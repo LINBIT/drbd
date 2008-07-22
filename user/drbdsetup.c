@@ -170,6 +170,7 @@ void string_opt_xml(struct drbd_option *option);
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int state_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -355,6 +356,7 @@ struct drbd_cmd commands[] = {
 	{"verify", P_start_ov, F_CONFIG_CMD, {{NULL, NULL}} },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
+	{"status", P_get_state, F_GET_CMD, {.gp={ status_xml_scmd } } },
 	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
 	{"dstate", P_get_state, F_GET_CMD, {.gp={ dstate_scmd} } },
 	{"show-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} }},
@@ -441,6 +443,8 @@ const char * error_to_string(int err_no)
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
+char *resname = NULL; /* for pretty printing in "status" only,
+			 taken from environment variable DRBD_RESOURCE */
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
@@ -1306,13 +1310,19 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	tl->drbd_p_header->drbd_minor = minor;
 	tl->drbd_p_header->flags = 0;
 
+	memset(buffer,0,sizeof(buffer));
 	call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,4096,NL_TIME);
 
 	close_cn(sk_nl);
 	reply = (struct drbd_nl_cfg_reply *)
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
-	if (reply->ret_code != NoError)
+	/* if there was an error, report and abort --
+	 * unless it was "this device is not there",
+	 * and command was "status" */
+	if (reply->ret_code != NoError &&
+	   !(reply->ret_code == MinorNotKnown &&
+	     cm->gp.show_function == status_xml_scmd))
 		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
@@ -1414,11 +1424,63 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	return 0;
 }
 
+int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
+		int minor, unsigned short *rtl)
+{
+	union drbd_state_t state = { .i = 0 };
+	int synced = 0;
+
+	if (!consume_tag_int(T_state_i,rtl,(int*)&state.i)) {
+		printf( "<!-- resource minor=\"%u\"", minor);
+		if (resname)
+			printf(" name=\"%s\"", resname);
+		printf(" not available or not yet created -->\n");
+		return 0;
+	}
+	printf("<resource minor=\"%u\"", minor);
+	if (resname)
+		printf(" name=\"%s\"", resname);
+
+	if (state.conn == StandAlone && state.disk == Diskless) {
+		printf(" cs=\"Unconfigured\" />\n");
+		return 0;
+	}
+
+	printf( /* connection state */
+		" cs=\"%s\""
+		/* role */
+		" st1=\"%s\" st2=\"%s\""
+		/* disk state */
+		" ds1=\"%s\" ds2=\"%s\"",
+	       conns_to_name(state.conn),
+	       roles_to_name(state.role),
+	       roles_to_name(state.peer),
+	       disks_to_name(state.disk),
+	       disks_to_name(state.pdsk));
+
+	/* io suspended ? */
+	if (state.susp)
+		printf(" suspended");
+	/* reason why sync is paused */
+	if (state.aftr_isp)
+		printf(" aftr_isp");
+	if (state.peer_isp)
+		printf(" peer_isp");
+	if (state.user_isp)
+		printf(" user_isp");
+
+	if (consume_tag_int(T_sync_progress, rtl, &synced))
+		printf(" resynced_precent=\"%i.%i\"", synced / 10, synced % 10);
+
+	printf(" />\n");
+	return 0;
+}
+
 int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
-	union drbd_state_t state;
+	union drbd_state_t state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -1433,7 +1495,7 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	union drbd_state_t state;
+	union drbd_state_t state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -1448,7 +1510,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	union drbd_state_t state;
+	union drbd_state_t state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -2308,6 +2370,7 @@ int main(int argc, char** argv)
 	/* it is enough to set it, value is ignored */
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
+	resname = getenv("DRBD_RESOURCE");
 
 	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
 		if(argc >= 3) {

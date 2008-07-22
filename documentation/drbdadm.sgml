@@ -250,6 +250,26 @@
 	</para></listitem>
       </varlistentry>
       <varlistentry>
+        <term>status</term>
+        <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>status</secondary></indexterm>
+	Shows the current status of all devices defined in the current config file,
+	in xml-like format. Example output:
+<programlisting>
+&lt;drbd-status version="8.2.6" api="88"&gt;
+&lt;resources config_file="/etc/drbd-82.conf"&gt;
+&lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
+          ds1="Inconsistent" ds2="UpToDate" resynced_precent ="5.9" /&gt;
+&lt;resource minor="1" name="s1" cs="WFConnection" st1="Secondary"
+          st2="Unknown" ds1="Inconsistent" ds2="Outdated" /&gt;
+&lt;resource minor="3" name="dummy" cs="Unconfigured" /&gt;
+&lt;!-- resource minor="4" name="scratch" not available or not yet created --&gt;
+&lt;/resources&gt;
+&lt;/drbd-status&gt;
+</programlisting>
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
         <term>dump</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>dump</secondary></indexterm>

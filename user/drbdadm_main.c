@@ -107,6 +107,7 @@ extern FILE* yyin;
 int adm_attach(struct d_resource* ,const char* );
 int adm_connect(struct d_resource* ,const char* );
 int adm_generic_s(struct d_resource* ,const char* );
+int adm_status_xml(struct d_resource* ,const char* );
 int adm_generic_l(struct d_resource* ,const char* );
 int adm_resize(struct d_resource* ,const char* );
 int adm_syncer(struct d_resource* ,const char* );
@@ -298,6 +299,7 @@ struct adm_cmd cmds[] = {
         { "wait-connect",          adm_wait_c,      DRBD_acf1_defnet    },
         { "wait-con-int",          adm_wait_ci,
 		.show_in_usage = 1, .verify_ips = 1, },
+        { "status",                adm_status_xml,  DRBD_acf2_gen_shell },
         { "state",                 adm_generic_s,   DRBD_acf1_default   },
         { "cstate",                adm_generic_s,   DRBD_acf1_default   },
         { "dstate",                adm_generic_b,   DRBD_acf1_default   },
@@ -1098,6 +1100,29 @@ static int adm_generic(struct d_resource* res,const char* cmd,int flags)
 int adm_generic_s(struct d_resource* res,const char* cmd)
 {
   return adm_generic(res,cmd,SLEEPS_SHORT);
+}
+
+int adm_status_xml(struct d_resource* res,const char* cmd)
+{
+  struct d_resource *r, *t;
+  int rv = 0;
+
+  if (!dry_run) {
+    printf("<drbd-status version=\"%s\" api=\"%u\">\n",
+      REL_VERSION, API_VERSION);
+    printf("<resources config_file=\"%s\">\n", config_save);
+  }
+
+  for_each_resource(r,t,res) {
+    setenv("DRBD_RESOURCE",r->name,1);
+    rv = adm_generic(r,cmd,SLEEPS_SHORT);
+    if (rv)
+	    break;
+  }
+
+  if (!dry_run)
+    printf("</resources>\n</drbd-status>\n");
+  return rv;
 }
 
 int adm_generic_l(struct d_resource* res,const char* cmd)

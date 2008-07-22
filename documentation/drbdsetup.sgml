@@ -144,6 +144,11 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">status</arg>
+    </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">resize</arg>
       <arg>-d<arg choice="req"><replaceable>size</replaceable></arg></arg>
     </cmdsynopsis>
@@ -1080,6 +1085,17 @@
       <indexterm><primary>drbdsetup</primary><secondary>dstate</secondary></indexterm>
       <para>
 	Shows the current states of the backing storage devices. (local/peer)
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>status</title>
+      <indexterm><primary>drbdsetup</primary><secondary>status</secondary></indexterm>
+      <para>
+	Shows the current status of the device in xml-like format. Example output:
+	<programlisting>
+&lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
+         ds1="Inconsistent" ds2="UpToDate" resynced_precent="5.9" /&gt;
+	</programlisting>
       </para>
     </refsect2>
     <refsect2>

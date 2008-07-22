@@ -1716,11 +1716,24 @@ STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
-	unsigned short *tl;
+	unsigned short *tl = reply->tag_list;
+	union drbd_state_t s = mdev->state;
+	unsigned long rs_left;
+	unsigned int res;
 
-	tl = reply->tag_list;
+	tl = get_state_to_tags(mdev, (struct get_state *)&s, tl);
 
-	tl = get_state_to_tags(mdev, (struct get_state *)&mdev->state, tl);
+	/* no local ref, no bitmap, no syncer progress. */
+	if (s.conn >= SyncSource && s.conn <= PausedSyncT) {
+		if (inc_local(mdev)) {
+			drbd_get_syncer_progress(mdev, &rs_left, &res);
+			*tl++ = T_sync_progress;
+			*tl++ = sizeof(int);
+			memcpy(tl, &res, sizeof(int));
+			tl = (unsigned short *)((char *)tl + sizeof(int));
+			dec_local(mdev);
+		}
+	}
 	*tl++ = TT_END; /* Close the tag list */
 
 	return (int)((char *)tl - (char *)reply->tag_list);
@@ -1881,7 +1894,8 @@ static struct cn_handler_struct cnd_table[] = {
 				    sizeof(struct disk_conf_tag_len_struct) +
 				    sizeof(struct net_conf_tag_len_struct) },
 	[ P_get_state ]		= { &drbd_nl_get_state,
-				    sizeof(struct get_state_tag_len_struct) },
+				    sizeof(struct get_state_tag_len_struct) +
+				    sizeof(struct sync_progress_tag_len_struct)	},
 	[ P_get_uuids ]		= { &drbd_nl_get_uuids,
 				    sizeof(struct get_uuids_tag_len_struct) },
 	[ P_get_timeout_flag ]	=

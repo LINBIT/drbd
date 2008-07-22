@@ -224,7 +224,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   write_ordering_chars[mdev->write_ordering]
 			);
 			seq_printf(seq, " oos:%lu\n",
-				   drbd_bm_total_weight(mdev) << (BM_BLOCK_SIZE_B - 10));
+				   Bit2KB(drbd_bm_total_weight(mdev)));
 		}
 		if ( mdev->state.conn == SyncSource ||
 		     mdev->state.conn == SyncTarget )
