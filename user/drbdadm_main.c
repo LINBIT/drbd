@@ -337,6 +337,7 @@ struct adm_cmd cmds[] = {
         { "suspend-io",            adm_generic_s,   DRBD_acf4_advanced  },
         { "resume-io",             adm_generic_s,   DRBD_acf4_advanced  },
         { "set-gi",                admm_generic,    DRBD_acf4_advanced  },
+        { "new-current-uuid",      adm_generic_s,   DRBD_acf4_advanced  },
 };
 
 /*** These functions are used to the print the config ***/

@@ -541,6 +541,18 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
+void drbd_bm_clear_all(struct drbd_conf *mdev)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	ERR_IF(!b) return;
+	ERR_IF(!b->bm) return;
+
+	spin_lock_irq(&b->bm_lock);
+	memset(b->bm, 0, b->bm_words*sizeof(long));
+	b->bm_set = 0;
+	spin_unlock_irq(&b->bm_lock);
+}
+
 static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;

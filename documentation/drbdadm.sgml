@@ -303,6 +303,19 @@
       </varlistentry>
 
       <varlistentry>
+        <term>new-current-uuid</term>
+        <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>new-current-uuid</secondary></indexterm>
+	  Generates a new currend UUID and rotates all other UUID values. This works
+          on disconnected devices only, the device might be in primary or secondary role.</para>
+        <para>
+          This can be used to shorten the initial resync of a cluster where the second node
+          is added after the first node is gone into production, by means of disk shipping.
+          See the drbdsetup manpage for a more details.
+        </para></listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term>dstate</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>dstate</secondary></indexterm>
@@ -322,7 +335,7 @@
   <refsect1>
     <title>Version</title>
     <simpara>
-      This document is correct for version 8.2.2 of the DRBD distribution.
+      This document is correct for version 8.2.7 of the DRBD distribution.
     </simpara>
   </refsect1>
 

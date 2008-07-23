@@ -139,6 +139,7 @@ enum ret_codes {
 	CSUMSResyncRunning,
 	VERIFYIsRunning,
 	DataOfWrongCurrent,
+	MayNotBeConnected,
 
 	/* insert new ones above this line */
 	AfterLastRetCode,

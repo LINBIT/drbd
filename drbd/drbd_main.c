@@ -3285,6 +3285,24 @@ int drbd_bmio_set_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
+/**
+ * drbd_bmio_clear_n_write:
+ * Is an io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io() that clears
+ * all bits in the bitmap and writes the whole bitmap to stable storage.
+ */
+int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
+{
+	int rv = -EIO;
+
+	if (inc_local_if_state(mdev, Attaching)) {
+		drbd_bm_clear_all(mdev);
+		rv = drbd_bm_write(mdev);
+		dec_local(mdev);
+	}
+
+	return rv;
+}
+
 STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = (struct bm_io_work *)w;

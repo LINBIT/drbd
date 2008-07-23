@@ -121,6 +121,10 @@ NL_PACKET(dump_ee, 24,
 NL_PACKET(start_ov, 25,
 )
 
+NL_PACKET(new_c_uuid, 26,
+       NL_BIT(		63,	T_MANDATORY,	clear_bm)
+)
+
 #undef NL_PACKET
 #undef NL_INTEGER
 #undef NL_INT64

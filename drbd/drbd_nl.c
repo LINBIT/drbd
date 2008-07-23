@@ -1777,6 +1777,52 @@ STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 }
 
 
+STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
+			      struct drbd_nl_cfg_reply *reply)
+{
+	int retcode = NoError;
+	int err;
+
+	struct new_c_uuid args;
+
+	memset(&args, 0, sizeof(struct new_c_uuid));
+	if (!new_c_uuid_from_tags(mdev, nlp->tag_list, &args)) {
+		reply->ret_code = UnknownMandatoryTag;
+		return 0;
+	}
+
+	mutex_lock(&mdev->state_mutex); /* Protects us against serialized state changes. */
+
+	if (mdev->state.conn >= Connected) {
+		retcode = MayNotBeConnected;
+		goto out;
+	}
+
+	if (!inc_local(mdev)) {
+		retcode = HaveNoDiskConfig;
+		goto out;
+	}
+
+	drbd_uuid_set(mdev, Bitmap, 0); /* Rotate Bitmap to History 1, etc... */
+	drbd_uuid_new_current(mdev); /* New current, previous to Bitmap */
+
+	if (args.clear_bm) {
+		err = drbd_bitmap_io(mdev, &drbd_bmio_clear_n_write);
+		if (err) {
+			ERR("Writing bitmap failed with %d\n",err);
+			retcode = MDIOError;
+		}
+	}
+
+	drbd_md_sync(mdev);
+	dec_local(mdev);
+out:
+	mutex_unlock(&mdev->state_mutex);
+
+	reply->ret_code = retcode;
+	return 0;
+}
+
 STATIC struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	struct drbd_conf *mdev;
@@ -1842,6 +1888,7 @@ static struct cn_handler_struct cnd_table[] = {
 		{ &drbd_nl_get_timeout_flag,
 		  sizeof(struct get_timeout_flag_tag_len_struct)},
 	[ P_start_ov ]          = { &drbd_nl_start_ov,          0 },
+	[ P_new_c_uuid ]        = { &drbd_nl_new_c_uuid,        0 },
 };
 
 STATIC void drbd_connector_callback(void *data)

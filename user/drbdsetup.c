@@ -340,6 +340,11 @@ struct drbd_cmd commands[] = {
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 CLOSE_OPTIONS }} }, },
 
+	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,
+	 (struct drbd_option[]) {
+		 { "clear-bitmap",'c',T_clear_bm, EB   },
+		 CLOSE_OPTIONS }} }, },
+
 	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"invalidate-remote", P_invalidate_peer, F_CONFIG_CMD, {{NULL, NULL}} },
 	{"pause-sync", P_pause_sync, F_CONFIG_CMD, {{ NULL, NULL }} },
@@ -423,6 +428,7 @@ static const char *error_messages[] = {
 	EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
 	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
 	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
+	EM(MayNotBeConnected) = "Not possible while connected",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)

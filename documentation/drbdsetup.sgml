@@ -194,6 +194,12 @@
       <arg>-u</arg>
       <arg>-a</arg>
     </cmdsynopsis>
+    <cmdsynopsis>
+      <command>drbdsetup</command>
+      <arg choice="req"><replaceable>device</replaceable></arg>
+      <arg choice="req">new-current-uuid</arg>
+      <arg>-c</arg>
+    </cmdsynopsis>
   </refsynopsisdiv>
 
   <refsect1>
@@ -1186,6 +1192,52 @@
 	</variablelist>
       </para>
     </refsect2>
+
+    <refsect2>
+      <title>new-current-uuid</title>
+      <indexterm><primary>drbdsetup</primary><secondary>new-current-uuid</secondary></indexterm>
+      <para>
+	Generates a new currend UUID and rotates all other UUID values. This works
+        on disconnected devices only, the device might be in primary or secondary role.
+        Available option:
+
+	<variablelist>
+	  <varlistentry>
+	    <term><option>-c</option>,
+	    <option>--clear-bitmap</option></term>
+	    <listitem>
+	      <para>
+		Clears the sync bitmap in addition to generating a new current UUID.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	</variablelist>
+      </para>
+      <para>
+        This can be used to shorten the initial resync of a cluster where the second node
+        is added after the first node is gone into production, by means of disk shipping.
+        The necessary steps are:
+        <orderedlist numeration="arabic">
+	  <listitem><simpara>
+	    <command>drbdsetup <replaceable>device</replaceable> new-current-uuid --clear-bitmap</command>
+	  </simpara></listitem>
+	  <listitem><simpara>
+	    Take the copy of the current active server. E.g. by pulling a disk out of
+	    the RAID1 controller, or by copying with dd. You need to copy the actual
+	    data, and the meta data.
+	  </simpara></listitem>
+	  <listitem><simpara>
+	    <command>drbdsetup <replaceable>device</replaceable> new-current-uuid</command>
+	  </simpara></listitem>
+	  <listitem><simpara>
+	    Add the disk to the new secondary node, and join it to the cluster. You will
+	    get a resync of that parts that where changed since the first call to
+	    <command>drbdsetup</command> in step 1.
+	  </simpara></listitem>
+	</orderedlist>
+      </para>
+    </refsect2>
+
 
   </refsect1>
   <refsect1>
