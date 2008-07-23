@@ -1242,6 +1242,10 @@ struct bm_extent {
  * Do not use PAGE_SIZE here! Use a architecture agnostic constant!
  */
 #define BM_PACKET_WORDS ((4096-sizeof(struct Drbd_Header))/sizeof(long))
+#if (PAGE_SIZE < 4096)
+/* drbd_send_bitmap / receive_bitmap would break horribly */
+#error "PAGE_SIZE too small"
+#endif
 
 /* the extent in "PER_EXTENT" below is an activity log extent
  * we need that many (long words/bytes) to store the bitmap

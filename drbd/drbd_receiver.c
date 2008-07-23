@@ -2953,7 +2953,13 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	bm_words = drbd_bm_words(mdev);
 	bm_i	 = 0;
-	buffer	 = vmalloc(BM_PACKET_WORDS*sizeof(long));
+	/* maybe we should use some per thread scratch page,
+	 * and allocate that during initial device creation? */
+	buffer	 = (unsigned long *) __get_free_page(GFP_NOIO);
+	if (!buffer) {
+		ERR("failed to allocate one page buffer in %s\n", __func__ );
+		return FALSE;
+	}
 
 	while (1) {
 		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i );
@@ -2988,7 +2994,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	ok = TRUE;
  out:
 	drbd_bm_unlock(mdev);
-	vfree(buffer);
+	free_page((unsigned long) buffer);
 	return ok;
 }
 
