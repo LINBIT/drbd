@@ -651,6 +651,7 @@ out:
 		case EINTR: case ERESTARTSYS:
 			/* peer not (yet) available, network problem */
 		case ECONNREFUSED: case ENETUNREACH:
+		case EHOSTDOWN:    case EHOSTUNREACH:
 #if 0
 			DBG("%s failure ignored, err = %d\n",
 					what, err);
