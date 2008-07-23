@@ -45,44 +45,9 @@
 #define MAX_LINELEN 2048
 
 
-char *expand_path(const char *path)
-/* This expands relative pathes to absolute ones. It returns a
- * malloc'ed buffer which has to be freed by the caller.
- */
-{
-	char *cwd;
-	size_t cwd_len;
-	char *absolute_path;
-
-	if (path == NULL || path[0] == 0)
-		return NULL;
-	if (path[0] == '/')
-		return strdup(path);
-
-	cwd = getcwd(NULL, 0);
-	if (cwd == NULL) {
-		perror("getcwd");
-		return NULL;
-	}
-	cwd_len = strlen(cwd);
-	absolute_path = malloc(cwd_len+strlen(path)+2);
-	if (!absolute_path)
-		return NULL;
-
-	strcpy(absolute_path, cwd);
-	strcpy(absolute_path+cwd_len, "/");
-	strcpy(absolute_path+cwd_len+1, path);
-
-	free(cwd);
-	return absolute_path;
-}
-
-
-
 int register_minor(int minor, const char *path)
 {
 	char buf[255];
-	char *absolute_path;
 	struct stat stat_buf;
 	int err = -1;
 
@@ -99,18 +64,19 @@ int register_minor(int minor, const char *path)
 		}
 	}
 
-	absolute_path = expand_path(path);
-	if (absolute_path == NULL) {
-		fprintf(stderr, "Couldn't expand path (%s).\n", path);
-	} else if (stat(absolute_path, &stat_buf) < 0) {
-		fprintf(stderr, "stat(%s): %m\n", absolute_path);
-	} else if (symlink(absolute_path, buf) < 0) {
-		fprintf(stderr, "symlink(%s, %s): %m\n", absolute_path, buf);
+	if (!path || !path[0]) {
+		fprintf(stderr, "Cannot register an empty path.\n");
+	} else if (path[0] != '/') {
+		fprintf(stderr, "Absolute path expected, "
+			"won't register relative path (%s).\n", path);
+	} else if (stat(path, &stat_buf) < 0) {
+		fprintf(stderr, "stat(%s): %m\n", path);
+	} else if (symlink(path, buf) < 0) {
+		fprintf(stderr, "symlink(%s, %s): %m\n", path, buf);
 	} else {
 		/* it did work out after all! */
 		err = 0;
 	}
-	free(absolute_path);
 	return err;
 }
 

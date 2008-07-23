@@ -45,6 +45,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <time.h>
+#include <dirent.h>
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 
@@ -149,6 +150,7 @@ struct d_resource* common = NULL;
 struct ifreq *ifreq_list = NULL;
 int nr_resources;
 int highest_minor;
+int config_from_stdin = 0;
 int config_valid=1;
 int no_tty;
 int dry_run;
@@ -875,6 +877,8 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
     if (dry_run) return 0;
   }
 
+  fflush(stdout);
+  fflush(stderr);
   pid = fork();
   if(pid == -1) {
     fprintf(stderr,"Can not fork\n");
@@ -940,6 +944,8 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
       }
     }
   }
+  fflush(stdout);
+  fflush(stderr);
 
   return rv;
 }
@@ -2045,6 +2051,70 @@ static void global_validate(void)
   }
 }
 
+/*
+ * returns a pointer to an malloced area that contains
+ * an absolute, canonical, version of path.
+ * aborts if any allocation or syscall fails.
+ * return value should be free()d, once no longer needed.
+ */
+char * canonify_path(char *path)
+{
+	int cwd_fd = -1;
+	char *last_slash;
+	char *tmp;
+	char *that_wd;
+	char *abs_path;
+	int len;
+
+	if (!path || !path[0]) {
+		fprintf(stderr, "cannot canonify an empty path\n");
+		exit(E_usage);
+	}
+
+	tmp = strdupa(path);
+	last_slash = strrchr(tmp,'/');
+
+	if (last_slash) {
+		*last_slash++ = '\0';
+		cwd_fd = open(".", O_RDONLY);
+		if (cwd_fd < 0) {
+			fprintf(stderr, "open(\".\") failed: %m\n");
+			exit(E_usage);
+		}
+		if (chdir(tmp)) {
+			fprintf(stderr, "chdir(\"%s\") failed: %m\n", tmp);
+			exit(E_usage);
+		}
+	} else {
+		last_slash = tmp;
+	}
+
+	that_wd = getcwd(NULL, 0);
+	if (!that_wd) {
+		fprintf(stderr, "getcwd() failed: %m\n");
+		exit(E_usage);
+	}
+
+	if (!strcmp("/", that_wd))
+		len = asprintf(&abs_path, "/%s", last_slash);
+	else
+		len = asprintf(&abs_path, "%s/%s", that_wd, last_slash);
+
+	if (len < 0) {
+		fprintf(stderr, "out of memory during asprintf in %s\n", __func__);
+		exit(E_usage);
+	}
+
+	free(that_wd);
+	if (cwd_fd >= 0) {
+		if (fchdir(cwd_fd) < 0) {
+			fprintf(stderr, "fchdir() failed: %m\n");
+			exit(E_usage);
+		}
+	}
+
+	return abs_path;
+}
 
 int main(int argc, char** argv)
 {
@@ -2137,6 +2207,7 @@ int main(int argc, char** argv)
 	  if(!strcmp(optarg,"-")) {
 	    yyin=stdin;
 	    ssprintf(config_file,"STDIN");
+	    config_from_stdin = 1;
 	  } else {
 	    yyin=fopen(optarg,"r");
 	    if(!yyin) {
@@ -2277,7 +2348,10 @@ have_config_file:
   /* for error-reporting reasons config_file may be re-assigned by adm_adjust,
    * we need the current value for register_minor, though.
    * save that. */
-  config_save = config_file;
+  if (config_from_stdin)
+    config_save = config_file;
+  else
+    config_save = canonify_path(config_file);
 
   /*
    * for check_uniq: check uniqueness of
@@ -2338,7 +2412,7 @@ have_config_file:
   is_dump_xml = (cmd->function == adm_dump_xml);
   is_dump = (is_dump_xml || cmd->function == adm_dump);
   if (!is_dump || dry_run) expand_common();
-  if (is_dump || dry_run) do_register_minor = 0;
+  if (is_dump || dry_run || config_from_stdin) do_register_minor = 0;
 
   if(cmd->res_name_required)
     {
@@ -2366,11 +2440,11 @@ have_config_file:
 	all_resources=1;
 	if (is_dump) {
 	  if (is_dump_xml) {
-	    printf("<config file=\"%s\">\n", config_file); ++indent;
+	    printf("<config file=\"%s\">\n", config_save); ++indent;
 	    dump_global_info_xml();
 	    dump_common_info_xml();
 	  } else {
-	    printf("# %s\n",config_file);
+	    printf("# %s\n", config_save);
 	    dump_global_info();
 	    dump_common_info();
 	  }
