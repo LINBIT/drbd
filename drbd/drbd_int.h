@@ -1272,8 +1272,8 @@ struct bm_extent {
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
-/* 16 TB in units of sectors */
-#define DRBD_MAX_SECTORS_FLEX (1ULL<<(32+BM_BLOCK_SIZE_B-9))
+/* 8 TB in units of sectors */
+#define DRBD_MAX_SECTORS_FLEX (1ULL<<(31+BM_BLOCK_SIZE_B-9))
 #endif
 
 /* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
