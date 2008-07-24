@@ -705,8 +705,9 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 		ns.conn = os.conn;
 	}
 
-	/* After a network error (+TearDown) only Unconnected can follow */
-	if (os.conn >= Timeout && os.conn <= TearDown && ns.conn != Unconnected)
+	/* After a network error (+TearDown) only Unconnected or Disconnecting can follow */
+	if (os.conn >= Timeout && os.conn <= TearDown &&
+	    ns.conn != Unconnected && ns.conn != Disconnecting)
 		ns.conn = os.conn;
 
 	/* After Disconnecting only StandAlone may follow */
