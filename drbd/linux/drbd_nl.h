@@ -50,9 +50,13 @@ NL_PACKET(net_conf, 5,
 	NL_INTEGER(	26,	T_MAY_IGNORE,	after_sb_2p)
 	NL_INTEGER(	39,	T_MAY_IGNORE,	rr_conflict)
 	NL_INTEGER(	40,	T_MAY_IGNORE,	ping_timeo)
+	  /* 59 addr_family was available in GIT, never released */
+	/* drbd-8.2: NL_BIT(         60,     T_MANDATORY,    mind_af) */
 	NL_BIT(		27,	T_MAY_IGNORE,	want_lose)
 	NL_BIT(		28,	T_MAY_IGNORE,	two_primaries)
 	NL_BIT(		41,	T_MAY_IGNORE,	always_asbp)
+	/* drbd-8.2: NL_BIT(		61,	T_MAY_IGNORE,	no_cork) */
+	NL_BIT(		62,	T_MANDATORY,	auto_sndbuf_size)
 )
 
 NL_PACKET(disconnect, 6, )

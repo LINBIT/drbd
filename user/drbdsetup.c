@@ -181,6 +181,7 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 // convert functions for options
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
@@ -249,6 +250,10 @@ struct option wait_cmds_options[] = {
 	conv_numeric, show_numeric, numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
 		DRBD_ ## N ## _DEF ,U,UN  } }
+#define EN_sndbuf(N,U,UN) \
+	conv_sndbuf, show_numeric, numeric_opt_usage, numeric_opt_xml, \
+	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
+		DRBD_ ## N ## _DEF ,U,UN  } }
 #define EH(N,D) \
 	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRY_SIZE(N), \
@@ -299,7 +304,7 @@ struct drbd_cmd commands[] = {
 		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1,NULL) },
 		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") },
 		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") },
-		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") },
+		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN_sndbuf(SNDBUF_SIZE,1,"bytes") },
 		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) },
 		 { "allow-two-primaries",'m',T_two_primaries, EB },
 		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
@@ -636,6 +641,21 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 	return NoError;
 }
 
+int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+{
+	int err = conv_numeric(od, tl, arg);
+	long long l = m_strtoll(arg, 0);
+	char bit = 1;
+
+	if (err != NoError || l != 0)
+		return err;
+	/* this is a mandatory bit,
+	 * to avoid newer userland to configure older modules with
+	 * a sndbuf size of zero, which would lead to Oops. */
+	add_tag(tl, T_auto_sndbuf_size, &bit, sizeof(bit));
+	return NoError;
+}
+
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const long long min = od->numeric_param.min;
@@ -666,7 +686,6 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		fprintf(stderr, "internal error in conv_numeric()\n");
 	}
 	return NoError;
-
 }
 
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
