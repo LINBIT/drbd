@@ -2346,7 +2346,7 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
 	if(inc_local(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
-			   p_size, drbd_get_capacity(mdev->bc->backing_bdev));
+			   p_size, drbd_get_max_capacity(mdev->bc));
 		warn_if_differ_considerably(mdev, "user requested size",
 					    p_usize, mdev->bc->dc.disk_size);
 

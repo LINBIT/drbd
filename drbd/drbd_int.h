@@ -1621,18 +1621,24 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-/* returns the capacity we announce to out peer */
+/* returns the capacity we announce to out peer.
+ * we clip ourselves at the various MAX_SECTORS, because if we don't,
+ * current implementation will oops sooner or later */
 static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
 	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		return drbd_get_capacity(bdev->backing_bdev)
-			? drbd_md_first_sector(bdev)
+			? min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
+					drbd_md_first_sector(bdev))
 			: 0;
 	case DRBD_MD_INDEX_FLEX_EXT:
+		return min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
+				drbd_get_capacity(bdev->backing_bdev));
 	default:
-		return drbd_get_capacity(bdev->backing_bdev);
+		return min_t(sector_t, DRBD_MAX_SECTORS,
+				drbd_get_capacity(bdev->backing_bdev));
 	}
 }
 

@@ -716,6 +716,8 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	enum ret_codes retcode;
 	enum determin_dev_size_enum dd;
+	sector_t max_possible_sectors;
+	sector_t min_md_device_sectors;
 	struct drbd_backing_dev* nbc=NULL; // new_backing_conf
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
@@ -839,39 +841,33 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	if ((drbd_get_capacity(nbc->backing_bdev)) < nbc->dc.disk_size) {
+	if (drbd_get_max_capacity(nbc) < nbc->dc.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}
 
-// warning LGE checks below no longer valid
-// --- rewrite
-#if 0
-	if (drbd_get_capacity(nbc->backing_bdev) >= (sector_t)DRBD_MAX_SECTORS) {
-		retcode = LDDeviceTooLarge;
-		goto release_bdev2_fail;
+	if (nbc->dc.meta_dev_idx < 0) {
+		max_possible_sectors = DRBD_MAX_SECTORS_FLEX;
+		/* at least one MB, otherwise it does not make sense */
+		min_md_device_sectors = (2<<10);
+	} else {
+		max_possible_sectors = DRBD_MAX_SECTORS;
+		min_md_device_sectors = MD_RESERVED_SECT * (nbc->dc.meta_dev_idx + 1);
 	}
 
-	if ( nbc->dc.meta_dev_idx == -1 ) i = 1;
-	else i = nbc->dc.meta_dev_idx+1;
+	if (drbd_get_capacity(nbc->md_bdev) > max_possible_sectors)
+		WARN("truncating very big lower level device "
+		     "to currently maximum possible %llu sectors\n",
+		     (unsigned long long) max_possible_sectors);
 
-	/* for internal, we need to check agains <= (then we have a drbd with
-	 * zero size, but meta data...) to be on the safe side, I require 32MB
-	 * minimal data storage area for drbd with internal meta data (thats
-	 * 160 total).  if someone wants to use that small devices, she can use
-	 * drbd 0.6 anyways...
-	 *
-	 * FIXME this is arbitrary and needs to be reconsidered as soon as we
-	 * move to flexible size meta data.
-	 */
-	if( drbd_get_capacity(nbc->md_bdev) < 2*MD_RESERVED_SIZE*i
-				+ (nbc->dc.meta_dev_idx == -1) ? (1<<16) : 0 )
+	if (drbd_get_capacity(nbc->md_bdev) < min_md_device_sectors)
 	{
 		retcode = MDDeviceTooSmall;
+		WARN("refusing attach: md-device too small, "
+		     "at least %llu sectors needed for this meta-disk type\n",
+		     (unsigned long long) min_md_device_sectors);
 		goto release_bdev2_fail;
 	}
-#endif
-// -- up to here
 
 	// Make sure the new disk is big enough
 	if (drbd_get_capacity(nbc->backing_bdev) <
@@ -880,7 +876,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		goto release_bdev2_fail;
 	}
 
-	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
+	nbc->known_size = drbd_get_max_capacity(nbc);
 
 	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
 	if (retcode < SS_Success )
@@ -916,6 +912,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 	// Prevent shrinking of consistent devices !
 	if(drbd_md_test_flag(nbc,MDF_Consistent) &&
 	   drbd_new_dev_size(mdev,nbc) < nbc->md.la_size_sect) {
+		WARN("refusing to truncate a consistent device\n");
 		retcode = LDDeviceTooSmall;
 		goto force_diskless_dec;
 	}

@@ -107,10 +107,11 @@
 
 /* drbdsetup XY resize -d Z
  * you are free to reduce the device size to nothing, if you want to.
- * but more than 3998G are currently not possible */
+ * the upper limit with 64bit kernel, enough ram and flexible meta data
+ * is 8 TB, currently. */
 /* DRBD_MAX_SECTORS */
 #define DRBD_DISK_SIZE_SECT_MIN  0
-#define DRBD_DISK_SIZE_SECT_MAX  ((128LLU*1024*2 - 72)*512LLU*8*8)
+#define DRBD_DISK_SIZE_SECT_MAX  (2LLU << 30)
 #define DRBD_DISK_SIZE_SECT_DEF  0 // = disabled = no user size...
 
 #define DRBD_ON_IO_ERROR_DEF PassOn
