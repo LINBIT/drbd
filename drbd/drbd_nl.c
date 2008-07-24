@@ -715,6 +715,7 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
+	enum determin_dev_size_enum dd;
 	struct drbd_backing_dev* nbc=NULL; // new_backing_conf
 	struct inode *inode, *inode2;
 	struct lru_cache* resync_lru = NULL;
@@ -984,10 +985,12 @@ STATIC int drbd_nl_disk_conf(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,
 		set_bit(USE_DEGR_WFC_T,&mdev->flags);
 	}
 
-	if (drbd_determin_dev_size(mdev) == dev_size_error) {
+	dd = drbd_determin_dev_size(mdev);
+	if (dd == dev_size_error) {
 		retcode = VMallocFailed;
 		goto force_diskless_dec;
-	}
+	} else if (dd == grew)
+		set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 
 	if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync (aka FullSync)\n");
@@ -1349,7 +1352,7 @@ void resync_after_online_grow(drbd_dev *mdev)
 	if (iass)
 		drbd_start_resync(mdev,SyncSource);
 	else
-		drbd_request_state(mdev,NS(conn,WFSyncUUID));
+		_drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose + ChgSerialize);
 }
 
 STATIC int drbd_nl_resize(drbd_dev *mdev, struct drbd_nl_cfg_req *nlp,

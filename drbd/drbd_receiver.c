@@ -2428,12 +2428,12 @@ STATIC int receive_sizes(drbd_dev *mdev, Drbd_Header *h)
 			// needs to know my new size...
 			drbd_send_sizes(mdev);
 		}
-		if (dd == grew && mdev->state.conn == Connected &&
-		    mdev->state.pdsk >= Inconsistent &&
-		    mdev->state.disk >= Inconsistent) {
-			/* With disk >= Inconsistent we take care to not get
-			   here during an attach while we are connected. */
-			resync_after_online_grow(mdev);
+		if (dd == grew && mdev->state.conn == Connected) {
+			if (mdev->state.pdsk >= Inconsistent &&
+			    mdev->state.disk >= Inconsistent)
+				resync_after_online_grow(mdev);
+			else
+				set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 		}
 	}
 

@@ -1124,6 +1124,13 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		__no_warn(local, mdev->bc = NULL;);
 	}
 
+	/* Disks got bigger while they were detached */
+	if (ns.disk > Negotiating && ns.pdsk > Negotiating &&
+	    test_and_clear_bit(RESYNC_AFTER_NEG, &mdev->flags)) {
+		if (ns.conn == Connected)
+			resync_after_online_grow(mdev);
+	}
+
 	// A resync finished or aborted, wake paused devices...
 	if ( (os.conn > Connected && ns.conn <= Connected) ||
 	     (os.peer_isp && !ns.peer_isp) ||
@@ -1549,7 +1556,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 
 	/* maybe we should use some per thread scratch page,
 	 * and allocate that during initial device creation? */
-	p = (struct Drbd_Header *) __get_free_page(GFP_NOIO);
+	p = (Drbd_Header *) __get_free_page(GFP_NOIO);
 	if (!p) {
 		ERR("failed to allocate one page buffer in %s\n", __func__ );
 		return FALSE;
