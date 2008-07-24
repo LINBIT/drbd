@@ -46,6 +46,11 @@
 #include <linux/vmalloc.h>
 #include <linux/random.h>
 #ifdef HAVE_LINUX_SCATTERLIST_H
+/* 2.6.11 (suse 9.3, fc4) does not include requisites
+ * from linux/scatterlist.h :( */
+#include <asm/scatterlist.h>
+#include <linux/mm.h>
+#include <linux/string.h>
 #include <linux/scatterlist.h>
 #endif
 #include <linux/drbd.h>
