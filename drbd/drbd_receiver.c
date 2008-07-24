@@ -2460,7 +2460,7 @@ STATIC int receive_uuids(drbd_dev *mdev, Drbd_Header *h)
 	mdev->p_uuid = p_uuid;
 
 	if (mdev->state.conn < Connected &&
-	    mdev->state.disk < Outdated &&
+	    mdev->state.disk < Inconsistent &&
 	    mdev->state.role == Primary &&
 	    (mdev->ed_uuid & ~((u64)1)) != (p_uuid[Current] & ~((u64)1))) {
 		ERR("Can only connect to data with current UUID=%016llX\n",

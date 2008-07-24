@@ -1032,10 +1032,9 @@ STATIC void after_state_ch(drbd_dev* mdev, drbd_state_t os, drbd_state_t ns,
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
-			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 ) {
-				/* Only do it if we have not yet done it... */
+			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 &&
+			    ns.disk >= UpToDate)
 				drbd_uuid_new_current(mdev);
-			}
 			if (ns.peer == Primary) {
 				/* Note: The condition ns.peer == Primary implies
 				   that we are connected. Otherwise it would
