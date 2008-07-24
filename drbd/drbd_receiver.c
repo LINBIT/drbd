@@ -488,6 +488,25 @@ void drbd_wait_ee_list_empty(drbd_dev *mdev,struct list_head *head)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
+#ifdef DEFINE_SOCK_CREATE_KERN
+/* if there is no sock_create_kern,
+ * tthere is also sock_create_lite missing */
+int sock_create_lite(int family, int type, int protocol, struct socket **res)
+{
+	int err = 0;
+	struct socket *sock = NULL;
+
+	sock = sock_alloc();
+	if (!sock)
+		err = -ENOMEM;
+	else
+		sock->type = type;
+
+	*res = sock;
+	return err;
+}
+#endif
+
 /* see also kernel_accept; which is only present since 2.6.18.
  * also we want to log which part of it failed, exactly */
 STATIC int drbd_accept(drbd_dev *mdev, const char **what,
