@@ -192,6 +192,17 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Tue Jul 23 2008 17:37:11 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.13rc1-1)
+ * Fixed the exit codes of drbdsetup
+ * Fixed online resizing if it is triggered from the secondary node.
+ * Fixed a possible deadlock in case "become-primary-on-both" is used, and
+   a resync starts
+ * Fixed the invocation of the pri-on-incon-degr handler
+ * sock_create_lite() to avoid a socket->sk leak
+ * Auto-tune socket buffers if sndbuf-size is set to zero
+ * Made it to compile on Linux-2.6.26
+
 * Tue Apr 24 2008 13:26:28 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.12-1)
  * Corrected lock-out of application IO during bitmap IO.
