@@ -1548,9 +1548,15 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 
 	ERR_IF(!mdev->bitmap) return FALSE;
 
+	/* maybe we should use some per thread scratch page,
+	 * and allocate that during initial device creation? */
+	p = (struct Drbd_Header *) __get_free_page(GFP_NOIO);
+	if (!p) {
+		ERR("failed to allocate one page buffer in %s\n", __func__ );
+		return FALSE;
+	}
 	bm_words = drbd_bm_words(mdev);
-	p  = vmalloc(PAGE_SIZE); // sleeps. cannot fail.
-	buffer = (unsigned long*)p->payload;
+	buffer = (unsigned long *)p->payload;
 
 	if (inc_local(mdev)) {
 		if (drbd_md_test_flag(mdev->bc,MDF_FullSync)) {
@@ -1585,7 +1591,7 @@ int _drbd_send_bitmap(drbd_dev *mdev)
 		bm_i += num_words;
 	} while (ok && want);
 
-	vfree(p);
+	free_page((unsigned long) p);
 	return ok;
 }
 
