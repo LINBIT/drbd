@@ -893,7 +893,8 @@
 	      Sets the cpu-affinity-mask for DRBD's kernel threads of this
 	      device. The default value of <replaceable>cpu-mask</replaceable> is
 	      0, which means that DRBD's kernel threads should be spread over
-	      all CPUs of the machine.
+	      all CPUs of the machine. This value must be given in hexadecimal
+              notation. If it is too big it will be truncated.
 	    </para>
 	  </listitem>
 	</varlistentry>
