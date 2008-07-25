@@ -373,23 +373,54 @@
 	</varlistentry>
 
 	<varlistentry>
-	  <term><option>-i</option>,
-	  <option>--no-disk-flushes</option></term>
+	  <term><option>-a</option>, <option>--no-disk-barrier</option></term>
+	  <term><option>-i</option>, <option>--no-disk-flushes</option></term>
+	  <term><option>-D</option>, <option>--no-disk-drain</option></term>
 	  <listitem>
 	    <para>
-      In case you are sure that your storage subsystem has
-      battery-backed write cache, and you know from measurements that it
-      really honors flush instructions by flushing data out from its
-      non-volatile write cache to disk, you have double security. You might then
-      reduce this to single security by disabling forced disk flushes with this
-      option. It might improve performance in this case.</para>
-	    <para>
-      If you use this option on plain disk drives, which have
-      volatile write caches (enabled by default), you are at risk to lose
-      your data with every power loss. <emphasis>Only use this option of you
-      understand each and every statement in these two
-      paragraphs.</emphasis>
-      </para>
+              DRBD has four implementations to express write-after-write dependencies to
+              its backing storage device. DRBD will use the first method that is
+              supported by the backing storage device and that is not disabled by the user.
+	    </para><para>
+              When selecting the method you should not only base your decision on the
+              measurable performance. In case your backing storage device has a volatile
+              write cache (plain disks, RAID of plain disks) you should use one
+              of the first two. In case your backing storage device has battery-backed
+              write cache you may go with option 3 or 4. Option 4 will deliver the
+              best performance such devices.
+            </para><para>
+              Unfortunately device mapper (LVM) does not support barriers.
+            </para><para>
+              The letter after "wo:" in /proc/drbd indicates with method is currently in
+              use for a device: b, f, d, n. The implementations:
+            </para>
+            <variablelist>
+              <varlistentry><term>barrier</term>
+	        <listitem><para>
+                  The first requirs that the driver of the
+                  backing storage device support barriers (called 'tagged command queuing' in
+                  SCSI and 'native command queuing' in SATA speak). The use of this
+                  method can be disabled by the we <option>--no-disk-barrier</option> option.
+	        </para></listitem></varlistentry>
+              <varlistentry><term>flush</term>
+	        <listitem><para>
+                  The second requires that the backing device support disk flushes (called
+                  'force unit access' in the drive vendors speak). The use of this method
+                  can be disabled using the <option>--no-disk-flushes</option> option.
+	        </para></listitem></varlistentry>
+              <varlistentry><term>drain</term>
+	        <listitem><para>
+                  The third method is simply to let write requests drain before
+                  write requests of a new reordering domain are issued. That was the
+                  only implementation before 8.0.9. You can prevent to use of this
+                  method by using the <option>--no-disk-drain</option> option.
+	        </para></listitem></varlistentry>
+              <varlistentry><term>none</term>
+	        <listitem><para>
+                  The fourth method is to not express write-after-write dependencies to
+                  the backing store at all.
+	        </para></listitem></varlistentry>
+              </variablelist>
 	  </listitem>
 	</varlistentry>
 
