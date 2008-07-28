@@ -1782,7 +1782,9 @@ int have_ip_ipv6(const char *ip)
 #define PROC_IF_INET6 "/proc/net/if_inet6"
   if_inet6 = fopen(PROC_IF_INET6,"r");
   if (!if_inet6) {
-    perror("open of " PROC_IF_INET6 "failed:");
+    if (errno != ENOENT)
+      perror("open of " PROC_IF_INET6 " failed:");
+#undef PROC_IF_INET6
     return 0;
   }
 
