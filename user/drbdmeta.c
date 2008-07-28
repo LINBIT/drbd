@@ -60,7 +60,7 @@
 extern FILE* yyin;
 YYSTYPE yylval;
 
-int     force = 0;
+/* int     force = 0; now extern, see drbdtool_common.c */
 int	verbose = 0;
 
 struct option metaopt[] = {
@@ -693,30 +693,6 @@ void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const ch
 			" actually wrote %d\n", tag, (int)count, (int)c);
 		exit(10);
 	}
-}
-
-int confirmed(const char *text)
-{
-	const char yes[] = "yes";
-	const ssize_t N = sizeof(yes);
-	char *answer = NULL;
-	size_t n = 0;
-	int ok;
-
-	printf("\n%s\n", text);
-
-	if (force) {
-	    printf("*** confirmation forced via --force option ***\n");
-	    ok = 1;
-	}
-	else {
-	    printf("[need to type '%s' to confirm] ", yes);
-	    ok = getline(&answer,&n,stdin) == N &&
-		strncmp(answer,yes,N-1) == 0;
-	    if (answer) free(answer);
-	    printf("\n");
-	}
-	return ok;
 }
 
 void m_get_gc(struct md_cpu *md)

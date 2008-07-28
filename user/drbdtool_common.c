@@ -21,6 +21,32 @@
 
 #define LANANA_DRBD_MAJOR 147	/* we should get this into linux/major.h */
 
+int force = 0;
+int confirmed(const char *text)
+{
+	const char yes[] = "yes";
+	const ssize_t N = sizeof(yes);
+	char *answer = NULL;
+	size_t n = 0;
+	int ok;
+
+	printf("\n%s\n", text);
+
+	if (force) {
+	    printf("*** confirmation forced via --force option ***\n");
+	    ok = 1;
+	}
+	else {
+	    printf("[need to type '%s' to confirm] ", yes);
+	    ok = getline(&answer,&n,stdin) == N &&
+		strncmp(answer,yes,N-1) == 0;
+	    if (answer) free(answer);
+	    printf("\n");
+	}
+	return ok;
+}
+
+
 char* ppsize(char* buf, size_t size)
 {
 	// Needs 9 bytes at max.

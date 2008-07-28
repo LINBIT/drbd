@@ -51,4 +51,7 @@ extern int fget_token(char *s, int size, FILE* stream);
 extern int sget_token(char *s, int size, const char** text);
 extern u64 bdev_size(int fd);
 extern void get_random_bytes(void* buffer, int len);
+
+extern int force; /* global option to force implicit confirmation */
+extern int confirmed(const char *text);
 #endif
