@@ -154,12 +154,12 @@ int highest_minor;
 int config_from_stdin = 0;
 int config_valid=1;
 int no_tty;
-int dry_run;
-int verbose;
+int dry_run = 0;
+int verbose = 0;
 int do_verify_ips;
 int all_resources=0; /* drbdadm was called with "all" instead of an resource name */
-char* drbdsetup;
-char* drbdmeta;
+char* drbdsetup = NULL;
+char* drbdmeta = NULL;
 char* drbd_proxy_ctl;
 char* sh_varname = NULL;
 char* setup_opts[10];
@@ -2083,7 +2083,7 @@ static void global_validate(void)
  * aborts if any allocation or syscall fails.
  * return value should be free()d, once no longer needed.
  */
-char * canonify_path(char *path)
+char *canonify_path(char *path)
 {
 	int cwd_fd = -1;
 	char *last_slash;
@@ -2098,7 +2098,7 @@ char * canonify_path(char *path)
 	}
 
 	tmp = strdupa(path);
-	last_slash = strrchr(tmp,'/');
+	last_slash = strrchr(tmp, '/');
 
 	if (last_slash) {
 		*last_slash++ = '\0';
@@ -2127,7 +2127,8 @@ char * canonify_path(char *path)
 		len = asprintf(&abs_path, "%s/%s", that_wd, last_slash);
 
 	if (len < 0) {
-		fprintf(stderr, "out of memory during asprintf in %s\n", __func__);
+		fprintf(stderr, "out of memory during asprintf in %s\n",
+			__func__);
 		exit(E_usage);
 	}
 
@@ -2142,6 +2143,180 @@ char * canonify_path(char *path)
 	return abs_path;
 }
 
+void assign_command_names_from_argv0(char **argv)
+{
+	/* in case drbdadm is called with an absolut or relative pathname
+	 * look for the drbdsetup binary in the same location,
+	 * otherwise, just let execvp sort it out... */
+	if ((progname = strrchr(argv[0], '/')) == 0) {
+		progname = argv[0];
+		drbdsetup = strdup("drbdsetup");
+		drbdmeta = strdup("drbdmeta");
+		drbd_proxy_ctl = strdup("drbd-proxy-ctl");
+	} else {
+		struct cmd_helper {
+			char *name;
+			char **var;
+		};
+		struct cmd_helper helpers[] = {
+			{"drbdsetup", &drbdsetup},
+			{"drbdmeta", &drbdmeta},
+			{"drbd-proxy-ctl", &drbd_proxy_ctl},
+			{NULL, NULL}
+		};
+		size_t len_dir, l;
+		struct cmd_helper *c;
+
+		++progname;
+		len_dir  = progname - argv[0];
+
+		for (c = helpers; c->name; ++c) {
+			l = len_dir + strlen(c->name) + 1;
+			*(c->var) = malloc(l);
+			if (*(c->var)) {
+				strncpy(*(c->var), argv[0], len_dir);
+				strcpy(*(c->var) + len_dir, c->name);
+			}
+		}
+
+		/* for pretty printing, truncate to basename */
+		argv[0] = progname;
+	}
+}
+
+int parse_options(int argc, char **argv)
+{
+	opterr = 1;
+	optind = 0;
+	while (1) {
+		int c;
+
+		c = getopt_long(argc, argv,
+				make_optstring(admopt, 0), admopt, 0);
+		if (c == -1)
+			break;
+		switch (c) {
+		case 'v':
+			verbose++;
+			break;
+		case 'd':
+			dry_run++;
+			break;
+		case 'c':
+			if (!strcmp(optarg, "-")) {
+				yyin = stdin;
+				if (asprintf(&config_file, "STDIN") < 0) {
+					fprintf(stderr,
+						"asprintf(config_file): %m\n");
+					return 20;
+				}
+				config_from_stdin = 1;
+			} else {
+				yyin = fopen(optarg, "r");
+				if (!yyin) {
+					fprintf(stderr, "Can not open '%s'.\n.",
+						optarg);
+					exit(E_exec_error);
+				}
+				if (asprintf(&config_file, "%s", optarg) < 0) {
+					fprintf(stderr,
+						"asprintf(config_file): %m\n");
+					return 20;
+				}
+			}
+			break;
+		case 's':
+			{
+				char *pathes[2];
+				pathes[0] = optarg;
+				pathes[1] = 0;
+				find_drbdcmd(&drbdsetup, pathes);
+			}
+			break;
+		case 'm':
+			{
+				char *pathes[2];
+				pathes[0] = optarg;
+				pathes[1] = 0;
+				find_drbdcmd(&drbdmeta, pathes);
+			}
+			break;
+		case 'p':
+			{
+				char *pathes[2];
+				pathes[0] = optarg;
+				pathes[1] = 0;
+				find_drbdcmd(&drbd_proxy_ctl, pathes);
+			}
+			break;
+		case 'n':
+			{
+				char *c;
+				int shell_var_name_ok = 1;
+				for (c = optarg; *c && shell_var_name_ok; c++) {
+					switch (*c) {
+					case 'a'...'z':
+					case 'A'...'Z':
+					case '0'...'9':
+					case '_':
+						break;
+					default:
+						shell_var_name_ok = 0;
+					}
+				}
+				if (shell_var_name_ok)
+					sh_varname = optarg;
+				else
+					fprintf(stderr,
+						"ignored --sh-varname=%s: "
+						"contains suspect characters, allowed set is [a-zA-Z0-9_]\n",
+						optarg);
+			}
+			break;
+		case '?':
+			// commented out, since opterr=1
+			//fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+			fprintf(stderr, "try '%s help'\n", progname);
+			return 20;
+			break;
+		}
+	}
+	return 0;
+}
+
+/* store pass through options to drbdsetup / drbdmeta etc. */
+void store_pass_through_options(int argc, char **argv)
+{
+	while (optind < argc) {
+		if (argv[optind][0] == '-' ||
+		    argv[optind][0] == ':' || isdigit(argv[optind][0]))
+			setup_opts[soi++] = argv[optind++];
+		else
+			break;
+	}
+}
+
+struct adm_cmd *find_cmd(char *cmdname)
+{
+	struct adm_cmd *cmd = NULL;
+	unsigned int i;
+	if (!strcmp("hidden-commands", cmdname)) {
+		// before parsing the configuration file...
+		hidden_cmds(NULL, NULL);
+		exit(0);
+	}
+	if (!strncmp("help", cmdname, 5))
+		print_usage_and_exit(0);
+
+	for (i = 0; i < ARRY_SIZE(cmds); i++) {
+		if (!strcmp(cmds[i].name, cmdname)) {
+			cmd = cmds + i;
+			break;
+		}
+	}
+	return cmd;
+}
+
 int main(int argc, char** argv)
 {
   size_t i;
@@ -2153,11 +2328,7 @@ int main(int argc, char** argv)
   int is_dump;
   int do_register_minor = 1;
 
-  drbdsetup=NULL;
-  drbdmeta=NULL;
-  dry_run=0;
-  verbose=0;
-  yyin=NULL;
+  yyin = NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
   no_tty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
 
@@ -2170,188 +2341,67 @@ int main(int argc, char** argv)
 	    "   PRETENDING that I am >>%s<<\n\n",nodeinfo.nodename);
   }
 
-  /* in case drbdadm is called with an absolut or relative pathname
-   * look for the drbdsetup binary in the same location,
-   * otherwise, just let execvp sort it out... */
-  if( (progname=strrchr(argv[0],'/')) == 0 ) {
-    progname=argv[0];
-    drbdsetup = strdup("drbdsetup");
-    drbdmeta = strdup("drbdmeta");
-    drbd_proxy_ctl = strdup("drbd-proxy-ctl");
-  } else {
-    size_t len = strlen(argv[0]) + 1;
-    ++progname;
+  assign_command_names_from_argv0(argv);
 
-    len += strlen("drbdsetup") - strlen(progname);
-    drbdsetup = malloc(len);
-    if (drbdsetup) {
-      strncpy(drbdsetup, argv[0], (progname - argv[0]));
-      strcpy(drbdsetup + (progname - argv[0]), "drbdsetup");
-    }
-
-    len += strlen("drbdmeta") - strlen(progname);
-    drbdmeta = malloc(len);
-    if (drbdmeta) {
-      strncpy(drbdmeta, argv[0], (progname - argv[0]));
-      strcpy(drbdmeta + (progname - argv[0]), "drbdmeta");
-    }
-
-    len += strlen("drbd-proxy-ctl") - strlen(progname);
-    drbd_proxy_ctl = malloc(len);
-    if (drbd_proxy_ctl) {
-      strncpy(drbd_proxy_ctl, argv[0], (progname - argv[0]));
-      strcpy(drbd_proxy_ctl + (progname - argv[0]), "drbd-proxy-ctl");
-    }
-
-    argv[0] = progname;
-  }
-
-  if(argc == 1) print_usage_and_exit("missing arguments"); // arguments missing.
+  if (argc == 1)
+    print_usage_and_exit("missing arguments"); // arguments missing.
 
   if (drbdsetup == NULL || drbdmeta == NULL || drbd_proxy_ctl == NULL) {
     fprintf(stderr,"could not strdup argv[0].\n");
     exit(E_exec_error);
   }
 
-  opterr=1;
-  optind=0;
-  while(1)
-    {
-      int c;
+  rv = parse_options(argc, argv);
+  if (rv)
+	  return rv;
+  store_pass_through_options(argc, argv);
+  if (optind == argc)
+	  print_usage_and_exit(0);
 
-      c = getopt_long(argc,argv,make_optstring(admopt,0),admopt,0);
-      if(c == -1) break;
-      switch(c)
-	{
-	case 'v':
-	  verbose++;
-	  break;
-	case 'd':
-	  dry_run++;
-	  break;
-	case 'c':
-	  if(!strcmp(optarg,"-")) {
-	    yyin=stdin;
-	    ssprintf(config_file,"STDIN");
-	    config_from_stdin = 1;
-	  } else {
-	    yyin=fopen(optarg,"r");
-	    if(!yyin) {
-	      fprintf(stderr,"Can not open '%s'.\n.",optarg);
-	      exit(E_exec_error);
-	    }
-	    ssprintf(config_file,"%s",optarg);
-	  }
-	  break;
-	case 's':
-	  {
-	    char* pathes[2];
-	    pathes[0]=optarg;
-	    pathes[1]=0;
-	    find_drbdcmd(&drbdsetup,pathes);
-	  }
-	  break;
-	case 'm':
-	  {
-	    char* pathes[2];
-	    pathes[0]=optarg;
-	    pathes[1]=0;
-	    find_drbdcmd(&drbdmeta,pathes);
-	  }
-	  break;
-	case 'p':
-	  {
-	    char* pathes[2];
-	    pathes[0]=optarg;
-	    pathes[1]=0;
-	    find_drbdcmd(&drbd_proxy_ctl,pathes);
-	  }
-	  break;
-	case 'n':
-	  {
-	    char *c;
-            int shell_var_name_ok = 1;
-	    for (c = optarg; *c && shell_var_name_ok; c++) {
-	      switch(*c) {
-		case 'a' ... 'z':
-                case 'A' ... 'Z':
-                case '0' ... '9':
-                case '_':
-                  break;
-                default:
-                  shell_var_name_ok = 0;
-              }
-            }
-            if (shell_var_name_ok)
-              sh_varname = optarg;
-            else
-              fprintf(stderr,"ignored --sh-varname=%s: "
-                  "contains suspect characters, allowed set is [a-zA-Z0-9_]\n",
-                  optarg);
-	  }
-	  break;
-	case '?':
-	  // commented out, since opterr=1
-	  //fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
-	  fprintf(stderr,"try '%s help'\n",progname);
-	  return 20;
-	  break;
-	}
-    }
-
-  if ( optind == argc ) print_usage_and_exit(0);
-
-  while(argv[optind][0]=='-' || argv[optind][0]==':' ||
-	isdigit(argv[optind][0]) ) {
-    setup_opts[soi++]=argv[optind++];
-    if (optind == argc) print_usage_and_exit(0);
+  cmd = find_cmd(argv[optind]);
+  if (cmd==NULL) {
+	fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
+	exit(E_usage);
   }
-  if (optind == argc) print_usage_and_exit(0);
-
-  if(!strcmp("hidden-commands",argv[optind])) {
-    // before parsing the configuration file...
-    hidden_cmds(NULL,NULL);
-    exit(0);
-  }
-
-  cmd=NULL;
-  for(i=0;i<ARRY_SIZE(cmds);i++) {
-      if(!strcmp(cmds[i].name,argv[optind])) {
-	cmd=cmds+i;
-	break;
-      }
-  }
-
-  if(cmd==NULL) {
-    if (!strncmp("help",argv[optind],5)) print_usage_and_exit(0);
-    fprintf(stderr,"Unknown command '%s'.\n",argv[optind]);
-    exit(E_usage);
-  }
-  optind++;
   do_verify_ips = cmd->verify_ips;
+  optind++;
+
+  is_dump_xml = (cmd->function == adm_dump_xml);
+  is_dump = (is_dump_xml || cmd->function == adm_dump);
+
+  /* remaining argv are expected to be resource names
+   * optind     == argc: no resourcenames given.
+   * optind + 1 == argc: exactly one resource name (or "all") given
+   * optind + 1  < argc: multiple resource names given. */
+  if (optind == argc) {
+	if (is_dump)
+		all_resources = 1;
+	else if (cmd->res_name_required)
+		print_usage_and_exit("missing resourcename arguments");
+  } else if (optind + 1 < argc) {
+	if (!cmd->res_name_required)
+		fprintf(stderr, "this command will ignore resource names!\n");
+	else if (cmd->use_cached_config_file)
+		fprintf(stderr, "You should not use this command with multiple resources!\n");
+  }
 
   if (!config_file) {
     if(cmd->use_cached_config_file) {
-      int minor;
-      if (optind < argc) {
-        minor = minor_by_id(argv[optind]);
-        if (minor>=0) {
-          config_file = lookup_minor(minor);
-          if(config_file==NULL) {
-            fprintf(stderr, "Don't know which config file belongs to minor %d, trying default ones...\n", minor);
-          } else {
-            yyin = fopen(config_file,"r");
-            if (yyin == NULL) {
-              fprintf(stderr, "Couldn't open file %s for reading, reason %s, trying default config file...\n", config_file, strerror(errno));
-            } else {
-              goto have_config_file;
-            }
-          }
-        } else {
-          fprintf(stderr, "Couldn't find minor from id %s, expecting minor-<minor> as id. Trying default minor file\n", argv[optind]);
-        }
+      int minor = minor_by_id(argv[optind]);
+      if (minor>=0) {
+	config_file = lookup_minor(minor);
+	if(config_file==NULL) {
+	  fprintf(stderr, "Don't know which config file belongs to minor %d, trying default ones...\n", minor);
+	} else {
+	  yyin = fopen(config_file,"r");
+	  if (yyin == NULL) {
+	    fprintf(stderr, "Couldn't open file %s for reading, reason %s, trying default config file...\n", config_file, strerror(errno));
+	  } else {
+	    goto have_config_file;
+	  }
+	}
       } else {
-        fprintf(stderr, "No resource name given, trying default config files.\n");
+	fprintf(stderr, "Couldn't find minor from id %s, expecting minor-<minor> as id. Trying default minor file\n", argv[optind]);
       }
     }
 
@@ -2403,6 +2453,11 @@ have_config_file:
 
   if(!config_valid) exit(E_config_invalid);
 
+  if (!is_dump || dry_run || verbose)
+    expand_common();
+  if (is_dump || dry_run || config_from_stdin)
+    do_register_minor = 0;
+
   /* disable check_uniq, so it won't interfere
    * with parsing of drbdsetup show output */
   config_valid = 2;
@@ -2434,16 +2489,8 @@ have_config_file:
 
   uc_node(global_options.usage_count);
 
-  is_dump_xml = (cmd->function == adm_dump_xml);
-  is_dump = (is_dump_xml || cmd->function == adm_dump);
-  if (!is_dump || dry_run) expand_common();
-  if (is_dump || dry_run || config_from_stdin) do_register_minor = 0;
-
   if(cmd->res_name_required)
     {
-      if (optind + 1 > argc && !is_dump)
-	print_usage_and_exit("missing arguments"); // arguments missing.
-
       global_validate();
       if (!is_dump) {
 	for_each_resource(res,tmp,config) {
