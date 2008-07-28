@@ -2317,6 +2317,54 @@ struct adm_cmd *find_cmd(char *cmdname)
 	return cmd;
 }
 
+char *config_file_from_arg(char *arg)
+{
+	char *f;
+	int minor = minor_by_id(arg);
+
+	if (minor < 0) {
+		/* this is expected, if someone wants to test the configured
+		 * handlers from the command line, using resource names */
+		fprintf(stderr,
+			"Couldn't find minor from id %s, "
+			"expecting minor-<minor> as id. "
+			"Trying default config files.\n",
+			arg);
+		return NULL;
+	}
+
+	f = lookup_minor(minor);
+	if (!f) {
+		fprintf(stderr,
+			"Don't know which config file belongs to minor %d, "
+			"trying default ones...\n", minor);
+	} else {
+		yyin = fopen(f, "r");
+		if (yyin == NULL) {
+			fprintf(stderr,
+				"Couldn't open file %s for reading, reason: %m\n"
+				"trying default config file...\n", config_file);
+		}
+	}
+	return f;
+}
+
+void assign_default_config_file(void)
+{
+	int i;
+	for (i = 0; conf_file[i]; i++) {
+		yyin = fopen(conf_file[i], "r");
+		if (yyin) {
+			config_file = conf_file[i];
+			break;
+		}
+	}
+	if (!config_file) {
+		fprintf(stderr, "Can not open '%s': %m", conf_file[i - 1]);
+		exit(E_config_invalid);
+	}
+}
+
 int main(int argc, char** argv)
 {
   size_t i;
@@ -2385,41 +2433,12 @@ int main(int argc, char** argv)
 		fprintf(stderr, "You should not use this command with multiple resources!\n");
   }
 
-  if (!config_file) {
-    if(cmd->use_cached_config_file) {
-      int minor = minor_by_id(argv[optind]);
-      if (minor>=0) {
-	config_file = lookup_minor(minor);
-	if(config_file==NULL) {
-	  fprintf(stderr, "Don't know which config file belongs to minor %d, trying default ones...\n", minor);
-	} else {
-	  yyin = fopen(config_file,"r");
-	  if (yyin == NULL) {
-	    fprintf(stderr, "Couldn't open file %s for reading, reason %s, trying default config file...\n", config_file, strerror(errno));
-	  } else {
-	    goto have_config_file;
-	  }
-	}
-      } else {
-	fprintf(stderr, "Couldn't find minor from id %s, expecting minor-<minor> as id. Trying default minor file\n", argv[optind]);
-      }
-    }
+  if (!config_file && cmd->use_cached_config_file)
+	config_file = config_file_from_arg(argv[optind]);
 
-    i=0;
-    do {
-      yyin = fopen(conf_file[i],"r");
-      if(yyin != 0) {
-	config_file = conf_file[i];
-	break;
-      }
-    } while (conf_file[++i]);
-  }
-  if(!config_file) {
-    fprintf(stderr,"Can not open '%s': ",conf_file[i-1]);
-    perror("");
-    exit(E_config_invalid);
-  }
-have_config_file:
+  if (!config_file)
+	assign_default_config_file();
+
   /* for error-reporting reasons config_file may be re-assigned by adm_adjust,
    * we need the current value for register_minor, though.
    * save that. */
