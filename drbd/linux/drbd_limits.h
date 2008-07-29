@@ -111,7 +111,7 @@
  * is 8 TB, currently. */
 /* DRBD_MAX_SECTORS */
 #define DRBD_DISK_SIZE_SECT_MIN  0
-#define DRBD_DISK_SIZE_SECT_MAX  (2LLU << 30)
+#define DRBD_DISK_SIZE_SECT_MAX  (8 * (2LLU << 30))
 #define DRBD_DISK_SIZE_SECT_DEF  0 // = disabled = no user size...
 
 #define DRBD_ON_IO_ERROR_DEF PassOn
