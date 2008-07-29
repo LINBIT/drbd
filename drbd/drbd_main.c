@@ -809,8 +809,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	    os.conn <= Disconnecting )
 		ns.conn = os.conn;
 
-	/* After a network error (+TearDown) only Unconnected can follow */
-	if (os.conn >= Timeout && os.conn <= TearDown && ns.conn != Unconnected)
+	/* After a network error (+TearDown) only Unconnected or Disconnecting can follow */
+	if (os.conn >= Timeout && os.conn <= TearDown &&
+	    ns.conn != Unconnected && ns.conn != Disconnecting)
 		ns.conn = os.conn;
 
 	/* After Disconnecting only StandAlone may follow */
@@ -1149,9 +1150,8 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
-			/* generate new uuid, unless we did already */
-			if (ns.role == Primary &&
-			    mdev->bc->md.uuid[Bitmap] == 0)
+			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 &&
+			    ns.disk >= UpToDate)
 				drbd_uuid_new_current(mdev);
 			if (ns.peer == Primary) {
 				/* Note: The condition ns.peer == Primary implies
@@ -1237,6 +1237,13 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		__no_warn(local, drbd_free_bc(mdev->bc););
 		wmb(); /* see begin of drbd_nl_disk_conf() */
 		__no_warn(local, mdev->bc = NULL;);
+	}
+
+	/* Disks got bigger while they were detached */
+	if (ns.disk > Negotiating && ns.pdsk > Negotiating &&
+	    test_and_clear_bit(RESYNC_AFTER_NEG, &mdev->flags)) {
+		if (ns.conn == Connected)
+			resync_after_online_grow(mdev);
 	}
 
 	/* A resync finished or aborted, wake paused devices... */
@@ -2677,7 +2684,7 @@ STATIC void drbd_cleanup(void)
 
 	if (minor_table) {
 		if (drbd_proc)
-			remove_proc_entry("drbd", &proc_root);
+			remove_proc_entry("drbd", NULL);
 		i = minor_count;
 		while (i--) {
 			struct drbd_conf        *mdev  = minor_to_mdev(i);
@@ -2906,7 +2913,7 @@ int __init drbd_init(void)
 	/*
 	 * register with procfs
 	 */
-	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , &proc_root);
+	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , NULL);
 
 	if (!drbd_proc)	{
 		printk(KERN_ERR "drbd: unable to register proc file\n");

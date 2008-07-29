@@ -76,6 +76,18 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+
+8.0.13rc1 (api:86/proto:86)
+--------
+ * Fixed the exit codes of drbdsetup
+ * Fixed online resizing if it is triggered from the secondary node.
+ * Fixed a possible deadlock in case "become-primary-on-both" is used, and
+   a resync starts
+ * Fixed the invocation of the pri-on-incon-degr handler
+ * sock_create_lite() to avoid a socket->sk leak
+ * Auto-tune socket buffers if sndbuf-size is set to zero
+ * Made it to compile on Linux-2.6.26
+
 8.0.12 (api:86/proto:86)
 --------
  * Corrected lock-out of application IO during bitmap IO.

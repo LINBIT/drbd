@@ -46,6 +46,11 @@
 #include <linux/vmalloc.h>
 #include <linux/random.h>
 #ifdef HAVE_LINUX_SCATTERLIST_H
+/* 2.6.11 (suse 9.3, fc4) does not include requisites
+ * from linux/scatterlist.h :( */
+#include <asm/scatterlist.h>
+#include <linux/mm.h>
+#include <linux/string.h>
 #include <linux/scatterlist.h>
 #endif
 #include <linux/drbd.h>
@@ -451,6 +456,25 @@ void drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
 	_drbd_wait_ee_list_empty(mdev, head);
 	spin_unlock_irq(&mdev->req_lock);
 }
+
+#ifdef DEFINE_SOCK_CREATE_KERN
+/* if there is no sock_create_kern,
+ * tthere is also sock_create_lite missing */
+int sock_create_lite(int family, int type, int protocol, struct socket **res)
+{
+	int err = 0;
+	struct socket *sock = NULL;
+
+	sock = sock_alloc();
+	if (!sock)
+		err = -ENOMEM;
+	else
+		sock->type = type;
+
+	*res = sock;
+	return err;
+}
+#endif
 
 /* see also kernel_accept; which is only present since 2.6.18.
  * also we want to log which part of it failed, exactly */
@@ -2618,7 +2642,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
 	if (inc_local(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
-			   p_size, drbd_get_capacity(mdev->bc->backing_bdev));
+			   p_size, drbd_get_max_capacity(mdev->bc));
 		warn_if_differ_considerably(mdev, "user requested size",
 					    p_usize, mdev->bc->dc.disk_size);
 
@@ -2699,12 +2723,12 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 			 * needs to know my new size... */
 			drbd_send_sizes(mdev);
 		}
-		if (dd == grew && mdev->state.conn == Connected &&
-		    mdev->state.pdsk >= Inconsistent &&
-		    mdev->state.disk >= Inconsistent) {
-			/* With disk >= Inconsistent we take care to not get
-			   here during an attach while we are connected. */
-			resync_after_online_grow(mdev);
+		if (dd == grew && mdev->state.conn == Connected) {
+			if (mdev->state.pdsk >= Inconsistent &&
+			    mdev->state.disk >= Inconsistent)
+				resync_after_online_grow(mdev);
+			else
+				set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 		}
 	}
 
@@ -2730,7 +2754,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct Drbd_Header *h)
 	mdev->p_uuid = p_uuid;
 
 	if (mdev->state.conn < Connected &&
-	    mdev->state.disk < Outdated &&
+	    mdev->state.disk < Inconsistent &&
 	    mdev->state.role == Primary &&
 	    (mdev->ed_uuid & ~((u64)1)) != (p_uuid[Current] & ~((u64)1))) {
 		ERR("Can only connect to data with current UUID=%016llX\n",
