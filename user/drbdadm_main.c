@@ -156,8 +156,10 @@ int config_valid=1;
 int no_tty;
 int dry_run = 0;
 int verbose = 0;
-int do_verify_ips;
-int all_resources=0; /* drbdadm was called with "all" instead of an resource name */
+int do_verify_ips = 0;
+int do_register_minor = 1;
+/* wether drbdadm was called with "all" instead of resource name(s) */
+int all_resources = 0;
 char* drbdsetup = NULL;
 char* drbdmeta = NULL;
 char* drbd_proxy_ctl;
@@ -223,6 +225,7 @@ struct option admopt[] = {
   { "drbdmeta",     required_argument,0, 'm' },
   { "drbd-proxy-ctl",required_argument,0,'p' },
   { "sh-varname",   required_argument,0, 'n' },
+  { "force",        no_argument,      0, 'f' },
   { 0,              0,                0, 0   }
 };
 
@@ -2273,9 +2276,12 @@ int parse_options(int argc, char **argv)
 						optarg);
 			}
 			break;
+		case 'f':
+			force = 1;
+			break;
 		case '?':
-			// commented out, since opterr=1
-			//fprintf(stderr,"Unknown option %s\n",argv[optind-1]);
+			/* commented out, since opterr=1
+			 * fprintf(stderr,"Unknown option %s\n",argv[optind-1]); */
 			fprintf(stderr, "try '%s help'\n", progname);
 			return 20;
 			break;
@@ -2365,6 +2371,40 @@ void assign_default_config_file(void)
 	}
 }
 
+void if_conf_differs_confirm_or_abort(char *res_name, int minor)
+{
+	char *f = lookup_minor(minor);
+
+	if (f && strcmp(f, config_save) != 0) {
+		fprintf(stderr, "Warning: resource %s\n"
+			"last used config file: %s\n"
+			"  current config file: %s\n",
+			res_name, f, config_save);
+		if (!confirmed("Do you want to proceed "
+			       "and register the current config file?")) {
+			printf("Operation cancelled.\n");
+			exit(E_usage);
+		}
+	}
+}
+
+int call_cmd(struct adm_cmd *cmd, struct d_resource *res)
+{
+	int rv;
+	int minor = dt_minor_of_dev(res->me->device);
+
+	if_conf_differs_confirm_or_abort(res->name, minor);
+	rv = cmd->function(res, cmd->name);
+	if (rv >= 20) {
+		fprintf(stderr, "command exited with code %d\n", rv);
+		exit(E_exec_error);
+	}
+	if (do_register_minor)
+		register_minor(minor, config_save);
+
+	return rv;
+}
+
 int main(int argc, char** argv)
 {
   size_t i;
@@ -2374,7 +2414,6 @@ int main(int argc, char** argv)
   char *env_drbd_nodename = NULL;
   int is_dump_xml;
   int is_dump;
-  int do_register_minor = 1;
 
   yyin = NULL;
   uname(&nodeinfo); /* FIXME maybe fold to lower case ? */
@@ -2437,6 +2476,7 @@ int main(int argc, char** argv)
 	config_file = config_file_from_arg(argv[optind]);
 
   if (!config_file)
+	/* may exit if no config file can be used! */
 	assign_default_config_file();
 
   /* for error-reporting reasons config_file may be re-assigned by adm_adjust,
@@ -2550,12 +2590,11 @@ int main(int argc, char** argv)
 	  }
 	}
 	for_each_resource(res,tmp,config) {
-	  if( (rv |= cmd->function(res,cmd->name)) >= 10 ) {
-	    fprintf(stderr,"command exited with code %d\n",rv);
-	    exit(E_exec_error);
-	  }
-	  if (do_register_minor)
-            register_minor(dt_minor_of_dev(res->me->device), config_save);
+	  int r = call_cmd(cmd, res);
+	  /* this super positioning of return values is soo ugly
+	   * anyone any better idea? */
+	  if (r > rv)
+	    rv = r;
 	}
 	if (is_dump_xml) {
 	    --indent; printf("</config>\n");
