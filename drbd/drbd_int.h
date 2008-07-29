@@ -722,6 +722,7 @@ enum {
 				   so don't even try */
 	BITMAP_IO,		/* Let user IO drain */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
+	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -1153,6 +1154,10 @@ struct bm_extent {
  * Do not use PAGE_SIZE here! Use a architecture agnostic constant!
  */
 #define BM_PACKET_WORDS ((4096-sizeof(struct Drbd_Header))/sizeof(long))
+#if (PAGE_SIZE < 4096)
+/* drbd_send_bitmap / receive_bitmap would break horribly */
+#error "PAGE_SIZE too small"
+#endif
 
 /* the extent in "PER_EXTENT" below is an activity log extent
  * we need that many (long words/bytes) to store the bitmap
@@ -1179,8 +1184,8 @@ struct bm_extent {
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
-/* 16 TB in units of sectors */
-#define DRBD_MAX_SECTORS_FLEX (1ULL<<(32+BM_BLOCK_SIZE_B-9))
+/* 8 TB in units of sectors */
+#define DRBD_MAX_SECTORS_FLEX (1ULL<<(31+BM_BLOCK_SIZE_B-9))
 #endif
 
 /* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
@@ -1619,18 +1624,24 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-/* returns the capacity we announce to out peer */
+/* returns the capacity we announce to out peer.
+ * we clip ourselves at the various MAX_SECTORS, because if we don't,
+ * current implementation will oops sooner or later */
 static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
 	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
 		return drbd_get_capacity(bdev->backing_bdev)
-			? drbd_md_first_sector(bdev)
+			? min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
+					drbd_md_first_sector(bdev))
 			: 0;
 	case DRBD_MD_INDEX_FLEX_EXT:
+		return min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
+				drbd_get_capacity(bdev->backing_bdev));
 	default:
-		return drbd_get_capacity(bdev->backing_bdev);
+		return min_t(sector_t, DRBD_MAX_SECTORS,
+				drbd_get_capacity(bdev->backing_bdev));
 	}
 }
 

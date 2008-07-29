@@ -725,6 +725,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 			     struct drbd_nl_cfg_reply *reply)
 {
 	enum ret_codes retcode;
+	enum determin_dev_size_enum dd;
+	sector_t max_possible_sectors;
+	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct inode *inode, *inode2;
 	struct lru_cache *resync_lru = NULL;
@@ -848,12 +851,33 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev2_fail;
 	}
 
-	if ((drbd_get_capacity(nbc->backing_bdev)) < nbc->dc.disk_size) {
+	if (drbd_get_max_capacity(nbc) < nbc->dc.disk_size) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}
 
-/* TODO check whether backing device size is within plausible limits */
+	if (nbc->dc.meta_dev_idx < 0) {
+		max_possible_sectors = DRBD_MAX_SECTORS_FLEX;
+		/* at least one MB, otherwise it does not make sense */
+		min_md_device_sectors = (2<<10);
+	} else {
+		max_possible_sectors = DRBD_MAX_SECTORS;
+		min_md_device_sectors = MD_RESERVED_SECT * (nbc->dc.meta_dev_idx + 1);
+	}
+
+	if (drbd_get_capacity(nbc->md_bdev) > max_possible_sectors)
+		WARN("truncating very big lower level device "
+		     "to currently maximum possible %llu sectors\n",
+		     (unsigned long long) max_possible_sectors);
+
+	if (drbd_get_capacity(nbc->md_bdev) < min_md_device_sectors)
+	{
+		retcode = MDDeviceTooSmall;
+		WARN("refusing attach: md-device too small, "
+		     "at least %llu sectors needed for this meta-disk type\n",
+		     (unsigned long long) min_md_device_sectors);
+		goto release_bdev2_fail;
+	}
 
 	/* Make sure the new disk is big enough
 	 * (we may currently be Primary with no local disk...) */
@@ -863,7 +887,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev2_fail;
 	}
 
-	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
+	nbc->known_size = drbd_get_max_capacity(nbc);
 
 	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
 	if (retcode < SS_Success )
@@ -898,6 +922,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_Consistent) &&
 	   drbd_new_dev_size(mdev, nbc) < nbc->md.la_size_sect) {
+		WARN("refusing to truncate a consistent device\n");
 		retcode = LDDeviceTooSmall;
 		goto force_diskless_dec;
 	}
@@ -966,10 +991,12 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	    !drbd_md_test_flag(mdev->bc, MDF_ConnectedInd) )
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
 
-	if (drbd_determin_dev_size(mdev) == dev_size_error) {
+	dd = drbd_determin_dev_size(mdev);
+	if (dd == dev_size_error) {
 		retcode = VMallocFailed;
 		goto force_diskless_dec;
-	}
+	} else if (dd == grew)
+		set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync "
@@ -1337,7 +1364,7 @@ void resync_after_online_grow(struct drbd_conf *mdev)
 	if (iass)
 		drbd_start_resync(mdev,SyncSource);
 	else
-		drbd_request_state(mdev,NS(conn,WFSyncUUID));
+		_drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose + ChgSerialize);
 }
 
 STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
