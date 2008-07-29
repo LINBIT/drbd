@@ -23,6 +23,8 @@
 
  */
 
+/* TODO clean up coding style in here, too. */
+
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -1840,11 +1842,33 @@ static char* conf_file[] = {
     0
 };
 
+/*
+ * for check_uniq: check uniqueness of
+ * resource names, ip:port, node:disk and node:device combinations
+ * as well as resource:section ...
+ * hash table to test for uniqness of these values...
+ *  256  (max minors)
+ *  *(
+ *       2 (host sections) * 4 (res ip:port node:disk node:device)
+ *     + 4 (other sections)
+ *     + some more,
+ *       if we want to check for scoped uniqueness of *every* option
+ *   )
+ *     since nobody (?) will actually use more than a dozend minors,
+ *     this should be more than enough.
+ */
+void check_uniq_init(void)
+{
+	if (!hcreate(256 * ((2 * 4) + 4))) {
+		fprintf(stderr, "Insufficient memory.\n");
+		exit(E_exec_error);
+	};
+}
+
 /* FIXME
  * strictly speaking we don't need to check for uniqueness of disk and device names,
  * but for uniqueness of their major:minor numbers ;-)
  */
-
 int check_uniq(const char* what, const char *fmt, ...)
 {
   va_list ap;
@@ -2405,6 +2429,32 @@ int call_cmd(struct adm_cmd *cmd, struct d_resource *res)
 	return rv;
 }
 
+void count_resources_die_if_minor_count_is_nonsense(void)
+{
+	int mc = global_options.minor_count;
+	struct d_resource *res, *tmp;
+
+	highest_minor = 0;
+	for_each_resource(res, tmp, config) {
+		int m = dt_minor_of_dev(res->me->device);
+		if (m > highest_minor)
+			highest_minor = m;
+		nr_resources++;
+	}
+
+	// Just for the case that minor_of_res() returned 0 for all devices.
+	if (nr_resources > (highest_minor + 1))
+		highest_minor = nr_resources - 1;
+
+	if (mc && mc < (highest_minor + 1)) {
+		fprintf(stderr,
+			"The highest minor you have in your config is %d"
+			"but a minor_count of %d in your config!\n",
+			highest_minor, mc);
+		exit(E_usage);
+	}
+}
+
 int main(int argc, char** argv)
 {
   size_t i;
@@ -2487,30 +2537,13 @@ int main(int argc, char** argv)
   else
     config_save = canonify_path(config_file);
 
-  /*
-   * for check_uniq: check uniqueness of
-   * resource names, ip:port, node:disk and node:device combinations
-   * as well as resource:section ...
-   * hash table to test for uniqness of these values...
-   *  256  (max minors)
-   *  *(
-   *       2 (host sections) * 4 (res ip:port node:disk node:device)
-   *     + 4 (other sections)
-   *     + some more,
-   *       if we want to check for scoped uniqueness of *every* option
-   *   )
-   *     since nobody (?) will actually use more than a dozend minors,
-   *     this should be more than enough.
-   */
-  if (!hcreate(256*((2*4)+4))) {
-    fprintf(stderr,"Insufficient memory.\n");
-    exit(E_exec_error);
-  };
+  check_uniq_init();
 
-  //yydebug = 1;
+  /* yydebug = 1; */
   my_parse();
 
-  if(!config_valid) exit(E_config_invalid);
+  if (!config_valid)
+    exit(E_config_invalid);
 
   if (!is_dump || dry_run || verbose)
     expand_common();
@@ -2526,25 +2559,7 @@ int main(int argc, char** argv)
     exit(0); /* THINK exit here? what code? */
   }
 
-  { /* block for mc to avoid compiler warnings */
-    int mc=global_options.minor_count;
-
-    highest_minor=0;
-    for_each_resource(res,tmp,config) {
-      int m = dt_minor_of_dev(res->me->device);
-      if ( m > highest_minor ) highest_minor = m;
-      nr_resources++;
-    }
-
-    // Just for the case that minor_of_res() returned 0 for all devices.
-    if( nr_resources > (highest_minor+1) ) highest_minor=nr_resources-1;
-
-    if( mc && mc<(highest_minor+1) ) {
-      fprintf(stderr,"The highest minor you have in your config is %d"
-	      "but a minor_count of %d in your config!\n", highest_minor,mc);
-      exit(E_usage);
-    }
-  }
+  count_resources_die_if_minor_count_is_nonsense();
 
   uc_node(global_options.usage_count);
 
