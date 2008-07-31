@@ -2096,12 +2096,18 @@ void validate_resource(struct d_resource * res)
   }
 }
 
-static void global_validate(void)
+static void global_validate_maybe_expand_die_if_invalid(int expand)
 {
-  struct d_resource *res,*tmp;
-  for_each_resource(res,tmp,config) {
-    validate_resource(res);
-  }
+	struct d_resource *res, *tmp;
+	for_each_resource(res, tmp, config) {
+		validate_resource(res);
+		if (expand) {
+			convert_after_option(res);
+			convert_discard_opt(res);
+		}
+	}
+	if (!config_valid)
+		exit(E_config_invalid);
 }
 
 /*
@@ -2455,6 +2461,21 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 	}
 }
 
+void print_dump_xml_header(void)
+{
+	printf("<config file=\"%s\">\n", config_save);
+	++indent;
+	dump_global_info_xml();
+	dump_common_info_xml();
+}
+
+void print_dump_header(void)
+{
+	printf("# %s\n", config_save);
+	dump_global_info();
+	dump_common_info();
+}
+
 int main(int argc, char** argv)
 {
   size_t i;
@@ -2563,47 +2584,26 @@ int main(int argc, char** argv)
 
   uc_node(global_options.usage_count);
 
-  if(cmd->res_name_required)
-    {
-      global_validate();
-      if (!is_dump) {
-	for_each_resource(res,tmp,config) {
-	  convert_after_option(res);
-	  convert_discard_opt(res);
-
-	  if(cmd->me_is_localhost) {
-	    if(strcmp(res->me->name, nodeinfo.nodename)) {
-	      fprintf(stderr,"In resource %s there is no host section for this"
-		      " host %s\n.", res->name, nodeinfo.nodename);
-	      config_valid=0;
-	    }
-	  }
-	}
-	if(!config_valid) exit(E_config_invalid);
-      }
+  if (cmd->res_name_required) {
+      global_validate_maybe_expand_die_if_invalid(!is_dump);
 
       /* either no resorce arguments at all,
        * but command is dump / dump-xml, so implitict "all",
        * or an explicit "all" argument is given */
-      if ( optind==argc || !strcmp(argv[optind],"all") ) {
+      if (optind == argc || !strcmp(argv[optind],"all") ) {
+	all_resources = 1;
 	/* verify ips first, for all of them */
         for_each_resource(res,tmp,config) {
 	  verify_ips(res);
 	}
-	if (!is_dump && !config_valid)
+	if (!config_valid)
 	  exit(E_config_invalid);
-	all_resources=1;
-	if (is_dump) {
-	  if (is_dump_xml) {
-	    printf("<config file=\"%s\">\n", config_save); ++indent;
-	    dump_global_info_xml();
-	    dump_common_info_xml();
-	  } else {
-	    printf("# %s\n", config_save);
-	    dump_global_info();
-	    dump_common_info();
-	  }
-	}
+
+	if (is_dump_xml)
+		print_dump_xml_header();
+	else if (is_dump)
+		print_dump_header();
+
 	for_each_resource(res,tmp,config) {
 	  int r = call_cmd(cmd, res);
 	  /* this super positioning of return values is soo ugly
