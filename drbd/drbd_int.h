@@ -72,9 +72,9 @@
 #endif
 
 // module parameter, defined in drbd_main.c
-extern int minor_count;
+extern unsigned int minor_count;
 extern int allow_oos;
-extern int major_nr;
+extern unsigned int major_nr;
 extern int use_nbd_major;
 
 #ifdef DRBD_ENABLE_FAULTS
@@ -930,7 +930,7 @@ struct Drbd_Conf {
 	struct mutex state_mutex;
 };
 
-static inline drbd_dev *minor_to_mdev(int minor)
+static inline drbd_dev *minor_to_mdev(unsigned int minor)
 {
 	drbd_dev *mdev;
 
@@ -1234,7 +1234,7 @@ extern int drbd_bm_count_bits(drbd_dev *mdev, const unsigned long s, const unsig
  * because of kmem_cache_t weirdness */
 #include "drbd_compat_wrappers.h"
 
-extern int minor_count;
+extern unsigned int minor_count;
 extern struct kmem_cache *drbd_request_cache;
 extern struct kmem_cache *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
