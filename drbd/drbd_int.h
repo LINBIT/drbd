@@ -741,7 +741,9 @@ enum {
 				   so don't even try */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
-	BITMAP_IO,		/* Let user IO drain */
+	SUSPEND_IO,		/* suspend application io */
+	BITMAP_IO,		/* suspend application io;
+				   once no more io in flight, start bitmap io */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 };
@@ -1930,7 +1932,9 @@ static inline int __inc_ap_bio_cond(drbd_dev* mdev) {
 	const unsigned int cs = mdev->state.conn;
 	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
+
 	if (mdev->state.susp) return 0;
+	if (test_bit(SUSPEND_IO, &mdev->flags)) return 0;
 
 	/* to avoid deadlock or bitmap corruption, we need to lock out
 	 * application io during attaching and bitmap exchange */

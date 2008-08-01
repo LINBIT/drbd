@@ -474,6 +474,38 @@ char* ppsize(char* buf, unsigned long long size)
 	return buf;
 }
 
+/* there is still a theoretical deadlock when called from receiver
+ * on an Inconsistent Primary:
+ *  remote READ does inc_ap_bio, receiver would need to receive answer
+ *  packet from remote to dec_ap_bio again.
+ *  receiver receive_sizes(), comes here,
+ *  waits for ap_bio_cnt == 0. -> deadlock.
+ * but this cannot happen, actually, because:
+ *  Primary Inconsistent, and peer's disk is unreachable
+ *  (not connected, *  or bad/no disk on peer):
+ *  see drbd_fail_request_early, ap_bio_cnt is zero.
+ *  Primary Inconsistent, and SyncTarget:
+ *  peer may not initiate a resize.
+ */
+static void suspend_io(struct Drbd_Conf *mdev)
+{
+	int in_flight;
+	set_bit(SUSPEND_IO, &mdev->flags);
+	in_flight = atomic_read(&mdev->ap_bio_cnt);
+	if (in_flight) {
+		DBG("Suspending IO, waiting for %d requests to finish\n", in_flight);
+		wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+	}
+	DBG("IO Suspended, no more requests in flight\n");
+}
+
+static void resume_io(struct Drbd_Conf *mdev)
+{
+	clear_bit(SUSPEND_IO, &mdev->flags);
+	DBG("Resumed IO\n");
+	wake_up(&mdev->misc_wait);
+}
+
 /**
  * drbd_determin_dev_size:
  * Evaluates all constraints and sets our correct device size.
@@ -491,6 +523,18 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev) __must_hold(l
 	int md_moved, la_size_changed;
 	enum determin_dev_size_enum rv=unchanged;
 
+	/* race:
+	 * application request passes inc_ap_bio,
+	 * but then cannot get an AL-reference.
+	 * this function later may wait on ap_bio_cnt == 0. -> deadlock.
+	 *
+	 * to avoid that:
+	 * Suspend IO right here.
+	 * still lock the act_log to not trigger ASSERTs there.
+	 */
+	suspend_io(mdev);
+
+	/* no wait necessary anymore, actually we could assert that */
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
 	prev_first_sect = drbd_md_first_sector(mdev->bc);
@@ -551,6 +595,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(drbd_dev* mdev) __must_hold(l
   out:
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
+	resume_io(mdev);
 
 	return rv;
 }
