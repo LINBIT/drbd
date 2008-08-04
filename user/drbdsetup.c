@@ -1200,6 +1200,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 		       ntohs(addr->sin_port));
 		printf("}\n");
 	}
+	consume_tag_bit(T_auto_sndbuf_size, rtl, &idx); /* consume it, its value has no relevance */
 
 	return 0;
 }
