@@ -2,13 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.0.13rc1 (api:86/proto:86)
+8.0.13 (api:86/proto:86)
 --------
- * Fixed the exit codes of drbdsetup
+ * Fixed online resizing if there is application IO on the fly when the
+   resize is triggered.
  * Fixed online resizing if it is triggered from the secondary node.
  * Fixed a possible deadlock in case "become-primary-on-both" is used, and
    a resync starts
  * Fixed the invocation of the pri-on-incon-degr handler
+ * Fixed the exit codes of drbdsetup
  * sock_create_lite() to avoid a socket->sk leak
  * Auto-tune socket buffers if sndbuf-size is set to zero
  * Made it to compile on Linux-2.6.26
