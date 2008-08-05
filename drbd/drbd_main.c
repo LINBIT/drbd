@@ -1279,6 +1279,10 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 {
 	drbd_dev *mdev = thi->mdev;
 	Drbd_thread_state ns = restart ? Restarting : Exiting;
+	const char *me =
+		thi == &mdev->receiver ? "receiver" :
+		thi == &mdev->asender  ? "asender"  :
+		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
 	spin_lock(&thi->t_lock);
 
@@ -1312,7 +1316,9 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart,int wait)
 		wait_for_completion(&thi->startstop);
 		spin_lock(&thi->t_lock);
 		D_ASSERT(thi->task == NULL);
-		D_ASSERT(thi->t_state == None);
+		if (thi->t_state != None)
+			ERR("ASSERT FAILED: %s t_state == %d expected 0.\n",
+					me, thi->t_state);
 		spin_unlock(&thi->t_lock);
 	}
 }
@@ -2242,7 +2248,9 @@ void drbd_mdev_cleanup(drbd_dev *mdev)
 	 * oldest_barrier
 	 */
 
-	D_ASSERT(mdev->receiver.t_state == None);
+	if (mdev->receiver.t_state != None)
+		ERR("ASSERT FAILED: receiver t_state == %d expected 0.\n",
+				mdev->receiver.t_state);
 
 	/* no need to lock it, I'm the only thread alive */
 	if ( mdev->epoch_size !=  0)
