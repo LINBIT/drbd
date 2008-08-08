@@ -3756,7 +3756,7 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 	dec_rs_pending(mdev);
 
 	if (--mdev->ov_left == 0) {
-		w = kmalloc(sizeof(w), GFP_KERNEL);
+		w = kmalloc(sizeof(*w), GFP_KERNEL);
 		if (w) {
 			w->cb = w_ov_finished;
 			drbd_queue_work_front(&mdev->data.work, w);
