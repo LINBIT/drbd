@@ -176,11 +176,13 @@ int drbd_khelper(drbd_dev *mdev, char* cmd)
 	drbd_bcast_ev_helper(mdev, cmd);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
-		WARN("helper command: %s %s %s exit code %d\n",
-				usermode_helper, cmd, mb, ret);
+		WARN("helper command: %s %s %s exit code %u (0x%x)\n",
+				usermode_helper, cmd, mb,
+				(ret >> 8), ret);
 	else
-		INFO("helper command: %s %s %s exit code %d\n",
-				usermode_helper, cmd, mb, ret);
+		INFO("helper command: %s %s %s exit code %u (0x%x)\n",
+				usermode_helper, cmd, mb,
+				(ret >> 8), ret);
 
 	return ret;
 }
