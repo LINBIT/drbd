@@ -2743,8 +2743,14 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
-	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
-	return TRUE; // cannot fail.
+	if (mdev->state.disk >= Inconsistent)
+		drbd_kick_lo(mdev);
+
+	/* Make sure we've acked all the TCP data associated
+	 * with the data requests being unplugged */
+	drbd_tcp_quickack(mdev->data.socket);
+
+	return TRUE;
 }
 
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
