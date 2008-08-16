@@ -1474,6 +1474,13 @@ static inline void drbd_tcp_nodelay(struct socket *sock)
 			(char __user *)&val, sizeof(val) );
 }
 
+static inline void drbd_tcp_quickack(struct socket *sock)
+{
+	int __user val = 1;
+	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
+			(char __user *)&val, sizeof(val) );
+}
+
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
 extern struct file_operations drbd_proc_fops;
