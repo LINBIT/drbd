@@ -2151,7 +2151,7 @@ int main(int argc, char** argv)
   char *env_drbd_nodename = NULL;
   int is_dump_xml;
   int is_dump;
-  int do_register_minor = 0;
+  int do_register_minor = 1;
 
   drbdsetup=NULL;
   drbdmeta=NULL;
@@ -2355,7 +2355,6 @@ int main(int argc, char** argv)
       }
     }
 
-    do_register_minor = 1;
     i=0;
     do {
       yyin = fopen(conf_file[i],"r");
