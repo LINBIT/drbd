@@ -3432,6 +3432,8 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	_req_mod(req, neg_acked, 0);
 	spin_unlock_irq(&mdev->req_lock);
 
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
+
 	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
@@ -3447,6 +3449,8 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 	D_ASSERT(p->block_id == ID_SYNCER);
+
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	dec_rs_pending(mdev);
 
