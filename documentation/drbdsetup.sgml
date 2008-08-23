@@ -538,7 +538,7 @@
 	      structure in order to increase asynchronicity between primary
 	      and secondary nodes. But keep in mind that more asynchronicity
 	      is synonymous with more data loss in the case of a primary
-	      node failure. Since 8.0.13 setting the <replaceable>size</replaceable>
+	      node failure. Since 8.0.13 resp. 8.2.7 setting the <replaceable>size</replaceable>
               value to 0 means that the kernel should autotune this.
               The default <replaceable>size</replaceable> is
 	      128 KB, the default unit is KB.
