@@ -2405,16 +2405,26 @@ void if_conf_differs_confirm_or_abort(char *res_name, int minor)
 {
 	char *f = lookup_minor(minor);
 
-	if (f && strcmp(f, config_save) != 0) {
-		fprintf(stderr, "Warning: resource %s\n"
-			"last used config file: %s\n"
-			"  current config file: %s\n",
-			res_name, f, config_save);
-		if (!confirmed("Do you want to proceed "
-			       "and register the current config file?")) {
-			printf("Operation cancelled.\n");
-			exit(E_usage);
-		}
+	/* if there was nothing registered before,
+	 * there is nothing to compare to */
+	if (!f)
+		return;
+
+	if (strcmp(f, config_save) == 0) {
+		/* no need to register the same thing again */
+		do_register_minor = 0;
+		return;
+	}
+
+	fprintf(stderr, "Warning: resource %s\n"
+		"last used config file: %s\n"
+		"  current config file: %s\n",
+		res_name, f, config_save);
+
+	if (!confirmed("Do you want to proceed "
+		       "and register the current config file?")) {
+		printf("Operation cancelled.\n");
+		exit(E_usage);
 	}
 }
 
@@ -2427,9 +2437,9 @@ int call_cmd(struct adm_cmd *cmd, struct d_resource *res)
 	rv = cmd->function(res, cmd->name);
 	if (rv >= 20) {
 		fprintf(stderr, "command exited with code %d\n", rv);
-		exit(E_exec_error);
+		exit(rv);
 	}
-	if (do_register_minor)
+	if (rv == 0 && do_register_minor)
 		register_minor(minor, config_save);
 
 	return rv;
@@ -2587,10 +2597,10 @@ int main(int argc, char** argv)
   if (cmd->res_name_required) {
       global_validate_maybe_expand_die_if_invalid(!is_dump);
 
-      /* either no resorce arguments at all,
-       * but command is dump / dump-xml, so implitict "all",
-       * or an explicit "all" argument is given */
       if (optind == argc || !strcmp(argv[optind],"all") ) {
+	/* either no resorce arguments at all,
+	 * but command is dump / dump-xml, so implitict "all",
+	 * or an explicit "all" argument is given */
 	all_resources = 1;
 	/* verify ips first, for all of them */
         for_each_resource(res,tmp,config) {
@@ -2605,7 +2615,7 @@ int main(int argc, char** argv)
 		print_dump_header();
 
 	for_each_resource(res,tmp,config) {
-	  int r = call_cmd(cmd, res);
+	  int r = call_cmd(cmd, res); /* does exit for r >= 20! */
 	  /* this super positioning of return values is soo ugly
 	   * anyone any better idea? */
 	  if (r > rv)
@@ -2615,6 +2625,7 @@ int main(int argc, char** argv)
 	    --indent; printf("</config>\n");
 	}
       } else {
+	/* explicit list of reources to work on */
 	for(i=optind;(int)i<argc;i++) {
 	  res = res_by_name(argv[i]);
 	  if( !res ) res=res_by_minor(argv[i]);
@@ -2625,21 +2636,21 @@ int main(int argc, char** argv)
 	  verify_ips(res);
 	  if (!is_dump && !config_valid)
             exit(E_config_invalid);
-	  if( (rv=cmd->function(res,cmd->name)) >= 20 ) {
-	    fprintf(stderr,"drbdadm aborting\n");
-	    exit(rv);
-	  }
-	  if (do_register_minor)
-            register_minor(dt_minor_of_dev(res->me->device), config_save);
+	  rv = call_cmd(cmd, res); /* does exit for rv >= 20! */
 	}
       }
     } else { // Commands which do not need a resource name
-      if( (rv=cmd->function(config,cmd->name)) >= 10) {
-	fprintf(stderr,"command exited with code %d\n",rv);
-	exit(E_exec_error);
+      /* no call_cmd, as that implies register_minor,
+       * which does not make sense for resource independent commands */
+      rv = cmd->function(config, cmd->name);
+      if (rv >= 10) { /* why do we special case the "generic sh-*" commands? */
+	fprintf(stderr,"command %s exited with code %d\n",
+		cmd->name, rv);
+	exit(rv);
       }
     }
 
+  /* do we really have to bitor the exit code? */
   rv |= run_dcmds();
 
   free_config(config);
