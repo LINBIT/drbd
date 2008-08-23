@@ -3757,6 +3757,8 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
+	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
+
 	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
 		drbd_ov_oos_found(mdev, sector, size);
 	} else ov_oos_print(mdev);
