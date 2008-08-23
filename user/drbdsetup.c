@@ -45,6 +45,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#define __bitwise /* Build-workaround for broken RHEL4 kernels (2.6.9_78.0.1) */
 #include <linux/netlink.h>
 #include <linux/connector.h>
 
@@ -645,7 +646,7 @@ int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	int err = conv_numeric(od, tl, arg);
 	long long l = m_strtoll(arg, 0);
-	char bit = 1;
+	char bit = 0;
 
 	if (err != NoError || l != 0)
 		return err;
@@ -1200,6 +1201,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 		       ntohs(addr->sin_port));
 		printf("}\n");
 	}
+	consume_tag_bit(T_auto_sndbuf_size, rtl, &idx); /* consume it, its value has no relevance */
 
 	return 0;
 }
@@ -1918,28 +1920,22 @@ void close_cn(int sk_nl)
 
 void ensure_drbd_driver_is_present(void)
 {
-	struct drbd_tag_list *tl;
-	char buffer[4096];
-	int sk_nl, rr;
+	struct stat sb;
+	int err;
 
-	sk_nl = open_cn();
-	/* Might print:
-	   Missing privileges? You should run this as root.
-	   Connector module not loaded? try 'modprobe cn'. */
-	if (sk_nl < 0) exit(20);
+	err = stat("/proc/drbd", &sb);
+	if (!err)
+		return;
 
-	tl = create_tag_list(2);
-	add_tag(tl, TT_END, NULL, 0); // close the tag list
+	if (err == ENOENT)
+		fprintf(stderr, "DRBD driver appears to be missing\n");
+	else
+		fprintf(stderr, "Could not stat(\"/proc/drbd\"): %m\n");
 
-	tl->drbd_p_header->packet_type = P_get_state;
-	tl->drbd_p_header->drbd_minor = 0;
-	tl->drbd_p_header->flags = 0;
+	fprintf(stderr, "do you need to load the module?\n"
+			"try: modprobe drbd\n");
 
-	rr = call_drbd(sk_nl, tl, (struct nlmsghdr*)buffer, 4096, 500);
-	/* Might print: (after 500ms)
-	   No response from the DRBD driver! Is the module loaded? */
-	close_cn(sk_nl);
-	if (rr == -2) exit(20);
+	exit(20);
 }
 
 int main(int argc, char** argv)

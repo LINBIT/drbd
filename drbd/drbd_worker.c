@@ -1076,6 +1076,9 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * device.. */
 
 	D_ASSERT(mdev->state.disk == Diskless && mdev->state.conn == StandAlone);
+	/* _drbd_set_state only uses stop_nowait.
+	 * wait here for the Exiting receiver. */
+	drbd_thread_stop(&mdev->receiver);
 	drbd_mdev_cleanup(mdev);
 
 	INFO("worker terminated\n");

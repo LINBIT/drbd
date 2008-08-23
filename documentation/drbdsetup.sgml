@@ -454,7 +454,9 @@
 	      structure in order to increase asynchronism between primary
 	      and secondary nodes. But keep in mind that more asynchronism
 	      is synonymous with more data loss in the case of a primary
-	      node failure. The default <replaceable>size</replaceable> is
+	      node failure. Since 8.0.13 setting the <replaceable>size</replaceable>
+              value to 0 means that the kernel should autotune this.
+              The default <replaceable>size</replaceable> is
 	      128 KB, the default unit is KB.
 	    </para>
 	  </listitem>
