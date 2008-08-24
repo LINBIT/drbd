@@ -329,6 +329,7 @@ struct adm_cmd cmds[] = {
         { "sh-md-idx",             sh_md_idx,       DRBD_acf2_shell     },
         { "sh-ip",                 sh_ip,           DRBD_acf2_shell     },
         { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
+        { "sh-status",             adm_generic_s,   DRBD_acf2_shell     },
 
         { "proxy-up",              adm_proxy_up,    DRBD_acf2_shell     },
         { "proxy-down",            adm_proxy_down,  DRBD_acf2_shell     },
@@ -828,38 +829,6 @@ static void alarm_handler(int __attribute((unused)) signo)
   alarm_raised=1;
 }
 
-static inline const char* shell_escape(char* s)
-{
-	/* ugly static buffer. so what. */
-	static char buffer[1024];
-	char *c = buffer;
-
-	if (s == NULL)
-		return s;
-
-	while (*s) {
-		if (buffer + sizeof(buffer) < c+2)
-			break;
-
-		switch(*s) {
-		/* set of 'clean' characters */
-		case '%': case '+': case '-': case '.': case '/':
-		case '0' ... '9':
-		case ':': case '=': case '@':
-		case 'A' ... 'Z':
-		case '_':
-		case 'a' ... 'z':
-			break;
-		/* escape everything else */
-		default:
-			*c++ = '\\';
-		}
-		*c++ = *s++;
-	}
-	*c = '\0';
-	return buffer;
-}
-
 pid_t m_system(char** argv, int flags, struct d_resource *res)
 {
   pid_t pid;
@@ -1099,6 +1068,7 @@ static int adm_generic(struct d_resource* res,const char* cmd,int flags)
   }
   argv[NA(argc)]=0;
 
+  setenv("DRBD_RESOURCE",res->name,1);
   return m_system(argv, flags, res);
 }
 
@@ -1119,7 +1089,6 @@ int adm_status_xml(struct d_resource* res,const char* cmd)
   }
 
   for_each_resource(r,t,res) {
-    setenv("DRBD_RESOURCE",r->name,1);
     rv = adm_generic(r,cmd,SLEEPS_SHORT);
     if (rv)
 	    break;

@@ -495,3 +495,35 @@ void get_random_bytes(void* buffer, int len)
 	}
 	close(fd);
 }
+
+const char* shell_escape(char* s)
+{
+	/* ugly static buffer. so what. */
+	static char buffer[1024];
+	char *c = buffer;
+
+	if (s == NULL)
+		return s;
+
+	while (*s) {
+		if (buffer + sizeof(buffer) < c+2)
+			break;
+
+		switch(*s) {
+		/* set of 'clean' characters */
+		case '%': case '+': case '-': case '.': case '/':
+		case '0' ... '9':
+		case ':': case '=': case '@':
+		case 'A' ... 'Z':
+		case '_':
+		case 'a' ... 'z':
+			break;
+		/* escape everything else */
+		default:
+			*c++ = '\\';
+		}
+		*c++ = *s++;
+	}
+	*c = '\0';
+	return buffer;
+}

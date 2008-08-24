@@ -54,4 +54,6 @@ extern void get_random_bytes(void* buffer, int len);
 
 extern int force; /* global option to force implicit confirmation */
 extern int confirmed(const char *text);
+
+extern const char* shell_escape(char* s);
 #endif

@@ -172,6 +172,7 @@ void string_opt_xml(struct drbd_option *option);
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int state_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int sh_status_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -358,6 +359,7 @@ struct drbd_cmd commands[] = {
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
 	{"status", P_get_state, F_GET_CMD, {.gp={ status_xml_scmd } } },
+	{"sh-status", P_get_state, F_GET_CMD, {.gp={ sh_status_scmd } } },
 	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
 	{"dstate", P_get_state, F_GET_CMD, {.gp={ dstate_scmd} } },
 	{"show-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} }},
@@ -982,18 +984,18 @@ void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
 	int i;
 	if (!debug_dump_argv)
 		return;
-	printf(",-- ARGV dump (optind %d, known_args %d, argc %u):\n",
+	fprintf(stderr, ",-- ARGV dump (optind %d, known_args %d, argc %u):\n",
 		first_non_option, n_known_args, argc);
 	for (i = 0; i < argc; i++) {
 		if (i == 1)
-			puts("-- consumed options:");
+			fprintf(stderr, "-- consumed options:");
 		if (i == first_non_option)
-			puts("-- known args:");
+			fprintf(stderr, "-- known args:");
 		if (i == (first_non_option + n_known_args))
-			puts("-- unexpected args:");
-		printf("| %2u: %s\n", i, argv[i]);
+			fprintf(stderr, "-- unexpected args:");
+		fprintf(stderr, "| %2u: %s\n", i, argv[i]);
 	}
-	printf("`--\n");
+	fprintf(stderr, "`--\n");
 }
 
 int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
@@ -1472,10 +1474,77 @@ int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf(" user_isp");
 
 	if (consume_tag_int(T_sync_progress, rtl, &synced))
-		printf(" resynced_precent=\"%i.%i\"", synced / 10, synced % 10);
+		printf(" resynced_percent=\"%i.%i\"", synced / 10, synced % 10);
 
 	printf(" />\n");
 	return 0;
+}
+
+int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
+		int minor, unsigned short *rtl)
+{
+/* variable prefix; maybe rather make that a command line parameter?
+ * or use "drbd_sh_status"? */
+#define _P ""
+	union drbd_state_t state = { .i = 0 };
+	int available = 0;
+	int synced = 0;
+
+	printf("%s_minor=%u\n", _P, minor);
+	printf("%s_res_name=%s\n", _P, shell_escape(resname ?: "UNKNOWN"));
+
+	available = consume_tag_int(T_state_i,rtl,(int*)&state.i);
+
+	if (state.conn == StandAlone && state.disk == Diskless) {
+		printf("%s_known=%s\n\n", _P,
+			available ? "Unconfigured"
+			          : "NA # not available or not yet created");
+		printf("%s_cstate=Unconfigured\n", _P);
+		printf("%s_role=\n", _P);
+		printf("%s_peer=\n", _P);
+		printf("%s_disk=\n", _P);
+		printf("%s_pdisk=\n", _P);
+		printf("%s_flags_susp=\n", _P);
+		printf("%s_flags_aftr_isp=\n", _P);
+		printf("%s_flags_peer_isp=\n", _P);
+		printf("%s_flags_user_isp=\n", _P);
+		printf("%s_resynced_percent=\n", _P);
+		return 0;
+	}
+
+	printf( "%s_known=Configured\n\n"
+		/* connection state */
+		"%s_cstate=%s\n"
+		/* role */
+		"%s_role=%s\n"
+		"%s_peer=%s\n"
+		/* disk state */
+		"%s_disk=%s\n"
+		"%s_pdsk=%s\n\n",
+		_P,
+		_P, conns_to_name(state.conn),
+		_P, roles_to_name(state.role),
+		_P, roles_to_name(state.peer),
+		_P, disks_to_name(state.disk),
+		_P, disks_to_name(state.pdsk));
+
+	/* io suspended ? */
+	printf("%s_flags_susp=%s\n", _P, state.susp ? "1" : "");
+	/* reason why sync is paused */
+	printf("%s_flags_aftr_isp=%s\n", _P, state.aftr_isp ? "1" : "");
+	printf("%s_flags_peer_isp=%s\n", _P, state.peer_isp ? "1" : "");
+	printf("%s_flags_user_isp=%s\n\n", _P, state.user_isp ? "1" : "");
+
+	printf("%s_resynced_percent=", _P);
+
+	if (consume_tag_int(T_sync_progress, rtl, &synced))
+		printf("%i.%i\n", synced / 10, synced % 10);
+	else
+		printf("\n");
+
+	fflush(stdout);
+	return 0;
+#undef _P
 }
 
 int state_scmd(struct drbd_cmd *cm __attribute((unused)),
