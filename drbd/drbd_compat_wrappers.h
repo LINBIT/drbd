@@ -89,6 +89,11 @@ extern BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error);
 #define kmem_cache_create(N,S,A,F,C) kmem_cache_create(N,S,A,F,C,NULL)
 #endif
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,26)
+# undef HAVE_bvec_merge_data
+# define HAVE_bvec_merge_data 1
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
 static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 			       unsigned int len, unsigned int offset)

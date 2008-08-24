@@ -284,9 +284,20 @@ struct Tl_epoch_entry* drbd_alloc_ee(drbd_dev *mdev,
 
 			q = bdev_get_queue(bio->bi_bdev);
 			if (q->merge_bvec_fn) {
-				ERR("merge_bvec_fn() = %d\n",
-				    q->merge_bvec_fn(q, bio, 
-					  &bio->bi_io_vec[bio->bi_vcnt]));
+#ifdef HAVE_bvec_merge_data
+				struct bvec_merge_data bvm = {
+					.bi_bdev = bio->bi_bdev,
+					.bi_sector = bio->bi_sector,
+					.bi_size = bio->bi_size,
+					.bi_rw = bio->bi_rw,
+				};
+				int l = q->merge_bvec_fn(q, &bvm,
+						&bio->bi_io_vec[bio->bi_vcnt]);
+#else
+				int l = q->merge_bvec_fn(q, bio,
+						&bio->bi_io_vec[bio->bi_vcnt]);
+#endif
+				ERR("merge_bvec_fn() = %d\n", l);
 			}
 
 			/* dump more of the bio. */

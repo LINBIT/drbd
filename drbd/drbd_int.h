@@ -1356,8 +1356,14 @@ dump_packet(drbd_dev *mdev, struct socket *sock,
 // drbd_req
 extern int drbd_make_request_26(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(drbd_dev *mdev, drbd_request_t *req);
-extern int drbd_merge_bvec(struct request_queue *, struct bio *, struct bio_vec *);
 extern int is_valid_ar_handle(drbd_request_t *, sector_t);
+extern int drbd_merge_bvec(struct request_queue *q,
+#ifdef HAVE_bvec_merge_data
+		struct bvec_merge_data *bvm,
+#else
+		struct bio *bvm,
+#endif
+		struct bio_vec *bvec);
 
 
 // drbd_nl.c
