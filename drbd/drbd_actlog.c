@@ -74,7 +74,7 @@ STATIC int _drbd_md_sync_page_io(drbd_dev *mdev,
 	/* check for unsupported barrier op */
 	if (unlikely(md_io.error == -EOPNOTSUPP && bio_barrier(bio))) {
 		/* Try again with no barrier */
-		WARN("Barriers not supported on meta data device - disabling\n");
+		drbd_WARN("Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER,&mdev->flags);
 		rw &= ~(1 << BIO_RW_BARRIER);
 		bio_put(bio);
@@ -110,9 +110,9 @@ int drbd_md_sync_page_io(drbd_dev *mdev, struct drbd_backing_dev *bdev,
 			struct page *page = alloc_page(GFP_NOIO);
 			if(!page) return 0;
 
-			WARN("Meta data's bdev hardsect = %d != %d\n",
+			drbd_WARN("Meta data's bdev hardsect = %d != %d\n",
 			     hardsect, MD_HARDSECT);
-			WARN("Workaround engaged (has performace impact).\n");
+			drbd_WARN("Workaround engaged (has performace impact).\n");
 
 			mdev->md_io_tmpp = page;
 		}
@@ -224,9 +224,9 @@ struct lc_element* _al_get(struct Drbd_Conf *mdev, unsigned int enr)
 	/*
 	if (!al_ext) {
 		if (al_flags & LC_STARVING)
-			WARN("Have to wait for LRU element (AL too small?)\n");
+			drbd_WARN("Have to wait for LRU element (AL too small?)\n");
 		if (al_flags & LC_DIRTY)
-			WARN("Ongoing AL update (AL device too slow?)\n");
+			drbd_WARN("Ongoing AL update (AL device too slow?)\n");
 	}
 	*/
 
@@ -472,7 +472,7 @@ int drbd_al_read_log(struct Drbd_Conf *mdev,struct drbd_backing_dev *bdev)
 	}
 
 	if(from == -1 || to == -1) {
-		WARN("No usable activity log found.\n");
+		drbd_WARN("No usable activity log found.\n");
 
 		up(&mdev->md_io_mutex);
 		return 1;
@@ -558,7 +558,7 @@ STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+		 * do we want to drbd_WARN() on this? */
 		error = -EIO;
 	}
 
@@ -745,7 +745,7 @@ void drbd_al_to_on_disk_bm(struct Drbd_Conf *mdev)
 	kfree(bios);
 
  submit_one_by_one:
-	WARN("Using the slow drbd_al_to_on_disk_bm()\n");
+	drbd_WARN("Using the slow drbd_al_to_on_disk_bm()\n");
 
 	for(i=0;i<mdev->act_log->nr_elements;i++) {
 		enr = lc_entry(mdev->act_log,i)->lc_number;
@@ -829,7 +829,7 @@ STATIC int w_update_odbm(drbd_dev *mdev, struct drbd_work *w, int unused)
 
 	if (!inc_local(mdev)) {
 		if (DRBD_ratelimit(5*HZ,5))
-			WARN("Can not update on disk bitmap, local IO disabled.\n");
+			drbd_WARN("Can not update on disk bitmap, local IO disabled.\n");
 		return 1;
 	}
 
@@ -888,7 +888,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				return;
 			}
 		} else {
-			//WARN("Counting bits in %d (resync LRU small?)\n",enr);
+			//drbd_WARN("Counting bits in %d (resync LRU small?)\n",enr);
 			// This element should be in the cache
 			// since drbd_rs_begin_io() pulled it already in.
 
@@ -896,14 +896,14 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 			// we set something in this area in sync.
 			int rs_left = drbd_bm_e_weight(mdev,enr);
 			if (ext->flags != 0) {
-				WARN("changing resync lce: %d[%u;%02lx]"
+				drbd_WARN("changing resync lce: %d[%u;%02lx]"
 				     " -> %d[%u;00]\n",
 				     ext->lce.lc_number, ext->rs_left,
 				     ext->flags, enr, rs_left);
 				ext->flags = 0;
 			}
 			if( ext->rs_failed ) {
-				WARN("Kicking resync_lru element enr=%u "
+				drbd_WARN("Kicking resync_lru element enr=%u "
 				     "out with rs_failed=%d\n",
 				     ext->lce.lc_number, ext->rs_failed);
 				set_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags);
@@ -924,7 +924,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct Drbd_Conf *mdev,sector_t sector,
 				udw->w.cb = w_update_odbm;
 				drbd_queue_work_front(&mdev->data.work,&udw->w);
 			} else {
-				WARN("Could not kmalloc an udw\n");
+				drbd_WARN("Could not kmalloc an udw\n");
 				set_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags);
 			}
 		}
@@ -1090,11 +1090,11 @@ struct bm_extent* _bme_get(struct Drbd_Conf *mdev, unsigned int enr)
 
 	if (!bm_ext) {
 		if (rs_flags & LC_STARVING) {
-			WARN("Have to wait for element"
+			drbd_WARN("Have to wait for element"
 			     " (resync LRU too small?)\n");
 		}
 		if (rs_flags & LC_DIRTY) {
-			BUG(); // WARN("Ongoing RS update (???)\n");
+			BUG(); // drbd_WARN("Ongoing RS update (???)\n");
 		}
 	}
 
@@ -1255,11 +1255,11 @@ int drbd_try_rs_begin_io(drbd_dev* mdev, sector_t sector)
 		if (!bm_ext) {
 			const unsigned long rs_flags = mdev->resync->flags;
 			if (rs_flags & LC_STARVING) {
-				WARN("Have to wait for element"
+				drbd_WARN("Have to wait for element"
 				     " (resync LRU too small?)\n");
 			}
 			if (rs_flags & LC_DIRTY) {
-				BUG(); // WARN("Ongoing RS update (???)\n");
+				BUG(); // drbd_WARN("Ongoing RS update (???)\n");
 			}
 			goto try_again;
 		}

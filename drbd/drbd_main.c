@@ -294,7 +294,7 @@ void tl_clear(drbd_dev *mdev)
 {
 	struct drbd_barrier *b, *tmp;
 
-	WARN("tl_clear()\n");
+	drbd_WARN("tl_clear()\n");
 
 	spin_lock_irq(&mdev->req_lock);
 
@@ -380,7 +380,7 @@ int drbd_io_error(drbd_dev* mdev, int forcedetach)
 
 	if (mdev->state.conn >= Connected) {
 		ok = drbd_send_state(mdev);
-		if (ok) WARN("Notified peer that my disk is broken.\n");
+		if (ok) drbd_WARN("Notified peer that my disk is broken.\n");
 		else ERR("Sending state in drbd_io_error() failed\n");
 	}
 
@@ -745,11 +745,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 			break;
 		case SyncTarget:
 			ns.disk = Inconsistent;
-			WARN("Implicit set disk state Inconsistent!\n");
+			drbd_WARN("Implicit set disk state Inconsistent!\n");
 			break;
 		}
 		if( os.disk == Outdated && ns.disk == UpToDate ) {
-			WARN("Implicit set disk from Outdate to UpToDate\n");
+			drbd_WARN("Implicit set disk from Outdate to UpToDate\n");
 		}
 	}
 
@@ -768,11 +768,11 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 			break;
 		case SyncSource:
 			ns.pdsk = Inconsistent;
-			WARN("Implicit set pdsk Inconsistent!\n");
+			drbd_WARN("Implicit set pdsk Inconsistent!\n");
 			break;
 		}
 		if( os.pdsk == Outdated && ns.pdsk == UpToDate ) {
-			WARN("Implicit set pdsk from Outdate to UpToDate\n");
+			drbd_WARN("Implicit set pdsk from Outdate to UpToDate\n");
 		}
 	}
 
@@ -833,7 +833,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 	}
 
 	if(warn_sync_abort) {
-		WARN("Resync aborted.\n");
+		drbd_WARN("Resync aborted.\n");
 	}
 
 #if DUMP_MD >= 2
@@ -938,7 +938,7 @@ int _drbd_set_state(drbd_dev* mdev, drbd_state_t ns, enum chg_state_flags flags,
 		ascw->done = done;
 		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
-		WARN("Could not kmalloc an ascw\n");
+		drbd_WARN("Could not kmalloc an ascw\n");
 	}
 
 	return rv;
@@ -1805,7 +1805,7 @@ int _drbd_send_page(drbd_dev *mdev, struct page *page,
 				continue;
 		}
 		if (sent <= 0) {
-			WARN("%s: size=%d len=%d sent=%d\n",
+			drbd_WARN("%s: size=%d len=%d sent=%d\n",
 			     __func__,(int)size,len,sent);
 			break;
 		}
@@ -2979,7 +2979,7 @@ void drbd_uuid_set_bm(drbd_dev *mdev, u64 val) __must_hold(local)
 		       drbd_print_uuid(mdev,Bitmap);
 			);
 	} else {
-		if( mdev->bc->md.uuid[Bitmap] ) WARN("bm UUID already set");
+		if( mdev->bc->md.uuid[Bitmap] ) drbd_WARN("bm UUID already set");
 
 		mdev->bc->md.uuid[Bitmap] = val;
 		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
@@ -3123,7 +3123,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 
 STATIC int w_md_sync(drbd_dev *mdev, struct drbd_work *w, int unused)
 {
-	WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
+	drbd_WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);
 
 	return 1;
@@ -3187,7 +3187,7 @@ _drbd_insert_fault(drbd_dev *mdev, unsigned int type)
 		fault_count++;
 
 		if (printk_ratelimit())
-			WARN("***Simulating %s failure\n", _drbd_fault_str(type));
+			drbd_WARN("***Simulating %s failure\n", _drbd_fault_str(type));
 	}
 
 	return ret;

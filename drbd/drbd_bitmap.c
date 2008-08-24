@@ -619,7 +619,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+		 * do we want to drbd_WARN() on this? */
 		error = -EIO;
 	}
 

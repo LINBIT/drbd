@@ -183,7 +183,7 @@ STATIC struct page * drbd_pp_alloc(drbd_dev *mdev, gfp_t gfp_mask)
 		 * unless, of course, someone signalled us.
 		 */
 		if (signal_pending(current)) {
-			WARN("drbd_pp_alloc interrupted!\n");
+			drbd_WARN("drbd_pp_alloc interrupted!\n");
 			finish_wait(&drbd_pp_wait, &wait);
 			return NULL;
 		}
@@ -850,7 +850,7 @@ STATIC int drbd_connect(drbd_dev *mdev)
 				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
 			default:
-				WARN("Error receiving initial packet\n");
+				drbd_WARN("Error receiving initial packet\n");
 				sock_release(s);
 			}
 		}
@@ -1080,7 +1080,7 @@ read_in_block(drbd_dev *mdev, u64 id, sector_t sector, int data_size) __must_hol
 		kunmap(page);
 		if( rr != min_t(int,ds,PAGE_SIZE) ) {
 			drbd_free_ee(mdev,e);
-			WARN("short read receiving data: read %d expected %d\n",
+			drbd_WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int,ds,PAGE_SIZE));
 			return NULL;
 		}
@@ -1108,7 +1108,7 @@ drbd_drain_block(drbd_dev *mdev, int data_size)
 		rr = drbd_recv(mdev,data,min_t(int,data_size,PAGE_SIZE));
 		if( rr != min_t(int,data_size,PAGE_SIZE) ) {
 			rv = 0;
-			WARN("short read receiving data: read %d expected %d\n",
+			drbd_WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int,data_size,PAGE_SIZE));
 			break;
 		}
@@ -1147,7 +1147,7 @@ STATIC int recv_dless_read(drbd_dev *mdev, drbd_request_t *req,
 			     expect);
 		kunmap(bvec->bv_page);
 		if (rr != expect) {
-			WARN("short read receiving data reply: read %d expected %d\n",
+			drbd_WARN("short read receiving data reply: read %d expected %d\n",
 			     rr, expect);
 			return 0;
 		}
@@ -1840,7 +1840,7 @@ STATIC int drbd_asb_recover_0p(drbd_dev *mdev) __must_hold(local)
 		if (self == 0 && peer == 1) { rv =  1; break; }
 		if (self == 1 && peer == 0) { rv = -1; break; }
 		/* Else fall through to one of the other strategies... */
-		WARN("Discard younger/older primary did not found a decision\n"
+		drbd_WARN("Discard younger/older primary did not found a decision\n"
 		     "Using discard-least-changes instead\n");
 	case DiscardZeroChg:
 		if( ch_peer == 0 && ch_self == 0) {
@@ -1903,7 +1903,7 @@ STATIC int drbd_asb_recover_1p(drbd_dev *mdev) __must_hold(local)
 			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 			} else {
-				WARN("Sucessfully gave up primary role.\n");
+				drbd_WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else rv = hg;
@@ -1941,7 +1941,7 @@ STATIC int drbd_asb_recover_2p(drbd_dev *mdev) __must_hold(local)
 			if (self != SS_Success) {
 				drbd_khelper(mdev,"pri-lost-after-sb");
 			} else {
-				WARN("Sucessfully gave up primary role.\n");
+				drbd_WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else rv = hg;
@@ -2106,10 +2106,10 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 			break;
 		}
 		if ( abs(hg) < 100 ) {
-			WARN("Split-Brain detected, %d primaries, automatically solved. Sync from %s node\n",
+			drbd_WARN("Split-Brain detected, %d primaries, automatically solved. Sync from %s node\n",
 			     pcount, (hg < 0) ? "peer":"this");
 			if(forced) {
-				WARN("Doing a full sync, since"
+				drbd_WARN("Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
 				drbd_uuid_dump(mdev,"self",mdev->bc->md.uuid);
 				drbd_uuid_dump(mdev,"peer",mdev->p_uuid);
@@ -2127,7 +2127,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 		}
 
 		if ( abs(hg) < 100 ) {
-			WARN("Split-Brain detected, manually solved. Sync from %s node\n",
+			drbd_WARN("Split-Brain detected, manually solved. Sync from %s node\n",
 			     (hg < 0) ? "peer":"this");
 		}
 	}
@@ -2155,7 +2155,7 @@ STATIC drbd_conns_t drbd_sync_handshake(drbd_dev *mdev, drbd_role_t peer_role,
 			ERR("I shall become SyncTarget, but I am primary!\n");
 			return conn_mask;
 		case Violently:
-			WARN("Becoming SyncTarget, violating the stable-data"
+			drbd_WARN("Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
 		}
 	}
@@ -2312,7 +2312,7 @@ static void warn_if_differ_considerably(drbd_dev *mdev, const char *s, sector_t 
 	if (a == 0 || b == 0) return;
 	d = (a > b) ? (a - b) : (b - a);
 	if ( d > (a>>3) || d > (b>>3)) {
-		WARN("Considerable difference in %s: %llus vs. %llus\n", s,
+		drbd_WARN("Considerable difference in %s: %llus vs. %llus\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
 	}
 }
@@ -2728,7 +2728,7 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 	static char sink[128];
 	int size,want,r;
 
-	WARN("skipping unknown optional packet type %d, l: %d!\n",
+	drbd_WARN("skipping unknown optional packet type %d, l: %d!\n",
 	     h->command, h->length );
 
 	size = h->length;
@@ -2743,14 +2743,8 @@ STATIC int receive_skip(drbd_dev *mdev,Drbd_Header *h)
 
 STATIC int receive_UnplugRemote(drbd_dev *mdev, Drbd_Header *h)
 {
-	if (mdev->state.disk >= Inconsistent)
-		drbd_kick_lo(mdev);
-
-	/* Make sure we've acked all the TCP data associated
-	 * with the data requests being unplugged */
-	drbd_tcp_quickack(mdev->data.socket);
-
-	return TRUE;
+	if (mdev->state.disk >= Inconsistent) drbd_kick_lo(mdev);
+	return TRUE; // cannot fail.
 }
 
 typedef int (*drbd_cmd_handler_f)(drbd_dev*,Drbd_Header*);
@@ -3084,7 +3078,7 @@ STATIC int drbd_do_handshake(drbd_dev *mdev)
 	if ( p->protocol_version == PRO_VERSION ||
 	     p->protocol_version == (PRO_VERSION+1) ) {
 		if (p->protocol_version == (PRO_VERSION+1)) {
-			WARN( "You should upgrade me! "
+			drbd_WARN( "You should upgrade me! "
 			      "Peer wants protocol version: %u\n",
 			      p->protocol_version );
 		}
@@ -3268,7 +3262,7 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 			schedule_timeout(HZ);
 		}
 		if( h == -1 ) {
-			WARN("Discarding network configuration.\n");
+			drbd_WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev,NS(conn,Disconnecting));
 		}
 	} while ( h == 0 );
@@ -3388,7 +3382,7 @@ STATIC int got_NegAck(drbd_dev *mdev, Drbd_Header* h)
 	drbd_request_t *req;
 
 	if (DRBD_ratelimit(5*HZ,5))
-		WARN("Got NegAck packet. Peer is in troubles?\n");
+		drbd_WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
@@ -3432,8 +3426,6 @@ STATIC int got_NegDReply(drbd_dev *mdev, Drbd_Header* h)
 	_req_mod(req, neg_acked, 0);
 	spin_unlock_irq(&mdev->req_lock);
 
-	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
-
 	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
@@ -3449,8 +3441,6 @@ STATIC int got_NegRSDReply(drbd_dev *mdev, Drbd_Header* h)
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 	D_ASSERT(p->block_id == ID_SYNCER);
-
-	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	dec_rs_pending(mdev);
 

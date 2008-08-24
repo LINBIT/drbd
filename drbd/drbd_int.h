@@ -179,7 +179,8 @@ typedef struct Drbd_Conf drbd_dev;
 
 #define ALERT(fmt,args...) PRINTK(KERN_ALERT, fmt , ##args)
 #define ERR(fmt,args...)  PRINTK(KERN_ERR, fmt , ##args)
-#define WARN(fmt,args...) PRINTK(KERN_WARNING, fmt , ##args)
+/* nowadays, drbd_WARN() is defined as BUG() without crash in bug.h */
+#define drbd_WARN(fmt,args...) PRINTK(KERN_WARNING, fmt , ##args)
 #define INFO(fmt,args...) PRINTK(KERN_INFO, fmt , ##args)
 #define DBG(fmt,args...)  PRINTK(KERN_DEBUG, fmt , ##args)
 
@@ -204,7 +205,7 @@ typedef struct Drbd_Conf drbd_dev;
 		missed = 0;					\
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
-			WARN("%d messages suppressed in %s:%d.\n",\
+			drbd_WARN("%d messages suppressed in %s:%d.\n",\
 				lost , __FILE__ , __LINE__ );	\
 		__ret=1;					\
 	} else {						\
@@ -1467,13 +1468,6 @@ static inline void drbd_tcp_nodelay(struct socket *sock)
 			(char __user *)&val, sizeof(val) );
 }
 
-static inline void drbd_tcp_quickack(struct socket *sock)
-{
-	int __user val = 1;
-	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
-			(char __user *)&val, sizeof(val) );
-}
-
 // drbd_proc.c
 extern struct proc_dir_entry *drbd_proc;
 extern struct file_operations drbd_proc_fops;
@@ -1908,7 +1902,7 @@ static inline void drbd_get_syncer_progress(drbd_dev* mdev,
 		 * for now, just prevent in-kernel buffer overflow.
 		 */
 		smp_rmb();
-		WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+		drbd_WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
 				conns_to_name(mdev->state.conn),
 				*bits_left, mdev->rs_total, mdev->rs_failed);
 		*per_mil_done = 0;

@@ -101,7 +101,7 @@ BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+		 * do we want to drbd_WARN() on this? */
 		error = -EIO;
 	}
 
@@ -148,7 +148,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+		 * do we want to drbd_WARN() on this? */
 		error = -EIO;
 	}
 
@@ -217,7 +217,7 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
-		 * do we want to WARN() on this? */
+		 * do we want to drbd_WARN() on this? */
 		error = -EIO;
 	}
 
@@ -566,7 +566,7 @@ int drbd_resync_finished(drbd_dev* mdev)
 	mdev->rs_paused = 0;
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC,&mdev->flags)) {
-		WARN("Writing the whole bitmap, due to failed kmalloc\n");
+		drbd_WARN("Writing the whole bitmap, due to failed kmalloc\n");
 		drbd_queue_bitmap_io(mdev, &drbd_bm_write, NULL);
 	}
 
@@ -1039,7 +1039,7 @@ int drbd_worker(struct Drbd_thread *thi)
 		spin_unlock_irq(&mdev->data.work.q_lock);
 
 		if(!w->cb(mdev,w, mdev->state.conn < Connected )) {
-			//WARN("worker: a callback failed! \n");
+			//drbd_WARN("worker: a callback failed! \n");
 			if (mdev->state.conn >= Connected)
 				drbd_force_state(mdev,NS(conn,NetworkFailure));
 		}
