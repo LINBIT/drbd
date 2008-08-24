@@ -615,7 +615,8 @@ resource r0 {
   The default value is 128K. You can specify smaller or larger values. Larger values
   are appropriate for reasonable write throughput with protocol A over high
   latency networks. Very large values like 1M may cause problems. Also values
-  below 32K do not make much sense.
+  below 32K do not make much sense. Since 8.0.13 setting the <replaceable>size</replaceable>
+  value to 0 means that the kernel should autotune this.
   </para>
   </listitem>
 </varlistentry>

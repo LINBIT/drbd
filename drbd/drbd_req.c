@@ -1149,8 +1149,7 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 	 * to serialize state changes, this is racy, since we may lose
 	 * the connection *after* we test for the cstate.
 	 */
-	if ( mdev->state.disk < UpToDate &&
-	     mdev->state.conn < Connected) {
+	if (mdev->state.disk < UpToDate && mdev->state.pdsk < UpToDate) {
 		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sorry, I have no access to good data anymore.\n");
 		/*

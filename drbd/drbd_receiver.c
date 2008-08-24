@@ -3046,6 +3046,11 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	if (mdev->state.disk >= Inconsistent)
 		drbd_kick_lo(mdev);
+
+	/* Make sure we've acked all the TCP data associated
+	 * with the data requests being unplugged */
+	drbd_tcp_quickack(mdev->data.socket);
+
 	return TRUE; /* cannot fail. */
 }
 
@@ -3700,6 +3705,8 @@ STATIC int got_NegDReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	_req_mod(req, neg_acked, 0);
 	spin_unlock_irq(&mdev->req_lock);
 
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
+
 	ERR("Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
@@ -3715,6 +3722,8 @@ STATIC int got_NegRSDReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 	D_ASSERT(p->block_id == ID_SYNCER);
+
+	update_peer_seq(mdev,be32_to_cpu(p->seq_num));
 
 	dec_rs_pending(mdev);
 

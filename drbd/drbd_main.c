@@ -89,7 +89,7 @@ MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
  * this becomes the boot parameter drbd.minor_count */
-module_param(minor_count, int,0444);
+module_param(minor_count, uint,0444);
 module_param(allow_oos, bool,0);
 
 #ifdef DRBD_ENABLE_FAULTS
@@ -108,7 +108,7 @@ module_param(fault_devs, int, 0644);
 #endif
 
 /* module parameter, defined */
-int minor_count = 32;
+unsigned int minor_count = 32;
 int allow_oos;
 
 #ifdef ENABLE_DYNAMIC_TRACE

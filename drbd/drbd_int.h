@@ -72,7 +72,7 @@
 #endif
 
 /* module parameter, defined in drbd_main.c */
-extern int minor_count;
+extern unsigned int minor_count;
 extern int allow_oos;
 
 #ifdef DRBD_ENABLE_FAULTS
@@ -770,7 +770,9 @@ enum {
 
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
-	BITMAP_IO,		/* Let user IO drain */
+	SUSPEND_IO,		/* suspend application io */
+	BITMAP_IO,		/* suspend application io;
+				   once no more io in flight, start bitmap io */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 };
@@ -998,7 +1000,7 @@ struct drbd_conf {
 	struct mutex state_mutex;
 };
 
-static inline struct drbd_conf *minor_to_mdev(int minor)
+static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
 {
 	struct drbd_conf *mdev;
 
@@ -1331,7 +1333,6 @@ extern int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, con
  * because of kmem_cache_t weirdness */
 #include "drbd_wrappers.h"
 
-extern int minor_count;
 extern struct kmem_cache *drbd_request_cache;
 extern struct kmem_cache *drbd_ee_cache;
 extern mempool_t *drbd_request_mempool;
@@ -1569,6 +1570,13 @@ static inline void drbd_tcp_nodelay(struct socket *sock)
 {
 	int __user val = 1;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_NODELAY,
+			(char __user *)&val, sizeof(val) );
+}
+
+static inline void drbd_tcp_quickack(struct socket *sock)
+{
+	int __user val = 1;
+	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
 			(char __user *)&val, sizeof(val) );
 }
 
@@ -2058,8 +2066,12 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	const unsigned int cs = mdev->state.conn;
 	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
+
 	if (mdev->state.susp)
 		return 0;
+	if (test_bit(SUSPEND_IO, &mdev->flags))
+		return 0;
+
 	/* to avoid deadlock or bitmap corruption, we need to lock out
 	 * application io during attaching and bitmap exchange */
 	if (Attaching <= ds && ds <= Negotiating)
