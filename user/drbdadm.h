@@ -25,6 +25,8 @@ enum {
 
   SUPRESS_STDERR       = 16,
 
+  RETURN_STDOUT_FD     = 32,
+
   DONT_REPORT_FAILED   = 0x80,
 };
 
@@ -117,6 +119,8 @@ struct d_resource
   struct d_option* handlers;
   struct d_option* proxy_options;
   struct d_resource* next;
+
+  int me_minor; /* cache local minor number of this resource */
 };
 
 extern int adm_attach(struct d_resource* ,const char* );
@@ -142,6 +146,7 @@ extern void convert_after_option(struct d_resource* res);
 
 /* See drbdadm_minor_table.c */
 extern int register_minor(int minor, const char *path);
+extern int unregister_minor(int minor);
 extern char *lookup_minor(int minor);
 
 enum pr_flags {

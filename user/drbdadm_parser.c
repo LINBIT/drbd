@@ -600,7 +600,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
-	res->next = NULL;
+	res->me_minor = -1; /* will be set once in dt_minor_of_res */
 
 	while(1) {
 		switch((token=yylex())) {

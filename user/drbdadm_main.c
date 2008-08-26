@@ -97,7 +97,7 @@ struct adm_cmd {
 struct deferred_cmd
 {
   int (* function)(struct d_resource*,const char* );
-  char *arg;
+  const char *arg;
   struct d_resource* res;
   struct deferred_cmd* next;
 };
@@ -138,6 +138,7 @@ static int hidden_cmds(struct d_resource* ,const char* );
 static int adm_outdate(struct d_resource* ,const char* );
 
 static char* get_opt_val(struct d_option*,const char*,char*);
+static void register_config_file(struct d_resource *res, const char* cfname);
 
 static struct ifreq* get_ifreq();
 
@@ -171,52 +172,196 @@ int soi=0;
 volatile int alarm_raised;
 
 struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
+struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
 
-void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
-		    struct d_resource* res,
-		    char* arg,
-		    int order)
+void schedule_dcmd(int (* function)(struct d_resource*,const char* ),
+		   struct d_resource *res, char *arg, int order)
 {
-  struct deferred_cmd *d;
+	struct deferred_cmd *d, *t;
 
-  if( (d = malloc(sizeof(struct deferred_cmd))) == NULL)
-    {
-      perror("malloc");
-      exit(E_exec_error);
-    }
+	d = calloc(1, sizeof(struct deferred_cmd));
+	if (d == NULL) {
+		perror("calloc");
+		exit(E_exec_error);
+	}
 
-  d->function = function;
-  d->res = res;
-  d->arg = arg;
-  d->next = deferred_cmds[order];
+	d->function = function;
+	d->res = res;
+	d->arg = arg;
 
-  deferred_cmds[order] = d;
+	/* first to come is head */
+	if (!deferred_cmds[order])
+		deferred_cmds[order] = d;
+
+	/* link it in at tail */
+	t = deferred_cmds_tail[order];
+	if (t)
+		t->next = d;
+
+	/* advance tail */
+	deferred_cmds_tail[order] = d;
 }
 
-int _run_dcmds(struct deferred_cmd *d)
+static int dt_minor_of_res(struct d_resource *res)
 {
-  int rv;
-  if(d == NULL) return 0;
+	int m;
+	if (res->me_minor >= 0)
+		return res->me_minor;
+	if (res->me_minor < -1)
+		return -1;
+	m = dt_minor_of_dev(res->me->device);
+	if (m < 0)
+		res->me_minor = -2;
+	else
+		res->me_minor = m;
+	return m;
+}
 
-  if(d->next == NULL)
-    {
-      rv = d->function(d->res,d->arg);
-      free(d);
-      return rv;
-    }
+static int adm_generic(struct d_resource* res,const char* cmd,int flags);
 
-  rv = _run_dcmds(d->next);
-  if(!rv) rv |= d->function(d->res,d->arg);
-  free(d);
+/* Returns non-zero if the resource is down. */
+static int test_if_resource_is_down(struct d_resource *res)
+{
+	char buf[1024];
+	char *line;
+	int fd;
+	FILE *f;
 
-  return rv;
+	if (dry_run) {
+		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
+		exit(E_thinko);
+	}
+	fd = adm_generic(res, "state", RETURN_STDOUT_FD);
+
+	if (fd < 0) {
+		fprintf(stderr, "Strange: got negative fd.\n");
+		exit(E_thinko);
+	}
+
+	f = fdopen(fd, "r");
+	if (f == NULL) {
+		fprintf(stderr, "Bad: could not fdopen file descriptor.\n");
+		exit(E_thinko);
+	}
+
+	errno = 0;
+	line = fgets(buf, sizeof(buf) - 1, f);
+	if (line == NULL && errno != 0) {
+		fprintf(stderr,
+			"Bad: fgets returned NULL while waiting for data: %m\n");
+		exit(E_thinko);
+	}
+	fclose(f);
+
+	if (line == NULL || strncmp(line, "Unconfigured", strlen("Unconfigured")) == 0)
+		return 1;
+
+	return 0;
+}
+
+enum do_register { SAME_ANYWAYS, DO_REGISTER };
+enum do_register
+if_conf_differs_confirm_or_abort(struct d_resource *res)
+{
+	int minor = dt_minor_of_res(res);
+	char *f;
+
+	/* if the resource was down,
+         * just register the new config file */
+	if (test_if_resource_is_down(res)) {
+		unregister_minor(minor);
+		return DO_REGISTER;
+	}
+
+	f = lookup_minor(minor);
+
+	/* if there was nothing registered before,
+	 * there is nothing to compare to */
+	if (!f)
+		return DO_REGISTER;
+
+	/* no need to register the same thing again */
+	if (strcmp(f, config_save) == 0)
+		return SAME_ANYWAYS;
+
+	fprintf(stderr, "Warning: resource %s\n"
+		"last used config file: %s\n"
+		"  current config file: %s\n",
+		res->name, f, config_save);
+
+	/* implicitly force if we don't have a tty */
+	if (no_tty)
+		force = 1;
+
+	if (!confirmed("Do you want to proceed "
+		       "and register the current config file?")) {
+		printf("Operation cancelled.\n");
+		exit(E_usage);
+	}
+	return DO_REGISTER;
+}
+
+static void register_config_file(struct d_resource *res, const char* cfname)
+{
+	int minor = dt_minor_of_res(res);
+	if (test_if_resource_is_down(res))
+		unregister_minor(minor);
+	else
+		register_minor(minor, cfname);
+}
+
+enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
+int call_cmd_fn(int (*function) (struct d_resource *, const char *),
+		const char *fn_name, struct d_resource *res,
+		enum on_error on_error)
+{
+	int rv;
+	int really_register = do_register_minor &&
+	    DO_REGISTER == if_conf_differs_confirm_or_abort(res) &&
+	    /* adm_up and adm_adjust only
+             * "schedule" the commands, don't register yet! */
+	    function != adm_up && function != adm_adjust;
+
+	rv = function(res, fn_name);
+	if (rv >= 20) {
+		fprintf(stderr, "%s %s %s: exited with code %d\n",
+			progname, fn_name, res->name, rv);
+		if (on_error == EXIT_ON_FAIL)
+			exit(rv);
+	}
+	if (rv == 0 && really_register)
+		register_config_file(res, config_save);
+
+	return rv;
+}
+
+int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
+	     enum on_error on_error)
+{
+	return call_cmd_fn(cmd->function, cmd->name, res, on_error);
+}
+
+int _run_dcmds(int order)
+{
+	struct deferred_cmd *d = deferred_cmds[order];
+	struct deferred_cmd *t;
+	int r = 0;
+	int rv = 0;
+
+	while (d) {
+		call_cmd_fn(d->function, d->arg, d->res, KEEP_RUNNING);
+		t = d->next;
+		free(d);
+		d = t;
+		if (r > rv)
+			rv = r;
+	}
+	return rv;
 }
 
 int run_dcmds(void)
 {
-  return _run_dcmds(deferred_cmds[0]) ||
-    _run_dcmds(deferred_cmds[1]) ||
-    _run_dcmds(deferred_cmds[2]);
+  return _run_dcmds(0) || _run_dcmds(1) || _run_dcmds(2);
 }
 
 struct option admopt[] = {
@@ -835,6 +980,7 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
   int status,rv=-1;
   int timeout = 0;
   char **cmdline = argv;
+  int pipe_fds[2];
 
   struct sigaction so;
   struct sigaction sa;
@@ -845,27 +991,45 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
 
   if(dry_run || verbose) {
     if (sh_varname && *cmdline)
-      fprintf(stdout,"%s=%s\n", sh_varname, shell_escape(res->name));
+      printf("%s=%s\n", sh_varname, shell_escape(res->name));
     while(*cmdline) {
-      fprintf(stdout,"%s ", shell_escape(*cmdline++));
+      printf("%s ", shell_escape(*cmdline++));
     }
-    fprintf(stdout,"\n");
+    printf("\n");
     if (dry_run) return 0;
   }
 
+  /* flush stdout and stderr, so output of drbdadm
+   * and helper binaries is reported in order! */
   fflush(stdout);
   fflush(stderr);
+
+  if (flags & RETURN_STDOUT_FD) {
+    if (pipe(pipe_fds) < 0) {
+      perror("pipe");
+      fprintf(stderr, "Error in pipe, giving up.\n");
+      exit(E_exec_error);
+    }
+  }
+
   pid = fork();
   if(pid == -1) {
     fprintf(stderr,"Can not fork\n");
     exit(E_exec_error);
   }
   if(pid == 0) {
+    if (flags & RETURN_STDOUT_FD) {
+      close(pipe_fds[0]);
+      dup2(pipe_fds[1], 1);
+    }
     if(flags & SUPRESS_STDERR) fclose(stderr);
     execvp(argv[0],argv);
     fprintf(stderr,"Can not exec\n");
     exit(E_exec_error);
   }
+
+  if (flags & RETURN_STDOUT_FD)
+    close(pipe_fds[1]);
 
   if( flags & SLEEPS_FINITE ) {
     sigaction(SIGALRM,&sa,&so);
@@ -884,6 +1048,9 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
   if( flags == RETURN_PID ) {
     return pid;
   }
+
+  if (flags & RETURN_STDOUT_FD)
+    return pipe_fds[0];
 
   while(1) {
     if (waitpid(pid, &status, 0) == -1) {
@@ -1220,7 +1387,7 @@ void convert_after_option(struct d_resource* res)
 
   if ( (opt = find_opt(res->sync_options, "after")) ) {
     char *ptr;
-    ssprintf(ptr,"%d",dt_minor_of_dev(res_by_name(opt->value)->me->device));
+    ssprintf(ptr,"%d",dt_minor_of_res(res_by_name(opt->value)));
     free(opt->value);
     opt->value=strdup(ptr);
   }
@@ -1355,7 +1522,7 @@ struct d_resource* res_by_minor(const char *id)
   if (mm < 0) return NULL;
 
   for_each_resource(res,t,config) {
-    if( mm == dt_minor_of_dev(res->me->device)) return res;
+    if (mm == dt_minor_of_res(res)) return res;
   }
   return NULL;
 }
@@ -2370,50 +2537,6 @@ void assign_default_config_file(void)
 	}
 }
 
-void if_conf_differs_confirm_or_abort(char *res_name, int minor)
-{
-	char *f = lookup_minor(minor);
-
-	/* if there was nothing registered before,
-	 * there is nothing to compare to */
-	if (!f)
-		return;
-
-	if (strcmp(f, config_save) == 0) {
-		/* no need to register the same thing again */
-		do_register_minor = 0;
-		return;
-	}
-
-	fprintf(stderr, "Warning: resource %s\n"
-		"last used config file: %s\n"
-		"  current config file: %s\n",
-		res_name, f, config_save);
-
-	if (!confirmed("Do you want to proceed "
-		       "and register the current config file?")) {
-		printf("Operation cancelled.\n");
-		exit(E_usage);
-	}
-}
-
-int call_cmd(struct adm_cmd *cmd, struct d_resource *res)
-{
-	int rv;
-	int minor = dt_minor_of_dev(res->me->device);
-
-	if_conf_differs_confirm_or_abort(res->name, minor);
-	rv = cmd->function(res, cmd->name);
-	if (rv >= 20) {
-		fprintf(stderr, "command exited with code %d\n", rv);
-		exit(rv);
-	}
-	if (rv == 0 && do_register_minor)
-		register_minor(minor, config_save);
-
-	return rv;
-}
-
 void count_resources_die_if_minor_count_is_nonsense(void)
 {
 	int mc = global_options.minor_count;
@@ -2421,7 +2544,7 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
-		int m = dt_minor_of_dev(res->me->device);
+		int m = dt_minor_of_res(res);
 		if (m > highest_minor)
 			highest_minor = m;
 		nr_resources++;
@@ -2584,7 +2707,7 @@ int main(int argc, char** argv)
 		print_dump_header();
 
 	for_each_resource(res,tmp,config) {
-	  int r = call_cmd(cmd, res); /* does exit for r >= 20! */
+	  int r = call_cmd(cmd, res, EXIT_ON_FAIL); /* does exit for r >= 20! */
 	  /* this super positioning of return values is soo ugly
 	   * anyone any better idea? */
 	  if (r > rv)
@@ -2605,7 +2728,7 @@ int main(int argc, char** argv)
 	  verify_ips(res);
 	  if (!is_dump && !config_valid)
             exit(E_config_invalid);
-	  rv = call_cmd(cmd, res); /* does exit for rv >= 20! */
+	  rv = call_cmd(cmd, res, EXIT_ON_FAIL); /* does exit for rv >= 20! */
 	}
       }
     } else { // Commands which do not need a resource name
@@ -2619,7 +2742,8 @@ int main(int argc, char** argv)
       }
     }
 
-  /* do we really have to bitor the exit code? */
+  /* do we really have to bitor the exit code?
+   * it is even only a boolen value in this case! */
   rv |= run_dcmds();
 
   free_config(config);
