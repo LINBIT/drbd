@@ -1285,6 +1285,7 @@ STATIC int drbd_thread_setup(void *arg)
 {
 	struct Drbd_thread *thi = (struct Drbd_thread *) arg;
 	struct drbd_conf *mdev = thi->mdev;
+	long timeout;
 	int retval;
 	const char *me =
 		thi == &mdev->receiver ? "receiver" :
@@ -1298,7 +1299,13 @@ STATIC int drbd_thread_setup(void *arg)
 	thi->task = current;
 	smp_mb();
 	spin_unlock(&thi->t_lock);
+
+	/* stolen from kthread; FIXME we need to convert to kthread api!
+	 * wait for wakeup */
+	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
+	timeout = schedule_timeout(10*HZ);
+	D_ASSERT(timeout != 0);
 
 restart:
 	retval = thi->function(thi);
@@ -1387,10 +1394,13 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		}
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
-		D_ASSERT(thi->task);
 		if (thi->t_state != Running)
 			ERR("ASSERT FAILED: %s t_state == %d expected %d.\n",
 					me, thi->t_state, Running);
+		if (thi->task)
+			wake_up_process(thi->task);
+		else
+			ERR("ASSERT FAILED thi->task is NULL where it should be set!?\n");
 		break;
 	case Exiting:
 		thi->t_state = Restarting;
