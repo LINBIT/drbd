@@ -2061,6 +2061,28 @@ static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 	return mxb;
 }
 
+static inline int drbd_cstate_is_stable(int cs)
+{
+	switch (cs) {
+	/* new io only accepted when there is no connection, ... */
+	case StandAlone:
+	case WFConnection:
+	/* ... or there is a well established connection. */
+	case Connected:
+	case SyncSource:
+	case SyncTarget:
+	case VerifyS:
+	case VerifyT:
+	case PausedSyncS:
+	case PausedSyncT:
+		return 1;
+	/* no new io accepted during tansitional states
+	 * like handshake or teardown */
+	default:
+		return 0;
+	}
+}
+
 static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 {
 	const unsigned int cs = mdev->state.conn;
@@ -2072,11 +2094,15 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	if (test_bit(SUSPEND_IO, &mdev->flags))
 		return 0;
 
-	/* to avoid deadlock or bitmap corruption, we need to lock out
-	 * application io during attaching and bitmap exchange */
+	/* to avoid potential deadlock or bitmap corruption,
+	 * in various places, we only allow new application io
+	 * to start during "stable" states. */
+
+	/* no new io accepted when attaching or detaching the disk */
 	if (Attaching <= ds && ds <= Negotiating)
 		return 0;
-	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams || cs == WFSyncUUID)
+
+	if (!drbd_cstate_is_stable(cs))
 		return 0;
 
 	/* since some older kernels don't have atomic_add_unless,
@@ -2123,6 +2149,9 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio >= 0);
+	/* this currently does wake_up for every dec_ap_bio!
+	 * maybe rather introduce some type of hysteresis?
+	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
 	if (ap_bio < mxb)
 		wake_up(&mdev->misc_wait);
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &mdev->flags)) {
