@@ -1388,7 +1388,9 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
 		D_ASSERT(thi->task);
-		D_ASSERT(get_t_state(thi) == Running);
+		if (thi->t_state != Running)
+			ERR("ASSERT FAILED: %s t_state == %d expected %d.\n",
+					me, thi->t_state, Running);
 		break;
 	case Exiting:
 		thi->t_state = Restarting;
@@ -1450,8 +1452,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		spin_lock(&thi->t_lock);
 		D_ASSERT(thi->task == NULL);
 		if (thi->t_state != None)
-			ERR("ASSERT FAILED: %s t_state == %d expected 0.\n",
-					me, thi->t_state);
+			ERR("ASSERT FAILED: %s t_state == %d expected %d.\n",
+					me, thi->t_state, None);
 		spin_unlock(&thi->t_lock);
 	}
 }
