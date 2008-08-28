@@ -231,7 +231,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
 		exit(E_thinko);
 	}
-	fd = adm_generic(res, "state", RETURN_STDOUT_FD);
+	fd = adm_generic(res, "state", RETURN_STDOUT_FD | SUPRESS_STDERR);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
