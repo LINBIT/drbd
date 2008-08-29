@@ -1332,12 +1332,11 @@ restart:
 	thi->task = NULL;
 	thi->t_state = None;
 	smp_mb();
-	spin_unlock(&thi->t_lock);
 
 	/* THINK maybe two different completions? */
 	complete(&thi->startstop); /* notify: thi->task unset. */
-
 	INFO("Terminating %s thread\n", me);
+	spin_unlock(&thi->t_lock);
 
 	/* Release mod reference taken when thread was started */
 	module_put(THIS_MODULE);
