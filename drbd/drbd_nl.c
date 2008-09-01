@@ -326,7 +326,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		if (r == SS_TwoPrimaries) {
 			/* Maybe the peer is detected as dead very soon...
 			   retry at most once more in this case. */
-			set_current_state(TASK_INTERRUPTIBLE);
+			__set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout((mdev->net_conf->ping_timeo+1)*HZ/10);
 			if (try < max_tries)
 				try = max_tries -1;
@@ -798,7 +798,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 			retcode = HaveDiskConfig;
 			goto fail;
 		}
-		set_current_state(TASK_INTERRUPTIBLE);
+		__set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ/10);
 	}
 
@@ -1151,7 +1151,7 @@ STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	fsync_bdev(mdev->this_bdev);
 	reply->ret_code = drbd_request_state(mdev, NS(disk, Diskless));
 
-	set_current_state(TASK_INTERRUPTIBLE);
+	__set_current_state(TASK_INTERRUPTIBLE);
 	schedule_timeout(HZ/20); /* 50ms; Time for worker to finally terminate */
 
 	return 0;
