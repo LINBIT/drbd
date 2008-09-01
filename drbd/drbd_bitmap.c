@@ -130,6 +130,10 @@ void __drbd_bm_lock(struct drbd_conf *mdev, char *file, int line)
 void drbd_bm_unlock(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	if (!b) {
+		ERR("FIXME no bitmap in drbd_bm_unlock!?\n");
+		return;
+	}
 	spin_lock_irq(&b->bm_lock);
 	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
 		ERR("bitmap not locked in bm_unlock\n");
