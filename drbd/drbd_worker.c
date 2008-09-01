@@ -666,6 +666,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 
 	art = os.conn == SyncTarget || os.conn == PausedSyncT;
 
+	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
   out_unlock:
 	spin_unlock_irq(&mdev->req_lock);
@@ -1186,6 +1187,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	else /* side == SyncSource */
 		ns.pdsk = Inconsistent;
 
+	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	r = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	ns = mdev->state;
 

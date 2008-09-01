@@ -1656,12 +1656,12 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
 #define _NS(D, T, S) \
-	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T = (S); __ns; })
+	D, ({ union drbd_state_t __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T = (S); __ns; })
 #define _NS2(D, T1, S1, T2, S2) \
-	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+	D, ({ union drbd_state_t __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns; })
 #define _NS3(D, T1, S1, T2, S2, T3, S3) \
-	D, ({ union drbd_state_t __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
+	D, ({ union drbd_state_t __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns.T3 = (S3); __ns; })
 
 static inline void drbd_state_lock(struct drbd_conf *mdev)

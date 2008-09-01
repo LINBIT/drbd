@@ -459,6 +459,7 @@ int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 	seq = ++sseq;
 	trace_st(mdev, seq, func, line, "!os", os);
 	trace_st(mdev, seq, func, line, "!ns", ns);
+	ns.func = NULL;
 #endif
 	rv = _drbd_set_state(mdev, ns, f, NULL);
 	ns = mdev->state;
@@ -548,6 +549,7 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 	seq = ++sseq;
 	trace_st(mdev, seq, func, line, "?os", os);
 	trace_st(mdev, seq, func, line, "?ns", ns);
+	ns.func = NULL;
 #endif
 
 	if (cl_wide_st_chg(mdev, os, ns)) {
@@ -802,6 +804,10 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		    union drbd_state_t ns, enum chg_state_flags flags,
 		    struct completion *done)
 {
+#if DRBD_DEBUG_STATE_CHANGES
+	static unsigned long long sseq = 0xff000000LLU;
+	unsigned long long seq = 0;
+#endif
 	union drbd_state_t os;
 	int rv = SS_Success;
 	int warn_sync_abort = 0;
@@ -811,6 +817,14 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	MUST_HOLD(&mdev->req_lock);
 
 	os = mdev->state;
+
+#if DRBD_DEBUG_STATE_CHANGES
+	if (ns.func) {
+		seq = ++sseq;
+		trace_st(mdev, seq, ns.func, ns.line, "==os", os);
+		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
+	}
+#endif
 
 	fp = DontCare;
 	if (inc_local(mdev)) {
@@ -926,6 +940,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			ns.conn = SyncTarget;
 	}
 
+#if DRBD_DEBUG_STATE_CHANGES
+	if (ns.func)
+		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
+#endif
+
 	if (ns.i == os.i)
 		return SS_NothingToDo;
 
@@ -975,6 +994,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	PSC(user_isp);
 	INFO("%s\n", pb);
 	}
+#endif
+
+#if DRBD_DEBUG_STATE_CHANGES
+	if (ns.func)
+		trace_st(mdev, seq, ns.func, ns.line, ":=ns", ns);
 #endif
 
 	mdev->state.i = ns.i;

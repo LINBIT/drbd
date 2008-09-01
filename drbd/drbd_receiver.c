@@ -2908,6 +2908,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	ns.peer_isp = ( peer_state.aftr_isp | peer_state.user_isp );
 	if ((nconn == Connected || nconn == WFBitMapS) && ns.disk == Negotiating)
 		ns.disk = mdev->new_state_tmp.disk;
+	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	rv = _drbd_set_state(mdev, ns, ChgStateVerbose | ChgStateHard, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
@@ -3258,6 +3259,7 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 		/* Do not restart in case we are Disconnecting */
 		ns = os;
 		ns.conn = Unconnected;
+		DRBD_STATE_DEBUG_INIT_VAL(ns);
 		rv = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	}
 	spin_unlock_irq(&mdev->req_lock);
