@@ -642,7 +642,7 @@ out:
 		}
 		switch (-err) {
 			/* timeout, busy, signal pending */
-		case ETIMEDOUT: case EAGAIN:
+		case ETIMEDOUT: case EAGAIN: case EINPROGRESS:
 		case EINTR: case ERESTARTSYS:
 			/* peer not (yet) available, network problem */
 		case ECONNREFUSED: case ENETUNREACH:
