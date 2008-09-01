@@ -1641,6 +1641,8 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
 static int drbd_wait_peer_seq(struct drbd_conf *mdev, const u32 packet_seq)
 {
 	DEFINE_WAIT(wait);
+	unsigned int p_seq;
+	long timeout;
 	int ret = 0;
 	spin_lock(&mdev->peer_seq_lock);
 	for (;;) {
@@ -1651,9 +1653,15 @@ static int drbd_wait_peer_seq(struct drbd_conf *mdev, const u32 packet_seq)
 			ret = -ERESTARTSYS;
 			break;
 		}
+		p_seq = mdev->peer_seq;
 		spin_unlock(&mdev->peer_seq_lock);
-		schedule();
+		timeout = schedule_timeout(30*HZ);
 		spin_lock(&mdev->peer_seq_lock);
+		if (timeout == 0 && p_seq == mdev->peer_seq) {
+			ret = -ETIMEDOUT;
+			ERR("ASSERT FAILED waited 30 seconds for sequence update, forcing reconnect\n");
+			break;
+		}
 	}
 	finish_wait(&mdev->seq_wait, &wait);
 	if (mdev->peer_seq+1 == packet_seq)
