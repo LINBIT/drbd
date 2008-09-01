@@ -3580,6 +3580,7 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 		h = drbd_connect(mdev);
 		if (h == 0) {
 			drbd_disconnect(mdev);
+			__set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ);
 		}
 		if (h == -1) {
