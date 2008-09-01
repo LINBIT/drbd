@@ -790,7 +790,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 			if (s || ++try >= 3)
 				break;
 			/* give the other side time to call bind() & listen() */
-			set_current_state(TASK_INTERRUPTIBLE);
+			__set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ / 10);
 		}
 
@@ -810,7 +810,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 		}
 
 		if (sock && msock) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			__set_current_state(TASK_INTERRUPTIBLE);
 			schedule_timeout(HZ / 10);
 			ok = drbd_socket_okay(mdev, &sock);
 			ok = drbd_socket_okay(mdev, &msock) && ok;

@@ -580,7 +580,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		 * is not finished by now).   Retry in 100ms. */
 
 		drbd_kick_lo(mdev);
-		set_current_state(TASK_INTERRUPTIBLE);
+		__set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ / 10);
 		w = kmalloc(sizeof(struct drbd_work), GFP_ATOMIC);
 		if (w) {
