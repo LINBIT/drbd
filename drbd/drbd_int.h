@@ -873,6 +873,7 @@ struct drbd_conf {
 	struct drbd_barrier *unused_spare_barrier; /* for pre-allocation */
 	struct drbd_barrier *newest_barrier;
 	struct drbd_barrier *oldest_barrier;
+	struct list_head out_of_sequence_requests;
 	struct hlist_head *tl_hash;
 	unsigned int tl_hash_s;
 
