@@ -194,6 +194,7 @@ STATIC int tl_init(struct drbd_conf *mdev)
 
 	mdev->oldest_barrier = b;
 	mdev->newest_barrier = b;
+	INIT_LIST_HEAD(&mdev->out_of_sequence_requests);
 
 	mdev->tl_hash = NULL;
 	mdev->tl_hash_s = 0;
@@ -204,6 +205,7 @@ STATIC int tl_init(struct drbd_conf *mdev)
 STATIC void tl_cleanup(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
+	D_ASSERT(list_empty(&mdev->out_of_sequence_requests));
 	kfree(mdev->oldest_barrier);
 	kfree(mdev->unused_spare_barrier);
 	kfree(mdev->tl_hash);
@@ -250,10 +252,16 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		r = list_entry(le, struct drbd_request, tl_requests);
 		_req_mod(r, barrier_acked, 0);
 	}
-	list_del(&b->requests);
 	/* There could be requests on the list waiting for completion
 	   of the write to the local disk, to avoid corruptions of
-	   slab's data structures we have to remove the lists head */
+	   slab's data structures we have to remove the lists head.
+	   Also there could have been a barrier ack out of sequence, overtaking
+	   the write acks - which would be a but and violating write ordering.
+	   To not deadlock in case we lose connection while such requests are
+	   still pending, we need some way to find them for the
+	   _req_mode(connection_lost_while_pending)
+	   */
+	list_splice_init(&b->requests, &mdev->out_of_sequence_requests);
 
 	D_ASSERT(b->br_number == barrier_nr);
 	D_ASSERT(b->n_req == set_size);
@@ -291,6 +299,8 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 void tl_clear(struct drbd_conf *mdev)
 {
 	struct drbd_barrier *b, *tmp;
+	struct list_head *le, *tle;
+	struct drbd_request *r;
 
 	WARN("tl_clear()\n");
 
@@ -298,9 +308,6 @@ void tl_clear(struct drbd_conf *mdev)
 
 	b = mdev->oldest_barrier;
 	while ( b ) {
-		struct list_head *le, *tle;
-		struct drbd_request *r;
-
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request, tl_requests);
 			_req_mod(r, connection_lost_while_pending, 0);
@@ -334,6 +341,15 @@ void tl_clear(struct drbd_conf *mdev)
 	}
 	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
 	D_ASSERT(mdev->newest_barrier->br_number == 4711);
+
+	/* we expect this list to be empty. */
+	D_ASSERT(list_empty(&mdev->out_of_sequence_requests));
+
+	/* but just in case, clean it up anyways! */
+	list_for_each_safe(le, tle, &mdev->out_of_sequence_requests) {
+		r = list_entry(le, struct drbd_request, tl_requests);
+		_req_mod(r, connection_lost_while_pending, 0);
+	}
 
 	/* ensure bit indicating barrier is required is clear */
 	clear_bit(CREATE_BARRIER, &mdev->flags);
