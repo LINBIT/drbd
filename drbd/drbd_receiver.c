@@ -2662,7 +2662,9 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 		ok = _drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose);
 		D_ASSERT( ok == SS_Success );
 	} else {
-		ERR("unexpected cstate (%s) in receive_bitmap\n",
+		/* admin may have requested Disconnecting,
+		 * other threads may have noticed network errors */
+		INFO("unexpected cstate (%s) in receive_bitmap\n",
 		    conns_to_name(mdev->state.conn));
 	}
 
