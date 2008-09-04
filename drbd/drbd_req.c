@@ -870,9 +870,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 	int local, remote;
 	int err = -EIO;
 
-	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
-	 * to avoid races with the disconnect/reconnect code.  */
-	inc_ap_bio(mdev);
+	/* allocate outside of all locks; */
 	req = drbd_req_new(mdev, bio);
 	if (!req) {
 		dec_ap_bio(mdev);
@@ -1197,15 +1195,20 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	s_enr = bio->bi_sector >> HT_SHIFT;
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> HT_SHIFT;
 
-	if (unlikely(s_enr != e_enr)) {
-	if (bio->bi_vcnt != 1 || bio->bi_idx != 0) {
+	if (likely(s_enr == e_enr)) {
+		inc_ap_bio(mdev,1);
+		return drbd_make_request_common(mdev,bio);
+	}
+
+	/* can this bio be split generically?
+	 * Maybe add our own split-arbitrary-bios function. */
+	if (bio->bi_vcnt != 1 || bio->bi_idx != 0 || bio->bi_size > DRBD_MAX_SEGMENT_SIZE) {
 		/* rather error out here than BUG in bio_split */
 		ERR("bio would need to, but cannot, be split: "
 		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
 		    bio->bi_vcnt, bio->bi_idx, bio->bi_size,
 		    (unsigned long long)bio->bi_sector);
 		bio_endio(bio, -EINVAL);
-		return 0;
 	} else {
 		/* This bio crosses some boundary, so we have to split it. */
 		struct bio_pair *bp;
@@ -1222,14 +1225,21 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		const int mask = sps -1;
 		const sector_t first_sectors = sps - (sect & mask);
 		bp = bio_split(bio, bio_split_pool, first_sectors);
-		drbd_make_request_26(q, &bp->bio1);
-		drbd_make_request_26(q, &bp->bio2);
-		bio_pair_release(bp);
-		return 0;
-	}
-	}
 
-	return drbd_make_request_common(mdev,bio);
+		/* we need to get a "reference count" (ap_bio_cnt)
+		 * to avoid races with the disconnect/reconnect/suspend code.
+		 * In case we need to split the bio here, we need to get two references
+		 * atomically, otherwise we might deadlock when trying to submit the
+		 * second one! */
+		inc_ap_bio(mdev,2);
+
+		D_ASSERT(e_enr == s_enr + 1);
+
+		drbd_make_request_common(mdev, &bp->bio1);
+		drbd_make_request_common(mdev, &bp->bio2);
+		bio_pair_release(bp);
+	}
+	return 0;
 }
 
 /* This is called by bio_add_page().  With this function we reduce
