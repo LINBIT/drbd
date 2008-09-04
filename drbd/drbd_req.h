@@ -175,8 +175,7 @@ enum drbd_req_state_bits {
 	__RQ_NET_SENT,
 
 	/* when set, the request may be freed (if RQ_NET_QUEUED is clear).
-	 * in (C) this happens when WriteAck is received,
-	 * in (B,A) when the corresponding BarrierAck is received */
+	 * basically this means the corresponding BarrierAck was received */
 	__RQ_NET_DONE,
 
 	/* whether or not we know (C) or pretend (B,A) that the write
