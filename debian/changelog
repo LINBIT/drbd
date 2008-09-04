@@ -1,3 +1,9 @@
+drbd8 (8.2.7~rc1-0) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Thu, 04 Sep 2008 14:28:46 +0200
+
 drbd8 (8.2.6-0) unstable; urgency=low
 
   * New upstream release.

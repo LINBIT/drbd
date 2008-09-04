@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.2.7~rc1 (api:86/proto:86-88)
+ * Fixed possible Oops on connection loss during sync handshake
+ * Fixed various possible deadlocks in the disconnect/reconnect and online-verify code
+ * Fixed possible access-after-free
+ * Added support for TCP buffer autotuning
+ * Added support for AF_SCI aka "Super Sockets"
+ * Added support for IPV6
+ * latency improvements
+ * new config options: no-disk-barrier, no-disk-drain
+ * Merged all changes from 8.0.12 -> 8.0.13 into 8.2
+
 8.2.6 (api:86/proto:86-88)
 --------
  * The details of the LRU data structures is now hidden from
