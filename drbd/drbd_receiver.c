@@ -2653,15 +2653,13 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 		D_ASSERT(h->command == ReportBitMap);
 	}
 
-	if (mdev->state.conn == WFBitMapS) {
-		drbd_start_resync(mdev, SyncSource);
-	} else if (mdev->state.conn == WFBitMapT) {
+	if (mdev->state.conn == WFBitMapT) {
 		ok = !drbd_send_bitmap(mdev);
 		if (!ok) goto out;
 		/* Omit ChgOrdered with this state transition to avoid deadlocks. */
 		ok = _drbd_request_state(mdev, NS(conn, WFSyncUUID), ChgStateVerbose);
 		D_ASSERT( ok == SS_Success );
-	} else {
+	} else if (mdev->state.conn != WFBitMapS) {
 		/* admin may have requested Disconnecting,
 		 * other threads may have noticed network errors */
 		INFO("unexpected cstate (%s) in receive_bitmap\n",
@@ -2671,6 +2669,8 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	ok = TRUE;
  out:
 	drbd_bm_unlock(mdev);
+	if (ok && mdev->state.conn == WFBitMapS)
+		drbd_start_resync(mdev, SyncSource);
 	free_page((unsigned long) buffer);
 	return ok;
 }
