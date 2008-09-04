@@ -98,33 +98,62 @@ struct drbd_bitmap {
 	unsigned long  bm_flags;
 
 	/* debugging aid, in case we are still racy somewhere */
-	unsigned long  bm_line;
-	char          *bm_file;
+	char          *bm_why;
+	struct task_struct *bm_task;
 };
 
 /* definition of bits in bm_flags */
 #define BM_LOCKED 0
 #define BM_MD_IO_ERROR (BITS_PER_LONG-1) /* 31? 63? */
 
-void __drbd_bm_lock(struct drbd_conf *mdev, char *file, int line)
+static inline int bm_is_locked(struct drbd_bitmap *b)
+{
+	return test_bit(BM_LOCKED, &b->bm_flags);
+}
+
+#define bm_print_lock_info(m) __bm_print_lock_info(m, __func__)
+static void __bm_print_lock_info(struct drbd_conf *mdev, const char *func)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
+	if (DRBD_ratelimit(5*HZ, 5))
+	ERR("FIXME %s in %s, bitmap locked for '%s' by %s\n",
+	    current == mdev->receiver.task ? "receiver" :
+	    current == mdev->asender.task  ? "asender"  :
+	    current == mdev->worker.task   ? "worker"   : current->comm,
+	    func, b->bm_why ?: "?",
+	    b->bm_task == mdev->receiver.task ? "receiver" :
+	    b->bm_task == mdev->asender.task  ? "asender"  :
+	    b->bm_task == mdev->worker.task   ? "worker"   : "?");
+}
 
-	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_set_bit(BM_LOCKED,&b->bm_flags)) {
-		b->bm_file = file;
-		b->bm_line = line;
-	} else if (DRBD_ratelimit(5*HZ,5)) {
-		ERR("%s:%d: bitmap already locked by %s:%lu\n",
-		    file, line, b->bm_file,b->bm_line);
-		/*
-		dump_stack();
-		ERR("This is no oops, but debug stack trace only.\n");
-		ERR("If you get this often, or in reproducable situations, "
-		    "notify <drbd-devel@linbit.com>\n");
-		*/
+void drbd_bm_lock(struct drbd_conf *mdev, char *why)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	int trylock_failed;
+
+	if (!b) {
+		ERR("FIXME no bitmap in drbd_bm_lock!?\n");
+		return;
 	}
-	spin_unlock_irq(&b->bm_lock);
+
+	trylock_failed = down_trylock(&b->bm_change);
+
+	if (trylock_failed) {
+		DBG("%s going to '%s' but bitmap already locked for '%s' by %s\n",
+		    current == mdev->receiver.task ? "receiver" :
+		    current == mdev->asender.task  ? "asender"  :
+		    current == mdev->worker.task   ? "worker"   : "?",
+		    why, b->bm_why ?: "?",
+		    b->bm_task == mdev->receiver.task ? "receiver" :
+		    b->bm_task == mdev->asender.task  ? "asender"  :
+		    b->bm_task == mdev->worker.task   ? "worker"   : "?");
+		down(&b->bm_change);
+	}
+	if (__test_and_set_bit(BM_LOCKED,&b->bm_flags))
+		ERR("FIXME bitmap already locked in bm_lock\n");
+
+	b->bm_why  = why;
+	b->bm_task = current;
 }
 
 void drbd_bm_unlock(struct drbd_conf *mdev)
@@ -134,16 +163,13 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 		ERR("FIXME no bitmap in drbd_bm_unlock!?\n");
 		return;
 	}
-	spin_lock_irq(&b->bm_lock);
-	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags)) {
-		ERR("bitmap not locked in bm_unlock\n");
-	} else {
-		/* FIXME if we got a "is already locked" previously,
-		 * we unlock here even though we actually MUST NOT do so... */
-		b->bm_file = NULL;
-		b->bm_line = -1;
-	}
-	spin_unlock_irq(&b->bm_lock);
+
+	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags))
+		ERR("FIXME bitmap not locked in bm_unlock\n");
+
+	b->bm_why  = NULL;
+	b->bm_task = NULL;
+	up(&b->bm_change);
 }
 
 #if DUMP_MD >= 3
@@ -292,6 +318,12 @@ void _drbd_bm_recount_bits(struct drbd_conf *mdev, char* file, int line)
 
 	ERR_IF(!b) return;
 
+	/* IMO this should be inside drbd_bm_lock/unlock.
+	 * Unfortunately it is used outside of the locks.
+	 * And I'm not yet sure where we need to place the
+	 * lock/unlock correctly.
+	 */
+
 	spin_lock_irqsave(&b->bm_lock, flags);
 	bits = bm_count_bits(b);
 	if (bits != b->bm_set) {
@@ -320,9 +352,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 
 	ERR_IF(!b) return -ENOMEM;
 
-	ERR_IF (down_trylock(&b->bm_change)) {
-		down(&b->bm_change);
-	}
+	drbd_bm_lock(mdev, "resize");
 
 	INFO("drbd_bm_resize called with capacity == %llu\n",
 			(unsigned long long)capacity);
@@ -418,7 +448,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
  free_obm:
 	vfree(obm); /* vfree(NULL) is noop */
  out:
-	up(&b->bm_change);
+	drbd_bm_unlock(mdev);
 	return err;
 }
 
@@ -447,22 +477,21 @@ unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 
 size_t drbd_bm_words(struct drbd_conf *mdev)
 {
-	struct drbd_bitmap *b = mdev->bitmap;
-	ERR_IF(!b) return 0;
-	return b->bm_words;
+	ERR_IF(!mdev->bitmap) return 0;
+	return mdev->bitmap->bm_words;
 }
 
 unsigned long drbd_bm_bits(struct drbd_conf *mdev)
 {
-	struct drbd_bitmap *b = mdev->bitmap;
-	ERR_IF(!b) return 0;
-
-	return b->bm_bits;
+	ERR_IF(!mdev->bitmap) return 0;
+	return mdev->bitmap->bm_bits;
 }
 
 
 /* merge number words from buffer into the bitmap starting at offset.
  * buffer[i] is expected to be little endian unsigned long.
+ * bitmap must be locked by drbd_bm_lock.
+ * currently only used from receive_bitmap.
  */
 void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
 			unsigned long *buffer )
@@ -472,10 +501,10 @@ void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
 	unsigned long word, bits;
 	size_t n = number;
 
-	if (number == 0)
-		return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
+	if (number == 0)
+		return;
 	WARN_ON(offset        >= b->bm_words);
 	WARN_ON(offset+number >  b->bm_words);
 	WARN_ON(number > PAGE_SIZE/sizeof(long));
@@ -509,25 +538,23 @@ void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
 
-	if (number == 0)
-		return;
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
+	if (number == 0)
+		return;
+	spin_lock_irq(&b->bm_lock);
 	if ( (offset        >= b->bm_words) ||
 	     (offset+number >  b->bm_words) ||
 	     (number > PAGE_SIZE/sizeof(long)) ||
-	     (number <= 0) ) {
-		/* yes, there is "%z", but that gives compiler warnings... */
+	     (number <= 0) )
 		ERR("offset=%lu number=%lu bm_words=%lu\n",
 			(unsigned long)	offset,
 			(unsigned long)	number,
 			(unsigned long) b->bm_words);
-		return;
+	else {
+		bm = b->bm + offset;
+		while (number--) *buffer++ = cpu_to_lel(*bm++);
 	}
-
-	spin_lock_irq(&b->bm_lock);
-	bm = b->bm + offset;
-	while (number--) *buffer++ = cpu_to_lel(*bm++);
 	spin_unlock_irq(&b->bm_lock);
 }
 
@@ -660,16 +687,12 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 	char ppb[10];
 	int err = 0;
 
+	WARN_ON(!bm_is_locked(b));
+
+	/* no spinlock here, the drbd_bm_lock should be enough! */
+
 	bm_words  = drbd_bm_words(mdev);
 	num_pages = (bm_words*sizeof(long) + PAGE_SIZE-1) >> PAGE_SHIFT;
-
-	/* OK, I manipulate the bitmap low level,
-	 * and I expect to be the exclusive user.
-	 * If not, I am really in a bad mood...
-	 * to catch such bugs early, make all people who want to access the
-	 * bitmap while I read/write it dereference a NULL pointer :->
-	 */
-	mdev->bitmap = NULL;
 
 	/* on disk bitmap is little endian */
 	if (rw == WRITE)
@@ -709,12 +732,6 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 		     jiffies - now);
 	}
 	now = b->bm_set;
-
-	/* ok, done,
-	 * now it is visible again
-	 */
-
-	mdev->bitmap = b;
 
 	INFO("%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb, now << (BM_BLOCK_SIZE_B-10)), now);
@@ -802,6 +819,8 @@ void drbd_bm_reset_find(struct drbd_conf *mdev)
 	ERR_IF(!b) return;
 
 	spin_lock_irq(&b->bm_lock);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	b->bm_fo = 0;
 	spin_unlock_irq(&b->bm_lock);
 
@@ -821,6 +840,8 @@ unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
 	ERR_IF(!b->bm) return i;
 
 	spin_lock_irq(&b->bm_lock);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	if (b->bm_fo < b->bm_bits)
 		i = find_next_bit(b->bm, b->bm_bits, b->bm_fo);
 	else if (b->bm_fo > b->bm_bits)
@@ -850,6 +871,7 @@ void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i)
 
 int drbd_bm_rs_done(struct drbd_conf *mdev)
 {
+	D_ASSERT(mdev->bitmap);
 	return (mdev->bitmap->bm_fo >= mdev->bitmap->bm_bits);
 }
 
@@ -868,6 +890,8 @@ static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	ERR_IF(!b->bm) return 1;
 
 	spin_lock_irqsave(&b->bm_lock,flags);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
@@ -911,6 +935,8 @@ int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	if (bitnr < b->bm_bits) {
 		i = test_bit(bitnr, b->bm) ? 1 : 0;
 	} else if (bitnr == b->bm_bits) {
@@ -975,6 +1001,8 @@ int drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr)
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm) return 0;
 	spin_lock_irqsave(&b->bm_lock, flags);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 
 	s = S2W(enr);
 	e = min((size_t)S2W(enr+1), b->bm_words);
@@ -1003,6 +1031,8 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev, unsigned long al_enr)
 	ERR_IF(!b->bm) return 0;
 
 	spin_lock_irq(&b->bm_lock);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	weight = b->bm_set;
 
 	s = al_enr * BM_WORDS_PER_AL_EXT;

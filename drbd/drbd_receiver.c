@@ -2433,7 +2433,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 
 	if (abs(hg) >= 2) {
 		INFO("Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
-		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write))
+		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write, "set_n_write from sync_handshake"))
 			return conn_mask;
 	}
 
@@ -2983,7 +2983,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
 
-	drbd_bm_lock(mdev);
+	drbd_bm_lock(mdev, "receive bitmap");
 
 	bm_words = drbd_bm_words(mdev);
 	bm_i	 = 0;
@@ -2992,7 +2992,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 	buffer	 = (unsigned long *) __get_free_page(GFP_NOIO);
 	if (!buffer) {
 		ERR("failed to allocate one page buffer in %s\n", __func__ );
-		return FALSE;
+		goto out;
 	}
 
 	while (1) {
