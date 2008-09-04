@@ -688,10 +688,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	 * we may not finish the request just yet.
 	 */
 	case send_canceled:
-		/* may be a write, may be a remote read */
-		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
-		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
-		/* fall through */
+		/* treat it the same */
 	case send_failed:
 		/* real cleanup will be done from tl_clear.  just update flags
 		 * so it is no longer marked as on the worker queue */
