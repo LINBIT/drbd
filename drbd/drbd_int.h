@@ -2011,14 +2011,13 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 		return 0;
 	if (test_bit(BITMAP_IO, &mdev->flags))
 		return 0;
-	atomic_inc(&mdev->ap_bio_cnt);
 	return 1;
 }
 
 /* I'd like to use wait_event_lock_irq,
  * but I'm not sure when it got introduced,
  * and not sure when it has 3 or 4 arguments */
-static inline void inc_ap_bio(struct drbd_conf *mdev)
+static inline void inc_ap_bio(struct drbd_conf *mdev, int one_or_two)
 {
 	/* compare with after_state_ch,
 	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
@@ -2040,6 +2039,7 @@ static inline void inc_ap_bio(struct drbd_conf *mdev)
 		finish_wait(&mdev->misc_wait, &wait);
 		spin_lock_irq(&mdev->req_lock);
 	}
+	atomic_add(one_or_two, &mdev->ap_bio_cnt);
 	spin_unlock_irq(&mdev->req_lock);
 }
 
