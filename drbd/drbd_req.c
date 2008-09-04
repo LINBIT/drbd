@@ -305,7 +305,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 static void _complete_master_bio(struct drbd_conf *mdev,
 	struct drbd_request *req, int error)
 {
-	dump_bio(mdev, req->master_bio, 1);
+	dump_bio(mdev, req->master_bio, 1, req);
 	bio_endio(req->master_bio, error);
 	req->master_bio = NULL;
 	dec_ap_bio(mdev);
@@ -883,7 +883,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 		return 0;
 	}
 
-	dump_bio(mdev, bio, 0);
+	dump_bio(mdev, bio, 0, req);
 
 	local = inc_local(mdev);
 	if (!local) {

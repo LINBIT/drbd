@@ -1417,19 +1417,19 @@ extern void drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			      unsigned int length);
 
 /* Bio printing support */
-extern void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete);
+extern void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete, struct drbd_request *r);
 
 static inline void dump_bio(struct drbd_conf *mdev,
-		struct bio *bio, int complete)
+		struct bio *bio, int complete, struct drbd_request *r)
 {
 	MTRACE(TraceTypeRq, TraceLvlSummary,
-	       _dump_bio("Rq", mdev, bio, complete);
+	       _dump_bio("Rq", mdev, bio, complete, r);
 		);
 }
 
 static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete) {
 	MTRACE(TraceTypeIntRq,TraceLvlSummary,
-	       _dump_bio(pfx, mdev, bio, complete);
+	       _dump_bio(pfx, mdev, bio, complete, NULL);
 		);
 }
 

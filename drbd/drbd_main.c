@@ -3901,7 +3901,7 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 
 /* Debug routine to dump info about bio */
 
-void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
+void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete, struct drbd_request *r)
 {
 #ifdef CONFIG_LBD
 #define SECTOR_FORMAT "%Lx"
@@ -3912,6 +3912,7 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 
 	unsigned long lowaddr = (unsigned long)(bio->bi_sector << SECTOR_SHIFT);
 	char *faddr = (char *)(lowaddr);
+	char rb[sizeof(void*)*2+6] = { 0, };
 	struct bio_vec *bvec;
 	int segno;
 
@@ -3920,13 +3921,17 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
 	const int biosync    = (rw & (1<<BIO_RW_SYNC));
 
-	INFO("%s %s:%s%s%s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
+	if (r)
+		sprintf(rb,"Req:%p ", r);
+
+	INFO("%s %s:%s%s%s Bio:%p %s- %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete? "<<<":">>>",
 	     pfx,
 	     biorw==WRITE?"Write":"Read",
 	     biobarrier?":B":"",
 	     biosync?":S":"",
 	     bio,
+	     rb,
 	     complete? (drbd_bio_uptodate(bio)? "Success, ":"Failed, ") : "",
 	     bio->bi_sector << SECTOR_SHIFT,
 	     bio->bi_size);
