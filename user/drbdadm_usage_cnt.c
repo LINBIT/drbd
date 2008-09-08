@@ -500,6 +500,8 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	int send=0;
 	char *tb;
 	int rv,fd;
+	int soi_tmp;
+	char *setup_opts_0_tmp;
 
 	tb = run_admm_generic(res, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
@@ -549,9 +551,17 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 		make_get_request(req_buf);
 	}
 
+	/* HACK */
+	soi_tmp = soi;
+	setup_opts_0_tmp = setup_opts[0];
+
+	setup_opts[0] = NULL;
 	ssprintf( setup_opts[0], X64(016), device_uuid);
 	soi=1;
 	_admm_generic(res, "write-dev-uuid", SLEEPS_VERY_LONG);
+
+	setup_opts[0] = setup_opts_0_tmp;
+	soi = soi_tmp;
 
 	return rv;
 }
