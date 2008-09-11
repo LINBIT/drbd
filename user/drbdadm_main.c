@@ -349,7 +349,7 @@ int _run_dcmds(int order)
 	int rv = 0;
 
 	while (d) {
-		call_cmd_fn(d->function, d->arg, d->res, KEEP_RUNNING);
+		r = call_cmd_fn(d->function, d->arg, d->res, KEEP_RUNNING);
 		t = d->next;
 		free(d);
 		d = t;
@@ -1482,9 +1482,9 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 
 static int adm_up(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  schedule_dcmd(adm_attach,res,NULL,0);
-  schedule_dcmd(adm_syncer,res,NULL,1);
-  schedule_dcmd(adm_connect,res,NULL,2);
+  schedule_dcmd(adm_attach,res,"attach",0);
+  schedule_dcmd(adm_syncer,res,"syncer",1);
+  schedule_dcmd(adm_connect,res,"connect",2);
 
   return 0;
 }
