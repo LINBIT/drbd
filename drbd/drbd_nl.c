@@ -80,6 +80,11 @@ STATIC int name ## _from_tags (struct drbd_conf *mdev, \
 		 break;
 #define NL_STRING(pn, pr, member, len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
+		if (dlen > len) { \
+			ERR("arg too long: %s (%u wanted, max len: %u bytes)\n", \
+				#member, dlen, (unsigned int)len); \
+			return 0; \
+		} \
 		 arg->member ## _len = dlen; \
 		 memcpy(arg->member, tags, min_t(size_t, dlen, len)); \
 		 break;

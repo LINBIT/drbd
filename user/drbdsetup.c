@@ -1169,7 +1169,7 @@ void show_bit(struct drbd_option *od, unsigned short* tp)
 void show_string(struct drbd_option *od, unsigned short* tp)
 {
 	ASSERT( tag_type(*tp++) == TT_STRING );
-	if( *tp++ > 0) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
+	if( *tp++ > 0 && *(char*)tp) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
 }
 
 unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)

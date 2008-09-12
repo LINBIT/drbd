@@ -2550,7 +2550,7 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int ok = TRUE;
 	struct Drbd_SyncParam_Packet *p = (struct Drbd_SyncParam_Packet *)h;
-	int header_size, data_size;
+	unsigned int header_size, data_size;
 	char p_verify_alg[SHARED_SECRET_MAX];
 	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm;
 
@@ -2563,11 +2563,20 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 	mdev->sync_conf.rate	  = be32_to_cpu(p->rate);
 
 	if (mdev->agreed_pro_version >= 88) {
+		if (data_size > SHARED_SECRET_MAX) {
+			ERR("verify-alg too long, "
+			    "peer wants %u, accepting only %u byte\n",
+					data_size, SHARED_SECRET_MAX);
+			return FALSE;
+		}
 
 		if (drbd_recv(mdev, p_verify_alg, data_size) != data_size)
 			return FALSE;
 
-		p_verify_alg[SHARED_SECRET_MAX-1] = 0;
+		/* we expect NUL terminated string */
+		/* but just in case someone tries to be evil */
+		D_ASSERT(p_verify_alg[data_size-1] == 0);
+		p_verify_alg[data_size-1] = 0;
 		if (strcpy(mdev->sync_conf.verify_alg, p_verify_alg)) {
 			if (strlen(p_verify_alg)) {
 				verify_tfm = crypto_alloc_hash(p_verify_alg, 0,
@@ -2590,7 +2599,7 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 			spin_lock(&mdev->peer_seq_lock);
 			/* lock against drbd_nl_syncer_conf() */
 			strcpy(mdev->sync_conf.verify_alg, p_verify_alg);
-			mdev->sync_conf.verify_alg_len = strlen(p_verify_alg) + 1;
+			mdev->sync_conf.verify_alg_len = strlen(p_verify_alg);
 			old_verify_tfm = mdev->verify_tfm;
 			mdev->verify_tfm = verify_tfm;
 			spin_unlock(&mdev->peer_seq_lock);
