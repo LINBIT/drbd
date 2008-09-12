@@ -3880,7 +3880,10 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 				mdev->net_conf->ping_timeo*HZ/10;
 		}
 
-		if (!mdev->net_conf->no_cork)
+		/* conditionally cork;
+		 * it may hurt latency if we cork without much to send */
+		if (!mdev->net_conf->no_cork &&
+			3 < atomic_read(&mdev->unacked_cnt))
 			drbd_tcp_cork(mdev->meta.socket);
 		while (1) {
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
@@ -3900,6 +3903,7 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			if (empty)
 				break;
 		}
+		/* but unconditionally uncork */
 		if (!mdev->net_conf->no_cork)
 			drbd_tcp_uncork(mdev->meta.socket);
 
