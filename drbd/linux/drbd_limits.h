@@ -66,7 +66,7 @@
 
   /* I don't think that a tcp send buffer of more than 10M is usefull */
 #define DRBD_SNDBUF_SIZE_MIN  0
-#define DRBD_SNDBUF_SIZE_MAX  10000000
+#define DRBD_SNDBUF_SIZE_MAX  (10<<20)
 #define DRBD_SNDBUF_SIZE_DEF  (2*65535)
 
   /* @4k PageSize -> 128kB - 512MB */
@@ -89,7 +89,8 @@
 /* syncer { */
   /* FIXME allow rate to be zero? */
 #define DRBD_RATE_MIN 1
-#define DRBD_RATE_MAX 700000
+/* channel bonding 10 GbE, or other hardware */
+#define DRBD_RATE_MAX (4 << 20)
 #define DRBD_RATE_DEF 250  /* kb/second */
 
   /* less than 7 would hit performance unneccessarily.
