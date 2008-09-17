@@ -57,6 +57,11 @@ extern void drbd_endio_read_sec(struct bio *bio, int error);
 extern void drbd_endio_write_sec(struct bio *bio, int error);
 extern void drbd_endio_pri(struct bio *bio, int error);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,26)
+# undef HAVE_bvec_merge_data
+# define HAVE_bvec_merge_data 1
+#endif
+
 /*
  * used to submit our private bio
  */

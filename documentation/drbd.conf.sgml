@@ -674,6 +674,8 @@ the unit is 1 second.
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>shared-secret</secondary></indexterm>
     The shared secret used in peer authentication. May be up to 64 characters.
+    Note that peer authentication is disabled as long as no cram-hmac-alg
+    (see above) is specified.
   </para></listitem>
 </varlistentry>
 

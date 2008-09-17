@@ -257,11 +257,11 @@ struct adm_cmd cmds[] = {
 	 *  - advanced
 	 ***/
         { "attach",                adm_attach,      DRBD_acf1_default   },
-        { "detach",                adm_generic_s,   DRBD_acf1_default   },
+        { "detach",                adm_generic_l,   DRBD_acf1_default   },
         { "connect",               adm_connect,     DRBD_acf1_defnet    },
         { "disconnect",            adm_generic_s,   DRBD_acf1_default   },
         { "up",                    adm_up,          DRBD_acf1_defnet    },
-        { "down",                  adm_generic_s,   DRBD_acf1_default   },
+        { "down",                  adm_generic_l,   DRBD_acf1_default   },
         { "primary",               adm_generic_l,   DRBD_acf1_default   },
         { "secondary",             adm_generic_l,   DRBD_acf1_default   },
         { "invalidate",            adm_generic_b,   DRBD_acf1_default   },
