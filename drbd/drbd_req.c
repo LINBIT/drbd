@@ -183,7 +183,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 				drbd_al_complete_io(mdev, req->sector);
 				dec_local(mdev);
 			} else {
-				WARN("Should have called drbd_al_complete_io(, %llu), "
+				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
 			}
@@ -978,7 +978,7 @@ allocate_barrier:
 			    ( mdev->state.pdsk == Inconsistent &&
 			      mdev->state.conn >= Connected ) );
 		if (!remote)
-			WARN("lost connection while grabbing the req_lock!\n");
+			drbd_WARN("lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
 			ERR("IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
@@ -1175,7 +1175,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	 * i.e. in drbd_init_set_defaults we set the NO_BARRIER_SUPP bit.
 	 */
 	if (unlikely(bio_barrier(bio) && test_bit(NO_BARRIER_SUPP, &mdev->flags))) {
-		/* WARN("Rejecting barrier request as underlying device does not support\n"); */
+		/* drbd_WARN("Rejecting barrier request as underlying device does not support\n"); */
 		bio_endio(bio, -EOPNOTSUPP);
 		return 0;
 	}
@@ -1252,12 +1252,18 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
  * cross extent boundaries.  those are dealt with (bio_split) in
  * drbd_make_request_26.
  */
-int drbd_merge_bvec(struct request_queue *q, struct bio *bio, struct bio_vec *bvec)
+int drbd_merge_bvec(struct request_queue *q,
+#ifdef HAVE_bvec_merge_data
+		struct bvec_merge_data *bvm,
+#else
+		struct bio *bvm,
+#endif
+		struct bio_vec *bvec)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 	unsigned int bio_offset =
-		(unsigned int)bio->bi_sector << 9; /* 32 bit */
-	unsigned int bio_size = bio->bi_size;
+		(unsigned int)bvm->bi_sector << 9; /* 32 bit */
+	unsigned int bio_size = bvm->bi_size;
 	int limit, backing_limit;
 
 	limit = DRBD_MAX_SEGMENT_SIZE
@@ -1271,7 +1277,7 @@ int drbd_merge_bvec(struct request_queue *q, struct bio *bio, struct bio_vec *bv
 		struct request_queue * const b =
 			mdev->bc->backing_bdev->bd_disk->queue;
 		if (b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
-			backing_limit = b->merge_bvec_fn(b, bio, bvec);
+			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
 			limit = min(limit, backing_limit);
 		}
 		dec_local(mdev);

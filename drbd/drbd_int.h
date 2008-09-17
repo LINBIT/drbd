@@ -176,7 +176,8 @@ struct drbd_conf;
 
 #define ALERT(fmt, args...) PRINTK(KERN_ALERT, fmt , ##args)
 #define ERR(fmt, args...)   PRINTK(KERN_ERR, fmt , ##args)
-#define WARN(fmt, args...)  PRINTK(KERN_WARNING, fmt , ##args)
+/* nowadays, WARN() is defined as BUG() without crash in bug.h */
+#define drbd_WARN(fmt, args...)  PRINTK(KERN_WARNING, fmt , ##args)
 #define INFO(fmt, args...)  PRINTK(KERN_INFO, fmt , ##args)
 #define DBG(fmt, args...)   PRINTK(KERN_DEBUG, fmt , ##args)
 
@@ -201,7 +202,7 @@ struct drbd_conf;
 		missed = 0;					\
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
-			WARN("%d messages suppressed in %s:%d.\n", \
+			drbd_WARN("%d messages suppressed in %s:%d.\n", \
 				lost , __FILE__ , __LINE__ );	\
 		__ret = 1;					\
 	} else {						\
@@ -2038,7 +2039,7 @@ static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 		 * for now, just prevent in-kernel buffer overflow.
 		 */
 		smp_rmb();
-		WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+		drbd_WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
 				conns_to_name(mdev->state.conn),
 				*bits_left, mdev->rs_total, mdev->rs_failed);
 		*per_mil_done = 0;

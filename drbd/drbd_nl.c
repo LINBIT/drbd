@@ -187,7 +187,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	drbd_bcast_ev_helper(mdev, cmd);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
-		WARN("helper command: %s %s %s exit code %u (0x%x)\n",
+		drbd_WARN("helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
 				(ret >> 8), ret);
 	else
@@ -211,7 +211,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
-		WARN("Not outdating peer, I'm not even Consistent myself.\n");
+		drbd_WARN("Not outdating peer, I'm not even Consistent myself.\n");
 		return mdev->state.pdsk;
 	}
 
@@ -238,7 +238,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		 * This is useful when an unconnected Secondary is asked to
 		 * become Primary, but findes the other peer being active. */
 		ex_to_string = "peer is active";
-		WARN("Peer is primary, outdating myself.\n");
+		drbd_WARN("Peer is primary, outdating myself.\n");
 		nps = DUnknown;
 		_drbd_request_state(mdev, NS(disk, Outdated), ChgWaitComplete);
 		break;
@@ -321,7 +321,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			nps = drbd_try_outdate_peer(mdev);
 
 			if (force && nps > Outdated) {
-				WARN("Forced into split brain situation!\n");
+				drbd_WARN("Forced into split brain situation!\n");
 				nps = Outdated;
 			}
 
@@ -350,7 +350,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	}
 
 	if (forced)
-		WARN("Forced to consider local data as UpToDate!\n");
+		drbd_WARN("Forced to consider local data as UpToDate!\n");
 
 	fsync_bdev(mdev->this_bdev);
 
@@ -598,7 +598,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 		|| prev_size	   != mdev->bc->md.md_size_sect;
 
 	if (md_moved) {
-		WARN("Moving meta-data.\n");
+		drbd_WARN("Moving meta-data.\n");
 		/* assert: (flexible) internal meta data */
 	}
 
@@ -768,7 +768,7 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	       );
 
 	if (b->merge_bvec_fn)
-		WARN("Backing device's merge_bvec_fn() = %p\n",
+		drbd_WARN("Backing device's merge_bvec_fn() = %p\n",
 		     b->merge_bvec_fn);
 	INFO("max_segment_size ( = BIO size ) = %u\n", q->max_segment_size);
 
@@ -810,7 +810,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		if (nbc == NULL)
 			break;
 		if (ntries++ >= 5) {
-			WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
+			drbd_WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
 			retcode = HaveDiskConfig;
 			goto fail;
 		}
@@ -935,14 +935,14 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	}
 
 	if (drbd_get_capacity(nbc->md_bdev) > max_possible_sectors)
-		WARN("truncating very big lower level device "
+		drbd_WARN("truncating very big lower level device "
 		     "to currently maximum possible %llu sectors\n",
 		     (unsigned long long) max_possible_sectors);
 
 	if (drbd_get_capacity(nbc->md_bdev) < min_md_device_sectors)
 	{
 		retcode = MDDeviceTooSmall;
-		WARN("refusing attach: md-device too small, "
+		drbd_WARN("refusing attach: md-device too small, "
 		     "at least %llu sectors needed for this meta-disk type\n",
 		     (unsigned long long) min_md_device_sectors);
 		goto release_bdev2_fail;
@@ -991,7 +991,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_Consistent) &&
 	   drbd_new_dev_size(mdev, nbc) < nbc->md.la_size_sect) {
-		WARN("refusing to truncate a consistent device\n");
+		drbd_WARN("refusing to truncate a consistent device\n");
 		retcode = LDDeviceTooSmall;
 		goto force_diskless_dec;
 	}
@@ -1627,7 +1627,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	if (sc.cpu_mask[0] != 0) {
 		err = __bitmap_parse(sc.cpu_mask, 32, 0, (unsigned long *)&n_cpu_mask, NR_CPUS);
 		if (err) {
-			WARN("__bitmap_parse() failed with %d\n", err);
+			drbd_WARN("__bitmap_parse() failed with %d\n", err);
 			retcode = CPUMaskParseFailed;
 			goto fail;
 		}
@@ -2122,7 +2122,7 @@ void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state_t state)
 		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
 
-	/* WARN("drbd_bcast_state() got called\n"); */
+	/* drbd_WARN("drbd_bcast_state() got called\n"); */
 
 	tl = get_state_to_tags(mdev, (struct get_state *)&state, tl);
 	*tl++ = TT_END; /* Close the tag list */
@@ -2157,7 +2157,7 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	unsigned short *tl = reply->tag_list;
 	int str_len;
 
-	/* WARN("drbd_bcast_state() got called\n"); */
+	/* drbd_WARN("drbd_bcast_state() got called\n"); */
 
 	str_len = strlen(helper_name)+1;
 	*tl++ = T_helper;

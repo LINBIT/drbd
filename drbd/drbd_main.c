@@ -302,7 +302,7 @@ void tl_clear(struct drbd_conf *mdev)
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 
-	WARN("tl_clear()\n");
+	drbd_WARN("tl_clear()\n");
 
 	spin_lock_irq(&mdev->req_lock);
 
@@ -396,7 +396,7 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 
 	if (mdev->state.conn >= Connected) {
 		ok = drbd_send_state(mdev);
-		if (ok) WARN("Notified peer that my disk is broken.\n");
+		if (ok) drbd_WARN("Notified peer that my disk is broken.\n");
 		else ERR("Sending state in drbd_io_error() failed\n");
 	}
 
@@ -879,11 +879,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncTarget:
 			ns.disk = Inconsistent;
-			WARN("Implicit set disk state Inconsistent!\n");
+			drbd_WARN("Implicit set disk state Inconsistent!\n");
 			break;
 		}
 		if (os.disk == Outdated && ns.disk == UpToDate)
-			WARN("Implicit set disk from Outdate to UpToDate\n");
+			drbd_WARN("Implicit set disk from Outdate to UpToDate\n");
 	}
 
 	if (ns.conn != os.conn && ns.conn >= Connected &&
@@ -901,11 +901,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncSource:
 			ns.pdsk = Inconsistent;
-			WARN("Implicit set pdsk Inconsistent!\n");
+			drbd_WARN("Implicit set pdsk Inconsistent!\n");
 			break;
 		}
 		if (os.pdsk == Outdated && ns.pdsk == UpToDate)
-			WARN("Implicit set pdsk from Outdate to UpToDate\n");
+			drbd_WARN("Implicit set pdsk from Outdate to UpToDate\n");
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
@@ -976,7 +976,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (warn_sync_abort)
-		WARN("Resync aborted.\n");
+		drbd_WARN("Resync aborted.\n");
 
 #if DUMP_MD >= 2
 	{
@@ -1098,7 +1098,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		ascw->done = done;
 		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
-		WARN("Could not kmalloc an ascw\n");
+		drbd_WARN("Could not kmalloc an ascw\n");
 	}
 
 	return rv;
@@ -2112,7 +2112,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 				continue;
 		}
 		if (sent <= 0) {
-			WARN("%s: size=%d len=%d sent=%d\n",
+			drbd_WARN("%s: size=%d len=%d sent=%d\n",
 			     __func__, (int)size, len, sent);
 			break;
 		}
@@ -3322,7 +3322,7 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 			);
 	} else {
 		if (mdev->bc->md.uuid[Bitmap])
-			WARN("bm UUID already set");
+			drbd_WARN("bm UUID already set");
 
 		mdev->bc->md.uuid[Bitmap] = val;
 		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
@@ -3491,7 +3491,7 @@ void md_sync_timer_fn(unsigned long data)
 
 int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
+	drbd_WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);
 
 	return 1;
@@ -3556,7 +3556,7 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 		fault_count++;
 
 		if (printk_ratelimit())
-			WARN("***Simulating %s failure\n",
+			drbd_WARN("***Simulating %s failure\n",
 				_drbd_fault_str(type));
 	}
 

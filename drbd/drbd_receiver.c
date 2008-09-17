@@ -153,7 +153,7 @@ STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, gfp_t gfp_mask)
 		 * unless, of course, someone signalled us.
 		 */
 		if (signal_pending(current)) {
-			WARN("drbd_pp_alloc interrupted!\n");
+			drbd_WARN("drbd_pp_alloc interrupted!\n");
 			finish_wait(&drbd_pp_wait, &wait);
 			return NULL;
 		}
@@ -254,10 +254,22 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 			    (unsigned long long)sector, data_size, ds);
 
 			q = bdev_get_queue(bio->bi_bdev);
-			if (q->merge_bvec_fn)
-				ERR("merge_bvec_fn() = %d\n",
-				    q->merge_bvec_fn(q, bio,
-					  &bio->bi_io_vec[bio->bi_vcnt]));
+			if (q->merge_bvec_fn) {
+#ifdef HAVE_bvec_merge_data
+				struct bvec_merge_data bvm = {
+					.bi_bdev = bio->bi_bdev,
+					.bi_sector = bio->bi_sector,
+					.bi_size = bio->bi_size,
+					.bi_rw = bio->bi_rw,
+				};
+				int l = q->merge_bvec_fn(q, &bvm,
+						&bio->bi_io_vec[bio->bi_vcnt]);
+#else
+				int l = q->merge_bvec_fn(q, bio,
+						&bio->bi_io_vec[bio->bi_vcnt]);
+#endif
+				ERR("merge_bvec_fn() = %d\n", l);
+			}
 
 			/* dump more of the bio. */
 			DUMPI(bio->bi_max_vecs);
@@ -832,7 +844,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
 			default:
-				WARN("Error receiving initial packet\n");
+				drbd_WARN("Error receiving initial packet\n");
 				sock_release(s);
 			}
 		}
@@ -1073,7 +1085,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			fw->epoch = epoch;
 			drbd_queue_work(&mdev->data.work, &fw->w);
 		} else {
-			WARN("Could not kmalloc a flush_work obj\n");
+			drbd_WARN("Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
 		}
@@ -1259,7 +1271,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
 		if (rr != dgs) {
-			WARN("short read receiving data digest: read %d expected %d\n",
+			drbd_WARN("short read receiving data digest: read %d expected %d\n",
 			     rr, dgs);
 			return NULL;
 		}
@@ -1281,7 +1293,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 		kunmap(page);
 		if ( rr != min_t(int, ds, PAGE_SIZE) ) {
 			drbd_free_ee(mdev, e);
-			WARN("short read receiving data: read %d expected %d\n",
+			drbd_WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int, ds, PAGE_SIZE));
 			return NULL;
 		}
@@ -1318,7 +1330,7 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 		rr = drbd_recv(mdev, data, min_t(int, data_size, PAGE_SIZE));
 		if ( rr != min_t(int, data_size, PAGE_SIZE) ) {
 			rv = 0;
-			WARN("short read receiving data: read %d expected %d\n",
+			drbd_WARN("short read receiving data: read %d expected %d\n",
 			     rr, min_t(int, data_size, PAGE_SIZE));
 			break;
 		}
@@ -1354,7 +1366,7 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
 		if (rr != dgs) {
-			WARN("short read receiving data reply digest: read %d expected %d\n",
+			drbd_WARN("short read receiving data reply digest: read %d expected %d\n",
 			     rr, dgs);
 			return 0;
 		}
@@ -1372,7 +1384,7 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 			     expect);
 		kunmap(bvec->bv_page);
 		if (rr != expect) {
-			WARN("short read receiving data reply: "
+			drbd_WARN("short read receiving data reply: "
 			     "read %d expected %d\n",
 			     rr, expect);
 			return 0;
@@ -2096,7 +2108,7 @@ STATIC int drbd_asb_recover_0p(struct drbd_conf *mdev) __must_hold(local)
 		if (self == 0 && peer == 1) { rv =  1; break; }
 		if (self == 1 && peer == 0) { rv = -1; break; }
 		/* Else fall through to one of the other strategies... */
-		WARN("Discard younger/older primary did not found a decision\n"
+		drbd_WARN("Discard younger/older primary did not found a decision\n"
 		     "Using discard-least-changes instead\n");
 	case DiscardZeroChg:
 		if (ch_peer == 0 && ch_self == 0) {
@@ -2165,7 +2177,7 @@ STATIC int drbd_asb_recover_1p(struct drbd_conf *mdev) __must_hold(local)
 			if (self != SS_Success) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
-				WARN("Sucessfully gave up primary role.\n");
+				drbd_WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else
@@ -2204,7 +2216,7 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 			if (self != SS_Success) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
-				WARN("Sucessfully gave up primary role.\n");
+				drbd_WARN("Sucessfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else
@@ -2378,11 +2390,11 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 			break;
 		}
 		if ( abs(hg) < 100 ) {
-			WARN("Split-Brain detected, %d primaries, "
+			drbd_WARN("Split-Brain detected, %d primaries, "
 			     "automatically solved. Sync from %s node\n",
 			     pcount, (hg < 0) ? "peer":"this");
 			if (forced) {
-				WARN("Doing a full sync, since"
+				drbd_WARN("Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
 				drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
 				drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
@@ -2398,7 +2410,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 			hg = 1;
 
 		if ( abs(hg) < 100 )
-			WARN("Split-Brain detected, manually solved. "
+			drbd_WARN("Split-Brain detected, manually solved. "
 			     "Sync from %s node\n",
 			     (hg < 0) ? "peer":"this");
 	}
@@ -2426,7 +2438,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 			ERR("I shall become SyncTarget, but I am primary!\n");
 			return conn_mask;
 		case Violently:
-			WARN("Becoming SyncTarget, violating the stable-data"
+			drbd_WARN("Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
 		}
 	}
@@ -2626,7 +2638,7 @@ static void warn_if_differ_considerably(struct drbd_conf *mdev,
 		return;
 	d = (a > b) ? (a - b) : (b - a);
 	if ( d > (a>>3) || d > (b>>3))
-		WARN("Considerable difference in %s: %llus vs. %llus\n", s,
+		drbd_WARN("Considerable difference in %s: %llus vs. %llus\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
 }
 
@@ -3049,7 +3061,7 @@ STATIC int receive_skip(struct drbd_conf *mdev, struct Drbd_Header *h)
 	static char sink[128];
 	int size, want, r;
 
-	WARN("skipping unknown optional packet type %d, l: %d!\n",
+	drbd_WARN("skipping unknown optional packet type %d, l: %d!\n",
 	     h->command, h->length );
 
 	size = h->length;
@@ -3597,7 +3609,7 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 			schedule_timeout(HZ);
 		}
 		if (h == -1) {
-			WARN("Discarding network configuration.\n");
+			drbd_WARN("Discarding network configuration.\n");
 			drbd_force_state(mdev, NS(conn, Disconnecting));
 		}
 	} while ( h == 0 );
@@ -3707,7 +3719,7 @@ STATIC int got_NegAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct drbd_request *req;
 
 	if (DRBD_ratelimit(5*HZ, 5))
-		WARN("Got NegAck packet. Peer is in troubles?\n");
+		drbd_WARN("Got NegAck packet. Peer is in troubles?\n");
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 

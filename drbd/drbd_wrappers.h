@@ -101,6 +101,11 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 
 #endif
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,26)
+# undef HAVE_bvec_merge_data
+# define HAVE_bvec_merge_data 1
+#endif
+
 /*
  * used to submit our private bio
  */
