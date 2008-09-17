@@ -977,17 +977,13 @@ int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	ok = drbd_send_drequest(mdev, DataRequest, req->sector, req->size,
 				(unsigned long)req);
 
-	if (ok) {
-		req_mod(req, handed_over_to_network, 0);
-	} else {
-		/* ?? we set Timeout or BrokenPipe in drbd_send() */
+	if (!ok) {
+		/* ?? we set Timeout or BrokenPipe in drbd_send();
+		 * so this is probably redundant */
 		if (mdev->state.conn >= Connected)
 			drbd_force_state(mdev, NS(conn, NetworkFailure));
-		/* req_mod(req, send_failed); we should not fail it here,
-		 * we might have to "freeze" on disconnect.
-		 * handled by req_mod(req, connection_lost_while_pending);
-		 * in drbd_fail_pending_reads soon enough. */
 	}
+	req_mod(req, ok ? handed_over_to_network : send_failed, 0);
 
 	return ok;
 }

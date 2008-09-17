@@ -3156,10 +3156,9 @@ STATIC void drbdd(struct drbd_conf *mdev)
 STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 {
 	struct hlist_head *slot;
-	struct hlist_node *n;
+	struct hlist_node *pos;
+	struct hlist_node *tmp;
 	struct drbd_request *req;
-	struct list_head *le;
-	LIST_HEAD(workset);
 	int i;
 
 	/*
@@ -3168,19 +3167,22 @@ STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 	spin_lock_irq(&mdev->req_lock);
 	for (i = 0; i < APP_R_HSIZE; i++) {
 		slot = mdev->app_reads_hash+i;
-		hlist_for_each_entry(req, n, slot, colision) {
-			list_add(&req->w.list, &workset);
+		hlist_for_each_entry_safe(req, pos, tmp, slot, colision) {
+			/* it may (but should not any longer!)
+			 * be on the work queue; if that assert triggers,
+			 * we need to also grab the
+			 * spin_lock_irq(&mdev->data.work.q_lock);
+			 * and list_del_init here. */
+			D_ASSERT(list_empty(&req->w.list));
+			_req_mod(req, connection_lost_while_pending, 0);
 		}
 	}
+	for (i = 0; i < APP_R_HSIZE; i++)
+		if (!hlist_empty(mdev->app_reads_hash+i))
+			drbd_WARN("ASSERT FAILED: app_reads_hash[%d].first: "
+				"%p, should be NULL\n", i, mdev->app_reads_hash[i].first);
+
 	memset(mdev->app_reads_hash, 0, APP_R_HSIZE*sizeof(void *));
-
-	while (!list_empty(&workset)) {
-		le = workset.next;
-		req = list_entry(le, struct drbd_request, w.list);
-		list_del(le);
-
-		_req_mod(req, connection_lost_while_pending, 0);
-	}
 	spin_unlock_irq(&mdev->req_lock);
 }
 
@@ -3216,11 +3218,6 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	_drbd_wait_ee_list_empty(mdev, &mdev->read_ee);
 	reclaim_net_ee(mdev);
 	spin_unlock_irq(&mdev->req_lock);
-
-	/* FIXME: fail pending reads?
-	 * when we are configured for freeze io,
-	 * we could retry them once we un-freeze. */
-	drbd_fail_pending_reads(mdev);
 
 	/* We do not have data structures that would allow us to
 	 * get the rs_pending_cnt down to 0 again.
@@ -3258,6 +3255,11 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	 * FIXME this should go into after_state_ch  */
 	if (!mdev->state.susp)
 		tl_clear(mdev);
+
+	/* FIXME: fail pending reads?
+	 * when we are configured for freeze io,
+	 * we could retry them once we un-freeze. */
+	drbd_fail_pending_reads(mdev);
 
 	INFO("Connection closed\n");
 
