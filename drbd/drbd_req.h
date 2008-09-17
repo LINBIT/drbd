@@ -296,6 +296,7 @@ static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev,
 		req->start_time  = jiffies;
 		INIT_HLIST_NODE(&req->colision);
 		INIT_LIST_HEAD(&req->tl_requests);
+		INIT_LIST_HEAD(&req->w.list);
 
 		bio->bi_private  = req;
 		bio->bi_end_io   = drbd_endio_pri;
