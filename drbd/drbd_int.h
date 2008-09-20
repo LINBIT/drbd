@@ -1233,7 +1233,7 @@ extern int drbd_bm_count_bits(drbd_dev *mdev, const unsigned long s, const unsig
 
 /* needs to be included here,
  * because of kmem_cache_t weirdness */
-#include "drbd_compat_wrappers.h"
+#include "drbd_wrappers.h"
 
 extern unsigned int minor_count;
 extern struct kmem_cache *drbd_request_cache;
