@@ -56,10 +56,6 @@
 #include "drbd_int.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 
-/* YES. We got an official device major from lanana
- */
-#define LANANA_DRBD_MAJOR 147
-
 struct after_state_chg_work {
 	struct drbd_work w;
 	drbd_state_t os;
@@ -85,7 +81,7 @@ MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, Lars Ellenberg <lars@linbit.co
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
 MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
-MODULE_ALIAS_BLOCKDEV_MAJOR(LANANA_DRBD_MAJOR);
+MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
 /* allow_open_on_secondary */
@@ -107,7 +103,6 @@ module_param(fault_devs,int,0644);      // bitmap of devices to insert faults on
 #endif
 
 // module parameter, defined
-unsigned int major_nr = LANANA_DRBD_MAJOR;
 unsigned int minor_count = 32;
 
 int allow_oos = 0;
@@ -2474,7 +2469,7 @@ STATIC void drbd_cleanup(void)
 
 	kfree(minor_table);
 
-	drbd_unregister_blkdev(LANANA_DRBD_MAJOR, DEVICE_NAME);
+	drbd_unregister_blkdev(DRBD_MAJOR, DEVICE_NAME);
 
 	printk(KERN_INFO DEVICE_NAME": module cleanup done.\n");
 }
@@ -2505,14 +2500,14 @@ drbd_dev *drbd_new_device(int minor)
 	set_disk_ro( disk, TRUE );
 
 	disk->queue = q;
-	disk->major = MAJOR_NR;
+	disk->major = DRBD_MAJOR;
 	disk->first_minor = minor;
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, DEVICE_NAME "%d", minor);
 	disk->private_data = mdev;
 	add_disk(disk);
 
-	mdev->this_bdev = bdget(MKDEV(MAJOR_NR,minor));
+	mdev->this_bdev = bdget(MKDEV(DRBD_MAJOR,minor));
 	// we have no partitions. we contain only ourselves.
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
 
@@ -2604,11 +2599,11 @@ int __init drbd_init(void)
 		return err;
 	}
 
-	err = register_blkdev(MAJOR_NR, DEVICE_NAME);
+	err = register_blkdev(DRBD_MAJOR, DEVICE_NAME);
 	if (err) {
 		printk(KERN_ERR DEVICE_NAME
 		       ": unable to register block device major %d\n",
-		       MAJOR_NR);
+		       DRBD_MAJOR);
 		return err;
 	}
 
@@ -2649,7 +2644,7 @@ int __init drbd_init(void)
 	       "Version: " REL_VERSION " (api:%d/proto:%d)\n",
 	       API_VERSION,PRO_VERSION);
 	printk(KERN_INFO DEVICE_NAME ": %s\n", drbd_buildtag());
-	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", MAJOR_NR);
+	printk(KERN_INFO DEVICE_NAME": registered as block device major %d\n", DRBD_MAJOR);
 	printk(KERN_INFO DEVICE_NAME": minor_table @ 0x%p\n", minor_table);
 
 	return 0; // Success!
