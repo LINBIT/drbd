@@ -2592,6 +2592,7 @@ struct drbd_conf *drbd_new_device(int minor)
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
 
 	blk_queue_make_request(q, drbd_make_request_26);
+	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 	q->queue_lock = &mdev->req_lock; /* needed since we use */
 		/* plugging on a queue, that actually has no requests! */
