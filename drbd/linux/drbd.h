@@ -88,8 +88,8 @@ enum after_sb_handler {
 /* KEEP the order, do not delete or insert!
  * Or change the API_VERSION, too. */
 enum ret_codes {
-	RetCodeBase=100,
-	NoError,         // 101 ...
+	RetCodeBase = 100,
+	NoError,         /* 101 ... */
 	LAAlreadyInUse,
 	OAAlreadyInUse,
 	LDNameInvalid,
@@ -117,7 +117,7 @@ enum ret_codes {
 	UnknownMandatoryTag,
 	MinorNotKnown,
 	StateNotAllowed,
-	GotSignal, // EINTR
+	GotSignal, /* EINTR */
 	NoResizeDuringResync,
 	APrimaryNodeNeeded,
 	SyncAfterInvalid,
@@ -148,12 +148,12 @@ enum ret_codes {
 #define DRBD_PROT_B   2
 #define DRBD_PROT_C   3
 
-typedef enum {
-	Unknown=0,
-	Primary=1,     // role
-	Secondary=2,   // role
-	role_mask=3,
-} drbd_role_t;
+enum drbd_role {
+	Unknown = 0,
+	Primary = 1,     /* role */
+	Secondary = 2,   /* role */
+	role_mask = 3,
+};
 
 /* The order of these constants is important.
  * The lower ones (<WFReportParams) indicate
@@ -164,44 +164,54 @@ typedef enum {
  * Skipped should be < Connected,
  * so writes on a Primary after Skipped sync are not mirrored either ?
  */
-typedef enum {
+enum drbd_conns {
 	StandAlone,
-	Disconnecting,  // Temporal state on the way to StandAlone.
-	Unconnected,    // >= Unconnected -> inc_net() succeeds
-	Timeout,	/// These temporal states are all used on the way
-	BrokenPipe,	/// from >= Connected to Unconnected.
-	NetworkFailure,	/// The 'disconnect reason' states
-	ProtocolError,  ///
-	TearDown,	/// I do not allow to change beween them.
+	Disconnecting,  /* Temporal state on the way to StandAlone. */
+	Unconnected,    /* >= Unconnected -> inc_net() succeeds */
+
+	/* These temporal states are all used on the way
+	 * from >= Connected to Unconnected.
+	 * The 'disconnect reason' states
+	 * I do not allow to change beween them. */
+	Timeout,
+	BrokenPipe,
+	NetworkFailure,
+	ProtocolError,
+	TearDown,
+
 	WFConnection,
-	WFReportParams, // we have a socket
-	Connected,      // we have introduced each other
-	StartingSyncS,  // starting full sync by IOCTL.
-	StartingSyncT,  // stariing full sync by IOCTL.
+	WFReportParams, /* we have a socket */
+	Connected,      /* we have introduced each other */
+	StartingSyncS,  /* starting full sync by IOCTL. */
+	StartingSyncT,  /* stariing full sync by IOCTL. */
 	WFBitMapS,
 	WFBitMapT,
 	WFSyncUUID,
-	SyncSource,     // The distance between original state and pause
-	SyncTarget,     // state must be the same for source and target. (+2)
-	PausedSyncS,    // All SyncStates are tested with this comparison
-	PausedSyncT,    // xx >= SyncSource && xx <= PausedSyncT
-	conn_mask=31
-} drbd_conns_t;
 
-typedef enum {
+	/* All SyncStates are tested with this comparison
+	 * xx >= SyncSource && xx <= PausedSyncT */
+	SyncSource,
+	SyncTarget,
+	PausedSyncS,
+	PausedSyncT,
+	conn_mask = 31
+};
+
+enum drbd_disk_state {
 	Diskless,
 	Attaching,      /* In the process of reading the meta-data */
 	Failed,         /* Becomes Diskless as soon as we told it the peer */
 			/* when >= Failed it is legal to access mdev->bc */
-	Negotiating,    /* Late attaching state, we need to talk to the peer... */
+	Negotiating,    /* Late attaching state, we need to talk to the peer */
 	Inconsistent,
 	Outdated,
 	DUnknown,       /* Only used for the peer, never for myself */
 	Consistent,     /* Might be Outdated, might be UpToDate ... */
 	UpToDate,       /* Only this disk state allows applications' IO ! */
-	disk_mask=15
-} drbd_disks_t;
+	disk_mask = 15
+};
 
+union drbd_state_t {
 /* According to gcc's docs is the ...
  * The order of allocation of bit-fields within a unit (C90 6.5.2.1, C99 6.7.2.1).
  * Determined by ABI.
@@ -210,7 +220,6 @@ typedef enum {
  * the offsets of the bitfields still need to be swapped
  * on different endianess.
  */
-typedef union {
 	struct {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 		unsigned role : 2 ;   /* 3/4	 primary/secondary/unknown */
@@ -239,14 +248,14 @@ typedef union {
 #endif
 	};
 	unsigned int i;
-} drbd_state_t;
+};
 
-typedef enum {
+enum set_st_err {
 	SS_CW_NoNeed = 4,
 	SS_CW_Success = 3,
 	SS_NothingToDo = 2,
 	SS_Success = 1,
-	SS_UnknownError = 0, // Used to sleep longer in _drbd_request_state
+	SS_UnknownError = 0, /* Used to sleep longer in _drbd_request_state */
 	SS_TwoPrimaries = -1,
 	SS_NoUpToDateDisk = -2,
 	SS_BothInconsistent = -4,
@@ -266,13 +275,13 @@ typedef enum {
 	SS_InTransientState = -18,  /* Retry after the next state change */
 	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
 	SS_AfterLastError = -20,    /* Keep this at bottom */
-} set_st_err_t;
+};
 
 /* from drbd_strings.c */
-extern const char* conns_to_name(drbd_conns_t);
-extern const char* roles_to_name(drbd_role_t);
-extern const char* disks_to_name(drbd_disks_t);
-extern const char* set_st_err_name(set_st_err_t);
+extern const char *conns_to_name(enum drbd_conns);
+extern const char *roles_to_name(enum drbd_role);
+extern const char *disks_to_name(enum drbd_disk_state);
+extern const char *set_st_err_name(enum set_st_err);
 
 #ifndef BDEVNAME_SIZE
 # define BDEVNAME_SIZE 32
@@ -286,7 +295,7 @@ enum MetaDataFlags {
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
 	__MDF_WasUpToDate,
-	__MDF_PeerOutDated // or less/lower.
+	__MDF_PeerOutDated /* or worse (e.g. invalid). */
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
@@ -300,9 +309,9 @@ enum UuidIndex {
 	Bitmap,
 	History_start,
 	History_end,
-	UUID_SIZE,      // In the packet we store the number of dirty bits here
-	UUID_FLAGS,     // In the packet we store flags here.
-	EXT_UUID_SIZE   // Everything.
+	UUID_SIZE,      /* nl-packet: number of dirty bits */
+	UUID_FLAGS,     /* nl-packet: flags */
+	EXT_UUID_SIZE   /* Everything. */
 };
 
 #define UUID_JUST_CREATED ((__u64)4)
@@ -315,13 +324,13 @@ enum UuidIndex {
 #define DRBD_MD_INDEX_FLEX_EXT -2
 #define DRBD_MD_INDEX_FLEX_INT -3
 
-// Start of the new netlink/connector stuff
+/* Start of the new netlink/connector stuff */
 
 #define DRBD_NL_CREATE_DEVICE 0x01
 #define DRBD_NL_SET_DEFAULTS  0x02
 
-// The following line should be moved over to linux/connector.h
-// when the time comes
+/* The following line should be moved over to linux/connector.h
+ * when the time comes */
 #define CN_IDX_DRBD			0x4
 #define CN_VAL_DRBD			0x1
 
@@ -335,8 +344,8 @@ struct drbd_nl_cfg_req {
 struct drbd_nl_cfg_reply {
 	int packet_type;
 	int minor;
-	int ret_code; // enum ret_code or set_st_err_t
-	unsigned short tag_list[]; // only used with get_* calls
+	int ret_code; /* enum ret_code or set_st_err_t */
+	unsigned short tag_list[]; /* only used with get_* calls */
 };
 
 #endif

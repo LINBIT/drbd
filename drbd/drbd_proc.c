@@ -57,7 +57,7 @@ struct file_operations drbd_proc_fops = {
  *	[=====>..............] 33.5% (23456/123456)
  *	finish: 2:20:20 speed: 6,345 (6,456) K/sec
  */
-STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
+STATIC void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 {
 	unsigned long db, dt, dbdt, rt, rs_left;
 	unsigned int res;
@@ -75,17 +75,16 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 		seq_printf(seq, ".");
 	seq_printf(seq, "] ");
 
-	seq_printf(seq,"sync'ed:%3u.%u%% ", res / 10, res % 10);
+	seq_printf(seq, "sync'ed:%3u.%u%% ", res / 10, res % 10);
 	/* if more than 1 GB display in MB */
-	if (mdev->rs_total > 0x100000L) {
-		seq_printf(seq,"(%lu/%lu)M\n\t",
+	if (mdev->rs_total > 0x100000L)
+		seq_printf(seq, "(%lu/%lu)M\n\t",
 			    (unsigned long) Bit2KB(rs_left) >> 10,
 			    (unsigned long) Bit2KB(mdev->rs_total) >> 10 );
-	} else {
-		seq_printf(seq,"(%lu/%lu)K\n\t",
+	else
+		seq_printf(seq, "(%lu/%lu)K\n\t",
 			    (unsigned long) Bit2KB(rs_left),
 			    (unsigned long) Bit2KB(mdev->rs_total) );
-	}
 
 	/* see drivers/md/md.c
 	 * We do not want to overflow, so the order of operands and
@@ -105,7 +104,8 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 		return;
 	}
 
-	if (!dt) dt++;
+	if (!dt)
+		dt++;
 	db = mdev->rs_mark_left - rs_left;
 	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
 
@@ -116,31 +116,32 @@ STATIC void drbd_syncer_progress(struct Drbd_Conf* mdev, struct seq_file *seq)
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
 		seq_printf(seq, " speed: %ld,%03ld",
-			dbdt/1000,dbdt % 1000);
+			dbdt/1000, dbdt % 1000);
 	else
 		seq_printf(seq, " speed: %ld", dbdt);
 
 	/* mean speed since syncer started
 	 * we do account for PausedSync periods */
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
-	if (dt <= 0) dt=1;
+	if (dt <= 0)
+		dt = 1;
 	db = mdev->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	if (dbdt > 1000)
 		seq_printf(seq, " (%ld,%03ld)",
-			dbdt/1000,dbdt % 1000);
+			dbdt/1000, dbdt % 1000);
 	else
 		seq_printf(seq, " (%ld)", dbdt);
 
-	seq_printf(seq," K/sec\n");
+	seq_printf(seq, " K/sec\n");
 }
 
-#if 0
-STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
+#ifdef DRBD_DUMP_RESYNC_DETAIL
+void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
 
-	seq_printf(seq,"%5d %s %s\n",bme->rs_left,
+	seq_printf(seq, "%5d %s %s\n", bme->rs_left,
 		   bme->flags & BME_NO_WRITES ? "NO_WRITES" : "---------",
 		   bme->flags & BME_LOCKED ? "LOCKED" : "------"
 		   );
@@ -149,12 +150,12 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element * e)
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
-	int i,hole=0;
+	int i, hole = 0;
 	const char *sn;
-	drbd_dev *mdev;
+	struct drbd_conf *mdev;
 
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d)\n%s\n",
-		    API_VERSION,PRO_VERSION, drbd_buildtag());
+		    API_VERSION, PRO_VERSION, drbd_buildtag());
 
 	/*
 	  cs .. connection state
@@ -171,12 +172,12 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 	for (i = 0; i < minor_count; i++) {
 		mdev = minor_to_mdev(i);
-		if(!mdev) {
-			hole=1;
+		if (!mdev) {
+			hole = 1;
 			continue;
 		}
-		if( hole ) {
-			hole=0;
+		if (hole) {
+			hole = 0;
 			seq_printf( seq, "\n");
 		}
 
@@ -215,9 +216,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			);
 		}
 		if ( mdev->state.conn == SyncSource ||
-		     mdev->state.conn == SyncTarget ) {
-			drbd_syncer_progress(mdev,seq);
-		}
+		     mdev->state.conn == SyncTarget )
+			drbd_syncer_progress(mdev, seq);
 
 		if (inc_local_if_state(mdev, Failed)) {
 			lc_printf_stats(seq, mdev->resync);

@@ -1210,7 +1210,7 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -1225,7 +1225,7 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -1240,7 +1240,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == StandAlone &&
 	     state.disk == Diskless) {
@@ -1317,7 +1317,7 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 int print_state(unsigned int seq, int u __attribute((unused)),
 		struct drbd_nl_cfg_reply *reply)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 	char* str;
 	int synced = 0;
 
@@ -1370,7 +1370,7 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
@@ -1386,7 +1386,7 @@ int w_synced_state(unsigned int seq __attribute((unused)),
 		   int wait_after_sb,
 		   struct drbd_nl_cfg_reply *reply)
 {
-	drbd_state_t state;
+	union drbd_state_t state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {

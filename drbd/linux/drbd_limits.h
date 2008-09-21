@@ -42,12 +42,12 @@
    * more than one minute timeout is not usefull */
 #define DRBD_TIMEOUT_MIN 1
 #define DRBD_TIMEOUT_MAX 600
-#define DRBD_TIMEOUT_DEF 60       // 6 seconds
+#define DRBD_TIMEOUT_DEF 60       /* 6 seconds */
 
   /* active connection retries when WFConnection */
 #define DRBD_CONNECT_INT_MIN 1
 #define DRBD_CONNECT_INT_MAX 120
-#define DRBD_CONNECT_INT_DEF 10   //seconds
+#define DRBD_CONNECT_INT_DEF 10   /* seconds */
 
   /* keep-alive probes when idle */
 #define DRBD_PING_INT_MIN 1
@@ -90,7 +90,7 @@
   /* FIXME allow rate to be zero? */
 #define DRBD_RATE_MIN 1
 #define DRBD_RATE_MAX 700000
-#define DRBD_RATE_DEF 250  // kb/second
+#define DRBD_RATE_DEF 250  /* kb/second */
 
   /* less than 7 would hit performance unneccessarily.
    * 3833 is the largest prime that still does fit
@@ -112,7 +112,7 @@
 /* DRBD_MAX_SECTORS */
 #define DRBD_DISK_SIZE_SECT_MIN  0
 #define DRBD_DISK_SIZE_SECT_MAX  (8 * (2LLU << 30))
-#define DRBD_DISK_SIZE_SECT_DEF  0 // = disabled = no user size...
+#define DRBD_DISK_SIZE_SECT_DEF  0 /* = disabled = no user size... */
 
 #define DRBD_ON_IO_ERROR_DEF PassOn
 #define DRBD_FENCING_DEF DontCare

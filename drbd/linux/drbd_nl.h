@@ -1,7 +1,7 @@
 /*
    PAKET( name,
-          TYPE ( pn, pr, member )
-          ...
+	  TYPE ( pn, pr, member )
+	  ...
    )
 
    You may never reissue one of the pn arguments
@@ -29,7 +29,7 @@ NL_PACKET(disk_conf, 3,
 	NL_BIT(		54,	T_MAY_IGNORE,	no_md_flush)
 )
 
-NL_PACKET(detach, 4,)
+NL_PACKET(detach, 4, )
 
 NL_PACKET(net_conf, 5,
 	NL_STRING(	8,	T_MANDATORY,	my_addr,	128)
@@ -96,8 +96,8 @@ NL_PACKET(call_helper, 20,
 	NL_STRING(	38,	T_MAY_IGNORE,	helper,		32)
 )
 
-// Tag nr 42 already allocated in drbd-8.1 development.
-// Packet numbers 21 and 22 already in drbd-8.1 development.
+/* Tag nr 42 already allocated in drbd-8.1 development.
+ * Packet numbers 21 and 22 already in drbd-8.1 development. */
 
 NL_PACKET(sync_progress, 23,
 	NL_INTEGER(	43,	T_MAY_IGNORE,	sync_progress)

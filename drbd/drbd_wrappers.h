@@ -14,7 +14,7 @@
 #endif
 
 /* see get_sb_bdev and bd_claim */
-extern char* drbd_sec_holder;
+extern char *drbd_sec_holder;
 
 static inline sector_t drbd_get_hardsect(struct block_device *bdev)
 {
@@ -29,15 +29,15 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(drbd_dev *mdev,
+static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 					sector_t size)
 {
 	/* set_capacity(mdev->this_bdev->bd_disk, size); */
-	set_capacity(mdev->vdisk,size);
+	set_capacity(mdev->vdisk, size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
 
-#define drbd_bio_uptodate(bio) bio_flagged(bio,BIO_UPTODATE)
+#define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 
 static inline int drbd_bio_has_active_page(struct bio *bio)
 {
@@ -107,11 +107,13 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(drbd_dev *mdev, int fault_type, struct bio *bio)
+static inline void drbd_generic_make_request(struct drbd_conf *mdev,
+					     int fault_type, struct bio *bio)
 {
 	__release(local);
 	if (!bio->bi_bdev) {
-		printk(KERN_ERR DEVICE_NAME "%d: drbd_generic_make_request: bio->bi_bdev == NULL\n",
+		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
+				"bio->bi_bdev == NULL\n",
 		       mdev_to_minor(mdev));
 		dump_stack();
 		bio_endio(bio, -ENODEV);
@@ -124,7 +126,7 @@ static inline void drbd_generic_make_request(drbd_dev *mdev, int fault_type, str
 		generic_make_request(bio);
 }
 
-static inline void drbd_plug_device(drbd_dev *mdev)
+static inline void drbd_plug_device(struct drbd_conf *mdev)
 {
 	struct request_queue *q;
 	q = bdev_get_queue(mdev->this_bdev);
@@ -134,10 +136,10 @@ static inline void drbd_plug_device(drbd_dev *mdev)
 /* XXX the check on !blk_queue_plugged is redundant,
  * implicitly checked in blk_plug_device */
 
-	if(!blk_queue_plugged(q)) {
+	if (!blk_queue_plugged(q)) {
 		blk_plug_device(q);
 		del_timer(&q->unplug_timer);
-		// unplugging should not happen automatically...
+		/* unplugging should not happen automatically... */
 	}
 	spin_unlock_irq(q->queue_lock);
 }
@@ -155,7 +157,7 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 {
 	int ret = unregister_blkdev(major,name);
 	if (ret)
-		printk(KERN_ERR DEVICE_NAME": unregister of device failed\n");
+		printk(KERN_ERR "drbd: unregister of device failed\n");
 }
 #else
 #define drbd_unregister_blkdev unregister_blkdev
@@ -254,11 +256,14 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	// "hmac(xxx)" is in alg_name we need that xxx.
 	closing_bracket = strchr(alg_name,')');
-	if(!closing_bracket) return ERR_PTR(-ENOENT);
-	if(closing_bracket-alg_name < 6) return ERR_PTR(-ENOENT);
+	if (!closing_bracket)
+		return ERR_PTR(-ENOENT);
+	if (closing_bracket-alg_name < 6)
+		return ERR_PTR(-ENOENT);
 
 	ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
-	if(!ch) return ERR_PTR(-ENOMEM);
+	if (!ch)
+		return ERR_PTR(-ENOMEM);
 
 	*closing_bracket = 0;
 	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
@@ -295,6 +300,8 @@ crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
 
 static inline void crypto_free_hash(struct crypto_hash *tfm)
 {
+	if (!tfm)
+		return;
 	crypto_free_tfm(tfm->base);
 	kfree(tfm);
 }
@@ -314,8 +321,9 @@ static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
 #ifdef NEED_BACKPORT_OF_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
-	void *rv = kmalloc(size,flags);
-	if(rv) memset(rv,0,size);
+	void *rv = kmalloc(size, flags);
+	if (rv)
+		memset(rv, 0, size);
 
 	return rv;
 }

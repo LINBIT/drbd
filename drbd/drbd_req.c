@@ -35,10 +35,10 @@
 
 /* outside of the ifdef
  * because of the _print_rq_state(,FIXME) in barrier_acked */
-STATIC void _print_rq_state(drbd_request_t *req, const char *txt)
+STATIC void _print_rq_state(struct drbd_request *req, const char *txt)
 {
 	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
@@ -59,11 +59,11 @@ STATIC void _print_rq_state(drbd_request_t *req, const char *txt)
 	     conns_to_name(mdev->state.conn));
 }
 
-//#define VERBOSE_REQUEST_CODE
+/* #define VERBOSE_REQUEST_CODE */
 #if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
-STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
+STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const int rw = (req->master_bio == NULL ||
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
@@ -77,7 +77,8 @@ STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 		[send_canceled] = "send_canceled",
 		[send_failed] = "send_failed",
 		[handed_over_to_network] = "handed_over_to_network",
-		[connection_lost_while_pending] = "connection_lost_while_pending",
+		[connection_lost_while_pending] =
+					"connection_lost_while_pending",
 		[recv_acked_by_peer] = "recv_acked_by_peer",
 		[write_acked_by_peer] = "write_acked_by_peer",
 		[neg_acked] = "neg_acked",
@@ -93,16 +94,18 @@ STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 }
 
 # ifdef ENABLE_DYNAMIC_TRACE
-#  define print_rq_state(R,T) MTRACE(TraceTypeRq,TraceLvlMetrics,_print_rq_state(R,T);)
-#  define print_req_mod(T,W)  MTRACE(TraceTypeRq,TraceLvlMetrics,_print_req_mod(T,W);)
+#  define print_rq_state(R, T) \
+	MTRACE(TraceTypeRq, TraceLvlMetrics, _print_rq_state(R, T);)
+#  define print_req_mod(T, W)  \
+	MTRACE(TraceTypeRq, TraceLvlMetrics, _print_req_mod(T, W);)
 # else
-#  define print_rq_state(R,T) _print_rq_state(R,T)
-#  define print_req_mod(T,W)  _print_req_mod(T,W)
+#  define print_rq_state(R, T) _print_rq_state(R, T)
+#  define print_req_mod(T, W)  _print_req_mod(T, W)
 # endif
 
 #else
-#define print_rq_state(R,T)
-#define print_req_mod(T,W)
+#define print_rq_state(R, T)
+#define print_req_mod(T, W)
 #endif
 
 /* We only support diskstats for 2.6.16 and up.
@@ -116,7 +119,7 @@ STATIC void _print_req_mod(drbd_request_t *req,drbd_req_event_t what)
 #else
 
 /* Update disk stats at start of I/O request */
-static inline void _drbd_start_io_acct(drbd_dev *mdev, drbd_request_t *req, struct bio *bio)
+static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
 {
 	const int rw = bio_data_dir(bio);
 
@@ -128,7 +131,7 @@ static inline void _drbd_start_io_acct(drbd_dev *mdev, drbd_request_t *req, stru
 }
 
 /* Update disk stats when completing request upwards */
-static inline void _drbd_end_io_acct(drbd_dev *mdev, drbd_request_t *req)
+static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
 {
 	int rw = bio_data_dir(req->master_bio);
 	unsigned long duration = jiffies - req->start_time;
@@ -141,7 +144,7 @@ static inline void _drbd_end_io_acct(drbd_dev *mdev, drbd_request_t *req)
 
 #endif
 
-static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
+static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
 	/* if it was a write, we may have to set the corresponding
@@ -159,14 +162,11 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 		 * (local only or remote failed).
 		 * Other places where we set out-of-sync:
 		 * READ with local io-error */
-		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK)) {
-			drbd_set_out_of_sync(mdev,req->sector,req->size);
-		}
+		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK))
+			drbd_set_out_of_sync(mdev, req->sector, req->size);
 
-		if( (s & RQ_NET_OK) && (s & RQ_LOCAL_OK) &&
-		    (s & RQ_NET_SIS) ) {
-			drbd_set_in_sync(mdev,req->sector,req->size);
-		}
+		if ((s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && (s & RQ_NET_SIS))
+			drbd_set_in_sync(mdev, req->sector, req->size);
 
 		/* one might be tempted to move the drbd_al_complete_io
 		 * to the local io completion callback drbd_endio_pri.
@@ -179,12 +179,12 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 		 * we would forget to resync the corresponding extent.
 		 */
 		if (s & RQ_LOCAL_MASK) {
-			if (inc_local_if_state(mdev,Failed)) {
+			if (inc_local_if_state(mdev, Failed)) {
 				drbd_al_complete_io(mdev, req->sector);
 				dec_local(mdev);
 			} else {
 				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
-				     "but my Disk seems to have failed:(\n", 
+				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
 			}
 		}
@@ -218,7 +218,7 @@ static void _req_is_done(drbd_dev *mdev, drbd_request_t *req, const int rw)
 	}
 }
 
-static void queue_barrier(drbd_dev *mdev)
+static void queue_barrier(struct drbd_conf *mdev)
 {
 	struct drbd_barrier *b;
 
@@ -241,10 +241,11 @@ static void queue_barrier(drbd_dev *mdev)
 	set_bit(CREATE_BARRIER, &mdev->flags);
 }
 
-static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
+static void _about_to_complete_local_write(struct drbd_conf *mdev,
+	struct drbd_request *req)
 {
 	const unsigned long s = req->rq_state;
-	drbd_request_t *i;
+	struct drbd_request *i;
 	struct Tl_epoch_entry *e;
 	struct hlist_node *n;
 	struct hlist_head *slot;
@@ -266,12 +267,13 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 		 * there must be no conflicting requests, since
 		 * they must have been failed on the spot */
 #define OVERLAPS overlaps(sector, size, i->sector, i->size)
-		slot = tl_hash_slot(mdev,sector);
+		slot = tl_hash_slot(mdev, sector);
 		hlist_for_each_entry(i, n, slot, colision) {
 			if (OVERLAPS) {
-				ALERT("LOGIC BUG: completed: %p %llus +%u; other: %p %llus +%u\n",
+				ALERT("LOGIC BUG: completed: %p %llus +%u; "
+				      "other: %p %llus +%u\n",
 				      req, (unsigned long long)sector, size,
-				      i,   (unsigned long long)i->sector, i->size);
+				      i, (unsigned long long)i->sector, i->size);
 			}
 		}
 
@@ -289,7 +291,7 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 		 * we just have to do a wake_up.  */
 #undef OVERLAPS
 #define OVERLAPS overlaps(sector, size, e->sector, e->size)
-		slot = ee_hash_slot(mdev,req->sector);
+		slot = ee_hash_slot(mdev, req->sector);
 		hlist_for_each_entry(e, n, slot, colision) {
 			if (OVERLAPS) {
 				wake_up(&mdev->misc_wait);
@@ -300,7 +302,8 @@ static void _about_to_complete_local_write(drbd_dev *mdev, drbd_request_t *req)
 #undef OVERLAPS
 }
 
-static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
+static void _complete_master_bio(struct drbd_conf *mdev,
+	struct drbd_request *req, int error)
 {
 	dump_bio(mdev, req->master_bio, 1);
 	bio_endio(req->master_bio, error);
@@ -308,10 +311,10 @@ static void _complete_master_bio(drbd_dev *mdev, drbd_request_t *req, int error)
 	dec_ap_bio(mdev);
 }
 
-void _req_may_be_done(drbd_request_t *req, int error)
+void _req_may_be_done(struct drbd_request *req, int error)
 {
 	const unsigned long s = req->rq_state;
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	int rw;
 
 	print_rq_state(req, "_req_may_be_done");
@@ -326,9 +329,12 @@ void _req_may_be_done(drbd_request_t *req, int error)
 	 *	the receiver,
 	 *	the bio_endio completion callbacks.
 	 */
-	if (s & RQ_NET_QUEUED) return;
-	if (s & RQ_NET_PENDING) return;
-	if (s & RQ_LOCAL_PENDING) return;
+	if (s & RQ_NET_QUEUED)
+		return;
+	if (s & RQ_NET_PENDING)
+		return;
+	if (s & RQ_LOCAL_PENDING)
+		return;
 
 	if (req->master_bio) {
 		/* this is data_received (remote read)
@@ -354,13 +360,14 @@ void _req_may_be_done(drbd_request_t *req, int error)
 
 		/* remove the request from the conflict detection
 		 * respective block_id verification hash */
-		if (!hlist_unhashed(&req->colision)) hlist_del(&req->colision);
-		else D_ASSERT((s & RQ_NET_MASK) == 0);
+		if (!hlist_unhashed(&req->colision))
+			hlist_del(&req->colision);
+		else
+			D_ASSERT((s & RQ_NET_MASK) == 0);
 
-		if (rw == WRITE) {
-			/* for writes we need to do some extra housekeeping */
-			_about_to_complete_local_write(mdev,req);
-		}
+		/* for writes we need to do some extra housekeeping */
+		if (rw == WRITE)
+			_about_to_complete_local_write(mdev, req);
 
 		/* FIXME not yet implemented...
 		 * in case we got "suspended" (on_disconnect: freeze io)
@@ -375,7 +382,7 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		_drbd_end_io_acct(mdev, req);
 
 		_complete_master_bio(mdev,req,
-			  ok ? 0 : ( error ? error : -EIO ) );
+				     ok ? 0 : ( error ? error : -EIO ) );
 	} else {
 		/* only WRITE requests can end up here without a master_bio */
 		rw = WRITE;
@@ -386,7 +393,7 @@ void _req_may_be_done(drbd_request_t *req, int error)
 		 * or protocol C WriteAck,
 		 * or protocol A or B BarrierAck,
 		 * or killed from the transfer log due to connection loss. */
-		_req_is_done(mdev,req,rw);
+		_req_is_done(mdev, req, rw);
 	}
 	/* else: network part and not DONE yet. that is
 	 * protocol A or B, barrier ack still pending... */
@@ -415,12 +422,12 @@ void _req_may_be_done(drbd_request_t *req, int error)
  * second hlist_for_each_entry becomes a noop. This is even simpler than to
  * grab a reference on the net_conf, and check for the two_primaries flag...
  */
-STATIC int _req_conflicts(drbd_request_t *req)
+STATIC int _req_conflicts(struct drbd_request *req)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	const sector_t sector = req->sector;
 	const int size = req->size;
-	drbd_request_t *i;
+	struct drbd_request *i;
 	struct Tl_epoch_entry *e;
 	struct hlist_node *n;
 	struct hlist_head *slot;
@@ -439,11 +446,12 @@ STATIC int _req_conflicts(drbd_request_t *req)
 	BUG_ON(mdev->tl_hash == NULL);
 
 #define OVERLAPS overlaps(i->sector, i->size, sector, size)
-	slot = tl_hash_slot(mdev,sector);
+	slot = tl_hash_slot(mdev, sector);
 	hlist_for_each_entry(i, n, slot, colision) {
 		if (OVERLAPS) {
-			ALERT("%s[%u] Concurrent local write detected!"
-			      " [DISCARD L] new: %llus +%u; pending: %llus +%u\n",
+			ALERT("%s[%u] Concurrent local write detected! "
+			      "[DISCARD L] new: %llus +%u; "
+			      "pending: %llus +%u\n",
 			      current->comm, current->pid,
 			      (unsigned long long)sector, size,
 			      (unsigned long long)i->sector, i->size);
@@ -451,16 +459,17 @@ STATIC int _req_conflicts(drbd_request_t *req)
 		}
 	}
 
-	if(mdev->ee_hash_s) {
+	if (mdev->ee_hash_s) {
 		/* now, check for overlapping requests with remote origin */
 		BUG_ON(mdev->ee_hash == NULL);
 #undef OVERLAPS
 #define OVERLAPS overlaps(e->sector, e->size, sector, size)
-		slot = ee_hash_slot(mdev,sector);
+		slot = ee_hash_slot(mdev, sector);
 		hlist_for_each_entry(e, n, slot, colision) {
 			if (OVERLAPS) {
 				ALERT("%s[%u] Concurrent remote write detected!"
-				      " [DISCARD L] new: %llus +%u; pending: %llus +%u\n",
+				      " [DISCARD L] new: %llus +%u; "
+				      "pending: %llus +%u\n",
 				      current->comm, current->pid,
 				      (unsigned long long)sector, size,
 				      (unsigned long long)e->sector, e->size);
@@ -470,13 +479,13 @@ STATIC int _req_conflicts(drbd_request_t *req)
 	}
 #undef OVERLAPS
 
-  out_no_conflict:
+out_no_conflict:
 	/* this is like it should be, and what we expected.
 	 * our users do behave after all... */
 	dec_net(mdev);
 	return 0;
 
-  out_conflict:
+out_conflict:
 	dec_net(mdev);
 	return 1;
 }
@@ -496,18 +505,17 @@ STATIC int _req_conflicts(drbd_request_t *req)
  * Though I think it is likely that we break this again into many
  * static inline void _req_mod_ ## what (req) ...
  */
-void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
+void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 {
-	drbd_dev *mdev = req->mdev;
+	struct drbd_conf *mdev = req->mdev;
 	MUST_HOLD(&mdev->req_lock);
 
-	if (error && ( bio_rw(req->master_bio) != READA ) ) {
-		ERR("got an _req_mod() errno of %d\n",error);
-	}
+	if (error && (bio_rw(req->master_bio) != READA))
+		ERR("got an _req_mod() errno of %d\n", error);
 
-	print_req_mod(req,what);
+	print_req_mod(req, what);
 
-	switch(what) {
+	switch (what) {
 	default:
 		ERR("LOGIC BUG in %s:%u\n", __FILE__ , __LINE__ );
 		return;
@@ -547,7 +555,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		dec_local(mdev);
 		break;
 
@@ -561,15 +569,15 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error.
 		 * FIXME see comment below in read_completed_with_error */
-		__drbd_chk_io_error(mdev,FALSE);
-		_req_may_be_done(req,error);
+		__drbd_chk_io_error(mdev, FALSE);
+		_req_may_be_done(req, error);
 		dec_local(mdev);
 		break;
 
 	case read_completed_with_error:
-		if (bio_rw(req->master_bio) != READA) {
-			drbd_set_out_of_sync(mdev,req->sector,req->size);
-		}
+		if (bio_rw(req->master_bio) != READA)
+			drbd_set_out_of_sync(mdev, req->sector, req->size);
+
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
@@ -577,7 +585,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		req->private_bio = NULL;
 		if (bio_rw(req->master_bio) == READA) {
 			/* it is legal to fail READA */
-			_req_may_be_done(req,error);
+			_req_may_be_done(req, error);
 			dec_local(mdev);
 			break;
 		}
@@ -598,7 +606,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		 * private bio then, and round the offset and size so
 		 * we get back enough data to be able to clear the bits again.
 		 */
-		__drbd_chk_io_error(mdev,FALSE);
+		__drbd_chk_io_error(mdev, FALSE);
 		dec_local(mdev);
 		/* NOTE: if we have no connection,
 		 * or know the peer has no good data either,
@@ -619,9 +627,9 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 
 		/* so we can verify the handle in the answer packet
 		 * corresponding hlist_del is in _req_may_be_done() */
-		hlist_add_head(&req->colision, ar_hash_slot(mdev,req->sector));
+		hlist_add_head(&req->colision, ar_hash_slot(mdev, req->sector));
 
-		set_bit(UNPLUG_REMOTE,&mdev->flags); /* why? */
+		set_bit(UNPLUG_REMOTE, &mdev->flags); /* why? */
 
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
@@ -635,7 +643,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		/* assert something? */
 		/* from drbd_make_request_common only */
 
-		hlist_add_head(&req->colision,tl_hash_slot(mdev,req->sector));
+		hlist_add_head(&req->colision, tl_hash_slot(mdev, req->sector));
 		/* corresponding hlist_del is in _req_may_be_done() */
 
 		/* NOTE
@@ -652,11 +660,13 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		 *
 		 * Add req to the (now) current epoch (barrier). */
 
-		/* see drbd_make_request_common just after it grabs the req_lock */
+		/* see drbd_make_request_common,
+		 * just after it grabs the req_lock */
 		D_ASSERT(test_bit(CREATE_BARRIER, &mdev->flags) == 0);
 
 		req->epoch = mdev->newest_barrier->br_number;
-		list_add_tail(&req->tl_requests,&mdev->newest_barrier->requests);
+		list_add_tail(&req->tl_requests,
+				&mdev->newest_barrier->requests);
 
 		/* increment size of current epoch */
 		mdev->newest_barrier->n_req++;
@@ -683,12 +693,12 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		/* fall through */
 	case send_failed:
-		/* real cleanup will be done from tl_clear.  just update flags so
-		 * it is no longer marked as on the worker queue */
+		/* real cleanup will be done from tl_clear.  just update flags
+		 * so it is no longer marked as on the worker queue */
 		req->rq_state &= ~RQ_NET_QUEUED;
-		/* if we did it right, tl_clear should be scheduled only after this,
-		 * so this should not be necessary! */
-		_req_may_be_done(req,error);
+		/* if we did it right, tl_clear should be scheduled only after
+		 * this, so this should not be necessary! */
+		_req_may_be_done(req, error);
 		break;
 
 	case handed_over_to_network:
@@ -719,20 +729,21 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		 * "completed_ok" events came in, once we return from
 		 * _drbd_send_zc_bio (drbd_send_dblock), we have to check
 		 * whether it is done already, and end it.  */
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		break;
 
 	case connection_lost_while_pending:
 		/* transfer log cleanup after connection loss */
 		/* assert something? */
-		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
+		if (req->rq_state & RQ_NET_PENDING)
+			dec_ap_pending(mdev);
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_DONE;
 		/* if it is still queued, we may not complete it here.
 		 * it will be canceled soon.
 		 * FIXME we should change the code so this can not happen. */
 		if (!(req->rq_state & RQ_NET_QUEUED))
-			_req_may_be_done(req,error);
+			_req_may_be_done(req, error);
 		break;
 
 	case write_acked_by_peer_and_sis:
@@ -763,16 +774,17 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		break;
 
 	case neg_acked:
 		/* assert something? */
-		if (req->rq_state & RQ_NET_PENDING) dec_ap_pending(mdev);
+		if (req->rq_state & RQ_NET_PENDING)
+			dec_ap_pending(mdev);
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		/* FIXME THINK! is it DONE now, or is it not? */
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		/* else: done by handed_over_to_network */
 		break;
 
@@ -781,11 +793,12 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 			/* barrier came in before all requests have been acked.
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
-			_print_rq_state(req, "FIXME (barrier_acked but pending)");
+			_print_rq_state(req,
+				"FIXME (barrier_acked but pending)");
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		break;
 
 	case data_received:
@@ -793,7 +806,7 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
-		_req_may_be_done(req,error);
+		_req_may_be_done(req, error);
 		break;
 	};
 }
@@ -805,15 +818,18 @@ void _req_mod(drbd_request_t *req, drbd_req_event_t what, int error)
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
-STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
+STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
-	if (mdev->state.disk == UpToDate) return 1;
-	if (mdev->state.disk >= Outdated) return 0;
-	if (mdev->state.disk <  Inconsistent) return 0;
-	// state.disk == Inconsistent   We will have a look at the BitMap
+	if (mdev->state.disk == UpToDate)
+		return 1;
+	if (mdev->state.disk >= Outdated)
+		return 0;
+	if (mdev->state.disk <  Inconsistent)
+		return 0;
+	/* state.disk == Inconsistent   We will have a look at the BitMap */
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
 	esector = sector + (size>>9) -1;
 
@@ -823,7 +839,7 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	return (0 == drbd_bm_count_bits(mdev,sbnr,ebnr));
+	return (0 == drbd_bm_count_bits(mdev, sbnr, ebnr));
 }
 
 /*
@@ -839,26 +855,25 @@ STATIC int drbd_may_do_local_read(drbd_dev *mdev, sector_t sector, int size)
  * application request is on the fly, so once we are positive about a "bad"
  * state, we know it won't get better during the lifetime of this request.
  *
- * In case we think we are ok, but "asynchronously" some interrupt or other thread
- * marks some operation as impossible, we are still ok, since we would just try
- * anyways, and then see that it does not work there and then.
+ * In case we think we are ok, but "asynchronously" some interrupt or other
+ * thread marks some operation as impossible, we are still ok, since we would
+ * just try anyways, and then see that it does not work there and then.
  */
 
-STATIC int
-drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
+STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 {
 	const int rw = bio_rw(bio);
 	const int size = bio->bi_size;
 	const sector_t sector = bio->bi_sector;
 	struct drbd_barrier *b = NULL;
-	drbd_request_t *req;
+	struct drbd_request *req;
 	int local, remote;
 	int err = -EIO;
 
 	/* allocate outside of all locks; get a "reference count" (ap_bio_cnt)
 	 * to avoid races with the disconnect/reconnect code.  */
 	inc_ap_bio(mdev);
-	req = drbd_req_new(mdev,bio);
+	req = drbd_req_new(mdev, bio);
 	if (!req) {
 		dec_ap_bio(mdev);
 		/* only pass the error to the upper layers.
@@ -880,7 +895,7 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 	} else {
 		/* READ || READA */
 		if (local) {
-			if (!drbd_may_do_local_read(mdev,sector,size)) {
+			if (!drbd_may_do_local_read(mdev, sector, size)) {
 				/* we could kick the syncer to
 				 * sync this extent asap, wait for
 				 * it, then continue locally.
@@ -902,16 +917,13 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 				 * local io stack.
 				 */
 
-/* XXX SHARED DISK mode
- * think this over again for two primaries */
-
 				local = 0;
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
 				dec_local(mdev);
 			}
 		}
-		remote = !local && mdev->state.pdsk >= UpToDate;//Consistent;
+		remote = !local && mdev->state.pdsk >= UpToDate;
 	}
 
 	/* If we have a disk, but a READA request is mapped to remote,
@@ -927,11 +939,11 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 		goto fail_and_free_req;
 	}
 
-	/* For WRITES going to the local disk, grab a reference on the target extent.
-	 * This waits for any resync activity in the corresponding resync
-	 * extent to finish, and, if necessary, pulls in the target extent into
-	 * the activity log, which involves further disk io because of transactional
-	 * on-disk meta data updates. */
+	/* For WRITES going to the local disk, grab a reference on the target
+	 * extent.  This waits for any resync activity in the corresponding
+	 * resync extent to finish, and, if necessary, pulls in the target
+	 * extent into the activity log, which involves further disk io because
+	 * of transactional on-disk meta data updates. */
 	if (rw == WRITE && local)
 		drbd_al_begin_io(mdev, sector);
 
@@ -952,11 +964,10 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && remote &&
 	    mdev->unused_spare_barrier == NULL &&
-	    test_bit(CREATE_BARRIER, &mdev->flags))
-	{
-  allocate_barrier:
-		b = kmalloc(sizeof(struct drbd_barrier),GFP_NOIO);
-		if(!b) {
+	    test_bit(CREATE_BARRIER, &mdev->flags)) {
+allocate_barrier:
+		b = kmalloc(sizeof(struct drbd_barrier), GFP_NOIO);
+		if (!b) {
 			ERR("Failed to alloc barrier.\n");
 			err = -ENOMEM;
 			goto fail_and_free_req;
@@ -971,9 +982,8 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 		remote = (mdev->state.pdsk == UpToDate ||
 			    ( mdev->state.pdsk == Inconsistent &&
 			      mdev->state.conn >= Connected ) );
-		if (!remote) {
+		if (!remote)
 			drbd_WARN("lost connection while grabbing the req_lock!\n");
-		}
 		if (!(local || remote)) {
 			ERR("IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
@@ -1032,8 +1042,10 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 
 	/* mark them early for readability.
 	 * this just sets some state flags. */
-	if (remote) _req_mod(req, to_be_send, 0);
-	if (local)  _req_mod(req, to_be_submitted, 0);
+	if (remote)
+		_req_mod(req, to_be_send, 0);
+	if (local)
+		_req_mod(req, to_be_submitted, 0);
 
 	/* check this request on the colison detection hash tables.
 	 * if we have a conflict, just complete it here.
@@ -1052,7 +1064,8 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 			dec_local(mdev);
 			local = 0;
 		}
-		if (remote) dec_ap_pending(mdev);
+		if (remote)
+			dec_ap_pending(mdev);
 		_drbd_end_io_acct(mdev, req);
 		/* THINK: do we want to fail it (-EIO), or pretend success? */
 		bio_endio(req->master_bio, 0);
@@ -1069,11 +1082,13 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		if (rw == WRITE) _req_mod(req,queue_for_net_write, 0);
-		else		 _req_mod(req,queue_for_net_read, 0);
+		if (rw == WRITE)
+			_req_mod(req, queue_for_net_write, 0);
+		else
+			_req_mod(req, queue_for_net_read, 0);
 	}
 	spin_unlock_irq(&mdev->req_lock);
-	if (b) kfree(b); /* if someone else has beaten us to it... */
+	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
@@ -1094,8 +1109,8 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
 
 	return 0;
 
-  fail_and_free_req:
-	if (b) kfree(b);
+fail_and_free_req:
+	kfree(b);
 	bio_endio(bio, err);
 	drbd_req_free(req);
 	return 0;
@@ -1106,18 +1121,21 @@ drbd_make_request_common(drbd_dev *mdev, struct bio *bio)
  * return 1
  * otherwise return 0
  */
-static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
+static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 {
-	// Unconfigured
+	/* Unconfigured */
 	if (mdev->state.conn == Disconnecting &&
 	    mdev->state.disk == Diskless)
 		return 1;
 
 	if (mdev->state.role != Primary &&
 		( !allow_oos || is_write) ) {
-		if (DRBD_ratelimit(5*HZ,5)) {
-			ERR("Process %s[%u] tried to %s; since we are not in Primary state, we cannot allow this\n",
-			    current->comm, current->pid, is_write ? "WRITE" : "READ");
+		if (DRBD_ratelimit(5*HZ, 5)) {
+			ERR("Process %s[%u] tried to %s; "
+			    "since we are not in Primary state, "
+			    "we cannot allow this\n",
+			    current->comm, current->pid,
+			    is_write ? "WRITE" : "READ");
 		}
 		return 1;
 	}
@@ -1132,9 +1150,8 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 	 * the connection *after* we test for the cstate.
 	 */
 	if (mdev->state.disk < UpToDate && mdev->state.pdsk < UpToDate) {
-		if (DRBD_ratelimit(5*HZ,5)) {
+		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sorry, I have no access to good data anymore.\n");
-		}
 		/*
 		 * FIXME suspend, loop waiting on cstate wait?
 		 */
@@ -1146,8 +1163,8 @@ static int drbd_fail_request_early(drbd_dev* mdev, int is_write)
 
 int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 {
-	unsigned int s_enr,e_enr;
-	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
+	unsigned int s_enr, e_enr;
+	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 
 	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
 		bio_endio(bio, -EPERM);
@@ -1173,7 +1190,6 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	 */
 	D_ASSERT(bio->bi_size > 0);
 	D_ASSERT( (bio->bi_size & 0x1ff) == 0);
-	// D_ASSERT(bio->bi_size <= q->max_segment_size); // wrong.
 	D_ASSERT(bio->bi_idx == 0);
 
 	/* to make some things easier, force allignment of requests within the
@@ -1181,12 +1197,12 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	s_enr = bio->bi_sector >> HT_SHIFT;
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> HT_SHIFT;
 
-	if(unlikely(s_enr != e_enr)) {
+	if (unlikely(s_enr != e_enr)) {
 	if (bio->bi_vcnt != 1 || bio->bi_idx != 0) {
 		/* rather error out here than BUG in bio_split */
 		ERR("bio would need to, but cannot, be split: "
 		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
-		    bio->bi_vcnt, bio->bi_idx, bio->bi_size, 
+		    bio->bi_vcnt, bio->bi_idx, bio->bi_size,
 		    (unsigned long long)bio->bi_sector);
 		bio_endio(bio, -EINVAL);
 		return 0;
@@ -1206,11 +1222,12 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		const int mask = sps -1;
 		const sector_t first_sectors = sps - (sect & mask);
 		bp = bio_split(bio, bio_split_pool, first_sectors);
-		drbd_make_request_26(q,&bp->bio1);
-		drbd_make_request_26(q,&bp->bio2);
+		drbd_make_request_26(q, &bp->bio1);
+		drbd_make_request_26(q, &bp->bio2);
 		bio_pair_release(bp);
 		return 0;
-	}}
+	}
+	}
 
 	return drbd_make_request_common(mdev,bio);
 }
@@ -1227,8 +1244,6 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
  * cross extent boundaries.  those are dealt with (bio_split) in
  * drbd_make_request_26.
  */
-/* FIXME for two_primaries,
- * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(struct request_queue *q,
 #ifdef HAVE_bvec_merge_data
 		struct bvec_merge_data *bvm,
@@ -1237,24 +1252,25 @@ int drbd_merge_bvec(struct request_queue *q,
 #endif
 		struct bio_vec *bvec)
 {
-	struct Drbd_Conf* mdev = (drbd_dev*) q->queuedata;
-	unsigned int bio_offset = (unsigned int)bvm->bi_sector << 9; // 32 bit
+	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
+	unsigned int bio_offset =
+		(unsigned int)bvm->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bvm->bi_size;
 	int limit, backing_limit;
 
-#if 1
-	limit = DRBD_MAX_SEGMENT_SIZE - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
-#else
-	limit = AL_EXTENT_SIZE - ((bio_offset & (AL_EXTENT_SIZE-1)) + bio_size);
-#endif
-	if (limit < 0) limit = 0;
+	limit = DRBD_MAX_SEGMENT_SIZE
+	      - ((bio_offset & (DRBD_MAX_SEGMENT_SIZE-1)) + bio_size);
+	if (limit < 0)
+		limit = 0;
 	if (bio_size == 0) {
-		if (limit <= bvec->bv_len) limit = bvec->bv_len;
+		if (limit <= bvec->bv_len)
+			limit = bvec->bv_len;
 	} else if (limit && inc_local(mdev)) {
-		struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
-		if(b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
+		struct request_queue * const b =
+			mdev->bc->backing_bdev->bd_disk->queue;
+		if (b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
 			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
-			limit = min(limit,backing_limit);
+			limit = min(limit, backing_limit);
 		}
 		dec_local(mdev);
 	}
