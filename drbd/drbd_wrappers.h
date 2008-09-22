@@ -214,11 +214,14 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	// "hmac(xxx)" is in alg_name we need that xxx.
 	closing_bracket = strchr(alg_name,')');
-	if(!closing_bracket) return NULL;
-	if(closing_bracket-alg_name < 6) return NULL;
+	if (!closing_bracket)
+		return ERR_PTR(-ENOENT);
+	if (closing_bracket-alg_name < 6)
+		return ERR_PTR(-ENOENT);
 
 	ch = kmalloc(sizeof(struct crypto_hash),GFP_KERNEL);
-	if(!ch) return NULL;
+	if (!ch)
+		return ERR_PTR(-ENOMEM);
 
 	*closing_bracket = 0;
 	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
@@ -226,7 +229,7 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 
 	if (ch->base == NULL) {
 		kfree(ch);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	return ch;
@@ -255,6 +258,8 @@ crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
 
 static inline void crypto_free_hash(struct crypto_hash *tfm)
 {
+	if (!tfm)
+		return;
 	crypto_free_tfm(tfm->base);
 	kfree(tfm);
 }
@@ -274,8 +279,9 @@ static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
 #ifdef NEED_BACKPORT_OF_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
-	void *rv = kmalloc(size,flags);
-	if(rv) memset(rv,0,size);
+	void *rv = kmalloc(size, flags);
+	if (rv)
+		memset(rv, 0, size);
 
 	return rv;
 }

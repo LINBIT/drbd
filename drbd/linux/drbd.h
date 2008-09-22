@@ -188,9 +188,7 @@ enum drbd_conns {
 	WFBitMapT,
 	WFSyncUUID,
 
-	/* The distance between original state and pause
-	 * state must be the same for source and target. (+2)
-	 * All SyncStates are tested with this comparison
+	/* All SyncStates are tested with this comparison
 	 * xx >= SyncSource && xx <= PausedSyncT */
 	SyncSource,
 	SyncTarget,

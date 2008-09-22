@@ -402,11 +402,12 @@ next_sector:
 			 * obscure reason; ( b == 0 ) would get the out-of-band
 			 * only accidentally right because of the "oddly sized"
 			 * adjustment below */
-			if ( drbd_bm_test_bit(mdev, bit+1) != 1 )
+			if (drbd_bm_test_bit(mdev, bit+1) != 1)
 				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
-			if ( (BM_BLOCK_SIZE<<align) <= size) align++;
+			if ((BM_BLOCK_SIZE << align) <= size)
+				align++;
 			i++;
 		}
 		/* if we merged some,

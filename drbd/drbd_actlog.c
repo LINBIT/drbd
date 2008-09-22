@@ -320,9 +320,9 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
 	struct al_transaction* buffer;
 	sector_t sector;
- 	int i,n,mx;
- 	unsigned int extent_nr;
- 	u32 xor_sum=0;
+	int i, n, mx;
+	unsigned int extent_nr;
+	u32 xor_sum = 0;
 
 	if (!inc_local(mdev)) {
 		ERR("inc_local() failed in w_al_write_transaction\n");
@@ -416,7 +416,7 @@ STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
 
 	rv = ( be32_to_cpu(b->magic) == DRBD_MAGIC );
 
-	for (i = 0; i < AL_EXTENTS_PT+1; i++)
+	for (i = 0; i < AL_EXTENTS_PT + 1; i++)
 		xor_sum ^= be32_to_cpu(b->updates[i].extent);
 	rv &= (xor_sum == be32_to_cpu(b->xor_sum));
 
@@ -461,7 +461,6 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 			return 0;
 		}
 		cnr = be32_to_cpu(buffer->tr_number);
-		/* INFO("index %d valid tnr=%d\n",i,cnr); */
 
 		if (cnr == -1)
 			overflow = 1;
@@ -559,8 +558,7 @@ STATIC void atodb_endio(struct bio *bio, int error)
 
 	/* strange behaviour of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
-	 * but do not return any error?!
-	 * do we want to WARN() on this? */
+	 * but do not return any error?! */
 	if (!error && !uptodate)
 		error = -EIO;
 
@@ -817,7 +815,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	struct lc_element *al_ext;
 	int i;
 
-	D_ASSERT( test_bit(__LC_DIRTY, &mdev->act_log->flags) );
+	D_ASSERT(test_bit(__LC_DIRTY, &mdev->act_log->flags));
 
 	for (i = 0; i < mdev->act_log->nr_elements; i++) {
 		al_ext = lc_entry(mdev->act_log, i);
@@ -903,7 +901,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 			 * since drbd_rs_begin_io() pulled it already in.
 			 *
 			 * But maybe an application write finished, and we set
-			 * something in outside the resync lru_cache in sync.
+			 * something outside the resync lru_cache in sync.
 			 */
 			int rs_left = drbd_bm_e_weight(mdev, enr);
 			if (ext->flags != 0) {
@@ -1400,7 +1398,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 			if (bm_ext->lce.lc_number == LC_FREE)
 				continue;
 			if (bm_ext->lce.lc_number == mdev->resync_wenr) {
-				INFO("dropping %u in drbd_rs_del_all, aparently"
+				INFO("dropping %u in drbd_rs_del_all, apparently"
 				     " got 'synced' by application io\n",
 				     mdev->resync_wenr);
 				D_ASSERT(!test_bit(BME_LOCKED, &bm_ext->flags));

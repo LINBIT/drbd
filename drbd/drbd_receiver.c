@@ -1946,7 +1946,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	    peer == UUID_JUST_CREATED) return 0;
 
 	*rule_nr = 2;
-	if ( (self == UUID_JUST_CREATED || self == (u64)0) &&
+	if ((self == UUID_JUST_CREATED || self == (u64)0) &&
 	     peer != UUID_JUST_CREATED) return -2;
 
 	*rule_nr = 3;
@@ -2153,12 +2153,12 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 STATIC int cmp_after_sb(enum after_sb_handler peer, enum after_sb_handler self)
 {
 	/* DiscardRemote - DiscardLocal is valid */
-	if ( (peer == DiscardRemote && self == DiscardLocal) ||
-	    (self == DiscardRemote && peer == DiscardLocal) ) return 0;
+	if ((peer == DiscardRemote && self == DiscardLocal) ||
+	    (self == DiscardRemote && peer == DiscardLocal)) return 0;
 
 	/* any other things with DiscardRemote or DiscardLocal are invalid */
-	if ( peer == DiscardRemote || peer == DiscardLocal ||
-	    self == DiscardRemote || self == DiscardLocal ) return 1;
+	if (peer == DiscardRemote || peer == DiscardLocal ||
+	    self == DiscardRemote || self == DiscardLocal) return 1;
 
 	/* everything else is valid if they are equal on both sides. */
 	if (peer == self)
@@ -2693,7 +2693,7 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, struct Drbd_Header *h)
 	 * with the data requests being unplugged */
 	drbd_tcp_quickack(mdev->data.socket);
 
-	return TRUE; /* cannot fail. */
+	return TRUE;
 }
 
 typedef int (*drbd_cmd_handler_f)(struct drbd_conf *, struct Drbd_Header *);
@@ -3504,8 +3504,8 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			ERR("meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
-			if ( mdev->meta.socket->sk->sk_rcvtimeo ==
-			    mdev->net_conf->ping_timeo*HZ/10 ) {
+			if (mdev->meta.socket->sk->sk_rcvtimeo ==
+			    mdev->net_conf->ping_timeo*HZ/10) {
 				ERR("PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
@@ -3518,8 +3518,8 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			goto reconnect;
 		}
 
-		if (received == expect && cmd == NULL ) {
-			if (unlikely( h->magic != BE_DRBD_MAGIC )) {
+		if (received == expect && cmd == NULL) {
+			if (unlikely( h->magic != BE_DRBD_MAGIC)) {
 				ERR("magic?? on meta m: 0x%lx c: %d l: %d\n",
 				    (long)be32_to_cpu(h->magic),
 				    h->command, h->length);

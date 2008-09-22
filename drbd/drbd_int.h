@@ -147,8 +147,6 @@ struct drbd_conf;
 #define D_DUMPI(A)
 #endif
 
-/* Info: do not remove the spaces around the "," before ##
- *	 Otherwise this is not portable from gcc-2.95 to gcc-3.3 */
 #define PRINTK(level, fmt, args...) \
 	printk(level "drbd%d: " fmt, \
 		mdev->minor , ##args)

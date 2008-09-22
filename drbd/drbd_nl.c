@@ -368,7 +368,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		}
 		set_disk_ro(mdev->vdisk, FALSE );
 		if (inc_local(mdev)) {
-			if ( ((mdev->state.conn < Connected ||
+			if (((mdev->state.conn < Connected ||
 			       mdev->state.pdsk <= Failed)
 			      && mdev->bc->md.uuid[Bitmap] == 0) || forced)
 				drbd_uuid_new_current(mdev);
@@ -378,8 +378,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		}
 	}
 
-	if ((new_role == Secondary) && inc_local(mdev) )
-	{
+	if ((new_role == Secondary) && inc_local(mdev)) {
 		drbd_al_to_on_disk_bm(mdev);
 		dec_local(mdev);
 	}
@@ -555,8 +554,8 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 
 	size = drbd_new_dev_size(mdev, mdev->bc);
 
-	if ( drbd_get_capacity(mdev->this_bdev) != size ||
-	    drbd_bm_capacity(mdev) != size ) {
+	if (drbd_get_capacity(mdev->this_bdev) != size ||
+	    drbd_bm_capacity(mdev) != size) {
 		int err;
 		err = drbd_bm_resize(mdev, size);
 		if (unlikely(err)) {
@@ -585,7 +584,6 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 
 	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
 
-	/* LGE: flexible device size!! is this the right thing to test? */
 	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
 		|| prev_size	   != mdev->bc->md.md_size_sect;
 
@@ -670,8 +668,8 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 	ERR_IF(mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;
 
-	if ( mdev->act_log &&
-	     mdev->act_log->nr_elements == mdev->sync_conf.al_extents )
+	if (mdev->act_log &&
+	    mdev->act_log->nr_elements == mdev->sync_conf.al_extents)
 		return 0;
 
 	in_use = 0;
@@ -1184,7 +1182,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if ( !(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
+	if (!(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
 		memcpy(new_conf, mdev->net_conf, sizeof(struct net_conf));
 		dec_net(mdev);
 	} else {
@@ -1376,7 +1374,6 @@ STATIC int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 			drbd_force_state(mdev, NS(conn, Disconnecting));
 			retcode = SS_Success;
 		}
-
 	}
 
 	if (retcode < SS_Success)

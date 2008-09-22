@@ -1232,8 +1232,6 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
  * cross extent boundaries.  those are dealt with (bio_split) in
  * drbd_make_request_26.
  */
-/* FIXME for two_primaries,
- * we should use DRBD_MAX_SEGMENT_SIZE instead of AL_EXTENT_SIZE */
 int drbd_merge_bvec(struct request_queue *q,
 #ifdef HAVE_bvec_merge_data
 		struct bvec_merge_data *bvm,

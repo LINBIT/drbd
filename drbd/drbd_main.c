@@ -69,13 +69,13 @@ int drbd_worker(struct Drbd_thread *);
 int drbd_asender(struct Drbd_thread *);
 
 int drbd_init(void);
-int drbd_open(struct inode *inode, struct file *file);
-int drbd_close(struct inode *inode, struct file *file);
-int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused);
-static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
+STATIC int drbd_open(struct inode *inode, struct file *file);
+STATIC int drbd_close(struct inode *inode, struct file *file);
+STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+STATIC static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags);
-int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
-void md_sync_timer_fn(unsigned long data);
+STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+STATIC void md_sync_timer_fn(unsigned long data);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -908,7 +908,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	}
 
-	if(inc_local(mdev)) {
+	if (inc_local(mdev)) {
 		u32 mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 						 MDF_ConnectedInd|MDF_WasUpToDate|
 						 MDF_PeerOutDated );
@@ -922,7 +922,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		if (mdev->state.disk > Outdated)       mdf |= MDF_WasUpToDate;
 		if (mdev->state.pdsk <= Outdated &&
 		    mdev->state.pdsk >= Inconsistent)  mdf |= MDF_PeerOutDated;
-		if( mdf != mdev->bc->md.flags) {
+		if (mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
 		}
@@ -964,7 +964,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	return rv;
 }
 
-int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct after_state_chg_work *ascw;
 
@@ -1002,7 +1002,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 {
 	enum fencing_policy fp;
 
-	if ( (os.conn != Connected && ns.conn == Connected) ) {
+	if (os.conn != Connected && ns.conn == Connected) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 		if (mdev->p_uuid)
 			mdev->p_uuid[UUID_FLAGS] &= ~((u64)2);
@@ -2098,7 +2098,7 @@ int drbd_open(struct inode *inode, struct file *file)
 	return rv;
 }
 
-int drbd_close(struct inode *inode, struct file *file)
+STATIC int drbd_close(struct inode *inode, struct file *file)
 {
 	/* do not use *file (May be NULL, in case of a unmount :-) */
 	struct drbd_conf *mdev;
@@ -2433,9 +2433,9 @@ STATIC void drbd_cleanup(void)
 			remove_proc_entry("drbd", NULL);
 		i = minor_count;
 		while (i--) {
-			struct drbd_conf        *mdev  = minor_to_mdev(i);
+			struct drbd_conf *mdev = minor_to_mdev(i);
 			struct gendisk  **disk = &mdev->vdisk;
-			struct request_queue **q    = &mdev->rq_queue;
+			struct request_queue **q = &mdev->rq_queue;
 
 			if (!mdev)
 				continue;
@@ -2599,7 +2599,6 @@ int __init drbd_init(void)
 	       THIS_MODULE, THIS_MODULE->module_core);
 #endif
 
-	/* FIXME should be a compile time assert */
 	if (sizeof(struct Drbd_HandShake_Packet) != 80) {
 		printk(KERN_ERR
 		       "drbd: never change the size or layout "
@@ -3122,7 +3121,7 @@ void drbd_md_set_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 void drbd_md_clear_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
-	if ( (mdev->bc->md.flags & flag) != 0 ) {
+	if ((mdev->bc->md.flags & flag) != 0) {
 		drbd_md_mark_dirty(mdev);
 		mdev->bc->md.flags &= ~flag;
 	}
@@ -3139,7 +3138,7 @@ void md_sync_timer_fn(unsigned long data)
 	drbd_queue_work_front(&mdev->data.work, &mdev->md_sync_work);
 }
 
-int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	drbd_WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);

@@ -38,7 +38,7 @@
 #include "drbd_int.h"
 #include "lru_cache.h" /* for lc_sprintf_stats */
 
-int drbd_proc_open(struct inode *inode, struct file *file);
+STATIC int drbd_proc_open(struct inode *inode, struct file *file);
 
 
 struct proc_dir_entry *drbd_proc;
@@ -230,7 +230,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-int drbd_proc_open(struct inode *inode, struct file *file)
+STATIC int drbd_proc_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, drbd_seq_show, PDE(inode)->data);
 }

@@ -144,7 +144,7 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 
 #if DUMP_MD >= 3
 /* debugging aid */
-void bm_end_info(struct drbd_conf *mdev, const char *where)
+STATIC void bm_end_info(struct drbd_conf *mdev, const char *where)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	size_t w = (b->bm_bits-1) >> LN2_BPL;
@@ -451,8 +451,8 @@ size_t drbd_bm_words(struct drbd_conf *mdev)
 /* merge number words from buffer into the bitmap starting at offset.
  * buffer[i] is expected to be little endian unsigned long.
  */
-void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
-			unsigned long *buffer )
+void drbd_bm_merge_lel(struct drbd_conf *mdev, size_t offset, size_t number,
+			unsigned long *buffer)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;
@@ -491,7 +491,7 @@ void drbd_bm_merge_lel( struct drbd_conf *mdev, size_t offset, size_t number,
  * buffer[i] will be little endian unsigned long.
  */
 void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
-		     unsigned long *buffer )
+		     unsigned long *buffer)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *bm;

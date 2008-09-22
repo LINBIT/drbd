@@ -38,9 +38,9 @@
 #ifdef NEED_BACKPORT_OF_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
-	void *rv = kmalloc(size,flags);
-	if(rv) memset(rv,0,size);
-
+	void *rv = kmalloc(size, flags);
+	if (rv)
+		memset(rv, 0, size);
 	return rv;
 }
 #endif
