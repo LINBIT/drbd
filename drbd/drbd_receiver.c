@@ -1142,25 +1142,41 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 
 	drbd_bump_write_ordering(mdev, WO_bdev_flush); /* to endio callback ?*/
 
-	e->flags &= ~EE_IS_BARRIER; /* This is no longer a barrier request. */
 	spin_lock(&mdev->epoch_lock);
 	epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 	spin_unlock(&mdev->epoch_lock);
 	if (epoch != e->epoch)
 		clear_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
 
+	/* prepare bio for re-submit,
+	 * re-init volatile members */
+	/* we still have a local reference,
+	 * inc_local was done in receive_Data. */
+	bio->bi_bdev = mdev->bc->backing_bdev;
 	bio->bi_sector = e->sector;
-	bio->bi_flags = 1UL << BIO_UPTODATE;
-	bio->bi_rw &= ~(1UL<<BIO_RW_BARRIER);
-	/* bio->bi_vcnt; */
-	bio->bi_idx = 0;
-	/* bio->bi_phys_segments; */
-	/* bio->bi_hw_segments; */
 	bio->bi_size = e->size;
-	/* bio->bi_hw_front_size */
-	/* bio->bi_hw_back_size */
+	bio->bi_idx = 0;
+
+	bio->bi_flags &= ~(BIO_POOL_MASK - 1);
+	bio->bi_flags |= 1 << BIO_UPTODATE;
+
+	/* don't know whether this is necessary: */
+	bio->bi_phys_segments = 0;
+	bio->bi_hw_segments = 0;
+	bio->bi_hw_front_size = 0;
+	bio->bi_hw_back_size = 0;
+	bio->bi_next = NULL;
+
+	/* these should be unchanged: */
+	/* bio->bi_end_io = drbd_endio_write_sec; */
+	/* bio->bi_vcnt = whatever; */
 
 	e->w.cb = e_end_block;
+
+	/* This is no longer a barrier request. */
+	e->flags &= ~EE_IS_BARRIER;
+	bio->bi_rw &= ~(1UL << BIO_RW_BARRIER);
+
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, bio);
 
 	return 1;
