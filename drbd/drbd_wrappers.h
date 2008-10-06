@@ -51,15 +51,57 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 	return 0;
 }
 
-/* bi_end_io handlers */
-extern void drbd_md_io_complete(struct bio *bio, int error);
-extern void drbd_endio_read_sec(struct bio *bio, int error);
-extern void drbd_endio_write_sec(struct bio *bio, int error);
-extern void drbd_endio_pri(struct bio *bio, int error);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+/* Before Linux-2.6.24 bie_endio() had the size of the bio as second argument.
+   See 6712ecf8f648118c3363c142196418f89a510b90 */
+#define bio_endio(B,E) bio_endio(B, (B)->bi_size, E)
+#define BIO_ENDIO_TYPE int
+#define BIO_ENDIO_ARGS(b,e) (b, unsigned int bytes_done, e)
+#define BIO_ENDIO_FN_START if (bio->bi_size) return 1
+#define BIO_ENDIO_FN_RETURN return 0
+#else
+#define BIO_ENDIO_TYPE void
+#define BIO_ENDIO_ARGS(b,e) (b,e)
+#define BIO_ENDIO_FN_START while(0) {}
+#define BIO_ENDIO_FN_RETURN return
+#endif
+
+// bi_end_io handlers
+extern BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
+/* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
+   ctor and a dtor */
+#define kmem_cache_create(N,S,A,F,C) kmem_cache_create(N,S,A,F,C,NULL)
+#endif
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,26)
 # undef HAVE_bvec_merge_data
 # define HAVE_bvec_merge_data 1
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+static inline void sg_set_page(struct scatterlist *sg, struct page *page,
+			       unsigned int len, unsigned int offset)
+{
+	sg->page   = page;
+	sg->offset = offset;
+        sg->length = len;
+}
+
+#define sg_init_table(S,N) ({})
+
+#ifdef NEED_SG_SET_BUF
+static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
+			      unsigned int buflen)
+{
+	sg_set_page(sg, virt_to_page(buf), buflen, offset_in_page(buf));
+}
+#endif
+
 #endif
 
 /*

@@ -62,10 +62,11 @@
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
-void drbd_md_io_complete(struct bio *bio, int error)
+BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_md_io *md_io;
 
+	BIO_ENDIO_FN_START;
 	/* error parameter ignored:
 	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
@@ -76,12 +77,13 @@ void drbd_md_io_complete(struct bio *bio, int error)
 	dump_internal_bio("Md", md_io->mdev, bio, 1);
 
 	complete(&md_io->event);
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-void drbd_endio_read_sec(struct bio *bio, int error) __releases(local)
+BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -91,6 +93,7 @@ void drbd_endio_read_sec(struct bio *bio, int error) __releases(local)
 	e = bio->bi_private;
 	mdev = e->mdev;
 
+	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -117,12 +120,13 @@ void drbd_endio_read_sec(struct bio *bio, int error) __releases(local)
 	       INFO("Moved EE (READ) to worker sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector, e->size, e);
 	       );
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-void drbd_endio_write_sec(struct bio *bio, int error) __releases(local)
+BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
 	struct Tl_epoch_entry *e = NULL;
@@ -136,6 +140,7 @@ void drbd_endio_write_sec(struct bio *bio, int error) __releases(local)
 	e = bio->bi_private;
 	mdev = e->mdev;
 
+	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
@@ -194,17 +199,21 @@ void drbd_endio_write_sec(struct bio *bio, int error) __releases(local)
 
 	wake_asender(mdev);
 	dec_local(mdev);
+
+	BIO_ENDIO_FN_RETURN;
 }
 
 /* read, readA or write requests on Primary comming from drbd_make_request
  */
-void drbd_endio_pri(struct bio *bio, int error)
+BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
 	struct drbd_conf *mdev = req->mdev;
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
+
+	BIO_ENDIO_FN_START;
 
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
@@ -225,6 +234,7 @@ void drbd_endio_pri(struct bio *bio, int error)
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	_req_mod(req, what, error);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
+	BIO_ENDIO_FN_RETURN;
 }
 
 int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)

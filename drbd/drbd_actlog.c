@@ -549,13 +549,14 @@ struct drbd_atodb_wait {
 	int                error;
 };
 
-STATIC void atodb_endio(struct bio *bio, int error)
+STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_atodb_wait *wc = bio->bi_private;
 	struct drbd_conf *mdev = wc->mdev;
 	struct page *page;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
+	BIO_ENDIO_FN_START;
 	/* strange behaviour of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
 	 * but do not return any error?! */
@@ -575,6 +576,8 @@ STATIC void atodb_endio(struct bio *bio, int error)
 	bio_put(bio);
 	mdev->bm_writ_cnt++;
 	dec_local(mdev);
+
+	BIO_ENDIO_FN_RETURN;
 }
 
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))

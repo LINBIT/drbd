@@ -532,11 +532,12 @@ void drbd_bm_set_all(struct drbd_conf *mdev)
 	spin_unlock_irq(&b->bm_lock);
 }
 
-STATIC void bm_async_io_complete(struct bio *bio, int error)
+static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_bitmap *b = bio->bi_private;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
+	BIO_ENDIO_FN_START;
 
 	/* strange behaviour of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
@@ -556,6 +557,8 @@ STATIC void bm_async_io_complete(struct bio *bio, int error)
 		wake_up(&b->bm_io_wait);
 
 	bio_put(bio);
+
+	BIO_ENDIO_FN_RETURN;
 }
 
 STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int page_nr, int rw) __must_hold(local)

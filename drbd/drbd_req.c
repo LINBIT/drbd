@@ -108,6 +108,16 @@ STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 #define print_req_mod(T, W)
 #endif
 
+/* We only support diskstats for 2.6.16 and up.
+ * see also commit commit a362357b6cd62643d4dda3b152639303d78473da
+ * Author: Jens Axboe <axboe@suse.de>
+ * Date:   Tue Nov 1 09:26:16 2005 +0100
+ *     [BLOCK] Unify the seperate read/write io stat fields into arrays */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,16)
+#define _drbd_start_io_acct(...) do {} while (0)
+#define _drbd_end_io_acct(...)   do {} while (0)
+#else
+
 /* Update disk stats at start of I/O request */
 static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
 {
@@ -131,6 +141,8 @@ static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request
 	disk_round_stats(mdev->vdisk);
 	mdev->vdisk->in_flight--;
 }
+
+#endif
 
 static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
 {

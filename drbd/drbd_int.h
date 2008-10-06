@@ -54,6 +54,23 @@
 
 #define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
 
+/* Compatibility for older kernels */
+#ifndef __acquires
+# ifdef __CHECKER__
+#  define __acquires(x)	__attribute__((context(x,0,1)))
+#  define __releases(x)	__attribute__((context(x,1,0)))
+#  define __acquire(x)	__context__(x,1)
+#  define __release(x)	__context__(x,-1)
+#  define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
+# else
+#  define __acquires(x)
+#  define __releases(x)
+#  define __acquire(x)	(void)0
+#  define __release(x)	(void)0
+#  define __cond_lock(x,c) (c)
+# endif
+#endif
+
 /* module parameter, defined in drbd_main.c */
 extern unsigned int minor_count;
 extern int allow_oos;
@@ -1364,7 +1381,13 @@ dump_packet(struct drbd_conf *mdev, struct socket *sock,
 /* drbd_req */
 extern int drbd_make_request_26(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(struct drbd_conf *mdev, struct drbd_request *req);
-extern int drbd_merge_bvec(struct request_queue *, struct bio *, struct bio_vec *);
+extern int drbd_merge_bvec(struct request_queue *q,
+#ifdef HAVE_bvec_merge_data
+		struct bvec_merge_data *bvm,
+#else
+		struct bio *bvm,
+#endif
+		struct bio_vec *bvec);
 extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
