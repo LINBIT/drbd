@@ -2797,13 +2797,17 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	enum fencing_policy fp;
 	union drbd_state_t os, ns;
 	int rv = SS_UnknownError;
+	unsigned int i;
 
-	D_ASSERT(mdev->state.conn < Connected);
 	if (mdev->state.conn == StandAlone) return;
+
 	/* FIXME verify that:
 	 * the state change magic prevents us from becoming >= Connected again
 	 * while we are still cleaning up.
 	 */
+	if (mdev->state.conn >= WFConnection)
+		ERR("ASSERT FAILED cstate = %s, expected < WFConnection\n",
+				conns_to_name(mdev->state.conn));
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
@@ -2890,15 +2894,32 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (os.conn == Disconnecting) {
-		wait_event( mdev->misc_wait, atomic_read(&mdev->net_cnt) == 0 );
+		struct hlist_head *h;
+		wait_event(mdev->misc_wait, atomic_read(&mdev->net_cnt) == 0);
 
+		/* we must not free the tl_hash
+		 * while application io is still on the fly */
+		wait_event(mdev->misc_wait, atomic_read(&mdev->ap_bio_cnt) == 0);
+
+		spin_lock_irq(&mdev->req_lock);
+		/* paranoia code */
+		for (h = mdev->ee_hash; h < mdev->ee_hash + mdev->ee_hash_s; h++)
+			if (h->first)
+				ERR("ASSERT FAILED ee_hash[%u].first == %p, expected NULL\n",
+						h - mdev->ee_hash, h->first);
 		kfree(mdev->ee_hash);
 		mdev->ee_hash = NULL;
 		mdev->ee_hash_s = 0;
 
+		/* paranoia code */
+		for (h = mdev->tl_hash; h < mdev->tl_hash + mdev->tl_hash_s; h++)
+			if (h->first)
+				ERR("ASSERT FAILED tl_hash[%u] == %p, expected NULL\n",
+						h - mdev->tl_hash, h->first);
 		kfree(mdev->tl_hash);
 		mdev->tl_hash = NULL;
 		mdev->tl_hash_s = 0;
+		spin_unlock_irq(&mdev->req_lock);
 
 		crypto_free_hash(mdev->cram_hmac_tfm);
 		mdev->cram_hmac_tfm = NULL;
@@ -2910,10 +2931,13 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 
 	/* they do trigger all the time.
 	 * hm. why won't tcp release the page references,
-	 * we already released the socket!?
-	D_ASSERT(atomic_read(&mdev->pp_in_use) == 0);
-	D_ASSERT(list_empty(&mdev->net_ee));
-	 */
+	 * we already released the socket!? */
+	i = atomic_read(&mdev->pp_in_use);
+	if (i)
+		DBG("pp_in_use = %u, expected 0\n", i);
+	if (!list_empty(&mdev->net_ee))
+		DBG("net_ee not empty!\n");
+
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->active_ee));
 	D_ASSERT(list_empty(&mdev->sync_ee));
