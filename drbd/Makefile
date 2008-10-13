@@ -103,7 +103,7 @@ else
 	set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
 	echo -e "#include <linux/drbd_config.h>";                               \
-	echo -e "const char * drbd_buildtag(void)\n{";				\
+	echo -e "const char *drbd_buildtag(void)\n{";				\
 	if $$is_tarball; then							\
 	  if ! test -e $@ ; then 						\
 	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\

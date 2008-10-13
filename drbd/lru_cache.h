@@ -116,7 +116,7 @@ struct seq_file;
 extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache *lc);
 
 void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
-	     void (*detail) (struct seq_file *, struct lc_element *) );
+	     void (*detail) (struct seq_file *, struct lc_element *));
 
 /* This can be used to stop lc_get from changing the set of active elements.
  * Note that the reference counts and order on the lru list may still change.
@@ -136,12 +136,12 @@ static inline void lc_unlock(struct lru_cache *lc)
 static inline int lc_is_used(struct lru_cache *lc, unsigned int enr)
 {
 	struct lc_element *e = lc_find(lc, enr);
-	return (e && e->refcnt);
+	return e && e->refcnt;
 }
 
 #define LC_FREE (-1U)
 
-#define lc_e_base(lc)  ((char *) ( (lc)->slot + (lc)->nr_elements ) )
+#define lc_e_base(lc)  ((char *)((lc)->slot + (lc)->nr_elements))
 #define lc_entry(lc, i) ((struct lc_element *) \
 		       (lc_e_base(lc) + (i)*(lc)->element_size))
 #define lc_index_of(lc, e) (((char *)(e) - lc_e_base(lc))/(lc)->element_size)

@@ -115,7 +115,8 @@ static inline int bm_is_locked(struct drbd_bitmap *b)
 static void __bm_print_lock_info(struct drbd_conf *mdev, const char *func)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
-	if (DRBD_ratelimit(5*HZ, 5))
+	if (!DRBD_ratelimit(5*HZ, 5))
+		return;
 	ERR("FIXME %s in %s, bitmap locked for '%s' by %s\n",
 	    current == mdev->receiver.task ? "receiver" :
 	    current == mdev->asender.task  ? "asender"  :
@@ -164,7 +165,7 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 		return;
 	}
 
-	if (!__test_and_clear_bit(BM_LOCKED,&mdev->bitmap->bm_flags))
+	if (!__test_and_clear_bit(BM_LOCKED, &mdev->bitmap->bm_flags))
 		ERR("FIXME bitmap not locked in bm_unlock\n");
 
 	b->bm_why  = NULL;
@@ -184,7 +185,7 @@ STATIC void bm_end_info(struct drbd_conf *mdev, const char *where)
 	w++;
 
 	if (w < b->bm_words) {
-		D_ASSERT(w == b->bm_words -1);
+		D_ASSERT(w == b->bm_words - 1);
 		INFO("bm[%d]=0x%lX\n", w, b->bm[w]);
 	}
 }
@@ -255,7 +256,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
  */
 STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 {
-	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
+	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) - 1;
 	size_t w = b->bm_bits >> LN2_BPL;
 	int cleared = 0;
 
@@ -274,7 +275,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 
 STATIC void bm_set_surplus(struct drbd_bitmap *b)
 {
-	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) -1;
+	const unsigned long mask = (1UL << (b->bm_bits & (BITS_PER_LONG-1))) - 1;
 	size_t w = b->bm_bits >> LN2_BPL;
 
 	if (w < b->bm_words)
@@ -290,9 +291,10 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 	unsigned long *ep = b->bm + b->bm_words;
 	unsigned long bits = 0;
 
-	while ( bm < ep ) {
+	while (bm < ep) {
 #ifndef __LITTLE_ENDIAN
-		if (swap_endian) *bm = lel_to_cpu(*bm);
+		if (swap_endian)
+			*bm = lel_to_cpu(*bm);
 #endif
 		bits += hweight_long(*bm++);
 	}
@@ -302,16 +304,16 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 
 static inline unsigned long bm_count_bits(struct drbd_bitmap *b)
 {
-	return __bm_count_bits(b,0);
+	return __bm_count_bits(b, 0);
 }
 
 static inline unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
 {
-	return __bm_count_bits(b,1);
+	return __bm_count_bits(b, 1);
 }
 
 
-void _drbd_bm_recount_bits(struct drbd_conf *mdev, char* file, int line)
+void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long flags, bits;
@@ -423,8 +425,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		}
 		if (growing) {
 			/* set all newly allocated bits */
-			memset( nbm + b->bm_words, 0xff,
-				(words - b->bm_words) * sizeof(long) );
+			memset(nbm + b->bm_words, 0xff,
+				(words - b->bm_words) * sizeof(long));
 			/* yes, I know, this is not the same number as was set by this memset.
 			 * bm_set_surplus above before the memcpy,
 			 * and bm_clear_surplus below after the new assignments
@@ -441,7 +443,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		bm_clear_surplus(b);
 		if (!growing)
 			b->bm_set = bm_count_bits(b);
-		bm_end_info(mdev, __FUNCTION__ );
+		bm_end_info(mdev, __func__);
 		spin_unlock_irq(&b->bm_lock);
 		INFO("resync bitmap: bits=%lu words=%lu\n", bits, words);
 	}
@@ -517,7 +519,7 @@ void drbd_bm_merge_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 	 */
 	if (offset+number == b->bm_words) {
 		b->bm_set -= bm_clear_surplus(b);
-		bm_end_info(mdev, __FUNCTION__ );
+		bm_end_info(mdev, __func__);
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -533,20 +535,19 @@ void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 
 	ERR_IF(!b) return;
 	ERR_IF(!b->bm) return;
-	if (number == 0)
-		return;
 	spin_lock_irq(&b->bm_lock);
-	if ( (offset        >= b->bm_words) ||
-	     (offset+number >  b->bm_words) ||
-	     (number > PAGE_SIZE/sizeof(long)) ||
-	     (number <= 0) )
+	if ((offset        >= b->bm_words) ||
+	    (offset+number >  b->bm_words) ||
+	    (number > PAGE_SIZE/sizeof(long)) ||
+	    (number <= 0))
 		ERR("offset=%lu number=%lu bm_words=%lu\n",
 			(unsigned long)	offset,
 			(unsigned long)	number,
 			(unsigned long) b->bm_words);
 	else {
 		bm = b->bm + offset;
-		while (number--) *buffer++ = cpu_to_lel(*bm++);
+		while (number--)
+			*buffer++ = cpu_to_lel(*bm++);
 	}
 	spin_unlock_irq(&b->bm_lock);
 }
@@ -620,7 +621,7 @@ STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int 
 	bio->bi_private = b;
 	bio->bi_end_io = bm_async_io_complete;
 
-	if (FAULT_ACTIVE(mdev, (rw&WRITE)?DRBD_FAULT_MD_WR:DRBD_FAULT_MD_RD)) {
+	if (FAULT_ACTIVE(mdev, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
 		bio_endio(bio, -EIO);
 	} else {
@@ -705,7 +706,7 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 		/* swap back endianness */
 		bm_lel_to_cpu(b);
 		/* flush bitmap to stable storage */
-		if (!test_bit(MD_NO_BARRIER,&mdev->flags))
+		if (!test_bit(MD_NO_BARRIER, &mdev->flags))
 			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
@@ -776,14 +777,14 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 #endif
 	if (num_words < S2W(1))
 		memset(page_address(mdev->md_io_page), 0, MD_HARDSECT);
-	drbd_bm_get_lel( mdev, offset, num_words,
-			 page_address(mdev->md_io_page) );
+	drbd_bm_get_lel(mdev, offset, num_words,
+			page_address(mdev->md_io_page));
 	if (!drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, WRITE)) {
 		int i;
 		err = -EIO;
-		ERR( "IO ERROR writing bitmap sector %lu "
-		     "(meta-disk sector %llus)\n",
-		     enr, (unsigned long long)on_disk_sector );
+		ERR("IO ERROR writing bitmap sector %lu "
+		    "(meta-disk sector %llus)\n",
+		    enr, (unsigned long long)on_disk_sector);
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 		for (i = 0; i < AL_EXT_PER_BM_SECT; i++)
@@ -854,7 +855,7 @@ void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i)
 int drbd_bm_rs_done(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->bitmap);
-	return (mdev->bitmap->bm_fo >= mdev->bitmap->bm_bits);
+	return mdev->bitmap->bm_fo >= mdev->bitmap->bm_bits;
 }
 
 /* returns number of bits actually changed.
@@ -871,7 +872,7 @@ static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	ERR_IF(!b) return 1;
 	ERR_IF(!b->bm) return 1;
 
-	spin_lock_irqsave(&b->bm_lock,flags);
+	spin_lock_irqsave(&b->bm_lock, flags);
 	if (bm_is_locked(b))
 		bm_print_lock_info(mdev);
 	for (bitnr = s; bitnr <= e; bitnr++) {
@@ -947,15 +948,15 @@ int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	ERR_IF(!b) return 1;
 	ERR_IF(!b->bm) return 1;
 
-	spin_lock_irqsave(&b->bm_lock,flags);
-	for (bitnr = s; bitnr <=e; bitnr++) {
+	spin_lock_irqsave(&b->bm_lock, flags);
+	for (bitnr = s; bitnr <= e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
-			ERR("bitnr=%lu bm_bits=%lu\n",bitnr, b->bm_bits);
+			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		} else {
 			c += (0 != test_bit(bitnr, b->bm));
 		}
 	}
-	spin_unlock_irqrestore(&b->bm_lock,flags);
+	spin_unlock_irqrestore(&b->bm_lock, flags);
 	return c;
 }
 
@@ -992,7 +993,8 @@ int drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr)
 	if (s < b->bm_words) {
 		const unsigned long *w = b->bm+s;
 		int n = e-s;
-		while (n--) count += hweight_long(*w++);
+		while (n--)
+			count += hweight_long(*w++);
 	} else {
 		ERR("start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
@@ -1023,7 +1025,8 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev, unsigned long al_enr)
 	if (s < b->bm_words) {
 		const unsigned long *w = b->bm+s;
 		int n = e-s;
-		while (n--) count += hweight_long(*w++);
+		while (n--)
+			count += hweight_long(*w++);
 		n = e-s;
 		memset(b->bm+s, -1, n*sizeof(long));
 		b->bm_set += n*BITS_PER_LONG - count;
