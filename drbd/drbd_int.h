@@ -820,6 +820,7 @@ struct drbd_md_io {
 
 struct bm_io_work {
 	struct drbd_work w;
+	char *why;
 	int (*io_fn)(struct drbd_conf *mdev);
 	void (*done)(struct drbd_conf *mdev, int rv);
 };
@@ -1075,9 +1076,10 @@ extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(struct drbd_conf *mdev);
 extern void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 				 int (*io_fn)(struct drbd_conf *),
-				 void (*done)(struct drbd_conf *, int));
+				 void (*done)(struct drbd_conf *, int),
+				 char *why);
 extern int drbd_bmio_set_n_write(struct drbd_conf *mdev);
-extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *));
+extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *), char *why);
 
 
 /* Meta data layout
@@ -1245,9 +1247,8 @@ extern void drbd_bm_merge_lel(struct drbd_conf *mdev, size_t offset,
 extern void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset,
 		size_t number, unsigned long *buffer);
 
-extern void __drbd_bm_lock(struct drbd_conf *mdev, char *file, int line);
+extern void drbd_bm_lock(struct drbd_conf *mdev, char *why);
 extern void drbd_bm_unlock(struct drbd_conf *mdev);
-#define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
 extern void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line);
 #define drbd_bm_recount_bits(mdev) \
@@ -1393,6 +1394,8 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
 /* drbd_nl.c */
+extern void drbd_suspend_io(struct drbd_conf *mdev);
+extern void drbd_resume_io(struct drbd_conf *mdev);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_conf *,
 		struct drbd_backing_dev *);

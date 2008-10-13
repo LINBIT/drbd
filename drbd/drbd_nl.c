@@ -495,7 +495,7 @@ char *ppsize(char *buf, unsigned long long size)
  *  Primary Inconsistent, and SyncTarget:
  *  peer may not initiate a resize.
  */
-static void suspend_io(struct drbd_conf *mdev)
+void drbd_suspend_io(struct drbd_conf *mdev)
 {
 	int in_flight;
 	set_bit(SUSPEND_IO, &mdev->flags);
@@ -507,7 +507,7 @@ static void suspend_io(struct drbd_conf *mdev)
 	DBG("IO Suspended, no more requests in flight\n");
 }
 
-static void resume_io(struct drbd_conf *mdev)
+void drbd_resume_io(struct drbd_conf *mdev)
 {
 	clear_bit(SUSPEND_IO, &mdev->flags);
 	DBG("Resumed IO\n");
@@ -540,7 +540,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 	 * Suspend IO right here.
 	 * still lock the act_log to not trigger ASSERTs there.
 	 */
-	suspend_io(mdev);
+	drbd_suspend_io(mdev);
 
 	/* no wait necessary anymore, actually we could assert that */
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -595,7 +595,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 	if (la_size_changed || md_moved) {
 		drbd_al_shrink(mdev); /* All extents inactive. */
 		INFO("Writing the whole bitmap, size changed\n");
-		rv = drbd_bitmap_io(mdev, &drbd_bm_write);
+		rv = drbd_bitmap_io(mdev, &drbd_bm_write, "size changed");
 		drbd_md_mark_dirty(mdev);
 	}
 
@@ -604,7 +604,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 out:
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
-	resume_io(mdev);
+	drbd_resume_io(mdev);
 
 	return rv;
 }
@@ -1046,12 +1046,12 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
 		INFO("Assuming that all blocks are out of sync "
 		     "(aka FullSync)\n");
-		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write)) {
+		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write, "set_n_write from attaching")) {
 			retcode = MDIOError;
 			goto force_diskless_dec;
 		}
 	} else {
-		if (drbd_bitmap_io(mdev, &drbd_bm_read) < 0) {
+		if (drbd_bitmap_io(mdev, &drbd_bm_read, "read from attaching") < 0) {
 			retcode = MDIOError;
 			goto force_diskless_dec;
 		}

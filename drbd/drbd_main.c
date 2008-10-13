@@ -1053,7 +1053,7 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 	/* Do not change the order of the if above and below... */
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS)
-		drbd_queue_bitmap_io(mdev, &drbd_send_bitmap, NULL);
+		drbd_queue_bitmap_io(mdev, &drbd_send_bitmap, NULL, "send_bitmap (WFBitMapS)");
 
 	/* Lost contact to peer's copy of the data */
 	if ( (os.pdsk >= Inconsistent &&
@@ -1130,14 +1130,14 @@ static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	if ( ( os.conn != StartingSyncT && ns.conn == StartingSyncT ) ||
 	     ( os.conn != StartingSyncS && ns.conn == StartingSyncS ) ) {
 		INFO("Queueing bitmap io: about to start a forced full sync\n");
-		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync);
+		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync, "set_n_write from StartingSync");
 	}
 
 	/* We are invalidating our self... */
 	if ( os.conn < Connected && ns.conn < Connected &&
 	       os.disk > Inconsistent && ns.disk == Inconsistent ) {
 		INFO("Queueing bitmap io: invalidate forced full sync\n");
-		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL);
+		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL, "set_n_write from invalidate");
 	}
 
 	if (os.disk > Diskless && ns.disk == Diskless) {
@@ -2188,6 +2188,8 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 		{ Secondary, Unknown, StandAlone, Diskless, DUnknown, 0 } };
 }
 
+int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+
 void drbd_init_set_defaults(struct drbd_conf *mdev)
 {
 	/* the memset(,0,) did most of this.
@@ -2238,9 +2240,11 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	INIT_LIST_HEAD(&mdev->resync_work.list);
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
 	INIT_LIST_HEAD(&mdev->md_sync_work.list);
+	INIT_LIST_HEAD(&mdev->bm_io_work.w.list);
 	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->unplug_work.cb  = w_send_write_hint;
 	mdev->md_sync_work.cb = w_md_sync;
+	mdev->bm_io_work.w.cb = w_bitmap_io;
 	init_timer(&mdev->resync_timer);
 	init_timer(&mdev->md_sync_timer);
 	mdev->resync_timer.function = resync_timer_fn;
@@ -3061,14 +3065,14 @@ int drbd_bmio_set_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
-STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = (struct bm_io_work *)w;
 	int rv;
 
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt)==0);
 
-	drbd_bm_lock(mdev);
+	drbd_bm_lock(mdev, work->why);
 	rv = work->io_fn(mdev);
 	drbd_bm_unlock(mdev);
 
@@ -3077,6 +3081,9 @@ STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
         if (work->done) work->done(mdev, rv);
 
+	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
+	work->why = NULL;
+
 	return 1;
 }
 
@@ -3084,54 +3091,57 @@ STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  * drbd_queue_bitmap_io:
  * Queues an IO operation on the whole bitmap.
  * While IO on the bitmap happens we freeze appliation IO thus we ensure
- * that drbd_set_out_of_sync() can not be called. This function might be
- * called from the worker thread and other contexts.
+ * that drbd_set_out_of_sync() can not be called.
+ * This function MUST ONLY be called from worker context.
+ * BAD API ALERT!
+ * It MUST NOT be used while a previous such work is still pending!
  */
 void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 			  int (*io_fn)(struct drbd_conf *),
-			  void (*done)(struct drbd_conf *, int))
+			  void (*done)(struct drbd_conf *, int),
+			  char *why)
 {
-	unsigned long flags;
+	D_ASSERT(current == mdev->worker.task);
 
+	D_ASSERT(!test_bit(BITMAP_IO_QUEUED, &mdev->flags));
 	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
+	D_ASSERT(list_empty(&mdev->bm_io_work.w.list));
+	if (mdev->bm_io_work.why)
+		ERR("FIXME going to queue '%s' but '%s' still pending?\n",
+			why, mdev->bm_io_work.why);
 
-	mdev->bm_io_work.w.cb = w_bitmap_io;
 	mdev->bm_io_work.io_fn = io_fn;
 	mdev->bm_io_work.done = done;
+	mdev->bm_io_work.why = why;
 
-	spin_lock_irqsave(&mdev->req_lock, flags);
-	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
 	set_bit(BITMAP_IO, &mdev->flags);
 	if (atomic_read(&mdev->ap_bio_cnt) == 0) {
-		set_bit(BITMAP_IO_QUEUED, &mdev->flags);
-		drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
+		if (list_empty(&mdev->bm_io_work.w.list)) {
+			set_bit(BITMAP_IO_QUEUED, &mdev->flags);
+			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
+		} else
+			ERR("FIXME avoided double queuing bm_io_work\n");
 	}
-	spin_unlock_irqrestore(&mdev->req_lock, flags);
 }
 
 /**
  * drbd_bitmap_io:
  * Does an IO operation on the bitmap, freezing application IO while that
- * IO operations runs. This functions might not be called from the context
- * of the worker thread.
+ * IO operations runs. This functions MUST NOT be called from worker context.
  */
-int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *))
+int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *), char *why)
 {
 	int rv;
 
 	D_ASSERT(current != mdev->worker.task);
-	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
 
-	set_bit(BITMAP_IO_QUEUED, &mdev->flags);
-	set_bit(BITMAP_IO, &mdev->flags);
-	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+	drbd_suspend_io(mdev);
 
-	drbd_bm_lock(mdev);
+	drbd_bm_lock(mdev, why);
 	rv = io_fn(mdev);
 	drbd_bm_unlock(mdev);
 
-	clear_bit(BITMAP_IO, &mdev->flags);
-	wake_up(&mdev->misc_wait);
+	drbd_resume_io(mdev);
 
 	return rv;
 }
