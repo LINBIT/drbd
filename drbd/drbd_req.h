@@ -175,8 +175,7 @@ enum drbd_req_state_bits {
 	__RQ_NET_SENT,
 
 	/* when set, the request may be freed (if RQ_NET_QUEUED is clear).
-	 * in (C) this happens when WriteAck is received,
-	 * in (B,A) when the corresponding BarrierAck is received */
+	 * basically this means the corresponding BarrierAck was received */
 	__RQ_NET_DONE,
 
 	/* whether or not we know (C) or pretend (B,A) that the write
@@ -235,8 +234,7 @@ static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id)
-		{
+		if ((unsigned long)req == (unsigned long)id) {
 			if (req->sector != sector) {
 				ERR("_ack_id_to_req: found req %p but it has "
 				    "wrong sector (%llus versus %llus)\n", req,
@@ -269,8 +267,7 @@ static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id)
-		{
+		if ((unsigned long)req == (unsigned long)id) {
 			D_ASSERT(req->sector == sector);
 			return req;
 		}
@@ -297,6 +294,7 @@ static inline struct drbd_request *drbd_req_new(struct drbd_conf *mdev,
 		req->start_time  = jiffies;
 		INIT_HLIST_NODE(&req->colision);
 		INIT_LIST_HEAD(&req->tl_requests);
+		INIT_LIST_HEAD(&req->w.list);
 
 		bio->bi_private  = req;
 		bio->bi_end_io   = drbd_endio_pri;
@@ -312,7 +310,7 @@ static inline void drbd_req_free(struct drbd_request *req)
 
 static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 {
-	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
+	return !((s1 + (l1>>9) <= s2) || (s1 >= s2 + (l2>>9)));
 }
 
 /* aparently too large to be inlined...

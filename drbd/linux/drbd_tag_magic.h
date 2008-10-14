@@ -23,7 +23,7 @@ enum packet_types {
 #define NL_INT64(pn, pr, member)		\
 	__u64 member; int tag_and_len ## member;
 #define NL_BIT(pn, pr, member)		\
-	unsigned char member : 1; int tag_and_len ## member;
+	unsigned char member:1; int tag_and_len ## member;
 #define NL_STRING(pn, pr, member, len)	\
 	unsigned char member[len]; int member ## _len; \
 	int tag_and_len ## member;

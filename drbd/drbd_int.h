@@ -91,7 +91,7 @@ extern char usermode_helper[];
 #include <linux/blkdev.h>
 #include <linux/bio.h>
 
-// XXX do we need this?
+/* XXX do we need this? */
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -142,11 +142,11 @@ struct drbd_conf;
  *************************/
 
 /* handy macro: DUMPP(somepointer) */
-#define DUMPP(A)   ERR( #A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPLU(A)  ERR( #A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
-#define DUMPLLU(A) ERR( #A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
-#define DUMPLX(A)  ERR( #A " = %lx in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPI(A)   ERR( #A " = %d in %s:%d\n", (int)(A), __FILE__, __LINE__);
+#define DUMPP(A)   ERR(#A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
+#define DUMPLU(A)  ERR(#A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
+#define DUMPLLU(A) ERR(#A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
+#define DUMPLX(A)  ERR(#A " = %lx in %s:%d\n", (A), __FILE__, __LINE__);
+#define DUMPI(A)   ERR(#A " = %d in %s:%d\n", (int)(A), __FILE__, __LINE__);
 
 #define DUMPST(A) DUMPLLU((unsigned long long)(A))
 
@@ -197,7 +197,7 @@ struct drbd_conf;
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
 			drbd_WARN("%d messages suppressed in %s:%d.\n", \
-				lost , __FILE__ , __LINE__ );	\
+				lost, __FILE__, __LINE__);	\
 		__ret = 1;					\
 	} else {						\
 		missed++;					\
@@ -208,7 +208,7 @@ struct drbd_conf;
 
 
 #ifdef DBG_ASSERTS
-extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int );
+extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int);
 # define D_ASSERT(exp)	if (!(exp)) \
 	 drbd_assert_breakpoint(mdev, #exp, __FILE__, __LINE__)
 #else
@@ -216,9 +216,9 @@ extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int );
 	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 #define ERR_IF(exp) if (({				\
-	int _b = (exp)!=0;				\
+	int _b = (exp) != 0;				\
 	if (_b) ERR("%s: (%s) in %s:%d\n",		\
-		__func__, #exp, __FILE__,__LINE__);	\
+		__func__, #exp, __FILE__, __LINE__);	\
 	 _b;						\
 	}))
 
@@ -240,9 +240,9 @@ extern unsigned int
 _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type);
 static inline int
 drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
-    return (fault_rate &&
+    return fault_rate &&
 	    (enable_faults & (1<<type)) &&
-	    _drbd_insert_fault(mdev, type));
+	    _drbd_insert_fault(mdev, type);
 }
 #define FAULT_ACTIVE(_m, _t) (drbd_insert_fault((_m), (_t)))
 
@@ -252,9 +252,9 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 
 #include <linux/stringify.h>
 /* integer division, round _UP_ to the next integer */
-#define div_ceil(A, B) ( (A)/(B) + ((A)%(B) ? 1 : 0) )
+#define div_ceil(A, B) ((A)/(B) + ((A)%(B) ? 1 : 0))
 /* usual integer division */
-#define div_floor(A, B) ( (A)/(B) )
+#define div_floor(A, B) ((A)/(B))
 
 /*
  * Compatibility Section
@@ -265,7 +265,7 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 #define RECALC_SIGPENDING()	    recalc_sigpending();
 
 #if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if (!spin_is_locked(lock)) { ERR("Not holding lock! in %s\n", __FUNCTION__ ); }
+# define MUST_HOLD(lock) if (!spin_is_locked(lock)) ERR("Not holding lock! in %s\n", __func__);
 #else
 # define MUST_HOLD(lock)
 #endif
@@ -285,8 +285,8 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 	({ typecheck(struct drbd_conf*, x); \
 	  (x)->magic = (long)(x) ^ DRBD_MAGIC; })
 #define IS_VALID_MDEV(x)  \
-	( typecheck(struct drbd_conf*, x) && \
-	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)):0))
+	(typecheck(struct drbd_conf*, x) && \
+	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)) : 0))
 
 /* drbd_meta-data.c (still in drbd_main.c) */
 /* 4th incarnation of the disk layout. */
@@ -385,20 +385,20 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 	};
 
 	if (Data > cmd || cmd >= MAX_CMD) {
-	    switch (cmd) {
-	    case HandShakeM:
-		return "HandShakeM";
-		break;
-	    case HandShakeS:
-		return "HandShakeS";
-		break;
-	    case HandShake:
-		return "HandShake";
-		break;
-	    default:
-		return "Unknown";
-		break;
-	    }
+		switch (cmd) {
+		case HandShakeM:
+			return "HandShakeM";
+			break;
+		case HandShakeS:
+			return "HandShakeS";
+			break;
+		case HandShake:
+			return "HandShake";
+			break;
+		default:
+			return "Unknown";
+			break;
+		}
 	}
 	return cmdnames[cmd];
 }
@@ -794,11 +794,11 @@ struct drbd_md {
 	 */
 };
 
-// for sync_conf and other types...
+/* for sync_conf and other types... */
 #define NL_PACKET(name, number, fields) struct name { fields };
 #define NL_INTEGER(pn,pr,member) int member;
 #define NL_INT64(pn,pr,member) __u64 member;
-#define NL_BIT(pn,pr,member)   unsigned member : 1;
+#define NL_BIT(pn,pr,member)   unsigned member:1;
 #define NL_STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
 #include "linux/drbd_nl.h"
 
@@ -820,6 +820,7 @@ struct drbd_md_io {
 
 struct bm_io_work {
 	struct drbd_work w;
+	char *why;
 	int (*io_fn)(struct drbd_conf *mdev);
 	void (*done)(struct drbd_conf *mdev, int rv);
 };
@@ -873,6 +874,7 @@ struct drbd_conf {
 	struct drbd_barrier *unused_spare_barrier; /* for pre-allocation */
 	struct drbd_barrier *newest_barrier;
 	struct drbd_barrier *oldest_barrier;
+	struct list_head out_of_sequence_requests;
 	struct hlist_head *tl_hash;
 	unsigned int tl_hash_s;
 
@@ -1006,7 +1008,7 @@ extern int _drbd_request_state(struct drbd_conf *, union drbd_state_t,
 extern int _drbd_set_state(struct drbd_conf *, union drbd_state_t,
 			   enum chg_state_flags, struct completion *done);
 extern void print_st_err(struct drbd_conf *, union drbd_state_t,
-			union drbd_state_t, int );
+			union drbd_state_t, int);
 extern int  drbd_thread_start(struct Drbd_thread *thi);
 extern void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait);
 extern void drbd_free_resources(struct drbd_conf *mdev);
@@ -1074,9 +1076,10 @@ extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
 extern void drbd_md_mark_dirty(struct drbd_conf *mdev);
 extern void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 				 int (*io_fn)(struct drbd_conf *),
-				 void (*done)(struct drbd_conf *, int));
+				 void (*done)(struct drbd_conf *, int),
+				 char *why);
 extern int drbd_bmio_set_n_write(struct drbd_conf *mdev);
-extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *));
+extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *), char *why);
 
 
 /* Meta data layout
@@ -1084,7 +1087,7 @@ extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf 
    * either at the end of the backing device
    * or on a seperate meta data device. */
 
-#define MD_RESERVED_SECT ( 128LU << 11 )  /* 128 MB, unit sectors */
+#define MD_RESERVED_SECT (128LU << 11)  /* 128 MB, unit sectors */
 /* The following numbers are sectors */
 #define MD_AL_OFFSET 8	    /* 8 Sectors after start of meta area */
 #define MD_AL_MAX_SIZE 64   /* = 32 kb LOG  ~ 3776 extents ~ 14 GB Storage */
@@ -1136,7 +1139,7 @@ struct bm_extent {
 #define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SIZE_B)
 /* (9+3) : 512 bytes @ 8 bits; representing 16M storage
  * per sector of on disk bitmap */
-#define BM_EXT_SIZE_B	 (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3 )  /* = 24 */
+#define BM_EXT_SIZE_B	 (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3)  /* = 24 */
 #define BM_EXT_SIZE	 (1<<BM_EXT_SIZE_B)
 
 #if (BM_EXT_SIZE_B != 24) || (BM_BLOCK_SIZE_B != 12)
@@ -1159,12 +1162,12 @@ struct bm_extent {
 #define BM_SECT_PER_EXT     (1ULL << (BM_EXT_SIZE_B-9))
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
-#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B) )
+#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B))
 #define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
 
-#define BM_BLOCKS_PER_BM_EXT_B ( BM_EXT_SIZE_B - BM_BLOCK_SIZE_B )
-#define BM_BLOCKS_PER_BM_EXT_MASK  ( (1<<BM_BLOCKS_PER_BM_EXT_B) - 1 )
+#define BM_BLOCKS_PER_BM_EXT_B (BM_EXT_SIZE_B - BM_BLOCK_SIZE_B)
+#define BM_BLOCKS_PER_BM_EXT_MASK  ((1<<BM_BLOCKS_PER_BM_EXT_B) - 1)
 
 /* I want the packet to fit within one page
  * THINK maybe use a special bitmap header,
@@ -1193,11 +1196,11 @@ struct bm_extent {
 
 #define DRBD_MAX_SECTORS_32 (0xffffffffLU)
 #define DRBD_MAX_SECTORS_BM \
-	  ( (MD_RESERVED_SECT - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)) )
+	  ((MD_RESERVED_SECT - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)))
 #if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_BM
-#elif   !defined(CONFIG_LBD) && BITS_PER_LONG == 32
+#elif !defined(CONFIG_LBD) && BITS_PER_LONG == 32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
@@ -1244,13 +1247,12 @@ extern void drbd_bm_merge_lel(struct drbd_conf *mdev, size_t offset,
 extern void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset,
 		size_t number, unsigned long *buffer);
 
-extern void __drbd_bm_lock(struct drbd_conf *mdev, char *file, int line);
+extern void drbd_bm_lock(struct drbd_conf *mdev, char *why);
 extern void drbd_bm_unlock(struct drbd_conf *mdev);
-#define drbd_bm_lock(mdev)    __drbd_bm_lock(mdev, __FILE__, __LINE__ )
 
 extern void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line);
 #define drbd_bm_recount_bits(mdev) \
-	_drbd_bm_recount_bits(mdev, __FILE__, __LINE__ )
+	_drbd_bm_recount_bits(mdev, __FILE__, __LINE__)
 extern int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e);
 /* drbd_main.c */
 
@@ -1299,12 +1301,12 @@ enum {
 
 static inline int
 is_trace(unsigned int type, unsigned int level) {
-	return ((trace_level >= level) && (type & trace_type));
+	return (trace_level >= level) && (type & trace_type);
 }
 static inline int
 is_mdev_trace(struct drbd_conf *mdev, unsigned int type, unsigned int level) {
-	return (is_trace(type, level) &&
-		( ( 1 << mdev_to_minor(mdev)) & trace_devs));
+	return is_trace(type, level) &&
+		((1 << mdev_to_minor(mdev)) & trace_devs);
 }
 
 #define MTRACE(type, lvl, code...) \
@@ -1348,8 +1350,9 @@ static inline void dump_bio(struct drbd_conf *mdev,
 		);
 }
 
-static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete) {
-	MTRACE(TraceTypeIntRq,TraceLvlSummary,
+static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
+{
+	MTRACE(TraceTypeIntRq, TraceLvlSummary,
 	       _dump_bio(pfx, mdev, bio, complete);
 		);
 }
@@ -1392,6 +1395,8 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
 /* drbd_nl.c */
+extern void drbd_suspend_io(struct drbd_conf *mdev);
+extern void drbd_resume_io(struct drbd_conf *mdev);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_conf *,
 		struct drbd_backing_dev *);
@@ -1467,28 +1472,28 @@ static inline void drbd_tcp_cork(struct socket *sock)
 {
 	int __user val = 1;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
-			(char __user *)&val, sizeof(val) );
+			(char __user *)&val, sizeof(val));
 }
 
 static inline void drbd_tcp_uncork(struct socket *sock)
 {
 	int __user val = 0;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
-			(char __user *)&val, sizeof(val) );
+			(char __user *)&val, sizeof(val));
 }
 
 static inline void drbd_tcp_nodelay(struct socket *sock)
 {
 	int __user val = 1;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_NODELAY,
-			(char __user *)&val, sizeof(val) );
+			(char __user *)&val, sizeof(val));
 }
 
 static inline void drbd_tcp_quickack(struct socket *sock)
 {
 	int __user val = 1;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
-			(char __user *)&val, sizeof(val) );
+			(char __user *)&val, sizeof(val));
 }
 
 /* drbd_proc.c */
@@ -1511,11 +1516,11 @@ extern int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *);
 extern void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector,
 		int size, const char *file, const unsigned int line);
 #define drbd_set_in_sync(mdev, sector, size) \
-	__drbd_set_in_sync(mdev, sector, size, __FILE__, __LINE__ )
+	__drbd_set_in_sync(mdev, sector, size, __FILE__, __LINE__)
 extern void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector,
 		int size, const char *file, const unsigned int line);
 #define drbd_set_out_of_sync(mdev, sector, size) \
-	__drbd_set_out_of_sync(mdev, sector, size, __FILE__, __LINE__ )
+	__drbd_set_out_of_sync(mdev, sector, size, __FILE__, __LINE__)
 extern void drbd_al_apply_to_bm(struct drbd_conf *mdev);
 extern void drbd_al_to_on_disk_bm(struct drbd_conf *mdev);
 extern void drbd_al_shrink(struct drbd_conf *mdev);
@@ -1647,7 +1652,7 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return bdev->md.md_offset + MD_AL_OFFSET -1;
+		return bdev->md.md_offset + MD_AL_OFFSET - 1;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
 		return bdev->md.md_offset + bdev->md.md_size_sect;
@@ -1811,7 +1816,7 @@ static inline void inc_ap_pending(struct drbd_conf *mdev)
 		    atomic_read(&mdev->which))
 
 #define dec_ap_pending(mdev)	do {				\
-	typecheck(struct drbd_conf *, mdev);				\
+	typecheck(struct drbd_conf *, mdev);			\
 	if (atomic_dec_and_test(&mdev->ap_pending_cnt))		\
 		wake_up(&mdev->misc_wait);			\
 	ERR_IF_CNT_IS_NEGATIVE(ap_pending_cnt); } while (0)
@@ -1828,7 +1833,7 @@ static inline void inc_rs_pending(struct drbd_conf *mdev)
 }
 
 #define dec_rs_pending(mdev)	do {				\
-	typecheck(struct drbd_conf *, mdev);				\
+	typecheck(struct drbd_conf *, mdev);			\
 	atomic_dec(&mdev->rs_pending_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(rs_pending_cnt); } while (0)
 
@@ -1847,12 +1852,12 @@ static inline void inc_unacked(struct drbd_conf *mdev)
 }
 
 #define dec_unacked(mdev)	do {				\
-	typecheck(struct drbd_conf *, mdev);				\
+	typecheck(struct drbd_conf *, mdev);			\
 	atomic_dec(&mdev->unacked_cnt);				\
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
 #define sub_unacked(mdev, n)	do {				\
-	typecheck(struct drbd_conf *, mdev);				\
+	typecheck(struct drbd_conf *, mdev);			\
 	atomic_sub(n, &mdev->unacked_cnt);			\
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
@@ -1899,7 +1904,7 @@ static inline int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_sta
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
-	io_allowed = (mdev->state.disk >= mins );
+	io_allowed = (mdev->state.disk >= mins);
 	if (!io_allowed)
 		dec_local(mdev);
 	return io_allowed;
@@ -1959,10 +1964,69 @@ static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 	return mxb;
 }
 
+static inline int drbd_state_is_stable(union drbd_state_t s)
+{
+
+	/* DO NOT add a default clause, we want the compiler to warn us
+	 * for any newly introduced state we may have forgotten to add here */
+
+	switch ((enum drbd_conns)s.conn) {
+	/* new io only accepted when there is no connection, ... */
+	case StandAlone:
+	case WFConnection:
+	/* ... or there is a well established connection. */
+	case Connected:
+	case SyncSource:
+	case SyncTarget:
+	case PausedSyncS:
+	case PausedSyncT:
+		/* maybe stable, look at the disk state */
+		break;
+
+	/* no new io accepted during tansitional states
+	 * like handshake or teardown */
+	case Disconnecting:
+	case Unconnected:
+	case Timeout:
+	case BrokenPipe:
+	case NetworkFailure:
+	case ProtocolError:
+	case TearDown:
+	case WFReportParams:
+	case StartingSyncS:
+	case StartingSyncT:
+	case WFBitMapS:
+	case WFBitMapT:
+	case WFSyncUUID:
+	case conn_mask:
+		/* not "stable" */
+		return 0;
+	}
+
+	switch ((enum drbd_disk_state)s.disk) {
+	case Diskless:
+	case Inconsistent:
+	case Outdated:
+	case Consistent:
+	case UpToDate:
+		/* disk state is stable as well. */
+		break;
+
+	/* no new io accepted during tansitional states */
+	case Attaching:
+	case Failed:
+	case Negotiating:
+	case DUnknown:
+	case disk_mask:
+		/* not "stable" */
+		return 0;
+	}
+
+	return 1;
+}
+
 static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 {
-	const unsigned int cs = mdev->state.conn;
-	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
 
 	if (mdev->state.susp)
@@ -1970,11 +2034,12 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	if (test_bit(SUSPEND_IO, &mdev->flags))
 		return 0;
 
-	/* to avoid deadlock or bitmap corruption, we need to lock out
-	 * application io during attaching and bitmap exchange */
-	if (Attaching <= ds && ds <= Negotiating)
-		return 0;
-	if (cs == WFBitMapS || cs == WFBitMapT || cs == WFReportParams)
+	/* to avoid potential deadlock or bitmap corruption,
+	 * in various places, we only allow new application io
+	 * to start during "stable" states. */
+
+	/* no new io accepted when attaching or detaching the disk */
+	if (!drbd_state_is_stable(mdev->state))
 		return 0;
 
 	/* since some older kernels don't have atomic_add_unless,
@@ -1983,14 +2048,13 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 		return 0;
 	if (test_bit(BITMAP_IO, &mdev->flags))
 		return 0;
-	atomic_inc(&mdev->ap_bio_cnt);
 	return 1;
 }
 
 /* I'd like to use wait_event_lock_irq,
  * but I'm not sure when it got introduced,
  * and not sure when it has 3 or 4 arguments */
-static inline void inc_ap_bio(struct drbd_conf *mdev)
+static inline void inc_ap_bio(struct drbd_conf *mdev, int one_or_two)
 {
 	/* compare with after_state_ch,
 	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
@@ -2012,6 +2076,7 @@ static inline void inc_ap_bio(struct drbd_conf *mdev)
 		finish_wait(&mdev->misc_wait, &wait);
 		spin_lock_irq(&mdev->req_lock);
 	}
+	atomic_add(one_or_two, &mdev->ap_bio_cnt);
 	spin_unlock_irq(&mdev->req_lock);
 }
 
@@ -2021,6 +2086,9 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 	int ap_bio = atomic_dec_return(&mdev->ap_bio_cnt);
 
 	D_ASSERT(ap_bio >= 0);
+	/* this currently does wake_up for every dec_ap_bio!
+	 * maybe rather introduce some type of hysteresis?
+	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
 	if (ap_bio < mxb)
 		wake_up(&mdev->misc_wait);
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &mdev->flags)) {
@@ -2033,8 +2101,8 @@ static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 {
 	mdev->ed_uuid = val;
 
-	MTRACE(TraceTypeUuid,TraceLvlMetrics,
-	       INFO(" exposed data uuid now %016llX\n",val);
+	MTRACE(TraceTypeUuid, TraceLvlMetrics,
+	       INFO(" exposed data uuid now %016llX\n", val);
 		);
 }
 
@@ -2045,7 +2113,7 @@ static inline int seq_cmp(u32 a, u32 b)
 	 * we'd have to
 	 *  a <<= 8; b <<= 8;
 	 */
-	return ((s32)(a) - (s32)(b));
+	return (s32)(a) - (s32)(b);
 }
 #define seq_lt(a, b) (seq_cmp((a), (b)) < 0)
 #define seq_gt(a, b) (seq_cmp((a), (b)) > 0)
