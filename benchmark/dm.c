@@ -106,7 +106,7 @@ void usage(char *prgname)
 		"   --seek-output val   -l val\n"
 		"   --size val          -s val\n"
 		"   --o_direct          -x\n"
-	        "     affect -i and -o \n"
+		"     affect -i and -o \n"
 		"   --bandwidth         -w val byte/second \n"
 		"   --sync              -y\n"
 		"   --progress          -m\n"

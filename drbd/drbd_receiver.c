@@ -610,7 +610,7 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	memcpy(&src_in, &(mdev->net_conf->my_addr), sizeof(struct sockaddr_in));
 	src_in.sin_port = 0;
 
-	what = "bind";
+	what = "bind before connect";
 	err = sock->ops->bind(sock,
 			      (struct sockaddr *) &src_in,
 			      sizeof(struct sockaddr_in));
@@ -674,7 +674,7 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 	s_listen->sk->sk_rcvtimeo =
 	s_listen->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
 
-	what = "bind";
+	what = "bind before listen";
 	err = s_listen->ops->bind(s_listen,
 			      (struct sockaddr *) mdev->net_conf->my_addr,
 			      mdev->net_conf->my_addr_len);
@@ -1758,7 +1758,8 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 		break;
 	default:
-		/* avoid compiler warning */
+		ERR("unexpected command (%s) in receive_DataRequest\n",
+		    cmdname(h->command));
 		fault_type = DRBD_FAULT_MAX;
 	}
 
@@ -2237,7 +2238,7 @@ STATIC int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	return TRUE;
 
- disconnect:
+disconnect:
 	drbd_force_state(mdev, NS(conn, Disconnecting));
 	return FALSE;
 }
@@ -2251,7 +2252,6 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	/* XXX harmless race with ioctl ... */
 	mdev->sync_conf.rate	  = be32_to_cpu(p->rate);
 
 	return ok;
