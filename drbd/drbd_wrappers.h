@@ -270,7 +270,8 @@ crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
 		}
 		return ch;
 	}
-	if(closing_bracket-alg_name < 6) return ERR_PTR(-ENOENT);
+	if (closing_bracket-alg_name < 6)
+		return ERR_PTR(-ENOENT);
 
 	ch = kmalloc(sizeof(struct crypto_hash), GFP_KERNEL);
 	if (!ch)

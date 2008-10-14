@@ -99,5 +99,5 @@ uninstall:
 	rm $(INITD)drbd
 	rm $(PREFIX)/etc/ha.d/resource.d/drbddisk
 	rm $(PREFIX)/etc/xen/scripts/block-drbd
-	rm $(PREFIX)/etc/bash_completion.d/drbdadm
+	rm $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
 	! test -L $(PREFIX)/sbin/rcdrbd || rm $(PREFIX)/sbin/rcdrbd

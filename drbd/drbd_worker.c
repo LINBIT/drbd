@@ -198,7 +198,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 
 	if (error)
 		__drbd_chk_io_error(mdev, FALSE);
- 	spin_unlock_irqrestore(&mdev->req_lock, flags);
+	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	if (is_syncer_req)
 		drbd_rs_complete_io(mdev, e_sector);
@@ -335,9 +335,10 @@ void resync_timer_fn(unsigned long data)
 
 	if (likely(!test_and_clear_bit(STOP_SYNC_TIMER, &mdev->flags))) {
 		queue = 1;
-		if(mdev->state.conn == VerifyS ) {
+		if (mdev->state.conn == VerifyS)
 			mdev->resync_work.cb = w_make_ov_request;
-		} else mdev->resync_work.cb = w_make_resync_request;
+		else
+			mdev->resync_work.cb = w_make_resync_request;
 	} else {
 		queue = 0;
 		mdev->resync_work.cb = w_resync_inactive;

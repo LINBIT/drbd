@@ -1440,8 +1440,6 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		thi->t_state = Restarting;
 		INFO("Restarting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
-		spin_unlock(&thi->t_lock);
-		break;
 	case Running:
 	case Restarting:
 		spin_unlock(&thi->t_lock);
@@ -2186,8 +2184,8 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
-	p.head.length  = cpu_to_be16( sizeof(p)
-			-sizeof(struct Drbd_Header)+dgs+req->size);
+	p.head.length  =
+		cpu_to_be16(sizeof(p) - sizeof(struct Drbd_Header) + dgs + req->size);
 
 	p.sector   = cpu_to_be64(req->sector);
 	p.block_id = (unsigned long)req;
@@ -2785,6 +2783,8 @@ STATIC void drbd_cleanup(void)
 				bdput(mdev->this_bdev);
 
 			tl_cleanup(mdev);
+			if (mdev->bitmap)
+				drbd_bm_cleanup(mdev);
 			if (mdev->resync)
 				lc_free(mdev->resync);
 
@@ -3416,9 +3416,6 @@ int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
 	if (work->done)
 		work->done(mdev, rv);
-
-	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
-	work->why = NULL;
 
 	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
 	work->why = NULL;

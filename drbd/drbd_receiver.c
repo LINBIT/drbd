@@ -758,7 +758,7 @@ STATIC enum Drbd_Packet_Cmd drbd_recv_fp(struct drbd_conf *mdev, struct socket *
  * Tests if the connection behind the socket still exists. If not it frees
  * the socket.
  */
-STATIC int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
+static int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
 {
 	int rr;
 	char tb[4];
@@ -3628,6 +3628,7 @@ STATIC int drbdd_init(struct Drbd_thread *thi)
 	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
+
 	INFO("receiver (re)started\n");
 
 	do {

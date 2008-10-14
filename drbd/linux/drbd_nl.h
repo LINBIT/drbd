@@ -34,6 +34,7 @@ NL_PACKET(disk_conf, 3,
 )
 
 NL_PACKET(detach, 4, )
+
 NL_PACKET(net_conf, 5,
 	NL_STRING(	8,	T_MANDATORY,	my_addr,	128)
 	NL_STRING(	9,	T_MANDATORY,	peer_addr,	128)
