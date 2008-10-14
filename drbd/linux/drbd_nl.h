@@ -27,6 +27,10 @@ NL_PACKET(disk_conf, 3,
 	NL_BIT(		37,	T_MAY_IGNORE,	use_bmbv)
 	NL_BIT(		53,	T_MAY_IGNORE,	no_disk_flush)
 	NL_BIT(		54,	T_MAY_IGNORE,	no_md_flush)
+	  /*  55 max_bio_size was available in 8.2.6rc2 */
+	/* drbd-8.2: NL_INTEGER(	56,	T_MAY_IGNORE,	max_bio_bvecs) */
+	/* drbd-8.2: NL_BIT(		57,	T_MAY_IGNORE,	no_disk_barrier) */
+	/* drbd-8.2: NL_BIT(		58,	T_MAY_IGNORE,	no_disk_drain) */
 )
 
 NL_PACKET(detach, 4, )
@@ -36,6 +40,7 @@ NL_PACKET(net_conf, 5,
 	NL_STRING(	9,	T_MANDATORY,	peer_addr,	128)
 	NL_STRING(	10,	T_MAY_IGNORE,	shared_secret,	SHARED_SECRET_MAX)
 	NL_STRING(	11,	T_MAY_IGNORE,	cram_hmac_alg,	SHARED_SECRET_MAX)
+	/* drbd-8.2: NL_STRING(	44,	T_MAY_IGNORE,	integrity_alg,	SHARED_SECRET_MAX) */
 	NL_INTEGER(	14,	T_MAY_IGNORE,	timeout)
 	NL_INTEGER(	15,	T_MANDATORY,	wire_protocol)
 	NL_INTEGER(	16,	T_MAY_IGNORE,	try_connect_int)
@@ -69,6 +74,8 @@ NL_PACKET(syncer_conf, 8,
 	NL_INTEGER(	30,	T_MAY_IGNORE,	rate)
 	NL_INTEGER(	31,	T_MAY_IGNORE,	after)
 	NL_INTEGER(	32,	T_MAY_IGNORE,	al_extents)
+	/* drbd-8.2: NL_STRING(      52,     T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX) */
+	/* drbd-8.2: NL_STRING(      51,     T_MAY_IGNORE,   cpu_mask,       32) */
 )
 
 NL_PACKET(invalidate, 9, )
@@ -102,6 +109,25 @@ NL_PACKET(call_helper, 20,
 NL_PACKET(sync_progress, 23,
 	NL_INTEGER(	43,	T_MAY_IGNORE,	sync_progress)
 )
+
+#if 0
+/* drbd-8.2: */
+NL_PACKET(dump_ee, 24,
+	NL_STRING(	45,	T_MAY_IGNORE,	dump_ee_reason, 32)
+	NL_STRING(	46,	T_MAY_IGNORE,	seen_digest, SHARED_SECRET_MAX)
+	NL_STRING(	47,	T_MAY_IGNORE,	calc_digest, SHARED_SECRET_MAX)
+	NL_INT64(	48,	T_MAY_IGNORE,	ee_sector)
+	NL_INT64(	49,	T_MAY_IGNORE,	ee_block_id)
+	NL_STRING(	50,	T_MAY_IGNORE,	ee_data,	32 << 10)
+)
+
+NL_PACKET(start_ov, 25,
+)
+
+NL_PACKET(new_c_uuid, 26,
+       NL_BIT(		63,	T_MANDATORY,	clear_bm)
+)
+#endif
 
 #undef NL_PACKET
 #undef NL_INTEGER

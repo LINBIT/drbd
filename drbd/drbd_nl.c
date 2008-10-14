@@ -79,6 +79,11 @@ STATIC int name ## _from_tags (struct drbd_conf *mdev, \
 		 break;
 #define NL_STRING(pn, pr, member, len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
+		if (dlen > len) { \
+			ERR("arg too long: %s (%u wanted, max len: %u bytes)\n", \
+				#member, dlen, (unsigned int)len); \
+			return 0; \
+		} \
 		 arg->member ## _len = dlen; \
 		 memcpy(arg->member, tags, min_t(size_t, dlen, len)); \
 		 break;
@@ -176,7 +181,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(mdev));
 
-	INFO("helper command: %s %s\n", usermode_helper, cmd);
+	INFO("helper command: %s %s %s\n", usermode_helper, cmd, mb);
 
 	drbd_bcast_ev_helper(mdev, cmd);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
@@ -882,6 +887,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
+	if (!mdev->bitmap) {
+		if(drbd_bm_init(mdev)) {
+			retcode = KMallocFailed;
+			goto fail;
+		}
+	}
+
 	nbc->md_bdev = inode2->i_bdev;
 	if (bd_claim(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
@@ -1331,8 +1343,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		mdev->ee_hash = new_ee_hash;
 	}
 
-	if (mdev->cram_hmac_tfm)
-		crypto_free_hash(mdev->cram_hmac_tfm);
+	crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = tfm;
 
 	retcode = _drbd_request_state(mdev, NS(conn, Unconnected), ChgStateVerbose);
@@ -1480,6 +1491,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
 
 	if (nlp->flags & DRBD_NL_SET_DEFAULTS) {
+		memset(&sc, 0, sizeof(struct syncer_conf));
 		sc.rate       = DRBD_RATE_DEF;
 		sc.after      = DRBD_AFTER_DEF;
 		sc.al_extents = DRBD_AL_EXTENTS_DEF;
@@ -1516,7 +1528,10 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	}
 #undef AL_MAX
 
+	spin_lock(&mdev->peer_seq_lock);
+	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
+	spin_unlock(&mdev->peer_seq_lock);
 
 	if (inc_local(mdev)) {
 		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -1539,7 +1554,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	drbd_alter_sa(mdev, sc.after);
 
- fail:
+fail:
 	reply->ret_code = retcode;
 	return 0;
 }

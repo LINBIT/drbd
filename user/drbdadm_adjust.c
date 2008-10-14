@@ -170,9 +170,7 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 }
 
 /*
- * calling drbdsetup again before waitpid("drbdsetup show") has a race with
- * the next ioctl failing because of the zombie still holding an open_cnt on
- * the drbd device. so don't do that.
+ * CAUTION this modifies global static char * config_file!
  */
 int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 {
@@ -212,12 +210,12 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	if(do_attach) {
 		if(have_disk) schedule_dcmd(adm_generic_s,res,"detach",0);
-		schedule_dcmd(adm_attach,res,NULL,0);
+		schedule_dcmd(adm_attach,res,"attach",0);
 	}
-	if(do_syncer)  schedule_dcmd(adm_syncer,res,NULL,1);
+	if(do_syncer)  schedule_dcmd(adm_syncer,res,"syncer",1);
 	if(do_connect) {
 		if(have_net) schedule_dcmd(adm_generic_s,res,"disconnect",0);
-		schedule_dcmd(adm_connect,res,NULL,2);
+		schedule_dcmd(adm_connect,res,"connect",2);
 	}
 
 	return 0;

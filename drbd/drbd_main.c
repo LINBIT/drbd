@@ -731,7 +731,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		dec_local(mdev);
 	}
 
-	/* Early state sanitising. Dissalow the invalidate ioctl to connect  */
+	/* Early state sanitising. */
+
+	/* Dissalow the invalidate ioctl to connect  */
 	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
 		os.conn < Connected) {
 		ns.conn = os.conn;
@@ -1348,9 +1350,8 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 
 		thi->t_state = ns;
 		smp_mb();
+		init_completion(&thi->startstop);
 		if (thi->task != current) {
-			if (wait)
-				init_completion(&thi->startstop);
 			force_sig(DRBD_SIGKILL, thi->task);
 		} else
 			D_ASSERT(!wait);
@@ -1915,8 +1916,8 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(Data);
-	p.head.length  = cpu_to_be16(sizeof(p)
-			-sizeof(struct Drbd_Header)+req->size);
+	p.head.length  =
+		cpu_to_be16(sizeof(p) - sizeof(struct Drbd_Header) + req->size);
 
 	p.sector   = cpu_to_be64(req->sector);
 	p.block_id = (unsigned long)req;
@@ -2335,6 +2336,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	D_ASSERT(mdev->net_conf == NULL);
 	drbd_set_my_capacity(mdev, 0);
 	drbd_bm_resize(mdev, 0);
+	drbd_bm_cleanup(mdev);
 
 	/* just in case */
 	drbd_free_resources(mdev);
@@ -2751,10 +2753,8 @@ void drbd_free_sock(struct drbd_conf *mdev)
 
 void drbd_free_resources(struct drbd_conf *mdev)
 {
-	if (mdev->cram_hmac_tfm) {
-		crypto_free_hash(mdev->cram_hmac_tfm);
-		mdev->cram_hmac_tfm = NULL;
-	}
+	crypto_free_hash(mdev->cram_hmac_tfm);
+	mdev->cram_hmac_tfm = NULL;
 	drbd_free_sock(mdev);
 	__no_warn(local,
 		  drbd_free_bc(mdev->bc);

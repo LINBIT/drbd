@@ -64,7 +64,7 @@
 		(__u64)(((__u64)(__x) & (__u64)0x000000000000ff00ULL) << 40) | \
 		(__u64)(((__u64)(__x) & (__u64)0x0000000000ff0000ULL) << 24) | \
 		(__u64)(((__u64)(__x) & (__u64)0x00000000ff000000ULL) <<  8) | \
-	        (__u64)(((__u64)(__x) & (__u64)0x000000ff00000000ULL) >>  8) | \
+		(__u64)(((__u64)(__x) & (__u64)0x000000ff00000000ULL) >>  8) | \
 		(__u64)(((__u64)(__x) & (__u64)0x0000ff0000000000ULL) >> 24) | \
 		(__u64)(((__u64)(__x) & (__u64)0x00ff000000000000ULL) >> 40) | \
 		(__u64)(((__u64)(__x) & (__u64)0xff00000000000000ULL) >> 56) )); \
@@ -126,11 +126,11 @@
 
 static inline unsigned int generic_hweight32(unsigned int w)
 {
-        unsigned int res = (w & 0x55555555) + ((w >> 1) & 0x55555555);
-        res = (res & 0x33333333) + ((res >> 2) & 0x33333333);
-        res = (res & 0x0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F);
-        res = (res & 0x00FF00FF) + ((res >> 8) & 0x00FF00FF);
-        return (res & 0x0000FFFF) + ((res >> 16) & 0x0000FFFF);
+	unsigned int res = (w & 0x55555555) + ((w >> 1) & 0x55555555);
+	res = (res & 0x33333333) + ((res >> 2) & 0x33333333);
+	res = (res & 0x0F0F0F0F) + ((res >> 4) & 0x0F0F0F0F);
+	res = (res & 0x00FF00FF) + ((res >> 8) & 0x00FF00FF);
+	return (res & 0x0000FFFF) + ((res >> 16) & 0x0000FFFF);
 }
 
 static inline unsigned long generic_hweight64(__u64 w)

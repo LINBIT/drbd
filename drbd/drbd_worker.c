@@ -215,7 +215,6 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	BIO_ENDIO_FN_START;
-
 	if (!error && !uptodate) {
 		/* strange behaviour of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
