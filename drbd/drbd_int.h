@@ -1964,9 +1964,13 @@ static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 	return mxb;
 }
 
-static inline int drbd_cstate_is_stable(int cs)
+static inline int drbd_state_is_stable(union drbd_state_t s)
 {
-	switch (cs) {
+
+	/* DO NOT add a default clause, we want the compiler to warn us
+	 * for any newly introduced state we may have forgotten to add here */
+
+	switch ((enum drbd_conns)s.conn) {
 	/* new io only accepted when there is no connection, ... */
 	case StandAlone:
 	case WFConnection:
@@ -1976,18 +1980,53 @@ static inline int drbd_cstate_is_stable(int cs)
 	case SyncTarget:
 	case PausedSyncS:
 	case PausedSyncT:
-		return 1;
+		/* maybe stable, look at the disk state */
+		break;
+
 	/* no new io accepted during tansitional states
 	 * like handshake or teardown */
-	default:
+	case Disconnecting:
+	case Unconnected:
+	case Timeout:
+	case BrokenPipe:
+	case NetworkFailure:
+	case ProtocolError:
+	case TearDown:
+	case WFReportParams:
+	case StartingSyncS:
+	case StartingSyncT:
+	case WFBitMapS:
+	case WFBitMapT:
+	case WFSyncUUID:
+	case conn_mask:
+		/* not "stable" */
 		return 0;
 	}
+
+	switch ((enum drbd_disk_state)s.disk) {
+	case Diskless:
+	case Inconsistent:
+	case Outdated:
+	case Consistent:
+	case UpToDate:
+		/* disk state is stable as well. */
+		break;
+
+	/* no new io accepted during tansitional states */
+	case Attaching:
+	case Failed:
+	case Negotiating:
+	case DUnknown:
+	case disk_mask:
+		/* not "stable" */
+		return 0;
+	}
+
+	return 1;
 }
 
 static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 {
-	const unsigned int cs = mdev->state.conn;
-	const unsigned int ds = mdev->state.disk;
 	int mxb = drbd_get_max_buffers(mdev);
 
 	if (mdev->state.susp)
@@ -2000,10 +2039,7 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 	 * to start during "stable" states. */
 
 	/* no new io accepted when attaching or detaching the disk */
-	if (Attaching <= ds && ds <= Negotiating)
-		return 0;
-
-	if (!drbd_cstate_is_stable(cs))
+	if (!drbd_state_is_stable(mdev->state))
 		return 0;
 
 	/* since some older kernels don't have atomic_add_unless,
