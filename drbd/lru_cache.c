@@ -65,7 +65,7 @@ static inline void lc_init(struct lru_cache *lc,
 		e = lc_entry(lc, i);
 		e->lc_number = LC_FREE;
 		list_add(&e->list, &lc->free);
-		// memset(,0,) did the rest of init for us
+		/* memset(,0,) did the rest of init for us */
 	}
 }
 
@@ -81,7 +81,7 @@ struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
 	size_t bytes;
 
 	BUG_ON(!e_count);
-	e_size = max(sizeof(struct lc_element),e_size);
+	e_size = max(sizeof(struct lc_element), e_size);
 	bytes = size_of_lc(e_count, e_size);
 	lc = vmalloc(bytes);
 	if (lc)
@@ -109,7 +109,7 @@ void lc_reset(struct lru_cache *lc)
 			lc->nr_elements, lc->element_size, lc->lc_private);
 }
 
-size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache* lc)
+size_t	lc_printf_stats(struct seq_file *seq, struct lru_cache *lc)
 {
 	/* NOTE:
 	 * total calls to lc_get are
@@ -155,7 +155,8 @@ STATIC struct lc_element *lc_evict(struct lru_cache *lc)
 	struct list_head  *n;
 	struct lc_element *e;
 
-	if (list_empty(&lc->lru)) return NULL;
+	if (list_empty(&lc->lru))
+		return NULL;
 
 	n = lc->lru.prev;
 	e = list_entry(n, struct lc_element, list);
@@ -189,7 +190,8 @@ STATIC struct lc_element *lc_get_unused_element(struct lru_cache *lc)
 {
 	struct list_head *n;
 
-	if (list_empty(&lc->free)) return lc_evict(lc);
+	if (list_empty(&lc->free))
+		return lc_evict(lc);
 
 	n = lc->free.next;
 	list_del(n);
@@ -198,8 +200,10 @@ STATIC struct lc_element *lc_get_unused_element(struct lru_cache *lc)
 
 STATIC int lc_unused_element_available(struct lru_cache *lc)
 {
-	if (!list_empty(&lc->free)) return 1; /* something on the free list */
-	if (!list_empty(&lc->lru)) return 1;  /* something to evict */
+	if (!list_empty(&lc->free))
+		return 1; /* something on the free list */
+	if (!list_empty(&lc->lru))
+		return 1;  /* something to evict */
 
 	return 0;
 }
@@ -368,7 +372,7 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 	e->lc_number = enr;
 
 	hlist_del_init(&e->colision);
-	hlist_add_head( &e->colision, lc->slot + lc_hash_fn(lc, enr) );
+	hlist_add_head(&e->colision, lc->slot + lc_hash_fn(lc, enr));
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
@@ -376,7 +380,7 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
  * lc_dump: Dump a complete LRU cache to seq in textual form.
  */
 void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
-	     void (*detail) (struct seq_file *, struct lc_element *) )
+	     void (*detail) (struct seq_file *, struct lc_element *))
 {
 	unsigned int nr_elements = lc->nr_elements;
 	struct lc_element *e;
@@ -386,11 +390,11 @@ void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
 	for (i = 0; i < nr_elements; i++) {
 		e = lc_entry(lc, i);
 		if (e->lc_number == LC_FREE) {
-			seq_printf(seq, "\t%2d: FREE\n", i );
+			seq_printf(seq, "\t%2d: FREE\n", i);
 		} else {
 			seq_printf(seq, "\t%2d: %4u %4u    ", i,
 				   e->lc_number,
-				   e->refcnt );
+				   e->refcnt);
 			detail(seq, e);
 		}
 	}

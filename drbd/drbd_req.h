@@ -234,8 +234,7 @@ static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id)
-		{
+		if ((unsigned long)req == (unsigned long)id) {
 			if (req->sector != sector) {
 				ERR("_ack_id_to_req: found req %p but it has "
 				    "wrong sector (%llus versus %llus)\n", req,
@@ -268,8 +267,7 @@ static inline struct drbd_request *_ar_id_to_req(struct drbd_conf *mdev,
 	struct drbd_request *req;
 
 	hlist_for_each_entry(req, n, slot, colision) {
-		if ((unsigned long)req == (unsigned long)id)
-		{
+		if ((unsigned long)req == (unsigned long)id) {
 			D_ASSERT(req->sector == sector);
 			return req;
 		}
@@ -312,7 +310,7 @@ static inline void drbd_req_free(struct drbd_request *req)
 
 static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 {
-	return !( ( s1 + (l1>>9) <= s2 ) || ( s1 >= s2 + (l2>>9) ) );
+	return !((s1 + (l1>>9) <= s2) || (s1 >= s2 + (l2>>9)));
 }
 
 /* aparently too large to be inlined...

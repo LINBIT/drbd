@@ -49,7 +49,7 @@ KDIR_PATCHLEVEL=$(grep "^PATCHLEVEL = " $KERNEL/Makefile | cut -d " " -f 3)
 test "$KDIR_PATCHLEVEL" = 6 ||
 	fatal "wrong kernel version patchlevel ($KDIR_PATCHLEVEL), expected 6."
 
-test -e "$KERNEL/drivers/connector/connector.c" ||
+test -e "$KERNEL/drivers/connector/Kconfig" ||
 	fatal "this won't work: your kernel lacks the connector :("
 #
 # convert to absolute pathnames
