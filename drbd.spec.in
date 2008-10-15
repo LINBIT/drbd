@@ -28,7 +28,6 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 Packager:
 Requires: kernel
-Provides: %{name}
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -52,7 +51,7 @@ Summary: Kernel driver for DRBD.
 Group: System Environment/Kernel
 Requires: %{name} = %{version}, /sbin/depmod
 # conflicts with the suse km_drbd package. use either theirs, or ours...
-Conflicts: km_drbd
+Conflicts: km_drbd, %{name} < %{version}
 #%{?ksmp:Provides: kernel-module-drbd = %{version}-%{release}_%{krelver}}
 
 #%description -n kernel%{?ksmp}-module-drbd
