@@ -1,6 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry id="re-drbdsetup">
-  <docinfo><date>31 March 2008</date></docinfo>
+  <refentryinfo><date>15 Oct 2008</date></refentryinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -451,8 +451,8 @@
 	      secondary node, which are not yet acknowledged (from a network
 	      point of view) by the secondary node. When using protocol A,
 	      it might be necessary to increase the size of this data
-	      structure in order to increase asynchronism between primary
-	      and secondary nodes. But keep in mind that more asynchronism
+	      structure in order to increase asynchronicity between primary
+	      and secondary nodes. But keep in mind that more asynchronicity
 	      is synonymous with more data loss in the case of a primary
 	      node failure. Since 8.0.13 setting the <replaceable>size</replaceable>
               value to 0 means that the kernel should autotune this.
@@ -566,7 +566,7 @@
 		</para></listitem></varlistentry>
 	        <varlistentry><term><option>discard-younger-primary</option></term>
 		<listitem><para>
-		  Auto sync from the node that was primary before the split-		brain situation occurred.
+		  Auto sync from the node that was primary before the split-brain situation occurred.
 		</para></listitem></varlistentry>
 		<varlistentry><term><option>discard-older-primary</option></term>
 		<listitem><para>
@@ -1077,7 +1077,8 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document was revised for version 8.0.12 of the DRBD distribution.
+<simpara>This document was revised for version 8.0.14 of the DRBD distribution.
+</simpara>
     </simpara>
   </refsect1>
 

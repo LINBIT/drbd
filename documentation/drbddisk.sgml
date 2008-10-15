@@ -1,6 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry>
-<docinfo><date>30 Aug 2005</date></docinfo>
+<refentryinfo><date>15 Oct 2008</date></refentryinfo>
 
 <refmeta>
  <refentrytitle>drbddisk</refentrytitle>
@@ -9,7 +9,7 @@
 
 <refnamediv>
  <refname>/etc/ha.d/resource.d/drbddisk</refname>
- <refpurpose>Script to mark devices as primary and mount filesystems</refpurpose>
+ <refpurpose>Script to mark devices as primary and mount file systems</refpurpose>
 </refnamediv>
 
 <refsynopsisdiv>
@@ -45,7 +45,7 @@
 
 <refsect1>
 <title>Version</title>
-<simpara>This document is correct for version 0.7.20 of the DRBD distribution.
+<simpara>This document was revised for version 8.0.14 of the DRBD distribution.
 </simpara>
 </refsect1>
 

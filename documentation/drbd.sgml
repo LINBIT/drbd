@@ -1,6 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry id="re-drbd">
-<docinfo><date>01 Oct 2001</date></docinfo>
+<refentryinfo><date>15 Oct 2008</date></refentryinfo>
 
 <refmeta>
  <refentrytitle>drbd</refentrytitle>
@@ -38,8 +38,8 @@
     In order to use <option>/etc/init.d/drbd</option> you must define
     a resource, a host, and any other configuration options in the drbd
     configuration file.  See <option>/etc/drbd.conf</option> for details.
-    If <replaceable>resource</replaceable> is omited, then all of the
-    resouces listed in the config file are configured.
+    If <replaceable>resource</replaceable> is omitted, then all of the
+    resources listed in the config file are configured.
   </para>
   <para>
     This script might ask you <quote>Do you want to abort waiting for
@@ -53,7 +53,7 @@
 
 <refsect1>
   <title>Version</title>
-  <simpara>This document is correct for version 0.7.20 of the DRBD distribution.
+  <simpara>This document was revised for version 8.0.14 of the DRBD distribution.
   </simpara>
 </refsect1>
 
