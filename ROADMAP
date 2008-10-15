@@ -6,6 +6,8 @@ DRBD ROADMAP for 8.2
    Release the online-verify code from drbd-plus to drbd-8.2, creating a new
    protocol version by the way.
 
+	Done.
+
 2  Hot cache.
 
    Finish the hot cache feature. With this feature enabled DRBD updates the
@@ -17,6 +19,8 @@ DRBD ROADMAP for 8.2
    With a conventional DRBD cluster for such a database, the performance
    of the database is after a switchover insufficient, since the caches
    on the secondary machine are cold.
+
+	Won't be implemented. Necessary in-kernel infrastructure is missing.
 
 3  write quorum of 2.
 
@@ -41,10 +45,20 @@ DRBD ROADMAP for 8.2
 
    * Use BIO_RW_BARRIER writes for updates to our meta-data-superblock.
 
+	Done.
+
    * Use BIO_RW_BARRIER for writes to the AL.
+
+	Done.
 
    * Implement the algorithm described in section 6 of
      http://www.drbd.org/fileadmin/drbd/publications/drbd8.pdf .
 
+	In-Kernel API has changed since then.
+	But still, supporting barriers on top of DRBD
+	will be implemented "RSN".
+
    * Delay setting of RQ_NET_DONE in the request objects until the right
      BarrierAck comes in, also for protocol C.
+
+	Done.
