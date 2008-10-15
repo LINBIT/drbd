@@ -1,6 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry id="re-drbdsetup">
-  <docinfo><date>31 March 2008</date></docinfo>
+  <refentryinfo><date>15 Oct 2008</date></refentryinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -1301,7 +1301,7 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document was revised for version 8.2.6 of the DRBD distribution.
+    <simpara>This document was revised for version 8.2.7 of the DRBD distribution.
     </simpara>
   </refsect1>
 

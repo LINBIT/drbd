@@ -1,7 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry id="re-drbdadm">
-  <docinfo><date>08 Jan 2008</date></docinfo>
-
+  <refentryinfo><date>15 Oct 2008</date></refentryinfo>
   <refmeta>
     <refentrytitle>drbdadm</refentrytitle>
     <manvolnum>8</manvolnum>
@@ -354,9 +353,8 @@
   </refsect1>
   <refsect1>
     <title>Version</title>
-    <simpara>
-      This document is correct for version 8.2.7 of the DRBD distribution.
-    </simpara>
+<simpara>This document was revised for version 8.2.7 of the DRBD distribution.
+</simpara>
   </refsect1>
 
   <refsect1>

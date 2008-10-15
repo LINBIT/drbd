@@ -1,6 +1,6 @@
-<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V3.1//EN" []>
+<!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.5//EN" []>
 <refentry id="re-drbdconf">
-<docinfo><date>31 March 2008</date></docinfo>
+<refentryinfo><date>15 Oct 2008</date></refentryinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -1155,7 +1155,7 @@ pre-production phase due to its CPU costs. Further we suggest to do online
 
 <refsect1>
 <title>Version</title>
-<simpara>This document was revised for version 8.0.12 of the DRBD distribution.
+<simpara>This document was revised for version 8.0.14 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>
