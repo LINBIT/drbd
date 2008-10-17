@@ -764,7 +764,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
 
-	if (ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed)) {
+	if (os.conn > Connected && ns.conn > Connected &&
+            (ns.disk <= Failed || ns.pdsk <= Failed)) {
 		warn_sync_abort = 1;
 		ns.conn = Connected;
 	}
