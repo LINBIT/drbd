@@ -72,7 +72,7 @@ int drbd_init(void);
 STATIC int drbd_open(struct inode *inode, struct file *file);
 STATIC int drbd_close(struct inode *inode, struct file *file);
 STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused);
-STATIC static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
+STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags);
 STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
@@ -868,7 +868,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
 
-	if (ns.conn > Connected && (ns.disk <= Failed || ns.pdsk <= Failed)) {
+	if (os.conn > Connected && ns.conn > Connected &&
+            (ns.disk <= Failed || ns.pdsk <= Failed)) {
 		warn_sync_abort = 1;
 		ns.conn = Connected;
 	}
@@ -1149,7 +1150,7 @@ static void abw_start_sync(struct drbd_conf *mdev, int rv)
 	}
 }
 
-static void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
+STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags)
 {
 	enum fencing_policy fp;
@@ -1442,6 +1443,7 @@ int drbd_thread_start(struct Drbd_thread *thi)
 				me, current->comm, current->pid);
 	case Running:
 	case Restarting:
+	default:
 		spin_unlock(&thi->t_lock);
 		break;
 	}
@@ -2385,7 +2387,7 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 	return sent;
 }
 
-int drbd_open(struct inode *inode, struct file *file)
+STATIC int drbd_open(struct inode *inode, struct file *file)
 {
 	struct drbd_conf *mdev;
 	unsigned long flags;
@@ -3504,7 +3506,7 @@ int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
 	return (bdev->md.flags & flag) != 0;
 }
 
-void md_sync_timer_fn(unsigned long data)
+STATIC void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) data;
 

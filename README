@@ -8,27 +8,9 @@
 Reference documentation is included in the documentation directory.
 
 Please refer to the web pages at
-http://www.drbd.org/ and
-http://www.linux-ha.org/DRBD
-http://www.linux-ha.org/DRBD/FAQ
+
+  http://www.drbd.org/
+  http://www.drbd.org/docs/introduction/
+
 to find maintained information.
-
-Please have a look at INSTALL or INSTALL.html, too.
-BTW, if there is no INSTALL.html, say "make INSTALL.html" :)
-
-DEBUGING:
----------
-
-In case you experience kernel crashes when using DRBD, please
-define "DBG_ALL_SYMBOLS" in drbd_config.h, and recompile DRBD.
-
-Run the oops through ksymoops and send it to the DRBD mailinglist.
-If you don't know what ksymoops is, read
-/usr/src/linux/Documentation/oops-tracing.txt
-
-Need RPMS?
------------
-
-Have a look at http://www.linbit.com/support/drbd-current/
-or Read INSTALL.
 

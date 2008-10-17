@@ -1551,7 +1551,7 @@ extern void _drbd_clear_done_ee(struct drbd_conf *mdev);
 /* yes, there is kernel_setsockopt, but only since 2.6.18. we don't need to
  * mess with get_fs/set_fs, we know we are KERNEL_DS always. */
 static inline int drbd_setsockopt(struct socket *sock, int level, int optname,
-			char *optval, int optlen)
+			char __user *optval, int optlen)
 {
 	int err;
 	if (level == SOL_SOCKET)
