@@ -268,8 +268,13 @@
 	      option. If you need to use the device before it was ever
 	      connected to its peer, use this option to pass the
 	      <replaceable>size</replaceable> of the DRBD device to the
-	      driver. Default unit is KB (1 KB = 1024 bytes).
-	      </para>
+	      driver. Default unit is sectors (1s = 512 bytes).
+	    </para>
+	    <para>
+	      If you use the <replaceable>size</replaceable> parameter in drbd.conf,
+	      we strongly recommend to add an explicit unit postfix.
+	      drbdadm and drbdsetup used to have mismatching default units.
+	    </para>
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
@@ -1079,7 +1084,6 @@
     <title>Version</title>
 <simpara>This document was revised for version 8.0.14 of the DRBD distribution.
 </simpara>
-    </simpara>
   </refsect1>
 
   <refsect1>
