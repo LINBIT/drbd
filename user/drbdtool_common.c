@@ -83,7 +83,7 @@ new_strtoll(const char *s, const char def_unit, unsigned long long *rv)
 		  case 'g':
 		*/
 	}
-	
+
 	if (!s || !*s) return MSE_MISSING_NUMBER;
 
 	c = sscanf(s, "%llu%c%c", rv, &unit, &dummy);
@@ -107,12 +107,24 @@ new_strtoll(const char *s, const char def_unit, unsigned long long *rv)
 		break;
 	case 's':
 		shift += 9;
-		break;		
+		break;
 	default:
 		return MSE_INVALID_UNIT;
 	}
-	if (*rv > (~0ULL >> shift)) return MSE_OUT_OF_RANGE;
 
+	/* if shift is negative (e.g. default unit 'K', actual unit 's'),
+	 * convert to posive, and shift right, rounding up. */
+	if (shift < 0) {
+		shift = -shift;
+		*rv = (*rv + (1ULL << shift) - 1) >> shift;
+		return MSE_OK;
+	}
+
+	/* if shift is positive, first check for overflow */
+	if (*rv > (~0ULL >> shift))
+		return MSE_OUT_OF_RANGE;
+
+	/* then convert */
 	*rv = *rv << shift;
 	return MSE_OK;
 }

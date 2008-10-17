@@ -92,9 +92,9 @@ void range_check(const enum range_checks what, const char *name,
 				DRBD_DIALOG_REFRESH_MAX);
 		break;
 	case R_DISK_SIZE:
-		m_strtoll_range(value, 'K', name,
-				DRBD_DISK_SIZE_SECT_MIN >> 1,
-				DRBD_DISK_SIZE_SECT_MAX >> 1);
+		m_strtoll_range(value, 's', name,
+				DRBD_DISK_SIZE_SECT_MIN,
+				DRBD_DISK_SIZE_SECT_MAX);
 		break;
 	case R_TIMEOUT:
 		m_strtoll_range(value, 1, name, DRBD_TIMEOUT_MIN,
