@@ -1014,75 +1014,79 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 					       struct drbd_epoch *epoch,
 					       enum epoch_event ev)
 {
-	int finish = 0, free = 0, epoch_size = 0, schedule_flush = 0;
-	struct drbd_epoch *next_epoch = NULL;
+	int finish, epoch_size;
+	struct drbd_epoch *next_epoch;
+	int schedule_flush = 0;
+	enum finish_epoch rv = FE_still_live;
 
-	spin_lock(&mdev->epoch_lock);
+	do {
+		next_epoch = NULL;
+		finish = 0;
 
-	switch (ev & ~EV_cleanup) {
-	case EV_put:
-		atomic_dec(&epoch->active);
-		break;
-	case EV_got_barrier_nr:
-		set_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
-		break;
-	case EV_barrier_done:
-		set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
-		break;
-	case EV_became_last:
-		/* nothing to do*/
-		break;
-	}
+		spin_lock(&mdev->epoch_lock);
 
-	if (atomic_read(&epoch->epoch_size) != 0 &&
-	    atomic_read(&epoch->active) == 0 &&
-	    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
-	    epoch->list.prev == &mdev->current_epoch->list) {
-		/* Nearly all conditions are met to finish that epoch... */
-		if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
-		    mdev->write_ordering == WO_none ||
-		    ev & EV_cleanup)
-			finish = 1;
-		else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
-			 mdev->write_ordering == WO_bio_barrier) {
-			atomic_inc(&epoch->active);
-			schedule_flush = 1;
-		}
-	}
-	if (finish) {
-		epoch_size = atomic_read(&epoch->epoch_size);
-		if (mdev->current_epoch != epoch) {
-			next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
-			list_del(&epoch->list);
-			free = 1;
-			mdev->epochs--;
-			MTRACE(TraceTypeEpochs, TraceLvlAll,
-			       INFO("Freeing epoch %p { nr=%d size=%d } nr_epochs=%d\n",
-				    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
-				);
-		} else {
-			epoch->flags = 0;
-			atomic_set(&epoch->epoch_size, 0);
-			/* atomic_set(&epoch->active, 0); is alrady zero */
-		}
-	}
-	spin_unlock(&mdev->epoch_lock);
-
-	if (finish) {
-		if ( ! (ev & EV_cleanup) )
-			if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
-				dec_unacked(mdev);
-
-		if (next_epoch)
-			drbd_may_finish_epoch(mdev, next_epoch, EV_became_last | (ev & EV_cleanup));
-
-		if (free) {
-			kfree(epoch);
-			return FE_destroyed;
+		switch (ev & ~EV_cleanup) {
+		case EV_put:
+			atomic_dec(&epoch->active);
+			break;
+		case EV_got_barrier_nr:
+			set_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
+			break;
+		case EV_barrier_done:
+			set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
+			break;
+		case EV_became_last:
+			/* nothing to do*/
+			break;
 		}
 
-		return FE_recycled;
-	}
+		if (atomic_read(&epoch->epoch_size) != 0 &&
+		    atomic_read(&epoch->active) == 0 &&
+		    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
+		    epoch->list.prev == &mdev->current_epoch->list) {
+			/* Nearly all conditions are met to finish that epoch... */
+			if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
+			    mdev->write_ordering == WO_none ||
+			    ev & EV_cleanup)
+				finish = 1;
+			else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
+				 mdev->write_ordering == WO_bio_barrier) {
+				atomic_inc(&epoch->active);
+				schedule_flush = 1;
+			}
+		}
+		if (finish) {
+			epoch_size = atomic_read(&epoch->epoch_size);
+			if (mdev->current_epoch != epoch) {
+				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
+				list_del(&epoch->list);
+				ev = EV_became_last | (ev & EV_cleanup);
+				mdev->epochs--;
+				MTRACE(TraceTypeEpochs, TraceLvlAll,
+				       INFO("Freeing epoch %p { nr=%d size=%d } nr_epochs=%d\n",
+					    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
+					);
+			} else {
+				epoch->flags = 0;
+				atomic_set(&epoch->epoch_size, 0);
+				/* atomic_set(&epoch->active, 0); is alrady zero */
+			}
+		}
+		spin_unlock(&mdev->epoch_lock);
+
+		if (finish) {
+			if ( ! (ev & EV_cleanup) )
+				if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
+					dec_unacked(mdev);
+
+			if (next_epoch)
+				kfree(epoch);
+
+			if (rv == FE_still_live)
+				rv = next_epoch ? FE_destroyed : FE_recycled;
+		}
+		epoch = next_epoch;
+	} while (epoch);
 
 	if (schedule_flush) {
 		struct flush_work *fw;
@@ -1098,7 +1102,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		}
 	}
 
-	return FE_still_live;
+	return rv;
 }
 
 /**
