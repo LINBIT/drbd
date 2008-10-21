@@ -2965,12 +2965,12 @@ STATIC int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (oconn > WFReportParams) {
-		if (nconn > Connected && peer_state.conn <= Connected) {
+		if (nconn > Connected && peer_state.conn <= Connected &&
+		    peer_state.disk != Negotiating ) {
 			/* we want resync, peer has not yet decided to sync... */
+			/* Nowadays only used when forcing a node into primary role and
+			   setting its disk to UpTpDate with that */
 			drbd_send_uuids(mdev);
-			drbd_send_state(mdev);
-		} else if (nconn == Connected && peer_state.disk == Negotiating) {
-			/* peer is waiting for us to respond... */
 			drbd_send_state(mdev);
 		}
 	}

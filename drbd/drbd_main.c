@@ -1188,7 +1188,11 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			spin_unlock_irq(&mdev->req_lock);
 		}
 	}
-	/* Do not change the order of the if above and below... */
+	/* Do not change the order of the if above and the two below... */
+	if (os.pdsk == Diskless && ns.pdsk > Diskless) {      /* attach on the peer */
+		drbd_send_uuids(mdev);
+		drbd_send_state(mdev);
+	}
 	if (os.conn != WFBitMapS && ns.conn == WFBitMapS)
 		drbd_queue_bitmap_io(mdev, &drbd_send_bitmap, NULL, "send_bitmap (WFBitMapS)");
 
