@@ -1121,20 +1121,14 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 
 	spin_lock(&mdev->epoch_lock);
 	pwo = mdev->write_ordering;
-	mdev->write_ordering = min(pwo, wo);
-	switch (mdev->write_ordering) {
-	case WO_bio_barrier:
-		if (mdev->bc->dc.no_disk_barrier)
-			mdev->write_ordering = WO_bdev_flush;
-	case WO_bdev_flush:
-		if (mdev->bc->dc.no_disk_flush)
-			mdev->write_ordering = WO_drain_io;
-	case WO_drain_io:
-		if (mdev->bc->dc.no_disk_drain)
-			mdev->write_ordering = WO_none;
-	case WO_none:
-		break;
-	}
+	wo = min(pwo, wo);
+	if (wo == WO_bio_barrier && mdev->bc->dc.no_disk_barrier)
+		wo = WO_bdev_flush;
+	if (wo == WO_bdev_flush && mdev->bc->dc.no_disk_flush)
+		wo = WO_drain_io;
+	if (wo == WO_drain_io && mdev->bc->dc.no_disk_drain)
+		wo = WO_none;
+	mdev->write_ordering = wo;
 	spin_unlock(&mdev->epoch_lock);
 	if (pwo != mdev->write_ordering)
 		INFO("Method to ensure write ordering: %s\n", write_ordering_str[mdev->write_ordering]);
