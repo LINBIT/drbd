@@ -977,6 +977,23 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
+STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
+{
+	int rv;
+
+	if (mdev->write_ordering >= WO_bdev_flush && inc_local(mdev)) {
+		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+		if (rv) {
+			ERR("local disk flush failed with status %d\n",rv);
+			if (rv == -EOPNOTSUPP)
+				drbd_bump_write_ordering(mdev, WO_drain_io);
+		}
+		dec_local(mdev);
+	}
+
+	return drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+}
+
 /**
  * w_flush: Checks if an epoch can be closed and therefore might
  * close and/or free the epoch object.
@@ -985,23 +1002,13 @@ STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = (struct flush_work *)w;
 	struct drbd_epoch *epoch = fw->epoch;
-	int rv;
 
 	kfree(w);
 
-	if (drbd_may_finish_epoch(mdev, epoch, EV_put) != FE_still_live)
-		return 1;
+	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
+		drbd_flush_after_epoch(mdev, epoch);
 
-	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) && inc_local(mdev)) {
-		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
-		if (rv) {
-			ERR("w_flush: local disk flush failed with status %d \n",rv);
-			if (rv == -EOPNOTSUPP)
-				drbd_bump_write_ordering(mdev, WO_drain_io);
-		}
-		dec_local(mdev);
-		drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
-	}
+	drbd_may_finish_epoch(mdev, epoch, EV_put);
 
 	return 1;
 }
@@ -1014,8 +1021,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 					       struct drbd_epoch *epoch,
 					       enum epoch_event ev)
 {
-	int finish;
-	int uninitialized_var(epoch_size);
+	int finish, epoch_size;
 	struct drbd_epoch *next_epoch;
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_still_live;
@@ -1025,6 +1031,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		finish = 0;
 
 		spin_lock(&mdev->epoch_lock);
+		epoch_size = atomic_read(&epoch->epoch_size);
 
 		switch (ev & ~EV_cleanup) {
 		case EV_put:
@@ -1041,13 +1048,14 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			break;
 		}
 
-		if (atomic_read(&epoch->epoch_size) != 0 &&
+		if (epoch_size != 0 &&
 		    atomic_read(&epoch->active) == 0 &&
 		    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
 		    epoch->list.prev == &mdev->current_epoch->list) {
 			/* Nearly all conditions are met to finish that epoch... */
 			if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
 			    mdev->write_ordering == WO_none ||
+			    (epoch_size == 1 && test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) ||
 			    ev & EV_cleanup)
 				finish = 1;
 			else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
@@ -1057,7 +1065,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			}
 		}
 		if (finish) {
-			epoch_size = atomic_read(&epoch->epoch_size);
 			if (mdev->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
 				list_del(&epoch->list);
@@ -1086,8 +1093,12 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			if (rv == FE_still_live)
 				rv = next_epoch ? FE_destroyed : FE_recycled;
 		}
+
+		if (!next_epoch)
+			break;
+
 		epoch = next_epoch;
-	} while (epoch);
+	} while (1);
 
 	if (schedule_flush) {
 		struct flush_work *fw;
@@ -1099,7 +1110,9 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		} else {
 			drbd_WARN("Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
+			/* That is not a recursion, only one level */
 			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+			drbd_may_finish_epoch(mdev, epoch, EV_put);
 		}
 	}
 
@@ -1190,7 +1203,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 
 STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
-	int rv;
+	int rv, issue_flush;
 	struct Drbd_Barrier_Packet *p = (struct Drbd_Barrier_Packet *)h;
 	struct drbd_epoch *epoch;
 
@@ -1223,20 +1236,8 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 	case WO_drain_io:
 		D_ASSERT(rv == FE_still_live);
 		set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
-
 		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
-
-		if (mdev->write_ordering == WO_bdev_flush && inc_local(mdev)) {
-			rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
-			if (rv) {
-				ERR("local disk flush failed with status %d\n",rv);
-				if (rv == -EOPNOTSUPP)
-					drbd_bump_write_ordering(mdev, WO_drain_io);
-			}
-			dec_local(mdev);
-		}
-
-		rv = drbd_may_finish_epoch(mdev, mdev->current_epoch, EV_barrier_done);
+		rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
 		if (rv == FE_recycled)
 			return TRUE;
 
@@ -1248,8 +1249,18 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
 	if (!epoch) {
-		ERR("Allocation of an epoch failed\n");
-		return FALSE;
+		drbd_WARN("Allocation of an epoch failed, slowing down\n");
+		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
+		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
+		if (issue_flush) {
+			rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
+			if (rv == FE_recycled)
+				return TRUE;
+		}
+
+		drbd_wait_ee_list_empty(mdev, &mdev->done_ee);
+
+		return TRUE;
 	}
 
 	epoch->flags = 0;
@@ -1582,7 +1593,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		spin_lock(&mdev->epoch_lock);
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 		spin_unlock(&mdev->epoch_lock);
-		if (epoch != e->epoch) {
+		if (epoch != e->epoch && epoch != mdev->current_epoch) {
 			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
 		}
 	}
