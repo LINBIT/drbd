@@ -1014,7 +1014,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 					       struct drbd_epoch *epoch,
 					       enum epoch_event ev)
 {
-	int finish, epoch_size;
+	int finish;
+	int uninitialized_var(epoch_size);
 	struct drbd_epoch *next_epoch;
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_still_live;
@@ -1075,7 +1076,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		spin_unlock(&mdev->epoch_lock);
 
 		if (finish) {
-			if ( ! (ev & EV_cleanup) )
+			if (!(ev & EV_cleanup))
 				if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
 					dec_unacked(mdev);
 
