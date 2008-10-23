@@ -1026,6 +1026,13 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_still_live;
 
+	static char *epoch_event_str[] = {
+		[EV_put] = "put",
+		[EV_got_barrier_nr] = "got_barrier_nr",
+		[EV_barrier_done] = "barrier_done",
+		[EV_became_last] = "became_last",
+	};
+
 	do {
 		next_epoch = NULL;
 		finish = 0;
@@ -1047,6 +1054,16 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			/* nothing to do*/
 			break;
 		}
+
+		MTRACE(TraceTypeEpochs, TraceLvlAll,
+		       INFO("Update epoch  %p/%d { size=%d active=%d %c%c n%c%c } ev=%s\n",
+			    epoch, epoch->barrier_nr, epoch_size, atomic_read(&epoch->active),
+			    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) ? 'n' : '-',
+			    test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags) ? 'b' : '-',
+			    test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) ? 'i' : '-',
+			    test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ? 'd' : '-',
+			    epoch_event_str[ev]);
+			);
 
 		if (epoch_size != 0 &&
 		    atomic_read(&epoch->active) == 0 &&
@@ -1070,8 +1087,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 				list_del(&epoch->list);
 				ev = EV_became_last | (ev & EV_cleanup);
 				mdev->epochs--;
-				MTRACE(TraceTypeEpochs, TraceLvlAll,
-				       INFO("Freeing epoch %p { nr=%d size=%d } nr_epochs=%d\n",
+				MTRACE(TraceTypeEpochs, TraceLvlSummary,
+				       INFO("Freeing epoch %p/%d { size=%d } nr_epochs=%d\n",
 					    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
 					);
 			} else {
@@ -1104,6 +1121,10 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
+			MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+			       INFO("Schedul flush %p/%d { size=%d } nr_epochs=%d\n",
+				    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
+				);
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
 			drbd_queue_work(&mdev->data.work, &fw->w);
@@ -1272,8 +1293,8 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
-		MTRACE(TraceTypeEpochs, TraceLvlAll,
-		       INFO("Allocating epoch %p nr_epochs=%d\n", epoch, mdev->epochs);
+		MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+		       INFO("Allocat epoch %p/xxxx { } nr_epochs=%d\n", epoch, mdev->epochs);
 			);
 	} else {
 		/* The current_epoch got recycled while we allocated this one... */
@@ -1772,12 +1793,21 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		   a Barrier. */
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == e->epoch) {
+			MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+			       INFO("Add barrier   %p/%d\n",
+				    epoch, epoch->barrier_nr);
+				);
 			set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
 			rw |= (1<<BIO_RW_BARRIER);
 			e->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
+				MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+				       INFO("Add barrier   %p/%d, setting bi in %p/%d\n",
+					    e->epoch, e->epoch->barrier_nr,
+					    epoch, epoch->barrier_nr);
+					);
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
 				rw |= (1<<BIO_RW_BARRIER);
