@@ -1800,6 +1800,13 @@ STATIC void drbd_connector_callback(void *data)
 	}
 
 	cm = cnd_table + nlp->packet_type;
+
+	/* This may happen if packet number is 0: */
+	if (cm->function == NULL) {
+		retcode = UnknownNetLinkPacket;
+		goto fail;
+	}
+
 	reply_size += cm->reply_body_size;
 
 	cn_reply = kmalloc(reply_size, GFP_KERNEL);
