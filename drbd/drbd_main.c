@@ -1888,6 +1888,8 @@ int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
 	p.barrier  = barrier_nr;
 	p.set_size = cpu_to_be32(set_size);
 
+	if (mdev->state.conn < Connected)
+		return FALSE;
 	ok = drbd_send_cmd(mdev, USE_META_SOCKET, BarrierAck,
 			(struct Drbd_Header *)&p, sizeof(p));
 	return ok;

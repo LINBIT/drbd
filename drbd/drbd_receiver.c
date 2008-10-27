@@ -1101,8 +1101,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 
 		if (finish) {
 			if (!(ev & EV_cleanup))
-				if (drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size))
-					dec_unacked(mdev);
+				drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size);
+			dec_unacked(mdev);
 
 			if (next_epoch)
 				kfree(epoch);
