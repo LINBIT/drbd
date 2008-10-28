@@ -1154,7 +1154,6 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 		[WO_bio_barrier] = "barrier",
 	};
 
-	spin_lock(&mdev->epoch_lock);
 	pwo = mdev->write_ordering;
 	wo = min(pwo, wo);
 	if (wo == WO_bio_barrier && mdev->bc->dc.no_disk_barrier)
@@ -1164,11 +1163,20 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 	if (wo == WO_drain_io && mdev->bc->dc.no_disk_drain)
 		wo = WO_none;
 	mdev->write_ordering = wo;
-	spin_unlock(&mdev->epoch_lock);
 	if (pwo != mdev->write_ordering)
 		INFO("Method to ensure write ordering: %s\n", write_ordering_str[mdev->write_ordering]);
 }
 
+static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
+{
+	struct drbd_epoch *prev;
+	spin_lock(&mdev->epoch_lock);
+	prev = list_entry(epoch->list.prev, struct drbd_epoch, list);
+	if (prev == epoch || prev == mdev->current_epoch)
+		prev = NULL;
+	spin_unlock(&mdev->epoch_lock);
+	return prev;
+}
 
 /**
  * w_e_reissue: In case the IO subsystem delivered an error for an BIO with the
@@ -1178,15 +1186,19 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	struct bio* bio = e->private_bio;
-	struct drbd_epoch *epoch;
 
-	drbd_bump_write_ordering(mdev, WO_bdev_flush); /* to endio callback ?*/
+	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_A_BARRIER in place,
+	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
+	   so that we can finish that epoch in drbd_may_finish_epoch().
+	   That is necessary if we already have a long chain of Epochs, before
+	   we realize that BIO_RW_BARRIER is actually not supported */
 
-	spin_lock(&mdev->epoch_lock);
-	epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
-	spin_unlock(&mdev->epoch_lock);
-	if (epoch != e->epoch)
-		clear_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
+	/* As long as the -ENOTSUPP on the barrier is reported immediately
+	   that will never trigger. It it is reported late, we will just
+	   print that warning an continue corretly for all future requests
+	   with WO_bdev_flush */
+	if (previous_epoch(mdev, e->epoch))
+		drbd_WARN("Write ordering was not enforced (one time event)\n");
 
 	/* prepare bio for re-submit,
 	 * re-init volatile members */
@@ -1214,7 +1226,6 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	e->w.cb = e_end_block;
 
 	/* This is no longer a barrier request. */
-	e->flags &= ~EE_IS_BARRIER;
 	bio->bi_rw &= ~(1UL << BIO_RW_BARRIER);
 
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, bio);
@@ -1611,12 +1622,9 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	int ok = 1, pcmd;
 
 	if (e->flags & EE_IS_BARRIER) {
-		spin_lock(&mdev->epoch_lock);
-		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
-		spin_unlock(&mdev->epoch_lock);
-		if (epoch != e->epoch && epoch != mdev->current_epoch) {
+		epoch = previous_epoch(mdev, e->epoch);
+		if (epoch)
 			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
-		}
 	}
 
 	if (mdev->net_conf->wire_protocol == DRBD_PROT_C) {
