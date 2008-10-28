@@ -1163,7 +1163,7 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 	if (wo == WO_drain_io && mdev->bc->dc.no_disk_drain)
 		wo = WO_none;
 	mdev->write_ordering = wo;
-	if (pwo != mdev->write_ordering)
+	if (pwo != mdev->write_ordering || wo == WO_bio_barrier)
 		INFO("Method to ensure write ordering: %s\n", write_ordering_str[mdev->write_ordering]);
 }
 
