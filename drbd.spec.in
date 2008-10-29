@@ -200,17 +200,19 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Thu Sep  4 2008 13:59:05 +0200 Lars Ellenberg <lars@linbit.com>
-- drbd (8.2.7~rc1-1)
+* Wed Oct 29 2008 10:04:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.2.7rc2-1)
  * Fixed possible Oops on connection loss during sync handshake
- * Fixed various possible deadlocks in the disconnect/reconnect and online-verify code
+ * Fixed various possible deadlocks in the disconnect/reconnect and
+   online-verify code
  * Fixed possible access-after-free
  * Added support for TCP buffer autotuning
  * Added support for AF_SCI aka "Super Sockets"
  * Added support for IPV6
  * latency improvements
- * new config options: no-disk-barrier, no-disk-drain
- * Merged all changes from 8.0.12 -> 8.0.13 into 8.2
+ * Support for using barriers to enforce write ordering on the secondary
+   node. New config options: no-disk-barrier, no-disk-drain
+ * Merged all changes from 8.0.12 -> 8.0.14 into 8.2
 
 * Fri May 30 2008 09:51:15 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.6-1)
