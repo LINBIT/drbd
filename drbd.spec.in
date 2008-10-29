@@ -128,6 +128,7 @@ ___
 /etc/xen/scripts/block-drbd
 
 %defattr(644,root,root)
+/var/lib/drbd
 %config(noreplace) /etc/drbd.conf
 
 %defattr(-,root,root)
