@@ -276,7 +276,6 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 			DUMPI(bio->bi_vcnt);
 			DUMPI(bio->bi_size);
 			DUMPI(bio->bi_phys_segments);
-			DUMPI(bio->bi_hw_segments);
 
 			goto fail2;
 			break;
@@ -1214,9 +1213,6 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 
 	/* don't know whether this is necessary: */
 	bio->bi_phys_segments = 0;
-	bio->bi_hw_segments = 0;
-	bio->bi_hw_front_size = 0;
-	bio->bi_hw_back_size = 0;
 	bio->bi_next = NULL;
 
 	/* these should be unchanged: */
