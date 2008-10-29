@@ -83,6 +83,7 @@ install:
 		install -m 755 drbdmeta $(PREFIX)/sbin/ ;		\
 		install -m 755 drbdadm $(PREFIX)/sbin/ ; 		\
 	fi
+	mkdir -p $(PREFIX)/var/lib/drbd
 
 uninstall:
 	rm -f $(PREFIX)/sbin/drbdsetup
