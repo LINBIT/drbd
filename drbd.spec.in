@@ -192,6 +192,26 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+* Tue Oct 28 2008 19:53:49 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.14rc1-1)
+ * fixed some access-after-free corner cases
+ * fixed some potential deadlocks on state changes
+ * don't use bounce buffers (reduce unnecessary buffer page bounces on 32bit)
+ * properly serialize IO operations on the whole bitmap
+ * reduce race possibilities in our thread restart code
+ * linux 2.6.27 compatibility
+ * latency improvements using TCP_QUICKACK
+ * reduced spurious coding differrences between drbd-8.0 and drbd-8.2
+ * drbdsetup now checks for /proc/drbd instead of playing netlink ping-pong
+   to determin whether the drbd kernel module is present.
+ * fixed (harmless but annoying) stack corruption in drbdadm
+ * adjusted timeouts on 'detach' and 'down'
+ * fixed unit conversion of disk size configuration parameter
+ * fixed drbdadm/drbdsetup default unit mismatch
+   for disk size configuration parameter
+ * drbd.spec file update
+ * documentation update
+
 * Tue Aug  4 2008 15:22:40 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.13-1)
  * Fixed online resizing if there is application IO on the fly when the
