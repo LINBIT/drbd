@@ -98,6 +98,7 @@ find etc/ -name drbd -printf "/%p\n" > "$FILELIST"
 test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
 # on non RedHat we have additionally:
 test -e etc/bash_completion.d/drbdadm && echo "/etc/bash_completion.d/drbdadm" >> "$FILELIST"
+test -e etc/bash_completion.d/drbdadm.sh && echo "/etc/bash_completion.d/drbdadm.sh" >> "$FILELIST"
 
 ## If I only wanted to include the module, not all the directories
 ## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below
@@ -124,6 +125,9 @@ ___
 /usr/lib/drbd/outdate-peer.sh
 /usr/lib/drbd/snapshot-resync-target-lvm.sh
 /usr/lib/drbd/unsnapshot-resync-target-lvm.sh
+/usr/lib/drbd/notify-out-of-sync.sh
+/usr/lib/drbd/notify-split-brain.sh
+/usr/lib/drbd/notify.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/xen/scripts/block-drbd
 
