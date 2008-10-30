@@ -111,8 +111,8 @@ else
 	  fi;									\
 	  grep return $@ ;							\
 	else									\
-	  GITHEAD=$$(git-rev-parse HEAD);					\
-	  GITDIFF=$$(cd .. && git-diff --name-only HEAD | tr -s '\t\n' '  ' |	\
+	  GITHEAD=$$(git rev-parse HEAD);					\
+	  GITDIFF=$$(cd .. && git diff --name-only HEAD | tr -s '\t\n' '  ' |	\
 	  	sed -e 's/^/ /;s/ *$$//');					\
 	  echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";	 		\
 	fi ;									\
