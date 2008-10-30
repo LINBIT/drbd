@@ -1186,7 +1186,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* Terminate worker thread if we are unconfigured - it will be
 	   restarted as needed... */
-	if (ns.disk == Diskless && ns.conn == StandAlone)
+	if (ns.disk == Diskless && ns.conn == StandAlone && ns.role == Secondary)
 		drbd_thread_stop_nowait(&mdev->worker);
 
 	drbd_md_sync(mdev);
