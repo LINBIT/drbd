@@ -837,7 +837,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 
 	/* Early state sanitising. */
 
-	/* Dissalow the invalidate ioctl to connect  */
+	/* Dissalow the invalidate command to connect  */
 	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
 		os.conn < Connected) {
 		ns.conn = os.conn;
@@ -2259,7 +2259,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 
 	/* Only called by our kernel thread.
 	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
-	 * in response to ioctl or module unload.
+	 * in response to admin command or module unload.
 	 */
 	if (!drbd_get_data_sock(mdev))
 		return 0;

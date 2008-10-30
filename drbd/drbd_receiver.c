@@ -886,7 +886,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 	msock->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
 	if (mdev->net_conf->sndbuf_size) {
-		/* FIXME fold to limits. should be done in drbd_ioctl */
+		/* FIXME fold to limits. should be done during configuration */
 		/* this is setsockopt SO_SNDBUFFORCE and SO_RCVBUFFORCE,
 		 * done directly. */
 		sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;

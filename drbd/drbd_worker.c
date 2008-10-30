@@ -1045,7 +1045,7 @@ STATIC int _drbd_may_sync_now(struct drbd_conf *mdev)
  * _drbd_pause_after:
  * Finds all devices that may not resync now, and causes them to
  * pause their resynchronisation.
- * Called from process context only ( ioctl and after_state_ch ).
+ * Called from process context only (admin command and after_state_ch).
  */
 STATIC int _drbd_pause_after(struct drbd_conf *mdev)
 {
@@ -1070,7 +1070,7 @@ STATIC int _drbd_pause_after(struct drbd_conf *mdev)
  * _drbd_resume_next:
  * Finds all devices that can resume resynchronisation
  * process, and causes them to resume.
- * Called from process context only ( ioctl and worker ).
+ * Called from process context only (admin command and worker).
  */
 STATIC int _drbd_resume_next(struct drbd_conf *mdev)
 {
@@ -1124,7 +1124,7 @@ void drbd_alter_sa(struct drbd_conf *mdev, int na)
  * drbd_start_resync:
  * @side: Either SyncSource or SyncTarget
  * Start the resync process. Called from process context only,
- * either ioctl or drbd_receiver.
+ * either admin command or drbd_receiver.
  * Note, this function might bring you directly into one of the
  * PausedSync* states.
  */
