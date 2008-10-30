@@ -105,6 +105,10 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
+# define BD_OPS_USE_FMODE
+#endif
+
 /*
  * used to submit our private bio
  */

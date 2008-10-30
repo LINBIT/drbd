@@ -69,8 +69,13 @@ int drbd_worker(struct Drbd_thread *);
 int drbd_asender(struct Drbd_thread *);
 
 int drbd_init(void);
-STATIC int drbd_open(struct inode *inode, struct file *file);
-STATIC int drbd_close(struct inode *inode, struct file *file);
+#ifdef BD_OPS_USE_FMODE
+static int drbd_open(struct block_device *bdev, fmode_t mode);
+static int drbd_release(struct gendisk *gd, fmode_t mode);
+#else
+static int drbd_open(struct inode *inode, struct file *file);
+static int drbd_release(struct inode *inode, struct file *file);
+#endif
 STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags);
@@ -153,7 +158,7 @@ wait_queue_head_t drbd_pp_wait;
 STATIC struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
-	.release = drbd_close,
+	.release = drbd_release,
 };
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -2109,22 +2114,27 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 	return sent;
 }
 
-STATIC int drbd_open(struct inode *inode, struct file *file)
+#ifdef BD_OPS_USE_FMODE
+static int drbd_open(struct block_device *bdev, fmode_t mode)
+#else
+static int drbd_open(struct inode *inode, struct file *file)
+#endif
 {
-	struct drbd_conf *mdev;
+#ifdef BD_OPS_USE_FMODE
+	struct drbd_conf *mdev = bdev->bd_disk->private_data;
+#else
+	int mode = file->f_mode;
+	struct drbd_conf *mdev = inode->i_bdev->bd_disk->private_data;
+#endif
 	unsigned long flags;
 	int rv = 0;
-
-	mdev = minor_to_mdev(MINOR(inode->i_rdev));
-	if (!mdev)
-		return -ENODEV;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	/* to have a stable mdev->state.role
 	 * and no race with updating open_cnt */
 
 	if (mdev->state.role != Primary) {
-		if (file->f_mode & FMODE_WRITE)
+		if (mode & FMODE_WRITE)
 			rv = -EROFS;
 		else if (!allow_oos)
 			rv = -EMEDIUMTYPE;
@@ -2137,25 +2147,21 @@ STATIC int drbd_open(struct inode *inode, struct file *file)
 	return rv;
 }
 
-STATIC int drbd_close(struct inode *inode, struct file *file)
+#ifdef BD_OPS_USE_FMODE
+static int drbd_release(struct gendisk *gd, fmode_t mode)
 {
-	/* do not use *file (May be NULL, in case of a unmount :-) */
-	struct drbd_conf *mdev;
-
-	mdev = minor_to_mdev(MINOR(inode->i_rdev));
-	if (!mdev)
-		return -ENODEV;
-
-	/*
-	printk(KERN_ERR "drbd: close(inode=%p,file=%p)"
-	       "current=%p,minor=%d,wc=%d\n", inode, file, current, minor,
-	       inode->i_writecount);
-	*/
-
+	struct drbd_conf *mdev = gd->private_data;
 	mdev->open_cnt--;
-
 	return 0;
 }
+#else
+static int drbd_release(struct inode *inode, struct file *file)
+{
+	struct drbd_conf *mdev = inode->i_bdev->bd_disk->private_data;
+	mdev->open_cnt--;
+	return 0;
+}
+#endif
 
 STATIC void drbd_unplug_fn(struct request_queue *q)
 {
