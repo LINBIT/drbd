@@ -770,8 +770,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		ns.conn = Connected;
 	}
 
-	if (ns.conn != os.conn && ns.conn >= Connected &&
-	    (ns.disk == Consistent || ns.disk == Outdated)) {
+	if (ns.conn >= Connected &&
+	    ((ns.disk == Consistent || ns.disk == Outdated) ||
+	     (ns.disk == Negotiating && ns.conn == WFBitMapT))) {
 		switch (ns.conn) {
 		case WFBitMapT:
 		case PausedSyncT:
@@ -792,7 +793,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			drbd_WARN("Implicit set disk from Outdate to UpToDate\n");
 	}
 
-	if (ns.conn != os.conn && ns.conn >= Connected &&
+	if (ns.conn >= Connected &&
 	    (ns.pdsk == Consistent || ns.pdsk == Outdated)) {
 		switch (ns.conn) {
 		case Connected:
