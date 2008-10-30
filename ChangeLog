@@ -93,7 +93,6 @@ Changelog for fixes propagated from 8.0.x:
 
 8.0.14 (api:86/proto:86)
 --------
-
  * fixed some access-after-free corner cases
  * fixed some potential deadlocks on state changes
  * don't use bounce buffers (reduce unnecessary buffer page bounces on 32bit)
@@ -102,7 +101,6 @@ Changelog for fixes propagated from 8.0.x:
  * linux 2.6.27 compatibility
  * latency improvements using TCP_QUICKACK
  * reduced spurious coding differrences between drbd-8.0 and drbd-8.2
-
  * drbdsetup now checks for /proc/drbd instead of playing netlink ping-pong
    to determin whether the drbd kernel module is present.
  * fixed (harmless but annoying) stack corruption in drbdadm

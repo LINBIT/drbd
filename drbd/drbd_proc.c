@@ -191,7 +191,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		sn = conns_to_name(mdev->state.conn);
 
 		if (mdev->state.conn == StandAlone &&
-		    mdev->state.disk == Diskless) {
+		    mdev->state.disk == Diskless &&
+		    mdev->state.role == Secondary) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf(seq,
