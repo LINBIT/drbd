@@ -2203,7 +2203,13 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
 	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF;
 	mdev->state = (union drbd_state_t) {
-		{ Secondary, Unknown, StandAlone, Diskless, DUnknown, 0 } };
+		{ .role = Secondary,
+		  .peer = Unknown,
+		  .conn = StandAlone,
+		  .disk = Diskless,
+		  .pdsk = DUnknown,
+		  .susp = 0
+		} };
 }
 
 int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
