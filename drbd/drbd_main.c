@@ -96,6 +96,7 @@ MODULE_PARM_DESC(allow_oos, "DONT USE!");
  * this becomes the boot parameter drbd.minor_count */
 module_param(minor_count, uint, 0444);
 module_param(allow_oos, bool, 0);
+module_param(cn_idx, uint, 0444);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
@@ -115,6 +116,7 @@ module_param(fault_devs, int, 0644);
 /* module parameter, defined */
 unsigned int minor_count = 32;
 int allow_oos;
+unsigned int cn_idx = CN_IDX_DRBD;
 
 #ifdef ENABLE_DYNAMIC_TRACE
 int trace_type;		/* Bitmap of trace types to enable */
@@ -258,15 +260,19 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		_req_mod(r, barrier_acked, 0);
 	}
 	/* There could be requests on the list waiting for completion
-	   of the write to the local disk, to avoid corruptions of
+	   of the write to the local disk. To avoid corruptions of
 	   slab's data structures we have to remove the lists head.
+
 	   Also there could have been a barrier ack out of sequence, overtaking
 	   the write acks - which would be a but and violating write ordering.
 	   To not deadlock in case we lose connection while such requests are
 	   still pending, we need some way to find them for the
-	   _req_mode(connection_lost_while_pending)
+	   _req_mode(connection_lost_while_pending).
+
+	   These have been list_move'd to the out_of_sequence_requests list in
+	   _req_mod(, barrier_acked,) above.
 	   */
-	list_splice_init(&b->requests, &mdev->out_of_sequence_requests);
+	list_del_init(&b->requests);
 
 	D_ASSERT(b->br_number == barrier_nr);
 	D_ASSERT(b->n_req == set_size);

@@ -2311,8 +2311,8 @@ void __exit cn_fini(void);
 
 int __init drbd_nl_init(void)
 {
-	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
-	int err;
+	static struct cb_id cn_id_drbd;
+	int err, try=10;
 
 #ifdef NETLINK_ROUTE6
 	/* pre 2.6.16 */
@@ -2320,7 +2320,15 @@ int __init drbd_nl_init(void)
 	if (err)
 		return err;
 #endif
-	err = cn_add_callback(&cn_id_drbd, "cn_drbd", &drbd_connector_callback);
+	cn_id_drbd.val = CN_VAL_DRBD;
+	do {
+		cn_id_drbd.idx = cn_idx;
+		err = cn_add_callback(&cn_id_drbd, "cn_drbd", &drbd_connector_callback);
+		if (!err)
+			break;
+		cn_idx = (cn_idx + CN_IDX_STEP);
+	} while (try--);
+
 	if (err) {
 		printk(KERN_ERR "drbd: cn_drbd failed to register\n");
 		return err;
@@ -2331,7 +2339,10 @@ int __init drbd_nl_init(void)
 
 void drbd_nl_cleanup(void)
 {
-	static struct cb_id cn_id_drbd = { CN_IDX_DRBD, CN_VAL_DRBD };
+	static struct cb_id cn_id_drbd;
+
+	cn_id_drbd.idx = cn_idx;
+	cn_id_drbd.val = CN_VAL_DRBD;
 
 	cn_del_callback(&cn_id_drbd);
 
