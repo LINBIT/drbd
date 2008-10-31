@@ -1045,6 +1045,13 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			break;
 		case EV_got_barrier_nr:
 			set_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
+
+			/* Special case: If we just switched from WO_bio_barrier to
+			   WO_bdev_flush we should not finish the current epoch */
+			if (test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags) && epoch_size == 1 &&
+			    mdev->write_ordering != WO_bio_barrier &&
+			    epoch == mdev->current_epoch)
+				clear_bit(DE_CONTAINS_A_BARRIER, &epoch->flags);
 			break;
 		case EV_barrier_done:
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
@@ -1186,7 +1193,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
 	struct bio* bio = e->private_bio;
 
-	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_A_BARRIER in place,
+	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
 	   so that we can finish that epoch in drbd_may_finish_epoch().
 	   That is necessary if we already have a long chain of Epochs, before
