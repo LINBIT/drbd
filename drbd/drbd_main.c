@@ -91,6 +91,7 @@ MODULE_PARM_DESC(allow_oos, "DONT USE!");
  * this becomes the boot parameter drbd.minor_count */
 module_param(minor_count, uint, 0444);
 module_param(allow_oos, bool, 0);
+module_param(cn_idx, uint, 0444);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
@@ -110,6 +111,7 @@ module_param(fault_devs, int, 0644);
 /* module parameter, defined */
 unsigned int minor_count = 32;
 int allow_oos;
+unsigned int cn_idx = CN_IDX_DRBD;
 
 #ifdef ENABLE_DYNAMIC_TRACE
 int trace_type;		/* Bitmap of trace types to enable */

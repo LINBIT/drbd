@@ -334,6 +334,9 @@ enum UuidIndex {
 #define CN_IDX_DRBD			0x4
 #define CN_VAL_DRBD			0x1
 
+/* For searching a vacant cn_idx value */
+#define CN_IDX_STEP			6977
+
 struct drbd_nl_cfg_req {
 	int packet_type;
 	int drbd_minor;

@@ -422,6 +422,7 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
+unsigned int cn_idx;
 
 int dump_tag_list(unsigned short *tlc)
 {
@@ -1789,7 +1790,7 @@ int open_cn()
 	}
 
 	my_nla.nl_family = AF_NETLINK;
-	my_nla.nl_groups = -1; //CN_IDX_DRBD;
+	my_nla.nl_groups = -1; //cn_idx
 	my_nla.nl_pid = getpid();
 
 	err = bind(sk_nl, (struct sockaddr *)&my_nla, sizeof(my_nla));
@@ -1825,7 +1826,7 @@ void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 	nl_hdr->nlmsg_pid = getpid();
 	/* fill the connector header */
 	cn_hdr->id.val = CN_VAL_DRBD;
-	cn_hdr->id.idx = CN_IDX_DRBD;
+	cn_hdr->id.idx = cn_idx;
 	cn_hdr->seq = cn_seq++;
 	get_random_bytes(&cn_hdr->ack,sizeof(cn_hdr->ack));
 	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
@@ -1921,7 +1922,15 @@ void close_cn(int sk_nl)
 void ensure_drbd_driver_is_present(void)
 {
 	struct stat sb;
+	FILE *cn_idx_file;
 	int err;
+
+	cn_idx = CN_IDX_DRBD;
+	cn_idx_file = fopen("/sys/module/drbd/parameters/cn_idx", "r");
+	if (cn_idx_file) {
+		fscanf(cn_idx_file, "%u", &cn_idx);
+		fclose(cn_idx_file);
+	}
 
 	err = stat("/proc/drbd", &sb);
 	if (!err)
