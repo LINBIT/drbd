@@ -2103,7 +2103,8 @@ static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 	mdev->ed_uuid = val;
 
 	MTRACE(TraceTypeUuid, TraceLvlMetrics,
-	       INFO(" exposed data uuid now %016llX\n", val);
+	       INFO(" exposed data uuid now %016llX\n",
+		    (unsigned long long)val);
 		);
 }
 

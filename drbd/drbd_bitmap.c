@@ -639,7 +639,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 	 * this may be optimized by using
 	 * cpu_to_lel(-1) == -1 and cpu_to_lel(0) == 0;
 	 * the following is still not optimal, but better than nothing */
-	const unsigned long *end = b->bm+b->bm_words;
+	unsigned long *end = b->bm+b->bm_words;
 	unsigned long *bm;
 	if (b->bm_set == 0) {
 		/* no page at all; avoid swap if all is 0 */

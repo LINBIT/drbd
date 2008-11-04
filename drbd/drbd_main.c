@@ -3301,7 +3301,7 @@ STATIC char *_drbd_uuid_str(unsigned int idx)
 void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
 {
 	INFO(" uuid[%s] now %016llX\n",
-		_drbd_uuid_str(idx), mdev->bc->md.uuid[idx]);
+	     _drbd_uuid_str(idx), (unsigned long long)mdev->bc->md.uuid[idx]);
 }
 
 
@@ -3488,12 +3488,12 @@ do { \
 
 STATIC char *_dump_block_id(u64 block_id, char *buff)
 {
-    if (is_syncer_block_id(block_id))
-	strcpy(buff, "SyncerId");
-    else
-	sprintf(buff, "%llx", block_id);
+	if (is_syncer_block_id(block_id))
+		strcpy(buff, "SyncerId");
+	else
+		sprintf(buff, "%llx", (unsigned long long)block_id);
 
-    return buff;
+	return buff;
 }
 
 void
@@ -3564,10 +3564,10 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 		INFOP("%s Curr:%016llX, Bitmap:%016llX, "
 		      "HisSt:%016llX, HisEnd:%016llX\n",
 		      cmdname(cmd),
-		      be64_to_cpu(p->GenCnt.uuid[Current]),
-		      be64_to_cpu(p->GenCnt.uuid[Bitmap]),
-		      be64_to_cpu(p->GenCnt.uuid[History_start]),
-		      be64_to_cpu(p->GenCnt.uuid[History_end]));
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[Current]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[Bitmap]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[History_start]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[History_end]));
 		break;
 
 	case ReportSizes:
