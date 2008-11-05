@@ -1562,9 +1562,11 @@ void drbd_thread_current_set_cpu(struct drbd_conf *mdev)
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	preempt_disable();
+	/* preempt_disable();
+	   Thas was a kernel that warned about a call to smp_processor_id() while preemt
+	   was not disabled. It seems that this was fixed in manline. */
 	set_cpus_allowed(p, mdev->cpu_mask);
-	preempt_enable();
+	/* preempt_enable(); */
 }
 #endif
 
