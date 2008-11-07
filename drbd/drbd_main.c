@@ -306,8 +306,6 @@ void tl_clear(struct drbd_conf *mdev)
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 
-	drbd_WARN("tl_clear()\n");
-
 	spin_lock_irq(&mdev->req_lock);
 
 	b = mdev->oldest_barrier;
@@ -1146,17 +1144,13 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* We are in the progress to start a full sync... */
 	if ((os.conn != StartingSyncT && ns.conn == StartingSyncT) ||
-	    (os.conn != StartingSyncS && ns.conn == StartingSyncS)) {
-		INFO("Queueing bitmap io: about to start a forced full sync\n");
+	    (os.conn != StartingSyncS && ns.conn == StartingSyncS))
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync, "set_n_write from StartingSync");
-	}
 
 	/* We are invalidating our self... */
 	if (os.conn < Connected && ns.conn < Connected &&
-	    os.disk > Inconsistent && ns.disk == Inconsistent) {
-		INFO("Queueing bitmap io: invalidate forced full sync\n");
+	    os.disk > Inconsistent && ns.disk == Inconsistent)
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL, "set_n_write from invalidate");
-	}
 
 	if (os.disk > Diskless && ns.disk == Diskless) {
 		/* since inc_local() only works as long as disk>=Inconsistent,
@@ -2819,7 +2813,9 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!inc_local_if_state(mdev, Failed))
 		return;
 
-	INFO("Writing meta data super block now.\n");
+	MTRACE(TraceTypeMDIO, TraceLvlSummary,
+	       INFO("Writing meta data super block now.\n");
+	       );
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);

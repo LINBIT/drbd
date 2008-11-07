@@ -18,7 +18,7 @@
 %define krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
 Name: drbd
-Summary: Distributed Redundant Block Device driver for Linux
+Summary: DRBD driver for Linux
 Version:
 Release: 3
 Source: %{name}-%{version}.tar.gz

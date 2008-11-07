@@ -505,17 +505,13 @@ void drbd_suspend_io(struct drbd_conf *mdev)
 	int in_flight;
 	set_bit(SUSPEND_IO, &mdev->flags);
 	in_flight = atomic_read(&mdev->ap_bio_cnt);
-	if (in_flight) {
-		DBG("Suspending IO, waiting for %d requests to finish\n", in_flight);
+	if (in_flight)
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
-	}
-	DBG("IO Suspended, no more requests in flight\n");
 }
 
 void drbd_resume_io(struct drbd_conf *mdev)
 {
 	clear_bit(SUSPEND_IO, &mdev->flags);
-	DBG("Resumed IO\n");
 	wake_up(&mdev->misc_wait);
 }
 
