@@ -658,7 +658,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 	 * this may be optimized by using
 	 * cpu_to_lel(-1) == -1 and cpu_to_lel(0) == 0;
 	 * the following is still not optimal, but better than nothing */
-	const unsigned long *end = b->bm+b->bm_words;
+	unsigned long *end = b->bm+b->bm_words;
 	unsigned long *bm;
 	if (b->bm_set == 0) {
 		/* no page at all; avoid swap if all is 0 */
@@ -710,8 +710,11 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
-	INFO("%s of bitmap took %lu jiffies\n",
-	     rw == READ ? "reading" : "writing", jiffies - now);
+
+	MTRACE(TraceTypeMDIO, TraceLvlSummary,
+	       INFO("%s of bitmap took %lu jiffies\n",
+		    rw == READ ? "reading" : "writing", jiffies - now);
+	       );
 
 	if (test_bit(BM_MD_IO_ERROR, &b->bm_flags)) {
 		ALERT("we had at least one MD IO ERROR during bitmap IO\n");

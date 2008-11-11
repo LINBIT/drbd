@@ -313,8 +313,6 @@ void tl_clear(struct drbd_conf *mdev)
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 
-	drbd_WARN("tl_clear()\n");
-
 	spin_lock_irq(&mdev->req_lock);
 
 	b = mdev->oldest_barrier;
@@ -1280,17 +1278,13 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* We are in the progress to start a full sync... */
 	if ((os.conn != StartingSyncT && ns.conn == StartingSyncT) ||
-	    (os.conn != StartingSyncS && ns.conn == StartingSyncS)) {
-		INFO("Queueing bitmap io: about to start a forced full sync\n");
+	    (os.conn != StartingSyncS && ns.conn == StartingSyncS))
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, &abw_start_sync, "set_n_write from StartingSync");
-	}
 
 	/* We are invalidating our self... */
 	if (os.conn < Connected && ns.conn < Connected &&
-	    os.disk > Inconsistent && ns.disk == Inconsistent) {
-		INFO("Queueing bitmap io: invalidate forced full sync\n");
+	    os.disk > Inconsistent && ns.disk == Inconsistent)
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL, "set_n_write from invalidate");
-	}
 
 	if (os.disk > Diskless && ns.disk == Diskless) {
 		/* since inc_local() only works as long as disk>=Inconsistent,
@@ -2496,7 +2490,13 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 	mdev->sync_conf.rate       = DRBD_RATE_DEF;
 	mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_DEF;
 	mdev->state = (union drbd_state_t) {
-		{ Secondary, Unknown, StandAlone, Diskless, DUnknown, 0 } };
+		{ .role = Secondary,
+		  .peer = Unknown,
+		  .conn = StandAlone,
+		  .disk = Diskless,
+		  .pdsk = DUnknown,
+		  .susp = 0
+		} };
 }
 
 int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
@@ -3129,7 +3129,9 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!inc_local_if_state(mdev, Failed))
 		return;
 
-	INFO("Writing meta data super block now.\n");
+	MTRACE(TraceTypeMDIO, TraceLvlSummary,
+	       INFO("Writing meta data super block now.\n");
+	       );
 
 	down(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
@@ -3629,7 +3631,7 @@ STATIC char *_drbd_uuid_str(unsigned int idx)
 void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
 {
 	INFO(" uuid[%s] now %016llX\n",
-		_drbd_uuid_str(idx), mdev->bc->md.uuid[idx]);
+	     _drbd_uuid_str(idx), (unsigned long long)mdev->bc->md.uuid[idx]);
 }
 
 
@@ -3816,12 +3818,12 @@ do { \
 
 STATIC char *_dump_block_id(u64 block_id, char *buff)
 {
-    if (is_syncer_block_id(block_id))
-	strcpy(buff, "SyncerId");
-    else
-	sprintf(buff, "%llx", block_id);
+	if (is_syncer_block_id(block_id))
+		strcpy(buff, "SyncerId");
+	else
+		sprintf(buff, "%llx", (unsigned long long)block_id);
 
-    return buff;
+	return buff;
 }
 
 void
@@ -3893,10 +3895,10 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 		INFOP("%s Curr:%016llX, Bitmap:%016llX, "
 		      "HisSt:%016llX, HisEnd:%016llX\n",
 		      cmdname(cmd),
-		      be64_to_cpu(p->GenCnt.uuid[Current]),
-		      be64_to_cpu(p->GenCnt.uuid[Bitmap]),
-		      be64_to_cpu(p->GenCnt.uuid[History_start]),
-		      be64_to_cpu(p->GenCnt.uuid[History_end]));
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[Current]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[Bitmap]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[History_start]),
+		      (unsigned long long)be64_to_cpu(p->GenCnt.uuid[History_end]));
 		break;
 
 	case ReportSizes:

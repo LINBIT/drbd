@@ -4,21 +4,11 @@
 %{!?kernelversion: %{expand: %%define kernelversion %(uname -r)}}
 %{!?kdir: %{expand: %%define kdir /lib/modules/%(uname -r)/build}}
 
-#
-# this results in strange names for e.g. smp4G, psmp,
-# -smp-lge or whatnot.
-#--
-# %define kversion %(echo %{kernelversion} | sed -e s/smp// -)
-# %define krelver  %(echo %{kversion} | tr -s '-' '_')
-# %if %(echo %{kernelversion} | grep -c smp)
-#   %{expand:%%define ksmp -smp}
-# %endif
-#--
-# so I choose to have it thus:
+# encode - to _ to be able to include that in a package name or release "number"
 %define krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
 Name: drbd
-Summary: Distributed Redundant Block Device driver for Linux
+Summary: DRBD driver for Linux
 Version:
 Release: 3
 Source: %{name}-%{version}.tar.gz
@@ -27,15 +17,13 @@ License: GPL
 ExclusiveOS: linux
 Group: System Environment/Kernel
 Packager:
-Requires: kernel
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
-Drbd is a distributed replicated block device. It mirrors a
-block device over the network to another machine. Think of it
-as networked raid 1. It is a building block for setting up
-high availability (HA) clusters.
+DRBD mirrors a block device over the network to another machine.
+Think of it as networked raid 1. It is a building block for
+setting up high availability (HA) clusters.
 
 Authors:
 --------
@@ -47,12 +35,28 @@ Authors:
 # drbd is prepended...
 %package km-%{krelver}
 Summary: Kernel driver for DRBD.
-#Release: %{release}_%{krelver}
 Group: System Environment/Kernel
+# This is STUPID and UGLY. I know.
+# But it works for now.
+# unless overridden by environment variable, conflicts with suse and
+# centos/rhel kernel module packages.  use either theirs, or ours...
+# under suse, it used to be called km_drbd a long time ago, now is called
+# drbd-kmp-$flavor, with a version ${drbd_version}_${kernelversion}
+# (e.g. 8.2.6_2.6.16.60...)
+# so if _3 is appended, that should do the trick to conflict with all
+# of their packages, unless they provide a newer version of drbd.  for
+# redhat/centos, it is called kmod-drbd-$flavor (the generic, flavorless,
+# provides being drbd-kmod for some reason; also they hide the kernel version
+# in the release instead of the version...).
+# we probably don't want to conflict with all of those on all distributions,
+# though, therefore the override possibility.
+Conflicts: %{expand: %(echo ${DRBD_KMOD_CONFLICTS:-"km_drbd, drbd-kmp <= %%{version}_3, drbd-kmod <= %%{version}_3"})}
+# always require a suitable userland and depmod.
 Requires: %{name} = %{version}, /sbin/depmod
-# conflicts with the suse km_drbd package. use either theirs, or ours...
-Conflicts: km_drbd, %{name} < %{version}
-#%{?ksmp:Provides: kernel-module-drbd = %{version}-%{release}_%{krelver}}
+# to be able to override from build scripts which flavor of kernel we are building against.
+Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
+# TODO: break up this generic .spec file into per distribution ones,
+# and use the distribution specific naming and build conventions for kernel modules.
 
 #%description -n kernel%{?ksmp}-module-drbd
 %description km-%{krelver}

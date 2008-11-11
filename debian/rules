@@ -68,6 +68,8 @@ build: patch build-arch build-indep
 build-arch: build-arch-stamp
 build-arch-stamp:
 	dh_testdir
+#	build this first, so user/drbd_buildtag.c does not use the stale thing from the tgz
+	$(MAKE) drbd/drbd_buildtag.c
 	$(MAKE) -C user
 	$(MAKE) -C scripts
 	$(MAKE) -C benchmark

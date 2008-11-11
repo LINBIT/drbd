@@ -2307,10 +2307,10 @@ STATIC void drbd_uuid_dump(struct drbd_conf *mdev, char *text, u64 *uuid)
 	}
 	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
 	     text,
-	     uuid[Current],
-	     uuid[Bitmap],
-	     uuid[History_start],
-	     uuid[History_end]);
+	     (unsigned long long)uuid[Current],
+	     (unsigned long long)uuid[Bitmap],
+	     (unsigned long long)uuid[History_start],
+	     (unsigned long long)uuid[History_end]);
 }
 
 /*
@@ -2425,12 +2425,10 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 
 	hg = drbd_uuid_compare(mdev, &rule_nr);
 
-	MTRACE(TraceTypeUuid, TraceLvlSummary,
-	       INFO("drbd_sync_handshake:\n");
-	       drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
-	       drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
-	       INFO("uuid_compare()=%d by rule %d\n", hg, rule_nr);
-	    );
+	INFO("drbd_sync_handshake:\n");
+	drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
+	drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
+	INFO("uuid_compare()=%d by rule %d\n", hg, rule_nr);
 
 	if (hg == -1000) {
 		ALERT("Unrelated data, aborting!\n");

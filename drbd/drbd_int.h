@@ -1384,7 +1384,8 @@ enum {
 	TraceTypeNl	= 0x00000040,
 	TraceTypeALExts = 0x00000080,
 	TraceTypeIntRq  = 0x00000100,
-	TraceTypeEpochs = 0x00000200,
+	TraceTypeMDIO   = 0x00000200,
+	TraceTypeEpochs = 0x00000400,
 };
 
 static inline int
@@ -2220,7 +2221,8 @@ static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 	mdev->ed_uuid = val;
 
 	MTRACE(TraceTypeUuid, TraceLvlMetrics,
-	       INFO(" exposed data uuid now %016llX\n", val);
+	       INFO(" exposed data uuid now %016llX\n",
+		    (unsigned long long)val);
 		);
 }
 
