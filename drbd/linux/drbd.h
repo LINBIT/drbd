@@ -26,6 +26,7 @@
 #ifndef DRBD_H
 #define DRBD_H
 #include <linux/drbd_config.h>
+#include <linux/connector.h>
 
 #include <asm/types.h>
 
@@ -331,7 +332,10 @@ enum UuidIndex {
 
 /* The following line should be moved over to linux/connector.h
  * when the time comes */
-#define CN_IDX_DRBD			0x4
+#ifndef CN_IDX_DRBD
+# define CN_IDX_DRBD			0x4
+/* Ubuntu's Trapid release defined CN_IDX_DRBD as 0x6 */
+#endif
 #define CN_VAL_DRBD			0x1
 
 /* For searching a vacant cn_idx value */
