@@ -196,8 +196,8 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
-* Tue Oct 28 2008 19:53:49 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.14rc1-1)
+* Wed Nov 12 2008 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.14-1)
  * fixed some access-after-free corner cases
  * fixed some potential deadlocks on state changes
  * don't use bounce buffers (reduce unnecessary buffer page bounces on 32bit)
