@@ -811,6 +811,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
+	memset(&nbc->md, 0, sizeof(struct drbd_md));
+
 	if (!(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_local(mdev)) {
 		memcpy(&nbc->dc, &mdev->bc->dc, sizeof(struct disk_conf));
 		dec_local(mdev);
@@ -906,7 +908,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev2_fail;
 	}
 
+	/* RT - for drbd_get_max_capacity() DRBD_MD_INDEX_FLEX_INT */
+	drbd_md_set_sector_offsets(mdev, nbc);
+
 	if (drbd_get_max_capacity(nbc) < nbc->dc.disk_size) {
+		ERR("max capacity %llu smaller than disk size %llu\n",
+			(unsigned long long) drbd_get_max_capacity(nbc),
+			(unsigned long long) nbc->dc.disk_size);
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}
