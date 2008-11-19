@@ -179,8 +179,17 @@ kernel-patch: drbd/drbd_buildtag.c
 	test -e $$d && cp -fav --backup=numbered $$d $$d; \
 	bash scripts/patch-kernel $(KDIR) . > $$d
 
-# maybe even dist/RPMS/$(ARCH) ?
-rpm: tgz
+.PHONY: check-kdir
+check-kdir:
+	@if ! test -e $(KDIR)/Makefile ; then \
+		echo "    SORRY, kernel makefile not found." ;\
+	        echo "    You need to tell me a correct KDIR," ;\
+	        echo "    Or install the neccessary kernel source packages." ;\
+	        echo "" ;\
+		false;\
+	fi
+
+rpm: check-kdir tgz
 	mkdir -p dist/BUILD \
 	         dist/RPMS  \
 	         dist/SPECS \
