@@ -105,6 +105,7 @@ no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
 after			{ DP; CP; return TK_SYNCER_OPTION;	}
 verify-alg              { DP; CP; return TK_SYNCER_OPTION;      }
+csums-alg               { DP; CP; return TK_SYNCER_OPTION;      }
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OPTION;}
 cpu-mask		{ DP; CP; return TK_SYNCER_OPTION;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}

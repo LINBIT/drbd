@@ -339,6 +339,7 @@ struct drbd_cmd commands[] = {
 		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
 		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
 		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
+		 { "csums-alg", 'C',T_csums_alg,        ES },
 		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 CLOSE_OPTIONS }} }, },
@@ -434,6 +435,9 @@ static const char *error_messages[] = {
 	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
 	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
 	EM(MayNotBeConnected) = "Not possible while connected",
+	EM(CSUMSAlgNotAvail) = "CSUMSAlgNotAvail",
+	EM(CSUMSAlgNotDigest) = "CSUMSAlgNotDigest",
+	EM(CSUMSResyncRunning) = "Can not change csums-alg while resync is in progress",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
