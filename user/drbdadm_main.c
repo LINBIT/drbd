@@ -47,7 +47,6 @@
 #include <getopt.h>
 #include <signal.h>
 #include <time.h>
-#include <dirent.h>
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 
@@ -127,6 +126,7 @@ static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
 static int sh_ip(struct d_resource* ,const char* );
+static int sh_lres(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
 static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
@@ -152,7 +152,11 @@ char *config_save = NULL;
 struct d_resource* config = NULL;
 struct d_resource* common = NULL;
 struct ifreq *ifreq_list = NULL;
+int is_drbd_top;
 int nr_resources;
+int nr_stacked;
+int nr_normal;
+int nr_ignore;
 int highest_minor;
 int config_from_stdin = 0;
 int config_valid=1;
@@ -365,6 +369,7 @@ int run_dcmds(void)
 }
 
 struct option admopt[] = {
+  { "stacked",      no_argument,      0, 'S' },
   { "dry-run",      no_argument,      0, 'd' },
   { "verbose",      no_argument,      0, 'v' },
   { "config-file",  required_argument,0, 'c' },
@@ -473,6 +478,7 @@ struct adm_cmd cmds[] = {
         { "sh-md-dev",             sh_md_dev,       DRBD_acf2_shell     },
         { "sh-md-idx",             sh_md_idx,       DRBD_acf2_shell     },
         { "sh-ip",                 sh_ip,           DRBD_acf2_shell     },
+        { "sh-lr-of",              sh_lres,         DRBD_acf2_shell     },
         { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
         { "sh-status",             adm_generic_s,   DRBD_acf2_shell     },
 
@@ -728,11 +734,31 @@ static void dump_host_info_xml(struct d_host_info* hi)
 
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
+  struct d_host_info *h;
+  printI("# resource %s on %s: %s, %s\n",
+	  esc(res->name), nodeinfo.nodename,
+	  res->ignore  ? "ignored" : "not ignored",
+	  res->stacked ? "stacked" : "not stacked");
   printI("resource %s {\n",esc(res->name)); ++indent;
-  if(res->protocol) printA("protocol",res->protocol);
-  // else if (common && common->protocol) printA("# common protocol", common->protocol);
-  dump_host_info(res->me);
-  dump_host_info(res->peer);
+  if (res->protocol) printA("protocol", res->protocol);
+  if (res->ignore) printA("ignore-on", nodeinfo.nodename);
+  if (res->lower) {
+    printI("stacked-on-top-of %s {\n",esc(res->lower->name)); ++indent;
+    h = res->ignore
+	? strcmp("stacked resource", res->me->name) == 0
+	  ? res->me
+	  : res->peer
+	: res->stacked
+	  ? res->me
+	  : res->peer;
+    printA("device", esc(h->device));
+    printI(IPFMT,"address", h->address, h->port);
+    --indent; printI("}\n");
+    dump_host_info(h == res->me ? res->peer : res->me);
+  } else {
+    dump_host_info(res->me);
+    dump_host_info(res->peer);
+  }
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
@@ -775,6 +801,8 @@ static int sh_resources(struct d_resource* ignored __attribute((unused)),const c
   int first=1;
 
   for_each_resource(res,t,config) {
+    if (res->ignore) continue;
+    if (is_drbd_top != res->stacked) continue;
     printf(first?"%s":" %s",esc(res->name));
     first=0;
   }
@@ -800,6 +828,21 @@ static int sh_dev(struct d_resource* res,const char* unused __attribute((unused)
 static int sh_ip(struct d_resource* res,const char* unused __attribute((unused)))
 {
   printf("%s\n",res->me->address);
+
+  return 0;
+}
+
+static int sh_lres(struct d_resource* res,const char* unused __attribute((unused)))
+{
+  if (!is_drbd_top) {
+	  fprintf(stderr,"sh-lower-resource only available in stacked mode\n");
+	  exit(E_usage);
+  }
+  if (!res->stacked) {
+	  fprintf(stderr,"'%s' is not stacked on this host (%s)\n", res->name, nodeinfo.nodename);
+	  exit(E_usage);
+  }
+  printf("%s\n",res->lower->name);
 
   return 0;
 }
@@ -1378,18 +1421,47 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
 
 struct d_resource* res_by_name(const char *name);
 
+struct d_option* del_opt(struct d_option* base,struct d_option* item)
+{
+  struct d_option *i;
+  if(base == item) {
+    base = item->next;
+      free(item->name);
+      free(item->value);
+      free(item);
+      return base;
+  }
+
+  for (i = base; i; i = i->next) {
+    if(i->next == item) {
+      i->next = item->next;
+      free(item->name);
+      free(item->value);
+      free(item);
+      return base;
+    }
+  }
+  return base;
+}
+
 // Need to convert after from resourcename to minor_number.
 void convert_after_option(struct d_resource* res)
 {
   struct d_option* opt;
+  struct d_resource* depends_on_res;
 
   if (res==NULL) return;
 
   if ( (opt = find_opt(res->sync_options, "after")) ) {
     char *ptr;
-    ssprintf(ptr,"%d",dt_minor_of_res(res_by_name(opt->value)));
-    free(opt->value);
-    opt->value=strdup(ptr);
+    depends_on_res = res_by_name(opt->value);
+    if(depends_on_res->ignore) {
+      res->sync_options = del_opt(res->sync_options, opt);
+    } else {
+      ssprintf(ptr,"%d",dt_minor_of_dev(depends_on_res->me->device));
+      free(opt->value);
+      opt->value=strdup(ptr);
+    }
   }
 }
 
@@ -1489,6 +1561,10 @@ static int adm_up(struct d_resource* res,const char* unused __attribute((unused)
   return 0;
 }
 
+/* The stacked-timeouts switch in the startup sections allowes us
+   to enforce the use of the specified timeouts insetead the use
+   of a sane value. Should only be used if the third node should
+   never become primary. */
 static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((unused)))
 {
   char* argv[MAX_ARGS];
@@ -1498,8 +1574,22 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   argv[NA(argc)]=drbdsetup;
   argv[NA(argc)]=res->me->device;
   argv[NA(argc)]="wait-connect";
-  opt=res->startup_options;
-  make_options_wait(opt);
+  if (is_drbd_top && !find_opt(res->startup_options,"stacked-timeouts") ) {
+    unsigned long timeout = 20;
+    if( (opt = find_opt(res->net_options,"connect-int")) ) {
+      timeout = strtoul(opt->value,NULL,10);
+      // one connect-intervall? two?
+      timeout *= 2;
+    }
+    argv[argc++] = "-t";
+    ssprintf(argv[argc],"%lu",timeout); argc++;
+  } else {
+    if( (opt=find_opt(res->startup_options,"stacked-timeouts")) ) {
+      res->startup_options = del_opt(res->startup_options,opt);
+    }
+    opt=res->startup_options;
+    make_options_wait(opt);
+  }
   argv[NA(argc)]=0;
 
   rv = m_system(argv, SLEEPS_FOREVER, res);
@@ -1645,6 +1735,8 @@ static int check_exit_codes(pid_t* pids)
   int i=0,rv=0;
 
   for_each_resource(res,t,config) {
+    if (res->ignore) continue;
+    if (is_drbd_top != res->stacked) continue;
     if (pids[i] == -5 || pids[i] == -1000) {
       pids[i]=0;
     }
@@ -1694,6 +1786,8 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
   memset(pids,0,nr_resources * sizeof(pid_t));
 
   for_each_resource(res,t,config) {
+    if (res->ignore) continue;
+    if (is_drbd_top != res->stacked) continue;
     argc=0;
     argv[NA(argc)]=drbdsetup;
     argv[NA(argc)]=res->me->device;
@@ -1972,6 +2066,7 @@ void verify_ips(struct d_resource *res)
 }
 
 static char* conf_file[] = {
+    "/etc/drbd-83.conf",
     "/etc/drbd-82.conf",
     "/etc/drbd-08.conf",
     "/etc/drbd.conf",
@@ -2170,6 +2265,8 @@ void validate_resource(struct d_resource * res)
   } else {
     res->protocol[0] = toupper(res->protocol[0]);
   }
+  if (res->ignore)
+    return;
   if (!res->me) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
@@ -2365,6 +2462,9 @@ int parse_options(int argc, char **argv)
 		if (c == -1)
 			break;
 		switch (c) {
+		case 'S':
+			is_drbd_top = 1;
+			break;
 		case 'v':
 			verbose++;
 			break;
@@ -2545,9 +2645,15 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
 		int m = dt_minor_of_res(res);
+
+		if (res->ignore)
+			continue;
 		if (m > highest_minor)
 			highest_minor = m;
 		nr_resources++;
+		if      (res->stacked) nr_stacked++;
+		else if (res->ignore)  nr_ignore++;
+		else                   nr_normal++;
 	}
 
 	// Just for the case that minor_of_res() returned 0 for all devices.
@@ -2560,6 +2666,16 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 			"but a minor_count of %d in your config!\n",
 			highest_minor, mc);
 		exit(E_usage);
+	}
+	if (!is_drbd_top && nr_normal == 0) {
+		fprintf(stderr, "no normal resources defined for this host (%s)!? "
+			"'this cannot happen...'\n", nodeinfo.nodename);
+		exit(E_thinko);
+	}
+	if (is_drbd_top && nr_stacked == 0) {
+		fprintf(stderr, "nothing stacked for this host (%s), "
+			"nothing to do in stacked mode!\n", nodeinfo.nodename);
+		exit(0);
 	}
 }
 
@@ -2707,6 +2823,12 @@ int main(int argc, char** argv)
 		print_dump_header();
 
 	for_each_resource(res,tmp,config) {
+	  if (!is_dump && res->ignore) {
+		  fprintf(stderr, "'%s' ignored\n", res->name);
+		  continue;
+	  }
+	  if (!is_dump && is_drbd_top != res->stacked)
+		  continue;
 	  int r = call_cmd(cmd, res, EXIT_ON_FAIL); /* does exit for r >= 20! */
 	  /* this super positioning of return values is soo ugly
 	   * anyone any better idea? */
@@ -2724,6 +2846,17 @@ int main(int argc, char** argv)
 	  if( !res ) {
 	    fprintf(stderr,"'%s' not defined in your config.\n",argv[i]);
 	    exit(E_usage);
+	  }
+	  if (res->ignore && !is_dump) {
+	    fprintf(stderr,"'%s' ignored\n", res->name);
+	    continue;
+	  }
+	  if (is_drbd_top != res->stacked && !is_dump) {
+	    fprintf(stderr,"'%s' is a %s resource, and not available in %s mode.\n",
+			    res->name,
+			    res->stacked ? "stacked" : "normal",
+			    is_drbd_top  ? "stacked" : "normal");
+	    continue;
 	  }
 	  verify_ips(res);
 	  if (!is_dump && !config_valid)

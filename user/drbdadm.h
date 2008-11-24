@@ -90,6 +90,7 @@ struct d_host_info
   char* meta_index;
   struct d_proxy_info *proxy;
   struct d_host_info* next;
+  int config_line;
 };
 
 struct d_option
@@ -122,7 +123,9 @@ struct d_resource
   struct d_option* handlers;
   struct d_option* proxy_options;
   struct d_resource* next;
-
+  struct d_resource* lower;
+  unsigned int ignore:1;
+  unsigned int stacked:1;
   int me_minor; /* cache local minor number of this resource */
 };
 

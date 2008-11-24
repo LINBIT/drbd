@@ -49,9 +49,9 @@ enum range_checks
 enum yytokentype {
 	TK_GLOBAL = 258,
 	TK_RESOURCE,
-
-	/* 260 */
 	TK_ON,
+	TK_STACKED,
+	TK_IGNORE,
 	TK_NET,
 	TK_DISK,
 	TK_SKIP,
@@ -61,8 +61,6 @@ enum yytokentype {
 	TK_DIALOG_REFRESH,
 	TK_PROTOCOL,
 	TK_HANDLER,
-
-	/* 270 */
 	TK_COMMON,
 	TK_ADDRESS,
 	TK_DEVICE,
@@ -73,8 +71,6 @@ enum yytokentype {
 	TK_INTEGER,
 	TK_STRING,
 	TK_ELSE,
-
-	/* 280 */
 	TK_DISK_SWITCH,
 	TK_DISK_OPTION,
 	TK_NET_SWITCH,
@@ -85,8 +81,6 @@ enum yytokentype {
 	TK_STARTUP_OPTION,
 	TK_HANDLER_OPTION,
 	TK_USAGE_COUNT,
-
-	/* 290 */
 	TK_ASK,
 	TK_YES,
 	TK_NO,
@@ -97,8 +91,6 @@ enum yytokentype {
 	TK__REMOTE_HOST,
 	TK_PROXY,
 	TK_INSIDE,
-
-	/* 300 */
 	TK_OUTSIDE,
 	TK_MEMLIMIT,
 	TK_PROXY_OPTION,
@@ -108,8 +100,6 @@ enum yytokentype {
 	TK_ERR_DQSTRING,
 	TK_SCI,
 	TK_IPV4,
-
-	/* 310 */
 	TK_IPV6,
 	TK_IPADDR6,
 };

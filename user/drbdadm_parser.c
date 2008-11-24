@@ -446,6 +446,7 @@ static void parse_host_section(struct d_resource *res,
 
 	host=calloc(1,sizeof(struct d_host_info));
 	host->name = host_name;
+	host->config_line = c_section_start;
 	check_uniq("host section", "%s: on %s", res->name, host->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
@@ -520,7 +521,7 @@ static void parse_host_section(struct d_resource *res,
 	}
       break_loop:
 
-	/* Inerit device, disk, meta_disk and meta_index from the resource. */
+	/* Inherit device, disk, meta_disk and meta_index from the resource. */
 	if(!host->disk && res->disk) {
 		host->disk = strdup(res->disk);
 		check_uniq("disk", "%s:%s:%s", "disk",
@@ -590,6 +591,136 @@ void parse_skip()
 	while (level) ;
 }
 
+static void parse_stacked_section(struct d_resource* res)
+{
+	struct d_host_info *host;
+	struct d_resource *l_res, *tmp;
+	char *l_res_name;
+
+	c_section_start = line;
+	fline = line;
+
+	host=calloc(1,sizeof(struct d_host_info));
+	EXP(TK_STRING);
+	l_res_name = yylval.txt;
+	check_uniq("stacked-on-top-of", "stacked:%s", l_res_name);
+
+	for_each_resource(l_res, tmp, config) {
+		if (!strcmp(l_res->name, l_res_name))
+			break;
+	}
+	if (l_res == NULL) {
+		fprintf(stderr, "%s:%d: in resource %s, "
+			"referenced resource '%s' not yet defined.\n",
+			config_file, c_section_start, res->name, l_res_name);
+		exit(E_config_invalid);
+	}
+	if (l_res->stacked) {
+		fprintf(stderr,
+			"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
+			"\tFIXME. I won't stack stacked resources.\n",
+			config_file, c_section_start, res->name, l_res_name);
+		exit(E_config_invalid);
+	}
+
+	res->lower = l_res;
+	if (l_res->ignore) {
+		host->name = strdup("stacked resource");
+	} else if (l_res->me == NULL) {
+		fprintf(stderr,
+			"%s:%d: in resource %s, "
+			"my hostname (%s) not found in referenced resource %s\n",
+			config_file, c_section_start, res->name,
+			nodeinfo.nodename, l_res->name);
+		exit(E_config_invalid);
+	} else if (res->ignore) {
+		fprintf(stderr,
+			"%s:%d: in resource %s, "
+			"my hostname (%s) found in referenced resource %s,\n\t"
+			"but you previously told me to ignore this resource?\n",
+			config_file, c_section_start, res->name,
+			nodeinfo.nodename, l_res->name);
+		exit(E_config_invalid);
+	} else {
+		host->name = strdup(nodeinfo.nodename);
+	}
+	if (res->me && res->peer) {
+		/* this check could go first, too */
+		fprintf(stderr,
+			"%s:%d: in resource %s, "
+			"already two host sections (on <host> { ... }) seen.\n",
+			config_file, c_section_start, res->name);
+		exit(E_config_invalid);
+	}
+
+	asprintf(&host->meta_disk, "%s", "internal");
+	asprintf(&host->meta_index, "%s", "internal");
+	if (res->lower->ignore) {
+		asprintf(&host->disk, "%s", "IGNORED");
+	} else {
+		asprintf(&host->disk, "%s", res->lower->me->device);
+	}
+
+	EXP('{');
+	while (1) {
+		switch(yylex()) {
+		case TK_DEVICE:
+			EXP(TK_STRING);
+			host->device = yylval.txt;
+			check_uniq("device", "%s:%s:%s","device",
+				   host->name,yylval.txt);
+			EXP(';');
+			break;
+		case TK_ADDRESS:
+			check_uniq("address statement", "%s:%s:address",
+				   res->name, host->name);
+			parse_address(&host->address, &host->port, &host->address_family);
+			range_check(R_PORT, "port", yylval.txt);
+			break;
+		case '}':
+			goto break_loop;
+		default:
+			pe_expected("device | address");
+		}
+	}
+ break_loop:
+
+	/* inherit device */
+	if (!host->device && res->device) {
+		host->device = strdup(res->device);
+		check_uniq("device", "%s:%s:%s", "device",
+			   host->name, host->device);
+	}
+
+	if (!host->device)
+		derror(host,res,"device");
+	if (!host->disk)
+		derror(host,res,"disk");
+	if (!host->address)
+		derror(host,res,"address");
+	if (!host->meta_disk)
+		derror(host,res,"meta-disk");
+
+
+	if (res->ignore) {
+		if (res->peer) res->me   = host;
+		else           res->peer = host;
+	} else if (res->lower->ignore) {
+		// FIXME if (res->peer) die "WTF?"
+		res->peer = host;
+	} else {
+		if (res->me) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
+				"\tYou cannot be your own peer (resources for me already defined).\n",
+				config_file, c_section_start, res->name, l_res_name);
+			exit(E_config_invalid);
+		}
+		res->me = host;
+		res->stacked = 1;
+	}
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -613,6 +744,24 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_ON:
 			EXP(TK_STRING);
 			parse_host_section(res, yylval.txt, 1);
+			break;
+		case TK_STACKED:
+			check_uniq("stacked-on-top-of section", "%s:stacked-on-top-of", res->name);
+			parse_stacked_section(res);
+			break;
+		case TK_IGNORE:
+			if (res->me || res->peer) {
+				fprintf(stderr,
+					"%s:%d: in resource %s, "
+					"'ignore-on' statement has to preceed any real host section (on ... { ... }).\n",
+					config_file, line, res->name);
+				exit(E_config_invalid);
+			}
+			EXP(TK_STRING);
+			if (strcmp(yylval.txt, nodeinfo.nodename) == 0) {
+				res->ignore = 1;
+			}
+			EXP(';');
 			break;
 		case TK__THIS_HOST:
 			parse_host_section(res, strdup("_this_host"), 0);
@@ -686,7 +835,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			goto exit_loop;
 		default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
-					" startup | handlers",token);
+					" startup | handlers |"
+					" ignore-on | stacked-on-top-of",token);
 		}
 	}
 
@@ -694,32 +844,64 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	/* Determin the local host section and the peer host section. */
 	host = res->all_hosts;
-	while(host) {
+	while (host) {
+		if (!res->ignore && (res->me && res->peer)) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, "
+				"unsupported third host section on %s { ... }.\n",
+				config_file, host->config_line, res->name, host->name);
+			exit(E_config_invalid);
+		}
+
 		if(!strcmp(host->name, nodeinfo.nodename) ||
 		   !strcmp(host->name, "_this_host") ||
 		   ( host->proxy && 
 		     !strcmp(host->proxy->name, nodeinfo.nodename))) {
-			if(res->me) {
+			if (res->ignore) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, on %s { ... }:\n"
+					"\tYou cannot ignore and define at the same time.\n",
+					config_file, host->config_line, res->name, host->name);
+			}
+			if (res->me) {
 				config_valid = 0;
 				fprintf(stderr,
 					"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
 					"\tThere are multiple host sections for this node.\n"
 					"\tMaybe misspelled local host name '%s'?\n",
-					config_file, c_section_start, res->name,
+					config_file, host->config_line, res->name,
 						res->me->name, host->name, nodeinfo.nodename);
 			}
 			res->me = host;
 		} else {
 			/* This needs to be refined as soon as we support 
 			   multiple peers in the resource section */
-			if(res->peer) {
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
-					"\tThere are multiple host sections for the peer.\n"
-					"\tMaybe misspelled local host name '%s'?\n",
-					config_file, c_section_start, res->name,
-						res->peer->name, host->name, nodeinfo.nodename);
+			if (res->peer) {
+				if (res->ignore && !res->me) {
+					/* just store it anyways into ->me */
+					/* reorder, so it dumps out in the same order as read in */
+					res->me = res->peer;
+					res->peer = host;
+				} else {
+					/* hm. if that did not work, I cannot ignore it */
+					config_valid = 0;
+					if (!res->lower) {
+						fprintf(stderr,
+							"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
+							"\tThere are multiple host sections for the peer.\n"
+							"\tMaybe misspelled local host name '%s'?\n",
+							config_file, host->config_line, res->name,
+								res->peer->name, host->name, nodeinfo.nodename);
+					} else {
+						fprintf(stderr,
+							"%s:%d: in resource %s, stacked-on-top-of %s { ... } ... on %s { ... }:\n"
+							"\tThere is no matching section for me.\n"
+							"\tMaybe misspelled local host name '%s'?\n",
+							config_file, host->config_line, res->name,
+							res->lower->name, host->name, nodeinfo.nodename);
+					}
+				}
 			}
 			res->peer = host;
 		}
