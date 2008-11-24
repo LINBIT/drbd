@@ -86,6 +86,11 @@ endif
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
+ifeq ($(DIST),redhat)
+	mkdir -p $(PREFIX)/usr/share/cluster
+	install -m 755 drbd.sh.rhcs $(PREFIX)/usr/share/cluster/drbd.sh
+	install -m 644 drbd.metadata.rhcs $(PREFIX)/usr/share/cluster/drbd.metadata
+endif
 	@ echo
 	@ echo "Don't forget to run update-rc.d or chkconfig"
 

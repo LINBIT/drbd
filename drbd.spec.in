@@ -103,6 +103,9 @@ test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
 # on non RedHat we have additionally:
 test -e etc/bash_completion.d/drbdadm && echo "/etc/bash_completion.d/drbdadm" >> "$FILELIST"
 test -e etc/bash_completion.d/drbdadm.sh && echo "/etc/bash_completion.d/drbdadm.sh" >> "$FILELIST"
+# on Red Hat, we provide integration scripts for Red Hat Cluster Suite
+test -e usr/share/cluster/drbd.sh && echo "/usr/share/cluster/drbd.sh" >> "$FILELIST"
+test -e usr/share/cluster/drbd.metadata && echo "/usr/share/cluster/drbd.metadata" >> "$FILELIST"
 
 ## If I only wanted to include the module, not all the directories
 ## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below

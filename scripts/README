@@ -2,10 +2,16 @@ drbd
 	drbd sys-v type init script
 drbd.gentoo
 	gentoo specific variation of the same
+drbdadm.bash_completion
+	bash completion for the drbdadm command
 drbddisk
-	resource script for heartbaet (haresources style)
+	resource script for heartbeat (R1 style)
 block-drbd
 	xen "drbd" vbd type implementation
+drbd.sh.rhcs
+	resource script for Red Hat Cluster Suite rgmanager
+drbd.metadata.rhcs
+	resource script metadata for Red Hat Cluster Suite rgmanager
 outdate-peer.sh
 	example implementation of the outdate-peer mechanism using ssh
 drbd.conf
