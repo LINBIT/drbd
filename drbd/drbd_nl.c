@@ -188,11 +188,14 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	if (ret)
 		drbd_WARN("helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
-				(ret >> 8), ret);
+				(ret >> 8) & 0xff, ret);
 	else
 		INFO("helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
-				(ret >> 8), ret);
+				(ret >> 8) & 0xff, ret);
+
+	if (ret < 0) /* Ignore any ERRNOs we got. */
+		ret = 0;
 
 	return ret;
 }
