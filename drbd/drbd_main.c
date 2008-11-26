@@ -257,6 +257,23 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 
 	b = mdev->oldest_barrier;
 
+	/* first some paranoia code */
+	if (b == NULL) {
+		ERR("BAD! BarrierAck #%u received, but no epoch in tl!?\n",
+			barrier_nr);
+		goto bail;
+	}
+	if (b->br_number != barrier_nr) {
+		ERR("BAD! BarrierAck #%u received, expected #%u!\n",
+			barrier_nr, b->br_number);
+		goto bail;
+	}
+	if (b->n_req != set_size) {
+		ERR("BAD! BarrierAck #%u received with n_req=%u, expected n_req=%u!\n",
+			barrier_nr, set_size, b->n_req);
+		goto bail;
+	}
+
 	/* Clean up list of requests processed during current epoch */
 	list_for_each_safe(le, tle, &b->requests) {
 		r = list_entry(le, struct drbd_request, tl_requests);
@@ -277,20 +294,6 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	   */
 	list_del_init(&b->requests);
 
-	D_ASSERT(b->br_number == barrier_nr);
-	D_ASSERT(b->n_req == set_size);
-
-#if 1
-	if (b->br_number != barrier_nr) {
-		DUMPI(b->br_number);
-		DUMPI(barrier_nr);
-	}
-	if (b->n_req != set_size) {
-		DUMPI(b->n_req);
-		DUMPI(set_size);
-	}
-#endif
-
 	nob = b->next;
 	if (test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
 		_tl_add_barrier(mdev, b);
@@ -305,6 +308,11 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	}
 
 	spin_unlock_irq(&mdev->req_lock);
+	return;
+
+bail:
+	spin_unlock_irq(&mdev->req_lock);
+	drbd_force_state(mdev, NS(conn, ProtocolError));
 }
 
 
@@ -315,6 +323,7 @@ void tl_clear(struct drbd_conf *mdev)
 	struct drbd_barrier *b, *tmp;
 	struct list_head *le, *tle;
 	struct drbd_request *r;
+	int new_initial_bnr = net_random();
 
 	spin_lock_irq(&mdev->req_lock);
 
@@ -342,7 +351,7 @@ void tl_clear(struct drbd_conf *mdev)
 			INIT_LIST_HEAD(&b->requests);
 			INIT_LIST_HEAD(&b->w.list);
 			b->w.cb = NULL;
-			b->br_number = 4711;
+			b->br_number = new_initial_bnr;
 			b->n_req = 0;
 
 			mdev->oldest_barrier = b;
@@ -351,8 +360,6 @@ void tl_clear(struct drbd_conf *mdev)
 		kfree(b);
 		b = tmp;
 	}
-	D_ASSERT(mdev->newest_barrier == mdev->oldest_barrier);
-	D_ASSERT(mdev->newest_barrier->br_number == 4711);
 
 	/* we expect this list to be empty. */
 	D_ASSERT(list_empty(&mdev->out_of_sequence_requests));
