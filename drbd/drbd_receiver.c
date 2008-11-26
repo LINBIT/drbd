@@ -3879,7 +3879,6 @@ STATIC int got_BarrierAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	struct Drbd_BarrierAck_Packet *p = (struct Drbd_BarrierAck_Packet *)h;
 
 	tl_release(mdev, p->barrier, be32_to_cpu(p->set_size));
-	dec_ap_pending(mdev);
 
 	return TRUE;
 }
