@@ -308,6 +308,8 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	}
 
 	spin_unlock_irq(&mdev->req_lock);
+	dec_ap_pending(mdev);
+
 	return;
 
 bail:
