@@ -182,7 +182,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 			if (inc_local_if_state(mdev, Failed)) {
 				drbd_al_complete_io(mdev, req->sector);
 				dec_local(mdev);
-			} else {
+			} else if (DRBD_ratelimit(5*HZ,3)) {
 				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
