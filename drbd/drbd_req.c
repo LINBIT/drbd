@@ -949,7 +949,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
-		goto fail_and_free_req;
+		goto fail_free_complete;
 	}
 
 	/* For WRITE request, we have to make sure that we have an
@@ -966,7 +966,7 @@ allocate_barrier:
 		if (!b) {
 			ERR("Failed to alloc barrier.\n");
 			err = -ENOMEM;
-			goto fail_and_free_req;
+			goto fail_free_complete;
 		}
 	}
 
@@ -983,7 +983,7 @@ allocate_barrier:
 		if (!(local || remote)) {
 			ERR("IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
-			goto fail_and_free_req;
+			goto fail_free_complete;
 		}
 	}
 
@@ -1105,15 +1105,20 @@ allocate_barrier:
 
 	return 0;
 
+fail_free_complete:
+	if (rw == WRITE && local)
+		drbd_al_complete_io(mdev, sector);
 fail_and_free_req:
-	kfree(b);
-	if (req->private_bio) {
-		bio_endio(req->private_bio, err);
-	} else {
-		bio_endio(bio, err);
-		drbd_req_free(req);
-		dec_ap_bio(mdev);
+	if (local) {
+		bio_put(req->private_bio);
+		req->private_bio = NULL;
+		dec_local(mdev);
 	}
+	bio_endio(bio, err);
+	drbd_req_free(req);
+	dec_ap_bio(mdev);
+	kfree(b);
+
 	return 0;
 }
 
