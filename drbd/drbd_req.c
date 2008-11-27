@@ -1107,8 +1107,13 @@ allocate_barrier:
 
 fail_and_free_req:
 	kfree(b);
-	bio_endio(bio, err);
-	drbd_req_free(req);
+	if (req->private_bio) {
+		bio_endio(req->private_bio, err);
+	} else {
+		bio_endio(bio, err);
+		drbd_req_free(req);
+		dec_ap_bio(mdev);
+	}
 	return 0;
 }
 
