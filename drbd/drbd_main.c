@@ -807,7 +807,7 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if (ns.conn == os.conn && ns.conn == WFReportParams)
 		rv = SS_InTransientState;
 
-	if( (ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected )
+	if ((ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected)
 		rv=SS_NeedConnection;
 
 	if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
@@ -1653,26 +1653,43 @@ int drbd_send_cmd2(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd, char *data,
 
 int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 {
-	struct Drbd_SyncParam_Packet *p;
+	struct Drbd_SyncParam89_Packet *p;
+	struct socket *sock;
 	int size, rv;
+	const int apv = mdev->agreed_pro_version;
 
-	size = sizeof(struct Drbd_SyncParam_Packet);
+	size = apv <= 87 ? sizeof(struct Drbd_SyncParam_Packet)
+	     : apv == 88 ? sizeof(struct Drbd_SyncParam_Packet)
+	                   + strlen(mdev->sync_conf.verify_alg) + 1
+	     : /* 89 */    sizeof(struct Drbd_SyncParam89_Packet);
 
-	if (mdev->agreed_pro_version >= 88)
-		size += strlen(mdev->sync_conf.verify_alg) + 1;
+	/* used from admin command context and receiver/worker context.
+	 * to avoid kmalloc, grab the socket right here,
+	 * then use the pre-allocated sbuf there */
+	down(&mdev->data.mutex);
+	sock = mdev->data.socket;
 
-	p = kmalloc(size, GFP_KERNEL);
-	if (p == NULL)
-		return 0;
+	if (likely(sock != NULL)) {
+		enum Drbd_Packet_Cmd cmd = apv >= 89 ? SyncParam89 : SyncParam;
 
-	p->rate      = cpu_to_be32(sc->rate);
+		p = &mdev->data.sbuf.SyncParam89;
 
-	if (mdev->agreed_pro_version >= 88)
-		strcpy(p->online_verify_alg,mdev->sync_conf.verify_alg);
+		/* initialize verify_alg and csums_alg */
+		memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
 
-	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, SyncParam,
-			   (struct Drbd_Header *)p, size);
-	kfree(p);
+		p->rate = cpu_to_be32(sc->rate);
+
+		if (apv >= 88)
+			strcpy(p->verify_alg, mdev->sync_conf.verify_alg);
+		if (apv >= 89)
+			strcpy(p->csums_alg, mdev->sync_conf.csums_alg);
+
+		rv = _drbd_send_cmd(mdev, sock, cmd, &p->head, size, 0);
+	} else
+		rv = 0; /* not ok */
+
+	up(&mdev->data.mutex);
+
 	return rv;
 }
 
@@ -1963,17 +1980,16 @@ int drbd_send_ack(struct drbd_conf *mdev,
 			      e->block_id);
 }
 
+/* This function misuses the block_id field to signal if the blocks
+ * are is sync or not. */
 int drbd_send_ack_ex(struct drbd_conf *mdev, enum Drbd_Packet_Cmd cmd,
 		     sector_t sector, int blksize, u64 block_id)
 {
-   /* This function misuses the block_id field to signal if the blocks
-      are is sync or not. */
-	return _drbd_send_ack(mdev,cmd,
+	return _drbd_send_ack(mdev, cmd,
 			      cpu_to_be64(sector),
 			      cpu_to_be32(blksize),
 			      cpu_to_be64(block_id));
 }
-
 
 int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 		       sector_t sector, int size, u64 block_id)
@@ -1992,7 +2008,6 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 	return ok;
 }
 
-
 int drbd_send_drequest_csum(struct drbd_conf *mdev,
 			    sector_t sector,int size,
 			    void *digest, int digest_size,
@@ -2007,12 +2022,12 @@ int drbd_send_drequest_csum(struct drbd_conf *mdev,
 
 	p.head.magic   = BE_DRBD_MAGIC;
 	p.head.command = cpu_to_be16(cmd);
-	p.head.length  = cpu_to_be16( sizeof(p)-sizeof(struct Drbd_Header) + digest_size );
+	p.head.length  = cpu_to_be16(sizeof(p) - sizeof(struct Drbd_Header) + digest_size);
 
 	down(&mdev->data.mutex);
 
-	ok = ( sizeof(p) == drbd_send(mdev,mdev->data.socket,&p,sizeof(p),0) );
-	ok = ok&& ( digest_size == drbd_send(mdev,mdev->data.socket,digest,digest_size,0) );
+	ok = (sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), 0));
+	ok = ok && (digest_size == drbd_send(mdev, mdev->data.socket, digest, digest_size, 0));
 
 	up(&mdev->data.mutex);
 
@@ -2032,7 +2047,6 @@ int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
 			   (struct Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
-
 
 /* called on sndtimeo
  * returns FALSE if we should retry,
@@ -2637,10 +2651,17 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 		ERR("ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				mdev->receiver.t_state);
 
-	if (mdev->verify_tfm) {
-		crypto_free_hash(mdev->verify_tfm);
-		mdev->verify_tfm=NULL;
-	}
+	crypto_free_hash(mdev->csums_tfm);
+	mdev->csums_tfm = NULL;
+
+	crypto_free_hash(mdev->verify_tfm);
+	mdev->verify_tfm = NULL;
+
+	crypto_free_hash(mdev->integrity_w_tfm);
+	mdev->integrity_w_tfm = NULL;
+
+	crypto_free_hash(mdev->integrity_r_tfm);
+	mdev->integrity_r_tfm = NULL;
 	/* no need to lock it, I'm the only thread alive */
 	if (atomic_read(&mdev->current_epoch->epoch_size) !=  0)
 		ERR("epoch_size:%d\n", atomic_read(&mdev->current_epoch->epoch_size));
@@ -3898,6 +3919,13 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 	case Barrier:
 	case BarrierAck:
 		INFOP("%s (barrier %u)\n", cmdname(cmd), p->Barrier.barrier);
+		break;
+
+	case SyncParam:
+	case SyncParam89:
+		INFOP("%s (rate %u, verify-alg \"%.64s\", csums-alg \"%.64s\")\n",
+			cmdname(cmd), be32_to_cpu(p->SyncParam89.rate),
+			p->SyncParam89.verify_alg, p->SyncParam89.csums_alg);
 		break;
 
 	case ReportUUIDs:

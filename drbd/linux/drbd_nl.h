@@ -76,6 +76,7 @@ NL_PACKET(syncer_conf, 8,
 	NL_INTEGER(	32,	T_MAY_IGNORE,	al_extents)
 	NL_STRING(      52,     T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
 	NL_STRING(      51,     T_MAY_IGNORE,   cpu_mask,       32)
+	NL_STRING(	64,	T_MAY_IGNORE,	csums_alg,	SHARED_SECRET_MAX)
 )
 
 NL_PACKET(invalidate, 9, )
@@ -103,8 +104,7 @@ NL_PACKET(call_helper, 20,
 	NL_STRING(	38,	T_MAY_IGNORE,	helper,		32)
 )
 
-/* Tag nr 42 already allocated in drbd-8.1 development.
- * Packet numbers 21 and 22 already in drbd-8.1 development. */
+/* Tag nr 42 already allocated in drbd-8.1 development. */
 
 NL_PACKET(sync_progress, 23,
 	NL_INTEGER(	43,	T_MAY_IGNORE,	sync_progress)

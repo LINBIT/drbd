@@ -158,6 +158,10 @@ STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, gfp_t gfp_mask)
 			return NULL;
 		}
 		drbd_kick_lo(mdev);
+		if (!(gfp_mask & __GFP_WAIT)) {
+			finish_wait(&drbd_pp_wait, &wait);
+			return NULL;
+		}
 		schedule();
 	}
 	finish_wait(&drbd_pp_wait, &wait);
@@ -225,15 +229,17 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	unsigned int ds;
 	int i;
 
-	e = mempool_alloc(drbd_ee_mempool, gfp_mask);
+	e = mempool_alloc(drbd_ee_mempool, gfp_mask & ~__GFP_HIGHMEM);
 	if (!e) {
-		ERR("alloc_ee: Allocation of an EE failed\n");
+		if (!(gfp_mask & __GFP_NOWARN))
+			ERR("alloc_ee: Allocation of an EE failed\n");
 		return NULL;
 	}
 
-	bio = bio_alloc(GFP_KERNEL, div_ceil(data_size, PAGE_SIZE));
+	bio = bio_alloc(gfp_mask & ~__GFP_HIGHMEM, div_ceil(data_size, PAGE_SIZE));
 	if (!bio) {
-		ERR("alloc_ee: Allocation of a bio failed\n");
+		if (!(gfp_mask & __GFP_NOWARN))
+			ERR("alloc_ee: Allocation of a bio failed\n");
 		goto fail1;
 	}
 
@@ -244,7 +250,8 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	while (ds) {
 		page = drbd_pp_alloc(mdev, gfp_mask);
 		if (!page) {
-			ERR("alloc_ee: Allocation of a page failed\n");
+			if (!(gfp_mask & __GFP_NOWARN))
+				ERR("alloc_ee: Allocation of a page failed\n");
 			goto fail2;
 		}
 		if (!bio_add_page(bio, page, min_t(int, ds, PAGE_SIZE), 0)) {
@@ -1544,9 +1551,6 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
-	/* I expect a block to be a multiple of 512 byte,
-	 * and no more than DRBD_MAX_SEGMENT_SIZE.
-	 * is this too restrictive?  */
 	ERR_IF(data_size == 0) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
@@ -1585,6 +1589,8 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
+
+	ERR_IF(data_size == 0) return FALSE;
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
@@ -2087,10 +2093,11 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		break;
 
 	case OVReply:
+	case CsumRSRequest:
 		fault_type = DRBD_FAULT_RS_RD;
 		digest_size = h->length - brps ;
 		di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
-		if(!di) {
+		if (!di) {
 			dec_local(mdev);
 			drbd_free_ee(mdev,e);
 			return 0;
@@ -2107,8 +2114,23 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 
 		e->block_id = (u64)(unsigned long)di;
-		e->w.cb = w_e_end_ov_reply;
-		dec_rs_pending(mdev);
+		if (h->command == CsumRSRequest) {
+			D_ASSERT(mdev->agreed_pro_version >= 89);
+			e->w.cb = w_e_end_csum_rs_req;
+		} else if (h->command == OVReply) {
+			e->w.cb = w_e_end_ov_reply;
+			dec_rs_pending(mdev);
+			break;
+		}
+
+		if (!drbd_rs_begin_io(mdev,sector)) {
+			// we have been interrupted, probably connection lost!
+			D_ASSERT(signal_pending(current));
+			drbd_free_ee(mdev,e);
+			kfree(di);
+			dec_local(mdev);
+			return FALSE;
+		}
 		break;
 
 	case OVRequest:
@@ -2565,7 +2587,7 @@ STATIC int receive_protocol(struct drbd_conf *mdev, struct Drbd_Header *h)
 	int header_size, data_size;
 	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_want_lose, p_two_primaries;
-	char p_integrity_alg[SHARED_SECRET_MAX];
+	char p_integrity_alg[SHARED_SECRET_MAX] = "";
 
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
@@ -2632,66 +2654,130 @@ disconnect:
 	return FALSE;
 }
 
+/* helper function
+ * input: alg name, feature name
+ * return: NULL (alg name was "")
+ *         ERR_PTR(error) if something goes wrong
+ *         or the crypto hash ptr, if it worked out ok. */
+struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_conf *mdev,
+		const char *alg, const char *name)
+{
+	struct crypto_hash *tfm;
+
+	if (!alg[0])
+		return NULL;
+
+	tfm = crypto_alloc_hash(alg, 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm)) {
+		ERR("Can not allocate \"%s\" as %s (reason: %ld)\n",
+				alg, name, PTR_ERR(tfm));
+		return tfm;
+	}
+	if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+		crypto_free_hash(tfm);
+		ERR("\"%s\" is not a digest (%s)\n", alg, name);
+		return ERR_PTR(-EINVAL);
+	}
+	return tfm;
+}
+
 STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	int ok = TRUE;
-	struct Drbd_SyncParam_Packet *p = (struct Drbd_SyncParam_Packet *)h;
-	unsigned int header_size, data_size;
-	char p_verify_alg[SHARED_SECRET_MAX];
-	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm;
+	struct Drbd_SyncParam89_Packet *p = (struct Drbd_SyncParam89_Packet *)h;
+	unsigned int header_size, data_size, exp_max_sz;
+	struct crypto_hash *verify_tfm = NULL;
+	struct crypto_hash *csums_tfm = NULL;
+	const int apv = mdev->agreed_pro_version;
 
-	header_size = sizeof(*p) - sizeof(*h);
-	data_size   = h->length  - header_size;
+	exp_max_sz  = apv <= 87 ? sizeof(struct Drbd_SyncParam_Packet)
+		    : apv == 88 ? sizeof(struct Drbd_SyncParam_Packet)
+					+ SHARED_SECRET_MAX
+		    : /* 89 */    sizeof(struct Drbd_SyncParam89_Packet);
+
+	if (h->length > exp_max_sz) {
+		ERR("SyncParam packet too long: received %u, expected <= %u bytes\n",
+		    h->length, exp_max_sz);
+		return FALSE;
+	}
+
+	if (apv <= 88) {
+		header_size = sizeof(struct Drbd_SyncParam_Packet) - sizeof(*h);
+		data_size   = h->length  - header_size;
+	} else /* apv >= 89 */ {
+		header_size = sizeof(struct Drbd_SyncParam89_Packet) - sizeof(*h);
+		data_size   = h->length  - header_size;
+		D_ASSERT(data_size == 0);
+	}
+
+	/* initialize verify_alg and csums_alg */
+	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
 
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
 	mdev->sync_conf.rate	  = be32_to_cpu(p->rate);
 
-	if (mdev->agreed_pro_version >= 88) {
-		if (data_size > SHARED_SECRET_MAX) {
-			ERR("verify-alg too long, "
-			    "peer wants %u, accepting only %u byte\n",
-					data_size, SHARED_SECRET_MAX);
-			return FALSE;
-		}
-
-		if (drbd_recv(mdev, p_verify_alg, data_size) != data_size)
-			return FALSE;
-
-		/* we expect NUL terminated string */
-		/* but just in case someone tries to be evil */
-		D_ASSERT(p_verify_alg[data_size-1] == 0);
-		p_verify_alg[data_size-1] = 0;
-		if (strcpy(mdev->sync_conf.verify_alg, p_verify_alg)) {
-			if (strlen(p_verify_alg)) {
-				verify_tfm = crypto_alloc_hash(p_verify_alg, 0,
-							       CRYPTO_ALG_ASYNC);
-				if (IS_ERR(verify_tfm)) {
-					ERR("Can not allocate \"%s\" as verify-alg\n",
-					    p_verify_alg);
-					return FALSE;
-				}
-
-				if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) !=
-				    CRYPTO_ALG_TYPE_DIGEST) {
-					crypto_free_hash(verify_tfm);
-					ERR("\"%s\" is not a digest (verify-alg)\n",
-					    p_verify_alg);
-					return FALSE;
-				}
+	if (apv >= 88) {
+		if (apv == 88) {
+			if (data_size > SHARED_SECRET_MAX) {
+				ERR("verify-alg too long, "
+				    "peer wants %u, accepting only %u byte\n",
+						data_size, SHARED_SECRET_MAX);
+				return FALSE;
 			}
 
-			spin_lock(&mdev->peer_seq_lock);
-			/* lock against drbd_nl_syncer_conf() */
-			strcpy(mdev->sync_conf.verify_alg, p_verify_alg);
-			mdev->sync_conf.verify_alg_len = strlen(p_verify_alg);
-			old_verify_tfm = mdev->verify_tfm;
-			mdev->verify_tfm = verify_tfm;
-			spin_unlock(&mdev->peer_seq_lock);
+			if (drbd_recv(mdev, p->verify_alg, data_size) != data_size)
+				return FALSE;
 
-			crypto_free_hash(old_verify_tfm);
+			/* we expect NUL terminated string */
+			/* but just in case someone tries to be evil */
+			D_ASSERT(p->verify_alg[data_size-1] == 0);
+			p->verify_alg[data_size-1] = 0;
+
+		} else /* apv >= 89 */ {
+			/* we still expect NUL terminated strings */
+			/* but just in case someone tries to be evil */
+			D_ASSERT(p->verify_alg[SHARED_SECRET_MAX-1] == 0);
+			D_ASSERT(p->csums_alg[SHARED_SECRET_MAX-1] == 0);
+			p->verify_alg[SHARED_SECRET_MAX-1] = 0;
+			p->csums_alg[SHARED_SECRET_MAX-1] = 0;
 		}
+
+		if (strcmp(mdev->sync_conf.verify_alg, p->verify_alg)) {
+			verify_tfm = drbd_crypto_alloc_digest_safe(mdev,
+					p->verify_alg, "verify-alg");
+			if (IS_ERR(verify_tfm))
+				return FALSE;
+		}
+
+		if (apv >= 89 && strcmp(mdev->sync_conf.csums_alg, p->csums_alg)) {
+			csums_tfm = drbd_crypto_alloc_digest_safe(mdev,
+					p->csums_alg, "csums-alg");
+			if (IS_ERR(csums_tfm)) {
+				crypto_free_hash(verify_tfm);
+				return FALSE;
+			}
+		}
+
+
+		spin_lock(&mdev->peer_seq_lock);
+		/* lock against drbd_nl_syncer_conf() */
+		if (verify_tfm) {
+			strcpy(mdev->sync_conf.verify_alg, p->verify_alg);
+			mdev->sync_conf.verify_alg_len = strlen(p->verify_alg);
+			crypto_free_hash(mdev->verify_tfm);
+			mdev->verify_tfm = verify_tfm;
+			INFO("using verify-alg: \"%s\"\n", p->verify_alg);
+		}
+		if (csums_tfm) {
+			strcpy(mdev->sync_conf.csums_alg, p->csums_alg);
+			mdev->sync_conf.csums_alg_len = strlen(p->csums_alg);
+			crypto_free_hash(mdev->csums_tfm);
+			mdev->csums_tfm = csums_tfm;
+			INFO("using csums-alg: \"%s\"\n", p->csums_alg);
+		}
+		spin_unlock(&mdev->peer_seq_lock);
 	}
 
 	return ok;
@@ -3179,6 +3265,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[DataRequest]	   = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest,
 	[SyncParam]	   = receive_SyncParam,
+	[SyncParam89]	   = receive_SyncParam,
 	[ReportProtocol]   = receive_protocol,
 	[ReportUUIDs]	   = receive_uuids,
 	[ReportSizes]	   = receive_sizes,
@@ -3187,6 +3274,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[ReportSyncUUID]   = receive_sync_uuid,
 	[OVRequest]        = receive_DataRequest,
 	[OVReply]          = receive_DataRequest,
+	[CsumRSRequest]    = receive_DataRequest,
 	/* anything missing from this table is in
 	 * the asender_tbl, see get_asender_cmd */
 	[MAX_CMD]	   = NULL,
@@ -3506,10 +3594,12 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 
 	p->protocol_min = be32_to_cpu(p->protocol_min);
 	p->protocol_max = be32_to_cpu(p->protocol_max);
-	if(p->protocol_max == 0) p->protocol_max = p->protocol_min;
+	if (p->protocol_max == 0)
+		p->protocol_max = p->protocol_min;
 
-	if (PRO_VERSION_MAX < p->protocol_min ) goto incompat;
-	if (PRO_VERSION_MIN > p->protocol_max ) goto incompat;
+	if (PRO_VERSION_MAX < p->protocol_min ||
+	    PRO_VERSION_MIN > p->protocol_max)
+		goto incompat;
 
 	mdev->agreed_pro_version = min_t(int,PRO_VERSION_MAX,p->protocol_max);
 
@@ -3521,7 +3611,7 @@ int drbd_do_handshake(struct drbd_conf *mdev)
  incompat:
 	ERR("incompatible DRBD dialects: "
 	    "I support %d-%d, peer supports %d-%d\n",
-	    PRO_VERSION_MIN,PRO_VERSION_MAX, 
+	    PRO_VERSION_MIN, PRO_VERSION_MAX,
 	    p->protocol_min, p->protocol_max);
 	return -1;
 }
@@ -3745,6 +3835,25 @@ STATIC int got_PingAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
+STATIC int got_IsInSync(struct drbd_conf *mdev, struct Drbd_Header *h)
+{
+	struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet *)h;
+	sector_t sector = be64_to_cpu(p->sector);
+	int blksize = be32_to_cpu(p->blksize);
+
+	D_ASSERT(mdev->agreed_pro_version >= 89);
+
+	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
+
+	drbd_rs_complete_io(mdev, sector);
+	drbd_set_in_sync(mdev, sector, blksize);
+	/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
+	mdev->rs_same_csum += (blksize >> BM_BLOCK_SIZE_B);
+	dec_rs_pending(mdev);
+
+	return TRUE;
+}
+
 STATIC int got_BlockAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
 	struct drbd_request *req;
@@ -3888,7 +3997,6 @@ STATIC int got_BarrierAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-
 STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 {
 	struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet*)h;
@@ -3921,7 +4029,6 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 	return TRUE;
 }
 
-
 struct asender_cmd {
 	size_t pkt_size;
 	int (*process)(struct drbd_conf *mdev, struct Drbd_Header *h);
@@ -3940,22 +4047,15 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	[RSWriteAck]	= { sizeof(struct Drbd_BlockAck_Packet), got_BlockAck },
 	[DiscardAck]	= { sizeof(struct Drbd_BlockAck_Packet), got_BlockAck },
 	[NegAck]	= { sizeof(struct Drbd_BlockAck_Packet), got_NegAck },
-	[NegDReply]	=
-		{ sizeof(struct Drbd_BlockAck_Packet), got_NegDReply },
-	[NegRSDReply]	=
-		{ sizeof(struct Drbd_BlockAck_Packet), got_NegRSDReply},
-	[OVResult]  = { sizeof(struct Drbd_BlockAck_Packet),  got_OVResult },
-
-	[BarrierAck]	=
-		{ sizeof(struct Drbd_BarrierAck_Packet), got_BarrierAck },
-	[StateChgReply] =
-		{ sizeof(struct Drbd_RqS_Reply_Packet), got_RqSReply },
+	[NegDReply]	= { sizeof(struct Drbd_BlockAck_Packet), got_NegDReply },
+	[NegRSDReply]	= { sizeof(struct Drbd_BlockAck_Packet), got_NegRSDReply},
+	[OVResult]      = { sizeof(struct Drbd_BlockAck_Packet),  got_OVResult },
+	[BarrierAck]	= { sizeof(struct Drbd_BarrierAck_Packet), got_BarrierAck },
+	[StateChgReply] = { sizeof(struct Drbd_RqS_Reply_Packet), got_RqSReply },
+	[RSIsInSync]	= { sizeof(struct Drbd_BlockAck_Packet), got_IsInSync },
+	[MAX_CMD]	= { 0, NULL },
 	};
-	if (cmd == OVResult)
-		return &asender_tbl[cmd];
-	if (cmd < FIRST_ASENDER_CMD)
-		return NULL;
-	if (cmd > LAST_ASENDER_CMD)
+	if (cmd > MAX_CMD)
 		return NULL;
 	return &asender_tbl[cmd];
 }
@@ -4008,7 +4108,7 @@ STATIC int drbd_asender(struct Drbd_thread *thi)
 			if (empty)
 				break;
 		}
-		/* but unconditionally uncork */
+		/* but unconditionally uncork unless disabled */
 		if (!mdev->net_conf->no_cork)
 			drbd_tcp_uncork(mdev->meta.socket);
 

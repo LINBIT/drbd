@@ -236,6 +236,7 @@ enum {
     DRBD_FAULT_DT_WR,		/* data            */
     DRBD_FAULT_DT_RD,
     DRBD_FAULT_DT_RA,		/* data read ahead */
+    DRBD_FAULT_AL_EE,		/* alloc ee */
 
     DRBD_FAULT_MAX,
 };
@@ -315,55 +316,59 @@ extern struct drbd_conf **minor_table;
  *********************************************************************/
 
 enum Drbd_Packet_Cmd {
-	Data,
-	DataReply,     /* Response to DataRequest */
-	RSDataReply,   /* Response to RSDataRequest */
-	Barrier,
-	ReportBitMap,
-	BecomeSyncTarget,
-	BecomeSyncSource,
-	UnplugRemote,  /* Used at various times to hint the peer */
-	DataRequest,   /* Used to ask for a data block */
-	RSDataRequest, /* Used to ask for a data block for resync */
-	SyncParam,
-	ReportProtocol,
-	ReportUUIDs,
-	ReportSizes,
-	ReportState,
-	ReportSyncUUID,
-	AuthChallenge,
-	AuthResponse,
-	StateChgRequest,
+	/* receiver (data socket) */
+	Data              = 0x00,
+	DataReply         = 0x01, /* Response to DataRequest */
+	RSDataReply       = 0x02, /* Response to RSDataRequest */
+	Barrier           = 0x03,
+	ReportBitMap      = 0x04,
+	BecomeSyncTarget  = 0x05,
+	BecomeSyncSource  = 0x06,
+	UnplugRemote      = 0x07, /* Used at various times to hint the peer */
+	DataRequest       = 0x08, /* Used to ask for a data block */
+	RSDataRequest     = 0x09, /* Used to ask for a data block for resync */
+	SyncParam         = 0x0a,
+	ReportProtocol    = 0x0b,
+	ReportUUIDs       = 0x0c,
+	ReportSizes       = 0x0d,
+	ReportState       = 0x0e,
+	ReportSyncUUID    = 0x0f,
+	AuthChallenge     = 0x10,
+	AuthResponse      = 0x11,
+	StateChgRequest   = 0x12,
 
-	FIRST_ASENDER_CMD,
-	Ping = FIRST_ASENDER_CMD,
-	PingAck,
-	RecvAck,      /* Used in protocol B */
-	WriteAck,     /* Used in protocol C */
-	RSWriteAck,   /* Is a WriteAck, additionally call set_in_sync(). */
-	DiscardAck,   /* Used in proto C, two-primaries conflict detection */
-	NegAck,       /* Sent if local disk is unusable */
-	NegDReply,    /* Local disk is broken... */
-	NegRSDReply,  /* Local disk is broken... */
-	BarrierAck,
-	StateChgReply,
-	LAST_ASENDER_CMD = StateChgReply,
+	/* asender (meta socket */
+	Ping              = 0x13,
+	PingAck           = 0x14,
+	RecvAck           = 0x15, /* Used in protocol B */
+	WriteAck          = 0x16, /* Used in protocol C */
+	RSWriteAck        = 0x17, /* Is a WriteAck, additionally call set_in_sync(). */
+	DiscardAck        = 0x18, /* Used in proto C, two-primaries conflict detection */
+	NegAck            = 0x19, /* Sent if local disk is unusable */
+	NegDReply         = 0x1a, /* Local disk is broken... */
+	NegRSDReply       = 0x1b, /* Local disk is broken... */
+	BarrierAck        = 0x1c,
+	StateChgReply     = 0x1d,
 
-	OVRequest,
-	OVReply,
-	OVResult, /* Exception to the FIRST/LAST ASENDER_CMD */
+	/* "new" commands, no longer fitting into the ordering scheme above */
 
-	MAX_CMD,
-	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
-	MAX_OPT_CMD,
+	OVRequest         = 0x1e, /* data socket */
+	OVReply           = 0x1f,
+	OVResult          = 0x20, /* meta socket */
+	CsumRSRequest     = 0x21, /* data socket */
+	RSIsInSync        = 0x22, /* meta socket */
+	SyncParam89       = 0x23, /* data socket, protocol version 89 replacement for SyncParam */
 
-	/* FIXME
-	 * to get a more useful error message with drbd-8 <-> drbd 0.7.x,
-	 * these could be reimplemented as special case of HandShake. */
-	HandShakeM = 0xfff1, /* First Packet on the MetaSock */
-	HandShakeS = 0xfff2, /* First Packet on the Socket */
+	MAX_CMD           = 0x24,
+	MayIgnore         = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
+	MAX_OPT_CMD       = 0x101,
 
-	HandShake  = 0xfffe  /* FIXED for the next century! */
+	/* special command ids for handshake */
+
+	HandShakeM        = 0xfff1, /* First Packet on the MetaSock */
+	HandShakeS        = 0xfff2, /* First Packet on the Socket */
+
+	HandShake         = 0xfffe  /* FIXED for the next century! */
 };
 
 static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
@@ -383,6 +388,7 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[DataRequest]	   = "DataRequest",
 		[RSDataRequest]    = "RSDataRequest",
 		[SyncParam]	   = "SyncParam",
+		[SyncParam89]	   = "SyncParam89",
 		[ReportProtocol]   = "ReportProtocol",
 		[ReportUUIDs]	   = "ReportUUIDs",
 		[ReportSizes]	   = "ReportSizes",
@@ -405,24 +411,19 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[OVRequest]        = "OVRequest",
 		[OVReply]          = "OVReply",
 		[OVResult]         = "OVResult",
+		[CsumRSRequest]    = "CsumRSRequest",
+		[RSIsInSync]       = "RSIsInSync",
+		[MAX_CMD]	   = NULL,
 	};
 
-	if (Data > cmd || cmd >= MAX_CMD) {
-		switch (cmd) {
-		case HandShakeM:
-			return "HandShakeM";
-			break;
-		case HandShakeS:
-			return "HandShakeS";
-			break;
-		case HandShake:
-			return "HandShake";
-			break;
-		default:
-			return "Unknown";
-			break;
-		}
-	}
+	if (cmd == HandShakeM)
+		return "HandShakeM";
+	if (cmd == HandShakeS)
+		return "HandShakeS";
+	if (cmd == HandShake)
+		return "HandShake";
+	if (cmd >= MAX_CMD)
+		return "Unknown";
 	return cmdnames[cmd];
 }
 
@@ -538,7 +539,15 @@ struct Drbd_SyncParam_Packet {
 	u32 rate;
 
 	      /* Since protocol version 88 and higher. */
-	char online_verify_alg[0];
+	char verify_alg[0];
+} __attribute((packed));
+
+struct Drbd_SyncParam89_Packet {
+	struct Drbd_Header head;
+	u32 rate;
+        /* protocol version 89: */
+	char verify_alg[SHARED_SECRET_MAX];
+	char csums_alg[SHARED_SECRET_MAX];
 } __attribute((packed));
 
 struct Drbd_Protocol_Packet {
@@ -614,7 +623,7 @@ union Drbd_Polymorph_Packet {
 	struct Drbd_BlockAck_Packet	BlockAck;
 	struct Drbd_Barrier_Packet	Barrier;
 	struct Drbd_BarrierAck_Packet	BarrierAck;
-	struct Drbd_SyncParam_Packet	SyncParam;
+	struct Drbd_SyncParam89_Packet	SyncParam89;
 	struct Drbd_Protocol_Packet	Protocol;
 	struct Drbd_Sizes_Packet	Sizes;
 	struct Drbd_GenCnt_Packet	GenCnt;
@@ -943,11 +952,15 @@ struct drbd_conf {
 	unsigned long rs_mark_left;
 	/* marks's time [unit jiffies] */
 	unsigned long rs_mark_time;
-
+	/* skipped because csum was equeal [unit BM_BLOCK_SIZE] */
+	unsigned long rs_same_csum;
 	sector_t ov_position;
-	sector_t ov_last_oos_start; /* Start sector of out of sync range */
-	sector_t ov_last_oos_size;  /* size of out-of-sync range in sectors */
+	/* Start sector of out of sync range. */
+	sector_t ov_last_oos_start;
+	/* size of out-of-sync range in sectors. */
+	sector_t ov_last_oos_size;
 	unsigned long ov_left;
+	struct crypto_hash *csums_tfm;
 	struct crypto_hash *verify_tfm;
 
 	struct Drbd_thread receiver;
@@ -1290,8 +1303,8 @@ struct bm_extent {
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
-/* 8 TB in units of sectors */
-#define DRBD_MAX_SECTORS_FLEX (1ULL<<(31+BM_BLOCK_SIZE_B-9))
+/* 16 TB in units of sectors */
+#define DRBD_MAX_SECTORS_FLEX (1ULL<<(32+BM_BLOCK_SIZE_B-9))
 #endif
 
 /* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
@@ -1528,6 +1541,7 @@ extern int w_req_cancel_conflict(struct drbd_conf *, struct drbd_work *, int);
 extern int w_read_retry_remote(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_data_req(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_rsdata_req(struct drbd_conf *, struct drbd_work *, int);
+extern int w_e_end_csum_rs_req(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_ov_reply(struct drbd_conf *, struct drbd_work *, int);
 extern int w_e_end_ov_req(struct drbd_conf *, struct drbd_work *, int);
 extern int w_ov_finished(struct drbd_conf *, struct drbd_work *, int);

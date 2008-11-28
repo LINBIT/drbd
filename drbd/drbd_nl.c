@@ -1569,11 +1569,13 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 			       struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
-	struct syncer_conf sc;
-	struct drbd_conf *odev;
 	int err;
-	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm = NULL;
 	int ovr; /* online verify running */
+	int rsr; /* re-sync running */
+	struct drbd_conf *odev;
+	struct crypto_hash *verify_tfm = NULL;
+	struct crypto_hash *csums_tfm = NULL;
+	struct syncer_conf sc;
 	cpumask_t n_cpu_mask = CPU_MASK_NONE;
 
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
@@ -1607,6 +1609,32 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		}
 	}
 
+	/* re-sync running */
+	rsr = (	mdev->state.conn == SyncSource ||
+		mdev->state.conn == SyncTarget ||
+		mdev->state.conn == PausedSyncS ||
+		mdev->state.conn == PausedSyncT );
+
+	if (rsr && strcmp(sc.csums_alg, mdev->sync_conf.csums_alg)) {
+		retcode = CSUMSResyncRunning;
+		goto fail;
+	}
+
+	if (!rsr && sc.csums_alg[0]) {
+		csums_tfm = crypto_alloc_hash(sc.csums_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(csums_tfm)) {
+			csums_tfm = NULL;
+			retcode = CSUMSAlgNotAvail;
+			goto fail;
+		}
+
+		if (crypto_tfm_alg_type(crypto_hash_tfm(csums_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+			retcode = CSUMSAlgNotDigest;
+			goto fail;
+		}
+	}
+
+	/* online verify running */
 	ovr = (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT);
 
 	if (ovr) {
@@ -1620,12 +1648,12 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		verify_tfm = crypto_alloc_hash(sc.verify_alg, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(verify_tfm)) {
 			verify_tfm = NULL;
-			retcode=VERIFYAlgNotAvail;
+			retcode = VERIFYAlgNotAvail;
 			goto fail;
 		}
 
 		if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
-			retcode=VERIFYAlgNotDigest;
+			retcode = VERIFYAlgNotDigest;
 			goto fail;
 		}
 	}
@@ -1651,14 +1679,19 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	spin_lock(&mdev->peer_seq_lock);
 	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
+
+	if (!rsr) {
+		crypto_free_hash(mdev->csums_tfm);
+		mdev->csums_tfm = csums_tfm;
+		csums_tfm = NULL;
+	}
+
 	if (!ovr) {
-		old_verify_tfm = mdev->verify_tfm;
+		crypto_free_hash(mdev->verify_tfm);
 		mdev->verify_tfm = verify_tfm;
 		verify_tfm = NULL;
 	}
 	spin_unlock(&mdev->peer_seq_lock);
-
-	crypto_free_hash(old_verify_tfm);
 
 	if (inc_local(mdev)) {
 		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -1690,6 +1723,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	}
 
 fail:
+	crypto_free_hash(csums_tfm);
 	crypto_free_hash(verify_tfm);
 	reply->ret_code = retcode;
 	return 0;
@@ -1984,11 +2018,10 @@ static struct cn_handler_struct cnd_table[] = {
 				    sizeof(struct sync_progress_tag_len_struct)	},
 	[ P_get_uuids ]		= { &drbd_nl_get_uuids,
 				    sizeof(struct get_uuids_tag_len_struct) },
-	[ P_get_timeout_flag ]	=
-		{ &drbd_nl_get_timeout_flag,
-		  sizeof(struct get_timeout_flag_tag_len_struct)},
-	[ P_start_ov ]          = { &drbd_nl_start_ov,          0 },
-	[ P_new_c_uuid ]        = { &drbd_nl_new_c_uuid,        0 },
+	[ P_get_timeout_flag ]	= { &drbd_nl_get_timeout_flag,
+				    sizeof(struct get_timeout_flag_tag_len_struct)},
+	[ P_start_ov ]		= { &drbd_nl_start_ov,		0 },
+	[ P_new_c_uuid ]	= { &drbd_nl_new_c_uuid,	0 },
 };
 
 STATIC void drbd_connector_callback(void *data)

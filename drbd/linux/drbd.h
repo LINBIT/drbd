@@ -344,7 +344,7 @@ enum UuidIndex {
  * when the time comes */
 #ifndef CN_IDX_DRBD
 # define CN_IDX_DRBD			0x4
-/* Ubuntu's Trapid release defined CN_IDX_DRBD as 0x6 */
+/* Ubuntu "intrepid ibex" release defined CN_IDX_DRBD as 0x6 */
 #endif
 #define CN_VAL_DRBD			0x1
 
