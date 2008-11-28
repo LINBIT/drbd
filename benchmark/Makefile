@@ -1,4 +1,6 @@
-CFLAGS=-Wall
+CFLAGS=-Wall $(OPTFLAGS)
+
+OPTFLAGS=-O2
 
 all: dm io-latency-test
 

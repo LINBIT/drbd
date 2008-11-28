@@ -20,7 +20,8 @@
 KDIR := /lib/modules/$(shell uname -r)/build
 
 CC = gcc
-CFLAGS = -g -O2 -c -W -Wall -I../drbd
+OPTFLAGS = -O2
+CFLAGS = -g $(OPTFLAGS) -c -W -Wall -I../drbd
 # for the netlink connector stuff <linux/connector.h>:
 drbdsetup: CFLAGS += -I$(KDIR)/include
 drbdsetup drbdmeta: CFLAGS += -fno-strict-aliasing
