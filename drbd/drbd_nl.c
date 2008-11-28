@@ -189,11 +189,14 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	if (ret)
 		drbd_WARN("helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
-				(ret >> 8), ret);
+				(ret >> 8) & 0xff, ret);
 	else
 		INFO("helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
-				(ret >> 8), ret);
+				(ret >> 8) & 0xff, ret);
+
+	if (ret < 0) /* Ignore any ERRNOs we got. */
+		ret = 0;
 
 	return ret;
 }
@@ -820,6 +823,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
+	memset(&nbc->md, 0, sizeof(struct drbd_md));
+
 	if (!(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_local(mdev)) {
 		memcpy(&nbc->dc, &mdev->bc->dc, sizeof(struct disk_conf));
 		dec_local(mdev);
@@ -916,7 +921,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev2_fail;
 	}
 
+	/* RT - for drbd_get_max_capacity() DRBD_MD_INDEX_FLEX_INT */
+	drbd_md_set_sector_offsets(mdev, nbc);
+
 	if (drbd_get_max_capacity(nbc) < nbc->dc.disk_size) {
+		ERR("max capacity %llu smaller than disk size %llu\n",
+			(unsigned long long) drbd_get_max_capacity(nbc),
+			(unsigned long long) nbc->dc.disk_size);
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
 	}
@@ -945,7 +956,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	/* Make sure the new disk is big enough
 	 * (we may currently be Primary with no local disk...) */
-	if (drbd_get_capacity(nbc->backing_bdev) <
+	if (drbd_get_max_capacity(nbc) <
 	    drbd_get_capacity(mdev->this_bdev)) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
@@ -1528,8 +1539,8 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
-		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+	if (mdev->bc->known_size != drbd_get_max_capacity(mdev->bc)) {
+		mdev->bc->known_size = drbd_get_max_capacity(mdev->bc);
 		ldsc = 1;
 	}
 

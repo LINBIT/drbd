@@ -203,7 +203,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 			if (inc_local_if_state(mdev, Failed)) {
 				drbd_al_complete_io(mdev, req->sector);
 				dec_local(mdev);
-			} else {
+			} else if (DRBD_ratelimit(5*HZ,3)) {
 				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
@@ -970,7 +970,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 
 	if (!(local || remote)) {
 		ERR("IO ERROR: neither local nor remote disk\n");
-		goto fail_and_free_req;
+		goto fail_free_complete;
 	}
 
 	/* For WRITE request, we have to make sure that we have an
@@ -987,7 +987,7 @@ allocate_barrier:
 		if (!b) {
 			ERR("Failed to alloc barrier.\n");
 			err = -ENOMEM;
-			goto fail_and_free_req;
+			goto fail_free_complete;
 		}
 	}
 
@@ -1004,7 +1004,7 @@ allocate_barrier:
 		if (!(local || remote)) {
 			ERR("IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
-			goto fail_and_free_req;
+			goto fail_free_complete;
 		}
 	}
 
@@ -1126,10 +1126,20 @@ allocate_barrier:
 
 	return 0;
 
+fail_free_complete:
+	if (rw == WRITE && local)
+		drbd_al_complete_io(mdev, sector);
 fail_and_free_req:
-	kfree(b);
+	if (local) {
+		bio_put(req->private_bio);
+		req->private_bio = NULL;
+		dec_local(mdev);
+	}
 	bio_endio(bio, err);
 	drbd_req_free(req);
+	dec_ap_bio(mdev);
+	kfree(b);
+
 	return 0;
 }
 

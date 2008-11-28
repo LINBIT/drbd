@@ -2807,8 +2807,8 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (inc_local(mdev)) {
-		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
-			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+		if (mdev->bc->known_size != drbd_get_max_capacity(mdev->bc)) {
+			mdev->bc->known_size = drbd_get_max_capacity(mdev->bc);
 			ldsc = 1;
 		}
 
@@ -2867,6 +2867,11 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct Drbd_Header *h)
 		return FALSE;
 	}
 
+	/* Before we test for the disk state, we should wait until an eventually
+	   ongoing cluster wide state change is finished. That is important if
+	   we are primary and are detaching from our disk. We need to see the
+	   new disk state... */
+	wait_event(mdev->misc_wait, !test_bit(CLUSTER_ST_CHANGE, &mdev->flags));
 	if (mdev->state.conn >= Connected && mdev->state.disk < Inconsistent)
 		drbd_set_ed_uuid(mdev, p_uuid[Current]);
 

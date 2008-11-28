@@ -13,11 +13,11 @@ if [ -x "/etc/init.d/drbd" ]
 then
     case "$1" in
 	remove|deconfigure)
-	    /etc/init.d/drbd stop || true
+	    /usr/sbin/invoke-rc.d drbd stop || true
 	    ;;
 
 	upgrade|failed-upgrade)
-	    /etc/init.d/drbd stop
+	    /usr/sbin/invoke-rc.d drbd stop
 	    ;;
 
 	*)
