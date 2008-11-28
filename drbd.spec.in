@@ -207,6 +207,16 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+
+* Fri Nov 28 2008 18:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.0rc1-1)
+ * Fixed 'sleep with spinlock held' in case online verify found a difference
+ * Fixed error code pathes in request processing.
+ * bitmap in unmapped pages = support for devices > 4TByte (was DRBD+)
+ * checksum based resync (was DRBD+)
+ * support for stacked resource (was DRBD+)
+ * RedHat cluster suite (rgmanager) integration scripts
+
 * Thu Nov 12 2008 10:01:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.2.7-1)
  * Fixed possible Oops on connection loss during sync handshake
