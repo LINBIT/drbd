@@ -943,7 +943,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	/* Make sure the new disk is big enough
 	 * (we may currently be Primary with no local disk...) */
-	if (drbd_get_capacity(nbc->backing_bdev) <
+	if (drbd_get_max_capacity(nbc) <
 	    drbd_get_capacity(mdev->this_bdev)) {
 		retcode = LDDeviceTooSmall;
 		goto release_bdev2_fail;
@@ -1458,8 +1458,8 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
-		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+	if (mdev->bc->known_size != drbd_get_max_capacity(mdev->bc)) {
+		mdev->bc->known_size = drbd_get_max_capacity(mdev->bc);
 		ldsc = 1;
 	}
 

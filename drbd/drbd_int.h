@@ -1159,8 +1159,9 @@ struct bm_extent {
  * _storage_ sector is located in */
 #define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))
 
-/* who much _storage_ sectors we have per bitmap sector */
-#define BM_SECT_PER_EXT     (1ULL << (BM_EXT_SIZE_B-9))
+/* how much _storage_ sectors we have per bitmap sector */
+#define BM_EXT_TO_SECT(x)   ((sector_t)(x) << (BM_EXT_SIZE_B-9))
+#define BM_SECT_PER_EXT     BM_EXT_TO_SECT(1)
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B))
@@ -1666,20 +1667,28 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
  * current implementation will oops sooner or later */
 static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
+	sector_t s;
 	switch (bdev->dc.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return drbd_get_capacity(bdev->backing_bdev)
+		s = drbd_get_capacity(bdev->backing_bdev)
 			? min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
 					drbd_md_first_sector(bdev))
 			: 0;
+		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
-		return min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
+		s = min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
 				drbd_get_capacity(bdev->backing_bdev));
+		/* clip at maximum size the meta device can support */
+		s = min_t(sector_t, s,
+			BM_EXT_TO_SECT(bdev->md.md_size_sect
+				     - bdev->md.bm_offset));
+		break;
 	default:
-		return min_t(sector_t, DRBD_MAX_SECTORS,
+		s = min_t(sector_t, DRBD_MAX_SECTORS,
 				drbd_get_capacity(bdev->backing_bdev));
 	}
+	return s;
 }
 
 /* returns the sector number of our meta data 'super' block */
