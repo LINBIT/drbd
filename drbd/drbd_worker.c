@@ -573,9 +573,10 @@ STATIC int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int ca
 int drbd_resync_finished(struct drbd_conf *mdev)
 {
 	unsigned long db, dt, dbdt;
+	unsigned long n_oos;
 	union drbd_state_t os, ns;
 	struct drbd_work *w;
-	int art = 0;
+	char * khelper_cmd = NULL;
 
 	/* Remove all elements from the resync LRU. Since future actions
 	 * might set bits in the (main) bitmap, then the entries in the
@@ -624,14 +625,19 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	     "Online verify ": "Resync",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
+	n_oos = drbd_bm_total_weight(mdev);
+
 	if (os.conn == VerifyS || os.conn == VerifyT) {
-		if (drbd_bm_total_weight(mdev)) {
+		if (n_oos) {
 			ALERT("Online verify found %lu %dk block out of sync!\n",
-			      drbd_bm_total_weight(mdev),BM_BLOCK_SIZE/1024);
-			drbd_khelper(mdev,"out-of-sync");
+			      n_oos, Bit2KB(1));
+			khelper_cmd = "out-of-sync";
 		}
 	} else {
-		D_ASSERT((drbd_bm_total_weight(mdev)-mdev->rs_failed) == 0);
+		D_ASSERT((n_oos - mdev->rs_failed) == 0);
+
+		if (os.conn == SyncTarget || os.conn == PausedSyncT)
+			khelper_cmd = "after-resync-target";
 	}
 
 	if (mdev->rs_failed) {
@@ -671,8 +677,6 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		}
 	}
 
-	art = os.conn == SyncTarget || os.conn == PausedSyncT;
-
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 out_unlock:
@@ -690,8 +694,8 @@ out:
 
 	drbd_bm_recount_bits(mdev);
 
-	if (art)
-		drbd_khelper(mdev, "after-resync-target");
+	if (khelper_cmd)
+		drbd_khelper(mdev, khelper_cmd);
 
 	return 1;
 }
