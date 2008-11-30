@@ -216,7 +216,7 @@ static void check_string_error(int got)
 		msg = "Double quoted string too long";
 		break;
 	case TK_ERR_DQSTRING:
-		msg = "Unterminated double quoted string\n  we don't allow embeded newlines\n ";
+		msg = "Unterminated double quoted string\n  we don't allow embedded newlines\n ";
 		break;
 	default:
 		return;
@@ -753,7 +753,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			if (res->me || res->peer) {
 				fprintf(stderr,
 					"%s:%d: in resource %s, "
-					"'ignore-on' statement has to preceed any real host section (on ... { ... }).\n",
+					"'ignore-on' statement must precede any real host section (on ... { ... }).\n",
 					config_file, line, res->name);
 				exit(E_config_invalid);
 			}
