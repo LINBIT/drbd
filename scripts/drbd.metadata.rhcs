@@ -13,7 +13,16 @@
   </shortdesc>
 
   <parameters>
-    <parameter name="resource" unique="1" primary="1">
+    <parameter name="name" unique="1" primary="1">
+      <longdesc lang="en">
+    Symbolic name for this resource.
+      </longdesc>
+      <shortdesc lang="en">
+    Cluster resource name
+      </shortdesc>
+      <content type="string"/>
+    </parameter>
+    <parameter name="resource" unique="1" required="1">
       <longdesc lang="en">
 	The DRBD resource name, as specified in /etc/drbd.conf.
       </longdesc>
@@ -27,9 +36,6 @@
   <actions>
     <action name="start" timeout="20"/>
     <action name="stop" timeout="20"/>
-    <!-- No recover action. FIXME  If the IP address is not useable, then
-    resources may or may not depend on it.  If it's been 
-    deconfigured, resources using it are in a bad state. -->
     
     <!-- Checks to see if the resource is Primary locally -->
     <action name="status" depth="10" interval="60" timeout="20"/>
