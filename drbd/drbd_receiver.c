@@ -78,6 +78,7 @@ enum finish_epoch {
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
+static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch);
 
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
@@ -430,6 +431,7 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 {
 	struct list_head *le;
 	struct Tl_epoch_entry *e;
+	struct drbd_epoch *epoch;
 	int n = 0;
 
 	MUST_HOLD(&mdev->req_lock);
@@ -446,8 +448,15 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 
 		if (!hlist_unhashed(&e->colision))
 			hlist_del_init(&e->colision);
-		if (e->epoch)
+
+		if (e->epoch) {
+			if (e->flags & EE_IS_BARRIER) {
+				epoch = previous_epoch(mdev, e->epoch);
+				if (epoch)
+					drbd_may_finish_epoch(mdev, epoch, EV_barrier_done + EV_cleanup);
+			}
 			drbd_may_finish_epoch(mdev, e->epoch, EV_put + EV_cleanup);
+		}
 		drbd_free_ee(mdev, e);
 	}
 
@@ -1014,7 +1023,8 @@ STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(mdev, epoch);
 
-	drbd_may_finish_epoch(mdev, epoch, EV_put);
+	drbd_may_finish_epoch(mdev, epoch, EV_put |
+			      (mdev->state.conn < Connected ? EV_cleanup : 0));
 
 	return 1;
 }
