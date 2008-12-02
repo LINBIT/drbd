@@ -2755,19 +2755,27 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 
 		if (strcmp(mdev->sync_conf.verify_alg, p->verify_alg)) {
+			if (mdev->state.conn == WFReportParams) {
+				ERR("Different verify-alg settings. me=\"%s\" peer=\"%s\"\n",
+				    mdev->sync_conf.verify_alg, p->verify_alg);
+				goto disconnect;
+			}
 			verify_tfm = drbd_crypto_alloc_digest_safe(mdev,
 					p->verify_alg, "verify-alg");
 			if (IS_ERR(verify_tfm))
-				return FALSE;
+				goto disconnect;
 		}
 
 		if (apv >= 89 && strcmp(mdev->sync_conf.csums_alg, p->csums_alg)) {
+			if (mdev->state.conn == WFReportParams) {
+				ERR("Different csums-alg settings. me=\"%s\" peer=\"%s\"\n",
+				    mdev->sync_conf.csums_alg, p->csums_alg);
+				goto disconnect;
+			}
 			csums_tfm = drbd_crypto_alloc_digest_safe(mdev,
 					p->csums_alg, "csums-alg");
-			if (IS_ERR(csums_tfm)) {
-				crypto_free_hash(verify_tfm);
-				return FALSE;
-			}
+			if (IS_ERR(csums_tfm))
+				goto disconnect;
 		}
 
 
@@ -2775,14 +2783,14 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 		/* lock against drbd_nl_syncer_conf() */
 		if (verify_tfm) {
 			strcpy(mdev->sync_conf.verify_alg, p->verify_alg);
-			mdev->sync_conf.verify_alg_len = strlen(p->verify_alg);
+			mdev->sync_conf.verify_alg_len = strlen(p->verify_alg) + 1;
 			crypto_free_hash(mdev->verify_tfm);
 			mdev->verify_tfm = verify_tfm;
 			INFO("using verify-alg: \"%s\"\n", p->verify_alg);
 		}
 		if (csums_tfm) {
 			strcpy(mdev->sync_conf.csums_alg, p->csums_alg);
-			mdev->sync_conf.csums_alg_len = strlen(p->csums_alg);
+			mdev->sync_conf.csums_alg_len = strlen(p->csums_alg) + 1;
 			crypto_free_hash(mdev->csums_tfm);
 			mdev->csums_tfm = csums_tfm;
 			INFO("using csums-alg: \"%s\"\n", p->csums_alg);
@@ -2791,6 +2799,10 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	return ok;
+disconnect:
+	crypto_free_hash(verify_tfm);
+	drbd_force_state(mdev, NS(conn, Disconnecting));
+	return FALSE;
 }
 
 STATIC void drbd_setup_order_type(struct drbd_conf *mdev, int peer)
