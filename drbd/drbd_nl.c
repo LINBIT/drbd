@@ -214,14 +214,14 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
 	} else {
-		drbd_WARN("Not outdating peer, I'm not even Consistent myself.\n");
+		drbd_WARN("Not fencing peer, I'm not even Consistent myself.\n");
 		return mdev->state.pdsk;
 	}
 
 	if (fp == Stonith)
 		_drbd_request_state(mdev, NS(susp, 1), ChgWaitComplete);
 
-	r = drbd_khelper(mdev, "outdate-peer");
+	r = drbd_khelper(mdev, "fence-peer");
 
 	switch ((r>>8) & 0xff) {
 	case 3: /* peer is inconsistent */
@@ -247,18 +247,18 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		break;
 	case 7:
 		if (fp != Stonith)
-			ERR("outdate-peer() = 7 && fencing != Stonith !!!\n");
+			ERR("fence-peer() = 7 && fencing != Stonith !!!\n");
 		ex_to_string = "peer was stonithed";
 		nps = Outdated;
 		break;
 	default:
 		/* The script is broken ... */
 		nps = DUnknown;
-		ERR("outdate-peer helper broken, returned %d\n", (r>>8)&0xff);
+		ERR("fence-peer helper broken, returned %d\n", (r>>8)&0xff);
 		return nps;
 	}
 
-	INFO("outdate-peer helper returned %d (%s)\n",
+	INFO("fence-peer helper returned %d (%s)\n",
 			(r>>8) & 0xff, ex_to_string);
 	return nps;
 }

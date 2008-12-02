@@ -166,15 +166,22 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 	/*
 	  cs .. connection state
-	  st .. node state (local/remote)
-	  ld .. local data consistentency
+	  ro .. node role (local/remote)
+	  ds .. disk state (local/remote)
+	     protocol
+	     various flags
 	  ns .. network send
 	  nr .. network receive
 	  dw .. disk write
 	  dr .. disk read
-	  pe .. pending (waiting for ack)
-	  ua .. unack'd (still need to send ack)
-	  al .. access log write count
+	  al .. activity log write count
+	  bm .. bitmap update write count
+	  pe .. pending (waiting for ack or data reply)
+	  ua .. unack'd (still need to send ack or data reply)
+	  ap .. application requests accepted, but not yet completed
+	  ep .. number of epochs currently "on the fly", BarrierAck pending
+	  wo .. write ordering mode currently in use
+	 oos .. known out-of-sync kB
 	*/
 
 	for (i = 0; i < minor_count; i++) {
@@ -196,7 +203,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf(seq,
-			   "%2d: cs:%s st:%s/%s ds:%s/%s %c %c%c%c%c\n"
+			   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c\n"
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 			   i, sn,

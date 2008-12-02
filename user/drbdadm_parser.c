@@ -316,6 +316,17 @@ static void parse_global(void)
 	}
 }
 
+static void check_and_change_deprecated_alias(char **name, int token_option)
+{
+	if (token_option == TK_HANDLER_OPTION) {
+		if (!strcmp(*name, "outdate-peer")) {
+			/* fprintf(stder, "config file:line: name is deprecated ...\n") */
+			free(*name);
+			*name = strdup("fence-peer");
+		}
+	}
+}
+
 static struct d_option *parse_options(int token_switch, int token_option)
 {
 	char *opt_name;
@@ -331,6 +342,7 @@ static struct d_option *parse_options(int token_switch, int token_option)
 			options = APPEND(options, new_opt(yylval.txt, NULL));
 		} else if (token == token_option) {
 			opt_name = yylval.txt;
+			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);

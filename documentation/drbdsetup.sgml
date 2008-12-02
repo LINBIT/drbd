@@ -129,7 +129,7 @@
     <cmdsynopsis>
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
-      <arg choice="req">state</arg>
+      <arg choice="req">role</arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -967,7 +967,7 @@
 	    <para>
 	      Becoming primary fails if the local replica is
 	      inconsistent. By using this option you can force it into
-	      primary state anyway. USE THIS OPTION ONLY IF YOU KNOW WHAT
+	      primary role anyway. USE THIS OPTION ONLY IF YOU KNOW WHAT
 	      YOU ARE DOING.
 	    </para>
 	  </listitem>
@@ -978,13 +978,12 @@
       <title>secondary</title>
       <indexterm><primary>drbdsetup</primary><secondary>secondary</secondary></indexterm>
       <para>
-	Sets the <replaceable>device</replaceable> into secondary state.
+	Brings the <replaceable>device</replaceable> into secondary role.
 	This operation fails as long as at least one application (or file
-	system) has the device open for write access.
+	system) has opened the device.
       </para>
       <para>
-	It is however, possible that both devices of a connected DRBD device
-	pair are in secondary state.
+	It is possible that both devices of a connected DRBD device pair are secondary.
       </para>
     </refsect2>
     <refsect2>
@@ -1103,12 +1102,17 @@
       </para>
     </refsect2>
     <refsect2>
-      <title>state</title>
-      <indexterm><primary>drbdsetup</primary><secondary>state</secondary></indexterm>
+      <title>role</title>
+      <indexterm><primary>drbdsetup</primary><secondary>role</secondary></indexterm>
       <para>
-	Shows the current states of the <replaceable>device</replaceable> and
+	Shows the current roles of the <replaceable>device</replaceable> and
 	its peer. (local/peer).
       </para>
+    </refsect2>
+    <refsect2>
+      <title>state</title>
+      <indexterm><primary>drbdsetup</primary><secondary>state</secondary></indexterm>
+      <para>Deprecated alias for "role"</para>
     </refsect2>
     <refsect2>
       <title>cstate</title>

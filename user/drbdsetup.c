@@ -170,7 +170,7 @@ void string_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int state_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+int role_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int sh_status_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
@@ -358,7 +358,9 @@ struct drbd_cmd commands[] = {
 	{"outdate", P_outdate, F_CONFIG_CMD, {{ NULL, NULL }} },
 	{"verify", P_start_ov, F_CONFIG_CMD, {{NULL, NULL}} },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
-	{"state", P_get_state, F_GET_CMD, { .gp={ state_scmd} } },
+	/* "state" is deprecated! please use "role".
+	 * find_cmd_by_name still understands "state", however. */
+	{"role", P_get_state, F_GET_CMD, { .gp={ role_scmd} } },
 	{"status", P_get_state, F_GET_CMD, {.gp={ status_xml_scmd } } },
 	{"sh-status", P_get_state, F_GET_CMD, {.gp={ sh_status_scmd } } },
 	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
@@ -1458,7 +1460,7 @@ int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	printf( /* connection state */
 		" cs=\"%s\""
 		/* role */
-		" st1=\"%s\" st2=\"%s\""
+		" ro1=\"%s\" ro2=\"%s\""
 		/* disk state */
 		" ds1=\"%s\" ds2=\"%s\"",
 	       conns_to_name(state.conn),
@@ -1552,7 +1554,7 @@ int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 #undef _P
 }
 
-int state_scmd(struct drbd_cmd *cm __attribute((unused)),
+int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
@@ -1626,13 +1628,19 @@ int uuids_scmd(struct drbd_cmd *cm,
 	return 0;
 }
 
-static struct drbd_cmd *find_cmd_by_name(const char* name)
+static struct drbd_cmd *find_cmd_by_name(char *name)
 {
 	unsigned int i;
 
-	for(i=0;i<ARRY_SIZE(commands);i++) {
-		if(!strcmp(name,commands[i].cmd)) {
-			return commands+i;
+	if (!strcmp(name, "state")) {
+		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
+			cmdname, cmdname);
+		name = "role";
+	}
+
+	for (i = 0; i < ARRY_SIZE(commands); i++) {
+		if (!strcmp(name, commands[i].cmd)) {
+			return commands + i;
 		}
 	}
 	return NULL;
@@ -1779,7 +1787,7 @@ int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 	switch (reply->packet_type) {
 	case P_get_state:
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			printf("%u ST %d { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
+			printf("%u ST %d { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 			       seq,
 			       reply->minor,
 			       conns_to_name(state.conn),

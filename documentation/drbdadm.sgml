@@ -131,7 +131,7 @@
         <term>primary</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>primary</secondary></indexterm>
-          Switch the resource's device into primary state. You need to do
+          Promote the resource's device into primary role. You need to do
 	  this before any access to the device, such as creating or mounting a file system.
         </para></listitem>
       </varlistentry>
@@ -234,11 +234,18 @@
         </para></listitem>
       </varlistentry>
       <varlistentry>
+        <term>role</term>
+        <listitem><para>
+	<indexterm><primary>drbdadm</primary><secondary>role</secondary></indexterm>
+	  Shows the current roles of the devices (local/peer).
+	  E.g. Primary/Secondary
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
         <term>state</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>state</secondary></indexterm>
-	  Shows the current states of the devices (local/peer).
-	  E.g. Primary/Secondary
+	  Deprecated alias for "role", see above.
 	</para></listitem>
       </varlistentry>
       <varlistentry>

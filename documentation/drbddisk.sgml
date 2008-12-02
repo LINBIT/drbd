@@ -30,8 +30,7 @@
  <para>
    The <option>/etc/ha.d/resource.d/drbddisk</option> script
    brings the local device of <replaceable>resource</replaceable> into
-   primary state. It is designed to be
-   used by Heartbeat.
+   primary role. It is designed to be used by Heartbeat.
   </para>
   <para>
     In order to use <option>/etc/ha.d/resource.d/drbddisk</option> you must

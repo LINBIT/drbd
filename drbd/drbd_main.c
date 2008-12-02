@@ -661,7 +661,7 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 		c == mdev->receiver.task ? "receiver" :
 		c == mdev->asender.task ? "asender" : "other";
 
-	DBG(" %8llx [%s] %s:%u %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
+	DBG(" %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    seq, context, func, line,
 	    name,
 	    conns_to_name(s.conn),
@@ -681,7 +681,7 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 
 STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
 {
-	ERR(" %s = { cs:%s st:%s/%s ds:%s/%s %c%c%c%c }\n",
+	ERR(" %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
 	    conns_to_name(ns.conn),
 	    roles_to_name(ns.role),

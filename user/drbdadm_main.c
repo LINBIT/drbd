@@ -235,7 +235,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
 		exit(E_thinko);
 	}
-	fd = adm_generic(res, "state", RETURN_STDOUT_FD | SUPRESS_STDERR);
+	fd = adm_generic(res, "role", RETURN_STDOUT_FD | SUPRESS_STDERR);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
@@ -455,7 +455,7 @@ struct adm_cmd cmds[] = {
         { "wait-con-int",          adm_wait_ci,
 		.show_in_usage = 1, .verify_ips = 1, },
         { "status",                adm_status_xml,  DRBD_acf2_gen_shell },
-        { "state",                 adm_generic_s,   DRBD_acf1_default   },
+        { "role",                  adm_generic_s,   DRBD_acf1_default   },
         { "cstate",                adm_generic_s,   DRBD_acf1_default   },
         { "dstate",                adm_generic_b,   DRBD_acf1_default   },
 
@@ -489,7 +489,7 @@ struct adm_cmd cmds[] = {
         { "after-resync-target",   adm_khelper,     DRBD_acf3_handler   },
         { "pri-on-incon-degr",     adm_khelper,     DRBD_acf3_handler   },
         { "pri-lost-after-sb",     adm_khelper,     DRBD_acf3_handler   },
-        { "outdate-peer",          adm_khelper,     DRBD_acf3_handler   },
+        { "fence-peer",            adm_khelper,     DRBD_acf3_handler   },
         { "local-io-error",        adm_khelper,     DRBD_acf3_handler   },
         { "pri-lost",              adm_khelper,     DRBD_acf3_handler   },
         { "split-brain",           adm_khelper,     DRBD_acf3_handler   },
@@ -2163,7 +2163,7 @@ int sanity_check_abs_cmd(char* cmd_name)
     if (!did_header)
       fprintf(stderr,
 	"WARN:\n"
-	"  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
+	"  You are using the 'drbd-peer-outdater' as fence-peer program.\n"
 	"  If you use that mechanism the dopd heartbeat plugin program needs\n"
 	"  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
 	"  You need to fix this with these commands:\n");
@@ -2229,7 +2229,7 @@ void sanity_check_conf(char *c)
 
 	fprintf(stderr,
 		"WARN:\n"
-		"  You are using the 'drbd-peer-outdater' as outdate-peer program.\n"
+		"  You are using the 'drbd-peer-outdater' as fence-peer program.\n"
 		"  If you use that mechanism the dopd heartbeat plugin program needs\n"
 		"  to be able to read the drbd.config file.\n\n"
 		"  You need to fix this with these commands:\n"
@@ -2307,7 +2307,7 @@ void validate_resource(struct d_resource * res)
   /* IP verification (check for existence)
    * moved to just before command execution */
 
-  if ( (opt = find_opt(res->handlers, "outdate-peer")) ) {
+  if ( (opt = find_opt(res->handlers, "fence-peer")) ) {
     if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
   }
 
@@ -2568,6 +2568,15 @@ void store_pass_through_options(int argc, char **argv)
 	}
 }
 
+static void substitute_deprecated_cmd(char **c, char *deprecated, char *substitution)
+{
+	if (!strcmp(*c, deprecated)) {
+		fprintf(stderr, "'%s %s' is deprecated, use '%s %s' instead.\n",
+			progname, deprecated, progname, substitution);
+		*c= substitution;
+	}
+}
+
 struct adm_cmd *find_cmd(char *cmdname)
 {
 	struct adm_cmd *cmd = NULL;
@@ -2579,6 +2588,18 @@ struct adm_cmd *find_cmd(char *cmdname)
 	}
 	if (!strncmp("help", cmdname, 5))
 		print_usage_and_exit(0);
+
+	/* Primary / Secondary is not a state, but a role.  Whatever that
+	 * means, actually.  But anyways, we decided to start using _role_ as
+	 * the terminus of choice, and deprecate "state". */
+	substitute_deprecated_cmd(&cmdname, "state", "role");
+
+	/* "outdate-peer" got renamed to fence-peer,
+	 * it is not required to actually outdate the peer,
+	 * depending on situation it may be sufficient to power-reset it
+	 * or do some other fencing action, or even call out to "meatware".
+	 * The name of the handler should not imply something that is not done. */
+	substitute_deprecated_cmd(&cmdname, "outdate-peer", "fence-peer");
 
 	for (i = 0; i < ARRY_SIZE(cmds); i++) {
 		if (!strcmp(cmds[i].name, cmdname)) {
@@ -2632,7 +2653,7 @@ void assign_default_config_file(void)
 		}
 	}
 	if (!config_file) {
-		fprintf(stderr, "Can not open '%s': %m", conf_file[i - 1]);
+		fprintf(stderr, "Can not open '%s': %m\n", conf_file[i - 1]);
 		exit(E_config_invalid);
 	}
 }
