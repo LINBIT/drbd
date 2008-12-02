@@ -94,6 +94,7 @@ drbd_pretty_status()
 		      -e '/^ *[0-9]\+: cs:Unconfigured/d;' \
 		      -e 's/^\(.* cs:.*[^ ]\)   \([rs]...\)$/\1 - \2/g' \
 		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
+		      -e 's/^\(.* \)cs:\([^ ]* \)ro:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
 		      -e 's/^\(.* \)cs:\([^ ]*\)$/\1\2/' \
 		      -e 's/^ *[0-9]\+:/ x &??not-found??/;' \
 		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
@@ -115,7 +116,7 @@ drbd_pretty_status()
 	# join -a1 <(p|sort) <(m|sort)
 	# echo "========="
 	(
-	echo m:res cs st ds p mounted fstype
+	echo m:res cs ro ds p mounted fstype
 	join -a1 <(p|sort) <(m|sort) | cut -d' ' -f2-6,8- | sort -k1,1n -k2,2
 	) | column -t
 }

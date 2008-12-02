@@ -53,8 +53,8 @@ sub slurp_proc_drbd_or_exit() {
 			# add "-" for protocol, in case it is missing
 	     		s/^(.* cs:.*\S)   ([rs]...)$/$1 - $2/;
 			# strip off what will be in the heading
-			s/^(.* )cs:([^ ]* )st:([^ ]* )ds:([^ ]*)/$1$2$3$4/;
-			s/^(.* )cs:([^ ]* )st:([^ ]* )ld:([^ ]*)/$1$2$3$4/;
+			s/^(.* )cs:([^ ]* )(?:st|ro):([^ ]* )ds:([^ ]*)/$1$2$3$4/;
+			s/^(.* )cs:([^ ]* )(?:st|ro):([^ ]* )ld:([^ ]*)/$1$2$3$4/;
 			s/^(.* )cs:([^ ]*)$/$1$2/;
 			# strip off leading minor number
 			s/^ *\d+:\s+//;
