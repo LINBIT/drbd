@@ -1,8 +1,8 @@
 Source: drbd8
 Section: admin
 Priority: extra
-Maintainer: Cyril Bouthors <cyril@bouthors.org>
-Uploaders: David Krovich <dkrovich@csee.wvu.edu>, Philipp Hug <debian@hug.cx>
+Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
+Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
 Build-Depends: debhelper (>= 4), debconf-utils, sp, docbook-utils, docbook, flex, dpatch
 Standards-Version: 3.6.2.1
 
