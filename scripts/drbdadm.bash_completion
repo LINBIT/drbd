@@ -1,7 +1,7 @@
 #
 # /etc/bash_completion.d/drbdadm
 #
-# Bash completion for the drbdadm top-level management application, drbdadm.
+# Bash completion for the DRBD top-level management application, drbdadm.
 #
 # If you have bash completion enabled, this module will
 #
@@ -22,9 +22,13 @@
 # if you are using the default location for your DRBD configuration
 # file (/etc/drbd.conf).
 
+# By default, ${DRBDADM} is "drbdadm", unless running in stacked mode,
+# in which case it must be redefined it as "drbdadm --stacked". (TODO)
+DRBDADM="drbdadm"
+
 __drbdadm_all_resources() {
 	# Detects all resources currently listed in drbd.conf
-	local resources="$(drbdadm sh-resources) all"
+	local resources="$(${DRBDADM} sh-resources) all"
 	COMPREPLY=( $(compgen -W "$resources" -- "$current") )
 }
 
@@ -33,10 +37,10 @@ __drbdadm_resources_by_status() {
 	status_type="$1"
 	shift 1
 	status_filter="$*"
-	local resources="$(drbdadm sh-resources)"
+	local resources="$(${DRBDADM} sh-resources)"
 	local filtered_resources
 	for res in $resources; do
-		local resource_status="$(drbdadm $status_type $res)"
+		local resource_status="$(${DRBDADM} $status_type $res)"
 		local i
 		for i in $status_filter; do
 			if [ "${resource_status%%/*}" = $i ]; then
@@ -49,7 +53,7 @@ __drbdadm_resources_by_status() {
 
 __drbdadm_commands() {
 	# Lists drbdadm sub-commands
-	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect state cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
+	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect role state cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
 	COMPREPLY=( $(compgen -W "$commands" -- "$current") )
 }
 
@@ -67,10 +71,11 @@ __drbdadm_drbdsetup_options() {
 }
 
 _drbdadm() {
-	local current previous resources
+	local current previous
+	# The word currently being evaluated for completion
 	current=${COMP_WORDS[COMP_CWORD]}
+	# The word that precedes the currently-evaluated one
 	previous=${COMP_WORDS[COMP_CWORD-1]}
-	resources="$(drbdadm sh-resources)"
 
 	case "$previous" in
 		drbdadm)
@@ -96,10 +101,10 @@ _drbdadm() {
 			__drbdadm_commands
 			;;
 		primary)
-			__drbdadm_resources_by_status "state" "Secondary"
+			__drbdadm_resources_by_status "role" "Secondary"
 			;;
 		secondary)
-			__drbdadm_resources_by_status "state" "Primary"
+			__drbdadm_resources_by_status "role" "Primary"
 			;;
 		detach)
 			__drbdadm_resources_by_status "dstate" "UpToDate" "Inconsistent" "Outdated"
@@ -117,7 +122,7 @@ _drbdadm() {
 			__drbdadm_resources_by_status "cstate" "Connected"
 			;;
 		disconnect)
-			__drbdadm_resources_by_status "cstate" "Connected" "WFConnection"
+			__drbdadm_resources_by_status "cstate" "Connected" "WFConnection" "VerifyT" "VerifyS"
 			;;
 		verify)
 			__drbdadm_resources_by_status "cstate" "Connected"
