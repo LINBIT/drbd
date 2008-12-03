@@ -2915,8 +2915,8 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct Drbd_Header *h)
 	}
 
 	if (inc_local(mdev)) {
-		if (mdev->bc->known_size != drbd_get_max_capacity(mdev->bc)) {
-			mdev->bc->known_size = drbd_get_max_capacity(mdev->bc);
+		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
 			ldsc = 1;
 		}
 

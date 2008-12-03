@@ -962,7 +962,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev2_fail;
 	}
 
-	nbc->known_size = drbd_get_max_capacity(nbc);
+	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
 	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
 	if (retcode < SS_Success)
@@ -1539,8 +1539,8 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->bc->known_size != drbd_get_max_capacity(mdev->bc)) {
-		mdev->bc->known_size = drbd_get_max_capacity(mdev->bc);
+	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
+		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
 		ldsc = 1;
 	}
 
