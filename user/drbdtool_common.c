@@ -401,11 +401,21 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "\n");
 }
 
+/*    s: token buffer
+ * size: size of s, _including_ the terminating NUL
+ * stream: to read from.
+ * s is guaranteed to be NUL terminated
+ * if a token (including the NUL) needs more size bytes,
+ * s will contain only a truncated token, and the next call will
+ * return the next size-1 non-white-space bytes of stream.
+ */
 int fget_token(char *s, int size, FILE* stream)
 {
 	int c;
 	char* sp = s;
 
+	*sp = 0; /* terminate even if nothing is found */
+	--size;  /* account for the terminating NUL */
 	do { // eat white spaces in front.
 		c = getc(stream);
 		if( c == EOF) return EOF;
@@ -426,6 +436,8 @@ int sget_token(char *s, int size, const char** text)
 	int c;
 	char* sp = s;
 
+	*sp = 0; /* terminate even if nothing is found */
+	--size;  /* account for the terminating NUL */
 	do { // eat white spaces in front.
 		c = *(*text)++;
 		if( c == 0) return EOF;
