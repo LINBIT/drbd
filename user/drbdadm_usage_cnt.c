@@ -112,7 +112,7 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 	int plus=0;
 	enum { begin,f_svn,f_rev,f_git } ex=begin;
 
-	while(sget_token(token,40,&text) != EOF) {
+	while (sget_token(token, sizeof(token), &text) != EOF) {
 		switch(ex) {
 		case begin:
 			if(!strcmp(token,"plus")) plus = 1;
