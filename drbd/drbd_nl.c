@@ -954,7 +954,10 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
+	drbd_suspend_io(mdev);
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_pending_cnt));
 	retcode = _drbd_request_state(mdev, NS(disk, Attaching), ChgStateVerbose);
+	drbd_resume_io(mdev);
 	if (retcode < SS_Success)
 		goto release_bdev2_fail;
 
