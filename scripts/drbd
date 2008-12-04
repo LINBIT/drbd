@@ -83,10 +83,17 @@ drbd_pretty_status()
 	fi
 	sed -e '2q' < "$proc_drbd"
 	sed_script=$(
-	   paste <(drbdadm sh-dev all | cat -n) \
-		 <(drbdadm sh-resources| tr ' ' '\n')  |
+	   (
+	   paste <(drbdadm sh-dev all) \
+		 <(drbdadm sh-resources| tr ' /' '\n_') ;
+	   paste <(drbdadm -S sh-dev all) \
+		 <(drbdadm -S sh-resources | tr ' /' '\n_' ) \
+		 <(drbdadm -S sh-ll-dev all )
+	   ) | cat -n |
 	   sed -e 's/|/_/g' \
-	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#')
+	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)./dev/drbd\([0-9]\+\)$#s|^ *\2:|\1\&\3^^\4|#' \
+	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#'
+	       )
 
 	p() {
 		sed -e "1,2d" \
@@ -104,7 +111,7 @@ drbd_pretty_status()
 	}
 	m() {
 		join -1 2 -2 1 -o 1.1,2.2,2.3 \
-			<(drbdadm sh-dev all | cat -n | sort -k2,2) \
+			<( ( drbdadm sh-dev all ; drbdadm -S sh-dev all ) | cat -n | sort -k2,2) \
 			<(sort < /proc/mounts ) |
 			sort -n | tr -s '\t ' '  ' | sed -e 's/^ *//'
 	}

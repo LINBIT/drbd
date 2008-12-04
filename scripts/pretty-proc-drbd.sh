@@ -53,9 +53,14 @@ done
 drbd_pretty_status()
 {
 	# add resource names
-	sed_script=$(paste <(drbdadm sh-dev all) <(drbdadm sh-resources| tr ' /' '\n_') |
-			sed -e 's,^/dev/drbd,s/^ *,;s,\t,:/,;s,$, \&/;,')
-	sed -e "$sed_script;s/^ *[0-9]\+:/??not-found??&/" < /proc/drbd |
+	sed_script=$(
+	   (
+	   paste <(drbdadm sh-dev all) \
+		 <(drbdadm sh-resources| tr ' /' '\n_') ;
+	   paste <(drbdadm -S sh-dev all) \
+		 <(drbdadm -S sh-resources | tr ' /' '\n_' )
+	   ) | sed -e 's,^/dev/drbd,s/^ *,;s,\t,:/,;s,$, \&/;,')
+	sed -e "$sed_script;s/^ *\([0-9]\+:\)/??not-found?? \1/" < /proc/drbd |
 	if [[ $short == true ]]; then
 		sed -e '1,2d;/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' | column -t
 	else
