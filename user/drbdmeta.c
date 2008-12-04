@@ -2584,26 +2584,36 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 int is_attached(int minor)
 {
 	FILE *pr;
-	char token[40];
-	int rv=-1;
-	long m,cm=-1;
+	char token[128];	/* longest interessting token is 40 Byte (git hash) */
+	int rv = -1;
+	long m, cm = -1;
 	char *p;
 
-	pr = fopen("/proc/drbd","r");
-	if(!pr) return 0;
+	pr = fopen("/proc/drbd", "r");
+	if (!pr)
+		return 0;
 
-	while(fget_token(token,40,pr) != EOF) {
-		m=strtol(token,&p,10);
-		if(*p==':' && p-token == (long)strlen(token)-1 ) cm=m;
-		if( cm == minor && rv == -1 ) rv=1;
-		if( cm == minor ) {
-			if(!strcmp(token,"cs:Unconfigured")) rv = 0;
-			if(!strncmp(token,"ds:Diskless",11)) rv = 0;
+	while (fget_token(token, sizeof(token), pr) != EOF) {
+		m = strtol(token, &p, 10);
+		/* keep track of currently parsed minor */
+		if (p[0] == ':' && p[1] == 0)
+			cm = m;
+		/* we found the minor number that was asked for */
+		if (cm == minor) {
+			/* first, assume it is attached */
+			if (rv == -1)
+				rv = 1;
+			/* unless, of course, it is unconfigured or diskless */
+			if (!strcmp(token, "cs:Unconfigured"))
+				rv = 0;
+			if (!strncmp(token, "ds:Diskless", 11))
+				rv = 0;
 		}
 	}
 	fclose(pr);
 
-	if(rv == -1) rv = 0; // minor not found -> not attached.
+	if (rv == -1)
+		rv = 0;		// minor not found -> not attached.
 	return rv;
 }
 
