@@ -22,10 +22,6 @@
 # if you are using the default location for your DRBD configuration
 # file (/etc/drbd.conf).
 
-# By default, ${DRBDADM} is "drbdadm", unless running in stacked mode,
-# in which case it must be redefined it as "drbdadm --stacked". (TODO)
-DRBDADM="drbdadm"
-
 __drbdadm_all_resources() {
 	# Detects all resources currently listed in drbd.conf
 	local resources="$(${DRBDADM} sh-resources) all"
@@ -71,7 +67,15 @@ __drbdadm_drbdsetup_options() {
 }
 
 _drbdadm() {
-	local current previous
+	local DRBDADM=${COMP_WORDS[0]}
+
+	case "$COMP_LINE " in
+	*" -S "*|*" --stacked "*)
+		DRBDADM="$DRBDADM --stacked"
+		;;
+	esac
+	
+	local current previous is_stacked
 	# The word currently being evaluated for completion
 	current=${COMP_WORDS[COMP_CWORD]}
 	# The word that precedes the currently-evaluated one
