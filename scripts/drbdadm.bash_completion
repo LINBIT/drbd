@@ -6,12 +6,14 @@
 # If you have bash completion enabled, this module will
 #
 # - provide tab completion for drbdadm sub-commands (up, down, primary,
-#   secondary etc.),
+#   secondary etc.);
 #
 # - try to detect your current resource state and provide appropriate
 #   command completion for the sub-command you provided. For example,
 #   when if you have entered the "primary" sub-command, it will list
-#   only those resources that are currently in the Secondary role.
+#   only those resources that are currently in the Secondary role;
+#
+# - differentiate between stacked and unstacked resources.
 #
 # This module does NOT guarantee that the DRBD state engine will in
 # fact agree to do what you ask it to. For example, resources that are
@@ -55,7 +57,7 @@ __drbdadm_commands() {
 
 __drbdadm_options() {
 	# Lists global drbdadm options
-	local options='-d --dry-run -v --verbose'
+	local options='-d --dry-run -v --verbose -S --stacked'
 	COMPREPLY=( $(compgen -W "$options" -- "$current") )
 }
 
@@ -69,13 +71,15 @@ __drbdadm_drbdsetup_options() {
 _drbdadm() {
 	local DRBDADM=${COMP_WORDS[0]}
 
+	# Redefine the drbdadm we use in __drbdadm_all_resources and
+	# __drbdadm_resources_by_status, if running in stacked mode
 	case "$COMP_LINE " in
 	*" -S "*|*" --stacked "*)
 		DRBDADM="$DRBDADM --stacked"
 		;;
 	esac
 	
-	local current previous is_stacked
+	local current previous
 	# The word currently being evaluated for completion
 	current=${COMP_WORDS[COMP_CWORD]}
 	# The word that precedes the currently-evaluated one
