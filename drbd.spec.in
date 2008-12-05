@@ -208,6 +208,21 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Fri Dec  5 2008 18:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.0rc2-1)
+ * Fixed a bug in the new epoch code (introduced with 8.2.7).
+   Might cause crash at reconnect after connection loss during heavy IO
+   (Bugz 160)
+ * Fixed a bug that could lead to a crash when detaching/attaching
+   on the primary under heavy IO (Bugz 171)
+ * Fixed the verify-alg and csums-alg negotiating in case the user
+   configures different ones on this two nodes (reg)
+ * Fixed online resize (reg)
+ * Fix for stack smashing in drbdmeta
+ * Renamed 'state' to 'role'
+ * Added support for stacked resources to the bash completion stuff
+ * Added missing documentation (manpages)
+
 * Fri Nov 28 2008 18:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.0rc1-1)
  * Fixed 'sleep with spinlock held' in case online verify found a difference
