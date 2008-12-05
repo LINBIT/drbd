@@ -3,6 +3,7 @@
 
 #include <asm/types.h>
 #include "drbd_endian.h"
+#include <stdarg.h>
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -51,4 +52,8 @@ extern int fget_token(char *s, int size, FILE* stream);
 extern int sget_token(char *s, int size, const char** text);
 extern u64 bdev_size(int fd);
 extern void get_random_bytes(void* buffer, int len);
+/* Since glibc 2.8~20080505-0ubuntu7 asprintf() is declared with the
+   warn_unused_result attribute.... */
+extern int m_asprintf(char **strp, const char *fmt, ...);
+
 #endif

@@ -1149,7 +1149,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 
 int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
-	int idx;
+	int idx=0;
 	char *str, *backing_dev, *address;
 	struct sockaddr_in *addr;
 
@@ -1257,7 +1257,7 @@ int uuids_scmd(struct drbd_cmd *cm,
 	       unsigned short *rtl)
 {
 	__u64 *uuids;
-	int flags;
+	int flags=0;
 	unsigned int len;
 
 	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
@@ -1406,7 +1406,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct drbd_tag_list *tl;
 	struct option *lo;
 	unsigned int b_seq=0, r_seq=0;
-	int sk_nl,c,cont=1,rr,i,last;
+	int sk_nl,c,cont=1,rr=0,i,last;
 	int unfiltered=0, all_devices=0;
 	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
 	struct timeval before,after;
@@ -1928,7 +1928,9 @@ void ensure_drbd_driver_is_present(void)
 	cn_idx = CN_IDX_DRBD;
 	cn_idx_file = fopen("/sys/module/drbd/parameters/cn_idx", "r");
 	if (cn_idx_file) {
-		fscanf(cn_idx_file, "%u", &cn_idx);
+		unsigned int idx; /* gcc is picky */
+		if (fscanf(cn_idx_file, "%u", &idx))
+			cn_idx = idx;
 		fclose(cn_idx_file);
 	}
 
@@ -1953,7 +1955,11 @@ int main(int argc, char** argv)
 	struct drbd_cmd *cmd;
 	int rv=0;
 
-	chdir("/");
+	if (chdir("/")) {
+		/* highliy unlikely, but gcc is picky */
+		perror("cannot chdir /");
+		return -111;
+	}
 
 	if ( (cmdname = strrchr(argv[0],'/')) )
 		argv[0] = ++cmdname;
