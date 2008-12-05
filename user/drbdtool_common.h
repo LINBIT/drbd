@@ -3,6 +3,7 @@
 
 #include <asm/types.h>
 #include "drbd_endian.h"
+#include <stdarg.h>
 
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
@@ -56,4 +57,9 @@ extern int force; /* global option to force implicit confirmation */
 extern int confirmed(const char *text);
 
 extern const char* shell_escape(char* s);
+
+/* Since glibc 2.8~20080505-0ubuntu7 asprintf() is declared with the
+   warn_unused_result attribute.... */
+extern int m_asprintf(char **strp, const char *fmt, ...);
+
 #endif
