@@ -362,6 +362,7 @@ void uc_node(enum usage_count_type type)
 	int update = 0;
 	char answer[ANSWER_SIZE];
 	char n_comment[ANSWER_SIZE*3];
+	char *unused_res;
 
 	if( type == UC_NO ) return;
 	if( getuid() != 0 ) return;
@@ -415,7 +416,7 @@ void uc_node(enum usage_count_type type)
 "* To count this node without comment, just press [RETURN]\n",
 			update ? "an update" : "a new installation",
 			REL_VERSION,ni.node_uuid, vcs_to_str(&ni.rev));
-		fgets(answer,ANSWER_SIZE,stdin);
+		unused_res = fgets(answer, ANSWER_SIZE, stdin);
 		if(!strcmp(answer,"no\n")) send = 0;
 		url_encode(answer,n_comment);
 	}
@@ -441,7 +442,7 @@ void uc_node(enum usage_count_type type)
 "to ask you for confirmation as long as 'usage-count' is at its default\n"
 "value of 'ask'.\n\n"
 "Just press [RETURN] to continue: ");
-			fgets(answer,9,stdin);
+			unused_res = fgets(answer, 9, stdin);
 		}
 	}
 }
@@ -502,6 +503,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	int rv,fd;
 	int soi_tmp;
 	char *setup_opts_0_tmp;
+	char *unused_res;
 
 	tb = run_admm_generic(res, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
@@ -535,8 +537,8 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 "* To continue, just press [RETURN]\n",
 				ni.node_uuid,device_uuid,device_size
 				);
-		fgets(answer,ANSWER_SIZE,stdin);
-		if(strcmp(answer,"no\n")) send = 1;
+			unused_res = fgets(answer, ANSWER_SIZE, stdin);
+			if(strcmp(answer,"no\n")) send = 1;
 		}
 	}
 

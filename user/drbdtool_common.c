@@ -551,3 +551,21 @@ const char* shell_escape(char* s)
 	*c = '\0';
 	return buffer;
 }
+
+int m_asprintf(char **strp, const char *fmt, ...)
+{
+	int r;
+	va_list ap;
+
+	va_start(ap, fmt);
+	r = vasprintf(strp, fmt, ap);
+	va_end(ap);
+
+	if (r == -1) {
+		fprintf(stderr, "vasprintf() failed. Out of memory?\n");
+		exit(10);
+	}
+
+	return r;
+}
+

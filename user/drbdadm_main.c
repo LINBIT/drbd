@@ -2054,7 +2054,7 @@ void verify_ips(struct d_resource *res)
   if (! have_ip(res->me->address_family, res->me->address)) {
     ENTRY e, *ep;
     e.key = e.data = ep = NULL;
-    asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
+    m_asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
       "IP %s not found on this host.\n",
