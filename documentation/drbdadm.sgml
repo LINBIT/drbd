@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.2//EN" []>
 <refentry id="re-drbdadm">
-  <refentryinfo><date>15 Oct 2008</date></refentryinfo>
+  <refentryinfo><date>5 Dec 2008</date></refentryinfo>
   <refmeta>
     <refentrytitle>drbdadm</refentrytitle>
     <manvolnum>8</manvolnum>
@@ -19,6 +19,7 @@
       <arg>-c<arg choice="req"><replaceable>file</replaceable></arg></arg>
       <arg>-s<arg choice="req"><replaceable>cmd</replaceable></arg></arg>
       <arg>-m<arg choice="req"><replaceable>cmd</replaceable></arg></arg>
+      <arg>-S</arg>
       <arg choice="req"><replaceable>command</replaceable></arg>
       <group>
 	<arg choice="plain">all</arg>
@@ -51,8 +52,8 @@
           <replaceable>file</replaceable></term>
         <listitem><para>
           Specifies the configuration file drbdadm will use. If this parameter
-	  is not specified, drbdadm will look for <option>/etc/drbd-08.conf</option> and
-          <option>/etc/drbd.conf</option>.
+	  is not specified, drbdadm will look for <option>/etc/drbd-83.conf</option>,
+          <option>/etc/drbd-08.conf</option> and <option>/etc/drbd.conf</option>.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
@@ -70,6 +71,12 @@
           Specifies the full path to the drbdmeta program. If this option is
 	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
 	  <option>./drbdsetup</option>.
+	</para></listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-S</option>, <option>--stacked</option>
+        <listitem><para>
+          Specifies that this command should be performed on a stacked resource.
 	</para></listitem>
       </varlistentry>
     </variablelist>

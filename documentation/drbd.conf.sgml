@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.2//EN" []>
 <refentry id="re-drbdconf">
-<refentryinfo><date>15 Oct 2008</date></refentryinfo>
+<refentryinfo><date>5 Dec 2008</date></refentryinfo>
 
 <refmeta>
  <refentrytitle>drbd.conf</refentrytitle>
@@ -153,6 +153,7 @@ resource r0 {
     a <option>handlers</option>,
     a <option>net</option> and a <option>disk</option> section.
     Required parameter in this section: <option>protocol</option>.
+    Optional parameter in this section: <option>ignore-on</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -171,6 +172,19 @@ resource r0 {
   </para>
   </listitem>
 </varlistentry>
+
+<varlistentry>
+  <term><option>stacked-on-top-of <replaceable>resource</replaceable></option></term>
+  <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>stacked-on-top-of</secondary></indexterm>
+    For a stacked DRBD setup (3 or 4 nodes), a <option>stacked-on-top-of</option> is used
+    instead of an <option>on</option> section.
+    Required parameters in this section: <option>device</option> and
+    <option>address</option>.
+  </para>
+  </listitem>
+</varlistentry>
+
 
 <varlistentry>
   <term><option>disk</option></term>
@@ -238,7 +252,7 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
-    <option>cpu-mask</option> and <option>verify-alg</option>.
+    <option>cpu-mask</option>, <option>verify-alg</option> and <option>csums-alg</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -330,6 +344,16 @@ resource r0 {
   local disk and remote buffer cache.</para>
   <para>Protocol C: write IO is reported as completed, if it has
   reached both local and remote disk.</para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>ignore-on <replaceable>host</replaceable></option></term>
+  <listitem>
+  <indexterm><primary>drbd.conf</primary><secondary>ignore-on</secondary></indexterm>
+    <para>In a three node DRBD setup there is a lower resources that connects only two
+    nodes. By using <option>ignore-on</option> it must be excepted from processing on the
+    other node.</para>
   </listitem>
 </varlistentry>
 
@@ -1037,6 +1061,22 @@ the unit is 1 second.
   available. By default this is not enabled; you must set this
   option explicitly in order to be able to use on-line device verification.</para>
   <para>See also the notes on data integrity.<para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>csums-alg <replaceable>hash-alg</replaceable></option></term>
+  <listitem>
+  <para>A resync process sends all marked data blocks form the source to
+  the destination node, as long as no <option>csums-alg</option> is
+  given. When one is specified the resync process exchanges hash values of all
+  marked blocks first, and sends only those data blocks over, that have different
+  hash values.</para>
+  <para>This setting is useful for DRBD setups with low bandwidth links.
+  During the restart of a crashed primary node, all blocks covered by the
+  activity log are marked for resync. But a large part of those will actually
+  be still in sync, therefore using <option>csums-alg</option> will lower
+  the required bandwidth in exchange for CPU cycles.</para>
   </listitem>
 </varlistentry>
 

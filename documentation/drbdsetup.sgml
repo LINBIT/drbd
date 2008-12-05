@@ -1,6 +1,6 @@
 <!DOCTYPE RefEntry PUBLIC "-//OASIS//DTD DocBook V4.2//EN" []>
 <refentry id="re-drbdsetup">
-  <refentryinfo><date>15 Oct 2008</date></refentryinfo>
+  <refentryinfo><date>5 Dec 2008</date></refentryinfo>
 
   <refmeta>
     <refentrytitle>drbdsetup</refentrytitle>
@@ -66,8 +66,9 @@
       <arg>-a<arg choice="req"><replaceable>dev_minor</replaceable></arg></arg>
       <arg>-r<arg choice="req"><replaceable>rate</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>extents</replaceable></arg></arg>
-      <arg>-v<arg choice="req"><replaceable>hash-alg</replaceable></arg></arg>
+      <arg>-v<arg choice="req"><replaceable>verify-hash-alg</replaceable></arg></arg>
       <arg>-c<arg choice="req"><replaceable>cpu-mask</replaceable></arg></arg>
+      <arg>-C<arg choice="req"><replaceable>csums-hash-alg</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -941,6 +942,26 @@
 	    </para>
 	  </listitem>
 	</varlistentry>
+
+	<varlistentry>
+	  <term><option>-C</option>,
+	  <option>--csums-alg <replaceable>hash-alg</replaceable></option></term>
+	  <listitem>
+	    <para>
+             A resync process sends all marked data blocks form the source to
+             the destination node, as long as no <option>csums-alg</option> is
+             given. When one is specified the resync process exchanges hash values of all
+             marked blocks first, and sends only those data blocks over, that have different
+             hash values.</para>
+             <para>This setting is useful for DRBD setups with low bandwidth links.
+             During the restart of a crashed primary node, all blocks covered by the
+             activity log are marked for resync. But a large part of those will actually
+             be still in sync, therefore using <option>csums-alg</option> will lower
+             the required bandwidth in exchange for CPU cycles.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
       </variablelist>
     </refsect2>
     <refsect2>
