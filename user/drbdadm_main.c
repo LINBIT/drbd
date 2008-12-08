@@ -2334,13 +2334,13 @@ static void global_validate_maybe_expand_die_if_invalid(int expand)
 	struct d_resource *res, *tmp;
 	for_each_resource(res, tmp, config) {
 		validate_resource(res);
+		if (!config_valid)
+			exit(E_config_invalid);
 		if (expand) {
 			convert_after_option(res);
 			convert_discard_opt(res);
 		}
 	}
-	if (!config_valid)
-		exit(E_config_invalid);
 }
 
 /*
