@@ -876,9 +876,9 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				exit(E_config_invalid);
 			}
 			EXP(TK_STRING);
-			if (strcmp(yylval.txt, nodeinfo.nodename) == 0) {
-				res->ignore = 1;
-			}
+			fprintf(stderr, "%s:%d: in resource %s, "
+			       "WARN: The 'ignore-on' keyword is depricated.\n",
+			       config_file, line, res->name);
 			EXP(';');
 			break;
 		case TK__THIS_HOST:
@@ -999,11 +999,12 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			/* This needs to be refined as soon as we support
 			   multiple peers in the resource section */
 			if (res->peer) {
-				if (res->ignore && !res->me) {
+				if (!res->me) {
 					/* just store it anyways into ->me */
 					/* reorder, so it dumps out in the same order as read in */
 					res->me = res->peer;
 					res->peer = host;
+					res->ignore = 1; /* implicit ignore */
 				} else {
 					/* hm. if that did not work, I cannot ignore it */
 					config_valid = 0;

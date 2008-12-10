@@ -741,7 +741,6 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 	  res->stacked ? "stacked" : "not stacked");
   printI("resource %s {\n",esc(res->name)); ++indent;
   if (res->protocol) printA("protocol", res->protocol);
-  if (res->ignore) printA("ignore-on", nodeinfo.nodename);
   if (res->lower) {
     printI("stacked-on-top-of %s {\n",esc(res->lower->name)); ++indent;
     h = res->ignore
