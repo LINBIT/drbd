@@ -584,7 +584,7 @@ static void dump_options(char* name,struct d_option* opts)
 
   printI("%s {\n",name); ++indent;
   while(opts) {
-    if(opts->value) printA(opts->name,esc(opts->value));
+    if(opts->value) printA(opts->name,opts->is_escaped ? opts->value : esc(opts->value));
     else            printI(BFMT,opts->name);
     opts=opts->next;
   }
@@ -607,11 +607,14 @@ static void dump_global_info()
   --indent; printI("}\n\n");
 }
 
+static void fake_startup_options(struct d_resource* res);
+
 static void dump_common_info()
 {
   if(!common) return;
   printI("common {\n"); ++indent;
   if(common->protocol) printA("protocol",common->protocol);
+  fake_startup_options(common);
   dump_options("net",common->net_options);
   dump_options("disk",common->disk_options);
   dump_options("syncer",common->sync_options);
@@ -631,7 +634,7 @@ static void dump_address(char* name, char* addr, char* port, char* af)
 
 static void dump_proxy_info(struct d_proxy_info* pi)
 {
-	printI("proxy on %s {\n", esc(names_to_str(pi->on_hosts))); ++indent;
+	printI("proxy on %s {\n", names_to_str(pi->on_hosts)); ++indent;
 	dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
 	dump_address("outside", pi->outside_addr, pi->outside_port, pi->outside_af);
 	--indent; printI("}\n");
@@ -644,7 +647,7 @@ static void dump_host_info(struct d_host_info* hi)
     return;
   }
 
-  printI("on %s {\n",esc(names_to_str(hi->on_hosts))); ++indent;
+  printI("on %s {\n",names_to_str(hi->on_hosts)); ++indent;
   printA("device", esc(hi->device));
   printA("disk"  , esc(hi->disk));
   dump_address("address", hi->address, hi->port, hi->address_family);
@@ -664,7 +667,7 @@ static void dump_options_xml(char* name,struct d_option* opts)
 
   printI("<section name=\"%s\">\n",name); ++indent;
   while(opts) {
-    if(opts->value) printI("<option name=\"%s\" value=\"%s\"/>\n", opts->name, esc_xml(opts->value));
+    if(opts->value) printI("<option name=\"%s\" value=\"%s\"/>\n", opts->name, opts->is_escaped ? opts->value : esc_xml(opts->value));
     else            printI("<option name=\"%s\"/>\n", opts->name);
     opts=opts->next;
   }
@@ -693,6 +696,7 @@ static void dump_common_info_xml()
   printI("<common");
   if(common->protocol) printf(" protocol=\"%s\"",common->protocol);
   printf(">\n"); ++indent;
+  fake_startup_options(common);
   dump_options_xml("net",common->net_options);
   dump_options_xml("disk",common->disk_options);
   dump_options_xml("syncer",common->sync_options);
@@ -704,7 +708,7 @@ static void dump_common_info_xml()
 
 static void dump_proxy_info_xml(struct d_proxy_info* pi)
 {
-	printI("<proxy hostname=\"%s\">\n",esc_xml(names_to_str(pi->on_hosts))); ++indent;
+	printI("<proxy hostname=\"%s\">\n",names_to_str(pi->on_hosts)); ++indent;
 	printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside_af, pi->inside_port, pi->inside_addr);
 	printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n", pi->outside_af, pi->outside_port, pi->outside_addr);
 	--indent; printI("</proxy>\n");
@@ -717,7 +721,7 @@ static void dump_host_info_xml(struct d_host_info* hi)
     return;
   }
 
-  printI("<host name=\"%s\">\n",esc_xml(names_to_str(hi->on_hosts))); ++indent;
+  printI("<host name=\"%s\">\n",names_to_str(hi->on_hosts)); ++indent;
   printI("<device>%s</device>\n", esc_xml(hi->device));
   printI("<disk>%s</disk>\n", esc_xml(hi->disk));
   printI("<address family=\"%s\" port=\"%s\">%s</address>\n", hi->address_family, hi->port, hi->address);
@@ -730,6 +734,24 @@ static void dump_host_info_xml(struct d_host_info* hi)
   }
   if(hi->proxy) dump_proxy_info_xml(hi->proxy);
   --indent; printI("</host>\n");
+}
+
+static void fake_startup_options(struct d_resource* res)
+{
+	struct d_option *opt;
+	char *val;
+
+	if (res->stacked_timeouts) {
+		opt = new_opt(strdup("stacked-timeouts"), NULL);
+		res->startup_options = APPEND(res->startup_options, opt);
+	}
+
+	if (res->become_primary_on) {
+		val = strdup(names_to_str(res->become_primary_on));
+		opt = new_opt(strdup("become-primary-on"), val);
+		opt->is_escaped = 1;
+		res->startup_options = APPEND(res->startup_options, opt);
+	}
 }
 
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
@@ -759,6 +781,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
     dump_host_info(res->me);
     dump_host_info(res->peer);
   }
+  fake_startup_options(res);
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
   dump_options("syncer",res->sync_options);
@@ -778,6 +801,7 @@ static int adm_dump_xml(struct d_resource* res,const char* unused __attribute((u
   // else if (common && common->protocol) printA("# common protocol", common->protocol);
   dump_host_info_xml(res->me);
   dump_host_info_xml(res->peer);
+  fake_startup_options(res);
   dump_options_xml("net",res->net_options);
   dump_options_xml("disk",res->disk_options);
   dump_options_xml("syncer",res->sync_options);
@@ -875,12 +899,10 @@ static int sh_md_idx(struct d_resource* res,const char* unused __attribute((unus
 
 static int sh_b_pri(struct d_resource *res,const char* unused __attribute((unused)))
 {
-  char* val;
   int i, rv;
 
-  val = get_opt_val(res->startup_options, "become-primary-on", NULL);
-  if ( val && ( !strcmp(val,nodeinfo.nodename) ||
-		!strcmp(val,"both") ) ) {
+  if (name_in_names(nodeinfo.nodename, res->become_primary_on) ||
+      name_in_names("both", res->become_primary_on)) {
     /* Opon connect resync starts, and both sides become primary at the same time.
        One's try might be declined since an other state transition happens. Retry. */
     for (i=0; i<5; i++) {
@@ -978,21 +1000,28 @@ static void expand_opts(struct d_option* co, struct d_option** opts)
 
 static void expand_common(void)
 {
-  struct d_resource *res,*tmp;
+	struct d_resource *res,*tmp;
 
-  if(!common) return;
+	if (!common)
+		return;
 
-  for_each_resource(res,tmp,config) {
-    expand_opts(common->net_options,     &res->net_options);
-    expand_opts(common->disk_options,    &res->disk_options);
-    expand_opts(common->sync_options,    &res->sync_options);
-    expand_opts(common->startup_options, &res->startup_options);
-    expand_opts(common->proxy_options,   &res->proxy_options);
-    expand_opts(common->handlers,        &res->handlers);
-    if(common->protocol && ! res->protocol) {
-      res->protocol = strdup(common->protocol);
-    }
-  }
+	for_each_resource(res, tmp, config) {
+		expand_opts(common->net_options, &res->net_options);
+		expand_opts(common->disk_options, &res->disk_options);
+		expand_opts(common->sync_options, &res->sync_options);
+		expand_opts(common->startup_options, &res->startup_options);
+		expand_opts(common->proxy_options, &res->proxy_options);
+		expand_opts(common->handlers, &res->handlers);
+
+		if (common->protocol && ! res->protocol)
+			res->protocol = strdup(common->protocol);
+
+		if (common->stacked_timeouts)
+			res->stacked_timeouts = 1;
+
+		if (!res->become_primary_on)
+			res->become_primary_on = common->become_primary_on;
+	}
 }
 
 static void find_drbdcmd(char** cmd, char** pathes)
@@ -1145,19 +1174,6 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
 
 #define make_options(OPT) \
   while(OPT) { \
-    if(OPT->value) { \
-      ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
-    } else { \
-      ssprintf(argv[NA(argc)],"--%s",OPT->name); \
-    } \
-    OPT=OPT->next; \
-  }
-
-#define make_options_wait(OPT) \
-  while(OPT) { \
-    if(!strcmp(OPT->name,"become-primary-on")) {\
-      OPT=OPT->next; continue; \
-    } \
     if(OPT->value) { \
       ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
     } else { \
@@ -1583,7 +1599,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   argv[NA(argc)]=drbdsetup;
   argv[NA(argc)]=res->me->device;
   argv[NA(argc)]="wait-connect";
-  if (is_drbd_top && !find_opt(res->startup_options,"stacked-timeouts") ) {
+  if (is_drbd_top && !res->stacked_timeouts) {
     unsigned long timeout = 20;
     if( (opt = find_opt(res->net_options,"connect-int")) ) {
       timeout = strtoul(opt->value,NULL,10);
@@ -1593,11 +1609,8 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
     argv[argc++] = "-t";
     ssprintf(argv[argc],"%lu",timeout); argc++;
   } else {
-    if( (opt=find_opt(res->startup_options,"stacked-timeouts")) ) {
-      res->startup_options = del_opt(res->startup_options,opt);
-    }
     opt=res->startup_options;
-    make_options_wait(opt);
+    make_options(opt);
   }
   argv[NA(argc)]=0;
 
@@ -1802,7 +1815,7 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
     argv[NA(argc)]=res->me->device;
     argv[NA(argc)]="wait-connect";
     opt=res->startup_options;
-    make_options_wait(opt);
+    make_options(opt);
     argv[NA(argc)]=0;
 
     pids[i++]=m_system(argv, RETURN_PID, res);
@@ -2271,7 +2284,7 @@ void sanity_check_perm()
 void validate_resource(struct d_resource * res)
 {
   struct d_option* opt;
-  char *bpo;
+  struct d_name *bpo;
 
   if (!res->protocol) {
     if (!common || !common->protocol) {
@@ -2331,9 +2344,8 @@ void validate_resource(struct d_resource * res)
     if(strstr(opt->value,"drbd-peer-outdater")) sanity_check_perm();
   }
 
-  bpo = get_opt_val(res->startup_options, "become-primary-on", "undef");
   opt = find_opt(res->net_options, "allow-two-primaries");
-  if(!strcmp(bpo,"both") && opt == NULL) {
+  if (name_in_names("both", res->become_primary_on) && opt == NULL) {
     fprintf(stderr,
 	    "In resource %s:\n"
 	    "become-primary-on is set to both, but allow-two-primaries "
@@ -2343,9 +2355,22 @@ void validate_resource(struct d_resource * res)
 
   if (( res->me->proxy == NULL ) != (res->peer->proxy == NULL)) {
 	fprintf(stderr,
-		"Incomplete proxy configuration. in resource %s.\n",
-		res->name);
+		"%s:%d: in resource %s:\n\t"
+		"Either both 'on' sections must contain a proxy subsection, or none.\n",
+		config_file, c_resource_start, res->name);
 	config_valid = 0;
+  }
+
+  for (bpo = res->become_primary_on; bpo; bpo = bpo->next) {
+	  if (!name_in_names(bpo->name, res->me->on_hosts) &&
+	      !name_in_names(bpo->name, res->peer->on_hosts) &&
+	      strcmp(bpo->name, "both")) {
+		  fprintf(stderr,
+			  "%s:%d: in resource %s:\n\t"
+			  "become-primary-on contains '%s', which is not named with the 'on' sections.\n",
+			  config_file, c_resource_start, res->name, bpo->name);
+		  config_valid = 0;
+	  }
   }
 }
 

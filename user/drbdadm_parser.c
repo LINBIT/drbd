@@ -38,19 +38,6 @@ YYSTYPE yylval;
 
 /////////////////////
 
-#define APPEND(LIST,ITEM) ({		      \
-  typeof((LIST)) _l = (LIST);		      \
-  typeof((ITEM)) _i = (ITEM);		      \
-  typeof((ITEM)) _t;			      \
-  _i->next = NULL;			      \
-  if (_l == NULL) { _l = _i; }		      \
-  else {				      \
-    for (_t = _l; _t->next; _t = _t->next);   \
-    _t->next = _i;			      \
-  };					      \
-  _l;					      \
-})
-
 static int c_section_start;
 
 struct d_name *names_from_str(char* str)
@@ -209,6 +196,7 @@ struct d_option *new_opt(char *name, char *value)
 	cn->value = value;
 	cn->mentioned = 0;
 	cn->is_default = 0;
+	cn->is_escaped = 0;
 
 	return cn;
 }
@@ -418,7 +406,9 @@ static void check_and_change_deprecated_alias(char **name, int token_option)
 	}
 }
 
-static struct d_option *parse_options(int token_switch, int token_option)
+static struct d_option *parse_options_d(int token_switch, int token_option,
+					int token_delegate, void (*delegate)(void*),
+					void *ctx)
 {
 	char *opt_name;
 	int token;
@@ -439,6 +429,9 @@ static struct d_option *parse_options(int token_switch, int token_option)
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, ro);
+		} else if (token == token_delegate) {
+			delegate(ctx);
+			continue;
 		} else if (token == '}') {
 			return options;
 		} else {
@@ -455,6 +448,11 @@ static struct d_option *parse_options(int token_switch, int token_option)
 			pe_expected("_is_default | ;");
 		}
 	}
+}
+
+static struct d_option *parse_options(int token_switch, int token_option)
+{
+	return parse_options_d(token_switch, token_option, 0, NULL, NULL);
 }
 
 static void parse_address(char** addr, char** port, char** af)
@@ -492,11 +490,12 @@ static void parse_address(char** addr, char** port, char** af)
 	EXP(';');
 }
 
-static void parse_hosts(struct d_name **pnp)
+static void parse_hosts(struct d_name **pnp, char delimeter)
 {
-	int token;
-	int hosts = 0;
+	char errstr[20];
 	struct d_name *name;
+	int hosts = 0;
+	int token;
 
 	while (1) {
 		token = yylex();
@@ -509,12 +508,15 @@ static void parse_hosts(struct d_name **pnp)
 			pnp = &name->next;
 			hosts++;
 			break;
-		case '{':
-			if (!hosts)
-				pe_expected_got("TK_STRING", token);
-			return;
 		default:
-			pe_expected_got("TK_STRING | '{'", token);
+			if (token == delimeter) {
+				if (!hosts)
+					pe_expected_got("TK_STRING", token);
+				return;
+			} else {
+				sprintf(errstr, "TK_STRING | '%c'", delimeter);
+				pe_expected_got(errstr, token);
+			}
 		}
 	}
 }
@@ -527,7 +529,7 @@ static void parse_proxy_section(struct d_host_info *host)
 	host->proxy = proxy;
 
 	EXP(TK_ON);
-	parse_hosts(&proxy->on_hosts);
+	parse_hosts(&proxy->on_hosts, '{');
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
@@ -838,6 +840,19 @@ static void parse_stacked_section(struct d_resource* res)
 	}
 }
 
+void startup_delegate(void *ctx)
+{
+	struct d_resource *res = (struct d_resource *)ctx;
+
+	if (!strcmp(yytext, "become-primary-on")) {
+		parse_hosts(&res->become_primary_on, ';');
+	} else if (!strcmp(yytext, "stacked-timeouts")) {
+		res->stacked_timeouts = 1;
+		EXP(';');
+	} else
+		pe_expected("<an option keyword> | become-primary-on | stacked-timeouts");
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -860,7 +875,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK_ON:
-			parse_hosts(&host_names);
+			parse_hosts(&host_names, '{');
 			parse_host_section(res, host_names, 1);
 			break;
 		case TK_STACKED:
@@ -920,8 +935,11 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_STARTUP:
 			check_uniq("startup section", "%s:startup", res->name);
 			EXP('{');
-			res->startup_options=parse_options(TK_STARTUP_SWITCH,
-							   TK_STARTUP_OPTION);
+			res->startup_options=parse_options_d(TK_STARTUP_SWITCH,
+							     TK_STARTUP_OPTION,
+							     TK_STARTUP_DELEGATE,
+							     &startup_delegate,
+							     res);
 			break;
 		case TK_HANDLER:
 			check_uniq("handlers section", "%s:handlers", res->name);
@@ -1081,7 +1099,7 @@ void my_parse(void)
 		case TK_RESOURCE:
 			EXP(TK_STRING);
 			EXP('{');
-			config=APPEND(config, 
+			config=APPEND(config,
 				      parse_resource(yylval.txt,BothHRequired));
 			break;
 		case TK_SKIP:

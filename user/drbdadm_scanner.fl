@@ -112,8 +112,8 @@ al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OPTION;}
 cpu-mask		{ DP; CP; return TK_SYNCER_OPTION;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
-stacked-timeouts	{ DP; CP; return TK_STARTUP_SWITCH;     }
-become-primary-on	{ DP; CP; return TK_STARTUP_OPTION;     }
+stacked-timeouts	{ DP; return TK_STARTUP_DELEGATE;       }
+become-primary-on	{ DP; return TK_STARTUP_DELEGATE;       }
 wait-after-sb		{ DP; CP; return TK_STARTUP_SWITCH;     }
 pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}

@@ -107,6 +107,7 @@ struct d_option
   struct d_option* next;
   unsigned int mentioned  :1 ; // for the adjust command.
   unsigned int is_default :1 ; // for the adjust command.
+  unsigned int is_escaped :1 ;
 };
 
 struct d_resource
@@ -131,6 +132,8 @@ struct d_resource
   struct d_option* proxy_options;
   struct d_resource* next;
   struct d_resource* lower;
+  struct d_name *become_primary_on;
+  unsigned int stacked_timeouts:1;
   unsigned int ignore:1;
   unsigned int stacked:1;
   int me_minor; /* cache local minor number of this resource */
@@ -220,3 +223,16 @@ extern int soi;
 	for (res = (config); res && (tmp = res->next, 1); res = tmp)
 
 #endif
+
+#define APPEND(LIST,ITEM) ({		      \
+  typeof((LIST)) _l = (LIST);		      \
+  typeof((ITEM)) _i = (ITEM);		      \
+  typeof((ITEM)) _t;			      \
+  _i->next = NULL;			      \
+  if (_l == NULL) { _l = _i; }		      \
+  else {				      \
+    for (_t = _l; _t->next; _t = _t->next);   \
+    _t->next = _i;			      \
+  };					      \
+  _l;					      \
+})
