@@ -640,23 +640,30 @@ static void dump_proxy_info(struct d_proxy_info* pi)
 	--indent; printI("}\n");
 }
 
-static void dump_host_info(struct d_host_info* hi)
+static void dump_host_info(struct d_host_info* hi, struct d_resource* lower)
 {
   if(!hi) {
     printI("  # No host section data available.\n");
     return;
   }
 
-  printI("on %s {\n",names_to_str(hi->on_hosts)); ++indent;
+  if (lower) {
+    printI("stacked-on-top-of %s {\n",esc(lower->name)); ++indent;
+    printI("# on %s \n",names_to_str(hi->on_hosts));
+  } else {
+    printI("on %s {\n",names_to_str(hi->on_hosts)); ++indent;
+  }
   printA("device", esc(hi->device));
-  printA("disk"  , esc(hi->disk));
+  if (!lower) printA("disk"  , esc(hi->disk));
   dump_address("address", hi->address, hi->port, hi->address_family);
-  if (!strncmp(hi->meta_index,"flex",4))
-    printI(FMDISK,"flexible-meta-disk", esc(hi->meta_disk));
-  else if (!strcmp(hi->meta_index,"internal"))
-    printA("meta-disk", "internal");
-  else
-    printI(MDISK,"meta-disk", esc(hi->meta_disk), hi->meta_index);
+  if (!lower) {
+    if (!strncmp(hi->meta_index,"flex",4))
+      printI(FMDISK,"flexible-meta-disk", esc(hi->meta_disk));
+    else if (!strcmp(hi->meta_index,"internal"))
+      printA("meta-disk", "internal");
+    else
+      printI(MDISK,"meta-disk", esc(hi->meta_disk), hi->meta_index);
+  }
   if(hi->proxy) dump_proxy_info(hi->proxy);
   --indent; printI("}\n");
 }
@@ -756,31 +763,15 @@ static void fake_startup_options(struct d_resource* res)
 
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
-  struct d_host_info *h;
   printI("# resource %s on %s: %s, %s\n",
 	  esc(res->name), nodeinfo.nodename,
 	  res->ignore  ? "ignored" : "not ignored",
 	  res->stacked ? "stacked" : "not stacked");
   printI("resource %s {\n",esc(res->name)); ++indent;
   if (res->protocol) printA("protocol", res->protocol);
-  if (res->lower) {
-    printI("stacked-on-top-of %s {\n",esc(res->lower->name)); ++indent;
-    h = res->ignore
-        ? name_in_names("stacked resource", res->me->on_hosts)
-	  ? res->me
-	  : res->peer
-	: res->stacked
-	  ? res->me
-	  : res->peer;
-    printA("device", esc(h->device));
-    printI(IPFMT,"address", h->address, h->port);
-    if(h->proxy) dump_proxy_info(h->proxy);
-    --indent; printI("}\n");
-    dump_host_info(h == res->me ? res->peer : res->me);
-  } else {
-    dump_host_info(res->me);
-    dump_host_info(res->peer);
-  }
+
+  dump_host_info(res->me, res->lower_me);
+  dump_host_info(res->peer, res->lower_peer);
   fake_startup_options(res);
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
@@ -866,7 +857,7 @@ static int sh_lres(struct d_resource* res,const char* unused __attribute((unused
 	  fprintf(stderr,"'%s' is not stacked on this host (%s)\n", res->name, nodeinfo.nodename);
 	  exit(E_usage);
   }
-  printf("%s\n",res->lower->name);
+  printf("%s\n",res->lower_me->name);
 
   return 0;
 }

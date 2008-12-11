@@ -131,7 +131,8 @@ struct d_resource
   struct d_option* handlers;
   struct d_option* proxy_options;
   struct d_resource* next;
-  struct d_resource* lower;
+  struct d_resource* lower_me;
+  struct d_resource* lower_peer;
   struct d_name *become_primary_on;
   unsigned int stacked_timeouts:1;
   unsigned int ignore:1;

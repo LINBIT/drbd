@@ -90,6 +90,34 @@ void free_names(struct d_name *names)
 	}
 }
 
+static void append_names(struct d_name **head, struct d_name ***last, struct d_name *to_copy)
+{
+	struct d_name *new;
+
+	while (to_copy) {
+		new = malloc(sizeof(struct d_name));
+		if (!*head)
+			*head = new;
+		new->name = strdup(to_copy->name);
+		new->next = NULL;
+		if (*last)
+			**last = new;
+		*last = &new->next;
+		to_copy = to_copy->next;
+	}
+}
+
+
+struct d_name *concat_names(struct d_name *to_copy1, struct d_name *to_copy2)
+{
+	struct d_name *head = NULL, **last = NULL;
+
+	append_names(&head, &last, to_copy1);
+	append_names(&head, &last, to_copy2);
+
+	return head;
+}
+
 void m_strtoll_range(const char *s, char def_unit,
 		     const char *name,
 		     unsigned long long min, unsigned long long max)
@@ -760,43 +788,12 @@ static void parse_stacked_section(struct d_resource* res)
 		exit(E_config_invalid);
 	}
 
-	res->lower = l_res;
-	if (l_res->ignore) {
-		host->on_hosts = names_from_str("stacked resource");
-	} else if (l_res->me == NULL) {
-		fprintf(stderr,
-			"%s:%d: in resource %s, "
-			"my hostname (%s) not found in referenced resource %s\n",
-			config_file, c_section_start, res->name,
-			nodeinfo.nodename, l_res->name);
-		exit(E_config_invalid);
-	} else if (res->ignore) {
-		fprintf(stderr,
-			"%s:%d: in resource %s, "
-			"my hostname (%s) found in referenced resource %s,\n\t"
-			"but you previously told me to ignore this resource?\n",
-			config_file, c_section_start, res->name,
-			nodeinfo.nodename, l_res->name);
-		exit(E_config_invalid);
-	} else {
-		host->on_hosts = names_from_str(nodeinfo.nodename);
-	}
-	if (res->me && res->peer) {
-		/* this check could go first, too */
-		fprintf(stderr,
-			"%s:%d: in resource %s, "
-			"already two host sections (on <host> { ... }) seen.\n",
-			config_file, c_section_start, res->name);
-		exit(E_config_invalid);
-	}
+	host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts);
+	res->ignore = l_res->ignore;
 
 	m_asprintf(&host->meta_disk, "%s", "internal");
 	m_asprintf(&host->meta_index, "%s", "internal");
-	if (res->lower->ignore) {
-		m_asprintf(&host->disk, "%s", "IGNORED");
-	} else {
-		m_asprintf(&host->disk, "%s", res->lower->me->device);
-	}
+	m_asprintf(&host->disk, "%s", l_res->me->device);
 
 	EXP('{');
 	while (1) {
@@ -838,13 +835,14 @@ static void parse_stacked_section(struct d_resource* res)
 	if (!host->meta_disk)
 		derror(host,res,"meta-disk");
 
-
 	if (res->ignore) {
-		if (res->peer) res->me   = host;
-		else           res->peer = host;
-	} else if (res->lower->ignore) {
-		// FIXME if (res->peer) die "WTF?"
-		res->peer = host;
+		if (res->peer) {
+			res->me = host;
+			res->lower_me = l_res;
+		} else {
+			res->peer = host;
+			res->lower_peer = l_res;
+		}
 	} else {
 		if (res->me) {
 			fprintf(stderr,
@@ -854,8 +852,9 @@ static void parse_stacked_section(struct d_resource* res)
 			exit(E_config_invalid);
 		}
 		res->me = host;
-		res->stacked = 1;
+		res->lower_me = l_res;
 	}
+	res->stacked = 1;
 }
 
 void startup_delegate(void *ctx)
@@ -880,6 +879,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	fline = line;
 
+	check_uniq("resource section", res_name);
+
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
 	res->me_minor = -1; /* will be set once in dt_minor_of_res */
@@ -897,7 +898,6 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			parse_host_section(res, host_names, 1);
 			break;
 		case TK_STACKED:
-			check_uniq("stacked-on-top-of section", "%s:stacked-on-top-of", res->name);
 			parse_stacked_section(res);
 			break;
 		case TK_IGNORE:
@@ -1044,24 +1044,14 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				} else {
 					/* hm. if that did not work, I cannot ignore it */
 					config_valid = 0;
-					if (!res->lower) {
-						fprintf(stderr,
-							"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
-							"\tThere are multiple host sections for the peer.\n"
-							"\tMaybe misspelled local host name '%s'?\n",
-							config_file, host->config_line, res->name,
-							names_to_str(res->peer->on_hosts),
-							names_to_str(host->on_hosts),
-							nodeinfo.nodename);
-					} else {
-						fprintf(stderr,
-							"%s:%d: in resource %s, stacked-on-top-of %s { ... } ... on %s { ... }:\n"
-							"\tThere is no matching section for me.\n"
-							"\tMaybe misspelled local host name '%s'?\n",
-							config_file, host->config_line, res->name,
-							res->lower->name, names_to_str(host->on_hosts),
-							nodeinfo.nodename);
-					}
+					fprintf(stderr,
+						"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
+						"\tThere are multiple host sections for the peer.\n"
+						"\tMaybe misspelled local host name '%s'?\n",
+						config_file, host->config_line, res->name,
+						names_to_str(res->peer->on_hosts),
+						names_to_str(host->on_hosts),
+						nodeinfo.nodename);
 				}
 			}
 			res->peer = host;
