@@ -665,12 +665,12 @@ static void parse_stacked_section(struct d_resource* res)
 		exit(E_config_invalid);
 	}
 
-	asprintf(&host->meta_disk, "%s", "internal");
-	asprintf(&host->meta_index, "%s", "internal");
+	m_asprintf(&host->meta_disk, "%s", "internal");
+	m_asprintf(&host->meta_index, "%s", "internal");
 	if (res->lower->ignore) {
-		asprintf(&host->disk, "%s", "IGNORED");
+		m_asprintf(&host->disk, "%s", "IGNORED");
 	} else {
-		asprintf(&host->disk, "%s", res->lower->me->device);
+		m_asprintf(&host->disk, "%s", res->lower->me->device);
 	}
 
 	EXP('{');
