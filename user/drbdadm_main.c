@@ -631,10 +631,10 @@ static void dump_address(char* name, char* addr, char* port, char* af)
 
 static void dump_proxy_info(struct d_proxy_info* pi)
 {
-  printI("proxy on %s {\n",esc(pi->name)); ++indent;
-  dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
-  dump_address("outside", pi->outside_addr, pi->outside_port, pi->outside_af);
-  --indent; printI("}\n");
+	printI("proxy on %s {\n", esc(names_to_str(pi->on_hosts))); ++indent;
+	dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
+	dump_address("outside", pi->outside_addr, pi->outside_port, pi->outside_af);
+	--indent; printI("}\n");
 }
 
 static void dump_host_info(struct d_host_info* hi)
@@ -644,7 +644,7 @@ static void dump_host_info(struct d_host_info* hi)
     return;
   }
 
-  printI("on %s {\n",esc(hi->name)); ++indent;
+  printI("on %s {\n",esc(names_to_str(hi->on_hosts))); ++indent;
   printA("device", esc(hi->device));
   printA("disk"  , esc(hi->disk));
   dump_address("address", hi->address, hi->port, hi->address_family);
@@ -704,10 +704,10 @@ static void dump_common_info_xml()
 
 static void dump_proxy_info_xml(struct d_proxy_info* pi)
 {
-  printI("<proxy hostname=\"%s\">\n",esc_xml(pi->name)); ++indent;
-  printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside_af, pi->inside_port, pi->inside_addr);
-  printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n", pi->outside_af, pi->outside_port, pi->outside_addr);
-  --indent; printI("</proxy>\n");
+	printI("<proxy hostname=\"%s\">\n",esc_xml(names_to_str(pi->on_hosts))); ++indent;
+	printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside_af, pi->inside_port, pi->inside_addr);
+	printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n", pi->outside_af, pi->outside_port, pi->outside_addr);
+	--indent; printI("</proxy>\n");
 }
 
 static void dump_host_info_xml(struct d_host_info* hi)
@@ -717,7 +717,7 @@ static void dump_host_info_xml(struct d_host_info* hi)
     return;
   }
 
-  printI("<host name=\"%s\">\n",esc_xml(hi->name)); ++indent;
+  printI("<host name=\"%s\">\n",esc_xml(names_to_str(hi->on_hosts))); ++indent;
   printI("<device>%s</device>\n", esc_xml(hi->device));
   printI("<disk>%s</disk>\n", esc_xml(hi->disk));
   printI("<address family=\"%s\" port=\"%s\">%s</address>\n", hi->address_family, hi->port, hi->address);
@@ -745,7 +745,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
   if (res->lower) {
     printI("stacked-on-top-of %s {\n",esc(res->lower->name)); ++indent;
     h = res->ignore
-	? strcmp("stacked resource", res->me->name) == 0
+        ? name_in_names("stacked resource", res->me->on_hosts)
 	  ? res->me
 	  : res->peer
 	: res->stacked
@@ -753,6 +753,7 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 	  : res->peer;
     printA("device", esc(h->device));
     printI(IPFMT,"address", h->address, h->port);
+    if(h->proxy) dump_proxy_info(h->proxy);
     --indent; printI("}\n");
     dump_host_info(h == res->me ? res->peer : res->me);
   } else {
@@ -907,7 +908,7 @@ static void free_host_info(struct d_host_info* hi)
 {
   if(!hi) return;
 
-  free(hi->name);
+  free_names(hi->on_hosts);
   free(hi->device);
   free(hi->disk);
   free(hi->address);
@@ -1357,7 +1358,10 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
   char *argv[] = { "/bin/sh", "-c", NULL , NULL };
 
   setenv("DRBD_RESOURCE",res->name,1);
-  setenv("DRBD_PEER",res->peer->name,1);
+  setenv("DRBD_PEER",res->peer->on_hosts->name,1);     /* depricated */
+  setenv("DRBD_PEERS",names_to_str(res->peer->on_hosts),1); /* since 8.3.0 */
+  setenv("DRBD_PEER_AF", res->peer->address_family,1); /* since 8.3.0 */
+  setenv("DRBD_PEER_ADDRESS", res->peer->address,1);   /* since 8.3.0 */
   setenv("DRBD_CONF",config_save,1);
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
@@ -1478,11 +1482,12 @@ static int do_proxy(struct d_resource* res, int do_up)
     exit(E_config_invalid);
   }
 
-  if(strcmp(res->me->proxy->name,nodeinfo.nodename)) {
-    if (all_resources) return 0;
-    fprintf(stderr,"The proxy config in resource %s is for %s, this is %s.\n",
-	    res->name, res->me->proxy->name,nodeinfo.nodename);
-    exit(E_config_invalid);
+  if (!name_in_names(nodeinfo.nodename, res->me->proxy->on_hosts)) {
+	  if (all_resources)
+		  return 0;
+	  fprintf(stderr,"The proxy config in resource %s is not for %s.\n",
+		  res->name, nodeinfo.nodename);
+	  exit(E_config_invalid);
   }
 
   argv[NA(argc)]=drbd_proxy_ctl;
@@ -1490,7 +1495,9 @@ static int do_proxy(struct d_resource* res, int do_up)
   if (do_up) {
     ssprintf(argv[NA(argc)],
 	     "add connection %s-%s-%s %s:%s %s:%s %s:%s %s:%s",
-	     res->me->name, res->name, res->peer->name,
+	     names_to_str_c(res->me->proxy->on_hosts, '_'),
+	     res->name,
+	     names_to_str_c(res->peer->proxy->on_hosts, '_'),
 	     res->me->proxy->inside_addr, res->me->proxy->inside_port,
 	     res->peer->proxy->outside_addr, res->peer->proxy->outside_port,
 	     res->me->proxy->outside_addr, res->me->proxy->outside_port,
@@ -1498,7 +1505,9 @@ static int do_proxy(struct d_resource* res, int do_up)
   } else {
     ssprintf(argv[NA(argc)],
              "del connection %s-%s-%s",
-	     res->me->name, res->name, res->peer->name);
+	     names_to_str_c(res->me->proxy->on_hosts, '_'),
+	     res->name,
+	     names_to_str_c(res->peer->proxy->on_hosts, '_'));
   }
   argv[NA(argc)]=0;
 
@@ -1513,7 +1522,8 @@ static int do_proxy(struct d_resource* res, int do_up)
   while(opt) {
     argv[NA(argc)]="-c";
     ssprintf(argv[NA(argc)], "set %s %s-%s-%s %s",
-	     opt->name, res->me->name, res->name, res->peer->name, opt->value);
+	     opt->name, names_to_str_c(res->me->proxy->on_hosts, '_'),
+	     res->name, names_to_str_c(res->peer->proxy->on_hosts, '_'), opt->value);
     opt=opt->next;
   }
   argv[NA(argc)]=0;
@@ -2059,7 +2069,7 @@ void verify_ips(struct d_resource *res)
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
       "IP %s not found on this host.\n",
       config_file, (int)(long)ep->data, res->name,
-      res->me->name, res->me->address);
+      names_to_str(res->me->on_hosts), res->me->address);
     if (INVALID_IP_IS_INVALID_CONF)
       config_valid = 0;
   }
@@ -2100,9 +2110,8 @@ void check_uniq_init(void)
  * strictly speaking we don't need to check for uniqueness of disk and device names,
  * but for uniqueness of their major:minor numbers ;-)
  */
-int check_uniq(const char* what, const char *fmt, ...)
+int vcheck_uniq(const char* what, const char *fmt, va_list ap)
 {
-  va_list ap;
   int rv;
   ENTRY e, *ep;
   e.key = e.data = ep = NULL;
@@ -2112,9 +2121,7 @@ int check_uniq(const char* what, const char *fmt, ...)
   if (config_valid >= 2)
 	  return 1;
 
-  va_start(ap, fmt);
   rv=vasprintf(&e.key,fmt,ap);
-  va_end(ap);
 
   if (rv < 0) { perror("vasprintf"); exit(E_thinko); }
 
@@ -2147,6 +2154,19 @@ int check_uniq(const char* what, const char *fmt, ...)
   if (EXIT_ON_CONFLICT && ep) exit(E_config_invalid);
   return !ep;
 }
+
+int check_uniq(const char* what, const char *fmt, ...)
+{
+  int rv;
+  va_list ap;
+
+  va_start(ap, fmt);
+  rv=vcheck_uniq(what, fmt, ap);
+  va_end(ap);
+
+  return rv;
+}
+
 
 int sanity_check_abs_cmd(char* cmd_name)
 {
@@ -2291,15 +2311,16 @@ void validate_resource(struct d_resource * res)
   // nodenames are mentioned.
   if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
     if(!strncmp(opt->value,"discard-node-",13)) {
-      if(strcmp(res->peer->name,opt->value+13) &&
-	 strcmp(res->me->name,opt->value+13)) {
+      if (!name_in_names(opt->value+13, res->peer->on_hosts) &&
+	  !name_in_names(opt->value+13, res->me->on_hosts)) {
 	fprintf(stderr,
 		" in resource %s:\n\t"
 		"the nodename in the '%s' option is "
 		"not known.\n\t"
-		"valid nodenames are: '%s' and '%s'.\n",
+		"valid nodenames are: '%s %s'.\n",
 		res->name, opt->value,
-		res->me->name, res->peer->name );
+		names_to_str(res->me->on_hosts),
+		names_to_str(res->peer->on_hosts));
 	config_valid = 0;
       }
     }

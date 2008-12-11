@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <net/if.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #define E_syntax	  2
 #define E_usage		  3
@@ -65,9 +66,15 @@ struct ifi_info {
   struct ifi_info *ifi_next;    /* next ifi_info structure */
 };
 
+struct d_name
+{
+  char *name;
+  struct d_name *next;
+};
+
 struct d_proxy_info
 {
-  char* name;
+  struct d_name *on_hosts;
   char* inside_addr;
   char* inside_port;
   char* inside_af;
@@ -78,7 +85,7 @@ struct d_proxy_info
 
 struct d_host_info
 {
-  char* name;
+  struct d_name *on_hosts;
   char* device;
   char* disk;
   char* address;
@@ -138,6 +145,7 @@ extern int _admm_generic(struct d_resource* ,const char*, int flags);
 extern int m_system(char**, int, struct d_resource*);
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
+extern int vcheck_uniq(const char* what, const char *fmt, va_list ap);
 extern int check_uniq(const char* what, const char *fmt, ...);
 extern void verify_ips(struct d_resource* res);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
@@ -163,6 +171,13 @@ enum pr_flags {
 };
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern struct d_option *new_opt(char *name, char *value);
+extern int name_in_names(char *name, struct d_name *names);
+extern char *_names_to_str(char* buffer, struct d_name *names);
+extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
+#define NAMES_STR_SIZE 255
+#define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
+#define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
+void free_names(struct d_name *names);
 
 extern char* config_file;
 extern int config_valid;

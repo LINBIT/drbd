@@ -53,6 +53,56 @@ YYSTYPE yylval;
 
 static int c_section_start;
 
+struct d_name *names_from_str(char* str)
+{
+	struct d_name *names;
+
+	names = malloc(sizeof(struct d_name));
+	names->next = NULL;
+	names->name = strdup(str);
+
+	return names;
+}
+
+char *_names_to_str_c(char* buffer, struct d_name *names, char c)
+{
+	int n = 0;
+
+	while (1) {
+		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", names->name);
+		names = names->next;
+		if (!names)
+			return buffer;
+		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%c", c);
+	}
+}
+
+char *_names_to_str(char* buffer, struct d_name *names)
+{
+	return _names_to_str_c(buffer, names, ' ');
+}
+
+int name_in_names(char *name, struct d_name *names)
+{
+	while (names) {
+		if (!strcmp(names->name, name))
+			return 1;
+		names = names->next;
+	}
+	return 0;
+}
+
+void free_names(struct d_name *names)
+{
+	struct d_name *nf;
+	while (names) {
+		nf = names->next;
+		free(names->name);
+		free(names);
+		names = nf;
+	}
+}
+
 void m_strtoll_range(const char *s, char def_unit,
 		     const char *name,
 		     unsigned long long min, unsigned long long max)
@@ -167,7 +217,49 @@ static void derror(struct d_host_info *host, struct d_resource *res, char *text)
 	config_valid = 0;
 	fprintf(stderr, "%s:%d: in resource %s, on %s { ... }:"
 		" '%s' keyword missing.\n",
-		config_file, c_section_start, res->name, host->name, text);
+		config_file, c_section_start, res->name, names_to_str(host->on_hosts), text);
+}
+
+int check_uniq_names(const char* what, const char *fmt, struct d_name* names, ...)
+{
+	enum { BASE, ESC } l = BASE;
+	char buffer[1024];
+	const char *c;
+	va_list ap;
+	char *p;
+	int rv = 1;
+
+	while (names) {
+		// %b => names->name
+		c = fmt;
+		p = buffer;
+		while (*c) {
+			switch (l) {
+			case BASE:
+				if (*c == '%')
+					l = ESC;
+				break;
+			case ESC:
+				if (*c == 'b') {
+					memcpy(p, fmt, c - fmt - 1);
+					p += c - fmt - 1;
+					memcpy(p, names->name, strlen(names->name));
+					p += strlen(names->name);
+					memcpy(p, c+1, strlen(c + 1) + 1);
+					p += strlen(c + 1) + 1;
+				} else
+					l = BASE;
+			}
+			c++;
+		}
+
+		va_start(ap, names);
+		rv = vcheck_uniq(what, buffer, ap) && rv;
+		va_end(ap);
+
+		names = names->next;
+	}
+	return rv;
 }
 
 void check_meta_disk(struct d_host_info *host)
@@ -180,8 +272,7 @@ void check_meta_disk(struct d_host_info *host)
 				config_file, fline, host->meta_disk);
 		}
 		/* index either some number, or "flexible" */
-		check_uniq("meta-disk", "%s:%s[%s]", host->name,
-			   host->meta_disk, host->meta_index);
+		check_uniq_names("meta-disk", "%b:%s[%s]", host->on_hosts, host->meta_disk, host->meta_index);
 	} else if (host->meta_index) {
 		/* internal */
 		if (strcmp(host->meta_index, "flexible") != 0) {
@@ -401,6 +492,33 @@ static void parse_address(char** addr, char** port, char** af)
 	EXP(';');
 }
 
+static void parse_hosts(struct d_name **pnp)
+{
+	int token;
+	int hosts = 0;
+	struct d_name *name;
+
+	while (1) {
+		token = yylex();
+		switch (token) {
+		case TK_STRING:
+			name = malloc(sizeof(struct d_name));
+			name->name = yylval.txt;
+			name->next = NULL;
+			*pnp = name;
+			pnp = &name->next;
+			hosts++;
+			break;
+		case '{':
+			if (!hosts)
+				pe_expected_got("TK_STRING", token);
+			return;
+		default:
+			pe_expected_got("TK_STRING | '{'", token);
+		}
+	}
+}
+
 static void parse_proxy_section(struct d_host_info *host)
 {
 	struct d_proxy_info *proxy;
@@ -409,10 +527,7 @@ static void parse_proxy_section(struct d_host_info *host)
 	host->proxy = proxy;
 
 	EXP(TK_ON);
-	EXP(TK_STRING);
-	proxy->name = yylval.txt;
-
-	EXP('{');
+	parse_hosts(&proxy->on_hosts);
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
@@ -449,7 +564,7 @@ static void parse_meta_disk(char **disk, char** index)
 }
 
 static void parse_host_section(struct d_resource *res,
-			       char *host_name, int require_all)
+			       struct d_name* on_hosts, int require_all)
 {
 	struct d_host_info *host;
 
@@ -457,30 +572,25 @@ static void parse_host_section(struct d_resource *res,
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
-	host->name = host_name;
+	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
-	check_uniq("host section", "%s: on %s", res->name, host->name);
+	check_uniq_names("host section", "%s: on %b", on_hosts, res->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
-	EXP('{');
 	while (1) {
 		switch (yylex()) {
 		case TK_DISK:
-			check_uniq("disk statement", "%s:%s:disk", res->name,
-				   host->name);
+			check_uniq_names("disk statement", "%s:%b:disk", on_hosts, res->name);
 			EXP(TK_STRING);
 			host->disk = yylval.txt;
-			check_uniq("disk", "%s:%s:%s", "disk",
-				   host->name, yylval.txt);
+			check_uniq_names("disk", "disk:%s:%s", on_hosts, yylval.txt);
 			EXP(';');
 			break;
 		case TK_DEVICE:
-			check_uniq("device statement", "%s:%s:device",
-				   res->name, host->name);
+			check_uniq_names("device statement", "%s:%b:device", on_hosts, res->name);
 			EXP(TK_STRING);
 			host->device = yylval.txt;
-			check_uniq("device", "%s:%s:%s", "device",
-				   host->name, yylval.txt);
+			check_uniq_names("device", "device:%b:%s", on_hosts, yylval.txt);
 			if (dt_minor_of_dev(host->device) < 0) {
 				fprintf(stderr, "%s:%d: cannot determine minor number of %s\n",
 					config_file, line, host->device);
@@ -489,20 +599,17 @@ static void parse_host_section(struct d_resource *res,
 			EXP(';');
 			break;
 		case TK_ADDRESS:
-			check_uniq("address statement", "%s:%s:address",
-				   res->name, host->name);
+			check_uniq_names("address statement", "%s:%b:address", on_hosts, res->name);
 			parse_address(&host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", host->port);
 			break;
 		case TK_META_DISK:
-			check_uniq("meta-disk statement", "%s:%s:meta-disk",
-				   res->name, host->name);
+			check_uniq_names("meta-disk statement", "%s:%b:meta-disk", on_hosts, res->name);
 			parse_meta_disk(&host->meta_disk, &host->meta_index);
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
-			check_uniq("meta-disk statement", "%s:%s:meta-disk",
-				   res->name, host->name);
+			check_uniq_names("meta-disk statement", "%s:%b:meta-disk", on_hosts, res->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
 			if (strcmp("internal", yylval.txt)) {
@@ -536,14 +643,12 @@ static void parse_host_section(struct d_resource *res,
 	/* Inherit device, disk, meta_disk and meta_index from the resource. */
 	if(!host->disk && res->disk) {
 		host->disk = strdup(res->disk);
-		check_uniq("disk", "%s:%s:%s", "disk",
-			   host->name, host->disk);
+		check_uniq_names("disk", "disk:%b:%s", on_hosts, host->disk);
 	}
 
 	if(!host->device && res->device) {
 		host->device = strdup(res->device);
-		check_uniq("device", "%s:%s:%s", "device",
-			   host->name, host->device);
+		check_uniq_names("device", "device:%b:%s", on_hosts, host->device);
 	}
 
 	if(!host->meta_disk && res->meta_disk) {
@@ -637,7 +742,7 @@ static void parse_stacked_section(struct d_resource* res)
 
 	res->lower = l_res;
 	if (l_res->ignore) {
-		host->name = strdup("stacked resource");
+		host->on_hosts = names_from_str("stacked resource");
 	} else if (l_res->me == NULL) {
 		fprintf(stderr,
 			"%s:%d: in resource %s, "
@@ -654,7 +759,7 @@ static void parse_stacked_section(struct d_resource* res)
 			nodeinfo.nodename, l_res->name);
 		exit(E_config_invalid);
 	} else {
-		host->name = strdup(nodeinfo.nodename);
+		host->on_hosts = names_from_str(nodeinfo.nodename);
 	}
 	if (res->me && res->peer) {
 		/* this check could go first, too */
@@ -679,20 +784,21 @@ static void parse_stacked_section(struct d_resource* res)
 		case TK_DEVICE:
 			EXP(TK_STRING);
 			host->device = yylval.txt;
-			check_uniq("device", "%s:%s:%s","device",
-				   host->name,yylval.txt);
+			check_uniq_names("device", "device:%b:%s", host->on_hosts, yylval.txt);
 			EXP(';');
 			break;
 		case TK_ADDRESS:
-			check_uniq("address statement", "%s:%s:address",
-				   res->name, host->name);
+			check_uniq_names("address statement", "%s:%b:address", host->on_hosts, res->name);
 			parse_address(&host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", yylval.txt);
+			break;
+		case TK_PROXY:
+			parse_proxy_section(host);
 			break;
 		case '}':
 			goto break_loop;
 		default:
-			pe_expected("device | address");
+			pe_expected("device | address | proxy");
 		}
 	}
  break_loop:
@@ -700,8 +806,7 @@ static void parse_stacked_section(struct d_resource* res)
 	/* inherit device */
 	if (!host->device && res->device) {
 		host->device = strdup(res->device);
-		check_uniq("device", "%s:%s:%s", "device",
-			   host->name, host->device);
+		check_uniq_names("device", "device:%b:%s", host->on_hosts, host->device);
 	}
 
 	if (!host->device)
@@ -737,6 +842,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
 	struct d_host_info *host;
+	struct d_name *host_names;
 	int token;
 
 	fline = line;
@@ -754,8 +860,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK_ON:
-			EXP(TK_STRING);
-			parse_host_section(res, yylval.txt, 1);
+			parse_hosts(&host_names);
+			parse_host_section(res, host_names, 1);
 			break;
 		case TK_STACKED:
 			check_uniq("stacked-on-top-of section", "%s:stacked-on-top-of", res->name);
@@ -776,10 +882,12 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK__THIS_HOST:
-			parse_host_section(res, strdup("_this_host"), 0);
+			host_names = names_from_str("_this_host");
+			parse_host_section(res, host_names, 0);
 			break;
 		case TK__REMOTE_HOST:
-			parse_host_section(res, strdup("_remote_host"), 0);
+			host_names = names_from_str("_remote_host");
+			parse_host_section(res, host_names, 0);
 			break;
 		case TK_DISK:
 			switch (token=yylex()) {
@@ -861,20 +969,20 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			fprintf(stderr,
 				"%s:%d: in resource %s, "
 				"unsupported third host section on %s { ... }.\n",
-				config_file, host->config_line, res->name, host->name);
+				config_file, host->config_line, res->name, names_to_str(host->on_hosts));
 			exit(E_config_invalid);
 		}
 
-		if(!strcmp(host->name, nodeinfo.nodename) ||
-		   !strcmp(host->name, "_this_host") ||
-		   ( host->proxy && 
-		     !strcmp(host->proxy->name, nodeinfo.nodename))) {
+		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
+		    name_in_names("_this_host", host->on_hosts) ||
+		    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
 			if (res->ignore) {
 				config_valid = 0;
 				fprintf(stderr,
 					"%s:%d: in resource %s, on %s { ... }:\n"
 					"\tYou cannot ignore and define at the same time.\n",
-					config_file, host->config_line, res->name, host->name);
+					config_file, host->config_line, res->name,
+					names_to_str(host->on_hosts));
 			}
 			if (res->me) {
 				config_valid = 0;
@@ -883,11 +991,12 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 					"\tThere are multiple host sections for this node.\n"
 					"\tMaybe misspelled local host name '%s'?\n",
 					config_file, host->config_line, res->name,
-						res->me->name, host->name, nodeinfo.nodename);
+					names_to_str(res->me->on_hosts), names_to_str(host->on_hosts),
+					nodeinfo.nodename);
 			}
 			res->me = host;
 		} else {
-			/* This needs to be refined as soon as we support 
+			/* This needs to be refined as soon as we support
 			   multiple peers in the resource section */
 			if (res->peer) {
 				if (res->ignore && !res->me) {
@@ -904,14 +1013,17 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 							"\tThere are multiple host sections for the peer.\n"
 							"\tMaybe misspelled local host name '%s'?\n",
 							config_file, host->config_line, res->name,
-								res->peer->name, host->name, nodeinfo.nodename);
+							names_to_str(res->peer->on_hosts),
+							names_to_str(host->on_hosts),
+							nodeinfo.nodename);
 					} else {
 						fprintf(stderr,
 							"%s:%d: in resource %s, stacked-on-top-of %s { ... } ... on %s { ... }:\n"
 							"\tThere is no matching section for me.\n"
 							"\tMaybe misspelled local host name '%s'?\n",
 							config_file, host->config_line, res->name,
-							res->lower->name, host->name, nodeinfo.nodename);
+							res->lower->name, names_to_str(host->on_hosts),
+							nodeinfo.nodename);
 					}
 				}
 			}
