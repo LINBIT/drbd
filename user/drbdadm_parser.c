@@ -373,7 +373,10 @@ static void expect_STRING_or_INT(void)
 	switch(token) {
 	case TK_INTEGER:
 	case TK_STRING:
-		return;
+		break;
+	case TK_ON:
+		yylval.txt = strdup(yytext);
+		break;
 	default:
 		check_string_error(token);
 		pe_expected_got("TK_STRING | TK_INTEGER", token);

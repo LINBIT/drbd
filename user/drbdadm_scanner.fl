@@ -126,6 +126,7 @@ before-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 after-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
+compression		{ DP; CP; return TK_PROXY_OPTION;       }
 out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
 {IPV6ADDR}		{ DP; CP; return TK_IPADDR6;		}
