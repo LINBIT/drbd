@@ -245,50 +245,21 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
 		names_to_str(proxy->on_hosts), text);
 }
 
-int check_uniq_names(const char* what, const char *fmt, struct d_name* names, ...)
-{
-	enum { BASE, ESC } l = BASE;
-	char buffer[1024];
-	const char *c;
-	va_list ap;
-	char *p;
-	int rv = 1;
+#define typecheck(type,x) \
+({	type __dummy; \
+	typeof(x) __dummy2; \
+	(void)(&__dummy == &__dummy2); \
+	1; \
+})
 
-	while (names) {
-		// %b => names->name
-		c = fmt;
-		p = buffer;
-		while (*c) {
-			switch (l) {
-			case BASE:
-				if (*c == '%')
-					l = ESC;
-				break;
-			case ESC:
-				if (*c == 'b') {
-					memcpy(p, fmt, c - fmt - 1);
-					p += c - fmt - 1;
-					memcpy(p, names->name, strlen(names->name));
-					p += strlen(names->name);
-					memcpy(p, c+1, strlen(c + 1) + 1);
-					p += strlen(c + 1) + 1;
-				} else
-					l = BASE;
-			}
-			c++;
-		}
-
-		va_start(ap, names);
-		rv = vcheck_uniq(what, buffer, ap) && rv;
-		va_end(ap);
-
-		names = names->next;
-	}
-	return rv;
-}
+#define for_each_host(h_,hosts_) \
+	for ( ({ typecheck(struct d_name*, h_); \
+		h_ = hosts_; }); \
+	 	h_; h_ = h_->next)
 
 void check_meta_disk(struct d_host_info *host)
 {
+	struct d_name *h;
 	if (strcmp(host->meta_disk, "internal") != 0) {
 		/* external */
 		if (host->meta_index == NULL) {
@@ -297,7 +268,8 @@ void check_meta_disk(struct d_host_info *host)
 				config_file, fline, host->meta_disk);
 		}
 		/* index either some number, or "flexible" */
-		check_uniq_names("meta-disk", "%b:%s[%s]", host->on_hosts, host->meta_disk, host->meta_index);
+		for_each_host(h, host->on_hosts)
+			check_uniq("meta-disk", "%s:%s[%s]", h->name, host->meta_disk, host->meta_index);
 	} else if (host->meta_index) {
 		/* internal */
 		if (strcmp(host->meta_index, "flexible") != 0) {
@@ -497,6 +469,7 @@ static struct d_option *parse_options(int token_switch, int token_option)
 
 static void parse_address(struct d_name *on_hosts, char** addr, char** port, char** af)
 {
+	struct d_name *h;
 	switch(yylex()) {
 	case TK_SCI:
 	case TK_IPV4:
@@ -527,7 +500,8 @@ static void parse_address(struct d_name *on_hosts, char** addr, char** port, cha
 	*port = yylval.txt;
 	range_check(R_PORT, "port", yylval.txt);
 	if (!strcmp(*addr, "127.0.0.1") || !strcmp(*addr, "::1"))
-		check_uniq_names("IP", "%b:%s:%s", on_hosts, *addr, *port);
+		for_each_host(h, on_hosts)
+			check_uniq("IP", "%s:%s:%s", h->name, *addr, *port);
 	else
 		check_uniq("IP", "%s:%s", *addr, *port);
 	EXP(';');
@@ -618,6 +592,7 @@ static void parse_host_section(struct d_resource *res,
 			       struct d_name* on_hosts, int require_all)
 {
 	struct d_host_info *host;
+	struct d_name *h;
 
 	c_section_start = line;
 	fline = line;
@@ -625,23 +600,28 @@ static void parse_host_section(struct d_resource *res,
 	host=calloc(1,sizeof(struct d_host_info));
 	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
-	check_uniq_names("host section", "%s: on %b", on_hosts, res->name);
+	for_each_host(h, on_hosts)
+		check_uniq("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
 	while (1) {
 		switch (yylex()) {
 		case TK_DISK:
-			check_uniq_names("disk statement", "%s:%b:disk", on_hosts, res->name);
+			for_each_host(h, on_hosts)
+				check_uniq("disk statement", "%s:%s:disk", res->name, h->name);
 			EXP(TK_STRING);
 			host->disk = yylval.txt;
-			check_uniq_names("disk", "disk:%s:%s", on_hosts, yylval.txt);
+			for_each_host(h, on_hosts)
+				check_uniq("disk", "disk:%s:%s", h->name, yylval.txt);
 			EXP(';');
 			break;
 		case TK_DEVICE:
-			check_uniq_names("device statement", "%s:%b:device", on_hosts, res->name);
+			for_each_host(h, on_hosts)
+				check_uniq("device statement", "%s:%s:device", res->name, h->name);
 			EXP(TK_STRING);
 			host->device = yylval.txt;
-			check_uniq_names("device", "device:%b:%s", on_hosts, yylval.txt);
+			for_each_host(h, on_hosts)
+				check_uniq("device", "device:%s:%s", h->name, yylval.txt);
 			if (dt_minor_of_dev(host->device) < 0) {
 				fprintf(stderr, "%s:%d: cannot determine minor number of %s\n",
 					config_file, line, host->device);
@@ -650,17 +630,20 @@ static void parse_host_section(struct d_resource *res,
 			EXP(';');
 			break;
 		case TK_ADDRESS:
-			check_uniq_names("address statement", "%s:%b:address", on_hosts, res->name);
+			for_each_host(h, on_hosts)
+				check_uniq("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(on_hosts, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", host->port);
 			break;
 		case TK_META_DISK:
-			check_uniq_names("meta-disk statement", "%s:%b:meta-disk", on_hosts, res->name);
+			for_each_host(h, on_hosts)
+				check_uniq("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			parse_meta_disk(&host->meta_disk, &host->meta_index);
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
-			check_uniq_names("meta-disk statement", "%s:%b:meta-disk", on_hosts, res->name);
+			for_each_host(h, on_hosts)
+				check_uniq("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
 			if (strcmp("internal", yylval.txt)) {
@@ -694,12 +677,14 @@ static void parse_host_section(struct d_resource *res,
 	/* Inherit device, disk, meta_disk and meta_index from the resource. */
 	if(!host->disk && res->disk) {
 		host->disk = strdup(res->disk);
-		check_uniq_names("disk", "disk:%b:%s", on_hosts, host->disk);
+		for_each_host(h, on_hosts)
+			check_uniq("disk", "disk:%s:%s", h->name, host->disk);
 	}
 
 	if(!host->device && res->device) {
 		host->device = strdup(res->device);
-		check_uniq_names("device", "device:%b:%s", on_hosts, host->device);
+		for_each_host(h, on_hosts)
+			check_uniq("device", "device:%s:%s", h->name, host->device);
 	}
 
 	if(!host->meta_disk && res->meta_disk) {
@@ -763,6 +748,7 @@ static void parse_stacked_section(struct d_resource* res)
 {
 	struct d_host_info *host;
 	struct d_resource *l_res, *tmp;
+	struct d_name *h;
 	char *l_res_name;
 
 	c_section_start = line;
@@ -804,11 +790,13 @@ static void parse_stacked_section(struct d_resource* res)
 		case TK_DEVICE:
 			EXP(TK_STRING);
 			host->device = yylval.txt;
-			check_uniq_names("device", "device:%b:%s", host->on_hosts, yylval.txt);
+			for_each_host(h, host->on_hosts)
+				check_uniq("device", "device:%s:%s", h->name, yylval.txt);
 			EXP(';');
 			break;
 		case TK_ADDRESS:
-			check_uniq_names("address statement", "%s:%b:address", host->on_hosts, res->name);
+			for_each_host(h, host->on_hosts)
+				check_uniq("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(l_res->me->on_hosts, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", yylval.txt);
 			break;
@@ -826,7 +814,8 @@ static void parse_stacked_section(struct d_resource* res)
 	/* inherit device */
 	if (!host->device && res->device) {
 		host->device = strdup(res->device);
-		check_uniq_names("device", "device:%b:%s", host->on_hosts, host->device);
+		for_each_host(h, host->on_hosts)
+			check_uniq("device", "device:%s:%s", h->name, host->device);
 	}
 
 	if (!host->device)
