@@ -2733,10 +2733,10 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 			highest_minor, mc);
 		exit(E_usage);
 	}
-	if (!is_drbd_top && nr_normal == 0) {
-		fprintf(stderr, "no normal resources defined for this host (%s)!? "
-			"'this cannot happen...'\n", nodeinfo.nodename);
-		exit(E_thinko);
+	if (!is_drbd_top && nr_ignore > 0 && nr_normal == 0) {
+		fprintf(stderr, "no normal resources defined for this host (%s)!?\n"
+			"Misspelled name of the local machine with the on keyword ?\n", nodeinfo.nodename);
+		exit(E_config_invalid);
 	}
 	if (is_drbd_top && nr_stacked == 0) {
 		fprintf(stderr, "nothing stacked for this host (%s), "
@@ -2889,10 +2889,9 @@ int main(int argc, char** argv)
 		print_dump_header();
 
 	for_each_resource(res,tmp,config) {
-	  if (!is_dump && res->ignore) {
-		  fprintf(stderr, "'%s' ignored\n", res->name);
-		  continue;
-	  }
+		if (!is_dump && res->ignore)
+			continue;
+
 	  if (!is_dump && is_drbd_top != res->stacked)
 		  continue;
 	  int r = call_cmd(cmd, res, EXIT_ON_FAIL); /* does exit for r >= 20! */
@@ -2914,8 +2913,9 @@ int main(int argc, char** argv)
 	    exit(E_usage);
 	  }
 	  if (res->ignore && !is_dump) {
-	    fprintf(stderr,"'%s' ignored\n", res->name);
-	    continue;
+		  fprintf(stderr,"'%s' ignored, since this host (%s) is not mentioned with an on keyword.\n",
+			  res->name, nodeinfo.nodename);
+		  continue;
 	  }
 	  if (is_drbd_top != res->stacked && !is_dump) {
 	    fprintf(stderr,"'%s' is a %s resource, and not available in %s mode.\n",

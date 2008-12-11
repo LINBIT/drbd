@@ -208,6 +208,15 @@ static void derror(struct d_host_info *host, struct d_resource *res, char *text)
 		config_file, c_section_start, res->name, names_to_str(host->on_hosts), text);
 }
 
+static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *text)
+{
+	config_valid = 0;
+	fprintf(stderr, "%s:%d: in section: on %s { proxy on %s { ... } }:"
+		" '%s' keyword missing.\n",
+		config_file, c_section_start, names_to_str(host->on_hosts),
+		names_to_str(proxy->on_hosts), text);
+}
+
 int check_uniq_names(const char* what, const char *fmt, struct d_name* names, ...)
 {
 	enum { BASE, ESC } l = BASE;
@@ -455,7 +464,7 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	return parse_options_d(token_switch, token_option, 0, NULL, NULL);
 }
 
-static void parse_address(char** addr, char** port, char** af)
+static void parse_address(struct d_name *on_hosts, char** addr, char** port, char** af)
 {
 	switch(yylex()) {
 	case TK_SCI:
@@ -486,7 +495,10 @@ static void parse_address(char** addr, char** port, char** af)
 	EXP(TK_INTEGER);
 	*port = yylval.txt;
 	range_check(R_PORT, "port", yylval.txt);
-	check_uniq("IP", "%s:%s", *addr, *port);
+	if (!strcmp(*addr, "127.0.0.1") || !strcmp(*addr, "::1"))
+		check_uniq_names("IP", "%b:%s:%s", on_hosts, *addr, *port);
+	else
+		check_uniq("IP", "%s:%s", *addr, *port);
 	EXP(';');
 }
 
@@ -533,10 +545,10 @@ static void parse_proxy_section(struct d_host_info *host)
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
-			parse_address(&proxy->inside_addr, &proxy->inside_port, &proxy->inside_af);
+			parse_address(proxy->on_hosts, &proxy->inside_addr, &proxy->inside_port, &proxy->inside_af);
 			break;
 		case TK_OUTSIDE:
-			parse_address(&proxy->outside_addr, &proxy->outside_port, &proxy->outside_af);
+			parse_address(proxy->on_hosts, &proxy->outside_addr, &proxy->outside_port, &proxy->outside_af);
 			break;
 		case '}':
 			goto break_loop;
@@ -547,6 +559,12 @@ static void parse_proxy_section(struct d_host_info *host)
 	}
 
  break_loop:
+	if (!proxy->inside_addr)
+		pperror(host, proxy, "inside");
+
+	if (!proxy->outside_addr)
+		pperror(host, proxy, "outside");
+
 	return;
 }
 
@@ -602,7 +620,7 @@ static void parse_host_section(struct d_resource *res,
 			break;
 		case TK_ADDRESS:
 			check_uniq_names("address statement", "%s:%b:address", on_hosts, res->name);
-			parse_address(&host->address, &host->port, &host->address_family);
+			parse_address(on_hosts, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", host->port);
 			break;
 		case TK_META_DISK:
@@ -791,7 +809,7 @@ static void parse_stacked_section(struct d_resource* res)
 			break;
 		case TK_ADDRESS:
 			check_uniq_names("address statement", "%s:%b:address", host->on_hosts, res->name);
-			parse_address(&host->address, &host->port, &host->address_family);
+			parse_address(l_res->me->on_hosts, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", yylval.txt);
 			break;
 		case TK_PROXY:
