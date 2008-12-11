@@ -1095,62 +1095,70 @@ the unit is 1 second.
 
 <varlistentry>
   <term><option>pri-on-incon-degr <replaceable>cmd</replaceable></option></term>
-  <listitem><para> This handler is called if the node is primary, degraded
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>pri-on-incon-degr </secondary></indexterm>
+  This handler is called if the node is primary, degraded
   and if the local copy of the data is inconsistent.</para></listitem>
   </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost-after-sb <replaceable>cmd</replaceable></option></term>
-  <listitem><para> The node is currently primary, but lost the after split
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>pri-lost-after-sb </secondary></indexterm>
+  The node is currently primary, but lost the after split
   brain auto recovery procedure. As as consequence, it should be abandoned.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>pri-lost <replaceable>cmd</replaceable></option></term>
-  <listitem><para> The node is currently primary, but DRBD's algorithm
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>pri-lost </secondary></indexterm>
+  The node is currently primary, but DRBD's algorithm
   thinks that it should become sync target. As a consequence it should
   give up its primary role.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>outdate-peer <replaceable>cmd</replaceable></option></term>
-  <listitem><para> The handler is part of the <option>fencing</option>
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>outdate-peer </secondary></indexterm>
+  The handler is part of the <option>fencing</option>
   mechanism.  This handler is called in case the node needs to outdate the
   peer's disk. It should use other communication paths than DRBD's network
   link.  </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>local-io-error <replaceable>cmd</replaceable></option></term>
-  <listitem><para> DRBD got an IO error from the local IO subsystem.
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>local-io-error </secondary></indexterm>
+  DRBD got an IO error from the local IO subsystem.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>split-brain <replaceable>cmd</replaceable></option></term>
-  <listitem><para> DRBD detected a split brain situation. Manual recovery is necessary. 
-      This handler should alert someone on duty.
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>split-brain </secondary></indexterm>
+  DRBD detected a split brain situation. Manual recovery is necessary. 
+  This handler should alert someone on duty.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>before-resync-target <replaceable>cmd</replaceable></option></term>
-  <listitem><para>DRBD calls this handler just before a resync beginns on the node
-      that becomes resync target. It might be used to take a snapshot of the
-      backing block device.
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>before-resync-target </secondary></indexterm>
+  DRBD calls this handler just before a resync beginns on the node
+  that becomes resync target. It might be used to take a snapshot of the
+  backing block device.
   </para></listitem> </varlistentry>
 
 <varlistentry>
   <term><option>after-resync-target <replaceable>cmd</replaceable></option></term>
-  <listitem><para>DRBD calls this handler just after a resync operation finished on the
-      node which's disk just became consistent after beeing inconsistent for the
-      duration of the resync. It might be used to remove a snapshot of the backing device 
-      that was created by the <option>before-resync-target</option> handler.
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>after-resync-target </secondary></indexterm>
+  DRBD calls this handler just after a resync operation finished on the
+  node which's disk just became consistent after beeing inconsistent for the
+  duration of the resync. It might be used to remove a snapshot of the backing device 
+  that was created by the <option>before-resync-target</option> handler.
   </para></listitem> </varlistentry>
 
 </variablelist>
