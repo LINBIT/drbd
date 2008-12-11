@@ -1777,17 +1777,17 @@ static void print_cmds(int level)
 static int hidden_cmds(struct d_resource* ignored __attribute((unused)),
 		       const char* ignored2 __attribute((unused)) )
 {
-  printf("\nThese additional commands might be usefull for writing\n"
-	 "nifty shell scripts around drbdadm\n\n");
+  printf("\nThese additional commands might be useful for writing\n"
+	 "nifty shell scripts around drbdadm:\n\n");
 
   print_cmds(2);
 
-  printf("\nThese command are used by the kernel part of DRBD to\n"
-	 "invoke user mode helper programs\n\n");
+  printf("\nThese commands are used by the kernel part of DRBD to\n"
+	 "invoke user mode helper programs:\n\n");
 
   print_cmds(3);
 
-  printf("\nThese commands ought to be used by experts and developers\n\n");
+  printf("\nThese commands ought to be used by experts and developers:\n\n");
 
   print_cmds(4);
 
