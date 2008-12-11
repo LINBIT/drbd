@@ -104,6 +104,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     have_linux_scatterlist_h=0
     need_sg_set_buf=1
   fi
+  if grep_q "msleep" $KDIR/include/linux/delay.h ; then
+    have_msleep=1
+  else
+    have_msleep=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -131,6 +136,8 @@ perl -pe "
   { ( $need_sg_set_buf ? '' : '//' ) . \$1}e;
  s{.*(#define HAVE_LINUX_SCATTERLIST_H.*)}
   { ( $have_linux_scatterlist_h ? '' : '//' ) . \$1}e;
+ s{.*(#define KERNEL_HAS_MSLEEP.*)}
+  { ( $have_msleep ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

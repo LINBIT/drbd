@@ -41,8 +41,27 @@ static inline void *kzalloc(size_t size, int flags)
 	void *rv = kmalloc(size, flags);
 	if (rv)
 		memset(rv, 0, size);
+
 	return rv;
 }
+#endif
+
+
+#ifndef KERNEL_HAS_MSLEEP
+/**
+ * msleep - sleep safely even with waitqueue interruptions
+ * @msecs: Time in milliseconds to sleep for
+ */
+static inline void msleep(unsigned int msecs)
+{
+	unsigned long timeout = (msecs * HZ + 999) / 1000;
+
+	while (timeout) {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		timeout = schedule_timeout(timeout);
+	}
+}
+
 #endif
 
 void cn_queue_wrapper(void *data)
