@@ -755,6 +755,7 @@ static void parse_stacked_section(struct d_resource* res)
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
+	res->all_hosts = APPEND(res->all_hosts, host);
 	EXP(TK_STRING);
 	l_res_name = yylval.txt;
 	check_uniq("stacked-on-top-of", "stacked:%s", l_res_name);
@@ -778,7 +779,7 @@ static void parse_stacked_section(struct d_resource* res)
 	}
 
 	host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts);
-	res->ignore = l_res->ignore;
+	host->lower = l_res;
 
 	m_asprintf(&host->meta_disk, "%s", "internal");
 	m_asprintf(&host->meta_index, "%s", "internal");
@@ -827,25 +828,6 @@ static void parse_stacked_section(struct d_resource* res)
 	if (!host->meta_disk)
 		derror(host,res,"meta-disk");
 
-	if (res->ignore) {
-		if (res->peer) {
-			res->me = host;
-			res->lower_me = l_res;
-		} else {
-			res->peer = host;
-			res->lower_peer = l_res;
-		}
-	} else {
-		if (res->me) {
-			fprintf(stderr,
-				"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
-				"\tYou cannot be your own peer (resources for me already defined).\n",
-				config_file, c_section_start, res->name, l_res_name);
-			exit(E_config_invalid);
-		}
-		res->me = host;
-		res->lower_me = l_res;
-	}
 	res->stacked = 1;
 }
 
@@ -996,8 +978,10 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		if (!res->ignore && (res->me && res->peer)) {
 			fprintf(stderr,
 				"%s:%d: in resource %s, "
-				"unsupported third host section on %s { ... }.\n",
-				config_file, host->config_line, res->name, names_to_str(host->on_hosts));
+				"unsupported third host section %s %s { ... }.\n",
+				config_file, host->config_line, res->name,
+				host->lower ? "stacked-on-top-of" : "on",
+				host->lower ? host->lower->name : names_to_str(host->on_hosts));
 			exit(E_config_invalid);
 		}
 
@@ -1007,20 +991,22 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			if (res->ignore) {
 				config_valid = 0;
 				fprintf(stderr,
-					"%s:%d: in resource %s, on %s { ... }:\n"
+					"%s:%d: in resource %s, %s %s { ... }:\n"
 					"\tYou cannot ignore and define at the same time.\n",
 					config_file, host->config_line, res->name,
-					names_to_str(host->on_hosts));
+					host->lower ? "stacked-on-top-of" : "on",
+					host->lower ? host->lower->name : names_to_str(host->on_hosts));
 			}
 			if (res->me) {
 				config_valid = 0;
 				fprintf(stderr,
-					"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
-					"\tThere are multiple host sections for this node.\n"
-					"\tMaybe misspelled local host name '%s'?\n",
+					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
+					"\tThere are multiple host sections for this node.\n",
 					config_file, host->config_line, res->name,
-					names_to_str(res->me->on_hosts), names_to_str(host->on_hosts),
-					nodeinfo.nodename);
+					res->me->lower ? "stacked-on-top-of" : "on",
+					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
+					host->lower ? "stacked-on-top-of" : "on",
+					host->lower ? host->lower->name : names_to_str(host->on_hosts));
 			}
 			res->me = host;
 		} else {
@@ -1036,14 +1022,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				} else {
 					/* hm. if that did not work, I cannot ignore it */
 					config_valid = 0;
-					fprintf(stderr,
-						"%s:%d: in resource %s, on %s { ... } ... on %s { ... }:\n"
-						"\tThere are multiple host sections for the peer.\n"
-						"\tMaybe misspelled local host name '%s'?\n",
-						config_file, host->config_line, res->name,
-						names_to_str(res->peer->on_hosts),
-						names_to_str(host->on_hosts),
-						nodeinfo.nodename);
+					fprintf(stderr, "THINKO 1\n");
+					exit(E_thinko);
 				}
 			}
 			res->peer = host;

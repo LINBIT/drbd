@@ -97,6 +97,7 @@ struct d_host_info
   char* meta_index;
   struct d_proxy_info *proxy;
   struct d_host_info* next;
+  struct d_resource* lower;  /* for device stacking */
   int config_line;
 };
 
@@ -131,8 +132,6 @@ struct d_resource
   struct d_option* handlers;
   struct d_option* proxy_options;
   struct d_resource* next;
-  struct d_resource* lower_me;
-  struct d_resource* lower_peer;
   struct d_name *become_primary_on;
   unsigned int stacked_timeouts:1;
   unsigned int ignore:1;
