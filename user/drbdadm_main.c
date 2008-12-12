@@ -2906,6 +2906,7 @@ int main(int argc, char** argv)
 	  if (res->ignore && !is_dump) {
 		  fprintf(stderr,"'%s' ignored, since this host (%s) is not mentioned with an on keyword.\n",
 			  res->name, nodeinfo.nodename);
+		  rv = E_usage;
 		  continue;
 	  }
 	  if (is_drbd_top != res->stacked && !is_dump) {
@@ -2913,6 +2914,7 @@ int main(int argc, char** argv)
 			    res->name,
 			    res->stacked ? "stacked" : "normal",
 			    is_drbd_top  ? "stacked" : "normal");
+	    rv = E_usage;
 	    continue;
 	  }
 	  verify_ips(res);
