@@ -107,7 +107,7 @@ doc-clean: distclean
 else
 
 doc:
-	@echo "could not find docbook tools, sorry."
+	@echo "could not find docbook tools, sorry." && exit 1
 
 doc-clean:
 	@echo "could not find docbook tools, leaving documentation in place."

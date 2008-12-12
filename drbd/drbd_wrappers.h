@@ -456,9 +456,12 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 typedef unsigned gfp_t;
 #endif
 
+
 /* struct kvec didn't exist before 2.6.8, this is an ugly
  * #define to work around it ... - jt */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,8)
+#ifndef KERNEL_HAS_KVEC
 #define kvec iovec
 #endif
+
+
