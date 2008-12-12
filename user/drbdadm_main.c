@@ -2063,6 +2063,7 @@ void verify_ips(struct d_resource *res)
 {
   if (global_options.disable_ip_verification) return;
   if (dry_run == 1 || do_verify_ips == 0) return;
+  if (res->ignore) return;
 
   if (! have_ip(res->me->address_family, res->me->address)) {
     ENTRY e, *ep;
@@ -2904,7 +2905,7 @@ int main(int argc, char** argv)
 	    exit(E_usage);
 	  }
 	  if (res->ignore && !is_dump) {
-		  fprintf(stderr,"'%s' ignored, since this host (%s) is not mentioned with an on keyword.\n",
+		  fprintf(stderr,"'%s' ignored, since this host (%s) is not mentioned with an 'on' keyword.\n",
 			  res->name, nodeinfo.nodename);
 		  rv = E_usage;
 		  continue;
