@@ -889,10 +889,12 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK__THIS_HOST:
+			EXP('{');
 			host_names = names_from_str("_this_host");
 			parse_host_section(res, host_names, 0);
 			break;
 		case TK__REMOTE_HOST:
+			EXP('{');
 			host_names = names_from_str("_remote_host");
 			parse_host_section(res, host_names, 0);
 			break;
