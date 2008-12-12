@@ -69,7 +69,7 @@
         <listitem><para>
           Specifies the full path to the drbdmeta program. If this option is
 	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
-	  <option>./drbdsetup</option>.
+	  <option>./drbdmeta</option>.
 	</para></listitem>
       </varlistentry>
     </variablelist>

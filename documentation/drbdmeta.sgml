@@ -39,7 +39,7 @@
       or at least detached from its backing storage. The first parameter
       is the device node associated to the resource. With the second
       parameter you select which the version of the meta data. Currently
-      all major DRBD releases (0.6, 0.7 and 0.8) are supported.
+      all major DRBD releases (0.6, 0.7 and 8) are supported.
     </para>
   </refsect1>
   <refsect1>
@@ -62,7 +62,7 @@
 	<indexterm><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
           Get-gi shows a short textual representation of the data generation
 	  identifier. In version 0.6 and 0.7 these are generation counters,
-	  while in version 0.8 it is a set of UUIDs.
+	  while in version 8 it is a set of UUIDs.
 	</para></listitem>
       </varlistentry>
       <varlistentry>
