@@ -90,4 +90,9 @@ extern const char *drbd_buildtag(void);
 
 #define KERNEL_HAS_MSLEEP
 
+/* Some other kernels < 2.6.8 do not have struct kvec,
+ * others do.. */
+
+#define KERNEL_HAS_KVEC
+
 #endif
