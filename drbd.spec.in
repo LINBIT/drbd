@@ -208,6 +208,13 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Fri Dec 12 2008 17:09:03 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.0rc3-1)
+ * Better support of drbd-proxy in stacked setups
+ * Allow two stacked-on-top-of sections per resource (4 node setups)
+ * Support for device stacking in the RHCS resource agent
+ * More build compatibility with older vendor kernels
+
 * Fri Dec  5 2008 18:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.0rc2-1)
  * Fixed a bug in the new epoch code (introduced with 8.2.7).
