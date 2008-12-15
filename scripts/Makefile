@@ -64,6 +64,8 @@ install:
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
+	install -d $(PREFIX)/usr/sbin
+	install -m 755 drbd-overview.pl $(PREFIX)/usr/sbin
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif

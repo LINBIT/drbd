@@ -123,6 +123,7 @@ ___
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
+/usr/sbin/drbd-overview.pl
 /usr/lib/drbd/outdate-peer.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/xen/scripts/block-drbd
