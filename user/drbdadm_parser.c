@@ -827,8 +827,6 @@ static void parse_stacked_section(struct d_resource* res)
 		derror(host,res,"address");
 	if (!host->meta_disk)
 		derror(host,res,"meta-disk");
-
-	res->stacked = 1;
 }
 
 void startup_delegate(void *ctx)
@@ -1011,6 +1009,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 					host->lower ? host->lower->name : names_to_str(host->on_hosts));
 			}
 			res->me = host;
+			if (host->lower)
+				res->stacked = 1;
 		} else {
 			/* This needs to be refined as soon as we support
 			   multiple peers in the resource section */
