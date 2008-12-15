@@ -1625,7 +1625,10 @@ struct d_resource* res_by_minor(const char *id)
   if (mm < 0) return NULL;
 
   for_each_resource(res,t,config) {
-    if (mm == dt_minor_of_res(res)) return res;
+    if (mm == dt_minor_of_res(res)) {
+      is_drbd_top = res->stacked;
+      return res;
+    }
   }
   return NULL;
 }
