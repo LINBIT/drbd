@@ -984,8 +984,10 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
 		if (rv) {
 			ERR("local disk flush failed with status %d\n",rv);
-			if (rv == -EOPNOTSUPP)
-				drbd_bump_write_ordering(mdev, WO_drain_io);
+			/* would rather check on EOPNOTSUPP, but that is not reliable.
+			 * don't try again for ANY return value != 0
+			 * if (rv == -EOPNOTSUPP) */
+			drbd_bump_write_ordering(mdev, WO_drain_io);
 		}
 		dec_local(mdev);
 	}

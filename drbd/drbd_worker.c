@@ -158,7 +158,8 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 		error = -EIO;
 	}
 
-	/* error == -ENOTSUPP would be a better test, but due to device mapper... */
+	/* error == -ENOTSUPP would be a better test,
+	 * alas it is not reliable */
 	if (error && e->flags & EE_IS_BARRIER) {
 		drbd_bump_write_ordering(mdev, WO_bdev_flush);
 		spin_lock_irqsave(&mdev->req_lock, flags);
