@@ -923,8 +923,7 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 		/* swap back endianness */
 		bm_lel_to_cpu(b);
 		/* flush bitmap to stable storage */
-		if (!test_bit(MD_NO_BARRIER, &mdev->flags))
-			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+		drbd_md_flush(mdev);
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits_swap_endian(b);

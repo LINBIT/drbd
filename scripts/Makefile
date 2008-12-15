@@ -83,6 +83,8 @@ ifneq ($(DIST),redhat)
 	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
  endif
 endif
+	install -d $(PREFIX)/usr/sbin
+	install -m 755 drbd-overview.pl $(PREFIX)/usr/sbin
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif

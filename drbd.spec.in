@@ -129,6 +129,7 @@ ___
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
+/usr/sbin/drbd-overview.pl
 /usr/lib/drbd/outdate-peer.sh
 /usr/lib/drbd/snapshot-resync-target-lvm.sh
 /usr/lib/drbd/unsnapshot-resync-target-lvm.sh
