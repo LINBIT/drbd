@@ -882,7 +882,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			}
 			EXP(TK_STRING);
 			fprintf(stderr, "%s:%d: in resource %s, "
-			       "WARN: The 'ignore-on' keyword is depricated.\n",
+			       "WARN: The 'ignore-on' keyword is deprecated.\n",
 			       config_file, line, res->name);
 			EXP(';');
 			break;
