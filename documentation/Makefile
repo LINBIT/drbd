@@ -24,10 +24,6 @@
 # the RedHat only way is docbook2man
 # hmmm, nowadays docbook2man works also on Debian
 
-LANGS =
-
-MAKEFILES_LANG := $(foreach dir,$(LANGS),$(dir)/Makefile)
-
 MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8 drbdmeta.8
 
 #
@@ -70,9 +66,22 @@ else
 endif
 
 
+all:
+	@echo "To (re)make the documentation: make doc"
+
+clean:
+	@echo "To clean the documentation: make doc-clean"
+
+doc:	man
+
+doc-clean: distclean
+
+
 ####### Implicit rules
 
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
+
+ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
 
 .sgml.5:
 	$(DB2MAN) $<
@@ -91,44 +100,35 @@ endif
 	$(DB2PS) $<
 	gzip -c $@ > $@.gz
 
-#######
-
-all:
-	@echo "To (re)make the documentation: make doc"
-
-clean:
-	@echo "To clean the documentation: make doc-clean"
-
-ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
-doc:	prepare man
-
-doc-clean: distclean
-
-else
-
-doc:
-	@echo "could not find docbook tools, sorry." && exit 1
-
-doc-clean:
-	@echo "could not find docbook tools, leaving documentation in place."
-
-endif
-
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
-	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile ; $(MAKE) -C $$i clean ; rm $$i/Makefile ; done
 
-$(MAKEFILES_LANG): Makefile.lang
-	ln -sf ../Makefile.lang $@
+else
 
-prepare: $(MAKEFILES_LANG)
+.sgml.5:
+	@echo "could not find docbook tools, sorry." ; exit 1
 
+.sgml.8:
+	@echo "could not find docbook tools, sorry." ; exit 1
 
-#	@ set -e; for i in $(LANGS); do ln -sf ../Makefile.lang $$i/Makefile; done
+.sgml.html:
+	@echo "could not find docbook tools, sorry." ; exit 1
+
+.sgml.pdf:
+	@echo "could not find docbook tools, sorry." ; exit 1
+
+.sgml.ps:
+	@echo "could not find docbook tools, sorry." ; exit 1
+
+distclean:
+	@echo "could not find docbook tools, sorry."
+
+endif
+
+#######
 
 man:	$(MANPAGES)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i man; done
 
 install:
 	@ok=true; for f in $(MANPAGES) ; \
@@ -138,20 +138,18 @@ install:
 		s=$${f##*.}; \
 		install -v -D -m 644 $$f $(PREFIX)/usr/share/man/man$$s/$$f ; \
 	done
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i install; done
 
 uninstall:
 	@ set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
 		rm -v $(PREFIX)/usr/share/man/man$$s/$$f ; \
 	done
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i uninstall; done
 
-html:	prepare $(shell ls *.sgml | sed s/sgml/html/g)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i html; done
-pdf:	prepare $(shell ls *.sgml | sed s/sgml/pdf/g)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i pdf; done
-ps:	prepare $(shell ls *.sgml | sed s/sgml/ps/g)
-	@ set -e; for i in $(LANGS); do $(MAKE) -C $$i ps; done
+html:	$(shell ls *.sgml | sed s/sgml/html/g)
+
+pdf:	$(shell ls *.sgml | sed s/sgml/pdf/g)
+
+ps:	$(shell ls *.sgml | sed s/sgml/ps/g)
+
 
 
