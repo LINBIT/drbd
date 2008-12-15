@@ -980,11 +980,13 @@ STATIC int receive_Barrier_no_tcq(struct drbd_conf *mdev, struct Drbd_Header *h)
 	 * better flush to make sure it is all on stable storage. */
 	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && inc_local(mdev)) {
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
-		dec_local(mdev);
-		if (rv == -EOPNOTSUPP) /* don't try again */
+		/* would rather check on EOPNOTSUPP, but that is not reliable.
+		 * don't try again for ANY return value != 0 */
+		if (rv) {
 			set_bit(LL_DEV_NO_FLUSH, &mdev->flags);
-		if (rv)
-			ERR("local disk flush failed with status %d\n", rv);
+			ERR("local disk flush failed with status %d, disabling disk-flushes\n", rv);
+		}
+		dec_local(mdev);
 	}
 
 	/* FIXME CAUTION! receiver thread sending via msock.

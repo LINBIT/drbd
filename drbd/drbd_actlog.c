@@ -69,10 +69,12 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	else
 		submit_bio(rw, bio);
 	wait_for_completion(&md_io.event);
-	ok = bio_flagged(bio, BIO_UPTODATE);
+	ok = bio_flagged(bio, BIO_UPTODATE) && md_io.error == 0;
 
-	/* check for unsupported barrier op */
-	if (unlikely(md_io.error == -EOPNOTSUPP && bio_barrier(bio))) {
+	/* check for unsupported barrier op.
+	 * would rather check on EOPNOTSUPP, but that is not reliable.
+	 * don't try again for ANY return value != 0 */
+	if (unlikely(bio_barrier(bio) && !ok)) {
 		/* Try again with no barrier */
 		drbd_WARN("Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER, &mdev->flags);
@@ -721,18 +723,17 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 
+	/* always (try to) flush bitmap to stable storage */
+	drbd_md_flush(mdev);
+
 	/* In case we did not submit a single IO do not wait for
 	 * them to complete. ( Because we would wait forever here. )
 	 *
 	 * In case we had IOs and they are already complete, there
 	 * is not point in waiting anyways.
 	 * Therefore this if () ... */
-	if (atomic_read(&wc.count)) {
+	if (atomic_read(&wc.count))
 		wait_for_completion(&wc.io_done);
-		/* flush bitmap to stable storage */
-		if (!test_bit(MD_NO_BARRIER, &mdev->flags))
-			blkdev_issue_flush(mdev->bc->md_bdev, NULL);
-	}
 
 	dec_local(mdev);
 
