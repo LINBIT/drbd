@@ -2299,4 +2299,19 @@ static inline void drbd_kick_lo(struct drbd_conf *mdev)
 		dec_local(mdev);
 	}
 }
+
+static inline void drbd_md_flush(struct drbd_conf *mdev)
+{
+	int r;
+
+	if (test_bit(MD_NO_BARRIER, &mdev->flags))
+		return;
+
+	r = blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	if (r) {
+		set_bit(MD_NO_BARRIER, &mdev->flags);
+		ERR("meta data flush failed with status %d, disabling md-flushes\n", r);
+	}
+}
+
 #endif
