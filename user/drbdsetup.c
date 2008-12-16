@@ -1985,12 +1985,15 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		   is the one created by this drbdsetup instance, the kernel's
 		   reply packets simply echo those sequence numbers.
 		   The second is created by the kernel's broadcast packets. */
-		if(cn_reply->ack==0) { // broadcasts
-			if(!unfiltered && cn_reply->seq <= b_seq) continue;
-			b_seq = cn_reply->seq;
-		} else { // replies to drbdsetup packes
-			if(!unfiltered && cn_reply->seq <= r_seq) continue;
-			r_seq = cn_reply->seq;
+		if (!unfiltered) {
+			if (cn_reply->ack == 0) { // broadcasts
+				if (cn_reply->seq <= b_seq) continue;
+				b_seq = cn_reply->seq;
+			} else if (minor == reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
+				// replies to drbdsetup packes and for this device.
+				if (cn_reply->seq <= r_seq) continue;
+				r_seq = cn_reply->seq;
+			}
 		}
 
 		if( all_devices || minor == reply->minor ) {
@@ -2299,7 +2302,7 @@ void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 	cn_hdr->id.val = CN_VAL_DRBD;
 	cn_hdr->id.idx = cn_idx;
 	cn_hdr->seq = cn_seq++;
-	get_random_bytes(&cn_hdr->ack,sizeof(cn_hdr->ack));
+	cn_hdr->ack = getpid();
 	cn_hdr->len = size - sizeof(struct nlmsghdr) - sizeof(struct cn_msg);
 }
 
