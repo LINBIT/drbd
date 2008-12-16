@@ -48,21 +48,12 @@ drbd_verify_all()
 
       # Can drbdadm parse the resource name?
       if ! drbdadm sh-dev $OCF_RESKEY_resource >/dev/null 2>&1; then
-        # Try as a stacked resource
-        if drbdadm -S sh-dev $OCF_RESKEY_resource  >/dev/null 2>&1; then
-          IS_STACKED="yes"
-        else
-          ocf_log error "DRBD resource \"$OCF_RESKEY_resource\" not found."
-          return $OCF_ERR_CONFIGURED
-        fi
+  	ocf_log error "DRBD resource \"$OCF_RESKEY_resource\" not found." 
+  	return $OCF_ERR_CONFIGURED
       fi
 
       # Is the backing device a locally available block device?
-      if [ "$IS_STACKED" = "yes" ]; then
-        backing_dev=$(drbdadm -S sh-ll-dev $OCF_RESKEY_resource)
-      else
-        backing_dev=$(drbdadm sh-ll-dev $OCF_RESKEY_resource)
-      fi
+      backing_dev=$(drbdadm sh-ll-dev $OCF_RESKEY_resource)
       if [ ! -b $backing_dev ]; then
   	ocf_log error "Backing device for DRBD resource \"$OCF_RESKEY_resource\" ($backing_dev) not found or not a block device."
   	return $OCF_ERR_INSTALLED
@@ -74,11 +65,7 @@ drbd_verify_all()
 }
 
 drbd_status() {
-    if [ "$IS_STACKED" = "yes" ]; then
-      state=$(drbdadm -S state $OCF_RESKEY_resource)
-    else
-      state=$(drbdadm state $OCF_RESKEY_resource)
-    fi
+    state=$(drbdadm state $OCF_RESKEY_resource)
     case $state in
 	Primary/*)
 	    return $OCF_RUNNING
@@ -92,21 +79,11 @@ drbd_status() {
 }
 
 drbd_promote() {
-    if [ "$IS_STACKED" = "yes" ]; then
-      drbdadm -S up $OCF_RESKEY_resource && \
-        drbdadm -S primary $OCF_RESKEY_resource || return $?
-    else
-      drbdadm primary $OCF_RESKEY_resource || return $?
-    fi
+    drbdadm primary $OCF_RESKEY_resource || return $?
 }
 
 drbd_demote() {
-    if [ "$IS_STACKED" = "yes" ]; then
-      drbdadm -S secondary $OCF_RESKEY_resource && \
-        drbdadm -S down $OCF_RESKEY_resource || return $?
-    else
-      drbdadm secondary $OCF_RESKEY_resource || return $?
-    fi
+    drbdadm secondary $OCF_RESKEY_resource || return $?
 }
 
 
