@@ -137,6 +137,7 @@ ___
 /usr/lib/drbd/notify-split-brain.sh
 /usr/lib/drbd/notify.sh
 /etc/ha.d/resource.d/drbddisk
+/etc/ha.d/resource.d/drbdupper
 /etc/xen/scripts/block-drbd
 
 %defattr(644,root,root)

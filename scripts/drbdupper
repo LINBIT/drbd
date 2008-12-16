@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# This script is inteded to be used as resource script by heartbeat
+#
+# Dec 2005 by Philipp Reisner.
+#
+# In heartbeat's haresources you should have:
+# IPAddr::XXX drbdupper::resource Filesystem::XXX
+# in other words, you have to allocate the service IP before you
+# try to activate the upper DRBD resource.
+###
+
+DEFAULTFILE="/etc/default/drbd"
+DRBDADM="/sbin/drbdadm"
+
+if [ -f $DEFAULTFILE ]; then
+  . $DEFAULTFILE
+fi
+
+if [ "$#" -eq 2 ]; then
+  RES="$1"
+  CMD="$2"
+else
+  echo "A resource name is required."
+  exit 10
+fi
+
+if [ "$RES" = "all" ]; then
+  echo "A resource name is required."
+  exit 10
+fi
+
+case "$CMD" in
+    start)
+	set -e # exit if one of these fails
+	$DRBDADM primary `$DRBDADM -S sh-lr-of $RES`
+	$DRBDADM -S adjust $RES
+	$DRBDADM -S wait-connect $RES || true # may fail
+	$DRBDADM -S primary $RES
+	;;
+    stop)
+	$DRBDADM -S down $RES
+	$DRBDADM secondary `$DRBDADM -S sh-lr-of $RES`
+	;;
+    status)
+	if $DRBDADM -S state $RES | grep -q "Primary/"; then
+		echo "running"
+	else
+		echo "stopped"
+	fi
+	;;
+    *)
+	echo "Usage: drbdupper {resource} {start|stop|status}"
+	exit 1
+	;;
+esac
+
+exit 0
+

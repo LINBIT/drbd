@@ -66,6 +66,7 @@ install:
 		install -m 644 drbd.conf $(PREFIX)/etc/; \
 	fi
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
+	install -m 755 drbdupper $(PREFIX)/etc/ha.d/resource.d
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
@@ -105,6 +106,7 @@ distclean: clean
 uninstall:
 	rm $(INITD)drbd
 	rm $(PREFIX)/etc/ha.d/resource.d/drbddisk
+	rm $(PREFIX)/etc/ha.d/resource.d/drbdupper
 	rm $(PREFIX)/etc/xen/scripts/block-drbd
 	rm $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
 	! test -L $(PREFIX)/sbin/rcdrbd || rm $(PREFIX)/sbin/rcdrbd
