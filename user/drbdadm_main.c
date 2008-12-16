@@ -2067,6 +2067,7 @@ void verify_ips(struct d_resource *res)
   if (global_options.disable_ip_verification) return;
   if (dry_run == 1 || do_verify_ips == 0) return;
   if (res->ignore) return;
+  if (res->stacked && !is_drbd_top) return;
 
   if (! have_ip(res->me->address_family, res->me->address)) {
     ENTRY e, *ep;
