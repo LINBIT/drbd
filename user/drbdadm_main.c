@@ -2699,7 +2699,7 @@ void assign_default_config_file(void)
 	}
 }
 
-void count_resources_die_if_minor_count_is_nonsense(void)
+void count_resources_or_die(void)
 {
 	int mc = global_options.minor_count;
 	struct d_resource *res, *tmp;
@@ -2729,15 +2729,23 @@ void count_resources_die_if_minor_count_is_nonsense(void)
 			highest_minor, mc);
 		exit(E_usage);
 	}
+}
+
+void die_if_no_resources(void)
+{
 	if (!is_drbd_top && nr_ignore > 0 && nr_normal == 0) {
-		fprintf(stderr, "no normal resources defined for this host (%s)!?\n"
-			"Misspelled name of the local machine with the on keyword ?\n", nodeinfo.nodename);
+		fprintf(stderr, "WARN: no normal resources defined for this host (%s)!?\n"
+			"Misspelled name of the local machine with the 'on' keyword ?\n", nodeinfo.nodename);
+		exit(E_config_invalid);
+	}
+	if (!is_drbd_top && nr_normal == 0) {
+		fprintf(stderr, "WARN: no normal resources defined for this host (%s)!?\n", nodeinfo.nodename);
 		exit(E_config_invalid);
 	}
 	if (is_drbd_top && nr_stacked == 0) {
-		fprintf(stderr, "nothing stacked for this host (%s), "
+		fprintf(stderr, "WARN: nothing stacked for this host (%s), "
 			"nothing to do in stacked mode!\n", nodeinfo.nodename);
-		exit(0);
+		exit(E_config_invalid);
 	}
 }
 
@@ -2860,7 +2868,7 @@ int main(int argc, char** argv)
     exit(0); /* THINK exit here? what code? */
   }
 
-  count_resources_die_if_minor_count_is_nonsense();
+  count_resources_or_die();
 
   uc_node(global_options.usage_count);
 
@@ -2872,6 +2880,7 @@ int main(int argc, char** argv)
 	 * but command is dump / dump-xml, so implitict "all",
 	 * or an explicit "all" argument is given */
 	all_resources = 1;
+	die_if_no_resources();
 	/* verify ips first, for all of them */
         for_each_resource(res,tmp,config) {
 	  verify_ips(res);
