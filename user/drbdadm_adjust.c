@@ -131,15 +131,27 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 
 static int addr_equal(struct d_resource* conf, struct d_resource* running)
 {
+	int equal;
+
 	if (conf->peer == NULL && running->peer == NULL) return 1;
 	if (conf->peer == NULL || running->peer == NULL) return 0;
 
-	return  !strcmp(conf->me->address,          running->me->address) &&
-		!strcmp(conf->me->port,             running->me->port) &&
-		!strcmp(conf->me->address_family,   running->me->address_family) &&
-		!strcmp(conf->peer->address,        running->peer->address) &&
-		!strcmp(conf->peer->port,           running->peer->port) &&
-		!strcmp(conf->peer->address_family, running->peer->address_family);
+	equal = !strcmp(conf->me->address,        running->me->address) &&
+		!strcmp(conf->me->port,           running->me->port) &&
+		!strcmp(conf->me->address_family, running->me->address_family);
+
+	if(conf->me->proxy)
+		equal = equal &&
+			!strcmp(conf->me->proxy->inside_addr, running->peer->address) &&
+			!strcmp(conf->me->proxy->inside_port, running->peer->port) &&
+			!strcmp(conf->me->proxy->inside_af,   running->peer->address_family);
+	else
+		equal = equal &&
+			!strcmp(conf->peer->address,        running->peer->address) &&
+			!strcmp(conf->peer->port,           running->peer->port) &&
+			!strcmp(conf->peer->address_family, running->peer->address_family);
+
+	return equal;
 }
 
 static int proto_equal(struct d_resource* conf, struct d_resource* running)
