@@ -250,10 +250,10 @@ case "$command" in
     case $t in 
       drbd)
         drbd_resource=$p
-        drbd_state="$(/sbin/drbdadm state $drbd_resource)"
-        drbd_lstate="${drbd_state%%/*}"
+        drbd_role="$(/sbin/drbdadm role $drbd_resource)"
+        drbd_lrole="${drbd_role%%/*}"
         drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
-        if [ "$drbd_lstate" != 'Primary' ]; then
+        if [ "$drbd_lrole" != 'Primary' ]; then
           /sbin/drbdadm primary $drbd_resource
         fi
         dev=$drbd_dev
@@ -279,11 +279,11 @@ case "$command" in
       drbd)
         p=$(xenstore_read "$XENBUS_PATH/params")
         drbd_resource=$p
-        drbd_state="$(/sbin/drbdadm state $drbd_resource)"
-        drbd_lstate="${drbd_state%%/*}"
+        drbd_role="$(/sbin/drbdadm role $drbd_resource)"
+        drbd_lrole="${drbd_role%%/*}"
         drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
 
-        if [ "$drbd_lstate" != 'Secondary' ]; then
+        if [ "$drbd_lrole" != 'Secondary' ]; then
           /sbin/drbdadm secondary $drbd_resource
         fi
         exit 0

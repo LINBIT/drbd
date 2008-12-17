@@ -53,7 +53,7 @@ case "$CMD" in
 	11)
 		# see drbdadm_main.c adm_generic and m_system
 		# as well as drbdsetup.c:
-		# in fact a state change was attempted, but failed.
+		# in fact a role change was attempted, but failed.
 		echo >&2 "$DRBDADM secondary $RES: exit code $ex, mapping to 1"
 		exit 1 # LSB generic error
 		;;
@@ -72,7 +72,7 @@ case "$CMD" in
 	    echo "A resource name is required for status inquiries."
 	    exit 10
 	fi
-	ST=$( $DRBDADM state $RES )
+	ST=$( $DRBDADM role $RES )
 	STATE=${ST%/*}
 	case $STATE in
 		Primary)
