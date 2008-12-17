@@ -78,7 +78,16 @@ enum finish_epoch {
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
-static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch);
+static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
+{
+	struct drbd_epoch *prev;
+	spin_lock(&mdev->epoch_lock);
+	prev = list_entry(epoch->list.prev, struct drbd_epoch, list);
+	if (prev == epoch || prev == mdev->current_epoch)
+		prev = NULL;
+	spin_unlock(&mdev->epoch_lock);
+	return prev;
+}
 
 #ifdef DBG_ASSERTS
 void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
@@ -1194,17 +1203,6 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 	mdev->write_ordering = wo;
 	if (pwo != mdev->write_ordering || wo == WO_bio_barrier)
 		INFO("Method to ensure write ordering: %s\n", write_ordering_str[mdev->write_ordering]);
-}
-
-static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
-{
-	struct drbd_epoch *prev;
-	spin_lock(&mdev->epoch_lock);
-	prev = list_entry(epoch->list.prev, struct drbd_epoch, list);
-	if (prev == epoch || prev == mdev->current_epoch)
-		prev = NULL;
-	spin_unlock(&mdev->epoch_lock);
-	return prev;
 }
 
 /**
