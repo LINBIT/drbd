@@ -153,7 +153,6 @@ resource r0 {
     a <option>handlers</option>,
     a <option>net</option> and a <option>disk</option> section.
     Required parameter in this section: <option>protocol</option>.
-    Optional parameter in this section: <option>ignore-on</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -344,16 +343,6 @@ resource r0 {
   local disk and remote buffer cache.</para>
   <para>Protocol C: write IO is reported as completed, if it has
   reached both local and remote disk.</para>
-  </listitem>
-</varlistentry>
-
-<varlistentry>
-  <term><option>ignore-on <replaceable>host</replaceable></option></term>
-  <listitem>
-  <indexterm><primary>drbd.conf</primary><secondary>ignore-on</secondary></indexterm>
-    <para>In a three node DRBD setup there is a lower resources that connects only two
-    nodes. By using <option>ignore-on</option> it must be excepted from processing on the
-    other node.</para>
   </listitem>
 </varlistentry>
 
