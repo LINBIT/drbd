@@ -51,7 +51,7 @@ __drbdadm_resources_by_status() {
 
 __drbdadm_commands() {
 	# Lists drbdadm sub-commands
-	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect role cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
+	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect role state cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
 	COMPREPLY=( $(compgen -W "$commands" -- "$current") )
 }
 
