@@ -2736,16 +2736,16 @@ void die_if_no_resources(void)
 	if (!is_drbd_top && nr_ignore > 0 && nr_normal == 0) {
 		fprintf(stderr, "WARN: no normal resources defined for this host (%s)!?\n"
 			"Misspelled name of the local machine with the 'on' keyword ?\n", nodeinfo.nodename);
-		exit(E_config_invalid);
+		exit(E_usage);
 	}
 	if (!is_drbd_top && nr_normal == 0) {
 		fprintf(stderr, "WARN: no normal resources defined for this host (%s)!?\n", nodeinfo.nodename);
-		exit(E_config_invalid);
+		exit(E_usage);
 	}
 	if (is_drbd_top && nr_stacked == 0) {
 		fprintf(stderr, "WARN: nothing stacked for this host (%s), "
 			"nothing to do in stacked mode!\n", nodeinfo.nodename);
-		exit(E_config_invalid);
+		exit(E_usage);
 	}
 }
 
