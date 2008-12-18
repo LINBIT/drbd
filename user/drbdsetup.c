@@ -1304,6 +1304,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	struct drbd_tag_list *tl;
 	struct drbd_nl_cfg_reply *reply;
 	int sk_nl,rv;
+	int ignore_minor_not_known;
 
 	if (argc > 1)
 		warn_print_excess_args(argc, argv, 1);
@@ -1330,9 +1331,11 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	/* if there was an error, report and abort --
 	 * unless it was "this device is not there",
 	 * and command was "status" */
+	ignore_minor_not_known =
+		cm->gp.show_function == status_xml_scmd ||
+		cm->gp.show_function == sh_status_scmd;
 	if (reply->ret_code != NoError &&
-	   !(reply->ret_code == MinorNotKnown &&
-	     cm->gp.show_function == status_xml_scmd))
+	   !(reply->ret_code == MinorNotKnown && ignore_minor_not_known))
 		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
@@ -1548,6 +1551,8 @@ int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf("%i.%i\n", synced / 10, synced % 10);
 	else
 		printf("\n");
+
+	printf("\n_sh_status_process\n\n\n");
 
 	fflush(stdout);
 	return 0;

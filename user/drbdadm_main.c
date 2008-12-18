@@ -131,6 +131,7 @@ static int sh_ll_dev(struct d_resource* ,const char* );
 static int sh_md_dev(struct d_resource* ,const char* );
 static int sh_md_idx(struct d_resource* ,const char* );
 static int sh_b_pri(struct d_resource* ,const char* );
+static int sh_status(struct d_resource* ,const char* );
 static int admm_generic(struct d_resource* ,const char* );
 static int adm_khelper(struct d_resource* ,const char* );
 static int adm_generic_b(struct d_resource* ,const char* );
@@ -480,7 +481,7 @@ struct adm_cmd cmds[] = {
         { "sh-ip",                 sh_ip,           DRBD_acf2_shell     },
         { "sh-lr-of",              sh_lres,         DRBD_acf2_shell     },
         { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
-        { "sh-status",             adm_generic_s,   DRBD_acf2_shell     },
+        { "sh-status",             sh_status,       DRBD_acf2_gen_shell },
 
         { "proxy-up",              adm_proxy_up,    DRBD_acf2_shell     },
         { "proxy-down",            adm_proxy_down,  DRBD_acf2_shell     },
@@ -1313,6 +1314,28 @@ int adm_status_xml(struct d_resource* res,const char* cmd)
 
   if (!dry_run)
     printf("</resources>\n</drbd-status>\n");
+  return rv;
+}
+
+int sh_status(struct d_resource* res,const char* cmd)
+{
+  struct d_resource *r, *t;
+  int rv = 0;
+
+  if (!dry_run) {
+    printf("_drbd_version=%s\n_drbd_api=%u\n",
+      shell_escape(REL_VERSION), API_VERSION);
+    printf("_config_file=%s\n\n", shell_escape(config_save));
+  }
+
+  for_each_resource(r,t,res) {
+    printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
+		   shell_escape(r->me->lower->name) : "");
+    rv = adm_generic(r,cmd,SLEEPS_SHORT);
+    if (rv)
+	    break;
+  }
+
   return rv;
 }
 
