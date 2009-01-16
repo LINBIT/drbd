@@ -82,8 +82,12 @@ else
 		[ $BE_VERBOSE = 1 ] && set -x
 		DRBD_DEV=$(drbdadm sh-dev $DRBD_RESOURCE)
 		DRBD_MINOR=${DRBD_DEV##/dev/drbd}
-		_OOS=$(cat /proc/drbd | grep -A 2 ${DRBD_MINOR}: | tr ' ' '\n' | grep oos)
-		OUT_OF_SYNC=${_OOS##oos:} # unit KiB
+		OUT_OF_SYNC=$(sed -ne "/^ *$DRBD_MINOR:/ "'{
+				n;
+				s/^.* oos:\([0-9]*\).*$/\1/;
+				s/^$/0/; # default if not found
+				p;
+				q; }' < /proc/drbd) # unit KiB
 		_BDS=$(blockdev --getsize64 $BACKING_BDEV)
 		BACKING=$((_BDS / 1024)) # unit KiB
 		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + BACKING * SNAP_PERC / 100))
