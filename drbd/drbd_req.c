@@ -122,12 +122,23 @@ STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
 {
 	const int rw = bio_data_dir(bio);
+#ifndef __disk_stat_inc
+	int cpu;
+#endif
 
 	MUST_HOLD(&mdev->req_lock)
+#ifdef __disk_stat_inc
 	__disk_stat_inc(mdev->vdisk, ios[rw]);
 	__disk_stat_add(mdev->vdisk, sectors[rw], bio_sectors(bio));
 	disk_round_stats(mdev->vdisk);
 	mdev->vdisk->in_flight++;
+#else
+	cpu = part_stat_lock();
+	part_stat_inc(cpu, &mdev->vdisk->part0, ios[rw]);
+	part_stat_add(cpu, &mdev->vdisk->part0, sectors[rw], bio_sectors(bio));
+	part_stat_unlock();
+	mdev->vdisk->part0.in_flight++;
+#endif
 }
 
 /* Update disk stats when completing request upwards */
@@ -135,11 +146,21 @@ static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request
 {
 	int rw = bio_data_dir(req->master_bio);
 	unsigned long duration = jiffies - req->start_time;
+#ifndef __disk_stat_inc
+	int cpu;
+#endif
 
 	MUST_HOLD(&mdev->req_lock)
+#ifdef __disk_stat_add
 	__disk_stat_add(mdev->vdisk, ticks[rw], duration);
 	disk_round_stats(mdev->vdisk);
 	mdev->vdisk->in_flight--;
+#else
+	cpu = part_stat_lock();
+	part_stat_add(cpu, &mdev->vdisk->part0, ticks[rw], duration);
+	part_round_stats(cpu, &mdev->vdisk->part0);
+	part_stat_unlock();
+#endif
 }
 
 #endif
@@ -1232,7 +1253,11 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 		const int sps = 1 << HT_SHIFT; /* sectors per slot */
 		const int mask = sps - 1;
 		const sector_t first_sectors = sps - (sect & mask);
-		bp = bio_split(bio, bio_split_pool, first_sectors);
+		bp = bio_split(bio,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
+				bio_split_pool,
+#endif
+				first_sectors);
 
 		/* we need to get a "reference count" (ap_bio_cnt)
 		 * to avoid races with the disconnect/reconnect/suspend code.
