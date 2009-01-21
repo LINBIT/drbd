@@ -40,12 +40,17 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
+#include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
+#ifdef HAVE_LINUX_BYTEORDER_SWABB_H
 #include <linux/byteorder/swabb.h>
+#else
+#include <linux/swab.h>
+#endif
 
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>

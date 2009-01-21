@@ -48,6 +48,7 @@ $O/{.config,Makefile,include/linux/version.h}
 test -e $O/include/asm/atomic.h  ||
 test -e $O/include/asm/arch/atomic.h  ||
 test -e $O/include2/asm/atomic.h ||
+test -e $KDIR/include/asm-generic/atomic.h ||
 exit 1
 
 if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
@@ -66,7 +67,8 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     $O/include2/asm/atomic.h \
     $O/include/asm/atomic_32.h \
     $O/include2/asm/atomic_32.h \
-    $O/include/asm/arch/atomic_32.h
+    $O/include/asm/arch/atomic_32.h \
+    $KDIR/include/asm-generic/atomic.h
   do
     if grep_q "atomic_add_return" $f; then
       have_atomic_add=1
@@ -114,6 +116,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_kvec=0
   fi
+  if test -e $KDIR/include/linux/byteorder/swabb.h ; then
+    have_linux_byteorder_swabb_h=1
+  else
+    have_linux_byteorder_swabb_h=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -145,6 +152,8 @@ perl -pe "
   { ( $have_msleep ? '' : '//' ) . \$1}e;
  s{.*(#define KERNEL_HAS_KVEC.*)}
   { ( $have_kvec ? '' : '//' ) . \$1}e;
+ s{.*(#define HAVE_LINUX_BYTEORDER_SWABB_H.*)}
+  { ( $have_linux_byteorder_swabb_h ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
