@@ -254,7 +254,6 @@ struct Tl_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 			DUMPI(bio->bi_vcnt);
 			DUMPI(bio->bi_size);
 			DUMPI(bio->bi_phys_segments);
-			DUMPI(bio->bi_hw_segments);
 
 			goto fail2;
 			break;
