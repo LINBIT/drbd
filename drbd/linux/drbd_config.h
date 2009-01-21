@@ -86,6 +86,9 @@ extern const char *drbd_buildtag(void);
 //#define NEED_SG_SET_BUF
 #define HAVE_LINUX_SCATTERLIST_H
 
+/* 2.6.29 and up no longer have swabb.h */
+//#define HAVE_LINUX_BYTEORDER_SWABB_H
+
 /* Some vendor kernels < 2.6.7 might define msleep in one or
  * another way .. */
 

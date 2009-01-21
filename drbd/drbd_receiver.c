@@ -37,6 +37,7 @@
 #include <linux/in.h>
 #include <linux/mm.h>
 #include <linux/drbd_config.h>
+#include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
