@@ -48,6 +48,7 @@ $O/{.config,Makefile,include/linux/version.h}
 test -e $O/include/asm/atomic.h  ||
 test -e $O/include/asm/arch/atomic.h  ||
 test -e $O/include2/asm/atomic.h ||
+test -e $KDIR/include/asm-generic/atomic.h ||
 exit 1
 
 if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
@@ -66,7 +67,8 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     $O/include2/asm/atomic.h \
     $O/include/asm/atomic_32.h \
     $O/include2/asm/atomic_32.h \
-    $O/include/asm/arch/atomic_32.h
+    $O/include/asm/arch/atomic_32.h \
+    $KDIR/include/asm-generic/atomic.h
   do
     if grep_q "atomic_add_return" $f; then
       have_atomic_add=1
