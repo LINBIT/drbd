@@ -114,6 +114,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_kvec=0
   fi
+  if test -e $KDIR/include/linux/byteorder/swabb.h ; then
+    have_linux_byteorder_swabb_h=1
+  else
+    have_linux_byteorder_swabb_h=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -145,6 +150,8 @@ perl -pe "
   { ( $have_msleep ? '' : '//' ) . \$1}e;
  s{.*(#define KERNEL_HAS_KVEC.*)}
   { ( $have_kvec ? '' : '//' ) . \$1}e;
+ s{.*(#define HAVE_LINUX_BYTEORDER_SWABB_H.*)}
+  { ( $have_linux_byteorder_swabb_h ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
