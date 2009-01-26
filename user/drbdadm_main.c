@@ -2903,7 +2903,8 @@ int main(int argc, char** argv)
 	 * but command is dump / dump-xml, so implitict "all",
 	 * or an explicit "all" argument is given */
 	all_resources = 1;
-	die_if_no_resources();
+	if (!is_dump || !force)
+		die_if_no_resources();
 	/* verify ips first, for all of them */
         for_each_resource(res,tmp,config) {
 	  verify_ips(res);
