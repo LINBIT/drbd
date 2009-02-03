@@ -105,7 +105,7 @@ install-indep:
 	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
 	cp drbd/linux/drbd_config.h debian/$(PACKAGE)-source/usr/src/modules/drbd
 	mkdir debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
-#	cp -a scripts/adjust_drbd_config_h.sh debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
+	cp -a scripts/adjust_drbd_config_h.sh debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
 
 #	 install debian/ files
 	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
