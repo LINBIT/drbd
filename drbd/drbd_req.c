@@ -160,6 +160,7 @@ static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request
 	part_stat_add(cpu, &mdev->vdisk->part0, ticks[rw], duration);
 	part_round_stats(cpu, &mdev->vdisk->part0);
 	part_stat_unlock();
+	mdev->vdisk->part0.in_flight--;
 #endif
 }
 
