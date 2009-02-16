@@ -565,7 +565,8 @@ static int sh_resources(struct d_resource* ignored __attribute((unused)),const c
     printf(first?"%s":" %s",esc(res->name));
     first=0;
   }
-  printf("\n");
+  if (!first)
+	printf("\n");
 
   return 0;
 }

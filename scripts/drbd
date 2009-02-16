@@ -85,8 +85,8 @@ drbd_pretty_status()
 	sed_script=$(
 	   paste <(drbdadm sh-dev all | cat -n) \
 		 <(drbdadm sh-resources| tr ' ' '\n')  |
-	   sed -e 's/|/_/g' \
-	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#')
+	   sed -n -e 's/|/_/g' \
+	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#p')
 
 	p() {
 		sed -e "1,2d" \
