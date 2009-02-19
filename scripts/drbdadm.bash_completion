@@ -32,13 +32,14 @@ __drbdadm_all_resources() {
 
 __drbdadm_resources_by_status() {
 	# Detects only those resources that match a particular status
-	status_type="$1"
+	local status_type="$1"
 	shift 1
-	status_filter="$*"
+	local status_filter="$*"
 	local resources="$(${DRBDADM} sh-resources)"
 	local filtered_resources
+	local res
 	for res in $resources; do
-		local resource_status="$(${DRBDADM} $status_type $res)"
+		local resource_status="$(${DRBDADM} $status_type $res 2>/dev/null)"
 		local i
 		for i in $status_filter; do
 			if [ "${resource_status%%/*}" = $i ]; then
