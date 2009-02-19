@@ -3,6 +3,12 @@
 use strict;
 use warnings;
 
+## MAYBE set 'sane' PATH ??
+
+$ENV{LANG} = 'C';
+$ENV{LC_ALL} = 'C';
+$ENV{LANGUAGE} = 'C';
+
 #use Data::Dumper;
 
 # globals
@@ -17,6 +23,7 @@ my @stacked_devices;
 my @stacked_devices_ll_dev;
 
 my %xen_info;
+my %virsh_info;
 
 # sets $drbd{minor}->{name} (and possibly ->{ll_dev})
 sub map_minor_to_resource_names()
@@ -106,12 +113,80 @@ sub df_info
 # sets $drbd{minor}->{xen_info}
 sub get_xen_info()
 {
-	my $dom_name;
+	my $dom;
+	my $running = 0;
+	my %i;
 	for (`xm list --long`) {
-		/^\s+\(name ([^)\n]+)\)/ and $dom_name = $1;
-		/drbd:([^)\n]+)/ and $drbd{$minor_of_name{$1}}{xen_info} = $dom_name;
-		m{phy:/dev/drbd(\d+)} and $drbd{$1}{xen_info} = $dom_name;
+		/^\s+\(name ([^)\n]+)\)/ and $dom = $1;
+		/drbd:([^)\n]+)/ and $i{$minor_of_name{$1}}++;
+		m{phy:/dev/drbd(\d+)} and $i{$1}++;
+		/^\s+\(state r/ and $running = 1;
+		if (/^\)$/) {
+			for (keys %i) {
+				$drbd{$_}{xen_info} =
+					$running ?
+					"\*$dom" : "_$dom";
+			}
+			$running = 0;
+			%i = ();
+		}
 	}
+}
+
+# set $drbd{minor}->{virsh_info}
+sub get_virsh_info()
+{
+	local $/ = undef;
+	my $virsh_list = `virsh list --all`;
+	#  Id Name                 State
+	# ----------------------------------
+	#   1 mail                 running
+	#   2 support              running
+	#   - debian-master        shut off
+	#   - www                  shut off
+
+	my %info;
+	my $virsh_dumpxml;
+	my $pid;
+
+	$virsh_list =~ s/^\s+Id\s+Name\s+?State\s*-+\n//;
+	while ($virsh_list =~ m{^\s*(\S+)\s+(\S+)\s+(\S.*?)\n}gm) {
+		$info{$2} = { id => $1, name => $2, state => $3 };
+		# print STDERR "$1, $2, $3\n";
+	}
+	for my $dom (keys %info) {
+		# add error processing as above
+		$pid = open(V, "-|");
+		return unless defined $pid;
+
+		if ($pid == 0) { # child
+			exec("virsh", "dumpxml", $dom)
+			or die "can't exec program: $!";
+			# NOTREACHED
+		}
+
+		# parent
+		$_ = <V>;
+		close(V) or warn "virsh dumpxml exit code: $?\n";
+		while (m{<disk\ [^>]*>\s*
+			  <source\ dev='/dev/drbd(\d+)'/>\s*
+			  <target\ dev='([^']*)'\s+bus='([^']*)'}xg)
+		{
+			$drbd{$1}{virsh_info} = {
+				domname =>
+					$info{$dom}->{state} eq 'running' ?
+					"\*$dom" : "_$dom",
+				vdev => $2,
+				bus => $3,
+			};
+		}
+	}
+}
+
+sub virsh_info
+{
+	my $t = shift;
+	@{$t}{qw(domname vdev bus)};
 }
 
 # very stupid option handling
@@ -133,6 +208,7 @@ slurp_proc_drbd_or_exit;
 get_pv_info;
 get_df_info;
 get_xen_info;
+get_virsh_info;
 
 # generate output, adjust columns
 my @out = [];
@@ -143,6 +219,7 @@ for my $m (sort { $a <=> $b } keys %drbd) {
 	my @used_by = exists $t->{xen_info} ? "xen-vbd: $t->{xen_info}"
 		    : exists $t->{pv_info} ? pv_info $t->{pv_info}
 		    : exists $t->{df_info} ? df_info $t->{df_info}
+		    : exists $t->{virsh_info} ? virsh_info $t->{virsh_info}
 		    : ();
 
 	$out[$line] = [
