@@ -84,7 +84,9 @@ ifneq ($(DIST),redhat)
  endif
 endif
 	install -d $(PREFIX)/usr/sbin
-	install -m 755 drbd-overview.pl $(PREFIX)/usr/sbin
+	# strip .pl on install,
+	# at some point we might reimplement similar functionality in non-perl
+	install -m 755 drbd-overview.pl $(PREFIX)/usr/sbin/drbd-overview
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
