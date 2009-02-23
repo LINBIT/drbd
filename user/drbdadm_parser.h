@@ -106,6 +106,7 @@ enum yytokentype {
 	TK_ERR_STRING_TOO_LONG,
 	TK_ERR_DQSTRING_TOO_LONG,
 	TK_ERR_DQSTRING,
+	TK_NET_DELEGATE,
 };
 
 typedef struct YYSTYPE {
