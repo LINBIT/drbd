@@ -1958,6 +1958,12 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 		dp_flags |= DP_HARDBARRIER;
 	if (bio_sync(req->master_bio))
 		dp_flags |= DP_RW_SYNC;
+#ifdef BIO_RW_UNPLUG
+	/* for now handle SYNCIO and UNPLUG
+	 * as if they still were one and the same flag */
+	if (bio_flagged(req->master_bio, BIO_RW_UNPLUG))
+		dp_flags |= DP_RW_SYNC;
+#endif
 	if (mdev->state.conn >= SyncSource &&
 	    mdev->state.conn <= PausedSyncT)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
@@ -3649,7 +3655,12 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 	const int rw = bio->bi_rw;
 	const int biorw      = (rw & (RW_MASK|RWA_MASK));
 	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
-	const int biosync    = (rw & (1<<BIO_RW_SYNC));
+	const int biosync    =
+#ifdef BIO_RW_UNPLUG
+		rw & ((1<<BIO_RW_UNPLUG) | (1<<BIO_RW_SYNCIO));
+#else
+		rw & (1<<BIO_RW_SYNC);
+#endif
 
 	INFO("%s %s:%s%s%s Bio:%p - %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete ? "<<<" : ">>>",
