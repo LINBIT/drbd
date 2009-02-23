@@ -460,6 +460,7 @@ struct Drbd_Header {
  *   Data, DataReply (see Drbd_Data_Packet)
  */
 
+/* these defines must not be changed without changing the protocol version */
 #define DP_HARDBARRIER	      1
 #define DP_RW_SYNC	      2
 #define DP_MAY_SET_IN_SYNC    4
