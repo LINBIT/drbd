@@ -103,6 +103,7 @@ enum yytokentype {
 	TK_IPV4,
 	TK_IPV6,
 	TK_IPADDR6,
+	TK_NET_DELEGATE,
 };
 
 typedef struct YYSTYPE {

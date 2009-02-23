@@ -104,6 +104,7 @@ data-integrity-alg	{ DP; CP; return TK_NET_OPTION;         }
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
 no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
+discard-my-data		{ DP; CP; return TK_NET_DELEGATE;	}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
 after			{ DP; CP; return TK_SYNCER_OPTION;	}
 verify-alg              { DP; CP; return TK_SYNCER_OPTION;      }

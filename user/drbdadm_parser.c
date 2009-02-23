@@ -842,6 +842,16 @@ void startup_delegate(void *ctx)
 		pe_expected("<an option keyword> | become-primary-on | stacked-timeouts");
 }
 
+void net_delegate(void *ctx)
+{
+	enum pr_flags flags = (enum pr_flags)ctx;
+
+	if (!strcmp(yytext, "discard-my-data") && flags & IgnDiscardMyData)
+		EXP(';');
+	else
+		pe_expected("an option keyword");
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -915,8 +925,11 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_NET:
 			check_uniq("net section", "%s:net", res->name);
 			EXP('{');
-			res->net_options = parse_options(TK_NET_SWITCH,
-							 TK_NET_OPTION);
+			res->net_options = parse_options_d(TK_NET_SWITCH,
+							   TK_NET_OPTION,
+							   TK_NET_DELEGATE,
+							   &net_delegate,
+							   (void *)flags);
 			break;
 		case TK_SYNCER:
 			check_uniq("syncer section", "%s:syncer", res->name);

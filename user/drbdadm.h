@@ -171,6 +171,7 @@ enum pr_flags {
   PeerHRequired = 2,
   BothHRequired = ThisHRequired | PeerHRequired,
   NoneHAllowed  = 4,
+  IgnDiscardMyData = 8
 };
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern struct d_option *new_opt(char *name, char *value);
