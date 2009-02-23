@@ -316,7 +316,9 @@ static void parse_global(void)
 	}
 }
 
-static struct d_option *parse_options(int token_switch, int token_option)
+static struct d_option *parse_options_d(int token_switch, int token_option,
+					int token_delegate, void (*delegate)(void*),
+					void *ctx)
 {
 	char *opt_name;
 	int token;
@@ -336,6 +338,9 @@ static struct d_option *parse_options(int token_switch, int token_option)
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, ro);
+		} else if (token == token_delegate) {
+			delegate(ctx);
+			continue;
 		} else if (token == '}') {
 			return options;
 		} else {
@@ -352,6 +357,11 @@ static struct d_option *parse_options(int token_switch, int token_option)
 			pe_expected("_is_default | ;");
 		}
 	}
+}
+
+static struct d_option *parse_options(int token_switch, int token_option)
+{
+	return parse_options_d(token_switch, token_option, 0, NULL, NULL);
 }
 
 static void parse_address(char** addr, char** port, char** af)
@@ -590,6 +600,16 @@ void parse_skip()
 	while (level) ;
 }
 
+void net_delegate(void *ctx)
+{
+	enum pr_flags flags = (enum pr_flags)ctx;
+
+	if (!strcmp(yytext, "discard-my-data") && flags & IgnDiscardMyData)
+		EXP(';');
+	else
+		pe_expected("an option keyword");
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -639,8 +659,11 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_NET:
 			check_uniq("net section", "%s:net", res->name);
 			EXP('{');
-			res->net_options = parse_options(TK_NET_SWITCH,
-							 TK_NET_OPTION);
+			res->net_options = parse_options_d(TK_NET_SWITCH,
+							   TK_NET_OPTION,
+							   TK_NET_DELEGATE,
+							   &net_delegate,
+							   (void *)flags);
 			break;
 		case TK_SYNCER:
 			check_uniq("syncer section", "%s:syncer", res->name);
