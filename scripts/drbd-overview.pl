@@ -12,6 +12,7 @@ $ENV{LANGUAGE} = 'C';
 #use Data::Dumper;
 
 # globals
+my $PROC_DRBD = "/proc/drbd";
 my $stderr_to_dev_null = 1;
 my $watch = 0;
 my %drbd;
@@ -41,7 +42,7 @@ sub map_minor_to_resource_names()
 
 # sets $drbd{minor}->{state} and (and possibly ->{sync})
 sub slurp_proc_drbd_or_exit() {
-	unless (open(PD,"/proc/drbd")) {
+	unless (open(PD,$PROC_DRBD)) {
 		print "drbd not loaded\n";
 		exit 0;
 	}
@@ -190,7 +191,14 @@ sub virsh_info
 }
 
 # very stupid option handling
+# first, for debugging of this script and its regex'es,
+# allow reading from a prepared file instead of /proc/drbd
+if (@ARGV > 1 and $ARGV[0] eq '--proc-drbd') {
+	$PROC_DRBD = $ARGV[1];
+	splice @ARGV,0,2;
+}
 $stderr_to_dev_null = 0 if @ARGV and $ARGV[0] eq '-d';
+
 
 open STDERR, "/dev/null"
 	if $stderr_to_dev_null;
@@ -233,6 +241,9 @@ for my $m (sort { $a <=> $b } keys %drbd) {
 		$maxw[$c] = $l unless $maxw[$c] and $l < $maxw[$c];
 	}
 	++$line;
+	if (defined $t->{sync}) {
+		$out[$line++] =  [ $t->{sync} ];
+	}
 }
 my @fmt = map { "%-${_}s" } @maxw;
 for (@out) {
