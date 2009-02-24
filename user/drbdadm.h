@@ -87,6 +87,7 @@ struct d_host_info
 {
   struct d_name *on_hosts;
   char* device;
+  int device_minor;
   char* disk;
   char* address;
   char* port;
@@ -118,6 +119,7 @@ struct d_resource
 
   /* these get propagated to host_info sections later. */
   char* device;
+  int device_minor;
   char* disk;
   char* meta_disk;
   char* meta_index;
@@ -136,7 +138,6 @@ struct d_resource
   unsigned int stacked_timeouts:1;
   unsigned int ignore:1;
   unsigned int stacked:1;
-  int me_minor; /* cache local minor number of this resource */
 };
 
 extern int adm_attach(struct d_resource* ,const char* );

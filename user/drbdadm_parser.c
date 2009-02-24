@@ -588,6 +588,41 @@ static void parse_meta_disk(char **disk, char** index)
 	}
 }
 
+static void parse_device(struct d_name* on_hosts, int *minor, char **device)
+{
+	struct d_name *h;
+	int m;
+
+	switch (yylex()) {
+	case TK_STRING:
+		*device = yylval.txt;
+		switch (yylex()) {
+		default:
+			pe_expected("minor | ;");
+			/* fall through */
+		case ';':
+			m = dt_minor_of_dev(*device);
+			if (m < 0) {
+				fprintf(stderr,
+					"%s:%d: no minor given nor device name conains a minor number\n",
+					config_file, fline);
+				config_valid = 0;
+			}
+			*minor = m;
+			goto out;
+		case TK_MINOR:
+			; /* double fall through */
+		}
+	case TK_MINOR:
+		EXP(TK_INTEGER);
+		*minor = atoi(yylval.txt);
+		EXP(';');
+	}
+out:
+	for_each_host(h, on_hosts)
+		check_uniq("device-minor", "device-minor:%s:%d", h->name, *minor);
+}
+
 static void parse_host_section(struct d_resource *res,
 			       struct d_name* on_hosts, int require_all)
 {
@@ -600,6 +635,7 @@ static void parse_host_section(struct d_resource *res,
 	host=calloc(1,sizeof(struct d_host_info));
 	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
+	host->device_minor = -1;
 	for_each_host(h, on_hosts)
 		check_uniq("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
@@ -618,16 +654,7 @@ static void parse_host_section(struct d_resource *res,
 		case TK_DEVICE:
 			for_each_host(h, on_hosts)
 				check_uniq("device statement", "%s:%s:device", res->name, h->name);
-			EXP(TK_STRING);
-			host->device = yylval.txt;
-			for_each_host(h, on_hosts)
-				check_uniq("device", "device:%s:%s", h->name, yylval.txt);
-			if (dt_minor_of_dev(host->device) < 0) {
-				fprintf(stderr, "%s:%d: cannot determine minor number of %s\n",
-					config_file, line, host->device);
-				config_valid = 0;
-			}
-			EXP(';');
+			parse_device(on_hosts, &host->device_minor, &host->device);
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, on_hosts)
@@ -650,17 +677,7 @@ static void parse_host_section(struct d_resource *res,
 				host->meta_index = strdup("flexible");
 			}
 			check_meta_disk(host);
-			switch (yylex()) {
-			case TK__MAJOR:
-				EXP(TK_INTEGER);
-				host->meta_major = atoi(yylval.txt);
-				EXP(TK__MINOR);
-				EXP(TK_INTEGER);
-				host->meta_minor = atoi(yylval.txt);
-				EXP(';');
-			case ';':
-				break;
-			}
+			EXP(';');
 			break;
 		case TK_PROXY:
 			parse_proxy_section(host);
@@ -683,8 +700,12 @@ static void parse_host_section(struct d_resource *res,
 
 	if(!host->device && res->device) {
 		host->device = strdup(res->device);
+	}
+
+	if (host->device_minor == -1 && res->device_minor != -1) {
+		host->device_minor = res->device_minor;
 		for_each_host(h, on_hosts)
-			check_uniq("device", "device:%s:%s", h->name, host->device);
+			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
 	}
 
 	if(!host->meta_disk && res->meta_disk) {
@@ -695,7 +716,7 @@ static void parse_host_section(struct d_resource *res,
 
 	if (!require_all)
 		return;
-	if (!host->device)
+	if (!host->device && host->device_minor == -1)
 		derror(host, res, "device");
 	if (!host->disk)
 		derror(host, res, "disk");
@@ -789,11 +810,9 @@ static void parse_stacked_section(struct d_resource* res)
 	while (1) {
 		switch(yylex()) {
 		case TK_DEVICE:
-			EXP(TK_STRING);
-			host->device = yylval.txt;
 			for_each_host(h, host->on_hosts)
-				check_uniq("device", "device:%s:%s", h->name, yylval.txt);
-			EXP(';');
+				check_uniq("device statement", "%s:%s:device", res->name, h->name);
+			parse_device(host->on_hosts, &host->device_minor, &host->device);
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
@@ -819,8 +838,8 @@ static void parse_stacked_section(struct d_resource* res)
 			check_uniq("device", "device:%s:%s", h->name, host->device);
 	}
 
-	if (!host->device)
-		derror(host,res,"device");
+	if (!host->device && host->device_minor == -1)
+		derror(host, res, "device");
 	if (!host->disk)
 		derror(host,res,"disk");
 	if (!host->address)
@@ -865,7 +884,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
-	res->me_minor = -1; /* will be set once in dt_minor_of_res */
+	res->device_minor = -1;
 
 	while(1) {
 		switch((token=yylex())) {
@@ -958,9 +977,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 							    TK_PROXY_OPTION);
 			break;
 		case TK_DEVICE:
-			EXP(TK_STRING);
-			res->device = yylval.txt;
-			EXP(';');
+			check_uniq("device statement", "%s:device", res->name);
+			parse_device(NULL, &res->device_minor, &res->device);
 			break;
 		case TK_META_DISK:
 			parse_meta_disk(&res->meta_disk, &res->meta_index);

@@ -125,6 +125,7 @@ static int sh_resources(struct d_resource* ,const char* );
 static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
+static int sh_udev(struct d_resource*,const char* );
 static int sh_ip(struct d_resource* ,const char* );
 static int sh_lres(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
@@ -207,21 +208,6 @@ void schedule_dcmd(int (* function)(struct d_resource*,const char* ),
 	deferred_cmds_tail[order] = d;
 }
 
-static int dt_minor_of_res(struct d_resource *res)
-{
-	int m;
-	if (res->me_minor >= 0)
-		return res->me_minor;
-	if (res->me_minor < -1)
-		return -1;
-	m = dt_minor_of_dev(res->me->device);
-	if (m < 0)
-		res->me_minor = -2;
-	else
-		res->me_minor = m;
-	return m;
-}
-
 static int adm_generic(struct d_resource* res,const char* cmd,int flags);
 
 /* Returns non-zero if the resource is down. */
@@ -268,7 +254,7 @@ enum do_register { SAME_ANYWAYS, DO_REGISTER };
 enum do_register
 if_conf_differs_confirm_or_abort(struct d_resource *res)
 {
-	int minor = dt_minor_of_res(res);
+	int minor = res->me->device_minor;
 	char *f;
 
 	/* if the resource was down,
@@ -308,7 +294,7 @@ if_conf_differs_confirm_or_abort(struct d_resource *res)
 
 static void register_config_file(struct d_resource *res, const char* cfname)
 {
-	int minor = dt_minor_of_res(res);
+	int minor = res->me->device_minor;
 	if (test_if_resource_is_down(res))
 		unregister_minor(minor);
 	else
@@ -475,6 +461,7 @@ struct adm_cmd cmds[] = {
         { "sh-resource",           sh_resource,     DRBD_acf2_shell     },
         { "sh-mod-parms",          sh_mod_parms,    DRBD_acf2_gen_shell },
         { "sh-dev",                sh_dev,          DRBD_acf2_shell     },
+        { "sh-udev",               sh_udev,         DRBD_acf2_shell     },
         { "sh-ll-dev",             sh_ll_dev,       DRBD_acf2_shell     },
         { "sh-md-dev",             sh_md_dev,       DRBD_acf2_shell     },
         { "sh-md-idx",             sh_md_idx,       DRBD_acf2_shell     },
@@ -654,7 +641,9 @@ static void dump_host_info(struct d_host_info* hi)
   } else {
     printI("on %s {\n",names_to_str(hi->on_hosts)); ++indent;
   }
-  printA("device", esc(hi->device));
+  printI("device%*s",-19+INDENT_WIDTH*indent,"");
+  if (hi->device) printf("%s ", esc(hi->device));
+  printf("minor %d;\n", hi->device_minor);
   if (!hi->lower) printA("disk"  , esc(hi->disk));
   dump_address("address", hi->address, hi->port, hi->address_family);
   if (!hi->lower) {
@@ -730,7 +719,7 @@ static void dump_host_info_xml(struct d_host_info* hi)
   }
 
   printI("<host name=\"%s\">\n",names_to_str(hi->on_hosts)); ++indent;
-  printI("<device>%s</device>\n", esc_xml(hi->device));
+  printI("<device minor=\"%d\">%s</device>\n", hi->device_minor, esc_xml(hi->device));
   printI("<disk>%s</disk>\n", esc_xml(hi->disk));
   printI("<address family=\"%s\" port=\"%s\">%s</address>\n", hi->address_family, hi->port, hi->address);
   if (!strncmp(hi->meta_index,"flex",4))
@@ -840,6 +829,15 @@ static int sh_dev(struct d_resource* res,const char* unused __attribute((unused)
   printf("%s\n",res->me->device);
 
   return 0;
+}
+
+static int sh_udev(struct d_resource* res,const char* unused __attribute((unused)))
+{
+	/* Assuming that the string starts with "/dev/"*/
+	if (strlen(res->me->device) > 5)
+		printf("%s\n", res->me->device + 5);
+
+	return 0;
 }
 
 static int sh_ip(struct d_resource* res,const char* unused __attribute((unused)))
@@ -994,6 +992,7 @@ static void expand_opts(struct d_option* co, struct d_option** opts)
 static void expand_common(void)
 {
 	struct d_resource *res,*tmp;
+	struct d_host_info *h;
 
 	if (!common)
 		return;
@@ -1014,6 +1013,11 @@ static void expand_common(void)
 
 		if (!res->become_primary_on)
 			res->become_primary_on = common->become_primary_on;
+
+		for (h = res->all_hosts; h; h = h->next) {
+			if (!h->device)
+				m_asprintf(&h->device, "/dev/drbd/%s", res->name);
+		}
 	}
 }
 
@@ -1189,7 +1193,7 @@ int adm_attach(struct d_resource* res,const char* unused __attribute((unused)))
   int argc=0;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="disk";
   argv[NA(argc)]=res->me->disk;
   if(!strcmp(res->me->meta_disk,"internal")) {
@@ -1225,7 +1229,7 @@ int adm_resize(struct d_resource* res,const char* unused __attribute((unused)))
   int i,argc=0;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="resize";
   opt=find_opt(res->disk_options,"size");
   if(opt) ssprintf(argv[NA(argc)],"--%s=%s",opt->name,opt->value);
@@ -1243,7 +1247,7 @@ int _admm_generic(struct d_resource* res ,const char* cmd, int flags)
   int argc=0,i;
 
   argv[NA(argc)]=drbdmeta;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="v08";
   if(!strcmp(res->me->meta_disk,"internal")) {
     argv[NA(argc)]=res->me->disk;
@@ -1280,7 +1284,7 @@ static int adm_generic(struct d_resource* res,const char* cmd,int flags)
   int argc=0,i;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]=(char*)cmd;
   for(i=0;i<soi;i++) {
     argv[NA(argc)]=setup_opts[i];
@@ -1429,7 +1433,7 @@ int adm_connect(struct d_resource* res,const char* unused __attribute((unused)))
   int argc=0;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="net";
   make_address(res->me->address, res->me->port, res->me->address_family);
   if(res->me->proxy) {
@@ -1492,7 +1496,7 @@ void convert_after_option(struct d_resource* res)
     if(depends_on_res->ignore) {
       res->sync_options = del_opt(res->sync_options, opt);
     } else {
-      ssprintf(ptr,"%d",dt_minor_of_dev(depends_on_res->me->device));
+      ssprintf(ptr,"%d", depends_on_res->me->device_minor);
       free(opt->value);
       opt->value=strdup(ptr);
     }
@@ -1580,7 +1584,7 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   int argc=0;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="syncer";
 
   argv[NA(argc)]="--set-defaults";
@@ -1612,7 +1616,7 @@ static int adm_wait_c(struct d_resource* res ,const char* unused __attribute((un
   int argc=0,rv;
 
   argv[NA(argc)]=drbdsetup;
-  argv[NA(argc)]=res->me->device;
+  ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
   argv[NA(argc)]="wait-connect";
   if (is_drbd_top && !res->stacked_timeouts) {
     unsigned long timeout = 20;
@@ -1649,7 +1653,7 @@ struct d_resource* res_by_minor(const char *id)
   if (mm < 0) return NULL;
 
   for_each_resource(res,t,config) {
-    if (mm == dt_minor_of_res(res)) {
+    if (mm == res->me->device_minor) {
       is_drbd_top = res->stacked;
       return res;
     }
@@ -1830,7 +1834,8 @@ static int adm_wait_ci(struct d_resource* ignored __attribute((unused)),const ch
     if (is_drbd_top != res->stacked) continue;
     argc=0;
     argv[NA(argc)]=drbdsetup;
-    argv[NA(argc)]=res->me->device;
+    ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+
     argv[NA(argc)]="wait-connect";
     opt=res->startup_options;
     make_options(opt);
@@ -2163,7 +2168,7 @@ int vcheck_uniq(const char* what, const char *fmt, va_list ap)
   }
   e.data = (void*)(long)fline;
   ep = hsearch(e, FIND);
-  // fprintf(stderr,"%s: FIND %s: %p\n",res->name,e.key,ep);
+  // fprintf(stderr,"FIND %s: %p\n",e.key,ep);
   if (ep) {
     if (what) {
       fprintf(stderr,
@@ -2176,7 +2181,7 @@ int vcheck_uniq(const char* what, const char *fmt, va_list ap)
     config_valid = 0;
   } else {
     ep = hsearch(e, ENTER);
-    // fprintf(stderr,"%s: ENTER %s as %s: %p\n",res->name,e.key,ep->key,ep);
+    // fprintf(stderr,"ENTER %s as %s: %p\n",e.key,ep->key,ep);
     if (!ep) {
       fprintf(stderr, "entry failed.\n");
       exit(E_thinko);
@@ -2730,7 +2735,7 @@ void count_resources_or_die(void)
 
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
-		int m = dt_minor_of_res(res);
+		int m = res->me->device_minor;
 
 		if (res->ignore)
 			continue;
@@ -2882,10 +2887,6 @@ int main(int argc, char** argv)
     expand_common();
   if (is_dump || dry_run || config_from_stdin)
     do_register_minor = 0;
-
-  /* disable check_uniq, so it won't interfere
-   * with parsing of drbdsetup show output */
-  config_valid = 2;
 
   if (config == NULL) {
     fprintf(stderr, "no resources defined!\n");

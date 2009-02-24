@@ -200,6 +200,10 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	argv[argc++]="show";
 	argv[argc++]=0;
 
+	/* disable check_uniq, so it won't interfere
+	 * with parsing of drbdsetup show output */
+	config_valid = 2;
+
 	yyin = m_popen(&pid,argv);
 	line = 1;
 	sprintf(config_file_dummy,"drbdsetup %s show", res->me->device);
@@ -210,7 +214,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
 	if(running->me) {
-		do_attach |= strcmp(res->me->device, running->me->device);
+		do_attach |= (res->me->device_minor != running->me->device_minor);
 		do_attach |= !disk_equal(res->me, running->me);
 		have_disk = (running->me->disk != NULL);
 	} else  do_attach |= 1;

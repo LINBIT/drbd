@@ -288,28 +288,7 @@ int dt_lock_drbd(const char* device)
 					device, dev_major, LANANA_DRBD_MAJOR);
 			exit(20);
 		}
-	} else {
-		/* See also dt_minor_of_dev(),
-		 * maybe we are about to create it?
-		 * But warn people which expect drbdsetup to behave like
-		 * "drbdsetup cute_name attach", it is
-		 * "drbdsetup /dev/drbd# attach". */
-		if (0 < strncmp("/dev/drbd0",device,10) ||
-		    0 > strncmp("/dev/drbd9",device,10))
-		{
-			/* warn only, don't fail, there may be a reason to not
-			 * use this device naming convention.
-			 *
-			 * but people expecting to be able to use arbitrary
-			 * names for device names, just because we default to
-			 * drbd0, should be made aware of their error. */
-			fprintf(stderr,
-				"We expect our device names to be named\n"
-				"/dev/drbd<minor-number>, not %s\n", device);
-		}
 	}
-
-
 	/* THINK.
 	 * maybe we should also place a fcntl lock on the
 	 * _physical_device_ we open later...

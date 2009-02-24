@@ -1,0 +1,6 @@
+# This file contains the rules to create named DRBD devices.
+
+KERNEL=="drbd*", \
+	PROGRAM="/sbin/drbdadm sh-udev minor-%m", \
+	NAME="%c", \
+	SYMLINK="%k"

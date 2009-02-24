@@ -28,7 +28,8 @@ DIST            :=$(strip \
   $(if $(wildcard /etc/gentoo-release),gentoo,\
   $(if $(wildcard /etc/redhat-release),redhat,\
   $(if $(wildcard /etc/slackware-version),slackware,\
-  $(if $(wildcard /sbin/rcsyslog),suselike,)))))
+  $(if $(wildcard /etc/debian_version),debian,\
+  $(if $(wildcard /sbin/rcsyslog),suselike,))))))
 
 ifeq ($(DIST),slackware)
   INITD=$(PREFIX)/etc/rc.d/
@@ -55,6 +56,12 @@ else
    COMPLETION=drbdadm
 endif
 
+ifeq ($(DIST),debian)
+   UDEV_RULES=$(PREFIX)/etc/udev/drbd.rules
+else
+   UDEV_RULES=$(PREFIX)/etc/udev/rules.d/65_drbd.rules
+endif
+
 all:
 
 install:
@@ -78,6 +85,7 @@ install:
 	  ln -sf notify.sh notify-out-of-sync.sh; )
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
+	install -m 644 drbd.rules $(UDEV_RULES)
 ifneq ($(DIST),redhat)
  ifneq ($(DIST),slackware)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
@@ -98,6 +106,10 @@ ifeq ($(DIST),redhat)
 endif
 	@ echo
 	@ echo "Don't forget to run update-rc.d or chkconfig"
+ifeq ($(DIST),debian)
+	@ echo "Do not forget to run ln -s ../drbd.rules /etc/udev/rules.d/65_drbd.rules"
+endif
+
 
 clean:
 	rm -f *~

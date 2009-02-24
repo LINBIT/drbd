@@ -1404,7 +1404,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	consume_tag_blob(T_my_addr, rtl, &address, &addr_len);
 	if(backing_dev || address) {
 		printf("_this_host {\n");
-		printf("\tdevice\t\t\t\"/dev/drbd%d\";\n",minor);
+		printf("\tdevice\t\t\tminor %d;\n",minor);
 		if(backing_dev) {
 			printf("\tdisk\t\t\t\"%s\";\n",backing_dev);
 			consume_tag_int(T_meta_dev_idx,rtl,&idx);

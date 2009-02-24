@@ -55,6 +55,7 @@ ask			{ DP; return TK_ASK;			}
 skip			{ DP; return TK_SKIP;			}
 disk			{ DP; return TK_DISK;			}
 proxy			{ DP; return TK_PROXY;			}
+minor			{ DP; return TK_MINOR;			}
 inside			{ DP; return TK_INSIDE;			}
 syncer			{ DP; return TK_SYNCER;			}
 device			{ DP; return TK_DEVICE;			}
