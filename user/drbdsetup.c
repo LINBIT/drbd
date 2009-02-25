@@ -1385,7 +1385,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx=0;
 	char *str, *backing_dev, *address;
-	unsigned int addr_len;
+	unsigned int addr_len = 0;
 
 	// find all commands that have options and print those...
 	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
