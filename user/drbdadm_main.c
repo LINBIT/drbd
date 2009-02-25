@@ -126,6 +126,7 @@ static int sh_resource(struct d_resource* ,const char* );
 static int sh_mod_parms(struct d_resource* ,const char* );
 static int sh_dev(struct d_resource* ,const char* );
 static int sh_udev(struct d_resource*,const char* );
+static int sh_minor(struct d_resource*,const char* );
 static int sh_ip(struct d_resource* ,const char* );
 static int sh_lres(struct d_resource* ,const char* );
 static int sh_ll_dev(struct d_resource* ,const char* );
@@ -462,6 +463,7 @@ struct adm_cmd cmds[] = {
         { "sh-mod-parms",          sh_mod_parms,    DRBD_acf2_gen_shell },
         { "sh-dev",                sh_dev,          DRBD_acf2_shell     },
         { "sh-udev",               sh_udev,         DRBD_acf2_shell     },
+        { "sh-minor",              sh_minor,        DRBD_acf2_shell     },
         { "sh-ll-dev",             sh_ll_dev,       DRBD_acf2_shell     },
         { "sh-md-dev",             sh_md_dev,       DRBD_acf2_shell     },
         { "sh-md-idx",             sh_md_idx,       DRBD_acf2_shell     },
@@ -836,6 +838,13 @@ static int sh_udev(struct d_resource* res,const char* unused __attribute((unused
 	/* Assuming that the string starts with "/dev/"*/
 	if (strlen(res->me->device) > 5)
 		printf("%s\n", res->me->device + 5);
+
+	return 0;
+}
+
+static int sh_minor(struct d_resource* res,const char* unused __attribute((unused)))
+{
+	printf("%d\n", res->me->device_minor);
 
 	return 0;
 }

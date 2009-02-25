@@ -196,9 +196,11 @@ open STDERR, "/dev/null"
 	if $stderr_to_dev_null;
 
 @resources = split(/\s+/, `drbdadm sh-resources`);
-@devices = map { s,^/dev/drbd(\d+)\n?\z,$1,; $_ } `drbdadm sh-dev all`;
+@devices = split(/\s+/, `drbdadm sh-minor all`);
+@devices = map { s,^/dev/drbd(\d+)\n?\z,$1,; $_ } `drbdadm sh-dev all` if($? ne "0");
 @stacked_resources = split(/\s+/,`drbdadm -S sh-resources`);
-@stacked_devices = map { s,^/dev/drbd(\d+)\n?\z$,$1,; $_ } `drbdadm -S sh-dev all`;
+@stacked_devices = split(/\s+/, `drbdadm -S sh-minor all`);
+@stacked_devices = map { s,^/dev/drbd(\d+)\n?\z$,$1,; $_ } `drbdadm -S sh-dev all` if($? ne "0");
 @stacked_devices_ll_dev = map { s,^/dev/drbd(\d+)\n?\z$,$1,; $_ } `drbdadm -S sh-ll-dev all`;
 
 map_minor_to_resource_names;
