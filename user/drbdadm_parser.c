@@ -776,6 +776,7 @@ static void parse_stacked_section(struct d_resource* res)
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
+	host->device_minor = -1;
 	res->all_hosts = APPEND(res->all_hosts, host);
 	EXP(TK_STRING);
 	l_res_name = yylval.txt;
@@ -836,6 +837,12 @@ static void parse_stacked_section(struct d_resource* res)
 		host->device = strdup(res->device);
 		for_each_host(h, host->on_hosts)
 			check_uniq("device", "device:%s:%s", h->name, host->device);
+	}
+
+	if (host->device_minor == -1 && res->device_minor != -1) {
+		host->device_minor = res->device_minor;
+		for_each_host(h, host->on_hosts)
+			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
 	}
 
 	if (!host->device && host->device_minor == -1)
