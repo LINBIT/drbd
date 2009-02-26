@@ -634,12 +634,18 @@ unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 	unsigned long s;
 	unsigned long flags;
 
+	/* if I don't have a disk, I don't know about out-of-sync status */
+	if (!inc_local_if_state(mdev, Negotiating))
+		return 0;
+
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm_pages) return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
 	s = b->bm_set;
 	spin_unlock_irqrestore(&b->bm_lock, flags);
+
+	dec_local(mdev);
 
 	return s;
 }
