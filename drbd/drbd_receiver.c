@@ -2349,12 +2349,14 @@ STATIC void drbd_uuid_dump(struct drbd_conf *mdev, char *text, u64 *uuid)
 		INFO("%s uuid info vanished while I was looking!\n", text);
 		return;
 	}
-	INFO("%s %016llX:%016llX:%016llX:%016llX\n",
+	INFO("%s %016llX:%016llX:%016llX:%016llX bits:%llu flags:%llX\n",
 	     text,
 	     (unsigned long long)uuid[Current],
 	     (unsigned long long)uuid[Bitmap],
 	     (unsigned long long)uuid[History_start],
-	     (unsigned long long)uuid[History_end]);
+	     (unsigned long long)uuid[History_end],
+	     (unsigned long long)uuid[UUID_SIZE],
+	     (unsigned long long)uuid[UUID_FLAGS]);
 }
 
 /*
