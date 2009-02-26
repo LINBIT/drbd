@@ -83,17 +83,15 @@ drbd_pretty_status()
 	fi
 	sed -e '2q' < "$proc_drbd"
 	sed_script=$(
-	   (
-	   paste <(drbdadm sh-dev all) \
-		 <(drbdadm sh-resources| tr ' /' '\n_') ;
-	   paste <(drbdadm -S sh-dev all) \
-		 <(drbdadm -S sh-resources | tr ' /' '\n_' ) \
-		 <(drbdadm -S sh-ll-dev all )
-	   ) | cat -n |
-	   sed -n -e 's/|/_/g' \
-	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)./dev/drbd\([0-9]\+\)$#s|^ *\2:|\1\&\3^^\4|#p' \
-	       -e 's#^\( *[0-9]\+.\)/dev/drbd\([0-9]\+\).\(.*\)$#s|^ *\2:|\1\&\3|#p'
-	       )
+		i=0;
+		_sh_status_process() {
+			let i++ ;
+			stacked=${_stacked_on:+"^^${_stacked_on_minor:-${_stacked_on//|/_}}"}
+			printf "s|^ *%u:|%6u\t&%s%s|\n" \
+				$_minor $i \
+				"${_res_name//|/_}" "$stacked"
+		};
+		eval "$(drbdadm sh-status)" )
 
 	p() {
 		sed -e "1,2d" \
