@@ -19,6 +19,7 @@ Group: System Environment/Kernel
 Packager:
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
+BuildRequires: flex, gcc
 
 %description
 DRBD mirrors a block device over the network to another machine.
@@ -123,7 +124,7 @@ ___
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
-/usr/sbin/drbd-overview.pl
+/usr/sbin/drbd-overview
 /usr/lib/drbd/outdate-peer.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/xen/scripts/block-drbd
