@@ -1963,6 +1963,9 @@ STATIC struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 {
 	struct drbd_conf *mdev;
 
+	if (nlp->drbd_minor >= minor_count)
+		return NULL;
+
 	mdev = minor_to_mdev(nlp->drbd_minor);
 
 	if (!mdev && (nlp->flags & DRBD_NL_CREATE_DEVICE)) {

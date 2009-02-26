@@ -1305,6 +1305,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	struct drbd_nl_cfg_reply *reply;
 	int sk_nl,rv;
 	int ignore_minor_not_known;
+	int dummy;
 
 	if (argc > 1)
 		warn_print_excess_args(argc, argv, 1);
@@ -1339,6 +1340,11 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
+
+	/* in case cm->packet_id == P_get_state, and the gp.show_function did
+	 * nothing with the sync_progress info, consume it here, so it won't
+	 * confuse users because it gets dumped below. */
+	consume_tag_int(T_sync_progress, reply->tag_list, &dummy);
 
 	if(dump_tag_list(reply->tag_list)) {
 		printf("# Found unknown tags, you should update your\n"
@@ -1388,7 +1394,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx = idx;
 	char *str, *backing_dev, *address;
-	unsigned int addr_len = addr_len;
+	unsigned int addr_len = 0;
 
 	// find all commands that have options and print those...
 	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {

@@ -1,8 +1,8 @@
 Source: drbd8
 Section: misc
 Priority: extra
-Maintainer: David Krovich <dkrovich@csee.wvu.edu>
-Uploaders: Philipp Hug <debian@hug.cx>
+Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
+Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
 Build-Depends: debhelper (>= 4), drbd8-source
 Standards-Version: 3.6.1
 
