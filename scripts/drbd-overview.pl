@@ -16,11 +16,6 @@ my $stderr_to_dev_null = 1;
 my $watch = 0;
 my %drbd;
 my %minor_of_name;
-my @resources;
-my @devices;
-my @stacked_resources;
-my @stacked_devices;
-my @stacked_devices_ll_dev;
 
 my %xen_info;
 my %virsh_info;
@@ -28,15 +23,45 @@ my %virsh_info;
 # sets $drbd{minor}->{name} (and possibly ->{ll_dev})
 sub map_minor_to_resource_names()
 {
-	my $i;
-	for ($i = 0; $i < @resources; $i++) {
-		$drbd{$devices[$i]}{name} = $resources[$i];
-		$minor_of_name{$resources[$i]} = $devices[$i];
+	my $drbdadm_sh_status = `drbdadm sh-status`;
+
+	while ($drbdadm_sh_status =~ m{
+		\n
+		_stacked_on=(.*?)\n
+		(?:_stacked_on_device=(.*)\n
+		   _stacked_on_minor=(\d*)\n)?
+		_minor=(.*?)\n
+		_res_name=(.*?)\n
+		}xg)
+	{
+		$drbd{$4}{name} = $5;
+		$minor_of_name{$5} = $4;
+		$drbd{$4}{ll_dev} = defined($3) ? $4 : $1
+			if $1;
 	}
-	for ($i = 0; $i < @stacked_resources; $i++) {
-		$drbd{$stacked_devices[$i]}{name} = $stacked_resources[$i];
-		$drbd{$stacked_devices[$i]}{ll_dev} = $stacked_devices_ll_dev[$i];
+
+	# fix up hack for git versions 8.3.1 > x > 8.3.0:
+	# _stacked_on_minor information is missing,
+	# _stacked_on is resource name
+	# may be defined (and reported) out of order.
+	for my $i (keys %drbd) {
+		next unless exists $drbd{$i}->{ll_dev};
+		my $lower = $drbd{$i}->{ll_dev};
+		next if $lower =~ /^\d+$/;
+		next unless exists $minor_of_name{$lower};
+		$drbd{$i}->{ll_dev} = $minor_of_name{$lower};
 	}
+	# fix up to be able to report "lower dev of:"
+	for my $i (keys %drbd) {
+		next unless exists $drbd{$i}->{ll_dev};
+		my $lower = $drbd{$i}->{ll_dev};
+		$drbd{$lower}->{ll_dev_of} = $i;
+	}
+}
+
+sub ll_dev_info {
+	my $i = shift;
+	( "ll-dev of:", $i, $drbd{$i}{name} )
 }
 
 # sets $drbd{minor}->{state} and (and possibly ->{sync})
@@ -195,14 +220,6 @@ $stderr_to_dev_null = 0 if @ARGV and $ARGV[0] eq '-d';
 open STDERR, "/dev/null"
 	if $stderr_to_dev_null;
 
-@resources = split(/\s+/, `drbdadm sh-resources`);
-@devices = split(/\s+/, `drbdadm sh-minor all`);
-@devices = map { s,^/dev/drbd(\d+)\n?\z,$1,; $_ } `drbdadm sh-dev all` if($? ne "0");
-@stacked_resources = split(/\s+/,`drbdadm -S sh-resources`);
-@stacked_devices = split(/\s+/, `drbdadm -S sh-minor all`);
-@stacked_devices = map { s,^/dev/drbd(\d+)\n?\z$,$1,; $_ } `drbdadm -S sh-dev all` if($? ne "0");
-@stacked_devices_ll_dev = map { s,^/dev/drbd(\d+)\n?\z$,$1,; $_ } `drbdadm -S sh-ll-dev all`;
-
 map_minor_to_resource_names;
 
 slurp_proc_drbd_or_exit;
@@ -212,16 +229,19 @@ get_df_info;
 get_xen_info;
 get_virsh_info;
 
+
 # generate output, adjust columns
 my @out = [];
 my @maxw = ();
 my $line = 0;
+
 for my $m (sort { $a <=> $b } keys %drbd) {
 	my $t = $drbd{$m};
 	my @used_by = exists $t->{xen_info} ? "xen-vbd: $t->{xen_info}"
 		    : exists $t->{pv_info} ? pv_info $t->{pv_info}
 		    : exists $t->{df_info} ? df_info $t->{df_info}
 		    : exists $t->{virsh_info} ? virsh_info $t->{virsh_info}
+		    : exists $t->{ll_dev_of} ? ll_dev_info $t->{ll_dev_of}
 		    : ();
 
 	$out[$line] = [
