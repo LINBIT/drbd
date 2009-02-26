@@ -2512,8 +2512,6 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 			if (forced) {
 				drbd_WARN("Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
-				drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
-				drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 				hg = hg*2;
 			}
 		}
@@ -2533,8 +2531,6 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 
 	if (hg == -100) {
 		ALERT("Split-Brain detected, dropping connection!\n");
-		drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
-		drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 		drbd_khelper(mdev, "split-brain");
 		return conn_mask;
 	}
