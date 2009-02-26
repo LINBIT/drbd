@@ -1345,6 +1345,12 @@ int sh_status(struct d_resource* res,const char* cmd)
   for_each_resource(r,t,res) {
     printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
 		   shell_escape(r->me->lower->name) : "");
+    printf("_stacked_on_device=%s\n", r->stacked && r->me->lower ?
+	   shell_escape(r->me->lower->me->device) : "");
+    if (r->stacked && r->me->lower)
+      printf("_stacked_on_minor=%d\n", r->me->lower->me->device_minor);
+    else
+      printf("_stacked_on_minor=\n");
     rv = adm_generic(r,cmd,SLEEPS_SHORT);
     if (rv)
 	    break;
