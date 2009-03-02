@@ -1038,7 +1038,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		return 0;
 
 	/* do you want to initilize al to something more usefull? */
-	printf("initialising activity log\n");
+	printf("initializing activity log\n");
 	if (MD_AL_MAX_SECT_07*512 > buffer_size) {
 		fprintf(stderr, "%s:%u: LOGIC BUG\n" , __FILE__ , __LINE__ );
 		exit(111);
@@ -1062,7 +1062,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		unsigned int percent_done = 0;
 		unsigned int percent_last_report = 0;
 		size_t chunk;
-		fprintf(stderr,"initialising bitmap (%u KB)\n",
+		fprintf(stderr,"initializing bitmap (%u KB)\n",
 			(unsigned int)(bm_bytes>>10));
 
 		memset(on_disk_buffer, 0xff, buffer_size);
@@ -1720,7 +1720,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 
 			ASSERT(!is_v06(cfg));
 		}
-		fprintf(stderr, "reinitialising\n");
+		fprintf(stderr, "reinitializing\n");
 		if (is_v07(cfg))
 			_v07_md_initialize(cfg,0);
 		else
@@ -2022,7 +2022,7 @@ int may_be_jfs(const char *data, struct fstype_s *f)
 /* really large block size,
  * will always refuse */
 #define REFUSE_BSIZE 0xFFFFffffFFFF0000LLU
-#define REFUSE_IT    f->bnum = 1; f->bsize = REFUSE_BSIZE;
+#define REFUSE_IT()	do { f->bnum = 1; f->bsize = REFUSE_BSIZE; } while(0)
 int may_be_swap(const char *data, struct fstype_s *f)
 {
 	int looks_like_swap =
@@ -2032,17 +2032,65 @@ int may_be_swap(const char *data, struct fstype_s *f)
 		strncmp(data+(1<<13)-10, "SWAPSPACE2", 10) == 0;
 	if (looks_like_swap) {
 		f->type = "swap space signature";
-		REFUSE_IT
+		REFUSE_IT();
 		return 1;
 	}
 	return 0;
 }
 
-int may_be_LVM(const char *data, struct fstype_s *f)
+int guessed_size_from_pvs(struct fstype_s *f, char *dev_name)
+{
+	char buf[200];
+	size_t c;
+	unsigned long long bnum;
+	int pipes[2];
+	pid_t pid;
+
+	if (pipe(pipes))
+		return 0;
+
+	pid = fork();
+	if (pid < 0)
+		return 0;
+
+	if (pid == 0) {
+		/* child */
+		char *argv[] = {
+			"pvs", "--noheadings", "--nosuffix", "--units", "s",
+			"-o", "pv_size",
+			dev_name,
+			NULL,
+		};
+		close(pipes[0]);
+		dup2(pipes[1],1);
+		close(pipes[1]);
+		close(2);
+		execvp(argv[0], argv);
+		_exit(0);
+	}
+	/* parent */
+	close(pipes[1]);
+	c = read(pipes[0], buf, sizeof(buf)-1);
+	close(pipes[0]);
+
+	if (c <= 0)
+		return 0;
+
+	buf[c] = 0;
+	if (1 == sscanf(buf, " %llu\n", &bnum)) {
+		f->bnum = bnum;
+		f->bsize = 512;
+		return 1;
+	} else
+		return 0;
+}
+
+int may_be_LVM(const char *data, struct fstype_s *f, char *dev_name)
 {
 	if (strncmp("LVM2",data+0x218,4) == 0) {
 		f->type = "LVM2 physical volume signature";
-		REFUSE_IT
+		if (!guessed_size_from_pvs(f, dev_name))
+			REFUSE_IT();
 		return 1;
 	}
 	return 0;
@@ -2072,7 +2120,7 @@ void check_for_existing_data(struct format *cfg)
 
 	(void)(
 	may_be_swap     (on_disk_buffer,&f) ||
-	may_be_LVM      (on_disk_buffer,&f) ||
+	may_be_LVM      (on_disk_buffer,&f, cfg->md_device_name) ||
 
 	may_be_extX     (on_disk_buffer,&f) ||
 	may_be_xfs      (on_disk_buffer,&f) ||
@@ -2154,10 +2202,15 @@ void check_for_existing_data(struct format *cfg)
 "   * zero out the device (destroy the filesystem)\n"
 "Operation refused.\n\n");
 			exit(40); /* FIXME sane exit code! */
+		} else {
+			printf(
+"\nEven though it looks like this would place the new meta data into\n"
+"unused space, you still need to confirm, as this is only a guess.\n");
 		}
-	}
-	if (!confirmed(" ==> This might destroy existing data! <==\n\n"
-			"Do you want to proceed?")) {
+	} else
+		printf("\n ==> This might destroy existing data! <==\n");
+
+	if (!confirmed("Do you want to proceed?")) {
 		printf("Operation cancelled.\n");
 		exit(1); // 1 to avoid online resource counting
 	}
@@ -2395,7 +2448,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	if (err)
 		fprintf(stderr, "operation failed\n");
 	else
-		printf("New drbd meta data block sucessfully created.\n");
+		printf("New drbd meta data block successfully created.\n");
 
 	return err;
 }
