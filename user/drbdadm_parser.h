@@ -103,6 +103,7 @@ enum yytokentype {
 	TK_IPV6,
 	TK_IPADDR6,
 	TK_NET_DELEGATE,
+	TK_INCLUDE,
 };
 
 typedef struct YYSTYPE {
@@ -119,3 +120,5 @@ extern char* yytext;
 
 /* avoid compiler warnings about implicit declaration */
 int yylex(void);
+void my_yypush_buffer_state(FILE *f);
+void yypop_buffer_state (void );

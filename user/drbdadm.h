@@ -135,6 +135,8 @@ struct d_resource
   struct d_option* proxy_options;
   struct d_resource* next;
   struct d_name *become_primary_on;
+  char *config_file; /* The config file this resource is define in.*/
+  int start_line;
   unsigned int stacked_timeouts:1;
   unsigned int ignore:1;
   unsigned int stacked:1;

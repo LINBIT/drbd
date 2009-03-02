@@ -148,7 +148,7 @@ static struct ifreq* get_ifreq();
 char ss_buffer[255];
 struct utsname nodeinfo;
 int line=1;
-int fline, c_resource_start;
+int fline;
 struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
 char *config_save = NULL;
@@ -2120,7 +2120,7 @@ void verify_ips(struct d_resource *res)
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
       "IP %s not found on this host.\n",
-      config_file, (int)(long)ep->data, res->name,
+      res->config_file, (int)(long)ep->data, res->name,
       names_to_str(res->me->on_hosts), res->me->address);
     if (INVALID_IP_IS_INVALID_CONF)
       config_valid = 0;
@@ -2330,7 +2330,7 @@ void validate_resource(struct d_resource * res)
     if (!common || !common->protocol) {
       fprintf(stderr,
 	      "%s:%d: in resource %s:\n\tprotocol definition missing.\n",
-	      config_file, c_resource_start, res->name);
+	      res->config_file, res->start_line, res->name);
       config_valid = 0;
     } /* else:
        * may not have been expanded yet for "dump" subcommand */
@@ -2342,20 +2342,21 @@ void validate_resource(struct d_resource * res)
   if (!res->me) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
-	    config_file, c_resource_start, res->name, nodeinfo.nodename);
+	    res->config_file, res->start_line, res->name, nodeinfo.nodename);
     config_valid = 0;
   }
   if (!res->peer) {
     fprintf(stderr,
 	    "%s:%d: in resource %s:\n\t"
 	    "missing section 'on <PEER> { ... }'.\n",
-	    config_file, c_resource_start, res->name);
+	    res->config_file, res->start_line, res->name);
     config_valid = 0;
   }
   if ( (opt = find_opt(res->sync_options, "after")) ) {
     if (res_by_name(opt->value) == NULL) {
-      fprintf(stderr,"In resource %s:\n\tresource '%s' mentioned in "
-	      "'after' option is not known.\n",res->name,opt->value);
+      fprintf(stderr,"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
+	      "'after' option is not known.\n",
+	      res->config_file, res->start_line, res->name,opt->value);
       config_valid=0;
     }
   }
@@ -2366,10 +2367,11 @@ void validate_resource(struct d_resource * res)
       if (!name_in_names(opt->value+13, res->peer->on_hosts) &&
 	  !name_in_names(opt->value+13, res->me->on_hosts)) {
 	fprintf(stderr,
-		" in resource %s:\n\t"
+		"%s:%d: in resource %s:\n\t"
 		"the nodename in the '%s' option is "
 		"not known.\n\t"
 		"valid nodenames are: '%s %s'.\n",
+		res->config_file, res->start_line,
 		res->name, opt->value,
 		names_to_str(res->me->on_hosts),
 		names_to_str(res->peer->on_hosts));
@@ -2387,9 +2389,9 @@ void validate_resource(struct d_resource * res)
   opt = find_opt(res->net_options, "allow-two-primaries");
   if (name_in_names("both", res->become_primary_on) && opt == NULL) {
     fprintf(stderr,
-	    "In resource %s:\n"
+	    "%s:%d: in resource %s:\n"
 	    "become-primary-on is set to both, but allow-two-primaries "
-	    "is not set.\n", res->name);
+	    "is not set.\n", res->config_file, res->start_line, res->name);
     config_valid = 0;
   }
 
@@ -2397,7 +2399,7 @@ void validate_resource(struct d_resource * res)
 	fprintf(stderr,
 		"%s:%d: in resource %s:\n\t"
 		"Either both 'on' sections must contain a proxy subsection, or none.\n",
-		config_file, c_resource_start, res->name);
+		res->config_file, res->start_line, res->name);
 	config_valid = 0;
   }
 
@@ -2408,7 +2410,7 @@ void validate_resource(struct d_resource * res)
 		  fprintf(stderr,
 			  "%s:%d: in resource %s:\n\t"
 			  "become-primary-on contains '%s', which is not named with the 'on' sections.\n",
-			  config_file, c_resource_start, res->name, bpo->name);
+			  res->config_file, res->start_line, res->name, bpo->name);
 		  config_valid = 0;
 	  }
   }

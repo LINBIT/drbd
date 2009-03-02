@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <glob.h>
 
 #include "drbdadm.h"
 #include "linux/drbd_limits.h"
@@ -39,6 +40,7 @@ YYSTYPE yylval;
 /////////////////////
 
 static int c_section_start;
+void my_parse(void);
 
 struct d_name *names_from_str(char* str)
 {
@@ -892,6 +894,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
 	res->device_minor = -1;
+	res->config_file = config_file;
+	res->start_line = line;
 
 	while(1) {
 		switch((token=yylex())) {
@@ -1102,6 +1106,51 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	return res;
 }
 
+
+void include_file(FILE *f, char* name)
+{
+	int saved_line;
+	char* saved_config_file;
+
+	saved_line = line;
+	saved_config_file = config_file;
+	line = 1;
+	config_file = name;
+
+	my_yypush_buffer_state(f);
+	my_parse();
+	yypop_buffer_state();
+
+	line = saved_line;
+	config_file = saved_config_file;
+}
+
+void include_stmt(char *str)
+{
+	glob_t glob_buf;
+	FILE *f;
+	size_t i;
+
+	f = fopen(str, "r");
+	if (f) {
+		include_file(f, str);
+		fclose(f);
+	} else if (glob(str, 0, NULL, &glob_buf) == 0) {
+		for (i=0; i<glob_buf.gl_pathc; i++) {
+			f = fopen(glob_buf.gl_pathv[i], "r");
+			if (f)
+				include_file(f, glob_buf.gl_pathv[i]);
+			fclose(f);
+		}
+		globfree(&glob_buf);
+	} else {
+		fprintf(stderr,
+			"%s:%d: Failed to open include file '%s'.\n",
+			config_file, line, yylval.txt);
+		config_valid = 0;
+	}
+}
+
 void my_parse(void)
 {
 	common = NULL;
@@ -1125,10 +1174,15 @@ void my_parse(void)
 		case TK_SKIP:
 			parse_skip();
 			break;
+		case TK_INCLUDE:
+			EXP(TK_STRING);
+			EXP(';');
+			include_stmt(yylval.txt);
+			break;
 		case 0:
 			return;
 		default:
-			pe_expected("global | common | resource | skip");
+			pe_expected("global | common | resource | skip | include");
 		}
 	}
 }

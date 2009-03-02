@@ -64,6 +64,7 @@ common			{ DP; return TK_COMMON;			}
 outside			{ DP; return TK_OUTSIDE;		}
 address			{ DP; return TK_ADDRESS;		}
 startup			{ DP; return TK_STARTUP;		}
+include			{ DP; return TK_INCLUDE;		}
 handlers		{ DP; return TK_HANDLER;		}
 protocol		{ DP; return TK_PROTOCOL;		}
 minor-count		{ DP; return TK_MINOR_COUNT;		}
@@ -158,4 +159,10 @@ static void unescape(void)
     *e++ = *ue++;
   }
   *e = '\0';
+}
+
+void my_yypush_buffer_state(FILE *f)
+{
+	/* Since we do not have YY_BUF_SIZE outside of the flex generated file.*/
+	yypush_buffer_state(yy_create_buffer(f, YY_BUF_SIZE));
 }
