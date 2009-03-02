@@ -62,8 +62,10 @@ YYSTYPE yylval;
 
 int     force = 0;
 int	verbose = 0;
+int	ignore_sanity_checks = 0;
 
 struct option metaopt[] = {
+    { "ignore-sanity-checks",  no_argument, &ignore_sanity_checks, 1000 },
     { "force",  no_argument,    0, 'f' },
     { "verbose",  no_argument,    0, 'v' },
     { NULL,     0,              0, 0 },
@@ -2074,6 +2076,8 @@ void check_for_existing_data(struct format *cfg)
 {
 	struct fstype_s f;
 	size_t i;
+	u64 fs_kB;
+	u64 max_usable_kB;
 
 	PREAD(cfg->md_fd, on_disk_buffer, SO_MUCH, 0);
 
@@ -2112,6 +2116,30 @@ void check_for_existing_data(struct format *cfg)
 	printf("bm_offset %llu\n", (long long unsigned)cfg->bm_offset);
 
 	printf("\nFound %s ", f.type);
+
+	/* FIXME overflow check missing!
+	 * relevant for ln2(bsize) + ln2(bnum) >= 64, thus only for
+	 * device sizes of more than several exa byte.
+	 * seems irrelevant to me for now.
+	 */
+	fs_kB = ((f.bsize * f.bnum) + (1<<10)-1) >> 10;
+#define min(x,y) ((x) < (y) ? (x) : (y))
+	max_usable_kB =
+		min( cfg->md_offset,
+		min( cfg->al_offset,
+		     cfg->bm_offset )) >> 10;
+#undef min
+
+	if (ignore_sanity_checks) {
+		if (f.bsize != REFUSE_BSIZE)
+			printf("which uses "U64" kB\n", fs_kB);
+		else
+			printf("\n");
+		printf("current configuration leaves usable "U64" kB\n", max_usable_kB);
+		printf("\nIgnoring sanity check on user request.\n\n");
+		return;
+	}
+
 	if (f.bnum) {
 		if (cfg->md_index >= 0 ||
 		    cfg->md_index == DRBD_MD_INDEX_FLEX_EXT) {
@@ -2124,14 +2152,6 @@ void check_for_existing_data(struct format *cfg)
 			exit(40); /* FIXME sane exit code! */
 		}
 
-		/* FIXME overflow check missing!
-		 * relevant for ln2(bsize) + ln2(bnum) >= 64, thus only for
-		 * device sizes of more than several exa byte.
-		 * seems irrelevant to me for now.
-		 */
-		u64 fs_kB = ((f.bsize * f.bnum) + (1<<10)-1) >> 10;
-		u64 max_usable_kB;
-
 		if (f.bsize == REFUSE_BSIZE) {
 			printf(
 "\nDevice size would be truncated, which\n"
@@ -2143,13 +2163,6 @@ void check_for_existing_data(struct format *cfg)
 "Operation refused.\n\n");
 			exit(40); /* FIXME sane exit code! */
 		}
-
-#define min(x,y) ((x) < (y) ? (x) : (y))
-		max_usable_kB =
-			min( cfg->md_offset,
-			min( cfg->al_offset,
-			     cfg->bm_offset )) >> 10;
-#undef min
 
 		/* looks like file system data */
 		printf("which uses "U64" kB\n", fs_kB);
@@ -2694,6 +2707,8 @@ int main(int argc, char **argv)
 		break;
 
 	    switch (c) {
+	    case 0:
+		break;
 	    case 'f':
 		force = 1;
 		break;
