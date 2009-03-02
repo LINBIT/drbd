@@ -1062,7 +1062,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		return 0;
 
 	/* do you want to initilize al to something more usefull? */
-	printf("initialising activity log\n");
+	printf("initializing activity log\n");
 	if (MD_AL_MAX_SECT_07*512 > buffer_size) {
 		fprintf(stderr, "%s:%u: LOGIC BUG\n" , __FILE__ , __LINE__ );
 		exit(111);
@@ -1086,7 +1086,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		unsigned int percent_done = 0;
 		unsigned int percent_last_report = 0;
 		size_t chunk;
-		fprintf(stderr,"initialising bitmap (%u KB)\n",
+		fprintf(stderr,"initializing bitmap (%u KB)\n",
 			(unsigned int)(bm_bytes>>10));
 
 		memset(on_disk_buffer, 0xff, buffer_size);
@@ -1744,7 +1744,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 
 			ASSERT(!is_v06(cfg));
 		}
-		fprintf(stderr, "reinitialising\n");
+		fprintf(stderr, "reinitializing\n");
 		if (is_v07(cfg))
 			_v07_md_initialize(cfg,0);
 		else
@@ -2419,7 +2419,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	if (err)
 		fprintf(stderr, "operation failed\n");
 	else
-		printf("New drbd meta data block sucessfully created.\n");
+		printf("New drbd meta data block successfully created.\n");
 
 	return err;
 }
