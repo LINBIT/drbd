@@ -82,6 +82,12 @@ install:
 	install -m 755 notify.sh $(PREFIX)/usr/lib/drbd
 	( cd $(PREFIX)/usr/lib/drbd ;\
 	  ln -sf notify.sh notify-split-brain.sh ;\
+	  ln -sf notify.sh notify-io-error.sh ;\
+	  ln -sf notify.sh notify-pri-on-incon-degr.sh ;\
+	  ln -sf notify.sh notify-pri-lost.sh ;\
+	  ln -sf notify.sh notify-pri-lost-after-sb.sh ;\
+	  ln -sf notify.sh notify-emergency-reboot.sh ;\
+	  ln -sf notify.sh notify-emergency-shutdown.sh ;\
 	  ln -sf notify.sh notify-out-of-sync.sh; )
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
