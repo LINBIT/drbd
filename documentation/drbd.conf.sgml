@@ -235,7 +235,8 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>,
-    <option>wait-after-sb</option> and <option>become-primary-on</option>.
+    <option>wait-after-sb</option>, <option>stacked-timeouts</option>
+    and <option>become-primary-on</option>.
   </para>
   </listitem>
 </varlistentry>
@@ -924,7 +925,7 @@ the unit is 1 second.
               In a typical kernel configuration you should have
               at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
               available. By default this is not enabled.</para>
-	    <para>See also the notes on data integrity.<para>
+	    <para>See also the notes on data integrity.</para>
 	  </listitem>
 </varlistentry>
 
@@ -994,6 +995,21 @@ the unit is 1 second.
 </varlistentry>
 
 <varlistentry>
+  <term><option>stacked-timeouts</option></term>
+  <listitem><para>
+  Usually <option>wfc-timeout</option> and <option>degr-wfc-timeout</option> are
+  ignored for stacked devices, instead twice the amount of <option>connect-int</option>
+  is used for the connection timeouts.
+  With the <option>stacked-timeouts</option> keyword you disable this, and force
+  DRBD to mind the <option>wfc-timeout</option> and <option>degr-wfc-timeout</option>
+  statements. Only do that if the peer of the stacked resource is usually not
+  available or will not become primary usually.
+  By using this option incorrectly, you run the risk of causing unexpected split brain.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
   <term><option>rate <replaceable>rate</replaceable></option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>rate </secondary></indexterm>
@@ -1018,8 +1034,9 @@ the unit is 1 second.
 
 <varlistentry>
   <term><option>al-extents <replaceable>extents</replaceable></option></term>
-  <listitem><para>DRBD automatically performs hot area detection. With this
+  <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>al-extents </secondary></indexterm>
+  DRBD automatically performs hot area detection. With this
   parameter you control how big the hot area (= active set) can
   get. Each extent marks 4M of the backing storage (= low-level device).
   In case a primary node leaves the cluster unexpectedly, the areas covered
@@ -1046,7 +1063,7 @@ the unit is 1 second.
   at least one of <option>md5</option>, <option>sha1</option>, and <option>crc32c</option>
   available. By default this is not enabled; you must set this
   option explicitly in order to be able to use on-line device verification.</para>
-  <para>See also the notes on data integrity.<para>
+  <para>See also the notes on data integrity.</para>
   </listitem>
 </varlistentry>
 
@@ -1149,6 +1166,21 @@ the unit is 1 second.
 
 </variablelist>
 </refsect2>
+ <refsect2>
+ <title>Other Keywords</title>
+  <variablelist>
+   <varlistentry>
+    <term><option>include <replaceable>file-pattern</replaceable></option></term>
+     <listitem><para>
+      <indexterm><primary>drbd.conf</primary><secondary>include</secondary></indexterm>
+       Include all files matching the wildcard pattern <replaceable>file-pattern</replaceable>.
+       The <option>include</option> statement
+       is only allowed on the top level, i.e. it is not allowed inside any section.
+      </para>
+     </listitem>
+    </varlistentry>
+  </variablelist>
+ </refsect2>
 </refsect1>
 
 <refsect1 id="data-integrity">
@@ -1218,9 +1250,3 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 </para>
 </refsect1>
 </refentry>
-
-
-
-
-
-
