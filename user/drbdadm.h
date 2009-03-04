@@ -99,6 +99,7 @@ struct d_host_info
   struct d_proxy_info *proxy;
   struct d_host_info* next;
   struct d_resource* lower;  /* for device stacking */
+  char *lower_name;          /* for device stacking, before bind_stacked_res() */
   int config_line;
 };
 
@@ -139,7 +140,8 @@ struct d_resource
   int start_line;
   unsigned int stacked_timeouts:1;
   unsigned int ignore:1;
-  unsigned int stacked:1;
+  unsigned int stacked:1;        /* Stacked on this node */
+  unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
 };
 
 extern int adm_attach(struct d_resource* ,const char* );
@@ -170,9 +172,6 @@ extern int unregister_minor(int minor);
 extern char *lookup_minor(int minor);
 
 enum pr_flags {
-  ThisHRequired = 1,
-  PeerHRequired = 2,
-  BothHRequired = ThisHRequired | PeerHRequired,
   NoneHAllowed  = 4,
   IgnDiscardMyData = 8
 };
@@ -184,7 +183,10 @@ extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
 #define NAMES_STR_SIZE 255
 #define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
-void free_names(struct d_name *names);
+extern void free_names(struct d_name *names);
+extern void set_me_in_resource(struct d_resource* res);
+extern void set_on_hosts_in_res(struct d_resource *res);
+extern void set_disk_in_res(struct d_resource *res);
 
 extern char* config_file;
 extern int config_valid;

@@ -57,10 +57,13 @@ char *_names_to_str_c(char* buffer, struct d_name *names, char c)
 {
 	int n = 0;
 
+	if (!names)
+		return buffer;
+
 	while (1) {
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", names->name);
 		names = names->next;
-		if (!names)
+ 		if (!names)
 			return buffer;
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%c", c);
 	}
@@ -770,9 +773,7 @@ void parse_skip()
 static void parse_stacked_section(struct d_resource* res)
 {
 	struct d_host_info *host;
-	struct d_resource *l_res, *tmp;
 	struct d_name *h;
-	char *l_res_name;
 
 	c_section_start = line;
 	fline = line;
@@ -781,33 +782,11 @@ static void parse_stacked_section(struct d_resource* res)
 	host->device_minor = -1;
 	res->all_hosts = APPEND(res->all_hosts, host);
 	EXP(TK_STRING);
-	l_res_name = yylval.txt;
-	check_uniq("stacked-on-top-of", "stacked:%s", l_res_name);
-
-	for_each_resource(l_res, tmp, config) {
-		if (!strcmp(l_res->name, l_res_name))
-			break;
-	}
-	if (l_res == NULL) {
-		fprintf(stderr, "%s:%d: in resource %s, "
-			"referenced resource '%s' not yet defined.\n",
-			config_file, c_section_start, res->name, l_res_name);
-		exit(E_config_invalid);
-	}
-	if (l_res->stacked) {
-		fprintf(stderr,
-			"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
-			"\tFIXME. I won't stack stacked resources.\n",
-			config_file, c_section_start, res->name, l_res_name);
-		exit(E_config_invalid);
-	}
-
-	host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts);
-	host->lower = l_res;
+	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
+	host->lower_name = yylval.txt;
 
 	m_asprintf(&host->meta_disk, "%s", "internal");
 	m_asprintf(&host->meta_index, "%s", "internal");
-	m_asprintf(&host->disk, "%s", l_res->me->device);
 
 	EXP('{');
 	while (1) {
@@ -820,7 +799,7 @@ static void parse_stacked_section(struct d_resource* res)
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
 				check_uniq("address statement", "%s:%s:address", res->name, h->name);
-			parse_address(l_res->me->on_hosts, &host->address, &host->port, &host->address_family);
+			parse_address(NULL, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", yylval.txt);
 			break;
 		case TK_PROXY:
@@ -833,6 +812,8 @@ static void parse_stacked_section(struct d_resource* res)
 		}
 	}
  break_loop:
+
+	res->stacked_on_one = 1;
 
 	/* inherit device */
 	if (!host->device && res->device) {
@@ -849,8 +830,6 @@ static void parse_stacked_section(struct d_resource* res)
 
 	if (!host->device && host->device_minor == -1)
 		derror(host, res, "device");
-	if (!host->disk)
-		derror(host,res,"disk");
 	if (!host->address)
 		derror(host,res,"address");
 	if (!host->meta_disk)
@@ -880,10 +859,137 @@ void net_delegate(void *ctx)
 		pe_expected("an option keyword");
 }
 
+void set_me_in_resource(struct d_resource* res)
+{
+	struct d_host_info *host;
+
+	/* Determin the local host section and the peer host section. */
+	host = res->all_hosts;
+	while (host) {
+		if (!res->ignore && (res->me && res->peer)) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, "
+				"unsupported third host section %s %s { ... }.\n",
+				res->config_file, host->config_line, res->name,
+				host->lower ? "stacked-on-top-of" : "on",
+				host->lower ? host->lower->name : names_to_str(host->on_hosts));
+			exit(E_config_invalid);
+		}
+
+		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
+		    name_in_names("_this_host", host->on_hosts) ||
+		    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
+			if (res->ignore) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, %s %s { ... }:\n"
+					"\tYou cannot ignore and define at the same time.\n",
+					res->config_file, host->config_line, res->name,
+					host->lower ? "stacked-on-top-of" : "on",
+					host->lower ? host->lower->name : names_to_str(host->on_hosts));
+			}
+			if (res->me) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
+					"\tThere are multiple host sections for this node.\n",
+					res->config_file, host->config_line, res->name,
+					res->me->lower ? "stacked-on-top-of" : "on",
+					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
+					host->lower ? "stacked-on-top-of" : "on",
+					host->lower ? host->lower->name : names_to_str(host->on_hosts));
+			}
+			res->me = host;
+			if (host->lower)
+				res->stacked = 1;
+		} else {
+			/* This needs to be refined as soon as we support
+			   multiple peers in the resource section */
+			if (res->peer) {
+				if (!res->me) {
+					/* just store it anyways into ->me */
+					/* reorder, so it dumps out in the same order as read in */
+					res->me = res->peer;
+					res->peer = host;
+					res->ignore = 1; /* implicit ignore */
+				} else {
+					/* hm. if that did not work, I cannot ignore it */
+					config_valid = 0;
+					fprintf(stderr, "THINKO 1\n");
+					exit(E_thinko);
+				}
+			}
+			res->peer = host;
+		}
+		host=host->next;
+	}
+}
+
+void set_on_hosts_in_res(struct d_resource *res)
+{
+	struct d_resource *l_res, *tmp;
+	struct d_host_info *host, *host2;
+	struct d_name *h, **last;
+
+	for (host = res->all_hosts; host; host=host->next) {
+		if (host->lower_name) {
+			for_each_resource(l_res, tmp, config) {
+				if (!strcmp(l_res->name, host->lower_name))
+					break;
+			}
+
+			if (l_res == NULL) {
+				fprintf(stderr, "%s:%d: in resource %s, "
+					"referenced resource '%s' not defined.\n",
+					res->config_file, res->start_line, res->name, l_res->name);
+				config_valid = 0;
+			}
+
+			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
+			last = NULL;
+			for (host2 = l_res->all_hosts; host2; host2 = host2->next)
+				if (!host2->lower_name)
+					append_names(&host->on_hosts, &last, host2->on_hosts);
+
+			host->lower = l_res;
+
+			/* */
+			if (!strcmp(host->address, "127.0.0.1") || !strcmp(host->address, "::1"))
+				for_each_host(h, host->on_hosts)
+					check_uniq("IP", "%s:%s:%s", h->name, host->address, host->port);
+
+		}
+	}
+}
+
+void set_disk_in_res(struct d_resource *res)
+{
+	struct d_host_info *host;
+
+	for (host = res->all_hosts; host; host=host->next) {
+		if (host->lower) {
+			if (res->stacked && host->lower->stacked) {
+				fprintf(stderr,
+					"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
+					"\tFIXME. I won't stack stacked resources.\n",
+					res->config_file, res->start_line, res->name, host->lower_name);
+				config_valid = 0;
+			}
+
+			if (host->lower->me->device)
+				m_asprintf(&host->disk, "%s", host->lower->me->device);
+			else
+				m_asprintf(&host->disk, "/dev/drbd/%s", host->lower->name);
+
+			if (!host->disk)
+				derror(host,res,"disk");
+		}
+	}
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
-	struct d_host_info *host;
 	struct d_name *host_names;
 	int token;
 
@@ -1014,87 +1120,10 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
  exit_loop:
 
-	/* Determin the local host section and the peer host section. */
-	host = res->all_hosts;
-	while (host) {
-		if (!res->ignore && (res->me && res->peer)) {
-			fprintf(stderr,
-				"%s:%d: in resource %s, "
-				"unsupported third host section %s %s { ... }.\n",
-				config_file, host->config_line, res->name,
-				host->lower ? "stacked-on-top-of" : "on",
-				host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			exit(E_config_invalid);
-		}
+	if (!res->stacked_on_one)
+		set_me_in_resource(res);
 
-		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
-		    name_in_names("_this_host", host->on_hosts) ||
-		    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
-			if (res->ignore) {
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, %s %s { ... }:\n"
-					"\tYou cannot ignore and define at the same time.\n",
-					config_file, host->config_line, res->name,
-					host->lower ? "stacked-on-top-of" : "on",
-					host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			}
-			if (res->me) {
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
-					"\tThere are multiple host sections for this node.\n",
-					config_file, host->config_line, res->name,
-					res->me->lower ? "stacked-on-top-of" : "on",
-					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
-					host->lower ? "stacked-on-top-of" : "on",
-					host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			}
-			res->me = host;
-			if (host->lower)
-				res->stacked = 1;
-		} else {
-			/* This needs to be refined as soon as we support
-			   multiple peers in the resource section */
-			if (res->peer) {
-				if (!res->me) {
-					/* just store it anyways into ->me */
-					/* reorder, so it dumps out in the same order as read in */
-					res->me = res->peer;
-					res->peer = host;
-					res->ignore = 1; /* implicit ignore */
-				} else {
-					/* hm. if that did not work, I cannot ignore it */
-					config_valid = 0;
-					fprintf(stderr, "THINKO 1\n");
-					exit(E_thinko);
-				}
-			}
-			res->peer = host;
-		}
-		host=host->next;
-	}
-
-	if(flags & ThisHRequired && !res->me) {
-		config_valid = 0;
-
-		fprintf(stderr,
-			"%s:%d: in resource %s, there is no host section"
-			" for this host.\n"
-			"\tMissing 'on %s {...}' ?\n",
-			config_file, c_section_start, res->name,
-			nodeinfo.nodename);
-	}
-	if(flags & PeerHRequired && !res->peer) {
-		config_valid = 0;
-
-		fprintf(stderr,
-			"%s:%d: in resource %s, there is no host section"
-			" for the peer host.\n"
-			"\tMissing 'on <peer-name> {...}' ?\n",
-			config_file, c_section_start, res->name);
-	}
-	if(flags == NoneHAllowed && ( res->me || res->peer ) ) {
+	if (flags == NoneHAllowed && res->all_hosts) {
 		config_valid = 0;
 
 		fprintf(stderr,
@@ -1168,8 +1197,7 @@ void my_parse(void)
 		case TK_RESOURCE:
 			EXP(TK_STRING);
 			EXP('{');
-			config=APPEND(config,
-				      parse_resource(yylval.txt,BothHRequired));
+			config = APPEND(config, parse_resource(yylval.txt, 0));
 			break;
 		case TK_SKIP:
 			parse_skip();

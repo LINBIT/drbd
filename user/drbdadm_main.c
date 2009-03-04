@@ -1003,6 +1003,13 @@ static void expand_common(void)
 	struct d_resource *res,*tmp;
 	struct d_host_info *h;
 
+	for_each_resource(res, tmp, config) {
+		for (h = res->all_hosts; h; h = h->next) {
+			if (!h->device)
+				m_asprintf(&h->device, "/dev/drbd/%s", res->name);
+		}
+	}
+
 	if (!common)
 		return;
 
@@ -1023,11 +1030,44 @@ static void expand_common(void)
 		if (!res->become_primary_on)
 			res->become_primary_on = common->become_primary_on;
 
-		for (h = res->all_hosts; h; h = h->next) {
-			if (!h->device)
-				m_asprintf(&h->device, "/dev/drbd/%s", res->name);
+	}
+}
+
+static void post_parse(void)
+{
+	struct d_resource *res,*tmp;
+
+	for_each_resource(res, tmp, config) {
+		if (res->stacked_on_one) {
+			set_on_hosts_in_res(res);
+			set_me_in_resource(res); // Needs "on_hosts" set in this res
+
+			/* Make shure we know me and peer. Move to validate ?*/
+
+			if (!res->me) {
+				fprintf(stderr,
+					"%s:%d: in resource %s, there is no host section"
+					" for this host.\n"
+					"\tMissing 'on %s {...}' ?\n",
+					res->config_file, res->start_line, res->name,
+					nodeinfo.nodename);
+				config_valid = 0;
+			}
+
+			if (!res->peer) {
+				fprintf(stderr,
+					"%s:%d: in resource %s, there is no host section"
+					" for the peer host.\n"
+					"\tMissing 'on <peer-name> {...}' ?\n",
+					res->config_file, res->start_line, res->name);
+				config_valid = 0;
+			}
 		}
 	}
+
+	for_each_resource(res, tmp, config)
+		if (res->stacked_on_one)
+			set_disk_in_res(res); // Needs "me" set in all res
 }
 
 static void find_drbdcmd(char** cmd, char** pathes)
@@ -2899,6 +2939,8 @@ int main(int argc, char** argv)
 
   if (!config_valid)
     exit(E_config_invalid);
+
+  post_parse();
 
   if (!is_dump || dry_run || verbose)
     expand_common();
