@@ -2713,7 +2713,7 @@ STATIC int receive_skip(struct drbd_conf *mdev, struct Drbd_Header *h)
 	while (size > 0) {
 		want = min_t(int, size, sizeof(sink));
 		r = drbd_recv(mdev, sink, want);
-		ERR_IF(r < 0) break;
+		ERR_IF(r <= 0) break;
 		size -= r;
 	}
 	return size == 0;
