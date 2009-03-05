@@ -1026,6 +1026,7 @@ struct drbd_conf {
 	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex state_mutex;
+	char congestion_reason;  /* Why we where congested... */
 };
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)

@@ -2918,6 +2918,53 @@ STATIC void drbd_cleanup(void)
 	printk(KERN_INFO "drbd: module cleanup done.\n");
 }
 
+/**
+ * drbd_congested: Returns 1<<BDI_write_congested and/or
+ * 1<<BDI_read_congested if we are congested. This interface is known
+ * to be used by pdflush.
+ */
+static int drbd_congested(void *congested_data, int bdi_bits)
+{
+	struct drbd_conf *mdev = congested_data;
+	struct request_queue *q;
+	unsigned long flags;
+	char reason = '-';
+	int r = 0;
+
+	if (!__inc_ap_bio_cond(mdev)) {
+		/* DRBD has frozen IO */
+		r = bdi_bits;
+		reason = 'd';
+		goto out;
+	}
+
+	if (inc_local(mdev)) {
+		q = bdev_get_queue(mdev->bc->backing_bdev);
+		r = bdi_congested(&q->backing_dev_info, bdi_bits);
+		dec_local(mdev);
+		if (r) {
+			reason = 'b';
+			goto out;
+		}
+	}
+
+	if (bdi_bits & (1 << BDI_write_congested)) {
+		spin_lock_irqsave(&mdev->req_lock, flags); /* no state changes, please */
+		if (mdev->state.conn >= Connected) {
+			struct sock *sk = mdev->data.socket->sk;
+			if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5) {
+				r = (1 << BDI_write_congested);
+				reason = 'n';
+			}
+		}
+		spin_unlock_irqrestore(&mdev->req_lock, flags);
+	}
+
+out:
+	mdev->congestion_reason = reason;
+	return r;
+}
+
 struct drbd_conf *drbd_new_device(int minor)
 {
 	struct drbd_conf *mdev = NULL;
@@ -2957,6 +3004,9 @@ struct drbd_conf *drbd_new_device(int minor)
 	mdev->this_bdev = bdget(MKDEV(DRBD_MAJOR, minor));
 	/* we have no partitions. we contain only ourselves. */
 	mdev->this_bdev->bd_contains = mdev->this_bdev;
+
+	q->backing_dev_info.congested_fn = drbd_congested;
+	q->backing_dev_info.congested_data = mdev;
 
 	blk_queue_make_request(q, drbd_make_request_26);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
