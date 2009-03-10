@@ -86,10 +86,10 @@ drbd_pretty_status()
 		i=0;
 		_sh_status_process() {
 			let i++ ;
-			stacked=${_stacked_on:+"^^${_stacked_on_minor:-${_stacked_on//|/_}}"}
+			stacked=${_stacked_on:+"^^${_stacked_on_minor:-${_stacked_on//[!a-zA-Z0-9_ -]/_}}"}
 			printf "s|^ *%u:|%6u\t&%s%s|\n" \
 				$_minor $i \
-				"${_res_name//|/_}" "$stacked"
+				"${_res_name//[!a-zA-Z0-9_ -]/_}" "$stacked"
 		};
 		eval "$(drbdadm sh-status)" )
 
