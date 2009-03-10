@@ -2596,7 +2596,7 @@ STATIC void drbd_cleanup(void)
 	printk(KERN_INFO "drbd: module cleanup done.\n");
 }
 
-struct drbd_conf *drbd_new_device(int minor)
+struct drbd_conf *drbd_new_device(unsigned int minor)
 {
 	struct drbd_conf *mdev = NULL;
 	struct gendisk *disk;

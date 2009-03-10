@@ -3240,7 +3240,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 STATIC int drbdd_init(struct Drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
-	int minor = mdev_to_minor(mdev);
+	unsigned int minor = mdev_to_minor(mdev);
 	int h;
 
 	sprintf(current->comm, "drbd%d_receiver", minor);
