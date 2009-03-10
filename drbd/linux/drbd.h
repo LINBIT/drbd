@@ -353,14 +353,14 @@ enum UuidIndex {
 
 struct drbd_nl_cfg_req {
 	int packet_type;
-	int drbd_minor;
+	unsigned int drbd_minor;
 	int flags;
 	unsigned short tag_list[];
 };
 
 struct drbd_nl_cfg_reply {
 	int packet_type;
-	int minor;
+	unsigned int minor;
 	int ret_code; /* enum ret_code or set_st_err_t */
 	unsigned short tag_list[]; /* only used with get_* calls */
 };

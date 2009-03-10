@@ -1020,7 +1020,7 @@ struct drbd_conf {
 	atomic_t packet_seq;
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
-	int minor;
+	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	cpumask_t cpu_mask;
 	struct bm_io_work bm_io_work;
@@ -1038,7 +1038,7 @@ static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
 	return mdev;
 }
 
-static inline int mdev_to_minor(struct drbd_conf *mdev)
+static inline unsigned int mdev_to_minor(struct drbd_conf *mdev)
 {
 	return mdev->minor;
 }
@@ -1373,7 +1373,8 @@ extern spinlock_t   drbd_pp_lock;
 extern int	    drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
 
-extern struct drbd_conf *drbd_new_device(int minor);
+extern struct drbd_conf *drbd_new_device(unsigned int minor);
+extern void drbd_free_mdev(struct drbd_conf *mdev);
 
 /* Dynamic tracing framework */
 #ifdef ENABLE_DYNAMIC_TRACE
