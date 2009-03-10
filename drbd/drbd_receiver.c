@@ -706,7 +706,7 @@ out:
 
 STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 {
-	int err;
+	int timeo, err;
 	struct socket *s_estab = NULL, *s_listen;
 	const char *what;
 
@@ -721,9 +721,12 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 		goto out;
 	}
 
+	timeo = mdev->net_conf->try_connect_int * HZ;
+	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+
 	s_listen->sk->sk_reuse    = 1; /* SO_REUSEADDR */
-	s_listen->sk->sk_rcvtimeo =
-	s_listen->sk->sk_sndtimeo =  mdev->net_conf->try_connect_int*HZ;
+	s_listen->sk->sk_rcvtimeo = timeo;
+	s_listen->sk->sk_sndtimeo = timeo;
 
 	what = "bind before listen";
 	err = s_listen->ops->bind(s_listen,
@@ -787,6 +790,9 @@ static int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
 {
 	int rr;
 	char tb[4];
+
+	if (!*sock)
+		return FALSE;
 
 	rr = drbd_recv_short(mdev, *sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
 
@@ -860,23 +866,33 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 				break;
 		}
 
+	retry:
 		s = drbd_wait_for_connect(mdev);
 		if (s) {
-			switch (drbd_recv_fp(mdev, s)) {
+			try = drbd_recv_fp(mdev, s);
+			drbd_socket_okay(mdev, &sock);
+			drbd_socket_okay(mdev, &msock);
+			switch (try) {
 			case HandShakeS:
-				if (sock)
+				if (sock) {
+					drbd_WARN("initial packet S crossed\n");
 					sock_release(sock);
+				}
 				sock = s;
 				break;
 			case HandShakeM:
-				if (msock)
+				if (msock) {
+					drbd_WARN("initial packet M crossed\n");
 					sock_release(msock);
+					}
 				msock = s;
 				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
 			default:
 				drbd_WARN("Error receiving initial packet\n");
 				sock_release(s);
+				if (random32() & 1)
+					goto retry;
 			}
 		}
 
