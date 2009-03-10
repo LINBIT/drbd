@@ -1274,6 +1274,7 @@ extern int	    drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
 
 extern struct drbd_conf *drbd_new_device(unsigned int minor);
+extern void drbd_free_mdev(struct drbd_conf *mdev);
 
 /* Dynamic tracing framework */
 #ifdef ENABLE_DYNAMIC_TRACE

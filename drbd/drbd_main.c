@@ -217,8 +217,11 @@ STATIC void tl_cleanup(struct drbd_conf *mdev)
 	D_ASSERT(mdev->oldest_barrier == mdev->newest_barrier);
 	D_ASSERT(list_empty(&mdev->out_of_sequence_requests));
 	kfree(mdev->oldest_barrier);
+	mdev->oldest_barrier = NULL;
 	kfree(mdev->unused_spare_barrier);
+	mdev->unused_spare_barrier = NULL;
 	kfree(mdev->tl_hash);
+	mdev->tl_hash = NULL;
 	mdev->tl_hash_s = 0;
 }
 
@@ -2495,10 +2498,93 @@ STATIC struct notifier_block drbd_notifier = {
 	.notifier_call = drbd_notify_sys,
 };
 
+static void drbd_release_ee_lists(struct drbd_conf *mdev)
+{
+	int rr;
+
+	rr = drbd_release_ee(mdev, &mdev->active_ee);
+	if (rr)
+		ERR("%d EEs in active list found!\n", rr);
+
+	rr = drbd_release_ee(mdev, &mdev->sync_ee);
+	if (rr)
+		ERR("%d EEs in sync list found!\n", rr);
+
+	rr = drbd_release_ee(mdev, &mdev->read_ee);
+	if (rr)
+		ERR("%d EEs in read list found!\n", rr);
+
+	rr = drbd_release_ee(mdev, &mdev->done_ee);
+	if (rr)
+		ERR("%d EEs in done list found!\n", rr);
+
+	rr = drbd_release_ee(mdev, &mdev->net_ee);
+	if (rr)
+		ERR("%d EEs in net list found!\n", rr);
+}
+
+/* caution. no locking.
+ * currently only used from module cleanup code. */
+static void drbd_delete_device(unsigned int minor)
+{
+	struct drbd_conf *mdev = minor_to_mdev(minor);
+
+	if (!mdev)
+		return;
+
+	/* paranoia asserts */
+	if (mdev->open_cnt != 0)
+		ERR("open_cnt = %d in %s:%u", mdev->open_cnt,
+				__FILE__ , __LINE__ );
+
+	ERR_IF (!list_empty(&mdev->data.work.q)) {
+		struct list_head *lp;
+		list_for_each(lp, &mdev->data.work.q) {
+			DUMPP(lp);
+		}
+	};
+	/* end paranoia asserts */
+
+	del_gendisk(mdev->vdisk);
+
+	/* cleanup stuff that may have been allocated during
+	 * device (re-)configuration or state changes */
+
+	if (mdev->this_bdev)
+		bdput(mdev->this_bdev);
+
+	drbd_free_resources(mdev);
+
+	drbd_release_ee_lists(mdev);
+
+	/* should be free'd on disconnect? */
+	kfree(mdev->ee_hash);
+	/*
+	mdev->ee_hash_s = 0;
+	mdev->ee_hash = NULL;
+	*/
+
+	/* should be free'd on detach? */
+	if (mdev->md_io_tmpp)
+		__free_page(mdev->md_io_tmpp);
+
+	if (mdev->act_log)
+		lc_free(mdev->act_log);
+	if (mdev->resync)
+		lc_free(mdev->resync);
+
+	kfree(mdev->p_uuid);
+	/* mdev->p_uuid = NULL; */
+
+	/* cleanup the rest that has been
+	 * allocated from drbd_new_device
+	 * and actually free the mdev itself */
+	drbd_free_mdev(mdev);
+}
 
 STATIC void drbd_cleanup(void)
 {
-	int i, rr;
+	unsigned int i;
 
 	unregister_reboot_notifier(&drbd_notifier);
 
@@ -2508,84 +2594,8 @@ STATIC void drbd_cleanup(void)
 		if (drbd_proc)
 			remove_proc_entry("drbd", NULL);
 		i = minor_count;
-		while (i--) {
-			struct drbd_conf *mdev = minor_to_mdev(i);
-			struct gendisk  **disk = &mdev->vdisk;
-			struct request_queue **q = &mdev->rq_queue;
-
-			if (!mdev)
-				continue;
-			drbd_free_resources(mdev);
-
-			if (*disk) {
-				del_gendisk(*disk);
-				put_disk(*disk);
-				*disk = NULL;
-			}
-			if (*q)
-				blk_cleanup_queue(*q);
-			*q = NULL;
-
-			D_ASSERT(mdev->open_cnt == 0);
-			if (mdev->this_bdev)
-				bdput(mdev->this_bdev);
-
-			tl_cleanup(mdev);
-			if (mdev->bitmap)
-				drbd_bm_cleanup(mdev);
-			if (mdev->resync)
-				lc_free(mdev->resync);
-
-			rr = drbd_release_ee(mdev, &mdev->active_ee);
-			if (rr)
-				ERR("%d EEs in active list found!\n", rr);
-
-			rr = drbd_release_ee(mdev, &mdev->sync_ee);
-			if (rr)
-				ERR("%d EEs in sync list found!\n", rr);
-
-			rr = drbd_release_ee(mdev, &mdev->read_ee);
-			if (rr)
-				ERR("%d EEs in read list found!\n", rr);
-
-			rr = drbd_release_ee(mdev, &mdev->done_ee);
-			if (rr)
-				ERR("%d EEs in done list found!\n", rr);
-
-			rr = drbd_release_ee(mdev, &mdev->net_ee);
-			if (rr)
-				ERR("%d EEs in net list found!\n", rr);
-
-			ERR_IF (!list_empty(&mdev->data.work.q)) {
-				struct list_head *lp;
-				list_for_each(lp, &mdev->data.work.q) {
-					DUMPP(lp);
-				}
-			};
-
-			if (mdev->md_io_page)
-				__free_page(mdev->md_io_page);
-
-			if (mdev->md_io_tmpp)
-				__free_page(mdev->md_io_tmpp);
-
-			if (mdev->act_log)
-				lc_free(mdev->act_log);
-
-			kfree(mdev->ee_hash);
-			mdev->ee_hash_s = 0;
-			mdev->ee_hash = NULL;
-
-			kfree(mdev->tl_hash);
-			mdev->tl_hash_s = 0;
-			mdev->tl_hash = NULL;
-
-			kfree(mdev->app_reads_hash);
-			mdev->app_reads_hash = NULL;
-
-			kfree(mdev->p_uuid);
-			mdev->p_uuid = NULL;
-		}
+		while (i--)
+			drbd_delete_device(i);
 		drbd_destroy_mempools();
 	}
 
@@ -2598,13 +2608,13 @@ STATIC void drbd_cleanup(void)
 
 struct drbd_conf *drbd_new_device(unsigned int minor)
 {
-	struct drbd_conf *mdev = NULL;
+	struct drbd_conf *mdev;
 	struct gendisk *disk;
 	struct request_queue *q;
 
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
 	if (!mdev)
-		goto Enomem;
+		return NULL;
 
 	mdev->minor = minor;
 
@@ -2612,14 +2622,14 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
-		goto Enomem;
+		goto out_no_q;
 	mdev->rq_queue = q;
 	q->queuedata   = mdev;
 	q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
 
 	disk = alloc_disk(1);
 	if (!disk)
-		goto Enomem;
+		goto out_no_disk;
 	mdev->vdisk = disk;
 
 	set_disk_ro(disk, TRUE);
@@ -2630,7 +2640,6 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = mdev;
-	add_disk(disk);
 
 	mdev->this_bdev = bdget(MKDEV(DRBD_MAJOR, minor));
 	/* we have no partitions. we contain only ourselves. */
@@ -2645,29 +2654,51 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 
 	mdev->md_io_page = alloc_page(GFP_KERNEL);
 	if (!mdev->md_io_page)
-		goto Enomem;
+		goto out_no_io_page;
 
 	if (drbd_bm_init(mdev))
-		goto Enomem;
+		goto out_no_bitmap;
 	/* no need to lock access, we are still initializing the module. */
 	if (!tl_init(mdev))
-		goto Enomem;
+		goto out_no_tl;
 
 	mdev->app_reads_hash = kzalloc(APP_R_HSIZE*sizeof(void *), GFP_KERNEL);
 	if (!mdev->app_reads_hash)
-		goto Enomem;
+		goto out_no_app_reads;
 
 	return mdev;
 
- Enomem:
-	if (mdev) {
-		kfree(mdev->app_reads_hash);
-		if (mdev->md_io_page)
-			__free_page(mdev->md_io_page);
-		kfree(mdev);
-	}
+
+/*out_whatever_else:
+	kfree(mdev->app_reads_hash); */
+out_no_app_reads:
+	tl_cleanup(mdev);
+out_no_tl:
+	drbd_bm_cleanup(mdev);
+out_no_bitmap:
+	__free_page(mdev->md_io_page);
+out_no_io_page:
+	put_disk(disk);
+out_no_disk:
+	blk_cleanup_queue(q);
+out_no_q:
+	kfree(mdev);
 	return NULL;
 }
+
+/* counterpart of drbd_new_device.
+ * last part of drbd_delete_device. */
+void drbd_free_mdev(struct drbd_conf *mdev)
+{
+	kfree(mdev->app_reads_hash);
+	tl_cleanup(mdev);
+	drbd_bm_cleanup(mdev);
+	__free_page(mdev->md_io_page);
+	put_disk(mdev->vdisk);
+	blk_cleanup_queue(mdev->rq_queue);
+	kfree(mdev);
+}
+
 
 int __init drbd_init(void)
 {

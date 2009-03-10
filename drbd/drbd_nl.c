@@ -1721,22 +1721,23 @@ STATIC struct drbd_conf *ensure_mdev(struct drbd_nl_cfg_req *nlp)
 	mdev = minor_to_mdev(nlp->drbd_minor);
 
 	if (!mdev && (nlp->flags & DRBD_NL_CREATE_DEVICE)) {
+		struct gendisk *disk = NULL;
 		mdev = drbd_new_device(nlp->drbd_minor);
 
 		spin_lock_irq(&drbd_pp_lock);
 		if (minor_table[nlp->drbd_minor] == NULL) {
 			minor_table[nlp->drbd_minor] = mdev;
+			disk = mdev->vdisk;
 			mdev = NULL;
-		}
+		} /* else: we lost the race */
 		spin_unlock_irq(&drbd_pp_lock);
 
-		if (mdev) {
-			kfree(mdev->app_reads_hash);
-			if (mdev->md_io_page)
-				__free_page(mdev->md_io_page);
-			kfree(mdev);
-			mdev = NULL;
-		}
+		if (disk) /* we won the race above */
+			/* in case we ever add a drbd_delete_device(),
+			 * don't forget the del_gendisk! */
+			add_disk(disk);
+		else /* we lost the race above */
+			drbd_free_mdev(mdev);
 
 		mdev = minor_to_mdev(nlp->drbd_minor);
 	}
