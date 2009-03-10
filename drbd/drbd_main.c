@@ -2651,10 +2651,6 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 		ERR("ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				mdev->receiver.t_state);
 
-	if (mdev->verify_tfm) {
-		crypto_free_hash(mdev->verify_tfm);
-		mdev->verify_tfm=NULL;
-	}
 	/* no need to lock it, I'm the only thread alive */
 	if (atomic_read(&mdev->current_epoch->epoch_size) !=  0)
 		ERR("epoch_size:%d\n", atomic_read(&mdev->current_epoch->epoch_size));
@@ -2671,11 +2667,11 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	mdev->rs_mark_left =
 	mdev->rs_mark_time = 0;
 	D_ASSERT(mdev->net_conf == NULL);
+
 	drbd_set_my_capacity(mdev, 0);
 	drbd_bm_resize(mdev, 0);
 	drbd_bm_cleanup(mdev);
 
-	/* just in case */
 	drbd_free_resources(mdev);
 
 	/*
@@ -3131,13 +3127,17 @@ void drbd_free_sock(struct drbd_conf *mdev)
 
 void drbd_free_resources(struct drbd_conf *mdev)
 {
+	crypto_free_hash(mdev->verify_tfm);
+	mdev->verify_tfm = NULL;
 	crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = NULL;
 	crypto_free_hash(mdev->integrity_w_tfm);
-	mdev->integrity_w_tfm=NULL;
+	mdev->integrity_w_tfm = NULL;
 	crypto_free_hash(mdev->integrity_r_tfm);
-	mdev->integrity_r_tfm=NULL;
+	mdev->integrity_r_tfm = NULL;
+
 	drbd_free_sock(mdev);
+
 	__no_warn(local,
 		  drbd_free_bc(mdev->bc);
 		  mdev->bc = NULL;);
