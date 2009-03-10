@@ -1965,7 +1965,7 @@ void verify_ips(struct d_resource *res)
     ep = hsearch(e, FIND);
     fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
       "IP %s not found on this host.\n",
-      config_file, (int)(long)ep->data, res->name,
+      config_file, ep ? (int)(long)ep->data : -1, res->name,
       res->me->name, res->me->address);
     if (INVALID_IP_IS_INVALID_CONF)
       config_valid = 0;
