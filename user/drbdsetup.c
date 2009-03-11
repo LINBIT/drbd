@@ -246,6 +246,7 @@ const char *rrcf_n[] = {
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
+	{ "outdated-wfc-timeout",required_argument,0,'o'},
 	{ "wait-after-sb",no_argument,0,'w'},
 	{ 0,            0,           0,  0  }
 };
@@ -1880,8 +1881,10 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	struct option *lo;
 	unsigned int b_seq=0, r_seq=0;
 	int sk_nl,c,cont=1,rr = rr,i,last;
-	int unfiltered=0, all_devices=0;
-	int wfc_timeout=0, degr_wfc_timeout=0,timeout_ms;
+	int unfiltered=0, all_devices=0, timeout_ms=0;
+	int wfc_timeout=DRBD_WFC_TIMEOUT_DEF;
+	int degr_wfc_timeout=DRBD_DEGR_WFC_TIMEOUT_DEF;
+	int outdated_wfc_timeout=DRBD_OUTDATED_WFC_TIMEOUT_DEF;
 	struct timeval before,after;
 	int wasb=0;
 
@@ -1920,6 +1923,18 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 				return 20;
 			}
 			break;
+		case 'o':
+			outdated_wfc_timeout=m_strtoll(optarg,1);
+			if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > degr_wfc_timeout ||
+			   degr_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "degr_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					outdated_wfc_timeout, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+					DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+
 		case 'w':
 			wasb=1;
 			break;
@@ -1955,18 +1970,37 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
-	if (rr) {
+	if (rr != UT_Default) {
 		if (0 < wfc_timeout &&
-		      (wfc_timeout < degr_wfc_timeout
-				  || degr_wfc_timeout == 0)) {
+		      (wfc_timeout < degr_wfc_timeout || degr_wfc_timeout == 0)) {
 			degr_wfc_timeout = wfc_timeout;
 			fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
 					"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
 					degr_wfc_timeout);
 		}
+
+		if (0 < degr_wfc_timeout &&
+		    (degr_wfc_timeout < outdated_wfc_timeout || outdated_wfc_timeout == 0)) {
+			outdated_wfc_timeout = wfc_timeout;
+			fprintf(stderr, "outdate-wfc-timeout has to be shorter than degr-wfc-timeout\n"
+					"outdate-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
+					degr_wfc_timeout);
+		}
+
 	}
 
-	timeout_ms= 1000 * (  rr ? degr_wfc_timeout : wfc_timeout) - 1;
+	switch (rr) {
+	case UT_Default:
+		timeout_ms = wfc_timeout;
+		break;
+	case UT_Degraded:
+		timeout_ms = degr_wfc_timeout;
+		break;
+	case UT_PeerOutdated:
+		timeout_ms = outdated_wfc_timeout;
+		break;
+	}
+	timeout_ms = timeout_ms * 1000 - 1; /* 0 -> -1 "infinite", 1000 -> 999, nobody cares...  */
 
 	// ask for the current state before waiting for state updates...
 	if (all_devices) {

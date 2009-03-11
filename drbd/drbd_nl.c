@@ -1886,18 +1886,25 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
 
-
+/**
+ * drbd_nl_get_timeout_flag:
+ * Is used by drbdsetup to find out which timeout value to use.
+ */
 STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				    struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl;
+	char rv;
 
 	tl = reply->tag_list;
+
+	rv = mdev->state.pdsk == Outdated        ? UT_PeerOutdated :
+	  test_bit(USE_DEGR_WFC_T, &mdev->flags) ? UT_Degraded : UT_Default;
 
 	/* This is a hand crafted add tag ;) */
 	*tl++ = T_use_degraded;
 	*tl++ = sizeof(char);
-	*((char *)tl) = test_bit(USE_DEGR_WFC_T, &mdev->flags) ? 1 : 0 ;
+	*((char *)tl) = rv;
 	tl = (unsigned short *)((char *)tl + sizeof(char));
 	*tl++ = TT_END;
 

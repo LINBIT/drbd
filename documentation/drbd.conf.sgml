@@ -235,6 +235,7 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>wfc-timeout</option>, <option>degr-wfc-timeout</option>,
+    <option>outdated-wfc-timeout</option>,
     <option>wait-after-sb</option>, <option>stacked-timeouts</option>
     and <option>become-primary-on</option>.
   </para>
@@ -966,8 +967,20 @@ the unit is 1 second.
   In case a degraded cluster (= cluster with only one node left)
   is rebooted, this timeout value is used instead of wfc-timeout,
   because the peer is less likely to show up in time,
-  if it had been dead before.
-  The default value is 60, the unit is seconds. Value 0 means unlimited.
+  if it had been dead before. Value 0 means unlimited.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>outdated-wfc-timeout <replaceable>time</replaceable></option></term>
+  <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>outdated-wfc-timeout </secondary></indexterm>
+  Wait for connection timeout, if the peer was outdated.
+  In case a degraded cluster (= cluster with only one node left)
+  with an outdated peer disk is rebooted, this timeout value is used instead of wfc-timeout,
+  because the peer is not allowed to become primary in the meantime.
+  Value 0 means unlimited.
   </para>
   </listitem>
 </varlistentry>

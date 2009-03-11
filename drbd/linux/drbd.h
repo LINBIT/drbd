@@ -325,6 +325,12 @@ enum UuidIndex {
 	EXT_UUID_SIZE   /* Everything. */
 };
 
+enum UseTimeout {
+	UT_Default      = 0,
+	UT_Degraded     = 1,
+	UT_PeerOutdated = 2,
+};
+
 #define UUID_JUST_CREATED ((__u64)4)
 
 #define DRBD_MAGIC 0x83740267

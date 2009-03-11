@@ -217,6 +217,10 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_DEGR_WFC_TIMEOUT_MIN,
 				DRBD_DEGR_WFC_TIMEOUT_MAX);
 		break;
+	case R_OUTDATED_WFC_TIMEOUT:
+		m_strtoll_range(value, 1, name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+				DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+		break;
 	}
 }
 
