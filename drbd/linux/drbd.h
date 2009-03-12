@@ -306,7 +306,8 @@ enum MetaDataFlags {
 	__MDF_ConnectedInd,
 	__MDF_FullSync,
 	__MDF_WasUpToDate,
-	__MDF_PeerOutDated /* or worse (e.g. invalid). */
+	__MDF_PeerOutDated, /* or worse (e.g. invalid). */
+	__MDF_CrashedPrimary,
 };
 #define MDF_Consistent      (1<<__MDF_Consistent)
 #define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
@@ -314,6 +315,7 @@ enum MetaDataFlags {
 #define MDF_FullSync        (1<<__MDF_FullSync)
 #define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
 #define MDF_PeerOutDated    (1<<__MDF_PeerOutDated)
+#define MDF_CrashedPrimary  (1<<__MDF_CrashedPrimary)
 
 enum UuidIndex {
 	Current,

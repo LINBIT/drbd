@@ -1081,10 +1081,11 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	if (inc_local(mdev)) {
 		u32 mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
 						 MDF_ConnectedInd|MDF_WasUpToDate|
-						 MDF_PeerOutDated);
+						 MDF_PeerOutDated|MDF_CrashedPrimary);
 
-		if (test_bit(CRASHED_PRIMARY, &mdev->flags) ||
-		    mdev->state.role == Primary ||
+		if (test_bit(CRASHED_PRIMARY, &mdev->flags))
+			mdf |= MDF_CrashedPrimary;
+		if (mdev->state.role == Primary ||
 		    (mdev->state.pdsk < Inconsistent && mdev->state.peer == Primary))
 			mdf |= MDF_PrimaryInd;
 		if (mdev->state.conn > WFReportParams)

@@ -793,6 +793,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	struct lru_cache *resync_lru = NULL;
 	union drbd_state_t ns, os;
 	int rv, ntries = 0;
+	int cp_discovered = 0;
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless) {
@@ -1029,10 +1030,15 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->write_ordering = WO_bio_barrier;
 	drbd_bump_write_ordering(mdev, WO_bio_barrier);
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd))
+	if (drbd_md_test_flag(mdev->bc, MDF_CrashedPrimary))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);
 	else
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+
+	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd)) {
+		set_bit(CRASHED_PRIMARY, &mdev->flags);
+		cp_discovered = 1;
+	}
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -1087,7 +1093,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		}
 	}
 
-	if (test_bit(CRASHED_PRIMARY, &mdev->flags)) {
+	if (cp_discovered) {
 		drbd_al_apply_to_bm(mdev);
 		drbd_al_to_on_disk_bm(mdev);
 	}

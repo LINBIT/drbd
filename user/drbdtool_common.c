@@ -380,13 +380,14 @@ void dt_print_uuids(const __u64* uuid, unsigned int flags)
 	for ( i=History_start ; i<=History_end ; i++ ) {
 		printf(X64(016)":", uuid[i]);
 	}
-	printf("%d:%d:%d:%d:%d:%d\n",
+	printf("%d:%d:%d:%d:%d:%d:%d\n",
 	       flags & MDF_Consistent ? 1 : 0,
 	       flags & MDF_WasUpToDate ? 1 : 0,
 	       flags & MDF_PrimaryInd ? 1 : 0,
 	       flags & MDF_ConnectedInd ? 1 : 0,
 	       flags & MDF_FullSync ? 1 : 0,
-	       flags & MDF_PeerOutDated ? 1 : 0);
+	       flags & MDF_PeerOutDated ? 1 : 0,
+	       flags & MDF_CrashedPrimary ? 1 : 0);
 }
 
 void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
@@ -400,13 +401,14 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "       V               V                 V         V\n");
 	dt_print_uuids(uuid, flags);
 	printf(
-"                                                                    ^ ^ ^ ^ ^ ^\n"
-"                                      -<  Data consistancy flag  >--+ | | | | |\n"
-"                             -<  Data was/is currently up-to-date  >--+ | | | |\n"
-"                                  -<  Node was/is currently primary  >--+ | | |\n"
-"                                  -<  Node was/is currently connected  >--+ | |\n"
-"         -<  Node was in the progress of setting all bits in the bitmap  >--+ |\n"
-"                        -<  The peer's disk was out-dated or inconsistent  >--+\n"
+"                                                                    ^ ^ ^ ^ ^ ^ ^\n"
+"                                      -<  Data consistancy flag  >--+ | | | | | |\n"
+"                             -<  Data was/is currently up-to-date  >--+ | | | | |\n"
+"                                  -<  Node was/is currently primary  >--+ | | | |\n"
+"                                  -<  Node was/is currently connected  >--+ | | |\n"
+"         -<  Node was in the progress of setting all bits in the bitmap  >--+ | |\n"
+"                        -<  The peer's disk was out-dated or inconsistent  >--+ |\n"
+"      -<  This node was a crashed primary, and has not seen its peer since   >--+\n"
 "\n");
 }
 

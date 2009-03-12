@@ -832,6 +832,7 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 		if (!m_strsep_bit(str, &md->flags, MDF_ConnectedInd)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_FullSync)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_PeerOutDated)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CrashedPrimary)) break;
 	} while (0);
 }
 
