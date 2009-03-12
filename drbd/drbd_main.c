@@ -391,9 +391,7 @@ void tl_clear(struct drbd_conf *mdev)
  * NOTE: we set ourselves FAILED here if on_io_error is Detach or Panic OR
  *	 if the forcedetach flag is set. This flag is set when failures
  *	 occur writing the meta data portion of the disk as they are
- *	 not recoverable. We also try to write the "need full sync bit" here
- *	 anyways.  This is to make sure that you get a resynchronisation of
- *	 the full device the next time you connect.
+ *	 not recoverable.
  */
 int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 {
@@ -1228,16 +1226,9 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
-			if (ns.role == Primary && mdev->bc->md.uuid[Bitmap] == 0 &&
-			    ns.disk >= UpToDate)
+			if ((ns.role == Primary || ns.peer == Primary) &&
+			    mdev->bc->md.uuid[Bitmap] == 0 && ns.disk >= UpToDate) {
 				drbd_uuid_new_current(mdev);
-			if (ns.peer == Primary) {
-				/* Note: The condition ns.peer == Primary implies
-				   that we are connected. Otherwise it would
-				   be ns.peer == Unknown. */
-				/* A FullSync is required after a
-				   primary detached from its disk! */
-				_drbd_uuid_new_current(mdev);
 				drbd_send_uuids(mdev);
 			}
 			dec_local(mdev);
@@ -1245,15 +1236,8 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	}
 
 	if (ns.pdsk < Inconsistent && inc_local(mdev)) {
-		if (ns.peer == Primary && mdev->bc->md.uuid[Bitmap] == 0) {
-			/* Diskless Peer becomes primary */
-			if (os.peer == Secondary)
-				drbd_uuid_new_current(mdev);
-
-			/* Got connected to diskless, primary peer */
-			if (os.peer == Unknown)
-				_drbd_uuid_new_current(mdev);
-		}
+		if (ns.peer == Primary && mdev->bc->md.uuid[Bitmap] == 0)
+			drbd_uuid_new_current(mdev);
 
 		/* Diskless Peer becomes secondary */
 		if (os.peer == Primary && ns.peer == Secondary)
@@ -3419,30 +3403,6 @@ void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 			);
 	}
 	_drbd_uuid_set(mdev, idx, val);
-}
-
-/**
- * _drbd_uuid_new_current:
- * Creates a new current UUID, but does NOT rotate the old current
- * UUID into the bitmap slot (but into history). This causes a full
- * sync upon next connect. Aditionally the full sync is also requested
- * by the FullSync bit.
- */
-void _drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
-{
-	u64 uuid;
-
-	/* Actually a seperate bit names DisklessPeer, would be
-	   the right thing. But for now the FullSync bit is a
-	   working substitute, to avoid repetitive generating
-	   of new current UUIDs in case we loose connection
-	   and reconnect in a loop. */
-	if (mdev->bc->md.flags & MDF_FullSync)
-		return;
-	INFO("Creating new current UUID [no BitMap]\n");
-	get_random_bytes(&uuid, sizeof(u64));
-	drbd_uuid_set(mdev, Current, uuid);
-	drbd_md_set_flag(mdev, MDF_FullSync);
 }
 
 /**
