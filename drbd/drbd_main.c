@@ -863,13 +863,6 @@ int _drbd_set_state(struct drbd_conf *mdev,
 
 	/* Early state sanitising. */
 
-	/* Dissalow the invalidate command to connect  */
-	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
-		os.conn < Connected) {
-		ns.conn = os.conn;
-		ns.pdsk = os.pdsk;
-	}
-
 	/* Dissalow Network errors to configure a device's network part */
 	if ((ns.conn >= Timeout && ns.conn <= TearDown) &&
 	    os.conn <= Disconnecting)
