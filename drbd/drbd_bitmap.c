@@ -1060,7 +1060,10 @@ unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
 			b->bm_fo = bit_offset + PAGE_SIZE*8;
 		}
 		i = -1UL;
-		/* leave b->bm_fo unchanged. */
+                b->bm_fo = b->bm_bits;
+			/* Set bm_fo to after bitmap, such that
+                         * subsequent calls always return -1 
+                         */
 	}
  found:
 	spin_unlock_irq(&b->bm_lock);
