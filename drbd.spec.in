@@ -198,6 +198,19 @@ uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
 
 %changelog
+
+* Thu Mar 17 2009 13:01:05 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.15rc1-1)
+ * Adding a missing range check in ensure_mdev()
+ * Fix for several potential memory leaks when allocating a device (Bugz 135)
+ * Fixed error code pathes in request processing (Bugz 149)
+ * Fixed an minor issue with the exposed data UUID logic (Bugz 164)
+ * Fixed tight attach/detach loops (Bugz 171)
+ * Fixed drbdadm adjust, when a running config contains "--discard-my-data" (Bugz 201)
+ * Fix stack smashing in drbdmeta
+ * Adding a missing range check in ensure_mdev() (Bugz 199)
+ * Compatibility with Linux 2.6.27 and 2.6.28
+
 * Wed Nov 12 2008 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.14-1)
  * fixed some access-after-free corner cases
