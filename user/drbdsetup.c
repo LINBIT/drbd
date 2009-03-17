@@ -2046,14 +2046,14 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 			if (cn_reply->ack == 0) { // broadcasts
 				if (cn_reply->seq <= b_seq) continue;
 				b_seq = cn_reply->seq;
-			} else if (minor == reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
+			} else if (minor == (int)reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
 				// replies to drbdsetup packes and for this device.
 				if (cn_reply->seq <= r_seq) continue;
 				r_seq = cn_reply->seq;
 			}
 		}
 
-		if( all_devices || minor == reply->minor ) {
+		if( all_devices || minor == (int)reply->minor ) {
 			cont=cm->ep.proc_event(cn_reply->seq, wasb, reply);
 		}
 	} while(cont);
