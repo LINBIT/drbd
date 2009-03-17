@@ -90,6 +90,17 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+8.0.15rc1 (api:86/proto:86)
+--------
+ * Adding a missing range check in ensure_mdev()
+ * Fix for several potential memory leaks when allocating a device (Bugz 135)
+ * Fixed error code pathes in request processing (Bugz 149)
+ * Fixed an minor issue with the exposed data UUID logic (Bugz 164)
+ * Fixed tight attach/detach loops (Bugz 171)
+ * Fixed drbdadm adjust, when a running config contains "--discard-my-data" (Bugz 201)
+ * Fix stack smashing in drbdmeta
+ * Adding a missing range check in ensure_mdev() (Bugz 199)
+ * Compatibility with Linux 2.6.27 and 2.6.28
 
 8.0.14 (api:86/proto:86)
 --------

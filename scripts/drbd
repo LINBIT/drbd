@@ -10,8 +10,8 @@
 # Provides: drbd
 # Required-Start: $network $syslog sshd
 # Required-Stop: $network $syslog sshd
-# Default-Start:  3 5
-# Default-Stop:   0 1 2 6
+# Default-Start:  2 3 4 5
+# Default-Stop:   0 1 6
 # Short-Description:    Control drbd resources.
 ### END INIT INFO
 
@@ -28,6 +28,24 @@ if [ -f $DEFAULTFILE ]; then
 fi
 
 test -f $DRBDADM || exit 5
+
+if [ -f /lib/lsb/init-functions ]; then
+    . /lib/lsb/init-functions
+else
+    function log_daemon_msg
+    {
+	if [ -z "${2:-}" ]; then
+            echo -n "$1:"
+            return
+	fi
+	echo -n "$1: $2"
+    }
+
+    function log_end_msg
+    {
+        echo "."
+    }
+fi
 
 function assure_module_is_loaded
 {
@@ -128,7 +146,7 @@ $DRBDADM sh-nop
 
 case "$1" in
     start)
-	echo -n "Starting DRBD resources:    "
+	log_daemon_msg "Starting DRBD resources"
 	assure_module_is_loaded
 	adjust_with_progress
 
@@ -144,19 +162,19 @@ case "$1" in
 	done
 
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd	# for RedHat
-	echo "."
 	$DRBDADM wait-con-int # User interruptible version of wait-connect all
 
 	$DRBDADM sh-b-pri all # Become primary if configured
+	log_end_msg 0
 	;;
     stop)
-	echo -n "Stopping all DRBD resources"
+	log_daemon_msg "Stopping all DRBD resources"
 	if [ -e $PROC_DRBD ] ; then
 		$DRBDADM down all
 		$RMMOD drbd
 	fi
 	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
-	echo "."
+	log_end_msg 0
 	;;
     status)
 	# NEEDS to be heartbeat friendly...
@@ -171,17 +189,17 @@ case "$1" in
 	fi
 	;;
     reload)
-	echo -n "Reloading DRBD configuration"
+	log_daemon_msg  "Reloading DRBD configuration"
 	$DRBDADM adjust all
-	echo "."
+	log_end_msg 0
 	;;
     restart|force-reload)
-	echo -n "Restarting all DRBD resources"
+	log_daemon_msg "Restarting all DRBD resources"
 	$DRBDADM down all
 	$RMMOD drbd
 	assure_module_is_loaded
 	$DRBDADM up all
-	echo "."
+	log_end_msg 0
 	;;
     *)
 	echo "Usage: /etc/init.d/drbd {start|stop|status|reload|restart|force-reload}"
