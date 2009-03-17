@@ -57,7 +57,7 @@ else
 endif
 
 ifeq ($(DIST),debian)
-   UDEV_RULES=$(PREFIX)/etc/udev/drbd.rules
+   UDEV_RULES=$(PREFIX)/etc/udev/rules.d/65-drbd.rules
 else
    UDEV_RULES=$(PREFIX)/etc/udev/rules.d/65_drbd.rules
 endif

@@ -13,7 +13,6 @@ if [ -x "/etc/init.d/drbd" ]
 then
     case "$1" in
 	remove|deconfigure)
-	    rm -f /etc/udev/rules.d/65_drbd.rules
 	    /usr/sbin/invoke-rc.d drbd stop || true
 	    ;;
 

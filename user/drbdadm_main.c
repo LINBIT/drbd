@@ -835,9 +835,15 @@ static int sh_dev(struct d_resource* res,const char* unused __attribute((unused)
 
 static int sh_udev(struct d_resource* res,const char* unused __attribute((unused)))
 {
+	/* No shell escape necessary. Udev does not handle it anyways... */
+	printf("RESOURCE=%s\n", res->name);
+
 	/* Assuming that the string starts with "/dev/"*/
 	if (strlen(res->me->device) > 5)
-		printf("%s\n", res->me->device + 5);
+		printf("DEVICE=%s\n", res->me->device + 5);
+
+	if (strlen(res->me->disk) > 5)
+		printf("DISK=%s\n", res->me->disk + 5);
 
 	return 0;
 }
@@ -1006,7 +1012,7 @@ static void expand_common(void)
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
 			if (!h->device)
-				m_asprintf(&h->device, "/dev/drbd/%s", res->name);
+				m_asprintf(&h->device, "/dev/drbd%d", res->me->device_minor);
 		}
 	}
 

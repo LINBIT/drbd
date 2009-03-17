@@ -7,8 +7,8 @@ fi
 # Make sure /dev/nb[0-7] devices exist
 # cd /dev; for a in `seq 0 7`; do MAKEDEV nb$a; done
 
-if [ -d /etc/udev/rules.d -a -e /etc/udev/drbd.rules ]; then
-	ln -sf ../drbd.rules /etc/udev/rules.d/65_drbd.rules
+if [ -d /etc/udev/rules.d ]; then
+	echo "Udev found. Not creating device nodes."
 else
 	for i in `seq 0 15` ; do
 		test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i;

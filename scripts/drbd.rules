@@ -1,6 +1,6 @@
 # This file contains the rules to create named DRBD devices.
 
 KERNEL=="drbd*", \
-	PROGRAM="/sbin/drbdadm sh-udev minor-%m", \
-	NAME="%c", \
-	SYMLINK="%k"
+	IMPORT{program}="/sbin/drbdadm sh-udev minor-%m", \
+	NAME="$env{DEVICE}", \
+	SYMLINK="drbd/by-res/$env{RESOURCE} drbd/by-disk/$env{DISK}"
