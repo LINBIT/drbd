@@ -2,6 +2,23 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.1rc1 (api:86/proto:86-89)
+--------
+ * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
+ * Adding a missing range check in ensure_mdev()
+ * Implemented a congested_fn; the kernel can keep its pdflushes running now
+ * Improvements the connection code for high latency links
+ * Fix for several potential memory leaks when allocating a device
+ * Use an additional meta data bit to store the fact of an old crashed primary
+ * Udev rule that populates /dev/drbd/by-res/ and /dev/drbd/by-disk/
+ * New timeout option: outdated-wfc-timeout
+ * New drbdmeta option: --ignore-sanity-checks
+ * Include statement for drbd.conf
+ * Improvements to drbd-overview.pl
+ * Fixed snapshot-resync-target-lvm.sh to work with more than 10 devices
+ * Do not force a full resync after a detach on a primary node
+ * Compatibility with Linux 2.6.27 and 2.6.28
+
 8.3.0 (api:86/proto:86-89)
 --------
  * Fixed 'sleep with spinlock held' in case online verify found a difference
