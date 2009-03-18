@@ -1027,19 +1027,13 @@ void drbd_bm_reset_find(struct drbd_conf *mdev)
  * this returns a bit number, NOT a sector!
  */
 #define BPP_MASK ((1UL << (PAGE_SHIFT+3)) - 1)
-unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
+static unsigned long __bm_find_next(struct drbd_conf *mdev, const int find_zero_bit)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
 	unsigned long *p_addr;
 	unsigned long bit_offset; /* bit offset of the mapped page. */
 
-	ERR_IF(!b) return i;
-	ERR_IF(!b->bm_pages) return i;
-
-	spin_lock_irq(&b->bm_lock);
-	if (bm_is_locked(b))
-		bm_print_lock_info(mdev);
 	if (b->bm_fo > b->bm_bits) {
 		ERR("bm_fo=%lu bm_bits=%lu\n", b->bm_fo, b->bm_bits);
 	} else {
@@ -1048,7 +1042,12 @@ unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
 			bit_offset = b->bm_fo & ~BPP_MASK; /* bit offset of the page */
 			offset = bit_offset >> LN2_BPL;    /* word offset of the page */
 			p_addr = bm_map_paddr(b, offset);
-			i = find_next_bit(p_addr, PAGE_SIZE*8, b->bm_fo & BPP_MASK);
+
+			if (find_zero_bit)
+				i = find_next_zero_bit(p_addr, PAGE_SIZE*8, b->bm_fo & BPP_MASK);
+			else
+				i = find_next_bit(p_addr, PAGE_SIZE*8, b->bm_fo & BPP_MASK);
+
 			bm_unmap(p_addr);
 			if (i < PAGE_SIZE*8) {
 				i = bit_offset + i;
@@ -1066,9 +1065,40 @@ unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
                          */
 	}
  found:
+	return i;
+}
+
+static unsigned long bm_find_next(struct drbd_conf *mdev, const int find_zero_bit)
+{
+	struct drbd_bitmap *b = mdev->bitmap;
+	unsigned long i = -1UL;
+
+	ERR_IF(!b) return i;
+	ERR_IF(!b->bm_pages) return i;
+
+	spin_lock_irq(&b->bm_lock);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
+
+	i = __bm_find_next(mdev, find_zero_bit);
+
 	spin_unlock_irq(&b->bm_lock);
 	return i;
 }
+
+unsigned long drbd_bm_find_next(struct drbd_conf *mdev)
+{
+	return bm_find_next(mdev, 0);
+}
+
+#if 0
+/* not yet needed for anything. */
+unsigned long drbd_bm_find_next_zero(struct drbd_conf *mdev)
+{
+	return bm_find_next(mdev, 1);
+}
+#endif
+
 
 void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i)
 {
