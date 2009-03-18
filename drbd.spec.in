@@ -136,10 +136,18 @@ ___
 /usr/lib/drbd/unsnapshot-resync-target-lvm.sh
 /usr/lib/drbd/notify-out-of-sync.sh
 /usr/lib/drbd/notify-split-brain.sh
+/usr/lib/drbd/notify-emergency-reboot.sh
+/usr/lib/drbd/notify-emergency-shutdown.sh
+/usr/lib/drbd/notify-io-error.sh
+/usr/lib/drbd/notify-pri-lost-after-sb.sh
+/usr/lib/drbd/notify-pri-lost.sh
+/usr/lib/drbd/notify-pri-on-incon-degr.sh
 /usr/lib/drbd/notify.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/ha.d/resource.d/drbdupper
 /etc/xen/scripts/block-drbd
+/etc/udev/rules.d/65-drbd.rules
+
 
 %defattr(644,root,root)
 /var/lib/drbd

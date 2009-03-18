@@ -56,12 +56,6 @@ else
    COMPLETION=drbdadm
 endif
 
-ifeq ($(DIST),debian)
-   UDEV_RULES=$(PREFIX)/etc/udev/rules.d/65-drbd.rules
-else
-   UDEV_RULES=$(PREFIX)/etc/udev/rules.d/65_drbd.rules
-endif
-
 all:
 
 install:
@@ -91,7 +85,8 @@ install:
 	  ln -sf notify.sh notify-out-of-sync.sh; )
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
-	install -m 644 drbd.rules $(UDEV_RULES)
+	mkdir -p $(PREFIX)/etc/udev/rules.d
+	install -m 644 drbd.rules $(PREFIX)/etc/udev/rules.d/65-drbd.rules
 ifneq ($(DIST),redhat)
  ifneq ($(DIST),slackware)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
