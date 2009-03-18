@@ -1143,23 +1143,18 @@ int drbd_bm_rs_done(struct drbd_conf *mdev)
 /* returns number of bits actually changed.
  * for val != 0, we change 0 -> 1, return code positiv
  * for val == 0, we change 1 -> 0, return code negative
- * wants bitnr, not sector */
-static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
-	const unsigned long e, int val)
+ * wants bitnr, not sector.
+ * Must hold bitmap lock already. */
+
+int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+	const unsigned long e, int val, const enum km_type km)
 {
-	unsigned long flags;
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *p_addr = NULL;
 	unsigned long bitnr;
 	unsigned long last_page_nr = -1UL;
 	int c = 0;
 
-	ERR_IF(!b) return 1;
-	ERR_IF(!b->bm_pages) return 0;
-
-	spin_lock_irqsave(&b->bm_lock, flags);
-	if (bm_is_locked(b))
-		bm_print_lock_info(mdev);
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
 			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
@@ -1168,8 +1163,8 @@ static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 			unsigned long page_nr = offset >> (PAGE_SHIFT - LN2_BPL + 3);
 			if (page_nr != last_page_nr) {
 				if (p_addr)
-					bm_unmap(p_addr);
-				p_addr = bm_map_paddr(b, offset);
+					__bm_unmap(p_addr, km);
+				p_addr = __bm_map_paddr(b, offset, km);
 				last_page_nr = page_nr;
 			}
 			if (val)
@@ -1179,8 +1174,31 @@ static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 		}
 	}
 	if (p_addr)
-		bm_unmap(p_addr);
+		__bm_unmap(p_addr, km);
 	b->bm_set += c;
+	return c;
+}
+
+/* returns number of bits actually changed.
+ * for val != 0, we change 0 -> 1, return code positiv
+ * for val == 0, we change 1 -> 0, return code negative
+ * wants bitnr, not sector */
+int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+	const unsigned long e, int val)
+{
+	unsigned long flags;
+	struct drbd_bitmap *b = mdev->bitmap;
+	int c = 0;
+
+	ERR_IF(!b) return 1;
+	ERR_IF(!b->bm_pages) return 0;
+
+	spin_lock_irqsave(&b->bm_lock, flags);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
+
+	c = __bm_change_bits_to(mdev, s, e, val, KM_IRQ1);
+
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 	return c;
 }
@@ -1195,6 +1213,14 @@ int drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsign
 int drbd_bm_clear_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
 	return -bm_change_bits_to(mdev, s, e, 0);
+}
+
+/* the same thing, but without taking the spin_lock_irqsave.
+ * you must first drbd_bm_lock(). */
+int _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
+{
+       /* WARN_ON(!bm_is_locked(b)); */
+       return __bm_change_bits_to(mdev, s, e, 1, KM_USER0);
 }
 
 /* returns bit state

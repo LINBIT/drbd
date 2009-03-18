@@ -1337,6 +1337,9 @@ extern int  drbd_bm_set_bits(
 		struct drbd_conf *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_clear_bits(
 		struct drbd_conf *mdev, unsigned long s, unsigned long e);
+/* bm_set_bits variant for use while holding drbd_bm_lock */
+extern int _drbd_bm_set_bits(struct drbd_conf *mdev,
+		const unsigned long s, const unsigned long e);
 extern int  drbd_bm_test_bit(struct drbd_conf *mdev, unsigned long bitnr);
 extern int  drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr);
 extern int  drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(local);
