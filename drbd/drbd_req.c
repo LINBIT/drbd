@@ -126,7 +126,6 @@ static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_reque
 	int cpu;
 #endif
 
-	MUST_HOLD(&mdev->req_lock)
 #ifdef __disk_stat_inc
 	__disk_stat_inc(mdev->vdisk, ios[rw]);
 	__disk_stat_add(mdev->vdisk, sectors[rw], bio_sectors(bio));
@@ -150,7 +149,6 @@ static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request
 	int cpu;
 #endif
 
-	MUST_HOLD(&mdev->req_lock)
 #ifdef __disk_stat_add
 	__disk_stat_add(mdev->vdisk, ticks[rw], duration);
 	disk_round_stats(mdev->vdisk);
@@ -340,7 +338,6 @@ void _req_may_be_done(struct drbd_request *req, int error)
 	int rw;
 
 	print_rq_state(req, "_req_may_be_done");
-	MUST_HOLD(&mdev->req_lock)
 
 	/* we must not complete the master bio, while it is
 	 *	still being processed by _drbd_send_zc_bio (drbd_send_dblock)
@@ -454,7 +451,6 @@ STATIC int _req_conflicts(struct drbd_request *req)
 	struct hlist_node *n;
 	struct hlist_head *slot;
 
-	MUST_HOLD(&mdev->req_lock);
 	D_ASSERT(hlist_unhashed(&req->colision));
 
 	/* FIXME should this inc_net/dec_net
@@ -530,7 +526,6 @@ out_conflict:
 void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 {
 	struct drbd_conf *mdev = req->mdev;
-	MUST_HOLD(&mdev->req_lock);
 
 	if (error && (bio_rw(req->master_bio) != READA))
 		ERR("got an _req_mod() errno of %d\n", error);

@@ -256,43 +256,16 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 #define FAULT_ACTIVE(_m, _t) (0)
 #endif
 
-#include <linux/stringify.h>
 /* integer division, round _UP_ to the next integer */
 #define div_ceil(A, B) ((A)/(B) + ((A)%(B) ? 1 : 0))
 /* usual integer division */
 #define div_floor(A, B) ((A)/(B))
-
-/*
- * Compatibility Section
- *************************/
-
-#define LOCK_SIGMASK(task, flags)   spin_lock_irqsave(&task->sighand->siglock, flags)
-#define UNLOCK_SIGMASK(task, flags) spin_unlock_irqrestore(&task->sighand->siglock, flags)
-#define RECALC_SIGPENDING()	    recalc_sigpending();
-
-#if defined(DBG_SPINLOCKS) && defined(__SMP__)
-# define MUST_HOLD(lock) if (!spin_is_locked(lock)) ERR("Not holding lock! in %s\n", __func__);
-#else
-# define MUST_HOLD(lock)
-#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,8)
 # define HAVE_KERNEL_SENDMSG 1
 #else
 # define HAVE_KERNEL_SENDMSG 0
 #endif
-
-#ifndef uninitialized_var
-/* in upstream since 9490991482a2091a828d997adbc088e24c310a4d
- * Date:   Sun May 6 14:49:17 2007 -0700 */
-/*
- * A trick to suppress uninitialized variable warning without generating any
- * code
- */
-#define uninitialized_var(x) x = x
-#endif
-
-
 
 /*
  * our structs

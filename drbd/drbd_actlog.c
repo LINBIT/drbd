@@ -885,7 +885,6 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 
 	unsigned int enr;
 
-	MUST_HOLD(&mdev->al_lock);
 	D_ASSERT(atomic_read(&mdev->local_cnt));
 
 	/* I simply assume that a sector/size pair never crosses

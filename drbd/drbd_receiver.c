@@ -446,7 +446,6 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 	struct drbd_epoch *epoch;
 	int n = 0;
 
-	MUST_HOLD(&mdev->req_lock);
 
 	reclaim_net_ee(mdev);
 
@@ -478,7 +477,6 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 void _drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
 {
 	DEFINE_WAIT(wait);
-	MUST_HOLD(&mdev->req_lock);
 
 	/* avoids spin_lock/unlock
 	 * and calling prepare_to_wait in the fast path */

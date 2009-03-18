@@ -843,7 +843,6 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	enum fencing_policy fp;
 	struct after_state_chg_work *ascw;
 
-	MUST_HOLD(&mdev->req_lock);
 
 	os = mdev->state;
 
@@ -3818,7 +3817,6 @@ int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *), cha
 
 void drbd_md_set_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
-	MUST_HOLD(mdev->req_lock);
 	if ((mdev->bc->md.flags & flag) != flag) {
 		drbd_md_mark_dirty(mdev);
 		mdev->bc->md.flags |= flag;
@@ -3827,7 +3825,6 @@ void drbd_md_set_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 
 void drbd_md_clear_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
-	MUST_HOLD(mdev->req_lock);
 	if ((mdev->bc->md.flags & flag) != 0) {
 		drbd_md_mark_dirty(mdev);
 		mdev->bc->md.flags &= ~flag;
