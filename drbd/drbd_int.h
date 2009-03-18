@@ -1348,6 +1348,9 @@ extern size_t	     drbd_bm_words(struct drbd_conf *mdev);
 extern unsigned long drbd_bm_bits(struct drbd_conf *mdev);
 extern sector_t      drbd_bm_capacity(struct drbd_conf *mdev);
 extern unsigned long drbd_bm_find_next(struct drbd_conf *mdev);
+/* bm_find_next variants for use while you hold drbd_bm_lock() */
+extern unsigned long _drbd_bm_find_next(struct drbd_conf *mdev);
+extern unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev);
 extern void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i);
 extern unsigned long drbd_bm_total_weight(struct drbd_conf *mdev);
 extern int drbd_bm_rs_done(struct drbd_conf *mdev);

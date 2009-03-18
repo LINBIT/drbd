@@ -192,7 +192,7 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 #endif
 
 /* word offset to long pointer */
-STATIC unsigned long * bm_map_paddr(struct drbd_bitmap *b, unsigned long offset)
+unsigned long * __bm_map_paddr(struct drbd_bitmap *b, unsigned long offset, const enum km_type km)
 {
 	struct page *page;
 	unsigned long page_nr;
@@ -202,13 +202,23 @@ STATIC unsigned long * bm_map_paddr(struct drbd_bitmap *b, unsigned long offset)
 	BUG_ON(page_nr >= b->bm_number_of_pages);
 	page = b->bm_pages[page_nr];
 
-	return (unsigned long *) kmap_atomic(page, KM_IRQ1);
+	return (unsigned long *) kmap_atomic(page, km);
 }
 
-STATIC void bm_unmap(unsigned long *p_addr)
+unsigned long * bm_map_paddr(struct drbd_bitmap *b, unsigned long offset)
 {
-	kunmap_atomic(p_addr, KM_IRQ1);
+	return __bm_map_paddr(b, offset, KM_IRQ1);
+}
+
+void __bm_unmap(unsigned long *p_addr, const enum km_type km)
+{
+	kunmap_atomic(p_addr, km);
 };
+
+void bm_unmap(unsigned long *p_addr)
+{
+	return __bm_unmap(p_addr, KM_IRQ1);
+}
 
 /* long word offset of _bitmap_ sector */
 #define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
@@ -1027,7 +1037,7 @@ void drbd_bm_reset_find(struct drbd_conf *mdev)
  * this returns a bit number, NOT a sector!
  */
 #define BPP_MASK ((1UL << (PAGE_SHIFT+3)) - 1)
-static unsigned long __bm_find_next(struct drbd_conf *mdev, const int find_zero_bit)
+static unsigned long __bm_find_next(struct drbd_conf *mdev, const int find_zero_bit, const enum km_type km)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long i = -1UL;
@@ -1041,14 +1051,14 @@ static unsigned long __bm_find_next(struct drbd_conf *mdev, const int find_zero_
 			unsigned long offset;
 			bit_offset = b->bm_fo & ~BPP_MASK; /* bit offset of the page */
 			offset = bit_offset >> LN2_BPL;    /* word offset of the page */
-			p_addr = bm_map_paddr(b, offset);
+			p_addr = __bm_map_paddr(b, offset, km);
 
 			if (find_zero_bit)
 				i = find_next_zero_bit(p_addr, PAGE_SIZE*8, b->bm_fo & BPP_MASK);
 			else
 				i = find_next_bit(p_addr, PAGE_SIZE*8, b->bm_fo & BPP_MASK);
 
-			bm_unmap(p_addr);
+			__bm_unmap(p_addr, km);
 			if (i < PAGE_SIZE*8) {
 				i = bit_offset + i;
 				if (i >= b->bm_bits)
@@ -1080,7 +1090,7 @@ static unsigned long bm_find_next(struct drbd_conf *mdev, const int find_zero_bi
 	if (bm_is_locked(b))
 		bm_print_lock_info(mdev);
 
-	i = __bm_find_next(mdev, find_zero_bit);
+	i = __bm_find_next(mdev, find_zero_bit, KM_IRQ1);
 
 	spin_unlock_irq(&b->bm_lock);
 	return i;
@@ -1099,6 +1109,19 @@ unsigned long drbd_bm_find_next_zero(struct drbd_conf *mdev)
 }
 #endif
 
+/* does not spin_lock_irqsave.
+ * you must take drbd_bm_lock() first */
+unsigned long _drbd_bm_find_next(struct drbd_conf *mdev)
+{
+	/* WARN_ON(!bm_is_locked(mdev)); */
+	return __bm_find_next(mdev, 0, KM_USER1);
+}
+
+unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev)
+{
+	/* WARN_ON(!bm_is_locked(mdev)); */
+	return __bm_find_next(mdev, 1, KM_USER1);
+}
 
 void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i)
 {
