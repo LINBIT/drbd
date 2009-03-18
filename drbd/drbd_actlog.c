@@ -1053,7 +1053,7 @@ void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 	unsigned long sbnr, ebnr, lbnr, flags;
 	sector_t esector, nr_sectors;
 	unsigned int enr, count;
-	struct bm_extent* ext;
+	struct bm_extent *ext;
 
 	if (size <= 0 || (size & 0x1ff) != 0 || size > DRBD_MAX_SEGMENT_SIZE) {
 		ERR("sector: %llus, size: %d\n",

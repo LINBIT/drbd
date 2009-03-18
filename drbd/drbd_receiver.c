@@ -655,7 +655,7 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	*/
 	memcpy(&src_in6, mdev->net_conf->my_addr,
 	       min_t(int, mdev->net_conf->my_addr_len, sizeof(src_in6)));
-	if(((struct sockaddr *)mdev->net_conf->my_addr)->sa_family == AF_INET6)
+	if (((struct sockaddr *)mdev->net_conf->my_addr)->sa_family == AF_INET6)
 		src_in6.sin6_port = 0;
 	else
 		((struct sockaddr_in *)&src_in6)->sin_port = 0; /* AF_INET & AF_SCI */
@@ -866,7 +866,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 				break;
 		}
 
-	retry:
+retry:
 		s = drbd_wait_for_connect(mdev);
 		if (s) {
 			try = drbd_recv_fp(mdev, s);
@@ -1025,7 +1025,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 	if (mdev->write_ordering >= WO_bdev_flush && inc_local(mdev)) {
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
 		if (rv) {
-			ERR("local disk flush failed with status %d\n",rv);
+			ERR("local disk flush failed with status %d\n", rv);
 			/* would rather check on EOPNOTSUPP, but that is not reliable.
 			 * don't try again for ANY return value != 0
 			 * if (rv == -EOPNOTSUPP) */
@@ -1229,7 +1229,7 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
 {
 	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
-	struct bio* bio = e->private_bio;
+	struct bio *bio = e->private_bio;
 
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
@@ -1407,7 +1407,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 
 	if (dgs) {
 		drbd_csum(mdev, mdev->integrity_r_tfm, bio, dig_vv);
-		if (memcmp(dig_in,dig_vv,dgs)) {
+		if (memcmp(dig_in, dig_vv, dgs)) {
 			ERR("Digest integrity check FAILED.\n");
 			drbd_bcast_ee(mdev, "digest failed",
 					dgs, dig_in, dig_vv, e);
@@ -1499,7 +1499,7 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 
 	if (dgs) {
 		drbd_csum(mdev, mdev->integrity_r_tfm, bio, dig_vv);
-		if (memcmp(dig_in,dig_vv,dgs)) {
+		if (memcmp(dig_in, dig_vv, dgs)) {
 			ERR("Digest integrity check FAILED. Broken NICs?\n");
 			return 0;
 		}
@@ -2064,7 +2064,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	struct Tl_epoch_entry *e;
 	struct digest_info *di;
-	int size,digest_size;
+	int size, digest_size;
 	unsigned int fault_type;
 	struct Drbd_BlockRequest_Packet *p =
 		(struct Drbd_BlockRequest_Packet *)h;
@@ -2134,10 +2134,10 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 	case CsumRSRequest:
 		fault_type = DRBD_FAULT_RS_RD;
 		digest_size = h->length - brps ;
-		di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
+		di = kmalloc(sizeof(*di) + digest_size, GFP_KERNEL);
 		if (!di) {
 			dec_local(mdev);
-			drbd_free_ee(mdev,e);
+			drbd_free_ee(mdev, e);
 			return 0;
 		}
 
@@ -2146,7 +2146,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 		if (drbd_recv(mdev, di->digest, digest_size) != digest_size) {
 			dec_local(mdev);
-			drbd_free_ee(mdev,e);
+			drbd_free_ee(mdev, e);
 			kfree(di);
 			return FALSE;
 		}
@@ -2161,10 +2161,10 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 			break;
 		}
 
-		if (!drbd_rs_begin_io(mdev,sector)) {
-			// we have been interrupted, probably connection lost!
+		if (!drbd_rs_begin_io(mdev, sector)) {
+			/* we have been interrupted, probably connection lost! */
 			D_ASSERT(signal_pending(current));
-			drbd_free_ee(mdev,e);
+			drbd_free_ee(mdev, e);
 			kfree(di);
 			dec_local(mdev);
 			return FALSE;
@@ -2179,12 +2179,12 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		 * resync data block.
 		 * the drbd_work_queue mechanism is made for this...
 		 */
-		if (!drbd_rs_begin_io(mdev,sector)) {
+		if (!drbd_rs_begin_io(mdev, sector)) {
 			/* we have been interrupted,
 			 * probably connection lost! */
 			D_ASSERT(signal_pending(current));
 			dec_local(mdev);
-			drbd_free_ee(mdev,e);
+			drbd_free_ee(mdev, e);
 			return 0;
 		}
 		break;
@@ -2234,12 +2234,24 @@ STATIC int drbd_asb_recover_0p(struct drbd_conf *mdev) __must_hold(local)
 	case Disconnect:
 		break;
 	case DiscardYoungerPri:
-		if (self == 0 && peer == 1) { rv = -1; break; }
-		if (self == 1 && peer == 0) { rv =  1; break; }
+		if (self == 0 && peer == 1) {
+			rv = -1;
+			break;
+		}
+		if (self == 1 && peer == 0) {
+			rv =  1;
+			break;
+		}
 		/* Else fall through to one of the other strategies... */
 	case DiscardOlderPri:
-		if (self == 0 && peer == 1) { rv =  1; break; }
-		if (self == 1 && peer == 0) { rv = -1; break; }
+		if (self == 0 && peer == 1) {
+			rv = 1;
+			break;
+		}
+		if (self == 1 && peer == 0) {
+			rv = -1;
+			break;
+		}
 		/* Else fall through to one of the other strategies... */
 		drbd_WARN("Discard younger/older primary did not found a decision\n"
 		     "Using discard-least-changes instead\n");
@@ -2395,16 +2407,18 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	peer = mdev->p_uuid[Current] & ~((u64)1);
 
 	*rule_nr = 1;
-	if (self == UUID_JUST_CREATED &&
-	    peer == UUID_JUST_CREATED) return 0;
+	if (self == UUID_JUST_CREATED && peer == UUID_JUST_CREATED)
+		return 0;
 
 	*rule_nr = 2;
 	if ((self == UUID_JUST_CREATED || self == (u64)0) &&
-	     peer != UUID_JUST_CREATED) return -2;
+	     peer != UUID_JUST_CREATED)
+		return -2;
 
 	*rule_nr = 3;
-	if ( self != UUID_JUST_CREATED &&
-	    (peer == UUID_JUST_CREATED || peer == (u64)0)) return 2;
+	if (self != UUID_JUST_CREATED &&
+	    (peer == UUID_JUST_CREATED || peer == (u64)0))
+		return 2;
 
 	*rule_nr = 4;
 	if (self == peer) { /* Common power [off|failure] */
@@ -2415,7 +2429,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
 
-		MTRACE(TraceTypeUuid, TraceLvlMetrics, DUMPI(rct); );
+		MTRACE(TraceTypeUuid, TraceLvlMetrics, DUMPI(rct););
 
 		switch (rct) {
 		case 0: /* !self_pri && !peer_pri */ return 0;
@@ -2423,7 +2437,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		case 2: /* !self_pri &&  peer_pri */ return -1;
 		case 3: /*  self_pri &&  peer_pri */
 			dc = test_bit(DISCARD_CONCURRENT, &mdev->flags);
-			MTRACE(TraceTypeUuid, TraceLvlMetrics, DUMPI(dc); );
+			MTRACE(TraceTypeUuid, TraceLvlMetrics, DUMPI(dc););
 			return dc ? -1 : 1;
 		}
 	}
@@ -2500,8 +2514,8 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 		return conn_mask;
 	}
 
-	if (   (mydisk == Inconsistent && peer_disk > Inconsistent) ||
-	    (peer_disk == Inconsistent && mydisk    > Inconsistent))  {
+	if    ((mydisk == Inconsistent && peer_disk > Inconsistent) ||
+	    (peer_disk == Inconsistent && mydisk    > Inconsistent)) {
 		int f = (hg == -100) || abs(hg) == 2;
 		hg = mydisk > Inconsistent ? 1 : -1;
 		if (f)
@@ -3867,7 +3881,7 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 	    PRO_VERSION_MIN > p->protocol_max)
 		goto incompat;
 
-	mdev->agreed_pro_version = min_t(int,PRO_VERSION_MAX,p->protocol_max);
+	mdev->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
 
 	INFO("Handshake successful: "
 	     "Agreed network protocol version %d\n", mdev->agreed_pro_version);
@@ -4263,10 +4277,10 @@ STATIC int got_BarrierAck(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
+STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
-	struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet*)h;
-	struct drbd_work* w;
+	struct Drbd_BlockAck_Packet *p = (struct Drbd_BlockAck_Packet *)h;
+	struct drbd_work *w;
 	sector_t sector;
 	int size;
 
@@ -4275,9 +4289,10 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct Drbd_Header* h)
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
-	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC) {
+	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC)
 		drbd_ov_oos_found(mdev, sector, size);
-	} else ov_oos_print(mdev);
+	else
+		ov_oos_print(mdev);
 
 	drbd_rs_complete_io(mdev, sector);
 	dec_rs_pending(mdev);

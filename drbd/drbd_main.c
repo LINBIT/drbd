@@ -777,13 +777,13 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 		  ns.disk == Outdated)
 		rv = SS_ConnectedOutdates;
 
-	else if( (ns.conn == VerifyS ||
-		  ns.conn == VerifyT) &&
-                  (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NoVerifyAlg;
+	else if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
+		 (mdev->sync_conf.verify_alg[0] == 0))
+		rv = SS_NoVerifyAlg;
 
-	else if( (ns.conn == VerifyS ||
-		  ns.conn == VerifyT) &&
-		  mdev->agreed_pro_version < 88) rv = SS_NotSupported;
+	else if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
+		  mdev->agreed_pro_version < 88)
+		rv = SS_NotSupported;
 
 	return rv;
 }
@@ -816,7 +816,7 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 		rv = SS_InTransientState;
 
 	if ((ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected)
-		rv=SS_NeedConnection;
+		rv = SS_NeedConnection;
 
 	if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
 	    ns.conn != os.conn && os.conn > Connected)
@@ -887,7 +887,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		ns.pdsk = DUnknown;
 
 	if (os.conn > Connected && ns.conn > Connected &&
-            (ns.disk <= Failed || ns.pdsk <= Failed)) {
+	    (ns.disk <= Failed || ns.pdsk <= Failed)) {
 		warn_sync_abort = 1;
 		ns.conn = Connected;
 	}
@@ -1063,7 +1063,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (os.conn == Connected &&
-	    (ns.conn == VerifyS || ns.conn == VerifyT )) {
+	    (ns.conn == VerifyS || ns.conn == VerifyT)) {
 		mdev->ov_position = 0;
 		mdev->ov_left  =
 		mdev->rs_total =
@@ -1074,7 +1074,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		mdev->ov_last_oos_start = 0;
 
 		if (ns.conn == VerifyS)
-			mod_timer(&mdev->resync_timer,jiffies);
+			mod_timer(&mdev->resync_timer, jiffies);
 	}
 
 	if (inc_local(mdev)) {
@@ -1489,9 +1489,9 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		thi->t_state = ns;
 		smp_mb();
 		init_completion(&thi->startstop);
-		if (thi->task != current) {
+		if (thi->task != current)
 			force_sig(DRBD_SIGKILL, thi->task);
-		} else
+		else
 			D_ASSERT(!wait);
 	}
 	spin_unlock(&thi->t_lock);
@@ -1646,9 +1646,9 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	const int apv = mdev->agreed_pro_version;
 
 	size = apv <= 87 ? sizeof(struct Drbd_SyncParam_Packet)
-	     : apv == 88 ? sizeof(struct Drbd_SyncParam_Packet)
-	                   + strlen(mdev->sync_conf.verify_alg) + 1
-	     : /* 89 */    sizeof(struct Drbd_SyncParam89_Packet);
+		: apv == 88 ? sizeof(struct Drbd_SyncParam_Packet)
+			+ strlen(mdev->sync_conf.verify_alg) + 1
+		: /* 89 */    sizeof(struct Drbd_SyncParam89_Packet);
 
 	/* used from admin command context and receiver/worker context.
 	 * to avoid kmalloc, grab the socket right here,
@@ -1683,14 +1683,15 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 int drbd_send_protocol(struct drbd_conf *mdev)
 {
 	struct Drbd_Protocol_Packet *p;
-	int size,rv;
+	int size, rv;
 
 	size = sizeof(struct Drbd_Protocol_Packet);
 
 	if (mdev->agreed_pro_version >= 87)
 		size += strlen(mdev->net_conf->integrity_alg) + 1;
 
-	if ((p = kmalloc(size, GFP_KERNEL)) == NULL)
+	p = kmalloc(size, GFP_KERNEL);
+	if (p == NULL)
 		return 0;
 
 	p->protocol      = cpu_to_be32(mdev->net_conf->wire_protocol);
@@ -2227,7 +2228,7 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 }
 
 int drbd_send_drequest_csum(struct drbd_conf *mdev,
-			    sector_t sector,int size,
+			    sector_t sector, int size,
 			    void *digest, int digest_size,
 			    enum Drbd_Packet_Cmd cmd)
 {
@@ -2252,7 +2253,7 @@ int drbd_send_drequest_csum(struct drbd_conf *mdev,
 	return ok;
 }
 
-int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
+int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	int ok;
 	struct Drbd_BlockRequest_Packet p;
@@ -2261,8 +2262,8 @@ int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
 	p.block_id = BE_DRBD_MAGIC + 0xbabe;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET, OVRequest,
-			   (struct Drbd_Header*)&p,sizeof(p));
+	ok = drbd_send_cmd(mdev, USE_DATA_SOCKET, OVRequest,
+			   (struct Drbd_Header *)&p, sizeof(p));
 	return ok;
 }
 
@@ -2754,7 +2755,7 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 		} };
 }
 
-int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 
 void drbd_init_set_defaults(struct drbd_conf *mdev)
 {
@@ -3058,7 +3059,7 @@ static void drbd_delete_device(unsigned int minor)
 	/* paranoia asserts */
 	if (mdev->open_cnt != 0)
 		ERR("open_cnt = %d in %s:%u", mdev->open_cnt,
-				__FILE__ , __LINE__ );
+				__FILE__ , __LINE__);
 
 	ERR_IF (!list_empty(&mdev->data.work.q)) {
 		struct list_head *lp;
@@ -3733,7 +3734,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
-int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = (struct bm_io_work *)w;
 	int rv;
@@ -4065,7 +4066,7 @@ drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			printk(KERN_DEBUG "%s%8.8lx: %*s|%*s|\n",
 			       prefix,
 			       (flags & DBGPRINT_BUFFADDR)
-			       ? (long)pstart_va : (long)offset,
+			       ? (long)pstart_va:(long)offset,
 			       LINE_ENTRIES*(field_width+1), bytes_str,
 			       LINE_SIZE, ascii_str);
 
@@ -4272,7 +4273,7 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 
 	unsigned long lowaddr = (unsigned long)(bio->bi_sector << SECTOR_SHIFT);
 	char *faddr = (char *)(lowaddr);
-	char rb[sizeof(void*)*2+6] = { 0, };
+	char rb[sizeof(void *)*2+6] = { 0, };
 	struct bio_vec *bvec;
 	int segno;
 
@@ -4287,7 +4288,7 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 #endif
 
 	if (r)
-		sprintf(rb,"Req:%p ", r);
+		sprintf(rb, "Req:%p ", r);
 
 	INFO("%s %s:%s%s%s Bio:%p %s- %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete ? "<<<" : ">>>",

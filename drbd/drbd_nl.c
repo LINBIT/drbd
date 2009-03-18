@@ -46,7 +46,7 @@ static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
 /* Generate the tag_list to struct functions */
 #define NL_PACKET(name, number, fields) \
-STATIC int name ## _from_tags (struct drbd_conf *mdev, \
+STATIC int name ## _from_tags(struct drbd_conf *mdev, \
 	unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
@@ -93,7 +93,7 @@ STATIC int name ## _from_tags (struct drbd_conf *mdev, \
 /* Generate the struct to tag_list functions */
 #define NL_PACKET(name, number, fields) \
 STATIC unsigned short* \
-name ## _to_tags (struct drbd_conf *mdev, \
+name ## _to_tags(struct drbd_conf *mdev, \
 	struct name *arg, unsigned short *tags) \
 { \
 	fields \
@@ -129,7 +129,7 @@ STATIC char *nl_packet_name(int packet_type)
 {
 /* Generate packet type strings */
 #define NL_PACKET(name, number, fields) \
-	[ P_ ## name ] = # name,
+	[P_ ## name] = # name,
 #define NL_INTEGER Argh!
 #define NL_BIT Argh!
 #define NL_INT64 Argh!
@@ -807,7 +807,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	* then fail.
 	*/
 	while (1) {
-		__no_warn(local, nbc = mdev->bc; );
+		__no_warn(local, nbc = mdev->bc;);
 		if (nbc == NULL)
 			break;
 		if (ntries++ >= 5) {
@@ -835,7 +835,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
 		nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
 		nbc->dc.fencing     = DRBD_FENCING_DEF;
-		nbc->dc.max_bio_bvecs= DRBD_MAX_BIO_BVECS_DEF;
+		nbc->dc.max_bio_bvecs = DRBD_MAX_BIO_BVECS_DEF;
 	}
 
 	if (!disk_conf_from_tags(mdev, nlp->tag_list, &nbc->dc)) {
@@ -901,7 +901,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	}
 
 	if (!mdev->bitmap) {
-		if(drbd_bm_init(mdev)) {
+		if (drbd_bm_init(mdev)) {
 			retcode = KMallocFailed;
 			goto fail;
 		}

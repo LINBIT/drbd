@@ -191,7 +191,7 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 #endif
 
 /* word offset to long pointer */
-unsigned long * __bm_map_paddr(struct drbd_bitmap *b, unsigned long offset, const enum km_type km)
+STATIC unsigned long *__bm_map_paddr(struct drbd_bitmap *b, unsigned long offset, const enum km_type km)
 {
 	struct page *page;
 	unsigned long page_nr;
@@ -269,7 +269,7 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 				       unsigned long have,
 				       unsigned long want)
 {
-	struct page** new_pages, *page;
+	struct page **new_pages, *page;
 	unsigned int i, bytes;
 
 	BUG_ON(have == 0 && old_pages != NULL);
@@ -295,7 +295,7 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 	 *   that the page has no bits set ...
 	 * or we can try a "huge" page ;-)
 	 */
-	bytes = sizeof(struct page*)*want;
+	bytes = sizeof(struct page *)*want;
 	new_pages = vmalloc(bytes);
 	if (!new_pages)
 		return NULL;
@@ -305,7 +305,8 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 		for (i = 0; i < have; i++)
 			new_pages[i] = old_pages[i];
 		for (; i < want; i++) {
-			if (!(page = alloc_page(GFP_HIGHUSER))) {
+			page = alloc_page(GFP_HIGHUSER);
+			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
 				vfree(new_pages);
 				return NULL;
@@ -480,7 +481,7 @@ void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
 }
 
 /* offset and len in long words.*/
-STATIC void bm_memset(struct drbd_bitmap * b, size_t offset, int c, size_t len)
+STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 {
 	unsigned long *p_addr, *bm;
 	size_t do_now, end;
@@ -617,7 +618,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	if (!growing)
 		b->bm_set = bm_count_bits(b);
 
-	bm_end_info(mdev, __FUNCTION__);
+	bm_end_info(mdev, __func__);
 	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
 		vfree(opages);
@@ -867,7 +868,7 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 		i = b->bm_number_of_pages;
 	} else if (b->bm_set == b->bm_bits) {
 		/* only the last page */
-		i = b->bm_number_of_pages -1;
+		i = b->bm_number_of_pages - 1;
 	} else {
 		/* all pages */
 		i = 0;
@@ -876,9 +877,8 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 		unsigned long *bm;
 		/* if you'd want to use kmap_atomic, you'd have to disable irq! */
 		p_addr = kmap(b->bm_pages[i]);
-		for (bm = p_addr; bm < p_addr + PAGE_SIZE/sizeof(long); bm++) {
+		for (bm = p_addr; bm < p_addr + PAGE_SIZE/sizeof(long); bm++)
 			*bm = cpu_to_lel(*bm);
-		}
 		kunmap(p_addr);
 	}
 }

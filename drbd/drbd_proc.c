@@ -240,7 +240,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			drbd_syncer_progress(mdev, seq);
 
 		if (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT)
-			seq_printf(seq,"\t%3d%%      %lu/%lu\n",
+			seq_printf(seq, "\t%3d%%      %lu/%lu\n",
 				   (int)((mdev->rs_total-mdev->ov_left) /
 					 (mdev->rs_total/100+1)),
 				   mdev->rs_total - mdev->ov_left,
