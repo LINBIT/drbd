@@ -1186,9 +1186,6 @@ void include_stmt(char *str)
 
 void my_parse(void)
 {
-	common = NULL;
-	config = NULL;
-
 	while (1) {
 		switch (yylex()) {
 		case TK_GLOBAL:
