@@ -1307,7 +1307,14 @@ struct bm_extent {
 #else
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
 /* 16 TB in units of sectors */
-#define DRBD_MAX_SECTORS_FLEX (1ULL<<(32+BM_BLOCK_SIZE_B-9))
+#if BITS_PER_LONG == 32
+/* adjust by one page worth of bitmap,
+ * so we won't wrap around in drbd_bm_find_next_bit.
+ * you should use 64bit OS for that much storage, anyways. */
+#define DRBD_MAX_SECTORS_FLEX BM_BIT_TO_SECT(0xffff7fff)
+#else
+#define DRBD_MAX_SECTORS_FLEX BM_BIT_TO_SECT(0x1LU << 32)
+#endif
 #endif
 
 /* Sector shift value for the "hash" functions of tl_hash and ee_hash tables.
