@@ -487,12 +487,13 @@ int w_make_resync_request(struct drbd_conf *mdev,
 next_sector:
 		size = BM_BLOCK_SIZE;
 		/* as of now, we are the only user of drbd_bm_find_next */
-		bit  = drbd_bm_find_next(mdev);
+		bit  = drbd_bm_find_next(mdev, mdev->bm_resync_fo);
 
 		if (bit == -1UL) {
 			/* FIXME either test_and_set some bit,
 			 * or make this the _only_ place that is allowed
 			 * to assign w_resync_inactive! */
+			mdev->bm_resync_fo = drbd_bm_bits(mdev);
 			mdev->resync_work.cb = w_resync_inactive;
 			dec_local(mdev);
 			return 1;
@@ -501,9 +502,10 @@ next_sector:
 		sector = BM_BIT_TO_SECT(bit);
 
 		if (drbd_try_rs_begin_io(mdev, sector)) {
-			drbd_bm_set_find(mdev, bit);
+			mdev->bm_resync_fo = bit;
 			goto requeue;
 		}
+		mdev->bm_resync_fo = bit + 1;
 
 		if (unlikely(drbd_bm_test_bit(mdev, bit) == 0)) {
 			drbd_rs_complete_io(mdev, sector);
@@ -551,7 +553,7 @@ next_sector:
 		/* if we merged some,
 		 * reset the offset to start the next drbd_bm_find_next from */
 		if (size > BM_BLOCK_SIZE)
-			drbd_bm_set_find(mdev, bit+1);
+			mdev->bm_resync_fo = bit + 1;
 #endif
 
 		/* adjust very last sectors, in case we are oddly sized */
@@ -564,7 +566,7 @@ next_sector:
 				return 0;
 			case 2: /* Allocation failed */
 				drbd_rs_complete_io(mdev, sector);
-				drbd_bm_set_find(mdev, BM_SECT_TO_BIT(sector));
+				mdev->bm_resync_fo = BM_SECT_TO_BIT(sector);
 				goto requeue;
 			/* case 1: everything ok */
 			}
@@ -580,7 +582,7 @@ next_sector:
 		}
 	}
 
-	if (drbd_bm_rs_done(mdev)) {
+	if (mdev->bm_resync_fo >= drbd_bm_bits(mdev)) {
 		/* last syncer _request_ was sent,
 		 * but the RSDataReply not yet received.  sync will end (and
 		 * next sync group will resume), as soon as we receive the last
@@ -1317,7 +1319,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 
 	if (side == SyncTarget) {
-		drbd_bm_reset_find(mdev);
+		mdev->bm_resync_fo = 0;
 	} else /* side == SyncSource */ {
 		u64 uuid;
 

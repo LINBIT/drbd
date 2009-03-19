@@ -970,6 +970,7 @@ struct drbd_conf {
 	struct Drbd_thread worker;
 	struct Drbd_thread asender;
 	struct drbd_bitmap *bitmap;
+	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
 	/* Used to track operations of resync... */
 	struct lru_cache *resync;
@@ -1332,7 +1333,6 @@ extern int  drbd_bm_resize(struct drbd_conf *mdev, sector_t sectors);
 extern void drbd_bm_cleanup(struct drbd_conf *mdev);
 extern void drbd_bm_set_all(struct drbd_conf *mdev);
 extern void drbd_bm_clear_all(struct drbd_conf *mdev);
-extern void drbd_bm_reset_find(struct drbd_conf *mdev);
 extern int  drbd_bm_set_bits(
 		struct drbd_conf *mdev, unsigned long s, unsigned long e);
 extern int  drbd_bm_clear_bits(
@@ -1350,11 +1350,10 @@ extern unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev,
 extern size_t	     drbd_bm_words(struct drbd_conf *mdev);
 extern unsigned long drbd_bm_bits(struct drbd_conf *mdev);
 extern sector_t      drbd_bm_capacity(struct drbd_conf *mdev);
-extern unsigned long drbd_bm_find_next(struct drbd_conf *mdev);
+extern unsigned long drbd_bm_find_next(struct drbd_conf *mdev, unsigned long bm_fo);
 /* bm_find_next variants for use while you hold drbd_bm_lock() */
-extern unsigned long _drbd_bm_find_next(struct drbd_conf *mdev);
-extern unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev);
-extern void drbd_bm_set_find(struct drbd_conf *mdev, unsigned long i);
+extern unsigned long _drbd_bm_find_next(struct drbd_conf *mdev, unsigned long bm_fo);
+extern unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_fo);
 extern unsigned long drbd_bm_total_weight(struct drbd_conf *mdev);
 extern int drbd_bm_rs_done(struct drbd_conf *mdev);
 /* for receive_bitmap */
