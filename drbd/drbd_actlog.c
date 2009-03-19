@@ -245,9 +245,6 @@ struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 	return al_ext;
 }
 
-/* FIXME
- * this should be able to return failure when meta data update has failed.
- */
 void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
@@ -905,7 +902,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				     ext->lce.lc_number, ext->rs_left,
 				     ext->rs_failed, count);
 				dump_stack();
-				/* FIXME brrrgs. should never happen! */
+
 				lc_put(mdev->resync, &ext->lce);
 				drbd_force_state(mdev, NS(conn, Disconnecting));
 				return;

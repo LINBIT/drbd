@@ -52,10 +52,6 @@
  *
  *  It has to be placed on the transfer log and other housekeeping lists,
  *  In case we have a network connection.
- *    FIXME I believe that for consistency we should place even READ requests
- *    on these lists, so we can moan when we detect that the other node is
- *    writing to an area that we currently read from (when this happens, our
- *    users are broken).
  *
  *  It may be identified as a concurrent (write) request
  *    and be handled accordingly.

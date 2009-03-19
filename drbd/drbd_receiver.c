@@ -111,17 +111,7 @@ STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, gfp_t gfp_mask)
 	struct page *page;
 	DEFINE_WAIT(wait);
 
-	/* FIXME Add some usefull watermark again to "kick_lo", if pages get
-	 * used up too quickly. The watermark that had been in place here did
-	 * not make sense.
-	 */
-
 	spin_lock_irqsave(&drbd_pp_lock, flags);
-	/* This lock needs to lock out irq because we might call drbd_pp_free()
-	   from IRQ context.
-	   FIXME but why irq _save_ ?
-	   this is only called from drbd_alloc_ee,
-	   and that is strictly process context! */
 	page = drbd_pp_pool;
 	if (page) {
 		drbd_pp_pool = (struct page *)page_private(page);
@@ -205,11 +195,6 @@ STATIC void drbd_pp_free(struct drbd_conf *mdev, struct page *page)
 	if (free_it)
 		__free_page(page);
 
-	/*
-	 * FIXME
-	 * typically there are no waiters.
-	 * we should try to avoid any unnecessary call to wake_up.
-	 */
 	wake_up(&drbd_pp_wait);
 }
 
@@ -928,9 +913,6 @@ retry:
 	msock->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
 	if (mdev->net_conf->sndbuf_size) {
-		/* FIXME fold to limits. should be done during configuration */
-		/* this is setsockopt SO_SNDBUFFORCE and SO_RCVBUFFORCE,
-		 * done directly. */
 		sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
 		sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
 		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
@@ -1451,7 +1433,6 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
  * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
 static void maybe_kick_lo(struct drbd_conf *mdev)
 {
-	/* FIXME hysteresis ?? */
 	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark)
 		drbd_kick_lo(mdev);
 }
@@ -1506,7 +1487,6 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	}
 
 	D_ASSERT(data_size == 0);
-	/* FIXME recv_cnt accounting ?? */
 	return 1;
 }
 
@@ -1633,11 +1613,6 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, struct Drbd_Header *h)
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding dec_local done below on error,
 		 * or in drbd_endio_write_sec. */
-		/* FIXME paranoia:
-		 * verify that the corresponding bit is set.
-		 * in case we are Primary SyncTarget,
-		 * verify there are no pending write request to that area.
-		 */
 		ok = recv_resync_read(mdev, sector, data_size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -1677,13 +1652,6 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 			if (pcmd == RSWriteAck)
 				drbd_set_in_sync(mdev, sector, e->size);
 		} else {
-			/* FIXME I think we should send a NegAck regardless of
-			 * which protocol is in effect.
-			 * In which case we would need to make sure that any
-			 * NegAck is sent. Basically that means that
-			 * drbd_process_done_ee may not list_del() the ee
-			 * before this callback did run...
-			 * maybe even move the list_del(e) in here... */
 			ok  = drbd_send_ack(mdev, NegAck, e);
 			ok &= drbd_io_error(mdev, FALSE);
 			/* we expect it to be marked out of sync anyways...
@@ -1741,8 +1709,6 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
  * outstanding packets on the msock. We wait for them to arrive.
  * In case we are the logically next packet, we update mdev->peer_seq
  * ourselves. Correctly handles 32bit wrap around.
- * FIXME verify that atomic_t guarantees 32bit wrap around,
- * otherwise we have to play tricks with << ...
  *
  * Assume we have a 10 GBit connection, that is about 1<<30 byte per second,
  * about 1<<21 sectors per second. So "worst" case, we have 1<<3 == 8 seconds
@@ -1793,7 +1759,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	int rw = WRITE;
 	u32 dp_flags;
 
-	/* FIXME merge this code dups into some helper function */
 	header_size = sizeof(*p) - sizeof(*h);
 	data_size   = h->length  - header_size;
 
@@ -2040,7 +2005,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 	       INFO("submit EE (DATA)WRITE sec=%llus size=%u ee=%p\n",
 		    (unsigned long long)e->sector, e->size, e);
 	       );
-	/* FIXME drbd_al_begin_io in case we have two primaries... */
+
 	e->private_bio->bi_rw = rw;
 	dump_internal_bio("Sec", mdev, e->private_bio, 0);
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
@@ -2102,8 +2067,6 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		return FALSE;
 	}
 
-	/* FIXME actually, it could be a READA originating from the peer,
-	 * also it could have set some flags (e.g. BIO_RW_SYNC) ... */
 	e->private_bio->bi_rw = READ;
 	e->private_bio->bi_end_io = drbd_endio_read_sec;
 
@@ -3184,7 +3147,6 @@ STATIC int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	mdev->net_conf->want_lose = 0;
 
-	/* FIXME assertion for (gencounts do not diverge) */
 	drbd_md_sync(mdev); /* update connected indicator, la_size, ... */
 
 	return TRUE;
@@ -3601,7 +3563,6 @@ STATIC void drbdd(struct drbd_conf *mdev)
 	}
 }
 
-/* FIXME how should freeze-io be handled? */
 STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 {
 	struct hlist_head *slot;
@@ -3645,10 +3606,6 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 
 	if (mdev->state.conn == StandAlone)
 		return;
-	/* FIXME verify that:
-	 * the state change magic prevents us from becoming >= Connected again
-	 * while we are still cleaning up.
-	 */
 	if (mdev->state.conn >= WFConnection)
 		ERR("ASSERT FAILED cstate = %s, expected < WFConnection\n",
 				conns_to_name(mdev->state.conn));
@@ -3700,14 +3657,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	kfree(mdev->p_uuid);
 	mdev->p_uuid = NULL;
 
-	/* queue cleanup for the worker.
-	 * FIXME this should go into after_state_ch  */
 	if (!mdev->state.susp)
 		tl_clear(mdev);
 
-	/* FIXME: fail pending reads?
-	 * when we are configured for freeze io,
-	 * we could retry them once we un-freeze. */
 	drbd_fail_pending_reads(mdev);
 
 	INFO("Connection closed\n");
@@ -3812,7 +3764,7 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 		ERR("interrupted during initial handshake\n");
 		return 0; /* interrupted. not ok. */
 	}
-	/* FIXME do we need to verify this here? */
+
 	if (mdev->data.socket == NULL) {
 		mutex_unlock(&mdev->data.mutex);
 		return 0;

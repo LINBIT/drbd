@@ -1223,7 +1223,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 	&&  (ns.pdsk < Inconsistent ||
 	     ns.pdsk == DUnknown ||
 	     ns.pdsk == Outdated)) {
-		/* FIXME race with drbd_sync_handshake accessing this! */
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
@@ -1342,8 +1341,6 @@ STATIC int drbd_thread_setup(void *arg)
 	smp_mb();
 	spin_unlock(&thi->t_lock);
 
-	/* stolen from kthread; FIXME we need to convert to kthread api!
-	 * wait for wakeup */
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
 	timeout = schedule_timeout(10*HZ);
@@ -1425,7 +1422,6 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		spin_unlock(&thi->t_lock);
 		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
 
-		/* FIXME rewrite to use kthread interface */
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
 			ERR("Couldn't start thread (%d)\n", pid);
@@ -1720,7 +1716,6 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 	if (!inc_local_if_state(mdev, Negotiating))
 		return 1;
 
-	/* FIXME howto handle diskless ? */
 	for (i = Current; i < UUID_SIZE; i++)
 		p.uuid[i] = mdev->bc ? cpu_to_be64(mdev->bc->md.uuid[i]) : 0;
 
@@ -2220,8 +2215,6 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 	p.block_id = block_id;
 	p.blksize  = cpu_to_be32(size);
 
-	/* FIXME BIO_RW_SYNC ? */
-
 	ok = drbd_send_cmd(mdev, USE_DATA_SOCKET, cmd,
 				(struct Drbd_Header *)&p, sizeof(p));
 	return ok;
@@ -2388,7 +2381,6 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		}
 		len    -= sent;
 		offset += sent;
-		/* FIXME test "last_received" ... */
 	} while (len > 0 /* THINK && mdev->cstate >= Connected*/);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &mdev->flags);
@@ -2840,46 +2832,6 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 
 void drbd_mdev_cleanup(struct drbd_conf *mdev)
 {
-	/* I'd like to cleanup completely, and memset(,0,) it.
-	 * but I'd have to reinit it.
-	 * FIXME: do the right thing...
-	 */
-
-	/* list of things that may still
-	 * hold data of the previous config
-
-	 * act_log        ** re-initialized in set_disk
-	 * on_io_error
-
-	 * al_tr_cycle    ** re-initialized in ... FIXME??
-	 * al_tr_number
-	 * al_tr_pos
-
-	 * backing_bdev   ** re-initialized in drbd_free_ll_dev
-	 * lo_file
-	 * md_bdev
-	 * md_file
-	 * md_index
-
-	 * ko_count       ** re-initialized in set_net
-
-	 * last_received  ** currently ignored
-
-	 * mbds_id        ** re-initialized in ... FIXME??
-
-	 * resync         ** re-initialized in ... FIXME??
-
-	*** no re-init necessary (?) ***
-	 * md_io_page
-	 * this_bdev
-
-	 * vdisk             ?
-
-	 * rq_queue       ** FIXME ASSERT ??
-	 * newest_barrier
-	 * oldest_barrier
-	 */
-
 	if (mdev->receiver.t_state != None)
 		ERR("ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				mdev->receiver.t_state);
@@ -3571,9 +3523,6 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
 	if (mdev->sync_conf.al_extents < 7)
 		mdev->sync_conf.al_extents = 127;
-		/* FIXME if this ever happens when reading meta data,
-		 * it possibly screws up reading of the activity log?
-		 */
 
  err:
 	mutex_unlock(&mdev->md_io_mutex);

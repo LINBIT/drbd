@@ -40,13 +40,6 @@
  * Note that since find_first_bit returns int, at the current granularity of
  * the bitmap (4KB per byte), this implementation "only" supports up to
  * 1<<(32+12) == 16 TB...
- *
- * we will eventually change the implementation to not allways hold the full
- * bitmap in memory, but only some 'lru_cache' of the on disk bitmap.
-
- * THINK
- * I'm not yet sure whether this file should be bits only,
- * or wether I want it to do all the sector<->bit calculation in here.
  */
 
 /*
@@ -58,22 +51,6 @@
  *  We may be called with irq already disabled,
  *  so we need spin_lock_irqsave().
  *  And we need the kmap_atomic.
- * FIXME
- *  for performance reasons, when we _know_ we have irq disabled, we should
- *  probably introduce some _in_irq variants, so we know to only spin_lock().
- *
- * FIXME
- *  Actually you need to serialize all resize operations.
- *  but then, resize is a drbd state change, and it should be serialized
- *  already. Unfortunately it is not (yet), so two concurrent resizes, like
- *  attach storage (drbdsetup) and receive the peers size (drbd receiver)
- *  may eventually blow things up.
- * Therefore,
- *  you may only change the other members when holding
- *  the bm_change mutex _and_ the bm_lock.
- *  thus reading them holding either is safe.
- *  this is sort of overkill, but I rather do it right
- *  than have two resize operations interfere somewhen.
  */
 struct drbd_bitmap {
 	struct page **bm_pages;
@@ -238,12 +215,6 @@ void bm_unmap(unsigned long *p_addr)
  * to be able to report device specific.
  */
 
-/* FIXME TODO sometimes I use "int offset" as index into the bitmap.
- * since we currently are LIMITED to (128<<11)-64-8 sectors of bitmap,
- * this is ok [as long as we dont run on a 24 bit arch :)].
- * But it is NOT strictly ok.
- */
-
 STATIC void bm_free_pages(struct page **pages, unsigned long number)
 {
 	unsigned long i;
@@ -355,11 +326,6 @@ sector_t drbd_bm_capacity(struct drbd_conf *mdev)
 void drbd_bm_cleanup(struct drbd_conf *mdev)
 {
 	ERR_IF (!mdev->bitmap) return;
-	/* FIXME I think we should explicitly change the device size to zero
-	 * before this...
-	 *
-	WARN_ON(mdev->bitmap->bm);
-	 */
 	bm_free_pages(mdev->bitmap->bm_pages, mdev->bitmap->bm_number_of_pages);
 	vfree(mdev->bitmap->bm_pages);
 	kfree(mdev->bitmap);
@@ -809,9 +775,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 
 	if (error) {
 		/* doh. what now?
-		 * for now, set all bits, and flag MD_IO_ERROR
-		 */
-		/* FIXME kmap_atomic memset etc. pp. */
+		 * for now, set all bits, and flag MD_IO_ERROR */
 		__set_bit(BM_MD_IO_ERROR, &b->bm_flags);
 	}
 	if (atomic_dec_and_test(&b->bm_async_io))

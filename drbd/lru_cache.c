@@ -173,7 +173,6 @@ static struct lc_element *lc_evict(struct lru_cache *lc)
  */
 void lc_del(struct lru_cache *lc, struct lc_element *e)
 {
-	/* FIXME what to do with refcnt != 0 ? */
 	PARANOIA_ENTRY();
 	BUG_ON(e->refcnt);
 	list_del(&e->list);

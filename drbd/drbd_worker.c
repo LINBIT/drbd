@@ -268,12 +268,6 @@ int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	struct drbd_request *req = (struct drbd_request *)w;
 	int ok;
 
-	/* FIXME send a "set_out_of_sync" packet to the peer
-	 * in the PassOn case...
-	 * in the Detach (or Panic) case, we (try to) send
-	 * a "we are diskless" param packet anyways, and the peer
-	 * will then set the FullSync bit in the meta data ...
-	 */
 	/* NOTE: mdev->bc can be NULL by the time we get here! */
 	/* D_ASSERT(mdev->bc->dc.on_io_error != PassOn); */
 
@@ -291,7 +285,7 @@ int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = (struct drbd_request *)w;
 
-	/* FIXME this is ugly. we should not detach for read io-error,
+	/* We should not detach for read io-error,
 	 * but try to WRITE the DataReply to the failed location,
 	 * to give the disk the chance to relocate that block */
 	drbd_io_error(mdev, FALSE); /* tries to schedule a detach and notifies peer */
@@ -300,7 +294,7 @@ int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (cancel ||
 	    mdev->state.conn < Connected ||
 	    mdev->state.pdsk <= Inconsistent) {
-		_req_mod(req, send_canceled, 0); /* FIXME freeze? ... */
+		_req_mod(req, send_canceled, 0);
 		spin_unlock_irq(&mdev->req_lock);
 		ALERT("WE ARE LOST. Local IO failure, no peer.\n");
 		return 1;
@@ -490,9 +484,6 @@ next_sector:
 		bit  = drbd_bm_find_next(mdev, mdev->bm_resync_fo);
 
 		if (bit == -1UL) {
-			/* FIXME either test_and_set some bit,
-			 * or make this the _only_ place that is allowed
-			 * to assign w_resync_inactive! */
 			mdev->bm_resync_fo = drbd_bm_bits(mdev);
 			mdev->resync_work.cb = w_resync_inactive;
 			dec_local(mdev);
@@ -837,9 +828,6 @@ int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 		ok = drbd_send_ack(mdev, NegDReply, e);
 
-		/* FIXME we should not detach for read io-errors, in particular
-		 * not now: when the peer asked us for our data, we are likely
-		 * the only remaining disk... */
 		drbd_io_error(mdev, FALSE);
 	}
 
@@ -1479,11 +1467,6 @@ int drbd_worker(struct Drbd_thread *thi)
 	 * So don't do that.
 	 */
 	spin_unlock_irq(&mdev->data.work.q_lock);
-	/* FIXME verify that there absolutely can not be any more work
-	 * on the queue now...
-	 * if so, the comment above is no longer true, but historic
-	 * from the times when the worker did not live as long as the
-	 * device.. */
 
 	D_ASSERT(mdev->state.disk == Diskless && mdev->state.conn == StandAlone);
 	/* _drbd_set_state only uses stop_nowait.

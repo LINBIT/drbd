@@ -360,12 +360,6 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	/* Wait until nothing is on the fly :) */
 	wait_event(mdev->misc_wait, atomic_read(&mdev->ap_pending_cnt) == 0);
 
-	/* FIXME RACE here: if our direct user is not using bd_claim (i.e.
-	 *  not a filesystem) since cstate might still be >= Connected, new
-	 * ap requests may come in and increase ap_pending_cnt again!
-	 * but that means someone is misusing DRBD...
-	 * */
-
 	if (new_role == Secondary) {
 		set_disk_ro(mdev->vdisk, TRUE);
 		if (inc_local(mdev)) {
@@ -461,7 +455,6 @@ STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 		bdev->md.md_offset = drbd_md_ss__(mdev, bdev);
 		/* al size is still fixed */
 		bdev->md.al_offset = -MD_AL_MAX_SIZE;
-		/* LGE FIXME max size check missing. */
 		/* we need (slightly less than) ~ this much bitmap sectors: */
 		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
 		md_size_sect = ALIGN(md_size_sect, BM_SECT_PER_EXT);
@@ -573,8 +566,6 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 				ERR("OUT OF MEMORY! "
 				    "Could not allocate bitmap! ");
 			} else {
-				/* FIXME this is problematic,
-				 * if we in fact are smaller now! */
 				ERR("BM resizing failed. "
 				    "Leaving size unchanged at size = %lu KB\n",
 				    (unsigned long)size);
@@ -1047,11 +1038,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->writ_cnt = 0;
 
 	drbd_setup_queue_param(mdev, DRBD_MAX_SEGMENT_SIZE);
-	/*
-	 * FIXME currently broken.
-	 * drbd_set_recv_tcq(mdev,
-	 *	drbd_queue_order_type(mdev)==QUEUE_ORDERED_TAG);
-	 */
 
 	/* If I am currently not Primary,
 	 * but meta data primary indicator is set,
@@ -1098,9 +1084,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		drbd_al_apply_to_bm(mdev);
 		drbd_al_to_on_disk_bm(mdev);
 	}
-	/* else {
-	     FIXME wipe out on disk al!
-	} */
 
 	spin_lock_irq(&mdev->req_lock);
 	os = mdev->state;

@@ -388,15 +388,6 @@ void _req_may_be_done(struct drbd_request *req, int error)
 		if (rw == WRITE)
 			_about_to_complete_local_write(mdev, req);
 
-		/* FIXME not yet implemented...
-		 * in case we got "suspended" (on_disconnect: freeze io)
-		 * we may not yet complete the request...
-		 * though, this is probably best handled elsewhere by not
-		 * walking the transfer log until "unfreeze", so we won't end
-		 * up here anyways during the freeze ...
-		 * then again, if it is a READ, it is not in the TL at all.
-		 * is it still leagal to complete a READ during freeze? */
-
 		/* Update disk stats */
 		_drbd_end_io_acct(mdev, req);
 
@@ -453,8 +444,6 @@ STATIC int _req_conflicts(struct drbd_request *req)
 
 	D_ASSERT(hlist_unhashed(&req->colision));
 
-	/* FIXME should this inc_net/dec_net
-	 * rather be done in drbd_make_request_common? */
 	if (!inc_net(mdev))
 		return 0;
 
@@ -545,7 +534,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 	case to_be_send: /* via network */
 		/* reached via drbd_make_request_common
-		 * and from FIXME w_read_retry_remote */
+		 * and from w_read_retry_remote */
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
 		req->rq_state |= RQ_NET_PENDING;
 		inc_ap_pending(mdev);
@@ -556,9 +545,6 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		D_ASSERT(!(req->rq_state & RQ_LOCAL_MASK));
 		req->rq_state |= RQ_LOCAL_PENDING;
 		break;
-
-	/* FIXME these *_completed_* are basically the same.
-	 * can probably be merged with some if (what == xy) */
 
 	case completed_ok:
 		if (bio_data_dir(req->private_bio) == WRITE)
@@ -584,8 +570,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->private_bio = NULL;
 		ALERT("Local WRITE failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
-		/* and now: check how to handle local io error.
-		 * FIXME see comment below in read_completed_with_error */
+		/* and now: check how to handle local io error. */
 		__drbd_chk_io_error(mdev, FALSE);
 		_req_may_be_done(req, error);
 		dec_local(mdev);
@@ -614,15 +599,6 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state |= RQ_NET_PENDING;
 		inc_ap_pending(mdev);
 
-		/* and now: check how to handle local io error.
-		 *
-		 * FIXME we should not handle WRITE and READ io errors
-		 * the same. When we retry the READ, and then write
-		 * the answer, that might suceed because modern drives
-		 * would relocate the sectors. We'd need to keep our
-		 * private bio then, and round the offset and size so
-		 * we get back enough data to be able to clear the bits again.
-		 */
 		__drbd_chk_io_error(mdev, FALSE);
 		dec_local(mdev);
 		/* NOTE: if we have no connection,
@@ -700,10 +676,6 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 		break;
 
-	/* FIXME
-	 * to implement freeze-io,
-	 * we may not finish the request just yet.
-	 */
 	case send_canceled:
 		/* treat it the same */
 	case send_failed:
@@ -720,13 +692,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		if (bio_data_dir(req->master_bio) == WRITE &&
 		    mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			/* this is what is dangerous about protocol A:
-			 * pretend it was sucessfully written on the peer.
-			 * FIXME in case we get a local io-error in
-			 * protocol != C, we might want to defer comletion
-			 * until we get the barrier ack, and send a NegAck
-			 * in case the other node had an io-error, too...
-			 * That way we would at least not report "success"
-			 * if it was not written at all. */
+			 * pretend it was sucessfully written on the peer. */
 			if (req->rq_state & RQ_NET_PENDING) {
 				dec_ap_pending(mdev);
 				req->rq_state &= ~RQ_NET_PENDING;
@@ -754,8 +720,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_DONE;
 		/* if it is still queued, we may not complete it here.
-		 * it will be canceled soon.
-		 * FIXME we should change the code so this can not happen. */
+		 * it will be canceled soon. */
 		if (!(req->rq_state & RQ_NET_QUEUED))
 			_req_may_be_done(req, error);
 		break;
@@ -796,7 +761,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		if (req->rq_state & RQ_NET_PENDING)
 			dec_ap_pending(mdev);
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
-		/* FIXME THINK! is it DONE now, or is it not? */
+
 		req->rq_state |= RQ_NET_DONE;
 		_req_may_be_done(req, error);
 		/* else: done by handed_over_to_network */
@@ -857,24 +822,6 @@ STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int s
 	return 0 == drbd_bm_count_bits(mdev, sbnr, ebnr);
 }
 
-/*
- * general note:
- * looking at the state (conn, disk, susp, pdsk) outside of the spinlock that
- * protects the state changes is inherently racy.
- *
- * FIXME verify this rationale why we may do so anyways:
- *
- * I think it "should" be like this:
- * as soon as we have a "ap_bio_cnt" reference we may test for "bad" states,
- * because the transition from "bad" to "good" states may only happen while no
- * application request is on the fly, so once we are positive about a "bad"
- * state, we know it won't get better during the lifetime of this request.
- *
- * In case we think we are ok, but "asynchronously" some interrupt or other
- * thread marks some operation as impossible, we are still ok, since we would
- * just try anyways, and then see that it does not work there and then.
- */
-
 STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 {
 	const int rw = bio_rw(bio);
@@ -914,22 +861,6 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 				 * it, then continue locally.
 				 * Or just issue the request remotely.
 				 */
-				/* FIXME
-				 * I think we have a RACE here. We request
-				 * something from the peer, then later some
-				 * write starts ...  and finished *before*
-				 * the answer to the read comes in, because
-				 * the ACK for the WRITE goes over
-				 * meta-socket ...
-				 * Maybe we need to properly lock reads
-				 * against the syncer, too. But if we have
-				 * some user issuing writes on an area that
-				 * he has pending reads on, _he_ is really
-				 * broke anyways, and would get "undefined
-				 * results" on _any_ io stack, even just the
-				 * local io stack.
-				 */
-
 				local = 0;
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
@@ -990,7 +921,6 @@ allocate_barrier:
 	/* GOOD, everything prepared, grab the spin_lock */
 	spin_lock_irq(&mdev->req_lock);
 
-	/* FIXME race with drbd_disconnect and tl_clear? */
 	if (remote) {
 		remote = (mdev->state.pdsk == UpToDate ||
 			    (mdev->state.pdsk == Inconsistent &&
@@ -1175,9 +1105,6 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 	if (mdev->state.disk < UpToDate && mdev->state.pdsk < UpToDate) {
 		if (DRBD_ratelimit(5*HZ, 5))
 			ERR("Sorry, I have no access to good data anymore.\n");
-		/*
-		 * FIXME suspend, loop waiting on cstate wait?
-		 */
 		return 1;
 	}
 
