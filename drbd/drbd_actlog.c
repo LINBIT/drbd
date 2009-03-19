@@ -101,7 +101,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 	int offset = 0;
 	struct page *iop = mdev->md_io_page;
 
-	D_ASSERT(semaphore_is_locked(&mdev->md_io_mutex));
+	D_ASSERT(mutex_is_locked(&mdev->md_io_mutex));
 
 	if (!bdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ, 5)) {
@@ -345,7 +345,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	if (mdev->state.conn < Connected && evicted != LC_FREE)
 		drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
 
-	down(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
+	mutex_lock(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
 	buffer = (struct al_transaction *)page_address(mdev->md_io_page);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
@@ -393,7 +393,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	D_ASSERT(mdev->al_tr_pos < MD_AL_MAX_SIZE);
 	mdev->al_tr_number++;
 
-	up(&mdev->md_io_mutex);
+	mutex_unlock(&mdev->md_io_mutex);
 
 	complete(&((struct update_al_work *)w)->event);
 	dec_local(mdev);
@@ -457,7 +457,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	/* lock out all other meta data io for now,
 	 * and make sure the page is mapped.
 	 */
-	down(&mdev->md_io_mutex);
+	mutex_lock(&mdev->md_io_mutex);
 	buffer = page_address(mdev->md_io_page);
 
 	/* Find the valid transaction in the log */
@@ -466,7 +466,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		if (rv == 0)
 			continue;
 		if (rv == -1) {
-			up(&mdev->md_io_mutex);
+			mutex_unlock(&mdev->md_io_mutex);
 			return 0;
 		}
 		cnr = be32_to_cpu(buffer->tr_number);
@@ -487,7 +487,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	if (from == -1 || to == -1) {
 		drbd_WARN("No usable activity log found.\n");
 
-		up(&mdev->md_io_mutex);
+		mutex_unlock(&mdev->md_io_mutex);
 		return 1;
 	}
 
@@ -502,7 +502,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		rv = drbd_al_read_tr(mdev, bdev, buffer, i);
 		ERR_IF(rv == 0) goto cancel;
 		if (rv == -1) {
-			up(&mdev->md_io_mutex);
+			mutex_unlock(&mdev->md_io_mutex);
 			return 0;
 		}
 
@@ -543,7 +543,7 @@ cancel:
 		mdev->al_tr_pos = 0;
 
 	/* ok, we are done with it */
-	up(&mdev->md_io_mutex);
+	mutex_unlock(&mdev->md_io_mutex);
 
 	INFO("Found %d transactions (%d active extents) in activity log.\n",
 	     transactions, active_extents);

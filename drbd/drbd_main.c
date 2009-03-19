@@ -1594,10 +1594,10 @@ int drbd_send_cmd(struct drbd_conf *mdev, int use_data_socket,
 	struct socket *sock;
 
 	if (use_data_socket) {
-		down(&mdev->data.mutex);
+		mutex_lock(&mdev->data.mutex);
 		sock = mdev->data.socket;
 	} else {
-		down(&mdev->meta.mutex);
+		mutex_lock(&mdev->meta.mutex);
 		sock = mdev->meta.socket;
 	}
 
@@ -1607,9 +1607,9 @@ int drbd_send_cmd(struct drbd_conf *mdev, int use_data_socket,
 		ok = _drbd_send_cmd(mdev, sock, cmd, h, size, 0);
 
 	if (use_data_socket)
-		up(&mdev->data.mutex);
+		mutex_unlock(&mdev->data.mutex);
 	else
-		up(&mdev->meta.mutex);
+		mutex_unlock(&mdev->meta.mutex);
 	return ok;
 }
 
@@ -1653,7 +1653,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	/* used from admin command context and receiver/worker context.
 	 * to avoid kmalloc, grab the socket right here,
 	 * then use the pre-allocated sbuf there */
-	down(&mdev->data.mutex);
+	mutex_lock(&mdev->data.mutex);
 	sock = mdev->data.socket;
 
 	if (likely(sock != NULL)) {
@@ -1675,7 +1675,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	} else
 		rv = 0; /* not ok */
 
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 
 	return rv;
 }
@@ -1795,7 +1795,7 @@ int drbd_send_state(struct drbd_conf *mdev)
 	 * of a cluster wide state change on another thread */
 	drbd_state_lock(mdev);
 
-	down(&mdev->data.mutex);
+	mutex_lock(&mdev->data.mutex);
 
 	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
 	sock = mdev->data.socket;
@@ -1805,7 +1805,7 @@ int drbd_send_state(struct drbd_conf *mdev)
 				    (struct Drbd_Header *)&p, sizeof(p), 0);
 	}
 
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 
 	drbd_state_unlock(mdev);
 	return ok;
@@ -2243,12 +2243,12 @@ int drbd_send_drequest_csum(struct drbd_conf *mdev,
 	p.head.command = cpu_to_be16(cmd);
 	p.head.length  = cpu_to_be16(sizeof(p) - sizeof(struct Drbd_Header) + digest_size);
 
-	down(&mdev->data.mutex);
+	mutex_lock(&mdev->data.mutex);
 
 	ok = (sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), 0));
 	ok = ok && (digest_size == drbd_send(mdev, mdev->data.socket, digest, digest_size, 0));
 
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 
 	return ok;
 }
@@ -2782,9 +2782,9 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	atomic_set(&mdev->packet_seq, 0);
 	atomic_set(&mdev->pp_in_use, 0);
 
-	init_MUTEX(&mdev->md_io_mutex);
-	init_MUTEX(&mdev->data.mutex);
-	init_MUTEX(&mdev->meta.mutex);
+	mutex_init(&mdev->md_io_mutex);
+	mutex_init(&mdev->data.mutex);
+	mutex_init(&mdev->meta.mutex);
 	sema_init(&mdev->data.work.s, 0);
 	sema_init(&mdev->meta.work.s, 0);
 	mutex_init(&mdev->state_mutex);
@@ -3466,7 +3466,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	       INFO("Writing meta data super block now.\n");
 	       );
 
-	down(&mdev->md_io_mutex);
+	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer, 0, 512);
 
@@ -3501,7 +3501,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	 * since we updated it on metadata. */
 	mdev->bc->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
-	up(&mdev->md_io_mutex);
+	mutex_unlock(&mdev->md_io_mutex);
 	dec_local(mdev);
 }
 
@@ -3520,7 +3520,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	if (!inc_local_if_state(mdev, Attaching))
 		return MDIOError;
 
-	down(&mdev->md_io_mutex);
+	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
 	if (!drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ)) {
@@ -3576,7 +3576,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		 */
 
  err:
-	up(&mdev->md_io_mutex);
+	mutex_unlock(&mdev->md_io_mutex);
 	dec_local(mdev);
 
 	return rv;

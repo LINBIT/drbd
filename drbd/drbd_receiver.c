@@ -3656,9 +3656,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
 
-	down(&mdev->data.mutex);
+	mutex_lock(&mdev->data.mutex);
 	drbd_free_sock(mdev);
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
@@ -3808,13 +3808,13 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 	struct Drbd_HandShake_Packet *p = &mdev->data.sbuf.HandShake;
 	int ok;
 
-	if (down_interruptible(&mdev->data.mutex)) {
+	if (mutex_lock_interruptible(&mdev->data.mutex)) {
 		ERR("interrupted during initial handshake\n");
 		return 0; /* interrupted. not ok. */
 	}
 	/* FIXME do we need to verify this here? */
 	if (mdev->data.socket == NULL) {
-		up(&mdev->data.mutex);
+		mutex_unlock(&mdev->data.mutex);
 		return 0;
 	}
 
@@ -3823,7 +3823,7 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,
 			     (struct Drbd_Header *)p, sizeof(*p), 0 );
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 	return ok;
 }
 

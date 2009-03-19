@@ -914,7 +914,7 @@ struct drbd_work_queue {
  */
 struct drbd_socket {
 	struct drbd_work_queue work;
-	struct semaphore  mutex;
+	struct mutex mutex;
 	struct socket    *socket;
 	/* this way we get our
 	 * send/receive buffers off the stack */
@@ -1094,7 +1094,7 @@ struct drbd_conf {
 	wait_queue_head_t ee_wait;
 	struct page *md_io_page;	/* one page buffer for md_io */
 	struct page *md_io_tmpp;	/* for hardsect != 512 [s390 only?] */
-	struct semaphore md_io_mutex;	/* protects the md_io_buffer */
+	struct mutex md_io_mutex;	/* protects the md_io_buffer */
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
 	struct lru_cache *act_log;	/* activity log */
@@ -1144,11 +1144,11 @@ static inline unsigned int mdev_to_minor(struct drbd_conf *mdev)
  */
 static inline int drbd_get_data_sock(struct drbd_conf *mdev)
 {
-	down(&mdev->data.mutex);
+	mutex_lock(&mdev->data.mutex);
 	/* drbd_disconnect() could have called drbd_free_sock()
 	 * while we were waiting in down()... */
 	if (unlikely(mdev->data.socket == NULL)) {
-		up(&mdev->data.mutex);
+		mutex_unlock(&mdev->data.mutex);
 		return 0;
 	}
 	return 1;
@@ -1156,7 +1156,7 @@ static inline int drbd_get_data_sock(struct drbd_conf *mdev)
 
 static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 {
-	up(&mdev->data.mutex);
+	mutex_unlock(&mdev->data.mutex);
 }
 
 /*
@@ -1859,15 +1859,6 @@ static inline void drbd_chk_io_error(struct drbd_conf *mdev,
 		__drbd_chk_io_error(mdev, forcedetach);
 		spin_unlock_irqrestore(&mdev->req_lock, flags);
 	}
-}
-
-static inline int semaphore_is_locked(struct semaphore *s)
-{
-	if (!down_trylock(s)) {
-		up(s);
-		return 0;
-	}
-	return 1;
 }
 
 /* Returns the first sector number of our meta data,

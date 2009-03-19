@@ -986,7 +986,7 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 	int bm_words, num_words, offset;
 	int err = 0;
 
-	down(&mdev->md_io_mutex);
+	mutex_lock(&mdev->md_io_mutex);
 	bm_words  = drbd_bm_words(mdev);
 	offset    = S2W(enr);	/* word offset into bitmap */
 	num_words = min(S2W(1), bm_words - offset);
@@ -1010,7 +1010,7 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 			drbd_bm_ALe_set_all(mdev, enr*AL_EXT_PER_BM_SECT+i);
 	}
 	mdev->bm_writ_cnt++;
-	up(&mdev->md_io_mutex);
+	mutex_unlock(&mdev->md_io_mutex);
 	return err;
 }
 
