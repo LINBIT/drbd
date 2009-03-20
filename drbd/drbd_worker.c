@@ -486,7 +486,6 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	for (i = 0; i < number; i++) {
 next_sector:
 		size = BM_BLOCK_SIZE;
-		/* as of now, we are the only user of drbd_bm_find_next */
 		bit  = drbd_bm_find_next(mdev, mdev->bm_resync_fo);
 
 		if (bit == -1UL) {

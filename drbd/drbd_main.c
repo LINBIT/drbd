@@ -61,6 +61,8 @@
 #include "drbd_int.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 
+#include "drbd_vli.h"
+
 struct after_state_chg_work {
 	struct drbd_work w;
 	union drbd_state_t os;
@@ -1831,16 +1833,155 @@ int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode)
 			     (struct Drbd_Header *)&p, sizeof(p));
 }
 
+/* returns
+ * positive: number of payload bytes needed in this packet.
+ * zero: incompressible.  */
+int fill_bitmap_rle_bytes(struct drbd_conf *mdev,
+	struct Drbd_Compressed_Bitmap_Packet *p,
+	struct bm_xfer_ctx *c)
+{
+	unsigned long plain_bits;
+	unsigned long tmp;
+	unsigned long rl;
+	void *buffer;
+	unsigned n;
+	unsigned len;
+	unsigned toggle;
+
+	/* may we use this feature? */
+	if ((mdev->sync_conf.use_rle_encoding == 0) ||
+		(mdev->agreed_pro_version < 90))
+			return 0;
+
+	if (c->bit_offset >= c->bm_bits)
+		return 0; /* nothing to do. */
+
+	/* use at most thus many bytes */
+	len = BM_PACKET_VLI_BYTES_MAX;
+	buffer = p->code;
+	/* plain bits covered in this code string */
+	plain_bits = 0;
+
+	/* p->encoding & 0x80 stores whether the first
+	 * run length is set.
+	 * bit offset is implicit.
+	 * start with toggle == 2 to be able to tell the first iteration */
+	toggle = 2;
+
+	/* see how much plain bits we can stuff into one packet
+	 * using RLE and VLI. */
+	do {
+		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(mdev, c->bit_offset)
+				    : _drbd_bm_find_next(mdev, c->bit_offset);
+		if (tmp == -1UL)
+			tmp = c->bm_bits;
+		rl = tmp - c->bit_offset;
+
+		if (toggle == 2) { /* first iteration */
+			if (rl == 0) {
+				/* the first checked bit was set,
+				 * store start value, */
+				DCBP_set_start(p, 1);
+				/* but skip encoding of zero run length */
+				toggle = !toggle;
+				continue;
+			}
+			DCBP_set_start(p, 0);
+		}
+
+		/* paranoia: catch zero runlength.
+		 * can only happen if bitmap is modified while we scan it. */
+		if (rl == 0) {
+			ERR("unexpected zero runlength while encoding bitmap "
+			    "t:%u bo:%lu\n", toggle, c->bit_offset);
+			return -1;
+		}
+
+		n = vli_encode_bytes(buffer, rl, len);
+		if (n == 0) /* buffer full */
+			break;
+
+		toggle = !toggle;
+		buffer += n;
+		len -= n;
+		plain_bits += rl;
+		c->bit_offset = tmp;
+	} while (len && c->bit_offset < c->bm_bits);
+
+	len = BM_PACKET_VLI_BYTES_MAX - len;
+
+	if (plain_bits < (len << 3)) {
+		/* incompressible with this method.
+		 * we need to rewind both word and bit position. */
+		c->bit_offset -= plain_bits;
+		bm_xfer_ctx_bit_to_word_offset(c);
+		c->bit_offset = c->word_offset * BITS_PER_LONG;
+		return 0;
+	}
+
+	/* RLE + VLI was able to compress it just fine.
+	 * update c->word_offset. */
+	bm_xfer_ctx_bit_to_word_offset(c);
+
+	/* store pad_bits */
+	DCBP_set_pad_bits(p, 0);
+
+	return len;
+}
+
+enum { OK, FAILED, DONE }
+send_bitmap_rle_or_plain(struct drbd_conf *mdev,
+	struct Drbd_Header *h, struct bm_xfer_ctx *c)
+{
+	struct Drbd_Compressed_Bitmap_Packet *p = (void*)h;
+	unsigned long num_words;
+	int len;
+	int ok;
+
+	len = fill_bitmap_rle_bytes(mdev, p, c);
+	if (len < 0)
+		return FAILED;
+	if (len) {
+		DCBP_set_code(p, RLE_VLI_Bytes);
+		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportCBitMap, h,
+			sizeof(*p) + len, 0);
+
+		c->packets[0]++;
+		c->bytes[0] += sizeof(*p) + len;
+
+		if (c->bit_offset >= c->bm_bits)
+			len = 0; /* DONE */
+	} else {
+		/* was not compressible.
+		 * send a buffer full of plain text bits instead. */
+		num_words = min_t(size_t, BM_PACKET_WORDS, c->bm_words - c->word_offset);
+		len = num_words * sizeof(long);
+		if (len)
+			drbd_bm_get_lel(mdev, c->word_offset, num_words, (unsigned long*)h->payload);
+		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportBitMap,
+				   h, sizeof(struct Drbd_Header) + len, 0);
+		c->word_offset += num_words;
+		c->bit_offset = c->word_offset * BITS_PER_LONG;
+
+		c->packets[1]++;
+		c->bytes[1] += sizeof(struct Drbd_Header) + len;
+
+		if (c->bit_offset > c->bm_bits)
+			c->bit_offset = c->bm_bits;
+	}
+	ok = ok ? ((len == 0) ? DONE : OK) : FAILED;
+
+	if (ok == DONE)
+		INFO_bm_xfer_stats(mdev, "send", c);
+	return ok;
+}
 
 /* See the comment at receive_bitmap() */
 int _drbd_send_bitmap(struct drbd_conf *mdev)
 {
-	int want;
-	int ok = TRUE;
-	int bm_i = 0;
-	size_t bm_words, num_words;
-	unsigned long *buffer;
+	struct bm_xfer_ctx c;
 	struct Drbd_Header *p;
+	int ret;
 
 	ERR_IF(!mdev->bitmap) return FALSE;
 
@@ -1851,8 +1992,6 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 		ERR("failed to allocate one page buffer in %s\n", __func__);
 		return FALSE;
 	}
-	bm_words = drbd_bm_words(mdev);
-	buffer = (unsigned long *)p->payload;
 
 	if (inc_local(mdev)) {
 		if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
@@ -1871,22 +2010,17 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 		dec_local(mdev);
 	}
 
-	/*
-	 * maybe TODO use some simple compression scheme, nowadays there are
-	 * some such algorithms in the kernel anyways.
-	 */
+	c = (struct bm_xfer_ctx) {
+		.bm_bits = drbd_bm_bits(mdev),
+		.bm_words = drbd_bm_words(mdev),
+	};
+
 	do {
-		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words - bm_i);
-		want = num_words * sizeof(long);
-		if (want)
-			drbd_bm_get_lel(mdev, bm_i, num_words, buffer);
-		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportBitMap,
-				   p, sizeof(*p) + want, 0);
-		bm_i += num_words;
-	} while (ok && want);
+		ret = send_bitmap_rle_or_plain(mdev, p, &c);
+	} while (ret == OK);
 
 	free_page((unsigned long) p);
-	return ok;
+	return (ret == DONE);
 }
 
 int drbd_send_bitmap(struct drbd_conf *mdev)
@@ -3919,6 +4053,7 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 		break;
 
 	case ReportBitMap: /* don't report this */
+	case ReportCBitMap: /* don't report this */
 		break;
 
 	case Data:
