@@ -161,10 +161,6 @@ enum drbd_role {
  * The lower ones (<WFReportParams) indicate
  * that there is no socket!
  * >=WFReportParams ==> There is a socket
- *
- * THINK
- * Skipped should be < Connected,
- * so writes on a Primary after Skipped sync are not mirrored either ?
  */
 enum drbd_conns {
 	StandAlone,
