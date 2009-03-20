@@ -115,9 +115,8 @@ done
 sed -e '/^ifndef CONFIG_CONNECTOR/,/^$/d' \
 	< $DRBD/drbd/Makefile-2.6 > $DRBD_SUB/Makefile
 
-# disable __arch_um__ to_virt() hack
-sed -e 's/^#if defined(__arch_um__).*/#if 0/' \
-	< $DRBD/drbd/drbd_receiver.c > $DRBD_SUB/drbd_receiver.c
+sed -e '/#ifndef DRBD_MAJOR/','/#endif/d' \
+	< $DRBD/drbd/drbd_int.h > $DRBD_SUB/drbd_int.h
 
 # and, in case this kernel was already patched:
 if test -e $KERNEL/include/linux/drbd.h ; then
@@ -131,7 +130,8 @@ if test -e $KERNEL/include/linux/drbd.h ; then
 fi
 
 # Bring over the current kernel Kconfig and Makefile
-for f in drivers/block/{Kconfig,Makefile} arch/um/Kconfig_block ; do
+for f in drivers/block/{Kconfig,Makefile} arch/um/Kconfig_block \
+		include/linux/major.h; do
 	test -e $KERNEL/$f || continue
 	cp -a $KERNEL/$f $KERNEL_BASE/$f
 	cp -a $KERNEL/$f $DRBD_BASE/$f
@@ -155,6 +155,12 @@ for f in drivers/block/Kconfig arch/um/Kconfig_block ; do
 	grep drbd/ $DRBD_BASE/$f >/dev/null && continue
 	patch_Kconfig < $KERNEL_BASE/$f > $DRBD_BASE/$f
 done
+
+patch_major.h() { sed -e '/#define RTF_MAJOR/i\
+#define DRBD_MAJOR		147' < $KERNEL_BASE/$f > $DRBD_BASE/$f
+}
+f=include/linux/major.h
+patch_major.h < $KERNEL_BASE/$f > $DRBD_BASE/$f
 
 #
 # finally: Create diff!
