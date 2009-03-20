@@ -1754,10 +1754,23 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 		const char* seen_hash, const char* calc_hash,
 		const struct Tl_epoch_entry* e);
 
-/*
- * inline helper functions
- *************************/
 
+/** DRBD State macros:
+ * These macros are used to express state changes in easily readable form.
+ *
+ * The NS macros expand to a mask and a value, that can be bit ored onto the
+ * current state as soon as the spinlock (req_lock) was taken.
+ *
+ * The _NS macros are used for state functions that get called with the
+ * spinlock. These macros expand directly to the new state value.
+ *
+ * Besides the basic forms NS() and _NS() additional _?NS[23] are defined
+ * to express state changes that affect more than one aspect of the state.
+ *
+ * E.g. NS2(conn, Connected, peer, Secondary)
+ * Means that the network connection was established and that the peer
+ * is in secondary role.
+ */
 #define peer_mask role_mask
 #define pdsk_mask disk_mask
 #define susp_mask 1
@@ -1793,6 +1806,10 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 #define _NS3(D, T1, S1, T2, S2, T3, S3) \
 	D, ({ union drbd_state_t __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns.T3 = (S3); __ns; })
+
+/*
+ * inline helper functions
+ *************************/
 
 static inline void drbd_state_lock(struct drbd_conf *mdev)
 {
