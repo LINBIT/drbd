@@ -22,6 +22,12 @@ static void unescape(void);
 #define YY_NO_UNPUT 1
 static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
+#ifndef YY_FLEX_SUBMINOR_VERSION
+#define MAX_INCLUDE_DEPTH 10
+YY_BUFFER_STATE include_stack[MAX_INCLUDE_DEPTH];
+int include_stack_ptr = 0;
+#endif
+
 %}
 
 %option noyywrap
@@ -161,6 +167,49 @@ static void unescape(void)
   }
   *e = '\0';
 }
+
+/* Compatibility cruft for flex version 2.5.4a */
+#ifndef YY_FLEX_SUBMINOR_VERSION
+/** Pushes the new state onto the stack. The new state becomes
+ *  the current state. This function will allocate the stack
+ *  if necessary.
+ *  @param new_buffer The new state.
+ *
+ */
+void yypush_buffer_state (YY_BUFFER_STATE new_buffer )
+{
+	if (new_buffer == NULL)
+		return;
+
+	if ( include_stack_ptr >= MAX_INCLUDE_DEPTH ) {
+		fprintf( stderr, "Includes nested too deeply" );
+		exit( 1 );
+	}
+
+	include_stack[include_stack_ptr++] = YY_CURRENT_BUFFER;
+
+	yy_switch_to_buffer(new_buffer);
+	BEGIN(INITIAL);
+}
+
+/** Removes and deletes the top of the stack, if present.
+ *  The next element becomes the new top.
+ *
+ */
+void yypop_buffer_state (void)
+{
+	if (!YY_CURRENT_BUFFER)
+		return;
+
+	if ( --include_stack_ptr < 0 ) {
+		fprintf( stderr, "error in flex compat code\n" );
+		exit( 1 );
+	}
+
+	yy_delete_buffer(YY_CURRENT_BUFFER );
+	yy_switch_to_buffer(include_stack[include_stack_ptr]);
+}
+#endif
 
 void my_yypush_buffer_state(FILE *f)
 {

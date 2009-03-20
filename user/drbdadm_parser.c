@@ -1172,7 +1172,7 @@ void include_stmt(char *str)
 		for (i=0; i<glob_buf.gl_pathc; i++) {
 			f = fopen(glob_buf.gl_pathv[i], "r");
 			if (f)
-				include_file(f, glob_buf.gl_pathv[i]);
+				include_file(f, strdup(glob_buf.gl_pathv[i]));
 			fclose(f);
 		}
 		globfree(&glob_buf);
