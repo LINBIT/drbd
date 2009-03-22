@@ -79,6 +79,9 @@ enum finish_epoch {
 	FE_recycled,
 };
 
+STATIC int drbd_do_handshake(struct drbd_conf *mdev);
+STATIC int drbd_do_auth(struct drbd_conf *mdev);
+
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
 static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
@@ -741,9 +744,6 @@ out:
 
 	return s_estab;
 }
-
-int drbd_do_handshake(struct drbd_conf *mdev);
-int drbd_do_auth(struct drbd_conf *mdev);
 
 STATIC int drbd_send_fp(struct drbd_conf *mdev,
 	struct socket *sock, enum Drbd_Packet_Cmd cmd)

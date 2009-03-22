@@ -88,6 +88,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 			   union drbd_state_t ns, enum chg_state_flags flags);
 STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
+STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -2746,8 +2747,6 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 		  .susp = 0
 		} };
 }
-
-STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 
 void drbd_init_set_defaults(struct drbd_conf *mdev)
 {

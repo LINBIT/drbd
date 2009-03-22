@@ -51,6 +51,12 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
+#define SLEEP_TIME (HZ/10)
+
+STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel);
+
+
+
 /* defined here:
    drbd_md_io_complete
    drbd_endio_write_sec
@@ -407,8 +413,6 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	return 1;
 }
 
-int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel);
-
 void resync_timer_fn(unsigned long data)
 {
 	unsigned long flags;
@@ -434,8 +438,6 @@ void resync_timer_fn(unsigned long data)
 	if (list_empty(&mdev->resync_work.list) && queue)
 		drbd_queue_work(&mdev->data.work, &mdev->resync_work);
 }
-
-#define SLEEP_TIME (HZ/10)
 
 int w_make_resync_request(struct drbd_conf *mdev,
 		struct drbd_work *w, int cancel)

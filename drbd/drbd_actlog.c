@@ -29,11 +29,37 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 
-/* This is what I like so much about the linux kernel:
- * if you have a close look, you can almost always reuse code by someone else
- * ;)
- * this is mostly from drivers/md/md.c
- */
+/* I do not believe that all storage medias can guarantee atomic
+ * 512 byte write operations. When the journal is read, only
+ * transactions with correct xor_sums are considered.
+ * sizeof() = 512 byte */
+struct __attribute__((packed)) al_transaction {
+	u32       magic;
+	u32       tr_number;
+	/* u32       tr_generation; TODO */
+	struct __attribute__((packed)) {
+		u32 pos;
+		u32 extent; } updates[1 + AL_EXTENTS_PT];
+	u32       xor_sum;
+};
+
+struct update_odbm_work {
+	struct drbd_work w;
+	unsigned int enr;
+};
+
+struct update_al_work {
+	struct drbd_work w;
+	struct lc_element *al_ext;
+	struct completion event;
+	unsigned int enr;
+	/* if old_enr != LC_FREE, write corresponding bitmap sector, too */
+	unsigned int old_enr;
+};
+
+
+int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
+
 STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
@@ -182,34 +208,6 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 
 	return ok;
 }
-
-/* I do not believe that all storage medias can guarantee atomic
- * 512 byte write operations. When the journal is read, only
- * transactions with correct xor_sums are considered.
- * sizeof() = 512 byte */
-struct __attribute__((packed)) al_transaction {
-	u32       magic;
-	u32       tr_number;
-	/* u32       tr_generation; TODO */
-	struct __attribute__((packed)) {
-		u32 pos;
-		u32 extent; } updates[1 + AL_EXTENTS_PT];
-	u32       xor_sum;
-};
-
-struct update_odbm_work {
-	struct drbd_work w;
-	unsigned int enr;
-};
-
-struct update_al_work {
-	struct drbd_work w;
-	struct lc_element *al_ext;
-	struct completion event;
-	unsigned int enr;
-	/* if old_enr != LC_FREE, write corresponding bitmap sector, too */
-	unsigned int old_enr;
-};
 
 int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
 
