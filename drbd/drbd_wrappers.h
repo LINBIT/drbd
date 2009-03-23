@@ -111,6 +111,22 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 # define BD_OPS_USE_FMODE
 #endif
 
+/* how to get to the kobj of a gendisk.
+ * see also upstream commits
+ * edfaa7c36574f1bf09c65ad602412db9da5f96bf
+ * ed9e1982347b36573cd622ee5f4e2a7ccd79b3fd
+ * 548b10eb2959c96cef6fc29fc96e0931eeb53bc5
+ */
+#ifndef dev_to_disk
+# define disk_to_kobj(disk) (&(disk)->kobj)
+#else
+# ifndef disk_to_dev
+#  define disk_to_dev(disk) (&(disk)->dev)
+# endif
+# define disk_to_kobj(disk) (&disk_to_dev(disk)->kobj)
+#endif
+
+
 /*
  * used to submit our private bio
  */

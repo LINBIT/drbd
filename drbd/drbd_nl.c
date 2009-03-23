@@ -403,6 +403,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 	drbd_md_sync(mdev);
 
+	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
  fail:
 	mutex_unlock(&mdev->state_mutex);
 	return r;
@@ -1154,6 +1155,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
 
+	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
 	dec_local(mdev);
 	reply->ret_code = retcode;
 	return 0;
@@ -1439,6 +1441,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	if (retcode >= SS_Success)
 		drbd_thread_start(&mdev->worker);
 
+	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
 	reply->ret_code = retcode;
 	return 0;
 
@@ -1731,6 +1734,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		mdev->worker.reset_cpu_mask = 1;
 	}
 
+	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
 fail:
 	crypto_free_hash(csums_tfm);
 	crypto_free_hash(verify_tfm);
