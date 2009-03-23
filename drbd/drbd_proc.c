@@ -1,7 +1,5 @@
 /*
--*- linux-c -*-
    drbd_proc.c
-   Kernel module for 2.6.x Kernels
 
    This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
