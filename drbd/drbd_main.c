@@ -3261,22 +3261,11 @@ int __init drbd_init(void)
 	if (err)
 		goto Enomem;
 
-#if CONFIG_PROC_FS
-	/*
-	 * register with procfs
-	 */
-	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , NULL);
-
+	drbd_proc = proc_create("drbd", S_IFREG | S_IRUGO , NULL, &drbd_proc_fops);
 	if (!drbd_proc)	{
 		printk(KERN_ERR "drbd: unable to register proc file\n");
 		goto Enomem;
 	}
-
-	drbd_proc->proc_fops = &drbd_proc_fops;
-	drbd_proc->owner = THIS_MODULE;
-#else
-# error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
-#endif
 
 	rwlock_init(&global_state_lock);
 
