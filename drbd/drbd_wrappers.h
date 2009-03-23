@@ -1,4 +1,5 @@
 #include <linux/ctype.h>
+#include <linux/net.h>
 
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
@@ -480,4 +481,6 @@ typedef unsigned gfp_t;
 #define kvec iovec
 #endif
 
-
+#ifndef net_random
+#define random32 net_random
+#endif
