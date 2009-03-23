@@ -676,10 +676,6 @@ out:
 			/* peer not (yet) available, network problem */
 		case ECONNREFUSED: case ENETUNREACH:
 		case EHOSTDOWN:    case EHOSTUNREACH:
-#if 0
-			DBG("%s failure ignored, err = %d\n",
-					what, err);
-#endif
 			disconnect_on_error = 0;
 			break;
 		default:
@@ -733,12 +729,6 @@ out:
 			ERR("%s failed, err = %d\n", what, err);
 			drbd_force_state(mdev, NS(conn, Disconnecting));
 		}
-#if 0
-		else {
-			DBG("%s failure ignored, err = %d, not Disconnecting\n",
-					what, err);
-		}
-#endif
 	}
 	dec_net(mdev);
 
@@ -917,11 +907,6 @@ retry:
 		sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
 		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
 	}
-
-#if 0 /* don't pin the msock bufsize, autotuning should work better */
-	msock->sk->sk_sndbuf = 2*32767;
-	msock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
-#endif
 
 	/* NOT YET ...
 	 * sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;

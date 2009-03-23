@@ -2326,23 +2326,6 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	int sent, ok;
 	int len = size;
 
-#ifdef SHOW_SENDPAGE_USAGE
-	unsigned long now = jiffies;
-	static unsigned long total;
-	static unsigned long fallback;
-	static unsigned long last_rep;
-
-	/* report statistics every hour,
-	 * if we had at least one fallback.
-	 */
-	++total;
-	if (fallback && time_before(last_rep+3600*HZ, now)) {
-		last_rep = now;
-		printk(KERN_INFO "drbd: sendpage() omitted: %lu/%lu\n",
-			fallback, total);
-	}
-#endif
-
 	/* PARANOIA. if this ever triggers,
 	 * something in the layers above us is really kaputt.
 	 *one roundtrip later:
@@ -2353,9 +2336,6 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		/* e.g. XFS meta- & log-data is in slab pages, which have a
 		 * page_count of 0 and/or have PageSlab() set...
 		 */
-#ifdef SHOW_SENDPAGE_USAGE
-		++fallback;
-#endif
 		sent = _drbd_no_send_page(mdev, page, offset, size);
 		if (likely(sent > 0))
 			len -= sent;
@@ -2823,9 +2803,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 
 	mdev->agreed_pro_version = PRO_VERSION_MAX;
 	mdev->write_ordering = WO_bio_barrier;
-#ifdef __arch_um__
 	INFO("mdev = 0x%p\n", mdev);
-#endif
 	mdev->resync_wenr = LC_FREE;
 }
 
@@ -3234,11 +3212,6 @@ void drbd_free_mdev(struct drbd_conf *mdev)
 int __init drbd_init(void)
 {
 	int err;
-
-#ifdef __arch_um__
-	printk(KERN_INFO "drbd_module = 0x%p core = 0x%p\n",
-	       THIS_MODULE, THIS_MODULE->module_core);
-#endif
 
 	if (sizeof(struct Drbd_HandShake_Packet) != 80) {
 		printk(KERN_ERR
