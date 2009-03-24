@@ -126,6 +126,16 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 # endif
 # define disk_to_kobj(disk) (&disk_to_dev(disk)->kobj)
 #endif
+static inline void drbd_kobject_uevent(struct drbd_conf *mdev)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
+	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
+	/* rhel4 / sles9 and older don't have this at all,
+	 * which means user space (udev) won't get events about possible changes of
+	 * corresponding resource + disk names after the initial drbd minor creation.
+	 */
+#endif
+}
 
 
 /*
