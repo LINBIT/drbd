@@ -199,8 +199,8 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Thu Mar 17 2009 13:01:05 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.15rc1-1)
+* Tue Mar 24 2009 16:26:36 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.15-1)
  * Adding a missing range check in ensure_mdev()
  * Fix for several potential memory leaks when allocating a device (Bugz 135)
  * Fixed error code pathes in request processing (Bugz 149)
