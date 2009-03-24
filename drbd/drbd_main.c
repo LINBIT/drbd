@@ -2135,6 +2135,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		goto out;
 	}
 
+	drbd_update_congested(mdev);
 	set_fs(KERNEL_DS);
 	do {
 		sent = mdev->data.socket->ops->sendpage(mdev->data.socket, page,
@@ -2157,6 +2158,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		/* FIXME test "last_received" ... */
 	} while (len > 0 /* THINK && mdev->cstate >= Connected*/);
 	set_fs(oldfs);
+	clear_bit(NET_CONGESTED, &mdev->flags);
 
 out:
 	ok = (len == 0);
@@ -2353,8 +2355,10 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 	set_fs(KERNEL_DS);
 #endif
 
-	if (sock == mdev->data.socket)
+	if (sock == mdev->data.socket) {
 		mdev->ko_count = mdev->net_conf->ko_count;
+		drbd_update_congested(mdev);
+	}
 	do {
 		/* STRANGE
 		 * tcp_sendmsg does _not_ use its size parameter at all ?
@@ -2399,9 +2403,13 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 		iov.iov_len  -= rv;
 	} while (sent < size);
 
+	if (sock == mdev->data.socket)
+		clear_bit(NET_CONGESTED, &mdev->flags);
+
 #if !HAVE_KERNEL_SENDMSG
 	set_fs(oldfs);
 #endif
+
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
@@ -2902,7 +2910,6 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 {
 	struct drbd_conf *mdev = congested_data;
 	struct request_queue *q;
-	unsigned long flags;
 	char reason = '-';
 	int r = 0;
 
@@ -2923,16 +2930,9 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		}
 	}
 
-	if (bdi_bits & (1 << BDI_write_congested)) {
-		spin_lock_irqsave(&mdev->req_lock, flags); /* no state changes, please */
-		if (mdev->state.conn >= Connected) {
-			struct sock *sk = mdev->data.socket->sk;
-			if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5) {
-				r = (1 << BDI_write_congested);
-				reason = 'n';
-			}
-		}
-		spin_unlock_irqrestore(&mdev->req_lock, flags);
+	if (bdi_bits & (1 << BDI_write_congested) && test_bit(NET_CONGESTED, &mdev->flags)) {
+		r = (1 << BDI_write_congested);
+		reason = 'n';
 	}
 
 out:

@@ -797,6 +797,7 @@ enum {
 				   once no more io in flight, start bitmap io */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
+	NET_CONGESTED,		/* The data socket is congested */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -2285,6 +2286,13 @@ static inline void update_peer_seq(struct drbd_conf *mdev, unsigned int new_seq)
 	spin_unlock(&mdev->peer_seq_lock);
 	if (m == new_seq)
 		wake_up(&mdev->seq_wait);
+}
+
+static inline void drbd_update_congested(struct drbd_conf *mdev)
+{
+	struct sock *sk = mdev->data.socket->sk;
+	if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5)
+		set_bit(NET_CONGESTED, &mdev->flags);
 }
 
 static inline int drbd_queue_order_type(struct drbd_conf *mdev)
