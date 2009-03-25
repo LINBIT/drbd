@@ -1293,6 +1293,9 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		__no_warn(local, drbd_free_bc(mdev->bc););
 		wmb(); /* see begin of drbd_nl_disk_conf() */
 		__no_warn(local, mdev->bc = NULL;);
+
+		if (mdev->md_io_tmpp)
+			__free_page(mdev->md_io_tmpp);
 	}
 
 	/* Disks got bigger while they were detached */
@@ -3014,10 +3017,6 @@ static void drbd_delete_device(unsigned int minor)
 	mdev->ee_hash_s = 0;
 	mdev->ee_hash = NULL;
 	*/
-
-	/* should be free'd on detach? */
-	if (mdev->md_io_tmpp)
-		__free_page(mdev->md_io_tmpp);
 
 	if (mdev->act_log)
 		lc_free(mdev->act_log);

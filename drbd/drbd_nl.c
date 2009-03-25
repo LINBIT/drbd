@@ -784,6 +784,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	union drbd_state_t ns, os;
 	int rv, ntries = 0;
 	int cp_discovered = 0;
+	int hardsect;
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > Diskless) {
@@ -998,6 +999,25 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	if (!drbd_al_read_log(mdev, nbc)) {
 		retcode = MDIOError;
 		goto force_diskless_dec;
+	}
+
+	/* allocate a second IO page if hardsect != 512 */
+	hardsect = drbd_get_hardsect(nbc->md_bdev);
+	if (hardsect == 0)
+		hardsect = MD_HARDSECT;
+
+	if (hardsect != MD_HARDSECT) {
+		if (!mdev->md_io_tmpp) {
+			struct page *page = alloc_page(GFP_NOIO);
+			if (!page)
+				goto force_diskless_dec;
+
+			drbd_WARN("Meta data's bdev hardsect = %d != %d\n",
+			     hardsect, MD_HARDSECT);
+			drbd_WARN("Workaround engaged (has performace impact).\n");
+
+			mdev->md_io_tmpp = page;
+		}
 	}
 
 	/* Reset the "barriers don't work" bits here, then force meta data to

@@ -34,7 +34,6 @@
 struct __attribute__((packed)) al_transaction {
 	u32       magic;
 	u32       tr_number;
-	/* u32       tr_generation; TODO */
 	struct __attribute__((packed)) {
 		u32 pos;
 		u32 extent; } updates[1 + AL_EXTENTS_PT];
@@ -141,18 +140,6 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 
 	/* in case hardsect != 512 [ s390 only? ] */
 	if (hardsect != MD_HARDSECT) {
-		if (!mdev->md_io_tmpp) {
-			struct page *page = alloc_page(GFP_NOIO);
-			if (!page)
-				return 0;
-
-			drbd_WARN("Meta data's bdev hardsect = %d != %d\n",
-			     hardsect, MD_HARDSECT);
-			drbd_WARN("Workaround engaged (has performace impact).\n");
-
-			mdev->md_io_tmpp = page;
-		}
-
 		mask = (hardsect / MD_HARDSECT) - 1;
 		D_ASSERT(mask == 1 || mask == 3 || mask == 7);
 		D_ASSERT(hardsect == (mask+1) * MD_HARDSECT);
