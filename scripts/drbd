@@ -31,7 +31,9 @@ test -f $DRBDADM || exit 5
 
 if [ -f /lib/lsb/init-functions ]; then
     . /lib/lsb/init-functions
-else
+fi
+
+if ! type log_daemon_msg &>/dev/null ; then
     function log_daemon_msg
     {
 	if [ -z "${2:-}" ]; then
@@ -40,7 +42,9 @@ else
 	fi
 	echo -n "$1: $2"
     }
+fi
 
+if ! type log_end_msg &>/dev/null ; then
     function log_end_msg
     {
         echo "."
