@@ -219,8 +219,8 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Thu Mar 17 2009 13:01:05 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.1rc1-1)
+* Thu Mar 26 2009 09:36:20 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.1rc2-1)
  * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
  * Adding a missing range check in ensure_mdev()
  * Implemented a congested_fn; the kernel can keep its pdflushes running now

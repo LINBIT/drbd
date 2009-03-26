@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.1rc1 (api:86/proto:86-89)
+8.3.1rc2 (api:86/proto:86-89)
 --------
  * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
  * Adding a missing range check in ensure_mdev()
