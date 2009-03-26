@@ -2996,7 +2996,8 @@ void drbd_free_mdev(struct drbd_conf *mdev)
 	kfree(mdev->current_epoch);
 	kfree(mdev->app_reads_hash);
 	tl_cleanup(mdev);
-	drbd_bm_cleanup(mdev);
+	if (mdev->bitmap) /* should no longer be there. */
+		drbd_bm_cleanup(mdev);
 	__free_page(mdev->md_io_page);
 	put_disk(mdev->vdisk);
 	blk_cleanup_queue(mdev->rq_queue);
