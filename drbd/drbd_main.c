@@ -827,7 +827,7 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	return rv;
 }
 
-int _drbd_set_state(struct drbd_conf *mdev,
+int __drbd_set_state(struct drbd_conf *mdev,
 		    union drbd_state_t ns, enum chg_state_flags flags,
 		    struct completion *done)
 {
@@ -3120,6 +3120,8 @@ int __init drbd_init(void)
 #else
 # error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
 #endif
+
+	rwlock_init(&global_state_lock);
 
 	printk(KERN_INFO "drbd: initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",

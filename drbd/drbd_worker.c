@@ -68,6 +68,13 @@
  *
  */
 
+
+/* About the global_state_lock
+   Each state transition on an device holds a read lock. In case we have
+   to evaluate the sync after dependencies, we grab a write lock, because
+   we need stable states on all devices for that.  */
+rwlock_t global_state_lock;
+
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
@@ -1169,38 +1176,6 @@ int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-STATIC void drbd_global_lock(void) __acquires(drbd_global_lock)
-{
-	struct drbd_conf *mdev;
-	int i;
-
-	__acquire(drbd_global_lock);
-	local_irq_disable();
-	for (i = 0; i < minor_count; i++) {
-		mdev = minor_to_mdev(i);
-		if (!mdev)
-			continue;
-		spin_lock(&mdev->req_lock);
-		__release(&mdev->req_lock); /* annihilate the spin_lock's annotation here */
-	}
-}
-
-STATIC void drbd_global_unlock(void) __releases(drbd_global_lock)
-{
-	struct drbd_conf *mdev;
-	int i;
-
-	for (i = 0; i < minor_count; i++) {
-		mdev = minor_to_mdev(i);
-		if (!mdev)
-			continue;
-		__acquire(&mdev->req_lock);
-		spin_unlock(&mdev->req_lock);
-	}
-	local_irq_enable();
-	__release(drbd_global_lock);
-}
-
 STATIC int _drbd_may_sync_now(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev = mdev;
@@ -1236,8 +1211,8 @@ STATIC int _drbd_pause_after(struct drbd_conf *mdev)
 		if (odev->state.conn == StandAlone && odev->state.disk == Diskless)
 			continue;
 		if (!_drbd_may_sync_now(odev))
-			rv |= (_drbd_set_state(_NS(odev, aftr_isp, 1), ChgStateHard, NULL)
-				!= SS_NothingToDo);
+			rv |= (__drbd_set_state(_NS(odev, aftr_isp, 1), ChgStateHard, NULL)
+			       != SS_NothingToDo);
 	}
 
 	return rv;
@@ -1260,9 +1235,9 @@ STATIC int _drbd_resume_next(struct drbd_conf *mdev)
 			continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
-				rv |= (_drbd_set_state(_NS(odev, aftr_isp, 0),
-						       ChgStateHard, NULL)
-					!= SS_NothingToDo) ;
+				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
+							ChgStateHard, NULL)
+				       != SS_NothingToDo) ;
 		}
 	}
 	return rv;
@@ -1270,23 +1245,23 @@ STATIC int _drbd_resume_next(struct drbd_conf *mdev)
 
 void resume_next_sg(struct drbd_conf *mdev)
 {
-	drbd_global_lock();
+	write_lock_irq(&global_state_lock);
 	_drbd_resume_next(mdev);
-	drbd_global_unlock();
+	write_unlock_irq(&global_state_lock);
 }
 
 void suspend_other_sg(struct drbd_conf *mdev)
 {
-	drbd_global_lock();
+	write_lock_irq(&global_state_lock);
 	_drbd_pause_after(mdev);
-	drbd_global_unlock();
+	write_unlock_irq(&global_state_lock);
 }
 
 void drbd_alter_sa(struct drbd_conf *mdev, int na)
 {
 	int changes;
 
-	drbd_global_lock();
+	write_lock_irq(&global_state_lock);
 	mdev->sync_conf.after = na;
 
 	do {
@@ -1294,7 +1269,7 @@ void drbd_alter_sa(struct drbd_conf *mdev, int na)
 		changes |= _drbd_resume_next(mdev);
 	} while (changes);
 
-	drbd_global_unlock();
+	write_unlock_irq(&global_state_lock);
 }
 
 /**
@@ -1353,7 +1328,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		D_ASSERT(mdev->state.disk == UpToDate);
 	}
 
-	drbd_global_lock();
+	write_lock_irq(&global_state_lock);
 	ns = mdev->state;
 
 	ns.aftr_isp = !_drbd_may_sync_now(mdev);
@@ -1366,7 +1341,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		ns.pdsk = Inconsistent;
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
-	r = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+	r = __drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
 	ns = mdev->state;
 
 	if (ns.conn < Connected)
@@ -1382,7 +1357,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		mdev->rs_same_csum = 0;
 		_drbd_pause_after(mdev);
 	}
-	drbd_global_unlock();
+	write_unlock_irq(&global_state_lock);
 	drbd_state_unlock(mdev);
 	dec_local(mdev);
 

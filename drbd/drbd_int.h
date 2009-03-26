@@ -1090,8 +1090,8 @@ extern void drbd_force_state(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t);
 extern int _drbd_request_state(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t, enum chg_state_flags);
-extern int _drbd_set_state(struct drbd_conf *, union drbd_state_t,
-			   enum chg_state_flags, struct completion *done);
+extern int __drbd_set_state(struct drbd_conf *, union drbd_state_t,
+			    enum chg_state_flags, struct completion *done);
 extern void print_st_err(struct drbd_conf *, union drbd_state_t,
 			union drbd_state_t, int);
 extern int  drbd_thread_start(struct Drbd_thread *thi);
@@ -1380,6 +1380,8 @@ extern struct page *drbd_pp_pool; /* drbd's page pool */
 extern spinlock_t   drbd_pp_lock;
 extern int	    drbd_pp_vacant;
 extern wait_queue_head_t drbd_pp_wait;
+
+extern rwlock_t global_state_lock;
 
 extern struct drbd_conf *drbd_new_device(unsigned int minor);
 extern void drbd_free_mdev(struct drbd_conf *mdev);
@@ -1720,6 +1722,19 @@ static inline void drbd_state_unlock(struct drbd_conf *mdev)
 {
 	clear_bit(CLUSTER_ST_CHANGE, &mdev->flags);
 	wake_up(&mdev->misc_wait);
+}
+
+static inline int _drbd_set_state(struct drbd_conf *mdev,
+				   union drbd_state_t ns, enum chg_state_flags flags,
+				   struct completion *done)
+{
+	int rv;
+
+	read_lock(&global_state_lock);
+	rv = __drbd_set_state(mdev, ns, flags, done);
+	read_unlock(&global_state_lock);
+
+	return rv;
 }
 
 static inline int drbd_request_state(struct drbd_conf *mdev,
