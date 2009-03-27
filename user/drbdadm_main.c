@@ -408,6 +408,17 @@ struct option admopt[] = {
 	.res_name_required = 1,		\
 	.verify_ips = 0,
 
+#define DRBD_acf2_proxy			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,
+
+#define DRBD_acf2_hook			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,                \
+	.use_cached_config_file = 1,
+
 #define DRBD_acf2_gen_shell		\
 	.show_in_usage = 2,		\
 	.res_name_required = 0,		\
@@ -462,7 +473,7 @@ struct adm_cmd cmds[] = {
         { "sh-resource",           sh_resource,     DRBD_acf2_shell     },
         { "sh-mod-parms",          sh_mod_parms,    DRBD_acf2_gen_shell },
         { "sh-dev",                sh_dev,          DRBD_acf2_shell     },
-        { "sh-udev",               sh_udev,         DRBD_acf2_shell     },
+        { "sh-udev",               sh_udev,         DRBD_acf2_hook      },
         { "sh-minor",              sh_minor,        DRBD_acf2_shell     },
         { "sh-ll-dev",             sh_ll_dev,       DRBD_acf2_shell     },
         { "sh-md-dev",             sh_md_dev,       DRBD_acf2_shell     },
@@ -472,8 +483,8 @@ struct adm_cmd cmds[] = {
         { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
         { "sh-status",             sh_status,       DRBD_acf2_gen_shell },
 
-        { "proxy-up",              adm_proxy_up,    DRBD_acf2_shell     },
-        { "proxy-down",            adm_proxy_down,  DRBD_acf2_shell     },
+        { "proxy-up",              adm_proxy_up,    DRBD_acf2_proxy     },
+        { "proxy-down",            adm_proxy_down,  DRBD_acf2_proxy     },
 
         { "before-resync-target",  adm_khelper,     DRBD_acf3_handler   },
         { "after-resync-target",   adm_khelper,     DRBD_acf3_handler   },
