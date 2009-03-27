@@ -29,26 +29,12 @@ fi
 
 test -f $DRBDADM || exit 5
 
+# we only use these two functions, define fallback versions of them ...
+log_daemon_msg() { echo -n "${1:-}: ${2:-}"; }
+log_end_msg() { echo "."; }
+# ... and let the lsb override them, if it thinks it knows better.
 if [ -f /lib/lsb/init-functions ]; then
     . /lib/lsb/init-functions
-fi
-
-if ! type log_daemon_msg &>/dev/null ; then
-    function log_daemon_msg
-    {
-	if [ -z "${2:-}" ]; then
-            echo -n "$1:"
-            return
-	fi
-	echo -n "$1: $2"
-    }
-fi
-
-if ! type log_end_msg &>/dev/null ; then
-    function log_end_msg
-    {
-        echo "."
-    }
 fi
 
 function assure_module_is_loaded
