@@ -219,9 +219,12 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Thu Mar 26 2009 09:36:20 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.1rc2-1)
+* Fri Mar 27 2009 12:16:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.1-1)
  * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
+ * Fixed a hard to trigger spinlock deadlock when using device stacking
+   with the upper device having a smaller minor number than the lower device.
+   (Bugz 210)
  * Adding a missing range check in ensure_mdev()
  * Implemented a congested_fn; the kernel can keep its pdflushes running now
  * Improvements the connection code for high latency links
@@ -234,7 +237,7 @@ uname -r | grep BOOT ||
  * Improvements to drbd-overview.pl
  * Fixed snapshot-resync-target-lvm.sh to work with more than 10 devices
  * Do not force a full resync after a detach on a primary node
- * Compatibility with Linux 2.6.27 and 2.6.28
+ * Compatibility with Linux 2.6.27, 2.6.28 and 2.6.29
 
 * Thu Dec 18 2008 14:03:03 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.0-1)
