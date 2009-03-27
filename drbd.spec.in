@@ -199,6 +199,10 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Fri Mar 27 2009 09:29:16 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.0.16-1)
+ * Fixed the init script to work with all flavors of LSB
+
 * Tue Mar 24 2009 16:26:36 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.0.15-1)
  * Adding a missing range check in ensure_mdev()
