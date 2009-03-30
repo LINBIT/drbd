@@ -1929,6 +1929,101 @@ int fill_bitmap_rle_bytes(struct drbd_conf *mdev,
 	return len;
 }
 
+int fill_bitmap_rle_bits(struct drbd_conf *mdev,
+	struct Drbd_Compressed_Bitmap_Packet *p,
+	struct bm_xfer_ctx *c)
+{
+	struct bitstream bs;
+	unsigned long plain_bits;
+	unsigned long tmp;
+	unsigned long rl;
+	unsigned len;
+	unsigned toggle;
+	int bits;
+
+	/* may we use this feature? */
+	if ((mdev->sync_conf.use_rle_encoding == 0) ||
+		(mdev->agreed_pro_version < 90))
+			return 0;
+
+	if (c->bit_offset >= c->bm_bits)
+		return 0; /* nothing to do. */
+
+	/* use at most thus many bytes */
+	bitstream_init(&bs, p->code, BM_PACKET_VLI_BYTES_MAX, 0);
+	memset(p->code, 0, BM_PACKET_VLI_BYTES_MAX);
+	/* plain bits covered in this code string */
+	plain_bits = 0;
+
+	/* p->encoding & 0x80 stores whether the first
+	 * run length is set.
+	 * bit offset is implicit.
+	 * start with toggle == 2 to be able to tell the first iteration */
+	toggle = 2;
+
+	/* see how much plain bits we can stuff into one packet
+	 * using RLE and VLI. */
+	do {
+		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(mdev, c->bit_offset)
+				    : _drbd_bm_find_next(mdev, c->bit_offset);
+		if (tmp == -1UL)
+			tmp = c->bm_bits;
+		rl = tmp - c->bit_offset;
+
+		if (toggle == 2) { /* first iteration */
+			if (rl == 0) {
+				/* the first checked bit was set,
+				 * store start value, */
+				DCBP_set_start(p, 1);
+				/* but skip encoding of zero run length */
+				toggle = !toggle;
+				continue;
+			}
+			DCBP_set_start(p, 0);
+		}
+
+		/* paranoia: catch zero runlength.
+		 * can only happen if bitmap is modified while we scan it. */
+		if (rl == 0) {
+			ERR("unexpected zero runlength while encoding bitmap "
+			    "t:%u bo:%lu\n", toggle, c->bit_offset);
+			return -1;
+		}
+
+		bits = vli_encode_bits(&bs, rl);
+		if (bits == -ENOBUFS) /* buffer full */
+			break;
+		if (bits <= 0) {
+			ERR("error while encoding bitmap: %d\n", bits);
+			return 0;
+		}
+
+		toggle = !toggle;
+		plain_bits += rl;
+		c->bit_offset = tmp;
+	} while (c->bit_offset < c->bm_bits);
+
+	len = bs.cur.b - p->code + !!bs.cur.bit;
+
+	if (plain_bits < (len << 3)) {
+		/* incompressible with this method.
+		 * we need to rewind both word and bit position. */
+		c->bit_offset -= plain_bits;
+		bm_xfer_ctx_bit_to_word_offset(c);
+		c->bit_offset = c->word_offset * BITS_PER_LONG;
+		return 0;
+	}
+
+	/* RLE + VLI was able to compress it just fine.
+	 * update c->word_offset. */
+	bm_xfer_ctx_bit_to_word_offset(c);
+
+	/* store pad_bits */
+	DCBP_set_pad_bits(p, (8 - bs.cur.bit) & 0x7);
+
+	return len;
+}
+
 enum { OK, FAILED, DONE }
 send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 	struct Drbd_Header *h, struct bm_xfer_ctx *c)
