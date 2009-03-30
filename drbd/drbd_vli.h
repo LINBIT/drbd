@@ -65,7 +65,7 @@
  *
  * There are endless variants of VLI.
  * For this special purpose, we just need something that is "good enough",
- * and easy to understand and code, and fast to encode and decode,
+ * and easy to understand and code, fast to encode and decode,
  * and does not consume memory.
  */
 

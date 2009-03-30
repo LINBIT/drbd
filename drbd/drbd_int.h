@@ -358,8 +358,9 @@ enum Drbd_Packet_Cmd {
 	CsumRSRequest     = 0x21, /* data socket */
 	RSIsInSync        = 0x22, /* meta socket */
 	SyncParam89       = 0x23, /* data socket, protocol version 89 replacement for SyncParam */
+	ReportCBitMap     = 0x24, /* compressed or otherwise encoded bitmap transfer */
 
-	MAX_CMD           = 0x24,
+	MAX_CMD           = 0x25,
 	MayIgnore         = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
 	MAX_OPT_CMD       = 0x101,
 
@@ -413,6 +414,7 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[OVResult]         = "OVResult",
 		[CsumRSRequest]    = "CsumRSRequest",
 		[RSIsInSync]       = "RSIsInSync",
+		[ReportCBitMap]    = "ReportCBitMap",
 		[MAX_CMD]	   = NULL,
 	};
 
@@ -427,6 +429,45 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 	return cmdnames[cmd];
 }
 
+/* for sending/receiving the bitmap,
+ * possibly in some encoding scheme */
+struct bm_xfer_ctx {
+	/* "const"
+	 * stores total bits and long words
+	 * of the bitmap, so we don't need to
+	 * call the accessor functions over and again. */
+	unsigned long bm_bits;
+	unsigned long bm_words;
+	/* during xfer, current position within the bitmap */
+	unsigned long bit_offset;
+	unsigned long word_offset;
+
+	/* statistics; index: (h->command == ReportBitMap) */
+	unsigned packets[2];
+	unsigned bytes[2];
+};
+
+extern void INFO_bm_xfer_stats(struct drbd_conf *mdev,
+		const char *direction, struct bm_xfer_ctx *c);
+
+static inline void bm_xfer_ctx_bit_to_word_offset(struct bm_xfer_ctx *c)
+{
+	/* word_offset counts "native long words" (32 or 64 bit),
+	 * aligned at 64 bit.
+	 * Encoded packet may end at an unaligned bit offset.
+	 * In case a fallback clear text packet is transmitted in
+	 * between, we adjust this offset back to the last 64bit
+	 * aligned "native long word", which makes coding and decoding
+	 * the plain text bitmap much more convenient.  */
+#if BITS_PER_LONG == 64
+	c->word_offset = c->bit_offset >> 6;
+#elif BITS_PER_LONG == 32
+	c->word_offset = c->bit_offset >> 5;
+	c->word_offset &= ~(1UL);
+#else
+# error "unsupported BITS_PER_LONG"
+#endif
+}
 
 /* This is the layout for a packet on the wire.
  * The byteorder is the network byte order.
@@ -442,7 +483,7 @@ struct Drbd_Header {
 	u32	  magic;
 	u16	  command;
 	u16	  length;	/* bytes of data after this header */
-	char	  payload[0];
+	u8	  payload[0];
 } __attribute((packed));
 /* 8 bytes. packet FIXED for the next century! */
 
@@ -459,6 +500,7 @@ struct Drbd_Header {
  * commands with out-of-struct payload:
  *   ReportBitMap    (no additional fields)
  *   Data, DataReply (see Drbd_Data_Packet)
+ *   ReportCBitMap (see receive_compressed_bitmap)
  */
 
 /* these defines must not be changed without changing the protocol version */
@@ -616,6 +658,80 @@ struct Drbd_Discard_Packet {
 	u32	    seq_num;
 	u32	    pad;
 } __attribute((packed));
+
+/* Valid values for the encoding field.
+ * Bump proto version when changing this. */
+enum Drbd_bitmap_code {
+	RLE_VLI_Bytes = 0,
+	RLE_VLI_BitsFibD_0_1 = 1,
+	RLE_VLI_BitsFibD_1_1 = 2,
+	RLE_VLI_BitsFibD_1_2 = 3,
+	RLE_VLI_BitsFibD_2_3 = 4,
+	RLE_VLI_BitsFibD_3_5 = 5,
+};
+
+struct Drbd_Compressed_Bitmap_Packet {
+	struct Drbd_Header head;
+	/* (encoding & 0x0f): actual encoding, see enum Drbd_bitmap_code
+	 * (encoding & 0x80): polarity (set/unset) of first runlength
+	 * ((encoding >> 4) & 0x07): pad_bits, number of trailing zero bits
+	 * used to pad up to head.length bytes
+	 */
+	u8 encoding;
+
+	u8 code[0];
+} __attribute((packed));
+
+static inline enum Drbd_bitmap_code
+DCBP_get_code(struct Drbd_Compressed_Bitmap_Packet *p)
+{
+	return (enum Drbd_bitmap_code)(p->encoding & 0x0f);
+}
+
+static inline void
+DCBP_set_code(struct Drbd_Compressed_Bitmap_Packet *p, enum Drbd_bitmap_code code)
+{
+	BUG_ON(code & ~0xf);
+	p->encoding = (p->encoding & ~0xf) | code;
+}
+
+static inline int
+DCBP_get_start(struct Drbd_Compressed_Bitmap_Packet *p)
+{
+	return (p->encoding & 0x80) != 0;
+}
+
+static inline void
+DCBP_set_start(struct Drbd_Compressed_Bitmap_Packet *p, int set)
+{
+	p->encoding = (p->encoding & ~0x80) | (set ? 0x80 : 0);
+}
+
+static inline int
+DCBP_get_pad_bits(struct Drbd_Compressed_Bitmap_Packet *p)
+{
+	return (p->encoding >> 4) & 0x7;
+}
+
+static inline void
+DCBP_set_pad_bits(struct Drbd_Compressed_Bitmap_Packet *p, int n)
+{
+	BUG_ON(n & ~0x7);
+	p->encoding = (p->encoding & (~0x7 << 4)) | (n << 4);
+}
+
+/* one bitmap packet, including the Drbd_Header,
+ * should fit within one _architecture independend_ page.
+ * so we need to use the fixed size 4KiB page size
+ * most architechtures have used for a long time.
+ */
+#define BM_PACKET_PAYLOAD_BYTES (4096 - sizeof(struct Drbd_Header))
+#define BM_PACKET_WORDS (BM_PACKET_PAYLOAD_BYTES/sizeof(long))
+#define BM_PACKET_VLI_BYTES_MAX (4096 - sizeof(struct Drbd_Compressed_Bitmap_Packet))
+#if (PAGE_SIZE < 4096)
+/* drbd_send_bitmap / receive_bitmap would break horribly */
+#error "PAGE_SIZE too small"
+#endif
 
 union Drbd_Polymorph_Packet {
 	struct Drbd_Header		head;
@@ -1268,20 +1384,8 @@ struct bm_extent {
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B))
 #define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
 
-
 #define BM_BLOCKS_PER_BM_EXT_B (BM_EXT_SIZE_B - BM_BLOCK_SIZE_B)
 #define BM_BLOCKS_PER_BM_EXT_MASK  ((1<<BM_BLOCKS_PER_BM_EXT_B) - 1)
-
-/* I want the packet to fit within one page
- * THINK maybe use a special bitmap header,
- * including offset and compression scheme and whatnot
- * Do not use PAGE_SIZE here! Use a architecture agnostic constant!
- */
-#define BM_PACKET_WORDS ((4096-sizeof(struct Drbd_Header))/sizeof(long))
-#if (PAGE_SIZE < 4096)
-/* drbd_send_bitmap / receive_bitmap would break horribly */
-#error "PAGE_SIZE too small"
-#endif
 
 /* the extent in "PER_EXTENT" below is an activity log extent
  * we need that many (long words/bytes) to store the bitmap

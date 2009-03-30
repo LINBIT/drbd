@@ -58,6 +58,8 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
+#include "drbd_vli.h"
+
 struct flush_work {
 	struct drbd_work w;
 	struct drbd_epoch *epoch;
@@ -3205,7 +3207,134 @@ STATIC int receive_sync_uuid(struct drbd_conf *mdev, struct Drbd_Header *h)
 	return TRUE;
 }
 
-/* Since we are processing the bitfild from lower addresses to higher,
+enum receive_bitmap_ret { OK, DONE, FAILED };
+
+static enum receive_bitmap_ret
+receive_bitmap_plain(struct drbd_conf *mdev, struct Drbd_Header *h,
+	unsigned long *buffer, struct bm_xfer_ctx *c)
+{
+	unsigned num_words = min_t(size_t, BM_PACKET_WORDS, c->bm_words - c->word_offset);
+	unsigned want = num_words * sizeof(long);
+
+	if (want != h->length) {
+		ERR("%s:want (%u) != h->length (%u)\n", __func__, want, h->length);
+		return FAILED;
+	}
+	if (want == 0)
+		return DONE;
+	if (drbd_recv(mdev, buffer, want) != want)
+		return FAILED;
+
+	drbd_bm_merge_lel(mdev, c->word_offset, num_words, buffer);
+
+	c->word_offset += num_words;
+	c->bit_offset = c->word_offset * BITS_PER_LONG;
+	if (c->bit_offset > c->bm_bits)
+		c->bit_offset = c->bm_bits;
+
+	return OK;
+}
+
+static enum receive_bitmap_ret
+receive_bitmap_rle(struct drbd_conf *mdev,
+		struct Drbd_Compressed_Bitmap_Packet *p,
+		struct bm_xfer_ctx *c)
+{
+	u64 rl;
+	unsigned char *buf = p->code;
+	unsigned long s;
+	unsigned long e;
+	int len = p->head.length - (p->code - p->head.payload);
+	int toggle;
+	int n;
+
+	s = c->bit_offset;
+
+	/* decoding.  the payload of bitmap rle packets is VLI encoded
+	 * runlength of set and unset bits, starting with set/unset as defined
+	 * in p->encoding & 0x80. */
+	for (toggle = DCBP_get_start(p); len; s += rl, toggle = !toggle) {
+		if (s >= c->bm_bits) {
+			ERR("bitmap overflow (s:%lu) while decoding bitmap RLE packet\n", s);
+			return FAILED;
+		}
+
+		n = vli_decode_bytes(&rl, buf, len);
+		if (n == 0) /* incomplete buffer! */
+			return FAILED;
+		buf += n;
+		len -= n;
+
+		if (rl == 0) {
+			ERR("unexpected zero runlength while decoding bitmap RLE packet\n");
+			return FAILED;
+		}
+
+		/* unset bits: ignore, because of x | 0 == x. */
+		if (!toggle)
+			continue;
+
+		/* set bits: merge into bitmap. */
+		e = s + rl -1;
+		if (e >= c->bm_bits) {
+			ERR("bitmap overflow (e:%lu) while decoding bitmap RLE packet\n", e);
+			return FAILED;
+		}
+		_drbd_bm_set_bits(mdev, s, e);
+	}
+
+	c->bit_offset = s;
+	bm_xfer_ctx_bit_to_word_offset(c);
+
+	return (s == c->bm_bits) ? DONE : OK;
+}
+
+static enum receive_bitmap_ret
+decode_bitmap_c(struct drbd_conf *mdev,
+		struct Drbd_Compressed_Bitmap_Packet *p,
+		struct bm_xfer_ctx *c)
+{
+	switch (DCBP_get_code(p)) {
+	/* no default! I want the compiler to warn me! */
+	case RLE_VLI_BitsFibD_0_1:
+	case RLE_VLI_BitsFibD_1_1:
+	case RLE_VLI_BitsFibD_1_2:
+	case RLE_VLI_BitsFibD_2_3:
+	case RLE_VLI_BitsFibD_3_5:
+		break; /* TODO */
+	case RLE_VLI_Bytes:
+		return receive_bitmap_rle(mdev, p, c);
+	}
+	ERR("receive_bitmap_c: unknown encoding %u\n", p->encoding);
+	return FAILED;
+}
+
+void INFO_bm_xfer_stats(struct drbd_conf *mdev,
+		const char *direction, struct bm_xfer_ctx *c)
+{
+	unsigned plain_would_take = sizeof(struct Drbd_Header) *
+		((c->bm_words+BM_PACKET_WORDS-1)/BM_PACKET_WORDS+1)
+		+ c->bm_words * sizeof(long);
+	unsigned total = c->bytes[0] + c->bytes[1];
+	unsigned q, r;
+
+	/* total can not be zero. but just in case: */
+	if (total == 0)
+		return;
+
+	q = plain_would_take / total;
+	r = plain_would_take % total;
+	r = (r > UINT_MAX/100) ? (r / (total+99/100)) : (100 * r / total);
+
+	INFO("%s bitmap stats [Bytes(packets)]: plain %u(%u), RLE %u(%u), "
+	     "total %u; compression factor: %u.%02u\n",
+			direction,
+			c->bytes[1], c->packets[1],
+			c->bytes[0], c->packets[0],
+			total, q, r);
+}
+
+/* Since we are processing the bitfield from lower addresses to higher,
    it does not matter if the process it in 32 bit chunks or 64 bit
    chunks as long as it is little endian. (Understand it as byte stream,
    beginning with the lowest byte...) If we would use big endian
@@ -3215,16 +3344,15 @@ STATIC int receive_sync_uuid(struct drbd_conf *mdev, struct Drbd_Header *h)
    returns 0 on failure, 1 if we suceessfully received it. */
 STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 {
-	size_t bm_words, bm_i, want, num_words;
-	unsigned long *buffer;
+	struct bm_xfer_ctx c;
+	void *buffer;
+	enum receive_bitmap_ret ret;
 	int ok = FALSE;
 
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
 
 	drbd_bm_lock(mdev, "receive bitmap");
 
-	bm_words = drbd_bm_words(mdev);
-	bm_i	 = 0;
 	/* maybe we should use some per thread scratch page,
 	 * and allocate that during initial device creation? */
 	buffer	 = (unsigned long *) __get_free_page(GFP_NOIO);
@@ -3233,22 +3361,51 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct Drbd_Header *h)
 		goto out;
 	}
 
-	while (1) {
-		num_words = min_t(size_t, BM_PACKET_WORDS, bm_words-bm_i);
-		want = num_words * sizeof(long);
-		ERR_IF(want != h->length) goto out;
-		if (want == 0)
-			break;
-		if (drbd_recv(mdev, buffer, want) != want)
-			goto out;
+	c = (struct bm_xfer_ctx) {
+		.bm_bits = drbd_bm_bits(mdev),
+		.bm_words = drbd_bm_words(mdev),
+	};
 
-		drbd_bm_merge_lel(mdev, bm_i, num_words, buffer);
-		bm_i += num_words;
+	do {
+		if (h->command == ReportBitMap) {
+			ret = receive_bitmap_plain(mdev, h, buffer, &c);
+		} else if (h->command == ReportCBitMap) {
+			/* MAYBE: sanity check that we speak proto >= 90,
+			 * and the feature is enabled! */
+			struct Drbd_Compressed_Bitmap_Packet *p;
+
+			if (h->length > BM_PACKET_PAYLOAD_BYTES) {
+				ERR("ReportCBitmap packet too large\n");
+				goto out;
+			}
+			/* use the page buff */
+			p = buffer;
+			memcpy(p, h, sizeof(*h));
+			if (drbd_recv(mdev, p->head.payload, h->length) != h->length)
+				goto out;
+			if (p->head.length <= (sizeof(*p) - sizeof(p->head))) {
+				ERR("ReportCBitmap packet too small (l:%u)\n", p->head.length);
+				return FAILED;
+			}
+			ret = decode_bitmap_c(mdev, p, &c);
+		} else {
+			drbd_WARN("receive_bitmap: h->command neither ReportBitMap nor ReportCBitMap (is 0x%x)", h->command);
+			goto out;
+		}
+
+		c.packets[h->command == ReportBitMap]++;
+		c.bytes[h->command == ReportBitMap] += sizeof(struct Drbd_Header) + h->length;
+
+		if (ret != OK)
+			break;
 
 		if (!drbd_recv_header(mdev, h))
 			goto out;
-		D_ASSERT(h->command == ReportBitMap);
-	}
+	} while (ret == OK);
+	if (ret == FAILED)
+		goto out;
+
+	INFO_bm_xfer_stats(mdev, "receive", &c);
 
 	if (mdev->state.conn == WFBitMapT) {
 		ok = !drbd_send_bitmap(mdev);
@@ -3312,6 +3469,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[RSDataReply]	   = receive_RSDataReply,
 	[Barrier]	   = receive_Barrier,
 	[ReportBitMap]	   = receive_bitmap,
+	[ReportCBitMap]    = receive_bitmap,
 	[UnplugRemote]	   = receive_UnplugRemote,
 	[DataRequest]	   = receive_DataRequest,
 	[RSDataRequest]    = receive_DataRequest,
