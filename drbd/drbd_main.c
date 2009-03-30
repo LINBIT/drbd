@@ -2033,11 +2033,15 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 	int len;
 	int ok;
 
-	len = fill_bitmap_rle_bytes(mdev, p, c);
+	if (0)
+		len = fill_bitmap_rle_bytes(mdev, p, c);
+	else
+		len = fill_bitmap_rle_bits(mdev, p, c);
+
 	if (len < 0)
 		return FAILED;
 	if (len) {
-		DCBP_set_code(p, RLE_VLI_Bytes);
+		DCBP_set_code(p, 0 ? RLE_VLI_Bytes : RLE_VLI_BitsFibD_3_5);
 		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportCBitMap, h,
 			sizeof(*p) + len, 0);
 
