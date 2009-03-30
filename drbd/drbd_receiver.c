@@ -3236,7 +3236,65 @@ receive_bitmap_plain(struct drbd_conf *mdev, struct Drbd_Header *h,
 }
 
 static enum receive_bitmap_ret
-receive_bitmap_rle(struct drbd_conf *mdev,
+recv_bm_rle_bits(struct drbd_conf *mdev,
+		struct Drbd_Compressed_Bitmap_Packet *p,
+		struct bm_xfer_ctx *c)
+{
+	struct bitstream bs;
+	u64 look_ahead;
+	u64 rl;
+	u64 tmp;
+	unsigned long s = c->bit_offset;
+	unsigned long e;
+	int len = p->head.length - (sizeof(*p) - sizeof(p->head));
+	int toggle = DCBP_get_start(p);
+	int have;
+	int bits;
+
+	bitstream_init(&bs, p->code, len, DCBP_get_pad_bits(p));
+
+	bits = bitstream_get_bits(&bs, &look_ahead, 64);
+	if (bits < 0)
+		return FAILED;
+
+	for (have = bits; have > 0; s += rl, toggle = !toggle) {
+		bits = vli_decode_bits(&rl, look_ahead);
+		if (bits <= 0)
+			return FAILED;
+
+		if (toggle) {
+			e = s + rl -1;
+			if (e >= c->bm_bits) {
+				ERR("bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
+				return FAILED;
+			}
+			_drbd_bm_set_bits(mdev, s, e);
+		}
+
+		if (have < bits) {
+			ERR("bitmap decoding error: h:%d b:%d la:0x%08llx l:%u/%u\n", have, bits, look_ahead,
+				bs.cur.b - p->code, bs.buf_len);
+			return FAILED;
+		}
+		look_ahead >>= bits;
+		have -= bits;
+
+		bits = bitstream_get_bits(&bs, &tmp, 64 - have);
+		if (bits < 0)
+			return FAILED;
+		look_ahead |= tmp << have;
+		have += bits;
+	}
+
+	c->bit_offset = s;
+	bm_xfer_ctx_bit_to_word_offset(c);
+
+	return (s == c->bm_bits) ? DONE : OK;
+}
+
+
+static enum receive_bitmap_ret
+recv_bm_rle_bytes(struct drbd_conf *mdev,
 		struct Drbd_Compressed_Bitmap_Packet *p,
 		struct bm_xfer_ctx *c)
 {
@@ -3300,10 +3358,11 @@ decode_bitmap_c(struct drbd_conf *mdev,
 	case RLE_VLI_BitsFibD_1_1:
 	case RLE_VLI_BitsFibD_1_2:
 	case RLE_VLI_BitsFibD_2_3:
-	case RLE_VLI_BitsFibD_3_5:
 		break; /* TODO */
+	case RLE_VLI_BitsFibD_3_5:
+		return recv_bm_rle_bits(mdev, p, c);
 	case RLE_VLI_Bytes:
-		return receive_bitmap_rle(mdev, p, c);
+		return recv_bm_rle_bytes(mdev, p, c);
 	}
 	ERR("receive_bitmap_c: unknown encoding %u\n", p->encoding);
 	return FAILED;
