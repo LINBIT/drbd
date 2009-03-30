@@ -148,5 +148,327 @@ static inline int vli_encode_bytes(unsigned char *buf, u64 n, unsigned buf_len)
 	return bytes+1;
 }
 
+/* ================================================================== */
+
+/* And here the more involved variants of VLI.
+ *
+ * Code length is determined by some unique (e.g. unary) prefix.
+ * This encodes arbitrary bit length, not whole bytes: we have a bit-stream,
+ * not a byte stream.
+ */
+
+/* for the bitstream, we need a cursor */
+struct bitstream_cursor {
+	/* the current byte */
+	u8 *b;
+	/* the current bit within *b, nomalized: 0..7 */
+	unsigned int bit;
+};
+
+/* initialize cursor to point to first bit of stream */
+static inline void bitstream_cursor_reset(struct bitstream_cursor *cur, void *s)
+{
+	cur->b = s;
+	cur->bit = 0;
+}
+
+/* advance cursor by that many bits; maximum expected input value: 64,
+ * but depending on VLI implementation, it may be more. */
+static inline void bitstream_cursor_advance(struct bitstream_cursor *cur, unsigned int bits)
+{
+	bits += cur->bit;
+	cur->b = cur->b + (bits >> 3);
+	cur->bit = bits & 7;
+}
+
+/* the bitstream itself knows its length */
+struct bitstream {
+	struct bitstream_cursor cur;
+	unsigned char *buf;
+	size_t buf_len;		/* in bytes */
+
+	/* for input stream:
+	 * number of trailing 0 bits for padding
+	 * total number of valid bits in stream: buf_len * 8 - pad_bits */
+	unsigned int pad_bits;
+};
+
+static inline void bitstream_init(struct bitstream *bs, void *s, size_t len, unsigned int pad_bits)
+{
+	bs->buf = s;
+	bs->buf_len = len;
+	bs->pad_bits = pad_bits;
+	bitstream_cursor_reset(&bs->cur, bs->buf);
+}
+
+static inline void bitstream_rewind(struct bitstream *bs)
+{
+	bitstream_cursor_reset(&bs->cur, bs->buf);
+	memset(bs->buf, 0, bs->buf_len);
+}
+
+/* Put (at most 64) least significant bits of val into bitstream, and advance cursor.
+ * Ignores "pad_bits".
+ * Returns zero if bits == 0 (nothing to do).
+ * Returns number of bits used if successful.
+ *
+ * If there is not enough room left in bitstream,
+ * leaves bitstream unchanged and returns -ENOBUFS.
+ */
+static inline int bitstream_put_bits(struct bitstream *bs, u64 val, const unsigned int bits)
+{
+	unsigned char *b = bs->cur.b;
+	unsigned int tmp;
+
+	if (bits == 0)
+		return 0;
+
+	if ((bs->cur.b + ((bs->cur.bit + bits -1) >> 3)) - bs->buf >= bs->buf_len)
+		return -ENOBUFS;
+
+	/* paranoia: strip off hi bits; they should not be set anyways. */
+	if (bits < 64)
+		val &= ~0ULL >> (64 - bits);
+
+	*b++ |= (val & 0xff) << bs->cur.bit;
+
+	for (tmp = 8 - bs->cur.bit; tmp < bits; tmp += 8)
+		*b++ |= (val >> tmp) & 0xff;
+
+	bitstream_cursor_advance(&bs->cur, bits);
+	return bits;
+}
+
+/* Fetch (at most 64) bits from bitstream into *out, and advance cursor.
+ *
+ * If more than 64 bits are requested, returns -EINVAL and leave *out unchanged.
+ *
+ * If there are less than the requested number of valid bits left in the
+ * bitstream, still fetches all available bits.
+ *
+ * Returns number of actually fetched bits.
+ */
+static inline int bitstream_get_bits(struct bitstream *bs, u64 *out, int bits)
+{
+	u64 val;
+	unsigned int n;
+
+	if (bits > 64)
+		return -EINVAL;
+
+	if (bs->cur.b + ((bs->cur.bit + bs->pad_bits + bits -1) >> 3) - bs->buf >= bs->buf_len)
+		bits = ((bs->buf_len - (bs->cur.b - bs->buf)) << 3)
+			- bs->cur.bit - bs->pad_bits;
+
+	if (bits == 0) {
+		*out = 0;
+		return 0;
+	}
+
+	/* get the high bits */
+	val = 0;
+	n = (bs->cur.bit + bits + 7) >> 3;
+	/* n may be at most 9, if cur.bit + bits > 64 */
+	/* which means this copies at most 8 byte */
+	if (n) {
+		memcpy(&val, bs->cur.b+1, n - 1);
+		val = le64_to_cpu(val) << (8 - bs->cur.bit);
+	}
+
+	/* we still need the low bits */
+	val |= bs->cur.b[0] >> bs->cur.bit;
+
+	/* and mask out bits we don't want */
+	val &= ~0ULL >> (64 - bits);
+
+	bitstream_cursor_advance(&bs->cur, bits);
+	*out = val;
+
+	return bits;
+}
+
+/* we still need to actually define the code. */
+
+/*
+ * encoding is "visualised" as
+ * __little endian__ bitstream, least significant bit first (left most)
+ *
+ * this particular encoding is chosen so that the prefix code
+ * starts as unary encoding the level, then modified so that
+ * 11 levels can be described in 8bit, with minimal overhead
+ * for the smaller levels.
+ *
+ * Number of data bits follow fibonacci sequence, with the exception of the
+ * last level (+1 data bit, so it makes 64bit total).  The only worse code when
+ * encoding bit polarity runlength is 2 plain bits => 3 code bits.
+prefix    data bits                                  max val    Nº data bits
+0                                                                     0x1  0
+10 x                                                                  0x3  1
+110 x                                                                 0x5  1
+1110 xx                                                               0x9  2
+11110 xxx                                                            0x11  3
+1111100 x xxxx                                                       0x31  5
+1111101 x xxxxxxx                                                   0x131  8
+11111100  xxxxxxxx xxxxx                                           0x2131 13
+11111110  xxxxxxxx xxxxxxxx xxxxx                                0x202131 21
+11111101  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xx             0x400202131 34
+11111111  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx 56
+ * maximum encodable value: 0x100000400202131 == 2**56 + some */
+
+/* LEVEL: (total bits, prefix bits, prefix value),
+ * sorted ascending by number of total bits.
+ * The rest of the code table is calculated at compiletime from this. */
+
+/* fibonacci data 0, 1, ... */
+#define VLI_L_0_1() do { \
+	LEVEL( 1, 1, 0x00); \
+	LEVEL( 3, 2, 0x01); \
+	LEVEL( 4, 3, 0x03); \
+	LEVEL( 6, 4, 0x07); \
+	LEVEL( 8, 5, 0x0f); \
+	LEVEL(12, 7, 0x1f); \
+	LEVEL(15, 7, 0x5f); \
+	LEVEL(21, 8, 0x3f); \
+	LEVEL(29, 8, 0x7f); \
+	LEVEL(42, 8, 0xbf); \
+	LEVEL(64, 8, 0xff); \
+	} while (0)
+
+/* Some variants, differeing in number of levels, prefix value, and number of
+ * databits in each level.  I tried a lot of variants. Those where the number
+ * of data bits follows the fibonacci sequence (with a certain offset) simply
+ * "look best" ;-)
+ * All of these can encode at least "2 ** 56". */
+
+/* fibonacci data 1, 1, ... */
+#define VLI_L_1_1() do { \
+	LEVEL( 2, 1, 0x00); \
+	LEVEL( 3, 2, 0x01); \
+	LEVEL( 5, 3, 0x03); \
+	LEVEL( 7, 4, 0x07); \
+	LEVEL(10, 5, 0x0f); \
+	LEVEL(14, 6, 0x1f); \
+	LEVEL(21, 8, 0x3f); \
+	LEVEL(29, 8, 0x7f); \
+	LEVEL(42, 8, 0xbf); \
+	LEVEL(64, 8, 0xff); \
+	} while (0)
+
+/* fibonacci data 1, 2, ... */
+#define VLI_L_1_2() do { \
+	LEVEL( 2, 1, 0x00); \
+	LEVEL( 4, 2, 0x01); \
+	LEVEL( 6, 3, 0x03); \
+	LEVEL( 9, 4, 0x07); \
+	LEVEL(13, 5, 0x0f); \
+	LEVEL(19, 6, 0x1f); \
+	LEVEL(28, 7, 0x3f); \
+	LEVEL(42, 8, 0x7f); \
+	LEVEL(64, 8, 0xff); \
+	} while (0)
+
+/* fibonacci data 2, 3, ... */
+#define VLI_L_2_3() do { \
+	LEVEL( 3, 1, 0x00); \
+	LEVEL( 5, 2, 0x01); \
+	LEVEL( 8, 3, 0x03); \
+	LEVEL(12, 4, 0x07); \
+	LEVEL(18, 5, 0x0f); \
+	LEVEL(27, 6, 0x1f); \
+	LEVEL(41, 7, 0x3f); \
+	LEVEL(64, 7, 0x5f); \
+	} while (0)
+
+/* fibonacci data 3, 5, ... */
+#define VLI_L_3_5() do { \
+	LEVEL( 4, 1, 0x00); \
+	LEVEL( 7, 2, 0x01); \
+	LEVEL(11, 3, 0x03); \
+	LEVEL(17, 4, 0x07); \
+	LEVEL(26, 5, 0x0f); \
+	LEVEL(40, 6, 0x1f); \
+	LEVEL(64, 6, 0x3f); \
+	} while (0)
+
+/* CONFIG */
+#ifndef VLI_LEVELS
+#define VLI_LEVELS() VLI_L_3_5()
+#endif
+
+/* finds a suitable level to decode the least significant part of in.
+ * returns number of bits consumed.
+ *
+ * BUG() for bad input, as that would mean a buggy code table. */
+static inline int vli_decode_bits(u64 *out, const u64 in)
+{
+	u64 adj = 1;
+
+#define LEVEL(t,b,v)					\
+	do {						\
+		if ((in & ((1 << b) -1)) == v) {	\
+			*out = ((in & ((~0ULL) >> (64-t))) >> b) + adj;	\
+			return t;			\
+		}					\
+		adj += 1ULL << (t - b);			\
+	} while (0)
+
+	VLI_LEVELS();
+
+	/* NOT REACHED, if VLI_LEVELS code table is defined properly */
+	BUG();
+#undef LEVEL
+}
+
+/* return number of code bits needed,
+ * or negative error number */
+static inline int __vli_encode_bits(u64 *out, const u64 in)
+{
+	u64 max = 0;
+	u64 adj = 1;
+
+	if (in == 0)
+		return -EINVAL;
+
+#define LEVEL(t,b,v) do {		\
+		max += 1ULL << (t - b);	\
+		if (in <= max) {	\
+			if (out)	\
+				*out = ((in - adj) << b) | v;	\
+			return t;	\
+		}			\
+		adj = max + 1;		\
+	} while (0)
+
+	VLI_LEVELS();
+
+	return -EOVERFLOW;
+#undef LEVEL
+}
+
+/* encodes @in as vli into @bs;
+
+ * return values
+ *  > 0: number of bits successfully stored in bitstream
+ * -ENOBUFS @bs is full
+ * -EINVAL input zero (invalid)
+ * -EOVERFLOW input too large for this vli code (invalid)
+ */
+static inline int vli_encode_bits(struct bitstream *bs, u64 in)
+{
+	u64 code = code;
+	int bits = __vli_encode_bits(&code, in);
+
+	if (bits <= 0)
+		return bits;
+
+	return bitstream_put_bits(bs, code, bits);
+}
+
+#undef VLI_L_0_1
+#undef VLI_L_1_1
+#undef VLI_L_1_2
+#undef VLI_L_2_3
+#undef VLI_L_3_5
+
 #undef VLI_LEVELS
 #endif
