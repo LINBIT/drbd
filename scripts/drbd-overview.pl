@@ -37,7 +37,7 @@ sub map_minor_to_resource_names()
 	{
 		$drbd{$4}{name} = $5;
 		$minor_of_name{$5} = $4;
-		$drbd{$4}{ll_dev} = defined($3) ? $4 : $1
+		$drbd{$4}{ll_dev} = defined($2) ? $3 : $1
 			if $1;
 	}
 
@@ -91,6 +91,8 @@ sub slurp_proc_drbd_or_exit() {
 			s/^(.* )cs:([^ ]*)$/$1$2/;
 			# strip off leading minor number
 			s/^ *\d+:\s+//;
+			# add alignment helpers for Unconfigured devices
+			s/Unconfigured$/$& . . . ./;
 			$drbd{$minor}{state} = $_;
 		};
 		/^\t\[.*sync.ed:/ and do {
