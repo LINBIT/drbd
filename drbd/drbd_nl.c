@@ -562,7 +562,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 			size = drbd_bm_capacity(mdev)>>1;
 			if (size == 0) {
 				ERR("OUT OF MEMORY! "
-				    "Could not allocate bitmap! ");
+				    "Could not allocate bitmap!\n");
 			} else {
 				ERR("BM resizing failed. "
 				    "Leaving size unchanged at size = %lu KB\n",
@@ -887,13 +887,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	resync_lru = lc_alloc("resync", 61, sizeof(struct bm_extent), mdev);
 	if (!resync_lru) {
 		retcode = KMallocFailed;
-		goto fail;
+		goto release_bdev_fail;
 	}
 
 	if (!mdev->bitmap) {
 		if (drbd_bm_init(mdev)) {
 			retcode = KMallocFailed;
-			goto fail;
+			goto release_bdev_fail;
 		}
 	}
 

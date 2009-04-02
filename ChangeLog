@@ -136,6 +136,10 @@ Latest:
 
 Changelog for fixes propagated from 8.0.x:
 ------------------------------------------
+8.0.16 (api:86/proto:86)
+--------
+ * Fixed the init script to work with all flavors of LSB
+
 8.0.15 (api:86/proto:86)
 --------
  * Adding a missing range check in ensure_mdev()

@@ -3798,6 +3798,8 @@ _drbd_fault_str(unsigned int type) {
 		"Data write",
 		"Data read",
 		"Data read ahead",
+		"BM allocation",
+		"EE allocation"
 	};
 
 	return (type < DRBD_FAULT_MAX) ? _faults[type] : "**Unknown**";

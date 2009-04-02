@@ -538,8 +538,12 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	if (want == have) {
 		D_ASSERT(b->bm_pages != NULL);
 		npages = b->bm_pages;
-	} else
-		npages = bm_realloc_pages(b->bm_pages, have, want);
+	} else {
+		if (FAULT_ACTIVE(mdev, DRBD_FAULT_BM_ALLOC))
+			npages = NULL;
+		else
+			npages = bm_realloc_pages(b->bm_pages, have, want);
+	}
 
 	if (!npages) {
 		err = -ENOMEM;
