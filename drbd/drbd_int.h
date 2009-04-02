@@ -236,6 +236,7 @@ enum {
     DRBD_FAULT_DT_WR,		/* data            */
     DRBD_FAULT_DT_RD,
     DRBD_FAULT_DT_RA,		/* data read ahead */
+    DRBD_FAULT_BM_ALLOC,        /* bitmap allocation */
 
     DRBD_FAULT_MAX,
 };
