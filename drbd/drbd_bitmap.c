@@ -403,7 +403,12 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		} else {
 			/* one extra long to catch off by one errors */
 			bytes = (words+1)*sizeof(long);
-			nbm = vmalloc(bytes);
+
+			if (FAULT_ACTIVE(mdev, DRBD_FAULT_BM_ALLOC))
+				nbm = NULL;
+			else
+				nbm = vmalloc(bytes);
+
 			if (!nbm) {
 				ERR("bitmap: failed to vmalloc %lu bytes\n",
 					bytes);
