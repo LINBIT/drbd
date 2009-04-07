@@ -27,6 +27,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <setjmp.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -249,6 +250,44 @@ static int read_node_id(struct node_info *ni)
 	return 1;
 }
 
+/* to interrupt gethostbyname,
+ * we not only need a signal,
+ * but also the long jump:
+ * gethostbyname would otherwise just restart the syscall
+ * and timeout again. */
+static jmp_buf timed_out;
+static void alarm_handler(int __attribute((unused)) signo)
+{
+	longjmp(timed_out, 1);
+}
+
+#define DNS_TIMEOUT 3	/* seconds */
+struct hostent *my_gethostbyname(const char *name)
+{
+	struct sigaction sa;
+	struct sigaction so;
+	struct hostent *h;
+
+	alarm(0);
+	sa.sa_handler = &alarm_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+
+	sigaction(SIGALRM, &sa, &so);
+
+	if (!setjmp(timed_out)) {
+		alarm(DNS_TIMEOUT);
+		h = gethostbyname(name);
+	} else
+		/* timed out, longjmp of SIGALRM jumped here */
+		h = NULL;
+
+	alarm(0);
+	sigaction(SIGALRM, &so, NULL);
+
+	return h;
+}
+
 /**
  * insert_usage_with_socket:
  *
@@ -277,7 +316,7 @@ static int make_get_request(char *req_buf) {
 	memset (&server, 0, sizeof(server));
 
 	/* convert host name to ip */
-	host_info = gethostbyname(http_host);
+	host_info = my_gethostbyname(http_host);
 	if (host_info == NULL) {
 		/* unknown host, try with ip */
 		if ((addr = inet_addr( HTTP_ADDR )) != INADDR_NONE)
