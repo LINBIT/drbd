@@ -45,7 +45,7 @@
 
 #define HTTP_PORT 80
 #define HTTP_HOST "usage.drbd.org"
-#define HTTP_ADDR "212.69.162.23"
+#define HTTP_ADDR "212.69.161.111"
 #define DRBD_LIB_DIR "/var/lib/drbd"
 #define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
 #define GIT_HASH_BYTE 20
