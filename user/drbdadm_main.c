@@ -1725,6 +1725,7 @@ struct d_resource* res_by_minor(const char *id)
   if (mm < 0) return NULL;
 
   for_each_resource(res,t,config) {
+    if (res->ignore) continue;
     if (mm == res->me->device_minor) {
       is_drbd_top = res->stacked;
       return res;
