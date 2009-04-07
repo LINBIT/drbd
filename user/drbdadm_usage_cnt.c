@@ -262,6 +262,7 @@ static void alarm_handler(int __attribute((unused)) signo)
 }
 
 #define DNS_TIMEOUT 3	/* seconds */
+#define SOCKET_TIMEOUT 3 /* seconds */
 struct hostent *my_gethostbyname(const char *name)
 {
 	struct sigaction sa;
@@ -309,10 +310,15 @@ static int make_get_request(char *req_buf) {
 	char buffer[buf_len];
 	FILE *sockfd;
 	int writeit;
+	struct timeval timeout = { .tv_sec = SOCKET_TIMEOUT };
+
 	sock = socket( PF_INET, SOCK_STREAM, 0);
-	if (sock < 0) {
+	if (sock < 0)
 		return 1;
-	}
+
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
 	memset (&server, 0, sizeof(server));
 
 	/* convert host name to ip */
