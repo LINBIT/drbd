@@ -1834,10 +1834,11 @@ STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *
 STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 		   int offset, size_t size)
 {
-       int ret;
-       ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-       kunmap(page);
-       return ret;
+	int sent = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	if (sent == size)
+		mdev->send_cnt += size>>9;
+	return sent;
 }
 
 int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
