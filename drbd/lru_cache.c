@@ -325,7 +325,7 @@ void lc_changed(struct lru_cache *lc, struct lc_element *e)
 	lc->new_number = -1;
 	clear_bit(__LC_DIRTY, &lc->flags);
 	smp_mb__after_clear_bit();
-	PARANOIA_LEAVE();
+	RETURN();
 }
 
 
