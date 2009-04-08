@@ -983,7 +983,7 @@ void set_disk_in_res(struct d_resource *res)
 			if (host->lower->me->device)
 				m_asprintf(&host->disk, "%s", host->lower->me->device);
 			else
-				m_asprintf(&host->disk, "/dev/drbd/%s", host->lower->name);
+				m_asprintf(&host->disk, "/dev/drbd%d", host->lower->me->device_minor);
 
 			if (!host->disk)
 				derror(host,res,"disk");
