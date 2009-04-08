@@ -78,8 +78,8 @@ struct drbd_bitmap {
 };
 
 /* definition of bits in bm_flags */
-#define BM_LOCKED 0
-#define BM_MD_IO_ERROR (BITS_PER_LONG-1) /* 31? 63? */
+#define BM_LOCKED       0
+#define BM_MD_IO_ERROR  1
 
 static inline int bm_is_locked(struct drbd_bitmap *b)
 {
