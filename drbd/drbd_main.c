@@ -882,6 +882,10 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			ns.pdsk = DUnknown;
 	}
 
+	/* Clear the aftr_isp when becomming Unconfigured */
+	if (ns.conn == StandAlone && ns.disk == Diskless && ns.role == Secondary)
+		ns.aftr_isp = 0;
+
 	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
 
@@ -1317,8 +1321,11 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* Terminate worker thread if we are unconfigured - it will be
 	   restarted as needed... */
-	if (ns.disk == Diskless && ns.conn == StandAlone && ns.role == Secondary)
+	if (ns.disk == Diskless && ns.conn == StandAlone && ns.role == Secondary) {
+		if (os.aftr_isp != ns.aftr_isp)
+			resume_next_sg(mdev);
 		drbd_thread_stop_nowait(&mdev->worker);
+	}
 
 	drbd_md_sync(mdev);
 }

@@ -1228,6 +1228,8 @@ STATIC int _drbd_resume_next(struct drbd_conf *mdev)
 		odev = minor_to_mdev(i);
 		if (!odev)
 			continue;
+		if (odev->state.conn == StandAlone && odev->state.disk == Diskless)
+			continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
 				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
