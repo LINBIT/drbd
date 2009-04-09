@@ -3061,8 +3061,8 @@ STATIC void drbd_cleanup(void)
 }
 
 /**
- * drbd_congested: Returns 1<<BDI_write_congested and/or
- * 1<<BDI_read_congested if we are congested. This interface is known
+ * drbd_congested: Returns 1<<BDI_async_congested and/or
+ * 1<<BDI_sync_congested if we are congested. This interface is known
  * to be used by pdflush.
  */
 static int drbd_congested(void *congested_data, int bdi_bits)
@@ -3083,15 +3083,13 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		q = bdev_get_queue(mdev->bc->backing_bdev);
 		r = bdi_congested(&q->backing_dev_info, bdi_bits);
 		dec_local(mdev);
-		if (r) {
+		if (r)
 			reason = 'b';
-			goto out;
-		}
 	}
 
-	if (bdi_bits & (1 << BDI_write_congested) && test_bit(NET_CONGESTED, &mdev->flags)) {
-		r = (1 << BDI_write_congested);
-		reason = 'n';
+	if (bdi_bits & (1 << BDI_async_congested) && test_bit(NET_CONGESTED, &mdev->flags)) {
+		r |= (1 << BDI_async_congested);
+		reason = reason == 'b' ? 'a' : 'n';
 	}
 
 out:

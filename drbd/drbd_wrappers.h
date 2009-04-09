@@ -498,3 +498,9 @@ typedef unsigned gfp_t;
 #ifndef net_random
 #define random32 net_random
 #endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
+#define BDI_async_congested BDI_write_congested
+#define BDI_sync_congested  BDI_read_congested
+#endif
+
