@@ -2051,6 +2051,9 @@ int main(int argc, char** argv)
     exit(E_exec_error);
   };
 
+  if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
+	warn_on_version_mismatch();
+
   //yydebug = 1;
   my_parse();
 
