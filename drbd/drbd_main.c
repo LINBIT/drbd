@@ -891,6 +891,10 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			ns.pdsk = DUnknown;
 	}
 
+	/* Clear the aftr_isp when becomming Unconfigured */
+	if (ns.conn == StandAlone && ns.disk == Diskless && ns.role == Secondary)
+		ns.aftr_isp = 0;
+
 	if (ns.conn <= Disconnecting && ns.disk == Diskless)
 		ns.pdsk = DUnknown;
 
@@ -1337,8 +1341,11 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 
 	/* Terminate worker thread if we are unconfigured - it will be
 	   restarted as needed... */
-	if (ns.disk == Diskless && ns.conn == StandAlone && ns.role == Secondary)
+	if (ns.disk == Diskless && ns.conn == StandAlone && ns.role == Secondary) {
+		if (os.aftr_isp != ns.aftr_isp)
+			resume_next_sg(mdev);
 		drbd_thread_stop_nowait(&mdev->worker);
+	}
 
 	drbd_md_sync(mdev);
 }
@@ -2094,10 +2101,11 @@ STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *
 STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 		   int offset, size_t size)
 {
-       int ret;
-       ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-       kunmap(page);
-       return ret;
+	int sent = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	if (sent == size)
+		mdev->send_cnt += size>>9;
+	return sent;
 }
 
 int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
@@ -3062,22 +3070,11 @@ int __init drbd_init(void)
 	if (err)
 		goto Enomem;
 
-#if CONFIG_PROC_FS
-	/*
-	 * register with procfs
-	 */
-	drbd_proc = create_proc_entry("drbd",  S_IFREG | S_IRUGO , NULL);
-
+	drbd_proc = proc_create("drbd", S_IFREG | S_IRUGO , NULL, &drbd_proc_fops);
 	if (!drbd_proc)	{
 		printk(KERN_ERR "drbd: unable to register proc file\n");
 		goto Enomem;
 	}
-
-	drbd_proc->proc_fops = &drbd_proc_fops;
-	drbd_proc->owner = THIS_MODULE;
-#else
-# error "Currently drbd depends on the proc file system (CONFIG_PROC_FS)"
-#endif
 
 	printk(KERN_INFO "drbd: initialised. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",

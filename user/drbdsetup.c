@@ -2399,7 +2399,7 @@ void close_cn(int sk_nl)
 	close(sk_nl);
 }
 
-void ensure_drbd_driver_is_present(void)
+int is_drbd_driver_missing(void)
 {
 	struct stat sb;
 	FILE *cn_idx_file;
@@ -2416,17 +2416,14 @@ void ensure_drbd_driver_is_present(void)
 
 	err = stat("/proc/drbd", &sb);
 	if (!err)
-		return;
+		return 0;
 
 	if (err == ENOENT)
 		fprintf(stderr, "DRBD driver appears to be missing\n");
 	else
 		fprintf(stderr, "Could not stat(\"/proc/drbd\"): %m\n");
 
-	fprintf(stderr, "do you need to load the module?\n"
-			"try: modprobe drbd\n");
-
-	exit(20);
+	return 1;
 }
 
 int main(int argc, char** argv)
@@ -2474,7 +2471,17 @@ int main(int argc, char** argv)
 
 	cmd=find_cmd_by_name(argv[2]);
 
-	ensure_drbd_driver_is_present();
+	if (is_drbd_driver_missing()) {
+		if (!strcmp(argv[2], "down") ||
+		    !strcmp(argv[2], "secondary") ||
+		    !strcmp(argv[2], "disconnect") ||
+		    !strcmp(argv[2], "detach"))
+			return 0; /* "down" succeeds even if drbd is missing */
+
+		fprintf(stderr, "do you need to load the module?\n"
+				"try: modprobe drbd\n");
+		return 20;
+	}
 
 	if(cmd) {
 		lock_fd = dt_lock_drbd(argv[1]);
