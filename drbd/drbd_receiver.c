@@ -3229,8 +3229,10 @@ recv_bm_rle_bits(struct drbd_conf *mdev,
 		}
 
 		if (have < bits) {
-			ERR("bitmap decoding error: h:%d b:%d la:0x%08llx l:%u/%u\n", have, bits, look_ahead,
-				bs.cur.b - p->code, bs.buf_len);
+			ERR("bitmap decoding error: h:%d b:%d la:0x%08llx l:%u/%u\n",
+				have, bits, look_ahead,
+				(unsigned int)(bs.cur.b - p->code),
+				(unsigned int)bs.buf_len);
 			return FAILED;
 		}
 		look_ahead >>= bits;
