@@ -276,7 +276,9 @@ static void parse_global(void)
 	}
 	EXP('{');
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch (token) {
 		case TK_DISABLE_IP_VERIFICATION:
 			global_options.disable_ip_verification = 1;
 			break;
@@ -325,10 +327,12 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	enum range_checks rc;
 
 	struct d_option *options = NULL, *ro = NULL;
+	c_section_start = line;
 	fline = line;
 
 	while (1) {
 		token = yylex();
+		fline = line;
 		if (token == token_switch) {
 			options = APPEND(options, new_opt(yylval.txt, NULL));
 		} else if (token == token_option) {
@@ -461,7 +465,9 @@ static void parse_host_section(struct d_resource *res,
 
 	EXP('{');
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch (token) {
 		case TK_DISK:
 			check_uniq("disk statement", "%s:%s:disk", res->name,
 				   host->name);
@@ -506,17 +512,7 @@ static void parse_host_section(struct d_resource *res,
 				host->meta_index = strdup("flexible");
 			}
 			check_meta_disk(host);
-			switch (yylex()) {
-			case TK__MAJOR:
-				EXP(TK_INTEGER);
-				host->meta_major = atoi(yylval.txt);
-				EXP(TK__MINOR);
-				EXP(TK_INTEGER);
-				host->meta_minor = atoi(yylval.txt);
-				EXP(';');
-			case ';':
-				break;
-			}
+			EXP(';');
 			break;
 		case TK_PROXY:
 			parse_proxy_section(host);
@@ -616,14 +612,16 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	struct d_host_info *host;
 	int token;
 
-	fline = line;
+	c_resource_start = line;
 
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
 	res->me_minor = -1; /* will be set once in dt_minor_of_res */
 
 	while(1) {
-		switch((token=yylex())) {
+		token = yylex();
+		fline = line;
+		switch(token) {
 		case TK_PROTOCOL:
 			check_uniq("protocol statement","%s: protocol",res->name);
 			EXP(TK_STRING);
@@ -786,7 +784,9 @@ void my_parse(void)
 	config = NULL;
 
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch(token) {
 		case TK_GLOBAL:
 			parse_global();
 			break;

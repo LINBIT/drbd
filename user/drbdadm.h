@@ -142,6 +142,7 @@ extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   char* arg,
 			   int order);
 
+extern void warn_on_version_mismatch(void);
 extern void uc_node(enum usage_count_type type);
 extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
