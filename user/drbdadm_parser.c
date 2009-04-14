@@ -376,7 +376,9 @@ static void parse_global(void)
 	}
 	EXP('{');
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch (token) {
 		case TK_DISABLE_IP_VERIFICATION:
 			global_options.disable_ip_verification = 1;
 			break;
@@ -436,10 +438,12 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	enum range_checks rc;
 
 	struct d_option *options = NULL, *ro = NULL;
+	c_section_start = line;
 	fline = line;
 
 	while (1) {
 		token = yylex();
+		fline = line;
 		if (token == token_switch) {
 			options = APPEND(options, new_opt(yylval.txt, NULL));
 		} else if (token == token_option) {
@@ -650,7 +654,9 @@ static void parse_host_section(struct d_resource *res,
 	res->all_hosts = APPEND(res->all_hosts, host);
 
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch (token) {
 		case TK_DISK:
 			for_each_host(h, on_hosts)
 				check_uniq("disk statement", "%s:%s:disk", res->name, h->name);
@@ -997,8 +1003,6 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	struct d_name *host_names;
 	int token;
 
-	fline = line;
-
 	check_uniq("resource section", res_name);
 
 	res=calloc(1,sizeof(struct d_resource));
@@ -1008,7 +1012,9 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	res->start_line = line;
 
 	while(1) {
-		switch((token=yylex())) {
+		token = yylex();
+		fline = line;
+		switch(token) {
 		case TK_PROTOCOL:
 			check_uniq("protocol statement","%s: protocol",res->name);
 			EXP(TK_STRING);
@@ -1187,7 +1193,9 @@ void include_stmt(char *str)
 void my_parse(void)
 {
 	while (1) {
-		switch (yylex()) {
+		int token = yylex();
+		fline = line;
+		switch(token) {
 		case TK_GLOBAL:
 			parse_global();
 			break;

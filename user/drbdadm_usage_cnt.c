@@ -27,6 +27,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <setjmp.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -45,7 +46,7 @@
 
 #define HTTP_PORT 80
 #define HTTP_HOST "usage.drbd.org"
-#define HTTP_ADDR "212.69.162.23"
+#define HTTP_ADDR "212.69.161.111"
 #define DRBD_LIB_DIR "/var/lib/drbd"
 #define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
 #define GIT_HASH_BYTE 20
@@ -54,6 +55,9 @@
 struct vcs_rel {
 	u32	svn_revision;
 	char	git_hash[GIT_HASH_BYTE];
+	struct {
+		unsigned major, minor, sublvl;
+	} version;
 };
 
 struct node_info {
@@ -106,18 +110,50 @@ void read_hex(char* dst, char* src, int dst_size, int src_size)
 	}
 }
 
+void vcs_ver_from_str(struct vcs_rel *rel, const char *token)
+{
+	char *dot;
+	long maj, min, sub;
+	maj = strtol(token, &dot, 10);
+	if (*dot != '.')
+		return;
+	min = strtol(dot+1, &dot, 10);
+	if (*dot != '.')
+		return;
+	sub = strtol(dot+1, &dot, 10);
+	/* don't check on *dot == 0,
+	 * we may want to add some extraversion tag sometime
+	if (*dot != 0)
+		return;
+	*/
+
+	rel->version.major = maj;
+	rel->version.minor = min;
+	rel->version.sublvl = sub;
+}
+
 void vcs_from_str(struct vcs_rel *rel, const char *text)
 {
 	char token[80];
 	int plus=0;
-	enum { begin,f_svn,f_rev,f_git } ex=begin;
+	enum { begin, f_ver, f_svn, f_rev, f_git } ex = begin;
 
 	while (sget_token(token, sizeof(token), &text) != EOF) {
 		switch(ex) {
 		case begin:
-			if(!strcmp(token,"plus")) plus = 1;
+			if(!strcmp(token,"version:"))
+				ex = f_ver;
 			if(!strcmp(token,"SVN"))  ex = f_svn;
 			if(!strcmp(token,"GIT-hash:"))  ex = f_git;
+			break;
+		case f_ver:
+			if(!strcmp(token,"plus"))
+				plus = 1;
+				/* still waiting for version */
+			else {
+				vcs_ver_from_str(rel, token);
+				ex = begin;
+			}
 			break;
 		case f_svn:
 			if(!strcmp(token,"Revision:"))  ex = f_rev;
@@ -135,17 +171,24 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 	}
 }
 
-static void vcs_get_current(struct vcs_rel *rel)
+static struct vcs_rel current_vcs_rel;
+static void vcs_get_current(void)
 {
+	static int initialized = 0;
 	char* version_txt;
+
+	if (initialized)
+		return;
 
 	version_txt = slurp_proc_drbd();
 	if(version_txt) {
-		vcs_from_str(rel, version_txt);
+		vcs_from_str(&current_vcs_rel, version_txt);
 		free(version_txt);
 	} else {
-		vcs_from_str(rel, drbd_buildtag());
+		vcs_from_str(&current_vcs_rel, drbd_buildtag());
+		vcs_ver_from_str(&current_vcs_rel, REL_VERSION);
 	}
+	initialized = 1;
 }
 
 static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
@@ -155,6 +198,48 @@ static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
 	} else {
 		return !memcmp(rev1->git_hash,rev2->git_hash,GIT_HASH_BYTE);
 	}
+}
+
+static int vcs_ver_cmp(struct vcs_rel *rev1, struct vcs_rel *rev2)
+{
+	return ((rev1->version.major << 16) + (rev1->version.minor << 8) + rev1->version.sublvl)
+	     - ((rev2->version.major << 16) + (rev2->version.minor << 8) + rev2->version.sublvl);
+}
+
+void warn_on_version_mismatch(void)
+{
+	struct vcs_rel userland_version = { .svn_revision = 0, };
+	char *msg;
+	int cmp;
+
+	/* get the kernel module version from /proc/drbd */
+	vcs_get_current();
+
+	/* get the userland version from REL_VERSION */
+	vcs_ver_from_str(&userland_version, REL_VERSION);
+
+	cmp = vcs_ver_cmp(&userland_version, &current_vcs_rel);
+	/* no message if equal */
+	if (cmp == 0)
+		return;
+	if (cmp > 0xffff || cmp < -0xffff)	 /* major version differs! */
+		msg = "mixing different major numbers will not work!";
+	else if (cmp < 0)		/* userland is older. always warn. */
+		msg = "you should upgrade your drbd tools!";
+	else if (cmp & 0xff00)		/* userland is newer minor version */
+		msg = "please don't mix different DRBD series.";
+	else		/* userland is newer, but only differ in sublevel. */
+		msg = "preferably kernel and userland versions should match.";
+
+	fprintf(stderr, "DRBD module version: %u.%u.%u\n"
+			"   userland version: %u.%u.%u\n%s\n",
+			current_vcs_rel.version.major,
+			current_vcs_rel.version.minor,
+			current_vcs_rel.version.sublvl,
+			userland_version.version.major,
+			userland_version.version.minor,
+			userland_version.version.sublvl,
+			msg);
 }
 
 static char *vcs_to_str(struct vcs_rel *rev)
@@ -249,6 +334,45 @@ static int read_node_id(struct node_info *ni)
 	return 1;
 }
 
+/* to interrupt gethostbyname,
+ * we not only need a signal,
+ * but also the long jump:
+ * gethostbyname would otherwise just restart the syscall
+ * and timeout again. */
+static jmp_buf timed_out;
+static void alarm_handler(int __attribute((unused)) signo)
+{
+	longjmp(timed_out, 1);
+}
+
+#define DNS_TIMEOUT 3	/* seconds */
+#define SOCKET_TIMEOUT 3 /* seconds */
+struct hostent *my_gethostbyname(const char *name)
+{
+	struct sigaction sa;
+	struct sigaction so;
+	struct hostent *h;
+
+	alarm(0);
+	sa.sa_handler = &alarm_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+
+	sigaction(SIGALRM, &sa, &so);
+
+	if (!setjmp(timed_out)) {
+		alarm(DNS_TIMEOUT);
+		h = gethostbyname(name);
+	} else
+		/* timed out, longjmp of SIGALRM jumped here */
+		h = NULL;
+
+	alarm(0);
+	sigaction(SIGALRM, &so, NULL);
+
+	return h;
+}
+
 /**
  * insert_usage_with_socket:
  *
@@ -270,14 +394,19 @@ static int make_get_request(char *req_buf) {
 	char buffer[buf_len];
 	FILE *sockfd;
 	int writeit;
+	struct timeval timeout = { .tv_sec = SOCKET_TIMEOUT };
+
 	sock = socket( PF_INET, SOCK_STREAM, 0);
-	if (sock < 0) {
+	if (sock < 0)
 		return 1;
-	}
+
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
 	memset (&server, 0, sizeof(server));
 
 	/* convert host name to ip */
-	host_info = gethostbyname(http_host);
+	host_info = my_gethostbyname(http_host);
 	if (host_info == NULL) {
 		/* unknown host, try with ip */
 		if ((addr = inet_addr( HTTP_ADDR )) != INADDR_NONE)
@@ -357,7 +486,6 @@ void uc_node(enum usage_count_type type)
 {
 	struct node_info ni;
 	char *req_buf;
-	struct vcs_rel current;
 	int send = 0;
 	int update = 0;
 	char answer[ANSWER_SIZE];
@@ -375,16 +503,16 @@ void uc_node(enum usage_count_type type)
 	if (getenv("INIT_VERSION")) return;
 	if (no_tty) return;
 
-	vcs_get_current(&current);
+	vcs_get_current();
 
 	if( ! read_node_id(&ni) ) {
 		get_random_bytes(&ni.node_uuid,sizeof(ni.node_uuid));
-		ni.rev = current;
+		ni.rev = current_vcs_rel;
 		send = 1;
 	} else {
 		// read_node_id() was successull
-		if (!vcs_eq(&ni.rev,&current)) {
-			ni.rev = current;
+		if (!vcs_eq(&ni.rev,&current_vcs_rel)) {
+			ni.rev = current_vcs_rel;
 			update = 1;
 			send = 1;
 		}

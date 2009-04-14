@@ -161,6 +161,7 @@ extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   char* arg,
 			   int order);
 
+extern void warn_on_version_mismatch(void);
 extern void uc_node(enum usage_count_type type);
 extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
@@ -193,7 +194,7 @@ extern int config_valid;
 extern struct d_resource* config;
 extern struct d_resource* common;
 extern struct d_globals global_options;
-extern int line, fline, c_resource_start;
+extern int line, fline;
 
 extern int no_tty;
 extern int dry_run;

@@ -911,11 +911,11 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncTarget:
 			ns.disk = Inconsistent;
-			drbd_WARN("Implicit set disk state Inconsistent!\n");
+			drbd_WARN("Implicitly set disk state Inconsistent!\n");
 			break;
 		}
 		if (os.disk == Outdated && ns.disk == UpToDate)
-			drbd_WARN("Implicit set disk from Outdate to UpToDate\n");
+			drbd_WARN("Implicitly set disk from Outdated to UpToDate\n");
 	}
 
 	if (ns.conn >= Connected &&
@@ -933,11 +933,11 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncSource:
 			ns.pdsk = Inconsistent;
-			drbd_WARN("Implicit set pdsk Inconsistent!\n");
+			drbd_WARN("Implicitly set pdsk Inconsistent!\n");
 			break;
 		}
 		if (os.pdsk == Outdated && ns.pdsk == UpToDate)
-			drbd_WARN("Implicit set pdsk from Outdate to UpToDate\n");
+			drbd_WARN("Implicitly set pdsk from Outdated to UpToDate\n");
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
@@ -2321,10 +2321,11 @@ STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *
 STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 		   int offset, size_t size)
 {
-       int ret;
-       ret = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
-       kunmap(page);
-       return ret;
+	int sent = drbd_send(mdev, mdev->data.socket, kmap(page) + offset, size, 0);
+	kunmap(page);
+	if (sent == size)
+		mdev->send_cnt += size>>9;
+	return sent;
 }
 
 int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
