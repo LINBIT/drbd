@@ -1181,8 +1181,6 @@ STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	return 0;
 }
 
-#define HMAC_NAME_L 20
-
 STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
@@ -1193,7 +1191,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct hlist_head *new_tl_hash = NULL;
 	struct hlist_head *new_ee_hash = NULL;
 	struct drbd_conf *odev;
-	char hmac_name[HMAC_NAME_L];
+	char hmac_name[CRYPTO_MAX_ALG_NAME];
 
 	if (mdev->state.conn > StandAlone) {
 		retcode = HaveNetConfig;
@@ -1274,7 +1272,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 #undef O_PORT
 
 	if (new_conf->cram_hmac_alg[0] != 0) {
-		snprintf(hmac_name, HMAC_NAME_L, "hmac(%s)",
+		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
 			new_conf->cram_hmac_alg);
 		tfm = crypto_alloc_hash(hmac_name, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(tfm)) {
