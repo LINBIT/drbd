@@ -431,17 +431,7 @@ static void parse_host_body(struct d_host_info *host,
 				host->meta_index = strdup("flexible");
 			}
 			check_meta_disk(host);
-			switch (yylex()) {
-			case TK__MAJOR:
-				EXP(TK_INTEGER);
-				host->meta_major = atoi(yylval.txt);
-				EXP(TK__MINOR);
-				EXP(TK_INTEGER);
-				host->meta_minor = atoi(yylval.txt);
-				EXP(';');
-			case ';':
-				break;
-			}
+			EXP(';');
 			break;
 		case '}':
 			goto break_loop;
