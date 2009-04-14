@@ -1319,7 +1319,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_w_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+		if (!drbd_crypto_is_hash(crypto_hash_tfm(integrity_w_tfm))) {
 			retcode=IntegrityAlgNotDigest;
 			goto fail;
 		}
@@ -1639,7 +1639,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(csums_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+		if (!drbd_crypto_is_hash(crypto_hash_tfm(csums_tfm))) {
 			retcode = CSUMSAlgNotDigest;
 			goto fail;
 		}
@@ -1663,7 +1663,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+		if (!drbd_crypto_is_hash(crypto_hash_tfm(verify_tfm))) {
 			retcode = VERIFYAlgNotDigest;
 			goto fail;
 		}

@@ -389,6 +389,17 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 
 #endif
 
+static inline int drbd_crypto_is_hash(struct crypto_tfm *tfm)
+{
+#ifdef CRYPTO_ALG_TYPE_HASH_MASK
+	return (crypto_tfm_alg_type(tfm) & CRYPTO_ALG_TYPE_HASH_MASK)
+		== CRYPTO_ALG_TYPE_HASH;
+#else
+	return crypto_tfm_alg_type(tfm) == CRYPTO_ALG_TYPE_HASH;
+#endif
+}
+
+
 #ifdef NEED_BACKPORT_OF_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
