@@ -979,30 +979,29 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	void *digest;
 	int ok = 1;
 
-	if (unlikely(cancel)) {
-		drbd_free_ee(mdev, e);
-		dec_unacked(mdev);
-		return 1;
+	if (unlikely(cancel))
+		goto out;
+
+	if (unlikely(!drbd_bio_uptodate(e->private_bio)))
+		goto out;
+
+	digest_size = crypto_hash_digestsize(mdev->verify_tfm);
+	digest = kmalloc(digest_size, GFP_KERNEL);
+	if (digest) {
+		drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
+		ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
+					     digest, digest_size, OVReply);
+		if (ok)
+			inc_rs_pending(mdev);
+		kfree(digest);
 	}
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
-		digest_size = crypto_hash_digestsize(mdev->verify_tfm);
-		digest = kmalloc(digest_size, GFP_KERNEL);
-		if (digest) {
-			drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
-			ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
-						     digest, digest_size, OVReply);
-			if (ok)
-				inc_rs_pending(mdev);
-			kfree(digest);
-		}
-	}
-
-	dec_unacked(mdev);
-
+out:
 	spin_lock_irq(&mdev->req_lock);
 	drbd_free_ee(mdev, e);
 	spin_unlock_irq(&mdev->req_lock);
+
+	dec_unacked(mdev);
 
 	return ok;
 }
