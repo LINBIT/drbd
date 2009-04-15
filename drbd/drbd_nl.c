@@ -1933,6 +1933,7 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 			      struct drbd_nl_cfg_reply *reply)
 {
 	int retcode = NoError;
+	int skip_initial_sync = 0;
 	int err;
 
 	struct new_c_uuid args;
@@ -1945,14 +1946,19 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 
 	mutex_lock(&mdev->state_mutex); /* Protects us against serialized state changes. */
 
-	if (mdev->state.conn >= Connected) {
-		retcode = MayNotBeConnected;
-		goto out;
-	}
-
 	if (!inc_local(mdev)) {
 		retcode = HaveNoDiskConfig;
 		goto out;
+	}
+
+	/* this is "skip initial sync", assume to be clean */
+	if (mdev->state.conn == Connected && mdev->agreed_pro_version >= 90 &&
+	    mdev->bc->md.uuid[Current] == UUID_JUST_CREATED && args.clear_bm) {
+		INFO("Preparing to skip initial sync\n");
+		skip_initial_sync = 1;
+	} else if (mdev->state.conn >= Connected) {
+		retcode = MayNotBeConnected;
+		goto out_dec;
 	}
 
 	drbd_uuid_set(mdev, Bitmap, 0); /* Rotate Bitmap to History 1, etc... */
@@ -1964,9 +1970,16 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 			ERR("Writing bitmap failed with %d\n",err);
 			retcode = MDIOError;
 		}
+		if (skip_initial_sync) {
+			drbd_send_uuids_skip_initial_sync(mdev);
+			_drbd_uuid_set(mdev, Bitmap, 0);
+			_drbd_set_state(_NS2(mdev, disk, UpToDate, pdsk, UpToDate),
+					ChgStateVerbose, NULL);
+		}
 	}
 
 	drbd_md_sync(mdev);
+out_dec:
 	dec_local(mdev);
 out:
 	mutex_unlock(&mdev->state_mutex);

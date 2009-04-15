@@ -2964,6 +2964,25 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct Drbd_Header *h)
 		return FALSE;
 	}
 
+	if (inc_local(mdev)) {
+		int skip_initial_sync =
+			mdev->state.conn == Connected &&
+			mdev->agreed_pro_version >= 90 &&
+			mdev->bc->md.uuid[Current] == UUID_JUST_CREATED &&
+			(p_uuid[UUID_FLAGS] & 8);
+		if (skip_initial_sync) {
+			INFO("Accepted new current UUID, preparing to skip initial sync\n");
+			drbd_bitmap_io(mdev, &drbd_bmio_clear_n_write,
+					"clear_n_write from receive_uuids");
+			_drbd_uuid_set(mdev, Current, p_uuid[Current]);
+			_drbd_uuid_set(mdev, Bitmap, 0);
+			_drbd_set_state(_NS2(mdev, disk, UpToDate, pdsk, UpToDate),
+					ChgStateVerbose, NULL);
+			drbd_md_sync(mdev);
+		}
+		dec_local(mdev);
+	}
+
 	/* Before we test for the disk state, we should wait until an eventually
 	   ongoing cluster wide state change is finished. That is important if
 	   we are primary and are detaching from our disk. We need to see the

@@ -1715,12 +1715,10 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	return rv;
 }
 
-int drbd_send_uuids(struct drbd_conf *mdev)
+int _drbd_send_uuids(struct drbd_conf *mdev, u64 uuid_flags)
 {
 	struct Drbd_GenCnt_Packet p;
 	int i;
-
-	u64 uuid_flags = 0;
 
 	if (!inc_local_if_state(mdev, Negotiating))
 		return 1;
@@ -1740,6 +1738,17 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 	return drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportUUIDs,
 			     (struct Drbd_Header *)&p, sizeof(p));
 }
+
+int drbd_send_uuids(struct drbd_conf *mdev)
+{
+	return _drbd_send_uuids(mdev, 0);
+}
+
+int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev)
+{
+	return _drbd_send_uuids(mdev, 8);
+}
+
 
 int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val)
 {

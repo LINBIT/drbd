@@ -1202,8 +1202,8 @@ extern void drbd_free_sock(struct drbd_conf *mdev);
 extern int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			void *buf, size_t size, unsigned msg_flags);
 extern int drbd_send_protocol(struct drbd_conf *mdev);
-extern int _drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids(struct drbd_conf *mdev);
+extern int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev);
 extern int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val);
 extern int drbd_send_sizes(struct drbd_conf *mdev);
 extern int _drbd_send_state(struct drbd_conf *mdev);
