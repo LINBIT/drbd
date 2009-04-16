@@ -265,17 +265,17 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 
 	/* first some paranoia code */
 	if (b == NULL) {
-		ERR("BAD! BarrierAck #%u received, but no epoch in tl!?\n",
+		dev_err(DEV, "BAD! BarrierAck #%u received, but no epoch in tl!?\n",
 			barrier_nr);
 		goto bail;
 	}
 	if (b->br_number != barrier_nr) {
-		ERR("BAD! BarrierAck #%u received, expected #%u!\n",
+		dev_err(DEV, "BAD! BarrierAck #%u received, expected #%u!\n",
 			barrier_nr, b->br_number);
 		goto bail;
 	}
 	if (b->n_req != set_size) {
-		ERR("BAD! BarrierAck #%u received with n_req=%u, expected n_req=%u!\n",
+		dev_err(DEV, "BAD! BarrierAck #%u received with n_req=%u, expected n_req=%u!\n",
 			barrier_nr, set_size, b->n_req);
 		goto bail;
 	}
@@ -422,9 +422,9 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 	if (mdev->state.conn >= Connected) {
 		ok = drbd_send_state(mdev);
 		if (ok)
-			drbd_WARN("Notified peer that my disk is broken.\n");
+			dev_warn(DEV, "Notified peer that my disk is broken.\n");
 		else
-			ERR("Sending state in drbd_io_error() failed\n");
+			dev_err(DEV, "Sending state in drbd_io_error() failed\n");
 	}
 
 	/* Make sure we try to flush meta-data to disk - we come
@@ -668,7 +668,7 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 		c == mdev->receiver.task ? "receiver" :
 		c == mdev->asender.task ? "asender" : "other";
 
-	DBG(" %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
+	dev_dbg(DEV, " %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    seq, context, func, line,
 	    name,
 	    conns_to_name(s.conn),
@@ -688,7 +688,7 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 
 STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state_t ns)
 {
-	ERR(" %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
+	dev_err(DEV, " %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
 	    conns_to_name(ns.conn),
 	    roles_to_name(ns.role),
@@ -707,7 +707,7 @@ void print_st_err(struct drbd_conf *mdev,
 {
 	if (err == SS_InTransientState)
 		return;
-	ERR("State change failed: %s\n", set_st_err_name(err));
+	dev_err(DEV, "State change failed: %s\n", set_st_err_name(err));
 	print_st(mdev, " state", os);
 	print_st(mdev, "wanted", ns);
 }
@@ -911,11 +911,11 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncTarget:
 			ns.disk = Inconsistent;
-			drbd_WARN("Implicitly set disk state Inconsistent!\n");
+			dev_warn(DEV, "Implicitly set disk state Inconsistent!\n");
 			break;
 		}
 		if (os.disk == Outdated && ns.disk == UpToDate)
-			drbd_WARN("Implicitly set disk from Outdated to UpToDate\n");
+			dev_warn(DEV, "Implicitly set disk from Outdated to UpToDate\n");
 	}
 
 	if (ns.conn >= Connected &&
@@ -933,11 +933,11 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			break;
 		case SyncSource:
 			ns.pdsk = Inconsistent;
-			drbd_WARN("Implicitly set pdsk Inconsistent!\n");
+			dev_warn(DEV, "Implicitly set pdsk Inconsistent!\n");
 			break;
 		}
 		if (os.pdsk == Outdated && ns.pdsk == UpToDate)
-			drbd_WARN("Implicitly set pdsk from Outdated to UpToDate\n");
+			dev_warn(DEV, "Implicitly set pdsk from Outdated to UpToDate\n");
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
@@ -947,7 +947,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			ns.disk = mdev->new_state_tmp.disk;
 			ns.pdsk = mdev->new_state_tmp.pdsk;
 		} else {
-			ALERT("Connection lost while negotiating, no data!\n");
+			dev_alert(DEV, "Connection lost while negotiating, no data!\n");
 			ns.disk = Diskless;
 			ns.pdsk = DUnknown;
 		}
@@ -990,7 +990,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			   this happen...*/
 
 			if (is_valid_state(mdev, os) == rv) {
-				ERR("Considering state change from bad state. "
+				dev_err(DEV, "Considering state change from bad state. "
 				    "Error would be: '%s'\n",
 				    set_st_err_name(rv));
 				print_st(mdev, "old", os);
@@ -1008,7 +1008,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (warn_sync_abort)
-		drbd_WARN("Resync aborted.\n");
+		dev_warn(DEV, "Resync aborted.\n");
 
 #if DUMP_MD >= 2
 	{
@@ -1024,7 +1024,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	PSC(aftr_isp);
 	PSC(peer_isp);
 	PSC(user_isp);
-	INFO("%s\n", pb);
+	dev_info(DEV, "%s\n", pb);
 	}
 #endif
 
@@ -1045,7 +1045,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 
 	if ((os.conn == PausedSyncT || os.conn == PausedSyncS) &&
 	    (ns.conn == SyncTarget  || ns.conn == SyncSource)) {
-		INFO("Syncer continues.\n");
+		dev_info(DEV, "Syncer continues.\n");
 		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 		if (ns.conn == SyncTarget) {
 			if (!test_and_clear_bit(STOP_SYNC_TIMER, &mdev->flags))
@@ -1059,7 +1059,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 
 	if ((os.conn == SyncTarget  || os.conn == SyncSource) &&
 	    (ns.conn == PausedSyncT || ns.conn == PausedSyncS)) {
-		INFO("Resync suspended\n");
+		dev_info(DEV, "Resync suspended\n");
 		mdev->rs_mark_time = jiffies;
 		if (ns.conn == PausedSyncT)
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
@@ -1134,7 +1134,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		ascw->done = done;
 		drbd_queue_work(&mdev->data.work, &ascw->w);
 	} else {
-		drbd_WARN("Could not kmalloc an ascw\n");
+		dev_warn(DEV, "Could not kmalloc an ascw\n");
 	}
 
 	return rv;
@@ -1158,7 +1158,7 @@ STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unu
 static void abw_start_sync(struct drbd_conf *mdev, int rv)
 {
 	if (rv) {
-		ERR("Writing the bitmap failed not starting resync.\n");
+		dev_err(DEV, "Writing the bitmap failed not starting resync.\n");
 		_drbd_request_state(mdev, NS(conn, Connected), ChgStateVerbose);
 		return;
 	}
@@ -1371,7 +1371,7 @@ restart:
 	 */
 
 	if (thi->t_state == Restarting) {
-		INFO("Restarting %s thread\n", me);
+		dev_info(DEV, "Restarting %s thread\n", me);
 		thi->t_state = Running;
 		spin_unlock(&thi->t_lock);
 		goto restart;
@@ -1383,7 +1383,7 @@ restart:
 
 	/* THINK maybe two different completions? */
 	complete(&thi->startstop); /* notify: thi->task unset. */
-	INFO("Terminating %s thread\n", me);
+	dev_info(DEV, "Terminating %s thread\n", me);
 	spin_unlock(&thi->t_lock);
 
 	/* Release mod reference taken when thread was started */
@@ -1414,12 +1414,12 @@ int drbd_thread_start(struct Drbd_thread *thi)
 
 	switch (thi->t_state) {
 	case None:
-		INFO("Starting %s thread (from %s [%d])\n",
+		dev_info(DEV, "Starting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
 
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
-			ERR("Failed to get module reference in drbd_thread_start\n");
+			dev_err(DEV, "Failed to get module reference in drbd_thread_start\n");
 			spin_unlock(&thi->t_lock);
 			return FALSE;
 		}
@@ -1433,7 +1433,7 @@ int drbd_thread_start(struct Drbd_thread *thi)
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
-			ERR("Couldn't start thread (%d)\n", pid);
+			dev_err(DEV, "Couldn't start thread (%d)\n", pid);
 
 			module_put(THIS_MODULE);
 			return FALSE;
@@ -1441,16 +1441,16 @@ int drbd_thread_start(struct Drbd_thread *thi)
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
 		if (thi->t_state != Running)
-			ERR("ASSERT FAILED: %s t_state == %d expected %d.\n",
+			dev_err(DEV, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 					me, thi->t_state, Running);
 		if (thi->task)
 			wake_up_process(thi->task);
 		else
-			ERR("ASSERT FAILED thi->task is NULL where it should be set!?\n");
+			dev_err(DEV, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
 		break;
 	case Exiting:
 		thi->t_state = Restarting;
-		INFO("Restarting %s thread (from %s [%d])\n",
+		dev_info(DEV, "Restarting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
 	case Running:
 	case Restarting:
@@ -1474,7 +1474,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 
 	spin_lock(&thi->t_lock);
 
-	/* INFO("drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
+	/* dev_info(DEV, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
@@ -1507,7 +1507,7 @@ void _drbd_thread_stop(struct Drbd_thread *thi, int restart, int wait)
 		spin_lock(&thi->t_lock);
 		D_ASSERT(thi->task == NULL);
 		if (thi->t_state != None)
-			ERR("ASSERT FAILED: %s t_state == %d expected %d.\n",
+			dev_err(DEV, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 					me, thi->t_state, None);
 		spin_unlock(&thi->t_lock);
 	}
@@ -1584,7 +1584,7 @@ int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
 
 	ok = (sent == size);
 	if (!ok)
-		ERR("short sent %s size=%d sent=%d\n",
+		dev_err(DEV, "short sent %s size=%d sent=%d\n",
 		    cmdname(cmd), (int)size, sent);
 	return ok;
 }
@@ -1905,7 +1905,7 @@ int fill_bitmap_rle_bytes(struct drbd_conf *mdev,
 		/* paranoia: catch zero runlength.
 		 * can only happen if bitmap is modified while we scan it. */
 		if (rl == 0) {
-			ERR("unexpected zero runlength while encoding bitmap "
+			dev_err(DEV, "unexpected zero runlength while encoding bitmap "
 			    "t:%u bo:%lu\n", toggle, c->bit_offset);
 			return -1;
 		}
@@ -1998,7 +1998,7 @@ int fill_bitmap_rle_bits(struct drbd_conf *mdev,
 		/* paranoia: catch zero runlength.
 		 * can only happen if bitmap is modified while we scan it. */
 		if (rl == 0) {
-			ERR("unexpected zero runlength while encoding bitmap "
+			dev_err(DEV, "unexpected zero runlength while encoding bitmap "
 			    "t:%u bo:%lu\n", toggle, c->bit_offset);
 			return -1;
 		}
@@ -2007,7 +2007,7 @@ int fill_bitmap_rle_bits(struct drbd_conf *mdev,
 		if (bits == -ENOBUFS) /* buffer full */
 			break;
 		if (bits <= 0) {
-			ERR("error while encoding bitmap: %d\n", bits);
+			dev_err(DEV, "error while encoding bitmap: %d\n", bits);
 			return 0;
 		}
 
@@ -2101,19 +2101,19 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 	 * and allocate that during initial device creation? */
 	p = (struct Drbd_Header *) __get_free_page(GFP_NOIO);
 	if (!p) {
-		ERR("failed to allocate one page buffer in %s\n", __func__);
+		dev_err(DEV, "failed to allocate one page buffer in %s\n", __func__);
 		return FALSE;
 	}
 
 	if (inc_local(mdev)) {
 		if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
-			INFO("Writing the whole bitmap, MDF_FullSync was set.\n");
+			dev_info(DEV, "Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(mdev);
 			if (drbd_bm_write(mdev)) {
 				/* write_bm did fail! Leave full sync flag set in Meta Data
 				 * but otherwise process as per normal - need to tell other
 				 * side that a full resync is required! */
-				ERR("Failed to write bitmap to disk!\n");
+				dev_err(DEV, "Failed to write bitmap to disk!\n");
 			} else {
 				drbd_md_clear_flag(mdev, MDF_FullSync);
 				drbd_md_sync(mdev);
@@ -2298,7 +2298,7 @@ STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *
 
 	drop_it = !--mdev->ko_count;
 	if (!drop_it) {
-		ERR("[%s/%d] sock_sendmsg time expired, ko = %u\n",
+		dev_err(DEV, "[%s/%d] sock_sendmsg time expired, ko = %u\n",
 		       current->comm, current->pid, mdev->ko_count);
 		request_ping(mdev);
 	}
@@ -2374,7 +2374,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 				continue;
 		}
 		if (sent <= 0) {
-			drbd_WARN("%s: size=%d len=%d sent=%d\n",
+			dev_warn(DEV, "%s: size=%d len=%d sent=%d\n",
 			     __func__, (int)size, len, sent);
 			break;
 		}
@@ -2612,7 +2612,7 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			 * eventually this should be sorted out be the proper
 			 * use of the SIGNAL_ASENDER bit... */
 			if (DRBD_ratelimit(5*HZ, 5)) {
-				DBG("Got a signal in drbd_send(,%c,)!\n",
+				dev_dbg(DEV, "Got a signal in drbd_send(,%c,)!\n",
 				    sock == mdev->meta.socket ? 'm' : 's');
 				/* dump_stack(); */
 			}
@@ -2637,7 +2637,7 @@ int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
-			ERR("%s_sendmsg returned %d\n",
+			dev_err(DEV, "%s_sendmsg returned %d\n",
 			    sock == mdev->meta.socket ? "msock" : "sock",
 			    rv);
 			drbd_force_state(mdev, NS(conn, BrokenPipe));
@@ -2702,7 +2702,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 	struct drbd_conf *mdev = q->queuedata;
 
 	MTRACE(TraceTypeUnplug, TraceLvlSummary,
-	       INFO("got unplugged ap_bio_count=%d\n",
+	       dev_info(DEV, "got unplugged ap_bio_count=%d\n",
 		    atomic_read(&mdev->ap_bio_cnt));
 	       );
 
@@ -2821,19 +2821,18 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 
 	mdev->agreed_pro_version = PRO_VERSION_MAX;
 	mdev->write_ordering = WO_bio_barrier;
-	INFO("mdev = 0x%p\n", mdev);
 	mdev->resync_wenr = LC_FREE;
 }
 
 void drbd_mdev_cleanup(struct drbd_conf *mdev)
 {
 	if (mdev->receiver.t_state != None)
-		ERR("ASSERT FAILED: receiver t_state == %d expected 0.\n",
+		dev_err(DEV, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				mdev->receiver.t_state);
 
 	/* no need to lock it, I'm the only thread alive */
 	if (atomic_read(&mdev->current_epoch->epoch_size) !=  0)
-		ERR("epoch_size:%d\n", atomic_read(&mdev->current_epoch->epoch_size));
+		dev_err(DEV, "epoch_size:%d\n", atomic_read(&mdev->current_epoch->epoch_size));
 	mdev->al_writ_cnt  =
 	mdev->bm_writ_cnt  =
 	mdev->read_cnt     =
@@ -2975,23 +2974,23 @@ static void drbd_release_ee_lists(struct drbd_conf *mdev)
 
 	rr = drbd_release_ee(mdev, &mdev->active_ee);
 	if (rr)
-		ERR("%d EEs in active list found!\n", rr);
+		dev_err(DEV, "%d EEs in active list found!\n", rr);
 
 	rr = drbd_release_ee(mdev, &mdev->sync_ee);
 	if (rr)
-		ERR("%d EEs in sync list found!\n", rr);
+		dev_err(DEV, "%d EEs in sync list found!\n", rr);
 
 	rr = drbd_release_ee(mdev, &mdev->read_ee);
 	if (rr)
-		ERR("%d EEs in read list found!\n", rr);
+		dev_err(DEV, "%d EEs in read list found!\n", rr);
 
 	rr = drbd_release_ee(mdev, &mdev->done_ee);
 	if (rr)
-		ERR("%d EEs in done list found!\n", rr);
+		dev_err(DEV, "%d EEs in done list found!\n", rr);
 
 	rr = drbd_release_ee(mdev, &mdev->net_ee);
 	if (rr)
-		ERR("%d EEs in net list found!\n", rr);
+		dev_err(DEV, "%d EEs in net list found!\n", rr);
 }
 
 /* caution. no locking.
@@ -3005,7 +3004,7 @@ static void drbd_delete_device(unsigned int minor)
 
 	/* paranoia asserts */
 	if (mdev->open_cnt != 0)
-		ERR("open_cnt = %d in %s:%u", mdev->open_cnt,
+		dev_err(DEV, "open_cnt = %d in %s:%u", mdev->open_cnt,
 				__FILE__ , __LINE__);
 
 	ERR_IF (!list_empty(&mdev->data.work.q)) {
@@ -3388,7 +3387,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 		return;
 
 	MTRACE(TraceTypeMDIO, TraceLvlSummary,
-	       INFO("Writing meta data super block now.\n");
+	       dev_info(DEV, "Writing meta data super block now.\n");
 	       );
 
 	mutex_lock(&mdev->md_io_mutex);
@@ -3416,7 +3415,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 		clear_bit(MD_DIRTY, &mdev->flags);
 	} else {
 		/* this was a try anyways ... */
-		ERR("meta data update failed!\n");
+		dev_err(DEV, "meta data update failed!\n");
 
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
@@ -3451,37 +3450,37 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	if (!drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ)) {
 		/* NOTE: cant do normal error processing here as this is
 		   called BEFORE disk is attached */
-		ERR("Error while reading metadata.\n");
+		dev_err(DEV, "Error while reading metadata.\n");
 		rv = MDIOError;
 		goto err;
 	}
 
 	if (be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) {
-		ERR("Error while reading metadata, magic not found.\n");
+		dev_err(DEV, "Error while reading metadata, magic not found.\n");
 		rv = MDInvalid;
 		goto err;
 	}
 	if (be32_to_cpu(buffer->al_offset) != bdev->md.al_offset) {
-		ERR("unexpected al_offset: %d (expected %d)\n",
+		dev_err(DEV, "unexpected al_offset: %d (expected %d)\n",
 		    be32_to_cpu(buffer->al_offset), bdev->md.al_offset);
 		rv = MDInvalid;
 		goto err;
 	}
 	if (be32_to_cpu(buffer->bm_offset) != bdev->md.bm_offset) {
-		ERR("unexpected bm_offset: %d (expected %d)\n",
+		dev_err(DEV, "unexpected bm_offset: %d (expected %d)\n",
 		    be32_to_cpu(buffer->bm_offset), bdev->md.bm_offset);
 		rv = MDInvalid;
 		goto err;
 	}
 	if (be32_to_cpu(buffer->md_size_sect) != bdev->md.md_size_sect) {
-		ERR("unexpected md_size: %u (expected %u)\n",
+		dev_err(DEV, "unexpected md_size: %u (expected %u)\n",
 		    be32_to_cpu(buffer->md_size_sect), bdev->md.md_size_sect);
 		rv = MDInvalid;
 		goto err;
 	}
 
 	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
-		ERR("unexpected bm_bytes_per_bit: %u (expected %u)\n",
+		dev_err(DEV, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
 		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
 		rv = MDInvalid;
 		goto err;
@@ -3572,7 +3571,7 @@ void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 {
 	u64 val;
 
-	INFO("Creating new current UUID\n");
+	dev_info(DEV, "Creating new current UUID\n");
 	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
 	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
 	MTRACE(TraceTypeUuid, TraceLvlMetrics,
@@ -3599,7 +3598,7 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 			);
 	} else {
 		if (mdev->bc->md.uuid[Bitmap])
-			drbd_WARN("bm UUID already set");
+			dev_warn(DEV, "bm UUID already set");
 
 		mdev->bc->md.uuid[Bitmap] = val;
 		mdev->bc->md.uuid[Bitmap] &= ~((u64)1);
@@ -3699,7 +3698,7 @@ void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
 	D_ASSERT(list_empty(&mdev->bm_io_work.w.list));
 	if (mdev->bm_io_work.why)
-		ERR("FIXME going to queue '%s' but '%s' still pending?\n",
+		dev_err(DEV, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, mdev->bm_io_work.why);
 
 	mdev->bm_io_work.io_fn = io_fn;
@@ -3712,7 +3711,7 @@ void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 			set_bit(BITMAP_IO_QUEUED, &mdev->flags);
 			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
 		} else
-			ERR("FIXME avoided double queuing bm_io_work\n");
+			dev_err(DEV, "FIXME avoided double queuing bm_io_work\n");
 	}
 }
 
@@ -3767,7 +3766,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 
 STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	drbd_WARN("md_sync_timer expired! Worker calls drbd_md_sync().\n");
+	dev_warn(DEV, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
 	drbd_md_sync(mdev);
 
 	return 1;
@@ -3834,7 +3833,7 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 		fault_count++;
 
 		if (printk_ratelimit())
-			drbd_WARN("***Simulating %s failure\n",
+			dev_warn(DEV, "***Simulating %s failure\n",
 				_drbd_fault_str(type));
 	}
 
@@ -3861,7 +3860,7 @@ STATIC char *_drbd_uuid_str(unsigned int idx)
 /* Pretty print a UUID value */
 void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
 {
-	INFO(" uuid[%s] now %016llX\n",
+	dev_info(DEV, " uuid[%s] now %016llX\n",
 	     _drbd_uuid_str(idx), (unsigned long long)mdev->bc->md.uuid[idx]);
 }
 
@@ -4036,12 +4035,12 @@ STATIC char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state
 #define INFOP(fmt, args...) \
 do { \
 	if (trace_level >= TraceLvlAll) { \
-		INFO("%s:%d: %s [%d] %s %s " fmt , \
+		dev_info(DEV, "%s:%d: %s [%d] %s %s " fmt , \
 		     file, line, current->comm, current->pid, \
 		     sockname, recv ? "<<<" : ">>>" , \
 		     ## args); \
 	} else { \
-		INFO("%s %s " fmt, sockname, \
+		dev_info(DEV, "%s %s " fmt, sockname, \
 		     recv ? "<<<" : ">>>" , \
 		     ## args); \
 	} \
@@ -4214,7 +4213,7 @@ void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int com
 	if (r)
 		sprintf(rb, "Req:%p ", r);
 
-	INFO("%s %s:%s%s%s Bio:%p %s- %soffset " SECTOR_FORMAT ", size %x\n",
+	dev_info(DEV, "%s %s:%s%s%s Bio:%p %s- %soffset " SECTOR_FORMAT ", size %x\n",
 	     complete ? "<<<" : ">>>",
 	     pfx,
 	     biorw == WRITE ? "Write" : "Read",

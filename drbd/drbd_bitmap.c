@@ -92,7 +92,7 @@ static void __bm_print_lock_info(struct drbd_conf *mdev, const char *func)
 	struct drbd_bitmap *b = mdev->bitmap;
 	if (!DRBD_ratelimit(5*HZ, 5))
 		return;
-	ERR("FIXME %s in %s, bitmap locked for '%s' by %s\n",
+	dev_err(DEV, "FIXME %s in %s, bitmap locked for '%s' by %s\n",
 	    current == mdev->receiver.task ? "receiver" :
 	    current == mdev->asender.task  ? "asender"  :
 	    current == mdev->worker.task   ? "worker"   : current->comm,
@@ -108,14 +108,14 @@ void drbd_bm_lock(struct drbd_conf *mdev, char *why)
 	int trylock_failed;
 
 	if (!b) {
-		ERR("FIXME no bitmap in drbd_bm_lock!?\n");
+		dev_err(DEV, "FIXME no bitmap in drbd_bm_lock!?\n");
 		return;
 	}
 
 	trylock_failed = down_trylock(&b->bm_change);
 
 	if (trylock_failed) {
-		DBG("%s going to '%s' but bitmap already locked for '%s' by %s\n",
+		dev_dbg(DEV, "%s going to '%s' but bitmap already locked for '%s' by %s\n",
 		    current == mdev->receiver.task ? "receiver" :
 		    current == mdev->asender.task  ? "asender"  :
 		    current == mdev->worker.task   ? "worker"   : "?",
@@ -126,7 +126,7 @@ void drbd_bm_lock(struct drbd_conf *mdev, char *why)
 		down(&b->bm_change);
 	}
 	if (__test_and_set_bit(BM_LOCKED, &b->bm_flags))
-		ERR("FIXME bitmap already locked in bm_lock\n");
+		dev_err(DEV, "FIXME bitmap already locked in bm_lock\n");
 
 	b->bm_why  = why;
 	b->bm_task = current;
@@ -136,12 +136,12 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	if (!b) {
-		ERR("FIXME no bitmap in drbd_bm_unlock!?\n");
+		dev_err(DEV, "FIXME no bitmap in drbd_bm_unlock!?\n");
 		return;
 	}
 
 	if (!__test_and_clear_bit(BM_LOCKED, &mdev->bitmap->bm_flags))
-		ERR("FIXME bitmap not locked in bm_unlock\n");
+		dev_err(DEV, "FIXME bitmap not locked in bm_unlock\n");
 
 	b->bm_why  = NULL;
 	b->bm_task = NULL;
@@ -437,7 +437,7 @@ void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
 	spin_lock_irqsave(&b->bm_lock, flags);
 	bits = bm_count_bits(b);
 	if (bits != b->bm_set) {
-		ERR("bm_set was %lu, corrected to %lu. %s:%d\n",
+		dev_err(DEV, "bm_set was %lu, corrected to %lu. %s:%d\n",
 		    b->bm_set, bits, file, line);
 		b->bm_set = bits;
 	}
@@ -496,7 +496,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 
 	drbd_bm_lock(mdev, "resize");
 
-	INFO("drbd_bm_resize called with capacity == %llu\n",
+	dev_info(DEV, "drbd_bm_resize called with capacity == %llu\n",
 			(unsigned long long)capacity);
 
 	if (capacity == b->bm_dev_capacity)
@@ -590,7 +590,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
 		vfree(opages);
-	INFO("resync bitmap: bits=%lu words=%lu\n", bits, words);
+	dev_info(DEV, "resync bitmap: bits=%lu words=%lu\n", bits, words);
 
  out:
 	drbd_bm_unlock(mdev);
@@ -713,7 +713,7 @@ void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 	if ((offset >= b->bm_words) ||
 	    (end    >  b->bm_words) ||
 	    (number <= 0))
-		ERR("offset=%lu number=%lu bm_words=%lu\n",
+		dev_err(DEV, "offset=%lu number=%lu bm_words=%lu\n",
 			(unsigned long)	offset,
 			(unsigned long)	number,
 			(unsigned long) b->bm_words);
@@ -887,12 +887,12 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
 
 	MTRACE(TraceTypeMDIO, TraceLvlSummary,
-	       INFO("%s of bitmap took %lu jiffies\n",
+	       dev_info(DEV, "%s of bitmap took %lu jiffies\n",
 		    rw == READ ? "reading" : "writing", jiffies - now);
 	       );
 
 	if (test_bit(BM_MD_IO_ERROR, &b->bm_flags)) {
-		ALERT("we had at least one MD IO ERROR during bitmap IO\n");
+		dev_alert(DEV, "we had at least one MD IO ERROR during bitmap IO\n");
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 		err = -EIO;
@@ -907,12 +907,12 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 	} else /* rw == READ */ {
 		/* just read, if neccessary adjust endianness */
 		b->bm_set = bm_count_bits_swap_endian(b);
-		INFO("recounting of set bits took additional %lu jiffies\n",
+		dev_info(DEV, "recounting of set bits took additional %lu jiffies\n",
 		     jiffies - now);
 	}
 	now = b->bm_set;
 
-	INFO("%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
+	dev_info(DEV, "%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb, now << (BM_BLOCK_SIZE_B-10)), now);
 
 	return err;
@@ -957,7 +957,7 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 	offset    = S2W(enr);	/* word offset into bitmap */
 	num_words = min(S2W(1), bm_words - offset);
 #if DUMP_MD >= 3
-	INFO("write_sect: sector=%lu offset=%u num_words=%u\n",
+	dev_info(DEV, "write_sect: sector=%lu offset=%u num_words=%u\n",
 			enr, offset, num_words);
 #endif
 	if (num_words < S2W(1))
@@ -967,7 +967,7 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 	if (!drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, WRITE)) {
 		int i;
 		err = -EIO;
-		ERR("IO ERROR writing bitmap sector %lu "
+		dev_err(DEV, "IO ERROR writing bitmap sector %lu "
 		    "(meta-disk sector %llus)\n",
 		    enr, (unsigned long long)on_disk_sector);
 		drbd_chk_io_error(mdev, 1, TRUE);
@@ -996,7 +996,7 @@ static unsigned long __bm_find_next(struct drbd_conf *mdev, unsigned long bm_fo,
 	unsigned long bit_offset; /* bit offset of the mapped page. */
 
 	if (bm_fo > b->bm_bits) {
-		ERR("bm_fo=%lu bm_bits=%lu\n", bm_fo, b->bm_bits);
+		dev_err(DEV, "bm_fo=%lu bm_bits=%lu\n", bm_fo, b->bm_bits);
 	} else {
 		while (bm_fo < b->bm_bits) {
 			unsigned long offset;
@@ -1087,7 +1087,7 @@ int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		ERR_IF (bitnr >= b->bm_bits) {
-			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
+			dev_err(DEV, "bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		} else {
 			unsigned long offset = bitnr>>LN2_BPL;
 			unsigned long page_nr = offset >> (PAGE_SHIFT - LN2_BPL + 3);
@@ -1181,7 +1181,7 @@ int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 	} else if (bitnr == b->bm_bits) {
 		i = -1;
 	} else { /* (bitnr > b->bm_bits) */
-		ERR("bitnr=%lu > bm_bits=%lu\n", bitnr, b->bm_bits);
+		dev_err(DEV, "bitnr=%lu > bm_bits=%lu\n", bitnr, b->bm_bits);
 		i = 0;
 	}
 
@@ -1216,7 +1216,7 @@ int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 			p_addr = bm_map_paddr(b, w);
 		}
 		ERR_IF (bitnr >= b->bm_bits) {
-			ERR("bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
+			dev_err(DEV, "bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 		} else {
 			c += (0 != test_bit(bitnr - (page_nr << (PAGE_SHIFT+3)), p_addr));
 		}
@@ -1270,11 +1270,11 @@ int drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr)
 		}
 		bm_unmap(p_addr);
 	} else {
-		ERR("start offset (%d) too large in drbd_bm_e_weight\n", s);
+		dev_err(DEV, "start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 #if DUMP_MD >= 3
-	INFO("enr=%lu weight=%d e=%d s=%d\n", enr, count, e, s);
+	dev_info(DEV, "enr=%lu weight=%d e=%d s=%d\n", enr, count, e, s);
 #endif
 	return count;
 }
@@ -1316,7 +1316,7 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev, unsigned long al_enr)
 		if (e == b->bm_words)
 			b->bm_set -= bm_clear_surplus(b);
 	} else {
-		ERR("start offset (%d) too large in drbd_bm_ALe_set_all\n", s);
+		dev_err(DEV, "start offset (%d) too large in drbd_bm_ALe_set_all\n", s);
 	}
 	weight = b->bm_set - weight;
 	spin_unlock_irq(&b->bm_lock);

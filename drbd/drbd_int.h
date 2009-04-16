@@ -146,11 +146,11 @@ struct drbd_conf;
  *************************/
 
 /* handy macro: DUMPP(somepointer) */
-#define DUMPP(A)   ERR(#A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPLU(A)  ERR(#A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
-#define DUMPLLU(A) ERR(#A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
-#define DUMPLX(A)  ERR(#A " = %lx in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPI(A)   ERR(#A " = %d in %s:%d\n", (int)(A), __FILE__, __LINE__);
+#define DUMPP(A)   dev_err(DEV, #A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
+#define DUMPLU(A)  dev_err(DEV, #A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
+#define DUMPLLU(A) dev_err(DEV, #A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
+#define DUMPLX(A)  dev_err(DEV, #A " = %lx in %s:%d\n", (A), __FILE__, __LINE__);
+#define DUMPI(A)   dev_err(DEV, #A " = %d in %s:%d\n", (int)(A), __FILE__, __LINE__);
 
 #define DUMPST(A) DUMPLLU((unsigned long long)(A))
 
@@ -168,16 +168,8 @@ struct drbd_conf;
 #define D_DUMPI(A)
 #endif
 
-#define PRINTK(level, fmt, args...) \
-	printk(level "drbd%d: " fmt, \
-		mdev->minor , ##args)
-
-#define ALERT(fmt, args...) PRINTK(KERN_ALERT, fmt , ##args)
-#define ERR(fmt, args...)   PRINTK(KERN_ERR, fmt , ##args)
-/* nowadays, WARN() is defined as BUG() without crash in bug.h */
-#define drbd_WARN(fmt, args...)  PRINTK(KERN_WARNING, fmt , ##args)
-#define INFO(fmt, args...)  PRINTK(KERN_INFO, fmt , ##args)
-#define DBG(fmt, args...)   PRINTK(KERN_DEBUG, fmt , ##args)
+/* to shorten dev_warn(DEV, "msg"); and relatives statements */
+#define DEV (disk_to_dev(mdev->vdisk))
 
 /* see kernel/printk.c:printk_ratelimit
  * macro, so it is easy do have independend rate limits at different locations
@@ -200,7 +192,7 @@ struct drbd_conf;
 		missed = 0;					\
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
-			drbd_WARN("%d messages suppressed in %s:%d.\n", \
+			dev_warn(DEV, "%d messages suppressed in %s:%d.\n", \
 				lost, __FILE__, __LINE__);	\
 		__ret = 1;					\
 	} else {						\
@@ -217,11 +209,11 @@ extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int);
 	 drbd_assert_breakpoint(mdev, #exp, __FILE__, __LINE__)
 #else
 # define D_ASSERT(exp)	if (!(exp)) \
-	 ERR("ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
+	 dev_err(DEV, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 #define ERR_IF(exp) if (({				\
 	int _b = (exp) != 0;				\
-	if (_b) ERR("%s: (%s) in %s:%d\n",		\
+	if (_b) dev_err(DEV, "%s: (%s) in %s:%d\n",		\
 		__func__, #exp, __FILE__, __LINE__);	\
 	 _b;						\
 	}))
@@ -1623,7 +1615,7 @@ extern void drbd_ov_oos_found(struct drbd_conf*, sector_t, int);
 static inline void ov_oos_print(struct drbd_conf *mdev)
 {
 	if (mdev->ov_last_oos_size) {
-		ERR("Out of sync: start=%llu, size=%lu (sectors)\n",
+		dev_err(DEV, "Out of sync: start=%llu, size=%lu (sectors)\n",
 		     (unsigned long long)mdev->ov_last_oos_start,
 		     (unsigned long)mdev->ov_last_oos_size);
 	}
@@ -1853,7 +1845,7 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	case PassOn: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
-				ERR("Local IO failed. Passing error on...\n");
+				dev_err(DEV, "Local IO failed. Passing error on...\n");
 			break;
 		}
 		/* NOTE fall through to detach case if forcedetach set */
@@ -1861,7 +1853,7 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	case CallIOEHelper:
 		if (mdev->state.disk > Failed) {
 			_drbd_set_state(_NS(mdev, disk, Failed), ChgStateHard, NULL);
-			ERR("Local IO failed. Detaching...\n");
+			dev_err(DEV, "Local IO failed. Detaching...\n");
 		}
 		break;
 	}
@@ -1951,7 +1943,7 @@ static inline sector_t drbd_md_ss__(struct drbd_conf *mdev,
 		 * position: last 4k aligned block of 4k size */
 		if (!bdev->backing_bdev) {
 			if (DRBD_ratelimit(5*HZ, 5)) {
-				ERR("bdev->backing_bdev==NULL\n");
+				dev_err(DEV, "bdev->backing_bdev==NULL\n");
 				dump_stack();
 			}
 			return 0;
@@ -2068,7 +2060,7 @@ static inline void inc_ap_pending(struct drbd_conf *mdev)
 
 #define ERR_IF_CNT_IS_NEGATIVE(which)				\
 	if (atomic_read(&mdev->which) < 0)			\
-		ERR("in %s:%d: " #which " = %d < 0 !\n",	\
+		dev_err(DEV, "in %s:%d: " #which " = %d < 0 !\n",	\
 		    __func__ , __LINE__ ,			\
 		    atomic_read(&mdev->which))
 
@@ -2194,7 +2186,7 @@ static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 		 * for now, just prevent in-kernel buffer overflow.
 		 */
 		smp_rmb();
-		drbd_WARN("cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+		dev_warn(DEV, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
 				conns_to_name(mdev->state.conn),
 				*bits_left, mdev->rs_total, mdev->rs_failed);
 		*per_mil_done = 0;
@@ -2361,7 +2353,7 @@ static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 	mdev->ed_uuid = val;
 
 	MTRACE(TraceTypeUuid, TraceLvlMetrics,
-	       INFO(" exposed data uuid now %016llX\n",
+	       dev_info(DEV, " exposed data uuid now %016llX\n",
 		    (unsigned long long)val);
 		);
 }
@@ -2448,7 +2440,7 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 	r = blkdev_issue_flush(mdev->bc->md_bdev, NULL);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &mdev->flags);
-		ERR("meta data flush failed with status %d, disabling md-flushes\n", r);
+		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
 

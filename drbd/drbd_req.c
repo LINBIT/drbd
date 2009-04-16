@@ -41,7 +41,7 @@ STATIC void _print_rq_state(struct drbd_request *req, const char *txt)
 			bio_data_dir(req->master_bio) == WRITE) ?
 		'W' : 'R';
 
-	INFO("%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
+	dev_info(DEV, "%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
 	     txt, req, rw,
 	     s & RQ_LOCAL_PENDING ? 'p' : '-',
 	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
@@ -88,7 +88,7 @@ STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
 		[completed_ok] = "completed_ok",
 	};
 
-	INFO("_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
+	dev_info(DEV, "_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
 }
 
 # ifdef ENABLE_DYNAMIC_TRACE
@@ -201,7 +201,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 				drbd_al_complete_io(mdev, req->sector);
 				dec_local(mdev);
 			} else if (DRBD_ratelimit(5*HZ, 3)) {
-				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
+				dev_warn(DEV, "Should have called drbd_al_complete_io(, %llu), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->sector);
 			}
@@ -288,7 +288,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 		slot = tl_hash_slot(mdev, sector);
 		hlist_for_each_entry(i, n, slot, colision) {
 			if (OVERLAPS) {
-				ALERT("LOGIC BUG: completed: %p %llus +%u; "
+				dev_alert(DEV, "LOGIC BUG: completed: %p %llus +%u; "
 				      "other: %p %llus +%u\n",
 				      req, (unsigned long long)sector, size,
 				      i, (unsigned long long)i->sector, i->size);
@@ -454,7 +454,7 @@ STATIC int _req_conflicts(struct drbd_request *req)
 	slot = tl_hash_slot(mdev, sector);
 	hlist_for_each_entry(i, n, slot, colision) {
 		if (OVERLAPS) {
-			ALERT("%s[%u] Concurrent local write detected! "
+			dev_alert(DEV, "%s[%u] Concurrent local write detected! "
 			      "[DISCARD L] new: %llus +%u; "
 			      "pending: %llus +%u\n",
 			      current->comm, current->pid,
@@ -472,7 +472,7 @@ STATIC int _req_conflicts(struct drbd_request *req)
 		slot = ee_hash_slot(mdev, sector);
 		hlist_for_each_entry(e, n, slot, colision) {
 			if (OVERLAPS) {
-				ALERT("%s[%u] Concurrent remote write detected!"
+				dev_alert(DEV, "%s[%u] Concurrent remote write detected!"
 				      " [DISCARD L] new: %llus +%u; "
 				      "pending: %llus +%u\n",
 				      current->comm, current->pid,
@@ -515,13 +515,13 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	struct drbd_conf *mdev = req->mdev;
 
 	if (error && (bio_rw(req->master_bio) != READA))
-		ERR("got an _req_mod() errno of %d\n", error);
+		dev_err(DEV, "got an _req_mod() errno of %d\n", error);
 
 	print_req_mod(req, what);
 
 	switch (what) {
 	default:
-		ERR("LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
+		dev_err(DEV, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
 		return;
 
 	/* does not happen...
@@ -566,7 +566,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
-		ALERT("Local WRITE failed sec=%llus size=%u\n",
+		dev_alert(DEV, "Local WRITE failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error. */
 		__drbd_chk_io_error(mdev, FALSE);
@@ -590,7 +590,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 			break;
 		}
 		/* else */
-		ALERT("Local READ failed sec=%llus size=%u\n",
+		dev_alert(DEV, "Local READ failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* _req_mod(req,to_be_send); oops, recursion in static inline */
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
@@ -836,7 +836,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 		dec_ap_bio(mdev);
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, thats not our business. */
-		ERR("could not kmalloc() req\n");
+		dev_err(DEV, "could not kmalloc() req\n");
 		bio_endio(bio, -ENOMEM);
 		return 0;
 	}
@@ -894,7 +894,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 			     mdev->state.conn >= Connected));
 
 	if (!(local || remote)) {
-		ERR("IO ERROR: neither local nor remote disk\n");
+		dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
 		goto fail_free_complete;
 	}
 
@@ -910,7 +910,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_barrier), GFP_NOIO);
 		if (!b) {
-			ERR("Failed to alloc barrier.\n");
+			dev_err(DEV, "Failed to alloc barrier.\n");
 			err = -ENOMEM;
 			goto fail_free_complete;
 		}
@@ -924,9 +924,9 @@ allocate_barrier:
 			    (mdev->state.pdsk == Inconsistent &&
 			     mdev->state.conn >= Connected));
 		if (!remote)
-			drbd_WARN("lost connection while grabbing the req_lock!\n");
+			dev_warn(DEV, "lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
-			ERR("IO ERROR: neither local nor remote disk\n");
+			dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&mdev->req_lock);
 			goto fail_free_complete;
 		}
@@ -1082,7 +1082,7 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 	if (mdev->state.role != Primary &&
 		(!allow_oos || is_write)) {
 		if (DRBD_ratelimit(5*HZ, 5)) {
-			ERR("Process %s[%u] tried to %s; "
+			dev_err(DEV, "Process %s[%u] tried to %s; "
 			    "since we are not in Primary state, "
 			    "we cannot allow this\n",
 			    current->comm, current->pid,
@@ -1102,7 +1102,7 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 	 */
 	if (mdev->state.disk < UpToDate && mdev->state.pdsk < UpToDate) {
 		if (DRBD_ratelimit(5*HZ, 5))
-			ERR("Sorry, I have no access to good data anymore.\n");
+			dev_err(DEV, "Sorry, I have no access to good data anymore.\n");
 		return 1;
 	}
 
@@ -1128,7 +1128,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	 * i.e. in drbd_init_set_defaults we set the NO_BARRIER_SUPP bit.
 	 */
 	if (unlikely(bio_barrier(bio) && test_bit(NO_BARRIER_SUPP, &mdev->flags))) {
-		/* drbd_WARN("Rejecting barrier request as underlying device does not support\n"); */
+		/* dev_warn(DEV, "Rejecting barrier request as underlying device does not support\n"); */
 		bio_endio(bio, -EOPNOTSUPP);
 		return 0;
 	}
@@ -1154,7 +1154,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	 * Maybe add our own split-arbitrary-bios function. */
 	if (bio->bi_vcnt != 1 || bio->bi_idx != 0 || bio->bi_size > DRBD_MAX_SEGMENT_SIZE) {
 		/* rather error out here than BUG in bio_split */
-		ERR("bio would need to, but cannot, be split: "
+		dev_err(DEV, "bio would need to, but cannot, be split: "
 		    "(vcnt=%u,idx=%u,size=%u,sector=%llu)\n",
 		    bio->bi_vcnt, bio->bi_idx, bio->bi_size,
 		    (unsigned long long)bio->bi_sector);

@@ -231,7 +231,7 @@ static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	hlist_for_each_entry(req, n, slot, colision) {
 		if ((unsigned long)req == (unsigned long)id) {
 			if (req->sector != sector) {
-				ERR("_ack_id_to_req: found req %p but it has "
+				dev_err(DEV, "_ack_id_to_req: found req %p but it has "
 				    "wrong sector (%llus versus %llus)\n", req,
 				    (unsigned long long)req->sector,
 				    (unsigned long long)sector);
@@ -240,7 +240,7 @@ static inline struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 			return req;
 		}
 	}
-	ERR("_ack_id_to_req: failed to find req %p, sector %llus in list\n",
+	dev_err(DEV, "_ack_id_to_req: failed to find req %p, sector %llus in list\n",
 		(void *)(unsigned long)id, (unsigned long long)sector);
 	return NULL;
 }
