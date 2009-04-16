@@ -74,9 +74,6 @@
  *    it will be destroyed,
  *    and completion will be signalled to the originator,
  *      with or without "success".
- *
- * See also documentation/drbd-request-state-overview.dot
- *  (dot -Tps2 documentation/drbd-request-state-overview.dot | display -)
  */
 
 enum drbd_req_event {
