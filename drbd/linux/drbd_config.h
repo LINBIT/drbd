@@ -42,18 +42,10 @@ extern const char *drbd_buildtag(void);
 #define PARANOIA
  */
 
-/* Dump every hour the usage / not usage of zero copy IO */
-/* #define SHOW_SENDPAGE_USAGE */
-
 /* Define this to enable dynamic tracing controlled by module parameters
  * at run time. This enables ALL use of dynamic tracing including packet
  * and bio dumping, etc */
 #define ENABLE_DYNAMIC_TRACE
-
-/* You can disable the use of the sendpage() call (= zero copy IO)
- * If you have the feeling that this might be the cause for troubles.
-#define DRBD_DISABLE_SENDPAGE
- */
 
 /* Enable fault insertion code */
 #define DRBD_ENABLE_FAULTS

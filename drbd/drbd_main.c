@@ -101,6 +101,7 @@ MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
  * this becomes the boot parameter drbd.minor_count */
 module_param(minor_count, uint, 0444);
+module_param(disable_sendpage, bool, 0644);
 module_param(allow_oos, bool, 0);
 module_param(cn_idx, uint, 0444);
 
@@ -121,6 +122,7 @@ module_param(fault_devs, int, 0644);
 
 /* module parameter, defined */
 unsigned int minor_count = 32;
+int disable_sendpage;
 int allow_oos;
 unsigned int cn_idx = CN_IDX_DRBD;
 
@@ -2350,7 +2352,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	 * put_page(); and would cause either a VM_BUG directly, or
 	 * __page_cache_release a page that would actually still be referenced
 	 * by someone, leading to some obscure delayed Oops somewhere else. */
-	if ((page_count(page) < 1) || PageSlab(page))
+	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(mdev, page, offset, size);
 
 	drbd_update_congested(mdev);
