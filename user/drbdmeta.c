@@ -1189,14 +1189,15 @@ void printf_bm(struct format *cfg)
 			i = 0;
 			n_buffer = chunk/sizeof(*bm);
 		}
+next:
 		ASSERT(i < n_buffer);
 		if (count == 0) cw = bm[i];
 		if ((i & 3) == 0) {
 			if (!count) printf_bm_eol(r);
 
-			for (j = i+1; j < n_buffer; j++) {
-				if(cw.le != bm[j].le) break;
-			}
+			/* j = i, because it may be continuation after buffer wrap */
+			for (j = i; j < n_buffer && cw.le == bm[j].le; j++)
+				;
 			j &= ~3; // round down to a multiple of 4
 			unsigned int tmp = (j-i);
 			if (tmp > 4) {
@@ -1210,13 +1211,17 @@ void printf_bm(struct format *cfg)
 				       count, le64_to_cpu(cw.le));
 				bits_set += count * generic_hweight64(cw.le);
 				count = 0;
-				continue;
+				if (r >= n)
+					break;
+				/* don't "continue;", we may have not advanced i after buffer wrap,
+				 * so that would be treated as an other buffer wrap */
+				goto next;
 			}
 		}
 		ASSERT(i < n_buffer);
 		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
-		r++; i++;
 		bits_set += generic_hweight64(bm[i].le);
+		r++; i++;
 	}
 	printf("\n}\n");
 	cfg->bits_set = bits_set;
