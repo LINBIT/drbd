@@ -89,57 +89,57 @@ enum after_sb_handler {
 /* KEEP the order, do not delete or insert!
  * Or change the API_VERSION, too. */
 enum ret_codes {
-	RetCodeBase = 100,
-	NoError,         /* 101 ... */
-	LAAlreadyInUse,
-	OAAlreadyInUse,
-	LDNameInvalid,
-	MDNameInvalid,
-	LDAlreadyInUse,
-	LDNoBlockDev,
-	MDNoBlockDev,
-	LDOpenFailed,
-	MDOpenFailed,
-	LDDeviceTooSmall,
-	MDDeviceTooSmall,
-	LDNoConfig,
-	LDMounted,
-	MDMounted,
-	LDMDInvalid,
-	LDDeviceTooLarge,
-	MDIOError,
-	MDInvalid,
-	CRAMAlgNotAvail,
-	CRAMAlgNotDigest,
-	KMallocFailed,
-	DiscardNotAllowed,
-	HaveDiskConfig,
-	HaveNetConfig,
-	UnknownMandatoryTag,
-	MinorNotKnown,
-	StateNotAllowed,
-	GotSignal, /* EINTR */
-	NoResizeDuringResync,
-	APrimaryNodeNeeded,
-	SyncAfterInvalid,
-	SyncAfterCycle,
-	PauseFlagAlreadySet,
-	PauseFlagAlreadyClear,
-	DiskLowerThanOutdated, /* obsolete, now SS_LowerThanOutdated */
-	UnknownNetLinkPacket,
-	HaveNoDiskConfig,
-	ProtocolCRequired,
-	VMallocFailed,
-	IntegrityAlgNotAvail,	/* DRBD 8.2 only */
-	IntegrityAlgNotDigest,	/* DRBD 8.2 only */
-	CPUMaskParseFailed,	/* DRBD 8.2 only */
-	CSUMSAlgNotAvail,	/* DRBD 8.2 only */
-	CSUMSAlgNotDigest,	/* DRBD 8.2 only */
-	VERIFYAlgNotAvail,	/* DRBD 8.2 only */
-	VERIFYAlgNotDigest,	/* DRBD 8.2 only */
-	CSUMSResyncRunning,	/* DRBD 8.2 only */
-	VERIFYIsRunning,	/* DRBD 8.2 only */
-	DataOfWrongCurrent,
+	RetCodeBase		= 100,
+	NoError			= 101,
+	LAAlreadyInUse		= 102,
+	OAAlreadyInUse		= 103,
+	LDNameInvalid		= 104,
+	MDNameInvalid		= 105,
+	LDAlreadyInUse		= 106,
+	LDNoBlockDev		= 107,
+	MDNoBlockDev		= 108,
+	LDOpenFailed		= 109,
+	MDOpenFailed		= 110,
+	LDDeviceTooSmall	= 111,
+	MDDeviceTooSmall	= 112,
+	LDNoConfig		= 113,
+	LDMounted		= 114,
+	MDMounted		= 115,
+	LDMDInvalid		= 116,
+	LDDeviceTooLarge	= 117,
+	MDIOError		= 118,
+	MDInvalid		= 119,
+	CRAMAlgNotAvail		= 120,
+	CRAMAlgNotDigest	= 121,
+	KMallocFailed		= 122,
+	DiscardNotAllowed	= 123,
+	HaveDiskConfig		= 124,
+	HaveNetConfig		= 125,
+	UnknownMandatoryTag	= 126,
+	MinorNotKnown		= 127,
+	StateNotAllowed		= 128,
+	GotSignal		= 129, /* EINTR */
+	NoResizeDuringResync	= 130,
+	APrimaryNodeNeeded	= 131,
+	SyncAfterInvalid	= 132,
+	SyncAfterCycle		= 133,
+	PauseFlagAlreadySet	= 134,
+	PauseFlagAlreadyClear	= 135,
+	DiskLowerThanOutdated	= 136, /* obsolete, now SS_LowerThanOutdated */
+	UnknownNetLinkPacket	= 137,
+	HaveNoDiskConfig	= 138,
+	ProtocolCRequired	= 139,
+	VMallocFailed		= 140,
+	IntegrityAlgNotAvail	= 141, /* DRBD 8.2 only */
+	IntegrityAlgNotDigest	= 142, /* DRBD 8.2 only */
+	CPUMaskParseFailed	= 143, /* DRBD 8.2 only */
+	CSUMSAlgNotAvail	= 144, /* DRBD 8.2 only */
+	CSUMSAlgNotDigest	= 145, /* DRBD 8.2 only */
+	VERIFYAlgNotAvail	= 146, /* DRBD 8.2 only */
+	VERIFYAlgNotDigest	= 147, /* DRBD 8.2 only */
+	CSUMSResyncRunning	= 148, /* DRBD 8.2 only */
+	VERIFYIsRunning		= 149, /* DRBD 8.2 only */
+	DataOfWrongCurrent	= 150,
 
 	/* insert new ones above this line */
 	AfterLastRetCode
