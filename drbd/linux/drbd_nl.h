@@ -91,7 +91,7 @@ NL_PACKET(get_state, 17,
 )
 
 NL_PACKET(get_uuids, 18,
-	NL_STRING(	34,	T_MAY_IGNORE,	uuids,	(UUID_SIZE*sizeof(__u64)))
+	NL_STRING(	34,	T_MAY_IGNORE,	uuids,	(UI_SIZE*sizeof(__u64)))
 	NL_INTEGER(	35,	T_MAY_IGNORE,	uuids_flags)
 )
 

@@ -55,94 +55,88 @@
 
 
 enum io_error_handler {
-	PassOn, /* FIXME should the better be named "Ignore"? */
-	CallIOEHelper,
-	Detach
+	EP_PASS_ON, /* FIXME should the better be named "Ignore"? */
+	EP_CALL_HELPER,
+	EP_DETACH
 };
 
 enum fencing_policy {
-	DontCare,
-	Resource,
-	Stonith
+	FP_DONT_CARE,
+	FP_RESOURCE,
+	FP_STONITH
 };
 
 enum disconnect_handler {
-	Reconnect,
-	DropNetConf,
-	FreezeIO
+	DP_RECONNECT,
+	DP_DROP_NET_CONF,
+	DP_FREEZE_IO
 };
 
 enum after_sb_handler {
-	Disconnect,
-	DiscardYoungerPri,
-	DiscardOlderPri,
-	DiscardZeroChg,
-	DiscardLeastChg,
-	DiscardLocal,
-	DiscardRemote,
-	Consensus,
-	DiscardSecondary,
-	CallHelper,
-	Violently
+	ASB_DISCONNECT,
+	ASB_DISCARD_YOUNGER_PRI,
+	ASB_DISCARD_OLDER_PRI,
+	ASB_DISCARD_ZERO_CHG,
+	ASB_DISCARD_LEAST_CHG,
+	ASB_DISCARD_LOCAL,
+	ASB_DISCARD_REMOTE,
+	ASB_CONSENSUS,
+	ASB_DISCARD_SECONDARY,
+	ASB_CALL_HELPER,
+	ASB_VIOLENTLY
 };
 
 /* KEEP the order, do not delete or insert!
  * Or change the API_VERSION, too. */
 enum ret_codes {
-	RetCodeBase		= 100,
-	NoError			= 101,
-	LAAlreadyInUse		= 102,
-	OAAlreadyInUse		= 103,
-	LDNameInvalid		= 104,
-	MDNameInvalid		= 105,
-	LDAlreadyInUse		= 106,
-	LDNoBlockDev		= 107,
-	MDNoBlockDev		= 108,
-	LDOpenFailed		= 109,
-	MDOpenFailed		= 110,
-	LDDeviceTooSmall	= 111,
-	MDDeviceTooSmall	= 112,
-	LDNoConfig		= 113,
-	LDMounted		= 114,
-	MDMounted		= 115,
-	LDMDInvalid		= 116,
-	LDDeviceTooLarge	= 117,
-	MDIOError		= 118,
-	MDInvalid		= 119,
-	CRAMAlgNotAvail		= 120,
-	CRAMAlgNotDigest	= 121,
-	KMallocFailed		= 122,
-	DiscardNotAllowed	= 123,
-	HaveDiskConfig		= 124,
-	HaveNetConfig		= 125,
-	UnknownMandatoryTag	= 126,
-	MinorNotKnown		= 127,
-	StateNotAllowed		= 128,
-	GotSignal		= 129, /* EINTR */
-	NoResizeDuringResync	= 130,
-	APrimaryNodeNeeded	= 131,
-	SyncAfterInvalid	= 132,
-	SyncAfterCycle		= 133,
-	PauseFlagAlreadySet	= 134,
-	PauseFlagAlreadyClear	= 135,
-	DiskLowerThanOutdated	= 136, /* obsolete, now SS_LowerThanOutdated */
-	UnknownNetLinkPacket	= 137,
-	HaveNoDiskConfig	= 138,
-	ProtocolCRequired	= 139,
-	VMallocFailed		= 140,
-	IntegrityAlgNotAvail	= 141, /* DRBD 8.2 only */
-	IntegrityAlgNotDigest	= 142, /* DRBD 8.2 only */
-	CPUMaskParseFailed	= 143, /* DRBD 8.2 only */
-	CSUMSAlgNotAvail	= 144, /* DRBD 8.2 only */
-	CSUMSAlgNotDigest	= 145, /* DRBD 8.2 only */
-	VERIFYAlgNotAvail	= 146, /* DRBD 8.2 only */
-	VERIFYAlgNotDigest	= 147, /* DRBD 8.2 only */
-	CSUMSResyncRunning	= 148, /* DRBD 8.2 only */
-	VERIFYIsRunning		= 149, /* DRBD 8.2 only */
-	DataOfWrongCurrent	= 150,
+	ERR_CODE_BASE		= 100,
+	NO_ERROR		= 101,
+	ERR_LOCAL_ADDR		= 102,
+	ERR_PEER_ADDR		= 103,
+	ERR_OPEN_DISK		= 104,
+	ERR_OPEN_MD_DISK	= 105,
+	ERR_DISK_NOT_BDEV	= 107,
+	ERR_MD_NOT_BDEV		= 108,
+	ERR_DISK_TO_SMALL	= 111,
+	ERR_MD_DISK_TO_SMALL	= 112,
+	ERR_BDCLAIM_DISK	= 114,
+	ERR_BDCLAIM_MD_DISK	= 115,
+	ERR_MD_IDX_INVALID	= 116,
+	ERR_IO_MD_DISK		= 118,
+	ERR_MD_INVALID          = 119,
+	ERR_AUTH_ALG		= 120,
+	ERR_AUTH_ALG_ND		= 121,
+	ERR_NOMEM		= 122,
+	ERR_DISCARD		= 123,
+	ERR_DISK_CONFIGURED	= 124,
+	ERR_NET_CONFIGURED	= 125,
+	ERR_MANDATORY_TAG	= 126,
+	ERR_MINOR_INVALID	= 127,
+	ERR_INTR		= 129, /* EINTR */
+	ERR_RESIZE_RESYNC	= 130,
+	ERR_NO_PRIMARY		= 131,
+	ERR_SYNC_AFTER		= 132,
+	ERR_SYNC_AFTER_CYCLE	= 133,
+	ERR_PAUSE_IS_SET	= 134,
+	ERR_PAUSE_IS_CLEAR	= 135,
+	ERR_PACKET_NR		= 137,
+	ERR_NO_DISK		= 138,
+	ERR_NOT_PROTO_C		= 139,
+	ERR_NOMEM_BITMAP	= 140,
+	ERR_INTEGRITY_ALG	= 141, /* DRBD 8.2 only */
+	ERR_INTEGRITY_ALG_ND	= 142, /* DRBD 8.2 only */
+	ERR_CPU_MASK_PARSE	= 143, /* DRBD 8.2 only */
+	ERR_CSUMS_ALG		= 144, /* DRBD 8.2 only */
+	ERR_CSUMS_ALG_ND	= 145, /* DRBD 8.2 only */
+	ERR_VERIFY_ALG		= 146, /* DRBD 8.2 only */
+	ERR_VERIFY_ALG_ND	= 147, /* DRBD 8.2 only */
+	ERR_CSUMS_RESYNC_RUNNING= 148, /* DRBD 8.2 only */
+	ERR_VERIFY_RUNNING	= 149, /* DRBD 8.2 only */
+	ERR_DATA_NOT_CURRENT	= 150,
+	ERR_CONNECTED		= 151, /* DRBD 8.3 only */
 
 	/* insert new ones above this line */
-	AfterLastRetCode
+	AFTER_LAST_ERR_CODE
 };
 
 #define DRBD_PROT_A   1
@@ -150,66 +144,66 @@ enum ret_codes {
 #define DRBD_PROT_C   3
 
 enum drbd_role {
-	Unknown = 0,
-	Primary = 1,     /* role */
-	Secondary = 2,   /* role */
-	role_mask = 3,
+	R_UNKNOWN = 0,
+	R_PRIMARY = 1,     /* role */
+	R_SECONDARY = 2,   /* role */
+	R_MASK = 3,
 };
 
 /* The order of these constants is important.
- * The lower ones (<WFReportParams) indicate
+ * The lower ones (<C_WF_REPORT_PARAMS) indicate
  * that there is no socket!
- * >=WFReportParams ==> There is a socket
+ * >=C_WF_REPORT_PARAMS ==> There is a socket
  *
  * THINK
- * Skipped should be < Connected,
- * so writes on a Primary after Skipped sync are not mirrored either ?
+ * Skipped should be < C_CONNECTED,
+ * so writes on a R_PRIMARY after Skipped sync are not mirrored either ?
  */
 enum drbd_conns {
-	StandAlone,
-	Disconnecting,  /* Temporal state on the way to StandAlone. */
-	Unconnected,    /* >= Unconnected -> inc_net() succeeds */
+	C_STANDALONE,
+	C_DISCONNECTING,  /* Temporal state on the way to StandAlone. */
+	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */
 
 	/* These temporal states are all used on the way
-	 * from >= Connected to Unconnected.
+	 * from >= C_CONNECTED to Unconnected.
 	 * The 'disconnect reason' states
 	 * I do not allow to change beween them. */
-	Timeout,
-	BrokenPipe,
-	NetworkFailure,
-	ProtocolError,
-	TearDown,
+	C_TIMEOUT,
+	C_BROKEN_PIPE,
+	C_NETWORK_FAILURE,
+	C_PROTOCOL_ERROR,
+	C_TEAR_DOWN,
 
-	WFConnection,
-	WFReportParams, /* we have a socket */
-	Connected,      /* we have introduced each other */
-	StartingSyncS,  /* starting full sync by IOCTL. */
-	StartingSyncT,  /* stariing full sync by IOCTL. */
-	WFBitMapS,
-	WFBitMapT,
-	WFSyncUUID,
+	C_WF_CONNECTION,
+	C_WF_REPORT_PARAMS, /* we have a socket */
+	C_CONNECTED,      /* we have introduced each other */
+	C_STARTING_SYNC_S,  /* starting full sync by IOCTL. */
+	C_STARTING_SYNC_T,  /* stariing full sync by IOCTL. */
+	C_WF_BITMAP_S,
+	C_WF_BITMAP_T,
+	C_WF_SYNC_UUID,
 
 	/* All SyncStates are tested with this comparison
-	 * xx >= SyncSource && xx <= PausedSyncT */
-	SyncSource,
-	SyncTarget,
-	PausedSyncS,
-	PausedSyncT,
-	conn_mask = 31
+	 * xx >= C_SYNC_SOURCE && xx <= C_PAUSED_SYNC_T */
+	C_SYNC_SOURCE,
+	C_SYNC_TARGET,
+	C_PAUSED_SYNC_S,
+	C_PAUSED_SYNC_T,
+	C_MASK = 31
 };
 
 enum drbd_disk_state {
-	Diskless,
-	Attaching,      /* In the process of reading the meta-data */
-	Failed,         /* Becomes Diskless as soon as we told it the peer */
-			/* when >= Failed it is legal to access mdev->bc */
-	Negotiating,    /* Late attaching state, we need to talk to the peer */
-	Inconsistent,
-	Outdated,
-	DUnknown,       /* Only used for the peer, never for myself */
-	Consistent,     /* Might be Outdated, might be UpToDate ... */
-	UpToDate,       /* Only this disk state allows applications' IO ! */
-	disk_mask = 15
+	D_DISKLESS,
+	D_ATTACHING,      /* In the process of reading the meta-data */
+	D_FAILED,         /* Becomes D_DISKLESS as soon as we told it the peer */
+			/* when >= D_FAILED it is legal to access mdev->bc */
+	D_NEGOTIATING,    /* Late attaching state, we need to talk to the peer */
+	D_INCONSISTENT,
+	D_OUTDATED,
+	D_UNKNOWN,       /* Only used for the peer, never for myself */
+	D_CONSISTENT,     /* Might be D_OUTDATED, might be D_UP_TO_DATE ... */
+	D_UP_TO_DATE,       /* Only this disk state allows applications' IO ! */
+	D_MASK = 15
 };
 
 union drbd_state_t {
@@ -226,8 +220,8 @@ union drbd_state_t {
 		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned conn:5 ;   /* 17/32	 cstates */
-		unsigned disk:4 ;   /* 8/16	 from Diskless to UpToDate */
-		unsigned pdsk:4 ;   /* 8/16	 from Diskless to UpToDate */
+		unsigned disk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
+		unsigned pdsk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
 		unsigned susp:1 ;   /* 2/2	 IO suspended  no/yes */
 		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
 		unsigned peer_isp:1 ;
@@ -239,8 +233,8 @@ union drbd_state_t {
 		unsigned peer_isp:1 ;
 		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
 		unsigned susp:1 ;   /* 2/2	 IO suspended  no/yes */
-		unsigned pdsk:4 ;   /* 8/16	 from Diskless to UpToDate */
-		unsigned disk:4 ;   /* 8/16	 from Diskless to UpToDate */
+		unsigned pdsk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
+		unsigned disk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
 		unsigned conn:5 ;   /* 17/32	 cstates */
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
@@ -252,30 +246,30 @@ union drbd_state_t {
 };
 
 enum set_st_err {
-	SS_CW_NoNeed = 4,
-	SS_CW_Success = 3,
-	SS_NothingToDo = 2,
-	SS_Success = 1,
-	SS_UnknownError = 0, /* Used to sleep longer in _drbd_request_state */
-	SS_TwoPrimaries = -1,
-	SS_NoUpToDateDisk = -2,
-	SS_BothInconsistent = -4,
-	SS_SyncingDiskless = -5,
-	SS_ConnectedOutdates = -6,
-	SS_PrimaryNOP = -7,
-	SS_ResyncRunning = -8,
-	SS_AlreadyStandAlone = -9,
-	SS_CW_FailedByPeer = -10,
-	SS_IsDiskLess = -11,
-	SS_DeviceInUse = -12,
-	SS_NoNetConfig = -13,
-	SS_NoVerifyAlg = -14,       /* drbd-8.2 only */
-	SS_NeedConnection = -15,    /* drbd-8.2 only */
-	SS_LowerThanOutdated = -16,
-	SS_NotSupported = -17,      /* drbd-8.2 only */
-	SS_InTransientState = -18,  /* Retry after the next state change */
-	SS_ConcurrentStChg = -19,   /* Concurrent cluster side state change! */
-	SS_AfterLastError = -20,    /* Keep this at bottom */
+	SS_CW_NO_NEED = 4,
+	SS_CW_SUCCESS = 3,
+	SS_NOTHING_TO_DO = 2,
+	SS_SUCCESS = 1,
+	SS_UNKNOWN_ERROR = 0, /* Used to sleep longer in _drbd_request_state */
+	SS_TWO_PRIMARIES = -1,
+	SS_NO_UP_TO_DATE_DISK = -2,
+	SS_BOTH_INCONSISTENT = -4,
+	SS_SYNCING_DISKLESS = -5,
+	SS_CONNECTED_OUTDATES = -6,
+	SS_PRIMARY_NOP = -7,
+	SS_RESYNC_RUNNING = -8,
+	SS_ALREADY_STANDALONE = -9,
+	SS_CW_FAILED_BY_PEER = -10,
+	SS_IS_DISKLESS = -11,
+	SS_DEVICE_IN_USE = -12,
+	SS_NO_NET_CONFIG = -13,
+	SS_NO_VERIFY_ALG = -14,       /* drbd-8.2 only */
+	SS_NEED_CONNECTION = -15,    /* drbd-8.2 only */
+	SS_LOWER_THAN_OUTDATED = -16,
+	SS_NOT_SUPPORTED = -17,      /* drbd-8.2 only */
+	SS_IN_TRANSIENT_STATE = -18,  /* Retry after the next state change */
+	SS_CONCURRENT_ST_CHG = -19,   /* Concurrent cluster side state change! */
+	SS_AFTER_LAST_ERROR = -20,    /* Keep this at bottom */
 };
 
 /* from drbd_strings.c */
@@ -290,29 +284,21 @@ extern const char *set_st_err_name(enum set_st_err);
 
 #define SHARED_SECRET_MAX 64
 
-enum MetaDataFlags {
-	__MDF_Consistent,
-	__MDF_PrimaryInd,
-	__MDF_ConnectedInd,
-	__MDF_FullSync,
-	__MDF_WasUpToDate,
-	__MDF_PeerOutDated /* or worse (e.g. invalid). */
-};
-#define MDF_Consistent      (1<<__MDF_Consistent)
-#define MDF_PrimaryInd      (1<<__MDF_PrimaryInd)
-#define MDF_ConnectedInd    (1<<__MDF_ConnectedInd)
-#define MDF_FullSync        (1<<__MDF_FullSync)
-#define MDF_WasUpToDate     (1<<__MDF_WasUpToDate)
-#define MDF_PeerOutDated    (1<<__MDF_PeerOutDated)
+#define MDF_CONSISTENT		(1 << 0)
+#define MDF_PRIMARY_IND		(1 << 1)
+#define MDF_CONNECTED_IND	(1 << 2)
+#define MDF_FULL_SYNC		(1 << 3)
+#define MDF_WAS_UP_TO_DATE	(1 << 4)
+#define MDF_PEER_OUT_DATED	(1 << 5)
 
 enum UuidIndex {
-	Current,
-	Bitmap,
-	History_start,
-	History_end,
-	UUID_SIZE,      /* nl-packet: number of dirty bits */
-	UUID_FLAGS,     /* nl-packet: flags */
-	EXT_UUID_SIZE   /* Everything. */
+	UI_CURRENT,
+	UI_BITMAP,
+	UI_HISTORY_START,
+	UI_HISTORY_END,
+	UI_SIZE,      /* nl-packet: number of dirty bits */
+	UI_FLAGS,     /* nl-packet: flags */
+	UI_EXTENDED_SIZE   /* Everything. */
 };
 
 #define UUID_JUST_CREATED ((__u64)4)

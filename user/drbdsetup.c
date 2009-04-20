@@ -199,45 +199,45 @@ int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
-	[PassOn]         = "pass_on",
-	[CallIOEHelper]  = "call-local-io-error",
-	[Detach]         = "detach",
+	[EP_PASS_ON]         = "pass_on",
+	[EP_CALL_HELPER]  = "call-local-io-error",
+	[EP_DETACH]         = "detach",
 };
 
 const char *fencing_n[] = {
-	[DontCare] = "dont-care",
-	[Resource] = "resource-only",
-	[Stonith]  = "resource-and-stonith",
+	[FP_DONT_CARE] = "dont-care",
+	[FP_RESOURCE] = "resource-only",
+	[FP_STONITH]  = "resource-and-stonith",
 };
 
 const char *asb0p_n[] = {
-        [Disconnect]        = "disconnect",
-	[DiscardYoungerPri] = "discard-younger-primary",
-	[DiscardOlderPri]   = "discard-older-primary",
-	[DiscardZeroChg]    = "discard-zero-changes",
-	[DiscardLeastChg]   = "discard-least-changes",
-	[DiscardLocal]      = "discard-local",
-	[DiscardRemote]     = "discard-remote"
+        [ASB_DISCONNECT]        = "disconnect",
+	[ASB_DISCARD_YOUNGER_PRI] = "discard-younger-primary",
+	[ASB_DISCARD_OLDER_PRI]   = "discard-older-primary",
+	[ASB_DISCARD_ZERO_CHG]    = "discard-zero-changes",
+	[ASB_DISCARD_LEAST_CHG]   = "discard-least-changes",
+	[ASB_DISCARD_LOCAL]      = "discard-local",
+	[ASB_DISCARD_REMOTE]     = "discard-remote"
 };
 
 const char *asb1p_n[] = {
-	[Disconnect]        = "disconnect",
-	[Consensus]         = "consensus",
-	[Violently]         = "violently-as0p",
-	[DiscardSecondary]  = "discard-secondary",
-	[CallHelper]        = "call-pri-lost-after-sb"
+	[ASB_DISCONNECT]        = "disconnect",
+	[ASB_CONSENSUS]         = "consensus",
+	[ASB_VIOLENTLY]         = "violently-as0p",
+	[ASB_DISCARD_SECONDARY]  = "discard-secondary",
+	[ASB_CALL_HELPER]        = "call-pri-lost-after-sb"
 };
 
 const char *asb2p_n[] = {
-	[Disconnect]        = "disconnect",
-	[Violently]         = "violently-as0p",
-	[CallHelper]        = "call-pri-lost-after-sb"
+	[ASB_DISCONNECT]        = "disconnect",
+	[ASB_VIOLENTLY]         = "violently-as0p",
+	[ASB_CALL_HELPER]        = "call-pri-lost-after-sb"
 };
 
 const char *rrcf_n[] = {
-	[Disconnect]        = "disconnect",
-	[Violently]         = "violently",
-	[CallHelper]        = "call-pri-lost"
+	[ASB_DISCONNECT]        = "disconnect",
+	[ASB_VIOLENTLY]         = "violently",
+	[ASB_CALL_HELPER]        = "call-pri-lost"
 };
 
 struct option wait_cmds_options[] = {
@@ -361,58 +361,59 @@ struct drbd_cmd commands[] = {
 
 #define OTHER_ERROR 900
 
-#define EM(C) [ C - RetCodeBase ]
+#define EM(C) [ C - ERR_CODE_BASE ]
 
+/* The EM(123) are used for old error messages. */
 static const char *error_messages[] = {
-	EM(NoError) = "No further Information available.",
-	EM(LAAlreadyInUse) = "Local address(port) already in use.",
-	EM(OAAlreadyInUse) = "Remote address(port) already in use.",
-	EM(LDNameInvalid) = "Can not open backing device.",
-	EM(MDNameInvalid) = "Can not open meta device.",
-	EM(LDAlreadyInUse) = "Lower device already in use.",
-	EM(LDNoBlockDev) = "Lower device is not a block device.",
-	EM(MDNoBlockDev) = "Meta device is not a block device.",
-	EM(LDOpenFailed) = "Open of lower device failed.",
-	EM(MDOpenFailed) = "Open of meta device failed.",
-	EM(LDDeviceTooSmall) = "Low.dev. smaller than requested DRBD-dev. size.",
-	EM(MDDeviceTooSmall) = "Meta device too small.",
-	EM(LDNoConfig) = "You have to use the disk command first.",
-	EM(LDMounted) = "Lower device is already claimed. This usually means it is mounted.",
-	EM(MDMounted) = "Meta device is already claimed. This usually means it is mounted.",
-	EM(LDMDInvalid) = "Lower device / meta device / index combination invalid.",
-	EM(LDDeviceTooLarge) = "Currently we only support devices up to 3.998TB.\n"
+	EM(NO_ERROR) = "No further Information available.",
+	EM(ERR_LOCAL_ADDR) = "Local address(port) already in use.",
+	EM(ERR_PEER_ADDR) = "Remote address(port) already in use.",
+	EM(ERR_OPEN_DISK) = "Can not open backing device.",
+	EM(ERR_OPEN_MD_DISK) = "Can not open meta device.",
+	EM(106) = "Lower device already in use.",
+	EM(ERR_DISK_NOT_BDEV) = "Lower device is not a block device.",
+	EM(ERR_MD_NOT_BDEV) = "Meta device is not a block device.",
+	EM(109) = "Open of lower device failed.",
+	EM(110) = "Open of meta device failed.",
+	EM(ERR_DISK_TO_SMALL) = "Low.dev. smaller than requested DRBD-dev. size.",
+	EM(ERR_MD_DISK_TO_SMALL) = "Meta device too small.",
+	EM(113) = "You have to use the disk command first.",
+	EM(ERR_BDCLAIM_DISK) = "Lower device is already claimed. This usually means it is mounted.",
+	EM(ERR_BDCLAIM_MD_DISK) = "Meta device is already claimed. This usually means it is mounted.",
+	EM(ERR_MD_IDX_INVALID) = "Lower device / meta device / index combination invalid.",
+	EM(117) = "Currently we only support devices up to 3.998TB.\n"
 	"(up to 2TB in case you do not have CONFIG_LBD set)\n"
 	"Contact office@linbit.com, if you need more.",
-	EM(MDIOError) = "IO error(s) occurred during initial access to meta-data.\n",
-	EM(MDInvalid) = "No valid meta-data signature found.\n\n"
+	EM(ERR_IO_MD_DISK) = "IO error(s) occurred during initial access to meta-data.\n",
+	EM(ERR_MD_INVALID) = "No valid meta-data signature found.\n\n"
 	"\t==> Use 'drbdadm create-md res' to initialize meta-data area. <==\n",
-	EM(CRAMAlgNotAvail) = "The 'cram-hmac-alg' you specified is not known in "
+	EM(ERR_AUTH_ALG) = "The 'cram-hmac-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
-	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
-	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
-	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
-	EM(HaveDiskConfig) = "Device is attached to a disk (use detach first)",
-	EM(HaveNetConfig) = "Device has a net-config (use disconnect first)",
-	EM(UnknownMandatoryTag) = "UnknownMandatoryTag",
-	EM(MinorNotKnown) = "Device minor not allocated",
-	EM(StateNotAllowed) = "Resulting device state would be invalid",
-	EM(GotSignal) = "Interrupted by Signal",
-	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
-	EM(APrimaryNodeNeeded) = "Need one Primary node to resize.",
-	EM(SyncAfterInvalid) = "The sync-after minor number is invalid",
-	EM(SyncAfterCycle) = "This would cause a sync-after dependency cycle",
-	EM(PauseFlagAlreadySet) = "Sync-pause flag is already set",
-	EM(PauseFlagAlreadyClear) = "Sync-pause flag is already cleared",
-	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
-	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
-	EM(ProtocolCRequired) = "Protocol C required",
-	EM(VMallocFailed) = "vmalloc() failed. Out of memory?",
-	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
+	EM(ERR_AUTH_ALG_ND) = "The 'cram-hmac-alg' you specified is not a digest.",
+	EM(ERR_NOMEM) = "kmalloc() failed. Out of memory?",
+	EM(ERR_DISCARD) = "--discard-my-data not allowed when primary.",
+	EM(ERR_DISK_CONFIGURED) = "Device is attached to a disk (use detach first)",
+	EM(ERR_NET_CONFIGURED) = "Device has a net-config (use disconnect first)",
+	EM(ERR_MANDATORY_TAG) = "UnknownMandatoryTag",
+	EM(ERR_MINOR_INVALID) = "Device minor not allocated",
+	EM(128) = "Resulting device state would be invalid",
+	EM(ERR_INTR) = "Interrupted by Signal",
+	EM(ERR_RESIZE_RESYNC) = "Resize not allowed during resync.",
+	EM(ERR_NO_PRIMARY) = "Need one Primary node to resize.",
+	EM(ERR_SYNC_AFTER) = "The sync-after minor number is invalid",
+	EM(ERR_SYNC_AFTER_CYCLE) = "This would cause a sync-after dependency cycle",
+	EM(ERR_PAUSE_IS_SET) = "Sync-pause flag is already set",
+	EM(ERR_PAUSE_IS_CLEAR) = "Sync-pause flag is already cleared",
+	EM(136) = "Disk state is lower than outdated",
+	EM(ERR_NO_DISK) = "Device does not have a disk-config",
+	EM(ERR_NOT_PROTO_C) = "Protocol C required",
+	EM(ERR_NOMEM_BITMAP) = "vmalloc() failed. Out of memory?",
+	EM(ERR_DATA_NOT_CURRENT) = "Can only attach to the data we lost last (see kernel log).",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
 {
-	const unsigned int idx = err_no - RetCodeBase;
+	const unsigned int idx = err_no - ERR_CODE_BASE;
 	if (idx >= MAX_ERROR) return "Unknown... maybe API_VERSION mismatch?";
 	return error_messages[idx];
 }
@@ -543,7 +544,7 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 
 	add_tag(tl,ad->tag,arg,strlen(arg)+1); // include the null byte.
 
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -556,7 +557,7 @@ int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
 
-	return NoError;
+	return NO_ERROR;
 }
 
 const char* addr_part(const char* s)
@@ -611,7 +612,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&addr,addr_len);
 
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -631,7 +632,7 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 
 	add_tag(tl,ad->tag,&prot,sizeof(prot));
 
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
@@ -640,7 +641,7 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 
 	add_tag(tl,od->tag,&bit,sizeof(bit));
 
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -649,13 +650,13 @@ int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	long long l = m_strtoll(arg, 0);
 	char bit = 0;
 
-	if (err != NoError || l != 0)
+	if (err != NO_ERROR || l != 0)
 		return err;
 	/* this is a mandatory bit,
 	 * to avoid newer userland to configure older modules with
 	 * a sndbuf size of zero, which would lead to Oops. */
 	add_tag(tl, T_auto_sndbuf_size, &bit, sizeof(bit));
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -687,7 +688,7 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	default:
 		fprintf(stderr, "internal error in conv_numeric()\n");
 	}
-	return NoError;
+	return NO_ERROR;
 }
 
 int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
@@ -700,7 +701,7 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 		if(handler_names[i]==NULL) continue;
 		if(strcmp(arg,handler_names[i])==0) {
 			add_tag(tl,od->tag,&i,sizeof(i));
-			return NoError;
+			return NO_ERROR;
 		}
 	}
 
@@ -717,7 +718,7 @@ int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	add_tag(tl,od->tag,arg,strlen(arg)+1);
 
-	return NoError;
+	return NO_ERROR;
 }
 
 struct option *	make_longoptions(struct drbd_option* od)
@@ -779,35 +780,35 @@ int print_config_error(int err_no)
 {
 	int rv=0;
 
-	if (err_no == NoError || err_no == SS_Success)
+	if (err_no == NO_ERROR || err_no == SS_SUCCESS)
 		return 0;
 	if (err_no == OTHER_ERROR)
 		return 20;
 
-	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
-	     ( err_no > SS_CW_NoNeed || err_no < SS_LowerThanOutdated) ) {
+	if ( ( err_no >= AFTER_LAST_ERR_CODE || err_no <= ERR_CODE_BASE ) &&
+	     ( err_no > SS_CW_NO_NEED || err_no < SS_LOWER_THAN_OUTDATED) ) {
 		fprintf(stderr,"%s: Error code %d unknown.\n"
 			"You should updated the drbd userland tools.\n",
 			devname, err_no);
 		rv = 20;
 	} else {
-		if(err_no > RetCodeBase ) {
+		if(err_no > ERR_CODE_BASE ) {
 			fprintf(stderr,"%s: Failure: (%d) %s\n",
 				devname, err_no, error_to_string(err_no));
 			rv = 10;
-		} else if (err_no == SS_UnknownError) {
+		} else if (err_no == SS_UNKNOWN_ERROR) {
 			fprintf(stderr,"%s: State change failed: (%d)"
 				"unknown error.\n", devname, err_no);
 			rv = 11;
-		} else if (err_no > SS_TwoPrimaries) {
-			// Ignore SS_Success, SS_NothingToDo, SS_CW_Success...
+		} else if (err_no > SS_TWO_PRIMARIES) {
+			// Ignore SS_SUCCESS, SS_NOTHING_TO_DO, SS_CW_Success...
 		} else {
 			fprintf(stderr,"%s: State change failed: (%d) %s\n",
 				devname, err_no, set_st_err_name(err_no));
-			if (err_no == SS_NoUpToDateDisk) {
-				/* am Primary, cannot outdate */
+			if (err_no == SS_NO_UP_TO_DATE_DISK) {
+				/* am R_PRIMARY, cannot outdate */
 				rv = 17;
-			} else if (err_no == SS_LowerThanOutdated) {
+			} else if (err_no == SS_LOWER_THAN_OUTDATED) {
 				/* was inconsistent anyways */
 				rv = 5;
 			} else {
@@ -868,7 +869,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 	struct drbd_option *od;
 	struct option *lo;
 	struct drbd_tag_list *tl;
-	int c,i=1,rv=NoError,sk_nl;
+	int c,i=1,rv=NO_ERROR,sk_nl;
 	int flags=0;
 	int n_args;
 
@@ -882,7 +883,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 			goto error;
 		}
 		rv = ad->convert_function(ad,tl,argv[i++]);
-		if (rv != NoError)
+		if (rv != NO_ERROR)
 			goto error;
 		ad++;
 	}
@@ -908,7 +909,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 				goto error;
 			}
 		}
-		if (rv != NoError)
+		if (rv != NO_ERROR)
 			goto error;
 	}
 
@@ -921,7 +922,7 @@ int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 	add_tag(tl,TT_END,NULL,0); // close the tag list
 
-	if(rv == NoError) {
+	if(rv == NO_ERROR) {
 		//dump_tag_list(tl->tag_list_start);
 		int received;
 		sk_nl = open_cn();
@@ -1134,7 +1135,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	reply = (struct drbd_nl_cfg_reply *)
 		((struct cn_msg *)NLMSG_DATA(buffer))->data;
 
-	if (reply->ret_code != NoError)
+	if (reply->ret_code != NO_ERROR)
 		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
@@ -1213,8 +1214,8 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 {
 	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
-	if ( state.conn == StandAlone &&
-	     state.disk == Diskless) {
+	if ( state.conn == C_STANDALONE &&
+	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
 		printf("%s/%s\n",roles_to_name(state.role),roles_to_name(state.peer));
@@ -1228,8 +1229,8 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 {
 	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
-	if ( state.conn == StandAlone &&
-	     state.disk == Diskless) {
+	if ( state.conn == C_STANDALONE &&
+	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
 		printf("%s\n",conns_to_name(state.conn));
@@ -1243,8 +1244,8 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 {
 	union drbd_state_t state;
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
-	if ( state.conn == StandAlone &&
-	     state.disk == Diskless) {
+	if ( state.conn == C_STANDALONE &&
+	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
 		printf("%s/%s\n",disks_to_name(state.disk),disks_to_name(state.pdsk));
@@ -1266,7 +1267,7 @@ int uuids_scmd(struct drbd_cmd *cm,
 		return 1;
 	}
 	consume_tag_int(T_uuids_flags,rtl,&flags);
-	if( len == UUID_SIZE * sizeof(__u64)) {
+	if( len == UI_SIZE * sizeof(__u64)) {
 		if(!strcmp(cm->cmd,"show-gi")) {
 			dt_pretty_print_uuids(uuids,flags);
 		} else if(!strcmp(cm->cmd,"get-gi")) {
@@ -1304,9 +1305,9 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 	cm = find_cmd_by_name("secondary");
 	rv = _generic_config_cmd(cm, minor, argc, argv); // No error messages
-	if (rv == MinorNotKnown)
+	if (rv == ERR_MINOR_INVALID)
 		return 0;
-	success = (rv >= SS_Success && rv < RetCodeBase) || rv == NoError;
+	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (!success)
 		return print_config_error(rv);
 	cm = find_cmd_by_name("disconnect");
@@ -1323,7 +1324,7 @@ int print_state(unsigned int seq, int u __attribute((unused)),
 	int synced = 0;
 
 	/* Ignore error replies */
-	if (reply->ret_code != NoError)
+	if (reply->ret_code != NO_ERROR)
 		return 1;
 
 	switch (reply->packet_type) {
@@ -1375,8 +1376,8 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if(state.conn >= Connected) return 0;
-			if(!wait_after_sb && state.conn < Unconnected) return 0;
+			if(state.conn >= C_CONNECTED) return 0;
+			if(!wait_after_sb && state.conn < C_UNCONNECTED) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 
@@ -1391,8 +1392,8 @@ int w_synced_state(unsigned int seq __attribute((unused)),
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
-			if(state.conn == Connected) return 0;
-			if(!wait_after_sb && state.conn < Unconnected) return 0;
+			if(state.conn == C_CONNECTED) return 0;
+			if(!wait_after_sb && state.conn < C_UNCONNECTED) return 0;
 		} else fprintf(stderr,"Missing tag !?\n");
 	}
 	return 1;

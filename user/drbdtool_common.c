@@ -332,14 +332,14 @@ void dt_unlock_drbd(int lock_fd)
 void dt_print_gc(const __u32* gen_cnt)
 {
 	printf("%d:%d:%d:%d:%d:%d:%d:%d\n",
-	       gen_cnt[Flags] & MDF_Consistent ? 1 : 0,
+	       gen_cnt[Flags] & MDF_CONSISTENT ? 1 : 0,
 	       gen_cnt[HumanCnt],
 	       gen_cnt[TimeoutCnt],
 	       gen_cnt[ConnectedCnt],
 	       gen_cnt[ArbitraryCnt],
-	       gen_cnt[Flags] & MDF_PrimaryInd ? 1 : 0,
-	       gen_cnt[Flags] & MDF_ConnectedInd ? 1 : 0,
-	       gen_cnt[Flags] & MDF_FullSync ? 1 : 0);
+	       gen_cnt[Flags] & MDF_PRIMARY_IND ? 1 : 0,
+	       gen_cnt[Flags] & MDF_CONNECTED_IND ? 1 : 0,
+	       gen_cnt[Flags] & MDF_FULL_SYNC ? 1 : 0);
 }
 
 void dt_pretty_print_gc(const __u32* gen_cnt)
@@ -356,32 +356,32 @@ void dt_pretty_print_gc(const __u32* gen_cnt)
 	       "   --------+-----+-----+-----+-----+-----+-----+-----+\n"
 	       "       %3s | %3d | %3d | %3d | %3d | %3s | %3s | %3s  \n"
 	       "\n",
-	       gen_cnt[Flags] & MDF_Consistent ? "1/c" : "0/i",
+	       gen_cnt[Flags] & MDF_CONSISTENT ? "1/c" : "0/i",
 	       gen_cnt[HumanCnt],
 	       gen_cnt[TimeoutCnt],
 	       gen_cnt[ConnectedCnt],
 	       gen_cnt[ArbitraryCnt],
-	       gen_cnt[Flags] & MDF_PrimaryInd ? "1/p" : "0/s",
-	       gen_cnt[Flags] & MDF_ConnectedInd ? "1/c" : "0/n",
-	       gen_cnt[Flags] & MDF_FullSync ? "1/y" : "0/n");
+	       gen_cnt[Flags] & MDF_PRIMARY_IND ? "1/p" : "0/s",
+	       gen_cnt[Flags] & MDF_CONNECTED_IND ? "1/c" : "0/n",
+	       gen_cnt[Flags] & MDF_FULL_SYNC ? "1/y" : "0/n");
 }
 
 void dt_print_uuids(const __u64* uuid, unsigned int flags)
 {
 	int i;
 	printf(X64(016)":"X64(016)":",
-	       uuid[Current],
-	       uuid[Bitmap]);
-	for ( i=History_start ; i<=History_end ; i++ ) {
+	       uuid[UI_CURRENT],
+	       uuid[UI_BITMAP]);
+	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
 		printf(X64(016)":", uuid[i]);
 	}
 	printf("%d:%d:%d:%d:%d:%d\n",
-	       flags & MDF_Consistent ? 1 : 0,
-	       flags & MDF_WasUpToDate ? 1 : 0,
-	       flags & MDF_PrimaryInd ? 1 : 0,
-	       flags & MDF_ConnectedInd ? 1 : 0,
-	       flags & MDF_FullSync ? 1 : 0,
-	       flags & MDF_PeerOutDated ? 1 : 0);
+	       flags & MDF_CONSISTENT ? 1 : 0,
+	       flags & MDF_WAS_UP_TO_DATE ? 1 : 0,
+	       flags & MDF_PRIMARY_IND ? 1 : 0,
+	       flags & MDF_CONNECTED_IND ? 1 : 0,
+	       flags & MDF_FULL_SYNC ? 1 : 0,
+	       flags & MDF_PEER_OUT_DATED ? 1 : 0);
 }
 
 void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)

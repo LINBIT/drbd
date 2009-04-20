@@ -207,7 +207,7 @@ struct md_cpu {
 	u32 al_nr_extents;	/* important for restoring the AL */
 	s32 bm_offset;		/* signed sector offset to the bitmap, from here */
 	/* Since DRBD 0.8 we have uuid instead of gc */
-	u64 uuid[UUID_SIZE];
+	u64 uuid[UI_SIZE];
 	u32 flags;
 	u64 device_uuid;
 	u32 bm_bytes_per_bit;
@@ -452,7 +452,7 @@ struct __attribute__ ((packed)) al_sector_on_disk {
 
 struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
-	be_u64 uuid[UUID_SIZE];   // UUIDs.
+	be_u64 uuid[UI_SIZE];   // UUIDs.
 	be_u64 device_uuid;
 	be_u64 reserved_u64_1;
 	be_u32 flags;
@@ -464,7 +464,7 @@ struct __attribute__ ((packed)) md_on_disk_08 {
 	be_u32 bm_bytes_per_bit;
 	be_u32 reserved_u32[4];
 
-	char reserved[8 * 512 - (8*(UUID_SIZE+3)+4*11)];
+	char reserved[8 * 512 - (8*(UI_SIZE+3)+4*11)];
 };
 
 void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
@@ -473,7 +473,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 
 	memset(cpu, 0, sizeof(*cpu));
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
-	for ( i=Current ; i<UUID_SIZE ; i++ )
+	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ )
 		cpu->uuid[i] = be64_to_cpu(disk->uuid[i].be);
 	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
 	cpu->flags = be32_to_cpu(disk->flags.be);
@@ -489,7 +489,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 {
 	int i;
 	disk->la_sect.be = cpu_to_be64(cpu->la_sect);
-	for ( i=Current ; i<UUID_SIZE ; i++ ) {
+	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 		disk->uuid[i].be = cpu_to_be64(cpu->uuid[i]);
 	}
 	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
@@ -828,14 +828,14 @@ void m_set_gc(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 	str = &argv[0];
 
 	do {
-		if (!m_strsep_bit(str, &md->gc[Flags], MDF_Consistent)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_CONSISTENT)) break;
 		if (!m_strsep_u32(str, &md->gc[HumanCnt])) break;
 		if (!m_strsep_u32(str, &md->gc[TimeoutCnt])) break;
 		if (!m_strsep_u32(str, &md->gc[ConnectedCnt])) break;
 		if (!m_strsep_u32(str, &md->gc[ArbitraryCnt])) break;
-		if (!m_strsep_bit(str, &md->gc[Flags], MDF_PrimaryInd)) break;
-		if (!m_strsep_bit(str, &md->gc[Flags], MDF_ConnectedInd)) break;
-		if (!m_strsep_bit(str, &md->gc[Flags], MDF_FullSync)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_PRIMARY_IND)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_CONNECTED_IND)) break;
+		if (!m_strsep_bit(str, &md->gc[Flags], MDF_FULL_SYNC)) break;
 	} while (0);
 }
 
@@ -847,15 +847,15 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 	str = &argv[0];
 
 	do {
-		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 			if (!m_strsep_u64(str, &md->uuid[i])) return;
 		}
-		if (!m_strsep_bit(str, &md->flags, MDF_Consistent)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_WasUpToDate)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_PrimaryInd)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_ConnectedInd)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_FullSync)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_PeerOutDated)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PRIMARY_IND)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CONNECTED_IND)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_FULL_SYNC)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PEER_OUT_DATED)) break;
 	} while (0);
 }
 
@@ -868,28 +868,28 @@ int m_outdate_gc(struct md_cpu *md __attribute((unused)))
 
 int m_outdate_uuid(struct md_cpu *md)
 {
-	if ( !(md->flags & MDF_Consistent) ) {
+	if ( !(md->flags & MDF_CONSISTENT) ) {
 		return 5;
 	}
 
-	md->flags &= ~MDF_WasUpToDate;
+	md->flags &= ~MDF_WAS_UP_TO_DATE;
 
 	return 0;
 }
 
 int m_invalidate_gc(struct md_cpu *md)
 {
-	md->gc[Flags] &= ~MDF_Consistent;
-	md->gc[Flags] |= MDF_FullSync;
+	md->gc[Flags] &= ~MDF_CONSISTENT;
+	md->gc[Flags] |= MDF_FULL_SYNC;
 
 	return 5;
 }
 
 int m_invalidate_uuid(struct md_cpu *md)
 {
-	md->flags &= ~MDF_Consistent;
-	md->flags &= ~MDF_WasUpToDate;
-	md->flags |= MDF_FullSync;
+	md->flags &= ~MDF_CONSISTENT;
+	md->flags &= ~MDF_WAS_UP_TO_DATE;
+	md->flags |= MDF_FULL_SYNC;
 
 	return 0;
 }
@@ -1447,9 +1447,9 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
 	cfg->md.la_sect = 0;
-	cfg->md.uuid[Current] = UUID_JUST_CREATED;
-	cfg->md.uuid[Bitmap] = 0;
-	for ( i=History_start ; i<=History_end ; i++ ) {
+	cfg->md.uuid[UI_CURRENT] = UUID_JUST_CREATED;
+	cfg->md.uuid[UI_BITMAP] = 0;
+	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
 		cfg->md.uuid[i]=0;
 	}
 	cfg->md.flags = 0;
@@ -1517,8 +1517,8 @@ int meta_dstate(struct format *cfg, char **argv __attribute((unused)), int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	if(cfg->md.flags & MDF_Consistent) {
-		if(cfg->md.flags & MDF_WasUpToDate) {
+	if(cfg->md.flags & MDF_CONSISTENT) {
+		if(cfg->md.flags & MDF_WAS_UP_TO_DATE) {
 			printf("Consistent/DUnknown\n");
 		} else {
 			printf("Outdated/DUnknown\n");
@@ -1612,7 +1612,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		printf("\n}\n");
 	} else { // >= 08
 		printf("uuid {\n   ");
-		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 			printf(" 0x"X64(016)";", cfg->md.uuid[i]);
 		}
 		printf("\n");
@@ -1772,7 +1772,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		EXP('}');
 	} else { // >= 08
 		EXP(TK_UUID); EXP('{');
-		for ( i=Current ; i<UUID_SIZE ; i++ ) {
+		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 			EXP(TK_U64); EXP(';');
 			cfg->md.uuid[i] = yylval.u64;
 		}
@@ -1891,13 +1891,13 @@ void md_convert_07_to_08(struct format *cfg)
 	int i,j;
 	/*
 	 * FIXME
-	 * what about the Bitmap, and the Activity Log?
+	 * what about the UI_BITMAP, and the Activity Log?
 	 * how to bring them over for internal meta data?
 	 *
 	 * maybe just refuse to convert anything that is not
 	 * "clean"? how to detect that?
 	 *
-	 * FIXME: if I am a crashed Primary, or Inconsistent,
+	 * FIXME: if I am a crashed R_PRIMARY, or D_INCONSISTENT,
 	 * or Want-Full-Sync or the like,
 	 * refuse, and indicate how to solve this */
 
@@ -1916,17 +1916,17 @@ void md_convert_07_to_08(struct format *cfg)
 	// The MDF Flags are (nearly) the same in 07 and 08
 	cfg->md.flags = cfg->md.gc[Flags];
 
-	cfg->md.uuid[Current] =
+	cfg->md.uuid[UI_CURRENT] =
 		(u64)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
 		(u64)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
 		(u64)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
 		       & 0xffff) << 16 |
 		(u64)0xbabe;
-	cfg->md.uuid[Bitmap] = (u64)0;
+	cfg->md.uuid[UI_BITMAP] = (u64)0;
 
-	for (i = cfg->bits_set ? Bitmap : History_start, j = 1;
-		i <= History_end ; i++, j++)
-		cfg->md.uuid[i] = cfg->md.uuid[Current] - j*0x10000;
+	for (i = cfg->bits_set ? UI_BITMAP : UI_HISTORY_START, j = 1;
+		i <= UI_HISTORY_END ; i++, j++)
+		cfg->md.uuid[i] = cfg->md.uuid[UI_CURRENT] - j*0x10000;
 
 	/* unconditionally re-initialize offsets,
 	 * not necessary if fixed size external,
@@ -1943,13 +1943,13 @@ void md_convert_08_to_07(struct format *cfg)
 {
 	/*
 	 * FIXME
-	 * what about the Bitmap, and the Activity Log?
+	 * what about the UI_BITMAP, and the Activity Log?
 	 * how to bring them over for internal meta data?
 	 *
 	 * maybe just refuse to convert anything that is not
 	 * "clean"? how to detect that?
 	 *
-	 * FIXME: if I am a crashed Primary, or Inconsistent,
+	 * FIXME: if I am a crashed R_PRIMARY, or D_INCONSISTENT,
 	 * or Want-Full-Sync or the like,
 	 * refuse, and indicate how to solve this */
 
@@ -2469,7 +2469,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * to flexible size, we'd need to move the AL and bitmap
 	 * over to the new location!
 	 * But the upgrade procedure in such case is documented to first get
-	 * the previous DRBD into "clean" Connected Secondary/Secondary, so AL
+	 * the previous DRBD into "clean" C_CONNECTED R_SECONDARY/R_SECONDARY, so AL
 	 * and bitmap should be empty anyways.
 	 */
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
