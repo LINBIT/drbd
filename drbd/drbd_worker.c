@@ -87,7 +87,7 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
-	struct Tl_epoch_entry *e = NULL;
+	struct drbd_epoch_entry *e = NULL;
 	struct drbd_conf *mdev;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -131,7 +131,7 @@ BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __
 BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
 {
 	unsigned long flags = 0;
-	struct Tl_epoch_entry *e = NULL;
+	struct drbd_epoch_entry *e = NULL;
 	struct drbd_conf *mdev;
 	sector_t e_sector;
 	int do_wake;
@@ -472,7 +472,7 @@ STATIC int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int ca
 int drbd_resync_finished(struct drbd_conf *mdev)
 {
 	unsigned long db, dt, dbdt;
-	union drbd_state_t os, ns;
+	union drbd_state os, ns;
 	struct drbd_work *w;
 
 	/* Remove all elements from the resync LRU. Since future actions
@@ -583,7 +583,7 @@ out:
  */
 int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
+	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
 	int ok;
 
 	if (unlikely(cancel)) {
@@ -628,7 +628,7 @@ int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
  */
 int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	struct Tl_epoch_entry *e = (struct Tl_epoch_entry *)w;
+	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
 	int ok;
 
 	if (unlikely(cancel)) {
@@ -690,8 +690,8 @@ int w_prev_work_done(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	struct drbd_barrier *b = (struct drbd_barrier *)w;
-	struct Drbd_Barrier_Packet *p = &mdev->data.sbuf.Barrier;
+	struct drbd_tl_epoch *b = (struct drbd_tl_epoch *)w;
+	struct p_barrier *p = &mdev->data.sbuf.barrier;
 	int ok = 1;
 
 	/* really avoid racing with tl_clear.  w.cb may have been referenced
@@ -713,7 +713,7 @@ int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in w_clear_epoch.  */
 	ok = _drbd_send_cmd(mdev, mdev->data.socket, P_BARRIER,
-				(struct Drbd_Header *)p, sizeof(*p), 0);
+				(struct p_header *)p, sizeof(*p), 0);
 	drbd_put_data_sock(mdev);
 
 	return ok;
@@ -912,7 +912,7 @@ void drbd_alter_sa(struct drbd_conf *mdev, int na)
  */
 void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 {
-	union drbd_state_t ns;
+	union drbd_state ns;
 	int r = 0;
 
 	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_SUMMARY,
@@ -995,7 +995,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 }
 
-int drbd_worker(struct Drbd_thread *thi)
+int drbd_worker(struct drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
 	struct drbd_work *w = NULL;
