@@ -1439,7 +1439,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor, unsigned short *rtl)
 {
-	union drbd_state_t state = { .i = 0 };
+	union drbd_state state = { .i = 0 };
 	int synced = 0;
 
 	if (!consume_tag_int(T_state_i,rtl,(int*)&state.i)) {
@@ -1494,7 +1494,7 @@ int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 /* variable prefix; maybe rather make that a command line parameter?
  * or use "drbd_sh_status"? */
 #define _P ""
-	union drbd_state_t state = { .i = 0 };
+	union drbd_state state = { .i = 0 };
 	int available = 0;
 	int synced = 0;
 
@@ -1559,7 +1559,7 @@ int state_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
-	union drbd_state_t state = { .i = 0 };
+	union drbd_state state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == C_STANDALONE &&
 	     state.disk == D_DISKLESS) {
@@ -1574,7 +1574,7 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	union drbd_state_t state = { .i = 0 };
+	union drbd_state state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == C_STANDALONE &&
 	     state.disk == D_DISKLESS) {
@@ -1589,7 +1589,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
-	union drbd_state_t state = { .i = 0 };
+	union drbd_state state = { .i = 0 };
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == C_STANDALONE &&
 	     state.disk == D_DISKLESS) {
@@ -1771,7 +1771,7 @@ void print_dump_ee(struct drbd_nl_cfg_reply *reply)
 int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 			   struct drbd_nl_cfg_reply *reply)
 {
-	union drbd_state_t state;
+	union drbd_state state;
 	char* str;
 	int synced = 0;
 
@@ -1828,7 +1828,7 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
-	union drbd_state_t state;
+	union drbd_state state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
@@ -1844,7 +1844,7 @@ int w_synced_state(unsigned int seq __attribute((unused)),
 		   int wait_after_sb,
 		   struct drbd_nl_cfg_reply *reply)
 {
-	union drbd_state_t state;
+	union drbd_state state;
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {

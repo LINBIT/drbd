@@ -206,7 +206,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 	char *ex_to_string;
 	int r;
 	enum drbd_disk_state nps;
-	enum fencing_policy fp;
+	enum drbd_fencing_p fp;
 
 	D_ASSERT(mdev->state.pdsk == D_UNKNOWN);
 
@@ -270,7 +270,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	int r = 0;
 	int try = 0;
 	int forced = 0;
-	union drbd_state_t mask, val;
+	union drbd_state mask, val;
 	enum drbd_disk_state nps;
 
 	if (new_role == R_PRIMARY)
@@ -528,7 +528,7 @@ void drbd_resume_io(struct drbd_conf *mdev)
  * indicate success.
  * You should call drbd_md_sync() after calling this function.
  */
-enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __must_hold(local)
+enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_hold(local)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -536,7 +536,7 @@ enum determin_dev_size_enum drbd_determin_dev_size(struct drbd_conf *mdev) __mus
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	enum determin_dev_size_enum rv = unchanged;
+	enum determine_dev_size rv = unchanged;
 
 	/* race:
 	 * application request passes inc_ap_bio,
@@ -784,14 +784,14 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			     struct drbd_nl_cfg_reply *reply)
 {
-	enum ret_codes retcode;
-	enum determin_dev_size_enum dd;
+	enum drbd_ret_codes retcode;
+	enum determine_dev_size dd;
 	sector_t max_possible_sectors;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct inode *inode, *inode2;
 	struct lru_cache *resync_lru = NULL;
-	union drbd_state_t ns, os;
+	union drbd_state ns, os;
 	int rv, ntries = 0;
 
 	/* if you want to reconfigure, please tear down first */
@@ -1194,7 +1194,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    struct drbd_nl_cfg_reply *reply)
 {
 	int i, ns;
-	enum ret_codes retcode;
+	enum drbd_ret_codes retcode;
 	struct net_conf *new_conf = NULL;
 	struct crypto_hash *tfm = NULL;
 	struct crypto_hash *integrity_w_tfm = NULL;
@@ -1516,7 +1516,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct resize rs;
 	int retcode = NO_ERROR;
 	int ldsc = 0; /* local disk size changed */
-	enum determin_dev_size_enum dd;
+	enum determine_dev_size dd;
 
 	memset(&rs, 0, sizeof(struct resize));
 	if (!resize_from_tags(mdev, nlp->tag_list, &rs)) {
@@ -1804,7 +1804,7 @@ STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 			     struct drbd_nl_cfg_reply *reply)
 {
 	unsigned short *tl = reply->tag_list;
-	union drbd_state_t s = mdev->state;
+	union drbd_state s = mdev->state;
 	unsigned long rs_left;
 	unsigned int res;
 
@@ -2129,7 +2129,7 @@ tl_add_int(unsigned short *tl, enum drbd_tags tag, const void *val)
 	return tl;
 }
 
-void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state_t state)
+void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state state)
 {
 	char buffer[sizeof(struct cn_msg)+
 		    sizeof(struct drbd_nl_cfg_reply)+
@@ -2205,7 +2205,7 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 void drbd_bcast_ee(struct drbd_conf *mdev,
 		const char *reason, const int dgs,
 		const char* seen_hash, const char* calc_hash,
-		const struct Tl_epoch_entry* e)
+		const struct drbd_epoch_entry* e)
 {
 	struct cn_msg *cn_reply;
 	struct drbd_nl_cfg_reply *reply;
