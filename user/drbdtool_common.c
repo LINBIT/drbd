@@ -381,13 +381,13 @@ void dt_print_uuids(const __u64* uuid, unsigned int flags)
 		printf(X64(016)":", uuid[i]);
 	}
 	printf("%d:%d:%d:%d:%d:%d:%d\n",
-	       flags & MDF_Consistent ? 1 : 0,
-	       flags & MDF_WasUpToDate ? 1 : 0,
-	       flags & MDF_PrimaryInd ? 1 : 0,
-	       flags & MDF_ConnectedInd ? 1 : 0,
-	       flags & MDF_FullSync ? 1 : 0,
-	       flags & MDF_PeerOutDated ? 1 : 0,
-	       flags & MDF_CrashedPrimary ? 1 : 0);
+	       flags & MDF_CONSISTENT ? 1 : 0,
+	       flags & MDF_WAS_UP_TO_DATE ? 1 : 0,
+	       flags & MDF_PRIMARY_IND ? 1 : 0,
+	       flags & MDF_CONNECTED_IND ? 1 : 0,
+	       flags & MDF_FULL_SYNC ? 1 : 0,
+	       flags & MDF_PEER_OUT_DATED ? 1 : 0,
+	       flags & MDF_CRASHED_PRIMARY ? 1 : 0);
 }
 
 void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)

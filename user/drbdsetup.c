@@ -433,16 +433,16 @@ static const char *error_messages[] = {
 	EM(ERR_NOMEM_BITMAP) = "vmalloc() failed. Out of memory?",
 	EM(ERR_INTEGRITY_ALG) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
-	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
-	EM(CPUMaskParseFailed) = "Invalid cpu-mask.",
-	EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
-	EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
-	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
-	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
-	EM(MayNotBeConnected) = "Not possible while connected",
-	EM(CSUMSAlgNotAvail) = "CSUMSAlgNotAvail",
-	EM(CSUMSAlgNotDigest) = "CSUMSAlgNotDigest",
-	EM(CSUMSResyncRunning) = "Can not change csums-alg while resync is in progress",
+	EM(ERR_INTEGRITY_ALG_ND) = "The 'data-integrity-alg' you specified is not a digest.",
+	EM(ERR_CPU_MASK_PARSE) = "Invalid cpu-mask.",
+	EM(ERR_VERIFY_ALG) = "VERIFYAlgNotAvail",
+	EM(ERR_VERIFY_ALG_ND) = "VERIFYAlgNotDigest",
+	EM(ERR_VERIFY_RUNNING) = "Can not change verify-alg while online verify runs",
+	EM(ERR_DATA_NOT_CURRENT) = "Can only attach to the data we lost last (see kernel log).",
+	EM(ERR_CONNECTED) = "Not possible while connected",
+	EM(ERR_CSUMS_ALG) = "CSUMSAlgNotAvail",
+	EM(ERR_CSUMS_ALG_ND) = "CSUMSAlgNotDigest",
+	EM(ERR_CSUMS_RESYNC_RUNNING) = "Can not change csums-alg while resync is in progress",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -1338,8 +1338,8 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	ignore_minor_not_known =
 		cm->gp.show_function == status_xml_scmd ||
 		cm->gp.show_function == sh_status_scmd;
-	if (reply->ret_code != NoError &&
-	   !(reply->ret_code == MinorNotKnown && ignore_minor_not_known))
+	if (reply->ret_code != NO_ERROR &&
+	   !(reply->ret_code == ERR_MINOR_INVALID && ignore_minor_not_known))
 		return print_config_error(reply->ret_code);
 
 	rv = cm->gp.show_function(cm,minor,reply->tag_list);
@@ -1972,7 +1972,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
 	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
 	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
-	if (rr != UT_Default) {
+	if (rr != UT_DEFAULT) {
 		if (0 < wfc_timeout &&
 		      (wfc_timeout < degr_wfc_timeout || degr_wfc_timeout == 0)) {
 			degr_wfc_timeout = wfc_timeout;
@@ -1992,13 +1992,13 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	}
 
 	switch (rr) {
-	case UT_Default:
+	case UT_DEFAULT:
 		timeout_ms = wfc_timeout;
 		break;
-	case UT_Degraded:
+	case UT_DEGRADED:
 		timeout_ms = degr_wfc_timeout;
 		break;
-	case UT_PeerOutdated:
+	case UT_PEER_OUTDATED:
 		timeout_ms = outdated_wfc_timeout;
 		break;
 	}

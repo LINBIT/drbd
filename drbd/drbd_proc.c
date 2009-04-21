@@ -177,7 +177,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 	  pe .. pending (waiting for ack or data reply)
 	  ua .. unack'd (still need to send ack or data reply)
 	  ap .. application requests accepted, but not yet completed
-	  ep .. number of epochs currently "on the fly", BarrierAck pending
+	  ep .. number of epochs currently "on the fly", P_BARRIER_ACK pending
 	  wo .. write ordering mode currently in use
 	 oos .. known out-of-sync kB
 	*/
@@ -237,7 +237,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		    mdev->state.conn == C_SYNC_TARGET)
 			drbd_syncer_progress(mdev, seq);
 
-		if (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT)
+		if (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T)
 			seq_printf(seq, "\t%3d%%      %lu/%lu\n",
 				   (int)((mdev->rs_total-mdev->ov_left) /
 					 (mdev->rs_total/100+1)),

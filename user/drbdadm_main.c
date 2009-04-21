@@ -2734,7 +2734,7 @@ struct adm_cmd *find_cmd(char *cmdname)
 	if (!strncmp("help", cmdname, 5))
 		print_usage_and_exit(0);
 
-	/* Primary / Secondary is not a state, but a role.  Whatever that
+	/* R_PRIMARY / R_SECONDARY is not a state, but a role.  Whatever that
 	 * means, actually.  But anyways, we decided to start using _role_ as
 	 * the terminus of choice, and deprecate "state". */
 	substitute_deprecated_cmd(&cmdname, "state", "role");

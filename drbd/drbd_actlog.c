@@ -236,7 +236,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 	D_ASSERT(atomic_read(&mdev->local_cnt) > 0);
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 	       dev_info(DEV, "al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
 		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
@@ -277,7 +277,7 @@ void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 	struct lc_element *extent;
 	unsigned long flags;
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 	       dev_info(DEV, "al_complete_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
 		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
@@ -980,7 +980,7 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       dev_info(DEV, "drbd_set_in_sync: sector=%llus size=%u sbnr=%lu ebnr=%lu\n",
 		    (unsigned long long)sector, size, sbnr, ebnr);
 	    );
@@ -1059,7 +1059,7 @@ void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       dev_info(DEV, "drbd_set_out_of_sync: sector=%llus size=%u "
 		    "sbnr=%lu ebnr=%lu\n",
 		    (unsigned long long)sector, size, sbnr, ebnr);
@@ -1160,7 +1160,7 @@ int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	int i, sig;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       dev_info(DEV, "drbd_rs_begin_io: sector=%llus (rs_end=%d)\n",
 		    (unsigned long long)sector, enr);
 	    );
@@ -1210,7 +1210,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	int i;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       dev_info(DEV, "drbd_try_rs_begin_io: sector=%llus\n",
 		    (unsigned long long)sector);
 	    );
@@ -1230,7 +1230,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		 * the lc_put here...
 		 * we also have to wake_up
 		 */
-		MTRACE(TraceTypeResync, TraceLvlAll,
+		MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 			dev_info(DEV, "dropping %u, aparently got 'synced' "
 			     "by application io\n", mdev->resync_wenr);
 		);
@@ -1259,7 +1259,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 			 * but then could not set BME_LOCKED,
 			 * so we tried again.
 			 * drop the extra reference. */
-			MTRACE(TraceTypeResync, TraceLvlAll,
+			MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 				dev_info(DEV, "dropping extra reference on %u\n", enr);
 			);
 			bm_ext->lce.refcnt--;
@@ -1268,7 +1268,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		goto check_al;
 	} else {
 		if (mdev->resync_locked > mdev->resync->nr_elements-3) {
-			MTRACE(TraceTypeResync, TraceLvlAll,
+			MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 				dev_info(DEV, "resync_locked = %u!\n", mdev->resync_locked);
 			);
 			goto try_again;
@@ -1295,7 +1295,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		goto check_al;
 	}
 check_al:
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 		dev_info(DEV, "checking al for %u\n", enr);
 	);
 	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
@@ -1311,7 +1311,7 @@ proceed:
 	return 0;
 
 try_again:
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 		dev_info(DEV, "need to try again for %u\n", enr);
 	);
 	if (bm_ext)
@@ -1326,7 +1326,7 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	unsigned long flags;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       dev_info(DEV, "drbd_rs_complete_io: sector=%llus (rs_enr=%d)\n",
 		    (long long)sector, enr);
 	    );
@@ -1363,7 +1363,7 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
  */
 void drbd_rs_cancel_all(struct drbd_conf *mdev)
 {
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       dev_info(DEV, "drbd_rs_cancel_all\n");
 	    );
 
@@ -1390,7 +1390,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 	struct bm_extent *bm_ext;
 	int i;
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       dev_info(DEV, "drbd_rs_del_all\n");
 	    );
 
@@ -1444,7 +1444,7 @@ void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 	sector_t esector, nr_sectors;
 	int wake_up = 0;
 
-	MTRACE(TraceTypeResync, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_SUMMARY,
 	       dev_info(DEV, "drbd_rs_failed_io: sector=%llus, size=%u\n",
 		    (unsigned long long)sector, size);
 	    );

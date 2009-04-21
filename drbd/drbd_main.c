@@ -776,13 +776,13 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 		  ns.disk == D_OUTDATED)
 		rv = SS_CONNECTED_OUTDATES;
 
-	else if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
+	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
 		 (mdev->sync_conf.verify_alg[0] == 0))
-		rv = SS_NoVerifyAlg;
+		rv = SS_NO_VERIFY_ALG;
 
-	else if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
+	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
 		  mdev->agreed_pro_version < 88)
-		rv = SS_NotSupported;
+		rv = SS_NOT_SUPPORTED;
 
 	return rv;
 }
@@ -814,8 +814,8 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if (ns.conn == os.conn && ns.conn == C_WF_REPORT_PARAMS)
 		rv = SS_IN_TRANSIENT_STATE;
 
-	if ((ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected)
-		rv = SS_NeedConnection;
+	if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) && os.conn < C_CONNECTED)
+		rv = SS_NEED_CONNECTION;
 
 	if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
 	    ns.conn != os.conn && os.conn > C_CONNECTED)
@@ -889,8 +889,8 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	if (ns.conn <= C_DISCONNECTING && ns.disk == D_DISKLESS)
 		ns.pdsk = D_UNKNOWN;
 
-	if (os.conn > Connected && ns.conn > Connected &&
-	    (ns.disk <= Failed || ns.pdsk <= Failed)) {
+	if (os.conn > C_CONNECTED && ns.conn > C_CONNECTED &&
+	    (ns.disk <= D_FAILED || ns.pdsk <= D_FAILED)) {
 		warn_sync_abort = 1;
 		ns.conn = C_CONNECTED;
 	}
@@ -909,12 +909,12 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		case C_PAUSED_SYNC_S:
 			ns.disk = D_UP_TO_DATE;
 			break;
-		case SyncTarget:
-			ns.disk = Inconsistent;
+		case C_SYNC_TARGET:
+			ns.disk = D_INCONSISTENT;
 			dev_warn(DEV, "Implicitly set disk state Inconsistent!\n");
 			break;
 		}
-		if (os.disk == Outdated && ns.disk == UpToDate)
+		if (os.disk == D_OUTDATED && ns.disk == D_UP_TO_DATE)
 			dev_warn(DEV, "Implicitly set disk from Outdated to UpToDate\n");
 	}
 
@@ -931,12 +931,12 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		case C_PAUSED_SYNC_S:
 			ns.pdsk = D_OUTDATED;
 			break;
-		case SyncSource:
-			ns.pdsk = Inconsistent;
+		case C_SYNC_SOURCE:
+			ns.pdsk = D_INCONSISTENT;
 			dev_warn(DEV, "Implicitly set pdsk Inconsistent!\n");
 			break;
 		}
-		if (os.pdsk == Outdated && ns.pdsk == UpToDate)
+		if (os.pdsk == D_OUTDATED && ns.pdsk == D_UP_TO_DATE)
 			dev_warn(DEV, "Implicitly set pdsk from Outdated to UpToDate\n");
 	}
 
@@ -948,8 +948,8 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			ns.pdsk = mdev->new_state_tmp.pdsk;
 		} else {
 			dev_alert(DEV, "Connection lost while negotiating, no data!\n");
-			ns.disk = Diskless;
-			ns.pdsk = DUnknown;
+			ns.disk = D_DISKLESS;
+			ns.pdsk = D_UNKNOWN;
 		}
 		dec_local(mdev);
 	}
@@ -1043,8 +1043,8 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		mod_timer(&mdev->resync_timer, jiffies);
 	}
 
-	if ((os.conn == PausedSyncT || os.conn == PausedSyncS) &&
-	    (ns.conn == SyncTarget  || ns.conn == SyncSource)) {
+	if ((os.conn == C_PAUSED_SYNC_T || os.conn == C_PAUSED_SYNC_S) &&
+	    (ns.conn == C_SYNC_TARGET  || ns.conn == C_SYNC_SOURCE)) {
 		dev_info(DEV, "Syncer continues.\n");
 		mdev->rs_paused += (long)jiffies-(long)mdev->rs_mark_time;
 		if (ns.conn == C_SYNC_TARGET) {
@@ -1057,16 +1057,16 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		}
 	}
 
-	if ((os.conn == SyncTarget  || os.conn == SyncSource) &&
-	    (ns.conn == PausedSyncT || ns.conn == PausedSyncS)) {
+	if ((os.conn == C_SYNC_TARGET  || os.conn == C_SYNC_SOURCE) &&
+	    (ns.conn == C_PAUSED_SYNC_T || ns.conn == C_PAUSED_SYNC_S)) {
 		dev_info(DEV, "Resync suspended\n");
 		mdev->rs_mark_time = jiffies;
 		if (ns.conn == C_PAUSED_SYNC_T)
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	}
 
-	if (os.conn == Connected &&
-	    (ns.conn == VerifyS || ns.conn == VerifyT)) {
+	if (os.conn == C_CONNECTED &&
+	    (ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T)) {
 		mdev->ov_position = 0;
 		mdev->ov_left  =
 		mdev->rs_total =
@@ -1076,28 +1076,28 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		mdev->ov_last_oos_size = 0;
 		mdev->ov_last_oos_start = 0;
 
-		if (ns.conn == VerifyS)
+		if (ns.conn == C_VERIFY_S)
 			mod_timer(&mdev->resync_timer, jiffies);
 	}
 
 	if (inc_local(mdev)) {
-		u32 mdf = mdev->bc->md.flags & ~(MDF_Consistent|MDF_PrimaryInd|
-						 MDF_ConnectedInd|MDF_WasUpToDate|
-						 MDF_PeerOutDated|MDF_CrashedPrimary);
+		u32 mdf = mdev->bc->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
+						 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
+						 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY);
 
 		if (test_bit(CRASHED_PRIMARY, &mdev->flags))
-			mdf |= MDF_CrashedPrimary;
-		if (mdev->state.role == Primary ||
-		    (mdev->state.pdsk < Inconsistent && mdev->state.peer == Primary))
-			mdf |= MDF_PrimaryInd;
-		if (mdev->state.conn > WFReportParams)
-			mdf |= MDF_ConnectedInd;
-		if (mdev->state.disk > Inconsistent)
-			mdf |= MDF_Consistent;
-		if (mdev->state.disk > Outdated)
-			mdf |= MDF_WasUpToDate;
-		if (mdev->state.pdsk <= Outdated && mdev->state.pdsk >= Inconsistent)
-			mdf |= MDF_PeerOutDated;
+			mdf |= MDF_CRASHED_PRIMARY;
+		if (mdev->state.role == R_PRIMARY ||
+		    (mdev->state.pdsk < D_INCONSISTENT && mdev->state.peer == R_PRIMARY))
+			mdf |= MDF_PRIMARY_IND;
+		if (mdev->state.conn > C_WF_REPORT_PARAMS)
+			mdf |= MDF_CONNECTED_IND;
+		if (mdev->state.disk > D_INCONSISTENT)
+			mdf |= MDF_CONSISTENT;
+		if (mdev->state.disk > D_OUTDATED)
+			mdf |= MDF_WAS_UP_TO_DATE;
+		if (mdev->state.pdsk <= D_OUTDATED && mdev->state.pdsk >= D_INCONSISTENT)
+			mdf |= MDF_PEER_OUT_DATED;
 		if (mdf != mdev->bc->md.flags) {
 			mdev->bc->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
@@ -1159,7 +1159,7 @@ static void abw_start_sync(struct drbd_conf *mdev, int rv)
 {
 	if (rv) {
 		dev_err(DEV, "Writing the bitmap failed not starting resync.\n");
-		_drbd_request_state(mdev, NS(conn, Connected), ChgStateVerbose);
+		_drbd_request_state(mdev, NS(conn, C_CONNECTED), CS_VERBOSE);
 		return;
 	}
 
@@ -1220,17 +1220,17 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		drbd_queue_bitmap_io(mdev, &drbd_send_bitmap, NULL, "send_bitmap (WFBitMapS)");
 
 	/* Lost contact to peer's copy of the data */
-	if ((os.pdsk >= Inconsistent &&
-	     os.pdsk != DUnknown &&
-	     os.pdsk != Outdated)
-	&&  (ns.pdsk < Inconsistent ||
-	     ns.pdsk == DUnknown ||
-	     ns.pdsk == Outdated)) {
+	if ((os.pdsk >= D_INCONSISTENT &&
+	     os.pdsk != D_UNKNOWN &&
+	     os.pdsk != D_OUTDATED)
+	&&  (ns.pdsk < D_INCONSISTENT ||
+	     ns.pdsk == D_UNKNOWN ||
+	     ns.pdsk == D_OUTDATED)) {
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (inc_local(mdev)) {
-			if ((ns.role == Primary || ns.peer == Primary) &&
-			    mdev->bc->md.uuid[Bitmap] == 0 && ns.disk >= UpToDate) {
+			if ((ns.role == R_PRIMARY || ns.peer == R_PRIMARY) &&
+			    mdev->bc->md.uuid[UI_BITMAP] == 0 && ns.disk >= D_UP_TO_DATE) {
 				drbd_uuid_new_current(mdev);
 				drbd_send_uuids(mdev);
 			}
@@ -1238,8 +1238,8 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state_t os,
 		}
 	}
 
-	if (ns.pdsk < Inconsistent && inc_local(mdev)) {
-		if (ns.peer == Primary && mdev->bc->md.uuid[Bitmap] == 0)
+	if (ns.pdsk < D_INCONSISTENT && inc_local(mdev)) {
+		if (ns.peer == R_PRIMARY && mdev->bc->md.uuid[UI_BITMAP] == 0)
 			drbd_uuid_new_current(mdev);
 
 		/* D_DISKLESS Peer becomes secondary */
@@ -1662,7 +1662,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	sock = mdev->data.socket;
 
 	if (likely(sock != NULL)) {
-		enum Drbd_Packet_Cmd cmd = apv >= 89 ? SyncParam89 : SyncParam;
+		enum Drbd_Packet_Cmd cmd = apv >= 89 ? P_SYNC_PARAM89 : P_SYNC_PARAM;
 
 		p = &mdev->data.sbuf.SyncParam89;
 
@@ -1720,10 +1720,10 @@ int _drbd_send_uuids(struct drbd_conf *mdev, u64 uuid_flags)
 	struct Drbd_GenCnt_Packet p;
 	int i;
 
-	if (!inc_local_if_state(mdev, Negotiating))
+	if (!inc_local_if_state(mdev, D_NEGOTIATING))
 		return 1;
 
-	for (i = Current; i < UUID_SIZE; i++)
+	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		p.uuid[i] = mdev->bc ? cpu_to_be64(mdev->bc->md.uuid[i]) : 0;
 
 	mdev->comm_bm_set = drbd_bm_total_weight(mdev);
@@ -2055,7 +2055,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 		return FAILED;
 	if (len) {
 		DCBP_set_code(p, 0 ? RLE_VLI_Bytes : RLE_VLI_BitsFibD_3_5);
-		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportCBitMap, h,
+		ok = _drbd_send_cmd(mdev, mdev->data.socket, P_COMPRESSED_BITMAP, h,
 			sizeof(*p) + len, 0);
 
 		c->packets[0]++;
@@ -2070,7 +2070,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 		len = num_words * sizeof(long);
 		if (len)
 			drbd_bm_get_lel(mdev, c->word_offset, num_words, (unsigned long*)h->payload);
-		ok = _drbd_send_cmd(mdev, mdev->data.socket, ReportBitMap,
+		ok = _drbd_send_cmd(mdev, mdev->data.socket, P_BITMAP,
 				   h, sizeof(struct Drbd_Header) + len, 0);
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;
@@ -2106,7 +2106,7 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 	}
 
 	if (inc_local(mdev)) {
-		if (drbd_md_test_flag(mdev->bc, MDF_FullSync)) {
+		if (drbd_md_test_flag(mdev->bc, MDF_FULL_SYNC)) {
 			dev_info(DEV, "Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(mdev);
 			if (drbd_bm_write(mdev)) {
@@ -2273,7 +2273,7 @@ int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
 	p.block_id = BE_DRBD_MAGIC + 0xbabe;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev, USE_DATA_SOCKET, OVRequest,
+	ok = drbd_send_cmd(mdev, USE_DATA_SOCKET, P_OV_REQUEST,
 			   (struct Drbd_Header *)&p, sizeof(p));
 	return ok;
 }
@@ -2380,7 +2380,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		}
 		len    -= sent;
 		offset += sent;
-	} while (len > 0 /* THINK && mdev->cstate >= Connected*/);
+	} while (len > 0 /* THINK && mdev->cstate >= C_CONNECTED*/);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &mdev->flags);
 
@@ -2701,7 +2701,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
-	MTRACE(TraceTypeUnplug, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_UNPLUG, TRACE_LVL_SUMMARY,
 	       dev_info(DEV, "got unplugged ap_bio_count=%d\n",
 		    atomic_read(&mdev->ap_bio_cnt));
 	       );
@@ -3386,7 +3386,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!inc_local_if_state(mdev, D_FAILED))
 		return;
 
-	MTRACE(TraceTypeMDIO, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_MD_IO, TRACE_LVL_SUMMARY,
 	       dev_info(DEV, "Writing meta data super block now.\n");
 	       );
 
@@ -3451,13 +3451,13 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		/* NOTE: cant do normal error processing here as this is
 		   called BEFORE disk is attached */
 		dev_err(DEV, "Error while reading metadata.\n");
-		rv = MDIOError;
+		rv = ERR_IO_MD_DISK;
 		goto err;
 	}
 
 	if (be32_to_cpu(buffer->magic) != DRBD_MD_MAGIC) {
 		dev_err(DEV, "Error while reading metadata, magic not found.\n");
-		rv = MDInvalid;
+		rv = ERR_MD_INVALID;
 		goto err;
 	}
 	if (be32_to_cpu(buffer->al_offset) != bdev->md.al_offset) {
@@ -3572,10 +3572,10 @@ void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 	u64 val;
 
 	dev_info(DEV, "Creating new current UUID\n");
-	D_ASSERT(mdev->bc->md.uuid[Bitmap] == 0);
-	mdev->bc->md.uuid[Bitmap] = mdev->bc->md.uuid[Current];
-	MTRACE(TraceTypeUuid, TraceLvlMetrics,
-	       drbd_print_uuid(mdev, Bitmap);
+	D_ASSERT(mdev->bc->md.uuid[UI_BITMAP] == 0);
+	mdev->bc->md.uuid[UI_BITMAP] = mdev->bc->md.uuid[UI_CURRENT];
+	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
+	       drbd_print_uuid(mdev, UI_BITMAP);
 		);
 
 	get_random_bytes(&val, sizeof(u64));
@@ -3597,7 +3597,7 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 		       drbd_print_uuid(mdev, UI_BITMAP);
 			);
 	} else {
-		if (mdev->bc->md.uuid[Bitmap])
+		if (mdev->bc->md.uuid[UI_BITMAP])
 			dev_warn(DEV, "bm UUID already set");
 
 		mdev->bc->md.uuid[UI_BITMAP] = val;
@@ -4034,7 +4034,7 @@ STATIC char *dump_st(char *p, int len, union drbd_state_t mask, union drbd_state
 
 #define INFOP(fmt, args...) \
 do { \
-	if (trace_level >= TraceLvlAll) { \
+	if (trace_level >= TRACE_LVL_ALL) { \
 		dev_info(DEV, "%s:%d: %s [%d] %s %s " fmt , \
 		     file, line, current->comm, current->pid, \
 		     sockname, recv ? "<<<" : ">>>" , \
@@ -4072,8 +4072,8 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 			be32_to_cpu(p->HandShake.protocol_max));
 		break;
 
-	case ReportBitMap: /* don't report this */
-	case ReportCBitMap: /* don't report this */
+	case P_BITMAP: /* don't report this */
+	case P_COMPRESSED_BITMAP: /* don't report this */
 		break;
 
 	case P_DATA:
@@ -4122,14 +4122,14 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 		INFOP("%s (barrier %u)\n", cmdname(cmd), p->Barrier.barrier);
 		break;
 
-	case SyncParam:
-	case SyncParam89:
+	case P_SYNC_PARAM:
+	case P_SYNC_PARAM89:
 		INFOP("%s (rate %u, verify-alg \"%.64s\", csums-alg \"%.64s\")\n",
 			cmdname(cmd), be32_to_cpu(p->SyncParam89.rate),
 			p->SyncParam89.verify_alg, p->SyncParam89.csums_alg);
 		break;
 
-	case ReportUUIDs:
+	case P_UUIDS:
 		INFOP("%s Curr:%016llX, Bitmap:%016llX, "
 		      "HisSt:%016llX, HisEnd:%016llX\n",
 		      cmdname(cmd),

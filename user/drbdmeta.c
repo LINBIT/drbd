@@ -826,13 +826,13 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 			if (!m_strsep_u64(str, &md->uuid[i])) return;
 		}
-		if (!m_strsep_bit(str, &md->flags, MDF_Consistent)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_WasUpToDate)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_PrimaryInd)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_ConnectedInd)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_FullSync)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_PeerOutDated)) break;
-		if (!m_strsep_bit(str, &md->flags, MDF_CrashedPrimary)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PRIMARY_IND)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CONNECTED_IND)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_FULL_SYNC)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PEER_OUT_DATED)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CRASHED_PRIMARY)) break;
 	} while (0);
 }
 

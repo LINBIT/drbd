@@ -282,59 +282,59 @@ extern struct drbd_conf **minor_table;
 
 enum Drbd_Packet_Cmd {
 	/* receiver (data socket) */
-	Data              = 0x00,
-	DataReply         = 0x01, /* Response to DataRequest */
-	RSDataReply       = 0x02, /* Response to RSDataRequest */
-	Barrier           = 0x03,
-	ReportBitMap      = 0x04,
-	BecomeSyncTarget  = 0x05,
-	BecomeSyncSource  = 0x06,
-	UnplugRemote      = 0x07, /* Used at various times to hint the peer */
-	DataRequest       = 0x08, /* Used to ask for a data block */
-	RSDataRequest     = 0x09, /* Used to ask for a data block for resync */
-	SyncParam         = 0x0a,
-	ReportProtocol    = 0x0b,
-	ReportUUIDs       = 0x0c,
-	ReportSizes       = 0x0d,
-	ReportState       = 0x0e,
-	ReportSyncUUID    = 0x0f,
-	AuthChallenge     = 0x10,
-	AuthResponse      = 0x11,
-	StateChgRequest   = 0x12,
+	P_DATA		      = 0x00,
+	P_DATA_REPLY	      = 0x01, /* Response to P_DATA_REQUEST */
+	P_RS_DATA_REPLY	      = 0x02, /* Response to P_RS_DATA_REQUEST */
+	P_BARRIER	      = 0x03,
+	P_BITMAP	      = 0x04,
+	P_BECOME_SYNC_TARGET  = 0x05,
+	P_BECOME_SYNC_SOURCE  = 0x06,
+	P_UNPLUG_REMOTE	      = 0x07, /* Used at various times to hint the peer */
+	P_DATA_REQUEST	      = 0x08, /* Used to ask for a data block */
+	P_RS_DATA_REQUEST     = 0x09, /* Used to ask for a data block for resync */
+	P_SYNC_PARAM	      = 0x0a,
+	P_PROTOCOL	      = 0x0b,
+	P_UUIDS		      = 0x0c,
+	P_SIZES		      = 0x0d,
+	P_STATE		      = 0x0e,
+	P_SYNC_UUID	      = 0x0f,
+	P_AUTH_CHALLENGE      = 0x10,
+	P_AUTH_RESPONSE	      = 0x11,
+	P_STATE_CHG_REQ	      = 0x12,
 
 	/* asender (meta socket */
-	Ping              = 0x13,
-	PingAck           = 0x14,
-	RecvAck           = 0x15, /* Used in protocol B */
-	WriteAck          = 0x16, /* Used in protocol C */
-	RSWriteAck        = 0x17, /* Is a WriteAck, additionally call set_in_sync(). */
-	DiscardAck        = 0x18, /* Used in proto C, two-primaries conflict detection */
-	NegAck            = 0x19, /* Sent if local disk is unusable */
-	NegDReply         = 0x1a, /* Local disk is broken... */
-	NegRSDReply       = 0x1b, /* Local disk is broken... */
-	BarrierAck        = 0x1c,
-	StateChgReply     = 0x1d,
+	P_PING		      = 0x13,
+	P_PING_ACK	      = 0x14,
+	P_RECV_ACK	      = 0x15, /* Used in protocol B */
+	P_WRITE_ACK	      = 0x16, /* Used in protocol C */
+	P_RS_WRITE_ACK	      = 0x17, /* Is a P_WRITE_ACK, additionally call set_in_sync(). */
+	P_DISCARD_ACK	      = 0x18, /* Used in proto C, two-primaries conflict detection */
+	P_NEG_ACK	      = 0x19, /* Sent if local disk is unusable */
+	P_NEG_DREPLY	      = 0x1a, /* Local disk is broken... */
+	P_NEG_RS_DREPLY	      = 0x1b, /* Local disk is broken... */
+	P_BARRIER_ACK	      = 0x1c,
+	P_STATE_CHG_REPLY     = 0x1d,
 
 	/* "new" commands, no longer fitting into the ordering scheme above */
 
-	OVRequest         = 0x1e, /* data socket */
-	OVReply           = 0x1f,
-	OVResult          = 0x20, /* meta socket */
-	CsumRSRequest     = 0x21, /* data socket */
-	RSIsInSync        = 0x22, /* meta socket */
-	SyncParam89       = 0x23, /* data socket, protocol version 89 replacement for SyncParam */
-	ReportCBitMap     = 0x24, /* compressed or otherwise encoded bitmap transfer */
+	P_OV_REQUEST	      = 0x1e, /* data socket */
+	P_OV_REPLY	      = 0x1f,
+	P_OV_RESULT	      = 0x20, /* meta socket */
+	P_CSUM_RS_REQUEST     = 0x21, /* data socket */
+	P_RS_IS_IN_SYNC	      = 0x22, /* meta socket */
+	P_SYNC_PARAM89	      = 0x23, /* data socket, protocol version 89 replacement for P_SYNC_PARAM */
+	P_COMPRESSED_BITMAP   = 0x24, /* compressed or otherwise encoded bitmap transfer */
 
-	MAX_CMD           = 0x25,
-	MayIgnore         = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
-	MAX_OPT_CMD       = 0x101,
+	P_MAX_CMD	      = 0x25,
+	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
+	P_MAX_OPT_CMD	      = 0x101,
 
 	/* special command ids for handshake */
 
-	HandShakeM        = 0xfff1, /* First Packet on the MetaSock */
-	HandShakeS        = 0xfff2, /* First Packet on the Socket */
+	P_HAND_SHAKE_M	      = 0xfff1, /* First Packet on the MetaSock */
+	P_HAND_SHAKE_S	      = 0xfff2, /* First Packet on the Socket */
 
-	HandShake         = 0xfffe  /* FIXED for the next century! */
+	P_HAND_SHAKE	      = 0xfffe	/* FIXED for the next century! */
 };
 
 static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
@@ -343,50 +343,50 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 	 * when we want to support more than
 	 * one PRO_VERSION */
 	static const char *cmdnames[] = {
-		[Data]		   = "Data",
-		[DataReply]	   = "DataReply",
-		[RSDataReply]	   = "RSDataReply",
-		[Barrier]	   = "Barrier",
-		[ReportBitMap]	   = "ReportBitMap",
-		[BecomeSyncTarget] = "BecomeSyncTarget",
-		[BecomeSyncSource] = "BecomeSyncSource",
-		[UnplugRemote]	   = "UnplugRemote",
-		[DataRequest]	   = "DataRequest",
-		[RSDataRequest]    = "RSDataRequest",
-		[SyncParam]	   = "SyncParam",
-		[SyncParam89]	   = "SyncParam89",
-		[ReportProtocol]   = "ReportProtocol",
-		[ReportUUIDs]	   = "ReportUUIDs",
-		[ReportSizes]	   = "ReportSizes",
-		[ReportState]	   = "ReportState",
-		[ReportSyncUUID]   = "ReportSyncUUID",
-		[AuthChallenge]    = "AuthChallenge",
-		[AuthResponse]	   = "AuthResponse",
-		[Ping]		   = "Ping",
-		[PingAck]	   = "PingAck",
-		[RecvAck]	   = "RecvAck",
-		[WriteAck]	   = "WriteAck",
-		[RSWriteAck]	   = "RSWriteAck",
-		[DiscardAck]	   = "DiscardAck",
-		[NegAck]	   = "NegAck",
-		[NegDReply]	   = "NegDReply",
-		[NegRSDReply]	   = "NegRSDReply",
-		[BarrierAck]	   = "BarrierAck",
-		[StateChgRequest]  = "StateChgRequest",
-		[StateChgReply]    = "StateChgReply",
-		[OVRequest]        = "OVRequest",
-		[OVReply]          = "OVReply",
-		[OVResult]         = "OVResult",
-		[MAX_CMD]	   = NULL,
+		[P_DATA]	        = "Data",
+		[P_DATA_REPLY]	        = "DataReply",
+		[P_RS_DATA_REPLY]	= "RSDataReply",
+		[P_BARRIER]	        = "Barrier",
+		[P_BITMAP]	        = "ReportBitMap",
+		[P_BECOME_SYNC_TARGET]  = "BecomeSyncTarget",
+		[P_BECOME_SYNC_SOURCE]  = "BecomeSyncSource",
+		[P_UNPLUG_REMOTE]	= "UnplugRemote",
+		[P_DATA_REQUEST]	= "DataRequest",
+		[P_RS_DATA_REQUEST]     = "RSDataRequest",
+		[P_SYNC_PARAM]	        = "SyncParam",
+		[P_SYNC_PARAM89]	= "SyncParam89",
+		[P_PROTOCOL]            = "ReportProtocol",
+		[P_UUIDS]	        = "ReportUUIDs",
+		[P_SIZES]	        = "ReportSizes",
+		[P_STATE]	        = "ReportState",
+		[P_SYNC_UUID]           = "ReportSyncUUID",
+		[P_AUTH_CHALLENGE]      = "AuthChallenge",
+		[P_AUTH_RESPONSE]	= "AuthResponse",
+		[P_PING]		= "Ping",
+		[P_PING_ACK]	        = "PingAck",
+		[P_RECV_ACK]	        = "RecvAck",
+		[P_WRITE_ACK]	        = "WriteAck",
+		[P_RS_WRITE_ACK]	= "RSWriteAck",
+		[P_DISCARD_ACK]	        = "DiscardAck",
+		[P_NEG_ACK]	        = "NegAck",
+		[P_NEG_DREPLY]	        = "NegDReply",
+		[P_NEG_RS_DREPLY]	= "NegRSDReply",
+		[P_BARRIER_ACK]	        = "BarrierAck",
+		[P_STATE_CHG_REQ]       = "StateChgRequest",
+		[P_STATE_CHG_REPLY]     = "StateChgReply",
+		[P_OV_REQUEST]          = "OVRequest",
+		[P_OV_REPLY]            = "OVReply",
+		[P_OV_RESULT]           = "OVResult",
+		[P_MAX_CMD]	        = NULL,
 	};
 
-	if (cmd == HandShakeM)
+	if (cmd == P_HAND_SHAKE_M)
 		return "HandShakeM";
-	if (cmd == HandShakeS)
+	if (cmd == P_HAND_SHAKE_S)
 		return "HandShakeS";
-	if (cmd == HandShake)
+	if (cmd == P_HAND_SHAKE)
 		return "HandShake";
-	if (cmd >= MAX_CMD)
+	if (cmd >= P_MAX_CMD)
 		return "Unknown";
 	return cmdnames[cmd];
 }
@@ -404,7 +404,7 @@ struct bm_xfer_ctx {
 	unsigned long bit_offset;
 	unsigned long word_offset;
 
-	/* statistics; index: (h->command == ReportBitMap) */
+	/* statistics; index: (h->command == P_BITMAP) */
 	unsigned packets[2];
 	unsigned bytes[2];
 };
@@ -460,9 +460,9 @@ struct Drbd_Header {
 
 /*
  * commands with out-of-struct payload:
- *   ReportBitMap    (no additional fields)
- *   Data, DataReply (see Drbd_Data_Packet)
- *   ReportCBitMap (see receive_compressed_bitmap)
+ *   P_BITMAP    (no additional fields)
+ *   P_DATA, P_DATA_REPLY (see Drbd_Data_Packet)
+ *   P_COMPRESSED_BITMAP (see receive_compressed_bitmap)
  */
 
 /* these defines must not be changed without changing the protocol version */
@@ -1756,7 +1756,7 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
  * Besides the basic forms NS() and _NS() additional _?NS[23] are defined
  * to express state changes that affect more than one aspect of the state.
  *
- * E.g. NS2(conn, Connected, peer, Secondary)
+ * E.g. NS2(conn, C_CONNECTED, peer, R_SECONDARY)
  * Means that the network connection was established and that the peer
  * is in secondary role.
  */
@@ -1849,10 +1849,10 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 			break;
 		}
 		/* NOTE fall through to detach case if forcedetach set */
-	case Detach:
-	case CallIOEHelper:
-		if (mdev->state.disk > Failed) {
-			_drbd_set_state(_NS(mdev, disk, Failed), ChgStateHard, NULL);
+	case EP_DETACH:
+	case EP_CALL_HELPER:
+		if (mdev->state.disk > D_FAILED) {
+			_drbd_set_state(_NS(mdev, disk, D_FAILED), CS_HARD, NULL);
 			dev_err(DEV, "Local IO failed. Detaching...\n");
 		}
 		break;
@@ -2352,7 +2352,7 @@ static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 {
 	mdev->ed_uuid = val;
 
-	MTRACE(TraceTypeUuid, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
 	       dev_info(DEV, " exposed data uuid now %016llX\n",
 		    (unsigned long long)val);
 		);

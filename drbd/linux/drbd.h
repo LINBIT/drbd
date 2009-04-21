@@ -152,7 +152,7 @@ enum drbd_role {
 /* The order of these constants is important.
  * The lower ones (<C_WF_REPORT_PARAMS) indicate
  * that there is no socket!
- * >=WFReportParams ==> There is a socket
+ * >=C_WF_REPORT_PARAMS ==> There is a socket
  */
 enum drbd_conns {
 	C_STANDALONE,
@@ -290,7 +290,7 @@ extern const char *set_st_err_name(enum set_st_err);
 #define MDF_FULL_SYNC		(1 << 3)
 #define MDF_WAS_UP_TO_DATE	(1 << 4)
 #define MDF_PEER_OUT_DATED	(1 << 5)
-#define MDF_CrashedPrimary      (1 << 6)
+#define MDF_CRASHED_PRIMARY      (1 << 6)
 
 enum UuidIndex {
 	UI_CURRENT,
@@ -303,9 +303,9 @@ enum UuidIndex {
 };
 
 enum UseTimeout {
-	UT_Default      = 0,
-	UT_Degraded     = 1,
-	UT_PeerOutdated = 2,
+	UT_DEFAULT      = 0,
+	UT_DEGRADED     = 1,
+	UT_PEER_OUTDATED = 2,
 };
 
 #define UUID_JUST_CREATED ((__u64)4)
