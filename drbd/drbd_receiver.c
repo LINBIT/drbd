@@ -64,17 +64,17 @@ struct flush_work {
 };
 
 enum epoch_event {
-	EV_put,
-	EV_got_barrier_nr,
-	EV_barrier_done,
-	EV_became_last,
-	EV_cleanup = 32, /* used as flag */
+	EV_PUT,
+	EV_GOT_BARRIER_NR,
+	EV_BARRIER_DONE,
+	EV_BECAME_LAST,
+	EV_CLEANUP = 32, /* used as flag */
 };
 
 enum finish_epoch {
-	FE_still_live,
-	FE_destroyed,
-	FE_recycled,
+	FE_STILL_LIVE,
+	FE_DESTROYED,
+	FE_RECYCLED,
 };
 
 STATIC int drbd_do_handshake(struct drbd_conf *mdev);
@@ -450,9 +450,9 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 			if (e->flags & EE_IS_BARRIER) {
 				epoch = previous_epoch(mdev, e->epoch);
 				if (epoch)
-					drbd_may_finish_epoch(mdev, epoch, EV_barrier_done + EV_cleanup);
+					drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE + EV_CLEANUP);
 			}
-			drbd_may_finish_epoch(mdev, e->epoch, EV_put + EV_cleanup);
+			drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + EV_CLEANUP);
 		}
 		drbd_free_ee(mdev, e);
 	}
@@ -999,7 +999,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 		dec_local(mdev);
 	}
 
-	return drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
 }
 
 /**
@@ -1016,8 +1016,8 @@ STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(mdev, epoch);
 
-	drbd_may_finish_epoch(mdev, epoch, EV_put |
-			      (mdev->state.conn < C_CONNECTED ? EV_cleanup : 0));
+	drbd_may_finish_epoch(mdev, epoch, EV_PUT |
+			      (mdev->state.conn < C_CONNECTED ? EV_CLEANUP : 0));
 
 	return 1;
 }
@@ -1033,13 +1033,13 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	int finish, epoch_size;
 	struct drbd_epoch *next_epoch;
 	int schedule_flush = 0;
-	enum finish_epoch rv = FE_still_live;
+	enum finish_epoch rv = FE_STILL_LIVE;
 
 	static char *epoch_event_str[] = {
-		[EV_put] = "put",
-		[EV_got_barrier_nr] = "got_barrier_nr",
-		[EV_barrier_done] = "barrier_done",
-		[EV_became_last] = "became_last",
+		[EV_PUT] = "put",
+		[EV_GOT_BARRIER_NR] = "got_barrier_nr",
+		[EV_BARRIER_DONE] = "barrier_done",
+		[EV_BECAME_LAST] = "became_last",
 	};
 
 	spin_lock(&mdev->epoch_lock);
@@ -1049,11 +1049,11 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 
 		epoch_size = atomic_read(&epoch->epoch_size);
 
-		switch (ev & ~EV_cleanup) {
-		case EV_put:
+		switch (ev & ~EV_CLEANUP) {
+		case EV_PUT:
 			atomic_dec(&epoch->active);
 			break;
-		case EV_got_barrier_nr:
+		case EV_GOT_BARRIER_NR:
 			set_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags);
 
 			/* Special case: If we just switched from WO_bio_barrier to
@@ -1063,10 +1063,10 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			    epoch == mdev->current_epoch)
 				clear_bit(DE_CONTAINS_A_BARRIER, &epoch->flags);
 			break;
-		case EV_barrier_done:
+		case EV_BARRIER_DONE:
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags);
 			break;
-		case EV_became_last:
+		case EV_BECAME_LAST:
 			/* nothing to do*/
 			break;
 		}
@@ -1090,7 +1090,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
 			    mdev->write_ordering == WO_none ||
 			    (epoch_size == 1 && test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) ||
-			    ev & EV_cleanup) {
+			    ev & EV_CLEANUP) {
 				finish = 1;
 				set_bit(DE_IS_FINISHING, &epoch->flags);
 			} else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
@@ -1100,7 +1100,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			}
 		}
 		if (finish) {
-			if (!(ev & EV_cleanup)) {
+			if (!(ev & EV_CLEANUP)) {
 				spin_unlock(&mdev->epoch_lock);
 				drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size);
 				spin_lock(&mdev->epoch_lock);
@@ -1110,7 +1110,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			if (mdev->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
 				list_del(&epoch->list);
-				ev = EV_became_last | (ev & EV_cleanup);
+				ev = EV_BECAME_LAST | (ev & EV_CLEANUP);
 				mdev->epochs--;
 				MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_SUMMARY,
 				       dev_info(DEV, "Freeing epoch %p/%d { size=%d } nr_epochs=%d\n",
@@ -1118,14 +1118,14 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 					);
 				kfree(epoch);
 
-				if (rv == FE_still_live)
-					rv = FE_destroyed;
+				if (rv == FE_STILL_LIVE)
+					rv = FE_DESTROYED;
 			} else {
 				epoch->flags = 0;
 				atomic_set(&epoch->epoch_size, 0);
 				/* atomic_set(&epoch->active, 0); is alrady zero */
-				if (rv == FE_still_live)
-					rv = FE_recycled;
+				if (rv == FE_STILL_LIVE)
+					rv = FE_RECYCLED;
 			}
 		}
 
@@ -1152,8 +1152,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			dev_warn(DEV, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 			/* That is not a recursion, only one level */
-			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
-			drbd_may_finish_epoch(mdev, epoch, EV_put);
+			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
+			drbd_may_finish_epoch(mdev, epoch, EV_PUT);
 		}
 	}
 
@@ -1256,7 +1256,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct p_header *h)
 		drbd_kick_lo(mdev);
 
 	mdev->current_epoch->barrier_nr = p->barrier;
-	rv = drbd_may_finish_epoch(mdev, mdev->current_epoch, EV_got_barrier_nr);
+	rv = drbd_may_finish_epoch(mdev, mdev->current_epoch, EV_GOT_BARRIER_NR);
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
@@ -1266,17 +1266,17 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct p_header *h)
 	switch (mdev->write_ordering) {
 	case WO_bio_barrier:
 	case WO_none:
-		if (rv == FE_recycled)
+		if (rv == FE_RECYCLED)
 			return TRUE;
 		break;
 
 	case WO_bdev_flush:
 	case WO_drain_io:
-		D_ASSERT(rv == FE_still_live);
+		D_ASSERT(rv == FE_STILL_LIVE);
 		set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &mdev->current_epoch->flags);
 		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 		rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
-		if (rv == FE_recycled)
+		if (rv == FE_RECYCLED)
 			return TRUE;
 
 		/* The asender will send all the ACKs and barrier ACKs out, since
@@ -1292,7 +1292,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct p_header *h)
 		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 		if (issue_flush) {
 			rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
-			if (rv == FE_recycled)
+			if (rv == FE_RECYCLED)
 				return TRUE;
 		}
 
@@ -1622,7 +1622,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	if (e->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(mdev, e->epoch);
 		if (epoch)
-			drbd_may_finish_epoch(mdev, epoch, EV_barrier_done);
+			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
 	}
 
 	if (mdev->net_conf->wire_protocol == DRBD_PROT_C) {
@@ -1656,7 +1656,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		D_ASSERT(hlist_unhashed(&e->colision));
 	}
 
-	drbd_may_finish_epoch(mdev, e->epoch, EV_put);
+	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT);
 
 	return ok;
 }
