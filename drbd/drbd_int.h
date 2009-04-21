@@ -377,9 +377,6 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[OVRequest]        = "OVRequest",
 		[OVReply]          = "OVReply",
 		[OVResult]         = "OVResult",
-		[CsumRSRequest]    = "CsumRSRequest",
-		[RSIsInSync]       = "RSIsInSync",
-		[ReportCBitMap]    = "ReportCBitMap",
 		[MAX_CMD]	   = NULL,
 	};
 
@@ -454,11 +451,11 @@ struct Drbd_Header {
 
 /*
  * short commands, packets without payload, plain Drbd_Header:
- *   Ping
- *   PingAck
- *   BecomeSyncTarget
- *   BecomeSyncSource
- *   UnplugRemote
+ *   P_PING
+ *   P_PING_ACK
+ *   P_BECOME_SYNC_TARGET
+ *   P_BECOME_SYNC_SOURCE
+ *   P_UNPLUG_REMOTE
  */
 
 /*
@@ -484,10 +481,10 @@ struct Drbd_Data_Packet {
 /*
  * commands which share a struct:
  *  Drbd_BlockAck_Packet:
- *   RecvAck (proto B), WriteAck (proto C),
- *   DiscardAck (proto C, two-primaries conflict detection)
+ *   P_RECV_ACK (proto B), P_WRITE_ACK (proto C),
+ *   P_DISCARD_ACK (proto C, two-primaries conflict detection)
  *  Drbd_BlockRequest_Packet:
- *   DataRequest, RSDataRequest
+ *   P_DATA_REQUEST, P_RS_DATA_REQUEST
  */
 struct Drbd_BlockAck_Packet {
 	struct Drbd_Header head;
@@ -508,10 +505,10 @@ struct Drbd_BlockRequest_Packet {
 
 /*
  * commands with their own struct for additional fields:
- *   HandShake
- *   Barrier
- *   BarrierAck
- *   SyncParam
+ *   P_HAND_SHAKE
+ *   P_BARRIER
+ *   P_BARRIER_ACK
+ *   P_SYNC_PARAM
  *   ReportParams
  */
 
@@ -574,7 +571,7 @@ struct Drbd_Protocol_Packet {
 
 struct Drbd_GenCnt_Packet {
 	struct Drbd_Header head;
-	u64 uuid[EXT_UUID_SIZE];
+	u64 uuid[UI_EXTENDED_SIZE];
 } __attribute((packed));
 
 struct Drbd_SyncUUID_Packet {
@@ -795,8 +792,8 @@ struct drbd_request;
 /* These Tl_epoch_entries may be in one of 6 lists:
    active_ee .. data packet being written
    sync_ee   .. syncer block being written
-   done_ee   .. block written, need to send WriteAck
-   read_ee   .. [RS]DataRequest being read
+   done_ee   .. block written, need to send P_WRITE_ACK
+   read_ee   .. [RS]P_DATA_REQUEST being read
 */
 
 struct drbd_epoch {
@@ -851,7 +848,7 @@ enum {
 
 /* global flag bits */
 enum {
-	CREATE_BARRIER,		/* next Data is preceeded by a Barrier */
+	CREATE_BARRIER,		/* next P_DATA is preceeded by a P_BARRIER */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	SEND_PING,		/* whether asender should send a ping asap */
 	WORK_PENDING,		/* completion flag for drbd_disconnect */
@@ -866,7 +863,7 @@ enum {
 	CL_ST_CHG_FAIL,
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
-				 * goes into Connected state. */
+				 * goes into C_CONNECTED state. */
 	WRITE_BM_AFTER_RESYNC,	/* A kmalloc() during resync failed */
 	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
 	CONSIDER_RESYNC,
@@ -918,7 +915,7 @@ struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
 	u64 la_size_sect;	/* last agreed size, unit sectors */
-	u64 uuid[UUID_SIZE];
+	u64 uuid[UI_SIZE];
 	u64 device_uuid;
 	u32 flags;
 	u32 md_size_sect;
@@ -1158,11 +1155,11 @@ static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 /* drbd_main.c */
 
 enum chg_state_flags {
-	ChgStateHard	= 1,
-	ChgStateVerbose = 2,
-	ChgWaitComplete = 4,
-	ChgSerialize    = 8,
-	ChgOrdered      = ChgWaitComplete + ChgSerialize,
+	CS_HARD	= 1,
+	CS_VERBOSE = 2,
+	CS_WAIT_COMPLETE = 4,
+	CS_SERIALIZE    = 8,
+	CS_ORDERED      = CS_WAIT_COMPLETE + CS_SERIALIZE,
 };
 
 extern void drbd_init_set_defaults(struct drbd_conf *mdev);
@@ -1469,25 +1466,25 @@ extern int trace_devs;
 extern int trace_level;
 
 enum {
-	TraceLvlAlways = 0,
-	TraceLvlSummary,
-	TraceLvlMetrics,
-	TraceLvlAll,
-	TraceLvlMax
+	TRACE_LVL_ALWAYS = 0,
+	TRACE_LVL_SUMMARY,
+	TRACE_LVL_METRICS,
+	TRACE_LVL_ALL,
+	TRACE_LVL_MAX
 };
 
 enum {
-	TraceTypePacket = 0x00000001,
-	TraceTypeRq	= 0x00000002,
-	TraceTypeUuid	= 0x00000004,
-	TraceTypeResync = 0x00000008,
-	TraceTypeEE	= 0x00000010,
-	TraceTypeUnplug = 0x00000020,
-	TraceTypeNl	= 0x00000040,
-	TraceTypeALExts = 0x00000080,
-	TraceTypeIntRq  = 0x00000100,
-	TraceTypeMDIO   = 0x00000200,
-	TraceTypeEpochs = 0x00000400,
+	TRACE_TYPE_PACKET  = 0x00000001,
+	TRACE_TYPE_RQ	   = 0x00000002,
+	TRACE_TYPE_UUID	   = 0x00000004,
+	TRACE_TYPE_RESYNC  = 0x00000008,
+	TRACE_TYPE_EE	   = 0x00000010,
+	TRACE_TYPE_UNPLUG  = 0x00000020,
+	TRACE_TYPE_NL	   = 0x00000040,
+	TRACE_TYPE_AL_EXTS = 0x00000080,
+	TRACE_TYPE_INT_RQ  = 0x00000100,
+	TRACE_TYPE_MD_IO   = 0x00000200,
+	TRACE_TYPE_EPOCHS  = 0x00000400,
 };
 
 static inline int
@@ -1536,14 +1533,14 @@ extern void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, 
 static inline void dump_bio(struct drbd_conf *mdev,
 		struct bio *bio, int complete, struct drbd_request *r)
 {
-	MTRACE(TraceTypeRq, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_SUMMARY,
 	       _dump_bio("Rq", mdev, bio, complete, r);
 		);
 }
 
 static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
 {
-	MTRACE(TraceTypeIntRq, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_INT_RQ, TRACE_LVL_SUMMARY,
 	       _dump_bio(pfx, mdev, bio, complete, NULL);
 		);
 }
@@ -1557,7 +1554,7 @@ static inline void
 dump_packet(struct drbd_conf *mdev, struct socket *sock,
 	    int recv, union Drbd_Polymorph_Packet *p, char *file, int line)
 {
-	MTRACE(TraceTypePacket, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_PACKET, TRACE_LVL_SUMMARY,
 	       _dump_packet(mdev, sock, recv, p, file, line);
 		);
 }
@@ -1763,11 +1760,14 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
  * Means that the network connection was established and that the peer
  * is in secondary role.
  */
-#define peer_mask role_mask
-#define pdsk_mask disk_mask
-#define susp_mask 1
-#define user_isp_mask 1
-#define aftr_isp_mask 1
+#define role_MASK R_MASK
+#define peer_MASK R_MASK
+#define disk_MASK D_MASK
+#define pdsk_MASK D_MASK
+#define conn_MASK C_MASK
+#define susp_MASK 1
+#define user_isp_MASK 1
+#define aftr_isp_MASK 1
 
 /* drbd state debug */
 #if DRBD_DEBUG_STATE_CHANGES
@@ -1777,16 +1777,16 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 #endif
 
 #define NS(T, S) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T = T##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T = (S); val; })
 #define NS2(T1, S1, T2, S2) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-	  mask.T2 = T2##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_MASK; \
+	  mask.T2 = T2##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val; })
 #define NS3(T1, S1, T2, S2, T3, S3) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-	  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_MASK; \
+	  mask.T2 = T2##_MASK; mask.T3 = T3##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
@@ -1832,7 +1832,7 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 				     union drbd_state_t mask,
 				     union drbd_state_t val)
 {
-	return _drbd_request_state(mdev, mask, val, ChgStateVerbose + ChgOrdered);
+	return _drbd_request_state(mdev, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
 /**
@@ -1842,7 +1842,7 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 {
 	switch (mdev->bc->dc.on_io_error) {
-	case PassOn: /* FIXME would this be better named "Ignore"? */
+	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
 				dev_err(DEV, "Local IO failed. Passing error on...\n");
@@ -2006,13 +2006,13 @@ static inline int drbd_send_short_cmd(struct drbd_conf *mdev,
 static inline int drbd_send_ping(struct drbd_conf *mdev)
 {
 	struct Drbd_Header h;
-	return drbd_send_cmd(mdev, USE_META_SOCKET, Ping, &h, sizeof(h));
+	return drbd_send_cmd(mdev, USE_META_SOCKET, P_PING, &h, sizeof(h));
 }
 
 static inline int drbd_send_ping_ack(struct drbd_conf *mdev)
 {
 	struct Drbd_Header h;
-	return drbd_send_cmd(mdev, USE_META_SOCKET, PingAck, &h, sizeof(h));
+	return drbd_send_cmd(mdev, USE_META_SOCKET, P_PING_ACK, &h, sizeof(h));
 }
 
 static inline void drbd_thread_stop(struct Drbd_thread *thi)
@@ -2044,7 +2044,7 @@ static inline void drbd_thread_restart_nowait(struct Drbd_thread *thi)
  *  _req_mod(req, data_received)
  *     [from receive_DataReply]
  *  _req_mod(req, write_acked_by_peer or recv_acked_by_peer or neg_acked)
- *     [from got_BlockAck (WriteAck, RecvAck)]
+ *     [from got_BlockAck (P_WRITE_ACK, P_RECV_ACK)]
  *     FIXME
  *     for some reason it is NOT decreased in got_NegAck,
  *     but in the resulting cleanup code from report_params.
@@ -2072,9 +2072,9 @@ static inline void inc_ap_pending(struct drbd_conf *mdev)
 
 /* counts how many resync-related answers we still expect from the peer
  *		     increase			decrease
- * SyncTarget sends RSDataRequest (and expects RSDataReply)
- * SyncSource sends RSDataReply   (and expects WriteAck whith ID_SYNCER)
- *					   (or NegAck with ID_SYNCER)
+ * C_SYNC_TARGET sends P_RS_DATA_REQUEST (and expects P_RS_DATA_REPLY)
+ * C_SYNC_SOURCE sends P_RS_DATA_REPLY   (and expects P_WRITE_ACK whith ID_SYNCER)
+ *					   (or P_NEG_ACK with ID_SYNCER)
  */
 static inline void inc_rs_pending(struct drbd_conf *mdev)
 {
@@ -2089,11 +2089,11 @@ static inline void inc_rs_pending(struct drbd_conf *mdev)
 /* counts how many answers we still need to send to the peer.
  * increased on
  *  receive_Data	unless protocol A;
- *			we need to send a RecvAck (proto B)
- *			or WriteAck (proto C)
- *  receive_RSDataReply (recv_resync_read) we need to send a WriteAck
- *  receive_DataRequest (receive_RSDataRequest) we need to send back Data
- *  receive_Barrier_*	we need to send a BarrierAck
+ *			we need to send a P_RECV_ACK (proto B)
+ *			or P_WRITE_ACK (proto C)
+ *  receive_RSDataReply (recv_resync_read) we need to send a P_WRITE_ACK
+ *  receive_DataRequest (receive_RSDataRequest) we need to send back P_DATA
+ *  receive_Barrier_*	we need to send a P_BARRIER_ACK
  */
 static inline void inc_unacked(struct drbd_conf *mdev)
 {
@@ -2126,7 +2126,7 @@ static inline int inc_net(struct drbd_conf *mdev)
 	int have_net_conf;
 
 	atomic_inc(&mdev->net_cnt);
-	have_net_conf = mdev->state.conn >= Unconnected;
+	have_net_conf = mdev->state.conn >= C_UNCONNECTED;
 	if (!have_net_conf)
 		dec_net(mdev);
 	return have_net_conf;
@@ -2137,7 +2137,7 @@ static inline int inc_net(struct drbd_conf *mdev)
  * TRUE you should call dec_local() after IO is completed.
  */
 #define inc_local_if_state(M,MINS) __cond_lock(local, _inc_local_if_state(M,MINS))
-#define inc_local(M) __cond_lock(local, _inc_local_if_state(M,Inconsistent))
+#define inc_local(M) __cond_lock(local, _inc_local_if_state(M,D_INCONSISTENT))
 
 static inline void dec_local(struct drbd_conf *mdev)
 {
@@ -2221,54 +2221,54 @@ static inline int drbd_state_is_stable(union drbd_state_t s)
 
 	switch ((enum drbd_conns)s.conn) {
 	/* new io only accepted when there is no connection, ... */
-	case StandAlone:
-	case WFConnection:
+	case C_STANDALONE:
+	case C_WF_CONNECTION:
 	/* ... or there is a well established connection. */
-	case Connected:
-	case SyncSource:
-	case SyncTarget:
-	case VerifyS:
-	case VerifyT:
-	case PausedSyncS:
-	case PausedSyncT:
+	case C_CONNECTED:
+	case C_SYNC_SOURCE:
+	case C_SYNC_TARGET:
+	case C_VERIFY_S:
+	case C_VERIFY_T:
+	case C_PAUSED_SYNC_S:
+	case C_PAUSED_SYNC_T:
 		/* maybe stable, look at the disk state */
 		break;
 
 	/* no new io accepted during tansitional states
 	 * like handshake or teardown */
-	case Disconnecting:
-	case Unconnected:
-	case Timeout:
-	case BrokenPipe:
-	case NetworkFailure:
-	case ProtocolError:
-	case TearDown:
-	case WFReportParams:
-	case StartingSyncS:
-	case StartingSyncT:
-	case WFBitMapS:
-	case WFBitMapT:
-	case WFSyncUUID:
-	case conn_mask:
+	case C_DISCONNECTING:
+	case C_UNCONNECTED:
+	case C_TIMEOUT:
+	case C_BROKEN_PIPE:
+	case C_NETWORK_FAILURE:
+	case C_PROTOCOL_ERROR:
+	case C_TEAR_DOWN:
+	case C_WF_REPORT_PARAMS:
+	case C_STARTING_SYNC_S:
+	case C_STARTING_SYNC_T:
+	case C_WF_BITMAP_S:
+	case C_WF_BITMAP_T:
+	case C_WF_SYNC_UUID:
+	case C_MASK:
 		/* not "stable" */
 		return 0;
 	}
 
 	switch ((enum drbd_disk_state)s.disk) {
-	case Diskless:
-	case Inconsistent:
-	case Outdated:
-	case Consistent:
-	case UpToDate:
+	case D_DISKLESS:
+	case D_INCONSISTENT:
+	case D_OUTDATED:
+	case D_CONSISTENT:
+	case D_UP_TO_DATE:
 		/* disk state is stable as well. */
 		break;
 
 	/* no new io accepted during tansitional states */
-	case Attaching:
-	case Failed:
-	case Negotiating:
-	case DUnknown:
-	case disk_mask:
+	case D_ATTACHING:
+	case D_FAILED:
+	case D_NEGOTIATING:
+	case D_UNKNOWN:
+	case D_MASK:
 		/* not "stable" */
 		return 0;
 	}
@@ -2308,7 +2308,7 @@ static inline int __inc_ap_bio_cond(struct drbd_conf *mdev)
 static inline void inc_ap_bio(struct drbd_conf *mdev, int one_or_two)
 {
 	/* compare with after_state_ch,
-	 * os.conn != WFBitMapS && ns.conn == WFBitMapS */
+	 * os.conn != C_WF_BITMAP_S && ns.conn == C_WF_BITMAP_S */
 	DEFINE_WAIT(wait);
 
 	/* we wait here

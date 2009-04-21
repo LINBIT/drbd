@@ -38,7 +38,7 @@
    Try to get the locking right :) */
 
 /*
- * Objects of type struct drbd_request do only exist on a Primary node, and are
+ * Objects of type struct drbd_request do only exist on a R_PRIMARY node, and are
  * associated with IO requests originating from the block layer above us.
  *
  * There are quite a few things that may happen to a drbd request
@@ -167,7 +167,7 @@ enum drbd_req_state_bits {
 	__RQ_NET_SENT,
 
 	/* when set, the request may be freed (if RQ_NET_QUEUED is clear).
-	 * basically this means the corresponding BarrierAck was received */
+	 * basically this means the corresponding P_BARRIER_ACK was received */
 	__RQ_NET_DONE,
 
 	/* whether or not we know (C) or pretend (B,A) that the write

@@ -530,7 +530,7 @@ typedef unsigned gfp_t;
 #ifndef KERNEL_HAS_PROC_CREATE
 static inline struct proc_dir_entry *proc_create(const char *name,
 	mode_t mode, struct proc_dir_entry *parent,
-	const struct file_operations *proc_fops)
+	struct file_operations *proc_fops)
 {
 	struct proc_dir_entry *pde = create_proc_entry(name, mode, parent);
 	if (pde)

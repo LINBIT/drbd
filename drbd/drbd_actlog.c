@@ -322,7 +322,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	 * TODO reduce maximum latency:
 	 * submit both bios, then wait for both,
 	 * instead of doing two synchronous sector writes. */
-	if (mdev->state.conn < Connected && evicted != LC_FREE)
+	if (mdev->state.conn < C_CONNECTED && evicted != LC_FREE)
 		drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
 
 	mutex_lock(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
@@ -634,7 +634,7 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
-	 * inc_local_if_state(mdev,Attaching);
+	 * inc_local_if_state(mdev,D_ATTACHING);
 	 * just get the extra reference, so that the local_cnt reflects
 	 * the number of pending IO requests DRBD at its backing device.
 	 */
@@ -656,7 +656,7 @@ out_bio_put:
  * drbd_al_to_on_disk_bm:
  * Writes the areas of the bitmap which are covered by the AL.
  * called when we detach (unconfigure) local storage,
- * or when we go from Primary to Secondary state.
+ * or when we go from R_PRIMARY to R_SECONDARY state.
  */
 void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 {
@@ -665,7 +665,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 	struct bio **bios;
 	struct drbd_atodb_wait wc;
 
-	ERR_IF (!inc_local_if_state(mdev, Attaching))
+	ERR_IF (!inc_local_if_state(mdev, D_ATTACHING))
 		return; /* sorry, I don't have any act_log etc... */
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -790,7 +790,7 @@ static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 		lc_del(mdev->act_log, al_ext);
 	spin_unlock_irq(&mdev->al_lock);
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 		if (unlikely(!rv))
 			dev_info(DEV, "Waiting for extent in drbd_al_shrink()\n");
 	       );
@@ -837,8 +837,8 @@ STATIC int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused
 
 	if (drbd_bm_total_weight(mdev) <= mdev->rs_failed) {
 		switch (mdev->state.conn) {
-		case SyncSource:  case SyncTarget:
-		case PausedSyncS: case PausedSyncT:
+		case C_SYNC_SOURCE:  case C_SYNC_TARGET:
+		case C_PAUSED_SYNC_S: case C_PAUSED_SYNC_T:
 			drbd_resync_finished(mdev);
 		default:
 			/* nothing to do */
@@ -887,7 +887,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				dump_stack();
 
 				lc_put(mdev->resync, &ext->lce);
-				drbd_force_state(mdev, NS(conn, Disconnecting));
+				drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 				return;
 			}
 		} else {
@@ -943,7 +943,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one ore more _aligned_ BM_BLOCK_SIZE blocks.
  *
- * called by worker on SyncTarget and receiver on SyncSource.
+ * called by worker on C_SYNC_TARGET and receiver on SyncSource.
  *
  */
 void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
@@ -1000,8 +1000,8 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 			/* should be roling marks,
 			 * but we estimate only anyways. */
 			if (mdev->rs_mark_left != drbd_bm_total_weight(mdev) &&
-			    mdev->state.conn != PausedSyncT &&
-			    mdev->state.conn != PausedSyncS) {
+			    mdev->state.conn != C_PAUSED_SYNC_T &&
+			    mdev->state.conn != C_PAUSED_SYNC_S) {
 				mdev->rs_mark_time = jiffies;
 				mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 			}
@@ -1369,7 +1369,7 @@ void drbd_rs_cancel_all(struct drbd_conf *mdev)
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if (inc_local_if_state(mdev, Failed)) { /* Makes sure ->resync is there. */
+	if (inc_local_if_state(mdev, D_FAILED)) { /* Makes sure ->resync is there. */
 		lc_reset(mdev->resync);
 		dec_local(mdev);
 	}
@@ -1396,7 +1396,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if (inc_local_if_state(mdev, Failed)) {
+	if (inc_local_if_state(mdev, D_FAILED)) {
 		/* ok, ->resync is there. */
 		for (i = 0; i < mdev->resync->nr_elements; i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
@@ -1433,7 +1433,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 
 /* Record information on a failure to resync the specified blocks
  *
- * called on SyncTarget when resync write fails or NegRSDReply received
+ * called on C_SYNC_TARGET when resync write fails or P_NEG_RS_DREPLY received
  *
  */
 void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
