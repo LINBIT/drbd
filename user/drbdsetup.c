@@ -407,34 +407,34 @@ static const char *error_messages[] = {
 	"\t==> Use 'drbdadm create-md res' to initialize meta-data area. <==\n",
 	EM(ERR_AUTH_ALG) = "The 'cram-hmac-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
-	EM(CRAMAlgNotDigest) = "The 'cram-hmac-alg' you specified is not a digest.",
-	EM(KMallocFailed) = "kmalloc() failed. Out of memory?",
-	EM(DiscardNotAllowed) = "--discard-my-data not allowed when primary.",
-	EM(HaveDiskConfig) = "Device is attached to a disk (use detach first)",
-	EM(HaveNetConfig) = "Device has a net-config (use disconnect first)",
-	EM(UnknownMandatoryTag) = "UnknownMandatoryTag",
-	EM(MinorNotKnown) = "Device minor not allocated",
-	EM(StateNotAllowed) = "Resulting device state would be invalid",
-	EM(GotSignal) = "Interrupted by Signal",
-	EM(NoResizeDuringResync) = "Resize not allowed during resync.",
-	EM(APrimaryNodeNeeded) = "Need one Primary node to resize.",
-	EM(SyncAfterInvalid) = "The sync-after minor number is invalid",
-	EM(SyncAfterCycle) = "This would cause a sync-after dependency cycle",
-	EM(PauseFlagAlreadySet) = "Sync-pause flag is already set",
-	EM(PauseFlagAlreadyClear) = "Sync-pause flag is already cleared",
-	EM(DiskLowerThanOutdated) = "Disk state is lower than outdated",
-	EM(HaveNoDiskConfig) = "Device does not have a disk-config",
-	EM(ProtocolCRequired) = "Protocol C required",
-	EM(VMallocFailed) = "vmalloc() failed. Out of memory?",
-	EM(IntegrityAlgNotAvail) = "The 'data-integrity-alg' you specified is not known in "
+	EM(ERR_AUTH_ALG_ND) = "The 'cram-hmac-alg' you specified is not a digest.",
+	EM(ERR_NOMEM) = "kmalloc() failed. Out of memory?",
+	EM(ERR_DISCARD) = "--discard-my-data not allowed when primary.",
+	EM(ERR_DISK_CONFIGURED) = "Device is attached to a disk (use detach first)",
+	EM(ERR_NET_CONFIGURED) = "Device has a net-config (use disconnect first)",
+	EM(ERR_MANDATORY_TAG) = "UnknownMandatoryTag",
+	EM(ERR_MINOR_INVALID) = "Device minor not allocated",
+	EM(128) = "Resulting device state would be invalid",
+	EM(ERR_INTR) = "Interrupted by Signal",
+	EM(ERR_RESIZE_RESYNC) = "Resize not allowed during resync.",
+	EM(ERR_NO_PRIMARY) = "Need one Primary node to resize.",
+	EM(ERR_SYNC_AFTER) = "The sync-after minor number is invalid",
+	EM(ERR_SYNC_AFTER_CYCLE) = "This would cause a sync-after dependency cycle",
+	EM(ERR_PAUSE_IS_SET) = "Sync-pause flag is already set",
+	EM(ERR_PAUSE_IS_CLEAR) = "Sync-pause flag is already cleared",
+	EM(136) = "Disk state is lower than outdated",
+	EM(ERR_NO_DISK) = "Device does not have a disk-config",
+	EM(ERR_NOT_PROTO_C) = "Protocol C required",
+	EM(ERR_NOMEM_BITMAP) = "vmalloc() failed. Out of memory?",
+	EM(ERR_INTEGRITY_ALG) = "The 'data-integrity-alg' you specified is not known in "
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
-	EM(IntegrityAlgNotDigest) = "The 'data-integrity-alg' you specified is not a digest.",
-	EM(CPUMaskParseFailed) = "Invalid cpu-mask.",
-	EM(VERIFYAlgNotAvail) = "VERIFYAlgNotAvail",
-	EM(VERIFYAlgNotDigest) = "VERIFYAlgNotDigest",
-	EM(VERIFYIsRunning) = "Can not change verify-alg while online verify runs",
-	EM(DataOfWrongCurrent) = "Can only attach to the data we lost last (see kernel log).",
-	EM(MayNotBeConnected) = "Not possible while connected",
+	EM(ERR_INTEGRITY_ALG_ND) = "The 'data-integrity-alg' you specified is not a digest.",
+	EM(ERR_CPU_MASK_PARSE) = "Invalid cpu-mask.",
+	EM(ERR_VERIFY_ALG) = "VERIFYAlgNotAvail",
+	EM(ERR_VERIFY_ALG_ND) = "VERIFYAlgNotDigest",
+	EM(ERR_VERIFY_RUNNING) = "Can not change verify-alg while online verify runs",
+	EM(ERR_DATA_NOT_CURRENT) = "Can only attach to the data we lost last (see kernel log).",
+	EM(ERR_CONNECTED) = "Not possible while connected",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -925,8 +925,8 @@ int print_config_error(int err_no)
 	if (err_no == OTHER_ERROR)
 		return 20;
 
-	if ( ( err_no >= AfterLastRetCode || err_no <= RetCodeBase ) &&
-	     ( err_no > SS_CW_NoNeed || err_no < SS_NotSupported) ) {
+	if ( ( err_no >= AFTER_LAST_ERR_CODE || err_no <= ERR_CODE_BASE ) &&
+	     ( err_no > SS_CW_NO_NEED || err_no < SS_NOT_SUPPORTED) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should update the drbd userland tools.\n",err_no);
 		rv = 20;
@@ -1326,8 +1326,8 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	/* if there was an error, report and abort --
 	 * unless it was "this device is not there",
 	 * and command was "status" */
-	if (reply->ret_code != NoError &&
-	   !(reply->ret_code == MinorNotKnown &&
+	if (reply->ret_code != NO_ERROR &&
+	   !(reply->ret_code == ERR_MINOR_INVALID &&
 	     cm->gp.show_function == status_xml_scmd))
 		return print_config_error(reply->ret_code);
 
@@ -1453,7 +1453,7 @@ int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	if (resname)
 		printf(" name=\"%s\"", resname);
 
-	if (state.conn == StandAlone && state.disk == Diskless) {
+	if (state.conn == C_STANDALONE && state.disk == D_DISKLESS) {
 		printf(" cs=\"Unconfigured\" />\n");
 		return 0;
 	}
@@ -1503,7 +1503,7 @@ int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 
 	available = consume_tag_int(T_state_i,rtl,(int*)&state.i);
 
-	if (state.conn == StandAlone && state.disk == Diskless) {
+	if (state.conn == C_STANDALONE && state.disk == D_DISKLESS) {
 		printf("%s_known=%s\n\n", _P,
 			available ? "Unconfigured"
 			          : "NA # not available or not yet created");

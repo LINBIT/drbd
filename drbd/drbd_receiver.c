@@ -1064,7 +1064,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			break;
 		}
 
-		MTRACE(TraceTypeEpochs, TraceLvlAll,
+		MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_ALL,
 		       INFO("Update epoch  %p/%d { size=%d active=%d %c%c n%c%c } ev=%s\n",
 			    epoch, epoch->barrier_nr, epoch_size, atomic_read(&epoch->active),
 			    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) ? 'n' : '-',
@@ -1105,7 +1105,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 				list_del(&epoch->list);
 				ev = EV_became_last | (ev & EV_cleanup);
 				mdev->epochs--;
-				MTRACE(TraceTypeEpochs, TraceLvlSummary,
+				MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_SUMMARY,
 				       INFO("Freeing epoch %p/%d { size=%d } nr_epochs=%d\n",
 					    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
 					);
@@ -1134,7 +1134,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
-			MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+			MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
 			       INFO("Schedul flush %p/%d { size=%d } nr_epochs=%d\n",
 				    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
 				);
@@ -1264,7 +1264,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
-	 * Primary crashes now.
+	 * R_PRIMARY crashes now.
 	 * Therefore we must send the barrier_ack after the barrier request was
 	 * completed. */
 	switch (mdev->write_ordering) {
@@ -1314,7 +1314,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct Drbd_Header *h)
 		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
-		MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+		MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
 		       INFO("Allocat epoch %p/xxxx { } nr_epochs=%d\n", epoch, mdev->epochs);
 			);
 	} else {
@@ -1784,7 +1784,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 			mdev->peer_seq++;
 		spin_unlock(&mdev->peer_seq_lock);
 
-		drbd_send_ack_dp(mdev, NegAck, p);
+		drbd_send_ack_dp(mdev, P_NEG_ACK, p);
 		atomic_inc(&mdev->current_epoch->epoch_size);
 		return drbd_drain_block(mdev, data_size);
 	}
@@ -1811,7 +1811,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		   a Barrier. */
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == e->epoch) {
-			MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+			MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
 			       INFO("Add barrier   %p/%d\n",
 				    epoch, epoch->barrier_nr);
 				);
@@ -1821,7 +1821,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct Drbd_Header *h)
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
-				MTRACE(TraceTypeEpochs, TraceLvlMetrics,
+				MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
 				       INFO("Add barrier   %p/%d, setting bi in %p/%d\n",
 					    e->epoch, e->epoch->barrier_nr,
 					    epoch, epoch->barrier_nr);
@@ -2100,7 +2100,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		}
 		break;
 
-	case OVReply:
+	case P_OV_REPLY:
 		fault_type = DRBD_FAULT_RS_RD;
 		digest_size = h->length - brps ;
 		di = kmalloc(sizeof(*di) + digest_size ,GFP_KERNEL);
@@ -2125,7 +2125,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct Drbd_Header *h)
 		dec_rs_pending(mdev);
 		break;
 
-	case OVRequest:
+	case P_OV_REQUEST:
 		e->w.cb = w_e_end_ov_req;
 		fault_type = DRBD_FAULT_RS_RD;
 		/* Eventually this should become asynchrously. Currently it
@@ -2903,11 +2903,11 @@ STATIC union drbd_state_t convert_state(union drbd_state_t ps)
 	static enum drbd_conns c_tab[] = {
 		[C_CONNECTED] = C_CONNECTED,
 
-		[StartingSyncS] = StartingSyncT,
-		[StartingSyncT] = StartingSyncS,
-		[Disconnecting] = TearDown, /* NetworkFailure, */
-		[VerifyS]       = VerifyT,
-		[conn_mask]   = conn_mask,
+		[C_STARTING_SYNC_S] = C_STARTING_SYNC_T,
+		[C_STARTING_SYNC_T] = C_STARTING_SYNC_S,
+		[C_DISCONNECTING] = C_TEAR_DOWN, /* C_NETWORK_FAILURE, */
+		[C_VERIFY_S]       = C_VERIFY_T,
+		[C_MASK]   = C_MASK,
 	};
 
 	ms.i = ps.i;
@@ -2945,7 +2945,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	val = convert_state(val);
 
 	DRBD_STATE_DEBUG_INIT_VAL(val);
-	rv = drbd_change_state(mdev, ChgStateVerbose, mask, val);
+	rv = drbd_change_state(mdev, CS_VERBOSE, mask, val);
 
 	drbd_send_sr_reply(mdev, rv);
 	drbd_md_sync(mdev);
@@ -3025,7 +3025,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct Drbd_Header *h)
 	if ((nconn == C_CONNECTED || nconn == C_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
 		ns.disk = mdev->new_state_tmp.disk;
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
-	rv = _drbd_set_state(mdev, ns, ChgStateVerbose | ChgStateHard, NULL);
+	rv = _drbd_set_state(mdev, ns, CS_VERBOSE | CS_HARD, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -3187,7 +3187,7 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[P_DATA]	    = receive_Data,
 	[P_DATA_REPLY]	    = receive_DataReply,
 	[P_RS_DATA_REPLY]   = receive_RSDataReply,
-	[P_BARRIER]	    = receive_Barrier_no_tcq,
+	[P_BARRIER]	    = receive_Barrier,
 	[P_BITMAP]	    = receive_bitmap,
 	[P_UNPLUG_REMOTE]   = receive_UnplugRemote,
 	[P_DATA_REQUEST]    = receive_DataRequest,
@@ -3199,8 +3199,8 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[P_STATE]	    = receive_state,
 	[P_STATE_CHG_REQ]   = receive_req_state,
 	[P_SYNC_UUID]       = receive_sync_uuid,
-	[OVRequest]        = receive_DataRequest,
-	[OVReply]          = receive_DataRequest,
+	[P_OV_REQUEST]      = receive_DataRequest,
+	[P_OV_REPLY]        = receive_DataRequest,
 	/* anything missing from this table is in
 	 * the asender_tbl, see get_asender_cmd */
 	[P_MAX_CMD]	    = NULL,
@@ -3378,9 +3378,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	if (os.conn >= C_UNCONNECTED) {
 		/* Do not restart in case we are C_DISCONNECTING */
 		ns = os;
-		ns.conn = Unconnected;
+		ns.conn = C_UNCONNECTED;
 		DRBD_STATE_DEBUG_INIT_VAL(ns);
-		rv = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+		rv = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -3467,7 +3467,7 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 	memset(p, 0, sizeof(*p));
 	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
-	ok = _drbd_send_cmd( mdev, mdev->data.socket, HandShake,
+	ok = _drbd_send_cmd( mdev, mdev->data.socket, P_HAND_SHAKE,
 			     (struct Drbd_Header *)p, sizeof(*p), 0 );
 	up(&mdev->data.mutex);
 	return ok;
@@ -3959,7 +3959,7 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	[P_BARRIER_ACK]	    = { sizeof(struct Drbd_BarrierAck_Packet), got_BarrierAck },
 	[P_STATE_CHG_REPLY] = { sizeof(struct Drbd_RqS_Reply_Packet), got_RqSReply },
 	};
-	if (cmd == OVResult)
+	if (cmd == P_OV_RESULT)
 		return &asender_tbl[cmd];
 	if (cmd < FIRST_ASENDER_CMD)
 		return NULL;

@@ -231,7 +231,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		    mdev->state.conn == C_SYNC_TARGET)
 			drbd_syncer_progress(mdev, seq);
 
-		if (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT)
+		if (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T)
 			seq_printf(seq,"\t%3d%%      %lu/%lu\n",
 				   (int)((mdev->rs_total-mdev->ov_left) /
 					 (mdev->rs_total/100+1)),
@@ -239,7 +239,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 				   mdev->rs_total);
 
 #ifdef ENABLE_DYNAMIC_TRACE
-		if (proc_details >= 1 && inc_local_if_state(mdev, Failed)) {
+		if (proc_details >= 1 && inc_local_if_state(mdev, D_FAILED)) {
 			lc_printf_stats(seq, mdev->resync);
 			lc_printf_stats(seq, mdev->act_log);
 			dec_local(mdev);

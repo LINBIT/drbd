@@ -337,26 +337,26 @@ enum Drbd_Packet_Cmd {
 	P_STATE_CHG_REQ,
 
 	FIRST_ASENDER_CMD,
-	Ping = FIRST_ASENDER_CMD,
-	PingAck,
-	RecvAck,      /* Used in protocol B */
-	WriteAck,     /* Used in protocol C */
-	RSWriteAck,   /* Is a WriteAck, additionally call set_in_sync(). */
-	DiscardAck,   /* Used in proto C, two-primaries conflict detection */
-	NegAck,       /* Sent if local disk is unusable */
-	NegDReply,    /* Local disk is broken... */
-	NegRSDReply,  /* Local disk is broken... */
-	BarrierAck,
-	StateChgReply,
-	LAST_ASENDER_CMD = StateChgReply,
+	P_PING = FIRST_ASENDER_CMD,
+	P_PING_ACK,
+	P_RECV_ACK,      /* Used in protocol B */
+	P_WRITE_ACK,     /* Used in protocol C */
+	P_RS_WRITE_ACK,   /* Is a P_WRITE_ACK, additionally call set_in_sync(). */
+	P_DISCARD_ACK,   /* Used in proto C, two-primaries conflict detection */
+	P_NEG_ACK,       /* Sent if local disk is unusable */
+	P_NEG_DREPLY,    /* Local disk is broken... */
+	P_NEG_RS_DREPLY,  /* Local disk is broken... */
+	P_BARRIER_ACK,
+	P_STATE_CHG_REPLY,
+	LAST_ASENDER_CMD = P_STATE_CHG_REPLY,
 
-	OVRequest,
-	OVReply,
-	OVResult, /* Exception to the FIRST/LAST ASENDER_CMD */
+	P_OV_REQUEST,
+	P_OV_REPLY,
+	P_OV_RESULT, /* Exception to the FIRST/LAST ASENDER_CMD */
 
-	MAX_CMD,
-	MayIgnore = 0x100, /* Flag to test if (cmd > MayIgnore) ... */
-	MAX_OPT_CMD,
+	P_MAX_CMD,
+	P_MAY_IGNORE = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
+	P_MAX_OPT_CMD,
 
 	/* FIXME
 	 * to get a more useful error message with drbd-8 <-> drbd 0.7.x,
@@ -402,10 +402,10 @@ static inline const char *cmdname(enum Drbd_Packet_Cmd cmd)
 		[P_NEG_RS_DREPLY]  = "NegRSDReply",
 		[P_BARRIER_ACK]	   = "BarrierAck",
 		[P_STATE_CHG_REQ]  = "StateChgRequest",
-		[P_STATE_CHG_REPLY]= "StateChgReply"
-		[OVRequest]        = "OVRequest",
-		[OVReply]          = "OVReply",
-		[OVResult]         = "OVResult",
+		[P_STATE_CHG_REPLY]= "StateChgReply",
+		[P_OV_REQUEST]     = "OVRequest",
+		[P_OV_REPLY]       = "OVReply",
+		[P_OV_RESULT]      = "OVResult",
 	};
 
 	if (P_DATA > cmd || cmd >= P_MAX_CMD) {
@@ -1390,7 +1390,7 @@ enum {
 	TRACE_TYPE_AL_EXTS = 0x00000080,
 	TRACE_TYPE_INT_RQ  = 0x00000100,
 	TRACE_TYPE_MD_IO   = 0x00000200,
-	TraceTypeEpochs = 0x00000400,
+	TRACE_TYPE_EPOCHS  = 0x00000400,
 };
 
 static inline int
@@ -1439,14 +1439,14 @@ extern void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, 
 static inline void dump_bio(struct drbd_conf *mdev,
 		struct bio *bio, int complete, struct drbd_request *r)
 {
-	MTRACE(TraceTypeRq, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_SUMMARY,
 	       _dump_bio("Rq", mdev, bio, complete, r);
 		);
 }
 
 static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
 {
-	MTRACE(TraceTypeIntRq, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_INT_RQ, TRACE_LVL_SUMMARY,
 	       _dump_bio(pfx, mdev, bio, complete, NULL);
 		);
 }
@@ -1669,16 +1669,16 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 #endif
 
 #define NS(T, S) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T = T##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T = T##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T = (S); val; })
 #define NS2(T1, S1, T2, S2) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-	  mask.T2 = T2##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_MASK; \
+	  mask.T2 = T2##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val; })
 #define NS3(T1, S1, T2, S2, T3, S3) \
-	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_mask; \
-	  mask.T2 = T2##_mask; mask.T3 = T3##_mask; mask; }), \
+	({ union drbd_state_t mask; mask.i = 0; mask.T1 = T1##_MASK; \
+	  mask.T2 = T2##_MASK; mask.T3 = T3##_MASK; mask; }), \
 	({ union drbd_state_t val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
@@ -2108,13 +2108,13 @@ static inline int drbd_state_is_stable(union drbd_state_t s)
 	case C_STANDALONE:
 	case C_WF_CONNECTION:
 	/* ... or there is a well established connection. */
-	case Connected:
-	case SyncSource:
-	case SyncTarget:
-	case VerifyS:
-	case VerifyT:
-	case PausedSyncS:
-	case PausedSyncT:
+	case C_CONNECTED:
+	case C_SYNC_SOURCE:
+	case C_SYNC_TARGET:
+	case C_VERIFY_S:
+	case C_VERIFY_T:
+	case C_PAUSED_SYNC_S:
+	case C_PAUSED_SYNC_T:
 		/* maybe stable, look at the disk state */
 		break;
 

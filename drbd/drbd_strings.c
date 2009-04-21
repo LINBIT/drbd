@@ -46,9 +46,9 @@ static const char *drbd_conn_s_names[] = {
 	[C_SYNC_SOURCE]      = "SyncSource",
 	[C_SYNC_TARGET]      = "SyncTarget",
 	[C_PAUSED_SYNC_S]    = "PausedSyncS",
-	[C_PAUSED_SYNC_T]    = "PausedSyncT"
-	[VerifyS]        = "VerifyS",
-	[VerifyT]        = "VerifyT",
+	[C_PAUSED_SYNC_T]    = "PausedSyncT",
+	[C_VERIFY_S]         = "VerifyS",
+	[C_VERIFY_T]         = "VerifyT",
 };
 
 static const char *drbd_role_s_names[] = {
@@ -70,24 +70,24 @@ static const char *drbd_disk_s_names[] = {
 };
 
 static const char *drbd_state_sw_errors[] = {
-	[-SS_TwoPrimaries] = "Multiple primaries not allowed by config",
-	[-SS_NoUpToDateDisk] = "Refusing to be Primary without at least one UpToDate disk",
-	[-SS_BothInconsistent] = "Refusing to be inconsistent on both nodes",
-	[-SS_SyncingDiskless] = "Refusing to be syncing and diskless",
-	[-SS_ConnectedOutdates] = "Refusing to be Outdated while Connected",
-	[-SS_PrimaryNOP] = "Refusing to be Primary while peer is not outdated",
-	[-SS_ResyncRunning] = "Can not start OV/resync since it is already active",
-	[-SS_AlreadyStandAlone] = "Can not disconnect a StandAlone device",
-	[-SS_CW_FailedByPeer] = "State changed was refused by peer node",
-	[-SS_IsDiskLess] = "Device is diskless, the requesed operation requires a disk",
-	[-SS_DeviceInUse] = "Device is held open by someone",
-	[-SS_NoNetConfig] = "Have no net/connection configuration",
-	[-SS_NoVerifyAlg] = "Need a verify algorithm to start online verify",
-	[-SS_NeedConnection] = "Need a connection to start verify or resync",
-	[-SS_NotSupported] = "Peer does not support protocol",
-	[-SS_LowerThanOutdated] = "Disk state is lower than outdated",
-	[-SS_InTransientState] = "In transient state, retry after next state change",
-	[-SS_ConcurrentStChg] = "Concurrent state changes detected and aborted",
+	[-SS_TWO_PRIMARIES] = "Multiple primaries not allowed by config",
+	[-SS_NO_UP_TO_DATE_DISK] = "Refusing to be Primary without at least one UpToDate disk",
+	[-SS_BOTH_INCONSISTENT] = "Refusing to be inconsistent on both nodes",
+	[-SS_SYNCING_DISKLESS] = "Refusing to be syncing and diskless",
+	[-SS_CONNECTED_OUTDATES] = "Refusing to be Outdated while Connected",
+	[-SS_PRIMARY_NOP] = "Refusing to be Primary while peer is not outdated",
+	[-SS_RESYNC_RUNNING] = "Can not start OV/resync since it is already active",
+	[-SS_ALREADY_STANDALONE] = "Can not disconnect a StandAlone device",
+	[-SS_CW_FAILED_BY_PEER] = "State changed was refused by peer node",
+	[-SS_IS_DISKLESS] = "Device is diskless, the requesed operation requires a disk",
+	[-SS_DEVICE_IN_USE] = "Device is held open by someone",
+	[-SS_NO_NET_CONFIG] = "Have no net/connection configuration",
+	[-SS_NO_VERIFY_ALG] = "Need a verify algorithm to start online verify",
+	[-SS_NEED_CONNECTION] = "Need a connection to start verify or resync",
+	[-SS_NOT_SUPPORTED] = "Peer does not support protocol",
+	[-SS_LOWER_THAN_OUTDATED] = "Disk state is lower than outdated",
+	[-SS_IN_TRANSIENT_STATE] = "In transient state, retry after next state change",
+	[-SS_CONCURRENT_ST_CHG] = "Concurrent state changes detected and aborted",
 };
 
 const char *conns_to_name(enum drbd_conns s)

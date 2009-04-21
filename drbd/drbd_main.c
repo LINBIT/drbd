@@ -124,9 +124,9 @@ int allow_oos;
 unsigned int cn_idx = CN_IDX_DRBD;
 
 #ifdef ENABLE_DYNAMIC_TRACE
-int trace_type;		/* Bitmap of trace types to enable */
-int trace_level;	/* Current trace level */
-int trace_devs;		/* Bitmap of devices to trace */
+int trace_type;		/* UI_BITMAP of trace types to enable */
+int trace_level;	/* UI_CURRENT trace level */
+int trace_devs;		/* UI_BITMAP of devices to trace */
 int proc_details;       /* Detail level in proc drbd*/
 
 module_param(trace_level, int, 0644);
@@ -457,13 +457,13 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
 			  union drbd_state_t os, union drbd_state_t ns)
 {
-	return (os.conn >= Connected && ns.conn >= Connected &&
-		 ((os.role != Primary && ns.role == Primary) ||
-		  (os.conn != StartingSyncT && ns.conn == StartingSyncT) ||
-		  (os.conn != StartingSyncS && ns.conn == StartingSyncS) ||
-		  (os.disk != Diskless && ns.disk == Diskless))) ||
-		(os.conn >= Connected && ns.conn == Disconnecting) ||
-		(os.conn == Connected && ns.conn == VerifyS);
+	return (os.conn >= C_CONNECTED && ns.conn >= C_CONNECTED &&
+		 ((os.role != R_PRIMARY && ns.role == R_PRIMARY) ||
+		  (os.conn != C_STARTING_SYNC_T && ns.conn == C_STARTING_SYNC_T) ||
+		  (os.conn != C_STARTING_SYNC_S && ns.conn == C_STARTING_SYNC_S) ||
+		  (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))) ||
+		(os.conn >= C_CONNECTED && ns.conn == C_DISCONNECTING) ||
+		(os.conn == C_CONNECTED && ns.conn == C_VERIFY_S);
 }
 
 int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
@@ -634,7 +634,7 @@ abort:
 	trace_st(mdev, seq, func, line, ":ns", ns);
 #endif
 
-	if (f & ChgSerialize)
+	if (f & CS_SERIALIZE)
 		mutex_unlock(&mdev->state_mutex);
 
 	return rv;
@@ -777,13 +777,13 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state_t ns)
 		  ns.disk == D_OUTDATED)
 		rv = SS_CONNECTED_OUTDATES;
 
-	else if( (ns.conn == VerifyS ||
-		  ns.conn == VerifyT) &&
-                  (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NoVerifyAlg;
+	else if( (ns.conn == C_VERIFY_S ||
+		  ns.conn == C_VERIFY_T) &&
+                  (mdev->sync_conf.verify_alg[0] == 0)) rv=SS_NO_VERIFY_ALG;
 
-	else if( (ns.conn == VerifyS ||
-		  ns.conn == VerifyT) &&
-		  mdev->agreed_pro_version < 88) rv = SS_NotSupported;
+	else if( (ns.conn == C_VERIFY_S ||
+		  ns.conn == C_VERIFY_T) &&
+		  mdev->agreed_pro_version < 88) rv = SS_NOT_SUPPORTED;
 
 	return rv;
 }
@@ -815,16 +815,16 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	if (ns.conn == os.conn && ns.conn == C_WF_REPORT_PARAMS)
 		rv = SS_IN_TRANSIENT_STATE;
 
-	if( (ns.conn == VerifyS || ns.conn == VerifyT) && os.conn < Connected )
-		rv=SS_NeedConnection;
+	if( (ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) && os.conn < C_CONNECTED )
+		rv=SS_NEED_CONNECTION;
 
-	if ((ns.conn == VerifyS || ns.conn == VerifyT) &&
-	    ns.conn != os.conn && os.conn > Connected)
-		rv = SS_ResyncRunning;
+	if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
+	    ns.conn != os.conn && os.conn > C_CONNECTED)
+		rv = SS_RESYNC_RUNNING;
 
-	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
-	    os.conn < Connected)
-		rv = SS_NeedConnection;
+	if ((ns.conn == C_STARTING_SYNC_S || ns.conn == C_STARTING_SYNC_T) &&
+	    os.conn < C_CONNECTED)
+		rv = SS_NEED_CONNECTION;
 
 	return rv;
 }
@@ -855,7 +855,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	}
 #endif
 
-	fp = DontCare;
+	fp = FP_DONT_CARE;
 	if (inc_local(mdev)) {
 		fp = mdev->bc->dc.fencing;
 		dec_local(mdev);
@@ -864,8 +864,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	/* Early state sanitising. */
 
 	/* Dissalow the invalidate command to connect  */
-	if ((ns.conn == StartingSyncS || ns.conn == StartingSyncT) &&
-		os.conn < Connected) {
+	if ((ns.conn == C_STARTING_SYNC_S || ns.conn == C_STARTING_SYNC_T) &&
+		os.conn < C_CONNECTED) {
 		ns.conn = os.conn;
 		ns.pdsk = os.pdsk;
 	}
@@ -1074,8 +1074,8 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	}
 
-	if (os.conn == Connected &&
-	    (ns.conn == VerifyS || ns.conn == VerifyT )) {
+	if (os.conn == C_CONNECTED &&
+	    (ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T )) {
 		mdev->ov_position = 0;
 		mdev->ov_left  =
 		mdev->rs_total =
@@ -1085,7 +1085,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		mdev->ov_last_oos_size = 0;
 		mdev->ov_last_oos_start = 0;
 
-		if (ns.conn == VerifyS)
+		if (ns.conn == C_VERIFY_S)
 			mod_timer(&mdev->resync_timer,jiffies);
 	}
 
@@ -1685,7 +1685,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	if (mdev->agreed_pro_version >= 88)
 		strcpy(p->online_verify_alg,mdev->sync_conf.verify_alg);
 
-	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, SyncParam,
+	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, P_SYNC_PARAM,
 			   (struct Drbd_Header *)p, size);
 	kfree(p);
 	return rv;
@@ -1714,7 +1714,7 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	if (mdev->agreed_pro_version >= 87)
 		strcpy(p->integrity_alg, mdev->net_conf->integrity_alg);
 
-	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, ReportProtocol,
+	rv = drbd_send_cmd(mdev, USE_DATA_SOCKET, P_PROTOCOL,
 			   (struct Drbd_Header *)p, size);
 	kfree(p);
 	return rv;
@@ -1920,9 +1920,9 @@ int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
 	p.barrier  = barrier_nr;
 	p.set_size = cpu_to_be32(set_size);
 
-	if (mdev->state.conn < Connected)
+	if (mdev->state.conn < C_CONNECTED)
 		return FALSE;
-	ok = drbd_send_cmd(mdev, USE_META_SOCKET, BarrierAck,
+	ok = drbd_send_cmd(mdev, USE_META_SOCKET, P_BARRIER_ACK,
 			(struct Drbd_Header *)&p, sizeof(p));
 	return ok;
 }
@@ -2043,7 +2043,7 @@ int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
 	p.block_id = BE_DRBD_MAGIC + 0xbabe;
 	p.blksize  = cpu_to_be32(size);
 
-	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET, OVRequest,
+	ok = drbd_send_cmd(mdev,USE_DATA_SOCKET, P_OV_REQUEST,
 			   (struct Drbd_Header*)&p,sizeof(p));
 	return ok;
 }
@@ -3467,7 +3467,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 {
 	int rv = -EIO;
 
-	if (inc_local_if_state(mdev, Attaching)) {
+	if (inc_local_if_state(mdev, D_ATTACHING)) {
 		drbd_bm_clear_all(mdev);
 		rv = drbd_bm_write(mdev);
 		dec_local(mdev);
@@ -3888,7 +3888,7 @@ _dump_packet(struct drbd_conf *mdev, struct socket *sock,
 	union drbd_state_t m, v;
 
 	switch (cmd) {
-	case HandShake:
+	case P_HAND_SHAKE:
 		INFOP("%s (protocol %u-%u)\n", cmdname(cmd),
 			be32_to_cpu(p->HandShake.protocol_min),
 			be32_to_cpu(p->HandShake.protocol_max));

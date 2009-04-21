@@ -184,14 +184,14 @@ enum drbd_conns {
 	C_WF_SYNC_UUID,
 
 	/* All SyncStates are tested with this comparison
-	 * xx >= SyncSource && xx <= PausedSyncT */
-	SyncSource,
-	SyncTarget,
-	VerifyS,
-	VerifyT,
-	PausedSyncS,
-	PausedSyncT,
-	conn_mask = 31
+	 * xx >= C_SYNC_SOURCE && xx <= C_PAUSED_SYNC_T */
+	C_SYNC_SOURCE,
+	C_SYNC_TARGET,
+	C_VERIFY_S,
+	C_VERIFY_T,
+	C_PAUSED_SYNC_S,
+	C_PAUSED_SYNC_T,
+	C_MASK = 31
 };
 
 enum drbd_disk_state {

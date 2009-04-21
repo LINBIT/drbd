@@ -283,7 +283,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 	while (try++ < max_tries) {
 		DRBD_STATE_DEBUG_INIT_VAL(val);
-		r = _drbd_request_state(mdev, mask, val, ChgWaitComplete);
+		r = _drbd_request_state(mdev, mask, val, CS_WAIT_COMPLETE);
 
 		/* in case we first succeeded to outdate,
 		 * but now suddenly could establish a connection */
@@ -342,7 +342,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 				try = max_tries - 1;
 			continue;
 		}
-		if (r < SS_Success) {
+		if (r < SS_SUCCESS) {
 			DRBD_STATE_DEBUG_INIT_VAL(val);
 			r = _drbd_request_state(mdev, mask, val,
 						CS_VERBOSE + CS_WAIT_COMPLETE);
@@ -1029,7 +1029,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	mdev->write_ordering = WO_bio_barrier;
 	drbd_bump_write_ordering(mdev, WO_bio_barrier);
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PrimaryInd))
+	if (drbd_md_test_flag(mdev->bc, MDF_PRIMARY_IND))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);
 	else
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
@@ -1133,7 +1133,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	}
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
-	rv = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+	rv = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	ns = mdev->state;
 	spin_unlock_irq(&mdev->req_lock);
 
@@ -1306,19 +1306,19 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		integrity_w_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(integrity_w_tfm)) {
 			integrity_w_tfm = NULL;
-			retcode=IntegrityAlgNotAvail;
+			retcode=ERR_INTEGRITY_ALG;
 			goto fail;
 		}
 
 		if (crypto_tfm_alg_type(crypto_hash_tfm(integrity_w_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
-			retcode=IntegrityAlgNotDigest;
+			retcode=ERR_INTEGRITY_ALG_ND;
 			goto fail;
 		}
 
 		integrity_r_tfm = crypto_alloc_hash(new_conf->integrity_alg, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(integrity_r_tfm)) {
 			integrity_r_tfm = NULL;
-			retcode=IntegrityAlgNotAvail;
+			retcode=ERR_INTEGRITY_ALG;
 			goto fail;
 		}
 	}
@@ -1371,24 +1371,24 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		i = crypto_hash_digestsize(integrity_w_tfm);
 		int_dig_out = kmalloc(i, GFP_KERNEL);
 		if (!int_dig_out) {
-			retcode = KMallocFailed;
+			retcode = ERR_NOMEM;
 			goto fail;
 		}
 		int_dig_in = kmalloc(i, GFP_KERNEL);
 		if (!int_dig_in) {
-			retcode = KMallocFailed;
+			retcode = ERR_NOMEM;
 			goto fail;
 		}
 		int_dig_vv = kmalloc(i, GFP_KERNEL);
 		if (!int_dig_vv) {
-			retcode = KMallocFailed;
+			retcode = ERR_NOMEM;
 			goto fail;
 		}
 	}
 
 	if (!mdev->bitmap) {
 		if(drbd_bm_init(mdev)) {
-			retcode = KMallocFailed;
+			retcode = ERR_NOMEM;
 			goto fail;
 		}
 	}
@@ -1427,8 +1427,8 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->int_dig_in=int_dig_in;
 	mdev->int_dig_vv=int_dig_vv;
 
-	retcode = _drbd_request_state(mdev, NS(conn, Unconnected), ChgStateVerbose);
-	if (retcode >= SS_Success)
+	retcode = _drbd_request_state(mdev, NS(conn, C_UNCONNECTED), CS_VERBOSE);
+	if (retcode >= SS_SUCCESS)
 		drbd_thread_start(&mdev->worker);
 
 	reply->ret_code = retcode;
@@ -1608,11 +1608,11 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		}
 	}
 
-	ovr = (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT);
+	ovr = (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T);
 
 	if (ovr) {
 		if (strcmp(sc.verify_alg, mdev->sync_conf.verify_alg)) {
-			retcode = VERIFYIsRunning;
+			retcode = ERR_VERIFY_RUNNING;
 			goto fail;
 		}
 	}
@@ -1621,12 +1621,12 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		verify_tfm = crypto_alloc_hash(sc.verify_alg, 0, CRYPTO_ALG_ASYNC);
 		if (IS_ERR(verify_tfm)) {
 			verify_tfm = NULL;
-			retcode=VERIFYAlgNotAvail;
+			retcode=ERR_VERIFY_ALG;
 			goto fail;
 		}
 
 		if (crypto_tfm_alg_type(crypto_hash_tfm(verify_tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
-			retcode=VERIFYAlgNotDigest;
+			retcode=ERR_VERIFY_ALG_ND;
 			goto fail;
 		}
 	}
@@ -1635,7 +1635,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		err = __bitmap_parse(sc.cpu_mask, 32, 0, (unsigned long *)&n_cpu_mask, NR_CPUS);
 		if (err) {
 			drbd_WARN("__bitmap_parse() failed with %d\n", err);
-			retcode = CPUMaskParseFailed;
+			retcode = ERR_CPU_MASK_PARSE;
 			goto fail;
 		}
 	}
@@ -1701,21 +1701,21 @@ STATIC int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 {
 	int retcode;
 
-	retcode = _drbd_request_state(mdev, NS(conn, StartingSyncT), ChgOrdered);
+	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
 
-	if (retcode < SS_Success && retcode != SS_NeedConnection)
-		retcode = drbd_request_state(mdev, NS(conn, StartingSyncT));
+	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
+		retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
 
-	while (retcode == SS_NeedConnection) {
+	while (retcode == SS_NEED_CONNECTION) {
 		spin_lock_irq(&mdev->req_lock);
-		if (mdev->state.conn < Connected)
-			retcode = _drbd_set_state(_NS(mdev, disk, Inconsistent), ChgStateVerbose, NULL);
+		if (mdev->state.conn < C_CONNECTED)
+			retcode = _drbd_set_state(_NS(mdev, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
 		spin_unlock_irq(&mdev->req_lock);
 
-		if (retcode != SS_NeedConnection)
+		if (retcode != SS_NEED_CONNECTION)
 			break;
 
-		retcode = drbd_request_state(mdev, NS(conn, StartingSyncT));
+		retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
 	}
 
 	reply->ret_code = retcode;
@@ -1726,7 +1726,7 @@ STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_re
 				   struct drbd_nl_cfg_reply *reply)
 {
 
-	reply->ret_code = drbd_request_state(mdev, NS(conn, StartingSyncS));
+	reply->ret_code = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S));
 
 	return 0;
 }
@@ -1811,7 +1811,7 @@ STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	tl = get_state_to_tags(mdev, (struct get_state *)&s, tl);
 
 	/* no local ref, no bitmap, no syncer progress. */
-	if (s.conn >= SyncSource && s.conn <= PausedSyncT) {
+	if (s.conn >= C_SYNC_SOURCE && s.conn <= C_PAUSED_SYNC_T) {
 		if (inc_local(mdev)) {
 			drbd_get_syncer_progress(mdev, &rs_left, &res);
 			*tl++ = T_sync_progress;
@@ -1871,7 +1871,7 @@ STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_r
 STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				    struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = drbd_request_state(mdev,NS(conn,VerifyS));
+	reply->ret_code = drbd_request_state(mdev,NS(conn,C_VERIFY_S));
 
 	return 0;
 }
@@ -1880,37 +1880,37 @@ STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			      struct drbd_nl_cfg_reply *reply)
 {
-	int retcode = NoError;
+	int retcode = NO_ERROR;
 	int err;
 
 	struct new_c_uuid args;
 
 	memset(&args, 0, sizeof(struct new_c_uuid));
 	if (!new_c_uuid_from_tags(mdev, nlp->tag_list, &args)) {
-		reply->ret_code = UnknownMandatoryTag;
+		reply->ret_code = ERR_MANDATORY_TAG;
 		return 0;
 	}
 
 	mutex_lock(&mdev->state_mutex); /* Protects us against serialized state changes. */
 
-	if (mdev->state.conn >= Connected) {
-		retcode = MayNotBeConnected;
+	if (mdev->state.conn >= C_CONNECTED) {
+		retcode = ERR_CONNECTED;
 		goto out;
 	}
 
 	if (!inc_local(mdev)) {
-		retcode = HaveNoDiskConfig;
+		retcode = ERR_NO_DISK;
 		goto out;
 	}
 
-	drbd_uuid_set(mdev, Bitmap, 0); /* Rotate Bitmap to History 1, etc... */
-	drbd_uuid_new_current(mdev); /* New current, previous to Bitmap */
+	drbd_uuid_set(mdev, UI_BITMAP, 0); /* Rotate UI_BITMAP to History 1, etc... */
+	drbd_uuid_new_current(mdev); /* New current, previous to UI_BITMAP */
 
 	if (args.clear_bm) {
 		err = drbd_bitmap_io(mdev, &drbd_bmio_clear_n_write, "clear_n_write from new_c_uuid");
 		if (err) {
 			ERR("Writing bitmap failed with %d\n",err);
-			retcode = MDIOError;
+			retcode = ERR_IO_MD_DISK;
 		}
 	}
 
@@ -2265,9 +2265,9 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 
 	reply->packet_type = P_dump_ee;
 	reply->minor = mdev_to_minor(mdev);
-	reply->ret_code = NoError;
+	reply->ret_code = NO_ERROR;
 
-	TRACE(TraceTypeNl, TraceLvlSummary, nl_trace_reply(cn_reply););
+	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
 
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	kfree(cn_reply);

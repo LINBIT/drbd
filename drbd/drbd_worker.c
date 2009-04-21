@@ -343,7 +343,7 @@ void resync_timer_fn(unsigned long data)
 
 	if (likely(!test_and_clear_bit(STOP_SYNC_TIMER, &mdev->flags))) {
 		queue = 1;
-		if (mdev->state.conn == VerifyS)
+		if (mdev->state.conn == C_VERIFY_S)
 			mdev->resync_work.cb = w_make_ov_request;
 		else
 			mdev->resync_work.cb = w_make_resync_request;
@@ -512,7 +512,7 @@ int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work* w,int cancel)
 
 	if(unlikely(cancel)) return 1;
 
-	if (unlikely(mdev->state.conn < Connected)) {
+	if (unlikely(mdev->state.conn < C_CONNECTED)) {
 		ERR("Confused in w_make_ov_request()! cstate < Connected");
 		return 0;
 	}
@@ -623,13 +623,13 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	ns.conn = C_CONNECTED;
 
 	INFO("%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
-	     (os.conn == VerifyS || os.conn == VerifyT) ?
+	     (os.conn == C_VERIFY_S || os.conn == C_VERIFY_T) ?
 	     "Online verify ": "Resync",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
 	n_oos = drbd_bm_total_weight(mdev);
 
-	if (os.conn == VerifyS || os.conn == VerifyT) {
+	if (os.conn == C_VERIFY_S || os.conn == C_VERIFY_T) {
 		if (n_oos) {
 			ALERT("Online verify found %lu %dk block out of sync!\n",
 			      n_oos, Bit2KB(1));
@@ -638,7 +638,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	} else {
 		D_ASSERT((n_oos - mdev->rs_failed) == 0);
 
-		if (os.conn == SyncTarget || os.conn == PausedSyncT)
+		if (os.conn == C_SYNC_TARGET || os.conn == C_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
 	}
 
@@ -680,7 +680,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	}
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
-	_drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+	_drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 out_unlock:
 	spin_unlock_irq(&mdev->req_lock);
 	dec_local(mdev);
@@ -825,7 +825,7 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		if(digest) {
 			drbd_csum(mdev,mdev->verify_tfm,e->private_bio,digest);
 			ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
-						     digest, digest_size, OVReply);
+						     digest, digest_size, P_OV_REPLY);
 			if (ok) inc_rs_pending(mdev);
 			kfree(digest);
 		}
@@ -883,7 +883,7 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			kfree(digest);
 		}
 	} else {
-		ok=drbd_send_ack(mdev,NegRSDReply,e);
+		ok=drbd_send_ack(mdev,P_NEG_RS_DREPLY,e);
 		if (DRBD_ratelimit(5*HZ,5))
 			ERR("Sending NegDReply. I guess it gets messy.\n");
 		drbd_io_error(mdev, FALSE);
@@ -896,7 +896,7 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (!eq) drbd_ov_oos_found(mdev,e->sector,e->size);
 	else ov_oos_print(mdev);
 
-	ok = drbd_send_ack_ex(mdev,OVResult,e->sector,e->size,
+	ok = drbd_send_ack_ex(mdev,P_OV_RESULT,e->sector,e->size,
 			      eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
 
 	spin_lock_irq(&mdev->req_lock);
@@ -1149,23 +1149,23 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_SUMMARY,
 	       INFO("Resync starting: side=%s\n",
 		    side == C_SYNC_TARGET ? "SyncTarget" : "SyncSource");
-	    );
+	       );
 
 	drbd_bm_recount_bits(mdev);
 
 	/* In case a previous resync run was aborted by an IO error... */
 	drbd_rs_cancel_all(mdev);
 
-	if (side == SyncTarget) {
-		/* Since application IO was locked out during WFBitMapT and
-		   WFSyncUUID we are still unmodified. Before going to SyncTarget
+	if (side == C_SYNC_TARGET) {
+		/* Since application IO was locked out during C_WF_BITMAP_T and
+		   C_WF_SYNC_UUID we are still unmodified. Before going to C_SYNC_TARGET
 		   we check that we might make the data inconsistent. */
 		r = drbd_khelper(mdev, "before-resync-target");
 		r = (r >> 8) & 0xff;
 		if (r > 0) {
 			INFO("before-resync-target handler returned %d, "
 			     "dropping connection.\n", r);
-			drbd_force_state(mdev, NS(conn, Disconnecting));
+			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 			return;
 		}
 	}
@@ -1202,7 +1202,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		ns.pdsk = D_INCONSISTENT;
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
-	r = _drbd_set_state(mdev, ns, ChgStateVerbose, NULL);
+	r = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	ns = mdev->state;
 
 	if (ns.conn < C_CONNECTED)
