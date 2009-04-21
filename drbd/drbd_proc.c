@@ -190,9 +190,9 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 		sn = conns_to_name(mdev->state.conn);
 
-		if (mdev->state.conn == StandAlone &&
-		    mdev->state.disk == Diskless &&
-		    mdev->state.role == Secondary) {
+		if (mdev->state.conn == C_STANDALONE &&
+		    mdev->state.disk == D_DISKLESS &&
+		    mdev->state.role == R_SECONDARY) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			seq_printf(seq,
@@ -227,8 +227,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf(seq, " oos:%lu\n",
 				   Bit2KB(drbd_bm_total_weight(mdev)));
 		}
-		if (mdev->state.conn == SyncSource ||
-		    mdev->state.conn == SyncTarget)
+		if (mdev->state.conn == C_SYNC_SOURCE ||
+		    mdev->state.conn == C_SYNC_TARGET)
 			drbd_syncer_progress(mdev, seq);
 
 		if (mdev->state.conn == VerifyS || mdev->state.conn == VerifyT)

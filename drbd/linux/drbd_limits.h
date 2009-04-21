@@ -44,7 +44,7 @@
 #define DRBD_TIMEOUT_MAX 600
 #define DRBD_TIMEOUT_DEF 60       /* 6 seconds */
 
-  /* active connection retries when WFConnection */
+  /* active connection retries when C_WF_CONNECTION */
 #define DRBD_CONNECT_INT_MIN 1
 #define DRBD_CONNECT_INT_MAX 120
 #define DRBD_CONNECT_INT_DEF 10   /* seconds */
@@ -115,12 +115,12 @@
 #define DRBD_DISK_SIZE_SECT_MAX  (8 * (2LLU << 30))
 #define DRBD_DISK_SIZE_SECT_DEF  0 /* = disabled = no user size... */
 
-#define DRBD_ON_IO_ERROR_DEF PassOn
-#define DRBD_FENCING_DEF DontCare
-#define DRBD_AFTER_SB_0P_DEF Disconnect
-#define DRBD_AFTER_SB_1P_DEF Disconnect
-#define DRBD_AFTER_SB_2P_DEF Disconnect
-#define DRBD_RR_CONFLICT_DEF Disconnect
+#define DRBD_ON_IO_ERROR_DEF EP_PASS_ON
+#define DRBD_FENCING_DEF FP_DONT_CARE
+#define DRBD_AFTER_SB_0P_DEF ASB_DISCONNECT
+#define DRBD_AFTER_SB_1P_DEF ASB_DISCONNECT
+#define DRBD_AFTER_SB_2P_DEF ASB_DISCONNECT
+#define DRBD_RR_CONFLICT_DEF ASB_DISCONNECT
 
 #define DRBD_MAX_BIO_BVECS_MIN 0
 #define DRBD_MAX_BIO_BVECS_MAX 128

@@ -256,7 +256,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 	D_ASSERT(atomic_read(&mdev->local_cnt) > 0);
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 	       INFO("al_begin_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
 		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
@@ -297,7 +297,7 @@ void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 	struct lc_element *extent;
 	unsigned long flags;
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 	       INFO("al_complete_io( sec=%llus (al_enr=%u) (rs_enr=%d) )\n",
 		    (unsigned long long) sector, enr,
 		    (int)BM_SECT_TO_EXT(sector));
@@ -342,7 +342,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	 * TODO reduce maximum latency:
 	 * submit both bios, then wait for both,
 	 * instead of doing two synchronous sector writes. */
-	if (mdev->state.conn < Connected && evicted != LC_FREE)
+	if (mdev->state.conn < C_CONNECTED && evicted != LC_FREE)
 		drbd_bm_write_sect(mdev, evicted/AL_EXT_PER_BM_SECT);
 
 	down(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
@@ -654,7 +654,7 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 
 	atomic_inc(&wc->count);
 	/* we already know that we may do this...
-	 * inc_local_if_state(mdev,Attaching);
+	 * inc_local_if_state(mdev,D_ATTACHING);
 	 * just get the extra reference, so that the local_cnt reflects
 	 * the number of pending IO requests DRBD at its backing device.
 	 */
@@ -676,7 +676,7 @@ out_bio_put:
  * drbd_al_to_on_disk_bm:
  * Writes the areas of the bitmap which are covered by the AL.
  * called when we detach (unconfigure) local storage,
- * or when we go from Primary to Secondary state.
+ * or when we go from R_PRIMARY to R_SECONDARY state.
  */
 void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 {
@@ -685,7 +685,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 	struct bio **bios;
 	struct drbd_atodb_wait wc;
 
-	ERR_IF (!inc_local_if_state(mdev, Attaching))
+	ERR_IF (!inc_local_if_state(mdev, D_ATTACHING))
 		return; /* sorry, I don't have any act_log etc... */
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -810,7 +810,7 @@ static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 		lc_del(mdev->act_log, al_ext);
 	spin_unlock_irq(&mdev->al_lock);
 
-	MTRACE(TraceTypeALExts, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_AL_EXTS, TRACE_LVL_METRICS,
 		if (unlikely(!rv))
 			INFO("Waiting for extent in drbd_al_shrink()\n");
 	       );
@@ -857,8 +857,8 @@ STATIC int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused
 
 	if (drbd_bm_total_weight(mdev) <= mdev->rs_failed) {
 		switch (mdev->state.conn) {
-		case SyncSource:  case SyncTarget:
-		case PausedSyncS: case PausedSyncT:
+		case C_SYNC_SOURCE:  case C_SYNC_TARGET:
+		case C_PAUSED_SYNC_S: case C_PAUSED_SYNC_T:
 			drbd_resync_finished(mdev);
 		default:
 			/* nothing to do */
@@ -908,7 +908,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				dump_stack();
 				/* FIXME brrrgs. should never happen! */
 				lc_put(mdev->resync, &ext->lce);
-				drbd_force_state(mdev, NS(conn, Disconnecting));
+				drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 				return;
 			}
 		} else {
@@ -964,7 +964,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one ore more _aligned_ BM_BLOCK_SIZE blocks.
  *
- * called by worker on SyncTarget and receiver on SyncSource.
+ * called by worker on C_SYNC_TARGET and receiver on SyncSource.
  *
  */
 void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
@@ -1001,7 +1001,7 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 		ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       INFO("drbd_set_in_sync: sector=%llus size=%u sbnr=%lu ebnr=%lu\n",
 		    (unsigned long long)sector, size, sbnr, ebnr);
 	    );
@@ -1021,8 +1021,8 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 			/* should be roling marks,
 			 * but we estimate only anyways. */
 			if (mdev->rs_mark_left != drbd_bm_total_weight(mdev) &&
-			    mdev->state.conn != PausedSyncT &&
-			    mdev->state.conn != PausedSyncS) {
+			    mdev->state.conn != C_PAUSED_SYNC_T &&
+			    mdev->state.conn != C_PAUSED_SYNC_S) {
 				mdev->rs_mark_time = jiffies;
 				mdev->rs_mark_left = drbd_bm_total_weight(mdev);
 			}
@@ -1080,7 +1080,7 @@ void __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       INFO("drbd_set_out_of_sync: sector=%llus size=%u "
 		    "sbnr=%lu ebnr=%lu\n",
 		    (unsigned long long)sector, size, sbnr, ebnr);
@@ -1181,7 +1181,7 @@ int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	int i, sig;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       INFO("drbd_rs_begin_io: sector=%llus (rs_end=%d)\n",
 		    (unsigned long long)sector, enr);
 	    );
@@ -1231,7 +1231,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	int i;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       INFO("drbd_try_rs_begin_io: sector=%llus\n",
 		    (unsigned long long)sector);
 	    );
@@ -1251,7 +1251,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		 * the lc_put here...
 		 * we also have to wake_up
 		 */
-		MTRACE(TraceTypeResync, TraceLvlAll,
+		MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 			INFO("dropping %u, aparently got 'synced' "
 			     "by application io\n", mdev->resync_wenr);
 		);
@@ -1280,7 +1280,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 			 * but then could not set BME_LOCKED,
 			 * so we tried again.
 			 * drop the extra reference. */
-			MTRACE(TraceTypeResync, TraceLvlAll,
+			MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 				INFO("dropping extra reference on %u\n", enr);
 			);
 			bm_ext->lce.refcnt--;
@@ -1289,7 +1289,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		goto check_al;
 	} else {
 		if (mdev->resync_locked > mdev->resync->nr_elements-3) {
-			MTRACE(TraceTypeResync, TraceLvlAll,
+			MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 				INFO("resync_locked = %u!\n", mdev->resync_locked);
 			);
 			goto try_again;
@@ -1316,7 +1316,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 		goto check_al;
 	}
 check_al:
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 		INFO("checking al for %u\n", enr);
 	);
 	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
@@ -1332,7 +1332,7 @@ proceed:
 	return 0;
 
 try_again:
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 		INFO("need to try again for %u\n", enr);
 	);
 	if (bm_ext)
@@ -1347,7 +1347,7 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
 	struct bm_extent *bm_ext;
 	unsigned long flags;
 
-	MTRACE(TraceTypeResync, TraceLvlAll,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_ALL,
 	       INFO("drbd_rs_complete_io: sector=%llus (rs_enr=%d)\n",
 		    (long long)sector, enr);
 	    );
@@ -1384,13 +1384,13 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
  */
 void drbd_rs_cancel_all(struct drbd_conf *mdev)
 {
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       INFO("drbd_rs_cancel_all\n");
 	    );
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if (inc_local_if_state(mdev, Failed)) { /* Makes sure ->resync is there. */
+	if (inc_local_if_state(mdev, D_FAILED)) { /* Makes sure ->resync is there. */
 		lc_reset(mdev->resync);
 		dec_local(mdev);
 	}
@@ -1411,13 +1411,13 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 	struct bm_extent *bm_ext;
 	int i;
 
-	MTRACE(TraceTypeResync, TraceLvlMetrics,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_METRICS,
 	       INFO("drbd_rs_del_all\n");
 	    );
 
 	spin_lock_irq(&mdev->al_lock);
 
-	if (inc_local_if_state(mdev, Failed)) {
+	if (inc_local_if_state(mdev, D_FAILED)) {
 		/* ok, ->resync is there. */
 		for (i = 0; i < mdev->resync->nr_elements; i++) {
 			bm_ext = (struct bm_extent *) lc_entry(mdev->resync, i);
@@ -1454,7 +1454,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 
 /* Record information on a failure to resync the specified blocks
  *
- * called on SyncTarget when resync write fails or NegRSDReply received
+ * called on C_SYNC_TARGET when resync write fails or P_NEG_RS_DREPLY received
  *
  */
 void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
@@ -1465,7 +1465,7 @@ void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 	sector_t esector, nr_sectors;
 	int wake_up = 0;
 
-	MTRACE(TraceTypeResync, TraceLvlSummary,
+	MTRACE(TRACE_TYPE_RESYNC, TRACE_LVL_SUMMARY,
 	       INFO("drbd_rs_failed_io: sector=%llus, size=%u\n",
 		    (unsigned long long)sector, size);
 	    );
