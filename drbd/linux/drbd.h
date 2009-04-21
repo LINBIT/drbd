@@ -54,25 +54,25 @@
 #endif
 
 
-enum io_error_handler {
+enum drbd_io_error_p {
 	EP_PASS_ON, /* FIXME should the better be named "Ignore"? */
 	EP_CALL_HELPER,
 	EP_DETACH
 };
 
-enum fencing_policy {
+enum drbd_fencing_p {
 	FP_DONT_CARE,
 	FP_RESOURCE,
 	FP_STONITH
 };
 
-enum disconnect_handler {
+enum drbd_disconnect_p {
 	DP_RECONNECT,
 	DP_DROP_NET_CONF,
 	DP_FREEZE_IO
 };
 
-enum after_sb_handler {
+enum drbd_after_sb_p {
 	ASB_DISCONNECT,
 	ASB_DISCARD_YOUNGER_PRI,
 	ASB_DISCARD_OLDER_PRI,
@@ -87,7 +87,7 @@ enum after_sb_handler {
 };
 
 /* KEEP the order, do not delete or insert. Only append. */
-enum ret_codes {
+enum drbd_ret_codes {
 	ERR_CODE_BASE		= 100,
 	NO_ERROR		= 101,
 	ERR_LOCAL_ADDR		= 102,
@@ -203,7 +203,7 @@ enum drbd_disk_state {
 	D_MASK = 15
 };
 
-union drbd_state_t {
+union drbd_state {
 /* According to gcc's docs is the ...
  * The order of allocation of bit-fields within a unit (C90 6.5.2.1, C99 6.7.2.1).
  * Determined by ABI.
@@ -249,7 +249,7 @@ union drbd_state_t {
 	unsigned int i;
 };
 
-enum set_st_err {
+enum drbd_state_ret_codes {
 	SS_CW_NO_NEED = 4,
 	SS_CW_SUCCESS = 3,
 	SS_NOTHING_TO_DO = 2,
@@ -280,7 +280,7 @@ enum set_st_err {
 extern const char *conns_to_name(enum drbd_conns);
 extern const char *roles_to_name(enum drbd_role);
 extern const char *disks_to_name(enum drbd_disk_state);
-extern const char *set_st_err_name(enum set_st_err);
+extern const char *set_st_err_name(enum drbd_state_ret_codes);
 
 #define SHARED_SECRET_MAX 64
 
@@ -292,7 +292,7 @@ extern const char *set_st_err_name(enum set_st_err);
 #define MDF_PEER_OUT_DATED	(1 << 5)
 #define MDF_CRASHED_PRIMARY      (1 << 6)
 
-enum UuidIndex {
+enum drbd_uuid_index {
 	UI_CURRENT,
 	UI_BITMAP,
 	UI_HISTORY_START,
@@ -302,7 +302,7 @@ enum UuidIndex {
 	UI_EXTENDED_SIZE   /* Everything. */
 };
 
-enum UseTimeout {
+enum drbd_timeout_flag {
 	UT_DEFAULT      = 0,
 	UT_DEGRADED     = 1,
 	UT_PEER_OUTDATED = 2,

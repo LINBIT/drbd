@@ -238,7 +238,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 
 static void queue_barrier(struct drbd_conf *mdev)
 {
-	struct drbd_barrier *b;
+	struct drbd_tl_epoch *b;
 
 	/* We are within the req_lock. Once we queued the barrier for sending,
 	 * we set the CREATE_BARRIER bit. It is cleared as soon as a new
@@ -248,7 +248,7 @@ static void queue_barrier(struct drbd_conf *mdev)
 	if (test_bit(CREATE_BARRIER, &mdev->flags))
 		return;
 
-	b = mdev->newest_barrier;
+	b = mdev->newest_tle;
 	b->w.cb = w_send_barrier;
 	/* inc_ap_pending done here, so we won't
 	 * get imbalanced on connection loss.
@@ -264,14 +264,14 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 {
 	const unsigned long s = req->rq_state;
 	struct drbd_request *i;
-	struct Tl_epoch_entry *e;
+	struct drbd_epoch_entry *e;
 	struct hlist_node *n;
 	struct hlist_head *slot;
 
 	/* before we can signal completion to the upper layers,
 	 * we may need to close the current epoch */
 	if (mdev->state.conn >= C_CONNECTED &&
-	    req->epoch == mdev->newest_barrier->br_number)
+	    req->epoch == mdev->newest_tle->br_number)
 		queue_barrier(mdev);
 
 	/* we need to do the conflict detection stuff,
@@ -436,7 +436,7 @@ STATIC int _req_conflicts(struct drbd_request *req)
 	const sector_t sector = req->sector;
 	const int size = req->size;
 	struct drbd_request *i;
-	struct Tl_epoch_entry *e;
+	struct drbd_epoch_entry *e;
 	struct hlist_node *n;
 	struct hlist_head *slot;
 
@@ -655,12 +655,12 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 * just after it grabs the req_lock */
 		D_ASSERT(test_bit(CREATE_BARRIER, &mdev->flags) == 0);
 
-		req->epoch = mdev->newest_barrier->br_number;
+		req->epoch = mdev->newest_tle->br_number;
 		list_add_tail(&req->tl_requests,
-				&mdev->newest_barrier->requests);
+				&mdev->newest_tle->requests);
 
 		/* increment size of current epoch */
-		mdev->newest_barrier->n_req++;
+		mdev->newest_tle->n_req++;
 
 		/* queue work item to send data */
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
@@ -669,7 +669,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		drbd_queue_work(&mdev->data.work, &req->w);
 
 		/* close the epoch, in case it outgrew the limit */
-		if (mdev->newest_barrier->n_req >= mdev->net_conf->max_epoch_size)
+		if (mdev->newest_tle->n_req >= mdev->net_conf->max_epoch_size)
 			queue_barrier(mdev);
 
 		break;
@@ -825,7 +825,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 	const int rw = bio_rw(bio);
 	const int size = bio->bi_size;
 	const sector_t sector = bio->bi_sector;
-	struct drbd_barrier *b = NULL;
+	struct drbd_tl_epoch *b = NULL;
 	struct drbd_request *req;
 	int local, remote;
 	int err = -EIO;
@@ -899,16 +899,16 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 	}
 
 	/* For WRITE request, we have to make sure that we have an
-	 * unused_spare_barrier, in case we need to start a new epoch.
+	 * unused_spare_tle, in case we need to start a new epoch.
 	 * I try to be smart and avoid to pre-allocate always "just in case",
 	 * but there is a race between testing the bit and pointer outside the
 	 * spinlock, and grabbing the spinlock.
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && remote &&
-	    mdev->unused_spare_barrier == NULL &&
+	    mdev->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 allocate_barrier:
-		b = kmalloc(sizeof(struct drbd_barrier), GFP_NOIO);
+		b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_NOIO);
 		if (!b) {
 			dev_err(DEV, "Failed to alloc barrier.\n");
 			err = -ENOMEM;
@@ -932,12 +932,12 @@ allocate_barrier:
 		}
 	}
 
-	if (b && mdev->unused_spare_barrier == NULL) {
-		mdev->unused_spare_barrier = b;
+	if (b && mdev->unused_spare_tle == NULL) {
+		mdev->unused_spare_tle = b;
 		b = NULL;
 	}
 	if (rw == WRITE && remote &&
-	    mdev->unused_spare_barrier == NULL &&
+	    mdev->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
@@ -959,10 +959,10 @@ allocate_barrier:
 	 * barrier packet.  To get the write ordering right, we only have to
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
-	if (remote && mdev->unused_spare_barrier &&
+	if (remote && mdev->unused_spare_tle &&
 	    test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
-		_tl_add_barrier(mdev, mdev->unused_spare_barrier);
-		mdev->unused_spare_barrier = NULL;
+		_tl_add_barrier(mdev, mdev->unused_spare_tle);
+		mdev->unused_spare_tle = NULL;
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&
 			   test_bit(CREATE_BARRIER, &mdev->flags)));
