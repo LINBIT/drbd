@@ -1215,6 +1215,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	void *int_dig_out = NULL;
 	void *int_dig_in = NULL;
 	void *int_dig_vv = NULL;
+	struct sockaddr *new_my_addr, *new_peer_addr, *taken_addr;
 
 	if (mdev->state.conn > C_STANDALONE) {
 		retcode = ERR_NET_CONFIGURED;
@@ -1266,22 +1267,23 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-#define M_ADDR(A) (((struct sockaddr_in *)&A->my_addr)->sin_addr.s_addr)
-#define M_PORT(A) (((struct sockaddr_in *)&A->my_addr)->sin_port)
-#define O_ADDR(A) (((struct sockaddr_in *)&A->peer_addr)->sin_addr.s_addr)
-#define O_PORT(A) (((struct sockaddr_in *)&A->peer_addr)->sin_port)
 	retcode = NO_ERROR;
+
+	new_my_addr = (struct sockaddr *)&new_conf->my_addr;
+	new_peer_addr = (struct sockaddr *)&new_conf->peer_addr;
 	for (i = 0; i < minor_count; i++) {
 		odev = minor_to_mdev(i);
 		if (!odev || odev == mdev)
 			continue;
 		if (inc_net(odev)) {
-			if (M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
-			    M_PORT(new_conf) == M_PORT(odev->net_conf))
+			taken_addr = (struct sockaddr *)&odev->net_conf->my_addr;
+			if (new_conf->my_addr_len == odev->net_conf->my_addr_len &&
+			    !memcmp(new_my_addr, taken_addr, new_conf->my_addr_len))
 				retcode = ERR_LOCAL_ADDR;
 
-			if (O_ADDR(new_conf) == O_ADDR(odev->net_conf) &&
-			    O_PORT(new_conf) == O_PORT(odev->net_conf))
+			taken_addr = (struct sockaddr *)&odev->net_conf->peer_addr;
+			if (new_conf->peer_addr_len == odev->net_conf->peer_addr_len &&
+			    !memcmp(new_peer_addr, taken_addr, new_conf->peer_addr_len))
 				retcode = ERR_PEER_ADDR;
 
 			dec_net(odev);
@@ -1289,10 +1291,6 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				goto fail;
 		}
 	}
-#undef M_ADDR
-#undef M_PORT
-#undef O_ADDR
-#undef O_PORT
 
 	if (new_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
