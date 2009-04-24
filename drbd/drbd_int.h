@@ -625,12 +625,10 @@ struct p_discard {
 /* Valid values for the encoding field.
  * Bump proto version when changing this. */
 enum drbd_bitmap_code {
-	RLE_VLI_Bytes = 0,
-	RLE_VLI_BitsFibD_0_1 = 1,
-	RLE_VLI_BitsFibD_1_1 = 2,
-	RLE_VLI_BitsFibD_1_2 = 3,
-	RLE_VLI_BitsFibD_2_3 = 4,
-	RLE_VLI_BitsFibD_3_5 = 5,
+	/* RLE_VLI_Bytes = 0,
+	 * and other bit variants had been defined during
+	 * algorithm evaluation. */
+	RLE_VLI_Bits = 2,
 };
 
 struct p_compressed_bm {

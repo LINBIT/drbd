@@ -3270,79 +3270,20 @@ recv_bm_rle_bits(struct drbd_conf *mdev,
 	return (s == c->bm_bits) ? DONE : OK;
 }
 
-
-static enum receive_bitmap_ret
-recv_bm_rle_bytes(struct drbd_conf *mdev,
-		struct p_compressed_bm *p,
-		struct bm_xfer_ctx *c)
-{
-	u64 rl;
-	unsigned char *buf = p->code;
-	unsigned long s;
-	unsigned long e;
-	int len = p->head.length - (p->code - p->head.payload);
-	int toggle;
-	int n;
-
-	s = c->bit_offset;
-
-	/* decoding.  the payload of bitmap rle packets is VLI encoded
-	 * runlength of set and unset bits, starting with set/unset as defined
-	 * in p->encoding & 0x80. */
-	for (toggle = DCBP_get_start(p); len; s += rl, toggle = !toggle) {
-		if (s >= c->bm_bits) {
-			dev_err(DEV, "bitmap overflow (s:%lu) while decoding bitmap RLE packet\n", s);
-			return FAILED;
-		}
-
-		n = vli_decode_bytes(&rl, buf, len);
-		if (n == 0) /* incomplete buffer! */
-			return FAILED;
-		buf += n;
-		len -= n;
-
-		if (rl == 0) {
-			dev_err(DEV, "unexpected zero runlength while decoding bitmap RLE packet\n");
-			return FAILED;
-		}
-
-		/* unset bits: ignore, because of x | 0 == x. */
-		if (!toggle)
-			continue;
-
-		/* set bits: merge into bitmap. */
-		e = s + rl -1;
-		if (e >= c->bm_bits) {
-			dev_err(DEV, "bitmap overflow (e:%lu) while decoding bitmap RLE packet\n", e);
-			return FAILED;
-		}
-		_drbd_bm_set_bits(mdev, s, e);
-	}
-
-	c->bit_offset = s;
-	bm_xfer_ctx_bit_to_word_offset(c);
-
-	return (s == c->bm_bits) ? DONE : OK;
-}
-
 static enum receive_bitmap_ret
 decode_bitmap_c(struct drbd_conf *mdev,
 		struct p_compressed_bm *p,
 		struct bm_xfer_ctx *c)
 {
-	switch (DCBP_get_code(p)) {
-	/* no default! I want the compiler to warn me! */
-	case RLE_VLI_BitsFibD_0_1:
-	case RLE_VLI_BitsFibD_1_1:
-	case RLE_VLI_BitsFibD_1_2:
-	case RLE_VLI_BitsFibD_2_3:
-		break; /* TODO */
-	case RLE_VLI_BitsFibD_3_5:
+	if (DCBP_get_code(p) == RLE_VLI_Bits)
 		return recv_bm_rle_bits(mdev, p, c);
-	case RLE_VLI_Bytes:
-		return recv_bm_rle_bytes(mdev, p, c);
-	}
+
+	/* other variants had been implemented for evaluation,
+	 * but have been dropped as this one turned out to be "best"
+	 * during all our tests. */
+
 	dev_err(DEV, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
+	drbd_force_state(mdev, NS(conn, C_PROTOCOL_ERROR));
 	return FAILED;
 }
 

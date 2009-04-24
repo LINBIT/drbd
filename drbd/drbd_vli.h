@@ -37,15 +37,15 @@
  *
  * We never actually need to encode a "zero" (runlengths are positive).
  * But then we have to store the value of the first bit.
- * So we can as well have the "zero" be a valid runlength,
- * and start encoding/decoding by "number of _set_ bits" by convention.
+ * The first bit of information thus shall encode if the first runlength
+ * gives the number of set or unset bits.
  *
  * We assume that large areas are either completely set or unset,
  * which gives good compression with any runlength method,
  * even when encoding the runlength as fixed size 32bit/64bit integers.
  *
  * Still, there may be areas where the polarity flips every few bits,
- * and encoding the runlength sequence of those ares with fix size
+ * and encoding the runlength sequence of those areas with fix size
  * integers would be much worse than plaintext.
  *
  * We want to encode small runlength values with minimum code length,
@@ -53,105 +53,147 @@
  *
  * Thus we need a Variable Length Integer encoding, VLI.
  *
- * For runlength < 8, we produce more code bits than plaintext input.
- * we need to send incompressible chunks as plaintext, skip over them
+ * For some cases, we produce more code bits than plaintext input.
+ * We need to send incompressible chunks as plaintext, skip over them
  * and then see if the next chunk compresses better.
  *
- * We don't care too much about "excellent" compression ratio
- * for large runlengths, 249 bit/24 bit still gives a factor of > 10.
+ * We don't care too much about "excellent" compression ratio for large
+ * runlengths (all set/all clear): whether we achieve a factor of 100
+ * or 1000 is not that much of an issue.
+ * We do not want to waste too much on short runlengths in the "noisy"
+ * parts of the bitmap, though.
  *
- * We care for cpu time needed to actually encode/decode
- * into the transmitted byte stream.
+ * There are endless variants of VLI, we experimented with:
+ *  * simple byte-based
+ *  * various bit based with different code word length.
  *
- * There are endless variants of VLI.
- * For this special purpose, we just need something that is "good enough",
- * and easy to understand and code, fast to encode and decode,
- * and does not consume memory.
+ * To avoid yet an other configuration parameter (choice of bitmap compression
+ * algorithm) which was difficult to explain and tune, we just chose the one
+ * variant that turned out best in all test cases.
+ * Based on real world usage patterns, with device sizes ranging from a few GiB
+ * to several TiB, file server/mailserver/webserver/mysql/postgress,
+ * mostly idle to really busy, the all time winner (though sometimes only
+ * marginally better) is:
  */
 
 /*
- * buf points to the current position in the tranfered byte stream.
- * stream is by definition little endian.
- * *buf_len gives the remaining number of bytes at that position.
- * *out will receive the decoded value.
- * returns number of bytes consumed,
- * or 0 if not enough bytes left in buffer (which would be invalid input).
- */
-static inline int vli_decode_bytes(u64 *out, unsigned char *buf, unsigned buf_len)
+ * encoding is "visualised" as
+ * __little endian__ bitstream, least significant bit first (left most)
+ *
+ * this particular encoding is chosen so that the prefix code
+ * starts as unary encoding the level, then modified so that
+ * 10 levels can be described in 8bit, with minimal overhead
+ * for the smaller levels.
+ *
+ * Number of data bits follow fibonacci sequence, with the exception of the
+ * last level (+1 data bit, so it makes 64bit total).  The only worse code when
+ * encoding bit polarity runlength is 1 plain bits => 2 code bits.
+prefix    data bits                                    max val  Nº data bits
+0 x                                                         0x2            1
+10 x                                                        0x4            1
+110 xx                                                      0x8            2
+1110 xxx                                                   0x10            3
+11110 xxx xx                                               0x30            5
+111110 xx xxxxxx                                          0x130            8
+11111100  xxxxxxxx xxxxx                                 0x2130           13
+11111110  xxxxxxxx xxxxxxxx xxxxx                      0x202130           21
+11111101  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xx   0x400202130           34
+11111111  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx 56
+ * maximum encodable value: 0x100000400202130 == 2**56 + some */
+
+/* compression "table":
+ transmitted   x                                0.29
+ as plaintext x                                  ........................
+             x                                   ........................
+            x                                    ........................
+           x    0.59                         0.21........................
+          x      ........................................................
+         x       .. c ...................................................
+        x    0.44.. o ...................................................
+       x .......... d ...................................................
+      x  .......... e ...................................................
+     X.............   ...................................................
+    x.............. b ...................................................
+2.0x............... i ...................................................
+ #X................ t ...................................................
+ #................. s ...........................  plain bits  ..........
+-+-----------------------------------------------------------------------
+ 1             16              32                              64
+*/
+
+/* LEVEL: (total bits, prefix bits, prefix value),
+ * sorted ascending by number of total bits.
+ * The rest of the code table is calculated at compiletime from this. */
+
+/* fibonacci data 1, 1, ... */
+#define VLI_L_1_1() do { \
+	LEVEL( 2, 1, 0x00); \
+	LEVEL( 3, 2, 0x01); \
+	LEVEL( 5, 3, 0x03); \
+	LEVEL( 7, 4, 0x07); \
+	LEVEL(10, 5, 0x0f); \
+	LEVEL(14, 6, 0x1f); \
+	LEVEL(21, 8, 0x3f); \
+	LEVEL(29, 8, 0x7f); \
+	LEVEL(42, 8, 0xbf); \
+	LEVEL(64, 8, 0xff); \
+	} while (0)
+
+/* finds a suitable level to decode the least significant part of in.
+ * returns number of bits consumed.
+ *
+ * BUG() for bad input, as that would mean a buggy code table. */
+static inline int vli_decode_bits(u64 *out, const u64 in)
 {
-	u64 tmp = 0;
-	unsigned bytes; /* extra bytes after code byte */
+	u64 adj = 1;
 
-	if (buf_len == 0)
-		return 0;
+#define LEVEL(t,b,v)					\
+	do {						\
+		if ((in & ((1 << b) -1)) == v) {	\
+			*out = ((in & ((~0ULL) >> (64-t))) >> b) + adj;	\
+			return t;			\
+		}					\
+		adj += 1ULL << (t - b);			\
+	} while (0)
 
-	switch(*buf) {
-	case 0xff: bytes = 8; break;
-	case 0xfe: bytes = 7; break;
-	case 0xfd: bytes = 6; break;
-	case 0xfc: bytes = 5; break;
-	case 0xfb: bytes = 4; break;
-	case 0xfa: bytes = 3; break;
-	case 0xf9: bytes = 2; break;
-	default:
-		*out = *buf;
-		return 1;
-	}
+	VLI_L_1_1();
 
-	if (buf_len <= bytes)
-		return 0;
-
-	/* no pointer cast assignment, there may be funny alignment
-	 * requirements on certain architectures */
-	memcpy(&tmp, buf+1, bytes);
-	*out = le64_to_cpu(tmp);
-	return bytes+1;
+	/* NOT REACHED, if VLI_LEVELS code table is defined properly */
+	BUG();
+#undef LEVEL
 }
+
+/* return number of code bits needed,
+ * or negative error number */
+static inline int __vli_encode_bits(u64 *out, const u64 in)
+{
+	u64 max = 0;
+	u64 adj = 1;
+
+	if (in == 0)
+		return -EINVAL;
+
+#define LEVEL(t,b,v) do {		\
+		max += 1ULL << (t - b);	\
+		if (in <= max) {	\
+			if (out)	\
+				*out = ((in - adj) << b) | v;	\
+			return t;	\
+		}			\
+		adj = max + 1;		\
+	} while (0)
+
+	VLI_L_1_1();
+
+	return -EOVERFLOW;
+#undef LEVEL
+}
+
+#undef VLI_L_1_1
+
+/* code from here down is independend of actually used bit code */
 
 /*
- * similarly, encode n into buf.
- * returns consumed bytes,
- * or zero if not enough room left in buffer
- * (in which case the buf is left unchanged).
- *
- * encoding is little endian, first byte codes how much bytes follow.
- * first byte <= 0xf8 means just this byte, value = code byte.
- * first byte == 0xf9 .. 0xff: (code byte - 0xf7) data bytes follow.
- */
-static inline int vli_encode_bytes(unsigned char *buf, u64 n, unsigned buf_len)
-{
-	unsigned bytes; /* _extra_ bytes after code byte */
-
-	if (buf_len == 0)
-		return 0;
-
-	if (n <= 0xf8) {
-		*buf = (unsigned char)n;
-		return 1;
-	}
-
-	bytes = (n < (1ULL << 32))
-	      ? (n < (1ULL << 16)) ? 2
-	      : (n < (1ULL << 24)) ? 3 : 4
-	      : (n < (1ULL << 48)) ?
-		(n < (1ULL << 40)) ? 5 : 6
-	      : (n < (1ULL << 56)) ? 7 : 8;
-
-	if (buf_len <= bytes)
-		return 0;
-
-	/* no pointer cast assignment, there may be funny alignment
-	 * requirements on certain architectures */
-	*buf++ = 0xf7 + bytes; /* code, 0xf9 .. 0xff */
-	n = cpu_to_le64(n);
-	memcpy(buf, &n, bytes); /* plain */
-	return bytes+1;
-}
-
-/* ================================================================== */
-
-/* And here the more involved variants of VLI.
- *
  * Code length is determined by some unique (e.g. unary) prefix.
  * This encodes arbitrary bit length, not whole bytes: we have a bit-stream,
  * not a byte stream.
@@ -287,164 +329,6 @@ static inline int bitstream_get_bits(struct bitstream *bs, u64 *out, int bits)
 	return bits;
 }
 
-/* we still need to actually define the code. */
-
-/*
- * encoding is "visualised" as
- * __little endian__ bitstream, least significant bit first (left most)
- *
- * this particular encoding is chosen so that the prefix code
- * starts as unary encoding the level, then modified so that
- * 11 levels can be described in 8bit, with minimal overhead
- * for the smaller levels.
- *
- * Number of data bits follow fibonacci sequence, with the exception of the
- * last level (+1 data bit, so it makes 64bit total).  The only worse code when
- * encoding bit polarity runlength is 2 plain bits => 3 code bits.
-prefix    data bits                                  max val    Nº data bits
-0                                                                     0x1  0
-10 x                                                                  0x3  1
-110 x                                                                 0x5  1
-1110 xx                                                               0x9  2
-11110 xxx                                                            0x11  3
-1111100 x xxxx                                                       0x31  5
-1111101 x xxxxxxx                                                   0x131  8
-11111100  xxxxxxxx xxxxx                                           0x2131 13
-11111110  xxxxxxxx xxxxxxxx xxxxx                                0x202131 21
-11111101  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xx             0x400202131 34
-11111111  xxxxxxxx xxxxxxxx xxxxxxxx  xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx 56
- * maximum encodable value: 0x100000400202131 == 2**56 + some */
-
-/* LEVEL: (total bits, prefix bits, prefix value),
- * sorted ascending by number of total bits.
- * The rest of the code table is calculated at compiletime from this. */
-
-/* fibonacci data 0, 1, ... */
-#define VLI_L_0_1() do { \
-	LEVEL( 1, 1, 0x00); \
-	LEVEL( 3, 2, 0x01); \
-	LEVEL( 4, 3, 0x03); \
-	LEVEL( 6, 4, 0x07); \
-	LEVEL( 8, 5, 0x0f); \
-	LEVEL(12, 7, 0x1f); \
-	LEVEL(15, 7, 0x5f); \
-	LEVEL(21, 8, 0x3f); \
-	LEVEL(29, 8, 0x7f); \
-	LEVEL(42, 8, 0xbf); \
-	LEVEL(64, 8, 0xff); \
-	} while (0)
-
-/* Some variants, differeing in number of levels, prefix value, and number of
- * databits in each level.  I tried a lot of variants. Those where the number
- * of data bits follows the fibonacci sequence (with a certain offset) simply
- * "look best" ;-)
- * All of these can encode at least "2 ** 56". */
-
-/* fibonacci data 1, 1, ... */
-#define VLI_L_1_1() do { \
-	LEVEL( 2, 1, 0x00); \
-	LEVEL( 3, 2, 0x01); \
-	LEVEL( 5, 3, 0x03); \
-	LEVEL( 7, 4, 0x07); \
-	LEVEL(10, 5, 0x0f); \
-	LEVEL(14, 6, 0x1f); \
-	LEVEL(21, 8, 0x3f); \
-	LEVEL(29, 8, 0x7f); \
-	LEVEL(42, 8, 0xbf); \
-	LEVEL(64, 8, 0xff); \
-	} while (0)
-
-/* fibonacci data 1, 2, ... */
-#define VLI_L_1_2() do { \
-	LEVEL( 2, 1, 0x00); \
-	LEVEL( 4, 2, 0x01); \
-	LEVEL( 6, 3, 0x03); \
-	LEVEL( 9, 4, 0x07); \
-	LEVEL(13, 5, 0x0f); \
-	LEVEL(19, 6, 0x1f); \
-	LEVEL(28, 7, 0x3f); \
-	LEVEL(42, 8, 0x7f); \
-	LEVEL(64, 8, 0xff); \
-	} while (0)
-
-/* fibonacci data 2, 3, ... */
-#define VLI_L_2_3() do { \
-	LEVEL( 3, 1, 0x00); \
-	LEVEL( 5, 2, 0x01); \
-	LEVEL( 8, 3, 0x03); \
-	LEVEL(12, 4, 0x07); \
-	LEVEL(18, 5, 0x0f); \
-	LEVEL(27, 6, 0x1f); \
-	LEVEL(41, 7, 0x3f); \
-	LEVEL(64, 7, 0x5f); \
-	} while (0)
-
-/* fibonacci data 3, 5, ... */
-#define VLI_L_3_5() do { \
-	LEVEL( 4, 1, 0x00); \
-	LEVEL( 7, 2, 0x01); \
-	LEVEL(11, 3, 0x03); \
-	LEVEL(17, 4, 0x07); \
-	LEVEL(26, 5, 0x0f); \
-	LEVEL(40, 6, 0x1f); \
-	LEVEL(64, 6, 0x3f); \
-	} while (0)
-
-/* CONFIG */
-#ifndef VLI_LEVELS
-#define VLI_LEVELS() VLI_L_3_5()
-#endif
-
-/* finds a suitable level to decode the least significant part of in.
- * returns number of bits consumed.
- *
- * BUG() for bad input, as that would mean a buggy code table. */
-static inline int vli_decode_bits(u64 *out, const u64 in)
-{
-	u64 adj = 1;
-
-#define LEVEL(t,b,v)					\
-	do {						\
-		if ((in & ((1 << b) -1)) == v) {	\
-			*out = ((in & ((~0ULL) >> (64-t))) >> b) + adj;	\
-			return t;			\
-		}					\
-		adj += 1ULL << (t - b);			\
-	} while (0)
-
-	VLI_LEVELS();
-
-	/* NOT REACHED, if VLI_LEVELS code table is defined properly */
-	BUG();
-#undef LEVEL
-}
-
-/* return number of code bits needed,
- * or negative error number */
-static inline int __vli_encode_bits(u64 *out, const u64 in)
-{
-	u64 max = 0;
-	u64 adj = 1;
-
-	if (in == 0)
-		return -EINVAL;
-
-#define LEVEL(t,b,v) do {		\
-		max += 1ULL << (t - b);	\
-		if (in <= max) {	\
-			if (out)	\
-				*out = ((in - adj) << b) | v;	\
-			return t;	\
-		}			\
-		adj = max + 1;		\
-	} while (0)
-
-	VLI_LEVELS();
-
-	return -EOVERFLOW;
-#undef LEVEL
-}
-
 /* encodes @in as vli into @bs;
 
  * return values
@@ -464,11 +348,4 @@ static inline int vli_encode_bits(struct bitstream *bs, u64 in)
 	return bitstream_put_bits(bs, code, bits);
 }
 
-#undef VLI_L_0_1
-#undef VLI_L_1_1
-#undef VLI_L_1_2
-#undef VLI_L_2_3
-#undef VLI_L_3_5
-
-#undef VLI_LEVELS
 #endif
