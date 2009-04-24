@@ -493,18 +493,15 @@ char *ppsize(char *buf, unsigned long long size)
  *  waits for ap_bio_cnt == 0. -> deadlock.
  * but this cannot happen, actually, because:
  *  R_PRIMARY D_INCONSISTENT, and peer's disk is unreachable
- *  (not connected, *  or bad/no disk on peer):
+ *  (not connected, or bad/no disk on peer):
  *  see drbd_fail_request_early, ap_bio_cnt is zero.
  *  R_PRIMARY D_INCONSISTENT, and C_SYNC_TARGET:
  *  peer may not initiate a resize.
  */
 void drbd_suspend_io(struct drbd_conf *mdev)
 {
-	int in_flight;
 	set_bit(SUSPEND_IO, &mdev->flags);
-	in_flight = atomic_read(&mdev->ap_bio_cnt);
-	if (in_flight)
-		wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
 }
 
 void drbd_resume_io(struct drbd_conf *mdev)
