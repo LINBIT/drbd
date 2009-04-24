@@ -3685,9 +3685,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	 * we already released the socket!? */
 	i = atomic_read(&mdev->pp_in_use);
 	if (i)
-		dev_dbg(DEV, "pp_in_use = %u, expected 0\n", i);
+		dev_info(DEV, "pp_in_use = %u, expected 0\n", i);
 	if (!list_empty(&mdev->net_ee))
-		dev_dbg(DEV, "net_ee not empty!\n");
+		dev_info(DEV, "net_ee not empty!\n");
 
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->active_ee));

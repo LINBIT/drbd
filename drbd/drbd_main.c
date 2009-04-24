@@ -670,7 +670,7 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 		c == mdev->receiver.task ? "receiver" :
 		c == mdev->asender.task ? "asender" : "other";
 
-	dev_dbg(DEV, " %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
+	dev_info(DEV, " %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    seq, context, func, line,
 	    name,
 	    conns_to_name(s.conn),
