@@ -3290,26 +3290,35 @@ decode_bitmap_c(struct drbd_conf *mdev,
 void INFO_bm_xfer_stats(struct drbd_conf *mdev,
 		const char *direction, struct bm_xfer_ctx *c)
 {
-	unsigned plain_would_take = sizeof(struct p_header) *
+	/* what would it take to transfer it "plaintext" */
+	unsigned plain = sizeof(struct p_header) *
 		((c->bm_words+BM_PACKET_WORDS-1)/BM_PACKET_WORDS+1)
 		+ c->bm_words * sizeof(long);
 	unsigned total = c->bytes[0] + c->bytes[1];
-	unsigned q, r;
+	unsigned r;
 
 	/* total can not be zero. but just in case: */
 	if (total == 0)
 		return;
 
-	q = plain_would_take / total;
-	r = plain_would_take % total;
-	r = (r > UINT_MAX/100) ? (r / (total+99/100)) : (100 * r / total);
+	/* don't report if not compressed */
+	if (total >= plain)
+		return;
 
+	/* total < plain. check for overflow, still */
+	r = (total > UINT_MAX/1000) ? (total / (plain/1000))
+		                    : (1000 * total / plain);
+
+	if (r > 1000)
+		r = 1000;
+
+	r = 1000 - r;
 	dev_info(DEV, "%s bitmap stats [Bytes(packets)]: plain %u(%u), RLE %u(%u), "
-	     "total %u; compression factor: %u.%02u\n",
+	     "total %u; compression: %u.%u%%\n",
 			direction,
 			c->bytes[1], c->packets[1],
 			c->bytes[0], c->packets[0],
-			total, q, r);
+			total, r/10, r % 10);
 }
 
 /* Since we are processing the bitfield from lower addresses to higher,
