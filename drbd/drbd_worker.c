@@ -1062,6 +1062,8 @@ int drbd_worker(struct drbd_thread *thi)
 						NS(conn, C_NETWORK_FAILURE));
 		}
 	}
+	D_ASSERT(test_bit(DEVICE_DYING, &mdev->flags));
+	D_ASSERT(test_bit(CONFIG_PENDING, &mdev->flags));
 
 	spin_lock_irq(&mdev->data.work.q_lock);
 	i = 0;
@@ -1098,6 +1100,10 @@ int drbd_worker(struct drbd_thread *thi)
 	drbd_mdev_cleanup(mdev);
 
 	INFO("worker terminated\n");
+
+	clear_bit(DEVICE_DYING, &mdev->flags);
+	clear_bit(CONFIG_PENDING, &mdev->flags);
+	wake_up(&mdev->state_wait);
 
 	return 0;
 }

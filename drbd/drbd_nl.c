@@ -770,6 +770,36 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	}
 }
 
+/* serialize deconfig (worker exiting, doing cleanup)
+ * and reconfig (drbdsetup disk, drbdsetup net)
+ *
+ * wait for a potentially exiting worker, then restart it,
+ * or start a new one.
+ */
+static void drbd_reconfig_start(struct drbd_conf *mdev)
+{
+	wait_event(mdev->state_wait, test_and_set_bit(CONFIG_PENDING, &mdev->flags));
+	wait_event(mdev->state_wait, !test_bit(DEVICE_DYING, &mdev->flags));
+	drbd_thread_start(&mdev->worker);
+}
+
+/* if still unconfigured, stops worker again.
+ * if configured now, clears CONFIG_PENDING.
+ * wakes potential waiters */
+static void drbd_reconfig_done(struct drbd_conf *mdev)
+{
+	spin_lock_irq(&mdev->req_lock);
+	if (mdev->state.disk == D_DISKLESS &&
+	    mdev->state.conn == C_STANDALONE &&
+	    mdev->state.role == R_SECONDARY) {
+		set_bit(DEVICE_DYING, &mdev->flags);
+		drbd_thread_stop_nowait(&mdev->worker);
+	} else
+		clear_bit(CONFIG_PENDING, &mdev->flags);
+	spin_unlock_irq(&mdev->req_lock);
+	wake_up(&mdev->state_wait);
+}
+
 /* does always return 0;
  * interesting return code is in reply->ret_code */
 STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
@@ -783,29 +813,14 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	struct inode *inode, *inode2;
 	struct lru_cache *resync_lru = NULL;
 	union drbd_state ns, os;
-	int rv, ntries = 0;
+	int rv;
+
+	drbd_reconfig_start(mdev);
 
 	/* if you want to reconfigure, please tear down first */
 	if (mdev->state.disk > D_DISKLESS) {
 		retcode = ERR_DISK_CONFIGURED;
 		goto fail;
-	}
-
-	/*
-	* We may have gotten here very quickly from a detach. Wait for a bit
-	* then fail.
-	*/
-	while (1) {
-		__no_warn(local, nbc = mdev->bc; );
-		if (nbc == NULL)
-			break;
-		if (ntries++ >= 5) {
-			drbd_WARN("drbd_nl_disk_conf: mdev->bc not NULL.\n");
-			retcode = ERR_DISK_CONFIGURED;
-			goto fail;
-		}
-		__set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(HZ/10);
 	}
 
 	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
@@ -888,13 +903,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev_fail;
 	}
 
-	if (!mdev->bitmap) {
-		if(drbd_bm_init(mdev)) {
-			retcode = ERR_NOMEM;
-			goto release_bdev_fail;
-		}
-	}
-
 	nbc->md_bdev = inode2->i_bdev;
 	if (bd_claim(nbc->md_bdev,
 		     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
@@ -955,7 +963,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
 
 	drbd_suspend_io(mdev);
+	/* also wait for the last barrier ack. */
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_pending_cnt));
+
 	retcode = _drbd_request_state(mdev, NS(disk, D_ATTACHING), CS_VERBOSE);
 	drbd_resume_io(mdev);
 	if (retcode < SS_SUCCESS)
@@ -964,8 +974,14 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	if (!inc_local_if_state(mdev, D_ATTACHING))
 		goto force_diskless;
 
-	drbd_thread_start(&mdev->worker);
 	drbd_md_set_sector_offsets(mdev, nbc);
+
+	if (!mdev->bitmap) {
+		if (drbd_bm_init(mdev)) {
+			retcode = ERR_NOMEM;
+			goto force_diskless_dec;
+		}
+	}
 
 	retcode = drbd_md_read(mdev, nbc);
 	if (retcode != NO_ERROR)
@@ -1141,6 +1157,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	dec_local(mdev);
 	reply->ret_code = retcode;
+	drbd_reconfig_done(mdev);
 	return 0;
 
  force_diskless_dec:
@@ -1166,6 +1183,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		lc_free(resync_lru);
 
 	reply->ret_code = retcode;
+	drbd_reconfig_done(mdev);
 	return 0;
 }
 
@@ -1174,9 +1192,6 @@ STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	fsync_bdev(mdev->this_bdev);
 	reply->ret_code = drbd_request_state(mdev, NS(disk, D_DISKLESS));
-
-	__set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(HZ/20); /* 50ms; Time for worker to finally terminate */
 
 	return 0;
 }
@@ -1192,6 +1207,8 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	struct hlist_head *new_ee_hash = NULL;
 	struct drbd_conf *odev;
 	char hmac_name[CRYPTO_MAX_ALG_NAME];
+
+	drbd_reconfig_start(mdev);
 
 	if (mdev->state.conn > C_STANDALONE) {
 		retcode = ERR_NET_CONFIGURED;
@@ -1333,7 +1350,19 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
-	D_ASSERT(mdev->net_conf == NULL);
+	if (!mdev->bitmap) {
+		if (drbd_bm_init(mdev)) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	}
+
+	spin_lock_irq(&mdev->req_lock);
+	if (mdev->net_conf != NULL) {
+		retcode = ERR_NET_CONFIGURED;
+		spin_unlock_irq(&mdev->req_lock);
+		goto fail;
+	}
 	mdev->net_conf = new_conf;
 
 	mdev->send_cnt = 0;
@@ -1353,12 +1382,11 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 
 	crypto_free_hash(mdev->cram_hmac_tfm);
 	mdev->cram_hmac_tfm = tfm;
+	spin_unlock_irq(&mdev->req_lock);
 
 	retcode = _drbd_request_state(mdev, NS(conn, C_UNCONNECTED), CS_VERBOSE);
-	if (retcode >= SS_SUCCESS)
-		drbd_thread_start(&mdev->worker);
-
 	reply->ret_code = retcode;
+	drbd_reconfig_done(mdev);
 	return 0;
 
 fail:
@@ -1368,6 +1396,7 @@ fail:
 	kfree(new_conf);
 
 	reply->ret_code = retcode;
+	drbd_reconfig_done(mdev);
 	return 0;
 }
 
