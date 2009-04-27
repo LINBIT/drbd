@@ -789,6 +789,13 @@ enum {
 				   once no more io in flight, start bitmap io */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
+
+	CONFIG_PENDING,		/* serialization of (re)configuration requests.
+				 * if set, also prevents the device from dying */
+	DEVICE_DYING,		/* device became unconfigured,
+				 * but worker thread is still handling the cleanup.
+				 * reconfiguring (nl_disk_conf, nl_net_conf) is dissalowed,
+				 * while this is set. */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */

@@ -1042,6 +1042,20 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		trace_st(mdev, seq, ns.func, ns.line, ":=ns", ns);
 #endif
 
+	/* solve the race between becoming unconfigured,
+	 * worker doing the cleanup, and
+	 * admin reconfiguring us:
+	 * on (re)configure, first set CONFIG_PENDING,
+	 * then wait for a potentially exiting worker,
+	 * start the worker, and schedule one no_op.
+	 * then proceed with configuration.
+	 */
+	if (ns.disk == D_DISKLESS &&
+	    ns.conn == C_STANDALONE &&
+	    ns.role == R_SECONDARY &&
+	    !test_and_set_bit(CONFIG_PENDING, &mdev->flags))
+		set_bit(DEVICE_DYING, &mdev->flags);
+
 	mdev->state.i = ns.i;
 	wake_up(&mdev->misc_wait);
 	wake_up(&mdev->state_wait);
@@ -1317,9 +1331,9 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		mdev->resync = NULL;
 		lc_free(mdev->act_log);
 		mdev->act_log = NULL;
-		__no_warn(local, drbd_free_bc(mdev->bc););
-		wmb(); /* see begin of drbd_nl_disk_conf() */
-		__no_warn(local, mdev->bc = NULL;);
+		__no_warn(local,
+			drbd_free_bc(mdev->bc);
+			mdev->bc = NULL;);
 	}
 
 	/* Disks got bigger while they were detached */
@@ -1341,10 +1355,14 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	/* Terminate worker thread if we are unconfigured - it will be
 	   restarted as needed... */
-	if (ns.disk == D_DISKLESS && ns.conn == C_STANDALONE && ns.role == R_SECONDARY) {
+	if (ns.disk == D_DISKLESS &&
+	    ns.conn == C_STANDALONE &&
+	    ns.role == R_SECONDARY) {
 		if (os.aftr_isp != ns.aftr_isp)
 			resume_next_sg(mdev);
-		drbd_thread_stop_nowait(&mdev->worker);
+		/* set in __drbd_set_state, unless CONFIG_PENDING was set */
+		if (test_bit(DEVICE_DYING, &mdev->flags))
+			drbd_thread_stop_nowait(&mdev->worker);
 	}
 
 	drbd_md_sync(mdev);
@@ -1475,6 +1493,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		thi->t_state = Restarting;
 		INFO("Restarting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
+		/* fall through */
 	case Running:
 	case Restarting:
 	default:
@@ -2677,8 +2696,11 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	D_ASSERT(mdev->net_conf == NULL);
 
 	drbd_set_my_capacity(mdev, 0);
-	drbd_bm_resize(mdev, 0);
-	drbd_bm_cleanup(mdev);
+	if (mdev->bitmap) {
+		/* maybe never allocated. */
+		drbd_bm_resize(mdev, 0);
+		drbd_bm_cleanup(mdev);
+	}
 
 	drbd_free_resources(mdev);
 
