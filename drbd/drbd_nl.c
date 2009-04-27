@@ -830,16 +830,10 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	}
 
 	memset(&nbc->md, 0, sizeof(struct drbd_md));
-
-	if (!(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_local(mdev)) {
-		memcpy(&nbc->dc, &mdev->bc->dc, sizeof(struct disk_conf));
-		dec_local(mdev);
-	} else {
-		memset(&nbc->dc, 0, sizeof(struct disk_conf));
-		nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
-		nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
-		nbc->dc.fencing     = DRBD_FENCING_DEF;
-	}
+	memset(&nbc->dc, 0, sizeof(struct disk_conf));
+	nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
+	nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
+	nbc->dc.fencing     = DRBD_FENCING_DEF;
 
 	if (!disk_conf_from_tags(mdev, nlp->tag_list, &nbc->dc)) {
 		retcode = ERR_MANDATORY_TAG;
@@ -1221,28 +1215,23 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (!(nlp->flags & DRBD_NL_SET_DEFAULTS) && inc_net(mdev)) {
-		memcpy(new_conf, mdev->net_conf, sizeof(struct net_conf));
-		dec_net(mdev);
-	} else {
-		memset(new_conf, 0, sizeof(struct net_conf));
-		new_conf->timeout	   = DRBD_TIMEOUT_DEF;
-		new_conf->try_connect_int  = DRBD_CONNECT_INT_DEF;
-		new_conf->ping_int	   = DRBD_PING_INT_DEF;
-		new_conf->max_epoch_size   = DRBD_MAX_EPOCH_SIZE_DEF;
-		new_conf->max_buffers	   = DRBD_MAX_BUFFERS_DEF;
-		new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
-		new_conf->sndbuf_size	   = DRBD_SNDBUF_SIZE_DEF;
-		new_conf->ko_count	   = DRBD_KO_COUNT_DEF;
-		new_conf->after_sb_0p	   = DRBD_AFTER_SB_0P_DEF;
-		new_conf->after_sb_1p	   = DRBD_AFTER_SB_1P_DEF;
-		new_conf->after_sb_2p	   = DRBD_AFTER_SB_2P_DEF;
-		new_conf->want_lose	   = 0;
-		new_conf->two_primaries    = 0;
-		new_conf->wire_protocol    = DRBD_PROT_C;
-		new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
-		new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
-	}
+	memset(new_conf, 0, sizeof(struct net_conf));
+	new_conf->timeout	   = DRBD_TIMEOUT_DEF;
+	new_conf->try_connect_int  = DRBD_CONNECT_INT_DEF;
+	new_conf->ping_int	   = DRBD_PING_INT_DEF;
+	new_conf->max_epoch_size   = DRBD_MAX_EPOCH_SIZE_DEF;
+	new_conf->max_buffers	   = DRBD_MAX_BUFFERS_DEF;
+	new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
+	new_conf->sndbuf_size	   = DRBD_SNDBUF_SIZE_DEF;
+	new_conf->ko_count	   = DRBD_KO_COUNT_DEF;
+	new_conf->after_sb_0p	   = DRBD_AFTER_SB_0P_DEF;
+	new_conf->after_sb_1p	   = DRBD_AFTER_SB_1P_DEF;
+	new_conf->after_sb_2p	   = DRBD_AFTER_SB_2P_DEF;
+	new_conf->want_lose	   = 0;
+	new_conf->two_primaries    = 0;
+	new_conf->wire_protocol    = DRBD_PROT_C;
+	new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
+	new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
 
 	if (!net_conf_from_tags(mdev, nlp->tag_list, new_conf)) {
 		retcode = ERR_MANDATORY_TAG;
