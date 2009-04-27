@@ -234,6 +234,8 @@ enum {
     DRBD_FAULT_MAX,
 };
 
+extern void trace_drbd_resync(struct drbd_conf *mdev, int level, const char *fmt, ...);
+
 #ifdef DRBD_ENABLE_FAULTS
 extern unsigned int
 _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type);
@@ -810,6 +812,19 @@ enum {
 	DE_CONTAINS_A_BARRIER,
 	DE_HAVE_BARRIER_NUMBER,
 	DE_IS_FINISHING,
+};
+
+enum epoch_event {
+	EV_PUT,
+	EV_GOT_BARRIER_NR,
+	EV_BARRIER_DONE,
+	EV_BECAME_LAST,
+	EV_TRACE_FLUSH,       /* TRACE_ are not real events, only used for tracing */
+	EV_TRACE_ADD_BARRIER, /* Doing the first write as a barrier write */
+	EV_TRACE_SETTING_BI,  /* Barrier is expressed with the first write of the next epoch */
+	EV_TRACE_ALLOC,
+	EV_TRACE_FREE,
+	EV_CLEANUP = 32, /* used as flag */
 };
 
 struct drbd_epoch_entry {
@@ -1463,117 +1478,7 @@ extern rwlock_t global_state_lock;
 extern struct drbd_conf *drbd_new_device(unsigned int minor);
 extern void drbd_free_mdev(struct drbd_conf *mdev);
 
-/* Dynamic tracing framework */
-#ifdef ENABLE_DYNAMIC_TRACE
-
 extern int proc_details;
-extern int trace_type;
-extern int trace_devs;
-extern int trace_level;
-
-enum {
-	TRACE_LVL_ALWAYS = 0,
-	TRACE_LVL_SUMMARY,
-	TRACE_LVL_METRICS,
-	TRACE_LVL_ALL,
-	TRACE_LVL_MAX
-};
-
-enum {
-	TRACE_TYPE_PACKET  = 0x00000001,
-	TRACE_TYPE_RQ	   = 0x00000002,
-	TRACE_TYPE_UUID	   = 0x00000004,
-	TRACE_TYPE_RESYNC  = 0x00000008,
-	TRACE_TYPE_EE	   = 0x00000010,
-	TRACE_TYPE_UNPLUG  = 0x00000020,
-	TRACE_TYPE_NL	   = 0x00000040,
-	TRACE_TYPE_AL_EXTS = 0x00000080,
-	TRACE_TYPE_INT_RQ  = 0x00000100,
-	TRACE_TYPE_MD_IO   = 0x00000200,
-	TRACE_TYPE_EPOCHS  = 0x00000400,
-};
-
-static inline int
-is_trace(unsigned int type, unsigned int level) {
-	return (trace_level >= level) && (type & trace_type);
-}
-static inline int
-is_mdev_trace(struct drbd_conf *mdev, unsigned int type, unsigned int level) {
-	return is_trace(type, level) &&
-		((1 << mdev_to_minor(mdev)) & trace_devs);
-}
-
-#define MTRACE(type, lvl, code...) \
-do { \
-	if (unlikely(is_mdev_trace(mdev, type, lvl))) { \
-		code \
-	} \
-} while (0)
-
-#define TRACE(type, lvl, code...) \
-do { \
-	if (unlikely(is_trace(type, lvl))) { \
-		code \
-	} \
-} while (0)
-
-/* Buffer printing support
- * dbg_print_flags: used for Flags arg to drbd_print_buffer
- * - DBGPRINT_BUFFADDR; if set, each line starts with the
- *	 virtual address of the line being output. If clear,
- *	 each line starts with the offset from the beginning
- *	 of the buffer. */
-enum dbg_print_flags {
-    DBGPRINT_BUFFADDR = 0x0001,
-};
-
-extern void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx);
-
-extern void drbd_print_buffer(const char *prefix, unsigned int flags, int size,
-			      const void *buffer, const void *buffer_va,
-			      unsigned int length);
-
-/* Bio printing support */
-extern void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete, struct drbd_request *r);
-
-static inline void dump_bio(struct drbd_conf *mdev,
-		struct bio *bio, int complete, struct drbd_request *r)
-{
-	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_SUMMARY,
-	       _dump_bio("Rq", mdev, bio, complete, r);
-		);
-}
-
-static inline void dump_internal_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete)
-{
-	MTRACE(TRACE_TYPE_INT_RQ, TRACE_LVL_SUMMARY,
-	       _dump_bio(pfx, mdev, bio, complete, NULL);
-		);
-}
-
-/* Packet dumping support */
-extern void _dump_packet(struct drbd_conf *mdev, struct socket *sock,
-			 int recv, union p_polymorph *p,
-			 char *file, int line);
-
-static inline void
-dump_packet(struct drbd_conf *mdev, struct socket *sock,
-	    int recv, union p_polymorph *p, char *file, int line)
-{
-	MTRACE(TRACE_TYPE_PACKET, TRACE_LVL_SUMMARY,
-	       _dump_packet(mdev, sock, recv, p, file, line);
-		);
-}
-
-#else
-
-#define MTRACE(ignored...) ((void)0)
-#define TRACE(ignored...) ((void)0)
-
-#define dump_bio(ignored...) ((void)0)
-#define dump_internal_bio(ignored...) ((void)0)
-#define dump_packet(ignored...) ((void)0)
-#endif
 
 /* drbd_req */
 extern int drbd_make_request_26(struct request_queue *q, struct bio *bio);
@@ -2357,11 +2262,6 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 static inline void drbd_set_ed_uuid(struct drbd_conf *mdev, u64 val)
 {
 	mdev->ed_uuid = val;
-
-	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
-	       dev_info(DEV, " exposed data uuid now %016llX\n",
-		    (unsigned long long)val);
-		);
 }
 
 static inline int seq_cmp(u32 a, u32 b)

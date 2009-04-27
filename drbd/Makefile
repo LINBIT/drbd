@@ -63,7 +63,8 @@ else
 
   DRBDSRC := $(shell pwd)
   CONFIG_BLK_DEV_DRBD := m
-  export DRBDSRC CONFIG_BLK_DEV_DRBD
+  CONFIG_DRBD_TRACE := m
+  export DRBDSRC CONFIG_BLK_DEV_DRBD CONFIG_DRBD_TRACE
 
   # to be overridden on command line:
   PREFIX := /

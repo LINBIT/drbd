@@ -886,11 +886,6 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
 
-	MTRACE(TRACE_TYPE_MD_IO, TRACE_LVL_SUMMARY,
-	       dev_info(DEV, "%s of bitmap took %lu jiffies\n",
-		    rw == READ ? "reading" : "writing", jiffies - now);
-	       );
-
 	if (test_bit(BM_MD_IO_ERROR, &b->bm_flags)) {
 		dev_alert(DEV, "we had at least one MD IO ERROR during bitmap IO\n");
 		drbd_chk_io_error(mdev, 1, TRUE);

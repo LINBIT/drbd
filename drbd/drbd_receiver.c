@@ -54,6 +54,7 @@
 #endif
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include "drbd_tracing.h"
 #include "drbd_req.h"
 
 #include "drbd_vli.h"
@@ -61,14 +62,6 @@
 struct flush_work {
 	struct drbd_work w;
 	struct drbd_epoch *epoch;
-};
-
-enum epoch_event {
-	EV_PUT,
-	EV_GOT_BARRIER_NR,
-	EV_BARRIER_DONE,
-	EV_BECAME_LAST,
-	EV_CLEANUP = 32, /* used as flag */
 };
 
 enum finish_epoch {
@@ -302,10 +295,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	e->epoch = NULL;
 	e->flags = 0;
 
-	MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-	       dev_info(DEV, "allocated EE sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)sector, data_size, e);
-	       );
+	trace_drbd_ee(mdev, e, "allocated");
 
 	return e;
 
@@ -326,10 +316,7 @@ void drbd_free_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 	struct bio_vec *bvec;
 	int i;
 
-	MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-	       dev_info(DEV, "Free EE sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)e->sector, e->size, e);
-	       );
+	trace_drbd_ee(mdev, e, "freed");
 
 	__bio_for_each_segment(bvec, bio, i, 0) {
 		drbd_pp_free(mdev, bvec->bv_page);
@@ -408,10 +395,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	 * all ignore the last argument.
 	 */
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
-		MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-		       dev_info(DEV, "Process EE on done_ee sec=%llus size=%u ee=%p\n",
-			    (unsigned long long)e->sector, e->size, e);
-			);
+		trace_drbd_ee(mdev, e, "process_done_ee");
 		/* list_del not necessary, next/prev members not touched */
 		if (e->w.cb(mdev, &e->w, 0) == 0)
 			ok = 0;
@@ -1035,13 +1019,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_STILL_LIVE;
 
-	static char *epoch_event_str[] = {
-		[EV_PUT] = "put",
-		[EV_GOT_BARRIER_NR] = "got_barrier_nr",
-		[EV_BARRIER_DONE] = "barrier_done",
-		[EV_BECAME_LAST] = "became_last",
-	};
-
 	spin_lock(&mdev->epoch_lock);
 	do {
 		next_epoch = NULL;
@@ -1071,15 +1048,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			break;
 		}
 
-		MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_ALL,
-		       dev_info(DEV, "Update epoch  %p/%d { size=%d active=%d %c%c n%c%c } ev=%s\n",
-			    epoch, epoch->barrier_nr, epoch_size, atomic_read(&epoch->active),
-			    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) ? 'n' : '-',
-			    test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags) ? 'b' : '-',
-			    test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) ? 'i' : '-',
-			    test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ? 'd' : '-',
-			    epoch_event_str[ev]);
-			);
+		trace_drbd_epoch(mdev, epoch, ev);
 
 		if (epoch_size != 0 &&
 		    atomic_read(&epoch->active) == 0 &&
@@ -1112,10 +1081,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 				list_del(&epoch->list);
 				ev = EV_BECAME_LAST | (ev & EV_CLEANUP);
 				mdev->epochs--;
-				MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_SUMMARY,
-				       dev_info(DEV, "Freeing epoch %p/%d { size=%d } nr_epochs=%d\n",
-					    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
-					);
+				trace_drbd_epoch(mdev, epoch, EV_TRACE_FREE);
 				kfree(epoch);
 
 				if (rv == FE_STILL_LIVE)
@@ -1141,10 +1107,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
-			MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
-			       dev_info(DEV, "Schedul flush %p/%d { size=%d } nr_epochs=%d\n",
-				    epoch, epoch->barrier_nr, epoch_size, mdev->epochs);
-				);
+			trace_drbd_epoch(mdev, epoch, EV_TRACE_FLUSH);
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
 			drbd_queue_work(&mdev->data.work, &fw->w);
@@ -1310,9 +1273,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct p_header *h)
 		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
-		MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
-		       dev_info(DEV, "Allocat epoch %p/xxxx { } nr_epochs=%d\n", epoch, mdev->epochs);
-			);
+		trace_drbd_epoch(mdev, epoch, EV_TRACE_ALLOC);
 	} else {
 		/* The current_epoch got recycled while we allocated this one... */
 		kfree(epoch);
@@ -1522,11 +1483,8 @@ STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_si
 	list_add(&e->w.list, &mdev->sync_ee);
 	spin_unlock_irq(&mdev->req_lock);
 
-	MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-	       dev_info(DEV, "submit EE (RS)WRITE sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)e->sector, e->size, e);
-	       );
-	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	trace_drbd_ee(mdev, e, "submitting for (rs)write");
+	trace_drbd_bio(mdev, "Sec", e->private_bio, 0, NULL);
 	drbd_generic_make_request(mdev, DRBD_FAULT_RS_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -1789,23 +1747,17 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 		   a Barrier. */
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == e->epoch) {
-			MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
-			       dev_info(DEV, "Add barrier   %p/%d\n",
-				    epoch, epoch->barrier_nr);
-				);
 			set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
+			trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
 			rw |= (1<<BIO_RW_BARRIER);
 			e->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
-				MTRACE(TRACE_TYPE_EPOCHS, TRACE_LVL_METRICS,
-				       dev_info(DEV, "Add barrier   %p/%d, setting bi in %p/%d\n",
-					    e->epoch, e->epoch->barrier_nr,
-					    epoch, epoch->barrier_nr);
-					);
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
+				trace_drbd_epoch(mdev, epoch, EV_TRACE_SETTING_BI);
 				set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
+				trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
 				rw |= (1<<BIO_RW_BARRIER);
 				e->flags |= EE_IS_BARRIER;
 			}
@@ -1984,13 +1936,9 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 		drbd_al_begin_io(mdev, e->sector);
 	}
 
-	MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-	       dev_info(DEV, "submit EE (DATA)WRITE sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)e->sector, e->size, e);
-	       );
-
 	e->private_bio->bi_rw = rw;
-	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	trace_drbd_ee(mdev, e, "submitting for (data)write");
+	trace_drbd_bio(mdev, "Sec", e->private_bio, 0, NULL);
 	drbd_generic_make_request(mdev, DRBD_FAULT_DT_WR, e->private_bio);
 	/* accounting done in endio */
 
@@ -2148,12 +2096,8 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 
 	inc_unacked(mdev);
 
-	MTRACE(TRACE_TYPE_EE, TRACE_LVL_ALL,
-	       dev_info(DEV, "submit EE READ sec=%llus size=%u ee=%p\n",
-		    (unsigned long long)e->sector, e->size, e);
-	       );
-
-	dump_internal_bio("Sec", mdev, e->private_bio, 0);
+	trace_drbd_ee(mdev, e, "submitting for read");
+	trace_drbd_bio(mdev, "Sec", e->private_bio, 0, NULL);
 	drbd_generic_make_request(mdev, fault_type, e->private_bio);
 	maybe_kick_lo(mdev);
 
@@ -2375,15 +2319,12 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
 
-		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS, DUMPI(rct););
-
 		switch (rct) {
 		case 0: /* !self_pri && !peer_pri */ return 0;
 		case 1: /*  self_pri && !peer_pri */ return 1;
 		case 2: /* !self_pri &&  peer_pri */ return -1;
 		case 3: /*  self_pri &&  peer_pri */
 			dc = test_bit(DISCARD_CONCURRENT, &mdev->flags);
-			MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS, DUMPI(dc););
 			return dc ? -1 : 1;
 		}
 	}
@@ -3512,7 +3453,7 @@ STATIC void drbdd(struct drbd_conf *mdev)
 			break;
 		}
 
-		dump_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
+		trace_drbd_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
 				__FILE__, __LINE__);
 	}
 }
@@ -3775,7 +3716,7 @@ int drbd_do_handshake(struct drbd_conf *mdev)
 		return 0;
 	}
 
-	dump_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
+	trace_drbd_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
 			__FILE__, __LINE__);
 
 	p->protocol_min = be32_to_cpu(p->protocol_min);
@@ -4355,14 +4296,14 @@ STATIC int drbd_asender(struct drbd_thread *thi)
 			}
 			expect = cmd->pkt_size;
 			ERR_IF(len != expect-sizeof(struct p_header)) {
-				dump_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
+				trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 				DUMPI(expect);
 				goto reconnect;
 			}
 		}
 		if (received == expect) {
 			D_ASSERT(cmd != NULL);
-			dump_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
+			trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 			if (!cmd->process(mdev, h))
 				goto reconnect;
 

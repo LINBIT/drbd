@@ -33,8 +33,9 @@
 #include <linux/drbd.h>
 #include <linux/blkpg.h>
 #include <linux/cpumask.h>
-
 #include "drbd_int.h"
+#include "drbd_tracing.h"
+#include "drbd_wrappers.h"
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
 
@@ -121,51 +122,6 @@ name ## _to_tags(struct drbd_conf *mdev, \
 
 void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
-
-STATIC char *nl_packet_name(int packet_type)
-{
-/* Generate packet type strings */
-#define NL_PACKET(name, number, fields) \
-	[P_ ## name] = # name,
-#define NL_INTEGER Argh!
-#define NL_BIT Argh!
-#define NL_INT64 Argh!
-#define NL_STRING Argh!
-
-	static char *nl_tag_name[P_nl_after_last_packet] = {
-#include "linux/drbd_nl.h"
-	};
-
-	return (packet_type < sizeof(nl_tag_name)/sizeof(nl_tag_name[0])) ?
-	    nl_tag_name[packet_type] : "*Unknown*";
-}
-
-STATIC void nl_trace_packet(void *data)
-{
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
-
-	printk(KERN_INFO "drbd%d: "
-	       "Netlink: << %s (%d) - seq: %x, ack: %x, len: %x\n",
-	       nlp->drbd_minor,
-	       nl_packet_name(nlp->packet_type),
-	       nlp->packet_type,
-	       req->seq, req->ack, req->len);
-}
-
-STATIC void nl_trace_reply(void *data)
-{
-	struct cn_msg *req = data;
-	struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)req->data;
-
-	printk(KERN_INFO "drbd%d: "
-	       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
-	       nlp->minor,
-	       nlp->packet_type == P_nl_after_last_packet ?
-		   "Empty-Reply" : nl_packet_name(nlp->packet_type),
-	       nlp->packet_type,
-	       req->seq, req->ack, req->len);
-}
 
 int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 {
@@ -711,15 +667,6 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 
 	max_seg_s = min(b->max_sectors * b->hardsect_size, max_seg_s);
 
-	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_SUMMARY,
-	       DUMPI(b->max_sectors);
-	       DUMPI(b->max_phys_segments);
-	       DUMPI(b->max_hw_segments);
-	       DUMPI(b->max_segment_size);
-	       DUMPI(b->hardsect_size);
-	       DUMPI(b->seg_boundary_mask);
-	       );
-
 	q->max_sectors	     = max_seg_s >> 9;
 	if (max_segments) {
 		q->max_phys_segments = max_segments;
@@ -740,15 +687,6 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	 * workaround here: */
 	if (q->max_segment_size == 0)
 		q->max_segment_size = max_seg_s;
-
-	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_SUMMARY,
-	       DUMPI(q->max_sectors);
-	       DUMPI(q->max_phys_segments);
-	       DUMPI(q->max_hw_segments);
-	       DUMPI(q->max_segment_size);
-	       DUMPI(q->hardsect_size);
-	       DUMPI(q->seg_boundary_mask);
-	       );
 
 	if (b->merge_bvec_fn)
 		dev_warn(DEV, "Backing device's merge_bvec_fn() = %p\n",
@@ -2088,7 +2026,7 @@ STATIC void drbd_connector_callback(void *data)
 		goto fail;
 	}
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_packet(data););
+	trace_drbd_netlink(data, 1);
 
 	if (nlp->packet_type >= P_nl_after_last_packet) {
 		retcode = ERR_PACKET_NR;
@@ -2126,8 +2064,7 @@ STATIC void drbd_connector_callback(void *data)
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + rr;
 	cn_reply->flags = 0;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
 		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);
@@ -2226,8 +2163,7 @@ void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state state)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
@@ -2265,8 +2201,7 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
@@ -2335,8 +2270,7 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	kfree(cn_reply);
 }
@@ -2379,8 +2313,7 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 }
 
@@ -2450,8 +2383,7 @@ void drbd_nl_send_reply(struct cn_msg *req, int ret_code)
 	reply->minor = ((struct drbd_nl_cfg_req *)req->data)->drbd_minor;
 	reply->ret_code = ret_code;
 
-	TRACE(TRACE_TYPE_NL, TRACE_LVL_SUMMARY, nl_trace_reply(cn_reply););
-
+	trace_drbd_netlink(cn_reply, 0);
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
 		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);

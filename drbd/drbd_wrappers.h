@@ -1,3 +1,6 @@
+#ifndef _DRBD_WRAPPERS_H
+#define _DRBD_WRAPPERS_H
+
 #include <linux/ctype.h>
 #include <linux/net.h>
 
@@ -537,4 +540,7 @@ static inline struct proc_dir_entry *proc_create(const char *name,
 		pde->proc_fops = proc_fops;
 	return pde;
 }
+
+#endif
+
 #endif

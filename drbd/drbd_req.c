@@ -29,82 +29,9 @@
 #include <linux/slab.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include "drbd_tracing.h"
 #include "drbd_req.h"
 
-/* outside of the ifdef
- * because of the _print_rq_state(,FIXME) in barrier_acked */
-STATIC void _print_rq_state(struct drbd_request *req, const char *txt)
-{
-	const unsigned long s = req->rq_state;
-	struct drbd_conf *mdev = req->mdev;
-	const int rw = (req->master_bio == NULL ||
-			bio_data_dir(req->master_bio) == WRITE) ?
-		'W' : 'R';
-
-	dev_info(DEV, "%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
-	     txt, req, rw,
-	     s & RQ_LOCAL_PENDING ? 'p' : '-',
-	     s & RQ_LOCAL_COMPLETED ? 'c' : '-',
-	     s & RQ_LOCAL_OK ? 'o' : '-',
-	     s & RQ_NET_PENDING ? 'p' : '-',
-	     s & RQ_NET_QUEUED ? 'q' : '-',
-	     s & RQ_NET_SENT ? 's' : '-',
-	     s & RQ_NET_DONE ? 'd' : '-',
-	     s & RQ_NET_OK ? 'o' : '-',
-	     req->epoch,
-	     (unsigned long long)req->sector,
-	     req->size,
-	     conns_to_name(mdev->state.conn));
-}
-
-/* #define VERBOSE_REQUEST_CODE */
-#if defined(VERBOSE_REQUEST_CODE) || defined(ENABLE_DYNAMIC_TRACE)
-STATIC void _print_req_mod(struct drbd_request *req, enum drbd_req_event what)
-{
-	struct drbd_conf *mdev = req->mdev;
-	const int rw = (req->master_bio == NULL ||
-			bio_data_dir(req->master_bio) == WRITE) ?
-		'W' : 'R';
-
-	static const char *rq_event_names[] = {
-		[created] = "created",
-		[to_be_send] = "to_be_send",
-		[to_be_submitted] = "to_be_submitted",
-		[queue_for_net_write] = "queue_for_net_write",
-		[queue_for_net_read] = "queue_for_net_read",
-		[send_canceled] = "send_canceled",
-		[send_failed] = "send_failed",
-		[handed_over_to_network] = "handed_over_to_network",
-		[connection_lost_while_pending] =
-					"connection_lost_while_pending",
-		[recv_acked_by_peer] = "recv_acked_by_peer",
-		[write_acked_by_peer] = "write_acked_by_peer",
-		[neg_acked] = "neg_acked",
-		[conflict_discarded_by_peer] = "conflict_discarded_by_peer",
-		[barrier_acked] = "barrier_acked",
-		[data_received] = "data_received",
-		[read_completed_with_error] = "read_completed_with_error",
-		[write_completed_with_error] = "write_completed_with_error",
-		[completed_ok] = "completed_ok",
-	};
-
-	dev_info(DEV, "_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
-}
-
-# ifdef ENABLE_DYNAMIC_TRACE
-#  define print_rq_state(R, T) \
-	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_METRICS, _print_rq_state(R, T);)
-#  define print_req_mod(T, W)  \
-	MTRACE(TRACE_TYPE_RQ, TRACE_LVL_METRICS, _print_req_mod(T, W);)
-# else
-#  define print_rq_state(R, T) _print_rq_state(R, T)
-#  define print_req_mod(T, W)  _print_req_mod(T, W)
-# endif
-
-#else
-#define print_rq_state(R, T)
-#define print_req_mod(T, W)
-#endif
 
 /* We only support diskstats for 2.6.16 and up.
  * see also commit commit a362357b6cd62643d4dda3b152639303d78473da
@@ -323,7 +250,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 static void _complete_master_bio(struct drbd_conf *mdev,
 	struct drbd_request *req, int error)
 {
-	dump_bio(mdev, req->master_bio, 1, req);
+	trace_drbd_bio(mdev, "Rq", req->master_bio, 1, req);
 	bio_endio(req->master_bio, error);
 	req->master_bio = NULL;
 	dec_ap_bio(mdev);
@@ -335,7 +262,7 @@ void _req_may_be_done(struct drbd_request *req, int error)
 	struct drbd_conf *mdev = req->mdev;
 	int rw;
 
-	print_rq_state(req, "_req_may_be_done");
+	trace_drbd_req(req, nothing, "_req_may_be_done");
 
 	/* we must not complete the master bio, while it is
 	 *	still being processed by _drbd_send_zc_bio (drbd_send_dblock)
@@ -517,7 +444,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 	if (error && (bio_rw(req->master_bio) != READA))
 		dev_err(DEV, "got an _req_mod() errno of %d\n", error);
 
-	print_req_mod(req, what);
+	trace_drbd_req(req, what, NULL);
 
 	switch (what) {
 	default:
@@ -770,8 +697,8 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 			/* barrier came in before all requests have been acked.
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
-			_print_rq_state(req,
-				"FIXME (barrier_acked but pending)");
+			dev_err(DEV, "FIXME (barrier_acked but pending)\n");
+			trace_drbd_req(req, nothing, "FIXME (barrier_acked but pending)");
 			list_move(&req->tl_requests, &mdev->out_of_sequence_requests);
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
@@ -841,7 +768,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 		return 0;
 	}
 
-	dump_bio(mdev, bio, 0, req);
+	trace_drbd_bio(mdev, "Rq", bio, 0, req);
 
 	local = inc_local(mdev);
 	if (!local) {
@@ -1034,7 +961,7 @@ allocate_barrier:
 	if (local) {
 		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
 
-		dump_internal_bio("Pri", mdev, req->private_bio, 0);
+		trace_drbd_bio(mdev, "Pri", req->private_bio, 0, NULL);
 
 		if (FAULT_ACTIVE(mdev, rw == WRITE ? DRBD_FAULT_DT_WR
 				     : rw == READ  ? DRBD_FAULT_DT_RD

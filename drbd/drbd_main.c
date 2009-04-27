@@ -57,6 +57,7 @@
 #include <linux/drbd.h>
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
+#include "drbd_tracing.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 
 #include "drbd_vli.h"
@@ -88,6 +89,18 @@ STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 
+DEFINE_TRACE(drbd_unplug);
+DEFINE_TRACE(drbd_uuid);
+DEFINE_TRACE(drbd_ee);
+DEFINE_TRACE(drbd_packet);
+DEFINE_TRACE(drbd_md_io);
+DEFINE_TRACE(drbd_epoch);
+DEFINE_TRACE(drbd_netlink);
+DEFINE_TRACE(drbd_actlog);
+DEFINE_TRACE(drbd_bio);
+DEFINE_TRACE(_drbd_resync);
+DEFINE_TRACE(drbd_req);
+
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
@@ -104,6 +117,7 @@ module_param(minor_count, uint, 0444);
 module_param(disable_sendpage, bool, 0644);
 module_param(allow_oos, bool, 0);
 module_param(cn_idx, uint, 0444);
+module_param(proc_details, int, 0644);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
@@ -125,18 +139,7 @@ unsigned int minor_count = 32;
 int disable_sendpage;
 int allow_oos;
 unsigned int cn_idx = CN_IDX_DRBD;
-
-#ifdef ENABLE_DYNAMIC_TRACE
-int trace_type;		/* UI_BITMAP of trace types to enable */
-int trace_level;	/* UI_CURRENT trace level */
-int trace_devs;		/* UI_BITMAP of devices to trace */
 int proc_details;       /* Detail level in proc drbd*/
-
-module_param(trace_level, int, 0644);
-module_param(trace_type, int, 0644);
-module_param(trace_devs, int, 0644);
-module_param(proc_details, int, 0644);
-#endif
 
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
@@ -1600,7 +1603,7 @@ int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(struct p_header));
 
-	dump_packet(mdev, sock, 0, (void *)h, __FILE__, __LINE__);
+	trace_drbd_packet(mdev, sock, 0, (void *)h, __FILE__, __LINE__);
 	sent = drbd_send(mdev, sock, h, size, msg_flags);
 
 	ok = (sent == size);
@@ -1652,7 +1655,7 @@ int drbd_send_cmd2(struct drbd_conf *mdev, enum drbd_packets cmd, char *data,
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	dump_packet(mdev, mdev->data.socket, 0, (void *)&h, __FILE__, __LINE__);
+	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&h, __FILE__, __LINE__);
 
 	ok = (sizeof(h) ==
 		drbd_send(mdev, mdev->data.socket, &h, sizeof(h), 0));
@@ -2376,7 +2379,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 
 	p.dp_flags = cpu_to_be32(dp_flags);
-	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
+	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	set_bit(UNPLUG_REMOTE, &mdev->flags);
 	ok = (sizeof(p) ==
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE));
@@ -2427,7 +2430,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	dump_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
+	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p,
 					sizeof(p), MSG_MORE);
 	if (ok && dgs) {
@@ -2615,10 +2618,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
-	MTRACE(TRACE_TYPE_UNPLUG, TRACE_LVL_SUMMARY,
-	       dev_info(DEV, "got unplugged ap_bio_count=%d\n",
-		    atomic_read(&mdev->ap_bio_cnt));
-	       );
+	trace_drbd_unplug(mdev, "got unplugged");
 
 	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
@@ -3303,9 +3303,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!inc_local_if_state(mdev, D_FAILED))
 		return;
 
-	MTRACE(TRACE_TYPE_MD_IO, TRACE_LVL_SUMMARY,
-	       dev_info(DEV, "Writing meta data super block now.\n");
-	       );
+	trace_drbd_md_io(mdev, WRITE, mdev->bc);
 
 	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
@@ -3360,6 +3358,8 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
 	if (!inc_local_if_state(mdev, D_ATTACHING))
 		return ERR_IO_MD_DISK;
+
+	trace_drbd_md_io(mdev, READ, bdev);
 
 	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
@@ -3440,9 +3440,7 @@ STATIC void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local)
 	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++) {
 		mdev->bc->md.uuid[i+1] = mdev->bc->md.uuid[i];
 
-		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_ALL,
-		       drbd_print_uuid(mdev, i+1);
-			);
+		trace_drbd_uuid(mdev, i+1);
 	}
 }
 
@@ -3458,11 +3456,7 @@ void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 	}
 
 	mdev->bc->md.uuid[idx] = val;
-
-	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_SUMMARY,
-	       drbd_print_uuid(mdev, idx);
-		);
-
+	trace_drbd_uuid(mdev, idx);
 	drbd_md_mark_dirty(mdev);
 }
 
@@ -3472,9 +3466,7 @@ void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 	if (mdev->bc->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
 		mdev->bc->md.uuid[UI_HISTORY_START] = mdev->bc->md.uuid[idx];
-		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
-		       drbd_print_uuid(mdev, UI_HISTORY_START);
-			);
+		trace_drbd_uuid(mdev, UI_HISTORY_START);
 	}
 	_drbd_uuid_set(mdev, idx, val);
 }
@@ -3491,9 +3483,7 @@ void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 	dev_info(DEV, "Creating new current UUID\n");
 	D_ASSERT(mdev->bc->md.uuid[UI_BITMAP] == 0);
 	mdev->bc->md.uuid[UI_BITMAP] = mdev->bc->md.uuid[UI_CURRENT];
-	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
-	       drbd_print_uuid(mdev, UI_BITMAP);
-		);
+	trace_drbd_uuid(mdev, UI_BITMAP);
 
 	get_random_bytes(&val, sizeof(u64));
 	_drbd_uuid_set(mdev, UI_CURRENT, val);
@@ -3508,11 +3498,8 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 		drbd_uuid_move_history(mdev);
 		mdev->bc->md.uuid[UI_HISTORY_START] = mdev->bc->md.uuid[UI_BITMAP];
 		mdev->bc->md.uuid[UI_BITMAP] = 0;
-
-		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
-		       drbd_print_uuid(mdev, UI_HISTORY_START);
-		       drbd_print_uuid(mdev, UI_BITMAP);
-			);
+		trace_drbd_uuid(mdev, UI_HISTORY_START);
+		trace_drbd_uuid(mdev, UI_BITMAP);
 	} else {
 		if (mdev->bc->md.uuid[UI_BITMAP])
 			dev_warn(DEV, "bm UUID already set");
@@ -3520,9 +3507,7 @@ void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 		mdev->bc->md.uuid[UI_BITMAP] = val;
 		mdev->bc->md.uuid[UI_BITMAP] &= ~((u64)1);
 
-		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
-		       drbd_print_uuid(mdev, UI_BITMAP);
-			);
+		trace_drbd_uuid(mdev, UI_BITMAP);
 	}
 	drbd_md_mark_dirty(mdev);
 }
@@ -3755,421 +3740,6 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 	}
 
 	return ret;
-}
-#endif
-
-#ifdef ENABLE_DYNAMIC_TRACE
-
-STATIC char *_drbd_uuid_str(unsigned int idx)
-{
-	static char *uuid_str[] = {
-		"Current",
-		"Bitmap",
-		"History_start",
-		"History_end",
-		"UUID_SIZE",
-		"UUID_FLAGS",
-	};
-
-	return (idx < UI_EXTENDED_SIZE) ? uuid_str[idx] : "*Unknown UUID index*";
-}
-
-/* Pretty print a UUID value */
-void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
-{
-	dev_info(DEV, " uuid[%s] now %016llX\n",
-	     _drbd_uuid_str(idx), (unsigned long long)mdev->bc->md.uuid[idx]);
-}
-
-
-/*
- *
- * drbd_print_buffer
- *
- * This routine dumps binary data to the debugging output. Can be
- * called at interrupt level.
- *
- * Arguments:
- *
- *     prefix      - String is output at the beginning of each line output
- *     flags       - Control operation of the routine. Currently defined
- *                   Flags are:
- *                   DBGPRINT_BUFFADDR; if set, each line starts with the
- *                       virtual address of the line being outupt. If clear,
- *                       each line starts with the offset from the beginning
- *                       of the buffer.
- *     size        - Indicates the size of each entry in the buffer. Supported
- *                   values are sizeof(char), sizeof(short) and sizeof(int)
- *     buffer      - Start address of buffer
- *     buffer_va   - Virtual address of start of buffer (normally the same
- *                   as Buffer, but having it separate allows it to hold
- *                   file address for example)
- *     length      - length of buffer
- *
- */
-void
-drbd_print_buffer(const char *prefix, unsigned int flags, int size,
-		  const void *buffer, const void *buffer_va,
-		  unsigned int length)
-
-#define LINE_SIZE       16
-#define LINE_ENTRIES    (int)(LINE_SIZE/size)
-{
-	const unsigned char *pstart;
-	const unsigned char *pstart_va;
-	const unsigned char *pend;
-	char bytes_str[LINE_SIZE*3+8], ascii_str[LINE_SIZE+8];
-	char *pbytes = bytes_str, *pascii = ascii_str;
-	int  offset = 0;
-	long sizemask;
-	int  field_width;
-	int  index;
-	const unsigned char *pend_str;
-	const unsigned char *p;
-	int count;
-
-	/* verify size parameter */
-	if (size != sizeof(char) &&
-	    size != sizeof(short) &&
-	    size != sizeof(int)) {
-		printk(KERN_DEBUG "drbd_print_buffer: "
-			"ERROR invalid size %d\n", size);
-		return;
-	}
-
-	sizemask = size-1;
-	field_width = size*2;
-
-	/* Adjust start/end to be on appropriate boundary for size */
-	buffer = (const char *)((long)buffer & ~sizemask);
-	pend   = (const unsigned char *)
-		(((long)buffer + length + sizemask) & ~sizemask);
-
-	if (flags & DBGPRINT_BUFFADDR) {
-		/* Move start back to nearest multiple of line size,
-		 * if printing address. This results in nicely formatted output
-		 * with addresses being on line size (16) byte boundaries */
-		pstart = (const unsigned char *)((long)buffer & ~(LINE_SIZE-1));
-	} else {
-		pstart = (const unsigned char *)buffer;
-	}
-
-	/* Set value of start VA to print if addresses asked for */
-	pstart_va = (const unsigned char *)buffer_va
-		 - ((const unsigned char *)buffer-pstart);
-
-	/* Calculate end position to nicely align right hand side */
-	pend_str = pstart + (((pend-pstart) + LINE_SIZE-1) & ~(LINE_SIZE-1));
-
-	/* Init strings */
-	*pbytes = *pascii = '\0';
-
-	/* Start at beginning of first line */
-	p = pstart;
-	count = 0;
-
-	while (p < pend_str) {
-		if (p < (const unsigned char *)buffer || p >= pend) {
-			/* Before start of buffer or after end- print spaces */
-			pbytes += sprintf(pbytes, "%*c ", field_width, ' ');
-			pascii += sprintf(pascii, "%*c", size, ' ');
-			p += size;
-		} else {
-			/* Add hex and ascii to strings */
-			int val;
-			switch (size) {
-			default:
-			case 1:
-				val = *(unsigned char *)p;
-				break;
-			case 2:
-				val = *(unsigned short *)p;
-				break;
-			case 4:
-				val = *(unsigned int *)p;
-				break;
-			}
-
-			pbytes += sprintf(pbytes, "%0*x ", field_width, val);
-
-			for (index = size; index; index--) {
-				*pascii++ = isprint(*p) ? *p : '.';
-				p++;
-			}
-		}
-
-		count++;
-
-		if (count == LINE_ENTRIES || p >= pend_str) {
-			/* Null terminate and print record */
-			*pascii = '\0';
-			printk(KERN_DEBUG "%s%8.8lx: %*s|%*s|\n",
-			       prefix,
-			       (flags & DBGPRINT_BUFFADDR)
-			       ? (long)pstart_va:(long)offset,
-			       LINE_ENTRIES*(field_width+1), bytes_str,
-			       LINE_SIZE, ascii_str);
-
-			/* Move onto next line */
-			pstart_va += (p-pstart);
-			pstart = p;
-			count  = 0;
-			offset += LINE_SIZE;
-
-			/* Re-init strings */
-			pbytes = bytes_str;
-			pascii = ascii_str;
-			*pbytes = *pascii = '\0';
-		}
-	}
-}
-
-#define PSM(A)							\
-do {								\
-	if (mask.A) {						\
-		int i = snprintf(p, len, " " #A "( %s )",	\
-				A##s_to_name(val.A));		\
-		if (i >= len)					\
-			return op;				\
-		p += i;						\
-		len -= i;					\
-	}							\
-} while (0)
-
-STATIC char *dump_st(char *p, int len, union drbd_state mask, union drbd_state val)
-{
-	char *op = p;
-	*p = '\0';
-	PSM(role);
-	PSM(peer);
-	PSM(conn);
-	PSM(disk);
-	PSM(pdsk);
-
-	return op;
-}
-
-#define INFOP(fmt, args...) \
-do { \
-	if (trace_level >= TRACE_LVL_ALL) { \
-		dev_info(DEV, "%s:%d: %s [%d] %s %s " fmt , \
-		     file, line, current->comm, current->pid, \
-		     sockname, recv ? "<<<" : ">>>" , \
-		     ## args); \
-	} else { \
-		dev_info(DEV, "%s %s " fmt, sockname, \
-		     recv ? "<<<" : ">>>" , \
-		     ## args); \
-	} \
-} while (0)
-
-STATIC char *_dump_block_id(u64 block_id, char *buff)
-{
-	if (is_syncer_block_id(block_id))
-		strcpy(buff, "SyncerId");
-	else
-		sprintf(buff, "%llx", (unsigned long long)block_id);
-
-	return buff;
-}
-
-void
-_dump_packet(struct drbd_conf *mdev, struct socket *sock,
-	    int recv, union p_polymorph *p, char *file, int line)
-{
-	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
-	int cmd = (recv == 2) ? p->header.command : be16_to_cpu(p->header.command);
-	char tmp[300];
-	union drbd_state m, v;
-
-	switch (cmd) {
-	case P_HAND_SHAKE:
-		INFOP("%s (protocol %u-%u)\n", cmdname(cmd),
-			be32_to_cpu(p->handshake.protocol_min),
-			be32_to_cpu(p->handshake.protocol_max));
-		break;
-
-	case P_BITMAP: /* don't report this */
-	case P_COMPRESSED_BITMAP: /* don't report this */
-		break;
-
-	case P_DATA:
-		INFOP("%s (sector %llus, id %s, seq %u, f %x)\n", cmdname(cmd),
-		      (unsigned long long)be64_to_cpu(p->data.sector),
-		      _dump_block_id(p->data.block_id, tmp),
-		      be32_to_cpu(p->data.seq_num),
-		      be32_to_cpu(p->data.dp_flags)
-			);
-		break;
-
-	case P_DATA_REPLY:
-	case P_RS_DATA_REPLY:
-		INFOP("%s (sector %llus, id %s)\n", cmdname(cmd),
-		      (unsigned long long)be64_to_cpu(p->data.sector),
-		      _dump_block_id(p->data.block_id, tmp)
-			);
-		break;
-
-	case P_RECV_ACK:
-	case P_WRITE_ACK:
-	case P_RS_WRITE_ACK:
-	case P_DISCARD_ACK:
-	case P_NEG_ACK:
-	case P_NEG_RS_DREPLY:
-		INFOP("%s (sector %llus, size %u, id %s, seq %u)\n",
-			cmdname(cmd),
-		      (long long)be64_to_cpu(p->block_ack.sector),
-		      be32_to_cpu(p->block_ack.blksize),
-		      _dump_block_id(p->block_ack.block_id, tmp),
-		      be32_to_cpu(p->block_ack.seq_num)
-			);
-		break;
-
-	case P_DATA_REQUEST:
-	case P_RS_DATA_REQUEST:
-		INFOP("%s (sector %llus, size %u, id %s)\n", cmdname(cmd),
-		      (long long)be64_to_cpu(p->block_req.sector),
-		      be32_to_cpu(p->block_req.blksize),
-		      _dump_block_id(p->block_req.block_id, tmp)
-			);
-		break;
-
-	case P_BARRIER:
-	case P_BARRIER_ACK:
-		INFOP("%s (barrier %u)\n", cmdname(cmd), p->barrier.barrier);
-		break;
-
-	case P_SYNC_PARAM:
-	case P_SYNC_PARAM89:
-		INFOP("%s (rate %u, verify-alg \"%.64s\", csums-alg \"%.64s\")\n",
-			cmdname(cmd), be32_to_cpu(p->rs_param_89.rate),
-			p->rs_param_89.verify_alg, p->rs_param_89.csums_alg);
-		break;
-
-	case P_UUIDS:
-		INFOP("%s Curr:%016llX, Bitmap:%016llX, "
-		      "HisSt:%016llX, HisEnd:%016llX\n",
-		      cmdname(cmd),
-		      (unsigned long long)be64_to_cpu(p->uuids.uuid[UI_CURRENT]),
-		      (unsigned long long)be64_to_cpu(p->uuids.uuid[UI_BITMAP]),
-		      (unsigned long long)be64_to_cpu(p->uuids.uuid[UI_HISTORY_START]),
-		      (unsigned long long)be64_to_cpu(p->uuids.uuid[UI_HISTORY_END]));
-		break;
-
-	case P_SIZES:
-		INFOP("%s (d %lluMiB, u %lluMiB, c %lldMiB, "
-		      "max bio %x, q order %x)\n",
-		      cmdname(cmd),
-		      (long long)(be64_to_cpu(p->sizes.d_size)>>(20-9)),
-		      (long long)(be64_to_cpu(p->sizes.u_size)>>(20-9)),
-		      (long long)(be64_to_cpu(p->sizes.c_size)>>(20-9)),
-		      be32_to_cpu(p->sizes.max_segment_size),
-		      be32_to_cpu(p->sizes.queue_order_type));
-		break;
-
-	case P_STATE:
-		v.i = be32_to_cpu(p->state.state);
-		m.i = 0xffffffff;
-		dump_st(tmp, sizeof(tmp), m, v);
-		INFOP("%s (s %x {%s})\n", cmdname(cmd), v.i, tmp);
-		break;
-
-	case P_STATE_CHG_REQ:
-		m.i = be32_to_cpu(p->req_state.mask);
-		v.i = be32_to_cpu(p->req_state.val);
-		dump_st(tmp, sizeof(tmp), m, v);
-		INFOP("%s (m %x v %x {%s})\n", cmdname(cmd), m.i, v.i, tmp);
-		break;
-
-	case P_STATE_CHG_REPLY:
-		INFOP("%s (ret %x)\n", cmdname(cmd),
-		      be32_to_cpu(p->req_state_reply.retcode));
-		break;
-
-	case P_PING:
-	case P_PING_ACK:
-		/*
-		 * Dont trace pings at summary level
-		 */
-		if (trace_level < TRACE_LVL_ALL)
-			break;
-		/* fall through... */
-	default:
-		INFOP("%s (%u)\n", cmdname(cmd), cmd);
-		break;
-	}
-}
-
-/* Debug routine to dump info about bio */
-
-void _dump_bio(const char *pfx, struct drbd_conf *mdev, struct bio *bio, int complete, struct drbd_request *r)
-{
-#ifdef CONFIG_LBD
-#define SECTOR_FORMAT "%Lx"
-#else
-#define SECTOR_FORMAT "%lx"
-#endif
-#define SECTOR_SHIFT 9
-
-	unsigned long lowaddr = (unsigned long)(bio->bi_sector << SECTOR_SHIFT);
-	char *faddr = (char *)(lowaddr);
-	char rb[sizeof(void *)*2+6] = { 0, };
-	struct bio_vec *bvec;
-	int segno;
-
-	const int rw = bio->bi_rw;
-	const int biorw      = (rw & (RW_MASK|RWA_MASK));
-	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
-	const int biosync    =
-#ifdef BIO_RW_UNPLUG
-		rw & ((1<<BIO_RW_UNPLUG) | (1<<BIO_RW_SYNCIO));
-#else
-		rw & (1<<BIO_RW_SYNC);
-#endif
-
-	if (r)
-		sprintf(rb, "Req:%p ", r);
-
-	dev_info(DEV, "%s %s:%s%s%s Bio:%p %s- %soffset " SECTOR_FORMAT ", size %x\n",
-	     complete ? "<<<" : ">>>",
-	     pfx,
-	     biorw == WRITE ? "Write" : "Read",
-	     biobarrier ? " : B" : "",
-	     biosync ? " : S" : "",
-	     bio,
-	     rb,
-	     complete ? (drbd_bio_uptodate(bio) ? "Success, " : "Failed, ") : "",
-	     bio->bi_sector << SECTOR_SHIFT,
-	     bio->bi_size);
-
-	if (trace_level >= TRACE_LVL_METRICS &&
-	    ((biorw == WRITE) ^ complete)) {
-		printk(KERN_DEBUG "  ind     page   offset   length\n");
-		__bio_for_each_segment(bvec, bio, segno, 0) {
-			printk(KERN_DEBUG "  [%d] %p %8.8x %8.8x\n", segno,
-			       bvec->bv_page, bvec->bv_offset, bvec->bv_len);
-
-			if (trace_level >= TRACE_LVL_ALL) {
-				char *bvec_buf;
-				unsigned long flags;
-
-				bvec_buf = bvec_kmap_irq(bvec, &flags);
-
-				drbd_print_buffer("    ", DBGPRINT_BUFFADDR, 1,
-						  bvec_buf,
-						  faddr,
-						  (bvec->bv_len <= 0x80)
-						  ? bvec->bv_len : 0x80);
-
-				bvec_kunmap_irq(bvec_buf, &flags);
-
-				if (bvec->bv_len > 0x40)
-					printk(KERN_DEBUG "    ....\n");
-
-				faddr += bvec->bv_len;
-			}
-		}
-	}
 }
 #endif
 

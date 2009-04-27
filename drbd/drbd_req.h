@@ -102,6 +102,7 @@ enum drbd_req_event {
 	read_completed_with_error,
 	write_completed_with_error,
 	completed_ok,
+	nothing, /* for tracing only */
 };
 
 /* encoding of request states for now.  we don't actually need that many bits.

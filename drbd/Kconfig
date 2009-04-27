@@ -35,3 +35,13 @@ config BLK_DEV_DRBD
 	  See also: http://www.drbd.org/, http://www.linux-ha.org
 
 	  If unsure, say N.
+
+config DRBD_TRACE
+	tristate "DRBD tracing"
+	depends on BLK_DEV_DRBD
+	select TRACEPOINTS
+	help
+
+	  Say Y here if you want to be able to trace various events in DRBD.
+
+	  If unsure, say N.

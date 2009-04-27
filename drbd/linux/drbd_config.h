@@ -42,11 +42,6 @@ extern const char *drbd_buildtag(void);
 #define PARANOIA
  */
 
-/* Define this to enable dynamic tracing controlled by module parameters
- * at run time. This enables ALL use of dynamic tracing including packet
- * and bio dumping, etc */
-#define ENABLE_DYNAMIC_TRACE
-
 /* Enable fault insertion code */
 #define DRBD_ENABLE_FAULTS
 

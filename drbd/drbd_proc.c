@@ -134,7 +134,6 @@ STATIC void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 	seq_printf(seq, " K/sec\n");
 }
 
-#ifdef ENABLE_DYNAMIC_TRACE
 STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 {
 	struct bm_extent *bme = (struct bm_extent *)e;
@@ -144,7 +143,6 @@ STATIC void resync_dump_detail(struct seq_file *seq, struct lc_element *e)
 		   bme->flags & BME_LOCKED ? "LOCKED" : "------"
 		   );
 }
-#endif
 
 STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 {
@@ -244,7 +242,6 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 				   mdev->rs_total - mdev->ov_left,
 				   mdev->rs_total);
 
-#ifdef ENABLE_DYNAMIC_TRACE
 		if (proc_details >= 1 && inc_local_if_state(mdev, D_FAILED)) {
 			lc_printf_stats(seq, mdev->resync);
 			lc_printf_stats(seq, mdev->act_log);
@@ -257,7 +254,6 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 					resync_dump_detail);
 			}
 		}
-#endif
 	}
 
 	return 0;
