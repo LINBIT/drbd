@@ -405,6 +405,8 @@ static const char *error_messages[] = {
 	EM(ERR_PAUSE_IS_SET) = "Sync-pause flag is already set",
 	EM(ERR_PAUSE_IS_CLEAR) = "Sync-pause flag is already cleared",
 	EM(136) = "Disk state is lower than outdated",
+	EM(ERR_PACKET_NR) = "Kernel does not know how to handle your request.\n"
+	"Maybe API_VERSION mismatch?",
 	EM(ERR_NO_DISK) = "Device does not have a disk-config",
 	EM(ERR_NOT_PROTO_C) = "Protocol C required",
 	EM(ERR_NOMEM_BITMAP) = "vmalloc() failed. Out of memory?",
