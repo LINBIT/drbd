@@ -397,7 +397,13 @@ static void probe_drbd_bio(struct drbd_conf *mdev, const char *pfx, struct bio *
 	const int rw = bio->bi_rw;
 	const int biorw      = (rw & (RW_MASK|RWA_MASK));
 	const int biobarrier = (rw & (1<<BIO_RW_BARRIER));
-	const int biosync    = (rw & ((1<<BIO_RW_UNPLUG) | (1<<BIO_RW_SYNCIO)));
+
+	const int biosync =
+#ifdef BIO_RW_UNPLUG
+		(1<<BIO_RW_SYNCIO) | (1<<BIO_RW_UNPLUG);
+#else
+		(1<<BIO_RW_SYNC);
+#endif
 
 	if (!is_mdev_trace(mdev, TRACE_LVL_ALWAYS))
 		return;
