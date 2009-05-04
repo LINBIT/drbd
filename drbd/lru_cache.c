@@ -34,13 +34,13 @@
 #define PARANOIA_LEAVE() do { clear_bit(__LC_PARANOIA, &lc->flags); smp_mb__after_clear_bit(); } while (0)
 #define RETURN(x...)     do { PARANOIA_LEAVE(); return x ; } while (0)
 
-static inline size_t size_of_lc(unsigned int e_count, size_t e_size)
+static size_t size_of_lc(unsigned int e_count, size_t e_size)
 {
 	return sizeof(struct lru_cache)
 	     + e_count * (e_size + sizeof(struct hlist_head));
 }
 
-static inline void lc_init(struct lru_cache *lc,
+static void lc_init(struct lru_cache *lc,
 		const size_t bytes, const char *name,
 		const unsigned int e_count, const size_t e_size,
 		void *private_p)

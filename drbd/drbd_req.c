@@ -44,7 +44,7 @@
 #else
 
 /* Update disk stats at start of I/O request */
-static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
+static void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
 {
 	const int rw = bio_data_dir(bio);
 #ifndef __disk_stat_inc
@@ -66,7 +66,7 @@ static inline void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_reque
 }
 
 /* Update disk stats when completing request upwards */
-static inline void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
+static void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
 {
 	int rw = bio_data_dir(req->master_bio);
 	unsigned long duration = jiffies - req->start_time;
@@ -433,9 +433,6 @@ out_conflict:
  *  happen "atomically" within the req_lock,
  *  and it enforces that we have to think in a very structured manner
  *  about the "events" that may happen to a request during its life time ...
- *
- * Though I think it is likely that we break this again into many
- * static inline void _req_mod_ ## what (req) ...
  */
 void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 {
@@ -519,7 +516,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		/* else */
 		dev_alert(DEV, "Local READ failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
-		/* _req_mod(req,to_be_send); oops, recursion in static inline */
+		/* _req_mod(req,to_be_send); oops, recursion... */
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
 		req->rq_state |= RQ_NET_PENDING;
 		inc_ap_pending(mdev);

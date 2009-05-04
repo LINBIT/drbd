@@ -2079,7 +2079,7 @@ STATIC void drbd_connector_callback(void *data)
 
 static atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
-static inline unsigned short *
+static unsigned short *
 __tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data,
 	int len, int nul_terminated)
 {
@@ -2099,19 +2099,19 @@ __tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data,
 	return tl;
 }
 
-static inline unsigned short *
+static unsigned short *
 tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data, int len)
 {
 	return __tl_add_blob(tl, tag, data, len, 0);
 }
 
-static inline unsigned short *
+static unsigned short *
 tl_add_str(unsigned short *tl, enum drbd_tags tag, const char *str)
 {
 	return __tl_add_blob(tl, tag, str, strlen(str)+1, 0);
 }
 
-static inline unsigned short *
+static unsigned short *
 tl_add_int(unsigned short *tl, enum drbd_tags tag, const void *val)
 {
 	switch(tag_type(tag)) {

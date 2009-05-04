@@ -81,7 +81,7 @@ struct drbd_bitmap {
 #define BM_LOCKED       0
 #define BM_MD_IO_ERROR  1
 
-static inline int bm_is_locked(struct drbd_bitmap *b)
+static int bm_is_locked(struct drbd_bitmap *b)
 {
 	return test_bit(BM_LOCKED, &b->bm_flags);
 }
@@ -411,12 +411,12 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 	return bits;
 }
 
-static inline unsigned long bm_count_bits(struct drbd_bitmap *b)
+static unsigned long bm_count_bits(struct drbd_bitmap *b)
 {
 	return __bm_count_bits(b, 0);
 }
 
-static inline unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
+static unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
 {
 	return __bm_count_bits(b, 1);
 }

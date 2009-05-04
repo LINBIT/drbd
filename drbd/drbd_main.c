@@ -2308,7 +2308,7 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	return ok;
 }
 
-static inline int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
+static int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
@@ -2320,7 +2320,7 @@ static inline int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 	return 1;
 }
 
-static inline int _drbd_send_zc_bio(struct drbd_conf *mdev, struct bio *bio)
+static int _drbd_send_zc_bio(struct drbd_conf *mdev, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;

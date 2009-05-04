@@ -75,7 +75,8 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev);
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
-static inline struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
+
+static struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
 {
 	struct drbd_epoch *prev;
 	spin_lock(&mdev->epoch_lock);
@@ -3979,6 +3980,32 @@ STATIC int got_IsInSync(struct drbd_conf *mdev, struct p_header *h)
 	dec_rs_pending(mdev);
 
 	return TRUE;
+}
+
+/* when we receive the ACK for a write request,
+ * verify that we actually know about it */
+static struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
+	u64 id, sector_t sector)
+{
+	struct hlist_head *slot = tl_hash_slot(mdev, sector);
+	struct hlist_node *n;
+	struct drbd_request *req;
+
+	hlist_for_each_entry(req, n, slot, colision) {
+		if ((unsigned long)req == (unsigned long)id) {
+			if (req->sector != sector) {
+				dev_err(DEV, "_ack_id_to_req: found req %p but it has "
+				    "wrong sector (%llus versus %llus)\n", req,
+				    (unsigned long long)req->sector,
+				    (unsigned long long)sector);
+				break;
+			}
+			return req;
+		}
+	}
+	dev_err(DEV, "_ack_id_to_req: failed to find req %p, sector %llus in list\n",
+		(void *)(unsigned long)id, (unsigned long long)sector);
+	return NULL;
 }
 
 STATIC int got_BlockAck(struct drbd_conf *mdev, struct p_header *h)

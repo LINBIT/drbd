@@ -209,7 +209,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 
 int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
 
-static inline
+static
 struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
@@ -785,7 +785,7 @@ void drbd_al_apply_to_bm(struct drbd_conf *mdev)
 	     ppsize(ppb, Bit2KB(add)));
 }
 
-static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
+static int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 {
 	int rv;
 
@@ -1077,7 +1077,7 @@ out:
 	dec_local(mdev);
 }
 
-static inline
+static
 struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct bm_extent  *bm_ext;
@@ -1116,7 +1116,7 @@ struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
 	return bm_ext;
 }
 
-static inline int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
+static int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
 {
 	struct lc_element *al_ext;
 	int rv = 0;
