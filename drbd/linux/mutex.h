@@ -19,9 +19,19 @@ static inline void mutex_lock(struct mutex *m)
 	down(&m->sem);
 }
 
+static inline int mutex_lock_interruptible(struct mutex *m)
+{
+	return down_interruptible(&m->sem);
+}
+
 static inline void mutex_unlock(struct mutex *m)
 {
 	up(&m->sem);
+}
+
+static inline int mutex_is_locked(struct mutex *lock)
+{
+        return atomic_read(&lock->sem.count) != 1;
 }
 
 #endif
