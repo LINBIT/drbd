@@ -68,11 +68,8 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 	struct drbd_md_io *md_io;
 
 	BIO_ENDIO_FN_START;
-	/* error parameter ignored:
-	 * drbd_md_sync_page_io explicitly tests bio_uptodate(bio); */
 
 	md_io = (struct drbd_md_io *)bio->bi_private;
-
 	md_io->error = error;
 
 	dump_internal_bio("Md", md_io->mdev, bio, 1);
