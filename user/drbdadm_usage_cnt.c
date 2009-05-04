@@ -68,7 +68,7 @@ struct node_info {
 struct node_info_od {
 	u32 magic;
 	struct node_info ni;
-} __attribute((packed));
+} __packed;
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */

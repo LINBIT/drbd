@@ -3282,7 +3282,7 @@ struct meta_data_on_disk {
 	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	u32 reserved_u32[4];
 
-} __attribute((packed));
+} __packed;
 
 /**
  * drbd_md_sync:

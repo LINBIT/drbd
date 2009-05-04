@@ -273,7 +273,7 @@ struct format_ops {
  * -- DRBD 0.6 --------------------------------------
  */
 
-struct __attribute__ ((packed)) md_on_disk_06 {
+struct __packed md_on_disk_06 {
 	be_u32 gc[GEN_CNT_SIZE];	/* generation counter */
 	be_u32 magic;
 };
@@ -310,7 +310,7 @@ int v06_validate_md(struct format *cfg)
  * -- DRBD 0.7 --------------------------------------
  */
 
-struct __attribute__ ((packed)) md_on_disk_07 {
+struct __packed md_on_disk_07 {
 	be_u64 la_kb;		/* last agreed size. */
 	be_u32 gc[GEN_CNT_SIZE];	/* generation counter */
 	be_u32 magic;
@@ -426,20 +426,20 @@ int is_valid_md(int f,
  * these stay the same for 0.8, too:
  */
 
-struct __attribute__ ((packed)) al_sector_cpu {
+struct __packed al_sector_cpu {
 	u32 magic;
 	u32 tr_number;
-	struct __attribute__ ((packed)) {
+	struct __packed {
 		u32 pos;
 		u32 extent;
 	} updates[62];
 	u32 xor_sum;
 };
 
-struct __attribute__ ((packed)) al_sector_on_disk {
+struct __packed al_sector_on_disk {
 	be_u32 magic;
 	be_u32 tr_number;
-	struct __attribute__ ((packed)) {
+	struct __packed {
 		be_u32 pos;
 		be_u32 extent;
 	} updates[62];
@@ -450,7 +450,7 @@ struct __attribute__ ((packed)) al_sector_on_disk {
  * -- DRBD 0.8 --------------------------------------
  */
 
-struct __attribute__ ((packed)) md_on_disk_08 {
+struct __packed md_on_disk_08 {
 	be_u64 la_sect;		/* last agreed size. */
 	be_u64 uuid[UI_SIZE];   // UUIDs.
 	be_u64 device_uuid;

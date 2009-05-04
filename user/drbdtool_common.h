@@ -5,6 +5,10 @@
 #include "drbd_endian.h"
 #include <stdarg.h>
 
+#ifndef __packed
+#define __packed __attribute__((packed))
+#endif
+
 #define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 #define COMM_TIMEOUT 120

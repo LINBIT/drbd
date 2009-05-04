@@ -33,10 +33,10 @@
  * 512 byte write operations. When the journal is read, only
  * transactions with correct xor_sums are considered.
  * sizeof() = 512 byte */
-struct __attribute__((packed)) al_transaction {
+struct __packed al_transaction {
 	u32       magic;
 	u32       tr_number;
-	struct __attribute__((packed)) {
+	struct __packed {
 		u32 pos;
 		u32 extent; } updates[1 + AL_EXTENTS_PT];
 	u32       xor_sum;

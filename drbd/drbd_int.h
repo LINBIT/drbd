@@ -461,6 +461,10 @@ static inline void bm_xfer_ctx_bit_to_word_offset(struct bm_xfer_ctx *c)
 #endif
 }
 
+#ifndef __packed
+#define __packed __attribute__((packed))
+#endif
+
 /* This is the layout for a packet on the wire.
  * The byteorder is the network byte order.
  *     (except block_id and barrier fields.
@@ -476,7 +480,7 @@ struct p_header {
 	u16	  command;
 	u16	  length;	/* bytes of data after this header */
 	u8	  payload[0];
-} __attribute((packed));
+} __packed;
 /* 8 bytes. packet FIXED for the next century! */
 
 /*
@@ -506,7 +510,7 @@ struct p_data {
 	u64	    block_id;  /* to identify the request in protocol B&C */
 	u32	    seq_num;
 	u32	    dp_flags;
-} __attribute((packed));
+} __packed;
 
 /*
  * commands which share a struct:
@@ -522,7 +526,7 @@ struct p_block_ack {
 	u64	    block_id;
 	u32	    blksize;
 	u32	    seq_num;
-} __attribute((packed));
+} __packed;
 
 
 struct p_block_req {
@@ -531,7 +535,7 @@ struct p_block_req {
 	u64 block_id;
 	u32 blksize;
 	u32 pad;	/* to multiple of 8 Byte */
-} __attribute((packed));
+} __packed;
 
 /*
  * commands with their own struct for additional fields:
@@ -554,20 +558,20 @@ struct p_handshake {
 
 	u32 _pad;
 	u64 reserverd[7];
-} __attribute((packed));
+} __packed;
 /* 80 bytes, FIXED for the next century */
 
 struct p_barrier {
 	struct p_header head;
 	u32 barrier;	/* barrier number _handle_ only */
 	u32 pad;	/* to multiple of 8 Byte */
-} __attribute((packed));
+} __packed;
 
 struct p_barrier_ack {
 	struct p_header head;
 	u32 barrier;
 	u32 set_size;
-} __attribute((packed));
+} __packed;
 
 struct p_rs_param {
 	struct p_header head;
@@ -575,7 +579,7 @@ struct p_rs_param {
 
 	      /* Since protocol version 88 and higher. */
 	char verify_alg[0];
-} __attribute((packed));
+} __packed;
 
 struct p_rs_param_89 {
 	struct p_header head;
@@ -583,7 +587,7 @@ struct p_rs_param_89 {
         /* protocol version 89: */
 	char verify_alg[SHARED_SECRET_MAX];
 	char csums_alg[SHARED_SECRET_MAX];
-} __attribute((packed));
+} __packed;
 
 struct p_protocol {
 	struct p_header head;
@@ -597,17 +601,17 @@ struct p_protocol {
               /* Since protocol version 87 and higher. */
 	char integrity_alg[0];
 
-} __attribute((packed));
+} __packed;
 
 struct p_uuids {
 	struct p_header head;
 	u64 uuid[UI_EXTENDED_SIZE];
-} __attribute((packed));
+} __packed;
 
 struct p_rs_uuid {
 	struct p_header head;
 	u64	    uuid;
-} __attribute((packed));
+} __packed;
 
 struct p_sizes {
 	struct p_header head;
@@ -616,23 +620,23 @@ struct p_sizes {
 	u64	    c_size;  /* current exported size */
 	u32	    max_segment_size;  /* Maximal size of a BIO */
 	u32	    queue_order_type;
-} __attribute((packed));
+} __packed;
 
 struct p_state {
 	struct p_header head;
 	u32	    state;
-} __attribute((packed));
+} __packed;
 
 struct p_req_state {
 	struct p_header head;
 	u32	    mask;
 	u32	    val;
-} __attribute((packed));
+} __packed;
 
 struct p_req_state_reply {
 	struct p_header head;
 	u32	    retcode;
-} __attribute((packed));
+} __packed;
 
 struct p_drbd06_param {
 	u64	  size;
@@ -642,14 +646,14 @@ struct p_drbd06_param {
 	u32	  version;
 	u32	  gen_cnt[5];
 	u32	  bit_map_gen[5];
-} __attribute((packed));
+} __packed;
 
 struct p_discard {
 	struct p_header head;
 	u64	    block_id;
 	u32	    seq_num;
 	u32	    pad;
-} __attribute((packed));
+} __packed;
 
 /* Valid values for the encoding field.
  * Bump proto version when changing this. */
@@ -670,7 +674,7 @@ struct p_compressed_bm {
 	u8 encoding;
 
 	u8 code[0];
-} __attribute((packed));
+} __packed;
 
 static inline enum drbd_bitmap_code
 DCBP_get_code(struct p_compressed_bm *p)
@@ -738,7 +742,7 @@ union p_polymorph {
         struct p_req_state       req_state;
         struct p_req_state_reply req_state_reply;
         struct p_block_req       block_req;
-} __attribute((packed));
+} __packed;
 
 /**********************************************************************/
 enum drbd_thread_state {
