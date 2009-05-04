@@ -242,10 +242,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 				   mdev->rs_total - mdev->ov_left,
 				   mdev->rs_total);
 
-		if (proc_details >= 1 && inc_local_if_state(mdev, D_FAILED)) {
+		if (proc_details >= 1 && get_ldev_if_state(mdev, D_FAILED)) {
 			lc_printf_stats(seq, mdev->resync);
 			lc_printf_stats(seq, mdev->act_log);
-			dec_local(mdev);
+			put_ldev(mdev);
 		}
 
 		if (proc_details >= 2) {

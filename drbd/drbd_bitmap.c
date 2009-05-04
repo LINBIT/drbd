@@ -527,9 +527,9 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	*/
 	words = ALIGN(bits, 64) >> LN2_BPL;
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* one extra long to catch off by one errors */
@@ -612,7 +612,7 @@ unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 	unsigned long flags;
 
 	/* if I don't have a disk, I don't know about out-of-sync status */
-	if (!inc_local_if_state(mdev, D_NEGOTIATING))
+	if (!get_ldev_if_state(mdev, D_NEGOTIATING))
 		return 0;
 
 	ERR_IF(!b) return 0;
@@ -622,7 +622,7 @@ unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 	s = b->bm_set;
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 
-	dec_local(mdev);
+	put_ldev(mdev);
 
 	return s;
 }

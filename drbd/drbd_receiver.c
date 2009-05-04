@@ -603,7 +603,7 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	int err;
 	int disconnect_on_error = 1;
 
-	if (!inc_net(mdev))
+	if (!get_net_conf(mdev))
 		return NULL;
 
 	what = "sock_create_kern";
@@ -667,7 +667,7 @@ out:
 		if (disconnect_on_error)
 			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 	}
-	dec_net(mdev);
+	put_net_conf(mdev);
 	return sock;
 }
 
@@ -677,7 +677,7 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_conf *mdev)
 	struct socket *s_estab = NULL, *s_listen;
 	const char *what;
 
-	if (!inc_net(mdev))
+	if (!get_net_conf(mdev))
 		return NULL;
 
 	what = "sock_create_kern";
@@ -713,7 +713,7 @@ out:
 			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 		}
 	}
-	dec_net(mdev);
+	put_net_conf(mdev);
 
 	return s_estab;
 }
@@ -972,7 +972,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 {
 	int rv;
 
-	if (mdev->write_ordering >= WO_bdev_flush && inc_local(mdev)) {
+	if (mdev->write_ordering >= WO_bdev_flush && get_ldev(mdev)) {
 		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
 		if (rv) {
 			dev_err(DEV, "local disk flush failed with status %d\n", rv);
@@ -981,7 +981,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 			 * if (rv == -EOPNOTSUPP) */
 			drbd_bump_write_ordering(mdev, WO_drain_io);
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
@@ -1176,7 +1176,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	/* prepare bio for re-submit,
 	 * re-init volatile members */
 	/* we still have a local reference,
-	 * inc_local was done in receive_Data. */
+	 * get_ldev was done in receive_Data. */
 	bio->bi_bdev = mdev->bc->backing_bdev;
 	bio->bi_sector = e->sector;
 	bio->bi_size = e->size;
@@ -1466,7 +1466,7 @@ STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_si
 
 	e = read_in_block(mdev, ID_SYNCER, sector, data_size);
 	if (!e) {
-		dec_local(mdev);
+		put_ldev(mdev);
 		return FALSE;
 	}
 
@@ -1551,9 +1551,9 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, struct p_header *h)
 	sector = be64_to_cpu(p->sector);
 	D_ASSERT(p->block_id == ID_SYNCER);
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		/* data is submitted to disk within recv_resync_read.
-		 * corresponding dec_local done below on error,
+		 * corresponding put_ldev done below on error,
 		 * or in drbd_endio_write_sec. */
 		ok = recv_resync_read(mdev, sector, data_size);
 	} else {
@@ -1709,9 +1709,9 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 	if (drbd_recv(mdev, h->payload, header_size) != header_size)
 		return FALSE;
 
-	if (!inc_local(mdev)) {
+	if (!get_ldev(mdev)) {
 		/* data is submitted to disk at the end of this function.
-		 * corresponding dec_local done either below (on error),
+		 * corresponding put_ldev done either below (on error),
 		 * or in drbd_endio_write_sec. */
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Can not write mirrored data block "
@@ -1729,7 +1729,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 	sector = be64_to_cpu(p->sector);
 	e = read_in_block(mdev, p->block_id, sector, data_size);
 	if (!e) {
-		dec_local(mdev);
+		put_ldev(mdev);
 		return FALSE;
 	}
 
@@ -1880,7 +1880,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 				/* we could probably send that P_DISCARD_ACK ourselves,
 				 * but I don't like the receiver using the msock */
 
-				dec_local(mdev);
+				put_ldev(mdev);
 				wake_asender(mdev);
 				finish_wait(&mdev->misc_wait, &wait);
 				return TRUE;
@@ -1950,7 +1950,7 @@ out_interrupted:
 	/* yes, the epoch_size now is imbalanced.
 	 * but we drop the connection anyways, so we don't have a chance to
 	 * receive a barrier... atomic_inc(&mdev->epoch_size); */
-	dec_local(mdev);
+	put_ldev(mdev);
 	drbd_free_ee(mdev, e);
 	return FALSE;
 }
@@ -1984,7 +1984,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		return FALSE;
 	}
 
-	if (!inc_local_if_state(mdev, D_UP_TO_DATE)) {
+	if (!get_ldev_if_state(mdev, D_UP_TO_DATE)) {
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Can not satisfy peer's read request, "
 			    "no local data.\n");
@@ -1995,7 +1995,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 
 	e = drbd_alloc_ee(mdev, p->block_id, sector, size, GFP_KERNEL);
 	if (!e) {
-		dec_local(mdev);
+		put_ldev(mdev);
 		return FALSE;
 	}
 
@@ -2019,7 +2019,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 			/* we have been interrupted,
 			 * probably connection lost! */
 			D_ASSERT(signal_pending(current));
-			dec_local(mdev);
+			put_ldev(mdev);
 			drbd_free_ee(mdev, e);
 			return 0;
 		}
@@ -2031,7 +2031,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		digest_size = h->length - brps ;
 		di = kmalloc(sizeof(*di) + digest_size, GFP_KERNEL);
 		if (!di) {
-			dec_local(mdev);
+			put_ldev(mdev);
 			drbd_free_ee(mdev, e);
 			return 0;
 		}
@@ -2040,7 +2040,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		di->digest = (((char *)di)+sizeof(struct digest_info));
 
 		if (drbd_recv(mdev, di->digest, digest_size) != digest_size) {
-			dec_local(mdev);
+			put_ldev(mdev);
 			drbd_free_ee(mdev, e);
 			kfree(di);
 			return FALSE;
@@ -2061,7 +2061,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 			D_ASSERT(signal_pending(current));
 			drbd_free_ee(mdev, e);
 			kfree(di);
-			dec_local(mdev);
+			put_ldev(mdev);
 			return FALSE;
 		}
 		break;
@@ -2078,7 +2078,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 			/* we have been interrupted,
 			 * probably connection lost! */
 			D_ASSERT(signal_pending(current));
-			dec_local(mdev);
+			put_ldev(mdev);
 			drbd_free_ee(mdev, e);
 			return 0;
 		}
@@ -2782,7 +2782,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 	mdev->p_size = p_size;
 
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
 			   p_size, drbd_get_max_capacity(mdev->bc));
 		warn_if_differ_considerably(mdev, "user requested size",
@@ -2811,16 +2811,16 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 			dev_err(DEV, "The peer's disk size is too small!\n");
 			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 			mdev->bc->dc.disk_size = my_usize;
-			dec_local(mdev);
+			put_ldev(mdev);
 			return FALSE;
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 #undef min_not_zero
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		dd = drbd_determin_dev_size(mdev);
-		dec_local(mdev);
+		put_ldev(mdev);
 		if (dd == dev_size_error)
 			return FALSE;
 		drbd_md_sync(mdev);
@@ -2829,10 +2829,10 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 		drbd_set_my_capacity(mdev, p_size);
 	}
 
-	if (mdev->p_uuid && mdev->state.conn <= C_CONNECTED && inc_local(mdev)) {
+	if (mdev->p_uuid && mdev->state.conn <= C_CONNECTED && get_ldev(mdev)) {
 		nconn = drbd_sync_handshake(mdev,
 				mdev->state.peer, mdev->state.pdsk);
-		dec_local(mdev);
+		put_ldev(mdev);
 
 		if (nconn == C_MASK) {
 			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
@@ -2845,7 +2845,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 		}
 	}
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
 			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
 			ldsc = 1;
@@ -2856,7 +2856,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 			drbd_setup_queue_param(mdev, max_seg_s);
 
 		drbd_setup_order_type(mdev, be32_to_cpu(p->queue_order_type));
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	if (mdev->state.conn > C_WF_REPORT_PARAMS) {
@@ -2906,7 +2906,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct p_header *h)
 		return FALSE;
 	}
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		int skip_initial_sync =
 			mdev->state.conn == C_CONNECTED &&
 			mdev->agreed_pro_version >= 90 &&
@@ -2922,7 +2922,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct p_header *h)
 					CS_VERBOSE, NULL);
 			drbd_md_sync(mdev);
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* Before we test for the disk state, we should wait until an eventually
@@ -3028,7 +3028,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 		nconn = C_CONNECTED;
 
 	if (mdev->p_uuid && peer_state.disk >= D_NEGOTIATING &&
-	    inc_local_if_state(mdev, D_NEGOTIATING)) {
+	    get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		int cr; /* consider resync */
 
 		cr  = (oconn < C_CONNECTED);
@@ -3041,7 +3041,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 		if (cr)
 			nconn = drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);
 
-		dec_local(mdev);
+		put_ldev(mdev);
 		if (nconn == C_MASK) {
 			if (mdev->state.disk == D_NEGOTIATING) {
 				drbd_force_state(mdev, NS(disk, D_DISKLESS));
@@ -3112,13 +3112,13 @@ STATIC int receive_sync_uuid(struct drbd_conf *mdev, struct p_header *h)
 
 	/* Here the _drbd_uuid_ functions are right, current should
 	   _not_ be rotated into the history */
-	if (inc_local_if_state(mdev, D_NEGOTIATING)) {
+	if (get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		_drbd_uuid_set(mdev, UI_CURRENT, be64_to_cpu(p->uuid));
 		_drbd_uuid_set(mdev, UI_BITMAP, 0UL);
 
 		drbd_start_resync(mdev, C_SYNC_TARGET);
 
-		dec_local(mdev);
+		put_ldev(mdev);
 	} else
 		dev_err(DEV, "Ignoring SyncUUID packet!\n");
 
@@ -3563,9 +3563,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	drbd_md_sync(mdev);
 
 	fp = FP_DONT_CARE;
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	if (mdev->state.role == R_PRIMARY) {
@@ -3917,9 +3917,9 @@ STATIC int drbdd_init(struct drbd_thread *thi)
 	} while (h == 0);
 
 	if (h > 0) {
-		if (inc_net(mdev)) {
+		if (get_net_conf(mdev)) {
 			drbdd(mdev);
-			dec_net(mdev);
+			put_net_conf(mdev);
 		}
 	}
 
@@ -4133,10 +4133,10 @@ STATIC int got_NegRSDReply(struct drbd_conf *mdev, struct p_header *h)
 
 	dec_rs_pending(mdev);
 
-	if (inc_local_if_state(mdev, D_FAILED)) {
+	if (get_ldev_if_state(mdev, D_FAILED)) {
 		drbd_rs_complete_io(mdev, sector);
 		drbd_rs_failed_io(mdev, sector, size);
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	return TRUE;
