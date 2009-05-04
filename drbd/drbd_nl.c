@@ -984,7 +984,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto force_diskless_dec;
 	}
 
-	/* Since we are diskless, fix the AL first... */
+	/* Since we are diskless, fix the activity log first... */
 	if (drbd_check_al_size(mdev)) {
 		retcode = ERR_NOMEM;
 		goto force_diskless_dec;

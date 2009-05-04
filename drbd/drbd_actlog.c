@@ -266,10 +266,11 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 	if (al_ext->lc_number != enr) {
 		/* drbd_al_write_transaction(mdev,al_ext,enr);
-		   generic_make_request() are serialized on the
-		   current->bio_tail list now. Therefore we have
-		   to deligate writing something to AL to the
-		   worker thread. */
+		 * recurses into generic_make_request(), which
+		 * disalows recursion, bios being serialized on the
+		 * current->bio_tail list now.
+		 * we have to delegate updates to the activity log
+		 * to the worker thread. */
 		init_completion(&al_work.event);
 		al_work.al_ext = al_ext;
 		al_work.enr = enr;
@@ -674,7 +675,8 @@ out_bio_put:
 
 /**
  * drbd_al_to_on_disk_bm:
- * Writes the areas of the bitmap which are covered by the AL.
+ * Writes the areas of the bitmap which are covered by the
+ * currently active extents of the activity log.
  * called when we detach (unconfigure) local storage,
  * or when we go from R_PRIMARY to R_SECONDARY state.
  */
@@ -773,8 +775,8 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 }
 
 /**
- * drbd_al_apply_to_bm: Sets the bits in the bitmap that are described
- * by the active extents of the AL.
+ * drbd_al_apply_to_bm: Sets the bits in the in-memory bitmap
+ * which are described by the active extents of the activity log.
  */
 void drbd_al_apply_to_bm(struct drbd_conf *mdev)
 {
@@ -818,8 +820,8 @@ static inline int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 }
 
 /**
- * drbd_al_shrink: Removes all active extents form the AL. (but does not
- * write any transactions)
+ * drbd_al_shrink: Removes all active extents form the activity log.
+ * (but does not write any transactions)
  * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
  */
 void drbd_al_shrink(struct drbd_conf *mdev)
