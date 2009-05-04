@@ -1134,7 +1134,7 @@ struct drbd_conf {
 	atomic_t pp_in_use;
 	wait_queue_head_t ee_wait;
 	struct page *md_io_page;	/* one page buffer for md_io */
-	struct page *md_io_tmpp;	/* for hardsect != 512 [s390 only?] */
+	struct page *md_io_tmpp;	/* for hardsect_size != 512 [s390 only?] */
 	struct mutex md_io_mutex;	/* protects the md_io_buffer */
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
@@ -1327,13 +1327,13 @@ extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf 
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE)
 
 /* Since the smalles IO unit is usually 512 byte */
-#define MD_HARDSECT_B	 9
-#define MD_HARDSECT	 (1<<MD_HARDSECT_B)
+#define MD_SECTOR_SHIFT	 9
+#define MD_SECTOR_SIZE	 (1<<MD_SECTOR_SHIFT)
 
 /* activity log */
-#define AL_EXTENTS_PT ((MD_HARDSECT-12)/8-1) /* 61 ; Extents per 512B sector */
-#define AL_EXTENT_SIZE_B 22		 /* One extent represents 4M Storage */
-#define AL_EXTENT_SIZE (1<<AL_EXTENT_SIZE_B)
+#define AL_EXTENTS_PT ((MD_SECTOR_SIZE-12)/8-1) /* 61 ; Extents per 512B sector */
+#define AL_EXTENT_SHIFT 22		 /* One extent represents 4M Storage */
+#define AL_EXTENT_SIZE (1<<AL_EXTENT_SHIFT)
 
 #if BITS_PER_LONG == 32
 #define LN2_BPL 5
@@ -1367,38 +1367,38 @@ struct bm_extent {
  * Bit 1 ==> local node thinks this block needs to be synced.
  */
 
-#define BM_BLOCK_SIZE_B  12			 /* 4k per bit */
-#define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SIZE_B)
+#define BM_BLOCK_SHIFT  12			 /* 4k per bit */
+#define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SHIFT)
 /* (9+3) : 512 bytes @ 8 bits; representing 16M storage
  * per sector of on disk bitmap */
-#define BM_EXT_SIZE_B	 (BM_BLOCK_SIZE_B + MD_HARDSECT_B + 3)  /* = 24 */
-#define BM_EXT_SIZE	 (1<<BM_EXT_SIZE_B)
+#define BM_EXT_SHIFT	 (BM_BLOCK_SHIFT + MD_SECTOR_SHIFT + 3)  /* = 24 */
+#define BM_EXT_SIZE	 (1<<BM_EXT_SHIFT)
 
-#if (BM_EXT_SIZE_B != 24) || (BM_BLOCK_SIZE_B != 12)
+#if (BM_EXT_SHIFT != 24) || (BM_BLOCK_SHIFT != 12)
 #error "HAVE YOU FIXED drbdmeta AS WELL??"
 #endif
 
 /* thus many _storage_ sectors are described by one bit */
-#define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SIZE_B-9))
-#define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SIZE_B-9))
+#define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SHIFT-9))
+#define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
 /* bit to represented kilo byte conversion */
-#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SIZE_B-10))
+#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SHIFT-10))
 
 /* in which _bitmap_ extent (resp. sector) the bit for a certain
  * _storage_ sector is located in */
-#define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SIZE_B-9))
+#define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SHIFT-9))
 
 /* how much _storage_ sectors we have per bitmap sector */
-#define BM_EXT_TO_SECT(x)   ((sector_t)(x) << (BM_EXT_SIZE_B-9))
+#define BM_EXT_TO_SECT(x)   ((sector_t)(x) << (BM_EXT_SHIFT-9))
 #define BM_SECT_PER_EXT     BM_EXT_TO_SECT(1)
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
-#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SIZE_B - AL_EXTENT_SIZE_B))
-#define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
+#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SHIFT - AL_EXTENT_SHIFT))
+#define BM_WORDS_PER_AL_EXT (1 << (AL_EXTENT_SHIFT-BM_BLOCK_SHIFT-LN2_BPL))
 
-#define BM_BLOCKS_PER_BM_EXT_B (BM_EXT_SIZE_B - BM_BLOCK_SIZE_B)
+#define BM_BLOCKS_PER_BM_EXT_B (BM_EXT_SHIFT - BM_BLOCK_SHIFT)
 #define BM_BLOCKS_PER_BM_EXT_MASK  ((1<<BM_BLOCKS_PER_BM_EXT_B) - 1)
 
 /* the extent in "PER_EXTENT" below is an activity log extent
@@ -1417,7 +1417,7 @@ struct bm_extent {
 
 #define DRBD_MAX_SECTORS_32 (0xffffffffLU)
 #define DRBD_MAX_SECTORS_BM \
-	  ((MD_RESERVED_SECT - MD_BM_OFFSET) * (1LL<<(BM_EXT_SIZE_B-9)))
+	  ((MD_RESERVED_SECT - MD_BM_OFFSET) * (1LL<<(BM_EXT_SHIFT-9)))
 #if DRBD_MAX_SECTORS_BM < DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_BM
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_BM

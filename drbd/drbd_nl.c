@@ -746,7 +746,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	union drbd_state ns, os;
 	int rv;
 	int cp_discovered = 0;
-	int hardsect;
+	int hardsect_size;
 
 	drbd_reconfig_start(mdev);
 
@@ -943,19 +943,19 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto force_diskless_dec;
 	}
 
-	/* allocate a second IO page if hardsect != 512 */
-	hardsect = drbd_get_hardsect(nbc->md_bdev);
-	if (hardsect == 0)
-		hardsect = MD_HARDSECT;
+	/* allocate a second IO page if hardsect_size != 512 */
+	hardsect_size = drbd_get_hardsect_size(nbc->md_bdev);
+	if (hardsect_size == 0)
+		hardsect_size = MD_SECTOR_SIZE;
 
-	if (hardsect != MD_HARDSECT) {
+	if (hardsect_size != MD_SECTOR_SIZE) {
 		if (!mdev->md_io_tmpp) {
 			struct page *page = alloc_page(GFP_NOIO);
 			if (!page)
 				goto force_diskless_dec;
 
-			dev_warn(DEV, "Meta data's bdev hardsect = %d != %d\n",
-			     hardsect, MD_HARDSECT);
+			dev_warn(DEV, "Meta data's bdev hardsect_size = %d != %d\n",
+			     hardsect_size, MD_SECTOR_SIZE);
 			dev_warn(DEV, "Workaround engaged (has performace impact).\n");
 
 			mdev->md_io_tmpp = page;

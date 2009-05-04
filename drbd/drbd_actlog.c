@@ -133,7 +133,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 			 sector_t sector, int rw)
 {
-	int hardsect, mask, ok;
+	int hardsect_size, mask, ok;
 	int offset = 0;
 	struct page *iop = mdev->md_io_page;
 
@@ -147,15 +147,15 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		return 0;
 	}
 
-	hardsect = drbd_get_hardsect(bdev->md_bdev);
-	if (hardsect == 0)
-		hardsect = MD_HARDSECT;
+	hardsect_size = drbd_get_hardsect_size(bdev->md_bdev);
+	if (hardsect_size == 0)
+		hardsect_size = MD_SECTOR_SIZE;
 
-	/* in case hardsect != 512 [ s390 only? ] */
-	if (hardsect != MD_HARDSECT) {
-		mask = (hardsect / MD_HARDSECT) - 1;
+	/* in case hardsect_size != 512 [ s390 only? ] */
+	if (hardsect_size != MD_SECTOR_SIZE) {
+		mask = (hardsect_size / MD_SECTOR_SIZE) - 1;
 		D_ASSERT(mask == 1 || mask == 3 || mask == 7);
-		D_ASSERT(hardsect == (mask+1) * MD_HARDSECT);
+		D_ASSERT(hardsect_size == (mask+1) * MD_SECTOR_SIZE);
 		offset = sector & mask;
 		sector = sector & ~mask;
 		iop = mdev->md_io_tmpp;
@@ -164,17 +164,17 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 			void *p = page_address(mdev->md_io_page);
 			void *hp = page_address(mdev->md_io_tmpp);
 
-			ok = _drbd_md_sync_page_io(mdev, bdev, iop,
-						   sector, READ, hardsect);
+			ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector,
+					READ, hardsect_size);
 
 			if (unlikely(!ok)) {
 				dev_err(DEV, "drbd_md_sync_page_io(,%llus,"
-				    "READ [hardsect!=512]) failed!\n",
+				    "READ [hardsect_size!=512]) failed!\n",
 				    (unsigned long long)sector);
 				return 0;
 			}
 
-			memcpy(hp + offset*MD_HARDSECT , p, MD_HARDSECT);
+			memcpy(hp + offset*MD_SECTOR_SIZE , p, MD_SECTOR_SIZE);
 		}
 	}
 
@@ -190,18 +190,18 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, rw ? "WRITE" : "READ");
 
-	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, hardsect);
+	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, hardsect_size);
 	if (unlikely(!ok)) {
 		dev_err(DEV, "drbd_md_sync_page_io(,%llus,%s) failed!\n",
 		    (unsigned long long)sector, rw ? "WRITE" : "READ");
 		return 0;
 	}
 
-	if (hardsect != MD_HARDSECT && rw == READ) {
+	if (hardsect_size != MD_SECTOR_SIZE && rw == READ) {
 		void *p = page_address(mdev->md_io_page);
 		void *hp = page_address(mdev->md_io_tmpp);
 
-		memcpy(p, hp + offset*MD_HARDSECT, MD_HARDSECT);
+		memcpy(p, hp + offset*MD_SECTOR_SIZE, MD_SECTOR_SIZE);
 	}
 
 	return ok;
@@ -243,7 +243,7 @@ struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 
 void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
-	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
+	unsigned int enr = (sector >> (AL_EXTENT_SHIFT-9));
 	struct lc_element *al_ext;
 	struct update_al_work al_work;
 
@@ -282,7 +282,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 {
-	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
+	unsigned int enr = (sector >> (AL_EXTENT_SHIFT-9));
 	struct lc_element *extent;
 	unsigned long flags;
 
@@ -574,7 +574,7 @@ STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-#define S2W(s)	((s)<<(BM_EXT_SIZE_B-BM_BLOCK_SIZE_B-LN2_BPL))
+#define S2W(s)	((s)<<(BM_EXT_SHIFT-BM_BLOCK_SHIFT-LN2_BPL))
 /* activity log to on disk bitmap -- prepare bio unless that sector
  * is already covered by previously prepared bios */
 STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
@@ -634,7 +634,7 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 	bio->bi_bdev = mdev->bc->md_bdev;
 	bio->bi_sector = on_disk_sector;
 
-	if (bio_add_page(bio, page, MD_HARDSECT, page_offset) != MD_HARDSECT)
+	if (bio_add_page(bio, page, MD_SECTOR_SIZE, page_offset) != MD_SECTOR_SIZE)
 		goto out_put_page;
 
 	atomic_inc(&wc->count);

@@ -213,7 +213,7 @@ static void probe_drbd_netlink(void *data, int is_req)
 
 static void probe_drbd_actlog(struct drbd_conf *mdev, sector_t sector, char* msg)
 {
-	unsigned int enr = (sector >> (AL_EXTENT_SIZE_B-9));
+	unsigned int enr = (sector >> (AL_EXTENT_SHIFT-9));
 
 	if (!is_mdev_trace(mdev, TRACE_LVL_ALWAYS))
 		return;

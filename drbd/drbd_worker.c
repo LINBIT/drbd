@@ -1353,7 +1353,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	if (r == SS_SUCCESS) {
 		dev_info(DEV, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     conns_to_name(ns.conn),
-		     (unsigned long) mdev->rs_total << (BM_BLOCK_SIZE_B-10),
+		     (unsigned long) mdev->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) mdev->rs_total);
 
 		if (mdev->rs_total == 0) {

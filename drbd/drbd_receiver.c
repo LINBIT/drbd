@@ -3976,7 +3976,7 @@ STATIC int got_IsInSync(struct drbd_conf *mdev, struct p_header *h)
 	drbd_rs_complete_io(mdev, sector);
 	drbd_set_in_sync(mdev, sector, blksize);
 	/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
-	mdev->rs_same_csum += (blksize >> BM_BLOCK_SIZE_B);
+	mdev->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
 	dec_rs_pending(mdev);
 
 	return TRUE;

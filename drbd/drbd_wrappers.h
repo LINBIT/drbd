@@ -32,7 +32,7 @@
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 
-static inline sector_t drbd_get_hardsect(struct block_device *bdev)
+static inline sector_t drbd_get_hardsect_size(struct block_device *bdev)
 {
 	return bdev->bd_disk->queue->hardsect_size;
 }
