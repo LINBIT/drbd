@@ -161,6 +161,8 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		iop = mdev->md_io_tmpp;
 
 		if (rw == WRITE) {
+			/* these are GFP_KERNEL pages, preallocated
+			 * on device initialization */
 			void *p = page_address(mdev->md_io_page);
 			void *hp = page_address(mdev->md_io_tmpp);
 
@@ -174,7 +176,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 				return 0;
 			}
 
-			memcpy(hp + offset*MD_SECTOR_SIZE , p, MD_SECTOR_SIZE);
+			memcpy(hp + offset*MD_SECTOR_SIZE, p, MD_SECTOR_SIZE);
 		}
 	}
 
@@ -311,7 +313,6 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	struct lc_element *updated = aw->al_ext;
 	const unsigned int new_enr = aw->enr;
 	const unsigned int evicted = aw->old_enr;
-
 	struct al_transaction *buffer;
 	sector_t sector;
 	int i, n, mx;
