@@ -402,7 +402,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 }
 
 /**
- * drbd_al_read_tr: Reads a single transaction record form the
+ * drbd_al_read_tr: Reads a single transaction record from the
  * on disk activity log.
  * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
  * record.
