@@ -160,7 +160,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		sector = sector & ~mask;
 		iop = mdev->md_io_tmpp;
 
-		if (rw == WRITE) {
+		if (rw & WRITE) {
 			/* these are GFP_KERNEL pages, preallocated
 			 * on device initialization */
 			void *p = page_address(mdev->md_io_page);
@@ -183,23 +183,23 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 #if DUMP_MD >= 3
 	dev_info(DEV, "%s [%d]:%s(,%llus,%s)\n",
 	     current->comm, current->pid, __func__,
-	     (unsigned long long)sector, rw ? "WRITE" : "READ");
+	     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 #endif
 
 	if (sector < drbd_md_first_sector(bdev) ||
 	    sector > drbd_md_last_sector(bdev))
 		dev_alert(DEV, "%s [%d]:%s(,%llus,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
-		     (unsigned long long)sector, rw ? "WRITE" : "READ");
+		     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 
 	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, hardsect_size);
 	if (unlikely(!ok)) {
 		dev_err(DEV, "drbd_md_sync_page_io(,%llus,%s) failed!\n",
-		    (unsigned long long)sector, rw ? "WRITE" : "READ");
+		    (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 		return 0;
 	}
 
-	if (hardsect_size != MD_SECTOR_SIZE && rw == READ) {
+	if (hardsect_size != MD_SECTOR_SIZE && !(rw & WRITE)) {
 		void *p = page_address(mdev->md_io_page);
 		void *hp = page_address(mdev->md_io_tmpp);
 
