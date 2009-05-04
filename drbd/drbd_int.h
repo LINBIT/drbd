@@ -36,6 +36,7 @@
 #include <linux/crypto.h>
 #include <linux/tcp.h>
 #include <linux/mutex.h>
+#include <linux/genhd.h>
 #include <net/tcp.h>
 #include "lru_cache.h"
 
@@ -169,8 +170,34 @@ struct drbd_conf;
 #define D_DUMPI(A)
 #endif
 
+/* upstream kernel wants us to use dev_warn(), ...
+ * dev_printk() expects to be presented a struct device *;
+ * in older kernels, (<= 2.6.24), there is nothing suitable there.
+ * "backport" hack: redefine dev_printk.
+ * Trigger is definition of dev_to_disk marcro, introduced with the
+ * commit edfaa7c36574f1bf09c65ad602412db9da5f96bf
+ *     Driver core: convert block from raw kobjects to core devices
+ */
+#if defined(dev_to_disk) && defined(disk_to_dev)
 /* to shorten dev_warn(DEV, "msg"); and relatives statements */
 #define DEV (disk_to_dev(mdev->vdisk))
+#else
+#undef dev_printk
+#define DEV mdev
+#define dev_printk(level, dev, format, arg...)  \
+	        printk(level "block drbd%u: " format , dev->minor , ## arg)
+#endif
+/* also, some older kernels do not have all of these. */
+#ifndef dev_emerg
+#define dev_emerg(dev, format, arg...)          \
+	        dev_printk(KERN_EMERG , dev , format , ## arg)
+#define dev_alert(dev, format, arg...)          \
+	        dev_printk(KERN_ALERT , dev , format , ## arg)
+#define dev_crit(dev, format, arg...)           \
+	        dev_printk(KERN_CRIT , dev , format , ## arg)
+#endif
+
+
 
 /* see kernel/printk.c:printk_ratelimit
  * macro, so it is easy do have independend rate limits at different locations
