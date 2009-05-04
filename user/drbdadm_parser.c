@@ -484,7 +484,11 @@ static void parse_address(struct d_name *on_hosts, char** addr, char** port, cha
 {
 	struct d_name *h;
 	switch(yylex()) {
-	case TK_SCI:
+	case TK_SCI:   /* 'ssocks' was names 'sci' before. */
+		*af = strdup("ssocks");
+		EXP(TK_IPADDR);
+		break;
+	case TK_SSOCKS:
 	case TK_IPV4:
 		*af = yylval.txt;
 		EXP(TK_IPADDR);
@@ -502,7 +506,7 @@ static void parse_address(struct d_name *on_hosts, char** addr, char** port, cha
 		*af = strdup("ipv6");
 		break; */
 	default:
-		pe_expected("sci | ipv4 | ipv6 | <ipv4 address> ");
+		pe_expected("ssocks | ipv4 | ipv6 | <ipv4 address> ");
 	}
 
 	*addr = yylval.txt;

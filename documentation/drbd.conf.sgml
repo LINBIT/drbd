@@ -387,7 +387,8 @@ resource r0 {
     A resource needs one <replaceable>IP</replaceable> address per device,
     which is used to wait for incoming connections from the partner device 
     respectively to reach the partner device. <replaceable>AF</replaceable>
-    must be one of <option>ipv4</option>, <option>ipv6</option> or <option>sci</option>.
+    must be one of <option>ipv4</option>, <option>ipv6</option> or <option>ssocks</option>.
+    (For compatibility reasons <option>sci</option> is an alias for <option>ssocks</option>)
     It may be ommited for IPv4 addresses. The actual IPv6 address that follows
     the <option>ipv6</option> keyword must be placed inside brackets.
   </para>

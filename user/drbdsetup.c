@@ -142,7 +142,7 @@ int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 void close_cn(int sk_nl);
 
 // other functions
-int get_af_sci(int warn);
+int get_af_ssocks(int warn);
 void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
@@ -662,7 +662,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 	static struct { char* text; int af; } afs[] = {
 		{ "ipv4:", AF_INET  },
 		{ "ipv6:", AF_INET6 },
-		{ "sci:",  -1 },
+		{ "ssocks:",  -1 },
 	};
 
 	unsigned int i;
@@ -678,7 +678,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 		}
 	}
 	if (*af == -1)
-		*af = get_af_sci(1);
+		*af = get_af_ssocks(1);
 
 	b=strrchr(text,':');
 	if (b) {
@@ -715,7 +715,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 		/* addr6.sin6_len = sizeof(addr6); */
 		add_tag(tl,ad->tag,&addr6,sizeof(addr6));
 	} else {
-		/* AF_INET and AF_SCI */
+		/* AF_INET and AF_SSOCKS */
 		addr.sin_port = htons(port);
 		addr.sin_family = af;
 		addr.sin_addr.s_addr = resolv(address);
@@ -756,8 +756,8 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 
 /* It will only print the WARNING if the warn flag is set
    with the _first_ call! */
-#define PROC_NET_AF_SCI_FAMILY "/proc/net/af_sci/family"
-int get_af_sci(int warn)
+#define PROC_NET_AF_SSOCKS_FAMILY "/proc/net/af_sci/family"
+int get_af_ssocks(int warn)
 {
 	char buf[16];
 	int c, fd;
@@ -766,11 +766,11 @@ int get_af_sci(int warn)
 	if (af > 0)
 		return af;
 
-	fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
+	fd = open(PROC_NET_AF_SSOCKS_FAMILY, O_RDONLY);
 	if (fd < 0) {
 		if (warn)
-			fprintf(stderr, "open(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\n WARNING: assuming AF_SCI = 27. "
+			fprintf(stderr, "open(" PROC_NET_AF_SSOCKS_FAMILY ") "
+				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
 				"Socket creation will probabely fail.\n");
 		af = 27;
 		return af;
@@ -783,8 +783,8 @@ int get_af_sci(int warn)
 		af = m_strtoll(buf,1);
 	} else {
 		if (warn)
-			fprintf(stderr, "read(" PROC_NET_AF_SCI_FAMILY ") "
-				"failed: %m\n WARNING: assuming AF_SCI = 27. "
+			fprintf(stderr, "read(" PROC_NET_AF_SSOCKS_FAMILY ") "
+				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
 				"Socket creation will probabely fail.\n");
 		af = 27;
 	}
@@ -1110,7 +1110,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 
 void show_af(struct drbd_option *od, unsigned short* tp)
 {
-	int af_sci = get_af_sci(0);
+	int af_ssocks = get_af_ssocks(0);
 	int val;
 	const char *msg;
 
@@ -1118,12 +1118,12 @@ void show_af(struct drbd_option *od, unsigned short* tp)
 	ASSERT( *tp++ == sizeof(int) );
 	val = *(int*)tp;
 
-	msg = (val == af_sci) ? "sci" :
+	msg = (val == af_ssocks) ? "ssocks" :
 	      (val == AF_INET) ? "IPv4" :
 	      "UNKNOWN";
 	printf("\t%-16s\t%s", od->name, msg);
 	if (val == AF_INET) printf(" _is_default");
-	if (val != AF_INET && val != af_sci)
+	if (val != AF_INET && val != af_ssocks)
 		printf("; # %u ??\n", val);
 	else
 		printf(";\n");
@@ -1365,8 +1365,8 @@ char *af_to_str(int af)
 		return "ipv4";
 	else if (af == AF_INET6)
 		return "ipv6";
-	else if (af == get_af_sci(0))
-		return "sci";
+	else if (af == get_af_ssocks(0))
+		return "ssocks";
 	else return "unknown";
 }
 
@@ -1378,7 +1378,7 @@ void show_address(void* address, int addr_len)
 	char buffer[INET6_ADDRSTRLEN];
 
 	addr = (struct sockaddr *)address;
-	if (addr->sa_family == AF_INET || addr->sa_family == get_af_sci(0)) {
+	if (addr->sa_family == AF_INET || addr->sa_family == get_af_ssocks(0)) {
 		addr4 = (struct sockaddr_in *)address;
 		printf("\taddress\t\t\t%s %s:%d;\n",
 		       af_to_str(addr4->sin_family),
@@ -2116,7 +2116,7 @@ void af_opt_xml(struct drbd_option *option)
 {
 	printf("\t<option name=\"%s\" type=\"addrfamily\">\n",option->name);
 	printf("\t\t<addrfamily>%s</addrfamily>\n", "IPv4");
-	printf("\t\t<addrfamily>%s</addrfamily>\n", "SCI");
+	printf("\t\t<addrfamily>%s</addrfamily>\n", "SSOCKS");
 	printf("\t</option>\n");
 }
 
