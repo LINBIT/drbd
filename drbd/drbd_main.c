@@ -172,7 +172,7 @@ STATIC struct block_device_operations drbd_ops = {
 /* When checking with sparse, and this is an inline function, sparse will
    give tons of false positives. When this is a real functions sparse works.
  */
-int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
+int _get_ldev_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
 {
 	int io_allowed;
 
@@ -401,9 +401,9 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 	int ok = 1;
 
 	eh = EP_PASS_ON;
-	if (inc_local_if_state(mdev, D_FAILED)) {
+	if (get_ldev_if_state(mdev, D_FAILED)) {
 		eh = mdev->bc->dc.on_io_error;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	if (!forcedetach && eh == EP_PASS_ON)
@@ -664,16 +664,16 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 	int rv = SS_SUCCESS;
 
 	fp = FP_DONT_CARE;
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
-	if (inc_net(mdev)) {
+	if (get_net_conf(mdev)) {
 		if (!mdev->net_conf->two_primaries &&
 		    ns.role == R_PRIMARY && ns.peer == R_PRIMARY)
 			rv = SS_TWO_PRIMARIES;
-		dec_net(mdev);
+		put_net_conf(mdev);
 	}
 
 	if (rv <= 0)
@@ -752,9 +752,9 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	os = mdev->state;
 
 	fp = FP_DONT_CARE;
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* Early state sanitising. */
@@ -847,7 +847,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 
 	/* Connection breaks down before we finished "Negotiating" */
 	if (ns.conn < C_CONNECTED && ns.disk == D_NEGOTIATING &&
-	    inc_local_if_state(mdev, D_NEGOTIATING)) {
+	    get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		if (mdev->ed_uuid == mdev->bc->md.uuid[UI_CURRENT]) {
 			ns.disk = mdev->new_state_tmp.disk;
 			ns.pdsk = mdev->new_state_tmp.pdsk;
@@ -856,7 +856,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			ns.disk = D_DISKLESS;
 			ns.pdsk = D_UNKNOWN;
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	if (fp == FP_STONITH &&
@@ -974,7 +974,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	}
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		u32 mdf = mdev->bc->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 						 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
 						 MDF_PEER_OUT_DATED);
@@ -997,7 +997,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 		}
 		if (os.disk < D_CONSISTENT && ns.disk >= D_CONSISTENT)
 			drbd_set_ed_uuid(mdev, mdev->bc->md.uuid[UI_CURRENT]);
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
@@ -1078,9 +1078,9 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	}
 
 	fp = FP_DONT_CARE;
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* Inform userspace about the change... */
@@ -1122,7 +1122,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		/* FIXME race with drbd_sync_handshake accessing this! */
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
-		if (inc_local(mdev)) {
+		if (get_ldev(mdev)) {
 			if (ns.role == R_PRIMARY && mdev->bc->md.uuid[UI_BITMAP] == 0 &&
 			    ns.disk >= D_UP_TO_DATE)
 				drbd_uuid_new_current(mdev);
@@ -1135,11 +1135,11 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 				_drbd_uuid_new_current(mdev);
 				drbd_send_uuids(mdev);
 			}
-			dec_local(mdev);
+			put_ldev(mdev);
 		}
 	}
 
-	if (ns.pdsk < D_INCONSISTENT && inc_local(mdev)) {
+	if (ns.pdsk < D_INCONSISTENT && get_ldev(mdev)) {
 		if (ns.peer == R_PRIMARY && mdev->bc->md.uuid[UI_BITMAP] == 0) {
 			/* D_DISKLESS Peer becomes primary */
 			if (os.peer == R_SECONDARY)
@@ -1153,7 +1153,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		/* D_DISKLESS Peer becomes secondary */
 		if (os.peer == R_PRIMARY && ns.peer == R_SECONDARY)
 			drbd_al_to_on_disk_bm(mdev);
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/* Last part of the attaching process ... */
@@ -1193,7 +1193,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL, "set_n_write from invalidate");
 
 	if (os.disk > D_DISKLESS && ns.disk == D_DISKLESS) {
-		/* since inc_local() only works as long as disk>=D_INCONSISTENT,
+		/* since get_ldev() only works as long as disk>=D_INCONSISTENT,
 		   and it is D_DISKLESS here, local_cnt can only go down, it can
 		   not increase... It will reach zero */
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
@@ -1535,7 +1535,7 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 
 	u64 uuid_flags = 0;
 
-	if (!inc_local_if_state(mdev, D_NEGOTIATING))
+	if (!get_ldev_if_state(mdev, D_NEGOTIATING))
 		return 1;
 
 	/* FIXME howto handle diskless ? */
@@ -1549,7 +1549,7 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 	uuid_flags |= mdev->new_state_tmp.disk == D_INCONSISTENT ? 4 : 0;
 	p.uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
-	dec_local(mdev);
+	put_ldev(mdev);
 
 	return drbd_send_cmd(mdev, USE_DATA_SOCKET, P_UUIDS,
 			     (struct p_header *)&p, sizeof(p));
@@ -1572,13 +1572,13 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 	int q_order_type;
 	int ok;
 
-	if (inc_local_if_state(mdev, D_NEGOTIATING)) {
+	if (get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		D_ASSERT(mdev->bc->backing_bdev);
 		d_size = drbd_get_max_capacity(mdev->bc);
 		u_size = mdev->bc->dc.disk_size;
 		q_order_type = drbd_queue_order_type(mdev);
 		p.queue_order_type = cpu_to_be32(drbd_queue_order_type(mdev));
-		dec_local(mdev);
+		put_ldev(mdev);
 	} else {
 		d_size = 0;
 		u_size = 0;
@@ -1674,7 +1674,7 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 	bm_words = drbd_bm_words(mdev);
 	buffer = (unsigned long *)p->payload;
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		if (drbd_md_test_flag(mdev->bc, MDF_FULL_SYNC)) {
 			INFO("Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(mdev);
@@ -1688,7 +1688,7 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 				drbd_md_sync(mdev);
 			}
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	/*
@@ -2880,7 +2880,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 
 	/* We use here D_FAILED and not D_ATTACHING because we try to write
 	 * metadata even if we detach due to a disk failure! */
-	if (!inc_local_if_state(mdev, D_FAILED))
+	if (!get_ldev_if_state(mdev, D_FAILED))
 		return;
 
 	MTRACE(TRACE_TYPE_MD_IO, TRACE_LVL_SUMMARY,
@@ -2923,7 +2923,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	mdev->bc->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
-	dec_local(mdev);
+	put_ldev(mdev);
 }
 
 /**
@@ -2938,7 +2938,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	struct meta_data_on_disk *buffer;
 	int i, rv = NO_ERROR;
 
-	if (!inc_local_if_state(mdev, D_ATTACHING))
+	if (!get_ldev_if_state(mdev, D_ATTACHING))
 		return ERR_IO_MD_DISK;
 
 	down(&mdev->md_io_mutex);
@@ -2998,7 +2998,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
  err:
 	up(&mdev->md_io_mutex);
-	dec_local(mdev);
+	put_ldev(mdev);
 
 	return rv;
 }
@@ -3143,7 +3143,7 @@ int drbd_bmio_set_n_write(struct drbd_conf *mdev)
 {
 	int rv = -EIO;
 
-	if (inc_local_if_state(mdev, D_ATTACHING)) {
+	if (get_ldev_if_state(mdev, D_ATTACHING)) {
 		drbd_md_set_flag(mdev, MDF_FULL_SYNC);
 		drbd_md_sync(mdev);
 		drbd_bm_set_all(mdev);
@@ -3155,7 +3155,7 @@ int drbd_bmio_set_n_write(struct drbd_conf *mdev)
 			drbd_md_sync(mdev);
 		}
 
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	return rv;

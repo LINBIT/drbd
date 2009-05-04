@@ -208,9 +208,9 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 
 	D_ASSERT(mdev->state.pdsk == D_UNKNOWN);
 
-	if (inc_local_if_state(mdev, D_CONSISTENT)) {
+	if (get_ldev_if_state(mdev, D_CONSISTENT)) {
 		fp = mdev->bc->dc.fencing;
-		dec_local(mdev);
+		put_ldev(mdev);
 	} else {
 		drbd_WARN("Not outdating peer, I'm not even Consistent myself.\n");
 		return mdev->state.pdsk;
@@ -362,30 +362,30 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 	if (new_role == R_SECONDARY) {
 		set_disk_ro(mdev->vdisk, TRUE);
-		if (inc_local(mdev)) {
+		if (get_ldev(mdev)) {
 			mdev->bc->md.uuid[UI_CURRENT] &= ~(u64)1;
-			dec_local(mdev);
+			put_ldev(mdev);
 		}
 	} else {
-		if (inc_net(mdev)) {
+		if (get_net_conf(mdev)) {
 			mdev->net_conf->want_lose = 0;
-			dec_net(mdev);
+			put_net_conf(mdev);
 		}
 		set_disk_ro(mdev->vdisk, FALSE);
-		if (inc_local(mdev)) {
+		if (get_ldev(mdev)) {
 			if (((mdev->state.conn < C_CONNECTED ||
 			       mdev->state.pdsk <= D_FAILED)
 			      && mdev->bc->md.uuid[UI_BITMAP] == 0) || forced)
 				drbd_uuid_new_current(mdev);
 
 			mdev->bc->md.uuid[UI_CURRENT] |=  (u64)1;
-			dec_local(mdev);
+			put_ldev(mdev);
 		}
 	}
 
-	if ((new_role == R_SECONDARY) && inc_local(mdev)) {
+	if ((new_role == R_SECONDARY) && get_ldev(mdev)) {
 		drbd_al_to_on_disk_bm(mdev);
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
 	if (mdev->state.conn >= C_WF_REPORT_PARAMS) {
@@ -959,7 +959,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	if (retcode < SS_SUCCESS)
 		goto release_bdev2_fail;
 
-	if (!inc_local_if_state(mdev, D_ATTACHING))
+	if (!get_ldev_if_state(mdev, D_ATTACHING))
 		goto force_diskless;
 
 	drbd_md_set_sector_offsets(mdev, nbc);
@@ -1143,13 +1143,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
 
-	dec_local(mdev);
+	put_ldev(mdev);
 	reply->ret_code = retcode;
 	drbd_reconfig_done(mdev);
 	return 0;
 
  force_diskless_dec:
-	dec_local(mdev);
+	put_ldev(mdev);
  force_diskless:
 	drbd_force_state(mdev, NS(disk, D_DISKLESS));
 	drbd_md_sync(mdev);
@@ -1250,7 +1250,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		odev = minor_to_mdev(i);
 		if (!odev || odev == mdev)
 			continue;
-		if (inc_net(odev)) {
+		if (get_net_conf(odev)) {
 			if (M_ADDR(new_conf) == M_ADDR(odev->net_conf) &&
 			    M_PORT(new_conf) == M_PORT(odev->net_conf))
 				retcode = ERR_LOCAL_ADDR;
@@ -1259,7 +1259,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			    O_PORT(new_conf) == O_PORT(odev->net_conf))
 				retcode = ERR_PEER_ADDR;
 
-			dec_net(odev);
+			put_net_conf(odev);
 			if (retcode != NO_ERROR)
 				goto fail;
 		}
@@ -1467,7 +1467,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (!inc_local(mdev)) {
+	if (!get_ldev(mdev)) {
 		retcode = ERR_NO_DISK;
 		goto fail;
 	}
@@ -1480,7 +1480,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
 	dd = drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
-	dec_local(mdev);
+	put_ldev(mdev);
 	if (dd == dev_size_error) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto fail;
@@ -1551,14 +1551,14 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	mdev->sync_conf = sc;
 	spin_unlock(&mdev->peer_seq_lock);
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 		drbd_al_shrink(mdev);
 		err = drbd_check_al_size(mdev);
 		lc_unlock(mdev->act_log);
 		wake_up(&mdev->al_wait);
 
-		dec_local(mdev);
+		put_ldev(mdev);
 		drbd_md_sync(mdev);
 
 		if (err) {
@@ -1648,14 +1648,14 @@ STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 
 	tl = reply->tag_list;
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		tl = disk_conf_to_tags(mdev, &mdev->bc->dc, tl);
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 
-	if (inc_net(mdev)) {
+	if (get_net_conf(mdev)) {
 		tl = net_conf_to_tags(mdev, mdev->net_conf, tl);
-		dec_net(mdev);
+		put_net_conf(mdev);
 	}
 	tl = syncer_conf_to_tags(mdev, &mdev->sync_conf, tl);
 
@@ -1684,7 +1684,7 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	tl = reply->tag_list;
 
-	if (inc_local(mdev)) {
+	if (get_ldev(mdev)) {
 		/* This is a hand crafted add tag ;) */
 		*tl++ = T_uuids;
 		*tl++ = UI_SIZE*sizeof(u64);
@@ -1694,7 +1694,7 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		*tl++ = sizeof(int);
 		memcpy(tl, &mdev->bc->md.flags, sizeof(int));
 		tl = (unsigned short *)((char *)tl + sizeof(int));
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 	*tl++ = TT_END; /* Close the tag list */
 
@@ -1955,10 +1955,10 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	unsigned int res;
 
 	/* no local ref, no bitmap, no syncer progress, no broadcast. */
-	if (!inc_local(mdev))
+	if (!get_ldev(mdev))
 		return;
 	drbd_get_syncer_progress(mdev, &rs_left, &res);
-	dec_local(mdev);
+	put_ldev(mdev);
 
 	*tl++ = T_sync_progress;
 	*tl++ = sizeof(int);

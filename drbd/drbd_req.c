@@ -201,9 +201,9 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 		 * we would forget to resync the corresponding extent.
 		 */
 		if (s & RQ_LOCAL_MASK) {
-			if (inc_local_if_state(mdev, D_FAILED)) {
+			if (get_ldev_if_state(mdev, D_FAILED)) {
 				drbd_al_complete_io(mdev, req->sector);
-				dec_local(mdev);
+				put_ldev(mdev);
 			} else if (DRBD_ratelimit(5*HZ,3)) {
 				drbd_WARN("Should have called drbd_al_complete_io(, %llu), "
 				     "but my Disk seems to have failed :(\n",
@@ -457,9 +457,9 @@ STATIC int _req_conflicts(struct drbd_request *req)
 	MUST_HOLD(&mdev->req_lock);
 	D_ASSERT(hlist_unhashed(&req->colision));
 
-	/* FIXME should this inc_net/dec_net
+	/* FIXME should this get_net_conf/put_net_conf
 	 * rather be done in drbd_make_request_common? */
-	if (!inc_net(mdev))
+	if (!get_net_conf(mdev))
 		return 0;
 
 	/* BUG_ON */
@@ -504,11 +504,11 @@ STATIC int _req_conflicts(struct drbd_request *req)
 out_no_conflict:
 	/* this is like it should be, and what we expected.
 	 * our users do behave after all... */
-	dec_net(mdev);
+	put_net_conf(mdev);
 	return 0;
 
 out_conflict:
-	dec_net(mdev);
+	put_net_conf(mdev);
 	return 1;
 }
 
@@ -578,7 +578,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		_req_may_be_done(req, error);
-		dec_local(mdev);
+		put_ldev(mdev);
 		break;
 
 	case write_completed_with_error:
@@ -593,7 +593,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 * FIXME see comment below in read_completed_with_error */
 		__drbd_chk_io_error(mdev, FALSE);
 		_req_may_be_done(req, error);
-		dec_local(mdev);
+		put_ldev(mdev);
 		break;
 
 	case read_completed_with_error:
@@ -608,7 +608,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		if (bio_rw(req->master_bio) == READA) {
 			/* it is legal to fail READA */
 			_req_may_be_done(req, error);
-			dec_local(mdev);
+			put_ldev(mdev);
 			break;
 		}
 		/* else */
@@ -629,7 +629,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 * we get back enough data to be able to clear the bits again.
 		 */
 		__drbd_chk_io_error(mdev, FALSE);
-		dec_local(mdev);
+		put_ldev(mdev);
 		/* NOTE: if we have no connection,
 		 * or know the peer has no good data either,
 		 * then we don't actually need to "queue_for_net_read",
@@ -903,7 +903,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 
 	dump_bio(mdev, bio, 0);
 
-	local = inc_local(mdev);
+	local = get_ldev(mdev);
 	if (!local) {
 		bio_put(req->private_bio); /* or we get a bio leak */
 		req->private_bio = NULL;
@@ -938,7 +938,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 				local = 0;
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
-				dec_local(mdev);
+				put_ldev(mdev);
 			}
 		}
 		remote = !local && mdev->state.pdsk >= D_UP_TO_DATE;
@@ -1079,7 +1079,7 @@ allocate_barrier:
 			bio_put(req->private_bio);
 			req->private_bio = NULL;
 			drbd_al_complete_io(mdev, req->sector);
-			dec_local(mdev);
+			put_ldev(mdev);
 			local = 0;
 		}
 		if (remote)
@@ -1134,7 +1134,7 @@ fail_and_free_req:
 	if (local) {
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 	bio_endio(bio, err);
 	drbd_req_free(req);
@@ -1309,14 +1309,14 @@ int drbd_merge_bvec(struct request_queue *q,
 	if (bio_size == 0) {
 		if (limit <= bvec->bv_len)
 			limit = bvec->bv_len;
-	} else if (limit && inc_local(mdev)) {
+	} else if (limit && get_ldev(mdev)) {
 		struct request_queue * const b =
 			mdev->bc->backing_bdev->bd_disk->queue;
 		if (b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
 			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
 			limit = min(limit, backing_limit);
 		}
-		dec_local(mdev);
+		put_ldev(mdev);
 	}
 	return limit;
 }

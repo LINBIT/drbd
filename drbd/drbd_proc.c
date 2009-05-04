@@ -220,10 +220,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		    mdev->state.conn == C_SYNC_TARGET)
 			drbd_syncer_progress(mdev, seq);
 
-		if (inc_local_if_state(mdev, D_FAILED)) {
+		if (get_ldev_if_state(mdev, D_FAILED)) {
 			lc_printf_stats(seq, mdev->resync);
 			lc_printf_stats(seq, mdev->act_log);
-			dec_local(mdev);
+			put_ldev(mdev);
 		}
 
 	}
