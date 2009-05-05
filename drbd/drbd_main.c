@@ -1198,6 +1198,11 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		   not increase... It will reach zero */
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
+		drbd_rs_cancel_all(mdev);
+		mdev->rs_total = 0;
+		mdev->rs_failed = 0;
+		atomic_set(&mdev->rs_pending_cnt, 0);
+
 		lc_free(mdev->resync);
 		mdev->resync = NULL;
 		lc_free(mdev->act_log);
