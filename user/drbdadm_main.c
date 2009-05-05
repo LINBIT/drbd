@@ -1466,7 +1466,7 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
 {
   char* argv[MAX_ARGS];
   struct d_option* opt;
-  int argc=0;
+  int i, argc=0;
 
   argv[NA(argc)]=drbdsetup;
   argv[NA(argc)]=res->me->device;
@@ -1476,6 +1476,11 @@ int adm_syncer(struct d_resource* res,const char* unused __attribute((unused)))
   argv[NA(argc)]="--create-device";
   opt=res->sync_options;
   make_options(opt);
+
+  for(i=0;i<soi;i++) {
+    argv[NA(argc)]=setup_opts[i];
+  }
+
   argv[NA(argc)]=0;
 
   return m_system(argv, SLEEPS_SHORT, res);
