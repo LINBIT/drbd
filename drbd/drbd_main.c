@@ -1376,6 +1376,7 @@ STATIC int drbd_thread_setup(void *arg)
 {
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
 	struct drbd_conf *mdev = thi->mdev;
+	unsigned long flags;
 	long timeout;
 	int retval;
 	const char *me =
@@ -1386,10 +1387,12 @@ STATIC int drbd_thread_setup(void *arg)
 	daemonize("drbd_thread");
 	D_ASSERT(get_t_state(thi) == Running);
 	D_ASSERT(thi->task == NULL);
-	spin_lock(&thi->t_lock);
+	/* state engine takes this lock (in drbd_thread_stop_nowait)
+	 * while holding the req_lock irqsave */
+	spin_lock_irqsave(&thi->t_lock, flags);
 	thi->task = current;
 	smp_mb();
-	spin_unlock(&thi->t_lock);
+	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
@@ -1399,7 +1402,7 @@ STATIC int drbd_thread_setup(void *arg)
 restart:
 	retval = thi->function(thi);
 
-	spin_lock(&thi->t_lock);
+	spin_lock_irqsave(&thi->t_lock, flags);
 
 	/* if the receiver has been "Exiting", the last thing it did
 	 * was set the conn state to "StandAlone",
@@ -1414,7 +1417,7 @@ restart:
 	if (thi->t_state == Restarting) {
 		dev_info(DEV, "Restarting %s thread\n", me);
 		thi->t_state = Running;
-		spin_unlock(&thi->t_lock);
+		spin_unlock_irqrestore(&thi->t_lock, flags);
 		goto restart;
 	}
 
@@ -1425,7 +1428,7 @@ restart:
 	/* THINK maybe two different completions? */
 	complete(&thi->startstop); /* notify: thi->task unset. */
 	dev_info(DEV, "Terminating %s thread\n", me);
-	spin_unlock(&thi->t_lock);
+	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	/* Release mod reference taken when thread was started */
 	module_put(THIS_MODULE);
@@ -1446,12 +1449,15 @@ int drbd_thread_start(struct drbd_thread *thi)
 {
 	int pid;
 	struct drbd_conf *mdev = thi->mdev;
+	unsigned long flags;
 	const char *me =
 		thi == &mdev->receiver ? "receiver" :
 		thi == &mdev->asender  ? "asender"  :
 		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
-	spin_lock(&thi->t_lock);
+	/* is used from state engine doing drbd_thread_stop_nowait,
+	 * while holding the req lock irqsave */
+	spin_lock_irqsave(&thi->t_lock, flags);
 
 	switch (thi->t_state) {
 	case None:
@@ -1461,7 +1467,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
 			dev_err(DEV, "Failed to get module reference in drbd_thread_start\n");
-			spin_unlock(&thi->t_lock);
+			spin_unlock_irqrestore(&thi->t_lock, flags);
 			return FALSE;
 		}
 
@@ -1469,7 +1475,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		D_ASSERT(thi->task == NULL);
 		thi->reset_cpu_mask = 1;
 		thi->t_state = Running;
-		spin_unlock(&thi->t_lock);
+		spin_unlock_irqrestore(&thi->t_lock, flags);
 		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
@@ -1497,7 +1503,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 	case Running:
 	case Restarting:
 	default:
-		spin_unlock(&thi->t_lock);
+		spin_unlock_irqrestore(&thi->t_lock, flags);
 		break;
 	}
 
@@ -1508,20 +1514,22 @@ int drbd_thread_start(struct drbd_thread *thi)
 void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 {
 	struct drbd_conf *mdev = thi->mdev;
+	unsigned long flags;
 	enum drbd_thread_state ns = restart ? Restarting : Exiting;
 	const char *me =
 		thi == &mdev->receiver ? "receiver" :
 		thi == &mdev->asender  ? "asender"  :
 		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
-	spin_lock(&thi->t_lock);
+	/* may be called from state engine, holding the req lock irqsave */
+	spin_lock_irqsave(&thi->t_lock, flags);
 
 	/* dev_info(DEV, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
 	if (thi->t_state == None) {
-		spin_unlock(&thi->t_lock);
+		spin_unlock_irqrestore(&thi->t_lock, flags);
 		if (restart)
 			drbd_thread_start(thi);
 		return;
@@ -1529,7 +1537,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 
 	if (thi->t_state != ns) {
 		if (thi->task == NULL) {
-			spin_unlock(&thi->t_lock);
+			spin_unlock_irqrestore(&thi->t_lock, flags);
 			return;
 		}
 
@@ -1541,17 +1549,17 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 		else
 			D_ASSERT(!wait);
 	}
-	spin_unlock(&thi->t_lock);
+	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	if (wait) {
 		D_ASSERT(thi->task != current);
 		wait_for_completion(&thi->startstop);
-		spin_lock(&thi->t_lock);
+		spin_lock_irqsave(&thi->t_lock, flags);
 		D_ASSERT(thi->task == NULL);
 		if (thi->t_state != None)
 			dev_err(DEV, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 					me, thi->t_state, None);
-		spin_unlock(&thi->t_lock);
+		spin_unlock_irqrestore(&thi->t_lock, flags);
 	}
 }
 
