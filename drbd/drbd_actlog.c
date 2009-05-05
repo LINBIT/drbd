@@ -29,10 +29,10 @@
 #include "drbd_tracing.h"
 #include "drbd_wrappers.h"
 
-/* I do not believe that all storage medias can guarantee atomic
- * 512 byte write operations. When the journal is read, only
- * transactions with correct xor_sums are considered.
- * sizeof() = 512 byte */
+/* We maintain a trivial check sum in our on disk activity log.
+ * With that we can ensure correct operation even when the storage
+ * device might do a partial (last) sector write while loosing power.
+ */
 struct __packed al_transaction {
 	u32       magic;
 	u32       tr_number;
