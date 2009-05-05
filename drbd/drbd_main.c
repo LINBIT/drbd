@@ -509,11 +509,13 @@ void drbd_force_state(struct drbd_conf *mdev,
 	drbd_change_state(mdev, CS_HARD, mask, val);
 }
 
-int is_valid_state(struct drbd_conf *mdev, union drbd_state ns);
-int is_valid_state_transition(struct drbd_conf *,
-	union drbd_state, union drbd_state);
+STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns);
+STATIC int is_valid_state_transition(struct drbd_conf *,
+				     union drbd_state, union drbd_state);
+STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state os,
+				       union drbd_state ns, int *warn_sync_abort);
 int drbd_send_state_req(struct drbd_conf *,
-	union drbd_state, union drbd_state);
+			union drbd_state, union drbd_state);
 
 STATIC enum drbd_state_ret_codes _req_st_cond(struct drbd_conf *mdev,
 				    union drbd_state mask, union drbd_state val)
@@ -532,6 +534,8 @@ STATIC enum drbd_state_ret_codes _req_st_cond(struct drbd_conf *mdev,
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
+	ns = sanitize_state(mdev, os, ns, NULL);
+
 	if (!cl_wide_st_chg(mdev, os, ns))
 		rv = SS_CW_NO_NEED;
 	if (!rv) {
@@ -577,6 +581,7 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
+	ns = sanitize_state(mdev, os, ns, NULL);
 
 #if DRBD_DEBUG_STATE_CHANGES
 	seq = ++sseq;
@@ -610,7 +615,6 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 			(rv = _req_st_cond(mdev, mask, val)));
 
 		if (rv < SS_SUCCESS) {
-			/* nearly dead code. */
 			drbd_state_unlock(mdev);
 			if (f & CS_VERBOSE)
 				print_st_err(mdev, os, ns, rv);
@@ -733,7 +737,7 @@ void print_st_err(struct drbd_conf *mdev,
 			      A##s_to_name(ns.A)); \
 	} })
 
-int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
+STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
@@ -792,8 +796,8 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 	return rv;
 }
 
-int is_valid_state_transition(struct drbd_conf *mdev,
-	union drbd_state ns, union drbd_state os)
+STATIC int is_valid_state_transition(struct drbd_conf *mdev,
+				     union drbd_state ns, union drbd_state os)
 {
 	int rv = SS_SUCCESS;
 
@@ -833,38 +837,16 @@ int is_valid_state_transition(struct drbd_conf *mdev,
 	return rv;
 }
 
-int __drbd_set_state(struct drbd_conf *mdev,
-		    union drbd_state ns, enum chg_state_flags flags,
-		    struct completion *done)
+STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state os,
+				       union drbd_state ns, int *warn_sync_abort)
 {
-#if DRBD_DEBUG_STATE_CHANGES
-	static unsigned long long sseq = 0xff000000LLU;
-	unsigned long long seq = 0;
-#endif
-	union drbd_state os;
-	int rv = SS_SUCCESS;
-	int warn_sync_abort = 0;
 	enum drbd_fencing_p fp;
-	struct after_state_chg_work *ascw;
-
-
-	os = mdev->state;
-
-#if DRBD_DEBUG_STATE_CHANGES
-	if (ns.func) {
-		seq = ++sseq;
-		trace_st(mdev, seq, ns.func, ns.line, "==os", os);
-		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
-	}
-#endif
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
 		fp = mdev->bc->dc.fencing;
 		put_ldev(mdev);
 	}
-
-	/* Early state sanitising. */
 
 	/* Dissalow Network errors to configure a device's network part */
 	if ((ns.conn >= C_TIMEOUT && ns.conn <= C_TEAR_DOWN) &&
@@ -894,9 +876,11 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	if (ns.conn <= C_DISCONNECTING && ns.disk == D_DISKLESS)
 		ns.pdsk = D_UNKNOWN;
 
+	/* Abort resync if a disk fails/detaches */
 	if (os.conn > C_CONNECTED && ns.conn > C_CONNECTED &&
 	    (ns.disk <= D_FAILED || ns.pdsk <= D_FAILED)) {
-		warn_sync_abort = 1;
+		if (warn_sync_abort)
+			*warn_sync_abort = 1;
 		ns.conn = C_CONNECTED;
 	}
 
@@ -976,6 +960,35 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		if (ns.conn == C_PAUSED_SYNC_T)
 			ns.conn = C_SYNC_TARGET;
 	}
+
+	return ns;
+}
+
+int __drbd_set_state(struct drbd_conf *mdev,
+		    union drbd_state ns, enum chg_state_flags flags,
+		    struct completion *done)
+{
+#if DRBD_DEBUG_STATE_CHANGES
+	static unsigned long long sseq = 0xff000000LLU;
+	unsigned long long seq = 0;
+#endif
+	union drbd_state os;
+	int rv = SS_SUCCESS;
+	int warn_sync_abort = 0;
+	struct after_state_chg_work *ascw;
+
+
+	os = mdev->state;
+
+#if DRBD_DEBUG_STATE_CHANGES
+	if (ns.func) {
+		seq = ++sseq;
+		trace_st(mdev, seq, ns.func, ns.line, "==os", os);
+		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
+	}
+#endif
+
+	ns = sanitize_state(mdev, os, ns, &warn_sync_abort);
 
 #if DRBD_DEBUG_STATE_CHANGES
 	if (ns.func)
