@@ -1278,7 +1278,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 	drbd_bm_recount_bits(mdev);
 
-	/* In case a previous resync run was aborted by an IO error... */
+	/* In case a previous resync run was aborted by an IO error/detach on the peer. */
 	drbd_rs_cancel_all(mdev);
 
 	if (side == C_SYNC_TARGET) {
