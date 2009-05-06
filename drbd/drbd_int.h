@@ -845,7 +845,7 @@ struct drbd_conf {
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; /* protected by get_net_conf() and put_net_conf() */
 	struct syncer_conf sync_conf;
-	struct drbd_backing_dev *bc __protected_by(local);
+	struct drbd_backing_dev *ldev __protected_by(local);
 
 	sector_t p_size;     /* partner's disk size */
 	struct request_queue *rq_queue;
@@ -1067,7 +1067,7 @@ extern int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 extern int drbd_send_bitmap(struct drbd_conf *mdev);
 extern int _drbd_send_bitmap(struct drbd_conf *mdev);
 extern int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode);
-extern void drbd_free_bc(struct drbd_backing_dev *bc);
+extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern int drbd_io_error(struct drbd_conf *mdev, int forcedetach);
 extern void drbd_mdev_cleanup(struct drbd_conf *mdev);
 
@@ -1607,7 +1607,7 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
  */
 static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 {
-	switch (mdev->bc->dc.on_io_error) {
+	switch (mdev->ldev->dc.on_io_error) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
@@ -2174,7 +2174,7 @@ static inline int drbd_queue_order_type(struct drbd_conf *mdev)
  *
  * b) struct backing_dev_info *bdi;
  *    b1) bdi = &q->backing_dev_info;
- *    b2) bdi = mdev->bc->backing_bdev->bd_inode->i_mapping->backing_dev_info;
+ *    b2) bdi = mdev->ldev->backing_bdev->bd_inode->i_mapping->backing_dev_info;
  *    blk_run_backing_dev(bdi,NULL);
  *
  * c) generic_unplug(q) ? __generic_unplug(q) ?
@@ -2191,7 +2191,7 @@ static inline void drbd_blk_run_queue(struct request_queue *q)
 static inline void drbd_kick_lo(struct drbd_conf *mdev)
 {
 	if (get_ldev(mdev)) {
-		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
+		drbd_blk_run_queue(bdev_get_queue(mdev->ldev->backing_bdev));
 		put_ldev(mdev);
 	}
 }
@@ -2203,7 +2203,7 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 	if (test_bit(MD_NO_BARRIER, &mdev->flags))
 		return;
 
-	r = blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	r = blkdev_issue_flush(mdev->ldev->md_bdev, NULL);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &mdev->flags);
 		ERR("meta data flush failed with status %d, disabling md-flushes\n", r);

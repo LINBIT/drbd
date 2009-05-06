@@ -216,7 +216,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 		goto fail1;
 	}
 
-	bio->bi_bdev = mdev->bc->backing_bdev;
+	bio->bi_bdev = mdev->ldev->backing_bdev;
 	bio->bi_sector = sector;
 
 	ds = data_size;
@@ -979,7 +979,7 @@ STATIC int receive_Barrier_no_tcq(struct drbd_conf *mdev, struct p_header *h)
 	 * Just waiting for write_completion is not enough,
 	 * better flush to make sure it is all on stable storage. */
 	if (!test_bit(LL_DEV_NO_FLUSH, &mdev->flags) && get_ldev(mdev)) {
-		rv = blkdev_issue_flush(mdev->bc->backing_bdev, NULL);
+		rv = blkdev_issue_flush(mdev->ldev->backing_bdev, NULL);
 		/* would rather check on EOPNOTSUPP, but that is not reliable.
 		 * don't try again for ANY return value != 0 */
 		if (rv) {
@@ -1795,7 +1795,7 @@ STATIC int drbd_asb_recover_0p(struct drbd_conf *mdev) __must_hold(local)
 	int self, peer, rv = -100;
 	unsigned long ch_self, ch_peer;
 
-	self = mdev->bc->md.uuid[UI_BITMAP] & 1;
+	self = mdev->ldev->md.uuid[UI_BITMAP] & 1;
 	peer = mdev->p_uuid[UI_BITMAP] & 1;
 
 	ch_peer = mdev->p_uuid[UI_SIZE];
@@ -1854,7 +1854,7 @@ STATIC int drbd_asb_recover_1p(struct drbd_conf *mdev) __must_hold(local)
 {
 	int self, peer, hg, rv = -100;
 
-	self = mdev->bc->md.uuid[UI_BITMAP] & 1;
+	self = mdev->ldev->md.uuid[UI_BITMAP] & 1;
 	peer = mdev->p_uuid[UI_BITMAP] & 1;
 
 	switch (mdev->net_conf->after_sb_1p) {
@@ -1900,7 +1900,7 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 {
 	int self, peer, hg, rv = -100;
 
-	self = mdev->bc->md.uuid[UI_BITMAP] & 1;
+	self = mdev->ldev->md.uuid[UI_BITMAP] & 1;
 	peer = mdev->p_uuid[UI_BITMAP] & 1;
 
 	switch (mdev->net_conf->after_sb_2p) {
@@ -1964,7 +1964,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	u64 self, peer;
 	int i, j;
 
-	self = mdev->bc->md.uuid[UI_CURRENT] & ~((u64)1);
+	self = mdev->ldev->md.uuid[UI_CURRENT] & ~((u64)1);
 	peer = mdev->p_uuid[UI_CURRENT] & ~((u64)1);
 
 	*rule_nr = 1;
@@ -2014,20 +2014,20 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	}
 
 	*rule_nr = 7;
-	self = mdev->bc->md.uuid[UI_BITMAP] & ~((u64)1);
+	self = mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1);
 	peer = mdev->p_uuid[UI_CURRENT] & ~((u64)1);
 	if (self == peer)
 		return 1;
 
 	*rule_nr = 8;
 	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
-		self = mdev->bc->md.uuid[i] & ~((u64)1);
+		self = mdev->ldev->md.uuid[i] & ~((u64)1);
 		if (self == peer)
 			return 2;
 	}
 
 	*rule_nr = 9;
-	self = mdev->bc->md.uuid[UI_BITMAP] & ~((u64)1);
+	self = mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1);
 	peer = mdev->p_uuid[UI_BITMAP] & ~((u64)1);
 	if (self == peer && self != ((u64)0))
 		return 100;
@@ -2062,7 +2062,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 	hg = drbd_uuid_compare(mdev, &rule_nr);
 
 	INFO("drbd_sync_handshake:\n");
-	drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
+	drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid);
 	drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 	INFO("uuid_compare()=%d by rule %d\n", hg, rule_nr);
 
@@ -2104,7 +2104,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 			if (forced) {
 				drbd_WARN("Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
-				drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
+				drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid);
 				drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 				hg = hg*2;
 			}
@@ -2125,7 +2125,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 
 	if (hg == -100) {
 		ALERT("Split-Brain detected, dropping connection!\n");
-		drbd_uuid_dump(mdev, "self", mdev->bc->md.uuid);
+		drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid);
 		drbd_uuid_dump(mdev, "peer", mdev->p_uuid);
 		drbd_khelper(mdev, "split-brain");
 		return C_MASK;
@@ -2312,33 +2312,33 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
 	if (get_ldev(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
-			   p_size, drbd_get_max_capacity(mdev->bc));
+			   p_size, drbd_get_max_capacity(mdev->ldev));
 		warn_if_differ_considerably(mdev, "user requested size",
-					    p_usize, mdev->bc->dc.disk_size);
+					    p_usize, mdev->ldev->dc.disk_size);
 
 		/* if this is the first connect, or an otherwise expected
 		 * param exchange, choose the minimum */
 		if (mdev->state.conn == C_WF_REPORT_PARAMS)
-			p_usize = min_not_zero((sector_t)mdev->bc->dc.disk_size,
+			p_usize = min_not_zero((sector_t)mdev->ldev->dc.disk_size,
 					     p_usize);
 
-		my_usize = mdev->bc->dc.disk_size;
+		my_usize = mdev->ldev->dc.disk_size;
 
-		if (mdev->bc->dc.disk_size != p_usize) {
-			mdev->bc->dc.disk_size = p_usize;
+		if (mdev->ldev->dc.disk_size != p_usize) {
+			mdev->ldev->dc.disk_size = p_usize;
 			INFO("Peer sets u_size to %lu sectors\n",
-			     (unsigned long)mdev->bc->dc.disk_size);
+			     (unsigned long)mdev->ldev->dc.disk_size);
 		}
 
 		/* Never shrink a device with usable data during connect.
 		   But allow online shrinking if we are connected. */
-		if (drbd_new_dev_size(mdev, mdev->bc) <
+		if (drbd_new_dev_size(mdev, mdev->ldev) <
 		   drbd_get_capacity(mdev->this_bdev) &&
 		   mdev->state.disk >= D_OUTDATED &&
 		   mdev->state.conn < C_CONNECTED) {
 			ERR("The peer's disk size is too small!\n");
 			drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
-			mdev->bc->dc.disk_size = my_usize;
+			mdev->ldev->dc.disk_size = my_usize;
 			put_ldev(mdev);
 			return FALSE;
 		}
@@ -2374,8 +2374,8 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 	}
 
 	if (get_ldev(mdev)) {
-		if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
-			mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+		if (mdev->ldev->known_size != drbd_get_capacity(mdev->ldev->backing_bdev)) {
+			mdev->ldev->known_size = drbd_get_capacity(mdev->ldev->backing_bdev);
 			ldsc = 1;
 		}
 
@@ -2909,7 +2909,7 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
-		fp = mdev->bc->dc.fencing;
+		fp = mdev->ldev->dc.fencing;
 		put_ldev(mdev);
 	}
 

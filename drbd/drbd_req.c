@@ -1109,7 +1109,7 @@ allocate_barrier:
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
-		req->private_bio->bi_bdev = mdev->bc->backing_bdev;
+		req->private_bio->bi_bdev = mdev->ldev->backing_bdev;
 
 		dump_internal_bio("Pri", mdev, req->private_bio, 0);
 
@@ -1311,8 +1311,8 @@ int drbd_merge_bvec(struct request_queue *q,
 			limit = bvec->bv_len;
 	} else if (limit && get_ldev(mdev)) {
 		struct request_queue * const b =
-			mdev->bc->backing_bdev->bd_disk->queue;
-		if (b->merge_bvec_fn && mdev->bc->dc.use_bmbv) {
+			mdev->ldev->backing_bdev->bd_disk->queue;
+		if (b->merge_bvec_fn && mdev->ldev->dc.use_bmbv) {
 			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
 			limit = min(limit, backing_limit);
 		}

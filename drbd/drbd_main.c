@@ -402,7 +402,7 @@ int drbd_io_error(struct drbd_conf *mdev, int forcedetach)
 
 	eh = EP_PASS_ON;
 	if (get_ldev_if_state(mdev, D_FAILED)) {
-		eh = mdev->bc->dc.on_io_error;
+		eh = mdev->ldev->dc.on_io_error;
 		put_ldev(mdev);
 	}
 
@@ -665,7 +665,7 @@ int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
-		fp = mdev->bc->dc.fencing;
+		fp = mdev->ldev->dc.fencing;
 		put_ldev(mdev);
 	}
 
@@ -753,7 +753,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
-		fp = mdev->bc->dc.fencing;
+		fp = mdev->ldev->dc.fencing;
 		put_ldev(mdev);
 	}
 
@@ -848,7 +848,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	/* Connection breaks down before we finished "Negotiating" */
 	if (ns.conn < C_CONNECTED && ns.disk == D_NEGOTIATING &&
 	    get_ldev_if_state(mdev, D_NEGOTIATING)) {
-		if (mdev->ed_uuid == mdev->bc->md.uuid[UI_CURRENT]) {
+		if (mdev->ed_uuid == mdev->ldev->md.uuid[UI_CURRENT]) {
 			ns.disk = mdev->new_state_tmp.disk;
 			ns.pdsk = mdev->new_state_tmp.pdsk;
 		} else {
@@ -975,7 +975,7 @@ int _drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (get_ldev(mdev)) {
-		u32 mdf = mdev->bc->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
+		u32 mdf = mdev->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 						 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
 						 MDF_PEER_OUT_DATED);
 
@@ -991,12 +991,12 @@ int _drbd_set_state(struct drbd_conf *mdev,
 			mdf |= MDF_WAS_UP_TO_DATE;
 		if (mdev->state.pdsk <= D_OUTDATED && mdev->state.pdsk >= D_INCONSISTENT)
 			mdf |= MDF_PEER_OUT_DATED;
-		if (mdf != mdev->bc->md.flags) {
-			mdev->bc->md.flags = mdf;
+		if (mdf != mdev->ldev->md.flags) {
+			mdev->ldev->md.flags = mdf;
 			drbd_md_mark_dirty(mdev);
 		}
 		if (os.disk < D_CONSISTENT && ns.disk >= D_CONSISTENT)
-			drbd_set_ed_uuid(mdev, mdev->bc->md.uuid[UI_CURRENT]);
+			drbd_set_ed_uuid(mdev, mdev->ldev->md.uuid[UI_CURRENT]);
 		put_ldev(mdev);
 	}
 
@@ -1079,7 +1079,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
-		fp = mdev->bc->dc.fencing;
+		fp = mdev->ldev->dc.fencing;
 		put_ldev(mdev);
 	}
 
@@ -1123,7 +1123,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		kfree(mdev->p_uuid);
 		mdev->p_uuid = NULL;
 		if (get_ldev(mdev)) {
-			if (ns.role == R_PRIMARY && mdev->bc->md.uuid[UI_BITMAP] == 0 &&
+			if (ns.role == R_PRIMARY && mdev->ldev->md.uuid[UI_BITMAP] == 0 &&
 			    ns.disk >= D_UP_TO_DATE)
 				drbd_uuid_new_current(mdev);
 			if (ns.peer == R_PRIMARY) {
@@ -1140,7 +1140,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	}
 
 	if (ns.pdsk < D_INCONSISTENT && get_ldev(mdev)) {
-		if (ns.peer == R_PRIMARY && mdev->bc->md.uuid[UI_BITMAP] == 0) {
+		if (ns.peer == R_PRIMARY && mdev->ldev->md.uuid[UI_BITMAP] == 0) {
 			/* D_DISKLESS Peer becomes primary */
 			if (os.peer == R_SECONDARY)
 				drbd_uuid_new_current(mdev);
@@ -1208,8 +1208,8 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		lc_free(mdev->act_log);
 		mdev->act_log = NULL;
 		__no_warn(local,
-			drbd_free_bc(mdev->bc);
-			mdev->bc = NULL;);
+			drbd_free_bc(mdev->ldev);
+			mdev->ldev = NULL;);
 	}
 
 	/* Disks got bigger while they were detached */
@@ -1553,7 +1553,7 @@ int drbd_send_uuids(struct drbd_conf *mdev)
 
 	/* FIXME howto handle diskless ? */
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
-		p.uuid[i] = mdev->bc ? cpu_to_be64(mdev->bc->md.uuid[i]) : 0;
+		p.uuid[i] = mdev->ldev ? cpu_to_be64(mdev->ldev->md.uuid[i]) : 0;
 
 	mdev->comm_bm_set = drbd_bm_total_weight(mdev);
 	p.uuid[UI_SIZE] = cpu_to_be64(mdev->comm_bm_set);
@@ -1586,9 +1586,9 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 	int ok;
 
 	if (get_ldev_if_state(mdev, D_NEGOTIATING)) {
-		D_ASSERT(mdev->bc->backing_bdev);
-		d_size = drbd_get_max_capacity(mdev->bc);
-		u_size = mdev->bc->dc.disk_size;
+		D_ASSERT(mdev->ldev->backing_bdev);
+		d_size = drbd_get_max_capacity(mdev->ldev);
+		u_size = mdev->ldev->dc.disk_size;
 		q_order_type = drbd_queue_order_type(mdev);
 		p.queue_order_type = cpu_to_be32(drbd_queue_order_type(mdev));
 		put_ldev(mdev);
@@ -1688,7 +1688,7 @@ int _drbd_send_bitmap(struct drbd_conf *mdev)
 	buffer = (unsigned long *)p->payload;
 
 	if (get_ldev(mdev)) {
-		if (drbd_md_test_flag(mdev->bc, MDF_FULL_SYNC)) {
+		if (drbd_md_test_flag(mdev->ldev, MDF_FULL_SYNC)) {
 			INFO("Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(mdev);
 			if (drbd_bm_write(mdev)) {
@@ -2820,18 +2820,18 @@ Enomem:
 	return err;
 }
 
-void drbd_free_bc(struct drbd_backing_dev *bc)
+void drbd_free_bc(struct drbd_backing_dev *ldev)
 {
-	if (bc == NULL)
+	if (ldev == NULL)
 		return;
 
-	bd_release(bc->backing_bdev);
-	bd_release(bc->md_bdev);
+	bd_release(ldev->backing_bdev);
+	bd_release(ldev->md_bdev);
 
-	fput(bc->lo_file);
-	fput(bc->md_file);
+	fput(ldev->lo_file);
+	fput(ldev->md_file);
 
-	kfree(bc);
+	kfree(ldev);
 }
 
 void drbd_free_sock(struct drbd_conf *mdev)
@@ -2853,8 +2853,8 @@ void drbd_free_resources(struct drbd_conf *mdev)
 	mdev->cram_hmac_tfm = NULL;
 	drbd_free_sock(mdev);
 	__no_warn(local,
-		  drbd_free_bc(mdev->bc);
-		  mdev->bc = NULL;);
+		  drbd_free_bc(mdev->ldev);
+		  mdev->ldev = NULL;);
 }
 
 /*********************************/
@@ -2906,22 +2906,22 @@ void drbd_md_sync(struct drbd_conf *mdev)
 
 	buffer->la_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
-		buffer->uuid[i] = cpu_to_be64(mdev->bc->md.uuid[i]);
-	buffer->flags = cpu_to_be32(mdev->bc->md.flags);
+		buffer->uuid[i] = cpu_to_be64(mdev->ldev->md.uuid[i]);
+	buffer->flags = cpu_to_be32(mdev->ldev->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC);
 
-	buffer->md_size_sect  = cpu_to_be32(mdev->bc->md.md_size_sect);
-	buffer->al_offset     = cpu_to_be32(mdev->bc->md.al_offset);
+	buffer->md_size_sect  = cpu_to_be32(mdev->ldev->md.md_size_sect);
+	buffer->al_offset     = cpu_to_be32(mdev->ldev->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(mdev->act_log->nr_elements);
 	buffer->bm_bytes_per_bit = cpu_to_be32(BM_BLOCK_SIZE);
-	buffer->device_uuid = cpu_to_be64(mdev->bc->md.device_uuid);
+	buffer->device_uuid = cpu_to_be64(mdev->ldev->md.device_uuid);
 
-	buffer->bm_offset = cpu_to_be32(mdev->bc->md.bm_offset);
+	buffer->bm_offset = cpu_to_be32(mdev->ldev->md.bm_offset);
 
-	D_ASSERT(drbd_md_ss__(mdev, mdev->bc) == mdev->bc->md.md_offset);
-	sector = mdev->bc->md.md_offset;
+	D_ASSERT(drbd_md_ss__(mdev, mdev->ldev) == mdev->ldev->md.md_offset);
+	sector = mdev->ldev->md.md_offset;
 
-	if (drbd_md_sync_page_io(mdev, mdev->bc, sector, WRITE)) {
+	if (drbd_md_sync_page_io(mdev, mdev->ldev, sector, WRITE)) {
 		clear_bit(MD_DIRTY, &mdev->flags);
 	} else {
 		/* this was a try anyways ... */
@@ -2931,9 +2931,9 @@ void drbd_md_sync(struct drbd_conf *mdev)
 		drbd_io_error(mdev, TRUE);
 	}
 
-	/* Update mdev->bc->md.la_size_sect,
+	/* Update mdev->ldev->md.la_size_sect,
 	 * since we updated it on metadata. */
-	mdev->bc->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
+	mdev->ldev->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
 	up(&mdev->md_io_mutex);
 	put_ldev(mdev);
@@ -3034,7 +3034,7 @@ STATIC void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local)
 	int i;
 
 	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++) {
-		mdev->bc->md.uuid[i+1] = mdev->bc->md.uuid[i];
+		mdev->ldev->md.uuid[i+1] = mdev->ldev->md.uuid[i];
 
 		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_ALL,
 		       drbd_print_uuid(mdev, i+1);
@@ -3053,7 +3053,7 @@ void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 		drbd_set_ed_uuid(mdev, val);
 	}
 
-	mdev->bc->md.uuid[idx] = val;
+	mdev->ldev->md.uuid[idx] = val;
 
 	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_SUMMARY,
 	       drbd_print_uuid(mdev, idx);
@@ -3065,9 +3065,9 @@ void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 
 void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local)
 {
-	if (mdev->bc->md.uuid[idx]) {
+	if (mdev->ldev->md.uuid[idx]) {
 		drbd_uuid_move_history(mdev);
-		mdev->bc->md.uuid[UI_HISTORY_START] = mdev->bc->md.uuid[idx];
+		mdev->ldev->md.uuid[UI_HISTORY_START] = mdev->ldev->md.uuid[idx];
 		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
 		       drbd_print_uuid(mdev, UI_HISTORY_START);
 			);
@@ -3091,7 +3091,7 @@ void _drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 	   working substitute, to avoid repetitive generating
 	   of new current UUIDs in case we loose connection
 	   and reconnect in a loop. */
-	if (mdev->bc->md.flags & MDF_FULL_SYNC)
+	if (mdev->ldev->md.flags & MDF_FULL_SYNC)
 		return;
 	INFO("Creating new current UUID [no BitMap]\n");
 	get_random_bytes(&uuid, sizeof(u64));
@@ -3109,8 +3109,8 @@ void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 	u64 val;
 
 	INFO("Creating new current UUID\n");
-	D_ASSERT(mdev->bc->md.uuid[UI_BITMAP] == 0);
-	mdev->bc->md.uuid[UI_BITMAP] = mdev->bc->md.uuid[UI_CURRENT];
+	D_ASSERT(mdev->ldev->md.uuid[UI_BITMAP] == 0);
+	mdev->ldev->md.uuid[UI_BITMAP] = mdev->ldev->md.uuid[UI_CURRENT];
 	MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
 	       drbd_print_uuid(mdev, UI_BITMAP);
 		);
@@ -3121,24 +3121,24 @@ void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local)
 
 void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local)
 {
-	if (mdev->bc->md.uuid[UI_BITMAP] == 0 && val == 0)
+	if (mdev->ldev->md.uuid[UI_BITMAP] == 0 && val == 0)
 		return;
 
 	if (val == 0) {
 		drbd_uuid_move_history(mdev);
-		mdev->bc->md.uuid[UI_HISTORY_START] = mdev->bc->md.uuid[UI_BITMAP];
-		mdev->bc->md.uuid[UI_BITMAP] = 0;
+		mdev->ldev->md.uuid[UI_HISTORY_START] = mdev->ldev->md.uuid[UI_BITMAP];
+		mdev->ldev->md.uuid[UI_BITMAP] = 0;
 
 		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
 		       drbd_print_uuid(mdev, UI_HISTORY_START);
 		       drbd_print_uuid(mdev, UI_BITMAP);
 			);
 	} else {
-		if (mdev->bc->md.uuid[UI_BITMAP])
+		if (mdev->ldev->md.uuid[UI_BITMAP])
 			drbd_WARN("bm UUID already set");
 
-		mdev->bc->md.uuid[UI_BITMAP] = val;
-		mdev->bc->md.uuid[UI_BITMAP] &= ~((u64)1);
+		mdev->ldev->md.uuid[UI_BITMAP] = val;
+		mdev->ldev->md.uuid[UI_BITMAP] &= ~((u64)1);
 
 		MTRACE(TRACE_TYPE_UUID, TRACE_LVL_METRICS,
 		       drbd_print_uuid(mdev, UI_BITMAP);
@@ -3259,18 +3259,18 @@ int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf *), cha
 void drbd_md_set_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
-	if ((mdev->bc->md.flags & flag) != flag) {
+	if ((mdev->ldev->md.flags & flag) != flag) {
 		drbd_md_mark_dirty(mdev);
-		mdev->bc->md.flags |= flag;
+		mdev->ldev->md.flags |= flag;
 	}
 }
 
 void drbd_md_clear_flag(struct drbd_conf *mdev, int flag) __must_hold(local)
 {
 	MUST_HOLD(mdev->req_lock);
-	if ((mdev->bc->md.flags & flag) != 0) {
+	if ((mdev->ldev->md.flags & flag) != 0) {
 		drbd_md_mark_dirty(mdev);
-		mdev->bc->md.flags &= ~flag;
+		mdev->ldev->md.flags &= ~flag;
 	}
 }
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
@@ -3381,7 +3381,7 @@ STATIC char *_drbd_uuid_str(unsigned int idx)
 void drbd_print_uuid(struct drbd_conf *mdev, unsigned int idx) __must_hold(local)
 {
 	INFO(" uuid[%s] now %016llX\n",
-	     _drbd_uuid_str(idx), (unsigned long long)mdev->bc->md.uuid[idx]);
+	     _drbd_uuid_str(idx), (unsigned long long)mdev->ldev->md.uuid[idx]);
 }
 
 

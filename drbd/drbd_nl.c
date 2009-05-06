@@ -209,7 +209,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 	D_ASSERT(mdev->state.pdsk == D_UNKNOWN);
 
 	if (get_ldev_if_state(mdev, D_CONSISTENT)) {
-		fp = mdev->bc->dc.fencing;
+		fp = mdev->ldev->dc.fencing;
 		put_ldev(mdev);
 	} else {
 		drbd_WARN("Not outdating peer, I'm not even Consistent myself.\n");
@@ -363,7 +363,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	if (new_role == R_SECONDARY) {
 		set_disk_ro(mdev->vdisk, TRUE);
 		if (get_ldev(mdev)) {
-			mdev->bc->md.uuid[UI_CURRENT] &= ~(u64)1;
+			mdev->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
 			put_ldev(mdev);
 		}
 	} else {
@@ -375,10 +375,10 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		if (get_ldev(mdev)) {
 			if (((mdev->state.conn < C_CONNECTED ||
 			       mdev->state.pdsk <= D_FAILED)
-			      && mdev->bc->md.uuid[UI_BITMAP] == 0) || forced)
+			      && mdev->ldev->md.uuid[UI_BITMAP] == 0) || forced)
 				drbd_uuid_new_current(mdev);
 
-			mdev->bc->md.uuid[UI_CURRENT] |=  (u64)1;
+			mdev->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
 			put_ldev(mdev);
 		}
 	}
@@ -543,14 +543,14 @@ enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_ho
 	/* no wait necessary anymore, actually we could assert that */
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 
-	prev_first_sect = drbd_md_first_sector(mdev->bc);
-	prev_size = mdev->bc->md.md_size_sect;
-	la_size = mdev->bc->md.la_size_sect;
+	prev_first_sect = drbd_md_first_sector(mdev->ldev);
+	prev_size = mdev->ldev->md.md_size_sect;
+	la_size = mdev->ldev->md.la_size_sect;
 
 	/* TODO: should only be some assert here, not (re)init... */
-	drbd_md_set_sector_offsets(mdev, mdev->bc);
+	drbd_md_set_sector_offsets(mdev, mdev->ldev);
 
-	size = drbd_new_dev_size(mdev, mdev->bc);
+	size = drbd_new_dev_size(mdev, mdev->ldev);
 
 	if (drbd_get_capacity(mdev->this_bdev) != size ||
 	    drbd_bm_capacity(mdev) != size) {
@@ -573,17 +573,17 @@ enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_ho
 		}
 		/* racy, see comments above. */
 		drbd_set_my_capacity(mdev, size);
-		mdev->bc->md.la_size_sect = size;
+		mdev->ldev->md.la_size_sect = size;
 		INFO("size = %s (%llu KB)\n", ppsize(ppb, size>>1),
 		     (unsigned long long)size>>1);
 	}
 	if (rv == dev_size_error)
 		goto out;
 
-	la_size_changed = (la_size != mdev->bc->md.la_size_sect);
+	la_size_changed = (la_size != mdev->ldev->md.la_size_sect);
 
-	md_moved = prev_first_sect != drbd_md_first_sector(mdev->bc)
-		|| prev_size	   != mdev->bc->md.md_size_sect;
+	md_moved = prev_first_sect != drbd_md_first_sector(mdev->ldev)
+		|| prev_size	   != mdev->ldev->md.md_size_sect;
 
 	if (md_moved) {
 		drbd_WARN("Moving meta-data.\n");
@@ -709,10 +709,10 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __must_hold(local)
 {
 	struct request_queue * const q = mdev->rq_queue;
-	struct request_queue * const b = mdev->bc->backing_bdev->bd_disk->queue;
+	struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
 	/* unsigned int old_max_seg_s = q->max_segment_size; */
 
-	if (b->merge_bvec_fn && !mdev->bc->dc.use_bmbv)
+	if (b->merge_bvec_fn && !mdev->ldev->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
 
 	max_seg_s = min(b->max_sectors * b->hardsect_size, max_seg_s);
@@ -1019,13 +1019,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	 * Devices and memory are no longer released by error cleanup below.
 	 * now mdev takes over responsibility, and the state engine should
 	 * clean it up somewhere.  */
-	D_ASSERT(mdev->bc == NULL);
-	mdev->bc = nbc;
+	D_ASSERT(mdev->ldev == NULL);
+	mdev->ldev = nbc;
 	mdev->resync = resync_lru;
 	nbc = NULL;
 	resync_lru = NULL;
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PRIMARY_IND))
+	if (drbd_md_test_flag(mdev->ldev, MDF_PRIMARY_IND))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);
 	else
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
@@ -1058,8 +1058,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	 */
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	if (mdev->state.role != R_PRIMARY &&
-	     drbd_md_test_flag(mdev->bc, MDF_PRIMARY_IND) &&
-	    !drbd_md_test_flag(mdev->bc, MDF_CONNECTED_IND))
+	     drbd_md_test_flag(mdev->ldev, MDF_PRIMARY_IND) &&
+	    !drbd_md_test_flag(mdev->ldev, MDF_CONNECTED_IND))
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
 
 	dd = drbd_determin_dev_size(mdev);
@@ -1069,7 +1069,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	} else if (dd == grew)
 		set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 
-	if (drbd_md_test_flag(mdev->bc, MDF_FULL_SYNC)) {
+	if (drbd_md_test_flag(mdev->ldev, MDF_FULL_SYNC)) {
 		INFO("Assuming that all blocks are out of sync "
 		     "(aka FullSync)\n");
 		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write, "set_n_write from attaching")) {
@@ -1099,8 +1099,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	   If MDF_WAS_UP_TO_DATE is not set go into D_OUTDATED disk state,
 	   otherwise into D_CONSISTENT state.
 	*/
-	if (drbd_md_test_flag(mdev->bc, MDF_CONSISTENT)) {
-		if (drbd_md_test_flag(mdev->bc, MDF_WAS_UP_TO_DATE))
+	if (drbd_md_test_flag(mdev->ldev, MDF_CONSISTENT)) {
+		if (drbd_md_test_flag(mdev->ldev, MDF_WAS_UP_TO_DATE))
 			ns.disk = D_CONSISTENT;
 		else
 			ns.disk = D_OUTDATED;
@@ -1108,11 +1108,11 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		ns.disk = D_INCONSISTENT;
 	}
 
-	if (drbd_md_test_flag(mdev->bc, MDF_PEER_OUT_DATED))
+	if (drbd_md_test_flag(mdev->ldev, MDF_PEER_OUT_DATED))
 		ns.pdsk = D_OUTDATED;
 
 	if ( ns.disk == D_CONSISTENT &&
-	    (ns.pdsk == D_OUTDATED || mdev->bc->dc.fencing == FP_DONT_CARE))
+	    (ns.pdsk == D_OUTDATED || mdev->ldev->dc.fencing == FP_DONT_CARE))
 		ns.disk = D_UP_TO_DATE;
 
 	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
@@ -1136,9 +1136,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto force_diskless_dec;
 
 	if (mdev->state.role == R_PRIMARY)
-		mdev->bc->md.uuid[UI_CURRENT] |=  (u64)1;
+		mdev->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
 	else
-		mdev->bc->md.uuid[UI_CURRENT] &= ~(u64)1;
+		mdev->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
 
 	drbd_md_mark_dirty(mdev);
 	drbd_md_sync(mdev);
@@ -1472,12 +1472,12 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (mdev->bc->known_size != drbd_get_capacity(mdev->bc->backing_bdev)) {
-		mdev->bc->known_size = drbd_get_capacity(mdev->bc->backing_bdev);
+	if (mdev->ldev->known_size != drbd_get_capacity(mdev->ldev->backing_bdev)) {
+		mdev->ldev->known_size = drbd_get_capacity(mdev->ldev->backing_bdev);
 		ldsc = 1;
 	}
 
-	mdev->bc->dc.disk_size = (sector_t)rs.resize_size;
+	mdev->ldev->dc.disk_size = (sector_t)rs.resize_size;
 	dd = drbd_determin_dev_size(mdev);
 	drbd_md_sync(mdev);
 	put_ldev(mdev);
@@ -1649,7 +1649,7 @@ STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 	tl = reply->tag_list;
 
 	if (get_ldev(mdev)) {
-		tl = disk_conf_to_tags(mdev, &mdev->bc->dc, tl);
+		tl = disk_conf_to_tags(mdev, &mdev->ldev->dc, tl);
 		put_ldev(mdev);
 	}
 
@@ -1688,11 +1688,11 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		/* This is a hand crafted add tag ;) */
 		*tl++ = T_uuids;
 		*tl++ = UI_SIZE*sizeof(u64);
-		memcpy(tl, mdev->bc->md.uuid, UI_SIZE*sizeof(u64));
+		memcpy(tl, mdev->ldev->md.uuid, UI_SIZE*sizeof(u64));
 		tl = (unsigned short *)((char *)tl + UI_SIZE*sizeof(u64));
 		*tl++ = T_uuids_flags;
 		*tl++ = sizeof(int);
-		memcpy(tl, &mdev->bc->md.flags, sizeof(int));
+		memcpy(tl, &mdev->ldev->md.flags, sizeof(int));
 		tl = (unsigned short *)((char *)tl + sizeof(int));
 		put_ldev(mdev);
 	}
