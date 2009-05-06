@@ -124,7 +124,7 @@ static void probe_drbd_uuid(struct drbd_conf *mdev, enum drbd_uuid_index index)
 
 	dev_info(DEV, " uuid[%s] now %016llX\n",
 		 uuid_str[index],
-		 (unsigned long long)mdev->bc->md.uuid[index]);
+		 (unsigned long long)mdev->ldev->md.uuid[index]);
 }
 
 static void probe_drbd_md_io(struct drbd_conf *mdev, int rw,

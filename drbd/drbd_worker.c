@@ -264,8 +264,8 @@ int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	struct drbd_request *req = (struct drbd_request *)w;
 	int ok;
 
-	/* NOTE: mdev->bc can be NULL by the time we get here! */
-	/* D_ASSERT(mdev->bc->dc.on_io_error != EP_PASS_ON); */
+	/* NOTE: mdev->ldev can be NULL by the time we get here! */
+	/* D_ASSERT(mdev->ldev->dc.on_io_error != EP_PASS_ON); */
 
 	/* the only way this callback is scheduled is from _req_may_be_done,
 	 * when it is done and had a local write error, see comments there */
@@ -756,7 +756,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 				int i;
 				for (i = UI_BITMAP ; i <= UI_HISTORY_END ; i++)
 					_drbd_uuid_set(mdev, i, mdev->p_uuid[i]);
-				drbd_uuid_set(mdev, UI_BITMAP, mdev->bc->md.uuid[UI_CURRENT]);
+				drbd_uuid_set(mdev, UI_BITMAP, mdev->ldev->md.uuid[UI_CURRENT]);
 				_drbd_uuid_set(mdev, UI_CURRENT, mdev->p_uuid[UI_CURRENT]);
 			} else {
 				dev_err(DEV, "mdev->p_uuid is NULL! BUG\n");
@@ -770,7 +770,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 			 * know of the peer. */
 			int i;
 			for (i = UI_CURRENT ; i <= UI_HISTORY_END ; i++)
-				mdev->p_uuid[i] = mdev->bc->md.uuid[i];
+				mdev->p_uuid[i] = mdev->ldev->md.uuid[i];
 		}
 	}
 

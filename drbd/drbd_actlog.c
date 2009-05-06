@@ -365,10 +365,10 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 
 	buffer->xor_sum = cpu_to_be32(xor_sum);
 
-	sector =  mdev->bc->md.md_offset
-		+ mdev->bc->md.al_offset + mdev->al_tr_pos;
+	sector =  mdev->ldev->md.md_offset
+		+ mdev->ldev->md.al_offset + mdev->al_tr_pos;
 
-	if (!drbd_md_sync_page_io(mdev, mdev->bc, sector, WRITE)) {
+	if (!drbd_md_sync_page_io(mdev, mdev->ldev, sector, WRITE)) {
 		drbd_chk_io_error(mdev, 1, TRUE);
 		drbd_io_error(mdev, TRUE);
 	}
@@ -586,8 +586,8 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 {
 	struct bio *bio;
 	struct page *page;
-	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
-				      + mdev->bc->md.bm_offset;
+	sector_t on_disk_sector = enr + mdev->ldev->md.md_offset
+				      + mdev->ldev->md.bm_offset;
 	unsigned int page_offset = PAGE_SIZE;
 	int offset;
 	int i = 0;
@@ -633,7 +633,7 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 
 	bio->bi_private = wc;
 	bio->bi_end_io = atodb_endio;
-	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_bdev = mdev->ldev->md_bdev;
 	bio->bi_sector = on_disk_sector;
 
 	if (bio_add_page(bio, page, MD_SECTOR_SIZE, page_offset) != MD_SECTOR_SIZE)
@@ -716,7 +716,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 		}
 	}
 
-	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+	drbd_blk_run_queue(bdev_get_queue(mdev->ldev->md_bdev));
 
 	/* always (try to) flush bitmap to stable storage */
 	drbd_md_flush(mdev);
