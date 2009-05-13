@@ -1770,6 +1770,16 @@ static inline int _drbd_set_state(struct drbd_conf *mdev,
 	return rv;
 }
 
+/**
+ * drbd_request_state() - Reqest a state change
+ * @mdev:	DRBD device.
+ * @mask:	mask of state bits to change.
+ * @val:	value of new state bits.
+ *
+ * This is the most graceful way of requesting a state change. It is verbose
+ * quite verbose in case the state change is not possible, and all those
+ * state changes are globally serialized.
+ */
 static inline int drbd_request_state(struct drbd_conf *mdev,
 				     union drbd_state mask,
 				     union drbd_state val)
