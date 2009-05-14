@@ -914,9 +914,8 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 }
 
 /**
- * drbd_bm_read: Read the whole bitmap from its on disk location.
- *
- * currently only called from "drbd_nl_disk_conf"
+ * drbd_bm_read() - Read the whole bitmap from its on disk location.
+ * @mdev:	DRBD device.
  */
 int drbd_bm_read(struct drbd_conf *mdev) __must_hold(local)
 {
@@ -924,9 +923,8 @@ int drbd_bm_read(struct drbd_conf *mdev) __must_hold(local)
 }
 
 /**
- * drbd_bm_write: Write the whole bitmap to its on disk location.
- *
- * called at various occasions.
+ * drbd_bm_write() - Write the whole bitmap to its on disk location.
+ * @mdev:	DRBD device.
  */
 int drbd_bm_write(struct drbd_conf *mdev) __must_hold(local)
 {
@@ -934,11 +932,13 @@ int drbd_bm_write(struct drbd_conf *mdev) __must_hold(local)
 }
 
 /**
- * drbd_bm_write_sect: Writes a 512 byte piece of the bitmap to its
- * on disk location. On disk bitmap is little endian.
+ * drbd_bm_write_sect: Writes a 512 (MD_SECTOR_SIZE) byte piece of the bitmap
+ * @mdev:	DRBD device.
+ * @enr:	Extent number in the resync lru (happens to be sector offset)
  *
- * @enr: The _sector_ offset from the start of the bitmap.
- *
+ * The BM_EXT_SIZE is on purpose exactle the amount of the bitmap covered
+ * by a single sector write. Therefore enr == sector offset from the
+ * start of the bitmap.
  */
 int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(local)
 {

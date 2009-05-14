@@ -223,30 +223,20 @@ static void probe_drbd_actlog(struct drbd_conf *mdev, sector_t sector, char* msg
 		 (int)BM_SECT_TO_EXT(sector));
 }
 
-/*
- *
- * drbd_print_buffer
- *
- * This routine dumps binary data to the debugging output. Can be
- * called at interrupt level.
- *
- * Arguments:
- *
- *     prefix      - String is output at the beginning of each line output
- *     flags       - Control operation of the routine. Currently defined
- *                   Flags are:
- *                   DBGPRINT_BUFFADDR; if set, each line starts with the
- *                       virtual address of the line being outupt. If clear,
- *                       each line starts with the offset from the beginning
- *                       of the buffer.
- *     size        - Indicates the size of each entry in the buffer. Supported
- *                   values are sizeof(char), sizeof(short) and sizeof(int)
- *     buffer      - Start address of buffer
- *     buffer_va   - Virtual address of start of buffer (normally the same
- *                   as Buffer, but having it separate allows it to hold
- *                   file address for example)
- *     length      - length of buffer
- *
+/**
+ * drbd_print_buffer() - Hexdump arbitraty binary data into a buffer
+ * @prefix:	String is output at the beginning of each line output.
+ * @flags:	Currently only defined flag: DBGPRINT_BUFFADDR; if set, each
+ *		line starts with the virtual address of the line being
+ *		outupt. If clear, each line starts with the offset from the
+ *		beginning of the buffer.
+ * @size:	Indicates the size of each entry in the buffer. Supported
+ * 		values are sizeof(char), sizeof(short) and sizeof(int)
+ * @buffer:	Start address of buffer
+ * @buffer_va:	Virtual address of start of buffer (normally the same
+ *		as Buffer, but having it separate allows it to hold
+ *		file address for example)
+ * @length:	length of buffer
  */
 static void drbd_print_buffer(const char *prefix, unsigned int flags, int size,
 			      const void *buffer, const void *buffer_va,

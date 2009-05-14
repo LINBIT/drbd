@@ -389,10 +389,13 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 }
 
 /**
- * drbd_al_read_tr: Reads a single transaction record from the
- * on disk activity log.
- * Returns -1 on IO error, 0 on checksum error and 1 if it is a valid
- * record.
+ * drbd_al_read_tr() - Read a single transaction from the on disk activity log
+ * @mdev:	DRBD device.
+ * @bdev:	Block device to read form.
+ * @b:		pointer to an al_transaction.
+ * @index:	On disk slot of the transaction to read.
+ *
+ * Returns -1 on IO error, 0 on checksum error and 1 upon success.
  */
 STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
 			   struct drbd_backing_dev *bdev,
@@ -420,9 +423,11 @@ STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
 }
 
 /**
- * drbd_al_read_log: Restores the activity log from its on disk
- * representation. Returns 1 on success, returns 0 when
- * reading the log failed due to IO errors.
+ * drbd_al_read_log() - Restores the activity log from its on disk representation.
+ * @mdev:	DRBD device.
+ * @bdev:	Block device to read form.
+ *
+ * Returns 1 on success, returns 0 when reading the log failed due to IO errors.
  */
 int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 {
@@ -660,11 +665,11 @@ out_bio_put:
 }
 
 /**
- * drbd_al_to_on_disk_bm:
- * Writes the areas of the bitmap which are covered by the
- * currently active extents of the activity log.
- * called when we detach (unconfigure) local storage,
- * or when we go from R_PRIMARY to R_SECONDARY state.
+ * drbd_al_to_on_disk_bm() -  * Writes bitmap parts covered by active AL extents
+ * @mdev:	DRBD device.
+ *
+ * Called when we detach (unconfigure) local storage,
+ * or when we go from R_PRIMARY to R_SECONDARY role.
  */
 void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 {
@@ -762,8 +767,8 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 }
 
 /**
- * drbd_al_apply_to_bm: Sets the bits in the in-memory bitmap
- * which are described by the active extents of the activity log.
+ * drbd_al_apply_to_bm() - Sets the bitmap to diry(1) where covered ba active AL extents
+ * @mdev:	DRBD device.
  */
 void drbd_al_apply_to_bm(struct drbd_conf *mdev)
 {
@@ -802,8 +807,12 @@ static int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
 }
 
 /**
- * drbd_al_shrink: Removes all active extents form the activity log.
- * (but does not write any transactions)
+ * drbd_al_shrink() - Removes all active extents form the activity log
+ * @mdev:	DRBD device.
+ *
+ * Removes all active extents form the activity log, waiting until
+ * the reference count of each etry dropped to 0 first, of course.
+ *
  * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
  */
 void drbd_al_shrink(struct drbd_conf *mdev)
@@ -1145,14 +1154,11 @@ static int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
 }
 
 /**
- * drbd_rs_begin_io: Gets an extent in the resync LRU cache and sets it
- * to BME_LOCKED.
+ * drbd_rs_begin_io() - Gets an extent in the resync LRU cache and sets it to BME_LOCKED
+ * @mdev:	DRBD device.
+ * @sector:	The sector number.
  *
- * @sector: The sector number
- *
- * sleeps on al_wait.
- * returns 1 if successful.
- * returns 0 if interrupted.
+ * This functions sleeps on al_wait. Returns 1 on success, 0 if interrupted.
  */
 int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
@@ -1193,14 +1199,13 @@ int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 }
 
 /**
- * drbd_try_rs_begin_io: Gets an extent in the resync LRU cache, sets it
- * to BME_NO_WRITES, then tries to set it to BME_LOCKED.
+ * drbd_try_rs_begin_io() - Gets an extent in the resync LRU cache, does not sleep
+ * @mdev:	DRBD device.
+ * @sector:	The sector number.
  *
- * @sector: The sector number
- *
- * does not sleep.
- * returns zero if we could set BME_LOCKED and can proceed,
- * -EAGAIN if we need to try again.
+ * Gets an extent in the resync LRU cache, sets it to BME_NO_WRITES, then
+ * tries to set it to BME_LOCKED. Returns 0 upon success, and -EAGAIN
+ * if there is still application IO going on in this area.
  */
 int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
@@ -1352,8 +1357,8 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
 }
 
 /**
- * drbd_rs_cancel_all: Removes extents from the resync LRU. Even
- * if they are BME_LOCKED.
+ * drbd_rs_cancel_all() - Removes all extents from the resync LRU (even BME_LOCKED)
+ * @mdev:	DRBD device.
  */
 void drbd_rs_cancel_all(struct drbd_conf *mdev)
 {
@@ -1372,10 +1377,11 @@ void drbd_rs_cancel_all(struct drbd_conf *mdev)
 }
 
 /**
- * drbd_rs_del_all: Gracefully remove all extents from the resync LRU.
- * there may be still a reference hold by someone. In that case this function
- * returns -EAGAIN.
- * In case all elements got removed it returns zero.
+ * drbd_rs_del_all() - Gracefully remove all extents from the resync LRU
+ * @mdev:	DRBD device.
+ *
+ * Returns 0 upon success, -EAGAIN if at least one reference count was
+ * not zero.
  */
 int drbd_rs_del_all(struct drbd_conf *mdev)
 {
@@ -1421,10 +1427,11 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 	return 0;
 }
 
-/* Record information on a failure to resync the specified blocks
- *
- * called on C_SYNC_TARGET when resync write fails or P_NEG_RS_DREPLY received
- *
+/**
+ * drbd_rs_failed_io() - Record information on a failure to resync the specified blocks
+ * @mdev:	DRBD device.
+ * @sector:	The sector number.
+ * @size:	Size of failed IO operation, in byte.
  */
 void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 {

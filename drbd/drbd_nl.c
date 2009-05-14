@@ -464,10 +464,10 @@ void drbd_resume_io(struct drbd_conf *mdev)
 }
 
 /**
- * drbd_determin_dev_size:
- * Evaluates all constraints and sets our correct device size.
- * Negative return values indicate errors. 0 and positive values
- * indicate success.
+ * drbd_determin_dev_size() -  Sets the right device size obeying all constraints
+ * @mdev:	DRBD device.
+ *
+ * Returns 0 on success, negative return values indicate errors.
  * You should call drbd_md_sync() after calling this function.
  */
 enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_hold(local)
@@ -601,11 +601,12 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 }
 
 /**
- * drbd_check_al_size:
- * checks that the al lru is of requested size, and if neccessary tries to
- * allocate a new one. returns -EBUSY if current al lru is still used,
- * -ENOMEM when allocation failed, and 0 on success. You should call
- * drbd_md_sync() after you called this function.
+ * drbd_check_al_size() - Ensures that the AL is of the right size
+ * @mdev:	DRBD device.
+ *
+ * Returns -EBUSY if current al lru is still used, -ENOMEM when allocation
+ * failed, and 0 on success. You should call drbd_md_sync() after you called
+ * this function.
  */
 STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 {
@@ -1836,8 +1837,10 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 }
 
 /**
- * drbd_nl_get_timeout_flag:
- * Is used by drbdsetup to find out which timeout value to use.
+ * drbd_nl_get_timeout_flag() - Used by drbdsetup to find out which timeout value to use
+ * @mdev:	DRBD device.
+ * @nlp:	Netlink/connector packet from drbdsetup
+ * @reply:	Reply packet for drbdsetup
  */
 STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				    struct drbd_nl_cfg_reply *reply)

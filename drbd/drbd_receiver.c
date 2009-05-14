@@ -98,7 +98,13 @@ void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
 #define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
 
 /**
- * drbd_bp_alloc: Returns a page. Fails only if a signal comes in.
+ * drbd_bp_alloc() - Returns a page, fails only if a signal comes in
+ * @mdev:	DRBD device.
+ * @gfp_mask:	Get free page allocation mask
+ *
+ * Allocates a page from the kernel or our own page pool. In case that
+ * allocation would go beyond the max_buffers setting, this function sleeps
+ * until DRBD frees a page somewhere else.
  */
 STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, gfp_t gfp_mask)
 {
@@ -740,9 +746,9 @@ STATIC enum drbd_packets drbd_recv_fp(struct drbd_conf *mdev, struct socket *soc
 }
 
 /**
- * drbd_socket_okay:
- * Tests if the connection behind the socket still exists. If not it frees
- * the socket.
+ * drbd_socket_okay() - Free the socket if its connection is not okay
+ * @mdev:	DRBD device.
+ * @sock:	pointer to the pointer to the socket.
  */
 static int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
 {
@@ -987,10 +993,6 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
 }
 
-/**
- * w_flush: Checks if an epoch can be closed and therefore might
- * close and/or free the epoch object.
- */
 STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = (struct flush_work *)w;
@@ -1008,8 +1010,10 @@ STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 }
 
 /**
- * drbd_may_finish_epoch: Checks if an epoch can be closed and therefore might
- * close and/or free the epoch object.
+ * drbd_may_finish_epoch() - Applies an epoch_event to the epoch's state, eventually finishes it.
+ * @mdev:	DRBD device.
+ * @epoch:	Epoch object.
+ * @ev:		Epoch event.
  */
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 					       struct drbd_epoch *epoch,
@@ -1125,8 +1129,9 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 }
 
 /**
- * drbd_bump_write_ordering: It turned out that the current mdev->write_ordering
- * method does not work on the backing block device. Try the next allowed method.
+ * drbd_bump_write_ordering() - Fall back to an other write ordering method
+ * @mdev:	DRBD device.
+ * @wo:		Write ordering method to try.
  */
 void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) __must_hold(local)
 {
@@ -1152,8 +1157,10 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 }
 
 /**
- * w_e_reissue: In case the IO subsystem delivered an error for an BIO with the
- * BIO_RW_BARRIER flag set, retry that bio without the barrier flag set.
+ * w_e_reissue() - Worker callback; Resubmit a bio, without BIO_RW_BARRIER set
+ * @mdev:	DRBD device.
+ * @w:		work object.
+ * @cancel:	The connection will be closed anyways (unused in this callback)
  */
 int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
 {
@@ -2937,8 +2944,8 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct p_header *h)
 }
 
 /**
- * convert_state:
- * Switches the view of the state.
+ * convert_state() - Converts the peer's view of the cluster state to our point of view
+ * @ps:		The state as seen by the peer.
  */
 STATIC union drbd_state convert_state(union drbd_state ps)
 {

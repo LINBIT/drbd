@@ -306,10 +306,7 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 
 extern struct drbd_conf **minor_table;
 
-/***
- * on the wire
- *********************************************************************/
-
+/* on the wire */
 enum drbd_packets {
 	/* receiver (data socket) */
 	P_DATA		      = 0x00,
@@ -1686,7 +1683,9 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 		const struct drbd_epoch_entry* e);
 
 
-/** DRBD State macros:
+/**
+ * DOC: DRBD State macros
+ *
  * These macros are used to express state changes in easily readable form.
  *
  * The NS macros expand to a mask and a value, that can be bit ored onto the
@@ -1787,10 +1786,6 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 	return _drbd_request_state(mdev, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
-/**
- * drbd_chk_io_error: Handles the on_io_error setting, should be called from
- * all io completion handlers. See also drbd_io_error().
- */
 static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 {
 	switch (mdev->ldev->dc.on_io_error) {
@@ -1811,6 +1806,14 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	}
 }
 
+/**
+ * drbd_chk_io_error: Handle the on_io_error setting, should be called from all io completion handlers
+ * @mdev:	 DRBD device.
+ * @error:	 Error code passed to the IO completion callback
+ * @forcedetach: Force detach. I.e. the error happened while accessing the meta data
+ *
+ * See also drbd_io_error().
+ */
 static inline void drbd_chk_io_error(struct drbd_conf *mdev,
 	int error, int forcedetach)
 {
@@ -1822,9 +1825,13 @@ static inline void drbd_chk_io_error(struct drbd_conf *mdev,
 	}
 }
 
-/* Returns the first sector number of our meta data,
- * which, for internal meta data, happens to be the maximum capacity
- * we could agree upon with our peer
+
+/**
+ * drbd_md_first_sector() - Returns the first sector number of the meta data area
+ * @bdev:	Meta data block device.
+ *
+ * BTW, for internal meta data, this happens to be the maximum capacity
+ * we could agree upon with our peer node.
  */
 static inline sector_t drbd_md_first_sector(struct drbd_backing_dev *bdev)
 {
@@ -1838,8 +1845,10 @@ static inline sector_t drbd_md_first_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-/* returns the last sector number of our meta data,
- * to be able to catch out of band md access */
+/**
+ * drbd_md_last_sector() - Return the last sector number of the meta data area
+ * @bdev:	Meta data block device.
+ */
 static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 {
 	switch (bdev->dc.meta_dev_idx) {
@@ -1852,9 +1861,14 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-/* returns the capacity we announce to out peer.
- * we clip ourselves at the various MAX_SECTORS, because if we don't,
- * current implementation will oops sooner or later */
+/**
+ * drbd_get_max_capacity() - Returns the capacity we announce to out peer
+ * @bdev:	Meta data block device.
+ *
+ * returns the capacity we announce to out peer.  we clip ourselves at the
+ * various MAX_SECTORS, because if we don't, current implementation will
+ * oops sooner or later
+ */
 static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 {
 	sector_t s;
@@ -1881,7 +1895,11 @@ static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 	return s;
 }
 
-/* returns the sector number of our meta data 'super' block */
+/**
+ * drbd_md_ss__() - Return the sector number of our meta data super block
+ * @mdev:	DRBD device.
+ * @bdev:	Meta data block device.
+ */
 static inline sector_t drbd_md_ss__(struct drbd_conf *mdev,
 				    struct drbd_backing_dev *bdev)
 {
@@ -2070,8 +2088,10 @@ static inline void put_net_conf(struct drbd_conf *mdev)
 }
 
 /**
- * get_net_conf: Returns TRUE when it is ok to access mdev->net_conf. You
- * should call put_net_conf() when finished looking at mdev->net_conf.
+ * get_net_conf() - Increase ref count on mdev->net_conf; Returns 0 if nothing there
+ * @mdev:	DRBD device.
+ *
+ * You have to call put_net_conf() when finished working with mdev->net_conf.
  */
 static inline int get_net_conf(struct drbd_conf *mdev)
 {
@@ -2085,11 +2105,13 @@ static inline int get_net_conf(struct drbd_conf *mdev)
 }
 
 /**
- * get_ldev: Returns TRUE when local IO is possible. If it returns
- * TRUE you should call put_ldev() after IO is completed.
+ * get_ldev() - Increase the ref count on mdev->ldev. Returns 0 if there is no ldev
+ * @M:		DRBD device.
+ *
+ * You have to call put_ldev() when finished working with mdev->ldev.
  */
-#define get_ldev_if_state(M,MINS) __cond_lock(local, _get_ldev_if_state(M,MINS))
 #define get_ldev(M) __cond_lock(local, _get_ldev_if_state(M,D_INCONSISTENT))
+#define get_ldev_if_state(M,MINS) __cond_lock(local, _get_ldev_if_state(M,MINS))
 
 static inline void put_ldev(struct drbd_conf *mdev)
 {
