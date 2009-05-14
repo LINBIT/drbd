@@ -833,11 +833,16 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto release_bdev_fail;
 	}
 
+	/* meta_dev_idx >= 0: external fixed size,
+	 * possibly multiple drbd sharing one meta device.
+	 * TODO in that case, paranoia check that [md_bdev, meta_dev_idx] is
+	 * not yet used by some other drbd minor!
+	 * (if you use drbd.conf + drbdadm,
+	 * that should check it for you already; but if you don't, or someone
+	 * fooled it, we need to double check here) */
 	nbc->md_bdev = inode2->i_bdev;
-	if (bd_claim(nbc->md_bdev,
-		     (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
-		      nbc->dc.meta_dev_idx == DRBD_MD_INDEX_FLEX_INT) ?
-		     (void *)mdev : (void *) drbd_m_holder)) {
+	if (bd_claim(nbc->md_bdev, (nbc->dc.meta_dev_idx < 0) ? (void *)mdev
+				: (void *) drbd_m_holder)) {
 		retcode = ERR_BDCLAIM_MD_DISK;
 		goto release_bdev_fail;
 	}
