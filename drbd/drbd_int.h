@@ -1347,10 +1347,10 @@ extern int drbd_bitmap_io(struct drbd_conf *mdev, int (*io_fn)(struct drbd_conf 
 /* resync bitmap */
 /* 16MB sized 'bitmap extent' to track syncer usage */
 struct bm_extent {
-	struct lc_element lce;
 	int rs_left; /* number of bits set (out of sync) in this extent. */
 	int rs_failed; /* number of failed resync requests in this extent. */
 	unsigned long flags;
+	struct lc_element lce;
 };
 
 #define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */

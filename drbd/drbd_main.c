@@ -1405,9 +1405,9 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		mdev->rs_failed = 0;
 		atomic_set(&mdev->rs_pending_cnt, 0);
 
-		lc_free(mdev->resync);
+		lc_destroy(mdev->resync);
 		mdev->resync = NULL;
-		lc_free(mdev->act_log);
+		lc_destroy(mdev->act_log);
 		mdev->act_log = NULL;
 		__no_warn(local,
 			drbd_free_bc(mdev->ldev);
@@ -3066,10 +3066,8 @@ static void drbd_delete_device(unsigned int minor)
 	mdev->ee_hash = NULL;
 	*/
 
-	if (mdev->act_log)
-		lc_free(mdev->act_log);
-	if (mdev->resync)
-		lc_free(mdev->resync);
+	lc_destroy(mdev->act_log);
+	lc_destroy(mdev->resync);
 
 	kfree(mdev->p_uuid);
 	/* mdev->p_uuid = NULL; */

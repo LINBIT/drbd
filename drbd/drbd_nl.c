@@ -624,8 +624,8 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 
 	in_use = 0;
 	t = mdev->act_log;
-	n = lc_alloc("act_log", mdev->sync_conf.al_extents,
-		     sizeof(struct lc_element), mdev);
+	n = lc_create("act_log", mdev->sync_conf.al_extents,
+		     sizeof(struct lc_element), 0);
 
 	if (n == NULL) {
 		dev_err(DEV, "Cannot allocate act_log lru!\n");
@@ -634,7 +634,7 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 	spin_lock_irq(&mdev->al_lock);
 	if (t) {
 		for (i = 0; i < t->nr_elements; i++) {
-			e = lc_entry(t, i);
+			e = lc_element_by_index(t, i);
 			if (e->refcnt)
 				dev_err(DEV, "refcnt(%d)==%d\n",
 				    e->lc_number, e->refcnt);
@@ -646,11 +646,11 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 	spin_unlock_irq(&mdev->al_lock);
 	if (in_use) {
 		dev_err(DEV, "Activity log still in use!\n");
-		lc_free(n);
+		lc_destroy(n);
 		return -EBUSY;
 	} else {
 		if (t)
-			lc_free(t);
+			lc_destroy(t);
 	}
 	drbd_md_mark_dirty(mdev); /* we changed mdev->act_log->nr_elemens */
 	return 0;
@@ -826,7 +826,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
-	resync_lru = lc_alloc("resync", 61, sizeof(struct bm_extent), mdev);
+	resync_lru = lc_create("resync", 61, sizeof(struct bm_extent),
+			offsetof(struct bm_extent, lce));
 	if (!resync_lru) {
 		retcode = ERR_NOMEM;
 		goto release_bdev_fail;
@@ -1124,8 +1125,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 			fput(nbc->md_file);
 		kfree(nbc);
 	}
-	if (resync_lru)
-		lc_free(resync_lru);
+	lc_destroy(resync_lru);
 
 	reply->ret_code = retcode;
 	drbd_reconfig_done(mdev);

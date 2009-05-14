@@ -28,6 +28,131 @@
 
 #include <linux/list.h>
 
+/*
+This header file (and its .c file; kernel-doc of functions see there)
+  define a helper framework to easily keep track of index:label associations,
+  and changes to an "active set" of objects, as well as pending transactions,
+  to persistently record those changes.
+
+  We use an LRU policy if it is necessary to "cool down" a region currently in
+  the active set before we can "heat" a previously unused region.
+
+  Because of this later property, it is called "lru_cache".
+  As it actually Tracks Objects in an Active SeT, we could also call it
+  toast (incidentally that is what may happen to the data on the
+  backend storage uppon next resync, if we don't get it right).
+
+What for?
+
+We replicate IO (more or less synchronously) to local and remote disk.
+
+For crash recovery after replication node failure,
+  we need to resync all regions that have been target of in-flight WRITE IO
+  (in use, or "hot", regions), as we don't know wether or not those WRITEs have
+  made it to stable storage.
+
+  To avoid a "full resync", we need to persistently track these regions.
+
+  This is known as "write intent log", and can be implemented as on-disk
+  (coarse or fine grained) bitmap, or other meta data.
+
+  To avoid the overhead of frequent extra writes to this meta data area,
+  usually the condition is softened to regions that _may_ have been target of
+  in-flight WRITE IO, e.g. by only lazily clearing the on-disk write-intent
+  bitmap, trading frequency of meta data transactions against amount of
+  (possibly unneccessary) resync traffic.
+
+  If we set a hard limit on the area that may be "hot" at any given time, we
+  limit the amount of resync traffic needed for crash recovery.
+
+For recovery after replication link failure,
+  we need to resync all blocks that have been changed on the other replica
+  in the mean time, or, if both replica have been changed independently [*],
+  all blocks that have been changed on either replica in the mean time.
+  [*] usually as a result of a cluster split-brain and insufficient protection.
+      but there are valid use cases to do this on purpose.
+
+  Tracking those blocks can be implemented as "dirty bitmap".
+  Having it fine-grained reduces the amount of resync traffic.
+  It should also be persistent, to allow for reboots (or crashes)
+  while the replication link is down.
+
+There are various possible implementations for persistently storing
+write intent log information, three of which are mentioned here.
+
+"Chunk dirtying"
+  The on-disk "dirty bitmap" may be re-used as "write-intent" bitmap as well.
+  To reduce the frequency of bitmap updates for write-intent log purposes,
+  one could dirty "chunks" (of some size) at a time of the (fine grained)
+  on-disk bitmap, while keeping the in-memory "dirty" bitmap as clean as
+  possible, flushing it to disk again when a previously "hot" (and on-disk
+  dirtied as full chunk) area "cools down" again (no IO in flight anymore,
+  and none expected in the near future either).
+
+"Explicit (coarse) write intent bitmap"
+  An other implementation could chose a (probably coarse) explicit bitmap,
+  for write-intent log purposes, additionally to the fine grained dirty bitmap.
+
+"Activity log"
+  Yet an other implementation may keep track of the hot regions, by starting
+  with an empty set, and writing down a journal of region numbers that have
+  become "hot", or have "cooled down" again.
+
+  To be able to use a ring buffer for this journal of changes to the active
+  set, we not only record the actual changes to that set, but also record the
+  not changing members of the set in a round robin fashion. To do so, we use a
+  fixed (but configurable) number of slots which we can identify by index, and
+  associate region numbers (labels) with these indices.
+  For each transaction recording a change to the active set, we record the
+  change itself (index: -old_label, +new_label), and which index is associated
+  with which label (index: current_label) within a certain sliding window that
+  is moved further over the available indices with each such transaction.
+
+  Thus, for crash recovery, if the ringbuffer is sufficiently large, we can
+  accurately reconstruct the active set.
+
+  Sufficiently large depends only on maximum number of active objects, and the
+  size of the sliding window recording "index: current_label" associations within
+  each transaction.
+
+  This is what we call the "activity log".
+
+  Currently we need one activity log transaction per single label change, which
+  does not give much benefit over the "dirty chunks of bitmap" approach, other
+  than potentially less seeks.
+
+  We plan to change the transaction format to support multiple changes per
+  transaction, which then would reduce several (disjoint, "random") updates to
+  the bitmap into one transaction to the activity log ring buffer.
+*/
+
+/* this defines an element in a tracked set
+ * .colision is for hash table lookup.
+ * When we process a new IO request, we know its sector, thus can deduce the
+ * region number (label) easily.  To do the label -> object lookup without a
+ * full list walk, we use a simple hash table.
+ *
+ * .list is on one of three lists:
+ *  in_use: currently in use (refcnt > 0, lc_number != LC_FREE)
+ *     lru: unused but ready to be reused or recycled
+ *          (ts_refcnt == 0, lc_number != LC_FREE),
+ *    free: unused but ready to be recycled
+ *          (ts_refcnt == 0, lc_number == LC_FREE),
+ *
+ * an element is said to be "in the active set",
+ * if either on "in_use" or "lru", i.e. lc_number != LC_FREE.
+ *
+ * DRBD currently only uses 61 elements on the resync lru_cache (total memory
+ * usage 2 pages), and up to 3833 elements on the act_log lru_cache, totalling
+ * ~215 kB for 64bit architechture, ~53 pages.
+ *
+ * We usually do not actually free these objects again, but only "recycle"
+ * them, as the change "index: -old_label, +LC_FREE" would need a transaction
+ * as well.  Which also means that using a kmem_cache or even mempool to
+ * allocate the objects from wastes some resources. But it would avoid high
+ * order page allocations in kmalloc, so we may change to a kmem_cache backed
+ * allocation of the elements in the near future.
+ */
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;		 /* LRU list or free list */
@@ -36,17 +161,31 @@ struct lc_element {
 };
 
 struct lru_cache {
+	/* the least recently used item is kept at lru->prev */
 	struct list_head lru;
 	struct list_head free;
 	struct list_head in_use;
+
+	/* size of tracked objects */
 	size_t element_size;
+	/* offset of struct lc_element member in the tracked object */
+	size_t element_off;
+
+	/* number of elements (indices) */
 	unsigned int  nr_elements;
+
+	/* statistics */
+	unsigned int used;
+	unsigned long hits, misses, starving, dirty, changed;
+
+	/* see below: flag-bits for lru_cache */
+	unsigned long flags;
+
+	/* when changing the label of an index element */
 	unsigned int  new_number;
 
-	unsigned int used;
-	unsigned long flags;
-	unsigned long hits, misses, starving, dirty, changed;
-	struct lc_element *changing_element; /* just for paranoia */
+	/* for paranoia when changing the label of an index element */
+	struct lc_element *changing_element;
 
 	void  *lc_private;
 	const char *name;
@@ -58,18 +197,30 @@ struct lru_cache {
 
 /* flag-bits for lru_cache */
 enum {
+	/* debugging aid, to catch concurrent access early.
+	 * user needs to guarantee exclusive access by proper locking! */
 	__LC_PARANOIA,
+	/* if we need to change the set, but currently there is a changing
+	 * transaction pending, we are "dirty", and must deferr further
+	 * changing requests */
 	__LC_DIRTY,
+	/* if we need to change the set, but currently there is no free nor
+	 * unused element available, we are "starving", and must not give out
+	 * further references, to guarantee that eventually some refcnt will
+	 * drop to zero and we will be able to make progress again, changing
+	 * the set, writing the transaction.
+	 * if the statistics say we are frequently starving,
+	 * nr_elements is too small. */
 	__LC_STARVING,
 };
 #define LC_PARANOIA (1<<__LC_PARANOIA)
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 
-extern struct lru_cache *lc_alloc(const char *name, unsigned int e_count,
-				  size_t e_size, void *private_p);
+extern struct lru_cache *lc_create(const char *name, unsigned int e_count,
+				  size_t e_size, size_t e_off);
 extern void lc_reset(struct lru_cache *lc);
-extern void lc_free(struct lru_cache *lc);
+extern void lc_destroy(struct lru_cache *lc);
 extern void lc_set(struct lru_cache *lc, unsigned int enr, int index);
 extern void lc_del(struct lru_cache *lc, struct lc_element *element);
 
@@ -80,9 +231,9 @@ extern unsigned int lc_put(struct lru_cache *lc, struct lc_element *e);
 extern void lc_changed(struct lru_cache *lc, struct lc_element *e);
 
 struct seq_file;
-extern size_t lc_printf_stats(struct seq_file *seq, struct lru_cache *lc);
+extern size_t lc_seq_printf_stats(struct seq_file *seq, struct lru_cache *lc);
 
-void lc_dump(struct lru_cache *lc, struct seq_file *seq, char *utext,
+void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext,
 	     void (*detail) (struct seq_file *, struct lc_element *));
 
 /* This can be used to stop lc_get from changing the set of active elements.
@@ -108,9 +259,27 @@ static inline int lc_is_used(struct lru_cache *lc, unsigned int enr)
 
 #define LC_FREE (-1U)
 
-#define lc_e_base(lc)  ((char *)((lc)->slot + (lc)->nr_elements))
-#define lc_entry(lc, i) ((struct lc_element *) \
-		       (lc_e_base(lc) + (i)*(lc)->element_size))
-#define lc_index_of(lc, e) (((char *)(e) - lc_e_base(lc))/(lc)->element_size)
+#define lc_entry(ptr, type, member) \
+	container_of(ptr, type, member)
+
+static inline struct lc_element *
+lc_element_by_index(struct lru_cache *lc, unsigned int i)
+{
+	BUG_ON(i >= lc->nr_elements);
+	return (struct lc_element *)(
+			((char *)(lc->slot + lc->nr_elements)) +
+			i * lc->element_size
+			+ lc->element_off);
+}
+
+static inline size_t lc_index_of(struct lru_cache *lc, struct lc_element *e)
+{
+	size_t i = ((char *)(e) - lc->element_off
+		- ((char *)(lc->slot + lc->nr_elements)))
+		/ lc->element_size;
+	BUG_ON(i >= lc->nr_elements);
+	BUG_ON(e != lc_element_by_index(lc, i));
+	return i;
+}
 
 #endif
