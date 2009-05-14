@@ -80,6 +80,7 @@ struct drbd_bitmap {
 /* definition of bits in bm_flags */
 #define BM_LOCKED       0
 #define BM_MD_IO_ERROR  1
+#define BM_P_VMALLOCED  2
 
 static int bm_is_locked(struct drbd_bitmap *b)
 {
@@ -231,15 +232,23 @@ STATIC void bm_free_pages(struct page **pages, unsigned long number)
 	}
 }
 
+STATIC void bm_vk_free(void *ptr, int v)
+{
+	if (v)
+		vfree(ptr);
+	else
+		kfree(ptr);
+}
+
 /*
  * "have" and "want" are NUMBER OF PAGES.
  */
-STATIC struct page **bm_realloc_pages(struct page **old_pages,
-				       unsigned long have,
-				       unsigned long want)
+STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 {
+	struct page **old_pages = b->bm_pages;
 	struct page **new_pages, *page;
-	unsigned int i, bytes;
+	unsigned int i, bytes, vmalloced = 0;
+	unsigned long have = b->bm_number_of_pages;
 
 	BUG_ON(have == 0 && old_pages != NULL);
 	BUG_ON(have != 0 && old_pages == NULL);
@@ -247,27 +256,15 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 	if (have == want)
 		return old_pages;
 
-	/* To use kmalloc here is ok, as long as we support 4TB at max...
-	 * otherwise this might become bigger than 128KB, which is
-	 * the maximum for kmalloc.
-	 *
-	 * no, it is not: on 64bit boxes, sizeof(void*) == 8,
-	 * 128MB bitmap @ 4K pages -> 256K of page pointers.
-	 * ==> use vmalloc for now again.
-	 * then again, we could do something like
-	 *   if (nr_pages > watermark) vmalloc else kmalloc :*> ...
-	 * or do cascading page arrays:
-	 *   one page for the page array of the page array,
-	 *   those pages for the real bitmap pages.
-	 *   there we could even add some optimization members,
-	 *   so we won't need to kmap_atomic in bm_find_next_bit just to see
-	 *   that the page has no bits set ...
-	 * or we can try a "huge" page ;-)
-	 */
+	/* Trying kmalloc first, falling back to vmalloc... */
 	bytes = sizeof(struct page *)*want;
-	new_pages = vmalloc(bytes);
-	if (!new_pages)
-		return NULL;
+	new_pages = kmalloc(bytes, GFP_KERNEL);
+	if (!new_pages) {
+		new_pages = vmalloc(bytes);
+		if (!new_pages)
+			return NULL;
+		vmalloced = 1;
+	}
 
 	memset(new_pages, 0, bytes);
 	if (want >= have) {
@@ -277,7 +274,7 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 			page = alloc_page(GFP_HIGHUSER);
 			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
-				vfree(new_pages);
+				bm_vk_free(new_pages, vmalloced);
 				return NULL;
 			}
 			new_pages[i] = page;
@@ -289,6 +286,11 @@ STATIC struct page **bm_realloc_pages(struct page **old_pages,
 		bm_free_pages(old_pages + want, have - want);
 		*/
 	}
+
+	if (vmalloced)
+		set_bit(BM_P_VMALLOCED, &b->bm_flags);
+	else
+		clear_bit(BM_P_VMALLOCED, &b->bm_flags);
 
 	return new_pages;
 }
@@ -325,7 +327,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
 {
 	ERR_IF (!mdev->bitmap) return;
 	bm_free_pages(mdev->bitmap->bm_pages, mdev->bitmap->bm_number_of_pages);
-	vfree(mdev->bitmap->bm_pages);
+	bm_vk_free(mdev->bitmap->bm_pages, test_bit(BM_P_VMALLOCED, &mdev->bitmap->bm_flags));
 	kfree(mdev->bitmap);
 	mdev->bitmap = NULL;
 }
@@ -491,6 +493,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	unsigned long want, have, onpages; /* number of pages */
 	struct page **npages, **opages = NULL;
 	int err = 0, growing;
+	int opages_vmalloced;
 
 	ERR_IF(!b) return -ENOMEM;
 
@@ -501,6 +504,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
+
+	opages_vmalloced = test_bit(BM_P_VMALLOCED, &b->bm_flags);
 
 	if (capacity == 0) {
 		spin_lock_irq(&b->bm_lock);
@@ -515,7 +520,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		b->bm_dev_capacity = 0;
 		spin_unlock_irq(&b->bm_lock);
 		bm_free_pages(opages, onpages);
-		vfree(opages);
+		bm_vk_free(opages, opages_vmalloced);
 		goto out;
 	}
 	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
@@ -542,7 +547,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		if (FAULT_ACTIVE(mdev, DRBD_FAULT_BM_ALLOC))
 			npages = NULL;
 		else
-			npages = bm_realloc_pages(b->bm_pages, have, want);
+			npages = bm_realloc_pages(b, want);
 	}
 
 	if (!npages) {
@@ -589,7 +594,7 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 	bm_end_info(mdev, __func__);
 	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
-		vfree(opages);
+		bm_vk_free(opages, opages_vmalloced);
 	dev_info(DEV, "resync bitmap: bits=%lu words=%lu\n", bits, words);
 
  out:
