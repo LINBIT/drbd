@@ -8,6 +8,7 @@ comment "DRBD disabled because PROC_FS, INET or CONNECTOR not selected"
 config BLK_DEV_DRBD
 	tristate "DRBD Distributed Replicated Block Device support"
 	depends on PROC_FS && INET && CONNECTOR
+	select LRU_CACHE
 	help
 
 	  NOTE: In order to authenticate connections you have to select

@@ -23,11 +23,12 @@
 
  */
 
+#include <linux/module.h>
 #include <linux/bitops.h>
 #include <linux/slab.h>
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h> /* for seq_printf */
-#include "lru_cache.h"
+#include <linux/lru_cache.h>
 
 /* this is developers aid only! */
 #define PARANOIA_ENTRY() BUG_ON(test_and_set_bit(__LC_PARANOIA, &lc->flags))
@@ -448,3 +449,15 @@ void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext
 	}
 }
 
+EXPORT_SYMBOL(lc_create);
+EXPORT_SYMBOL(lc_reset);
+EXPORT_SYMBOL(lc_destroy);
+EXPORT_SYMBOL(lc_set);
+EXPORT_SYMBOL(lc_del);
+EXPORT_SYMBOL(lc_try_get);
+EXPORT_SYMBOL(lc_find);
+EXPORT_SYMBOL(lc_get);
+EXPORT_SYMBOL(lc_put);
+EXPORT_SYMBOL(lc_changed);
+EXPORT_SYMBOL(lc_seq_printf_stats);
+EXPORT_SYMBOL(lc_seq_dump_details);

@@ -233,8 +233,8 @@ extern void lc_changed(struct lru_cache *lc, struct lc_element *e);
 struct seq_file;
 extern size_t lc_seq_printf_stats(struct seq_file *seq, struct lru_cache *lc);
 
-void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext,
-	     void (*detail) (struct seq_file *, struct lc_element *));
+extern void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext,
+				void (*detail) (struct seq_file *, struct lc_element *));
 
 /* This can be used to stop lc_get from changing the set of active elements.
  * Note that the reference counts and order on the lru list may still change.

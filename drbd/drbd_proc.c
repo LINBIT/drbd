@@ -34,7 +34,6 @@
 #include <linux/seq_file.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
-#include "lru_cache.h" /* for lc_sprintf_stats */
 
 STATIC int drbd_proc_open(struct inode *inode, struct file *file);
 
