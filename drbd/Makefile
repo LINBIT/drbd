@@ -39,6 +39,7 @@ ifneq ($(PATCHLEVEL),)
     $(error "won't compile with this kernel version")
   endif
 
+  CONFIG_BLK_DEV_DRBD := m
   include $(DRBDSRC)/Makefile-2.6
 
   override EXTRA_CFLAGS += -I$(DRBDSRC)
@@ -62,8 +63,7 @@ else
   SHELL=/bin/bash
 
   DRBDSRC := $(shell pwd)
-  CONFIG_BLK_DEV_DRBD := m
-  export DRBDSRC CONFIG_BLK_DEV_DRBD
+  export DRBDSRC
 
   # to be overridden on command line:
   PREFIX := /
