@@ -1857,7 +1857,7 @@ STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 	kunmap(page);
 	if (sent == size)
 		mdev->send_cnt += size>>9;
-	return sent;
+	return sent == size;
 }
 
 int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
@@ -1884,23 +1884,17 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	}
 #endif
 
-	/* PARANOIA. if this ever triggers,
-	 * something in the layers above us is really kaputt.
-	 *one roundtrip later:
-	 * doh. it triggered. so XFS _IS_ really kaputt ...
-	 * oh well...
-	 */
+	/* e.g. XFS meta- & log-data is in slab pages, which have a
+	 * page_count of 0 and/or have PageSlab() set.
+	 * we cannot use send_page for those, as that does get_page();
+	 * put_page(); and would cause either a VM_BUG directly, or
+	 * __page_cache_release a page that would actually still be referenced
+	 * by someone, leading to some obscure delayed Oops somewhere else. */
 	if ((page_count(page) < 1) || PageSlab(page)) {
-		/* e.g. XFS meta- & log-data is in slab pages, which have a
-		 * page_count of 0 and/or have PageSlab() set...
-		 */
 #ifdef SHOW_SENDPAGE_USAGE
 		++fallback;
 #endif
-		sent = _drbd_no_send_page(mdev, page, offset, size);
-		if (likely(sent > 0))
-			len -= sent;
-		goto out;
+		return _drbd_no_send_page(mdev, page, offset, size);
 	}
 
 	set_fs(KERNEL_DS);
@@ -1926,7 +1920,6 @@ int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	} while (len > 0 /* THINK && mdev->cstate >= C_CONNECTED*/);
 	set_fs(oldfs);
 
-out:
 	ok = (len == 0);
 	if (likely(ok))
 		mdev->send_cnt += size>>9;
