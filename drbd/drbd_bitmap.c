@@ -383,9 +383,9 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 		*/
 		words = ALIGN(bits, 64) >> LN2_BPL;
 
-		if (inc_local(mdev)) {
-			D_ASSERT((u64)bits <= (((u64)mdev->bc->md.md_size_sect-MD_BM_OFFSET) << 12));
-			dec_local(mdev);
+		if (get_ldev(mdev)) {
+			D_ASSERT((u64)bits <= (((u64)mdev->ldev->md.md_size_sect-MD_BM_OFFSET) << 12));
+			put_ldev(mdev);
 		}
 
 		growing = bits > b->bm_bits;
@@ -628,18 +628,18 @@ STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int 
 						+ (PAGE_SIZE*page_nr));
 	unsigned int len;
 	sector_t on_disk_sector =
-		mdev->bc->md.md_offset + mdev->bc->md.bm_offset;
+		mdev->ldev->md.md_offset + mdev->ldev->md.bm_offset;
 	on_disk_sector += ((sector_t)page_nr) << (PAGE_SHIFT-9);
 
 	/* this might happen with very small
 	 * flexible external meta data device */
 	len = min_t(unsigned int, PAGE_SIZE,
-		(drbd_md_last_sector(mdev->bc) - on_disk_sector + 1)<<9);
+		(drbd_md_last_sector(mdev->ldev) - on_disk_sector + 1)<<9);
 
 	D_DUMPLU(on_disk_sector);
 	D_DUMPI(len);
 
-	bio->bi_bdev = mdev->bc->md_bdev;
+	bio->bi_bdev = mdev->ldev->md_bdev;
 	bio->bi_sector = on_disk_sector;
 	bio_add_page(bio, page, len, 0);
 	bio->bi_private = b;
@@ -713,7 +713,7 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 	for (i = 0; i < num_pages; i++)
 		bm_page_io_async(mdev, b, i, rw);
 
-	drbd_blk_run_queue(bdev_get_queue(mdev->bc->md_bdev));
+	drbd_blk_run_queue(bdev_get_queue(mdev->ldev->md_bdev));
 	wait_event(b->bm_io_wait, atomic_read(&b->bm_async_io) == 0);
 
 	MTRACE(TRACE_TYPE_MD_IO, TRACE_LVL_SUMMARY,
@@ -788,8 +788,8 @@ int drbd_bm_write(struct drbd_conf *mdev) __must_hold(local)
  */
 int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(local)
 {
-	sector_t on_disk_sector = enr + mdev->bc->md.md_offset
-				      + mdev->bc->md.bm_offset;
+	sector_t on_disk_sector = enr + mdev->ldev->md.md_offset
+				      + mdev->ldev->md.bm_offset;
 	int bm_words, num_words, offset;
 	int err = 0;
 
@@ -805,7 +805,7 @@ int drbd_bm_write_sect(struct drbd_conf *mdev, unsigned long enr) __must_hold(lo
 		memset(page_address(mdev->md_io_page), 0, MD_HARDSECT);
 	drbd_bm_get_lel(mdev, offset, num_words,
 			page_address(mdev->md_io_page));
-	if (!drbd_md_sync_page_io(mdev, mdev->bc, on_disk_sector, WRITE)) {
+	if (!drbd_md_sync_page_io(mdev, mdev->ldev, on_disk_sector, WRITE)) {
 		int i;
 		err = -EIO;
 		ERR("IO ERROR writing bitmap sector %lu "

@@ -17,6 +17,14 @@
 # define set_page_private(page, v)	((page)->private = (v))
 #endif
 
+/* mutex was not available before 2.6.16.
+ * various vendors provide various degrees of backports.
+ * we provide the missing parts ourselves, if neccessary.
+ * this one is for RHEL/Centos 4 */
+#if defined(mutex_lock) && !defined(mutex_is_locked)
+#define mutex_is_locked(m) (atomic_read(&(m)->count) != 1)
+#endif
+
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 

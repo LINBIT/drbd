@@ -895,9 +895,9 @@ struct drbd_conf {
 	unsigned long flags;
 
 	/* configured by drbdsetup */
-	struct net_conf *net_conf; /* protected by inc_net() and dec_net() */
+	struct net_conf *net_conf; /* protected by get_net_conf() and put_net_conf() */
 	struct syncer_conf sync_conf;
-	struct drbd_backing_dev *bc __protected_by(local);
+	struct drbd_backing_dev *ldev __protected_by(local);
 
 	sector_t p_size;     /* partner's disk size */
 	struct request_queue *rq_queue;
@@ -1150,7 +1150,7 @@ extern int drbd_send_ov_request(struct drbd_conf *mdev,sector_t sector,int size)
 extern int drbd_send_bitmap(struct drbd_conf *mdev);
 extern int _drbd_send_bitmap(struct drbd_conf *mdev);
 extern int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode);
-extern void drbd_free_bc(struct drbd_backing_dev *bc);
+extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern int drbd_io_error(struct drbd_conf *mdev, int forcedetach);
 extern void drbd_mdev_cleanup(struct drbd_conf *mdev);
 
@@ -1723,7 +1723,7 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
  */
 static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 {
-	switch (mdev->bc->dc.on_io_error) {
+	switch (mdev->ldev->dc.on_io_error) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
@@ -2002,35 +2002,35 @@ static inline void inc_unacked(struct drbd_conf *mdev)
 	ERR_IF_CNT_IS_NEGATIVE(unacked_cnt); } while (0)
 
 
-static inline void dec_net(struct drbd_conf *mdev)
+static inline void put_net_conf(struct drbd_conf *mdev)
 {
 	if (atomic_dec_and_test(&mdev->net_cnt))
 		wake_up(&mdev->misc_wait);
 }
 
 /**
- * inc_net: Returns TRUE when it is ok to access mdev->net_conf. You
- * should call dec_net() when finished looking at mdev->net_conf.
+ * get_net_conf: Returns TRUE when it is ok to access mdev->net_conf. You
+ * should call put_net_conf() when finished looking at mdev->net_conf.
  */
-static inline int inc_net(struct drbd_conf *mdev)
+static inline int get_net_conf(struct drbd_conf *mdev)
 {
 	int have_net_conf;
 
 	atomic_inc(&mdev->net_cnt);
 	have_net_conf = mdev->state.conn >= C_UNCONNECTED;
 	if (!have_net_conf)
-		dec_net(mdev);
+		put_net_conf(mdev);
 	return have_net_conf;
 }
 
 /**
- * inc_local: Returns TRUE when local IO is possible. If it returns
- * TRUE you should call dec_local() after IO is completed.
+ * get_ldev: Returns TRUE when local IO is possible. If it returns
+ * TRUE you should call put_ldev() after IO is completed.
  */
-#define inc_local_if_state(M,MINS) __cond_lock(local, _inc_local_if_state(M,MINS))
-#define inc_local(M) __cond_lock(local, _inc_local_if_state(M,D_INCONSISTENT))
+#define get_ldev_if_state(M,MINS) __cond_lock(local, _get_ldev_if_state(M,MINS))
+#define get_ldev(M) __cond_lock(local, _get_ldev_if_state(M,D_INCONSISTENT))
 
-static inline void dec_local(struct drbd_conf *mdev)
+static inline void put_ldev(struct drbd_conf *mdev)
 {
 	__release(local);
 	if (atomic_dec_and_test(&mdev->local_cnt))
@@ -2039,21 +2039,21 @@ static inline void dec_local(struct drbd_conf *mdev)
 }
 
 #ifndef __CHECKER__
-static inline int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
+static inline int _get_ldev_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
 {
 	int io_allowed;
 
 	atomic_inc(&mdev->local_cnt);
 	io_allowed = (mdev->state.disk >= mins);
 	if (!io_allowed)
-		dec_local(mdev);
+		put_ldev(mdev);
 	return io_allowed;
 }
 #else
-extern int _inc_local_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins);
+extern int _get_ldev_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins);
 #endif
 
-/* you must have an "inc_local" reference */
+/* you must have an "get_ldev" reference */
 static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 		unsigned long *bits_left, unsigned int *per_mil_done)
 {
@@ -2097,9 +2097,9 @@ static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 static inline int drbd_get_max_buffers(struct drbd_conf *mdev)
 {
 	int mxb = 1000000; /* arbitrary limit on open requests */
-	if (inc_net(mdev)) {
+	if (get_net_conf(mdev)) {
 		mxb = mdev->net_conf->max_buffers;
-		dec_net(mdev);
+		put_net_conf(mdev);
 	}
 	return mxb;
 }
@@ -2292,7 +2292,7 @@ static inline int drbd_queue_order_type(struct drbd_conf *mdev)
  *
  * b) struct backing_dev_info *bdi;
  *    b1) bdi = &q->backing_dev_info;
- *    b2) bdi = mdev->bc->backing_bdev->bd_inode->i_mapping->backing_dev_info;
+ *    b2) bdi = mdev->ldev->backing_bdev->bd_inode->i_mapping->backing_dev_info;
  *    blk_run_backing_dev(bdi,NULL);
  *
  * c) generic_unplug(q) ? __generic_unplug(q) ?
@@ -2308,9 +2308,9 @@ static inline void drbd_blk_run_queue(struct request_queue *q)
 
 static inline void drbd_kick_lo(struct drbd_conf *mdev)
 {
-	if (inc_local(mdev)) {
-		drbd_blk_run_queue(bdev_get_queue(mdev->bc->backing_bdev));
-		dec_local(mdev);
+	if (get_ldev(mdev)) {
+		drbd_blk_run_queue(bdev_get_queue(mdev->ldev->backing_bdev));
+		put_ldev(mdev);
 	}
 }
 
@@ -2321,7 +2321,7 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 	if (test_bit(MD_NO_BARRIER, &mdev->flags))
 		return;
 
-	r = blkdev_issue_flush(mdev->bc->md_bdev, NULL);
+	r = blkdev_issue_flush(mdev->ldev->md_bdev, NULL);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &mdev->flags);
 		ERR("meta data flush failed with status %d, disabling md-flushes\n", r);
