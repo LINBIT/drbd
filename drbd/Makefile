@@ -150,6 +150,12 @@ else
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean
+	@if git show HEAD:drbd/linux/drbd_config.h > linux/drbd_config.h.tmp \
+	&& ! diff -s -U0 linux/drbd_config.h.tmp linux/drbd_config.h ; then \
+		mv linux/drbd_config.h.tmp linux/drbd_config.h ; \
+	else \
+		rm -f linux/drbd_config.h.tmp ; \
+	fi
 
   tags:
 	ctags -R -I__initdata,__exitdata,__acquires,__releases \
