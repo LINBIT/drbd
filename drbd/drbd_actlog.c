@@ -209,8 +209,6 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 	return ok;
 }
 
-int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
-
 static
 struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr)
 {
