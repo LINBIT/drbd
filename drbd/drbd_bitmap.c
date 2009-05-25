@@ -834,6 +834,8 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 	 * this may be optimized by using
 	 * cpu_to_lel(-1) == -1 and cpu_to_lel(0) == 0;
 	 * the following is still not optimal, but better than nothing */
+	unsigned int i;
+	unsigned long *p_addr, *bm;
 	if (b->bm_set == 0) {
 		/* no page at all; avoid swap if all is 0 */
 		i = b->bm_number_of_pages;
@@ -845,12 +847,10 @@ void bm_cpu_to_lel(struct drbd_bitmap *b)
 		i = 0;
 	}
 	for (; i < b->bm_number_of_pages; i++) {
-		unsigned long *bm;
-		/* if you'd want to use kmap_atomic, you'd have to disable irq! */
-		p_addr = kmap(b->bm_pages[i]);
+		p_addr = kmap_atomic(b->bm_pages[i], KM_USER0);
 		for (bm = p_addr; bm < p_addr + PAGE_SIZE/sizeof(long); bm++)
 			*bm = cpu_to_lel(*bm);
-		kunmap(p_addr);
+		kunmap_atomic(p_addr, KM_USER0);
 	}
 }
 # endif
