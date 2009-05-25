@@ -2700,8 +2700,10 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct p_header *h)
 			}
 			verify_tfm = drbd_crypto_alloc_digest_safe(mdev,
 					p->verify_alg, "verify-alg");
-			if (IS_ERR(verify_tfm))
+			if (IS_ERR(verify_tfm)) {
+				verify_tfm = NULL;
 				goto disconnect;
+			}
 		}
 
 		if (apv >= 89 && strcmp(mdev->sync_conf.csums_alg, p->csums_alg)) {
@@ -2712,8 +2714,10 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct p_header *h)
 			}
 			csums_tfm = drbd_crypto_alloc_digest_safe(mdev,
 					p->csums_alg, "csums-alg");
-			if (IS_ERR(csums_tfm))
+			if (IS_ERR(csums_tfm)) {
+				csums_tfm = NULL;
 				goto disconnect;
+			}
 		}
 
 
@@ -2738,6 +2742,10 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, struct p_header *h)
 
 	return ok;
 disconnect:
+	/* just for completeness: actually not needed,
+	 * as this is not reached if csums_tfm was ok. */
+	crypto_free_hash(csums_tfm);
+	/* but free the verify_tfm again, if csums_tfm did not work out */
 	crypto_free_hash(verify_tfm);
 	drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
 	return FALSE;
