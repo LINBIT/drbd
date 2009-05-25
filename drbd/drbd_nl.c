@@ -624,8 +624,8 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 
 	in_use = 0;
 	t = mdev->act_log;
-	n = lc_create("act_log", mdev->sync_conf.al_extents,
-		     sizeof(struct lc_element), 0);
+	n = lc_create("act_log", drbd_al_ext_cache,
+		mdev->sync_conf.al_extents, sizeof(struct lc_element), 0);
 
 	if (n == NULL) {
 		dev_err(DEV, "Cannot allocate act_log lru!\n");
@@ -826,7 +826,8 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
-	resync_lru = lc_create("resync", 61, sizeof(struct bm_extent),
+	resync_lru = lc_create("resync", drbd_bm_ext_cache,
+			61, sizeof(struct bm_extent),
 			offsetof(struct bm_extent, lce));
 	if (!resync_lru) {
 		retcode = ERR_NOMEM;

@@ -1492,7 +1492,9 @@ extern int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, con
 #include "drbd_wrappers.h"
 
 extern struct kmem_cache *drbd_request_cache;
-extern struct kmem_cache *drbd_ee_cache;
+extern struct kmem_cache *drbd_ee_cache;	/* epoch entries */
+extern struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
+extern struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 extern mempool_t *drbd_request_mempool;
 extern mempool_t *drbd_ee_mempool;
 

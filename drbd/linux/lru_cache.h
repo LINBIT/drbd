@@ -27,6 +27,10 @@
 #define LRU_CACHE_H
 
 #include <linux/list.h>
+#include <linux/slab.h>
+#include <linux/bitops.h>
+#include <linux/string.h> /* for memset */
+#include <linux/seq_file.h>
 
 /*
 This header file (and its .c file; kernel-doc of functions see there)
@@ -142,22 +146,29 @@ write intent log information, three of which are mentioned here.
  * an element is said to be "in the active set",
  * if either on "in_use" or "lru", i.e. lc_number != LC_FREE.
  *
- * DRBD currently only uses 61 elements on the resync lru_cache (total memory
- * usage 2 pages), and up to 3833 elements on the act_log lru_cache, totalling
- * ~215 kB for 64bit architechture, ~53 pages.
+ * DRBD currently (May 2009) only uses 61 elements on the resync lru_cache
+ * (total memory usage 2 pages), and up to 3833 elements on the act_log
+ * lru_cache, totalling ~215 kB for 64bit architechture, ~53 pages.
  *
  * We usually do not actually free these objects again, but only "recycle"
  * them, as the change "index: -old_label, +LC_FREE" would need a transaction
- * as well.  Which also means that using a kmem_cache or even mempool to
- * allocate the objects from wastes some resources. But it would avoid high
- * order page allocations in kmalloc, so we may change to a kmem_cache backed
- * allocation of the elements in the near future.
+ * as well.  Which also means that using a kmem_cache to allocate the objects
+ * from wastes some resources.
+ * But it avoids high order page allocations in kmalloc.
  */
 struct lc_element {
 	struct hlist_node colision;
 	struct list_head list;		 /* LRU list or free list */
-	unsigned int refcnt;
-	unsigned int lc_number;
+	unsigned refcnt;
+	/* back "pointer" into ts_cache->element[index],
+	 * for paranoia, and for "ts_element_to_index" */
+	unsigned lc_index;
+	/* if we want to track a larger set of objects,
+	 * it needs to become arch independend u64 */
+	unsigned lc_number;
+
+	/* special label when on free list */
+#define LC_FREE (~0UL)
 };
 
 struct lru_cache {
@@ -166,16 +177,25 @@ struct lru_cache {
 	struct list_head free;
 	struct list_head in_use;
 
-	/* size of tracked objects */
+	/* the pre-created kmem cache to allocate the objects from */
+	struct kmem_cache *lc_cache;
+
+	/* size of tracked objects, used to memset(,0,) them in lc_reset */
 	size_t element_size;
 	/* offset of struct lc_element member in the tracked object */
 	size_t element_off;
 
 	/* number of elements (indices) */
 	unsigned int  nr_elements;
+	/* Arbitrary limit on maximum tracked objects. Practical limit is much
+	 * lower due to allocation failures, probably. For typical use cases,
+	 * nr_elements should be a few thousand at most.
+	 * This also limits the maximum value of ts_element.ts_index, allowing the
+	 * 8 high bits of .ts_index to be overloaded with flags in the future. */
+#define LC_MAX_ACTIVE	(1<<24)
 
 	/* statistics */
-	unsigned int used;
+	unsigned used; /* number of lelements currently on in_use list */
 	unsigned long hits, misses, starving, dirty, changed;
 
 	/* see below: flag-bits for lru_cache */
@@ -190,8 +210,9 @@ struct lru_cache {
 	void  *lc_private;
 	const char *name;
 
-	struct hlist_head slot[0];
-	/* hash colision chains here, then element storage. */
+	/* nr_elements there */
+	struct hlist_head *lc_slot;
+	struct lc_element **lc_element;
 };
 
 
@@ -217,8 +238,8 @@ enum {
 #define LC_DIRTY    (1<<__LC_DIRTY)
 #define LC_STARVING (1<<__LC_STARVING)
 
-extern struct lru_cache *lc_create(const char *name, unsigned int e_count,
-				  size_t e_size, size_t e_off);
+extern struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
+		unsigned int e_count, size_t e_size, size_t e_off);
 extern void lc_reset(struct lru_cache *lc);
 extern void lc_destroy(struct lru_cache *lc);
 extern void lc_set(struct lru_cache *lc, unsigned int enr, int index);
@@ -236,15 +257,22 @@ extern size_t lc_seq_printf_stats(struct seq_file *seq, struct lru_cache *lc);
 extern void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext,
 				void (*detail) (struct seq_file *, struct lc_element *));
 
-/* This can be used to stop lc_get from changing the set of active elements.
- * Note that the reference counts and order on the lru list may still change.
- * returns true if we aquired the lock.
+/**
+ * lc_try_lock - can be used to stop lc_get() from changing the tracked set
+ * @lc: the lru cache to operate on
+ *
+ * Note that the reference counts and order on the active and lru lists may
+ * still change.  Returns true if we aquired the lock.
  */
 static inline int lc_try_lock(struct lru_cache *lc)
 {
 	return !test_and_set_bit(__LC_DIRTY, &lc->flags);
 }
 
+/**
+ * lc_unlock - unlock @lc, allow lc_get() to change the set again
+ * @lc: the lru cache to operate on
+ */
 static inline void lc_unlock(struct lru_cache *lc)
 {
 	clear_bit(__LC_DIRTY, &lc->flags);
@@ -257,29 +285,10 @@ static inline int lc_is_used(struct lru_cache *lc, unsigned int enr)
 	return e && e->refcnt;
 }
 
-#define LC_FREE (-1U)
-
 #define lc_entry(ptr, type, member) \
 	container_of(ptr, type, member)
 
-static inline struct lc_element *
-lc_element_by_index(struct lru_cache *lc, unsigned int i)
-{
-	BUG_ON(i >= lc->nr_elements);
-	return (struct lc_element *)(
-			((char *)(lc->slot + lc->nr_elements)) +
-			i * lc->element_size
-			+ lc->element_off);
-}
-
-static inline size_t lc_index_of(struct lru_cache *lc, struct lc_element *e)
-{
-	size_t i = ((char *)(e) - lc->element_off
-		- ((char *)(lc->slot + lc->nr_elements)))
-		/ lc->element_size;
-	BUG_ON(i >= lc->nr_elements);
-	BUG_ON(e != lc_element_by_index(lc, i));
-	return i;
-}
+extern struct lc_element *lc_element_by_index(struct lru_cache *lc, unsigned i);
+extern unsigned int lc_index_of(struct lru_cache *lc, struct lc_element *e);
 
 #endif

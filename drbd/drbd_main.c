@@ -153,7 +153,9 @@ module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0
 struct drbd_conf **minor_table;
 
 struct kmem_cache *drbd_request_cache;
-struct kmem_cache *drbd_ee_cache;
+struct kmem_cache *drbd_ee_cache;	/* epoch entries */
+struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
+struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 mempool_t *drbd_request_mempool;
 mempool_t *drbd_ee_mempool;
 
@@ -2924,11 +2926,17 @@ STATIC void drbd_destroy_mempools(void)
 		kmem_cache_destroy(drbd_ee_cache);
 	if (drbd_request_cache)
 		kmem_cache_destroy(drbd_request_cache);
+	if (drbd_bm_ext_cache)
+		kmem_cache_destroy(drbd_bm_ext_cache);
+	if (drbd_al_ext_cache)
+		kmem_cache_destroy(drbd_al_ext_cache);
 
 	drbd_ee_mempool      = NULL;
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
+	drbd_bm_ext_cache    = NULL;
+	drbd_al_ext_cache    = NULL;
 
 	return;
 }
@@ -2943,17 +2951,29 @@ STATIC int drbd_create_mempools(void)
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
+	drbd_bm_ext_cache    = NULL;
+	drbd_al_ext_cache    = NULL;
 	drbd_pp_pool         = NULL;
 
 	/* caches */
 	drbd_request_cache = kmem_cache_create(
-		"drbd_req_cache", sizeof(struct drbd_request), 0, 0, NULL);
+		"drbd_req", sizeof(struct drbd_request), 0, 0, NULL);
 	if (drbd_request_cache == NULL)
 		goto Enomem;
 
 	drbd_ee_cache = kmem_cache_create(
-		"drbd_ee_cache", sizeof(struct drbd_epoch_entry), 0, 0, NULL);
+		"drbd_ee", sizeof(struct drbd_epoch_entry), 0, 0, NULL);
 	if (drbd_ee_cache == NULL)
+		goto Enomem;
+
+	drbd_bm_ext_cache = kmem_cache_create(
+		"drbd_bm", sizeof(struct bm_extent), 0, 0, NULL);
+	if (drbd_bm_ext_cache == NULL)
+		goto Enomem;
+
+	drbd_al_ext_cache = kmem_cache_create(
+		"drbd_al", sizeof(struct lc_element), 0, 0, NULL);
+	if (drbd_al_ext_cache == NULL)
 		goto Enomem;
 
 	/* mempools */

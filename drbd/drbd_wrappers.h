@@ -9,6 +9,8 @@
 # error "use a 2.6 kernel, please"
 #endif
 
+#include <linux/slab.h>
+
 /* for the proc_create wrapper */
 #include <linux/proc_fs.h>
 
