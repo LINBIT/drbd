@@ -2621,7 +2621,7 @@ struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_conf *mdev,
 			alg, name, PTR_ERR(tfm));
 		return tfm;
 	}
-	if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_DIGEST) {
+	if (!drbd_crypto_is_hash(crypto_hash_tfm(tfm))) {
 		crypto_free_hash(tfm);
 		dev_err(DEV, "\"%s\" is not a digest (%s)\n", alg, name);
 		return ERR_PTR(-EINVAL);
