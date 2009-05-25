@@ -3855,15 +3855,15 @@ _drbd_fault_random(struct fault_random_state *rsp)
 STATIC char *
 _drbd_fault_str(unsigned int type) {
 	static char *_faults[] = {
-		"Meta-data write",
-		"Meta-data read",
-		"Resync write",
-		"Resync read",
-		"Data write",
-		"Data read",
-		"Data read ahead",
-		"BM allocation",
-		"EE allocation"
+		[DRBD_FAULT_MD_WR] = "Meta-data write",
+		[DRBD_FAULT_MD_RD] = "Meta-data read",
+		[DRBD_FAULT_RS_WR] = "Resync write",
+		[DRBD_FAULT_RS_RD] = "Resync read",
+		[DRBD_FAULT_DT_WR] = "Data write",
+		[DRBD_FAULT_DT_RD] = "Data read",
+		[DRBD_FAULT_DT_RA] = "Data read ahead",
+		[DRBD_FAULT_BM_ALLOC] = "BM allocation",
+		[DRBD_FAULT_AL_EE] = "EE allocation"
 	};
 
 	return (type < DRBD_FAULT_MAX) ? _faults[type] : "**Unknown**";

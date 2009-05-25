@@ -249,14 +249,14 @@ extern void drbd_assert_breakpoint(struct drbd_conf *, char *, char *, int);
 /* Defines to control fault insertion */
 enum {
     DRBD_FAULT_MD_WR = 0,	/* meta data write */
-    DRBD_FAULT_MD_RD,		/*           read  */
-    DRBD_FAULT_RS_WR,		/* resync          */
-    DRBD_FAULT_RS_RD,
-    DRBD_FAULT_DT_WR,		/* data            */
-    DRBD_FAULT_DT_RD,
-    DRBD_FAULT_DT_RA,		/* data read ahead */
-    DRBD_FAULT_BM_ALLOC,        /* bitmap allocation */
-    DRBD_FAULT_AL_EE,		/* alloc ee */
+    DRBD_FAULT_MD_RD = 1,	/*           read  */
+    DRBD_FAULT_RS_WR = 2,	/* resync          */
+    DRBD_FAULT_RS_RD = 3,
+    DRBD_FAULT_DT_WR = 4,	/* data            */
+    DRBD_FAULT_DT_RD = 5,
+    DRBD_FAULT_DT_RA = 6,	/* data read ahead */
+    DRBD_FAULT_BM_ALLOC = 7,	/* bitmap allocation */
+    DRBD_FAULT_AL_EE = 8,	/* alloc ee */
 
     DRBD_FAULT_MAX,
 };
