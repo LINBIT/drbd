@@ -212,9 +212,9 @@ size_t lc_seq_printf_stats(struct seq_file *seq, struct lru_cache *lc)
 		lc->hits, lc->misses, lc->starving, lc->dirty, lc->changed);
 }
 
-static unsigned int lc_hash_fn(struct lru_cache *lc, unsigned int enr)
+static struct hlist_head *lc_hash_slot(struct lru_cache *lc, unsigned int enr)
 {
-	return enr % lc->nr_elements;
+	return  lc->lc_slot + (enr % lc->nr_elements);
 }
 
 
@@ -234,7 +234,7 @@ struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr)
 
 	BUG_ON(!lc);
 	BUG_ON(!lc->nr_elements);
-	hlist_for_each_entry(e, n, lc->lc_slot + lc_hash_fn(lc, enr), colision) {
+	hlist_for_each_entry(e, n, lc_hash_slot(lc, enr), colision) {
 		if (e->lc_number == enr)
 			return e;
 	}
@@ -429,8 +429,7 @@ void lc_changed(struct lru_cache *lc, struct lc_element *e)
 	++lc->changed;
 	e->lc_number = lc->new_number;
 	list_add(&e->list, &lc->in_use);
-	hlist_add_head(&e->colision,
-		lc->lc_slot + lc_hash_fn(lc, lc->new_number));
+	hlist_add_head(&e->colision, lc_hash_slot(lc, lc->new_number));
 	lc->changing_element = NULL;
 	lc->new_number = LC_FREE;
 	clear_bit(__LC_DIRTY, &lc->flags);
@@ -507,7 +506,7 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
 	e->lc_number = enr;
 
 	hlist_del_init(&e->colision);
-	hlist_add_head(&e->colision, lc->lc_slot + lc_hash_fn(lc, enr));
+	hlist_add_head(&e->colision, lc_hash_slot(lc, enr));
 	list_move(&e->list, e->refcnt ? &lc->in_use : &lc->lru);
 }
 
