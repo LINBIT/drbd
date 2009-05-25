@@ -4219,11 +4219,13 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	[P_NEG_ACK]	    = { sizeof(struct p_block_ack), got_NegAck },
 	[P_NEG_DREPLY]	    = { sizeof(struct p_block_ack), got_NegDReply },
 	[P_NEG_RS_DREPLY]   = { sizeof(struct p_block_ack), got_NegRSDReply},
+	[P_OV_RESULT]	    = { sizeof(struct p_block_ack), got_OVResult },
 	[P_BARRIER_ACK]	    = { sizeof(struct p_barrier_ack), got_BarrierAck },
 	[P_STATE_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
+	[P_MAX_CMD]	    = { 0, NULL },
 	};
-	if (cmd > P_MAX_CMD)
+	if (cmd > P_MAX_CMD || asender_tbl[cmd].process == NULL)
 		return NULL;
 	return &asender_tbl[cmd];
 }
