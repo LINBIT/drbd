@@ -983,13 +983,15 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		goto out;
 
 	digest_size = crypto_hash_digestsize(mdev->verify_tfm);
+	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = kmalloc(digest_size, GFP_NOIO);
 	if (digest) {
 		drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
+		inc_rs_pending(mdev);
 		ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
 					     digest, digest_size, P_OV_REPLY);
-		if (ok)
-			inc_rs_pending(mdev);
+		if (!ok)
+			dec_rs_pending(mdev);
 		kfree(digest);
 	}
 
