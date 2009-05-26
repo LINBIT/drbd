@@ -32,6 +32,14 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h>
 
+/* needs to be included here,
+ * because of kmem_cache_t weirdness */
+#include <linux/drbd_config.h>
+#ifdef USE_KMEM_CACHE_S
+#define kmem_cache kmem_cache_s
+#endif
+
+
 /*
 This header file (and its .c file; kernel-doc of functions see there)
   define a helper framework to easily keep track of index:label associations,

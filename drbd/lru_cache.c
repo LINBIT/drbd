@@ -105,9 +105,10 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 
 	/* preallocate all objects */
 	for (i = 0; i < e_count; i++) {
-		void *p = kmem_cache_alloc(cache, GFP_KERNEL | __GFP_ZERO);
+		void *p = kmem_cache_alloc(cache, GFP_KERNEL);
 		if (!p)
 			break;
+		memset(p, 0, lc->element_size);
 		e = p + e_off;
 		e->lc_index = i;
 		e->lc_number = LC_FREE;
