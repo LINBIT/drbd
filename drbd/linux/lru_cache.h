@@ -176,7 +176,7 @@ struct lc_element {
 	unsigned lc_number;
 
 	/* special label when on free list */
-#define LC_FREE (~0UL)
+#define LC_FREE (~0U)
 };
 
 struct lru_cache {
@@ -247,7 +247,7 @@ enum {
 #define LC_STARVING (1<<__LC_STARVING)
 
 extern struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
-		unsigned int e_count, size_t e_size, size_t e_off);
+		unsigned e_count, size_t e_size, size_t e_off);
 extern void lc_reset(struct lru_cache *lc);
 extern void lc_destroy(struct lru_cache *lc);
 extern void lc_set(struct lru_cache *lc, unsigned int enr, int index);

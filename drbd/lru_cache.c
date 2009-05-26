@@ -61,7 +61,7 @@
  * or NULL on (allocation) failure.
  */
 struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
-		unsigned e_count, unsigned e_size, unsigned e_off)
+		unsigned e_count, size_t e_size, size_t e_off)
 {
 	struct hlist_head *slot = NULL;
 	struct lc_element **element = NULL;
