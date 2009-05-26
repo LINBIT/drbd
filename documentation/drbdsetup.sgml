@@ -69,6 +69,7 @@
       <arg>-v<arg choice="req"><replaceable>verify-hash-alg</replaceable></arg></arg>
       <arg>-c<arg choice="req"><replaceable>cpu-mask</replaceable></arg></arg>
       <arg>-C<arg choice="req"><replaceable>csums-hash-alg</replaceable></arg></arg>
+      <arg>-R<arg choice="req"><replaceable>use-rle-encoding</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -100,6 +101,7 @@
       <command>drbdsetup</command>
       <arg choice="req"><replaceable>device</replaceable></arg>
       <arg choice="req">verify</arg>
+      <arg>-s<arg choice="req"><replaceable>start-position</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -964,6 +966,34 @@
 	  </listitem>
 	</varlistentry>
 
+	<varlistentry>
+	  <term><option>-R</option>,
+	  <option>--use-rle-encoding</option></term>
+	  <listitem>
+	    <para>
+              During resync-handshake, the dirty-bitmaps of the nodes are
+              exchanged and merged (using bit-or), so the nodes will have the
+              same understanding of which blocks are dirty. On large devices,
+              the fine grained dirty-bitmap can become large as well, and the
+              bitmap exchange can take quite some time on low-bandwidth links.
+	    </para>
+	    <para>
+              Because the bitmap typically contains compact areas where all
+              bits are unset (clean) or set (dirty), a simple run-length
+              encoding scheme can considerably reduce the network traffic
+              necessary for the bitmap exchange.
+	    </para>
+	    <para>
+              For backward compatibilty reasons, and because on fast links this
+              possibly does not improve transfer time but consumes cpu cycles,
+              this defaults to off.
+	    </para>
+	    <para>
+              Introduced in 8.3.2.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
       </variablelist>
     </refsect2>
     <refsect2>
@@ -1023,10 +1053,31 @@
         do that, simply disconnect and reconnect the resource.
       </para>
       <para>
+        If on-line verification is already in progress, this command
+        silently does nothing.
+      </para>
+      <para>
 	This command will fail if the <replaceable>device</replaceable> is
 	not part of a connected device pair.
       </para>
       <para>See also the notes on data integrity on the drbd.conf manpage.</para>
+      <variablelist>
+	<varlistentry>
+	  <term><option>-s</option>,
+	  <option>--start <replaceable>start-sector</replaceable></option></term>
+	  <listitem>
+            <para>
+              Since version 8.3.2, on-line verification should resume from the
+	      last position after connection loss.  It may also be started from
+	      an arbitrary position by setting this option.
+            </para>
+            <para>
+              Default unit is sectors. You may also specify a unit explicitly.
+              The start-sector will be rounded down to a multiple of 8 sectors (4kB).
+            </para>
+	  </listitem>
+	</varlistentry>
+      </variablelist>
     </refsect2>
     <refsect2>
       <title>invalidate</title>
@@ -1281,8 +1332,11 @@
       <title>new-current-uuid</title>
       <indexterm><primary>drbdsetup</primary><secondary>new-current-uuid</secondary></indexterm>
       <para>
-	Generates a new currend UUID and rotates all other UUID values. This works
-        on disconnected devices only, the device might be in primary or secondary role.
+        Generates a new currend UUID and rotates all other UUID values. This
+        has at least two use cases, namely to skip the initial sync, and to
+        reduce network bandwidth when starting in a single node configuration
+        and then later (re-)integrating a remote site.
+      </para><para>
         Available option:
 
 	<variablelist>
@@ -1298,8 +1352,52 @@
 	</variablelist>
       </para>
       <para>
-        This can be used to shorten the initial resync of a cluster where the second node
+        This can be used to skip the initial sync, if you want to start from scratch.
+        This use-case does only work on "Just Created" meta data.
+        Necessary steps:
+        <orderedlist numeration="arabic">
+	  <listitem><simpara>
+            On <emphasis>both</emphasis> nodes, initialize meta data and configure the device.
+          </simpara><simpara>
+            <command>drbdadm -- --force create-md <replaceable>res</replaceable></command>
+          </simpara></listitem>
+	  <listitem><simpara>
+            They need to do the initial handshake, so they know their sizes.
+          </simpara><simpara>
+            <command>drbdadm up <replaceable>res</replaceable></command>
+	  </simpara></listitem>
+	  <listitem><simpara>
+            They are now Connected Secondary/Secondary Inconsistent/Inconsistent.
+            Generate a new current-uuid and clear the dirty bitmap.
+          </simpara><simpara>
+            <command>drbdadm -- --clear-bitmap new-current-uuid <replaceable>res</replaceable></command>
+	  </simpara></listitem>
+	  <listitem><simpara>
+            They are now Connected Secondary/Secondary UpToDate/UpToDate.
+            Make one side primary and create a file system.
+          </simpara><simpara>
+            <command>drbdadm primary <replaceable>res</replaceable></command>
+          </simpara><simpara>
+            <command>mkfs -t <replaceable>fs-type</replaceable> $(drbdadm sh-dev <replaceable>res</replaceable>)</command>
+	  </simpara></listitem>
+	</orderedlist>
+      </para>
+      <para>
+	One obvious side-effect is that the replica are full of old garbage
+	(unless you made them identical using other means), so any
+	online-verify is expected to find any number of out-of-sync blocks.
+      </para>
+      <para>
+        <emphasis>You must not use this on pre-existing data!</emphasis>
+        Even though it may appear to work at first glance, once you switch to
+        the other node, your data is toast, as it never got replicated.
+        So do <emphasis>do not leave out the mkfs</emphasis> (or equivalent).
+      </para>
+      <para>
+        This can also be used to shorten the initial resync of a cluster where the second node
         is added after the first node is gone into production, by means of disk shipping.
+	This use-case works on disconnected devices only, the device may be in
+	primary or secondary role.
         The necessary steps are:
         <orderedlist numeration="arabic">
 	  <listitem><simpara>
@@ -1335,7 +1433,7 @@
 
   <refsect1>
     <title>Version</title>
-    <simpara>This document was revised for version 8.2.7 of the DRBD distribution.
+    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.
     </simpara>
   </refsect1>
 

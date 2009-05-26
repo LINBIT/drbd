@@ -253,6 +253,7 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
+    <option>use-rle-encoding</option>,
     <option>cpu-mask</option>, <option>verify-alg</option> and <option>csums-alg</option>.
   </para>
   </listitem>
@@ -1222,7 +1223,7 @@ pre-production phase due to its CPU costs. Further we suggest to do online
 
 <refsect1>
 <title>Version</title>
-<simpara>This document was revised for version 8.0.14 of the DRBD distribution.
+<simpara>This document was revised for version 8.3.2 of the DRBD distribution.
 </simpara>
 </refsect1>
 <refsect1>

@@ -269,8 +269,8 @@
 	Shows the current status of all devices defined in the current config file,
 	in xml-like format. Example output:
 <programlisting>
-&lt;drbd-status version="8.2.6" api="88"&gt;
-&lt;resources config_file="/etc/drbd-82.conf"&gt;
+&lt;drbd-status version="8.3.2" api="88"&gt;
+&lt;resources config_file="/etc/drbd.conf"&gt;
 &lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
           ds1="Inconsistent" ds2="UpToDate" resynced_precent ="5.9" /&gt;
 &lt;resource minor="1" name="s1" cs="WFConnection" st1="Secondary"
@@ -339,11 +339,10 @@
         <term>new-current-uuid</term>
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>new-current-uuid</secondary></indexterm>
-	  Generates a new currend UUID and rotates all other UUID values. This works
-          on disconnected devices only, the device might be in primary or secondary role.</para>
+	  Generates a new currend UUID and rotates all other UUID values.
+        </para>
         <para>
-          This can be used to shorten the initial resync of a cluster where the second node
-          is added after the first node is gone into production, by means of disk shipping.
+          This can be used to shorten the initial resync of a cluster.
           See the drbdsetup manpage for a more details.
         </para></listitem>
       </varlistentry>
@@ -367,7 +366,7 @@
   </refsect1>
   <refsect1>
     <title>Version</title>
-<simpara>This document was revised for version 8.2.7 of the DRBD distribution.
+<simpara>This document was revised for version 8.3.2 of the DRBD distribution.
 </simpara>
   </refsect1>
 

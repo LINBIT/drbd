@@ -119,7 +119,7 @@
 	<indexterm><primary>drbdmeta</primary><secondary>set-gi </secondary></indexterm>
           Set-gi allows you to set the generation identifier.
 	  <replaceable>Gi</replaceable> needs to be a generation
-	  counter for the 0.6 and 0.7 format, and a UUID set for 8.0.
+	  counter for the 0.6 and 0.7 format, and a UUID set for 8.x.
 	  Specify it in the same way as get-gi shows it.
 	</para></listitem>
       </varlistentry>
@@ -136,7 +136,7 @@
 
   <refsect1>
     <title>Version</title>
-<simpara>This document was revised for version 8.2.7 of the DRBD distribution.
+<simpara>This document was revised for version 8.3.2 of the DRBD distribution.
 </simpara>
   </refsect1>
 
