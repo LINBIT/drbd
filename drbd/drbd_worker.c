@@ -464,7 +464,6 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	}
 
 	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
-
 	if (atomic_read(&mdev->rs_pending_cnt) > number)
 		goto requeue;
 	number -= atomic_read(&mdev->rs_pending_cnt);
@@ -604,6 +603,11 @@ int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	sector = mdev->ov_position;
 	for (i = 0; i < number; i++) {
+		if (sector >= capacity) {
+			mdev->resync_work.cb = w_resync_inactive;
+			return 1;
+		}
+
 		size = BM_BLOCK_SIZE;
 
 		if (drbd_try_rs_begin_io(mdev, sector)) {
@@ -620,11 +624,6 @@ int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			return 0;
 		}
 		sector += BM_SECT_PER_BIT;
-		if (sector >= capacity) {
-			mdev->resync_work.cb = w_resync_inactive;
-
-			return 1;
-		}
 	}
 	mdev->ov_position = sector;
 
@@ -782,6 +781,7 @@ out:
 	mdev->rs_total  = 0;
 	mdev->rs_failed = 0;
 	mdev->rs_paused = 0;
+	mdev->ov_start_sector = 0;
 
 	if (test_and_clear_bit(WRITE_BM_AFTER_RESYNC, &mdev->flags)) {
 		dev_warn(DEV, "Writing the whole bitmap, due to failed kmalloc\n");

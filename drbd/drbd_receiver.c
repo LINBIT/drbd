@@ -2076,6 +2076,15 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		break;
 
 	case P_OV_REQUEST:
+		D_ASSERT(mdev->state.conn == C_VERIFY_T);
+		if (mdev->ov_start_sector == ~(sector_t)0 &&
+		    mdev->agreed_pro_version >= 90) {
+			mdev->ov_start_sector = sector;
+			mdev->ov_position = sector;
+			mdev->ov_left = mdev->rs_total - BM_SECT_TO_BIT(sector);
+			dev_info(DEV, "Online Verify start sector: %llu\n",
+					(unsigned long long)sector);
+		}
 		e->w.cb = w_e_end_ov_req;
 		fault_type = DRBD_FAULT_RS_RD;
 		/* Eventually this should become asynchrously. Currently it
@@ -4195,6 +4204,7 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct p_header *h)
 			drbd_queue_work_front(&mdev->data.work, w);
 		} else {
 			dev_err(DEV, "kmalloc(w) failed.");
+			ov_oos_print(mdev);
 			drbd_resync_finished(mdev);
 		}
 	}

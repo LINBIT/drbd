@@ -1029,6 +1029,25 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 	return ns;
 }
 
+/* helper for __drbd_set_state */
+static void set_ov_position(struct drbd_conf *mdev, enum drbd_conns cs)
+{
+	if (cs == C_VERIFY_T) {
+		/* starting online verify from an arbitrary position
+		 * does not fit well into the existion protocol.
+		 * on C_VERIFY_T, we initialize ov_left and friends
+		 * implicitly in receive_DataRequest once the
+		 * first P_OV_REQUEST is received */
+		mdev->ov_start_sector = ~(sector_t)0;
+	} else {
+		unsigned long bit = BM_SECT_TO_BIT(mdev->ov_start_sector);
+		if (bit >= mdev->rs_total)
+			mdev->ov_start_sector =
+				BM_BIT_TO_SECT(mdev->rs_total - 1);
+		mdev->ov_position = mdev->ov_start_sector;
+	}
+}
+
 /**
  * __drbd_set_state() - Set a new DRBD state
  * @mdev:	DRBD device.
@@ -1149,6 +1168,15 @@ int __drbd_set_state(struct drbd_conf *mdev,
 		mod_timer(&mdev->resync_timer, jiffies);
 	}
 
+	/* aborted verify run. log the last position */
+	if ((os.conn == C_VERIFY_S || os.conn == C_VERIFY_T) &&
+	    ns.conn < C_CONNECTED) {
+		mdev->ov_start_sector =
+			BM_BIT_TO_SECT(mdev->rs_total - mdev->ov_left);
+		dev_info(DEV, "Online Verify reached sector %llu\n",
+			(unsigned long long)mdev->ov_start_sector);
+	}
+
 	if ((os.conn == C_PAUSED_SYNC_T || os.conn == C_PAUSED_SYNC_S) &&
 	    (ns.conn == C_SYNC_TARGET  || ns.conn == C_SYNC_SOURCE)) {
 		dev_info(DEV, "Syncer continues.\n");
@@ -1174,16 +1202,24 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	if (os.conn == C_CONNECTED &&
 	    (ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T)) {
 		mdev->ov_position = 0;
-		mdev->ov_left  =
 		mdev->rs_total =
 		mdev->rs_mark_left = drbd_bm_bits(mdev);
+		if (mdev->agreed_pro_version >= 90)
+			set_ov_position(mdev, ns.conn);
+		else
+			mdev->ov_start_sector = 0;
+		mdev->ov_left = mdev->rs_total
+			      - BM_SECT_TO_BIT(mdev->ov_position);
 		mdev->rs_start     =
 		mdev->rs_mark_time = jiffies;
 		mdev->ov_last_oos_size = 0;
 		mdev->ov_last_oos_start = 0;
 
-		if (ns.conn == C_VERIFY_S)
+		if (ns.conn == C_VERIFY_S) {
+			dev_info(DEV, "Starting Online Verify from sector %llu\n",
+					(unsigned long long)mdev->ov_position);
 			mod_timer(&mdev->resync_timer, jiffies);
+		}
 	}
 
 	if (get_ldev(mdev)) {

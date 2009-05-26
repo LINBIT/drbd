@@ -1084,12 +1084,16 @@ struct drbd_conf {
 	unsigned long rs_mark_time;
 	/* skipped because csum was equeal [unit BM_BLOCK_SIZE] */
 	unsigned long rs_same_csum;
+
+	/* where does the admin want us to start? (sector) */
+	sector_t ov_start_sector;
+	/* where are we now? (sector) */
 	sector_t ov_position;
-	/* Start sector of out of sync range. */
+	/* Start sector of out of sync range (to merge printk reporting). */
 	sector_t ov_last_oos_start;
 	/* size of out-of-sync range in sectors. */
 	sector_t ov_last_oos_size;
-	unsigned long ov_left;
+	unsigned long ov_left; /* in bits */
 	struct crypto_hash *csums_tfm;
 	struct crypto_hash *verify_tfm;
 

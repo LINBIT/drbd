@@ -1875,8 +1875,17 @@ STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_r
 STATIC int drbd_nl_start_ov(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 				    struct drbd_nl_cfg_reply *reply)
 {
-	reply->ret_code = drbd_request_state(mdev,NS(conn,C_VERIFY_S));
+	/* default to resume from last known position, if possible */
+	struct start_ov args =
+		{ .start_sector = mdev->ov_start_sector };
 
+	if (!start_ov_from_tags(mdev, nlp->tag_list, &args)) {
+		reply->ret_code = ERR_MANDATORY_TAG;
+		return 0;
+	}
+	/* w_make_ov_request expects position to be aligned */
+	mdev->ov_start_sector = args.start_sector & ~BM_SECT_PER_BIT;
+	reply->ret_code = drbd_request_state(mdev,NS(conn,C_VERIFY_S));
 	return 0;
 }
 
