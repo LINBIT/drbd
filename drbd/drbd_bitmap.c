@@ -256,7 +256,11 @@ STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 	if (have == want)
 		return old_pages;
 
-	/* Trying kmalloc first, falling back to vmalloc... */
+	/* Trying kmalloc first, falling back to vmalloc.
+	 * GFP_KERNEL is ok, as this is done when a lower level disk is
+	 * "attached" to the drbd.  Context is receiver thread or cqueue
+	 * thread.  As we have no disk yet, we are not in the IO path,
+	 * not even the IO path of the peer. */
 	bytes = sizeof(struct page *)*want;
 	new_pages = kmalloc(bytes, GFP_KERNEL);
 	if (!new_pages) {

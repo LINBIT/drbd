@@ -1256,7 +1256,9 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, struct p_header *h)
 		break;
 	}
 
-	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+	/* receiver context, in the writeout path of the other node.
+	 * avoid potential distributed deadlock */
+	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_NOIO);
 	if (!epoch) {
 		dev_warn(DEV, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -2036,7 +2038,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 	case P_CSUM_RS_REQUEST:
 		fault_type = DRBD_FAULT_RS_RD;
 		digest_size = h->length - brps ;
-		di = kmalloc(sizeof(*di) + digest_size, GFP_KERNEL);
+		di = kmalloc(sizeof(*di) + digest_size, GFP_NOIO);
 		if (!di) {
 			put_ldev(mdev);
 			drbd_free_ee(mdev, e);
@@ -2903,7 +2905,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, struct p_header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	p_uuid = kmalloc(sizeof(u64)*UI_EXTENDED_SIZE, GFP_KERNEL);
+	p_uuid = kmalloc(sizeof(u64)*UI_EXTENDED_SIZE, GFP_NOIO);
 
 	for (i = UI_CURRENT; i < UI_EXTENDED_SIZE; i++)
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
@@ -3815,7 +3817,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 		goto fail;
 	}
 
-	peers_ch = kmalloc(p.length, GFP_KERNEL);
+	peers_ch = kmalloc(p.length, GFP_NOIO);
 	if (peers_ch == NULL) {
 		dev_err(DEV, "kmalloc of peers_ch failed\n");
 		rv = 0;
@@ -3831,7 +3833,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 	}
 
 	resp_size = crypto_hash_digestsize(mdev->cram_hmac_tfm);
-	response = kmalloc(resp_size, GFP_KERNEL);
+	response = kmalloc(resp_size, GFP_NOIO);
 	if (response == NULL) {
 		dev_err(DEV, "kmalloc of response failed\n");
 		rv = 0;
@@ -3877,7 +3879,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 		goto fail;
 	}
 
-	right_response = kmalloc(resp_size, GFP_KERNEL);
+	right_response = kmalloc(resp_size, GFP_NOIO);
 	if (response == NULL) {
 		dev_err(DEV, "kmalloc of right_response failed\n");
 		rv = 0;
@@ -4187,7 +4189,7 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct p_header *h)
 	dec_rs_pending(mdev);
 
 	if (--mdev->ov_left == 0) {
-		w = kmalloc(sizeof(*w), GFP_KERNEL);
+		w = kmalloc(sizeof(*w), GFP_NOIO);
 		if (w) {
 			w->cb = w_ov_finished;
 			drbd_queue_work_front(&mdev->data.work, w);

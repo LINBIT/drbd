@@ -343,7 +343,7 @@ STATIC int w_e_send_csum(struct drbd_conf *mdev, struct drbd_work *w, int cancel
 
 	if (likely(drbd_bio_uptodate(e->private_bio))) {
 		digest_size = crypto_hash_digestsize(mdev->csums_tfm);
-		digest = kmalloc(digest_size, GFP_KERNEL);
+		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
 			drbd_csum(mdev, mdev->csums_tfm, e->private_bio, digest);
 
@@ -462,7 +462,6 @@ int w_make_resync_request(struct drbd_conf *mdev,
 		mdev->resync_work.cb = w_resync_inactive;
 		return 1;
 	}
-	/* All goto requeses have to happend after this block: get_ldev() */
 
 	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
 
@@ -928,7 +927,7 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		if (mdev->csums_tfm) {
 			digest_size = crypto_hash_digestsize(mdev->csums_tfm);
 			D_ASSERT(digest_size == di->digest_size);
-			digest = kmalloc(digest_size, GFP_KERNEL);
+			digest = kmalloc(digest_size, GFP_NOIO);
 		}
 		if (digest) {
 			drbd_csum(mdev, mdev->csums_tfm, e->private_bio, digest);
@@ -984,7 +983,7 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		goto out;
 
 	digest_size = crypto_hash_digestsize(mdev->verify_tfm);
-	digest = kmalloc(digest_size, GFP_KERNEL);
+	digest = kmalloc(digest_size, GFP_NOIO);
 	if (digest) {
 		drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
 		ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
@@ -1038,7 +1037,7 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	if (likely(drbd_bio_uptodate(e->private_bio))) {
 		digest_size = crypto_hash_digestsize(mdev->verify_tfm);
-		digest = kmalloc(digest_size, GFP_KERNEL);
+		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
 			drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
 

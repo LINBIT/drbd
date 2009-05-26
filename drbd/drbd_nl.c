@@ -757,6 +757,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
+	/* allocation not in the IO path, cqueue thread context */
 	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
@@ -1170,6 +1171,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
+	/* allocation not in the IO path, cqueue thread context */
 	new_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {
 		retcode = ERR_NOMEM;
@@ -1317,6 +1319,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		new_conf->ping_int = new_conf->ping_int+1;
 #endif
 
+	/* allocation not in the IO path, cqueue thread context */
 	if (integrity_w_tfm) {
 		i = crypto_hash_digestsize(integrity_w_tfm);
 		int_dig_out = kmalloc(i, GFP_KERNEL);
@@ -2052,6 +2055,7 @@ STATIC void drbd_connector_callback(void *data)
 
 	reply_size += cm->reply_body_size;
 
+	/* allocation not in the IO path, cqueue thread context */
 	cn_reply = kmalloc(reply_size, GFP_KERNEL);
 	if (!cn_reply) {
 		retcode = ERR_NOMEM;
@@ -2233,12 +2237,15 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	/* aparently we have to memcpy twice, first to prepare the data for the
 	 * struct cn_msg, then within cn_netlink_send from the cn_msg to the
 	 * netlink skb. */
+	/* receiver thread context, which is not in the writeout path (of this node),
+	 * but may be in the writeout path of the _other_ node.
+	 * GFP_NOIO to avoid potential "distributed deadlock". */
 	cn_reply = kmalloc(
 		sizeof(struct cn_msg)+
 		sizeof(struct drbd_nl_cfg_reply)+
 		sizeof(struct dump_ee_tag_len_struct)+
-		sizeof(short int)
-		, GFP_KERNEL);
+		sizeof(short int),
+		GFP_NOIO);
 
 	if (!cn_reply) {
 		dev_err(DEV, "could not kmalloc buffer for drbd_bcast_ee, sector %llu, size %u\n",

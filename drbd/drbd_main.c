@@ -211,6 +211,7 @@ STATIC int tl_init(struct drbd_conf *mdev)
 {
 	struct drbd_tl_epoch *b;
 
+	/* during device minor initialization, we may well use GFP_KERNEL */
 	b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_KERNEL);
 	if (!b)
 		return 0;
@@ -1432,7 +1433,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	    (os.user_isp && !ns.user_isp))
 		resume_next_sg(mdev);
 
-	/* Upon network connection, we need to start the received */
+	/* Upon network connection, we need to start the receiver */
 	if (os.conn == C_STANDALONE && ns.conn == C_UNCONNECTED)
 		drbd_thread_start(&mdev->receiver);
 
@@ -1830,7 +1831,9 @@ int drbd_send_protocol(struct drbd_conf *mdev)
 	if (mdev->agreed_pro_version >= 87)
 		size += strlen(mdev->net_conf->integrity_alg) + 1;
 
-	p = kmalloc(size, GFP_KERNEL);
+	/* we must not recurse into our own queue,
+	 * as that is blocked during handshake */
+	p = kmalloc(size, GFP_NOIO);
 	if (p == NULL)
 		return 0;
 
@@ -3220,7 +3223,7 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 
 	if (drbd_bm_init(mdev))
 		goto out_no_bitmap;
-	/* no need to lock access, we are still initializing the module. */
+	/* no need to lock access, we are still initializing this minor device. */
 	if (!tl_init(mdev))
 		goto out_no_tl;
 
