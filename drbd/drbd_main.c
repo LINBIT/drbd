@@ -104,6 +104,7 @@ DEFINE_TRACE(drbd_req);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
+MODULE_VERSION(REL_VERSION);
 MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(minor_count, "Maximum number of drbd devices (1-255)");
 MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
