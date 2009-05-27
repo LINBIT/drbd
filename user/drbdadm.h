@@ -24,10 +24,9 @@ enum {
   RETURN_PID           = 2,
   SLEEPS_FOREVER       = 4,
 
-  SUPRESS_STDERR       = 16,
-
-  RETURN_STDOUT_FD     = 32,
-
+  SUPRESS_STDERR       = 0x10,
+  RETURN_STDOUT_FD     = 0x20,
+  RETURN_STDERR_FD     = 0x40,
   DONT_REPORT_FAILED   = 0x80,
 };
 

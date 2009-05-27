@@ -939,7 +939,7 @@ int print_config_error(int err_no)
 		return 20;
 
 	if ( ( err_no >= AFTER_LAST_ERR_CODE || err_no <= ERR_CODE_BASE ) &&
-	     ( err_no > SS_CW_NO_NEED || err_no < SS_NOT_SUPPORTED) ) {
+	     ( err_no > SS_CW_NO_NEED || err_no <= SS_AFTER_LAST_ERROR) ) {
 		fprintf(stderr,"Error code %d unknown.\n"
 			"You should update the drbd userland tools.\n",err_no);
 		rv = 20;
@@ -963,6 +963,9 @@ int print_config_error(int err_no)
 			} else if (err_no == SS_LOWER_THAN_OUTDATED) {
 				/* was inconsistent anyways */
 				rv = 5;
+			} else if (err_no == SS_NO_LOCAL_DISK) {
+				/* Can not start resync, no local diks, try with drbdmeta */
+				rv = 16;
 			} else {
 				rv = 11;
 			}

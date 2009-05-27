@@ -257,8 +257,8 @@ enum drbd_state_ret_codes {
 	SS_UNKNOWN_ERROR = 0, /* Used to sleep longer in _drbd_request_state */
 	SS_TWO_PRIMARIES = -1,
 	SS_NO_UP_TO_DATE_DISK = -2,
-	SS_BOTH_INCONSISTENT = -4,
-	SS_SYNCING_DISKLESS = -5,
+	SS_NO_LOCAL_DISK = -4,
+	SS_NO_REMOTE_DISK = -5,
 	SS_CONNECTED_OUTDATES = -6,
 	SS_PRIMARY_NOP = -7,
 	SS_RESYNC_RUNNING = -8,

@@ -1144,7 +1144,7 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
   fflush(stdout);
   fflush(stderr);
 
-  if (flags & RETURN_STDOUT_FD) {
+  if (flags & (RETURN_STDOUT_FD|RETURN_STDERR_FD)) {
     if (pipe(pipe_fds) < 0) {
       perror("pipe");
       fprintf(stderr, "Error in pipe, giving up.\n");
@@ -1162,13 +1162,17 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
       close(pipe_fds[0]);
       dup2(pipe_fds[1], 1);
     }
+    if (flags & RETURN_STDERR_FD) {
+      close(pipe_fds[0]);
+      dup2(pipe_fds[1], 2);
+    }
     if(flags & SUPRESS_STDERR) fclose(stderr);
     execvp(argv[0],argv);
     fprintf(stderr,"Can not exec\n");
     exit(E_exec_error);
   }
 
-  if (flags & RETURN_STDOUT_FD)
+  if (flags & (RETURN_STDOUT_FD|RETURN_STDERR_FD))
     close(pipe_fds[1]);
 
   if( flags & SLEEPS_FINITE ) {
@@ -1189,7 +1193,7 @@ pid_t m_system(char** argv, int flags, struct d_resource *res)
     return pid;
   }
 
-  if (flags & RETURN_STDOUT_FD)
+  if (flags & (RETURN_STDOUT_FD|RETURN_STDERR_FD))
     return pipe_fds[0];
 
   while(1) {
@@ -1452,14 +1456,49 @@ static int adm_outdate(struct d_resource* res,const char* cmd)
 
 static int adm_generic_b(struct d_resource* res,const char* cmd)
 {
-  int rv;
+	char buffer[4096];
+	int fd, status, rv = 0, rr, s = 0;
 
-  rv=adm_generic(res,cmd,SLEEPS_SHORT|SUPRESS_STDERR);
+	fd = adm_generic(res, cmd, SLEEPS_SHORT | RETURN_STDERR_FD);
 
-  if (rv || dry_run) {
-    rv = admm_generic(res,cmd);
-  }
-  return rv;
+	if (fd < 0) {
+		fprintf(stderr, "Strange: got negative fd.\n");
+		exit(E_thinko);
+	}
+
+	if (!dry_run) {
+		while(1) {
+			rr = read(fd, buffer+s, 4096-s);
+			if (rr <= 0) break;
+			s += rr;
+		}
+
+		close(fd);
+		waitpid(0, &status, WNOHANG);
+
+		if (WIFEXITED(status))
+			rv = WEXITSTATUS(status);
+		if (alarm_raised) {
+			rv = 0x100;
+		}
+	}
+
+	if (rv == 11) {
+		/* Some state transition error, report it ... */
+		rr = write(fileno(stderr), buffer, s);
+		return rv;
+	}
+
+	if (rv || dry_run) {
+		/* On other errors
+		   rv = 10 .. no minor allocated
+		   rv = 20 .. module not loaded
+		   rv = 16 .. we are diskless here
+		   retry with drbdmeta.
+		*/
+		rv = admm_generic(res,cmd);
+	}
+	return rv;
 }
 
 static int adm_khelper(struct d_resource* res ,const char* cmd)

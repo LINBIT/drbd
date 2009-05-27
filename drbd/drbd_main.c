@@ -822,11 +822,11 @@ STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 	else if (ns.role == R_PRIMARY && ns.disk <= D_INCONSISTENT && ns.pdsk <= D_INCONSISTENT)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if (ns.conn > C_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
-		rv = SS_BOTH_INCONSISTENT;
+	else if (ns.conn > C_CONNECTED && ns.disk < D_INCONSISTENT)
+		rv = SS_NO_LOCAL_DISK;
 
-	else if (ns.conn > C_CONNECTED && (ns.disk == D_DISKLESS || ns.pdsk == D_DISKLESS))
-		rv = SS_SYNCING_DISKLESS;
+	else if (ns.conn > C_CONNECTED && ns.pdsk < D_INCONSISTENT)
+		rv = SS_NO_REMOTE_DISK;
 
 	else if ((ns.conn == C_CONNECTED ||
 		  ns.conn == C_WF_BITMAP_S ||
