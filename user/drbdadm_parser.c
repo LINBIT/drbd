@@ -612,7 +612,21 @@ static void parse_device(struct d_name* on_hosts, int *minor, char **device)
 
 	switch (yylex()) {
 	case TK_STRING:
-		*device = yylval.txt;
+		if (!strncmp("drbd", yylval.txt, 4)) {
+			m_asprintf(device, "/dev/%s", yylval.txt);
+			free(yylval.txt);
+		} else
+			*device = yylval.txt;
+
+		if (strncmp("/dev/drbd", *device, 9)) {
+			fprintf(stderr,
+				"%s:%d: device name must start with /dev/drbd\n"
+				"\t(/dev/ is optional, but drbd is required)\n",
+				config_file, fline);
+			config_valid = 0;
+			/* no goto out yet,
+			 * as that would additionally throw a parse error */
+		}
 		switch (yylex()) {
 		default:
 			pe_expected("minor | ;");
@@ -637,7 +651,7 @@ static void parse_device(struct d_name* on_hosts, int *minor, char **device)
 	}
 out:
 	for_each_host(h, on_hosts)
-		check_uniq("device-minor", "device-minor:%s:%d", h->name, *minor);
+		check_uniq("device-minor", "device-minor:%s:%u", h->name, *minor);
 }
 
 static void parse_host_section(struct d_resource *res,
@@ -993,7 +1007,7 @@ void set_disk_in_res(struct d_resource *res)
 			if (host->lower->me->device)
 				m_asprintf(&host->disk, "%s", host->lower->me->device);
 			else
-				m_asprintf(&host->disk, "/dev/drbd%d", host->lower->me->device_minor);
+				m_asprintf(&host->disk, "/dev/drbd%u", host->lower->me->device_minor);
 
 			if (!host->disk)
 				derror(host,res,"disk");
