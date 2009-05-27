@@ -405,8 +405,9 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 static inline int drbd_crypto_is_hash(struct crypto_tfm *tfm)
 {
 #ifdef CRYPTO_ALG_TYPE_HASH_MASK
-	return (crypto_tfm_alg_type(tfm) & CRYPTO_ALG_TYPE_HASH_MASK)
-		== CRYPTO_ALG_TYPE_HASH;
+	/* see include/linux/crypto.h */
+	return !((crypto_tfm_alg_type(tfm) ^ CRYPTO_ALG_TYPE_HASH)
+		& CRYPTO_ALG_TYPE_HASH_MASK);
 #else
 	return crypto_tfm_alg_type(tfm) == CRYPTO_ALG_TYPE_HASH;
 #endif
