@@ -245,6 +245,8 @@ static int test_if_resource_is_down(struct d_resource *res)
 	}
 	fclose(f);
 
+	waitpid(0, NULL, WNOHANG); /* Reap the child process, do not leafe a zombie around. */
+
 	if (line == NULL || strncmp(line, "Unconfigured", strlen("Unconfigured")) == 0)
 		return 1;
 
