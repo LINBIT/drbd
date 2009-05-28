@@ -1,6 +1,15 @@
 # This file contains the rules to create named DRBD devices.
 
-KERNEL=="drbd*", \
-	IMPORT{program}="/sbin/drbdadm sh-udev minor-%m", \
-	NAME="$env{DEVICE}", \
-	SYMLINK="drbd/by-res/$env{RESOURCE} drbd/by-disk/$env{DISK}"
+# DO NOT WRAP THIS LINE
+#
+# old udev does not understand some of it,
+# and would end up skipping only some lines, not the full rule.
+# which can cause all sort of trouble with strange-named device nodes
+# for completely unrelated devices,
+# resulting in unusable network lookback, etc.
+#
+# in case this is "accidentally" installed on a system with old udev,
+# having it as one single line avoids those problems.
+#
+# DO NOT WRAP THIS LINE
+KERNEL=="drbd*", IMPORT{program}="/sbin/drbdadm sh-udev minor-%m", NAME="$env{DEVICE}", SYMLINK="drbd/by-res/$env{RESOURCE} drbd/by-disk/$env{DISK}"
