@@ -58,7 +58,9 @@ endif
 
 all:
 
-install:
+install: install-most install-udev-rules
+
+install-most:
 	mkdir -p $(PREFIX)/etc/ha.d/resource.d
 	install -d $(INITD)
 	install -m 755 $(SCRIPT) $(INITD)drbd
@@ -86,7 +88,6 @@ install:
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 	mkdir -p $(PREFIX)/etc/udev/rules.d
-	install -m 644 drbd.rules $(PREFIX)/etc/udev/rules.d/65-drbd.rules
 ifneq ($(DIST),redhat)
  ifneq ($(DIST),slackware)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
@@ -107,10 +108,34 @@ ifeq ($(DIST),redhat)
 endif
 	@ echo
 	@ echo "Don't forget to run update-rc.d or chkconfig"
-ifeq ($(DIST),debian)
-	@ echo "Do not forget to run ln -s ../drbd.rules /etc/udev/rules.d/65_drbd.rules"
-endif
 
+# more install
+# only install the udev rules file when udev is determined to be new enough.
+# udevadm was introduced in 117, which is ok.
+# if udevadm is not there, we still may work.
+# try to ask the package data base (rpm/deb) for the udev version.
+# IMPORT was introduced in 059.
+# ETCH is 105, RHEL5 is 095, SLES10 is 085. test on >= 085.
+#
+# may be overridden from build environment,
+# e.g. if you build in some changeroot without access to the package database,
+# or without udev installed.
+# 
+install-udev-rules:
+	disable=.disabled ; \
+	v=$$(udevadm version 2>/dev/null) || \
+	v=$$(rpm -q --qf '%{VERSION}' udev 2>/dev/null) || \
+	v=$$(dpkg-query -W -f '$${Version}' udev 2>/dev/null); \
+	v=$${v##*.} ; v=$${v%%-*} ; v=$${v#0} ; \
+	if [ -n "$$DRBD_ENABLE_UDEV" ] ; then \
+		disable="" ; \
+	else case "$$v" in \
+	"") :;; *[!0-9]*) :;; *) \
+		if [ "$$v" -ge 85 ]; then \
+			disable=""; \
+		fi ;; \
+	esac; fi ; \
+	install -m 644 drbd.rules $(PREFIX)/etc/udev/rules.d/65-drbd.rules$$disable
 
 clean:
 	rm -f *~
