@@ -253,7 +253,7 @@ resource r0 {
     of this section's parameters.
     Optional parameters:
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
-    <option>use-rle-encoding</option>,
+    <option>use-rle</option>,
     <option>cpu-mask</option>, <option>verify-alg</option> and <option>csums-alg</option>.
   </para>
   </listitem>

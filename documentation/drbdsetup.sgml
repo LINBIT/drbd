@@ -69,7 +69,7 @@
       <arg>-v<arg choice="req"><replaceable>verify-hash-alg</replaceable></arg></arg>
       <arg>-c<arg choice="req"><replaceable>cpu-mask</replaceable></arg></arg>
       <arg>-C<arg choice="req"><replaceable>csums-hash-alg</replaceable></arg></arg>
-      <arg>-R<arg choice="req"><replaceable>use-rle-encoding</replaceable></arg></arg>
+      <arg>-R<arg choice="req"><replaceable>use-rle</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis>
       <command>drbdsetup</command>
@@ -968,7 +968,7 @@
 
 	<varlistentry>
 	  <term><option>-R</option>,
-	  <option>--use-rle-encoding</option></term>
+	  <option>--use-rle</option></term>
 	  <listitem>
 	    <para>
               During resync-handshake, the dirty-bitmaps of the nodes are

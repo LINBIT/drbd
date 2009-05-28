@@ -2031,7 +2031,7 @@ int fill_bitmap_rle_bits(struct drbd_conf *mdev,
 	int bits;
 
 	/* may we use this feature? */
-	if ((mdev->sync_conf.use_rle_encoding == 0) ||
+	if ((mdev->sync_conf.use_rle == 0) ||
 		(mdev->agreed_pro_version < 90))
 			return 0;
 

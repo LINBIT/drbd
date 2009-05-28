@@ -1141,7 +1141,7 @@ void printf_bm(struct format *cfg)
 {
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u64 const *bm = on_disk_buffer;
-	le_u64 cw; /* current word for rll encoding */
+	le_u64 cw; /* current word for rl encoding */
 	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
 	unsigned int count = 0;
 	unsigned int bits_set = 0;

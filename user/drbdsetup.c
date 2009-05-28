@@ -343,7 +343,7 @@ struct drbd_cmd commands[] = {
 		 { "csums-alg", 'C',T_csums_alg,        ES },
 		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
-		 { "use-rle-encoding",'R',T_use_rle_encoding,   EB },
+		 { "use-rle",'R',T_use_rle,   EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,

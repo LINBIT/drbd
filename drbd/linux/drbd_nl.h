@@ -77,7 +77,7 @@ NL_PACKET(syncer_conf, 8,
 	NL_STRING(      52,     T_MAY_IGNORE,   verify_alg,     SHARED_SECRET_MAX)
 	NL_STRING(      51,     T_MAY_IGNORE,   cpu_mask,       32)
 	NL_STRING(	64,	T_MAY_IGNORE,	csums_alg,	SHARED_SECRET_MAX)
-	NL_BIT(         65,     T_MAY_IGNORE,   use_rle_encoding)
+	NL_BIT(         65,     T_MAY_IGNORE,   use_rle)
 )
 
 NL_PACKET(invalidate, 9, )

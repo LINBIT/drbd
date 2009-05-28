@@ -673,6 +673,7 @@ struct p_compressed_bm {
 	u8 code[0];
 } __packed;
 
+/* DCBP: Drbd Compressed Bitmap Packet ... */
 static inline enum drbd_bitmap_code
 DCBP_get_code(struct p_compressed_bm *p)
 {
