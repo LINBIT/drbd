@@ -91,6 +91,7 @@ struct adm_cmd {
    * This is necessary for handlers (callbacks from kernel) to work
    * when using "drbdadm -c /some/other/config/file" */
   unsigned int use_cached_config_file :1;
+  unsigned int need_peer         :1;
 };
 
 struct deferred_cmd
@@ -175,6 +176,7 @@ char* drbdmeta = NULL;
 char* drbd_proxy_ctl;
 char* sh_varname = NULL;
 char* setup_opts[10];
+char* connect_to_host = NULL;
 int soi=0;
 volatile int alarm_raised;
 
@@ -368,6 +370,7 @@ struct option admopt[] = {
   { "drbd-proxy-ctl",required_argument,0,'p' },
   { "sh-varname",   required_argument,0, 'n' },
   { "force",        no_argument,      0, 'f' },
+  { "host",         required_argument,0, 'h' },
   { 0,              0,                0, 0   }
 };
 
@@ -380,6 +383,13 @@ struct option admopt[] = {
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 	.me_is_localhost = 1,
+
+#define DRBD_acf1_connect		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,		\
+	.me_is_localhost = 1,		\
+	.need_peer = 1,
 
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
@@ -410,6 +420,12 @@ struct option admopt[] = {
 	.res_name_required = 1,		\
 	.verify_ips = 0,
 
+#define DRBD_acf2_proxy_up		\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+	.need_peer = 1,
+
 #define DRBD_acf2_proxy			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
@@ -437,9 +453,9 @@ struct adm_cmd cmds[] = {
 	 ***/
         { "attach",                adm_attach,      DRBD_acf1_default   },
         { "detach",                adm_generic_l,   DRBD_acf1_default   },
-        { "connect",               adm_connect,     DRBD_acf1_defnet    },
+        { "connect",               adm_connect,     DRBD_acf1_connect   },
         { "disconnect",            adm_generic_s,   DRBD_acf1_default   },
-        { "up",                    adm_up,          DRBD_acf1_defnet    },
+        { "up",                    adm_up,          DRBD_acf1_connect   },
         { "down",                  adm_generic_l,   DRBD_acf1_default   },
         { "primary",               adm_generic_l,   DRBD_acf1_default   },
         { "secondary",             adm_generic_l,   DRBD_acf1_default   },
@@ -485,7 +501,7 @@ struct adm_cmd cmds[] = {
         { "sh-b-pri",              sh_b_pri,        DRBD_acf2_shell     },
         { "sh-status",             sh_status,       DRBD_acf2_gen_shell },
 
-        { "proxy-up",              adm_proxy_up,    DRBD_acf2_proxy     },
+        { "proxy-up",              adm_proxy_up,    DRBD_acf2_proxy_up  },
         { "proxy-down",            adm_proxy_down,  DRBD_acf2_proxy     },
 
         { "before-resync-target",  adm_khelper,     DRBD_acf3_handler   },
@@ -768,6 +784,8 @@ static void fake_startup_options(struct d_resource* res)
 
 static int adm_dump(struct d_resource* res,const char* unused __attribute((unused)))
 {
+  struct d_host_info *host;
+
   printI("# resource %s on %s: %s, %s\n",
 	  esc(res->name), nodeinfo.nodename,
 	  res->ignore  ? "ignored" : "not ignored",
@@ -775,8 +793,9 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
   printI("resource %s {\n",esc(res->name)); ++indent;
   if (res->protocol) printA("protocol", res->protocol);
 
-  dump_host_info(res->me);
-  dump_host_info(res->peer);
+  for (host = res->all_hosts; host; host=host->next)
+	  dump_host_info(host);
+
   fake_startup_options(res);
   dump_options("net",res->net_options);
   dump_options("disk",res->disk_options);
@@ -791,12 +810,13 @@ static int adm_dump(struct d_resource* res,const char* unused __attribute((unuse
 
 static int adm_dump_xml(struct d_resource* res,const char* unused __attribute((unused)))
 {
+  struct d_host_info *host;
   printI("<resource name=\"%s\"",esc_xml(res->name));
   if(res->protocol) printf(" protocol=\"%s\"",res->protocol);
   printf(">\n"); ++indent;
   // else if (common && common->protocol) printA("# common protocol", common->protocol);
-  dump_host_info_xml(res->me);
-  dump_host_info_xml(res->peer);
+  for (host = res->all_hosts; host; host=host->next)
+	  dump_host_info_xml(host);
   fake_startup_options(res);
   dump_options_xml("net",res->net_options);
   dump_options_xml("disk",res->disk_options);
@@ -976,6 +996,8 @@ static void free_options(struct d_option* opts)
 static void free_config(struct d_resource* res)
 {
   struct d_resource *f,*t;
+  struct d_host_info *host;
+
   for_each_resource(f,t,res) {
     free(f->name);
     free(f->protocol);
@@ -983,8 +1005,8 @@ static void free_config(struct d_resource* res)
     free(f->disk);
     free(f->meta_disk);
     free(f->meta_index);
-    free_host_info(f->me);
-    free_host_info(f->peer);
+    for (host = f->all_hosts; host; host=host->next)
+	    free_host_info(host);
     free_options(f->net_options);
     free_options(f->disk_options);
     free_options(f->sync_options);
@@ -1028,7 +1050,7 @@ static void expand_common(void)
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
 			if (!h->device)
-				m_asprintf(&h->device, "/dev/drbd%u", res->me->device_minor);
+				m_asprintf(&h->device, "/dev/drbd%u", h->device_minor);
 		}
 	}
 
@@ -1055,37 +1077,19 @@ static void expand_common(void)
 	}
 }
 
-static void post_parse(void)
+static void post_parse(struct adm_cmd *cmd)
 {
 	struct d_resource *res,*tmp;
 
-	for_each_resource(res, tmp, config) {
-		if (res->stacked_on_one) {
+	for_each_resource(res, tmp, config)
+		if (res->stacked_on_one)
 			set_on_hosts_in_res(res);
-			set_me_in_resource(res); // Needs "on_hosts" set in this res
 
-			/* Make shure we know me and peer. Move to validate ?*/
+	for_each_resource(res, tmp, config)
+		set_me_in_resource(res); // Needs "on_hosts" set in this res
 
-			if (!res->me) {
-				fprintf(stderr,
-					"%s:%d: in resource %s, there is no host section"
-					" for this host.\n"
-					"\tMissing 'on %s {...}' ?\n",
-					res->config_file, res->start_line, res->name,
-					nodeinfo.nodename);
-				config_valid = 0;
-			}
-
-			if (!res->peer) {
-				fprintf(stderr,
-					"%s:%d: in resource %s, there is no host section"
-					" for the peer host.\n"
-					"\tMissing 'on <peer-name> {...}' ?\n",
-					res->config_file, res->start_line, res->name);
-				config_valid = 0;
-			}
-		}
-	}
+	for_each_resource(res, tmp, config)
+		set_peer_in_resource(res, cmd->need_peer); // Needs me already set
 
 	for_each_resource(res, tmp, config)
 		if (res->stacked_on_one)
@@ -2452,13 +2456,6 @@ void validate_resource(struct d_resource * res)
 	    res->config_file, res->start_line, res->name, nodeinfo.nodename);
     config_valid = 0;
   }
-  if (!res->peer) {
-    fprintf(stderr,
-	    "%s:%d: in resource %s:\n\t"
-	    "missing section 'on <PEER> { ... }'.\n",
-	    res->config_file, res->start_line, res->name);
-    config_valid = 0;
-  }
   if ( (opt = find_opt(res->sync_options, "after")) ) {
     if (res_by_name(opt->value) == NULL) {
       fprintf(stderr,"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
@@ -2471,7 +2468,8 @@ void validate_resource(struct d_resource * res)
   // nodenames are mentioned.
   if ( (opt = find_opt(res->net_options, "after-sb-0pri")) ) {
     if(!strncmp(opt->value,"discard-node-",13)) {
-      if (!name_in_names(opt->value+13, res->peer->on_hosts) &&
+      if (res->peer &&
+	  !name_in_names(opt->value+13, res->peer->on_hosts) &&
 	  !name_in_names(opt->value+13, res->me->on_hosts)) {
 	fprintf(stderr,
 		"%s:%d: in resource %s:\n\t"
@@ -2502,7 +2500,7 @@ void validate_resource(struct d_resource * res)
     config_valid = 0;
   }
 
-  if (( res->me->proxy == NULL ) != (res->peer->proxy == NULL)) {
+  if (res->peer && ((res->me->proxy == NULL ) != (res->peer->proxy == NULL))) {
 	fprintf(stderr,
 		"%s:%d: in resource %s:\n\t"
 		"Either both 'on' sections must contain a proxy subsection, or none.\n",
@@ -2511,7 +2509,8 @@ void validate_resource(struct d_resource * res)
   }
 
   for (bpo = res->become_primary_on; bpo; bpo = bpo->next) {
-	  if (!name_in_names(bpo->name, res->me->on_hosts) &&
+	  if (res->peer &&
+	      !name_in_names(bpo->name, res->me->on_hosts) &&
 	      !name_in_names(bpo->name, res->peer->on_hosts) &&
 	      strcmp(bpo->name, "both")) {
 		  fprintf(stderr,
@@ -2739,6 +2738,9 @@ int parse_options(int argc, char **argv)
 		case 'f':
 			force = 1;
 			break;
+		case 'h':
+			connect_to_host = optarg;
+			break;
 		case '?':
 			/* commented out, since opterr=1
 			 * fprintf(stderr,"Unknown option %s\n",argv[optind-1]); */
@@ -2854,15 +2856,15 @@ void assign_default_config_file(void)
 
 void count_resources_or_die(void)
 {
-	int mc = global_options.minor_count;
+	int m, mc = global_options.minor_count;
 	struct d_resource *res, *tmp;
 
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
-		int m = res->me->device_minor;
-
 		if (res->ignore)
 			continue;
+
+		m = res->me->device_minor;
 		if (m > highest_minor)
 			highest_minor = m;
 		nr_resources++;
@@ -3010,7 +3012,7 @@ int main(int argc, char** argv)
   if (!config_valid)
     exit(E_config_invalid);
 
-  post_parse();
+  post_parse(cmd);
 
   if (!is_dump || dry_run || verbose)
     expand_common();

@@ -185,6 +185,7 @@ extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
 extern void free_names(struct d_name *names);
 extern void set_me_in_resource(struct d_resource* res);
+extern void set_peer_in_resource(struct d_resource* res, int required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
 
@@ -202,6 +203,7 @@ extern char ss_buffer[255];
 extern struct utsname nodeinfo;
 
 extern char* setup_opts[10];
+extern char* connect_to_host;
 extern int soi;
 
 

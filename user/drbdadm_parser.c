@@ -891,19 +891,8 @@ void set_me_in_resource(struct d_resource* res)
 {
 	struct d_host_info *host;
 
-	/* Determin the local host section and the peer host section. */
-	host = res->all_hosts;
-	while (host) {
-		if (!res->ignore && (res->me && res->peer)) {
-			fprintf(stderr,
-				"%s:%d: in resource %s, "
-				"unsupported third host section %s %s { ... }.\n",
-				res->config_file, host->config_line, res->name,
-				host->lower ? "stacked-on-top-of" : "on",
-				host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			exit(E_config_invalid);
-		}
-
+	/* Determin the local host section */
+	for (host = res->all_hosts; host; host=host->next) {
 		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
 		    name_in_names("_this_host", host->on_hosts) ||
 		    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
@@ -930,26 +919,76 @@ void set_me_in_resource(struct d_resource* res)
 			res->me = host;
 			if (host->lower)
 				res->stacked = 1;
+		}
+	}
+
+	/* If there is no me, implicitly ignore that resource */
+	if (!res->me) {
+		res->ignore = 1;
+		return;
+	}
+}
+
+void set_peer_in_resource(struct d_resource* res, int required)
+{
+	struct d_host_info *host;
+
+	/* me must be already set */
+
+	if (res->ignore)
+		return;
+
+	/* Determin the peer host section */
+	for (host = res->all_hosts; host; host=host->next) {
+		if (host == res->me)
+			continue;
+
+		if (!connect_to_host) {
+			/* No, --host option given, assume there are only two on sections. */
+			if (!res->peer)
+				res->peer = host;
+			else if (required) {
+				config_valid = 0;
+				fprintf(stderr,
+					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
+					"\tThere are multiple host sections for the peer node.\n"
+					"\tYou need to use the --host option to select one host\n"
+					"\tsection as the peer host section.\n",
+					res->config_file, host->config_line, res->name,
+					res->me->lower ? "stacked-on-top-of" : "on",
+					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
+					host->lower ? "stacked-on-top-of" : "on",
+					host->lower ? host->lower->name : names_to_str(host->on_hosts));
+				return;
+			}
+
 		} else {
-			/* This needs to be refined as soon as we support
-			   multiple peers in the resource section */
-			if (res->peer) {
-				if (!res->me) {
-					/* just store it anyways into ->me */
-					/* reorder, so it dumps out in the same order as read in */
-					res->me = res->peer;
-					res->peer = host;
-					res->ignore = 1; /* implicit ignore */
-				} else {
-					/* hm. if that did not work, I cannot ignore it */
+			if (name_in_names(connect_to_host, host->on_hosts) ||
+			    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
+				if (res->peer) {
+					/* Should have been catched by check_unique ... */
 					config_valid = 0;
 					fprintf(stderr, "THINKO 1\n");
 					exit(E_thinko);
 				}
+				res->peer = host;
 			}
-			res->peer = host;
 		}
-		host=host->next;
+	}
+
+	if (required && !res->peer) {
+		config_valid = 0;
+		if (connect_to_host)
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tNo host ('on') section matches the host you passed\n"
+				"\twith the --host ('%s')option.\n",
+				res->config_file, res->start_line, res->name, connect_to_host);
+		else
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tMissing section 'on <PEER> { ... }'.\n",
+				res->config_file, res->start_line, res->name);
 	}
 }
 
@@ -993,6 +1032,9 @@ void set_on_hosts_in_res(struct d_resource *res)
 void set_disk_in_res(struct d_resource *res)
 {
 	struct d_host_info *host;
+
+	if (res->ignore)
+		return;
 
 	for (host = res->all_hosts; host; host=host->next) {
 		if (host->lower) {
@@ -1147,9 +1189,6 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	}
 
  exit_loop:
-
-	if (!res->stacked_on_one)
-		set_me_in_resource(res);
 
 	if (flags == NoneHAllowed && res->all_hosts) {
 		config_valid = 0;
