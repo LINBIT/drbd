@@ -100,6 +100,7 @@ struct d_host_info
   struct d_resource* lower;  /* for device stacking */
   char *lower_name;          /* for device stacking, before bind_stacked_res() */
   int config_line;
+  unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
 };
 
 struct d_option
@@ -165,6 +166,7 @@ extern void uc_node(enum usage_count_type type);
 extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);
+extern int have_ip(const char *af, const char *ip);
 
 /* See drbdadm_minor_table.c */
 extern int register_minor(int minor, const char *path);

@@ -669,6 +669,8 @@ static void dump_host_info(struct d_host_info* hi)
   if (hi->lower) {
     printI("stacked-on-top-of %s {\n",esc(hi->lower->name)); ++indent;
     printI("# on %s \n",names_to_str(hi->on_hosts));
+  } else if (hi->by_address) {
+    printI("floating {\n"); ++indent;
   } else {
     printI("on %s {\n",names_to_str(hi->on_hosts)); ++indent;
   }
@@ -749,7 +751,12 @@ static void dump_host_info_xml(struct d_host_info* hi)
     return;
   }
 
-  printI("<host name=\"%s\">\n",names_to_str(hi->on_hosts)); ++indent;
+  if (hi->by_address)
+    printI("<host floating=\"1\">\n");
+  else
+    printI("<host name=\"%s\">\n",names_to_str(hi->on_hosts));
+
+  ++indent;
   printI("<device minor=\"%d\">%s</device>\n", hi->device_minor, esc_xml(hi->device));
   printI("<disk>%s</disk>\n", esc_xml(hi->disk));
   printI("<address family=\"%s\" port=\"%s\">%s</address>\n", hi->address_family, hi->port, hi->address);

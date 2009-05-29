@@ -106,6 +106,7 @@ enum yytokentype {
 	TK_IPADDR6,
 	TK_NET_DELEGATE,
 	TK_INCLUDE,
+	TK_FLOATING,
 };
 
 typedef struct YYSTYPE {

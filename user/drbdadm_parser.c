@@ -654,8 +654,14 @@ out:
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, *minor);
 }
 
+enum parse_host_section_flags {
+	REQUIRE_ALL = 1,
+	BY_ADDRESS  = 2,
+};
+
 static void parse_host_section(struct d_resource *res,
-			       struct d_name* on_hosts, int require_all)
+			       struct d_name* on_hosts,
+			       enum parse_host_section_flags flags)
 {
 	struct d_host_info *host;
 	struct d_name *h;
@@ -667,6 +673,10 @@ static void parse_host_section(struct d_resource *res,
 	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
 	host->device_minor = -1;
+
+	if (flags & BY_ADDRESS)
+		host->by_address = 1;
+
 	for_each_host(h, on_hosts)
 		check_uniq("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
@@ -747,7 +757,7 @@ static void parse_host_section(struct d_resource *res,
 		check_meta_disk(host);
 	}
 
-	if (!require_all)
+	if (!(flags & REQUIRE_ALL))
 		return;
 	if (!host->device && host->device_minor == -1)
 		derror(host, res, "device");
@@ -895,7 +905,8 @@ void set_me_in_resource(struct d_resource* res)
 	for (host = res->all_hosts; host; host=host->next) {
 		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
 		    name_in_names("_this_host", host->on_hosts) ||
-		    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
+		    (host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts)) ||
+		    (host->by_address && have_ip(host->address_family, host->address)) ) {
 			if (res->ignore) {
 				config_valid = 0;
 				fprintf(stderr,
@@ -964,6 +975,7 @@ void set_peer_in_resource(struct d_resource* res, int required)
 
 		} else {
 			if (name_in_names(connect_to_host, host->on_hosts) ||
+			    (host->by_address && !strcmp(connect_to_host, host->address)) ||
 			    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
 				if (res->peer) {
 					/* Should have been catched by check_unique ... */
@@ -1059,9 +1071,11 @@ void set_disk_in_res(struct d_resource *res)
 
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
+	static int host_nr = 0;
 	struct d_resource* res;
 	struct d_name *host_names;
 	int token;
+	char *hname;
 
 	check_uniq("resource section", res_name);
 
@@ -1083,7 +1097,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_ON:
 			parse_hosts(&host_names, '{');
-			parse_host_section(res, host_names, 1);
+			parse_host_section(res, host_names, REQUIRE_ALL);
 			break;
 		case TK_STACKED:
 			parse_stacked_section(res);
@@ -1111,6 +1125,12 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP('{');
 			host_names = names_from_str("_remote_host");
 			parse_host_section(res, host_names, 0);
+			break;
+		case TK_FLOATING:
+			EXP('{');
+			m_asprintf(&hname, "_floating_%d", host_nr++);
+			host_names = names_from_str(hname);
+			parse_host_section(res, host_names, REQUIRE_ALL + BY_ADDRESS);
 			break;
 		case TK_DISK:
 			switch (token=yylex()) {

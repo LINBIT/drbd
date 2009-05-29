@@ -54,6 +54,7 @@ LONG_STRING	[a-zA-Z0-9/._-]{81}
 on			{ DP; return TK_ON;			}
 ignore-on		{ DP; return TK_IGNORE;			}
 stacked-on-top-of	{ DP; return TK_STACKED;		}
+floating		{ DP; return TK_FLOATING;		}
 no			{ DP; return TK_NO;			}
 net			{ DP; return TK_NET;			}
 yes			{ DP; return TK_YES;			}
