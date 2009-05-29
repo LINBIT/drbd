@@ -1,0 +1,488 @@
+#!/bin/bash
+#
+#
+#       OCF Resource Agent compliant drbd resource script.
+#
+# Copyright (c) 2009 LINBIT HA-Solutions GmbH, Florian Haas
+# Based on the Heartbeat drbd OCF Resource Agent by Lars Marowsky-Bree
+#
+#                    All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of version 2 of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# Further, this software is distributed without any warranty that it is
+# free of the rightful claim of any third person regarding infringement
+# or the like.  Any license provided herein, whether implied or
+# otherwise, applies only to this software file.  Patent licenses, if
+# any, provided herein do not apply to combinations of this program with
+# other software, or any other product whatsoever.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
+#
+#
+
+# OCF instance parameters
+#	OCF_RESKEY_drbd_resource
+#	OCF_RESKEY_drbdconf
+#	OCF_RESKEY_CRM_meta_clone_max
+#	OCF_RESKEY_CRM_meta_clone_node_max
+#	OCF_RESKEY_CRM_meta_master_max
+#	OCF_RESKEY_CRM_meta_master_node_max
+
+# FIXME: For testing purposes only -- remove
+# env | grep OCF_ | sort > /tmp/drbd.env
+
+#######################################################################
+# Initialization:
+
+. ${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs
+LC_ALL="C"
+LANG="C"
+
+# Defaults
+OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
+
+: ${OCF_RESKEY_drbdconf=${OCF_RESKEY_drbdconf_default}}
+#######################################################################
+
+meta_data() {
+    cat <<END
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="drbd">
+<version>1.1</version>
+
+<longdesc lang="en">
+Master/Slave OCF Resource Agent for DRBD
+</longdesc>
+
+<shortdesc lang="en">This resource agent manages a DRBD resource
+as a master/slave resource. DRBD is a shared-nothing replicated storage
+device.</shortdesc>
+
+<parameters>
+<parameter name="drbd_resource" unique="1" required="1">
+<longdesc lang="en">
+The name of the drbd resource from the drbd.conf file.
+</longdesc>
+<shortdesc lang="en">drbd resource name</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name="drbdconf">
+<longdesc lang="en">
+Full path to the drbd.conf file.
+</longdesc>
+<shortdesc lang="en">Path to drbd.conf</shortdesc>
+<content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start"   timeout="240" />
+<action name="promote"   timeout="90" />
+<action name="demote"   timeout="90" />
+<action name="notify"   timeout="90" />
+<action name="stop"    timeout="100" />
+<action name="monitor" depth="0"  timeout="20" interval="20" start-delay="1m" role="Slave" />
+<action name="monitor" depth="0"  timeout="20" interval="10" start-delay="1m" role="Master" />
+<action name="meta-data"  timeout="5" />
+<action name="validate-all"  timeout="30" />
+</actions>
+</resource-agent>
+END
+}
+
+do_cmd() {
+    # Run a command, return its exit code, capture any output, and log
+    # everything if appropriate.
+    local cmd="$*"
+    ocf_log debug "$OCF_RESKEY_drbd_resource: Calling $cmd"
+    local cmd_out
+    cmd_out=$($cmd)
+    ret=$?
+    
+    if [ $ret -ne 0 ]; then
+	ocf_log err "$OCF_RESKEY_drbd_resource: Called $cmd"
+	ocf_log err "$OCF_RESKEY_drbd_resource: Exit code $ret"
+	ocf_log err "$OCF_RESKEY_drbd_resource: Command output: $cmd_out"
+    else
+	ocf_log debug "$OCF_RESKEY_drbd_resource: Exit code $ret"
+	ocf_log debug "$OCF_RESKEY_drbd_resource: Command output: $cmd_out"
+    fi
+    
+    echo $cmd_out
+    
+    return $ret
+}
+
+do_drbdadm() {
+    # Run drbdadm with appropriate command line options, and capture
+    # its output.
+
+    local cmd
+    # $DRBDADM is defined during drbd_init as "drbdadm" plus
+    # appropriate command line options
+    do_cmd $DRBDADM $*
+    return $?
+}
+
+set_master_preference() {
+    # Set a numeric master preference. Invoked on notify from
+    # drbd_update_prefs.
+
+    local pref
+    pref=$1
+    do_cmd ${HA_SBIN_DIR}/crm_master -l reboot -v $pref
+}
+
+remove_master_preference() {
+    # Clear the master preference.
+    do_cmd ${HA_SBIN_DIR}/crm_master -l reboot -D
+}
+
+drbd_init() {
+    DRBDADM="drbdadm"
+
+    # if we have a non-default config file, append -c
+    if [ -n "${OCF_RESKEY_drbdconf}" ]; then
+	DRBDADM="$DRBDADM -c ${OCF_RESKEY_drbdconf}"
+    fi
+
+    # if we are operating on a stacked resource, append -S
+    if $DRBDADM --stacked sh-dev $OCF_RESKEY_drbd_resource > /dev/null 2>&1; then
+	DRBDADM="$DRBDADM -S"
+    fi
+    
+    DRBD_DEVICE=$($DRBDADM sh-dev $OCF_RESKEY_drbd_resource)
+}
+
+drbd_set_status_variables() {
+    # Populates a set of variables relevant to DRBD's status
+    DRBD_ROLE=$(do_drbdadm role $OCF_RESKEY_drbd_resource)
+    DRBD_ROLE_LOCAL=$(echo $DRBD_ROLE | sed -e 's#/.*##')
+    DRBD_ROLE_REMOTE=$(echo $DRBD_ROLE | sed -e 's#.*/##')
+    
+    DRBD_CSTATE=$(do_drbdadm cstate $OCF_RESKEY_drbd_resource)
+    
+    DRBD_DSTATE=$(do_drbdadm dstate $OCF_RESKEY_drbd_resource)
+    DRBD_DSTATE_LOCAL=$(echo $DRBD_DSTATE | sed -e 's#/.*##')
+    DRBD_DSTATE_REMOTE=$(echo $DRBD_DSTATE | sed -e 's#.*/##')
+}
+
+drbd_update_prefs() {
+    drbd_set_status_variables
+
+    case $DRBD_DSTATE_LOCAL in
+	Diskless|Inconsistent|Outdated)
+	    case $DRBD_CSTATE in
+		StandAlone|WFConnection) 
+		    # Our local disk is not up to date. Our peer is
+		    # not available. We have no access to useful data.
+		    set_master_preference -INFINITY
+		    ;;
+		*)
+		    # Our local disk is not up to date, but our peer
+		    # is OK. We can expect to have access to useful
+		    # data, but must expect degraded performance.
+		    set_master_preference 50
+		    ;;
+	    esac
+	    ;;
+	UpToDate)
+	    # Our local disk is UpToDate, which means even if we are
+	    # currently synchronizing, we do so as SyncSource.
+	    set_master_preference 100
+    esac
+
+    return $OCF_SUCCESS
+}
+
+is_drbd_enabled() {
+    if [ -f /proc/drbd ]; then
+	return 0
+    fi
+    return 1
+}
+
+#######################################################################
+
+drbd_usage() {
+    cat <<END
+usage: $0 {start|stop|monitor|validate-all|promote|demote|notify|meta-data}
+
+Expects to have a fully populated OCF RA-compliant environment set.
+END
+}
+
+drbd_status() {
+    local rc
+    local status
+
+    rc=$OCF_NOT_RUNNING
+
+    if is_drbd_enabled; then
+	if [ -e $DRBD_DEVICE ]; then
+	    drbd_set_status_variables
+	    case "${DRBD_ROLE_LOCAL}" in
+		"Primary")
+		    rc=$OCF_RUNNING_MASTER
+		    ;;
+		"Secondary")
+		    rc=$OCF_SUCCESS
+		    ;;
+		"Unconfigured")
+		    rc=$OCF_NOT_RUNNING
+		    ;;
+		*)
+		    ocf_log err "Unexpected role ${DRBD_ROLE_LOCAL}"
+		    rc=$OCF_ERR_GENERIC
+		    ;;
+	    esac
+	fi
+    else
+	ocf_log warn "$OCF_RESKEY_drbd_resource status: drbd module not loaded"
+    fi
+    
+    return $rc
+}
+
+drbd_start() {
+    local rc
+    local status
+
+    rc=$OCF_ERR_GENERIC
+    
+    if ! is_drbd_enabled; then
+	do_cmd modprobe -s drbd `$DRBDADM sh-mod-parms` || { 
+	    ocf_log err "Cannot load the drbd module."$'\n'; 
+	    return $rc
+	}
+	ocf_log debug "$OCF_RESKEY_drbd_resource start: Module loaded."
+    fi
+
+    # Keep trying to bring the resource up; wait for the CRM to time
+    # us out if this fails
+    while sleep 1; do
+	drbd_status
+	status=$?
+	case "$status" in
+	    "$OCF_SUCCESS")
+		rc=$OCF_SUCCESS
+		break
+		;;
+	    "$OCF_NOT_RUNNING")
+		do_drbdadm up $OCF_RESKEY_drbd_resource
+		;;
+	    "$OCF_RUNNING_MASTER")
+		ocf_log warn "$OCF_RESKEY_drbd_resource already Primary, demoting."
+		do_drbdadm secondary $OCF_RESKEY_drbd_resource
+		;;
+		esac
+    done
+
+    return $rc
+}
+
+drbd_promote() {
+    local rc
+    local status
+
+    rc=$OCF_ERR_GENERIC
+
+    # Keep trying to promote the resource; wait for the CRM to time
+    # us out if this fails
+    while sleep 1; do
+	drbd_status
+	status=$?
+	case "$status" in
+	    "$OCF_SUCCESS")
+		do_drbdadm primary $OCF_RESKEY_drbd_resource
+		;;
+	    "$OCF_NOT_RUNNING")
+		ocf_log error "Trying to promote a resource that was not started"
+		break
+		;;
+	    "$OCF_RUNNING_MASTER")
+		rc=$OCF_SUCCESS
+		break
+		;;
+	esac
+    done
+
+    return $rc
+}
+
+drbd_demote() {
+    local rc
+    local status
+
+    rc=$OCF_ERR_GENERIC
+    
+    # Keep trying to demote the resource; wait for the CRM to time
+    # us out if this fails
+    while sleep 1; do
+	drbd_status
+	status=$?
+	case "$status" in
+	    "$OCF_SUCCESS")
+		rc=$OCF_SUCCESS
+		break
+		;;
+	    "$OCF_NOT_RUNNING")
+		ocf_log error "Trying to promote a resource that was not started"
+		break
+		;;
+	    "$OCF_RUNNING_MASTER")
+		do_drbdadm secondary $OCF_RESKEY_drbd_resource
+		;;
+	esac
+    done
+
+    return $rc
+}
+
+drbd_stop() {
+    rc=$OCF_ERR_GENERIC
+
+    # Keep trying to bring down the resource; wait for the CRM to time
+    # us out if this fails
+    while sleep 1; do
+	drbd_status
+	status=$?
+	case "$status" in
+	    "$OCF_SUCCESS")
+		do_drbdadm down $OCF_RESKEY_drbd_resource
+		;;
+	    "$OCF_NOT_RUNNING")
+		rc=$OCF_SUCCESS
+		break
+		;;
+	    "$OCF_RUNNING_MASTER")
+		ocf_log warn "$OCF_RESKEY_drbd_resource still Primary, demoting."
+		do_drbdadm secondary  $OCF_RESKEY_drbd_resource
+		;;
+	esac
+    done
+
+    return $rc
+}
+
+drbd_notify() {
+    local n_type="$OCF_RESKEY_CRM_meta_notify_type"
+    local n_op="$OCF_RESKEY_CRM_meta_notify_operation"
+    set -- $OCF_RESKEY_CRM_meta_notify_active_resource
+    local n_active="$#"
+    set -- $OCF_RESKEY_CRM_meta_notify_stop_resource
+    local n_stop="$#"
+    set -- $OCF_RESKEY_CRM_meta_notify_start_resource
+    local n_start="$#"
+    
+    ocf_log debug "$OCF_RESKEY_drbd_resource notify: $n_type for $n_op - counts: active $n_active - starting $n_start - stopping $n_stop"
+    
+    case $n_type in
+	post)
+	    # After something has been done is a good time to
+	    # recheck our status:
+	    drbd_update_prefs
+	    ;;
+    esac
+	
+    return $OCF_SUCCESS
+}
+
+drbd_validate_all () {
+	# First, check the resource name
+	if [ -z "$OCF_RESKEY_drbd_resource" ]; then
+	    ocf_log err "No resource name specified!"
+	    return $OCF_ERR_CONFIGURED
+	fi
+
+	# Check if we can read the configuration file
+	if [ -n "${OCF_RESKEY_drbdconf}" ] && [ ! -r "${OCF_RESKEY_drbdconf}" ]; then
+	    ocf_log err "Configuration file ${OCF_RESKEY_drbdconf} does not exist or is not readable!"
+	    return $OCF_ERR_INSTALLED
+	fi
+
+	# The resource should appear in the config file, otherwise
+	# something's fishy
+	if ! do_drbdadm sh-dev $OCF_RESKEY_drbd_resource >/dev/null 2>&1; then
+	    ocf_log err "DRBD resource $OCF_RESKEY_drbd_resource not found in configuration file."
+	    # Rather than returning $OCF_ERR_CONFIGURED, we return
+	    # $OCF_ERR_INSTALLED here: the local config may be broken,
+	    # but some other node may have a valid config
+	    return $OCF_ERR_INSTALLED
+	fi
+	
+	# Check clone and M/S options. Caveat: if
+	# $OCF_RESKEY_master_max is 2, then allow-two-primaries must
+	# also be set in drbd.conf, and we currently don't check for
+	# that here.
+	if [ "$OCF_RESKEY_CRM_meta_clone_max" -ne 2 ] \
+	    || [ "$OCF_RESKEY_CRM_meta_clone_node_max" -ne 1 ] \
+	    || [ "$OCF_RESKEY_CRM_meta_master_node_max" -ne 1 ] \
+	    || [ "$OCF_RESKEY_CRM_meta_master_max" -gt 2 ] ; then
+		ocf_log err "Clone or master/slave options misconfigured."
+		exit $OCF_ERR_CONFIGURED
+	fi
+	
+	return $OCF_SUCCESS
+}
+
+: ${OCF_RESKEY_CRM_meta_interval=0}
+
+if [ $# -ne 1 ]; then
+  usage
+  exit $OCF_ERR_ARGS
+fi
+
+case $1 in
+  meta-data)		meta_data
+			exit $OCF_SUCCESS
+			;;
+  usage)		drbd_usage
+			exit $OCF_SUCCESS
+			;;
+esac
+
+# Everything except usage and meta-data must pass the validate test
+# and also needs drbd_init
+drbd_init
+drbd_validate_all || exit $?
+
+case $1 in
+    start)
+	drbd_start
+	;;
+    stop)
+	drbd_stop
+	;;
+    notify)
+	drbd_notify
+	;;
+    promote)
+	drbd_promote
+	;;
+    demote)
+	drbd_demote
+	;;
+    status|monitor)
+	drbd_status
+	;;
+    validate-all)		
+	;;
+    *)	
+	drbd_usage
+	exit $OCF_ERR_UNIMPLEMENTED
+	;;
+esac
+exit $?

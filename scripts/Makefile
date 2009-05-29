@@ -70,6 +70,8 @@ install-most:
 	fi
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
 	install -m 755 drbdupper $(PREFIX)/etc/ha.d/resource.d
+	mkdir -p $(PREFIX)/usr/lib/ocf/resource.d/drbd
+	install -m 755 drbd.ocf $(PREFIX)/usr/lib/ocf/resource.d/drbd
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
