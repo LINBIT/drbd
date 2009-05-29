@@ -81,7 +81,7 @@
 	</para></listitem>
       </varlistentry>
       <varlistentry>
-        <term><option>-h</option>, <option>--host</option>
+        <term><option>-t</option>, <option>--to</option>
         <listitem><para>
           Specifies to which peer node to connect. Only necessary if thare are
 	  more than two host sections in the resource you are working on.
@@ -112,7 +112,7 @@
           Sets up the network configuration of the resource's device. If the
  	  peer device is already configured, the two DRBD devices will connect.
 	  If there are more than two host sections in the resource you need
-	  to use the <option>--host</option> option to select the peer you want to
+	  to use the <option>--to</option> option to select the peer you want to
 	  connect to.
         </para></listitem>
       </varlistentry>

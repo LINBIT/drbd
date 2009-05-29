@@ -125,15 +125,44 @@ void drbd_nl_send_reply(struct cn_msg *, int);
 
 int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 {
-	char mb[12];
-	char *argv[] = {usermode_helper, cmd, mb, NULL };
-	int ret;
 	static char *envp[] = { "HOME=/",
 				"TERM=linux",
 				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+				NULL, /* Will be set to af */
+				NULL, /* Will be set to ad */
 				NULL };
 
+	char mb[12], af[20], ad[60], *afs;
+	char *argv[] = {usermode_helper, cmd, mb, NULL };
+	int ret;
+
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(mdev));
+
+	if (get_net_conf(mdev)) {
+		switch (((struct sockaddr *)mdev->net_conf->peer_addr)->sa_family) {
+		case AF_INET6:
+			afs = "ipv6";
+			snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI6",
+				 &((struct sockaddr_in6 *)mdev->net_conf->peer_addr)->sin6_addr);
+			break;
+		case AF_INET:
+			afs = "ipv4";
+			snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI4",
+				 &((struct sockaddr_in *)mdev->net_conf->peer_addr)->sin_addr);
+			break;
+		default:
+			afs = "ssocks";
+			snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI4",
+				 &((struct sockaddr_in *)mdev->net_conf->peer_addr)->sin_addr);
+		}
+		snprintf(af, 20, "DRBD_PEER_AF=%s", afs);
+		envp[3]=af;
+		envp[4]=ad;
+		put_net_conf(mdev);
+	} else {
+		envp[3]=NULL;
+		envp[4]=NULL;
+	}
 
 	dev_info(DEV, "helper command: %s %s %s\n", usermode_helper, cmd, mb);
 

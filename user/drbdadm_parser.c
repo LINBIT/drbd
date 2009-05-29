@@ -958,7 +958,11 @@ void set_peer_in_resource(struct d_resource* res, int required)
 			/* No, --host option given, assume there are only two on sections. */
 			if (!res->peer)
 				res->peer = host;
-			else if (required) {
+			else {
+				res->peer = NULL;
+				if (!required)
+					return;
+
 				config_valid = 0;
 				fprintf(stderr,
 					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
@@ -972,7 +976,6 @@ void set_peer_in_resource(struct d_resource* res, int required)
 					host->lower ? host->lower->name : names_to_str(host->on_hosts));
 				return;
 			}
-
 		} else {
 			if (name_in_names(connect_to_host, host->on_hosts) ||
 			    (host->by_address && !strcmp(connect_to_host, host->address)) ||

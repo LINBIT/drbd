@@ -370,7 +370,7 @@ struct option admopt[] = {
   { "drbd-proxy-ctl",required_argument,0,'p' },
   { "sh-varname",   required_argument,0, 'n' },
   { "force",        no_argument,      0, 'f' },
-  { "host",         required_argument,0, 'h' },
+  { "to",           required_argument,0, 't' },
   { 0,              0,                0, 0   }
 };
 
@@ -1518,11 +1518,23 @@ static int adm_khelper(struct d_resource* res ,const char* cmd)
   char *sh_cmd;
   char *argv[] = { "/bin/sh", "-c", NULL , NULL };
 
+  /* res->peer is not available here if one has more than two host sections in his
+     resoruce definition.
+     Therefore DRBD_PEERS will not be available. */
+
+  /* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
+     If we know the peer anyways (i.e. not more than two host sections) we
+     set it (overwrite) it here anyways. */
+  if (res->peer) {
+	  setenv("DRBD_PEER_AF", res->peer->address_family,1); /* since 8.3.0 */
+	  setenv("DRBD_PEER_ADDRESS", res->peer->address,1);   /* since 8.3.0 */
+  }
+
   setenv("DRBD_RESOURCE",res->name,1);
   setenv("DRBD_PEER",res->peer->on_hosts->name,1);     /* deprecated */
-  setenv("DRBD_PEERS",names_to_str(res->peer->on_hosts),1); /* since 8.3.0 */
-  setenv("DRBD_PEER_AF", res->peer->address_family,1); /* since 8.3.0 */
-  setenv("DRBD_PEER_ADDRESS", res->peer->address,1);   /* since 8.3.0 */
+  if (res->peer)
+	  setenv("DRBD_PEERS",names_to_str(res->peer->on_hosts),1); /* since 8.3.0 */
+
   setenv("DRBD_CONF",config_save,1);
 
   if( (sh_cmd = get_opt_val(res->handlers,cmd,NULL)) ) {
