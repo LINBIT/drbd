@@ -256,6 +256,19 @@ drbd_status() {
     return $rc
 }
 
+drbd_monitor() {
+    local status
+
+    drbd_status
+    status=$?
+
+    if [ $status -ne $OCF_NOT_RUNNING ]; then
+	drbd_update_prefs
+    fi
+
+    return $status
+}
+
 drbd_start() {
     local rc
     local status
@@ -475,8 +488,11 @@ case $1 in
     demote)
 	drbd_demote
 	;;
-    status|monitor)
+    status)
 	drbd_status
+	;;
+    monitor)
+	drbd_monitor
 	;;
     validate-all)		
 	;;
