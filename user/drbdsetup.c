@@ -134,72 +134,72 @@ struct drbd_cmd {
 
 // Connector functions
 #define NL_TIME (COMM_TIMEOUT*1000)
-int open_cn();
-int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
-int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
-int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
-	      int size, int timeout_ms);
-void close_cn(int sk_nl);
+static int open_cn();
+static int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size);
+static int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms);
+static int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
+		     int size, int timeout_ms);
+static void close_cn(int sk_nl);
 
 // other functions
-int get_af_ssocks(int warn);
-void print_command_usage(int i, const char *addinfo, enum usage_type);
+static int get_af_ssocks(int warn);
+static void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
-int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
+static int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+static int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+static int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
+static int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
 
 // usage functions
-void config_usage(struct drbd_cmd *cm, enum usage_type);
-void get_usage(struct drbd_cmd *cm, enum usage_type);
-void events_usage(struct drbd_cmd *cm, enum usage_type);
+static void config_usage(struct drbd_cmd *cm, enum usage_type);
+static void get_usage(struct drbd_cmd *cm, enum usage_type);
+static void events_usage(struct drbd_cmd *cm, enum usage_type);
 
 // sub usage functions for config_usage
-int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
-int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
-int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
-int string_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int string_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub usage function for config_usage as xml
-void numeric_opt_xml(struct drbd_option *option);
-void handler_opt_xml(struct drbd_option *option);
-void bit_opt_xml(struct drbd_option *option);
-void string_opt_xml(struct drbd_option *option);
+static void numeric_opt_xml(struct drbd_option *option);
+static void handler_opt_xml(struct drbd_option *option);
+static void bit_opt_xml(struct drbd_option *option);
+static void string_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
-int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int role_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int sh_status_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int role_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int sh_status_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
 
 // convert functions for arguments
-int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 
 // convert functions for options
-int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
-int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+static int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+static int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+static int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+static int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
+static int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
 
 // show functions for options (used by show_scmd)
-void show_numeric(struct drbd_option *od, unsigned short* tp);
-void show_handler(struct drbd_option *od, unsigned short* tp);
-void show_bit(struct drbd_option *od, unsigned short* tp);
-void show_string(struct drbd_option *od, unsigned short* tp);
+static void show_numeric(struct drbd_option *od, unsigned short* tp);
+static void show_handler(struct drbd_option *od, unsigned short* tp);
+static void show_bit(struct drbd_option *od, unsigned short* tp);
+static void show_string(struct drbd_option *od, unsigned short* tp);
 
 // sub functions for events_cmd
-int print_broadcast_events(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
-int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
-int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+static int print_broadcast_events(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+static int w_connected_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
+static int w_synced_state(unsigned int seq, int, struct drbd_nl_cfg_reply *reply);
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -466,7 +466,7 @@ int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the envir
 int lock_fd;
 unsigned int cn_idx;
 
-int dump_tag_list(unsigned short *tlc)
+static int dump_tag_list(unsigned short *tlc)
 {
 	enum drbd_tags tag;
 	unsigned int tag_nr;
@@ -515,7 +515,7 @@ int dump_tag_list(unsigned short *tlc)
 	return found_unknown;
 }
 
-struct drbd_tag_list *create_tag_list(int size)
+static struct drbd_tag_list *create_tag_list(int size)
 {
 	struct drbd_tag_list *tl;
 
@@ -532,7 +532,7 @@ struct drbd_tag_list *create_tag_list(int size)
 	return tl;
 }
 
-void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
+static void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 {
 	if(data_len > tag_descriptions[tag_number(tag)].max_len) {
 		fprintf(stderr, "The value for %s may only be %d byte long."
@@ -554,13 +554,13 @@ void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 	tl->tag_list_cpos = (unsigned short*)((char*)tl->tag_list_cpos + data_len);
 }
 
-void free_tag_list(struct drbd_tag_list *tl)
+static void free_tag_list(struct drbd_tag_list *tl)
 {
 	free(tl->nl_header);
 	free(tl);
 }
 
-int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 {
 	struct stat sb;
 	int device_fd;
@@ -588,7 +588,7 @@ int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg
 	return NO_ERROR;
 }
 
-int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 {
 	int idx;
 
@@ -601,7 +601,7 @@ int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	return NO_ERROR;
 }
 
-const char* addr_part(const char* s)
+static const char* addr_part(const char* s)
 {
 	static char buffer[200];
 	char *b;
@@ -615,7 +615,7 @@ const char* addr_part(const char* s)
 	return s;
 }
 
-int port_part(const char* s)
+static int port_part(const char* s)
 {
 	char *b;
 
@@ -626,7 +626,7 @@ int port_part(const char* s)
 	return 7788;
 }
 
-void resolv6(char *name, struct in6_addr *addr)
+static void resolv6(char *name, struct in6_addr *addr)
 {
 	int rv;
 	struct hostent *he;
@@ -644,7 +644,7 @@ void resolv6(char *name, struct in6_addr *addr)
 	}
 }
 
-unsigned long resolv(const char* name)
+static unsigned long resolv(const char* name)
 {
 	unsigned long retval;
 
@@ -691,7 +691,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 		*port = 7788;
 }
 
-int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 {
 	static int mind_af_set = 0;
 	struct sockaddr_in addr;
@@ -728,7 +728,7 @@ int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	return NO_ERROR;
 }
 
-int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+static int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 {
 	int prot;
 
@@ -748,7 +748,7 @@ int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
 	return NO_ERROR;
 }
 
-int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
+static int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attribute((unused)))
 {
 	char bit=1;
 
@@ -760,7 +760,7 @@ int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg __attri
 /* It will only print the WARNING if the warn flag is set
    with the _first_ call! */
 #define PROC_NET_AF_SSOCKS_FAMILY "/proc/net/af_sci/family"
-int get_af_ssocks(int warn)
+static int get_af_ssocks(int warn)
 {
 	char buf[16];
 	int c, fd;
@@ -795,7 +795,7 @@ int get_af_ssocks(int warn)
 	return af;
 }
 
-int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+static int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	int err = conv_numeric(od, tl, arg);
 	long long l = m_strtoll(arg, 0);
@@ -810,7 +810,7 @@ int conv_sndbuf(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	return NO_ERROR;
 }
 
-int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+static int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const long long min = od->numeric_param.min;
 	const long long max = od->numeric_param.max;
@@ -842,7 +842,7 @@ int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	return NO_ERROR;
 }
 
-int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+static int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	const char** handler_names = od->handler_param.handler_names;
 	const int number_of_handlers = od->handler_param.number_of_handlers;
@@ -865,7 +865,7 @@ int conv_handler(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 	return OTHER_ERROR;
 }
 
-int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
+static int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 {
 	add_tag(tl,od->tag,arg,strlen(arg)+1);
 
@@ -873,7 +873,7 @@ int conv_string(struct drbd_option *od, struct drbd_tag_list *tl, char* arg)
 }
 
 
-struct option *	make_longoptions(struct drbd_option* od)
+static struct option *	make_longoptions(struct drbd_option* od)
 {
 	/* room for up to N options,
 	 * plus set-defaults, create-device, and the terminating NULL */
@@ -917,7 +917,7 @@ struct option *	make_longoptions(struct drbd_option* od)
 	return buffer;
 }
 
-struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
+static struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 {
 	if(!od) return NULL;
 	while(od->name) {
@@ -929,7 +929,7 @@ struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
 }
 
 /* prepends global devname to output (if any) */
-int print_config_error(int err_no)
+static int print_config_error(int err_no)
 {
 	int rv=0;
 
@@ -977,19 +977,19 @@ int print_config_error(int err_no)
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
 
 /* cmdname and optind are global variables */
-void warn_unrecognized_option(char **argv)
+static void warn_unrecognized_option(char **argv)
 {
 	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
 		cmdname, argv[0], argv[optind - 1]);
 }
 
-void warn_missing_required_arg(char **argv)
+static void warn_missing_required_arg(char **argv)
 {
 	fprintf(stderr, "%s %s: option '%s' requires an argument\n",
 		cmdname, argv[0], argv[optind - 1]);
 }
 
-void warn_print_excess_args(int argc, char **argv, int i)
+static void warn_print_excess_args(int argc, char **argv, int i)
 {
 	fprintf(stderr, "Ignoring excess arguments:");
 	for (; i < argc; i++)
@@ -997,7 +997,7 @@ void warn_print_excess_args(int argc, char **argv, int i)
 	printf("\n");
 }
 
-void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
+static void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
 {
 	int i;
 	if (!debug_dump_argv)
@@ -1016,7 +1016,7 @@ void dump_argv(int argc, char **argv, int first_non_option, int n_known_args)
 	fprintf(stderr, "`--\n");
 }
 
-int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
 	struct drbd_nl_cfg_reply *reply;
@@ -1106,7 +1106,7 @@ error:
 	return rv;
 }
 
-int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	return print_config_error(_generic_config_cmd(cm, minor, argc, argv));
 }
@@ -1114,7 +1114,7 @@ int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 #define ASSERT(exp) if (!(exp)) \
 		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
 
-void show_af(struct drbd_option *od, unsigned short* tp)
+static void show_af(struct drbd_option *od, unsigned short* tp)
 {
 	int af_ssocks = get_af_ssocks(0);
 	int val;
@@ -1135,7 +1135,7 @@ void show_af(struct drbd_option *od, unsigned short* tp)
 		printf(";\n");
 }
 
-void show_numeric(struct drbd_option *od, unsigned short* tp)
+static void show_numeric(struct drbd_option *od, unsigned short* tp)
 {
 	long long val;
 	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
@@ -1164,7 +1164,7 @@ void show_numeric(struct drbd_option *od, unsigned short* tp)
 	}
 }
 
-void show_handler(struct drbd_option *od, unsigned short* tp)
+static void show_handler(struct drbd_option *od, unsigned short* tp)
 {
 	const char** handler_names = od->handler_param.handler_names;
 	int i;
@@ -1177,20 +1177,20 @@ void show_handler(struct drbd_option *od, unsigned short* tp)
 	printf(";\n");
 }
 
-void show_bit(struct drbd_option *od, unsigned short* tp)
+static void show_bit(struct drbd_option *od, unsigned short* tp)
 {
 	ASSERT( tag_type(*tp++) == TT_BIT );
 	ASSERT( *tp++ == sizeof(char) );
 	if(*(char*)tp) printf("\t%-16s;\n",od->name);
 }
 
-void show_string(struct drbd_option *od, unsigned short* tp)
+static void show_string(struct drbd_option *od, unsigned short* tp)
 {
 	ASSERT( tag_type(*tp++) == TT_STRING );
 	if( *tp++ > 0 && *(char*)tp) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
 }
 
-unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
+static unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
 {
 	enum drbd_tags t;
 	int len;
@@ -1204,7 +1204,7 @@ unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
 	return NULL;
 }
 
-void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect_name)
+static void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect_name)
 {
 	unsigned short *tp;
 	int opened = 0;
@@ -1227,7 +1227,7 @@ void print_options(struct drbd_option *od, unsigned short *tlc, const char* sect
 }
 
 
-int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
+static int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
 		     char** val, unsigned int* len)
 {
 	unsigned short *tp;
@@ -1241,7 +1241,7 @@ int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
 	return 0;
 }
 
-int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** val)
+static int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** val)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
@@ -1256,7 +1256,7 @@ int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** val)
 	return 0;
 }
 
-int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
+static int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
@@ -1269,7 +1269,7 @@ int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
-int consume_tag_u64(enum drbd_tags tag, unsigned short *tlc, unsigned long long* val)
+static int consume_tag_u64(enum drbd_tags tag, unsigned short *tlc, unsigned long long* val)
 {
 	unsigned short *tp;
 	unsigned short len;
@@ -1295,7 +1295,7 @@ int consume_tag_u64(enum drbd_tags tag, unsigned short *tlc, unsigned long long*
 	return 0;
 }
 
-int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
+static int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 {
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
@@ -1308,7 +1308,7 @@ int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
-int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
+static int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 		    char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
@@ -1365,7 +1365,7 @@ int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
 	return rv;
 }
 
-char *af_to_str(int af)
+static char *af_to_str(int af)
 {
 	if (af == AF_INET)
 		return "ipv4";
@@ -1376,7 +1376,7 @@ char *af_to_str(int af)
 	else return "unknown";
 }
 
-void show_address(void* address, int addr_len)
+static void show_address(void* address, int addr_len)
 {
 	struct sockaddr     *addr;
 	struct sockaddr_in  *addr4;
@@ -1401,10 +1401,10 @@ void show_address(void* address, int addr_len)
 	}
 }
 
-int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
+static int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 {
 	int idx = idx;
-	char *str, *backing_dev, *address;
+	char *str = NULL, *backing_dev, *address;
 	unsigned int addr_len = 0;
 
 	// find all commands that have options and print those...
@@ -1455,7 +1455,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 	return 0;
 }
 
-int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
+static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor, unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
@@ -1507,7 +1507,7 @@ int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
+static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor, unsigned short *rtl)
 {
 /* variable prefix; maybe rather make that a command line parameter?
@@ -1576,7 +1576,7 @@ int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 #undef _P
 }
 
-int role_scmd(struct drbd_cmd *cm __attribute((unused)),
+static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
@@ -1591,7 +1591,7 @@ int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
+static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
@@ -1606,7 +1606,7 @@ int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
+static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		int minor __attribute((unused)),
 		unsigned short *rtl)
 {
@@ -1621,7 +1621,7 @@ int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	return 0;
 }
 
-int uuids_scmd(struct drbd_cmd *cm,
+static int uuids_scmd(struct drbd_cmd *cm,
 	       int minor __attribute((unused)),
 	       unsigned short *rtl)
 {
@@ -1668,7 +1668,7 @@ static struct drbd_cmd *find_cmd_by_name(char *name)
 	return NULL;
 }
 
-int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 {
 	int rv;
 	int success;
@@ -1691,7 +1691,7 @@ int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
 }
 
 
-void print_digest(const char* label, const int len, const unsigned char *hash)
+static void print_digest(const char* label, const int len, const unsigned char *hash)
 {
 	int i;
 	printf("\t%s: ", label);
@@ -1700,12 +1700,12 @@ void print_digest(const char* label, const int len, const unsigned char *hash)
 	printf("\n");
 }
 
-static inline char printable_or_dot(char c)
+static char printable_or_dot(char c)
 {
 	return (' ' < c && c <= '~') ? c : '.';
 }
 
-void print_hex_line(int offset, unsigned char *data)
+static void print_hex_line(int offset, unsigned char *data)
 {
 
 	printf(	" %04x:"
@@ -1728,7 +1728,7 @@ void print_hex_line(int offset, unsigned char *data)
 }
 
 /* successive identical lines are collapsed into just printing one star */
-void print_hex_dump(int len, void *data)
+static void print_hex_dump(int len, void *data)
 {
 	int i;
 	int star = 0;
@@ -1749,7 +1749,7 @@ void print_hex_dump(int len, void *data)
 	printf(" %04x.\n", len);
 }
 
-void print_dump_ee(struct drbd_nl_cfg_reply *reply)
+static void print_dump_ee(struct drbd_nl_cfg_reply *reply)
 {
 	unsigned long long sector = -1ULL;
 	unsigned long long block_id = 0;
@@ -1795,7 +1795,7 @@ void print_dump_ee(struct drbd_nl_cfg_reply *reply)
 	print_hex_dump(size,data);
 }
 
-int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
+static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 			   struct drbd_nl_cfg_reply *reply)
 {
 	union drbd_state state;
@@ -1851,7 +1851,7 @@ int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 	return 1;
 }
 
-int w_connected_state(unsigned int seq __attribute((unused)),
+static int w_connected_state(unsigned int seq __attribute((unused)),
 		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
@@ -1867,7 +1867,7 @@ int w_connected_state(unsigned int seq __attribute((unused)),
 	return 1;
 }
 
-int w_synced_state(unsigned int seq __attribute((unused)),
+static int w_synced_state(unsigned int seq __attribute((unused)),
 		   int wait_after_sb,
 		   struct drbd_nl_cfg_reply *reply)
 {
@@ -1882,7 +1882,7 @@ int w_synced_state(unsigned int seq __attribute((unused)),
 	return 1;
 }
 
-int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
+static int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 {
 	void *buffer;
 	struct cn_msg *cn_reply;
@@ -2078,7 +2078,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 	return (rr == -2) ? 5 : 0;
 }
 
-int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
+static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c} %lld ... %lld]",
 			option->name, option->short_name,
@@ -2086,7 +2086,7 @@ int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 			option->numeric_param.max);
 }
 
-int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
+static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	const char** handlers;
 	int i, chars=0,first=1;
@@ -2106,19 +2106,19 @@ int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 	return chars;
 }
 
-int bit_opt_usage(struct drbd_option *option, char* str, int strlen)
+static int bit_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c}]",
 			option->name, option->short_name);
 }
 
-int string_opt_usage(struct drbd_option *option, char* str, int strlen)
+static int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c} <str>]",
 			option->name, option->short_name);
 }
 
-void af_opt_xml(struct drbd_option *option)
+static void af_opt_xml(struct drbd_option *option)
 {
 	printf("\t<option name=\"%s\" type=\"addrfamily\">\n",option->name);
 	printf("\t\t<addrfamily>%s</addrfamily>\n", "IPv4");
@@ -2126,7 +2126,7 @@ void af_opt_xml(struct drbd_option *option)
 	printf("\t</option>\n");
 }
 
-void numeric_opt_xml(struct drbd_option *option)
+static void numeric_opt_xml(struct drbd_option *option)
 {
 	printf("\t<option name=\"%s\" type=\"numeric\">\n",option->name);
 	printf("\t\t<min>%lld</min>\n",option->numeric_param.min);
@@ -2144,7 +2144,7 @@ void numeric_opt_xml(struct drbd_option *option)
 	printf("\t</option>\n");
 }
 
-void handler_opt_xml(struct drbd_option *option)
+static void handler_opt_xml(struct drbd_option *option)
 {
 	const char** handlers;
 	int i;
@@ -2159,20 +2159,20 @@ void handler_opt_xml(struct drbd_option *option)
 	printf("\t</option>\n");
 }
 
-void bit_opt_xml(struct drbd_option *option)
+static void bit_opt_xml(struct drbd_option *option)
 {
 	printf("\t<option name=\"%s\" type=\"boolean\">\n",option->name);
 	printf("\t</option>\n");
 }
 
-void string_opt_xml(struct drbd_option *option)
+static void string_opt_xml(struct drbd_option *option)
 {
 	printf("\t<option name=\"%s\" type=\"string\">\n",option->name);
 	printf("\t</option>\n");
 }
 
 
-void config_usage(struct drbd_cmd *cm, enum usage_type ut)
+static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
 	struct drbd_option *options;
@@ -2250,7 +2250,7 @@ void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	printf("%s\n",line);
 }
 
-void get_usage(struct drbd_cmd *cm, enum usage_type ut)
+static void get_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	if(ut == BRIEF) {
 		printf(" %-39s", cm->cmd);
@@ -2259,7 +2259,7 @@ void get_usage(struct drbd_cmd *cm, enum usage_type ut)
 	}
 }
 
-void events_usage(struct drbd_cmd *cm, enum usage_type ut)
+static void events_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct option *lo;
 	char line[41];
@@ -2278,7 +2278,7 @@ void events_usage(struct drbd_cmd *cm, enum usage_type ut)
 	}
 }
 
-void print_command_usage(int i, const char *addinfo, enum usage_type ut)
+static void print_command_usage(int i, const char *addinfo, enum usage_type ut)
 {
 	if(ut != XML) printf("USAGE:\n");
 	commands[i].usage(commands+i,ut);
@@ -2289,7 +2289,7 @@ void print_command_usage(int i, const char *addinfo, enum usage_type ut)
 	}
 }
 
-void print_usage(const char* addinfo)
+static void print_usage(const char* addinfo)
 {
 	size_t i;
 
@@ -2318,7 +2318,7 @@ void print_usage(const char* addinfo)
 	exit(20);
 }
 
-int open_cn()
+static int open_cn()
 {
 	int sk_nl;
 	int err;
@@ -2353,7 +2353,7 @@ int open_cn()
 }
 
 
-void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
+static void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 {
 	static __u32 cn_seq = 1;
 	struct cn_msg *cn_hdr;
@@ -2374,7 +2374,7 @@ void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 }
 
 
-int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
+static int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 {
 	int rr;
 
@@ -2388,7 +2388,7 @@ int send_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size)
 	return rr;
 }
 
-int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms)
+static int receive_cn(int sk_nl, struct nlmsghdr* nl_hdr, int size, int timeout_ms)
 {
 	struct pollfd pfd;
 	int rr;
@@ -2433,7 +2433,7 @@ int receive_reply_cn(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hd
 	return rr;
 }
 
-int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
+static int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 		     int size, int timeout_ms)
 {
 	int rr;
@@ -2455,12 +2455,12 @@ int call_drbd(int sk_nl, struct drbd_tag_list *tl, struct nlmsghdr* nl_hdr,
 	return rr;
 }
 
-void close_cn(int sk_nl)
+static void close_cn(int sk_nl)
 {
 	close(sk_nl);
 }
 
-int is_drbd_driver_missing(void)
+static int is_drbd_driver_missing(void)
 {
 	struct stat sb;
 	FILE *cn_idx_file;
