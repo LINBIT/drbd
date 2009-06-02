@@ -601,31 +601,6 @@ static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char*
 	return NO_ERROR;
 }
 
-static const char* addr_part(const char* s)
-{
-	static char buffer[200];
-	char *b;
-
-	b=strchr(s,':');
-	if(b) {
-		strncpy(buffer,s,b-s);
-		buffer[b-s]=0;
-		return buffer;
-	}
-	return s;
-}
-
-static int port_part(const char* s)
-{
-	char *b;
-
-	b=strchr(s,':');
-
-	// m_strtoll_range(b+1,1, "port", DRBD_PORT_MIN, DRBD_PORT_MAX);
-	if(b) return m_strtoll(b+1,1);
-	return 7788;
-}
-
 static void resolv6(char *name, struct in6_addr *addr)
 {
 	int rv;
@@ -1113,27 +1088,6 @@ static int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **a
 
 #define ASSERT(exp) if (!(exp)) \
 		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
-
-static void show_af(struct drbd_option *od, unsigned short* tp)
-{
-	int af_ssocks = get_af_ssocks(0);
-	int val;
-	const char *msg;
-
-	ASSERT(tag_type(*tp++) == TT_INTEGER);
-	ASSERT( *tp++ == sizeof(int) );
-	val = *(int*)tp;
-
-	msg = (val == af_ssocks) ? "ssocks" :
-	      (val == AF_INET) ? "IPv4" :
-	      "UNKNOWN";
-	printf("\t%-16s\t%s", od->name, msg);
-	if (val == AF_INET) printf(" _is_default");
-	if (val != AF_INET && val != af_ssocks)
-		printf("; # %u ??\n", val);
-	else
-		printf(";\n");
-}
 
 static void show_numeric(struct drbd_option *od, unsigned short* tp)
 {
@@ -2116,14 +2070,6 @@ static int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	return snprintf(str,strlen," [{--%s|-%c} <str>]",
 			option->name, option->short_name);
-}
-
-static void af_opt_xml(struct drbd_option *option)
-{
-	printf("\t<option name=\"%s\" type=\"addrfamily\">\n",option->name);
-	printf("\t\t<addrfamily>%s</addrfamily>\n", "IPv4");
-	printf("\t\t<addrfamily>%s</addrfamily>\n", "SSOCKS");
-	printf("\t</option>\n");
 }
 
 static void numeric_opt_xml(struct drbd_option *option)
