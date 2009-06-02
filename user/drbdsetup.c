@@ -1490,9 +1490,7 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf("%s_flags_peer_isp=\n", _P);
 		printf("%s_flags_user_isp=\n", _P);
 		printf("%s_resynced_percent=\n", _P);
-		return 0;
-	}
-
+	} else {
 	printf( "%s_known=Configured\n\n"
 		/* connection state */
 		"%s_cstate=%s\n"
@@ -1522,8 +1520,8 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf("%i.%i\n", synced / 10, synced % 10);
 	else
 		printf("\n");
-
-	printf("\n_sh_status_process\n\n\n");
+	}
+	printf("\n%s_sh_status_process\n\n\n", _P);
 
 	fflush(stdout);
 	return 0;
