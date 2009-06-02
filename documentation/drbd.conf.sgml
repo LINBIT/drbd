@@ -284,7 +284,7 @@ resource r0 {
     by the DRBD system in response to certain events.
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
-    <option>pri-lost</option>, <option>outdate-peer</option>,
+    <option>pri-lost</option>, <option>fence-peer</option> (formerly oudate-peer),
     <option>local-io-error</option>, <option>split-brain</option>,
     <option>before-resync-target</option>, <option>after-resync-target</option>.
   </para>
@@ -488,17 +488,17 @@ resource r0 {
       </para></listitem></varlistentry>
     <varlistentry><term><option>resource-only</option></term>
       <listitem><para>
-	If a node becomes a disconnected primary, it tries to outdate
-	the peer's disk. This is done by calling the outdate-peer
+	If a node becomes a disconnected primary, it tries to fence
+	the peer's disk. This is done by calling the fence-peer
 	handler. The handler is supposed to reach the other node over
-	alternative communication paths and call 'drbdadm outdate
+	alternative communication paths and call 'drbdadm fence
 	res' there.
       </para></listitem></varlistentry>
     <varlistentry><term><option>resource-and-stonith</option></term>
       <listitem><para>
 	If a node becomes a disconnected primary, it freezes all
-	its IO operations and calls its outdate-peer handler. The
-	outdate-peer handler is supposed to reach the peer over
+	its IO operations and calls its fence-peer handler. The
+	fence-peer handler is supposed to reach the peer over
 	alternative communication paths and call 'drbdadm outdate
 	res' there. In case it cannot reach the peer it should
 	stonith the peer. IO is resumed as soon as the situation
@@ -1153,11 +1153,11 @@ the unit is 1 second.
   </para></listitem> </varlistentry>
 
 <varlistentry>
-  <term><option>outdate-peer <replaceable>cmd</replaceable></option></term>
+  <term><option>fence-peer <replaceable>cmd</replaceable></option></term>
   <listitem><para>
-  <indexterm><primary>drbd.conf</primary><secondary>outdate-peer </secondary></indexterm>
+  <indexterm><primary>drbd.conf</primary><secondary>fence-peer </secondary></indexterm>
   The handler is part of the <option>fencing</option>
-  mechanism.  This handler is called in case the node needs to outdate the
+  mechanism.  This handler is called in case the node needs to fence the
   peer's disk. It should use other communication paths than DRBD's network
   link.  </para></listitem> </varlistentry>
 

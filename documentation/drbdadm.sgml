@@ -307,7 +307,7 @@
         <listitem><para>
 	<indexterm><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
           Used to mark the node's data as outdated. Usually used by the
-	  peer's outdate-peer handler.
+	  peer's fence-peer handler.
         </para></listitem>
       </varlistentry>
 

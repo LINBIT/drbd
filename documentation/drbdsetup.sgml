@@ -340,7 +340,7 @@
 	        <varlistentry><term><option>resource-only</option></term>
 		<listitem><para>
 		  If a node becomes a disconnected primary. it tries to outdate
-		  the peer's disk. This is done by calling the outdate-peer
+		  the peer's disk. This is done by calling the fence-peer
 		  handler. The handler is supposed to reach the other node over
 		  alternative communication paths and call 'drbdadm outdate
 		  res' there.
@@ -348,8 +348,8 @@
 		<varlistentry><term><option>resource-and-stonith</option></term>
 		<listitem><para>
 		  If a node becomes a disconnected primary, it freezes all
-		  its IO operations and calls its outdate-peer handler. The
-		  outdate-peer handler is supposed to reach the peer over
+		  its IO operations and calls its fence-peer handler. The
+		  fence-peer handler is supposed to reach the peer over
 		  alternative communication paths and call 'drbdadm outdate
 		  res' there. In case it cannot reach the peer, it should
 		  stonith the peer. IO is resumed as soon as the situation
@@ -1251,7 +1251,7 @@
       <para>
         Mark the data on the local backing storage as outdated. An outdated
 	device refuses to become primary. This is used in conjunction with
-	<option>fencing</option> and by the peer's outdate-peer handler.
+	<option>fencing</option> and by the peer's fence-peer handler.
       </para>
     </refsect2>
     <refsect2>
@@ -1288,7 +1288,7 @@
       <title>resume-io</title>
       <indexterm><primary>drbdsetup</primary><secondary>resume-io</secondary></indexterm>
       <para>
-	If the outdate-peer handler fails to stonith the peer node,
+	If the fence-peer handler fails to stonith the peer node,
 	and your <option>fencing</option> policy is set to
 	resource-and-stonith, you can unfreeze IO operations with this
 	command.

@@ -13,7 +13,7 @@ drbd.sh.rhcs
 drbd.metadata.rhcs
 	resource script metadata for Red Hat Cluster Suite rgmanager
 outdate-peer.sh
-	example implementation of the outdate-peer mechanism using ssh
+	example implementation of the fence-peer mechanism using ssh
 drbd.conf
 	commented example configuration
 drbd-overview.pl
