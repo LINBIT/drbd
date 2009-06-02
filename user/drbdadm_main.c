@@ -1398,6 +1398,8 @@ int adm_status_xml(struct d_resource* res,const char* cmd)
   }
 
   for_each_resource(r,t,res) {
+    if (r->ignore)
+	    continue;
     rv = adm_generic(r,cmd,SLEEPS_SHORT);
     if (rv)
 	    break;
@@ -1420,6 +1422,8 @@ int sh_status(struct d_resource* res,const char* cmd)
   }
 
   for_each_resource(r,t,res) {
+    if (r->ignore)
+	    continue;
     printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
 		   shell_escape(r->me->lower->name) : "");
     printf("_stacked_on_device=%s\n", r->stacked && r->me->lower ?
