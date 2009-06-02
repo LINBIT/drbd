@@ -125,12 +125,12 @@ void drbd_nl_send_reply(struct cn_msg *, int);
 
 int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 {
-	static char *envp[] = { "HOME=/",
-				"TERM=linux",
-				"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-				NULL, /* Will be set to af */
-				NULL, /* Will be set to ad */
-				NULL };
+	char *envp[] = { "HOME=/",
+			"TERM=linux",
+			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+			NULL, /* Will be set to address family */
+			NULL, /* Will be set to address */
+			NULL };
 
 	char mb[12], af[20], ad[60], *afs;
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
@@ -159,9 +159,6 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 		envp[3]=af;
 		envp[4]=ad;
 		put_net_conf(mdev);
-	} else {
-		envp[3]=NULL;
-		envp[4]=NULL;
 	}
 
 	dev_info(DEV, "helper command: %s %s %s\n", usermode_helper, cmd, mb);
