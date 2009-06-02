@@ -1491,35 +1491,35 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf("%s_flags_user_isp=\n", _P);
 		printf("%s_resynced_percent=\n", _P);
 	} else {
-	printf( "%s_known=Configured\n\n"
-		/* connection state */
-		"%s_cstate=%s\n"
-		/* role */
-		"%s_role=%s\n"
-		"%s_peer=%s\n"
-		/* disk state */
-		"%s_disk=%s\n"
-		"%s_pdsk=%s\n\n",
-		_P,
-		_P, conns_to_name(state.conn),
-		_P, roles_to_name(state.role),
-		_P, roles_to_name(state.peer),
-		_P, disks_to_name(state.disk),
-		_P, disks_to_name(state.pdsk));
+		printf( "%s_known=Configured\n\n"
+			/* connection state */
+			"%s_cstate=%s\n"
+			/* role */
+			"%s_role=%s\n"
+			"%s_peer=%s\n"
+			/* disk state */
+			"%s_disk=%s\n"
+			"%s_pdsk=%s\n\n",
+			_P,
+			_P, conns_to_name(state.conn),
+			_P, roles_to_name(state.role),
+			_P, roles_to_name(state.peer),
+			_P, disks_to_name(state.disk),
+			_P, disks_to_name(state.pdsk));
 
-	/* io suspended ? */
-	printf("%s_flags_susp=%s\n", _P, state.susp ? "1" : "");
-	/* reason why sync is paused */
-	printf("%s_flags_aftr_isp=%s\n", _P, state.aftr_isp ? "1" : "");
-	printf("%s_flags_peer_isp=%s\n", _P, state.peer_isp ? "1" : "");
-	printf("%s_flags_user_isp=%s\n\n", _P, state.user_isp ? "1" : "");
+		/* io suspended ? */
+		printf("%s_flags_susp=%s\n", _P, state.susp ? "1" : "");
+		/* reason why sync is paused */
+		printf("%s_flags_aftr_isp=%s\n", _P, state.aftr_isp ? "1" : "");
+		printf("%s_flags_peer_isp=%s\n", _P, state.peer_isp ? "1" : "");
+		printf("%s_flags_user_isp=%s\n\n", _P, state.user_isp ? "1" : "");
 
-	printf("%s_resynced_percent=", _P);
+		printf("%s_resynced_percent=", _P);
 
-	if (consume_tag_int(T_sync_progress, rtl, &synced))
-		printf("%i.%i\n", synced / 10, synced % 10);
-	else
-		printf("\n");
+		if (consume_tag_int(T_sync_progress, rtl, &synced))
+			printf("%i.%i\n", synced / 10, synced % 10);
+		else
+			printf("\n");
 	}
 	printf("\n%s_sh_status_process\n\n\n", _P);
 
