@@ -491,7 +491,7 @@ resource r0 {
 	If a node becomes a disconnected primary, it tries to fence
 	the peer's disk. This is done by calling the fence-peer
 	handler. The handler is supposed to reach the other node over
-	alternative communication paths and call 'drbdadm fence
+	alternative communication paths and call 'drbdadm outdate
 	res' there.
       </para></listitem></varlistentry>
     <varlistentry><term><option>resource-and-stonith</option></term>
