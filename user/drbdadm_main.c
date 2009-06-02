@@ -1084,25 +1084,6 @@ static void expand_common(void)
 	}
 }
 
-static void post_parse(struct adm_cmd *cmd)
-{
-	struct d_resource *res,*tmp;
-
-	for_each_resource(res, tmp, config)
-		if (res->stacked_on_one)
-			set_on_hosts_in_res(res);
-
-	for_each_resource(res, tmp, config)
-		set_me_in_resource(res); // Needs "on_hosts" set in this res
-
-	for_each_resource(res, tmp, config)
-		set_peer_in_resource(res, cmd->need_peer); // Needs me already set
-
-	for_each_resource(res, tmp, config)
-		if (res->stacked_on_one)
-			set_disk_in_res(res); // Needs "me" set in all res
-}
-
 static void find_drbdcmd(char** cmd, char** pathes)
 {
   char **path;
@@ -3035,7 +3016,7 @@ int main(int argc, char** argv)
   if (!config_valid)
     exit(E_config_invalid);
 
-  post_parse(cmd);
+  post_parse(config, cmd->need_peer);
 
   if (!is_dump || dry_run || verbose)
     expand_common();

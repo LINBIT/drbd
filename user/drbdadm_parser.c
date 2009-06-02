@@ -1260,6 +1260,24 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	return res;
 }
 
+void post_parse(struct d_resource *config, int need_peer)
+{
+	struct d_resource *res,*tmp;
+
+	for_each_resource(res, tmp, config)
+		if (res->stacked_on_one)
+			set_on_hosts_in_res(res);
+
+	for_each_resource(res, tmp, config)
+		set_me_in_resource(res); // Needs "on_hosts" set in this res
+
+	for_each_resource(res, tmp, config)
+		set_peer_in_resource(res, need_peer); // Needs me already set
+
+	for_each_resource(res, tmp, config)
+		if (res->stacked_on_one)
+			set_disk_in_res(res); // Needs "me" set in all res
+}
 
 void include_file(FILE *f, char* name)
 {

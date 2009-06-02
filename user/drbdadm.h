@@ -178,6 +178,7 @@ enum pr_flags {
   IgnDiscardMyData = 8
 };
 extern struct d_resource* parse_resource(char*, enum pr_flags);
+extern void post_parse(struct d_resource *config, int need_peer);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct d_name *names);
 extern char *_names_to_str(char* buffer, struct d_name *names);
