@@ -605,6 +605,37 @@ static void parse_meta_disk(char **disk, char** index)
 	}
 }
 
+static void check_minor_nonsense(const char *devname, const int explicit_minor)
+{
+	if (!devname)
+		return;
+
+	/* if devname is set, it starts with /dev/drbd */
+	if (only_digits(devname + 9)) {
+		int m = strtol(devname + 9, NULL, 10);
+		if (m == explicit_minor)
+			return;
+
+		fprintf(stderr,
+			"%s:%d: explicit minor number must match with device name\n"
+			"\tTry \"device /dev/drbd%u minor %u;\",\n"
+			"\tor leave off either device name or explicit minor.\n"
+			"\tArbitrary device names must start with /dev/drbd_\n"
+			"\tmind the '_'! (/dev/ is optional, but drbd_ is required)\n",
+			config_file, fline, explicit_minor, explicit_minor);
+		config_valid = 0;
+		return;
+	} else if (devname[9] == '_')
+		return;
+
+	fprintf(stderr,
+		"%s:%d: arbitrary device name must start with /dev/drbd_\n"
+		"\tmind the '_'! (/dev/ is optional, but drbd_ is required)\n",
+		config_file, fline);
+	config_valid = 0;
+	return;
+}
+
 static void parse_device(struct d_name* on_hosts, int *minor, char **device)
 {
 	struct d_name *h;
@@ -648,6 +679,10 @@ static void parse_device(struct d_name* on_hosts, int *minor, char **device)
 		EXP(TK_INTEGER);
 		*minor = atoi(yylval.txt);
 		EXP(';');
+
+		/* if both device name and minor number are explicitly given,
+		 * force /dev/drbd<minor-number> or /dev/drbd_<arbitrary> */
+		check_minor_nonsense(*device, *minor);
 	}
 out:
 	for_each_host(h, on_hosts)

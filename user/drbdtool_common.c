@@ -250,26 +250,59 @@ int get_fd_lockfile_timeout(const char *path, int seconds)
 int dt_minor_of_dev(const char *device)
 {
 	struct stat sb;
+	long m;
+	int digits_only = only_digits(device);
+	const char *c = device;
 
-	if(stat(device,&sb)) {
-		// On udev/devfs based system the device nodes does not
-		// exist before the module is loaded. Therefore assume that
-		// the number in the device name is the minor number.
-		const char *c;
+	/* On udev/devfs based system the device nodes does not
+	 * exist before the drbd is created.
+	 *
+	 * If the device name starts with /dev/drbd followed by
+	 * only digits, or if only digits are given,
+	 * those digits are the minor number.
+	 *
+	 * Otherwise, we cannot reliably determine the minor number!
+	 *
+	 * We allow "arbitrary" device names in drbd.conf,
+	 * and those may well contain digits.
+	 * Interpreting any digits as minor number is dangerous!
+	 */
+	if (!digits_only) {
+		if (!strncmp("/dev/drbd", device, 9) &&
+		    only_digits(device + 9))
+			c = device + 9;
 
-		c=device;
-		while(*c) {
-			if(isdigit(*c))
-				return strtol(c,NULL,10);
-			c++;
-		}
-		/* if there is not even a digit in that name, fail. */
-		return -1;
+		/* if the device node exists,
+		 * and is a block device with the correct major,
+		 * do not enforce further naming conventions.
+		 * people without udev, and not using drbdadm
+		 * may do whatever they like. */
+		else if (!stat(device,&sb) &&
+			 S_ISBLK(sb.st_mode) &&
+			 major(sb.st_rdev) == LANANA_DRBD_MAJOR)
+			return minor(sb.st_rdev);
+
+		else
+			return -1;
 	}
 
-	return minor(sb.st_rdev);
+	/* ^[0-9]+$ or ^/dev/drbd[0-9]+$ */
+
+	errno = 0;
+	m = strtol(c, NULL, 10);
+	if (!errno)
+		return m;
+
+	return -1;
 }
 
+int only_digits(const char *s)
+{
+	const char *c;
+	for (c = s; isdigit(*c); c++)
+		;
+	return c != s && *c == 0;
+}
 
 int dt_lock_drbd(const char* device)
 {
@@ -278,8 +311,13 @@ int dt_lock_drbd(const char* device)
 	char lfname[40];
 	int dev_major,dev_minor;
 
-	dev_major = 147; //LANANA_DRBD_MAJOR;
-	if (!stat(device, &drbd_stat)) {
+	dev_major = LANANA_DRBD_MAJOR;
+
+	/* if called from drbdadm, "device" is usually just the minor number.
+	 * if someone happens to mkdir /0, drbdsetup 0 anything would simply
+	 * say "0 is not a block device!" */
+
+	if (!only_digits(device) && !stat(device, &drbd_stat)) {
 		if (!S_ISBLK(drbd_stat.st_mode)) {
 			fprintf(stderr, "%s is not a block device!\n", device);
 			exit(20);
@@ -304,8 +342,6 @@ int dt_lock_drbd(const char* device)
 	 * pretending it belongs to an other, you'll screw up completely.
 	 *
 	 * We should store something in the meta data to detect such abuses.
-	 * Philipp, see my suggestion for "/var/lib/drbd/drbd-toc",
-	 * or /etc/drbd/ for that matter ...
 	 */
 
 	/* NOTE that /var/lock/drbd-*-* may not be "secure",
@@ -317,7 +353,7 @@ int dt_lock_drbd(const char* device)
 	if (dev_minor < 0) {
 		fprintf(stderr,
 			"Could not determine device minor number of '%s'.\n"
-			"Try /dev/drbd<minor-number> instead.\n", device);
+			"Try /dev/drbd<minor-number> or just <minor-number> instead.\n", device);
 		exit(20);
 	}
 	snprintf(lfname,39,"/var/lock/drbd-%d-%d",dev_major,dev_minor);

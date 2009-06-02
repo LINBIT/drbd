@@ -40,6 +40,7 @@ enum new_strtoll_errs {
 
 struct option;
 
+extern int only_digits(const char *s);
 extern int dt_lock_drbd(const char* device);
 extern void dt_unlock_drbd(int lock_fd);
 extern void dt_release_lockfile(int drbd_fd);
