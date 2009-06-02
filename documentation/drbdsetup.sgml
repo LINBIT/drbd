@@ -42,6 +42,7 @@
       <arg>-i<arg choice="req"><replaceable>time</replaceable></arg></arg>
       <arg>-t<arg choice="req"><replaceable>val</replaceable></arg></arg>
       <arg>-S<arg choice="req"><replaceable>size</replaceable></arg></arg>
+      <arg>-r<arg choice="req"><replaceable>size</replaceable></arg></arg>
       <arg>-k<arg choice="req"><replaceable>count</replaceable></arg></arg>
       <arg>-e<arg choice="req"><replaceable>max_epoch_size</replaceable></arg></arg>
       <arg>-b<arg choice="req"><replaceable>max_buffers</replaceable></arg></arg>
@@ -555,6 +556,22 @@
 	    </para>
 	  </listitem>
 	</varlistentry>
+	<varlistentry>
+	  <term><option>-r</option>,
+	  <option>--rcvbuf-size <replaceable>size</replaceable></option></term>
+	  <listitem>
+	    <para>
+	      Packets received from the network are stored in the socket receive
+              buffer first. From there they are consumed by DRBD. Before 8.3.2 the
+              receive buffer's size was always set to the size of the socket
+              send buffer. Since 8.3.2 they can be tuned independently.
+              A value of 0 means that the kernel should autotune this.
+              The default <replaceable>size</replaceable> is
+	      128 KB, the default unit is KB.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
 	<varlistentry>
 	  <term><option>-k</option>,
 	  <option>--ko-count <replaceable>count</replaceable></option></term>

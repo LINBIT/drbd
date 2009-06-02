@@ -893,8 +893,12 @@ retry:
 
 	if (mdev->net_conf->sndbuf_size) {
 		sock->sk->sk_sndbuf = mdev->net_conf->sndbuf_size;
-		sock->sk->sk_rcvbuf = mdev->net_conf->sndbuf_size;
-		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK | SOCK_RCVBUF_LOCK;
+		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
+	}
+
+	if (mdev->net_conf->rcvbuf_size) {
+		sock->sk->sk_rcvbuf = mdev->net_conf->rcvbuf_size;
+		sock->sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
 	}
 
 	/* NOT YET ...

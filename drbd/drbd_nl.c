@@ -1212,6 +1212,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	new_conf->max_buffers	   = DRBD_MAX_BUFFERS_DEF;
 	new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
 	new_conf->sndbuf_size	   = DRBD_SNDBUF_SIZE_DEF;
+	new_conf->rcvbuf_size	   = DRBD_RCVBUF_SIZE_DEF;
 	new_conf->ko_count	   = DRBD_KO_COUNT_DEF;
 	new_conf->after_sb_0p	   = DRBD_AFTER_SB_0P_DEF;
 	new_conf->after_sb_1p	   = DRBD_AFTER_SB_1P_DEF;
@@ -1228,7 +1229,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (new_conf->two_primaries
-	&& (new_conf->wire_protocol != DRBD_PROT_C)) {
+	    && (new_conf->wire_protocol != DRBD_PROT_C)) {
 		retcode = ERR_NOT_PROTO_C;
 		goto fail;
 	};

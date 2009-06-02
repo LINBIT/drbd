@@ -102,6 +102,7 @@ ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}
 max-buffers		{ DP; CP; RC(MAX_BUFFERS); return TK_NET_OPTION;}
 sndbuf-size		{ DP; CP; RC(SNDBUF_SIZE); return TK_NET_OPTION;}
+rcvbuf-size		{ DP; CP; RC(RCVBUF_SIZE); return TK_NET_OPTION;}
 connect-int		{ DP; CP; RC(CONNECT_INT); return TK_NET_OPTION;}
 cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
 shared-secret		{ DP; CP; return TK_NET_OPTION;		}

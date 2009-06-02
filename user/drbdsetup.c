@@ -313,6 +313,7 @@ struct drbd_cmd commands[] = {
 		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") },
 		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") },
 		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN_sndbuf(SNDBUF_SIZE,1,"bytes") },
+		 { "rcvbuf-size",'r',	T_rcvbuf_size,	   EN_sndbuf(RCVBUF_SIZE,1,"bytes") },
 		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) },
 		 { "allow-two-primaries",'m',T_two_primaries, EB },
 		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
@@ -852,7 +853,7 @@ static struct option *	make_longoptions(struct drbd_option* od)
 {
 	/* room for up to N options,
 	 * plus set-defaults, create-device, and the terminating NULL */
-#define N 20
+#define N 30
 	static struct option buffer[N+3];
 	int i=0;
 

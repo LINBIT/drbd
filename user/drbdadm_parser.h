@@ -36,6 +36,7 @@ enum range_checks
 	R_MAX_BUFFERS,
 	R_MAX_EPOCH_SIZE,
 	R_SNDBUF_SIZE,
+	R_RCVBUF_SIZE,
 	R_KO_COUNT,
 	R_RATE,
 	R_GROUP,

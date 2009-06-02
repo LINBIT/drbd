@@ -190,6 +190,10 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_SNDBUF_SIZE_MIN,
 				DRBD_SNDBUF_SIZE_MAX);
 		break;
+	case R_RCVBUF_SIZE:
+		m_strtoll_range(value, 1, name, DRBD_RCVBUF_SIZE_MIN,
+				DRBD_RCVBUF_SIZE_MAX);
+		break;
 	case R_KO_COUNT:
 		m_strtoll_range(value, 1, name, DRBD_KO_COUNT_MIN,
 				DRBD_KO_COUNT_MAX);
