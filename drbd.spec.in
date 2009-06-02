@@ -146,7 +146,7 @@ ___
 /etc/ha.d/resource.d/drbddisk
 /etc/ha.d/resource.d/drbdupper
 /etc/xen/scripts/block-drbd
-/etc/udev/rules.d/65-drbd.rules
+/etc/udev/rules.d/65-drbd.rules*
 
 
 %defattr(644,root,root)
