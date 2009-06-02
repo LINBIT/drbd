@@ -17,6 +17,7 @@
 
 DEFAULTFILE="/etc/default/drbd"
 DRBDADM="/sbin/drbdadm"
+DRBDSETUP="/sbin/drbdsetup"
 PROC_DRBD="/proc/drbd"
 MODPROBE="/sbin/modprobe"
 RMMOD="/sbin/rmmod"
@@ -166,7 +167,20 @@ case "$1" in
     stop)
 	log_daemon_msg "Stopping all DRBD resources"
 	if [ -e $PROC_DRBD ] ; then
-		$DRBDADM down all
+		# bypass drbdadm and drbd config file and everything,
+		# to avoid leaving devices around that are not referenced by
+		# the current config file, or in case the current config file
+		# does not parse for some reason.
+		for d in /dev/drbd* ; do
+			[ -L "$d" ] && continue
+			[ -b "$d" ] || continue
+			M=$(umount "$d" 2>&1)
+			case $M in
+			*" not mounted") :;;
+			*) echo "$M" >&2 ;;
+			esac
+			$DRBDSETUP "$d" down
+		done
 		$RMMOD drbd
 	fi
 	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
