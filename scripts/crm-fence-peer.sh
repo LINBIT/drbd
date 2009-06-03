@@ -6,6 +6,11 @@ PROG=${0##*/}
 exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
 
 # check envars normally passed in by drbdadm
+# TODO DRBD_CONF is also passed in.  we may need to use it in the
+# xpath query, in case someone is crazy enough to use different
+# conf files with the _same_ resource name.
+# for now: do not do that, or hardcode the cib id of the master
+# in the handler section of your drbd conf file.
 for var in DRBD_RESOURCE; do
 	if [ -z "${!var}" ]; then
 		echo "Environment variable \$$var not found (this is normally passed in by drbdadm)." >&2
@@ -33,8 +38,6 @@ if [ -z "$CIB_RESOURCE" ]; then
 	echo "You must specify a resource defined in the CIB when using this handler." >&2
 	exit 1
 fi
-
-: ${DRBD_CONF:="usually /etc/drbd.conf"}
 
 DRBD_LOCAL_HOST=$(hostname)
 
