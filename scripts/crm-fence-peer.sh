@@ -15,8 +15,18 @@ done
 
 echo "invoked for $DRBD_RESOURCE"
 
-# The CIB resource name. Must be passed in.
+# The CIB resource name, may be passed in from commandline
 CIB_RESOURCE=${1}
+# if not passed in, try to "guess" it from the cib
+if [ -z "$CIB_RESOURCE" ]; then
+	# '//master[primitive[@type="drbd" and instance_attributes/nvpair[@name = "drbd_resource" and @value="r0"]]]/@id'
+	# would be what I want. But unfortunately the answer to that is empty, cibadmin cannot do that yet.
+	# fall back to sed.
+	CIB_RESOURCE=$(cibadmin --query --xpath \
+		'//master[primitive[@type="drbd" and instance_attributes/nvpair
+			[@name = "drbd_resource" and @value="r0"]]]' |
+		sed -ne '1 { s/^<master id="\([^"]*\)">$/\1/p; };q')
+fi
 
 # check arguments specified on command line
 if [ -z "$CIB_RESOURCE" ]; then
