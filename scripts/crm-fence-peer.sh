@@ -30,7 +30,7 @@ DRBD_LOCAL_HOST=$(hostname)
 case `basename $0` in
     crm-fence-peer.sh)
 	crm configure location \
-	    drbd-fence-${CIB_RESOURCE}${CIB_RESOURCE} \
+	    drbd-fence-${CIB_RESOURCE} ${CIB_RESOURCE} \
 	    rule \$id=drbd-fence-rule-${CIB_RESOURCE} \
 	    \$role="Master" -inf: \#uname ne ${DRBD_LOCAL_HOST}
 	rc=$?
