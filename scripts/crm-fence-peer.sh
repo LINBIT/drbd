@@ -4,6 +4,15 @@
 # try to get possible output on stdout/err to syslog
 PROG=${0##*/}
 exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
+
+# check envars normally passed in by drbdadm
+for var in DRBD_RESOURCE; do
+	if [ -z "${!var}" ]; then
+		echo "Environment variable \$$var not found (this is normally passed in by drbdadm)." >&2
+		exit 1
+	fi
+done
+
 echo "invoked for $DRBD_RESOURCE"
 
 # The CIB resource name. Must be passed in.
@@ -14,14 +23,6 @@ if [ -z "$CIB_RESOURCE" ]; then
 	echo "You must specify a resource defined in the CIB when using this handler." >&2
 	exit 1
 fi
-
-# check envars normally passed in by drbdadm
-for var in DRBD_RESOURCE; do
-	if [ -z "${!var}" ]; then
-		echo "Environment variable \$$var not found (this is normally passed in by drbdadm)." >&2
-		exit 1
-	fi
-done
 
 : ${DRBD_CONF:="usually /etc/drbd.conf"}
 
