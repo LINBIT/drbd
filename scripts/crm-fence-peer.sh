@@ -41,10 +41,13 @@ fi
 
 DRBD_LOCAL_HOST=$(hostname)
 
+xml_id=drbd-fence-$CIB_RESOURCE
+
 case `basename $0` in
     crm-fence-peer.sh)
+    	# if this id already exits, we may have lost a shootout
 	crm configure location \
-	    drbd-fence-${CIB_RESOURCE} ${CIB_RESOURCE} \
+	    $xml_id ${CIB_RESOURCE} \
 	    rule \$id=drbd-fence-rule-${CIB_RESOURCE} \
 	    \$role="Master" -inf: \#uname ne ${DRBD_LOCAL_HOST}
 	rc=$?
@@ -55,8 +58,13 @@ case `basename $0` in
 	fi
 	;;
     crm-unfence-peer.sh)
-	crm configure delete drbd-fence-${CIB_RESOURCE}
-	rc=$?
+	exists=$(crm configure show $xml_id)
+	if [[ $exists ]]; then
+		crm configure delete drbd-fence-${CIB_RESOURCE}
+		rc=$?
+	else
+		rc=0
+	fi
 	if [ $rc -eq 0 ]; then
 	    exit 0
 	fi
