@@ -31,8 +31,12 @@ DIST            :=$(strip \
   $(if $(wildcard /etc/debian_version),debian,\
   $(if $(wildcard /sbin/rcsyslog),suselike,))))))
 
+INST_COMPLETION := 1
+INST_RHCS := 0
+
 ifeq ($(DIST),slackware)
   INITD=$(PREFIX)/etc/rc.d/
+  INST_COMPLETION := 0
 endif
 
 ifeq ($(DIST),gentoo)
@@ -42,6 +46,15 @@ endif
 
 ifeq ($(DIST),redhat)
   INITD=$(PREFIX)/etc/rc.d/init.d/
+  INST_COMPLETION := 0
+  INST_RHCS := 1
+endif
+
+ifeq ($(DIST),redhat)
+  ifeq ($(shell if grep -q XenServer /etc/redhat-release; then echo xenserver; fi),xenserver)
+    INST_COMPLETION := 1
+    INST_RHCS := 0
+  endif
 endif
 
 ifeq ($(INITD),)
@@ -70,8 +83,8 @@ install-most:
 	fi
 	install -m 755 drbddisk $(PREFIX)/etc/ha.d/resource.d
 	install -m 755 drbdupper $(PREFIX)/etc/ha.d/resource.d
-	mkdir -p $(PREFIX)/usr/lib/ocf/resource.d/drbd
-	install -m 755 drbd.ocf $(PREFIX)/usr/lib/ocf/resource.d/drbd
+	mkdir -p $(PREFIX)/usr/lib/ocf/resource.d/linbit
+	install -m 755 drbd.ocf $(PREFIX)/usr/lib/ocf/resource.d/linbit/drbd
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
@@ -90,11 +103,9 @@ install-most:
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 	mkdir -p $(PREFIX)/etc/udev/rules.d
-ifneq ($(DIST),redhat)
- ifneq ($(DIST),slackware)
+ifneq ($(INST_COMPLETION),1)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
 	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
- endif
 endif
 	install -d $(PREFIX)/usr/sbin
 	# strip .pl on install,
@@ -103,7 +114,7 @@ endif
 ifeq ($(DIST),suselike)
 	ln -sf ../etc/init.d/drbd $(PREFIX)/sbin/rcdrbd
 endif
-ifeq ($(DIST),redhat)
+ifeq ($(INST_RHCS),1)
 	mkdir -p $(PREFIX)/usr/share/cluster
 	install -m 755 drbd.sh.rhcs $(PREFIX)/usr/share/cluster/drbd.sh
 	install -m 644 drbd.metadata.rhcs $(PREFIX)/usr/share/cluster/drbd.metadata

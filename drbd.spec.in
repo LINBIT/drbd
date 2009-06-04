@@ -145,6 +145,7 @@ ___
 /usr/lib/drbd/notify.sh
 /etc/ha.d/resource.d/drbddisk
 /etc/ha.d/resource.d/drbdupper
+/usr/lib/ocf/resource.d/linbit/drbd
 /etc/xen/scripts/block-drbd
 /etc/udev/rules.d/65-drbd.rules*
 
