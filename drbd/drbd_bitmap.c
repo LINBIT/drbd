@@ -26,6 +26,7 @@
 #include <linux/vmalloc.h>
 #include <linux/string.h>
 #include <linux/drbd.h>
+#include <asm/kmap_types.h>
 #include "drbd_int.h"
 
 /* OPAQUE outside this file!

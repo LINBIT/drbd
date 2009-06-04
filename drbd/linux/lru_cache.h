@@ -50,6 +50,7 @@ static inline void *kzalloc(size_t size, int flags)
 
 	return rv;
 }
+#undef NEED_BACKPORT_OF_KZALLOC
 #endif
 
 /* } compatibility crap */
