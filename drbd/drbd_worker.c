@@ -436,8 +436,8 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int max_segment_size = mdev->rq_queue->max_segment_size;
-	int number, i, size;
-	int align;
+	int number, i, size, pe, mx;
+	int align, queued, sndbuf;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -463,12 +463,39 @@ int w_make_resync_request(struct drbd_conf *mdev,
 		return 1;
 	}
 
-	number = SLEEP_TIME*mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
-	if (atomic_read(&mdev->rs_pending_cnt) > number)
-		goto requeue;
-	number -= atomic_read(&mdev->rs_pending_cnt);
+	number = SLEEP_TIME * mdev->sync_conf.rate / ((BM_BLOCK_SIZE/1024)*HZ);
+	pe = atomic_read(&mdev->rs_pending_cnt);
+
+	mutex_lock(&mdev->data.mutex);
+	if (mdev->data.socket)
+		mx = mdev->data.socket->sk->sk_rcvbuf / sizeof(struct p_block_req);
+	else
+		mx = 1;
+	mutex_unlock(&mdev->data.mutex);
+
+	/* For resync rates >160MB/sec, allow more pending RS requests */
+	if (number > mx)
+		mx = number;
+
+	/* Limit the nunber of pending RS requests to no more than the peer's receive buffer */
+	if ((pe + number) > mx) {
+		number = mx - pe;
+	}
 
 	for (i = 0; i < number; i++) {
+		/* Stop generating RS requests, when half of the sendbuffer is filled */
+		mutex_lock(&mdev->data.mutex);
+		if (mdev->data.socket) {
+			queued = mdev->data.socket->sk->sk_wmem_queued;
+			sndbuf = mdev->data.socket->sk->sk_sndbuf;
+		} else {
+			queued = 1;
+			sndbuf = 0;
+		}
+		mutex_unlock(&mdev->data.mutex);
+		if (queued > sndbuf / 2)
+			goto requeue;
+
 next_sector:
 		size = BM_BLOCK_SIZE;
 		bit  = drbd_bm_find_next(mdev, mdev->bm_resync_fo);
