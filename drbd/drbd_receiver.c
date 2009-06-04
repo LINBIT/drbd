@@ -2538,12 +2538,21 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 	    get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		int cr; /* consider resync */
 
+		/* if we established a new connection */
 		cr  = (oconn < C_CONNECTED);
+		/* if we had an established connection
+		 * and one of the nodes newly attaches a disk */
 		cr |= (oconn == C_CONNECTED &&
 		       (peer_state.disk == D_NEGOTIATING ||
 			mdev->state.disk == D_NEGOTIATING));
-		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags); /* peer forced */
-		cr |= (oconn == C_CONNECTED && peer_state.conn > C_CONNECTED);
+		/* if we have both been inconsistent, and the peer has been
+		 * forced to be UpToDate with --overwrite-data */
+		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags);
+		/* if we had been plain connected, and the admin requested to
+		 * start a sync by "invalidate" or "invalidate-remote" */
+		cr |= (oconn == C_CONNECTED &&
+				(peer_state.conn == C_STARTING_SYNC_S ||
+				 peer_state.conn == C_STARTING_SYNC_T));
 
 		if (cr)
 			nconn = drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);
