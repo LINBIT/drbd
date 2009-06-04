@@ -884,19 +884,46 @@ void suspend_other_sg(struct drbd_conf *mdev)
 	drbd_global_unlock();
 }
 
-void drbd_alter_sa(struct drbd_conf *mdev, int na)
+static int sync_after_error(struct drbd_conf *mdev, int o_minor)
+{
+	struct drbd_conf *odev;
+
+	if (o_minor == -1)
+		return NO_ERROR;
+	if (o_minor < -1 || minor_to_mdev(o_minor) == NULL)
+		return ERR_SYNC_AFTER;
+
+	/* check for loops */
+	odev = minor_to_mdev(o_minor);
+	while (1) {
+		if (odev == mdev)
+			return ERR_SYNC_AFTER_CYCLE;
+
+		/* dependency chain ends here, no cycles. */
+		if (odev->sync_conf.after == -1)
+			return NO_ERROR;
+
+		/* follow the dependency chain */
+		odev = minor_to_mdev(odev->sync_conf.after);
+	}
+}
+
+int drbd_alter_sa(struct drbd_conf *mdev, int na)
 {
 	int changes;
+	int retcode;
 
 	drbd_global_lock();
-	mdev->sync_conf.after = na;
-
-	do {
-		changes  = _drbd_pause_after(mdev);
-		changes |= _drbd_resume_next(mdev);
-	} while (changes);
-
+	retcode = sync_after_error(mdev, na);
+	if (retcode == NO_ERROR) {
+		mdev->sync_conf.after = na;
+		do {
+			changes  = _drbd_pause_after(mdev);
+			changes |= _drbd_resume_next(mdev);
+		} while (changes);
+	}
 	drbd_global_unlock();
+	return retcode;
 }
 
 /**

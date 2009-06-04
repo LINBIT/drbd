@@ -1508,7 +1508,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 {
 	int retcode = NO_ERROR;
 	struct syncer_conf sc;
-	struct drbd_conf *odev;
 	int err;
 
 	memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
@@ -1525,23 +1524,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		goto fail;
 	}
 
-	if (sc.after != -1) {
-		if (sc.after < -1 || minor_to_mdev(sc.after) == NULL) {
-			retcode = ERR_SYNC_AFTER;
-			goto fail;
-		}
-		odev = minor_to_mdev(sc.after); /* check against loops in */
-		while (1) {
-			if (odev == mdev) {
-				retcode = ERR_SYNC_AFTER_CYCLE;
-				goto fail;
-			}
-			if (odev->sync_conf.after == -1)
-				break; /* no cycles. */
-			odev = minor_to_mdev(odev->sync_conf.after);
-		}
-	}
-
 	ERR_IF (sc.rate < 1) sc.rate = 1;
 	ERR_IF (sc.al_extents < 7) sc.al_extents = 127; /* arbitrary minimum */
 #define AL_MAX ((MD_AL_MAX_SIZE-1) * AL_EXTENTS_PT)
@@ -1551,8 +1533,16 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	}
 #undef AL_MAX
 
+	/* most sanity checks done, try to assign the new sync-after
+	 * dependency.  need to hold the global lock in there,
+	 * to avoid a race in the dependency loop check. */
+	retcode = drbd_alter_sa(mdev, sc.after);
+	if (retcode != NO_ERROR)
+		goto fail;
+
+	/* ok, assign the rest of it as well.
+	 * lock against receive_SyncParam() */
 	spin_lock(&mdev->peer_seq_lock);
-	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
 	spin_unlock(&mdev->peer_seq_lock);
 
@@ -1574,8 +1564,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev, &sc);
-
-	drbd_alter_sa(mdev, sc.after);
 
 fail:
 	reply->ret_code = retcode;
