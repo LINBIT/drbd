@@ -86,4 +86,9 @@ extern const char *drbd_buildtag(void);
 
 #define KERNEL_HAS_KVEC
 
+/* Actually availabe since 2.6.25, but venders have backported...
+ */
+#define KERNEL_HAS_PROC_CREATE
+
+
 #endif

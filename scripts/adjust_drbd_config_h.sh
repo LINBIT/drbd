@@ -121,6 +121,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_linux_byteorder_swabb_h=0
   fi
+  if grep_q "proc_create(" $KDIR/include/linux/proc_fs.h ; then
+    have_proc_create=1
+  else
+    have_proc_create=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -154,6 +159,8 @@ perl -pe "
   { ( $have_kvec ? '' : '//' ) . \$1}e;
  s{.*(#define HAVE_LINUX_BYTEORDER_SWABB_H.*)}
   { ( $have_linux_byteorder_swabb_h ? '' : '//' ) . \$1}e;
+ s{.*(#define KERNEL_HAS_PROC_CREATE.*)}
+  { ( $have_proc_create ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

@@ -537,10 +537,6 @@ typedef unsigned gfp_t;
  * this "backport" does not close the race that lead to the API change,
  * but only provides an equivalent function call.
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
-/* maybe someone will backport this upstream somewhen. */
-#define KERNEL_HAS_PROC_CREATE
-#endif
 #ifndef KERNEL_HAS_PROC_CREATE
 static inline struct proc_dir_entry *proc_create(const char *name,
 	mode_t mode, struct proc_dir_entry *parent,
