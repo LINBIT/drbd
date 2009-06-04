@@ -2,6 +2,32 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.2rc1 (api:86/proto:86-90)
+--------
+ * Fixed the "Not a digest" issue for hash functions already ported to shash
+ * Fixed a race condition between device configuration and de-configuration
+ * Fixed: The sync-after logic modified flags of an unconfigured
+   device. This caused very weird symptoms later. (Bugz 214)
+ * Fixed a possible imbalance of the 'pe' counter during online verify
+ * Fix for potential segfaults in drbdadm's sh-status & status commands
+ * Correctly clean up resync status if a detach interrupts a resync (Bugz 223)
+ * Reasonable error reporting if 'drbdadm invalidate' fails because resync already runs
+ * New module parameter: disable_sendpage. Workaround for a Xen on DRBD issue
+ * Allow detach while being SyncTarget (Bugz 221)
+ * Optional RLE compression of the bitmap exchange ('use-rle' keyword)
+ * Rewrite of the LRU code
+ * Allow to skip initial resync: 'drbdadm -- --clear-bitmap new-current-uuid'
+ * Upon request of Dolphin NICS: The 'sci' keyword is now called 'ssocks'
+ * Allow more than two host ('on' keyword) sections, new drbdadm option '--to'
+ * New, alternate keyword 'floating' for host sections, for matching by ip-address
+ * An OCF resource agent for pacemaker
+ * crm-fence-peer.sh: A fence peer handler using pacemaker constraints
+ * /etc/init.d/drbd stop now works completely independent of the config file
+ * arbitrary custom device names (prefix drbd_ required)
+ * Code cleanups for Linux mainline submission (no functional change)
+ * Using Linux's own tracing framework instead of our own
+ * Compatibility with Linux 2.6.30
+
 8.3.1 (api:86/proto:86-89)
 --------
  * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
