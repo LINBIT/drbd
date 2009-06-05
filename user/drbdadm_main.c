@@ -23,8 +23,6 @@
 
  */
 
-/* TODO clean up coding style in here, too. */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -247,7 +245,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 	}
 	fclose(f);
 
-	waitpid(0, NULL, WNOHANG);	/* Reap the child process, do not leafe a zombie around. */
+	waitpid(0, NULL, WNOHANG);	/* Reap the child process, do not leave a zombie around. */
 
 	if (line == NULL
 	    || strncmp(line, "Unconfigured", strlen("Unconfigured")) == 0)
