@@ -2398,9 +2398,9 @@ void verify_ips(struct d_resource *res)
 		e.key = e.data = ep = NULL;
 		m_asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
 		ep = hsearch(e, FIND);
-		fprintf(stderr, "%s:%d: in resource %s, on %s:\n\t"
+		fprintf(stderr, "%s: in resource %s, on %s:\n\t"
 			"IP %s not found on this host.\n",
-			res->config_file, ep ? (int)(long)ep->data : -1,
+			ep ? (char *)ep->data : res->config_file,
 			res->name, names_to_str(res->me->on_hosts),
 			res->me->address);
 		if (INVALID_IP_IS_INVALID_CONF)
@@ -2466,19 +2466,19 @@ int vcheck_uniq(const char *what, const char *fmt, va_list ap)
 			__LINE__);
 		exit(E_thinko);
 	}
-	e.data = (void *)(long)fline;
+	m_asprintf((char **)&e.data, "%s:%u", config_file, fline);
 	ep = hsearch(e, FIND);
 	// fprintf(stderr,"FIND %s: %p\n",e.key,ep);
 	if (ep) {
 		if (what) {
 			fprintf(stderr,
-				"%s:%d: conflicting use of %s '%s' ...\n"
-				"%s:%d: %s '%s' first used here.\n",
-				config_file, line, what, ep->key,
-				config_file, (int)(long)ep->data, what,
-				ep->key);
+				"%s: conflicting use of %s '%s' ...\n"
+				"%s: %s '%s' first used here.\n",
+				(char *)e.data,  what, ep->key,
+				(char *)ep->data, what, ep->key);
 		}
 		free(e.key);
+		free(e.data);
 		config_valid = 0;
 	} else {
 		ep = hsearch(e, ENTER);
