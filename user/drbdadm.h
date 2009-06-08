@@ -153,9 +153,6 @@ extern int _admm_generic(struct d_resource* ,const char*, int flags);
 extern int m_system(char**, int, struct d_resource*);
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
-extern int vcheck_uniq(const char* what, const char *fmt, va_list ap);
-extern int check_uniq(const char* what, const char *fmt, ...);
-extern void verify_ips(struct d_resource* res);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
 			   struct d_resource* res,
 			   char* arg,
@@ -198,6 +195,7 @@ extern struct d_resource* config;
 extern struct d_resource* common;
 extern struct d_globals global_options;
 extern int line, fline;
+extern struct hsearch_data global_htable;
 
 extern int no_tty;
 extern int dry_run;

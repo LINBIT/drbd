@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <glob.h>
+#include <search.h>
 
 #include "drbdadm.h"
 #include "linux/drbd_limits.h"
@@ -269,6 +270,98 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
 	for ( ({ typecheck(struct d_name*, h_); \
 		h_ = hosts_; }); \
 	 	h_; h_ = h_->next)
+
+/*
+ * for check_uniq: check uniqueness of
+ * resource names, ip:port, node:disk and node:device combinations
+ * as well as resource:section ...
+ * hash table to test for uniqness of these values...
+ *  256  (max minors)
+ *  *(
+ *       2 (host sections) * 4 (res ip:port node:disk node:device)
+ *     + 4 (other sections)
+ *     + some more,
+ *       if we want to check for scoped uniqueness of *every* option
+ *   )
+ *     since nobody (?) will actually use more than a dozend minors,
+ *     this should be more than enough.
+ */
+struct hsearch_data global_htable;
+void check_uniq_init(void)
+{
+	memset(&global_htable, 0, sizeof(global_htable));
+	if (!hcreate_r(256 * ((2 * 4) + 4), &global_htable)) {
+		fprintf(stderr, "Insufficient memory.\n");
+		exit(E_exec_error);
+	};
+}
+
+/* FIXME
+ * strictly speaking we don't need to check for uniqueness of disk and device names,
+ * but for uniqueness of their major:minor numbers ;-)
+ */
+int vcheck_uniq(struct hsearch_data *ht, const char *what, const char *fmt, va_list ap)
+{
+	int rv;
+	ENTRY e, *ep;
+	e.key = e.data = ep = NULL;
+
+	/* if we are done parsing the config file,
+	 * switch off this paranoia */
+	if (config_valid >= 2)
+		return 1;
+
+	rv = vasprintf(&e.key, fmt, ap);
+
+	if (rv < 0) {
+		perror("vasprintf");
+		exit(E_thinko);
+	}
+
+	if (EXIT_ON_CONFLICT && !what) {
+		fprintf(stderr, "Oops, unset argument in %s:%d.\n", __FILE__,
+			__LINE__);
+		exit(E_thinko);
+	}
+	m_asprintf((char **)&e.data, "%s:%u", config_file, fline);
+	hsearch_r(e, FIND, &ep, ht);
+	// fprintf(stderr,"FIND %s: %p\n",e.key,ep);
+	if (ep) {
+		if (what) {
+			fprintf(stderr,
+				"%s: conflicting use of %s '%s' ...\n"
+				"%s: %s '%s' first used here.\n",
+				(char *)e.data,  what, ep->key,
+				(char *)ep->data, what, ep->key);
+		}
+		free(e.key);
+		free(e.data);
+		config_valid = 0;
+	} else {
+		hsearch_r(e, ENTER, &ep, ht);
+		// fprintf(stderr,"ENTER %s as %s: %p\n",e.key,ep->key,ep);
+		if (!ep) {
+			fprintf(stderr, "entry failed.\n");
+			exit(E_thinko);
+		}
+		ep = NULL;
+	}
+	if (EXIT_ON_CONFLICT && ep)
+		exit(E_config_invalid);
+	return !ep;
+}
+
+int check_uniq(const char *what, const char *fmt, ...)
+{
+	int rv;
+	va_list ap;
+
+	va_start(ap, fmt);
+	rv = vcheck_uniq(&global_htable, what, fmt, ap);
+	va_end(ap);
+
+	return rv;
+}
 
 void check_meta_disk(struct d_host_info *host)
 {
