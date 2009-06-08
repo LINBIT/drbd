@@ -3108,8 +3108,6 @@ int main(int argc, char **argv)
 	else
 		config_save = canonify_path(config_file);
 
-	check_uniq_init();
-
 	/* yydebug = 1; */
 	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
 		warn_on_version_mismatch();

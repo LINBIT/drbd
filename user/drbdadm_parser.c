@@ -296,6 +296,25 @@ void check_uniq_init(void)
 	};
 }
 
+/* some settings need only be unique within one resource definition.
+ * we need currently about 8 + (number of host) * 8 entries,
+ * 200 should be much more than enough. */
+struct hsearch_data per_resource_htable;
+void check_upr_init(void)
+{
+	static int created = 0;
+	if (config_valid >= 2)
+		return;
+	if (created)
+		hdestroy_r(&per_resource_htable);
+	memset(&per_resource_htable, 0, sizeof(per_resource_htable));
+	if (!hcreate_r(256, &per_resource_htable)) {
+		fprintf(stderr, "Insufficient memory.\n");
+		exit(E_exec_error);
+	};
+	created = 1;
+}
+
 /* FIXME
  * strictly speaking we don't need to check for uniqueness of disk and device names,
  * but for uniqueness of their major:minor numbers ;-)
@@ -325,7 +344,7 @@ int vcheck_uniq(struct hsearch_data *ht, const char *what, const char *fmt, va_l
 	}
 	m_asprintf((char **)&e.data, "%s:%u", config_file, fline);
 	hsearch_r(e, FIND, &ep, ht);
-	// fprintf(stderr,"FIND %s: %p\n",e.key,ep);
+	//fprintf(stderr, "FIND %s: %p\n", e.key, ep);
 	if (ep) {
 		if (what) {
 			fprintf(stderr,
@@ -338,10 +357,11 @@ int vcheck_uniq(struct hsearch_data *ht, const char *what, const char *fmt, va_l
 		free(e.data);
 		config_valid = 0;
 	} else {
+		//fprintf(stderr, "ENTER %s\t=>\t%s\n", e.key, (char *)e.data);
 		hsearch_r(e, ENTER, &ep, ht);
-		// fprintf(stderr,"ENTER %s as %s: %p\n",e.key,ep->key,ep);
 		if (!ep) {
-			fprintf(stderr, "entry failed.\n");
+			fprintf(stderr, "hash table entry (%s => %s) failed\n",
+					e.key, (char *)e.data);
 			exit(E_thinko);
 		}
 		ep = NULL;
@@ -358,6 +378,19 @@ int check_uniq(const char *what, const char *fmt, ...)
 
 	va_start(ap, fmt);
 	rv = vcheck_uniq(&global_htable, what, fmt, ap);
+	va_end(ap);
+
+	return rv;
+}
+
+/* unique per resource */
+int check_upr(const char *what, const char *fmt, ...)
+{
+	int rv;
+	va_list ap;
+
+	va_start(ap, fmt);
+	rv = vcheck_uniq(&per_resource_htable, what, fmt, ap);
 	va_end(ap);
 
 	return rv;
@@ -812,7 +845,7 @@ static void parse_host_section(struct d_resource *res,
 		host->by_address = 1;
 
 	for_each_host(h, on_hosts)
-		check_uniq("host section", "%s: on %s", res->name, h->name);
+		check_upr("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
 	while (1) {
@@ -821,7 +854,7 @@ static void parse_host_section(struct d_resource *res,
 		switch (token) {
 		case TK_DISK:
 			for_each_host(h, on_hosts)
-				check_uniq("disk statement", "%s:%s:disk", res->name, h->name);
+				check_upr("disk statement", "%s:%s:disk", res->name, h->name);
 			EXP(TK_STRING);
 			host->disk = yylval.txt;
 			for_each_host(h, on_hosts)
@@ -830,24 +863,24 @@ static void parse_host_section(struct d_resource *res,
 			break;
 		case TK_DEVICE:
 			for_each_host(h, on_hosts)
-				check_uniq("device statement", "%s:%s:device", res->name, h->name);
+				check_upr("device statement", "%s:%s:device", res->name, h->name);
 			parse_device(on_hosts, &host->device_minor, &host->device);
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, on_hosts)
-				check_uniq("address statement", "%s:%s:address", res->name, h->name);
+				check_upr("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(on_hosts, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", host->port);
 			break;
 		case TK_META_DISK:
 			for_each_host(h, on_hosts)
-				check_uniq("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
+				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			parse_meta_disk(&host->meta_disk, &host->meta_index);
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
 			for_each_host(h, on_hosts)
-				check_uniq("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
+				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			EXP(TK_STRING);
 			host->meta_disk = yylval.txt;
 			if (strcmp("internal", yylval.txt)) {
@@ -965,12 +998,12 @@ static void parse_stacked_section(struct d_resource* res)
 		switch(yylex()) {
 		case TK_DEVICE:
 			for_each_host(h, host->on_hosts)
-				check_uniq("device statement", "%s:%s:device", res->name, h->name);
+				check_upr("device statement", "%s:%s:device", res->name, h->name);
 			parse_device(host->on_hosts, &host->device_minor, &host->device);
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
-				check_uniq("address statement", "%s:%s:address", res->name, h->name);
+				check_upr("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(NULL, &host->address, &host->port, &host->address_family);
 			range_check(R_PORT, "port", yylval.txt);
 			break;
@@ -1214,6 +1247,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	int token;
 	char *hname;
 
+	check_upr_init();
 	check_uniq("resource section", res_name);
 
 	res=calloc(1,sizeof(struct d_resource));
@@ -1227,7 +1261,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		fline = line;
 		switch(token) {
 		case TK_PROTOCOL:
-			check_uniq("protocol statement","%s: protocol",res->name);
+			check_upr("protocol statement","%s: protocol",res->name);
 			EXP(TK_STRING);
 			res->protocol=yylval.txt;
 			EXP(';');
@@ -1276,7 +1310,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				EXP(';');
 				break;
 			case '{':
-				check_uniq("disk section", "%s:disk", res->name);
+				check_upr("disk section", "%s:disk", res->name);
 				res->disk_options = parse_options(TK_DISK_SWITCH,
 								  TK_DISK_OPTION);
 				break;
@@ -1286,7 +1320,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			}
 			break;
 		case TK_NET:
-			check_uniq("net section", "%s:net", res->name);
+			check_upr("net section", "%s:net", res->name);
 			EXP('{');
 			res->net_options = parse_options_d(TK_NET_SWITCH,
 							   TK_NET_OPTION,
@@ -1295,13 +1329,13 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 							   (void *)flags);
 			break;
 		case TK_SYNCER:
-			check_uniq("syncer section", "%s:syncer", res->name);
+			check_upr("syncer section", "%s:syncer", res->name);
 			EXP('{');
 			res->sync_options = parse_options(TK_SYNCER_SWITCH,
 							  TK_SYNCER_OPTION);
 			break;
 		case TK_STARTUP:
-			check_uniq("startup section", "%s:startup", res->name);
+			check_upr("startup section", "%s:startup", res->name);
 			EXP('{');
 			res->startup_options=parse_options_d(TK_STARTUP_SWITCH,
 							     TK_STARTUP_OPTION,
@@ -1310,18 +1344,18 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 							     res);
 			break;
 		case TK_HANDLER:
-			check_uniq("handlers section", "%s:handlers", res->name);
+			check_upr("handlers section", "%s:handlers", res->name);
 			EXP('{');
 			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
 			break;
 		case TK_PROXY:
-			check_uniq("proxy section", "%s:proxy", res->name);
+			check_upr("proxy section", "%s:proxy", res->name);
 			EXP('{');
 			res->proxy_options =  parse_options(TK_PROXY_SWITCH,
 							    TK_PROXY_OPTION);
 			break;
 		case TK_DEVICE:
-			check_uniq("device statement", "%s:device", res->name);
+			check_upr("device statement", "%s:device", res->name);
 			parse_device(NULL, &res->device_minor, &res->device);
 			break;
 		case TK_META_DISK:
@@ -1424,6 +1458,12 @@ void include_stmt(char *str)
 
 void my_parse(void)
 {
+	static int global_htable_init = 0;
+	if (!global_htable_init) {
+		check_uniq_init();
+		global_htable_init = 1;
+	}
+
 	while (1) {
 		int token = yylex();
 		fline = line;
