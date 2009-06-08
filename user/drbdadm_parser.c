@@ -689,8 +689,10 @@ static void parse_device(struct d_name* on_hosts, int *minor, char **device)
 		check_minor_nonsense(*device, *minor);
 	}
 out:
-	for_each_host(h, on_hosts)
+	for_each_host(h, on_hosts) {
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, *minor);
+		check_uniq("device", "device:%s:%s", h->name, *device);
+	}
 }
 
 enum parse_host_section_flags {
