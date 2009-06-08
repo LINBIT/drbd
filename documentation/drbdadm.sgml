@@ -80,13 +80,6 @@
           Specifies that this command should be performed on a stacked resource.
 	</para></listitem>
       </varlistentry>
-      <varlistentry>
-        <term><option>-t</option>, <option>--to</option>
-        <listitem><para>
-          Specifies to which peer node to connect. Only necessary if thare are
-	  more than two host sections in the resource you are working on.
-	</para></listitem>
-      </varlistentry>
     </variablelist>
   </refsect1>
   <refsect1>
@@ -111,9 +104,6 @@
 	<indexterm><primary>drbdadm</primary><secondary>connect</secondary></indexterm>
           Sets up the network configuration of the resource's device. If the
  	  peer device is already configured, the two DRBD devices will connect.
-	  If there are more than two host sections in the resource you need
-	  to use the <option>--to</option> option to select the peer you want to
-	  connect to.
         </para></listitem>
       </varlistentry>
       <varlistentry>
