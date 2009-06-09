@@ -417,16 +417,11 @@ struct option admopt[] = {
 	.res_name_required = 1,		\
 	.verify_ips = 0,
 
-#define DRBD_acf2_proxy_up		\
+#define DRBD_acf2_proxy			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 	.need_peer = 1,
-
-#define DRBD_acf2_proxy			\
-	.show_in_usage = 2,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,
 
 #define DRBD_acf2_hook			\
 	.show_in_usage = 2,		\
@@ -498,7 +493,7 @@ struct adm_cmd cmds[] = {
 	{"sh-b-pri", sh_b_pri, DRBD_acf2_shell},
 	{"sh-status", sh_status, DRBD_acf2_gen_shell},
 
-	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy_up},
+	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
