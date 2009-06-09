@@ -1616,15 +1616,12 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 	if (res->peer) {
 		setenv("DRBD_PEER_AF", res->peer->address_family, 1);	/* since 8.3.0 */
 		setenv("DRBD_PEER_ADDRESS", res->peer->address, 1);	/* since 8.3.0 */
-	}
-
-	setenv("DRBD_RESOURCE", res->name, 1);
-	if (res->peer) {
 		setenv("DRBD_PEER", res->peer->on_hosts->name, 1);	/* deprecated */
 		setenv("DRBD_PEERS", names_to_str(res->peer->on_hosts), 1);
 			/* since 8.3.0, but not useable when using a config with "floating" statements. */
 	}
 
+	setenv("DRBD_RESOURCE", res->name, 1);
 	setenv("DRBD_CONF", config_save, 1);
 
 	if ((sh_cmd = get_opt_val(res->handlers, cmd, NULL))) {
