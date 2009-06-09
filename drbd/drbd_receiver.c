@@ -947,7 +947,7 @@ retry:
 
 	drbd_send_protocol(mdev);
 	drbd_send_sync_param(mdev, &mdev->sync_conf);
-	drbd_send_sizes(mdev);
+	drbd_send_sizes(mdev, 0);
 	drbd_send_uuids(mdev);
 	drbd_send_state(mdev);
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
@@ -2894,9 +2894,10 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 		    drbd_get_capacity(mdev->this_bdev) || ldsc) {
 			/* we have different sizes, probabely peer
 			 * needs to know my new size... */
-			drbd_send_sizes(mdev);
+			drbd_send_sizes(mdev, 0);
 		}
-		if (dd == grew && mdev->state.conn == C_CONNECTED) {
+		if (test_and_clear_bit(RESIZE_PENDING, &mdev->flags) ||
+		    (dd == grew && mdev->state.conn == C_CONNECTED)) {
 			if (mdev->state.pdsk >= D_INCONSISTENT &&
 			    mdev->state.disk >= D_INCONSISTENT)
 				resync_after_online_grow(mdev);

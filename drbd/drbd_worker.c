@@ -1313,6 +1313,11 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	union drbd_state ns;
 	int r;
 
+	if (mdev->state.conn >= C_SYNC_SOURCE) {
+		dev_err(DEV, "Resync already running!\n");
+		return;
+	}
+
 	trace_drbd_resync(mdev, TRACE_LVL_SUMMARY, "Resync starting: side=%s\n",
 			  side == C_SYNC_TARGET ? "SyncTarget" : "SyncSource");
 

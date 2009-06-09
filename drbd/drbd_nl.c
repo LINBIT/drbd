@@ -560,15 +560,12 @@ enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_ho
 	md_moved = prev_first_sect != drbd_md_first_sector(mdev->ldev)
 		|| prev_size	   != mdev->ldev->md.md_size_sect;
 
-	if (md_moved) {
-		dev_warn(DEV, "Moving meta-data.\n");
-		/* assert: (flexible) internal meta data */
-	}
-
 	if (la_size_changed || md_moved) {
 		drbd_al_shrink(mdev); /* All extents inactive. */
-		dev_info(DEV, "Writing the whole bitmap, size changed\n");
-		rv = drbd_bitmap_io(mdev, &drbd_bm_write, "size changed");
+		dev_info(DEV, "Writing the whole bitmap, %s\n",
+			 la_size_changed && md_moved ? "size changed and md moved" :
+			 la_size_changed ? "size changed" : "md moved");
+		rv = drbd_bitmap_io(mdev, &drbd_bm_write, "size changed"); /* does drbd_resume_io() ! */
 		drbd_md_mark_dirty(mdev);
 	}
 
@@ -1542,10 +1539,11 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	if (mdev->state.conn == C_CONNECTED && (dd != unchanged || ldsc)) {
-		drbd_send_uuids(mdev);
-		drbd_send_sizes(mdev);
 		if (dd == grew)
-			resync_after_online_grow(mdev);
+			set_bit(RESIZE_PENDING, &mdev->flags);
+
+		drbd_send_uuids(mdev);
+		drbd_send_sizes(mdev, 1);
 	}
 
  fail:

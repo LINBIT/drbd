@@ -926,6 +926,8 @@ enum {
 				 * but worker thread is still handling the cleanup.
 				 * reconfiguring (nl_disk_conf, nl_net_conf) is dissalowed,
 				 * while this is set. */
+	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
+				 * the peer, if it changed there as well. */
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -1248,7 +1250,7 @@ extern int drbd_send_protocol(struct drbd_conf *mdev);
 extern int drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev);
 extern int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val);
-extern int drbd_send_sizes(struct drbd_conf *mdev);
+extern int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply);
 extern int _drbd_send_state(struct drbd_conf *mdev);
 extern int drbd_send_state(struct drbd_conf *mdev);
 extern int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,

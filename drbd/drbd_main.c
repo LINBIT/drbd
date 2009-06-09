@@ -890,6 +890,9 @@ STATIC int is_valid_state_transition(struct drbd_conf *mdev,
 	    os.conn < C_CONNECTED)
 		rv = SS_NEED_CONNECTION;
 
+	if (ns.conn == C_SYNC_SOURCE && os.conn >= C_SYNC_SOURCE)
+		rv = SS_RESYNC_RUNNING;
+
 	return rv;
 }
 
@@ -1403,7 +1406,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
 		kfree(mdev->p_uuid); /* We expect to receive up-to-date UUIDs soon. */
 		mdev->p_uuid = NULL; /* ...to not use the old ones in the mean time */
-		drbd_send_sizes(mdev);  /* to start sync... */
+		drbd_send_sizes(mdev, 0);  /* to start sync... */
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev);
 	}
@@ -1935,7 +1938,7 @@ int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val)
 			     (struct p_header *)&p, sizeof(p));
 }
 
-int drbd_send_sizes(struct drbd_conf *mdev)
+int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply)
 {
 	struct p_sizes p;
 	sector_t d_size, u_size;
@@ -1957,7 +1960,7 @@ int drbd_send_sizes(struct drbd_conf *mdev)
 
 	p.d_size = cpu_to_be64(d_size);
 	p.u_size = cpu_to_be64(u_size);
-	p.c_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
+	p.c_size = cpu_to_be64(trigger_reply ? 0 : drbd_get_capacity(mdev->this_bdev));
 	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
 	p.queue_order_type = cpu_to_be32(q_order_type);
 
