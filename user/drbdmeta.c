@@ -1786,7 +1786,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			 * or the maintenance nightmare of code duplication */
 			if (parse_only) break;
 			bm[i].le = cpu_to_le64(yylval.u64);
-			if (++i == buffer_size/sizeof(*bm)) {
+			if ((unsigned)++i == buffer_size/sizeof(*bm)) {
 				pwrite_or_die(cfg->md_fd, on_disk_buffer,
 					buffer_size, bm_on_disk_off,
 					"meta_restore_md:TK_U64");
@@ -1803,7 +1803,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			value.le = cpu_to_le64(yylval.u64);
 			while(times--) {
 				bm[i] = value;
-				if (++i == buffer_size/sizeof(*bm)) {
+				if ((unsigned)++i == buffer_size/sizeof(*bm)) {
 					pwrite_or_die(cfg->md_fd, on_disk_buffer,
 						buffer_size, bm_on_disk_off,
 						"meta_restore_md:TK_NUM");
