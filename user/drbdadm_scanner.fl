@@ -19,6 +19,7 @@ static void unescape(void);
 #define CP yylval.txt = strdup(yytext); yylval.rc = R_NO_CHECK
 #define RC(N) yylval.rc = R_ ## N
 
+#define YY_NO_INPUT 1
 #define YY_NO_UNPUT 1
 static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 
