@@ -613,7 +613,8 @@ static void resolv6(char *name, struct in6_addr *addr)
 	else if (rv == 0) {
 		he = gethostbyname2(name, AF_INET6);
 		if (!he) {
-			PERROR("can not resolv the hostname");
+			fprintf(stderr, "can not resolve the hostname: gethostbyname2(%s, AF_INET6): %s\n",
+					name, hstrerror(h_errno));
 			exit(20);
 		}
 		memcpy(addr, he->h_addr_list[0], sizeof(struct in6_addr));
@@ -628,7 +629,8 @@ static unsigned long resolv(const char* name)
 		struct hostent *he;
 		he = gethostbyname(name);
 		if (!he) {
-			PERROR("can not resolv the hostname");
+			fprintf(stderr, "can not resolve the hostname: gethostbyname(%s): %s\n",
+					name, hstrerror(h_errno));
 			exit(20);
 		}
 		retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
