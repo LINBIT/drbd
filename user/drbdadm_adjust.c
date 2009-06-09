@@ -134,7 +134,7 @@ static int addr_equal(struct d_resource* conf, struct d_resource* running)
 	int equal;
 
 	if (conf->peer == NULL && running->peer == NULL) return 1;
-	if (conf->peer == NULL || running->peer == NULL) return 0;
+	if (running->peer == NULL) return 0;
 
 	equal = !strcmp(conf->me->address,        running->me->address) &&
 		!strcmp(conf->me->port,           running->me->port) &&
@@ -146,7 +146,7 @@ static int addr_equal(struct d_resource* conf, struct d_resource* running)
 			!strcmp(conf->me->proxy->inside_port, running->peer->port) &&
 			!strcmp(conf->me->proxy->inside_af,   running->peer->address_family);
 	else
-		equal = equal &&
+		equal = equal && conf->peer &&
 			!strcmp(conf->peer->address,        running->peer->address) &&
 			!strcmp(conf->peer->port,           running->peer->port) &&
 			!strcmp(conf->peer->address_family, running->peer->address_family);
