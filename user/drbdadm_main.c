@@ -371,6 +371,7 @@ struct option admopt[] = {
 	{"sh-varname", required_argument, 0, 'n'},
 	{"force", no_argument, 0, 'f'},
 	{"peer", required_argument, 0, 'P'},
+	{"version", no_argument, 0, 'V'},
 	{0, 0, 0, 0}
 };
 
@@ -2842,6 +2843,14 @@ int parse_options(int argc, char **argv)
 		case 'f':
 			force = 1;
 			break;
+		case 'V':
+			printf("DRBDADM_BUILDTAG=%s\n", shell_escape(drbd_buildtag()));
+			printf("DRBDADM_API_VERSION=%u\n", API_VERSION);
+			printf("DRBD_KERNEL_VERSION_CODE=0x%06x\n", version_code_kernel());
+			printf("DRBDADM_VERSION_CODE=0x%06x\n", version_code_userland());
+			printf("DRBDADM_VERSION=%s\n", shell_escape(REL_VERSION));
+			exit(0);
+			break;
 		case 'P':
 			connect_to_host = optarg;
 			break;
@@ -3065,6 +3074,9 @@ int main(int argc, char **argv)
 		exit(E_exec_error);
 	}
 
+	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
+		warn_on_version_mismatch();
+
 	rv = parse_options(argc, argv);
 	if (rv)
 		return rv;
@@ -3115,10 +3127,6 @@ int main(int argc, char **argv)
 		config_save = config_file;
 	else
 		config_save = canonify_path(config_file);
-
-	/* yydebug = 1; */
-	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
-		warn_on_version_mismatch();
 
 	my_parse();
 

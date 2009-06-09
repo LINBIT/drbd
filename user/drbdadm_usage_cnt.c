@@ -58,6 +58,7 @@ struct vcs_rel {
 	struct {
 		unsigned major, minor, sublvl;
 	} version;
+	unsigned version_code;
 };
 
 struct node_info {
@@ -130,6 +131,8 @@ void vcs_ver_from_str(struct vcs_rel *rel, const char *token)
 	rel->version.major = maj;
 	rel->version.minor = min;
 	rel->version.sublvl = sub;
+
+	rel->version_code = (maj << 16) + (min << 8) + sub;
 }
 
 void vcs_from_str(struct vcs_rel *rel, const char *text)
@@ -171,24 +174,46 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 	}
 }
 
+static int current_vcs_is_from_proc_drbd;
 static struct vcs_rel current_vcs_rel;
+static struct vcs_rel userland_version;
 static void vcs_get_current(void)
 {
-	static int initialized = 0;
 	char* version_txt;
 
-	if (initialized)
+	if (current_vcs_rel.version_code)
 		return;
 
 	version_txt = slurp_proc_drbd();
 	if(version_txt) {
 		vcs_from_str(&current_vcs_rel, version_txt);
+		current_vcs_is_from_proc_drbd = 1;
 		free(version_txt);
 	} else {
 		vcs_from_str(&current_vcs_rel, drbd_buildtag());
 		vcs_ver_from_str(&current_vcs_rel, REL_VERSION);
 	}
-	initialized = 1;
+}
+
+static void vcs_get_userland(void)
+{
+	if (userland_version.version_code)
+		return;
+	vcs_ver_from_str(&userland_version, REL_VERSION);
+}
+
+int version_code_kernel(void)
+{
+	vcs_get_current();
+	return current_vcs_is_from_proc_drbd
+		? current_vcs_rel.version_code
+		: 0;
+}
+
+int version_code_userland(void)
+{
+	vcs_get_userland();
+	return userland_version.version_code;
 }
 
 static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
@@ -202,13 +227,11 @@ static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
 
 static int vcs_ver_cmp(struct vcs_rel *rev1, struct vcs_rel *rev2)
 {
-	return ((rev1->version.major << 16) + (rev1->version.minor << 8) + rev1->version.sublvl)
-	     - ((rev2->version.major << 16) + (rev2->version.minor << 8) + rev2->version.sublvl);
+	return rev1->version_code - rev2->version_code;
 }
 
 void warn_on_version_mismatch(void)
 {
-	struct vcs_rel userland_version = { .svn_revision = 0, };
 	char *msg;
 	int cmp;
 
@@ -216,7 +239,7 @@ void warn_on_version_mismatch(void)
 	vcs_get_current();
 
 	/* get the userland version from REL_VERSION */
-	vcs_ver_from_str(&userland_version, REL_VERSION);
+	vcs_get_userland();
 
 	cmp = vcs_ver_cmp(&userland_version, &current_vcs_rel);
 	/* no message if equal */

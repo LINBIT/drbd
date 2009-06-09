@@ -541,7 +541,7 @@ void get_random_bytes(void* buffer, int len)
 	close(fd);
 }
 
-const char* shell_escape(char* s)
+const char* shell_escape(const char* s)
 {
 	/* ugly static buffer. so what. */
 	static char buffer[1024];
