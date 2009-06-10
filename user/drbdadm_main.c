@@ -1674,8 +1674,11 @@ int adm_connect(struct d_resource *res,
 	} else if (res->peer) {
 		make_address(res->peer->address, res->peer->port,
 			     res->peer->address_family);
-	} else {
+	} else if (dry_run > 1) {
 		argv[NA(argc)] = "N/A";
+	} else {
+		fprintf(stderr, "cannot connect without knowing my peer.\n");
+		return dry_run ? 0 : 20;
 	}
 	argv[NA(argc)] = res->protocol;
 
