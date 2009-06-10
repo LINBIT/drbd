@@ -1107,7 +1107,7 @@ void set_me_in_resource(struct d_resource* res)
 	}
 }
 
-void set_peer_in_resource(struct d_resource* res, int required)
+void set_peer_in_resource(struct d_resource* res, enum set_peer_flags flags)
 {
 	struct d_host_info *host;
 
@@ -1118,24 +1118,24 @@ void set_peer_in_resource(struct d_resource* res, int required)
 
 	/* Determin the peer host section */
 	for (host = res->all_hosts; host; host=host->next) {
-		if (host == res->me)
-			continue;
+		if (!connect_to_host || (flags & FROM_ADJUST)) {
+			if (host == res->me)
+				continue;
 
-		if (!connect_to_host) {
-			/* No, --host option given, assume there are only two on sections. */
+			/* connect_to_host is NULL, no --peer option given.
+			 * There should only be two "on" sections. */
 			if (!res->peer)
 				res->peer = host;
 			else {
 				res->peer = NULL;
-				if (!required)
+				if (!(flags & PEER_REQUIRED))
 					return;
 
 				config_valid = 0;
 				fprintf(stderr,
 					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
 					"\tThere are multiple host sections for the peer node.\n"
-					"\tYou need to use the --host option to select one host\n"
-					"\tsection as the peer host section.\n",
+					"\tUse the --peer option to select the peer section.\n",
 					res->config_file, host->config_line, res->name,
 					res->me->lower ? "stacked-on-top-of" : "on",
 					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
@@ -1147,6 +1147,14 @@ void set_peer_in_resource(struct d_resource* res, int required)
 			if (name_in_names(connect_to_host, host->on_hosts) ||
 			    (host->by_address && !strcmp(connect_to_host, host->address)) ||
 			    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
+				if (host == res->me) {
+					fprintf(stderr,
+						"%s:%d: in resource %s\n"
+						"\tInvoked with --peer '%s', but that matches myself!\n",
+						res->config_file, host->config_line, res->name, connect_to_host);
+					config_valid = 0;
+					return;
+				}
 				if (res->peer) {
 					/* Should have been catched by check_unique ... */
 					config_valid = 0;
@@ -1158,13 +1166,12 @@ void set_peer_in_resource(struct d_resource* res, int required)
 		}
 	}
 
-	if (required && !res->peer) {
+	if ((flags & PEER_REQUIRED) && !res->peer) {
 		config_valid = 0;
 		if (connect_to_host)
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
-				"\tNo host ('on') section matches the host you passed\n"
-				"\twith the --host ('%s')option.\n",
+				"\tNo host ('on') section matches the requested --peer '%s'\n",
 				res->config_file, res->start_line, res->name, connect_to_host);
 		else
 			fprintf(stderr,
@@ -1393,7 +1400,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	return res;
 }
 
-void post_parse(struct d_resource *config, int need_peer)
+void post_parse(struct d_resource *config)
 {
 	struct d_resource *res,*tmp;
 
@@ -1403,9 +1410,6 @@ void post_parse(struct d_resource *config, int need_peer)
 
 	for_each_resource(res, tmp, config)
 		set_me_in_resource(res); // Needs "on_hosts" set in this res
-
-	for_each_resource(res, tmp, config)
-		set_peer_in_resource(res, need_peer); // Needs me already set
 
 	for_each_resource(res, tmp, config)
 		if (res->stacked_on_one)

@@ -175,7 +175,7 @@ enum pr_flags {
   IgnDiscardMyData = 8
 };
 extern struct d_resource* parse_resource(char*, enum pr_flags);
-extern void post_parse(struct d_resource *config, int need_peer);
+extern void post_parse(struct d_resource *config);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct d_name *names);
 extern char *_names_to_str(char* buffer, struct d_name *names);
@@ -185,7 +185,8 @@ extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
 extern void free_names(struct d_name *names);
 extern void set_me_in_resource(struct d_resource* res);
-extern void set_peer_in_resource(struct d_resource* res, int required);
+enum set_peer_flags { PEER_REQUIRED = 1, FROM_ADJUST = 2 };
+extern void set_peer_in_resource(struct d_resource* res, enum set_peer_flags flags);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
 

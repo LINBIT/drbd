@@ -331,6 +331,9 @@ int call_cmd_fn(int (*function) (struct d_resource *, const char *),
 int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
 	     enum on_error on_error)
 {
+	if (!res->peer && cmd->need_peer)
+		set_peer_in_resource(res, PEER_REQUIRED);
+
 	return call_cmd_fn(cmd->function, cmd->name, res, on_error);
 }
 
@@ -367,7 +370,7 @@ struct option admopt[] = {
 	{"drbd-proxy-ctl", required_argument, 0, 'p'},
 	{"sh-varname", required_argument, 0, 'n'},
 	{"force", no_argument, 0, 'f'},
-	{"to", required_argument, 0, 't'},
+	{"peer", required_argument, 0, 'P'},
 	{0, 0, 0, 0}
 };
 
@@ -1668,9 +1671,11 @@ int adm_connect(struct d_resource *res,
 		make_address(res->me->proxy->inside_addr,
 			     res->me->proxy->inside_port,
 			     res->me->proxy->inside_af);
-	} else {
+	} else if (res->peer) {
 		make_address(res->peer->address, res->peer->port,
 			     res->peer->address_family);
+	} else {
+		argv[NA(argc)] = "N/A";
 	}
 	argv[NA(argc)] = res->protocol;
 
@@ -1756,6 +1761,12 @@ static int do_proxy(struct d_resource *res, int do_up)
 		fprintf(stderr,
 			"The proxy config in resource %s is not for %s.\n",
 			res->name, nodeinfo.nodename);
+		exit(E_config_invalid);
+	}
+
+	if (!res->peer) {
+		fprintf(stderr, "Cannot determine the peer in resource %s.\n",
+			res->name);
 		exit(E_config_invalid);
 	}
 
@@ -2828,7 +2839,7 @@ int parse_options(int argc, char **argv)
 		case 'f':
 			force = 1;
 			break;
-		case 'h':
+		case 'P':
 			connect_to_host = optarg;
 			break;
 		case '?':
@@ -3111,7 +3122,7 @@ int main(int argc, char **argv)
 	if (!config_valid)
 		exit(E_config_invalid);
 
-	post_parse(config, cmd->need_peer);
+	post_parse(config);
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();
