@@ -951,6 +951,7 @@ retry:
 	drbd_send_uuids(mdev);
 	drbd_send_state(mdev);
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
+	clear_bit(RESIZE_PENDING, &mdev->flags);
 
 	return 1;
 }
