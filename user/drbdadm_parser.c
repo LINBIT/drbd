@@ -1107,77 +1107,96 @@ void set_me_in_resource(struct d_resource* res)
 	}
 }
 
-void set_peer_in_resource(struct d_resource* res, enum set_peer_flags flags)
+void set_peer_in_resource(struct d_resource* res, int peer_required)
 {
-	struct d_host_info *host;
-
-	/* me must be already set */
+	struct d_host_info *host = NULL;
 
 	if (res->ignore)
 		return;
 
-	/* Determin the peer host section */
-	for (host = res->all_hosts; host; host=host->next) {
-		if (!connect_to_host || (flags & FROM_ADJUST)) {
-			if (host == res->me)
-				continue;
-
-			/* connect_to_host is NULL, no --peer option given.
-			 * There should only be two "on" sections. */
-			if (!res->peer)
-				res->peer = host;
-			else {
-				res->peer = NULL;
-				if (!(flags & PEER_REQUIRED))
-					return;
-
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
-					"\tThere are multiple host sections for the peer node.\n"
-					"\tUse the --peer option to select the peer section.\n",
-					res->config_file, host->config_line, res->name,
-					res->me->lower ? "stacked-on-top-of" : "on",
-					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
-					host->lower ? "stacked-on-top-of" : "on",
-					host->lower ? host->lower->name : names_to_str(host->on_hosts));
-				return;
-			}
-		} else {
-			if (name_in_names(connect_to_host, host->on_hosts) ||
-			    (host->by_address && !strcmp(connect_to_host, host->address)) ||
-			    ( host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts))) {
-				if (host == res->me) {
-					fprintf(stderr,
-						"%s:%d: in resource %s\n"
-						"\tInvoked with --peer '%s', but that matches myself!\n",
-						res->config_file, host->config_line, res->name, connect_to_host);
-					config_valid = 0;
-					return;
-				}
-				if (res->peer) {
-					/* Should have been catched by check_unique ... */
-					config_valid = 0;
-					fprintf(stderr, "THINKO 1\n");
-					exit(E_thinko);
-				}
-				res->peer = host;
-			}
-		}
+	/* me must be already set */
+	if (!res->me) {
+		/* should have been implicitly ignored. */
+		fprintf(stderr, "%s:%d: in resource %s:\n"
+				"\tcannot determin the peer, don't even know myself!\n",
+				res->config_file, res->start_line, res->name);
+		exit(E_thinko);
 	}
 
-	if ((flags & PEER_REQUIRED) && !res->peer) {
-		config_valid = 0;
-		if (connect_to_host)
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
-				"\tNo host ('on') section matches the requested --peer '%s'\n",
-				res->config_file, res->start_line, res->name, connect_to_host);
-		else
+	/* only one host section? */
+	if (!res->all_hosts->next) {
+		if (peer_required) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
 				"\tMissing section 'on <PEER> { ... }'.\n",
 				res->config_file, res->start_line, res->name);
+			config_valid = 0;
+		}
+		return;
+	}
+
+	/* short cut for exactly two host sections.
+	 * silently ignore any --peer connect_to_host option. */
+	if (res->all_hosts->next->next == NULL) {
+		res->peer = res->all_hosts == res->me ?
+			res->all_hosts->next : res->all_hosts;
+		if (dry_run > 1 && connect_to_host)
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tIgnoring --peer '%s': there are only two host sections.\n",
+				res->config_file, res->start_line, res->name, connect_to_host);
+		return;
+	}
+
+	/* Multiple peer hosts to choose from.
+	 * we need some help! */
+	if (!connect_to_host) {
+		if (peer_required) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tThere are multiple host sections for the peer node.\n"
+				"\tUse the --peer option to select which peer section to use.\n",
+				res->config_file, res->start_line, res->name);
+			config_valid = 0;
+		}
+		return;
+	}
+
+	for (host = res->all_hosts; host; host=host->next) {
+		if (host->by_address && strcmp(connect_to_host, host->address))
+			continue;
+		if (host->proxy && !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
+			continue;
+		if (!name_in_names(connect_to_host, host->on_hosts))
+			continue;
+
+		if (host == res->me) {
+			fprintf(stderr,
+				"%s:%d: in resource %s\n"
+				"\tInvoked with --peer '%s', but that matches myself!\n",
+				res->config_file, res->start_line, res->name, connect_to_host);
+			res->peer = NULL;
+			break;
+		}
+
+		if (res->peer) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tInvoked with --peer '%s', but that matches multiple times!\n",
+				res->config_file, res->start_line, res->name, connect_to_host);
+			res->peer = NULL;
+			break;
+		}
+		res->peer = host;
+	}
+
+	if (peer_required && !res->peer) {
+		config_valid = 0;
+		if (!host)
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n"
+				"\tNo host ('on' or 'floating') section matches --peer '%s'\n",
+				res->config_file, res->start_line, res->name, connect_to_host);
 	}
 }
 

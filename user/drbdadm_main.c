@@ -217,13 +217,17 @@ static int test_if_resource_is_down(struct d_resource *res)
 	char buf[1024];
 	char *line;
 	int fd;
+	int old_verbose = verbose;
 	FILE *f;
 
 	if (dry_run) {
 		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
 		exit(E_thinko);
 	}
+	if (verbose == 1)
+		verbose = 0;
 	fd = adm_generic(res, "role", RETURN_STDOUT_FD | SUPRESS_STDERR);
+	verbose = old_verbose;
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
@@ -332,7 +336,7 @@ int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
 	     enum on_error on_error)
 {
 	if (!res->peer && cmd->need_peer)
-		set_peer_in_resource(res, PEER_REQUIRED);
+		set_peer_in_resource(res, 1);
 
 	return call_cmd_fn(cmd->function, cmd->name, res, on_error);
 }

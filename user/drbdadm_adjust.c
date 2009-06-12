@@ -206,13 +206,13 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	yyin = m_popen(&pid,argv);
 	line = 1;
-	sprintf(config_file_dummy,"drbdsetup %s show", res->me->device);
+	sprintf(config_file_dummy,"drbdsetup %u show", res->me->device_minor);
 	config_file = config_file_dummy;
 	running = parse_resource(config_file_dummy, IgnDiscardMyData);
 	fclose(yyin);
 	waitpid(pid,0,0);
 	post_parse(running);
-	set_peer_in_resource(running, FROM_ADJUST);
+	set_peer_in_resource(running, 0);
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
 	if(running->me) {
