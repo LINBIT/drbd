@@ -533,7 +533,7 @@ static struct drbd_tag_list *create_tag_list(int size)
 	return tl;
 }
 
-static void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
+static void add_tag(struct drbd_tag_list *tl, short int tag, void *data, short int data_len)
 {
 	if(data_len > tag_descriptions[tag_number(tag)].max_len) {
 		fprintf(stderr, "The value for %s may only be %d byte long."
@@ -549,9 +549,10 @@ static void add_tag(struct drbd_tag_list *tl, int tag, void *data, int data_len)
 		fprintf(stderr, "Tag list size exceeded!\n");
 		exit(20);
 	}
-	*tl->tag_list_cpos++ = tag;
-	*tl->tag_list_cpos++ = data_len;
-	memcpy(tl->tag_list_cpos,data,data_len);
+	/* Memcpy, not assignments. Some architectures do not like unaligned word accesses */
+	memcpy(tl->tag_list_cpos++, &tag, sizeof(tl->tag_list_cpos));
+	memcpy(tl->tag_list_cpos++, &data_len, sizeof(tl->tag_list_cpos));
+	memcpy(tl->tag_list_cpos, data, data_len);
 	tl->tag_list_cpos = (unsigned short*)((char*)tl->tag_list_cpos + data_len);
 }
 

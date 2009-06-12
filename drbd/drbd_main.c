@@ -2422,7 +2422,7 @@ STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 	return sent == size;
 }
 
-int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
+STATIC int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		    int offset, size_t size)
 {
 	mm_segment_t oldfs = get_fs();

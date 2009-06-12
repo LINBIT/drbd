@@ -36,8 +36,13 @@
 #include "drbd_int.h"
 #include "drbd_tracing.h"
 #include "drbd_wrappers.h"
+#include <asm/unaligned.h>
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
+
+static unsigned short *tl_add_blob(unsigned short *, enum drbd_tags, const void *, int);
+static unsigned short *tl_add_str(unsigned short *, enum drbd_tags, const char *);
+static unsigned short *tl_add_int(unsigned short *, enum drbd_tags, const void *);
 
 /* see get_sb_bdev and bd_claim */
 static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
@@ -50,8 +55,8 @@ STATIC int name ## _from_tags(struct drbd_conf *mdev, \
 	int tag; \
 	int dlen; \
 	\
-	while ((tag = *tags++) != TT_END) { \
-		dlen = *tags++; \
+	while ((tag = get_unaligned(tags++)) != TT_END) {	\
+		dlen = get_unaligned(tags++);			\
 		switch (tag_number(tag)) { \
 		fields \
 		default: \
@@ -66,16 +71,16 @@ STATIC int name ## _from_tags(struct drbd_conf *mdev, \
 }
 #define NL_INTEGER(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INTEGER ); */ \
-		 arg->member = *(int *)(tags); \
-		 break;
+		arg->member = get_unaligned((int *)(tags));	\
+		break;
 #define NL_INT64(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_INT64 ); */ \
-		 arg->member = *(u64 *)(tags); \
-		 break;
+		arg->member = get_unaligned((u64 *)(tags));	\
+		break;
 #define NL_BIT(pn, pr, member) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_BIT ); */ \
-		 arg->member = *(char *)(tags) ? 1 : 0; \
-		 break;
+		arg->member = *(char *)(tags) ? 1 : 0; \
+		break;
 #define NL_STRING(pn, pr, member, len) \
 	case pn: /* D_ASSERT( tag_type(tag) == TT_STRING ); */ \
 		if (dlen > len) { \
@@ -99,23 +104,23 @@ name ## _to_tags(struct drbd_conf *mdev, \
 }
 
 #define NL_INTEGER(pn, pr, member) \
-	*tags++ = pn | pr | TT_INTEGER; \
-	*tags++ = sizeof(int); \
-	*(int *)tags = arg->member; \
+	put_unaligned(pn | pr | TT_INTEGER, tags++);	\
+	put_unaligned(sizeof(int), tags++);		\
+	put_unaligned(arg->member, (int *)tags);	\
 	tags = (unsigned short *)((char *)tags+sizeof(int));
 #define NL_INT64(pn, pr, member) \
-	*tags++ = pn | pr | TT_INT64; \
-	*tags++ = sizeof(u64); \
-	*(u64 *)tags = arg->member; \
+	put_unaligned(pn | pr | TT_INT64, tags++);	\
+	put_unaligned(sizeof(u64), tags++);		\
+	put_unaligned(arg->member, (u64 *)tags);	\
 	tags = (unsigned short *)((char *)tags+sizeof(u64));
 #define NL_BIT(pn, pr, member) \
-	*tags++ = pn | pr | TT_BIT; \
-	*tags++ = sizeof(char); \
+	put_unaligned(pn | pr | TT_BIT, tags++);	\
+	put_unaligned(sizeof(char), tags++);		\
 	*(char *)tags = arg->member; \
 	tags = (unsigned short *)((char *)tags+sizeof(char));
 #define NL_STRING(pn, pr, member, len) \
-	*tags++ = pn | pr | TT_STRING; \
-	*tags++ = arg->member ## _len; \
+	put_unaligned(pn | pr | TT_STRING, tags++);	\
+	put_unaligned(arg->member ## _len, tags++);	\
 	memcpy(tags, arg->member, arg->member ## _len); \
 	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include "linux/drbd_nl.h"
@@ -1810,7 +1815,7 @@ STATIC int drbd_nl_get_config(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 	}
 	tl = syncer_conf_to_tags(mdev, &mdev->sync_conf, tl);
 
-	*tl++ = TT_END; /* Close the tag list */
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
@@ -1829,14 +1834,11 @@ STATIC int drbd_nl_get_state(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	if (s.conn >= C_SYNC_SOURCE && s.conn <= C_PAUSED_SYNC_T) {
 		if (get_ldev(mdev)) {
 			drbd_get_syncer_progress(mdev, &rs_left, &res);
-			*tl++ = T_sync_progress;
-			*tl++ = sizeof(int);
-			memcpy(tl, &res, sizeof(int));
-			tl = (unsigned short *)((char *)tl + sizeof(int));
+			tl = tl_add_int(tl, T_sync_progress, &res);
 			put_ldev(mdev);
 		}
 	}
-	*tl++ = TT_END; /* Close the tag list */
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
@@ -1849,18 +1851,11 @@ STATIC int drbd_nl_get_uuids(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	tl = reply->tag_list;
 
 	if (get_ldev(mdev)) {
-		/* This is a hand crafted add tag ;) */
-		*tl++ = T_uuids;
-		*tl++ = UI_SIZE*sizeof(u64);
-		memcpy(tl, mdev->ldev->md.uuid, UI_SIZE*sizeof(u64));
-		tl = (unsigned short *)((char *)tl + UI_SIZE*sizeof(u64));
-		*tl++ = T_uuids_flags;
-		*tl++ = sizeof(int);
-		memcpy(tl, &mdev->ldev->md.flags, sizeof(int));
-		tl = (unsigned short *)((char *)tl + sizeof(int));
+		tl = tl_add_blob(tl, T_uuids, mdev->ldev->md.uuid, UI_SIZE*sizeof(u64));
+		tl = tl_add_int(tl, T_uuids_flags, &mdev->ldev->md.flags);
 		put_ldev(mdev);
 	}
-	*tl++ = TT_END; /* Close the tag list */
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
@@ -1882,12 +1877,8 @@ STATIC int drbd_nl_get_timeout_flag(struct drbd_conf *mdev, struct drbd_nl_cfg_r
 	rv = mdev->state.pdsk == D_OUTDATED        ? UT_PEER_OUTDATED :
 	  test_bit(USE_DEGR_WFC_T, &mdev->flags) ? UT_DEGRADED : UT_DEFAULT;
 
-	/* This is a hand crafted add tag ;) */
-	*tl++ = T_use_degraded;
-	*tl++ = sizeof(char);
-	*((char *)tl) = rv;
-	tl = (unsigned short *)((char *)tl + sizeof(char));
-	*tl++ = TT_END;
+	tl = tl_add_blob(tl, T_use_degraded, &rv, sizeof(rv));
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	return (int)((char *)tl - (char *)reply->tag_list);
 }
@@ -2123,18 +2114,13 @@ static atomic_t drbd_nl_seq = ATOMIC_INIT(2); /* two. */
 
 static unsigned short *
 __tl_add_blob(unsigned short *tl, enum drbd_tags tag, const void *data,
-	int len, int nul_terminated)
+	unsigned short len, int nul_terminated)
 {
-	int l = tag_descriptions[tag_number(tag)].max_len;
-	l = (len < l) ? len :  l;
-	*tl++ = tag;
-	*tl++ = len;
+	unsigned short l = tag_descriptions[tag_number(tag)].max_len;
+	len = (len < l) ? len :  l;
+	put_unaligned(tag, tl++);
+	put_unaligned(len, tl++);
 	memcpy(tl, data, len);
-	/* TODO
-	 * maybe we need to add some padding to the data stream.
-	 * otherwise we may get strange effects on architectures
-	 * that require certain data types to be strictly aligned,
-	 * because now the next "unsigned short" may be misaligned. */
 	tl = (unsigned short*)((char*)tl + len);
 	if (nul_terminated)
 		*((char*)tl - 1) = 0;
@@ -2156,17 +2142,16 @@ tl_add_str(unsigned short *tl, enum drbd_tags tag, const char *str)
 static unsigned short *
 tl_add_int(unsigned short *tl, enum drbd_tags tag, const void *val)
 {
+	put_unaligned(tag, tl++);
 	switch(tag_type(tag)) {
 	case TT_INTEGER:
-		*tl++ = tag;
-		*tl++ = sizeof(int);
-		*(int*)tl = *(int*)val;
+		put_unaligned(sizeof(int), tl++);
+		put_unaligned(*(int *)val, (int *)tl++);
 		tl = (unsigned short*)((char*)tl+sizeof(int));
 		break;
 	case TT_INT64:
-		*tl++ = tag;
-		*tl++ = sizeof(u64);
-		*(u64*)tl = *(u64*)val;
+		put_unaligned(sizeof(u64), tl++);
+		put_unaligned(*(u64 *)val, (u64 *)tl++);
 		tl = (unsigned short*)((char*)tl+sizeof(u64));
 		break;
 	default:
@@ -2190,7 +2175,8 @@ void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state state)
 	/* dev_warn(DEV, "drbd_bcast_state() got called\n"); */
 
 	tl = get_state_to_tags(mdev, (struct get_state *)&state, tl);
-	*tl++ = TT_END; /* Close the tag list */
+
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
@@ -2219,16 +2205,11 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	struct drbd_nl_cfg_reply *reply =
 		(struct drbd_nl_cfg_reply *)cn_reply->data;
 	unsigned short *tl = reply->tag_list;
-	int str_len;
 
 	/* dev_warn(DEV, "drbd_bcast_state() got called\n"); */
 
-	str_len = strlen(helper_name)+1;
-	*tl++ = T_helper;
-	*tl++ = str_len;
-	memcpy(tl, helper_name, str_len);
-	tl = (unsigned short *)((char *)tl + str_len);
-	*tl++ = TT_END; /* Close the tag list */
+	tl = tl_add_str(tl, T_helper, helper_name);
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
@@ -2291,8 +2272,8 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	tl = tl_add_int(tl, T_ee_sector, &e->sector);
 	tl = tl_add_int(tl, T_ee_block_id, &e->block_id);
 
-	*tl++ = T_ee_data;
-	*tl++ = e->size;
+	put_unaligned(T_ee_data, tl++);
+	put_unaligned(e->size, tl++);
 
 	__bio_for_each_segment(bvec, e->private_bio, i, 0) {
 		void *d = kmap(bvec->bv_page);
@@ -2300,7 +2281,7 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 		kunmap(bvec->bv_page);
 		tl=(unsigned short*)((char*)tl + bvec->bv_len);
 	}
-	*tl++ = TT_END; /* Close the tag list */
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
@@ -2339,11 +2320,8 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	drbd_get_syncer_progress(mdev, &rs_left, &res);
 	put_ldev(mdev);
 
-	*tl++ = T_sync_progress;
-	*tl++ = sizeof(int);
-	memcpy(tl, &res, sizeof(int));
-	tl = (unsigned short *)((char *)tl + sizeof(int));
-	*tl++ = TT_END; /* Close the tag list */
+	tl = tl_add_int(tl, T_sync_progress, &res);
+	put_unaligned(TT_END, tl++); /* Close the tag list */
 
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
