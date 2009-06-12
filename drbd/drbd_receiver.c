@@ -2261,6 +2261,10 @@ STATIC int drbd_asb_recover_1p(struct drbd_conf *mdev) __must_hold(local)
 		hg = drbd_asb_recover_0p(mdev);
 		if (hg == -1 && mdev->state.role == R_PRIMARY) {
 			self = drbd_set_role(mdev, R_SECONDARY, 0);
+			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
+			  * we might be here in C_WF_REPORT_PARAMS which is transient.
+			  * we do not need to wait for the after state change work either. */
+			self = drbd_change_state(mdev, CS_VERBOSE, NS(role, R_SECONDARY));
 			if (self != SS_SUCCESS) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
@@ -2299,7 +2303,10 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 	case ASB_CALL_HELPER:
 		hg = drbd_asb_recover_0p(mdev);
 		if (hg == -1) {
-			self = drbd_set_role(mdev, R_SECONDARY, 0);
+			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
+			  * we might be here in C_WF_REPORT_PARAMS which is transient.
+			  * we do not need to wait for the after state change work either. */
+			self = drbd_change_state(mdev, CS_VERBOSE, NS(role, R_SECONDARY));
 			if (self != SS_SUCCESS) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
@@ -2987,12 +2994,21 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 	    get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		int cr; /* consider resync */
 
+		/* if we established a new connection */
 		cr  = (oconn < C_CONNECTED);
+		/* if we had an established connection
+		 * and one of the nodes newly attaches a disk */
 		cr |= (oconn == C_CONNECTED &&
 		       (peer_state.disk == D_NEGOTIATING ||
 			mdev->state.disk == D_NEGOTIATING));
-		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags); /* peer forced */
-		cr |= (oconn == C_CONNECTED && peer_state.conn > C_CONNECTED);
+		/* if we have both been inconsistent, and the peer has been
+		 * forced to be UpToDate with --overwrite-data */
+		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags);
+		/* if we had been plain connected, and the admin requested to
+		 * start a sync by "invalidate" or "invalidate-remote" */
+		cr |= (oconn == C_CONNECTED &&
+				(peer_state.conn == C_STARTING_SYNC_S ||
+				 peer_state.conn == C_STARTING_SYNC_T));
 
 		if (cr)
 			nconn = drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);

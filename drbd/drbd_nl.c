@@ -826,14 +826,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
-	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	/* allocation not in the IO path, cqueue thread context */
+	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
-	memset(&nbc->md, 0, sizeof(struct drbd_md));
-	memset(&nbc->dc, 0, sizeof(struct disk_conf));
 	nbc->dc.disk_size     = DRBD_DISK_SIZE_SECT_DEF;
 	nbc->dc.on_io_error   = DRBD_ON_IO_ERROR_DEF;
 	nbc->dc.fencing       = DRBD_FENCING_DEF;
@@ -843,9 +842,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		retcode = ERR_MANDATORY_TAG;
 		goto fail;
 	}
-
-	nbc->lo_file = NULL;
-	nbc->md_file = NULL;
 
 	if (nbc->dc.meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
@@ -1579,7 +1575,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 {
 	int retcode = NO_ERROR;
 	struct syncer_conf sc;
-	struct drbd_conf *odev;
 	int err;
 	struct crypto_hash *verify_tfm = NULL, *old_verify_tfm = NULL;
 	int ovr; /* online verify running */
@@ -1597,23 +1592,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	if (!syncer_conf_from_tags(mdev, nlp->tag_list, &sc)) {
 		retcode = ERR_MANDATORY_TAG;
 		goto fail;
-	}
-
-	if (sc.after != -1) {
-		if (sc.after < -1 || minor_to_mdev(sc.after) == NULL) {
-			retcode = ERR_SYNC_AFTER;
-			goto fail;
-		}
-		odev = minor_to_mdev(sc.after); /* check against loops in */
-		while (1) {
-			if (odev == mdev) {
-				retcode = ERR_SYNC_AFTER_CYCLE;
-				goto fail;
-			}
-			if (odev->sync_conf.after == -1)
-				break; /* no cycles. */
-			odev = minor_to_mdev(odev->sync_conf.after);
-		}
 	}
 
 	ovr = (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T);
@@ -1657,8 +1635,16 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	}
 #undef AL_MAX
 
+	/* most sanity checks done, try to assign the new sync-after
+	 * dependency.  need to hold the global lock in there,
+	 * to avoid a race in the dependency loop check. */
+	retcode = drbd_alter_sa(mdev, sc.after);
+	if (retcode != NO_ERROR)
+		goto fail;
+
+	/* ok, assign the rest of it as well.
+	 * lock against receive_SyncParam() */
 	spin_lock(&mdev->peer_seq_lock);
-	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
 	if (!ovr) {
 		old_verify_tfm = mdev->verify_tfm;
@@ -1687,8 +1673,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev, &sc);
-
-	drbd_alter_sa(mdev, sc.after);
 
 	if (!cpus_equal(mdev->cpu_mask, n_cpu_mask)) {
 		mdev->cpu_mask = n_cpu_mask;
