@@ -2081,7 +2081,10 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		break;
 
 	case P_OV_REQUEST:
-		D_ASSERT(mdev->state.conn == C_VERIFY_T);
+		if (mdev->state.conn >= C_CONNECTED &&
+		    mdev->state.conn != C_VERIFY_T)
+			dev_warn(DEV, "ASSERT FAILED: got P_OV_REQUEST while being %s\n",
+				conns_to_name(mdev->state.conn));
 		if (mdev->ov_start_sector == ~(sector_t)0 &&
 		    mdev->agreed_pro_version >= 90) {
 			mdev->ov_start_sector = sector;
