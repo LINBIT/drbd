@@ -56,27 +56,17 @@ OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
 : ${OCF_RESKEY_CRM_meta_master_max=1}
 : ${OCF_RESKEY_CRM_meta_master_node_max=1}
 #######################################################################
-
-_ACTION=$1
-
-#######################################################################
 # for debugging this RA
 DEBUG_LOG=/tmp/drbd.ocf.ra.log
 USE_DEBUG_LOG=false
-case "$OCF_RESKEY_meta_drbd_ra_use_debug_log" in
-1|yes|true|on)
-	if [[ -w "$DEBUG_LOG" && ! -L "$DEBUG_LOG" ]]; then
-		USE_DEBUG_LOG=true
-		exec 9>>"$DEBUG_LOG"
-	fi ;;
-*)
-	exec 9>/dev/null ;;
-esac
-
-if $USE_DEBUG_LOG; then
+if [[ -w "$DEBUG_LOG" && ! -L "$DEBUG_LOG" ]]; then
+	USE_DEBUG_LOG=true
+	exec 9>>"$DEBUG_LOG"
 	date >&9
 	echo "$*" >&9
 	env | grep OCF_ | sort >&9
+else
+	exec 9>/dev/null
 fi
 # end of debugging aid
 #######################################################################
@@ -173,7 +163,7 @@ _sh_status_process() {
 	DRBD_ROLE_REMOTE=${_peer:-Unknown}
 	DRBD_CSTATE=$_cstate
 	DRBD_DSTATE_LOCAL=${_disk:-Unconfigured}
-	DRBD_DSTATE_REMOTE=${_pdisk:-Unknown}
+	DRBD_DSTATE_REMOTE=${_pdsk:-DUnknown}
 }
 drbd_set_status_variables() {
 	# drbdsetup sh-status prints these values to stdout,
@@ -194,7 +184,7 @@ drbd_set_status_variables() {
 	DRBD_ROLE_REMOTE=Unknown
 	DRBD_CSTATE=Unconfigured
 	DRBD_DSTATE_LOCAL=Unconfigured
-	DRBD_DSTATE_REMOTE=Unknown
+	DRBD_DSTATE_REMOTE=DUnknown
 
 	if $DRBDADM_HAS_SH_STATUS; then
 		# Populates a set of variables relevant to DRBD's status
@@ -506,6 +496,11 @@ meta_expect()
 	exit $OCF_ERR_CONFIGURED
 }
 
+ls_stat_is_block_maj_147() {
+	set -- $(command ls -L -l "$1" 2>/dev/null)
+	[[ $1 = b* ]] && [[ $5 == 147,* ]]
+}
+
 drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
@@ -586,17 +581,32 @@ drbd_validate_all () {
 		return $OCF_ERR_INSTALLED
 	fi
 
-	# only check for master-max and allow-tow-primaries on start.
-	if [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]] && [[ $_ACTION = start ]] &&
-		!  $DRBDADM -d -v dump $DRBD_RESOURCE 2>/dev/null |
-		   grep '^[[:space:]]*allow-two-primaries;$'
-	then
-		ocf_log err "master-max = 2, but DRBD resource $DRBD_RESOURCE does not allow-two-primaries."
-		return $OCF_ERR_INSTALLED
+	# very special paranoia: someone edited the config file, and changed
+	# the device name, while drbd was configured and up.  try to recover!
+	# if you change the resource name, or the minor number, while the
+	# former config was active, result are "undefined", anyways.
+	if ! [ -b $DRBD_DEVICE ] &&
+	   ls_stat_is_block_maj_147 /dev/drbd/by-res/$DRBD_RESOURCE; then
+		DRBD_DEVICE=/dev/drbd/by-res/$DRBD_RESOURCE
 	fi
+
+	# don't check for master-max and allow-two-primaries on start|promote
+	# only, so it could be stopped still, if someone re-configured while
+	# running.
+	case $_ACTION:$OCF_RESKEY_CRM_meta_master_max in
+	start:2|promote:2)
+		if $DRBDADM -d -v dump $DRBD_RESOURCE 2>/dev/null |
+			grep '^[[:space:]]*allow-two-primaries;$'
+		then
+			ocf_log err "master-max = 2, but DRBD resource $DRBD_RESOURCE does not allow-two-primaries."
+			return $OCF_ERR_INSTALLED
+		fi ;;
+	esac
 
 	return $OCF_SUCCESS
 }
+
+#######################################################################
 
 if [ $# != 1 ]; then
 	usage
