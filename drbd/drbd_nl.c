@@ -1626,7 +1626,8 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		}
 	}
 
-	if (sc.cpu_mask[0] != 0) {
+	/* silently ignore cpu mask on UP kernel */
+	if (NR_CPUS > 1 && sc.cpu_mask[0] != 0) {
 		err = __bitmap_parse(sc.cpu_mask, 32, 0, (unsigned long *)&n_cpu_mask, NR_CPUS);
 		if (err) {
 			dev_warn(DEV, "__bitmap_parse() failed with %d\n", err);
