@@ -1558,7 +1558,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	int err;
 	int ovr; /* online verify running */
 	int rsr; /* re-sync running */
-	struct drbd_conf *odev;
 	struct crypto_hash *verify_tfm = NULL;
 	struct crypto_hash *csums_tfm = NULL;
 	struct syncer_conf sc;
@@ -1576,23 +1575,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	if (!syncer_conf_from_tags(mdev, nlp->tag_list, &sc)) {
 		retcode = ERR_MANDATORY_TAG;
 		goto fail;
-	}
-
-	if (sc.after != -1) {
-		if (sc.after < -1 || minor_to_mdev(sc.after) == NULL) {
-			retcode = ERR_SYNC_AFTER;
-			goto fail;
-		}
-		odev = minor_to_mdev(sc.after); /* check against loops in */
-		while (1) {
-			if (odev == mdev) {
-				retcode = ERR_SYNC_AFTER_CYCLE;
-				goto fail;
-			}
-			if (odev->sync_conf.after == -1)
-				break; /* no cycles. */
-			odev = minor_to_mdev(odev->sync_conf.after);
-		}
 	}
 
 	/* re-sync running */
@@ -1662,8 +1644,16 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	}
 #undef AL_MAX
 
+	/* most sanity checks done, try to assign the new sync-after
+	 * dependency.  need to hold the global lock in there,
+	 * to avoid a race in the dependency loop check. */
+	retcode = drbd_alter_sa(mdev, sc.after);
+	if (retcode != NO_ERROR)
+		goto fail;
+
+	/* ok, assign the rest of it as well.
+	 * lock against receive_SyncParam() */
 	spin_lock(&mdev->peer_seq_lock);
-	/* lock against receive_SyncParam() */
 	mdev->sync_conf = sc;
 
 	if (!rsr) {
@@ -1697,8 +1687,6 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev, &sc);
-
-	drbd_alter_sa(mdev, sc.after);
 
 	if (!cpus_equal(mdev->cpu_mask, n_cpu_mask)) {
 		mdev->cpu_mask = n_cpu_mask;

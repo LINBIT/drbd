@@ -1547,7 +1547,7 @@ extern int drbd_khelper(struct drbd_conf *mdev, char *cmd);
 
 /* drbd_worker.c */
 extern int drbd_worker(struct drbd_thread *thi);
-extern void drbd_alter_sa(struct drbd_conf *mdev, int na);
+extern int drbd_alter_sa(struct drbd_conf *mdev, int na);
 extern void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side);
 extern void resume_next_sg(struct drbd_conf *mdev);
 extern void suspend_other_sg(struct drbd_conf *mdev);
