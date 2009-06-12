@@ -817,14 +817,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto fail;
 	}
 
-	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	/* allocation not in the IO path, cqueue thread context */
+	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
-	memset(&nbc->md, 0, sizeof(struct drbd_md));
-	memset(&nbc->dc, 0, sizeof(struct disk_conf));
 	nbc->dc.disk_size   = DRBD_DISK_SIZE_SECT_DEF;
 	nbc->dc.on_io_error = DRBD_ON_IO_ERROR_DEF;
 	nbc->dc.fencing     = DRBD_FENCING_DEF;
@@ -833,9 +832,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		retcode = ERR_MANDATORY_TAG;
 		goto fail;
 	}
-
-	nbc->lo_file = NULL;
-	nbc->md_file = NULL;
 
 	if (nbc->dc.meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
