@@ -208,8 +208,6 @@ drbd_set_status_variables() {
 }
 
 drbd_update_prefs() {
-	drbd_set_status_variables
-
 	case $DRBD_DSTATE_LOCAL in
 	Diskless|Inconsistent|Outdated)
 		case $DRBD_CSTATE in
@@ -477,6 +475,7 @@ drbd_notify() {
 	post)
 		# After something has been done is a good time to
 		# recheck our status:
+		drbd_set_status_variables
 		drbd_update_prefs
 		;;
 	esac
