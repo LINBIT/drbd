@@ -3,7 +3,7 @@
 
 # try to get possible output on stdout/err to syslog
 PROG=${0##*/}
-exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
+exec > >(2>&- ; logger -s -t "$PROG[$$]" -p local5.info) 2>&1
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the

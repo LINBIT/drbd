@@ -207,27 +207,71 @@ drbd_set_status_variables() {
 	fi
 }
 
-drbd_update_prefs() {
-	case $DRBD_DSTATE_LOCAL in
-	Diskless|Inconsistent|Outdated)
-		case $DRBD_CSTATE in
-		StandAlone|WFConnection)
-			# Our local disk is not up to date. Our peer is
-			# not available. We have no access to useful data.
+# This is not the only fencing mechanism.
+# But in addition to the drbd "fence-peer" handler, which should be configured
+# and is expected to place some appropriate constraints, this is used to
+# actually store the Outdated information in DRBD on-disk meta data.
+I_should_be_outdated()
+{
+	local host myhostname=`uname -n`
+	for host in $OCF_RESKEY_CRM_meta_notify_master_uname \
+		$OCF_RESKEY_CRM_meta_notify_promote_uname \
+		""
+	do
+		[[ $host == $myhostname ]] || break
+	done
+	if [[ -z $host ]]; then
+		# do not outdate
+		return 1
+	fi
+	if [[ $DRBD_ROLE_LOCAL == Primary ]] && [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]]; then
+		# I am Primary. The other one is Primary.
+		# But we cannot talk to each other :(
+		# one of us has to die.
+
+		# FIXME do we want to change the score?
+		ocf_log crit "resource internal SPLIT-BRAIN: both $myhostname and $host DRBD Primary for $DRBD_RESOURCE, but replication link down!"
+		return 1
+	fi
+
+	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
+	# Outdate myself
+	do_drbdadm outdate $DRBD_RESOURCE
+	return 0
+}
+
+drbd_update_master_score() {
+	case $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
+	UpToDate/DUnknown)
+		# we may need to outdate ourselves?
+		if I_should_be_outdated; then
+			# -INFINITY master score
+			# may even cause a slave to be restarted/relocated.
 			set_master_score -INFINITY
-			;;
-		*)
-			# Our local disk is not up to date, but our peer
-			# is OK. We can expect to have access to useful
-			# data, but must expect degraded performance.
-			set_master_score 50
-			;;
-		esac
+		else
+			set_master_score 100
+		fi
 		;;
-	UpToDate)
+
+	UpToDate/*)
 		# Our local disk is UpToDate, which means even if we are
 		# currently synchronizing, we do so as SyncSource.
 		set_master_score 100
+		;;
+
+	*/UpToDate)
+		# Our local disk is not up to date.
+		# But our peer is OK.
+		# We can expect to have access to useful
+		# data, but must expect degraded performance.
+		set_master_score 50
+		;;
+	*)
+		# Our local disk is not up to date.
+		# Our peer is not available.
+		# We have no access to useful data.
+		remove_master_score
+		;;
 	esac
 
 	return $OCF_SUCCESS
@@ -282,9 +326,7 @@ drbd_monitor() {
 	drbd_status
 	status=$?
 
-	if [ $status != $OCF_NOT_RUNNING ]; then
-		drbd_update_prefs
-	fi
+	drbd_update_master_score
 
 	return $status
 }
@@ -350,7 +392,7 @@ drbd_start() {
 	done
 	# in case someone does not configure monitor,
 	# we must at least call it once after start.
-	drbd_update_prefs
+	drbd_update_master_score
 
 	return $rc
 }
@@ -476,7 +518,7 @@ drbd_notify() {
 		# After something has been done is a good time to
 		# recheck our status:
 		drbd_set_status_variables
-		drbd_update_prefs
+		drbd_update_master_score
 		;;
 	esac
 
