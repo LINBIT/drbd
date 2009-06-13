@@ -29,7 +29,8 @@ KDIR=${KDIR%/}
 if test -z "$O"; then
 	## just in case...
 	## detect if $KDIR points to something which is actually $O ...
-	X=$( make help | sed -ne '/ -C .* O=.* help$/p' | tr -s ' ' )
+	X=$( make no-such-makefile-target 2>/dev/null |
+	     sed -ne '/ -C .* O=.* no-such-makefile-target$/p' | tr -s ' ' )
 	if [[ -n $X ]]; then
 		KDIR=${X##* -C }; KDIR=${KDIR%% *}; KDIR=$(cd $KDIR && pwd)
 		O=${X##* O=}; O=${O%% *}; O=$(cd $KDIR && cd $O && pwd)
