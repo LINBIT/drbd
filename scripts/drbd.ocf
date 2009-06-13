@@ -620,9 +620,13 @@ drbd_validate_all () {
 	else
 		ocf_log err "DRBD resource $DRBD_RESOURCE not found in configuration file."
 		if [[ $__OCF_ACTION = "monitor" && $OCF_RESKEY_CRM_meta_interval = 0 ]]; then
+			# ok, this was a probe. That may happen on any node,
+			# to enforce configuration.
 			return $OCF_NOT_RUNNING
 		else
-			return $OCF_ERR_INSTALLED
+			# hm. probably misconfigured constraint somewhere.
+			# sorry. don't retry anywhere.
+			return $OCF_ERR_CONFIGURED
 		fi
 	fi
 
