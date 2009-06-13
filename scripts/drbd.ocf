@@ -619,7 +619,7 @@ drbd_validate_all () {
 		: # nothing to do.
 	else
 		ocf_log err "DRBD resource $DRBD_RESOURCE not found in configuration file."
-		if [[ $_ACTION = "monitor" && $OCF_RESKEY_CRM_meta_interval = 0 ]]; then
+		if [[ $__OCF_ACTION = "monitor" && $OCF_RESKEY_CRM_meta_interval = 0 ]]; then
 			return $OCF_NOT_RUNNING
 		else
 			return $OCF_ERR_INSTALLED
@@ -638,7 +638,7 @@ drbd_validate_all () {
 	# don't check for master-max and allow-two-primaries on start|promote
 	# only, so it could be stopped still, if someone re-configured while
 	# running.
-	case $_ACTION:$OCF_RESKEY_CRM_meta_master_max in
+	case $__OCF_ACTION:$OCF_RESKEY_CRM_meta_master_max in
 	start:2|promote:2)
 		if $DRBDADM -d -v dump $DRBD_RESOURCE 2>/dev/null |
 			grep '^[[:space:]]*allow-two-primaries;$'
@@ -658,13 +658,11 @@ if [ $# != 1 ]; then
 	exit $OCF_ERR_ARGS
 fi
 
-_ACTION=$1
-
-# if $_ACTION = monitor, but meta_interval not set,
+# if $__OCF_ACTION = monitor, but meta_interval not set,
 # this is a "probe". we could change behaviour.
 : ${OCF_RESKEY_CRM_meta_interval=0}
 
-case $_ACTION in
+case $__OCF_ACTION in
 meta-data)
 	meta_data
 	exit $OCF_SUCCESS
@@ -683,7 +681,7 @@ fi
 # Everything except usage and meta-data must pass the validate test
 drbd_validate_all || exit
 
-case $_ACTION in
+case $__OCF_ACTION in
 start)
 	drbd_start
 	;;
