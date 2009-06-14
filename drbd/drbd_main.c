@@ -3412,10 +3412,12 @@ void drbd_free_bc(struct drbd_backing_dev *ldev)
 void drbd_free_sock(struct drbd_conf *mdev)
 {
 	if (mdev->data.socket) {
+		kernel_sock_shutdown(mdev->data.socket, SHUT_RDWR);
 		sock_release(mdev->data.socket);
 		mdev->data.socket = NULL;
 	}
 	if (mdev->meta.socket) {
+		kernel_sock_shutdown(mdev->meta.socket, SHUT_RDWR);
 		sock_release(mdev->meta.socket);
 		mdev->meta.socket = NULL;
 	}
