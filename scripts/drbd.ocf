@@ -211,50 +211,68 @@ drbd_set_status_variables() {
 # But in addition to the drbd "fence-peer" handler, which should be configured
 # and is expected to place some appropriate constraints, this is used to
 # actually store the Outdated information in DRBD on-disk meta data.
-I_should_be_outdated()
+maybe_outdate()
 {
-	local host myhostname=`uname -n`
+	local host stop_uname
 	for host in $OCF_RESKEY_CRM_meta_notify_master_uname \
 		$OCF_RESKEY_CRM_meta_notify_promote_uname \
 		""
 	do
-		[[ $host == $myhostname ]] || break
+		[[ $host == "$HOSTNAME" ]] || break
 	done
-	if [[ -z $host ]]; then
-		# do not outdate
+	if [[ -z $host ]] ; then
+		# no current nor future master host found
+		# do not outdate myself
 		return 1
 	fi
+	for stop_uname in $OCF_RESKEY_CRM_meta_notify_stop_uname; do
+		[[ $host == "$stop_uname" ]] || continue
+		# post notification for stop on that host.
+		# hrmpf. crm passed in stale master_uname :(
+		# ignore
+		return 1
+	done
+
 	if [[ $DRBD_ROLE_LOCAL == Primary ]] && [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]]; then
 		# I am Primary. The other one is Primary.
 		# But we cannot talk to each other :(
 		# one of us has to die.
+		# which one, however, is not ours to decide.
 
-		# FIXME do we want to change the score?
-		ocf_log crit "resource internal SPLIT-BRAIN: both $myhostname and $host DRBD Primary for $DRBD_RESOURCE, but replication link down!"
+		ocf_log crit "resource internal SPLIT-BRAIN: both $HOSTNAME and $host are Primary for $DRBD_RESOURCE, but replication link down!"
 		return 1
 	fi
 
 	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
 	# Outdate myself
 	do_drbdadm outdate $DRBD_RESOURCE
+	# -INFINITY may cause a slave restart/relocate, which may even fix the
+	# replication link problem.
+	set_master_score -INFINITY
 	return 0
 }
 
 drbd_update_master_score() {
+	: == DEBUG == $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
 	case $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
 	UpToDate/DUnknown)
-		# we may need to outdate ourselves?
-		if I_should_be_outdated; then
-			# -INFINITY master score
-			# may even cause a slave to be restarted/relocated.
-			set_master_score -INFINITY
-		else
-			set_master_score 100
-		fi
+		# We don't know about our peer.
+		# We may need to outdate ourselves?
+		# But if we outdate in a MONITOR, and are disconnected
+		# secondary because of a hard primary crash, before CRM noticed
+		# that there is no more master, we'd make us utterly useless!
+		# Trust that, in time, a monitor on the primary will also find
+		# us disconnected, and will place an appropriate fencing
+		# constraint.  Besides, there should be fence-peer handler
+		# callbacks from drbd kernel space.
+		set_master_score 50
 		;;
 
 	UpToDate/*)
-		# Our local disk is UpToDate, which means even if we are
+		# We know somthing about our peer which means that either the
+		# replication link is established, or it was not even
+		# consistent last time we talked to each other.
+		# Also our local disk is UpToDate, which means even if we are
 		# currently synchronizing, we do so as SyncSource.
 		set_master_score 100
 		;;
@@ -264,14 +282,14 @@ drbd_update_master_score() {
 		# But our peer is OK.
 		# We can expect to have access to useful
 		# data, but must expect degraded performance.
-		set_master_score 50
+		set_master_score 1
 		;;
 	*)
 		# Our local disk is not up to date.
 		# Our peer is not available.
 		# We have no access to useful data.
+		# DRBD would refuse to be promoted, anyways.
 		remove_master_score
-		;;
 	esac
 
 	return $OCF_SUCCESS
@@ -302,19 +320,18 @@ drbd_status() {
 	# lets see its status
 	drbd_set_status_variables
 	case "${DRBD_ROLE_LOCAL}" in
-	"Primary")
+	Primary)
 		rc=$OCF_RUNNING_MASTER
 		;;
-	"Secondary")
+	Secondary)
 		rc=$OCF_SUCCESS
 		;;
-	"Unconfigured")
+	Unconfigured)
 		rc=$OCF_NOT_RUNNING
 		;;
 	*)
 		ocf_log err "Unexpected role ${DRBD_ROLE_LOCAL}"
 		rc=$OCF_ERR_GENERIC
-		;;
 	esac
 
 	return $rc
@@ -341,7 +358,6 @@ figure_out_drbd_peer_uname()
 	# configured, slave, master, or about to be started,
 	# it may be mentioned in various variables (or not at all)
 	local x
-	local myhostname=`uname -n`
 	# intentionally not cared for stop_uname
 	for x in \
 		$OCF_RESKEY_CRM_meta_notify_start_uname \
@@ -351,7 +367,7 @@ figure_out_drbd_peer_uname()
 		$OCF_RESKEY_CRM_meta_notify_demote_uname \
 		""
 	do
-		[[ $x == "$myhostname" ]] || break
+		[[ $x == "$HOSTNAME" ]] || break
 	done
 	DRBD_TO_PEER=${x:+ --peer $x}
 }
@@ -376,18 +392,17 @@ drbd_start() {
 		drbd_status
 		status=$?
 		case "$status" in
-		"$OCF_SUCCESS")
+		$OCF_SUCCESS)
 			rc=$OCF_SUCCESS
 			break
 			;;
-		"$OCF_NOT_RUNNING")
+		$OCF_NOT_RUNNING)
 			figure_out_drbd_peer_uname
 			do_drbdadm $DRBD_TO_PEER up $DRBD_RESOURCE
 			;;
-		"$OCF_RUNNING_MASTER")
+		$OCF_RUNNING_MASTER)
 			ocf_log warn "$DRBD_RESOURCE already Primary, demoting."
 			do_drbdadm secondary $DRBD_RESOURCE
-			;;
 		esac
 	done
 	# in case someone does not configure monitor,
@@ -397,9 +412,105 @@ drbd_start() {
 	return $rc
 }
 
+fence_peer_init()
+{
+	# so we can place (and remove) a negative "fencing" constraint
+	# in case we are promoted without peer
+
+	# we know which instance we are: $OCF_RESOURCE_INSTANCE.
+	# but we do not know the xml ID of the <master/> :(
+	# cibadmin -Ql --xpath '//master[ primitive[@id="'"$primitive_id"'"]]'
+	# but I'd have to pipe that through sed anyways, because @attribute
+	# xpath queries are not supported.
+	# and I'd be incompatible with older cibadmin not supporting --xpath.
+	# be cool, sed it out:
+	cib_xml=$(cibadmin -Ql -o configuration)
+	master_id=$( echo "$cib_xml" |
+		sed -ne '/<master /,/<\/master>/ {
+				/<master / h;
+				/<primitive .*\bid="'"$primitive_id"'"/ {
+					x;
+					s/^.*\bid="\([^"]*\)".*/\1/p;
+					q;
+				};
+			}')
+	# skip, unless within a <master/>
+	# hold the <master...> tag line
+	# in case there is a primitiv with our id,
+	# x-change, we now operate on the previously holded opening master tag
+	# s/// out the id, print, and quit.
+	# any more questions?
+
+	if [[ -z $master_id ]] ; then
+		ocf_log warn "drbd-fencing could not determine the master id of $primitiv_id ($DRBD_RESOURCE)"
+		return 1;
+	fi
+	# lets see: 
+	have_constraint=$(echo "$cib_xml" | sed -e '/<rsc_location .*\bid="'"$id_prefix-$master_id"'"/!d;q')
+	return 0
+}
+
+drbd_peer_fencing()
+{
+	# if peer is not UpToDate (possibly DUnknown: replication link down!),
+	# and be are being promoted, prevent peer from becoming master.
+	local rc
+
+	# input for fence_peer_init
+	local primitive_id=${OCF_RESOURCE_INSTANCE%:*}
+	local id_prefix=drbd-RA-fence
+	# output of fence_peer_init
+	local master_id cib_xml have_constraint
+
+	fence_peer_init || return
+
+	# this should be an other constraint id than the one
+	# for the fence-by-drbd-handler-callback constraint
+	local fencing_attribute fencing_value
+
+	case $1 in
+	fence)
+		if [[ -z $have_constraint ]] ; then
+			fencing_attribute=drbd-site
+			if ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
+				fencing_attribute="#uname"
+				fencing_value=$HOSTNAME
+			fi
+
+			# try to place it.
+			# double negation: do not run but with my data.
+			cibadmin -C -o constraints -X "\
+<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">
+  <rule role=\"Master\" score=\"-INFINITY\" id=\"$id_prefix-rule-$master_id\">
+    <expression attribute=\"$fencing_attribute\" operation=\"ne\" value=\"$fencing_value\" id=\"$id_prefix-expr-$master_id\"/>
+  </rule>
+</rsc_location>"
+			rc=$?
+		else
+			# anything != 0 will do;
+			# 21 happend to be "The object already exists" with my cibadmin
+			rc=21
+		fi
+
+		if [ $rc != 0 ]; then
+			# at least we tried.
+			# may it was already in place?
+			ocf_log warn "drbd_fence_peer() could not place the constraint! ignored."
+		fi
+		return $rc
+		;;
+	unfence)
+		if [[ -n $have_constraint ]]; then
+			# remove it
+			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">"
+		fi
+	esac
+}
+
 drbd_promote() {
 	local rc
 	local status
+	local fenced=""
 
 	rc=$OCF_ERR_GENERIC
 
@@ -409,17 +520,21 @@ drbd_promote() {
 		drbd_status
 		status=$?
 		case "$status" in
-		"$OCF_SUCCESS")
+		$OCF_SUCCESS)
+			# try fencing only during first iteration
+			if [[ $DRBD_DSTATE_REMOTE$fenced == DUnknown ]]; then
+				drbd_peer_fencing fence
+				fenced=fenced
+			fi
 			do_drbdadm primary $DRBD_RESOURCE
 			;;
-		"$OCF_NOT_RUNNING")
+		$OCF_NOT_RUNNING)
 			ocf_log error "Trying to promote a resource that was not started"
 			break
 			;;
-		"$OCF_RUNNING_MASTER")
+		$OCF_RUNNING_MASTER)
 			rc=$OCF_SUCCESS
 			break
-			;;
 		esac
 	done
 
@@ -438,17 +553,16 @@ drbd_demote() {
 		drbd_status
 		status=$?
 		case "$status" in
-		"$OCF_SUCCESS")
+		$OCF_SUCCESS)
 			rc=$OCF_SUCCESS
 			break
 			;;
-		"$OCF_NOT_RUNNING")
+		$OCF_NOT_RUNNING)
 			ocf_log error "Trying to promote a resource that was not started"
 			break
 			;;
-		"$OCF_RUNNING_MASTER")
+		$OCF_RUNNING_MASTER)
 			do_drbdadm secondary $DRBD_RESOURCE
-			;;
 		esac
 	done
 
@@ -456,7 +570,8 @@ drbd_demote() {
 }
 
 drbd_stop() {
-	rc=$OCF_ERR_GENERIC
+	local rc=$OCF_ERR_GENERIC
+	local try_outdate=true
 
 	# Keep trying to bring down the resource;
 	# wait for the CRM to time us out if this fails
@@ -464,21 +579,25 @@ drbd_stop() {
 		drbd_status
 		status=$?
 		case "$status" in
-			"$OCF_SUCCESS")
+		$OCF_SUCCESS)
 			do_drbdadm down $DRBD_RESOURCE
+			$try_outdate && maybe_outdate
+			try_outdate=false
 			;;
-		"$OCF_NOT_RUNNING")
+		$OCF_NOT_RUNNING)
 			rc=$OCF_SUCCESS
 			break
 			;;
-		"$OCF_RUNNING_MASTER")
+		$OCF_RUNNING_MASTER)
+			try_outdate=false
 			ocf_log warn "$DRBD_RESOURCE still Primary, demoting."
 			do_drbdadm secondary  $DRBD_RESOURCE
-			;;
 		esac
 	done
 	# do not let old master scores laying around.
 	# they may confuse crm if this node was set to standby.
+	# also, Outdate myself in case drbd handler don't do that for me
+	# in case the other node is still Master
 	remove_master_score
 
 	return $rc
@@ -519,7 +638,23 @@ drbd_notify() {
 		# recheck our status:
 		drbd_set_status_variables
 		drbd_update_master_score
-		;;
+
+		: == DEBUG == $DRBD_DSTATE_REMOTE ==
+		case $DRBD_DSTATE_REMOTE in
+		Outdated)
+			# Known bad, and not communicating.
+			# Nothing else to do.
+			:;;
+		DUnknown)
+			# Still not communicating.
+			# Maybe someone else is primary?
+			maybe_outdate
+			;;
+		*)
+			# We communicate.
+			# We may well remove any constraint now.
+			drbd_peer_fencing unfence
+		esac
 	esac
 
 	return $OCF_SUCCESS
@@ -591,7 +726,6 @@ drbd_validate_all () {
 			return $OCF_ERR_INSTALLED
 		fi
 		DRBDADM="$DRBDADM -c $OCF_RESKEY_drbdconf"
-		;;
 	esac
 
 	# check drbd_resource plausibility
@@ -604,7 +738,6 @@ drbd_validate_all () {
 		# no, I do not trust the configurable cib parameters.
 		ocf_log err "Resource name must only contain [-%+./0-9:=@A-Z_a-z]"
 		return $OCF_ERR_CONFIGURED
-		;;
 	esac
 	# exporting this is useful for "drbdsetup show".
 	# and it makes it all a little bit more readable.
@@ -626,6 +759,7 @@ drbd_validate_all () {
 		else
 			# hm. probably misconfigured constraint somewhere.
 			# sorry. don't retry anywhere.
+			remove_master_score
 			return $OCF_ERR_CONFIGURED
 		fi
 	fi
@@ -649,8 +783,12 @@ drbd_validate_all () {
 		then
 			ocf_log err "master-max = 2, but DRBD resource $DRBD_RESOURCE does not allow-two-primaries."
 			return $OCF_ERR_INSTALLED
-		fi ;;
+		fi
 	esac
+
+	# we use it in various places,
+	# just make sure it contains what we expect.
+	HOSTNAME=`uname -n`
 
 	return $OCF_SUCCESS
 }
@@ -674,7 +812,6 @@ meta-data)
 usage)
 	drbd_usage
 	exit $OCF_SUCCESS
-	;;
 esac
 
 if $USE_DEBUG_LOG ; then
@@ -712,6 +849,5 @@ validate-all)
 *)
 	drbd_usage
 	exit $OCF_ERR_UNIMPLEMENTED
-	;;
 esac
 # exit code is the exit code (return code) of the last command (shell function)
