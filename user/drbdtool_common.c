@@ -446,6 +446,15 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 "                        -<  The peer's disk was out-dated or inconsistent  >--+ |\n"
 "      -<  This node was a crashed primary, and has not seen its peer since   >--+\n"
 "\n");
+	printf("flags:%s %s, %s, %s%s%s\n",
+	       (flags & MDF_CRASHED_PRIMARY) ? " crashed" : "",
+	       (flags & MDF_PRIMARY_IND) ? "Primary" : "Secondary",
+	       (flags & MDF_CONNECTED_IND) ? "Connected" : "StandAlone",
+	       (flags & MDF_CONSISTENT)
+			?  ((flags & MDF_WAS_UP_TO_DATE) ? "UpToDate" : "Outdated")
+			: "Inconsistent",
+	       (flags & MDF_FULL_SYNC) ? ", need full sync" : "",
+	       (flags & MDF_PEER_OUT_DATED) ? ", peer Outdated" : "");
 }
 
 /*    s: token buffer
