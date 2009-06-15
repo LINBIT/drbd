@@ -57,9 +57,17 @@ OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
 : ${OCF_RESKEY_CRM_meta_master_node_max=1}
 #######################################################################
 # for debugging this RA
-DEBUG_LOG=/tmp/drbd.ocf.ra.log
+DEBUG_LOG_DIR=/tmp/drbd.ocf.ra.debug
+DEBUG_LOG=$DEBUG_LOG_DIR/log
 USE_DEBUG_LOG=false
-if [[ -w "$DEBUG_LOG" && ! -L "$DEBUG_LOG" ]]; then
+ls_stat_is_dir_0700_root() {
+	set -- $(command ls -ldn "$1");
+	[[ $1/$3 = drwx?-??-?/0 ]]
+}
+# try to avoid symlink vuln.
+if ls_stat_is_dir_0700_root $DEBUG_LOG_DIR &&
+   [[ -w "$DEBUG_LOG" && ! -L "$DEBUG_LOG" ]]
+then
 	USE_DEBUG_LOG=true
 	exec 9>>"$DEBUG_LOG"
 	date >&9
