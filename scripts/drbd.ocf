@@ -786,6 +786,17 @@ drbd_validate_all () {
 		fi
 	esac
 
+	# detect whether notify is configured or not.
+	# for probes, the meta_notify* namespace is not exported.
+	case $__OCF_ACTION in
+	monitor|validate-all)
+		:;;
+	*)
+		if [[ ${OCF_RESKEY_CRM_meta_notify_start_uname- NOT SET } = " NOT SET " ]]; then
+			ocf_log warn "you really should enable notify when using this RA"
+		fi
+	esac
+
 	# we use it in various places,
 	# just make sure it contains what we expect.
 	HOSTNAME=`uname -n`
