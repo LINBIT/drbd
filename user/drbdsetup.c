@@ -54,6 +54,7 @@
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
 
+#include "unaligned.h"
 #include "drbdtool_common.h"
 
 #ifndef __CONNECTOR_H
@@ -549,9 +550,8 @@ static void add_tag(struct drbd_tag_list *tl, short int tag, void *data, short i
 		fprintf(stderr, "Tag list size exceeded!\n");
 		exit(20);
 	}
-	/* Memcpy, not assignments. Some architectures do not like unaligned word accesses */
-	memcpy(tl->tag_list_cpos++, &tag, sizeof(tl->tag_list_cpos));
-	memcpy(tl->tag_list_cpos++, &data_len, sizeof(tl->tag_list_cpos));
+	put_unaligned(tag, tl->tag_list_cpos++);
+	put_unaligned(data_len, tl->tag_list_cpos++);
 	memcpy(tl->tag_list_cpos, data, data_len);
 	tl->tag_list_cpos = (unsigned short*)((char*)tl->tag_list_cpos + data_len);
 }
@@ -1098,14 +1098,14 @@ static void show_numeric(struct drbd_option *od, unsigned short* tp)
 	long long val;
 	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
 
-	switch(tag_type(*tp++)) {
+	switch(tag_type(get_unaligned(tp++))) {
 	case TT_INTEGER:
-		ASSERT( *tp++ == sizeof(int) );
-		val = *(int*)tp;
+		ASSERT( get_unaligned(tp++) == sizeof(int) );
+		val = get_unaligned((int*)tp);
 		break;
 	case TT_INT64:
-		ASSERT( *tp++ == sizeof(__u64) );
-		val = *(__u64*)tp;
+		ASSERT( get_unaligned(tp++) == sizeof(__u64) );
+		val = get_unaligned((__u64*)tp);
 		break;
 	default:
 		ASSERT(0);
@@ -1127,9 +1127,9 @@ static void show_handler(struct drbd_option *od, unsigned short* tp)
 	const char** handler_names = od->handler_param.handler_names;
 	int i;
 
-	ASSERT( tag_type(*tp++) == TT_INTEGER );
-	ASSERT( *tp++ == sizeof(int) );
-	i = *(int*)tp;
+	ASSERT( tag_type(get_unaligned(tp++)) == TT_INTEGER );
+	ASSERT( get_unaligned(tp++) == sizeof(int) );
+	i = get_unaligned((int*)tp);
 	printf("\t%-16s\t%s",od->name,handler_names[i]);
 	if( i == (long long)od->numeric_param.def) printf(" _is_default");
 	printf(";\n");
@@ -1137,15 +1137,15 @@ static void show_handler(struct drbd_option *od, unsigned short* tp)
 
 static void show_bit(struct drbd_option *od, unsigned short* tp)
 {
-	ASSERT( tag_type(*tp++) == TT_BIT );
-	ASSERT( *tp++ == sizeof(char) );
-	if(*(char*)tp) printf("\t%-16s;\n",od->name);
+	ASSERT( tag_type(get_unaligned(tp++)) == TT_BIT );
+	ASSERT( get_unaligned(tp++) == sizeof(char) );
+	if(get_unaligned((char*)tp)) printf("\t%-16s;\n",od->name);
 }
 
 static void show_string(struct drbd_option *od, unsigned short* tp)
 {
-	ASSERT( tag_type(*tp++) == TT_STRING );
-	if( *tp++ > 0 && *(char*)tp) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
+	ASSERT( tag_type(get_unaligned(tp++)) == TT_STRING );
+	if( get_unaligned(tp++) > 0 && get_unaligned((char*)tp)) printf("\t%-16s\t\"%s\";\n",od->name,(char*)tp);
 }
 
 static unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
@@ -1153,10 +1153,10 @@ static unsigned short *look_for_tag(unsigned short *tlc, unsigned short tag)
 	enum drbd_tags t;
 	int len;
 
-	while( (t = *tlc) != TT_END ) {
+	while( (t = get_unaligned(tlc)) != TT_END ) {
 		if(t == tag) return tlc;
 		tlc++;
-		len = *tlc++;
+		len = get_unaligned(tlc++);
 		tlc = (unsigned short*)((char*)tlc + len);
 	}
 	return NULL;
@@ -1175,7 +1175,7 @@ static void print_options(struct drbd_option *od, unsigned short *tlc, const cha
 				printf("%s {\n",sect_name);
 			}
 			od->show_function(od,tp);
-			*tp = TT_REMOVED;
+			put_unaligned(TT_REMOVED, tp);
 		}
 		od++;
 	}
@@ -1191,8 +1191,8 @@ static int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
-		*tp++ = TT_REMOVED;
-		*len = *tp++;
+		put_unaligned(TT_REMOVED, tp++);
+		*len = get_unaligned(tp++);
 		*val = (char*)tp;
 		return 1;
 	}
@@ -1204,8 +1204,8 @@ static int consume_tag_string(enum drbd_tags tag, unsigned short *tlc, char** va
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
-		*tp++ = TT_REMOVED;
-		if( *tp++ > 0 )
+		put_unaligned(TT_REMOVED, tp++);
+		if( get_unaligned(tp++) > 0 )
 			*val = (char*)tp;
 		else
 			*val = "";
@@ -1219,9 +1219,9 @@ static int consume_tag_int(enum drbd_tags tag, unsigned short *tlc, int* val)
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
-		*tp++ = TT_REMOVED;
+		put_unaligned(TT_REMOVED, tp++);
 		tp++;
-		*val = *(int *)tp;
+		*val = get_unaligned((int *)tp);
 		return 1;
 	}
 	return 0;
@@ -1231,18 +1231,18 @@ static int consume_tag_u64(enum drbd_tags tag, unsigned short *tlc, unsigned lon
 {
 	unsigned short *tp;
 	unsigned short len;
-	tp = look_for_tag(tlc,tag);
+	tp = look_for_tag(tlc, tag);
 	if(tp) {
-		*tp++ = TT_REMOVED;
-		len = *tp++;
+		put_unaligned(TT_REMOVED, tp++);
+		len = get_unaligned(tp++);
 		/* check the data size.
 		 * actually it has to be long long, but I'm paranoid */
 		if (len == sizeof(int))
-			*val = *(unsigned int*)tp;
+			*val = get_unaligned((unsigned int*)tp);
 		else if (len == sizeof(long))
-			*val = *(unsigned long *)tp;
+			*val = get_unaligned((unsigned long *)tp);
 		else if (len == sizeof(long long))
-			*val = *(unsigned long long *)tp;
+			*val = get_unaligned((unsigned long long *)tp);
 		else {
 			fprintf(stderr, "%s: unexpected tag len: %u\n",
 					__func__ , len);
@@ -1258,7 +1258,7 @@ static int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 	unsigned short *tp;
 	tp = look_for_tag(tlc,tag);
 	if(tp) {
-		*tp++ = TT_REMOVED;
+		put_unaligned(TT_REMOVED, tp++);
 		tp++;
 		*val = (int)(*(char *)tp);
 		return 1;

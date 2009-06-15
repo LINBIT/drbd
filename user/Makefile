@@ -94,6 +94,7 @@ uninstall:
 drbdsetup.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
 drbdsetup.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
 drbdsetup.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
+drbdsetup.o:       unaligned.h
 drbdtool_common.o: drbdtool_common.h
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
