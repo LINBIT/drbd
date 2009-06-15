@@ -74,6 +74,10 @@ extern const char *drbd_buildtag(void);
  * some older distribution kernels don't. */
 //#define DEFINE_SOCK_CREATE_KERN
 
+/* 2.6.24 and later have kernel_sock_shutdown.
+ * some older distribution kernels may also have a backport. */
+//#define DEFINE_KERNEL_SOCK_SHUTDOWN
+
 /* in older kernels (vanilla < 2.6.16) struct netlink_skb_parms has a
  * member called dst_groups. Later it is called dst_group (without 's'). */
 //#define DRBD_NL_DST_GROUPS
