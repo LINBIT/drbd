@@ -605,16 +605,17 @@ drbd_stop() {
 
 
 drbd_notify() {
-	local n_type="$OCF_RESKEY_CRM_meta_notify_type"
-	local n_op="$OCF_RESKEY_CRM_meta_notify_operation"
-	set -- $OCF_RESKEY_CRM_meta_notify_active_resource
-	local n_active="$#"
-	set -- $OCF_RESKEY_CRM_meta_notify_stop_resource
-	local n_stop="$#"
-	set -- $OCF_RESKEY_CRM_meta_notify_start_resource
-	local n_start="$#"
+	local n_type=$OCF_RESKEY_CRM_meta_notify_type
+	local n_op=$OCF_RESKEY_CRM_meta_notify_operation
 
-	ocf_log debug "$DRBD_RESOURCE notify: $n_type for $n_op - counts: active $n_active - starting $n_start - stopping $n_stop"
+	# active_* and *_resource not really interessting
+	# : "== DEBUG == active  = $OCF_RESKEY_CRM_meta_notify_active_uname"
+	: "== DEBUG == slave   = $OCF_RESKEY_CRM_meta_notify_slave_uname"
+	: "== DEBUG == master  = $OCF_RESKEY_CRM_meta_notify_master_uname"
+	: "== DEBUG == start   = $OCF_RESKEY_CRM_meta_notify_start_uname"
+	: "== DEBUG == promote = $OCF_RESKEY_CRM_meta_notify_promote_uname"
+	: "== DEBUG == stop    = $OCF_RESKEY_CRM_meta_notify_stop_uname"
+	: "== DEBUG == demote  = $OCF_RESKEY_CRM_meta_notify_demote_uname"
 
 	# We do not get a /pre/ start notification for ourself.
 	# but we get a /pre/ start notification for the other side, unless both
