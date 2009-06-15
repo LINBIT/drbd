@@ -422,9 +422,6 @@ drbd_start() {
 
 fence_peer_init()
 {
-	# so we can place (and remove) a negative "fencing" constraint
-	# in case we are promoted without peer
-
 	# we know which instance we are: $OCF_RESOURCE_INSTANCE.
 	# but we do not know the xml ID of the <master/> :(
 	# cibadmin -Ql --xpath '//master[ primitive[@id="'"$primitive_id"'"]]'
@@ -432,7 +429,7 @@ fence_peer_init()
 	# xpath queries are not supported.
 	# and I'd be incompatible with older cibadmin not supporting --xpath.
 	# be cool, sed it out:
-	cib_xml=$(cibadmin -Ql -o configuration)
+	cib_xml=$(cibadmin -Ql)
 	master_id=$( echo "$cib_xml" |
 		sed -ne '/<master /,/<\/master>/ {
 				/<master / h;
@@ -458,22 +455,20 @@ fence_peer_init()
 	return 0
 }
 
+# drbd_peer_fencing fence|unfence
 drbd_peer_fencing()
 {
-	# if peer is not UpToDate (possibly DUnknown: replication link down!),
-	# and be are being promoted, prevent peer from becoming master.
 	local rc
 
 	# input for fence_peer_init
 	local primitive_id=${OCF_RESOURCE_INSTANCE%:*}
+	# this should be a different id_prefix as for the constraint placed by
+	# the drbd "fence-peer" handler callback
 	local id_prefix=drbd-RA-fence
 	# output of fence_peer_init
 	local master_id cib_xml have_constraint
 
 	fence_peer_init || return
-
-	# this should be an other constraint id than the one
-	# for the fence-by-drbd-handler-callback constraint
 	local fencing_attribute fencing_value
 
 	case $1 in
@@ -518,7 +513,7 @@ drbd_peer_fencing()
 drbd_promote() {
 	local rc
 	local status
-	local fenced=""
+	local try_fence=true
 
 	rc=$OCF_ERR_GENERIC
 
@@ -529,10 +524,12 @@ drbd_promote() {
 		status=$?
 		case "$status" in
 		$OCF_SUCCESS)
+			# so we place a negative "fencing" constraint
+			# in case we are promoted without peer.
 			# try fencing only during first iteration
-			if [[ $DRBD_DSTATE_REMOTE$fenced == DUnknown ]]; then
+			if $try_fence && [[ $DRBD_DSTATE_REMOTE == DUnknown ]]; then
 				drbd_peer_fencing fence
-				fenced=fenced
+				try_fence=false
 			fi
 			do_drbdadm primary $DRBD_RESOURCE
 			;;
