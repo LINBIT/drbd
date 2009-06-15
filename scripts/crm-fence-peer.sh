@@ -3,7 +3,9 @@
 
 # try to get possible output on stdout/err to syslog
 PROG=${0##*/}
-exec > >(2>&- ; logger -s -t "$PROG[$$]" -p local5.info) 2>&1
+if [[ $- != *x* ]]; then
+	exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
+fi
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
@@ -18,57 +20,126 @@ for var in DRBD_RESOURCE; do
 	fi
 done
 
-echo "invoked for $DRBD_RESOURCE"
+# make sure it contains what we expect
+HOSTNAME=$(uname -n)
 
-# The CIB resource name, may be passed in from commandline
-CIB_RESOURCE=${1}
+# The CIB master resource id, may be passed in from commandline
+master_id=${1}
+
+echo "invoked for $DRBD_RESOURCE${master_id:+" (master-id: $master_id)"}"
+
 # if not passed in, try to "guess" it from the cib
-if [ -z "$CIB_RESOURCE" ]; then
+# we only know the DRBD_RESOURCE.
+fence_peer_init()
+{
+	# we know which instance we are: $OCF_RESOURCE_INSTANCE.
+	# but we do not know the xml ID of the <master/> :(
+	# cibadmin -Ql --xpath \
 	# '//master[primitive[@type="drbd" and instance_attributes/nvpair[@name = "drbd_resource" and @value="r0"]]]/@id'
-	# would be what I want. But unfortunately the answer to that is empty, cibadmin cannot do that yet.
-	# fall back to sed.
-	CIB_RESOURCE=$(cibadmin --query --xpath \
-		'//master[primitive[@type="drbd" and instance_attributes/nvpair
-			[@name = "drbd_resource" and @value="r0"]]]' |
-		sed -ne '1 { s/^<master id="\([^"]*\)">$/\1/p; };q')
-fi
+	# but I'd have to pipe that through sed anyways, because @attribute
+	# xpath queries are not supported.
+	# and I'd be incompatible with older cibadmin not supporting --xpath.
+	# be cool, sed it out:
+	cib_xml=$(cibadmin -Ql)
+	: ${master_id=$( echo "$cib_xml" |
+		sed -ne '/<master /,/<\/master>/ {
+			   /<master / h;
+			     /<primitive/,/<\/primitive/ {
+			       /<instance_attributes/,/<\/instance_attributes/ {
+				 /<nvpair .*\bname="drbd_resource"/ {
+				   /.*\bvalue="'"$DRBD_RESOURCE"'"/! d
+				   x
+				   s/^.*\bid="\([^"]*\)".*/\1/p
+				   q
+				 };};};}')}
+	if [[ -z $master_id ]] ; then
+		echo WARNING "drbd-fencing could not determine the master id of drbd resource $DRBD_RESOURCE"
+		return 1;
+	fi
+	# lets see: 
+	have_constraint=$(echo "$cib_xml" | sed -e '/<rsc_location .*\bid="'"$id_prefix-$master_id"'"/!d;q')
+	return 0
+}
+
+# drbd_peer_fencing fence|unfence
+drbd_peer_fencing()
+{
+	local rc
+
+	# input for fence_peer_init
+	local primitive_id=${OCF_RESOURCE_INSTANCE%:*}
+	# this should be a different id_prefix as for the constraint placed by
+	# the drbd resource agent
+	local id_prefix=drbd-fence-by-handler
+	# output of fence_peer_init
+	local cib_xml have_constraint
+
+	fence_peer_init || return
+	local fencing_attribute fencing_value
+
+	case $1 in
+	fence)
+		if [[ -z $have_constraint ]] ; then
+			fencing_attribute=drbd-site
+			if ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
+				fencing_attribute="#uname"
+				fencing_value=$HOSTNAME
+			fi
+
+			# try to place it.
+			# double negation: do not run but with my data.
+			cibadmin -C -o constraints -X "\
+<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">
+  <rule role=\"Master\" score=\"-INFINITY\" id=\"$id_prefix-rule-$master_id\">
+    <expression attribute=\"$fencing_attribute\" operation=\"ne\" value=\"$fencing_value\" id=\"$id_prefix-expr-$master_id\"/>
+  </rule>
+</rsc_location>"
+			rc=$?
+		else
+			# if this id already exits, we may have lost a shootout
+			echo WARNING "constraint "$have_constraint" already exists"
+			# anything != 0 will do;
+			# 21 happend to be "The object already exists" with my cibadmin
+			rc=21
+		fi
+
+		if [ $rc != 0 ]; then
+			# at least we tried.
+			# maybe it was already in place?
+			echo WARNING "could not place the constraint!"
+		fi
+		return $rc
+		;;
+	unfence)
+		if [[ -n $have_constraint ]]; then
+			# remove it
+			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">"
+		else
+			return 0
+		fi
+	esac
+}
 
 # check arguments specified on command line
-if [ -z "$CIB_RESOURCE" ]; then
+if [ -z "$master_id" ]; then
 	echo "You must specify a resource defined in the CIB when using this handler." >&2
 	exit 1
 fi
 
-DRBD_LOCAL_HOST=$(hostname)
-
 xml_id=drbd-fence-$CIB_RESOURCE
 
-case `basename $0` in
+case $PROG in
     crm-fence-peer.sh)
-    	# if this id already exits, we may have lost a shootout
-	crm configure location \
-	    $xml_id ${CIB_RESOURCE} \
-	    rule \$id=drbd-fence-rule-${CIB_RESOURCE} \
-	    \$role="Master" -inf: \#uname ne ${DRBD_LOCAL_HOST}
-	rc=$?
-	if [ $rc -eq 0 ]; then
-            # 4: successfully outdated (per the exit code convention
-	    # of the DRBD "fence-peer" handler.
+	if drbd_peer_fencing fence; then
+	    # 4: successfully outdated (per the exit code convention
+	    # of the DRBD "fence-peer" handler)
 	    exit 4
 	fi
 	;;
     crm-unfence-peer.sh)
-	exists=$(crm configure show $xml_id)
-	if [[ $exists ]]; then
-		crm configure delete drbd-fence-${CIB_RESOURCE}
-		rc=$?
-	else
-		rc=0
+	if drbd_peer_fencing unfence; then
+		exit 0
 	fi
-	if [ $rc -eq 0 ]; then
-	    exit 0
-	fi
-	;;
 esac
 
 # 1: unexpected error
