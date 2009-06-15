@@ -29,7 +29,8 @@ KDIR=${KDIR%/}
 if test -z "$O"; then
 	## just in case...
 	## detect if $KDIR points to something which is actually $O ...
-	X=$( make help | sed -ne '/ -C .* O=.* help$/p' | tr -s ' ' )
+	X=$( make no-such-makefile-target 2>/dev/null |
+	     sed -ne '/ -C .* O=.* no-such-makefile-target$/p' | tr -s ' ' )
 	if [[ -n $X ]]; then
 		KDIR=${X##* -C }; KDIR=${KDIR%% *}; KDIR=$(cd $KDIR && pwd)
 		O=${X##* O=}; O=${O%% *}; O=$(cd $KDIR && cd $O && pwd)
@@ -84,6 +85,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     have_sock_create_kern=1
   else
     have_sock_create_kern=0
+  fi
+  if grep_q "kernel_sock_shutdown" $KDIR/include/linux/net.h ; then
+    have_kernel_sock_shutdown=1
+  else
+    have_kernel_sock_shutdown=0
   fi
   if grep_q "dst_groups" $KDIR/include/linux/netlink.h ; then
     have_nl_dst_groups=1
@@ -140,6 +146,8 @@ perl -pe "
   { ( $have_kmem_cache_s ? '' : '//' ) . \$1}e;
  s{.*(#define DEFINE_SOCK_CREATE_KERN.*)}
   { ( $have_sock_create_kern ? '//' : '' ) . \$1}e;
+ s{.*(#define DEFINE_KERNEL_SOCK_SHUTDOWN.*)}
+  { ( $have_kernel_sock_shutdown ? '//' : '' ) . \$1}e;
  s{.*(#define DRBD_NL_DST_GROUPS.*)}
   { ( $have_nl_dst_groups ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BACKPORT_OF_KZALLOC.*)}

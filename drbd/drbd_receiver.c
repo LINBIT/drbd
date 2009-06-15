@@ -3007,8 +3007,8 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
 		cr |= (oconn == C_CONNECTED &&
-				(peer_state.conn == C_STARTING_SYNC_S ||
-				 peer_state.conn == C_STARTING_SYNC_T));
+				(peer_state.conn >= C_STARTING_SYNC_S &&
+				 peer_state.conn <= C_WF_BITMAP_T));
 
 		if (cr)
 			nconn = drbd_sync_handshake(mdev, peer_state.role, real_peer_disk);

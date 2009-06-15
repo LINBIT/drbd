@@ -169,6 +169,18 @@ static inline void drbd_plug_device(struct drbd_conf *mdev)
 #define kmem_cache kmem_cache_s
 #endif
 
+#ifdef DEFINE_KERNEL_SOCK_SHUTDOWN
+enum sock_shutdown_cmd {
+	SHUT_RD = 0,
+	SHUT_WR = 1,
+	SHUT_RDWR = 2,
+};
+static inline int kernel_sock_shutdown(struct socket *sock, enum sock_shutdown_cmd how)
+{
+	return sock->ops->shutdown(sock, how);
+}
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 {

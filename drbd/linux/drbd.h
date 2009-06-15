@@ -177,8 +177,8 @@ enum drbd_conns {
 	C_WF_CONNECTION,
 	C_WF_REPORT_PARAMS, /* we have a socket */
 	C_CONNECTED,      /* we have introduced each other */
-	C_STARTING_SYNC_S,  /* starting full sync by IOCTL. */
-	C_STARTING_SYNC_T,  /* stariing full sync by IOCTL. */
+	C_STARTING_SYNC_S,  /* starting full sync by admin request. */
+	C_STARTING_SYNC_T,  /* stariing full sync by admin request. */
 	C_WF_BITMAP_S,
 	C_WF_BITMAP_T,
 	C_WF_SYNC_UUID,
