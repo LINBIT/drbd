@@ -774,9 +774,8 @@ drbd_validate_all () {
 		DRBD_DEVICE=/dev/drbd/by-res/$DRBD_RESOURCE
 	fi
 
-	# don't check for master-max and allow-two-primaries on start|promote
-	# only, so it could be stopped still, if someone re-configured while
-	# running.
+	# check for master-max and allow-two-primaries on start|promote only,
+	# so it could be stopped still, if someone re-configured while running.
 	case $__OCF_ACTION:$OCF_RESKEY_CRM_meta_master_max in
 	start:2|promote:2)
 		if $DRBDADM -d -v dump $DRBD_RESOURCE 2>/dev/null |
