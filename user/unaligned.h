@@ -58,16 +58,15 @@ static inline uint64_t __get_unaligned_64(uint64_t *ptr)
 	}))
 
 #define put_unaligned(val, ptr) ({					\
-	typeof(val) v;							\
-	switch (sizeof(*(ptr))) {					\
+	typeof(*ptr) v = val;						\
+	switch (sizeof(v)) {						\
 	case 1:								\
-		*(uint8_t *)(ptr) = (uint8_t)(val);			\
+		*(ptr) = v;						\
 		break;							\
 	case 2:								\
 	case 4:								\
 	case 8:								\
-		v = val;						\
-		memcpy(ptr, &v, sizeof(*(ptr)));			\
+		memcpy(ptr, &v, sizeof(v));				\
 		break;							\
 	default:							\
 		__bad_unaligned_access_size();				\

@@ -24,7 +24,6 @@ OPTFLAGS = -O1
 CFLAGS = $(OPTFLAGS) -c -W -Wall -I../drbd
 # for the netlink connector stuff <linux/connector.h>:
 drbdsetup: CFLAGS += -I$(KDIR)/include
-drbdsetup drbdmeta: CFLAGS += -fno-strict-aliasing
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
