@@ -61,7 +61,7 @@ DEBUG_LOG_DIR=/tmp/drbd.ocf.ra.debug
 DEBUG_LOG=$DEBUG_LOG_DIR/log
 USE_DEBUG_LOG=false
 ls_stat_is_dir_0700_root() {
-	set -- $(command ls -ldn "$1");
+	set -- $(command ls -ldn "$1" 2>/dev/null);
 	[[ $1/$3 = drwx?-??-?/0 ]]
 }
 # try to avoid symlink vuln.
@@ -672,9 +672,11 @@ meta_expect()
 {
 	local what=$1 whatvar=OCF_RESKEY_CRM_meta_${1//-/_} op=$2 expect=$3
 	local val=${!whatvar}
-	# [, not [[, or it won't work ;)
-	[ $val $op $expect ] && return
-	ocf_log err "meta parameter misconfigured, expected $what $op $expect, but found $val."
+	if [[ -n $val ]]; then
+		# [, not [[, or it won't work ;)
+		[ $val $op $expect ] && return
+	fi
+	ocf_log err "meta parameter misconfigured, expected $what $op $expect, but found ${val:-unset}."
 	exit $OCF_ERR_CONFIGURED
 }
 
