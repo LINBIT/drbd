@@ -50,7 +50,6 @@
 #include <linux/connector.h>
 
 #include <linux/drbd.h>
-#include <linux/drbd_config.h>
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
 

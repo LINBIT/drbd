@@ -104,7 +104,7 @@ else
 	@is_tarball=`test -e ../.git/. && echo false || echo true`;\
 	set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
-	echo -e "#include <linux/drbd_config.h>";                               \
+	echo -e "#include <linux/drbd.h>";					\
 	echo -e "const char *drbd_buildtag(void)\n{";				\
 	if $$is_tarball; then							\
 	  if ! test -e $@ ; then 						\

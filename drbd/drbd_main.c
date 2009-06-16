@@ -26,7 +26,7 @@
 #include <linux/autoconf.h>
 #include <linux/module.h>
 #include <linux/version.h>
-
+#include <linux/drbd.h>
 #include <asm/uaccess.h>
 #include <asm/types.h>
 #include <net/sock.h>
@@ -37,7 +37,6 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/mm.h>
-#include <linux/drbd_config.h>
 #include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
@@ -54,7 +53,6 @@
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 
-#include <linux/drbd.h>
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
 #include "drbd_tracing.h"
