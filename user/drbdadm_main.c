@@ -1682,7 +1682,7 @@ int adm_connect(struct d_resource *res,
 	} else if (dry_run > 1) {
 		argv[NA(argc)] = "N/A";
 	} else {
-		fprintf(stderr, "cannot connect without knowing my peer.\n");
+		fprintf(stderr, "resource %s: cannot change network config without knowing my peer.\n", res->name);
 		return dry_run ? 0 : 20;
 	}
 	argv[NA(argc)] = res->protocol;

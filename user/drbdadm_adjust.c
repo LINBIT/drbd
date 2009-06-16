@@ -234,7 +234,8 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	}
 	if(do_syncer)  schedule_dcmd(adm_syncer,res,"syncer",1);
 	if(do_connect) {
-		if(have_net) schedule_dcmd(adm_generic_s,res,"disconnect",0);
+		if (have_net && res->peer)
+			schedule_dcmd(adm_generic_s,res,"disconnect",0);
 		schedule_dcmd(adm_connect,res,"connect",2);
 	}
 
