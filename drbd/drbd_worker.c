@@ -44,7 +44,6 @@
 #include <linux/scatterlist.h>
 #endif
 
-#include <linux/drbd.h>
 #include "drbd_int.h"
 #include "drbd_req.h"
 #include "drbd_tracing.h"

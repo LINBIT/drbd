@@ -30,6 +30,7 @@
 #include <net/sock.h>
 
 #include <linux/version.h>
+#include <linux/drbd.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/in.h>
@@ -51,7 +52,6 @@
 #include <linux/string.h>
 #include <linux/scatterlist.h>
 #endif
-#include <linux/drbd.h>
 #include "drbd_int.h"
 #include "drbd_tracing.h"
 #include "drbd_req.h"

@@ -25,12 +25,12 @@
 
 #include <linux/autoconf.h>
 #include <linux/module.h>
+#include <linux/drbd.h>
 #include <linux/in.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/connector.h>
-#include <linux/drbd.h>
 #include <linux/blkpg.h>
 #include <linux/cpumask.h>
 #include "drbd_int.h"
