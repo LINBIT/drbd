@@ -1274,8 +1274,6 @@ extern int drbd_send_ack_dp(struct drbd_conf *mdev, enum drbd_packets cmd,
 			struct p_data *dp);
 extern int drbd_send_ack_ex(struct drbd_conf *mdev, enum drbd_packets cmd,
 			    sector_t sector, int blksize, u64 block_id);
-extern int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
-			int offset, size_t size);
 extern int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
 			   struct drbd_epoch_entry *e);
 extern int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req);
@@ -1568,7 +1566,7 @@ static inline void ov_oos_print(struct drbd_conf *mdev)
 }
 
 
-void drbd_csum(struct drbd_conf *, struct crypto_hash *, struct bio *, void *);
+extern void drbd_csum(struct drbd_conf *, struct crypto_hash *, struct bio *, void *);
 /* worker callbacks */
 extern int w_req_cancel_conflict(struct drbd_conf *, struct drbd_work *, int);
 extern int w_read_retry_remote(struct drbd_conf *, struct drbd_work *, int);

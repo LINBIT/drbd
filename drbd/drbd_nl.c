@@ -50,6 +50,8 @@ static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 /* Generate the tag_list to struct functions */
 #define NL_PACKET(name, number, fields) \
 STATIC int name ## _from_tags(struct drbd_conf *mdev, \
+	unsigned short *tags, struct name *arg) __attribute__ ((unused)); \
+STATIC int name ## _from_tags(struct drbd_conf *mdev, \
 	unsigned short *tags, struct name *arg) \
 { \
 	int tag; \
@@ -95,6 +97,9 @@ STATIC int name ## _from_tags(struct drbd_conf *mdev, \
 
 /* Generate the struct to tag_list functions */
 #define NL_PACKET(name, number, fields) \
+STATIC unsigned short* \
+name ## _to_tags(struct drbd_conf *mdev, \
+	struct name *arg, unsigned short *tags) __attribute__ ((unused)); \
 STATIC unsigned short* \
 name ## _to_tags(struct drbd_conf *mdev, \
 	struct name *arg, unsigned short *tags) \

@@ -3944,7 +3944,7 @@ int drbd_do_auth(struct drbd_conf *mdev)
 }
 #endif
 
-STATIC int drbdd_init(struct drbd_thread *thi)
+int drbdd_init(struct drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
 	unsigned int minor = mdev_to_minor(mdev);
@@ -4267,7 +4267,7 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	return &asender_tbl[cmd];
 }
 
-STATIC int drbd_asender(struct drbd_thread *thi)
+int drbd_asender(struct drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
 	struct p_header *h = &mdev->meta.rbuf.header;

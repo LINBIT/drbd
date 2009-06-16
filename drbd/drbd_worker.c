@@ -307,7 +307,7 @@ int w_resync_inactive(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return 1; /* Simply ignore this! */
 }
 
-STATIC void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
+void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
 {
 	struct hash_desc desc;
 	struct scatterlist sg;
