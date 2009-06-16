@@ -369,9 +369,9 @@ figure_out_drbd_peer_uname()
 	# intentionally not cared for stop_uname
 	for x in \
 		$OCF_RESKEY_CRM_meta_notify_start_uname \
+		$OCF_RESKEY_CRM_meta_notify_promote_uname \
 		$OCF_RESKEY_CRM_meta_notify_master_uname \
 		$OCF_RESKEY_CRM_meta_notify_slave_uname \
-		$OCF_RESKEY_CRM_meta_notify_promote_uname \
 		$OCF_RESKEY_CRM_meta_notify_demote_uname \
 		""
 	do
