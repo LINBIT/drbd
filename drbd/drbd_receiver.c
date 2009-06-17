@@ -2395,7 +2395,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 
 	*rule_nr = 10;
 	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
-		self = mdev->p_uuid[i] & ~((u64)1);
+		self = mdev->ldev->md.uuid[i] & ~((u64)1);
 		for (j = UI_HISTORY_START; j <= UI_HISTORY_END; j++) {
 			peer = mdev->p_uuid[j] & ~((u64)1);
 			if (self == peer)
