@@ -49,7 +49,9 @@
 #define HTTP_ADDR "212.69.161.111"
 #define DRBD_LIB_DIR "/var/lib/drbd"
 #define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
-#define GIT_HASH_BYTE 20
+#define GIT_HASH_BYTE   20
+#define SRCVERSION_BYTE 12     /* acutally 11 and a half. */
+#define SRCVERSION_PAD (GIT_HASH_BYTE - SRCVERSION_BYTE)
 #define SVN_STYLE_OD  16
 
 struct vcs_rel {
@@ -102,9 +104,14 @@ void read_hex(char* dst, char* src, int dst_size, int src_size)
 	int dst_i, u, src_i=0;
 
 	for(dst_i=0;dst_i<dst_size;dst_i++) {
-		if(src[src_i] == 0) break;
-		sscanf(src+src_i,"%2x",&u);
-		dst[dst_i]=u;
+		if (src[src_i] == 0) break;
+		if (src_size - src_i < 2) {
+			sscanf(src+src_i,"%1x",&u);
+			dst[dst_i]=u<<4;
+		} else {
+			sscanf(src+src_i,"%2x",&u);
+			dst[dst_i]=u;
+		}
 		if(++src_i >= src_size) break;
 		if(src[src_i] == 0) break;
 		if(++src_i >= src_size) break;
@@ -139,7 +146,7 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 {
 	char token[80];
 	int plus=0;
-	enum { begin, f_ver, f_svn, f_rev, f_git } ex = begin;
+	enum { begin, f_ver, f_svn, f_rev, f_git, f_srcv } ex = begin;
 
 	while (sget_token(token, sizeof(token), &text) != EOF) {
 		switch(ex) {
@@ -148,6 +155,7 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 				ex = f_ver;
 			if(!strcmp(token,"SVN"))  ex = f_svn;
 			if(!strcmp(token,"GIT-hash:"))  ex = f_git;
+			if(!strcmp(token,"srcversion:"))  ex = f_srcv;
 			break;
 		case f_ver:
 			if(!strcmp(token,"plus"))
@@ -168,6 +176,11 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 			return;
 		case f_git:
 			read_hex(rel->git_hash, token, GIT_HASH_BYTE, strlen(token));
+			rel->svn_revision = 0;
+			return;
+		case f_srcv:
+			memset(rel->git_hash, 0, SRCVERSION_PAD);
+			read_hex(rel->git_hash + SRCVERSION_PAD, token, SRCVERSION_BYTE, strlen(token));
 			rel->svn_revision = 0;
 			return;
 		}
