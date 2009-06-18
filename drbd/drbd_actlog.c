@@ -433,14 +433,14 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	int i;
 	int rv;
 	int mx;
-	int cnr;
 	int active_extents = 0;
 	int transactions = 0;
-	int overflow = 0;
-	int from = -1;
-	int to = -1;
-	u32 from_tnr = -1;
+	int found_valid = 0;
+	int from = 0;
+	int to = 0;
+	u32 from_tnr = 0;
 	u32 to_tnr = 0;
+	u32 cnr;
 
 	mx = div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT);
 
@@ -461,22 +461,27 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		}
 		cnr = be32_to_cpu(buffer->tr_number);
 
-		if (cnr == -1)
-			overflow = 1;
-
-		if (cnr < from_tnr && !overflow) {
+		if (++found_valid == 1) {
+			from = i;
+			to = i;
+			from_tnr = cnr;
+			to_tnr = cnr;
+			continue;
+		}
+		if ((int)cnr - (int)from_tnr < 0) {
+			D_ASSERT(from_tnr - cnr + i - from == mx+1);
 			from = i;
 			from_tnr = cnr;
 		}
-		if (cnr > to_tnr) {
+		if ((int)cnr - (int)to_tnr > 0) {
+			D_ASSERT(cnr - to_tnr == i - to);
 			to = i;
 			to_tnr = cnr;
 		}
 	}
 
-	if (from == -1 || to == -1) {
+	if (!found_valid) {
 		dev_warn(DEV, "No usable activity log found.\n");
-
 		mutex_unlock(&mdev->md_io_mutex);
 		return 1;
 	}
