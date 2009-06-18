@@ -23,55 +23,54 @@
 
 /* on some architectures we have to do it in program code */
 
-static inline uint16_t __get_unaligned_16(uint16_t *ptr)
-{
-	uint16_t rv;
-	memcpy(&rv, ptr, sizeof(rv));
-	return rv;
-}
-
-static inline uint32_t __get_unaligned_32(uint32_t *ptr)
-{
-	uint32_t rv;
-	memcpy(&rv, ptr, sizeof(rv));
-	return rv;
-}
-
-static inline uint64_t __get_unaligned_64(uint64_t *ptr)
-{
-	uint64_t rv;
-	memcpy(&rv, ptr, sizeof(rv));
-	return rv;
-}
+/* Better not use memcpy(). gcc generates broken code an ARM at higher
+   optimisation levels
+*/
 
 #define __bad_unaligned_access_size() ({			\
 	fprintf(stderr, "bad unaligned access. abort()\n");	\
 	abort();						\
 	})
 
-#define get_unaligned(ptr) ((typeof(*(ptr)))({							\
-	__builtin_choose_expr(sizeof(*(ptr)) == 1, *(ptr),					\
-	__builtin_choose_expr(sizeof(*(ptr)) == 2, __get_unaligned_16((uint16_t *)(ptr)),	\
-	__builtin_choose_expr(sizeof(*(ptr)) == 4, __get_unaligned_32((uint32_t *)(ptr)),	\
-	__builtin_choose_expr(sizeof(*(ptr)) == 8, __get_unaligned_64((uint64_t *)(ptr)),	\
-	__bad_unaligned_access_size()))));							\
-	}))
+#define get_unaligned(ptr) ((typeof(*(ptr)))({		\
+	typeof(*(ptr)) v;			 	\
+	unsigned char *s = (unsigned char*)(ptr);	\
+	unsigned char *d = (unsigned char*)&v;		\
+	switch (sizeof(v)) {				\
+	case 8: *d++ = *s++;				\
+		*d++ = *s++;				\
+		*d++ = *s++;				\
+		*d++ = *s++;				\
+	case 4: *d++ = *s++;				\
+		*d++ = *s++;				\
+	case 2:	*d++ = *s++;				\
+	case 1:	*d++ = *s++;				\
+		break;					\
+	default:					\
+		__bad_unaligned_access_size();		\
+		break;					\
+	}						\
+	v; }))
 
-#define put_unaligned(val, ptr) ({					\
-	typeof(*ptr) v = val;						\
-	switch (sizeof(v)) {						\
-	case 1:								\
-		*(ptr) = v;						\
-		break;							\
-	case 2:								\
-	case 4:								\
-	case 8:								\
-		memcpy(ptr, &v, sizeof(v));				\
-		break;							\
-	default:							\
-		__bad_unaligned_access_size();				\
-		break;							\
-	}								\
+
+#define put_unaligned(val, ptr) ({			\
+	typeof(*(ptr)) v = (val);			\
+	unsigned char *d = (unsigned char*)(ptr);	\
+	unsigned char *s = (unsigned char*)&v;		\
+	switch (sizeof(v)) {				\
+	case 8: *d++ = *s++;				\
+		*d++ = *s++;				\
+		*d++ = *s++;				\
+		*d++ = *s++;				\
+	case 4: *d++ = *s++;				\
+		*d++ = *s++;				\
+	case 2:	*d++ = *s++;				\
+	case 1:	*d++ = *s++;				\
+		break;					\
+	default:					\
+		__bad_unaligned_access_size();		\
+		break;					\
+	}						\
 	(void)0; })
 
 #endif
