@@ -216,9 +216,11 @@ drbd_set_status_variables() {
 }
 
 # This is not the only fencing mechanism.
-# But in addition to the drbd "fence-peer" handler, which should be configured
+# But in addition to the drbd "fence-peer" handler, which should be configured,
 # and is expected to place some appropriate constraints, this is used to
 # actually store the Outdated information in DRBD on-disk meta data.
+#
+# called after stop, and from post notification events.
 maybe_outdate()
 {
 	local host stop_uname
@@ -241,13 +243,16 @@ maybe_outdate()
 		return 1
 	done
 
+	# e.g. post/promote of some other peer.
+	# Should not happen, fencing constraints should take care of that.
+	# But in case it does, scream out loud.
 	if [[ $DRBD_ROLE_LOCAL == Primary ]] && [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]]; then
 		# I am Primary. The other one is Primary.
 		# But we cannot talk to each other :(
 		# one of us has to die.
 		# which one, however, is not ours to decide.
 
-		ocf_log crit "resource internal SPLIT-BRAIN: both $HOSTNAME and $host are Primary for $DRBD_RESOURCE, but replication link down!"
+		ocf_log crit "resource internal SPLIT BRAIN: both $HOSTNAME and $host are Primary for $DRBD_RESOURCE, but the replication link is down!"
 		return 1
 	fi
 
@@ -277,7 +282,7 @@ drbd_update_master_score() {
 		;;
 
 	UpToDate/*)
-		# We know somthing about our peer which means that either the
+		# We know something about our peer, which means that either the
 		# replication link is established, or it was not even
 		# consistent last time we talked to each other.
 		# Also our local disk is UpToDate, which means even if we are
@@ -290,7 +295,7 @@ drbd_update_master_score() {
 		# But our peer is OK.
 		# We can expect to have access to useful
 		# data, but must expect degraded performance.
-		set_master_score 1
+		set_master_score 10
 		;;
 	*)
 		# Our local disk is not up to date.
@@ -461,7 +466,7 @@ drbd_peer_fencing()
 	local rc
 
 	# input for fence_peer_init
-	local primitive_id=${OCF_RESOURCE_INSTANCE%:*}
+	local primitive_id=$(echo "${OCF_RESOURCE_INSTANCE}" | sed -e 's/:[0-9]*$//;s/[$*.[\^]/\\&/g')
 	# this should be a different id_prefix as for the constraint placed by
 	# the drbd "fence-peer" handler callback
 	local id_prefix=drbd-RA-fence
@@ -576,7 +581,6 @@ drbd_demote() {
 
 drbd_stop() {
 	local rc=$OCF_ERR_GENERIC
-	local try_outdate=true
 
 	# Keep trying to bring down the resource;
 	# wait for the CRM to time us out if this fails
@@ -586,8 +590,6 @@ drbd_stop() {
 		case "$status" in
 		$OCF_SUCCESS)
 			do_drbdadm down $DRBD_RESOURCE
-			$try_outdate && maybe_outdate
-			try_outdate=false
 			;;
 		$OCF_NOT_RUNNING)
 			rc=$OCF_SUCCESS
@@ -599,6 +601,11 @@ drbd_stop() {
 			do_drbdadm secondary  $DRBD_RESOURCE
 		esac
 	done
+
+	# if there is some Master (Primary) still around,
+	# outdate myself in drbd on-disk meta data.
+	maybe_outdate
+
 	# do not let old master scores laying around.
 	# they may confuse crm if this node was set to standby.
 	# also, Outdate myself in case drbd handler don't do that for me
@@ -622,24 +629,24 @@ drbd_notify() {
 	: "== DEBUG == stop    = $OCF_RESKEY_CRM_meta_notify_stop_uname"
 	: "== DEBUG == demote  = $OCF_RESKEY_CRM_meta_notify_demote_uname"
 
-	# We do not get a /pre/ start notification for ourself.
-	# but we get a /pre/ start notification for the other side, unless both
-	# are started from the same transition graph.  if there are only two
-	# peers (the "classic" two-node DRBD), this adjust is usually a no-op.
-	#
-	# In case of more than one _possible_ peer, we may still be StandAlone,
-	# or configured for a meanwhile failed peer, and should now adjust our
-	# network settings during pre-notification of start of the other node.
-	#
-	# We usually get /post/ notification for ourself and the peer.
-	# In both cases adjust should be a no-op.
-	if $DRBDADM_HAS_MULTI_PEER && [[ $n_op = start ]] ; then
+	case $n_type/$n_op in
+	*/start)
+		# We do not get a /pre/ start notification for ourself.
+		# but we get a /pre/ start notification for the other side, unless both
+		# are started from the same transition graph.  If there are only two
+		# peers (the "classic" two-node DRBD), this adjust is usually a no-op.
+		#
+		# In case of more than one _possible_ peer, we may still be StandAlone,
+		# or configured for a meanwhile failed peer, and should now adjust our
+		# network settings during pre-notification of start of the other node.
+		#
+		# We usually get /post/ notification for ourself and the peer.
+		# In both cases adjust should be a no-op.
 		drbd_set_status_variables
 		figure_out_drbd_peer_uname
 		do_drbdadm $DRBD_TO_PEER -v adjust $DRBD_RESOURCE
-	fi
-	case $n_type in
-	post)
+		;;
+	post/*)
 		# After something has been done is a good time to
 		# recheck our status:
 		drbd_set_status_variables
@@ -653,7 +660,7 @@ drbd_notify() {
 			:;;
 		DUnknown)
 			# Still not communicating.
-			# Maybe someone else is primary?
+			# Maybe someone else is primary (too)?
 			maybe_outdate
 			;;
 		*)
@@ -689,15 +696,17 @@ drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
 
+	# This resource agent uses some features introduced in drbd 8.3.2.
+	# check with drbdadm --version, which is one of the new features ;)
 	local VERSION DRBDADM_VERSION_CODE=0
-	if VERSION="$($DRBDADM -V 2>/dev/null)"; then
+	if VERSION="$($DRBDADM --version 2>/dev/null)"; then
 		eval $VERSION
 	fi
 	if (( $DRBDADM_VERSION_CODE >= 0x080302 )); then
 		DRBDADM_HAS_SH_STATUS=true
 		DRBDADM_HAS_MULTI_PEER=true
 	else
-		#ocf_log warn "this RA needs drbd 8.3.2 or better"
+		ocf_log warn "this RA is intended for DRBD 8.3.2 or better"
 		#return $OCF_ERR_INSTALLED
 		# actually, sh-status is available for >= 8.2.7
 		# but that did not yet support drbdadm --version.
