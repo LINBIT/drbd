@@ -49,6 +49,7 @@ export LANG=C LANGUAGE=C LC_ALL=C
 OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
 
 : ${OCF_RESKEY_drbdconf:=${OCF_RESKEY_drbdconf_default}}
+: ${OCF_RESKEY_drbd_fencing_attribute:="#uname"}
 
 # Defaults according to "Configuration 1.0 Explained",
 # "Multi-state resource configuration options"
@@ -109,6 +110,15 @@ Full path to the drbd.conf file.
 </longdesc>
 <shortdesc lang="en">Path to drbd.conf</shortdesc>
 <content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
+</parameter>
+
+<parameter name="drbd_fencing_attribute">
+<longdesc lang="en">
+Node attribute to be used in fencing constraints, to reduce the chance of going online with stale data.
+Set to DISABLED to disable this functionality.
+</longdesc>
+<shortdesc lang="en">Node attribute for fencing constraints</shortdesc>
+<content type="string" default="#uname"/>
 </parameter>
 
 </parameters>
@@ -198,20 +208,24 @@ drbd_set_status_variables() {
 		# Populates a set of variables relevant to DRBD's status
 		eval "$($DRBDSETUP "$DRBD_DEVICE" sh-status)"
 	else
-		local DRBD_ROLE DRBD_DSTATE
 		# redirect stderr on state, as it may print a deprecation
 		# warning on 8.3.0 and 8.3.1.
 		# not redirect on cstate, in case drbdsetup actually wants
 		# to complain about something!
-		DRBD_ROLE=$($DRBDSETUP "$DRBD_DEVICE" state 2>/dev/null)
-		DRBD_DSTATE=$($DRBDSETUP "$DRBD_DEVICE" dstate 2>/dev/null)
-		DRBD_CSTATE=$(do_cmd $DRBDSETUP "$DRBD_DEVICE" cstate)
-
-		DRBD_ROLE_LOCAL=${DRBD_ROLE%%/*}
-		DRBD_ROLE_REMOTE=${DRBD_ROLE##*/}
-
-		DRBD_DSTATE_LOCAL=${DRBD_DSTATE%%/*}
-		DRBD_DSTATE_REMOTE=${DRBD_DSTATE##*/}
+		if _cstate=$(do_cmd $DRBDSETUP "$DRBD_DEVICE" cstate) &&
+		   _role=$($DRBDSETUP "$DRBD_DEVICE" state 2>/dev/null) &&
+		   _disk=$($DRBDSETUP "$DRBD_DEVICE" dstate 2>/dev/null)
+		then
+			DRBD_CSTATE=${_cstate:-Unconfigured}
+			if [[ $_role = */* ]] ; then
+				DRBD_ROLE_LOCAL=${_role%%/*}
+				DRBD_ROLE_REMOTE=${_role##*/}
+			fi
+			if [[ $_disk = */* ]]; then
+				DRBD_DSTATE_LOCAL=${_disk%%/*}
+				DRBD_DSTATE_REMOTE=${_disk##*/}
+			fi
+		fi
 	fi
 }
 
@@ -221,7 +235,7 @@ drbd_set_status_variables() {
 # actually store the Outdated information in DRBD on-disk meta data.
 #
 # called after stop, and from post notification events.
-maybe_outdate()
+maybe_outdate_self()
 {
 	local host stop_uname
 	for host in $OCF_RESKEY_CRM_meta_notify_master_uname \
@@ -297,6 +311,15 @@ drbd_update_master_score() {
 		# data, but must expect degraded performance.
 		set_master_score 10
 		;;
+	Consistent/*)
+		# Our local disk is Consistent.
+		# It _may_ be up to date, or not.
+		# We hope that fencing mechanisms have put constraints in
+		# place, so we won't be promoted with stale data.
+		# But in case this was a cluster crash,
+		# at least allow _someone_ to be promoted.
+		set_master_score 5
+		;;
 	*)
 		# Our local disk is not up to date.
 		# Our peer is not available.
@@ -357,6 +380,12 @@ drbd_monitor() {
 	status=$?
 
 	drbd_update_master_score
+
+	case $DRBD_DSTATE_REMOTE in
+	UpToDate|Inconsistent)
+		# We may well remove any fencing constraint now.
+		drbd_peer_fencing unfence
+	esac
 
 	return $status
 }
@@ -435,7 +464,7 @@ fence_peer_init()
 	# and I'd be incompatible with older cibadmin not supporting --xpath.
 	# be cool, sed it out:
 	cib_xml=$(cibadmin -Ql)
-	master_id=$( echo "$cib_xml" |
+	master_id=$( set +x; echo "$cib_xml" |
 		sed -ne '/<master /,/<\/master>/ {
 				/<master / h;
 				/<primitive .*\bid="'"$primitive_id"'"/ {
@@ -456,7 +485,8 @@ fence_peer_init()
 		return 1;
 	fi
 	# lets see: 
-	have_constraint=$(echo "$cib_xml" | sed -e '/<rsc_location .*\bid="'"$id_prefix-$master_id"'"/!d;q')
+	have_constraint=$(set +x; echo "$cib_xml" |
+		sed -e '/<rsc_location .*\bid="'"$id_prefix-$master_id"'"/!d;q')
 	return 0
 }
 
@@ -464,23 +494,28 @@ fence_peer_init()
 drbd_peer_fencing()
 {
 	local rc
+	local fencing_value fencing_attribute=$OCF_RESKEY_drbd_fencing_attribute
 
+	if [[ $fencing_attribute = DISABLED ]]; then
+		return
+	fi
 	# input for fence_peer_init
 	local primitive_id=$(echo "${OCF_RESOURCE_INSTANCE}" | sed -e 's/:[0-9]*$//;s/[$*.[\^]/\\&/g')
 	# this should be a different id_prefix as for the constraint placed by
 	# the drbd "fence-peer" handler callback
-	local id_prefix=drbd-RA-fence
+	local id_prefix=drbd-fence-by-RA
 	# output of fence_peer_init
 	local master_id cib_xml have_constraint
 
 	fence_peer_init || return
-	local fencing_attribute fencing_value
 
 	case $1 in
 	fence)
 		if [[ -z $have_constraint ]] ; then
-			fencing_attribute=drbd-site
-			if ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
+			if [[ $fencing_attribute = "#uname" ]]; then
+				fencing_value=$HOSTNAME
+			elif ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
+				ocf_log warn "No value for drbd_fencing_attribute $fencing_attribute found, falling back to #uname";
 				fencing_attribute="#uname"
 				fencing_value=$HOSTNAME
 			fi
@@ -502,7 +537,7 @@ drbd_peer_fencing()
 
 		if [ $rc != 0 ]; then
 			# at least we tried.
-			# may it was already in place?
+			# maybe it was already in place?
 			ocf_log warn "drbd_fence_peer() could not place the constraint! ignored."
 		fi
 		return $rc
@@ -531,7 +566,9 @@ drbd_promote() {
 		$OCF_SUCCESS)
 			# so we place a negative "fencing" constraint
 			# in case we are promoted without peer.
-			# try fencing only during first iteration
+			# try fencing only during first iteration.
+			# XXX what about this optimistic fencing constraint,
+			# if promoting fails?
 			if $try_fence && [[ $DRBD_DSTATE_REMOTE == DUnknown ]]; then
 				drbd_peer_fencing fence
 				try_fence=false
@@ -596,7 +633,6 @@ drbd_stop() {
 			break
 			;;
 		$OCF_RUNNING_MASTER)
-			try_outdate=false
 			ocf_log warn "$DRBD_RESOURCE still Primary, demoting."
 			do_drbdadm secondary  $DRBD_RESOURCE
 		esac
@@ -604,7 +640,7 @@ drbd_stop() {
 
 	# if there is some Master (Primary) still around,
 	# outdate myself in drbd on-disk meta data.
-	maybe_outdate
+	maybe_outdate_self
 
 	# do not let old master scores laying around.
 	# they may confuse crm if this node was set to standby.
@@ -661,12 +697,7 @@ drbd_notify() {
 		DUnknown)
 			# Still not communicating.
 			# Maybe someone else is primary (too)?
-			maybe_outdate
-			;;
-		*)
-			# We communicate.
-			# We may well remove any constraint now.
-			drbd_peer_fencing unfence
+			maybe_outdate_self
 		esac
 	esac
 
@@ -696,6 +727,10 @@ drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
 
+	check_binary $DRBDADM
+	check_binary $DRBDSETUP
+	# XXX I really take cibadmin, sed, grep, etc. for granted.
+
 	# This resource agent uses some features introduced in drbd 8.3.2.
 	# check with drbdadm --version, which is one of the new features ;)
 	local VERSION DRBDADM_VERSION_CODE=0
@@ -706,7 +741,7 @@ drbd_validate_all () {
 		DRBDADM_HAS_SH_STATUS=true
 		DRBDADM_HAS_MULTI_PEER=true
 	else
-		ocf_log warn "this RA is intended for DRBD 8.3.2 or better"
+		ocf_log warn "You may be disappointed: This RA is intended for DRBD 8.3.2 or better!"
 		#return $OCF_ERR_INSTALLED
 		# actually, sh-status is available for >= 8.2.7
 		# but that did not yet support drbdadm --version.
@@ -727,10 +762,10 @@ drbd_validate_all () {
 	# check drbdconf plausibility
 	case "$OCF_RESKEY_drbdconf" in
 	"")
-		: # this is actually ok. drbdadm has its own builtin defaults.
-		  # but as long as we assign an explicit default above,
-		  # this cannot happen anyways.
-		;;
+		# this is actually ok. drbdadm has its own builtin defaults.
+		# but as long as we assign an explicit default above,
+		# this cannot happen anyways.
+		: ;;
 	*[!-%+./0-9:=@A-Z_a-z]*)
 		# no, I do not trust the configurable cib parameters.
 		ocf_log err "drbdconf name must only contain [-%+./0-9:=@A-Z_a-z]"
