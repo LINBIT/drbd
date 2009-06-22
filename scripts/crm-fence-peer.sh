@@ -1,39 +1,12 @@
 #!/bin/bash
 #
 
-# try to get possible output on stdout/err to syslog
-PROG=${0##*/}
-if [[ $- != *x* ]]; then
-	exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
-fi
-
-# check envars normally passed in by drbdadm
-# TODO DRBD_CONF is also passed in.  we may need to use it in the
-# xpath query, in case someone is crazy enough to use different
-# conf files with the _same_ resource name.
-# for now: do not do that, or hardcode the cib id of the master
-# in the handler section of your drbd conf file.
-for var in DRBD_RESOURCE; do
-	if [ -z "${!var}" ]; then
-		echo "Environment variable \$$var not found (this is normally passed in by drbdadm)." >&2
-		exit 1
-	fi
-done
-
-# make sure it contains what we expect
-HOSTNAME=$(uname -n)
-
-# The CIB master resource id, may be passed in from commandline
-master_id=${1}
-
-echo "invoked for $DRBD_RESOURCE${master_id:+" (master-id: $master_id)"}"
-
 sed_rsc_location_suitable_for_string_compare()
 {
 	# expected input: exactly one tag per line: "^[[:space:]]*<.*/?>$"
 	sed -ne '
 	# within the rsc_location constraint with that id,
-	/<rsc_location .*\bid="'"drbd-fence-by-handler-ms-drbd-r0"'"/, /<\/rsc_location>/ {
+	/<rsc_location .*\bid="'"$1"'"/, /<\/rsc_location>/ {
 		/<\/rsc_location>/q # done, if closing tag is found
 		s/^[[:space:]]*//   # trim spaces
 		s/ *\bid="[^"]*"//  # remove id tag
@@ -62,8 +35,8 @@ fence_peer_init()
 	# xpath queries are not supported.
 	# and I'd be incompatible with older cibadmin not supporting --xpath.
 	# be cool, sed it out:
-	cib_xml=$(cibadmin -Ql)
-	: ${master_id=$( echo "$cib_xml" |
+	local cib_xml=$(cibadmin -Ql)
+	: ${master_id=$(set +x; echo "$cib_xml" |
 		sed -ne '/<master /,/<\/master>/ {
 			   /<master / h;
 			     /<primitive/,/<\/primitive/ {
@@ -78,8 +51,8 @@ fence_peer_init()
 		echo WARNING "drbd-fencing could not determine the master id of drbd resource $DRBD_RESOURCE"
 		return 1;
 	fi
-	# lets see: 
-	have_constraint=$(set +x; echo "$cib_xml" | sed_rsc_location_suitable_for_string_compare)
+	have_constraint=$(set +x; echo "$cib_xml" |
+		sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")
 	return 0
 }
 
@@ -87,22 +60,20 @@ fence_peer_init()
 drbd_peer_fencing()
 {
 	local rc
-
-	# input for fence_peer_init
-	local primitive_id=$(echo "${OCF_RESOURCE_INSTANCE}" | sed -e 's/:[0-9]*$//;s/[$*.[\^]/\\&/g')
-	# this should be a different id_prefix as for the constraint placed by
-	# the drbd resource agent
-	local id_prefix=drbd-fence-by-handler
-	# output of fence_peer_init
-	local cib_xml have_constraint new_constraint
+	# input to fence_peer_init:
+	# $DRBD_RESOURCE is set by command line of from environment.
+	# $id_prefix is set by command line or default.
+	# $master_id is set by command line or will be parsed from the cib.
+	# output of fence_peer_init:
+	local have_constraint new_constraint
 
 	fence_peer_init || return
-	local fencing_attribute fencing_value
 
 	case $1 in
 	fence)
-		fencing_attribute=drbd-site
-		if ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
+		if [[ $fencing_attribute = "#uname" ]]; then
+			fencing_value=$HOSTNAME
+		elif ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
 			fencing_attribute="#uname"
 			fencing_value=$HOSTNAME
 		fi
@@ -118,7 +89,7 @@ drbd_peer_fencing()
 			cibadmin -C -o constraints -X "$new_constraint"
 			rc=$?
 		elif [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
-			sed_rsc_location_suitable_for_string_compare)" ]]; then
+			sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")" ]]; then
 			: "identical constraint already placed"
 			rc=0
 		else
@@ -139,20 +110,84 @@ drbd_peer_fencing()
 	unfence)
 		if [[ -n $have_constraint ]]; then
 			# remove it based on that id
-			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">"
+			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\"/>"
 		else
 			return 0
 		fi
 	esac
 }
 
-# check arguments specified on command line
-if [ -z "$master_id" ]; then
-	echo "You must specify a resource defined in the CIB when using this handler." >&2
-	exit 1
+############################################################
+
+# try to get possible output on stdout/err to syslog
+PROG=${0##*/}
+if [[ $- != *x* ]]; then
+	exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
 fi
 
-xml_id=drbd-fence-$CIB_RESOURCE
+# poor mans command line argument parsing
+while [[ $# != 0 ]]; do
+	case $1 in
+	--resource=*)
+		DRBD_RESOURCE=${1#*=}
+		;;
+	-r|--resource)
+		DRBD_RESOURCE=$2
+		shift
+		;;
+	--master-id=*)
+		master_id=${1#*=}
+		;;
+	-i|--master-id)
+		master_id=$2
+		shift
+		;;
+	--fencing-attribute=*)
+		fencing_attribute=${1#*=}
+		;;
+	-a|--fencing-attribute)
+		fencing_attribute=${2}
+		shift
+		;;
+	--id-prefix=*)
+		id_prefix=${1#*=}
+		;;
+	-p|--id-prefix)
+		id_prefix=${2}
+		shift
+		;;
+	-*)
+		echo >&2 "ignoring unknown option $1"
+		;;
+	*)
+		echo >&2 "ignoring unexpected argument $1"
+		;;
+	esac
+	shift
+done
+# defaults: 
+# DRBD_RESOURCE: from environment
+# master_id: parsed from cib
+: ${fencing_attribute:="#uname"}
+: ${id_prefix:="drbd-fence-by-handler"}
+
+# check envars normally passed in by drbdadm
+# TODO DRBD_CONF is also passed in.  we may need to use it in the
+# xpath query, in case someone is crazy enough to use different
+# conf files with the _same_ resource name.
+# for now: do not do that, or hardcode the cib id of the master
+# in the handler section of your drbd conf file.
+for var in DRBD_RESOURCE; do
+	if [ -z "${!var}" ]; then
+		echo "Environment variable \$$var not found (this is normally passed in by drbdadm)." >&2
+		exit 1
+	fi
+done
+
+# make sure it contains what we expect
+HOSTNAME=$(uname -n)
+
+echo "invoked for $DRBD_RESOURCE${master_id:+" (master-id: $master_id)"}"
 
 case $PROG in
     crm-fence-peer.sh)
