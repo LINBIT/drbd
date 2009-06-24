@@ -18,6 +18,8 @@ Latest:
  * Rewrite of the LRU code
  * Allow to skip initial resync: 'drbdadm -- --clear-bitmap new-current-uuid'
  * Upon request of Dolphin NICS: The 'sci' keyword is now called 'ssocks'
+ * Allow more than two host ('on' keyword) sections, new drbdadm option '--peer'
+ * New, alternate keyword 'floating' for host sections, for matching by ip-address
  * An OCF resource agent for pacemaker
  * crm-fence-peer.sh: A fence peer handler using pacemaker constraints
  * /etc/init.d/drbd stop now works completely independent of the config file

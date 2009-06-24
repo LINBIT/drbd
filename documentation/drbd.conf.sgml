@@ -164,7 +164,8 @@ resource r0 {
     Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
     <replaceable>host-name</replaceable> is mandatory and must match the
-    Linux host name (uname -n) of one of the nodes.
+    Linux host name (uname -n) of one of the nodes. See also the
+    <option>floating</option> section keyword.
     Required parameters in this section: <option>device</option>,
     <option>disk</option>, <option>address</option>, <option>meta-disk</option>,
     <option>flexible-meta-disk</option>.
@@ -180,6 +181,42 @@ resource r0 {
     instead of an <option>on</option> section.
     Required parameters in this section: <option>device</option> and
     <option>address</option>.
+  </para>
+  </listitem>
+</varlistentry>
+
+<varlistentry>
+  <term><option>floating <replaceable>AF addr:port</replaceable></option></term>
+  <listitem><para>
+  <indexterm><primary>drbd.conf</primary><secondary>on</secondary></indexterm>
+    Carries the necessary configuration parameters for a DRBD
+    device of the enclosing resource.
+    This section is very similar to the <option>on</option> section.
+    The difference to the <option>on</option> section is that
+    the matching of the host sections to machines is done by the IP-address
+    instead of the node name.
+    Required parameters in this section: <option>device</option>,
+    <option>disk</option>, <option>meta-disk</option>,
+    <option>flexible-meta-disk</option>, all of which <emphasis>may</emphasis> be
+    inherited from the resource section, in which case you may shorten this section
+    down to just the address identifier.
+	<programlisting>
+	resource r2 {
+		protocol C;
+		device minor 2;
+		disk      /dev/sda7;
+		meta-disk internal;
+
+		# short form, device, disk and meta-disk inherited
+		floating 10.1.1.31:7802;
+
+		# longer form, only device inherited
+		floating 10.1.1.32:7802 {
+			disk /dev/sdb;
+			meta-disk /dev/sdc8;
+		}
+	}
+	</programlisting>
   </para>
   </listitem>
 </varlistentry>
@@ -382,7 +419,7 @@ resource r0 {
 </varlistentry>
 
 <varlistentry>
-  <term><option>address <replaceable>AF IP:port</replaceable></option></term>
+  <term><option>address <replaceable>AF addr:port</replaceable></option></term>
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>address</secondary></indexterm>
     A resource needs one <replaceable>IP</replaceable> address per device,
@@ -391,13 +428,14 @@ resource r0 {
     must be one of <option>ipv4</option>, <option>ipv6</option> or <option>ssocks</option>.
     (For compatibility reasons <option>sci</option> is an alias for <option>ssocks</option>)
     It may be ommited for IPv4 addresses. The actual IPv6 address that follows
-    the <option>ipv6</option> keyword must be placed inside brackets.
+    the <option>ipv6</option> keyword must be placed inside brackets:
+    <literal>ipv6 [fd01:2345:6789:abcd::1]:7800</literal>.
   </para>
   <para>
     Each DRBD resource needs a TCP <replaceable>port</replaceable>
     which is used to connect to the node's partner device.
     Two different DRBD resources may not use the same
-     <replaceable>IP:port</replaceable> combination on the same node.
+     <replaceable>addr:port</replaceable> combination on the same node.
   </para>
   </listitem>
 </varlistentry>
