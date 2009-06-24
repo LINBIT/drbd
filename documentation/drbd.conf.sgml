@@ -145,7 +145,7 @@ resource r0 {
   <listitem><para>
   <indexterm><primary>drbd.conf</primary><secondary>resource</secondary></indexterm>
     Configures a DRBD resource.
-    Each resource section needs to have two
+    Each resource section needs to have two (or more)
     <option>on <replaceable>host</replaceable></option> sections
     and may have
     a <option>startup</option>,
@@ -164,8 +164,31 @@ resource r0 {
     Carries the necessary configuration parameters for a DRBD
     device of the enclosing resource.
     <replaceable>host-name</replaceable> is mandatory and must match the
-    Linux host name (uname -n) of one of the nodes. See also the
-    <option>floating</option> section keyword.
+    Linux host name (uname -n) of one of the nodes.
+    You may list more than one host name here, in case you want to use the same
+    parameters on several hosts (you'd have to move the IP around usually).
+    Or you may list more than two such sections.
+	<programlisting>
+	resource r1 {
+		protocol C;
+		device minor 1;
+		meta-disk internal;
+
+		on alice bob {
+			address 10.2.2.100:7801;
+			disk /dev/mapper/some-san;
+		}
+		on charlie {
+			address 10.2.2.101:7801;
+			disk /dev/mapper/other-san;
+		}
+		on daisy {
+			address 10.2.2.103:7801;
+			disk /dev/mapper/other-san-as-seen-from-daisy;
+		}
+	}
+	</programlisting>
+    See also the <option>floating</option> section keyword.
     Required parameters in this section: <option>device</option>,
     <option>disk</option>, <option>address</option>, <option>meta-disk</option>,
     <option>flexible-meta-disk</option>.
