@@ -211,7 +211,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	running = parse_resource(config_file_dummy, IgnDiscardMyData);
 	fclose(yyin);
 	waitpid(pid,0,0);
-	post_parse(running);
+	post_parse(running, 0);
 	set_peer_in_resource(running, 0);
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);

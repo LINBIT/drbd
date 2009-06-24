@@ -176,8 +176,11 @@ enum pr_flags {
   NoneHAllowed  = 4,
   IgnDiscardMyData = 8
 };
+enum pp_flags {
+	match_on_proxy = 1,
+};
 extern struct d_resource* parse_resource(char*, enum pr_flags);
-extern void post_parse(struct d_resource *config);
+extern void post_parse(struct d_resource *config, enum pp_flags);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct d_name *names);
 extern char *_names_to_str(char* buffer, struct d_name *names);
@@ -186,7 +189,7 @@ extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
 #define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
 extern void free_names(struct d_name *names);
-extern void set_me_in_resource(struct d_resource* res);
+extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);

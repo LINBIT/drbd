@@ -82,14 +82,13 @@ struct adm_cmd {
 	unsigned int res_name_required:1;
 	/* error out if the ip specified is not available/active now */
 	unsigned int verify_ips:1;
-	/* error out, if there is no "on $NODENAME" section for me */
-	unsigned int me_is_localhost:1;
 	/* if set, use the "cache" in /var/lib/drbd to figure out
 	 * which config file to use.
 	 * This is necessary for handlers (callbacks from kernel) to work
 	 * when using "drbdadm -c /some/other/config/file" */
 	unsigned int use_cached_config_file:1;
 	unsigned int need_peer:1;
+	unsigned int is_proxy_cmd:1;
 };
 
 struct deferred_cmd {
@@ -387,33 +386,28 @@ struct option admopt[] = {
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.me_is_localhost = 1,
 
 #define DRBD_acf1_connect		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
-	.me_is_localhost = 1,		\
 	.need_peer = 1,
 
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
-	.me_is_localhost = 1,
 
 #define DRBD_acf3_handler		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.me_is_localhost = 1,		\
 	.use_cached_config_file = 1,
 
 #define DRBD_acf4_advanced		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.me_is_localhost = 1,
 
 #define DRBD_acf1_dump			\
 	.show_in_usage = 1,		\
@@ -429,7 +423,8 @@ struct option admopt[] = {
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.need_peer = 1,
+	.need_peer = 1,			\
+	.is_proxy_cmd = 1,
 
 #define DRBD_acf2_hook			\
 	.show_in_usage = 2,		\
@@ -3137,7 +3132,7 @@ int main(int argc, char **argv)
 	if (!config_valid)
 		exit(E_config_invalid);
 
-	post_parse(config);
+	post_parse(config, cmd->is_proxy_cmd ? match_on_proxy : 0);
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();

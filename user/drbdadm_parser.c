@@ -1064,7 +1064,7 @@ void net_delegate(void *ctx)
 		pe_expected("an option keyword");
 }
 
-void set_me_in_resource(struct d_resource* res)
+void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 {
 	struct d_host_info *host;
 
@@ -1072,8 +1072,10 @@ void set_me_in_resource(struct d_resource* res)
 	for (host = res->all_hosts; host; host=host->next) {
 		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
 		    name_in_names("_this_host", host->on_hosts) ||
-		    (host->proxy && name_in_names(nodeinfo.nodename, host->proxy->on_hosts)) ||
-		    (host->by_address && have_ip(host->address_family, host->address)) ) {
+		    (host->by_address && have_ip(host->address_family, host->address)) ||
+		    (match_on_proxy && host->proxy &&
+		     name_in_names(nodeinfo.nodename, host->proxy->on_hosts)))
+		{
 			if (res->ignore) {
 				config_valid = 0;
 				fprintf(stderr,
@@ -1419,7 +1421,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	return res;
 }
 
-void post_parse(struct d_resource *config)
+void post_parse(struct d_resource *config, enum pp_flags flags)
 {
 	struct d_resource *res,*tmp;
 
@@ -1427,12 +1429,14 @@ void post_parse(struct d_resource *config)
 		if (res->stacked_on_one)
 			set_on_hosts_in_res(res);
 
+	// Needs "on_hosts" set already
 	for_each_resource(res, tmp, config)
-		set_me_in_resource(res); // Needs "on_hosts" set in this res
+		set_me_in_resource(res, flags & match_on_proxy);
 
+	// Needs "me" set already
 	for_each_resource(res, tmp, config)
 		if (res->stacked_on_one)
-			set_disk_in_res(res); // Needs "me" set in all res
+			set_disk_in_res(res);
 }
 
 void include_file(FILE *f, char* name)
