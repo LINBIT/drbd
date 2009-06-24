@@ -1070,36 +1070,44 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 
 	/* Determin the local host section */
 	for (host = res->all_hosts; host; host=host->next) {
-		if (name_in_names(nodeinfo.nodename, host->on_hosts) ||
-		    name_in_names("_this_host", host->on_hosts) ||
-		    (host->by_address && have_ip(host->address_family, host->address)) ||
-		    (match_on_proxy && host->proxy &&
-		     name_in_names(nodeinfo.nodename, host->proxy->on_hosts)))
-		{
-			if (res->ignore) {
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, %s %s { ... }:\n"
-					"\tYou cannot ignore and define at the same time.\n",
-					res->config_file, host->config_line, res->name,
-					host->lower ? "stacked-on-top-of" : "on",
-					host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			}
-			if (res->me) {
-				config_valid = 0;
-				fprintf(stderr,
-					"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
-					"\tThere are multiple host sections for this node.\n",
-					res->config_file, host->config_line, res->name,
-					res->me->lower ? "stacked-on-top-of" : "on",
-					res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
-					host->lower ? "stacked-on-top-of" : "on",
-					host->lower ? host->lower->name : names_to_str(host->on_hosts));
-			}
-			res->me = host;
-			if (host->lower)
-				res->stacked = 1;
+		/* do we match  this host? */
+		if (match_on_proxy) {
+		       if (!host->proxy || !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
+			       continue;
+		} else if (host->by_address) {
+			if (!have_ip(host->address_family, host->address) &&
+				/* for debugging only, e.g. __DRBD_NODE__=10.0.0.1 */
+			    strcmp(nodeinfo.nodename, host->address))
+				continue;
+		} else {
+			if (!name_in_names(nodeinfo.nodename, host->on_hosts) &&
+			    strcmp("_this_host", host->on_hosts->name))
+				continue;
 		}
+		/* we matched. */
+		if (res->ignore) {
+			config_valid = 0;
+			fprintf(stderr,
+				"%s:%d: in resource %s, %s %s { ... }:\n"
+				"\tYou cannot ignore and define at the same time.\n",
+				res->config_file, host->config_line, res->name,
+				host->lower ? "stacked-on-top-of" : "on",
+				host->lower ? host->lower->name : names_to_str(host->on_hosts));
+		}
+		if (res->me) {
+			config_valid = 0;
+			fprintf(stderr,
+				"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
+				"\tThere are multiple host sections for this node.\n",
+				res->config_file, host->config_line, res->name,
+				res->me->lower ? "stacked-on-top-of" : "on",
+				res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
+				host->lower ? "stacked-on-top-of" : "on",
+				host->lower ? host->lower->name : names_to_str(host->on_hosts));
+		}
+		res->me = host;
+		if (host->lower)
+			res->stacked = 1;
 	}
 
 	/* If there is no me, implicitly ignore that resource */
