@@ -49,7 +49,6 @@ export LANG=C LANGUAGE=C LC_ALL=C
 OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
 
 : ${OCF_RESKEY_drbdconf:=${OCF_RESKEY_drbdconf_default}}
-: ${OCF_RESKEY_drbd_fencing_attribute:="#uname"}
 
 # Defaults according to "Configuration 1.0 Explained",
 # "Multi-state resource configuration options"
@@ -115,10 +114,12 @@ Full path to the drbd.conf file.
 <parameter name="drbd_fencing_attribute">
 <longdesc lang="en">
 Node attribute to be used in fencing constraints, to reduce the chance of going online with stale data.
-Set to DISABLED to disable this functionality.
+This is independend from any fencing constraints possibly set by the
+"fence-peer" handler during DRBD kernel event callback excecution.
+If not set, this resource agent will not place constraints.
 </longdesc>
 <shortdesc lang="en">Node attribute for fencing constraints</shortdesc>
-<content type="string" default="#uname"/>
+<content type="string"/>
 </parameter>
 
 </parameters>
@@ -496,9 +497,8 @@ drbd_peer_fencing()
 	local rc
 	local fencing_value fencing_attribute=$OCF_RESKEY_drbd_fencing_attribute
 
-	if [[ $fencing_attribute = DISABLED ]]; then
-		return
-	fi
+	[[ -n $fencing_attribute ]] || return
+
 	# input for fence_peer_init
 	local primitive_id=$(echo "${OCF_RESOURCE_INSTANCE}" | sed -e 's/:[0-9]*$//;s/[$*.[\^]/\\&/g')
 	# this should be a different id_prefix as for the constraint placed by
@@ -844,7 +844,8 @@ drbd_validate_all () {
 		:;;
 	*)
 		if [[ ${OCF_RESKEY_CRM_meta_notify_start_uname- NOT SET } = " NOT SET " ]]; then
-			ocf_log warn "you really should enable notify when using this RA"
+			ocf_log err "you really should enable notify when using this RA"
+			return $OCF_ERR_CONFIGURED
 		fi
 	esac
 
