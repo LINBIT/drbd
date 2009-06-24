@@ -53,7 +53,6 @@
 static int indent = 0;
 #define INDENT_WIDTH 4
 #define BFMT  "%s;\n"
-#define IPFMT "%-16s %s:%s;\n"
 #define IPV4FMT "%-16s %s %s:%s;\n"
 #define IPV6FMT "%-16s %s [%s]:%s;\n"
 #define MDISK "%-16s %s [%s];\n"
@@ -689,7 +688,10 @@ static void dump_host_info(struct d_host_info *hi)
 		++indent;
 		printI("# on %s \n", names_to_str(hi->on_hosts));
 	} else if (hi->by_address) {
-		printI("floating {\n");
+		if (!strcmp(hi->address_family, "ipv6"))
+			printI("floating ipv6 [%s]:%s {\n", hi->address, hi->port);
+		else
+			printI("floating %s %s:%s {\n", hi->address_family, hi->address, hi->port);
 		++indent;
 	} else {
 		printI("on %s {\n", names_to_str(hi->on_hosts));
@@ -701,7 +703,8 @@ static void dump_host_info(struct d_host_info *hi)
 	printf("minor %d;\n", hi->device_minor);
 	if (!hi->lower)
 		printA("disk", esc(hi->disk));
-	dump_address("address", hi->address, hi->port, hi->address_family);
+	if (!hi->by_address)
+		dump_address("address", hi->address, hi->port, hi->address_family);
 	if (!hi->lower) {
 		if (!strncmp(hi->meta_index, "flex", 4))
 			printI(FMDISK, "flexible-meta-disk",

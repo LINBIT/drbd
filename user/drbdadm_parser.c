@@ -1,4 +1,5 @@
 /*
+ *
    drbdadm_parser.c a hand crafted parser
 
    This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
@@ -64,7 +65,7 @@ char *_names_to_str_c(char* buffer, struct d_name *names, char c)
 	while (1) {
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", names->name);
 		names = names->next;
- 		if (!names)
+		if (!names)
 			return buffer;
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%c", c);
 	}
@@ -610,26 +611,29 @@ static struct d_option *parse_options(int token_switch, int token_option)
 	return parse_options_d(token_switch, token_option, 0, NULL, NULL);
 }
 
-static void parse_address(struct d_name *on_hosts, char** addr, char** port, char** af)
+static void __parse_address(char** addr, char** port, char** af)
 {
-	struct d_name *h;
 	switch(yylex()) {
 	case TK_SCI:   /* 'ssocks' was names 'sci' before. */
-		*af = strdup("ssocks");
+		if (af)
+			*af = strdup("ssocks");
 		EXP(TK_IPADDR);
 		break;
 	case TK_SSOCKS:
 	case TK_IPV4:
-		*af = yylval.txt;
+		if (af)
+			*af = yylval.txt;
 		EXP(TK_IPADDR);
 		break;
 	case TK_IPV6:
-		*af = yylval.txt;
+		if (af)
+			*af = yylval.txt;
 		EXP('[');
 		EXP(TK_IPADDR6);
 		break;
 	case TK_IPADDR:
-		*af = strdup("ipv4");
+		if (af)
+			*af = strdup("ipv4");
 		break;
 	/* case '[': // Do not foster people's laziness ;)
 		EXP(TK_IPADDR6);
@@ -639,13 +643,21 @@ static void parse_address(struct d_name *on_hosts, char** addr, char** port, cha
 		pe_expected("ssocks | ipv4 | ipv6 | <ipv4 address> ");
 	}
 
-	*addr = yylval.txt;
-	if (!strcmp(*af, "ipv6"))
+	if (addr)
+		*addr = yylval.txt;
+	if (af && !strcmp(*af, "ipv6"))
 		EXP(']');
 	EXP(':');
 	EXP(TK_INTEGER);
-	*port = yylval.txt;
+	if (port)
+		*port = yylval.txt;
 	range_check(R_PORT, "port", yylval.txt);
+}
+
+static void parse_address(struct d_name *on_hosts, char** addr, char** port, char** af)
+{
+	struct d_name *h;
+	__parse_address(addr, port, af);
 	if (!strcmp(*addr, "127.0.0.1") || !strcmp(*addr, "::1"))
 		for_each_host(h, on_hosts)
 			check_uniq("IP", "%s:%s:%s", h->name, *addr, *port);
@@ -832,6 +844,7 @@ static void parse_host_section(struct d_resource *res,
 {
 	struct d_host_info *host;
 	struct d_name *h;
+	int in_braces = 1;
 
 	c_section_start = line;
 	fline = line;
@@ -841,14 +854,38 @@ static void parse_host_section(struct d_resource *res,
 	host->config_line = c_section_start;
 	host->device_minor = -1;
 
-	if (flags & BY_ADDRESS)
+	if (flags & BY_ADDRESS) {
+		/* floating <address> {} */
+		char *fake_uname = NULL;
+		int token;
+
 		host->by_address = 1;
+		__parse_address(&host->address, &host->port, &host->address_family);
+		check_uniq("IP", "%s:%s", host->address, host->port);
+		if (!strcmp(host->address_family, "ipv6"))
+			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address, host->port);
+		else
+			m_asprintf(&fake_uname, "%s:%s", host->address, host->port);
+		on_hosts = names_from_str(fake_uname);
+		host->on_hosts = on_hosts;
+
+		token = yylex();
+		switch(token) {
+		case '{':
+			break;
+		case ';':
+			in_braces = 0;
+			break;
+		default:
+			pe_expected_got("{ | ;", token);
+		}
+	}
 
 	for_each_host(h, on_hosts)
 		check_upr("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
-	while (1) {
+	while (in_braces) {
 		int token = yylex();
 		fline = line;
 		switch (token) {
@@ -867,6 +904,13 @@ static void parse_host_section(struct d_resource *res,
 			parse_device(on_hosts, &host->device_minor, &host->device);
 			break;
 		case TK_ADDRESS:
+			if (host->by_address) {
+				fprintf(stderr,
+					"%s:%d: address statement not allowed for floating {} host sections\n",
+					config_file, fline);
+				config_valid = 0;
+				exit(E_config_invalid);
+			}
 			for_each_host(h, on_hosts)
 				check_upr("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(on_hosts, &host->address, &host->port, &host->address_family);
@@ -893,13 +937,13 @@ static void parse_host_section(struct d_resource *res,
 			parse_proxy_section(host);
 			break;
 		case '}':
-			goto break_loop;
+			in_braces = 0;
+			break;
 		default:
 			pe_expected("disk | device | address | meta-disk "
 				    "| flexible-meta-disk");
 		}
 	}
-      break_loop:
 
 	/* Inherit device, disk, meta_disk and meta_index from the resource. */
 	if(!host->disk && res->disk) {
@@ -1277,11 +1321,9 @@ void set_disk_in_res(struct d_resource *res)
 
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
-	static int host_nr = 0;
 	struct d_resource* res;
 	struct d_name *host_names;
 	int token;
-	char *hname;
 
 	check_upr_init();
 	check_uniq("resource section", res_name);
@@ -1334,10 +1376,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			parse_host_section(res, host_names, 0);
 			break;
 		case TK_FLOATING:
-			EXP('{');
-			m_asprintf(&hname, "_floating_%d", host_nr++);
-			host_names = names_from_str(hname);
-			parse_host_section(res, host_names, REQUIRE_ALL + BY_ADDRESS);
+			parse_host_section(res, NULL, REQUIRE_ALL + BY_ADDRESS);
 			break;
 		case TK_DISK:
 			switch (token=yylex()) {
