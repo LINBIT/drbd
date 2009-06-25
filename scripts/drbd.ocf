@@ -110,18 +110,6 @@ Full path to the drbd.conf file.
 <shortdesc lang="en">Path to drbd.conf</shortdesc>
 <content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
 </parameter>
-
-<parameter name="drbd_fencing_attribute">
-<longdesc lang="en">
-Node attribute to be used in fencing constraints, to reduce the chance of going online with stale data.
-This is independend from any fencing constraints possibly set by the
-"fence-peer" handler during DRBD kernel event callback excecution.
-If not set, this resource agent will not place constraints.
-</longdesc>
-<shortdesc lang="en">Node attribute for fencing constraints</shortdesc>
-<content type="string"/>
-</parameter>
-
 </parameters>
 
 <actions>
@@ -289,10 +277,9 @@ drbd_update_master_score() {
 		# But if we outdate in a MONITOR, and are disconnected
 		# secondary because of a hard primary crash, before CRM noticed
 		# that there is no more master, we'd make us utterly useless!
-		# Trust that, in time, a monitor on the primary will also find
-		# us disconnected, and will place an appropriate fencing
-		# constraint.  Besides, there should be fence-peer handler
-		# callbacks from drbd kernel space.
+		# Trust that the primary will also notice the disconnect,
+		# and will place an appropriate fencing constraint via
+		# its fence-peer handler callback.
 		set_master_score 50
 		;;
 
@@ -382,12 +369,6 @@ drbd_monitor() {
 
 	drbd_update_master_score
 
-	case $DRBD_DSTATE_REMOTE in
-	UpToDate|Inconsistent)
-		# We may well remove any fencing constraint now.
-		drbd_peer_fencing unfence
-	esac
-
 	return $status
 }
 
@@ -455,105 +436,9 @@ drbd_start() {
 	return $rc
 }
 
-fence_peer_init()
-{
-	# we know which instance we are: $OCF_RESOURCE_INSTANCE.
-	# but we do not know the xml ID of the <master/> :(
-	# cibadmin -Ql --xpath '//master[ primitive[@id="'"$primitive_id"'"]]'
-	# but I'd have to pipe that through sed anyways, because @attribute
-	# xpath queries are not supported.
-	# and I'd be incompatible with older cibadmin not supporting --xpath.
-	# be cool, sed it out:
-	cib_xml=$(cibadmin -Ql)
-	master_id=$( set +x; echo "$cib_xml" |
-		sed -ne '/<master /,/<\/master>/ {
-				/<master / h;
-				/<primitive .*\bid="'"$primitive_id"'"/ {
-					x;
-					s/^.*\bid="\([^"]*\)".*/\1/p;
-					q;
-				};
-			}')
-	# skip, unless within a <master/>
-	# hold the <master...> tag line
-	# in case there is a primitiv with our id,
-	# x-change, we now operate on the previously holded opening master tag
-	# s/// out the id, print, and quit.
-	# any more questions?
-
-	if [[ -z $master_id ]] ; then
-		ocf_log warn "drbd-fencing could not determine the master id of $primitiv_id ($DRBD_RESOURCE)"
-		return 1;
-	fi
-	# lets see: 
-	have_constraint=$(set +x; echo "$cib_xml" |
-		sed -e '/<rsc_location .*\bid="'"$id_prefix-$master_id"'"/!d;q')
-	return 0
-}
-
-# drbd_peer_fencing fence|unfence
-drbd_peer_fencing()
-{
-	local rc
-	local fencing_value fencing_attribute=$OCF_RESKEY_drbd_fencing_attribute
-
-	[[ -n $fencing_attribute ]] || return
-
-	# input for fence_peer_init
-	local primitive_id=$(echo "${OCF_RESOURCE_INSTANCE}" | sed -e 's/:[0-9]*$//;s/[$*.[\^]/\\&/g')
-	# this should be a different id_prefix as for the constraint placed by
-	# the drbd "fence-peer" handler callback
-	local id_prefix=drbd-fence-by-RA
-	# output of fence_peer_init
-	local master_id cib_xml have_constraint
-
-	fence_peer_init || return
-
-	case $1 in
-	fence)
-		if [[ -z $have_constraint ]] ; then
-			if [[ $fencing_attribute = "#uname" ]]; then
-				fencing_value=$HOSTNAME
-			elif ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
-				ocf_log warn "No value for drbd_fencing_attribute $fencing_attribute found, falling back to #uname";
-				fencing_attribute="#uname"
-				fencing_value=$HOSTNAME
-			fi
-
-			# try to place it.
-			# double negation: do not run but with my data.
-			cibadmin -C -o constraints -X "\
-<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">
-  <rule role=\"Master\" score=\"-INFINITY\" id=\"$id_prefix-rule-$master_id\">
-    <expression attribute=\"$fencing_attribute\" operation=\"ne\" value=\"$fencing_value\" id=\"$id_prefix-expr-$master_id\"/>
-  </rule>
-</rsc_location>"
-			rc=$?
-		else
-			# anything != 0 will do;
-			# 21 happend to be "The object already exists" with my cibadmin
-			rc=21
-		fi
-
-		if [ $rc != 0 ]; then
-			# at least we tried.
-			# maybe it was already in place?
-			ocf_log warn "drbd_fence_peer() could not place the constraint! ignored."
-		fi
-		return $rc
-		;;
-	unfence)
-		if [[ -n $have_constraint ]]; then
-			# remove it
-			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">"
-		fi
-	esac
-}
-
 drbd_promote() {
 	local rc
 	local status
-	local try_fence=true
 
 	rc=$OCF_ERR_GENERIC
 
@@ -564,15 +449,6 @@ drbd_promote() {
 		status=$?
 		case "$status" in
 		$OCF_SUCCESS)
-			# so we place a negative "fencing" constraint
-			# in case we are promoted without peer.
-			# try fencing only during first iteration.
-			# XXX what about this optimistic fencing constraint,
-			# if promoting fails?
-			if $try_fence && [[ $DRBD_DSTATE_REMOTE == DUnknown ]]; then
-				drbd_peer_fencing fence
-				try_fence=false
-			fi
 			do_drbdadm primary $DRBD_RESOURCE
 			;;
 		$OCF_NOT_RUNNING)
