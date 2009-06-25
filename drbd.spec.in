@@ -223,7 +223,7 @@ uname -r | grep BOOT ||
 %changelog
 
 * Fri Jun  4 2009 13:46:10 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.2rc1-1)
+- drbd (8.3.2rc2-1)
  * Fixed the "Not a digest" issue for hash functions already ported to shash
  * Fixed a race condition between device configuration and de-configuration
  * Fixed: The sync-after logic modified flags of an unconfigured
@@ -246,7 +246,7 @@ uname -r | grep BOOT ||
  * arbitrary custom device names (prefix drbd_ required)
  * Code cleanups for Linux mainline submission (no functional change)
  * Using Linux's own tracing framework instead of our own
- * Compatibility with Linux 2.6.30
+ * Compatibility with Linux 2.6.30 and 2.6.31-rc1
 
 * Fri Mar 27 2009 12:16:00 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.1-1)
