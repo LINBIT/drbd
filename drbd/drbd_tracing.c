@@ -371,7 +371,7 @@ static void probe_drbd_resync(struct drbd_conf *mdev, int level, const char *fmt
 static void probe_drbd_bio(struct drbd_conf *mdev, const char *pfx, struct bio *bio, int complete,
 			   struct drbd_request *r)
 {
-#ifdef CONFIG_LBD
+#if defined(CONFIG_LBDAF) || defined(CONFIG_LBD)
 #define SECTOR_FORMAT "%Lx"
 #else
 #define SECTOR_FORMAT "%lx"

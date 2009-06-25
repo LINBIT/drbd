@@ -693,39 +693,33 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 {
 	struct request_queue * const q = mdev->rq_queue;
 	struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
-	/* unsigned int old_max_seg_s = q->max_segment_size; */
 	int max_segments = mdev->ldev->dc.max_bio_bvecs;
 
 	if (b->merge_bvec_fn && !mdev->ldev->dc.use_bmbv)
 		max_seg_s = PAGE_SIZE;
 
-	max_seg_s = min(b->max_sectors * b->hardsect_size, max_seg_s);
+	max_seg_s = min(queue_max_sectors(b) * queue_logical_block_size(b), max_seg_s);
 
-	q->max_sectors	     = max_seg_s >> 9;
-	if (max_segments) {
-		q->max_phys_segments = max_segments;
-		q->max_hw_segments   = max_segments;
-	} else {
-		q->max_phys_segments = MAX_PHYS_SEGMENTS;
-		q->max_hw_segments   = MAX_HW_SEGMENTS;
-	}
-	q->max_segment_size  = max_seg_s;
-	q->hardsect_size     = 512;
-	q->seg_boundary_mask = PAGE_SIZE-1;
+	blk_queue_max_sectors(q, max_seg_s >> 9);
+	blk_queue_max_phys_segments(q, max_segments ? max_segments : MAX_PHYS_SEGMENTS);
+	blk_queue_max_hw_segments(q, max_segments ? max_segments : MAX_HW_SEGMENTS);
+	blk_queue_max_segment_size(q, max_seg_s);
+	blk_queue_logical_block_size(q, 512);
+	blk_queue_segment_boundary(q, PAGE_SIZE-1);
 	blk_queue_stack_limits(q, b);
 
-	/* KERNEL BUG. in ll_rw_blk.c ??
+	/* KERNEL BUG in old ll_rw_blk.c
 	 * t->max_segment_size = min(t->max_segment_size,b->max_segment_size);
 	 * should be
 	 * t->max_segment_size = min_not_zero(...,...)
 	 * workaround here: */
-	if (q->max_segment_size == 0)
-		q->max_segment_size = max_seg_s;
+	if (queue_max_sectors(q) == 0)
+		blk_queue_max_segment_size(q, max_seg_s);
 
 	if (b->merge_bvec_fn)
 		dev_warn(DEV, "Backing device's merge_bvec_fn() = %p\n",
 		     b->merge_bvec_fn);
-	dev_info(DEV, "max_segment_size ( = BIO size ) = %u\n", q->max_segment_size);
+	dev_info(DEV, "max_segment_size ( = BIO size ) = %u\n", queue_max_segment_size(q));
 
 	if (q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
 		dev_info(DEV, "Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
@@ -780,7 +774,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	union drbd_state ns, os;
 	int rv;
 	int cp_discovered = 0;
-	int hardsect_size;
+	int logical_block_size;
 
 	drbd_reconfig_start(mdev);
 
@@ -980,19 +974,19 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto force_diskless_dec;
 	}
 
-	/* allocate a second IO page if hardsect_size != 512 */
-	hardsect_size = drbd_get_hardsect_size(nbc->md_bdev);
-	if (hardsect_size == 0)
-		hardsect_size = MD_SECTOR_SIZE;
+	/* allocate a second IO page if logical_block_size != 512 */
+	logical_block_size = bdev_logical_block_size(nbc->md_bdev);
+	if (logical_block_size == 0)
+		logical_block_size = MD_SECTOR_SIZE;
 
-	if (hardsect_size != MD_SECTOR_SIZE) {
+	if (logical_block_size != MD_SECTOR_SIZE) {
 		if (!mdev->md_io_tmpp) {
 			struct page *page = alloc_page(GFP_NOIO);
 			if (!page)
 				goto force_diskless_dec;
 
-			dev_warn(DEV, "Meta data's bdev hardsect_size = %d != %d\n",
-			     hardsect_size, MD_SECTOR_SIZE);
+			dev_warn(DEV, "Meta data's bdev logical_block_size = %d != %d\n",
+			     logical_block_size, MD_SECTOR_SIZE);
 			dev_warn(DEV, "Workaround engaged (has performace impact).\n");
 
 			mdev->md_io_tmpp = page;

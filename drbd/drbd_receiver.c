@@ -2892,7 +2892,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 		}
 
 		max_seg_s = be32_to_cpu(p->max_segment_size);
-		if (max_seg_s != mdev->rq_queue->max_segment_size)
+		if (max_seg_s != queue_max_segment_size(mdev->rq_queue))
 			drbd_setup_queue_param(mdev, max_seg_s);
 
 		drbd_setup_order_type(mdev, be32_to_cpu(p->queue_order_type));

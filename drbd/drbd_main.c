@@ -1956,7 +1956,7 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply)
 	p.d_size = cpu_to_be64(d_size);
 	p.u_size = cpu_to_be64(u_size);
 	p.c_size = cpu_to_be64(trigger_reply ? 0 : drbd_get_capacity(mdev->this_bdev));
-	p.max_segment_size = cpu_to_be32(mdev->rq_queue->max_segment_size);
+	p.max_segment_size = cpu_to_be32(queue_max_segment_size(mdev->rq_queue));
 	p.queue_order_type = cpu_to_be32(q_order_type);
 
 	ok = drbd_send_cmd(mdev, USE_DATA_SOCKET, P_SIZES,
@@ -3222,7 +3222,7 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 		goto out_no_q;
 	mdev->rq_queue = q;
 	q->queuedata   = mdev;
-	q->max_segment_size = DRBD_MAX_SEGMENT_SIZE;
+	blk_queue_max_segment_size(q, DRBD_MAX_SEGMENT_SIZE);
 
 	disk = alloc_disk(1);
 	if (!disk)

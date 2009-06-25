@@ -133,7 +133,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 			 sector_t sector, int rw)
 {
-	int hardsect_size, mask, ok;
+	int logical_block_size, mask, ok;
 	int offset = 0;
 	struct page *iop = mdev->md_io_page;
 
@@ -147,15 +147,15 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		return 0;
 	}
 
-	hardsect_size = drbd_get_hardsect_size(bdev->md_bdev);
-	if (hardsect_size == 0)
-		hardsect_size = MD_SECTOR_SIZE;
+	logical_block_size = bdev_logical_block_size(bdev->md_bdev);
+	if (logical_block_size == 0)
+		logical_block_size = MD_SECTOR_SIZE;
 
-	/* in case hardsect_size != 512 [ s390 only? ] */
-	if (hardsect_size != MD_SECTOR_SIZE) {
-		mask = (hardsect_size / MD_SECTOR_SIZE) - 1;
+	/* in case logical_block_size != 512 [ s390 only? ] */
+	if (logical_block_size != MD_SECTOR_SIZE) {
+		mask = (logical_block_size / MD_SECTOR_SIZE) - 1;
 		D_ASSERT(mask == 1 || mask == 3 || mask == 7);
-		D_ASSERT(hardsect_size == (mask+1) * MD_SECTOR_SIZE);
+		D_ASSERT(logical_block_size == (mask+1) * MD_SECTOR_SIZE);
 		offset = sector & mask;
 		sector = sector & ~mask;
 		iop = mdev->md_io_tmpp;
@@ -167,11 +167,11 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 			void *hp = page_address(mdev->md_io_tmpp);
 
 			ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector,
-					READ, hardsect_size);
+					READ, logical_block_size);
 
 			if (unlikely(!ok)) {
 				dev_err(DEV, "drbd_md_sync_page_io(,%llus,"
-				    "READ [hardsect_size!=512]) failed!\n",
+				    "READ [logical_block_size!=512]) failed!\n",
 				    (unsigned long long)sector);
 				return 0;
 			}
@@ -192,14 +192,14 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 
-	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, hardsect_size);
+	ok = _drbd_md_sync_page_io(mdev, bdev, iop, sector, rw, logical_block_size);
 	if (unlikely(!ok)) {
 		dev_err(DEV, "drbd_md_sync_page_io(,%llus,%s) failed!\n",
 		    (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 		return 0;
 	}
 
-	if (hardsect_size != MD_SECTOR_SIZE && !(rw & WRITE)) {
+	if (logical_block_size != MD_SECTOR_SIZE && !(rw & WRITE)) {
 		void *p = page_address(mdev->md_io_page);
 		void *hp = page_address(mdev->md_io_tmpp);
 

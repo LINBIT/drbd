@@ -433,7 +433,7 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
-	int max_segment_size = mdev->rq_queue->max_segment_size;
+	int max_segment_size = queue_max_segment_size(mdev->rq_queue);
 	int number, i, size, pe, mx;
 	int align, queued, sndbuf;
 

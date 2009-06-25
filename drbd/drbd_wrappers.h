@@ -34,10 +34,35 @@
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 
-static inline sector_t drbd_get_hardsect_size(struct block_device *bdev)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
+static inline unsigned short queue_logical_block_size(struct request_queue *q)
 {
-	return bdev->bd_disk->queue->hardsect_size;
+	int retval = 512;
+	if (q && q->hardsect_size)
+		retval = q->hardsect_size;
+	return retval;
 }
+
+static inline sector_t bdev_logical_block_size(struct block_device *bdev)
+{
+	return queue_logical_block_size(bdev_get_queue(bdev));
+}
+
+static inline unsigned int queue_max_segment_size(struct request_queue *q)
+{
+	return q->max_segment_size;
+}
+
+static inline unsigned int queue_max_sectors(struct request_queue *q)
+{
+	return q->max_sectors;
+}
+
+static inline void blk_queue_logical_block_size(struct request_queue *q, unsigned short size)
+{
+	q->hardsect_size = size;
+}
+#endif
 
 /* Returns the number of 512 byte sectors of the device */
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
