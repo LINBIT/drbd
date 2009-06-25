@@ -89,10 +89,10 @@ install-most:
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 crm-fence-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
-	( cd $(PREFIX)/usr/lib/drbd ;\
-	  ln -sf snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh )
 	install -m 755 notify.sh $(PREFIX)/usr/lib/drbd
-	( cd $(PREFIX)/usr/lib/drbd ;\
+	( set -e ; cd $(PREFIX)/usr/lib/drbd ;\
+	  ln -sf crm-fence-peer.sh crm-unfence-peer.sh ;\
+	  ln -sf snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh ;\
 	  ln -sf notify.sh notify-split-brain.sh ;\
 	  ln -sf notify.sh notify-io-error.sh ;\
 	  ln -sf notify.sh notify-pri-on-incon-degr.sh ;\

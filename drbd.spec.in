@@ -132,6 +132,8 @@ ___
 /sbin/drbdmeta
 /usr/sbin/drbd-overview
 /usr/lib/drbd/outdate-peer.sh
+/usr/lib/drbd/crm-fence-peer.sh
+/usr/lib/drbd/crm-unfence-peer.sh
 /usr/lib/drbd/snapshot-resync-target-lvm.sh
 /usr/lib/drbd/unsnapshot-resync-target-lvm.sh
 /usr/lib/drbd/notify-out-of-sync.sh
