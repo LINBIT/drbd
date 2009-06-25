@@ -87,6 +87,7 @@ install-most:
 	install -m 755 drbd.ocf $(PREFIX)/usr/lib/ocf/resource.d/linbit/drbd
 	install -d $(PREFIX)/usr/lib/drbd
 	install -m 755 outdate-peer.sh $(PREFIX)/usr/lib/drbd
+	install -m 755 crm-fence-peer.sh $(PREFIX)/usr/lib/drbd
 	install -m 755 snapshot-resync-target-lvm.sh $(PREFIX)/usr/lib/drbd
 	( cd $(PREFIX)/usr/lib/drbd ;\
 	  ln -sf snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh )
