@@ -1308,6 +1308,9 @@ void set_disk_in_res(struct d_resource *res)
 				config_valid = 0;
 			}
 
+			if (host->lower->ignore)
+				continue;
+
 			if (host->lower->me->device)
 				m_asprintf(&host->disk, "%s", host->lower->me->device);
 			else
