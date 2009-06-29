@@ -3142,16 +3142,16 @@ int main(int argc, char **argv)
 	if (is_dump || dry_run || config_from_stdin)
 		do_register_minor = 0;
 
-	if (config == NULL) {
-		fprintf(stderr, "no resources defined!\n");
-		exit(0);	/* THINK exit here? what code? */
-	}
-
 	count_resources_or_die();
 
 	uc_node(global_options.usage_count);
 
 	if (cmd->res_name_required) {
+		if (config == NULL) {
+			fprintf(stderr, "no resources defined!\n");
+			exit(E_usage);
+		}
+
 		global_validate_maybe_expand_die_if_invalid(!is_dump);
 
 		if (optind == argc || !strcmp(argv[optind], "all")) {

@@ -1947,8 +1947,8 @@ static int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 		if (0 < degr_wfc_timeout &&
 		    (degr_wfc_timeout < outdated_wfc_timeout || outdated_wfc_timeout == 0)) {
 			outdated_wfc_timeout = wfc_timeout;
-			fprintf(stderr, "outdate-wfc-timeout has to be shorter than degr-wfc-timeout\n"
-					"outdate-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
+			fprintf(stderr, "outdated-wfc-timeout has to be shorter than degr-wfc-timeout\n"
+					"outdated-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
 					degr_wfc_timeout);
 		}
 
