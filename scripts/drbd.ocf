@@ -399,6 +399,7 @@ figure_out_drbd_peer_uname()
 drbd_start() {
 	local rc
 	local status
+	local first_try=true
 
 	rc=$OCF_ERR_GENERIC
 
@@ -412,7 +413,7 @@ drbd_start() {
 
 	# Keep trying to bring up the resource;
 	# wait for the CRM to time us out if this fails
-	while sleep 1; do
+	while :; do
 		drbd_status
 		status=$?
 		case "$status" in
@@ -428,6 +429,8 @@ drbd_start() {
 			ocf_log warn "$DRBD_RESOURCE already Primary, demoting."
 			do_drbdadm secondary $DRBD_RESOURCE
 		esac
+		$first_try || sleep 1
+		first_try=false
 	done
 	# in case someone does not configure monitor,
 	# we must at least call it once after start.
@@ -439,12 +442,13 @@ drbd_start() {
 drbd_promote() {
 	local rc
 	local status
+	local first_try=true
 
 	rc=$OCF_ERR_GENERIC
 
 	# Keep trying to promote the resource;
 	# wait for the CRM to time us out if this fails
-	while sleep 1; do
+	while :; do
 		drbd_status
 		status=$?
 		case "$status" in
@@ -459,6 +463,8 @@ drbd_promote() {
 			rc=$OCF_SUCCESS
 			break
 		esac
+		$first_try || sleep 1
+		first_try=false
 	done
 
 	return $rc
@@ -467,12 +473,13 @@ drbd_promote() {
 drbd_demote() {
 	local rc
 	local status
+	local first_try=true
 
 	rc=$OCF_ERR_GENERIC
 
 	# Keep trying to demote the resource;
 	# wait for the CRM to time us out if this fails
-	while sleep 1; do
+	while :; do
 		drbd_status
 		status=$?
 		case "$status" in
@@ -487,6 +494,8 @@ drbd_demote() {
 		$OCF_RUNNING_MASTER)
 			do_drbdadm secondary $DRBD_RESOURCE
 		esac
+		$first_try || sleep 1
+		first_try=false
 	done
 
 	return $rc
@@ -494,10 +503,11 @@ drbd_demote() {
 
 drbd_stop() {
 	local rc=$OCF_ERR_GENERIC
+	local first_try=true
 
 	# Keep trying to bring down the resource;
 	# wait for the CRM to time us out if this fails
-	while sleep 1; do
+	while :; do
 		drbd_status
 		status=$?
 		case "$status" in
@@ -512,6 +522,8 @@ drbd_stop() {
 			ocf_log warn "$DRBD_RESOURCE still Primary, demoting."
 			do_drbdadm secondary  $DRBD_RESOURCE
 		esac
+		$first_try || sleep 1
+		first_try=false
 	done
 
 	# if there is some Master (Primary) still around,
