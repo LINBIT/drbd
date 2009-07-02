@@ -229,6 +229,9 @@ uname -r | grep BOOT ||
  * Fixed: The sync-after logic modified flags of an unconfigured
    device. This caused very weird symptoms later. (Bugz 214)
  * Fixed a possible imbalance of the 'pe' counter during online verify
+ * Fixed activity-log reading; could have been (partially) ignored,
+   leading to incomplete resync after primary crash.
+ * Fixed a deadlock when using automatic split brain recovery
  * Fix for potential segfaults in drbdadm's sh-status & status commands
  * Correctly clean up resync status if a detach interrupts a resync (Bugz 223)
  * Reasonable error reporting if 'drbdadm invalidate' fails because resync already runs
