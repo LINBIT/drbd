@@ -1428,10 +1428,12 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 			return;
 		}
 
-		if (ns.conn == C_SYNC_TARGET) {
-			D_ASSERT(!test_bit(STOP_SYNC_TIMER, &mdev->flags));
+		/* ns.conn may already be != mdev->state.conn,
+		 * we may have been paused in between, or become paused until
+		 * the timer triggers.
+		 * No matter, that is handled in resync_timer_fn() */
+		if (ns.conn == C_SYNC_TARGET)
 			mod_timer(&mdev->resync_timer, jiffies);
-		}
 
 		drbd_md_sync(mdev);
 	}
