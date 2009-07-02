@@ -1123,6 +1123,9 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 				/* for debugging only, e.g. __DRBD_NODE__=10.0.0.1 */
 			    strcmp(nodeinfo.nodename, host->address))
 				continue;
+		} else if (host->lower) {
+			if (!host->lower->me)
+				continue;
 		} else {
 			if (!name_in_names(nodeinfo.nodename, host->on_hosts) &&
 			    strcmp("_this_host", host->on_hosts->name))
@@ -1477,11 +1480,17 @@ void post_parse(struct d_resource *config, enum pp_flags flags)
 
 	for_each_resource(res, tmp, config)
 		if (res->stacked_on_one)
-			set_on_hosts_in_res(res);
+			set_on_hosts_in_res(res); /* sets on_hosts and host->lower */
 
-	// Needs "on_hosts" set already
+	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, tmp, config)
-		set_me_in_resource(res, flags & match_on_proxy);
+		if (!res->stacked_on_one)
+			set_me_in_resource(res, flags & match_on_proxy);
+
+	/* Needs host->lower->me already set */
+	for_each_resource(res, tmp, config)
+		if (res->stacked_on_one)
+			set_me_in_resource(res, flags & match_on_proxy);
 
 	// Needs "me" set already
 	for_each_resource(res, tmp, config)
