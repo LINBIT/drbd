@@ -181,17 +181,17 @@ STATIC unsigned long *__bm_map_paddr(struct drbd_bitmap *b, unsigned long offset
 	return (unsigned long *) kmap_atomic(page, km);
 }
 
-unsigned long * bm_map_paddr(struct drbd_bitmap *b, unsigned long offset)
+static unsigned long * bm_map_paddr(struct drbd_bitmap *b, unsigned long offset)
 {
 	return __bm_map_paddr(b, offset, KM_IRQ1);
 }
 
-void __bm_unmap(unsigned long *p_addr, const enum km_type km)
+static void __bm_unmap(unsigned long *p_addr, const enum km_type km)
 {
 	kunmap_atomic(p_addr, km);
 };
 
-void bm_unmap(unsigned long *p_addr)
+static void bm_unmap(unsigned long *p_addr)
 {
 	return __bm_unmap(p_addr, KM_IRQ1);
 }
