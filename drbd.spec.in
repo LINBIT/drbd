@@ -222,8 +222,8 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Fri Jun  4 2009 13:46:10 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.2rc2-1)
+* Fri Jul  3 2009 15:33:12 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.2-1)
  * Fixed the "Not a digest" issue for hash functions already ported to shash
  * Fixed a race condition between device configuration and de-configuration
  * Fixed: The sync-after logic modified flags of an unconfigured
@@ -232,6 +232,9 @@ uname -r | grep BOOT ||
  * Fixed activity-log reading; could have been (partially) ignored,
    leading to incomplete resync after primary crash.
  * Fixed a deadlock when using automatic split brain recovery
+ * Fixed a possible kernel crash in DRBD on highmem kernels. Was triggered by
+   reading in the bitmap on one device, and writing data to an other, disconnected
+   devices at the same time.
  * Fix for potential segfaults in drbdadm's sh-status & status commands
  * Correctly clean up resync status if a detach interrupts a resync (Bugz 223)
  * Reasonable error reporting if 'drbdadm invalidate' fails because resync already runs
@@ -243,7 +246,7 @@ uname -r | grep BOOT ||
  * Upon request of Dolphin NICS: The 'sci' keyword is now called 'ssocks'
  * Allow more than two host ('on' keyword) sections, new drbdadm option '--peer'
  * New, alternate keyword 'floating' for host sections, for matching by ip-address
- * An OCF resource agent for pacemaker
+ * An OCF resource agent for pacemaker [Marked as BETA for this release]
  * crm-fence-peer.sh: A fence peer handler using pacemaker constraints
  * /etc/init.d/drbd stop now works completely independent of the config file
  * arbitrary custom device names (prefix drbd_ required)
