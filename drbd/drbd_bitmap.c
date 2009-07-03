@@ -392,7 +392,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 	bm_unmap(p_addr);
 }
 
-STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endian)
+STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endian, const enum km_type km)
 {
 	unsigned long *p_addr, *bm, offset = 0;
 	unsigned long bits = 0;
@@ -400,7 +400,7 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 
 	while (offset < b->bm_words) {
 		i = do_now = min_t(size_t, b->bm_words-offset, LWPP);
-		p_addr = bm_map_paddr(b, offset);
+		p_addr = __bm_map_paddr(b, offset, km);
 		bm = p_addr + MLPP(offset);
 		while (i--) {
 			catch_oob_access_start();
@@ -411,7 +411,7 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 			bits += hweight_long(*bm++);
 			catch_oob_access_end();
 		}
-		bm_unmap(p_addr);
+		__bm_unmap(p_addr, km);
 		offset += do_now;
 	}
 
@@ -420,12 +420,12 @@ STATIC unsigned long __bm_count_bits(struct drbd_bitmap *b, const int swap_endia
 
 static unsigned long bm_count_bits(struct drbd_bitmap *b)
 {
-	return __bm_count_bits(b, 0);
+	return __bm_count_bits(b, 0, KM_IRQ1);
 }
 
 static unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
 {
-	return __bm_count_bits(b, 1);
+	return __bm_count_bits(b, 1, KM_USER0);
 }
 
 void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
