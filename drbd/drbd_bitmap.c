@@ -1079,10 +1079,10 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_f
  * for val != 0, we change 0 -> 1, return code positiv
  * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector.
+ * expected to be called for only a few bits (e - s about BITS_PER_LONG).
  * Must hold bitmap lock already. */
-
 int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
-	const unsigned long e, int val, const enum km_type km)
+	unsigned long e, int val, const enum km_type km)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *p_addr = NULL;
@@ -1090,23 +1090,24 @@ int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	unsigned long last_page_nr = -1UL;
 	int c = 0;
 
+	if (e >= b->bm_bits) {
+		dev_err(DEV, "ASSERT FAILED: bit_s=%lu bit_e=%lu bm_bits=%lu\n",
+				s, e, b->bm_bits);
+		e = b->bm_bits ? b->bm_bits -1 : 0;
+	}
 	for (bitnr = s; bitnr <= e; bitnr++) {
-		ERR_IF (bitnr >= b->bm_bits) {
-			dev_err(DEV, "bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
-		} else {
-			unsigned long offset = bitnr>>LN2_BPL;
-			unsigned long page_nr = offset >> (PAGE_SHIFT - LN2_BPL + 3);
-			if (page_nr != last_page_nr) {
-				if (p_addr)
-					__bm_unmap(p_addr, km);
-				p_addr = __bm_map_paddr(b, offset, km);
-				last_page_nr = page_nr;
-			}
-			if (val)
-				c += (0 == __test_and_set_bit(bitnr & BPP_MASK, p_addr));
-			else
-				c -= (0 != __test_and_clear_bit(bitnr & BPP_MASK, p_addr));
+		unsigned long offset = bitnr>>LN2_BPL;
+		unsigned long page_nr = offset >> (PAGE_SHIFT - LN2_BPL + 3);
+		if (page_nr != last_page_nr) {
+			if (p_addr)
+				__bm_unmap(p_addr, km);
+			p_addr = __bm_map_paddr(b, offset, km);
+			last_page_nr = page_nr;
 		}
+		if (val)
+			c += (0 == __test_and_set_bit(bitnr & BPP_MASK, p_addr));
+		else
+			c -= (0 != __test_and_clear_bit(bitnr & BPP_MASK, p_addr));
 	}
 	if (p_addr)
 		__bm_unmap(p_addr, km);
@@ -1150,12 +1151,73 @@ int drbd_bm_clear_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	return -bm_change_bits_to(mdev, s, e, 0);
 }
 
+static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
+		int page_nr, int first_word, int last_word)
+{
+	int i;
+	int bits;
+	unsigned long *paddr = kmap_atomic(b->bm_pages[page_nr], KM_USER0);
+	for (i = first_word; i < last_word; i++) {
+		bits = hweight_long(paddr[i]);
+		paddr[i] = ~0UL;
+		b->bm_set += BITS_PER_LONG - bits;
+	}
+	kunmap_atomic(paddr, KM_USER0);
+}
+
 /* the same thing, but without taking the spin_lock_irqsave.
  * you must first drbd_bm_lock(). */
-int _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
+void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
-       /* WARN_ON(!bm_is_locked(b)); */
-       return __bm_change_bits_to(mdev, s, e, 1, KM_USER0);
+	/* s <= sl <= el <= e */
+	/* first set_bit from the first bit (s)
+	 * up to the next long boundary (sl),
+	 * then assign full words including the last long boundary (el),
+	 * then set_bit up to the last bit (e).
+	 * do not use memset, because we have need to account for changes,
+	 * so we need to loop over the words with hweight() anyways.
+	 */
+	unsigned long sl = ALIGN(s,BITS_PER_LONG);
+	unsigned long el = (e & ~((unsigned long)BITS_PER_LONG-1)) -1;
+	int first_page;
+	int last_page;
+	int page_nr;
+	int first_word;
+	int last_word;
+
+	if (e - s <= 3*BITS_PER_LONG) {
+		/* don't bother; el and sl may even be wrong. */
+		__bm_change_bits_to(mdev, s, e, 1, KM_USER0);
+		return;
+	}
+
+	/* difference is large enough that we can trust sl and el */
+
+	/* bits filling the current long */
+	if (sl)
+		__bm_change_bits_to(mdev, s, sl-1, 1, KM_USER0);
+
+	first_page = sl >> (3 + PAGE_SHIFT);
+	last_page = el >> (3 + PAGE_SHIFT);
+
+	/* MLPP: modulo longs per page */
+	/* LWPP: long words per page */
+	first_word = MLPP(sl >> LN2_BPL);
+	last_word = LWPP;
+
+	/* first and full pages, unless first page == last page */
+	for (page_nr = first_page; page_nr < last_page; page_nr++) {
+		bm_set_full_words_within_one_page(mdev->bitmap, page_nr, first_word, last_word);
+		cond_resched();
+		first_word = 0;
+	}
+
+	/* last page (respectively only page, for first page == last page) */
+	last_word = MLPP(el >> LN2_BPL);
+	bm_set_full_words_within_one_page(mdev->bitmap, last_page, first_word, last_word);
+
+	/* possibly trailing bits */
+	__bm_change_bits_to(mdev, el+1, e, 1, KM_USER0);
 }
 
 /* returns bit state
