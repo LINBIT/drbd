@@ -2547,15 +2547,6 @@ void validate_resource(struct d_resource *res)
 	} else {
 		res->protocol[0] = toupper(res->protocol[0]);
 	}
-	if (res->ignore)
-		return;
-	if (!res->me) {
-		fprintf(stderr,
-			"%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
-			res->config_file, res->start_line, res->name,
-			nodeinfo.nodename);
-		config_valid = 0;
-	}
 	if ((opt = find_opt(res->sync_options, "after"))) {
 		if (res_by_name(opt->value) == NULL) {
 			fprintf(stderr,
@@ -2565,6 +2556,15 @@ void validate_resource(struct d_resource *res)
 				opt->value);
 			config_valid = 0;
 		}
+	}
+	if (res->ignore)
+		return;
+	if (!res->me) {
+		fprintf(stderr,
+			"%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
+			res->config_file, res->start_line, res->name,
+			nodeinfo.nodename);
+		config_valid = 0;
 	}
 	// need to verify that in the discard-node-nodename options only known
 	// nodenames are mentioned.
@@ -2587,8 +2587,6 @@ void validate_resource(struct d_resource *res)
 			}
 		}
 	}
-	/* IP verification (check for existence)
-	 * moved to just before command execution */
 
 	if ((opt = find_opt(res->handlers, "fence-peer"))) {
 		if (strstr(opt->value, "drbd-peer-outdater"))
