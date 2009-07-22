@@ -10,7 +10,7 @@ exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
 echo "invoked for $DRBD_RESOURCE"
 
 # Default to sending email to root, unless otherwise specified
-RECIPIENT=${1:=root}
+RECIPIENT=${1:-root}
 
 # check arguments specified on command line
 if [ -z "$RECIPIENT" ]; then
