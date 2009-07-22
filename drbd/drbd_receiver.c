@@ -1418,6 +1418,10 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 
 	data_size -= dgs;
 
+	/* optimistically update recv_cnt.  if receiving fails below,
+	 * we disconnect anyways, and counters will be reset. */
+	mdev->recv_cnt += data_size>>9;
+
 	bio = req->master_bio;
 	D_ASSERT(sector == bio->bi_sector);
 
