@@ -428,29 +428,6 @@ static unsigned long bm_count_bits_swap_endian(struct drbd_bitmap *b)
 	return __bm_count_bits(b, 1, KM_USER0);
 }
 
-void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line)
-{
-	struct drbd_bitmap *b = mdev->bitmap;
-	unsigned long flags, bits;
-
-	ERR_IF(!b) return;
-
-	/* IMO this should be inside drbd_bm_lock/unlock.
-	 * Unfortunately it is used outside of the locks.
-	 * And I'm not yet sure where we need to place the
-	 * lock/unlock correctly.
-	 */
-
-	spin_lock_irqsave(&b->bm_lock, flags);
-	bits = bm_count_bits(b);
-	if (bits != b->bm_set) {
-		dev_err(DEV, "bm_set was %lu, corrected to %lu. %s:%d\n",
-		    b->bm_set, bits, file, line);
-		b->bm_set = bits;
-	}
-	spin_unlock_irqrestore(&b->bm_lock, flags);
-}
-
 /* offset and len in long words.*/
 STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 {

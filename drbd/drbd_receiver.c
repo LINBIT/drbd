@@ -2532,8 +2532,6 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 		}
 	}
 
-	drbd_bm_recount_bits(mdev);
-
 	return rv;
 }
 

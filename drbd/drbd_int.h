@@ -1486,9 +1486,6 @@ extern void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset,
 extern void drbd_bm_lock(struct drbd_conf *mdev, char *why);
 extern void drbd_bm_unlock(struct drbd_conf *mdev);
 
-extern void _drbd_bm_recount_bits(struct drbd_conf *mdev, char *file, int line);
-#define drbd_bm_recount_bits(mdev) \
-	_drbd_bm_recount_bits(mdev, __FILE__, __LINE__)
 extern int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e);
 /* drbd_main.c */
 

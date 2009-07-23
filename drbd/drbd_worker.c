@@ -813,8 +813,6 @@ out:
 		drbd_queue_bitmap_io(mdev, &drbd_bm_write, NULL, "write from resync_finished");
 	}
 
-	drbd_bm_recount_bits(mdev);
-
 	if (khelper_cmd)
 		drbd_khelper(mdev, khelper_cmd);
 
@@ -1345,8 +1343,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 	trace_drbd_resync(mdev, TRACE_LVL_SUMMARY, "Resync starting: side=%s\n",
 			  side == C_SYNC_TARGET ? "SyncTarget" : "SyncSource");
-
-	drbd_bm_recount_bits(mdev);
 
 	/* In case a previous resync run was aborted by an IO error/detach on the peer. */
 	drbd_rs_cancel_all(mdev);
