@@ -1128,6 +1128,8 @@ int drbd_bm_clear_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	return -bm_change_bits_to(mdev, s, e, 0);
 }
 
+/* sets all bits in full words,
+ * from first_word up to, but not including, last_word */
 static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
 		int page_nr, int first_word, int last_word)
 {
@@ -1142,20 +1144,21 @@ static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
 	kunmap_atomic(paddr, KM_USER0);
 }
 
-/* the same thing, but without taking the spin_lock_irqsave.
- * you must first drbd_bm_lock(). */
+/* same thing as drbd_bm_set_bits, but without taking the spin_lock_irqsave.
+ * you must first drbd_bm_lock().
+ * Sets bits from s to e _inclusive_. */
 void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
-	/* s <= sl <= el <= e */
-	/* first set_bit from the first bit (s)
+	/* First set_bit from the first bit (s)
 	 * up to the next long boundary (sl),
-	 * then assign full words including the last long boundary (el),
-	 * then set_bit up to the last bit (e).
-	 * do not use memset, because we have need to account for changes,
+	 * then assign full words up to the last long boundary (el),
+	 * then set_bit up to and including the last bit (e).
+	 *
+	 * Do not use memset, because we have need to account for changes,
 	 * so we need to loop over the words with hweight() anyways.
 	 */
 	unsigned long sl = ALIGN(s,BITS_PER_LONG);
-	unsigned long el = (e & ~((unsigned long)BITS_PER_LONG-1)) -1;
+	unsigned long el = (e+1) & ~((unsigned long)BITS_PER_LONG-1);
 	int first_page;
 	int last_page;
 	int page_nr;
@@ -1194,7 +1197,7 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	bm_set_full_words_within_one_page(mdev->bitmap, last_page, first_word, last_word);
 
 	/* possibly trailing bits */
-	__bm_change_bits_to(mdev, el+1, e, 1, KM_USER0);
+	__bm_change_bits_to(mdev, el, e, 1, KM_USER0);
 }
 
 /* returns bit state
@@ -1233,7 +1236,7 @@ int drbd_bm_test_bit(struct drbd_conf *mdev, const unsigned long bitnr)
 	return i;
 }
 
-/* returns number of bits set */
+/* returns number of bits set in the range [s, e] */
 int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
 	unsigned long flags;
