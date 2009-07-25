@@ -1144,8 +1144,9 @@ static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
 	kunmap_atomic(paddr, KM_USER0);
 }
 
-/* same thing as drbd_bm_set_bits, but without taking the spin_lock_irqsave.
- * you must first drbd_bm_lock().
+/* Same thing as drbd_bm_set_bits, but without taking the spin_lock_irqsave.
+ * You must first drbd_bm_lock().
+ * Can be called to set the whole bitmap in one go.
  * Sets bits from s to e _inclusive_. */
 void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsigned long e)
 {
@@ -1154,7 +1155,7 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	 * then assign full words up to the last long boundary (el),
 	 * then set_bit up to and including the last bit (e).
 	 *
-	 * Do not use memset, because we have need to account for changes,
+	 * Do not use memset, because we must account for changes,
 	 * so we need to loop over the words with hweight() anyways.
 	 */
 	unsigned long sl = ALIGN(s,BITS_PER_LONG);
@@ -1196,8 +1197,13 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	last_word = MLPP(el >> LN2_BPL);
 	bm_set_full_words_within_one_page(mdev->bitmap, last_page, first_word, last_word);
 
-	/* possibly trailing bits */
-	__bm_change_bits_to(mdev, el, e, 1, KM_USER0);
+	/* possibly trailing bits.
+	 * example: (e & 63) == 63, el will be e+1.
+	 * if that even was the very last bit,
+	 * it would trigger an assert in __bm_change_bits_to()
+	 */
+	if (el <= e)
+		__bm_change_bits_to(mdev, el, e, 1, KM_USER0);
 }
 
 /* returns bit state
