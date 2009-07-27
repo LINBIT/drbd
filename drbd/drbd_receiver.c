@@ -2087,7 +2087,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		if (mdev->state.conn >= C_CONNECTED &&
 		    mdev->state.conn != C_VERIFY_T)
 			dev_warn(DEV, "ASSERT FAILED: got P_OV_REQUEST while being %s\n",
-				conns_to_name(mdev->state.conn));
+				drbd_conn_str(mdev->state.conn));
 		if (mdev->ov_start_sector == ~(sector_t)0 &&
 		    mdev->agreed_pro_version >= 90) {
 			mdev->ov_start_sector = sector;
@@ -3059,7 +3059,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 	real_peer_disk = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
 		real_peer_disk = mdev->p_uuid[UI_FLAGS] & 4 ? D_INCONSISTENT : D_CONSISTENT;
-		dev_info(DEV, "real peer disk state = %s\n", disks_to_name(real_peer_disk));
+		dev_info(DEV, "real peer disk state = %s\n", drbd_disk_str(real_peer_disk));
 	}
 
 	spin_lock_irq(&mdev->req_lock);
@@ -3399,7 +3399,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, struct p_header *h)
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
 		dev_info(DEV, "unexpected cstate (%s) in receive_bitmap\n",
-		    conns_to_name(mdev->state.conn));
+		    drbd_conn_str(mdev->state.conn));
 	}
 
 	ok = TRUE;
@@ -3556,7 +3556,7 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 		return;
 	if (mdev->state.conn >= C_WF_CONNECTION)
 		dev_err(DEV, "ASSERT FAILED cstate = %s, expected < WFConnection\n",
-				conns_to_name(mdev->state.conn));
+				drbd_conn_str(mdev->state.conn));
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
@@ -3994,7 +3994,7 @@ STATIC int got_RqSReply(struct drbd_conf *mdev, struct p_header *h)
 	} else {
 		set_bit(CL_ST_CHG_FAIL, &mdev->flags);
 		dev_err(DEV, "Requested state change failed by peer: %s (%d)\n",
-		    set_st_err_name(retcode), retcode);
+		    drbd_set_st_err_str(retcode), retcode);
 	}
 	wake_up(&mdev->state_wait);
 

@@ -723,11 +723,11 @@ static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 	dev_info(DEV, " %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    seq, context, func, line,
 	    name,
-	    conns_to_name(s.conn),
-	    roles_to_name(s.role),
-	    roles_to_name(s.peer),
-	    disks_to_name(s.disk),
-	    disks_to_name(s.pdsk),
+	    drbd_conn_str(s.conn),
+	    drbd_role_str(s.role),
+	    drbd_role_str(s.peer),
+	    drbd_disk_str(s.disk),
+	    drbd_disk_str(s.pdsk),
 	    s.susp ? 's' : 'r',
 	    s.aftr_isp ? 'a' : '-',
 	    s.peer_isp ? 'p' : '-',
@@ -742,11 +742,11 @@ STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state ns)
 {
 	dev_err(DEV, " %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	    name,
-	    conns_to_name(ns.conn),
-	    roles_to_name(ns.role),
-	    roles_to_name(ns.peer),
-	    disks_to_name(ns.disk),
-	    disks_to_name(ns.pdsk),
+	    drbd_conn_str(ns.conn),
+	    drbd_role_str(ns.role),
+	    drbd_role_str(ns.peer),
+	    drbd_disk_str(ns.disk),
+	    drbd_disk_str(ns.pdsk),
 	    ns.susp ? 's' : 'r',
 	    ns.aftr_isp ? 'a' : '-',
 	    ns.peer_isp ? 'p' : '-',
@@ -759,25 +759,25 @@ void print_st_err(struct drbd_conf *mdev,
 {
 	if (err == SS_IN_TRANSIENT_STATE)
 		return;
-	dev_err(DEV, "State change failed: %s\n", set_st_err_name(err));
+	dev_err(DEV, "State change failed: %s\n", drbd_set_st_err_str(err));
 	print_st(mdev, " state", os);
 	print_st(mdev, "wanted", ns);
 }
 
 
-#define peers_to_name roles_to_name
-#define pdsks_to_name disks_to_name
+#define drbd_peer_str drbd_role_str
+#define drbd_pdsk_str drbd_disk_str
 
-#define susps_to_name(A)     ((A) ? "1" : "0")
-#define aftr_isps_to_name(A) ((A) ? "1" : "0")
-#define peer_isps_to_name(A) ((A) ? "1" : "0")
-#define user_isps_to_name(A) ((A) ? "1" : "0")
+#define drbd_susp_str(A)     ((A) ? "1" : "0")
+#define drbd_aftr_isp_str(A) ((A) ? "1" : "0")
+#define drbd_peer_isp_str(A) ((A) ? "1" : "0")
+#define drbd_user_isp_str(A) ((A) ? "1" : "0")
 
 #define PSC(A) \
 	({ if (ns.A != os.A) { \
 		pbp += sprintf(pbp, #A "( %s -> %s ) ", \
-			      A##s_to_name(os.A), \
-			      A##s_to_name(ns.A)); \
+			      drbd_##A##_str(os.A), \
+			      drbd_##A##_str(ns.A)); \
 	} })
 
 /**
@@ -1102,7 +1102,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 			if (is_valid_state(mdev, os) == rv) {
 				dev_err(DEV, "Considering state change from bad state. "
 				    "Error would be: '%s'\n",
-				    set_st_err_name(rv));
+				    drbd_set_st_err_str(rv));
 				print_st(mdev, "old", os);
 				print_st(mdev, "new", ns);
 				rv = is_valid_state_transition(mdev, ns, os);
@@ -3933,3 +3933,9 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type)
 
 module_init(drbd_init)
 module_exit(drbd_cleanup)
+
+/* For drbd_tracing: */
+EXPORT_SYMBOL(drbd_conn_str);
+EXPORT_SYMBOL(drbd_role_str);
+EXPORT_SYMBOL(drbd_disk_str);
+EXPORT_SYMBOL(drbd_set_st_err_str);

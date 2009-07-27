@@ -934,7 +934,7 @@ static int print_config_error(int err_no)
 			// Ignore SS_SUCCESS, SS_NOTHING_TO_DO, SS_CW_Success...
 		} else {
 			fprintf(stderr,"%s: State change failed: (%d) %s\n",
-				devname, err_no, set_st_err_name(err_no));
+				devname, err_no, drbd_set_st_err_str(err_no));
 			if (err_no == SS_NO_UP_TO_DATE_DISK) {
 				/* am R_PRIMARY, cannot outdate */
 				rv = 17;
@@ -1440,11 +1440,11 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		" ro1=\"%s\" ro2=\"%s\""
 		/* disk state */
 		" ds1=\"%s\" ds2=\"%s\"",
-	       conns_to_name(state.conn),
-	       roles_to_name(state.role),
-	       roles_to_name(state.peer),
-	       disks_to_name(state.disk),
-	       disks_to_name(state.pdsk));
+	       drbd_conn_str(state.conn),
+	       drbd_role_str(state.role),
+	       drbd_role_str(state.peer),
+	       drbd_disk_str(state.disk),
+	       drbd_disk_str(state.pdsk));
 
 	/* io suspended ? */
 	if (state.susp)
@@ -1504,11 +1504,11 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 			"%s_disk=%s\n"
 			"%s_pdsk=%s\n\n",
 			_P,
-			_P, conns_to_name(state.conn),
-			_P, roles_to_name(state.role),
-			_P, roles_to_name(state.peer),
-			_P, disks_to_name(state.disk),
-			_P, disks_to_name(state.pdsk));
+			_P, drbd_conn_str(state.conn),
+			_P, drbd_role_str(state.role),
+			_P, drbd_role_str(state.peer),
+			_P, drbd_disk_str(state.disk),
+			_P, drbd_disk_str(state.pdsk));
 
 		/* io suspended ? */
 		printf("%s_flags_susp=%s\n", _P, state.susp ? "1" : "");
@@ -1541,7 +1541,7 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
-		printf("%s/%s\n",roles_to_name(state.role),roles_to_name(state.peer));
+		printf("%s/%s\n",drbd_role_str(state.role),drbd_role_str(state.peer));
 	}
 	return 0;
 }
@@ -1556,7 +1556,7 @@ static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
-		printf("%s\n",conns_to_name(state.conn));
+		printf("%s\n",drbd_conn_str(state.conn));
 	}
 	return 0;
 }
@@ -1571,7 +1571,7 @@ static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 	     state.disk == D_DISKLESS) {
 		printf("Unconfigured\n");
 	} else {
-		printf("%s/%s\n",disks_to_name(state.disk),disks_to_name(state.pdsk));
+		printf("%s/%s\n",drbd_disk_str(state.disk),drbd_disk_str(state.pdsk));
 	}
 	return 0;
 }
@@ -1767,11 +1767,11 @@ static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 			printf("%u ST %d { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 			       seq,
 			       reply->minor,
-			       conns_to_name(state.conn),
-			       roles_to_name(state.role),
-			       roles_to_name(state.peer),
-			       disks_to_name(state.disk),
-			       disks_to_name(state.pdsk),
+			       drbd_conn_str(state.conn),
+			       drbd_role_str(state.role),
+			       drbd_role_str(state.peer),
+			       drbd_disk_str(state.disk),
+			       drbd_disk_str(state.pdsk),
 			       state.susp ? 's' : 'r',
 			       state.aftr_isp ? 'a' : '-',
 			       state.peer_isp ? 'p' : '-',

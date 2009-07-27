@@ -490,19 +490,19 @@ static void probe_drbd_req(struct drbd_request *req, enum drbd_req_event what, c
 			 req->epoch,
 			 (unsigned long long)req->sector,
 			 req->size,
-			 conns_to_name(mdev->state.conn));
+			 drbd_conn_str(mdev->state.conn));
 	}
 }
 
 
-#define peers_to_name roles_to_name
-#define pdsks_to_name disks_to_name
+#define drbd_peer_str drbd_role_str
+#define drbd_pdsk_str drbd_disk_str
 
 #define PSM(A)							\
 do {								\
 	if (mask.A) {						\
 		int i = snprintf(p, len, " " #A "( %s )",	\
-				A##s_to_name(val.A));		\
+				 drbd_##A##_str(val.A));	\
 		if (i >= len)					\
 			return op;				\
 		p += i;						\

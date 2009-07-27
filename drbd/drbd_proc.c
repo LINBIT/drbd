@@ -190,7 +190,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "\n");
 		}
 
-		sn = conns_to_name(mdev->state.conn);
+		sn = drbd_conn_str(mdev->state.conn);
 
 		if (mdev->state.conn == C_STANDALONE &&
 		    mdev->state.disk == D_DISKLESS &&
@@ -202,10 +202,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 			   i, sn,
-			   roles_to_name(mdev->state.role),
-			   roles_to_name(mdev->state.peer),
-			   disks_to_name(mdev->state.disk),
-			   disks_to_name(mdev->state.pdsk),
+			   drbd_role_str(mdev->state.role),
+			   drbd_role_str(mdev->state.peer),
+			   drbd_disk_str(mdev->state.disk),
+			   drbd_disk_str(mdev->state.pdsk),
 			   (mdev->net_conf == NULL ? ' ' :
 			    (mdev->net_conf->wire_protocol - DRBD_PROT_A+'A')),
 			   mdev->state.susp ? 's' : 'r',

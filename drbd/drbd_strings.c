@@ -89,23 +89,23 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_CONCURRENT_ST_CHG] = "Concurrent state changes detected and aborted",
 };
 
-const char *conns_to_name(enum drbd_conns s)
+const char *drbd_conn_str(enum drbd_conns s)
 {
 	/* enums are unsigned... */
 	return s > C_PAUSED_SYNC_T ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 
-const char *roles_to_name(enum drbd_role s)
+const char *drbd_role_str(enum drbd_role s)
 {
 	return s > R_SECONDARY   ? "TOO_LARGE" : drbd_role_s_names[s];
 }
 
-const char *disks_to_name(enum drbd_disk_state s)
+const char *drbd_disk_str(enum drbd_disk_state s)
 {
 	return s > D_UP_TO_DATE    ? "TOO_LARGE" : drbd_disk_s_names[s];
 }
 
-const char *set_st_err_name(enum drbd_state_ret_codes err)
+const char *drbd_set_st_err_str(enum drbd_state_ret_codes err)
 {
 	return err <= SS_AFTER_LAST_ERROR ? "TOO_SMALL" :
 	       err > SS_TWO_PRIMARIES ? "TOO_LARGE"

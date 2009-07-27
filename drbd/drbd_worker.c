@@ -449,7 +449,7 @@ int w_make_resync_request(struct drbd_conf *mdev,
 
 	if (mdev->state.conn != C_SYNC_TARGET)
 		dev_err(DEV, "%s in w_make_resync_request\n",
-			conns_to_name(mdev->state.conn));
+			drbd_conn_str(mdev->state.conn));
 
 	if (!get_ldev(mdev)) {
 		/* Since we only need to access mdev->rsync a
@@ -1415,7 +1415,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 	if (r == SS_SUCCESS) {
 		dev_info(DEV, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
-		     conns_to_name(ns.conn),
+		     drbd_conn_str(ns.conn),
 		     (unsigned long) mdev->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) mdev->rs_total);
 

@@ -1648,8 +1648,8 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo);
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;
 extern struct file_operations drbd_proc_fops;
-extern const char *conns_to_name(enum drbd_conns s);
-extern const char *roles_to_name(enum drbd_role s);
+extern const char *drbd_conn_str(enum drbd_conns s);
+extern const char *drbd_role_str(enum drbd_role s);
 
 /* drbd_actlog.c */
 extern void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector);
@@ -2165,7 +2165,7 @@ static inline void drbd_get_syncer_progress(struct drbd_conf *mdev,
 		 */
 		smp_rmb();
 		dev_warn(DEV, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-				conns_to_name(mdev->state.conn),
+				drbd_conn_str(mdev->state.conn),
 				*bits_left, mdev->rs_total, mdev->rs_failed);
 		*per_mil_done = 0;
 	} else {

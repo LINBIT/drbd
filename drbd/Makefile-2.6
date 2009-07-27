@@ -6,7 +6,7 @@ ifndef CONFIG_CONNECTOR
 	drbd-y += connector.o cn_queue.o
 endif
 
-drbd_trace-y := drbd_tracing.o drbd_strings.o
+drbd_trace-y := drbd_tracing.o
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 obj-$(CONFIG_DRBD_TRACE)       += drbd_trace.o
