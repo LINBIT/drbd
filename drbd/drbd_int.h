@@ -1233,10 +1233,10 @@ extern int  drbd_thread_start(struct drbd_thread *thi);
 extern void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
 #ifdef CONFIG_SMP
 extern void drbd_thread_current_set_cpu(struct drbd_conf *mdev);
-extern cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev);
+extern void drbd_calc_cpu_mask(struct drbd_conf *mdev);
 #else
 #define drbd_thread_current_set_cpu(A) ({})
-#define drbd_calc_cpu_mask(A) CPU_MASK_ALL
+#define drbd_calc_cpu_mask(A) ({})
 #endif
 extern void drbd_free_resources(struct drbd_conf *mdev);
 extern void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,

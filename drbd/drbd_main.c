@@ -1687,25 +1687,23 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
  * Forces all threads of a device onto the same CPU. This is benificial for
  * DRBD's performance. May be overwritten by user's configuration.
  */
-cpumask_t drbd_calc_cpu_mask(struct drbd_conf *mdev)
+void drbd_calc_cpu_mask(struct drbd_conf *mdev)
 {
-	int sv, cpu;
-	cpumask_t av_cpu_m;
+	int ord, cpu;
 
-	if (cpus_weight(mdev->cpu_mask))
-		return mdev->cpu_mask;
+	/* user override. */
+	if (cpumask_weight(&mdev->cpu_mask))
+		return;
 
-	av_cpu_m = cpu_online_map;
-	sv = mdev_to_minor(mdev) % cpus_weight(av_cpu_m);
-
-	for_each_cpu_mask(cpu, av_cpu_m) {
-		if (sv-- == 0)
-			return cpumask_of_cpu(cpu);
+	ord = mdev_to_minor(mdev) % cpumask_weight(cpu_online_mask);
+	for_each_online_cpu(cpu) {
+		if (ord-- == 0) {
+			cpumask_set_cpu(cpu, &mdev->cpu_mask);
+			return;
+		}
 	}
-
-	/* some kernel versions "forget" to add the (cpumask_t) typecast
-	 * to that macro, which results in "parse error before '{'" ;-> */
-	return (cpumask_t) CPU_MASK_ALL; /* Never reached. */
+	/* should not be reached */
+	cpumask_setall(&mdev->cpu_mask);
 }
 
 /**
@@ -1728,11 +1726,7 @@ void drbd_thread_current_set_cpu(struct drbd_conf *mdev)
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	/* preempt_disable();
-	   Thas was a kernel that warned about a call to smp_processor_id() while preemt
-	   was not disabled. It seems that this was fixed in manline. */
-	set_cpus_allowed(p, mdev->cpu_mask);
-	/* preempt_enable(); */
+	set_cpus_allowed_ptr(p, &mdev->cpu_mask);
 }
 #endif
 
