@@ -462,6 +462,75 @@ static inline void *kzalloc(size_t size, int flags)
 }
 #endif
 
+/* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
+#ifndef cpumask_bits
+#define nr_cpu_ids NR_CPUS
+#define nr_cpumask_bits nr_cpu_ids
+
+typedef cpumask_t cpumask_var_t[1];
+#define cpumask_bits(maskp) ((unsigned long*)(maskp))
+#define cpu_online_mask &(cpu_online_map)
+
+static inline void cpumask_clear(cpumask_t *dstp)
+{
+	bitmap_zero(cpumask_bits(dstp), NR_CPUS);
+}
+
+static inline int cpumask_equal(const cpumask_t *src1p,
+				const cpumask_t *src2p)
+{
+	return bitmap_equal(cpumask_bits(src1p), cpumask_bits(src2p),
+						 nr_cpumask_bits);
+}
+
+static inline void cpumask_copy(cpumask_t *dstp,
+				cpumask_t *srcp)
+{
+	bitmap_copy(cpumask_bits(dstp), cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+static inline unsigned int cpumask_weight(const cpumask_t *srcp)
+{
+	return bitmap_weight(cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+static inline void cpumask_set_cpu(unsigned int cpu, cpumask_t *dstp)
+{
+	set_bit(cpu, cpumask_bits(dstp));
+}
+
+static inline void cpumask_setall(cpumask_t *dstp)
+{
+	bitmap_fill(cpumask_bits(dstp), nr_cpumask_bits);
+}
+
+static inline void free_cpumask_var(cpumask_var_t mask)
+{
+}
+#endif
+/* see upstream commit 0281b5dc0350cbf6dd21ed558a33cccce77abc02 */
+#ifdef CONFIG_CPUMASK_OFFSTACK
+static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
+{
+	return alloc_cpumask_var(mask, flags | __GFP_ZERO);
+}
+#else
+static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
+{
+	cpumask_clear(*mask);
+	return 1;
+}
+#endif
+/* see upstream commit cd8ba7cd9be0192348c2836cb6645d9b2cd2bfd2 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
+static inline int set_cpus_allowed_ptr(struct task_struct *p, const cpumask_t *new_mask)
+{
+	return set_cpus_allowed(p, *new_mask);
+}
+#endif
+#endif
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
 #define __bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK) \
