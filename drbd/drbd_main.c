@@ -1692,18 +1692,18 @@ void drbd_calc_cpu_mask(struct drbd_conf *mdev)
 	int ord, cpu;
 
 	/* user override. */
-	if (cpumask_weight(&mdev->cpu_mask))
+	if (cpumask_weight(mdev->cpu_mask))
 		return;
 
 	ord = mdev_to_minor(mdev) % cpumask_weight(cpu_online_mask);
 	for_each_online_cpu(cpu) {
 		if (ord-- == 0) {
-			cpumask_set_cpu(cpu, &mdev->cpu_mask);
+			cpumask_set_cpu(cpu, mdev->cpu_mask);
 			return;
 		}
 	}
 	/* should not be reached */
-	cpumask_setall(&mdev->cpu_mask);
+	cpumask_setall(mdev->cpu_mask);
 }
 
 /**
@@ -1726,7 +1726,7 @@ void drbd_thread_current_set_cpu(struct drbd_conf *mdev)
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	set_cpus_allowed_ptr(p, &mdev->cpu_mask);
+	set_cpus_allowed_ptr(p, mdev->cpu_mask);
 }
 #endif
 
@@ -3206,6 +3206,8 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
 	if (!mdev)
 		return NULL;
+	if (!zalloc_cpumask_var(&mdev->cpu_mask, GFP_KERNEL))
+		goto out_no_cpumask;
 
 	mdev->minor = minor;
 
@@ -3284,6 +3286,8 @@ out_no_io_page:
 out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
+	free_cpumask_var(mdev->cpu_mask);
+out_no_cpumask:
 	kfree(mdev);
 	return NULL;
 }
@@ -3300,6 +3304,7 @@ void drbd_free_mdev(struct drbd_conf *mdev)
 	__free_page(mdev->md_io_page);
 	put_disk(mdev->vdisk);
 	blk_cleanup_queue(mdev->rq_queue);
+	free_cpumask_var(mdev->cpu_mask);
 	kfree(mdev);
 }
 
