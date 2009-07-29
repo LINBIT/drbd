@@ -2513,9 +2513,9 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	/* NOTE: no need to check if barriers supported here as we would
 	 *       not pass the test in make_request_common in that case
 	 */
-	if (bio_barrier(req->master_bio))
+	if (bio_rw_flagged(req->master_bio, BIO_RW_BARRIER))
 		dp_flags |= DP_HARDBARRIER;
-	if (bio_sync(req->master_bio))
+	if (bio_rw_flagged(req->master_bio, BIO_RW_SYNCIO))
 		dp_flags |= DP_RW_SYNC;
 #ifdef BIO_RW_UNPLUG
 	/* for now handle SYNCIO and UNPLUG

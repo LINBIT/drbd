@@ -117,7 +117,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	/* check for unsupported barrier op.
 	 * would rather check on EOPNOTSUPP, but that is not reliable.
 	 * don't try again for ANY return value != 0 */
-	if (unlikely(bio_barrier(bio) && !ok)) {
+	if (unlikely(bio_rw_flagged(bio, BIO_RW_BARRIER) && !ok)) {
 		/* Try again with no barrier */
 		dev_warn(DEV, "Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER, &mdev->flags);
