@@ -2515,12 +2515,15 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	 */
 	if (bio_rw_flagged(req->master_bio, BIO_RW_BARRIER))
 		dp_flags |= DP_HARDBARRIER;
+#ifdef BIO_RW_UNPLUG
 	if (bio_rw_flagged(req->master_bio, BIO_RW_SYNCIO))
 		dp_flags |= DP_RW_SYNC;
-#ifdef BIO_RW_UNPLUG
 	/* for now handle SYNCIO and UNPLUG
 	 * as if they still were one and the same flag */
 	if (bio_flagged(req->master_bio, BIO_RW_UNPLUG))
+		dp_flags |= DP_RW_SYNC;
+#else
+	if (bio_flagged(req->master_bio, BIO_RW_SYNC))
 		dp_flags |= DP_RW_SYNC;
 #endif
 	if (mdev->state.conn >= C_SYNC_SOURCE &&

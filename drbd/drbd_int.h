@@ -1158,7 +1158,11 @@ struct drbd_conf {
 	spinlock_t peer_seq_lock;
 	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)
+	cpumask_t cpu_mask[1];
+#else
 	cpumask_var_t cpu_mask;
+#endif
 	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex state_mutex;

@@ -9,6 +9,11 @@
 # error "use a 2.6 kernel, please"
 #endif
 
+#include <linux/bio.h>
+#ifndef bio_rw_flagged
+#define bio_rw_flagged(bio, flag)      ((bio)->bi_rw & (1 << (flag)))
+#endif
+
 #include <linux/slab.h>
 
 /* for the proc_create wrapper */
