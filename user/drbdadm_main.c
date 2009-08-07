@@ -333,8 +333,8 @@ int call_cmd_fn(int (*function) (struct d_resource *, const char *),
 int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
 	     enum on_error on_error)
 {
-	if (!res->peer && cmd->need_peer)
-		set_peer_in_resource(res, 1);
+	if (!res->peer)
+		set_peer_in_resource(res, cmd->need_peer);
 
 	return call_cmd_fn(cmd->function, cmd->name, res, on_error);
 }
