@@ -1612,13 +1612,24 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 	char *sh_cmd;
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
 
-	/* res->peer is not available here if one has more than two host sections in his
-	   resoruce definition.
-	   Therefore DRBD_PEERS will not be available. */
+	if (!res->peer) {
+		/* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
+		   If we do not know the peer by now, use these to find the peer. */
+		struct d_host_info *host;
+		char *peer_address = getenv("DRBD_PEER_ADDRESS");
+		char *peer_af = getenv("DRBD_PEER_AF");
 
-	/* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
-	   If we know the peer anyways (i.e. not more than two host sections) we
-	   set it (overwrite) it here anyways. */
+		if (peer_address && peer_af) {
+			for (host = res->all_hosts; host; host = host->next) {
+				if (!strcmp(host->address_family, peer_af) &&
+				    !strcmp(host->address, peer_address)) {
+					res->peer = host;
+					break;
+				}
+			}
+		}
+	}
+
 	if (res->peer) {
 		setenv("DRBD_PEER_AF", res->peer->address_family, 1);	/* since 8.3.0 */
 		setenv("DRBD_PEER_ADDRESS", res->peer->address, 1);	/* since 8.3.0 */
