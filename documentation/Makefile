@@ -15,56 +15,18 @@
 # You should have received a copy of the GNU General Public License
 # along with drbd; see the file COPYING.  If not, write to
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
-#
-#
-# For Debian:
-# nsgmls drbdsetup.sgml | sgmlspl /usr/lib/perl5/sgmlspl-specs/docbook2man-spec.pl
-# On RedHat it is at:
-# /usr/share/sgml/docbook/utils-0.6/helpers/docbook2man-spec.pl
-# the RedHat only way is docbook2man
-# hmmm, nowadays docbook2man works also on Debian
 
 MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8 drbdmeta.8
+SOURCES        := $(wildcard *.xml)
 
-#
-# Docbook Magic for SuSE, Worksforme...
-# Needs to be explicitly enabled with make doc DIST=SuSE-9.0
-# requires these packages and their dependencies:
-#  docbook-dsssl-stylesheets docbook-toys
-#  docbook-utils docbook-utils opensp perl-SGMLS
-#
-ifeq ($(DIST),SuSE-9.0)
-  # dockbook2man just does not work.
-  # this does:
-  DB2MAN :=\
-  @_db2man() { in=$$1		;\
-   echo "  [DB2MAN] $$in"	;\
-   nsgmls "$$in" |\
-   sgmlspl /usr/share/sgml/docbook/utils-0.6.6/helpers/docbook2man-spec.pl;\
-  }; _db2man
+STYLESHEET_PREFIX ?= http://docbook.sourceforge.net/release/xsl/current
+MANPAGES_STYLESHEET ?= $(STYLESHEET_PREFIX)/manpages/docbook.xsl
+HTML_STYLESHEET ?= $(STYLESHEET_PREFIX)/xhtml/docbook.xsl
+FO_STYLESHEET ?= $(STYLESHEET_PREFIX)/fo/docbook.xsl
 
-  # dockbook2html produces errors and swallows tables.
-  # db2html works, but in contrast do dockbook2man creates
-  # a subdirectory and some extra files ...
-  # this works for me:
-  DB2HTML :=\
-  _db2html() { in=$$1; base=$${in%.sgml}		;\
-   echo " [DB2HTML] $$in"			;\
-   db2html "$$in"				;\
-   ln -sf t1.html $$base/index.html		;\
-   mv $$base/*.html .		                ;\
-   rm -rf $$base/   		                ;\
-  }; _db2html
-
-else
-
- DB2MAN          := $(shell which 2>/dev/null docbook2man)
- DB2HTML         := $(shell which 2>/dev/null docbook2html)
- DB2PDF          := $(shell which 2>/dev/null docbook2pdf)
- DB2PS           := $(shell which 2>/dev/null docbook2ps)
-
-endif
-
+XSLTPROC_MANPAGES_OPTIONS ?= --xinclude
+XSLTPROC_HTML_OPTIONS ?= --xinclude
+XSLTPROC_FO_OPTIONS ?= --xinclude
 
 all:
 	@echo "To (re)make the documentation: make doc"
@@ -81,50 +43,24 @@ doc-clean: distclean
 
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
 
-ifneq ($(DB2MAN)$(DB2HTML)$(DB2PDF)$(DB2PS),)
+%.5 %.8: %.xml 
+	xsltproc \
+	$(XSLTPROC_MANPAGES_OPTIONS) \
+	$(MANPAGES_STYLESHEET) $<
 
-.sgml.5:
-	$(DB2MAN) $<
+%.html: %.xml
+	xsltproc -o $@ \
+	$(XSLTPROC_HTML_OPTIONS) \
+	$(HTML_STYLESHEET) $<
 
-.sgml.8:
-	$(DB2MAN) $<
-
-.sgml.html:
-	$(DB2HTML) $<
-	mv index.html $@
-
-.sgml.pdf:
-	$(DB2PDF) $<
-
-.sgml.ps:
-	$(DB2PS) $<
-	gzip -c $@ > $@.gz
+%.fo: %.xml
+	xsltproc -o $@ \
+	$(XSLTPROC_FO_OPTIONS) \
+	$(FO_STYLESHEET) $<
 
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
-
-else
-
-.sgml.5:
-	@echo "could not find docbook tools, sorry." ; exit 1
-
-.sgml.8:
-	@echo "could not find docbook tools, sorry." ; exit 1
-
-.sgml.html:
-	@echo "could not find docbook tools, sorry." ; exit 1
-
-.sgml.pdf:
-	@echo "could not find docbook tools, sorry." ; exit 1
-
-.sgml.ps:
-	@echo "could not find docbook tools, sorry." ; exit 1
-
-distclean:
-	@echo "could not find docbook tools, sorry."
-
-endif
 
 #######
 
@@ -145,11 +81,11 @@ uninstall:
 		rm -v $(PREFIX)/usr/share/man/man$$s/$$f ; \
 	done
 
-html:	$(shell ls *.sgml | sed s/sgml/html/g)
+html:	$(SOURCES:.xml=.html)
 
-pdf:	$(shell ls *.sgml | sed s/sgml/pdf/g)
+pdf:	$(SOURCES:.xml=.pdf)
 
-ps:	$(shell ls *.sgml | sed s/sgml/ps/g)
+ps:	$(SOURCES:.xml=.ps)
 
 
 

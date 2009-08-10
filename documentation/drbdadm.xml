@@ -1,0 +1,437 @@
+<?xml version="1.0"?>
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
+<refentry id="re-drbdadm">
+  <refnamediv>
+    <refname>drbdadm</refname>
+    <refpurpose>Administration tool for DRBD</refpurpose>
+    <indexterm significance="normal">
+      <primary>drbdadm</primary>
+    </indexterm>
+  </refnamediv>
+  <refentryinfo>
+    <date>5 Dec 2008</date>
+    <productname>DRBD</productname>
+    <productnumber>8.3.2</productnumber>
+  </refentryinfo>
+  <refmeta>
+    <refentrytitle>drbdadm</refentrytitle>
+    <manvolnum>8</manvolnum>
+    <refmiscinfo class="manual">System Administration</refmiscinfo>
+  </refmeta>
+  <refsynopsisdiv>
+    <cmdsynopsis sepchar=" ">
+      <command moreinfo="none">drbdadm</command>
+      <arg choice="opt" rep="norepeat">-d</arg>
+      <arg choice="opt" rep="norepeat">-c<arg choice="req" rep="norepeat"><replaceable>file</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-s<arg choice="req" rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-m<arg choice="req" rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-S</arg>
+      <arg choice="opt" rep="norepeat">-h<arg choice="req" rep="norepeat"><replaceable>host</replaceable></arg></arg>
+      <arg choice="req" rep="norepeat">
+        <replaceable>command</replaceable>
+      </arg>
+      <group choice="opt" rep="norepeat">
+        <arg choice="plain" rep="norepeat">all</arg>
+        <arg choice="plain" rep="repeat">
+          <replaceable>resource</replaceable>
+        </arg>
+      </group>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+  <refsect1>
+    <title>Description</title>
+    <para>      Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to
+      drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its
+      configuration file and performs the specified commands by calling the
+      drbdsetup and/or the drbdmeta program.
+    </para>
+  </refsect1>
+  <refsect1>
+    <title>Options</title>
+    <variablelist>
+      <varlistentry>
+        <term><option>-d</option>, <option>--dry-run</option></term>
+        <listitem>
+          <para>	  Just prints the calls of drbdsetup to stdout, but does not run
+	  the commands.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-c</option>, <option>--config-file</option><replaceable>file</replaceable></term>
+        <listitem>
+          <para>          Specifies the configuration file drbdadm will use. If this parameter
+	  is not specified, drbdadm will look for <option>/etc/drbd-83.conf</option>,
+          <option>/etc/drbd-08.conf</option> and <option>/etc/drbd.conf</option>.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-s</option>, <option>--drbdsetup</option><replaceable>file</replaceable></term>
+        <listitem>
+          <para>          Specifies the full path to the drbdsetup program. If this option is
+	  omitted, drbdadm will look for <option>/sbin/drbdsetup</option> and <option>./drbdsetup</option>.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-m</option>, <option>--drbdmeta</option><replaceable>file</replaceable></term>
+        <listitem>
+          <para>          Specifies the full path to the drbdmeta program. If this option is
+	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
+	  <option>./drbdmeta</option>.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-S</option>, <option>--stacked</option></term>
+        <listitem>
+          <para>          Specifies that this command should be performed on a stacked resource.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>-P</option>, <option>--peer</option></term>
+        <listitem>
+          <para>          Specifies to which peer node to connect. Only necessary if there are
+	  more than two host sections in the resource you are working on.
+	</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1>
+    <title>Commands</title>
+    <variablelist>
+      <varlistentry>
+        <term>attach</term>
+        <listitem>
+          <para>          Attaches a local backing block device to the DRBD resource's device.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>detach</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>detach</secondary></indexterm>
+          Removes the backing storage device from a DRBD resource's device.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>connect</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>connect</secondary></indexterm>
+          Sets up the network configuration of the resource's device. If the
+ 	  peer device is already configured, the two DRBD devices will connect.
+	  If there are more than two host sections in the resource you need
+	  to use the <option>--peer</option> option to select the peer you want to
+	  connect to.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>disconnect</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>disconnect</secondary></indexterm>
+          Removes the network configuration from the resource. The device
+	  will then go into StandAlone state.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>syncer</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>syncer</secondary></indexterm>
+          Loads the resynchronization parameters into the device.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>up</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>up</secondary></indexterm>
+          Is a shortcut for attach and connect.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>down</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>down</secondary></indexterm>
+          Is a shortcut for disconnect and detach.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>primary</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>primary</secondary></indexterm>
+          Promote the resource's device into primary role. You need to do
+	  this before any access to the device, such as creating or mounting a file system.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>secondary</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>secondary</secondary></indexterm>
+          Brings the device back into secondary role. This is needed since in
+	  a connected DRBD device pair,  only one of the two peers may have
+	  primary role (except if allow-two-primaries is explicitly set in
+	  the configuration file).
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>invalidate</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>invalidate</secondary></indexterm>
+          Forces DRBD to consider the data on the <emphasis>local</emphasis> backing
+	  storage device as out-of-sync. Therefore DRBD will copy each
+	  and every block over from its peer, to bring the local storage
+	  device back in sync.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>invalidate-remote</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>invalidate-remote</secondary></indexterm>
+          This command is similar to the invalidate command, however, the
+	  <emphasis>peer's</emphasis> backing storage is invalidated and hence rewritten
+	  with the data of the local node.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>resize</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>resize</secondary></indexterm>
+          Causes DRBD to re-examine all sizing constraints, and resize the
+	  resource's device accordingly. For example in case you increased the
+	  size of your backing storage devices (on both nodes of course),
+	  then DRBD will adopt to the new size after you called
+	  this command on one of your nodes. Since new storage space must be
+          synchronised this command only works if there is at least one primary
+          node present.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>create-md</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>
+          Initializes the meta data storage. This needs to be
+	  done before a DRBD resource can be taken online for the first
+	  time.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>get-gi</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>get-gi</secondary></indexterm>
+          Shows a short textual representation of the data generation
+	  identifiers.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>show-gi</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>show-gi</secondary></indexterm>
+	  Prints a textual representation of the data generation
+	  identifiers including explanatory information.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>dump-md</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>dump-md</secondary></indexterm>
+          Dumps the whole contents of the meta data storage, including
+	  the stored bit-map and activity-log, in a textual representation.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>outdate</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
+          Sets the outdated flag in the meta data.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>adjust</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>adjust</secondary></indexterm>
+          Synchronizes the configuration of the device with your configuration
+	  file. You should always examine the output of the dry-run
+	  mode before actually executing this command.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>wait-connect</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>wait-connect</secondary></indexterm>
+          Waits until the device is connected to its peer device.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>role</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>role</secondary></indexterm>
+	  Shows the current roles of the devices (local/peer).
+	  E.g. Primary/Secondary
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>state</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>state</secondary></indexterm>
+	  Deprecated alias for "role", see above.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>cstate</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>cstate</secondary></indexterm>
+	  Shows the current connection state of the devices.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>status</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>status</secondary></indexterm>
+	Shows the current status of all devices defined in the current config file,
+	in xml-like format. Example output:
+<programlisting format="linespecific">&lt;drbd-status version="8.3.2" api="88"&gt;
+&lt;resources config_file="/etc/drbd.conf"&gt;
+&lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
+          ds1="Inconsistent" ds2="UpToDate" resynced_precent ="5.9" /&gt;
+&lt;resource minor="1" name="s1" cs="WFConnection" st1="Secondary"
+          st2="Unknown" ds1="Inconsistent" ds2="Outdated" /&gt;
+&lt;resource minor="3" name="dummy" cs="Unconfigured" /&gt;
+&lt;!-- resource minor="4" name="scratch" not available or not yet created --&gt;
+&lt;/resources&gt;
+&lt;/drbd-status&gt;</programlisting>
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>dump</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>dump</secondary></indexterm>
+          Just parse the configuration file and dump it to stdout. May
+	  be used to check the configuration file for syntactical correctness.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>outdate</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>outdate</secondary></indexterm>
+          Used to mark the node's data as outdated. Usually used by the
+	  peer's fence-peer handler.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>verify</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>verify</secondary></indexterm>
+           Starts online verify. During online verify, data on
+           both nodes is compared for inconsistency. See
+   	   <filename moreinfo="none">/proc/drbd</filename> for online verify progress. If out-of-sync
+           blocks are found, they are <emphasis>not</emphasis> resynchronized
+           automatically. To do that, <command moreinfo="none">disconnect</command> and
+           <command moreinfo="none">connect</command> the resource when verification has completed.
+        </para>
+          <para>See also the notes on data integrity on the drbd.conf manpage.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>pause-sync</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>pause-sync</secondary></indexterm>
+          Temporarily suspend an ongoing resynchronization by setting the
+          local pause flag. Resync only progresses if neither the local
+          nor the remote pause flag is set. It might be desirable to
+          postpone DRBD's resynchronization until after any
+          resynchronization of the backing storage's RAID setup.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>resume-sync</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>resume-sync</secondary></indexterm>
+          Unset the local sync pause flag.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>new-current-uuid</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>new-current-uuid</secondary></indexterm>
+	  Generates a new currend UUID and rotates all other UUID values.
+        </para>
+          <para>          This can be used to shorten the initial resync of a cluster.
+          See the drbdsetup manpage for a more details.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>dstate</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>dstate</secondary></indexterm>
+  	  Show the current state of the backing storage devices. (local/peer)
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>hidden-commands</term>
+        <listitem>
+          <para>  	  Shows all commands undocumented on purpose.
+        </para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1>
+    <title>Version</title>
+    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.</simpara>
+  </refsect1>
+  <refsect1>
+    <title>Author</title>
+    <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email>
+            and Lars Ellenberg <email>lars.ellenberg@linbit.com</email>
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>Reporting Bugs</title>
+    <simpara>Report bugs to <email>drbd-user@lists.linbit.com</email>.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>Copyright</title>
+    <simpara>Copyright 2001-2008 LINBIT Information Technologies,
+Philipp Reisner, Lars Ellenberg. This  is  free software;
+see the source for copying conditions.  There is NO warranty;
+not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+    </simpara>
+  </refsect1>
+  <refsect1>
+    <title>See Also</title>
+    <para><citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbd</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry><ulink url="http://www.drbd.org/"><citetitle>DRBD project web site</citetitle></ulink></para>
+  </refsect1>
+</refentry>
