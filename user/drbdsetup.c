@@ -60,6 +60,11 @@
 #error "You need to set KDIR while building drbdsetup."
 #endif
 
+#ifndef AF_INET_SDP
+#define AF_INET_SDP 27
+#define PF_INET_SDP AF_INET_SDP
+#endif
+
 enum usage_type {
 	BRIEF,
 	FULL,
@@ -643,6 +648,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 	static struct { char* text; int af; } afs[] = {
 		{ "ipv4:", AF_INET  },
 		{ "ipv6:", AF_INET6 },
+		{ "sdp:",  AF_INET_SDP },
 		{ "ssocks:",  -1 },
 	};
 
@@ -738,7 +744,7 @@ static int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg 
 /* It will only print the WARNING if the warn flag is set
    with the _first_ call! */
 #define PROC_NET_AF_SSOCKS_FAMILY "/proc/net/af_sci/family"
-static int get_af_ssocks(int warn)
+static int get_af_ssocks(int warn_and_use_default)
 {
 	char buf[16];
 	int c, fd;
@@ -749,11 +755,12 @@ static int get_af_ssocks(int warn)
 
 	fd = open(PROC_NET_AF_SSOCKS_FAMILY, O_RDONLY);
 	if (fd < 0) {
-		if (warn)
+		if (warn_and_use_default) {
 			fprintf(stderr, "open(" PROC_NET_AF_SSOCKS_FAMILY ") "
 				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
 				"Socket creation will probabely fail.\n");
-		af = 27;
+			af = 27;
+		}
 		return af;
 	}
 	c = read(fd, buf, sizeof(buf)-1);
@@ -763,11 +770,12 @@ static int get_af_ssocks(int warn)
 			buf[c-1] = 0;
 		af = m_strtoll(buf,1);
 	} else {
-		if (warn)
+		if (warn_and_use_default) {
 			fprintf(stderr, "read(" PROC_NET_AF_SSOCKS_FAMILY ") "
 				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
 				"Socket creation will probabely fail.\n");
-		af = 27;
+			af = 27;
+		}
 	}
 	close(fd);
 	return af;
@@ -1328,8 +1336,14 @@ static char *af_to_str(int af)
 		return "ipv4";
 	else if (af == AF_INET6)
 		return "ipv6";
+	/* AF_SSOCKS typically is 27, the same as AF_INET_SDP.
+	 * But with warn_and_use_default = 0, it will stay at -1 if not available.
+	 * Just keep the test on ssocks before the one on SDP (which is hardcoded),
+	 * and all should be fine.  */
 	else if (af == get_af_ssocks(0))
 		return "ssocks";
+	else if (af == AF_INET_SDP)
+		return "sdp";
 	else return "unknown";
 }
 
@@ -1341,7 +1355,9 @@ static void show_address(void* address, int addr_len)
 	char buffer[INET6_ADDRSTRLEN];
 
 	addr = (struct sockaddr *)address;
-	if (addr->sa_family == AF_INET || addr->sa_family == get_af_ssocks(0)) {
+	if (addr->sa_family == AF_INET
+	|| addr->sa_family == get_af_ssocks(0)
+	|| addr->sa_family == AF_INET_SDP) {
 		addr4 = (struct sockaddr_in *)address;
 		printf("\taddress\t\t\t%s %s:%d;\n",
 		       af_to_str(addr4->sin_family),

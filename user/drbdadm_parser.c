@@ -620,6 +620,7 @@ static void __parse_address(char** addr, char** port, char** af)
 		EXP(TK_IPADDR);
 		break;
 	case TK_SSOCKS:
+	case TK_SDP:
 	case TK_IPV4:
 		if (af)
 			*af = yylval.txt;
@@ -640,7 +641,7 @@ static void __parse_address(char** addr, char** port, char** af)
 		*af = strdup("ipv6");
 		break; */
 	default:
-		pe_expected("ssocks | ipv4 | ipv6 | <ipv4 address> ");
+		pe_expected("ssocks | sdp | ipv4 | ipv6 | <ipv4 address> ");
 	}
 
 	if (addr)

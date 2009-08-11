@@ -87,6 +87,7 @@ _this_host 		{ DP; return TK__THIS_HOST;		}
 _remote_host 		{ DP; return TK__REMOTE_HOST;		}
 sci			{ DP; CP; return TK_SCI;		}
 ssocks			{ DP; CP; return TK_SSOCKS;		}
+sdp			{ DP; CP; return TK_SDP;		}
 ipv4			{ DP; CP; return TK_IPV4;		}
 ipv6			{ DP; CP; return TK_IPV6;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
