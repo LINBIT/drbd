@@ -1260,6 +1260,8 @@ int drbd_bm_count_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	ERR_IF(!b->bm_pages) return 1;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
+	if (bm_is_locked(b))
+		bm_print_lock_info(mdev);
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		w = bitnr >> LN2_BPL;
 		if (page_nr != w >> (PAGE_SHIFT - LN2_BPL + 3)) {
