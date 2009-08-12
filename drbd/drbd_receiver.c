@@ -847,7 +847,7 @@ retry:
 				if (msock) {
 					dev_warn(DEV, "initial packet M crossed\n");
 					sock_release(msock);
-					}
+				}
 				msock = s;
 				set_bit(DISCARD_CONCURRENT, &mdev->flags);
 				break;
@@ -859,9 +859,7 @@ retry:
 			}
 		}
 
-		if (mdev->state.conn <= C_DISCONNECTING)
-			return -1;
-		if (signal_pending(current)) {
+		if (signal_pending(current) || mdev->state.conn <= C_DISCONNECTING) {
 			flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&mdev->receiver) == Exiting) {
