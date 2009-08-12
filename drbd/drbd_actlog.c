@@ -615,6 +615,7 @@ STATIC int atodb_prepare_unless_covered(struct drbd_conf *mdev,
 	}
 	/* bios[i] == NULL, the next not yet used slot */
 
+	/* GFP_KERNEL, we are not in the write-out path */
 	bio = bio_alloc(GFP_KERNEL, 1);
 	if (bio == NULL)
 		return -ENOMEM;
@@ -688,6 +689,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 
 	nr_elements = mdev->act_log->nr_elements;
 
+	/* GFP_KERNEL, we are not in anyones write-out path */
 	bios = kzalloc(sizeof(struct bio *) * nr_elements, GFP_KERNEL);
 	if (!bios)
 		goto submit_one_by_one;

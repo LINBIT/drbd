@@ -1336,7 +1336,10 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 	ERR_IF(data_size &  0x1ff) return NULL;
 	ERR_IF(data_size >  DRBD_MAX_SEGMENT_SIZE) return NULL;
 
-	e = drbd_alloc_ee(mdev, id, sector, data_size, GFP_KERNEL);
+	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
+	 * "criss-cross" setup, that might cause write-out on some other DRBD,
+	 * which in turn might block on the other node at this very place.  */
+	e = drbd_alloc_ee(mdev, id, sector, data_size, GFP_NOIO);
 	if (!e)
 		return NULL;
 	bio = e->private_bio;
@@ -2010,7 +2013,10 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		return TRUE;
 	}
 
-	e = drbd_alloc_ee(mdev, p->block_id, sector, size, GFP_KERNEL);
+	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
+	 * "criss-cross" setup, that might cause write-out on some other DRBD,
+	 * which in turn might block on the other node at this very place.  */
+	e = drbd_alloc_ee(mdev, p->block_id, sector, size, GFP_NOIO);
 	if (!e) {
 		put_ldev(mdev);
 		return FALSE;

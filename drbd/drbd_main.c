@@ -3206,6 +3206,7 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 	struct gendisk *disk;
 	struct request_queue *q;
 
+	/* GFP_KERNEL, we are outside of all write-out paths */
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
 	if (!mdev)
 		return NULL;
