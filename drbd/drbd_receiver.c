@@ -96,90 +96,121 @@ void drbd_assert_breakpoint(struct drbd_conf *mdev, char *exp,
 
 #define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
 
-/**
- * drbd_bp_alloc() - Returns a page, fails only if a signal comes in
- * @mdev:	DRBD device.
- * @gfp_mask:	Get free page allocation mask
- *
- * Allocates a page from the kernel or our own page pool. In case that
- * allocation would go beyond the max_buffers setting, this function sleeps
- * until DRBD frees a page somewhere else.
- */
-STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, gfp_t gfp_mask)
+static struct page *drbd_pp_first_page_or_try_alloc(struct drbd_conf *mdev)
 {
-	unsigned long flags = 0;
-	struct page *page;
+	struct page *page = NULL;
+
+	/* Yes, testing drbd_pp_vacant outside the lock is racy.
+	 * So what. It saves a spin_lock. */
+	if (drbd_pp_vacant > 0) {
+		spin_lock(&drbd_pp_lock);
+		page = drbd_pp_pool;
+		if (page) {
+			drbd_pp_pool = (struct page *)page_private(page);
+			set_page_private(page, 0); /* just to be polite */
+			drbd_pp_vacant--;
+		}
+		spin_unlock(&drbd_pp_lock);
+	}
+	/* GFP_TRY, because we must not cause arbitrary write-out: in a DRBD
+	 * "criss-cross" setup, that might cause write-out on some other DRBD,
+	 * which in turn might block on the other node at this very place.  */
+	if (!page)
+		page = alloc_page(GFP_TRY);
+	if (page)
+		atomic_inc(&mdev->pp_in_use);
+	return page;
+}
+
+/* kick lower level device, if we have more than (arbitrary number)
+ * reference counts on it, which typically are locally submitted io
+ * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
+static void maybe_kick_lo(struct drbd_conf *mdev)
+{
+	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark)
+		drbd_kick_lo(mdev);
+}
+
+static void reclaim_net_ee(struct drbd_conf *mdev)
+{
+	struct drbd_epoch_entry *e;
+	struct list_head *le, *tle;
+
+	/* The EEs are always appended to the end of the list. Since
+	   they are sent in order over the wire, they have to finish
+	   in order. As soon as we see the first not finished we can
+	   stop to examine the list... */
+
+	list_for_each_safe(le, tle, &mdev->net_ee) {
+		e = list_entry(le, struct drbd_epoch_entry, w.list);
+		if (drbd_bio_has_active_page(e->private_bio))
+			break;
+		list_del(le);
+		drbd_free_ee(mdev, e);
+	}
+}
+
+static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
+{
+	maybe_kick_lo(mdev);
+	spin_lock_irq(&mdev->req_lock);
+	reclaim_net_ee(mdev);
+	spin_unlock_irq(&mdev->req_lock);
+}
+
+/**
+ * drbd_pp_alloc() - Returns a page, fails only if a signal comes in
+ * @mdev:	DRBD device.
+ * @retry:	wether or not to retry allocation forever (or until signalled)
+ *
+ * Tries to allocate a page, first from our own page pool, then from the
+ * kernel, unless this allocation would exceed the max_buffers setting.
+ * If @retry is non-zero, retry until DRBD frees a page somewhere else.
+ */
+STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, int retry)
+{
+	struct page *page = NULL;
 	DEFINE_WAIT(wait);
 
-	spin_lock_irqsave(&drbd_pp_lock, flags);
-	page = drbd_pp_pool;
-	if (page) {
-		drbd_pp_pool = (struct page *)page_private(page);
-		set_page_private(page, 0); /* just to be polite */
-		drbd_pp_vacant--;
+	if (atomic_read(&mdev->pp_in_use) < mdev->net_conf->max_buffers) {
+		page = drbd_pp_first_page_or_try_alloc(mdev);
+		if (page)
+			return page;
 	}
-	spin_unlock_irqrestore(&drbd_pp_lock, flags);
-	if (page)
-		goto got_page;
-
-	drbd_kick_lo(mdev);
 
 	for (;;) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		/* try the pool again, maybe the drbd_kick_lo set some free */
-		spin_lock_irqsave(&drbd_pp_lock, flags);
-		page = drbd_pp_pool;
-		if (page) {
-			drbd_pp_pool = (struct page *)page_private(page);
-			drbd_pp_vacant--;
-		}
-		spin_unlock_irqrestore(&drbd_pp_lock, flags);
+		drbd_kick_lo_and_reclaim_net(mdev);
 
-		if (page)
-			break;
-
-		/* hm. pool was empty. try to allocate from kernel.
-		 * don't wait, if none is available, though.
-		 */
-		if (atomic_read(&mdev->pp_in_use)
-					< mdev->net_conf->max_buffers) {
-			page = alloc_page(GFP_TRY);
+		if (atomic_read(&mdev->pp_in_use) < mdev->net_conf->max_buffers) {
+			page = drbd_pp_first_page_or_try_alloc(mdev);
 			if (page)
 				break;
 		}
 
-		/* doh. still no page.
-		 * either used up the configured maximum number,
-		 * or we are low on memory.
-		 * wait for someone to return a page into the pool.
-		 * unless, of course, someone signalled us.
-		 */
+		if (!retry)
+			break;
+
 		if (signal_pending(current)) {
 			dev_warn(DEV, "drbd_pp_alloc interrupted!\n");
-			finish_wait(&drbd_pp_wait, &wait);
-			return NULL;
+			break;
 		}
-		drbd_kick_lo(mdev);
-		if (!(gfp_mask & __GFP_WAIT)) {
-			finish_wait(&drbd_pp_wait, &wait);
-			return NULL;
-		}
+
 		schedule();
 	}
 	finish_wait(&drbd_pp_wait, &wait);
 
- got_page:
-	atomic_inc(&mdev->pp_in_use);
 	return page;
 }
 
+/* Must not be used from irq, as that may deadlock: see drbd_pp_alloc.
+ * Is also used from inside an other spin_lock_irq(&mdev->req_lock) */
 STATIC void drbd_pp_free(struct drbd_conf *mdev, struct page *page)
 {
-	unsigned long flags = 0;
 	int free_it;
 
-	spin_lock_irqsave(&drbd_pp_lock, flags);
+	spin_lock(&drbd_pp_lock);
 	if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
 		free_it = 1;
 	} else {
@@ -188,7 +219,7 @@ STATIC void drbd_pp_free(struct drbd_conf *mdev, struct page *page)
 		drbd_pp_vacant++;
 		free_it = 0;
 	}
-	spin_unlock_irqrestore(&drbd_pp_lock, flags);
+	spin_unlock(&drbd_pp_lock);
 
 	atomic_dec(&mdev->pp_in_use);
 
@@ -246,7 +277,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 
 	ds = data_size;
 	while (ds) {
-		page = drbd_pp_alloc(mdev, gfp_mask);
+		page = drbd_pp_alloc(mdev, (gfp_mask & __GFP_WAIT));
 		if (!page) {
 			if (!(gfp_mask & __GFP_NOWARN))
 				dev_err(DEV, "alloc_ee: Allocation of a page failed\n");
@@ -353,26 +384,6 @@ int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list)
 	spin_unlock_irq(&mdev->req_lock);
 
 	return count;
-}
-
-
-STATIC void reclaim_net_ee(struct drbd_conf *mdev)
-{
-	struct drbd_epoch_entry *e;
-	struct list_head *le, *tle;
-
-	/* The EEs are always appended to the end of the list. Since
-	   they are sent in order over the wire, they have to finish
-	   in order. As soon as we see the first not finished we can
-	   stop to examine the list... */
-
-	list_for_each_safe(le, tle, &mdev->net_ee) {
-		e = list_entry(le, struct drbd_epoch_entry, w.list);
-		if (drbd_bio_has_active_page(e->private_bio))
-			break;
-		list_del(le);
-		drbd_free_ee(mdev, e);
-	}
 }
 
 
@@ -1366,7 +1377,7 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 	int rr, rv = 1;
 	void *data;
 
-	page = drbd_pp_alloc(mdev, GFP_KERNEL);
+	page = drbd_pp_alloc(mdev, 1);
 
 	data = kmap(page);
 	while (data_size) {
@@ -1382,15 +1393,6 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 	kunmap(page);
 	drbd_pp_free(mdev, page);
 	return rv;
-}
-
-/* kick lower level device, if we have more than (arbitrary number)
- * reference counts on it, which typically are locally submitted io
- * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
-static void maybe_kick_lo(struct drbd_conf *mdev)
-{
-	if (atomic_read(&mdev->local_cnt) >= mdev->net_conf->unplug_watermark)
-		drbd_kick_lo(mdev);
 }
 
 STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
