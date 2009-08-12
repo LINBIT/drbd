@@ -2425,8 +2425,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 	hg = drbd_uuid_compare(mdev, &rule_nr);
 
 	dev_info(DEV, "drbd_sync_handshake:\n");
-	drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
-		       mdev->state.disk >= D_NEGOTIATING ? drbd_bm_total_weight(mdev) : 0, 0);
+	drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid, mdev->comm_bm_set, 0);
 	drbd_uuid_dump(mdev, "peer", mdev->p_uuid,
 		       mdev->p_uuid[UI_SIZE], mdev->p_uuid[UI_FLAGS]);
 	dev_info(DEV, "uuid_compare()=%d by rule %d\n", hg, rule_nr);
