@@ -827,7 +827,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 				s = NULL;
 			} else {
 				dev_err(DEV, "Logic error in drbd_connect()\n");
-				return -1;
+				goto out_release_sockets;
 			}
 		}
 
@@ -870,16 +870,13 @@ retry:
 			}
 		}
 
-		if (signal_pending(current) || mdev->state.conn <= C_DISCONNECTING) {
+		if (mdev->state.conn <= C_DISCONNECTING)
+			goto out_release_sockets;
+		if (signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
-			if (get_t_state(&mdev->receiver) == Exiting) {
-				if (sock)
-					sock_release(sock);
-				if (msock)
-					sock_release(msock);
-				return -1;
-			}
+			if (get_t_state(&mdev->receiver) == Exiting)
+				goto out_release_sockets;
 		}
 
 		if (sock && msock) {
@@ -962,6 +959,13 @@ retry:
 	clear_bit(RESIZE_PENDING, &mdev->flags);
 
 	return 1;
+
+out_release_sockets:
+	if (sock)
+		sock_release(sock);
+	if (msock)
+		sock_release(msock);
+	return -1;
 }
 
 STATIC int drbd_recv_header(struct drbd_conf *mdev, struct p_header *h)
