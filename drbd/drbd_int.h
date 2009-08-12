@@ -788,7 +788,13 @@ struct drbd_tl_epoch;
 struct drbd_request {
 	struct drbd_work w;
 	struct drbd_conf *mdev;
+
+	/* if local IO is not allowed, will be NULL.
+	 * if local IO _is_ allowed, holds the locally submitted bio clone,
+	 * or, after local IO completion, the ERR_PTR(error).
+	 * see drbd_endio_pri(). */
 	struct bio *private_bio;
+
 	struct hlist_node colision;
 	sector_t sector;
 	unsigned int size;

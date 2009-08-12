@@ -312,20 +312,20 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 	/* Clean up list of requests processed during current epoch */
 	list_for_each_safe(le, tle, &b->requests) {
 		r = list_entry(le, struct drbd_request, tl_requests);
-		_req_mod(r, barrier_acked, 0);
+		_req_mod(r, barrier_acked);
 	}
 	/* There could be requests on the list waiting for completion
 	   of the write to the local disk. To avoid corruptions of
 	   slab's data structures we have to remove the lists head.
 
 	   Also there could have been a barrier ack out of sequence, overtaking
-	   the write acks - which would be a but and violating write ordering.
+	   the write acks - which would be a bug and violating write ordering.
 	   To not deadlock in case we lose connection while such requests are
 	   still pending, we need some way to find them for the
 	   _req_mode(connection_lost_while_pending).
 
 	   These have been list_move'd to the out_of_sequence_requests list in
-	   _req_mod(, barrier_acked,) above.
+	   _req_mod(, barrier_acked) above.
 	   */
 	list_del_init(&b->requests);
 
@@ -374,7 +374,9 @@ void tl_clear(struct drbd_conf *mdev)
 	while (b) {
 		list_for_each_safe(le, tle, &b->requests) {
 			r = list_entry(le, struct drbd_request, tl_requests);
-			_req_mod(r, connection_lost_while_pending, 0);
+			/* It would be nice to complete outside of spinlock.
+			 * But this is easier for now. */
+			_req_mod(r, connection_lost_while_pending);
 		}
 		tmp = b->next;
 
@@ -410,7 +412,9 @@ void tl_clear(struct drbd_conf *mdev)
 	/* but just in case, clean it up anyways! */
 	list_for_each_safe(le, tle, &mdev->out_of_sequence_requests) {
 		r = list_entry(le, struct drbd_request, tl_requests);
-		_req_mod(r, connection_lost_while_pending, 0);
+		/* It would be nice to complete outside of spinlock.
+		 * But this is easier for now. */
+		_req_mod(r, connection_lost_while_pending);
 	}
 
 	/* ensure bit indicating barrier is required is clear */

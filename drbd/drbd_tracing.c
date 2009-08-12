@@ -463,6 +463,7 @@ static void probe_drbd_req(struct drbd_request *req, enum drbd_req_event what, c
 		[barrier_acked] = "barrier_acked",
 		[data_received] = "data_received",
 		[read_completed_with_error] = "read_completed_with_error",
+		[read_ahead_completed_with_error] = "reada_completed_with_error",
 		[write_completed_with_error] = "write_completed_with_error",
 		[completed_ok] = "completed_ok",
 	};
@@ -475,7 +476,7 @@ static void probe_drbd_req(struct drbd_request *req, enum drbd_req_event what, c
 	const unsigned long s = req->rq_state;
 
 	if (what != nothing) {
-		dev_info(DEV, "_req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
+		dev_info(DEV, "__req_mod(%p %c ,%s)\n", req, rw, rq_event_names[what]);
 	} else {
 		dev_info(DEV, "%s %p %c L%c%c%cN%c%c%c%c%c %u (%llus +%u) %s\n",
 			 msg, req, rw,

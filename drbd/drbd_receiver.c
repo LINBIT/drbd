@@ -1545,7 +1545,7 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, struct p_header *h)
 	ok = recv_dless_read(mdev, req, sector, data_size);
 
 	if (ok)
-		req_mod(req, data_received, 0);
+		req_mod(req, data_received);
 	/* else: nothing. handled from drbd_disconnect...
 	 * I don't think we may complete this just yet
 	 * in case we are "on-disconnect: freeze" */
@@ -3539,7 +3539,9 @@ STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 			 * spin_lock_irq(&mdev->data.work.q_lock);
 			 * and list_del_init here. */
 			D_ASSERT(list_empty(&req->w.list));
-			_req_mod(req, connection_lost_while_pending, 0);
+			/* It would be nice to complete outside of spinlock.
+			 * But this is easier for now. */
+			_req_mod(req, connection_lost_while_pending);
 		}
 	}
 	for (i = 0; i < APP_R_HSIZE; i++)
@@ -4067,63 +4069,75 @@ static struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	return NULL;
 }
 
-STATIC int got_BlockAck(struct drbd_conf *mdev, struct p_header *h)
+typedef struct drbd_request *(req_validator_fn)
+	(struct drbd_conf *mdev, u64 id, sector_t sector);
+
+static int validate_req_change_req_state(struct drbd_conf *mdev,
+	u64 id, sector_t sector, req_validator_fn validator,
+	const char *func, enum drbd_req_event what)
 {
 	struct drbd_request *req;
+	struct bio_and_error m;
+
+	spin_lock_irq(&mdev->req_lock);
+	req = validator(mdev, id, sector);
+	if (unlikely(!req)) {
+		spin_unlock_irq(&mdev->req_lock);
+		dev_err(DEV, "%s: got a corrupt block_id/sector pair\n", func);
+		return FALSE;
+	}
+	__req_mod(req, what, &m);
+	spin_unlock_irq(&mdev->req_lock);
+
+	if (m.bio)
+		complete_master_bio(mdev, &m);
+	return TRUE;
+}
+
+STATIC int got_BlockAck(struct drbd_conf *mdev, struct p_header *h)
+{
 	struct p_block_ack *p = (struct p_block_ack *)h;
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
+	enum drbd_req_event what;
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
 	if (is_syncer_block_id(p->block_id)) {
 		drbd_set_in_sync(mdev, sector, blksize);
 		dec_rs_pending(mdev);
-	} else {
-		spin_lock_irq(&mdev->req_lock);
-		req = _ack_id_to_req(mdev, p->block_id, sector);
-
-		if (unlikely(!req)) {
-			spin_unlock_irq(&mdev->req_lock);
-			dev_err(DEV, "Got a corrupt block_id/sector pair(2).\n");
-			return FALSE;
-		}
-
-		switch (be16_to_cpu(h->command)) {
-		case P_RS_WRITE_ACK:
-			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-			_req_mod(req, write_acked_by_peer_and_sis, 0);
-			break;
-		case P_WRITE_ACK:
-			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-			_req_mod(req, write_acked_by_peer, 0);
-			break;
-		case P_RECV_ACK:
-			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_B);
-			_req_mod(req, recv_acked_by_peer, 0);
-			break;
-		case P_DISCARD_ACK:
-			D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-			dev_alert(DEV, "Got DiscardAck packet %llus +%u!"
-			      " DRBD is not a random data generator!\n",
-			      (unsigned long long)req->sector, req->size);
-			_req_mod(req, conflict_discarded_by_peer, 0);
-			break;
-		default:
-			D_ASSERT(0);
-		}
-		spin_unlock_irq(&mdev->req_lock);
+		return TRUE;
 	}
-	/* dec_ap_pending is handled within _req_mod */
+	switch (be16_to_cpu(h->command)) {
+	case P_RS_WRITE_ACK:
+		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+		what = write_acked_by_peer_and_sis;
+		break;
+	case P_WRITE_ACK:
+		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+		what = write_acked_by_peer;
+		break;
+	case P_RECV_ACK:
+		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_B);
+		what = recv_acked_by_peer;
+		break;
+	case P_DISCARD_ACK:
+		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
+		what = conflict_discarded_by_peer;
+		break;
+	default:
+		D_ASSERT(0);
+		return FALSE;
+	}
 
-	return TRUE;
+	return validate_req_change_req_state(mdev, p->block_id, sector,
+		_ack_id_to_req, __func__ , what);
 }
 
 STATIC int got_NegAck(struct drbd_conf *mdev, struct p_header *h)
 {
 	struct p_block_ack *p = (struct p_block_ack *)h;
 	sector_t sector = be64_to_cpu(p->sector);
-	struct drbd_request *req;
 
 	if (DRBD_ratelimit(5*HZ, 5))
 		dev_warn(DEV, "Got NegAck packet. Peer is in troubles?\n");
@@ -4132,50 +4146,25 @@ STATIC int got_NegAck(struct drbd_conf *mdev, struct p_header *h)
 
 	if (is_syncer_block_id(p->block_id)) {
 		int size = be32_to_cpu(p->blksize);
-
 		dec_rs_pending(mdev);
-
 		drbd_rs_failed_io(mdev, sector, size);
-	} else {
-		spin_lock_irq(&mdev->req_lock);
-		req = _ack_id_to_req(mdev, p->block_id, sector);
-
-		if (unlikely(!req)) {
-			spin_unlock_irq(&mdev->req_lock);
-			dev_err(DEV, "Got a corrupt block_id/sector pair(2).\n");
-			return FALSE;
-		}
-
-		_req_mod(req, neg_acked, 0);
-		spin_unlock_irq(&mdev->req_lock);
+		return TRUE;
 	}
-
-	return TRUE;
+	return validate_req_change_req_state(mdev, p->block_id, sector,
+		_ack_id_to_req, __func__ , neg_acked);
 }
 
 STATIC int got_NegDReply(struct drbd_conf *mdev, struct p_header *h)
 {
-	struct drbd_request *req;
 	struct p_block_ack *p = (struct p_block_ack *)h;
 	sector_t sector = be64_to_cpu(p->sector);
 
-	spin_lock_irq(&mdev->req_lock);
-	req = _ar_id_to_req(mdev, p->block_id, sector);
-	if (unlikely(!req)) {
-		spin_unlock_irq(&mdev->req_lock);
-		dev_err(DEV, "Got a corrupt block_id/sector pair(3).\n");
-		return FALSE;
-	}
-
-	_req_mod(req, neg_acked, 0);
-	spin_unlock_irq(&mdev->req_lock);
-
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
-
 	dev_err(DEV, "Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
-	return TRUE;
+	return validate_req_change_req_state(mdev, p->block_id, sector,
+		_ar_id_to_req, __func__ , neg_acked);
 }
 
 STATIC int got_NegRSDReply(struct drbd_conf *mdev, struct p_header *h)

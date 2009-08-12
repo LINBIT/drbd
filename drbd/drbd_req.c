@@ -89,6 +89,7 @@ static void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
 
 #endif
 
+/* rw is bio_data_dir(), only READ or WRITE */
 static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
@@ -247,20 +248,26 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 #undef OVERLAPS
 }
 
-static void _complete_master_bio(struct drbd_conf *mdev,
-	struct drbd_request *req, int error)
+void complete_master_bio(struct drbd_conf *mdev,
+		struct bio_and_error *m)
 {
-	trace_drbd_bio(mdev, "Rq", req->master_bio, 1, req);
-	bio_endio(req->master_bio, error);
-	req->master_bio = NULL;
+	trace_drbd_bio(mdev, "Rq", m->bio, 1, NULL);
+	bio_endio(m->bio, m->error);
 	dec_ap_bio(mdev);
 }
 
-void _req_may_be_done(struct drbd_request *req, int error)
+/* Helper for __req_mod().
+ * Set m->bio to the master bio, if it is fit to be completed,
+ * or leave it alone (it is initialized to NULL in __req_mod),
+ * if it has already been completed, or cannot be completed yet.
+ * If m->bio is set, the error status to be returned is placed in m->error.
+ */
+void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 {
 	const unsigned long s = req->rq_state;
 	struct drbd_conf *mdev = req->mdev;
-	int rw;
+	/* only WRITES may end up here without a master bio (on barrier ack) */
+	int rw = req->master_bio ? bio_data_dir(req->master_bio) : WRITE;
 
 	trace_drbd_req(req, nothing, "_req_may_be_done");
 
@@ -298,9 +305,12 @@ void _req_may_be_done(struct drbd_request *req, int error)
 		 *
 		 * what to do about the failures is handled elsewhere.
 		 * what we need to do here is just: complete the master_bio.
+		 *
+		 * local completion error, if any, has been stored as ERR_PTR
+		 * in private_bio within drbd_endio_pri.
 		 */
 		int ok = (s & RQ_LOCAL_OK) || (s & RQ_NET_OK);
-		rw = bio_data_dir(req->master_bio);
+		int error = PTR_ERR(req->private_bio);
 
 		/* remove the request from the conflict detection
 		 * respective block_id verification hash */
@@ -316,11 +326,9 @@ void _req_may_be_done(struct drbd_request *req, int error)
 		/* Update disk stats */
 		_drbd_end_io_acct(mdev, req);
 
-		_complete_master_bio(mdev, req,
-				     ok ? 0 : (error ? error : -EIO));
-	} else {
-		/* only WRITE requests can end up here without a master_bio */
-		rw = WRITE;
+		m->error = ok ? 0 : (error ?: -EIO);
+		m->bio = req->master_bio;
+		req->master_bio = NULL;
 	}
 
 	if ((s & RQ_NET_MASK) == 0 || (s & RQ_NET_DONE)) {
@@ -434,19 +442,18 @@ out_conflict:
  *  and it enforces that we have to think in a very structured manner
  *  about the "events" that may happen to a request during its life time ...
  */
-void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
+void __req_mod(struct drbd_request *req, enum drbd_req_event what,
+		struct bio_and_error *m)
 {
 	struct drbd_conf *mdev = req->mdev;
-
-	if (error && (bio_rw(req->master_bio) != READA))
-		dev_err(DEV, "got an _req_mod() errno of %d\n", error);
+	m->bio = NULL;
 
 	trace_drbd_req(req, what, NULL);
 
 	switch (what) {
 	default:
 		dev_err(DEV, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
-		return;
+		break;
 
 	/* does not happen...
 	 * initialization done in drbd_req_new
@@ -469,18 +476,15 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		break;
 
 	case completed_ok:
-		if (bio_data_dir(req->private_bio) == WRITE)
+		if (bio_data_dir(req->master_bio) == WRITE)
 			mdev->writ_cnt += req->size>>9;
 		else
 			mdev->read_cnt += req->size>>9;
 
-		bio_put(req->private_bio);
-		req->private_bio = NULL;
-
 		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		put_ldev(mdev);
 		break;
 
@@ -488,32 +492,28 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		bio_put(req->private_bio);
-		req->private_bio = NULL;
 		dev_alert(DEV, "Local WRITE failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* and now: check how to handle local io error. */
 		__drbd_chk_io_error(mdev, FALSE);
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
+		put_ldev(mdev);
+		break;
+
+	case read_ahead_completed_with_error:
+		/* it is legal to fail READA */
+		req->rq_state |= RQ_LOCAL_COMPLETED;
+		req->rq_state &= ~RQ_LOCAL_PENDING;
+		_req_may_be_done(req, m);
 		put_ldev(mdev);
 		break;
 
 	case read_completed_with_error:
-		if (bio_rw(req->master_bio) != READA)
-			drbd_set_out_of_sync(mdev, req->sector, req->size);
+		drbd_set_out_of_sync(mdev, req->sector, req->size);
 
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		bio_put(req->private_bio);
-		req->private_bio = NULL;
-		if (bio_rw(req->master_bio) == READA) {
-			/* it is legal to fail READA */
-			_req_may_be_done(req, error);
-			put_ldev(mdev);
-			break;
-		}
-		/* else */
 		dev_alert(DEV, "Local READ failed sec=%llus size=%u\n",
 		      (unsigned long long)req->sector, req->size);
 		/* _req_mod(req,to_be_send); oops, recursion... */
@@ -606,7 +606,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state &= ~RQ_NET_QUEUED;
 		/* if we did it right, tl_clear should be scheduled only after
 		 * this, so this should not be necessary! */
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		break;
 
 	case handed_over_to_network:
@@ -631,7 +631,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		 * "completed_ok" events came in, once we return from
 		 * _drbd_send_zc_bio (drbd_send_dblock), we have to check
 		 * whether it is done already, and end it.  */
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		break;
 
 	case connection_lost_while_pending:
@@ -644,7 +644,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		/* if it is still queued, we may not complete it here.
 		 * it will be canceled soon. */
 		if (!(req->rq_state & RQ_NET_QUEUED))
-			_req_may_be_done(req, error);
+			_req_may_be_done(req, m);
 		break;
 
 	case write_acked_by_peer_and_sis:
@@ -653,6 +653,10 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		/* for discarded conflicting writes of multiple primarys,
 		 * there is no need to keep anything in the tl, potential
 		 * node crashes are covered by the activity log. */
+		if (what == conflict_discarded_by_peer)
+			dev_alert(DEV, "Got DiscardAck packet %llus +%u!"
+			      " DRBD is not a random data generator!\n",
+			      (unsigned long long)req->sector, req->size);
 		req->rq_state |= RQ_NET_DONE;
 		/* fall through */
 	case write_acked_by_peer:
@@ -675,7 +679,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		break;
 
 	case neg_acked:
@@ -685,7 +689,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		/* else: done by handed_over_to_network */
 		break;
 
@@ -700,7 +704,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		}
 		D_ASSERT(req->rq_state & RQ_NET_SENT);
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		break;
 
 	case data_received:
@@ -708,7 +712,7 @@ void _req_mod(struct drbd_request *req, enum drbd_req_event what, int error)
 		dec_ap_pending(mdev);
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
-		_req_may_be_done(req, error);
+		_req_may_be_done(req, m);
 		break;
 	};
 }
@@ -908,9 +912,9 @@ allocate_barrier:
 	/* mark them early for readability.
 	 * this just sets some state flags. */
 	if (remote)
-		_req_mod(req, to_be_send, 0);
+		_req_mod(req, to_be_send);
 	if (local)
-		_req_mod(req, to_be_submitted, 0);
+		_req_mod(req, to_be_submitted);
 
 	/* check this request on the colison detection hash tables.
 	 * if we have a conflict, just complete it here.
@@ -947,10 +951,9 @@ allocate_barrier:
 		 * or READ, and no local disk,
 		 * or READ, but not in sync.
 		 */
-		if (rw == WRITE)
-			_req_mod(req, queue_for_net_write, 0);
-		else
-			_req_mod(req, queue_for_net_read, 0);
+		_req_mod(req, (rw == WRITE)
+				? queue_for_net_write
+				: queue_for_net_read);
 	}
 	spin_unlock_irq(&mdev->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */

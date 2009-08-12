@@ -231,6 +231,7 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
 	struct drbd_conf *mdev = req->mdev;
+	struct bio_and_error m;
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -245,15 +246,25 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	trace_drbd_bio(mdev, "Pri", bio, 1, NULL);
 
-	/* to avoid recursion in _req_mod */
-	what = error
-	       ? (bio_data_dir(bio) == WRITE)
-		 ? write_completed_with_error
-		 : read_completed_with_error
-	       : completed_ok;
+	/* to avoid recursion in __req_mod */
+	if (unlikely(error)) {
+		what = (bio_data_dir(bio) == WRITE)
+			? write_completed_with_error
+			: (bio_rw(bio) == READA)
+			  ? read_completed_with_error
+			  : read_ahead_completed_with_error;
+	} else
+		what = completed_ok;
+
+	bio_put(req->private_bio);
+	req->private_bio = ERR_PTR(error);
+
 	spin_lock_irqsave(&mdev->req_lock, flags);
-	_req_mod(req, what, error);
+	__req_mod(req, what, &m);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
+
+	if (m.bio)
+		complete_master_bio(mdev, &m);
 	BIO_ENDIO_FN_RETURN;
 }
 
@@ -288,7 +299,7 @@ int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (cancel ||
 	    mdev->state.conn < C_CONNECTED ||
 	    mdev->state.pdsk <= D_INCONSISTENT) {
-		_req_mod(req, send_canceled, 0);
+		_req_mod(req, send_canceled);
 		spin_unlock_irq(&mdev->req_lock);
 		dev_alert(DEV, "WE ARE LOST. Local IO failure, no peer.\n");
 		return 1;
@@ -1160,12 +1171,12 @@ int w_send_dblock(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if (unlikely(cancel)) {
-		req_mod(req, send_canceled, 0);
+		req_mod(req, send_canceled);
 		return 1;
 	}
 
 	ok = drbd_send_dblock(mdev, req);
-	req_mod(req, ok ? handed_over_to_network : send_failed, 0);
+	req_mod(req, ok ? handed_over_to_network : send_failed);
 
 	return ok;
 }
@@ -1182,7 +1193,7 @@ int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	int ok;
 
 	if (unlikely(cancel)) {
-		req_mod(req, send_canceled, 0);
+		req_mod(req, send_canceled);
 		return 1;
 	}
 
@@ -1195,7 +1206,7 @@ int w_send_read_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		if (mdev->state.conn >= C_CONNECTED)
 			drbd_force_state(mdev, NS(conn, C_NETWORK_FAILURE));
 	}
-	req_mod(req, ok ? handed_over_to_network : send_failed, 0);
+	req_mod(req, ok ? handed_over_to_network : send_failed);
 
 	return ok;
 }

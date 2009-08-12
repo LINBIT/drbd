@@ -100,6 +100,7 @@ enum drbd_req_event {
 	data_received, /* (remote read) */
 
 	read_completed_with_error,
+	read_ahead_completed_with_error,
 	write_completed_with_error,
 	completed_ok,
 	nothing, /* for tracing only */
@@ -280,19 +281,46 @@ static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
 	return !((s1 + (l1>>9) <= s2) || (s1 >= s2 + (l2>>9)));
 }
 
-/* aparently too large to be inlined...
- * moved to drbd_req.c */
-extern void _req_may_be_done(struct drbd_request *req, int error);
-extern void _req_mod(struct drbd_request *req,
-		enum drbd_req_event what, int error);
+/* Short lived temporary struct on the stack.
+ * We could squirrel the error to be returned into
+ * bio->bi_size, or similar. But that would be too ugly. */
+struct bio_and_error {
+	struct bio *bio;
+	int error;
+};
 
-/* If you need it irqsave, do it your self! */
-static inline void req_mod(struct drbd_request *req,
-		enum drbd_req_event what, int error)
+extern void _req_may_be_done(struct drbd_request *req,
+		struct bio_and_error *m);
+extern void __req_mod(struct drbd_request *req, enum drbd_req_event what,
+		struct bio_and_error *m);
+extern void complete_master_bio(struct drbd_conf *mdev,
+		struct bio_and_error *m);
+
+/* use this if you don't want to deal with calling complete_master_bio()
+ * outside the spinlock, e.g. when walking some list on cleanup. */
+static inline void _req_mod(struct drbd_request *req, enum drbd_req_event what)
 {
 	struct drbd_conf *mdev = req->mdev;
+	struct bio_and_error m;
+
+	/* __req_mod possibly frees req, do not touch req after that! */
+	__req_mod(req, what, &m);
+	if (m.bio)
+		complete_master_bio(mdev, &m);
+}
+
+/* completion of master bio is outside of spinlock.
+ * If you need it irqsave, do it your self! */
+static inline void req_mod(struct drbd_request *req,
+		enum drbd_req_event what)
+{
+	struct drbd_conf *mdev = req->mdev;
+	struct bio_and_error m;
 	spin_lock_irq(&mdev->req_lock);
-	_req_mod(req, what, error);
+	__req_mod(req, what, &m);
 	spin_unlock_irq(&mdev->req_lock);
+
+	if (m.bio)
+		complete_master_bio(mdev, &m);
 }
 #endif
