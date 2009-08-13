@@ -909,9 +909,10 @@ retry:
 	/* NOT YET ...
 	 * sock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	 * sock->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
-	 * first set it to the P_HAND_SHAKE timeout, wich is hardcoded for now: */
+	 * first set it to the P_HAND_SHAKE timeout,
+	 * which we set to 4x the configured ping_timeout. */
 	sock->sk->sk_sndtimeo =
-	sock->sk->sk_rcvtimeo = 2*HZ;
+	sock->sk->sk_rcvtimeo = mdev->net_conf->ping_timeo*4*HZ/10;
 
 	msock->sk->sk_sndtimeo = mdev->net_conf->timeout*HZ/10;
 	msock->sk->sk_rcvtimeo = mdev->net_conf->ping_int*HZ;
