@@ -89,6 +89,11 @@ uninstall:
 	rm -f $(PREFIX)/sbin/drbdsetup
 	rm -f $(PREFIX)/sbin/drbdadm
 
+spell:
+	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdmeta.c drbdsetup.c drbdtool_common.c; do \
+	 	aspell --save-repl --dont-backup --personal=./../documentation/aspell.en.per check $$f; \
+	done
+
 ###dependencies
 drbdsetup.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
 drbdsetup.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
