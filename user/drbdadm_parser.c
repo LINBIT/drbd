@@ -216,7 +216,7 @@ static void check_string_error(int got)
 		msg = "Double quoted string too long";
 		break;
 	case TK_ERR_DQSTRING:
-		msg = "Unterminated double quoted string\n  we don't allow embeded newlines\n ";
+		msg = "Unterminated double quoted string\n  we don't allow embedded newlines\n ";
 		break;
 	default:
 		return;
