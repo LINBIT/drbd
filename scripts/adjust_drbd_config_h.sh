@@ -132,6 +132,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_proc_create=0
   fi
+  if grep_q "set_cpus_allowed_ptr(" $KDIR/include/linux/sched.h ; then
+    have_set_cpus_allowed_ptr=1
+  else
+    have_set_cpus_allowed_ptr=1
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -169,6 +174,8 @@ perl -pe "
   { ( $have_linux_byteorder_swabb_h ? '' : '//' ) . \$1}e;
  s{.*(#define KERNEL_HAS_PROC_CREATE.*)}
   { ( $have_proc_create ? '' : '//' ) . \$1}e;
+ s{.*(#define HAVE_SET_CPUS_ALLOWED_PTR.*)}
+  { ( $have_set_cpus_allowed_ptr ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
