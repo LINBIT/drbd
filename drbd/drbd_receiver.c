@@ -131,7 +131,7 @@ static void maybe_kick_lo(struct drbd_conf *mdev)
 		drbd_kick_lo(mdev);
 }
 
-static void reclaim_net_ee(struct drbd_conf *mdev)
+static void reclaim_net_ee(struct drbd_conf *mdev, struct list_head *to_be_freed)
 {
 	struct drbd_epoch_entry *e;
 	struct list_head *le, *tle;
@@ -145,17 +145,22 @@ static void reclaim_net_ee(struct drbd_conf *mdev)
 		e = list_entry(le, struct drbd_epoch_entry, w.list);
 		if (drbd_bio_has_active_page(e->private_bio))
 			break;
-		list_del(le);
-		drbd_free_ee(mdev, e);
+		list_move(le, to_be_freed);
 	}
 }
 
 static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
 {
+	LIST_HEAD(reclaimed);
+	struct drbd_epoch_entry *e, *t;
+
 	maybe_kick_lo(mdev);
 	spin_lock_irq(&mdev->req_lock);
-	reclaim_net_ee(mdev);
+	reclaim_net_ee(mdev, &reclaimed);
 	spin_unlock_irq(&mdev->req_lock);
+
+	list_for_each_entry_safe(e, t, &reclaimed, w.list)
+		drbd_free_ee(mdev, e);
 }
 
 /**
@@ -229,6 +234,37 @@ STATIC void drbd_pp_free(struct drbd_conf *mdev, struct page *page)
 	wake_up(&drbd_pp_wait);
 }
 
+STATIC void drbd_pp_free_bio_pages(struct drbd_conf *mdev, struct bio *bio)
+{
+	struct page *p_to_be_freed = NULL;
+	struct page *page;
+	struct bio_vec *bvec;
+	int i;
+
+	spin_lock(&drbd_pp_lock);
+	__bio_for_each_segment(bvec, bio, i, 0) {
+		if (drbd_pp_vacant > (DRBD_MAX_SEGMENT_SIZE/PAGE_SIZE)*minor_count) {
+			set_page_private(bvec->bv_page, (unsigned long)p_to_be_freed);
+			p_to_be_freed = bvec->bv_page;
+		} else {
+			set_page_private(bvec->bv_page, (unsigned long)drbd_pp_pool);
+			drbd_pp_pool = bvec->bv_page;
+			drbd_pp_vacant++;
+		}
+	}
+	spin_unlock(&drbd_pp_lock);
+	atomic_sub(bio->bi_vcnt, &mdev->pp_in_use);
+
+	while (p_to_be_freed) {
+		page = p_to_be_freed;
+		p_to_be_freed = (struct page *)page_private(page);
+		set_page_private(page, 0); /* just to be polite */
+		__free_page(page);
+	}
+
+	wake_up(&drbd_pp_wait);
+}
+
 /*
 You need to hold the req_lock:
  drbd_free_ee()
@@ -252,11 +288,9 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 {
 	struct request_queue *q;
 	struct drbd_epoch_entry *e;
-	struct bio_vec *bvec;
 	struct page *page;
 	struct bio *bio;
 	unsigned int ds;
-	int i;
 
 	e = mempool_alloc(drbd_ee_mempool, gfp_mask & ~__GFP_HIGHMEM);
 	if (!e) {
@@ -337,9 +371,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	return e;
 
  fail2:
-	__bio_for_each_segment(bvec, bio, i, 0) {
-		drbd_pp_free(mdev, bvec->bv_page);
-	}
+	drbd_pp_free_bio_pages(mdev, bio);
 	bio_put(bio);
  fail1:
 	mempool_free(e, drbd_ee_mempool);
@@ -350,39 +382,28 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 void drbd_free_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 {
 	struct bio *bio = e->private_bio;
-	struct bio_vec *bvec;
-	int i;
-
 	trace_drbd_ee(mdev, e, "freed");
-
-	__bio_for_each_segment(bvec, bio, i, 0) {
-		drbd_pp_free(mdev, bvec->bv_page);
-	}
-
+	drbd_pp_free_bio_pages(mdev, bio);
 	bio_put(bio);
-
 	D_ASSERT(hlist_unhashed(&e->colision));
-
 	mempool_free(e, drbd_ee_mempool);
 }
 
 /* currently on module unload only */
 int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list)
 {
+	LIST_HEAD(work_list);
+	struct drbd_epoch_entry *e, *t;
 	int count = 0;
-	struct drbd_epoch_entry *e;
-	struct list_head *le;
 
 	spin_lock_irq(&mdev->req_lock);
-	while (!list_empty(list)) {
-		le = list->next;
-		list_del(le);
-		e = list_entry(le, struct drbd_epoch_entry, w.list);
+	list_splice_init(list, &work_list);
+	spin_unlock_irq(&mdev->req_lock);
+
+	list_for_each_entry_safe(e, t, &work_list, w.list) {
 		drbd_free_ee(mdev, e);
 		count++;
 	}
-	spin_unlock_irq(&mdev->req_lock);
-
 	return count;
 }
 
@@ -399,13 +420,17 @@ int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list)
 STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 {
 	LIST_HEAD(work_list);
+	LIST_HEAD(reclaimed);
 	struct drbd_epoch_entry *e, *t;
 	int ok = 1;
 
 	spin_lock_irq(&mdev->req_lock);
-	reclaim_net_ee(mdev);
+	reclaim_net_ee(mdev, &reclaimed);
 	list_splice_init(&mdev->done_ee, &work_list);
 	spin_unlock_irq(&mdev->req_lock);
+
+	list_for_each_entry_safe(e, t, &reclaimed, w.list)
+		drbd_free_ee(mdev, e);
 
 	/* possible callbacks here:
 	 * e_end_block, and e_end_resync_block, e_send_discard_ack.
@@ -426,19 +451,16 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 
 
 /* clean-up helper for drbd_disconnect */
-void _drbd_clear_done_ee(struct drbd_conf *mdev)
+void _drbd_clear_done_ee(struct drbd_conf *mdev, struct list_head *to_be_freed)
 {
 	struct list_head *le;
 	struct drbd_epoch_entry *e;
 	struct drbd_epoch *epoch;
 	int n = 0;
 
-
-	reclaim_net_ee(mdev);
-
 	while (!list_empty(&mdev->done_ee)) {
 		le = mdev->done_ee.next;
-		list_del(le);
+		list_move(le, to_be_freed);
 		e = list_entry(le, struct drbd_epoch_entry, w.list);
 		if (mdev->net_conf->wire_protocol == DRBD_PROT_C
 		|| is_syncer_block_id(e->block_id))
@@ -455,7 +477,6 @@ void _drbd_clear_done_ee(struct drbd_conf *mdev)
 			}
 			drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + EV_CLEANUP);
 		}
-		drbd_free_ee(mdev, e);
 	}
 
 	sub_unacked(mdev, n);
@@ -3560,6 +3581,8 @@ STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 
 STATIC void drbd_disconnect(struct drbd_conf *mdev)
 {
+	LIST_HEAD(to_be_freed);
+	struct drbd_epoch_entry *e, *t;
 	struct drbd_work prev_work_done;
 	enum drbd_fencing_p fp;
 	union drbd_state os, ns;
@@ -3582,10 +3605,13 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 	_drbd_wait_ee_list_empty(mdev, &mdev->sync_ee);
-	_drbd_clear_done_ee(mdev);
+	_drbd_clear_done_ee(mdev, &to_be_freed);
 	_drbd_wait_ee_list_empty(mdev, &mdev->read_ee);
-	reclaim_net_ee(mdev);
+	reclaim_net_ee(mdev, &to_be_freed);
 	spin_unlock_irq(&mdev->req_lock);
+
+	list_for_each_entry_safe(e, t, &to_be_freed, w.list)
+		drbd_free_ee(mdev, e);
 
 	/* We do not have data structures that would allow us to
 	 * get the rs_pending_cnt down to 0 again.

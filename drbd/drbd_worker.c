@@ -832,6 +832,18 @@ out:
 	return 1;
 }
 
+/* helper */
+static void move_to_net_ee_or_free(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
+{
+	if (drbd_bio_has_active_page(e->private_bio)) {
+		/* This might happen if sendpage() has not finished */
+		spin_lock_irq(&mdev->req_lock);
+		list_add_tail(&e->w.list, &mdev->net_ee);
+		spin_unlock_irq(&mdev->req_lock);
+	} else
+		drbd_free_ee(mdev, e);
+}
+
 /**
  * w_e_end_data_req() - Worker callback, to send a P_DATA_REPLY packet in response to a P_DATA_REQUEST
  * @mdev:	DRBD device.
@@ -863,14 +875,7 @@ int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	dec_unacked(mdev);
 
-	spin_lock_irq(&mdev->req_lock);
-	if (drbd_bio_has_active_page(e->private_bio)) {
-		/* This might happen if sendpage() has not finished */
-		list_add_tail(&e->w.list, &mdev->net_ee);
-	} else {
-		drbd_free_ee(mdev, e);
-	}
-	spin_unlock_irq(&mdev->req_lock);
+	move_to_net_ee_or_free(mdev, e);
 
 	if (unlikely(!ok))
 		dev_err(DEV, "drbd_send_block() failed\n");
@@ -924,14 +929,7 @@ int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	dec_unacked(mdev);
 
-	spin_lock_irq(&mdev->req_lock);
-	if (drbd_bio_has_active_page(e->private_bio)) {
-		/* This might happen if sendpage() has not finished */
-		list_add_tail(&e->w.list, &mdev->net_ee);
-	} else {
-		drbd_free_ee(mdev, e);
-	}
-	spin_unlock_irq(&mdev->req_lock);
+	move_to_net_ee_or_free(mdev, e);
 
 	if (unlikely(!ok))
 		dev_err(DEV, "drbd_send_block() failed\n");
@@ -991,14 +989,7 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	kfree(di);
 
-	spin_lock_irq(&mdev->req_lock);
-	if (drbd_bio_has_active_page(e->private_bio)) {
-		/* This might happen if sendpage() has not finished */
-		list_add_tail(&e->w.list, &mdev->net_ee);
-	} else {
-		drbd_free_ee(mdev, e);
-	}
-	spin_unlock_irq(&mdev->req_lock);
+	move_to_net_ee_or_free(mdev, e);
 
 	if (unlikely(!ok))
 		dev_err(DEV, "drbd_send_block/ack() failed\n");
@@ -1032,9 +1023,7 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	}
 
 out:
-	spin_lock_irq(&mdev->req_lock);
 	drbd_free_ee(mdev, e);
-	spin_unlock_irq(&mdev->req_lock);
 
 	dec_unacked(mdev);
 
@@ -1102,9 +1091,7 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	ok = drbd_send_ack_ex(mdev, P_OV_RESULT, e->sector, e->size,
 			      eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
 
-	spin_lock_irq(&mdev->req_lock);
 	drbd_free_ee(mdev, e);
-	spin_unlock_irq(&mdev->req_lock);
 
 	if (--mdev->ov_left == 0) {
 		ov_oos_print(mdev);
