@@ -77,7 +77,7 @@ struct adm_cmd {
    * 0: don't show this command, ever
    * 1: normal administrative commands, shown in normal help
    * 2-4: shown on "drbdadm hidden-commands"
-   * 2: usefull for shell scripts
+   * 2: useful for shell scripts
    * 3: callbacks potentially called from kernel module on certain events
    * 4: advanced, experts and developers only */
   unsigned int show_in_usage     :3;

@@ -641,7 +641,7 @@ unsigned long resolv(const char* name)
 		struct hostent *he;
 		he = gethostbyname(name);
 		if (!he) {
-			PERROR("can not resolv the hostname");
+			PERROR("can not resolve the hostname");
 			exit(20);
 		}
 		retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
@@ -1396,7 +1396,7 @@ int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 			print_options(cm->cp.options, rtl, cm->cmd);
 	}
 
-	// start of spagethi code...
+	// start of spaghetti code...
 	if(consume_tag_int(T_wire_protocol,rtl,&idx))
 		printf("protocol %c;\n",'A'+idx-1);
 	backing_dev = address = NULL;
@@ -1612,7 +1612,7 @@ int uuids_scmd(struct drbd_cmd *cm,
 
 	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
 		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
-			"Probabely the device has no disk!\n");
+			"Probably the device has no disk!\n");
 		return 1;
 	}
 	consume_tag_int(T_uuids_flags,rtl,&flags);
@@ -1999,7 +1999,7 @@ int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 				if (cn_reply->seq <= b_seq) continue;
 				b_seq = cn_reply->seq;
 			} else if (minor == (int)reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
-				// replies to drbdsetup packes and for this device.
+				// replies to drbdsetup packets and for this device.
 				if (cn_reply->seq <= r_seq) continue;
 				r_seq = cn_reply->seq;
 			}
@@ -2436,7 +2436,7 @@ int main(int argc, char** argv)
 	int rv=0;
 
 	if (chdir("/")) {
-		/* highliy unlikely, but gcc is picky */
+		/* highly unlikely, but gcc is picky */
 		perror("cannot chdir /");
 		return -111;
 	}

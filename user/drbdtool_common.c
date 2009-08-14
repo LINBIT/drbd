@@ -143,7 +143,7 @@ new_strtoll(const char *s, const char def_unit, unsigned long long *rv)
 	}
 
 	/* if shift is negative (e.g. default unit 'K', actual unit 's'),
-	 * convert to posive, and shift right, rounding up. */
+	 * convert to positive, and shift right, rounding up. */
 	if (shift < 0) {
 		shift = -shift;
 		*rv = (*rv + (1ULL << shift) - 1) >> shift;
@@ -422,7 +422,7 @@ void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
 	dt_print_uuids(uuid, flags);
 	printf(
 "                                                                    ^ ^ ^ ^ ^ ^\n"
-"                                      -<  Data consistancy flag  >--+ | | | | |\n"
+"                                      -<  Data consistency flag  >--+ | | | | |\n"
 "                             -<  Data was/is currently up-to-date  >--+ | | | |\n"
 "                                  -<  Node was/is currently primary  >--+ | | |\n"
 "                                  -<  Node was/is currently connected  >--+ | |\n"

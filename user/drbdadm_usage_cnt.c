@@ -244,7 +244,7 @@ void warn_on_version_mismatch(void)
 
 static char *vcs_to_str(struct vcs_rel *rev)
 {
-	static char buffer[80]; // Not generic, sufficent for the purpose.
+	static char buffer[80]; // Not generic, sufficient for the purpose.
 
 	if( rev->svn_revision ) {
 		snprintf(buffer,80,"nv="U32,rev->svn_revision);
@@ -510,7 +510,7 @@ void uc_node(enum usage_count_type type)
 		ni.rev = current_vcs_rel;
 		send = 1;
 	} else {
-		// read_node_id() was successull
+		// read_node_id() was successful
 		if (!vcs_eq(&ni.rev,&current_vcs_rel)) {
 			ni.rev = current_vcs_rel;
 			update = 1;

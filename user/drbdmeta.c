@@ -124,7 +124,7 @@ struct option metaopt[] = {
  * that serves as md storage.
  *
  * For certain content on the lower level device, we should refuse
- * allways.  e.g. refuse to be created on top of a LVM2 physical volume,
+ * always.  e.g. refuse to be created on top of a LVM2 physical volume,
  * or on top of swap space. This would require people to do an dd
  * if=/dev/zero of=device.  Protects them from shooting themselves,
  * and blaming us...
@@ -164,7 +164,7 @@ struct option metaopt[] = {
  */
 
 /*
- * global vaiables and data types
+ * global variables and data types
  */
 
 const size_t buffer_size = 128*1024;
@@ -413,7 +413,7 @@ int is_valid_md(int f,
 		break;
 	}
 
-	/* fixme consistency check, la_size < ll_device_size,
+	/* FIXME consistency check, la_size < ll_device_size,
 	 * no overlap with internal meta data,
 	 * no overlap of flexible meta data offsets/sizes
 	 * ...
@@ -1037,7 +1037,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 	if (!do_disk_writes)
 		return 0;
 
-	/* do you want to initilize al to something more usefull? */
+	/* do you want to initialize al to something more useful? */
 	printf("initializing activity log\n");
 	if (MD_AL_MAX_SECT_07*512 > buffer_size) {
 		fprintf(stderr, "%s:%u: LOGIC BUG\n" , __FILE__ , __LINE__ );
@@ -1055,7 +1055,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		 * Note that even though ALIGN does round up, for sector sizes
 		 * of 512, 1024, 2048, 4096 Bytes, this will be fully within
 		 * the claimed meta data area, since we already align all
-		 * "interessting" parts of that to 4kB */
+		 * "interesting" parts of that to 4kB */
 		const size_t bm_bytes = ALIGN(cfg->bm_bytes, cfg->md_hard_sect_size);
 		size_t i = bm_bytes;
 		off_t bm_on_disk_off = cfg->bm_offset;
@@ -1531,7 +1531,7 @@ int meta_set_gi(struct format *cfg, char **argv, int argc)
 	cfg->ops->get_gi(&tmp);
 
 	if (!confirmed("Write new GI to disk?")) {
-		printf("Operation cancelled.\n");
+		printf("Operation canceled.\n");
 		exit(0);
 	}
 
@@ -2137,7 +2137,7 @@ void check_for_existing_data(struct format *cfg)
 	 * some of the messages below only make sense for internal meta data.
 	 * for external meta data, we now only checked the meta-disk.
 	 * we should still check the actual lower level storage area for
-	 * existing data, too, and give apropriate warnings when it would
+	 * existing data, too, and give appropriate warnings when it would
 	 * appear to be truncated by too small external meta data */
 
 	printf("md_offset %llu\n", (long long unsigned)cfg->md_offset);
@@ -2216,7 +2216,7 @@ void check_for_existing_data(struct format *cfg)
 		printf("\n ==> This might destroy existing data! <==\n");
 
 	if (!confirmed("Do you want to proceed?")) {
-		printf("Operation cancelled.\n");
+		printf("Operation canceled.\n");
 		exit(1); // 1 to avoid online resource counting
 	}
 }
@@ -2274,17 +2274,17 @@ void check_internal_md_flavours(struct format * cfg) {
 		cfg->md_index == DRBD_MD_INDEX_FLEX_INT ? "flexible-size" : "fixed-size");
 
 	if (have_fixed_v07) {
-		fprintf(stderr, "There apears to be a v07 fixed-size internal meta data block\n"
+		fprintf(stderr, "There appears to be a v07 fixed-size internal meta data block\n"
 				"already in place on %s at byte offset %llu\n",
 				cfg->md_device_name, (long long unsigned)fixed_offset);
 	}
 	if (have_flex_v07) {
-		fprintf(stderr, "There apears to be a v07(plus) flexible-size internal meta data block\n"
+		fprintf(stderr, "There appears to be a v07(plus) flexible-size internal meta data block\n"
 				"already in place on %s at byte offset %llu",
 		cfg->md_device_name, (long long unsigned)flex_offset);
 	}
 	if (have_flex_v08) {
-		fprintf(stderr, "There apears to be a v08 flexible-size internal meta data block\n"
+		fprintf(stderr, "There appears to be a v08 flexible-size internal meta data block\n"
 				"already in place on %s at byte offset %llu",
 		cfg->md_device_name, (long long unsigned)flex_offset);
 	}
@@ -2298,7 +2298,7 @@ void check_internal_md_flavours(struct format * cfg) {
 	if (is_v08(cfg)) {
 		if (have_flex_v08) {
 			if (!confirmed("Do you really want to overwrite the existing v08 meta-data?")) {
-				printf("Operation cancelled.\n");
+				printf("Operation canceled.\n");
 				exit(1); // 1 to avoid online resource counting
 			}
 			/* no need to wipe flex offset,
@@ -2312,17 +2312,17 @@ void check_internal_md_flavours(struct format * cfg) {
 				md_convert_07_to_08(cfg);
 				/* goto wipe; */
 			} else if (!confirmed("So you want me to wipe out the v07 meta-data?")) {
-				printf("Operation cancelled.\n");
+				printf("Operation canceled.\n");
 				exit(1); // 1 to avoid online resource counting
 			}
 		}
 	} else { /* is_v07(cfg) */
 		if (have_fixed_v07 || have_flex_v07) {
 			if (!confirmed("Do you really want to overwrite the existing v07 meta-data?")) {
-				printf("Operation cancelled.\n");
+				printf("Operation canceled.\n");
 				exit(1); // 1 to avoid online resource counting
 			}
-			/* no need to wipe the requested flavour,
+			/* no need to wipe the requested flavor,
 			 * will be overwritten with new data */
 			cfg->md.magic = 0;
 			if (cfg->md_index == DRBD_MD_INDEX_INTERNAL)
@@ -2362,7 +2362,7 @@ void check_external_md_flavours(struct format * cfg) {
 	if (cfg->md.magic) {
 		if (!confirmed("Valid meta data seems to be in place.\n"
 				"Do you really want to overwrite?")) {
-			printf("Operation cancelled.\n");
+			printf("Operation canceled.\n");
 			exit(1);
 		}
 		cfg->md.magic = 0; /* will be re-initialized below */
@@ -2380,7 +2380,7 @@ void check_external_md_flavours(struct format * cfg) {
 		}
 		if (!confirmed("So you want me to replace the v07 meta-data\n"
 				"with newly initialized v08 meta-data?")) {
-			printf("Operation cancelled.\n");
+			printf("Operation canceled.\n");
 			exit(1);
 		}
 	} else if (is_v07(cfg)) {
@@ -2394,7 +2394,7 @@ void check_external_md_flavours(struct format * cfg) {
 		}
 		if (!confirmed("So you want me to replace the v08 meta-data\n"
 				"with newly initialized v07 meta-data?")) {
-			printf("Operation cancelled.\n");
+			printf("Operation canceled.\n");
 			exit(1);
 		}
 	}
@@ -2429,7 +2429,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * on a request to create v08 flex-internal meta data (or v07 plus, for
 	 * that matter), we also check the same offset for the respective other
 	 * flex-internal format version, as well as the v07 fixed-size internal
-	 * meta data offset for its flavour of meta data.
+	 * meta data offset for its flavor of meta data.
 	 */
 	if (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
 	    cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
@@ -2467,12 +2467,12 @@ int meta_wipe_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	virgin = cfg->ops->open(cfg);
 	if (virgin) {
-		fprintf(stderr,"There apears to be no drbd meta data to wipe out?\n");
+		fprintf(stderr,"There appears to be no drbd meta data to wipe out?\n");
 		return 0;
 	}
 
 	if (!confirmed("Do you really want to wipe out the DRBD meta data?")) {
-		printf("Operation cancelled.\n");
+		printf("Operation canceled.\n");
 		exit(1);
 	}
 
@@ -2631,7 +2631,7 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 int is_attached(int minor)
 {
 	FILE *pr;
-	char token[128];	/* longest interessting token is 40 Byte (git hash) */
+	char token[128];	/* longest interesting token is 40 Byte (git hash) */
 	int rv = -1;
 	long m, cm = -1;
 	char *p;
@@ -2783,7 +2783,7 @@ int main(int argc, char **argv)
 	}
 	ai++;
 
-	/* does exit() unless we aquired the lock.
+	/* does exit() unless we acquired the lock.
 	 * unlock happens implicitly when the process dies,
 	 * but may be requested implicitly
 	 */
