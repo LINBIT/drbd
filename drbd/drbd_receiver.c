@@ -267,10 +267,10 @@ STATIC void drbd_pp_free_bio_pages(struct drbd_conf *mdev, struct bio *bio)
 
 /*
 You need to hold the req_lock:
- drbd_free_ee()
  _drbd_wait_ee_list_empty()
 
 You must not have the req_lock:
+ drbd_free_ee()
  drbd_alloc_ee()
  drbd_init_ee()
  drbd_release_ee()
