@@ -2367,21 +2367,21 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	self = mdev->ldev->md.uuid[UI_CURRENT] & ~((u64)1);
 	peer = mdev->p_uuid[UI_CURRENT] & ~((u64)1);
 
-	*rule_nr = 1;
+	*rule_nr = 10;
 	if (self == UUID_JUST_CREATED && peer == UUID_JUST_CREATED)
 		return 0;
 
-	*rule_nr = 2;
+	*rule_nr = 20;
 	if ((self == UUID_JUST_CREATED || self == (u64)0) &&
 	     peer != UUID_JUST_CREATED)
 		return -2;
 
-	*rule_nr = 3;
+	*rule_nr = 30;
 	if (self != UUID_JUST_CREATED &&
 	    (peer == UUID_JUST_CREATED || peer == (u64)0))
 		return 2;
 
-	*rule_nr = 4;
+	*rule_nr = 40;
 	if (self == peer) { /* Common power [off|failure] */
 		int rct, dc; /* roles at crash time */
 
@@ -2400,38 +2400,70 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		}
 	}
 
-	*rule_nr = 5;
+	*rule_nr = 50;
 	peer = mdev->p_uuid[UI_BITMAP] & ~((u64)1);
 	if (self == peer)
 		return -1;
 
-	*rule_nr = 6;
+	*rule_nr = 51;
+	peer = mdev->p_uuid[UI_HISTORY_START] & ~((u64)1);
+	if (self == peer) {
+		self = mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1);
+		peer = mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1);
+		if (self == peer)
+			return -1;
+	}
+
+	*rule_nr = 60;
+	self = mdev->ldev->md.uuid[UI_CURRENT] & ~((u64)1);
 	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
 		peer = mdev->p_uuid[i] & ~((u64)1);
 		if (self == peer)
 			return -2;
 	}
 
-	*rule_nr = 7;
+	*rule_nr = 70;
 	self = mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1);
 	peer = mdev->p_uuid[UI_CURRENT] & ~((u64)1);
 	if (self == peer)
 		return 1;
 
-	*rule_nr = 8;
+	*rule_nr = 71;
+	self = mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1);
+	if (self == peer) {
+		self = mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1);
+		peer = mdev->p_uuid[UI_HISTORY_START] & ~((u64)1);
+		if (self == peer) {
+			/* The last P_SYNC_UUID did not get though. Undo the last start of
+			   resync as sync source modifications of our UUIDs. */
+
+			_drbd_uuid_set(mdev, UI_BITMAP, mdev->ldev->md.uuid[UI_HISTORY_START]);
+			_drbd_uuid_set(mdev, UI_HISTORY_START, mdev->ldev->md.uuid[UI_HISTORY_START + 1]);
+
+			dev_info(DEV, "Undid last start of resync:\n");
+
+			drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
+				       mdev->state.disk >= D_NEGOTIATING ? drbd_bm_total_weight(mdev) : 0, 0);
+
+			return 1;
+		}
+	}
+
+
+	*rule_nr = 80;
 	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
 		self = mdev->ldev->md.uuid[i] & ~((u64)1);
 		if (self == peer)
 			return 2;
 	}
 
-	*rule_nr = 9;
+	*rule_nr = 90;
 	self = mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1);
 	peer = mdev->p_uuid[UI_BITMAP] & ~((u64)1);
 	if (self == peer && self != ((u64)0))
 		return 100;
 
-	*rule_nr = 10;
+	*rule_nr = 100;
 	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
 		self = mdev->ldev->md.uuid[i] & ~((u64)1);
 		for (j = UI_HISTORY_START; j <= UI_HISTORY_END; j++) {
@@ -2458,12 +2490,13 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 	if (mydisk == D_NEGOTIATING)
 		mydisk = mdev->new_state_tmp.disk;
 
-	hg = drbd_uuid_compare(mdev, &rule_nr);
-
 	dev_info(DEV, "drbd_sync_handshake:\n");
 	drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid, mdev->comm_bm_set, 0);
 	drbd_uuid_dump(mdev, "peer", mdev->p_uuid,
 		       mdev->p_uuid[UI_SIZE], mdev->p_uuid[UI_FLAGS]);
+
+	hg = drbd_uuid_compare(mdev, &rule_nr);
+
 	dev_info(DEV, "uuid_compare()=%d by rule %d\n", hg, rule_nr);
 
 	if (hg == -1000) {
