@@ -183,6 +183,36 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 	return eq;
 }
 
+int need_trigger_kobj_change(struct d_resource *res)
+{
+	struct stat sbuf;
+	char *link_name;
+	int err;
+
+	m_asprintf(&link_name, "/dev/drbd/by-res/%s", res->name);
+
+	err = stat("/dev/drbd/by-res", &sbuf);
+	if (err)	/* probably no udev rules in use */
+		return 0;
+
+	err = stat(link_name, &sbuf);
+	if (err)
+		/* resource link cannot be stat()ed. */
+		return 1;
+
+	/* double check device information */
+	if (!S_ISBLK(sbuf.st_mode))
+		return 1;
+	if (major(sbuf.st_rdev) != DRBD_MAJOR)
+		return 1;
+	if (minor(sbuf.st_rdev) != res->me->device_minor)
+		return 1;
+
+	/* Link exists, and is expected block major:minor.
+	 * Do nothing. */
+	return 0;
+}
+
 /*
  * CAUTION this modifies global static char * config_file!
  */
@@ -227,6 +257,13 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	have_net = (running->protocol != NULL);
 
 	do_syncer = !opts_equal(res->sync_options, running->sync_options);
+
+	/* Special case: nothing changed, but the resource name.
+	 * Trigger a no-op syncer request, which will cause a KOBJ_CHANGE
+	 * to be broadcast, so udev may pick up the resource name change
+	 * and update its symlinks. */
+	if (!(do_attach || do_syncer || do_connect))
+		do_syncer = need_trigger_kobj_change(running);
 
 	if(do_attach) {
 		if(have_disk) schedule_dcmd(adm_generic_s,res,"detach",0);

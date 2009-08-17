@@ -19,8 +19,6 @@
 
 #include "drbdtool_common.h"
 
-#define LANANA_DRBD_MAJOR 147	/* we should get this into linux/major.h */
-
 int force = 0;
 int confirmed(const char *text)
 {

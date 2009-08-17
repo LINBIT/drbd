@@ -4,6 +4,14 @@
 #include <asm/types.h>
 #include "drbd_endian.h"
 #include <stdarg.h>
+#include <linux/major.h>
+
+#define LANANA_DRBD_MAJOR 147	/* we should get this into linux/major.h */
+#ifndef DRBD_MAJOR
+#define DRBD_MAJOR LANANA_DRBD_MAJOR
+#elif (DRBD_MAJOR != LANANA_DRBD_MAJOR)
+# error "FIXME unexpected DRBD_MAJOR"
+#endif
 
 #ifndef __packed
 #define __packed __attribute__((packed))
