@@ -593,15 +593,11 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
  *
  * maybe bm_set should be atomic_t ?
  */
-unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
+static unsigned long _drbd_bm_total_weight(struct drbd_conf *mdev)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long s;
 	unsigned long flags;
-
-	/* if I don't have a disk, I don't know about out-of-sync status */
-	if (!get_ldev_if_state(mdev, D_NEGOTIATING))
-		return 0;
 
 	ERR_IF(!b) return 0;
 	ERR_IF(!b->bm_pages) return 0;
@@ -610,8 +606,17 @@ unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
 	s = b->bm_set;
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 
-	put_ldev(mdev);
+	return s;
+}
 
+unsigned long drbd_bm_total_weight(struct drbd_conf *mdev)
+{
+	unsigned long s;
+	/* if I don't have a disk, I don't know about out-of-sync status */
+	if (!get_ldev_if_state(mdev, D_NEGOTIATING))
+		return 0;
+	s = _drbd_bm_total_weight(mdev);
+	put_ldev(mdev);
 	return s;
 }
 
