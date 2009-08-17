@@ -104,7 +104,7 @@ install-most:
 	mkdir -p $(PREFIX)/etc/xen/scripts
 	install -m 755 block-drbd $(PREFIX)/etc/xen/scripts
 	mkdir -p $(PREFIX)/etc/udev/rules.d
-ifneq ($(INST_COMPLETION),1)
+ifeq ($(INST_COMPLETION),1)
 	mkdir -p $(PREFIX)/etc/bash_completion.d
 	install -m 644 drbdadm.bash_completion $(PREFIX)/etc/bash_completion.d/$(COMPLETION)
 endif
