@@ -135,7 +135,7 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   if grep_q "set_cpus_allowed_ptr(" $KDIR/include/linux/sched.h ; then
     have_set_cpus_allowed_ptr=1
   else
-    have_set_cpus_allowed_ptr=1
+    have_set_cpus_allowed_ptr=0
   fi
 else
     # not a 2.6. kernel. just leave it alone...
