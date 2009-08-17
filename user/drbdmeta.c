@@ -1491,8 +1491,10 @@ int meta_dstate(struct format *cfg, char **argv __attribute((unused)), int argc)
 		fprintf(stderr, "Ignoring additional arguments\n");
 	}
 
-	if (cfg->ops->open(cfg))
+	if (cfg->ops->open(cfg)) {
+		fprintf(stderr, "No valid meta data found\n");
 		return -1;
+	}
 
 	if(cfg->md.flags & MDF_CONSISTENT) {
 		if(cfg->md.flags & MDF_WAS_UP_TO_DATE) {
