@@ -292,6 +292,9 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	struct bio *bio;
 	unsigned int ds;
 
+	if (FAULT_ACTIVE(mdev, DRBD_FAULT_AL_EE))
+		return NULL;
+
 	e = mempool_alloc(drbd_ee_mempool, gfp_mask & ~__GFP_HIGHMEM);
 	if (!e) {
 		if (!(gfp_mask & __GFP_NOWARN))

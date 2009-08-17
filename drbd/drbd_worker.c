@@ -389,9 +389,6 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	if (!get_ldev(mdev))
 		return 0;
 
-	if (FAULT_ACTIVE(mdev, DRBD_FAULT_AL_EE))
-		return 2;
-
 	/* GFP_TRY, because if there is no memory available right now, this may
 	 * be rescheduled for later. It is "only" background resync, after all. */
 	e = drbd_alloc_ee(mdev, DRBD_MAGIC+0xbeef, sector, size, GFP_TRY);
