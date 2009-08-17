@@ -1917,20 +1917,20 @@ static int adm_wait_c(struct d_resource *res,
 	return rv;
 }
 
-static int minor_by_id(const char *id)
+static unsigned minor_by_id(const char *id)
 {
 	if (strncmp(id, "minor-", 6))
-		return -1;
+		return -1U;
 	return m_strtoll(id + 6, 1);
 }
 
 struct d_resource *res_by_minor(const char *id)
 {
 	struct d_resource *res, *t;
-	int mm;
+	unsigned int mm;
 
 	mm = minor_by_id(id);
-	if (mm < 0)
+	if (mm == -1U)
 		return NULL;
 
 	for_each_resource(res, t, config) {

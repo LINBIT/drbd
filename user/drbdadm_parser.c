@@ -779,7 +779,7 @@ static void check_minor_nonsense(const char *devname, const int explicit_minor)
 	return;
 }
 
-static void parse_device(struct d_name* on_hosts, int *minor, char **device)
+static void parse_device(struct d_name* on_hosts, unsigned *minor, char **device)
 {
 	struct d_name *h;
 	int m;
@@ -957,7 +957,7 @@ static void parse_host_section(struct d_resource *res,
 		host->device = strdup(res->device);
 	}
 
-	if (host->device_minor == -1 && res->device_minor != -1) {
+	if (host->device_minor == -1U && res->device_minor != -1U) {
 		host->device_minor = res->device_minor;
 		for_each_host(h, on_hosts)
 			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
@@ -971,7 +971,7 @@ static void parse_host_section(struct d_resource *res,
 
 	if (!(flags & REQUIRE_ALL))
 		return;
-	if (!host->device && host->device_minor == -1)
+	if (!host->device && host->device_minor == -1U)
 		derror(host, res, "device");
 	if (!host->disk)
 		derror(host, res, "disk");
@@ -1072,13 +1072,13 @@ static void parse_stacked_section(struct d_resource* res)
 			check_uniq("device", "device:%s:%s", h->name, host->device);
 	}
 
-	if (host->device_minor == -1 && res->device_minor != -1) {
+	if (host->device_minor == -1U && res->device_minor != -1U) {
 		host->device_minor = res->device_minor;
 		for_each_host(h, host->on_hosts)
 			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
 	}
 
-	if (!host->device && host->device_minor == -1)
+	if (!host->device && host->device_minor == -1U)
 		derror(host, res, "device");
 	if (!host->address)
 		derror(host,res,"address");

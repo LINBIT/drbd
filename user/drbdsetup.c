@@ -117,7 +117,7 @@ struct drbd_option {
 struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
-	int (*function)(struct drbd_cmd *, int, int, char **);
+	int (*function)(struct drbd_cmd *, unsigned, int, char **);
 	void (*usage)(struct drbd_cmd *, enum usage_type);
 	union {
 		struct {
@@ -125,7 +125,7 @@ struct drbd_cmd {
 			struct drbd_option *options;
 		} cp; // for generic_config_cmd, config_usage
 		struct {
-			int (*show_function)(struct drbd_cmd *, int,
+			int (*show_function)(struct drbd_cmd *, unsigned,
 					     unsigned short* );
 		} gp; // for generic_get_cmd, get_usage
 		struct {
@@ -151,10 +151,10 @@ static int get_af_ssocks(int warn);
 static void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
-static int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-static int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-static int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv);
-static int events_cmd(struct drbd_cmd *cm, int minor, int argc,char **argv);
+static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc,char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
@@ -174,13 +174,13 @@ static void bit_opt_xml(struct drbd_option *option);
 static void string_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
-static int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int role_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int status_xml_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int sh_status_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int cstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int dstate_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
-static int uuids_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl);
+static int show_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int role_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int status_xml_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int sh_status_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int cstate_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int dstate_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int uuids_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
@@ -1002,7 +1002,7 @@ static void dump_argv(int argc, char **argv, int first_non_option, int n_known_a
 	fprintf(stderr, "`--\n");
 }
 
-static int _generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
 	struct drbd_nl_cfg_reply *reply;
@@ -1092,7 +1092,7 @@ error:
 	return rv;
 }
 
-static int generic_config_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
 	return print_config_error(_generic_config_cmd(cm, minor, argc, argv));
 }
@@ -1273,7 +1273,7 @@ static int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
-static int generic_get_cmd(struct drbd_cmd *cm, int minor, int argc,
+static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		    char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
@@ -1374,7 +1374,7 @@ static void show_address(void* address, int addr_len)
 	}
 }
 
-static int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
+static int show_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl)
 {
 	int idx = idx;
 	char *str = NULL, *backing_dev, *address;
@@ -1429,7 +1429,7 @@ static int show_scmd(struct drbd_cmd *cm, int minor, unsigned short *rtl)
 }
 
 static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
-		int minor, unsigned short *rtl)
+		unsigned minor, unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
 	int synced = 0;
@@ -1481,7 +1481,7 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
-		int minor, unsigned short *rtl)
+		unsigned minor, unsigned short *rtl)
 {
 /* variable prefix; maybe rather make that a command line parameter?
  * or use "drbd_sh_status"? */
@@ -1548,7 +1548,7 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
-	       int minor __attribute((unused)),
+	       unsigned minor __attribute((unused)),
 	       unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
@@ -1563,7 +1563,7 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		int minor __attribute((unused)),
+		unsigned minor __attribute((unused)),
 		unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
@@ -1578,7 +1578,7 @@ static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		int minor __attribute((unused)),
+		unsigned minor __attribute((unused)),
 		unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
@@ -1593,7 +1593,7 @@ static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int uuids_scmd(struct drbd_cmd *cm,
-	       int minor __attribute((unused)),
+	       unsigned minor __attribute((unused)),
 	       unsigned short *rtl)
 {
 	__u64 *uuids;
@@ -1639,7 +1639,7 @@ static struct drbd_cmd *find_cmd_by_name(char *name)
 	return NULL;
 }
 
-static int down_cmd(struct drbd_cmd *cm, int minor, int argc, char **argv)
+static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
 	int rv;
 	int success;
@@ -1853,7 +1853,7 @@ static int w_synced_state(unsigned int seq __attribute((unused)),
 	return 1;
 }
 
-static int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
+static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv)
 {
 	void *buffer;
 	struct cn_msg *cn_reply;
@@ -2027,14 +2027,14 @@ static int events_cmd(struct drbd_cmd *cm, int minor, int argc ,char **argv)
 			if (cn_reply->ack == 0) { // broadcasts
 				if (cn_reply->seq <= b_seq) continue;
 				b_seq = cn_reply->seq;
-			} else if (minor == (int)reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
+			} else if (minor == reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
 				// replies to drbdsetup packes and for this device.
 				if (cn_reply->seq <= r_seq) continue;
 				r_seq = cn_reply->seq;
 			}
 		}
 
-		if( all_devices || minor == (int)reply->minor ) {
+		if( all_devices || minor == reply->minor ) {
 			cont=cm->ep.proc_event(cn_reply->seq, wasb, reply);
 		}
 	} while(cont);
@@ -2452,7 +2452,7 @@ static int is_drbd_driver_missing(void)
 
 int main(int argc, char** argv)
 {
-	int minor;
+	unsigned minor;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
