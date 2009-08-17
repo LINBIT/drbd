@@ -2410,8 +2410,14 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	if (self == peer) {
 		self = mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1);
 		peer = mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1);
-		if (self == peer)
+		if (self == peer) {
+			/* The last P_SYNC_UUID did not get though. Undo the last start of
+			   resync as sync source modifications of the peer's UUIDs. */
+
+			mdev->p_uuid[UI_BITMAP] = mdev->p_uuid[UI_HISTORY_START];
+			mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_HISTORY_START + 1];
 			return -1;
+		}
 	}
 
 	*rule_nr = 60;
