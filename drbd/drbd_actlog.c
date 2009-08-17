@@ -308,7 +308,7 @@ void drbd_al_complete_io(struct drbd_conf *mdev, sector_t sector)
 int
 w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct update_al_work *aw = (struct update_al_work *)w;
+	struct update_al_work *aw = container_of(w, struct update_al_work, w);
 	struct lc_element *updated = aw->al_ext;
 	const unsigned int new_enr = aw->enr;
 	const unsigned int evicted = aw->old_enr;
@@ -839,7 +839,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 
 STATIC int w_update_odbm(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct update_odbm_work *udw = (struct update_odbm_work *)w;
+	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 
 	if (!get_ldev(mdev)) {
 		if (DRBD_ratelimit(5*HZ, 5))

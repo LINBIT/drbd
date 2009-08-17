@@ -1287,9 +1287,8 @@ int __drbd_set_state(struct drbd_conf *mdev,
 
 STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct after_state_chg_work *ascw;
-
-	ascw = (struct after_state_chg_work *) w;
+	struct after_state_chg_work *ascw =
+		container_of(w, struct after_state_chg_work, w);
 	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
 	if (ascw->flags & CS_WAIT_COMPLETE) {
 		D_ASSERT(ascw->done != NULL);
@@ -3747,7 +3746,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 
 STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct bm_io_work *work = (struct bm_io_work *)w;
+	struct bm_io_work *work = container_of(w, struct bm_io_work, w);
 	int rv;
 
 	D_ASSERT(atomic_read(&mdev->ap_bio_cnt) == 0);
