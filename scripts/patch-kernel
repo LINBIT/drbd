@@ -90,11 +90,11 @@ done
 #
 # Pull in the base drbd source
 #
-include_linux="drbd.h drbd_limits.h drbd_nl.h drbd_tag_magic.h"
+include_linux="drbd.h drbd_limits.h drbd_nl.h drbd_tag_magic.h lru_cache.h"
 drbd_source="drbd_actlog.c drbd_bitmap.c drbd_buildtag.c
 	drbd_wrappers.h drbd_int.h drbd_main.c drbd_nl.c drbd_proc.c
 	drbd_receiver.c drbd_req.c drbd_req.h drbd_strings.c drbd_worker.c
-	lru_cache.c lru_cache.h"
+	lru_cache.c drbd_vli.h drbd_tracing.c drbd_tracing.h"
 
 # clean it first
 make -s -C $DRBD/drbd clean
