@@ -2385,6 +2385,9 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
 			dev_info(DEV, "was SyncSource, missed the resync finished event, corrected myself:\n");
 
+			if (mdev->agreed_pro_version < 91)
+				return -1001;
+
 			drbd_uuid_set_bm(mdev, 0UL);
 
 			drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
@@ -2398,6 +2401,9 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
 		    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
 			dev_info(DEV, "was SyncTarget, peer missed the resync finished event, correced peer:\n");
+
+			if (mdev->agreed_pro_version < 91)
+				return -1001;
 
 			mdev->p_uuid[UI_HISTORY_START + 1] = mdev->p_uuid[UI_HISTORY_START];
 			mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_BITMAP];
@@ -2440,6 +2446,9 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of the peer's UUIDs. */
 
+			if (mdev->agreed_pro_version < 91)
+				return -1001;
+
 			mdev->p_uuid[UI_BITMAP] = mdev->p_uuid[UI_HISTORY_START];
 			mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_HISTORY_START + 1];
 			return -1;
@@ -2468,6 +2477,9 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		if (self == peer) {
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of our UUIDs. */
+
+			if (mdev->agreed_pro_version < 91)
+				return -1001;
 
 			_drbd_uuid_set(mdev, UI_BITMAP, mdev->ldev->md.uuid[UI_HISTORY_START]);
 			_drbd_uuid_set(mdev, UI_HISTORY_START, mdev->ldev->md.uuid[UI_HISTORY_START + 1]);
@@ -2533,6 +2545,10 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 
 	if (hg == -1000) {
 		dev_alert(DEV, "Unrelated data, aborting!\n");
+		return C_MASK;
+	}
+	if (hg == -1001) {
+		dev_alert(DEV, "To resolve this both sides have to support at least protocol\n");
 		return C_MASK;
 	}
 
