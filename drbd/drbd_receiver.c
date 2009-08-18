@@ -2376,14 +2376,45 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	    (peer == UUID_JUST_CREATED || peer == (u64)0))
 		return 2;
 
-	*rule_nr = 40;
-	if (self == peer) { /* Common power [off|failure] */
+	if (self == peer) {
 		int rct, dc; /* roles at crash time */
 
+		if (mdev->p_uuid[UI_BITMAP] == (u64)0 &&
+		    mdev->ldev->md.uuid[UI_BITMAP] != (u64)0 &&
+		    (mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
+		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
+			dev_info(DEV, "was SyncSource, missed the resync finished event, corrected myself:\n");
+
+			drbd_uuid_set_bm(mdev, 0UL);
+
+			drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
+				       mdev->state.disk >= D_NEGOTIATING ? drbd_bm_total_weight(mdev) : 0, 0);
+			*rule_nr = 34;
+			return 1;
+		}
+
+		if (mdev->ldev->md.uuid[UI_BITMAP] == (u64)0 &&
+		    mdev->p_uuid[UI_BITMAP] != (u64)0 &&
+		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
+		    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
+			dev_info(DEV, "was SyncTarget, peer missed the resync finished event, correced peer:\n");
+
+			mdev->p_uuid[UI_HISTORY_START + 1] = mdev->p_uuid[UI_HISTORY_START];
+			mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_BITMAP];
+			mdev->p_uuid[UI_BITMAP] = 0UL;
+
+			drbd_uuid_dump(mdev, "peer", mdev->p_uuid, mdev->p_uuid[UI_SIZE], mdev->p_uuid[UI_FLAGS]);
+
+			*rule_nr = 35;
+			return -1;
+		}
+
+		/* Common power [off|failure] */
 		rct = (test_bit(CRASHED_PRIMARY, &mdev->flags) ? 1 : 0) +
 			(mdev->p_uuid[UI_FLAGS] & 2);
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
+		*rule_nr = 40;
 
 		switch (rct) {
 		case 0: /* !self_pri && !peer_pri */ return 0;
