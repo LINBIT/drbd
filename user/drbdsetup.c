@@ -743,7 +743,9 @@ static int conv_bit(struct drbd_option *od, struct drbd_tag_list *tl, char* arg 
 
 /* It will only print the WARNING if the warn flag is set
    with the _first_ call! */
-#define PROC_NET_AF_SSOCKS_FAMILY "/proc/net/af_sci/family"
+#define PROC_NET_AF_SCI_FAMILY "/proc/net/af_sci/family"
+#define PROC_NET_AF_SSOCKS_FAMILY "/proc/net/af_ssocks/family"
+
 static int get_af_ssocks(int warn_and_use_default)
 {
 	char buf[16];
@@ -754,11 +756,15 @@ static int get_af_ssocks(int warn_and_use_default)
 		return af;
 
 	fd = open(PROC_NET_AF_SSOCKS_FAMILY, O_RDONLY);
+
+	if (fd < 0)
+		fd = open(PROC_NET_AF_SCI_FAMILY, O_RDONLY);
+
 	if (fd < 0) {
 		if (warn_and_use_default) {
 			fprintf(stderr, "open(" PROC_NET_AF_SSOCKS_FAMILY ") "
 				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
-				"Socket creation will probabely fail.\n");
+				"Socket creation may fail.\n");
 			af = 27;
 		}
 		return af;
@@ -773,7 +779,7 @@ static int get_af_ssocks(int warn_and_use_default)
 		if (warn_and_use_default) {
 			fprintf(stderr, "read(" PROC_NET_AF_SSOCKS_FAMILY ") "
 				"failed: %m\n WARNING: assuming AF_SSOCKS = 27. "
-				"Socket creation will probabely fail.\n");
+				"Socket creation may fail.\n");
 			af = 27;
 		}
 	}
