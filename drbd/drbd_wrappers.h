@@ -528,11 +528,9 @@ static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
 }
 #endif
 /* see upstream commit cd8ba7cd9be0192348c2836cb6645d9b2cd2bfd2 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26) && !defined(HAVE_SET_CPUS_ALLOWED_PTR)
-static inline int set_cpus_allowed_ptr(struct task_struct *p, const cpumask_t *new_mask)
-{
-	return set_cpus_allowed(p, *new_mask);
-}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
+/* As macro because RH has it in 2.6.18-128.4.1.el5, but not exported to modules !?!? */
+#define set_cpus_allowed_ptr(P, NM) set_cpus_allowed(P, *NM)
 #endif
 #endif
 
