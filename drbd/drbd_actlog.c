@@ -161,7 +161,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 		iop = mdev->md_io_tmpp;
 
 		if (rw & WRITE) {
-			/* these are GFP_KERNEL pages, preallocated
+			/* these are GFP_KERNEL pages, pre-allocated
 			 * on device initialization */
 			void *p = page_address(mdev->md_io_page);
 			void *hp = page_address(mdev->md_io_tmpp);
@@ -256,7 +256,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 	if (al_ext->lc_number != enr) {
 		/* drbd_al_write_transaction(mdev,al_ext,enr);
 		 * recurses into generic_make_request(), which
-		 * disalows recursion, bios being serialized on the
+		 * disallows recursion, bios being serialized on the
 		 * current->bio_tail list now.
 		 * we have to delegate updates to the activity log
 		 * to the worker thread. */
@@ -407,7 +407,7 @@ STATIC int drbd_al_read_tr(struct drbd_conf *mdev,
 	sector = bdev->md.md_offset + bdev->md.al_offset + index;
 
 	/* Dont process error normally,
-	 * as this is done before disk is atached! */
+	 * as this is done before disk is attached! */
 	if (!drbd_md_sync_page_io(mdev, bdev, sector, READ))
 		return -1;
 
@@ -561,7 +561,7 @@ STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	BIO_ENDIO_FN_START;
-	/* strange behaviour of some lower level drivers...
+	/* strange behavior of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
 	 * but do not return any error?! */
 	if (!error && !uptodate)
@@ -689,7 +689,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 
 	nr_elements = mdev->act_log->nr_elements;
 
-	/* GFP_KERNEL, we are not in anyones write-out path */
+	/* GFP_KERNEL, we are not in anyone's write-out path */
 	bios = kzalloc(sizeof(struct bio *) * nr_elements, GFP_KERNEL);
 	if (!bios)
 		goto submit_one_by_one;
@@ -710,7 +710,7 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 			goto free_bios_submit_one_by_one;
 	}
 
-	/* unneccessary optimization? */
+	/* unnecessary optimization? */
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
@@ -816,7 +816,7 @@ static int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
  * @mdev:	DRBD device.
  *
  * Removes all active extents form the activity log, waiting until
- * the reference count of each etry dropped to 0 first, of course.
+ * the reference count of each entry dropped to 0 first, of course.
  *
  * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
  */
@@ -989,7 +989,7 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 
 	/* we clear it (in sync).
 	 * round up start sector, round down end sector.  we make sure we only
-	 * clear full, alligned, BM_BLOCK_SIZE (4K) blocks */
+	 * clear full, aligned, BM_BLOCK_SIZE (4K) blocks */
 	if (unlikely(esector < BM_SECT_PER_BIT-1))
 		return;
 	if (unlikely(esector == (nr_sectors-1)))
@@ -1014,7 +1014,7 @@ void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
 	if (count) {
 		/* we need the lock for drbd_try_clear_on_disk_bm */
 		if (jiffies - mdev->rs_mark_time > HZ*10) {
-			/* should be roling marks,
+			/* should be rolling marks,
 			 * but we estimate only anyways. */
 			if (mdev->rs_mark_left != drbd_bm_total_weight(mdev) &&
 			    mdev->state.conn != C_PAUSED_SYNC_T &&
@@ -1229,21 +1229,21 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	spin_lock_irq(&mdev->al_lock);
 	if (mdev->resync_wenr != LC_FREE && mdev->resync_wenr != enr) {
 		/* in case you have very heavy scattered io, it may
-		 * stall the syncer undefined if we giveup the ref count
+		 * stall the syncer undefined if we give up the ref count
 		 * when we try again and requeue.
 		 *
 		 * if we don't give up the refcount, but the next time
 		 * we are scheduled this extent has been "synced" by new
 		 * application writes, we'd miss the lc_put on the
-		 * extent we keept the refcount on.
-		 * so we remembered which extent we had to try agin, and
+		 * extent we keep the refcount on.
+		 * so we remembered which extent we had to try again, and
 		 * if the next requested one is something else, we do
 		 * the lc_put here...
 		 * we also have to wake_up
 		 */
 
 		trace_drbd_resync(mdev, TRACE_LVL_ALL,
-				  "dropping %u, aparently got 'synced' by application io\n",
+				  "dropping %u, apparently got 'synced' by application io\n",
 				  mdev->resync_wenr);
 
 		e = lc_find(mdev->resync, mdev->resync_wenr);
@@ -1288,7 +1288,7 @@ int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 			goto try_again;
 		}
-		/* Do or do not. There is no try. -- Joda */
+		/* Do or do not. There is no try. -- Yoda */
 		e = lc_get(mdev->resync, enr);
 		bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 		if (!bm_ext) {
@@ -1478,7 +1478,7 @@ void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
 
 	/*
 	 * round up start sector, round down end sector.  we make sure we only
-	 * handle full, alligned, BM_BLOCK_SIZE (4K) blocks */
+	 * handle full, aligned, BM_BLOCK_SIZE (4K) blocks */
 	if (unlikely(esector < BM_SECT_PER_BIT-1))
 		return;
 	if (unlikely(esector == (nr_sectors-1)))

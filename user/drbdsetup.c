@@ -956,7 +956,7 @@ static int print_config_error(int err_no)
 				/* was inconsistent anyways */
 				rv = 5;
 			} else if (err_no == SS_NO_LOCAL_DISK) {
-				/* Can not start resync, no local diks, try with drbdmeta */
+				/* Can not start resync, no local disks, try with drbdmeta */
 				rv = 16;
 			} else {
 				rv = 11;
@@ -1344,7 +1344,7 @@ static char *af_to_str(int af)
 		return "ipv6";
 	/* AF_SSOCKS typically is 27, the same as AF_INET_SDP.
 	 * But with warn_and_use_default = 0, it will stay at -1 if not available.
-	 * Just keep the test on ssocks before the one on SDP (which is hardcoded),
+	 * Just keep the test on ssocks before the one on SDP (which is hard-coded),
 	 * and all should be fine.  */
 	else if (af == get_af_ssocks(0))
 		return "ssocks";
@@ -1392,7 +1392,7 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl)
 			print_options(cm->cp.options, rtl, cm->cmd);
 	}
 
-	// start of spagethi code...
+	// start of spaghetti code...
 	if(consume_tag_int(T_wire_protocol,rtl,&idx))
 		printf("protocol %c;\n",'A'+idx-1);
 	backing_dev = address = NULL;
@@ -1608,7 +1608,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 
 	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
 		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
-			"Probabely the device has no disk!\n");
+			"Probably the device has no disk!\n");
 		return 1;
 	}
 	consume_tag_int(T_uuids_flags,rtl,&flags);
@@ -2034,7 +2034,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 				if (cn_reply->seq <= b_seq) continue;
 				b_seq = cn_reply->seq;
 			} else if (minor == reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
-				// replies to drbdsetup packes and for this device.
+				// replies to drbdsetup packets and for this device.
 				if (cn_reply->seq <= r_seq) continue;
 				r_seq = cn_reply->seq;
 			}
@@ -2463,7 +2463,7 @@ int main(int argc, char** argv)
 	int rv=0;
 
 	if (chdir("/")) {
-		/* highliy unlikely, but gcc is picky */
+		/* highly unlikely, but gcc is picky */
 		perror("cannot chdir /");
 		return -111;
 	}

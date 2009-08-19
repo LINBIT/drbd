@@ -37,7 +37,7 @@
  * see also commit commit a362357b6cd62643d4dda3b152639303d78473da
  * Author: Jens Axboe <axboe@suse.de>
  * Date:   Tue Nov 1 09:26:16 2005 +0100
- *     [BLOCK] Unify the seperate read/write io stat fields into arrays */
+ *     [BLOCK] Unify the separate read/write io stat fields into arrays */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,16)
 #define _drbd_start_io_acct(...) do {} while (0)
 #define _drbd_end_io_acct(...)   do {} while (0)
@@ -101,7 +101,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 		 * well, only if it had been there in the first
 		 * place... if it had not (local only or conflicting
 		 * and never sent), it should still be "empty" as
-		 * initialised in drbd_req_new(), so we can list_del() it
+		 * initialized in drbd_req_new(), so we can list_del() it
 		 * here unconditionally */
 		list_del(&req->tl_requests);
 		/* Set out-of-sync unless both OK flags are set
@@ -299,7 +299,7 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 		/*
 		 * figure out whether to report success or failure.
 		 *
-		 * report success when at least one of the operations suceeded.
+		 * report success when at least one of the operations succeeded.
 		 * or, to put the other way,
 		 * only report failure, when both operations failed.
 		 *
@@ -614,7 +614,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (bio_data_dir(req->master_bio) == WRITE &&
 		    mdev->net_conf->wire_protocol == DRBD_PROT_A) {
 			/* this is what is dangerous about protocol A:
-			 * pretend it was sucessfully written on the peer. */
+			 * pretend it was successfully written on the peer. */
 			if (req->rq_state & RQ_NET_PENDING) {
 				dec_ap_pending(mdev);
 				req->rq_state &= ~RQ_NET_PENDING;
@@ -650,7 +650,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case write_acked_by_peer_and_sis:
 		req->rq_state |= RQ_NET_SIS;
 	case conflict_discarded_by_peer:
-		/* for discarded conflicting writes of multiple primarys,
+		/* for discarded conflicting writes of multiple primaries,
 		 * there is no need to keep anything in the tl, potential
 		 * node crashes are covered by the activity log. */
 		if (what == conflict_discarded_by_peer)
@@ -668,11 +668,11 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * A barrier request is expected to have forced all prior
 		 * requests onto stable storage, so completion of a barrier
 		 * request could set NET_DONE right here, and not wait for the
-		 * P_BARRIER_ACK, but that is an unecessary optimisation. */
+		 * P_BARRIER_ACK, but that is an unnecessary optimization. */
 
 		/* this makes it effectively the same as for: */
 	case recv_acked_by_peer:
-		/* protocol B; pretends to be sucessfully written on peer.
+		/* protocol B; pretends to be successfully written on peer.
 		 * see also notes above in handed_over_to_network about
 		 * protocol != C */
 		req->rq_state |= RQ_NET_OK;
@@ -763,7 +763,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio)
 	if (!req) {
 		dec_ap_bio(mdev);
 		/* only pass the error to the upper layers.
-		 * if user cannot handle io errors, thats not our business. */
+		 * if user cannot handle io errors, that's not our business. */
 		dev_err(DEV, "could not kmalloc() req\n");
 		bio_endio(bio, -ENOMEM);
 		return 0;
@@ -905,7 +905,7 @@ allocate_barrier:
 	 * 'remote' may become wrong any time because the network could fail.
 	 *
 	 * This is a harmless race condition, though, since it is handled
-	 * correctly at the appropriate places; so it just deferres the failure
+	 * correctly at the appropriate places; so it just defers the failure
 	 * of the respective operation.
 	 */
 
@@ -916,7 +916,7 @@ allocate_barrier:
 	if (local)
 		_req_mod(req, to_be_submitted);
 
-	/* check this request on the colison detection hash tables.
+	/* check this request on the collision detection hash tables.
 	 * if we have a conflict, just complete it here.
 	 * THINK do we want to check reads, too? (I don't think so...) */
 	if (rw == WRITE && _req_conflicts(req)) {
@@ -1021,7 +1021,7 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 	/*
 	 * Paranoia: we might have been primary, but sync target, or
 	 * even diskless, then lost the connection.
-	 * This should have been handled (panic? suspend?) somehwere
+	 * This should have been handled (panic? suspend?) somewhere
 	 * else. But maybe it was not, so check again here.
 	 * Caution: as long as we do not have a read/write lock on mdev,
 	 * to serialize state changes, this is racy, since we may lose
@@ -1067,7 +1067,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
 	D_ASSERT((bio->bi_size & 0x1ff) == 0);
 	D_ASSERT(bio->bi_idx == 0);
 
-	/* to make some things easier, force allignment of requests within the
+	/* to make some things easier, force alignment of requests within the
 	 * granularity of our hash tables */
 	s_enr = bio->bi_sector >> HT_SHIFT;
 	e_enr = (bio->bi_sector+(bio->bi_size>>9)-1) >> HT_SHIFT;
@@ -1131,7 +1131,7 @@ int drbd_make_request_26(struct request_queue *q, struct bio *bio)
  * since we don't care for actual offset, but only check whether it
  * would cross "activity log extent" boundaries.
  *
- * As long as the BIO is emtpy we have to allow at least one bvec,
+ * As long as the BIO is empty we have to allow at least one bvec,
  * regardless of size and offset.  so the resulting bio may still
  * cross extent boundaries.  those are dealt with (bio_split) in
  * drbd_make_request_26.

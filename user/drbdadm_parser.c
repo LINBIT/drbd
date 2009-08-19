@@ -276,7 +276,7 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
  * for check_uniq: check uniqueness of
  * resource names, ip:port, node:disk and node:device combinations
  * as well as resource:section ...
- * hash table to test for uniqness of these values...
+ * hash table to test for uniqueness of these values...
  *  256  (max minors)
  *  *(
  *       2 (host sections) * 4 (res ip:port node:disk node:device)
@@ -284,7 +284,7 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
  *     + some more,
  *       if we want to check for scoped uniqueness of *every* option
  *   )
- *     since nobody (?) will actually use more than a dozend minors,
+ *     since nobody (?) will actually use more than a dozen minors,
  *     this should be more than enough.
  */
 struct hsearch_data global_htable;
@@ -809,7 +809,7 @@ static void parse_device(struct d_name* on_hosts, unsigned *minor, char **device
 			m = dt_minor_of_dev(*device);
 			if (m < 0) {
 				fprintf(stderr,
-					"%s:%d: no minor given nor device name conains a minor number\n",
+					"%s:%d: no minor given nor device name contains a minor number\n",
 					config_file, fline);
 				config_valid = 0;
 			}
@@ -1113,7 +1113,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 {
 	struct d_host_info *host;
 
-	/* Determin the local host section */
+	/* Determine the local host section */
 	for (host = res->all_hosts; host; host=host->next) {
 		/* do we match  this host? */
 		if (match_on_proxy) {
@@ -1176,7 +1176,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	if (!res->me) {
 		/* should have been implicitly ignored. */
 		fprintf(stderr, "%s:%d: in resource %s:\n"
-				"\tcannot determin the peer, don't even know myself!\n",
+				"\tcannot determine the peer, don't even know myself!\n",
 				res->config_file, res->start_line, res->name);
 		exit(E_thinko);
 	}

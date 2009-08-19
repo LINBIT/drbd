@@ -32,7 +32,7 @@
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
 
- * convetion:
+ * convention:
  * function name drbd_bm_... => used elsewhere, "public".
  * function name      bm_... => internal to implementation, "private".
 
@@ -340,7 +340,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
 /*
  * since (b->bm_bits % BITS_PER_LONG) != 0,
  * this masks out the remaining bits.
- * Rerturns the number of bits cleared.
+ * Returns the number of bits cleared.
  */
 STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 {
@@ -463,11 +463,11 @@ STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 
 /*
  * make sure the bitmap has enough room for the attached storage,
- * if neccessary, resize.
+ * if necessary, resize.
  * called whenever we may have changed the device size.
  * returns -ENOMEM if we could not allocate enough memory, 0 on success.
  * In case this is actually a resize, we copy the old bitmap into the new one.
- * Otherwise, the bitmap is initiallized to all bits set.
+ * Otherwise, the bitmap is initialized to all bits set.
  */
 int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity)
 {
@@ -761,7 +761,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 
 	BIO_ENDIO_FN_START;
 
-	/* strange behaviour of some lower level drivers...
+	/* strange behavior of some lower level drivers...
 	 * fail the request by clearing the uptodate flag,
 	 * but do not return any error?!
 	 * do we want to WARN() on this? */
@@ -893,7 +893,7 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw) __must_hold(local)
 		/* flush bitmap to stable storage */
 		drbd_md_flush(mdev);
 	} else /* rw == READ */ {
-		/* just read, if neccessary adjust endianness */
+		/* just read, if necessary adjust endianness */
 		b->bm_set = bm_count_bits_swap_endian(b);
 		dev_info(DEV, "recounting of set bits took additional %lu jiffies\n",
 		     jiffies - now);
@@ -929,7 +929,7 @@ int drbd_bm_write(struct drbd_conf *mdev) __must_hold(local)
  * @mdev:	DRBD device.
  * @enr:	Extent number in the resync lru (happens to be sector offset)
  *
- * The BM_EXT_SIZE is on purpose exactle the amount of the bitmap covered
+ * The BM_EXT_SIZE is on purpose exactly the amount of the bitmap covered
  * by a single sector write. Therefore enr == sector offset from the
  * start of the bitmap.
  */
@@ -1059,7 +1059,7 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_f
 }
 
 /* returns number of bits actually changed.
- * for val != 0, we change 0 -> 1, return code positiv
+ * for val != 0, we change 0 -> 1, return code positive
  * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector.
  * expected to be called for only a few bits (e - s about BITS_PER_LONG).
@@ -1099,7 +1099,7 @@ int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 }
 
 /* returns number of bits actually changed.
- * for val != 0, we change 0 -> 1, return code positiv
+ * for val != 0, we change 0 -> 1, return code positive
  * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector */
 int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,

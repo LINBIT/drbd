@@ -313,7 +313,7 @@ static int lc_unused_element_available(struct lru_cache *lc)
  * "touches" and returns it.
  *
  * In case the requested number is not present, it needs to be added to the
- * cache. Therefore it is possible that an other element becomes eviced from
+ * cache. Therefore it is possible that an other element becomes evicted from
  * the cache. In either case, the user is notified so he is able to e.g. keep
  * a persistent log of the cache changes, and therefore the objects in use.
  *
@@ -333,7 +333,7 @@ static int lc_unused_element_available(struct lru_cache *lc)
  *
  *          In this case, the cache is marked %LC_DIRTY (blocking further changes),
  *          and the returned element pointer is removed from the lru list and
- *          hash collision chains.  The user now should do whatever houskeeping
+ *          hash collision chains.  The user now should do whatever housekeeping
  *          is necessary.
  *          Then he must call lc_changed(lc,element_pointer), to finish
  *          the change.
@@ -517,7 +517,7 @@ void lc_set(struct lru_cache *lc, unsigned int enr, int index)
  * @seq: the &struct seq_file pointer to seq_printf into
  * @utext: user supplied "heading" or other info
  * @detail: function pointer the user may provide to dump further details
- * of the object the lc_element is embeded in.
+ * of the object the lc_element is embedded in.
  */
 void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char *utext,
 	     void (*detail) (struct seq_file *, struct lc_element *))

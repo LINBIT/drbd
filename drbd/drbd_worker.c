@@ -64,7 +64,7 @@ STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
    atodb_endio in drbd_actlog.c
    drbd_bm_async_io_complete in drbd_bitmap.c
 
- * For all these callbacks, note the follwing:
+ * For all these callbacks, note the following:
  * The callbacks will be called in irq context by the IDE drivers,
  * and in Softirqs/Tasklets/BH context by the SCSI drivers.
  * Try to get the locking right :)
@@ -111,7 +111,7 @@ BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __
 
 	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
-		/* strange behaviour of some lower level drivers...
+		/* strange behavior of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
 		 * do we want to dev_warn(DEV, ) on this? */
@@ -156,7 +156,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 
 	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
-		/* strange behaviour of some lower level drivers...
+		/* strange behavior of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
 		 * do we want to dev_warn(DEV, ) on this? */
@@ -224,7 +224,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 	BIO_ENDIO_FN_RETURN;
 }
 
-/* read, readA or write requests on R_PRIMARY comming from drbd_make_request
+/* read, readA or write requests on R_PRIMARY coming from drbd_make_request
  */
 BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
@@ -237,7 +237,7 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	BIO_ENDIO_FN_START;
 	if (!error && !uptodate) {
-		/* strange behaviour of some lower level drivers...
+		/* strange behavior of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?!
 		 * do we want to dev_warn(DEV, ) on this? */
@@ -485,13 +485,13 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	if (number > mx)
 		mx = number;
 
-	/* Limit the nunber of pending RS requests to no more than the peer's receive buffer */
+	/* Limit the number of pending RS requests to no more than the peer's receive buffer */
 	if ((pe + number) > mx) {
 		number = mx - pe;
 	}
 
 	for (i = 0; i < number; i++) {
-		/* Stop generating RS requests, when half of the sendbuffer is filled */
+		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&mdev->data.mutex);
 		if (mdev->data.socket) {
 			queued = mdev->data.socket->sk->sk_wmem_queued;
@@ -532,10 +532,10 @@ next_sector:
 		/* try to find some adjacent bits.
 		 * we stop if we have already the maximum req size.
 		 *
-		 * Aditionally always align bigger requests, in order to
+		 * Additionally always align bigger requests, in order to
 		 * be prepared for all stripe sizes of software RAIDs.
 		 *
-		 * we _do_ care about the agreed-uppon q->max_segment_size
+		 * we _do_ care about the agreed-upon q->max_segment_size
 		 * here, as splitting up the requests on the other side is more
 		 * difficult.  the consequence is, that on lvm and md and other
 		 * "indirect" devices, this is dead code, since
@@ -698,7 +698,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
 	if (drbd_rs_del_all(mdev)) {
-		/* In case this is not possible now, most probabely because
+		/* In case this is not possible now, most probably because
 		 * there are P_RS_DATA_REPLY Packets lingering on the worker's
 		 * queue (or even the read operations for those packets
 		 * is not finished by now).   Retry in 100ms. */
@@ -1112,7 +1112,7 @@ int w_send_barrier(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	int ok = 1;
 
 	/* really avoid racing with tl_clear.  w.cb may have been referenced
-	 * just before it was reassigned and requeued, so double check that.
+	 * just before it was reassigned and re-queued, so double check that.
 	 * actually, this race was harmless, since we only try to send the
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */

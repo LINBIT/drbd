@@ -166,7 +166,7 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
 /**
  * drbd_pp_alloc() - Returns a page, fails only if a signal comes in
  * @mdev:	DRBD device.
- * @retry:	wether or not to retry allocation forever (or until signalled)
+ * @retry:	whether or not to retry allocation forever (or until signalled)
  *
  * Tries to allocate a page, first from our own page pool, then from the
  * kernel, unless this allocation would exceed the max_buffers setting.
@@ -510,7 +510,7 @@ void drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
 
 #ifdef DEFINE_SOCK_CREATE_KERN
 /* if there is no sock_create_kern,
- * tthere is also sock_create_lite missing */
+ * there is also sock_create_lite missing */
 int sock_create_lite(int family, int type, int protocol, struct socket **res)
 {
 	int err = 0;
@@ -661,7 +661,7 @@ STATIC struct socket *drbd_try_connect(struct drbd_conf *mdev)
 	*  for the outgoing connections.
 	*  This is needed for multihomed hosts and to be
 	*  able to use lo: interfaces for drbd.
-	* Make sure to use 0 as portnumber, so linux selects
+	* Make sure to use 0 as port number, so linux selects
 	*  a free one dynamically.
 	*/
 	memcpy(&src_in6, mdev->net_conf->my_addr,
@@ -805,7 +805,7 @@ static int drbd_socket_okay(struct drbd_conf *mdev, struct socket **sock)
 
 /*
  * return values:
- *   1 yess, we have a valid connection
+ *   1 yes, we have a valid connection
  *   0 oops, did not work out, please try again
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.
@@ -1217,7 +1217,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 
 	/* As long as the -ENOTSUPP on the barrier is reported immediately
 	   that will never trigger. It it is reported late, we will just
-	   print that warning an continue corretly for all future requests
+	   print that warning an continue correctly for all future requests
 	   with WO_bdev_flush */
 	if (previous_epoch(mdev, e->epoch))
 		dev_warn(DEV, "Write ordering was not enforced (one time event)\n");
@@ -2064,7 +2064,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 	case P_RS_DATA_REQUEST:
 		e->w.cb = w_e_end_rsdata_req;
 		fault_type = DRBD_FAULT_RS_RD;
-		/* Eventually this should become asynchrously. Currently it
+		/* Eventually this should become asynchronously. Currently it
 		 * blocks the whole receiver just to delay the reading of a
 		 * resync data block.
 		 * the drbd_work_queue mechanism is made for this...
@@ -2123,7 +2123,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		}
 		e->w.cb = w_e_end_ov_req;
 		fault_type = DRBD_FAULT_RS_RD;
-		/* Eventually this should become asynchrously. Currently it
+		/* Eventually this should become asynchronous. Currently it
 		 * blocks the whole receiver just to delay the reading of a
 		 * resync data block.
 		 * the drbd_work_queue mechanism is made for this...
@@ -2275,7 +2275,7 @@ STATIC int drbd_asb_recover_1p(struct drbd_conf *mdev) __must_hold(local)
 			if (self != SS_SUCCESS) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
-				dev_warn(DEV, "Sucessfully gave up primary role.\n");
+				dev_warn(DEV, "Successfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else
@@ -2317,7 +2317,7 @@ STATIC int drbd_asb_recover_2p(struct drbd_conf *mdev) __must_hold(local)
 			if (self != SS_SUCCESS) {
 				drbd_khelper(mdev, "pri-lost-after-sb");
 			} else {
-				dev_warn(DEV, "Sucessfully gave up primary role.\n");
+				dev_warn(DEV, "Successfully gave up primary role.\n");
 				rv = hg;
 			}
 		} else
@@ -2400,7 +2400,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		    mdev->p_uuid[UI_BITMAP] != (u64)0 &&
 		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
 		    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
-			dev_info(DEV, "was SyncTarget, peer missed the resync finished event, correced peer:\n");
+			dev_info(DEV, "was SyncTarget, peer missed the resync finished event, corrected peer:\n");
 
 			if (mdev->agreed_pro_version < 91)
 				return -1001;
@@ -2934,7 +2934,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 	}
 
 	/* just store the peer's disk size for now.
-	 * we still need to figure out wether we accept that. */
+	 * we still need to figure out whether we accept that. */
 	mdev->p_size = p_size;
 
 #define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
@@ -3018,7 +3018,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, struct p_header *h)
 	if (mdev->state.conn > C_WF_REPORT_PARAMS) {
 		if (be64_to_cpu(p->c_size) !=
 		    drbd_get_capacity(mdev->this_bdev) || ldsc) {
-			/* we have different sizes, probabely peer
+			/* we have different sizes, probably peer
 			 * needs to know my new size... */
 			drbd_send_sizes(mdev, 0);
 		}
@@ -3249,7 +3249,7 @@ STATIC int receive_state(struct drbd_conf *mdev, struct p_header *h)
 		    peer_state.disk != D_NEGOTIATING ) {
 			/* we want resync, peer has not yet decided to sync... */
 			/* Nowadays only used when forcing a node into primary role and
-			   setting its disk to UpTpDate with that */
+			   setting its disk to UpToDate with that */
 			drbd_send_uuids(mdev);
 			drbd_send_state(mdev);
 		}
@@ -3436,7 +3436,7 @@ void INFO_bm_xfer_stats(struct drbd_conf *mdev,
    we would need to process it from the highest address to the lowest,
    in order to be agnostic to the 32 vs 64 bits issue.
 
-   returns 0 on failure, 1 if we suceessfully received it. */
+   returns 0 on failure, 1 if we successfully received it. */
 STATIC int receive_bitmap(struct drbd_conf *mdev, struct p_header *h)
 {
 	struct bm_xfer_ctx c;
@@ -3850,7 +3850,7 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 
 /*
  * return values:
- *   1 yess, we have a valid connection
+ *   1 yes, we have a valid connection
  *   0 oops, did not work out, please try again
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.

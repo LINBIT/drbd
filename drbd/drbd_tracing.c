@@ -166,7 +166,7 @@ static void probe_drbd_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch,
 
 	switch (ev) {
 	case EV_TRACE_ALLOC:
-		dev_info(DEV, "Allocat epoch %p/xxxx { } nr_epochs=%d\n", epoch, mdev->epochs);
+		dev_info(DEV, "Allocate epoch %p/xxxx { } nr_epochs=%d\n", epoch, mdev->epochs);
 		break;
 	case EV_TRACE_FREE:
 		dev_info(DEV, "Freeing epoch %p/%d { size=%d } nr_epochs=%d\n",
@@ -224,11 +224,11 @@ static void probe_drbd_actlog(struct drbd_conf *mdev, sector_t sector, char* msg
 }
 
 /**
- * drbd_print_buffer() - Hexdump arbitraty binary data into a buffer
+ * drbd_print_buffer() - Hexdump arbitrary binary data into a buffer
  * @prefix:	String is output at the beginning of each line output.
  * @flags:	Currently only defined flag: DBGPRINT_BUFFADDR; if set, each
  *		line starts with the virtual address of the line being
- *		outupt. If clear, each line starts with the offset from the
+ *		output. If clear, each line starts with the offset from the
  *		beginning of the buffer.
  * @size:	Indicates the size of each entry in the buffer. Supported
  * 		values are sizeof(char), sizeof(short) and sizeof(int)

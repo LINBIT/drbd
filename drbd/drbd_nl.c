@@ -228,7 +228,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself.
 		 * This is useful when an unconnected R_SECONDARY is asked to
-		 * become R_PRIMARY, but findes the other peer being active. */
+		 * become R_PRIMARY, but finds the other peer being active. */
 		ex_to_string = "peer is active";
 		dev_warn(DEV, "Peer is primary, outdating myself.\n");
 		nps = D_UNKNOWN;
@@ -500,7 +500,7 @@ void drbd_resume_io(struct drbd_conf *mdev)
 }
 
 /**
- * drbd_determin_dev_size() -  Sets the right device size obeying all constraints
+ * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @mdev:	DRBD device.
  *
  * Returns 0 on success, negative return values indicate errors.
@@ -987,7 +987,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 			dev_warn(DEV, "Meta data's bdev logical_block_size = %d != %d\n",
 			     logical_block_size, MD_SECTOR_SIZE);
-			dev_warn(DEV, "Workaround engaged (has performace impact).\n");
+			dev_warn(DEV, "Workaround engaged (has performance impact).\n");
 
 			mdev->md_io_tmpp = page;
 		}
@@ -1080,7 +1080,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	os = mdev->state;
 	ns.i = os.i;
 	/* If MDF_CONSISTENT is not set go into inconsistent state,
-	   otherwise investige MDF_WasUpToDate...
+	   otherwise investigate MDF_WasUpToDate...
 	   If MDF_WAS_UP_TO_DATE is not set go into D_OUTDATED disk state,
 	   otherwise into D_CONSISTENT state.
 	*/
@@ -1105,7 +1105,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	   this point, because drbd_request_state() modifies these
 	   flags. */
 
-	/* In case we are C_CONNECTED postpone any desicion on the new disk
+	/* In case we are C_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
 	if (mdev->state.conn == C_CONNECTED) {
 		mdev->new_state_tmp.i = ns.i;
@@ -1448,7 +1448,7 @@ STATIC int drbd_nl_disconnect(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 		retcode = drbd_request_state(mdev, NS2(conn, C_DISCONNECTING,
 						      pdsk, D_OUTDATED));
 	} else if (retcode == SS_CW_FAILED_BY_PEER) {
-		/* The peer probabely wants to see us outdated. */
+		/* The peer probably wants to see us outdated. */
 		retcode = _drbd_request_state(mdev, NS2(conn, C_DISCONNECTING,
 							disk, D_OUTDATED),
 					      CS_ORDERED);
@@ -2081,7 +2081,7 @@ STATIC void drbd_connector_callback(void *data)
 		cm->reply_body_size ? nlp->packet_type : P_nl_after_last_packet;
 	reply->minor = nlp->drbd_minor;
 	reply->ret_code = NO_ERROR; /* Might by modified by cm->function. */
-	/* reply->tag_list; might be modified by cm->fucntion. */
+	/* reply->tag_list; might be modified by cm->function. */
 
 	rr = cm->function(mdev, nlp, reply);
 
@@ -2238,7 +2238,7 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	if (!reason || !reason[0])
 		return;
 
-	/* aparently we have to memcpy twice, first to prepare the data for the
+	/* apparently we have to memcpy twice, first to prepare the data for the
 	 * struct cn_msg, then within cn_netlink_send from the cn_msg to the
 	 * netlink skb. */
 	/* receiver thread context, which is not in the writeout path (of this node),

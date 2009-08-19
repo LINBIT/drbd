@@ -73,7 +73,7 @@ struct adm_cmd {
 	 * 0: don't show this command, ever
 	 * 1: normal administrative commands, shown in normal help
 	 * 2-4: shown on "drbdadm hidden-commands"
-	 * 2: usefull for shell scripts
+	 * 2: useful for shell scripts
 	 * 3: callbacks potentially called from kernel module on certain events
 	 * 4: advanced, experts and developers only */
 	unsigned int show_in_usage:3;
@@ -165,7 +165,7 @@ int dry_run = 0;
 int verbose = 0;
 int do_verify_ips = 0;
 int do_register_minor = 1;
-/* wether drbdadm was called with "all" instead of resource name(s) */
+/* whether drbdadm was called with "all" instead of resource name(s) */
 int all_resources = 0;
 char *drbdsetup = NULL;
 char *drbdmeta = NULL;
@@ -290,7 +290,7 @@ enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
 
 	if (!confirmed("Do you want to proceed "
 		       "and register the current config file?")) {
-		printf("Operation cancelled.\n");
+		printf("Operation canceled.\n");
 		exit(E_usage);
 	}
 	return DO_REGISTER;
@@ -1635,7 +1635,7 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 		setenv("DRBD_PEER_ADDRESS", res->peer->address, 1);	/* since 8.3.0 */
 		setenv("DRBD_PEER", res->peer->on_hosts->name, 1);	/* deprecated */
 		setenv("DRBD_PEERS", names_to_str(res->peer->on_hosts), 1);
-			/* since 8.3.0, but not useable when using a config with "floating" statements. */
+			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
 	setenv("DRBD_RESOURCE", res->name, 1);
@@ -1882,8 +1882,8 @@ static int adm_up(struct d_resource *res,
 	return 0;
 }
 
-/* The stacked-timeouts switch in the startup sections allowes us
-   to enforce the use of the specified timeouts insetead the use
+/* The stacked-timeouts switch in the startup sections allows us
+   to enforce the use of the specified timeouts instead the use
    of a sane value. Should only be used if the third node should
    never become primary. */
 static int adm_wait_c(struct d_resource *res,
@@ -1900,7 +1900,7 @@ static int adm_wait_c(struct d_resource *res,
 		unsigned long timeout = 20;
 		if ((opt = find_opt(res->net_options, "connect-int"))) {
 			timeout = strtoul(opt->value, NULL, 10);
-			// one connect-intervall? two?
+			// one connect-interval? two?
 			timeout *= 2;
 		}
 		argv[argc++] = "-t";
@@ -2312,7 +2312,7 @@ static struct ifreq *get_ifreq(void)
 	} while (buf_size <= (size_t) ifc.ifc_len);
 
 	num_ifaces = ifc.ifc_len / sizeof(struct ifreq);
-	/* Since we allocated at least one more than neccessary,
+	/* Since we allocated at least one more than necessary,
 	 * this serves as a stop marker for the iteration in
 	 * have_ip() */
 	ifc.ifc_req[num_ifaces].ifr_name[0] = 0;
@@ -2720,7 +2720,7 @@ char *canonify_path(char *path)
 
 void assign_command_names_from_argv0(char **argv)
 {
-	/* in case drbdadm is called with an absolut or relative pathname
+	/* in case drbdadm is called with an absolute or relative pathname
 	 * look for the drbdsetup binary in the same location,
 	 * otherwise, just let execvp sort it out... */
 	if ((progname = strrchr(argv[0], '/')) == 0) {
@@ -3164,8 +3164,8 @@ int main(int argc, char **argv)
 		global_validate_maybe_expand_die_if_invalid(!is_dump);
 
 		if (optind == argc || !strcmp(argv[optind], "all")) {
-			/* either no resorce arguments at all,
-			 * but command is dump / dump-xml, so implitict "all",
+			/* either no resource arguments at all,
+			 * but command is dump / dump-xml, so implicit "all",
 			 * or an explicit "all" argument is given */
 			all_resources = 1;
 			if (!is_dump || !force)
@@ -3199,7 +3199,7 @@ int main(int argc, char **argv)
 				printf("</config>\n");
 			}
 		} else {
-			/* explicit list of reources to work on */
+			/* explicit list of resources to work on */
 			for (i = optind; (int)i < argc; i++) {
 				res = res_by_name(argv[i]);
 				if (!res)
@@ -3246,7 +3246,7 @@ int main(int argc, char **argv)
 	}
 
 	/* do we really have to bitor the exit code?
-	 * it is even only a boolen value in this case! */
+	 * it is even only a Boolean value in this case! */
 	rv |= run_dcmds();
 
 	free_config(config);

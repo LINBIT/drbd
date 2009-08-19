@@ -159,7 +159,7 @@ mempool_t *drbd_request_mempool;
 mempool_t *drbd_ee_mempool;
 
 /* I do not use a standard mempool, because:
-   1) I want to hand out the preallocated objects first.
+   1) I want to hand out the pre-allocated objects first.
    2) I want to be able to interrupt sleeping allocation with a signal.
    Note: This is a single linked list, the next pointer is the private
 	 member of struct page.
@@ -335,7 +335,7 @@ void tl_release(struct drbd_conf *mdev, unsigned int barrier_nr,
 		if (nob)
 			mdev->oldest_tle = nob;
 		/* if nob == NULL b was the only barrier, and becomes the new
-		   barrer. Threfore mdev->oldest_tle points already to b */
+		   barrier. Therefore mdev->oldest_tle points already to b */
 	} else {
 		D_ASSERT(nob != NULL);
 		mdev->oldest_tle = nob;
@@ -692,7 +692,7 @@ abort:
 }
 
 /**
- * _drbd_request_state() - Reqest a state change (with flags)
+ * _drbd_request_state() - Request a state change (with flags)
  * @mdev:	DRBD device.
  * @mask:	mask of state bits to change.
  * @val:	value of new state bits.
@@ -916,7 +916,7 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 		put_ldev(mdev);
 	}
 
-	/* Dissalow Network errors to configure a device's network part */
+	/* Disallow Network errors to configure a device's network part */
 	if ((ns.conn >= C_TIMEOUT && ns.conn <= C_TEAR_DOWN) &&
 	    os.conn <= C_DISCONNECTING)
 		ns.conn = os.conn;
@@ -1037,7 +1037,7 @@ static void set_ov_position(struct drbd_conf *mdev, enum drbd_conns cs)
 {
 	if (cs == C_VERIFY_T) {
 		/* starting online verify from an arbitrary position
-		 * does not fit well into the existion protocol.
+		 * does not fit well into the existing protocol.
 		 * on C_VERIFY_T, we initialize ov_left and friends
 		 * implicitly in receive_DataRequest once the
 		 * first P_OV_REQUEST is received */
@@ -1352,7 +1352,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	   state change. This function might sleep */
 
 	if (fp == FP_STONITH && ns.susp) {
-		/* case1: The outdate peer handler is successfull:
+		/* case1: The outdate peer handler is successful:
 		 * case2: The connection was established again: */
 		if ((os.pdsk > D_OUTDATED  && ns.pdsk <= D_OUTDATED) ||
 		    (os.conn < C_CONNECTED && ns.conn >= C_CONNECTED)) {
@@ -1528,7 +1528,7 @@ restart:
 	 * if now a re-connect request comes in, conn state goes C_UNCONNECTED,
 	 * and receiver thread will be "started".
 	 * drbd_thread_start needs to set "Restarting" in that case.
-	 * t_state check and assignement needs to be within the same spinlock,
+	 * t_state check and assignment needs to be within the same spinlock,
 	 * so either thread_start sees Exiting, and can remap to Restarting,
 	 * or thread_start see None, and can proceed as normal.
 	 */
@@ -1687,7 +1687,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
  * drbd_calc_cpu_mask() - Generate CPU masks, spread over all CPUs
  * @mdev:	DRBD device.
  *
- * Forces all threads of a device onto the same CPU. This is benificial for
+ * Forces all threads of a device onto the same CPU. This is beneficial for
  * DRBD's performance. May be overwritten by user's configuration.
  */
 void drbd_calc_cpu_mask(struct drbd_conf *mdev)
@@ -2579,7 +2579,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
 	/* p.seq_num  = 0;    No sequence numbers here.. */
 
 	/* Only called by our kernel thread.
-	 * This one may be interupted by DRBD_SIG and/or DRBD_SIGKILL
+	 * This one may be interrupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to admin command or module unload.
 	 */
 	if (!drbd_get_data_sock(mdev))
@@ -3047,7 +3047,7 @@ Enomem:
 STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	void *unused)
 {
-	/* just so we have it.  you never know what interessting things we
+	/* just so we have it.  you never know what interesting things we
 	 * might want to do here some day...
 	 */
 
@@ -3376,7 +3376,7 @@ int __init drbd_init(void)
 
 	rwlock_init(&global_state_lock);
 
-	printk(KERN_INFO "drbd: initialised. "
+	printk(KERN_INFO "drbd: initialized. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",
 	       API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX);
 	printk(KERN_INFO "drbd: %s\n", drbd_buildtag());
@@ -3605,7 +3605,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
  * drbd_md_mark_dirty() - Mark meta data super block as dirty
  * @mdev:	DRBD device.
  *
- * Call this function if you change enything that should be written to
+ * Call this function if you change anything that should be written to
  * the meta-data super block. This function sets MD_DIRTY, and starts a
  * timer that ensures that within five seconds you have to call drbd_md_sync().
  */
@@ -3774,7 +3774,7 @@ STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused)
  * @done:	callback to be called after the bitmap IO was performed
  * @why:	Descriptive text of the reason for doing the IO
  *
- * While IO on the bitmap happens we freeze appliation IO thus we ensure
+ * While IO on the bitmap happens we freeze application IO thus we ensure
  * that drbd_set_out_of_sync() can not be called. This function MAY ONLY be
  * called from worker context. It MUST NOT be used while a previous such
  * work is still pending!
