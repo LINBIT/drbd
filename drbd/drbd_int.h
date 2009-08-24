@@ -1301,7 +1301,6 @@ extern int drbd_send_bitmap(struct drbd_conf *mdev);
 extern int _drbd_send_bitmap(struct drbd_conf *mdev);
 extern int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);
-extern int drbd_io_error(struct drbd_conf *mdev, int forcedetach);
 extern void drbd_mdev_cleanup(struct drbd_conf *mdev);
 
 /* drbd_meta-data.c (still in drbd_main.c) */
@@ -1826,7 +1825,7 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
  * @error:	 Error code passed to the IO completion callback
  * @forcedetach: Force detach. I.e. the error happened while accessing the meta data
  *
- * See also drbd_io_error().
+ * See also drbd_main.c:after_state_ch() if (os.disk > D_FAILED && ns.disk == D_FAILED)
  */
 static inline void drbd_chk_io_error(struct drbd_conf *mdev,
 	int error, int forcedetach)

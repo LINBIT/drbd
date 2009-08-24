@@ -1502,7 +1502,6 @@ STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int u
 		drbd_rs_failed_io(mdev, sector, e->size);
 
 		ok  = drbd_send_ack(mdev, P_NEG_ACK, e);
-		ok &= drbd_io_error(mdev, FALSE);
 	}
 	dec_unacked(mdev);
 
@@ -1644,15 +1643,11 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 				drbd_set_in_sync(mdev, sector, e->size);
 		} else {
 			ok  = drbd_send_ack(mdev, P_NEG_ACK, e);
-			ok &= drbd_io_error(mdev, FALSE);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
 		dec_unacked(mdev);
-	} else if (unlikely(!drbd_bio_uptodate(e->private_bio))) {
-		ok = drbd_io_error(mdev, FALSE);
 	}
-
 	/* we delete from the conflict detection hash _after_ we sent out the
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
 	if (mdev->net_conf->two_primaries) {

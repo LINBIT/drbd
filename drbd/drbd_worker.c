@@ -271,7 +271,6 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	int ok;
 
 	/* NOTE: mdev->ldev can be NULL by the time we get here! */
 	/* D_ASSERT(mdev->ldev->dc.on_io_error != EP_PASS_ON); */
@@ -280,10 +279,7 @@ int w_io_error(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	 * when it is done and had a local write error, see comments there */
 	drbd_req_free(req);
 
-	ok = drbd_io_error(mdev, FALSE);
-	if (unlikely(!ok))
-		dev_err(DEV, "Sending in w_io_error() failed\n");
-	return ok;
+	return TRUE;
 }
 
 int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
@@ -293,7 +289,6 @@ int w_read_retry_remote(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	/* We should not detach for read io-error,
 	 * but try to WRITE the P_DATA_REPLY to the failed location,
 	 * to give the disk the chance to relocate that block */
-	drbd_io_error(mdev, FALSE); /* tries to schedule a detach and notifies peer */
 
 	spin_lock_irq(&mdev->req_lock);
 	if (cancel ||
@@ -368,10 +363,8 @@ STATIC int w_e_send_csum(struct drbd_conf *mdev, struct drbd_work *w, int cancel
 			dev_err(DEV, "kmalloc() of digest failed.\n");
 			ok = 0;
 		}
-	} else {
-		drbd_io_error(mdev, FALSE);
+	} else
 		ok = 1;
-	}
 
 	drbd_free_ee(mdev, e);
 
@@ -866,8 +859,6 @@ int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			    (unsigned long long)e->sector);
 
 		ok = drbd_send_ack(mdev, P_NEG_DREPLY, e);
-
-		drbd_io_error(mdev, FALSE);
 	}
 
 	dec_unacked(mdev);
@@ -917,8 +908,6 @@ int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			    (unsigned long long)e->sector);
 
 		ok = drbd_send_ack(mdev, P_NEG_RS_DREPLY, e);
-
-		drbd_io_error(mdev, FALSE);
 
 		/* update resync data with failure */
 		drbd_rs_failed_io(mdev, e->sector, e->size);
@@ -979,7 +968,6 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		ok = drbd_send_ack(mdev, P_NEG_RS_DREPLY, e);
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Sending NegDReply. I guess it gets messy.\n");
-		drbd_io_error(mdev, FALSE);
 	}
 
 	dec_unacked(mdev);
@@ -1073,7 +1061,6 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		ok = drbd_send_ack(mdev, P_NEG_RS_DREPLY, e);
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Sending NegDReply. I guess it gets messy.\n");
-		drbd_io_error(mdev, FALSE);
 	}
 
 	dec_unacked(mdev);

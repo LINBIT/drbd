@@ -366,10 +366,8 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	sector =  mdev->ldev->md.md_offset
 		+ mdev->ldev->md.al_offset + mdev->al_tr_pos;
 
-	if (!drbd_md_sync_page_io(mdev, mdev->ldev, sector, WRITE)) {
+	if (!drbd_md_sync_page_io(mdev, mdev->ldev, sector, WRITE))
 		drbd_chk_io_error(mdev, 1, TRUE);
-		drbd_io_error(mdev, TRUE);
-	}
 
 	if (++mdev->al_tr_pos >
 	    div_ceil(mdev->act_log->nr_elements, AL_EXTENTS_PT))
@@ -567,7 +565,6 @@ STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	if (!error && !uptodate)
 		error = -EIO;
 
-	/* corresponding drbd_io_error is in drbd_al_to_on_disk_bm */
 	drbd_chk_io_error(mdev, error, TRUE);
 	if (error && wc->error == 0)
 		wc->error = error;
@@ -742,8 +739,6 @@ void drbd_al_to_on_disk_bm(struct drbd_conf *mdev)
 
 	put_ldev(mdev);
 
-	if (wc.error)
-		drbd_io_error(mdev, TRUE);
 	kfree(bios);
 	return;
 

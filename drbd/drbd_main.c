@@ -423,62 +423,6 @@ void tl_clear(struct drbd_conf *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-/**
- * drbd_io_error() - Detach from the local disk of so configured with the on_io_error setting
- * @mdev:	DRBD device.
- * @force_detach: Detach no matter how on_io_error is set (meta data IO error)
- *
- * Should be called in the unlikely(!drbd_bio_uptodate(e->bio)) case from
- * kernel thread context.  See also drbd_chk_io_error().
- */
-int drbd_io_error(struct drbd_conf *mdev, int force_detach)
-{
-	enum drbd_io_error_p eh;
-	unsigned long flags;
-	int send;
-	int ok = 1;
-
-	eh = EP_PASS_ON;
-	if (get_ldev_if_state(mdev, D_FAILED)) {
-		eh = mdev->ldev->dc.on_io_error;
-		put_ldev(mdev);
-	}
-
-	if (!force_detach && eh == EP_PASS_ON)
-		return 1;
-
-	spin_lock_irqsave(&mdev->req_lock, flags);
-	send = (mdev->state.disk == D_FAILED);
-	if (send)
-		_drbd_set_state(_NS(mdev, disk, D_DISKLESS), CS_HARD, NULL);
-	spin_unlock_irqrestore(&mdev->req_lock, flags);
-
-	if (!send)
-		return ok;
-
-	if (mdev->state.conn >= C_CONNECTED) {
-		ok = drbd_send_state(mdev);
-		if (ok)
-			dev_warn(DEV, "Notified peer that my disk is broken.\n");
-		else
-			dev_err(DEV, "Sending state in drbd_io_error() failed\n");
-	}
-
-	/* Make sure we try to flush meta-data to disk - we come
-	 * in here because of a local disk error so it might fail
-	 * but we still need to try -- both because the error might
-	 * be in the data portion of the disk and because we need
-	 * to ensure the md-sync-timer is stopped if running. */
-	drbd_md_sync(mdev);
-
-	/* Releasing the backing device is done in after_state_ch() */
-
-	if (eh == EP_CALL_HELPER)
-		drbd_khelper(mdev, "local-io-error");
-
-	return ok;
-}
-
 #if DRBD_DEBUG_STATE_CHANGES
 static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
 		const char *func, unsigned int line,
@@ -1435,16 +1379,40 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	    os.disk > D_INCONSISTENT && ns.disk == D_INCONSISTENT)
 		drbd_queue_bitmap_io(mdev, &drbd_bmio_set_n_write, NULL, "set_n_write from invalidate");
 
-	if (os.disk > D_DISKLESS && ns.disk == D_DISKLESS) {
+	if (os.disk > D_FAILED && ns.disk == D_FAILED) {
+		enum drbd_io_error_p eh;
+
+		eh = EP_PASS_ON;
+		if (get_ldev_if_state(mdev, D_FAILED)) {
+			eh = mdev->ldev->dc.on_io_error;
+			put_ldev(mdev);
+		}
+
+		drbd_rs_cancel_all(mdev);
 		/* since get_ldev() only works as long as disk>=D_INCONSISTENT,
 		   and it is D_DISKLESS here, local_cnt can only go down, it can
 		   not increase... It will reach zero */
 		wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
-
-		drbd_rs_cancel_all(mdev);
 		mdev->rs_total = 0;
 		mdev->rs_failed = 0;
 		atomic_set(&mdev->rs_pending_cnt, 0);
+
+		spin_lock_irq(&mdev->req_lock);
+		_drbd_set_state(_NS(mdev, disk, D_DISKLESS), CS_HARD, NULL);
+		spin_unlock_irq(&mdev->req_lock);
+
+		if (eh == EP_CALL_HELPER)
+			drbd_khelper(mdev, "local-io-error");
+	}
+
+	if (os.disk > D_DISKLESS && ns.disk == D_DISKLESS) {
+
+		if (os.disk == D_FAILED) /* && ns.disk == D_DISKLESS*/ {
+			if (drbd_send_state(mdev))
+				dev_warn(DEV, "Notified peer that my disk is broken.\n");
+			else
+				dev_err(DEV, "Sending state in drbd_io_error() failed\n");
+		}
 
 		lc_destroy(mdev->resync);
 		mdev->resync = NULL;
@@ -3513,7 +3481,6 @@ void drbd_md_sync(struct drbd_conf *mdev)
 		dev_err(DEV, "meta data update failed!\n");
 
 		drbd_chk_io_error(mdev, 1, TRUE);
-		drbd_io_error(mdev, TRUE);
 	}
 
 	/* Update mdev->ldev->md.la_size_sect,
