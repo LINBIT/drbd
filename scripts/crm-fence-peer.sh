@@ -117,6 +117,35 @@ drbd_peer_fencing()
 	esac
 }
 
+peer_node_reachable()
+{
+	# We would really need a reliable method to find out if hearbeat/pacemaker
+	# can reach the other node(s). Waiting for heartbeat's dead time and then
+	# looking at the CIB is the only sulution I currently have.
+	sleep $dead_time
+
+	local state_lines=$(cibadmin -Ql | grep '<node_state')
+	local nr_other_nodes=$(echo "$state_lines" | grep -v uname=\"$(uname -n)\" | wc -l)
+
+	if [[ $nr_other_nodes -gt 1 ]]; then
+		# Many nodes cluster, look at $DRBD_PEERS
+		local rc=0
+		for P in $DRBD_PEERS; do
+			echo "$state_lines" | grep uname=\"$P\" | grep -q 'ha="active"' || rc=1
+		done
+		return $rc
+	fi
+
+	# two node case, ignore $DRBD_PEERS
+	echo "$state_lines" | grep -v uname=\"$(uname -n)\" | grep -q 'ha="active"'
+	# return $?
+}
+
+disk_is_up_to_date()
+{
+	drbdsetup $(drbdadm sh-dev $DRBD_RESOURCE) dstate | grep -q "UpToDate/"
+	# return $?
+}
 ############################################################
 
 # try to get possible output on stdout/err to syslog
@@ -156,6 +185,13 @@ while [[ $# != 0 ]]; do
 		id_prefix=${2}
 		shift
 		;;
+	--dead-time=*)
+		dead_time=${1#*=}
+		;;
+	-t|--dead-time)
+		dead_time=${2}
+		shift
+		;;
 	-*)
 		echo >&2 "ignoring unknown option $1"
 		;;
@@ -170,6 +206,7 @@ done
 # master_id: parsed from cib
 : ${fencing_attribute:="#uname"}
 : ${id_prefix:="drbd-fence-by-handler"}
+: ${dead_time:=8}
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
@@ -191,11 +228,21 @@ echo "invoked for $DRBD_RESOURCE${master_id:+" (master-id: $master_id)"}"
 
 case $PROG in
     crm-fence-peer.sh)
-	if drbd_peer_fencing fence; then
-	    # 4: successfully outdated (per the exit code convention
-	    # of the DRBD "fence-peer" handler)
-	    exit 4
+	if peer_node_reachable; then
+		if drbd_peer_fencing fence; then
+			# 4: successfully outdated (per the exit code convention
+			# of the DRBD "fence-peer" handler)
+			exit 4
+		fi
+	else
+		if disk_is_up_to_date; then
+			drbd_peer_fencing fence
+		fi
 	fi
+	# We have assume that the constraint did not make it to the CIB of the peer.
+	# 5: Peer not reachable (per the exit code convention
+	# of the DRBD "fence-peer" handler)
+	exit 5
 	;;
     crm-unfence-peer.sh)
 	if drbd_peer_fencing unfence; then

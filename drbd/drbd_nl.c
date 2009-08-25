@@ -217,14 +217,19 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		ex_to_string = "peer is inconsistent or worse";
 		nps = D_INCONSISTENT;
 		break;
-	case 4:
+	case 4: /* peer got outdated, or was already outdated */
 		ex_to_string = "peer is outdated";
 		nps = D_OUTDATED;
 		break;
-	case 5: /* peer was down, we will(have) create(d) a new UUID anyways... */
-		/* If we would be more strict, we would return D_UNKNOWN here. */
-		ex_to_string = "peer is unreachable, assumed to be dead";
-		nps = D_OUTDATED;
+	case 5: /* peer was down */
+		if (mdev->state.disk == D_UP_TO_DATE) {
+			/* we will(have) create(d) a new UUID anyways... */
+			ex_to_string = "peer is unreachable, assumed to be dead";
+			nps = D_OUTDATED;
+		} else {
+			ex_to_string = "peer unreachable, doing nothing since disk != UpToDate";
+			nps = mdev->state.pdsk;
+		}
 		break;
 	case 6: /* Peer is primary, voluntarily outdate myself.
 		 * This is useful when an unconnected R_SECONDARY is asked to
