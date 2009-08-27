@@ -878,6 +878,11 @@ struct drbd_epoch_entry {
 	u64    block_id;
 };
 
+struct drbd_wq_barrier {
+	struct drbd_work w;
+	struct completion done;
+};
+
 struct digest_info {
 	int digest_size;
 	void *digest;
@@ -900,7 +905,7 @@ enum {
 	CREATE_BARRIER,		/* next P_DATA is preceeded by a P_BARRIER */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	SEND_PING,		/* whether asender should send a ping asap */
-	WORK_PENDING,		/* completion flag for drbd_disconnect */
+
 	STOP_SYNC_TIMER,	/* tell timer to cancel itself */
 	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
 	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
@@ -1609,6 +1614,7 @@ extern void _drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 		struct list_head *head);
 extern void drbd_set_recv_tcq(struct drbd_conf *mdev, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_conf *mdev, struct list_head *to_be_freed);
+extern void drbd_flush_workqueue(struct drbd_conf *mdev);
 
 /* yes, there is kernel_setsockopt, but only since 2.6.18. we don't need to
  * mess with get_fs/set_fs, we know we are KERNEL_DS always. */

@@ -3620,9 +3620,18 @@ STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
+void drbd_flush_workqueue(struct drbd_conf *mdev)
+{
+	struct drbd_wq_barrier barr;
+
+	barr.w.cb = w_prev_work_done;
+	init_completion(&barr.done);
+	drbd_queue_work(&mdev->data.work, &barr.w);
+	wait_for_completion(&barr.done);
+}
+
 STATIC void drbd_disconnect(struct drbd_conf *mdev)
 {
-	struct drbd_work prev_work_done;
 	enum drbd_fencing_p fp;
 	union drbd_state os, ns;
 	int rv = SS_UNKNOWN_ERROR;
@@ -3672,10 +3681,7 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
 	 * to be "canceled" */
-	set_bit(WORK_PENDING, &mdev->flags);
-	prev_work_done.cb = w_prev_work_done;
-	drbd_queue_work(&mdev->data.work, &prev_work_done);
-	wait_event(mdev->misc_wait, !test_bit(WORK_PENDING, &mdev->flags));
+	drbd_flush_workqueue(mdev);
 
 	kfree(mdev->p_uuid);
 	mdev->p_uuid = NULL;

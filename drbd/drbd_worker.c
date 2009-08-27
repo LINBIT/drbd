@@ -1089,8 +1089,8 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 int w_prev_work_done(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	clear_bit(WORK_PENDING, &mdev->flags);
-	wake_up(&mdev->misc_wait);
+	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
+	complete(&b->done);
 	return 1;
 }
 
