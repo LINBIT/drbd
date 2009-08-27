@@ -553,8 +553,9 @@
 	and to try to connect to <replaceable>af:remote_addr:port</replaceable>.
 	If <replaceable>port</replaceable> is omitted, 7788 is used as default.
         If <replaceable>af</replaceable> is omitted <option>ipv4</option> gets
-        used. Other supported address families are <option>ipv6</option> and
-        <option>ssocks</option> for Dolphin Interconnect Solutions' "super sockets".
+        used. Other supported address families are <option>ipv6</option>,
+        <option>ssocks</option> for Dolphin Interconnect Solutions' "super sockets"
+        and <option>sdp</option> for Sockets Direct Protocol (Infiniband).
       </para>
       <para>	On the TCP/IP link the specified <replaceable>protocol</replaceable>
 	is used. Valid protocol specifiers are A, B, and C.</para>
