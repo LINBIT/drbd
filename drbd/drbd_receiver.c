@@ -1181,8 +1181,8 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	   we realize that BIO_RW_BARRIER is actually not supported */
 
 	/* As long as the -ENOTSUPP on the barrier is reported immediately
-	   that will never trigger. It it is reported late, we will just
-	   print that warning an continue correctly for all future requests
+	   that will never trigger. If it is reported late, we will just
+	   print that warning and continue correctly for all future requests
 	   with WO_bdev_flush */
 	if (previous_epoch(mdev, e->epoch))
 		dev_warn(DEV, "Write ordering was not enforced (one time event)\n");

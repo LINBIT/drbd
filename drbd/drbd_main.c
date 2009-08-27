@@ -642,7 +642,7 @@ abort:
  * @val:	value of new state bits.
  * @f:		flags
  *
- * Cousin of drbd_request_state(), use full with the CS_WAIT_COMPLETE
+ * Cousin of drbd_request_state(), useful with the CS_WAIT_COMPLETE
  * flag, or when logging of failed state change requests is not desired.
  */
 int _drbd_request_state(struct drbd_conf *mdev,	union drbd_state mask,
