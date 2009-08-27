@@ -425,7 +425,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	LIST_HEAD(work_list);
 	LIST_HEAD(reclaimed);
 	struct drbd_epoch_entry *e, *t;
-	int ok = 1;
+	int ok = (mdev->state.conn >= C_WF_REPORT_PARAMS);
 
 	spin_lock_irq(&mdev->req_lock);
 	reclaim_net_ee(mdev, &reclaimed);
@@ -442,47 +442,12 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
 		trace_drbd_ee(mdev, e, "process_done_ee");
 		/* list_del not necessary, next/prev members not touched */
-		if (e->w.cb(mdev, &e->w, 0) == 0)
-			ok = 0;
+		ok = e->w.cb(mdev, &e->w, !ok) && ok;
 		drbd_free_ee(mdev, e);
 	}
 	wake_up(&mdev->ee_wait);
 
 	return ok;
-}
-
-
-
-/* clean-up helper for drbd_disconnect */
-void _drbd_clear_done_ee(struct drbd_conf *mdev, struct list_head *to_be_freed)
-{
-	struct list_head *le;
-	struct drbd_epoch_entry *e;
-	struct drbd_epoch *epoch;
-	int n = 0;
-
-	while (!list_empty(&mdev->done_ee)) {
-		le = mdev->done_ee.next;
-		list_move(le, to_be_freed);
-		e = list_entry(le, struct drbd_epoch_entry, w.list);
-		if (mdev->net_conf->wire_protocol == DRBD_PROT_C
-		|| is_syncer_block_id(e->block_id))
-			++n;
-
-		if (!hlist_unhashed(&e->colision))
-			hlist_del_init(&e->colision);
-
-		if (e->epoch) {
-			if (e->flags & EE_IS_BARRIER) {
-				epoch = previous_epoch(mdev, e->epoch);
-				if (epoch)
-					drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE + EV_CLEANUP);
-			}
-			drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + EV_CLEANUP);
-		}
-	}
-
-	sub_unacked(mdev, n);
 }
 
 void _drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
@@ -1619,7 +1584,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, struct p_header *h)
 /* e_end_block() is called via drbd_process_done_ee().
  * this means this function only runs in the asender thread
  */
-STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
 	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
 	sector_t sector = e->sector;
@@ -1629,7 +1594,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	if (e->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(mdev, e->epoch);
 		if (epoch)
-			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
+			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
 	}
 
 	if (mdev->net_conf->wire_protocol == DRBD_PROT_C) {
@@ -1659,7 +1624,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		D_ASSERT(hlist_unhashed(&e->colision));
 	}
 
-	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT);
+	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
 	return ok;
 }
@@ -3657,8 +3622,6 @@ STATIC void drbd_fail_pending_reads(struct drbd_conf *mdev)
 
 STATIC void drbd_disconnect(struct drbd_conf *mdev)
 {
-	LIST_HEAD(to_be_freed);
-	struct drbd_epoch_entry *e, *t;
 	struct drbd_work prev_work_done;
 	enum drbd_fencing_p fp;
 	union drbd_state os, ns;
@@ -3681,13 +3644,9 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 	_drbd_wait_ee_list_empty(mdev, &mdev->sync_ee);
-	_drbd_clear_done_ee(mdev, &to_be_freed);
 	_drbd_wait_ee_list_empty(mdev, &mdev->read_ee);
-	reclaim_net_ee(mdev, &to_be_freed);
 	spin_unlock_irq(&mdev->req_lock);
-
-	list_for_each_entry_safe(e, t, &to_be_freed, w.list)
-		drbd_free_ee(mdev, e);
+	drbd_process_done_ee(mdev);
 
 	/* We do not have data structures that would allow us to
 	 * get the rs_pending_cnt down to 0 again.
