@@ -222,6 +222,23 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Fri Aug 28 2009 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.3rc1-1)
+ * Correctly deal with large bitmaps (Bugz 239, 240)
+ * Fiexed a segfault in drbdadm's parser for unknown sync-after dependencies
+ * DRBD_PEER was not set for handlers (introduced in 8.3.2) (Bugz 241)
+ * Fixed a bug that could cause reads off diskless DRBD devices to get very slow
+ * Fixed a deadlock possible when IO errors occure during resync (Bugz 224)
+ * Do not do a full sync in case P_SYNC_UUID packet gets lost (Bugz 244)
+ * Do not forget a resync in case the last ACK of a resync gets lost
+ * If a resource gets renamed (only) update its /dev/
+ * Fixed many spelling errors
+ * Do not upgrade a Consistent disk to UpToDate when the fence-peer handler
+   can not reach the peer (Bugz 198)
+ * Support for Infiniband via SDP (sockets direct protocol)
+ * Install bash completion stuff on SLES11
+ * Following Linux upstream changes 2.6.31
+
 * Fri Jul  3 2009 15:33:12 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.2-1)
  * Fixed the "Not a digest" issue for hash functions already ported to shash
