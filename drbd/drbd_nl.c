@@ -346,6 +346,9 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		break;
 	}
 
+	if (r < SS_SUCCESS)
+		goto fail;
+
 	if (forced)
 		dev_warn(DEV, "Forced to consider local data as UpToDate!\n");
 
