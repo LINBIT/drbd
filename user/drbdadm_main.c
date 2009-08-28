@@ -1610,6 +1610,7 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 {
 	int rv = 0;
 	char *sh_cmd;
+	char minor_string[8];
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
 
 	if (!res->peer) {
@@ -1638,7 +1639,9 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
+	snprintf(minor_string, sizeof(minor_string), "%u", res->me->device_minor);
 	setenv("DRBD_RESOURCE", res->name, 1);
+	setenv("DRBD_MINOR", minor_string, 1);
 	setenv("DRBD_CONF", config_save, 1);
 
 	if ((sh_cmd = get_opt_val(res->handlers, cmd, NULL))) {

@@ -35,7 +35,6 @@ fence_peer_init()
 	# xpath queries are not supported.
 	# and I'd be incompatible with older cibadmin not supporting --xpath.
 	# be cool, sed it out:
-	local cib_xml=$(cibadmin -Ql)
 	: ${master_id=$(set +x; echo "$cib_xml" |
 		sed -ne '/<master /,/<\/master>/ {
 			   /<master / h;
@@ -66,6 +65,7 @@ drbd_peer_fencing()
 	# $master_id is set by command line or will be parsed from the cib.
 	# output of fence_peer_init:
 	local have_constraint new_constraint
+	local cib_xml=$(cibadmin -Ql)
 
 	fence_peer_init || return
 
@@ -86,14 +86,45 @@ drbd_peer_fencing()
 </rsc_location>"
 		if [[ -z $have_constraint ]] ; then
 			# try to place it.
-			cibadmin -C -o constraints -X "$new_constraint"
-			rc=$?
+
+			# interessting:
+			# In case this is a two-node cluster (still common with
+			# drbd clusters) it does not have real quorum.
+			# If it is configured to do stonith, and reboot,
+			# and after reboot that stonithed node cluster comm is
+			# still broken, it will shoot the still online node,
+			# and try to go online with stale data.
+			# Exactly what this "fence" hanler should prevent.
+			# But setting contraints in a cluster partition with
+			# "no-quorum-policy=ignore" will usually succeed. 
+			#
+			# So we need to differentiate between node reachable or
+			# not, and DRBD "Consistent" or "UpToDate".
+
+			if peer_node_reachable; then
+				cibadmin -C -o constraints -X "$new_constraint" &&
+				drbd_fence_peer_exit_code=4 rc=0
+				# 4: successfully outdated (per the exit code convention
+				# of the DRBD "fence-peer" handler)
+			elif disk_is_up_to_date; then
+				cibadmin -C -o constraints -X "$new_constraint" &&
+				drbd_fence_peer_exit_code=5 rc=0
+				# 5: Peer not reachable (per the exit code convention
+				# of the DRBD "fence-peer" handler)
+				# XXX Do we want to trigger a STONITH operation?
+				#     Can we?
+			else
+				# why not try to set the constraint anyways?
+				echo WARNING "did not place the constraint!"
+				drbd_fence_peer_exit_code=5 rc=0
+			fi
 		elif [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
 			sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")" ]]; then
 			: "identical constraint already placed"
+			drbd_fence_peer_exit_code=4
 			rc=0
 		else
-			# if this id already exits, but looks different, we may have lost a shootout
+			# if this id already exists, but looks different, we may have lost a shootout
 			echo WARNING "constraint "$have_constraint" already exists"
 			# anything != 0 will do;
 			# 21 happend to be "The object already exists" with my cibadmin
@@ -121,30 +152,58 @@ peer_node_reachable()
 {
 	# We would really need a reliable method to find out if hearbeat/pacemaker
 	# can reach the other node(s). Waiting for heartbeat's dead time and then
-	# looking at the CIB is the only sulution I currently have.
-	sleep $dead_time
+	# looking at the CIB is the only solution I currently have.
 
-	local state_lines=$(cibadmin -Ql | grep '<node_state')
-	local nr_other_nodes=$(echo "$state_lines" | grep -v uname=\"$(uname -n)\" | wc -l)
-
-	if [[ $nr_other_nodes -gt 1 ]]; then
-		# Many nodes cluster, look at $DRBD_PEERS
-		local rc=0
-		for P in $DRBD_PEERS; do
-			echo "$state_lines" | grep uname=\"$P\" | grep -q 'ha="active"' || rc=1
-		done
-		return $rc
-	fi
-
-	# two node case, ignore $DRBD_PEERS
-	echo "$state_lines" | grep -v uname=\"$(uname -n)\" | grep -q 'ha="active"'
-	# return $?
+	while :; do
+		local state_lines=$(echo "$cib_xml" | grep '<node_state')
+		local nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
+		if [[ $nr_other_nodes -gt 1 ]]; then
+			# Many nodes cluster, look at $DRBD_PEER, if set.
+			# Note that this should not be neccessary.  The problem
+			# we try to solve is relevant on two-node clusters
+			# (no real quorum)
+			if [[ $DRBD_PEER ]]; then
+				echo "$state_lines" | grep -F uname=\"$DRBD_PEER\" |
+					grep -q 'ha="active"' || return 1 # unreachable
+			else
+				# Loop through DRBD_PEERS.  If at least one of
+				# the potential peers was not "active" even
+				# before this handler was called, but some
+				# others are, then this may not be good enough.
+				for P in $DRBD_PEERS; do
+					echo "$state_lines" | grep -F uname=\"$P\" |
+						grep -q 'ha="active"' || return 1 # unreachable
+				done
+			fi
+		else
+			# two node case, ignore $DRBD_PEERS
+			echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" |
+				grep -q 'ha="active"' || return 1 # unreachable
+		fi
+		# bash magic $SECONDS is seconds since shell invocation.
+		[[ $SECONDS -le $dead_time ]] || return 0 # reachable
+		# TODO It would be great to figure out that a node is definitly
+		# still reachable without resorting to sleep and repoll for
+		# dead_time seconds.  Maybe we can put in a
+		# # cibadmin -Q -h $DRBD_PEER -t $dead_time
+		# to check this?
+		# Caution, some cibadmin apparently use -t seconds,
+		# some use milliseconds!
+		sleep 1
+		# update our view of the cib, ask the DC this time
+		cib_xml=$(cibadmin -Q)
+	done
+	# NOT REACHED
 }
 
 disk_is_up_to_date()
 {
-	drbdsetup $(drbdadm sh-dev $DRBD_RESOURCE) dstate | grep -q "UpToDate/"
-	# return $?
+	# DRBD_MINOR exported by drbdadm since 8.3.3
+	$DRBD_MINOR || DRBD_MINOR=$(drbdadm sh-minor $DRBD_RESOURCE) || return
+	# We must not recurse into netlink,
+	# this may be a callback triggered by "drbdsetup primary".
+	# grep /proc/drbd instead
+	grep -q "^ *$DRBD_MINOR: .* ds:UpToDate/" /proc/drbd
 }
 ############################################################
 
@@ -175,21 +234,21 @@ while [[ $# != 0 ]]; do
 		fencing_attribute=${1#*=}
 		;;
 	-a|--fencing-attribute)
-		fencing_attribute=${2}
+		fencing_attribute=$2
 		shift
 		;;
 	--id-prefix=*)
 		id_prefix=${1#*=}
 		;;
 	-p|--id-prefix)
-		id_prefix=${2}
+		id_prefix=$2
 		shift
 		;;
 	--dead-time=*)
 		dead_time=${1#*=}
 		;;
 	-t|--dead-time)
-		dead_time=${2}
+		dead_time=$2
 		shift
 		;;
 	-*)
@@ -206,7 +265,10 @@ done
 # master_id: parsed from cib
 : ${fencing_attribute:="#uname"}
 : ${id_prefix:="drbd-fence-by-handler"}
-: ${dead_time:=8}
+
+# by default, don't re-poll for node_state
+# see peer_node_reachable() above.
+: ${dead_time:=0}
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
@@ -226,23 +288,14 @@ HOSTNAME=$(uname -n)
 
 echo "invoked for $DRBD_RESOURCE${master_id:+" (master-id: $master_id)"}"
 
+# to be set by drbd_peer_fencing()
+drbd_fence_peer_exit_code=1
+
 case $PROG in
     crm-fence-peer.sh)
-	if peer_node_reachable; then
-		if drbd_peer_fencing fence; then
-			# 4: successfully outdated (per the exit code convention
-			# of the DRBD "fence-peer" handler)
-			exit 4
-		fi
-	else
-		if disk_is_up_to_date; then
-			drbd_peer_fencing fence
-		fi
+	if drbd_peer_fencing fence; then
+		exit $drbd_fence_peer_exit_code
 	fi
-	# We have assume that the constraint did not make it to the CIB of the peer.
-	# 5: Peer not reachable (per the exit code convention
-	# of the DRBD "fence-peer" handler)
-	exit 5
 	;;
     crm-unfence-peer.sh)
 	if drbd_peer_fencing unfence; then
