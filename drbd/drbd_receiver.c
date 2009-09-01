@@ -259,7 +259,7 @@ STATIC void drbd_pp_free_bio_pages(struct drbd_conf *mdev, struct bio *bio)
 		page = p_to_be_freed;
 		p_to_be_freed = (struct page *)page_private(page);
 		set_page_private(page, 0); /* just to be polite */
-		__free_page(page);
+		put_page(page);
 	}
 
 	wake_up(&drbd_pp_wait);
@@ -392,7 +392,6 @@ void drbd_free_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 	mempool_free(e, drbd_ee_mempool);
 }
 
-/* currently on module unload only */
 int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list)
 {
 	LIST_HEAD(work_list);
@@ -3655,7 +3654,6 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	_drbd_wait_ee_list_empty(mdev, &mdev->sync_ee);
 	_drbd_wait_ee_list_empty(mdev, &mdev->read_ee);
 	spin_unlock_irq(&mdev->req_lock);
-	drbd_process_done_ee(mdev);
 
 	/* We do not have data structures that would allow us to
 	 * get the rs_pending_cnt down to 0 again.
@@ -3678,10 +3676,18 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	set_bit(STOP_SYNC_TIMER, &mdev->flags);
 	resync_timer_fn((unsigned long)mdev);
 
+	/* so we can be sure that all remote or resync reads
+	 * made it at least to net_ee */
+	wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
+
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
 	 * to be "canceled" */
 	drbd_flush_workqueue(mdev);
+
+	/* This also does reclaim_net_ee().  If we do this too early, we might
+	 * miss some resync ee and pages.*/
+	drbd_process_done_ee(mdev);
 
 	kfree(mdev->p_uuid);
 	mdev->p_uuid = NULL;
@@ -3755,14 +3761,19 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 		drbd_request_state(mdev, NS(conn, C_STANDALONE));
 	}
 
-	/* they do trigger all the time.
-	 * hm. why won't tcp release the page references,
-	 * we already released the socket!? */
+	/* tcp_close and release of sendpage pages can be deferred.  I don't
+	 * want to use SO_LINGER, because apparently it can be deferred for
+	 * more than 20 seconds (longest time I checked).
+	 *
+	 * Actually we don't care for exactly when the network stack does its
+	 * put_page(), but release our reference on these pages right here.
+	 */
+	i = drbd_release_ee(mdev, &mdev->net_ee);
+	if (i)
+		dev_info(DEV, "net_ee not empty, killed %u entries\n", i);
 	i = atomic_read(&mdev->pp_in_use);
 	if (i)
 		dev_info(DEV, "pp_in_use = %u, expected 0\n", i);
-	if (!list_empty(&mdev->net_ee))
-		dev_info(DEV, "net_ee not empty!\n");
 
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->active_ee));
