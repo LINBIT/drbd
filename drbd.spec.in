@@ -125,7 +125,7 @@ ___
 %clean
 [ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 
-%files -f %{_builddir}/%{name}-%{version}/file.list
+%files -f file.list
 %defattr(755,root,root)
 /sbin/drbdsetup
 /sbin/drbdadm
