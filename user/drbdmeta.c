@@ -2029,8 +2029,10 @@ int may_be_jfs(const char *data, struct fstype_s *f)
 
 /* really large block size,
  * will always refuse */
-#define REFUSE_BSIZE 0xFFFFffffFFFF0000LLU
+#define REFUSE_BSIZE	0xFFFFffffFFFF0000LLU
+#define ERR_BSIZE	0xFFFFffffFFFF0001LLU
 #define REFUSE_IT()	do { f->bnum = 1; f->bsize = REFUSE_BSIZE; } while(0)
+#define REFUSE_IT_ERR()	do { f->bnum = 1; f->bsize = ERR_BSIZE; } while(0)
 int may_be_swap(const char *data, struct fstype_s *f)
 {
 	int looks_like_swap =
@@ -2046,51 +2048,109 @@ int may_be_swap(const char *data, struct fstype_s *f)
 	return 0;
 }
 
+#define N_ERR_LINES 4
+#define MAX_ERR_LINE_LEN 1024
 int guessed_size_from_pvs(struct fstype_s *f, char *dev_name)
 {
-	char buf[200];
+	char buf_in[200];
+	char *buf_err[N_ERR_LINES];
 	size_t c;
 	unsigned long long bnum;
-	int pipes[2];
+	int pipes[3][2];
+	int err_lines = 0;
+	FILE *child_err = NULL;
+	int i;
+	int ret = 0;
 	pid_t pid;
 
-	if (pipe(pipes))
+	buf_err[0] = calloc(N_ERR_LINES, MAX_ERR_LINE_LEN);
+	if (!buf_err[0])
 		return 0;
+	for (i = 1; i < N_ERR_LINES; i++)
+		buf_err[i] = buf_err[i-1] + MAX_ERR_LINE_LEN;
+
+	for (i = 0; i < 3; i++) {
+		if (pipe(pipes[i]))
+			goto out;
+	}
 
 	pid = fork();
 	if (pid < 0)
-		return 0;
+		goto out;
 
 	if (pid == 0) {
 		/* child */
 		char *argv[] = {
-			"pvs", "--noheadings", "--nosuffix", "--units", "s",
+			"pvs", "-vvv", "--noheadings", "--nosuffix", "--units", "s",
 			"-o", "pv_size",
 			dev_name,
 			NULL,
 		};
-		close(pipes[0]);
-		dup2(pipes[1],1);
-		close(pipes[1]);
-		close(2);
+		close(pipes[0][1]); /* close unused pipe ends */
+		close(pipes[1][0]);
+		close(pipes[2][0]);
+
+		dup2(pipes[0][0],0); /* map to expected stdin/out/err */
+		dup2(pipes[1][1],1);
+		dup2(pipes[2][1],2);
+
+		close(0); /* we do not use stdin */
 		execvp(argv[0], argv);
 		_exit(0);
 	}
 	/* parent */
-	close(pipes[1]);
-	c = read(pipes[0], buf, sizeof(buf)-1);
-	close(pipes[0]);
+	close(pipes[0][0]); /* close unused pipe ends */
+	close(pipes[1][1]);
+	close(pipes[2][1]);
 
-	if (c <= 0)
-		return 0;
+	close(pipes[0][1]); /* we do not use stdin in child */
 
-	buf[c] = 0;
-	if (1 == sscanf(buf, " %llu\n", &bnum)) {
-		f->bnum = bnum;
-		f->bsize = 512;
-		return 1;
-	} else
-		return 0;
+	/* We use blocking IO on pipes. This could deadlock,
+	 * If the child process would do something unexpected.
+	 * We do know the behaviour of pvs, though,
+	 * and expect only a few bytes on stdout,
+	 * and quite a few debug messages on stderr.
+	 *
+	 * First drain stderr, keeping the last N_ERR_LINES,
+	 * then read stdout. */
+	child_err = fdopen(pipes[2][0], "r");
+	if (child_err) {
+		char *b;
+		do {
+			err_lines = (err_lines + 1) % N_ERR_LINES;
+			b = fgets(buf_err[err_lines], MAX_ERR_LINE_LEN, child_err);
+		} while (b);
+	}
+
+	c = read(pipes[1][0], buf_in, sizeof(buf_in)-1);
+	if (c > 0) {
+		buf_in[c] = 0;
+		if (1 == sscanf(buf_in, " %llu\n", &bnum)) {
+			f->bnum = bnum;
+			f->bsize = 512;
+			ret = 1;
+		}
+	}
+	if (!ret) {
+		for (i = 0; i < N_ERR_LINES; i++) {
+			char *b = buf_err[(err_lines + i) % N_ERR_LINES];
+			if (b[0] == 0)
+				continue;
+			fprintf(stderr, "pvs stderr:%s", b);
+		}
+		fprintf(stderr, "\n");
+	}
+
+	i = 2;
+out:
+	for ( ; i >= 0; i--) {
+		close(pipes[i][0]);
+		close(pipes[i][1]);
+	}
+	if (child_err)
+		fclose(child_err);
+	free(buf_err[0]);
+	return ret;
 }
 
 int may_be_LVM(const char *data, struct fstype_s *f, char *dev_name)
@@ -2098,12 +2158,13 @@ int may_be_LVM(const char *data, struct fstype_s *f, char *dev_name)
 	if (strncmp("LVM2",data+0x218,4) == 0) {
 		f->type = "LVM2 physical volume signature";
 		if (!guessed_size_from_pvs(f, dev_name))
-			REFUSE_IT();
+			REFUSE_IT_ERR();
 		return 1;
 	}
 	return 0;
 }
 
+/* XXX should all this output go to stderr? */
 void check_for_existing_data(struct format *cfg)
 {
 	struct fstype_s f;
@@ -2123,7 +2184,8 @@ void check_for_existing_data(struct format *cfg)
 	f.bnum = 0;
 	f.bsize = 0;
 
-/* FIXME add more detection magic
+/* FIXME add more detection magic.
+ * Or, rather, use some lib.
  */
 
 	(void)(
@@ -2147,7 +2209,7 @@ void check_for_existing_data(struct format *cfg)
 	printf("al_offset %llu\n", (long long unsigned)cfg->al_offset);
 	printf("bm_offset %llu\n", (long long unsigned)cfg->bm_offset);
 
-	printf("\nFound %s ", f.type);
+	printf("\nFound %s\n", f.type);
 
 	/* FIXME overflow check missing!
 	 * relevant for ln2(bsize) + ln2(bnum) >= 64, thus only for
@@ -2162,21 +2224,16 @@ void check_for_existing_data(struct format *cfg)
 		     cfg->bm_offset )) >> 10;
 #undef min
 
-	if (ignore_sanity_checks) {
-		if (f.bsize != REFUSE_BSIZE)
-			printf("which uses "U64" kB\n", fs_kB);
-		else
-			printf("\n");
-		printf("current configuration leaves usable "U64" kB\n", max_usable_kB);
-		printf("\nIgnoring sanity check on user request.\n\n");
-		return;
-	}
 
 	if (f.bnum) {
 		if (cfg->md_index >= 0 ||
 		    cfg->md_index == DRBD_MD_INDEX_FLEX_EXT) {
+			printf("\nThis would corrupt existing data.\n");
+			if (ignore_sanity_checks) {
+				printf("\nIgnoring sanity check on user request.\n\n");
+				return;
+			}
 			printf(
-"\nThis would corrupt existing data.\n"
 "If you want me to do this, you need to zero out the first part\n"
 "of the device (destroy the content).\n"
 "You should be very sure that you mean it.\n"
@@ -2184,11 +2241,23 @@ void check_for_existing_data(struct format *cfg)
 			exit(40); /* FIXME sane exit code! */
 		}
 
-		if (f.bsize == REFUSE_BSIZE) {
+		if (f.bsize < REFUSE_BSIZE)
+			printf("%12llu kB data area apparently used\n", (unsigned long long)fs_kB);
+		printf("%12llu kB left usable by current configuration\n", (unsigned long long)max_usable_kB);
+
+		if (f.bsize == ERR_BSIZE)
 			printf(
-"\nDevice size would be truncated, which\n"
+"Could not determine the size of the actually used data area.\n\n");
+		if (f.bsize >= REFUSE_BSIZE) {
+			printf(
+"Device size would be truncated, which\n"
 "would corrupt data and result in\n"
-"'access beyond end of device' errors.\n"
+"'access beyond end of device' errors.\n");
+			if (ignore_sanity_checks) {
+				printf("\nIgnoring sanity check on user request.\n\n");
+				return;
+			}
+			printf(
 "If you want me to do this, you need to zero out the first part\n"
 "of the device (destroy the content).\n"
 "You should be very sure that you mean it.\n"
@@ -2197,8 +2266,6 @@ void check_for_existing_data(struct format *cfg)
 		}
 
 		/* looks like file system data */
-		printf("which uses "U64" kB\n", fs_kB);
-		printf("current configuration leaves usable "U64" kB\n", max_usable_kB);
 		if (fs_kB > max_usable_kB) {
 			printf(
 "\nDevice size would be truncated, which\n"
