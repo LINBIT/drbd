@@ -69,12 +69,19 @@ else
 
   # to be overridden on command line:
   PREFIX := /
-  ifeq ($(wildcard ../build-for-uml),../build-for-uml)
+  ifneq ($(wildcard ../build-for-uml),)
     #### for Philipp's convenience :)
     ARCH_UM := "ARCH=um"
     KDIR := /usr/src/linux-um
   else
-    KDIR := /lib/modules/$(shell uname -r)/build
+    ifeq ($(wildcard /lib/modules/$(shell uname -r)/source),)
+      KDIR := /lib/modules/$(shell uname -r)/build
+    else
+      KDIR := /lib/modules/$(shell uname -r)/source
+      ifneq ($(wildcard /lib/modules/$(shell uname -r)/build),)
+        O := /lib/modules/$(shell uname -r)/build
+      endif
+    endif
   endif
 
   KDIR_Makefile_PATCHLEVEL = $(shell test -e $(KDIR)/Makefile && grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
@@ -126,7 +133,7 @@ else
 	-test -f ../scripts/adjust_drbd_config_h.sh && \
 	 KDIR=$(KDIR) O=$(O) $(SHELL) ../scripts/adjust_drbd_config_h.sh
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
-	$(MAKE) -C $(KDIR) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR) O=$(O) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
