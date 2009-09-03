@@ -78,8 +78,10 @@ else
       KDIR := /lib/modules/$(shell uname -r)/build
     else
       KDIR := /lib/modules/$(shell uname -r)/source
-      ifneq ($(wildcard /lib/modules/$(shell uname -r)/build),)
-        O := /lib/modules/$(shell uname -r)/build
+      ifneq ("$(origin KDIR)", "command line")
+        ifneq ($(wildcard /lib/modules/$(shell uname -r)/build),)
+          O := /lib/modules/$(shell uname -r)/build
+        endif
       endif
     endif
   endif
@@ -133,7 +135,7 @@ else
 	-test -f ../scripts/adjust_drbd_config_h.sh && \
 	 KDIR=$(KDIR) O=$(O) $(SHELL) ../scripts/adjust_drbd_config_h.sh
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
-	$(MAKE) -C $(KDIR) O=$(O) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
