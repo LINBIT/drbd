@@ -638,7 +638,7 @@ drbd_validate_all () {
 	fi
 
 	# Check clone and M/S options.
-	meta_expect clone-max = 2
+	meta_expect clone-max -le 2
 	meta_expect clone-node-max = 1
 	meta_expect master-node-max = 1
 	meta_expect master-max -le 2
