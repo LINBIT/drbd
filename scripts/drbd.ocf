@@ -611,6 +611,17 @@ ls_stat_is_block_maj_147() {
 	[[ $1 = b* ]] && [[ $5 == 147,* ]]
 }
 
+check_crm_feature_set()
+{
+	set -- ${OCF_RESKEY_crm_feature_set//[!0-9]/ }
+	local a=${1:-0} b=${2:-0} c=${3:-0}
+	
+	(( a > 3 )) ||
+	(( a == 3 && b > 0 )) ||
+	(( a == 3 && b = 0 && c > 0 )) ||
+	ocf_log warn "You may be disappointed: This RA is intended for pacemaker 1.0 or better!"
+}
+
 drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
@@ -636,6 +647,7 @@ drbd_validate_all () {
 		DRBDADM_HAS_SH_STATUS=false
 		DRBDADM_HAS_MULTI_PEER=false
 	fi
+	check_crm_feature_set
 
 	# Check clone and M/S options.
 	meta_expect clone-max -le 2
