@@ -240,6 +240,8 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		_drbd_request_state(mdev, NS(disk, D_OUTDATED), CS_WAIT_COMPLETE);
 		break;
 	case 7:
+		/* THINK: do we need to handle this
+		 * like case 4, or more like case 5? */
 		if (fp != FP_STONITH)
 			dev_err(DEV, "fence-peer() = 7 && fencing != Stonith !!!\n");
 		ex_to_string = "peer was stonithed";

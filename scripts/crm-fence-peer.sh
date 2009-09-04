@@ -55,6 +55,128 @@ fence_peer_init()
 	return 0
 }
 
+# drbd_fence_peer_exit_code is per the exit code
+# convention of the DRBD "fence-peer" handler,
+# obviously.
+# 3: peer is already outdated or worse (e.g. inconsistent)
+# 4: peer has been successfully fenced
+# 5: peer not reachable, assumed to be dead
+# 6: please outdate yourself, peer is known (or likely)
+#    to have better data, or is even currently primary.
+#    (actually, currently it is "peer is active primary now", but I'd like to
+#    change that meaning slightly towards the above meaning)
+# 7: peer has been STONITHed, thus assumed to be properly fenced
+#    XXX IMO, this should rather be handled like 5, not 4.
+
+# NOTE:
+#    On loss of all cluster comm (cluster split-brain),
+#    without STONITH configured, you always still risk data divergence.
+#
+# There are two timeouts:
+#
+# --timeout is how long we poll the DC for a definite "unreachable" node state,
+# before we deduce that the peer is in fact still reachable.
+# This should be longer than "dead time" or "stonith timeout",
+# the time it takes the cluster manager to declare the other node dead and
+# shoot it, just to be sure.
+#
+# --dc-timeout is how long we try to contact a DC before we give up.
+# This is neccessary, because placing the constraint will fail (with some
+# internal timeout) if no DC was available when we request the constraint.
+# Which is likely if the DC crashed. Then the surviving DRBD Primary needs
+# to wait for a new DC to be elected. Usually such election takes only
+# fractions of a second, but it can take much longer (the default election
+# timeout in pacemaker is ~2 minutes!).
+#
+# a) Small-ish (1s) timeout, medium (10..20s) dc-timeout:
+#    Intended use case: fencing resource-only, no STONITH configured.
+#
+#    Even with STONITH properly configured, on cluster-split-brain this method
+#    risks to complete transactions to user space which can be lost due to
+#    STONITH later.
+#
+#    With dual-primary setup (cluster file system),
+#    you should use method b).
+#
+# b) timeout >= deadtime, dc-timeout > timeout
+#    Intended use case: fencing resource-and-stonith, STONITH configured.
+#
+#    Difference to a)
+#
+#       If peer is still reachable according to the cib,
+#	we first poll the cib until timeout has elapsed,
+#	or the peer becomes definetely unreachable.
+#
+#	This gives STONITH the chance to kill us.
+#	With "fencing resource-and-stontith;" this protects us against
+#	completing transactions to userland which might otherwise be lost.
+#
+#	We then place the constraint (if we are UpToDate), as explained below,
+#	and return reachable/unreachable according to our last cib status poll.
+#
+
+#
+#    replication link loss, current Primary calls this handler:
+#	We are UpToDate, but we potentially need to wait for a DC election.
+#	Once we have contacted the DC, we poll the cib until the peer is
+#	confirmed unreachable, or timeout expired.
+#	Then we place the constraint, and are done.
+#
+#	If it is complete communications loss, one will stonith the other.
+#	For two-node clusters with no-quorum-policy=ignore, we will have a
+#	deathmatch shoot-out, which the former DC is likely to win.
+#
+#	In dual-primary setups, if it is only replication link loss, both nodes
+#	will call this handler, but only one will succeed to place the
+#	constraint. The other will then typically need to "commit suicide".
+#
+#    Primary crash, promotion of former Secondary:
+#	DC-election, if any, will have taken place already.
+#	We are UpToDate, we place the constraint, done.
+#
+#    node or cluster crash, promotion of Secondary with replication link down:
+#	We are "Only" Consistent.  Usually any "init-dead-time" or similar has
+#	expired already, and the cib node states are already authoritative
+#	without doing additional waiting.  If the peer is still reachable, we
+#	place the constraint - if the peer had better data, it should have a
+#	higher master score, and we should not have been asked to become
+#	primary.  If the peer is not reachable, we don't do anything, and drbd
+#	will refuse to be promoted. This is neccessary to avoid problems
+#	With data diversion, in case this "crash" was due to a STONITH operation,
+#	maybe the reboot did not fix our cluster communications!
+#
+#	Note that typically, if STONITH is in use, it has been done on any
+#	unreachable node _before_ we are promoted, so the cib should already
+#	know that the peer is dead - if it is.
+#
+
+try_place_constraint()
+{
+	local peer_state
+	check_peer_node_reachable
+	set_states_from_proc_drbd
+	case $peer_state/$DRBD_disk in
+	reachable/*)
+		cibadmin -C -o constraints -X "$new_constraint" &&
+		drbd_fence_peer_exit_code=4 rc=0
+		;;
+	*/UpToDate)
+		# We could differentiate between unreachable,
+		# and DC-unreachable.  In the latter case, placing the
+		# constraint will fail anyways, and  drbd_fence_peer_exit_code
+		# will stay at "generic error".
+		cibadmin -C -o constraints -X "$new_constraint" &&
+		drbd_fence_peer_exit_code=5 rc=0
+		;;
+	*)
+		echo WARNING "did not place the constraint!"
+		drbd_fence_peer_exit_code=5 rc=0
+		# I'd like to return 6 here, otherwise pacemaker will retry
+		# forever to promote, even though 6 is not strictly correct.
+		;;
+	esac
+}
+
 # drbd_peer_fencing fence|unfence
 drbd_peer_fencing()
 {
@@ -65,8 +187,10 @@ drbd_peer_fencing()
 	# $master_id is set by command line or will be parsed from the cib.
 	# output of fence_peer_init:
 	local have_constraint new_constraint
-	local cib_xml=$(cibadmin -Ql)
 
+	# if I cannot query the local cib, give up
+	local cib_xml
+	cib_xml=$(cibadmin -Ql) || return
 	fence_peer_init || return
 
 	case $1 in
@@ -101,23 +225,7 @@ drbd_peer_fencing()
 			# So we need to differentiate between node reachable or
 			# not, and DRBD "Consistent" or "UpToDate".
 
-			if peer_node_reachable; then
-				cibadmin -C -o constraints -X "$new_constraint" &&
-				drbd_fence_peer_exit_code=4 rc=0
-				# 4: successfully outdated (per the exit code convention
-				# of the DRBD "fence-peer" handler)
-			elif disk_is_up_to_date; then
-				cibadmin -C -o constraints -X "$new_constraint" &&
-				drbd_fence_peer_exit_code=5 rc=0
-				# 5: Peer not reachable (per the exit code convention
-				# of the DRBD "fence-peer" handler)
-				# XXX Do we want to trigger a STONITH operation?
-				#     Can we?
-			else
-				# why not try to set the constraint anyways?
-				echo WARNING "did not place the constraint!"
-				drbd_fence_peer_exit_code=5 rc=0
-			fi
+			try_place_constraint
 		elif [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
 			sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")" ]]; then
 			: "identical constraint already placed"
@@ -129,13 +237,26 @@ drbd_peer_fencing()
 			# anything != 0 will do;
 			# 21 happend to be "The object already exists" with my cibadmin
 			rc=21
+
+			# maybe: drbd_fence_peer_exit_code=6
+			# as this is not the constraint we'd like to set,
+			# it is likely the inverse, so we probably can assume
+			# that the peer is active primary, or at least has
+			# better data than us, and wants us outdated.
 		fi
 
 		if [ $rc != 0 ]; then
 			# at least we tried.
 			# maybe it was already in place?
-			echo WARNING "could not place the constraint!"
+			echo WARNING "DATA INTEGRITY at RISK: could not place the fencing constraint!"
 		fi
+
+		# XXX policy decision:
+		if $suicide_on_failure_if_primary && [[ $DRBD_role = Primary ]] &&
+			[[ $drbd_fence_peer_exit_code != [3457] ]]; then
+			commit_suicide # shell function yet to be written
+		fi
+
 		return $rc
 		;;
 	unfence)
@@ -148,62 +269,106 @@ drbd_peer_fencing()
 	esac
 }
 
-peer_node_reachable()
+# return value in $peer_state:
+# reachable
+#	Peer is probably still reachable.  We have had at least one successful
+#	round-trip with cibadmin -Q to the DC.
+# unreachable
+#	Peer is not reachable, according to the cib of the DC.
+# DC-unreachable
+#	We have not been able to contact the DC.
+check_peer_node_reachable()
 {
 	# We would really need a reliable method to find out if hearbeat/pacemaker
 	# can reach the other node(s). Waiting for heartbeat's dead time and then
 	# looking at the CIB is the only solution I currently have.
 
+	# we are going to increase the cib timeout with every timeout.
+	# for the actual invocation, we use int(cibtimeout/10).
+	local cibtimeout=10
+	local node_state state_lines nr_other_nodes
 	while :; do
-		local state_lines=$(echo "$cib_xml" | grep '<node_state')
-		local nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
+		while :; do
+			# TODO It would be great to figure out that a node is definitly
+			# still reachable without resorting to sleep and repoll for
+			# timeout seconds.
+			# Update our view of the cib, ask the DC this time.
+			# Timeout, in case no DC is available.
+			# Caution, some cibadmin (pacemaker 0.6 and earlier)
+			# apparently use -t use milliseconds, so will timeout
+			# many times until a suitably long timeout is reached
+			# by increasing below.
+			cib_xml=$(cibadmin -Q -t $[cibtimeout/10]) && break
+
+			# bash magic $SECONDS is seconds since shell invocation.
+			if (( $SECONDS > $dc_timeout )) ; then
+				# unreachable: cannot even reach the DC
+				peer_state="DC-unreachable"
+				return
+			fi
+
+			# try again, longer timeout.
+			let "cibtimeout = cibtimeout * 5 / 4"
+		done
+		state_lines=$(echo "$cib_xml" | grep '<node_state')
+		nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
 		if [[ $nr_other_nodes -gt 1 ]]; then
 			# Many nodes cluster, look at $DRBD_PEER, if set.
 			# Note that this should not be neccessary.  The problem
 			# we try to solve is relevant on two-node clusters
 			# (no real quorum)
 			if [[ $DRBD_PEER ]]; then
-				echo "$state_lines" | grep -F uname=\"$DRBD_PEER\" |
-					grep -q 'ha="active"' || return 1 # unreachable
+				if ! echo "$state_lines" | grep -v -F uname=\"$DRBD_PEER\" | grep -q 'ha="active"'; then
+					peer_state="unreachable"
+					return
+				fi
 			else
-				# Loop through DRBD_PEERS.  If at least one of
-				# the potential peers was not "active" even
-				# before this handler was called, but some
+				# Loop through DRBD_PEERS. FIXME If at least
+				# one of the potential peers was not "active"
+				# even before this handler was called, but some
 				# others are, then this may not be good enough.
 				for P in $DRBD_PEERS; do
-					echo "$state_lines" | grep -F uname=\"$P\" |
-						grep -q 'ha="active"' || return 1 # unreachable
+					if ! echo "$state_lines" | grep -v -F uname=\"$P\" | grep -q 'ha="active"'; then
+						peer_state="unreachable"
+						return
+					fi
 				done
 			fi
 		else
 			# two node case, ignore $DRBD_PEERS
-			echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" |
-				grep -q 'ha="active"' || return 1 # unreachable
+			if ! echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | grep -q 'ha="active"'; then
+				peer_state="unreachable"
+				return
+			fi
 		fi
-		# bash magic $SECONDS is seconds since shell invocation.
-		[[ $SECONDS -le $dead_time ]] || return 0 # reachable
-		# TODO It would be great to figure out that a node is definitly
-		# still reachable without resorting to sleep and repoll for
-		# dead_time seconds.  Maybe we can put in a
-		# # cibadmin -Q -h $DRBD_PEER -t $dead_time
-		# to check this?
-		# Caution, some cibadmin apparently use -t seconds,
-		# some use milliseconds!
+		
+		# For a resource-and-stonith setup, or dual-primaries (which
+		# you should only use with resource-and-stonith, anyways),
+		# the recommended timeout is larger than the deadtime or
+		# stonith timeout, and according to beekhof maybe should be
+		# tuned up to the election-timeout (which, btw, defaults to 2
+		# minuts!).
+		if (( $SECONDS >= $timeout )) ; then
+			peer_state="reachable"
+			return
+		fi
+
+		# wait a bit before we poll the DC again.
 		sleep 1
-		# update our view of the cib, ask the DC this time
-		cib_xml=$(cibadmin -Q)
 	done
 	# NOT REACHED
 }
 
-disk_is_up_to_date()
+set_states_from_proc_drbd()
 {
 	# DRBD_MINOR exported by drbdadm since 8.3.3
-	$DRBD_MINOR || DRBD_MINOR=$(drbdadm sh-minor $DRBD_RESOURCE) || return
+	[[ $DRBD_MINOR ]] || DRBD_MINOR=$(drbdadm ${DRBD_CONF:+ -c "$DRBD_CONF"} sh-minor $DRBD_RESOURCE) || return
 	# We must not recurse into netlink,
 	# this may be a callback triggered by "drbdsetup primary".
 	# grep /proc/drbd instead
-	grep -q "^ *$DRBD_MINOR: .* ds:UpToDate/" /proc/drbd
+	set -- $(sed -ne "/^ *$DRBD_MINOR: cs:/ { s/:/ /g; p; q; }" /proc/drbd)
+	DRBD_role=${5%/*}
+	DRBD_disk=${7%/*}
 }
 ############################################################
 
@@ -213,7 +378,12 @@ if [[ $- != *x* ]]; then
 	exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
 fi
 
-# poor mans command line argument parsing
+# clean environment just in case.
+unset fencing_attribute id_prefix timeout dc_timeout
+suicide_on_failure_if_primary=false
+
+# poor mans command line argument parsing,
+# allow for command line overrides
 while [[ $# != 0 ]]; do
 	case $1 in
 	--resource=*)
@@ -244,13 +414,23 @@ while [[ $# != 0 ]]; do
 		id_prefix=$2
 		shift
 		;;
-	--dead-time=*)
-		dead_time=${1#*=}
+	--timeout=*)
+		timeout=${1#*=}
 		;;
-	-t|--dead-time)
-		dead_time=$2
+	-t|--timeout)
+		timeout=$2
 		shift
 		;;
+	--dc-timeout=*)
+		dc_timeout=${1#*=}
+		;;
+	-d|--dc-timeout)
+		dc_timeout=$2
+		shift
+		;;
+	# --suicide-on-failure-if-primary)
+	# 	suicide_on_failure_if_primary=true
+	# 	;;
 	-*)
 		echo >&2 "ignoring unknown option $1"
 		;;
@@ -260,15 +440,15 @@ while [[ $# != 0 ]]; do
 	esac
 	shift
 done
-# defaults: 
 # DRBD_RESOURCE: from environment
 # master_id: parsed from cib
+# apply defaults: 
 : ${fencing_attribute:="#uname"}
 : ${id_prefix:="drbd-fence-by-handler"}
 
-# by default, don't re-poll for node_state
-# see peer_node_reachable() above.
-: ${dead_time:=0}
+# defaults suitable for single-primary no-stonith.
+: ${timeout:=1}
+: ${dc_timeout:=$[20+timeout]}
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
