@@ -950,7 +950,8 @@ static int print_config_error(int err_no)
 			fprintf(stderr,"%s: State change failed: (%d) %s\n",
 				devname, err_no, drbd_set_st_err_str(err_no));
 			if (err_no == SS_NO_UP_TO_DATE_DISK) {
-				/* am R_PRIMARY, cannot outdate */
+				/* all available disks are inconsistent,
+				 * or I am consistent, but cannot outdate the peer. */
 				rv = 17;
 			} else if (err_no == SS_LOWER_THAN_OUTDATED) {
 				/* was inconsistent anyways */

@@ -454,6 +454,14 @@ drbd_promote() {
 		case "$status" in
 		$OCF_SUCCESS)
 			do_drbdadm primary $DRBD_RESOURCE
+			if [[ $? = 17 ]]; then
+				# All available disks are inconsistent,
+				# or I am consistent, but failed to fence the peer.
+				# Cannot become primary.
+				# No need to retry indefinitely.
+				ocf_log crit "Refusing to be promoted to Primary without UpToDate data"
+				break
+			fi
 			;;
 		$OCF_NOT_RUNNING)
 			ocf_log error "Trying to promote a resource that was not started"
@@ -618,7 +626,7 @@ check_crm_feature_set()
 	
 	(( a > 3 )) ||
 	(( a == 3 && b > 0 )) ||
-	(( a == 3 && b = 0 && c > 0 )) ||
+	(( a == 3 && b == 0 && c > 0 )) ||
 	ocf_log warn "You may be disappointed: This RA is intended for pacemaker 1.0 or better!"
 }
 

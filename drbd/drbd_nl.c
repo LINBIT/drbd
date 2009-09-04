@@ -218,7 +218,7 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		nps = D_INCONSISTENT;
 		break;
 	case 4: /* peer got outdated, or was already outdated */
-		ex_to_string = "peer is outdated";
+		ex_to_string = "peer was fenced";
 		nps = D_OUTDATED;
 		break;
 	case 5: /* peer was down */
@@ -297,11 +297,11 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 		}
 
 		if (r == SS_NO_UP_TO_DATE_DISK &&
-		    mdev->state.disk == D_CONSISTENT) {
+		    mdev->state.disk == D_CONSISTENT && mask.pdsk == 0) {
 			D_ASSERT(mdev->state.pdsk == D_UNKNOWN);
 			nps = drbd_try_outdate_peer(mdev);
 
-			if (nps == D_OUTDATED) {
+			if (nps == D_OUTDATED || nps == D_INCONSISTENT) {
 				val.disk = D_UP_TO_DATE;
 				mask.disk = D_MASK;
 			}
@@ -314,7 +314,7 @@ int drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 		if (r == SS_NOTHING_TO_DO)
 			goto fail;
-		if (r == SS_PRIMARY_NOP) {
+		if (r == SS_PRIMARY_NOP && mask.pdsk == 0) {
 			nps = drbd_try_outdate_peer(mdev);
 
 			if (force && nps > D_OUTDATED) {
