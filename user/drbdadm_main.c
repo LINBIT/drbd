@@ -2879,18 +2879,6 @@ int parse_options(int argc, char **argv)
 	return 0;
 }
 
-/* store pass through options to drbdsetup / drbdmeta etc. */
-void store_pass_through_options(int argc, char **argv)
-{
-	while (optind < argc) {
-		if (argv[optind][0] == '-' ||
-		    argv[optind][0] == ':' || isdigit(argv[optind][0]))
-			setup_opts[soi++] = argv[optind++];
-		else
-			break;
-	}
-}
-
 static void substitute_deprecated_cmd(char **c, char *deprecated,
 				      char *substitution)
 {
@@ -3057,7 +3045,7 @@ int main(int argc, char **argv)
 {
 	size_t i;
 	int rv = 0;
-	struct adm_cmd *cmd;
+	struct adm_cmd *cmd = NULL;
 	struct d_resource *res, *tmp;
 	char *env_drbd_nodename = NULL;
 	int is_dump_xml;
@@ -3094,11 +3082,18 @@ int main(int argc, char **argv)
 	rv = parse_options(argc, argv);
 	if (rv)
 		return rv;
-	store_pass_through_options(argc, argv);
+
+	/* store everything before the command name as pass through option/argument */
+	while (optind < argc) {
+		cmd = find_cmd(argv[optind]);
+		if (cmd)
+			break;
+		setup_opts[soi++] = argv[optind++];
+	}
+
 	if (optind == argc)
 		print_usage_and_exit(0);
 
-	cmd = find_cmd(argv[optind]);
 	if (cmd == NULL) {
 		fprintf(stderr, "Unknown command '%s'.\n", argv[optind]);
 		exit(E_usage);
