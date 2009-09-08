@@ -262,13 +262,33 @@ maybe_outdate_self()
 	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
 	# Outdate myself
 	do_drbdadm outdate $DRBD_RESOURCE
-	# -INFINITY may cause a slave restart/relocate, which may even fix the
-	# replication link problem.
 	set_master_score -INFINITY
 	return 0
 }
 
 drbd_update_master_score() {
+	# NOTE
+	# there may be constraint scores from rules on role=Master,
+	# that in some ways can add to the node attribute based master score we
+	# specify below. If you think you want to add personal preferences,
+	# in case the scores given by this RA do not suffice, this is the
+	# value space you can work with:
+	# -INFINITY: Do not promote. Really. Won't work anyways.
+	# missing, zero: Do not promote.
+	#        I think my data is not good enough.
+	#        Though, of course, you may try, and it might even work.
+	#     5: please, do not promote, unless this is your only option.
+	#    10: promotion is probably a bad idea, our local data is no good,
+	#        you'd probably run into severe performance problems, and risk
+	#        application crashes in case you lose the replication
+	#        connection.
+	#  1000: Ok to be promoted, we have good data locally (though we don't
+	#        know about the peer, so possibly it has even better data?).
+	#        You sould use the crm-fence-peer.sh handler or similar
+	#        mechanism to avoid data divergence.
+	# 10000: Please promote me.
+	#        I'm confident that my data is as good as it gets.
+	#
 	: == DEBUG == $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
 	case $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
 	UpToDate/DUnknown)
@@ -280,7 +300,7 @@ drbd_update_master_score() {
 		# Trust that the primary will also notice the disconnect,
 		# and will place an appropriate fencing constraint via
 		# its fence-peer handler callback.
-		set_master_score 50
+		set_master_score  1000
 		;;
 
 	UpToDate/*)
@@ -289,7 +309,7 @@ drbd_update_master_score() {
 		# consistent last time we talked to each other.
 		# Also our local disk is UpToDate, which means even if we are
 		# currently synchronizing, we do so as SyncSource.
-		set_master_score 100
+		set_master_score 10000
 		;;
 
 	*/UpToDate)
@@ -313,7 +333,7 @@ drbd_update_master_score() {
 		# Our peer is not available.
 		# We have no access to useful data.
 		# DRBD would refuse to be promoted, anyways.
-		remove_master_score
+		set_master_score -INFINITY
 	esac
 
 	return $OCF_SUCCESS
