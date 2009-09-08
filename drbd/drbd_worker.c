@@ -1406,6 +1406,10 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		     (unsigned long) mdev->rs_total);
 
 		if (mdev->rs_total == 0) {
+			/* Peer still reachable? Beware of failing before-resync-target handlers! */
+			request_ping(mdev);
+			__set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout(mdev->net_conf->ping_timeo*HZ/9); /* 9 instead 10 */
 			drbd_resync_finished(mdev);
 			return;
 		}
