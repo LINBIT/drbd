@@ -2152,12 +2152,12 @@ tl_add_int(unsigned short *tl, enum drbd_tags tag, const void *val)
 	switch(tag_type(tag)) {
 	case TT_INTEGER:
 		put_unaligned(sizeof(int), tl++);
-		put_unaligned(*(int *)val, (int *)tl++);
+		put_unaligned(*(int *)val, (int *)tl);
 		tl = (unsigned short*)((char*)tl+sizeof(int));
 		break;
 	case TT_INT64:
 		put_unaligned(sizeof(u64), tl++);
-		put_unaligned(*(u64 *)val, (u64 *)tl++);
+		put_unaligned(*(u64 *)val, (u64 *)tl);
 		tl = (unsigned short*)((char*)tl+sizeof(u64));
 		break;
 	default:
