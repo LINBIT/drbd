@@ -2338,39 +2338,47 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	if (self == peer) {
 		int rct, dc; /* roles at crash time */
 
-		if (mdev->p_uuid[UI_BITMAP] == (u64)0 &&
-		    mdev->ldev->md.uuid[UI_BITMAP] != (u64)0 &&
-		    (mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
-		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
-			dev_info(DEV, "was SyncSource, missed the resync finished event, corrected myself:\n");
+		if (mdev->p_uuid[UI_BITMAP] == (u64)0 && mdev->ldev->md.uuid[UI_BITMAP] != (u64)0) {
 
 			if (mdev->agreed_pro_version < 91)
 				return -1001;
 
-			drbd_uuid_set_bm(mdev, 0UL);
+			if ((mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
+			    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
+				dev_info(DEV, "was SyncSource, missed the resync finished event, corrected myself:\n");
+				drbd_uuid_set_bm(mdev, 0UL);
 
-			drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
-				       mdev->state.disk >= D_NEGOTIATING ? drbd_bm_total_weight(mdev) : 0, 0);
-			*rule_nr = 34;
+				drbd_uuid_dump(mdev, "self", mdev->ldev->md.uuid,
+					       mdev->state.disk >= D_NEGOTIATING ? drbd_bm_total_weight(mdev) : 0, 0);
+				*rule_nr = 34;
+			} else {
+				dev_info(DEV, "was SyncSource (peer failed to write sync_uuid)\n");
+				*rule_nr = 36;
+			}
+
 			return 1;
 		}
 
-		if (mdev->ldev->md.uuid[UI_BITMAP] == (u64)0 &&
-		    mdev->p_uuid[UI_BITMAP] != (u64)0 &&
-		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
-		    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
-			dev_info(DEV, "was SyncTarget, peer missed the resync finished event, corrected peer:\n");
+		if (mdev->ldev->md.uuid[UI_BITMAP] == (u64)0 && mdev->p_uuid[UI_BITMAP] != (u64)0) {
 
 			if (mdev->agreed_pro_version < 91)
 				return -1001;
 
-			mdev->p_uuid[UI_HISTORY_START + 1] = mdev->p_uuid[UI_HISTORY_START];
-			mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_BITMAP];
-			mdev->p_uuid[UI_BITMAP] = 0UL;
+			if ((mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
+			    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
+				dev_info(DEV, "was SyncTarget, peer missed the resync finished event, corrected peer:\n");
 
-			drbd_uuid_dump(mdev, "peer", mdev->p_uuid, mdev->p_uuid[UI_SIZE], mdev->p_uuid[UI_FLAGS]);
+				mdev->p_uuid[UI_HISTORY_START + 1] = mdev->p_uuid[UI_HISTORY_START];
+				mdev->p_uuid[UI_HISTORY_START] = mdev->p_uuid[UI_BITMAP];
+				mdev->p_uuid[UI_BITMAP] = 0UL;
 
-			*rule_nr = 35;
+				drbd_uuid_dump(mdev, "peer", mdev->p_uuid, mdev->p_uuid[UI_SIZE], mdev->p_uuid[UI_FLAGS]);
+				*rule_nr = 35;
+			} else {
+				dev_info(DEV, "was SyncTarget (failed to write sync_uuid)\n");
+				*rule_nr = 37;
+			}
+
 			return -1;
 		}
 
