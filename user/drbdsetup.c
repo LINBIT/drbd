@@ -479,7 +479,7 @@ static int dump_tag_list(unsigned short *tlc)
 	int len;
 	int integer;
 	char bit;
-	__u64 int64;
+	uint64_t int64;
 	const char* string;
 	int found_unknown=0;
 
@@ -501,7 +501,7 @@ static int dump_tag_list(unsigned short *tlc)
 			printf("(integer) %d",integer);
 			break;
 		case TT_INT64:
-			int64 = *(__u64*)tlc;
+			int64 = *(uint64_t*)tlc;
 			printf("(int64) %lld",(long long)int64);
 			break;
 		case TT_BIT:
@@ -1118,8 +1118,8 @@ static void show_numeric(struct drbd_option *od, unsigned short* tp)
 		val = get_unaligned((int*)tp);
 		break;
 	case TT_INT64:
-		ASSERT( get_unaligned(tp++) == sizeof(__u64) );
-		val = get_unaligned((__u64*)tp);
+		ASSERT( get_unaligned(tp++) == sizeof(uint64_t) );
+		val = get_unaligned((uint64_t*)tp);
 		break;
 	default:
 		ASSERT(0);
@@ -1603,7 +1603,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 	       unsigned minor __attribute((unused)),
 	       unsigned short *rtl)
 {
-	__u64 *uuids;
+	uint64_t *uuids;
 	int flags = flags;
 	unsigned int len;
 
@@ -1613,7 +1613,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 		return 1;
 	}
 	consume_tag_int(T_uuids_flags,rtl,&flags);
-	if( len == UI_SIZE * sizeof(__u64)) {
+	if( len == UI_SIZE * sizeof(uint64_t)) {
 		if(!strcmp(cm->cmd,"show-gi")) {
 			dt_pretty_print_uuids(uuids,flags);
 		} else if(!strcmp(cm->cmd,"get-gi")) {
@@ -2034,7 +2034,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 			if (cn_reply->ack == 0) { // broadcasts
 				if (cn_reply->seq <= b_seq) continue;
 				b_seq = cn_reply->seq;
-			} else if (minor == reply->minor && cn_reply->ack == (__u32)getpid() + 1) {
+			} else if (minor == reply->minor && cn_reply->ack == (uint32_t)getpid() + 1) {
 				// replies to drbdsetup packets and for this device.
 				if (cn_reply->seq <= r_seq) continue;
 				r_seq = cn_reply->seq;
@@ -2325,7 +2325,7 @@ static int open_cn()
 
 static void prepare_nl_header(struct nlmsghdr* nl_hdr, int size)
 {
-	static __u32 cn_seq = 1;
+	static uint32_t cn_seq = 1;
 	struct cn_msg *cn_hdr;
 	cn_hdr = (struct cn_msg *)NLMSG_DATA(nl_hdr);
 

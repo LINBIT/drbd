@@ -1,6 +1,6 @@
 typedef union YYSTYPE {
   char* txt;
-  u64   u64;
+  uint64_t   u64;
 } YYSTYPE;
 
 #define YYSTYPE_IS_DECLARED 1

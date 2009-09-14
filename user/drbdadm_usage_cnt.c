@@ -55,8 +55,8 @@
 #define SVN_STYLE_OD  16
 
 struct vcs_rel {
-	u32	svn_revision;
-	char	git_hash[GIT_HASH_BYTE];
+	uint32_t svn_revision;
+	char git_hash[GIT_HASH_BYTE];
 	struct {
 		unsigned major, minor, sublvl;
 	} version;
@@ -64,12 +64,12 @@ struct vcs_rel {
 };
 
 struct node_info {
-	u64	node_uuid;
+	uint64_t node_uuid;
 	struct vcs_rel rev;
 };
 
 struct node_info_od {
-	u32 magic;
+	uint32_t magic;
 	struct node_info ni;
 } __packed;
 
@@ -659,8 +659,8 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 {
 	char answer[ANSWER_SIZE];
 	struct node_info ni;
-	u64 device_uuid=0;
-	u64 device_size=0;
+	uint64_t device_uuid=0;
+	uint64_t device_size=0;
 	char *req_buf;
 	int send=0;
 	char *tb;
@@ -684,7 +684,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	}
 
 	if( read_node_id(&ni) && device_size && !device_uuid) {
-		get_random_bytes(&device_uuid, sizeof(u64));
+		get_random_bytes(&device_uuid, sizeof(uint64_t));
 
 		if( global_options.usage_count == UC_YES ) send = 1;
 		if( global_options.usage_count == UC_ASK ) {
@@ -707,7 +707,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	}
 
 	if(!device_uuid) {
-		get_random_bytes(&device_uuid, sizeof(u64));
+		get_random_bytes(&device_uuid, sizeof(uint64_t));
 	}
 
 	if (send) {

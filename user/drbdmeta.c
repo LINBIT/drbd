@@ -71,7 +71,7 @@ struct option metaopt[] = {
     { NULL,     0,              0, 0 },
 };
 
-/* FIXME? should use sector_t and off_t, not long/u64 ... */
+/* FIXME? should use sector_t and off_t, not long/uint64_t ... */
 
 /* Note RETURN VALUES:
  * exit code convention: int vXY_something() and meta_blah return some negative
@@ -148,9 +148,9 @@ struct option metaopt[] = {
 #define MD_AL_OFFSET_07        8
 #define MD_AL_MAX_SECT_07     64
 #define MD_BM_OFFSET_07        (MD_AL_OFFSET_07 + MD_AL_MAX_SECT_07)
-#define MD_RESERVED_SECT_07    ( (u64)(128ULL << 11) )
-#define MD_BM_MAX_BYTE_07      ( (u64)(MD_RESERVED_SECT_07 - MD_BM_OFFSET_07)*512 )
-#define MD_BM_MAX_BYTE_FLEX    ( (u64)(1ULL << (32-3)) )
+#define MD_RESERVED_SECT_07    ( (uint64_t)(128ULL << 11) )
+#define MD_BM_MAX_BYTE_07      ( (uint64_t)(MD_RESERVED_SECT_07 - MD_BM_OFFSET_07)*512 )
+#define MD_BM_MAX_BYTE_FLEX    ( (uint64_t)(1ULL << (32-3)) )
 
 #define DEFAULT_BM_BLOCK_SIZE  (1<<12)
 
@@ -183,11 +183,11 @@ enum Known_Formats {
 
 /* let gcc help us get it right.
  * some explicit endian types */
-typedef struct { u64 le; } le_u64;
-typedef struct { u64 be; } be_u64;
-typedef struct { u32 le; } le_u32;
-typedef struct { u32 be; } be_u32;
-typedef struct { s32 be; } be_s32;
+typedef struct { uint64_t le; } le_u64;
+typedef struct { uint64_t be; } be_u64;
+typedef struct { uint32_t le; } le_u32;
+typedef struct { uint32_t be; } be_u32;
+typedef struct { int32_t be; } be_s32;
 typedef struct { unsigned long le; } le_ulong;
 typedef struct { unsigned long be; } be_ulong;
 
@@ -196,21 +196,21 @@ typedef struct { unsigned long be; } be_ulong;
  */
 struct md_cpu {
 	/* present since drbd 0.6 */
-	u32 gc[GEN_CNT_SIZE];	/* generation counter */
-	u32 magic;
+	uint32_t gc[GEN_CNT_SIZE];	/* generation counter */
+	uint32_t magic;
 	/* added in drbd 0.7;
 	 * 0.7 stores la_size on disk as kb, 0.8 in units of sectors.
 	 * we use sectors in our general working structure here */
-	u64 la_sect;		/* last agreed size. */
-	u32 md_size_sect;
-	s32 al_offset;		/* signed sector offset to this block */
-	u32 al_nr_extents;	/* important for restoring the AL */
-	s32 bm_offset;		/* signed sector offset to the bitmap, from here */
+	uint64_t la_sect;		/* last agreed size. */
+	uint32_t md_size_sect;
+	int32_t al_offset;		/* signed sector offset to this block */
+	uint32_t al_nr_extents;	/* important for restoring the AL */
+	int32_t bm_offset;		/* signed sector offset to the bitmap, from here */
 	/* Since DRBD 0.8 we have uuid instead of gc */
-	u64 uuid[UI_SIZE];
-	u32 flags;
-	u64 device_uuid;
-	u32 bm_bytes_per_bit;
+	uint64_t uuid[UI_SIZE];
+	uint32_t flags;
+	uint64_t device_uuid;
+	uint32_t bm_bytes_per_bit;
 };
 
 /*
@@ -239,12 +239,12 @@ struct format {
 	struct md_cpu md;
 
 	/* _byte_ offsets of our "super block" and other data, within fd */
-	u64 md_offset;
-	u64 al_offset;
-	u64 bm_offset;
+	uint64_t md_offset;
+	uint64_t al_offset;
+	uint64_t bm_offset;
 
 	/* convenience */
-	u64 bd_size; /* size of block device for internal meta data */
+	uint64_t bd_size; /* size of block device for internal meta data */
 };
 
 /* - parse is expected to exit() if it does not work out.
@@ -353,9 +353,9 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cp
 }
 
 int is_valid_md(int f,
-	const struct md_cpu const *md, const int md_index, const u64 ll_size)
+	const struct md_cpu const *md, const int md_index, const uint64_t ll_size)
 {
-	u64 md_size_sect;
+	uint64_t md_size_sect;
 	char *v = (f == Drbd_07) ? "v07" : "v08";
 	const unsigned int magic = (f == Drbd_07) ? DRBD_MD_MAGIC_07 : DRBD_MD_MAGIC_08;
 
@@ -398,9 +398,9 @@ int is_valid_md(int f,
 		 * and the activity log; unit still sectors */
 		md_size_sect += MD_BM_OFFSET_07;
 
-		if (md->bm_offset != -(s64)md_size_sect + MD_AL_OFFSET_07) {
+		if (md->bm_offset != -(int64_t)md_size_sect + MD_AL_OFFSET_07) {
 			fprintf(stderr, "strange bm_offset %d (expected: "D64")\n",
-					md->bm_offset, -(s64)md_size_sect + MD_AL_OFFSET_07);
+					md->bm_offset, -(int64_t)md_size_sect + MD_AL_OFFSET_07);
 			return 0;
 		};
 		if (md->md_size_sect != md_size_sect) {
@@ -427,13 +427,13 @@ int is_valid_md(int f,
  */
 
 struct __packed al_sector_cpu {
-	u32 magic;
-	u32 tr_number;
+	uint32_t magic;
+	uint32_t tr_number;
 	struct __packed {
-		u32 pos;
-		u32 extent;
+		uint32_t pos;
+		uint32_t extent;
 	} updates[62];
-	u32 xor_sum;
+	uint32_t xor_sum;
 };
 
 struct __packed al_sector_on_disk {
@@ -717,7 +717,7 @@ void m_show_uuid(struct md_cpu *md)
 	dt_pretty_print_uuids(md->uuid,md->flags);
 }
 
-int m_strsep_u32(char **s, u32 *val)
+int m_strsep_u32(char **s, uint32_t *val)
 {
 	char *t, *e;
 	unsigned long v;
@@ -742,17 +742,17 @@ int m_strsep_u32(char **s, u32 *val)
 					*s);
 				exit(10);
 			}
-			*val = (u32)v;
+			*val = (uint32_t)v;
 		}
 		return 1;
 	}
 	return 0;
 }
 
-int m_strsep_u64(char **s, u64 *val)
+int m_strsep_u64(char **s, uint64_t *val)
 {
 	char *t, *e;
-	u64 v;
+	uint64_t v;
 
 	if ((t = strsep(s, ":"))) {
 		if (strlen(t)) {
@@ -775,9 +775,9 @@ int m_strsep_u64(char **s, u64 *val)
 	return 0;
 }
 
-int m_strsep_bit(char **s, u32 *val, int mask)
+int m_strsep_bit(char **s, uint32_t *val, int mask)
 {
-	u32 d;
+	uint32_t d;
 	int rv;
 
 	d = *val & mask ? 1 : 0;
@@ -976,7 +976,7 @@ int v06_md_initialize(struct format *cfg)
 
 void re_initialize_md_offsets(struct format *cfg)
 {
-	u64 md_size_sect;
+	uint64_t md_size_sect;
 	switch(cfg->md_index) {
 	default:
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
@@ -1091,9 +1091,9 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
  begin of v07 {{{
  ******************************************/
 
-u64 v07_style_md_get_byte_offset(const int idx, const u64 bd_size)
+uint64_t v07_style_md_get_byte_offset(const int idx, const uint64_t bd_size)
 {
-	u64 offset;
+	uint64_t offset;
 
 	switch(idx) {
 	default: /* external, some index */
@@ -1116,7 +1116,7 @@ u64 v07_style_md_get_byte_offset(const int idx, const u64 bd_size)
 	return offset;
 }
 
-unsigned long bm_words(u64 sectors, int bytes_per_bit)
+unsigned long bm_words(uint64_t sectors, int bytes_per_bit)
 {
 	unsigned long long bits;
 	unsigned long long words;
@@ -1756,7 +1756,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			cfg->md.uuid[i] = yylval.u64;
 		}
 		EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
-		cfg->md.flags = (u32)yylval.u64;
+		cfg->md.flags = (uint32_t)yylval.u64;
 		EXP('}');
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
@@ -1896,12 +1896,12 @@ void md_convert_07_to_08(struct format *cfg)
 	cfg->md.flags = cfg->md.gc[Flags];
 
 	cfg->md.uuid[UI_CURRENT] =
-		(u64)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
-		(u64)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
-		(u64)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
+		(uint64_t)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
+		(uint64_t)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
+		(uint64_t)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
 		       & 0xffff) << 16 |
-		(u64)0xbabe;
-	cfg->md.uuid[UI_BITMAP] = (u64)0;
+		(uint64_t)0xbabe;
+	cfg->md.uuid[UI_BITMAP] = (uint64_t)0;
 
 	for (i = cfg->bits_set ? UI_BITMAP : UI_HISTORY_START, j = 1;
 		i <= UI_HISTORY_END ; i++, j++)
@@ -1977,13 +1977,13 @@ struct fstype_s {
 int may_be_extX(const char *data, struct fstype_s *f)
 {
 	unsigned int size;
-	if (le16_to_cpu(*(u16*)(data+0x438)) == 0xEF53) {
+	if (le16_to_cpu(*(uint16_t*)(data+0x438)) == 0xEF53) {
 		if ( (le32_to_cpu(*(data+0x45c)) & 4) == 4 )
 			f->type = "ext3 filesystem";
 		else
 			f->type = "ext2 filesystem";
-		f->bnum  = le32_to_cpu(*(u32*)(data+0x404));
-		size     = le32_to_cpu(*(u32*)(data+0x418));
+		f->bnum  = le32_to_cpu(*(uint32_t*)(data+0x404));
+		size     = le32_to_cpu(*(uint32_t*)(data+0x418));
 		f->bsize = size == 0 ? 1024 :
 			size == 1 ? 2048 :
 			size == 2 ? 4096 :
@@ -1995,10 +1995,10 @@ int may_be_extX(const char *data, struct fstype_s *f)
 
 int may_be_xfs(const char *data, struct fstype_s *f)
 {
-	if (be32_to_cpu(*(u32*)(data+0)) == 0x58465342) {
+	if (be32_to_cpu(*(uint32_t*)(data+0)) == 0x58465342) {
 		f->type = "xfs filesystem";
-		f->bsize = be32_to_cpu(*(u32*)(data+4));
-		f->bnum  = be64_to_cpu(*(u64*)(data+8));
+		f->bsize = be32_to_cpu(*(uint32_t*)(data+4));
+		f->bnum  = be64_to_cpu(*(uint64_t*)(data+8));
 		return 1;
 	}
 	return 0;
@@ -2009,8 +2009,8 @@ int may_be_reiserfs(const char *data, struct fstype_s *f)
 	if (strncmp("ReIsErFs",data+0x10034,8) == 0 ||
 	    strncmp("ReIsEr2Fs",data+0x10034,9) == 0) {
 		f->type = "reiser filesystem";
-		f->bnum  = le32_to_cpu(*(u32*)(data+0x10000));
-		f->bsize = le16_to_cpu(*(u16*)(data+0x1002c));
+		f->bnum  = le32_to_cpu(*(uint32_t*)(data+0x10000));
+		f->bsize = le16_to_cpu(*(uint16_t*)(data+0x1002c));
 		return 1;
 	}
 	return 0;
@@ -2020,8 +2020,8 @@ int may_be_jfs(const char *data, struct fstype_s *f)
 {
 	if (strncmp("JFS1",data+0x8000,4) == 0) {
 		f->type = "JFS filesystem";
-		f->bnum = le64_to_cpu(*(u64*)(data+0x8008));
-		f->bsize = le32_to_cpu(*(u32*)(data+0x8018));
+		f->bnum = le64_to_cpu(*(uint64_t*)(data+0x8008));
+		f->bsize = le32_to_cpu(*(uint32_t*)(data+0x8018));
 		return 1;
 	}
 	return 0;
@@ -2169,8 +2169,8 @@ void check_for_existing_data(struct format *cfg)
 {
 	struct fstype_s f;
 	size_t i;
-	u64 fs_kB;
-	u64 max_usable_kB;
+	uint64_t fs_kB;
+	uint64_t max_usable_kB;
 
 	PREAD(cfg->md_fd, on_disk_buffer, SO_MUCH, 0);
 

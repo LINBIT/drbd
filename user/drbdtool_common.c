@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 
 #include <sys/types.h>
-#include <asm/types.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/ioctl.h>
@@ -368,7 +367,7 @@ void dt_unlock_drbd(int lock_fd)
 	if (lock_fd >= 0) unlock_fd(lock_fd);
 }
 
-void dt_print_gc(const __u32* gen_cnt)
+void dt_print_gc(const uint32_t* gen_cnt)
 {
 	printf("%d:%d:%d:%d:%d:%d:%d:%d\n",
 	       gen_cnt[Flags] & MDF_CONSISTENT ? 1 : 0,
@@ -381,7 +380,7 @@ void dt_print_gc(const __u32* gen_cnt)
 	       gen_cnt[Flags] & MDF_FULL_SYNC ? 1 : 0);
 }
 
-void dt_pretty_print_gc(const __u32* gen_cnt)
+void dt_pretty_print_gc(const uint32_t* gen_cnt)
 {
 	printf("\n"
 	       "                                        WantFullSync |\n"
@@ -405,7 +404,7 @@ void dt_pretty_print_gc(const __u32* gen_cnt)
 	       gen_cnt[Flags] & MDF_FULL_SYNC ? "1/y" : "0/n");
 }
 
-void dt_print_uuids(const __u64* uuid, unsigned int flags)
+void dt_print_uuids(const uint64_t* uuid, unsigned int flags)
 {
 	int i;
 	printf(X64(016)":"X64(016)":",
@@ -424,7 +423,7 @@ void dt_print_uuids(const __u64* uuid, unsigned int flags)
 	       flags & MDF_CRASHED_PRIMARY ? 1 : 0);
 }
 
-void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags)
+void dt_pretty_print_uuids(const uint64_t* uuid, unsigned int flags)
 {
 	printf(
 "\n"
@@ -507,9 +506,9 @@ int sget_token(char *s, int size, const char** text)
 	return 1;
 }
 
-u64 bdev_size(int fd)
+uint64_t bdev_size(int fd)
 {
-	u64 size64;		/* size in byte. */
+	uint64_t size64;		/* size in byte. */
 	long size;		/* size in sectors. */
 	int err;
 
@@ -522,7 +521,7 @@ u64 bdev_size(int fd)
 				perror("ioctl(,BLKGETSIZE,) failed");
 				exit(20);
 			}
-			size64 = (u64)512 *size;
+			size64 = (uint64_t)512 *size;
 		} else {
 			perror("ioctl(,BLKGETSIZE64,) failed");
 			exit(20);

@@ -1,7 +1,6 @@
 #ifndef DRBDTOOL_COMMON_H
 #define DRBDTOOL_COMMON_H
 
-#include <asm/types.h>
 #include "drbd_endian.h"
 #include <stdarg.h>
 #include <linux/major.h>
@@ -57,13 +56,13 @@ extern int new_strtoll(const char *s, const char def_unit, unsigned long long *r
 extern unsigned long long m_strtoll(const char* s,const char def_unit);
 extern const char* make_optstring(struct option *options, char startc);
 extern char* ppsize(char* buf, size_t size);
-extern void dt_print_gc(const __u32* gen_cnt);
-extern void dt_pretty_print_gc(const __u32* gen_cnt);
-extern void dt_print_uuids(const __u64* uuid, unsigned int flags);
-extern void dt_pretty_print_uuids(const __u64* uuid, unsigned int flags);
+extern void dt_print_gc(const uint32_t* gen_cnt);
+extern void dt_pretty_print_gc(const uint32_t* gen_cnt);
+extern void dt_print_uuids(const uint64_t* uuid, unsigned int flags);
+extern void dt_pretty_print_uuids(const uint64_t* uuid, unsigned int flags);
 extern int fget_token(char *s, int size, FILE* stream);
 extern int sget_token(char *s, int size, const char** text);
-extern u64 bdev_size(int fd);
+extern uint64_t bdev_size(int fd);
 extern void get_random_bytes(void* buffer, int len);
 
 extern int force; /* global option to force implicit confirmation */
