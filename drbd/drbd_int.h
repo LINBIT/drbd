@@ -1805,13 +1805,15 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 	return _drbd_request_state(mdev, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
-static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
+#define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
+static inline void __drbd_chk_io_error_(struct drbd_conf *mdev, int forcedetach, const char *where)
 {
 	switch (mdev->ldev->dc.on_io_error) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
 			if (printk_ratelimit())
-				dev_err(DEV, "Local IO failed. Passing error on...\n");
+				dev_err(DEV, "Local IO failed in %s."
+					     "Passing error on...\n", where);
 			break;
 		}
 		/* NOTE fall through to detach case if forcedetach set */
@@ -1819,7 +1821,8 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
 	case EP_CALL_HELPER:
 		if (mdev->state.disk > D_FAILED) {
 			_drbd_set_state(_NS(mdev, disk, D_FAILED), CS_HARD, NULL);
-			dev_err(DEV, "Local IO failed. Detaching...\n");
+			dev_err(DEV, "Local IO failed in %s."
+				     "Detaching...\n", where);
 		}
 		break;
 	}
@@ -1833,13 +1836,14 @@ static inline void __drbd_chk_io_error(struct drbd_conf *mdev, int forcedetach)
  *
  * See also drbd_main.c:after_state_ch() if (os.disk > D_FAILED && ns.disk == D_FAILED)
  */
-static inline void drbd_chk_io_error(struct drbd_conf *mdev,
-	int error, int forcedetach)
+#define drbd_chk_io_error(m,e,f) drbd_chk_io_error_(m,e,f, __func__)
+static inline void drbd_chk_io_error_(struct drbd_conf *mdev,
+	int error, int forcedetach, const char *where)
 {
 	if (error) {
 		unsigned long flags;
 		spin_lock_irqsave(&mdev->req_lock, flags);
-		__drbd_chk_io_error(mdev, forcedetach);
+		__drbd_chk_io_error_(mdev, forcedetach, where);
 		spin_unlock_irqrestore(&mdev->req_lock, flags);
 	}
 }
