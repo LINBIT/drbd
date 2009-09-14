@@ -1780,13 +1780,14 @@ STATIC int receive_Data(struct drbd_conf *mdev, struct p_header *h)
 	if (dp_flags & DP_HARDBARRIER)
 		rw |= (1<<BIO_RW_BARRIER);
 	if (dp_flags & DP_RW_SYNC)
-#ifdef BIO_RW_UNPLUG
+#ifdef BIO_RW_SYNC
+		rw |= (1<<BIO_RW_SYNC);
+#else
 		/* see upstream commits
 		 * 213d9417fec62ef4c3675621b9364a667954d4dd,
-		 * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8 */
+		 * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
+		 * later, the defines even became an enum ;-) */
 		rw |= (1<<BIO_RW_SYNCIO) | (1<<BIO_RW_UNPLUG);
-#else
-		rw |= (1<<BIO_RW_SYNC);
 #endif
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
