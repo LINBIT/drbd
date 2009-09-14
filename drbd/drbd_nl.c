@@ -723,7 +723,7 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_seg_s) __mu
 	 * should be
 	 * t->max_segment_size = min_not_zero(...,...)
 	 * workaround here: */
-	if (queue_max_sectors(q) == 0)
+	if (queue_max_segment_size(q) == 0)
 		blk_queue_max_segment_size(q, max_seg_s);
 
 	if (b->merge_bvec_fn)
