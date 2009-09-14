@@ -1346,7 +1346,8 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (!bm_ext) {
 		spin_unlock_irqrestore(&mdev->al_lock, flags);
-		dev_err(DEV, "drbd_rs_complete_io() called, but extent not found\n");
+		if (DRBD_ratelimit(5*HZ, 5))
+			dev_err(DEV, "drbd_rs_complete_io() called, but extent not found\n");
 		return;
 	}
 
