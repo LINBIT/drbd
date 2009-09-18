@@ -158,7 +158,9 @@ do_drbdadm() {
 }
 
 set_master_score() {
-	do_cmd ${HA_SBIN_DIR}/crm_master -l reboot -v $1
+	# Use quiet mode (-Q) to quench logging. Actual score updates
+	# will get logged by attrd anyway
+	do_cmd ${HA_SBIN_DIR}/crm_master -Q -l reboot -v $1
 }
 
 remove_master_score() {
