@@ -26,7 +26,6 @@
 #include <linux/module.h>
 #include <linux/drbd.h>
 #include <linux/ctype.h>
-#include <linux/marker.h>
 #include "drbd_int.h"
 #include "drbd_tracing.h"
 #include <linux/drbd_tag_magic.h>
