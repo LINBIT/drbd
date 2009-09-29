@@ -2,10 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.3rc2 (api:86/proto:86-91)
+8.3.3rc3 (api:86/proto:86-91)
 --------
  * Correctly deal with large bitmaps (Bugz 239, 240)
- * Fiexed a segfault in drbdadm's parser for unknown sync-after dependencies
+ * Fixed a segfault in drbdadm's parser for unknown sync-after dependencies
  * DRBD_PEER was not set for handlers (introduced in 8.3.2) (Bugz 241)
  * Fixed a bug that could cause reads off diskless DRBD devices to get very slow
  * Fixed a deadlock possible when IO errors occure during resync (Bugz 224)
@@ -14,7 +14,8 @@ Latest:
  * The UUID compare function now handles more cases when connection/disk got
    lost during UUID updates (Bugz 251, 254)
  * If a resource gets renamed (only) update its /dev/
- * drbdsetup get-gi/show-gi sometimes warned about unknown (Bugz 253)
+ * drbdsetup get-gi/show-gi sometimes warned about unknown tags (Bugz 253)
+ * Autotune sndbuf-size and rcvbuf-size by default
  * Fixed many spelling errors
  * Improvements on the crm-fence-peer Pacemaker integration
  * Do not upgrade a Consistent disk to UpToDate when the fence-peer handler

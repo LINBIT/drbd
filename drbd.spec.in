@@ -222,8 +222,8 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Thu Sep 10 2009 11:43:09 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.3rc2-1)
+* Thu Sep 29 2009 10:08:58 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.3rc3-1)
  * Correctly deal with large bitmaps (Bugz 239, 240)
  * Fixed a segfault in drbdadm's parser for unknown sync-after dependencies
  * DRBD_PEER was not set for handlers (introduced in 8.3.2) (Bugz 241)
@@ -235,6 +235,7 @@ uname -r | grep BOOT ||
    lost during UUID updates (Bugz 251, 254)
  * If a resource gets renamed (only) update its /dev/
  * drbdsetup get-gi/show-gi sometimes warned about unknown tags (Bugz 253)
+ * Autotune sndbuf-size and rcvbuf-size by default
  * Fixed many spelling errors
  * Improvements on the crm-fence-peer Pacemaker integration
  * Do not upgrade a Consistent disk to UpToDate when the fence-peer handler
