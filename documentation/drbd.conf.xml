@@ -731,7 +731,7 @@ resource r0 {
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>sndbuf-size </secondary></indexterm><replaceable>size</replaceable> is the size of the TCP socket send buffer.
-  The default value is 128K. You can specify smaller or larger values. Larger values
+  The default value is 0, i.e. autotune. You can specify smaller or larger values. Larger values
   are appropriate for reasonable write throughput with protocol A over high
   latency networks. Very large values like 1M may cause problems. Also values
   below 32K do not make much sense. Since 8.0.13 resp. 8.2.7, setting the <replaceable>size</replaceable>
@@ -745,7 +745,7 @@ resource r0 {
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>rcvbuf-size </secondary></indexterm><replaceable>size</replaceable> is the size of the TCP socket receive buffer.
-  The default value is 128K. You can specify smaller or larger values.
+  The default value is 0, i.e. autotune. You can specify smaller or larger values.
   Usually this should be left at its default. Setting the <replaceable>size</replaceable>
   value to 0 means that the kernel should autotune this.
   </para>

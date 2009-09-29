@@ -614,7 +614,7 @@
 	      node failure. Since 8.0.13 resp. 8.2.7 setting the <replaceable>size</replaceable>
               value to 0 means that the kernel should autotune this.
               The default <replaceable>size</replaceable> is
-	      128 KB, the default unit is KB.
+	      0, i.e. autotune.
 	    </para>
           </listitem>
         </varlistentry>
@@ -628,7 +628,7 @@
               send buffer. Since 8.3.2 they can be tuned independently.
               A value of 0 means that the kernel should autotune this.
               The default <replaceable>size</replaceable> is
-	      128 KB, the default unit is KB.
+	      0, i.e. autotune.
 	    </para>
           </listitem>
         </varlistentry>
