@@ -264,7 +264,11 @@ maybe_outdate_self()
 	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
 	# Outdate myself
 	do_drbdadm outdate $DRBD_RESOURCE
+
+	# currently, -INFINITY may cause resource instance stop/start.  But in
+	# this case that is ok, it may even clear the replication link problem.
 	set_master_score -INFINITY
+
 	return 0
 }
 
@@ -276,6 +280,8 @@ drbd_update_master_score() {
 	# in case the scores given by this RA do not suffice, this is the
 	# value space you can work with:
 	# -INFINITY: Do not promote. Really. Won't work anyways.
+		# Too bad, at least with current (Oktober 2009) Pacemaker,
+		# negative master scores cause instance stop; restart cycle :(
 	# missing, zero: Do not promote.
 	#        I think my data is not good enough.
 	#        Though, of course, you may try, and it might even work.
@@ -335,7 +341,12 @@ drbd_update_master_score() {
 		# Our peer is not available.
 		# We have no access to useful data.
 		# DRBD would refuse to be promoted, anyways.
-		set_master_score -INFINITY
+		#
+		# set_master_score -INFINITY
+		# Too bad, at least with current (Oktober 2009) Pacemaker,
+		# negative master scores cause instance stop; restart cycle :(
+		# Hope that this will suffice.
+		remove_master_score
 	esac
 
 	return $OCF_SUCCESS
@@ -562,8 +573,6 @@ drbd_stop() {
 
 	# do not let old master scores laying around.
 	# they may confuse crm if this node was set to standby.
-	# also, Outdate myself in case drbd handler don't do that for me
-	# in case the other node is still Master
 	remove_master_score
 
 	return $rc
