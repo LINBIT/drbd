@@ -28,6 +28,7 @@
 #include <linux/netlink.h>
 #include <linux/moduleparam.h>
 #include <linux/connector.h>
+#include <linux/capability.h>
 
 #ifndef DRBD_CONNECTOR_BACKPORT_HEADER
 #error "drbd backported connector.c compiled against kernel connector.h will not work"
@@ -202,12 +203,18 @@ static int __cn_rx_skb(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
 	u32 pid, uid, seq, group;
 	struct cn_msg *msg;
+	int err;
 
 	pid = NETLINK_CREDS(skb)->pid;
 	uid = NETLINK_CREDS(skb)->uid;
 	seq = nlh->nlmsg_seq;
 	group = NETLINK_GROUP(skb);
 	msg = NLMSG_DATA(nlh);
+
+	/* DRBD specific change: Only allow packets from ROOT */
+	err = capable(CAP_SYS_ADMIN);
+	if (err)
+		return err;
 
 	return cn_call_callback(msg, (void (*)(void *))kfree_skb, skb);
 }
