@@ -97,5 +97,8 @@ extern const char *drbd_buildtag(void);
  */
 #define KERNEL_HAS_PROC_CREATE
 
+/* In 2.6.32 we finally fixed connector to pass netlink_skb_parms to the callback
+ */
+#define KERNEL_HAS_CN_SKB_PARMS
 
 #endif

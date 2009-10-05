@@ -455,6 +455,7 @@ static const char *error_messages[] = {
 	EM(ERR_CSUMS_ALG) = "CSUMSAlgNotAvail",
 	EM(ERR_CSUMS_ALG_ND) = "CSUMSAlgNotDigest",
 	EM(ERR_CSUMS_RESYNC_RUNNING) = "Can not change csums-alg while resync is in progress",
+	EM(ERR_PERM) = "Permission denied. CAP_SYS_ADMIN necessary",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)

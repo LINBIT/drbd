@@ -137,6 +137,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_set_cpus_allowed_ptr=0
   fi
+  if grep_q "netlink_skb_parms" $KDIR/include/linux/connector.h ; then
+    have_netlink_skb_parms=1
+  else
+    have_netlink_skb_parms=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -176,6 +181,8 @@ perl -pe "
   { ( $have_proc_create ? '' : '//' ) . \$1}e;
  s{.*(#define HAVE_SET_CPUS_ALLOWED_PTR.*)}
   { ( $have_set_cpus_allowed_ptr ? '' : '//' ) . \$1}e;
+ s{.*(#define KERNEL_HAS_CN_SKB_PARMS.*)}
+  { ( $have_netlink_skb_parms ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

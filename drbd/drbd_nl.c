@@ -2040,9 +2040,14 @@ static struct cn_handler_struct cnd_table[] = {
 	[ P_new_c_uuid ]	= { &drbd_nl_new_c_uuid,	0 },
 };
 
+#ifdef KERNEL_HAS_CN_SKB_PARMS
+STATIC void drbd_connector_callback(struct cn_msg *req, struct netlink_skb_parms *nsp)
+{
+#else
 STATIC void drbd_connector_callback(void *data)
 {
 	struct cn_msg *req = data;
+#endif
 	struct drbd_nl_cfg_req *nlp = (struct drbd_nl_cfg_req *)req->data;
 	struct cn_handler_struct *cm;
 	struct cn_msg *cn_reply;
@@ -2058,13 +2063,20 @@ STATIC void drbd_connector_callback(void *data)
 		return;
 	}
 
+#ifdef KERNEL_HAS_CN_SKB_PARMS
+	if (!cap_raised(nsp->eff_cap, CAP_SYS_ADMIN)) {
+		retcode = ERR_PERM;
+		goto fail;
+	}
+#endif
+
 	mdev = ensure_mdev(nlp);
 	if (!mdev) {
 		retcode = ERR_MINOR_INVALID;
 		goto fail;
 	}
 
-	trace_drbd_netlink(data, 1);
+	trace_drbd_netlink(req, 1);
 
 	if (nlp->packet_type >= P_nl_after_last_packet) {
 		retcode = ERR_PACKET_NR;
