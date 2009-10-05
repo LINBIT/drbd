@@ -222,8 +222,8 @@ uname -r | grep BOOT ||
 
 %changelog
 
-* Thu Sep 29 2009 10:08:58 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.3rc3-1)
+* Thu Oct  5 2009 11:25:55 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.3-1)
  * Correctly deal with large bitmaps (Bugz 239, 240)
  * Fixed a segfault in drbdadm's parser for unknown sync-after dependencies
  * DRBD_PEER was not set for handlers (introduced in 8.3.2) (Bugz 241)
