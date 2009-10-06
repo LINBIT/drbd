@@ -203,7 +203,6 @@ static int __cn_rx_skb(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
 	u32 pid, uid, seq, group;
 	struct cn_msg *msg;
-	int err;
 
 	pid = NETLINK_CREDS(skb)->pid;
 	uid = NETLINK_CREDS(skb)->uid;
@@ -212,9 +211,8 @@ static int __cn_rx_skb(struct sk_buff *skb, struct nlmsghdr *nlh)
 	msg = NLMSG_DATA(nlh);
 
 	/* DRBD specific change: Only allow packets from ROOT */
-	err = capable(CAP_SYS_ADMIN);
-	if (err)
-		return err;
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	return cn_call_callback(msg, (void (*)(void *))kfree_skb, skb);
 }
