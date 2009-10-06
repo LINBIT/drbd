@@ -222,6 +222,11 @@ uname -r | grep BOOT ||
 
 %changelog
 
+* Thu Oct  6 2009 14:32:15 +0200 Philipp Reisner <phil@linbit.com>
+- drbd (8.3.4-1)
+ * Fixed a regression in the connector backport introduced with 8.3.3.
+   Affected only kernels older than 2.6.14. I.e. RHEL4 and SLES9.
+
 * Thu Oct  5 2009 11:25:55 +0200 Philipp Reisner <phil@linbit.com>
 - drbd (8.3.3-1)
  * Correctly deal with large bitmaps (Bugz 239, 240)
