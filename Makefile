@@ -54,6 +54,11 @@ endif
 LN_S = ln -s
 RPMBUILD=rpmbuild
 
+# Use a reasonably sane default for KDIR
+export KDIR KVER O
+KDIR := $(shell echo /lib/modules/`uname -r`/build)
+KVER := $(shell KDIR=$(KDIR) O=$(O) scripts/get_uts_release.sh)
+
 all: tools module
 
 module:
@@ -167,10 +172,6 @@ tarball: check_all_committed distclean doc .filelist
 	$(MAKE) tgz
 
 all tools doc .filelist: drbd/drbd_buildtag.c
-
-export KDIR KVER O
-KDIR := $(shell echo /lib/modules/`uname -r`/build)
-KVER := $(shell KDIR=$(KDIR) O=$(O) scripts/get_uts_release.sh)
 
 kernel-patch: drbd/drbd_buildtag.c
 	set -o errexit; \
