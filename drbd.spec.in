@@ -120,7 +120,7 @@ This package contains programmable bash completion support for the drbdadm
 management utility.
 
 %prep
-%setup
+%setup -q
 test -d %{kdir}/.
 test "$(scripts/get_uts_release.sh)" = %{kernelversion}
 
