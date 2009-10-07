@@ -192,8 +192,7 @@ check-kdir:
 	fi
 
 drbd.spec: drbd.spec.in
-	sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" \
-		-e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;"  $< > $@
+	sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" $< > $@
 
 .PHONY: spec
 spec: drbd.spec

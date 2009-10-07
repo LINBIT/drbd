@@ -16,7 +16,6 @@ Vendor: DRBD
 License: GPL
 ExclusiveOS: linux
 Group: System Environment/Kernel
-Packager:
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: flex, gcc
