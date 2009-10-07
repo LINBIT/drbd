@@ -249,7 +249,7 @@ ___
 # which already contain some (probably outdated) drbd module
 EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
 if test -e $EXTRA_DRBD_KO; then
-	mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+    mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
 fi
 chkconfig --add drbd
 
@@ -260,19 +260,19 @@ done
 
 %preun
 if type -p service ; then
-	service drbd stop
+    service drbd stop
 fi
 if type -p rcdrbd ; then
-	rcdrbd stop
+    rcdrbd stop
 fi
 
 lsmod | grep drbd > /dev/null 2>&1
 if [ $? -eq 0 ]; then
-	rmmod drbd
+    rmmod drbd
 fi
 
 if [ $1 -eq 0 ]; then
-	chkconfig --del drbd
+    chkconfig --del drbd
 fi
 
 #%post -n kernel%{?ksmp}-module-drbd
@@ -281,7 +281,7 @@ fi
 # which already contain some (probably outdated) drbd module
 EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
 if test -e $EXTRA_DRBD_KO; then
-	mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+    mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
 fi
 uname -r | grep BOOT ||
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
