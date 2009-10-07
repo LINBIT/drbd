@@ -190,6 +190,13 @@ check-kdir:
 		false;\
 	fi
 
+drbd.spec: drbd.spec.in
+	sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" \
+		-e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;"  $< > $@
+
+.PHONY: spec
+spec: drbd.spec
+
 rpm: check-kdir tgz
 	mkdir -p dist/BUILD \
 	         dist/RPMS  \
