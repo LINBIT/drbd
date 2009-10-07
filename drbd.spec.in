@@ -65,6 +65,60 @@ This module is the kernel-dependent driver for DRBD.  This is split out so
 that multiple kernel driver versions can be installed, one for each
 installed kernel.
 
+%package xen
+Summary: Xen block device management script for DRBD
+Group: System Environment/Kernel
+Requires: xen
+
+%description xen
+This package contains a Xen block device helper script for DRBD, capable of
+promoting and demoting DRBD resources as necessary.
+
+%package udev
+Summary: udev integration scripts for DRBD
+Group: System Environment/Kernel
+Requires: udev
+
+%description udev
+This package contains udev helper scripts for DRBD, managing symlinks to
+DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
+
+%package pacemaker
+Summary: Pacemaker resource agent for DRBD
+Group: System Environment/Base
+Requires: pacemaker
+
+%description pacemaker
+This package contains the master/slave DRBD resource agent for the
+Pacemaker High Availability cluster manager.
+
+%package rgmanager
+Summary: Red Hat Cluster Suite agent for DRBD
+Group: System Environment/Base
+Requires: rgmanager
+
+%description rgmanager
+This package contains the DRBD resource agent for the Red Hat Cluster Suite
+resource manager.
+
+%package heartbeat
+Summary: Heartbeat resource agent for DRBD
+Group: System Environment/Base
+Requires: heartbeat
+
+%description heartbeat
+This package contains the DRBD resource agents for the Heartbeat cluster
+resource manager (in v1 compatibility mode).
+
+%package bash-completion
+Summary: Programmable bash completion support for drbdadm
+Group: System Environment/Base
+Requires: bash-completion
+
+%description bash-completion
+This package contains programmable bash completion support for the drbdadm
+management utility.
+
 %prep
 %setup
 test -d %{kdir}/.
@@ -101,12 +155,6 @@ cd %{buildroot}
 find etc/ -name drbd -printf "/%p\n" > "$FILELIST"
 # on suse/united we have additionally:
 test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
-# on non RedHat we have additionally:
-test -e etc/bash_completion.d/drbdadm && echo "/etc/bash_completion.d/drbdadm" >> "$FILELIST"
-test -e etc/bash_completion.d/drbdadm.sh && echo "/etc/bash_completion.d/drbdadm.sh" >> "$FILELIST"
-# on Red Hat, we provide integration scripts for Red Hat Cluster Suite
-test -e usr/share/cluster/drbd.sh && echo "/usr/share/cluster/drbd.sh" >> "$FILELIST"
-test -e usr/share/cluster/drbd.metadata && echo "/usr/share/cluster/drbd.metadata" >> "$FILELIST"
 
 ## If I only wanted to include the module, not all the directories
 ## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below
@@ -145,11 +193,6 @@ ___
 /usr/lib/drbd/notify-pri-lost.sh
 /usr/lib/drbd/notify-pri-on-incon-degr.sh
 /usr/lib/drbd/notify.sh
-/etc/ha.d/resource.d/drbddisk
-/etc/ha.d/resource.d/drbdupper
-/usr/lib/ocf/resource.d/linbit/drbd
-/etc/xen/scripts/block-drbd
-/etc/udev/rules.d/65-drbd.rules*
 
 
 %defattr(644,root,root)
@@ -173,6 +216,33 @@ ___
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
 %doc drbd/k-config-%{kernelversion}.gz
+
+%files xen
+%defattr(755,root,root)
+/etc/xen/scripts/block-drbd
+
+%files udev
+%defattr(755,root,root)
+/etc/udev/rules.d/65-drbd.rules*
+
+%files pacemaker
+%defattr(755,root,root)
+/usr/lib/ocf/resource.d/linbit/drbd
+
+%files rgmanager
+%defattr(644,root,root)
+/usr/share/cluster/drbd.metadata
+%defattr(755,root,root)
+/usr/share/cluster/drbd.sh
+
+%files heartbeat
+%defattr(755,root,root)
+/etc/ha.d/resource.d/drbddisk
+/etc/ha.d/resource.d/drbdupper
+
+%files bash-completion
+%defattr(644,root,root)
+/etc/bash_completion.d/drbdadm*
 
 %post
 # hack for distribution kernel packages,

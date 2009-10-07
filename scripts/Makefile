@@ -46,7 +46,7 @@ endif
 
 ifeq ($(DIST),redhat)
   INITD=$(PREFIX)/etc/rc.d/init.d/
-  INST_COMPLETION := 0
+  INST_COMPLETION := 1
   INST_RHCS := 1
 endif
 
