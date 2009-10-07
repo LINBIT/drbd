@@ -128,7 +128,6 @@ test "$(scripts/get_uts_release.sh)" = %{kernelversion}
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
-[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 mkdir -p %{buildroot}
 
 make clean
@@ -142,6 +141,7 @@ else
        make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
 fi
 %install
+[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
