@@ -136,6 +136,7 @@ drbd/drbd_buildtag.c:
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
+	echo drbd-$(DIST_VERSION)/drbd.spec >> .filelist ;\
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
@@ -197,28 +198,12 @@ drbd.spec: drbd.spec.in
 .PHONY: spec
 spec: drbd.spec
 
+.PHONY: rpm
 rpm: check-kdir tgz
-	mkdir -p dist/BUILD \
-	         dist/RPMS  \
-	         dist/SPECS \
-	         dist/SOURCES \
-	         dist/TMP \
-	         dist/install \
-	         dist/SRPMS
-	[ -h dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz ] || \
-	  $(LN_S) $(PWD)/drbd-$(FDIST_VERSION).tar.gz \
-	          $(PWD)/dist/SOURCES/drbd-$(FDIST_VERSION).tar.gz
-	if test drbd.spec.in -nt dist/SPECS/drbd.spec ; then \
-	   sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" \
-	       -e "s/^\(Packager:\).*/\1 $(USER)@$(HOSTNAME)/;" < drbd.spec.in \
-	   > dist/SPECS/drbd.spec ; \
-	fi
-	$(RPMBUILD) -bb \
-	    --define "_topdir $(PWD)/dist" \
-	    --define "buildroot $(PWD)/dist/install" \
+	$(RPMBUILD) -tb \
 	    --define "kernelversion $(KVER)" \
 	    --define "kdir $(KDIR)" \
 	    $(RPMOPT) \
-	    $(PWD)/dist/SPECS/drbd.spec
-	@echo "You have now:" ; ls -l dist/*RPMS/*/*.rpm
+	    drbd-$(FDIST_VERSION).tar.gz
+	@echo "You have now:" ; ls -l `rpm -E "%_rpmdir"`/*.rpm
 
