@@ -7,6 +7,18 @@
 # encode - to _ to be able to include that in a package name or release "number"
 %global krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
+# Conditionals -- invoke "rpmbuild --without <feature>" to disable
+# specific features
+# note: conditionals may not contain "-" nor "_", hence "bashcompletion"
+%bcond_without utils
+%bcond_without km
+%bcond_without xen
+%bcond_without udev
+%bcond_without pacemaker
+%bcond_without rgmanager
+%bcond_without heartbeat
+%bcond_without bashcompletion
+
 Name: drbd
 Summary: DRBD driver for Linux
 Version:
@@ -38,6 +50,7 @@ Authors:
 %files
 %doc README
 
+%if %{with utils}
 %package utils
 Summary: Management utilities for DRBD
 Group: System Environment/Kernel
@@ -85,8 +98,9 @@ This packages includes the DRBD administration tools.
 %doc COPYING
 %doc README
 %doc file.list
+%endif # with utils
 
-
+%if %{with km}
 #%package -n kernel%{?ksmp}-module-drbd
 # I choose to have the kernelversion as part of the package name!
 # drbd is prepended...
@@ -126,7 +140,9 @@ installed kernel.
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
 %doc drbd/k-config-%{kernelversion}.gz
+%endif  # with km
 
+%if %{with xen}
 %package xen
 Summary: Xen block device management script for DRBD
 Group: System Environment/Kernel
@@ -139,8 +155,9 @@ promoting and demoting DRBD resources as necessary.
 %files xen
 %defattr(755,root,root)
 %{_sysconfdir}/xen/scripts/block-drbd
+%endif # with xen
 
-
+%if %{with udev}
 %package udev
 Summary: udev integration scripts for DRBD
 Group: System Environment/Kernel
@@ -153,8 +170,9 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 %files udev
 %defattr(755,root,root)
 %{_sysconfdir}/udev/rules.d/65-drbd.rules*
+%endif # with udev
 
-
+%if %{with pacemaker}
 %package pacemaker
 Summary: Pacemaker resource agent for DRBD
 Group: System Environment/Base
@@ -167,8 +185,9 @@ Pacemaker High Availability cluster manager.
 %files pacemaker
 %defattr(755,root,root)
 /usr/lib/ocf/resource.d/linbit/drbd
+%endif # with pacemaker
 
-
+%if %{with rgmanager}
 %package rgmanager
 Summary: Red Hat Cluster Suite agent for DRBD
 Group: System Environment/Base
@@ -183,8 +202,9 @@ resource manager.
 /usr/share/cluster/drbd.metadata
 %defattr(755,root,root)
 /usr/share/cluster/drbd.sh
+%endif # with rgmanager
 
-
+%if %{with heartbeat}
 %package heartbeat
 Summary: Heartbeat resource agent for DRBD
 Group: System Environment/Base
@@ -198,8 +218,9 @@ resource manager (in v1 compatibility mode).
 %defattr(755,root,root)
 %{_sysconfdir}/ha.d/resource.d/drbddisk
 %{_sysconfdir}/ha.d/resource.d/drbdupper
+%endif # with heartbeat
 
-
+%if %{with bashcompletion}
 %package bash-completion
 Summary: Programmable bash completion support for drbdadm
 Group: System Environment/Base
@@ -212,7 +233,7 @@ management utility.
 %files bash-completion
 %defattr(644,root,root)
 %{_sysconfdir}/bash_completion.d/drbdadm*
-
+%endif # with bashcompletion
 
 
 %prep
@@ -268,6 +289,7 @@ ___
 %clean
 [ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 
+%if %{with utils}
 %post utils
 chkconfig --add drbd
 
@@ -289,7 +311,9 @@ fi
 if [ $1 -eq 0 ]; then
     chkconfig --del drbd
 fi
+%endif # with-utils
 
+%if %{with km}
 #%post -n kernel%{?ksmp}-module-drbd
 %post km-%{krelver}
 # hack for distribution kernel packages,
@@ -304,6 +328,7 @@ uname -r | grep BOOT ||
 #%postun -n kernel%{?ksmp}-module-drbd
 %postun km-%{krelver}
 /sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
+%endif # with km
 
 %changelog
 
