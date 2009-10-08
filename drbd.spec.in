@@ -19,16 +19,24 @@ Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: flex, gcc
+Requires: drbd-utils, drbd-xen, drbd-udev, drbd-pacemaker, drbd-rgmanager, drbd-heartbeat, drbd-bash-completion
 
 %description
 DRBD mirrors a block device over the network to another machine.
 Think of it as networked raid 1. It is a building block for
 setting up high availability (HA) clusters.
 
+This is a virtual package, installing the full DRBD userland suite.
+
 Authors:
 --------
     Philipp Reisner <philipp.reisner@linbit.com>
     Lars Ellenberg  <lars.ellenberg@linbit.com>
+
+# Just a few docs go into the "drbd" package. Everything else is part
+# of one of the drbd-* packages.
+%files
+%doc README
 
 %package utils
 Summary: Management utilities for DRBD
