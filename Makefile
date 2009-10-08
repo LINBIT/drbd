@@ -207,3 +207,9 @@ rpm: check-kdir tgz
 	    drbd-$(FDIST_VERSION).tar.gz
 	@echo "You have now:" ; ls -l `rpm -E "%_rpmdir"`/*.rpm
 
+.PHONY: srpm
+srpm: tgz
+	$(RPMBUILD) -ts \
+		$(RPMOPT) \
+		drbd-$(FDIST_VERSION).tar.gz
+	@echo "You have now:" ; ls -l `rpm -E "%_srcrpmdir"`/*.src.rpm
