@@ -244,12 +244,6 @@ ___
 %clean
 [ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 %post
-# hack for distribution kernel packages,
-# which already contain some (probably outdated) drbd module
-EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
-if test -e $EXTRA_DRBD_KO; then
-    mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
-fi
 chkconfig --add drbd
 
 for i in `seq 0 15` ; do
