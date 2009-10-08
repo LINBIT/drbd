@@ -225,7 +225,6 @@ echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
 mkdir -p %{buildroot}
-
 make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
@@ -236,12 +235,12 @@ else
        # LOCALVERSION necessary for building on SuSE-9.3
        make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
 fi
+
 %install
 [ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
-
 FILELIST="%{_builddir}/%{name}-%{version}/file.list"
 cd %{buildroot}
 #
@@ -283,12 +282,10 @@ fi
 if type -p rcdrbd ; then
     rcdrbd stop
 fi
-
 lsmod | grep drbd > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     rmmod drbd
 fi
-
 if [ $1 -eq 0 ]; then
     chkconfig --del drbd
 fi
