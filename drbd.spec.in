@@ -118,59 +118,6 @@ Requires: bash-completion
 This package contains programmable bash completion support for the drbdadm
 management utility.
 
-%prep
-%setup -q
-test -d %{kdir}/.
-test "$(scripts/get_uts_release.sh)" = %{kernelversion}
-
-%build
-echo kernelversion=%{kernelversion}
-echo kversion=%{kversion}
-echo krelver=%{krelver}
-mkdir -p %{buildroot}
-
-make clean
-# note: MANDIR is not used anywhere in the makefiles
-#       maybe this should be changed
-if [ -e /etc/redhat-release ]; then
-       # unset LOCALVERSION for building on RHEL AS 4
-       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
-else
-       # LOCALVERSION necessary for building on SuSE-9.3
-       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
-fi
-%install
-[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
-make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
-cd drbd
-mv .kernel.config.gz k-config-%{kernelversion}.gz
-
-FILELIST="%{_builddir}/%{name}-%{version}/file.list"
-cd %{buildroot}
-#
-# this is because /etc/init.d != /etc/rc.d != /etc/rc.d/init.d ...
-# you may want to edit this, or the file list below ;)
-#
-find etc/ -name drbd -printf "/%p\n" > "$FILELIST"
-# on suse/united we have additionally:
-test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
-
-## If I only wanted to include the module, not all the directories
-## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below
-#find lib/ -name "drbd.*" -printf "/%p\n" > "$FILELIST.mod"
-
-#
-# and I only want to install a hint to the example conf
-#
-cat <<___ > etc/drbd.conf
-#
-# please have a a look at the example configuration file in
-# %{_docdir}/%{name}/drbd.conf
-#
-___
-
-%clean
-[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 
 %files -f file.list
 %defattr(755,root,root)
@@ -243,6 +190,59 @@ ___
 %defattr(644,root,root)
 /etc/bash_completion.d/drbdadm*
 
+%prep
+%setup -q
+test -d %{kdir}/.
+test "$(scripts/get_uts_release.sh)" = %{kernelversion}
+
+%build
+echo kernelversion=%{kernelversion}
+echo kversion=%{kversion}
+echo krelver=%{krelver}
+mkdir -p %{buildroot}
+
+make clean
+# note: MANDIR is not used anywhere in the makefiles
+#       maybe this should be changed
+if [ -e /etc/redhat-release ]; then
+       # unset LOCALVERSION for building on RHEL AS 4
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
+else
+       # LOCALVERSION necessary for building on SuSE-9.3
+       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
+fi
+%install
+[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
+make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
+cd drbd
+mv .kernel.config.gz k-config-%{kernelversion}.gz
+
+FILELIST="%{_builddir}/%{name}-%{version}/file.list"
+cd %{buildroot}
+#
+# this is because /etc/init.d != /etc/rc.d != /etc/rc.d/init.d ...
+# you may want to edit this, or the file list below ;)
+#
+find etc/ -name drbd -printf "/%p\n" > "$FILELIST"
+# on suse/united we have additionally:
+test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
+
+## If I only wanted to include the module, not all the directories
+## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below
+#find lib/ -name "drbd.*" -printf "/%p\n" > "$FILELIST.mod"
+
+#
+# and I only want to install a hint to the example conf
+#
+cat <<___ > etc/drbd.conf
+#
+# please have a a look at the example configuration file in
+# %{_docdir}/%{name}/drbd.conf
+#
+___
+
+%clean
+[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
 %post
 # hack for distribution kernel packages,
 # which already contain some (probably outdated) drbd module
@@ -255,7 +255,6 @@ chkconfig --add drbd
 for i in `seq 0 15` ; do
     test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i;
 done
-
 
 %preun
 if type -p service ; then
