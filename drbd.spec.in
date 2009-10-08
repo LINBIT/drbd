@@ -41,94 +41,6 @@ setting up high availability (HA) clusters.
 
 This packages includes the DRBD administration tools.
 
-#%package -n kernel%{?ksmp}-module-drbd
-# I choose to have the kernelversion as part of the package name!
-# drbd is prepended...
-%package km-%{krelver}
-Summary: Kernel driver for DRBD.
-Group: System Environment/Kernel
-# This is STUPID and UGLY. I know.
-# But it works for now.
-# unless overridden by environment variable, conflicts with suse and
-# centos/rhel kernel module packages.  use either theirs, or ours...
-# under suse, it used to be called km_drbd a long time ago, now is called
-# drbd-kmp-$flavor, with a version ${drbd_version}_${kernelversion}
-# (e.g. 8.2.6_2.6.16.60...)
-# so if _3 is appended, that should do the trick to conflict with all
-# of their packages, unless they provide a newer version of drbd.  for
-# redhat/centos, it is called kmod-drbd-$flavor (the generic, flavorless,
-# provides being drbd-kmod for some reason; also they hide the kernel version
-# in the release instead of the version...).
-# we probably don't want to conflict with all of those on all distributions,
-# though, therefore the override possibility.
-Conflicts: %{expand: %(echo ${DRBD_KMOD_CONFLICTS:-"km_drbd, drbd-kmp <= %%{version}_3, drbd-kmod <= %%{version}_3"})}
-# always require a suitable userland and depmod.
-Requires: %{name} = %{version}, /sbin/depmod
-# to be able to override from build scripts which flavor of kernel we are building against.
-Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
-# TODO: break up this generic .spec file into per distribution ones,
-# and use the distribution specific naming and build conventions for kernel modules.
-
-#%description -n kernel%{?ksmp}-module-drbd
-%description km-%{krelver}
-This module is the kernel-dependent driver for DRBD.  This is split out so
-that multiple kernel driver versions can be installed, one for each
-installed kernel.
-
-%package xen
-Summary: Xen block device management script for DRBD
-Group: System Environment/Kernel
-Requires: drbd-utils, xen
-
-%description xen
-This package contains a Xen block device helper script for DRBD, capable of
-promoting and demoting DRBD resources as necessary.
-
-%package udev
-Summary: udev integration scripts for DRBD
-Group: System Environment/Kernel
-Requires: drbd-utils, udev
-
-%description udev
-This package contains udev helper scripts for DRBD, managing symlinks to
-DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
-
-%package pacemaker
-Summary: Pacemaker resource agent for DRBD
-Group: System Environment/Base
-Requires: drbd-utils, pacemaker
-
-%description pacemaker
-This package contains the master/slave DRBD resource agent for the
-Pacemaker High Availability cluster manager.
-
-%package rgmanager
-Summary: Red Hat Cluster Suite agent for DRBD
-Group: System Environment/Base
-Requires: drbd-utils, rgmanager
-
-%description rgmanager
-This package contains the DRBD resource agent for the Red Hat Cluster Suite
-resource manager.
-
-%package heartbeat
-Summary: Heartbeat resource agent for DRBD
-Group: System Environment/Base
-Requires: drbd-utils, heartbeat
-
-%description heartbeat
-This package contains the DRBD resource agents for the Heartbeat cluster
-resource manager (in v1 compatibility mode).
-
-%package bash-completion
-Summary: Programmable bash completion support for drbdadm
-Group: System Environment/Base
-Requires: drbd-utils, bash-completion
-
-%description bash-completion
-This package contains programmable bash completion support for the drbdadm
-management utility.
-
 %files utils -f file.list
 %defattr(755,root,root)
 /sbin/drbdsetup
@@ -166,23 +78,97 @@ management utility.
 %doc README
 %doc file.list
 
+
+#%package -n kernel%{?ksmp}-module-drbd
+# I choose to have the kernelversion as part of the package name!
+# drbd is prepended...
+%package km-%{krelver}
+Summary: Kernel driver for DRBD.
+Group: System Environment/Kernel
+# This is STUPID and UGLY. I know.
+# But it works for now.
+# unless overridden by environment variable, conflicts with suse and
+# centos/rhel kernel module packages.  use either theirs, or ours...
+# under suse, it used to be called km_drbd a long time ago, now is called
+# drbd-kmp-$flavor, with a version ${drbd_version}_${kernelversion}
+# (e.g. 8.2.6_2.6.16.60...)
+# so if _3 is appended, that should do the trick to conflict with all
+# of their packages, unless they provide a newer version of drbd.  for
+# redhat/centos, it is called kmod-drbd-$flavor (the generic, flavorless,
+# provides being drbd-kmod for some reason; also they hide the kernel version
+# in the release instead of the version...).
+# we probably don't want to conflict with all of those on all distributions,
+# though, therefore the override possibility.
+Conflicts: %{expand: %(echo ${DRBD_KMOD_CONFLICTS:-"km_drbd, drbd-kmp <= %%{version}_3, drbd-kmod <= %%{version}_3"})}
+# always require a suitable userland and depmod.
+Requires: %{name} = %{version}, /sbin/depmod
+# to be able to override from build scripts which flavor of kernel we are building against.
+Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
+# TODO: break up this generic .spec file into per distribution ones,
+# and use the distribution specific naming and build conventions for kernel modules.
+
+#%description -n kernel%{?ksmp}-module-drbd
+%description km-%{krelver}
+This module is the kernel-dependent driver for DRBD.  This is split out so
+that multiple kernel driver versions can be installed, one for each
+installed kernel.
+
 #%files -n kernel%{?ksmp}-module-drbd
 %files km-%{krelver}
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
 %doc drbd/k-config-%{kernelversion}.gz
 
+%package xen
+Summary: Xen block device management script for DRBD
+Group: System Environment/Kernel
+Requires: drbd-utils, xen
+
+%description xen
+This package contains a Xen block device helper script for DRBD, capable of
+promoting and demoting DRBD resources as necessary.
+
 %files xen
 %defattr(755,root,root)
 /etc/xen/scripts/block-drbd
+
+
+%package udev
+Summary: udev integration scripts for DRBD
+Group: System Environment/Kernel
+Requires: drbd-utils, udev
+
+%description udev
+This package contains udev helper scripts for DRBD, managing symlinks to
+DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 
 %files udev
 %defattr(755,root,root)
 /etc/udev/rules.d/65-drbd.rules*
 
+
+%package pacemaker
+Summary: Pacemaker resource agent for DRBD
+Group: System Environment/Base
+Requires: drbd-utils, pacemaker
+
+%description pacemaker
+This package contains the master/slave DRBD resource agent for the
+Pacemaker High Availability cluster manager.
+
 %files pacemaker
 %defattr(755,root,root)
 /usr/lib/ocf/resource.d/linbit/drbd
+
+
+%package rgmanager
+Summary: Red Hat Cluster Suite agent for DRBD
+Group: System Environment/Base
+Requires: drbd-utils, rgmanager
+
+%description rgmanager
+This package contains the DRBD resource agent for the Red Hat Cluster Suite
+resource manager.
 
 %files rgmanager
 %defattr(644,root,root)
@@ -190,14 +176,36 @@ management utility.
 %defattr(755,root,root)
 /usr/share/cluster/drbd.sh
 
+
+%package heartbeat
+Summary: Heartbeat resource agent for DRBD
+Group: System Environment/Base
+Requires: drbd-utils, heartbeat
+
+%description heartbeat
+This package contains the DRBD resource agents for the Heartbeat cluster
+resource manager (in v1 compatibility mode).
+
 %files heartbeat
 %defattr(755,root,root)
 /etc/ha.d/resource.d/drbddisk
 /etc/ha.d/resource.d/drbdupper
 
+
+%package bash-completion
+Summary: Programmable bash completion support for drbdadm
+Group: System Environment/Base
+Requires: drbd-utils, bash-completion
+
+%description bash-completion
+This package contains programmable bash completion support for the drbdadm
+management utility.
+
 %files bash-completion
 %defattr(644,root,root)
 /etc/bash_completion.d/drbdadm*
+
+
 
 %prep
 %setup -q
