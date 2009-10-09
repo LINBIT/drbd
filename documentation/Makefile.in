@@ -16,6 +16,39 @@
 # along with drbd; see the file COPYING.  If not, write to
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
+# variables set by configure
+DISTRO = @DISTRO@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+localstatedir = @localstatedir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+sbindir = @sbindir@
+sysconfdir = @sysconfdir@
+mandir = @mandir@
+BASH_COMPLETION_SUFFIX = @BASH_COMPLETION_SUFFIX@
+UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
+INITDIR = @INITDIR@
+KDIR ?= @KDIR@
+LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
+CC = @CC@
+CFLAGS = @CFLAGS@
+XSLTPROC = @XSLTPROC@
+
+# features enabled or disabled by configure
+WITH_UTILS = @WITH_UTILS@
+WITH_KM = @WITH_KM@
+WITH_UDEV = @WITH_UDEV@
+WITH_XEN = @WITH_XEN@
+WITH_PACEMAKER = @WITH_PACEMAKER@
+WITH_HEARTBEAT = @WITH_HEARTBEAT@
+WITH_RGMANAGER = @WITH_RGMANAGER@
+WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
+
+# variables meant to be overridden from the make command line
+DESTDIR ?= /
+
+
 MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8 drbdmeta.8
 SOURCES        := $(wildcard *.xml)
 
@@ -44,20 +77,26 @@ doc-clean: distclean
 
 .SUFFIXES: .sgml .5 .8 .html .pdf .ps
 
-%.5 %.8: %.xml 
-	xsltproc \
+%.5 %.8: %.xml
+ifeq ($(WITH_UTILS),yes)
+	$(XSLTPROC) \
 	$(XSLTPROC_MANPAGES_OPTIONS) \
 	$(MANPAGES_STYLESHEET) $<
+endif
 
 %.html: %.xml
-	xsltproc -o $@ \
+ifeq ($(WITH_UTILS),yes)
+	$(XSLTPROC) -o $@ \
 	$(XSLTPROC_HTML_OPTIONS) \
 	$(HTML_STYLESHEET) $<
+endif
 
 %.fo: %.xml
-	xsltproc -o $@ \
+ifeq ($(WITH_UTILS),yes)
+	$(XSLTPROC) -o $@ \
 	$(XSLTPROC_FO_OPTIONS) \
 	$(FO_STYLESHEET) $<
+endif
 
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
@@ -73,13 +112,13 @@ install:
 	done ; $$ok
 	set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
-		install -v -D -m 644 $$f $(PREFIX)/usr/share/man/man$$s/$$f ; \
+		install -v -D -m 644 $$f $(DESTDIR)$(mandir)/man$$s/$$f ; \
 	done
 
 uninstall:
 	@ set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
-		rm -v $(PREFIX)/usr/share/man/man$$s/$$f ; \
+		rm -v $(DESTDIR)$(mandir)/man$$s/$$f ; \
 	done
 
 html:	$(SOURCES:.xml=.html)

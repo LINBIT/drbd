@@ -154,7 +154,7 @@ AC_SUBST(BASH_COMPLETION_SUFFIX)
 AC_SUBST(UDEV_RULE_SUFFIX)
 
 dnl The configuration files we create (from their .in template)
-AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile drbd.spec)
+AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile drbd.spec)
 
 dnl output
 AC_OUTPUT
