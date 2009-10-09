@@ -33,6 +33,7 @@ KDIR ?= @KDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 CC = @CC@
 CFLAGS = @CFLAGS@
+LN_S = @LN_S@
 
 # features enabled or disabled by configure
 WITH_UTILS = @WITH_UTILS@
