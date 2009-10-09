@@ -19,9 +19,9 @@
 %bcond_without heartbeat
 %bcond_without bashcompletion
 
-Name: drbd
+Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
-Version:
+Version: @PACKAGE_VERSION@
 Release: 3
 Source: %{name}-%{version}.tar.gz
 Vendor: DRBD
@@ -44,6 +44,8 @@ Authors:
 --------
     Philipp Reisner <philipp.reisner@linbit.com>
     Lars Ellenberg  <lars.ellenberg@linbit.com>
+
+Please report bugs to @PACKAGE_BUGREPORT@.
 
 # Just a few docs go into the "drbd" package. Everything else is part
 # of one of the drbd-* packages.

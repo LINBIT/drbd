@@ -94,6 +94,9 @@ distclean:
 	@ set -e; for i in $(ALLSUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
 	rm -rf dist
+	rm -f configure
+	rm -f config.log
+	rm -f config.status
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
@@ -190,12 +193,6 @@ check-kdir:
 	        echo "" ;\
 		false;\
 	fi
-
-drbd.spec: drbd.spec.in
-	sed -e "s/^\(Version:\).*/\1 $(FDIST_VERSION)/;" $< > $@
-
-.PHONY: spec
-spec: drbd.spec
 
 .PHONY: rpm
 rpm: check-kdir tgz
