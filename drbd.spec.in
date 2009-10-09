@@ -218,7 +218,7 @@ management utility.
 %prep
 %setup -q
 test -d %{kdir}/.
-test "$(scripts/get_uts_release.sh)" = %{kernelversion}
+test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 
 %build
 echo kernelversion=%{kernelversion}
