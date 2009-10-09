@@ -17,11 +17,38 @@
 # the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 
-KDIR := /lib/modules/$(shell uname -r)/build
+# variables set by configure
+DISTRO = @DISTRO@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+localstatedir = @localstatedir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+sbindir = @sbindir@
+sysconfdir = @sysconfdir@
+BASH_COMPLETION_SUFFIX = @BASH_COMPLETION_SUFFIX@
+UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
+INITDIR = @INITDIR@
+KDIR ?= @KDIR@
+LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
+CC = @CC@
+CFLAGS = @CFLAGS@
 
-CC = gcc
+# features enabled or disabled by configure
+WITH_UTILS = @WITH_UTILS@
+WITH_KM = @WITH_KM@
+WITH_UDEV = @WITH_UDEV@
+WITH_XEN = @WITH_XEN@
+WITH_PACEMAKER = @WITH_PACEMAKER@
+WITH_HEARTBEAT = @WITH_HEARTBEAT@
+WITH_RGMANAGER = @WITH_RGMANAGER@
+WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
+
+# variables meant to be overridden from the make command line
+DESTDIR ?= /
+
 OPTFLAGS = -O1
-CFLAGS = $(OPTFLAGS) -c -W -Wall -I../drbd
+CFLAGS += $(OPTFLAGS) -c -W -Wall -I../drbd
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
@@ -32,7 +59,13 @@ drbdsetup-obj = drbdsetup.o drbdtool_common.o drbd_buildtag.o \
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 
-all: drbdadm drbdmeta drbdsetup
+all: tools
+
+ifeq ($(WITH_UTILS),yes)
+tools: drbdadm drbdmeta drbdsetup
+else
+tools:
+endif
 
 drbd_buildtag.c: ../drbd/drbd_buildtag.c
 	cp $^ $@
@@ -42,9 +75,6 @@ drbd_strings.c: ../drbd/drbd_strings.c
 
 drbdadm: $(drbdadm-obj)
 	$(CC) -o $@ $^
-
-# for debugging:
-# 	LANG=C LC_ALL=C flex -d -b -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -58,10 +88,6 @@ drbdsetup: $(drbdsetup-obj)
 drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^
 
-drbdmeta_unfinished_rewrite: CFLAGS += -fno-strict-aliasing
-drbdmeta_unfinished_rewrite: drbdmeta_unfinished_rewrite.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
-	$(CC) -o $@ $^
-
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta drbdmeta_unfinished_rewrite *.o
@@ -71,21 +97,23 @@ clean:
 distclean: clean
 
 install:
-	install -d $(PREFIX)/sbin/
+ifeq ($(WITH_UTILS),yes)
+	install -d $(DESTDIR)/sbin/
 	if getent group haclient > /dev/null 2> /dev/null ; then	\
-		install -g haclient -m 4750 drbdsetup $(PREFIX)/sbin/ ;	\
-		install -g haclient -m 4750 drbdmeta $(PREFIX)/sbin/ ;	\
-		install -m 755 drbdadm $(PREFIX)/sbin/ ;		\
+		install -g haclient -m 4750 drbdsetup $(DESTDIR)/sbin/ ;	\
+		install -g haclient -m 4750 drbdmeta $(DESTDIR)/sbin/ ;	\
+		install -m 755 drbdadm $(DESTDIR)/sbin/ ;		\
 	else								\
-		install -m 755 drbdsetup $(PREFIX)/sbin/ ;		\
-		install -m 755 drbdmeta $(PREFIX)/sbin/ ;		\
-		install -m 755 drbdadm $(PREFIX)/sbin/ ; 		\
+		install -m 755 drbdsetup $(DESTDIR)/sbin/ ;		\
+		install -m 755 drbdmeta $(DESTDIR)/sbin/ ;		\
+		install -m 755 drbdadm $(DESTDIR)/sbin/ ; 		\
 	fi
-	mkdir -p $(PREFIX)/var/lib/drbd
+	mkdir -p $(DESTDIR)$(localstatedir)/lib/drbd
+endif
 
 uninstall:
-	rm -f $(PREFIX)/sbin/drbdsetup
-	rm -f $(PREFIX)/sbin/drbdadm
+	rm -f $(DESTDIR)/sbin/drbdsetup
+	rm -f $(DESTDIR)/sbin/drbdadm
 
 spell:
 	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdmeta.c drbdsetup.c drbdtool_common.c; do \
