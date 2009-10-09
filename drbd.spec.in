@@ -257,15 +257,11 @@ make clean
     %{?_with_heartbeat} \
     %{?_with_rgmanager} \
     %{?_with_bashcompletion}
-# note: MANDIR is not used anywhere in the makefiles
-#       maybe this should be changed
-if [ -e %{_sysconfdir}/redhat-release ]; then
-       # unset LOCALVERSION for building on RHEL AS 4
-       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
-else
-       # LOCALVERSION necessary for building on SuSE-9.3
-       make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir}
-fi
+%if %{with km}
+make all doc KDIR=%{kdir}
+%else
+make all doc
+%endif
 
 %install
 rm -rf %{buildroot}
