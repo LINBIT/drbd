@@ -54,25 +54,25 @@ This packages includes the DRBD administration tools.
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
-/usr/sbin/drbd-overview
-/usr/lib/drbd/outdate-peer.sh
-/usr/lib/drbd/crm-fence-peer.sh
-/usr/lib/drbd/crm-unfence-peer.sh
-/usr/lib/drbd/snapshot-resync-target-lvm.sh
-/usr/lib/drbd/unsnapshot-resync-target-lvm.sh
-/usr/lib/drbd/notify-out-of-sync.sh
-/usr/lib/drbd/notify-split-brain.sh
-/usr/lib/drbd/notify-emergency-reboot.sh
-/usr/lib/drbd/notify-emergency-shutdown.sh
-/usr/lib/drbd/notify-io-error.sh
-/usr/lib/drbd/notify-pri-lost-after-sb.sh
-/usr/lib/drbd/notify-pri-lost.sh
-/usr/lib/drbd/notify-pri-on-incon-degr.sh
-/usr/lib/drbd/notify.sh
+%{_sbindir}/drbd-overview
+%{_prefix}/lib/%{name}/outdate-peer.sh
+%{_prefix}/lib/%{name}/crm-fence-peer.sh
+%{_prefix}/lib/%{name}/crm-unfence-peer.sh
+%{_prefix}/lib/%{name}/snapshot-resync-target-lvm.sh
+%{_prefix}/lib/%{name}/unsnapshot-resync-target-lvm.sh
+%{_prefix}/lib/%{name}/notify-out-of-sync.sh
+%{_prefix}/lib/%{name}/notify-split-brain.sh
+%{_prefix}/lib/%{name}/notify-emergency-reboot.sh
+%{_prefix}/lib/%{name}/notify-emergency-shutdown.sh
+%{_prefix}/lib/%{name}/notify-io-error.sh
+%{_prefix}/lib/%{name}/notify-pri-lost-after-sb.sh
+%{_prefix}/lib/%{name}/notify-pri-lost.sh
+%{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
+%{_prefix}/lib/%{name}/notify.sh
 
 %defattr(644,root,root)
-/var/lib/drbd
-%config(noreplace) /etc/drbd.conf
+%{_var}/lib/drbd
+%config(noreplace) %{_sysconfdir}/drbd.conf
 
 %defattr(-,root,root)
 %{_mandir}/man8/drbd.8.*
@@ -138,7 +138,7 @@ promoting and demoting DRBD resources as necessary.
 
 %files xen
 %defattr(755,root,root)
-/etc/xen/scripts/block-drbd
+%{_sysconfdir}/xen/scripts/block-drbd
 
 
 %package udev
@@ -152,7 +152,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 
 %files udev
 %defattr(755,root,root)
-/etc/udev/rules.d/65-drbd.rules*
+%{_sysconfdir}/udev/rules.d/65-drbd.rules*
 
 
 %package pacemaker
@@ -196,8 +196,8 @@ resource manager (in v1 compatibility mode).
 
 %files heartbeat
 %defattr(755,root,root)
-/etc/ha.d/resource.d/drbddisk
-/etc/ha.d/resource.d/drbdupper
+%{_sysconfdir}/ha.d/resource.d/drbddisk
+%{_sysconfdir}/ha.d/resource.d/drbdupper
 
 
 %package bash-completion
@@ -211,7 +211,7 @@ management utility.
 
 %files bash-completion
 %defattr(644,root,root)
-/etc/bash_completion.d/drbdadm*
+%{_sysconfdir}/bash_completion.d/drbdadm*
 
 
 
@@ -228,7 +228,7 @@ mkdir -p %{buildroot}
 make clean
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
-if [ -e /etc/redhat-release ]; then
+if [ -e %{_sysconfdir}/redhat-release ]; then
        # unset LOCALVERSION for building on RHEL AS 4
        make all doc PREFIX=%{buildroot}/ MANDIR=%{_mandir} KDIR=%{kdir} LOCALVERSION=""
 else
