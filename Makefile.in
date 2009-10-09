@@ -69,17 +69,31 @@ endif
 
 all: tools module
 
-module:
-	@if [ -z "$(KVER)" ]; then \
-		echo "Could not determine uts_release" ; \
-		false ; \
+.PHONY: check-kdir
+check-kdir:
+ifeq ($(WITH_KM),yes)
+	@if ! test -e $(KDIR)/Makefile ; then \
+		echo "    SORRY, kernel makefile not found." ;\
+	        echo "    You need to tell me a correct KDIR," ;\
+	        echo "    Or install the neccessary kernel source packages." ;\
+	        echo "" ;\
+		false;\
 	fi
+endif
+
+.PHONY: module
+module: check-kdir
+ifeq ($(WITH_KM),yes)
 	@ $(MAKE) -C drbd
 	@ echo -e "\n\tModule build was successful."
+endif
 
+.PHONY: tools
 tools:
+ifeq ($(WITH_UTILS),yes)
 	@ set -e; for i in $(patsubst drbd,,$(SUBDIRS)); do $(MAKE) -C $$i ; done
 	@ echo -e "\n\tUserland tools build was successful."
+endif
 
 doc:
 	$(MAKE) -C documentation doc
@@ -87,8 +101,10 @@ doc:
 doc-clean:
 	$(MAKE) -C documentation doc-clean
 
-install:
-	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i install; done
+install: install-tools
+ifeq ($(WITH_KM),yes)
+	$(MAKE) -C drbd install
+endif
 
 install-tools:
 	@ set -e; for i in $(patsubst drbd,,$(SUBDIRS)); do $(MAKE) -C $$i install; done
@@ -192,15 +208,6 @@ kernel-patch: drbd/drbd_buildtag.c
 	test -e $$d && cp -fav --backup=numbered $$d $$d; \
 	bash scripts/patch-kernel $(KDIR) . > $$d
 
-.PHONY: check-kdir
-check-kdir:
-	@if ! test -e $(KDIR)/Makefile ; then \
-		echo "    SORRY, kernel makefile not found." ;\
-	        echo "    You need to tell me a correct KDIR," ;\
-	        echo "    Or install the neccessary kernel source packages." ;\
-	        echo "" ;\
-		false;\
-	fi
 
 ifdef RPMBUILD
 .PHONY: rpm
