@@ -5,7 +5,7 @@
 %{!?kdir: %{expand: %%define kdir /lib/modules/%(uname -r)/build}}
 
 # encode - to _ to be able to include that in a package name or release "number"
-%define krelver  %(echo %{kernelversion} | tr -s '-' '_')
+%global krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
 Name: drbd
 Summary: DRBD driver for Linux
