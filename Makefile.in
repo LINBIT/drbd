@@ -24,16 +24,20 @@
 # TODO move some of the more cryptic bash scriptlets here into scripts/*
 # and call those from here.	-- lge
 
+# variables set by configure
+RPMBUILD = @RPMBUILD@
+PREFIX = @prefix@
+SED = @SED@
+LN_S = @LN_S@
+
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash
 
-#PREFIX      = /usr/local
-
 SUBDIRS     = user scripts documentation drbd #testing #benchmark
 ALLSUBDIRS  = user scripts benchmark documentation drbd #testing
 
-REL_VERSION := $(shell sed -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(shell $(SED) -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
@@ -50,9 +54,6 @@ FDIST_VERSION := $(shell test -e .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p
 ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
 endif
-
-LN_S = ln -s
-RPMBUILD=rpmbuild
 
 # Use a reasonably sane default for KDIR
 export KDIR KVER O
@@ -149,9 +150,9 @@ drbd/drbd_buildtag.c:
 # which will regenerate .filelist
 tgz:
 	test -e .filelist
-	ln -sf drbd/linux/drbd_config.h drbd_config.h
+	$(LN_S) -f drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(FDIST_VERSION)
-	ln -s . drbd-$(FDIST_VERSION)
+	$(LN_S) . drbd-$(FDIST_VERSION)
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
 	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
 	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION)$$_DEB.tar.gz
@@ -194,6 +195,7 @@ check-kdir:
 		false;\
 	fi
 
+ifdef RPMBUILD
 .PHONY: rpm
 rpm: check-kdir tgz
 	$(RPMBUILD) -tb \
@@ -209,3 +211,4 @@ srpm: tgz
 		$(RPMOPT) \
 		drbd-$(FDIST_VERSION).tar.gz
 	@echo "You have now:" ; ls -l `rpm -E "%_srcrpmdir"`/*.src.rpm
+endif
