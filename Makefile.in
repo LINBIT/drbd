@@ -47,8 +47,7 @@ WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash
 
-SUBDIRS     = user scripts documentation drbd #testing #benchmark
-ALLSUBDIRS  = user scripts benchmark documentation drbd #testing
+SUBDIRS     = user scripts documentation drbd
 
 REL_VERSION := $(shell $(SED) -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
@@ -100,7 +99,7 @@ clean:
 	rm -rf dist
 
 distclean:
-	@ set -e; for i in $(ALLSUBDIRS); do $(MAKE) -C $$i distclean; done
+	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
 	rm -rf dist
 	rm -f configure
