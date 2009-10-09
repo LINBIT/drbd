@@ -278,10 +278,6 @@ echo @INITDIR@/drbd > "$FILELIST"
 # on suse/united we have additionally:
 test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
 
-## If I only wanted to include the module, not all the directories
-## I'd then say  %files -n kernel%{?ksmp}-module-drbd -f $FILELIST.mod below
-#find lib/ -name "drbd.*" -printf "/%p\n" > "$FILELIST.mod"
-
 #
 # and I only want to install a hint to the example conf
 #
