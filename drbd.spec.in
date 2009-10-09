@@ -274,7 +274,7 @@ cd %{buildroot}
 # this is because /etc/init.d != /etc/rc.d != /etc/rc.d/init.d ...
 # you may want to edit this, or the file list below ;)
 #
-find etc/ -name drbd -printf "/%p\n" > "$FILELIST"
+echo @INITDIR@/drbd > "$FILELIST"
 # on suse/united we have additionally:
 test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
 
