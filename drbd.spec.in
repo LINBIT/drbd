@@ -249,6 +249,14 @@ echo kversion=%{kversion}
 echo krelver=%{krelver}
 mkdir -p %{buildroot}
 make clean
+%configure %{?_with_utils} \
+    %{?_with_km} \
+    %{?_with_udev} \
+    %{?_with_xen} \
+    %{?_with_pacemaker} \
+    %{?_with_heartbeat} \
+    %{?_with_rgmanager} \
+    %{?_with_bashcompletion}
 # note: MANDIR is not used anywhere in the makefiles
 #       maybe this should be changed
 if [ -e %{_sysconfdir}/redhat-release ]; then
@@ -260,7 +268,7 @@ else
 fi
 
 %install
-[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
+rm -rf %{buildroot}
 make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
