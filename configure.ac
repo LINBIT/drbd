@@ -71,6 +71,7 @@ AC_PATH_PROG(XSLTPROC, xsltproc)
 AC_PATH_PROG(TAR, tar)
 AC_PATH_PROG(GIT, git)
 AC_PATH_PROG(DPKG_BUILDPACKAGE, dpkg-buildpackage)
+AC_PATH_PROG(UDEVADM, udevadm)
 
 if test -z $CC; then
    if test "$WITH_UTILS" = "yes"; then
@@ -103,7 +104,16 @@ if test -z $GIT; then
    AC_MSG_WARN(Cannot update buildtag without git. You may safely ignore this warning when building from a tarball.)
 fi
 
+if test -z $UDEVADM; then
+   if test "$WITH_UDEV" = "yes"; then
+     AC_MSG_WARN([udev support enabled, but no udevadm found on this system.])
+   fi
+fi
+
+
 dnl Checks for system services
+
+dnl figure out the kernel versin and kernel headers directory
 KVER="`uname -r`"
 KDIR="/lib/modules/$KVER/build"
 AC_SUBST(KVER)
@@ -114,8 +124,37 @@ if test "$WITH_KM" = "yes"; then
       		AC_MSG_WARN([Unable to find a kernel Makefile in $KDIR. You will have to set KDIR correctly when invoking make.]))
 fi
 
+INITDIR="$sysconfdir/init.d"
+BASH_COMPLETION_SUFFIX=""
+UDEV_RULE_SUFFIX=""
+dnl figure out the distribution we're running on, and set some variables accordingly
+AC_CHECK_FILE(/etc/gentoo-release, [DISTRO="gentoo"])
+AC_CHECK_FILE(/etc/redhat-release, [DISTRO="redhat"; INITDIR="$sysconfdir/rc.d/init.d"])
+AC_CHECK_FILE(/etc/slackware-version, [DISTRO="slackware"; INITDIR="$sysconfdir/rc.d"])
+AC_CHECK_FILE(/etc/debian_version, [DISTRO="debian"])
+AC_CHECK_FILE(/etc/SuSErelease, [DISTRO="suse", BASH_COMPLETION_SUFFIX=".sh"])
+if test -z "$DISTRO"; then
+   AC_MSG_WARN([Unable to determine what distribution we are running on. Distribution-specific features will be disabled.])
+else
+   AC_MSG_NOTICE([Configured for $DISTRO.])
+fi
+
+dnl Our udev rules file is known to work only with udev >= 85
+if test "$WITH_UDEV" = "yes"; then
+   udev_version=`$UDEVADM version 2>/dev/null`
+   if test $udev_version -lt 85; then
+      UDEV_RULE_SUFFIX=".disabled"
+      AC_MSG_WARN([Obsolete or unknown udev version. Installing disabled udev rules.])
+   fi
+fi
+
+AC_SUBST(DISTRO)
+AC_SUBST(INITDIR)
+AC_SUBST(BASH_COMPLETION_SUFFIX)
+AC_SUBST(UDEV_RULE_SUFFIX)
+
 dnl The configuration files we create (from their .in template)
-AC_CONFIG_FILES(Makefile drbd.spec)
+AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile drbd.spec)
 
 dnl output
 AC_OUTPUT
