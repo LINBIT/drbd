@@ -289,7 +289,7 @@ cat <<___ > etc/drbd.conf
 ___
 
 %clean
-[ -n $RPM_BUILD_ROOT -a "$RPM_BUILD_ROOT" != "/" ] && rm -rf $RPM_BUILD_ROOT
+rm -rf %{buildroot}
 
 %if %{with utils}
 %post utils
