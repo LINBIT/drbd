@@ -265,7 +265,7 @@ make all doc
 
 %install
 rm -rf %{buildroot}
-make install PREFIX=%{buildroot}/ MANDIR=%{_mandir}
+make install DESTDIR=%{buildroot}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
 FILELIST="%{_builddir}/%{name}-%{version}/file.list"
