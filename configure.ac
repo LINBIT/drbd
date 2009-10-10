@@ -82,6 +82,7 @@ AC_PATH_PROG(TAR, tar)
 AC_PATH_PROG(GIT, git)
 AC_PATH_PROG(DPKG_BUILDPACKAGE, dpkg-buildpackage)
 AC_PATH_PROG(UDEVADM, udevadm)
+AC_PATH_PROG(UDEVINFO, udevinfo)
 
 if test -z $CC; then
    if test "$WITH_UTILS" = "yes"; then
@@ -114,9 +115,9 @@ if test -z $GIT; then
    AC_MSG_WARN(Cannot update buildtag without git. You may safely ignore this warning when building from a tarball.)
 fi
 
-if test -z $UDEVADM; then
+if test -z $UDEVADM && test -z $UDEVINFO; then
    if test "$WITH_UDEV" = "yes"; then
-     AC_MSG_WARN([udev support enabled, but no udevadm found on this system.])
+     AC_MSG_WARN([udev support enabled, but neither udevadm nor udevinfo found on this system.])
    fi
 fi
 
@@ -173,7 +174,7 @@ esac
 
 dnl Our udev rules file is known to work only with udev >= 85
 if test "$WITH_UDEV" = "yes"; then
-   udev_version=`$UDEVADM version 2>/dev/null`
+   udev_version=`$UDEVADM version 2>/dev/null` || udev_version=`$UDEVINFO -V | cut -d " " -f 3` || udev_version=0
    if test $udev_version -lt 85; then
       UDEV_RULE_SUFFIX=".disabled"
       AC_MSG_WARN([Obsolete or unknown udev version. Installing disabled udev rules.])
