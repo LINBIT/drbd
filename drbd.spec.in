@@ -260,10 +260,9 @@ mkdir -p %{buildroot}
     %{?_with_rgmanager} \
     %{?_with_bashcompletion}
 make clean
+make tools doc
 %if %{with km}
-make all doc KDIR=%{kdir}
-%else
-make all doc
+make module KDIR=%{kdir}
 %endif
 
 %install
