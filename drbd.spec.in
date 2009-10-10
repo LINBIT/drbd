@@ -251,14 +251,14 @@ echo kversion=%{kversion}
 echo krelver=%{krelver}
 mkdir -p %{buildroot}
 %configure \
-    %{?_with_utils} \
-    %{?_with_km} \
-    %{?_with_udev} \
-    %{?_with_xen} \
-    %{?_with_pacemaker} \
-    %{?_with_heartbeat} \
-    %{?_with_rgmanager} \
-    %{?_with_bashcompletion}
+    %{?_without_utils} \
+    %{?_without_km} \
+    %{?_without_udev} \
+    %{?_without_xen} \
+    %{?_without_pacemaker} \
+    %{?_without_heartbeat} \
+    %{?_without_rgmanager} \
+    %{?_without_bashcompletion}
 make clean
 make tools doc
 %if %{with km}
@@ -268,9 +268,12 @@ make module KDIR=%{kdir}
 %install
 rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
+%if %{with km}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
+%endif
 FILELIST="%{_builddir}/%{name}-%{version}/file.list"
+%if %{with utils}
 cd %{buildroot}
 #
 # this is because /etc/init.d != /etc/rc.d != /etc/rc.d/init.d ...
@@ -289,6 +292,7 @@ cat <<___ > etc/drbd.conf
 # %{_docdir}/%{name}/drbd.conf
 #
 ___
+%endif
 
 %clean
 rm -rf %{buildroot}
