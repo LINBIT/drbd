@@ -250,7 +250,6 @@ echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
 mkdir -p %{buildroot}
-make clean
 %configure \
     %{?_with_utils} \
     %{?_with_km} \
@@ -260,6 +259,7 @@ make clean
     %{?_with_heartbeat} \
     %{?_with_rgmanager} \
     %{?_with_bashcompletion}
+make clean
 %if %{with km}
 make all doc KDIR=%{kdir}
 %else
