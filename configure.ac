@@ -132,6 +132,7 @@ fi
 INITDIR="$sysconfdir/init.d"
 BASH_COMPLETION_SUFFIX=""
 UDEV_RULE_SUFFIX=""
+RPM_DIST_TAG=""
 dnl figure out the distribution we're running on, and set some variables accordingly
 AC_CHECK_FILE(/etc/gentoo-release, [DISTRO="gentoo"])
 AC_CHECK_FILE(/etc/redhat-release, [DISTRO="redhat"; INITDIR="$sysconfdir/rc.d/init.d"])
@@ -143,6 +144,30 @@ if test -z "$DISTRO"; then
 else
    AC_MSG_NOTICE([Configured for $DISTRO.])
 fi
+case "$DISTRO" in
+     gentoo)
+	AC_MSG_NOTICE([configured for Gentoo.])
+	;;
+     redhat)
+	INITDIR="$sysconfdir/rc.d/init.d"
+	RPM_DIST_TAG="%{?dist}"
+	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
+	;;
+     slackware)
+	INITDIR="$sysconfdir/rc.d"
+	AC_MSG_NOTICE([configured for Slackware.])
+	;;
+     debian)
+	AC_MSG_NOTICE([configured for Debian (includes Ubuntu).])
+        ;;
+     suse)
+	BASH_COMPLETION_SUFFIX=".sh"
+	AC_MSG_NOTICE([configured for SUSE (includes openSUSE, SLES).])
+	;;
+     "")
+	AC_MSG_WARN([Unable to determine what distribution we are running on. Distribution-specific features will be disabled.])
+	;;
+esac
 
 dnl Our udev rules file is known to work only with udev >= 85
 if test "$WITH_UDEV" = "yes"; then
@@ -157,6 +182,7 @@ AC_SUBST(DISTRO)
 AC_SUBST(INITDIR)
 AC_SUBST(BASH_COMPLETION_SUFFIX)
 AC_SUBST(UDEV_RULE_SUFFIX)
+AC_SUBST(RPM_DIST_TAG)
 
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then
