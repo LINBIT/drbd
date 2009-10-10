@@ -240,8 +240,10 @@ management utility.
 
 %prep
 %setup -q
+%if %{with km}
 test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
+%endif
 
 %build
 echo kernelversion=%{kernelversion}
