@@ -164,6 +164,7 @@ drbd/drbd_buildtag.c:
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
 	echo drbd-$(DIST_VERSION)/drbd.spec >> .filelist ;\
+	echo drbd-$(DIST_VERSION)/configure >> .filelist ;\
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
