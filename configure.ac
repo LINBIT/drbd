@@ -50,6 +50,11 @@ AC_ARG_WITH([bashcompletion],
 	[AS_HELP_STRING([--with-bashcompletion],
 			[Enable programmable bash completion])],
 	[WITH_BASHCOMPLETION=$withval])
+AC_ARG_ENABLE([spec],
+	[AS_HELP_STRING([--enable-spec],
+			[Rather than creating Makefiles, create an RPM spec file only])],
+	[SPECMODE=$enableval],
+	[SPECMODE=""])
 AC_SUBST(WITH_UTILS)
 AC_SUBST(WITH_KM)
 AC_SUBST(WITH_UDEV)
@@ -154,7 +159,11 @@ AC_SUBST(BASH_COMPLETION_SUFFIX)
 AC_SUBST(UDEV_RULE_SUFFIX)
 
 dnl The configuration files we create (from their .in template)
-AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile drbd.spec)
+if test -z $SPECMODE; then
+   AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile)
+else
+   AC_CONFIG_FILES(drbd.spec)
+fi
 
 dnl output
 AC_OUTPUT

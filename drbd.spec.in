@@ -249,7 +249,8 @@ echo kversion=%{kversion}
 echo krelver=%{krelver}
 mkdir -p %{buildroot}
 make clean
-%configure %{?_with_utils} \
+%configure \
+    %{?_with_utils} \
     %{?_with_km} \
     %{?_with_udev} \
     %{?_with_xen} \
