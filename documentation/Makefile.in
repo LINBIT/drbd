@@ -48,8 +48,12 @@ WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
 # variables meant to be overridden from the make command line
 DESTDIR ?= /
 
-
-MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbddisk.8 drbdmeta.8
+ifeq ($(WITH_UTILS),yes)
+MANPAGES       := drbdsetup.8 drbd.conf.5 drbd.8 drbdadm.8 drbdmeta.8
+endif
+ifeq ($(WITH_HEARTBEAT),yes)
+MANPAGES += drbddisk.8
+endif
 SOURCES        := $(wildcard *.xml)
 
 STYLESHEET_PREFIX ?= http://docbook.sourceforge.net/release/xsl/current

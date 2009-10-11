@@ -93,7 +93,6 @@ This packages includes the DRBD administration tools.
 %{_mandir}/man8/drbd.8.*
 %{_mandir}/man8/drbdsetup.8.*
 %{_mandir}/man8/drbdadm.8.*
-%{_mandir}/man8/drbddisk.8.*
 %{_mandir}/man5/drbd.conf.5.*
 %{_mandir}/man8/drbdmeta.8.*
 %doc scripts/drbd.conf
@@ -220,6 +219,7 @@ resource manager (in v1 compatibility mode).
 %defattr(755,root,root)
 %{_sysconfdir}/ha.d/resource.d/drbddisk
 %{_sysconfdir}/ha.d/resource.d/drbdupper
+%{_mandir}/man8/drbddisk.8.*
 %endif # with heartbeat
 
 %if %{with bashcompletion}
