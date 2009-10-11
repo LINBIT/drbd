@@ -259,7 +259,6 @@ mkdir -p %{buildroot}
     %{?_without_heartbeat} \
     %{?_without_rgmanager} \
     %{?_without_bashcompletion}
-make clean
 make tools doc
 %if %{with km}
 make module KDIR=%{kdir}
