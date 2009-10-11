@@ -182,10 +182,10 @@ else
 	@if ! [ -e $(MODOBJ) ] ; then \
 	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
-# install -d $(PREFIX)/var/lib/drbd
-	install -d $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-	install -m 644 $(MODOBJ) $(PREFIX)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-    ifeq ($(PREFIX),/)
+# install -d $(DESTDIR)/var/lib/drbd
+	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
+	install -m 644 $(MODOBJ) $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
+    ifeq ($(DESTDIR),/)
       ifeq ($(shell uname -r),$(KERNELRELEASE))
 	/sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
       else
