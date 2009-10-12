@@ -140,6 +140,7 @@ BASH_COMPLETION_SUFFIX=""
 UDEV_RULE_SUFFIX=""
 RPM_DIST_TAG=""
 RPM_CONFLICTS_KM=""
+RPM_BUILDREQ_KM=""
 dnl figure out the distribution we're running on, and set some variables accordingly
 if test -z $DISTRO; then
    AC_CHECK_FILE(/etc/gentoo-release, [DISTRO="gentoo"])
@@ -156,6 +157,7 @@ case "$DISTRO" in
 	INITDIR="$sysconfdir/rc.d/init.d"
 	RPM_DIST_TAG="%{?dist}"
 	RPM_CONFLICTS_KM="drbd-kmod <= %{version}_3"
+	RPM_BUILDREQ_KM="kernel-devel = %{kernelversion}"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
 	;;
      slackware)
@@ -168,6 +170,7 @@ case "$DISTRO" in
      suse)
 	BASH_COMPLETION_SUFFIX=".sh"
 	RPM_CONFLICTS_KM="km_drbd, drbd-kmp <= %{version}_3"
+	RPM_BUILDREQ_KM="kernel-syms = %{kernelversion}"
 	AC_MSG_NOTICE([configured for SUSE (includes openSUSE, SLES).])
 	;;
      "")
@@ -190,6 +193,7 @@ AC_SUBST(BASH_COMPLETION_SUFFIX)
 AC_SUBST(UDEV_RULE_SUFFIX)
 AC_SUBST(RPM_DIST_TAG)
 AC_SUBST(RPM_CONFLICTS_KM)
+AC_SUBST(RPM_BUILDREQ_KM)
 
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then

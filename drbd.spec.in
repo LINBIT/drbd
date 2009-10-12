@@ -30,7 +30,12 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
+%if %{with utils}
 BuildRequires: flex, gcc
+%endif
+%if %{with km}
+BuildRequires: gcc, @RPM_BUILDREQ_KM@
+%endif
 Requires: drbd-utils, drbd-xen, drbd-udev, drbd-pacemaker, drbd-rgmanager, drbd-heartbeat, drbd-bash-completion
 
 %description
