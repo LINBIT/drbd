@@ -89,7 +89,7 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify.sh
 
 %defattr(644,root,root)
-%{_var}/lib/drbd
+%{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
 
 %defattr(-,root,root)
@@ -176,7 +176,7 @@ Pacemaker High Availability cluster manager.
 %defattr(755,root,root)
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
-/usr/lib/ocf/resource.d/linbit/drbd
+%{_prefix}/lib/ocf/resource.d/linbit/drbd
 %endif # with pacemaker
 
 %if %{with rgmanager}
@@ -191,9 +191,9 @@ resource manager.
 
 %files rgmanager
 %defattr(644,root,root)
-/usr/share/cluster/drbd.metadata
+%{_datadir}/cluster/drbd.metadata
 %defattr(755,root,root)
-/usr/share/cluster/drbd.sh
+%{_datadir}/cluster/drbd.sh
 %endif # with rgmanager
 
 %if %{with heartbeat}
