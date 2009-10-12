@@ -64,11 +64,9 @@ ifeq ($(WITH_UTILS),yes)
 	fi
 	install -d $(DESTDIR)$(LIBDIR)
 	install -m 755 outdate-peer.sh $(DESTDIR)$(LIBDIR)
-	install -m 755 crm-fence-peer.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 snapshot-resync-target-lvm.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 notify.sh $(DESTDIR)$(LIBDIR)
 	( set -e ; cd $(DESTDIR)$(LIBDIR) ;\
-	  $(LN_S) -f crm-fence-peer.sh crm-unfence-peer.sh ;\
 	  $(LN_S) -f snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh ;\
 	  $(LN_S) -f notify.sh notify-split-brain.sh ;\
 	  $(LN_S) -f notify.sh notify-io-error.sh ;\
@@ -99,6 +97,10 @@ endif
 
 install-pacemaker:
 ifeq ($(WITH_PACEMAKER),yes)
+	install -d $(DESTDIR)$(LIBDIR)
+	install -m 755 crm-fence-peer.sh $(DESTDIR)$(LIBDIR)
+	( set -e ; cd $(DESTDIR)$(LIBDIR) ;\
+	  $(LN_S) -f crm-fence-peer.sh crm-unfence-peer.sh ; )
 	mkdir -p $(DESTDIR)$(prefix)/lib/ocf/resource.d/linbit
 	install -m 755 drbd.ocf $(DESTDIR)$(prefix)/lib/ocf/resource.d/linbit/drbd
 endif
