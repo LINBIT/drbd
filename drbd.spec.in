@@ -235,12 +235,6 @@ management utility.
 test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 %endif
-
-%build
-echo kernelversion=%{kernelversion}
-echo kversion=%{kversion}
-echo krelver=%{krelver}
-mkdir -p %{buildroot}
 %configure \
     %{?_without_utils} \
     %{?_with_km} \
@@ -250,6 +244,13 @@ mkdir -p %{buildroot}
     %{?_without_heartbeat} \
     %{?_without_rgmanager} \
     %{?_without_bashcompletion}
+
+
+%build
+echo kernelversion=%{kernelversion}
+echo kversion=%{kversion}
+echo krelver=%{krelver}
+mkdir -p %{buildroot}
 make tools doc
 %if %{with km}
 make module KDIR=%{kdir}
