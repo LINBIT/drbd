@@ -254,7 +254,6 @@ test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
-mkdir -p %{buildroot}
 make tools doc
 %if %{with km}
 make module KDIR=%{kdir}
