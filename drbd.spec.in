@@ -58,6 +58,7 @@ Please report bugs to @PACKAGE_BUGREPORT@.
 # Just a few docs go into the "drbd" package. Everything else is part
 # of one of the drbd-* packages.
 %files
+%defattr(-,root,root)
 %doc README
 
 %if %{with utils}
