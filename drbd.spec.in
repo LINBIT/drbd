@@ -11,7 +11,7 @@
 # specific features
 # note: conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without utils
-%bcond_without km
+%bcond_with km
 %bcond_without xen
 %bcond_without udev
 %bcond_without pacemaker
@@ -243,7 +243,7 @@ echo krelver=%{krelver}
 mkdir -p %{buildroot}
 %configure \
     %{?_without_utils} \
-    %{?_without_km} \
+    %{?_with_km} \
     %{?_without_udev} \
     %{?_without_xen} \
     %{?_without_pacemaker} \
