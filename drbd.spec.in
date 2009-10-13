@@ -36,6 +36,9 @@ BuildRequires: flex, gcc
 %if %{with km}
 BuildRequires: gcc, @RPM_BUILDREQ_KM@
 %endif
+%if %{with udev}
+BuildRequires: udev
+%endif
 Requires: drbd-utils, drbd-xen, drbd-udev, drbd-pacemaker, drbd-rgmanager, drbd-heartbeat, drbd-bash-completion
 
 %description
