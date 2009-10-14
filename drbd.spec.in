@@ -181,7 +181,7 @@ This package contains udev helper scripts for DRBD, managing symlinks to
 DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 
 %files udev
-%defattr(755,root,root)
+%defattr(-,root,root)
 %{_sysconfdir}/udev/rules.d/65-drbd.rules*
 %doc COPYING
 %endif # with udev
