@@ -116,7 +116,6 @@ This packages includes the DRBD administration tools.
 %endif # with utils
 
 %if %{with km}
-#%package -n kernel%{?ksmp}-module-drbd
 # I choose to have the kernelversion as part of the package name!
 # drbd is prepended...
 %package km-%{krelver}
@@ -130,13 +129,11 @@ Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
 # TODO: break up this generic .spec file into per distribution ones,
 # and use the distribution specific naming and build conventions for kernel modules.
 
-#%description -n kernel%{?ksmp}-module-drbd
 %description km-%{krelver}
 This module is the kernel-dependent driver for DRBD.  This is split out so
 that multiple kernel driver versions can be installed, one for each
 installed kernel.
 
-#%files -n kernel%{?ksmp}-module-drbd
 %files km-%{krelver}
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
