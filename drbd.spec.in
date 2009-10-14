@@ -278,9 +278,9 @@ test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
-make tools doc
+make %{_smp_mflags} tools doc
 %if %{with km}
-make module KDIR=%{kdir}
+make %{_smp_mflags} module KDIR=%{kdir}
 %endif
 
 %install
