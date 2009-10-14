@@ -25,7 +25,7 @@ Version: @PACKAGE_VERSION@
 Release: 5@RPM_DIST_TAG@
 Source: %{name}-%{version}.tar.gz
 Vendor: DRBD
-License: GPL
+License: GPLv2+
 ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
