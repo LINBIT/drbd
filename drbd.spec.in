@@ -59,6 +59,8 @@ Please report bugs to @PACKAGE_BUGREPORT@.
 # of one of the drbd-* packages.
 %files
 %defattr(-,root,root)
+%doc COPYING
+%doc ChangeLog
 %doc README
 
 %if %{with utils}
@@ -133,6 +135,7 @@ installed kernel.
 %files km-%{krelver}
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
+%doc COPYING
 %doc drbd/k-config-%{kernelversion}.gz
 %endif  # with km
 
@@ -149,6 +152,7 @@ promoting and demoting DRBD resources as necessary.
 %files xen
 %defattr(755,root,root)
 %{_sysconfdir}/xen/scripts/block-drbd
+%doc COPYING
 %endif # with xen
 
 %if %{with udev}
@@ -164,6 +168,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 %files udev
 %defattr(755,root,root)
 %{_sysconfdir}/udev/rules.d/65-drbd.rules*
+%doc COPYING
 %endif # with udev
 
 %if %{with pacemaker}
@@ -181,6 +186,7 @@ Pacemaker High Availability cluster manager.
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
+%doc COPYING
 %endif # with pacemaker
 
 %if %{with rgmanager}
@@ -198,6 +204,7 @@ resource manager.
 %{_datadir}/cluster/drbd.metadata
 %defattr(755,root,root)
 %{_datadir}/cluster/drbd.sh
+%doc COPYING
 %endif # with rgmanager
 
 %if %{with heartbeat}
@@ -215,6 +222,7 @@ resource manager (in v1 compatibility mode).
 %{_sysconfdir}/ha.d/resource.d/drbddisk
 %{_sysconfdir}/ha.d/resource.d/drbdupper
 %{_mandir}/man8/drbddisk.8.*
+%doc COPYING
 %endif # with heartbeat
 
 %if %{with bashcompletion}
@@ -230,6 +238,7 @@ management utility.
 %files bash-completion
 %defattr(644,root,root)
 %{_sysconfdir}/bash_completion.d/drbdadm*
+%doc COPYING
 %endif # with bashcompletion
 
 
