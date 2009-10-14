@@ -23,7 +23,7 @@ Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
 Release: 5@RPM_DIST_TAG@
-Source: %{name}-%{version}.tar.gz
+Source: http://oss.linbit.com/%{name}/8.3/%{name}-%{version}.tar.gz
 Vendor: DRBD
 License: GPLv2+
 ExclusiveOS: linux
