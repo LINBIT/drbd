@@ -111,6 +111,7 @@ This packages includes the DRBD administration tools.
 %{_mandir}/man8/drbdmeta.8.*
 %doc scripts/drbd.conf
 %doc COPYING
+%doc ChangeLog
 %doc README
 %endif # with utils
 
@@ -137,6 +138,7 @@ installed kernel.
 %defattr(-,root,root)
 /lib/modules/%{kernelversion}/
 %doc COPYING
+%doc ChangeLog
 %doc drbd/k-config-%{kernelversion}.gz
 %endif  # with km
 
@@ -341,421 +343,63 @@ uname -r | grep BOOT ||
 %endif # with km
 
 %changelog
+* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-6@RPM_DIST_TAG@
+- Packaging makeover.
 
-* Thu Oct  6 2009 14:32:15 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.4-1)
- * Fixed a regression in the connector backport introduced with 8.3.3.
-   Affected only kernels older than 2.6.14. I.e. RHEL4 and SLES9.
+* Thu Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
+- New upstream release.
 
-* Thu Oct  5 2009 11:25:55 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.3-1)
- * Correctly deal with large bitmaps (Bugz 239, 240)
- * Fixed a segfault in drbdadm's parser for unknown sync-after dependencies
- * DRBD_PEER was not set for handlers (introduced in 8.3.2) (Bugz 241)
- * Fixed a bug that could cause reads off diskless DRBD devices to get very slow
- * Fixed a deadlock possible when IO errors occure during resync (Bugz 224)
- * Do not do a full sync in case P_SYNC_UUID packet gets lost (Bugz 244)
- * Do not forget a resync in case the last ACK of a resync gets lost
- * The UUID compare function now handles more cases when connection/disk got
-   lost during UUID updates (Bugz 251, 254)
- * If a resource gets renamed (only) update its /dev/
- * drbdsetup get-gi/show-gi sometimes warned about unknown tags (Bugz 253)
- * Autotune sndbuf-size and rcvbuf-size by default
- * Fixed many spelling errors
- * Improvements on the crm-fence-peer Pacemaker integration
- * Do not upgrade a Consistent disk to UpToDate when the fence-peer handler
-   can not reach the peer (Bugz 198)
- * Support for Infiniband via SDP (sockets direct protocol)
- * Install bash completion stuff on SLES11
- * Following Linux upstream changes 2.6.31
+* Thu Oct  5 2009 Philipp Reisner <phil@linbit.com> - 8.3.3-1
+- New upstream release.
 
-* Fri Jul  3 2009 15:33:12 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.2-1)
- * Fixed the "Not a digest" issue for hash functions already ported to shash
- * Fixed a race condition between device configuration and de-configuration
- * Fixed: The sync-after logic modified flags of an unconfigured
-   device. This caused very weird symptoms later. (Bugz 214)
- * Fixed a possible imbalance of the 'pe' counter during online verify
- * Fixed activity-log reading; could have been (partially) ignored,
-   leading to incomplete resync after primary crash.
- * Fixed a deadlock when using automatic split brain recovery
- * Fixed a possible kernel crash in DRBD on highmem kernels. Was triggered by
-   reading in the bitmap on one device, and writing data to an other, disconnected
-   devices at the same time.
- * Fix for potential segfaults in drbdadm's sh-status & status commands
- * Correctly clean up resync status if a detach interrupts a resync (Bugz 223)
- * Reasonable error reporting if 'drbdadm invalidate' fails because resync already runs
- * New module parameter: disable_sendpage. Workaround for a Xen on DRBD issue
- * Allow detach while being SyncTarget (Bugz 221)
- * Optional RLE compression of the bitmap exchange ('use-rle' keyword)
- * Rewrite of the LRU code
- * Allow to skip initial resync: 'drbdadm -- --clear-bitmap new-current-uuid'
- * Upon request of Dolphin NICS: The 'sci' keyword is now called 'ssocks'
- * Allow more than two host ('on' keyword) sections, new drbdadm option '--peer'
- * New, alternate keyword 'floating' for host sections, for matching by ip-address
- * An OCF resource agent for pacemaker [Marked as BETA for this release]
- * crm-fence-peer.sh: A fence peer handler using pacemaker constraints
- * /etc/init.d/drbd stop now works completely independent of the config file
- * arbitrary custom device names (prefix drbd_ required)
- * Code cleanups for Linux mainline submission (no functional change)
- * Using Linux's own tracing framework instead of our own
- * Compatibility with Linux 2.6.30 and 2.6.31-rc1
+* Fri Jul  3 2009 Philipp Reisner <phil@linbit.com> - 8.3.2-1
+- New upstream release.
 
-* Fri Mar 27 2009 12:16:00 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.1-1)
- * Fixed drbdadm invalidate on disconnected devices (reg in 8.2.7)
- * Fixed a hard to trigger spinlock deadlock when using device stacking
-   with the upper device having a smaller minor number than the lower device.
-   (Bugz 210)
- * Adding a missing range check in ensure_mdev()
- * Implemented a congested_fn; the kernel can keep its pdflushes running now
- * Improvements the connection code for high latency links
- * Fix for several potential memory leaks when allocating a device
- * Use an additional meta data bit to store the fact of an old crashed primary
- * Udev rule that populates /dev/drbd/by-res/ and /dev/drbd/by-disk/
- * New timeout option: outdated-wfc-timeout
- * New drbdmeta option: --ignore-sanity-checks
- * Include statement for drbd.conf
- * Improvements to drbd-overview.pl
- * Fixed snapshot-resync-target-lvm.sh to work with more than 10 devices
- * Do not force a full resync after a detach on a primary node
- * Compatibility with Linux 2.6.27, 2.6.28 and 2.6.29
+* Fri Mar 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.1-1
+- New upstream release.
 
-* Thu Dec 18 2008 14:03:03 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.3.0-1)
- * Fixed 'sleep with spinlock held' in case online verify found a difference
- * Fixed error code pathes in request processing.
- * Fix for stack smashing in drbdmeta
- * Fixed a bug that could lead to a crash when detaching/attaching
-   on the primary under heavy IO (Bugz 171)
- * Fixed a bug in the new epoch code (introduced with 8.2.7).
-   Might cause crash at reconnect after connection loss during heavy IO
-   (Bugz 160)
- * Fixed a bug in drbdsetup that could cause drbdsetup wait-connect to
-   miss the connection event.
- * Fixed a race condition in the new barrier code. (Reordered barrier ACKs)
- * Do not rely on blkdev_issue_flush() returning ENOTSUPP
- * bitmap in unmapped pages = support for devices > 4TByte (was DRBD+)
- * checksum based resync (was DRBD+)
- * support for stacked resource (was DRBD+)
- * Added support for stacked resources to the bash completion stuff
- * Added missing documentation (manpages)
- * Fixed drbdadm handlers for stacked resources
- * Support of drbd-proxy in stacked setups
- * RedHat cluster suite (rgmanager) integration scripts
- * Renamed 'state' to 'role'
- * More build compatibility with older vendor kernels
- * Added drbd-overview.pl to the packages
+* Thu Dec 18 2008 Philipp Reisner <phil@linbit.com> - 8.3.0-1
+- New upstream release.
 
-* Thu Nov 12 2008 10:01:00 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.7-1)
- * Fixed possible Oops on connection loss during sync handshake
- * Fixed various possible deadlocks in the disconnect/reconnect and
-   online-verify code
- * Fixed possible access-after-free
- * Added support for TCP buffer autotuning
- * Added support for AF_SCI aka "Super Sockets"
- * Added support for IPV6
- * latency improvements
- * Support for using barriers to enforce write ordering on the secondary
-   node. New config options: no-disk-barrier, no-disk-drain
- * Merged all changes from 8.0.12 -> 8.0.14 into 8.2
+* Thu Nov 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.7-1
+- New upstream release.
 
-* Fri May 30 2008 09:51:15 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.6-1)
- * The details of the LRU data structures is now hidden from
-   /proc/drbd but can be re-enabled by echoing 1 to
-   /sys/module/drbd/parameters/proc_details
- * Bash completion support for drbdadm (Installs on all distributions
-   but RedHat, since they lack the /etc/bash_completion.d directory)
- * Fixed the out-of-sync handler it never fired.
- * Added the before-resync-target handler, and a default
-   implementation of a handler that snapshots the target
-   of a resynchronisation in case it is a LVM2 logic volume.
- * Improved error messages and documentation in regards to
-   false positives of online verify and data-integrity-alg
-   mechanisms in the presence of ReiserFS or the Linux
-   swap code.
- * Added the max-bio-bvecs option to workaround issues in
-   a stack of DRBD/LVM/Xen.
- * Merged all changes from 8.0.11 -> 8.0.12 into 8.2
- * Fixed online resizing in case it is triggered from the
-   secondary node.
+* Fri May 30 2008 Philipp Reisner <phil@linbit.com> - 8.2.6-1
+- New upstream release.
 
-* Tue Feb 12 2008 13:37:59 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.5-1)
- * Fixed a race between online-verify and application writes.
-   It caused drbd to report false positives, and very likely
-   deadlocked immediately afterwards.
- * Merged all changes from 8.0.8 -> 8.0.11 into 8.2
+* Tue Feb 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.5-1
+- New upstream release.
 
-* Fri Jan 11 2008 13:37:50 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.4-1)
- * Fixed the online-verify and data-integrity-alg features.
-   While preparing DRBD for Linux-2.6.24 a bug was introduced
-   that rendered most digest based functionality in DRBD useless.
+* Fri Jan 11 2008 Philipp Reisner <phil@linbit.com> - 8.2.4-1
+- New upstream release.
 
-* Wed Jan  9 2008 15:27:53 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.3-1)
- * Released the online-verify feature from DRBD+ into drbd-8.2
- * Fixed the data-integrity-alg feature to work correctly
-   in 'allow-two-primaries' mode.
- * Significant latency improvement: Implemented sane default
-   CPU bindings (affinity mask) of threads, and added the tuning
-   option 'cpu-mask'.
- * A completely new drbdmeta - finally dealing with
-   all drbd-0.7 to drbd-8.x conversion cases correctly.
- * Merged all changes from 8.0.7 -> 8.0.8 into 8.2
+* Wed Jan  9 2008 Philipp Reisner <phil@linbit.com> - 8.2.3-1
+- New upstream release.
 
-* Fri Nov  2 2007 13:10:27 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.1-1)
- * Fixed the OOPS when _not_ using a shared secret on kernel 
-   before Linux-2.6.19 (=old crypto API).
- * Support for drbd-porxy's configuration directives in drbdadm.
- * Look for /etc/drbd-82.conf before drbd-08.conf before drbd.conf
- * drbdadm now allowes one to move the device, disk and meta-disk
-   statements out of the host ("on") sections into the resource
-   section. This allows you to shorten your config files.
- * Merged all changes from 8.0.6 -> 8.0.7 to 8.2
+* Fri Nov  2 2007 Philipp Reisner <phil@linbit.com> - 8.2.1-1
+- New upstream release.
 
-* Fri Sep 28 2007 12:15:07 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.2.0-1)
- * Branch for new features after 8.1 and 8.0. We will do a number of
-   features that do not fiddle with the general architecture of DRBD.
-   This will be like the the current Linux-2.6 development model.
- * Implemented the data-integrity-alg option. When this is set to
-   one of the kernel's hash algorithms, such a hash is shipped with
-   every user-data carrying packet. In case user-data is corrupted
-   on the network DRBD protests by dropping the connection.
+* Fri Sep 28 2007 Philipp Reisner <phil@linbit.com> - 8.2.0-1
+- New upstream release.
 
-* Mon Sep  3 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.6-1)
- * Fixed DRBD to not deadlock while doing bitmap updates on Linux
-   2.6.22 and later.
- * Make it compile on Linux-2.6.22 and later.
- * Removed a hardcoded path to docbook DTDs from our sgml files,
-   maybe improving the situation with building the documentation.
- * When a drbd connect attempt gets accepted onto a other program,
-   that simply closes the socket, drbd stays for some seconds in the
-   "BrokenPipe" network state. When one removed the network
-   config during that time, drbd OOPSed. This is fixed now.
- * drbdmeta can now also initialize meta data on meta devices
-   smaller than 128MB.
- * Added an explicit NULL argument to our ioctl() calls in drbdmeta.
- * Added scripts/block-drbd, which is a nice way hand over DRBD
-   role assignment to Xen, allowing one to do Xen live migrations
-   in a sane way.
- * Added scripts/pretty-proc-drbd.sh
- * Added an option to drbd.conf which instructs the init script
-   to promote DRBD devices to primary role upon machine start up.
+* Mon Sep  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.6-1
+- New upstream release.
 
-* Fri Aug  3 2007 09:34:49 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.5-1)
- * Changed the default behaviour of the init script. Now the init
-   script terminates in case the devices refuse to because they 
-   had a split brain. Introduced an option to preserve the old
-   behaviour.
- * Fixed a bug where the local_cnt could get imbalanced upon a 
-   state change.
- * Fixed an bug in the UUID algorithm, that could lead to both
-   sides in cs:WFBitMapT state. It was triggered when the disk
-   on the SyncTarget gets detached and attached.
- * Implemented proper size checking on strings that get communicated
-   with DRBD's netlink protocol.
- * Changed the maximal length of device names from 32 characters to
-   128 characters. (udev based disk names might be very long nowadays)
- * Fixed the after-sb-0pri policies discard-younger/discard-older
- * When the resync speed was changed to a considerably lower 
-   value while resync was running, it could happen that we erronously
-   decremented the local_cnt too often.
- * Fixed a bug in the UUID code, that caused drbd to erronously report 
-   a split brain after changing the role of a diskless node multiple 
-   times.
- * Both nodes ended up in SyncSource when a state change occured on 
-   one node while the disk state on the other node is in the temporal 
-   'Negotiating' state. Fixed got fixed.
- * drbdmeta's parse/scan code for meta-data dumps got fixed for 
-   huge devices, and an improved error reporting.
- * drbdadm had difficulties with option values of type string that
-   start with an digit. Fixed.
- * Fixed a code path that should it make possible to unload the
-   module even in case some of our receive buffers leaked.
- * The usermode helper program is now user definable. It is no
-   longer hardcoded set to 'drbdadm'.
+* Fri Aug  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.5-1
+- New upstream release.
 
-* Wed Jun 27 2007 10:00:00 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.4-1)
- * Fixed an OOPS in case you do an invalidate on an diskless device. And
-   made invalidates on diskless devices possible by using drbdmeta.
- * Fix for an possbile OOPS in drbd_al_to_on_disk_bm().
- * Fix for a possible OOPS. This issue was triggered when you do an
-   attach very soon (ms) after the disk was dropped.
- * Fix for a race condition in receive_state(). Symptom was that the
-   resync stalls at 100% on a node.
- * Some block devices fail requests by clearing the BIO_UOTODATE flag
-   (that is ok), but not returning an error (that is strange). 
-   We now deal with that correctly.
- * Drbdadm's parser will now reject config files with resources with 
-   missing "on" sections. (Instead of segfaulting)
- * Init script continues in case the setup of a single resource failes.
- * Improvements to the "drbdsetup events" interface: Updates about
-   the resync progress and initial state of all devices if called with "-a".
- * The benchmark/dm program can now also create curstom bandwith loads.
+* Wed Jun 27 2007 Philipp Reisner <phil@linbit.com> - 8.0.4-1
+- New upstream release.
 
-* Mon May 7 2007 17:10:14 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.3-1)
- * Fixed a race condition that could cause us to continue to traverse a bio
-   after it was freed. (led to an OOPS)
- * Fixed a race condition that could cause us to use members of an ee, after
-   it was freed. (led to various weirdness)
- * Language fixes for the man pages.
- * The drbdsetup commands (events, wait-connect,...) release the lock now.
- * Minor fixes and updates to the user land tools and to the peer outdater.
+* Mon May 7 2007 Philipp Reisner <phil@linbit.com> - 8.0.3-1
+- New upstream release.
 
-* Fri Apr 6 2007 21:32:39 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.2-1)
- * Removed a bug that could cause an OOPS in drbd_al_to_on_disk_bm()
- * Improved the robustness of the UUID based algorithm that decides
-   about the resync direction.
- * Fixed the error handling in case a the open() of a backing
-   blockdevice fails.
- * Fixed a race condition that could cause a "drbdadm disconnect" to hang.
- * More verbosity in we can not claim a backing block device.
- * More verbosity and paranoia in the bitmap area.
- * On some vendor kernels 8.0.1 did not load because of kzalloc. fixed.
- * Fault injection can now not only be turned on or off, but can be 
-   enabled on a per device basis.
- * Fixed the scripts and files needed to build drbd into a kernel.
+* Fri Apr 6 2007 Philipp Reisner <phil@linbit.com> - 8.0.2-1
+- New upstream release.
 
-* Mon Mar 3 2007 10:10:26 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.1-1)
- * Fixed some race conditions that could trigger an OOPS when the loca disk
-   failes and DRBD detaches itself from the failing disk.
- * Added a missing call to drbd_try_outdate_peer().
- * LVM's LVs expose ambiguous queue settings. When a RAID-0 (md) PV is
-   used the present a segment size of 64k but at the same time allow only
-   8 sectors. Fixed DRBD to deal with that fact corretly.
- * New option "always-asbp" to also use the after-after-split-brain-policy
-   handlers, even it is not possible to determine from the UUIDs that
-   the data of the two nodes was related in the past.
- * More verbosity in case a bio_add_page() fails.
- * Replaced kmalloc()/memset() with kzmalloc(), and a wrapper for older kernls
- * A fast version of drbd_al_to_on_disk_bm(). This is necessary for short
-   (even sub-second) switchover times while having large "al-extents" settings.
- * Fixed drbdadm's array overflows (of on stack objects)
- * drbdsetup can now dump its usage in a XML format
- * New init script for gentoo
- * Fixed Typos in the usage of /proc/sysrq-trigger in the example config.
+* Mon Mar 3 2007 Philipp Reisner <phil@linbit.com> - 8.0.1-1
+- New upstream release.
 
-* Wed Jan 24 2007 16:10:09 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0.0-1)
- * No effecitve changes to rc2.
+* Wed Jan 24 2007 Philipp Reisner <phil@linbit.com>  - 8.0.0-1
+- New upstream release.
 
-* Wed Jan 17 2007 17:30:23 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0rc2-1)
- * Added the well known automagiacally adjust drbd_config.h to
-   make drbd compile on every by vendor's backports defaced 
-   kernel. ( Linux-2.6.x only of course )
- * Fixed races with starting and finishing resync processes 
-   while heavy application IO is going on.
- * Ported DRBD to the new crypto API (and added a emulation of the
-   now API on top of the old one for older 2.6.x kernels)
- * Code to perform better on ethernet networks with jumbo
-   frames.
- * Bugfixes to our request code (race conditions).
- * Every error code that is returned by drbdsetup has a 
-   textual description by now.
-
-* Fri Dec 22 2006 15:19:10 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0rc1-1)
- * The drbd-peer-outdater got updated to work in multi node heartbeat
-   clusters. (But we still not suceeded to get this into Heartbeat's
-   repository accepted.)
- * Fixed resync decission after a crash in a pri-pri cluster.
- * Implemented the ping-timeout option for "sub-second" failover clusters.
- * Implemented all the "violently" options in the reconnect handling.
- * Updated man pages of drbd.conf and drbdsetup.
- * Removed the "self-claiming" on secondary nodes.
- * Fixed an uncountable number of bugs.
-
-* Fri Nov  3 2006 15:20:54 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0pre6-1)
- * All panic() calls where removed from DRBD.
- * IO errors while accessing the backing storage device are now handled
-   correct.
- * Conflict detection for two primaries is in place and tested.
- * More tracing stuff
- * Lots of bugs found and fixed
-
-* Sun Oct 31 2006 22:03:54 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0pre5-1)
- * The request code was completely rewritten.
- * The write conflict detection code for primary-primary is currently
-   broken, but will be fixed soon.
- * drbdsetup is no longer based on IOCTL but works now via
-   netlink/connector.
- * drbd_panic() is on its way out.
- * A runtime configurable tracing framework got added.
- * A lot of effort was put into finding and fixing bugs.
-
-* Mon Jul 31 2006 12:04:41 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0pre4-1)
- * Added the "drbd-peer-outdater" heartbeat plugin.
- * New ("cluster wide") state changes. (Cluster wide serialisation of
-   major state changes, like becomming primary, invalidateing a disk etc...)
- * Write requests are now sent by the worker instead out of the process's
-   context that calls make_request().
- * The worker thread no longer gets restarted upon loss of connection.
- * A testsuite developed by students of 'FH Hagenberg' was added.
-
-* Tue Apr 20 2006 13:46:18 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0pre3-1)
- * Now it works on device mapper (LVM) as well as on "real" block devices.
- * Finally (after years) a sane "drbdadm adjust" imprementation, which is
-   really really robust.
- * Fixes for 64bit kernel / 32 bit userland environments
- * Fixes in the sys-v init script
- * Renamed "--do-what-I-say" to "--overwrite-data-of-peer". Hopefully
-   people now understand what this option does.
-
-* Tue Apr  6 2006 17:53:56 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0-pre2-1)
- * removed the "on-disconnect" and "split-brain-fix" config options and
-   added the "fencing" config option instead.
- * Updated all manpages to cover drbd-8.0
- * /proc/drbd shows the whole drbd_state_t, as well the logging of state
-   changes shows every field of drbd_state_t now.
- * Deactivated most of the TCQ code for now, since it changed again
-   in the mainline kernel.
- * Minor other fixes.
-
-* Tue Mar 14 2006 11:37:56 +0200 Philipp Reisner <phil@linbit.com>
-- drbd (8.0_pre1-1)
- * Removed support for Linux-2.4.x
- * Cleanup of the wire protocol.
- * Added optional peer authentication with a shared secret.
- * Consolidated state changes into a central function.
- * Improved, tunable after-split-brain recovery strategies.
- * Always verify all IDs used in the protocol that are used as pointers.
- * Introduced the "outdate" disk state, and commands for managing it.
- * Introduced the "drbdmeta" command, and require the user to create
-   meta-data explicitly.
- * Support for primary/primary (for OCFS2, GFS...)
- * Replaced the sync-groups with the sync-after mechanism.
- * The "common" section in the configuration file.
- * Replaced the generation counters (GCs) with data-generation-UUIDs
- * Improved performance by using Linux-2.6's BIOs with up to 32k per
-   IO request. Before we transferred only up to 4k per IO request.
- * A Warning if the disk sizes are more than 10% different.
- * A connection teardown packet to differentiate between a crash
-   of the peer and a peer that is shut down gracefully.
- * External imposable SyncPause states, to serialize DRBD's resynchronisation
-   with the resynchronisation of backing storage's RAID configurations.
- * Backing storage can be hot added to disk less nodes.
- * Prepared for advanced integration to Heartbeat-2.0
- * Changed internal APIs so that missed writes of the meta-data super
-   block are reported as they happen.
- * The http://usage.drbd.org sub project.
- * Rewrote the scanner/parser of drbd.conf. 10 times smaller/faster and
-   easier to maintain.
- * Asynchronous meta-data IO [ Code drop from the DRBD+ branch ]
