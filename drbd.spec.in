@@ -90,11 +90,12 @@ setting up high availability (HA) clusters.
 
 This packages includes the DRBD administration tools.
 
-%files utils -f file.list
+%files utils
 %defattr(755,root,root)
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
+%{_initrddir}/%{name}
 %{_sbindir}/drbd-overview
 %{_prefix}/lib/%{name}
 %{_prefix}/lib/%{name}/outdate-peer.sh
@@ -109,6 +110,7 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify-pri-lost.sh
 %{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
 %{_prefix}/lib/%{name}/notify.sh
+@INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root)
 %{_var}/lib/%{name}
@@ -123,7 +125,6 @@ This packages includes the DRBD administration tools.
 %doc scripts/drbd.conf
 %doc COPYING
 %doc README
-%doc file.list
 %endif # with utils
 
 %if %{with km}
@@ -291,21 +292,11 @@ make install DESTDIR=%{buildroot}
 cd drbd
 mv .kernel.config.gz k-config-%{kernelversion}.gz
 %endif
-FILELIST="%{_builddir}/%{name}-%{version}/file.list"
 %if %{with utils}
-cd %{buildroot}
 #
-# this is because /etc/init.d != /etc/rc.d != /etc/rc.d/init.d ...
-# you may want to edit this, or the file list below ;)
+# We only want to install a hint to the example conf
 #
-echo @INITDIR@/drbd > "$FILELIST"
-# on suse/united we have additionally:
-test -e sbin/rcdrbd && echo "/sbin/rcdrbd" >> "$FILELIST"
-
-#
-# and I only want to install a hint to the example conf
-#
-cat <<___ > etc/drbd.conf
+cat <<___ > %{buildroot}%{_sysconfdir}/drbd.conf
 #
 # please have a a look at the example configuration file in
 # %{_docdir}/%{name}/drbd.conf
