@@ -39,7 +39,22 @@ BuildRequires: gcc, @RPM_BUILDREQ_KM@
 %if %{with udev}
 BuildRequires: udev
 %endif
-Requires: drbd-utils, drbd-xen, drbd-udev, drbd-pacemaker, drbd-rgmanager, drbd-heartbeat, drbd-bash-completion
+Requires: %{name}-utils = %{version}
+%if %{with xen}
+Requires: %{name}-xen = %{version}
+%endif
+%if %{with pacemaker}
+Requires: %{name}-pacemaker = %{version}
+%endif
+%if %{with rgmanager}
+Requires: %{name}-rgmanager = %{version}
+%endif
+%if %{with heartbeat}
+Requires: %{name}-heartbeat = %{version}
+%endif
+%if %{with bashcompletion}
+Requires: %{name}-bash-completion = %{version}
+%endif
 
 %description
 DRBD mirrors a block device over the network to another machine.
