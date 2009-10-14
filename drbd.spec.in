@@ -15,7 +15,7 @@
 %bcond_without xen
 %bcond_without udev
 %bcond_without pacemaker
-%bcond_without rgmanager
+%bcond_with rgmanager
 %bcond_without heartbeat
 %bcond_without bashcompletion
 
@@ -202,11 +202,15 @@ Pacemaker High Availability cluster manager.
 Summary: Red Hat Cluster Suite agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}, rgmanager
+Conflicts: rgmanager >= 3.0.1
 @RPM_SUBPACKAGE_NOARCH@
 
 %description rgmanager
 This package contains the DRBD resource agent for the Red Hat Cluster Suite
 resource manager.
+
+As of Red Hat Cluster Suite 3.0.1, the DRBD resource agent is included
+in the Cluster distribution.
 
 %files rgmanager
 %defattr(644,root,root)
@@ -266,7 +270,7 @@ test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
     %{?_without_xen} \
     %{?_without_pacemaker} \
     %{?_without_heartbeat} \
-    %{?_without_rgmanager} \
+    %{?_with_rgmanager} \
     %{?_without_bashcompletion}
 
 
