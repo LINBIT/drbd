@@ -18,6 +18,7 @@ WITH_PACEMAKER=yes
 WITH_HEARTBEAT=yes
 WITH_RGMANAGER=yes
 WITH_BASHCOMPLETION=yes
+WITH_NOARCH_SUBPACKAGES=no
 AC_ARG_WITH([utils],
 	[AS_HELP_STRING([--with-utils],
 			[Enable management utilities])],
@@ -54,11 +55,16 @@ AC_ARG_WITH([distro],
 	[AS_HELP_STRING([--with-distro],
 			[Configure for a specific distribution (supported values: generic, redhat, suse, debian, gentoo, slackware; default is to autodetect)])],
 	[DISTRO=$withval])
+AC_ARG_WITH([noarchsubpkg],
+	[AS_HELP_STRING([--with-noarchsubpkg],
+			[Build subpackages that support it for the "noarch" architecture (makes sense only with --enable-spec, supported by RPM from 4.6.0 forward)])],
+	[WITH_NOARCH_SUBPACKAGES=$withval])
 AC_ARG_ENABLE([spec],
 	[AS_HELP_STRING([--enable-spec],
 			[Rather than creating Makefiles, create an RPM spec file only])],
 	[SPECMODE=$enableval],
 	[SPECMODE=""])
+
 
 AC_SUBST(WITH_UTILS)
 AC_SUBST(WITH_KM)
@@ -141,6 +147,7 @@ UDEV_RULE_SUFFIX=""
 RPM_DIST_TAG=""
 RPM_CONFLICTS_KM=""
 RPM_BUILDREQ_KM=""
+RPM_SUBPACKAGE_NOARCH=""
 INITSCRIPT_SYMLINK=""
 dnl figure out the distribution we're running on, and set some variables accordingly
 if test -z $DISTRO; then
@@ -189,6 +196,10 @@ if test "$WITH_UDEV" = "yes"; then
    fi
 fi
 
+dnl Our sub-packages can be built for noarch, but RPM only supports this from version 4.6.0 forward
+if test "$WITH_NOARCH_SUBPACKAGES" = "yes"; then
+   RPM_SUBPACKAGE_NOARCH="BuildArch: noarch"
+fi
 AC_SUBST(DISTRO)
 AC_SUBST(INITDIR)
 AC_SUBST(BASH_COMPLETION_SUFFIX)
@@ -196,6 +207,7 @@ AC_SUBST(UDEV_RULE_SUFFIX)
 AC_SUBST(RPM_DIST_TAG)
 AC_SUBST(RPM_CONFLICTS_KM)
 AC_SUBST(RPM_BUILDREQ_KM)
+AC_SUBST(RPM_SUBPACKAGE_NOARCH)
 AC_SUBST(INITSCRIPT_SYMLINK)
 
 dnl The configuration files we create (from their .in template)

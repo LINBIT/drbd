@@ -161,6 +161,7 @@ installed kernel.
 Summary: Xen block device management script for DRBD
 Group: System Environment/Kernel
 Requires: %{name}-utils = %{version}, xen
+@RPM_SUBPACKAGE_NOARCH@
 
 %description xen
 This package contains a Xen block device helper script for DRBD, capable of
@@ -177,6 +178,7 @@ promoting and demoting DRBD resources as necessary.
 Summary: udev integration scripts for DRBD
 Group: System Environment/Kernel
 Requires: %{name}-utils = %{version}, udev
+@RPM_SUBPACKAGE_NOARCH@
 
 %description udev
 This package contains udev helper scripts for DRBD, managing symlinks to
@@ -193,6 +195,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 Summary: Pacemaker resource agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}, pacemaker
+@RPM_SUBPACKAGE_NOARCH@
 
 %description pacemaker
 This package contains the master/slave DRBD resource agent for the
@@ -211,6 +214,7 @@ Pacemaker High Availability cluster manager.
 Summary: Red Hat Cluster Suite agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}, rgmanager
+@RPM_SUBPACKAGE_NOARCH@
 
 %description rgmanager
 This package contains the DRBD resource agent for the Red Hat Cluster Suite
@@ -229,6 +233,7 @@ resource manager.
 Summary: Heartbeat resource agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}, heartbeat
+@RPM_SUBPACKAGE_NOARCH@
 
 %description heartbeat
 This package contains the DRBD resource agents for the Heartbeat cluster
@@ -247,6 +252,7 @@ resource manager (in v1 compatibility mode).
 Summary: Programmable bash completion support for drbdadm
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}, bash-completion
+@RPM_SUBPACKAGE_NOARCH@
 
 %description bash-completion
 This package contains programmable bash completion support for the drbdadm
