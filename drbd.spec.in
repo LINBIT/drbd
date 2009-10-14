@@ -109,7 +109,7 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
 %{_prefix}/lib/%{name}/notify.sh
 
-%defattr(644,root,root)
+%defattr(-,root,root)
 %{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
 
