@@ -119,7 +119,7 @@ Summary: Kernel driver for DRBD.
 Group: System Environment/Kernel
 Conflicts: @RPM_CONFLICTS_KM@
 # always require a suitable userland and depmod.
-Requires: %{name} = %{version}, /sbin/depmod
+Requires: %{name}-utils = %{version}, /sbin/depmod
 # to be able to override from build scripts which flavor of kernel we are building against.
 Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
 # TODO: break up this generic .spec file into per distribution ones,
