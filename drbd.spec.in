@@ -315,18 +315,14 @@ done
 %endif
 
 %preun utils
-if type -p service ; then
-    service drbd stop
+if [ $1 -eq 0 ]; then
+        %{_initrddir}/drbd stop >/dev/null 2>&1
+        /sbin/chkconfig --del drbd
 fi
-if type -p rcdrbd ; then
-    rcdrbd stop
-fi
+
 lsmod | grep drbd > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     rmmod drbd
-fi
-if [ $1 -eq 0 ]; then
-    chkconfig --del drbd
 fi
 %endif # with-utils
 
