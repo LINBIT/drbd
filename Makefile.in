@@ -218,12 +218,12 @@ rpm: check-kdir tgz
 	    --define "kdir $(KDIR)" \
 	    $(RPMOPT) \
 	    drbd-$(FDIST_VERSION).tar.gz
-	@echo "You have now:" ; ls -l `rpm -E "%_rpmdir"`/*.rpm
+	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
 
 .PHONY: srpm
 srpm: tgz
 	$(RPMBUILD) -ts \
 		$(RPMOPT) \
 		drbd-$(FDIST_VERSION).tar.gz
-	@echo "You have now:" ; ls -l `rpm -E "%_srcrpmdir"`/*.src.rpm
+	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
 endif
