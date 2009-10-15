@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# chkconfig: 345 70 08
+# chkconfig: - 70 08
 # description: Loads and unloads the drbd module
 #
 # Copright 2001-2008 LINBIT Information Technologies
@@ -10,8 +10,8 @@
 # Provides: drbd
 # Required-Start: $network $syslog sshd
 # Required-Stop: $network $syslog sshd
-# Default-Start:  2 3 4 5
-# Default-Stop:   0 1 6
+# Default-Start:
+# Default-Stop:
 # Short-Description:    Control drbd resources.
 ### END INIT INFO
 
