@@ -155,6 +155,8 @@ promoting and demoting DRBD resources as necessary.
 %files xen
 %defattr(755,root,root)
 %{_sysconfdir}/xen/scripts/block-drbd
+
+%defattr(-,root,root)
 %doc COPYING
 %endif # with xen
 
@@ -191,6 +193,8 @@ Pacemaker High Availability cluster manager.
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
+
+%defattr(-,root,root)
 %doc COPYING
 %endif # with pacemaker
 
@@ -210,10 +214,11 @@ As of Red Hat Cluster Suite 3.0.1, the DRBD resource agent is included
 in the Cluster distribution.
 
 %files rgmanager
-%defattr(644,root,root)
-%{_datadir}/cluster/drbd.metadata
 %defattr(755,root,root)
 %{_datadir}/cluster/drbd.sh
+
+%defattr(-,root,root)
+%{_datadir}/cluster/drbd.metadata
 %doc COPYING
 %endif # with rgmanager
 
