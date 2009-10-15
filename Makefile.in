@@ -129,8 +129,7 @@ check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
 	echo "checking for presence of $$dver_re in various changelog files"; \
 	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
-	                     -e '/^- *drbd ('"$$dver_re"'-/p' \
-	                     -e '/^\*.* \['"$$dver_re"'-/p' < drbd.spec.in) ; \
+	                     -e '/- '"$$dver_re"'-/p' < drbd.spec) ; \
 	if test -z "$$in_changelog" ; \
 	then \
 	   echo -e "\n\t%changelog in drbd.spec.in needs update"; \
