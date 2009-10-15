@@ -97,6 +97,19 @@ This packages includes the DRBD administration tools.
 %{_initrddir}/%{name}
 %{_sbindir}/drbd-overview
 %{_prefix}/lib/%{name}
+%{_prefix}/lib/%{name}/outdate-peer.sh
+%{_prefix}/lib/%{name}/snapshot-resync-target-lvm.sh
+%{_prefix}/lib/%{name}/unsnapshot-resync-target-lvm.sh
+%{_prefix}/lib/%{name}/notify-out-of-sync.sh
+%{_prefix}/lib/%{name}/notify-split-brain.sh
+%{_prefix}/lib/%{name}/notify-emergency-reboot.sh
+%{_prefix}/lib/%{name}/notify-emergency-shutdown.sh
+%{_prefix}/lib/%{name}/notify-io-error.sh
+%{_prefix}/lib/%{name}/notify-pri-lost-after-sb.sh
+%{_prefix}/lib/%{name}/notify-pri-lost.sh
+%{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
+%{_prefix}/lib/%{name}/notify.sh
+@INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root)
 %{_var}/lib/%{name}
