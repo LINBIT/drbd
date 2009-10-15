@@ -173,7 +173,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 
 %files udev
 %defattr(-,root,root)
-%{_sysconfdir}/udev/rules.d/65-drbd.rules*
+%config %{_sysconfdir}/udev/rules.d/65-drbd.rules*
 %doc COPYING
 %endif # with udev
 
@@ -256,7 +256,7 @@ management utility.
 
 %files bash-completion
 %defattr(-,root,root)
-%{_sysconfdir}/bash_completion.d/drbdadm*
+%config %{_sysconfdir}/bash_completion.d/drbdadm*
 %doc COPYING
 %endif # with bashcompletion
 
