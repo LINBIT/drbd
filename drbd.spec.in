@@ -199,8 +199,8 @@ Pacemaker High Availability cluster manager.
 %package rgmanager
 Summary: Red Hat Cluster Suite agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}, rgmanager
-Conflicts: rgmanager >= 3.0.1
+Requires: %{name}-utils = %{version}, rgmanager < 3
+Conflicts: resource-agents >= 3
 @RPM_SUBPACKAGE_NOARCH@
 
 %description rgmanager
