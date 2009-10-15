@@ -233,6 +233,8 @@ resource manager (in v1 compatibility mode).
 %defattr(755,root,root)
 %{_sysconfdir}/ha.d/resource.d/drbddisk
 %{_sysconfdir}/ha.d/resource.d/drbdupper
+
+%defattr(-,root,root)
 %{_mandir}/man8/drbddisk.8.*
 %doc COPYING
 %endif # with heartbeat
@@ -249,7 +251,7 @@ This package contains programmable bash completion support for the drbdadm
 management utility.
 
 %files bash-completion
-%defattr(644,root,root)
+%defattr(-,root,root)
 %{_sysconfdir}/bash_completion.d/drbdadm*
 %doc COPYING
 %endif # with bashcompletion
