@@ -22,7 +22,7 @@
 Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 6@RPM_DIST_TAG@
+Release: 7@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/%{name}-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -97,7 +97,6 @@ This packages includes the DRBD administration tools.
 %{_initrddir}/%{name}
 %{_sbindir}/drbd-overview
 %{_prefix}/lib/%{name}
-@INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root)
 %{_var}/lib/%{name}
@@ -345,7 +344,7 @@ uname -r | grep BOOT ||
 %endif # with km
 
 %changelog
-* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-6@RPM_DIST_TAG@
+* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-7@RPM_DIST_TAG@
 - Packaging makeover.
 
 * Thu Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
