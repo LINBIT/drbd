@@ -301,7 +301,7 @@ mv .kernel.config.gz k-config-%{kernelversion}.gz
 cat <<___ > %{buildroot}%{_sysconfdir}/drbd.conf
 #
 # please have a a look at the example configuration file in
-# %{_docdir}/%{name}/drbd.conf
+# %{_docdir}/%{name}-utils-%{version}/drbd.conf
 #
 ___
 %endif
