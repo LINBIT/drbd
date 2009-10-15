@@ -96,7 +96,7 @@ This packages includes the DRBD administration tools.
 /sbin/drbdmeta
 %{_initrddir}/%{name}
 %{_sbindir}/drbd-overview
-%{_prefix}/lib/%{name}
+%dir %{_prefix}/lib/%{name}
 %{_prefix}/lib/%{name}/outdate-peer.sh
 %{_prefix}/lib/%{name}/snapshot-resync-target-lvm.sh
 %{_prefix}/lib/%{name}/unsnapshot-resync-target-lvm.sh
@@ -112,7 +112,7 @@ This packages includes the DRBD administration tools.
 @INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root)
-%{_var}/lib/%{name}
+%dir %{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
 
 %defattr(-,root,root)
