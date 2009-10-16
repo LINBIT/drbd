@@ -1,0 +1,163 @@
+# "uname -r" output of the kernel to build for, the running one
+# if none was specified with "--define 'kernelversion <uname -r>'"
+# PLEASE: provide both (correctly) or none!!
+%{!?kernelversion: %{expand: %%define kernelversion %(uname -r)}}
+%{!?kdir: %{expand: %%define kdir /lib/modules/%(uname -r)/build}}
+
+# encode - to _ to be able to include that in a package name or release "number"
+%global krelver  %(echo %{kernelversion} | tr -s '-' '_')
+
+Name: @PACKAGE_TARNAME@-km
+Summary: DRBD driver for Linux
+Version: @PACKAGE_VERSION@
+Release: 8@RPM_DIST_TAG@
+Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
+License: GPLv2+
+ExclusiveOS: linux
+Group: System Environment/Kernel
+URL: http://www.drbd.org/
+BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+BuildRequires: gcc, @RPM_BUILDREQ_KM@
+
+%description
+DRBD mirrors a block device over the network to another machine.
+Think of it as networked raid 1. It is a building block for
+setting up high availability (HA) clusters.
+
+# I choose to have the kernelversion as part of the package name!
+# drbd-km is prepended...
+%package %{krelver}
+Summary: Kernel driver for DRBD.
+Group: System Environment/Kernel
+Conflicts: @RPM_CONFLICTS_KM@
+# always require a suitable userland and depmod.
+Requires: drbd-utils = %{version}, /sbin/depmod
+# to be able to override from build scripts which flavor of kernel we are building against.
+Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
+# TODO: break up this generic .spec file into per distribution ones,
+# and use the distribution specific naming and build conventions for kernel modules.
+
+%description %{krelver}
+This module is the kernel-dependent driver for DRBD.  This is split out so
+that multiple kernel driver versions can be installed, one for each
+installed kernel.
+
+%files %{krelver}
+%defattr(-,root,root)
+/lib/modules/%{kernelversion}/
+%doc COPYING
+%doc ChangeLog
+%doc drbd/k-config-%{kernelversion}.gz
+
+%prep
+%setup -q -n drbd-%{version}
+test -d %{kdir}/.
+test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
+%configure \
+    --without-utils \
+    --with-km \
+    --without-udev \
+    --without-xen \
+    --without-pacemaker \
+    --without-heartbeat \
+    --without-rgmanager \
+    --without-bashcompletion
+
+
+%build
+echo kernelversion=%{kernelversion}
+echo kversion=%{kversion}
+echo krelver=%{krelver}
+make %{_smp_mflags} module KDIR=%{kdir}
+
+
+%install
+rm -rf %{buildroot}
+make install DESTDIR=%{buildroot}
+cd drbd
+mv .kernel.config.gz k-config-%{kernelversion}.gz
+
+%clean
+rm -rf %{buildroot}
+
+%preun %{krelver}
+lsmod | grep drbd > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    rmmod drbd
+fi
+
+%post %{krelver}
+# hack for distribution kernel packages,
+# which already contain some (probably outdated) drbd module
+EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
+if test -e $EXTRA_DRBD_KO; then
+    mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
+fi
+uname -r | grep BOOT ||
+/sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
+
+%postun %{krelver}
+/sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
+
+
+%changelog
+* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-8@RPM_DIST_TAG@
+- Packaging makeover.
+
+* Thu Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
+- New upstream release.
+
+* Thu Oct  5 2009 Philipp Reisner <phil@linbit.com> - 8.3.3-1
+- New upstream release.
+
+* Fri Jul  3 2009 Philipp Reisner <phil@linbit.com> - 8.3.2-1
+- New upstream release.
+
+* Fri Mar 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.1-1
+- New upstream release.
+
+* Thu Dec 18 2008 Philipp Reisner <phil@linbit.com> - 8.3.0-1
+- New upstream release.
+
+* Thu Nov 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.7-1
+- New upstream release.
+
+* Fri May 30 2008 Philipp Reisner <phil@linbit.com> - 8.2.6-1
+- New upstream release.
+
+* Tue Feb 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.5-1
+- New upstream release.
+
+* Fri Jan 11 2008 Philipp Reisner <phil@linbit.com> - 8.2.4-1
+- New upstream release.
+
+* Wed Jan  9 2008 Philipp Reisner <phil@linbit.com> - 8.2.3-1
+- New upstream release.
+
+* Fri Nov  2 2007 Philipp Reisner <phil@linbit.com> - 8.2.1-1
+- New upstream release.
+
+* Fri Sep 28 2007 Philipp Reisner <phil@linbit.com> - 8.2.0-1
+- New upstream release.
+
+* Mon Sep  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.6-1
+- New upstream release.
+
+* Fri Aug  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.5-1
+- New upstream release.
+
+* Wed Jun 27 2007 Philipp Reisner <phil@linbit.com> - 8.0.4-1
+- New upstream release.
+
+* Mon May 7 2007 Philipp Reisner <phil@linbit.com> - 8.0.3-1
+- New upstream release.
+
+* Fri Apr 6 2007 Philipp Reisner <phil@linbit.com> - 8.0.2-1
+- New upstream release.
+
+* Mon Mar 3 2007 Philipp Reisner <phil@linbit.com> - 8.0.1-1
+- New upstream release.
+
+* Wed Jan 24 2007 Philipp Reisner <phil@linbit.com>  - 8.0.0-1
+- New upstream release.
+

@@ -1,17 +1,7 @@
-# "uname -r" output of the kernel to build for, the running one
-# if none was specified with "--define 'kernelversion <uname -r>'"
-# PLEASE: provide both (correctly) or none!!
-%{!?kernelversion: %{expand: %%define kernelversion %(uname -r)}}
-%{!?kdir: %{expand: %%define kdir /lib/modules/%(uname -r)/build}}
-
-# encode - to _ to be able to include that in a package name or release "number"
-%global krelver  %(echo %{kernelversion} | tr -s '-' '_')
-
 # Conditionals -- invoke "rpmbuild --without <feature>" to disable
 # specific features
 # note: conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without utils
-%bcond_with km
 %bcond_without xen
 %bcond_without udev
 %bcond_without pacemaker
@@ -31,9 +21,6 @@ URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 %if %{with utils}
 BuildRequires: flex, gcc
-%endif
-%if %{with km}
-BuildRequires: gcc, @RPM_BUILDREQ_KM@
 %endif
 %if %{with udev}
 BuildRequires: udev
@@ -126,33 +113,6 @@ This packages includes the DRBD administration tools.
 %doc ChangeLog
 %doc README
 %endif # with utils
-
-%if %{with km}
-# I choose to have the kernelversion as part of the package name!
-# drbd is prepended...
-%package km-%{krelver}
-Summary: Kernel driver for DRBD.
-Group: System Environment/Kernel
-Conflicts: @RPM_CONFLICTS_KM@
-# always require a suitable userland and depmod.
-Requires: %{name}-utils = %{version}, /sbin/depmod
-# to be able to override from build scripts which flavor of kernel we are building against.
-Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
-# TODO: break up this generic .spec file into per distribution ones,
-# and use the distribution specific naming and build conventions for kernel modules.
-
-%description km-%{krelver}
-This module is the kernel-dependent driver for DRBD.  This is split out so
-that multiple kernel driver versions can be installed, one for each
-installed kernel.
-
-%files km-%{krelver}
-%defattr(-,root,root)
-/lib/modules/%{kernelversion}/
-%doc COPYING
-%doc ChangeLog
-%doc drbd/k-config-%{kernelversion}.gz
-%endif  # with km
 
 %if %{with xen}
 %package xen
@@ -276,13 +236,9 @@ management utility.
 
 %prep
 %setup -q
-%if %{with km}
-test -d %{kdir}/.
-test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
-%endif
 %configure \
     %{?_without_utils} \
-    %{?_with_km} \
+    --without-km \
     %{?_without_udev} \
     %{?_without_xen} \
     %{?_without_pacemaker} \
@@ -292,21 +248,11 @@ test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 
 
 %build
-echo kernelversion=%{kernelversion}
-echo kversion=%{kversion}
-echo krelver=%{krelver}
 make %{_smp_mflags} tools doc
-%if %{with km}
-make %{_smp_mflags} module KDIR=%{kdir}
-%endif
 
 %install
 rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
-%if %{with km}
-cd drbd
-mv .kernel.config.gz k-config-%{kernelversion}.gz
-%endif
 %if %{with utils}
 #
 # We only want to install a hint to the example conf
@@ -338,28 +284,6 @@ if [ $1 -eq 0 ]; then
 fi
 %endif # with-utils
 
-%if %{with km}
-%preun km-%{krelver}
-lsmod | grep drbd > /dev/null 2>&1
-if [ $? -eq 0 ]; then
-    rmmod drbd
-fi
-
-#%post -n kernel%{?ksmp}-module-drbd
-%post km-%{krelver}
-# hack for distribution kernel packages,
-# which already contain some (probably outdated) drbd module
-EXTRA_DRBD_KO=/lib/modules/%{kernelversion}/extra/drbd.ko
-if test -e $EXTRA_DRBD_KO; then
-    mv $EXTRA_DRBD_KO $EXTRA_DRBD_KO.orig
-fi
-uname -r | grep BOOT ||
-/sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
-
-#%postun -n kernel%{?ksmp}-module-drbd
-%postun km-%{krelver}
-/sbin/depmod -a -F /boot/System.map-%{kernelversion} %{kernelversion} >/dev/null 2>&1 || true
-%endif # with km
 
 %changelog
 * Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-8@RPM_DIST_TAG@

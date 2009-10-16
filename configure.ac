@@ -215,6 +215,7 @@ if test -z $SPECMODE; then
    AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile)
 else
    AC_CONFIG_FILES(drbd.spec)
+   AC_CONFIG_FILES(drbd-km.spec)
 fi
 
 dnl output
