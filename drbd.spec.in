@@ -49,13 +49,6 @@ setting up high availability (HA) clusters.
 
 This is a virtual package, installing the full DRBD userland suite.
 
-Authors:
---------
-    Philipp Reisner <philipp.reisner@linbit.com>
-    Lars Ellenberg  <lars.ellenberg@linbit.com>
-
-Please report bugs to @PACKAGE_BUGREPORT@.
-
 # Just a few docs go into the "drbd" package. Everything else is part
 # of one of the drbd-* packages.
 %files
