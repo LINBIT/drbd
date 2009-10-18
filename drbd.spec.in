@@ -1,7 +1,6 @@
 # Conditionals -- invoke "rpmbuild --without <feature>" to disable
 # specific features
 # note: conditionals may not contain "-" nor "_", hence "bashcompletion"
-%bcond_without utils
 %bcond_without xen
 %bcond_without udev
 %bcond_without pacemaker
@@ -19,9 +18,7 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-%if %{with utils}
 BuildRequires: flex, gcc
-%endif
 %if %{with udev}
 BuildRequires: udev
 %endif
@@ -57,7 +54,6 @@ This is a virtual package, installing the full DRBD userland suite.
 %doc ChangeLog
 %doc README
 
-%if %{with utils}
 %package utils
 Summary: Management utilities for DRBD
 Group: System Environment/Kernel
@@ -105,7 +101,6 @@ This packages includes the DRBD administration tools.
 %doc COPYING
 %doc ChangeLog
 %doc README
-%endif # with utils
 
 %if %{with xen}
 %package xen
@@ -230,7 +225,7 @@ management utility.
 %prep
 %setup -q
 %configure \
-    %{?_without_utils} \
+    --with-utils \
     --without-km \
     %{?_without_udev} \
     %{?_without_xen} \
@@ -246,7 +241,6 @@ make %{?_smp_mflags} tools doc
 %install
 rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
-%if %{with utils}
 #
 # We only want to install a hint to the example conf
 #
@@ -256,26 +250,23 @@ cat <<___ > %{buildroot}%{_sysconfdir}/drbd.conf
 # %{_docdir}/%{name}-utils-%{version}/drbd.conf
 #
 ___
-%endif
 
 %clean
 rm -rf %{buildroot}
 
-%if %{with utils}
 %post utils
 chkconfig --add drbd
 %if %{without udev}
 for i in `seq 0 15` ; do
     test -b /dev/drbd$i || mknod -m 0660 /dev/drbd$i b 147 $i;
 done
-%endif
+%endif #without udev
 
 %preun utils
 if [ $1 -eq 0 ]; then
         %{_initrddir}/drbd stop >/dev/null 2>&1
         /sbin/chkconfig --del drbd
 fi
-%endif # with-utils
 
 
 %changelog
