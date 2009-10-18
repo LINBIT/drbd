@@ -111,7 +111,7 @@ This packages includes the DRBD administration tools.
 %package xen
 Summary: Xen block device management script for DRBD
 Group: System Environment/Kernel
-Requires: %{name}-utils = %{version}, xen
+Requires: %{name}-utils = %{version}-%{release}, xen
 @RPM_SUBPACKAGE_NOARCH@
 
 %description xen
@@ -130,7 +130,7 @@ promoting and demoting DRBD resources as necessary.
 %package udev
 Summary: udev integration scripts for DRBD
 Group: System Environment/Kernel
-Requires: %{name}-utils = %{version}, udev
+Requires: %{name}-utils = %{version}-%{release}, udev
 @RPM_SUBPACKAGE_NOARCH@
 
 %description udev
@@ -147,7 +147,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 %package pacemaker
 Summary: Pacemaker resource agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}, pacemaker
+Requires: %{name}-utils = %{version}-%{release}, pacemaker
 @RPM_SUBPACKAGE_NOARCH@
 
 %description pacemaker
@@ -168,7 +168,7 @@ Pacemaker High Availability cluster manager.
 %package rgmanager
 Summary: Red Hat Cluster Suite agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}, rgmanager < 3
+Requires: %{name}-utils = %{version}-%{release}, rgmanager < 3
 Conflicts: resource-agents >= 3
 @RPM_SUBPACKAGE_NOARCH@
 
@@ -192,7 +192,7 @@ in the Cluster distribution.
 %package heartbeat
 Summary: Heartbeat resource agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}, heartbeat
+Requires: %{name}-utils = %{version}-%{release}, heartbeat
 @RPM_SUBPACKAGE_NOARCH@
 
 %description heartbeat
@@ -213,7 +213,7 @@ resource manager (in v1 compatibility mode).
 %package bash-completion
 Summary: Programmable bash completion support for drbdadm
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}, bash-completion
+Requires: %{name}-utils = %{version}-%{release}, bash-completion
 @RPM_SUBPACKAGE_NOARCH@
 
 %description bash-completion
