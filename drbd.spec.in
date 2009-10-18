@@ -241,7 +241,7 @@ management utility.
 
 
 %build
-make %{_smp_mflags} tools doc
+make %{?_smp_mflags} tools doc
 
 %install
 rm -rf %{buildroot}
