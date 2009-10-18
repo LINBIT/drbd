@@ -52,7 +52,7 @@ This is a virtual package, installing the full DRBD userland suite.
 # Just a few docs go into the "drbd" package. Everything else is part
 # of one of the drbd-* packages.
 %files
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %doc COPYING
 %doc ChangeLog
 %doc README
@@ -70,7 +70,7 @@ setting up high availability (HA) clusters.
 This packages includes the DRBD administration tools.
 
 %files utils
-%defattr(755,root,root)
+%defattr(755,root,root,-)
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
@@ -91,11 +91,11 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify.sh
 @INITSCRIPT_SYMLINK@
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %dir %{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %{_mandir}/man8/drbd.8.*
 %{_mandir}/man8/drbdsetup.8.*
 %{_mandir}/man8/drbdadm.8.*
@@ -119,10 +119,10 @@ This package contains a Xen block device helper script for DRBD, capable of
 promoting and demoting DRBD resources as necessary.
 
 %files xen
-%defattr(755,root,root)
+%defattr(755,root,root,-)
 %{_sysconfdir}/xen/scripts/block-drbd
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %doc COPYING
 %endif # with xen
 
@@ -138,7 +138,7 @@ This package contains udev helper scripts for DRBD, managing symlinks to
 DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 
 %files udev
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %config %{_sysconfdir}/udev/rules.d/65-drbd.rules*
 %doc COPYING
 %endif # with udev
@@ -155,12 +155,12 @@ This package contains the master/slave DRBD resource agent for the
 Pacemaker High Availability cluster manager.
 
 %files pacemaker
-%defattr(755,root,root)
+%defattr(755,root,root,-)
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %doc COPYING
 %endif # with pacemaker
 
@@ -180,10 +180,10 @@ As of Red Hat Cluster Suite 3.0.1, the DRBD resource agent is included
 in the Cluster distribution.
 
 %files rgmanager
-%defattr(755,root,root)
+%defattr(755,root,root,-)
 %{_datadir}/cluster/drbd.sh
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %{_datadir}/cluster/drbd.metadata
 %doc COPYING
 %endif # with rgmanager
@@ -200,11 +200,11 @@ This package contains the DRBD resource agents for the Heartbeat cluster
 resource manager (in v1 compatibility mode).
 
 %files heartbeat
-%defattr(755,root,root)
+%defattr(755,root,root,-)
 %{_sysconfdir}/ha.d/resource.d/drbddisk
 %{_sysconfdir}/ha.d/resource.d/drbdupper
 
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %{_mandir}/man8/drbddisk.8.*
 %doc COPYING
 %endif # with heartbeat
@@ -221,7 +221,7 @@ This package contains programmable bash completion support for the drbdadm
 management utility.
 
 %files bash-completion
-%defattr(-,root,root)
+%defattr(-,root,root,-)
 %config %{_sysconfdir}/bash_completion.d/drbdadm*
 %doc COPYING
 %endif # with bashcompletion
