@@ -149,6 +149,7 @@ BASH_COMPLETION_SUFFIX=""
 UDEV_RULE_SUFFIX=""
 RPM_DIST_TAG=""
 RPM_CONFLICTS_KM=""
+RPM_BUILDREQ_DEFAULT="gcc flex glibc-devel make"
 RPM_BUILDREQ_KM=""
 RPM_SUBPACKAGE_NOARCH=""
 INITSCRIPT_SYMLINK=""
@@ -168,6 +169,10 @@ case "$DISTRO" in
 	test -z $INITDIR && INITDIR="$sysconfdir/rc.d/init.d"
 	RPM_DIST_TAG="%{?dist}"
 	RPM_CONFLICTS_KM="drbd-kmod <= %{version}_3"
+	dnl Fedora/Red Hat packaging guidelines mandate that packages
+	dnl belonging to the "minimal build system" should not be
+	dnl listed in BuildRequires
+	RPM_BUILDREQ_DEFAULT="flex"
 	RPM_BUILDREQ_KM="kernel-devel = %{kernelversion}"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
 	;;
@@ -213,6 +218,7 @@ AC_SUBST(BASH_COMPLETION_SUFFIX)
 AC_SUBST(UDEV_RULE_SUFFIX)
 AC_SUBST(RPM_DIST_TAG)
 AC_SUBST(RPM_CONFLICTS_KM)
+AC_SUBST(RPM_BUILDREQ_DEFAULT)
 AC_SUBST(RPM_BUILDREQ_KM)
 AC_SUBST(RPM_SUBPACKAGE_NOARCH)
 AC_SUBST(INITSCRIPT_SYMLINK)

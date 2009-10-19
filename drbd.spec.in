@@ -23,7 +23,7 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: flex, gcc
+BuildRequires: @RPM_BUILDREQ_DEFAULT@
 %if %{with udev}
 BuildRequires: udev
 %endif
