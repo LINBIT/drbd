@@ -55,6 +55,10 @@ AC_ARG_WITH([distro],
 	[AS_HELP_STRING([--with-distro],
 			[Configure for a specific distribution (supported values: generic, redhat, suse, debian, gentoo, slackware; default is to autodetect)])],
 	[DISTRO=$withval])
+AC_ARG_WITH([initdir],
+	[AS_HELP_STRING([--with-initdir],
+			[Override directory for init scripts (default is distribution-specific)])],
+	[INITDIR=$withval])
 AC_ARG_WITH([noarchsubpkg],
 	[AS_HELP_STRING([--with-noarchsubpkg],
 			[Build subpackages that support it for the "noarch" architecture (makes sense only with --enable-spec, supported by RPM from 4.6.0 forward)])],
@@ -141,7 +145,6 @@ fi
 AC_SUBST(KVER)
 AC_SUBST(KDIR)
 
-INITDIR="$sysconfdir/init.d"
 BASH_COMPLETION_SUFFIX=""
 UDEV_RULE_SUFFIX=""
 RPM_DIST_TAG=""
@@ -162,14 +165,14 @@ case "$DISTRO" in
 	AC_MSG_NOTICE([configured for Gentoo.])
 	;;
      redhat)
-	INITDIR="$sysconfdir/rc.d/init.d"
+	test -z $INITDIR && INITDIR="$sysconfdir/rc.d/init.d"
 	RPM_DIST_TAG="%{?dist}"
 	RPM_CONFLICTS_KM="drbd-kmod <= %{version}_3"
 	RPM_BUILDREQ_KM="kernel-devel = %{kernelversion}"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
 	;;
      slackware)
-	INITDIR="$sysconfdir/rc.d"
+	test -z $INITDIR && INITDIR="$sysconfdir/rc.d"
 	AC_MSG_NOTICE([configured for Slackware.])
 	;;
      debian)
@@ -186,6 +189,10 @@ case "$DISTRO" in
 	AC_MSG_WARN([Unable to determine what distribution we are running on. Distribution-specific features will be disabled.])
 	;;
 esac
+dnl INITDIR may be set with --with-initdir, or set in the distro
+dnl detection magic above. If unset down to here, use a sensible
+dnl default.
+test -z $INITDIR && INITDIR="$sysconfdir/init.d"
 
 dnl Our udev rules file is known to work only with udev >= 85
 if test "$WITH_UDEV" = "yes"; then

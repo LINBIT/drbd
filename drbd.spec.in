@@ -1,3 +1,8 @@
+# Define init script directory. %{_initddir} is available from Fedora
+# 9 forward; CentOS knows 5 only %{_initrddir}. Neither are known to
+# autoconf...
+%{!?_initddir: %{expand: %%global _initddir %{_initrddir}}}
+
 # Conditionals -- invoke "rpmbuild --without <feature>" to disable
 # specific features
 # note: conditionals may not contain "-" nor "_", hence "bashcompletion"
@@ -70,7 +75,7 @@ This packages includes the DRBD administration tools.
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
-%{_initrddir}/%{name}
+%{_initddir}/%{name}
 %{_sbindir}/drbd-overview
 %dir %{_prefix}/lib/%{name}
 %{_prefix}/lib/%{name}/outdate-peer.sh
@@ -234,8 +239,8 @@ management utility.
     %{?_without_pacemaker} \
     %{?_without_heartbeat} \
     %{?_with_rgmanager} \
-    %{?_without_bashcompletion}
-
+    %{?_without_bashcompletion} \
+    --with-initdir=%{_initddir}
 
 %build
 make %{?_smp_mflags} tools doc
