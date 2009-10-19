@@ -143,6 +143,7 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 Summary: Pacemaker resource agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}-%{release}, pacemaker
+License: GPLv2
 @RPM_SUBPACKAGE_NOARCH@
 
 %description pacemaker
@@ -188,6 +189,7 @@ in the Cluster distribution.
 Summary: Heartbeat resource agent for DRBD
 Group: System Environment/Base
 Requires: %{name}-utils = %{version}-%{release}, heartbeat
+License: GPLv2
 @RPM_SUBPACKAGE_NOARCH@
 
 %description heartbeat
