@@ -123,9 +123,6 @@ promoting and demoting DRBD resources as necessary.
 %files xen
 %defattr(755,root,root,-)
 %{_sysconfdir}/xen/scripts/block-drbd
-
-%defattr(-,root,root,-)
-%doc COPYING
 %endif # with xen
 
 %if %{with udev}
@@ -142,7 +139,6 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 %files udev
 %defattr(-,root,root,-)
 %config %{_sysconfdir}/udev/rules.d/65-drbd.rules*
-%doc COPYING
 %endif # with udev
 
 %if %{with pacemaker}
@@ -162,9 +158,6 @@ Pacemaker High Availability cluster manager.
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
-
-%defattr(-,root,root,-)
-%doc COPYING
 %endif # with pacemaker
 
 %if %{with rgmanager}
@@ -188,7 +181,6 @@ in the Cluster distribution.
 
 %defattr(-,root,root,-)
 %{_datadir}/cluster/drbd.metadata
-%doc COPYING
 %endif # with rgmanager
 
 %if %{with heartbeat}
@@ -210,7 +202,6 @@ resource manager (in v1 compatibility mode).
 
 %defattr(-,root,root,-)
 %{_mandir}/man8/drbddisk.8.*
-%doc COPYING
 %endif # with heartbeat
 
 %if %{with bashcompletion}
@@ -227,7 +218,6 @@ management utility.
 %files bash-completion
 %defattr(-,root,root,-)
 %config %{_sysconfdir}/bash_completion.d/drbdadm*
-%doc COPYING
 %endif # with bashcompletion
 
 
