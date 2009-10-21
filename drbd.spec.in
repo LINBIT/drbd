@@ -97,8 +97,6 @@ This packages includes the DRBD administration tools.
 %defattr(-,root,root,-)
 %dir %{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
-
-%defattr(-,root,root,-)
 %{_mandir}/man8/drbd.8.*
 %{_mandir}/man8/drbdsetup.8.*
 %{_mandir}/man8/drbdadm.8.*
