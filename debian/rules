@@ -121,9 +121,9 @@ install-arch:
 	dh_testroot
 	dh_clean -k -s
 	dh_installdirs -s
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C user install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C scripts install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C documentation install
+	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C user install
+	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C scripts install
+	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C documentation install
 
 	dh_install -s
 # Must not depend on anything. This is to be called by
