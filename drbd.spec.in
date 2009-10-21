@@ -233,7 +233,7 @@ management utility.
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
     --with-initdir=%{_initddir}
-make %{?_smp_mflags} tools doc
+make %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
