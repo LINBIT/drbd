@@ -98,6 +98,21 @@ struct deferred_cmd {
 	struct deferred_cmd *next;
 };
 
+struct option admopt[] = {
+	{"stacked", no_argument, 0, 'S'},
+	{"dry-run", no_argument, 0, 'd'},
+	{"verbose", no_argument, 0, 'v'},
+	{"config-file", required_argument, 0, 'c'},
+	{"drbdsetup", required_argument, 0, 's'},
+	{"drbdmeta", required_argument, 0, 'm'},
+	{"drbd-proxy-ctl", required_argument, 0, 'p'},
+	{"sh-varname", required_argument, 0, 'n'},
+	{"force", no_argument, 0, 'f'},
+	{"peer", required_argument, 0, 'P'},
+	{"version", no_argument, 0, 'V'},
+	{0, 0, 0, 0}
+};
+
 extern int my_parse();
 extern int yydebug;
 extern FILE *yyin;
@@ -179,6 +194,149 @@ volatile int alarm_raised;
 
 struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
 struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
+
+/* DRBD adm_cmd flags shortcuts,
+ * to avoid merge conflicts and unreadable diffs
+ * when we add the next flag */
+
+#define DRBD_acf1_default		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf1_connect		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,		\
+	.need_peer = 1,			\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf1_defnet		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf3_handler		\
+	.show_in_usage = 3,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+	.use_cached_config_file = 1,	\
+
+#define DRBD_acf4_advanced		\
+	.show_in_usage = 4,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf1_dump			\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 1,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf2_shell			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+
+#define DRBD_acf2_proxy			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+	.need_peer = 1,			\
+	.is_proxy_cmd = 1,		\
+
+#define DRBD_acf2_hook			\
+	.show_in_usage = 2,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,                \
+	.use_cached_config_file = 1,	\
+
+#define DRBD_acf2_gen_shell		\
+	.show_in_usage = 2,		\
+	.res_name_required = 0,		\
+	.verify_ips = 0,		\
+
+struct adm_cmd cmds[] = {
+	/*  name, function, flags
+	 *  sort order:
+	 *  - normal config commands,
+	 *  - normal meta data manipulation
+	 *  - sh-*
+	 *  - handler
+	 *  - advanced
+	 ***/
+	{"attach", adm_attach, DRBD_acf1_default},
+	{"detach", adm_generic_l, DRBD_acf1_default},
+	{"connect", adm_connect, DRBD_acf1_connect},
+	{"disconnect", adm_generic_s, DRBD_acf1_default},
+	{"up", adm_up, DRBD_acf1_connect},
+	{"down", adm_generic_l, DRBD_acf1_default},
+	{"primary", adm_generic_l, DRBD_acf1_default},
+	{"secondary", adm_generic_l, DRBD_acf1_default},
+	{"invalidate", adm_generic_b, DRBD_acf1_default},
+	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
+	{"outdate", adm_outdate, DRBD_acf1_default},
+	{"resize", adm_resize, DRBD_acf1_defnet},
+	{"syncer", adm_syncer, DRBD_acf1_defnet},
+	{"verify", adm_generic_s, DRBD_acf1_defnet},
+	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
+	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
+	{"adjust", adm_adjust, DRBD_acf1_connect},
+	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
+	{"wait-con-int", adm_wait_ci,
+	 .show_in_usage = 1,.verify_ips = 1,},
+	{"status", adm_status_xml, DRBD_acf2_gen_shell},
+	{"role", adm_generic_s, DRBD_acf1_default},
+	{"cstate", adm_generic_s, DRBD_acf1_default},
+	{"dstate", adm_generic_b, DRBD_acf1_default},
+
+	{"dump", adm_dump, DRBD_acf1_dump},
+	{"dump-xml", adm_dump_xml, DRBD_acf1_dump},
+
+	{"create-md", adm_create_md, DRBD_acf1_default},
+	{"show-gi", adm_generic_b, DRBD_acf1_default},
+	{"get-gi", adm_generic_b, DRBD_acf1_default},
+	{"dump-md", admm_generic, DRBD_acf1_default},
+	{"wipe-md", admm_generic, DRBD_acf1_default},
+	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
+
+	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1},
+	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
+	{"sh-resource", sh_resource, DRBD_acf2_shell},
+	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
+	{"sh-dev", sh_dev, DRBD_acf2_shell},
+	{"sh-udev", sh_udev, DRBD_acf2_hook},
+	{"sh-minor", sh_minor, DRBD_acf2_shell},
+	{"sh-ll-dev", sh_ll_dev, DRBD_acf2_shell},
+	{"sh-md-dev", sh_md_dev, DRBD_acf2_shell},
+	{"sh-md-idx", sh_md_idx, DRBD_acf2_shell},
+	{"sh-ip", sh_ip, DRBD_acf2_shell},
+	{"sh-lr-of", sh_lres, DRBD_acf2_shell},
+	{"sh-b-pri", sh_b_pri, DRBD_acf2_shell},
+	{"sh-status", sh_status, DRBD_acf2_gen_shell},
+
+	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
+	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
+
+	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
+	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
+	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_handler},
+	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_handler},
+	{"fence-peer", adm_khelper, DRBD_acf3_handler},
+	{"local-io-error", adm_khelper, DRBD_acf3_handler},
+	{"pri-lost", adm_khelper, DRBD_acf3_handler},
+	{"split-brain", adm_khelper, DRBD_acf3_handler},
+	{"out-of-sync", adm_khelper, DRBD_acf3_handler},
+
+	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
+	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
+	{"set-gi", admm_generic, DRBD_acf4_advanced},
+	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced},
+};
+
 
 void schedule_dcmd(int (*function) (struct d_resource *, const char *),
 		   struct d_resource *res, char *arg, int order)
@@ -362,163 +520,6 @@ int run_dcmds(void)
 {
 	return _run_dcmds(0) || _run_dcmds(1) || _run_dcmds(2);
 }
-
-struct option admopt[] = {
-	{"stacked", no_argument, 0, 'S'},
-	{"dry-run", no_argument, 0, 'd'},
-	{"verbose", no_argument, 0, 'v'},
-	{"config-file", required_argument, 0, 'c'},
-	{"drbdsetup", required_argument, 0, 's'},
-	{"drbdmeta", required_argument, 0, 'm'},
-	{"drbd-proxy-ctl", required_argument, 0, 'p'},
-	{"sh-varname", required_argument, 0, 'n'},
-	{"force", no_argument, 0, 'f'},
-	{"peer", required_argument, 0, 'P'},
-	{"version", no_argument, 0, 'V'},
-	{0, 0, 0, 0}
-};
-
-/* DRBD adm_cmd flags shortcuts,
- * to avoid merge conflicts and unreadable diffs
- * when we add the next flag */
-
-#define DRBD_acf1_default		\
-	.show_in_usage = 1,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,		\
-	.uc_dialog = 1,			\
-
-#define DRBD_acf1_connect		\
-	.show_in_usage = 1,		\
-	.res_name_required = 1,		\
-	.verify_ips = 1,		\
-	.need_peer = 1,			\
-	.uc_dialog = 1,			\
-
-#define DRBD_acf1_defnet		\
-	.show_in_usage = 1,		\
-	.res_name_required = 1,		\
-	.verify_ips = 1,		\
-	.uc_dialog = 1,			\
-
-#define DRBD_acf3_handler		\
-	.show_in_usage = 3,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,		\
-	.use_cached_config_file = 1,	\
-
-#define DRBD_acf4_advanced		\
-	.show_in_usage = 4,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,		\
-	.uc_dialog = 1,			\
-
-#define DRBD_acf1_dump			\
-	.show_in_usage = 1,		\
-	.res_name_required = 1,		\
-	.verify_ips = 1,		\
-	.uc_dialog = 1,			\
-
-#define DRBD_acf2_shell			\
-	.show_in_usage = 2,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,		\
-
-#define DRBD_acf2_proxy			\
-	.show_in_usage = 2,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,		\
-	.need_peer = 1,			\
-	.is_proxy_cmd = 1,		\
-
-#define DRBD_acf2_hook			\
-	.show_in_usage = 2,		\
-	.res_name_required = 1,		\
-	.verify_ips = 0,                \
-	.use_cached_config_file = 1,	\
-
-#define DRBD_acf2_gen_shell		\
-	.show_in_usage = 2,		\
-	.res_name_required = 0,		\
-	.verify_ips = 0,		\
-
-struct adm_cmd cmds[] = {
-	/*  name, function, flags
-	 *  sort order:
-	 *  - normal config commands,
-	 *  - normal meta data manipulation
-	 *  - sh-*
-	 *  - handler
-	 *  - advanced
-	 ***/
-	{"attach", adm_attach, DRBD_acf1_default},
-	{"detach", adm_generic_l, DRBD_acf1_default},
-	{"connect", adm_connect, DRBD_acf1_connect},
-	{"disconnect", adm_generic_s, DRBD_acf1_default},
-	{"up", adm_up, DRBD_acf1_connect},
-	{"down", adm_generic_l, DRBD_acf1_default},
-	{"primary", adm_generic_l, DRBD_acf1_default},
-	{"secondary", adm_generic_l, DRBD_acf1_default},
-	{"invalidate", adm_generic_b, DRBD_acf1_default},
-	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
-	{"outdate", adm_outdate, DRBD_acf1_default},
-	{"resize", adm_resize, DRBD_acf1_defnet},
-	{"syncer", adm_syncer, DRBD_acf1_defnet},
-	{"verify", adm_generic_s, DRBD_acf1_defnet},
-	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"adjust", adm_adjust, DRBD_acf1_connect},
-	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
-	{"wait-con-int", adm_wait_ci,
-	 .show_in_usage = 1,.verify_ips = 1,},
-	{"status", adm_status_xml, DRBD_acf2_gen_shell},
-	{"role", adm_generic_s, DRBD_acf1_default},
-	{"cstate", adm_generic_s, DRBD_acf1_default},
-	{"dstate", adm_generic_b, DRBD_acf1_default},
-
-	{"dump", adm_dump, DRBD_acf1_dump},
-	{"dump-xml", adm_dump_xml, DRBD_acf1_dump},
-
-	{"create-md", adm_create_md, DRBD_acf1_default},
-	{"show-gi", adm_generic_b, DRBD_acf1_default},
-	{"get-gi", adm_generic_b, DRBD_acf1_default},
-	{"dump-md", admm_generic, DRBD_acf1_default},
-	{"wipe-md", admm_generic, DRBD_acf1_default},
-	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
-
-	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1},
-	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
-	{"sh-resource", sh_resource, DRBD_acf2_shell},
-	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
-	{"sh-dev", sh_dev, DRBD_acf2_shell},
-	{"sh-udev", sh_udev, DRBD_acf2_hook},
-	{"sh-minor", sh_minor, DRBD_acf2_shell},
-	{"sh-ll-dev", sh_ll_dev, DRBD_acf2_shell},
-	{"sh-md-dev", sh_md_dev, DRBD_acf2_shell},
-	{"sh-md-idx", sh_md_idx, DRBD_acf2_shell},
-	{"sh-ip", sh_ip, DRBD_acf2_shell},
-	{"sh-lr-of", sh_lres, DRBD_acf2_shell},
-	{"sh-b-pri", sh_b_pri, DRBD_acf2_shell},
-	{"sh-status", sh_status, DRBD_acf2_gen_shell},
-
-	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
-	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
-
-	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
-	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
-	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_handler},
-	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_handler},
-	{"fence-peer", adm_khelper, DRBD_acf3_handler},
-	{"local-io-error", adm_khelper, DRBD_acf3_handler},
-	{"pri-lost", adm_khelper, DRBD_acf3_handler},
-	{"split-brain", adm_khelper, DRBD_acf3_handler},
-	{"out-of-sync", adm_khelper, DRBD_acf3_handler},
-
-	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
-	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
-	{"set-gi", admm_generic, DRBD_acf4_advanced},
-	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced},
-};
 
 /*** These functions are used to the print the config ***/
 
