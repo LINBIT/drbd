@@ -1,3 +1,9 @@
+drbd8 (2:8.3.4-11) unstable; urgency=low
+
+  * Packaging makeover.
+
+ -- Florian Haas <florian@linbit.com>  Wed, 21 Oct 2009 13:55:45 +0200
+
 drbd8 (2:8.3.4-0) unstable; urgency=low
 
   * New upstream release.
