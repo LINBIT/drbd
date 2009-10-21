@@ -221,6 +221,8 @@ management utility.
 
 %prep
 %setup -q
+
+%build
 %configure \
     --with-utils \
     --without-km \
@@ -231,8 +233,6 @@ management utility.
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
     --with-initdir=%{_initddir}
-
-%build
 make %{?_smp_mflags} tools doc
 
 %install

@@ -53,6 +53,8 @@ installed kernel.
 %setup -q -n drbd-%{version}
 test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
+
+%build
 %configure \
     --without-utils \
     --with-km \
@@ -62,9 +64,6 @@ test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
     --without-heartbeat \
     --without-rgmanager \
     --without-bashcompletion
-
-
-%build
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
