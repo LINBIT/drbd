@@ -69,6 +69,8 @@ build-arch: build-arch-stamp
 build-arch-stamp:
 	dh_testdir
 #	build this first, so user/drbd_buildtag.c does not use the stale thing from the tgz
+	[ -f configure ] || autoconf
+	./configure --prefix=/ --sysconfdir=/etc
 	$(MAKE) drbd/drbd_buildtag.c
 	$(MAKE) -C user
 	$(MAKE) -C scripts
