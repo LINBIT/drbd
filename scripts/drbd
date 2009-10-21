@@ -135,14 +135,14 @@ drbd_pretty_status()
 	) | column -t
 }
 
-# Just in case drbdadm want to display any errors in the configuration
-# file, or we need to ask the user about registering this installation
-# at http://usage.drbd.org, we call drbdadm here without any IO
-# redirection.
-$DRBDADM sh-nop
 
 case "$1" in
     start)
+	# Just in case drbdadm want to display any errors in the configuration
+	# file, or we need to ask the user about registering this installation
+	# at http://usage.drbd.org, we call drbdadm here without any IO
+	# redirection.
+	$DRBDADM sh-nop
 	log_daemon_msg "Starting DRBD resources"
 	assure_module_is_loaded
 	adjust_with_progress
@@ -165,6 +165,7 @@ case "$1" in
 	log_end_msg 0
 	;;
     stop)
+	$DRBDADM sh-nop
 	log_daemon_msg "Stopping all DRBD resources"
 	if [ -e $PROC_DRBD ] ; then
 		# bypass drbdadm and drbd config file and everything,
@@ -199,11 +200,13 @@ case "$1" in
 	fi
 	;;
     reload)
+	$DRBDADM sh-nop
 	log_daemon_msg  "Reloading DRBD configuration"
 	$DRBDADM adjust all
 	log_end_msg 0
 	;;
     restart|force-reload)
+	$DRBDADM sh-nop
 	log_daemon_msg "Restarting all DRBD resources"
 	$DRBDADM down all
 	$RMMOD drbd

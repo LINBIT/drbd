@@ -88,6 +88,7 @@ struct adm_cmd {
 	unsigned int use_cached_config_file:1;
 	unsigned int need_peer:1;
 	unsigned int is_proxy_cmd:1;
+	unsigned int uc_dialog:1; /* May show usage count dialog */
 };
 
 struct deferred_cmd {
@@ -385,56 +386,61 @@ struct option admopt[] = {
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
 
 #define DRBD_acf1_connect		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
-	.need_peer = 1,
+	.need_peer = 1,			\
+	.uc_dialog = 1,			\
 
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
+	.uc_dialog = 1,			\
 
 #define DRBD_acf3_handler		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
-	.use_cached_config_file = 1,
+	.use_cached_config_file = 1,	\
 
 #define DRBD_acf4_advanced		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
 
 #define DRBD_acf1_dump			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
-	.verify_ips = 1,
+	.verify_ips = 1,		\
+	.uc_dialog = 1,			\
 
 #define DRBD_acf2_shell			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
-	.verify_ips = 0,
+	.verify_ips = 0,		\
 
 #define DRBD_acf2_proxy			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 	.need_peer = 1,			\
-	.is_proxy_cmd = 1,
+	.is_proxy_cmd = 1,		\
 
 #define DRBD_acf2_hook			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,                \
-	.use_cached_config_file = 1,
+	.use_cached_config_file = 1,	\
 
 #define DRBD_acf2_gen_shell		\
 	.show_in_usage = 2,		\
 	.res_name_required = 0,		\
-	.verify_ips = 0,
+	.verify_ips = 0,		\
 
 struct adm_cmd cmds[] = {
 	/*  name, function, flags
@@ -480,7 +486,7 @@ struct adm_cmd cmds[] = {
 	{"wipe-md", admm_generic, DRBD_acf1_default},
 	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
 
-	{"sh-nop", sh_nop, DRBD_acf2_gen_shell},
+	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1},
 	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
 	{"sh-resource", sh_resource, DRBD_acf2_shell},
 	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
@@ -3151,7 +3157,8 @@ int main(int argc, char **argv)
 
 	count_resources_or_die();
 
-	uc_node(global_options.usage_count);
+	if (cmd->uc_dialog)
+		uc_node(global_options.usage_count);
 
 	if (cmd->res_name_required) {
 		if (config == NULL) {
