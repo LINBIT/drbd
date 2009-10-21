@@ -74,7 +74,6 @@ build-arch-stamp:
 	$(MAKE) drbd/drbd_buildtag.c
 	$(MAKE) -C user
 	$(MAKE) -C scripts
-	$(MAKE) -C benchmark
 	$(MAKE) -C documentation doc
 	touch build-arch-stamp
 
@@ -92,7 +91,6 @@ clean: unpatch
 	rm -f debian/kernel-patch-wup.kpatches debian/kernel-patch-wup.README.Debian debian/kernel-export-wup.patch
 	-$(MAKE) -C user clean
 	-$(MAKE) -C scripts clean
-	-$(MAKE) -C benchmark clean
 	-$(MAKE) -C documentation clean
 	-$(MAKE) -C drbd clean
 	dh_clean
@@ -125,7 +123,6 @@ install-arch:
 	dh_installdirs -s
 	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C user install
 	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C scripts install
-	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C benchmark install
 	$(MAKE) PREFIX=$(CURDIR)/debian/drbd8-utils/ -C documentation install
 
 	dh_install -s
