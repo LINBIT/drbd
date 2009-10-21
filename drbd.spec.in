@@ -267,7 +267,7 @@ fi
 
 
 %changelog
-* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-10@RPM_DIST_TAG@
+* Wed Oct 14 2009 Florian Haas <florian@linbit.com> - 8.3.4-10
 - Packaging makeover.
 
 * Thu Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
