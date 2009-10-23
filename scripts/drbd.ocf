@@ -297,9 +297,9 @@ drbd_update_master_score() {
 	# 10000: Please promote me.
 	#        I'm confident that my data is as good as it gets.
 	#
-	: == DEBUG == $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
-	case $DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
-	UpToDate/DUnknown)
+	: == DEBUG == $DRBD_ROLE_LOCAL/$DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
+	case $DRBD_ROLE_LOCAL/$DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
+	Secondary/UpToDate/DUnknown)
 		# We don't know about our peer.
 		# We may need to outdate ourselves?
 		# But if we outdate in a MONITOR, and are disconnected
@@ -311,7 +311,7 @@ drbd_update_master_score() {
 		set_master_score  1000
 		;;
 
-	UpToDate/*)
+	*/UpToDate/*)
 		# We know something about our peer, which means that either the
 		# replication link is established, or it was not even
 		# consistent last time we talked to each other.
@@ -320,14 +320,14 @@ drbd_update_master_score() {
 		set_master_score 10000
 		;;
 
-	*/UpToDate)
+	*/*/UpToDate)
 		# Our local disk is not up to date.
 		# But our peer is OK.
 		# We can expect to have access to useful
 		# data, but must expect degraded performance.
 		set_master_score 10
 		;;
-	Consistent/*)
+	*/Consistent/*)
 		# Our local disk is Consistent.
 		# It _may_ be up to date, or not.
 		# We hope that fencing mechanisms have put constraints in
