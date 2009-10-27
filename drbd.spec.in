@@ -267,6 +267,9 @@ fi
 
 
 %changelog
+* Thu Oct 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.5-1
+- New upstream release.
+
 * Wed Oct 21 2009 Florian Haas <florian@linbit.com> - 8.3.4-12
 - Packaging makeover.
 

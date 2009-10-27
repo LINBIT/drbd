@@ -2,6 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.5 (api:86/proto:86-91)
+--------
+ * Fixed a regression introduced shortly before 8.3.3, which might
+   case a deadlock in DRBD's disconnect code path. (Bugz 258)
+ * Fixed drbdsetup X resume-io which is needed for the recovery
+   from the effects of broken fence-peer scripts. (Bugz 256)
+ * Do not reduce master score of a current Primary on connection loss,
+   to avoid unnecessary migrations
+ * Do not display the usage count dialog for /etc/inti.d/drbd status
+
 8.3.4 (api:86/proto:86-91)
 --------
  * Fixed a regression in the connector backport introduced with 8.3.3.
