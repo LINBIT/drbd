@@ -20,6 +20,15 @@ test -e ./linux/drbd_config.h || {
        exit 1
 }
 
+if [[ -z $KDIR ]] ; then
+	echo >&2 "You did not tell me which kernel I should check"
+	echo >&2 "So I'm taking a guess..."
+	O=
+	KDIR_BEST_GUESS=/lib/modules/`uname -r`/source
+	O_BEST_GUESS=/lib/modules/`uname -r`/build
+	test -d $KDIR_BEST_GUESS && KDIR=$KDIR_BEST_GUESS
+	test -d $O_BEST_GUESS && O=$O_BEST_GUESS
+fi
 test -n "$KDIR"
 
 # ok, now we have a KDIR; cd into it, in case we detect relative pathes
