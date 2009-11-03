@@ -39,6 +39,7 @@
 #include <asm/unaligned.h>
 #include <linux/drbd_tag_magic.h>
 #include <linux/drbd_limits.h>
+#include <linux/compiler.h>
 
 static unsigned short *tl_add_blob(unsigned short *, enum drbd_tags, const void *, int);
 static unsigned short *tl_add_str(unsigned short *, enum drbd_tags, const char *);
@@ -2367,6 +2368,16 @@ int __init cn_init(void);
 void __exit cn_fini(void);
 #endif
 
+typedef int (*cn_add_callback_req_nsp_fn)(struct cb_id *, char *,
+	void (*cb)(struct cn_msg *req, struct netlink_skb_parms *nsp));
+typedef int (*cn_add_callback_req_fn)(struct cb_id *, char *,
+	void (*cb)(struct cn_msg *req));
+typedef int (*cn_add_callback_void_fn)(struct cb_id *, char *,
+	void (*cb)(void *data));
+#ifndef __same_type
+# define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+#endif
+
 int __init drbd_nl_init(void)
 {
 	static struct cb_id cn_id_drbd;
@@ -2381,6 +2392,16 @@ int __init drbd_nl_init(void)
 	cn_id_drbd.val = CN_VAL_DRBD;
 	do {
 		cn_id_drbd.idx = cn_idx;
+		/* Try to catch incompatible callbacks at compile time,
+		 * otherwise it will just be a compiler _warning_,
+		 * but then BUG at runtime. */
+#ifdef KERNEL_HAS_CN_SKB_PARMS
+		BUILD_BUG_ON(!__same_type(&cn_add_callback, cn_add_callback_req_nsp_fn));
+#else
+		BUILD_BUG_ON(!(
+			__same_type(&cn_add_callback, cn_add_callback_req_fn) ||
+			__same_type(&cn_add_callback, cn_add_callback_void_fn)));
+#endif
 		err = cn_add_callback(&cn_id_drbd, "cn_drbd", &drbd_connector_callback);
 		if (!err)
 			break;
