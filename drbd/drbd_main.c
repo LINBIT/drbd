@@ -2507,7 +2507,6 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 
 	p.dp_flags = cpu_to_be32(dp_flags);
 	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
-	set_bit(UNPLUG_REMOTE, &mdev->flags);
 	ok = (sizeof(p) ==
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), MSG_MORE));
 	if (ok && dgs) {
