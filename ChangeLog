@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.6 (api:86/proto:86-91)
+--------
+ * Make sure that we ship all unplug events
+ * Introduced autoconf, new RPM packaging
+
 8.3.5 (api:86/proto:86-91)
 --------
  * Fixed a regression introduced shortly before 8.3.3, which might
