@@ -118,7 +118,6 @@ distclean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
 	rm -rf dist
-	rm -f configure
 	rm -f config.log
 	rm -f config.status
 
@@ -129,7 +128,7 @@ check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
 	echo "checking for presence of $$dver_re in various changelog files"; \
 	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
-	                     -e '/- '"$$dver_re"'-/p' < drbd.spec) ; \
+	                     -e '/- '"$$dver_re"'-/p' < drbd.spec.in) ; \
 	if test -z "$$in_changelog" ; \
 	then \
 	   echo -e "\n\t%changelog in drbd.spec.in needs update"; \
@@ -137,6 +136,10 @@ check_changelogs_up2date:
 	if ! grep "^$$dver_re\>" >/dev/null 2>&1 ChangeLog; \
 	then \
 	   echo -e "\n\tChangeLog needs update"; \
+	   up2date=false; fi ; \
+	if ! grep "^AC_INIT(DRBD, $$dver_re" >/dev/null 2>&1 configure.ac; \
+	then \
+	   echo -e "\n\tconfigure.ac needs update"; \
 	   up2date=false; fi ; \
 	if ! grep "^drbd8 ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
@@ -162,7 +165,6 @@ drbd/drbd_buildtag.c:
 	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
-	echo drbd-$(DIST_VERSION)/drbd.spec >> .filelist ;\
 	echo drbd-$(DIST_VERSION)/configure >> .filelist ;\
 	echo "./.filelist updated."
 
@@ -196,7 +198,10 @@ prepare_release:
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
-tarball: check_all_committed distclean doc .filelist
+configure: configure.ac
+	autoconf
+
+tarball: check_all_committed distclean doc configure .filelist
 	$(MAKE) tgz
 
 all tools doc .filelist: drbd/drbd_buildtag.c

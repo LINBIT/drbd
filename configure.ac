@@ -7,7 +7,7 @@ dnl Minimum autoconf version we require
 AC_PREREQ(2.53)
 
 dnl What we are, our version, who to bug in case of problems
-AC_INIT(DRBD, 8.3.4, [drbd-dev@lists.linbit.com])
+AC_INIT(DRBD, 8.3.5, [drbd-dev@lists.linbit.com])
 
 dnl "--with-<foo>" options (all except km enabled by default, pass --without-<foo> to disable)
 WITH_UTILS=yes
