@@ -243,6 +243,8 @@ km-rpm: check-kdir tgz drbd-km.spec
 srpm: tgz drbd.spec drbd-km.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
 	$(RPMBUILD) -bs \
+	    --define "kernelversion $(KVER)" \
+	    --define "kdir $(KDIR)" \
 		$(RPMOPT) \
 		drbd.spec drbd-km.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
