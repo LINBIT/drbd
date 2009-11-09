@@ -215,19 +215,35 @@ kernel-patch: drbd/drbd_buildtag.c
 
 
 ifdef RPMBUILD
+drbd.spec: drbd.spec.in configure
+	./configure --enable-spec
+
+drbd-km.spec: drbd-km.spec.in configure
+	./configure --enable-spec --without-utils --with-km
+
 .PHONY: rpm
-rpm: check-kdir tgz
-	$(RPMBUILD) -tb \
+rpm: tgz drbd.spec
+	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
+	$(RPMBUILD) -bb \
+	    $(RPMOPT) \
+	    drbd.spec
+	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
+
+.PHONY: km-rpm
+km-rpm: check-kdir tgz drbd-km.spec
+	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
+	$(RPMBUILD) -bb \
 	    --define "kernelversion $(KVER)" \
 	    --define "kdir $(KDIR)" \
 	    $(RPMOPT) \
-	    drbd-$(FDIST_VERSION).tar.gz
+	    drbd-km.spec
 	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
 
 .PHONY: srpm
-srpm: tgz
-	$(RPMBUILD) -ts \
+srpm: tgz drbd.spec drbd-km.spec
+	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
+	$(RPMBUILD) -bs \
 		$(RPMOPT) \
-		drbd-$(FDIST_VERSION).tar.gz
+		drbd.spec drbd-km.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
 endif

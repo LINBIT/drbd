@@ -227,8 +227,12 @@ dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then
    AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile)
 else
-   AC_CONFIG_FILES(drbd.spec)
-   AC_CONFIG_FILES(drbd-km.spec)
+   if test "$WITH_UTILS" = "yes"; then
+     AC_CONFIG_FILES(drbd.spec)
+   fi
+   if test "$WITH_KM" = "yes"; then
+     AC_CONFIG_FILES(drbd-km.spec)
+   fi
 fi
 
 dnl output
