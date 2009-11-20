@@ -27,6 +27,10 @@
 # note: if you get strange make errors when ARCH=um, you
 # probably need to "make mrproper" in the KDIR first...
 
+# The destination "root" directory. Meant to be overridden by
+# packaging scripts.
+DESTDIR ?= /
+
 # since 2.6.16, KERNELRELEASE may be empty,
 # e.g. when building agains some (broken?) linux-header package.
 # Lets test on PATCHLEVEL, that won't change too soon...
