@@ -186,7 +186,6 @@ else
 	@if ! [ -e $(MODOBJ) ] ; then \
 	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
-# install -d $(DESTDIR)/var/lib/drbd
 	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
 	install -m 644 $(MODOBJ) $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
     ifeq ($(DESTDIR),/)
