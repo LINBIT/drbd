@@ -3,14 +3,15 @@
 # autoconf...
 %{!?_initddir: %{expand: %%global _initddir %{_initrddir}}}
 
-# Conditionals -- invoke "rpmbuild --without <feature>" to disable
-# specific features
-# note: conditionals may not contain "-" nor "_", hence "bashcompletion"
-%bcond_without xen
+# Conditionals
+# Invoke "rpmbuild --without <feature>" or "rpmbuild --with <feature>"
+# to disable or enable specific features
 %bcond_without udev
 %bcond_without pacemaker
 %bcond_with rgmanager
 %bcond_without heartbeat
+%bcond_without xen
+# conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without bashcompletion
 
 Name: @PACKAGE_TARNAME@
