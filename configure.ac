@@ -9,6 +9,34 @@ AC_PREREQ(2.53)
 dnl What we are, our version, who to bug in case of problems
 AC_INIT(DRBD, 8.3.6, [drbd-dev@lists.linbit.com])
 
+dnl Sanitize $prefix. Autoconf does this by itself, but so late in the
+dnl generated configure script that the expansion does not occur until
+dnl after our eval magic below.
+prefix=$ac_default_prefix
+exec_prefix=$prefix
+
+dnl Expand autoconf variables so that we dont end up with '${prefix}'
+dnl in #defines
+dnl Autoconf deliberately leaves them unexpanded to allow make
+dnl exec_prefix=/foo install. DRBD supports only DESTDIR, KDIR and
+dnl KVER to be invoked with make.
+prefix="`eval echo ${prefix}`"
+exec_prefix="`eval echo ${exec_prefix}`"
+bindir="`eval echo ${bindir}`"
+sbindir="`eval echo ${sbindir}`"
+libexecdir="`eval echo ${libexecdir}`"
+datarootdir="`eval echo ${datarootdir}`"
+datadir="`eval echo ${datadir}`"
+sysconfdir="`eval echo ${sysconfdir}`"
+sharedstatedir="`eval echo ${sharedstatedir}`"
+localstatedir="`eval echo ${localstatedir}`"
+libdir="`eval echo ${libdir}`"
+includedir="`eval echo ${includedir}`"
+oldincludedir="`eval echo ${oldincludedir}`"
+infodir="`eval echo ${infodir}`"
+mandir="`eval echo ${mandir}`"
+docdir="`eval echo ${docdir}`"
+
 dnl "--with-<foo>" options (all except km enabled by default, pass --without-<foo> to disable)
 WITH_UTILS=yes
 WITH_KM=no
@@ -208,7 +236,8 @@ if test "$WITH_UDEV" = "yes"; then
    fi
 fi
 
-dnl Our sub-packages can be built for noarch, but RPM only supports this from version 4.6.0 forward
+dnl Our sub-packages can be built for noarch, but RPM only supports
+dnl this from version 4.6.0 forward
 if test "$WITH_NOARCH_SUBPACKAGES" = "yes"; then
    RPM_SUBPACKAGE_NOARCH="BuildArch: noarch"
 fi
