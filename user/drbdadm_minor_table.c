@@ -40,16 +40,16 @@
 #include <sys/stat.h>
 #include <string.h>
 
-#define MINOR_TABLE_DIR "/var/lib/drbd/"
-#define MAX_MINOR 256
+#include "config.h"
 
+#define MAX_MINOR 256
 #define MAX_REGISTER_PATH_LEN	1024
 
 /* buf has to be big enough to hold that path.
  * it is assumed that sprintf cannot fail :-] */
 void linkname_from_minor(char *buf, int minor)
 {
-	sprintf(buf, "%s/drbd-minor-%d.conf", MINOR_TABLE_DIR, minor);
+	sprintf(buf, "%s/drbd-minor-%d.conf", DRBD_LIB_DIR, minor);
 }
 
 int unregister_minor(int minor)

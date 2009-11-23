@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "drbdtool_common.h"
+#include "config.h"
 
 int force = 0;
 int confirmed(const char *text)
@@ -353,7 +354,7 @@ int dt_lock_drbd(const char* device)
 			"Try /dev/drbd<minor-number> or just <minor-number> instead.\n", device);
 		exit(20);
 	}
-	snprintf(lfname,39,"/var/lock/drbd-%d-%d",dev_major,dev_minor);
+	snprintf(lfname, 39, DRBD_LOCK_DIR "/drbd-%d-%d", dev_major, dev_minor);
 
 	lfd = get_fd_lockfile_timeout(lfname,1);
 	if (lfd < 0)

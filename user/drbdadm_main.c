@@ -2441,10 +2441,10 @@ void verify_ips(struct d_resource *res)
 }
 
 static char *conf_file[] = {
-	"/etc/drbd-83.conf",
-	"/etc/drbd-82.conf",
-	"/etc/drbd-08.conf",
-	"/etc/drbd.conf",
+	DRBD_CONFIG_DIR "/drbd-83.conf",
+	DRBD_CONFIG_DIR "/drbd-82.conf",
+	DRBD_CONFIG_DIR "/drbd-08.conf",
+	DRBD_CONFIG_DIR "/drbd.conf",
 	0
 };
 

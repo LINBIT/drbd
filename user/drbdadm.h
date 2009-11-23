@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#include "config.h"
+
 #define E_syntax	  2
 #define E_usage		  3
 #define E_config_invalid 10
