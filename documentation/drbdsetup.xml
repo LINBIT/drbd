@@ -13,10 +13,11 @@
   </refmeta>
   <refnamediv>
     <refname>drbdsetup</refname>
-    <refpurpose>Setup tool for DRBD</refpurpose>
+    <refpurpose>Setup tool for DRBD
     <indexterm significance="normal">
       <primary>drbdsetup</primary>
     </indexterm>
+    </refpurpose>
   </refnamediv>
   <refsynopsisdiv>
     <cmdsynopsis sepchar=" ">

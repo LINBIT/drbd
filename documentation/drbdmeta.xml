@@ -13,10 +13,11 @@
   </refmeta>
   <refnamediv>
     <refname>drbdmeta</refname>
-    <refpurpose>DRBD's meta data management tool</refpurpose>
+    <refpurpose>DRBD's meta data management tool
     <indexterm significance="normal">
       <primary>drbdmeta</primary>
     </indexterm>
+    </refpurpose>
   </refnamediv>
   <refsynopsisdiv>
     <cmdsynopsis sepchar=" ">
