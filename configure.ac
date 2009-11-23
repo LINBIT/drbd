@@ -12,7 +12,9 @@ AC_INIT(DRBD, 8.3.6, [drbd-dev@lists.linbit.com])
 dnl Sanitize $prefix. Autoconf does this by itself, but so late in the
 dnl generated configure script that the expansion does not occur until
 dnl after our eval magic below.
-prefix=$ac_default_prefix
+if test "$prefix" = "NONE"; then
+  prefix=$ac_default_prefix
+fi
 exec_prefix=$prefix
 
 dnl Expand autoconf variables so that we dont end up with '${prefix}'
