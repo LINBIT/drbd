@@ -252,9 +252,23 @@ AC_SUBST(RPM_BUILDREQ_KM)
 AC_SUBST(RPM_SUBPACKAGE_NOARCH)
 AC_SUBST(INITSCRIPT_SYMLINK)
 
+AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
+			  /var/lib/drbd or /usr/local/var/lib/drbd])
+AH_TEMPLATE(DRBD_LOCK_DIR, [Local lock directory. Commonly
+			   /var/lock or
+			   /usr/local/var/lock])
+AH_TEMPLATE(DRBD_CONFIG_DIR, [Local configuration directory. Commonly
+			   /etc or
+			   /usr/local/etc])
+
+AC_DEFINE_UNQUOTED(DRBD_LIB_DIR, ["$localstatedir/lib/$PACKAGE_TARNAME"])
+AC_DEFINE_UNQUOTED(DRBD_LOCK_DIR, ["$localstatedir/lock"])
+AC_DEFINE_UNQUOTED(DRBD_CONFIG_DIR, ["$sysconfdir"])
+
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then
    AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile)
+   AC_CONFIG_HEADERS(user/config.h)
 else
    if test "$WITH_UTILS" = "yes"; then
      AC_CONFIG_FILES(drbd.spec)
