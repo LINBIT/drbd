@@ -96,14 +96,17 @@ ifeq ($(WITH_HEARTBEAT),yes)
 	install -m 755 drbdupper $(DESTDIR)$(sysconfdir)/ha.d/resource.d
 endif
 
+# Do not use $(prefix) for the resource agent. The OCF standard
+# explicitly mandates where resource agents must live,
+# no matter what prefix is configured to.
 install-pacemaker:
 ifeq ($(WITH_PACEMAKER),yes)
 	install -d $(DESTDIR)$(LIBDIR)
 	install -m 755 crm-fence-peer.sh $(DESTDIR)$(LIBDIR)
 	( set -e ; cd $(DESTDIR)$(LIBDIR) ;\
 	  $(LN_S) -f crm-fence-peer.sh crm-unfence-peer.sh ; )
-	mkdir -p $(DESTDIR)$(prefix)/lib/ocf/resource.d/linbit
-	install -m 755 drbd.ocf $(DESTDIR)$(prefix)/lib/ocf/resource.d/linbit/drbd
+	mkdir -p $(DESTDIR)/usr/lib/ocf/resource.d/linbit
+	install -m 755 drbd.ocf $(DESTDIR)/usr/lib/ocf/resource.d/linbit/drbd
 endif
 
 install-rgmanager:
