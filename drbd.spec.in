@@ -10,9 +10,13 @@
 %bcond_without pacemaker
 %bcond_with rgmanager
 %bcond_without heartbeat
-%bcond_without xen
 # conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without bashcompletion
+# --with xen is ignored on any non-x86 architecture
+%bcond_without xen
+%ifnarch %{ix86} x86_64
+%global _without_xen --without-xen
+%endif
 
 Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
@@ -29,8 +33,10 @@ BuildRequires: @RPM_BUILDREQ_DEFAULT@
 BuildRequires: udev
 %endif
 Requires: %{name}-utils = %{version}
+%ifarch %{ix86} x86_64
 %if %{with xen}
 Requires: %{name}-xen = %{version}
+%endif
 %endif
 %if %{with pacemaker}
 Requires: %{name}-pacemaker = %{version}
@@ -108,6 +114,7 @@ This packages includes the DRBD administration tools.
 %doc ChangeLog
 %doc README
 
+%ifarch %{ix86} x86_64
 %if %{with xen}
 %package xen
 Summary: Xen block device management script for DRBD
@@ -123,6 +130,7 @@ promoting and demoting DRBD resources as necessary.
 %defattr(755,root,root,-)
 %{_sysconfdir}/xen/scripts/block-drbd
 %endif # with xen
+%endif # arch %{ix86} x86_64
 
 %if %{with udev}
 %package udev
