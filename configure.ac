@@ -203,7 +203,7 @@ case "$DISTRO" in
 	dnl belonging to the "minimal build system" should not be
 	dnl listed in BuildRequires
 	RPM_BUILDREQ_DEFAULT="flex"
-	RPM_BUILDREQ_KM="kernel-devel = %{kernelversion}"
+	RPM_BUILDREQ_KM="kernel-devel"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
 	;;
      slackware)
