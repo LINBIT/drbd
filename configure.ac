@@ -189,7 +189,7 @@ if test -z $DISTRO; then
    AC_CHECK_FILE(/etc/redhat-release, [DISTRO="redhat"])
    AC_CHECK_FILE(/etc/slackware-version, [DISTRO="slackware"])
    AC_CHECK_FILE(/etc/debian_version, [DISTRO="debian"])
-   AC_CHECK_FILE(/etc/SuSErelease, [DISTRO="suse"])
+   AC_CHECK_FILE(/etc/SuSE-release, [DISTRO="suse"])
 fi
 case "$DISTRO" in
      gentoo)
