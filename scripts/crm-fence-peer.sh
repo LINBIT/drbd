@@ -204,7 +204,7 @@ drbd_peer_fencing()
 		# double negation: do not run but with my data.
 		new_constraint="\
 <rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\">
-  <rule role=\"Master\" score=\"-INFINITY\" id=\"$id_prefix-rule-$master_id\">
+  <rule role=\"$role\" score=\"-INFINITY\" id=\"$id_prefix-rule-$master_id\">
     <expression attribute=\"$fencing_attribute\" operation=\"ne\" value=\"$fencing_value\" id=\"$id_prefix-expr-$master_id\"/>
   </rule>
 </rsc_location>"
@@ -400,6 +400,13 @@ while [[ $# != 0 ]]; do
 		master_id=$2
 		shift
 		;;
+	--role=*)
+		role=${1#*=}
+		;;
+	-l|--role)
+		role=${2}
+		shift
+		;;
 	--fencing-attribute=*)
 		fencing_attribute=${1#*=}
 		;;
@@ -445,6 +452,7 @@ done
 # apply defaults: 
 : ${fencing_attribute:="#uname"}
 : ${id_prefix:="drbd-fence-by-handler"}
+: ${role:="Master"}
 
 # defaults suitable for single-primary no-stonith.
 : ${timeout:=1}
