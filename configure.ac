@@ -216,7 +216,7 @@ case "$DISTRO" in
      suse)
 	BASH_COMPLETION_SUFFIX=".sh"
 	RPM_CONFLICTS_KM="km_drbd, drbd-kmp <= %{version}_3"
-	RPM_BUILDREQ_KM="kernel-syms = %{kernelversion}"
+	RPM_BUILDREQ_KM="kernel-syms"
 	INITSCRIPT_SYMLINK="/sbin/rcdrbd"
 	AC_MSG_NOTICE([configured for SUSE (includes openSUSE, SLES).])
 	;;
