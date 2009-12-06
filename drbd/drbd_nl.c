@@ -1287,8 +1287,7 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			goto fail;
 		}
 
-		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm))
-						!= CRYPTO_ALG_TYPE_HASH) {
+		if (crypto_tfm_alg_type(crypto_hash_tfm(tfm)) != CRYPTO_ALG_TYPE_SHASH) {
 			retcode = ERR_AUTH_ALG_ND;
 			goto fail;
 		}
