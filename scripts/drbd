@@ -8,8 +8,10 @@
 #
 ### BEGIN INIT INFO
 # Provides: drbd
-# Required-Start: $network $syslog sshd
-# Required-Stop: $network $syslog sshd
+# Required-Start: $local_fs $network $syslog
+# Required-Stop:  $local_fs $network $syslog
+# Should-Start:   sshd
+# Should-Stop:    sshd
 # Default-Start:
 # Default-Stop:
 # Short-Description:    Control drbd resources.
