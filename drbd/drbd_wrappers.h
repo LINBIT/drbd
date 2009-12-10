@@ -121,6 +121,11 @@ extern BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int er
 extern BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
 extern BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+#define part_inc_in_flight(A, B) part_inc_in_flight(A)
+#define part_dec_in_flight(A, B) part_dec_in_flight(A)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 /* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
    ctor and a dtor */
