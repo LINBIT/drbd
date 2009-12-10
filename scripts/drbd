@@ -10,8 +10,8 @@
 # Provides: drbd
 # Required-Start: $local_fs $network $syslog
 # Required-Stop:  $local_fs $network $syslog
-# Should-Start:   sshd
-# Should-Stop:    sshd
+# Should-Start:   sshd multipathd
+# Should-Stop:    sshd multipathd
 # Default-Start:
 # Default-Stop:
 # Short-Description:    Control drbd resources.
