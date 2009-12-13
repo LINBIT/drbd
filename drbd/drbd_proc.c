@@ -39,7 +39,7 @@ STATIC int drbd_proc_open(struct inode *inode, struct file *file);
 
 
 struct proc_dir_entry *drbd_proc;
-struct file_operations drbd_proc_fops = {
+const struct file_operations drbd_proc_fops = {
 	.owner		= THIS_MODULE,
 	.open		= drbd_proc_open,
 	.read		= seq_read,
