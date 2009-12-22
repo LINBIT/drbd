@@ -217,6 +217,7 @@
       </arg>
       <arg choice="req" rep="norepeat">resize</arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>size</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-f<arg choice="req" rep="norepeat"><replaceable>assume-peer-has-space</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -1352,11 +1353,16 @@
         <primary>drbdsetup</primary>
         <secondary>resize</secondary>
       </indexterm>
-      <para>	This causes DRBD to reexamine the size of the
+      <para>This causes DRBD to reexamine the size of the
 	<replaceable>device</replaceable>'s backing storage device.  To
 	actually do online growing you need to extend the backing storages
 	on both devices and call the <option>resize</option> command one of
         your nodes.
+      </para>
+      <para>The <option>--assume-peer-has-space</option> allows you to
+	resize a device which is currently not connected to the peer.
+	Use with care, since if you do not resize the peer's disk as well,
+	further connect attempts of the two will fail.
       </para>
     </refsect2>
     <refsect2>

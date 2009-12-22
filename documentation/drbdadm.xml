@@ -217,6 +217,11 @@
           synchronised this command only works if there is at least one primary
           node present.
         </para>
+        <para>The <option>--assume-peer-has-space</option> allows you to
+	  resize a device which is currently not connected to the peer.
+	  Use with care, since if you do not resize the peer's disk as well,
+	  further connect attempts of the two will fail.
+        </para>
         </listitem>
       </varlistentry>
       <varlistentry>

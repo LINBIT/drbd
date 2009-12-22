@@ -340,6 +340,7 @@ struct drbd_cmd commands[] = {
 	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
+		 { "assume-peer-has-space",'f',T_resize_force,	EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,

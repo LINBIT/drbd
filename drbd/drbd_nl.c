@@ -517,7 +517,7 @@ void drbd_resume_io(struct drbd_conf *mdev)
  * Returns 0 on success, negative return values indicate errors.
  * You should call drbd_md_sync() after calling this function.
  */
-enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_hold(local)
+enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev, int force) __must_hold(local)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size;
@@ -548,7 +548,7 @@ enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev) __must_ho
 	/* TODO: should only be some assert here, not (re)init... */
 	drbd_md_set_sector_offsets(mdev, mdev->ldev);
 
-	size = drbd_new_dev_size(mdev, mdev->ldev);
+	size = drbd_new_dev_size(mdev, mdev->ldev, force);
 
 	if (drbd_get_capacity(mdev->this_bdev) != size ||
 	    drbd_bm_capacity(mdev) != size) {
@@ -603,7 +603,7 @@ out:
 }
 
 sector_t
-drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
+drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev, int assume_peer_has_space)
 {
 	sector_t p_size = mdev->p_size;   /* partner's disk size. */
 	sector_t la_size = bdev->md.la_size_sect; /* last agreed size. */
@@ -612,6 +612,11 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	sector_t size = 0;
 
 	m_size = drbd_get_max_capacity(bdev);
+
+	if (mdev->state.conn < C_CONNECTED && assume_peer_has_space) {
+		dev_warn(DEV, "Resize while not connected was forced by the user!\n");
+		p_size = m_size;
+	}
 
 	if (p_size && m_size) {
 		size = min_t(sector_t, p_size, m_size);
@@ -980,7 +985,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_CONSISTENT) &&
-	   drbd_new_dev_size(mdev, nbc) < nbc->md.la_size_sect) {
+	    drbd_new_dev_size(mdev, nbc, 0) < nbc->md.la_size_sect) {
 		dev_warn(DEV, "refusing to truncate a consistent device\n");
 		retcode = ERR_DISK_TO_SMALL;
 		goto force_diskless_dec;
@@ -1067,7 +1072,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	    !drbd_md_test_flag(mdev->ldev, MDF_CONNECTED_IND))
 		set_bit(USE_DEGR_WFC_T, &mdev->flags);
 
-	dd = drbd_determin_dev_size(mdev);
+	dd = drbd_determin_dev_size(mdev, 0);
 	if (dd == dev_size_error) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
@@ -1545,7 +1550,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	mdev->ldev->dc.disk_size = (sector_t)rs.resize_size;
-	dd = drbd_determin_dev_size(mdev);
+	dd = drbd_determin_dev_size(mdev, rs.resize_force);
 	drbd_md_sync(mdev);
 	put_ldev(mdev);
 	if (dd == dev_size_error) {
