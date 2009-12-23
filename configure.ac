@@ -239,6 +239,11 @@ case "$DISTRO" in
 	# RPM_REQ_XEN="Requires: xen"
 	# RPM_REQ_PACEMAKER="Requires: pacemaker"
 	# RPM_REQ_HEARTBEAT="Requires: heartbeat"
+
+	# Unfortunately gcc on SLES9 is broken with -O2. Works with -O1
+	if grep -q 'VERSION = 9' /etc/SuSE-release; then
+		CFLAGS="-g -O1"
+	fi
 	;;
      "")
 	AC_MSG_WARN([Unable to determine what distribution we are running on. Distribution-specific features will be disabled.])
