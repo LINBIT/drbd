@@ -183,6 +183,10 @@ RPM_BUILDREQ_DEFAULT="gcc flex glibc-devel make"
 RPM_BUILDREQ_KM=""
 RPM_SUBPACKAGE_NOARCH=""
 INITSCRIPT_SYMLINK=""
+RPM_REQ_PACEMAKER=""
+RPM_REQ_HEARTBEAT=""
+RPM_REQ_BASH_COMPLETION=""
+RPM_REQ_XEN=""
 dnl figure out the distribution we're running on, and set some variables accordingly
 if test -z $DISTRO; then
    AC_CHECK_FILE(/etc/gentoo-release, [DISTRO="gentoo"])
@@ -205,6 +209,16 @@ case "$DISTRO" in
 	RPM_BUILDREQ_DEFAULT="flex"
 	RPM_BUILDREQ_KM="kernel-devel"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
+
+	AC_CHECK_FILE(/etc/fedora-release, [SUB_DISTRO="fedora"], [SUB_DISTRO="RHEL"])
+	if test "$SUB_DISTRO" = "fedora"; then
+		# pacemaker, heartbeat and bash-completion are not available in RHEL
+		# Xen: Be relaxed on RHEL (hassle free update). Be strict on Fedora
+		RPM_REQ_PACEMAKER="Requires: pacemaker"
+		RPM_REQ_HEARTBEAT="Requires: heartbeat"
+		RPM_REQ_BASH_COMPLETION="Requires: bash-completion"
+		RPM_REQ_XEN="Requires: xen"
+	fi
 	;;
      slackware)
 	test -z $INITDIR && INITDIR="$sysconfdir/rc.d"
@@ -219,6 +233,12 @@ case "$DISTRO" in
 	RPM_BUILDREQ_KM="kernel-syms"
 	INITSCRIPT_SYMLINK="/sbin/rcdrbd"
 	AC_MSG_NOTICE([configured for SUSE (includes openSUSE, SLES).])
+
+	RPM_REQ_BASH_COMPLETION="Requires: bash-completion"
+	# The following are disabled for hassle free updates:
+	# RPM_REQ_XEN="Requires: xen"
+	# RPM_REQ_PACEMAKER="Requires: pacemaker"
+	# RPM_REQ_HEARTBEAT="Requires: heartbeat"
 	;;
      "")
 	AC_MSG_WARN([Unable to determine what distribution we are running on. Distribution-specific features will be disabled.])
@@ -253,6 +273,10 @@ AC_SUBST(RPM_BUILDREQ_DEFAULT)
 AC_SUBST(RPM_BUILDREQ_KM)
 AC_SUBST(RPM_SUBPACKAGE_NOARCH)
 AC_SUBST(INITSCRIPT_SYMLINK)
+AC_SUBST(RPM_REQ_PACEMAKER)
+AC_SUBST(RPM_REQ_HEARTBEAT)
+AC_SUBST(RPM_REQ_BASH_COMPLETION)
+AC_SUBST(RPM_REQ_XEN)
 
 AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
 			  /var/lib/drbd or /usr/local/var/lib/drbd])

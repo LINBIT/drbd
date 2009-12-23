@@ -128,7 +128,8 @@ This packages includes the DRBD administration tools.
 %package xen
 Summary: Xen block device management script for DRBD
 Group: System Environment/Kernel
-Requires: %{name}-utils = %{version}-%{release}, xen
+Requires: %{name}-utils = %{version}-%{release}
+@RPM_REQ_XEN@
 @RPM_SUBPACKAGE_NOARCH@
 
 %description xen
@@ -161,7 +162,8 @@ DRBD devices in /dev/drbd/by-res and /dev/drbd/by-disk.
 %package pacemaker
 Summary: Pacemaker resource agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}-%{release}, pacemaker
+Requires: %{name}-utils = %{version}-%{release}
+@RPM_REQ_PACEMAKER@
 License: GPLv2
 @RPM_SUBPACKAGE_NOARCH@
 
@@ -203,7 +205,8 @@ in the Cluster distribution.
 %package heartbeat
 Summary: Heartbeat resource agent for DRBD
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}-%{release}, heartbeat
+Requires: %{name}-utils = %{version}-%{release}
+@RPM_REQ_HEARTBEAT@
 License: GPLv2
 @RPM_SUBPACKAGE_NOARCH@
 
@@ -224,7 +227,8 @@ resource manager (in v1 compatibility mode).
 %package bash-completion
 Summary: Programmable bash completion support for drbdadm
 Group: System Environment/Base
-Requires: %{name}-utils = %{version}-%{release}, bash-completion
+Requires: %{name}-utils = %{version}-%{release}
+@RPM_REQ_BASH_COMPLETION@
 @RPM_SUBPACKAGE_NOARCH@
 
 %description bash-completion
