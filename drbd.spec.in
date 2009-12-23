@@ -111,12 +111,14 @@ This packages includes the DRBD administration tools.
 %defattr(-,root,root,-)
 %dir %{_var}/lib/%{name}
 %config(noreplace) %{_sysconfdir}/drbd.conf
+%dir %{_sysconfdir}/drbd.d
+%config(noreplace) %{_sysconfdir}/drbd.d/global_common.conf
 %{_mandir}/man8/drbd.8.*
 %{_mandir}/man8/drbdsetup.8.*
 %{_mandir}/man8/drbdadm.8.*
 %{_mandir}/man5/drbd.conf.5.*
 %{_mandir}/man8/drbdmeta.8.*
-%doc scripts/drbd.conf
+%doc scripts/drbd.conf.example
 %doc COPYING
 %doc ChangeLog
 %doc README
@@ -254,15 +256,6 @@ make %{?_smp_mflags}
 %install
 rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
-#
-# We only want to install a hint to the example conf
-#
-cat <<___ > %{buildroot}%{_sysconfdir}/drbd.conf
-#
-# please have a a look at the example configuration file in
-# %{_docdir}/%{name}-utils-%{version}/drbd.conf
-#
-___
 
 %clean
 rm -rf %{buildroot}

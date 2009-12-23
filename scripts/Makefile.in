@@ -62,6 +62,8 @@ ifeq ($(WITH_UTILS),yes)
 	@ if [ ! -e $(DESTDIR)$(sysconfdir)/drbd.conf ]; then \
 		install -d $(DESTDIR)$(sysconfdir)/; \
 		install -m 644 drbd.conf $(DESTDIR)$(sysconfdir)/; \
+		install -d $(DESTDIR)$(sysconfdir)/drbd.d; \
+		install -m 644 global_common.conf $(DESTDIR)$(sysconfdir)/drbd.d; \
 	fi
 	install -d $(DESTDIR)$(LIBDIR)
 	install -m 755 outdate-peer.sh $(DESTDIR)$(LIBDIR)
