@@ -24,6 +24,7 @@
       <command moreinfo="none">drbdadm</command>
       <arg choice="opt" rep="norepeat">-d</arg>
       <arg choice="opt" rep="norepeat">-c<arg choice="req" rep="norepeat"><replaceable>file</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-t<arg choice="req" rep="norepeat"><replaceable>file</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-s<arg choice="req" rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-m<arg choice="req" rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-S</arg>
@@ -67,6 +68,16 @@
 	</para>
         </listitem>
       </varlistentry>
+
+      <varlistentry>
+        <term><option>-t</option>, <option>--config-to-test</option><replaceable>file</replaceable></term>
+        <listitem>
+          <para>          Specifies an additional configuration file drbdadm to check. This option
+	    is only allowed with the dump and the sh-nop commands.
+	</para>
+        </listitem>
+      </varlistentry>
+
       <varlistentry>
         <term><option>-s</option>, <option>--drbdsetup</option><replaceable>file</replaceable></term>
         <listitem>

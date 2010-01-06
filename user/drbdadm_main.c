@@ -89,6 +89,7 @@ struct adm_cmd {
 	unsigned int need_peer:1;
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
+	unsigned int test_config:1; /* Allow -t option */
 };
 
 struct deferred_cmd {
@@ -103,6 +104,7 @@ struct option admopt[] = {
 	{"dry-run", no_argument, 0, 'd'},
 	{"verbose", no_argument, 0, 'v'},
 	{"config-file", required_argument, 0, 'c'},
+	{"config-to-test", required_argument, 0, 't'},
 	{"drbdsetup", required_argument, 0, 's'},
 	{"drbdmeta", required_argument, 0, 'm'},
 	{"drbd-proxy-ctl", required_argument, 0, 'p'},
@@ -165,6 +167,7 @@ struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 
 char *config_file = NULL;
 char *config_save = NULL;
+char *config_test = NULL;
 struct d_resource *config = NULL;
 struct d_resource *common = NULL;
 struct ifreq *ifreq_list = NULL;
@@ -235,6 +238,7 @@ struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
+	.test_config = 1,		\
 
 #define DRBD_acf2_shell			\
 	.show_in_usage = 2,		\
@@ -303,7 +307,7 @@ struct adm_cmd cmds[] = {
 	{"wipe-md", admm_generic, DRBD_acf1_default},
 	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
 
-	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1},
+	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1, .test_config = 1},
 	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
 	{"sh-resource", sh_resource, DRBD_acf2_shell},
 	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
@@ -2813,6 +2817,9 @@ int parse_options(int argc, char **argv)
 				}
 			}
 			break;
+		case 't':
+			config_test = optarg;
+			break;
 		case 's':
 			{
 				char *pathes[2];
@@ -3105,6 +3112,13 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Unknown command '%s'.\n", argv[optind]);
 		exit(E_usage);
 	}
+
+	if (config_test && !cmd->test_config) {
+		fprintf(stderr, "The --config-to-test (-t) option is only allowed "
+			"with the dump and sh-nop commands\n");
+		exit(E_usage);
+	}
+
 	do_verify_ips = cmd->verify_ips;
 	optind++;
 
@@ -3145,6 +3159,25 @@ int main(int argc, char **argv)
 		config_save = canonify_path(config_file);
 
 	my_parse();
+
+	if (config_test) {
+		char *saved_config_file = config_file;
+		char *saved_config_save = config_save;
+
+		config_file = config_test;
+		config_save = canonify_path(config_test);
+
+		fclose(yyin);
+		yyin = fopen(config_test, "r");
+		if (!yyin) {
+			fprintf(stderr, "Can not open '%s'.\n.", config_test);
+			exit(E_exec_error);
+		}
+		my_parse();
+
+		config_file = saved_config_file;
+		config_save = saved_config_save;
+	}
 
 	if (!config_valid)
 		exit(E_config_invalid);
