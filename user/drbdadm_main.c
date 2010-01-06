@@ -1754,16 +1754,18 @@ void convert_after_option(struct d_resource *res)
 	if (res == NULL)
 		return;
 
-	if ((opt = find_opt(res->sync_options, "after"))) {
+	opt = res->sync_options;
+	while ((opt = find_opt(opt, "after"))) {
 		char *ptr;
 		depends_on_res = res_by_name(opt->value);
-		if (depends_on_res->ignore) {
+		if (!depends_on_res || depends_on_res->ignore) {
 			res->sync_options = del_opt(res->sync_options, opt);
 		} else {
 			ssprintf(ptr, "%d", depends_on_res->me->device_minor);
 			free(opt->value);
 			opt->value = strdup(ptr);
 		}
+		opt = opt->next;
 	}
 }
 
