@@ -31,6 +31,7 @@
 #include <string.h>
 #include <glob.h>
 #include <search.h>
+#include <fcntl.h>
 
 #include "drbdadm.h"
 #include "linux/drbd_limits.h"
@@ -1499,15 +1500,17 @@ void post_parse(struct d_resource *config, enum pp_flags flags)
 			set_disk_in_res(res);
 }
 
-void include_file(FILE *f, char* name)
+void include_file(FILE *f, char *name)
 {
 	int saved_line;
-	char* saved_config_file;
+	char *saved_config_file, *saved_config_save;
 
 	saved_line = line;
 	saved_config_file = config_file;
+	saved_config_save = config_save;
 	line = 1;
 	config_file = name;
+	config_save = canonify_path(name);
 
 	my_yypush_buffer_state(f);
 	my_parse();
@@ -1515,13 +1518,34 @@ void include_file(FILE *f, char* name)
 
 	line = saved_line;
 	config_file = saved_config_file;
+	config_save = saved_config_save;
 }
 
 void include_stmt(char *str)
 {
+	char *last_slash, *tmp;
 	glob_t glob_buf;
+	int cwd_fd;
 	FILE *f;
 	size_t i;
+
+	/* in order to allow relative paths in include statements we change
+	   directory to the location of the current configuration file. */
+	cwd_fd = open(".", O_RDONLY);
+	if (cwd_fd < 0) {
+		fprintf(stderr, "open(\".\") failed: %m\n");
+		exit(E_usage);
+	}
+
+	tmp = strdupa(config_save);
+	last_slash = strrchr(tmp, '/');
+	if (last_slash)
+		*last_slash = 0;
+
+	if (chdir(tmp)) {
+		fprintf(stderr, "chdir(\"%s\") failed: %m\n", tmp);
+		exit(E_usage);
+	}
 
 	f = fopen(str, "r");
 	if (f) {
@@ -1540,6 +1564,11 @@ void include_stmt(char *str)
 			"%s:%d: Failed to open include file '%s'.\n",
 			config_file, line, yylval.txt);
 		config_valid = 0;
+	}
+
+	if (fchdir(cwd_fd) < 0) {
+		fprintf(stderr, "fchdir() failed: %m\n");
+		exit(E_usage);
 	}
 }
 

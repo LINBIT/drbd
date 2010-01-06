@@ -146,6 +146,7 @@ struct d_resource
   unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
 };
 
+extern char *canonify_path(char *path);
 extern int adm_attach(struct d_resource* ,const char* );
 extern int adm_connect(struct d_resource* ,const char* );
 extern int adm_resize(struct d_resource* ,const char* );
@@ -196,7 +197,8 @@ extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
 
-extern char* config_file;
+extern char *config_file;
+extern char *config_save;
 extern int config_valid;
 extern struct d_resource* config;
 extern struct d_resource* common;
