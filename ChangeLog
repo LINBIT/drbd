@@ -2,20 +2,29 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.7rc1 (api:86/proto:86-91)
+8.3.7rc2 (api:86/proto:86-91)
 --------
  * Lots of fixes to the new RPM packaging
  * Lots of fixes to the autoconfig stuff
- * Fixed a regression in the resynch handshake code introduced before 8.3.3.
+ * Following the rename of CONFIG_LBD to CONFIG_LBDAF
+ * Silenced an assert. Could trigger after changing write ordering (Bugz 261)
+ * Fixed a race condition between detach and ongoing IO. Very hard to
+   trigger, caused an OOPS in make_request/drbd_make_request. (Bugz 262)
+ * Fixed a regression in the resync handshake code introduced before 8.3.3.
    That bug causes DRBD to block during the initial handshake when a partial
    resync is not possible but a full resync is necessary. Happens very rarely.
    (Bugz 260)
+ * Corrected a null test in the authentication code, found by conccinelle,
+   thanks to upstream integration. The chance to trigger that was probably 10^-9.
  * crm-fence-peer.sh is now also usable if DRBD is managed from the xen block
    helper script
  * Fixes to the init script's dependencies
  * Backported cleanups that where contributed to the in kernel DRBD
  * Allow online resizing of disconnected devices, new option to drbdsetup
    drbdsetup /dev/drbdX resize --assume-peer-has-space
+ * Allow multiple after options in the syncer section for stacked setups
+ * Correctly process relative paths in include statements in drbd.conf
+ * New option (-t) for drbdadm to test syntax of config snippets
  * Following Linux upstream changes 2.6.32 (SHASH and in_flight issues)
  * New /etc/drbd.conf example that suggests the use of /etc/drbd.d/xxx.res
 
