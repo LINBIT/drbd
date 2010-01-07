@@ -921,9 +921,13 @@ retry:
 
 	if (mdev->cram_hmac_tfm) {
 		/* drbd_request_state(mdev, NS(conn, WFAuth)); */
-		if (!drbd_do_auth(mdev)) {
+		switch (drbd_do_auth(mdev)) {
+		case -1:
 			dev_err(DEV, "Authentication of peer failed\n");
 			return -1;
+		case 0:
+			dev_err(DEV, "Authentication of peer failed, trying again.\n");
+			return 0;
 		}
 	}
 
@@ -3904,10 +3908,17 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 {
 	dev_err(DEV, "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
 	dev_err(DEV, "You need to disable 'cram-hmac-alg' in drbd.conf.\n");
-	return 0;
+	return -1;
 }
 #else
 #define CHALLENGE_LEN 64
+
+/* Return value:
+	1 - auth succeeded,
+	0 - failed, try again (network error),
+	-1 - auth failed, don't try again.
+*/
+
 STATIC int drbd_do_auth(struct drbd_conf *mdev)
 {
 	char my_challenge[CHALLENGE_LEN];  /* 64 Bytes... */
@@ -3928,7 +3939,7 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 				(u8 *)mdev->net_conf->shared_secret, key_len);
 	if (rv) {
 		dev_err(DEV, "crypto_hash_setkey() failed with %d\n", rv);
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -3951,14 +3962,14 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 
 	if (p.length > CHALLENGE_LEN*2) {
 		dev_err(DEV, "expected AuthChallenge payload too big.\n");
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
 	peers_ch = kmalloc(p.length, GFP_NOIO);
 	if (peers_ch == NULL) {
 		dev_err(DEV, "kmalloc of peers_ch failed\n");
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -3974,7 +3985,7 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	response = kmalloc(resp_size, GFP_NOIO);
 	if (response == NULL) {
 		dev_err(DEV, "kmalloc of response failed\n");
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -3984,7 +3995,7 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
 		dev_err(DEV, "crypto_hash_digest() failed with %d\n", rv);
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -4020,7 +4031,7 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	right_response = kmalloc(resp_size, GFP_NOIO);
 	if (right_response == NULL) {
 		dev_err(DEV, "kmalloc of right_response failed\n");
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -4029,7 +4040,7 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
 		dev_err(DEV, "crypto_hash_digest() failed with %d\n", rv);
-		rv = 0;
+		rv = -1;
 		goto fail;
 	}
 
@@ -4038,6 +4049,8 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	if (rv)
 		dev_info(DEV, "Peer authenticated using %d bytes of '%s' HMAC\n",
 		     resp_size, mdev->net_conf->cram_hmac_alg);
+	else
+		rv = -1;
 
  fail:
 	kfree(peers_ch);
