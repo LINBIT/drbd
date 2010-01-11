@@ -200,6 +200,7 @@ prepare_release:
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
 configure: configure.ac
+	autoheader
 	autoconf
 
 tarball: check_all_committed distclean doc configure .filelist
