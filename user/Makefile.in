@@ -99,6 +99,8 @@ distclean: clean
 install:
 ifeq ($(WITH_UTILS),yes)
 	install -d $(DESTDIR)/sbin/
+	install -d $(DESTDIR)$(localstatedir)/lib/drbd
+	install -d $(DESTDIR)$(localstatedir)/lock
 	if getent group haclient > /dev/null 2> /dev/null ; then	\
 		install -g haclient -m 4750 drbdsetup $(DESTDIR)/sbin/ ;	\
 		install -g haclient -m 4750 drbdmeta $(DESTDIR)/sbin/ ;	\
@@ -108,7 +110,6 @@ ifeq ($(WITH_UTILS),yes)
 		install -m 755 drbdmeta $(DESTDIR)/sbin/ ;		\
 		install -m 755 drbdadm $(DESTDIR)/sbin/ ; 		\
 	fi
-	mkdir -p $(DESTDIR)$(localstatedir)/lib/drbd
 endif
 
 uninstall:
