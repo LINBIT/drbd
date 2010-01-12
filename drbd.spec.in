@@ -36,14 +36,15 @@ Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 BuildRequires: @RPM_BUILDREQ_DEFAULT@
-%if %{with udev}
-BuildRequires: udev
-%endif
 Requires: %{name}-utils = %{version}
 %ifarch %{ix86} x86_64
 %if %{with xen}
 Requires: %{name}-xen = %{version}
 %endif
+%endif
+%if %{with udev}
+Requires: %{name}-udev = %{version}
+BuildRequires: udev
 %endif
 %if %{with pacemaker}
 Requires: %{name}-pacemaker = %{version}
