@@ -187,6 +187,8 @@ RPM_REQ_PACEMAKER=""
 RPM_REQ_HEARTBEAT=""
 RPM_REQ_BASH_COMPLETION=""
 RPM_REQ_XEN=""
+RPM_REQ_CHKCONFIG_POST=""
+RPM_REQ_CHKCONFIG_PREUN=""
 dnl figure out the distribution we're running on, and set some variables accordingly
 if test -z $DISTRO; then
    AC_CHECK_FILE(/etc/gentoo-release, [DISTRO="gentoo"])
@@ -208,6 +210,8 @@ case "$DISTRO" in
 	dnl listed in BuildRequires
 	RPM_BUILDREQ_DEFAULT="flex"
 	RPM_BUILDREQ_KM="kernel-devel"
+	RPM_REQ_CHKCONFIG_POST="Requires(post): chkconfig"
+	RPM_REQ_CHKCONFIG_PREUN="Requires(preun): chkconfig"
 	AC_MSG_NOTICE([configured for Red Hat (includes Fedora, RHEL, CentOS).])
 
 	AC_CHECK_FILE(/etc/fedora-release, [SUB_DISTRO="fedora"], [SUB_DISTRO="RHEL"])
@@ -231,10 +235,12 @@ case "$DISTRO" in
 	BASH_COMPLETION_SUFFIX=".sh"
 	RPM_CONFLICTS_KM="km_drbd, drbd-kmp <= %{version}_3"
 	RPM_BUILDREQ_KM="kernel-syms"
+	# RPM_REQ_CHKCONFIG_POST="" chkconfig is part of aaa_base on suse
+	# RPM_REQ_CHKCONFIG_PREUN="" chkconfig is part of aaa_base on suse
 	INITSCRIPT_SYMLINK="/sbin/rcdrbd"
 	AC_MSG_NOTICE([configured for SUSE (includes openSUSE, SLES).])
 
-	RPM_REQ_BASH_COMPLETION="Requires: bash-completion"
+	RPM_REQ_BASH_COMPLETION="Requires: bash"
 	# The following are disabled for hassle free updates:
 	# RPM_REQ_XEN="Requires: xen"
 	# RPM_REQ_PACEMAKER="Requires: pacemaker"
@@ -282,6 +288,8 @@ AC_SUBST(RPM_REQ_PACEMAKER)
 AC_SUBST(RPM_REQ_HEARTBEAT)
 AC_SUBST(RPM_REQ_BASH_COMPLETION)
 AC_SUBST(RPM_REQ_XEN)
+AC_SUBST(RPM_REQ_CHKCONFIG_POST)
+AC_SUBST(RPM_REQ_CHKCONFIG_PREUN)
 
 AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
 			  /var/lib/drbd or /usr/local/var/lib/drbd])

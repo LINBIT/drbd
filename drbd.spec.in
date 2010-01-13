@@ -77,8 +77,8 @@ This is a virtual package, installing the full DRBD userland suite.
 %package utils
 Summary: Management utilities for DRBD
 Group: System Environment/Kernel
-Requires(post): chkconfig
-Requires(preun): chkconfig
+@RPM_REQ_CHKCONFIG_POST@
+@RPM_REQ_CHKCONFIG_PREUN@
 
 %description utils
 DRBD mirrors a block device over the network to another machine.
