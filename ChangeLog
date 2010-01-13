@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.7rc2 (api:86/proto:86-91)
+8.3.7 (api:86/proto:86-91)
 --------
  * Lots of fixes to the new RPM packaging
  * Lots of fixes to the autoconfig stuff
@@ -14,6 +14,7 @@ Latest:
    That bug causes DRBD to block during the initial handshake when a partial
    resync is not possible but a full resync is necessary. Happens very rarely.
    (Bugz 260)
+ * Do not drop into StandAlone mode when connection is lost during authentication
  * Corrected a null test in the authentication code, found by conccinelle,
    thanks to upstream integration. The chance to trigger that was probably 10^-9.
  * crm-fence-peer.sh is now also usable if DRBD is managed from the xen block
