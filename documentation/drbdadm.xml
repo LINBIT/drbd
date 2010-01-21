@@ -29,6 +29,7 @@
       <arg choice="opt" rep="norepeat">-m<arg choice="req" rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-S</arg>
       <arg choice="opt" rep="norepeat">-h<arg choice="req" rep="norepeat"><replaceable>host</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">--<arg choice="req" rep="norepeat"><replaceable>backend-options</replaceable></arg></arg>
       <arg choice="req" rep="norepeat">
         <replaceable>command</replaceable>
       </arg>
@@ -107,6 +108,15 @@
         <listitem>
           <para>          Specifies to which peer node to connect. Only necessary if there are
 	  more than two host sections in the resource you are working on.
+	</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><option>--</option> <replaceable>backend-options</replaceable></term>
+        <listitem>
+          <para>All options following the doubly hyphen are considered <replaceable>backend-options</replaceable>.
+	    These are passed through to the backend command. I.e. to drbdsetup,
+	    drbdmeta or drbd-proxy-ctl.
 	</para>
         </listitem>
       </varlistentry>
