@@ -22,10 +22,12 @@
   <refsynopsisdiv>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdmeta</command>
+      <arg choice="opt" rep="norepeat">--force</arg>
+      <arg choice="opt" rep="norepeat">--ignore-sanity-checks</arg>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <group choice="opt" rep="norepeat">
+      <group choice="req" rep="norepeat">
         <arg choice="plain" rep="norepeat">v06 <replaceable>minor</replaceable></arg>
         <arg choice="plain" rep="norepeat">v07 <replaceable>meta_dev index</replaceable></arg>
         <arg choice="plain" rep="norepeat">v08 <replaceable>meta_dev index</replaceable></arg>
@@ -42,7 +44,8 @@
     <title>Description</title>
     <para>      Drbdmeta is used to create, display and modify the contents of
       DRBD's meta data storage. Usually you do not want to use this
-      command directly, but use it through the front end drbdadm.
+      command directly, but use it through the front end
+      <citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry>.
     </para>
     <para>      This command only works if the DRBD resource is currently down,
       or at least detached from its backing storage. The first parameter
@@ -50,6 +53,28 @@
       parameter you select which the version of the meta data. Currently
       all major DRBD releases (0.6, 0.7 and 8) are supported.
     </para>
+  </refsect1>
+  <refsect1>
+    <title>Options</title>
+    <variablelist>
+      <varlistentry>
+        <term>--force</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>--force</secondary></indexterm>
+            All questions that get asked by drbdmeta are treated as if
+	    the user answered 'yes'.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>--ignore-sanity-checks</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>--ignore-sanity-checks</secondary></indexterm>
+            Some sanity checks cause drbdmeta to terminate. E.g. if a file system image would get
+	    destroyed by creating the meta data. By using that option you can force drbdmeta
+	    to ignore these checks.</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
   </refsect1>
   <refsect1>
     <title>Commands</title>

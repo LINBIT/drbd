@@ -241,7 +241,8 @@
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>
           Initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
-	  time.
+	  time. In case of issues with that command have a look at
+	  <citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry>
         </para>
         </listitem>
       </varlistentry>
@@ -449,6 +450,9 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     <title>See Also</title>
     <para><citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>drbd</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
-      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry><ulink url="http://www.drbd.org/"><citetitle>DRBD project web site</citetitle></ulink></para>
+      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry> and the
+      <ulink url="http://www.drbd.org/"><citetitle>DRBD project web site</citetitle></ulink></para>
   </refsect1>
 </refentry>
