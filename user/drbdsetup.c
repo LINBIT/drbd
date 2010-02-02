@@ -333,6 +333,7 @@ struct drbd_cmd commands[] = {
 		 { "discard-my-data",'D', T_want_lose,     EB },
 		 { "data-integrity-alg",'d', T_integrity_alg,     ES },
 		 { "no-tcp-cork",'o',   T_no_cork,         EB },
+		 { "dry-run",'n',   T_dry_run,		   EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },
