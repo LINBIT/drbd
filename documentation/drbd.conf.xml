@@ -1303,6 +1303,29 @@ the unit is 1 second.
         </varlistentry>
         <varlistentry>
           <term>
+            <option>use-rle</option>
+          </term>
+          <listitem>
+            <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>use-rle </secondary></indexterm>
+ During resync-handshake, the dirty-bitmaps of the nodes are exchanged and
+ merged (using bit-or), so the nodes will have the same understanding of
+ which blocks are dirty. On large devices, the fine grained dirty-bitmap can
+ become large as well, and the bitmap exchange can take quite some time on
+ low-bandwidth links.
+	    </para>
+            <para> Because the bitmap typically contains compact areas where
+              all bits are unset (clean) or set (dirty), a simple run-length
+              encoding scheme can considerably reduce the network traffic
+              necessary for the bitmap exchange.
+	    </para>
+            <para> For backward compatibilty reasons, and because on fast
+              links this possibly does not improve transfer time but
+              consumes cpu cycles, this defaults to off.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
             <option>after <replaceable>res-name</replaceable></option>
           </term>
           <listitem>
