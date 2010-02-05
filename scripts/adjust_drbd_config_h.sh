@@ -34,21 +34,34 @@ test -n "$KDIR"
 # ok, now we have a KDIR; cd into it, in case we detect relative pathes
 pushd $KDIR
 
-KDIR=${KDIR%/}
+KDIR=$(pwd)
 if test -z "$O"; then
 	## just in case...
 	## detect if $KDIR points to something which is actually $O ...
-	X=$( make no-such-makefile-target 2>/dev/null |
-	     sed -ne '/ -C .* O=.* no-such-makefile-target$/p' | tr -s ' ' )
-	if [[ -n $X ]]; then
+	## If someone _please_ make this easier :(
+	X=$( make no-such-makefile-target V=1 2>/dev/null |
+	     sed -ne '/ -C .* O=.* no-such-makefile-target$/p' \
+		-e 's/^[[:space:]]*\(KBUILD_SRC=[^ ]\+\).*$/\1/p' |
+		tr -s '\t ' '  ')
+	case $X in
+	KBUILD_SRC=*)
+		O=$KDIR
+		KDIR=${X#KBUILD_SRC=}
+		;;
+	*' -C '*)
 		KDIR=${X##* -C }; KDIR=${KDIR%% *}; KDIR=$(cd $KDIR && pwd)
 		O=${X##* O=}; O=${O%% *}; O=$(cd $KDIR && cd $O && pwd)
-	else
-		O=$KDIR;
-	fi
+		;;
+	*)	
+		O=$KDIR ;;
+	esac
 else
 	O=${O%/}
+	test -d $O
 fi
+
+echo "KDIR=$KDIR"
+echo "O=$O"
 
 # some paranoia: check that all files are where we expect them
 ls > /dev/null \
