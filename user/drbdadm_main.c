@@ -1752,7 +1752,7 @@ struct d_option *del_opt(struct d_option *base, struct d_option *item)
 // Need to convert after from resourcename to minor_number.
 void convert_after_option(struct d_resource *res)
 {
-	struct d_option *opt;
+	struct d_option *opt, *next;
 	struct d_resource *depends_on_res;
 
 	if (res == NULL)
@@ -1760,6 +1760,7 @@ void convert_after_option(struct d_resource *res)
 
 	opt = res->sync_options;
 	while ((opt = find_opt(opt, "after"))) {
+		next = opt->next;
 		depends_on_res = res_by_name(opt->value);
 		if (!depends_on_res || depends_on_res->ignore) {
 			res->sync_options = del_opt(res->sync_options, opt);
@@ -1767,7 +1768,7 @@ void convert_after_option(struct d_resource *res)
 			free(opt->value);
 			asprintf(&opt->value, "%d", depends_on_res->me->device_minor);
 		}
-		opt = opt->next;
+		opt = next;
 	}
 }
 
