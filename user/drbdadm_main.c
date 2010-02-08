@@ -2559,7 +2559,7 @@ void sanity_check_perm()
 
 void validate_resource(struct d_resource *res)
 {
-	struct d_option *opt;
+	struct d_option *opt, *next;
 	struct d_name *bpo;
 
 	if (!res->protocol) {
@@ -2573,15 +2573,29 @@ void validate_resource(struct d_resource *res)
 	} else {
 		res->protocol[0] = toupper(res->protocol[0]);
 	}
-	if ((opt = find_opt(res->sync_options, "after"))) {
+	/* there may be more than one "after" statement,
+	 * see commit 89cd0585 */
+	opt = res->sync_options;
+	while ((opt = find_opt(opt, "after"))) {
+		next = opt->next;
 		if (res_by_name(opt->value) == NULL) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
 				"'after' option is not known.\n",
 				res->config_file, res->start_line, res->name,
 				opt->value);
-			config_valid = 0;
+			/* Non-fatal if run from some script.
+			 * When deleting resources, it is an easily made
+			 * oversight to leave references to the deleted
+			 * resources in sync-after statements.  Don't fail on
+			 * every pacemaker-induced action, as it would
+			 * ultimately lead to all nodes committing suicide. */
+			if (no_tty)
+				res->sync_options = del_opt(res->sync_options, opt);
+			else
+				config_valid = 0;
 		}
+		opt = next;
 	}
 	if (res->ignore)
 		return;
