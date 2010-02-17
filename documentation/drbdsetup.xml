@@ -87,6 +87,7 @@
       <arg choice="opt" rep="norepeat">-u<arg choice="req" rep="norepeat"><replaceable>val</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>hash_alg</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-o</arg>
+      <arg choice="opt" rep="norepeat">-n</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -980,6 +981,16 @@
 	      situation. In case you do not have any automatic after-split-brain policies selected, the nodes refuse to
 	      connect. By passing this option you make a node to
 	      sync target immediately after successful connect.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-n</option>,
+	  <option>--dry-run </option></term>
+          <listitem>
+            <para>	      Causes DRBD to abort the connection process after the resync
+	      handshake, i.e. no resync gets performed. You can find out which resync
+	      DRBD would perform by looking at the kernel's log file.
 	    </para>
           </listitem>
         </varlistentry>
