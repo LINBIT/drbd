@@ -39,37 +39,38 @@ BE_VERBOSE=0
 SNAP_NAME=${BACKING_BDEV##*/}-before-resync
 DEFAULTFILE="/etc/default/drbd-snapshot"
 
-eval set -- "$TEMP"
-while true; do
-	case $1 in
-		-p|--percent)
-			SNAP_PERC="$2"
-			shift
-			;;
-		-a|--additional)
-			SNAP_ADDITIONAL="$2"
-			shift 2
-			;;
-		-n|--disconnect-on-error)
-			DISCONNECT_ON_ERROR=1
-			shift
-			;;
-		-v|--verbose)
-			BE_VERBOSE=1
-			shift
-			;;
-		--)
-			shift
-			break
-			;;
-	esac
-done
-
-LVC_OPTIONS="$@"
-
 if [ -f $DEFAULTFILE ]; then
 	. $DEFAULTFILE
 fi
+
+## command line parameters override default file
+
+eval set -- "$TEMP"
+while true; do
+	case $1 in
+	-p|--percent)
+		SNAP_PERC="$2"
+		shift
+		;;
+	-a|--additional)
+		SNAP_ADDITIONAL="$2"
+		shift
+		;;
+	-n|--disconnect-on-error)
+		DISCONNECT_ON_ERROR=1
+		;;
+	-v|--verbose)
+		BE_VERBOSE=1
+		;;
+	--)
+		break
+		;;
+	esac
+	shift
+done
+shift # the --
+
+LVC_OPTIONS="$@"
 
 if [[ $0 == *unsnapshot* ]]; then
 	[ $BE_VERBOSE = 1 ] && set -x
@@ -80,8 +81,8 @@ else
 	(
 		set -e
 		[ $BE_VERBOSE = 1 ] && set -x
-		DRBD_DEV=$(drbdadm sh-dev $DRBD_RESOURCE)
-		DRBD_MINOR=${DRBD_DEV##/dev/drbd}
+		# it may even be a stacked resource :-/
+		DRBD_MINOR=$(drbdadm sh-minor $DRBD_RESOURCE || drbdadm -S sh-minor $DRBD_RESOURCE)
 		OUT_OF_SYNC=$(sed -ne "/^ *$DRBD_MINOR:/ "'{
 				n;
 				s/^.* oos:\([0-9]*\).*$/\1/;
