@@ -234,12 +234,16 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	 * with parsing of drbdsetup show output */
 	config_valid = 2;
 
-	yyin = m_popen(&pid,argv);
+	/* setup error reporting context for the parsing routines */
 	line = 1;
 	sprintf(config_file_dummy,"drbdsetup %u show", res->me->device_minor);
 	config_file = config_file_dummy;
-	running = parse_resource(config_file_dummy, IgnDiscardMyData);
+
+	/* actually parse drbdsetup show output */
+	yyin = m_popen(&pid,argv);
+	running = parse_resource(res->name, IgnDiscardMyData);
 	fclose(yyin);
+
 	waitpid(pid,0,0);
 	post_parse(running, 0);
 	set_peer_in_resource(running, 0);
