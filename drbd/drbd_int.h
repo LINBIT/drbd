@@ -39,6 +39,7 @@
 #include <linux/genhd.h>
 #include <net/tcp.h>
 #include <linux/lru_cache.h>
+#include <linux/drbd_config.h>
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
