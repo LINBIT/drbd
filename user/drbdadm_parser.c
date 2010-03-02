@@ -1128,6 +1128,9 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 		} else if (host->lower) {
 			if (!host->lower->me)
 				continue;
+		} else if (!host->on_hosts) {
+			/* huh? a resource without hosts to run on?! */
+			continue;
 		} else {
 			if (!name_in_names(nodeinfo.nodename, host->on_hosts) &&
 			    strcmp("_this_host", host->on_hosts->name))
@@ -1275,8 +1278,10 @@ void set_on_hosts_in_res(struct d_resource *res)
 			if (l_res == NULL) {
 				fprintf(stderr, "%s:%d: in resource %s, "
 					"referenced resource '%s' not defined.\n",
-					res->config_file, res->start_line, res->name, l_res->name);
+					res->config_file, res->start_line, res->name,
+					host->lower_name);
 				config_valid = 0;
+				continue;
 			}
 
 			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
