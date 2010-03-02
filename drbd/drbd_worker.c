@@ -1415,7 +1415,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		_drbd_pause_after(mdev);
 	}
 	write_unlock_irq(&global_state_lock);
-	drbd_state_unlock(mdev);
 	put_ldev(mdev);
 
 	if (r == SS_SUCCESS) {
@@ -1428,7 +1427,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 			/* Peer still reachable? Beware of failing before-resync-target handlers! */
 			ping_peer(mdev);
 			drbd_resync_finished(mdev);
-			return;
 		}
 
 		/* ns.conn may already be != mdev->state.conn,
@@ -1440,6 +1438,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 		drbd_md_sync(mdev);
 	}
+	drbd_state_unlock(mdev);
 }
 
 int drbd_worker(struct drbd_thread *thi)
