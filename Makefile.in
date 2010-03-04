@@ -49,7 +49,7 @@ SHELL=/bin/bash
 
 SUBDIRS     = user scripts documentation drbd
 
-REL_VERSION := $(shell $(SED) -ne '/REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(shell $(SED) -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
