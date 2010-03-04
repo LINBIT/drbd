@@ -130,6 +130,7 @@
         <replaceable>device</replaceable>
       </arg>
       <arg choice="req" rep="norepeat">primary</arg>
+      <arg choice="opt" rep="norepeat">-f</arg>
       <arg choice="opt" rep="norepeat">-o</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
@@ -1139,8 +1140,19 @@
           <term><option>-o</option>,
 	  <option>--overwrite-data-of-peer</option></term>
           <listitem>
+            <para>Alias for --force.
+	    </para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+      <variablelist>
+        <varlistentry>
+          <term><option>-f</option>,
+	  <option>--force</option></term>
+          <listitem>
             <para>	      Becoming primary fails if the local replica is
-	      inconsistent. By using this option you can force it into
+	      not up-to-date. I.e. when it is inconsistent, outdated of consistent.
+	      By using this option you can force it into
 	      primary role anyway. USE THIS OPTION ONLY IF YOU KNOW WHAT
 	      YOU ARE DOING.
 	    </para>

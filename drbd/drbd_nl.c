@@ -414,7 +414,7 @@ STATIC int drbd_nl_primary(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	}
 
 	reply->ret_code =
-		drbd_set_role(mdev, R_PRIMARY, primary_args.overwrite_peer);
+		drbd_set_role(mdev, R_PRIMARY, primary_args.primary_force);
 
 	return 0;
 }
