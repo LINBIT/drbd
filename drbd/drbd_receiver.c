@@ -43,6 +43,10 @@
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/random.h>
+#include "drbd_int.h"
+#include "drbd_tracing.h"
+#include "drbd_req.h"
+#include "drbd_vli.h"
 #ifdef HAVE_LINUX_SCATTERLIST_H
 /* 2.6.11 (suse 9.3, fc4) does not include requisites
  * from linux/scatterlist.h :( */
@@ -51,11 +55,6 @@
 #include <linux/string.h>
 #include <linux/scatterlist.h>
 #endif
-#include "drbd_int.h"
-#include "drbd_tracing.h"
-#include "drbd_req.h"
-
-#include "drbd_vli.h"
 
 struct flush_work {
 	struct drbd_work w;

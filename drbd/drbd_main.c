@@ -45,12 +45,6 @@
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
-#ifdef HAVE_LINUX_BYTEORDER_SWABB_H
-#include <linux/byteorder/swabb.h>
-#else
-#include <linux/swab.h>
-#endif
-
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
@@ -59,8 +53,13 @@
 #include "drbd_int.h"
 #include "drbd_tracing.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
-
 #include "drbd_vli.h"
+
+#ifdef HAVE_LINUX_BYTEORDER_SWABB_H
+#include <linux/byteorder/swabb.h>
+#else
+#include <linux/swab.h>
+#endif
 
 struct after_state_chg_work {
 	struct drbd_work w;
