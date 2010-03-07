@@ -159,7 +159,7 @@ else
 	@echo "done."
 
   clean:
-	rm -rf .tmp_versions
+	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 
   distclean: clean
