@@ -196,16 +196,20 @@ sub get_virsh_info()
 		# parent
 		$_ = <V>;
 		close(V) or warn "virsh dumpxml exit code: $?\n";
-		while (m{<disk\ [^>]*>\s*
-			  <source\ dev='/dev/drbd(\d+)'/>\s*
-			  <target\ dev='([^']*)'\s+bus='([^']*)'}xg)
-		{
-			$drbd{$1}{virsh_info} = {
+		for (m{<disk\ [^>]*>.*</disk>}gs) {
+			m{<source\ dev='/dev/drbd([^']+)'/>} or next;
+			my $dev = $1;
+			if ($dev !~ /^\d+$/) {
+				my @stat = stat("/dev/drbd$dev") or next;
+				$dev = $stat[6] & 0xff;
+			}
+			m{<target\ dev='([^']*)'\s+bus='([^']*)'}xg;
+			$drbd{$dev}{virsh_info} = {
 				domname =>
 					$info{$dom}->{state} eq 'running' ?
 					"\*$dom" : "_$dom",
-				vdev => $2,
-				bus => $3,
+				vdev => $1,
+				bus => $2,
 			};
 		}
 	}
