@@ -651,14 +651,16 @@ typedef unsigned gfp_t;
  * this "backport" does not close the race that lead to the API change,
  * but only provides an equivalent function call.
  */
-#ifndef KERNEL_HAS_PROC_CREATE
-static inline struct proc_dir_entry *proc_create(const char *name,
+#ifndef KERNEL_HAS_PROC_CREATE_DATA
+static inline struct proc_dir_entry *proc_create_data(const char *name,
 	mode_t mode, struct proc_dir_entry *parent,
-	struct file_operations *proc_fops)
+	struct file_operations *proc_fops, void *data)
 {
 	struct proc_dir_entry *pde = create_proc_entry(name, mode, parent);
-	if (pde)
+	if (pde) {
 		pde->proc_fops = proc_fops;
+		pde->data = data;
+	}
 	return pde;
 }
 

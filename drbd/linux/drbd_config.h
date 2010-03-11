@@ -106,9 +106,9 @@ extern const char *drbd_buildtag(void);
 
 #define KERNEL_HAS_KVEC
 
-/* Actually availabe since 2.6.25, but venders have backported...
+/* Actually availabe since 2.6.26, but vendors have backported...
  */
-#define KERNEL_HAS_PROC_CREATE
+#define KERNEL_HAS_PROC_CREATE_DATA
 
 /* In 2.6.32 we finally fixed connector to pass netlink_skb_parms to the callback
  */
