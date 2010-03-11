@@ -114,4 +114,11 @@ extern const char *drbd_buildtag(void);
  */
 #define KERNEL_HAS_CN_SKB_PARMS
 
+/* In the 2.6.34 mergewindow blk_queue_max_sectors() got blk_queue_max_hw_sectors() and
+   blk_queue_max_(phys|hw)_segments() got blk_queue_max_segments()
+   See Linux commits: 086fa5ff0854c676ec333 8a78362c4eefc1deddbef */
+//#define NEED_BLK_QUEUE_MAX_HW_SECTORS
+#define NEED_BLK_QUEUE_MAX_SEGMENTS
+
+
 #endif

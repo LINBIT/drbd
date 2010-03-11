@@ -164,6 +164,16 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_netlink_skb_parms=0
   fi
+  if grep_q "blk_queue_max_hw_sectors" $KDIR/include/linux/blkdev.h ; then
+    need_blk_queue_max_hw_sectors=0
+  else
+    need_blk_queue_max_hw_sectors=1
+  fi
+  if grep_q "blk_queue_max_segments" $KDIR/include/linux/blkdev.h ; then
+    need_blk_queue_max_segments=0
+  else
+    need_blk_queue_max_segments=1
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -205,6 +215,10 @@ perl -pe "
   { ( $have_set_cpus_allowed_ptr ? '' : '//' ) . \$1}e;
  s{.*(#define KERNEL_HAS_CN_SKB_PARMS.*)}
   { ( $have_netlink_skb_parms ? '' : '//' ) . \$1}e;
+ s{.*(#define NEED_BLK_QUEUE_MAX_HW_SECTORS.*)}
+  { ( $need_blk_queue_max_hw_sectors ? '' : '//' ) . \$1}e;
+ s{.*(#define NEED_BLK_QUEUE_MAX_SEGMENTS.*)}
+  { ( $need_blk_queue_max_segments ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

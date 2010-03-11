@@ -689,5 +689,20 @@ static inline struct proc_dir_entry *proc_create(const char *name,
 
 #endif
 
+#ifdef NEED_BLK_QUEUE_MAX_HW_SECTORS
+static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max)
+{
+	blk_queue_max_sectors(q, max);
+}
+#endif
+
+#ifdef NEED_BLK_QUEUE_MAX_SEGMENTS
+static inline void blk_queue_max_segments(struct request_queue *q, unsigned short max_segments)
+{
+	blk_queue_max_phys_segments(q, max_segments);
+	blk_queue_max_hw_segments(q, max_segments);
+#define BLK_MAX_SEGMENTS MAX_HW_SEGMENTS /* or max MAX_PHYS_SEGMENTS. Probably does not matter */
+}
+#endif
 
 #endif
