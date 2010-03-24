@@ -1562,7 +1562,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			set_bit(RESIZE_PENDING, &mdev->flags);
 
 		drbd_send_uuids(mdev);
-		drbd_send_sizes(mdev, 1);
+		drbd_send_sizes(mdev, 1, 0);
 	}
 
  fail:
