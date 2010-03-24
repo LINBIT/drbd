@@ -133,6 +133,7 @@ enum drbd_ret_codes {
 	ERR_DATA_NOT_CURRENT	= 150,
 	ERR_CONNECTED		= 151, /* DRBD 8.3 only */
 	ERR_PERM		= 152,
+	ERR_NEED_APV_93		= 153,
 
 	/* insert new ones above this line */
 	AFTER_LAST_ERR_CODE

@@ -343,6 +343,7 @@ struct drbd_cmd commands[] = {
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
 		 { "assume-peer-has-space",'f',T_resize_force,	EB },
+		 { "assume-clean", 'c',        T_no_resync, EB },
 		 CLOSE_OPTIONS }} }, },
 
 	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,
@@ -459,6 +460,7 @@ static const char *error_messages[] = {
 	EM(ERR_CSUMS_ALG_ND) = "CSUMSAlgNotDigest",
 	EM(ERR_CSUMS_RESYNC_RUNNING) = "Can not change csums-alg while resync is in progress",
 	EM(ERR_PERM) = "Permission denied. CAP_SYS_ADMIN necessary",
+	EM(ERR_NEED_APV_93) = "Protocol version 93 required to use --assume-clean",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
