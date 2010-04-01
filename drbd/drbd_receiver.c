@@ -1376,6 +1376,9 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 	int rr, rv = 1;
 	void *data;
 
+	if (!data_size)
+		return TRUE;
+
 	page = drbd_pp_alloc(mdev, 1);
 
 	data = kmap(page);
@@ -2006,7 +2009,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 			    "no local data.\n");
 		drbd_send_ack_rp(mdev, h->command == P_DATA_REQUEST ? P_NEG_DREPLY :
 				 P_NEG_RS_DREPLY , p);
-		return TRUE;
+		return drbd_drain_block(mdev, h->length - brps);
 	}
 
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
