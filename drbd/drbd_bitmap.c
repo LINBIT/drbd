@@ -83,7 +83,7 @@ struct drbd_bitmap {
 #define BM_MD_IO_ERROR  1
 #define BM_P_VMALLOCED  2
 
-int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 			       unsigned long e, int val, const enum km_type km);
 
 static int bm_is_locked(struct drbd_bitmap *b)
@@ -826,7 +826,7 @@ STATIC void bm_page_io_async(struct drbd_conf *mdev, struct drbd_bitmap *b, int 
 	/* nothing to do, on disk == in memory */
 # define bm_cpu_to_lel(x) ((void)0)
 # else
-void bm_cpu_to_lel(struct drbd_bitmap *b)
+STATIC void bm_cpu_to_lel(struct drbd_bitmap *b)
 {
 	/* need to cpu_to_lel all the pages ...
 	 * this may be optimized by using
@@ -1072,7 +1072,7 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_f
  * wants bitnr, not sector.
  * expected to be called for only a few bits (e - s about BITS_PER_LONG).
  * Must hold bitmap lock already. */
-int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	unsigned long e, int val, const enum km_type km)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -1110,7 +1110,7 @@ int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
  * for val != 0, we change 0 -> 1, return code positive
  * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector */
-int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+STATIC int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	const unsigned long e, int val)
 {
 	unsigned long flags;
