@@ -4303,7 +4303,6 @@ STATIC int got_NegRSDReply(struct drbd_conf *mdev, struct p_header *h)
 
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
-	D_ASSERT(p->block_id == ID_SYNCER);
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
