@@ -1599,7 +1599,12 @@ static int adm_generic_b(struct d_resource *res, const char *cmd)
 		}
 	}
 
-	if (rv == 11) {
+	/* see drbdsetup.c, print_config_error():
+	 *  11: some unspecific state change error
+	 *  17: SS_NO_UP_TO_DATE_DISK
+	 * In both cases, we don't need to retry with drbdmeta,
+	 * it would fail anyways with "Device is configured!" */
+	if (rv == 11 || rv == 17) {
 		/* Some state transition error, report it ... */
 		rr = write(fileno(stderr), buffer, s);
 		return rv;
