@@ -332,6 +332,7 @@ struct adm_cmd cmds[] = {
 	{"fence-peer", adm_khelper, DRBD_acf3_handler},
 	{"local-io-error", adm_khelper, DRBD_acf3_handler},
 	{"pri-lost", adm_khelper, DRBD_acf3_handler},
+	{"initial-split-brain", adm_khelper, DRBD_acf3_handler},
 	{"split-brain", adm_khelper, DRBD_acf3_handler},
 	{"out-of-sync", adm_khelper, DRBD_acf3_handler},
 

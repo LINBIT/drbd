@@ -134,6 +134,7 @@ wait-after-sb		{ DP; CP; return TK_STARTUP_SWITCH;     }
 pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost		{ DP; CP; return TK_HANDLER_OPTION;     }
+initial-split-brain    { DP; CP; return TK_HANDLER_OPTION;     }
 split-brain		{ DP; CP; return TK_HANDLER_OPTION;     }
 outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 fence-peer		{ DP; CP; return TK_HANDLER_OPTION;	}

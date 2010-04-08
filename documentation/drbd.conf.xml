@@ -329,7 +329,7 @@ resource r0 {
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
     <option>pri-lost</option>, <option>fence-peer</option> (formerly oudate-peer),
-    <option>local-io-error</option>, <option>split-brain</option>,
+    <option>local-io-error</option>, <option>initial-split-brain</option>, <option>split-brain</option>,
     <option>before-resync-target</option>, <option>after-resync-target</option>.
   </para>
           </listitem>
@@ -1463,12 +1463,24 @@ the unit is 1 second.
         </varlistentry>
         <varlistentry>
           <term>
+            <option>initial-split-brain <replaceable>cmd</replaceable></option>
+          </term>
+          <listitem>
+            <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>initial-split-brain </secondary></indexterm>
+  DRBD has connected and detected a split brain situation.
+  This handler can alert someone in all cases of split brain, not just
+  those that go unresolved.
+  </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
             <option>split-brain <replaceable>cmd</replaceable></option>
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>split-brain </secondary></indexterm>
-  DRBD detected a split brain situation. Manual recovery is necessary.
-  This handler should alert someone on duty.
+  DRBD detected a split brain situation but remains unresolved.
+  Manual recovery is necessary. This handler should alert someone on duty.
   </para>
           </listitem>
         </varlistentry>
