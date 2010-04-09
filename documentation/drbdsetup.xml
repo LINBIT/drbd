@@ -220,6 +220,7 @@
       <arg choice="req" rep="norepeat">resize</arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>size</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-f<arg choice="req" rep="norepeat"><replaceable>assume-peer-has-space</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-c<arg choice="req" rep="norepeat"><replaceable>assume-clean</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -1386,6 +1387,11 @@
 	resize a device which is currently not connected to the peer.
 	Use with care, since if you do not resize the peer's disk as well,
 	further connect attempts of the two will fail.
+      </para>
+      <para>When the <option>--assume-clean</option> option is given
+	DRBD will skip the resync of the new storage. Only do this if you
+	know that the new storage was initialized to the same content
+	by other means.
       </para>
     </refsect2>
     <refsect2>
