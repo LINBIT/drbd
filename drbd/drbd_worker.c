@@ -263,7 +263,7 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 	if (unlikely(error)) {
 		what = (bio_data_dir(bio) == WRITE)
 			? write_completed_with_error
-			: (bio_rw(bio) == READA)
+			: (bio_rw(bio) == READ)
 			  ? read_completed_with_error
 			  : read_ahead_completed_with_error;
 	} else
