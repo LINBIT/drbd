@@ -1808,6 +1808,15 @@ static int do_proxy(struct d_resource *res, int do_up)
 		exit(E_config_invalid);
 	}
 
+	if (!res->peer->proxy) {
+		fprintf(stderr,
+			"There is no proxy config for the peer in resource %s.\n",
+			res->name);
+		if (all_resources)
+			return 0;
+		exit(E_config_invalid);
+	}
+
 	argv[NA(argc)] = drbd_proxy_ctl;
 	argv[NA(argc)] = "-c";
 	if (do_up) {
@@ -2648,6 +2657,9 @@ void validate_resource(struct d_resource *res)
 			res->name);
 		config_valid = 0;
 	}
+
+	if (!res->peer)
+		set_peer_in_resource(res, 0);
 
 	if (res->peer
 	    && ((res->me->proxy == NULL) != (res->peer->proxy == NULL))) {
