@@ -371,14 +371,15 @@ void schedule_dcmd(int (*function) (struct d_resource *, const char *),
 	deferred_cmds_tail[order] = d;
 }
 
-static int adm_generic(struct d_resource *res, const char *cmd, int flags);
+static void _adm_generic(struct d_resource *res, const char *cmd, int flags, pid_t *pid, int *fd, int *ex);
 
 /* Returns non-zero if the resource is down. */
 static int test_if_resource_is_down(struct d_resource *res)
 {
 	char buf[1024];
-	char *line;
+	int rr, s = 0;
 	int fd;
+	pid_t pid;
 	int old_verbose = verbose;
 	FILE *f;
 
@@ -388,7 +389,8 @@ static int test_if_resource_is_down(struct d_resource *res)
 	}
 	if (verbose == 1)
 		verbose = 0;
-	fd = adm_generic(res, "role", RETURN_STDOUT_FD | SUPRESS_STDERR);
+	_adm_generic(res, "role", SLEEPS_SHORT | RETURN_STDOUT_FD | SUPRESS_STDERR,
+			&pid, &fd, NULL);
 	verbose = old_verbose;
 
 	if (fd < 0) {
@@ -396,25 +398,18 @@ static int test_if_resource_is_down(struct d_resource *res)
 		exit(E_thinko);
 	}
 
-	f = fdopen(fd, "r");
-	if (f == NULL) {
-		fprintf(stderr, "Bad: could not fdopen file descriptor.\n");
-		exit(E_thinko);
+	while (1) {
+		rr = read(fd, buf + s, sizeof(buf) - s);
+		if (rr <= 0)
+			break;
+		s += rr;
 	}
+	close(fd);
 
-	errno = 0;
-	line = fgets(buf, sizeof(buf) - 1, f);
-	if (line == NULL && errno != 0) {
-		fprintf(stderr,
-			"Bad: fgets returned NULL while waiting for data: %m\n");
-		exit(E_thinko);
-	}
-	fclose(f);
+	waitpid(pid, NULL, 0);	/* Reap the child process, do not leave a zombie around. */
+	alarm(0);
 
-	waitpid(0, NULL, WNOHANG);	/* Reap the child process, do not leave a zombie around. */
-
-	if (line == NULL
-	    || strncmp(line, "Unconfigured", strlen("Unconfigured")) == 0)
+	if (s == 0 || strncmp(buf, "Unconfigured", strlen("Unconfigured")) == 0)
 		return 1;
 
 	return 0;
@@ -1207,7 +1202,7 @@ static void alarm_handler(int __attribute((unused)) signo)
 	alarm_raised = 1;
 }
 
-pid_t m_system(char **argv, int flags, struct d_resource *res)
+void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *fd, int *ex)
 {
 	pid_t pid;
 	int status, rv = -1;
@@ -1229,8 +1224,15 @@ pid_t m_system(char **argv, int flags, struct d_resource *res)
 			printf("%s ", shell_escape(*cmdline++));
 		}
 		printf("\n");
-		if (dry_run)
-			return 0;
+		if (dry_run) {
+			if (kid)
+				*kid = -1;
+			if (fd)
+				*fd = 0;
+			if (ex)
+				*ex = 0;
+			return;
+		}
 	}
 
 	/* flush stdout and stderr, so output of drbdadm
@@ -1291,12 +1293,14 @@ pid_t m_system(char **argv, int flags, struct d_resource *res)
 		alarm(timeout);
 	}
 
-	if (flags == RETURN_PID) {
-		return pid;
-	}
+	if (kid)
+		*kid = pid;
+	if (fd)
+		*fd = pipe_fds[0];
 
-	if (flags & (RETURN_STDOUT_FD | RETURN_STDERR_FD))
-		return pipe_fds[0];
+	if (flags & (RETURN_STDOUT_FD | RETURN_STDERR_FD)
+	||  flags == RETURN_PID)
+		return;
 
 	while (1) {
 		if (waitpid(pid, &status, 0) == -1) {
@@ -1343,7 +1347,8 @@ pid_t m_system(char **argv, int flags, struct d_resource *res)
 	fflush(stdout);
 	fflush(stderr);
 
-	return rv;
+	if (ex)
+		*ex = rv;
 }
 
 #define NA(ARGC) \
@@ -1374,6 +1379,7 @@ int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
+	int ex;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1463,7 +1469,7 @@ static int admm_generic(struct d_resource *res, const char *cmd)
 	return _admm_generic(res, cmd, SLEEPS_VERY_LONG);
 }
 
-static int adm_generic(struct d_resource *res, const char *cmd, int flags)
+static void _adm_generic(struct d_resource *res, const char *cmd, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, i;
@@ -1477,7 +1483,14 @@ static int adm_generic(struct d_resource *res, const char *cmd, int flags)
 	argv[NA(argc)] = 0;
 
 	setenv("DRBD_RESOURCE", res->name, 1);
-	return m_system(argv, flags, res);
+	m__system(argv, flags, res, pid, fd, ex);
+}
+
+static int adm_generic(struct d_resource *res, const char *cmd, int flags)
+{
+	int ex;
+	_adm_generic(res, cmd, flags, NULL, NULL, &ex);
+	return ex;
 }
 
 int adm_generic_s(struct d_resource *res, const char *cmd)
@@ -1573,9 +1586,10 @@ static int adm_outdate(struct d_resource *res, const char *cmd)
 static int adm_generic_b(struct d_resource *res, const char *cmd)
 {
 	char buffer[4096];
-	int fd, status, rv = 0, rr, s = 0;
+	int fd, status, rv, rr, s = 0;
+	pid_t pid;
 
-	fd = adm_generic(res, cmd, SLEEPS_SHORT | RETURN_STDERR_FD);
+	_adm_generic(res, cmd, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
@@ -1591,7 +1605,8 @@ static int adm_generic_b(struct d_resource *res, const char *cmd)
 		}
 
 		close(fd);
-		waitpid(0, &status, WNOHANG);
+		rr = waitpid(pid, &status, 0);
+		alarm(0);
 
 		if (WIFEXITED(status))
 			rv = WEXITSTATUS(status);

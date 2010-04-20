@@ -153,7 +153,13 @@ extern int adm_resize(struct d_resource* ,const char* );
 extern int adm_syncer(struct d_resource* ,const char* );
 extern int adm_generic_s(struct d_resource* ,const char* );
 extern int _admm_generic(struct d_resource* ,const char*, int flags);
-extern int m_system(char**, int, struct d_resource*);
+extern void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *fd, int *ex);
+static inline int m_system(char **argv, int flags, struct d_resource *res)
+{
+	int ex;
+	m__system(argv, flags, res, NULL, NULL, &ex);
+	return ex;
+}
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
 extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
