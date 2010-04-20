@@ -154,7 +154,7 @@ extern int adm_syncer(struct d_resource* ,const char* );
 extern int adm_generic_s(struct d_resource* ,const char* );
 extern int _admm_generic(struct d_resource* ,const char*, int flags);
 extern void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *fd, int *ex);
-static inline int m_system(char **argv, int flags, struct d_resource *res)
+static inline int m_system_ex(char **argv, int flags, struct d_resource *res)
 {
 	int ex;
 	m__system(argv, flags, res, NULL, NULL, &ex);

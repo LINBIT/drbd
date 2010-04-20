@@ -1398,7 +1398,7 @@ int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
 	make_options(opt);
 	argv[NA(argc)] = 0;
 
-	return m_system(argv, SLEEPS_LONG, res);
+	return m_system_ex(argv, SLEEPS_LONG, res);
 }
 
 struct d_option *find_opt(struct d_option *base, char *name)
@@ -1429,7 +1429,7 @@ int adm_resize(struct d_resource *res, const char *unused __attribute((unused)))
 	}
 	argv[NA(argc)] = 0;
 
-	return m_system(argv, SLEEPS_SHORT, res);
+	return m_system_ex(argv, SLEEPS_SHORT, res);
 }
 
 int _admm_generic(struct d_resource *res, const char *cmd, int flags)
@@ -1461,7 +1461,7 @@ int _admm_generic(struct d_resource *res, const char *cmd, int flags)
 
 	argv[NA(argc)] = 0;
 
-	return m_system(argv, flags, res);
+	return m_system_ex(argv, flags, res);
 }
 
 static int admm_generic(struct d_resource *res, const char *cmd)
@@ -1678,7 +1678,7 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 
 	if ((sh_cmd = get_opt_val(res->handlers, cmd, NULL))) {
 		argv[2] = sh_cmd;
-		rv = m_system(argv, SLEEPS_VERY_LONG, res);
+		rv = m_system_ex(argv, SLEEPS_VERY_LONG, res);
 	}
 	return rv;
 }
@@ -1742,7 +1742,7 @@ int adm_connect(struct d_resource *res,
 
 	argv[NA(argc)] = 0;
 
-	return m_system(argv, SLEEPS_SHORT, res);
+	return m_system_ex(argv, SLEEPS_SHORT, res);
 }
 
 struct d_resource *res_by_name(const char *name);
@@ -1856,7 +1856,7 @@ static int do_proxy(struct d_resource *res, int do_up)
 	}
 	argv[NA(argc)] = 0;
 
-	rv = m_system(argv, SLEEPS_SHORT, res);
+	rv = m_system_ex(argv, SLEEPS_SHORT, res);
 	if (rv != 0)
 		return rv;
 
@@ -1877,7 +1877,7 @@ static int do_proxy(struct d_resource *res, int do_up)
 	}
 	argv[NA(argc)] = 0;
 	if (argc > 2)
-		return m_system(argv, SLEEPS_SHORT, res);
+		return m_system_ex(argv, SLEEPS_SHORT, res);
 	return rv;
 }
 
@@ -1914,7 +1914,7 @@ int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
 
 	argv[NA(argc)] = 0;
 
-	return m_system(argv, SLEEPS_SHORT, res);
+	return m_system_ex(argv, SLEEPS_SHORT, res);
 }
 
 static int adm_up(struct d_resource *res,
@@ -1957,7 +1957,7 @@ static int adm_wait_c(struct d_resource *res,
 	}
 	argv[NA(argc)] = 0;
 
-	rv = m_system(argv, SLEEPS_FOREVER, res);
+	rv = m_system_ex(argv, SLEEPS_FOREVER, res);
 
 	return rv;
 }
@@ -2188,7 +2188,7 @@ static int adm_wait_ci(struct d_resource *ignored __attribute((unused)),
 		make_options(opt);
 		argv[NA(argc)] = 0;
 
-		pids[i++] = m_system(argv, RETURN_PID, res);
+		m__system(argv, RETURN_PID, res, &pids[i++], NULL, NULL);
 	}
 
 	wtime = global_options.dialog_refresh ? : -1;
