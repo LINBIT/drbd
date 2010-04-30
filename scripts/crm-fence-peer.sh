@@ -348,6 +348,19 @@ check_peer_node_reachable()
 		done
 		state_lines=$(echo "$cib_xml" | grep '<node_state')
 
+		if $CTS_mode; then
+			# CTS requires startup-fencing=false.
+			# For PartialStart, NearQuorumPoint and similar tests,
+			# we would likely stay Consistent, and refuse to Promote.
+			# And CTS would be very unhappy.
+			# Pretend that the peer was reachable if we are missing a node_state entry for it.
+			if [[ $DRBD_PEER ]] && ! echo "$state_lines" | grep -q -F uname=\"$DRBD_PEER\" ; then
+				peer_state="reachable"
+				echo WARNING "CTS-mode: pretending that unseen node $DRBD_PEER was reachable"
+				return
+			fi
+		fi
+
 		nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
 		if [[ $nr_other_nodes -gt 1 ]]; then
 			# Many nodes cluster, look at $DRBD_PEER, if set.
@@ -378,7 +391,7 @@ check_peer_node_reachable()
 				return
 			fi
 		fi
-		
+
 		# For a resource-and-stonith setup, or dual-primaries (which
 		# you should only use with resource-and-stonith, anyways),
 		# the recommended timeout is larger than the deadtime or
@@ -418,6 +431,7 @@ fi
 
 # clean environment just in case.
 unset fencing_attribute id_prefix timeout dc_timeout unreachable_peer_is
+CTS_mode=false
 suicide_on_failure_if_primary=false
 
 # poor mans command line argument parsing,
@@ -472,6 +486,9 @@ while [[ $# != 0 ]]; do
 	-d|--dc-timeout)
 		dc_timeout=$2
 		shift
+		;;
+	--CTS-mode)
+		CTS_mode=true
 		;;
 	--unreachable-peer-is-outdated)
 		# This is NOT to be scripted.
