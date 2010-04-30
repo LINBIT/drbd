@@ -425,8 +425,23 @@ set_states_from_proc_drbd()
 
 # try to get possible output on stdout/err to syslog
 PROG=${0##*/}
+redirect_to_logger()
+{
+	local lf=${1:-local5}
+	case $lf in 
+	# do we want to exclude some?
+	auth|authpriv|cron|daemon|ftp|kern|lpr|mail|news|syslog|user|uucp|local[0-7])
+		: OK ;;
+	*)
+		echo >&2 "invalid logfacility: $lf"
+		return
+		;;
+	esac
+	exec > >(2>&- ; logger -t "$PROG[$$]" -p $lf.info) 2>&1
+}
 if [[ $- != *x* ]]; then
-	exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
+	# you may override with --logfacility below
+	redirect_to_logger local5
 fi
 
 # clean environment just in case.
@@ -438,6 +453,13 @@ suicide_on_failure_if_primary=false
 # allow for command line overrides
 while [[ $# != 0 ]]; do
 	case $1 in
+	--logfacility=*)
+		redirect_to_logger ${1#*=}
+		;;
+	--logfacility)
+		redirect_to_logger $2
+		shift
+		;;
 	--resource=*)
 		DRBD_RESOURCE=${1#*=}
 		;;
