@@ -155,21 +155,57 @@ try_place_constraint()
 	local peer_state
 	check_peer_node_reachable
 	set_states_from_proc_drbd
-	case $peer_state/$DRBD_disk in
-	reachable/*)
-		cibadmin -C -o constraints -X "$new_constraint" &&
-		drbd_fence_peer_exit_code=4 rc=0
+	case $DRBD_peer in
+	Secondary|Primary)
+		# WTF? We are supposed to fence the peer,
+		# but the replication link is just fine?
+		echo WARNING "peer is $DRBD_peer, did not place the constraint!"
+		rc=0
+		return
 		;;
-	*/UpToDate)
+	esac
+	: == DEBUG == $peer_state/$DRBD_disk/$unreachable_peer_is ==
+	case $peer_state/$DRBD_disk/$unreachable_peer_is in
+	*//*)
+		# Someone called this script, without the corresponding drbd
+		# resource being configured. That's not very useful.
+		echo WARNING "could not determine my disk state: did not place the constraint!"
+		rc=0
+		# keep drbd_fence_peer_exit_code at "generic error",
+		# which will cause a "script is broken" message in case it was
+		# indeed called as handler from within drbd
+		;;
+	reachable/Consistent/*|\
+	reachable/UpToDate/*)
+		cibadmin -C -o constraints -X "$new_constraint" &&
+		drbd_fence_peer_exit_code=4 rc=0 &&
+		echo INFO "peer is $peer_state, my disk is $DRBD_disk: placed constraint '$id_prefix-$master_id'"
+		;;
+	*/UpToDate/*)
 		# We could differentiate between unreachable,
 		# and DC-unreachable.  In the latter case, placing the
 		# constraint will fail anyways, and  drbd_fence_peer_exit_code
 		# will stay at "generic error".
 		cibadmin -C -o constraints -X "$new_constraint" &&
-		drbd_fence_peer_exit_code=5 rc=0
+		drbd_fence_peer_exit_code=5 rc=0 &&
+		echo INFO "peer is not reachable, my disk is UpToDate: placed constraint '$id_prefix-$master_id'"
+		;;
+	unreachable/Consistent/outdated)
+		# If the peer is not reachable, but we are only Consistent, we
+		# may need some way to still allow promotion.
+		# Easy way out: --force primary with drbdsetup.
+		# But that would not place the constraint, nor outdate the
+		# peer.  With this --unreachable-peer-is-outdated, we still try
+		# to set the constraint.  Next promotion attempt will find the
+		# "correct" constraint, consider the peer as successfully
+		# fenced, and continue.
+		cibadmin -C -o constraints -X "$new_constraint" &&
+		drbd_fence_peer_exit_code=5 rc=0 &&
+		echo WARNING "peer is unreachable, my disk is only Consistent: --unreachable-peer-is-outdated FORCED constraint '$id_prefix-$master_id'" &&
+		echo WARNING "This MAY RISK DATA INTEGRITY"
 		;;
 	*)
-		echo WARNING "did not place the constraint!"
+		echo WARNING "peer is $peer_state, my disk is $DRBD_disk: did not place the constraint!"
 		drbd_fence_peer_exit_code=5 rc=0
 		# I'd like to return 6 here, otherwise pacemaker will retry
 		# forever to promote, even though 6 is not strictly correct.
@@ -220,7 +256,7 @@ drbd_peer_fencing()
 			# and try to go online with stale data.
 			# Exactly what this "fence" hanler should prevent.
 			# But setting contraints in a cluster partition with
-			# "no-quorum-policy=ignore" will usually succeed. 
+			# "no-quorum-policy=ignore" will usually succeed.
 			#
 			# So we need to differentiate between node reachable or
 			# not, and DRBD "Consistent" or "UpToDate".
@@ -228,7 +264,7 @@ drbd_peer_fencing()
 			try_place_constraint
 		elif [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
 			sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")" ]]; then
-			: "identical constraint already placed"
+			echo INFO "suitable constraint already placed: '$id_prefix-$master_id'"
 			drbd_fence_peer_exit_code=4
 			rc=0
 		else
@@ -245,7 +281,7 @@ drbd_peer_fencing()
 			# better data than us, and wants us outdated.
 		fi
 
-		if [ $rc != 0 ]; then
+		if [[ $rc != 0 ]]; then
 			# at least we tried.
 			# maybe it was already in place?
 			echo WARNING "DATA INTEGRITY at RISK: could not place the fencing constraint!"
@@ -311,6 +347,7 @@ check_peer_node_reachable()
 			let "cibtimeout = cibtimeout * 5 / 4"
 		done
 		state_lines=$(echo "$cib_xml" | grep '<node_state')
+
 		nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
 		if [[ $nr_other_nodes -gt 1 ]]; then
 			# Many nodes cluster, look at $DRBD_PEER, if set.
@@ -367,6 +404,7 @@ set_states_from_proc_drbd()
 	# this may be a callback triggered by "drbdsetup primary".
 	# grep /proc/drbd instead
 	set -- $(sed -ne "/^ *$DRBD_MINOR: cs:/ { s/:/ /g; p; q; }" /proc/drbd)
+	DRBD_peer=${5#*/}
 	DRBD_role=${5%/*}
 	DRBD_disk=${7%/*}
 }
@@ -379,7 +417,7 @@ if [[ $- != *x* ]]; then
 fi
 
 # clean environment just in case.
-unset fencing_attribute id_prefix timeout dc_timeout
+unset fencing_attribute id_prefix timeout dc_timeout unreachable_peer_is
 suicide_on_failure_if_primary=false
 
 # poor mans command line argument parsing,
@@ -435,6 +473,13 @@ while [[ $# != 0 ]]; do
 		dc_timeout=$2
 		shift
 		;;
+	--unreachable-peer-is-outdated)
+		# This is NOT to be scripted.
+		# Or people will put this into the handler definition in
+		# drbd.conf, and all this nice work was useless.
+		test -t 0 &&
+		unreachable_peer_is=outdated
+		;;
 	# --suicide-on-failure-if-primary)
 	# 	suicide_on_failure_if_primary=true
 	# 	;;
@@ -449,14 +494,17 @@ while [[ $# != 0 ]]; do
 done
 # DRBD_RESOURCE: from environment
 # master_id: parsed from cib
-# apply defaults: 
-: ${fencing_attribute:="#uname"}
-: ${id_prefix:="drbd-fence-by-handler"}
-: ${role:="Master"}
+
+: "== unreachable_peer_is == ${unreachable_peer_is:=unknown}"
+# apply defaults:
+: "== fencing_attribute   == ${fencing_attribute:="#uname"}"
+: "== id_prefix           == ${id_prefix:="drbd-fence-by-handler"}"
+: "== role                == ${role:="Master"}"
 
 # defaults suitable for single-primary no-stonith.
-: ${timeout:=1}
-: ${dc_timeout:=$[20+timeout]}
+: "== timeout             == ${timeout:=1}"
+: "== dc_timeout          == ${dc_timeout:=$[20+timeout]}"
+
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
