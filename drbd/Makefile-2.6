@@ -1,4 +1,5 @@
 ccflags-y := -include $(DRBDSRC)/linux/drbd.h
+ccflags-y += -include $(DRBDSRC)/linux/drbd_limits.h
 
 drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_worker.o drbd_receiver.o drbd_req.o drbd_actlog.o

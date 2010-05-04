@@ -453,6 +453,14 @@ resource r0 {
     # Sets the CPU affinity mask of DRBD's threads. Might be of interest
     # for advanced performance tuning.
     # cpu-mask 15;
+
+    # To reasonably control resync speed over drbd-proxy connections,
+    # drbd has to measure the current delay of packets transmitted over
+    # the (possibly congested) data socket vs the meta-data socket
+    delay-probe-volume   16M; # Send a delay probe at least every 16MB of data
+    delay-probe-interval 5;   # Send a delay probe at least every 500 ms
+    throttle-threshold   20;  # Begin to slow down resync if delay > 2 sec
+    hold-off-threshold   100; # Completely stop resync if delay > 10 sec
   }
 
   on amd {

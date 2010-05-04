@@ -355,6 +355,10 @@ struct drbd_cmd commands[] = {
 		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 { "use-rle",'R',T_use_rle,   EB },
+		 { "delay-probe-volume",'V',	T_dp_volume,	EN(DP_VOLUME,'k',"bytes") },
+		 { "delay-probe-interval",'I',	T_dp_interval,	EN(DP_INTERVAL,1,"1/10 seconds") },
+		 { "throttle-threshold",'T',	T_throttle_th,	EN(RS_THROTTLE_TH,1,"1/10 seconds") },
+		 { "hold-off-threshold",'H',	T_hold_off_th,	EN(RS_HOLD_OFF_TH,1,"1/10 seconds") },
 		 CLOSE_OPTIONS }} }, },
 
 	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,
