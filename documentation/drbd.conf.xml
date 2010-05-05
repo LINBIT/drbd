@@ -314,7 +314,9 @@ resource r0 {
     Optional parameters:
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
     <option>use-rle</option>,
-    <option>cpu-mask</option>, <option>verify-alg</option> and <option>csums-alg</option>.
+    <option>cpu-mask</option>, <option>verify-alg</option>, <option>csums-alg</option>,
+    <option>delay-probe-volume</option>, <option>delay-probe-interval</option>,
+    <option>throttle-threshold</option> and <option>hold-off-threshold</option>.
   </para>
           </listitem>
         </varlistentry>
@@ -1390,6 +1392,34 @@ the unit is 1 second.
   activity log are marked for resync. But a large part of those will actually
   be still in sync, therefore using <option>csums-alg</option> will lower
   the required bandwidth in exchange for CPU cycles.</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>delay-probe-volume <replaceable>bytes</replaceable></option>
+          </term>
+          <term>
+	    <option>delay-probe-interval <replaceable>interval</replaceable></option>
+          </term>
+          <term>
+	    <option>throttle-threshold <replaceable>throttle_delay</replaceable></option>
+          </term>
+          <term>
+	    <option>hold-off-threshold <replaceable>hold_off_delay</replaceable></option>
+          </term>
+          <listitem>
+            <para>During resync at least every <replaceable>bytes</replaceable> of data
+              and at least every <replaceable>interval</replaceable> * 100ms a pair of delay
+	      probes get inserted in DRBD's packet stream. Those
+	      packets are used to measure the delay of packts on the data
+	      socket caused by queuing in various network components along the
+	      path.
+	    </para>
+            <para>If the delay on the data socket becomes greater than
+	      <replaceable>throttle_delay</replaceable> DRBD will slow down the resync
+	      in order to keep the delay small. The resync speed gets linearly slowed
+	      down it reaches 0 at a delay of <replaceable>hold_off_delay</replaceable>.
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>

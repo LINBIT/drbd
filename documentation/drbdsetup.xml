@@ -101,7 +101,11 @@
       <arg choice="opt" rep="norepeat">-v<arg choice="req" rep="norepeat"><replaceable>verify-hash-alg</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-c<arg choice="req" rep="norepeat"><replaceable>cpu-mask</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-C<arg choice="req" rep="norepeat"><replaceable>csums-hash-alg</replaceable></arg></arg>
-      <arg choice="opt" rep="norepeat">-R<arg choice="req" rep="norepeat"><replaceable>use-rle</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-R</arg>
+      <arg choice="opt" rep="norepeat">-V<arg choice="req" rep="norepeat"><replaceable>delay-probe-volume</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-I<arg choice="req" rep="norepeat"><replaceable>delay-probe-interval</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-T<arg choice="req" rep="norepeat"><replaceable>throttle-delay</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-H<arg choice="req" rep="norepeat"><replaceable>hold-off-delay</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -1114,6 +1118,36 @@
               this defaults to off.
 	    </para>
             <para>              Introduced in 8.3.2.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-V</option>,
+	  <option>--delay-probe-volume <replaceable>volume</replaceable></option></term>
+          <term><option>-I</option>,
+	  <option>--delay-probe-interval <replaceable>interval</replaceable></option></term>
+          <term><option>-T</option>,
+	  <option>--throttle-threshold <replaceable>throttle_delay</replaceable></option></term>
+          <term><option>-H</option>,
+	  <option>--hold-off-threshold <replaceable>hold_off_delay</replaceable></option></term>
+          <listitem>
+            <para>During resync at least every <replaceable>volume</replaceable> bytes of data
+              and at least every <replaceable>interval</replaceable> * 100ms a pair of delay
+	      probes get inserted in DRBD's packet stream. Those
+	      packets are used to measure the delay of packts on the data
+	      socket caused by queuing in various network components along the
+	      path.
+	    </para>
+            <para>If the delay on the data socket becomes greater than
+	      <replaceable>throttle_delay</replaceable> DRBD will slow down the resync
+	      in order to keep the delay small. The resync speed gets linearly slowed
+	      down it reaches 0 at a delay of <replaceable>hold_off_delay</replaceable>.
+	    </para>
+            <para>The default value of <replaceable>volume</replaceable> is 16384 (16MB), the default unit is KB.
+	      <replaceable>Interval</replaceable> has 5 (500ms),
+	      <replaceable>throttle_delay</replaceable> 20 (2 seconds),
+	      <replaceable>hold_off_delay</replaceable> 100 (10 seconds) as default value. The default
+	      unit of the latter three is 100ms.
 	    </para>
           </listitem>
         </varlistentry>
