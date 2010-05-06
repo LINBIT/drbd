@@ -913,7 +913,7 @@ int v06_parse(struct format *cfg, char **argv, int argc, int *ai)
 		fprintf(stderr, "'%s' is not a valid minor number.\n", argv[0]);
 		exit(20);
 	}
-	if (asprintf(&e, DRBD_LIB_DIR "/drbd%lu", minor) <= 18) {
+	if (asprintf(&e, "%s/drbd%lu", DRBD_LIB_DIR, minor) <= 18) {
 		fprintf(stderr, "asprintf() failed.\n");
 		exit(20);
 	};
