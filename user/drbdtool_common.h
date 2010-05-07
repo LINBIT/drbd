@@ -74,4 +74,31 @@ extern const char* shell_escape(const char* s);
    warn_unused_result attribute.... */
 extern int m_asprintf(char **strp, const char *fmt, ...);
 
+/* If the lower level device is resized,
+ * and DRBD did not move its "internal" meta data in time,
+ * the next time we try to attach, we won't find our meta data.
+ *
+ * Some helpers for storing and retrieving "last known"
+ * information, to be able to find it regardless,
+ * without scanning the full device for magic numbers.
+ */
+
+/* We may want to store more things later...  if so, we can easily change to
+ * some NULL terminated tag-value list format then.
+ * For now: store the last known lower level block device size,
+ * and its /dev/<name> */
+struct bdev_info {
+	uint64_t bd_size;
+	char *bd_name;
+};
+
+/* these return 0 on sucess, error code if something goes wrong. */
+/* create (update) the last-known-bdev-info file */
+extern int lk_bdev_save(const unsigned minor, const struct bdev_info *bd);
+/* we may want to remove all stored information */
+extern int lk_bdev_delete(const unsigned minor);
+/* load info from that file.
+ * caller should free(bd->bd_name) once it is no longer needed. */
+extern int lk_bdev_load(const unsigned minor, struct bdev_info *bd);
+
 #endif

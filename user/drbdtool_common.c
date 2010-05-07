@@ -532,6 +532,110 @@ uint64_t bdev_size(int fd)
 	return size64;
 }
 
+char *lk_bdev_path(unsigned minor)
+{
+	char *path;
+	m_asprintf(&path, "%s/drbd-minor-%d.lkbd", DRBD_LIB_DIR, minor);
+	return path;
+}
+
+/* If the lower level device is resized,
+ * and DRBD did not move its "internal" meta data in time,
+ * the next time we try to attach, we won't find our meta data.
+ *
+ * Some helpers for storing and retrieving "last known"
+ * information, to be able to find it regardless,
+ * without scanning the full device for magic numbers.
+ */
+
+/* these return 0 on sucess, error code if something goes wrong. */
+
+/* NOTE: file format for now:
+ * one line, starting with size in byte, followed by tab,
+ * followed by device name, followed by newline. */
+
+int lk_bdev_save(const unsigned minor, const struct bdev_info *bd)
+{
+	FILE *fp;
+	char *path = lk_bdev_path(minor);
+	int ok = 0;
+
+	fp = fopen(path, "w");
+	if (!fp)
+		goto fail;
+
+	ok = fprintf(fp, "%llu\t%s\n",
+		(unsigned long long) bd->bd_size, bd->bd_name);
+	if (ok < 0)
+		goto fail;
+	ok =       0 == fflush(fp);
+	ok = ok && 0 == fsync(fileno(fp));
+	ok = ok && 0 == fclose(fp);
+
+	if (!ok)
+fail:		/* MAYBE: unlink. But maybe partial info is better than no info? */
+		fprintf(stderr, "lk_bdev_save(%s) failed: %m\n", path);
+
+	free(path);
+	return ok <= 0 ? -1 : 0;
+}
+
+/* we may want to remove all stored information */
+int lk_bdev_delete(const unsigned minor)
+{
+	char *path = lk_bdev_path(minor);
+	int rc = unlink(path);
+	if (rc && errno != ENOENT)
+		fprintf(stderr, "lk_bdev_delete(%s) failed: %m\n", path);
+	free(path);
+	return rc;
+}
+
+/* load info from that file.
+ * caller should free(bd->bd_name) once it is no longer needed. */
+int lk_bdev_load(const unsigned minor, struct bdev_info *bd)
+{
+	FILE *fp;
+	char *path;
+	char *bd_name;
+	uint64_t bd_size;
+	int rc = -1;
+	char nl;
+
+	if (!bd)
+		return -1;
+
+	path = lk_bdev_path(minor);
+	fp = fopen(path, "r");
+	if (!fp) {
+		if (errno != ENOENT)
+			fprintf(stderr, "lk_bdev_load(%s) failed: %m\n", path);
+		goto out;
+	}
+
+	/* GNU format extension: %as:
+	 * malloc buffer space for the resulting char */
+	rc = fscanf(fp, "%llu %as%[\n]", &bd_size, &bd_name, &nl);
+	/* rc == 3: successfully converted a whole line.
+	 *    == 2: somehow we did not find the newline.
+	 *	    maybe early whitespace? incomplete file?
+	 *    == 1: found some number, but no more.
+	 *          incomplete file? try anyways.
+	 */
+	bd->bd_name = (rc >= 2) ? bd_name : NULL;
+	bd->bd_size = (rc >= 1) ? bd_size : -1ULL;
+	if (rc < 1) {
+		fprintf(stderr, "lk_bdev_load(%s): parse error\n", path);
+		rc = -1;
+	} else
+		rc = 0;
+
+	fclose(fp);
+out:
+	free(path);
+	return rc;
+}
+
 void get_random_bytes(void* buffer, int len)
 {
 	int fd;

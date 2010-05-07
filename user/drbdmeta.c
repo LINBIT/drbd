@@ -226,6 +226,7 @@ struct format {
 	const struct format_ops *ops;
 	char *md_device_name;	/* well, in 06 it is file name */
 	char *drbd_dev_name;
+	unsigned minor;		/* cache, determined from drbd_dev_name */
 	int lock_fd;
 	int drbd_fd;		/* no longer used!   */
 	int ll_fd;		/* not yet used here */
@@ -238,6 +239,7 @@ struct format {
 	unsigned int bm_bytes;
 	unsigned int bits_set;	/* 32 bit should be enough. @4k ==> 16TB */
 	int bits_counted:1;
+	int update_lk_bdev:1;	/* need to update the last known bdev info? */
 
 	struct md_cpu md;
 
@@ -248,6 +250,12 @@ struct format {
 
 	/* convenience */
 	uint64_t bd_size; /* size of block device for internal meta data */
+
+	/* last-known bdev info,
+	 * to increase the chance of finding internal meta data in case the
+	 * lower level device has been resized without telling DRBD.
+	 * Loaded from file for internal metadata */
+	struct bdev_info lk_bd;
 };
 
 /* - parse is expected to exit() if it does not work out.
@@ -536,6 +544,7 @@ int v07_style_md_open(struct format *cfg); /* also v08 */
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg);
+int v08_md_close(struct format *cfg);
 
 struct format_ops f_ops[] = {
 	[Drbd_06] = {
@@ -573,7 +582,7 @@ struct format_ops f_ops[] = {
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
 		     .open = v07_style_md_open,
-		     .close = generic_md_close,
+		     .close = v08_md_close,
 		     .md_initialize = v08_md_initialize,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
@@ -627,6 +636,7 @@ int meta_set_gi(struct format *cfg, char **argv, int argc);
 int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_write_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_dstate(struct format *cfg, char **argv, int argc);
+int meta_chk_offline_resize(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1},
@@ -642,6 +652,7 @@ struct meta_cmd cmds[] = {
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
+	{"chk-offline-resize", 0, meta_chk_offline_resize, 1},
 };
 
 /*
@@ -676,9 +687,11 @@ void pread_or_die(int fd, void *buf, size_t count, off_t offset, const char* tag
 	}
 }
 
+static unsigned n_writes = 0;
 void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const char* tag)
 {
 	ssize_t c = pwrite(fd, buf, count, offset);
+	++n_writes;
 	if (verbose >= 2) {
 		fprintf(stderr, " %-26s: pwrite(%u, ...,%6lu,%12llu)\n", tag,
 			fd, (unsigned long)count, (unsigned long long)offset);
@@ -1324,10 +1337,15 @@ int v07_style_md_open(struct format *cfg)
 
 int v07_md_disk_to_cpu(struct format *cfg)
 {
+	struct md_cpu md;
+	int ok;
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_07), cfg->md_offset);
-	md_disk_07_to_cpu(&cfg->md, (struct md_on_disk_07*)on_disk_buffer);
-	return !is_valid_md(Drbd_07,&cfg->md, cfg->md_index, cfg->bd_size);
+	md_disk_07_to_cpu(&md, (struct md_on_disk_07*)on_disk_buffer);
+	ok = is_valid_md(Drbd_07,&cfg->md, cfg->md_index, cfg->bd_size);
+	if (ok)
+		cfg->md = md;
+	return ok ? 0 : -1;
 }
 
 int v07_md_cpu_to_disk(struct format *cfg)
@@ -1404,10 +1422,15 @@ int v07_md_initialize(struct format *cfg)
 
 int v08_md_disk_to_cpu(struct format *cfg)
 {
+	struct md_cpu md;
+	int ok;
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_08), cfg->md_offset);
-	md_disk_08_to_cpu(&cfg->md, (struct md_on_disk_08*)on_disk_buffer);
-	return !is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size);
+	md_disk_08_to_cpu(&md, (struct md_on_disk_08*)on_disk_buffer);
+	ok = is_valid_md(Drbd_08, &md, cfg->md_index, cfg->bd_size);
+	if (ok)
+		cfg->md = md;
+	return ok ? 0 : -1;
 }
 
 int v08_md_cpu_to_disk(struct format *cfg)
@@ -1441,6 +1464,22 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 int v08_md_initialize(struct format *cfg)
 {
 	return _v08_md_initialize(cfg, 1);
+}
+
+int v08_md_close(struct format *cfg)
+{
+	/* update last known info, if we changed anything,
+	 * or if explicitly requested. */
+	if (n_writes || cfg->update_lk_bdev) {
+		if (cfg->md_index != DRBD_MD_INDEX_FLEX_INT)
+			lk_bdev_delete(cfg->minor);
+		else {
+			cfg->lk_bd.bd_size = cfg->bd_size;
+			cfg->lk_bd.bd_name = cfg->md_device_name;
+			lk_bdev_save(cfg->minor, &cfg->lk_bd);
+		}
+	}
+	return generic_md_close(cfg);
 }
 
 /******************************************
@@ -1611,7 +1650,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.device_uuid);
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
-		printf_bm(cfg);
+		printf_bm(cfg); /* pretty prints the whole bitmap */
 		printf("# bits-set %u;\n", cfg->bits_set);
 	}
 
@@ -1847,6 +1886,8 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 
 	err = cfg->ops->md_cpu_to_disk(cfg);
+	if (!err)
+		cfg->update_lk_bdev = 1;
 	err = cfg->ops->close(cfg) || err;
 	if (err) {
 		fprintf(stderr, "Writing failed\n");
@@ -2294,6 +2335,65 @@ void check_for_existing_data(struct format *cfg)
 	}
 }
 
+/* if this returns with something != -1ULL; in cfg->lk_bd.bd_size,
+ * caller knows he must move the meta data to actually find it. */
+void v08_check_for_resize(struct format *cfg)
+{
+	struct md_cpu md_08;
+	off_t flex_offset;
+	int found = 0;
+	/* check for resized lower level device ... only check for drbd 8 */
+	if (!is_v08(cfg))
+		return;
+	if (cfg->md_index != DRBD_MD_INDEX_FLEX_INT)
+		return;
+
+	/* Do we know anything? Maybe it never was stored. */
+	if (lk_bdev_load(cfg->minor, &cfg->lk_bd))
+		return;
+
+	if (verbose)
+		fprintf(stderr, " last known info: %llu %s\n",
+		(unsigned long long)cfg->lk_bd.bd_size,
+		cfg->lk_bd.bd_name ?: "-unknown device name-");
+
+	/* I just checked that offset, nothing to see there. */
+	if (cfg->lk_bd.bd_size == cfg->bd_size)
+		return;
+
+	flex_offset = v07_style_md_get_byte_offset(
+		DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
+
+	/* actually check that offset, if it is accessible. */
+	/* If someone shrunk that device, I won't be able to read it! */
+	if (flex_offset < cfg->bd_size) {
+		PREAD(cfg->md_fd, on_disk_buffer, 4096, flex_offset);
+		md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
+		found = is_valid_md(Drbd_08, &md_08, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
+	}
+
+	fprintf(stderr, "While checking for internal meta data for drbd%u on %s,\n"
+			"it appears that it may have been relocated.\n"
+			"It used to be ", cfg->minor, cfg->md_device_name);
+	if (cfg->lk_bd.bd_name &&
+		strcmp(cfg->lk_bd.bd_name, cfg->md_device_name)) {
+		fprintf(stderr, "on %s ", cfg->lk_bd.bd_name);
+	}
+	fprintf(stderr, "at byte offset %llu", (unsigned long long)flex_offset);
+
+	if (!found) {
+		fprintf(stderr, ", but I cannot find it now.\n");
+		if (flex_offset >= cfg->bd_size)
+			fprintf(stderr, "Device is too small now!\n");
+	} else {
+		/* it should still be all zeros */
+		ASSERT(cfg->md.magic == 0);
+		cfg->md = md_08;
+		fprintf(stderr, ", and seems to still be valid.\n");
+	}
+	return;
+}
+
 void check_internal_md_flavours(struct format * cfg) {
 	struct md_cpu md_07;
 	struct md_cpu md_07p;
@@ -2336,8 +2436,10 @@ void check_internal_md_flavours(struct format * cfg) {
 	have_flex_v08 = is_valid_md(Drbd_08,
 		&md_08, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
-	if (!(have_fixed_v07 || have_flex_v07 || have_flex_v08))
+	if (!(have_fixed_v07 || have_flex_v07 || have_flex_v08)) {
+		v08_check_for_resize(cfg);
 		return;
+	}
 
 	ASSERT(have_flex_v07 == 0 || have_flex_v08 == 0); /* :-) */
 
@@ -2473,6 +2575,96 @@ void check_external_md_flavours(struct format * cfg) {
 	}
 }
 
+/* ok, so there is no valid meta data at the end of the device,
+ * but there is valid internal meta data at the "last known"
+ * position.  Move the stuff.
+ * Areas may overlap:
+ * |--...~//~[BITMAP][AL][SB]|     <<- last known
+ * |--.......~//~[BITMAP][AL][SB]| <<- what it should look like now
+ * So we move it in chunks.
+ */
+int v08_move_internal_md_after_resize(struct format *cfg)
+{
+	struct md_cpu md_08;
+	off_t old_offset;
+	off_t old_bm_offset;
+	off_t cur_offset;
+	off_t last_chunk_size;
+	int err;
+
+	ASSERT(is_v08(cfg));
+	ASSERT(cfg->md_index == DRBD_MD_INDEX_FLEX_INT);
+	ASSERT(cfg->lk_bd.bd_size <= cfg->bd_size);
+
+	/* we just read it in v08_check_for_resize().
+	 * no need to do it again, but ASSERT this. */
+	old_offset = v07_style_md_get_byte_offset(DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
+	/*
+	PREAD(cfg->md_fd, on_disk_buffer, 4096, old_offset);
+	md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
+	*/
+	ASSERT(is_valid_md(Drbd_08, &cfg->md, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size));
+
+	fprintf(stderr, "Moving the internal meta data to its proper location\n");
+
+	/* FIXME
+	 * If the new meta data area overlaps the old "super block",
+	 * and we crash before we successfully wrote the new super block,
+	 * but after we overwrote the old, we are out of luck!
+	 * But I don't want to write the new superblock early, either.
+	 */
+
+	/* move activity log, fixed size immediately preceeding the "super block". */
+	cur_offset = old_offset + cfg->md.al_offset * 512;
+	PREAD(cfg->md_fd, on_disk_buffer, old_offset - cur_offset, cur_offset);
+	PWRITE(cfg->md_fd, on_disk_buffer, old_offset - cur_offset, cfg->al_offset);
+
+	/* The AL was of fixed size.
+	 * Bitmap is of flexible size, new bitmap is likely larger.
+	 * We do not initialize that part, we just leave "garbage" in there.
+	 * Once DRBD "agrees" on the new lower level device size, that part of
+	 * the bitmap will be handled by the module, anyways. */
+	old_bm_offset = old_offset + cfg->md.bm_offset * 512;
+
+	/* move bitmap, in chunks, peel off from the end. */
+	cur_offset = old_offset + cfg->md.al_offset * 512 - buffer_size;
+	while (cur_offset > old_bm_offset) {
+		PREAD(cfg->md_fd, on_disk_buffer, buffer_size, cur_offset);
+		PWRITE(cfg->md_fd, on_disk_buffer, buffer_size,
+				cfg->bm_offset + (cur_offset - old_bm_offset));
+		cur_offset -= buffer_size;
+	}
+
+	/* Adjust for last, possibly partial buffer. */
+	last_chunk_size = buffer_size - (old_bm_offset - cur_offset);
+	PREAD(cfg->md_fd, on_disk_buffer, last_chunk_size, old_bm_offset);
+	PWRITE(cfg->md_fd, on_disk_buffer, last_chunk_size, cfg->bm_offset);
+
+	/* fix bitmap offset in meta data,
+	 * and rewrite the "super block" */
+	re_initialize_md_offsets(cfg);
+
+	err = cfg->ops->md_cpu_to_disk(cfg);
+
+	if (!err && old_offset < cfg->bm_offset) {
+		/* wipe out previous meta data block, it has been superseeded. */
+		memset(on_disk_buffer, 0, 4096);
+		PWRITE(cfg->md_fd, on_disk_buffer, 4096, old_offset);
+	}
+
+	/* only update last-known info if the new block was successfully written */
+	if (!err) {
+		cfg->update_lk_bdev = 1;
+		printf("Internal drbd meta data successfully moved.\n");
+	}
+
+	err = cfg->ops->close(cfg) || err;
+	if (err)
+		fprintf(stderr, "operation failed\n");
+
+	return err;
+}
+
 int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	int err = 0;
@@ -2510,7 +2702,12 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	else
 		check_external_md_flavours(cfg);
 
+	/* no confirmation for moving internal meta data after offline resize. */
+	if (cfg->lk_bd.bd_size != -1ULL && cfg->md.magic)
+		return v08_move_internal_md_after_resize(cfg);
+
 	printf("Writing meta data...\n");
+	cfg->update_lk_bdev = 1;
 	if (!cfg->md.magic) /* not converted: initialize */
 		err = cfg->ops->md_initialize(cfg); /* Clears on disk AL implicitly */
 	/* FIXME
@@ -2737,6 +2934,41 @@ int is_attached(int minor)
 	return rv;
 }
 
+int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
+{
+	int err;
+
+	err = cfg->ops->open(cfg);
+
+	/* this is first, so that lk-bdev-info files are removed/updated
+	 * if we find valid meta data in the expected place. */
+	if (!err) {
+		printf("Found valid meta data in the expected location, %llu bytes into %s.\n",
+			(unsigned long long)cfg->md_offset, cfg->md_device_name);
+		lk_bdev_load(cfg->minor, &cfg->lk_bd);
+		if (cfg->lk_bd.bd_size != -1ULL && cfg->lk_bd.bd_size != cfg->bd_size)
+			cfg->update_lk_bdev = 1; /* update or create the last known info */
+		return cfg->ops->close(cfg);
+	}
+
+	if (!is_v08(cfg) || cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
+		fprintf(stderr, "Operation only supported for v8 internal meta data\n");
+		return -1;
+	}
+
+	v08_check_for_resize(cfg);
+	if (cfg->lk_bd.bd_size == -1ULL) {
+		fprintf(stderr, "no last-known offset information available.\n");
+		return -1; /* sorry :( */
+	}
+	if (!cfg->md.magic) {
+		fprintf(stderr, "no valid meta data found :(\n");
+		return -1; /* sorry :( */
+	}
+
+	return v08_move_internal_md_after_resize(cfg);
+}
+
 /* CALL ONLY ONCE as long as on_disk_buffer is global! */
 struct format *new_cfg()
 {
@@ -2861,9 +3093,11 @@ int main(int argc, char **argv)
 	 * but may be requested implicitly
 	 */
 	cfg->lock_fd = dt_lock_drbd(cfg->drbd_dev_name);
+	cfg->minor = dt_minor_of_dev(cfg->drbd_dev_name);
+	cfg->lk_bd.bd_size = -1ULL;
 
 	/* unconditionally check whether this is in use */
-	if (is_attached(dt_minor_of_dev(cfg->drbd_dev_name))) {
+	if (is_attached(cfg->minor)) {
 		if (!(force && (command->function == meta_dump_md))) {
 			fprintf(stderr, "Device '%s' is configured!\n",
 				cfg->drbd_dev_name);

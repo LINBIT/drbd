@@ -340,6 +340,7 @@ struct adm_cmd cmds[] = {
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
 	{"set-gi", admm_generic, DRBD_acf4_advanced},
 	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced},
+	{"chk-offline-resize", admm_generic, DRBD_acf4_advanced},
 };
 
 
@@ -1787,7 +1788,7 @@ void convert_after_option(struct d_resource *res)
 			res->sync_options = del_opt(res->sync_options, opt);
 		} else {
 			free(opt->value);
-			asprintf(&opt->value, "%d", depends_on_res->me->device_minor);
+			m_asprintf(&opt->value, "%d", depends_on_res->me->device_minor);
 		}
 		opt = next;
 	}
