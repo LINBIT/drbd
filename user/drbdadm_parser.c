@@ -1553,6 +1553,7 @@ void include_stmt(char *str)
 	int cwd_fd;
 	FILE *f;
 	size_t i;
+	int r;
 
 	/* in order to allow relative paths in include statements we change
 	   directory to the location of the current configuration file. */
@@ -1572,23 +1573,31 @@ void include_stmt(char *str)
 		exit(E_usage);
 	}
 
-	f = fopen(str, "r");
-	if (f) {
-		include_file(f, str);
-		fclose(f);
-	} else if (glob(str, 0, NULL, &glob_buf) == 0) {
+	r = glob(str, 0, NULL, &glob_buf);
+	if (r == 0) {
 		for (i=0; i<glob_buf.gl_pathc; i++) {
 			f = fopen(glob_buf.gl_pathv[i], "r");
-			if (f)
+			if (f) {
 				include_file(f, strdup(glob_buf.gl_pathv[i]));
-			fclose(f);
+				fclose(f);
+			} else {
+				fprintf(stderr,
+					"%s:%d: Failed to open include file '%s'.\n",
+					config_file, line, yylval.txt);
+				config_valid = 0;
+			}
 		}
 		globfree(&glob_buf);
+	} else if (r == GLOB_NOMATCH) {
+		if (!strchr(str, '?') && !strchr(str, '*') && !strchr(str, '[')) {
+			fprintf(stderr,
+				"%s:%d: Failed to open include file '%s'.\n",
+				config_file, line, yylval.txt);
+			config_valid = 0;
+		}
 	} else {
-		fprintf(stderr,
-			"%s:%d: Failed to open include file '%s'.\n",
-			config_file, line, yylval.txt);
-		config_valid = 0;
+		fprintf(stderr, "glob() failed: %d\n", r);
+		exit(E_usage);
 	}
 
 	if (fchdir(cwd_fd) < 0) {
