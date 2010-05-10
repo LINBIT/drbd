@@ -1614,17 +1614,20 @@ static int uuids_scmd(struct drbd_cmd *cm,
 	       unsigned minor __attribute((unused)),
 	       unsigned short *rtl)
 {
-	uint64_t *uuids;
+	uint64_t uuids[UI_SIZE];
+	char *tl_uuids;
 	int flags = flags;
 	unsigned int len;
 
-	if(!consume_tag_blob(T_uuids,rtl,(char **) &uuids,&len)) {
+	if (!consume_tag_blob(T_uuids, rtl, &tl_uuids, &len)) {
 		fprintf(stderr,"Reply payload did not carry an uuid-tag,\n"
 			"Probably the device has no disk!\n");
 		return 1;
 	}
+
 	consume_tag_int(T_uuids_flags,rtl,&flags);
 	if( len == UI_SIZE * sizeof(uint64_t)) {
+		memcpy(uuids, tl_uuids, len);
 		if(!strcmp(cm->cmd,"show-gi")) {
 			dt_pretty_print_uuids(uuids,flags);
 		} else if(!strcmp(cm->cmd,"get-gi")) {

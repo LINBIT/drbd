@@ -382,7 +382,6 @@ static int test_if_resource_is_down(struct d_resource *res)
 	int fd;
 	pid_t pid;
 	int old_verbose = verbose;
-	FILE *f;
 
 	if (dry_run) {
 		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
@@ -1380,7 +1379,6 @@ int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
-	int ex;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1587,7 +1585,7 @@ static int adm_outdate(struct d_resource *res, const char *cmd)
 static int adm_generic_b(struct d_resource *res, const char *cmd)
 {
 	char buffer[4096];
-	int fd, status, rv, rr, s = 0;
+	int fd, status, rv = 0, rr, s = 0;
 	pid_t pid;
 
 	_adm_generic(res, cmd, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
@@ -2494,7 +2492,7 @@ int sanity_check_abs_cmd(char *cmd_name)
 		return 0;
 	}
 
-	if (!sb.st_mode & S_ISUID || sb.st_mode & S_IXOTH || sb.st_gid == 0) {
+	if (!(sb.st_mode & S_ISUID) || sb.st_mode & S_IXOTH || sb.st_gid == 0) {
 		static int did_header = 0;
 		if (!did_header)
 			fprintf(stderr,

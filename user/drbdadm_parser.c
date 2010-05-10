@@ -32,6 +32,7 @@
 #include <glob.h>
 #include <search.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "drbdadm.h"
 #include "linux/drbd_limits.h"
