@@ -74,6 +74,8 @@ extern const char* shell_escape(const char* s);
    warn_unused_result attribute.... */
 extern int m_asprintf(char **strp, const char *fmt, ...);
 
+extern void fprintf_hex(FILE *fp, off_t file_offset, const void *buf, unsigned len);
+
 /* If the lower level device is resized,
  * and DRBD did not move its "internal" meta data in time,
  * the next time we try to attach, we won't find our meta data.
@@ -89,6 +91,7 @@ extern int m_asprintf(char **strp, const char *fmt, ...);
  * and its /dev/<name> */
 struct bdev_info {
 	uint64_t bd_size;
+	uint64_t bd_uuid;
 	char *bd_name;
 };
 

@@ -566,8 +566,10 @@ int lk_bdev_save(const unsigned minor, const struct bdev_info *bd)
 
 	ok = fprintf(fp, "%llu\t%s\n",
 		(unsigned long long) bd->bd_size, bd->bd_name);
-	if (ok < 0)
+	if (ok <= 0)
 		goto fail;
+	if (bd->bd_uuid)
+		fprintf(fp, "uuid:\t"X64(016)"\n", bd->bd_uuid);
 	ok =       0 == fflush(fp);
 	ok = ok && 0 == fsync(fileno(fp));
 	ok = ok && 0 == fclose(fp);
@@ -598,9 +600,10 @@ int lk_bdev_load(const unsigned minor, struct bdev_info *bd)
 	FILE *fp;
 	char *path;
 	char *bd_name;
-	uint64_t bd_size;
+	unsigned long long bd_size;
+	unsigned long long bd_uuid;
+	char nl[2];
 	int rc = -1;
-	char nl;
 
 	if (!bd)
 		return -1;
@@ -615,15 +618,20 @@ int lk_bdev_load(const unsigned minor, struct bdev_info *bd)
 
 	/* GNU format extension: %as:
 	 * malloc buffer space for the resulting char */
-	rc = fscanf(fp, "%llu %as%[\n]", &bd_size, &bd_name, &nl);
-	/* rc == 3: successfully converted a whole line.
-	 *    == 2: somehow we did not find the newline.
-	 *	    maybe early whitespace? incomplete file?
+	rc = fscanf(fp, "%llu %as%[\n]uuid: %llx%[\n]",
+			&bd_size, &bd_name, nl,
+			&bd_uuid, nl);
+	/* rc == 5: successfully converted two lines.
+	 *    == 4: newline not found, possibly truncated uuid
+	 *    == 3: first line complete, uuid missing.
+	 *    == 2: new line not found, possibly truncated pathname,
+	 *          or early whitespace
 	 *    == 1: found some number, but no more.
 	 *          incomplete file? try anyways.
 	 */
+	bd->bd_uuid = (rc >= 4) ? bd_uuid : 0;
 	bd->bd_name = (rc >= 2) ? bd_name : NULL;
-	bd->bd_size = (rc >= 1) ? bd_size : -1ULL;
+	bd->bd_size = (rc >= 1) ? bd_size : 0;
 	if (rc < 1) {
 		fprintf(stderr, "lk_bdev_load(%s): parse error\n", path);
 		rc = -1;
@@ -701,3 +709,62 @@ int m_asprintf(char **strp, const char *fmt, ...)
 	return r;
 }
 
+/* print len bytes from buf in the format of well known "hd",
+ * adjust displayed offset by file_offset */
+void fprintf_hex(FILE *fp, off_t file_offset, const void *buf, unsigned len)
+{
+	const unsigned char *c = buf;
+	unsigned o;
+	int skipped = 0;
+
+	for (o = 0; o + 16 < len; o += 16, c += 16) {
+		if (o && !memcmp(c - 16, c, 16)) {
+			skipped = 1;
+			continue;
+		}
+		if (skipped) {
+			skipped = 0;
+			fprintf(fp, "*\n");
+		}
+		/* no error check here, don't know what to do about errors */
+		fprintf(fp,
+			/* offset */
+			"%08llx"
+			/* two times 8 byte as byte stream, on disk order */
+			"  %02x %02x %02x %02x %02x %02x %02x %02x"
+			"  %02x %02x %02x %02x %02x %02x %02x %02x"
+			/* the same as printable char or '.' */
+			"  |%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c|\n",
+			(unsigned long long)o + file_offset,
+			c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
+			c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15],
+
+#define p_(x)	(isprint(x) ? x : '.')
+#define p(a,b,c,d,e,f,g,h) \
+		p_(a), p_(b), p_(c), p_(d), p_(e), p_(f), p_(g), p_(h)
+			p(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]),
+			p(c[8], c[9], c[10], c[11], c[12], c[13], c[14], c[15])
+		       );
+	}
+	if (skipped) {
+		skipped = 0;
+		fprintf(fp, "*\n");
+	}
+	if (o < len) {
+		unsigned remaining = len - o;
+		unsigned i;
+		fprintf(fp, "%08llx ", (unsigned long long)o + file_offset);
+		for (i = 0; i < remaining; i++) {
+			if (i == 8)
+				fprintf(fp, " ");
+			fprintf(fp, " %02x", c[i]);
+		}
+		fprintf(fp, "%*s  |", (16 - i)*3 + (i < 8), "");
+		for (i = 0; i < remaining; i++)
+			fprintf(fp, "%c", p_(c[i]));
+#undef p
+#undef p_
+		fprintf(fp, "|\n");
+	}
+	fprintf(fp, "%08llx\n", (unsigned long long)len + file_offset);
+}
