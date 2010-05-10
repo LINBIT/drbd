@@ -153,6 +153,7 @@ static int adm_khelper(struct d_resource *, const char *);
 static int adm_generic_b(struct d_resource *, const char *);
 static int hidden_cmds(struct d_resource *, const char *);
 static int adm_outdate(struct d_resource *, const char *);
+static int adm_chk_resize(struct d_resource *res, const char *cmd);
 
 static char *get_opt_val(struct d_option *, const char *, char *);
 static void register_config_file(struct d_resource *res, const char *cfname);
@@ -340,7 +341,7 @@ struct adm_cmd cmds[] = {
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
 	{"set-gi", admm_generic, DRBD_acf4_advanced},
 	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced},
-	{"chk-offline-resize", admm_generic, DRBD_acf4_advanced},
+	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
 };
 
 
@@ -1411,11 +1412,13 @@ struct d_option *find_opt(struct d_option *base, char *name)
 	return 0;
 }
 
-int adm_resize(struct d_resource *res, const char *unused __attribute((unused)))
+int adm_resize(struct d_resource *res, const char *cmd)
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int i, argc = 0;
+	int silent;
+	int ex;
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
@@ -1423,12 +1426,32 @@ int adm_resize(struct d_resource *res, const char *unused __attribute((unused)))
 	opt = find_opt(res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
-	for (i = 0; i < soi; i++) {
+	for (i = 0; i < soi; i++)
 		argv[NA(argc)] = setup_opts[i];
-	}
 	argv[NA(argc)] = 0;
 
-	return m_system_ex(argv, SLEEPS_SHORT, res);
+	/* if this is not "resize", but "check-resize", be silent! */
+	silent = strcmp(cmd, "resize") ? SUPRESS_STDERR : 0;
+	ex = m_system_ex(argv, SLEEPS_SHORT | silent, res);
+
+	if (ex)
+		return ex;
+
+	/* Record last-known bdev info.
+	 * Unfortunately drbdsetup did not have enough information
+	 * when doing the "resize", and in theory, _our_ information
+	 * about the backing device may even be wrong.
+	 * Call drbdsetup again, tell it to ask the kernel for
+	 * current config, and update the last known bdev info
+	 * according to that. */
+	/* argv[0] = drbdsetup;
+	 * argv[1] = minor; */
+	argv[2] = "check-resize";
+	argv[3] = NULL;
+	/* ignore exit code */
+	m_system_ex(argv, SLEEPS_SHORT | silent, res);
+
+	return 0;
 }
 
 int _admm_generic(struct d_resource *res, const char *cmd, int flags)
@@ -1580,6 +1603,19 @@ static int adm_outdate(struct d_resource *res, const char *cmd)
 		rv = admm_generic(res, cmd);
 	}
 	return rv;
+}
+
+/* shell equivalent:
+ * ( drbdsetup resize && drbdsetup check-resize ) || drbdmeta check-resize */
+static int adm_chk_resize(struct d_resource *res, const char *cmd)
+{
+	/* drbdsetup resize && drbdsetup check-resize */
+	int ex = adm_resize(res, cmd);
+	if (ex == 0)
+		return 0;
+
+	/* try drbdmeta check-resize */
+	return admm_generic(res, cmd);
 }
 
 static int adm_generic_b(struct d_resource *res, const char *cmd)

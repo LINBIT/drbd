@@ -684,7 +684,7 @@ struct meta_cmd cmds[] = {
 	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
-	{"chk-offline-resize", 0, meta_chk_offline_resize, 1},
+	{"check-resize", 0, meta_chk_offline_resize, 1},
 };
 
 /*

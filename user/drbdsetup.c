@@ -182,6 +182,7 @@ static int sh_status_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *r
 static int cstate_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
 static int dstate_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
 static int uuids_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
+static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
@@ -388,6 +389,7 @@ struct drbd_cmd commands[] = {
 	{"show-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} }},
 	{"get-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} } },
 	{"show", P_get_config, F_GET_CMD, {.gp={ show_scmd} } },
+	{"check-resize", P_get_config, F_GET_CMD, {.gp={ lk_bdev_scmd} } },
 	{"events",          0, F_EVENTS_CMD, { .ep = {
 		(struct option[]) {
 			{ "unfiltered", no_argument, 0, 'u' },
@@ -521,7 +523,7 @@ static int dump_tag_list(unsigned short *tlc)
 			break;
 		case TT_STRING:
 			string = (char*)tlc;
-			printf("(string)'%s'",string);
+			printf("(string)'%s'", len ? string : "");
 			break;
 		}
 		printf(" \t[len: %u]\n",len);
@@ -1210,6 +1212,17 @@ static void print_options(struct drbd_option *od, unsigned short *tlc, const cha
 }
 
 
+static void consume_everything(unsigned short *tlc)
+{
+	enum drbd_tags t;
+	int len;
+	while( (t = get_unaligned(tlc)) != TT_END ) {
+		put_unaligned(TT_REMOVED, tlc++);
+		len = get_unaligned(tlc++);
+		tlc = (unsigned short*)((char*)tlc + len);
+	}
+}
+
 static int consume_tag_blob(enum drbd_tags tag, unsigned short *tlc,
 		     char** val, unsigned int* len)
 {
@@ -1442,6 +1455,52 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor, unsigned short *rtl)
 	}
 	consume_tag_bit(T_mind_af, rtl, &idx); /* consume it, its value has no relevance */
 	consume_tag_bit(T_auto_sndbuf_size, rtl, &idx); /* consume it, its value has no relevance */
+
+	return 0;
+}
+
+static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor,
+			unsigned short *rtl)
+{
+	struct bdev_info bd = { 0, };
+	char *backing_dev = NULL;
+	uint64_t bd_size;
+	int fd;
+	int idx = idx;
+	int index_valid = 0;
+
+	consume_tag_string(T_backing_dev, rtl, &backing_dev);
+	index_valid = consume_tag_int(T_meta_dev_idx, rtl, &idx);
+
+	/* consume everything */
+	consume_everything(rtl);
+
+	if (!backing_dev) {
+		fprintf(stderr, "Has no disk config, try with drbdmeta.\n");
+		return 1;
+	}
+
+	if (idx >= 0 || idx == DRBD_MD_INDEX_FLEX_EXT) {
+		lk_bdev_delete(minor);
+		return 0;
+	}
+
+	fd = open(backing_dev, O_RDONLY);
+	if (fd == -1) {
+		fprintf(stderr, "Could not open %s: %m.\n", backing_dev);
+		return 1;
+	}
+	bd_size = bdev_size(fd);
+	close(fd);
+
+	if (lk_bdev_load(minor, &bd) == 0 &&
+	    bd.bd_size == bd_size &&
+	    bd.bd_name && !strcmp(bd.bd_name, backing_dev))
+		return 0;	/* nothing changed. */
+
+	bd.bd_size = bd_size;
+	bd.bd_name = backing_dev;
+	lk_bdev_save(minor, &bd);
 
 	return 0;
 }
