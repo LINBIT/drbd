@@ -1028,21 +1028,6 @@ static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
 		return 1;
 	}
 
-	/*
-	 * Paranoia: we might have been primary, but sync target, or
-	 * even diskless, then lost the connection.
-	 * This should have been handled (panic? suspend?) somewhere
-	 * else. But maybe it was not, so check again here.
-	 * Caution: as long as we do not have a read/write lock on mdev,
-	 * to serialize state changes, this is racy, since we may lose
-	 * the connection *after* we test for the cstate.
-	 */
-	if (mdev->state.disk < D_UP_TO_DATE && mdev->state.pdsk < D_UP_TO_DATE) {
-		if (DRBD_ratelimit(5*HZ, 5))
-			dev_err(DEV, "Sorry, I have no access to good data anymore.\n");
-		return 1;
-	}
-
 	return 0;
 }
 
