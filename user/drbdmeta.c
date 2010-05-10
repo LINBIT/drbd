@@ -1342,7 +1342,7 @@ int v07_md_disk_to_cpu(struct format *cfg)
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_07), cfg->md_offset);
 	md_disk_07_to_cpu(&md, (struct md_on_disk_07*)on_disk_buffer);
-	ok = is_valid_md(Drbd_07,&cfg->md, cfg->md_index, cfg->bd_size);
+	ok = is_valid_md(Drbd_07, &md, cfg->md_index, cfg->bd_size);
 	if (ok)
 		cfg->md = md;
 	return ok ? 0 : -1;
