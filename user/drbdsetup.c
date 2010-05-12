@@ -1480,6 +1480,12 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor,
 		return 1;
 	}
 
+	if (!index_valid) {
+		/* cannot happen, right? ;-) */
+		fprintf(stderr, "No meta data index!?\n");
+		return 1;
+	}
+
 	if (idx >= 0 || idx == DRBD_MD_INDEX_FLEX_EXT) {
 		lk_bdev_delete(minor);
 		return 0;
