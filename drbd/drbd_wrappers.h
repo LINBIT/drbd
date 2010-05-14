@@ -87,19 +87,6 @@ static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 
-static inline int drbd_bio_has_active_page(struct bio *bio)
-{
-	struct bio_vec *bvec;
-	int i;
-
-	__bio_for_each_segment(bvec, bio, i, 0) {
-		if (page_count(bvec->bv_page) > 1)
-			return 1;
-	}
-
-	return 0;
-}
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
 /* Before Linux-2.6.24 bie_endio() had the size of the bio as second argument.
    See 6712ecf8f648118c3363c142196418f89a510b90 */
@@ -117,8 +104,7 @@ static inline int drbd_bio_has_active_page(struct bio *bio)
 
 /* bi_end_io handlers */
 extern BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
 extern BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)

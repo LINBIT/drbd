@@ -55,8 +55,7 @@ STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
 /* defined here:
    drbd_md_io_complete
-   drbd_endio_write_sec
-   drbd_endio_read_sec
+   drbd_endio_sec
    drbd_endio_pri
 
  * more endio handlers:
@@ -98,100 +97,60 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-BIO_ENDIO_TYPE drbd_endio_read_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
+void drbd_endio_read_sec_final(struct drbd_epoch_entry *e) __releases(local)
 {
 	unsigned long flags = 0;
-	struct drbd_epoch_entry *e = NULL;
-	struct drbd_conf *mdev;
-	int uptodate = bio_flagged(bio, BIO_UPTODATE);
-
-	e = bio->bi_private;
-	mdev = e->mdev;
-
-	BIO_ENDIO_FN_START;
-	if (error)
-		dev_warn(DEV, "read: error=%d s=%llus\n", error,
-				(unsigned long long)e->sector);
-	if (!error && !uptodate) {
-		dev_warn(DEV, "read: setting error to -EIO s=%llus\n",
-				(unsigned long long)e->sector);
-		/* strange behavior of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?! */
-		error = -EIO;
-	}
+	struct drbd_conf *mdev = e->mdev;
 
 	D_ASSERT(e->block_id != ID_VACANT);
-
-	trace_drbd_bio(mdev, "Sec", bio, 1, NULL);
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->read_cnt += e->size >> 9;
 	list_del(&e->w.list);
 	if (list_empty(&mdev->read_ee))
 		wake_up(&mdev->ee_wait);
+	if (test_bit(__EE_WAS_ERROR, &e->flags))
+		__drbd_chk_io_error(mdev, FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	drbd_chk_io_error(mdev, error, FALSE);
+	trace_drbd_ee(mdev, e, "read completed");
 	drbd_queue_work(&mdev->data.work, &e->w);
 	put_ldev(mdev);
+}
 
-	trace_drbd_ee(mdev, e, "read completed");
-	BIO_ENDIO_FN_RETURN;
+static int is_failed_barrier(int ee_flags)
+{
+	return (ee_flags & (EE_IS_BARRIER|EE_WAS_ERROR|EE_RESUBMITTED))
+			== (EE_IS_BARRIER|EE_WAS_ERROR);
 }
 
 /* writes on behalf of the partner, or resync writes,
- * "submitted" by the receiver.
- */
-BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) __releases(local)
+ * "submitted" by the receiver, final stage.  */
+static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(local)
 {
 	unsigned long flags = 0;
-	struct drbd_epoch_entry *e = NULL;
-	struct drbd_conf *mdev;
+	struct drbd_conf *mdev = e->mdev;
 	sector_t e_sector;
 	int do_wake;
 	int is_syncer_req;
 	int do_al_complete_io;
-	int uptodate = bio_flagged(bio, BIO_UPTODATE);
-	int is_barrier = bio_rw_flagged(bio, BIO_RW_BARRIER);
 
-	e = bio->bi_private;
-	mdev = e->mdev;
-
-	BIO_ENDIO_FN_START;
-	if (error)
-		dev_warn(DEV, "write: error=%d s=%llus\n", error,
-				(unsigned long long)e->sector);
-	if (!error && !uptodate) {
-		dev_warn(DEV, "write: setting error to -EIO s=%llus\n",
-				(unsigned long long)e->sector);
-		/* strange behavior of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?! */
-		error = -EIO;
-	}
-
-	/* error == -ENOTSUPP would be a better test,
-	 * alas it is not reliable */
-	if (error && is_barrier && e->flags & EE_IS_BARRIER) {
+	/* if this is a failed barrier request, disable use of barriers,
+	 * and schedule for resubmission */
+	if (is_failed_barrier(e->flags)) {
 		drbd_bump_write_ordering(mdev, WO_bdev_flush);
 		spin_lock_irqsave(&mdev->req_lock, flags);
 		list_del(&e->w.list);
+		e->flags |= EE_RESUBMITTED;
 		e->w.cb = w_e_reissue;
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&mdev->req_lock, flags);
 		drbd_queue_work(&mdev->data.work, &e->w);
-		BIO_ENDIO_FN_RETURN;
+		return;
 	}
 
 	D_ASSERT(e->block_id != ID_VACANT);
-
-	trace_drbd_bio(mdev, "Sec", bio, 1, NULL);
-
-	spin_lock_irqsave(&mdev->req_lock, flags);
-	mdev->writ_cnt += e->size >> 9;
-	is_syncer_req = is_syncer_block_id(e->block_id);
 
 	/* after we moved e to done_ee,
 	 * we may no longer access it,
@@ -199,7 +158,10 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 	 * (as soon as we release the req_lock) */
 	e_sector = e->sector;
 	do_al_complete_io = e->flags & EE_CALL_AL_COMPLETE_IO;
+	is_syncer_req = is_syncer_block_id(e->block_id);
 
+	spin_lock_irqsave(&mdev->req_lock, flags);
+	mdev->writ_cnt += e->size >> 9;
 	list_del(&e->w.list); /* has been on active_ee or sync_ee */
 	list_add_tail(&e->w.list, &mdev->done_ee);
 
@@ -214,7 +176,7 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 		? list_empty(&mdev->sync_ee)
 		: list_empty(&mdev->active_ee);
 
-	if (error)
+	if (test_bit(__EE_WAS_ERROR, &e->flags))
 		__drbd_chk_io_error(mdev, FALSE);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
@@ -229,7 +191,44 @@ BIO_ENDIO_TYPE drbd_endio_write_sec BIO_ENDIO_ARGS(struct bio *bio, int error) _
 
 	wake_asender(mdev);
 	put_ldev(mdev);
+}
 
+/* writes on behalf of the partner, or resync writes,
+ * "submitted" by the receiver.
+ */
+BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error)
+{
+	struct drbd_epoch_entry *e = bio->bi_private;
+	struct drbd_conf *mdev = e->mdev;
+	int uptodate = bio_flagged(bio, BIO_UPTODATE);
+	int is_write = bio_data_dir(bio) == WRITE;
+
+	BIO_ENDIO_FN_START;
+	if (error)
+		dev_warn(DEV, "%s: error=%d s=%llus\n",
+				is_write ? "write" : "read", error,
+				(unsigned long long)e->sector);
+	if (!error && !uptodate) {
+		dev_warn(DEV, "%s: setting error to -EIO s=%llus\n",
+				is_write ? "write" : "read",
+				(unsigned long long)e->sector);
+		/* strange behavior of some lower level drivers...
+		 * fail the request by clearing the uptodate flag,
+		 * but do not return any error?! */
+		error = -EIO;
+	}
+
+	if (error)
+		set_bit(__EE_WAS_ERROR, &e->flags);
+
+	trace_drbd_bio(mdev, "Sec", bio, 1, NULL);
+	bio_put(bio); /* no need for the bio anymore */
+	if (atomic_dec_and_test(&e->pending_bios)) {
+		if (is_write)
+			drbd_endio_write_sec_final(e);
+		else
+			drbd_endio_read_sec_final(e);
+	}
 	BIO_ENDIO_FN_RETURN;
 }
 
@@ -324,7 +323,34 @@ int w_resync_inactive(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return 1; /* Simply ignore this! */
 }
 
-void drbd_csum(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
+void drbd_csum_ee(struct drbd_conf *mdev, struct crypto_hash *tfm, struct drbd_epoch_entry *e, void *digest)
+{
+	struct hash_desc desc;
+	struct scatterlist sg;
+	struct page *page = e->pages;
+	struct page *tmp;
+	unsigned len;
+
+	desc.tfm = tfm;
+	desc.flags = 0;
+
+	sg_init_table(&sg, 1);
+	crypto_hash_init(&desc);
+
+	while ((tmp = page_chain_next(page))) {
+		/* all but the last page will be fully used */
+		sg_set_page(&sg, page, PAGE_SIZE, 0);
+		crypto_hash_update(&desc, &sg, sg.length);
+		page = tmp;
+	}
+	/* and now the last, possibly only partially used page */
+	len = e->size & (PAGE_SIZE - 1);
+	sg_set_page(&sg, page, len ?: PAGE_SIZE, 0);
+	crypto_hash_update(&desc, &sg, sg.length);
+	crypto_hash_final(&desc, digest);
+}
+
+void drbd_csum_bio(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *bio, void *digest)
 {
 	struct hash_desc desc;
 	struct scatterlist sg;
@@ -358,11 +384,11 @@ STATIC int w_e_send_csum(struct drbd_conf *mdev, struct drbd_work *w, int cancel
 		return 1;
 	}
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		digest_size = crypto_hash_digestsize(mdev->csums_tfm);
 		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
-			drbd_csum(mdev, mdev->csums_tfm, e->private_bio, digest);
+			drbd_csum_ee(mdev, mdev->csums_tfm, e, digest);
 
 			inc_rs_pending(mdev);
 			ok = drbd_send_drequest_csum(mdev,
@@ -398,23 +424,21 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	/* GFP_TRY, because if there is no memory available right now, this may
 	 * be rescheduled for later. It is "only" background resync, after all. */
 	e = drbd_alloc_ee(mdev, DRBD_MAGIC+0xbeef, sector, size, GFP_TRY);
-	if (!e) {
-		put_ldev(mdev);
-		return 2;
-	}
+	if (!e)
+		goto fail;
 
 	spin_lock_irq(&mdev->req_lock);
 	list_add(&e->w.list, &mdev->read_ee);
 	spin_unlock_irq(&mdev->req_lock);
 
-	e->private_bio->bi_end_io = drbd_endio_read_sec;
-	e->private_bio->bi_rw = READ;
 	e->w.cb = w_e_send_csum;
+	if (drbd_submit_ee(mdev, e, READ, DRBD_FAULT_RS_RD) == 0)
+		return 1;
 
-	mdev->read_cnt += size >> 9;
-	drbd_generic_make_request(mdev, DRBD_FAULT_RS_RD, e->private_bio);
-
-	return 1;
+	drbd_free_ee(mdev, e);
+fail:
+	put_ldev(mdev);
+	return 2;
 }
 
 void resync_timer_fn(unsigned long data)
@@ -851,7 +875,7 @@ out:
 /* helper */
 static void move_to_net_ee_or_free(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 {
-	if (drbd_bio_has_active_page(e->private_bio)) {
+	if (drbd_ee_has_active_page(e)) {
 		/* This might happen if sendpage() has not finished */
 		spin_lock_irq(&mdev->req_lock);
 		list_add_tail(&e->w.list, &mdev->net_ee);
@@ -877,7 +901,7 @@ int w_e_end_data_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		ok = drbd_send_block(mdev, P_DATA_REPLY, e);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -918,7 +942,7 @@ int w_e_end_rsdata_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		put_ldev(mdev);
 	}
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(mdev->state.pdsk >= D_INCONSISTENT)) {
 			inc_rs_pending(mdev);
 			ok = drbd_send_block(mdev, P_RS_DATA_REPLY, e);
@@ -966,7 +990,7 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	di = (struct digest_info *)(unsigned long)e->block_id;
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		/* quick hack to try to avoid a race against reconfiguration.
 		 * a real fix would be much more involved,
 		 * introducing more locking mechanisms */
@@ -976,7 +1000,7 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			digest = kmalloc(digest_size, GFP_NOIO);
 		}
 		if (digest) {
-			drbd_csum(mdev, mdev->csums_tfm, e->private_bio, digest);
+			drbd_csum_ee(mdev, mdev->csums_tfm, e, digest);
 			eq = !memcmp(digest, di->digest, digest_size);
 			kfree(digest);
 		}
@@ -1018,14 +1042,14 @@ int w_e_end_ov_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	if (unlikely(!drbd_bio_uptodate(e->private_bio)))
+	if (unlikely((e->flags & EE_WAS_ERROR) != 0))
 		goto out;
 
 	digest_size = crypto_hash_digestsize(mdev->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = kmalloc(digest_size, GFP_NOIO);
 	if (digest) {
-		drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
+		drbd_csum_ee(mdev, mdev->verify_tfm, e, digest);
 		inc_rs_pending(mdev);
 		ok = drbd_send_drequest_csum(mdev, e->sector, e->size,
 					     digest, digest_size, P_OV_REPLY);
@@ -1074,11 +1098,11 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	di = (struct digest_info *)(unsigned long)e->block_id;
 
-	if (likely(drbd_bio_uptodate(e->private_bio))) {
+	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		digest_size = crypto_hash_digestsize(mdev->verify_tfm);
 		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
-			drbd_csum(mdev, mdev->verify_tfm, e->private_bio, digest);
+			drbd_csum_ee(mdev, mdev->verify_tfm, e, digest);
 
 			D_ASSERT(digest_size == di->digest_size);
 			eq = !memcmp(digest, di->digest, digest_size);
