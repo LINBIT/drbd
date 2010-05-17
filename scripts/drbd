@@ -3,7 +3,8 @@
 # chkconfig: - 70 08
 # description: Loads and unloads the drbd module
 #
-# Copright 2001-2008 LINBIT Information Technologies
+# Copyright 2001-2010 LINBIT
+#
 # Philipp Reisner, Lars Ellenberg
 #
 ### BEGIN INIT INFO
@@ -12,8 +13,10 @@
 # Required-Stop:  $local_fs $network $syslog
 # Should-Start:   sshd multipathd
 # Should-Stop:    sshd multipathd
-# Default-Start:
-# Default-Stop:
+# Default-Start:  2 3 4 5
+# Default-Stop:   0 1 6
+# X-Start-Before: heartbeat corosync
+# X-Stop-After:   heartbeat corosync
 # Short-Description:    Control drbd resources.
 ### END INIT INFO
 
