@@ -1470,7 +1470,10 @@ STATIC int w_new_current_uuid(struct drbd_conf *mdev, struct drbd_work *w, int c
 {
 	if (get_ldev(mdev)) {
 		drbd_uuid_new_current(mdev);
-		drbd_send_uuids(mdev);
+		if (get_net_conf(mdev)) {
+			drbd_send_uuids(mdev);
+			put_net_conf(mdev);
+		}
 		drbd_md_sync(mdev);
 		put_ldev(mdev);
 	}
