@@ -83,6 +83,7 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   fi
   # stupid vendor kernels grrr...
   have_atomic_add=0
+  have_atomic_add_unless=0
   # btw, don't ask why I don't use grep -qs $a $b $c 
   # it simply does not work always...
   for f in $O/include/asm/atomic.h \
@@ -91,11 +92,14 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
     $O/include/asm/atomic_32.h \
     $O/include2/asm/atomic_32.h \
     $O/include/asm/arch/atomic_32.h \
-    $KDIR/include/asm-generic/atomic.h
+    $KDIR/include/asm-generic/atomic.h \
+    $KDIR/arch/x86/include/asm/atomic_32.h # Assume ARCHs are in sync, feature wise.
   do
     if grep_q "atomic_add_return" $f; then
       have_atomic_add=1
-      break
+    fi
+    if grep_q "atomic_add_unless" $f; then
+      have_atomic_add_unless=1
     fi
   done
   if grep_q "typedef.*kmem_cache_s" $KDIR/include/linux/slab.h ; then
@@ -219,6 +223,8 @@ perl -pe "
   { ( $need_blk_queue_max_hw_sectors ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BLK_QUEUE_MAX_SEGMENTS.*)}
   { ( $need_blk_queue_max_segments ? '' : '//' ) . \$1}e;
+ s{.*(#define NEED_ATOMIC_ADD_UNLESS.*)}
+  { ( $have_atomic_add_unless ? '//' : '' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

@@ -120,5 +120,7 @@ extern const char *drbd_buildtag(void);
 #define NEED_BLK_QUEUE_MAX_HW_SECTORS
 #define NEED_BLK_QUEUE_MAX_SEGMENTS
 
+/* some old kernels do not have atomic_add_unless() */
+//#define NEED_ATOMIC_ADD_UNLESS
 
 #endif
