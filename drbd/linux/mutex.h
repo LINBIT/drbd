@@ -34,4 +34,8 @@ static inline int mutex_is_locked(struct mutex *lock)
         return atomic_read(&lock->sem.count) != 1;
 }
 
+static inline int mutex_trylock(struct mutex *lock)
+{
+	return !down_trylock(&lock->sem);
+}
 #endif
