@@ -123,4 +123,7 @@ extern const char *drbd_buildtag(void);
 /* some old kernels do not have atomic_add_unless() */
 //#define NEED_ATOMIC_ADD_UNLESS
 
+/* some old kernels do not have the bool type */
+//#define NEED_BOOL_TYPE
+
 #endif

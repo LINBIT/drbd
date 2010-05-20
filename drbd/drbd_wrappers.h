@@ -726,4 +726,8 @@ static inline int atomic_add_unless(atomic_t *v, int a, int u)
 }
 #endif
 
+#ifdef NEED_BOOL_TYPE
+typedef _Bool                   bool;
+#endif
+
 #endif

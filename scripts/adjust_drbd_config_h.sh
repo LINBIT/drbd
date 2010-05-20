@@ -178,6 +178,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     need_blk_queue_max_segments=1
   fi
+  if grep_q "typedef.*bool" $KDIR/include/linux/types.h ; then
+    have_bool_type=1
+  else
+    have_bool_type=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -225,6 +230,8 @@ perl -pe "
   { ( $need_blk_queue_max_segments ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_ATOMIC_ADD_UNLESS.*)}
   { ( $have_atomic_add_unless ? '//' : '' ) . \$1}e;
+ s{.*(#define NEED_BOOL_TYPE.*)}
+  { ( $have_bool_type ? '//' : '' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
