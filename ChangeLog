@@ -2,6 +2,46 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.8rc1 (api:88/proto:86-94)
+--------
+ * Do not expose failed local READs to upper layers, regression introduced
+   in 8.3.3
+ * Fixed support for devices with 4k hard sector size (again)
+ * Fixed a potential Oops in the disconnect code
+ * Fixed a race condition that could cause DRBD to consider the peers disk
+   as Inconstent after resync instead of UpToDate (Bugz 271)
+ * Fixed a reace condition that could cause DRBD to consider the peers disk
+   as Outdated instead of Inconsistent during resync (Bugz 277)
+ * Disallow to start a resync with invalidate / invalidate-remote when the
+   source disk is not UpToDate
+ * Forcing primary works now also for Consistent, not only for Outdated and
+   Inconsistent (Bugz 266)
+ * Improved robustness against corrupt or malicous sector addresses when
+   receiving data
+ * Added the initial-split-brain, it gets called also if the split-brain gets
+   automatically resolved
+ * Added the --assume-clean option for the resize command, it causes drbd to
+   not resync the new storage after an online grow operation
+ * drbdadm: Do not segfault if stacked-on-top-of refers to an undefined res
+ * drbdadm: Do not consider configs with invalid after statements as invalid
+ * drbdadm: Do not segfault if the peer's proxy section is missing
+ * drbdadm: Allow nullglob in include statement
+ * drbdadm: Fixed the use of waitpid
+ * init script: fix insserv headers (Debian 576901)
+ * Gave the receiving code the ability to use multiple BIOs for writing a
+   single data packet; now DRBD works with BIOs up to 32kByte also on LVM
+   devices; from now on the use_bmbv config option does nothing
+ * New command check-resize, that allows DRBD to detect offline resizing
+   and to move internal meta-data accordingly
+ * Added a control loop, that allows DRBD to find auto tune the resync
+   speed, on connections with large queues (drbd-proxy)
+ * Create new current UUIDs late, after loosing connection to the peer
+ * --dry-run option for connect; disconnects after sync handshake
+ * --overwrite-data-of-peer got an alias named --force
+ * Improvements to crm-fence-peer
+ * Fixed option parsing and stacking in snapshot-resync-target-lvm.sh
+ * Compiles on 2.6.33 and 2.6.34
+
 8.3.7 (api:88/proto:86-91)
 --------
  * Lots of fixes to the new RPM packaging

@@ -281,6 +281,9 @@ fi
 
 
 %changelog
+* Fri May 21 2010 Philipp Reisner <phil@linbit.com> - 8.3.8rc1-1
+- New upstream release.
+
 * Thu Jan 13 2010 Philipp Reisner <phil@linbit.com> - 8.3.7-1
 - New upstream release.
 
