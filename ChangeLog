@@ -35,7 +35,6 @@ Latest:
    and to move internal meta-data accordingly
  * Added a control loop, that allows DRBD to find auto tune the resync
    speed, on connections with large queues (drbd-proxy)
- * Create new current UUIDs late, after loosing connection to the peer
  * --dry-run option for connect; disconnects after sync handshake
  * --overwrite-data-of-peer got an alias named --force
  * Improvements to crm-fence-peer
