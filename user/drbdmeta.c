@@ -1568,7 +1568,7 @@ void v08_check_for_resize(struct format *cfg)
 
 	if (found) {
 		if (cfg->lk_bd.bd_uuid && md_08.device_uuid != cfg->lk_bd.bd_uuid) {
-			fprintf(stderr, "But last known and found uuid differ!?\n"
+			fprintf(stderr, "Last known and found uuid differ!?\n"
 					X64(016)" != "X64(016)"\n",
 					cfg->lk_bd.bd_uuid, cfg->md.device_uuid);
 			if (!force) {
@@ -2826,9 +2826,12 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * fs/partition/usage types? */
 	check_for_existing_data(cfg);
 
-	/* no further checks for moving internal meta data
-	 * after offline resize. */
-	if (err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION)
+	/* Suggest to move existing meta data after offline resize.  Though, if
+	 * you --force create-md, you probably mean it, so we don't even ask.
+	 * If you want to automatically move it, use check-resize.
+	 */
+	if (!force && err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION &&
+	    confirmed("Move internal meta data from last-known position?\n"))
 		return v08_move_internal_md_after_resize(cfg);
 
 	/* the offset of v07 fixed-size internal meta data is different from
