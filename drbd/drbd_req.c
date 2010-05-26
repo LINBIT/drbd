@@ -467,9 +467,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		dev_alert(DEV, "Local WRITE failed sec=%llus size=%u\n",
-		      (unsigned long long)req->sector, req->size);
-		/* and now: check how to handle local io error. */
 		__drbd_chk_io_error(mdev, FALSE);
 		_req_may_be_done(req, m);
 		put_ldev(mdev);
@@ -489,8 +486,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
-		dev_alert(DEV, "Local READ failed sec=%llus size=%u\n",
-		      (unsigned long long)req->sector, req->size);
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
 
 		__drbd_chk_io_error(mdev, FALSE);
