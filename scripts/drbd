@@ -60,7 +60,7 @@ function adjust_with_progress
     NEWLINE='
 '
     IFS=$NEWLINE
-    local res
+    local res out
 
     COMMANDS=`$DRBDADM -d -n res adjust all` || exit 20
     echo -n "[ "
@@ -68,7 +68,13 @@ function adjust_with_progress
     for CMD in $COMMANDS; do
 	case "$CMD" in
 		res=*)		eval "$CMD";;
-		*\ disk\ *)	echo -n "d($res) " ;;
+		*\ disk\ *)
+			# Check for offline resize. If using internal meta data,
+			# we may need to move it first to its expected location.
+				out=$($DRBDADM check-resize "$res" 2>&1)
+				[[ -z $out ]] ||
+				printf "\n%s\n%s\n" "$res" "$out"
+				echo -n "d($res) " ;;
 		*\ syncer\ *)	echo -n "s($res) " ;;
 		*\ net\ *)	echo -n "n($res) " ;;
 		*)		echo ".. " ;;

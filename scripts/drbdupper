@@ -34,6 +34,7 @@ case "$CMD" in
     start)
 	set -e # exit if one of these fails
 	$DRBDADM primary `$DRBDADM -S sh-lr-of $RES`
+	$DRBDADM -S check-resize $RES || true # may fail
 	$DRBDADM -S adjust $RES
 	$DRBDADM -S wait-connect $RES || true # may fail
 	$DRBDADM -S primary $RES

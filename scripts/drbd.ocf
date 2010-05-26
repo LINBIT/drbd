@@ -455,6 +455,9 @@ drbd_start() {
 			break
 			;;
 		$OCF_NOT_RUNNING)
+			# Check for offline resize. If using internal meta data,
+			# we may need to move it first to its expected location.
+			$first_try && do_drbdadm check-resize $DRBD_RESOURCE
 			figure_out_drbd_peer_uname
 			do_drbdadm $DRBD_TO_PEER up $DRBD_RESOURCE
 			;;
