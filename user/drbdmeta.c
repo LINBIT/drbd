@@ -2830,9 +2830,13 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * you --force create-md, you probably mean it, so we don't even ask.
 	 * If you want to automatically move it, use check-resize.
 	 */
-	if (!force && err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION &&
-	    confirmed("Move internal meta data from last-known position?\n"))
-		return v08_move_internal_md_after_resize(cfg);
+	if (err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
+		if (!force &&
+		    confirmed("Move internal meta data from last-known position?\n"))
+			return v08_move_internal_md_after_resize(cfg);
+		/* else: reset cfg->md, it needs to be re-initialized below */
+		memset(&cfg->md, 0, sizeof(cfg->md));
+	}
 
 	/* the offset of v07 fixed-size internal meta data is different from
 	 * the offset of the flexible-size v07 ("plus") and v08 (default)
