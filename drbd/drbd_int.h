@@ -1905,7 +1905,7 @@ static inline void __drbd_chk_io_error_(struct drbd_conf *mdev, int forcedetach,
 	switch (mdev->ldev->dc.on_io_error) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
-			if (printk_ratelimit())
+			if (DRBD_ratelimit(5*HZ, 5))
 				dev_err(DEV, "Local IO failed in %s."
 					     "Passing error on...\n", where);
 			break;
