@@ -53,14 +53,14 @@ DRBD has detected an I/O error on resource $DRBD_RESOURCE
 on $DRBD_LOCAL_HOST.
 Please see the system logs for details."
 		;;
-	*pri-lost)
+	*pri-lost.sh)
 		SUBJECT="DRBD resource $DRBD_RESOURCE is currently Primary, but is to become SyncTarget on $DRBD_LOCAL_HOST"
 		BODY="
 The DRBD resource $DRBD_RESOURCE is currently in the Primary
 role on host $DRBD_LOCAL_HOST, but lost the SyncSource election
 process."
 		;;
-	*pri-lost-after-sb)
+	*pri-lost-after-sb.sh)
 		SUBJECT="DRBD resource $DRBD_RESOURCE is currently Primary, but lost split brain auto recovery on $DRBD_LOCAL_HOST"
 		BODY="
 The DRBD resource $DRBD_RESOURCE is currently in the Primary
