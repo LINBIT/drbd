@@ -250,6 +250,11 @@ const char *rrcf_n[] = {
 	[ASB_CALL_HELPER]        = "call-pri-lost"
 };
 
+const char *on_no_data_n[] = {
+	[OND_IO_ERROR]		= "io-error",
+	[OND_SUSPEND_IO]	= "suspend-io"
+};
+
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
@@ -360,6 +365,7 @@ struct drbd_cmd commands[] = {
 		 { "delay-probe-interval",'I',	T_dp_interval,	EN(DP_INTERVAL,1,"1/10 seconds") },
 		 { "throttle-threshold",'T',	T_throttle_th,	EN(RS_THROTTLE_TH,1,"1/10 seconds") },
 		 { "hold-off-threshold",'H',	T_hold_off_th,	EN(RS_HOLD_OFF_TH,1,"1/10 seconds") },
+		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
 		 CLOSE_OPTIONS }} }, },
 
 	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,
