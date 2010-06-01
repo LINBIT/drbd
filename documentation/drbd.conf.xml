@@ -79,7 +79,7 @@ resource r0 {
   by whitespace. Every subsequent character
   is considered
   as part of the parameter's value. A special case are Boolean
-  parameters which only consist of the identifier.
+  parameters which consist only of the identifier.
   Parameters are terminated by a semicolon (<quote>;</quote>).
   </para>
     <para>Some parameter values have default units which might be overruled
@@ -104,7 +104,7 @@ resource r0 {
     brace (<quote>{</quote>) are ignored. Everything enclosed by the braces
     is skipped.
     This comes in handy, if you just want to comment out
-    some 'resource [name] {...}' section: just precede it with 'skip'.
+    some '<option>resource [name] {...}</option>' section: just precede it with '<quote>skip</quote>'.
   </para>
           </listitem>
         </varlistentry>
@@ -253,7 +253,7 @@ resource r0 {
     in respect to the low level storage. Please
     refer to <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry> for detailed description of
     the parameters.
-    Optional parameter: <option>on-io-error</option>,
+    Optional parameters: <option>on-io-error</option>,
     <option>size</option>, <option>fencing</option>, <option>use-bmbv</option>,
     <option>no-disk-barrier</option>, <option>no-disk-flushes</option>,
     <option>no-disk-drain</option>, <option>no-md-flushes</option>,
@@ -326,7 +326,7 @@ resource r0 {
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>handlers</secondary></indexterm>
-    In this section you can define handlers (executables) that are executed
+    In this section you can define handlers (executables) that are started
     by the DRBD system in response to certain events.
     Optional parameters:
     <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
@@ -377,7 +377,7 @@ resource r0 {
               <secondary>disable-ip-verification</secondary>
             </indexterm>
             <para>Use <replaceable>disable-ip-verification</replaceable>
-   if, for some obscure reasons, drbdadm can/might not use ip or ifconfig
+   if, for some obscure reasons, drbdadm can/might not use <option>ip</option> or <option>ifconfig</option>
    to do a sanity check for the IP address. You can disable the IP verification  with
    this option.
    </para>
@@ -430,8 +430,8 @@ resource r0 {
     you must not use the low level block device which is specified with the
     <option>disk</option> parameter.
   </para>
-            <para>    One can ether ommit the <replaceable>name</replaceable> or <option>minor</option>
-    and the <replaceable>minor number</replaceable>. If you ommit the <replaceable>name</replaceable>
+            <para>    One can ether omit the <replaceable>name</replaceable> or <option>minor</option>
+    and the <replaceable>minor number</replaceable>. If you omit the <replaceable>name</replaceable>
     a default of /dev/drbd<replaceable>minor</replaceable> will be used.
   </para>
             <para>    Udev will create additional symlinks in /dev/drbd/by-res and /dev/drbd/by-disk.
@@ -446,7 +446,7 @@ resource r0 {
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>disk</secondary></indexterm>
     DRBD uses this block device to actually store and retrieve the data.
     Never access such a device while DRBD is running on top of it. This
-    holds also true for <citerefentry><refentrytitle>dumpe2fs</refentrytitle><manvolnum>8</manvolnum></citerefentry> and similar commands.
+    also holds true for <citerefentry><refentrytitle>dumpe2fs</refentrytitle><manvolnum>8</manvolnum></citerefentry> and similar commands.
   </para>
           </listitem>
         </varlistentry>
@@ -460,9 +460,9 @@ resource r0 {
     which is used to wait for incoming connections from the partner device
     respectively to reach the partner device. <replaceable>AF</replaceable>
     must be one of <option>ipv4</option>, <option>ipv6</option>, <option>ssocks</option>
-    or <option>sdp</option>.
-    (For compatibility reasons <option>sci</option> is an alias for <option>ssocks</option>)
-    It may be ommited for IPv4 addresses. The actual IPv6 address that follows
+    or <option>sdp</option>
+    (for compatibility reasons <option>sci</option> is an alias for <option>ssocks</option>).
+    It may be omited for IPv4 addresses. The actual IPv6 address that follows
     the <option>ipv6</option> keyword must be placed inside brackets:
     <literal moreinfo="none">ipv6 [fd01:2345:6789:abcd::1]:7800</literal>.
   </para>
@@ -516,16 +516,16 @@ resource r0 {
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>on-io-error</secondary></indexterm><replaceable>handler</replaceable> is taken, if the lower level
-    device reports io-error to the upper layers.
+    device reports io-errors to the upper layers.
   </para>
-            <para><replaceable>handler</replaceable> may be pass_on, call-local-io-error
-  or detach.
+            <para><replaceable>handler</replaceable> may be <option>pass_on</option>, <option>call-local-io-error</option>
+  or <option>detach.</option>
   </para>
-            <para>pass_on: Report the io-error to the upper layers. On Primary report
+            <para><option>pass_on</option>: Report the io-error to the upper layers. On Primary report
   it to the mounted file system. On Secondary ignore it.</para>
-            <para>call-local-io-error: Call the handler script
+            <para><option>call-local-io-error</option>: Call the handler script
          <option>local-io-error</option>.</para>
-            <para>detach: The node drops its low level device, and continues in diskless mode.</para>
+            <para><option>detach</option>: The node drops its low level device, and continues in diskless mode.</para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -534,7 +534,7 @@ resource r0 {
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>fencing</secondary></indexterm>
-  Under <option>fencing</option> we understand preventive
+  By <option>fencing</option> we understand preventive
   measures to avoid situations where both nodes are primary
   and disconnected (AKA split brain).
   </para>
@@ -545,7 +545,7 @@ resource r0 {
                   <option>dont-care</option>
                 </term>
                 <listitem>
-                  <para>	This is the default policy. No fencing actions are undertaken.
+                  <para>	This is the default policy. No fencing actions are taken.
       </para>
                 </listitem>
               </varlistentry>
@@ -555,10 +555,10 @@ resource r0 {
                 </term>
                 <listitem>
                   <para>	If a node becomes a disconnected primary, it tries to fence
-	the peer's disk. This is done by calling the fence-peer
+	the peer's disk. This is done by calling the <option>fence-peer</option>
 	handler. The handler is supposed to reach the other node over
-	alternative communication paths and call 'drbdadm outdate
-	res' there.
+	alternative communication paths and call '<option>drbdadm outdate
+	res</option>' there.
       </para>
                 </listitem>
               </varlistentry>
@@ -592,10 +592,10 @@ resource r0 {
             </indexterm>
             <para>      In case the backing storage's driver has a merge_bvec_fn() function,
        DRBD has to pretend that it can only process IO requests in
-      units not lager than 4kByte. (At time of writing the only known drivers which have such a function
+      units not larger than 4KiB. (At the time of writing the only known drivers which have such a function
       are: md (software raid driver), dm (device mapper - LVM) and DRBD
-      itself)</para>
-            <para>      To get best performance out of DRBD on top of software RAID (or any
+      itself).</para>
+            <para>      To get the best performance out of DRBD on top of software RAID (or any
       other driver with a merge_bvec_fn() function) you might enable this
       function, if you know for sure that the merge_bvec_fn() function will
       deliver the same results on all nodes of your cluster. I.e. the
@@ -637,21 +637,21 @@ resource r0 {
               write cache (plain disks, RAID of plain disks) you should use one
               of the first two. In case your backing storage device has battery-backed
               write cache you may go with option 3 or 4. Option 4 will deliver the
-              best performance such devices.
+              best performance on such devices.
             </para>
             <para>              Unfortunately device mapper (LVM) does not support barriers.
             </para>
             <para>              The letter after "wo:" in /proc/drbd indicates with method is currently in
-              use for a device: b, f, d, n. The implementations:
+              use for a device: <option>b</option>, <option>f</option>, <option>d</option>, <option>n</option>. The implementations are:
             </para>
             <variablelist>
               <varlistentry>
                 <term>barrier</term>
                 <listitem>
-                  <para>                  The first requirs that the driver of the
+                  <para>                  The first requires that the driver of the
                   backing storage device support barriers (called 'tagged command queuing' in
                   SCSI and 'native command queuing' in SATA speak). The use of this
-                  method can be disabled by the we <option>no-disk-barrier</option> option.
+                  method can be disabled by the <option>no-disk-barrier</option> option.
 	        </para>
                 </listitem>
               </varlistentry>
@@ -668,8 +668,8 @@ resource r0 {
                 <term>drain</term>
                 <listitem>
                   <para>                  The third method is simply to let write requests drain before
-                  write requests of a new reordering domain are issued. That was the
-                  only implementation before 8.0.9. You can prevent to use of this
+                  write requests of a new reordering domain are issued. This was the
+                  only implementation before 8.0.9. You can disable this
                   method by using the <option>no-disk-drain</option> option.
 	        </para>
                 </listitem>
@@ -712,17 +712,17 @@ resource r0 {
       pass BIOs to DRBD that violate the constraints that are set forth
       by DRBD's merge_bvec() function and which have more than one bvec.
       A known example is:
-      phys-disk -&gt; DRBD -&gt; LVM -&gt; Xen -&gt; missaligned partition (63) -&gt; DomU FS.
+      phys-disk -&gt; DRBD -&gt; LVM -&gt; Xen -&gt; misaligned partition (63) -&gt; DomU FS.
       Then you might see "bio would need to, but cannot, be split:" in
       the Dom0's kernel log. </para>
             <para>      The best workaround is to proper align the partition within
-      the VM (E.g. start it at sector 1024). Costs 480 KiByte of storage.
+      the VM (E.g. start it at sector 1024). This costs 480 KiB of storage.
       Unfortunately the default of most Linux partitioning tools is
       to start the first partition at an odd number (63). Therefore
       most distribution's install helpers for virtual linux machines will
-      end up with missaligned partitions.
+      end up with misaligned partitions.
       The second best workaround is to limit DRBD's max bvecs per BIO
-      (= max-bio-bvecs) to 1. Might cost performance.</para>
+      (= <option>max-bio-bvecs</option>) to 1, but that might cost performance.</para>
             <para>      The default value of <option>max-bio-bvecs</option> is 0, which means that
       there is no user imposed limitation.
     </para>
@@ -737,7 +737,7 @@ resource r0 {
   The default value is 0, i.e. autotune. You can specify smaller or larger values. Larger values
   are appropriate for reasonable write throughput with protocol A over high
   latency networks. Very large values like 1M may cause problems. Also values
-  below 32K do not make much sense. Since 8.0.13 resp. 8.2.7, setting the <replaceable>size</replaceable>
+  below 32K do not make sense. Since 8.0.13 resp. 8.2.7, setting the <replaceable>size</replaceable>
   value to 0 means that the kernel should autotune this.
   </para>
           </listitem>
@@ -761,7 +761,7 @@ resource r0 {
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>timeout</secondary></indexterm>
 If the partner node fails to send an expected response packet within
-<replaceable>time</replaceable> 10<superscript>ths</superscript>
+<replaceable>time</replaceable> tenths
 of a second, the partner node
 is considered dead and therefore the TCP/IP connection is abandoned. This must be lower than <replaceable>connect-int</replaceable> and <replaceable>ping-int</replaceable>.
 The default value is 60 = 6 seconds, the unit 0.1 seconds.
@@ -776,7 +776,7 @@ The default value is 60 = 6 seconds, the unit 0.1 seconds.
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>connect-int</secondary></indexterm>
 In case it is not possible to connect to the remote DRBD device immediately,
 DRBD keeps on trying to connect. With this option you can set the time
-between two tries. The default value is 10 seconds, the unit is 1 second.
+between two retries. The default value is 10 seconds, the unit is 1 second.
   </para>
           </listitem>
         </varlistentry>
@@ -801,7 +801,7 @@ the unit is 1 second.
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>ping-timeout</secondary></indexterm>
     The time the peer has time to answer to a keep-alive packet. In case
     the peer's reply is not received within this time period, it is
-    considered as dead. The default value is 500ms, the default unit is 100ms.
+    considered as dead. The default value is 500ms, the default unit are tenths of a second.
   </para>
           </listitem>
         </varlistentry>
@@ -812,9 +812,9 @@ the unit is 1 second.
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>max-buffers </secondary></indexterm>
   Maximum number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
-  which is 4 KB on most systems.
-  The minimum is hard coded to 32 (=128 KB).
-  For high-performance installations it might help, if you
+  which is 4 KiB on most systems.
+  The minimum is hard coded to 32 (=128 KiB).
+  For high-performance installations it might help if you
   increase that number. These buffers are used to hold
   data blocks while they are written to disk.
   </para>
@@ -829,7 +829,7 @@ the unit is 1 second.
 	      In case the secondary node fails to complete a single write
 	      request for <replaceable>count</replaceable> times the
 	      <replaceable>timeout</replaceable>, it is expelled from the
-	      cluster. (I.e. the primary node goes into StandAlone mode.)
+	      cluster. (I.e. the primary node goes into <option>StandAlone</option> mode.)
 	      The default value is 0, which disables this feature.
   </para>
           </listitem>
@@ -851,7 +851,7 @@ the unit is 1 second.
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>allow-two-primaries</secondary></indexterm>
-    With this option set you may assign primary role to both nodes. You only should
+    With this option set you may assign the primary role to both nodes. You only should
     use this option if you use a shared storage file system on top of
     DRBD. At the time of writing the only ones are: OCFS2 and GFS. If you
     use this option with any other file system, you are going to crash your
@@ -869,7 +869,7 @@ the unit is 1 second.
               <secondary>unplug-watermark </secondary>
             </indexterm>
             <para>      When the number of pending write requests on the standby
-      (secondary) node exceeds the unplug-watermark, we trigger
+      (secondary) node exceeds the <option>unplug-watermark</option>, we trigger
       the request processing of our backing storage device.
       Some storage controllers deliver better performance with small
       values, others deliver best performance when the value is set to
@@ -888,7 +888,7 @@ the unit is 1 second.
     at all. You are strongly encouraged to use peer authentication. The HMAC
     algorithm will be used for the challenge response authentication
     of the peer. You may specify any digest algorithm that is named in
-    /proc/crypto.
+    <option>/proc/crypto</option>.
   </para>
           </listitem>
         </varlistentry>
@@ -899,7 +899,7 @@ the unit is 1 second.
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>shared-secret</secondary></indexterm>
     The shared secret used in peer authentication. May be up to 64 characters.
-    Note that peer authentication is disabled as long as no cram-hmac-alg
+    Note that peer authentication is disabled as long as no <option>cram-hmac-alg</option>
     (see above) is specified.
   </para>
           </listitem>
@@ -1020,11 +1020,11 @@ the unit is 1 second.
                 </term>
                 <listitem>
                   <para>                  Always take the decision of the <option>after-sb-0pri</option>
-                  algorithm. Even if that causes an erratic change of
+                  algorithm, even if that causes an erratic change of
                   the primary's view of the data.  This is only useful if
-                  you use a 1node FS (i.e.  not OCFS2 or GFS) with the
-                  allow-two-primaries flag, _AND_ if you really know what you
-                  are doing.  This is DANGEROUS and MAY CRASH YOUR MACHINE
+                  you use a one-node FS (i.e.  not OCFS2 or GFS) with the
+                  <option>allow-two-primaries</option> flag, <emphasis>AND</emphasis> if you really know what you
+                  are doing.  This is <emphasis>DANGEROUS and MAY CRASH YOUR MACHINE</emphasis>
                   if you have an FS mounted on the primary node.
 		</para>
                 </listitem>
@@ -1081,11 +1081,11 @@ the unit is 1 second.
                 </term>
                 <listitem>
                   <para>                  Always take the decision of the <option>after-sb-0pri</option>
-                  algorithm. Even if that causes an erratic change of
+                  algorithm, even if that causes an erratic change of
                   the primary's view of the data.  This is only useful if
-                  you use a 1node FS (i.e.  not OCFS2 or GFS) with the
-                  allow-two-primaries flag, _AND_ if you really know what you
-                  are doing.  This is DANGEROUS and MAY CRASH YOUR MACHINE
+                  you use a one-node FS (i.e.  not OCFS2 or GFS) with the
+                  <option>allow-two-primaries</option> flag, <emphasis>AND</emphasis> if you really know what you
+                  are doing.  This is <emphasis>DANGEROUS and MAY CRASH YOUR MACHINE</emphasis>
                   if you have an FS mounted on the primary node.
 		</para>
                 </listitem>
@@ -1131,7 +1131,7 @@ the unit is 1 second.
               <primary>drbd.conf</primary>
               <secondary>rr-conflict </secondary>
             </indexterm>
-            <para>	    To solve the cases when the outcome of the resync decision is
+            <para>	    This option helps to solve the cases when the outcome of the resync decision is
 	    incompatible with the current role assignment in the cluster.
 	    </para>
             <variablelist>
@@ -1200,9 +1200,9 @@ the unit is 1 second.
             </indexterm>
             <para>	      DRBD usually uses the TCP socket option TCP_CORK to hint to the network
               stack when it can expect more data, and when it should flush out what it
-              has in its send queue. It turned out that there is at lease one network
+              has in its send queue. It turned out that there is at least one network
               stack that performs worse when one uses this hinting method. Therefore
-              we introducted this option, which disable the setting and clearing of
+              we introducted this option, which disables the setting and clearing of
               the TCP_CORK socket option by DRBD.</para>
           </listitem>
         </varlistentry>
@@ -1268,7 +1268,7 @@ the unit is 1 second.
           <listitem>
             <para>  Sets on which node the device should be promoted to primary role by
   the init script. The <replaceable>node-name</replaceable> might either
-  be a host name or the key word <option>both</option>. When this option is 
+  be a host name or the keyword <option>both</option>. When this option is 
   not set the devices stay in secondary role on both nodes. Usually
   one delegates the role assignment to a cluster manager (e.g. heartbeat).
   </para>
@@ -1285,7 +1285,7 @@ the unit is 1 second.
   With the <option>stacked-timeouts</option> keyword you disable this, and force
   DRBD to mind the <option>wfc-timeout</option> and <option>degr-wfc-timeout</option>
   statements. Only do that if the peer of the stacked resource is usually not
-  available or will not become primary usually.
+  available or will usually not become primary.
   By using this option incorrectly, you run the risk of causing unexpected split brain.
   </para>
           </listitem>
@@ -1335,7 +1335,7 @@ the unit is 1 second.
   By default, resynchronization of all devices would run in parallel.
   By defining a sync-after dependency, the resynchronization of this
   resource will start only if the resource <replaceable>res-name</replaceable>
-  is already in connected state (= finished its resynchronization).
+  is already in connected state (i.e., has finished its resynchronization).
   </para>
           </listitem>
         </varlistentry>
@@ -1382,10 +1382,10 @@ the unit is 1 second.
             <option>csums-alg <replaceable>hash-alg</replaceable></option>
           </term>
           <listitem>
-            <para>A resync process sends all marked data blocks form the source to
+            <para>A resync process sends all marked data blocks from the source to
   the destination node, as long as no <option>csums-alg</option> is
   given. When one is specified the resync process exchanges hash values of all
-  marked blocks first, and sends only those data blocks over, that have different
+  marked blocks first, and sends only those data blocks that have different
   hash values.</para>
             <para>This setting is useful for DRBD setups with low bandwidth links.
   During the restart of a crashed primary node, all blocks covered by the
@@ -1452,8 +1452,8 @@ the unit is 1 second.
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>pri-lost-after-sb </secondary></indexterm>
-  The node is currently primary, but lost the after split
-  brain auto recovery procedure. As as consequence, it should be abandoned.
+                The node is currently primary, but lost the after-split-brain
+                auto recovery procedure. As as consequence, it should be abandoned.
   </para>
           </listitem>
         </varlistentry>
@@ -1520,7 +1520,7 @@ the unit is 1 second.
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>before-resync-target </secondary></indexterm>
-  DRBD calls this handler just before a resync beginns on the node
+  DRBD calls this handler just before a resync begins on the node
   that becomes resync target. It might be used to take a snapshot of the
   backing block device.
   </para>
@@ -1533,7 +1533,7 @@ the unit is 1 second.
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>after-resync-target </secondary></indexterm>
   DRBD calls this handler just after a resync operation finished on the
-  node which's disk just became consistent after beeing inconsistent for the
+  node whose disk just became consistent after being inconsistent for the
   duration of the resync. It might be used to remove a snapshot of the backing device
   that was created by the <option>before-resync-target</option> handler.
   </para>
@@ -1574,10 +1574,10 @@ issue with the TCP offloading engine and the driver of a certain type
 of GBit NIC. The actual corruption happened on the DMA transfer from
 core memory to the card. Since the TCP checksum gets calculated on the card
 this type of corruption stays undetected as long as you do not use
-either the online <option>verify</option> or the data-integrity-alg.</para>
+either the online <option>verify</option> or the <option>data-integrity-alg</option>.</para>
     <para>We suggest to use the <option>data-integrity-alg</option> only during a
 pre-production phase due to its CPU costs. Further we suggest to do online
-<option>verify</option> runs regularly e.g. once a month during low load period.</para>
+<option>verify</option> runs regularly e.g. once a month during a low load period.</para>
   </refsect1>
   <refsect1>
     <title>Version</title>
