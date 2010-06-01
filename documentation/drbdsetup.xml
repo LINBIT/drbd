@@ -659,7 +659,7 @@
           <listitem>
             <para>	      With this option the maximal number of write requests between
 	      two barriers is limited. Should be set to the same as
-	      <option>--max-buffers</option>. Values smaller than 100 can
+	      <option>--max-buffers</option>. Values smaller than 10 can
 	      lead to degraded performance. The default value is 2048.
 	      </para>
           </listitem>
@@ -1567,15 +1567,16 @@
       <para>        This can also be used to shorten the initial resync of a cluster where the second node
         is added after the first node is gone into production, by means of disk shipping.
 	This use-case works on disconnected devices only, the device may be in
-	primary or secondary role.
-        The necessary steps are:
+        primary or secondary role.
+      </para>
+      <para>The necessary steps on the current active server are:
         <orderedlist numeration="arabic" inheritnum="ignore" continuation="restarts"><listitem><simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable> new-current-uuid --clear-bitmap</command></simpara></listitem><listitem><simpara>	    Take the copy of the current active server. E.g. by pulling a disk out of
 	    the RAID1 controller, or by copying with dd. You need to copy the actual
 	    data, and the meta data.
-	  </simpara></listitem><listitem><simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable> new-current-uuid</command></simpara></listitem><listitem><simpara>	    Add the disk to the new secondary node, and join it to the cluster. You will
-	    get a resync of that parts that were changed since the first call to
-	    <command moreinfo="none">drbdsetup</command> in step 1.
-	  </simpara></listitem></orderedlist>
+            </simpara></listitem><listitem><simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable> new-current-uuid</command></simpara></listitem></orderedlist>
+        Now add the disk to the new secondary node, and join it to the cluster. You will
+        get a resync of that parts that were changed since the first call to
+        <command moreinfo="none">drbdsetup</command> in step 1.
       </para>
     </refsect2>
   </refsect1>
