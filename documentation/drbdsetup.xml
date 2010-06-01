@@ -469,7 +469,7 @@
               write cache you may go with option 3 or 4. Option 4 will deliver the
               best performance such devices.
             </para>
-            <para>              Unfortunately device mapper (LVM) does not support barriers.
+            <para>              Unfortunately device mapper (LVM) might not support barriers.
             </para>
             <para>              The letter after "wo:" in /proc/drbd indicates with method is currently in
               use for a device: b, f, d, n. The implementations:

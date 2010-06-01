@@ -639,7 +639,7 @@ resource r0 {
               write cache you may go with option 3 or 4. Option 4 will deliver the
               best performance on such devices.
             </para>
-            <para>              Unfortunately device mapper (LVM) does not support barriers.
+            <para>              Unfortunately device mapper (LVM) might not support barriers.
             </para>
             <para>              The letter after "wo:" in /proc/drbd indicates with method is currently in
               use for a device: <option>b</option>, <option>f</option>, <option>d</option>, <option>n</option>. The implementations are:
@@ -736,7 +736,7 @@ resource r0 {
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>sndbuf-size </secondary></indexterm><replaceable>size</replaceable> is the size of the TCP socket send buffer.
   The default value is 0, i.e. autotune. You can specify smaller or larger values. Larger values
   are appropriate for reasonable write throughput with protocol A over high
-  latency networks. Very large values like 1M may cause problems. Also values
+  latency networks. Values
   below 32K do not make sense. Since 8.0.13 resp. 8.2.7, setting the <replaceable>size</replaceable>
   value to 0 means that the kernel should autotune this.
   </para>
