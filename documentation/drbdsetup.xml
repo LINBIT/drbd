@@ -25,7 +25,7 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">disk</arg>
+      <arg choice="plain" rep="norepeat">disk</arg>
       <arg choice="req" rep="norepeat">
         <replaceable>lower_dev</replaceable>
       </arg>
@@ -45,7 +45,7 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">net</arg>
+      <arg choice="plain" rep="norepeat">net</arg>
       <arg choice="opt" rep="norepeat">
         <replaceable>af:</replaceable>
       </arg>
@@ -94,7 +94,7 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">syncer</arg>
+      <arg choice="plain" rep="norepeat">syncer</arg>
       <arg choice="opt" rep="norepeat">-a<arg choice="req" rep="norepeat"><replaceable>dev_minor</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-r<arg choice="req" rep="norepeat"><replaceable>rate</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-e<arg choice="req" rep="norepeat"><replaceable>extents</replaceable></arg></arg>
@@ -112,28 +112,28 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">disconnect</arg>
+      <arg choice="plain" rep="norepeat">disconnect</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">detach</arg>
+      <arg choice="plain" rep="norepeat">detach</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">down</arg>
+      <arg choice="plain" rep="norepeat">down</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">primary</arg>
+      <arg choice="plain" rep="norepeat">primary</arg>
       <arg choice="opt" rep="norepeat">-f</arg>
       <arg choice="opt" rep="norepeat">-o</arg>
     </cmdsynopsis>
@@ -142,14 +142,14 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">secondary</arg>
+      <arg choice="plain" rep="norepeat">secondary</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">verify</arg>
+      <arg choice="plain" rep="norepeat">verify</arg>
       <arg choice="opt" rep="norepeat">-s<arg choice="req" rep="norepeat"><replaceable>start-position</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
@@ -157,21 +157,21 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">invalidate</arg>
+      <arg choice="plain" rep="norepeat">invalidate</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">invalidate-remote</arg>
+      <arg choice="plain" rep="norepeat">invalidate-remote</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">wait-connect</arg>
+      <arg choice="plain" rep="norepeat">wait-connect</arg>
       <arg choice="opt" rep="norepeat">-t<arg choice="req" rep="norepeat"><replaceable>wfc_timeout</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-o<arg choice="req" rep="norepeat"><replaceable>outdated_wfc_timeout</replaceable></arg></arg>
@@ -182,7 +182,7 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">wait-sync</arg>
+      <arg choice="plain" rep="norepeat">wait-sync</arg>
       <arg choice="opt" rep="norepeat">-t<arg choice="req" rep="norepeat"><replaceable>wfc_timeout</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-o<arg choice="req" rep="norepeat"><replaceable>outdated_wfc_timeout</replaceable></arg></arg>
@@ -193,35 +193,35 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">role</arg>
+      <arg choice="plain" rep="norepeat">role</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">cstate</arg>
+      <arg choice="plain" rep="norepeat">cstate</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">dstate</arg>
+      <arg choice="plain" rep="norepeat">dstate</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">status</arg>
+      <arg choice="plain" rep="norepeat">status</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">resize</arg>
+      <arg choice="plain" rep="norepeat">resize</arg>
       <arg choice="opt" rep="norepeat">-d<arg choice="req" rep="norepeat"><replaceable>size</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-f<arg choice="req" rep="norepeat"><replaceable>assume-peer-has-space</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-c<arg choice="req" rep="norepeat"><replaceable>assume-clean</replaceable></arg></arg>
@@ -231,63 +231,63 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">pause-sync</arg>
+      <arg choice="plain" rep="norepeat">pause-sync</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">resume-sync</arg>
+      <arg choice="plain" rep="norepeat">resume-sync</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">outdate</arg>
+      <arg choice="plain" rep="norepeat">outdate</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">show-gi</arg>
+      <arg choice="plain" rep="norepeat">show-gi</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">get-gi</arg>
+      <arg choice="plain" rep="norepeat">get-gi</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">show</arg>
+      <arg choice="plain" rep="norepeat">show</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">suspend-io</arg>
+      <arg choice="plain" rep="norepeat">suspend-io</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">resume-io</arg>
+      <arg choice="plain" rep="norepeat">resume-io</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">events</arg>
+      <arg choice="plain" rep="norepeat">events</arg>
       <arg choice="opt" rep="norepeat">-u</arg>
       <arg choice="opt" rep="norepeat">-a</arg>
     </cmdsynopsis>
@@ -296,7 +296,7 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
-      <arg choice="req" rep="norepeat">new-current-uuid</arg>
+      <arg choice="plain" rep="norepeat">new-current-uuid</arg>
       <arg choice="opt" rep="norepeat">-c</arg>
     </cmdsynopsis>
   </refsynopsisdiv>
