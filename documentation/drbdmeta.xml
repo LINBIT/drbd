@@ -44,13 +44,13 @@
     <title>Description</title>
     <para>      Drbdmeta is used to create, display and modify the contents of
       DRBD's meta data storage. Usually you do not want to use this
-      command directly, but use it through the front end
+      command directly, but start it via the frontend
       <citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry>.
     </para>
     <para>      This command only works if the DRBD resource is currently down,
       or at least detached from its backing storage. The first parameter
       is the device node associated to the resource. With the second
-      parameter you select which the version of the meta data. Currently
+      parameter you can select the version of the meta data. Currently
       all major DRBD releases (0.6, 0.7 and 8) are supported.
     </para>
   </refsect1>
@@ -115,7 +115,7 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>dump-md</secondary></indexterm>
           Dumps the whole contents of the meta data storage including
-	  the stored bit-map and activity-log, in a textual representation.
+	  the stored bit-map and activity-log in a textual representation.
         </para>
         </listitem>
       </varlistentry>
