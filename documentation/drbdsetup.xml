@@ -385,7 +385,7 @@
           <term><option>-f</option>,
 	  <option>--fencing <replaceable>fencing_policy</replaceable></option></term>
           <listitem>
-            <para>	      Under <option>fencing</option> we understand preventative
+            <para>	      Under <option>fencing</option> we understand preventive
 	      measures to avoid situations where both nodes are primary
 	      and disconnected (AKA split brain).
 	    </para>
@@ -397,7 +397,7 @@
                   <option>dont-care</option>
                 </term>
                 <listitem>
-                  <para>		  This is the default policy. No fencing actions are undertaken.
+                  <para>		  This is the default policy. No fencing actions are done.
 		</para>
                 </listitem>
               </varlistentry>
@@ -406,7 +406,7 @@
                   <option>resource-only</option>
                 </term>
                 <listitem>
-                  <para>		  If a node becomes a disconnected primary. it tries to outdate
+                  <para>		  If a node becomes a disconnected primary, it tries to outdate
 		  the peer's disk. This is done by calling the fence-peer
 		  handler. The handler is supposed to reach the other node over
 		  alternative communication paths and call 'drbdadm outdate
@@ -440,13 +440,13 @@
             <para>	      In case the backing storage's driver has a merge_bvec_fn()
 	      function,  DRBD has to
 	      pretend that it can only process IO requests in units
-	      not lager than 4kByte. (At time of writing the only known 
+	      not larger than 4 KiB. (At time of writing the only known 
 	      drivers which
 	      have such a function are: md (software raid driver),
 	      dm (device mapper - LVM) and DRBD itself)</para>
             <para>	      To get best performance out of DRBD on top of software
 	      raid (or any other driver with a merge_bvec_fn() function)
-	      you might enable this function, if you know for sure
+	      you might enable this option, if you know for sure
 	      that the merge_bvec_fn() function will deliver the same
 	      results on all nodes of your cluster. I.e. the physical
 	      disks of the software raid are exactly of the same type.
@@ -478,10 +478,10 @@
               <varlistentry>
                 <term>barrier</term>
                 <listitem>
-                  <para>                  The first requirs that the driver of the
+                  <para>                  The first requires that the driver of the
                   backing storage device support barriers (called 'tagged command queuing' in
                   SCSI and 'native command queuing' in SATA speak). The use of this
-                  method can be disabled by the we <option>--no-disk-barrier</option> option.
+                  method can be disabled by the <option>--no-disk-barrier</option> option.
 	        </para>
                 </listitem>
               </varlistentry>
@@ -537,13 +537,13 @@
       Then you might see "bio would need to, but cannot, be split:" in
       the Dom0's kernel log. </para>
             <para>      The best workaround is to proper align the partition within
-      the VM (E.g. start it at sector 1024). Costs 480 KiByte of storage.
+      the VM (E.g. start it at sector 1024). That costs 480 KiB of storage.
       Unfortunately the default of most Linux partitioning tools is
       to start the first partition at an odd number (63). Therefore
-      most distribution's install helpers for virtual linux machines will
+      most distributions install helpers for virtual linux machines will
       end up with missaligned partitions.
       The second best workaround is to limit DRBD's max bvecs per BIO
-      (= max-bio-bvecs) to 1. Might cost performance.</para>
+      (i.e., the <option>max-bio-bvecs</option> option) to 1, but that might cost performance.</para>
             <para>      The default value of <option>max-bio-bvecs</option> is 0, which means that
       there is no user imposed limitation.
     </para>
@@ -581,7 +581,7 @@
           <listitem>
             <para>		In case it is not possible to connect to the remote DRBD
 		device immediately, DRBD keeps on trying to connect. With
-		this option you can set the time between two tries. The
+		this option you can set the time between two retries. The
 		default value is 10 seconds, the unit is 1 second.
 		</para>
           </listitem>
@@ -603,7 +603,7 @@
           <listitem>
             <para>	      If the partner node fails to send an expected response packet
 	      within <replaceable>val</replaceable>
-	      10<superscript>ths</superscript> of a second, the partner node
+	      tenths of a second, the partner node
 	      is considered dead and therefore the TCP/IP connection is
 	      abandoned. The default value is 60 (= 6 seconds).
 	    </para>
@@ -648,7 +648,7 @@
             <para>	      In case the secondary node fails to complete a single write
 	      request for <replaceable>count</replaceable> times the
 	      <replaceable>timeout</replaceable>, it is expelled from the
-	      cluster. (I.e. the primary node goes into StandAlone mode.)
+	      cluster, i.e. the primary node goes into StandAlone mode.
 	      The default is 0, which disables this feature.
 	      </para>
           </listitem>
@@ -659,7 +659,7 @@
           <listitem>
             <para>	      With this option the maximal number of write requests between
 	      two barriers is limited. Should be set to the same as
-	      <option>--max-buffers </option>. Values smaller than 100 can
+	      <option>--max-buffers</option>. Values smaller than 100 can
 	      lead to degraded performance. The default value is 2048.
 	      </para>
           </listitem>
@@ -670,9 +670,8 @@
           <listitem>
             <para>	      With this option the maximal number of buffer pages allocated
 	      by DRBD's receiver thread is limited. Should be set to the
-	      same as <option>--max-epoch-size </option>. Small values
-	      could lead to degraded performance. (Minimum 32) The default value is
-	      2048.
+	      same as <option>--max-epoch-size</option>. Small values
+	      could lead to degraded performance. The default value is 2048, the minimum 32.
 	    </para>
           </listitem>
         </varlistentry>
@@ -839,7 +838,7 @@
                 <listitem>
                   <para>		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
-		  secondary has the right data, call the
+		  secondary has the correct data, call the
 		  <option>pri-lost-after-sb</option> on the current primary.
 		</para>
                 </listitem>
@@ -851,7 +850,7 @@
                 <listitem>
                   <para>		  Always honor the outcome of the <option>after-sb-0pri
 		  </option> algorithm. In case it decides the current
-		  secondary has the right data, accept a possible instantaneous
+		  secondary has the correct data, accept a possible instantaneous
 		  change of the primary's data.
 		</para>
                 </listitem>
@@ -935,7 +934,7 @@
 	      The default is <option>disconnect</option>.</para>
             <para>	      With the <option>violently</option> setting you allow DRBD
 	      to force a primary node into SyncTarget state. This means
-	      that with that action the data exposed by DRBD change to
+	      that the data exposed by DRBD changes to
 	      the SyncSource's version of the data instantaneously.
 	      USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.
 	    </para>
@@ -962,9 +961,9 @@
           <listitem>
             <para>	      DRBD usually uses the TCP socket option TCP_CORK to hint to the network
               stack when it can expect more data, and when it should flush out what it
-              has in its send queue. It turned out that there is at lease one network
+              has in its send queue. There is at least one network
               stack that performs worse when one uses this hinting method. Therefore
-              we introducted this option, which disable the setting and clearing of
+              we introduced this option, which disable the setting and clearing of
               the TCP_CORK socket option by DRBD.
             </para>
           </listitem>
@@ -974,8 +973,8 @@
 	  <option>--ping-timeout </option><replaceable>ping_timeout</replaceable></term>
           <listitem>
             <para>	      The time the peer has to answer to a keep-alive packet. In case the peer's reply is not received within this
-	      time period, it is considered as dead. The default value is 500ms,
-	      the default unit is 100ms.
+                time period, it is considered dead. The default unit is tenths of a second,
+                the default value is 5 (for half a second).
 	    </para>
           </listitem>
         </varlistentry>
@@ -985,7 +984,7 @@
           <listitem>
             <para>	      Use this option to manually recover from a split-brain
 	      situation. In case you do not have any automatic after-split-brain policies selected, the nodes refuse to
-	      connect. By passing this option you make a node to
+	      connect. By passing this option you make this node a
 	      sync target immediately after successful connect.
 	    </para>
           </listitem>
@@ -1018,8 +1017,8 @@
           <listitem>
             <para>	      To ensure smooth operation of the application on top of DRBD,
 	      it is possible to limit the bandwidth that  may be used by
-	      background synchronization. The default is 250 KB/sec, the
-	      default unit is KB/sec.
+	      background synchronization. The default is 250 KiB/sec, the
+	      default unit is KiB/sec.
 	    </para>
           </listitem>
         </varlistentry>
@@ -1143,7 +1142,7 @@
 	      in order to keep the delay small. The resync speed gets linearly slowed
 	      down it reaches 0 at a delay of <replaceable>hold_off_delay</replaceable>.
 	    </para>
-            <para>The default value of <replaceable>volume</replaceable> is 16384 (16MB), the default unit is KB.
+            <para>The default value of <replaceable>volume</replaceable> is 16384 (16 MiB), the default unit is KiB.
 	      <replaceable>Interval</replaceable> has 5 (500ms),
 	      <replaceable>throttle_delay</replaceable> 20 (2 seconds),
 	      <replaceable>hold_off_delay</replaceable> 100 (10 seconds) as default value. The default
@@ -1240,7 +1239,7 @@
 	      an arbitrary position by setting this option.
             </para>
             <para>              Default unit is sectors. You may also specify a unit explicitly.
-              The start-sector will be rounded down to a multiple of 8 sectors (4kB).
+              The <option>start-sector</option> will be rounded down to a multiple of 8 sectors (4kB).
             </para>
           </listitem>
         </varlistentry>
@@ -1363,7 +1362,7 @@
         <secondary>role</secondary>
       </indexterm>
       <para>	Shows the current roles of the <replaceable>device</replaceable> and
-	its peer. (local/peer).
+          its peer, as <replaceable>local</replaceable>/<replaceable>peer</replaceable>.
       </para>
     </refsect2>
     <refsect2>
@@ -1390,7 +1389,7 @@
         <primary>drbdsetup</primary>
         <secondary>dstate</secondary>
       </indexterm>
-      <para>	Shows the current states of the backing storage devices. (local/peer)
+      <para>	Shows the current states of the backing storage devices, as <replaceable>local</replaceable>/<replaceable>peer</replaceable>.
       </para>
     </refsect2>
     <refsect2>
@@ -1399,10 +1398,9 @@
         <primary>drbdsetup</primary>
         <secondary>status</secondary>
       </indexterm>
-      <para>	Shows the current status of the device in xml-like format. Example output:
+      <para>	Shows the current status of the device in XML-like format. Example output:
 	<programlisting format="linespecific">&lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
-         ds1="Inconsistent" ds2="UpToDate" resynced_precent="5.9" /&gt;
-	</programlisting>
+         ds1="Inconsistent" ds2="UpToDate" resynced_precent="5.9" /&gt;</programlisting>
       </para>
     </refsect2>
     <refsect2>
@@ -1414,7 +1412,7 @@
       <para>This causes DRBD to reexamine the size of the
 	<replaceable>device</replaceable>'s backing storage device.  To
 	actually do online growing you need to extend the backing storages
-	on both devices and call the <option>resize</option> command one of
+	on both devices and call the <option>resize</option> command on one of
         your nodes.
       </para>
       <para>The <option>--assume-peer-has-space</option> allows you to
@@ -1458,7 +1456,7 @@
       </indexterm>
       <para>        Mark the data on the local backing storage as outdated. An outdated
 	device refuses to become primary. This is used in conjunction with
-	<option>fencing</option> and by the peer's fence-peer handler.
+	<option>fencing</option> and by the peer's <option>fence-peer</option> handler.
       </para>
     </refsect2>
     <refsect2>
@@ -1535,7 +1533,7 @@
         <primary>drbdsetup</primary>
         <secondary>new-current-uuid</secondary>
       </indexterm>
-      <para>        Generates a new currend UUID and rotates all other UUID values. This
+      <para>        Generates a new current UUID and rotates all other UUID values. This
         has at least two use cases, namely to skip the initial sync, and to
         reduce network bandwidth when starting in a single node configuration
         and then later (re-)integrating a remote site.
@@ -1557,14 +1555,14 @@
             Make one side primary and create a file system.
           </simpara><simpara><command moreinfo="none">drbdadm primary <replaceable>res</replaceable></command></simpara><simpara><command moreinfo="none">mkfs -t <replaceable>fs-type</replaceable> $(drbdadm sh-dev <replaceable>res</replaceable>)</command></simpara></listitem></orderedlist>
       </para>
-      <para>	One obvious side-effect is that the replica are full of old garbage
+      <para>	One obvious side-effect is that the replica is full of old garbage
 	(unless you made them identical using other means), so any
 	online-verify is expected to find any number of out-of-sync blocks.
       </para>
       <para><emphasis>You must not use this on pre-existing data!</emphasis>
         Even though it may appear to work at first glance, once you switch to
         the other node, your data is toast, as it never got replicated.
-        So do <emphasis>do not leave out the mkfs</emphasis> (or equivalent).
+        So <emphasis>do not leave out the mkfs</emphasis> (or equivalent).
       </para>
       <para>        This can also be used to shorten the initial resync of a cluster where the second node
         is added after the first node is gone into production, by means of disk shipping.
@@ -1575,7 +1573,7 @@
 	    the RAID1 controller, or by copying with dd. You need to copy the actual
 	    data, and the meta data.
 	  </simpara></listitem><listitem><simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable> new-current-uuid</command></simpara></listitem><listitem><simpara>	    Add the disk to the new secondary node, and join it to the cluster. You will
-	    get a resync of that parts that where changed since the first call to
+	    get a resync of that parts that were changed since the first call to
 	    <command moreinfo="none">drbdsetup</command> in step 1.
 	  </simpara></listitem></orderedlist>
       </para>
@@ -1615,7 +1613,7 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
     <title>See Also</title>
     <para><citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>,
       <citerefentry><refentrytitle>drbd</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
-      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry><ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>,
+      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry>, <citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry>, <ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>,
       <ulink url="http://www.drbd.org/"><citetitle>DRBD web site</citetitle></ulink></para>
   </refsect1>
 </refentry>
