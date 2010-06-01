@@ -43,10 +43,10 @@
   </refsynopsisdiv>
   <refsect1>
     <title>Description</title>
-    <para>      Drbdadm is the high level tool of the DRBD program suite. Drbdadm is to
-      drbdsetup and drbdmeta what ifup/ifdown is to ifconfig. Drbdadm reads its
+    <para>      <option>Drbdadm</option> is the high level tool of the DRBD program suite. <option>Drbdadm</option> is to
+      <option>drbdsetup</option> and <option>drbdmeta</option> what <option>ifup</option>/<option>ifdown</option> is to <option>ifconfig</option>. <option>Drbdadm</option> reads its
       configuration file and performs the specified commands by calling the
-      drbdsetup and/or the drbdmeta program.
+      <option>drbdsetup</option> and/or the <option>drbdmeta</option> program.
     </para>
   </refsect1>
   <refsect1>
@@ -55,13 +55,13 @@
       <varlistentry>
         <term><option>-d</option>, <option>--dry-run</option></term>
         <listitem>
-          <para>	  Just prints the calls of drbdsetup to stdout, but does not run
+          <para>	  Just prints the calls of <option>drbdsetup</option> to stdout, but does not run
 	  the commands.
 	</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term><option>-c</option>, <option>--config-file</option><replaceable>file</replaceable></term>
+        <term><option>-c</option>, <option>--config-file</option> <replaceable>file</replaceable></term>
         <listitem>
           <para>          Specifies the configuration file drbdadm will use. If this parameter
 	  is not specified, drbdadm will look for <option>/etc/drbd-83.conf</option>,
@@ -71,7 +71,7 @@
       </varlistentry>
 
       <varlistentry>
-        <term><option>-t</option>, <option>--config-to-test</option><replaceable>file</replaceable></term>
+        <term><option>-t</option>, <option>--config-to-test</option> <replaceable>file</replaceable></term>
         <listitem>
           <para>          Specifies an additional configuration file drbdadm to check. This option
 	    is only allowed with the dump and the sh-nop commands.
@@ -80,17 +80,17 @@
       </varlistentry>
 
       <varlistentry>
-        <term><option>-s</option>, <option>--drbdsetup</option><replaceable>file</replaceable></term>
+        <term><option>-s</option>, <option>--drbdsetup</option> <replaceable>file</replaceable></term>
         <listitem>
-          <para>          Specifies the full path to the drbdsetup program. If this option is
+          <para>          Specifies the full path to the <option>drbdsetup</option> program. If this option is
 	  omitted, drbdadm will look for <option>/sbin/drbdsetup</option> and <option>./drbdsetup</option>.
 	</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term><option>-m</option>, <option>--drbdmeta</option><replaceable>file</replaceable></term>
+        <term><option>-m</option>, <option>--drbdmeta</option> <replaceable>file</replaceable></term>
         <listitem>
-          <para>          Specifies the full path to the drbdmeta program. If this option is
+          <para>          Specifies the full path to the <option>drbdmeta</option> program. If this option is
 	  omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
 	  <option>./drbdmeta</option>.
 	</para>
@@ -115,8 +115,8 @@
         <term><option>--</option> <replaceable>backend-options</replaceable></term>
         <listitem>
           <para>All options following the doubly hyphen are considered <replaceable>backend-options</replaceable>.
-	    These are passed through to the backend command. I.e. to drbdsetup,
-	    drbdmeta or drbd-proxy-ctl.
+	    These are passed through to the backend command. I.e. to <option>drbdsetup</option>,
+	    <option>drbdmeta</option> or <option>drbd-proxy-ctl</option>.
 	</para>
         </listitem>
       </varlistentry>
@@ -200,7 +200,7 @@
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>secondary</secondary></indexterm>
           Brings the device back into secondary role. This is needed since in
 	  a connected DRBD device pair,  only one of the two peers may have
-	  primary role (except if allow-two-primaries is explicitly set in
+	  primary role (except if <option>allow-two-primaries</option> is explicitly set in
 	  the configuration file).
         </para>
         </listitem>
@@ -211,7 +211,7 @@
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>invalidate</secondary></indexterm>
           Forces DRBD to consider the data on the <emphasis>local</emphasis> backing
 	  storage device as out-of-sync. Therefore DRBD will copy each
-	  and every block over from its peer, to bring the local storage
+	  and every block from its peer, to bring the local storage
 	  device back in sync.
         </para>
         </listitem>
@@ -231,9 +231,9 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>resize</secondary></indexterm>
           Causes DRBD to re-examine all sizing constraints, and resize the
-	  resource's device accordingly. For example in case you increased the
-	  size of your backing storage devices (on both nodes of course),
-	  then DRBD will adopt to the new size after you called
+	  resource's device accordingly. For example, if you increased the
+	  size of your backing storage devices (on both nodes, of course),
+	  then DRBD will adopt the new size after you called
 	  this command on one of your nodes. Since new storage space must be
           synchronised this command only works if there is at least one primary
           node present.
@@ -339,11 +339,11 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>status</secondary></indexterm>
 	Shows the current status of all devices defined in the current config file,
-	in xml-like format. Example output:
+	in XML-like format. Example output:
 <programlisting format="linespecific">&lt;drbd-status version="8.3.2" api="88"&gt;
 &lt;resources config_file="/etc/drbd.conf"&gt;
 &lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
-          ds1="Inconsistent" ds2="UpToDate" resynced_precent ="5.9" /&gt;
+          ds1="Inconsistent" ds2="UpToDate" resynced_precent="5.9" /&gt;
 &lt;resource minor="1" name="s1" cs="WFConnection" st1="Secondary"
           st2="Unknown" ds1="Inconsistent" ds2="Outdated" /&gt;
 &lt;resource minor="3" name="dummy" cs="Unconfigured" /&gt;
@@ -358,7 +358,7 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>dump</secondary></indexterm>
           Just parse the configuration file and dump it to stdout. May
-	  be used to check the configuration file for syntactical correctness.
+	  be used to check the configuration file for syntactic correctness.
         </para>
         </listitem>
       </varlistentry>
@@ -376,7 +376,7 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>verify</secondary></indexterm>
            Starts online verify. During online verify, data on
-           both nodes is compared for inconsistency. See
+           both nodes is compared for equality. See
    	   <filename moreinfo="none">/proc/drbd</filename> for online verify progress. If out-of-sync
            blocks are found, they are <emphasis>not</emphasis> resynchronized
            automatically. To do that, <command moreinfo="none">disconnect</command> and
@@ -412,7 +412,7 @@
 	  Generates a new currend UUID and rotates all other UUID values.
         </para>
           <para>          This can be used to shorten the initial resync of a cluster.
-          See the drbdsetup manpage for a more details.
+          See the <option>drbdsetup</option> manpage for a more details.
         </para>
         </listitem>
       </varlistentry>
