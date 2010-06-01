@@ -334,6 +334,33 @@ resource r0 {
     <option>local-io-error</option>, <option>initial-split-brain</option>, <option>split-brain</option>,
     <option>before-resync-target</option>, <option>after-resync-target</option>.
   </para>
+  <para>
+        The interface is done via environment variables:
+        <varlistentry>
+            <listitem>
+                <option>DRBD_RESOURCE</option> is the name of the resource
+            </listitem>
+            <listitem>
+                <option>DRBD_MINOR</option> is the minor number of the DRBD device, in decimal.
+            </listitem>
+            <listitem>
+                <option>DRBD_CONF</option> is the path to the primary configuration file; if you
+                split your configuration into multiple files (e.g. in <option>/etc/drbd.conf.d/</option>),
+                this will not be helpful.
+            </listitem>
+            <listitem>
+                <option>DRBD_PEER_AF</option>, 
+                <option>DRBD_PEER_ADDRESS</option>, 
+                <option>DRBD_PEERS</option>
+                are the address family (e.g. <option>ipv6</option>),
+                the peer's address and hostnames.
+            </listitem>
+        </varlistentry>
+        <option>DRBD_PEER</option> is deprecated.
+  </para>
+  <para>
+      Please note that not all of these might be set for all handlers, and that some values might not be useable for a <option>floating</option> definition.
+  </para>
           </listitem>
         </varlistentry>
       </variablelist>
