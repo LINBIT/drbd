@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.8rc2 (api:88/proto:86-94)
+8.3.8 (api:88/proto:86-94)
 --------
  * Do not expose failed local READs to upper layers, regression introduced
    in 8.3.3

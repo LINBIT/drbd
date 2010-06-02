@@ -35,7 +35,7 @@ extern const char *drbd_buildtag(void);
 #endif
 /* End of external module for 2.6.33 stuff */
 
-#define REL_VERSION "8.3.8rc2"
+#define REL_VERSION "8.3.8"
 #define API_VERSION 88
 #define PRO_VERSION_MIN 86
 #define PRO_VERSION_MAX 94
