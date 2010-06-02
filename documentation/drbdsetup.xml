@@ -231,6 +231,13 @@
       <arg choice="req" rep="norepeat">
         <replaceable>device</replaceable>
       </arg>
+      <arg choice="plain" rep="norepeat">check-resize</arg>
+    </cmdsynopsis>
+    <cmdsynopsis sepchar=" ">
+      <command moreinfo="none">drbdsetup</command>
+      <arg choice="req" rep="norepeat">
+        <replaceable>device</replaceable>
+      </arg>
       <arg choice="plain" rep="norepeat">pause-sync</arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
@@ -1424,6 +1431,23 @@
 	DRBD will skip the resync of the new storage. Only do this if you
 	know that the new storage was initialized to the same content
 	by other means.
+      </para>
+    </refsect2>
+    <refsect2>
+      <title>check-resize</title>
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+        <secondary>check-resize</secondary>
+      </indexterm>
+      <para>To enable DRBD to detect offline resizing of backing devices
+	this command may be used to record the current size of backing
+	devices. The size is stored in files in /var/lib/drbd/ named
+	drbd-minor-??.lkbd
+      </para>
+      <para>
+	This command is called by
+	<command moreinfo="none">drbdadm resize <replaceable>res</replaceable></command> after
+	<command moreinfo="none">drbdsetup <replaceable>device</replaceable> resize</command> returned.
       </para>
     </refsect2>
     <refsect2>

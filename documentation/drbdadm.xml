@@ -246,6 +246,17 @@
         </listitem>
       </varlistentry>
       <varlistentry>
+        <term>check-resize</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>check-resize</secondary></indexterm>
+          Calls drbdmeta to eventually move internal meta data. If the backing
+	  device was resized, while DRBD was not running, meta data has to be
+	  moved to the end of the device, so that the next <option>attach</option> command
+	  can succeed.
+        </para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
         <term>create-md</term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdadm</primary><secondary>create-md</secondary></indexterm>

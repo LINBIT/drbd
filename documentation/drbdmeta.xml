@@ -139,6 +139,19 @@
         </para>
         </listitem>
       </varlistentry>
+
+      <varlistentry>
+        <term>check-resize</term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>check-resize</secondary></indexterm>
+          Examines the device size of a backing device, and it's last known device size,
+	  recorded in a file /var/lib/drbd/drbd-minor-??.lkbd. In case the size of the
+	  backing device changed, and the meta data can be found at the old position,
+	  it moves the meta data to the right position at the end of the block device.
+        </para>
+        </listitem>
+      </varlistentry>
+
     </variablelist>
   </refsect1>
   <refsect1>
