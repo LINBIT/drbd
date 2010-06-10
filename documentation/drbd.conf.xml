@@ -316,7 +316,8 @@ resource r0 {
     <option>use-rle</option>,
     <option>cpu-mask</option>, <option>verify-alg</option>, <option>csums-alg</option>,
     <option>delay-probe-volume</option>, <option>delay-probe-interval</option>,
-    <option>throttle-threshold</option> and <option>hold-off-threshold</option>.
+    <option>throttle-threshold</option>, <option>hold-off-threshold</option>
+    and <option>on-no-data-accessible</option>.
   </para>
           </listitem>
         </varlistentry>
@@ -1446,6 +1447,25 @@ the unit is 1 second.
 	      <replaceable>throttle_delay</replaceable> DRBD will slow down the resync
 	      in order to keep the delay small. The resync speed gets linearly slowed
 	      down it reaches 0 at a delay of <replaceable>hold_off_delay</replaceable>.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>on-no-data-accessible <replaceable>ond-policy</replaceable></option>
+          </term>
+          <listitem>
+            <para>This setting controls what happens to IO requests on a degraded, disk less node
+	      (I.e. no data store is reachable). The available policies are <option>io-error</option>
+	      and <option>suspend-io</option>.</para>
+	    <para>
+	      If <replaceable>ond-policy</replaceable> is set to <option>suspend-io</option> you
+	      can either resume IO by attaching/connecting the last lost data storage, or by
+	      the <command moreinfo="none">drbdadm resume-io <replaceable>res</replaceable></command>
+	      command. The latter will result in IO errors of course.
+	    </para>
+	    <para>
+	      The default is <option>io-error</option>. This setting is available since DRBD 8.3.9.
 	    </para>
           </listitem>
         </varlistentry>

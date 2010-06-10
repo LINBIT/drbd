@@ -461,6 +461,11 @@ resource r0 {
     delay-probe-interval 5;   # Send a delay probe at least every 500 ms
     throttle-threshold   20;  # Begin to slow down resync if delay > 2 sec
     hold-off-threshold   100; # Completely stop resync if delay > 10 sec
+
+    # If the local disk and the connection to the peer fail cuncurrently,
+    # DRBD fails IO requests by default. Alternatively you can set this to
+    # "suspend-io".
+    on-no-data-accessible io-error;
   }
 
   on amd {

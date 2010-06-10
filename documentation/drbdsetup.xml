@@ -106,6 +106,7 @@
       <arg choice="opt" rep="norepeat">-I<arg choice="req" rep="norepeat"><replaceable>delay-probe-interval</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-T<arg choice="req" rep="norepeat"><replaceable>throttle-delay</replaceable></arg></arg>
       <arg choice="opt" rep="norepeat">-H<arg choice="req" rep="norepeat"><replaceable>hold-off-delay</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-n<arg choice="req" rep="norepeat"><replaceable>ond-policy</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -1127,6 +1128,7 @@
 	    </para>
           </listitem>
         </varlistentry>
+
         <varlistentry>
           <term><option>-V</option>,
 	  <option>--delay-probe-volume <replaceable>volume</replaceable></option></term>
@@ -1154,6 +1156,24 @@
 	      <replaceable>throttle_delay</replaceable> 20 (2 seconds),
 	      <replaceable>hold_off_delay</replaceable> 100 (10 seconds) as default value. The default
 	      unit of the latter three is 100ms.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-n</option>,
+	  <option>--on-no-data-accessible <replaceable>ond-policy</replaceable></option></term>
+          <listitem>
+            <para>This setting controls what happens to IO requests on a degraded, disk less node
+	      (I.e. no data store is reachable). The available policies are <option>io-error</option>
+	      and <option>suspend-io</option>.</para>
+	    <para>
+	      If <replaceable>ond-policy</replaceable> is set to <option>suspend-io</option> you
+	      can either resume IO by attaching/connecting the last lost data storage, or by
+	      the <command moreinfo="none">drbdadm resume-io <replaceable>res</replaceable></command>
+	      command. The latter will result in IO errors of course.
+	    </para>
+	    <para>
+	      The default is <option>io-error</option>. This setting is available since DRBD 8.3.9.
 	    </para>
           </listitem>
         </varlistentry>
