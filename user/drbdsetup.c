@@ -473,6 +473,7 @@ static const char *error_messages[] = {
 	EM(ERR_CSUMS_RESYNC_RUNNING) = "Can not change csums-alg while resync is in progress",
 	EM(ERR_PERM) = "Permission denied. CAP_SYS_ADMIN necessary",
 	EM(ERR_NEED_APV_93) = "Protocol version 93 required to use --assume-clean",
+	EM(ERR_STONITH_AND_PROT_A) = "Fencing policy resource-and-stonith only with prot B or C allowed",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
