@@ -84,7 +84,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	md_io.error = 0;
 
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
-		rw |= (1UL << BIO_RW_BARRIER);
+		rw |= REQ_HARDBARRIER;
 #ifdef BIO_RW_SYNC
 	rw |= (1<<BIO_RW_SYNC);
 #else
@@ -92,7 +92,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	 * 213d9417fec62ef4c3675621b9364a667954d4dd,
 	 * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
 	 * later, the defines even became an enum ;-) */
-	rw |= (1<<BIO_RW_SYNCIO) | (1<<BIO_RW_UNPLUG);
+	rw |= REQ_UNPLUG | REQ_SYNC;
 #endif
 
  retry:
@@ -118,11 +118,11 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	/* check for unsupported barrier op.
 	 * would rather check on EOPNOTSUPP, but that is not reliable.
 	 * don't try again for ANY return value != 0 */
-	if (unlikely(bio_rw_flagged(bio, BIO_RW_BARRIER) && !ok)) {
+	if (unlikely((bio->bi_rw & REQ_HARDBARRIER) && !ok)) {
 		/* Try again with no barrier */
 		dev_warn(DEV, "Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER, &mdev->flags);
-		rw &= ~(1 << BIO_RW_BARRIER);
+		rw &= ~REQ_HARDBARRIER;
 		bio_put(bio);
 		goto retry;
 	}
