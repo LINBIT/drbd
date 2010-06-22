@@ -364,7 +364,7 @@ bail:
 static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 {
 	struct drbd_tl_epoch *b, *tmp, **pn;
-	struct list_head *le, *tle;
+	struct list_head *le, *tle, carry_reads;
 	struct drbd_request *req;
 	int rv, n_writes, n_reads;
 
@@ -373,6 +373,7 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 	while (b) {
 		n_writes = 0;
 		n_reads = 0;
+		INIT_LIST_HEAD(&carry_reads);
 		list_for_each_safe(le, tle, &b->requests) {
 			req = list_entry(le, struct drbd_request, tl_requests);
 			rv = _req_mod(req, what);
@@ -382,7 +383,7 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 		}
 		tmp = b->next;
 
-		if (n_writes + n_reads) {
+		if (n_writes) {
 			if (what == resend) {
 				b->n_writes = n_writes;
 				if (b->w.cb == NULL) {
@@ -395,6 +396,8 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 			}
 			pn = &b->next;
 		} else {
+			if (n_reads)
+				list_add(&carry_reads, &b->requests);
 			/* there could still be requests on that ring list,
 			 * in case local io is still pending */
 			list_del(&b->requests);
@@ -409,6 +412,7 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 				/* recycle, but reinit! */
 				D_ASSERT(tmp == NULL);
 				INIT_LIST_HEAD(&b->requests);
+				list_splice(&carry_reads, &b->requests);
 				INIT_LIST_HEAD(&b->w.list);
 				b->w.cb = NULL;
 				b->br_number = net_random();
@@ -421,6 +425,7 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 			kfree(b);
 		}
 		b = tmp;
+		list_splice(&carry_reads, &b->requests);
 	}
 }
 
