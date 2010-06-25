@@ -82,12 +82,13 @@ STATIC void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 			    (unsigned long) Bit2KB(rs_left),
 			    (unsigned long) Bit2KB(mdev->rs_total));
 
-	if (mdev->state.conn == C_SYNC_TARGET)
-		seq_printf(seq, " queue_delay: %d.%d ms\n\t",
-			   mdev->data_delay / 1000,
-			   (mdev->data_delay % 1000) / 100);
-	else if (mdev->state.conn == C_SYNC_SOURCE)
-		seq_printf(seq, " delay_probe: %u\n\t", mdev->delay_seq);
+	if (mdev->state.conn == C_SYNC_TARGET) {
+		int data_delay = drbd_calc_data_delay_us(mdev);
+		seq_printf(seq, " queue_delay: %d.%03d ms\n\t",
+			   data_delay / 1000,
+			   (data_delay % 1000));
+	} else if (mdev->state.conn == C_SYNC_SOURCE)
+		seq_printf(seq, "\n\t");
 
 	/* see drivers/md/md.c
 	 * We do not want to overflow, so the order of operands and

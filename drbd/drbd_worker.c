@@ -449,7 +449,7 @@ void resync_timer_fn(unsigned long data)
 
 static int calc_resync_rate(struct drbd_conf *mdev)
 {
-	int d = mdev->data_delay / 1000; /* us -> ms */
+	int d = drbd_calc_data_delay_us(mdev) / 1000; /* us -> ms */
 	int td = mdev->sync_conf.throttle_th * 100;  /* 0.1s -> ms */
 	int hd = mdev->sync_conf.hold_off_th * 100;  /* 0.1s -> ms */
 	int cr = mdev->sync_conf.rate;

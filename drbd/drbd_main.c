@@ -2428,18 +2428,16 @@ int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
 STATIC int drbd_send_delay_probe(struct drbd_conf *mdev, struct drbd_socket *ds)
 {
 	struct p_delay_probe dp;
-	int offset, ok = 0;
-	struct timeval now;
+	struct timespec now;
+	int ok = 0;
 
 	mutex_lock(&ds->mutex);
 	if (likely(ds->socket)) {
-		do_gettimeofday(&now);
-		offset = now.tv_usec - mdev->dps_time.tv_usec +
-			 (now.tv_sec - mdev->dps_time.tv_sec) * 1000000;
-		dp.seq_num  = cpu_to_be32(mdev->delay_seq);
-		dp.offset   = cpu_to_be32(offset);
+		ktime_get_ts(&now);
+		dp.sent_at_sec  = cpu_to_be64(now.tv_sec);
+		dp.sent_at_nsec = cpu_to_be32(now.tv_nsec);
 
-		ok = _drbd_send_cmd(mdev, ds->socket, P_DELAY_PROBE,
+		ok = _drbd_send_cmd(mdev, ds->socket, P_DELAY_PROBE95,
 				    (struct p_header *)&dp, sizeof(dp), 0);
 	}
 	mutex_unlock(&ds->mutex);
@@ -2451,8 +2449,6 @@ STATIC int drbd_send_delay_probes(struct drbd_conf *mdev)
 {
 	int ok;
 
-	mdev->delay_seq++;
-	do_gettimeofday(&mdev->dps_time);
 	ok = drbd_send_delay_probe(mdev, &mdev->meta);
 	ok = ok && drbd_send_delay_probe(mdev, &mdev->data);
 
@@ -2613,7 +2609,7 @@ static int _drbd_send_zc_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 
 static void consider_delay_probes(struct drbd_conf *mdev)
 {
-	if (mdev->state.conn != C_SYNC_SOURCE || mdev->agreed_pro_version < 93)
+	if (mdev->state.conn != C_SYNC_SOURCE || mdev->agreed_pro_version < 95)
 		return;
 
 	if (mdev->dp_volume_last + mdev->sync_conf.dp_volume * 2 < mdev->send_cnt)
@@ -3027,7 +3023,6 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
 	INIT_LIST_HEAD(&mdev->md_sync_work.list);
 	INIT_LIST_HEAD(&mdev->bm_io_work.w.list);
-	INIT_LIST_HEAD(&mdev->delay_probes);
 	INIT_LIST_HEAD(&mdev->delay_probe_work.list);
 
 	mdev->resync_work.cb  = w_resync_inactive;

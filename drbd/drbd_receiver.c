@@ -968,6 +968,7 @@ retry:
 	drbd_send_state(mdev);
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	clear_bit(RESIZE_PENDING, &mdev->flags);
+	mdev->dp_inbalance = 0;
 
 	return 1;
 
@@ -3659,80 +3660,6 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, struct p_header *h)
 	return TRUE;
 }
 
-STATIC void timeval_sub_us(struct timeval* tv, unsigned int us)
-{
-	tv->tv_sec -= us / 1000000;
-	us = us % 1000000;
-	if (tv->tv_usec > us) {
-		tv->tv_usec += 1000000;
-		tv->tv_sec--;
-	}
-	tv->tv_usec -= us;
-}
-
-STATIC void got_delay_probe(struct drbd_conf *mdev, int from, struct p_delay_probe *p)
-{
-	struct delay_probe *dp;
-	struct list_head *le;
-	struct timeval now;
-	int seq_num;
-	int offset;
-	int data_delay;
-
-	seq_num = be32_to_cpu(p->seq_num);
-	offset  = be32_to_cpu(p->offset);
-
-	spin_lock(&mdev->peer_seq_lock);
-	if (!list_empty(&mdev->delay_probes)) {
-		if (from == USE_DATA_SOCKET)
-			le = mdev->delay_probes.next;
-		else
-			le = mdev->delay_probes.prev;
-
-		dp = list_entry(le, struct delay_probe, list);
-
-		if (dp->seq_num == seq_num) {
-			list_del(le);
-			spin_unlock(&mdev->peer_seq_lock);
-			do_gettimeofday(&now);
-			timeval_sub_us(&now, offset);
-			data_delay =
-				now.tv_usec - dp->time.tv_usec +
-				(now.tv_sec - dp->time.tv_sec) * 1000000;
-
-			if (data_delay > 0)
-				mdev->data_delay = data_delay;
-
-			kfree(dp);
-			return;
-		}
-
-		if (dp->seq_num > seq_num) {
-			spin_unlock(&mdev->peer_seq_lock);
-			dev_warn(DEV, "Previous allocation failure of struct delay_probe?\n");
-			return; /* Do not alloca a struct delay_probe.... */
-		}
-	}
-	spin_unlock(&mdev->peer_seq_lock);
-
-	dp = kmalloc(sizeof(struct delay_probe), GFP_NOIO);
-	if (!dp) {
-		dev_warn(DEV, "Failed to allocate a struct delay_probe, do not worry.\n");
-		return;
-	}
-
-	dp->seq_num = seq_num;
-	do_gettimeofday(&dp->time);
-	timeval_sub_us(&dp->time, offset);
-
-	spin_lock(&mdev->peer_seq_lock);
-	if (from == USE_DATA_SOCKET)
-		list_add(&dp->list, &mdev->delay_probes);
-	else
-		list_add_tail(&dp->list, &mdev->delay_probes);
-	spin_unlock(&mdev->peer_seq_lock);
-}
-
 STATIC int receive_delay_probe(struct drbd_conf *mdev, struct p_header *h)
 {
 	struct p_delay_probe *p = (struct p_delay_probe *)h;
@@ -3741,8 +3668,73 @@ STATIC int receive_delay_probe(struct drbd_conf *mdev, struct p_header *h)
 	if (drbd_recv(mdev, h->payload, h->length) != h->length)
 		return FALSE;
 
-	got_delay_probe(mdev, USE_DATA_SOCKET, p);
+	spin_lock(&mdev->peer_seq_lock);
+	mdev->dp_send_data.tv_sec  = be64_to_cpu(p->sent_at_sec);
+	mdev->dp_send_data.tv_nsec = be32_to_cpu(p->sent_at_nsec);
+	ktime_get_ts(&mdev->dp_recv_data);
+	mdev->dp_inbalance--;
+	spin_unlock(&mdev->peer_seq_lock);
+
 	return TRUE;
+}
+
+STATIC int got_delay_probe_m(struct drbd_conf *mdev, struct p_header *h)
+{
+	struct p_delay_probe *p = (struct p_delay_probe *)h;
+
+	spin_lock(&mdev->peer_seq_lock);
+	mdev->dp_send_meta.tv_sec  = be64_to_cpu(p->sent_at_sec);
+	mdev->dp_send_meta.tv_nsec = be32_to_cpu(p->sent_at_nsec);
+	ktime_get_ts(&mdev->dp_recv_meta);
+	mdev->dp_inbalance++;
+	spin_unlock(&mdev->peer_seq_lock);
+
+	return TRUE;
+}
+
+static inline s64 timespec_to_us(const struct timespec *ts)
+{
+	return ((s64) ts->tv_sec * USEC_PER_SEC) + ts->tv_nsec / NSEC_PER_USEC;
+}
+
+int drbd_calc_data_delay_us(struct drbd_conf *mdev)
+{
+	s64 rd, rm, sd, sm, delay = 0; /* units: us */
+	int inb;
+
+	spin_lock(&mdev->peer_seq_lock);
+	rd = timespec_to_us(&mdev->dp_recv_data);
+	rm = timespec_to_us(&mdev->dp_recv_meta);
+	sd = timespec_to_us(&mdev->dp_send_data);
+	sm = timespec_to_us(&mdev->dp_send_meta);
+	inb = mdev->dp_inbalance;
+	spin_unlock(&mdev->peer_seq_lock);
+
+	if (inb < 0)
+		return 0;
+
+	delay = (rd - rm) - (sd - sm);
+
+	if (delay < 0)
+		return 0;
+
+	if (inb > 0) {
+		struct timespec now_ts;
+		s64 now, mdp, d2;
+
+		ktime_get_ts(&now_ts);
+		now = timespec_to_us(&now_ts);
+		d2 = now - rm;
+
+		/* That assumes that dp_interval is configured to the same value
+		   on both nodes. mdp = missing delay probes */
+		mdp = mdev->sync_conf.dp_interval * (inb - 1) * 100 * USEC_PER_MSEC;
+		d2 += mdp;
+
+		if (d2 > delay)
+			delay = d2;
+	}
+	return delay;
 }
 
 typedef int (*drbd_cmd_handler_f)(struct drbd_conf *, struct p_header *);
@@ -3768,7 +3760,8 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[P_OV_REQUEST]      = receive_DataRequest,
 	[P_OV_REPLY]        = receive_DataRequest,
 	[P_CSUM_RS_REQUEST]    = receive_DataRequest,
-	[P_DELAY_PROBE]     = receive_delay_probe,
+	[P_DELAY_PROBE]     = receive_skip,
+	[P_DELAY_PROBE95]   = receive_delay_probe,
 	/* anything missing from this table is in
 	 * the asender_tbl, see get_asender_cmd */
 	[P_MAX_CMD]	    = NULL,
@@ -4523,11 +4516,8 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct p_header *h)
 	return TRUE;
 }
 
-STATIC int got_delay_probe_m(struct drbd_conf *mdev, struct p_header *h)
+STATIC int got_skip(struct drbd_conf *mdev, struct p_header *h)
 {
-	struct p_delay_probe *p = (struct p_delay_probe *)h;
-
-	got_delay_probe(mdev, USE_META_SOCKET, p);
 	return TRUE;
 }
 
@@ -4555,7 +4545,8 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	[P_BARRIER_ACK]	    = { sizeof(struct p_barrier_ack), got_BarrierAck },
 	[P_STATE_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
-	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe), got_delay_probe_m },
+	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
+	[P_DELAY_PROBE95]   = { sizeof(struct p_delay_probe), got_delay_probe_m },
 	[P_MAX_CMD]	    = { 0, NULL },
 	};
 	if (cmd > P_MAX_CMD || asender_tbl[cmd].process == NULL)
