@@ -229,12 +229,8 @@ drbd_set_status_variables() {
 maybe_outdate_self()
 {
 	local host stop_uname
-	for host in $OCF_RESKEY_CRM_meta_notify_master_uname \
-		$OCF_RESKEY_CRM_meta_notify_promote_uname \
-		""
-	do
-		[[ $host == "$HOSTNAME" ]] || break
-	done
+	host=$(printf "%s\n" $OCF_RESKEY_CRM_meta_notify_master_uname |
+		grep -vix -m1 -e "$HOSTNAME" )
 	if [[ -z $host ]] ; then
 		# no current nor future master host found
 		# do not outdate myself
@@ -416,16 +412,13 @@ figure_out_drbd_peer_uname()
 	# it may be mentioned in various variables (or not at all)
 	local x
 	# intentionally not cared for stop_uname
-	for x in \
+	x=$(printf "%s\n" \
 		$OCF_RESKEY_CRM_meta_notify_start_uname \
 		$OCF_RESKEY_CRM_meta_notify_promote_uname \
 		$OCF_RESKEY_CRM_meta_notify_master_uname \
 		$OCF_RESKEY_CRM_meta_notify_slave_uname \
-		$OCF_RESKEY_CRM_meta_notify_demote_uname \
-		""
-	do
-		[[ $x == "$HOSTNAME" ]] || break
-	done
+		$OCF_RESKEY_CRM_meta_notify_demote_uname |
+		grep -vix -m1 -e "$HOSTNAME" )
 	DRBD_TO_PEER=${x:+ --peer $x}
 }
 
