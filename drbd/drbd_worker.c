@@ -447,18 +447,6 @@ void resync_timer_fn(unsigned long data)
 		drbd_queue_work(&mdev->data.work, &mdev->resync_work);
 }
 
-static int calc_resync_rate(struct drbd_conf *mdev)
-{
-	int d = drbd_calc_data_delay_us(mdev) / 1000; /* us -> ms */
-	int td = mdev->sync_conf.throttle_th * 100;  /* 0.1s -> ms */
-	int hd = mdev->sync_conf.hold_off_th * 100;  /* 0.1s -> ms */
-	int cr = mdev->sync_conf.rate;
-
-	return d <= td ? cr :
-		d >= hd ? 0 :
-		cr + (cr * (td - d) / (hd - td));
-}
-
 int w_make_resync_request(struct drbd_conf *mdev,
 		struct drbd_work *w, int cancel)
 {
@@ -498,7 +486,7 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	max_segment_size = mdev->agreed_pro_version < 94 ?
 		queue_max_segment_size(mdev->rq_queue) : DRBD_MAX_SEGMENT_SIZE;
 
-	mdev->c_sync_rate = calc_resync_rate(mdev);
+	mdev->c_sync_rate = mdev->sync_conf.rate;
 	number = SLEEP_TIME * mdev->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	pe = atomic_read(&mdev->rs_pending_cnt);
 

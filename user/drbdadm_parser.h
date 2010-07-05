@@ -48,8 +48,6 @@ enum range_checks
 	R_OUTDATED_WFC_TIMEOUT,
 	R_DP_VOLUME,
 	R_DP_INTERVAL,
-	R_RS_THROTTLE_TH,
-	R_RS_HOLD_OFF_TH,
 };
 
 enum yytokentype {
@@ -113,6 +111,7 @@ enum yytokentype {
 	TK_NET_DELEGATE,
 	TK_INCLUDE,
 	TK_FLOATING,
+	TK_DEPRECATED_OPTION,
 };
 
 typedef struct YYSTYPE {

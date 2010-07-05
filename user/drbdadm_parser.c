@@ -242,16 +242,6 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_DP_INTERVAL_MIN,
 				DRBD_DP_INTERVAL_MAX);
 		break;
-
-	case R_RS_THROTTLE_TH:
-		m_strtoll_range(value, 1, name, DRBD_RS_THROTTLE_TH_MIN,
-				DRBD_RS_THROTTLE_TH_MAX);
-		break;
-
-	case R_RS_HOLD_OFF_TH:
-		m_strtoll_range(value, 1, name, DRBD_RS_HOLD_OFF_TH_MIN,
-				DRBD_RS_HOLD_OFF_TH_MAX);
-		break;
 	}
 }
 
@@ -613,6 +603,9 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 		} else if (token == token_delegate) {
 			delegate(ctx);
 			continue;
+		} else if (token == TK_DEPRECATED_OPTION) {
+			/* fprintf(stderr, "Warn: Ignoring deprecated option '%s'\n", yylval.txt); */
+			expect_STRING_or_INT();
 		} else if (token == '}') {
 			return options;
 		} else {

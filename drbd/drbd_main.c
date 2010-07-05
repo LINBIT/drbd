@@ -2966,8 +2966,6 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 		/* .al_extents = */	DRBD_AL_EXTENTS_DEF,
 		/* .dp_volume = */	DRBD_DP_VOLUME_DEF,
 		/* .dp_interval = */	DRBD_DP_INTERVAL_DEF,
-		/* .throttle_th = */	DRBD_RS_THROTTLE_TH_DEF,
-		/* .hold_off_th = */	DRBD_RS_HOLD_OFF_TH_DEF,
 		/* .verify_alg = */	{}, 0,
 		/* .cpu_mask = */	{}, 0,
 		/* .csums_alg = */	{}, 0,

@@ -127,8 +127,8 @@ cpu-mask		{ DP; CP; return TK_SYNCER_OPTION;	}
 use-rle			{ DP; CP; return TK_SYNCER_SWITCH;	}
 delay-probe-volume	{ DP; CP; RC(DP_VOLUME); return TK_SYNCER_OPTION; }
 delay-probe-interval	{ DP; CP; RC(DP_INTERVAL); return TK_SYNCER_OPTION; }
-throttle-threshold	{ DP; CP; RC(RS_THROTTLE_TH); return TK_SYNCER_OPTION; }
-hold-off-threshold	{ DP; CP; RC(RS_HOLD_OFF_TH); return TK_SYNCER_OPTION; }
+throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
+hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 on-no-data-accessible   { DP; CP; return TK_SYNCER_OPTION;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}

@@ -363,8 +363,6 @@ struct drbd_cmd commands[] = {
 		 { "use-rle",'R',T_use_rle,   EB },
 		 { "delay-probe-volume",'V',	T_dp_volume,	EN(DP_VOLUME,'k',"bytes") },
 		 { "delay-probe-interval",'I',	T_dp_interval,	EN(DP_INTERVAL,1,"1/10 seconds") },
-		 { "throttle-threshold",'T',	T_throttle_th,	EN(RS_THROTTLE_TH,1,"1/10 seconds") },
-		 { "hold-off-threshold",'H',	T_hold_off_th,	EN(RS_HOLD_OFF_TH,1,"1/10 seconds") },
 		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
 		 CLOSE_OPTIONS }} }, },
 
