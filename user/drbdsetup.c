@@ -362,6 +362,10 @@ struct drbd_cmd commands[] = {
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 { "use-rle",'R',T_use_rle,   EB },
 		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
+		 { "c-plan-ahead", 'p',         T_c_plan_ahead, EN(C_PLAN_AHEAD,1,"1/10 seconds") },
+		 { "c-delay-target", 'd',       T_c_delay_target, EN(C_DELAY_TARGET,1,"1/10 seconds") },
+		 { "c-fill-target", 's',        T_c_fill_target, EN(C_FILL_TARGET,'s',"bytes") },
+		 { "c-max-rate", 'm',		T_c_max_rate, EN(C_MAX_RATE,'k',"bytes/second") },
 		 CLOSE_OPTIONS }} }, },
 
 	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,

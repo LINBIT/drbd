@@ -232,6 +232,26 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
 				DRBD_OUTDATED_WFC_TIMEOUT_MAX);
 		break;
+
+	case R_C_PLAN_AHEAD:
+		m_strtoll_range(value, 1, name, DRBD_C_PLAN_AHEAD_MIN,
+				DRBD_C_PLAN_AHEAD_MAX);
+		break;
+
+	case R_C_DELAY_TARGET:
+		m_strtoll_range(value, 1, name, DRBD_C_DELAY_TARGET_MIN,
+				DRBD_C_DELAY_TARGET_MAX);
+		break;
+
+	case R_C_FILL_TARGET:
+		m_strtoll_range(value, 's', name, DRBD_C_FILL_TARGET_MIN,
+				DRBD_C_FILL_TARGET_MAX);
+		break;
+
+	case R_C_MAX_RATE:
+		m_strtoll_range(value, 'k', name, DRBD_C_MAX_RATE_MIN,
+				DRBD_C_MAX_RATE_MAX);
+		break;
 	}
 }
 
