@@ -137,7 +137,10 @@ void m_strtoll_range(const char *s, char def_unit,
 		fprintf(stderr,
 			"%s:%d: %s %s => %llu%s out of range [%llu..%llu]%s.\n",
 			config_file, fline, name, s, r, unit, min, max, unit);
-		exit(E_config_invalid);
+		if (config_valid <= 1) {
+			config_valid = 0;
+			return;
+		}
 	}
 	if (DEBUG_RANGE_CHECK) {
 		fprintf(stderr,
