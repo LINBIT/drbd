@@ -232,16 +232,6 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
 				DRBD_OUTDATED_WFC_TIMEOUT_MAX);
 		break;
-
-	case R_DP_VOLUME:
-		m_strtoll_range(value, 'k', name, DRBD_DP_VOLUME_MIN,
-				DRBD_DP_VOLUME_MAX);
-		break;
-
-	case R_DP_INTERVAL:
-		m_strtoll_range(value, 1, name, DRBD_DP_INTERVAL_MIN,
-				DRBD_DP_INTERVAL_MAX);
-		break;
 	}
 }
 

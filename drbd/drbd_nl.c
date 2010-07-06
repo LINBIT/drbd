@@ -1637,9 +1637,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 		sc.rate       = DRBD_RATE_DEF;
 		sc.after      = DRBD_AFTER_DEF;
 		sc.al_extents = DRBD_AL_EXTENTS_DEF;
-		sc.dp_volume  = DRBD_DP_VOLUME_DEF;
-		sc.dp_interval = DRBD_DP_INTERVAL_DEF;
-		sc.on_no_data  = DRBD_ON_NO_DATA_DEF;
+		sc.on_no_data = DRBD_ON_NO_DATA_DEF;
 	} else
 		memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
 

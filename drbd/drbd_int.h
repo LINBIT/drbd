@@ -356,7 +356,6 @@ enum drbd_packets {
 	/* P_CKPT_FENCE_REQ      = 0x25, * currently reserved for protocol D */
 	/* P_CKPT_DISABLE_REQ    = 0x26, * currently reserved for protocol D */
 	P_DELAY_PROBE         = 0x27, /* is used on BOTH sockets */
-	P_DELAY_PROBE95       = 0x28, /* Since proto 95, new delay probes */
 
 	P_MAX_CMD	      = 0x29,
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
@@ -414,7 +413,6 @@ static inline const char *cmdname(enum drbd_packets cmd)
 		[P_RS_IS_IN_SYNC]	= "CsumRSIsInSync",
 		[P_COMPRESSED_BITMAP]   = "CBitmap",
 		[P_DELAY_PROBE]         = "DelayProbe",
-		[P_DELAY_PROBE95]       = "DelayProbe95",
 		[P_MAX_CMD]	        = NULL,
 	};
 
@@ -694,13 +692,6 @@ struct p_delay_probe93 {
 	struct p_header head;
 	u32     seq_num; /* sequence number to match the two probe packets */
 	u32     offset;  /* usecs the probe got sent after the reference time point */
-} __packed;
-
-struct p_delay_probe {
-	struct p_header head;
-	u64	reserved;    /* To add write count later. */
-	u64	sent_at_sec;
-	u32	sent_at_nsec;
 } __packed;
 
 /* DCBP: Drbd Compressed Bitmap Packet ... */
@@ -1103,11 +1094,9 @@ struct drbd_conf {
 	unsigned int ko_count;
 	struct drbd_work  resync_work,
 			  unplug_work,
-			  md_sync_work,
-			  delay_probe_work;
+			  md_sync_work;
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
-	struct timer_list delay_probe_timer;
 
 	/* Used after attach while negotiating new disk state. */
 	union drbd_state new_state_tmp;
@@ -1230,10 +1219,6 @@ struct drbd_conf {
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex state_mutex;
 	char congestion_reason;  /* Why we where congested... */
-	struct timespec dp_recv_meta, dp_recv_data; /* Receive timestamps of last delay probes */
-	struct timespec dp_send_meta, dp_send_data; /* Receive timestamps of last delay probes */
-	int dp_inbalance; /* How many delay_probes more we got on meta socket */
-	unsigned int dp_volume_last;  /* send_cnt of last delay probe */
 	int c_sync_rate; /* current resync rate after delay_probe magic */
 };
 
@@ -1683,7 +1668,6 @@ extern void drbd_set_recv_tcq(struct drbd_conf *mdev, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_conf *mdev, struct list_head *to_be_freed);
 extern void drbd_flush_workqueue(struct drbd_conf *mdev);
 extern void drbd_free_tl_hash(struct drbd_conf *mdev);
-extern int drbd_calc_data_delay_us(struct drbd_conf *mdev);
 
 /* yes, there is kernel_setsockopt, but only since 2.6.18. we don't need to
  * mess with get_fs/set_fs, we know we are KERNEL_DS always. */

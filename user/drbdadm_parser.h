@@ -46,8 +46,6 @@ enum range_checks
 	R_WFC_TIMEOUT,
 	R_DEGR_WFC_TIMEOUT,
 	R_OUTDATED_WFC_TIMEOUT,
-	R_DP_VOLUME,
-	R_DP_INTERVAL,
 };
 
 enum yytokentype {

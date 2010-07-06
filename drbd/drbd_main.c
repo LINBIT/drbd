@@ -2425,39 +2425,6 @@ int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
 	return ok;
 }
 
-STATIC int drbd_send_delay_probe(struct drbd_conf *mdev, struct drbd_socket *ds)
-{
-	struct p_delay_probe dp;
-	struct timespec now;
-	int ok = 0;
-
-	mutex_lock(&ds->mutex);
-	if (likely(ds->socket)) {
-		ktime_get_ts(&now);
-		dp.sent_at_sec  = cpu_to_be64(now.tv_sec);
-		dp.sent_at_nsec = cpu_to_be32(now.tv_nsec);
-
-		ok = _drbd_send_cmd(mdev, ds->socket, P_DELAY_PROBE95,
-				    (struct p_header *)&dp, sizeof(dp), 0);
-	}
-	mutex_unlock(&ds->mutex);
-
-	return ok;
-}
-
-STATIC int drbd_send_delay_probes(struct drbd_conf *mdev)
-{
-	int ok;
-
-	ok = drbd_send_delay_probe(mdev, &mdev->meta);
-	ok = ok && drbd_send_delay_probe(mdev, &mdev->data);
-
-	mdev->dp_volume_last = mdev->send_cnt;
-	mod_timer(&mdev->delay_probe_timer, jiffies + mdev->sync_conf.dp_interval * HZ / 10);
-
-	return ok;
-}
-
 /* called on sndtimeo
  * returns FALSE if we should retry,
  * TRUE if we think connection is dead
@@ -2607,31 +2574,6 @@ static int _drbd_send_zc_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 	return 1;
 }
 
-static void consider_delay_probes(struct drbd_conf *mdev)
-{
-	if (mdev->state.conn != C_SYNC_SOURCE || mdev->agreed_pro_version < 95)
-		return;
-
-	if (mdev->dp_volume_last + mdev->sync_conf.dp_volume * 2 < mdev->send_cnt)
-		drbd_send_delay_probes(mdev);
-}
-
-static int w_delay_probes(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
-{
-	if (!cancel && mdev->state.conn == C_SYNC_SOURCE)
-		drbd_send_delay_probes(mdev);
-
-	return 1;
-}
-
-static void delay_probe_timer_fn(unsigned long data)
-{
-	struct drbd_conf *mdev = (struct drbd_conf *) data;
-
-	if (list_empty(&mdev->delay_probe_work.list))
-		drbd_queue_work(&mdev->data.work, &mdev->delay_probe_work);
-}
-
 /* Used to send write requests
  * R_PRIMARY -> Peer	(P_DATA)
  */
@@ -2700,9 +2642,6 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 
 	drbd_put_data_sock(mdev);
 
-	if (ok)
-		consider_delay_probes(mdev);
-
 	return ok;
 }
 
@@ -2749,9 +2688,6 @@ int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
 		ok = _drbd_send_zc_ee(mdev, e);
 
 	drbd_put_data_sock(mdev);
-
-	if (ok)
-		consider_delay_probes(mdev);
 
 	return ok;
 }
@@ -2964,8 +2900,6 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 		/* .rate = */		DRBD_RATE_DEF,
 		/* .after = */		DRBD_AFTER_DEF,
 		/* .al_extents = */	DRBD_AL_EXTENTS_DEF,
-		/* .dp_volume = */	DRBD_DP_VOLUME_DEF,
-		/* .dp_interval = */	DRBD_DP_INTERVAL_DEF,
 		/* .verify_alg = */	{}, 0,
 		/* .cpu_mask = */	{}, 0,
 		/* .csums_alg = */	{}, 0,
@@ -3037,23 +2971,17 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	INIT_LIST_HEAD(&mdev->unplug_work.list);
 	INIT_LIST_HEAD(&mdev->md_sync_work.list);
 	INIT_LIST_HEAD(&mdev->bm_io_work.w.list);
-	INIT_LIST_HEAD(&mdev->delay_probe_work.list);
 
 	mdev->resync_work.cb  = w_resync_inactive;
 	mdev->unplug_work.cb  = w_send_write_hint;
 	mdev->md_sync_work.cb = w_md_sync;
 	mdev->bm_io_work.w.cb = w_bitmap_io;
-	mdev->delay_probe_work.cb = w_delay_probes;
 	init_timer(&mdev->resync_timer);
 	init_timer(&mdev->md_sync_timer);
-	init_timer(&mdev->delay_probe_timer);
 	mdev->resync_timer.function = resync_timer_fn;
 	mdev->resync_timer.data = (unsigned long) mdev;
 	mdev->md_sync_timer.function = md_sync_timer_fn;
 	mdev->md_sync_timer.data = (unsigned long) mdev;
-	mdev->delay_probe_timer.function = delay_probe_timer_fn;
-	mdev->delay_probe_timer.data = (unsigned long) mdev;
-
 
 	init_waitqueue_head(&mdev->misc_wait);
 	init_waitqueue_head(&mdev->state_wait);

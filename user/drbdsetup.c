@@ -361,8 +361,6 @@ struct drbd_cmd commands[] = {
 		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 { "use-rle",'R',T_use_rle,   EB },
-		 { "delay-probe-volume",'V',	T_dp_volume,	EN(DP_VOLUME,'k',"bytes") },
-		 { "delay-probe-interval",'I',	T_dp_interval,	EN(DP_INTERVAL,1,"1/10 seconds") },
 		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
 		 CLOSE_OPTIONS }} }, },
 

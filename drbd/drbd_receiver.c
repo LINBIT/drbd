@@ -968,7 +968,6 @@ retry:
 	drbd_send_state(mdev);
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	clear_bit(RESIZE_PENDING, &mdev->flags);
-	mdev->dp_inbalance = 0;
 
 	return 1;
 
@@ -3660,83 +3659,6 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, struct p_header *h)
 	return TRUE;
 }
 
-STATIC int receive_delay_probe(struct drbd_conf *mdev, struct p_header *h)
-{
-	struct p_delay_probe *p = (struct p_delay_probe *)h;
-
-	ERR_IF(h->length != (sizeof(*p)-sizeof(*h))) return FALSE;
-	if (drbd_recv(mdev, h->payload, h->length) != h->length)
-		return FALSE;
-
-	spin_lock(&mdev->peer_seq_lock);
-	mdev->dp_send_data.tv_sec  = be64_to_cpu(p->sent_at_sec);
-	mdev->dp_send_data.tv_nsec = be32_to_cpu(p->sent_at_nsec);
-	ktime_get_ts(&mdev->dp_recv_data);
-	mdev->dp_inbalance--;
-	spin_unlock(&mdev->peer_seq_lock);
-
-	return TRUE;
-}
-
-STATIC int got_delay_probe_m(struct drbd_conf *mdev, struct p_header *h)
-{
-	struct p_delay_probe *p = (struct p_delay_probe *)h;
-
-	spin_lock(&mdev->peer_seq_lock);
-	mdev->dp_send_meta.tv_sec  = be64_to_cpu(p->sent_at_sec);
-	mdev->dp_send_meta.tv_nsec = be32_to_cpu(p->sent_at_nsec);
-	ktime_get_ts(&mdev->dp_recv_meta);
-	mdev->dp_inbalance++;
-	spin_unlock(&mdev->peer_seq_lock);
-
-	return TRUE;
-}
-
-static inline s64 timespec_to_us(const struct timespec *ts)
-{
-	return ((s64) ts->tv_sec * USEC_PER_SEC) + ts->tv_nsec / NSEC_PER_USEC;
-}
-
-int drbd_calc_data_delay_us(struct drbd_conf *mdev)
-{
-	s64 rd, rm, sd, sm, delay = 0; /* units: us */
-	int inb;
-
-	spin_lock(&mdev->peer_seq_lock);
-	rd = timespec_to_us(&mdev->dp_recv_data);
-	rm = timespec_to_us(&mdev->dp_recv_meta);
-	sd = timespec_to_us(&mdev->dp_send_data);
-	sm = timespec_to_us(&mdev->dp_send_meta);
-	inb = mdev->dp_inbalance;
-	spin_unlock(&mdev->peer_seq_lock);
-
-	if (inb < 0)
-		return 0;
-
-	delay = (rd - rm) - (sd - sm);
-
-	if (delay < 0)
-		return 0;
-
-	if (inb > 0) {
-		struct timespec now_ts;
-		s64 now, mdp, d2;
-
-		ktime_get_ts(&now_ts);
-		now = timespec_to_us(&now_ts);
-		d2 = now - rm;
-
-		/* That assumes that dp_interval is configured to the same value
-		   on both nodes. mdp = missing delay probes */
-		mdp = mdev->sync_conf.dp_interval * (inb - 1) * 100 * USEC_PER_MSEC;
-		d2 += mdp;
-
-		if (d2 > delay)
-			delay = d2;
-	}
-	return delay;
-}
-
 typedef int (*drbd_cmd_handler_f)(struct drbd_conf *, struct p_header *);
 
 static drbd_cmd_handler_f drbd_default_handler[] = {
@@ -3761,7 +3683,6 @@ static drbd_cmd_handler_f drbd_default_handler[] = {
 	[P_OV_REPLY]        = receive_DataRequest,
 	[P_CSUM_RS_REQUEST]    = receive_DataRequest,
 	[P_DELAY_PROBE]     = receive_skip,
-	[P_DELAY_PROBE95]   = receive_delay_probe,
 	/* anything missing from this table is in
 	 * the asender_tbl, see get_asender_cmd */
 	[P_MAX_CMD]	    = NULL,
@@ -4546,7 +4467,6 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 	[P_STATE_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
 	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
-	[P_DELAY_PROBE95]   = { sizeof(struct p_delay_probe), got_delay_probe_m },
 	[P_MAX_CMD]	    = { 0, NULL },
 	};
 	if (cmd > P_MAX_CMD || asender_tbl[cmd].process == NULL)
