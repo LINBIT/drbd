@@ -212,7 +212,7 @@ configure: configure.ac
 tarball: check_all_committed distclean doc configure .filelist
 	$(MAKE) tgz
 
-all tools doc .filelist: drbd/drbd_buildtag.c
+all module tools doc .filelist: drbd/drbd_buildtag.c
 
 kernel-patch: drbd/drbd_buildtag.c
 	set -o errexit; \
