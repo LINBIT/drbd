@@ -47,8 +47,6 @@
 #include <linux/scatterlist.h>
 #endif
 
-#define SLEEP_TIME (HZ/10)
-
 STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int cancel);
 
 
