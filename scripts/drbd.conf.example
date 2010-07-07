@@ -454,13 +454,15 @@ resource r0 {
     # for advanced performance tuning.
     # cpu-mask 15;
 
-    # To reasonably control resync speed over drbd-proxy connections,
-    # drbd has to measure the current delay of packets transmitted over
-    # the (possibly congested) data socket vs the meta-data socket
-    delay-probe-volume   16M; # Send a delay probe at least every 16MB of data
-    delay-probe-interval 5;   # Send a delay probe at least every 500 ms
-    throttle-threshold   20;  # Begin to slow down resync if delay > 2 sec
-    hold-off-threshold   100; # Completely stop resync if delay > 10 sec
+    # Alternatively to the fixed resync rate DRBD has a resync speed
+    # controller. Its purpose is to resync as fast as possible, without
+    # filling up queues along the data path.
+    # The controller gets enabled with setting c-plan-ahead to a value
+    # greater than 0 (by default 0, i.e. it is disabled).
+    #c-plan-ahead           10; # How long the controller should plan ahead  (unit = 0.1 seconds)
+    #c-fill-target           0; # Aimed fill level. 0 to use c-delay-target  (unit = sectors)
+    #c-delay-target          6; # Aimed delay by the drbd-proxy's fill level (unit = 0.1 seconds)
+    #c-max-rate           100M; # Upper bound for the controller
 
     # If the local disk and the connection to the peer fail cuncurrently,
     # DRBD fails IO requests by default. Alternatively you can set this to

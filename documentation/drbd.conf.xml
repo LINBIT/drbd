@@ -315,8 +315,8 @@ resource r0 {
     <option>rate</option>, <option>after</option>, <option>al-extents</option>,
     <option>use-rle</option>,
     <option>cpu-mask</option>, <option>verify-alg</option>, <option>csums-alg</option>,
-    <option>delay-probe-volume</option>, <option>delay-probe-interval</option>,
-    <option>throttle-threshold</option>, <option>hold-off-threshold</option>
+    <option>c-plan-ahead</option>, <option>c-fill-target</option>,
+    <option>c-delay-target</option>, <option>c-max-rate</option>
     and <option>on-no-data-accessible</option>.
   </para>
           </listitem>
@@ -1424,29 +1424,46 @@ the unit is 1 second.
         </varlistentry>
         <varlistentry>
           <term>
-            <option>delay-probe-volume <replaceable>bytes</replaceable></option>
+            <option>c-plan-ahead <replaceable>plan_time</replaceable></option>
           </term>
           <term>
-	    <option>delay-probe-interval <replaceable>interval</replaceable></option>
+	    <option>c-fill-target <replaceable>fill_target</replaceable></option>
           </term>
           <term>
-	    <option>throttle-threshold <replaceable>throttle_delay</replaceable></option>
+	    <option>c-delay-target <replaceable>delay_target</replaceable></option>
           </term>
           <term>
-	    <option>hold-off-threshold <replaceable>hold_off_delay</replaceable></option>
+	    <option>c-max-rate <replaceable>max_rate</replaceable></option>
           </term>
           <listitem>
-            <para>During resync at least every <replaceable>bytes</replaceable> of data
-              and at least every <replaceable>interval</replaceable> * 100ms a pair of delay
-	      probes get inserted in DRBD's packet stream. Those
-	      packets are used to measure the delay of packts on the data
-	      socket caused by queuing in various network components along the
-	      path.
+            <para>The dynamic resync speed controller gets enabled with setting
+	      <replaceable>plan_time</replaceable> to a positive value. It aims to
+	      fill the buffers along the data path with either a constant amount of data
+	      <replaceable>fill_target</replaceable>, or aims to have a constant
+	      delay time of <replaceable>delay_target</replaceable> along the
+	      path. The controller has an upper bound of <replaceable>max_rate</replaceable>.
 	    </para>
-            <para>If the delay on the data socket becomes greater than
-	      <replaceable>throttle_delay</replaceable> DRBD will slow down the resync
-	      in order to keep the delay small. The resync speed gets linearly slowed
-	      down it reaches 0 at a delay of <replaceable>hold_off_delay</replaceable>.
+	    <para>
+	      By <replaceable>plan_time</replaceable> the agility of the controller is configured.
+	      Higher values yield for slower/lower responses of the controller to deviation
+	      from the target value. It should be at least 5 times RTT.
+	      For regular data paths a <replaceable>fill_target</replaceable>
+	      in the area of 4k to 100k is appropriate. For a setup that contains drbd-proxy
+	      it is advisable to use <replaceable>delay_target</replaceable> instead.
+	      Only when <replaceable>fill_target</replaceable> is set to 0 the controller
+	      will use <replaceable>delay_target</replaceable>. 5 times RTT is a reasonable
+	      starting value. <replaceable>Max_rate</replaceable> should be set to the
+	      bandwidth available between the DRBD-hosts and the machines hosting
+	      DRBD-proxy, or to the available disk-bandwidth.
+	    </para>
+	    <para>
+	      The default value of <replaceable>plan_time</replaceable> is 0, the default unit is
+	      0.1 seconds. <replaceable>Fill_target</replaceable> has 0 and sectors as default unit.
+	      <replaceable>Delay_target</replaceable> has 1 (100ms) and 0.1 as default unit.
+	      <replaceable>Max_rate</replaceable> has 10240 (100MiB/s) and KiB/s as default unit.
+	    </para>
+	    <para>
+	      The dynamic resync speed controller and its settings are available since DRBD 8.3.9.
 	    </para>
           </listitem>
         </varlistentry>
