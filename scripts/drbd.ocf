@@ -229,6 +229,12 @@ drbd_set_status_variables() {
 maybe_outdate_self()
 {
 	local host stop_uname
+	# We ignore $OCF_RESKEY_CRM_meta_notify_promote_uname here
+	# because: if demote and promote for a _stacked_ resource
+	# happen in the same transition, demote will see the promote
+	# hostname here, and voluntarily outdate itself. Which would
+	# result in promote failure, as it is using the same meta
+	# data, which would then be outdated.
 	host=$(printf "%s\n" $OCF_RESKEY_CRM_meta_notify_master_uname |
 		grep -vix -m1 -e "$HOSTNAME" )
 	if [[ -z $host ]] ; then
