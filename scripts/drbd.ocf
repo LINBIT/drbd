@@ -87,12 +87,12 @@ meta_data() {
 <version>1.1</version>
 
 <longdesc lang="en">
-Master/Slave OCF Resource Agent for DRBD
+This resource agent manages a DRBD resource
+as a master/slave resource. DRBD is a shared-nothing replicated storage
+device.
 </longdesc>
 
-<shortdesc lang="en">This resource agent manages a DRBD resource
-as a master/slave resource. DRBD is a shared-nothing replicated storage
-device.</shortdesc>
+<shortdesc lang="en">Manages a DRBD device as a Master/Slave resource</shortdesc>
 
 <parameters>
 <parameter name="drbd_resource" unique="1" required="1">
