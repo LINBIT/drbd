@@ -42,8 +42,8 @@
 #######################################################################
 # Initialization:
 
-. ${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs
-export LANG=C LANGUAGE=C LC_ALL=C
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
 
 # Defaults
 OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
