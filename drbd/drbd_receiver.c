@@ -2153,7 +2153,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, struct p_header *h)
 		if (drbd_recv(mdev, di->digest, digest_size) != digest_size)
 			goto out_free_e;
 
-		e->block_id = (u64)(unsigned long)di;
+		e->digest = di;
 		if (h->command == P_CSUM_RS_REQUEST) {
 			D_ASSERT(mdev->agreed_pro_version >= 89);
 			e->w.cb = w_e_end_csum_rs_req;
@@ -3819,6 +3819,7 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 	drbd_thread_stop(&mdev->asender);
 	drbd_free_sock(mdev);
 
+	/* wait for current activity to cease. */
 	spin_lock_irq(&mdev->req_lock);
 	_drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
 	_drbd_wait_ee_list_empty(mdev, &mdev->sync_ee);
