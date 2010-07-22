@@ -535,7 +535,7 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int max_segment_size;
-	int number, i, size, pe, mx;
+	int number, i, rollback_i, size, pe, mx;
 	int align, queued, sndbuf;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
@@ -638,6 +638,7 @@ next_sector:
 		 * be prepared for all stripe sizes of software RAIDs.
 		 */
 		align = 1;
+		rollback_i = i;
 		for (;;) {
 			if (size + BM_BLOCK_SIZE > max_segment_size)
 				break;
@@ -679,6 +680,7 @@ next_sector:
 			case 2: /* Allocation failed */
 				drbd_rs_complete_io(mdev, sector);
 				mdev->bm_resync_fo = BM_SECT_TO_BIT(sector);
+				i = rollback_i;
 				goto requeue;
 			/* case 1: everything ok */
 			}
