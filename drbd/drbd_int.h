@@ -2540,6 +2540,10 @@ static inline void drbd_kick_lo(struct drbd_conf *mdev)
 	}
 }
 
+/* see fbd9b09a177a481eda256447c881f014f29034fe */
+#ifndef BLKDEV_IFL_WAIT
+#define blkdev_issue_flush(b, gfpf, s, ifl)	blkdev_issue_flush(b, s)
+#endif
 static inline void drbd_md_flush(struct drbd_conf *mdev)
 {
 	int r;
@@ -2547,7 +2551,8 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 	if (test_bit(MD_NO_BARRIER, &mdev->flags))
 		return;
 
-	r = blkdev_issue_flush(mdev->ldev->md_bdev, NULL);
+	r = blkdev_issue_flush(mdev->ldev->md_bdev, GFP_KERNEL, NULL,
+			BLKDEV_IFL_WAIT);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &mdev->flags);
 		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
