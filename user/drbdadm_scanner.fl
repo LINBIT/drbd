@@ -131,6 +131,7 @@ c-plan-ahead		{ DP; CP; RC(C_PLAN_AHEAD); return TK_SYNCER_OPTION;	}
 c-delay-target	{ DP; CP; RC(C_DELAY_TARGET); return TK_SYNCER_OPTION;	}
 c-fill-target		{ DP; CP; RC(C_FILL_TARGET); return TK_SYNCER_OPTION;	}
 c-max-rate		{ DP; CP; RC(C_MAX_RATE); return TK_SYNCER_OPTION;	}
+c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OPTION;	}
 throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 on-no-data-accessible   { DP; CP; return TK_SYNCER_OPTION;	}

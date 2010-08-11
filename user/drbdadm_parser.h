@@ -49,7 +49,8 @@ enum range_checks
 	R_C_PLAN_AHEAD,
 	R_C_DELAY_TARGET,
 	R_C_FILL_TARGET,
-	R_C_MAX_RATE
+	R_C_MAX_RATE,
+	R_C_MIN_RATE,
 };
 
 enum yytokentype {

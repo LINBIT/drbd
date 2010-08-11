@@ -234,10 +234,8 @@ BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error)
  */
 BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
-	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
 	struct drbd_conf *mdev = req->mdev;
-	struct bio_and_error m;
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -266,12 +264,7 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 	bio_put(req->private_bio);
 	req->private_bio = ERR_PTR(error);
 
-	spin_lock_irqsave(&mdev->req_lock, flags);
-	__req_mod(req, what, &m);
-	spin_unlock_irqrestore(&mdev->req_lock, flags);
-
-	if (m.bio)
-		complete_master_bio(mdev, &m);
+	req_mod(req, what);
 	BIO_ENDIO_FN_RETURN;
 }
 
@@ -399,6 +392,9 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	if (!get_ldev(mdev))
 		return -EIO;
 
+	if (drbd_rs_should_slow_down(mdev))
+		goto defer;
+
 	/* GFP_TRY, because if there is no memory available right now, this may
 	 * be rescheduled for later. It is "only" background resync, after all. */
 	e = drbd_alloc_ee(mdev, DRBD_MAGIC+0xbeef, sector, size, GFP_TRY);
@@ -410,6 +406,7 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	list_add(&e->w.list, &mdev->read_ee);
 	spin_unlock_irq(&mdev->req_lock);
 
+	atomic_add(size >> 9, &mdev->rs_sect_ev);
 	if (drbd_submit_ee(mdev, e, READ, DRBD_FAULT_RS_RD) == 0)
 		return 0;
 
@@ -535,8 +532,9 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
 	int max_segment_size;
-	int number, i, rollback_i, size, pe, mx;
+	int number, rollback_i, size, pe, mx;
 	int align, queued, sndbuf;
+	int i = 0;
 
 	PARANOIA_BUG_ON(w != &mdev->resync_work);
 
@@ -574,7 +572,14 @@ int w_make_resync_request(struct drbd_conf *mdev,
 		mdev->c_sync_rate = mdev->sync_conf.rate;
 		number = SLEEP_TIME * mdev->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	}
-	pe = atomic_read(&mdev->rs_pending_cnt);
+
+	/* Throttle resync on lower level disk activity, which may also be
+	 * caused by application IO on Primary/SyncTarget.
+	 * Keep this after the call to drbd_rs_controller, as that assumes
+	 * to be called as precisely as possible every SLEEP_TIME,
+	 * and would be confused otherwise. */
+	if (drbd_rs_should_slow_down(mdev))
+		goto requeue;
 
 	mutex_lock(&mdev->data.mutex);
 	if (mdev->data.socket)
@@ -588,6 +593,7 @@ int w_make_resync_request(struct drbd_conf *mdev,
 		mx = number;
 
 	/* Limit the number of pending RS requests to no more than the peer's receive buffer */
+	pe = atomic_read(&mdev->rs_pending_cnt);
 	if ((pe + number) > mx) {
 		number = mx - pe;
 	}
@@ -1522,6 +1528,8 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		mdev->rs_failed    = 0;
 		mdev->rs_paused    = 0;
 		mdev->rs_same_csum = 0;
+		mdev->rs_last_events = 0;
+		mdev->rs_last_sect_ev = 0;
 		mdev->rs_total     = tw;
 		mdev->rs_start     = now;
 		for (i = 0; i < DRBD_SYNC_MARKS; i++) {
@@ -1546,6 +1554,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		}
 
 		atomic_set(&mdev->rs_sect_in, 0);
+		atomic_set(&mdev->rs_sect_ev, 0);
 		mdev->rs_in_flight = 0;
 		mdev->rs_planed = 0;
 		spin_lock(&mdev->peer_seq_lock);

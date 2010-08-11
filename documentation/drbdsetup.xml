@@ -1136,7 +1136,7 @@
 	  <option>--c-fill-target <replaceable>fill_target</replaceable></option></term>
           <term><option>-d</option>,
 	  <option>--c-delay-target <replaceable>delay_target</replaceable></option></term>
-          <term><option>-m</option>,
+          <term><option>-M</option>,
 	  <option>--c-max-rate <replaceable>max_rate</replaceable></option></term>
           <listitem>
             <para>The dynamic resync speed controller gets enabled with setting
@@ -1164,6 +1164,22 @@
 	      0.1 seconds. <replaceable>Fill_target</replaceable> has 0 and sectors as default unit.
 	      <replaceable>Delay_target</replaceable> has 1 (100ms) and 0.1 as default unit.
 	      <replaceable>Max_rate</replaceable> has 10240 (100MiB/s) and KiB/s as default unit.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-m</option>,
+	  <option>--c-min-rate <replaceable>min_rate</replaceable></option></term>
+          <listitem>
+	    <para>We track the disk IO rate caused by the resync, so we can
+	      detect non-resync IO on the lower level device. If the lower
+	      level device seems to be busy, and the current resync rate is
+	      above <replaceable>min_rate</replaceable>, we throttle the resync.
+	    </para>
+	    <para>
+	      The default value of <replaceable>min_rate</replaceable> is 4M,
+	      the default unit is k.  If you want to not throttle at all, set
+	      it to zero, if you want to throttle always, set it to one.
 	    </para>
           </listitem>
         </varlistentry>

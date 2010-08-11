@@ -1244,8 +1244,12 @@ struct drbd_conf {
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex state_mutex;
 	char congestion_reason;  /* Why we where congested... */
-	atomic_t rs_sect_in; /* counter to measure the incoming resync data rate */
-	int c_sync_rate; /* current resync rate after delay_probe magic */
+	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
+	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
+	int rs_last_sect_ev; /* counter to compare with */
+	int rs_last_events;  /* counter of read or write "events" (unit sectors)
+			      * on the lower level device when we last looked. */
+	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer rs_plan_s; /* correction values of resync planer */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	int rs_planed;    /* resync sectors already planed */
@@ -1682,6 +1686,7 @@ extern int w_restart_disk_io(struct drbd_conf *, struct drbd_work *, int);
 extern void resync_timer_fn(unsigned long data);
 
 /* drbd_receiver.c */
+extern int drbd_rs_should_slow_down(struct drbd_conf *mdev);
 extern int drbd_submit_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e,
 		const unsigned rw, const int fault_type);
 extern int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list);

@@ -463,6 +463,7 @@ resource r0 {
     #c-fill-target           0; # Aimed fill level. 0 to use c-delay-target  (unit = sectors)
     #c-delay-target          6; # Aimed delay by the drbd-proxy's fill level (unit = 0.1 seconds)
     #c-max-rate           100M; # Upper bound for the controller
+    #c-min-rate             4M; # below this rate, application IO will not cause extra throttling of resync
 
     # If the local disk and the connection to the peer fail cuncurrently,
     # DRBD fails IO requests by default. Alternatively you can set this to

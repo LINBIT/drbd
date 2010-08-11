@@ -252,6 +252,11 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 'k', name, DRBD_C_MAX_RATE_MIN,
 				DRBD_C_MAX_RATE_MAX);
 		break;
+
+	case R_C_MIN_RATE:
+		m_strtoll_range(value, 'k', name, DRBD_C_MIN_RATE_MIN,
+				DRBD_C_MIN_RATE_MAX);
+		break;
 	}
 }
 
