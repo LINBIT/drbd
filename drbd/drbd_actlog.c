@@ -1173,7 +1173,7 @@ static int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
  * @mdev:	DRBD device.
  * @sector:	The sector number.
  *
- * This functions sleeps on al_wait. Returns 1 on success, 0 if interrupted.
+ * This functions sleeps on al_wait. Returns 0 on success, -EINTR if interrupted.
  */
 int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 {
@@ -1188,10 +1188,10 @@ int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 	sig = wait_event_interruptible(mdev->al_wait,
 			(bm_ext = _bme_get(mdev, enr)));
 	if (sig)
-		return 0;
+		return -EINTR;
 
 	if (test_bit(BME_LOCKED, &bm_ext->flags))
-		return 1;
+		return 0;
 
 	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
 		sig = wait_event_interruptible(mdev->al_wait,
@@ -1204,13 +1204,11 @@ int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
 				wake_up(&mdev->al_wait);
 			}
 			spin_unlock_irq(&mdev->al_lock);
-			return 0;
+			return -EINTR;
 		}
 	}
-
 	set_bit(BME_LOCKED, &bm_ext->flags);
-
-	return 1;
+	return 0;
 }
 
 /**
