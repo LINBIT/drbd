@@ -1154,12 +1154,16 @@ struct drbd_conf {
 	unsigned long rs_start;
 	/* cumulated time in PausedSyncX state [unit jiffies] */
 	unsigned long rs_paused;
-	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
-	unsigned long rs_mark_left;
-	/* marks's time [unit jiffies] */
-	unsigned long rs_mark_time;
-	/* skipped because csum was equeal [unit BM_BLOCK_SIZE] */
+	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
 	unsigned long rs_same_csum;
+#define DRBD_SYNC_MARKS 8
+#define DRBD_SYNC_MARK_STEP (3*HZ)
+	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
+	unsigned long rs_mark_left[DRBD_SYNC_MARKS];
+	/* marks's time [unit jiffies] */
+	unsigned long rs_mark_time[DRBD_SYNC_MARKS];
+	/* current index into rs_mark_{left,time} */
+	int rs_last_mark;
 
 	/* where does the admin want us to start? (sector) */
 	sector_t ov_start_sector;
@@ -2246,10 +2250,11 @@ static inline int get_net_conf(struct drbd_conf *mdev)
 
 static inline void put_ldev(struct drbd_conf *mdev)
 {
+	int i = atomic_dec_return(&mdev->local_cnt);
 	__release(local);
-	if (atomic_dec_and_test(&mdev->local_cnt))
+	D_ASSERT(i >= 0);
+	if (i == 0)
 		wake_up(&mdev->misc_wait);
-	D_ASSERT(atomic_read(&mdev->local_cnt) >= 0);
 }
 
 #ifndef __CHECKER__
