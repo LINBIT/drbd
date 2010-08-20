@@ -549,9 +549,12 @@ static void probe_drbd_packet(struct drbd_conf *mdev, struct socket *sock,
 			      int recv, union p_polymorph *p, char *file, int line)
 {
 	char *sockname = sock == mdev->meta.socket ? "meta" : "data";
-	int cmd = (recv == 2) ? p->header.command : be16_to_cpu(p->header.command);
+	int cmd;
 	char tmp[300];
 	union drbd_state m, v;
+
+	cmd = be16_to_cpu(p->header.h80.magic == BE_DRBD_MAGIC ?
+			  p->header.h80.command : p->header.h95.command);
 
 	switch (cmd) {
 	case P_HAND_SHAKE:
