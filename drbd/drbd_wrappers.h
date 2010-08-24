@@ -730,4 +730,22 @@ static inline int atomic_add_unless(atomic_t *v, int a, int u)
 typedef _Bool                   bool;
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
+#ifdef REQ_HARDBARRIER
+#undef REQ_HARDBARRIER
+#endif
+#define REQ_HARDBARRIER (1UL << BIO_RW_BARRIER)
+#ifdef BIO_RW_SYNC
+/* see upstream commits
+ * 213d9417fec62ef4c3675621b9364a667954d4dd,
+ * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
+ * later, the defines even became an enum ;-) */
+#define REQ_SYNC        (1UL << BIO_RW_SYNC)
+#define REQ_UNPLUG      (0)
+#else
+#define REQ_SYNC        (1UL << BIO_RW_SYNCIO)
+#define REQ_UNPLUG      (1UL << BIO_RW_UNPLUG)
+#endif
+#endif
+
 #endif
