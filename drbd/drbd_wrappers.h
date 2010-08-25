@@ -742,10 +742,22 @@ typedef _Bool                   bool;
  * later, the defines even became an enum ;-) */
 #define REQ_SYNC        (1UL << BIO_RW_SYNC)
 #define REQ_UNPLUG      (0)
+#define DP_BCOMP_UNPLUG DP_UNPLUG
+#define REQ_BCOMP_SYNC  REQ_SYNC
 #else
 #define REQ_SYNC        (1UL << BIO_RW_SYNCIO)
 #define REQ_UNPLUG      (1UL << BIO_RW_UNPLUG)
+#define DP_BCOMP_UNPLUG (0)
+#define REQ_BCOMP_SYNC  (0)
 #endif
+#endif
+
+#ifndef REQ_FLUSH
+#define REQ_FLUSH       (0)
+#endif
+
+#ifndef REQ_DISCARD
+#define REQ_DISCARD     (0)
 #endif
 
 #endif
