@@ -1320,6 +1320,11 @@
 	into SyncSource state, which means that all data blocks of the
 	device are copied to the peer.
       </para>
+      <para>
+	On a disconnected device, this will set all bits in the out of sync bitmap.
+	As a side affect this suspend updates to the on disk activity log. Updates
+	to the on disk activity log will get resumes automatically when necessary.
+      </para>
     </refsect2>
     <refsect2>
       <title>wait-connect</title>
