@@ -32,6 +32,34 @@ fi
 #	LSB-Core-generic/LSB-Core-generic/iniscrptact.html
 ####
 
+drbd_set_role_from_proc_drbd()
+{
+	local out
+	if ! test -e /proc/drbd; then
+		ROLE="Unconfigured"
+		return
+	fi
+
+	dev=$( $DRBDADM sh-dev $RES )
+	minor=${dev#/dev/drbd}
+	if [[ $minor = *[!0-9]* ]] ; then
+		# sh-minor is only supported since drbd 8.3.1
+		minor=$( $DRBDADM sh-minor $RES )
+	fi
+	if [[ -z $minor ]] || [[ $minor = *[!0-9]* ]] ; then
+		ROLE=Unknown
+		return
+	fi
+
+	if out=$(sed -ne "/^ *$minor: cs:/ { s/:/ /g; p; q; }" /proc/drbd); then
+		set -- $out
+		ROLE=${5%/*}
+		: ${ROLE:=Unconfigured} # if it does not show up
+	else
+		ROLE=Unknown
+	fi
+}
+
 case "$CMD" in
     start)
 	# try several times, in case heartbeat deadtime
@@ -44,28 +72,19 @@ case "$CMD" in
 	done
 	;;
     stop)
-	$DRBDADM secondary $RES
-	ex=$?
-	case $ex in
-	0)
-		exit 0
-		;;
-	11)
-		# see drbdadm_main.c adm_generic and m_system
-		# as well as drbdsetup.c:
-		# in fact a role change was attempted, but failed.
-		echo >&2 "$DRBDADM secondary $RES: exit code $ex, mapping to 1"
-		exit 1 # LSB generic error
-		;;
-	*)
-		# other error, may be syntax error in config file,
-		# anything else: to not confuse heartbeat further,
-		# and avoid reboot due so "failed stop recovery",
-		# pretend that we succeeded in stopping this.
-		echo >&2 "$DRBDADM secondary $RES: exit code $ex, mapping to 0"
-		exit 0
-		;;
-	esac
+	# heartbeat (haresources mode) will retry failed stop
+	# for a number of times in addition to this internal retry.
+	try=3
+	while true; do
+		$DRBDADM secondary $RES && break
+		# We used to lie here, and pretend success for anything != 11,
+		# to avoid the reboot on failed stop recovery for "simple
+		# config errors" and such. But that is incorrect.
+		# Don't lie to your cluster manager.
+		# And don't do config errors...
+		let --try || exit 1 # LSB generic error
+		sleep 1
+	done
 	;;
     status)
 	if [ "$RES" = "all" ]; then
@@ -73,21 +92,37 @@ case "$CMD" in
 	    exit 10
 	fi
 	ST=$( $DRBDADM role $RES )
-	STATE=${ST%/*}
-	case $STATE in
+	ROLE=${ST%/*}
+	case $ROLE in
+	Primary|Secondary|Unconfigured)
+		# expected
+		;;
+	*)
+		# unexpected. whatever...
+		# If we are unsure about the state of a resource, we need to
+		# report it as possibly running, so heartbeat can, after failed
+		# stop, do a recovery by reboot.
+		# drbdsetup may fail for obscure reasons, e.g. if /var/lock/ is
+		# suddenly readonly.  So we retry by parsing /proc/drbd.
+		drbd_set_role_from_proc_drbd
+	esac
+	case $ROLE in
 		Primary)
 			echo "running (Primary)"
 			exit 0 # LSB status "service is OK"
 			;;
 		Secondary|Unconfigured)
-			echo "stopped ($STATE)" ;;
-		"")
-			echo "stopped" ;;
+			echo "stopped ($ROLE)"
+			exit 3 # LSB status "service is not running"
+			;;
 		*)
-			# unexpected. whatever...
-			echo "stopped ($ST)" ;;
+			# NOTE the "running" in below message.
+			# this is a "heartbeat" resource script,
+			# the exit code is _ignored_.
+			echo "cannot determine status, may be running ($ROLE)"
+			exit 4 #  LSB status "service status is unknown"
+			;;
 	esac
-	exit 3 # LSB status "service is not running"
 	;;
     *)
 	echo "Usage: drbddisk [resource] {start|stop|status}"
