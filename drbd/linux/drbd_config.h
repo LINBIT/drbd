@@ -30,6 +30,10 @@ extern const char *drbd_buildtag(void);
 #undef PRO_VERSION_MAX
 #endif
 
+#ifndef DRBD_DEBUG_MD_SYNC
+#define DRBD_DEBUG_MD_SYNC
+#endif
+
 #ifndef DRBD_DEBUG_STATE_CHANGES
 #define DRBD_DEBUG_STATE_CHANGES 0
 #endif
