@@ -1053,7 +1053,10 @@ int w_e_end_csum_rs_req(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		return 1;
 	}
 
-	drbd_rs_complete_io(mdev, e->sector);
+	if (get_ldev(mdev)) {
+		drbd_rs_complete_io(mdev, e->sector);
+		put_ldev(mdev);
+	}
 
 	di = e->digest;
 
@@ -1160,7 +1163,10 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 	/* after "cancel", because after drbd_disconnect/drbd_rs_cancel_all
 	 * the resync lru has been cleaned up already */
-	drbd_rs_complete_io(mdev, e->sector);
+	if (get_ldev(mdev)) {
+		drbd_rs_complete_io(mdev, e->sector);
+		put_ldev(mdev);
+	}
 
 	di = e->digest;
 
