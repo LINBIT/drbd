@@ -546,7 +546,7 @@ STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns);
 STATIC int is_valid_state_transition(struct drbd_conf *,
 				     union drbd_state, union drbd_state);
 STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state os,
-				       union drbd_state ns, int *warn_sync_abort);
+				       union drbd_state ns, const char **warn_sync_abort);
 int drbd_send_state_req(struct drbd_conf *,
 			union drbd_state, union drbd_state);
 
@@ -903,7 +903,7 @@ STATIC int is_valid_state_transition(struct drbd_conf *mdev,
  * to D_UNKNOWN. This rule and many more along those lines are in this function.
  */
 STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state os,
-				       union drbd_state ns, int *warn_sync_abort)
+				       union drbd_state ns, const char **warn_sync_abort)
 {
 	enum drbd_fencing_p fp;
 
@@ -942,7 +942,9 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 	if (os.conn > C_CONNECTED && ns.conn > C_CONNECTED &&
 	    (ns.disk <= D_FAILED || ns.pdsk <= D_FAILED)) {
 		if (warn_sync_abort)
-			*warn_sync_abort = 1;
+			*warn_sync_abort =
+				os.conn == C_VERIFY_S || os.conn == C_VERIFY_T ?
+				"Online-verify" : "Resync";
 		ns.conn = C_CONNECTED;
 	}
 
@@ -1079,7 +1081,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 #endif
 	union drbd_state os;
 	int rv = SS_SUCCESS;
-	int warn_sync_abort = 0;
+	const char *warn_sync_abort = NULL;
 	struct after_state_chg_work *ascw;
 
 
@@ -1125,7 +1127,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	}
 
 	if (warn_sync_abort)
-		dev_warn(DEV, "Resync aborted.\n");
+		dev_warn(DEV, "%s aborted.\n", warn_sync_abort);
 
 #if DUMP_MD >= 2
 	{
