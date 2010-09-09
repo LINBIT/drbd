@@ -2077,9 +2077,17 @@ int drbd_rs_should_slow_down(struct drbd_conf *mdev)
 	if (mdev->sync_conf.c_min_rate == 0)
 		return 0;
 
+#ifdef part_stat_read
+	/* recent kernel */
 	curr_events = (int)part_stat_read(&disk->part0, sectors[0]) +
 		      (int)part_stat_read(&disk->part0, sectors[1]) -
 			atomic_read(&mdev->rs_sect_ev);
+#else
+	/* older kernel */
+	curr_events = (int)disk_stat_read(disk, sectors[0]) +
+		      (int)disk_stat_read(disk, sectors[1]) -
+			atomic_read(&mdev->rs_sect_ev);
+#endif
 	if (!mdev->rs_last_events || curr_events - mdev->rs_last_events > 64) {
 		unsigned long rs_left;
 		int i;
@@ -2234,7 +2242,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, un
 	 * In that case, throttling is done on the SyncTarget only.
 	 */
 	if (mdev->state.peer != R_PRIMARY && drbd_rs_should_slow_down(mdev))
-		msleep(100);
+		schedule_timeout_uninterruptible(HZ/10);
 	if (drbd_rs_begin_io(mdev, e->sector))
 		goto out_free_e;
 
