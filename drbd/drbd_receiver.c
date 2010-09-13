@@ -1882,7 +1882,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	spin_unlock(&mdev->epoch_lock);
 
 	dp_flags = be32_to_cpu(p->dp_flags);
-	rw = write_flags_to_bio(mdev, dp_flags);
+	rw |= write_flags_to_bio(mdev, dp_flags);
 
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;
