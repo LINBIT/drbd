@@ -39,10 +39,6 @@
 /* see get_sb_bdev and bd_claim */
 extern char *drbd_sec_holder;
 
-#ifndef DIV_ROUND_UP
-#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
 static inline unsigned short queue_logical_block_size(struct request_queue *q)
 {
