@@ -1523,8 +1523,10 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			drbd_free_bc(mdev->ldev);
 			mdev->ldev = NULL;);
 
-		if (mdev->md_io_tmpp)
+		if (mdev->md_io_tmpp) {
 			__free_page(mdev->md_io_tmpp);
+			mdev->md_io_tmpp = NULL;
+		}
 	}
 
 	/* Disks got bigger while they were detached */
