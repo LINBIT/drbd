@@ -9,11 +9,13 @@
 # error "use a 2.6 kernel, please"
 #endif
 
-#include <linux/bio.h>
-#ifndef bio_rw_flagged
-#define bio_rw_flagged(bio, flag)      ((bio)->bi_rw & (1 << (flag)))
+#include <linux/blkdev.h>
+#ifndef BLKDEV_IFL_WAIT
+/* see fbd9b09a177a481eda256447c881f014f29034fe */
+#define blkdev_issue_flush(b, gfpf, s, ifl)	blkdev_issue_flush(b, s)
 #endif
 
+#include <linux/bio.h>
 #include <linux/slab.h>
 
 /* for the proc_create wrapper */
@@ -216,6 +218,24 @@ static inline void drbd_plug_device(struct drbd_conf *mdev)
 		/* unplugging should not happen automatically... */
 	}
 	spin_unlock_irq(q->queue_lock);
+}
+
+static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
+{
+	struct gendisk *disk = mdev->ldev->backing_bdev->bd_contains->bd_disk;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
+	/* very old kernel */
+	return (int)disk_stat_read(disk, read_sectors)
+	     + (int)disk_stat_read(disk, write_sectors);
+#elif defined(__disk_stat_inc)
+	/* older kernel */
+	return (int)disk_stat_read(disk, sectors[0])
+	     + (int)disk_stat_read(disk, sectors[1]);
+#else
+	/* recent kernel */
+	return (int)part_stat_read(&disk->part0, sectors[0])
+	     + (int)part_stat_read(&disk->part0, sectors[1]);
+#endif
 }
 
 #ifdef DEFINE_SOCK_CREATE_KERN
@@ -694,6 +714,12 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 #endif
 
 #ifdef NEED_ATOMIC_ADD_UNLESS
+#ifndef atomic_xchg
+static inline int atomic_xchg(atomic_t *v, int new)
+{
+	return xchg(&v->counter, new);
+}
+#endif
 #ifndef atomic_cmpxchg
 static inline int atomic_cmpxchg(atomic_t *v, int old, int new)
 {
@@ -754,6 +780,10 @@ typedef _Bool                   bool;
 
 #ifndef REQ_FLUSH
 #define REQ_FLUSH       (0)
+#endif
+
+#ifndef REQ_FUA
+#define REQ_FUA		(REQ_HARDBARRIER|REQ_UNPLUG)
 #endif
 
 #ifndef REQ_DISCARD

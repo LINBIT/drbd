@@ -2068,7 +2068,6 @@ out_interrupted:
  */
 int drbd_rs_should_slow_down(struct drbd_conf *mdev)
 {
-	struct gendisk *disk = mdev->ldev->backing_bdev->bd_contains->bd_disk;
 	unsigned long db, dt, dbdt;
 	int curr_events;
 	int throttle = 0;
@@ -2077,17 +2076,9 @@ int drbd_rs_should_slow_down(struct drbd_conf *mdev)
 	if (mdev->sync_conf.c_min_rate == 0)
 		return 0;
 
-#ifdef part_stat_read
-	/* recent kernel */
-	curr_events = (int)part_stat_read(&disk->part0, sectors[0]) +
-		      (int)part_stat_read(&disk->part0, sectors[1]) -
-			atomic_read(&mdev->rs_sect_ev);
-#else
-	/* older kernel */
-	curr_events = (int)disk_stat_read(disk, sectors[0]) +
-		      (int)disk_stat_read(disk, sectors[1]) -
-			atomic_read(&mdev->rs_sect_ev);
-#endif
+	curr_events = drbd_backing_bdev_events(mdev)
+		    - atomic_read(&mdev->rs_sect_ev);
+
 	if (!mdev->rs_last_events || curr_events - mdev->rs_last_events > 64) {
 		unsigned long rs_left;
 		int i;

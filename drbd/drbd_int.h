@@ -2584,10 +2584,6 @@ static inline void drbd_kick_lo(struct drbd_conf *mdev)
 	}
 }
 
-/* see fbd9b09a177a481eda256447c881f014f29034fe */
-#ifndef BLKDEV_IFL_WAIT
-#define blkdev_issue_flush(b, gfpf, s, ifl)	blkdev_issue_flush(b, s)
-#endif
 static inline void drbd_md_flush(struct drbd_conf *mdev)
 {
 	int r;
