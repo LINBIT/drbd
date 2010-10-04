@@ -784,7 +784,11 @@ drbd_validate_all () {
 	monitor|validate-all)
 		:;;
 	*)
-		if [[ ${OCF_RESKEY_CRM_meta_notify_start_uname- NOT SET } = " NOT SET " ]]; then
+		# Test if the environment variables for either the notify
+		# enabled, or one of its effects, are set.
+		# If both are unset, we complain.
+		if ! ocf_is_true ${OCF_RESKEY_CRM_meta_notify} &&
+		   [[ ${OCF_RESKEY_CRM_meta_notify_start_uname- NOT SET } = " NOT SET " ]]; then
 			ocf_log err "you really should enable notify when using this RA"
 			return $OCF_ERR_CONFIGURED
 		fi
