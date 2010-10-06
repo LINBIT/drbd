@@ -628,22 +628,39 @@ static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char*
 	return NO_ERROR;
 }
 
-static void resolv6(char *name, struct in6_addr *addr)
+static void resolv6(char *name, struct sockaddr_in6 *addr)
 {
-	int rv;
-	struct hostent *he;
+	struct addrinfo hints, *res, *tmp;
+	int err;
 
-	rv = inet_pton(AF_INET6, name, addr);
-	if (rv > 0)
-		return;
-	else if (rv == 0) {
-		he = gethostbyname2(name, AF_INET6);
-		if (!he) {
-			fprintf(stderr, "can not resolve the hostname: gethostbyname2(%s, AF_INET6): %s\n",
-					name, hstrerror(h_errno));
-			exit(20);
-		}
-		memcpy(addr, he->h_addr_list[0], sizeof(struct in6_addr));
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+
+	err = getaddrinfo(name, 0, &hints, &res);
+	if (err) {
+		fprintf(stderr, "getaddrinfo %s: %s\n", name, gai_strerror(err));
+		exit(20);
+	}
+
+	/* Yes, it is a list. We use only the first result. The loop is only
+	 * there to document that we know it is a list */
+	for (tmp = res; tmp; tmp = tmp->ai_next) {
+		memcpy(addr, tmp->ai_addr, sizeof(*addr));
+		break;
+	}
+	freeaddrinfo(res);
+	if (0) { /* debug output */
+		char ip[INET6_ADDRSTRLEN];
+		inet_ntop(AF_INET6, &addr->sin6_addr, ip, sizeof(ip));
+		fprintf(stderr, "%s -> %02x %04x %08x %s %08x\n",
+				name,
+				addr->sin6_family,
+				addr->sin6_port,
+				addr->sin6_flowinfo,
+				ip,
+				addr->sin6_scope_id);
 	}
 }
 
@@ -662,6 +679,25 @@ static unsigned long resolv(const char* name)
 		retval = ((struct in_addr *)(he->h_addr_list[0]))->s_addr;
 	}
 	return retval;
+}
+
+static void split_ipv6_addr(char **address, int *port)
+{
+	/* ipv6:[fe80::0234:5678:9abc:def1]:8000; */
+	char *b = strrchr(*address,']');
+	if (address[0][0] != '[' || b == NULL ||
+		(b[1] != ':' && b[1] != '\0')) {
+		fprintf(stderr, "unexpected ipv6 format: %s\n",
+				*address);
+		exit(20);
+	}
+
+	*b = 0;
+	*address += 1; /* skip '[' */
+	if (b[1] == ':')
+		*port = m_strtoll(b+2,1); /* b+2: "]:" */
+	else
+		*port = 7788; /* will we ever get rid of that default port? */
 }
 
 static void split_address(char* text, int *af, char** address, int* port)
@@ -685,15 +721,27 @@ static void split_address(char* text, int *af, char** address, int* port)
 			break;
 		}
 	}
+
+	if (*af == AF_INET6 && address[0][0] == '[')
+		return split_ipv6_addr(address, port);
+
 	if (*af == -1)
 		*af = get_af_ssocks(1);
 
 	b=strrchr(text,':');
 	if (b) {
 		*b = 0;
+		if (*af == AF_INET6) {
+			/* compatibility handling of ipv6 addresses,
+			 * in the style expected before drbd 8.3.9.
+			 * may go wrong without explicit port */
+			fprintf(stderr, "interpreting ipv6:%s:%s as ipv6:[%s]:%s\n",
+					*address, b+1, *address, b+1);
+		}
 		*port = m_strtoll(b+1,1);
 	} else
 		*port = 7788;
+
 }
 
 static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
@@ -717,13 +765,12 @@ static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char
 
 	if (af == AF_INET6) {
 		memset(&addr6, 0, sizeof(struct sockaddr_in6));
+		resolv6(address, &addr6);
 		addr6.sin6_port = htons(port);
-		addr6.sin6_family = AF_INET6;
-		resolv6(address, &addr6.sin6_addr);
-		/* addr6.sin6_len = sizeof(addr6); */
 		add_tag(tl,ad->tag,&addr6,sizeof(addr6));
 	} else {
-		/* AF_INET and AF_SSOCKS */
+		/* AF_INET, AF_SDP, AF_SSOCKS,
+		 * all use the IPv4 addressing scheme */
 		addr.sin_port = htons(port);
 		addr.sin_family = af;
 		addr.sin_addr.s_addr = resolv(address);

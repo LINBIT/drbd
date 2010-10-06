@@ -1370,10 +1370,10 @@ void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *
   }
 
 #define make_address(ADDR, PORT, AF)		\
-  if (strcmp(AF, "ipv4")) { \
-    ssprintf(argv[NA(argc)],"%s:%s:%s", AF, ADDR, PORT); \
+  if (!strcmp(AF, "ipv6")) { \
+    ssprintf(argv[NA(argc)],"%s:[%s]:%s", AF, ADDR, PORT); \
   } else { \
-    ssprintf(argv[NA(argc)],"%s:%s", ADDR, PORT); \
+    ssprintf(argv[NA(argc)],"%s:%s:%s", AF, ADDR, PORT); \
   }
 
 int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
@@ -2443,10 +2443,18 @@ int have_ip_ipv6(const char *ip)
 	FILE *if_inet6;
 	struct in6_addr addr6, query_addr;
 	unsigned int b[4];
-	char name[20];
+	char tmp_ip[INET6_ADDRSTRLEN+1];
+	char name[20]; /* IFNAMSIZ aka IF_NAMESIZE is 16 */
 	int i;
 
-	if (inet_pton(AF_INET6, ip, &query_addr) <= 0)
+	/* don't want to do getaddrinfo lookup, but inet_pton get's confused by
+	 * %eth0 link local scope specifiers. So we have a temporary copy
+	 * without that part. */
+	for (i=0; ip[i] && ip[i] != '%' && i < INET6_ADDRSTRLEN; i++)
+		tmp_ip[i] = ip[i];
+	tmp_ip[i] = 0;
+
+	if (inet_pton(AF_INET6, tmp_ip, &query_addr) <= 0)
 		return 0;
 
 #define PROC_IF_INET6 "/proc/net/if_inet6"
