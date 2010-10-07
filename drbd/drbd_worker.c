@@ -840,7 +840,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	if (os.conn <= C_CONNECTED)
 		goto out_unlock;
 
-	ns = os;
+	ns.i = os.i;
 	ns.conn = C_CONNECTED;
 
 	dev_info(DEV, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
@@ -1512,7 +1512,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	}
 
 	write_lock_irq(&global_state_lock);
-	ns = mdev->state;
+	ns.i = mdev->state.i;
 
 	ns.aftr_isp = !_drbd_may_sync_now(mdev);
 
@@ -1525,7 +1525,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	r = __drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
-	ns = mdev->state;
+	ns.i = mdev->state.i;
 
 	if (ns.conn < C_CONNECTED)
 		r = SS_UNKNOWN_ERROR;

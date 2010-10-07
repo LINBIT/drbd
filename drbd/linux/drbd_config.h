@@ -34,9 +34,6 @@ extern const char *drbd_buildtag(void);
 #define DRBD_DEBUG_MD_SYNC
 #endif
 
-#ifndef DRBD_DEBUG_STATE_CHANGES
-#define DRBD_DEBUG_STATE_CHANGES 0
-#endif
 /* End of external module for 2.6.33 stuff */
 
 #define REL_VERSION "8.3.8"

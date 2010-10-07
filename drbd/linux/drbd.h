@@ -255,6 +255,7 @@ union drbd_state {
 #if DRBD_DEBUG_STATE_CHANGES
 		unsigned int line;
 		const char *func;
+		unsigned long long seq;
 #endif
 	};
 	unsigned int i;

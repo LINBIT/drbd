@@ -1256,7 +1256,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	rv = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
-	ns = mdev->state;
+	ns.i = mdev->state.i;
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_SUCCESS)

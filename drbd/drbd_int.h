@@ -1859,8 +1859,12 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 
 /* drbd state debug */
 #if DRBD_DEBUG_STATE_CHANGES
-#define DRBD_STATE_DEBUG_INIT_VAL(s) ({ (s).line = __LINE__; (s).func = __func__; })
+extern void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
+		const char *func, unsigned int line,
+		const char *name, union drbd_state s);
+#define DRBD_STATE_DEBUG_INIT_VAL(s) ({ (s).seq = 0; (s).line = __LINE__; (s).func = __func__; })
 #else
+#define drbd_state_dbg(...) do { } while (0)
 #define DRBD_STATE_DEBUG_INIT_VAL(s) do { } while (0)
 #endif
 

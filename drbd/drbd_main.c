@@ -48,6 +48,8 @@
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
+#include <linux/device.h>
+#include <linux/dynamic_debug.h>
 
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
@@ -473,12 +475,6 @@ void tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-#if DRBD_DEBUG_STATE_CHANGES
-static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
-		const char *func, unsigned int line,
-		const char *name, union drbd_state s);
-#endif
-
 /**
  * cl_wide_st_chg() - TRUE if the state change is a cluster wide one
  * @mdev:	DRBD device.
@@ -501,29 +497,26 @@ int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 		      union drbd_state mask, union drbd_state val)
 {
 #if DRBD_DEBUG_STATE_CHANGES
-	static unsigned long long sseq = 0xf0000000LLU;
-	unsigned long seq;
-	unsigned int line = val.line;
-	const char *func = val.func;
+	static unsigned long long sseq = 0x00f00000LLU;
 #endif
 
 	unsigned long flags;
 	union drbd_state os, ns;
 	int rv;
 
+	ns = val; /* assign debug info, if any. */
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
 #if DRBD_DEBUG_STATE_CHANGES
-	seq = ++sseq;
-	trace_st(mdev, seq, func, line, "!os", os);
-	trace_st(mdev, seq, func, line, "!ns", ns);
-	ns.func = NULL;
+	ns.seq = ++sseq;
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "!os", os);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "!ns", ns);
 #endif
 	rv = _drbd_set_state(mdev, ns, f, NULL);
-	ns = mdev->state;
+	ns.i = mdev->state.i;
 #if DRBD_DEBUG_STATE_CHANGES
-	trace_st(mdev, seq, func, line, "=ns", ns);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "=ns", ns);
 #endif
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
@@ -600,9 +593,6 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 {
 #if DRBD_DEBUG_STATE_CHANGES
 	static unsigned long long sseq = 0;
-	unsigned long seq;
-	unsigned int line = val.line;
-	const char *func = val.func;
 #endif
 
 	struct completion done;
@@ -615,16 +605,20 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 	if (f & CS_SERIALIZE)
 		mutex_lock(&mdev->state_mutex);
 
+	ns = val; /* assign debug info, if any */
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
+	ns.i = (os.i & ~mask.i) | val.i; /* assign state info */
+
+#if DRBD_DEBUG_STATE_CHANGES
+	ns.seq = ++sseq;
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?os", os);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?ns", ns);
+#endif
 	ns = sanitize_state(mdev, os, ns, NULL);
 
 #if DRBD_DEBUG_STATE_CHANGES
-	seq = ++sseq;
-	trace_st(mdev, seq, func, line, "?os", os);
-	trace_st(mdev, seq, func, line, "?ns", ns);
-	ns.func = NULL;
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?=>ns", ns);
 #endif
 
 	if (cl_wide_st_chg(mdev, os, ns)) {
@@ -675,8 +669,8 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 
 abort:
 #if DRBD_DEBUG_STATE_CHANGES
-	trace_st(mdev, seq, func, line, ":os", os);
-	trace_st(mdev, seq, func, line, ":ns", ns);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":os", os);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":ns", ns);
 #endif
 
 	if (f & CS_SERIALIZE)
@@ -706,51 +700,58 @@ int _drbd_request_state(struct drbd_conf *mdev,	union drbd_state mask,
 	return rv;
 }
 
+/* pretty print of drbd internal state */
+
+#define STATE_FMT	" %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c%c%c }\n"
+#define STATE_ARGS(tag, s)		\
+		tag,			\
+		drbd_conn_str(s.conn),	\
+		drbd_role_str(s.role),	\
+		drbd_role_str(s.peer),	\
+		drbd_disk_str(s.disk),	\
+		drbd_disk_str(s.pdsk),	\
+		is_susp(s) ? 's' : 'r',	\
+		s.aftr_isp ? 'a' : '-',	\
+		s.peer_isp ? 'p' : '-',	\
+		s.user_isp ? 'u' : '-', \
+		s.susp_fen ? 'F' : '-', \
+		s.susp_nod ? 'N' : '-'
+
 #if DRBD_DEBUG_STATE_CHANGES
-static void trace_st(struct drbd_conf *mdev, const unsigned long long seq,
+void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
 		const char *func, unsigned int line,
 		const char *name, union drbd_state s)
 {
-
-	const struct task_struct *c = current;
-	const char *context =
-		c == mdev->worker.task ? "worker" :
-		c == mdev->receiver.task ? "receiver" :
-		c == mdev->asender.task ? "asender" : "other";
-
-	dev_info(DEV, " %8llx [%s] %s:%u %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
-	    seq, context, func, line,
-	    name,
-	    drbd_conn_str(s.conn),
-	    drbd_role_str(s.role),
-	    drbd_role_str(s.peer),
-	    drbd_disk_str(s.disk),
-	    drbd_disk_str(s.pdsk),
-	    is_susp(s) ? 's' : 'r',
-	    s.aftr_isp ? 'a' : '-',
-	    s.peer_isp ? 'p' : '-',
-	    s.user_isp ? 'u' : '-'
-	    );
+	int i;
+	/* some paranoia code,
+	 * in case this is called with unitizalized data. */
+	if (!name || !func) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+	for (i = 0; i < 8 && name[i]; i++)
+		;
+	if (i == 8) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+	for (i = 0; i < 32 && func[i]; i++)
+		;
+	if (i == 32) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+	/* the actual debug prink */
+	dynamic_dev_dbg(DEV, " %8llx [%s] %s:%u" STATE_FMT,
+		seq, current->comm, func, line, STATE_ARGS(name, s));
 }
-#else
-#define trace_st(...) do { } while (0)
 #endif
 
-STATIC void print_st(struct drbd_conf *mdev, char *name, union drbd_state ns)
+void print_st(struct drbd_conf *mdev, const char *tag, union drbd_state s)
 {
-	dev_err(DEV, " %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
-	    name,
-	    drbd_conn_str(ns.conn),
-	    drbd_role_str(ns.role),
-	    drbd_role_str(ns.peer),
-	    drbd_disk_str(ns.disk),
-	    drbd_disk_str(ns.pdsk),
-	    is_susp(ns) ? 's' : 'r',
-	    ns.aftr_isp ? 'a' : '-',
-	    ns.peer_isp ? 'p' : '-',
-	    ns.user_isp ? 'u' : '-'
-	    );
+	dev_err(DEV, STATE_FMT, STATE_ARGS(tag, s));
 }
+
 
 void print_st_err(struct drbd_conf *mdev,
 	union drbd_state os, union drbd_state ns, int err)
@@ -762,6 +763,8 @@ void print_st_err(struct drbd_conf *mdev,
 	print_st(mdev, "wanted", ns);
 }
 
+#undef STATE_FMT
+#undef STATE_ARGS
 
 #define drbd_peer_str drbd_role_str
 #define drbd_pdsk_str drbd_disk_str
@@ -1078,7 +1081,6 @@ int __drbd_set_state(struct drbd_conf *mdev,
 {
 #if DRBD_DEBUG_STATE_CHANGES
 	static unsigned long long sseq = 0xff000000LLU;
-	unsigned long long seq = 0;
 #endif
 	union drbd_state os;
 	int rv = SS_SUCCESS;
@@ -1089,18 +1091,17 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	os = mdev->state;
 
 #if DRBD_DEBUG_STATE_CHANGES
-	if (ns.func) {
-		seq = ++sseq;
-		trace_st(mdev, seq, ns.func, ns.line, "==os", os);
-		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
+	if (!ns.seq) {
+		ns.seq = ++sseq;
+		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "==os", os);
+		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "==ns", ns);
 	}
 #endif
 
 	ns = sanitize_state(mdev, os, ns, &warn_sync_abort);
 
 #if DRBD_DEBUG_STATE_CHANGES
-	if (ns.func)
-		trace_st(mdev, seq, ns.func, ns.line, "==ns", ns);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "=>ns", ns);
 #endif
 
 	if (ns.i == os.i)
@@ -1152,8 +1153,7 @@ int __drbd_set_state(struct drbd_conf *mdev,
 #endif
 
 #if DRBD_DEBUG_STATE_CHANGES
-	if (ns.func)
-		trace_st(mdev, seq, ns.func, ns.line, ":=ns", ns);
+	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":=ns", ns);
 #endif
 
 	/* solve the race between becoming unconfigured,
@@ -1170,7 +1170,9 @@ int __drbd_set_state(struct drbd_conf *mdev,
 	    !test_and_set_bit(CONFIG_PENDING, &mdev->flags))
 		set_bit(DEVICE_DYING, &mdev->flags);
 
-	mdev->state.i = ns.i;
+	/* assignment inclusive debug info about what code path
+	 * initiated this state change. */
+	mdev->state = ns;
 	wake_up(&mdev->misc_wait);
 	wake_up(&mdev->state_wait);
 
@@ -1338,6 +1340,13 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	enum drbd_fencing_p fp;
 	enum drbd_req_event what = nothing;
 	union drbd_state nsm = (union drbd_state){ .i = -1 };
+
+#if DRBD_DEBUG_STATE_CHANGES
+	if (ns.seq) {
+		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ">>os", os);
+		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ">>ns", ns);
+	}
+#endif
 
 	if (os.conn != C_CONNECTED && ns.conn == C_CONNECTED) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);
@@ -2074,6 +2083,7 @@ int drbd_send_state(struct drbd_conf *mdev)
 	sock = mdev->data.socket;
 
 	if (likely(sock != NULL)) {
+		drbd_state_dbg(mdev, mdev->state.seq, __func__, __LINE__, "send", mdev->state);
 		ok = _drbd_send_cmd(mdev, sock, P_STATE,
 				    (struct p_header80 *)&p, sizeof(p), 0);
 	}
