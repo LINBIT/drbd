@@ -2067,7 +2067,7 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
  * drbd_send_state() - Sends the drbd state to the peer
  * @mdev:	DRBD device.
  */
-int drbd_send_state(struct drbd_conf *mdev)
+int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line)
 {
 	struct socket *sock;
 	struct p_state p;
@@ -2083,7 +2083,7 @@ int drbd_send_state(struct drbd_conf *mdev)
 	sock = mdev->data.socket;
 
 	if (likely(sock != NULL)) {
-		drbd_state_dbg(mdev, mdev->state.seq, __func__, __LINE__, "send", mdev->state);
+		drbd_state_dbg(mdev, mdev->state.seq, func, line, "send", mdev->state);
 		ok = _drbd_send_cmd(mdev, sock, P_STATE,
 				    (struct p_header80 *)&p, sizeof(p), 0);
 	}
