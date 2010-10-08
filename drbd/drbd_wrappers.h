@@ -790,4 +790,12 @@ typedef _Bool                   bool;
 #define REQ_DISCARD     (0)
 #endif
 
+#ifdef NEED_SCHEDULE_TIMEOUT_INTERR
+static inline signed long schedule_timeout_interruptible(signed long timeout)
+{
+	__set_current_state(TASK_INTERRUPTIBLE);
+        return schedule_timeout(timeout);
+}
+#endif
+
 #endif

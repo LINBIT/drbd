@@ -183,6 +183,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_bool_type=0
   fi
+  if grep_q "schedule_timeout_interruptible" $KDIR/include/linux/sched.h ; then
+    have_sched_timeout_interr=1
+  else
+    have_sched_timeout_interr=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -232,6 +237,8 @@ perl -pe "
   { ( $have_atomic_add_unless ? '//' : '' ) . \$1}e;
  s{.*(#define NEED_BOOL_TYPE.*)}
   { ( $have_bool_type ? '//' : '' ) . \$1}e;
+ s{.*(#define NEED_SCHEDULE_TIMEOUT_INTERR.*)}
+  { ( $have_sched_timeout_interr ? '//' : '' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

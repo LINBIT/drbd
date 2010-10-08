@@ -127,4 +127,7 @@ extern const char *drbd_buildtag(void);
 /* some old kernels do not have the bool type */
 //#define NEED_BOOL_TYPE
 
+/* some older kernels do not have schedule_timeout_interruptible() */
+//#define NEED_SCHEDULE_TIMEOUT_INTERR
+
 #endif
