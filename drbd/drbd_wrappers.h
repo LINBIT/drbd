@@ -804,4 +804,15 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 }
 #endif
 
+#ifndef CONFIG_DYNAMIC_DEBUG
+/* At least in 2.6.34 the function macro dynamic_dev_dbg() is broken when compiling
+   without CONFIG_DYNAMIC_DEBUG. It has 'format' in the argument list, it references
+   to 'fmt' in its body. */
+#ifdef dynamic_dev_dbg
+#undef dynamic_dev_dbg
+#define dynamic_dev_dbg(dev, fmt, ...)                               \
+        do { if (0) dev_printk(KERN_DEBUG, dev, fmt, ##__VA_ARGS__); } while (0)
+#endif
+#endif
+
 #endif
