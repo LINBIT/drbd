@@ -169,7 +169,7 @@ if test "$WITH_KM" = "yes"; then
    AC_CHECK_FILE($KDIR/Makefile,
 		,
       		AC_MSG_WARN([Unable to find a kernel Makefile in $KDIR. You will have to set KDIR correctly when invoking make.]))
-   KVER="`uname -r`"
+   KVER='`uname -r`'
    KDIR="/lib/modules/$KVER/build"
 fi
 AC_SUBST(KVER)
