@@ -450,6 +450,13 @@ drbd_start() {
 		status=$?
 		case "$status" in
 		$OCF_SUCCESS)
+			# Just in case we have to adjust something, this is a
+			# good place to do it.  Actually, we don't expect to be
+			# called to "start" an already "running" resource, so
+			# this is probably dead code.
+			# Also, ignore the exit code of adjust, as we are
+			# "running" already, anyways, right?
+			do_drbdadm $DRBD_TO_PEER adjust $DRBD_RESOURCE
 			rc=$OCF_SUCCESS
 			break
 			;;
@@ -458,7 +465,14 @@ drbd_start() {
 			# we may need to move it first to its expected location.
 			$first_try && do_drbdadm check-resize $DRBD_RESOURCE
 			figure_out_drbd_peer_uname
-			do_drbdadm $DRBD_TO_PEER up $DRBD_RESOURCE
+			if ! do_drbdadm $DRBD_TO_PEER up $DRBD_RESOURCE ; then
+				# If we cannot up it, even on the second try,
+				# it is unlikely to get better.  Don't wait for
+				# this operation to timeout, but short circuit
+				# exit with generic error.
+				$first_try || exit $OCF_ERR_GENERIC
+				sleep 1
+			fi
 			;;
 		$OCF_RUNNING_MASTER)
 			ocf_log warn "$DRBD_RESOURCE already Primary, demoting."
