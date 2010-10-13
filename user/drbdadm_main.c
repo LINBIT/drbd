@@ -160,7 +160,7 @@ static void register_config_file(struct d_resource *res, const char *cfname);
 
 static struct ifreq *get_ifreq();
 
-char ss_buffer[255];
+char ss_buffer[1024];
 struct utsname nodeinfo;
 int line = 1;
 int fline;

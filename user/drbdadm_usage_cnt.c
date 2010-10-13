@@ -419,11 +419,12 @@ struct hostent *my_gethostbyname(const char *name)
  * 3 - cannot connect to server
  * 5 - other error
  */
-static int make_get_request(char *req_buf) {
+static int make_get_request(char *uri) {
 	struct sockaddr_in server;
 	struct hostent *host_info;
 	unsigned long addr;
 	int sock;
+	char *req_buf;
 	char *http_host = HTTP_HOST;
 	int buf_len = 1024;
 	char buffer[buf_len];
@@ -454,6 +455,16 @@ static int make_get_request(char *req_buf) {
 		memcpy((char *)&server.sin_addr, host_info->h_addr,
 			host_info->h_length);
 	}
+
+
+	ssprintf(req_buf,
+		"GET %s HTTP/1.0\r\n"
+		"Host: "HTTP_HOST"\r\n"
+		"User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"
+		"\r\n",
+		uri,
+		nodeinfo.sysname, nodeinfo.release,
+		nodeinfo.version, nodeinfo.machine);
 
 	server.sin_family = AF_INET;
 	server.sin_port = htons(HTTP_PORT);
@@ -520,7 +531,7 @@ static void url_encode(char* in, char* out)
 void uc_node(enum usage_count_type type)
 {
 	struct node_info ni;
-	char *req_buf;
+	char *uri;
 	int send = 0;
 	int update = 0;
 	char answer[ANSWER_SIZE];
@@ -562,8 +573,8 @@ void uc_node(enum usage_count_type type)
 "\t\t--== This is %s of DRBD ==--\n"
 "Please take part in the global DRBD usage count at http://"HTTP_HOST".\n\n"
 "The counter works anonymously. It creates a random number to identify\n"
-"your machine and sends that random number, along with \n"
-"DRBD's version number, to "HTTP_HOST".\n\n"
+"your machine and sends that random number, along with the kernel and\n"
+"DRBD version, to "HTTP_HOST".\n\n"
 "The benefits for you are:\n"
 " * In response to your submission, the server ("HTTP_HOST") will tell you\n"
 "   how many users before you have installed this version (%s).\n"
@@ -584,8 +595,7 @@ void uc_node(enum usage_count_type type)
 		url_encode(answer,n_comment);
 	}
 
-	ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-		 "nu="U64"&%s%s%s HTTP/1.0\n\n",
+	ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s%s%s",
 		 ni.node_uuid, vcs_to_str(&ni.rev),
 		 n_comment[0] ? "&nc=" : "", n_comment);
 
@@ -596,7 +606,7 @@ void uc_node(enum usage_count_type type)
 "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 "  --==  Thank you for participating in the global usage survey  ==--\n"
 "The server's response is:\n\n");
-		make_get_request(req_buf);
+		make_get_request(uri);
 		if (type == UC_ASK) {
 			fprintf(stderr,
 "\n"
@@ -660,7 +670,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	struct node_info ni;
 	uint64_t device_uuid=0;
 	uint64_t device_size=0;
-	char *req_buf;
+	char *uri;
 	int send=0;
 	char *tb;
 	int rv,fd;
@@ -690,11 +700,11 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 			fprintf(stderr,
 "\n"
 "\t\t--== Creating metadata ==--\n"
-"As with nodes, we count the total number of devices mirrored by DRBD at\n"
+"As with nodes, we count the total number of devices mirrored by DRBD\n"
 "at http://"HTTP_HOST".\n\n"
 "The counter works anonymously. It creates a random number to identify\n"
-"the device and sends that random number, along with \n"
-"DRBD's version number, to "HTTP_HOST".\n\n"
+"the device and sends that random number, along with the kernel and\n"
+"DRBD version, to "HTTP_HOST".\n\n"
 "http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&ru="U64"&rs="U64"\n\n"
 "* If you wish to opt out entirely, simply enter 'no'.\n"
 "* To continue, just press [RETURN]\n",
@@ -710,10 +720,10 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	}
 
 	if (send) {
-		ssprintf(req_buf,"GET http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-			 "nu="U64"&ru="U64"&rs="U64" HTTP/1.0\n\n",
+		ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
+			 "nu="U64"&ru="U64"&rs="U64,
 			 ni.node_uuid, device_uuid, device_size);
-		make_get_request(req_buf);
+		make_get_request(uri);
 	}
 
 	/* HACK */

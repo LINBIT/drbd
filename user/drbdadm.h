@@ -216,7 +216,7 @@ extern int no_tty;
 extern int dry_run;
 extern int verbose;
 extern char* drbdsetup;
-extern char ss_buffer[255];
+extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
 
 extern char* setup_opts[10];
@@ -241,7 +241,7 @@ extern int soi;
 */
 
 #define ssprintf(ptr,...) \
-  ptr=strcpy(alloca(snprintf(ss_buffer,255,##__VA_ARGS__)+1),ss_buffer)
+  ptr=strcpy(alloca(snprintf(ss_buffer,1024,##__VA_ARGS__)+1),ss_buffer)
 
 /* CAUTION: arguments may not have side effects! */
 #define for_each_resource(res,tmp,config) \
