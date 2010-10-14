@@ -30,10 +30,6 @@ extern const char *drbd_buildtag(void);
 #undef PRO_VERSION_MAX
 #endif
 
-#ifndef DRBD_DEBUG_MD_SYNC
-#define DRBD_DEBUG_MD_SYNC
-#endif
-
 /* End of external module for 2.6.33 stuff */
 
 #define REL_VERSION "8.3.9rc1"
