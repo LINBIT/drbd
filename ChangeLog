@@ -2,8 +2,9 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.9rc1 (api:88/proto:86-95)
+8.3.9rc2 (api:88/proto:86-95)
 --------
+ * Fix for possible deadlock on IO error during resync
  * Fixed a race condition between adding and removing network configuration.
    Lead to a BUG_ON() when triggered.
  * Fixed spurious full syncs that could happen after an empty resync and
@@ -15,6 +16,7 @@ Latest:
    at the next connect
  * Implicitly create unconfigured devices which are referenced in sync-after
    dependencies.
+ * OCF RA now also works with pacemaker 1.1
  * Allow BIO sizes of up to 128kByte. Note: In case drbd-proxy is used, at least
    version 1.0.16 of drbd-proxy is required.
  * New configuration keyword on-no-data-accessible. Possible values
