@@ -34,6 +34,7 @@
 # OCF instance parameters
 #	OCF_RESKEY_drbd_resource
 #	OCF_RESKEY_drbdconf
+#	OCF_RESKEY_stop_outdates_secondary
 #	OCF_RESKEY_CRM_meta_clone_max
 #	OCF_RESKEY_CRM_meta_clone_node_max
 #	OCF_RESKEY_CRM_meta_master_max
@@ -47,8 +48,10 @@
 
 # Defaults
 OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
+OCF_RESKEY_stop_outdates_secondary_default="true"
 
 : ${OCF_RESKEY_drbdconf:=${OCF_RESKEY_drbdconf_default}}
+: ${OCF_RESKEY_stop_outdates_secondary:=${OCF_RESKEY_stop_outdates_secondary_default}}
 
 # Defaults according to "Configuration 1.0 Explained",
 # "Multi-state resource configuration options"
@@ -84,7 +87,7 @@ meta_data() {
 <?xml version="1.0"?>
 <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
 <resource-agent name="drbd">
-<version>1.1</version>
+<version>1.2</version>
 
 <longdesc lang="en">
 This resource agent manages a DRBD resource
@@ -109,6 +112,19 @@ Full path to the drbd.conf file.
 </longdesc>
 <shortdesc lang="en">Path to drbd.conf</shortdesc>
 <content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
+</parameter>
+
+<parameter name="stop_outdates_secondary">
+<longdesc lang="en">
+Recommended setting: leave at default (enabled).
+If a Secondary is stopped (unconfigured), it may be marked as outdated in the
+drbd meta data, if we know there is still a Primary running in the cluster.
+Note that this does not affect fencing policies set in drbd config,
+but is an additional safety feature of this resource agent only.
+You can disable this behaviour by setting the parameter to false.
+</longdesc>
+<shortdesc lang="en">outdate a secondary on stop</shortdesc>
+<content type="boolean" default="${OCF_RESKEY_stop_outdates_secondary_default}"/>
 </parameter>
 </parameters>
 
@@ -228,6 +244,10 @@ drbd_set_status_variables() {
 # called after stop, and from post notification events.
 maybe_outdate_self()
 {
+	# if you claim your right to go online with stale data,
+	# there you are.
+	ocf_is_true $OCF_RESKEY_stop_outdates_secondary || return 1
+
 	local host stop_uname
 	# We ignore $OCF_RESKEY_CRM_meta_notify_promote_uname here
 	# because: if demote and promote for a _stacked_ resource
