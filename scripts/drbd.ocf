@@ -428,6 +428,18 @@ figure_out_drbd_peer_uname()
 	DRBD_TO_PEER=${x:+ --peer $x}
 }
 
+create_device_udev_settle() {
+	if do_drbdadm syncer $DRBD_RESOURCE ; then
+		# udevsettle
+		while [ ! -b "$DRBD_DEVICE" ]; do
+			sleep 1
+		done
+		return 0
+	else
+		return 1
+	fi
+}
+
 drbd_start() {
 	local rc
 	local status
@@ -456,6 +468,7 @@ drbd_start() {
 			# this is probably dead code.
 			# Also, ignore the exit code of adjust, as we are
 			# "running" already, anyways, right?
+			figure_out_drbd_peer_uname
 			do_drbdadm $DRBD_TO_PEER adjust $DRBD_RESOURCE
 			rc=$OCF_SUCCESS
 			break
@@ -465,7 +478,11 @@ drbd_start() {
 			# we may need to move it first to its expected location.
 			$first_try && do_drbdadm check-resize $DRBD_RESOURCE
 			figure_out_drbd_peer_uname
-			if ! do_drbdadm $DRBD_TO_PEER up $DRBD_RESOURCE ; then
+			if ! create_device_udev_settle; then
+				# We cannot even set syncer parameters.
+				exit $OCF_ERR_GENERIC
+			fi
+			if ! do_drbdadm $DRBD_TO_PEER attach $DRBD_RESOURCE ; then
 				# If we cannot up it, even on the second try,
 				# it is unlikely to get better.  Don't wait for
 				# this operation to timeout, but short circuit
