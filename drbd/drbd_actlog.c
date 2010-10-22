@@ -25,6 +25,7 @@
 
 #include <linux/slab.h>
 #include <linux/drbd.h>
+#include <linux/dynamic_debug.h>
 #include "drbd_int.h"
 #include "drbd_tracing.h"
 #include "drbd_wrappers.h"
