@@ -255,6 +255,12 @@ const char *on_no_data_n[] = {
 	[OND_SUSPEND_IO]	= "suspend-io"
 };
 
+const char *on_congestion_n[] = {
+	[OC_BLOCK]              = "block",
+	[OC_PULL_AHEAD]         = "pull-ahead",
+	[OC_DISCONNECT]         = "disconnect"
+};
+
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
@@ -341,6 +347,9 @@ struct drbd_cmd commands[] = {
 		 { "data-integrity-alg",'d', T_integrity_alg,     ES },
 		 { "no-tcp-cork",'o',   T_no_cork,         EB },
 		 { "dry-run",'n',   T_dry_run,		   EB },
+		 { "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) },
+		 { "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") },
+		 { "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
 	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },
@@ -475,6 +484,7 @@ static const char *error_messages[] = {
 	EM(ERR_PERM) = "Permission denied. CAP_SYS_ADMIN necessary",
 	EM(ERR_NEED_APV_93) = "Protocol version 93 required to use --assume-clean",
 	EM(ERR_STONITH_AND_PROT_A) = "Fencing policy resource-and-stonith only with prot B or C allowed",
+	EM(ERR_CONG_NOT_PROTO_A) = "on-congestion policy pull-ahead only with prot A allowed",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)

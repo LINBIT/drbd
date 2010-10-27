@@ -51,6 +51,8 @@ enum range_checks
 	R_C_FILL_TARGET,
 	R_C_MAX_RATE,
 	R_C_MIN_RATE,
+	R_CONG_FILL,
+	R_CONG_EXTENTS,
 };
 
 enum yytokentype {

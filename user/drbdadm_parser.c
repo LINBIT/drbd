@@ -257,6 +257,17 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 'k', name, DRBD_C_MIN_RATE_MIN,
 				DRBD_C_MIN_RATE_MAX);
 		break;
+
+	case R_CONG_FILL:
+		m_strtoll_range(value, 's', name, DRBD_CONG_FILL_MIN,
+				DRBD_CONG_FILL_MAX);
+		break;
+
+	case R_CONG_EXTENTS:
+		m_strtoll_range(value, 1, name, DRBD_CONG_EXTENTS_MIN,
+				DRBD_CONG_EXTENTS_MAX);
+		break;
+
 	}
 }
 

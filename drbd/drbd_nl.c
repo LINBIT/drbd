@@ -1360,6 +1360,8 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 	new_conf->wire_protocol    = DRBD_PROT_C;
 	new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
 	new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
+	new_conf->on_congestion    = DRBD_ON_CONGESTION_DEF;
+	new_conf->cong_extents     = DRBD_CONG_EXTENTS_DEF;
 
 	if (!net_conf_from_tags(mdev, nlp->tag_list, new_conf)) {
 		retcode = ERR_MANDATORY_TAG;
@@ -1379,6 +1381,11 @@ STATIC int drbd_nl_net_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 			retcode = ERR_STONITH_AND_PROT_A;
 			goto fail;
 		}
+	}
+
+	if (new_conf->on_congestion != OC_BLOCK && new_conf->wire_protocol != DRBD_PROT_A) {
+		retcode = ERR_CONG_NOT_PROTO_A;
+		goto fail;
 	}
 
 	if (mdev->state.role == R_PRIMARY && new_conf->want_lose) {

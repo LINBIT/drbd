@@ -114,6 +114,9 @@ rr-conflict 		{ DP; CP; return TK_NET_OPTION;		}
 ping-timeout 		{ DP; CP; return TK_NET_OPTION;		}
 unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 data-integrity-alg	{ DP; CP; return TK_NET_OPTION;         }
+on-congestion		{ DP; CP; return TK_NET_OPTION;         }
+congestion-fill		{ DP; CP; RC(CONG_FILL); return TK_NET_OPTION;   }
+congestion-extents	{ DP; CP; RC(CONG_EXTENTS); return TK_NET_OPTION;}
 allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
 no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
