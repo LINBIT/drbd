@@ -2055,15 +2055,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	/* last "fixes" to rw flags.
 	 * Strip off BIO_RW_BARRIER unconditionally,
 	 * it is not supposed to be here anyways.
-	 *
-	 * Also add UNPLUG to any SYNC request,
-	 * which was the behaviour of DRBD up to protocol 95.
-	 * Our benchmarks show that it improves overall performance
-	 * of O_SYNC or O_DIRECT writes. */
+	 */
 	rw &= ~DRBD_REQ_HARDBARRIER;
-	if (rw & DRBD_REQ_SYNC)
-		rw |= DRBD_REQ_UNPLUG;
-
 	if (drbd_submit_ee(mdev, e, rw, DRBD_FAULT_DT_WR) == 0)
 		return TRUE;
 
@@ -3847,15 +3840,17 @@ STATIC void drbdd(struct drbd_conf *mdev)
 		}
 
 		shs = drbd_cmd_handler[cmd].pkt_size - sizeof(union p_header);
-		rv = drbd_recv(mdev, &header->h80.payload, shs);
-		if (unlikely(rv != shs)) {
-			dev_err(DEV, "short read while reading sub header: rv=%d\n", rv);
-			goto err_out;
-		}
-
 		if (packet_size - shs > 0 && !drbd_cmd_handler[cmd].expect_payload) {
 			dev_err(DEV, "No payload expected %s l:%d\n", cmdname(cmd), packet_size);
 			goto err_out;
+		}
+
+		if (shs) {
+			rv = drbd_recv(mdev, &header->h80.payload, shs);
+			if (unlikely(rv != shs)) {
+				dev_err(DEV, "short read while reading sub header: rv=%d\n", rv);
+				goto err_out;
+			}
 		}
 
 		rv = drbd_cmd_handler[cmd].function(mdev, cmd, packet_size - shs);
