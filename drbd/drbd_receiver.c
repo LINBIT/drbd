@@ -2052,6 +2052,18 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		drbd_al_begin_io(mdev, e->sector);
 	}
 
+	/* last "fixes" to rw flags.
+	 * Strip off BIO_RW_BARRIER unconditionally,
+	 * it is not supposed to be here anyways.
+	 *
+	 * Also add UNPLUG to any SYNC request,
+	 * which was the behaviour of DRBD up to protocol 95.
+	 * Our benchmarks show that it improves overall performance
+	 * of O_SYNC or O_DIRECT writes. */
+	rw &= ~DRBD_REQ_HARDBARRIER;
+	if (rw & DRBD_REQ_SYNC)
+		rw |= DRBD_REQ_UNPLUG;
+
 	if (drbd_submit_ee(mdev, e, rw, DRBD_FAULT_DT_WR) == 0)
 		return TRUE;
 
