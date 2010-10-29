@@ -518,7 +518,7 @@ union p_header {
  */
 
 /* these defines must not be changed without changing the protocol version */
-#define DP_HARDBARRIER	      1 /* depricated */
+#define DP_HARDBARRIER	      1 /* no longer used */
 #define DP_RW_SYNC	      2 /* equals REQ_SYNC    */
 #define DP_MAY_SET_IN_SYNC    4
 #define DP_UNPLUG             8 /* equals REQ_UNPLUG  */

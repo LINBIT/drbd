@@ -2640,16 +2640,20 @@ static int _drbd_send_zc_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e)
 	return 1;
 }
 
+/* see also wire_flags_to_bio()
+ * DRBD_REQ_*, because we need to semantically map the flags to data packet
+ * flags and back. We may replicate to other kernel versions. */
 static u32 bio_flags_to_wire(struct drbd_conf *mdev, unsigned long bi_rw)
 {
 	if (mdev->agreed_pro_version >= 95)
-		return  (bi_rw & REQ_SYNC ? (DP_RW_SYNC | DP_BCOMP_UNPLUG): 0) |
-			(bi_rw & REQ_UNPLUG ? DP_UNPLUG : 0) |
-			(bi_rw & REQ_FUA ? DP_FUA : 0) |
-			(bi_rw & REQ_FLUSH ? DP_FLUSH : 0) |
-			(bi_rw & REQ_DISCARD ? DP_DISCARD : 0);
-	else
-		return bi_rw & (REQ_SYNC | REQ_UNPLUG) ? DP_RW_SYNC : 0;
+		return  (bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
+			(bi_rw & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
+			(bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
+			(bi_rw & DRBD_REQ_FLUSH ? DP_FLUSH : 0) |
+			(bi_rw & DRBD_REQ_DISCARD ? DP_DISCARD : 0);
+
+	/* else: we used to communicate one bit only in older DRBD */
+	return bi_rw & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
 }
 
 /* Used to send write requests

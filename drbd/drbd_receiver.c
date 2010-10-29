@@ -1232,7 +1232,7 @@ next_bio:
 	bio->bi_sector = sector;
 	bio->bi_bdev = mdev->ldev->backing_bdev;
 	/* we special case some flags in the multi-bio case, see below
-	 * (REQ_UNPLUG, REQ_HARDBARRIER) */
+	 * (REQ_UNPLUG, REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
 	bio->bi_rw = rw;
 	bio->bi_private = e;
 	bio->bi_end_io = drbd_endio_sec;
@@ -1264,18 +1264,14 @@ next_bio:
 
 		/* strip off REQ_UNPLUG unless it is the last bio */
 		if (bios)
-#ifdef BIO_RW_SYNC
-			bio->bi_rw &= ~(1<<BIO_RW_SYNC);
-#else
-			bio->bi_rw &= ~REQ_UNPLUG;
-#endif
+			bio->bi_rw &= ~DRBD_REQ_UNPLUG;
 		trace_drbd_bio(mdev, "Sec", bio, 0, NULL);
 		drbd_generic_make_request(mdev, fault_type, bio);
 
-		/* strip off REQ_HARDBARRIER,
+		/* strip off REQ_FLUSH,
 		 * unless it is the first or last bio */
 		if (bios && bios->bi_next)
-			bios->bi_rw &= ~REQ_HARDBARRIER;
+			bios->bi_rw &= ~DRBD_REQ_FLUSH;
 	} while (bios);
 	maybe_kick_lo(mdev);
 	return 0;
@@ -1302,7 +1298,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
 	   so that we can finish that epoch in drbd_may_finish_epoch().
 	   That is necessary if we already have a long chain of Epochs, before
-	   we realize that REQ_HARDBARRIER is actually not supported */
+	   we realize that BARRIER is actually not supported */
 
 	/* As long as the -ENOTSUPP on the barrier is reported immediately
 	   that will never trigger. If it is reported late, we will just
@@ -1810,16 +1806,20 @@ static int drbd_wait_peer_seq(struct drbd_conf *mdev, const u32 packet_seq)
 	return ret;
 }
 
-static unsigned long write_flags_to_bio(struct drbd_conf *mdev, u32 dpf)
+/* see also bio_flags_to_wire()
+ * DRBD_REQ_*, because we need to semantically map the flags to data packet
+ * flags and back. We may replicate to other kernel versions. */
+static unsigned long wire_flags_to_bio(struct drbd_conf *mdev, u32 dpf)
 {
 	if (mdev->agreed_pro_version >= 95)
-		return  (dpf & DP_RW_SYNC ? REQ_SYNC : 0) |
-			(dpf & DP_UNPLUG ? (REQ_UNPLUG | REQ_BCOMP_SYNC): 0) |
-			(dpf & DP_FUA ? REQ_FUA : 0) |
-			(dpf & DP_FLUSH ? REQ_FUA : 0) |
-			(dpf & DP_DISCARD ? REQ_DISCARD : 0);
-	else
-		return dpf & DP_RW_SYNC ? (REQ_SYNC | REQ_UNPLUG) : 0;
+		return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
+			(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
+			(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
+			(dpf & DP_FLUSH ? DRBD_REQ_FLUSH : 0) |
+			(dpf & DP_DISCARD ? DRBD_REQ_DISCARD : 0);
+
+	/* else: we used to communicate one bit only in older DRBD */
+	return dpf & DP_RW_SYNC ? (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) : 0;
 }
 
 /* mirrored write */
@@ -1873,7 +1873,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		if (epoch == e->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
 			trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
-			rw |= REQ_HARDBARRIER;
+			rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
 			e->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
@@ -1882,7 +1882,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 				trace_drbd_epoch(mdev, epoch, EV_TRACE_SETTING_BI);
 				set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
 				trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
-				rw |= REQ_HARDBARRIER;
+				rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
 				e->flags |= EE_IS_BARRIER;
 			}
 		}
@@ -1890,7 +1890,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	spin_unlock(&mdev->epoch_lock);
 
 	dp_flags = be32_to_cpu(p->dp_flags);
-	rw |= write_flags_to_bio(mdev, dp_flags);
+	rw |= wire_flags_to_bio(mdev, dp_flags);
 
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		e->flags |= EE_MAY_SET_IN_SYNC;

@@ -756,39 +756,107 @@ static inline int atomic_add_unless(atomic_t *v, int a, int u)
 typedef _Bool                   bool;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-#ifdef REQ_HARDBARRIER
-#undef REQ_HARDBARRIER
-#endif
-#define REQ_HARDBARRIER (1UL << BIO_RW_BARRIER)
-#ifdef BIO_RW_SYNC
+/* REQ_* and BIO_RW_* flags have been moved around in the tree,
+ * and have finally been "merged" with
+ * 7b6d91daee5cac6402186ff224c3af39d79f4a0e and
+ * 7cc015811ef8992dfcce314d0ed9642bc18143d1
+ * We communicate between different systems,
+ * so we have to somehow semantically map the bi_rw flags
+ * bi_rw (some kernel version) -> data packet flags -> bi_rw (other kernel version)
+ */
+
+#if defined(BIO_RW_SYNC)
 /* see upstream commits
  * 213d9417fec62ef4c3675621b9364a667954d4dd,
  * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
  * later, the defines even became an enum ;-) */
-#define REQ_SYNC        (1UL << BIO_RW_SYNC)
-#define REQ_UNPLUG      (0)
-#define DP_BCOMP_UNPLUG DP_UNPLUG
-#define REQ_BCOMP_SYNC  REQ_SYNC
+#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNC)
+#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_SYNC)
+#elif defined(REQ_SYNC)		/* introduced in 2.6.36 */
+#define DRBD_REQ_SYNC		REQ_SYNC
+#define DRBD_REQ_UNPLUG		REQ_UNPLUG
 #else
-#define REQ_SYNC        (1UL << BIO_RW_SYNCIO)
-#define REQ_UNPLUG      (1UL << BIO_RW_UNPLUG)
-#define DP_BCOMP_UNPLUG (0)
-#define REQ_BCOMP_SYNC  (0)
+/* cannot test on defined(BIO_RW_SYNCIO), it may be an enum */
+#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
+#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
+#endif
+
+
+#ifdef REQ_FLUSH	/* introduced in 2.6.36, now equivalent to bi_rw */
+#define DRBD_REQ_FLUSH		REQ_FLUSH
+#define DRBD_REQ_FUA		REQ_FUA
+#define DRBD_REQ_DISCARD	REQ_DISCARD
+#define DRBD_REQ_HARDBARRIER	REQ_HARDBARRIER
+#else
+
+#define DRBD_REQ_FLUSH		(1UL << BIO_RW_BARRIER)
+/* REQ_FUA has been around for a longer time,
+ * without a direct equivalent in bi_rw. */
+#define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
+#define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
+
+#ifdef BIO_RW_DISCARD
+#define DRBD_REQ_DISCARD	(1UL << BIO_RW_DISCARD)
+#else
+#define DRBD_REQ_DISCARD	0
 #endif
 #endif
 
-#ifndef REQ_FLUSH
-#define REQ_FLUSH       (0)
-#endif
+/* this results in:
+	bi_rw   -> dp_flags
 
-#ifndef REQ_FUA
-#define REQ_FUA		(REQ_HARDBARRIER|REQ_UNPLUG)
-#endif
+< 2.6.28
+	SYNC	-> SYNC|UNPLUG
+	BARRIER	-> FUA|FLUSH
+	there is no DISCARD
+2.6.28
+	SYNC	-> SYNC|UNPLUG
+	BARRIER	-> FUA|FLUSH
+	DISCARD	-> DISCARD
+2.6.29
+	SYNCIO	-> SYNC
+	UNPLUG	-> UNPLUG
+	BARRIER	-> FUA|FLUSH
+	DISCARD	-> DISCARD
+2.6.36
+	SYNC	-> SYNC
+	UNPLUG	-> UNPLUG
+	FUA	-> FUA
+	FLUSH	-> FLUSH
+	DISCARD	-> DISCARD
+--------------------------------------
+	dp_flags   -> bi_rw
+< 2.6.28
+	SYNC	-> SYNC (and unplug)
+	UNPLUG	-> SYNC (and unplug)
+	FUA	-> BARRIER
+	FLUSH	-> BARRIER
+	there is no DISCARD,
+	it will be silently ignored on the receiving side.
+2.6.28
+	SYNC	-> SYNC (and unplug)
+	UNPLUG	-> SYNC (and unplug)
+	FUA	-> BARRIER
+	FLUSH	-> BARRIER
+	DISCARD -> DISCARD
+	(if that fails, we handle it like any other IO error)
+2.6.29
+	SYNC	-> SYNCIO
+	UNPLUG	-> UNPLUG
+	FUA	-> BARRIER
+	FLUSH	-> BARRIER
+	DISCARD -> DISCARD
+2.6.36
+	SYNC	-> SYNC
+	UNPLUG	-> UNPLUG
+	FUA	-> FUA
+	FLUSH	-> FLUSH
+	DISCARD	-> DISCARD
 
-#ifndef REQ_DISCARD
-#define REQ_DISCARD     (0)
-#endif
+NOTE: DISCARDs likely need some work still.  We should actually never see
+DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
+*/
+
 
 #ifdef NEED_SCHEDULE_TIMEOUT_INTERR
 static inline signed long schedule_timeout_interruptible(signed long timeout)
