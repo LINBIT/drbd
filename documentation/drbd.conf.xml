@@ -1436,9 +1436,6 @@ the unit is 1 second.
           <term>
 	    <option>c-max-rate <replaceable>max_rate</replaceable></option>
           </term>
-          <term>
-	    <option>c-min-rate <replaceable>min_rate</replaceable></option>
-          </term>
           <listitem>
             <para>The dynamic resync speed controller gets enabled with setting
 	      <replaceable>plan_time</replaceable> to a positive value. It aims to
@@ -1458,19 +1455,40 @@ the unit is 1 second.
 	      will use <replaceable>delay_target</replaceable>. 5 times RTT is a reasonable
 	      starting value. <replaceable>Max_rate</replaceable> should be set to the
 	      bandwidth available between the DRBD-hosts and the machines hosting
-	      DRBD-proxy, or to the available disk-bandwidth. <replaceable>Min_rate</replaceable>
-	      is the lower bound for the controller. If you set it to zero, resync IO
-	      requests will always get out of the way of application IO requests.
+	      DRBD-proxy, or to the available disk-bandwidth.
 	    </para>
 	    <para>
 	      The default value of <replaceable>plan_time</replaceable> is 0, the default unit is
 	      0.1 seconds. <replaceable>Fill_target</replaceable> has 0 and sectors as default unit.
 	      <replaceable>Delay_target</replaceable> has 1 (100ms) and 0.1 as default unit.
 	      <replaceable>Max_rate</replaceable> has 10240 (100MiB/s) and KiB/s as default unit.
-	      <replaceable>Min_rate</replaceable> has 4096 (4MiB/s) and KiB/s as default unit.
 	    </para>
 	    <para>
 	      The dynamic resync speed controller and its settings are available since DRBD 8.3.9.
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+	    <option>c-min-rate <replaceable>min_rate</replaceable></option>
+          </term>
+          <listitem>
+            <para>A node that is primary and sync-source has to schedule application
+	      IO requests and resync IO requests. The <replaceable>min_rate</replaceable>
+	      tells DRBD use only up to min_rate for resync IO and to dedicate all
+	      other available IO bandwidth to application requests.</para>
+	    <para>Note: The value 0 has a special meaning. It disables the limitation
+	      of resync IO completely, which might slow down application IO considerably.
+	      Set it to a value of 1, if you prefer that resync IO never slows down
+	      application IO.
+	    </para>
+	    <para>Note: Although the name might suggest that it is a lower bound for the
+	      dynamic resync speed controller, it is not. If the DRBD-proxy buffer is full,
+	      the dynamic resync speed controller is free to lower the resync speed down
+	      to 0, completely independent of the <option>c-min-rate</option> setting.
+	    </para>
+	    <para>
+	      <replaceable>Min_rate</replaceable> has 4096 (4MiB/s) and KiB/s as default unit.
 	    </para>
           </listitem>
         </varlistentry>
