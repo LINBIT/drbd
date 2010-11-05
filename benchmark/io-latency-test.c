@@ -57,6 +57,7 @@ struct shared_data {
 	unsigned long record_nr;
 	unsigned int write_duration_us;
 	unsigned int write_duration_records;
+	unsigned int max_write_duration_us;
 	double avg_write_duration;
 };
 
@@ -64,7 +65,7 @@ void* wd_thread(void *arg)
 {
 	struct shared_data *data = (struct shared_data*) arg;
 	unsigned long last_record_nr=-1, current_record_nr=0;
-	unsigned int avg_write,wd,wr;
+	unsigned int avg_write,wd,wr,mwd;
 	double avg_write_duration;
 
 	enum { IO_RUNNING, IO_BLOCKED } io_state = IO_RUNNING;
@@ -76,8 +77,10 @@ void* wd_thread(void *arg)
 		current_record_nr = data->record_nr;
 		wd = data->write_duration_us;
 		wr = data->write_duration_records;
+		mwd = data->max_write_duration_us;
 		data->write_duration_us = 0;
 		data->write_duration_records = 0;
+		data->max_write_duration_us = 0;
 		avg_write_duration = data->avg_write_duration;
 		pthread_mutex_unlock(&data->mutex);
 
@@ -106,7 +109,8 @@ void* wd_thread(void *arg)
 			last_record_nr = current_record_nr;
 		case IO_BLOCKED:
 			if(current_record_nr != last_record_nr) {
-				printf("IO just resumed.\n");
+				printf("IO just resumed. Blocked for %d.%02dms\n",
+				       mwd/1000, (mwd%1000)/10);
 				io_state = IO_RUNNING;
 			}
 		}
@@ -216,6 +220,7 @@ int main(int argc, char** argv)
 	data.record_nr = record_nr;
 	data.write_duration_us = 0;
 	data.write_duration_records = 1;
+	data.max_write_duration_us = 0;
 	pthread_create(&watch_dog,NULL,wd_thread,&data);
 
 	for( ; !records || record_nr < records ; record_nr++) {
@@ -268,6 +273,8 @@ int main(int argc, char** argv)
 		data.write_duration_us += write_duration_us;
 		data.write_duration_records++;
 		data.avg_write_duration = avg_write_duration;
+		if (write_duration_us > data.max_write_duration_us)
+			data.max_write_duration_us = write_duration_us;
 		pthread_mutex_unlock(&data.mutex);
 
 		if(write_duration_us < record_time ) {
