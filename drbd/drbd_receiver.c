@@ -2096,15 +2096,28 @@ out_interrupted:
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-int drbd_rs_should_slow_down(struct drbd_conf *mdev)
+int drbd_rs_should_slow_down(struct drbd_conf *mdev, sector_t sector)
 {
 	unsigned long db, dt, dbdt;
+	struct lc_element *tmp;
 	int curr_events;
 	int throttle = 0;
 
 	/* feature disabled? */
 	if (mdev->sync_conf.c_min_rate == 0)
 		return 0;
+
+	spin_lock_irq(&mdev->al_lock);
+	tmp = lc_find(mdev->resync, BM_SECT_TO_EXT(sector));
+	if (tmp) {
+		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
+		if (test_bit(BME_PRIORITY, &bm_ext->flags)) {
+			spin_unlock_irq(&mdev->al_lock);
+			return 0;
+		}
+		/* Do not slow down if app IO is already waiting for this extent */
+	}
+	spin_unlock_irq(&mdev->al_lock);
 
 	curr_events = drbd_backing_bdev_events(mdev)
 		    - atomic_read(&mdev->rs_sect_ev);
@@ -2293,9 +2306,9 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, un
 	 * we would also throttle its application reads.
 	 * In that case, throttling is done on the SyncTarget only.
 	 */
-	if (mdev->state.peer != R_PRIMARY && drbd_rs_should_slow_down(mdev))
+	if (mdev->state.peer != R_PRIMARY && drbd_rs_should_slow_down(mdev, sector))
 		schedule_timeout_uninterruptible(HZ/10);
-	if (drbd_rs_begin_io(mdev, e->sector))
+	if (drbd_rs_begin_io(mdev, sector))
 		goto out_free_e;
 
 submit_for_resync:

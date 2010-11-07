@@ -400,7 +400,7 @@ STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 	if (!get_ldev(mdev))
 		return -EIO;
 
-	if (drbd_rs_should_slow_down(mdev))
+	if (drbd_rs_should_slow_down(mdev, sector))
 		goto defer;
 
 	/* GFP_TRY, because if there is no memory available right now, this may
@@ -548,16 +548,6 @@ int drbd_rs_number_requests(struct drbd_conf *mdev)
 		number = SLEEP_TIME * mdev->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	}
 
-	/* Throttle resync on lower level disk activity, which may also be
-	 * caused by application IO on Primary/SyncTarget.
-	 * Keep this after the call to drbd_rs_controller, as that assumes
-	 * to be called as precisely as possible every SLEEP_TIME,
-	 * and would be confused otherwise. */
-	if (number && drbd_rs_should_slow_down(mdev)) {
-		mdev->c_sync_rate = 1;
-		number = 0;
-	}
-
 	/* ignore the amount of pending requests, the resync controller should
 	 * throttle down to incoming reply rate soon enough anyways. */
 	return number;
@@ -641,7 +631,8 @@ next_sector:
 
 		sector = BM_BIT_TO_SECT(bit);
 
-		if (drbd_try_rs_begin_io(mdev, sector)) {
+		if (drbd_rs_should_slow_down(mdev, sector) ||
+		    drbd_try_rs_begin_io(mdev, sector)) {
 			mdev->bm_resync_fo = bit;
 			goto requeue;
 		}
@@ -766,7 +757,8 @@ STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
 		size = BM_BLOCK_SIZE;
 
-		if (drbd_try_rs_begin_io(mdev, sector)) {
+		if (drbd_rs_should_slow_down(mdev, sector) ||
+		    drbd_try_rs_begin_io(mdev, sector)) {
 			mdev->ov_position = sector;
 			goto requeue;
 		}
