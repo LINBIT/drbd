@@ -483,7 +483,7 @@ static void fifo_add_val(struct fifo_buffer *fb, int value)
 		fb->values[i] += value;
 }
 
-int drbd_rs_controller(struct drbd_conf *mdev)
+STATIC int drbd_rs_controller(struct drbd_conf *mdev)
 {
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	unsigned int want;     /* The number of sectors we want in the proxy */
@@ -537,7 +537,7 @@ int drbd_rs_controller(struct drbd_conf *mdev)
 	return req_sect;
 }
 
-int drbd_rs_number_requests(struct drbd_conf *mdev)
+STATIC int drbd_rs_number_requests(struct drbd_conf *mdev)
 {
 	int number;
 	if (mdev->rs_plan_s.size) { /* mdev->sync_conf.c_plan_ahead */
@@ -553,8 +553,8 @@ int drbd_rs_number_requests(struct drbd_conf *mdev)
 	return number;
 }
 
-int w_make_resync_request(struct drbd_conf *mdev,
-		struct drbd_work *w, int cancel)
+STATIC int w_make_resync_request(struct drbd_conf *mdev,
+				 struct drbd_work *w, int cancel)
 {
 	unsigned long bit;
 	sector_t sector;
