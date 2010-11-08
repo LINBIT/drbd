@@ -98,7 +98,7 @@ static inline void blk_queue_logical_block_size(struct request_queue *q, unsigne
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
 	/* return bdev ? get_capacity(bdev->bd_disk) : 0; */
-	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
+	return bdev ? i_size_read(bdev->bd_inode) >> 9 : 0;
 }
 
 #include "drbd_int.h"
