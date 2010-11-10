@@ -68,7 +68,7 @@ drbd_status() {
     role=$(drbdadm role $OCF_RESKEY_resource)
     case $role in
 	Primary/*)
-	    return $OCF_RUNNING
+	    return $OCF_SUCCESS
 	    ;;
 	Secondary/*)
 	    return $OCF_NOT_RUNNING
