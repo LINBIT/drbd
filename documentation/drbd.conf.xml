@@ -1654,10 +1654,21 @@ the unit is 1 second.
 the mirrored data. The online-verify mechanism and the <option>data-integrity-alg</option>
 of the <option>network</option> section.</para>
     <para>Both mechanisms might deliver false positives if the user of DRBD modifies the
-data which gets written to disk while the transfer goes on. Currently the swap code and
-ReiserFS are known to do so. In both cases this is not a problem, because when the
-initiator of the data transfer does this it already knows that that data block will
-not be part of an on disk data structure.</para>
+data which gets written to disk while the transfer goes on. This may happen for
+swap, or for certain append while global sync, or truncate/rewrite workloads,
+and not necessarily poses a problem for the integrity of the data.
+Usually when the initiator of the data transfer does this, it already knows that
+that data block will not be part of an on disk data structure, or will be resubmitted
+with correct data soon enough.</para>
+<para>The <option>data-integrity-alg</option> causes the receiving side to log
+an error about "Digest integrity check FAILED: Ns +x\n", where N is the sector
+offset, and x is the size of the requst in bytes.  It will then disconnect, and
+reconnect, thus causing a quick resync. If the sending side at the same time
+detected a modification, it warns about "Digest mismatch, buffer modified by
+upper layers during write: Ns +x\n", which shows that this was a false positive.
+The sending side may detect these buffer modifications immediately after the
+unmodified data has been copied to the tcp buffers, in which case the receiving
+side won't notice it.</para>
     <para>The most recent (2007) example of systematically corruption was an
 issue with the TCP offloading engine and the driver of a certain type
 of GBit NIC. The actual corruption happened on the DMA transfer from
