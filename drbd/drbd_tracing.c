@@ -637,7 +637,7 @@ static void probe_drbd_packet(struct drbd_conf *mdev, struct socket *sock,
 		      (long long)(be64_to_cpu(p->sizes.d_size)>>(20-9)),
 		      (long long)(be64_to_cpu(p->sizes.u_size)>>(20-9)),
 		      (long long)(be64_to_cpu(p->sizes.c_size)>>(20-9)),
-		      be32_to_cpu(p->sizes.max_segment_size),
+		      be32_to_cpu(p->sizes.max_bio_size),
 		      be32_to_cpu(p->sizes.queue_order_type));
 		break;
 
