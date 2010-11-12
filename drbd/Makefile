@@ -114,22 +114,25 @@ else
 .PHONY: drbd_buildtag.c
 
   drbd_buildtag.c:
-	@is_tarball=`test -e ../.git/. && echo false || echo true`;\
-	set -e; exec > $@.new;							\
+	@set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
 	echo -e "#include <linux/drbd.h>";					\
 	echo -e "const char *drbd_buildtag(void)\n{";				\
-	if $$is_tarball; then							\
-	  if ! test -e $@ ; then 						\
-	  	echo >&2 "your DRBD source tree is broken. unpack again.";	\
+	if test -e ../.git && GITHEAD=$$(git rev-parse HEAD); then		\
+		GITDIFF=$$(cd .. && git diff --name-only HEAD |			\
+			tr -s '\t\n' '  ' |					\
+			sed -e 's/^/ /;s/ *$$//');				\
+		echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";		\
+	elif ! test -e $@ ; then						\
+		echo >&2 "$@ not found.";					\
+		test -e ../.git &&						\
+		>&2 printf "%s\n"						\
+			"git did not work, but this looks like a git checkout?"	\
+			"Install git and try again." ||				\
+		echo >&2 "Your DRBD source tree is broken. Unpack again.";	\
 		exit 1;								\
-	  fi;									\
-	  grep return $@ ;							\
 	else									\
-	  GITHEAD=$$(git rev-parse HEAD);					\
-	  GITDIFF=$$(cd .. && git diff --name-only HEAD | tr -s '\t\n' '  ' |	\
-	  	sed -e 's/^/ /;s/ *$$//');					\
-	  echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";	 		\
+		grep return $@ ;						\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
 	mv --force $@.new $@
