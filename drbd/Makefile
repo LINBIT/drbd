@@ -189,7 +189,11 @@ else
 	@if ! [ -e $(MODOBJ) ] ; then \
 	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
+	now=$$(date +%F_%H%M%S); \
 	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
+	for m in $$(find $(DESTDIR)/lib/modules/$(KERNELRELEASE)/ -name $(MODOBJ)) ; do \
+		mv $$m $$m.disabled.$$now ; \
+	done
 	install -m 644 $(MODOBJ) $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
     ifeq ($(DESTDIR),/)
       ifeq ($(shell uname -r),$(KERNELRELEASE))
