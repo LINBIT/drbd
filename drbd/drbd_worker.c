@@ -234,8 +234,10 @@ BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error)
  */
 BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
+	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
 	struct drbd_conf *mdev = req->mdev;
+	struct bio_and_error m;
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
@@ -264,7 +266,13 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 	bio_put(req->private_bio);
 	req->private_bio = ERR_PTR(error);
 
-	req_mod(req, what);
+	/* not req_mod(), we need irqsave here! */
+	spin_lock_irqsave(&mdev->req_lock, flags);
+	__req_mod(req, what, &m);
+	spin_unlock_irqrestore(&mdev->req_lock, flags);
+
+	if (m.bio)
+		complete_master_bio(mdev, &m);
 	BIO_ENDIO_FN_RETURN;
 }
 

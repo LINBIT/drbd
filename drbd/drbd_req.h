@@ -338,21 +338,19 @@ static inline int _req_mod(struct drbd_request *req, enum drbd_req_event what)
 	return rv;
 }
 
-/* completion of master bio is outside of our spinlock.
- * We still may or may not be inside some irqs disabled section
- * of the lower level driver completion callback, so we need to
- * spin_lock_irqsave here. */
+/* completion of master bio is outside of spinlock.
+ * If you need it irqsave, do it your self!
+ * Which means: don't use from bio endio callback. */
 static inline int req_mod(struct drbd_request *req,
 		enum drbd_req_event what)
 {
-	unsigned long flags;
 	struct drbd_conf *mdev = req->mdev;
 	struct bio_and_error m;
 	int rv;
 
-	spin_lock_irqsave(&mdev->req_lock, flags);
+	spin_lock_irq(&mdev->req_lock);
 	rv = __req_mod(req, what, &m);
-	spin_unlock_irqrestore(&mdev->req_lock, flags);
+	spin_unlock_irq(&mdev->req_lock);
 
 	if (m.bio)
 		complete_master_bio(mdev, &m);
