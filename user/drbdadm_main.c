@@ -154,6 +154,7 @@ static int adm_generic_b(struct d_resource *, const char *);
 static int hidden_cmds(struct d_resource *, const char *);
 static int adm_outdate(struct d_resource *, const char *);
 static int adm_chk_resize(struct d_resource *res, const char *cmd);
+static void dump_options(char *name, struct d_option *opts);
 
 static char *get_opt_val(struct d_option *, const char *, char *);
 static void register_config_file(struct d_resource *res, const char *cfname);
@@ -635,6 +636,13 @@ static void dump_options(char *name, struct d_option *opts)
 	dump_options2(name, opts, NULL, NULL);
 }
 
+void dump_proxy_plugins(void *ctx)
+{
+	struct d_option *opt = ctx;
+
+	dump_options("plugin", opt);
+}
+
 static void dump_global_info()
 {
 	if (!global_options.minor_count
@@ -668,7 +676,8 @@ static void dump_common_info()
 	dump_options("disk", common->disk_options);
 	dump_options("syncer", common->sync_options);
 	dump_options("startup", common->startup_options);
-	dump_options("proxy", common->proxy_options);
+	dump_options2("proxy", common->proxy_options,
+			dump_proxy_plugins, common->proxy_plugins);
 	dump_options("handlers", common->handlers);
 	--indent;
 	printf("}\n\n");
@@ -767,6 +776,13 @@ static void dump_options_xml(char *name, struct d_option *opts)
 	dump_options_xml2(name, opts, NULL, NULL);
 }
 
+void dump_proxy_plugins_xml(void *ctx)
+{
+	struct d_option *opt = ctx;
+
+	dump_options_xml("plugin", opt);
+}
+
 static void dump_global_info_xml()
 {
 	if (!global_options.minor_count
@@ -801,7 +817,8 @@ static void dump_common_info_xml()
 	dump_options_xml("disk", common->disk_options);
 	dump_options_xml("syncer", common->sync_options);
 	dump_options_xml("startup", common->startup_options);
-	dump_options_xml("proxy", common->proxy_options);
+	dump_options2("proxy", common->proxy_options,
+			dump_proxy_plugins, common->proxy_plugins);
 	dump_options_xml("handlers", common->handlers);
 	--indent;
 	printI("</common>\n");
@@ -892,7 +909,8 @@ static int adm_dump(struct d_resource *res,
 	dump_options("disk", res->disk_options);
 	dump_options("syncer", res->sync_options);
 	dump_options("startup", res->startup_options);
-	dump_options("proxy", res->proxy_options);
+	dump_options2("proxy", res->proxy_options,
+			dump_proxy_plugins, res->proxy_plugins);
 	dump_options("handlers", res->handlers);
 	--indent;
 	printf("}\n\n");
@@ -917,7 +935,8 @@ static int adm_dump_xml(struct d_resource *res,
 	dump_options_xml("disk", res->disk_options);
 	dump_options_xml("syncer", res->sync_options);
 	dump_options_xml("startup", res->startup_options);
-	dump_options_xml("proxy", res->proxy_options);
+	dump_options_xml2("proxy", res->proxy_options,
+			dump_proxy_plugins_xml, res->proxy_plugins);
 	dump_options_xml("handlers", res->handlers);
 	--indent;
 	printI("</resource>\n");
@@ -1194,6 +1213,9 @@ static void expand_common(void)
 
 		if (!res->become_primary_on)
 			res->become_primary_on = common->become_primary_on;
+
+		if (common->proxy_plugins && !res->proxy_plugins)
+			expand_opts(common->proxy_plugins, &res->proxy_plugins);
 
 	}
 }
@@ -1850,6 +1872,7 @@ static int do_proxy(struct d_resource *res, int do_up)
 	char *argv[MAX_ARGS];
 	int argc = 0, rv;
 	struct d_option *opt;
+	int counter;
 	char conn_name[128];
 
 	if (!res->me->proxy) {
@@ -1930,6 +1953,17 @@ static int do_proxy(struct d_resource *res, int do_up)
 			 opt->name, conn_name, opt->value);
 		opt = opt->next;
 	}
+
+	counter = 0;
+	opt = res->proxy_plugins;
+	while (opt) {
+		argv[NA(argc)] = "-c";
+		ssprintf(argv[NA(argc)], "set plugin %s %d %s",
+			 conn_name, counter, opt->value);
+		opt = opt->next;
+		counter ++;
+	}
+
 	argv[NA(argc)] = 0;
 	if (argc > 2)
 		return m_system_ex(argv, SLEEPS_SHORT, res);
