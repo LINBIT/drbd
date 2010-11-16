@@ -57,7 +57,14 @@ static inline sector_t bdev_logical_block_size(struct block_device *bdev)
 
 static inline unsigned int queue_max_hw_sectors(struct request_queue *q)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,9)
+	/* before upstream commit ba066f3a0469dfc6d8fbdf70fabfd8c069fbf306,
+	 * there is no max_hw_sectors. Simply use max_sectors here,
+	 * it should be good enough. Affected: sles9. */
+	return q->max_sectors;
+#else
 	return q->max_hw_sectors;
+#endif
 }
 
 static inline unsigned int queue_max_sectors(struct request_queue *q)
