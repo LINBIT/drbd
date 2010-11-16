@@ -1850,6 +1850,7 @@ static int do_proxy(struct d_resource *res, int do_up)
 	char *argv[MAX_ARGS];
 	int argc = 0, rv;
 	struct d_option *opt;
+	char conn_name[128];
 
 	if (!res->me->proxy) {
 		if (all_resources)
@@ -1884,14 +1885,23 @@ static int do_proxy(struct d_resource *res, int do_up)
 		exit(E_config_invalid);
 	}
 
+	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
+			 names_to_str_c(res->me->proxy->on_hosts, '_'),
+			 res->name,
+			 names_to_str_c(res->peer->proxy->on_hosts, '_'));
+	if (counter >= sizeof(conn_name)-3) {
+		fprintf(stderr,
+				"The connection name in resource %s got too long.\n",
+				res->name);
+		exit(E_config_invalid);
+	}
+
 	argv[NA(argc)] = drbd_proxy_ctl;
 	argv[NA(argc)] = "-c";
 	if (do_up) {
 		ssprintf(argv[NA(argc)],
-			 "add connection %s-%s-%s %s:%s %s:%s %s:%s %s:%s",
-			 names_to_str_c(res->me->proxy->on_hosts, '_'),
-			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'),
+			 "add connection %s %s:%s %s:%s %s:%s %s:%s",
+			 conn_name,
 			 res->me->proxy->inside_addr,
 			 res->me->proxy->inside_port,
 			 res->peer->proxy->outside_addr,
@@ -1900,11 +1910,7 @@ static int do_proxy(struct d_resource *res, int do_up)
 			 res->me->proxy->outside_port, res->me->address,
 			 res->me->port);
 	} else {
-		ssprintf(argv[NA(argc)],
-			 "del connection %s-%s-%s",
-			 names_to_str_c(res->me->proxy->on_hosts, '_'),
-			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'));
+		ssprintf(argv[NA(argc)], "del connection %s", conn_name);
 	}
 	argv[NA(argc)] = 0;
 
@@ -1920,16 +1926,14 @@ static int do_proxy(struct d_resource *res, int do_up)
 	opt = res->proxy_options;
 	while (opt) {
 		argv[NA(argc)] = "-c";
-		ssprintf(argv[NA(argc)], "set %s %s-%s-%s %s",
-			 opt->name, names_to_str_c(res->me->proxy->on_hosts,
-						   '_'), res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'),
-			 opt->value);
+		ssprintf(argv[NA(argc)], "set %s %s %s",
+			 opt->name, conn_name, opt->value);
 		opt = opt->next;
 	}
 	argv[NA(argc)] = 0;
 	if (argc > 2)
 		return m_system_ex(argv, SLEEPS_SHORT, res);
+
 	return rv;
 }
 
