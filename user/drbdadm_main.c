@@ -607,9 +607,10 @@ static char *esc_xml(char *str)
 	return str;
 }
 
-static void dump_options(char *name, struct d_option *opts)
+static void dump_options2(char *name, struct d_option *opts,
+		void(*within)(void*), void *ctx)
 {
-	if (!opts)
+	if (!opts && !(within && ctx))
 		return;
 
 	printI("%s {\n", name);
@@ -623,8 +624,15 @@ static void dump_options(char *name, struct d_option *opts)
 			printI(BFMT, opts->name);
 		opts = opts->next;
 	}
+	if (within)
+		within(ctx);
 	--indent;
 	printI("}\n");
+}
+
+static void dump_options(char *name, struct d_option *opts)
+{
+	dump_options2(name, opts, NULL, NULL);
 }
 
 static void dump_global_info()
@@ -730,9 +738,10 @@ static void dump_host_info(struct d_host_info *hi)
 	printI("}\n");
 }
 
-static void dump_options_xml(char *name, struct d_option *opts)
+static void dump_options_xml2(char *name, struct d_option *opts,
+		void(*within)(void*), void *ctx)
 {
-	if (!opts)
+	if (!opts && !(within && ctx))
 		return;
 
 	printI("<section name=\"%s\">\n", name);
@@ -747,8 +756,15 @@ static void dump_options_xml(char *name, struct d_option *opts)
 			printI("<option name=\"%s\"/>\n", opts->name);
 		opts = opts->next;
 	}
+	if (within)
+		within(ctx);
 	--indent;
 	printI("</section>\n");
+}
+
+static void dump_options_xml(char *name, struct d_option *opts)
+{
+	dump_options_xml2(name, opts, NULL, NULL);
 }
 
 static void dump_global_info_xml()
