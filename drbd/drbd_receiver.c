@@ -1860,6 +1860,22 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 	e->w.cb = e_end_block;
 
+	dp_flags = be32_to_cpu(p->dp_flags);
+	rw |= wire_flags_to_bio(mdev, dp_flags);
+
+	if (dp_flags & DP_MAY_SET_IN_SYNC)
+		e->flags |= EE_MAY_SET_IN_SYNC;
+
+	/* last "fixes" to rw flags.
+	 * Strip off BIO_RW_BARRIER unconditionally,
+	 * it is not supposed to be here anyways.
+	 * (Was FUA or FLUSH on the peer,
+	 * and got translated to BARRIER on this side).
+	 * Note that the epoch handling code below
+	 * may add it again, though.
+	 */
+	rw &= ~DRBD_REQ_HARDBARRIER;
+
 	spin_lock(&mdev->epoch_lock);
 	e->epoch = mdev->current_epoch;
 	atomic_inc(&e->epoch->epoch_size);
@@ -1889,12 +1905,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		}
 	}
 	spin_unlock(&mdev->epoch_lock);
-
-	dp_flags = be32_to_cpu(p->dp_flags);
-	rw |= wire_flags_to_bio(mdev, dp_flags);
-
-	if (dp_flags & DP_MAY_SET_IN_SYNC)
-		e->flags |= EE_MAY_SET_IN_SYNC;
 
 	/* I'm the receiver, I do hold a net_cnt reference. */
 	if (!mdev->net_conf->two_primaries) {
@@ -2053,11 +2063,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		drbd_al_begin_io(mdev, e->sector);
 	}
 
-	/* last "fixes" to rw flags.
-	 * Strip off BIO_RW_BARRIER unconditionally,
-	 * it is not supposed to be here anyways.
-	 */
-	rw &= ~DRBD_REQ_HARDBARRIER;
 	if (drbd_submit_ee(mdev, e, rw, DRBD_FAULT_DT_WR) == 0)
 		return TRUE;
 
