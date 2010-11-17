@@ -33,7 +33,6 @@
 #include <asm/types.h>
 #include <net/sock.h>
 #include <linux/ctype.h>
-#include <linux/smp_lock.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/proc_fs.h>
