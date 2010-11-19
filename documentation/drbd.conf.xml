@@ -280,7 +280,8 @@ resource r0 {
     <option>cram-hmac-alg</option>, <option>shared-secret</option>,
     <option>after-sb-0pri</option>, <option>after-sb-1pri</option>,
     <option>after-sb-2pri</option>, <option>data-integrity-alg</option>,
-    <option>no-tcp-cork</option>
+    <option>no-tcp-cork</option>, <option>on-congestion</option>,
+    <option>congestion-fill</option>, <option>congestion-extents</option>
   </para>
           </listitem>
         </varlistentry>
@@ -1233,6 +1234,39 @@ the unit is 1 second.
               stack that performs worse when one uses this hinting method. Therefore
               we introducted this option, which disables the setting and clearing of
               the TCP_CORK socket option by DRBD.</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>on-congestion <replaceable>congestion_policy</replaceable></option>
+          </term>
+          <term>
+	    <option>congestion-fill <replaceable>fill_threshold</replaceable></option>
+          </term>
+          <term>
+	    <option>congestion-extents <replaceable>active_extents_threshold</replaceable></option>
+          </term>
+          <listitem>
+            <para>By default DRBD blocks when the available TCP send queue becomes full.
+	      That means it will slow down the application that generates the write
+	      requests that cause DRBD to send more data down that TCP connection.
+	    </para>
+	    <para>When DRBD is deployed with DRBD-proxy it might be more desirable that
+	      DRBD goes into AHEAD/BEHIND mode shortly before the send queue becomes full.
+	      In AHEAD/BEHIND mode DRBD does no longer replicate data, but still keeps
+	      the connection open.</para>
+	    <para>The advantage of the AHEAD/BEHIND mode is that the
+	      application is not slowed down, even if DRBD-proxy's buffer is
+	      not sufficient to buffer all write requests. The downside is that
+	      the peer node falls behind, and that a resync will be necessary to
+	      bring it back into sync. During that resync the peer node will have
+	      an inconsistent disk. </para>
+	    <para>Available <replaceable>congestion_policy</replaceable>s are <option>block</option>
+	      and <option>pull-ahead</option>. The default is <option>block</option>.
+	      <replaceable>Fill_threshold</replaceable> might be in the range of 0 to 10GiBytes. The
+	      default is 0 which disables the check. <replaceable>Active_extents_threshold</replaceable>
+	      has the same limits as <option>al-extents</option>.</para>
+	    <para>The AHEAD/BEHIND mode and its settings are available since DRBD 8.3.10.</para>
           </listitem>
         </varlistentry>
         <varlistentry>
