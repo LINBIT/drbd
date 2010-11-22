@@ -203,6 +203,8 @@ extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
+extern char *proxy_connection_name(struct d_resource *res);
+void parse_proxy_settings(struct d_resource *res, int check_proxy_token);
 
 extern char *config_file;
 extern char *config_save;
@@ -217,6 +219,7 @@ extern int no_tty;
 extern int dry_run;
 extern int verbose;
 extern char* drbdsetup;
+extern char* drbd_proxy_ctl;
 extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
 

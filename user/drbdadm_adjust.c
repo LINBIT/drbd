@@ -37,6 +37,7 @@
 
 #include "drbdadm.h"
 #include "drbdtool_common.h"
+#include "drbdadm_parser.h"
 
 extern FILE* yyin;
 
@@ -219,25 +220,27 @@ int need_trigger_kobj_change(struct d_resource *res)
 int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 {
 	char* argv[20];
-	int pid,argc=0;
+	int pid,argc, i;
 	struct d_resource* running;
 	int do_attach=0,do_connect=0,do_syncer=0;
 	int have_disk=0,have_net=0;
-	char config_file_dummy[250];
-
-	argv[argc++]=drbdsetup;
-	argv[argc++]=res->me->device;
-	argv[argc++]="show";
-	argv[argc++]=0;
+	char config_file_dummy[250], *conn_name, show_conn[128];
 
 	/* disable check_uniq, so it won't interfere
 	 * with parsing of drbdsetup show output */
 	config_valid = 2;
 
+
 	/* setup error reporting context for the parsing routines */
 	line = 1;
 	sprintf(config_file_dummy,"drbdsetup %u show", res->me->device_minor);
 	config_file = config_file_dummy;
+
+	argc=0;
+	argv[argc++]=drbdsetup;
+	argv[argc++]=res->me->device;
+	argv[argc++]="show";
+	argv[argc++]=0;
 
 	/* actually parse drbdsetup show output */
 	yyin = m_popen(&pid,argv);
@@ -245,8 +248,37 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	fclose(yyin);
 
 	waitpid(pid,0,0);
+	/* Sets "me" and "peer" pointer */
 	post_parse(running, 0);
 	set_peer_in_resource(running, 0);
+
+
+	/* Parse proxy settings */
+	line = 1;
+	conn_name = proxy_connection_name(res);
+	i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", conn_name);
+	if (i>= sizeof(show_conn)-1)
+	{
+		fprintf(stderr,"connection name too long");
+		exit(E_thinko);
+	}
+	sprintf(config_file_dummy,"drbd-proxy-ctl -c '%s'", show_conn);
+	config_file = config_file_dummy;
+
+	argc=0;
+	argv[argc++]=drbd_proxy_ctl;
+	argv[argc++]="-c";
+	argv[argc++]=show_conn;
+	argv[argc++]=0;
+
+	/* actually parse drbdsetup show output */
+	yyin = m_popen(&pid,argv);
+	yyrestart(yyin);
+	parse_proxy_settings(running, 1);
+	fclose(yyin);
+
+	waitpid(pid,0,0);
+
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
 	if(running->me) {

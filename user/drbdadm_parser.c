@@ -1559,12 +1559,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_PROXY:
 			check_upr("proxy section", "%s:proxy", res->name);
-			EXP('{');
-			res->proxy_options =
-                            parse_options_d(TK_PROXY_SWITCH,
-					TK_PROXY_OPTION,
-					TK_PROXY_DELEGATE,
-					proxy_delegate, res);
+			parse_proxy_settings(res, 0);
 			break;
 		case TK_DEVICE:
 			check_upr("device statement", "%s:device", res->name);

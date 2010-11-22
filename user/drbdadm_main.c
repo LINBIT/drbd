@@ -1867,13 +1867,32 @@ void convert_after_option(struct d_resource *res)
 	}
 }
 
+char *proxy_connection_name(struct d_resource *res)
+{
+	static char conn_name[128];
+	int counter;
+
+	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
+			 names_to_str_c(res->me->proxy->on_hosts, '_'),
+			 res->name,
+			 names_to_str_c(res->peer->proxy->on_hosts, '_'));
+	if (counter >= sizeof(conn_name)-3) {
+		fprintf(stderr,
+				"The connection name in resource %s got too long.\n",
+				res->name);
+		exit(E_config_invalid);
+	}
+
+	return conn_name;
+}
+
 static int do_proxy(struct d_resource *res, int do_up)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, rv;
 	struct d_option *opt;
 	int counter;
-	char conn_name[128];
+	char *conn_name;
 
 	if (!res->me->proxy) {
 		if (all_resources)
@@ -1908,16 +1927,8 @@ static int do_proxy(struct d_resource *res, int do_up)
 		exit(E_config_invalid);
 	}
 
-	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
-			 names_to_str_c(res->me->proxy->on_hosts, '_'),
-			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'));
-	if (counter >= sizeof(conn_name)-3) {
-		fprintf(stderr,
-				"The connection name in resource %s got too long.\n",
-				res->name);
-		exit(E_config_invalid);
-	}
+
+	conn_name = proxy_connection_name(res);
 
 	argv[NA(argc)] = drbd_proxy_ctl;
 	argv[NA(argc)] = "-c";
