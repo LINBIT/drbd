@@ -184,6 +184,78 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 	return eq;
 }
 
+
+/* NULL terminated */
+static void find_option_in_resources(char *name,
+		struct d_option *list, struct d_option **opt, ...)
+{
+	va_list va;
+
+	va_start(va, opt);
+	while (list && opt) {
+		while (list) {
+			if (strcmp(list->name, name) == 0)
+				break;
+			list = list->next;
+		}
+
+		*opt = list;
+
+		list = va_arg(va, struct d_option*);
+		opt  = va_arg(va, struct d_option**);
+	}
+}
+
+static int do_proxy_reconf(struct d_resource *res, const char *cmd)
+{
+	int rv;
+	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)cmd, NULL };
+
+	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	return rv;
+}
+
+
+static int proxy_reconf(struct d_resource *res, struct d_resource *running)
+{
+	int reconn = 0;
+	struct d_option* res_o, *run_o;
+	char *str;
+
+	reconn = 0;
+
+	find_option_in_resources("memlimit",
+			res->proxy_options, &res_o,
+			running->proxy_options, &run_o,
+			NULL);
+	/* TODO: convert both to integers, and compare (with some є [epsilon])? */
+	if (res_o &&
+			(!run_o || strcmp(res_o->value, run_o->value) != 0))
+	{
+		reconn = 1;
+		asprintf(&str, "set memlimit %s %s", res->name, res_o->value);
+		schedule_dcmd(do_proxy_reconf, res, str, 1);
+	}
+
+
+#if 0
+	/* TODO: loglevel gets reported by connection, but works only globally */
+	find_option_in_resources("loglevel",
+			res->proxy_options, &res_o,
+			running->proxy_options, &run_o,
+			NULL);
+	if (res_o &&
+			(!run_o || strcmp(res_o->value, run_o->value) != 0))
+	{
+		asprintf(&str, "set loglevel %s", res_o->value);
+		schedule_dcmd2(NULL, drbd_proxy_ctl, res, str, 1);
+	}
+#endif
+
+
+	return reconn;
+}
+
 int need_trigger_kobj_change(struct d_resource *res)
 {
 	struct stat sbuf;
@@ -290,6 +362,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);
 	do_connect |= !proto_equal(res,running);
+	do_connect |= proxy_reconf(res,running);
 	have_net = (running->protocol != NULL);
 
 	do_syncer = !opts_equal(res->sync_options, running->sync_options);
