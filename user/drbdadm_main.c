@@ -1967,10 +1967,11 @@ static int do_proxy(struct d_resource *res, int do_up)
 
 	counter = 0;
 	opt = res->proxy_plugins;
-	while (opt) {
+	while (1) {
 		argv[NA(argc)] = "-c";
 		ssprintf(argv[NA(argc)], "set plugin %s %d %s",
-			 conn_name, counter, opt->value);
+			 conn_name, counter, opt ? opt->value : "END");
+		if (!opt) break;
 		opt = opt->next;
 		counter ++;
 	}
