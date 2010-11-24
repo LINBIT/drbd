@@ -48,7 +48,7 @@ ifneq ($(PATCHLEVEL),)
 
   include $(DRBDSRC)/Makefile-2.6
 
-  override EXTRA_CFLAGS += -I$(DRBDSRC)
+  override EXTRA_CFLAGS += -I$(DRBDSRC) -I$(DRBDSRC)/compat
   # remember KERNELRELEASE for install target
   # .kernelversion can be included in Makefile as well as
   # sourced from shell
