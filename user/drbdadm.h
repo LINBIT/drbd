@@ -245,7 +245,7 @@ extern int soi;
 */
 
 #define ssprintf(ptr,...) \
-  ptr=strcpy(alloca(snprintf(ss_buffer,1024,##__VA_ARGS__)+1),ss_buffer)
+  ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
 
 /* CAUTION: arguments may not have side effects! */
 #define for_each_resource(res,tmp,config) \
