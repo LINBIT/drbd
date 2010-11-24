@@ -75,6 +75,8 @@ STATIC char *nl_packet_name(int packet_type)
 /* Generate packet type strings */
 #define NL_PACKET(name, number, fields) \
 	[P_ ## name] = # name,
+#define NL_RESPONSE(name, number) \
+	[P_ ## name] = # name,
 #define NL_INTEGER Argh!
 #define NL_BIT Argh!
 #define NL_INT64 Argh!
@@ -201,12 +203,11 @@ static void probe_drbd_netlink(void *data, int is_req)
 		struct drbd_nl_cfg_reply *nlp = (struct drbd_nl_cfg_reply *)msg->data;
 
 		printk(KERN_INFO "drbd%d: "
-		       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x\n",
+		       "Netlink: >> %s (%d) - seq: %x, ack: %x, len: %x ret: %d\n",
 		       nlp->minor,
-		       nlp->packet_type == P_nl_after_last_packet ?
-		       "Empty-Reply" : nl_packet_name(nlp->packet_type),
+		       nl_packet_name(nlp->packet_type),
 		       nlp->packet_type,
-		       msg->seq, msg->ack, msg->len);
+		       msg->seq, msg->ack, msg->len, nlp->ret_code);
 	}
 }
 
