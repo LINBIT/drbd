@@ -1917,6 +1917,23 @@ static void print_dump_ee(struct drbd_nl_cfg_reply *reply)
 	print_hex_dump(size,data);
 }
 
+/* this is not pretty; but it's api... ;-( */
+const char *pretty_print_return_code(int e)
+{
+	return
+		e == NO_ERROR ? "No error" :
+		e > ERR_CODE_BASE ?
+			error_to_string(e) :
+		e > SS_AFTER_LAST_ERROR && e <= SS_TWO_PRIMARIES ?
+			drbd_set_st_err_str(e) :
+		e == SS_CW_NO_NEED ? "Cluster wide state change: nothing to do" :
+		e == SS_CW_SUCCESS ? "Cluster wide state change successful" :
+		e == SS_NOTHING_TO_DO ? "State change: nothing to do" :
+		e == SS_SUCCESS ? "State change successful" :
+		e == SS_UNKNOWN_ERROR ? "Unspecified error" :
+		"Unknown return code";
+}
+
 static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 			   struct drbd_nl_cfg_reply *reply)
 {
@@ -1924,11 +1941,13 @@ static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 	char* str;
 	int synced = 0;
 
-	/* Ignore error replies */
-	if (reply->ret_code != NO_ERROR)
-		return 1;
-
 	switch (reply->packet_type) {
+	case 0: /* used to be this way in drbd_nl.c for some responses :-( */
+	case P_return_code_only: /* used by drbd_nl.c for most "empty" responses */
+		printf("%u ZZ %d ret_code: %d %s\n", seq, reply->minor,
+			reply->ret_code,
+			pretty_print_return_code(reply->ret_code));
+		break;
 	case P_get_state:
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
 			printf("%u ST %d { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
@@ -1964,7 +1983,7 @@ static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 		print_dump_ee(reply);
 		break;
 	default:
-		printf("%u ?? %d <other message>\n",seq, reply->minor);
+		printf("%u ?? %d <other message %d>\n",seq, reply->minor, reply->packet_type);
 		break;
 	}
 
@@ -1973,11 +1992,26 @@ static int print_broadcast_events(unsigned int seq, int u __attribute((unused)),
 	return 1;
 }
 
+void print_failure_code(int ret_code)
+{
+	if (ret_code > ERR_CODE_BASE)
+		fprintf(stderr,"%s: Failure: (%d) %s\n",
+			devname, ret_code, error_to_string(ret_code));
+	else
+		fprintf(stderr,"%s: Failure: (ret_code=%d)\n",
+			devname, ret_code);
+}
+
 static int w_connected_state(unsigned int seq __attribute((unused)),
 		      int wait_after_sb,
 		      struct drbd_nl_cfg_reply *reply)
 {
 	union drbd_state state;
+
+	if (reply->ret_code != NO_ERROR) {
+		print_failure_code(reply->ret_code);
+		return 0;
+	}
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
@@ -1994,6 +2028,11 @@ static int w_synced_state(unsigned int seq __attribute((unused)),
 		   struct drbd_nl_cfg_reply *reply)
 {
 	union drbd_state state;
+
+	if (reply->ret_code != NO_ERROR) {
+		print_failure_code(reply->ret_code);
+		return 0;
+	}
 
 	if(reply->packet_type == P_get_state) {
 		if(consume_tag_int(T_state_i,reply->tag_list,(int*)&state.i)) {
@@ -2084,11 +2123,6 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 	sk_nl = open_cn();
 	if(sk_nl < 0) return 20;
 
-	// Find out which timeout value to use.
-	tl->drbd_p_header->packet_type = P_get_timeout_flag;
-	tl->drbd_p_header->drbd_minor = minor;
-	tl->drbd_p_header->flags = 0;
-
 	/* allocate 64k to be on the safe side. */
 #define NL_BUFFER_SIZE (64 << 10)
 	buffer = malloc(NL_BUFFER_SIZE);
@@ -2097,41 +2131,57 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 		exit(20);
 	}
 
-	call_drbd(sk_nl,tl, buffer, NL_BUFFER_SIZE, NL_TIME);
+	/* drbdsetup events should not ask for timeout "type",
+	 * this is only useful with wait-sync and wait-connected callbacks.
+	 */
+	if (cm->ep.proc_event != print_broadcast_events) {
+		// Find out which timeout value to use.
+		tl->drbd_p_header->packet_type = P_get_timeout_flag;
+		tl->drbd_p_header->drbd_minor = minor;
+		tl->drbd_p_header->flags = 0;
 
-	cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
-	reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
-	consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
-	if (rr != UT_DEFAULT) {
-		if (0 < wfc_timeout &&
-		      (wfc_timeout < degr_wfc_timeout || degr_wfc_timeout == 0)) {
-			degr_wfc_timeout = wfc_timeout;
-			fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
-					"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
-					degr_wfc_timeout);
+		if (0 >= call_drbd(sk_nl,tl, buffer, NL_BUFFER_SIZE, NL_TIME))
+			exit(20);
+
+		cn_reply = (struct cn_msg *)NLMSG_DATA(buffer);
+		reply = (struct drbd_nl_cfg_reply *)cn_reply->data;
+
+		if (reply->ret_code != NO_ERROR)
+			return print_config_error(reply->ret_code);
+
+		consume_tag_bit(T_use_degraded,reply->tag_list,&rr);
+		if (rr != UT_DEFAULT) {
+			if (0 < wfc_timeout &&
+			      (wfc_timeout < degr_wfc_timeout || degr_wfc_timeout == 0)) {
+				degr_wfc_timeout = wfc_timeout;
+				fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
+						"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
+						degr_wfc_timeout);
+			}
+
+			if (0 < degr_wfc_timeout &&
+			    (degr_wfc_timeout < outdated_wfc_timeout || outdated_wfc_timeout == 0)) {
+				outdated_wfc_timeout = wfc_timeout;
+				fprintf(stderr, "outdated-wfc-timeout has to be shorter than degr-wfc-timeout\n"
+						"outdated-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
+						degr_wfc_timeout);
+			}
+
 		}
 
-		if (0 < degr_wfc_timeout &&
-		    (degr_wfc_timeout < outdated_wfc_timeout || outdated_wfc_timeout == 0)) {
-			outdated_wfc_timeout = wfc_timeout;
-			fprintf(stderr, "outdated-wfc-timeout has to be shorter than degr-wfc-timeout\n"
-					"outdated-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
-					degr_wfc_timeout);
+		switch (rr) {
+		case UT_DEFAULT:
+			timeout_ms = wfc_timeout;
+			break;
+		case UT_DEGRADED:
+			timeout_ms = degr_wfc_timeout;
+			break;
+		case UT_PEER_OUTDATED:
+			timeout_ms = outdated_wfc_timeout;
+			break;
 		}
-
 	}
 
-	switch (rr) {
-	case UT_DEFAULT:
-		timeout_ms = wfc_timeout;
-		break;
-	case UT_DEGRADED:
-		timeout_ms = degr_wfc_timeout;
-		break;
-	case UT_PEER_OUTDATED:
-		timeout_ms = outdated_wfc_timeout;
-		break;
-	}
 	timeout_ms = timeout_ms * 1000 - 1; /* 0 -> -1 "infinite", 1000 -> 999, nobody cares...  */
 
 	// ask for the current state before waiting for state updates...
