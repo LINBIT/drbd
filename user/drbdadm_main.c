@@ -1886,7 +1886,8 @@ char *proxy_connection_name(struct d_resource *res)
 	return conn_name;
 }
 
-static int do_proxy(struct d_resource *res, int do_up)
+/* The dcmd wants to pass an additional argument (char*) that we don't use. */
+int do_proxy_conn_up(struct d_resource *res, ...)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, rv;
@@ -1894,6 +1895,70 @@ static int do_proxy(struct d_resource *res, int do_up)
 	int counter;
 	char *conn_name;
 
+	conn_name = proxy_connection_name(res);
+
+	argv[NA(argc)] = drbd_proxy_ctl;
+	argv[NA(argc)] = "-c";
+	ssprintf(argv[NA(argc)],
+			"add connection %s %s:%s %s:%s %s:%s %s:%s",
+			conn_name,
+			res->me->proxy->inside_addr,
+			res->me->proxy->inside_port,
+			res->peer->proxy->outside_addr,
+			res->peer->proxy->outside_port,
+			res->me->proxy->outside_addr,
+			res->me->proxy->outside_port, res->me->address,
+			res->me->port);
+	argv[NA(argc)] = 0;
+
+	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	if (rv != 0)
+		return rv;
+
+	argc = 0;
+	argv[NA(argc)] = drbd_proxy_ctl;
+	opt = res->proxy_options;
+	while (opt) {
+		argv[NA(argc)] = "-c";
+		ssprintf(argv[NA(argc)], "set %s %s %s",
+			 opt->name, conn_name, opt->value);
+		opt = opt->next;
+	}
+
+	counter = 0;
+	opt = res->proxy_plugins;
+	while (1) {
+		argv[NA(argc)] = "-c";
+		ssprintf(argv[NA(argc)], "set plugin %s %d %s",
+			 conn_name, counter, opt ? opt->value : "END");
+		if (!opt) break;
+		opt = opt->next;
+		counter ++;
+	}
+
+	argv[NA(argc)] = 0;
+	if (argc > 2)
+		return m_system_ex(argv, SLEEPS_SHORT, res);
+
+	return rv;
+}
+
+int do_proxy_conn_down(struct d_resource *res, ...)
+{
+	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL};
+	int rv;
+	char *conn_name;
+
+	conn_name = proxy_connection_name(res);
+	ssprintf(argv[2], "del connection %s", conn_name);
+
+	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	return rv;
+}
+
+
+static int check_proxy(struct d_resource *res, int do_up)
+{
 	if (!res->me->proxy) {
 		if (all_resources)
 			return 0;
@@ -1928,71 +1993,21 @@ static int do_proxy(struct d_resource *res, int do_up)
 	}
 
 
-	conn_name = proxy_connection_name(res);
-
-	argv[NA(argc)] = drbd_proxy_ctl;
-	argv[NA(argc)] = "-c";
-	if (do_up) {
-		ssprintf(argv[NA(argc)],
-			 "add connection %s %s:%s %s:%s %s:%s %s:%s",
-			 conn_name,
-			 res->me->proxy->inside_addr,
-			 res->me->proxy->inside_port,
-			 res->peer->proxy->outside_addr,
-			 res->peer->proxy->outside_port,
-			 res->me->proxy->outside_addr,
-			 res->me->proxy->outside_port, res->me->address,
-			 res->me->port);
-	} else {
-		ssprintf(argv[NA(argc)], "del connection %s", conn_name);
-	}
-	argv[NA(argc)] = 0;
-
-	rv = m_system_ex(argv, SLEEPS_SHORT, res);
-	if (rv != 0)
-		return rv;
-
-	if (!do_up)
-		return rv;
-
-	argc = 0;
-	argv[NA(argc)] = drbd_proxy_ctl;
-	opt = res->proxy_options;
-	while (opt) {
-		argv[NA(argc)] = "-c";
-		ssprintf(argv[NA(argc)], "set %s %s %s",
-			 opt->name, conn_name, opt->value);
-		opt = opt->next;
-	}
-
-	counter = 0;
-	opt = res->proxy_plugins;
-	while (1) {
-		argv[NA(argc)] = "-c";
-		ssprintf(argv[NA(argc)], "set plugin %s %d %s",
-			 conn_name, counter, opt ? opt->value : "END");
-		if (!opt) break;
-		opt = opt->next;
-		counter ++;
-	}
-
-	argv[NA(argc)] = 0;
-	if (argc > 2)
-		return m_system_ex(argv, SLEEPS_SHORT, res);
-
-	return rv;
+	return do_up ?
+		do_proxy_conn_up(res) :
+		do_proxy_conn_down(res);
 }
 
 static int adm_proxy_up(struct d_resource *res,
 			const char *unused __attribute((unused)))
 {
-	return do_proxy(res, 1);
+	return check_proxy(res, 1);
 }
 
 static int adm_proxy_down(struct d_resource *res,
 			  const char *unused __attribute((unused)))
 {
-	return do_proxy(res, 0);
+	return check_proxy(res, 0);
 }
 
 int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
