@@ -46,7 +46,7 @@ ifneq ($(PATCHLEVEL),)
   CONFIG_BLK_DEV_DRBD := m
   CONFIG_DRBD_TRACE := $(shell test $${SUBLEVEL} -ge 30 && test $${SUBLEVEL} -lt 35 && echo m || echo n)
 
-  include $(DRBDSRC)/Makefile-2.6
+  include $(src)/Makefile-2.6
 
   # remember KERNELRELEASE for install target
   # .kernelversion can be included in Makefile as well as
@@ -58,7 +58,7 @@ ifneq ($(PATCHLEVEL),)
                   "LOCALVERSION=$(LOCALVERSION)\n"   \
                   "KERNELRELEASE=$(KERNELRELEASE)\n" \
                   "KERNELVERSION=$(KERNELVERSION)"   \
-          > $(DRBDSRC)/.drbd_kernelrelease.new       \
+          > $(src)/.drbd_kernelrelease.new       \
    )
 else
   # called from command line in current directory
@@ -68,7 +68,6 @@ else
   SHELL=/bin/bash
 
   DRBDSRC := $(shell pwd)
-  export DRBDSRC
 
   # to be overridden on command line:
   PREFIX := /

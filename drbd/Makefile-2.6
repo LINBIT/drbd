@@ -1,10 +1,10 @@
 # Search the local directory before the standard include directories.
 # This is needed for overriding files like <linux/drbd.h>.
-LINUXINCLUDE := -I$(DRBDSRC) $(LINUXINCLUDE)
+LINUXINCLUDE := -I$(src) $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
 # in the compat directory.
-EXTRA_CFLAGS += -I$(DRBDSRC)/compat
+EXTRA_CFLAGS += -I$(src)/compat
 
 drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_worker.o drbd_receiver.o drbd_req.o drbd_actlog.o
