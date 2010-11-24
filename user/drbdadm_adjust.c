@@ -220,7 +220,6 @@ static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 {
 	int reconn = 0;
 	struct d_option* res_o, *run_o;
-	char *str;
 
 	reconn = 0;
 
@@ -235,10 +234,45 @@ static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
 		 * completely destroy and rebuild the connection. */
-		schedule_dcmd(do_proxy_conn_down, res, NULL, 0);
-		schedule_dcmd(do_proxy_conn_up, res, NULL, 2);
+		schedule_dcmd( do_proxy_conn_down, res, NULL, 0);
+		schedule_dcmd( do_proxy_conn_up, res, NULL, 1);
+		schedule_dcmd( do_proxy_conn_plugins, res, NULL, 2);
+
+		/* With connection cleanup and reopen everything is rebuild anyway, and
+		 * DRBD will get a reconnect too.  */
+		return 0;
 	}
 
+
+	res_o = res->proxy_plugins;
+	run_o = running->proxy_plugins;
+	while (1)
+	{
+		if (used >= sizeof(plugin_changes)-1) {
+			fprintf(stderr, "Too many proxy plugin changes");
+			exit(E_config_invalid);
+		}
+		/* Now we can be sure that we can store another pointer. */
+
+
+		if (!res_o) {
+			if (run_o) {
+				/* More plugins running than configured - just stop here. */
+				asprintf(&cp, "set plugin %s %d end", conn_name, i);
+				plugin_changes[used++] = cp;
+			}
+			else {
+				/* Both at the end? ok, quit loop */
+			}
+			break;
+
+		if (!res_o || !run_o ||
+				strcmp(res_o->value, run_o->value) != 0)
+		{
+			schedule_dcmd(do_proxy_conn_plugins, res, NULL, 2);
+			break;
+		}
+	}
 
 #if 0
 	/* TODO: loglevel gets reported by connection, but works only globally */

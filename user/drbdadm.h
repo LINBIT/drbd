@@ -205,8 +205,10 @@ extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
 extern char *proxy_connection_name(struct d_resource *res);
 void parse_proxy_settings(struct d_resource *res, int check_proxy_token);
-int do_proxy_conn_up(struct d_resource *res, ...);
-int do_proxy_conn_down(struct d_resource *res, ...);
+/* conn_name is optional and mostly for compatibility with dcmd */
+int do_proxy_conn_up(struct d_resource *res, const char *conn_name);
+int do_proxy_conn_down(struct d_resource *res, const char *conn_name);
+int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name);
 
 extern char *config_file;
 extern char *config_save;

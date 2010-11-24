@@ -1886,20 +1886,15 @@ char *proxy_connection_name(struct d_resource *res)
 	return conn_name;
 }
 
-/* The dcmd wants to pass an additional argument (char*) that we don't use. */
-int do_proxy_conn_up(struct d_resource *res, ...)
+int do_proxy_conn_up(struct d_resource *res, const char *conn_name)
 {
-	char *argv[MAX_ARGS];
-	int argc = 0, rv;
-	struct d_option *opt;
-	int counter;
-	char *conn_name;
+	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL };
+	int rv;
 
-	conn_name = proxy_connection_name(res);
+	if (!conn_name)
+		conn_name = proxy_connection_name(res);
 
-	argv[NA(argc)] = drbd_proxy_ctl;
-	argv[NA(argc)] = "-c";
-	ssprintf(argv[NA(argc)],
+	ssprintf(argv[2],
 			"add connection %s %s:%s %s:%s %s:%s %s:%s",
 			conn_name,
 			res->me->proxy->inside_addr,
@@ -1909,11 +1904,20 @@ int do_proxy_conn_up(struct d_resource *res, ...)
 			res->me->proxy->outside_addr,
 			res->me->proxy->outside_port, res->me->address,
 			res->me->port);
-	argv[NA(argc)] = 0;
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, res);
-	if (rv != 0)
-		return rv;
+	return rv;
+}
+
+int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name)
+{
+	char *argv[MAX_ARGS];
+	int argc = 0;
+	struct d_option *opt;
+	int counter;
+
+	if (!conn_name)
+		conn_name = proxy_connection_name(res);
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
@@ -1940,16 +1944,16 @@ int do_proxy_conn_up(struct d_resource *res, ...)
 	if (argc > 2)
 		return m_system_ex(argv, SLEEPS_SHORT, res);
 
-	return rv;
+	return 0;
 }
 
-int do_proxy_conn_down(struct d_resource *res, ...)
+int do_proxy_conn_down(struct d_resource *res, const char *conn_name)
 {
 	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL};
 	int rv;
-	char *conn_name;
 
-	conn_name = proxy_connection_name(res);
+	if (!conn_name)
+		conn_name = proxy_connection_name(res);
 	ssprintf(argv[2], "del connection %s", conn_name);
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, res);
@@ -1959,6 +1963,8 @@ int do_proxy_conn_down(struct d_resource *res, ...)
 
 static int check_proxy(struct d_resource *res, int do_up)
 {
+	int rv;
+
 	if (!res->me->proxy) {
 		if (all_resources)
 			return 0;
@@ -1993,9 +1999,15 @@ static int check_proxy(struct d_resource *res, int do_up)
 	}
 
 
-	return do_up ?
-		do_proxy_conn_up(res) :
-		do_proxy_conn_down(res);
+	if (do_up) {
+		rv = do_proxy_conn_up(res, NULL);
+		if (!rv)
+			rv = do_proxy_conn_plugins(res, NULL);
+	}
+	else
+		rv = do_proxy_conn_down(res, NULL);
+
+	return rv;
 }
 
 static int adm_proxy_up(struct d_resource *res,
