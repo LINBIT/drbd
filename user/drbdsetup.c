@@ -2226,12 +2226,24 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 		   The second is created by the kernel's broadcast packets. */
 		if (!unfiltered) {
 			if (cn_reply->ack == 0) { // broadcasts
-				if (cn_reply->seq <= b_seq) continue;
+				/* Careful, potential wrap around!
+				 * Will skip a lot of packets if you
+				 * unload/reload the module in between,
+				 * but keep this drbdsetup events running.
+				 * So don't do that.
+				 */
+				if ((int)(cn_reply->seq - b_seq) <= 0)
+					continue;
 				b_seq = cn_reply->seq;
-			} else if (minor == reply->minor && cn_reply->ack == (uint32_t)getpid() + 1) {
+			} else if ((all_devices || minor == reply->minor)
+					&& cn_reply->ack == (uint32_t)getpid() + 1) {
 				// replies to drbdsetup packets and for this device.
-				if (cn_reply->seq <= r_seq) continue;
+				if ((int)(cn_reply->seq - r_seq) <= 0)
+					continue;
 				r_seq = cn_reply->seq;
+			} else {
+				/* or reply to configuration request of other drbdsetup */
+				continue;
 			}
 		}
 
