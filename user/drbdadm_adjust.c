@@ -175,13 +175,13 @@ static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
 {
 	int eq = 1;
 
-	if (conf->disk == NULL && running->disk == NULL) return 1;
-	if (conf->disk == NULL || running->disk == NULL) return 0;
+	if (conf->volumes->disk == NULL && running->volumes->disk == NULL) return 1;
+	if (conf->volumes->disk == NULL || running->volumes->disk == NULL) return 0;
 
-	eq &= !strcmp(conf->disk,running->disk);
-	eq &= int_eq(conf->meta_disk,running->meta_disk);
-	if(!strcmp(conf->meta_disk,"internal")) return eq;
-	eq &= !strcmp(conf->meta_disk,running->meta_disk);
+	eq &= !strcmp(conf->volumes->disk,running->volumes->disk);
+	eq &= int_eq(conf->volumes->meta_disk,running->volumes->meta_disk);
+	if(!strcmp(conf->volumes->meta_disk,"internal")) return eq;
+	eq &= !strcmp(conf->volumes->meta_disk,running->volumes->meta_disk);
 
 	return eq;
 }
@@ -398,7 +398,7 @@ int need_trigger_kobj_change(struct d_resource *res)
 		return 1;
 	if (major(sbuf.st_rdev) != DRBD_MAJOR)
 		return 1;
-	if (minor(sbuf.st_rdev) != res->me->device_minor)
+	if (minor(sbuf.st_rdev) != res->me->volumes->device_minor)
 		return 1;
 
 	/* Link exists, and is expected block major:minor.
@@ -425,12 +425,12 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	/* setup error reporting context for the parsing routines */
 	line = 1;
-	sprintf(config_file_dummy,"drbdsetup %u show", res->me->device_minor);
+	sprintf(config_file_dummy,"drbdsetup %u show", res->me->volumes->device_minor);
 	config_file = config_file_dummy;
 
 	argc=0;
 	argv[argc++]=drbdsetup;
-	argv[argc++]=res->me->device;
+	argv[argc++]=res->me->volumes->device;
 	argv[argc++]="show";
 	argv[argc++]=0;
 
@@ -475,9 +475,9 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
 	if(running->me) {
-		do_attach |= (res->me->device_minor != running->me->device_minor);
+		do_attach |= (res->me->volumes->device_minor != running->me->volumes->device_minor);
 		do_attach |= !disk_equal(res->me, running->me);
-		have_disk = (running->me->disk != NULL);
+		have_disk = (running->me->volumes->disk != NULL);
 	} else  do_attach |= 1;
 
 	do_connect  = !opts_equal(res->net_options, running->net_options);

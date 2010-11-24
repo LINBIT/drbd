@@ -686,7 +686,7 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 
 	if(rv || dry_run) return rv;
 
-	fd = open(res->me->disk,O_RDONLY);
+	fd = open(res->me->volumes->disk,O_RDONLY);
 	if( fd != -1) {
 		device_size = bdev_size(fd);
 		close(fd);

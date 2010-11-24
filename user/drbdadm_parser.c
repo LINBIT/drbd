@@ -451,19 +451,19 @@ int check_upr(const char *what, const char *fmt, ...)
 void check_meta_disk(struct d_host_info *host)
 {
 	struct d_name *h;
-	if (strcmp(host->meta_disk, "internal") != 0) {
+	if (strcmp(host->volumes->meta_disk, "internal") != 0) {
 		/* external */
-		if (host->meta_index == NULL) {
+		if (host->volumes->meta_index == NULL) {
 			fprintf(stderr,
 				"%s:%d: expected 'meta-disk = %s [index]'.\n",
-				config_file, fline, host->meta_disk);
+				config_file, fline, host->volumes->meta_disk);
 		}
 		/* index either some number, or "flexible" */
 		for_each_host(h, host->on_hosts)
-			check_uniq("meta-disk", "%s:%s[%s]", h->name, host->meta_disk, host->meta_index);
-	} else if (host->meta_index) {
+			check_uniq("meta-disk", "%s:%s[%s]", h->name, host->volumes->meta_disk, host->volumes->meta_index);
+	} else if (host->volumes->meta_index) {
 		/* internal */
-		if (strcmp(host->meta_index, "flexible") != 0) {
+		if (strcmp(host->volumes->meta_index, "flexible") != 0) {
 			/* internal, not flexible, but index given: no sir! */
 			fprintf(stderr,
 				"%s:%d: no index allowed with 'meta-disk = internal'.\n",
@@ -471,7 +471,7 @@ void check_meta_disk(struct d_host_info *host)
 		}		/* else internal, flexible: fine */
 	} else {
 		/* internal, not flexible */
-		host->meta_index = strdup("internal");
+		host->volumes->meta_index = strdup("internal");
 	}
 }
 
@@ -905,9 +905,10 @@ static void parse_host_section(struct d_resource *res,
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
+	host->volumes = calloc(1, sizeof(struct d_volume));
+	host->volumes->device_minor = -1;
 	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
-	host->device_minor = -1;
 
 	if (flags & BY_ADDRESS) {
 		/* floating <address> {} */
@@ -948,7 +949,7 @@ static void parse_host_section(struct d_resource *res,
 			for_each_host(h, on_hosts)
 				check_upr("disk statement", "%s:%s:disk", res->name, h->name);
 			EXP(TK_STRING);
-			host->disk = yylval.txt;
+			host->volumes->disk = yylval.txt;
 			for_each_host(h, on_hosts)
 				check_uniq("disk", "disk:%s:%s", h->name, yylval.txt);
 			EXP(';');
@@ -956,7 +957,7 @@ static void parse_host_section(struct d_resource *res,
 		case TK_DEVICE:
 			for_each_host(h, on_hosts)
 				check_upr("device statement", "%s:%s:device", res->name, h->name);
-			parse_device(on_hosts, &host->device_minor, &host->device);
+			parse_device(on_hosts, &host->volumes->device_minor, &host->volumes->device);
 			break;
 		case TK_ADDRESS:
 			if (host->by_address) {
@@ -974,16 +975,16 @@ static void parse_host_section(struct d_resource *res,
 		case TK_META_DISK:
 			for_each_host(h, on_hosts)
 				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
-			parse_meta_disk(&host->meta_disk, &host->meta_index);
+			parse_meta_disk(&host->volumes->meta_disk, &host->volumes->meta_index);
 			check_meta_disk(host);
 			break;
 		case TK_FLEX_META_DISK:
 			for_each_host(h, on_hosts)
 				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			EXP(TK_STRING);
-			host->meta_disk = yylval.txt;
+			host->volumes->meta_disk = yylval.txt;
 			if (strcmp("internal", yylval.txt)) {
-				host->meta_index = strdup("flexible");
+				host->volumes->meta_index = strdup("flexible");
 			}
 			check_meta_disk(host);
 			EXP(';');
@@ -1001,37 +1002,37 @@ static void parse_host_section(struct d_resource *res,
 	}
 
 	/* Inherit device, disk, meta_disk and meta_index from the resource. */
-	if(!host->disk && res->disk) {
-		host->disk = strdup(res->disk);
+	if(!host->volumes->disk && res->volumes->disk) {
+		host->volumes->disk = strdup(res->volumes->disk);
 		for_each_host(h, on_hosts)
-			check_uniq("disk", "disk:%s:%s", h->name, host->disk);
+			check_uniq("disk", "disk:%s:%s", h->name, host->volumes->disk);
 	}
 
-	if(!host->device && res->device) {
-		host->device = strdup(res->device);
+	if(!host->volumes->device && res->volumes->device) {
+		host->volumes->device = strdup(res->volumes->device);
 	}
 
-	if (host->device_minor == -1U && res->device_minor != -1U) {
-		host->device_minor = res->device_minor;
+	if (host->volumes->device_minor == -1U && res->volumes->device_minor != -1U) {
+		host->volumes->device_minor = res->volumes->device_minor;
 		for_each_host(h, on_hosts)
-			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
+			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->volumes->device_minor);
 	}
 
-	if(!host->meta_disk && res->meta_disk) {
-		host->meta_disk = strdup(res->meta_disk);
-		if(res->meta_index) host->meta_index = strdup(res->meta_index);
+	if(!host->volumes->meta_disk && res->volumes->meta_disk) {
+		host->volumes->meta_disk = strdup(res->volumes->meta_disk);
+		if(res->volumes->meta_index) host->volumes->meta_index = strdup(res->volumes->meta_index);
 		check_meta_disk(host);
 	}
 
 	if (!(flags & REQUIRE_ALL))
 		return;
-	if (!host->device && host->device_minor == -1U)
+	if (!host->volumes->device && host->volumes->device_minor == -1U)
 		derror(host, res, "device");
-	if (!host->disk)
+	if (!host->volumes->disk)
 		derror(host, res, "disk");
 	if (!host->address)
 		derror(host, res, "address");
-	if (!host->meta_disk)
+	if (!host->volumes->meta_disk)
 		derror(host, res, "meta-disk");
 }
 
@@ -1083,14 +1084,15 @@ static void parse_stacked_section(struct d_resource* res)
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
-	host->device_minor = -1;
+	host->volumes = calloc(1, sizeof(struct d_volume));
+	host->volumes->device_minor = -1;
 	res->all_hosts = APPEND(res->all_hosts, host);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
 	host->lower_name = yylval.txt;
 
-	m_asprintf(&host->meta_disk, "%s", "internal");
-	m_asprintf(&host->meta_index, "%s", "internal");
+	m_asprintf(&host->volumes->meta_disk, "%s", "internal");
+	m_asprintf(&host->volumes->meta_index, "%s", "internal");
 
 	EXP('{');
 	while (1) {
@@ -1098,7 +1100,7 @@ static void parse_stacked_section(struct d_resource* res)
 		case TK_DEVICE:
 			for_each_host(h, host->on_hosts)
 				check_upr("device statement", "%s:%s:device", res->name, h->name);
-			parse_device(host->on_hosts, &host->device_minor, &host->device);
+			parse_device(host->on_hosts, &host->volumes->device_minor, &host->volumes->device);
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
@@ -1120,23 +1122,23 @@ static void parse_stacked_section(struct d_resource* res)
 	res->stacked_on_one = 1;
 
 	/* inherit device */
-	if (!host->device && res->device) {
-		host->device = strdup(res->device);
+	if (!host->volumes->device && res->volumes->device) {
+		host->volumes->device = strdup(res->volumes->device);
 		for_each_host(h, host->on_hosts)
-			check_uniq("device", "device:%s:%s", h->name, host->device);
+			check_uniq("device", "device:%s:%s", h->name, host->volumes->device);
 	}
 
-	if (host->device_minor == -1U && res->device_minor != -1U) {
-		host->device_minor = res->device_minor;
+	if (host->volumes->device_minor == -1U && res->volumes->device_minor != -1U) {
+		host->volumes->device_minor = res->volumes->device_minor;
 		for_each_host(h, host->on_hosts)
-			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->device_minor);
+			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->volumes->device_minor);
 	}
 
-	if (!host->device && host->device_minor == -1U)
+	if (!host->volumes->device && host->volumes->device_minor == -1U)
 		derror(host, res, "device");
 	if (!host->address)
 		derror(host,res,"address");
-	if (!host->meta_disk)
+	if (!host->volumes->meta_disk)
 		derror(host,res,"meta-disk");
 }
 
@@ -1374,12 +1376,12 @@ void set_disk_in_res(struct d_resource *res)
 			if (host->lower->ignore)
 				continue;
 
-			if (host->lower->me->device)
-				m_asprintf(&host->disk, "%s", host->lower->me->device);
+			if (host->lower->me->volumes->device)
+				m_asprintf(&host->volumes->disk, "%s", host->lower->me->volumes->device);
 			else
-				m_asprintf(&host->disk, "/dev/drbd%u", host->lower->me->device_minor);
+				m_asprintf(&host->volumes->disk, "/dev/drbd%u", host->lower->me->volumes->device_minor);
 
-			if (!host->disk)
+			if (!host->volumes->disk)
 				derror(host,res,"disk");
 		}
 	}
@@ -1473,8 +1475,9 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	check_uniq("resource section", res_name);
 
 	res=calloc(1,sizeof(struct d_resource));
+	res->volumes = calloc(1, sizeof(struct d_volume));
 	res->name = res_name;
-	res->device_minor = -1;
+	res->volumes->device_minor = -1;
 	res->config_file = config_file;
 	res->start_line = line;
 
@@ -1525,7 +1528,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_DISK:
 			switch (token=yylex()) {
 			case TK_STRING:
-				res->disk = yylval.txt;
+				res->volumes->disk = yylval.txt;
 				EXP(';');
 				break;
 			case '{':
@@ -1573,16 +1576,16 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_DEVICE:
 			check_upr("device statement", "%s:device", res->name);
-			parse_device(NULL, &res->device_minor, &res->device);
+			parse_device(NULL, &res->volumes->device_minor, &res->volumes->device);
 			break;
 		case TK_META_DISK:
-			parse_meta_disk(&res->meta_disk, &res->meta_index);
+			parse_meta_disk(&res->volumes->meta_disk, &res->volumes->meta_index);
 			break;
 		case TK_FLEX_META_DISK:
 			EXP(TK_STRING);
-			res->meta_disk = yylval.txt;
+			res->volumes->meta_disk = yylval.txt;
 			if (strcmp("internal", yylval.txt)) {
-				res->meta_index = strdup("flexible");
+				res->volumes->meta_index = strdup("flexible");
 			}
 			EXP(';');
 			break;

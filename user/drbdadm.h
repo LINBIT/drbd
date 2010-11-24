@@ -84,19 +84,26 @@ struct d_proxy_info
   char* outside_af;
 };
 
-struct d_host_info
+struct d_volume
 {
-  struct d_name *on_hosts;
+  unsigned volume_nr;
   char* device;
   unsigned device_minor;
   char* disk;
-  char* address;
-  char* port;
   char* meta_disk;
-  char* address_family;
+  char* meta_index;
   int meta_major;
   int meta_minor;
-  char* meta_index;
+  struct d_volume *next;
+};
+
+struct d_host_info
+{
+  struct d_name *on_hosts;
+  struct d_volume *volumes;
+  char* address;
+  char* port;
+  char* address_family;
   struct d_proxy_info *proxy;
   struct d_host_info* next;
   struct d_resource* lower;  /* for device stacking */
@@ -120,12 +127,7 @@ struct d_resource
   char* name;
   char* protocol;
 
-  /* these get propagated to host_info sections later. */
-  char* device;
-  unsigned device_minor;
-  char* disk;
-  char* meta_disk;
-  char* meta_index;
+  struct d_volume *volumes;   /* gets propagated to host_info sections later. */
 
   struct d_host_info* me;
   struct d_host_info* peer;

@@ -425,7 +425,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 enum do_register { SAME_ANYWAYS, DO_REGISTER };
 enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
 {
-	int minor = res->me->device_minor;
+	int minor = res->me->volumes->device_minor;
 	char *f;
 
 	/* if the resource was down,
@@ -464,7 +464,7 @@ enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
 
 static void register_config_file(struct d_resource *res, const char *cfname)
 {
-	int minor = res->me->device_minor;
+	int minor = res->me->volumes->device_minor;
 	if (test_if_resource_is_down(res))
 		unregister_minor(minor);
 	else
@@ -728,22 +728,22 @@ static void dump_host_info(struct d_host_info *hi)
 		++indent;
 	}
 	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
-	if (hi->device)
-		printf("%s ", esc(hi->device));
-	printf("minor %d;\n", hi->device_minor);
+	if (hi->volumes->device)
+		printf("%s ", esc(hi->volumes->device));
+	printf("minor %d;\n", hi->volumes->device_minor);
 	if (!hi->lower)
-		printA("disk", esc(hi->disk));
+		printA("disk", esc(hi->volumes->disk));
 	if (!hi->by_address)
 		dump_address("address", hi->address, hi->port, hi->address_family);
 	if (!hi->lower) {
-		if (!strncmp(hi->meta_index, "flex", 4))
+		if (!strncmp(hi->volumes->meta_index, "flex", 4))
 			printI(FMDISK, "flexible-meta-disk",
-			       esc(hi->meta_disk));
-		else if (!strcmp(hi->meta_index, "internal"))
+			       esc(hi->volumes->meta_disk));
+		else if (!strcmp(hi->volumes->meta_index, "internal"))
 			printA("meta-disk", "internal");
 		else
-			printI(MDISK, "meta-disk", esc(hi->meta_disk),
-			       hi->meta_index);
+			printI(MDISK, "meta-disk", esc(hi->volumes->meta_disk),
+			       hi->volumes->meta_index);
 	}
 	if (hi->proxy)
 		dump_proxy_info(hi->proxy);
@@ -853,19 +853,19 @@ static void dump_host_info_xml(struct d_host_info *hi)
 		printI("<host name=\"%s\">\n", names_to_str(hi->on_hosts));
 
 	++indent;
-	printI("<device minor=\"%d\">%s</device>\n", hi->device_minor,
-	       esc_xml(hi->device));
-	printI("<disk>%s</disk>\n", esc_xml(hi->disk));
+	printI("<device minor=\"%d\">%s</device>\n", hi->volumes->device_minor,
+	       esc_xml(hi->volumes->device));
+	printI("<disk>%s</disk>\n", esc_xml(hi->volumes->disk));
 	printI("<address family=\"%s\" port=\"%s\">%s</address>\n",
 	       hi->address_family, hi->port, hi->address);
-	if (!strncmp(hi->meta_index, "flex", 4))
+	if (!strncmp(hi->volumes->meta_index, "flex", 4))
 		printI("<flexible-meta-disk>%s</flexible-meta-disk>\n",
-		       esc_xml(hi->meta_disk));
-	else if (!strcmp(hi->meta_index, "internal"))
+		       esc_xml(hi->volumes->meta_disk));
+	else if (!strcmp(hi->volumes->meta_index, "internal"))
 		printI("<meta-disk>internal</meta-disk>\n");
 	else {
 		printI("<meta-disk index=\"%s\">%s</meta-disk>\n",
-		       hi->meta_index, esc_xml(hi->meta_disk));
+		       hi->volumes->meta_index, esc_xml(hi->volumes->meta_disk));
 	}
 	if (hi->proxy)
 		dump_proxy_info_xml(hi->proxy);
@@ -985,7 +985,7 @@ static int sh_resource(struct d_resource *res,
 static int sh_dev(struct d_resource *res,
 		  const char *unused __attribute((unused)))
 {
-	printf("%s\n", res->me->device);
+	printf("%s\n", res->me->volumes->device);
 
 	return 0;
 }
@@ -996,15 +996,15 @@ static int sh_udev(struct d_resource *res,
 	/* No shell escape necessary. Udev does not handle it anyways... */
 	printf("RESOURCE=%s\n", res->name);
 
-	if (!strncmp(res->me->device, "/dev/drbd", 9))
-		printf("DEVICE=%s\n", res->me->device + 5);
+	if (!strncmp(res->me->volumes->device, "/dev/drbd", 9))
+		printf("DEVICE=%s\n", res->me->volumes->device + 5);
 	else
-		printf("DEVICE=drbd%u\n", res->me->device_minor);
+		printf("DEVICE=drbd%u\n", res->me->volumes->device_minor);
 
-	if (!strncmp(res->me->disk, "/dev/", 5))
-		printf("DISK=%s\n", res->me->disk + 5);
+	if (!strncmp(res->me->volumes->disk, "/dev/", 5))
+		printf("DISK=%s\n", res->me->volumes->disk + 5);
 	else
-		printf("DISK=%s\n", res->me->disk);
+		printf("DISK=%s\n", res->me->volumes->disk);
 
 	return 0;
 }
@@ -1012,7 +1012,7 @@ static int sh_udev(struct d_resource *res,
 static int sh_minor(struct d_resource *res,
 		    const char *unused __attribute((unused)))
 {
-	printf("%d\n", res->me->device_minor);
+	printf("%d\n", res->me->volumes->device_minor);
 
 	return 0;
 }
@@ -1046,7 +1046,7 @@ static int sh_lres(struct d_resource *res,
 static int sh_ll_dev(struct d_resource *res,
 		     const char *unused __attribute((unused)))
 {
-	printf("%s\n", res->me->disk);
+	printf("%s\n", res->me->volumes->disk);
 
 	return 0;
 }
@@ -1056,10 +1056,10 @@ static int sh_md_dev(struct d_resource *res,
 {
 	char *r;
 
-	if (strcmp("internal", res->me->meta_disk) == 0)
-		r = res->me->disk;
+	if (strcmp("internal", res->me->volumes->meta_disk) == 0)
+		r = res->me->volumes->disk;
 	else
-		r = res->me->meta_disk;
+		r = res->me->volumes->meta_disk;
 
 	printf("%s\n", r);
 
@@ -1069,7 +1069,7 @@ static int sh_md_dev(struct d_resource *res,
 static int sh_md_idx(struct d_resource *res,
 		     const char *unused __attribute((unused)))
 {
-	printf("%s\n", res->me->meta_index);
+	printf("%s\n", res->me->volumes->meta_index);
 
 	return 0;
 }
@@ -1111,19 +1111,28 @@ static int sh_mod_parms(struct d_resource *res __attribute((unused)),
 	return 0;
 }
 
+static void free_volume(struct d_volume *vol)
+{
+	if (!vol)
+		return;
+
+	free(vol->device);
+	free(vol->disk);
+	free(vol->meta_disk);
+	free(vol->meta_index);
+	free(vol);
+}
+
 static void free_host_info(struct d_host_info *hi)
 {
 	if (!hi)
 		return;
 
 	free_names(hi->on_hosts);
-	free(hi->device);
-	free(hi->disk);
+	free_volume(hi->volumes);
 	free(hi->address);
 	free(hi->address_family);
 	free(hi->port);
-	free(hi->meta_disk);
-	free(hi->meta_index);
 }
 
 static void free_options(struct d_option *opts)
@@ -1146,10 +1155,7 @@ static void free_config(struct d_resource *res)
 	for_each_resource(f, t, res) {
 		free(f->name);
 		free(f->protocol);
-		free(f->device);
-		free(f->disk);
-		free(f->meta_disk);
-		free(f->meta_index);
+		free_volume(f->volumes);
 		for (host = f->all_hosts; host; host = host->next)
 			free_host_info(host);
 		free_options(f->net_options);
@@ -1196,9 +1202,9 @@ static void expand_common(void)
 
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
-			if (!h->device)
-				m_asprintf(&h->device, "/dev/drbd%u",
-					   h->device_minor);
+			if (!h->volumes->device)
+				m_asprintf(&h->volumes->device, "/dev/drbd%u",
+					   h->volumes->device_minor);
 		}
 	}
 
@@ -1430,15 +1436,15 @@ int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "disk";
-	argv[NA(argc)] = res->me->disk;
-	if (!strcmp(res->me->meta_disk, "internal")) {
-		argv[NA(argc)] = res->me->disk;
+	argv[NA(argc)] = res->me->volumes->disk;
+	if (!strcmp(res->me->volumes->meta_disk, "internal")) {
+		argv[NA(argc)] = res->me->volumes->disk;
 	} else {
-		argv[NA(argc)] = res->me->meta_disk;
+		argv[NA(argc)] = res->me->volumes->meta_disk;
 	}
-	argv[NA(argc)] = res->me->meta_index;
+	argv[NA(argc)] = res->me->volumes->meta_index;
 	argv[NA(argc)] = "--set-defaults";
 	argv[NA(argc)] = "--create-device";
 	opt = res->disk_options;
@@ -1468,7 +1474,7 @@ int adm_resize(struct d_resource *res, const char *cmd)
 	int ex;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "resize";
 	opt = find_opt(res->disk_options, "size");
 	if (opt)
@@ -1507,21 +1513,21 @@ int _admm_generic(struct d_resource *res, const char *cmd, int flags)
 	int argc = 0, i;
 
 	argv[NA(argc)] = drbdmeta;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "v08";
-	if (!strcmp(res->me->meta_disk, "internal")) {
-		argv[NA(argc)] = res->me->disk;
+	if (!strcmp(res->me->volumes->meta_disk, "internal")) {
+		argv[NA(argc)] = res->me->volumes->disk;
 	} else {
-		argv[NA(argc)] = res->me->meta_disk;
+		argv[NA(argc)] = res->me->volumes->meta_disk;
 	}
-	if (!strcmp(res->me->meta_index, "flexible")) {
-		if (!strcmp(res->me->meta_disk, "internal")) {
+	if (!strcmp(res->me->volumes->meta_index, "flexible")) {
+		if (!strcmp(res->me->volumes->meta_disk, "internal")) {
 			argv[NA(argc)] = "flex-internal";
 		} else {
 			argv[NA(argc)] = "flex-external";
 		}
 	} else {
-		argv[NA(argc)] = res->me->meta_index;
+		argv[NA(argc)] = res->me->volumes->meta_index;
 	}
 	argv[NA(argc)] = (char *)cmd;
 	for (i = 0; i < soi; i++) {
@@ -1544,7 +1550,7 @@ static void _adm_generic(struct d_resource *res, const char *cmd, int flags, pid
 	int argc = 0, i;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = (char *)cmd;
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
@@ -1608,10 +1614,10 @@ int sh_status(struct d_resource *res, const char *cmd)
 		printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
 		       shell_escape(r->me->lower->name) : "");
 		printf("_stacked_on_device=%s\n", r->stacked && r->me->lower ?
-		       shell_escape(r->me->lower->me->device) : "");
+		       shell_escape(r->me->lower->me->volumes->device) : "");
 		if (r->stacked && r->me->lower)
 			printf("_stacked_on_minor=%d\n",
-			       r->me->lower->me->device_minor);
+			       r->me->lower->me->volumes->device_minor);
 		else
 			printf("_stacked_on_minor=\n");
 		rv = adm_generic(r, cmd, SLEEPS_SHORT);
@@ -1753,7 +1759,7 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
-	snprintf(minor_string, sizeof(minor_string), "%u", res->me->device_minor);
+	snprintf(minor_string, sizeof(minor_string), "%u", res->me->volumes->device_minor);
 	setenv("DRBD_RESOURCE", res->name, 1);
 	setenv("DRBD_MINOR", minor_string, 1);
 	setenv("DRBD_CONF", config_save, 1);
@@ -1795,7 +1801,7 @@ int adm_connect(struct d_resource *res,
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "net";
 	make_address(res->me->address, res->me->port, res->me->address_family);
 	if (res->me->proxy) {
@@ -1869,7 +1875,7 @@ void convert_after_option(struct d_resource *res)
 			res->sync_options = del_opt(res->sync_options, opt);
 		} else {
 			free(opt->value);
-			m_asprintf(&opt->value, "%d", depends_on_res->me->device_minor);
+			m_asprintf(&opt->value, "%d", depends_on_res->me->volumes->device_minor);
 		}
 		opt = next;
 	}
@@ -2041,7 +2047,7 @@ int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
 	int i, argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "syncer";
 
 	argv[NA(argc)] = "--set-defaults";
@@ -2080,7 +2086,7 @@ static int adm_wait_c(struct d_resource *res,
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 	argv[NA(argc)] = "wait-connect";
 	if (is_drbd_top && !res->stacked_timeouts) {
 		unsigned long timeout = 20;
@@ -2122,7 +2128,7 @@ struct d_resource *res_by_minor(const char *id)
 	for_each_resource(res, t, config) {
 		if (res->ignore)
 			continue;
-		if (mm == res->me->device_minor) {
+		if (mm == res->me->volumes->device_minor) {
 			is_drbd_top = res->stacked;
 			return res;
 		}
@@ -2322,7 +2328,7 @@ static int adm_wait_ci(struct d_resource *ignored __attribute((unused)),
 			continue;
 		argc = 0;
 		argv[NA(argc)] = drbdsetup;
-		ssprintf(argv[NA(argc)], "%d", res->me->device_minor);
+		ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
 
 		argv[NA(argc)] = "wait-connect";
 		opt = res->startup_options;
@@ -3183,7 +3189,7 @@ void count_resources_or_die(void)
 		if (res->ignore)
 			continue;
 
-		m = res->me->device_minor;
+		m = res->me->volumes->device_minor;
 		if (m > highest_minor)
 			highest_minor = m;
 		nr_resources++;
