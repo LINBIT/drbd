@@ -232,9 +232,11 @@ static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 	if (res_o &&
 			(!run_o || strcmp(res_o->value, run_o->value) != 0))
 	{
-		reconn = 1;
-		asprintf(&str, "set memlimit %s %s", res->name, res_o->value);
-		schedule_dcmd(do_proxy_reconf, res, str, 1);
+redo_whole_conn:
+		/* As the memory is in use while the connection is allocated we have to
+		 * completely destroy and rebuild the connection. */
+		schedule_dcmd(do_proxy_conn_down, res, NULL, 0);
+		schedule_dcmd(do_proxy_conn_up, res, NULL, 2);
 	}
 
 
