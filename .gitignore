@@ -1,4 +1,13 @@
+autom4te.cache
+config.log
+config.status
+configure
+drbd-*.tar.gz
+drbd.spec
+drbd-kernel.spec
+drbd-km.spec
 ID
+Makefile
 TODO
 tags
 
@@ -8,28 +17,16 @@ tags
 *.o
 
 drbd/drbd.ko
-drbd/.drbd.ko.cmd
-drbd/.drbd.mod.o.cmd
-drbd/.drbd.o.cmd
-drbd/.drbd_actlog.o.cmd
-drbd/.drbd_bitmap.o.cmd
-drbd/.drbd_buildtag.o.cmd
-drbd/.drbd_kernelrelease
-drbd/.drbd_main.o.cmd
-drbd/.drbd_nl.o.cmd
-drbd/.drbd_proc.o.cmd
-drbd/.drbd_receiver.o.cmd
-drbd/.drbd_req.o.cmd
-drbd/.drbd_strings.o.cmd
-drbd/.drbd_worker.o.cmd
+drbd/.*.cmd
 drbd/.kernel.config.gz
-drbd/.lru_cache.o.cmd
 drbd/.tmp_versions
 drbd/Module.symvers
 drbd/drbd.mod.c
 drbd/drbd_buildtag.c
 drbd/linux/drbd_config.h.orig
 
+user/config.h
+user/config.h.in
 user/drbd_buildtag.c
 user/drbd_strings.c
 user/drbdadm
