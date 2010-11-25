@@ -1,0 +1,77 @@
+Name: drbd-kernel
+Summary: Kernel driver for DRBD
+Version: @PACKAGE_VERSION@
+Release: 1%{?dist}
+Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
+License: GPLv2+
+Group: System Environment/Kernel
+URL: http://www.drbd.org/
+BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+%if %{defined kernel_module_package_buildreqs}
+BuildRequires: %kernel_module_package_buildreqs
+%endif
+
+%if %{defined suse_kernel_module_package}
+# Support also sles10, where kernel_module_package was not yet defined.
+# In sles11, suse_k_m_p became a wrapper around k_m_p.
+%suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/suse-filelist
+%else
+%kernel_module_package -n drbd -p drbd/preamble -f drbd/redhat-filelist
+%endif
+
+%description
+This module is the kernel-dependent driver for DRBD.  This is split out so
+that multiple kernel driver versions can be installed, one for each
+installed kernel.
+
+%prep
+%setup -q -n drbd-%{version}
+
+%build
+rm -rf obj
+mkdir obj
+ln -s ../scripts obj/
+
+for flavor in %flavors_to_build; do
+    cp -r drbd obj/$flavor
+    #make -C %{kernel_source $flavor} M=$PWD/obj/$flavor
+    make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor}
+done
+
+%install
+export INSTALL_MOD_PATH=$RPM_BUILD_ROOT
+
+%if %{defined kernel_module_package_moddir}
+export INSTALL_MOD_DIR=%kernel_module_package_moddir/%name
+%else
+%if %{defined suse_kernel_module_package}
+export INSTALL_MOD_DIR=updates
+%else
+export INSTALL_MOD_DIR=extra/drbd
+%endif
+%endif
+
+for flavor in %flavors_to_build ; do
+    make -C %{kernel_source $flavor} modules_install \
+	M=$PWD/obj/$flavor
+    kernelrelease=$(make -s -C %{kernel_source $flavor} kernelrelease)
+    mv obj/$flavor/.kernel.config.gz obj/k-config-$kernelrelease.gz
+done
+
+%if %{defined suse_kernel_module_package}
+# On SUSE, putting the modules into the default path determined by
+# %kernel_module_package_moddir is enough to give them priority over
+# shipped modules.
+rm -f drbd.conf
+%else
+mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
+echo "override drbd * $INSTALL_MOD_DIR" \
+    > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
+%endif
+
+%clean
+rm -rf %{buildroot}
+
+%changelog
+* Wed Nov 25 2010 Andreas Gruenbacher <agruen@linbit.com> - 8.3.9-1
+- Convert to a Kernel Module Package.

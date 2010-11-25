@@ -1,0 +1,11 @@
+%defattr(-,root,root)
+%doc COPYING
+%doc ChangeLog
+%if %{defined 3}
+# on sles10, _suse_kernel_module_subpackage takes 3 arguments still
+/lib/modules/%3-%1
+%doc obj/k-config-%3-%1.gz
+%else
+/lib/modules/%2-%1
+%doc obj/k-config-%2-%1.gz
+%endif

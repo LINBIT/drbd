@@ -1,0 +1,6 @@
+%defattr(644,root,root,755)
+%doc COPYING
+%doc ChangeLog
+/lib/modules/%verrel%dotvariant
+%doc obj/k-config-%verrel%dotvariant.gz
+%config /etc/depmod.d/drbd.conf

@@ -1,0 +1,2 @@
+# always require a suitable userland
+Requires: drbd-utils = %{version}

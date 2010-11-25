@@ -313,7 +313,7 @@ else
      AC_CONFIG_FILES(drbd.spec)
    fi
    if test "$WITH_KM" = "yes"; then
-     AC_CONFIG_FILES(drbd-km.spec)
+     AC_CONFIG_FILES(drbd-km.spec drbd-kernel.spec)
    fi
 fi
 
