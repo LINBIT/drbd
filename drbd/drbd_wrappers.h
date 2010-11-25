@@ -9,10 +9,24 @@
 # error "use a 2.6 kernel, please"
 #endif
 
+/* The history of blkdev_issue_flush()
+
+   It had 2 arguments before fbd9b09a177a481eda256447c881f014f29034fe,
+   after it had 4 arguments. (With that commit came BLKDEV_IFL_WAIT)
+
+   It had 4 arguments before dd3932eddf428571762596e17b65f5dc92ca361b,
+   after it got 3 arguments. (With that commit came BLKDEV_DISCARD_SECURE
+   and BLKDEV_IFL_WAIT disappeared again.) */
 #include <linux/blkdev.h>
 #ifndef BLKDEV_IFL_WAIT
-/* see fbd9b09a177a481eda256447c881f014f29034fe */
-#define blkdev_issue_flush(b, gfpf, s, ifl)	blkdev_issue_flush(b, s)
+#ifndef BLKDEV_DISCARD_SECURE
+/* before fbd9b09a177 */
+#define blkdev_issue_flush(b, gfpf, s)	blkdev_issue_flush(b, s)
+#endif
+/* after dd3932eddf4 no define at all */
+#else
+/* between fbd9b09a177 and dd3932eddf4 */
+#define blkdev_issue_flush(b, gfpf, s)	blkdev_issue_flush(b, gfpf, s, BLKDEV_IFL_WAIT)
 #endif
 
 #include <linux/bio.h>
