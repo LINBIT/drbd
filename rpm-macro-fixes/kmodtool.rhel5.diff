@@ -1,0 +1,56 @@
+--- /mnt/rhel5-amd64/usr/lib/rpm/redhat/kmodtool.orig	2010-11-27 10:51:24.000000000 +0100
++++ /mnt/rhel5-amd64/usr/lib/rpm/redhat/kmodtool	2010-11-28 15:20:40.000000000 +0100
+@@ -61,6 +61,36 @@
+   echo "${variant}"
+ }
+ 
++get_filelist() {
++	local IFS=$'\n'
++	filelist=($(cat))
++
++	if [ ${#filelist[@]} -gt 0 ];
++	then
++		for ((n = 0; n < ${#filelist[@]}; n++));
++		do
++			line="${filelist[n]}"
++			line=$(echo "$line" \
++				| sed -e "s/%verrel/$verrel/g" \
++				| sed -e "s/%variant/$variant/g" \
++				| sed -e "s/%dashvariant/$dashvariant/g" \
++				| sed -e "# not: s/%dotvariant/$dotvariant/g" \
++				      -e "# there is no %dotvariant in rhel5" \
++				| sed -e "s/%dotvariant/$variant/g" \
++				| sed -e "s/\.%1/$dotvariant/g" \
++				| sed -e "s/\-%1/$dotvariant/g" \
++				| sed -e "s/%2/$verrel/g")
++			echo "$line"
++		done
++	else
++		echo "%defattr(644,root,root,755)"
++		# again, not ${dotvariant},
++		# this is indeed where rhel5 expects its modules.
++		echo "/lib/modules/${verrel}${variant}"
++	fi
++}
++	
++
+ get_rpmtemplate ()
+ {
+     local variant="${1}"
+@@ -100,7 +130,6 @@
+     fi
+     
+     cat <<EOF
+-Requires:         ${kmod_name}-kmod-common >= %{?epoch:%{epoch}:}%{version}
+ Requires(post):   /sbin/depmod
+ Requires(postun): /sbin/depmod
+ EOF
+@@ -162,7 +191,7 @@
+     echo "%defattr(644,root,root,755)"
+     echo "/lib/modules/${verrel}${variant}/"
+ else
+-    cat "$kmp_override_filelist"
++    cat "$kmp_override_filelist" | get_filelist
+ fi
+ }
+ 

@@ -1,0 +1,48 @@
+By default, the %kernel_module_package will build packages for all kernel
+flavors it finds in /usr/src/linux-obj: this directory contains symlinks to the
+latest kernel-$flavor-devel packages installed.
+
+This default can be overridden by defining the %kernel_version macro on the
+rpmbuild command line.  For example, you can build against version
+2.6.32.19-0.2 with:
+
+	rpmbuild --define 'kernel_version 2.6.32.19-0.2'
+
+When doing that, rpmbuild will iterate over the kernels defined in
+/usr/src/linux-%kernel_version-obj, instead.
+
+It is not possible to iterate over all installed kernel-$flavor-devel packages
+in one rpmbuild command: rpm only allows to build a single sub-package with a
+given name (for example, drbd-kmp-default), and cannot build two separate
+drbd-kmp-default sub-packages with different versions.
+
+	Andreas Gruenbacher <agruen@linbit.com>
+
+--- /etc/rpm/macros.kernel-source.orig
++++ /etc/rpm/macros.kernel-source
+@@ -9,14 +9,14 @@
+ 	echo "%%define _suse_kernel_module_subpackage(n:v:r:f:p:) %%{expand:%%(cd %_sourcedir; cat $subpkg; echo %%%%nil)}" \
+ 	flavors_to_build= \
+ 	flavors="%*" \
+-	for flavor in $(ls /usr/src/linux-obj/%_target_cpu 2>/dev/null); do \
++	for flavor in $(ls /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu 2>/dev/null); do \
+ 	    case " $flavors " in \
+ 	    (*" $flavor "*) \
+ 		[ -n "%{-X}" ] && continue ;; \
+ 	    (*) \
+ 		[ -z "%{-X}" -a -n "$flavors" ] && continue ;; \
+ 	    esac \
+-	    krel=$(make -s -C /usr/src/linux-obj/%_target_cpu/$flavor kernelrelease) \
++	    krel=$(make -s -C /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/$flavor kernelrelease) \
+ 	    kver=${krel%%-*} \
+ 	    [ -e /boot/symsets-$kver-$flavor.tar.gz ] || continue \
+ 	    flavors_to_build="$flavors_to_build $flavor" \
+@@ -24,7 +24,7 @@
+ 	done \
+ 	echo "%%global flavors_to_build${flavors_to_build:-%%nil}" \
+ 	echo "%%{expand:%%(test -z '%flavors_to_build' && echo %%%%internal_kmp_error)}" \
+-	echo "%%global kernel_source() /usr/src/linux-obj/%_target_cpu/%%%%{1}" \
++	echo "%%global kernel_source() /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/%%%%{1}" \
+ 	echo "%%global kernel_module_package_moddir() updates" \
+ 	\
+ 	echo "%package -n %{-n*}%{!-n:%name}-kmp-_dummy_" \

@@ -1,0 +1,30 @@
+See comment in macros.kernel-source.sles11-sp1.diff
+
+--- /etc/rpm/macros.kernel-source.orig
++++ /etc/rpm/macros.kernel-source
+@@ -9,14 +9,14 @@
+ 	echo "%%define _suse_kernel_module_subpackage(n:v:r:f:p:) %%{expand:%%(cd %_sourcedir; cat $subpkg; echo %%%%nil)}" \
+ 	flavors_to_build= \
+ 	flavors="%*" \
+-	for flavor in $(ls /usr/src/linux-obj/%_target_cpu 2>/dev/null); do \
++	for flavor in $(ls /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu 2>/dev/null); do \
+ 	    case " $flavors " in \
+ 	    (*" $flavor "*) \
+ 		[ -n "%{-X}" ] && continue ;; \
+ 	    (*) \
+ 		[ -z "%{-X}" -a -n "$flavors" ] && continue ;; \
+ 	    esac \
+-	    krel=$(make -s -C /usr/src/linux-obj/%_target_cpu/$flavor kernelrelease) \
++	    krel=$(make -s -C /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/$flavor kernelrelease) \
+ 	    kver=${krel%%-*} \
+ 	    [ -e /boot/symsets-$kver-$flavor.tar.gz ] || continue \
+ 	    flavors_to_build="$flavors_to_build $flavor" \
+@@ -24,7 +24,7 @@
+ 	done \
+ 	echo "%%global flavors_to_build${flavors_to_build:-%%nil}" \
+ 	echo "%%{expand:%%(test -z '%flavors_to_build' && echo %%%%internal_kmp_error)}" \
+-	echo "%%global kernel_source() /usr/src/linux-obj/%_target_cpu/%%%%{1}" \
++ 	echo "%%global kernel_source() /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/%%%%{1}" \
+ 	\
+ 	echo "%package -n %{-n*}%{!-n:%name}-kmp-_dummy_" \
+ 	echo "Version: %version" \

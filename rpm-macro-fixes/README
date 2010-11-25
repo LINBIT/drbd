@@ -1,0 +1,20 @@
+macros.kernel-source.sles11-sp1.diff:
+
+	Patch needed on SUSE products in order to allow building kernel module
+	packages for a specific kernel version.
+	See the patch for more detailed documentation.
+
+macros.kernel-source.sles11.diff:
+
+	Same thing for sles11 (no sp1)
+
+suse_macros.sles10.diff:
+
+	Similar thing for sles10
+
+kmodtool.rhel5.diff
+
+	Add filelist tag substitution capabilities to rhel5 kmodtool,
+	and drop the dependency on a ...-kmod-common package,
+	similar to what rhel6 does. 
+

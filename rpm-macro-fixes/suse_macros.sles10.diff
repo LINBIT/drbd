@@ -1,0 +1,32 @@
+See comment in macros.kernel-source.sles11-sp1.diff
+
+--- /usr/lib/rpm/suse_macros.orig
++++ /usr/lib/rpm/suse_macros
+@@ -476,9 +476,8 @@
+ %{expand:%( \
+         subpkg=%{-s*}%{!-s:/usr/lib/rpm/rpm-suse-kernel-module-subpackage} \
+         echo "%%define _suse_kernel_module_subpackage(n:v:r:f:p:) %%{expand:%%(cd %_sourcedir; cat $subpkg; echo %%%%nil)}" \
+-        flavors="%{-x:%*}%{!-x:$(ls /usr/src/linux-obj/%_target_cpu 2>/dev/null)}" \
++        flavors="%{-x:%*}%{!-x:$(ls /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu 2>/dev/null)}" \
+         flavors_to_build= \
+-        kver=$(rpm -q --qf '%{VERSION}-%{RELEASE}' kernel-source) \
+         for flavor in $flavors; do \
+             if [ -z "%{-x}" ]; then \
+                 case " %* " in \
+@@ -486,12 +485,15 @@
+                     continue ;; \
+                 esac \
+             fi \
+-            krel=$(make -s -C /usr/src/linux-obj/%_target_cpu/$flavor kernelrelease) \
++            krel=$(make -s -C /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/$flavor kernelrelease) \
++	    kver=${krel%%-*} \
+             [ -e /boot/symsets-$krel.tar.gz ] || continue \
+             flavors_to_build="$flavors_to_build $flavor" \
+             echo "%%_suse_kernel_module_subpackage -n %{-n*}%{!-n:%name}-kmp -v %{-v*}%{!-v:%version} -r %{-r*}%{!-r:%release} %{-p} $flavor $krel $kver" \
+         done \
+         echo "%%global flavors_to_build${flavors_to_build:-%%nil}" \
++	echo "%%global kernel_source() /usr/src/linux-%{?kernel_version:%kernel_version-}obj/%_target_cpu/%%%%{1}" \
++	echo "%%global kernel_module_package_moddir() updates" \
+         \
+         echo "%package -n %{-n*}%{!-n:%name}-kmp-_dummy_" \
+         echo "Version: %version" \
