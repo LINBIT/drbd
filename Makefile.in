@@ -167,12 +167,16 @@ drbd/drbd_buildtag.c:
 	@$(GIT) ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@find documentation -name "[^.]*.[58]" -o -name "*.html" | \
-	sed "s/^/drbd-$(DIST_VERSION)\//" >> .filelist           ;\
-	echo drbd-$(DIST_VERSION)/drbd_config.h >> .filelist     ;\
-	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ;\
-	echo drbd-$(DIST_VERSION)/.filelist >> .filelist         ;\
-	echo drbd-$(DIST_VERSION)/configure >> .filelist ;\
-	echo drbd-$(DIST_VERSION)/user/config.h.in >> .filelist ;\
+	sed "s/^/drbd-$(DIST_VERSION)\//"              >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd_config.h        >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/.filelist            >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd-kernel.spec.in  >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd/preamble        >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd/redhat-filelist >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd/suse-filelist   >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/configure            >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/user/config.h.in     >> .filelist ; \
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
