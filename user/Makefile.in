@@ -48,7 +48,7 @@ WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
 # variables meant to be overridden from the make command line
 DESTDIR ?= /
 
-CFLAGS += -Wall -I../drbd
+CFLAGS += -Wall -I../drbd -I../drbd/compat
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
