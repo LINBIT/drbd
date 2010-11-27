@@ -86,7 +86,7 @@ struct d_proxy_info
 
 struct d_volume
 {
-  unsigned volume_nr;
+  unsigned vnr;
   char* device;
   unsigned device_minor;
   char* disk;

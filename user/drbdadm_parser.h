@@ -118,6 +118,7 @@ enum yytokentype {
 	TK_INCLUDE,
 	TK_FLOATING,
 	TK_DEPRECATED_OPTION,
+	TK_VOLUME,
 };
 
 typedef struct YYSTYPE {

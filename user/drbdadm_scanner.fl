@@ -65,6 +65,7 @@ disk			{ DP; return TK_DISK;			}
 proxy			{ DP; return TK_PROXY;			}
 minor			{ DP; return TK_MINOR;			}
 inside			{ DP; return TK_INSIDE;			}
+volume			{ DP; return TK_VOLUME;			}
 syncer			{ DP; return TK_SYNCER;			}
 device			{ DP; return TK_DEVICE;			}
 global			{ DP; return TK_GLOBAL;			}

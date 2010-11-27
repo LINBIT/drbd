@@ -641,3 +641,30 @@ resource upper {
     }
   }
 }
+
+resource multi {
+	on alpha {
+		volume 0 {
+			device minor 0;
+			disk /dev/foo;
+			flexible-meta-disk /dev/bar;
+		}
+		volume 1 {
+			device minor 1;
+			disk /dev/foo1;
+			flexible-meta-disk /dev/bar1;
+		}
+	}
+	on beta {
+		volume 0 {
+			device minor 0;
+			disk /dev/foo;
+			flexible-meta-disk /dev/bar;
+		}
+		volume 1 {
+			device minor 1;
+			disk /dev/foo1;
+			flexible-meta-disk /dev/bar1;
+		}
+	}
+}
