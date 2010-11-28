@@ -233,6 +233,9 @@ drbd.spec: drbd.spec.in configure
 drbd-km.spec: drbd-km.spec.in configure
 	./configure --enable-spec --without-utils --with-km
 
+drbd-kernel.spec: drbd-kernel.spec.in configure
+	./configure --enable-spec --without-utils --with-km
+
 .PHONY: rpm
 rpm: tgz drbd.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
@@ -251,13 +254,25 @@ km-rpm: check-kdir tgz drbd-km.spec
 	    drbd-km.spec
 	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
 
+# kernel module package using the system macros.
+# result is kABI aware and uses the weak-updates mechanism.
+.PHONY: kmp-rpm
+kmp-rpm: tgz drbd-kernel.spec
+	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
+	$(RPMBUILD) -bb \
+	    --define "kernel_version $(KVER)" \
+	    $(RPMOPT) \
+	    drbd-kernel.spec
+	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
+
 .PHONY: srpm
 srpm: tgz drbd.spec drbd-km.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
 	$(RPMBUILD) -bs \
 	    --define "kernelversion $(KVER)" \
+	    --define "kernel_version $(KVER)" \
 	    --define "kdir $(KDIR)" \
 		$(RPMOPT) \
-		drbd.spec drbd-km.spec
+		drbd.spec drbd-km.spec drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
 endif
