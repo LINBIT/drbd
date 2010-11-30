@@ -42,7 +42,7 @@ done
 export INSTALL_MOD_PATH=$RPM_BUILD_ROOT
 
 %if %{defined kernel_module_package_moddir}
-export INSTALL_MOD_DIR=%kernel_module_package_moddir/%name
+export INSTALL_MOD_DIR=%{kernel_module_package_moddir drbd}
 %else
 %if %{defined suse_kernel_module_package}
 export INSTALL_MOD_DIR=updates
