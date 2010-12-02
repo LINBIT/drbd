@@ -642,7 +642,8 @@ resource upper {
   }
 }
 
-resource multi {
+resource alpha-bravo {
+	protocol a;
 	on alpha {
 		volume 0 {
 			device minor 0;
@@ -654,8 +655,9 @@ resource multi {
 			disk /dev/foo1;
 			flexible-meta-disk /dev/bar1;
 		}
+		address	127.0.0.6:1230;
 	}
-	on beta {
+	on bravo {
 		volume 0 {
 			device minor 0;
 			disk /dev/foo;
@@ -666,5 +668,40 @@ resource multi {
 			disk /dev/foo1;
 			flexible-meta-disk /dev/bar1;
 		}
+		address	127.0.0.7:1230;
+	}
+}
+
+resource charlie-delta {
+	protocol a;
+	volume 0 {
+		device minor 0;
+		disk /dev/foo;
+		flexible-meta-disk /dev/bar;
+	}
+	volume 1 {
+		device minor 1;
+		disk /dev/foo1;
+		flexible-meta-disk /dev/bar1;
+	}
+
+	on charlie {
+		address	127.0.0.2:1230;
+	}
+	on delta {
+		address	127.0.0.3:1230;
+	}
+}
+
+resource stacked_mv {
+	protocol a;
+	volume 0 { device minor 10; }
+	volume 1 { device minor 11; }
+
+	stacked-on-top-of alpha-bravo {
+		address	127.0.0.4:1230;
+	}
+	stacked-on-top-of charlie-delta {
+		address	127.0.0.5:1230;
 	}
 }

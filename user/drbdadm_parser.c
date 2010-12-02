@@ -969,6 +969,23 @@ struct d_volume *parse_volume(int vnr)
 	return vol;
 }
 
+struct d_volume *parse_stacked_volume(int vnr)
+{
+	struct d_volume *vol;
+
+	vol = calloc(1,sizeof(struct d_volume));
+	vol->vnr = vnr;
+
+	EXP('{');
+	EXP(TK_DEVICE);
+	parse_device(NULL, vol);
+	EXP('}');
+	vol->meta_disk = strdup("internal");
+	vol->meta_index = strdup("internal");
+
+	return vol;
+}
+
 void inherit_volumes(struct d_volume *from, struct d_host_info *host)
 {
 	struct d_volume *s, *t;
@@ -1222,23 +1239,20 @@ static void parse_stacked_section(struct d_resource* res)
 	fline = line;
 
 	host=calloc(1,sizeof(struct d_host_info));
-	host->volumes = calloc(1, sizeof(struct d_volume));
-	host->volumes->device_minor = -1;
 	res->all_hosts = APPEND(res->all_hosts, host);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
 	host->lower_name = yylval.txt;
 
-	m_asprintf(&host->volumes->meta_disk, "%s", "internal");
-	m_asprintf(&host->volumes->meta_index, "%s", "internal");
-
 	EXP('{');
 	while (1) {
 		switch(yylex()) {
 		case TK_DEVICE:
-			for_each_host(h, host->on_hosts)
-				check_upr("device statement", "%s:%s:device", res->name, h->name);
-			parse_device(host->on_hosts, host->volumes);
+			/* for_each_host(h, host->on_hosts)
+			  check_upr("device statement", "%s:%s:device", res->name, h->name); */
+			parse_device(host->on_hosts, volume0(&host->volumes));
+			volume0(&host->volumes)->meta_disk = strdup("internal");
+			volume0(&host->volumes)->meta_index = strdup("internal");
 			break;
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
@@ -1248,6 +1262,10 @@ static void parse_stacked_section(struct d_resource* res)
 			break;
 		case TK_PROXY:
 			parse_proxy_section(host);
+			break;
+		case TK_VOLUME:
+			EXP(TK_INTEGER);
+			host->volumes = APPEND(host->volumes, parse_stacked_volume(atoi(yylval.txt)));
 			break;
 		case '}':
 			goto break_loop;
@@ -1259,25 +1277,10 @@ static void parse_stacked_section(struct d_resource* res)
 
 	res->stacked_on_one = 1;
 
-	/* inherit device */
-	if (!host->volumes->device && res->volumes->device) {
-		host->volumes->device = strdup(res->volumes->device);
-		for_each_host(h, host->on_hosts)
-			check_uniq("device", "device:%s:%s", h->name, host->volumes->device);
-	}
+	inherit_volumes(res->volumes, host);
 
-	if (host->volumes->device_minor == -1U && res->volumes->device_minor != -1U) {
-		host->volumes->device_minor = res->volumes->device_minor;
-		for_each_host(h, host->on_hosts)
-			check_uniq("device-minor", "device-minor:%s:%d", h->name, host->volumes->device_minor);
-	}
-
-	if (!host->volumes->device && host->volumes->device_minor == -1U)
-		derror(host, res, "device");
 	if (!host->address)
 		derror(host,res,"address");
-	if (!host->volumes->meta_disk)
-		derror(host,res,"meta-disk");
 }
 
 void startup_delegate(void *ctx)
@@ -1514,6 +1517,8 @@ void set_disk_in_res(struct d_resource *res)
 			if (host->lower->ignore)
 				continue;
 
+			ensure_vols_1_in_2(res, host, host->lower->me);
+			/* öö FIXME. Do this for all volumes...*/
 			if (host->lower->me->volumes->device)
 				m_asprintf(&host->volumes->disk, "%s", host->lower->me->volumes->device);
 			else
