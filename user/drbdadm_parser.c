@@ -1022,6 +1022,39 @@ void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
 	}
 }
 
+void ensure_vols_1_in_2(struct d_resource *res, struct d_host_info *host1, struct d_host_info *host2)
+{
+	struct d_volume *vol;
+
+	for (vol = host1->volumes; vol; vol = vol->next) {
+		if (!find_volume(host2->volumes, vol->vnr)) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, on %s { ... }: "
+				"volume %d not defined on %s\n",
+				config_file, line, res->name, names_to_str(host1->on_hosts),
+				vol->vnr, names_to_str(host2->on_hosts));
+			config_valid = 0;
+		}
+	}
+}
+
+/* Ensure that in all host sections the same volumes are defined */
+void check_volumes_hosts(struct d_resource *res)
+{
+	struct d_host_info *host1, *host2;
+
+	host1 = res->all_hosts;
+
+	if (!host1)
+		return;
+
+	for (host2 = host1->next; host2; host2 = host2->next) {
+		ensure_vols_1_in_2(res, host1, host2);
+		ensure_vols_1_in_2(res, host2, host1);
+	}
+}
+
+
 enum parse_host_section_flags {
 	REQUIRE_ALL = 1,
 	BY_ADDRESS  = 2,
@@ -1708,6 +1741,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			" allowed.\n",
 			config_file, c_section_start, res->name);
 	}
+
+	check_volumes_hosts(res);
 
 	return res;
 }
