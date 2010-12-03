@@ -352,7 +352,10 @@ struct drbd_cmd commands[] = {
 		 { "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
-	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL,
+	 (struct drbd_option[]) {
+		 { "force", 'F',	T_force,	EB },
+		CLOSE_OPTIONS }} }, },
 
 	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
