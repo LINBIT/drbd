@@ -328,6 +328,7 @@ struct adm_cmd cmds[] = {
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
 	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
+	{"before-resync-source", adm_khelper, DRBD_acf3_handler},
 	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_handler},
 	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_handler},
 	{"fence-peer", adm_khelper, DRBD_acf3_handler},

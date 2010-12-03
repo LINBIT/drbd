@@ -154,6 +154,7 @@ fence-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
 local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
 before-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 after-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
+before-resync-source	{ DP; CP; return TK_HANDLER_OPTION;	}
 memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
 compression		{ DP; CP; return TK_PROXY_OPTION;       }
