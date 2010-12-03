@@ -1703,10 +1703,10 @@ upper layers during write: Ns +x\n", which shows that this was a false positive.
 The sending side may detect these buffer modifications immediately after the
 unmodified data has been copied to the tcp buffers, in which case the receiving
 side won't notice it.</para>
-    <para>The most recent (2007) example of systematically corruption was an
+    <para>The most recent (2007) example of systematic corruption was an
 issue with the TCP offloading engine and the driver of a certain type
 of GBit NIC. The actual corruption happened on the DMA transfer from
-core memory to the card. Since the TCP checksum gets calculated on the card
+core memory to the card. Since the TCP checksum gets calculated on the card,
 this type of corruption stays undetected as long as you do not use
 either the online <option>verify</option> or the <option>data-integrity-alg</option>.</para>
     <para>We suggest to use the <option>data-integrity-alg</option> only during a
