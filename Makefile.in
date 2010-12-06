@@ -26,8 +26,6 @@
 
 # variables set by configure
 GIT = @GIT@
-KDIR ?= @KDIR@
-KVER ?= @KVER@
 LN_S = @LN_S@
 PREFIX = @prefix@
 RPMBUILD = @RPMBUILD@
@@ -42,6 +40,17 @@ WITH_PACEMAKER = @WITH_PACEMAKER@
 WITH_HEARTBEAT = @WITH_HEARTBEAT@
 WITH_RGMANAGER = @WITH_RGMANAGER@
 WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
+
+# default for KDIR/KVER
+ifndef KVER
+ ifndef KDIR
+KVER = `uname -r`
+KDIR = /lib/modules/$(KVER)/build
+ else
+KVER := $(shell make -s -C $(KDIR) kernelrelease)
+ endif
+endif
+KDIR ?= /lib/modules/$(KVER)/build
 
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.

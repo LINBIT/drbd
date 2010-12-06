@@ -164,17 +164,6 @@ fi
 
 dnl Checks for system services
 
-dnl figure out the kernel versin and kernel headers directory
-if test "$WITH_KM" = "yes"; then
-   KVER='$(uname -r)'
-   KDIR="/lib/modules/$KVER/build"
-   AC_CHECK_FILE(/lib/modules/$(uname -r)/build/Makefile,
-		,
-		AC_MSG_WARN([Unable to find a kernel Makefile in $KDIR. You will have to set KDIR correctly when invoking make.]))
-fi
-AC_SUBST(KVER)
-AC_SUBST(KDIR)
-
 BASH_COMPLETION_SUFFIX=""
 UDEV_RULE_SUFFIX=""
 RPM_DIST_TAG=""
