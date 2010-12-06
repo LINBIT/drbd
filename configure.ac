@@ -149,6 +149,10 @@ fi
 
 if test -z $XSLTPROC; then
    AC_MSG_WARN([Cannot build man pages without xsltproc. You may safely ignore this warning when building from a tarball.])
+   dnl default to some sane value at least,
+   dnl so the error message about command not found makes sense
+   dnl otherwise you get "--xinclude ... command not found" :-/
+   XSLTPROC=xsltproc
 fi
 
 if test -z $GIT; then
