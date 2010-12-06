@@ -93,7 +93,7 @@ endif
 .PHONY: module
 module: check-kdir
 ifeq ($(WITH_KM),yes)
-	@ $(MAKE) -C drbd
+	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR)
 	@ echo -e "\n\tModule build was successful."
 endif
 
