@@ -265,11 +265,15 @@ km-rpm: check-kdir tgz drbd-km.spec
 
 # kernel module package using the system macros.
 # result is kABI aware and uses the weak-updates mechanism.
+# Only define %kernel_version, it it was set outside of this file,
+# i.e. was inherited from environment, or set explicitly on command line.
+# If unset, the macro will figure it out internally, and not depend on
+# uname -r, which may be wrong in a chroot build environment.
 .PHONY: kmp-rpm
 kmp-rpm: tgz drbd-kernel.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
 	$(RPMBUILD) -bb \
-	    --define "kernel_version $(KVER)" \
+	    $(if $(filter file,$(origin KVER)), --define "kernel_version $(KVER)") \
 	    $(RPMOPT) \
 	    drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
