@@ -494,8 +494,9 @@ STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
 		(os.conn == C_CONNECTED && ns.conn == C_VERIFY_S);
 }
 
-int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
-		      union drbd_state mask, union drbd_state val)
+enum drbd_state_rv
+drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
+		  union drbd_state mask, union drbd_state val)
 {
 #if DRBD_DEBUG_STATE_CHANGES
 	static unsigned long long sseq = 0x00f00000LLU;
@@ -503,7 +504,7 @@ int drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 
 	unsigned long flags;
 	union drbd_state os, ns;
-	int rv;
+	enum drbd_state_rv rv;
 
 	ns = val; /* assign debug info, if any. */
 	spin_lock_irqsave(&mdev->req_lock, flags);
@@ -536,9 +537,10 @@ void drbd_force_state(struct drbd_conf *mdev,
 	drbd_change_state(mdev, CS_HARD, mask, val);
 }
 
-STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns);
-STATIC int is_valid_state_transition(struct drbd_conf *,
-				     union drbd_state, union drbd_state);
+STATIC enum drbd_state_rv is_valid_state(struct drbd_conf *, union drbd_state);
+STATIC enum drbd_state_rv is_valid_state_transition(struct drbd_conf *,
+						    union drbd_state,
+						    union drbd_state);
 STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state os,
 				       union drbd_state ns, const char **warn_sync_abort);
 int drbd_send_state_req(struct drbd_conf *,
@@ -550,7 +552,7 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
 {
 	union drbd_state os, ns;
 	unsigned long flags;
-	int rv;
+	enum drbd_state_rv rv;
 
 	if (test_and_clear_bit(CL_ST_CHG_SUCCESS, &mdev->flags))
 		return SS_CW_SUCCESS;
@@ -571,7 +573,7 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
 		if (rv == SS_SUCCESS) {
 			rv = is_valid_state_transition(mdev, ns, os);
 			if (rv == SS_SUCCESS)
-				rv = 0; /* cont waiting, otherwise fail. */
+				rv = SS_UNKNOWN_ERROR; /* cont waiting, otherwise fail. */
 		}
 	}
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
@@ -589,9 +591,9 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
  * Should not be called directly, use drbd_request_state() or
  * _drbd_request_state().
  */
-STATIC int drbd_req_state(struct drbd_conf *mdev,
-			  union drbd_state mask, union drbd_state val,
-			  enum chg_state_flags f)
+STATIC enum drbd_state_rv
+drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
+	       union drbd_state val, enum chg_state_flags f)
 {
 #if DRBD_DEBUG_STATE_CHANGES
 	static unsigned long long sseq = 0;
@@ -600,7 +602,7 @@ STATIC int drbd_req_state(struct drbd_conf *mdev,
 	struct completion done;
 	unsigned long flags;
 	union drbd_state os, ns;
-	int rv;
+	enum drbd_state_rv rv;
 
 	init_completion(&done);
 
@@ -691,10 +693,11 @@ abort:
  * Cousin of drbd_request_state(), useful with the CS_WAIT_COMPLETE
  * flag, or when logging of failed state change requests is not desired.
  */
-int _drbd_request_state(struct drbd_conf *mdev,	union drbd_state mask,
-			union drbd_state val,	enum chg_state_flags f)
+enum drbd_state_rv
+_drbd_request_state(struct drbd_conf *mdev, union drbd_state mask,
+		    union drbd_state val, enum chg_state_flags f)
 {
-	int rv;
+	enum drbd_state_rv rv;
 
 	wait_event(mdev->state_wait,
 		   (rv = drbd_req_state(mdev, mask, val, f)) != SS_IN_TRANSIENT_STATE);
@@ -755,8 +758,8 @@ void print_st(struct drbd_conf *mdev, const char *tag, union drbd_state s)
 }
 
 
-void print_st_err(struct drbd_conf *mdev,
-	union drbd_state os, union drbd_state ns, int err)
+void print_st_err(struct drbd_conf *mdev, union drbd_state os,
+	          union drbd_state ns, enum drbd_state_rv err)
 {
 	if (err == SS_IN_TRANSIENT_STATE)
 		return;
@@ -773,12 +776,13 @@ void print_st_err(struct drbd_conf *mdev,
  * @mdev:	DRBD device.
  * @ns:		State to consider.
  */
-STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
+STATIC enum drbd_state_rv
+is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	enum drbd_fencing_p fp;
-	int rv = SS_SUCCESS;
+	enum drbd_state_rv rv = SS_SUCCESS;
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
@@ -841,10 +845,11 @@ STATIC int is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
  * @ns:		new state.
  * @os:		old state.
  */
-STATIC int is_valid_state_transition(struct drbd_conf *mdev,
-				     union drbd_state ns, union drbd_state os)
+STATIC enum drbd_state_rv
+is_valid_state_transition(struct drbd_conf *mdev, union drbd_state ns,
+			  union drbd_state os)
 {
-	int rv = SS_SUCCESS;
+	enum drbd_state_rv rv = SS_SUCCESS;
 
 	if ((ns.conn == C_STARTING_SYNC_T || ns.conn == C_STARTING_SYNC_S) &&
 	    os.conn > C_CONNECTED)
@@ -1114,15 +1119,15 @@ static void drbd_resume_al(struct drbd_conf *mdev)
  *
  * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
  */
-int __drbd_set_state(struct drbd_conf *mdev,
-		    union drbd_state ns, enum chg_state_flags flags,
-		    struct completion *done)
+enum drbd_state_rv
+__drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
+	         enum chg_state_flags flags, struct completion *done)
 {
 #if DRBD_DEBUG_STATE_CHANGES
 	static unsigned long long sseq = 0xff000000LLU;
 #endif
 	union drbd_state os;
-	int rv = SS_SUCCESS;
+	enum drbd_state_rv rv = SS_SUCCESS;
 	const char *warn_sync_abort = NULL;
 	struct after_state_chg_work *ascw;
 
@@ -2189,7 +2194,7 @@ int drbd_send_state_req(struct drbd_conf *mdev,
 			     (struct p_header80 *)&p, sizeof(p));
 }
 
-int drbd_send_sr_reply(struct drbd_conf *mdev, int retcode)
+int drbd_send_sr_reply(struct drbd_conf *mdev, enum drbd_state_rv retcode)
 {
 	struct p_req_state_reply p;
 
