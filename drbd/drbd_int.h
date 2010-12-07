@@ -265,20 +265,19 @@ enum {
 
 extern void trace_drbd_resync(struct drbd_conf *mdev, int level, const char *fmt, ...);
 
-#ifdef DRBD_ENABLE_FAULTS
 extern unsigned int
 _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type);
+
 static inline int
 drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
+#ifdef DRBD_ENABLE_FAULTS
 	return fault_rate &&
 		(enable_faults & (1<<type)) &&
 		_drbd_insert_fault(mdev, type);
-}
-#define FAULT_ACTIVE(_m, _t) (drbd_insert_fault((_m), (_t)))
-
 #else
-#define FAULT_ACTIVE(_m, _t) (0)
+	return 0;
 #endif
+}
 
 /* integer division, round _UP_ to the next integer */
 #define div_ceil(A, B) ((A)/(B) + ((A)%(B) ? 1 : 0))
