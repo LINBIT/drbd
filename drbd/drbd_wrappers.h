@@ -910,4 +910,11 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 #endif
 #endif
 
+#ifndef min_not_zero
+#define min_not_zero(x, y) ({			\
+	typeof(x) __x = (x);			\
+	typeof(y) __y = (y);			\
+	__x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
+#endif
+
 #endif

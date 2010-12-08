@@ -3161,7 +3161,6 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 	 * we still need to figure out whether we accept that. */
 	mdev->p_size = p_size;
 
-#define min_not_zero(l, r) (l == 0) ? r : ((r == 0) ? l : min(l, r))
 	if (get_ldev(mdev)) {
 		warn_if_differ_considerably(mdev, "lower level device sizes",
 			   p_size, drbd_get_max_capacity(mdev->ldev));
@@ -3196,7 +3195,6 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 		}
 		put_ldev(mdev);
 	}
-#undef min_not_zero
 
 	ddsf = be16_to_cpu(p->dds_flags);
 	if (get_ldev(mdev)) {
