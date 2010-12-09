@@ -32,29 +32,6 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h>
 
-/* { compatibility crap */
-
-/* needs to be included here,
- * because of various old kernel compatibility wrappers */
-#include <linux/drbd_config.h>
-#ifdef COMPAT_USE_KMEM_CACHE_S
-#define kmem_cache kmem_cache_s
-#endif
-
-#ifndef COMPAT_HAVE_KZALLOC
-static inline void *kzalloc(size_t size, int flags)
-{
-	void *rv = kmalloc(size, flags);
-	if (rv)
-		memset(rv, 0, size);
-
-	return rv;
-}
-#define COMPAT_HAVE_KZALLOC
-#endif
-
-/* } compatibility crap */
-
 
 /*
 This header file (and its .c file; kernel-doc of functions see there)

@@ -34,18 +34,7 @@
 #include <linux/delay.h>
 
 #include <linux/drbd_config.h> /* In case kzalloc() is missing. */
-
-#ifndef COMPAT_HAVE_KZALLOC
-static inline void *kzalloc(size_t size, int flags)
-{
-	void *rv = kmalloc(size, flags);
-	if (rv)
-		memset(rv, 0, size);
-
-	return rv;
-}
-#define COMPAT_HAVE_KZALLOC
-#endif
+#include <linux/drbd_wrappers.h>
 
 
 #ifndef COMPAT_HAVE_MSLEEP

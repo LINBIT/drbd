@@ -101,6 +101,8 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 	return bdev ? bdev->bd_inode->i_size >> 9 : 0;
 }
 
+#include "drbd_int.h"
+
 /* sets the number of 512 byte sectors of our virtual device */
 static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 					sector_t size)
@@ -317,6 +319,7 @@ static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 #endif
 
 #ifndef COMPAT_HAVE_SOCK_SHUTDOWN
+#define COMPAT_HAVE_SOCK_SHUTDOWN 1
 enum sock_shutdown_cmd {
 	SHUT_RD = 0,
 	SHUT_WR = 1,
@@ -537,8 +540,14 @@ static inline int drbd_crypto_is_hash(struct crypto_tfm *tfm)
 }
 
 
+#ifndef COMPAT_HAVE_GFP_T
+#define COMPAT_HAVE_GFP_T
+typedef unsigned gfp_t;
+#endif
+
+
 #ifndef COMPAT_HAVE_KZALLOC
-static inline void *kzalloc(size_t size, int flags)
+static inline void *kzalloc(size_t size, gfp_t flags)
 {
 	void *rv = kmalloc(size, flags);
 	if (rv)
@@ -698,11 +707,6 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 #ifndef __CHECKER__
 # undef __cond_lock
 # define __cond_lock(x,c) (c)
-#endif
-
-#ifndef COMPAT_HAVE_GFP_T
-#define COMPAT_HAVE_GFP_T
-typedef unsigned gfp_t;
 #endif
 
 

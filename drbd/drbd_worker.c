@@ -547,7 +547,7 @@ STATIC int drbd_rs_number_requests(struct drbd_conf *mdev)
 	return number;
 }
 
-STATIC int w_make_resync_request(struct drbd_conf *mdev,
+int w_make_resync_request(struct drbd_conf *mdev,
 				 struct drbd_work *w, int cancel)
 {
 	unsigned long bit;

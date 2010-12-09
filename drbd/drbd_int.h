@@ -38,8 +38,10 @@
 #include <linux/mutex.h>
 #include <linux/genhd.h>
 #include <net/tcp.h>
-#include <linux/lru_cache.h>
-#include <linux/drbd_config.h>
+
+#include <linux/config.h>
+#include "linux/drbd.h"
+
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
@@ -1507,19 +1509,6 @@ extern void drbd_ldev_destroy(struct drbd_conf *mdev);
 #error "LN2 of BITS_PER_LONG unknown!"
 #endif
 
-/* resync bitmap */
-/* 16MB sized 'bitmap extent' to track syncer usage */
-struct bm_extent {
-	int rs_left; /* number of bits set (out of sync) in this extent. */
-	int rs_failed; /* number of failed resync requests in this extent. */
-	unsigned long flags;
-	struct lc_element lce;
-};
-
-#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
-#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
-#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
-
 /* drbd_bitmap.c */
 /*
  * We need to store one bit for a block.
@@ -2093,6 +2082,8 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 		return bdev->md.md_offset + bdev->md.md_size_sect;
 	}
 }
+
+#include "drbd_wrappers.h"
 
 /**
  * drbd_get_max_capacity() - Returns the capacity we announce to out peer
@@ -2671,5 +2662,22 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
+
+#include <linux/lru_cache.h>
+#include <linux/drbd_config.h>
+
+/* resync bitmap */
+/* 16MB sized 'bitmap extent' to track syncer usage */
+struct bm_extent {
+	int rs_left; /* number of bits set (out of sync) in this extent. */
+	int rs_failed; /* number of failed resync requests in this extent. */
+	unsigned long flags;
+	struct lc_element lce;
+};
+
+#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
+#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
+#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
+
 
 #endif
