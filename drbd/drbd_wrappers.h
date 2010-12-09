@@ -316,7 +316,7 @@ static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 #define kmem_cache kmem_cache_s
 #endif
 
-#ifdef DEFINE_KERNEL_SOCK_SHUTDOWN
+#ifndef COMPAT_HAVE_SOCK_SHUTDOWN
 enum sock_shutdown_cmd {
 	SHUT_RD = 0,
 	SHUT_WR = 1,
