@@ -24,13 +24,16 @@ documentation/Makefile
 
 drbd/drbd.ko
 drbd/.*.cmd
+drbd/.compat.h.d
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
 drbd/.drbd_kernelrelease.new
 drbd/.tmp_versions
 drbd/Module.symvers
+drbd/compat.h
 drbd/drbd.mod.c
 drbd/drbd_buildtag.c
+drbd/modules.order
 drbd/linux/drbd_config.h.orig
 
 user/config.h

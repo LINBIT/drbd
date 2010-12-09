@@ -46,20 +46,8 @@ ifneq ($(PATCHLEVEL),)
   CONFIG_BLK_DEV_DRBD := m
   CONFIG_DRBD_TRACE := n
 
-  include $(src)/Makefile-2.6
+  include $(src)/Kbuild
 
-  # remember KERNELRELEASE for install target
-  # .kernelversion can be included in Makefile as well as
-  # sourced from shell
-  $(shell echo -e "VERSION=$(VERSION)\n"             \
-                  "PATCHLEVEL=$(PATCHLEVEL)\n"       \
-                  "SUBLEVEL=$(SUBLEVEL)\n"           \
-                  "EXTRAVERSION=$(EXTRAVERSION)\n"   \
-                  "LOCALVERSION=$(LOCALVERSION)\n"   \
-                  "KERNELRELEASE=$(KERNELRELEASE)\n" \
-                  "KERNELVERSION=$(KERNELVERSION)"   \
-          > $(src)/.drbd_kernelrelease.new       \
-   )
 else
   # called from command line in current directory
 
@@ -137,8 +125,6 @@ else
 
   kbuild: drbd_buildtag.c
 	@rm -f .drbd_kernelrelease*
-	-test -f ../scripts/adjust_drbd_config_h.sh && \
-		KDIR=$(KDIR) O=$(O) $(SHELL) ../scripts/adjust_drbd_config_h.sh
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
 # $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules

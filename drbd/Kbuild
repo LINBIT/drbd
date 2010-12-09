@@ -1,0 +1,75 @@
+obj-m := drbd.o
+
+
+clean-files := compat.h
+
+LINUXINCLUDE := -I$(src) $(LINUXINCLUDE)
+
+# Files in the standard include directories take precendence over files
+# in the compat directory.
+#
+# Add -I$(src) to EXTRA_CFLAGS again: some (rhel5, maybe other) kbuild does not
+# yet use LINUXINCLUDE like we expect it to ;( fortunately it does not contain
+# in-tree drbd either yet, so precedence of include files is not important.
+#
+# override: we absolutely need this, even if EXTRA_CFLAGS originates from make
+# command line or environment
+override EXTRA_CFLAGS += -I$(src) -I$(src)/compat
+
+drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
+drbd-y += drbd_worker.o drbd_receiver.o drbd_req.o drbd_actlog.o
+drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
+
+ifndef CONFIG_CONNECTOR
+	drbd-y += connector.o cn_queue.o
+endif
+
+drbd_trace-y := drbd_tracing.o
+
+$(patsubst %,$(obj)/%,$(drbd-y) $(drbd_trace-y)): $(obj)/compat.h
+
+obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
+obj-$(CONFIG_DRBD_TRACE)       += drbd_trace.o
+
+# ======================================================================
+
+# remember KERNELRELEASE for install target
+# .kernelversion can be included in Makefile as well as
+# sourced from shell
+$(shell echo -e "VERSION=$(VERSION)\n"             \
+			  "PATCHLEVEL=$(PATCHLEVEL)\n"       \
+			  "SUBLEVEL=$(SUBLEVEL)\n"           \
+			  "EXTRAVERSION=$(EXTRAVERSION)\n"   \
+			  "LOCALVERSION=$(LOCALVERSION)\n"   \
+			  "KERNELRELEASE=$(KERNELRELEASE)\n" \
+			  "KERNELVERSION=$(KERNELVERSION)"   \
+	  > $(src)/.drbd_kernelrelease.new       \
+)
+
+# Are we in stage 2 of the build (modpost)?
+
+KBUILD_STAGE ?= $(if $(filter $(srctree)/scripts/Makefile.modpost,$(MAKEFILE_LIST)),modpost)
+
+# We want to generate compat.h only once.
+ifneq ($(KBUILD_STAGE),modpost)
+$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) FORCE
+	$(call filechk,compat.h)
+endif
+
+filechk_compat.h = \
+	for cfg in $(sort $(filter-out FORCE,$^)); do \
+	    var=`echo $$cfg | \
+		 sed -e "s,.*/,COMPAT_," -e "s,\.c,," | \
+		 tr -- -a-z _A-Z | \
+		 tr -dc A-Z0-9_`; \
+	    if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o dummy.o $$cfg \
+		    > /dev/null $(if $(quiet),2>&1); then \
+		echo "\#define $$var"; \
+		rm -f dummy.{o,gcda,gcno}; \
+	    else \
+		echo "/* \#undef $$var */"; \
+	    fi; \
+	done
+
+
+

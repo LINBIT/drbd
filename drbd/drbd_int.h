@@ -39,7 +39,7 @@
 #include <linux/genhd.h>
 #include <net/tcp.h>
 
-#include <linux/config.h>
+#include "compat.h"
 #include "linux/drbd.h"
 
 
