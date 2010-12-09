@@ -94,14 +94,6 @@ extern char usermode_helper[];
 #include <linux/blkdev.h>
 #include <linux/bio.h>
 
-/* XXX do we need this? */
-#ifndef TRUE
-#define TRUE 1
-#endif
-#ifndef FALSE
-#define FALSE 0
-#endif
-
 /* I don't remember why XCPU ...
  * This is used to wake the asender,
  * and to interrupt sending the sending task
@@ -2196,17 +2188,17 @@ static inline int drbd_send_ping_ack(struct drbd_conf *mdev)
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
-	_drbd_thread_stop(thi, FALSE, TRUE);
+	_drbd_thread_stop(thi, false, true);
 }
 
 static inline void drbd_thread_stop_nowait(struct drbd_thread *thi)
 {
-	_drbd_thread_stop(thi, FALSE, FALSE);
+	_drbd_thread_stop(thi, false, false);
 }
 
 static inline void drbd_thread_restart_nowait(struct drbd_thread *thi)
 {
-	_drbd_thread_stop(thi, TRUE, FALSE);
+	_drbd_thread_stop(thi, true, false);
 }
 
 /* counts how many answer packets packets we expect from our peer,
