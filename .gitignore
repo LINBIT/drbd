@@ -1,24 +1,32 @@
-autom4te.cache
-config.log
-config.status
-configure
-drbd-*.tar.gz
-drbd.spec
-drbd-kernel.spec
-drbd-km.spec
-ID
-Makefile
-TODO
-tags
+/autom4te.cache
+/config.log
+/config.status
+/configure
+/drbd-*.tar.gz
+/drbd.spec
+/drbd-kernel.spec
+/drbd-km.spec
+/ID
+/TODO
+/tags
+/Makefile
+
+user/Makefile
+scripts/Makefile
+documentation/Makefile
 
 ./.filelist
 ./drbd_config.h
 
+*.gcda
+*.gcno
 *.o
 
 drbd/drbd.ko
 drbd/.*.cmd
 drbd/.kernel.config.gz
+drbd/.drbd_kernelrelease
+drbd/.drbd_kernelrelease.new
 drbd/.tmp_versions
 drbd/Module.symvers
 drbd/drbd.mod.c
