@@ -117,6 +117,18 @@ extern const char *drbd_buildtag(void);
 //#define NEED_BLK_QUEUE_MAX_HW_SECTORS
 //#define NEED_BLK_QUEUE_MAX_SEGMENTS
 
+/* For kernel versions 2.6.31 to 2.6.33 inclusive, even though
+ * blk_queue_max_hw_sectors is present, we actually need to use
+ * blk_queue_max_sectors to set max_hw_sectors. :-(
+ * RHEL6 2.6.32 chose to be different and already has eliminated
+ * blk_queue_max_sectors as upstream 2.6.34 did.
+ * I check it into the git repo as defined,
+ * because if someone does not run our compat adjust magic, it otherwise would
+ * silently compile broken code on affected kernel versions, which is worse
+ * than the compile error it may cause on more recent kernels.
+ */
+#define USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS
+
 /* some old kernels do not have atomic_add_unless() */
 //#define NEED_ATOMIC_ADD_UNLESS
 

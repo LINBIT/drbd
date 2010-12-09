@@ -173,6 +173,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     need_blk_queue_max_hw_sectors=1
   fi
+  if grep_q "blk_queue_max_sectors" $KDIR/include/linux/blkdev.h ; then
+    use_blk_queue_max_sectors_anyways=1
+  else
+    use_blk_queue_max_sectors_anyways=0
+  fi
   if grep_q "blk_queue_max_segments" $KDIR/include/linux/blkdev.h ; then
     need_blk_queue_max_segments=0
   else
@@ -231,6 +236,8 @@ perl -pe "
   { ( $have_netlink_skb_parms ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BLK_QUEUE_MAX_HW_SECTORS.*)}
   { ( $need_blk_queue_max_hw_sectors ? '' : '//' ) . \$1}e;
+ s{.*(#define USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS.*)}
+  { ( $use_blk_queue_max_sectors_anyways ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BLK_QUEUE_MAX_SEGMENTS.*)}
   { ( $need_blk_queue_max_segments ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_ATOMIC_ADD_UNLESS.*)}
