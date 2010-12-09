@@ -699,8 +699,8 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 # define __cond_lock(x,c) (c)
 #endif
 
-#ifndef KERNEL_HAS_GFP_T
-#define KERNEL_HAS_GFP_T
+#ifndef COMPAT_HAVE_GFP_T
+#define COMPAT_HAVE_GFP_T
 typedef unsigned gfp_t;
 #endif
 
