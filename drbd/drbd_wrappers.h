@@ -312,7 +312,7 @@ static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 #define sock_create_kern sock_create
 #endif
 
-#ifdef USE_KMEM_CACHE_S
+#ifdef COMPAT_USE_KMEM_CACHE_S
 #define kmem_cache kmem_cache_s
 #endif
 

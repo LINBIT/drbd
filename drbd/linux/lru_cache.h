@@ -37,7 +37,7 @@
 /* needs to be included here,
  * because of various old kernel compatibility wrappers */
 #include <linux/drbd_config.h>
-#ifdef USE_KMEM_CACHE_S
+#ifdef COMPAT_USE_KMEM_CACHE_S
 #define kmem_cache kmem_cache_s
 #endif
 
