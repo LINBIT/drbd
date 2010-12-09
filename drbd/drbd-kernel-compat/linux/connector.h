@@ -95,11 +95,7 @@ struct cn_ctl_msg {
 
 #ifdef __KERNEL__
 #include <linux/drbd_config.h>
-
-#ifndef COMPAT_HAVE_GFP_T
-#define COMPAT_HAVE_GFP_T
-typedef unsigned gfp_t;
-#endif
+#include <linux/drbd_wrappers.h>
 
 #include <asm/atomic.h>
 
