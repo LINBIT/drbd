@@ -1170,8 +1170,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 {
 	struct p_compressed_bm *p = (void*)h;
 	unsigned long num_words;
-	int len;
-	int ok;
+	int len, err;
 
 	len = fill_bitmap_rle_bits(mdev, p, c);
 
@@ -1180,7 +1179,8 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 
 	if (len) {
 		DCBP_set_code(p, RLE_VLI_Bits);
-		ok = !_drbd_send_cmd(mdev, mdev->tconn->data.socket, P_COMPRESSED_BITMAP, h,
+		err = _drbd_send_cmd(mdev, mdev->tconn->data.socket,
+				     P_COMPRESSED_BITMAP, h,
 				     sizeof(*p) + len, 0);
 
 		c->packets[0]++;
@@ -1195,7 +1195,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 		len = num_words * sizeof(long);
 		if (len)
 			drbd_bm_get_lel(mdev, c->word_offset, num_words, (unsigned long*)h->payload);
-		ok = !_drbd_send_cmd(mdev, mdev->tconn->data.socket, P_BITMAP,
+		err = _drbd_send_cmd(mdev, mdev->tconn->data.socket, P_BITMAP,
 				     h, sizeof(struct p_header80) + len, 0);
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;
@@ -1206,7 +1206,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 		if (c->bit_offset > c->bm_bits)
 			c->bit_offset = c->bm_bits;
 	}
-	if (ok) {
+	if (!err) {
 		if (len == 0) {
 			INFO_bm_xfer_stats(mdev, "send", c);
 			return 0;
