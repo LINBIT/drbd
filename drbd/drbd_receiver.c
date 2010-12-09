@@ -483,7 +483,7 @@ void drbd_wait_ee_list_empty(struct drbd_conf *mdev, struct list_head *head)
 	spin_unlock_irq(&mdev->req_lock);
 }
 
-#ifdef DEFINE_SOCK_CREATE_KERN
+#ifndef COMPAT_HAVE_SOCK_CREATE
 /* if there is no sock_create_kern,
  * there is also sock_create_lite missing */
 int sock_create_lite(int family, int type, int protocol, struct socket **res)

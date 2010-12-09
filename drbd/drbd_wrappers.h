@@ -308,7 +308,7 @@ static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 #endif
 }
 
-#ifdef DEFINE_SOCK_CREATE_KERN
+#ifndef COMPAT_HAVE_SOCK_CREATE
 #define sock_create_kern sock_create
 #endif
 
