@@ -339,7 +339,7 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 #define drbd_unregister_blkdev unregister_blkdev
 #endif
 
-#ifdef NEED_BACKPORT_OF_ATOMIC_ADD
+#ifndef COMPAT_HAVE_ATOMIC_ADD
 
 #if defined(__x86_64__)
 
