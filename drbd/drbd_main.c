@@ -57,7 +57,7 @@
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 #include "drbd_vli.h"
 
-#ifdef HAVE_LINUX_BYTEORDER_SWABB_H
+#ifdef COMPAT_HAVE_LINUX_BYTEORDER_SWABB_H
 #include <linux/byteorder/swabb.h>
 #else
 #include <linux/swab.h>
