@@ -783,7 +783,7 @@ static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned in
 #define blk_queue_max_hw_sectors(q, max)	blk_queue_max_sectors(q, max)
 #endif
 
-#ifdef NEED_BLK_QUEUE_MAX_SEGMENTS
+#ifndef COMPAT_HAVE_BLK_QUEUE_MAX_SEGMENTS
 static inline void blk_queue_max_segments(struct request_queue *q, unsigned short max_segments)
 {
 	blk_queue_max_phys_segments(q, max_segments);
