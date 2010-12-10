@@ -47,7 +47,7 @@ static inline void *kzalloc(size_t size, int flags)
 #endif
 
 
-#ifndef KERNEL_HAS_MSLEEP
+#ifndef COMPAT_HAVE_MSLEEP
 /**
  * msleep - sleep safely even with waitqueue interruptions
  * @msecs: Time in milliseconds to sleep for
