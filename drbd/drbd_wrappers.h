@@ -206,7 +206,7 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 
 #define sg_init_table(S,N) ({})
 
-#ifdef NEED_SG_SET_BUF
+#ifndef COMPAT_HAVE_SG_SET_BUF
 static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 			      unsigned int buflen)
 {
