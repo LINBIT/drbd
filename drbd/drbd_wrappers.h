@@ -708,7 +708,7 @@ typedef unsigned gfp_t;
 /* struct kvec didn't exist before 2.6.8, this is an ugly
  * #define to work around it ... - jt */
 
-#ifndef KERNEL_HAS_KVEC
+#ifndef COMPAT_HAVE_KVEC
 #define kvec iovec
 #endif
 
