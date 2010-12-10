@@ -768,7 +768,7 @@ static inline struct proc_dir_entry *proc_create_data(const char *name,
 
 #endif
 
-#ifdef NEED_BLK_QUEUE_MAX_HW_SECTORS
+#ifndef COMPAT_HAVE_BLK_QUEUE_MAX_HW_SECTORS
 static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max)
 {
 	blk_queue_max_sectors(q, max);
