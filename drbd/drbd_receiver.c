@@ -3737,7 +3737,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 				goto out;
 			if (data_size <= (sizeof(*p) - sizeof(p->head))) {
 				dev_err(DEV, "ReportCBitmap packet too small (l:%u)\n", data_size);
-				return FAILED;
+				return false;
 			}
 			ret = decode_bitmap_c(mdev, p, &c);
 		} else {
