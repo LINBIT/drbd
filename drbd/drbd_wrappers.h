@@ -952,7 +952,7 @@ DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
 	({ init_completion(&work); work; })
 #endif
 
-#ifdef NEED_SCHEDULE_TIMEOUT_INTERR
+#ifndef COMPAT_HAVE_SCHEDULE_TIMEOUT_INTERR
 static inline signed long schedule_timeout_interruptible(signed long timeout)
 {
 	__set_current_state(TASK_INTERRUPTIBLE);
