@@ -537,7 +537,7 @@ static inline int drbd_crypto_is_hash(struct crypto_tfm *tfm)
 }
 
 
-#ifdef NEED_BACKPORT_OF_KZALLOC
+#ifndef COMPAT_HAVE_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
 	void *rv = kmalloc(size, flags);
@@ -546,6 +546,7 @@ static inline void *kzalloc(size_t size, int flags)
 
 	return rv;
 }
+#define COMPAT_HAVE_KZALLOC
 #endif
 
 /* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */

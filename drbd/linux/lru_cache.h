@@ -41,7 +41,7 @@
 #define kmem_cache kmem_cache_s
 #endif
 
-#ifdef NEED_BACKPORT_OF_KZALLOC
+#ifndef COMPAT_HAVE_KZALLOC
 static inline void *kzalloc(size_t size, int flags)
 {
 	void *rv = kmalloc(size, flags);
@@ -50,7 +50,7 @@ static inline void *kzalloc(size_t size, int flags)
 
 	return rv;
 }
-#undef NEED_BACKPORT_OF_KZALLOC
+#define COMPAT_HAVE_KZALLOC
 #endif
 
 /* } compatibility crap */
