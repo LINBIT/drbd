@@ -2250,7 +2250,7 @@ static struct cn_handler_struct cnd_table[] = {
 	[ P_new_c_uuid ]	= { &drbd_nl_new_c_uuid,	0 },
 };
 
-#ifdef KERNEL_HAS_CN_SKB_PARMS
+#ifdef COMPAT_HAVE_CN_NETLINK_SKB_PARMS
 STATIC void drbd_connector_callback(struct cn_msg *req, struct netlink_skb_parms *nsp)
 {
 #else
@@ -2273,7 +2273,7 @@ STATIC void drbd_connector_callback(void *data)
 		return;
 	}
 
-#ifdef KERNEL_HAS_CN_SKB_PARMS
+#ifdef COMPAT_HAVE_CN_NETLINK_SKB_PARMS
 	if (!cap_raised(nsp->eff_cap, CAP_SYS_ADMIN)) {
 		retcode = ERR_PERM;
 		goto fail;
@@ -2609,7 +2609,7 @@ int __init drbd_nl_init(void)
 		/* Try to catch incompatible callbacks at compile time,
 		 * otherwise it will just be a compiler _warning_,
 		 * but then BUG at runtime. */
-#ifdef KERNEL_HAS_CN_SKB_PARMS
+#ifdef COMPAT_HAVE_CN_NETLINK_SKB_PARMS
 		BUILD_BUG_ON(!__same_type(&cn_add_callback, cn_add_callback_req_nsp_fn));
 #else
 		BUILD_BUG_ON(!(
