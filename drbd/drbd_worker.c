@@ -39,7 +39,7 @@
 #include "drbd_req.h"
 #include "drbd_tracing.h"
 
-#ifdef HAVE_LINUX_SCATTERLIST_H
+#ifdef COMPAT_HAVE_SCATTERLIST_H
 /* 2.6.11 (suse 9.3, fc4) does not include requisites
  * from linux/scatterlist.h :( */
 #include <asm/scatterlist.h>
