@@ -3549,23 +3549,32 @@ STATIC int receive_sync_uuid(struct drbd_conf *mdev, enum drbd_packets cmd, unsi
 	return true;
 }
 
-enum receive_bitmap_ret { OK, DONE, FAILED };
-
-static enum receive_bitmap_ret
+/**
+ * receive_bitmap_plain
+ *
+ * Return 0 when done, 1 when another iteration is needed, and a negative error
+ * code upon failure.
+ */
+static int
 receive_bitmap_plain(struct drbd_conf *mdev, unsigned int data_size,
 		     unsigned long *buffer, struct bm_xfer_ctx *c)
 {
 	unsigned num_words = min_t(size_t, BM_PACKET_WORDS, c->bm_words - c->word_offset);
 	unsigned want = num_words * sizeof(long);
+	int err;
 
 	if (want != data_size) {
 		dev_err(DEV, "%s:want (%u) != data_size (%u)\n", __func__, want, data_size);
-		return FAILED;
+		return -EIO;
 	}
 	if (want == 0)
-		return DONE;
-	if (drbd_recv(mdev, buffer, want) != want)
-		return FAILED;
+		return 0;
+	err = drbd_recv(mdev, buffer, want);
+	if (err != want) {
+		if (err >= 0)
+			err = -EIO;
+		return err;
+	}
 
 	drbd_bm_merge_lel(mdev, c->word_offset, num_words, buffer);
 
@@ -3574,10 +3583,16 @@ receive_bitmap_plain(struct drbd_conf *mdev, unsigned int data_size,
 	if (c->bit_offset > c->bm_bits)
 		c->bit_offset = c->bm_bits;
 
-	return OK;
+	return 1;
 }
 
-static enum receive_bitmap_ret
+/**
+ * recv_bm_rle_bits
+ *
+ * Return 0 when done, 1 when another iteration is needed, and a negative error
+ * code upon failure.
+ */
+static int
 recv_bm_rle_bits(struct drbd_conf *mdev,
 		struct p_compressed_bm *p,
 		struct bm_xfer_ctx *c)
@@ -3597,18 +3612,18 @@ recv_bm_rle_bits(struct drbd_conf *mdev,
 
 	bits = bitstream_get_bits(&bs, &look_ahead, 64);
 	if (bits < 0)
-		return FAILED;
+		return -EIO;
 
 	for (have = bits; have > 0; s += rl, toggle = !toggle) {
 		bits = vli_decode_bits(&rl, look_ahead);
 		if (bits <= 0)
-			return FAILED;
+			return -EIO;
 
 		if (toggle) {
 			e = s + rl -1;
 			if (e >= c->bm_bits) {
 				dev_err(DEV, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
-				return FAILED;
+				return -EIO;
 			}
 			_drbd_bm_set_bits(mdev, s, e);
 		}
@@ -3618,14 +3633,14 @@ recv_bm_rle_bits(struct drbd_conf *mdev,
 				have, bits, look_ahead,
 				(unsigned int)(bs.cur.b - p->code),
 				(unsigned int)bs.buf_len);
-			return FAILED;
+			return -EIO;
 		}
 		look_ahead >>= bits;
 		have -= bits;
 
 		bits = bitstream_get_bits(&bs, &tmp, 64 - have);
 		if (bits < 0)
-			return FAILED;
+			return -EIO;
 		look_ahead |= tmp << have;
 		have += bits;
 	}
@@ -3633,10 +3648,16 @@ recv_bm_rle_bits(struct drbd_conf *mdev,
 	c->bit_offset = s;
 	bm_xfer_ctx_bit_to_word_offset(c);
 
-	return (s == c->bm_bits) ? DONE : OK;
+	return (s != c->bm_bits);
 }
 
-static enum receive_bitmap_ret
+/**
+ * decode_bitmap_c
+ *
+ * Return 0 when done, 1 when another iteration is needed, and a negative error
+ * code upon failure.
+ */
+static int
 decode_bitmap_c(struct drbd_conf *mdev,
 		struct p_compressed_bm *p,
 		struct bm_xfer_ctx *c)
@@ -3650,7 +3671,7 @@ decode_bitmap_c(struct drbd_conf *mdev,
 
 	dev_err(DEV, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
 	drbd_force_state(mdev, NS(conn, C_PROTOCOL_ERROR));
-	return FAILED;
+	return -EIO;
 }
 
 void INFO_bm_xfer_stats(struct drbd_conf *mdev,
@@ -3699,7 +3720,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 {
 	struct bm_xfer_ctx c;
 	void *buffer;
-	enum receive_bitmap_ret ret;
+	int err;
 	int ok = false;
 	struct p_header80 *h = &mdev->data.rbuf.header.h80;
 
@@ -3718,9 +3739,9 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 		.bm_words = drbd_bm_words(mdev),
 	};
 
-	do {
+	for(;;) {
 		if (cmd == P_BITMAP) {
-			ret = receive_bitmap_plain(mdev, data_size, buffer, &c);
+			err = receive_bitmap_plain(mdev, data_size, buffer, &c);
 		} else if (cmd == P_COMPRESSED_BITMAP) {
 			/* MAYBE: sanity check that we speak proto >= 90,
 			 * and the feature is enabled! */
@@ -3739,7 +3760,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 				dev_err(DEV, "ReportCBitmap packet too small (l:%u)\n", data_size);
 				goto out;
 			}
-			ret = decode_bitmap_c(mdev, p, &c);
+			err = decode_bitmap_c(mdev, p, &c);
 		} else {
 			dev_warn(DEV, "receive_bitmap: cmd neither ReportBitMap nor ReportCBitMap (is 0x%x)", cmd);
 			goto out;
@@ -3748,14 +3769,14 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 		c.packets[cmd == P_BITMAP]++;
 		c.bytes[cmd == P_BITMAP] += sizeof(struct p_header80) + data_size;
 
-		if (ret != OK)
+		if (err <= 0) {
+			if (err < 0)
+				goto out;
 			break;
-
+		}
 		if (!drbd_recv_header(mdev, &cmd, &data_size))
 			goto out;
-	} while (ret == OK);
-	if (ret == FAILED)
-		goto out;
+	}
 
 	INFO_bm_xfer_stats(mdev, "receive", &c);
 
