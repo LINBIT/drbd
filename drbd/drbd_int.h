@@ -1662,7 +1662,7 @@ extern void drbd_free_mdev(struct drbd_conf *mdev);
 extern int proc_details;
 
 /* drbd_req */
-extern int drbd_make_request_26(struct request_queue *q, struct bio *bio);
+extern int drbd_make_request(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(struct drbd_conf *mdev, struct drbd_request *req);
 extern int drbd_merge_bvec(struct request_queue *q,
 #ifdef HAVE_bvec_merge_data
