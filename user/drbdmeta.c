@@ -155,7 +155,11 @@ struct option metaopt[] = {
 #define MD_BM_OFFSET_07        (MD_AL_OFFSET_07 + MD_AL_MAX_SECT_07)
 #define MD_RESERVED_SECT_07    ( (uint64_t)(128ULL << 11) )
 #define MD_BM_MAX_BYTE_07      ( (uint64_t)(MD_RESERVED_SECT_07 - MD_BM_OFFSET_07)*512 )
+#if BITS_PER_LONG == 32
 #define MD_BM_MAX_BYTE_FLEX    ( (uint64_t)(1ULL << (32-3)) )
+#else
+#define MD_BM_MAX_BYTE_FLEX    ( (uint64_t)(1ULL << (38-3)) )
+#endif
 
 #define DEFAULT_BM_BLOCK_SIZE  (1<<12)
 
@@ -1063,7 +1067,11 @@ void re_initialize_md_offsets(struct format *cfg)
 		md_size_sect = (md_size_sect + 7) & ~7ULL;         /* align on 4K blocks */
 
 		if (md_size_sect > (MD_BM_MAX_BYTE_FLEX>>9)) {
-			fprintf(stderr, "Device too large. We only support up to ~16TB.\n");
+			char ppbuf[10];
+			fprintf(stderr, "Device too large. We only support up to %s.\n",
+					ppsize(ppbuf, MD_BM_MAX_BYTE_FLEX << (3+2)));
+			if (BITS_PER_LONG == 32)
+				fprintf(stderr, "Maybe try a 64bit arch?\n");
 			exit(10);
 		}
 		/* plus the "drbd meta data super block",

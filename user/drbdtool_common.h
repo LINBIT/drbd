@@ -2,6 +2,8 @@
 #define DRBDTOOL_COMMON_H
 
 #include "drbd_endian.h"
+#include <stdio.h>
+#include <unistd.h>
 #include <stdarg.h>
 #include <linux/major.h>
 
@@ -55,7 +57,7 @@ extern int dt_minor_of_dev(const char *device);
 extern int new_strtoll(const char *s, const char def_unit, unsigned long long *rv);
 extern unsigned long long m_strtoll(const char* s,const char def_unit);
 extern const char* make_optstring(struct option *options, char startc);
-extern char* ppsize(char* buf, size_t size);
+extern char* ppsize(char* buf, unsigned long long size);
 extern void dt_print_gc(const uint32_t* gen_cnt);
 extern void dt_pretty_print_gc(const uint32_t* gen_cnt);
 extern void dt_print_uuids(const uint64_t* uuid, unsigned int flags);

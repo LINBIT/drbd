@@ -45,16 +45,19 @@ int confirmed(const char *text)
 }
 
 
-char* ppsize(char* buf, size_t size)
+/* input size is expected to be in KB */
+char *ppsize(char *buf, unsigned long long size)
 {
-	// Needs 9 bytes at max.
-	static char units[] = { 'K','M','G','T' };
+	/* Needs 9 bytes at max including trailing NUL:
+	 * -1ULL ==> "16384 EB" */
+	static char units[] = { 'K', 'M', 'G', 'T', 'P', 'E' };
 	int base = 0;
-	while (size >= 10000 ) {
-		size = size >> 10;
+	while (size >= 10000 && base < sizeof(units)-1) {
+		/* shift + round */
+		size = (size >> 10) + !!(size & (1<<9));
 		base++;
 	}
-	sprintf(buf,"%lu %cB",(unsigned long)size,units[base]);
+	sprintf(buf, "%u %cB", (unsigned)size, units[base]);
 
 	return buf;
 }
