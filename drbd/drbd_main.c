@@ -1836,6 +1836,24 @@ int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 	return sent;
 }
 
+/**
+ * drbd_send_all  -  Send an entire buffer
+ *
+ * Returns 0 upon success and a negative error value otherwise.
+ */
+int drbd_send_all(struct drbd_tconn *tconn, struct socket *sock, void *buffer,
+		  size_t size, unsigned msg_flags)
+{
+	int err;
+
+	err = drbd_send(tconn, sock, buffer, size, msg_flags);
+	if (err < 0)
+		return err;
+	if (err != size)
+		return -EIO;
+	return 0;
+}
+
 #ifdef BD_OPS_USE_FMODE
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 #else
