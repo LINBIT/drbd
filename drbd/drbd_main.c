@@ -972,6 +972,14 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 		put_ldev(mdev);
 	}
 
+	/* D_CONSISTENT and D_OUTDATED vanish when we get connected */
+	if (ns.conn >= C_CONNECTED && ns.conn < C_AHEAD) {
+		if (ns.disk == D_CONSISTENT || ns.disk == D_OUTDATED)
+			ns.disk = D_UP_TO_DATE;
+		if (ns.pdsk == D_CONSISTENT || ns.pdsk == D_OUTDATED)
+			ns.pdsk = D_UP_TO_DATE;
+	}
+
 	/* Implications of the connection stat on the disk states */
 	disk_min = D_DISKLESS;
 	disk_max = D_UP_TO_DATE;
