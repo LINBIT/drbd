@@ -158,6 +158,7 @@ before-resync-source	{ DP; CP; return TK_HANDLER_OPTION;	}
 memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
 read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
 compression		{ DP; CP; return TK_PROXY_OPTION;       }
+plugin			{ DP; CP; return TK_PROXY_DELEGATE;     }
 out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
 {IPV6ADDR}		{ DP; CP; return TK_IPADDR6;		}

@@ -136,6 +136,7 @@ struct d_resource
   struct d_option* startup_options;
   struct d_option* handlers;
   struct d_option* proxy_options;
+  struct d_option* proxy_plugins;
   struct d_resource* next;
   struct d_name *become_primary_on;
   char *config_file; /* The config file this resource is define in.*/

@@ -292,6 +292,14 @@ static void derror(struct d_host_info *host, struct d_resource *res, char *text)
 		config_file, c_section_start, res->name, names_to_str(host->on_hosts), text);
 }
 
+void pdperror(char *text)
+{
+	config_valid = 0;
+	fprintf(stderr, "%s:%d: in proxy plugin section: %s.\n",
+		config_file, line, text);
+	exit(E_config_invalid);
+}
+
 static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *text)
 {
 	config_valid = 0;
@@ -1375,6 +1383,76 @@ void set_disk_in_res(struct d_resource *res)
 	}
 }
 
+void proxy_delegate(void *ctx)
+{
+	struct d_resource *res = (struct d_resource *)ctx;
+	int token;
+	struct d_option *options, *opt;
+	struct d_name *line, *word, **pnp;
+
+	opt = NULL;
+	token = yylex();
+	if (token != '{') {
+		fprintf(stderr,	"%s:%d: expected \"{\" after \"proxy\" keyword\n",
+				config_file, fline);
+		exit(E_config_invalid);
+	}
+
+	options = NULL;
+	while (1) {
+		pnp = &line;
+		while (1) {
+			token = yylex();
+			if (token == ';')
+				break;
+			if (token == '}') {
+				if (pnp == &line)
+					goto out;
+
+				fprintf(stderr,	"%s:%d: Missing \";\" before  \"}\"\n",
+					config_file, fline);
+				exit(E_config_invalid);
+			}
+
+			word = malloc(sizeof(struct d_name));
+			if (!word)
+				pdperror("out of memory.");
+			word->name = yylval.txt;
+			word->next = NULL;
+			*pnp = word;
+			pnp = &word->next;
+		}
+
+		opt = calloc(1, sizeof(struct d_option));
+		if (!opt)
+			pdperror("out of memory.");
+		opt->name = strdup(names_to_str(line));
+		options = APPEND(options, opt);
+		free_names(line);
+	}
+out:
+	res->proxy_plugins = options;
+}
+
+void parse_proxy_settings(struct d_resource *res, int check_proxy_token)
+{
+	int token;
+
+	if (check_proxy_token) {
+		token = yylex();
+		if (token != TK_PROXY)
+			pe_expected_got("proxy", token);
+	}
+
+	EXP('{');
+
+	res->proxy_options =
+		parse_options_d(TK_PROXY_SWITCH,
+				TK_PROXY_OPTION,
+				TK_PROXY_DELEGATE,
+				proxy_delegate, res);
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -1482,8 +1560,11 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_PROXY:
 			check_upr("proxy section", "%s:proxy", res->name);
 			EXP('{');
-			res->proxy_options =  parse_options(TK_PROXY_SWITCH,
-							    TK_PROXY_OPTION);
+			res->proxy_options =
+                            parse_options_d(TK_PROXY_SWITCH,
+					TK_PROXY_OPTION,
+					TK_PROXY_DELEGATE,
+					proxy_delegate, res);
 			break;
 		case TK_DEVICE:
 			check_upr("device statement", "%s:device", res->name);
