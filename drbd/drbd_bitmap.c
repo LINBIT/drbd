@@ -189,21 +189,6 @@ void drbd_bm_unlock(struct drbd_conf *mdev)
 	mutex_unlock(&b->bm_change);
 }
 
-#if 0
-#define catch_oob_access_start() do {	\
-	do {				\
-		if ((bm-p_addr) >= PAGE_SIZE/sizeof(long)) { \
-			printk(KERN_ALERT "drbd_bitmap.c:%u %s: p_addr:%p bm:%p %d\n", \
-					__LINE__ , __func__ , p_addr, bm, (bm-p_addr)); \
-			break;		\
-		}
-#define catch_oob_access_end()	\
-	} while (0); } while (0)
-#else
-#define catch_oob_access_start() do {
-#define catch_oob_access_end() } while (0)
-#endif
-
 /* we store some "meta" info about our pages in page->private */
 /* at a granularity of 4k storage per bitmap bit:
  * one peta byte storage: 1<<50 byte, 1<<38 * 4k storage blocks
@@ -513,20 +498,16 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 		 * to the long containing the last bit.
 		 * If mask == 0, bm already points to the word immediately
 		 * after the last (long word aligned) bit. */
-		catch_oob_access_start();
 		cleared = hweight_long(*bm & ~mask);
 		*bm &= mask;
-		catch_oob_access_end();
 		bm++;
 	}
 
 	if (BITS_PER_LONG == 32 && ((bm - p_addr) & 1) == 1) {
 		/* on a 32bit arch, we may need to zero out
 		 * a padding long to align with a 64bit remote */
-		catch_oob_access_start();
 		cleared += hweight_long(*bm);
 		*bm = 0;
-		catch_oob_access_end();
 	}
 	bm_unmap(p_addr);
 	return cleared;
@@ -553,18 +534,14 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 		 * to the long containing the last bit.
 		 * If mask == 0, bm already points to the word immediately
 		 * after the last (long word aligned) bit. */
-		catch_oob_access_start();
 		*bm |= ~mask;
-		catch_oob_access_end();
 		bm++;
 	}
 
 	if (BITS_PER_LONG == 32 && ((bm - p_addr) & 1) == 1) {
 		/* on a 32bit arch, we may need to zero out
 		 * a padding long to align with a 64bit remote */
-		catch_oob_access_start();
 		*bm = ~0UL;
-		catch_oob_access_end();
 	}
 	bm_unmap(p_addr);
 }
@@ -619,14 +596,11 @@ STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 		idx = bm_word_to_page_idx(b, offset);
 		p_addr = bm_map_pidx(b, idx);
 		bm = p_addr + MLPP(offset);
-		catch_oob_access_start();
 		if (bm+do_now > p_addr + LWPP) {
 			printk(KERN_ALERT "drbd: BUG BUG BUG! p_addr:%p bm:%p do_now:%d\n",
 			       p_addr, bm, (int)do_now);
-			break; /* breaks to after catch_oob_access_end() only! */
-		}
-		memset(bm, c, do_now * sizeof(long));
-		catch_oob_access_end();
+		} else
+			memset(bm, c, do_now * sizeof(long));
 		bm_unmap(p_addr);
 		bm_set_page_need_writeout(b->bm_pages[idx]);
 		offset += do_now;
@@ -841,12 +815,10 @@ void drbd_bm_merge_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 		bm = p_addr + MLPP(offset);
 		offset += do_now;
 		while (do_now--) {
-			catch_oob_access_start();
 			bits = hweight_long(*bm);
 			word = *bm | *buffer++;
 			*bm++ = word;
 			b->bm_set += hweight_long(word) - bits;
-			catch_oob_access_end();
 		}
 		bm_unmap(p_addr);
 		bm_set_page_need_writeout(b->bm_pages[idx]);
@@ -890,11 +862,8 @@ void drbd_bm_get_lel(struct drbd_conf *mdev, size_t offset, size_t number,
 			p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, offset));
 			bm = p_addr + MLPP(offset);
 			offset += do_now;
-			while (do_now--) {
-				catch_oob_access_start();
+			while (do_now--)
 				*buffer++ = *bm++;
-				catch_oob_access_end();
-			}
 			bm_unmap(p_addr);
 		}
 	}
@@ -1563,11 +1532,8 @@ int drbd_bm_e_weight(struct drbd_conf *mdev, unsigned long enr)
 		int n = e-s;
 		p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, s));
 		bm = p_addr + MLPP(s);
-		while (n--) {
-			catch_oob_access_start();
+		while (n--)
 			count += hweight_long(*bm++);
-			catch_oob_access_end();
-		}
 		bm_unmap(p_addr);
 	} else {
 		dev_err(DEV, "start offset (%d) too large in drbd_bm_e_weight\n", s);
@@ -1607,10 +1573,8 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_conf *mdev, unsigned long al_enr)
 		p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, s));
 		bm = p_addr + MLPP(s);
 		while (i--) {
-			catch_oob_access_start();
 			count += hweight_long(*bm);
 			*bm = -1UL;
-			catch_oob_access_end();
 			bm++;
 		}
 		bm_unmap(p_addr);
