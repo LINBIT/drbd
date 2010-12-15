@@ -30,6 +30,9 @@
 #include <asm/kmap_types.h>
 #include "drbd_int.h"
 
+/* See the ifdefs and comments inside that header file.
+ * On recent kernels this is not needed. */
+#include "compat/bitops.h"
 
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
