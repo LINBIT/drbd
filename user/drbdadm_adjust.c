@@ -32,6 +32,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
@@ -215,21 +217,74 @@ static int do_proxy_reconf(struct d_resource *res, const char *cmd)
 	return rv;
 }
 
+#define MAX_PLUGINS (10)
+#define MAX_PLUGIN_NAME (16)
+
+/* The new name is appended to the alist. */
+int _is_plugin_in_list(char *string,
+		char slist[MAX_PLUGINS][MAX_PLUGIN_NAME],
+		char alist[MAX_PLUGINS][MAX_PLUGIN_NAME],
+		int list_len)
+{
+	int word_len, i;
+	char *copy;
+
+	for(word_len=0; string[word_len]; word_len++)
+		if (isspace(string[word_len]))
+			break;
+
+	if (word_len+1 >= MAX_PLUGIN_NAME) {
+		fprintf(stderr, "Wrong proxy plugin name %*.*s",
+				word_len, word_len, string);
+		exit(E_config_invalid);
+	}
+
+	copy = alist[list_len];
+	strncpy(copy, string, word_len);
+	copy[word_len] = 0;
+
+
+	for(i=0; i<list_len && *slist; i++) {
+		if (strcmp(slist[i], copy) == 0)
+			return 1;
+	}
+
+	/* Not found, insert into list. */
+	if (list_len >= MAX_PLUGINS) {
+		fprintf(stderr, "Too many proxy plugins.");
+		exit(E_config_invalid);
+	}
+
+	return 0;
+}
+
 
 static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 {
 	int reconn = 0;
 	struct d_option* res_o, *run_o;
+	unsigned long long v1, v2, minimum;
+	char *plugin_changes[MAX_PLUGINS], *cp, *conn_name;
+	/* It's less memory usage when we're storing char[]. malloc overhead for
+	 * the few bytes + pointers is much more. */
+	char p_res[MAX_PLUGINS][MAX_PLUGIN_NAME],
+		 p_run[MAX_PLUGINS][MAX_PLUGIN_NAME];
+	int used, i, re_do;
 
 	reconn = 0;
+
 
 	find_option_in_resources("memlimit",
 			res->proxy_options, &res_o,
 			running->proxy_options, &run_o,
 			NULL);
-	/* TODO: convert both to integers, and compare (with some є [epsilon])? */
+	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
+	v2 = run_o ? m_strtoll(run_o->value, 1) : 0;
+	minimum = v1 < v2 ? v1 : v2;
+	/* We allow an є [epsilon] of 2%, so that small (rounding) deviations do
+	 * not cause the connection to be re-established. */
 	if (res_o &&
-			(!run_o || strcmp(res_o->value, run_o->value) != 0))
+			(!run_o || abs(v1-v2)/(float)minimum > 0.02))
 	{
 redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
@@ -246,14 +301,15 @@ redo_whole_conn:
 
 	res_o = res->proxy_plugins;
 	run_o = running->proxy_plugins;
-	while (1)
+	used = 0;
+	conn_name = proxy_connection_name(res);
+	for(i=0; i<MAX_PLUGINS; i++)
 	{
 		if (used >= sizeof(plugin_changes)-1) {
 			fprintf(stderr, "Too many proxy plugin changes");
 			exit(E_config_invalid);
 		}
 		/* Now we can be sure that we can store another pointer. */
-
 
 		if (!res_o) {
 			if (run_o) {
@@ -265,29 +321,54 @@ redo_whole_conn:
 				/* Both at the end? ok, quit loop */
 			}
 			break;
-
-		if (!res_o || !run_o ||
-				strcmp(res_o->value, run_o->value) != 0)
-		{
-			schedule_dcmd(do_proxy_conn_plugins, res, NULL, 2);
-			break;
 		}
+
+		/* res_o != NULL. */
+
+		if (!run_o) {
+			p_run[i][0] = 0;
+			if (_is_plugin_in_list(res_o->value, p_run, p_res, i)) {
+				/* Current plugin was already active, just at another position.
+				 * Redo the whole connection. */
+				goto redo_whole_conn;
+			}
+
+			/* More configured than running - just add it, if it's not already
+			 * somewhere else. */
+			plugin_changes[used++] = res_o->value;
+		} else {
+			/* If we get here, both lists have been filled in parallel, so we
+			 * can simply use the common counter. */
+			re_do = _is_plugin_in_list(res_o->value, p_run, p_res, i) ||
+				_is_plugin_in_list(run_o->value, p_res, p_run, i);
+			if (re_do) {
+				/* Plugin(s) were moved, not simple reconfigured.
+				 * Re-do the whole connection. */
+				goto redo_whole_conn;
+			}
+
+			/* TODO: We don't (yet) account for possible different ordering of
+			 * the parameters to the plugin.
+			 *    plugin A 1 B 2
+			 * should be treated as equal to
+			 *    plugin B 2 A 1. */
+			if (strcmp(run_o->value, res_o->value) != 0) {
+				/* Either a different plugin, or just different settings
+				 * - plugin can be overwritten.  */
+				plugin_changes[used++] = res_o->value;
+			}
+		}
+
+
+		if (res_o)
+			res_o = res_o->next;
+		if (run_o)
+			run_o = run_o->next;
 	}
 
-#if 0
-	/* TODO: loglevel gets reported by connection, but works only globally */
-	find_option_in_resources("loglevel",
-			res->proxy_options, &res_o,
-			running->proxy_options, &run_o,
-			NULL);
-	if (res_o &&
-			(!run_o || strcmp(res_o->value, run_o->value) != 0))
-	{
-		asprintf(&str, "set loglevel %s", res_o->value);
-		schedule_dcmd2(NULL, drbd_proxy_ctl, res, str, 1);
-	}
-#endif
-
+	/* change only a few plugin settings. */
+	for(i=0; i<used; i++)
+		schedule_dcmd(do_proxy_reconf, res, plugin_changes[i], 2);
 
 	return reconn;
 }
