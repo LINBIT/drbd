@@ -815,7 +815,16 @@ typedef _Bool                   bool;
 #define DRBD_REQ_FLUSH		REQ_FLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_DISCARD	REQ_DISCARD
+/* REQ_HARDBARRIER has been around for a long time,
+ * without being directly related to bi_rw.
+ * so the ifdef is only usful inside the ifdef REQ_FLUSH!
+ * commit 7cc0158 (v2.6.36-rc1) made it a bi_rw flag, ...  */
+#ifdef REQ_HARDBARRIER
 #define DRBD_REQ_HARDBARRIER	REQ_HARDBARRIER
+#else
+/* ... but REQ_HARDBARRIER was removed again in 02e031c (v2.6.37-rc4). */
+#define DRBD_REQ_HARDBARRIER	0
+#endif
 #else
 
 #define DRBD_REQ_FLUSH		(1UL << BIO_RW_BARRIER)
@@ -824,11 +833,9 @@ typedef _Bool                   bool;
 #define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
 #define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
 
-#ifdef BIO_RW_DISCARD
-#define DRBD_REQ_DISCARD	(1UL << BIO_RW_DISCARD)
-#else
+/* we don't support DISCARDS yet, anyways.
+ * cannot test on defined(BIO_RW_DISCARD), it may be an enum */
 #define DRBD_REQ_DISCARD	0
-#endif
 #endif
 
 /* this results in:
