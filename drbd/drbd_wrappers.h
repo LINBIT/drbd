@@ -783,6 +783,10 @@ static inline int atomic_add_unless(atomic_t *v, int a, int u)
 
 #ifdef NEED_BOOL_TYPE
 typedef _Bool                   bool;
+enum {
+	false = 0,
+	true = 1
+};
 #endif
 
 /* REQ_* and BIO_RW_* flags have been moved around in the tree,
