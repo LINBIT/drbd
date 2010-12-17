@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.10rc1 (api:88/proto:86-96)
+--------
+ * Fixed a subtle performance degradation that might affected synchronous
+   work loads (databases) (introduced in 8.3.9)
+ * Fixed a locking regression (introduced in 8.3.9)
+ * Fixed on-no-data-accessible for Primary, SyncTarget nodes (Bugz 332)
+ * Progress bar for online verify
+ * Optionally use the resync speed control loop code for the online verify
+   process as well
+ * Added code to detect false positives when using data-integrity-alg
+ * New config option on-congestion and new connection states ahead and behind
+ * Reduced IO latencies during resync, bitmap exchange and temporal states
+ * Only build a single kernel module package on distributions that provide
+   the infrastructure to have kernel version independent modules
+ * On 64bit architectures allow device sizes up to one petabyte
+
 8.3.9 (api:88/proto:86-95)
 --------
  * Fix for possible deadlock on IO error during resync
