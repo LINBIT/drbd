@@ -1381,7 +1381,7 @@ extern int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 extern int drbd_send_protocol(struct drbd_conf *mdev);
 extern int drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev);
-extern int drbd_send_sync_uuid(struct drbd_conf *mdev, u64 val);
+extern int drbd_gen_and_send_sync_uuid(struct drbd_conf *mdev);
 extern int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags flags);
 #define drbd_send_state(m) drbd_send_state_(m, __func__ , __LINE__ )
 extern int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line);
