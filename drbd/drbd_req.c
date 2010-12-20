@@ -802,7 +802,7 @@ STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int s
 	return 0 == drbd_bm_count_bits(mdev, sbnr, ebnr);
 }
 
-STATIC int drbd_should_do_remote(struct drbd_conf *mdev)
+STATIC bool drbd_should_do_remote(struct drbd_conf *mdev)
 {
 	union drbd_state s = mdev->state;
 
@@ -810,13 +810,17 @@ STATIC int drbd_should_do_remote(struct drbd_conf *mdev)
 		(s.pdsk >= D_INCONSISTENT &&
 		 s.conn >= C_WF_BITMAP_T &&
 		 s.conn < C_AHEAD);
+	/* Before proto 96 that was >= CONNECTED instead of >= C_WF_BITMAP_T.
+	   That is equivalent since before 96 IO was frozen in the C_WF_BITMAP*
+	   states. */
 }
-STATIC int drbd_should_send_oos(struct drbd_conf *mdev)
+STATIC bool drbd_should_send_oos(struct drbd_conf *mdev)
 {
 	union drbd_state s = mdev->state;
 
-	return s.pdsk >= D_INCONSISTENT &&
-		(s.conn == C_AHEAD || s.conn == C_WF_BITMAP_S);
+	return s.conn == C_AHEAD || s.conn == C_WF_BITMAP_S;
+	/* pdsk = D_INCONSISTENT as a consequence. Protocol 96 check not necessary
+	   since we enter state C_AHEAD only if proto >= 96 */
 }
 
 STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
