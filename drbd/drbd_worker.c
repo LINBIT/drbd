@@ -202,14 +202,15 @@ BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error)
 	int is_write = bio_data_dir(bio) == WRITE;
 
 	BIO_ENDIO_FN_START;
-	if (error)
+	if (error && DRBD_ratelimit(5*HZ, 5))
 		dev_warn(DEV, "%s: error=%d s=%llus\n",
 				is_write ? "write" : "read", error,
 				(unsigned long long)e->sector);
 	if (!error && !uptodate) {
-		dev_warn(DEV, "%s: setting error to -EIO s=%llus\n",
-				is_write ? "write" : "read",
-				(unsigned long long)e->sector);
+		if (DRBD_ratelimit(5*HZ, 5))
+			dev_warn(DEV, "%s: setting error to -EIO s=%llus\n",
+					is_write ? "write" : "read",
+					(unsigned long long)e->sector);
 		/* strange behavior of some lower level drivers...
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?! */
