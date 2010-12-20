@@ -31,6 +31,7 @@
 
 #include <linux/bio.h>
 #include <linux/slab.h>
+#include <linux/completion.h>
 
 /* for the proc_create wrapper */
 #include <linux/proc_fs.h>
@@ -897,6 +898,10 @@ NOTE: DISCARDs likely need some work still.  We should actually never see
 DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
 */
 
+#ifndef COMPLETION_INITIALIZER_ONSTACK
+#define COMPLETION_INITIALIZER_ONSTACK(work) \
+	({ init_completion(&work); work; })
+#endif
 
 #ifdef NEED_SCHEDULE_TIMEOUT_INTERR
 static inline signed long schedule_timeout_interruptible(signed long timeout)
