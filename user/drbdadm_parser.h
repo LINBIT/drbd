@@ -131,8 +131,10 @@ typedef struct YYSTYPE {
 
 extern yystype yylval;
 extern char* yytext;
+extern FILE* yyin;
 
 /* avoid compiler warnings about implicit declaration */
 int yylex(void);
 void my_yypush_buffer_state(FILE *f);
 void yypop_buffer_state (void );
+void yyrestart(FILE *input_file);

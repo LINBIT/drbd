@@ -1441,8 +1441,10 @@ void parse_proxy_settings(struct d_resource *res, int flags)
 	if (flags & PARSER_CHECK_PROXY_KEYWORD) {
 		token = yylex();
 		if (token != TK_PROXY) {
-			if (flags & PARSER_STOP_IF_INVALID)
+			if (flags & PARSER_STOP_IF_INVALID) {
+				yyrestart(yyin); /* flushes flex's buffers */
 				return;
+			}
 
 			pe_expected_got("proxy", token);
 		}
