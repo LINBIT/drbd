@@ -1931,13 +1931,17 @@ int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name)
 
 	counter = 0;
 	opt = res->proxy_plugins;
-	while (1) {
-		argv[NA(argc)] = "-c";
-		ssprintf(argv[NA(argc)], "set plugin %s %d %s",
-			 conn_name, counter, opt ? opt->value : "END");
-		if (!opt) break;
-		opt = opt->next;
-		counter ++;
+	/* Don't send the "set plugin ... END" line if no plugins are defined 
+	 * - that's incompatible with the drbd proxy version 1. */
+	if (opt) {
+		while (1) {
+			argv[NA(argc)] = "-c";
+			ssprintf(argv[NA(argc)], "set plugin %s %d %s",
+					conn_name, counter, opt ? opt->name : "END");
+			if (!opt) break;
+			opt = opt->next;
+			counter ++;
+		}
 	}
 
 	argv[NA(argc)] = 0;
