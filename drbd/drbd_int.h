@@ -126,12 +126,6 @@ struct drbd_conf;
 # define STATIC static
 #endif
 
-#ifdef PARANOIA
-# define PARANOIA_BUG_ON(x) BUG_ON(x)
-#else
-# define PARANOIA_BUG_ON(x)
-#endif
-
 /* upstream kernel wants us to use dev_warn(), ...
  * dev_printk() expects to be presented a struct device *;
  * in older kernels, (<= 2.6.24), there is nothing suitable there.

@@ -544,7 +544,9 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	int align, queued, sndbuf;
 	int i = 0;
 
-	PARANOIA_BUG_ON(w != &mdev->resync_work);
+#ifdef PARANOIA
+	BUG_ON(w != &mdev->resync_work);
+#endif
 
 	if (unlikely(cancel))
 		return 1;
