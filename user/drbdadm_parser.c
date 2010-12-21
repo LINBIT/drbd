@@ -1434,7 +1434,7 @@ out:
 	res->proxy_plugins = options;
 }
 
-void parse_proxy_settings(struct d_resource *res, int flags)
+int parse_proxy_settings(struct d_resource *res, int flags)
 {
 	int token;
 
@@ -1443,7 +1443,7 @@ void parse_proxy_settings(struct d_resource *res, int flags)
 		if (token != TK_PROXY) {
 			if (flags & PARSER_STOP_IF_INVALID) {
 				yyrestart(yyin); /* flushes flex's buffers */
-				return;
+				return 1;
 			}
 
 			pe_expected_got("proxy", token);
@@ -1457,6 +1457,8 @@ void parse_proxy_settings(struct d_resource *res, int flags)
 				TK_PROXY_OPTION,
 				TK_PROXY_DELEGATE,
 				proxy_delegate, res);
+
+	return 0;
 }
 
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)

@@ -204,7 +204,7 @@ extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
 extern char *proxy_connection_name(struct d_resource *res);
-void parse_proxy_settings(struct d_resource *res, int check_proxy_token);
+int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
 /* conn_name is optional and mostly for compatibility with dcmd */
 int do_proxy_conn_up(struct d_resource *res, const char *conn_name);
 int do_proxy_conn_down(struct d_resource *res, const char *conn_name);

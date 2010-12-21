@@ -411,7 +411,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	int pid,argc, i;
 	struct d_resource* running;
 	int do_attach=0,do_connect=0,do_syncer=0;
-	int have_disk=0,have_net=0;
+	int have_disk=0,have_net=0,can_do_proxy=1;
 	char config_file_dummy[250], *conn_name, show_conn[128];
 
 	/* disable check_uniq, so it won't interfere
@@ -461,7 +461,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 		/* actually parse "drbd-proxy-ctl show" output */
 		yyin = m_popen(&pid,argv);
-		parse_proxy_settings(running,
+		can_do_proxy = !parse_proxy_settings(running,
 				PARSER_CHECK_PROXY_KEYWORD | PARSER_STOP_IF_INVALID);
 		fclose(yyin);
 
@@ -479,7 +479,8 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);
 	do_connect |= !proto_equal(res,running);
-	if (res->me->proxy)
+	/* No adjust support for drbd proxy version 1. */
+	if (res->me->proxy && can_do_proxy)
 		do_connect |= proxy_reconf(res,running);
 	have_net = (running->protocol != NULL);
 
