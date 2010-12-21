@@ -326,7 +326,7 @@ redo_whole_conn:
 
 		if (!run_o) {
 			p_run[i][0] = 0;
-			if (_is_plugin_in_list(res_o->value, p_run, p_res, i)) {
+			if (_is_plugin_in_list(res_o->name, p_run, p_res, i)) {
 				/* Current plugin was already active, just at another position.
 				 * Redo the whole connection. */
 				goto redo_whole_conn;
@@ -334,12 +334,13 @@ redo_whole_conn:
 
 			/* More configured than running - just add it, if it's not already
 			 * somewhere else. */
-			plugin_changes[used++] = res_o->value;
+			asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
+			plugin_changes[used++] = cp;
 		} else {
 			/* If we get here, both lists have been filled in parallel, so we
 			 * can simply use the common counter. */
-			re_do = _is_plugin_in_list(res_o->value, p_run, p_res, i) ||
-				_is_plugin_in_list(run_o->value, p_res, p_run, i);
+			re_do = _is_plugin_in_list(res_o->name, p_run, p_res, i) ||
+				_is_plugin_in_list(run_o->name, p_res, p_run, i);
 			if (re_do) {
 				/* Plugin(s) were moved, not simple reconfigured.
 				 * Re-do the whole connection. */
@@ -351,10 +352,11 @@ redo_whole_conn:
 			 *    plugin A 1 B 2
 			 * should be treated as equal to
 			 *    plugin B 2 A 1. */
-			if (strcmp(run_o->value, res_o->value) != 0) {
+			if (strcmp(run_o->name, res_o->name) != 0) {
 				/* Either a different plugin, or just different settings
 				 * - plugin can be overwritten.  */
-				plugin_changes[used++] = res_o->value;
+				asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
+				plugin_changes[used++] = cp;
 			}
 		}
 
