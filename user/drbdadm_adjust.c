@@ -442,31 +442,32 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	set_peer_in_resource(running, 0);
 
 
-	/* Parse proxy settings */
-	line = 1;
-	conn_name = proxy_connection_name(res);
-	i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", conn_name);
-	if (i>= sizeof(show_conn)-1)
-	{
-		fprintf(stderr,"connection name too long");
-		exit(E_thinko);
+	/* Parse proxy settings, if this host has a proxy definition */
+	if (res->me->proxy) {
+		line = 1;
+		conn_name = proxy_connection_name(res);
+		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", conn_name);
+		if (i>= sizeof(show_conn)-1) {
+			fprintf(stderr,"connection name too long");
+			exit(E_thinko);
+		}
+		sprintf(config_file_dummy,"drbd-proxy-ctl -c '%s'", show_conn);
+		config_file = config_file_dummy;
+
+		argc=0;
+		argv[argc++]=drbd_proxy_ctl;
+		argv[argc++]="-c";
+		argv[argc++]=show_conn;
+		argv[argc++]=0;
+
+		/* actually parse "drbd-proxy-ctl show" output */
+		yyin = m_popen(&pid,argv);
+		yyrestart(yyin);
+		parse_proxy_settings(running, 1);
+		fclose(yyin);
+
+		waitpid(pid,0,0);
 	}
-	sprintf(config_file_dummy,"drbd-proxy-ctl -c '%s'", show_conn);
-	config_file = config_file_dummy;
-
-	argc=0;
-	argv[argc++]=drbd_proxy_ctl;
-	argv[argc++]="-c";
-	argv[argc++]=show_conn;
-	argv[argc++]=0;
-
-	/* actually parse drbdsetup show output */
-	yyin = m_popen(&pid,argv);
-	yyrestart(yyin);
-	parse_proxy_settings(running, 1);
-	fclose(yyin);
-
-	waitpid(pid,0,0);
 
 
 	do_attach  = !opts_equal(res->disk_options, running->disk_options);
@@ -479,7 +480,8 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);
 	do_connect |= !proto_equal(res,running);
-	do_connect |= proxy_reconf(res,running);
+	if (res->me->proxy)
+		do_connect |= proxy_reconf(res,running);
 	have_net = (running->protocol != NULL);
 
 	do_syncer = !opts_equal(res->sync_options, running->sync_options);
