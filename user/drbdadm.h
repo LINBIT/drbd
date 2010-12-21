@@ -269,3 +269,8 @@ extern int soi;
   };					      \
   _l;					      \
 })
+
+
+#define PARSER_CHECK_PROXY_KEYWORD (1)
+#define PARSER_STOP_IF_INVALID (2)
+

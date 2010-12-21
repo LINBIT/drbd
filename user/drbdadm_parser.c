@@ -1434,14 +1434,18 @@ out:
 	res->proxy_plugins = options;
 }
 
-void parse_proxy_settings(struct d_resource *res, int check_proxy_token)
+void parse_proxy_settings(struct d_resource *res, int flags)
 {
 	int token;
 
-	if (check_proxy_token) {
+	if (flags & PARSER_CHECK_PROXY_KEYWORD) {
 		token = yylex();
-		if (token != TK_PROXY)
+		if (token != TK_PROXY) {
+			if (flags & PARSER_STOP_IF_INVALID)
+				return;
+
 			pe_expected_got("proxy", token);
+		}
 	}
 
 	EXP('{');

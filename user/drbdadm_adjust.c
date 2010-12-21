@@ -463,7 +463,8 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 		/* actually parse "drbd-proxy-ctl show" output */
 		yyin = m_popen(&pid,argv);
 		yyrestart(yyin);
-		parse_proxy_settings(running, 1);
+		parse_proxy_settings(running,
+				PARSER_CHECK_PROXY_KEYWORD | PARSER_STOP_IF_INVALID);
 		fclose(yyin);
 
 		waitpid(pid,0,0);
