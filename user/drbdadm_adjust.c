@@ -194,7 +194,8 @@ static void find_option_in_resources(char *name,
 	va_list va;
 
 	va_start(va, opt);
-	while (list && opt) {
+	/* We need to keep setting *opt to NULL, even if a list == NULL. */
+	while (list || opt) {
 		while (list) {
 			if (strcmp(list->name, name) == 0)
 				break;
@@ -277,7 +278,7 @@ static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 	find_option_in_resources("memlimit",
 			res->proxy_options, &res_o,
 			running->proxy_options, &run_o,
-			NULL);
+			NULL, NULL);
 	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
 	v2 = run_o ? m_strtoll(run_o->value, 1) : 0;
 	minimum = v1 < v2 ? v1 : v2;
