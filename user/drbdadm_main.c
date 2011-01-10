@@ -45,6 +45,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <time.h>
+#include "linux/drbd_limits.h"
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 
@@ -1095,10 +1096,14 @@ static int sh_mod_parms(struct d_resource *res __attribute((unused)),
 {
 	int mc = global_options.minor_count;
 
-	if (mc == 0)
+	if (mc == 0) {
 		mc = highest_minor + 11;
-	if (mc < 32)
-		mc = 32;
+		if (mc > DRBD_MINOR_COUNT_MAX)
+			mc = DRBD_MINOR_COUNT_MAX;
+
+		if (mc < DRBD_MINOR_COUNT_DEF)
+			mc = DRBD_MINOR_COUNT_DEF;
+	}
 	printf("minor_count=%d\n", mc);
 	return 0;
 }
