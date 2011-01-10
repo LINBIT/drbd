@@ -3111,8 +3111,10 @@ int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
 	/* this is first, so that lk-bdev-info files are removed/updated
 	 * if we find valid meta data in the expected place. */
 	if (err == VALID_MD_FOUND) {
+		/* Do not clutter the output of the init script
 		printf("Found valid meta data in the expected location, %llu bytes into %s.\n",
-			(unsigned long long)cfg->md_offset, cfg->md_device_name);
+		       (unsigned long long)cfg->md_offset, cfg->md_device_name);
+		*/
 		/* create, delete or update the last known info */
 		err = lk_bdev_load(cfg->minor, &cfg->lk_bd);
 		if (cfg->md_index != DRBD_MD_INDEX_FLEX_INT)
