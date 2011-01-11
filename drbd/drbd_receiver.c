@@ -381,6 +381,10 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	e->size = data_size;
 	e->flags = 0;
 	e->sector = sector;
+	/*
+	 * The block_id is opaque to the receiver.  It is not endianness
+	 * converted, and sent back to the sender unchanged.
+	 */
 	e->block_id = id;
 
 	trace_drbd_ee(mdev, e, "allocated");
