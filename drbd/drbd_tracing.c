@@ -554,7 +554,7 @@ static void probe_drbd_packet(struct drbd_conf *mdev, struct socket *sock,
 	char tmp[300];
 	union drbd_state m, v;
 
-	cmd = be16_to_cpu(p->header.h80.magic == BE_DRBD_MAGIC ?
+	cmd = be16_to_cpu(p->header.h80.magic == cpu_to_be32(DRBD_MAGIC) ?
 			  p->header.h80.command : p->header.h95.command);
 
 	switch (cmd) {
