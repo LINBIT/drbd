@@ -49,9 +49,12 @@ BuildRequires: udev
 %if %{with pacemaker}
 Requires: %{name}-pacemaker = %{version}
 %endif
-%if %{with rgmanager}
-Requires: %{name}-rgmanager = %{version}
-%endif
+## %if %{with rgmanager}
+## ## No.
+## ## We don't want to annoy the majority of our userbase on pacemaker
+## ## by pulling in the full rgmanager stack via drbd-rgmanager as well.
+## Requires: %{name}-rgmanager = %{version}
+## %endif
 %if %{with heartbeat}
 Requires: %{name}-heartbeat = %{version}
 %endif
