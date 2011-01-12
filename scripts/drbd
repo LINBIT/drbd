@@ -146,6 +146,21 @@ drbd_pretty_status()
 	) | column -t
 }
 
+# Try to settle regardless of udev version or presence,
+# so "/etc/init.d/drbd stop" is able to rmmod, without interfering
+# temporary module references caused by udev scanning the devices.
+# But don't wait too long.
+_udev_settle()
+{
+	if udevadm version ; then
+		# ok, we have udevadm, use it.
+		udevadm settle --timeout=5
+	else
+		# if udevsettle is not there,
+		# no matter.
+		udevsettle --timeout=5
+	fi
+}
 
 case "$1" in
     start)
@@ -193,6 +208,7 @@ case "$1" in
 			esac
 			$DRBDSETUP "$d" down
 		done
+		_udev_settle &> /dev/null
 		$RMMOD drbd
 	fi
 	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
