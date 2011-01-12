@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.10rc1 (api:88/proto:86-96)
+8.3.10rc2 (api:88/proto:86-96)
 --------
  * Fixed a subtle performance degradation that might affected synchronous
    work loads (databases) (introduced in 8.3.9)
