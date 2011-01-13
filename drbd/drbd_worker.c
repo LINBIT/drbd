@@ -100,8 +100,6 @@ void drbd_endio_read_sec_final(struct drbd_epoch_entry *e) __releases(local)
 	unsigned long flags = 0;
 	struct drbd_conf *mdev = e->mdev;
 
-	D_ASSERT(e->block_id != ID_VACANT);
-
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->read_cnt += e->size >> 9;
 	list_del(&e->w.list);
@@ -130,7 +128,7 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 	struct drbd_conf *mdev = e->mdev;
 	sector_t e_sector;
 	int do_wake;
-	int is_syncer_req;
+	u64 block_id;
 	int do_al_complete_io;
 
 	/* if this is a failed barrier request, disable use of barriers,
@@ -148,15 +146,13 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 		return;
 	}
 
-	D_ASSERT(e->block_id != ID_VACANT);
-
 	/* after we moved e to done_ee,
 	 * we may no longer access it,
 	 * it may be freed/reused already!
 	 * (as soon as we release the req_lock) */
 	e_sector = e->sector;
 	do_al_complete_io = e->flags & EE_CALL_AL_COMPLETE_IO;
-	is_syncer_req = is_syncer_block_id(e->block_id);
+	block_id = e->block_id;
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->writ_cnt += e->size >> 9;
@@ -170,15 +166,13 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 	 * done from "drbd_process_done_ee" within the appropriate w.cb
 	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
 
-	do_wake = is_syncer_req
-		? list_empty(&mdev->sync_ee)
-		: list_empty(&mdev->active_ee);
+	do_wake = list_empty(block_id == ID_SYNCER ? &mdev->sync_ee : &mdev->active_ee);
 
 	if (test_bit(__EE_WAS_ERROR, &e->flags))
 		__drbd_chk_io_error(mdev, false);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	if (is_syncer_req)
+	if (block_id == ID_SYNCER)
 		drbd_rs_complete_io(mdev, e_sector);
 
 	if (do_wake)

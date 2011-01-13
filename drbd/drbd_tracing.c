@@ -538,7 +538,7 @@ do { \
 
 STATIC char *_dump_block_id(u64 block_id, char *buff)
 {
-	if (is_syncer_block_id(block_id))
+	if (block_id == ID_SYNCER)
 		strcpy(buff, "SyncerId");
 	else
 		sprintf(buff, "%llx", (unsigned long long)block_id);
