@@ -1723,7 +1723,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packets cmd, un
 	if (get_ldev(mdev)) {
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding put_ldev done below on error,
-		 * or in drbd_endio_write_sec. */
+		 * or in drbd_endio_sec. */
 		ok = recv_resync_read(mdev, sector, data_size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -1896,7 +1896,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 	/* get_ldev(mdev) successful.
 	 * Corresponding put_ldev done either below (on various errors),
-	 * or in drbd_endio_write_sec, if we successfully submit the data at
+	 * or in drbd_endio_sec, if we successfully submit the data at
 	 * the end of this function. */
 
 	sector = be64_to_cpu(p->sector);
