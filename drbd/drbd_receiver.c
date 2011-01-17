@@ -4007,9 +4007,6 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 
 	if (mdev->state.conn == C_STANDALONE)
 		return;
-	if (mdev->state.conn >= C_WF_CONNECTION)
-		dev_err(DEV, "ASSERT FAILED cstate = %s, expected < WFConnection\n",
-				drbd_conn_str(mdev->state.conn));
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&mdev->asender);
