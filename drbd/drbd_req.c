@@ -802,27 +802,6 @@ STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int s
 	return 0 == drbd_bm_count_bits(mdev, sbnr, ebnr);
 }
 
-STATIC bool drbd_should_do_remote(struct drbd_conf *mdev)
-{
-	union drbd_state s = mdev->state;
-
-	return s.pdsk == D_UP_TO_DATE ||
-		(s.pdsk >= D_INCONSISTENT &&
-		 s.conn >= C_WF_BITMAP_T &&
-		 s.conn < C_AHEAD);
-	/* Before proto 96 that was >= CONNECTED instead of >= C_WF_BITMAP_T.
-	   That is equivalent since before 96 IO was frozen in the C_WF_BITMAP*
-	   states. */
-}
-STATIC bool drbd_should_send_oos(struct drbd_conf *mdev)
-{
-	union drbd_state s = mdev->state;
-
-	return s.conn == C_AHEAD || s.conn == C_WF_BITMAP_S;
-	/* pdsk = D_INCONSISTENT as a consequence. Protocol 96 check not necessary
-	   since we enter state C_AHEAD only if proto >= 96 */
-}
-
 STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
 {
 	const int rw = bio_rw(bio);
@@ -896,8 +875,8 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, uns
 		drbd_al_begin_io(mdev, sector);
 	}
 
-	remote = remote && drbd_should_do_remote(mdev);
-	send_oos = rw == WRITE && drbd_should_send_oos(mdev);
+	remote = remote && drbd_should_do_remote(mdev->state);
+	send_oos = rw == WRITE && drbd_should_send_oos(mdev->state);
 	D_ASSERT(!(remote && send_oos));
 
 	if (!(local || remote) && !is_susp(mdev->state)) {
@@ -938,8 +917,8 @@ allocate_barrier:
 	}
 
 	if (remote || send_oos) {
-		remote = drbd_should_do_remote(mdev);
-		send_oos = rw == WRITE && drbd_should_send_oos(mdev);
+		remote = drbd_should_do_remote(mdev->state);
+		send_oos = rw == WRITE && drbd_should_send_oos(mdev->state);
 		D_ASSERT(!(remote && send_oos));
 
 		if (!(remote || send_oos))
