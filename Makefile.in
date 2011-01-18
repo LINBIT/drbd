@@ -180,10 +180,6 @@ drbd/drbd_buildtag.c:
 	echo drbd-$(DIST_VERSION)/drbd_config.h        >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/.filelist            >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/drbd-kernel.spec.in  >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/drbd/preamble        >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/drbd/redhat-filelist >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/drbd/suse-filelist   >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/configure            >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/user/config.h.in     >> .filelist ; \
 	echo "./.filelist updated."
