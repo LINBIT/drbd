@@ -1,6 +1,11 @@
 %defattr(644,root,root,755)
 %doc COPYING
 %doc ChangeLog
+%if 0%(grep -q "release 5" /etc/redhat-release && echo 1)
+/lib/modules/%verrel%variant
+%doc obj/k-config-%verrel%variant.gz
+%else
 /lib/modules/%verrel%dotvariant
 %doc obj/k-config-%verrel%dotvariant.gz
+%endif
 %config /etc/depmod.d/drbd.conf
