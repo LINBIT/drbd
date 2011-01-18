@@ -1,0 +1,13 @@
+--- /usr/lib/rpm/redhat/macros.orig
++++ /usr/lib/rpm/redhat/macros
+@@ -170,8 +170,8 @@
+ 
+ %kernel_module_package(n:v:r:s:f:xp:) %{expand:%( \
+ 	%define kmodtool %{-s*}%{!-s:/usr/lib/rpm/redhat/kmodtool} \
+-	%define kmp_version %{-v*}%{!-v:%{version}} \
+-	%define kmp_release %{-r*}%{!-r:%{release}} \
++	%global kmp_version %{-v*}%{!-v:%{version}} \
++	%global kmp_release %{-r*}%{!-r:%{release}} \
+ 	%define latest_kernel %(rpm -q --qf '%{VERSION}-%{RELEASE}\\\\n' `rpm -q kernel-devel | /usr/lib/rpm/redhat/rpmsort -r | head -n 1` | head -n 1) \
+ 	%{!?kernel_version:%{expand:%%global kernel_version %{latest_kernel}}} \
+ 	%global kverrel %(%{kmodtool} verrel %{?kernel_version} 2>/dev/null) \
