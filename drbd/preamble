@@ -15,5 +15,8 @@ Requires: drbd-utils = %{version}
 %if 0%((test -e /etc/redhat-release && grep -q "release 5" /etc/redhat-release) && echo 1)
 %{expand:%(cat %_sourcedir/drbd/preamble-rhel5)}
 
+# CentOS:
+Conflicts: kmod-drbd82 kmod-drbd83
+
 %endif
 %endif

@@ -80,6 +80,12 @@ This is a virtual package, installing the full DRBD userland suite.
 %package utils
 Summary: Management utilities for DRBD
 Group: System Environment/Kernel
+# We used to have one monolithic userland package.
+# Since all other packages require drbd-utils,
+# it should be sufficient to add the conflict here.
+Conflicts: drbd < 8.3.6
+# These exist in centos extras:
+Conflicts: drbd82 drbd83
 @RPM_REQ_CHKCONFIG_POST@
 @RPM_REQ_CHKCONFIG_PREUN@
 
