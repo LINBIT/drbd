@@ -14,9 +14,9 @@ BuildRequires: %kernel_module_package_buildreqs
 %if %{defined suse_kernel_module_package}
 # Support also sles10, where kernel_module_package was not yet defined.
 # In sles11, suse_k_m_p became a wrapper around k_m_p.
-%suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/suse-filelist
+%suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-suse
 %else
-%kernel_module_package -n drbd -p drbd/preamble -f drbd/redhat-filelist
+%kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-redhat
 %endif
 
 %description
