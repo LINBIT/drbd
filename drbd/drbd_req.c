@@ -561,7 +561,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_queue_work(&mdev->data.work, &req->w);
 
 		/* close the epoch, in case it outgrew the limit */
-		if (mdev->newest_tle->n_writes >= mdev->net_conf->max_epoch_size)
+		if (mdev->newest_tle->n_writes >= mdev->tconn->net_conf->max_epoch_size)
 			queue_barrier(mdev);
 
 		break;
@@ -591,7 +591,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			atomic_add(req->i.size >> 9, &mdev->ap_in_flight);
 
 		if (bio_data_dir(req->master_bio) == WRITE &&
-		    mdev->net_conf->wire_protocol == DRBD_PROT_A) {
+		    mdev->tconn->net_conf->wire_protocol == DRBD_PROT_A) {
 			/* this is what is dangerous about protocol A:
 			 * pretend it was successfully written on the peer. */
 			if (req->rq_state & RQ_NET_PENDING) {
@@ -730,8 +730,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		}
 		if ((req->rq_state & RQ_NET_MASK) != 0) {
 			req->rq_state |= RQ_NET_DONE;
-			if (mdev->net_conf->wire_protocol == DRBD_PROT_A)
-				atomic_sub(req->i.size >> 9, &mdev->ap_in_flight);
+			if (mdev->tconn->net_conf->wire_protocol == DRBD_PROT_A)
+				atomic_sub(req->i.size>>9, &mdev->ap_in_flight);
 		}
 		_req_may_be_done(req, m); /* Allowed while state.susp */
 		break;
@@ -984,16 +984,16 @@ allocate_barrier:
 		_req_mod(req, QUEUE_FOR_SEND_OOS);
 
 	if (remote &&
-	    mdev->net_conf->on_congestion != OC_BLOCK && mdev->agreed_pro_version >= 96) {
+	    mdev->tconn->net_conf->on_congestion != OC_BLOCK && mdev->agreed_pro_version >= 96) {
 		int congested = 0;
 
-		if (mdev->net_conf->cong_fill &&
-		    atomic_read(&mdev->ap_in_flight) >= mdev->net_conf->cong_fill) {
+		if (mdev->tconn->net_conf->cong_fill &&
+		    atomic_read(&mdev->ap_in_flight) >= mdev->tconn->net_conf->cong_fill) {
 			dev_info(DEV, "Congestion-fill threshold reached\n");
 			congested = 1;
 		}
 
-		if (mdev->act_log->used >= mdev->net_conf->cong_extents) {
+		if (mdev->act_log->used >= mdev->tconn->net_conf->cong_extents) {
 			dev_info(DEV, "Congestion-extents threshold reached\n");
 			congested = 1;
 		}
@@ -1001,9 +1001,9 @@ allocate_barrier:
 		if (congested) {
 			queue_barrier(mdev); /* last barrier, after mirrored writes */
 
-			if (mdev->net_conf->on_congestion == OC_PULL_AHEAD)
+			if (mdev->tconn->net_conf->on_congestion == OC_PULL_AHEAD)
 				_drbd_set_state(_NS(mdev, conn, C_AHEAD), 0, NULL);
-			else  /*mdev->net_conf->on_congestion == OC_DISCONNECT */
+			else  /*mdev->tconn->net_conf->on_congestion == OC_DISCONNECT */
 				_drbd_set_state(_NS(mdev, conn, C_DISCONNECTING), 0, NULL);
 		}
 	}
