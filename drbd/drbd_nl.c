@@ -1128,9 +1128,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		 * backing store. We must not increase the user visible maximum
 		 * bio size on this device to something the peer may not be
 		 * able to handle. */
-		if (mdev->agreed_pro_version < 94)
+		if (mdev->tconn->agreed_pro_version < 94)
 			max_bio_size = queue_max_hw_sectors(mdev->rq_queue) << 9;
-		else if (mdev->agreed_pro_version == 94)
+		else if (mdev->tconn->agreed_pro_version == 94)
 			max_bio_size = DRBD_MAX_SIZE_H80_PACKET;
 		/* else: drbd 8.3.9 and later, stay with default */
 	}
@@ -1645,7 +1645,7 @@ STATIC int drbd_nl_resize(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 		goto fail;
 	}
 
-	if (rs.no_resync && mdev->agreed_pro_version < 93) {
+	if (rs.no_resync && mdev->tconn->agreed_pro_version < 93) {
 		retcode = ERR_NEED_APV_93;
 		goto fail;
 	}
@@ -2140,7 +2140,7 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 	}
 
 	/* this is "skip initial sync", assume to be clean */
-	if (mdev->state.conn == C_CONNECTED && mdev->agreed_pro_version >= 90 &&
+	if (mdev->state.conn == C_CONNECTED && mdev->tconn->agreed_pro_version >= 90 &&
 	    mdev->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED && args.clear_bm) {
 		dev_info(DEV, "Preparing to skip initial sync\n");
 		skip_initial_sync = 1;

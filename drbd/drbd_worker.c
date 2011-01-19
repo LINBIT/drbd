@@ -569,8 +569,8 @@ int w_make_resync_request(struct drbd_conf *mdev,
 	/* starting with drbd 8.3.8, we can handle multi-bio EEs,
 	 * if it should be necessary */
 	max_bio_size =
-		mdev->agreed_pro_version < 94 ? queue_max_hw_sectors(mdev->rq_queue) << 9 :
-		mdev->agreed_pro_version < 95 ?	DRBD_MAX_SIZE_H80_PACKET : DRBD_MAX_BIO_SIZE;
+		mdev->tconn->agreed_pro_version < 94 ? queue_max_hw_sectors(mdev->rq_queue) << 9 :
+		mdev->tconn->agreed_pro_version < 95 ?	DRBD_MAX_SIZE_H80_PACKET : DRBD_MAX_BIO_SIZE;
 
 	number = drbd_rs_number_requests(mdev);
 	if (number == 0)
@@ -656,7 +656,7 @@ next_sector:
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
-		if (mdev->agreed_pro_version >= 89 && mdev->csums_tfm) {
+		if (mdev->tconn->agreed_pro_version >= 89 && mdev->csums_tfm) {
 			switch (read_for_csum(mdev, sector, size)) {
 			case -EIO: /* Disk failure */
 				put_ldev(mdev);
@@ -1601,10 +1601,10 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		 * drbd_resync_finished from here in that case.
 		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
 		 * and from after_state_ch otherwise. */
-		if (side == C_SYNC_SOURCE && mdev->agreed_pro_version < 96)
+		if (side == C_SYNC_SOURCE && mdev->tconn->agreed_pro_version < 96)
 			drbd_gen_and_send_sync_uuid(mdev);
 
-		if (mdev->agreed_pro_version < 95 && mdev->rs_total == 0) {
+		if (mdev->tconn->agreed_pro_version < 95 && mdev->rs_total == 0) {
 			/* This still has a race (about when exactly the peers
 			 * detect connection loss) that can lead to a full sync
 			 * on next handshake. In 8.3.9 we fixed this with explicit

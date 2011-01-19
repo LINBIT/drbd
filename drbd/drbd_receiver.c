@@ -931,7 +931,7 @@ retry:
 
 	mdev->tconn->data.socket = sock;
 	mdev->tconn->meta.socket = msock;
-	mdev->last_received = jiffies;
+	mdev->tconn->last_received = jiffies;
 
 	D_ASSERT(mdev->tconn->asender.task == NULL);
 
@@ -962,7 +962,7 @@ retry:
 
 	drbd_thread_start(&mdev->tconn->asender);
 
-	if (mdev->agreed_pro_version < 95 && get_ldev(mdev)) {
+	if (mdev->tconn->agreed_pro_version < 95 && get_ldev(mdev)) {
 		drbd_setup_queue_param(mdev, DRBD_MAX_SIZE_H80_PACKET);
 		put_ldev(mdev);
 	}
@@ -1011,7 +1011,7 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, enum drbd_packets *cmd, unsi
 		    be16_to_cpu(h->h80.length));
 		return false;
 	}
-	mdev->last_received = jiffies;
+	mdev->tconn->last_received = jiffies;
 
 	return true;
 }
@@ -1445,7 +1445,7 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 	void *dig_vv = mdev->int_dig_vv;
 	unsigned long *data;
 
-	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_r_tfm) ?
+	dgs = (mdev->tconn->agreed_pro_version >= 87 && mdev->integrity_r_tfm) ?
 		crypto_hash_digestsize(mdev->integrity_r_tfm) : 0;
 
 	if (dgs) {
@@ -1562,7 +1562,7 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	void *dig_in = mdev->int_dig_in;
 	void *dig_vv = mdev->int_dig_vv;
 
-	dgs = (mdev->agreed_pro_version >= 87 && mdev->integrity_r_tfm) ?
+	dgs = (mdev->tconn->agreed_pro_version >= 87 && mdev->integrity_r_tfm) ?
 		crypto_hash_digestsize(mdev->integrity_r_tfm) : 0;
 
 	if (dgs) {
@@ -1872,7 +1872,7 @@ static int drbd_wait_peer_seq(struct drbd_conf *mdev, const u32 packet_seq)
  * flags and back. We may replicate to other kernel versions. */
 static unsigned long wire_flags_to_bio(struct drbd_conf *mdev, u32 dpf)
 {
-	if (mdev->agreed_pro_version >= 95)
+	if (mdev->tconn->agreed_pro_version >= 95)
 		return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
 			(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
 			(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
@@ -2290,7 +2290,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, un
 			goto out_free_e;
 
 		if (cmd == P_CSUM_RS_REQUEST) {
-			D_ASSERT(mdev->agreed_pro_version >= 89);
+			D_ASSERT(mdev->tconn->agreed_pro_version >= 89);
 			e->w.cb = w_e_end_csum_rs_req;
 			/* used in the sector offset progress display */
 			mdev->bm_resync_fo = BM_SECT_TO_BIT(sector);
@@ -2307,7 +2307,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, un
 
 	case P_OV_REQUEST:
 		if (mdev->ov_start_sector == ~(sector_t)0 &&
-		    mdev->agreed_pro_version >= 90) {
+		    mdev->tconn->agreed_pro_version >= 90) {
 			unsigned long now = jiffies;
 			int i;
 			mdev->ov_start_sector = sector;
@@ -2602,7 +2602,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 
 		if (mdev->p_uuid[UI_BITMAP] == (u64)0 && mdev->ldev->md.uuid[UI_BITMAP] != (u64)0) {
 
-			if (mdev->agreed_pro_version < 91)
+			if (mdev->tconn->agreed_pro_version < 91)
 				return -1091;
 
 			if ((mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1)) == (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
@@ -2623,7 +2623,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 
 		if (mdev->ldev->md.uuid[UI_BITMAP] == (u64)0 && mdev->p_uuid[UI_BITMAP] != (u64)0) {
 
-			if (mdev->agreed_pro_version < 91)
+			if (mdev->tconn->agreed_pro_version < 91)
 				return -1091;
 
 			if ((mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) == (mdev->p_uuid[UI_BITMAP] & ~((u64)1)) &&
@@ -2669,14 +2669,14 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	*rule_nr = 51;
 	peer = mdev->p_uuid[UI_HISTORY_START] & ~((u64)1);
 	if (self == peer) {
-		if (mdev->agreed_pro_version < 96 ?
+		if (mdev->tconn->agreed_pro_version < 96 ?
 		    (mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1)) ==
 		    (mdev->p_uuid[UI_HISTORY_START + 1] & ~((u64)1)) :
 		    peer + UUID_NEW_BM_OFFSET == (mdev->p_uuid[UI_BITMAP] & ~((u64)1))) {
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of the peer's UUIDs. */
 
-			if (mdev->agreed_pro_version < 91)
+			if (mdev->tconn->agreed_pro_version < 91)
 				return -1091;
 
 			mdev->p_uuid[UI_BITMAP] = mdev->p_uuid[UI_HISTORY_START];
@@ -2706,14 +2706,14 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 	*rule_nr = 71;
 	self = mdev->ldev->md.uuid[UI_HISTORY_START] & ~((u64)1);
 	if (self == peer) {
-		if (mdev->agreed_pro_version < 96 ?
+		if (mdev->tconn->agreed_pro_version < 96 ?
 		    (mdev->ldev->md.uuid[UI_HISTORY_START + 1] & ~((u64)1)) ==
 		    (mdev->p_uuid[UI_HISTORY_START] & ~((u64)1)) :
 		    self + UUID_NEW_BM_OFFSET == (mdev->ldev->md.uuid[UI_BITMAP] & ~((u64)1))) {
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of our UUIDs. */
 
-			if (mdev->agreed_pro_version < 91)
+			if (mdev->tconn->agreed_pro_version < 91)
 				return -1091;
 
 			_drbd_uuid_set(mdev, UI_BITMAP, mdev->ldev->md.uuid[UI_HISTORY_START]);
@@ -2973,7 +2973,7 @@ STATIC int receive_protocol(struct drbd_conf *mdev, enum drbd_packets cmd, unsig
 		goto disconnect;
 	}
 
-	if (mdev->agreed_pro_version >= 87) {
+	if (mdev->tconn->agreed_pro_version >= 87) {
 		unsigned char *my_alg = mdev->tconn->net_conf->integrity_alg;
 
 		if (drbd_recv(mdev, p_integrity_alg, data_size) != data_size)
@@ -3029,7 +3029,7 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packets cmd, unsi
 	unsigned int header_size, data_size, exp_max_sz;
 	struct crypto_hash *verify_tfm = NULL;
 	struct crypto_hash *csums_tfm = NULL;
-	const int apv = mdev->agreed_pro_version;
+	const int apv = mdev->tconn->agreed_pro_version;
 	int *rs_plan_s = NULL;
 	int fifo_size = 0;
 
@@ -3267,9 +3267,9 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 			ldsc = 1;
 		}
 
-		if (mdev->agreed_pro_version < 94)
+		if (mdev->tconn->agreed_pro_version < 94)
 			max_bio_size = be32_to_cpu(p->max_bio_size);
-		else if (mdev->agreed_pro_version == 94)
+		else if (mdev->tconn->agreed_pro_version == 94)
 			max_bio_size = DRBD_MAX_SIZE_H80_PACKET;
 		else /* drbd 8.3.8 onwards */
 			max_bio_size = DRBD_MAX_BIO_SIZE;
@@ -3331,7 +3331,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 	if (get_ldev(mdev)) {
 		int skip_initial_sync =
 			mdev->state.conn == C_CONNECTED &&
-			mdev->agreed_pro_version >= 90 &&
+			mdev->tconn->agreed_pro_version >= 90 &&
 			mdev->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED &&
 			(p_uuid[UI_FLAGS] & 8);
 		if (skip_initial_sync) {
@@ -4232,10 +4232,10 @@ STATIC int drbd_do_handshake(struct drbd_conf *mdev)
 	    PRO_VERSION_MIN > p->protocol_max)
 		goto incompat;
 
-	mdev->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
+	mdev->tconn->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
 
 	dev_info(DEV, "Handshake successful: "
-	     "Agreed network protocol version %d\n", mdev->agreed_pro_version);
+	     "Agreed network protocol version %d\n", mdev->tconn->agreed_pro_version);
 
 	return 1;
 
@@ -4485,7 +4485,7 @@ STATIC int got_IsInSync(struct drbd_conf *mdev, struct p_header80 *h)
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
 
-	D_ASSERT(mdev->agreed_pro_version >= 89);
+	D_ASSERT(mdev->tconn->agreed_pro_version >= 89);
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
