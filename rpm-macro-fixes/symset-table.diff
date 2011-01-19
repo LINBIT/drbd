@@ -1,0 +1,54 @@
+symsets-xyz-tar.gz contain only the current symsets,
+and potentially compatible symsets.
+
+To be compatible by definition means to be a subset of the current symset.
+
+If we scan through the symsets in ascending order of their size in bytes,
+the first symset to match a particular symbol will be the "oldest",
+"most compatible".
+
+This way, even if the most recent kernel version provides some new
+symset containing new symbols, a kernel module package built
+against it will still only require the weakest symset(s) necessary,
+so will stay compatible on the rpm dependency level with all older
+kernels that provide the actually used symbols.
+
+Without the sorting and filtering, the resulting kmp would require
+all symsets the respective symbols are defined in, including the
+latest symset, even if only a subset of the contained symbols is
+actually used.  Thus the kmp may become "incompatible" on the rpm
+level with older kernel versions, even though it works just fine
+with "weak-modules" on the actual symbol version level.
+
+--- /usr/lib/rpm/symset-table
++++ /usr/lib/rpm/symset-table
+@@ -21,15 +21,26 @@
+ 
+ for symsets in *; do
+     krel=${symsets#symsets-}
+-    for symset in $symsets/*; do
++    for symset in $(ls -Sr $symsets/* ); do
+ 	class=${symset##*/} ; class=${class%.*}
+ 	hash=${symset##*.}
+ 	awk '
+ 	BEGIN { FS = "\t" ; OFS = "\t" }
+ 	{ sub(/0x0*/, "", $1)
+-	  print krel "/" $1 "/" $2, class, hash }
++	  print krel "/" $1, $2, class, hash }
+ 	' krel="$krel" class="$class" hash="$hash" $symset
+-    done
++    done \
++    | awk '
++	# Filter out duplicate symbols.  Since we went through the symset
++	# files in increasing size order, each symbol will remain in the
++	# table with the oldest symset it is defined in.
++	BEGIN { FS = "\t" ; OFS = "\t" }
++	{ if ($2 in seen)
++	    next
++	  seen[$2]=1
++	  print $1 "/" $2, $3, $4 }
++	' \
++    | sort -t $'\t' -k 1,1
+ done
+ 
+ # vim:shiftwidth=4 softtabstop=4
