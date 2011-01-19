@@ -575,7 +575,7 @@ STATIC int drbd_recv(struct drbd_conf *mdev, void *buf, size_t size)
 	set_fs(KERNEL_DS);
 
 	for (;;) {
-		rv = sock_recvmsg(mdev->data.socket, &msg, size, msg.msg_flags);
+		rv = sock_recvmsg(mdev->tconn->data.socket, &msg, size, msg.msg_flags);
 		if (rv == size)
 			break;
 
@@ -759,14 +759,14 @@ out:
 STATIC int drbd_send_fp(struct drbd_conf *mdev,
 	struct socket *sock, enum drbd_packets cmd)
 {
-	struct p_header80 *h = &mdev->data.sbuf.header.h80;
+	struct p_header80 *h = &mdev->tconn->data.sbuf.header.h80;
 
 	return _drbd_send_cmd(mdev, sock, cmd, h, sizeof(*h), 0);
 }
 
 STATIC enum drbd_packets drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
 {
-	struct p_header80 *h = &mdev->data.rbuf.header.h80;
+	struct p_header80 *h = &mdev->tconn->data.rbuf.header.h80;
 	int rr;
 
 	rr = drbd_recv_short(mdev, sock, h, sizeof(*h), 0);
@@ -814,7 +814,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 	struct socket *s, *sock, *msock;
 	int try, h, ok;
 
-	D_ASSERT(!mdev->data.socket);
+	D_ASSERT(!mdev->tconn->data.socket);
 
 	if (drbd_request_state(mdev, NS(conn, C_WF_CONNECTION)) < SS_SUCCESS)
 		return -2;
@@ -929,8 +929,8 @@ retry:
 	drbd_tcp_nodelay(sock);
 	drbd_tcp_nodelay(msock);
 
-	mdev->data.socket = sock;
-	mdev->meta.socket = msock;
+	mdev->tconn->data.socket = sock;
+	mdev->tconn->meta.socket = msock;
 	mdev->last_received = jiffies;
 
 	D_ASSERT(mdev->asender.task == NULL);
@@ -988,7 +988,7 @@ out_release_sockets:
 
 STATIC int drbd_recv_header(struct drbd_conf *mdev, enum drbd_packets *cmd, unsigned int *packet_size)
 {
-	union p_header *h = &mdev->data.rbuf.header;
+	union p_header *h = &mdev->tconn->data.rbuf.header;
 	int r;
 
 	r = drbd_recv(mdev, h, sizeof(*h));
@@ -1154,7 +1154,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		if (fw) {
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
-			drbd_queue_work(&mdev->data.work, &fw->w);
+			drbd_queue_work(&mdev->tconn->data.work, &fw->w);
 		} else {
 			dev_warn(DEV, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -1329,7 +1329,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	switch (err) {
 	case -ENOMEM:
 		e->w.cb = w_e_reissue;
-		drbd_queue_work(&mdev->data.work, &e->w);
+		drbd_queue_work(&mdev->tconn->data.work, &e->w);
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
@@ -1357,7 +1357,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
 	int rv, issue_flush;
-	struct p_barrier *p = &mdev->data.rbuf.barrier;
+	struct p_barrier *p = &mdev->tconn->data.rbuf.barrier;
 	struct drbd_epoch *epoch;
 
 	inc_unacked(mdev);
@@ -1695,7 +1695,7 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, enum drbd_packets cmd, unsi
 	struct drbd_request *req;
 	sector_t sector;
 	int ok;
-	struct p_data *p = &mdev->data.rbuf.data;
+	struct p_data *p = &mdev->tconn->data.rbuf.data;
 
 	sector = be64_to_cpu(p->sector);
 
@@ -1723,7 +1723,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packets cmd, un
 {
 	sector_t sector;
 	int ok;
-	struct p_data *p = &mdev->data.rbuf.data;
+	struct p_data *p = &mdev->tconn->data.rbuf.data;
 
 	sector = be64_to_cpu(p->sector);
 	D_ASSERT(p->block_id == ID_SYNCER);
@@ -1888,7 +1888,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 {
 	sector_t sector;
 	struct drbd_epoch_entry *e;
-	struct p_data *p = &mdev->data.rbuf.data;
+	struct p_data *p = &mdev->tconn->data.rbuf.data;
 	int rw = WRITE;
 	u32 dp_flags;
 
@@ -2206,7 +2206,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, un
 	struct digest_info *di = NULL;
 	int size, verb;
 	unsigned int fault_type;
-	struct p_block_req *p =	&mdev->data.rbuf.block_req;
+	struct p_block_req *p =	&mdev->tconn->data.rbuf.block_req;
 
 	sector = be64_to_cpu(p->sector);
 	size   = be32_to_cpu(p->blksize);
@@ -2925,7 +2925,7 @@ STATIC int cmp_after_sb(enum drbd_after_sb_p peer, enum drbd_after_sb_p self)
 
 STATIC int receive_protocol(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_protocol *p = &mdev->data.rbuf.protocol;
+	struct p_protocol *p = &mdev->tconn->data.rbuf.protocol;
 	int p_proto, p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_want_lose, p_two_primaries, cf;
 	char p_integrity_alg[SHARED_SECRET_MAX] = "";
@@ -3025,7 +3025,7 @@ struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_conf *mdev,
 STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int packet_size)
 {
 	int ok = true;
-	struct p_rs_param_95 *p = &mdev->data.rbuf.rs_param_95;
+	struct p_rs_param_95 *p = &mdev->tconn->data.rbuf.rs_param_95;
 	unsigned int header_size, data_size, exp_max_sz;
 	struct crypto_hash *verify_tfm = NULL;
 	struct crypto_hash *csums_tfm = NULL;
@@ -3194,7 +3194,7 @@ static void warn_if_differ_considerably(struct drbd_conf *mdev,
 
 STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_sizes *p = &mdev->data.rbuf.sizes;
+	struct p_sizes *p = &mdev->tconn->data.rbuf.sizes;
 	enum determine_dev_size dd = unchanged;
 	unsigned int max_bio_size;
 	sector_t p_size, p_usize, my_usize;
@@ -3306,7 +3306,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 
 STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_uuids *p = &mdev->data.rbuf.uuids;
+	struct p_uuids *p = &mdev->tconn->data.rbuf.uuids;
 	u64 *p_uuid;
 	int i, updated_uuids = 0;
 
@@ -3400,7 +3400,7 @@ STATIC union drbd_state convert_state(union drbd_state ps)
 
 STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_req_state *p = &mdev->data.rbuf.req_state;
+	struct p_req_state *p = &mdev->tconn->data.rbuf.req_state;
 	union drbd_state mask, val;
 	enum drbd_state_rv rv;
 
@@ -3427,7 +3427,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packets cmd, unsi
 
 STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_state *p = &mdev->data.rbuf.state;
+	struct p_state *p = &mdev->tconn->data.rbuf.state;
 	union drbd_state os, ns, peer_state;
 	enum drbd_disk_state real_peer_disk;
 	enum chg_state_flags cs_flags;
@@ -3584,7 +3584,7 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 
 STATIC int receive_sync_uuid(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_rs_uuid *p = &mdev->data.rbuf.rs_uuid;
+	struct p_rs_uuid *p = &mdev->tconn->data.rbuf.rs_uuid;
 
 	wait_event(mdev->misc_wait,
 		   mdev->state.conn == C_WF_SYNC_UUID ||
@@ -3783,7 +3783,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packets cmd, unsigne
 	void *buffer;
 	int err;
 	int ok = false;
-	struct p_header80 *h = &mdev->data.rbuf.header.h80;
+	struct p_header80 *h = &mdev->tconn->data.rbuf.header.h80;
 
 	drbd_bm_lock(mdev, "receive bitmap", BM_LOCKED_SET_ALLOWED);
 	/* you are supposed to send additional out-of-sync information
@@ -3895,14 +3895,14 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, enum drbd_packets cmd, u
 
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
-	drbd_tcp_quickack(mdev->data.socket);
+	drbd_tcp_quickack(mdev->tconn->data.socket);
 
 	return true;
 }
 
 STATIC int receive_out_of_sync(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
 {
-	struct p_block_desc *p = &mdev->data.rbuf.block_desc;
+	struct p_block_desc *p = &mdev->tconn->data.rbuf.block_desc;
 
 	switch (mdev->state.conn) {
 	case C_WF_SYNC_UUID:
@@ -3956,15 +3956,15 @@ static struct data_cmd drbd_cmd_handler[] = {
 };
 
 /* All handler functions that expect a sub-header get that sub-heder in
-   mdev->data.rbuf.header.head.payload.
+   mdev->tconn->data.rbuf.header.head.payload.
 
-   Usually in mdev->data.rbuf.header.head the callback can find the usual
+   Usually in mdev->tconn->data.rbuf.header.head the callback can find the usual
    p_header, but they may not rely on that. Since there is also p_header95 !
  */
 
 STATIC void drbdd(struct drbd_conf *mdev)
 {
-	union p_header *header = &mdev->data.rbuf.header;
+	union p_header *header = &mdev->tconn->data.rbuf.header;
 	unsigned int packet_size;
 	enum drbd_packets cmd;
 	size_t shs; /* sub header size */
@@ -4019,7 +4019,7 @@ void drbd_flush_workqueue(struct drbd_conf *mdev)
 
 	barr.w.cb = w_prev_work_done;
 	init_completion(&barr.done);
-	drbd_queue_work(&mdev->data.work, &barr.w);
+	drbd_queue_work(&mdev->tconn->data.work, &barr.w);
 	wait_for_completion(&barr.done);
 }
 
@@ -4157,25 +4157,25 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 {
 	/* ASSERT current == mdev->receiver ... */
-	struct p_handshake *p = &mdev->data.sbuf.handshake;
+	struct p_handshake *p = &mdev->tconn->data.sbuf.handshake;
 	int ok;
 
-	if (mutex_lock_interruptible(&mdev->data.mutex)) {
+	if (mutex_lock_interruptible(&mdev->tconn->data.mutex)) {
 		dev_err(DEV, "interrupted during initial handshake\n");
 		return 0; /* interrupted. not ok. */
 	}
 
-	if (mdev->data.socket == NULL) {
-		mutex_unlock(&mdev->data.mutex);
+	if (mdev->tconn->data.socket == NULL) {
+		mutex_unlock(&mdev->tconn->data.mutex);
 		return 0;
 	}
 
 	memset(p, 0, sizeof(*p));
 	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
-	ok = _drbd_send_cmd( mdev, mdev->data.socket, P_HAND_SHAKE,
+	ok = _drbd_send_cmd( mdev, mdev->tconn->data.socket, P_HAND_SHAKE,
 			     (struct p_header80 *)p, sizeof(*p), 0 );
-	mutex_unlock(&mdev->data.mutex);
+	mutex_unlock(&mdev->tconn->data.mutex);
 	return ok;
 }
 
@@ -4189,7 +4189,7 @@ STATIC int drbd_send_handshake(struct drbd_conf *mdev)
 STATIC int drbd_do_handshake(struct drbd_conf *mdev)
 {
 	/* ASSERT current == mdev->receiver ... */
-	struct p_handshake *p = &mdev->data.rbuf.handshake;
+	struct p_handshake *p = &mdev->tconn->data.rbuf.handshake;
 	const int expect = sizeof(struct p_handshake) - sizeof(struct p_header80);
 	unsigned int length;
 	enum drbd_packets cmd;
@@ -4472,7 +4472,7 @@ STATIC int got_Ping(struct drbd_conf *mdev, struct p_header80 *h)
 STATIC int got_PingAck(struct drbd_conf *mdev, struct p_header80 *h)
 {
 	/* restore idle timeout */
-	mdev->meta.socket->sk->sk_rcvtimeo = mdev->tconn->net_conf->ping_int*HZ;
+	mdev->tconn->meta.socket->sk->sk_rcvtimeo = mdev->tconn->net_conf->ping_int*HZ;
 	if (!test_and_set_bit(GOT_PING_ACK, &mdev->flags))
 		wake_up(&mdev->misc_wait);
 
@@ -4692,7 +4692,7 @@ STATIC int got_OVResult(struct drbd_conf *mdev, struct p_header80 *h)
 		w = kmalloc(sizeof(*w), GFP_NOIO);
 		if (w) {
 			w->cb = w_ov_finished;
-			drbd_queue_work_front(&mdev->data.work, w);
+			drbd_queue_work_front(&mdev->tconn->data.work, w);
 		} else {
 			dev_err(DEV, "kmalloc(w) failed.");
 			ov_oos_print(mdev);
@@ -4744,7 +4744,7 @@ static struct asender_cmd *get_asender_cmd(int cmd)
 int drbd_asender(struct drbd_thread *thi)
 {
 	struct drbd_conf *mdev = thi->mdev;
-	struct p_header80 *h = &mdev->meta.rbuf.header.h80;
+	struct p_header80 *h = &mdev->tconn->meta.rbuf.header.h80;
 	struct asender_cmd *cmd = NULL;
 
 	int rv;
@@ -4765,7 +4765,7 @@ int drbd_asender(struct drbd_thread *thi)
 				dev_err(DEV, "drbd_send_ping has failed\n");
 				goto reconnect;
 			}
-			mdev->meta.socket->sk->sk_rcvtimeo =
+			mdev->tconn->meta.socket->sk->sk_rcvtimeo =
 				mdev->tconn->net_conf->ping_timeo*HZ/10;
 		}
 
@@ -4773,7 +4773,7 @@ int drbd_asender(struct drbd_thread *thi)
 		 * it may hurt latency if we cork without much to send */
 		if (!mdev->tconn->net_conf->no_cork &&
 			3 < atomic_read(&mdev->unacked_cnt))
-			drbd_tcp_cork(mdev->meta.socket);
+			drbd_tcp_cork(mdev->tconn->meta.socket);
 		while (1) {
 			clear_bit(SIGNAL_ASENDER, &mdev->flags);
 			flush_signals(current);
@@ -4792,13 +4792,13 @@ int drbd_asender(struct drbd_thread *thi)
 		}
 		/* but unconditionally uncork unless disabled */
 		if (!mdev->tconn->net_conf->no_cork)
-			drbd_tcp_uncork(mdev->meta.socket);
+			drbd_tcp_uncork(mdev->tconn->meta.socket);
 
 		/* short circuit, recv_msg would return EINTR anyways. */
 		if (signal_pending(current))
 			continue;
 
-		rv = drbd_recv_short(mdev, mdev->meta.socket,
+		rv = drbd_recv_short(mdev, mdev->tconn->meta.socket,
 				     buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &mdev->flags);
 
@@ -4821,7 +4821,7 @@ int drbd_asender(struct drbd_thread *thi)
 			dev_err(DEV, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
-			if (mdev->meta.socket->sk->sk_rcvtimeo ==
+			if (mdev->tconn->meta.socket->sk->sk_rcvtimeo ==
 			    mdev->tconn->net_conf->ping_timeo*HZ/10) {
 				dev_err(DEV, "PingAck did not arrive in time.\n");
 				goto reconnect;
