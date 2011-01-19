@@ -35,7 +35,7 @@ extern const char *drbd_buildtag(void);
 #define REL_VERSION "8.3.10rc3"
 #define API_VERSION 88
 #define PRO_VERSION_MIN 86
-#define PRO_VERSION_MAX 96
+#define PRO_VERSION_MAX 100
 
 #ifndef __CHECKER__   /* for a sparse run, we need all STATICs */
 #define DBG_ALL_SYMBOLS /* no static functs, improves quality of OOPS traces */

@@ -454,8 +454,7 @@ struct p_header80 {
 struct p_header95 {
 	u16	  magic;	/* use DRBD_MAGIC_BIG here */
 	u16	  command;
-	u32	  length;	/* Use only 24 bits of that. Ignore the highest 8 bit. */
-	u8	  payload[0];
+	u32	  vol_n_len;	/* big endian: high byte = volume; remaining 24 bit = length */
 } __packed;
 
 struct p_header {
