@@ -153,7 +153,7 @@ static void queue_barrier(struct drbd_conf *mdev)
 	if (test_bit(CREATE_BARRIER, &mdev->flags))
 		return;
 
-	b = mdev->newest_tle;
+	b = mdev->tconn->newest_tle;
 	b->w.cb = w_send_barrier;
 	/* inc_ap_pending done here, so we won't
 	 * get imbalanced on connection loss.
@@ -177,7 +177,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 	 */
 	if (mdev->state.conn >= C_CONNECTED &&
 	    (s & RQ_NET_SENT) != 0 &&
-	    req->epoch == mdev->newest_tle->br_number)
+	    req->epoch == mdev->tconn->newest_tle->br_number)
 		queue_barrier(mdev);
 
 	/* we need to do the conflict detection stuff,
@@ -549,10 +549,10 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * just after it grabs the req_lock */
 		D_ASSERT(test_bit(CREATE_BARRIER, &mdev->flags) == 0);
 
-		req->epoch = mdev->newest_tle->br_number;
+		req->epoch = mdev->tconn->newest_tle->br_number;
 
 		/* increment size of current epoch */
-		mdev->newest_tle->n_writes++;
+		mdev->tconn->newest_tle->n_writes++;
 
 		/* queue work item to send data */
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
@@ -561,7 +561,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_queue_work(&mdev->tconn->data.work, &req->w);
 
 		/* close the epoch, in case it outgrew the limit */
-		if (mdev->newest_tle->n_writes >= mdev->tconn->net_conf->max_epoch_size)
+		if (mdev->tconn->newest_tle->n_writes >= mdev->tconn->net_conf->max_epoch_size)
 			queue_barrier(mdev);
 
 		break;
@@ -726,7 +726,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
 			dev_err(DEV, "FIXME (BARRIER_ACKED but pending)\n");
-			list_move(&req->tl_requests, &mdev->out_of_sequence_requests);
+			list_move(&req->tl_requests, &mdev->tconn->out_of_sequence_requests);
 		}
 		if ((req->rq_state & RQ_NET_MASK) != 0) {
 			req->rq_state |= RQ_NET_DONE;
@@ -867,7 +867,7 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, uns
 	 * spinlock, and grabbing the spinlock.
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && (remote || send_oos) &&
-	    mdev->unused_spare_tle == NULL &&
+	    mdev->tconn->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_NOIO);
@@ -879,7 +879,7 @@ allocate_barrier:
 	}
 
 	/* GOOD, everything prepared, grab the spin_lock */
-	spin_lock_irq(&mdev->req_lock);
+	spin_lock_irq(&mdev->tconn->req_lock);
 
 	if (is_susp(mdev->state)) {
 		/* If we got suspended, use the retry mechanism of
@@ -887,7 +887,7 @@ allocate_barrier:
 		   bio. In the next call to drbd_make_request
 		   we sleep in inc_ap_bio() */
 		ret = 1;
-		spin_unlock_irq(&mdev->req_lock);
+		spin_unlock_irq(&mdev->tconn->req_lock);
 		goto fail_free_complete;
 	}
 
@@ -900,21 +900,21 @@ allocate_barrier:
 			dev_warn(DEV, "lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
 			dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
-			spin_unlock_irq(&mdev->req_lock);
+			spin_unlock_irq(&mdev->tconn->req_lock);
 			goto fail_free_complete;
 		}
 	}
 
-	if (b && mdev->unused_spare_tle == NULL) {
-		mdev->unused_spare_tle = b;
+	if (b && mdev->tconn->unused_spare_tle == NULL) {
+		mdev->tconn->unused_spare_tle = b;
 		b = NULL;
 	}
 	if (rw == WRITE && (remote || send_oos) &&
-	    mdev->unused_spare_tle == NULL &&
+	    mdev->tconn->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &mdev->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
-		spin_unlock_irq(&mdev->req_lock);
+		spin_unlock_irq(&mdev->tconn->req_lock);
 		goto allocate_barrier;
 	}
 
@@ -932,10 +932,10 @@ allocate_barrier:
 	 * barrier packet.  To get the write ordering right, we only have to
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
-	if ((remote || send_oos) && mdev->unused_spare_tle &&
+	if ((remote || send_oos) && mdev->tconn->unused_spare_tle &&
 	    test_and_clear_bit(CREATE_BARRIER, &mdev->flags)) {
-		_tl_add_barrier(mdev, mdev->unused_spare_tle);
-		mdev->unused_spare_tle = NULL;
+		_tl_add_barrier(mdev, mdev->tconn->unused_spare_tle);
+		mdev->tconn->unused_spare_tle = NULL;
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&
 			   test_bit(CREATE_BARRIER, &mdev->flags)));
@@ -967,7 +967,7 @@ allocate_barrier:
 	if (rw == WRITE && _req_conflicts(req))
 		goto fail_conflicting;
 
-	list_add_tail(&req->tl_requests, &mdev->newest_tle->requests);
+	list_add_tail(&req->tl_requests, &mdev->tconn->newest_tle->requests);
 
 	/* NOTE remote first: to get the concurrent write detection right,
 	 * we must register the request before start of local IO.  */
@@ -1008,7 +1008,7 @@ allocate_barrier:
 		}
 	}
 
-	spin_unlock_irq(&mdev->req_lock);
+	spin_unlock_irq(&mdev->tconn->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
@@ -1045,7 +1045,7 @@ fail_conflicting:
 	 * pretend that it was successfully served right now.
 	 */
 	_drbd_end_io_acct(mdev, req);
-	spin_unlock_irq(&mdev->req_lock);
+	spin_unlock_irq(&mdev->tconn->req_lock);
 	if (remote)
 		dec_ap_pending(mdev);
 	/* THINK: do we want to fail it (-EIO), or pretend success?
