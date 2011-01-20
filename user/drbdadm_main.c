@@ -862,8 +862,32 @@ static void dump_proxy_info_xml(struct d_proxy_info *pi)
 	printI("</proxy>\n");
 }
 
+static void dump_volume_xml(struct d_volume *vol)
+{
+	printI("<volume vnr=\"%d\">\n", vol->vnr);
+	++indent;
+
+	printI("<device minor=\"%d\">%s</device>\n", vol->device_minor,
+	       esc_xml(vol->device));
+	printI("<disk>%s</disk>\n", esc_xml(vol->disk));
+
+	if (!strncmp(vol->meta_index, "flex", 4))
+		printI("<flexible-meta-disk>%s</flexible-meta-disk>\n",
+		       esc_xml(vol->meta_disk));
+	else if (!strcmp(vol->meta_index, "internal"))
+		printI("<meta-disk>internal</meta-disk>\n");
+	else {
+		printI("<meta-disk index=\"%s\">%s</meta-disk>\n",
+		       vol->meta_index, esc_xml(vol->meta_disk));
+	}
+	--indent;
+	printI("</volume>\n");
+}
+
 static void dump_host_info_xml(struct d_host_info *hi)
 {
+	struct d_volume *vol;
+
 	if (!hi) {
 		printI("<!-- No host section data available. -->\n");
 		return;
@@ -875,20 +899,12 @@ static void dump_host_info_xml(struct d_host_info *hi)
 		printI("<host name=\"%s\">\n", names_to_str(hi->on_hosts));
 
 	++indent;
-	printI("<device minor=\"%d\">%s</device>\n", hi->volumes->device_minor,
-	       esc_xml(hi->volumes->device));
-	printI("<disk>%s</disk>\n", esc_xml(hi->volumes->disk));
+
+	for_each_volume(vol, hi->volumes)
+		dump_volume_xml(vol);
+
 	printI("<address family=\"%s\" port=\"%s\">%s</address>\n",
 	       hi->address_family, hi->port, hi->address);
-	if (!strncmp(hi->volumes->meta_index, "flex", 4))
-		printI("<flexible-meta-disk>%s</flexible-meta-disk>\n",
-		       esc_xml(hi->volumes->meta_disk));
-	else if (!strcmp(hi->volumes->meta_index, "internal"))
-		printI("<meta-disk>internal</meta-disk>\n");
-	else {
-		printI("<meta-disk index=\"%s\">%s</meta-disk>\n",
-		       hi->volumes->meta_index, esc_xml(hi->volumes->meta_disk));
-	}
 	if (hi->proxy)
 		dump_proxy_info_xml(hi->proxy);
 	--indent;
