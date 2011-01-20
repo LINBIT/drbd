@@ -906,10 +906,11 @@ struct d_volume *volume0(struct d_volume **volp)
 		vol = calloc(1, sizeof(struct d_volume));
 		vol->device_minor = -1;
 		*volp = vol;
+		vol->implicit = 1;
 		return vol;
 	} else {
 		vol = *volp;
-		if (vol->vnr == 0 && vol->next == NULL)
+		if (vol->vnr == 0 && vol->next == NULL && vol->implicit)
 			return vol;
 
 		config_valid = 0;
@@ -1043,7 +1044,7 @@ void ensure_vols_1_in_2(struct d_resource *res, struct d_host_info *host1, struc
 {
 	struct d_volume *vol;
 
-	for (vol = host1->volumes; vol; vol = vol->next) {
+	for_each_volume(vol, host1->volumes) {
 		if (!find_volume(host2->volumes, vol->vnr)) {
 			fprintf(stderr,
 				"%s:%d: in resource %s, on %s { ... }: "

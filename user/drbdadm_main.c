@@ -706,8 +706,42 @@ static void dump_proxy_info(struct d_proxy_info *pi)
 	printI("}\n");
 }
 
+static void dump_volume(int has_lower, struct d_volume *vol)
+{
+	if (!vol->implicit) {
+		printI("volume %d {\n", vol->vnr);
+		++indent;
+	}
+
+	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
+	if (vol->device)
+		printf("%s ", esc(vol->device));
+	printf("minor %d;\n", vol->device_minor);
+
+	if (!has_lower)
+		printA("disk", esc(vol->disk));
+
+	if (!has_lower) {
+		if (!strncmp(vol->meta_index, "flex", 4))
+			printI(FMDISK, "flexible-meta-disk",
+			       esc(vol->meta_disk));
+		else if (!strcmp(vol->meta_index, "internal"))
+			printA("meta-disk", "internal");
+		else
+			printI(MDISK, "meta-disk", esc(vol->meta_disk),
+			       vol->meta_index);
+	}
+
+	if (!vol->implicit) {
+		--indent;
+		printI("}\n");
+	}
+}
+
 static void dump_host_info(struct d_host_info *hi)
 {
+	struct d_volume *vol;
+
 	if (!hi) {
 		printI("  # No host section data available.\n");
 		return;
@@ -727,24 +761,12 @@ static void dump_host_info(struct d_host_info *hi)
 		printI("on %s {\n", names_to_str(hi->on_hosts));
 		++indent;
 	}
-	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
-	if (hi->volumes->device)
-		printf("%s ", esc(hi->volumes->device));
-	printf("minor %d;\n", hi->volumes->device_minor);
-	if (!hi->lower)
-		printA("disk", esc(hi->volumes->disk));
+
+	for_each_volume(vol, hi->volumes)
+		dump_volume(!!hi->lower, vol);
+
 	if (!hi->by_address)
 		dump_address("address", hi->address, hi->port, hi->address_family);
-	if (!hi->lower) {
-		if (!strncmp(hi->volumes->meta_index, "flex", 4))
-			printI(FMDISK, "flexible-meta-disk",
-			       esc(hi->volumes->meta_disk));
-		else if (!strcmp(hi->volumes->meta_index, "internal"))
-			printA("meta-disk", "internal");
-		else
-			printI(MDISK, "meta-disk", esc(hi->volumes->meta_disk),
-			       hi->volumes->meta_index);
-	}
 	if (hi->proxy)
 		dump_proxy_info(hi->proxy);
 	--indent;
@@ -1125,11 +1147,14 @@ static void free_volume(struct d_volume *vol)
 
 static void free_host_info(struct d_host_info *hi)
 {
+	struct d_volume *vol;
+
 	if (!hi)
 		return;
 
 	free_names(hi->on_hosts);
-	free_volume(hi->volumes);
+	for_each_volume(vol, hi->volumes)
+		free_volume(vol);
 	free(hi->address);
 	free(hi->address_family);
 	free(hi->port);

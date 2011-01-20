@@ -95,6 +95,7 @@ struct d_volume
   int meta_major;
   int meta_minor;
   struct d_volume *next;
+  unsigned int implicit :1 ; /* Do not dump an explicit volume section */
 };
 
 struct d_host_info
@@ -257,7 +258,8 @@ extern int soi;
 #define for_each_resource(res,tmp,config) \
 	for (res = (config); res && (tmp = res->next, 1); res = tmp)
 
-#endif
+#define for_each_volume(v_,volumes_) \
+	for (v_ = volumes_; v_; v_ = v_->next)
 
 #define APPEND(LIST,ITEM) ({		      \
   typeof((LIST)) _l = (LIST);		      \
@@ -275,4 +277,6 @@ extern int soi;
 
 #define PARSER_CHECK_PROXY_KEYWORD (1)
 #define PARSER_STOP_IF_INVALID (2)
+
+#endif
 
