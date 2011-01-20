@@ -374,6 +374,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 		goto fail;
 
 	INIT_HLIST_NODE(&e->colision);
+	drbd_clear_interval(&e->i);
 	e->epoch = NULL;
 	e->mdev = mdev;
 	e->pages = page;
@@ -403,6 +404,7 @@ void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int i
 	drbd_pp_free(mdev, e->pages, is_net);
 	D_ASSERT(atomic_read(&e->pending_bios) == 0);
 	D_ASSERT(hlist_unhashed(&e->colision));
+	D_ASSERT(drbd_interval_empty(&e->i));
 	mempool_free(e, drbd_ee_mempool);
 }
 
@@ -1352,7 +1354,8 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 		 * and cause a "Network failure" */
 		spin_lock_irq(&mdev->req_lock);
 		list_del(&e->w.list);
-		hlist_del_init(&e->colision);
+		drbd_remove_interval(&mdev->epoch_entries, &e->i);
+		drbd_clear_interval(&e->i);
 		spin_unlock_irq(&mdev->req_lock);
 		if (e->flags & EE_CALL_AL_COMPLETE_IO)
 			drbd_al_complete_io(mdev, e->i.sector);
@@ -1629,6 +1632,7 @@ STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int u
 	int ok;
 
 	D_ASSERT(hlist_unhashed(&e->colision));
+	D_ASSERT(drbd_interval_empty(&e->i));
 
 	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(mdev, sector, e->i.size);
@@ -1792,9 +1796,13 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 		spin_lock_irq(&mdev->req_lock);
 		D_ASSERT(!hlist_unhashed(&e->colision));
 		hlist_del_init(&e->colision);
+		D_ASSERT(!drbd_interval_empty(&e->i));
+		drbd_remove_interval(&mdev->epoch_entries, &e->i);
+		drbd_clear_interval(&e->i);
 		spin_unlock_irq(&mdev->req_lock);
 	} else {
 		D_ASSERT(hlist_unhashed(&e->colision));
+		D_ASSERT(drbd_interval_empty(&e->i));
 	}
 
 	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
@@ -1813,6 +1821,9 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
 	spin_lock_irq(&mdev->req_lock);
 	D_ASSERT(!hlist_unhashed(&e->colision));
 	hlist_del_init(&e->colision);
+	D_ASSERT(!drbd_interval_empty(&e->i));
+	drbd_remove_interval(&mdev->epoch_entries, &e->i);
+	drbd_clear_interval(&e->i);
 	spin_unlock_irq(&mdev->req_lock);
 
 	dec_unacked(mdev);
@@ -2024,6 +2035,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		spin_lock_irq(&mdev->req_lock);
 
 		hlist_add_head(&e->colision, ee_hash_slot(mdev, sector));
+		drbd_insert_interval(&mdev->epoch_entries, &e->i);
 
 		first = 1;
 		for (;;) {
@@ -2074,6 +2086,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 			if (signal_pending(current)) {
 				hlist_del_init(&e->colision);
+				drbd_remove_interval(&mdev->epoch_entries, &e->i);
+				drbd_clear_interval(&e->i);
 
 				spin_unlock_irq(&mdev->req_lock);
 
@@ -2132,6 +2146,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
 	hlist_del_init(&e->colision);
+	drbd_remove_interval(&mdev->epoch_entries, &e->i);
+	drbd_clear_interval(&e->i);
 	spin_unlock_irq(&mdev->req_lock);
 	if (e->flags & EE_CALL_AL_COMPLETE_IO)
 		drbd_al_complete_io(mdev, e->i.sector);
