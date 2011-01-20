@@ -37,6 +37,7 @@
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -2873,7 +2874,6 @@ char *canonify_path(char *path)
 	char *tmp;
 	char *that_wd;
 	char *abs_path;
-	int len;
 
 	if (!path || !path[0]) {
 		fprintf(stderr, "cannot canonify an empty path\n");
@@ -2905,15 +2905,9 @@ char *canonify_path(char *path)
 	}
 
 	if (!strcmp("/", that_wd))
-		len = asprintf(&abs_path, "/%s", last_slash);
+		m_asprintf(&abs_path, "/%s", last_slash);
 	else
-		len = asprintf(&abs_path, "%s/%s", that_wd, last_slash);
-
-	if (len < 0) {
-		fprintf(stderr, "out of memory during asprintf in %s\n",
-			__func__);
-		exit(E_usage);
-	}
+		m_asprintf(&abs_path, "%s/%s", that_wd, last_slash);
 
 	free(that_wd);
 	if (cwd_fd >= 0) {

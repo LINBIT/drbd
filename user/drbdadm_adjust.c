@@ -313,7 +313,7 @@ redo_whole_conn:
 		if (!res_o) {
 			if (run_o) {
 				/* More plugins running than configured - just stop here. */
-				asprintf(&cp, "set plugin %s %d end", conn_name, i);
+				m_asprintf(&cp, "set plugin %s %d end", conn_name, i);
 				plugin_changes[used++] = cp;
 			}
 			else {
@@ -334,7 +334,7 @@ redo_whole_conn:
 
 			/* More configured than running - just add it, if it's not already
 			 * somewhere else. */
-			asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
+			m_asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
 			plugin_changes[used++] = cp;
 		} else {
 			/* If we get here, both lists have been filled in parallel, so we
@@ -355,7 +355,7 @@ redo_whole_conn:
 			if (strcmp(run_o->name, res_o->name) != 0) {
 				/* Either a different plugin, or just different settings
 				 * - plugin can be overwritten.  */
-				asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
+				m_asprintf(&cp, "set plugin %s %d %s", conn_name, i, res_o->name);
 				plugin_changes[used++] = cp;
 			}
 		}
