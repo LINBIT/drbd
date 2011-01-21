@@ -993,7 +993,8 @@ STATIC int drbd_recv_header(struct drbd_conf *mdev, enum drbd_packets *cmd, unsi
 
 	r = drbd_recv(mdev, h, sizeof(*h));
 	if (unlikely(r != sizeof(*h))) {
-		dev_err(DEV, "short read expecting header on sock: r=%d\n", r);
+		if (!signal_pending(current))
+			dev_warn(DEV, "short read expecting header on sock: r=%d\n", r);
 		return false;
 	}
 
@@ -1417,8 +1418,10 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
 		if (rr != dgs) {
-			dev_warn(DEV, "short read receiving data digest: read %d expected %d\n",
-			     rr, dgs);
+			if (!signal_pending(current))
+				dev_warn(DEV,
+					"short read receiving data digest: read %d expected %d\n",
+					rr, dgs);
 			return NULL;
 		}
 	}
@@ -1458,8 +1461,9 @@ read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __
 		kunmap(page);
 		if (rr != len) {
 			drbd_free_ee(mdev, e);
-			dev_warn(DEV, "short read receiving data: read %d expected %d\n",
-			     rr, len);
+			if (!signal_pending(current))
+				dev_warn(DEV, "short read receiving data: read %d expected %d\n",
+				rr, len);
 			return NULL;
 		}
 		ds -= rr;
@@ -1499,8 +1503,10 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 		rr = drbd_recv(mdev, data, min_t(int, data_size, PAGE_SIZE));
 		if (rr != min_t(int, data_size, PAGE_SIZE)) {
 			rv = 0;
-			dev_warn(DEV, "short read receiving data: read %d expected %d\n",
-			     rr, min_t(int, data_size, PAGE_SIZE));
+			if (!signal_pending(current))
+				dev_warn(DEV,
+					"short read receiving data: read %d expected %d\n",
+					rr, min_t(int, data_size, PAGE_SIZE));
 			break;
 		}
 		data_size -= rr;
@@ -1525,8 +1531,10 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	if (dgs) {
 		rr = drbd_recv(mdev, dig_in, dgs);
 		if (rr != dgs) {
-			dev_warn(DEV, "short read receiving data reply digest: read %d expected %d\n",
-			     rr, dgs);
+			if (!signal_pending(current))
+				dev_warn(DEV,
+					"short read receiving data reply digest: read %d expected %d\n",
+					rr, dgs);
 			return 0;
 		}
 	}
@@ -1547,9 +1555,10 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 			     expect);
 		kunmap(bvec->bv_page);
 		if (rr != expect) {
-			dev_warn(DEV, "short read receiving data reply: "
-			     "read %d expected %d\n",
-			     rr, expect);
+			if (!signal_pending(current))
+				dev_warn(DEV, "short read receiving data reply: "
+					"read %d expected %d\n",
+					rr, expect);
 			return 0;
 		}
 		data_size -= rr;
@@ -3937,7 +3946,8 @@ STATIC void drbdd(struct drbd_conf *mdev)
 		if (shs) {
 			rv = drbd_recv(mdev, &header->h80.payload, shs);
 			if (unlikely(rv != shs)) {
-				dev_err(DEV, "short read while reading sub header: rv=%d\n", rv);
+				if (!signal_pending(current))
+					dev_warn(DEV, "short read while reading sub header: rv=%d\n", rv);
 				goto err_out;
 			}
 		}
@@ -4198,7 +4208,8 @@ STATIC int drbd_do_handshake(struct drbd_conf *mdev)
 	rv = drbd_recv(mdev, &p->head.payload, expect);
 
 	if (rv != expect) {
-		dev_err(DEV, "short read receiving handshake packet: l=%u\n", rv);
+		if (!signal_pending(current))
+			dev_warn(DEV, "short read receiving handshake packet: l=%u\n", rv);
 		return 0;
 	}
 
@@ -4303,7 +4314,8 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	rv = drbd_recv(mdev, peers_ch, length);
 
 	if (rv != length) {
-		dev_err(DEV, "short read AuthChallenge: l=%u\n", rv);
+		if (!signal_pending(current))
+			dev_warn(DEV, "short read AuthChallenge: l=%u\n", rv);
 		rv = 0;
 		goto fail;
 	}
@@ -4350,7 +4362,8 @@ STATIC int drbd_do_auth(struct drbd_conf *mdev)
 	rv = drbd_recv(mdev, response , resp_size);
 
 	if (rv != resp_size) {
-		dev_err(DEV, "short read receiving AuthResponse: l=%u\n", rv);
+		if (!signal_pending(current))
+			dev_warn(DEV, "short read receiving AuthResponse: l=%u\n", rv);
 		rv = 0;
 		goto fail;
 	}
