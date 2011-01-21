@@ -182,9 +182,9 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 		queue_barrier(mdev);
 
 	/* we need to do the conflict detection stuff,
-	 * if we have the ee_hash (two_primaries) and
-	 * this has been on the network */
-	if ((s & RQ_NET_DONE) && mdev->ee_hash != NULL) {
+	 * if the epoch_entries tree is non-empty and
+	 * this request has completed on the network */
+	if ((s & RQ_NET_DONE) && !RB_EMPTY_ROOT(&mdev->epoch_entries)) {
 		const sector_t sector = req->i.sector;
 		const int size = req->i.size;
 		struct drbd_interval *i;
@@ -291,7 +291,6 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 		if (!drbd_interval_empty(&req->i)) {
 			struct rb_root *root;
 
-			hlist_del(&req->colision);
 			if (rw == WRITE)
 				root = &mdev->write_requests;
 			else
@@ -350,9 +349,7 @@ static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_e
  * conflicting requests with local origin, and why we have to do so regardless
  * of whether we allowed multiple primaries.
  *
- * BTW, in case we only have one primary, the ee_hash is empty anyways, and the
- * second hlist_for_each_entry becomes a noop. This is even simpler than to
- * grab a reference on the net_conf, and check for the two_primaries flag...
+ * In case we only have one primary, the epoch_entries tree is empty.
  */
 STATIC int _req_conflicts(struct drbd_request *req)
 {
@@ -361,16 +358,10 @@ STATIC int _req_conflicts(struct drbd_request *req)
 	const int size = req->i.size;
 	struct drbd_interval *i;
 
-	D_ASSERT(hlist_unhashed(&req->colision));
 	D_ASSERT(drbd_interval_empty(&req->i));
 
 	if (!get_net_conf(mdev))
 		return 0;
-
-	/* BUG_ON */
-	ERR_IF (mdev->tl_hash_s == 0)
-		goto out_no_conflict;
-	BUG_ON(mdev->tl_hash == NULL);
 
 	i = drbd_find_overlap(&mdev->write_requests, sector, size);
 	if (i) {
@@ -386,10 +377,8 @@ STATIC int _req_conflicts(struct drbd_request *req)
 		goto out_conflict;
 	}
 
-	if (mdev->ee_hash_s) {
-		/* now, check for overlapping requests with remote origin */
-		BUG_ON(mdev->ee_hash == NULL);
-
+	if (!RB_EMPTY_ROOT(&mdev->epoch_entries)) {
+		/* check for overlapping requests with remote origin */
 		i = drbd_find_overlap(&mdev->epoch_entries, sector, size);
 		if (i) {
 			struct drbd_epoch_entry *e =
@@ -405,7 +394,6 @@ STATIC int _req_conflicts(struct drbd_request *req)
 		}
 	}
 
-out_no_conflict:
 	/* this is like it should be, and what we expected.
 	 * our users do behave after all... */
 	put_net_conf(mdev);
@@ -525,7 +513,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* so we can verify the handle in the answer packet
 		 * corresponding hlist_del is in _req_may_be_done() */
-		hlist_add_head(&req->colision, ar_hash_slot(mdev, req->i.sector));
 		drbd_insert_interval(&mdev->read_requests, &req->i);
 
 		set_bit(UNPLUG_REMOTE, &mdev->flags);
@@ -542,7 +529,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* assert something? */
 		/* from drbd_make_request_common only */
 
-		hlist_add_head(&req->colision, tl_hash_slot(mdev, req->i.sector));
 		/* corresponding hlist_del is in _req_may_be_done() */
 		drbd_insert_interval(&mdev->write_requests, &req->i);
 

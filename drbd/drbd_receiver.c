@@ -373,7 +373,6 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	if (!page)
 		goto fail;
 
-	INIT_HLIST_NODE(&e->colision);
 	drbd_clear_interval(&e->i);
 	e->epoch = NULL;
 	e->mdev = mdev;
@@ -403,7 +402,6 @@ void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int i
 		kfree(e->digest);
 	drbd_pp_free(mdev, e->pages, is_net);
 	D_ASSERT(atomic_read(&e->pending_bios) == 0);
-	D_ASSERT(hlist_unhashed(&e->colision));
 	D_ASSERT(drbd_interval_empty(&e->i));
 	mempool_free(e, drbd_ee_mempool);
 }
@@ -1631,7 +1629,6 @@ STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int u
 	sector_t sector = e->i.sector;
 	int ok;
 
-	D_ASSERT(hlist_unhashed(&e->colision));
 	D_ASSERT(drbd_interval_empty(&e->i));
 
 	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
@@ -1794,16 +1791,12 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
 	if (mdev->net_conf->two_primaries) {
 		spin_lock_irq(&mdev->req_lock);
-		D_ASSERT(!hlist_unhashed(&e->colision));
-		hlist_del_init(&e->colision);
 		D_ASSERT(!drbd_interval_empty(&e->i));
 		drbd_remove_interval(&mdev->epoch_entries, &e->i);
 		drbd_clear_interval(&e->i);
 		spin_unlock_irq(&mdev->req_lock);
-	} else {
-		D_ASSERT(hlist_unhashed(&e->colision));
+	} else
 		D_ASSERT(drbd_interval_empty(&e->i));
-	}
 
 	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
@@ -1819,8 +1812,6 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
 	ok = drbd_send_ack(mdev, P_DISCARD_ACK, e);
 
 	spin_lock_irq(&mdev->req_lock);
-	D_ASSERT(!hlist_unhashed(&e->colision));
-	hlist_del_init(&e->colision);
 	D_ASSERT(!drbd_interval_empty(&e->i));
 	drbd_remove_interval(&mdev->epoch_entries, &e->i);
 	drbd_clear_interval(&e->i);
@@ -1992,23 +1983,20 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		int first;
 
 		D_ASSERT(mdev->net_conf->wire_protocol == DRBD_PROT_C);
-		BUG_ON(mdev->ee_hash == NULL);
-		BUG_ON(mdev->tl_hash == NULL);
 
 		/* conflict detection and handling:
 		 * 1. wait on the sequence number,
 		 *    in case this data packet overtook ACK packets.
-		 * 2. check our hash tables for conflicting requests.
-		 *    we only need to walk the tl_hash, since an ee can not
-		 *    have a conflict with an other ee: on the submitting
-		 *    node, the corresponding req had already been conflicting,
-		 *    and a conflicting req is never sent.
+		 * 2. check our interval trees for conflicting requests:
+		 *    we only need to check the write_requests tree; the
+		 *    epoch_entries tree cannot contain any overlaps because
+		 *    they were already eliminated on the submitting node.
 		 *
 		 * Note: for two_primaries, we are protocol C,
 		 * so there cannot be any request that is DONE
 		 * but still on the transfer log.
 		 *
-		 * unconditionally add to the ee_hash.
+		 * unconditionally add to the epoch_entries tree.
 		 *
 		 * if no conflicting request is found:
 		 *    submit.
@@ -2034,7 +2022,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 		spin_lock_irq(&mdev->req_lock);
 
-		hlist_add_head(&e->colision, ee_hash_slot(mdev, sector));
 		drbd_insert_interval(&mdev->epoch_entries, &e->i);
 
 		first = 1;
@@ -2085,7 +2072,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 			}
 
 			if (signal_pending(current)) {
-				hlist_del_init(&e->colision);
 				drbd_remove_interval(&mdev->epoch_entries, &e->i);
 				drbd_clear_interval(&e->i);
 
@@ -2145,7 +2131,6 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	dev_err(DEV, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
-	hlist_del_init(&e->colision);
 	drbd_remove_interval(&mdev->epoch_entries, &e->i);
 	drbd_clear_interval(&e->i);
 	spin_unlock_irq(&mdev->req_lock);

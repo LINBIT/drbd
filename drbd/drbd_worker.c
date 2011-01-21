@@ -161,10 +161,13 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 
 	trace_drbd_ee(mdev, e, "write completed");
 
-	/* No hlist_del_init(&e->colision) here, we did not send the Ack yet,
-	 * neither did we wake possibly waiting conflicting requests.
-	 * done from "drbd_process_done_ee" within the appropriate w.cb
-	 * (e_end_block/e_end_resync_block) or from _drbd_clear_done_ee */
+	/*
+	 * Do not remove from the epoch_entries tree here: we did not send the
+	 * Ack yet and did not wake possibly waiting conflicting requests.
+	 * Removed from the tree from "drbd_process_done_ee" within the
+	 * appropriate w.cb (e_end_block/e_end_resync_block) or from
+	 * _drbd_clear_done_ee.
+	 */
 
 	do_wake = list_empty(block_id == ID_SYNCER ? &mdev->sync_ee : &mdev->active_ee);
 
