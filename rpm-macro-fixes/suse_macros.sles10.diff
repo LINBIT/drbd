@@ -2,8 +2,13 @@ See comment in macros.kernel-source.sles11-sp1.diff
 
 --- /usr/lib/rpm/suse_macros.orig
 +++ /usr/lib/rpm/suse_macros
-@@ -476,9 +476,8 @@
- %{expand:%( \
+@@ -473,12 +473,12 @@
+ 
+ # Defines %flavors_to_build as a side effect.
+ %suse_kernel_module_package(n:v:r:s:f:xp:) \
+-%{expand:%( \
++%{expand:%{expand:%( \
++	( \
          subpkg=%{-s*}%{!-s:/usr/lib/rpm/rpm-suse-kernel-module-subpackage} \
          echo "%%define _suse_kernel_module_subpackage(n:v:r:f:p:) %%{expand:%%(cd %_sourcedir; cat $subpkg; echo %%%%nil)}" \
 -        flavors="%{-x:%*}%{!-x:$(ls /usr/src/linux-obj/%_target_cpu 2>/dev/null)}" \
@@ -13,7 +18,7 @@ See comment in macros.kernel-source.sles11-sp1.diff
          for flavor in $flavors; do \
              if [ -z "%{-x}" ]; then \
                  case " %* " in \
-@@ -486,12 +485,15 @@
+@@ -486,19 +486,23 @@
                      continue ;; \
                  esac \
              fi \
@@ -30,3 +35,12 @@ See comment in macros.kernel-source.sles11-sp1.diff
          \
          echo "%package -n %{-n*}%{!-n:%name}-kmp-_dummy_" \
          echo "Version: %version" \
+         echo "Summary: %summary" \
+         echo "Group: %group" \
+         echo "%description -n %{-n*}%{!-n:%name}-kmp-_dummy_" \
+-        )}
++	) | sed -e 's/%%/%%%%/g' \
++        )}}
+ 
+ %suse_version 1010
+ %sles_version 10
