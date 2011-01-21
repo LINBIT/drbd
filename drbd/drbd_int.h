@@ -1189,6 +1189,7 @@ struct drbd_conf {
 	unsigned int tl_hash_s;
 
 	/* Interval tree of pending local write requests */
+	struct rb_root read_requests;
 	struct rb_root write_requests;
 
 	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
