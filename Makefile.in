@@ -148,6 +148,12 @@ check_changelogs_up2date:
 	then \
 	   echo -e "\n\t%changelog in drbd-km.spec.in needs update"; \
 	   up2date=false; fi; \
+	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
+			     -e '/- '"$$dver_re"'-/p' < drbd-kernel.spec.in) ; \
+	if test -z "$$in_changelog" ; \
+	then \
+	   echo -e "\n\t%changelog in drbd-kernel.spec.in needs update"; \
+	   up2date=false; fi; \
 	if ! grep "^$$dver_re\>" >/dev/null 2>&1 ChangeLog; \
 	then \
 	   echo -e "\n\tChangeLog needs update"; \
