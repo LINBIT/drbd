@@ -29,6 +29,7 @@
 #define blkdev_issue_flush(b, gfpf, s)	blkdev_issue_flush(b, gfpf, s, BLKDEV_IFL_WAIT)
 #endif
 
+#include <linux/fs.h>
 #include <linux/bio.h>
 #include <linux/slab.h>
 #include <linux/completion.h>
@@ -108,6 +109,53 @@ static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 	set_capacity(mdev->vdisk, size);
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
+
+#ifndef COMPAT_HAVE_BLKDEV_GET_BY_PATH
+/* see kernel 2.6.37,
+ * d4d7762 block: clean up blkdev_get() wrappers and their users
+ * e525fd8 block: make blkdev_get/put() handle exclusive access
+ * and kernel 2.6.28
+ * 30c40d2 [PATCH] propagate mode through open_bdev_excl/close_bdev_excl
+ * Also note that there is no FMODE_EXCL before
+ * 86d434d [PATCH] eliminate use of ->f_flags in block methods
+ */
+#ifndef COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE
+#ifndef FMODE_EXCL
+#define FMODE_EXCL 0
+#endif
+static inline
+struct block_device *open_bdev_exclusive(const char *path, fmode_t mode, void *holder)
+{
+	/* drbd does not open readonly, but try to be correct, anyways */
+	return open_bdev_excl(path, (mode & FMODE_WRITE) ? 0 : MS_RDONLY, holder);
+}
+static inline
+void close_bdev_exclusive(struct block_device *bdev, fmode_t mode)
+{
+	/* mode ignored. */
+	close_bdev_excl(bdev);
+}
+#endif
+static inline struct block_device *blkdev_get_by_path(const char *path,
+		fmode_t mode, void *holder)
+{
+	return open_bdev_exclusive(path, mode, holder);
+}
+
+static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
+{
+	/* blkdev_put != close_bdev_exclusive, in general, so this is obviously
+	 * not correct, and there should be some if (mode & FMODE_EXCL) ...
+	 * But this is the only way it is used in DRBD,
+	 * and for <= 2.6.27, there is no FMODE_EXCL anyways. */
+	close_bdev_exclusive(bdev, mode);
+
+	/* blkdev_put seems to not have useful return values,
+	 * close_bdev_exclusive is void. */
+	return 0;
+}
+#define blkdev_put(b, m)	drbd_blkdev_put(b, m)
+#endif
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 

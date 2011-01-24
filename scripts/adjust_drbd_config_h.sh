@@ -183,6 +183,16 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     need_blk_queue_max_segments=1
   fi
+  if grep_q "blkdev_get_by_path" $KDIR/include/linux/fs.h ; then
+    have_blkdev_get_by_path=1
+  else
+    have_blkdev_get_by_path=0
+  fi
+  if grep_q "open_bdev_exclusive" $KDIR/include/linux/fs.h ; then
+    have_open_bdev_exclusive=1
+  else
+    have_open_bdev_exclusive=0
+  fi
   if grep_q "typedef.*bool" $KDIR/include/linux/types.h ; then
     have_bool_type=1
   else
@@ -240,6 +250,10 @@ perl -pe "
   { ( $use_blk_queue_max_sectors_anyways ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BLK_QUEUE_MAX_SEGMENTS.*)}
   { ( $need_blk_queue_max_segments ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_BLKDEV_GET_BY_PATH.*)}
+  { ( $have_blkdev_get_by_path ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE.*)}
+  { ( $have_open_bdev_exclusive ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_ATOMIC_ADD_UNLESS.*)}
   { ( $have_atomic_add_unless ? '//' : '' ) . \$1}e;
  s{.*(#define NEED_BOOL_TYPE.*)}

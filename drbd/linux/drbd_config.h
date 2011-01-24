@@ -129,6 +129,14 @@ extern const char *drbd_buildtag(void);
  */
 #define USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS
 
+/* For kernel versions > 2.6.38, open_bdev_excl has been replaced with
+ * blkdev_get_by_path. See e525fd89 and d4d77629 */
+//#define COMPAT_HAVE_BLKDEV_GET_BY_PATH
+
+/* before open_bdev_exclusive, there was a open_bdev_excl,
+ * see 30c40d2 */
+#define COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE
+
 /* some old kernels do not have atomic_add_unless() */
 //#define NEED_ATOMIC_ADD_UNLESS
 
