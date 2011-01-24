@@ -1204,6 +1204,16 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
  * @mdev:	DRBD device.
  * @e:		epoch entry
  * @rw:		flag field, see bio->bi_rw
+ *
+ * May spread the pages to multiple bios,
+ * depending on bio_add_page restrictions.
+ *
+ * Returns 0 if all bios have been submitted,
+ * -ENOMEM if we could not allocate enough bios,
+ * -ENOSPC (any better suggestion?) if we have not been able to bio_add_page a
+ *  single page to an empty bio (which should never happen and likely indicates
+ *  that the lower level IO stack is in some way broken). This has been observed
+ *  on certain Xen deployments.
  */
 /* TODO allocate from our own bio_set. */
 int drbd_submit_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e,
@@ -1216,6 +1226,7 @@ int drbd_submit_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e,
 	unsigned ds = e->size;
 	unsigned n_bios = 0;
 	unsigned nr_pages = (ds + PAGE_SIZE -1) >> PAGE_SHIFT;
+	int err = -ENOMEM;
 
 	/* In most cases, we will only need one bio.  But in case the lower
 	 * level restrictions happen to be different at this offset on this
@@ -1243,8 +1254,17 @@ next_bio:
 	page_chain_for_each(page) {
 		unsigned len = min_t(unsigned, ds, PAGE_SIZE);
 		if (!bio_add_page(bio, page, len, 0)) {
-			/* a single page must always be possible! */
-			BUG_ON(bio->bi_vcnt == 0);
+			/* A single page must always be possible!
+			 * But in case it fails anyways,
+			 * we deal with it, and complain (below). */
+			if (bio->bi_vcnt == 0) {
+				dev_err(DEV,
+					"bio_add_page failed for len=%u, "
+					"bi_vcnt=0 (bi_sector=%llu)\n",
+					len, (unsigned long long)bio->bi_sector);
+				err = -ENOSPC;
+				goto fail;
+			}
 			goto next_bio;
 		}
 		ds -= len;
@@ -1281,7 +1301,7 @@ fail:
 		bios = bios->bi_next;
 		bio_put(bio);
 	}
-	return -ENOMEM;
+	return err;
 }
 
 /**
@@ -1293,6 +1313,7 @@ fail:
 int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
 {
 	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
+	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
 	   so that we can finish that epoch in drbd_may_finish_epoch().
@@ -1310,14 +1331,32 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 	 * get_ldev was done in receive_Data. */
 
 	e->w.cb = e_end_block;
-	if (drbd_submit_ee(mdev, e, WRITE, DRBD_FAULT_DT_WR) != 0) {
-		/* drbd_submit_ee fails for one reason only:
-		 * if was not able to allocate sufficient bios.
-		 * requeue, try again later. */
+	err = drbd_submit_ee(mdev, e, WRITE, DRBD_FAULT_DT_WR);
+	switch (err) {
+	case -ENOMEM:
 		e->w.cb = w_e_reissue;
 		drbd_queue_work(&mdev->data.work, &e->w);
+		/* retry later; fall through */
+	case 0:
+		/* keep worker happy and connection up */
+		return 1;
+
+	case -ENOSPC:
+		/* no other error expected, but anyways: */
+	default:
+		/* forget the object,
+		 * and cause a "Network failure" */
+		spin_lock_irq(&mdev->req_lock);
+		list_del(&e->w.list);
+		hlist_del_init(&e->colision);
+		spin_unlock_irq(&mdev->req_lock);
+		if (e->flags & EE_CALL_AL_COMPLETE_IO)
+			drbd_al_complete_io(mdev, e->sector);
+		drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + EV_CLEANUP);
+		drbd_free_ee(mdev, e);
+		dev_err(DEV, "submit failed, triggering re-connect\n");
+		return 0;
 	}
-	return 1;
 }
 
 STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int data_size)
@@ -1624,9 +1663,8 @@ STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_si
 	if (drbd_submit_ee(mdev, e, WRITE, DRBD_FAULT_RS_WR) == 0)
 		return true;
 
-	/* drbd_submit_ee currently fails for one reason only:
-	 * not being able to allocate enough bios.
-	 * Is dropping the connection going to help? */
+	/* don't care for the reason here */
+	dev_err(DEV, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
 	spin_unlock_irq(&mdev->req_lock);
@@ -2071,9 +2109,8 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	if (drbd_submit_ee(mdev, e, rw, DRBD_FAULT_DT_WR) == 0)
 		return true;
 
-	/* drbd_submit_ee currently fails for one reason only:
-	 * not being able to allocate enough bios.
-	 * Is dropping the connection going to help? */
+	/* don't care for the reason here */
+	dev_err(DEV, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
 	hlist_del_init(&e->colision);
@@ -2082,9 +2119,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		drbd_al_complete_io(mdev, e->sector);
 
 out_interrupted:
-	/* yes, the epoch_size now is imbalanced.
-	 * but we drop the connection anyways, so we don't have a chance to
-	 * receive a barrier... atomic_inc(&mdev->epoch_size); */
+	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(mdev);
 	drbd_free_ee(mdev, e);
 	return false;
@@ -2328,9 +2363,8 @@ submit:
 	if (drbd_submit_ee(mdev, e, READ, fault_type) == 0)
 		return true;
 
-	/* drbd_submit_ee currently fails for one reason only:
-	 * not being able to allocate enough bios.
-	 * Is dropping the connection going to help? */
+	/* don't care for the reason here */
+	dev_err(DEV, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
 	spin_unlock_irq(&mdev->req_lock);
