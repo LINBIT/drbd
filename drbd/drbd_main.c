@@ -3827,14 +3827,12 @@ void drbd_free_bc(struct drbd_backing_dev *ldev)
 	if (ldev == NULL)
 		return;
 
-	bd_release(ldev->backing_bdev);
-	bd_release(ldev->md_bdev);
-
-	fput(ldev->lo_file);
-	fput(ldev->md_file);
+	blkdev_put(ldev->backing_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+	blkdev_put(ldev->md_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 
 	kfree(ldev);
 }
+
 
 void drbd_free_sock(struct drbd_conf *mdev)
 {
