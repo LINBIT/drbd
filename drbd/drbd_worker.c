@@ -50,15 +50,12 @@ STATIC int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
 
 
-/* defined here:
-   drbd_md_io_complete
-   drbd_endio_sec
-   drbd_endio_pri
-
- * more endio handlers:
-   atodb_endio in drbd_actlog.c
-   drbd_bm_async_io_complete in drbd_bitmap.c
-
+/* endio handlers:
+ *   drbd_md_io_complete (defined here)
+ *   drbd_endio_pri (defined here)
+ *   drbd_endio_sec (defined here)
+ *   bm_async_io_complete (defined in drbd_bitmap.c)
+ *
  * For all these callbacks, note the following:
  * The callbacks will be called in irq context by the IDE drivers,
  * and in Softirqs/Tasklets/BH context by the SCSI drivers.

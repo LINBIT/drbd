@@ -567,43 +567,6 @@ cancel:
 	return 1;
 }
 
-struct drbd_atodb_wait {
-	atomic_t           count;
-	struct completion  io_done;
-	struct drbd_conf   *mdev;
-	int                error;
-};
-
-STATIC BIO_ENDIO_TYPE atodb_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
-{
-	struct drbd_atodb_wait *wc = bio->bi_private;
-	struct drbd_conf *mdev = wc->mdev;
-	struct page *page;
-	int uptodate = bio_flagged(bio, BIO_UPTODATE);
-
-	BIO_ENDIO_FN_START;
-	/* strange behavior of some lower level drivers...
-	 * fail the request by clearing the uptodate flag,
-	 * but do not return any error?! */
-	if (!error && !uptodate)
-		error = -EIO;
-
-	drbd_chk_io_error(mdev, error, true);
-	if (error && wc->error == 0)
-		wc->error = error;
-
-	if (atomic_dec_and_test(&wc->count))
-		complete(&wc->io_done);
-
-	page = bio->bi_io_vec[0].bv_page;
-	put_page(page);
-	bio_put(bio);
-	mdev->bm_writ_cnt++;
-	put_ldev(mdev);
-
-	BIO_ENDIO_FN_RETURN;
-}
-
 /**
  * drbd_al_apply_to_bm() - Sets the bitmap to diry(1) where covered ba active AL extents
  * @mdev:	DRBD device.
