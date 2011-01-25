@@ -1732,7 +1732,7 @@ STATIC int drbd_thread_setup(void *arg)
 		thi == &mdev->worker   ? "worker"   : "NONSENSE";
 
 	daemonize("drbd_thread");
-	D_ASSERT(get_t_state(thi) == Running);
+	D_ASSERT(get_t_state(thi) == RUNNING);
 	D_ASSERT(thi->task == NULL);
 	/* state engine takes this lock (in drbd_thread_stop_nowait)
 	 * while holding the req_lock irqsave */
@@ -1751,25 +1751,25 @@ restart:
 
 	spin_lock_irqsave(&thi->t_lock, flags);
 
-	/* if the receiver has been "Exiting", the last thing it did
+	/* if the receiver has been "EXITING", the last thing it did
 	 * was set the conn state to "StandAlone",
 	 * if now a re-connect request comes in, conn state goes C_UNCONNECTED,
 	 * and receiver thread will be "started".
-	 * drbd_thread_start needs to set "Restarting" in that case.
+	 * drbd_thread_start needs to set "RESTARTING" in that case.
 	 * t_state check and assignment needs to be within the same spinlock,
-	 * so either thread_start sees Exiting, and can remap to Restarting,
-	 * or thread_start see None, and can proceed as normal.
+	 * so either thread_start sees EXITING, and can remap to RESTARTING,
+	 * or thread_start see NONE, and can proceed as normal.
 	 */
 
-	if (thi->t_state == Restarting) {
+	if (thi->t_state == RESTARTING) {
 		dev_info(DEV, "Restarting %s thread\n", me);
-		thi->t_state = Running;
+		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		goto restart;
 	}
 
 	thi->task = NULL;
-	thi->t_state = None;
+	thi->t_state = NONE;
 	smp_mb();
 
 	/* THINK maybe two different completions? */
@@ -1787,7 +1787,7 @@ STATIC void drbd_thread_init(struct drbd_conf *mdev, struct drbd_thread *thi,
 {
 	spin_lock_init(&thi->t_lock);
 	thi->task    = NULL;
-	thi->t_state = None;
+	thi->t_state = NONE;
 	thi->function = func;
 	thi->mdev = mdev;
 }
@@ -1807,7 +1807,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 	spin_lock_irqsave(&thi->t_lock, flags);
 
 	switch (thi->t_state) {
-	case None:
+	case NONE:
 		dev_info(DEV, "Starting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
 
@@ -1821,7 +1821,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		init_completion(&thi->startstop);
 		D_ASSERT(thi->task == NULL);
 		thi->reset_cpu_mask = 1;
-		thi->t_state = Running;
+		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
 
@@ -1834,21 +1834,21 @@ int drbd_thread_start(struct drbd_thread *thi)
 		}
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
-		if (thi->t_state != Running)
+		if (thi->t_state != RUNNING)
 			dev_err(DEV, "ASSERT FAILED: %s t_state == %d expected %d.\n",
-					me, thi->t_state, Running);
+					me, thi->t_state, RUNNING);
 		if (thi->task)
 			wake_up_process(thi->task);
 		else
 			dev_err(DEV, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
 		break;
-	case Exiting:
-		thi->t_state = Restarting;
+	case EXITING:
+		thi->t_state = RESTARTING;
 		dev_info(DEV, "Restarting %s thread (from %s [%d])\n",
 				me, current->comm, current->pid);
 		/* fall through */
-	case Running:
-	case Restarting:
+	case RUNNING:
+	case RESTARTING:
 	default:
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		break;
@@ -1862,7 +1862,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 {
 	struct drbd_conf *mdev = thi->mdev;
 	unsigned long flags;
-	enum drbd_thread_state ns = restart ? Restarting : Exiting;
+	enum drbd_thread_state ns = restart ? RESTARTING : EXITING;
 	const char *me =
 		thi == &mdev->receiver ? "receiver" :
 		thi == &mdev->asender  ? "asender"  :
@@ -1875,7 +1875,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
-	if (thi->t_state == None) {
+	if (thi->t_state == NONE) {
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		if (restart)
 			drbd_thread_start(thi);
@@ -1903,9 +1903,9 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 		wait_for_completion(&thi->startstop);
 		spin_lock_irqsave(&thi->t_lock, flags);
 		D_ASSERT(thi->task == NULL);
-		if (thi->t_state != None)
+		if (thi->t_state != NONE)
 			dev_err(DEV, "ASSERT FAILED: %s t_state == %d expected %d.\n",
-					me, thi->t_state, None);
+					me, thi->t_state, NONE);
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 	}
 }
@@ -2645,7 +2645,7 @@ STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *
 
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
-		|| get_t_state(&mdev->asender) != Running
+		|| get_t_state(&mdev->asender) != RUNNING
 		|| mdev->state.conn < C_CONNECTED;
 
 	if (drop_it)
@@ -3272,7 +3272,7 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 void drbd_mdev_cleanup(struct drbd_conf *mdev)
 {
 	int i;
-	if (mdev->receiver.t_state != None)
+	if (mdev->receiver.t_state != NONE)
 		dev_err(DEV, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				mdev->receiver.t_state);
 

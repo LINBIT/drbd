@@ -892,7 +892,7 @@ retry:
 		if (signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
-			if (get_t_state(&mdev->receiver) == Exiting)
+			if (get_t_state(&mdev->receiver) == EXITING)
 				goto out_release_sockets;
 		}
 
@@ -3966,7 +3966,7 @@ STATIC void drbdd(struct drbd_conf *mdev)
 	size_t shs; /* sub header size */
 	int rv;
 
-	while (get_t_state(&mdev->receiver) == Running) {
+	while (get_t_state(&mdev->receiver) == RUNNING) {
 		drbd_thread_current_set_cpu(mdev);
 		if (!drbd_recv_header(mdev, &cmd, &packet_size))
 			goto err_out;
@@ -4754,7 +4754,7 @@ int drbd_asender(struct drbd_thread *thi)
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
 
-	while (get_t_state(thi) == Running) {
+	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(mdev);
 		if (test_and_clear_bit(SEND_PING, &mdev->flags)) {
 			ERR_IF(!drbd_send_ping(mdev)) goto reconnect;
