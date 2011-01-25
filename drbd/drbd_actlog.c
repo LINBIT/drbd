@@ -257,10 +257,6 @@ void drbd_al_begin_io(struct drbd_conf *mdev, sector_t sector)
 
 		mdev->al_writ_cnt++;
 
-		/*
-		DUMPI(al_ext->lc_number);
-		DUMPI(mdev->act_log->new_number);
-		*/
 		spin_lock_irq(&mdev->al_lock);
 		lc_changed(mdev->act_log, al_ext);
 		spin_unlock_irq(&mdev->al_lock);

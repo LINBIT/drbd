@@ -661,8 +661,8 @@ int drbd_bm_resize(struct drbd_conf *mdev, sector_t capacity, int set_new_bits)
 		u64 bits_on_disk = ((u64)mdev->ldev->md.md_size_sect-MD_BM_OFFSET) << 12;
 		put_ldev(mdev);
 		if (bits > bits_on_disk) {
-			DUMPLLU(bits);
-			DUMPLLU(bits_on_disk);
+			dev_err(DEV, "Not enough space for bitmap: %lu > %lu\n",
+				(unsigned long)bits, (unsigned long)bits_on_disk);
 			err = -ENOSPC;
 			goto out;
 		}

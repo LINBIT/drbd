@@ -132,33 +132,6 @@ struct drbd_conf;
 # define PARANOIA_BUG_ON(x)
 #endif
 
-/*
- * Some Message Macros
- *************************/
-
-/* handy macro: DUMPP(somepointer) */
-#define DUMPP(A)   dev_err(DEV, #A " = %p in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPLU(A)  dev_err(DEV, #A " = %lu in %s:%d\n", (unsigned long)(A), __FILE__, __LINE__);
-#define DUMPLLU(A) dev_err(DEV, #A " = %llu in %s:%d\n", (unsigned long long)(A), __FILE__, __LINE__);
-#define DUMPLX(A)  dev_err(DEV, #A " = %lx in %s:%d\n", (A), __FILE__, __LINE__);
-#define DUMPI(A)   dev_err(DEV, #A " = %d in %s:%d\n", (int)(A), __FILE__, __LINE__);
-
-#define DUMPST(A) DUMPLLU((unsigned long long)(A))
-
-#if 0
-#define D_DUMPP(A)   DUMPP(A)
-#define D_DUMPLU(A)  DUMPLU(A)
-#define D_DUMPLLU(A) DUMPLLU(A)
-#define D_DUMPLX(A)  DUMPLX(A)
-#define D_DUMPI(A)   DUMPI(A)
-#else
-#define D_DUMPP(A)
-#define D_DUMPLU(A)
-#define D_DUMPLLU(A)
-#define D_DUMPLX(A)
-#define D_DUMPI(A)
-#endif
-
 /* upstream kernel wants us to use dev_warn(), ...
  * dev_printk() expects to be presented a struct device *;
  * in older kernels, (<= 2.6.24), there is nothing suitable there.

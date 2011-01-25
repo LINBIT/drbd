@@ -4747,7 +4747,7 @@ int drbd_asender(struct drbd_thread *thi)
 	struct p_header80 *h = &mdev->meta.rbuf.header.h80;
 	struct asender_cmd *cmd = NULL;
 
-	int rv, len;
+	int rv;
 	void *buf    = h;
 	int received = 0;
 	int expect   = sizeof(struct p_header80);
@@ -4844,7 +4844,6 @@ int drbd_asender(struct drbd_thread *thi)
 				goto reconnect;
 			}
 			cmd = get_asender_cmd(be16_to_cpu(h->command));
-			len = be16_to_cpu(h->length);
 			if (unlikely(cmd == NULL)) {
 				dev_err(DEV, "unknown command?? on meta m: 0x%08x c: %d l: %d\n",
 				    be32_to_cpu(h->magic),
@@ -4853,8 +4852,11 @@ int drbd_asender(struct drbd_thread *thi)
 				goto disconnect;
 			}
 			expect = cmd->pkt_size;
-			if (!expect(len == expect - sizeof(struct p_header80))) {
-				DUMPI(expect);
+			if (be16_to_cpu(h->length) != expect - sizeof(struct p_header80)) {
+				dev_err(DEV, "packet size?? on meta m: 0x%08x c: %d l: %d\n",
+				    be32_to_cpu(h->magic),
+				    be16_to_cpu(h->command),
+				    be16_to_cpu(h->length));
 				goto reconnect;
 			}
 		}

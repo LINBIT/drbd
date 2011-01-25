@@ -2643,8 +2643,6 @@ int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
 STATIC int we_should_drop_the_connection(struct drbd_conf *mdev, struct socket *sock)
 {
 	int drop_it;
-	/* long elapsed = (long)(jiffies - mdev->last_received); */
-	/* DUMPLU(elapsed); // elapsed ignored for now. */
 
 	drop_it =   mdev->meta.socket == sock
 		|| !mdev->asender.task
