@@ -37,7 +37,6 @@
 
 #include "drbd_int.h"
 #include "drbd_req.h"
-#include "drbd_tracing.h"
 
 #ifdef COMPAT_HAVE_SCATTERLIST_H
 /* 2.6.11 (suse 9.3, fc4) does not include requisites
@@ -86,8 +85,6 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 	md_io = (struct drbd_md_io *)bio->bi_private;
 	md_io->error = error;
 
-	trace_drbd_bio(md_io->mdev, "Md", bio, 1, NULL);
-
 	complete(&md_io->event);
 	BIO_ENDIO_FN_RETURN;
 }
@@ -109,7 +106,6 @@ void drbd_endio_read_sec_final(struct drbd_epoch_entry *e) __releases(local)
 		__drbd_chk_io_error(mdev, false);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
-	trace_drbd_ee(mdev, e, "read completed");
 	drbd_queue_work(&mdev->data.work, &e->w);
 	put_ldev(mdev);
 }
@@ -158,8 +154,6 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 	mdev->writ_cnt += e->i.size >> 9;
 	list_del(&e->w.list); /* has been on active_ee or sync_ee */
 	list_add_tail(&e->w.list, &mdev->done_ee);
-
-	trace_drbd_ee(mdev, e, "write completed");
 
 	/*
 	 * Do not remove from the epoch_entries tree here: we did not send the
@@ -217,7 +211,6 @@ BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error)
 	if (error)
 		set_bit(__EE_WAS_ERROR, &e->flags);
 
-	trace_drbd_bio(mdev, "Sec", bio, 1, NULL);
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&e->pending_bios)) {
 		if (is_write)
@@ -248,8 +241,6 @@ BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error)
 		 * but do not return any error?! */
 		error = -EIO;
 	}
-
-	trace_drbd_bio(mdev, "Pri", bio, 1, NULL);
 
 	/* to avoid recursion in __req_mod */
 	if (unlikely(error)) {
@@ -1509,9 +1500,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		dev_err(DEV, "Resync already running!\n");
 		return;
 	}
-
-	trace_drbd_resync(mdev, TRACE_LVL_SUMMARY, "Resync starting: side=%s\n",
-			  side == C_SYNC_TARGET ? "SyncTarget" : "SyncSource");
 
 	if (mdev->state.conn < C_AHEAD) {
 		/* In case a previous resync run was aborted by an IO error/detach on the peer. */

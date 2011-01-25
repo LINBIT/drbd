@@ -25,12 +25,9 @@ ifndef CONFIG_CONNECTOR
 	drbd-y += connector.o cn_queue.o
 endif
 
-drbd_trace-y := drbd_tracing.o
-
-$(patsubst %,$(obj)/%,$(drbd-y) $(drbd_trace-y)): $(obj)/compat.h
+$(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
-obj-$(CONFIG_DRBD_TRACE)       += drbd_trace.o
 
 # ======================================================================
 

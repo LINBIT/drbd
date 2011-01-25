@@ -44,7 +44,6 @@
 #include <linux/vmalloc.h>
 #include <linux/random.h>
 #include "drbd_int.h"
-#include "drbd_tracing.h"
 #include "drbd_req.h"
 #include "drbd_vli.h"
 #ifdef COMPAT_HAVE_SCATTERLIST_H
@@ -387,7 +386,6 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	 */
 	e->block_id = id;
 
-	trace_drbd_ee(mdev, e, "allocated");
 	return e;
 
  fail:
@@ -397,7 +395,6 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 
 void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int is_net)
 {
-	trace_drbd_ee(mdev, e, "freed");
 	if (e->flags & EE_HAS_DIGEST)
 		kfree(e->digest);
 	drbd_pp_free(mdev, e->pages, is_net);
@@ -454,7 +451,6 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	 * all ignore the last argument.
 	 */
 	list_for_each_entry_safe(e, t, &work_list, w.list) {
-		trace_drbd_ee(mdev, e, "process_done_ee");
 		/* list_del not necessary, next/prev members not touched */
 		ok = e->w.cb(mdev, &e->w, !ok) && ok;
 		drbd_free_ee(mdev, e);
@@ -1100,8 +1096,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 			break;
 		}
 
-		trace_drbd_epoch(mdev, epoch, ev);
-
 		if (epoch_size != 0 &&
 		    atomic_read(&epoch->active) == 0 &&
 		    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
@@ -1133,7 +1127,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 				list_del(&epoch->list);
 				ev = EV_BECAME_LAST | (ev & EV_CLEANUP);
 				mdev->epochs--;
-				trace_drbd_epoch(mdev, epoch, EV_TRACE_FREE);
 				kfree(epoch);
 
 				if (rv == FE_STILL_LIVE)
@@ -1159,7 +1152,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
-			trace_drbd_epoch(mdev, epoch, EV_TRACE_FLUSH);
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
 			drbd_queue_work(&mdev->data.work, &fw->w);
@@ -1279,7 +1271,6 @@ next_bio:
 	D_ASSERT(ds == 0);
 
 	atomic_set(&e->pending_bios, n_bios);
-	trace_drbd_ee(mdev, e, "submitted");
 	do {
 		bio = bios;
 		bios = bios->bi_next;
@@ -1288,7 +1279,6 @@ next_bio:
 		/* strip off REQ_UNPLUG unless it is the last bio */
 		if (bios)
 			bio->bi_rw &= ~DRBD_REQ_UNPLUG;
-		trace_drbd_bio(mdev, "Sec", bio, 0, NULL);
 		drbd_generic_make_request(mdev, fault_type, bio);
 
 		/* strip off REQ_FLUSH,
@@ -1433,7 +1423,6 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packets cmd, unsign
 		list_add(&epoch->list, &mdev->current_epoch->list);
 		mdev->current_epoch = epoch;
 		mdev->epochs++;
-		trace_drbd_epoch(mdev, epoch, EV_TRACE_ALLOC);
 	} else {
 		/* The current_epoch got recycled while we allocated this one... */
 		kfree(epoch);
@@ -1954,16 +1943,13 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 		epoch = list_entry(e->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == e->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
-			trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
 			rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
 			e->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
-				trace_drbd_epoch(mdev, epoch, EV_TRACE_SETTING_BI);
 				set_bit(DE_CONTAINS_A_BARRIER, &e->epoch->flags);
-				trace_drbd_epoch(mdev, e->epoch, EV_TRACE_ADD_BARRIER);
 				rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
 				e->flags |= EE_IS_BARRIER;
 			}
@@ -4012,9 +3998,6 @@ STATIC void drbdd(struct drbd_conf *mdev)
 			    cmdname(cmd), packet_size);
 			goto err_out;
 		}
-
-		trace_drbd_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
-				__FILE__, __LINE__);
 	}
 
 	if (0) {
@@ -4235,9 +4218,6 @@ STATIC int drbd_do_handshake(struct drbd_conf *mdev)
 			dev_warn(DEV, "short read receiving handshake packet: l=%u\n", rv);
 		return 0;
 	}
-
-	trace_drbd_packet(mdev, mdev->data.socket, 2, &mdev->data.rbuf,
-			__FILE__, __LINE__);
 
 	p->protocol_min = be32_to_cpu(p->protocol_min);
 	p->protocol_max = be32_to_cpu(p->protocol_max);
@@ -4867,14 +4847,12 @@ int drbd_asender(struct drbd_thread *thi)
 			}
 			expect = cmd->pkt_size;
 			ERR_IF(len != expect-sizeof(struct p_header80)) {
-				trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 				DUMPI(expect);
 				goto reconnect;
 			}
 		}
 		if (received == expect) {
 			D_ASSERT(cmd != NULL);
-			trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 			if (!cmd->process(mdev, h))
 				goto reconnect;
 

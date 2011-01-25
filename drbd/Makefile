@@ -44,7 +44,6 @@ ifneq ($(PATCHLEVEL),)
   endif
 
   CONFIG_BLK_DEV_DRBD := m
-  CONFIG_DRBD_TRACE := n
 
   include $(src)/Kbuild
 

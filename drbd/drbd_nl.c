@@ -34,7 +34,7 @@
 #include <linux/blkpg.h>
 #include <linux/cpumask.h>
 #include "drbd_int.h"
-#include "drbd_tracing.h"
+#include "drbd_req.h"
 #include "drbd_wrappers.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_tag_magic.h>
@@ -2253,8 +2253,6 @@ STATIC void drbd_connector_callback(void *data)
 		goto fail;
 	}
 
-	trace_drbd_netlink(req, 1);
-
 	if (nlp->packet_type >= P_nl_after_last_packet ||
 	    nlp->packet_type == P_return_code_only) {
 		retcode = ERR_PACKET_NR;
@@ -2293,7 +2291,6 @@ STATIC void drbd_connector_callback(void *data)
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) + rr;
 	cn_reply->flags = 0;
 
-	trace_drbd_netlink(cn_reply, 0);
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
 		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);
@@ -2387,7 +2384,6 @@ void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state state)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_NOIO);
 }
 
@@ -2420,7 +2416,6 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_NOIO);
 }
 
@@ -2499,7 +2494,6 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_NOIO);
 	kfree(cn_reply);
 }
@@ -2539,7 +2533,6 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	reply->minor = mdev_to_minor(mdev);
 	reply->ret_code = NO_ERROR;
 
-	trace_drbd_netlink(cn_reply, 0);
 	cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_NOIO);
 }
 
@@ -2631,7 +2624,6 @@ void drbd_nl_send_reply(struct cn_msg *req, int ret_code)
 	reply->minor = ((struct drbd_nl_cfg_req *)req->data)->drbd_minor;
 	reply->ret_code = ret_code;
 
-	trace_drbd_netlink(cn_reply, 0);
 	rr = cn_netlink_send(cn_reply, CN_IDX_DRBD, GFP_NOIO);
 	if (rr && rr != -ESRCH)
 		printk(KERN_INFO "drbd: cn_netlink_send()=%d\n", rr);

@@ -53,7 +53,6 @@
 
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
-#include "drbd_tracing.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 #include "drbd_vli.h"
 
@@ -90,18 +89,6 @@ STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC int w_go_diskless(struct drbd_conf *mdev, struct drbd_work *w, int unused);
-
-DEFINE_TRACE(drbd_unplug);
-DEFINE_TRACE(drbd_uuid);
-DEFINE_TRACE(drbd_ee);
-DEFINE_TRACE(drbd_packet);
-DEFINE_TRACE(drbd_md_io);
-DEFINE_TRACE(drbd_epoch);
-DEFINE_TRACE(drbd_netlink);
-DEFINE_TRACE(drbd_actlog);
-DEFINE_TRACE(drbd_bio);
-DEFINE_TRACE(_drbd_resync);
-DEFINE_TRACE(drbd_req);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -1988,7 +1975,6 @@ int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
 	h->command = cpu_to_be16(cmd);
 	h->length  = cpu_to_be16(size-sizeof(struct p_header80));
 
-	trace_drbd_packet(mdev, sock, 0, (void *)h, __FILE__, __LINE__);
 	sent = drbd_send(mdev, sock, h, size, msg_flags);
 
 	ok = (sent == size);
@@ -2039,8 +2025,6 @@ int drbd_send_cmd2(struct drbd_conf *mdev, enum drbd_packets cmd, char *data,
 
 	if (!drbd_get_data_sock(mdev))
 		return 0;
-
-	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&h, __FILE__, __LINE__);
 
 	ok = (sizeof(h) ==
 		drbd_send(mdev, mdev->data.socket, &h, sizeof(h), 0));
@@ -2855,7 +2839,6 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 
 	p.dp_flags = cpu_to_be32(dp_flags);
-	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = (sizeof(p) ==
 		drbd_send(mdev, mdev->data.socket, &p, sizeof(p), dgs ? MSG_MORE : 0));
 	if (ok && dgs) {
@@ -2939,7 +2922,6 @@ int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
 	if (!drbd_get_data_sock(mdev))
 		return 0;
 
-	trace_drbd_packet(mdev, mdev->data.socket, 0, (void *)&p, __FILE__, __LINE__);
 	ok = sizeof(p) == drbd_send(mdev, mdev->data.socket, &p, sizeof(p), dgs ? MSG_MORE : 0);
 	if (ok && dgs) {
 		dgb = mdev->int_dig_out;
@@ -3136,8 +3118,6 @@ static int drbd_release(struct inode *inode, struct file *file)
 STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
-
-	trace_drbd_unplug(mdev, "got unplugged");
 
 	/* unplug FIRST */
 	spin_lock_irq(q->queue_lock);
@@ -3888,8 +3868,6 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!get_ldev_if_state(mdev, D_FAILED))
 		return;
 
-	trace_drbd_md_io(mdev, WRITE, mdev->ldev);
-
 	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 	memset(buffer, 0, 512);
@@ -3940,8 +3918,6 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
 	if (!get_ldev_if_state(mdev, D_ATTACHING))
 		return ERR_IO_MD_DISK;
-
-	trace_drbd_md_io(mdev, READ, bdev);
 
 	mutex_lock(&mdev->md_io_mutex);
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);

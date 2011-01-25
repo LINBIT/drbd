@@ -747,31 +747,6 @@ static inline struct proc_dir_entry *proc_create_data(const char *name,
 
 #endif
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-#define TP_PROTO(args...)	args
-#define TP_ARGS(args...)		args
-
-#undef DECLARE_TRACE
-#define DECLARE_TRACE(name, proto, args)				\
-	static inline void _do_trace_##name(struct tracepoint *tp, proto) \
-	{ }								\
-	static inline void trace_##name(proto)				\
-	{ }								\
-	static inline int register_trace_##name(void (*probe)(proto))	\
-	{								\
-		return -ENOSYS;						\
-	}								\
-	static inline int unregister_trace_##name(void (*probe)(proto))	\
-	{								\
-		return -ENOSYS;						\
-	}
-
-#undef DEFINE_TRACE
-#define DEFINE_TRACE(name)
-
-#endif
-
 #ifndef COMPAT_HAVE_BLK_QUEUE_MAX_HW_SECTORS
 static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max)
 {
