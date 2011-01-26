@@ -967,7 +967,18 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 #define bio_split(bi, first_sectors) bio_split(bi, bio_split_pool, first_sectors)
 #endif
 
-#ifndef COMPAT_HAVE_RB_AUGMENT_FUNCTIONS
+#if !(defined(COMPAT_HAVE_RB_AUGMENT_FUNCTIONS) && \
+      defined(AUGMENTED_RBTREE_SYMBOLS_EXPORTED))
+
+/*
+ * Make sure the replacements for the augmented rbtree helper functions do not
+ * clash with functions the kernel implements but does not export.
+ */
+#define rb_augment_f drbd_rb_augment_f
+#define rb_augment_path drbd_rb_augment_path
+#define rb_augment_insert drbd_rb_augment_insert
+#define rb_augment_erase_begin drbd_rb_augment_erase_begin
+#define rb_augment_erase_end drbd_rb_augment_erase_end
 
 typedef void (*rb_augment_f)(struct rb_node *node, void *data);
 

@@ -1,6 +1,5 @@
 obj-m := drbd.o
 
-
 clean-files := compat.h
 
 LINUXINCLUDE := -I$(src) $(LINUXINCLUDE)
@@ -15,6 +14,15 @@ LINUXINCLUDE := -I$(src) $(LINUXINCLUDE)
 # override: we absolutely need this, even if EXTRA_CFLAGS originates from make
 # command line or environment
 override EXTRA_CFLAGS += -I$(src) -I$(src)/compat
+
+# The augmented rbtree helper functions are not exported at least until kernel
+# version 2.6.38-rc2.
+ifeq ($(shell grep -e '\<rb_augment_insert\>' \
+		   -e '\<rb_augment_erase_begin\>' \
+		   -e '\<rb_augment_erase_end\>' \
+		   $(objtree)/Module.symvers | wc -l),3)
+EXTRA_CFLAGS += -DAUGMENTED_RBTREE_SYMBOLS_EXPORTED
+endif
 
 drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_worker.o drbd_receiver.o drbd_req.o drbd_actlog.o
