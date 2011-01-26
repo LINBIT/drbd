@@ -1963,7 +1963,7 @@ void drbd_thread_current_set_cpu(struct drbd_conf *mdev)
 #endif
 
 static void prepare_header80(struct drbd_conf *mdev, struct p_header80 *h,
-			     enum drbd_packets cmd, int size)
+			     enum drbd_packet cmd, int size)
 {
 	h->magic   = cpu_to_be32(DRBD_MAGIC);
 	h->command = cpu_to_be16(cmd);
@@ -1971,7 +1971,7 @@ static void prepare_header80(struct drbd_conf *mdev, struct p_header80 *h,
 }
 
 static void prepare_header95(struct drbd_conf *mdev, struct p_header95 *h,
-			     enum drbd_packets cmd, int size)
+			     enum drbd_packet cmd, int size)
 {
 	h->magic   = cpu_to_be16(DRBD_MAGIC_BIG);
 	h->command = cpu_to_be16(cmd);
@@ -1979,7 +1979,7 @@ static void prepare_header95(struct drbd_conf *mdev, struct p_header95 *h,
 }
 
 static void prepare_header(struct drbd_conf *mdev, struct p_header *h,
-			   enum drbd_packets cmd, int size)
+			   enum drbd_packet cmd, int size)
 {
 	if (mdev->tconn->agreed_pro_version >= 100 || size > DRBD_MAX_SIZE_H80_PACKET)
 		prepare_header95(mdev, &h->h95, cmd, size);
@@ -1989,8 +1989,8 @@ static void prepare_header(struct drbd_conf *mdev, struct p_header *h,
 
 /* the appropriate socket mutex must be held already */
 int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
-			  enum drbd_packets cmd, struct p_header *h,
-			  size_t size, unsigned msg_flags)
+		   enum drbd_packet cmd, struct p_header *h, size_t size,
+		   unsigned msg_flags)
 {
 	int sent, ok;
 
@@ -2014,7 +2014,7 @@ int _drbd_send_cmd(struct drbd_conf *mdev, struct socket *sock,
  * when we hold the appropriate socket mutex.
  */
 int drbd_send_cmd(struct drbd_conf *mdev, int use_data_socket,
-		  enum drbd_packets cmd, struct p_header *h, size_t size)
+		  enum drbd_packet cmd, struct p_header *h, size_t size)
 {
 	int ok = 0;
 	struct socket *sock;
@@ -2039,7 +2039,7 @@ int drbd_send_cmd(struct drbd_conf *mdev, int use_data_socket,
 	return ok;
 }
 
-int drbd_send_cmd2(struct drbd_conf *mdev, enum drbd_packets cmd, char *data,
+int drbd_send_cmd2(struct drbd_conf *mdev, enum drbd_packet cmd, char *data,
 		   size_t size)
 {
 	struct p_header h;
@@ -2080,7 +2080,8 @@ int drbd_send_sync_param(struct drbd_conf *mdev, struct syncer_conf *sc)
 	sock = mdev->tconn->data.socket;
 
 	if (likely(sock != NULL)) {
-		enum drbd_packets cmd = apv >= 89 ? P_SYNC_PARAM89 : P_SYNC_PARAM;
+		enum drbd_packet cmd =
+			apv >= 89 ? P_SYNC_PARAM89 : P_SYNC_PARAM;
 
 		p = &mdev->tconn->data.sbuf.rs_param_95;
 
@@ -2531,10 +2532,8 @@ int drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
  * @blksize:	size in byte, needs to be in big endian byte order
  * @block_id:	Id, big endian byte order
  */
-STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packets cmd,
-			  u64 sector,
-			  u32 blksize,
-			  u64 block_id)
+STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
+			  u64 sector, u32 blksize, u64 block_id)
 {
 	int ok;
 	struct p_block_ack p;
@@ -2553,7 +2552,7 @@ STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packets cmd,
 /* dp->sector and dp->block_id already/still in network byte order,
  * data_size is payload size according to dp->head,
  * and may need to be corrected for digest size. */
-int drbd_send_ack_dp(struct drbd_conf *mdev, enum drbd_packets cmd,
+int drbd_send_ack_dp(struct drbd_conf *mdev, enum drbd_packet cmd,
 		     struct p_data *dp, int data_size)
 {
 	data_size -= (mdev->tconn->agreed_pro_version >= 87 && mdev->tconn->integrity_r_tfm) ?
@@ -2562,7 +2561,7 @@ int drbd_send_ack_dp(struct drbd_conf *mdev, enum drbd_packets cmd,
 			      dp->block_id);
 }
 
-int drbd_send_ack_rp(struct drbd_conf *mdev, enum drbd_packets cmd,
+int drbd_send_ack_rp(struct drbd_conf *mdev, enum drbd_packet cmd,
 		     struct p_block_req *rp)
 {
 	return _drbd_send_ack(mdev, cmd, rp->sector, rp->blksize, rp->block_id);
@@ -2574,8 +2573,8 @@ int drbd_send_ack_rp(struct drbd_conf *mdev, enum drbd_packets cmd,
  * @cmd:	Packet command code.
  * @e:		Epoch entry.
  */
-int drbd_send_ack(struct drbd_conf *mdev,
-	enum drbd_packets cmd, struct drbd_epoch_entry *e)
+int drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
+		  struct drbd_epoch_entry *e)
 {
 	return _drbd_send_ack(mdev, cmd,
 			      cpu_to_be64(e->i.sector),
@@ -2585,7 +2584,7 @@ int drbd_send_ack(struct drbd_conf *mdev,
 
 /* This function misuses the block_id field to signal if the blocks
  * are is sync or not. */
-int drbd_send_ack_ex(struct drbd_conf *mdev, enum drbd_packets cmd,
+int drbd_send_ack_ex(struct drbd_conf *mdev, enum drbd_packet cmd,
 		     sector_t sector, int blksize, u64 block_id)
 {
 	return _drbd_send_ack(mdev, cmd,
@@ -2608,10 +2607,8 @@ int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
 	return ok;
 }
 
-int drbd_send_drequest_csum(struct drbd_conf *mdev,
-			    sector_t sector, int size,
-			    void *digest, int digest_size,
-			    enum drbd_packets cmd)
+int drbd_send_drequest_csum(struct drbd_conf *mdev, sector_t sector, int size,
+			    void *digest, int digest_size, enum drbd_packet cmd)
 {
 	int ok;
 	struct p_block_req p;
@@ -2885,7 +2882,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
  *  Peer       -> (diskless) R_PRIMARY   (P_DATA_REPLY)
  *  C_SYNC_SOURCE -> C_SYNC_TARGET         (P_RS_DATA_REPLY)
  */
-int drbd_send_block(struct drbd_conf *mdev, enum drbd_packets cmd,
+int drbd_send_block(struct drbd_conf *mdev, enum drbd_packet cmd,
 		    struct drbd_epoch_entry *e)
 {
 	int ok;
@@ -4316,7 +4313,7 @@ STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	return 1;
 }
 
-const char *cmdname(enum drbd_packets cmd)
+const char *cmdname(enum drbd_packet cmd)
 {
 	/* THINK may need to become several global tables
 	 * when we want to support more than
