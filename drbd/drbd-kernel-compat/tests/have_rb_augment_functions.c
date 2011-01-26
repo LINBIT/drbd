@@ -6,10 +6,9 @@ void foo(void) {
 	struct rb_node *n;
 
 	rb_augment_insert((struct rb_node *) NULL,
-			  (struct rb_node *) NULL,
 			  (rb_augment_f) NULL,
 			  NULL);
 
 	n = rb_augment_erase_begin((struct rb_node *)NULL);
-	rb_augment_erase_end((struct rb_node *) NULL, (rb_augment_f) NULL, func, NULL);
+	rb_augment_erase_end((struct rb_node *) NULL, (rb_augment_f) NULL, NULL);
 }
