@@ -18,12 +18,12 @@ BuildRequires: %kernel_module_package_buildreqs
 %if 0%{?suse_version} < 1110
 # We need to exclude some flavours on sles10 etc,
 # or we hit an rpm internal buffer limit.
-%suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-suse kdump kdumppae vmi vmipae
+%suse_kernel_module_package -n drbd -p preamble -f filelist-suse kdump kdumppae vmi vmipae
 %else
-%suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-suse
+%suse_kernel_module_package -n drbd -p preamble -f filelist-suse
 %endif
 %else
-%kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-redhat
+%kernel_module_package -n drbd -p preamble -f filelist-redhat
 %endif
 
 %description
