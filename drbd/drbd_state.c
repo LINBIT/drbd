@@ -274,6 +274,50 @@ void print_st_err(struct drbd_conf *mdev, union drbd_state os,
 	print_st(mdev, "wanted", ns);
 }
 
+static void print_state_change(struct drbd_conf *mdev, union drbd_state os, union drbd_state ns)
+{
+	char *pbp, pb[300];
+	pbp = pb;
+	*pbp = 0;
+	if (ns.role != os.role)
+		pbp += sprintf(pbp, "role( %s -> %s ) ",
+			       drbd_role_str(os.role),
+			       drbd_role_str(ns.role));
+	if (ns.peer != os.peer)
+		pbp += sprintf(pbp, "peer( %s -> %s ) ",
+			       drbd_role_str(os.peer),
+			       drbd_role_str(ns.peer));
+	if (ns.conn != os.conn)
+		pbp += sprintf(pbp, "conn( %s -> %s ) ",
+			       drbd_conn_str(os.conn),
+			       drbd_conn_str(ns.conn));
+	if (ns.disk != os.disk)
+		pbp += sprintf(pbp, "disk( %s -> %s ) ",
+			       drbd_disk_str(os.disk),
+			       drbd_disk_str(ns.disk));
+	if (ns.pdsk != os.pdsk)
+		pbp += sprintf(pbp, "pdsk( %s -> %s ) ",
+			       drbd_disk_str(os.pdsk),
+			       drbd_disk_str(ns.pdsk));
+	if (is_susp(ns) != is_susp(os))
+		pbp += sprintf(pbp, "susp( %d -> %d ) ",
+			       is_susp(os),
+			       is_susp(ns));
+	if (ns.aftr_isp != os.aftr_isp)
+		pbp += sprintf(pbp, "aftr_isp( %d -> %d ) ",
+			       os.aftr_isp,
+			       ns.aftr_isp);
+	if (ns.peer_isp != os.peer_isp)
+		pbp += sprintf(pbp, "peer_isp( %d -> %d ) ",
+			       os.peer_isp,
+			       ns.peer_isp);
+	if (ns.user_isp != os.user_isp)
+		pbp += sprintf(pbp, "user_isp( %d -> %d ) ",
+			       os.user_isp,
+			       ns.user_isp);
+	dev_info(DEV, "%s\n", pb);
+}
+
 #undef STATE_FMT
 #undef STATE_ARGS
 
@@ -672,50 +716,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	if (warn_sync_abort)
 		dev_warn(DEV, "%s aborted.\n", warn_sync_abort);
 
-#if DUMP_MD >= 2
-	{
-	char *pbp, pb[300];
-	pbp = pb;
-	*pbp = 0;
-	if (ns.role != os.role)
-		pbp += sprintf(pbp, "role( %s -> %s ) ",
-			       drbd_role_str(os.role),
-			       drbd_role_str(ns.role));
-	if (ns.peer != os.peer)
-		pbp += sprintf(pbp, "peer( %s -> %s ) ",
-			       drbd_role_str(os.peer),
-			       drbd_role_str(ns.peer));
-	if (ns.conn != os.conn)
-		pbp += sprintf(pbp, "conn( %s -> %s ) ",
-			       drbd_conn_str(os.conn),
-			       drbd_conn_str(ns.conn));
-	if (ns.disk != os.disk)
-		pbp += sprintf(pbp, "disk( %s -> %s ) ",
-			       drbd_disk_str(os.disk),
-			       drbd_disk_str(ns.disk));
-	if (ns.pdsk != os.pdsk)
-		pbp += sprintf(pbp, "pdsk( %s -> %s ) ",
-			       drbd_disk_str(os.pdsk),
-			       drbd_disk_str(ns.pdsk));
-	if (is_susp(ns) != is_susp(os))
-		pbp += sprintf(pbp, "susp( %d -> %d ) ",
-			       is_susp(os),
-			       is_susp(ns));
-	if (ns.aftr_isp != os.aftr_isp)
-		pbp += sprintf(pbp, "aftr_isp( %d -> %d ) ",
-			       os.aftr_isp,
-			       ns.aftr_isp);
-	if (ns.peer_isp != os.peer_isp)
-		pbp += sprintf(pbp, "peer_isp( %d -> %d ) ",
-			       os.peer_isp,
-			       ns.peer_isp);
-	if (ns.user_isp != os.user_isp)
-		pbp += sprintf(pbp, "user_isp( %d -> %d ) ",
-			       os.user_isp,
-			       ns.user_isp);
-	dev_info(DEV, "%s\n", pb);
-	}
-#endif
+	print_state_change(mdev, os, ns);
 
 	/* solve the race between becoming unconfigured,
 	 * worker doing the cleanup, and
