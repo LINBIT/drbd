@@ -2063,6 +2063,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 		first = 1;
 		for (;;) {
 			struct drbd_interval *i;
+			struct drbd_request *req2;
 			int have_unacked = 0;
 			int have_conflict = 0;
 			prepare_to_wait(&mdev->misc_wait, &wait,
@@ -2070,8 +2071,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 			i = drbd_find_overlap(&mdev->write_requests, sector, size);
 			if (i) {
-				struct drbd_request *req2 =
-					container_of(i, struct drbd_request, i);
+				req2 = container_of(i, struct drbd_request, i);
 
 				/* only ALERT on first iteration,
 				 * we may be woken up early... */
@@ -2116,6 +2116,9 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 				finish_wait(&mdev->misc_wait, &wait);
 				goto out_interrupted;
 			}
+
+			/* Indicate to wake up mdev->misc_wait upon completion.  */
+			req2->rq_state |= RQ_COLLISION;
 
 			spin_unlock_irq(&mdev->tconn->req_lock);
 			if (first) {
