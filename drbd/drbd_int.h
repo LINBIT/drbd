@@ -1735,68 +1735,6 @@ void drbd_bcast_ee(struct drbd_conf *, const char *, const int, const char *,
 		   const char *, const struct drbd_peer_request *);
 
 
-/**
- * DOC: DRBD State macros
- *
- * These macros are used to express state changes in easily readable form.
- *
- * The NS macros expand to a mask and a value, that can be bit ored onto the
- * current state as soon as the spinlock (req_lock) was taken.
- *
- * The _NS macros are used for state functions that get called with the
- * spinlock. These macros expand directly to the new state value.
- *
- * Besides the basic forms NS() and _NS() additional _?NS[23] are defined
- * to express state changes that affect more than one aspect of the state.
- *
- * E.g. NS2(conn, C_CONNECTED, peer, R_SECONDARY)
- * Means that the network connection was established and that the peer
- * is in secondary role.
- */
-#define role_MASK R_MASK
-#define peer_MASK R_MASK
-#define disk_MASK D_MASK
-#define pdsk_MASK D_MASK
-#define conn_MASK C_MASK
-#define susp_MASK 1
-#define user_isp_MASK 1
-#define aftr_isp_MASK 1
-#define susp_nod_MASK 1
-#define susp_fen_MASK 1
-
-/* drbd state debug */
-#if DRBD_DEBUG_STATE_CHANGES
-extern void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
-		const char *func, unsigned int line,
-		const char *name, union drbd_state s);
-#define DRBD_STATE_DEBUG_INIT_VAL(s) ({ (s).seq = 0; (s).line = __LINE__; (s).func = __func__; })
-#else
-#define drbd_state_dbg(...) do { } while (0)
-#define DRBD_STATE_DEBUG_INIT_VAL(s) do { } while (0)
-#endif
-
-#define NS(T, S) \
-	({ union drbd_state mask; mask.i = 0; mask.T = T##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T = (S); val; })
-#define NS2(T1, S1, T2, S2) \
-	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
-	  mask.T2 = T2##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
-	  val.T2 = (S2); val; })
-#define NS3(T1, S1, T2, S2, T3, S3) \
-	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
-	  mask.T2 = T2##_MASK; mask.T3 = T3##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
-	  val.T2 = (S2); val.T3 = (S3); val; })
-
-#define _NS(D, T, S) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T = (S); __ns; })
-#define _NS2(D, T1, S1, T2, S2) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
-	__ns.T2 = (S2); __ns; })
-#define _NS3(D, T1, S1, T2, S2, T3, S3) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
-	__ns.T2 = (S2); __ns.T3 = (S3); __ns; })
 
 /*
  * inline helper functions
