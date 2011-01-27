@@ -41,7 +41,7 @@
 
 #include "compat.h"
 #include "linux/drbd.h"
-
+#include "drbd_state.h"
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
@@ -1269,35 +1269,12 @@ static inline void drbd_put_data_sock(struct drbd_conf *mdev)
 
 /* drbd_main.c */
 
-enum chg_state_flags {
-	CS_HARD	= 1,
-	CS_VERBOSE = 2,
-	CS_WAIT_COMPLETE = 4,
-	CS_SERIALIZE    = 8,
-	CS_ORDERED      = CS_WAIT_COMPLETE + CS_SERIALIZE,
-};
-
 enum dds_flags {
 	DDSF_FORCED    = 1,
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
 };
 
 extern void drbd_init_set_defaults(struct drbd_conf *mdev);
-extern enum drbd_state_rv drbd_change_state(struct drbd_conf *mdev,
-					    enum chg_state_flags f,
-					    union drbd_state mask,
-					    union drbd_state val);
-extern void drbd_force_state(struct drbd_conf *, union drbd_state,
-			union drbd_state);
-extern enum drbd_state_rv _drbd_request_state(struct drbd_conf *,
-					      union drbd_state,
-					      union drbd_state,
-					      enum chg_state_flags);
-extern enum drbd_state_rv __drbd_set_state(struct drbd_conf *, union drbd_state,
-					   enum chg_state_flags,
-					   struct completion *done);
-extern void print_st_err(struct drbd_conf *, union drbd_state,
-			union drbd_state, int);
 extern int  drbd_thread_start(struct drbd_thread *thi);
 extern void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
 #ifdef CONFIG_SMP
@@ -1314,6 +1291,7 @@ extern void tl_clear(struct drbd_conf *mdev);
 enum drbd_req_event;
 extern void tl_restart(struct drbd_conf *mdev, enum drbd_req_event what);
 extern void _tl_add_barrier(struct drbd_conf *, struct drbd_tl_epoch *);
+extern void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what);
 extern void drbd_free_sock(struct drbd_conf *mdev);
 extern int drbd_send(struct drbd_conf *mdev, struct socket *sock,
 			void *buf, size_t size, unsigned msg_flags);
@@ -1874,6 +1852,10 @@ static inline int drbd_ee_has_active_page(struct drbd_epoch_entry *e)
 }
 
 
+
+
+
+
 static inline void drbd_state_lock(struct drbd_conf *mdev)
 {
 	wait_event(mdev->misc_wait,
@@ -1897,23 +1879,6 @@ _drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	read_unlock(&global_state_lock);
 
 	return rv;
-}
-
-/**
- * drbd_request_state() - Reqest a state change
- * @mdev:	DRBD device.
- * @mask:	mask of state bits to change.
- * @val:	value of new state bits.
- *
- * This is the most graceful way of requesting a state change. It is verbose
- * quite verbose in case the state change is not possible, and all those
- * state changes are globally serialized.
- */
-static inline int drbd_request_state(struct drbd_conf *mdev,
-				     union drbd_state mask,
-				     union drbd_state val)
-{
-	return _drbd_request_state(mdev, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
 #define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
