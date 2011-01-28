@@ -752,7 +752,7 @@ static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned in
 {
 	blk_queue_max_sectors(q, max);
 }
-#elif defined(USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS)
+#elif defined(COMPAT_USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS)
 	/* For kernel versions 2.6.31 to 2.6.33 inclusive, even though
 	 * blk_queue_max_hw_sectors is present, we actually need to use
 	 * blk_queue_max_sectors to set max_hw_sectors. :-(

@@ -68,10 +68,10 @@ filechk_compat.h = \
 		 sed -e "s,.*/,COMPAT_," -e "s,\.c,," | \
 		 tr -- -a-z _A-Z | \
 		 tr -dc A-Z0-9_`; \
-	    if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o dummy.o $$cfg \
+	    if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(obj)/dummy.o $$cfg \
 		    > /dev/null $(if $(quiet),2>&1); then \
 		echo "\#define $$var"; \
-		rm -f dummy.{o,gcda,gcno}; \
+		rm -f $(obj)/dummy.{o,gcda,gcno}; \
 	    else \
 		echo "/* \#undef $$var */"; \
 	    fi; \
