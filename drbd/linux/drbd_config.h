@@ -146,4 +146,7 @@ extern const char *drbd_buildtag(void);
 /* some older kernels do not have schedule_timeout_interruptible() */
 //#define NEED_SCHEDULE_TIMEOUT_INTERR
 
+/* Stone old kernels lack the fmode_t type */
+#define COMPAT_HAVE_FMODE_T
+
 #endif

@@ -203,6 +203,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_sched_timeout_interr=0
   fi
+  if grep_q "fmode_t" $KDIR/include/linux/types.h ; then
+    have_fmode_t=1
+  else
+    have_fmode_t=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -260,6 +265,8 @@ perl -pe "
   { ( $have_bool_type ? '//' : '' ) . \$1}e;
  s{.*(#define NEED_SCHEDULE_TIMEOUT_INTERR.*)}
   { ( $have_sched_timeout_interr ? '//' : '' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_FMODE_T.*)}
+  { ( $have_fmode_t ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
