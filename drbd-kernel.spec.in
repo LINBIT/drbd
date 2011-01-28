@@ -80,7 +80,7 @@ echo "override drbd * $INSTALL_MOD_DIR" \
 rm -rf %{buildroot}
 
 %changelog
-* Fri Jan 21 2011 Philipp Reisner <phil@linbit.com> - 8.3.10rc3-1
+* Fri Jan 28 2011 Philipp Reisner <phil@linbit.com> - 8.3.10-1
 - New upstream release.
 
 * Wed Nov 25 2010 Andreas Gruenbacher <agruen@linbit.com> - 8.3.9-1
