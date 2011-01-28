@@ -1033,38 +1033,11 @@ fail_and_free_req:
 	return ret;
 }
 
-/* helper function for drbd_make_request
- * if we can determine just by the mdev (state) that this request will fail,
- * return 1
- * otherwise return 0
- */
-static int drbd_fail_request_early(struct drbd_conf *mdev, int is_write)
-{
-	if (mdev->state.role != R_PRIMARY &&
-		(!allow_oos || is_write)) {
-		if (DRBD_ratelimit(5*HZ, 5)) {
-			dev_err(DEV, "Process %s[%u] tried to %s; "
-			    "since we are not in Primary state, "
-			    "we cannot allow this\n",
-			    current->comm, current->pid,
-			    is_write ? "WRITE" : "READ");
-		}
-		return 1;
-	}
-
-	return 0;
-}
-
 int drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	unsigned int s_enr, e_enr;
 	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 	unsigned long start_time;
-
-	if (drbd_fail_request_early(mdev, bio_data_dir(bio) & WRITE)) {
-		bio_endio(bio, -EPERM);
-		return 0;
-	}
 
 	/* We never supported BIO_RW_BARRIER.
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
