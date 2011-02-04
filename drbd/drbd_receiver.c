@@ -227,7 +227,7 @@ static void maybe_kick_lo(struct drbd_conf *mdev)
 
 static void reclaim_net_ee(struct drbd_conf *mdev, struct list_head *to_be_freed)
 {
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 	struct list_head *le, *tle;
 
 	/* The EEs are always appended to the end of the list. Since
@@ -236,7 +236,7 @@ static void reclaim_net_ee(struct drbd_conf *mdev, struct list_head *to_be_freed
 	   stop to examine the list... */
 
 	list_for_each_safe(le, tle, &mdev->net_ee) {
-		e = list_entry(le, struct drbd_epoch_entry, w.list);
+		e = list_entry(le, struct drbd_peer_request, w.list);
 		if (drbd_ee_has_active_page(e))
 			break;
 		list_move(le, to_be_freed);
@@ -246,7 +246,7 @@ static void reclaim_net_ee(struct drbd_conf *mdev, struct list_head *to_be_freed
 static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
 {
 	LIST_HEAD(reclaimed);
-	struct drbd_epoch_entry *e, *t;
+	struct drbd_peer_request *e, *t;
 
 	maybe_kick_lo(mdev);
 	spin_lock_irq(&mdev->tconn->req_lock);
@@ -348,13 +348,11 @@ You must not have the req_lock:
  drbd_wait_ee_list_empty()
 */
 
-struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
-				     u64 id,
-				     sector_t sector,
-				     unsigned int data_size,
-				     gfp_t gfp_mask) __must_hold(local)
+struct drbd_peer_request *
+drbd_alloc_ee(struct drbd_conf *mdev, u64 id, sector_t sector,
+	      unsigned int data_size, gfp_t gfp_mask) __must_hold(local)
 {
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 	struct page *page;
 	unsigned nr_pages = (data_size + PAGE_SIZE -1) >> PAGE_SHIFT;
 
@@ -396,7 +394,8 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	return NULL;
 }
 
-void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int is_net)
+void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_peer_request *e,
+		       int is_net)
 {
 	if (e->flags & EE_HAS_DIGEST)
 		kfree(e->digest);
@@ -409,7 +408,7 @@ void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int i
 int drbd_release_ee(struct drbd_conf *mdev, struct list_head *list)
 {
 	LIST_HEAD(work_list);
-	struct drbd_epoch_entry *e, *t;
+	struct drbd_peer_request *e, *t;
 	int count = 0;
 	int is_net = list == &mdev->net_ee;
 
@@ -438,7 +437,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 {
 	LIST_HEAD(work_list);
 	LIST_HEAD(reclaimed);
-	struct drbd_epoch_entry *e, *t;
+	struct drbd_peer_request *e, *t;
 	int ok = (mdev->state.conn >= C_WF_REPORT_PARAMS);
 
 	spin_lock_irq(&mdev->tconn->req_lock);
@@ -1231,8 +1230,8 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
  *  on certain Xen deployments.
  */
 /* TODO allocate from our own bio_set. */
-int drbd_submit_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e,
-		const unsigned rw, const int fault_type)
+int drbd_submit_ee(struct drbd_conf *mdev, struct drbd_peer_request *e,
+		   const unsigned rw, const int fault_type)
 {
 	struct bio *bios = NULL;
 	struct bio *bio;
@@ -1318,7 +1317,7 @@ fail:
 }
 
 static void drbd_remove_epoch_entry_interval(struct drbd_conf *mdev,
-					     struct drbd_epoch_entry *e)
+					     struct drbd_peer_request *e)
 {
 	struct drbd_interval *i = &e->i;
 
@@ -1338,7 +1337,7 @@ static void drbd_remove_epoch_entry_interval(struct drbd_conf *mdev,
  */
 int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
 {
-	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
+	struct drbd_peer_request *e = (struct drbd_peer_request *)w;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
@@ -1466,11 +1465,12 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data */
-STATIC struct drbd_epoch_entry *
-read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector, int data_size) __must_hold(local)
+STATIC struct drbd_peer_request *
+read_in_block(struct drbd_conf *mdev, u64 id, sector_t sector,
+	      int data_size) __must_hold(local)
 {
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 	struct page *page;
 	int dgs, ds, rr;
 	void *dig_in = mdev->tconn->int_dig_in;
@@ -1649,7 +1649,7 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
  * drbd_process_done_ee() by asender only */
 STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
+	struct drbd_peer_request *e = (struct drbd_peer_request *)w;
 	sector_t sector = e->i.sector;
 	int ok;
 
@@ -1671,7 +1671,7 @@ STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int u
 
 STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_size) __releases(local)
 {
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 
 	e = read_in_block(mdev, ID_SYNCER, sector, data_size);
 	if (!e)
@@ -1786,7 +1786,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
  */
 STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 {
-	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
+	struct drbd_peer_request *e = (struct drbd_peer_request *)w;
 	sector_t sector = e->i.sector;
 	struct drbd_epoch *epoch;
 	int ok = 1, pcmd;
@@ -1830,7 +1830,7 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 
 STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 {
-	struct drbd_epoch_entry *e = (struct drbd_epoch_entry *)w;
+	struct drbd_peer_request *e = (struct drbd_peer_request *)w;
 	int ok = 1;
 
 	D_ASSERT(mdev->tconn->net_conf->wire_protocol == DRBD_PROT_C);
@@ -1947,7 +1947,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 			unsigned int data_size)
 {
 	sector_t sector;
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 	struct p_data *p = &mdev->tconn->data.rbuf.data;
 	int rw = WRITE;
 	u32 dp_flags;
@@ -2260,7 +2260,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packet cmd,
 {
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
-	struct drbd_epoch_entry *e;
+	struct drbd_peer_request *e;
 	struct digest_info *di = NULL;
 	int size, verb;
 	unsigned int fault_type;
