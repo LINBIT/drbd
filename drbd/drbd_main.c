@@ -988,10 +988,6 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	struct p_state p;
 	int ok = 0;
 
-	/* Grab state lock so we wont send state if we're in the middle
-	 * of a cluster wide state change on another thread */
-	drbd_state_lock(mdev);
-
 	mutex_lock(&mdev->tconn->data.mutex);
 
 	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
@@ -1004,7 +1000,6 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 
 	mutex_unlock(&mdev->tconn->data.mutex);
 
-	drbd_state_unlock(mdev);
 	return ok;
 }
 
