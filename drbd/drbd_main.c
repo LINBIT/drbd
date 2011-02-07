@@ -178,6 +178,18 @@ int _get_ldev_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
 
 #endif
 
+/* printk functions for connections
+ */
+void conn_printk(const char *level, struct drbd_tconn *tconn, const char *fmt, ...)
+{
+	va_list args;
+
+	printk("%sd-con %s: ", level, tconn->name);
+	va_start(args, fmt);
+	vprintk(fmt, args);
+	va_end(args);
+}
+
 /**
  * DOC: The transfer log
  *
@@ -2337,12 +2349,14 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 	struct drbd_conf *mdev;
 	struct gendisk *disk;
 	struct request_queue *q;
+	char conn_name[9]; /* drbd1234N */
 
 	/* GFP_KERNEL, we are outside of all write-out paths */
 	mdev = kzalloc(sizeof(struct drbd_conf), GFP_KERNEL);
 	if (!mdev)
 		return NULL;
-	mdev->tconn = drbd_new_tconn("dummy");
+	sprintf(conn_name, "drbd%d", minor);
+	mdev->tconn = drbd_new_tconn(conn_name);
 	if (!mdev->tconn)
 		goto out_no_tconn;
 
