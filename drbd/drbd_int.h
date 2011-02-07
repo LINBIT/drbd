@@ -874,7 +874,6 @@ enum {
 enum {
 	CREATE_BARRIER,		/* next P_DATA is preceeded by a P_BARRIER */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
-	SEND_PING,		/* whether asender should send a ping asap */
 
 	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
 	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
@@ -1034,6 +1033,7 @@ struct fifo_buffer {
 enum {
 	NET_CONGESTED,		/* The data socket is congested */
 	DISCARD_CONCURRENT,	/* Set on one node, cleared on the peer! */
+	SEND_PING,		/* whether asender should send a ping asap */
 };
 
 struct drbd_tconn {			/* is a resource from the config file */
@@ -1990,7 +1990,7 @@ static inline void wake_asender(struct drbd_conf *mdev)
 
 static inline void request_ping(struct drbd_conf *mdev)
 {
-	set_bit(SEND_PING, &mdev->flags);
+	set_bit(SEND_PING, &mdev->tconn->flags);
 	wake_asender(mdev);
 }
 
