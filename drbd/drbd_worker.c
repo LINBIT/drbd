@@ -175,7 +175,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	if (do_al_complete_io)
 		drbd_al_complete_io(mdev, e_sector);
 
-	wake_asender(mdev);
+	wake_asender(mdev->tconn);
 	put_ldev(mdev);
 }
 
@@ -763,7 +763,7 @@ STATIC int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int ca
 STATIC void ping_peer(struct drbd_conf *mdev)
 {
 	clear_bit(GOT_PING_ACK, &mdev->flags);
-	request_ping(mdev);
+	request_ping(mdev->tconn);
 	wait_event(mdev->misc_wait,
 		   test_bit(GOT_PING_ACK, &mdev->flags) || mdev->state.conn < C_CONNECTED);
 }

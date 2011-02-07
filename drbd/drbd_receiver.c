@@ -2112,7 +2112,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 				 * but I don't like the receiver using the msock */
 
 				put_ldev(mdev);
-				wake_asender(mdev);
+				wake_asender(mdev->tconn);
 				finish_wait(&mdev->misc_wait, &wait);
 				return true;
 			}
