@@ -3,10 +3,6 @@
 
 struct drbd_conf;
 
-/* disabled for now. */
-#define DRBD_DEBUG_STATE_CHANGES 0
-
-
 /**
  * DOC: DRBD State macros
  *
@@ -36,38 +32,27 @@ struct drbd_conf;
 #define susp_nod_MASK 1
 #define susp_fen_MASK 1
 
-/* drbd state debug */
-#if DRBD_DEBUG_STATE_CHANGES
-extern void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
-		const char *func, unsigned int line,
-		const char *name, union drbd_state s);
-#define DRBD_STATE_DEBUG_INIT_VAL(s) ({ (s).seq = 0; (s).line = __LINE__; (s).func = __func__; })
-#else
-#define drbd_state_dbg(...) do { } while (0)
-#define DRBD_STATE_DEBUG_INIT_VAL(s) do { } while (0)
-#endif
-
 #define NS(T, S) \
 	({ union drbd_state mask; mask.i = 0; mask.T = T##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T = (S); val; })
+	({ union drbd_state val; val.i = 0; val.T = (S); val; })
 #define NS2(T1, S1, T2, S2) \
 	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
 	  mask.T2 = T2##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
+	({ union drbd_state val; val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val; })
 #define NS3(T1, S1, T2, S2, T3, S3) \
 	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
 	  mask.T2 = T2##_MASK; mask.T3 = T3##_MASK; mask; }), \
-	({ union drbd_state val; DRBD_STATE_DEBUG_INIT_VAL(val); val.i = 0; val.T1 = (S1); \
+	({ union drbd_state val; val.i = 0; val.T1 = (S1); \
 	  val.T2 = (S2); val.T3 = (S3); val; })
 
 #define _NS(D, T, S) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T = (S); __ns; })
+	D, ({ union drbd_state __ns; __ns.i = D->state.i; __ns.T = (S); __ns; })
 #define _NS2(D, T1, S1, T2, S2) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
+	D, ({ union drbd_state __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns; })
 #define _NS3(D, T1, S1, T2, S2, T3, S3) \
-	D, ({ union drbd_state __ns; DRBD_STATE_DEBUG_INIT_VAL(__ns); __ns.i = D->state.i; __ns.T1 = (S1); \
+	D, ({ union drbd_state __ns; __ns.i = D->state.i; __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns.T3 = (S3); __ns; })
 
 

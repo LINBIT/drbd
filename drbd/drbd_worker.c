@@ -896,7 +896,6 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 		}
 	}
 
-	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	_drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 out_unlock:
 	spin_unlock_irq(&mdev->tconn->req_lock);
@@ -1569,7 +1568,6 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	else /* side == C_SYNC_SOURCE */
 		ns.pdsk = D_INCONSISTENT;
 
-	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	r = __drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	ns.i = mdev->state.i;
 

@@ -310,7 +310,6 @@ drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	val.i  = 0; val.role  = new_role;
 
 	while (try++ < max_tries) {
-		DRBD_STATE_DEBUG_INIT_VAL(val);
 		rv = _drbd_request_state(mdev, mask, val, CS_WAIT_COMPLETE);
 
 		/* in case we first succeeded to outdate,
@@ -370,7 +369,6 @@ drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 			continue;
 		}
 		if (rv < SS_SUCCESS) {
-			DRBD_STATE_DEBUG_INIT_VAL(val);
 			rv = _drbd_request_state(mdev, mask, val,
 						CS_VERBOSE + CS_WAIT_COMPLETE);
 			if (rv < SS_SUCCESS)
@@ -1235,7 +1233,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		mdev->p_uuid = NULL;
 	}
 
-	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	rv = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	ns.i = mdev->state.i;
 	spin_unlock_irq(&mdev->tconn->req_lock);

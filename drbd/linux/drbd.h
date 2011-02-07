@@ -262,18 +262,6 @@ union drbd_state {
 #else
 # error "this endianess is not supported"
 #endif
-#ifndef DRBD_DEBUG_STATE_CHANGES
-# ifdef CONFIG_DYNAMIC_DEBUG
-#  define DRBD_DEBUG_STATE_CHANGES 1
-# else
-#  define DRBD_DEBUG_STATE_CHANGES 0
-# endif
-#endif
-#if DRBD_DEBUG_STATE_CHANGES
-		unsigned int line;
-		const char *func;
-		unsigned long long seq;
-#endif
 	};
 	unsigned int i;
 };

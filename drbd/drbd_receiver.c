@@ -3480,7 +3480,6 @@ STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	DRBD_STATE_DEBUG_INIT_VAL(val);
 	rv = drbd_change_state(mdev, CS_VERBOSE, mask, val);
 
 	drbd_send_sr_reply(mdev, rv);
@@ -3499,10 +3498,6 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 	int rv;
 
 	peer_state.i = be32_to_cpu(p->state);
-
-	/* maybe we should always send a state seqence number with the state
-	 * packet, so we can more easily correlate with the sending side? */
-	drbd_state_dbg(mdev, 0, __func__, __LINE__, "recv", peer_state);
 
 	real_peer_disk = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
@@ -3619,7 +3614,6 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 		drbd_force_state(mdev, NS2(conn, C_PROTOCOL_ERROR, susp, 0));
 		return false;
 	}
-	DRBD_STATE_DEBUG_INIT_VAL(ns);
 	rv = _drbd_set_state(mdev, ns, cs_flags, NULL);
 	ns.i = mdev->state.i;
 	spin_unlock_irq(&mdev->tconn->req_lock);
@@ -4170,7 +4164,6 @@ STATIC void drbd_disconnect(struct drbd_conf *mdev)
 		/* Do not restart in case we are C_DISCONNECTING */
 		ns.i = os.i;
 		ns.conn = C_UNCONNECTED;
-		DRBD_STATE_DEBUG_INIT_VAL(ns);
 		rv = _drbd_set_state(mdev, ns, CS_VERBOSE, NULL);
 	}
 	spin_unlock_irq(&mdev->tconn->req_lock);

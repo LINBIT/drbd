@@ -64,10 +64,6 @@ enum drbd_state_rv
 drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 		  union drbd_state mask, union drbd_state val)
 {
-#if DRBD_DEBUG_STATE_CHANGES
-	static unsigned long long sseq = 0x00f00000LLU;
-#endif
-
 	unsigned long flags;
 	union drbd_state os, ns;
 	enum drbd_state_rv rv;
@@ -76,16 +72,8 @@ drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i;
-#if DRBD_DEBUG_STATE_CHANGES
-	ns.seq = ++sseq;
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "!os", os);
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "!ns", ns);
-#endif
 	rv = _drbd_set_state(mdev, ns, f, NULL);
 	ns.i = mdev->state.i;
-#if DRBD_DEBUG_STATE_CHANGES
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "=ns", ns);
-#endif
 	spin_unlock_irqrestore(&mdev->tconn->req_lock, flags);
 
 	return rv;
@@ -161,10 +149,6 @@ STATIC enum drbd_state_rv
 drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	       union drbd_state val, enum chg_state_flags f)
 {
-#if DRBD_DEBUG_STATE_CHANGES
-	static unsigned long long sseq = 0;
-#endif
-
 	struct completion done;
 	unsigned long flags;
 	union drbd_state os, ns;
@@ -180,16 +164,7 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	os = mdev->state;
 	ns.i = (os.i & ~mask.i) | val.i; /* assign state info */
 
-#if DRBD_DEBUG_STATE_CHANGES
-	ns.seq = ++sseq;
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?os", os);
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?ns", ns);
-#endif
 	ns = sanitize_state(mdev, os, ns, NULL);
-
-#if DRBD_DEBUG_STATE_CHANGES
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "?=>ns", ns);
-#endif
 
 	if (cl_wide_st_chg(mdev, os, ns)) {
 		rv = is_valid_state(mdev, ns);
@@ -238,11 +213,6 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	}
 
 abort:
-#if DRBD_DEBUG_STATE_CHANGES
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":os", os);
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":ns", ns);
-#endif
-
 	if (f & CS_SERIALIZE)
 		mutex_unlock(&mdev->state_mutex);
 
@@ -287,36 +257,6 @@ _drbd_request_state(struct drbd_conf *mdev, union drbd_state mask,
 		s.user_isp ? 'u' : '-', \
 		s.susp_fen ? 'F' : '-', \
 		s.susp_nod ? 'N' : '-'
-
-#if DRBD_DEBUG_STATE_CHANGES
-void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
-		const char *func, unsigned int line,
-		const char *name, union drbd_state s)
-{
-	int i;
-	/* some paranoia code,
-	 * in case this is called with unitizalized data. */
-	if (!name || !func) {
-		WARN_ON_ONCE(1);
-		return;
-	}
-	for (i = 0; i < 8 && name[i]; i++)
-		;
-	if (i == 8) {
-		WARN_ON_ONCE(1);
-		return;
-	}
-	for (i = 0; i < 32 && func[i]; i++)
-		;
-	if (i == 32) {
-		WARN_ON_ONCE(1);
-		return;
-	}
-	/* the actual debug prink */
-	dynamic_dev_dbg(DEV, " %8llx [%s] %s:%u" STATE_FMT,
-		seq, current->comm, func, line, STATE_ARGS(name, s));
-}
-#endif
 
 void print_st(struct drbd_conf *mdev, const char *tag, union drbd_state s)
 {
@@ -697,31 +637,14 @@ enum drbd_state_rv
 __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	         enum chg_state_flags flags, struct completion *done)
 {
-#if DRBD_DEBUG_STATE_CHANGES
-	static unsigned long long sseq = 0xff000000LLU;
-#endif
 	union drbd_state os;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	const char *warn_sync_abort = NULL;
 	struct after_state_chg_work *ascw;
 
-
 	os = mdev->state;
 
-#if DRBD_DEBUG_STATE_CHANGES
-	if (!ns.seq) {
-		ns.seq = ++sseq;
-		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "==os", os);
-		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "==ns", ns);
-	}
-#endif
-
 	ns = sanitize_state(mdev, os, ns, &warn_sync_abort);
-
-#if DRBD_DEBUG_STATE_CHANGES
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, "=>ns", ns);
-#endif
-
 	if (ns.i == os.i)
 		return SS_NOTHING_TO_DO;
 
@@ -792,10 +715,6 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 			       ns.user_isp);
 	dev_info(DEV, "%s\n", pb);
 	}
-#endif
-
-#if DRBD_DEBUG_STATE_CHANGES
-	drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ":=ns", ns);
 #endif
 
 	/* solve the race between becoming unconfigured,
@@ -1009,13 +928,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	enum drbd_fencing_p fp;
 	enum drbd_req_event what = NOTHING;
 	union drbd_state nsm = (union drbd_state){ .i = -1 };
-
-#if DRBD_DEBUG_STATE_CHANGES
-	if (ns.seq) {
-		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ">>os", os);
-		drbd_state_dbg(mdev, ns.seq, ns.func, ns.line, ">>ns", ns);
-	}
-#endif
 
 	if (os.conn != C_CONNECTED && ns.conn == C_CONNECTED) {
 		clear_bit(CRASHED_PRIMARY, &mdev->flags);

@@ -993,10 +993,8 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
 	sock = mdev->tconn->data.socket;
 
-	if (likely(sock != NULL)) {
-		drbd_state_dbg(mdev, mdev->state.seq, func, line, "send", mdev->state);
+	if (likely(sock != NULL))
 		ok = _drbd_send_cmd(mdev, sock, P_STATE, &p.head, sizeof(p), 0);
-	}
 
 	mutex_unlock(&mdev->tconn->data.mutex);
 
