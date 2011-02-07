@@ -757,16 +757,14 @@ out:
 	return s_estab;
 }
 
-STATIC int drbd_send_fp(struct drbd_conf *mdev, struct socket *sock,
-			enum drbd_packet cmd)
+STATIC int drbd_send_fp(struct drbd_tconn *tconn, struct socket *sock, enum drbd_packet cmd)
 {
-	struct p_header *h = &mdev->tconn->data.sbuf.header;
+	struct p_header *h = &tconn->data.sbuf.header;
 
-	return _drbd_send_cmd(mdev, sock, cmd, h, sizeof(*h), 0);
+	return _conn_send_cmd(tconn, 0, sock, cmd, h, sizeof(*h), 0);
 }
 
-STATIC enum drbd_packet drbd_recv_fp(struct drbd_conf *mdev,
-				     struct socket *sock)
+STATIC enum drbd_packet drbd_recv_fp(struct drbd_conf *mdev, struct socket *sock)
 {
 	struct p_header80 *h = &mdev->tconn->data.rbuf.header.h80;
 	int rr;
@@ -841,11 +839,11 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 
 		if (s) {
 			if (!sock) {
-				drbd_send_fp(mdev, s, P_HAND_SHAKE_S);
+				drbd_send_fp(mdev->tconn, s, P_HAND_SHAKE_S);
 				sock = s;
 				s = NULL;
 			} else if (!msock) {
-				drbd_send_fp(mdev, s, P_HAND_SHAKE_M);
+				drbd_send_fp(mdev->tconn, s, P_HAND_SHAKE_M);
 				msock = s;
 				s = NULL;
 			} else {
