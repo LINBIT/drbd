@@ -1293,7 +1293,7 @@ extern void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what);
 extern void drbd_free_sock(struct drbd_conf *mdev);
 extern int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 		     void *buf, size_t size, unsigned msg_flags);
-extern int drbd_send_protocol(struct drbd_conf *mdev);
+extern int drbd_send_protocol(struct drbd_tconn *tconn);
 extern int drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev);
 extern int drbd_gen_and_send_sync_uuid(struct drbd_conf *mdev);
