@@ -484,6 +484,7 @@ STATIC int drbd_thread_setup(void *arg)
 	D_ASSERT(timeout != 0);
 
 restart:
+	sprintf(current->comm, "drbd_%s_%s", thi->name, thi->mdev->tconn->name);
 	retval = thi->function(thi);
 
 	spin_lock_irqsave(&thi->t_lock, flags);
