@@ -1853,7 +1853,7 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 
 	if (!cpumask_equal(mdev->tconn->cpu_mask, new_cpu_mask)) {
 		cpumask_copy(mdev->tconn->cpu_mask, new_cpu_mask);
-		drbd_calc_cpu_mask(mdev);
+		drbd_calc_cpu_mask(mdev->tconn);
 		mdev->tconn->receiver.reset_cpu_mask = 1;
 		mdev->tconn->asender.reset_cpu_mask = 1;
 		mdev->tconn->worker.reset_cpu_mask = 1;

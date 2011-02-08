@@ -665,23 +665,23 @@ char *drbd_task_to_thread_name(struct drbd_conf *mdev, struct task_struct *task)
  * Forces all threads of a device onto the same CPU. This is beneficial for
  * DRBD's performance. May be overwritten by user's configuration.
  */
-void drbd_calc_cpu_mask(struct drbd_mdev *mdev)
+void drbd_calc_cpu_mask(struct drbd_tconn *tconn)
 {
 	int ord, cpu;
 
 	/* user override. */
-	if (cpumask_weight(mdev->tconn->cpu_mask))
+	if (cpumask_weight(tconn->cpu_mask))
 		return;
 
 	ord = mdev_to_minor(mdev) % cpumask_weight(cpu_online_mask);
 	for_each_online_cpu(cpu) {
 		if (ord-- == 0) {
-			cpumask_set_cpu(cpu, mdev->tconn->cpu_mask);
+			cpumask_set_cpu(cpu, tconn->cpu_mask);
 			return;
 		}
 	}
 	/* should not be reached */
-	cpumask_setall(mdev->tconn->cpu_mask);
+	cpumask_setall(tconn->cpu_mask);
 }
 
 /**
@@ -692,14 +692,14 @@ void drbd_calc_cpu_mask(struct drbd_mdev *mdev)
  * call in the "main loop" of _all_ threads, no need for any mutex, current won't die
  * prematurely.
  */
-void drbd_thread_current_set_cpu(struct drbd_conf *mdev, struct drbd_thread *thi)
+void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 {
 	struct task_struct *p = current;
 
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	set_cpus_allowed_ptr(p, mdev->tconn->cpu_mask);
+	set_cpus_allowed_ptr(p, thi->mdev->tconn->cpu_mask);
 }
 #endif
 
