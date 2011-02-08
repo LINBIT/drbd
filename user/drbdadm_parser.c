@@ -25,6 +25,8 @@
  */
 
 #define _GNU_SOURCE
+#define _XOPEN_SOURCE 600
+#define _FILE_OFFSET_BITS 64
 
 #include <stdlib.h>
 #include <stdio.h>

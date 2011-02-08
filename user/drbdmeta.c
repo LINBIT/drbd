@@ -31,7 +31,6 @@
 #define _GNU_SOURCE
 #define _XOPEN_SOURCE 600
 #define _FILE_OFFSET_BITS 64
-#define __USE_LARGEFILE64
 
 #include <sys/types.h>
 #include <sys/stat.h>
