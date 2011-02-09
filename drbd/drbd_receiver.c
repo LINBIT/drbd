@@ -4486,7 +4486,7 @@ STATIC int drbd_do_auth(struct drbd_tconn *tconn)
 
 int drbdd_init(struct drbd_thread *thi)
 {
-	struct drbd_tconn *tconn = thi->mdev->tconn;
+	struct drbd_tconn *tconn = thi->tconn;
 	int h;
 
 	conn_info(tconn, "receiver (re)started\n");
@@ -4853,7 +4853,7 @@ STATIC int tconn_process_done_ee(struct drbd_tconn *tconn)
 
 int drbd_asender(struct drbd_thread *thi)
 {
-	struct drbd_tconn *tconn = thi->mdev->tconn;
+	struct drbd_tconn *tconn = thi->tconn;
 	struct p_header *h = &tconn->meta.rbuf.header;
 	struct asender_cmd *cmd = NULL;
 	struct packet_info pi;
