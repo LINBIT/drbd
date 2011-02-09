@@ -42,7 +42,8 @@ int drbd_send_state_req(struct drbd_conf *, union drbd_state, union drbd_state);
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-
+STATIC void after_conn_state_ch(struct drbd_tconn *tconn, union drbd_state os,
+				union drbd_state ns, enum chg_state_flags flags);
 
 /**
  * cl_wide_st_chg() - true if the state change is a cluster wide one
@@ -1203,22 +1204,28 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		put_ldev(mdev);
 	}
 
-	/* Upon network connection, we need to start the receiver */
-	if (os.conn == C_STANDALONE && ns.conn == C_UNCONNECTED)
-		drbd_thread_start(&mdev->tconn->receiver);
-
-	/* Terminate worker thread if we are unconfigured - it will be
-	   restarted as needed... */
 	if (ns.disk == D_DISKLESS &&
 	    ns.conn == C_STANDALONE &&
 	    ns.role == R_SECONDARY) {
 		if (os.aftr_isp != ns.aftr_isp)
 			resume_next_sg(mdev);
-		/* set in __drbd_set_state, unless CONFIG_PENDING was set */
-		if (test_bit(DEVICE_DYING, &mdev->flags))
-			drbd_thread_stop_nowait(&mdev->tconn->worker);
 	}
 
+	after_conn_state_ch(mdev->tconn, os, ns, flags);
 	drbd_md_sync(mdev);
 }
 
+STATIC void after_conn_state_ch(struct drbd_tconn *tconn, union drbd_state os,
+				union drbd_state ns, enum chg_state_flags flags)
+{
+	/* Upon network configuration, we need to start the receiver */
+	if (os.conn == C_STANDALONE && ns.conn == C_UNCONNECTED)
+		drbd_thread_start(&tconn->receiver);
+
+	if (ns.disk == D_DISKLESS &&
+	    ns.conn == C_STANDALONE &&
+	    ns.role == R_SECONDARY) {
+		/* if (test_bit(DEVICE_DYING, &mdev->flags)) TODO: DEVICE_DYING functionality */
+		drbd_thread_stop_nowait(&tconn->worker);
+	}
+}
