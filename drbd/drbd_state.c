@@ -37,7 +37,9 @@ struct after_state_chg_work {
 	struct completion *done;
 };
 
-STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+int drbd_send_state_req(struct drbd_conf *, union drbd_state, union drbd_state);
+
+STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 
@@ -865,10 +867,12 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	return rv;
 }
 
-STATIC int w_after_state_ch(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 {
 	struct after_state_chg_work *ascw =
 		container_of(w, struct after_state_chg_work, w);
+	struct drbd_conf *mdev = w->mdev;
+
 	after_state_ch(mdev, ascw->os, ascw->ns, ascw->flags);
 	if (ascw->flags & CS_WAIT_COMPLETE) {
 		D_ASSERT(ascw->done != NULL);

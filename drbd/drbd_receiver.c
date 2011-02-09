@@ -76,7 +76,7 @@ STATIC int drbd_do_auth(struct drbd_tconn *tconn);
 STATIC int drbd_disconnected(int vnr, void *p, void *data);
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
-STATIC int e_end_block(struct drbd_conf *, struct drbd_work *, int);
+STATIC int e_end_block(struct drbd_work *, int);
 
 static struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
 {
@@ -459,7 +459,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	 */
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
 		/* list_del not necessary, next/prev members not touched */
-		ok = peer_req->w.cb(mdev, &peer_req->w, !ok) && ok;
+		ok = peer_req->w.cb(&peer_req->w, !ok) && ok;
 		drbd_free_ee(mdev, peer_req);
 	}
 	wake_up(&mdev->ee_wait);
@@ -1057,10 +1057,11 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
 }
 
-STATIC int w_flush(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+STATIC int w_flush(struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = (struct flush_work *)w;
 	struct drbd_epoch *epoch = fw->epoch;
+	struct drbd_conf *mdev = w->mdev;
 
 	kfree(w);
 
@@ -1339,9 +1340,10 @@ static void drbd_remove_epoch_entry_interval(struct drbd_conf *mdev,
  * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __releases(local)
+int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 {
 	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_conf *mdev = w->mdev;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
@@ -1651,9 +1653,10 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 
 /* e_end_resync_block() is called via
  * drbd_process_done_ee() by asender only */
-STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
 	int ok;
 
@@ -1788,9 +1791,10 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 /* e_end_block() is called via drbd_process_done_ee().
  * this means this function only runs in the asender thread
  */
-STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
+STATIC int e_end_block(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
 	int ok = 1, pcmd;
@@ -1832,9 +1836,10 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	return ok;
 }
 
-STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int unused)
+STATIC int e_send_discard_ack(struct drbd_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_conf *mdev = w->mdev;
 	int ok = 1;
 
 	D_ASSERT(mdev->tconn->net_conf->wire_protocol == DRBD_PROT_C);
