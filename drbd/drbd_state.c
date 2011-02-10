@@ -1380,7 +1380,7 @@ _conn_request_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct _is_valid_itr_params params;
 	struct after_conn_state_chg_work *acscw;
-	enum drbd_conns oc = tconn->volume0->state.conn;
+	enum drbd_conns oc = tconn->cstate;
 
 	read_lock(&global_state_lock);
 
@@ -1407,7 +1407,7 @@ _conn_request_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_
 		print_conn_state_change(tconn, oc, val.conn);
 		params.flags |= CS_NO_CSTATE_CHG;
 	}
-	/* tconn->cstate = nc; with next commit */
+	tconn->cstate = val.conn;
 	params.ms.i = 0;
 	params.ms.conn = val.conn;
 	idr_for_each(&tconn->volumes, _set_state_itr_fn, &params);
