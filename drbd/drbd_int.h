@@ -1309,6 +1309,7 @@ extern int drbd_send_uuids(struct drbd_conf *mdev);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_conf *mdev);
 extern int drbd_gen_and_send_sync_uuid(struct drbd_conf *mdev);
 extern int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags flags);
+extern int conn_send_state_req(struct drbd_tconn *, int vnr, union drbd_state, union drbd_state);
 #define drbd_send_state(m) drbd_send_state_(m, __func__ , __LINE__ )
 extern int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line);
 extern int _conn_send_cmd(struct drbd_tconn *tconn, int vnr, struct socket *sock,
@@ -2017,6 +2018,12 @@ static inline int drbd_send_ping_ack(struct drbd_tconn *tconn)
 {
 	struct p_header h;
 	return conn_send_cmd(tconn, 0, USE_META_SOCKET, P_PING_ACK, &h, sizeof(h));
+}
+
+static inline int drbd_send_state_req(struct drbd_conf *mdev,
+				      union drbd_state mask, union drbd_state val)
+{
+	return conn_send_state_req(mdev->tconn, mdev->vnr, mask, val);
 }
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)

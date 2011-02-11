@@ -37,8 +37,6 @@ struct after_state_chg_work {
 	struct completion *done;
 };
 
-int drbd_send_state_req(struct drbd_conf *, union drbd_state, union drbd_state);
-
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
