@@ -304,7 +304,7 @@ drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 	if (new_role == R_PRIMARY)
 		request_ping(mdev->tconn); /* Detect a dead peer ASAP */
 
-	mutex_lock(&mdev->state_mutex);
+	mutex_lock(mdev->state_mutex);
 
 	mask.i = 0; mask.role = R_MASK;
 	val.i  = 0; val.role  = new_role;
@@ -423,7 +423,7 @@ drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
 
 	drbd_kobject_uevent(mdev);
  fail:
-	mutex_unlock(&mdev->state_mutex);
+	mutex_unlock(mdev->state_mutex);
 	return rv;
 }
 
@@ -2129,7 +2129,7 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 		return 0;
 	}
 
-	mutex_lock(&mdev->state_mutex); /* Protects us against serialized state changes. */
+	mutex_lock(mdev->state_mutex); /* Protects us against serialized state changes. */
 
 	if (!get_ldev(mdev)) {
 		retcode = ERR_NO_DISK;
@@ -2171,7 +2171,7 @@ STATIC int drbd_nl_new_c_uuid(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 out_dec:
 	put_ldev(mdev);
 out:
-	mutex_unlock(&mdev->state_mutex);
+	mutex_unlock(mdev->state_mutex);
 
 	reply->ret_code = retcode;
 	return 0;

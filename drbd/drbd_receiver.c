@@ -816,12 +816,18 @@ STATIC int drbd_connected(int vnr, void *p, void *data)
 		drbd_setup_queue_param(mdev, DRBD_MAX_SIZE_H80_PACKET);
 		put_ldev(mdev);
 	}
+
+	mdev->state_mutex = mdev->tconn->agreed_pro_version < 100 ?
+		&mdev->tconn->cstate_mutex :
+		&mdev->own_state_mutex;
+
 	ok &= drbd_send_sync_param(mdev, &mdev->sync_conf);
 	ok &= drbd_send_sizes(mdev, 0, 0);
 	ok &= drbd_send_uuids(mdev);
 	ok &= drbd_send_state(mdev);
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	clear_bit(RESIZE_PENDING, &mdev->flags);
+
 
 	return !ok;
 }
@@ -3430,8 +3436,8 @@ STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packet cmd,
 	   ongoing cluster wide state change is finished. That is important if
 	   we are primary and are detaching from our disk. We need to see the
 	   new disk state... */
-	mutex_lock(&mdev->state_mutex);
-	mutex_unlock(&mdev->state_mutex);
+	mutex_lock(mdev->state_mutex);
+	mutex_unlock(mdev->state_mutex);
 	if (mdev->state.conn >= C_CONNECTED && mdev->state.disk < D_INCONSISTENT)
 		updated_uuids |= drbd_set_ed_uuid(mdev, p_uuid[UI_CURRENT]);
 
@@ -3482,7 +3488,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 	val.i = be32_to_cpu(p->val);
 
 	if (test_bit(DISCARD_CONCURRENT, &mdev->tconn->flags) &&
-	    mutex_is_locked(&mdev->state_mutex)) {
+	    mutex_is_locked(mdev->state_mutex)) {
 		drbd_send_sr_reply(mdev, SS_CONCURRENT_ST_CHG);
 		return true;
 	}

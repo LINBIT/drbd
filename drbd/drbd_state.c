@@ -163,7 +163,7 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	init_completion(&done);
 
 	if (f & CS_SERIALIZE)
-		mutex_lock(&mdev->state_mutex);
+		mutex_lock(mdev->state_mutex);
 
 	ns = val; /* assign debug info, if any */
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
@@ -216,7 +216,7 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 
 abort:
 	if (f & CS_SERIALIZE)
-		mutex_unlock(&mdev->state_mutex);
+		mutex_unlock(mdev->state_mutex);
 
 	return rv;
 }
