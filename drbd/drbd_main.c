@@ -1010,15 +1010,15 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	return ok;
 }
 
-int conn_send_state_req(struct drbd_tconn *tconn, int vnr,
-			union drbd_state mask, union drbd_state val)
+int _conn_send_state_req(struct drbd_tconn *tconn, int vnr, enum drbd_packet cmd,
+			 union drbd_state mask, union drbd_state val)
 {
 	struct p_req_state p;
 
 	p.mask    = cpu_to_be32(mask.i);
 	p.val     = cpu_to_be32(val.i);
 
-	return conn_send_cmd(tconn, vnr, USE_DATA_SOCKET, P_STATE_CHG_REQ, &p.head, sizeof(p));
+	return conn_send_cmd(tconn, vnr, USE_DATA_SOCKET, cmd, &p.head, sizeof(p));
 }
 
 int drbd_send_sr_reply(struct drbd_conf *mdev, enum drbd_state_rv retcode)
