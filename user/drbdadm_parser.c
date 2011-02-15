@@ -35,6 +35,7 @@
 #include <search.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "drbdadm.h"
 #include "linux/drbd_limits.h"
@@ -653,14 +654,16 @@ void parse_options_syncer(struct d_resource *res)
 		token = yylex();
 		fline = line;
 		if (token >= TK_GLOBAL && !(token & TK_SYNCER_OLD_OPT))
-			pe_expected("an syncer option keyword");
+			pe_expected("a syncer option keyword");
 		token &= ~TK_SYNCER_OLD_OPT;
 		switch (token) {
-		case TK_NET_SWITCH:
+		case TK_NET_FLAG:
+		case TK_NET_NO_FLAG:
 		case TK_NET_OPTION:
 			options = &res->net_options;
 			break;
-		case TK_DISK_SWITCH:
+		case TK_DISK_FLAG:
+		case TK_DISK_NO_FLAG:
 		case TK_DISK_OPTION:
 			options = &res->disk_options;
 			break;
@@ -670,26 +673,44 @@ void parse_options_syncer(struct d_resource *res)
 		case '}':
 			return;
 		default:
-			pe_expected("an syncer option keyword");
+			pe_expected("a syncer option keyword");
 		}
+		opt_name = yylval.txt;
 		switch (token) {
-		case TK_NET_SWITCH:
-		case TK_DISK_SWITCH:
-			*options = APPEND(*options, new_opt(yylval.txt, NULL));
+		case TK_NET_FLAG:
+		case TK_DISK_FLAG:
+			token = yylex();
+			switch(token) {
+			case TK_NO:
+				*options = APPEND(*options, new_opt(opt_name, strdup("no")));
+				token = yylex();
+				break;
+			default:
+				*options = APPEND(*options, new_opt(opt_name, strdup("yes")));
+				if (token == TK_YES)
+					token = yylex();
+				break;
+			}
+			break;
+		case TK_NET_NO_FLAG:
+		case TK_DISK_NO_FLAG:
+			assert(strncmp(opt_name, "no-", 3));
+			*options = APPEND(*options, new_opt(opt_name + 3, strdup("no")));
+			token = yylex();
 			break;
 		case TK_NET_OPTION:
 		case TK_DISK_OPTION:
 		case TK_RES_OPTION:
-			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token);
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			*options = APPEND(*options, ro);
+			token = yylex();
 			break;
 		}
-		switch (yylex()) {
+		switch (token) {
 		case TK__IS_DEFAULT:
 			ro->is_default = 1;
 			EXP(';');
@@ -702,7 +723,7 @@ void parse_options_syncer(struct d_resource *res)
 	}
 }
 
-static struct d_option *parse_options_d(int token_switch, int token_option,
+static struct d_option *parse_options_d(int token_flag, int token_no_flag, int token_option,
 					int token_delegate, void (*delegate)(void*),
 					void *ctx)
 {
@@ -718,8 +739,25 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 		token = yylex();
 		fline = line;
 		token &= ~TK_SYNCER_OLD_OPT;
-		if (token == token_switch) {
-			options = APPEND(options, new_opt(yylval.txt, NULL));
+		if (token == token_flag) {
+			opt_name = yylval.txt;
+			switch(yylex()) {
+			case TK_YES:
+				options = APPEND(options, new_opt(opt_name, strdup("yes")));
+				break;
+			case TK_NO:
+				options = APPEND(options, new_opt(opt_name, strdup("no")));
+				break;
+			case ';':
+				/* Flag value missing; assume yes.  */
+				options = APPEND(options, new_opt(opt_name, strdup("yes")));
+				continue;
+			default:
+				pe_expected("yes | no | ;");
+			}
+		} else if (token == token_no_flag) {
+			assert(strncmp(yylval.txt, "no-", 3));
+			options = APPEND(options, new_opt(yylval.txt + 3, strdup("no")));
 		} else if (token == token_option) {
 			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token_option);
@@ -752,9 +790,9 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	}
 }
 
-static struct d_option *parse_options(int token_switch, int token_option)
+static struct d_option *parse_options(int token_flag, int token_no_flag, int token_option)
 {
-	return parse_options_d(token_switch, token_option, 0, NULL, NULL);
+	return parse_options_d(token_flag, token_no_flag, token_option, 0, NULL, NULL);
 }
 
 static void __parse_address(char** addr, char** port, char** af)
@@ -1024,7 +1062,8 @@ int parse_volume_stmt(struct d_volume *vol, int token)
 			EXP(';');
 			break;
 		case '{':
-			vol->disk_options = parse_options(TK_DISK_SWITCH,
+			vol->disk_options = parse_options(TK_DISK_FLAG,
+							  TK_DISK_NO_FLAG,
 							  TK_DISK_OPTION);
 			break;
 		default:
@@ -1281,7 +1320,8 @@ static void parse_host_section(struct d_resource *res,
 			break;
 		case TK_OPTIONS:
 			EXP('{');
-			host->res_options = parse_options(TK_RES_SWITCH,
+			host->res_options = parse_options(0,
+							  0,
 							  TK_RES_OPTION);
 			break;
 		case '}':
@@ -1718,11 +1758,12 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 
 	EXP('{');
 
-	proxy_options =
-		parse_options_d(TK_PROXY_SWITCH,
-				TK_PROXY_OPTION,
-				TK_PROXY_DELEGATE,
-				proxy_delegate, res);
+	proxy_options = parse_options_d(0,
+					0,
+					TK_PROXY_OPTION,
+					TK_PROXY_DELEGATE,
+					proxy_delegate,
+					res);
 
 	if (res)
 		res->proxy_options = proxy_options;
@@ -1803,7 +1844,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				check_upr("disk section", "%s:disk", res->name);
 				res->disk_options =
 					SPLICE(res->disk_options,
-					       parse_options(TK_DISK_SWITCH,
+					       parse_options(TK_DISK_FLAG,
+							     TK_DISK_NO_FLAG,
 							     TK_DISK_OPTION));
 				break;
 			default:
@@ -1816,7 +1858,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP('{');
 			res->net_options =
 				SPLICE(res->net_options,
-				       parse_options_d(TK_NET_SWITCH,
+				       parse_options_d(TK_NET_FLAG,
+						       TK_NET_NO_FLAG,
 						       TK_NET_OPTION,
 						       TK_NET_DELEGATE,
 						       &net_delegate,
@@ -1830,16 +1873,17 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_STARTUP:
 			check_upr("startup section", "%s:startup", res->name);
 			EXP('{');
-			res->startup_options=parse_options_d(TK_STARTUP_SWITCH,
-							     TK_STARTUP_OPTION,
-							     TK_STARTUP_DELEGATE,
-							     &startup_delegate,
-							     res);
+			res->startup_options = parse_options_d(TK_STARTUP_FLAG,
+							       0,
+							       TK_STARTUP_OPTION,
+							       TK_STARTUP_DELEGATE,
+							       &startup_delegate,
+							       res);
 			break;
 		case TK_HANDLER:
 			check_upr("handlers section", "%s:handlers", res->name);
 			EXP('{');
-			res->handlers =  parse_options(0, TK_HANDLER_OPTION);
+			res->handlers =  parse_options(0, 0, TK_HANDLER_OPTION);
 			break;
 		case TK_PROXY:
 			check_upr("proxy section", "%s:proxy", res->name);
@@ -1860,7 +1904,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP('{');
 			res->res_options =
 				SPLICE(res->res_options,
-				       parse_options(TK_RES_SWITCH,
+				       parse_options(0,
+						     0,
 						     TK_RES_OPTION));
 			break;
 		case '}':

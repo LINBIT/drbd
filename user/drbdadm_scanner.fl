@@ -95,11 +95,15 @@ size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 fencing			{ DP; CP; return TK_DISK_OPTION;	}
 max-bio-bvecs		{ DP; CP; return TK_DISK_OPTION;	}
-use-bmbv		{ DP; CP; return TK_DISK_SWITCH;		}
-no-disk-barrier		{ DP; CP; return TK_DISK_SWITCH;		}
-no-disk-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
-no-disk-drain		{ DP; CP; return TK_DISK_SWITCH;		}
-no-md-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
+use-bmbv		{ DP; CP; return TK_DISK_FLAG;		}
+disk-barrier		{ DP; CP; return TK_DISK_FLAG;		}
+disk-flushes		{ DP; CP; return TK_DISK_FLAG;		}
+disk-drain		{ DP; CP; return TK_DISK_FLAG;          }
+md-flushes		{ DP; CP; return TK_DISK_FLAG;          }
+no-disk-barrier		{ DP; CP; return TK_DISK_NO_FLAG;		}
+no-disk-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
+no-disk-drain		{ DP; CP; return TK_DISK_NO_FLAG;		}
+no-md-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
 protocol		{ DP; CP; RC(PROTOCOL); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
@@ -119,9 +123,10 @@ data-integrity-alg	{ DP; CP; return TK_NET_OPTION;         }
 on-congestion		{ DP; CP; return TK_NET_OPTION;         }
 congestion-fill		{ DP; CP; RC(CONG_FILL); return TK_NET_OPTION;   }
 congestion-extents	{ DP; CP; RC(CONG_EXTENTS); return TK_NET_OPTION;}
-allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
-always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
-no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
+allow-two-primaries	{ DP; CP; return TK_NET_FLAG;		}
+always-asbp		{ DP; CP; return TK_NET_FLAG;		}
+no-tcp-cork		{ DP; CP; return TK_NET_NO_FLAG;	}
+tcp-cork		{ DP; CP; return TK_NET_FLAG;		}
 discard-my-data		{ DP; CP; return TK_NET_DELEGATE;	}
 rate			{ DP; CP; RC(RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
 resync-rate		{ DP; CP; RC(RATE); return TK_DISK_OPTION;	}
@@ -131,7 +136,7 @@ verify-alg              { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;     
 csums-alg               { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;}
 cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
-use-rle			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_SWITCH;	}
+use-rle			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_FLAG;	}
 delay-probe-volume	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 delay-probe-interval	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 c-plan-ahead		{ DP; CP; RC(C_PLAN_AHEAD); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
@@ -147,7 +152,7 @@ degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 outdated-wfc-timeout	{ DP; CP; RC(OUTDATED_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 stacked-timeouts	{ DP; return TK_STARTUP_DELEGATE;       }
 become-primary-on	{ DP; return TK_STARTUP_DELEGATE;       }
-wait-after-sb		{ DP; CP; return TK_STARTUP_SWITCH;     }
+wait-after-sb		{ DP; CP; return TK_STARTUP_FLAG;     }
 pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
 pri-lost		{ DP; CP; return TK_HANDLER_OPTION;     }
