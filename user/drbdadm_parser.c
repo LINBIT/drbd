@@ -134,7 +134,7 @@ void m_strtoll_range(const char *s, char def_unit,
 		     unsigned long long min, unsigned long long max)
 {
 	unsigned long long r = m_strtoll(s, def_unit);
-	char unit[] = { def_unit > '1' ? def_unit : 0, 0 };
+	char unit[] = { def_unit != '1' ? def_unit : 0, 0 };
 	if (min > r || r > max) {
 		fprintf(stderr,
 			"%s:%d: %s %s => %llu%s out of range [%llu..%llu]%s.\n",
@@ -163,11 +163,11 @@ void range_check(const enum range_checks what, const char *name,
 			config_file, fline, name, value);
 		break;
 	case R_MINOR_COUNT:
-		m_strtoll_range(value, 1, name,
+		m_strtoll_range(value, '1', name,
 				DRBD_MINOR_COUNT_MIN, DRBD_MINOR_COUNT_MAX);
 		break;
 	case R_DIALOG_REFRESH:
-		m_strtoll_range(value, 1, name,
+		m_strtoll_range(value, '1', name,
 				DRBD_DIALOG_REFRESH_MIN,
 				DRBD_DIALOG_REFRESH_MAX);
 		break;
@@ -177,72 +177,72 @@ void range_check(const enum range_checks what, const char *name,
 				DRBD_DISK_SIZE_SECT_MAX);
 		break;
 	case R_TIMEOUT:
-		m_strtoll_range(value, 1, name, DRBD_TIMEOUT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_TIMEOUT_MIN,
 				DRBD_TIMEOUT_MAX);
 		break;
 	case R_CONNECT_INT:
-		m_strtoll_range(value, 1, name, DRBD_CONNECT_INT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_CONNECT_INT_MIN,
 				DRBD_CONNECT_INT_MAX);
 		break;
 	case R_PING_INT:
-		m_strtoll_range(value, 1, name, DRBD_PING_INT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_PING_INT_MIN,
 				DRBD_PING_INT_MAX);
 		break;
 	case R_MAX_BUFFERS:
-		m_strtoll_range(value, 1, name, DRBD_MAX_BUFFERS_MIN,
+		m_strtoll_range(value, '1', name, DRBD_MAX_BUFFERS_MIN,
 				DRBD_MAX_BUFFERS_MAX);
 		break;
 	case R_MAX_EPOCH_SIZE:
-		m_strtoll_range(value, 1, name, DRBD_MAX_EPOCH_SIZE_MIN,
+		m_strtoll_range(value, '1', name, DRBD_MAX_EPOCH_SIZE_MIN,
 				DRBD_MAX_EPOCH_SIZE_MAX);
 		break;
 	case R_SNDBUF_SIZE:
-		m_strtoll_range(value, 1, name, DRBD_SNDBUF_SIZE_MIN,
+		m_strtoll_range(value, '1', name, DRBD_SNDBUF_SIZE_MIN,
 				DRBD_SNDBUF_SIZE_MAX);
 		break;
 	case R_RCVBUF_SIZE:
-		m_strtoll_range(value, 1, name, DRBD_RCVBUF_SIZE_MIN,
+		m_strtoll_range(value, '1', name, DRBD_RCVBUF_SIZE_MIN,
 				DRBD_RCVBUF_SIZE_MAX);
 		break;
 	case R_KO_COUNT:
-		m_strtoll_range(value, 1, name, DRBD_KO_COUNT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_KO_COUNT_MIN,
 				DRBD_KO_COUNT_MAX);
 		break;
 	case R_RATE:
 		m_strtoll_range(value, 'K', name, DRBD_RATE_MIN, DRBD_RATE_MAX);
 		break;
 	case R_AL_EXTENTS:
-		m_strtoll_range(value, 1, name, DRBD_AL_EXTENTS_MIN,
+		m_strtoll_range(value, '1', name, DRBD_AL_EXTENTS_MIN,
 				DRBD_AL_EXTENTS_MAX);
 		break;
 	case R_PORT:
-		m_strtoll_range(value, 1, name, DRBD_PORT_MIN, DRBD_PORT_MAX);
+		m_strtoll_range(value, '1', name, DRBD_PORT_MIN, DRBD_PORT_MAX);
 		break;
 		/* FIXME not yet implemented!
 		   case R_META_IDX:
-		   m_strtoll_range(value, 1, name, DRBD_META_IDX_MIN, DRBD_META_IDX_MAX);
+		   m_strtoll_range(value, '1', name, DRBD_META_IDX_MIN, DRBD_META_IDX_MAX);
 		   break;
 		 */
 	case R_WFC_TIMEOUT:
-		m_strtoll_range(value, 1, name, DRBD_WFC_TIMEOUT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_WFC_TIMEOUT_MIN,
 				DRBD_WFC_TIMEOUT_MAX);
 		break;
 	case R_DEGR_WFC_TIMEOUT:
-		m_strtoll_range(value, 1, name, DRBD_DEGR_WFC_TIMEOUT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_DEGR_WFC_TIMEOUT_MIN,
 				DRBD_DEGR_WFC_TIMEOUT_MAX);
 		break;
 	case R_OUTDATED_WFC_TIMEOUT:
-		m_strtoll_range(value, 1, name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+		m_strtoll_range(value, '1', name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
 				DRBD_OUTDATED_WFC_TIMEOUT_MAX);
 		break;
 
 	case R_C_PLAN_AHEAD:
-		m_strtoll_range(value, 1, name, DRBD_C_PLAN_AHEAD_MIN,
+		m_strtoll_range(value, '1', name, DRBD_C_PLAN_AHEAD_MIN,
 				DRBD_C_PLAN_AHEAD_MAX);
 		break;
 
 	case R_C_DELAY_TARGET:
-		m_strtoll_range(value, 1, name, DRBD_C_DELAY_TARGET_MIN,
+		m_strtoll_range(value, '1', name, DRBD_C_DELAY_TARGET_MIN,
 				DRBD_C_DELAY_TARGET_MAX);
 		break;
 
@@ -267,7 +267,7 @@ void range_check(const enum range_checks what, const char *name,
 		break;
 
 	case R_CONG_EXTENTS:
-		m_strtoll_range(value, 1, name, DRBD_CONG_EXTENTS_MIN,
+		m_strtoll_range(value, '1', name, DRBD_CONG_EXTENTS_MIN,
 				DRBD_CONG_EXTENTS_MAX);
 		break;
 	case R_PROTOCOL:
