@@ -68,18 +68,25 @@ STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
 		(os.conn == C_CONNECTED && ns.conn == C_VERIFY_S);
 }
 
+static union drbd_state
+apply_mask_val(union drbd_state os, union drbd_state mask, union drbd_state val)
+{
+	union drbd_state ns;
+	ns.i = (os.i & ~mask.i) | val.i;
+	return ns;
+}
+
 enum drbd_state_rv
 drbd_change_state(struct drbd_conf *mdev, enum chg_state_flags f,
 		  union drbd_state mask, union drbd_state val)
 {
 	unsigned long flags;
-	union drbd_state os, ns;
+	union drbd_state ns;
 	enum drbd_state_rv rv;
 
 	ns = val; /* assign debug info, if any. */
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
-	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
+	ns = apply_mask_val(mdev->state, mask, val);
 	rv = _drbd_set_state(mdev, ns, f, NULL);
 	ns.i = mdev->state.i;
 	spin_unlock_irqrestore(&mdev->tconn->req_lock, flags);
@@ -115,8 +122,7 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
 
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
 	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i;
-	ns = sanitize_state(mdev, ns, NULL);
+	ns = sanitize_state(mdev, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv == SS_SUCCESS)
 		rv = SS_UNKNOWN_ERROR;  /* cont waiting, otherwise fail. */
@@ -163,8 +169,7 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	ns = val; /* assign debug info, if any */
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
 	os = mdev->state;
-	ns.i = (os.i & ~mask.i) | val.i; /* assign state info */
-	ns = sanitize_state(mdev, ns, NULL);
+	ns = sanitize_state(mdev, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS)
 		goto abort;
@@ -200,8 +205,7 @@ drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 			goto abort;
 		}
 		spin_lock_irqsave(&mdev->tconn->req_lock, flags);
-		os = mdev->state;
-		ns.i = (os.i & ~mask.i) | val.i;
+		ns = apply_mask_val(mdev->state, mask, val);
 		rv = _drbd_set_state(mdev, ns, f, &done);
 		drbd_state_unlock(mdev);
 	} else {
