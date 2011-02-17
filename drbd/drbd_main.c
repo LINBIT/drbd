@@ -656,6 +656,12 @@ char *drbd_task_to_thread_name(struct drbd_tconn *tconn, struct task_struct *tas
 }
 
 #ifdef CONFIG_SMP
+static int conn_lowest_minor(struct drbd_tconn *tconn)
+{
+	int minor = 0;
+	idr_get_next(&tconn->volumes, &minor);
+	return minor;
+}
 /**
  * drbd_calc_cpu_mask() - Generate CPU masks, spread over all CPUs
  * @mdev:	DRBD device.
@@ -671,7 +677,7 @@ void drbd_calc_cpu_mask(struct drbd_tconn *tconn)
 	if (cpumask_weight(tconn->cpu_mask))
 		return;
 
-	ord = mdev_to_minor(mdev) % cpumask_weight(cpu_online_mask);
+	ord = conn_lowest_minor(tconn) % cpumask_weight(cpu_online_mask);
 	for_each_online_cpu(cpu) {
 		if (ord-- == 0) {
 			cpumask_set_cpu(cpu, tconn->cpu_mask);
@@ -697,7 +703,7 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	set_cpus_allowed_ptr(p, thi->mdev->tconn->cpu_mask);
+	set_cpus_allowed_ptr(p, thi->tconn->cpu_mask);
 }
 #endif
 
