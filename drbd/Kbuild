@@ -24,10 +24,17 @@ ifeq ($(shell grep -e '\<rb_augment_insert\>' \
 EXTRA_CFLAGS += -DAUGMENTED_RBTREE_SYMBOLS_EXPORTED
 endif
 
+ifeq ($(shell grep -e '\<idr_get_next\>' \
+		   $(objtree)/Module.symvers | wc -l),1)
+EXTRA_CFLAGS += -DIDR_GET_NEXT_EXPORTED
+else
+compat_objs += compat/idr.o
+endif
+
 drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_worker.o drbd_receiver.o drbd_req.o drbd_actlog.o
 drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
-drbd-y += drbd_interval.o drbd_state.o
+drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
 
 ifndef CONFIG_CONNECTOR
 	drbd-y += connector.o cn_queue.o
