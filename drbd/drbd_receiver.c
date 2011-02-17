@@ -1271,7 +1271,7 @@ next_bio:
 	 * (REQ_UNPLUG, REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
 	bio->bi_rw = rw;
 	bio->bi_private = peer_req;
-	bio->bi_end_io = drbd_endio_sec;
+	bio->bi_end_io = drbd_peer_request_endio;
 
 	bio->bi_next = bios;
 	bios = bio;
@@ -1779,7 +1779,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (get_ldev(mdev)) {
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding put_ldev done below on error,
-		 * or in drbd_endio_sec. */
+		 * or in drbd_peer_request_endio. */
 		ok = recv_resync_read(mdev, sector, data_size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -1979,10 +1979,11 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 		return drbd_drain_block(mdev, data_size);
 	}
 
-	/* get_ldev(mdev) successful.
-	 * Corresponding put_ldev done either below (on various errors),
-	 * or in drbd_endio_sec, if we successfully submit the data at
-	 * the end of this function. */
+	/*
+	 * Corresponding put_ldev done either below (on various errors), or in
+	 * drbd_peer_request_endio, if we successfully submit the data at the
+	 * end of this function.
+	 */
 
 	sector = be64_to_cpu(p->sector);
 	peer_req = read_in_block(mdev, p->block_id, sector, data_size);

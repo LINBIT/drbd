@@ -178,8 +178,8 @@ static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
 
 /* bi_end_io handlers */
 extern BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_endio_sec BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_endio_pri BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
 #define part_inc_in_flight(A, B) part_inc_in_flight(A)
