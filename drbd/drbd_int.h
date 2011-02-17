@@ -2510,4 +2510,16 @@ struct bm_extent {
 
 extern unsigned int drbd_max_bio_size(struct drbd_conf *mdev);
 
+/* should be moved to idr.h */
+/**
+ * idr_for_each_entry - iterate over an idr's elements of a given type
+ * @idp:     idr handle
+ * @entry:   the type * to use as cursor
+ * @id:      id entry's key
+ */
+#define idr_for_each_entry(idp, entry, id)				\
+	for (id = 0, entry = (typeof(entry))idr_get_next((idp), &(id)); \
+	     entry != NULL;						\
+	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+
 #endif
