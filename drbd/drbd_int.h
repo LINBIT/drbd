@@ -1703,7 +1703,11 @@ extern void _drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 		struct list_head *head);
 extern void drbd_set_recv_tcq(struct drbd_conf *mdev, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_conf *mdev, struct list_head *to_be_freed);
-extern void drbd_flush_workqueue(struct drbd_conf *mdev);
+extern void conn_flush_workqueue(struct drbd_tconn *tconn);
+static inline void drbd_flush_workqueue(struct drbd_conf *mdev)
+{
+	conn_flush_workqueue(mdev->tconn);
+}
 
 /* yes, there is kernel_setsockopt, but only since 2.6.18. we don't need to
  * mess with get_fs/set_fs, we know we are KERNEL_DS always. */
