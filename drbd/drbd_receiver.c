@@ -1349,7 +1349,8 @@ static void drbd_remove_epoch_entry_interval(struct drbd_conf *mdev,
  */
 int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 {
-	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
@@ -1662,7 +1663,8 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
  * drbd_process_done_ee() by asender only */
 STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 {
-	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
 	int ok;
@@ -1800,7 +1802,8 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
  */
 STATIC int e_end_block(struct drbd_work *w, int cancel)
 {
-	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
@@ -1845,7 +1848,8 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 
 STATIC int e_send_discard_ack(struct drbd_work *w, int unused)
 {
-	struct drbd_peer_request *peer_req = (struct drbd_peer_request *)w;
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	int ok = 1;
 
