@@ -275,6 +275,7 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 #define DRBD_MD_MAGIC (DRBD_MAGIC+4)
 
 extern struct drbd_conf **minor_table;
+extern struct list_head drbd_tconns;
 
 /* on the wire */
 enum drbd_packet {
@@ -1596,6 +1597,7 @@ extern wait_queue_head_t drbd_pp_wait;
 
 extern rwlock_t global_state_lock;
 
+extern int conn_lowest_minor(struct drbd_tconn *tconn);
 extern struct drbd_conf *drbd_new_device(unsigned int minor);
 extern void drbd_free_mdev(struct drbd_conf *mdev);
 
