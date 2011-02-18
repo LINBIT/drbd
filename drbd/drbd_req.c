@@ -695,9 +695,7 @@ STATIC int drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int s
 
 	if (mdev->state.disk == D_UP_TO_DATE)
 		return 1;
-	if (mdev->state.disk >= D_OUTDATED)
-		return 0;
-	if (mdev->state.disk <  D_INCONSISTENT)
+	if (mdev->state.disk != D_INCONSISTENT)
 		return 0;
 	/* state.disk == D_INCONSISTENT   We will have a look at the BitMap */
 	nr_sectors = drbd_get_capacity(mdev->this_bdev);
