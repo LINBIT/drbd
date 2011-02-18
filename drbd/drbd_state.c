@@ -40,12 +40,28 @@ struct after_state_chg_work {
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-STATIC void after_all_state_ch(struct drbd_tconn *tconn, union drbd_state ns);
+STATIC void after_all_state_ch(struct drbd_tconn *tconn);
 STATIC enum drbd_state_rv is_valid_state(struct drbd_conf *, union drbd_state);
 STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
 STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state ns,
 				       const char **warn_sync_abort);
+
+int conn_all_vols_unconf(struct drbd_tconn *tconn)
+{
+	struct drbd_conf *mdev;
+	int minor, uncfg = 1;
+
+	idr_for_each_entry(&tconn->volumes, mdev, minor) {
+		uncfg &= (mdev->state.disk == D_DISKLESS &&
+			  mdev->state.conn == C_STANDALONE &&
+			  mdev->state.role == R_SECONDARY);
+		if (!uncfg)
+			break;
+	}
+
+	return uncfg;
+}
 
 /**
  * cl_wide_st_chg() - true if the state change is a cluster wide one
@@ -755,11 +771,9 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	 * start the worker, and schedule one no_op.
 	 * then proceed with configuration.
 	 */
-	if (ns.disk == D_DISKLESS &&
-	    ns.conn == C_STANDALONE &&
-	    ns.role == R_SECONDARY &&
-	    !test_and_set_bit(CONFIG_PENDING, &mdev->flags))
-		set_bit(DEVICE_DYING, &mdev->flags);
+	if(conn_all_vols_unconf(mdev->tconn) &&
+	   !test_and_set_bit(CONFIG_PENDING, &mdev->tconn->flags))
+		set_bit(OBJECT_DYING, &mdev->tconn->flags);
 
 	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
@@ -1237,7 +1251,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			resume_next_sg(mdev);
 	}
 
-	after_all_state_ch(mdev->tconn, ns);
+	after_all_state_ch(mdev->tconn);
 
 	drbd_md_sync(mdev);
 }
@@ -1249,10 +1263,10 @@ struct after_conn_state_chg_work {
 	enum chg_state_flags flags;
 };
 
-STATIC void after_all_state_ch(struct drbd_tconn *tconn, union drbd_state ns)
+STATIC void after_all_state_ch(struct drbd_tconn *tconn)
 {
-	if (ns.disk == D_DISKLESS && ns.conn == C_STANDALONE && ns.role == R_SECONDARY) {
-		/* if (test_bit(DEVICE_DYING, &mdev->flags)) TODO: DEVICE_DYING functionality */
+	if (conn_all_vols_unconf(tconn) &&
+	    test_bit(OBJECT_DYING, &tconn->flags)) {
 		drbd_thread_stop_nowait(&tconn->worker);
 	}
 }
@@ -1272,7 +1286,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 		drbd_thread_start(&tconn->receiver);
 
 	//conn_err(tconn, STATE_FMT, STATE_ARGS("nms", nms));
-	after_all_state_ch(tconn, nms);
+	after_all_state_ch(tconn);
 
 	return 1;
 }

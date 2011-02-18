@@ -904,12 +904,6 @@ enum {
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_IO_ERROR,		/* Local disk failed returned IO error */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
-	CONFIG_PENDING,		/* serialization of (re)configuration requests.
-				 * if set, also prevents the device from dying */
-	DEVICE_DYING,		/* device became unconfigured,
-				 * but worker thread is still handling the cleanup.
-				 * reconfiguring (nl_disk_conf, nl_net_conf) is dissalowed,
-				 * while this is set. */
 	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
 				 * the peer, if it changed there as well. */
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
@@ -1044,6 +1038,12 @@ enum {
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
 	CONN_WD_ST_CHG_OKAY,
 	CONN_WD_ST_CHG_FAIL,
+	CONFIG_PENDING,		/* serialization of (re)configuration requests.
+				 * if set, also prevents the device from dying */
+	OBJECT_DYING,		/* device became unconfigured,
+				 * but worker thread is still handling the cleanup.
+				 * reconfiguring (nl_disk_conf, nl_net_conf) is dissalowed,
+				 * while this is set. */
 };
 
 struct drbd_tconn {			/* is a resource from the config file */
