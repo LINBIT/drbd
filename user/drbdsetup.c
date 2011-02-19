@@ -203,6 +203,8 @@ static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, ch
 static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 static int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_arg_string(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
+static int conv_arg_numeric(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 
 // convert functions for options
 static int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
@@ -433,6 +435,22 @@ struct drbd_cmd commands[] = {
 		wait_cmds_options, w_connected_state } } },
 	{"wait-sync", 0, CHT_MINOR, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_synced_state } } },
+
+	{"new-connection", P_new_connection, CHT_CTOR, F_CONFIG_CMD, {{
+	 (struct drbd_argument[]) {
+		 { "conn-name", T_name, conv_arg_string },
+		 { NULL,                0,           	NULL}, },
+	 NULL }} },
+
+	{"new-minor", P_new_minor, CHT_CONN, F_CONFIG_CMD, {{
+	 (struct drbd_argument[]) {
+		 { "minor-number", T_minor, conv_arg_numeric },
+		 { "volume-number", T_vol_nr, conv_arg_numeric },
+		 { NULL,                0,           	NULL}, },
+	 NULL }} },
+
+	{"del-minor", P_del_minor, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"del-connection", P_del_minor, CHT_CONN, F_CONFIG_CMD, {{ NULL, NULL }} },
 };
 
 #define OTHER_ERROR 900
@@ -507,6 +525,10 @@ static const char *error_messages[] = {
 	EM(ERR_PIC_PEER_DEP) = "Sync-pause flag is already cleared.\n"
 	"Note: Resync pause caused by the peer node.",
 	EM(ERR_CONN_NOT_KNOWN) = "Unknown connection",
+	EM(ERR_CONN_IN_USE) = "Connection still in use (delete all minors first)",
+	EM(ERR_MINOR_CONFIGURED) = "Minor still configured (down it first)",
+	EM(ERR_MINOR_EXISTS) = "Minor exists already (delete it first)",
+
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -657,6 +679,20 @@ static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char*
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
 
+	return NO_ERROR;
+}
+
+static int conv_arg_string(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+{
+	add_tag(tl, ad->tag, arg, strlen(arg)+1); // include the null byte.
+	return NO_ERROR;
+}
+
+static int conv_arg_numeric(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
+{
+	int num = m_strtoll(arg,1);
+
+	add_tag(tl, ad->tag, &num, sizeof(num));
 	return NO_ERROR;
 }
 
