@@ -1014,7 +1014,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	if (ns.susp_fen) {
 		/* case1: The outdate peer handler is successful: */
 		if (os.pdsk > D_OUTDATED  && ns.pdsk <= D_OUTDATED) {
-			tl_clear(mdev);
+			tl_clear(mdev->tconn);
 			if (test_bit(NEW_CUR_UUID, &mdev->flags)) {
 				drbd_uuid_new_current(mdev);
 				clear_bit(NEW_CUR_UUID, &mdev->flags);
@@ -1033,7 +1033,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	if (what != NOTHING) {
 		spin_lock_irq(&mdev->tconn->req_lock);
-		_tl_restart(mdev, what);
+		_tl_restart(mdev->tconn, what);
 		nsm.i &= mdev->state.i;
 		_drbd_set_state(mdev, nsm, CS_VERBOSE, NULL);
 		spin_unlock_irq(&mdev->tconn->req_lock);
