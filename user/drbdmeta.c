@@ -196,6 +196,7 @@ typedef struct { uint64_t be; } be_u64;
 typedef struct { uint32_t le; } le_u32;
 typedef struct { uint32_t be; } be_u32;
 typedef struct { int32_t be; } be_s32;
+typedef struct { uint16_t be; } be_u16;
 typedef struct { unsigned long le; } le_ulong;
 typedef struct { unsigned long be; } be_ulong;
 
@@ -485,7 +486,7 @@ int v07_al_disk_to_cpu(struct al_sector_cpu *al_cpu, struct al_sector_on_disk *a
 }
 
 /*
- * -- DRBD 0.8 --------------------------------------
+ * -- DRBD 8.0, 8.2, 8.3 --------------------------------------
  */
 
 struct __packed md_on_disk_08 {
@@ -540,6 +541,110 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
 	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
+
+/*
+ * -- DRBD 8.4 --------------------------------------
+ */
+
+/* new in 8.4: 4k al transaction blocks */
+#define AL_UPDATES_PER_TRANSACTION 64
+#define AL_CONTEXT_PER_TRANSACTION 919
+struct __packed al_4k_transaction_on_disk {
+	/* don't we all like magic */
+	be_u32	magic;
+
+	/* to identify the most recent transaction block
+	 * in the on disk ring buffer */
+	be_u32	tr_number;
+
+	/* checksum on the full 4k block, with this field set to 0. */
+	be_u32	crc32c;
+
+	/* type of transaction, special transaction types like:
+	 * purge-all, set-all-idle, set-all-active, ... to-be-defined */
+	be_u16	transaction_type;
+
+	/* we currently allow only a few thousand extents,
+	 * so 16bit will be enough for the slot number. */
+
+	/* how many updates in this transaction */
+	be_u16	n_updates;
+
+	/* maximum slot number, "al-extents" in drbd.conf speak.
+	 * Having this in each transaction should make reconfiguration
+	 * of that parameter easier. */
+	be_u16	context_size;
+
+	/* slot number the context starts with */
+	be_u16	context_start_slot_nr;
+
+	/* Some reserved bytes.  Expected usage is a 64bit counter of
+	 * sectors-written since device creation, and other data generation tag
+	 * supporting usage */
+	be_u32	__reserved[4];
+
+	/* --- 36 byte used --- */
+
+	/* Reserve space for up to AL_UPDATES_PER_TRANSACTION changes
+	 * in one transaction, then use the remaining byte in the 4k block for
+	 * context information.  "Flexible" number of updates per transaction
+	 * does not help, as we have to account for the case when all update
+	 * slots are used anyways, so it would only complicate code without
+	 * additional benefit.
+	 */
+	be_u16	update_slot_nr[AL_UPDATES_PER_TRANSACTION];
+
+	/* but the extent number is 32bit, which at an extent size of 4 MiB
+	 * allows to cover device sizes of up to 2**54 Byte (16 PiB) */
+	be_u32	update_extent_nr[AL_UPDATES_PER_TRANSACTION];
+
+	/* --- 420 bytes used (36 + 64*6) --- */
+
+	/* 4096 - 420 = 3676 = 919 * 4 */
+	be_u32	context[AL_CONTEXT_PER_TRANSACTION];
+};
+
+struct al_4k_cpu {
+	uint32_t	magic;
+	uint32_t	tr_number;
+	uint32_t	crc32c;
+	uint16_t	transaction_type;
+	uint16_t	n_updates;
+	uint16_t	context_size;
+	uint16_t	context_start_slot_nr;
+	uint32_t	__reserved[4];
+	uint16_t	update_slot_nr[AL_UPDATES_PER_TRANSACTION];
+	uint32_t	update_extent_nr[AL_UPDATES_PER_TRANSACTION];
+	uint32_t	context[AL_CONTEXT_PER_TRANSACTION];
+};
+
+int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_disk *al_disk)
+{
+	unsigned i;
+
+	al_cpu->magic                 = be32_to_cpu(al_disk->magic.be);
+	al_cpu->tr_number             = be32_to_cpu(al_disk->tr_number.be);
+	al_cpu->crc32c                = be32_to_cpu(al_disk->crc32c.be);
+	al_cpu->transaction_type      = be16_to_cpu(al_disk->transaction_type.be);
+	al_cpu->n_updates             = be16_to_cpu(al_disk->n_updates.be);
+	al_cpu->context_size          = be16_to_cpu(al_disk->context_size.be);
+	al_cpu->context_start_slot_nr = be16_to_cpu(al_disk->context_start_slot_nr.be);
+
+	/* reserverd al_disk->__reserved[4] */
+
+	for (i=0; i < AL_UPDATES_PER_TRANSACTION; i++)
+		al_cpu->update_slot_nr[i] = be16_to_cpu(al_disk->update_slot_nr[i].be);
+	for (i=0; i < AL_UPDATES_PER_TRANSACTION; i++)
+		al_cpu->update_extent_nr[i] = be32_to_cpu(al_disk->update_extent_nr[i].be);
+	for (i=0; i < AL_CONTEXT_PER_TRANSACTION; i++)
+		al_cpu->context[i] = be32_to_cpu(al_disk->context[i].be);
+
+	return al_cpu->magic == DRBD_AL_MAGIC /* && al_cpu->crc32c == crc32c */;
+}
+
+/*
+ * --------------------------------------------------
+ */
 
 /* pre declarations */
 void m_get_gc(struct md_cpu *md);
@@ -1183,17 +1288,11 @@ uint64_t v07_style_md_get_byte_offset(const int idx, const uint64_t bd_size)
 	return offset;
 }
 
-void printf_al(struct format *cfg)
+void printf_al_07(struct format *cfg, struct al_sector_on_disk *al_disk)
 {
 	struct al_sector_cpu al_cpu;
-	off_t al_on_disk_off = cfg->al_offset;
-	off_t al_size = MD_AL_MAX_SECT_07 * 512;
-	struct al_sector_on_disk *al_disk = on_disk_buffer;
 	unsigned s, i;
 	unsigned max_slot_nr = 0;
-
-	printf("# al {\n");
-	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, al_on_disk_off, "printf_al");
 	for (s = 0; s < MD_AL_MAX_SECT_07; s++) {
 		int ok = v07_al_disk_to_cpu(&al_cpu, al_disk + s);
 		printf("#     sector %2u { %s\n", s, ok ? "valid" : "invalid");
@@ -1216,7 +1315,77 @@ void printf_al(struct format *cfg)
 		"### CAUTION: maximum slot number found in AL: %u\n"
 		"### CAUTION: but 'super-block' al-extents is: %u\n",
 		max_slot_nr, cfg->md.al_nr_extents);
+}
 
+void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk)
+{
+	struct al_4k_cpu al_cpu;
+	unsigned b, i;
+	unsigned max_slot_nr = 0;
+	for (b = 0; b < MD_AL_MAX_SECT_07/8; b++) {
+		int ok = v84_al_disk_to_cpu(&al_cpu, al_disk + b);
+		printf("#     block %2u { %s\n", b, ok ? "valid" : "invalid");
+		printf("# \tmagic: 0x%08x\n", al_cpu.magic);
+		printf("# \ttype: 0x%08x\n", al_cpu.transaction_type);
+		printf("# \ttr: %10u\n", al_cpu.tr_number);
+		printf("# \tactive set size: %u\n", al_cpu.context_size);
+		if (al_cpu.context_size -1 > max_slot_nr)
+			max_slot_nr = al_cpu.context_size -1;
+		for (i = 0; i < AL_CONTEXT_PER_TRANSACTION; i++) {
+			unsigned slot = al_cpu.context_start_slot_nr + i;
+			if (al_cpu.context[i] == ~0U && slot >= al_cpu.context_size)
+				continue;
+			if (slot > max_slot_nr)
+				max_slot_nr = slot;
+			printf("# \t%2u: %10u %10u\n", i, slot, al_cpu.context[i]);
+		}
+		printf("# \tupdates: %u\n", al_cpu.n_updates);
+		for (i = 0; i < AL_UPDATES_PER_TRANSACTION; i++) {
+			if (i >= al_cpu.n_updates &&
+			    al_cpu.update_slot_nr[i] == (uint16_t)(~0U))
+				continue;
+			printf("# \t%2u: %10u %10u\n", i,
+				al_cpu.update_slot_nr[i],
+				al_cpu.update_extent_nr[i]);
+			if (al_cpu.update_slot_nr[i] > max_slot_nr)
+				max_slot_nr = al_cpu.update_slot_nr[i];
+		}
+		printf("# \tcrc32c: 0x%08x\n", al_cpu.crc32c);
+		printf("#     }\n");
+	}
+	printf("# }\n");
+	if (max_slot_nr >= cfg->md.al_nr_extents)
+		printf(
+		"### CAUTION: maximum slot number found in AL: %u\n"
+		"### CAUTION: but 'super-block' al-extents is: %u\n",
+		max_slot_nr, cfg->md.al_nr_extents);
+}
+
+void printf_al(struct format *cfg)
+{
+	off_t al_on_disk_off = cfg->al_offset;
+	off_t al_size = MD_AL_MAX_SECT_07 * 512;
+	struct al_sector_on_disk *al_512_disk = on_disk_buffer;
+	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
+
+	printf("# al {\n");
+	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, al_on_disk_off, "printf_al");
+
+	/* FIXME
+	 * we should introduce a new meta data "super block" magic, so we won't
+	 * have the same super block with two different activity log
+	 * transaction layouts */
+	if (format_version(cfg) < Drbd_08)
+		printf_al_07(cfg, al_512_disk);
+
+	/* looks like we have the new al format */
+	else if (DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
+		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be))
+		printf_al_84(cfg, al_4k_disk);
+
+	/* try the old al format anyways */
+	else
+		printf_al_07(cfg, al_512_disk);
 }
 
 unsigned long bm_words(uint64_t sectors, int bytes_per_bit)
