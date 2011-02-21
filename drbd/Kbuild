@@ -64,9 +64,11 @@ $(shell echo -e "VERSION=$(VERSION)\n"             \
 KBUILD_STAGE ?= $(if $(filter $(srctree)/scripts/Makefile.modpost,$(MAKEFILE_LIST)),modpost)
 
 # We want to generate compat.h only once.
+ifneq ($(USE_COMPAT_H_AS_IS),1)
 ifneq ($(KBUILD_STAGE),modpost)
 $(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) FORCE
 	$(call filechk,compat.h)
+endif
 endif
 
 filechk_compat.h = \
