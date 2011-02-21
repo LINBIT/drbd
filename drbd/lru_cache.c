@@ -39,8 +39,8 @@
 } while (0)
 
 #define RETURN(x...)     do { \
-	clear_bit(__LC_PARANOIA, &lc->flags); \
-	smp_mb__after_clear_bit(); return x ; } while (0)
+	clear_bit_unlock(__LC_PARANOIA, &lc->flags); \
+	return x ; } while (0)
 
 /* BUG() if e is not one of the elements tracked by lc */
 #define PARANOIA_LC_ELEMENT(lc, e) do {	\
@@ -433,8 +433,7 @@ void lc_changed(struct lru_cache *lc, struct lc_element *e)
 	hlist_add_head(&e->colision, lc_hash_slot(lc, lc->new_number));
 	lc->changing_element = NULL;
 	lc->new_number = LC_FREE;
-	clear_bit(__LC_DIRTY, &lc->flags);
-	smp_mb__after_clear_bit();
+	clear_bit_unlock(__LC_DIRTY, &lc->flags);
 	RETURN();
 }
 
@@ -458,8 +457,7 @@ unsigned int lc_put(struct lru_cache *lc, struct lc_element *e)
 		/* move it to the front of LRU. */
 		list_move(&e->list, &lc->lru);
 		lc->used--;
-		clear_bit(__LC_STARVING, &lc->flags);
-		smp_mb__after_clear_bit();
+		clear_bit_unlock(__LC_STARVING, &lc->flags);
 	}
 	RETURN(e->refcnt);
 }

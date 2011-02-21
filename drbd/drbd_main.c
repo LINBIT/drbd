@@ -2928,8 +2928,7 @@ STATIC int w_bitmap_io(struct drbd_work *w, int unused)
 		put_ldev(mdev);
 	}
 
-	clear_bit(BITMAP_IO, &mdev->flags);
-	smp_mb__after_clear_bit();
+	clear_bit_unlock(BITMAP_IO, &mdev->flags);
 	wake_up(&mdev->misc_wait);
 
 	if (work->done)
