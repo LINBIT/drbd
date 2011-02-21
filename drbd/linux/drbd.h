@@ -149,6 +149,7 @@ enum drbd_ret_code {
 	ERR_CONG_NOT_PROTO_A	= 155,
 	ERR_PIC_AFTER_DEP	= 156,
 	ERR_PIC_PEER_DEP	= 157,
+	ERR_CONN_NOT_KNOWN      = 158,
 
 	/* insert new ones above this line */
 	AFTER_LAST_ERR_CODE
@@ -341,8 +342,11 @@ enum drbd_timeout_flag {
 
 /* Start of the new netlink/connector stuff */
 
-#define DRBD_NL_CREATE_DEVICE 0x01
-#define DRBD_NL_SET_DEFAULTS  0x02
+enum drbd_ncr_flags {
+	DRBD_NL_CREATE_DEVICE = 0x01,
+	DRBD_NL_SET_DEFAULTS =  0x02,
+};
+#define DRBD_NL_OBJ_NAME_LEN 32
 
 /* The following line should be moved over to linux/connector.h
  * when the time comes */
@@ -357,8 +361,15 @@ enum drbd_timeout_flag {
 
 struct drbd_nl_cfg_req {
 	int packet_type;
-	unsigned int drbd_minor;
-	int flags;
+	union {
+		struct {
+			unsigned int drbd_minor;
+			enum drbd_ncr_flags flags;
+		};
+		struct {
+			char obj_name[DRBD_NL_OBJ_NAME_LEN];
+		};
+	};
 	unsigned short tag_list[];
 };
 
