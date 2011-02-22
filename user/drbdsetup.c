@@ -1119,7 +1119,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_na
 	struct option *lo;
 	struct drbd_tag_list *tl;
 	int c,i=1,rv=NO_ERROR,sk_nl;
-	int flags=0;
+	enum drbd_ncr_flags flags = 0;
 	int n_args;
 
 	tl = create_tag_list(4096);
