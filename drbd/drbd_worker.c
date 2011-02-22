@@ -330,39 +330,47 @@ void drbd_csum_bio(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *
 	crypto_hash_final(&desc, digest);
 }
 
+/* MAYBE merge common code with w_e_end_ov_req */
 STATIC int w_e_send_csum(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	int digest_size;
 	void *digest;
-	int ok;
+	int ok = 1;
 
-	if (unlikely(cancel)) {
+	if (unlikely(cancel))
+		goto out;
+
+	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))
+		goto out;
+
+	digest_size = crypto_hash_digestsize(mdev->csums_tfm);
+	digest = kmalloc(digest_size, GFP_NOIO);
+	if (digest) {
+		sector_t sector = peer_req->i.sector;
+		unsigned int size = peer_req->i.size;
+		drbd_csum_ee(mdev, mdev->csums_tfm, peer_req, digest);
+		/* Free peer_req and pages before send.
+		 * In case we block on congestion, we could otherwise run into
+		 * some distributed deadlock, if the other side blocks on
+		 * congestion as well, because our receiver blocks in
+		 * drbd_pp_alloc due to pp_in_use > max_buffers. */
 		drbd_free_ee(mdev, peer_req);
-		return 1;
+		peer_req = NULL;
+		inc_rs_pending(mdev);
+		ok = drbd_send_drequest_csum(mdev, sector, size,
+					     digest, digest_size,
+					     P_CSUM_RS_REQUEST);
+		kfree(digest);
+	} else {
+		dev_err(DEV, "kmalloc() of digest failed.\n");
+		ok = 0;
 	}
 
-	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		digest_size = crypto_hash_digestsize(mdev->csums_tfm);
-		digest = kmalloc(digest_size, GFP_NOIO);
-		if (digest) {
-			drbd_csum_ee(mdev, mdev->csums_tfm, peer_req, digest);
-
-			inc_rs_pending(mdev);
-			ok = drbd_send_drequest_csum(mdev, peer_req->i.sector,
-						     peer_req->i.size, digest,
-						     digest_size,
-						     P_CSUM_RS_REQUEST);
-			kfree(digest);
-		} else {
-			dev_err(DEV, "kmalloc() of digest failed.\n");
-			ok = 0;
-		}
-	} else
-		ok = 1;
-
-	drbd_free_ee(mdev, peer_req);
+out:
+	if (peer_req)
+		drbd_free_ee(mdev, peer_req);
 
 	if (unlikely(!ok))
 		dev_err(DEV, "drbd_send_drequest(..., csum) failed\n");
@@ -1111,20 +1119,29 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = kmalloc(digest_size, GFP_NOIO);
 	if (digest) {
+		sector_t sector = peer_req->i.sector;
+		unsigned int size = peer_req->i.size;
 		drbd_csum_ee(mdev, mdev->verify_tfm, peer_req, digest);
+		/* Free peer_req and pages before send.
+		 * In case we block on congestion, we could otherwise run into
+		 * some distributed deadlock, if the other side blocks on
+		 * congestion as well, because our receiver blocks in
+		 * drbd_pp_alloc due to pp_in_use > max_buffers. */
+		drbd_free_ee(mdev, peer_req);
+		peer_req = NULL;
 		inc_rs_pending(mdev);
-		ok = drbd_send_drequest_csum(mdev, peer_req->i.sector, peer_req->i.size,
-					     digest, digest_size, P_OV_REPLY);
+		ok = drbd_send_drequest_csum(mdev, sector, size,
+					     digest, digest_size,
+					     P_OV_REPLY);
 		if (!ok)
 			dec_rs_pending(mdev);
 		kfree(digest);
 	}
 
 out:
-	drbd_free_ee(mdev, peer_req);
-
+	if (peer_req)
+		drbd_free_ee(mdev, peer_req);
 	dec_unacked(mdev);
-
 	return ok;
 }
 
@@ -1144,8 +1161,10 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	struct digest_info *di;
-	int digest_size;
 	void *digest;
+	sector_t sector = peer_req->i.sector;
+	unsigned int size = peer_req->i.size;
+	int digest_size;
 	int ok, eq = 0;
 
 	if (unlikely(cancel)) {
@@ -1179,16 +1198,21 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 			dev_err(DEV, "Sending NegDReply. I guess it gets messy.\n");
 	}
 
-	dec_unacked(mdev);
+	/* Free peer_req and pages before send.
+	 * In case we block on congestion, we could otherwise run into
+	 * some distributed deadlock, if the other side blocks on
+	 * congestion as well, because our receiver blocks in
+	 * drbd_pp_alloc due to pp_in_use > max_buffers. */
+	drbd_free_ee(mdev, peer_req);
 	if (!eq)
-		drbd_ov_oos_found(mdev, peer_req->i.sector, peer_req->i.size);
+		drbd_ov_oos_found(mdev, sector, size);
 	else
 		ov_oos_print(mdev);
 
-	ok = drbd_send_ack_ex(mdev, P_OV_RESULT, peer_req->i.sector, peer_req->i.size,
+	ok = drbd_send_ack_ex(mdev, P_OV_RESULT, sector, size,
 			      eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
 
-	drbd_free_ee(mdev, peer_req);
+	dec_unacked(mdev);
 
 	--mdev->ov_left;
 
