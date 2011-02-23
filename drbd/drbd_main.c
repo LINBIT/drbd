@@ -139,6 +139,7 @@ struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
 struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 mempool_t *drbd_request_mempool;
 mempool_t *drbd_ee_mempool;
+mempool_t *drbd_md_io_page_pool;
 
 /* I do not use a standard mempool, because:
    1) I want to hand out the pre-allocated objects first.
@@ -2071,6 +2072,8 @@ STATIC void drbd_destroy_mempools(void)
 
 	/* D_ASSERT(atomic_read(&drbd_pp_vacant)==0); */
 
+	if (drbd_md_io_page_pool)
+		mempool_destroy(drbd_md_io_page_pool);
 	if (drbd_ee_mempool)
 		mempool_destroy(drbd_ee_mempool);
 	if (drbd_request_mempool)
@@ -2084,6 +2087,7 @@ STATIC void drbd_destroy_mempools(void)
 	if (drbd_al_ext_cache)
 		kmem_cache_destroy(drbd_al_ext_cache);
 
+	drbd_md_io_page_pool = NULL;
 	drbd_ee_mempool      = NULL;
 	drbd_request_mempool = NULL;
 	drbd_ee_cache        = NULL;
@@ -2107,6 +2111,7 @@ STATIC int drbd_create_mempools(void)
 	drbd_bm_ext_cache    = NULL;
 	drbd_al_ext_cache    = NULL;
 	drbd_pp_pool         = NULL;
+	drbd_md_io_page_pool = NULL;
 
 	/* caches */
 	drbd_request_cache = kmem_cache_create(
@@ -2130,6 +2135,10 @@ STATIC int drbd_create_mempools(void)
 		goto Enomem;
 
 	/* mempools */
+	drbd_md_io_page_pool = mempool_create_page_pool(DRBD_MIN_POOL_PAGES, 0);
+	if (drbd_md_io_page_pool == NULL)
+		goto Enomem;
+
 	drbd_request_mempool = mempool_create(number,
 		mempool_alloc_slab, mempool_free_slab, drbd_request_cache);
 	if (drbd_request_mempool == NULL)
