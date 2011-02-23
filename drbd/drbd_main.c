@@ -2487,6 +2487,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 		idr_remove(&minors, minor_got);
 		goto out_no_minor_idr;
 	}
+	add_disk(disk);
 
 	return NO_ERROR;
 
