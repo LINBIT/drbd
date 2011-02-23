@@ -147,6 +147,7 @@ else
   clean:
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
+	rm -f compat/*.[oas] compat/.*.cmd
 
   distclean: clean
 	@if git show HEAD:drbd/linux/drbd_config.h > linux/drbd_config.h.tmp \
