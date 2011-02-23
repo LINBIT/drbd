@@ -122,7 +122,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
  retry:
 #endif
-	bio = bio_alloc(GFP_NOIO, 1);
+	bio = bio_alloc_drbd(GFP_NOIO);
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
 	ok = (bio_add_page(bio, page, size, 0) == size);
