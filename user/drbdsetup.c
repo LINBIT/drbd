@@ -450,7 +450,7 @@ struct drbd_cmd commands[] = {
 	 NULL }} },
 
 	{"del-minor", P_del_minor, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"del-connection", P_del_minor, CHT_CONN, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"del-connection", P_del_connection, CHT_CONN, F_CONFIG_CMD, {{ NULL, NULL }} },
 };
 
 #define OTHER_ERROR 900
