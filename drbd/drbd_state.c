@@ -763,6 +763,18 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 
 	print_state_change(mdev, os, ns, flags);
 
+	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
+	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
+	 * drbd_ldev_destroy() won't happen before our corresponding
+	 * after_state_ch works run, where we put_ldev again. */
+	if ((os.disk != D_FAILED && ns.disk == D_FAILED) ||
+	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
+		atomic_inc(&mdev->local_cnt);
+
+	/* assignment inclusive debug info about what code path
+	 * initiated this state change. */
+	mdev->state = ns;
+
 	/* solve the race between becoming unconfigured,
 	 * worker doing the cleanup, and
 	 * admin reconfiguring us:
@@ -775,17 +787,6 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	   !test_and_set_bit(CONFIG_PENDING, &mdev->tconn->flags))
 		set_bit(OBJECT_DYING, &mdev->tconn->flags);
 
-	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
-	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
-	 * drbd_ldev_destroy() won't happen before our corresponding
-	 * after_state_ch works run, where we put_ldev again. */
-	if ((os.disk != D_FAILED && ns.disk == D_FAILED) ||
-	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
-		atomic_inc(&mdev->local_cnt);
-
-	/* assignment inclusive debug info about what code path
-	 * initiated this state change. */
-	mdev->state = ns;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(mdev, "attached to UUIDs");
