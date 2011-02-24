@@ -2349,7 +2349,7 @@ void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state state)
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
 
-	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
+	cn_reply->seq = atomic_inc_return(&drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char *)tl - (char *)reply->tag_list);
@@ -2381,7 +2381,7 @@ void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name)
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
 
-	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
+	cn_reply->seq = atomic_inc_return(&drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char *)tl - (char *)reply->tag_list);
@@ -2460,7 +2460,7 @@ void drbd_bcast_ee(struct drbd_conf *mdev, const char *reason, const int dgs,
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
 
-	cn_reply->seq = atomic_add_return(1,&drbd_nl_seq);
+	cn_reply->seq = atomic_inc_return(&drbd_nl_seq);
 	cn_reply->ack = 0; // not used here.
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char*)tl - (char*)reply->tag_list);
@@ -2499,7 +2499,7 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	cn_reply->id.idx = CN_IDX_DRBD;
 	cn_reply->id.val = CN_VAL_DRBD;
 
-	cn_reply->seq = atomic_add_return(1, &drbd_nl_seq);
+	cn_reply->seq = atomic_inc_return(&drbd_nl_seq);
 	cn_reply->ack = 0; /* not used here. */
 	cn_reply->len = sizeof(struct drbd_nl_cfg_reply) +
 		(int)((char *)tl - (char *)reply->tag_list);
