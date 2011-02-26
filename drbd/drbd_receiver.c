@@ -1851,16 +1851,10 @@ STATIC int e_send_discard_ack(struct drbd_work *w, int unused)
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
-	int ok = 1;
+	int ok;
 
 	D_ASSERT(mdev->tconn->net_conf->wire_protocol == DRBD_PROT_C);
 	ok = drbd_send_ack(mdev, P_DISCARD_ACK, peer_req);
-
-	spin_lock_irq(&mdev->tconn->req_lock);
-	D_ASSERT(!drbd_interval_empty(&peer_req->i));
-	drbd_remove_epoch_entry_interval(mdev, peer_req);
-	spin_unlock_irq(&mdev->tconn->req_lock);
-
 	dec_unacked(mdev);
 
 	return ok;
@@ -2088,6 +2082,12 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 		spin_lock_irq(&mdev->tconn->req_lock);
 
+		/*
+		 * Inserting the peer request into the write_requests tree will
+		 * prevent new conflicting local requests from being added.
+		 */
+		drbd_insert_interval(&mdev->write_requests, &peer_req->i);
+
 		first = 1;
 		for (;;) {
 			struct drbd_interval *i;
@@ -2096,26 +2096,26 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 			prepare_to_wait(&mdev->misc_wait, &wait,
 				TASK_INTERRUPTIBLE);
 
-			i = drbd_find_overlap(&mdev->write_requests, sector, size);
-			if (i) {
+			drbd_for_each_overlap(i, &mdev->write_requests, sector, size) {
+				struct drbd_request *req2;
+
+				if (i == &peer_req->i || !i->local)
+					continue;
+
 				/* only ALERT on first iteration,
 				 * we may be woken up early... */
 				if (first)
-					dev_alert(DEV, "%s[%u] Concurrent %s write detected!"
+					dev_alert(DEV, "%s[%u] Concurrent local write detected!"
 					      "	new: %llus +%u; pending: %llus +%u\n",
 					      current->comm, current->pid,
-					      i->local ? "local" : "remote",
 					      (unsigned long long)sector, size,
 					      (unsigned long long)i->sector, i->size);
 
-				if (i->local) {
-					struct drbd_request *req2;
-
-					req2 = container_of(i, struct drbd_request, i);
-					if (req2->rq_state & RQ_NET_PENDING)
-						++have_unacked;
-				}
+				req2 = container_of(i, struct drbd_request, i);
+				if (req2->rq_state & RQ_NET_PENDING)
+					++have_unacked;
 				++have_conflict;
+				break;
 			}
 			if (!have_conflict)
 				break;
@@ -2124,6 +2124,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 			if (first && discard && have_unacked) {
 				dev_alert(DEV, "Concurrent write! [DISCARD BY FLAG] sec=%llus\n",
 				     (unsigned long long)sector);
+				drbd_remove_epoch_entry_interval(mdev, peer_req);
 				inc_unacked(mdev);
 				peer_req->w.cb = e_send_discard_ack;
 				list_add_tail(&peer_req->w.list, &mdev->done_ee);
@@ -2140,6 +2141,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 			}
 
 			if (signal_pending(current)) {
+				drbd_remove_epoch_entry_interval(mdev, peer_req);
 				spin_unlock_irq(&mdev->tconn->req_lock);
 				finish_wait(&mdev->misc_wait, &wait);
 				goto out_interrupted;
@@ -2158,12 +2160,11 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 				 * there must be none now. */
 				D_ASSERT(have_unacked == 0);
 			}
+			/* FIXME: Introduce a timeout here after which we disconnect.  */
 			schedule();
 			spin_lock_irq(&mdev->tconn->req_lock);
 		}
 		finish_wait(&mdev->misc_wait, &wait);
-
-		drbd_insert_interval(&mdev->write_requests, &peer_req->i);
 	}
 
 	list_add(&peer_req->w.list, &mdev->active_ee);
