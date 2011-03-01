@@ -987,4 +987,12 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 	__x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
 #endif
 
+/* Introduced with 2.6.26. See include/linux/jiffies.h */
+#ifndef time_is_before_eq_jiffies
+#define time_is_before_jiffies(a) time_after(jiffies, a)
+#define time_is_after_jiffies(a) time_before(jiffies, a)
+#define time_is_before_eq_jiffies(a) time_after_eq(jiffies, a)
+#define time_is_after_eq_jiffies(a) time_before_eq(jiffies, a)
+#endif
+
 #endif
