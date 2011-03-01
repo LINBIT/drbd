@@ -1109,31 +1109,34 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))
-		goto out;
-
 	digest_size = crypto_hash_digestsize(mdev->tconn->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = kmalloc(digest_size, GFP_NOIO);
-	if (digest) {
-		sector_t sector = peer_req->i.sector;
-		unsigned int size = peer_req->i.size;
-		drbd_csum_ee(mdev, mdev->tconn->verify_tfm, peer_req, digest);
-		/* Free peer_req and pages before send.
-		 * In case we block on congestion, we could otherwise run into
-		 * some distributed deadlock, if the other side blocks on
-		 * congestion as well, because our receiver blocks in
-		 * drbd_pp_alloc due to pp_in_use > max_buffers. */
-		drbd_free_ee(mdev, peer_req);
-		peer_req = NULL;
-		inc_rs_pending(mdev);
-		err = drbd_send_drequest_csum(mdev, sector, size,
-					      digest, digest_size,
-					      P_OV_REPLY);
-		if (err)
-			dec_rs_pending(mdev);
-		kfree(digest);
+	if (!digest) {
+		err = -ENOMEM;
+		goto out;
 	}
+
+	if (!(peer_req->flags & EE_WAS_ERROR))
+		drbd_csum_ee(mdev, mdev->tconn->verify_tfm, peer_req, digest);
+	else
+		memset(digest, 0, digest_size);
+
+	/* Free peer_req and pages before send.
+	 * In case we block on congestion, we could otherwise run into
+	 * some distributed deadlock, if the other side blocks on
+	 * congestion as well, because our receiver blocks in
+	 * drbd_pp_alloc due to pp_in_use > max_buffers. */
+	drbd_free_ee(mdev, peer_req);
+	peer_req = NULL;
+
+	inc_rs_pending(mdev);
+	err = drbd_send_drequest_csum(mdev, peer_req->i.sector,
+				      peer_req->i.size, digest, digest_size,
+				      P_OV_REPLY);
+	if (err)
+		dec_rs_pending(mdev);
+	kfree(digest);
 
 out:
 	if (peer_req)
