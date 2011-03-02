@@ -3175,6 +3175,16 @@ int drbd_wait_misc(struct drbd_conf *mdev, struct drbd_interval *i)
 	return 0;
 }
 
+unsigned int drbd_max_bio_size(struct drbd_conf *mdev)
+{
+	int version = mdev->tconn->agreed_pro_version;
+
+	return (version < 94)  ? queue_max_hw_sectors(mdev->rq_queue) << 9 :
+	       (version < 95)  ? DRBD_MAX_SIZE_H80_PACKET :
+	       /* since drbd 8.3.9 */
+	       DRBD_MAX_BIO_SIZE;
+}
+
 #ifdef DRBD_ENABLE_FAULTS
 /* Fault insertion support including random number generator shamelessly
  * stolen from kernel/rcutorture.c */

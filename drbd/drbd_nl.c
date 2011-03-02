@@ -1104,11 +1104,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		 * backing store. We must not increase the user visible maximum
 		 * bio size on this device to something the peer may not be
 		 * able to handle. */
-		if (mdev->tconn->agreed_pro_version < 94)
-			max_bio_size = queue_max_hw_sectors(mdev->rq_queue) << 9;
-		else if (mdev->tconn->agreed_pro_version == 94)
-			max_bio_size = DRBD_MAX_SIZE_H80_PACKET;
-		/* else: drbd 8.3.9 and later, stay with default */
+		max_bio_size = drbd_max_bio_size(mdev);
 	}
 
 	drbd_setup_queue_param(mdev, max_bio_size);

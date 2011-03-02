@@ -2511,5 +2511,6 @@ struct bm_extent {
 #define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
 #define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
+extern unsigned int drbd_max_bio_size(struct drbd_conf *mdev);
 
 #endif

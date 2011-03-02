@@ -3446,13 +3446,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packet cmd,
 			ldsc = 1;
 		}
 
-		if (mdev->tconn->agreed_pro_version < 94)
-			max_bio_size = be32_to_cpu(p->max_bio_size);
-		else if (mdev->tconn->agreed_pro_version == 94)
-			max_bio_size = DRBD_MAX_SIZE_H80_PACKET;
-		else /* drbd 8.3.8 onwards */
-			max_bio_size = DRBD_MAX_BIO_SIZE;
-
+		max_bio_size = drbd_max_bio_size(mdev);
 		if (max_bio_size != queue_max_hw_sectors(mdev->rq_queue) << 9)
 			drbd_setup_queue_param(mdev, max_bio_size);
 
