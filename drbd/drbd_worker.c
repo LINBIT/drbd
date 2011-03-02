@@ -1198,10 +1198,6 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 			eq = !memcmp(digest, di->digest, digest_size);
 			kfree(digest);
 		}
-	} else {
-		ok = drbd_send_ack(mdev, P_NEG_RS_DREPLY, e);
-		if (DRBD_ratelimit(5*HZ, 5))
-			dev_err(DEV, "Sending NegDReply. I guess it gets messy.\n");
 	}
 
 	dec_unacked(mdev);
