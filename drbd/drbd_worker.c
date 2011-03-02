@@ -1192,10 +1192,6 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 			eq = !memcmp(digest, di->digest, digest_size);
 			kfree(digest);
 		}
-	} else {
-		err = drbd_send_ack(mdev, P_NEG_RS_DREPLY, peer_req);
-		if (DRBD_ratelimit(5*HZ, 5))
-			dev_err(DEV, "Sending NegDReply. I guess it gets messy.\n");
 	}
 
 	/* Free peer_req and pages before send.
