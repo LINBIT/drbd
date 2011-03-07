@@ -52,7 +52,6 @@
 
 #endif
 
-
 enum drbd_io_error_p {
 	EP_PASS_ON, /* FIXME should the better be named "Ignore"? */
 	EP_CALL_HELPER,
@@ -153,6 +152,7 @@ enum drbd_ret_code {
 	ERR_CONN_IN_USE         = 159,
 	ERR_MINOR_CONFIGURED    = 160,
 	ERR_MINOR_EXISTS	= 161,
+	ERR_INVALID_REQUEST	= 162,
 
 	/* insert new ones above this line */
 	AFTER_LAST_ERR_CODE
@@ -342,46 +342,5 @@ enum drbd_timeout_flag {
 #define DRBD_MD_INDEX_INTERNAL -1
 #define DRBD_MD_INDEX_FLEX_EXT -2
 #define DRBD_MD_INDEX_FLEX_INT -3
-
-/* Start of the new netlink/connector stuff */
-
-enum drbd_ncr_flags {
-	DRBD_NL_CREATE_DEVICE = 0x01,
-	DRBD_NL_SET_DEFAULTS =  0x02,
-};
-#define DRBD_NL_OBJ_NAME_LEN 32
-
-/* The following line should be moved over to linux/connector.h
- * when the time comes */
-#ifndef CN_IDX_DRBD
-# define CN_IDX_DRBD			0x4
-/* Ubuntu "intrepid ibex" release defined CN_IDX_DRBD as 0x6 */
-#endif
-#define CN_VAL_DRBD			0x1
-
-/* For searching a vacant cn_idx value */
-#define CN_IDX_STEP			6977
-
-struct drbd_nl_cfg_req {
-	int packet_type;
-	union {
-		struct {
-			unsigned int drbd_minor;
-			enum drbd_ncr_flags flags;
-		};
-		struct {
-			char obj_name[DRBD_NL_OBJ_NAME_LEN];
-		};
-	};
-	unsigned short tag_list[];
-};
-
-struct drbd_nl_cfg_reply {
-	int packet_type;
-	unsigned int minor;
-	/* FIXME: This is super ugly. */
-	int ret_code; /* enum drbd_ret_code or enum drbd_state_rv */
-	unsigned short tag_list[]; /* only used with get_* calls */
-};
 
 #endif

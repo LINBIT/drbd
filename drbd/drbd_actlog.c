@@ -709,6 +709,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_conf *mdev = w->mdev;
+	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 
 	if (!get_ldev(mdev)) {
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -732,7 +733,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 			break;
 		}
 	}
-	drbd_bcast_sync_progress(mdev);
+	drbd_bcast_event(mdev, &sib);
 
 	return 1;
 }

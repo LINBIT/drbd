@@ -40,6 +40,7 @@
 #include <linux/idr.h>
 #include <net/tcp.h>
 #include <linux/lru_cache.h>
+#include <linux/drbd_genl_api.h>
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
 
@@ -81,7 +82,6 @@
 extern unsigned int minor_count;
 extern int disable_sendpage;
 extern int allow_oos;
-extern unsigned int cn_idx;
 
 #ifdef DRBD_ENABLE_FAULTS
 extern int enable_faults;
@@ -989,14 +989,6 @@ struct drbd_md {
 	 */
 };
 
-/* for sync_conf and other types... */
-#define NL_PACKET(name, number, fields) struct name { fields };
-#define NL_INTEGER(pn,pr,member) int member;
-#define NL_INT64(pn,pr,member) __u64 member;
-#define NL_BIT(pn,pr,member)   unsigned member:1;
-#define NL_STRING(pn,pr,member,len) unsigned char member[len]; int member ## _len;
-#include "linux/drbd_nl.h"
-
 struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
@@ -1626,7 +1618,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 extern void drbd_free_mdev(struct drbd_conf *mdev);
 extern void drbd_delete_device(unsigned int minor);
 
-struct drbd_tconn *drbd_new_tconn(char *name);
+struct drbd_tconn *drbd_new_tconn(const char *name);
 extern void drbd_free_tconn(struct drbd_tconn *tconn);
 struct drbd_tconn *conn_by_name(const char *name);
 
@@ -1810,16 +1802,22 @@ extern int __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector,
 extern void drbd_al_apply_to_bm(struct drbd_conf *mdev);
 extern void drbd_al_shrink(struct drbd_conf *mdev);
 
-
 /* drbd_nl.c */
-
-void drbd_nl_cleanup(void);
-int __init drbd_nl_init(void);
-void drbd_bcast_state(struct drbd_conf *mdev, union drbd_state);
-void drbd_bcast_sync_progress(struct drbd_conf *mdev);
-void drbd_bcast_ee(struct drbd_conf *, const char *, const int, const char *,
-		   const char *, const struct drbd_peer_request *);
-
+/* state info broadcast */
+struct sib_info {
+	enum drbd_state_info_bcast_reason sib_reason;
+	union {
+		struct {
+			char *helper_name;
+			unsigned helper_exit_code;
+		};
+		struct {
+			union drbd_state os;
+			union drbd_state ns;
+		};
+	};
+};
+void drbd_bcast_event(struct drbd_conf *mdev, const struct sib_info *sib);
 
 
 /*
