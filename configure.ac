@@ -41,6 +41,7 @@ docdir="`eval echo ${docdir}`"
 
 dnl "--with-<foo>" options (all except km enabled by default, pass --without-<foo> to disable)
 WITH_UTILS=yes
+WITH_LEGACY_DRBDSETUP_CN=yes
 WITH_KM=no
 WITH_UDEV=yes
 WITH_XEN=yes
@@ -53,6 +54,10 @@ AC_ARG_WITH([utils],
 	[AS_HELP_STRING([--with-utils],
 			[Enable management utilities])],
 	[WITH_UTILS=$withval])
+AC_ARG_WITH([legacy-connector],
+	[AS_HELP_STRING([--with-legacy-connector],
+			[Enable legacy connector based drbdsetup])],
+	[WITH_LEGACY_DRBDSETUP_CN=$withval])
 AC_ARG_WITH([km],
 	[AS_HELP_STRING([--with-km],
 			[Enable kernel module])],
@@ -101,6 +106,7 @@ AC_ARG_ENABLE([spec],
 
 
 AC_SUBST(WITH_UTILS)
+AC_SUBST(WITH_LEGACY_DRBDSETUP_CN)
 AC_SUBST(WITH_KM)
 AC_SUBST(WITH_UDEV)
 AC_SUBST(WITH_XEN)
@@ -136,6 +142,12 @@ fi
 if test -z $FLEX; then
    if test "$WITH_UTILS" = "yes"; then
      AC_MSG_ERROR([Cannot build utils without flex, either install flex or pass the --without-utils option.])
+   fi
+fi
+
+if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
+   if test "$WITH_UTILS" != "yes"; then
+      AC_MSG_ERROR([You have to say --with-utils, if you want --with-legacy-connector])
    fi
 fi
 

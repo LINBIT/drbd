@@ -36,6 +36,7 @@ LN_S = @LN_S@
 
 # features enabled or disabled by configure
 WITH_UTILS = @WITH_UTILS@
+WITH_LEGACY_DRBDSETUP_CN = @WITH_LEGACY_DRBDSETUP_CN@
 WITH_KM = @WITH_KM@
 WITH_UDEV = @WITH_UDEV@
 WITH_XEN = @WITH_XEN@
@@ -53,7 +54,10 @@ drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
 	      drbd_buildtag.o drbdadm_minor_table.o
 
-drbdsetup-obj = drbdsetup.o drbdtool_common.o drbd_buildtag.o \
+drbdsetup-obj = libgenl.o drbdsetup_genl.o drbdtool_common.o drbd_buildtag.o \
+	        drbd_strings.o
+
+drbdsetup-cn-obj = drbdsetup_cn.o drbdtool_common.o drbd_buildtag.o \
 	        drbd_strings.o
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
@@ -61,7 +65,11 @@ drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 all: tools
 
 ifeq ($(WITH_UTILS),yes)
+ifeq ($(WITH_LEGACY_DRBDSETUP_CN),yes)
+tools: drbdadm drbdmeta drbdsetup drbdsetup-cn
+else
 tools: drbdadm drbdmeta drbdsetup
+endif
 else
 tools:
 endif
@@ -84,12 +92,15 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 drbdsetup: $(drbdsetup-obj)
 	$(CC) -o $@ $^
 
+drbdsetup-cn: $(drbdsetup-cn-obj)
+	$(CC) -o $@ $^
+
 drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
-	rm -f drbdsetup drbdadm drbdmeta drbdmeta_unfinished_rewrite *.o
+	rm -f drbdsetup drbdsetup-cn drbdadm drbdmeta *.o
 	rm -f drbd_buildtag.c drbd_strings.c
 	rm -f *~
 
@@ -116,15 +127,20 @@ uninstall:
 	rm -f $(DESTDIR)/sbin/drbdadm
 
 spell:
-	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdmeta.c drbdsetup.c drbdtool_common.c; do \
+	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdmeta.c drbdsetup_genl.c drbdsetup_cn.c drbdtool_common.c; do \
 	 	aspell --save-repl --dont-backup --personal=./../documentation/aspell.en.per check $$f; \
 	done
 
 ###dependencies
-drbdsetup.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
-drbdsetup.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
-drbdsetup.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
-drbdsetup.o:       unaligned.h
+drbdsetup_cn.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
+drbdsetup_cn.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
+drbdsetup_cn.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
+drbdsetup_cn.o:       unaligned.h
+drbdset_genl.o:     drbdtool_common.h ../drbd/linux/drbd_limits.h
+drbdsetup_genl.o:       ../drbd/linux/drbd_genl.h ../drbd/linux/drbd.h
+drbdsetup_genl.o:       ../drbd/linux/genl_magic_struct.h ../drbd/linux/genl_magic_func.h
+drbdsetup_genl.o:       libgenl.h
+libgenl.o:       libgenl.h
 drbdtool_common.o: drbdtool_common.h
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
@@ -132,5 +148,4 @@ drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../drbd/linux/drbd_limits.h
 drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h
 drbdsetup.o:       drbdtool_common.h           ../drbd/linux/drbd_limits.h
 drbdmeta.o:        drbdtool_common.h drbd_endian.h
-drbdmeta_unfinished_rewrite.o:        drbdtool_common.h drbd_endian.h
 drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h
