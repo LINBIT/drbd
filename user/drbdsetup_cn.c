@@ -24,8 +24,6 @@
  */
 
 #define _GNU_SOURCE
-#define _XOPEN_SOURCE 600
-#define _FILE_OFFSET_BITS 64
 
 #include <errno.h>
 #include <unistd.h>
@@ -52,11 +50,11 @@
 #include <linux/netlink.h>
 #include <linux/connector.h>
 
-#include <linux/drbd.h>
-#include <linux/drbd_tag_magic.h>
-#include <linux/drbd_limits.h>
+#include "legacy/drbd.h"
+#include "legacy/drbd_tag_magic.h"
+#include "legacy/drbd_limits.h"
 
-#include "unaligned.h"
+#include "legacy/unaligned.h"
 #include "drbdtool_common.h"
 
 #ifndef __CONNECTOR_H
@@ -117,18 +115,10 @@ struct drbd_option {
 	};
 };
 
-enum cn_handler_type {
-	CHT_MINOR,
-	CHT_CONN,
-	CHT_CTOR,
-	/* CHT_RES, later */
-};
-
 struct drbd_cmd {
 	const char* cmd;
 	const int packet_id;
-	const enum cn_handler_type type;
-	int (*function)(struct drbd_cmd *, unsigned, char *, int, char **);
+	int (*function)(struct drbd_cmd *, unsigned, int, char **);
 	void (*usage)(struct drbd_cmd *, enum usage_type);
 	union {
 		struct {
@@ -162,14 +152,10 @@ static int get_af_ssocks(int warn);
 static void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
-static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-			      int argc, char **argv);
-static int down_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-		    int argc, char **argv);
-static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-			   int argc, char **argv);
-static int events_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-		      int argc,char **argv);
+static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc,char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
@@ -203,8 +189,6 @@ static int conv_block_dev(struct drbd_argument *ad, struct drbd_tag_list *tl, ch
 static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 static int conv_address(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 static int conv_protocol(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-static int conv_arg_string(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
-static int conv_arg_numeric(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg);
 
 // convert functions for options
 static int conv_numeric(struct drbd_option *od, struct drbd_tag_list *tl, char* arg);
@@ -306,15 +290,15 @@ struct option wait_cmds_options[] = {
 #define F_EVENTS_CMD	events_cmd, events_usage
 
 struct drbd_cmd commands[] = {
-	{"primary", P_primary, CHT_MINOR, F_CONFIG_CMD, {{ NULL,
+	{"primary", P_primary, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "overwrite-data-of-peer",'o',T_primary_force, EB   }, /* legacy name */
 		 { "force",'f',			T_primary_force, EB   },
 		 CLOSE_OPTIONS }} }, },
 
-	{"secondary", P_secondary, CHT_MINOR, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"secondary", P_secondary, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"disk", P_disk_conf, CHT_MINOR, F_CONFIG_CMD, {{
+	{"disk", P_disk_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
@@ -332,9 +316,9 @@ struct drbd_cmd commands[] = {
 		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
-	{"detach", P_detach, CHT_MINOR, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"net", P_net_conf, CHT_CONN, F_CONFIG_CMD, {{
+	{"net", P_net_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
 		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
@@ -368,19 +352,19 @@ struct drbd_cmd commands[] = {
 		 { "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
-	{"disconnect", P_disconnect, CHT_CONN, F_CONFIG_CMD, {{NULL,
+	{"disconnect", P_disconnect, F_CONFIG_CMD, {{NULL,
 	 (struct drbd_option[]) {
 		 { "force", 'F',	T_force,	EB },
 		CLOSE_OPTIONS }} }, },
 
-	{"resize", P_resize, CHT_MINOR, F_CONFIG_CMD, {{ NULL,
+	{"resize", P_resize, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
 		 { "assume-peer-has-space",'f',T_resize_force,	EB },
 		 { "assume-clean", 'c',        T_no_resync, EB },
 		 CLOSE_OPTIONS }} }, },
 
-	{"syncer", P_syncer_conf, CHT_MINOR, F_CONFIG_CMD, {{ NULL,
+	{"syncer", P_syncer_conf, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
 		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
@@ -397,60 +381,44 @@ struct drbd_cmd commands[] = {
 		 { "c-min-rate", 'm',	        T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
 		 CLOSE_OPTIONS }} }, },
 
-	{"new-current-uuid", P_new_c_uuid, CHT_MINOR, F_CONFIG_CMD, {{NULL,
+	{"new-current-uuid", P_new_c_uuid, F_CONFIG_CMD, {{NULL,
 	 (struct drbd_option[]) {
 		 { "clear-bitmap",'c',T_clear_bm, EB   },
 		 CLOSE_OPTIONS }} }, },
 
-	{"invalidate", P_invalidate, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"invalidate-remote", P_invalidate_peer, CHT_MINOR, F_CONFIG_CMD, {{NULL, NULL}} },
-	{"pause-sync", P_pause_sync, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"resume-sync", P_resume_sync, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"suspend-io", P_suspend_io, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"resume-io", P_resume_io, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"outdate", P_outdate, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"verify", P_start_ov, CHT_MINOR, F_CONFIG_CMD, {{ NULL,
+	{"invalidate", P_invalidate, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"invalidate-remote", P_invalidate_peer, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"pause-sync", P_pause_sync, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"resume-sync", P_resume_sync, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"suspend-io", P_suspend_io, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"resume-io", P_resume_io, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"outdate", P_outdate, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"verify", P_start_ov, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "start",'s',T_start_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
 		 CLOSE_OPTIONS }} }, },
-	{"down",            0, CHT_MINOR, down_cmd, get_usage, { {NULL, NULL }} },
+	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	/* "state" is deprecated! please use "role".
 	 * find_cmd_by_name still understands "state", however. */
-	{"role", P_get_state, CHT_MINOR, F_GET_CMD, { .gp={ role_scmd} } },
-	{"status", P_get_state, CHT_MINOR, F_GET_CMD, {.gp={ status_xml_scmd } } },
-	{"sh-status", P_get_state, CHT_MINOR, F_GET_CMD, {.gp={ sh_status_scmd } } },
-	{"cstate", P_get_state, CHT_MINOR, F_GET_CMD, {.gp={ cstate_scmd} } },
-	{"dstate", P_get_state, CHT_MINOR, F_GET_CMD, {.gp={ dstate_scmd} } },
-	{"show-gi", P_get_uuids, CHT_MINOR, F_GET_CMD, {.gp={ uuids_scmd} }},
-	{"get-gi", P_get_uuids, CHT_MINOR, F_GET_CMD, {.gp={ uuids_scmd} } },
-	{"show", P_get_config, CHT_MINOR, F_GET_CMD, {.gp={ show_scmd} } },
-	{"check-resize", P_get_config, CHT_MINOR, F_GET_CMD, {.gp={ lk_bdev_scmd} } },
-	{"events",          0, CHT_MINOR, F_EVENTS_CMD, { .ep = {
+	{"role", P_get_state, F_GET_CMD, { .gp={ role_scmd} } },
+	{"status", P_get_state, F_GET_CMD, {.gp={ status_xml_scmd } } },
+	{"sh-status", P_get_state, F_GET_CMD, {.gp={ sh_status_scmd } } },
+	{"cstate", P_get_state, F_GET_CMD, {.gp={ cstate_scmd} } },
+	{"dstate", P_get_state, F_GET_CMD, {.gp={ dstate_scmd} } },
+	{"show-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} }},
+	{"get-gi", P_get_uuids, F_GET_CMD, {.gp={ uuids_scmd} } },
+	{"show", P_get_config, F_GET_CMD, {.gp={ show_scmd} } },
+	{"check-resize", P_get_config, F_GET_CMD, {.gp={ lk_bdev_scmd} } },
+	{"events",          0, F_EVENTS_CMD, { .ep = {
 		(struct option[]) {
 			{ "unfiltered", no_argument, 0, 'u' },
 			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
 		print_broadcast_events } } },
-	{"wait-connect", 0, CHT_MINOR, F_EVENTS_CMD, { .ep = {
+	{"wait-connect", 0, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_connected_state } } },
-	{"wait-sync", 0, CHT_MINOR, F_EVENTS_CMD, { .ep = {
+	{"wait-sync", 0, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_synced_state } } },
-
-	{"new-connection", P_new_connection, CHT_CTOR, F_CONFIG_CMD, {{
-	 (struct drbd_argument[]) {
-		 { "conn-name", T_name, conv_arg_string },
-		 { NULL,                0,           	NULL}, },
-	 NULL }} },
-
-	{"new-minor", P_new_minor, CHT_CONN, F_CONFIG_CMD, {{
-	 (struct drbd_argument[]) {
-		 { "minor-number", T_minor, conv_arg_numeric },
-		 { "volume-number", T_vol_nr, conv_arg_numeric },
-		 { NULL,                0,           	NULL}, },
-	 NULL }} },
-
-	{"del-minor", P_del_minor, CHT_MINOR, F_CONFIG_CMD, {{ NULL, NULL }} },
-	{"del-connection", P_del_connection, CHT_CONN, F_CONFIG_CMD, {{ NULL, NULL }} },
 };
 
 #define OTHER_ERROR 900
@@ -524,11 +492,6 @@ static const char *error_messages[] = {
 	"Note: Resync pause caused by a local sync-after dependency.",
 	EM(ERR_PIC_PEER_DEP) = "Sync-pause flag is already cleared.\n"
 	"Note: Resync pause caused by the peer node.",
-	EM(ERR_CONN_NOT_KNOWN) = "Unknown connection",
-	EM(ERR_CONN_IN_USE) = "Connection still in use (delete all minors first)",
-	EM(ERR_MINOR_CONFIGURED) = "Minor still configured (down it first)",
-	EM(ERR_MINOR_EXISTS) = "Minor exists already (delete it first)",
-
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
@@ -679,20 +642,6 @@ static int conv_md_idx(struct drbd_argument *ad, struct drbd_tag_list *tl, char*
 
 	add_tag(tl,ad->tag,&idx,sizeof(idx));
 
-	return NO_ERROR;
-}
-
-static int conv_arg_string(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
-{
-	add_tag(tl, ad->tag, arg, strlen(arg)+1); // include the null byte.
-	return NO_ERROR;
-}
-
-static int conv_arg_numeric(struct drbd_argument *ad, struct drbd_tag_list *tl, char* arg)
-{
-	int num = m_strtoll(arg,1);
-
-	add_tag(tl, ad->tag, &num, sizeof(num));
 	return NO_ERROR;
 }
 
@@ -1145,8 +1094,7 @@ static void dump_argv(int argc, char **argv, int first_non_option, int n_known_a
 	fprintf(stderr, "`--\n");
 }
 
-static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-			       int argc, char **argv)
+static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
 	char buffer[ RCV_SIZE ];
 	struct drbd_nl_cfg_reply *reply;
@@ -1155,7 +1103,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_na
 	struct option *lo;
 	struct drbd_tag_list *tl;
 	int c,i=1,rv=NO_ERROR,sk_nl;
-	enum drbd_ncr_flags flags = 0;
+	int flags=0;
 	int n_args;
 
 	tl = create_tag_list(4096);
@@ -1217,11 +1165,8 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_na
 		}
 
 		tl->drbd_p_header->packet_type = cm->packet_id;
-		if (!obj_name) {
-			tl->drbd_p_header->drbd_minor = minor;
-			tl->drbd_p_header->flags = flags;
-		} else
-			strncpy(tl->drbd_p_header->obj_name, obj_name, DRBD_NL_OBJ_NAME_LEN);
+		tl->drbd_p_header->drbd_minor = minor;
+		tl->drbd_p_header->flags = flags;
 
 		received = call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,RCV_SIZE,NL_TIME);
 
@@ -1239,10 +1184,9 @@ error:
 	return rv;
 }
 
-static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-			      int argc, char **argv)
+static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
-	return print_config_error(_generic_config_cmd(cm, minor, obj_name, argc, argv));
+	return print_config_error(_generic_config_cmd(cm, minor, argc, argv));
 }
 
 #define ASSERT(exp) if (!(exp)) \
@@ -1432,8 +1376,8 @@ static int consume_tag_bit(enum drbd_tags tag, unsigned short *tlc, int* val)
 	return 0;
 }
 
-static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-			   int argc, char **argv __attribute((unused)))
+static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
+		    char **argv __attribute((unused)))
 {
 	char buffer[ 4096 ];
 	struct drbd_tag_list *tl;
@@ -1454,11 +1398,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
 	if(sk_nl < 0) return 20;
 
 	tl->drbd_p_header->packet_type = cm->packet_id;
-	if (!obj_name) {
-		tl->drbd_p_header->drbd_minor = minor;
-		tl->drbd_p_header->flags = 0;
-	} else
-		strncpy(tl->drbd_p_header->obj_name, obj_name, DRBD_NL_OBJ_NAME_LEN);
+	tl->drbd_p_header->drbd_minor = minor;
+	tl->drbd_p_header->flags = 0;
 
 	memset(buffer,0,sizeof(buffer));
 	call_drbd(sk_nl,tl, (struct nlmsghdr*)buffer,4096,NL_TIME);
@@ -1856,27 +1797,26 @@ static struct drbd_cmd *find_cmd_by_name(char *name)
 	return NULL;
 }
 
-static int down_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-		    int argc, char **argv)
+static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
 	int rv;
 	int success;
 
 	if(argc > 1) {
-		fprintf(stderr, "Ignoring excess arguments\n");
+		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
 	cm = find_cmd_by_name("secondary");
-	rv = _generic_config_cmd(cm, minor, obj_name, argc, argv); // No error messages
+	rv = _generic_config_cmd(cm, minor, argc, argv); // No error messages
 	if (rv == ERR_MINOR_INVALID)
 		return 0;
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (!success)
 		return print_config_error(rv);
 	cm = find_cmd_by_name("disconnect");
-	cm->function(cm, minor, obj_name, argc, argv);
+	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
-	return cm->function(cm, minor, obj_name, argc, argv);
+	return cm->function(cm,minor,argc,argv);
 }
 
 
@@ -2110,8 +2050,7 @@ static int w_synced_state(unsigned int seq __attribute((unused)),
 	return 1;
 }
 
-static int events_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
-		      int argc ,char **argv)
+static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv)
 {
 	void *buffer;
 	struct cn_msg *cn_reply;
@@ -2205,11 +2144,8 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, char *obj_name,
 	if (cm->ep.proc_event != print_broadcast_events) {
 		// Find out which timeout value to use.
 		tl->drbd_p_header->packet_type = P_get_timeout_flag;
-		if (!obj_name) {
-			tl->drbd_p_header->drbd_minor = minor;
-			tl->drbd_p_header->flags = 0;
-		} else
-			strncpy(tl->drbd_p_header->obj_name, obj_name, DRBD_NL_OBJ_NAME_LEN);
+		tl->drbd_p_header->drbd_minor = minor;
+		tl->drbd_p_header->flags = 0;
 
 		if (0 >= call_drbd(sk_nl,tl, buffer, NL_BUFFER_SIZE, NL_TIME))
 			exit(20);
@@ -2737,7 +2673,6 @@ static int is_drbd_driver_missing(void)
 int main(int argc, char** argv)
 {
 	unsigned minor;
-	char *obj_name;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
@@ -2793,27 +2728,14 @@ int main(int argc, char** argv)
 		return 20;
 	}
 
-	if (cmd) {
-		minor = 0;
-		obj_name = NULL;
-
-		switch (cmd->type) {
-		case CHT_MINOR:
-			lock_fd = dt_lock_drbd(argv[1]);
-			minor = dt_minor_of_dev(argv[1]);
-			break;
-		case CHT_CONN:
-			obj_name = argv[1];
-			break;
-		case CHT_CTOR:
-			/* nothing */;
-		}
-
+	if(cmd) {
+		lock_fd = dt_lock_drbd(argv[1]);
+		minor=dt_minor_of_dev(argv[1]);
 		/* maybe rather canonicalize, using asprintf? */
 		devname = argv[1];
 		// by passing argc-2, argv+2 the function has the command name
 		// in argv[0], e.g. "syncer"
-		rv = cmd->function(cmd, minor, obj_name, argc - 2, argv + 2);
+		rv = cmd->function(cmd,minor,argc-2,argv+2);
 		dt_unlock_drbd(lock_fd);
 	} else {
 		print_usage("invalid command");

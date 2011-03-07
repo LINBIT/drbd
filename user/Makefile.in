@@ -132,10 +132,10 @@ spell:
 	done
 
 ###dependencies
-drbdsetup_cn.o:       drbdtool_common.h ../drbd/linux/drbd_limits.h
-drbdsetup_cn.o:       ../drbd/linux/drbd_tag_magic.h ../drbd/linux/drbd.h
-drbdsetup_cn.o:       ../drbd/linux/drbd_config.h ../drbd/linux/drbd_nl.h
-drbdsetup_cn.o:       unaligned.h
+drbdsetup_cn.o:       drbdtool_common.h legacy/drbd_limits.h
+drbdsetup_cn.o:       legacy/drbd_tag_magic.h legacy/drbd.h
+drbdsetup_cn.o:       legacy/drbd_config.h legacy/drbd_nl.h
+drbdsetup_cn.o:       legacy/unaligned.h
 drbdset_genl.o:     drbdtool_common.h ../drbd/linux/drbd_limits.h
 drbdsetup_genl.o:       ../drbd/linux/drbd_genl.h ../drbd/linux/drbd.h
 drbdsetup_genl.o:       ../drbd/linux/genl_magic_struct.h ../drbd/linux/genl_magic_func.h
