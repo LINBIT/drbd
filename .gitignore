@@ -24,6 +24,7 @@ documentation/Makefile
 
 drbd/drbd.ko
 drbd/.*.cmd
+drbd/compat/.*.cmd
 drbd/.compat.h.d
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
