@@ -39,9 +39,11 @@
 #include <linux/genhd.h>
 #include <linux/idr.h>
 #include <net/tcp.h>
+#include <linux/lru_cache.h>
+#include <linux/drbd.h>
+#include <linux/drbd_config.h>
 
 #include "compat.h"
-#include "linux/drbd.h"
 #include "drbd_state.h"
 
 #ifdef __CHECKER__
@@ -1950,8 +1952,6 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-#include "drbd_wrappers.h"
-
 /**
  * drbd_get_max_capacity() - Returns the capacity we announce to out peer
  * @bdev:	Meta data block device.
@@ -2528,9 +2528,6 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
-
-#include <linux/lru_cache.h>
-#include <linux/drbd_config.h>
 
 /* resync bitmap */
 /* 16MB sized 'bitmap extent' to track syncer usage */
