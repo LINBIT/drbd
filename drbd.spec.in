@@ -188,6 +188,22 @@ Pacemaker High Availability cluster manager.
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
 %endif # with pacemaker
 
+# Dependencies for drbd-rgmanager are particularly awful. On RHEL 5
+# and prior (and corresponding Fedora releases), %{_datadir}/cluster
+# was owned by rgmanager version 2, so we have to depend on that.
+#
+# With Red Hat Cluster 3.0.1 (around Fedora 12), the DRBD resource
+# agent was merged in, and it became part of the resource-agents 3
+# package (which of course is different from resource-agents on all
+# other platforms -- go figure). So for resource-agents >= 3, we must
+# generally conflict.
+#
+# Then for RHEL 6, Red Hat in all their glory decided to keep the
+# packaging scheme, but kicked DRBD out of the resource-agents
+# package. Thus, for RHEL 6 specifically, we must not conflict with
+# resource-agents >=3, but instead require it.
+#
+# All of this for exactly two (2) files.
 %if %{with rgmanager}
 %package rgmanager
 Summary: Red Hat Cluster Suite agent for DRBD
