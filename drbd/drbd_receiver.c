@@ -4784,8 +4784,6 @@ STATIC int got_Ping(struct drbd_tconn *tconn, struct packet_info *pi)
 
 STATIC int got_PingAck(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	/* restore idle timeout */
-	tconn->meta.socket->sk->sk_rcvtimeo = tconn->net_conf->ping_int*HZ;
 	if (!test_and_set_bit(GOT_PING_ACK, &tconn->flags))
 		wake_up(&tconn->ping_wait);
 
@@ -5120,6 +5118,7 @@ int drbd_asender(struct drbd_thread *thi)
 	int received = 0;
 	unsigned int header_size = drbd_header_size(tconn);
 	int expect   = header_size;
+	bool ping_timeout_active = false;
 
 	current->policy = SCHED_RR;  /* Make this a realtime task! */
 	current->rt_priority = 2;    /* more important than all other tasks */
@@ -5133,6 +5132,7 @@ int drbd_asender(struct drbd_thread *thi)
 			}
 			tconn->meta.socket->sk->sk_rcvtimeo =
 				tconn->net_conf->ping_timeo*HZ/10;
+			ping_timeout_active = true;
 		}
 
 		/* TODO: conditionally cork; it may hurt latency if we cork without
@@ -5173,8 +5173,7 @@ int drbd_asender(struct drbd_thread *thi)
 			conn_err(tconn, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
-			if (tconn->meta.socket->sk->sk_rcvtimeo ==
-			    tconn->net_conf->ping_timeo*HZ/10) {
+			if (ping_timeout_active) {
 				conn_err(tconn, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
@@ -5210,6 +5209,13 @@ int drbd_asender(struct drbd_thread *thi)
 			if (err) {
 				conn_err(tconn, "%pf failed\n", cmd->fn);
 				goto reconnect;
+			}
+
+			if (cmd == &asender_tbl[P_PING_ACK]) {
+				/* restore idle timeout */
+				tconn->meta.socket->sk->sk_rcvtimeo =
+					tconn->net_conf->ping_int*HZ;
+				ping_timeout_active = false;
 			}
 
 			buf	 = tconn->meta.rbuf;
