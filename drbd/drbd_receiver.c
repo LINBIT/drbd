@@ -4821,6 +4821,7 @@ int drbd_asender(struct drbd_thread *thi)
 	int received = 0;
 	int expect   = sizeof(struct p_header80);
 	int empty;
+	int ping_timeout_active = 0;
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
 
@@ -4833,6 +4834,7 @@ int drbd_asender(struct drbd_thread *thi)
 			ERR_IF(!drbd_send_ping(mdev)) goto reconnect;
 			mdev->meta.socket->sk->sk_rcvtimeo =
 				mdev->net_conf->ping_timeo*HZ/10;
+			ping_timeout_active = 1;
 		}
 
 		/* conditionally cork;
@@ -4887,8 +4889,7 @@ int drbd_asender(struct drbd_thread *thi)
 			dev_err(DEV, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
-			if (mdev->meta.socket->sk->sk_rcvtimeo ==
-			    mdev->net_conf->ping_timeo*HZ/10) {
+			if (ping_timeout_active) {
 				dev_err(DEV, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
@@ -4930,6 +4931,11 @@ int drbd_asender(struct drbd_thread *thi)
 			trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 			if (!cmd->process(mdev, h))
 				goto reconnect;
+
+			/* the idle_timeout (ping-int)
+			 * has been restored in got_PingAck() */
+			if (cmd == get_asender_cmd(P_PING_ACK))
+				ping_timeout_active = 0;
 
 			buf	 = h;
 			received = 0;
