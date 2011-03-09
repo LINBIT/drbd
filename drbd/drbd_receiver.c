@@ -1311,7 +1311,7 @@ next_bio:
 	bio->bi_sector = sector;
 	bio->bi_bdev = mdev->ldev->backing_bdev;
 	/* we special case some flags in the multi-bio case, see below
-	 * (REQ_UNPLUG, REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
+	 * (REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
 	bio->bi_rw = rw;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
@@ -1349,9 +1349,6 @@ next_bio:
 		bios = bios->bi_next;
 		bio->bi_next = NULL;
 
-		/* strip off REQ_UNPLUG unless it is the last bio */
-		if (bios)
-			bio->bi_rw &= ~DRBD_REQ_UNPLUG;
 		drbd_generic_make_request(mdev, fault_type, bio);
 
 		/* strip off REQ_FLUSH,
@@ -2055,13 +2052,12 @@ static unsigned long wire_flags_to_bio(struct drbd_conf *mdev, u32 dpf)
 {
 	if (mdev->tconn->agreed_pro_version >= 95)
 		return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
-			(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
 			(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
 			(dpf & DP_FLUSH ? DRBD_REQ_FLUSH : 0) |
 			(dpf & DP_DISCARD ? DRBD_REQ_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
-	return dpf & DP_RW_SYNC ? (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) : 0;
+	return dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0;
 }
 
 static void fail_postponed_requests(struct drbd_conf *mdev, sector_t sector,

@@ -815,14 +815,11 @@ enum {
  * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
  * later, the defines even became an enum ;-) */
 #define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNC)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_SYNC)
 #elif defined(REQ_SYNC)		/* introduced in 2.6.36 */
 #define DRBD_REQ_SYNC		REQ_SYNC
-#define DRBD_REQ_UNPLUG		REQ_UNPLUG
 #else
 /* cannot test on defined(BIO_RW_SYNCIO), it may be an enum */
 #define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
 #endif
 
 

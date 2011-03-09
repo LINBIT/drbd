@@ -122,7 +122,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
 		rw |= DRBD_REQ_FUA;
-	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC;
+	rw |= DRBD_REQ_SYNC;
 
 #ifndef REQ_FLUSH
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
