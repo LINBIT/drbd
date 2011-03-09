@@ -233,13 +233,8 @@ case "$1" in
 	log_end_msg 0
 	;;
     restart|force-reload)
-	$DRBDADM sh-nop
-	log_daemon_msg "Restarting all DRBD resources"
-	$DRBDADM down all
-	$RMMOD drbd
-	assure_module_is_loaded
-	$DRBDADM up all
-	log_end_msg 0
+	( . $0 stop )
+	( . $0 start )
 	;;
     *)
 	echo "Usage: /etc/init.d/drbd {start|stop|status|reload|restart|force-reload}"
