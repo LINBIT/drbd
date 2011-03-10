@@ -278,6 +278,7 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 
 extern struct idr minors;
 extern struct list_head drbd_tconns;
+extern struct mutex drbd_cfg_mutex;
 
 /* on the wire */
 enum drbd_packet {
@@ -1043,7 +1044,7 @@ enum {
 
 struct drbd_tconn {			/* is a resource from the config file */
 	char *name;			/* Resource name */
-	struct list_head all_tconn;	/* List of all drbd_tconn, prot by global_state_lock */
+	struct list_head all_tconn;	/* linked on global drbd_tconns */
 	struct idr volumes;		/* <tconn, vnr> to mdev mapping */
 	enum drbd_conns cstate;		/* Only C_STANDALONE to C_WF_REPORT_PARAMS */
 	struct mutex cstate_mutex;	/* Protects graceful disconnects */
