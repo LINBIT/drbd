@@ -1092,10 +1092,8 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 	 * will not complete() early, and decrement / test it here.  If there
 	 * are still some bios in flight, we need to wait for them here.
 	 */
-	if (!atomic_dec_and_test(&ctx.in_flight)) {
-		drbd_blk_run_queue(bdev_get_queue(mdev->ldev->md_bdev));
+	if (!atomic_dec_and_test(&ctx.in_flight))
 		wait_for_completion(&ctx.done);
-	}
 	/* summary for global bitmap IO */
 	if (flags == 0)
 		dev_info(DEV, "bitmap %s of %u pages took %lu jiffies\n",

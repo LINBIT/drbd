@@ -1965,35 +1965,6 @@ static int drbd_release(struct inode *inode, struct file *file)
 }
 #endif
 
-STATIC void drbd_unplug_fn(struct request_queue *q)
-{
-	struct drbd_conf *mdev = q->queuedata;
-
-	/* unplug FIRST */
-	spin_lock_irq(q->queue_lock);
-	blk_remove_plug(q);
-	spin_unlock_irq(q->queue_lock);
-
-	/* only if connected */
-	spin_lock_irq(&mdev->tconn->req_lock);
-	if (mdev->state.pdsk >= D_INCONSISTENT && mdev->state.conn >= C_CONNECTED) {
-		D_ASSERT(mdev->state.role == R_PRIMARY);
-		if (test_and_clear_bit(UNPLUG_REMOTE, &mdev->flags)) {
-			/* add to the data.work queue,
-			 * unless already queued.
-			 * XXX this might be a good addition to drbd_queue_work
-			 * anyways, to detect "double queuing" ... */
-			if (list_empty(&mdev->unplug_work.list))
-				drbd_queue_work(&mdev->tconn->data.work,
-						&mdev->unplug_work);
-		}
-	}
-	spin_unlock_irq(&mdev->tconn->req_lock);
-
-	if (mdev->state.disk >= D_INCONSISTENT)
-		drbd_kick_lo(mdev);
-}
-
 STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 {
 	/* Beware! The actual layout differs
@@ -2587,9 +2558,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE >> 9);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
-	q->queue_lock = &mdev->tconn->req_lock; /* needed since we use */
-		/* plugging on a queue, that actually has no requests! */
-	q->unplug_fn = drbd_unplug_fn;
+	q->queue_lock = &mdev->tconn->req_lock;
 
 	mdev->md_io_page = alloc_page(GFP_KERNEL);
 	if (!mdev->md_io_page)
