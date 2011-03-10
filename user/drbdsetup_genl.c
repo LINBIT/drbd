@@ -259,6 +259,7 @@ static void show_string(struct drbd_option *od, struct nlattr *nla);
 static int print_broadcast_events(struct genl_info *, int);
 static int w_connected_state(struct genl_info *, int);
 static int w_synced_state(struct genl_info *, int);
+static int print_resources(struct genl_info *, int);
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -473,6 +474,11 @@ struct drbd_cmd commands[] = {
 			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
 		print_broadcast_events } } },
+	{"show-all", CTX_CONN, F_EVENTS_CMD, { .ep = {
+		(struct option[]) {
+			{ "all", no_argument, 0, 'a' },
+			{ 0,            0,           0,  0  } },
+		print_resources } } },
 	{"wait-connect", CTX_MINOR, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_connected_state } } },
 	{"wait-sync", CTX_MINOR, F_EVENTS_CMD, { .ep = {
@@ -1447,68 +1453,125 @@ static void show_address(void* address, int addr_len)
 	}
 }
 
+/* may be called for a "show" of a single minor device.
+ * prints all available configuration information in that case.
+ *
+ * may also be called iteratively for a "show-all", which should try to not
+ * print redundant configuration information for the same resource (tconn).
+ */
 static int show_scmd(struct drbd_cmd *cm, unsigned minor)
 {
+	/* FIXME need some define for max len here */
+	static char last_ctx_conn_name[128];
+
+	static struct nlattr *option_attrs[ARRAY_SIZE(global_attrs)];
+	static unsigned long seen[(ARRAY_SIZE(global_attrs)+sizeof(long)-1)/sizeof(long)];
+
+	int called_by_show_all = (cm == NULL);
+	int start_new_resource = 1;
+	int close_prev_resource = 0;
+	int i;
+
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct disk_conf dc = { .disk_size = 0, };
-	struct net_conf nc = { .timeout = 0, };
+	struct net_conf nc = { .timeout = 0, };;
 	struct syncer_conf sc = { .rate = 0, };
 
+	memcpy(option_attrs, global_attrs, sizeof(option_attrs));
 	drbd_cfg_context_from_attrs(&cfg, global_attrs);
 	disk_conf_from_attrs(&dc, global_attrs);
 	net_conf_from_attrs(&nc, global_attrs);
 	syncer_conf_from_attrs(&sc, global_attrs);
 
-	printf("resource %s {\n", cfg.ctx_conn_name ?: "n/a");
-	// find all commands that have options and print those...
+	if (called_by_show_all) {
+		close_prev_resource = last_ctx_conn_name[0];
+		start_new_resource =
+			strncmp(cfg.ctx_conn_name, last_ctx_conn_name, sizeof(last_ctx_conn_name));
+		if (start_new_resource) {
+			strncpy(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name));
+			memset(seen, 0, sizeof(seen));
+		} else {
+			/* we already printed some options on the previous iteration */
+			for (i = 0; i < ARRAY_SIZE(global_attrs); i++) {
+				if (seen[i/sizeof(long)] & (1 << (i % sizeof(long))))
+					option_attrs[i] = NULL;
+			}
+		}
+	} else
+		start_new_resource = 1;
+
+	if (start_new_resource) {
+		if (close_prev_resource) {
+			printf("    }\n"); /* close _this_host */
+			printf("}\n\n");
+		}
+		printf("resource %s {\n", cfg.ctx_conn_name);
+	}
+
+	/* find all commands that have options and print those...
+	 * Actually, this is supposed to "just" find and print
+	 * syncer {}, net {} and disk {} option sections.
+	 */
 	for ( cm = commands ; cm < commands + ARRAY_SIZE(commands) ; cm++ ) {
 		if (cm->function == generic_config_cmd && cm->cp.options) {
-			if (!global_attrs[cm->tla_id])
+			if (!option_attrs[cm->tla_id])
 				continue;
 			if (nla_parse_nested(nested_attr_tb, cm->maxattr,
-			    global_attrs[cm->tla_id], cm->policy)) {
+			    option_attrs[cm->tla_id], cm->policy)) {
 				fprintf(stderr, "nla_policy violation for %s payload!\n",
 						cm->cmd);
 				continue;
 			}
 			current_policy = cm->policy;
 			print_options(cm->cp.options, cm->cmd);
+			/* for now, we assume that all _options_ are identical
+			 * for the full connection, and want to avoid to print
+			 * them again for each volume. */
+			seen[cm->tla_id/sizeof(long)] |= 1 << (cm->tla_id % sizeof(long));
 		}
 	}
 
-	if (global_attrs[DRBD_NLA_NET_CONF])
+	if (option_attrs[DRBD_NLA_NET_CONF]) {
 		printf("    protocol %c;\n", 'A' + nc.wire_protocol - 1);
-	if (global_attrs[DRBD_NLA_DISK_CONF] || global_attrs[DRBD_NLA_NET_CONF]) {
-		printf("    _this_host {\n");
-		printf("\tvolume %d {\n", cfg.ctx_volume);
-		printf("\t\tdevice\t\t\tminor %d;\n", minor);
-		if (dc.backing_dev[0]) {
-			printf("\t\tdisk\t\t\t\"%s\";\n", dc.backing_dev);
-			switch(dc.meta_dev_idx) {
-			case DRBD_MD_INDEX_INTERNAL:
-			case DRBD_MD_INDEX_FLEX_INT:
-				printf("\t\tmeta-disk\t\tinternal;\n");
-				break;
-			case DRBD_MD_INDEX_FLEX_EXT:
-				printf("\t\tflexible-meta-disk\t\"%s\";\n", dc.meta_dev);
-				break;
-			default:
-				printf("\t\tmeta-disk\t\t\"%s\" [ %d ];\n", dc.meta_dev,
-				       dc.meta_dev_idx);
-			 }
+		if (nc.peer_addr_len) {
+			printf("    _remote_host {\n");
+			show_address(nc.peer_addr, nc.peer_addr_len);
+			printf("    }\n");
 		}
-		printf("\t}\n"); /* close volume */
+	}
+	if (start_new_resource)
+		printf("    _this_host {\n");
+	if (option_attrs[DRBD_NLA_NET_CONF]) {
 		if (nc.my_addr[0])
 			show_address(nc.my_addr, nc.my_addr_len);
-		printf("    }\n"); /* close _this_host */
+	}
+	if (cfg.ctx_volume != -1U) {
+		printf("\tvolume %d {\n", cfg.ctx_volume);
+		printf("\t\tdevice\t\t\tminor %d;\n", minor);
+		if (global_attrs[DRBD_NLA_DISK_CONF]) {
+			if (dc.backing_dev[0]) {
+				printf("\t\tdisk\t\t\t\"%s\";\n", dc.backing_dev);
+				switch(dc.meta_dev_idx) {
+				case DRBD_MD_INDEX_INTERNAL:
+				case DRBD_MD_INDEX_FLEX_INT:
+					printf("\t\tmeta-disk\t\tinternal;\n");
+					break;
+				case DRBD_MD_INDEX_FLEX_EXT:
+					printf("\t\tflexible-meta-disk\t\"%s\";\n", dc.meta_dev);
+					break;
+				default:
+					printf("\t\tmeta-disk\t\t\"%s\" [ %d ];\n", dc.meta_dev,
+					       dc.meta_dev_idx);
+				 }
+			}
+		}
+		printf("\t}\n"); /* close volume */
 	}
 
-	if (nc.peer_addr_len) {
-		printf("    _remote_host {\n");
-		show_address(nc.peer_addr, nc.peer_addr_len);
-		printf("    }\n");
+	if (!called_by_show_all) {
+		printf("    }\n"); /* close _this_host */
+		printf("}\n"); /* close resource */
 	}
-	printf("}\n"); /* close resource */
 
 	return 0;
 }
@@ -1872,6 +1935,29 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 	       s.user_isp ? 'u' : '-' );
 }
 
+static int print_resources(struct genl_info *info, int u __unused)
+{
+	static int call_count;
+	struct drbd_genlmsghdr *dh;
+	if (!info) {
+		/* dump finished */
+		if (call_count) {
+			printf("    }\n"); /* close _this_host */
+			printf("}\n");
+		}
+		fflush(stdout);
+		return 0;
+	}
+	dh = info->userhdr;
+	if (!global_attrs[DRBD_NLA_CFG_CONTEXT]) {
+		dbg(1, "unexpected packet, configuration context missing!\n");
+	} else {
+		call_count++;
+		show_scmd(NULL, dh->minor);
+	}
+	return 1;
+}
+
 static int print_broadcast_events(struct genl_info *info, int u __unused)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -2088,6 +2174,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 	struct option *lo;
 	int c, rr;
 	int unfiltered=0, all_devices=0, timeout_ms=0;
+	int terminate_after_initial_dump = 0;
 	int wfc_timeout=DRBD_WFC_TIMEOUT_DEF;
 	int degr_wfc_timeout=DRBD_DEGR_WFC_TIMEOUT_DEF;
 	int outdated_wfc_timeout=DRBD_OUTDATED_WFC_TIMEOUT_DEF;
@@ -2180,8 +2267,11 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 
 	/* rewind send message buffer */
 	smsg->tail = smsg->data;
+	/* we want a dump, if this is "show-all",
+	 * or if it is "events -a" */
+	terminate_after_initial_dump = cm->ep.proc_event == print_resources;
 	dhdr = genlmsg_put(smsg, &drbd_genl_family,
-			all_devices ? NLM_F_DUMP : 0,
+			(all_devices || terminate_after_initial_dump) ? NLM_F_DUMP : 0,
 			DRBD_ADM_GET_STATUS);
 
 	if (genl_join_mc_group(drbd_sock, "events")) {
@@ -2227,6 +2317,10 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 		case -E_RCV_UNEXPECTED_TYPE:
 			continue;
 		case -E_RCV_NLMSG_DONE:
+			if (terminate_after_initial_dump) {
+				cm->ep.proc_event(NULL, 0);
+				return 0;
+			}
 			continue;
 		case -E_RCV_ERROR_REPLY:
 			if (!errno) /* positive ACK message */
