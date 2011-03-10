@@ -3200,7 +3200,7 @@ void print_usage_and_exit()
 	}
 
 	printf("\nCOMMANDS:\n");
-	for (i = 0; i < ARRY_SIZE(cmds); i++) {
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (!cmds[i].show_in_usage)
 			continue;
 		printf("  %s %s\n", cmds[i].name,
@@ -3415,7 +3415,7 @@ int main(int argc, char **argv)
 		exit(20);
 	}
 
-	for (i = 0; i < ARRY_SIZE(cmds); i++) {
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (!strcmp(cmds[i].name, argv[ai])) {
 			command = cmds + i;
 			break;

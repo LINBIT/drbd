@@ -327,7 +327,7 @@ struct option wait_cmds_options[] = {
 		DRBD_ ## N ## _DEF ,U,UN  } }
 #define EH(N,D) \
 	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
-	{ .handler_param = { N, ARRY_SIZE(N), \
+	{ .handler_param = { N, ARRAY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
 #define EB      conv_bit, show_bit, bit_opt_usage, bit_opt_xml, { }
 #define ES      conv_string, show_string, string_opt_usage, string_opt_xml, { }
@@ -744,7 +744,7 @@ static void split_address(char* text, int *af, char** address, int* port)
 
 	*af=AF_INET;
 	*address = text;
-	for (i=0; i<ARRY_SIZE(afs); i++) {
+	for (i=0; i<ARRAY_SIZE(afs); i++) {
 		if (!strncmp(text, afs[i].text, strlen(afs[i].text))) {
 			*af = afs[i].af;
 			*address = text + strlen(afs[i].text);
@@ -1461,7 +1461,7 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor)
 
 	printf("resource %s {\n", cfg.ctx_conn_name ?: "n/a");
 	// find all commands that have options and print those...
-	for ( cm = commands ; cm < commands + ARRY_SIZE(commands) ; cm++ ) {
+	for ( cm = commands ; cm < commands + ARRAY_SIZE(commands) ; cm++ ) {
 		if (cm->function == generic_config_cmd && cm->cp.options) {
 			if (!global_attrs[cm->tla_id])
 				continue;
@@ -1820,7 +1820,7 @@ static struct drbd_cmd *find_cmd_by_name(char *name)
 		name = "role";
 	}
 
-	for (i = 0; i < ARRY_SIZE(commands); i++) {
+	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		if (!strcmp(name, commands[i].cmd)) {
 			return commands + i;
 		}
@@ -2479,7 +2479,7 @@ static void print_usage_and_exit(const char* addinfo)
 	       "\nCommands are:\n",cmdname);
 
 
-	for (i = 0; i < ARRY_SIZE(commands); i++) {
+	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		commands[i].usage(commands+i,BRIEF);
 		if(i%2==1) printf("\n");
 	}

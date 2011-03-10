@@ -18,7 +18,9 @@
 #define __packed __attribute__((packed))
 #endif
 
-#define ARRY_SIZE(A) (sizeof(A)/sizeof(A[0]))
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(A) (sizeof(A)/sizeof(A[0]))
+#endif
 
 #define COMM_TIMEOUT 120
 

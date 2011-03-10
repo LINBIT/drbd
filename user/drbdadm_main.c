@@ -2441,7 +2441,7 @@ static void print_cmds(int level)
 	size_t i;
 	int j = 0;
 
-	for (i = 0; i < ARRY_SIZE(cmds); i++) {
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (cmds[i].show_in_usage != level)
 			continue;
 		if (j++ % 2) {
@@ -3164,7 +3164,7 @@ struct adm_cmd *find_cmd(char *cmdname)
 	 * The name of the handler should not imply something that is not done. */
 	substitute_deprecated_cmd(&cmdname, "outdate-peer", "fence-peer");
 
-	for (i = 0; i < ARRY_SIZE(cmds); i++) {
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (!strcmp(cmds[i].name, cmdname)) {
 			cmd = cmds + i;
 			break;
