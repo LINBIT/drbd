@@ -3129,7 +3129,6 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_DELAY_PROBE]         = "DelayProbe",
 		[P_OUT_OF_SYNC]		= "OutOfSync",
 		[P_RETRY_WRITE]		= "RetryWrite",
-		[P_MAX_CMD]	        = NULL,
 	};
 
 	if (cmd == P_HAND_SHAKE_M)
@@ -3138,7 +3137,7 @@ const char *cmdname(enum drbd_packet cmd)
 		return "HandShakeS";
 	if (cmd == P_HAND_SHAKE)
 		return "HandShake";
-	if (cmd >= P_MAX_CMD)
+	if (cmd >= ARRAY_SIZE(cmdnames))
 		return "Unknown";
 	return cmdnames[cmd];
 }
