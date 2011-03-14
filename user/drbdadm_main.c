@@ -1487,7 +1487,6 @@ int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
 	}
 	argv[NA(argc)] = res->me->volumes->meta_index;
 	argv[NA(argc)] = "--set-defaults";
-	argv[NA(argc)] = "--create-device";
 	opt = res->disk_options;
 	make_options(opt);
 	argv[NA(argc)] = 0;
@@ -1861,7 +1860,6 @@ int adm_connect(struct d_resource *res,
 	argv[NA(argc)] = res->protocol;
 
 	argv[NA(argc)] = "--set-defaults";
-	argv[NA(argc)] = "--create-device";
 	opt = res->net_options;
 	make_options(opt);
 
@@ -2092,7 +2090,6 @@ int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
 	argv[NA(argc)] = "syncer";
 
 	argv[NA(argc)] = "--set-defaults";
-	argv[NA(argc)] = "--create-device";
 	opt = res->sync_options;
 	make_options(opt);
 

@@ -947,9 +947,9 @@ static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg)
 static struct option *	make_longoptions(struct drbd_option* od, struct nla_policy *policy)
 {
 	/* room for up to N options,
-	 * plus set-defaults, create-device, and the terminating NULL */
+	 * plus set-defaults, and the terminating NULL */
 #define N 30
-	static struct option buffer[N+3];
+	static struct option buffer[N+2];
 	int i=0;
 
 	while(od && od->name) {
@@ -973,12 +973,6 @@ static struct option *	make_longoptions(struct drbd_option* od, struct nla_polic
 	buffer[i].has_arg = 0;
 	buffer[i].flag = NULL;
 	buffer[i].val = '(';
-	i++;
-
-	buffer[i].name = "create-device";
-	buffer[i].has_arg = 0;
-	buffer[i].flag = NULL;
-	buffer[i].val = ')';
 	i++;
 
 	buffer[i].name = NULL;
@@ -2569,7 +2563,7 @@ static void print_usage_and_exit(const char* addinfo)
 
 	printf("\nUSAGE: %s device command arguments options\n\n"
 	       "Device is usually /dev/drbdX or /dev/drbd/X.\n"
-	       "General options: --create-device, --set-defaults\n"
+	       "General options: --set-defaults\n"
 	       "\nCommands are:\n",cmdname);
 
 
