@@ -316,7 +316,10 @@ struct drbd_cmd commands[] = {
 		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
 		 CLOSE_OPTIONS }} }, },
 
-	{"detach", P_detach, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"detach", P_detach, F_CONFIG_CMD, {{NULL,
+	 (struct drbd_option[]) {
+		 { "force",'f',			T_detach_force, EB   },
+		 CLOSE_OPTIONS }} }, },
 
 	{"net", P_net_conf, F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
