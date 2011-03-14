@@ -2571,8 +2571,11 @@ int drbd_adm_create_connection(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	if (adm_ctx.tconn) {
-		retcode = ERR_INVALID_REQUEST;
-		drbd_msg_put_info("connection exists");
+		if (info->nlhdr->nlmsg_flags & NLM_F_EXCL) {
+			retcode = ERR_INVALID_REQUEST;
+			drbd_msg_put_info("connection exists");
+		}
+		/* else: still NO_ERROR */
 		goto out;
 	}
 
@@ -2603,6 +2606,15 @@ int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.volume >= 256) {
 		drbd_msg_put_info("requested volume id out of range");
 		return ERR_INVALID_REQUEST;
+	}
+
+	/* drbd_adm_prepare made sure already
+	 * that mdev->tconn and mdev->vnr match the request. */
+	if (adm_ctx.mdev) {
+		if (info->nlhdr->nlmsg_flags & NLM_F_EXCL)
+			retcode = ERR_MINOR_EXISTS;
+		/* else: still NO_ERROR */
+		goto out;
 	}
 
 	retcode = conn_new_minor(adm_ctx.tconn, dh->minor, adm_ctx.volume);
