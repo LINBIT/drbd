@@ -150,32 +150,74 @@ struct d_resource
   unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
 };
 
+struct adm_cmd;
+
+struct cfg_ctx {
+	/* res == NULL: does not care for resources, or iterates over all
+	 * resources in the global "struct d_resource *config" */
+	struct d_resource *res;
+	/* vol == NULL: operate on the resource itself, or iterates over all
+	 * volumes in res */
+	struct d_volume *vol;
+
+	const char *arg;
+};
+
+
 extern char *canonify_path(char *path);
-extern int adm_attach(struct d_resource* ,const char* );
-extern int adm_connect(struct d_resource* ,const char* );
-extern int adm_resize(struct d_resource* ,const char* );
-extern int adm_syncer(struct d_resource* ,const char* );
-extern int adm_generic_s(struct d_resource* ,const char* );
-extern int _admm_generic(struct d_resource* ,const char*, int flags);
-extern void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *fd, int *ex);
-static inline int m_system_ex(char **argv, int flags, struct d_resource *res)
+extern int adm_create_md(struct cfg_ctx *);
+extern int adm_attach(struct cfg_ctx *);
+extern int adm_connect(struct cfg_ctx *);
+extern int adm_resize(struct cfg_ctx *);
+extern int adm_syncer(struct cfg_ctx *);
+extern int adm_generic_s(struct cfg_ctx *);
+extern int _admm_generic(struct cfg_ctx *, int flags);
+extern void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd, int *ex);
+static inline int m_system_ex(char **argv, int flags, const char *res_name)
 {
 	int ex;
-	m__system(argv, flags, res, NULL, NULL, &ex);
+	m__system(argv, flags, res_name, NULL, NULL, &ex);
 	return ex;
 }
 extern struct d_option* find_opt(struct d_option*,char*);
 extern void validate_resource(struct d_resource *);
-extern void schedule_dcmd( int (* function)(struct d_resource*,const char* ),
-			   struct d_resource* res,
-			   char* arg,
-			   int order);
+/* stages of configuration, as performed on "drbdadm up"
+ * or "drbdadm adjust":
+ */
+enum drbd_cfg_stage {
+	/* prerequisite stage: create objects, start daemons, ... */
+	CFG_PREREQ,
+
+	/* detach/attach local disks, */
+	CFG_DISK,
+
+	/* The stage to discard network configuration, during adjust.
+	 * This is after the DISK stage, because we don't want to cut access to
+	 * good data while in primary role.  And before the SETTINGS stage, as
+	 * some proxy or syncer settings may cause side effects and additional
+	 * handshakes while we have an established connection.
+	 */
+	CFG_NET_PREREQ,
+
+	/* (re)set syncer parameters, */
+	CFG_SETTINGS,
+
+	/* discard/set connection parameters */
+	CFG_NET,
+
+	__CFG_LAST
+};
+
+extern void schedule_dcmd( int (*function)(struct cfg_ctx *),
+			   struct d_resource *res,
+			   struct d_volume *vol,
+			   const char *arg,
+			   enum drbd_cfg_stage stage);
 
 extern int version_code_kernel(void);
 extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);
 extern void uc_node(enum usage_count_type type);
-extern int adm_create_md(struct d_resource* res ,const char* cmd);
 extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);
 extern int have_ip(const char *af, const char *ip);
@@ -209,9 +251,9 @@ extern void set_disk_in_res(struct d_resource *res);
 extern char *proxy_connection_name(struct d_resource *res);
 int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
 /* conn_name is optional and mostly for compatibility with dcmd */
-int do_proxy_conn_up(struct d_resource *res, const char *conn_name);
-int do_proxy_conn_down(struct d_resource *res, const char *conn_name);
-int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name);
+int do_proxy_conn_up(struct cfg_ctx *ctx);
+int do_proxy_conn_down(struct cfg_ctx *ctx);
+int do_proxy_conn_plugins(struct cfg_ctx *ctx);
 
 extern char *config_file;
 extern char *config_save;

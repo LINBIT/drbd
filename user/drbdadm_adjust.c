@@ -209,12 +209,12 @@ static void find_option_in_resources(char *name,
 	}
 }
 
-static int do_proxy_reconf(struct d_resource *res, const char *cmd)
+static int do_proxy_reconf(struct cfg_ctx *ctx)
 {
 	int rv;
-	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)cmd, NULL };
+	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)ctx->arg, NULL };
 
-	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	rv = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 	return rv;
 }
 
@@ -290,9 +290,10 @@ static int proxy_reconf(struct d_resource *res, struct d_resource *running)
 redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
 		 * completely destroy and rebuild the connection. */
-		schedule_dcmd( do_proxy_conn_down, res, NULL, 0);
-		schedule_dcmd( do_proxy_conn_up, res, NULL, 1);
-		schedule_dcmd( do_proxy_conn_plugins, res, NULL, 2);
+
+		schedule_dcmd( do_proxy_conn_down, res, NULL, NULL, CFG_NET_PREREQ);
+		schedule_dcmd( do_proxy_conn_up, res, NULL, NULL, CFG_NET_PREREQ);
+		schedule_dcmd( do_proxy_conn_plugins, res, NULL, NULL, CFG_NET_PREREQ);
 
 		/* With connection cleanup and reopen everything is rebuild anyway, and
 		 * DRBD will get a reconnect too.  */
@@ -371,7 +372,7 @@ redo_whole_conn:
 
 	/* change only a few plugin settings. */
 	for(i=0; i<used; i++)
-		schedule_dcmd(do_proxy_reconf, res, plugin_changes[i], 2);
+		schedule_dcmd(do_proxy_reconf, res, NULL, plugin_changes[i], CFG_SETTINGS);
 
 	return reconn;
 }
@@ -498,14 +499,16 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 		do_syncer = need_trigger_kobj_change(running);
 
 	if(do_attach) {
-		if(have_disk) schedule_dcmd(adm_generic_s,res,"detach",0);
-		schedule_dcmd(adm_attach,res,"attach",0);
+		if (have_disk)
+			schedule_dcmd(adm_generic_s, res, NULL, "detach", CFG_DISK);
+		schedule_dcmd(adm_attach, res, NULL, "attach", CFG_DISK);
 	}
-	if(do_syncer)  schedule_dcmd(adm_syncer,res,"syncer",1);
-	if(do_connect) {
+	if (do_syncer)
+		schedule_dcmd(adm_syncer, res, NULL, "syncer", CFG_SETTINGS);
+	if (do_connect) {
 		if (have_net && res->peer)
-			schedule_dcmd(adm_generic_s,res,"disconnect",0);
-		schedule_dcmd(adm_connect,res,"connect",2);
+			schedule_dcmd(adm_generic_s, res, NULL, "disconnect", CFG_NET_PREREQ);
+		schedule_dcmd(adm_connect, res, NULL, "connect", CFG_NET);
 	}
 
 	return 0;

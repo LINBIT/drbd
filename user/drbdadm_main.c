@@ -72,7 +72,7 @@ char *progname;
 
 struct adm_cmd {
 	const char *name;
-	int (*function) (struct d_resource *, const char *);
+	int (*function) (struct cfg_ctx *);
 	/* which level this command is for.
 	 * 0: don't show this command, ever
 	 * 1: normal administrative commands, shown in normal help
@@ -83,6 +83,10 @@ struct adm_cmd {
 	unsigned int show_in_usage:3;
 	/* if set, command requires an explicit resource name */
 	unsigned int res_name_required:1;
+	/* if set, command requires an explicit volume number as well */
+	unsigned int vol_id_required:1;
+	/* most commands need to iterate over all volumes in the resource */
+	unsigned int iterate_volumes:1;
 	/* error out if the ip specified is not available/active now */
 	unsigned int verify_ips:1;
 	/* if set, use the "cache" in /var/lib/drbd to figure out
@@ -97,9 +101,8 @@ struct adm_cmd {
 };
 
 struct deferred_cmd {
-	int (*function) (struct d_resource *, const char *);
-	const char *arg;
-	struct d_resource *res;
+	int (*function) (struct cfg_ctx *);
+	struct cfg_ctx ctx;
 	struct deferred_cmd *next;
 };
 
@@ -123,45 +126,49 @@ extern int my_parse();
 extern int yydebug;
 extern FILE *yyin;
 
-int adm_attach(struct d_resource *, const char *);
-int adm_connect(struct d_resource *, const char *);
-int adm_generic_s(struct d_resource *, const char *);
-int adm_status_xml(struct d_resource *, const char *);
-int adm_generic_l(struct d_resource *, const char *);
-int adm_resize(struct d_resource *, const char *);
-int adm_syncer(struct d_resource *, const char *);
-static int adm_up(struct d_resource *, const char *);
-extern int adm_adjust(struct d_resource *, const char *);
-static int adm_dump(struct d_resource *, const char *);
-static int adm_dump_xml(struct d_resource *, const char *);
-static int adm_wait_c(struct d_resource *, const char *);
-static int adm_wait_ci(struct d_resource *, const char *);
-static int adm_proxy_up(struct d_resource *, const char *);
-static int adm_proxy_down(struct d_resource *, const char *);
-static int sh_nop(struct d_resource *, const char *);
-static int sh_resources(struct d_resource *, const char *);
-static int sh_resource(struct d_resource *, const char *);
-static int sh_mod_parms(struct d_resource *, const char *);
-static int sh_dev(struct d_resource *, const char *);
-static int sh_udev(struct d_resource *, const char *);
-static int sh_minor(struct d_resource *, const char *);
-static int sh_ip(struct d_resource *, const char *);
-static int sh_lres(struct d_resource *, const char *);
-static int sh_ll_dev(struct d_resource *, const char *);
-static int sh_md_dev(struct d_resource *, const char *);
-static int sh_md_idx(struct d_resource *, const char *);
-static int sh_b_pri(struct d_resource *, const char *);
-static int sh_status(struct d_resource *, const char *);
-static int admm_generic(struct d_resource *, const char *);
-static int adm_khelper(struct d_resource *, const char *);
-static int adm_generic_b(struct d_resource *, const char *);
-static int hidden_cmds(struct d_resource *, const char *);
-static int adm_outdate(struct d_resource *, const char *);
-static int adm_chk_resize(struct d_resource *res, const char *cmd);
+int adm_attach(struct cfg_ctx *);
+int adm_connect(struct cfg_ctx *);
+int adm_generic_s(struct cfg_ctx *);
+int adm_status_xml(struct cfg_ctx *);
+int adm_generic_l(struct cfg_ctx *);
+int adm_resize(struct cfg_ctx *);
+int adm_syncer(struct cfg_ctx *);
+
+extern int adm_adjust(struct cfg_ctx *);
+
+static int adm_new_minor(struct cfg_ctx *);
+static int adm_new_connection(struct cfg_ctx *);
+static int adm_up(struct cfg_ctx *);
+static int adm_dump(struct cfg_ctx *);
+static int adm_dump_xml(struct cfg_ctx *);
+static int adm_wait_c(struct cfg_ctx *);
+static int adm_wait_ci(struct cfg_ctx *);
+static int adm_proxy_up(struct cfg_ctx *);
+static int adm_proxy_down(struct cfg_ctx *);
+static int sh_nop(struct cfg_ctx *);
+static int sh_resources(struct cfg_ctx *);
+static int sh_resource(struct cfg_ctx *);
+static int sh_mod_parms(struct cfg_ctx *);
+static int sh_dev(struct cfg_ctx *);
+static int sh_udev(struct cfg_ctx *);
+static int sh_minor(struct cfg_ctx *);
+static int sh_ip(struct cfg_ctx *);
+static int sh_lres(struct cfg_ctx *);
+static int sh_ll_dev(struct cfg_ctx *);
+static int sh_md_dev(struct cfg_ctx *);
+static int sh_md_idx(struct cfg_ctx *);
+static int sh_b_pri(struct cfg_ctx *);
+static int sh_status(struct cfg_ctx *);
+static int admm_generic(struct cfg_ctx *);
+static int adm_khelper(struct cfg_ctx *);
+static int adm_generic_b(struct cfg_ctx *);
+static int hidden_cmds(struct cfg_ctx *);
+static int adm_outdate(struct cfg_ctx *);
+static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct d_option *opts);
 
 static char *get_opt_val(struct d_option *, const char *, char *);
-static void register_config_file(struct d_resource *res, const char *cfname);
+//static void register_config_file(struct d_resource *res, const char *cfname);
 
 static struct ifreq *get_ifreq();
 
@@ -201,8 +208,8 @@ char *connect_to_host = NULL;
 int soi = 0;
 volatile int alarm_raised;
 
-struct deferred_cmd *deferred_cmds[3] = { NULL, NULL, NULL };
-struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
+struct deferred_cmd *deferred_cmds[__CFG_LAST] = { NULL, };
+struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
 
 /* DRBD adm_cmd flags shortcuts,
  * to avoid merge conflicts and unreadable diffs
@@ -211,12 +218,27 @@ struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
 #define DRBD_acf1_default		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.iterate_volumes = 1,		\
 	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf1_resname		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
 	.uc_dialog = 1,			\
 
 #define DRBD_acf1_connect		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.iterate_volumes = 0,		\
+	.verify_ips = 1,		\
+	.need_peer = 1,			\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf1_adjust		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.iterate_volumes = 1,		\
 	.verify_ips = 1,		\
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
@@ -224,18 +246,29 @@ struct deferred_cmd *deferred_cmds_tail[3] = { NULL, NULL, NULL };
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.iterate_volumes = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
 
 #define DRBD_acf3_handler		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
+	.iterate_volumes = 0,		\
 	.verify_ips = 0,		\
 	.use_cached_config_file = 1,	\
 
 #define DRBD_acf4_advanced		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
+	.iterate_volumes = 1,		\
+	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
+
+#define DRBD_acf4_advanced_need_vol	\
+	.show_in_usage = 4,		\
+	.res_name_required = 1,		\
+	.iterate_volumes = 0,		\
+	.vol_id_required = 1,		\
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
@@ -281,9 +314,9 @@ struct adm_cmd cmds[] = {
 	{"attach", adm_attach, DRBD_acf1_default},
 	{"detach", adm_generic_l, DRBD_acf1_default},
 	{"connect", adm_connect, DRBD_acf1_connect},
-	{"disconnect", adm_generic_s, DRBD_acf1_default},
-	{"up", adm_up, DRBD_acf1_connect},
-	{"down", adm_generic_l, DRBD_acf1_default},
+	{"disconnect", adm_generic_s, DRBD_acf1_resname},
+	{"up", adm_up, DRBD_acf1_adjust},
+	{"down", adm_generic_l, DRBD_acf1_resname},
 	{"primary", adm_generic_l, DRBD_acf1_default},
 	{"secondary", adm_generic_l, DRBD_acf1_default},
 	{"invalidate", adm_generic_b, DRBD_acf1_default},
@@ -294,7 +327,7 @@ struct adm_cmd cmds[] = {
 	{"verify", adm_generic_s, DRBD_acf1_defnet},
 	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"adjust", adm_adjust, DRBD_acf1_connect},
+	{"adjust", adm_adjust, DRBD_acf1_adjust},
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
 	{"wait-con-int", adm_wait_ci,
 	 .show_in_usage = 1,.verify_ips = 1,},
@@ -331,6 +364,9 @@ struct adm_cmd cmds[] = {
 	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
+	{"sh-new-connection", adm_new_connection, DRBD_acf2_shell},
+	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced_need_vol},
+
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
 	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
 	{"before-resync-source", adm_khelper, DRBD_acf3_handler},
@@ -345,14 +381,15 @@ struct adm_cmd cmds[] = {
 
 	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
-	{"set-gi", admm_generic, DRBD_acf4_advanced},
-	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced},
+	{"set-gi", admm_generic, DRBD_acf4_advanced_need_vol},
+	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced_need_vol},
 	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
 };
 
 
-void schedule_dcmd(int (*function) (struct d_resource *, const char *),
-		   struct d_resource *res, char *arg, int order)
+void schedule_dcmd(int (*function) (struct cfg_ctx *),
+		   struct d_resource *res, struct d_volume *vol,
+		   const char *arg, enum drbd_cfg_stage stage)
 {
 	struct deferred_cmd *d, *t;
 
@@ -363,25 +400,28 @@ void schedule_dcmd(int (*function) (struct d_resource *, const char *),
 	}
 
 	d->function = function;
-	d->res = res;
-	d->arg = arg;
+	d->ctx.res = res;
+	d->ctx.vol = vol;
+	d->ctx.arg = arg;
 
 	/* first to come is head */
-	if (!deferred_cmds[order])
-		deferred_cmds[order] = d;
+	if (!deferred_cmds[stage])
+		deferred_cmds[stage] = d;
 
 	/* link it in at tail */
-	t = deferred_cmds_tail[order];
+	t = deferred_cmds_tail[stage];
 	if (t)
 		t->next = d;
 
 	/* advance tail */
-	deferred_cmds_tail[order] = d;
+	deferred_cmds_tail[stage] = d;
 }
 
-static void _adm_generic(struct d_resource *res, const char *cmd, int flags, pid_t *pid, int *fd, int *ex);
+static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex);
 
+#if 0
 /* Returns non-zero if the resource is down. */
+/* FIXME iterate volumes */
 static int test_if_resource_is_down(struct d_resource *res)
 {
 	char buf[1024];
@@ -396,7 +436,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 	}
 	if (verbose == 1)
 		verbose = 0;
-	_adm_generic(res, "role", SLEEPS_SHORT | RETURN_STDOUT_FD | SUPRESS_STDERR,
+	_adm_generic(res, vol, "role", SLEEPS_SHORT | RETURN_STDOUT_FD | SUPRESS_STDERR,
 			&pid, &fd, NULL);
 	verbose = old_verbose;
 
@@ -422,6 +462,7 @@ static int test_if_resource_is_down(struct d_resource *res)
 	return 0;
 }
 
+/* FIXME iterate volumes */
 enum do_register { SAME_ANYWAYS, DO_REGISTER };
 enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
 {
@@ -462,6 +503,8 @@ enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
 	return DO_REGISTER;
 }
 
+/* FIXME iterate volumes?
+ * get rid of this "register config file" completely? */
 static void register_config_file(struct d_resource *res, const char *cfname)
 {
 	int minor = res->me->volumes->device_minor;
@@ -470,28 +513,35 @@ static void register_config_file(struct d_resource *res, const char *cfname)
 	else
 		register_minor(minor, cfname);
 }
+#endif
 
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
-int call_cmd_fn(int (*function) (struct d_resource *, const char *),
-		const char *fn_name, struct d_resource *res,
-		enum on_error on_error)
+int call_cmd_fn(int (*function) (struct cfg_ctx *),
+		struct cfg_ctx *ctx, enum on_error on_error)
 {
 	int rv;
+#if 0
+	int schedule_only =
+	    function == adm_up || function == adm_adjust;
 	int really_register = do_register_minor &&
 	    DO_REGISTER == if_conf_differs_confirm_or_abort(res) &&
-	    /* adm_up and adm_adjust only
-	     * "schedule" the commands, don't register yet! */
-	    function != adm_up && function != adm_adjust;
+	    !schedule_only;
+#endif
 
-	rv = function(res, fn_name);
+	rv = function(ctx);
 	if (rv >= 20) {
 		fprintf(stderr, "%s %s %s: exited with code %d\n",
-			progname, fn_name, res->name, rv);
+			progname, ctx->arg, ctx->res->name, rv);
 		if (on_error == EXIT_ON_FAIL)
 			exit(rv);
 	}
+
+#if 0
+	/* FIXME how do we want to handle this "register config file" stuff,
+	 * now that we have multiple volumes per resource? */
 	if (rv == 0 && really_register)
 		register_config_file(res, config_save);
+#endif
 
 	return rv;
 }
@@ -499,21 +549,43 @@ int call_cmd_fn(int (*function) (struct d_resource *, const char *),
 int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
 	     enum on_error on_error)
 {
+	struct cfg_ctx ctx = { .res = res, .arg = cmd->name, };
+	struct d_volume *vol;
+	int ret;
+
 	if (!res->peer)
 		set_peer_in_resource(res, cmd->need_peer);
 
-	return call_cmd_fn(cmd->function, cmd->name, res, on_error);
+	if (!cmd->iterate_volumes)
+		return call_cmd_fn(cmd->function, &ctx, on_error);
+
+
+	/* call it once with vol == NULL,
+	 * so it can do preparations as well */
+	if (cmd->function == adm_up)
+		call_cmd_fn(cmd->function, &ctx, on_error);
+
+	for_each_volume(vol, res->me->volumes) {
+		ctx.vol = vol;
+		ret = call_cmd_fn(cmd->function, &ctx, on_error);
+		/* FIXME: Do we want to keep running?
+		 * When?
+		 * How would we determine which return value to return? */
+		if (ret)
+			return ret;
+	}
+	return 0;
 }
 
-int _run_dcmds(int order)
+int _run_dcmds(enum drbd_cfg_stage stage)
 {
-	struct deferred_cmd *d = deferred_cmds[order];
+	struct deferred_cmd *d = deferred_cmds[stage];
 	struct deferred_cmd *t;
 	int r = 0;
 	int rv = 0;
 
 	while (d) {
-		r = call_cmd_fn(d->function, d->arg, d->res, KEEP_RUNNING);
+		r = call_cmd_fn(d->function, &d->ctx, KEEP_RUNNING);
 		t = d->next;
 		free(d);
 		d = t;
@@ -525,7 +597,14 @@ int _run_dcmds(int order)
 
 int run_dcmds(void)
 {
-	return _run_dcmds(0) || _run_dcmds(1) || _run_dcmds(2);
+	enum drbd_cfg_stage stage;
+	int ret;
+	for (stage = CFG_PREREQ; stage < __CFG_LAST; stage++) {
+		ret = _run_dcmds(stage);
+		if (ret)
+			return 1; /* FIXME ret? */
+	}
+	return 0;
 }
 
 /*** These functions are used to the print the config ***/
@@ -929,10 +1008,10 @@ static void fake_startup_options(struct d_resource *res)
 	}
 }
 
-static int adm_dump(struct d_resource *res,
-		    const char *unused __attribute((unused)))
+static int adm_dump(struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
+	struct d_resource *res = ctx->res;
 
 	printI("# resource %s on %s: %s, %s\n",
 	       esc(res->name), nodeinfo.nodename,
@@ -960,10 +1039,11 @@ static int adm_dump(struct d_resource *res,
 	return 0;
 }
 
-static int adm_dump_xml(struct d_resource *res,
-			const char *unused __attribute((unused)))
+static int adm_dump_xml(struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
+	struct d_resource *res = ctx->res;
+
 	printI("<resource name=\"%s\"", esc_xml(res->name));
 	if (res->protocol)
 		printf(" protocol=\"%s\"", res->protocol);
@@ -986,14 +1066,12 @@ static int adm_dump_xml(struct d_resource *res,
 	return 0;
 }
 
-static int sh_nop(struct d_resource *ignored __attribute((unused)),
-		  const char *unused __attribute((unused)))
+static int sh_nop(struct cfg_ctx *ctx)
 {
 	return 0;
 }
 
-static int sh_resources(struct d_resource *ignored __attribute((unused)),
-			const char *unused __attribute((unused)))
+static int sh_resources(struct cfg_ctx *ctx)
 {
 	struct d_resource *res, *t;
 	int first = 1;
@@ -1012,60 +1090,54 @@ static int sh_resources(struct d_resource *ignored __attribute((unused)),
 	return 0;
 }
 
-static int sh_resource(struct d_resource *res,
-		       const char *unused __attribute((unused)))
+static int sh_resource(struct cfg_ctx *ctx)
 {
-	printf("%s\n", res->name);
-
+	printf("%s\n", ctx->res->name);
 	return 0;
 }
 
-static int sh_dev(struct d_resource *res,
-		  const char *unused __attribute((unused)))
+static int sh_dev(struct cfg_ctx *ctx)
 {
-	printf("%s\n", res->me->volumes->device);
-
+	printf("%s\n", ctx->vol->device);
 	return 0;
 }
 
-static int sh_udev(struct d_resource *res,
-		   const char *unused __attribute((unused)))
+static int sh_udev(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
+	struct d_volume *vol = ctx->vol;
+
 	/* No shell escape necessary. Udev does not handle it anyways... */
 	printf("RESOURCE=%s\n", res->name);
 
-	if (!strncmp(res->me->volumes->device, "/dev/drbd", 9))
-		printf("DEVICE=%s\n", res->me->volumes->device + 5);
+	if (!strncmp(vol->device, "/dev/drbd", 9))
+		printf("DEVICE=%s\n", vol->device + 5);
 	else
-		printf("DEVICE=drbd%u\n", res->me->volumes->device_minor);
+		printf("DEVICE=drbd%u\n", vol->device_minor);
 
-	if (!strncmp(res->me->volumes->disk, "/dev/", 5))
-		printf("DISK=%s\n", res->me->volumes->disk + 5);
+	if (!strncmp(vol->disk, "/dev/", 5))
+		printf("DISK=%s\n", vol->disk + 5);
 	else
-		printf("DISK=%s\n", res->me->volumes->disk);
+		printf("DISK=%s\n", vol->disk);
 
 	return 0;
 }
 
-static int sh_minor(struct d_resource *res,
-		    const char *unused __attribute((unused)))
+static int sh_minor(struct cfg_ctx *ctx)
 {
-	printf("%d\n", res->me->volumes->device_minor);
-
+	printf("%d\n", ctx->vol->device_minor);
 	return 0;
 }
 
-static int sh_ip(struct d_resource *res,
-		 const char *unused __attribute((unused)))
+static int sh_ip(struct cfg_ctx *ctx)
 {
-	printf("%s\n", res->me->address);
-
+	printf("%s\n", ctx->res->me->address);
 	return 0;
 }
 
-static int sh_lres(struct d_resource *res,
-		   const char *unused __attribute((unused)))
+static int sh_lres(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
 	if (!is_drbd_top) {
 		fprintf(stderr,
 			"sh-lower-resource only available in stacked mode\n");
@@ -1081,48 +1153,44 @@ static int sh_lres(struct d_resource *res,
 	return 0;
 }
 
-static int sh_ll_dev(struct d_resource *res,
-		     const char *unused __attribute((unused)))
+static int sh_ll_dev(struct cfg_ctx *ctx)
 {
-	printf("%s\n", res->me->volumes->disk);
-
+	printf("%s\n", ctx->vol->disk);
 	return 0;
 }
 
-static int sh_md_dev(struct d_resource *res,
-		     const char *unused __attribute((unused)))
+
+static int sh_md_dev(struct cfg_ctx *ctx)
 {
+	struct d_volume *vol = ctx->vol;
 	char *r;
 
-	if (strcmp("internal", res->me->volumes->meta_disk) == 0)
-		r = res->me->volumes->disk;
+	if (strcmp("internal", vol->meta_disk) == 0)
+		r = vol->disk;
 	else
-		r = res->me->volumes->meta_disk;
+		r = vol->meta_disk;
 
 	printf("%s\n", r);
-
 	return 0;
 }
 
-static int sh_md_idx(struct d_resource *res,
-		     const char *unused __attribute((unused)))
+static int sh_md_idx(struct cfg_ctx *ctx)
 {
-	printf("%s\n", res->me->volumes->meta_index);
-
+	printf("%s\n", ctx->vol->meta_index);
 	return 0;
 }
 
-static int sh_b_pri(struct d_resource *res,
-		    const char *unused __attribute((unused)))
+static int sh_b_pri(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
 	int i, rv;
 
 	if (name_in_names(nodeinfo.nodename, res->become_primary_on) ||
 	    name_in_names("both", res->become_primary_on)) {
-		/* Opon connect resync starts, and both sides become primary at the same time.
+		/* upon connect resync starts, and both sides become primary at the same time.
 		   One's try might be declined since an other state transition happens. Retry. */
 		for (i = 0; i < 5; i++) {
-			rv = adm_generic_s(res, "primary");
+			rv = adm_generic_s(ctx);
 			if (rv == 0)
 				return rv;
 			sleep(1);
@@ -1132,8 +1200,8 @@ static int sh_b_pri(struct d_resource *res,
 	return 0;
 }
 
-static int sh_mod_parms(struct d_resource *res __attribute((unused)),
-			const char *unused __attribute((unused)))
+/* FIXME this module parameter will go */
+static int sh_mod_parms(struct cfg_ctx *ctx)
 {
 	int mc = global_options.minor_count;
 
@@ -1297,7 +1365,7 @@ static void alarm_handler(int __attribute((unused)) signo)
 	alarm_raised = 1;
 }
 
-void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *fd, int *ex)
+void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd, int *ex)
 {
 	pid_t pid;
 	int status, rv = -1;
@@ -1314,7 +1382,8 @@ void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *
 
 	if (dry_run || verbose) {
 		if (sh_varname && *cmdline)
-			printf("%s=%s\n", sh_varname, shell_escape(res->name));
+			printf("%s=%s\n", sh_varname,
+					res_name ? shell_escape(res_name) : "");
 		while (*cmdline) {
 			printf("%s ", shell_escape(*cmdline++));
 		}
@@ -1470,28 +1539,30 @@ void m__system(char **argv, int flags, struct d_resource *res, pid_t *kid, int *
     ssprintf(argv[NA(argc)],"%s:%s:%s", AF, ADDR, PORT); \
   }
 
-int adm_attach(struct d_resource *res, const char *unused __attribute((unused)))
+int adm_attach(struct cfg_ctx *ctx)
 {
+	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = "disk";
-	argv[NA(argc)] = res->me->volumes->disk;
-	if (!strcmp(res->me->volumes->meta_disk, "internal")) {
-		argv[NA(argc)] = res->me->volumes->disk;
+	argv[NA(argc)] = vol->disk;
+	if (!strcmp(vol->meta_disk, "internal")) {
+		argv[NA(argc)] = vol->disk;
 	} else {
-		argv[NA(argc)] = res->me->volumes->meta_disk;
+		argv[NA(argc)] = vol->meta_disk;
 	}
-	argv[NA(argc)] = res->me->volumes->meta_index;
+	argv[NA(argc)] = vol->meta_index;
 	argv[NA(argc)] = "--set-defaults";
-	opt = res->disk_options;
+	/* FIXME per volume disk options? */
+	opt = ctx->res->disk_options;
 	make_options(opt);
 	argv[NA(argc)] = 0;
 
-	return m_system_ex(argv, SLEEPS_LONG, res);
+	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
 }
 
 struct d_option *find_opt(struct d_option *base, char *name)
@@ -1505,7 +1576,35 @@ struct d_option *find_opt(struct d_option *base, char *name)
 	return 0;
 }
 
-int adm_resize(struct d_resource *res, const char *cmd)
+int adm_new_minor(struct cfg_ctx *ctx)
+{
+	char *argv[MAX_ARGS];
+	int argc = 0;
+
+	argv[NA(argc)] = drbdsetup;
+	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
+	argv[NA(argc)] = "new-minor";
+	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	ssprintf(argv[NA(argc)], "%u", ctx->vol->vnr);
+	argv[NA(argc)] = NULL;
+
+	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+}
+
+int adm_new_connection(struct cfg_ctx *ctx)
+{
+	char *argv[MAX_ARGS];
+	int argc = 0;
+
+	argv[NA(argc)] = drbdsetup;
+	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	argv[NA(argc)] = "new-connection";
+	argv[NA(argc)] = NULL;
+
+	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+}
+
+int adm_resize(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
@@ -1514,9 +1613,9 @@ int adm_resize(struct d_resource *res, const char *cmd)
 	int ex;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	argv[NA(argc)] = "resize";
-	opt = find_opt(res->disk_options, "size");
+	opt = find_opt(ctx->res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
 	for (i = 0; i < soi; i++)
@@ -1524,8 +1623,8 @@ int adm_resize(struct d_resource *res, const char *cmd)
 	argv[NA(argc)] = 0;
 
 	/* if this is not "resize", but "check-resize", be silent! */
-	silent = strcmp(cmd, "resize") ? SUPRESS_STDERR : 0;
-	ex = m_system_ex(argv, SLEEPS_SHORT | silent, res);
+	silent = !strcmp(ctx->arg, "check-resize") ? SUPRESS_STDERR : 0;
+	ex = m_system_ex(argv, SLEEPS_SHORT | silent, ctx->res->name);
 
 	if (ex)
 		return ex;
@@ -1542,81 +1641,92 @@ int adm_resize(struct d_resource *res, const char *cmd)
 	argv[2] = "check-resize";
 	argv[3] = NULL;
 	/* ignore exit code */
-	m_system_ex(argv, SLEEPS_SHORT | silent, res);
+	m_system_ex(argv, SLEEPS_SHORT | silent, ctx->res->name);
 
 	return 0;
 }
 
-int _admm_generic(struct d_resource *res, const char *cmd, int flags)
+int _admm_generic(struct cfg_ctx *ctx, int flags)
 {
+	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	int argc = 0, i;
 
 	argv[NA(argc)] = drbdmeta;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = "v08";
-	if (!strcmp(res->me->volumes->meta_disk, "internal")) {
-		argv[NA(argc)] = res->me->volumes->disk;
+	if (!strcmp(vol->meta_disk, "internal")) {
+		argv[NA(argc)] = vol->disk;
 	} else {
-		argv[NA(argc)] = res->me->volumes->meta_disk;
+		argv[NA(argc)] = vol->meta_disk;
 	}
-	if (!strcmp(res->me->volumes->meta_index, "flexible")) {
-		if (!strcmp(res->me->volumes->meta_disk, "internal")) {
+	if (!strcmp(vol->meta_index, "flexible")) {
+		if (!strcmp(vol->meta_disk, "internal")) {
 			argv[NA(argc)] = "flex-internal";
 		} else {
 			argv[NA(argc)] = "flex-external";
 		}
 	} else {
-		argv[NA(argc)] = res->me->volumes->meta_index;
+		argv[NA(argc)] = vol->meta_index;
 	}
-	argv[NA(argc)] = (char *)cmd;
+	argv[NA(argc)] = (char *)ctx->arg;
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
 	}
 
 	argv[NA(argc)] = 0;
 
-	return m_system_ex(argv, flags, res);
+	return m_system_ex(argv, flags, ctx->res->name);
 }
 
-static int admm_generic(struct d_resource *res, const char *cmd)
+static int admm_generic(struct cfg_ctx *ctx)
 {
-	return _admm_generic(res, cmd, SLEEPS_VERY_LONG);
+	return _admm_generic(ctx, SLEEPS_VERY_LONG);
 }
 
-static void _adm_generic(struct d_resource *res, const char *cmd, int flags, pid_t *pid, int *fd, int *ex)
+static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, i;
 
+	if (!ctx->res) {
+		/* ASSERT */
+		fprintf(stderr, "sorry, need at least a resource name to call drbdsetup\n");
+		abort();
+	}
+
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
-	argv[NA(argc)] = (char *)cmd;
+	if (ctx->vol)
+		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
+	else
+		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	argv[NA(argc)] = (char *)ctx->arg;
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
 	}
 	argv[NA(argc)] = 0;
 
-	setenv("DRBD_RESOURCE", res->name, 1);
-	m__system(argv, flags, res, pid, fd, ex);
+	setenv("DRBD_RESOURCE", ctx->res->name, 1);
+	m__system(argv, flags, ctx->res->name, pid, fd, ex);
 }
 
-static int adm_generic(struct d_resource *res, const char *cmd, int flags)
+static int adm_generic(struct cfg_ctx *ctx, int flags)
 {
 	int ex;
-	_adm_generic(res, cmd, flags, NULL, NULL, &ex);
+	_adm_generic(ctx, flags, NULL, NULL, &ex);
 	return ex;
 }
 
-int adm_generic_s(struct d_resource *res, const char *cmd)
+int adm_generic_s(struct cfg_ctx *ctx)
 {
-	return adm_generic(res, cmd, SLEEPS_SHORT);
+	return adm_generic(ctx, SLEEPS_SHORT);
 }
 
-int adm_status_xml(struct d_resource *res, const char *cmd)
+int adm_status_xml(struct cfg_ctx *ctx)
 {
+	int rv, max_rv = 0;
 	struct d_resource *r, *t;
-	int rv = 0;
+	struct d_volume *vol;
 
 	if (!dry_run) {
 		printf("<drbd-status version=\"%s\" api=\"%u\">\n",
@@ -1624,22 +1734,32 @@ int adm_status_xml(struct d_resource *res, const char *cmd)
 		printf("<resources config_file=\"%s\">\n", config_save);
 	}
 
-	for_each_resource(r, t, res) {
+	/* TODO: remove thes loops, have drbdsetup use dump
+	 * and optionally filter on resource name.
+	 * Fix adm_generic to figure out how to call drbdsetup
+	 * if neither volume nor resource is set in ctx. */
+	for_each_resource(r, t, config) {
 		if (r->ignore)
 			continue;
-		rv = adm_generic(r, cmd, SLEEPS_SHORT);
-		if (rv)
-			break;
+		ctx->res = r;
+		for_each_volume(vol, r->me->volumes) {
+			ctx->vol = vol;
+			rv = adm_generic(ctx, SLEEPS_SHORT);
+			/* FIXME what if rv != 0 */
+			if (rv > max_rv)
+				max_rv = rv;
+		}
 	}
 
 	if (!dry_run)
 		printf("</resources>\n</drbd-status>\n");
-	return rv;
+	return max_rv;
 }
 
-int sh_status(struct d_resource *res, const char *cmd)
+int sh_status(struct cfg_ctx *ctx)
 {
 	struct d_resource *r, *t;
+	struct d_volume *vol, *lower_vol;
 	int rv = 0;
 
 	if (!dry_run) {
@@ -1648,36 +1768,55 @@ int sh_status(struct d_resource *res, const char *cmd)
 		printf("_config_file=%s\n\n", shell_escape(config_save));
 	}
 
-	for_each_resource(r, t, res) {
+	for_each_resource(r, t, config) {
 		if (r->ignore)
 			continue;
+		printf("_res_name=%s\n", r->name);
 		printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
 		       shell_escape(r->me->lower->name) : "");
-		printf("_stacked_on_device=%s\n", r->stacked && r->me->lower ?
-		       shell_escape(r->me->lower->me->volumes->device) : "");
-		if (r->stacked && r->me->lower)
-			printf("_stacked_on_minor=%d\n",
-			       r->me->lower->me->volumes->device_minor);
-		else
-			printf("_stacked_on_minor=\n");
-		rv = adm_generic(r, cmd, SLEEPS_SHORT);
-		if (rv)
-			break;
+		/* reset stuff */
+		printf("_stacked_on_device=\n");
+		printf("_stacked_on_minor=\n");
+		ctx->res = r;
+		lower_vol = r->stacked && r->me->lower ?
+			r->me->lower->me->volumes : NULL;
+		/* TODO: remove this loop, have drbdsetup use dump
+		 * and optionally filter on resource name. */
+		for_each_volume(vol, r->me->volumes) {
+			/* do not continue in this loop,
+			 * or lower_vol will get out of sync */
+			if (lower_vol) {
+				printf("_stacked_on_device=%s\n", shell_escape(lower_vol->device));
+				printf("_stacked_on_minor=%d\n", lower_vol->device_minor);
+			} else if (r->stacked && r->me->lower) {
+				/* ASSERT */
+				fprintf(stderr, "in %s: stacked volume[%u] without lower volume\n",
+						r->name, vol->vnr);
+				abort();
+			}
+			ctx->vol = vol;
+			rv = adm_generic(ctx, SLEEPS_SHORT);
+			if (rv)
+				return rv;
+
+			if (lower_vol)
+				lower_vol = lower_vol->next;
+			/* vol is advanced by for_each_volume */
+		}
 	}
-
-	return rv;
+	return 0;
 }
 
-int adm_generic_l(struct d_resource *res, const char *cmd)
+int adm_generic_l(struct cfg_ctx *ctx)
 {
-	return adm_generic(res, cmd, SLEEPS_LONG);
+	return adm_generic(ctx, SLEEPS_LONG);
 }
 
-static int adm_outdate(struct d_resource *res, const char *cmd)
+static int adm_outdate(struct cfg_ctx *ctx)
 {
 	int rv;
 
-	rv = adm_generic(res, cmd, SLEEPS_SHORT | SUPRESS_STDERR);
+	rv = adm_generic(ctx, SLEEPS_SHORT | SUPRESS_STDERR);
 	/* special cases for outdate:
 	 * 17: drbdsetup outdate, but is primary and thus cannot be outdated.
 	 *  5: drbdsetup outdate, and is inconsistent or worse anyways. */
@@ -1686,38 +1825,38 @@ static int adm_outdate(struct d_resource *res, const char *cmd)
 
 	if (rv == 5) {
 		/* That might mean it is diskless. */
-		rv = admm_generic(res, cmd);
+		rv = admm_generic(ctx);
 		if (rv)
 			rv = 5;
 		return rv;
 	}
 
 	if (rv || dry_run) {
-		rv = admm_generic(res, cmd);
+		rv = admm_generic(ctx);
 	}
 	return rv;
 }
 
 /* shell equivalent:
  * ( drbdsetup resize && drbdsetup check-resize ) || drbdmeta check-resize */
-static int adm_chk_resize(struct d_resource *res, const char *cmd)
+static int adm_chk_resize(struct cfg_ctx *ctx)
 {
 	/* drbdsetup resize && drbdsetup check-resize */
-	int ex = adm_resize(res, cmd);
+	int ex = adm_resize(ctx);
 	if (ex == 0)
 		return 0;
 
 	/* try drbdmeta check-resize */
-	return admm_generic(res, cmd);
+	return admm_generic(ctx);
 }
 
-static int adm_generic_b(struct d_resource *res, const char *cmd)
+static int adm_generic_b(struct cfg_ctx *ctx)
 {
 	char buffer[4096];
 	int fd, status, rv = 0, rr, s = 0;
 	pid_t pid;
 
-	_adm_generic(res, cmd, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
+	_adm_generic(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
@@ -1761,13 +1900,15 @@ static int adm_generic_b(struct d_resource *res, const char *cmd)
 		   rv = 16 .. we are diskless here
 		   retry with drbdmeta.
 		 */
-		rv = admm_generic(res, cmd);
+		rv = admm_generic(ctx);
 	}
 	return rv;
 }
 
-static int adm_khelper(struct d_resource *res, const char *cmd)
+static int adm_khelper(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
+	struct d_volume *vol = ctx->vol;
 	int rv = 0;
 	char *sh_cmd;
 	char minor_string[8];
@@ -1799,14 +1940,14 @@ static int adm_khelper(struct d_resource *res, const char *cmd)
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
-	snprintf(minor_string, sizeof(minor_string), "%u", res->me->volumes->device_minor);
+	snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
 	setenv("DRBD_RESOURCE", res->name, 1);
 	setenv("DRBD_MINOR", minor_string, 1);
 	setenv("DRBD_CONF", config_save, 1);
 
-	if ((sh_cmd = get_opt_val(res->handlers, cmd, NULL))) {
+	if ((sh_cmd = get_opt_val(res->handlers, ctx->arg, NULL))) {
 		argv[2] = sh_cmd;
-		rv = m_system_ex(argv, SLEEPS_VERY_LONG, res);
+		rv = m_system_ex(argv, SLEEPS_VERY_LONG, res->name);
 	}
 	return rv;
 }
@@ -1832,16 +1973,16 @@ void convert_discard_opt(struct d_resource *res)
 	}
 }
 
-int adm_connect(struct d_resource *res,
-		const char *unused __attribute((unused)))
+int adm_connect(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int i;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%s", res->name);
 	argv[NA(argc)] = "net";
 	make_address(res->me->address, res->me->port, res->me->address_family);
 	if (res->me->proxy) {
@@ -1869,7 +2010,7 @@ int adm_connect(struct d_resource *res,
 
 	argv[NA(argc)] = 0;
 
-	return m_system_ex(argv, SLEEPS_SHORT, res);
+	return m_system_ex(argv, SLEEPS_SHORT, res->name);
 }
 
 struct d_resource *res_by_name(const char *name);
@@ -1939,13 +2080,14 @@ char *proxy_connection_name(struct d_resource *res)
 	return conn_name;
 }
 
-int do_proxy_conn_up(struct d_resource *res, const char *conn_name)
+int do_proxy_conn_up(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
 	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL };
+	char *conn_name;
 	int rv;
 
-	if (!conn_name)
-		conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(res);
 
 	ssprintf(argv[2],
 			"add connection %s %s:%s %s:%s %s:%s %s:%s",
@@ -1958,19 +2100,20 @@ int do_proxy_conn_up(struct d_resource *res, const char *conn_name)
 			res->me->proxy->outside_port, res->me->address,
 			res->me->port);
 
-	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	rv = m_system_ex(argv, SLEEPS_SHORT, res->name);
 	return rv;
 }
 
-int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name)
+int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
+	char *conn_name;
 	int argc = 0;
 	struct d_option *opt;
 	int counter;
 
-	if (!conn_name)
-		conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(res);
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
@@ -1999,27 +2142,29 @@ int do_proxy_conn_plugins(struct d_resource *res, const char *conn_name)
 
 	argv[NA(argc)] = 0;
 	if (argc > 2)
-		return m_system_ex(argv, SLEEPS_SHORT, res);
+		return m_system_ex(argv, SLEEPS_SHORT, res->name);
 
 	return 0;
 }
 
-int do_proxy_conn_down(struct d_resource *res, const char *conn_name)
+int do_proxy_conn_down(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
+	char *conn_name;
 	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL};
 	int rv;
 
-	if (!conn_name)
-		conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(res);
 	ssprintf(argv[2], "del connection %s", conn_name);
 
-	rv = m_system_ex(argv, SLEEPS_SHORT, res);
+	rv = m_system_ex(argv, SLEEPS_SHORT, res->name);
 	return rv;
 }
 
 
-static int check_proxy(struct d_resource *res, int do_up)
+static int check_proxy(struct cfg_ctx *ctx, int do_up)
 {
+	struct d_resource *res = ctx->res;
 	int rv;
 
 	if (!res->me->proxy) {
@@ -2057,39 +2202,40 @@ static int check_proxy(struct d_resource *res, int do_up)
 
 
 	if (do_up) {
-		rv = do_proxy_conn_up(res, NULL);
+		rv = do_proxy_conn_up(ctx);
 		if (!rv)
-			rv = do_proxy_conn_plugins(res, NULL);
+			rv = do_proxy_conn_plugins(ctx);
 	}
 	else
-		rv = do_proxy_conn_down(res, NULL);
+		rv = do_proxy_conn_down(ctx);
 
 	return rv;
 }
 
-static int adm_proxy_up(struct d_resource *res,
-			const char *unused __attribute((unused)))
+static int adm_proxy_up(struct cfg_ctx *ctx)
 {
-	return check_proxy(res, 1);
+	return check_proxy(ctx, 1);
 }
 
-static int adm_proxy_down(struct d_resource *res,
-			  const char *unused __attribute((unused)))
+static int adm_proxy_down(struct cfg_ctx *ctx)
 {
-	return check_proxy(res, 0);
+	return check_proxy(ctx, 0);
 }
 
-int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
+int adm_syncer(struct cfg_ctx *ctx)
 {
+	struct d_volume *vol = ctx->vol;
+	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int i, argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = "syncer";
 
 	argv[NA(argc)] = "--set-defaults";
+	/* FIXME per volume syncer settings? */
 	opt = res->sync_options;
 	make_options(opt);
 
@@ -2099,16 +2245,27 @@ int adm_syncer(struct d_resource *res, const char *unused __attribute((unused)))
 
 	argv[NA(argc)] = 0;
 
-	return m_system_ex(argv, SLEEPS_SHORT, res);
+	return m_system_ex(argv, SLEEPS_SHORT, res->name);
 }
 
-static int adm_up(struct d_resource *res,
-		  const char *unused __attribute((unused)))
+/* The "main" loop iterates over resources.
+ * This "sorts" the drbdsetup commands to bring those up
+ * so we will later first create all objects,
+ * then attach all local disks,
+ * adjust various settings,
+ * and then configure the network part */
+static int adm_up(struct cfg_ctx *ctx)
 {
-	schedule_dcmd(adm_attach, res, "attach", 0);
-	schedule_dcmd(adm_syncer, res, "syncer", 1);
-	schedule_dcmd(adm_connect, res, "connect", 2);
-
+	struct d_resource *res = ctx->res;
+	struct d_volume *vol = ctx->vol;
+	if (vol == NULL) {
+		schedule_dcmd(adm_new_connection, res, vol, "attach", CFG_PREREQ);
+		schedule_dcmd(adm_connect, res, vol, "connect", CFG_NET);
+	} else {
+		schedule_dcmd(adm_new_minor, res, vol, "new-minor", CFG_PREREQ);
+		schedule_dcmd(adm_attach, res, vol, "attach", CFG_DISK);
+		schedule_dcmd(adm_syncer, res, vol, "syncer", CFG_SETTINGS);
+	}
 	return 0;
 }
 
@@ -2116,15 +2273,16 @@ static int adm_up(struct d_resource *res,
    to enforce the use of the specified timeouts instead the use
    of a sane value. Should only be used if the third node should
    never become primary. */
-static int adm_wait_c(struct d_resource *res,
-		      const char *unused __attribute((unused)))
+static int adm_wait_c(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
+	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = "wait-connect";
 	if (is_drbd_top && !res->stacked_timeouts) {
 		unsigned long timeout = 20;
@@ -2142,7 +2300,7 @@ static int adm_wait_c(struct d_resource *res,
 	}
 	argv[NA(argc)] = 0;
 
-	rv = m_system_ex(argv, SLEEPS_FOREVER, res);
+	rv = m_system_ex(argv, SLEEPS_FOREVER, res->name);
 
 	return rv;
 }
@@ -2157,6 +2315,7 @@ static unsigned minor_by_id(const char *id)
 struct d_resource *res_by_minor(const char *id)
 {
 	struct d_resource *res, *t;
+	struct d_volume *vol;
 	unsigned int mm;
 
 	mm = minor_by_id(id);
@@ -2166,9 +2325,11 @@ struct d_resource *res_by_minor(const char *id)
 	for_each_resource(res, t, config) {
 		if (res->ignore)
 			continue;
-		if (mm == res->me->volumes->device_minor) {
-			is_drbd_top = res->stacked;
-			return res;
+		for_each_volume(vol, res->me->volumes) {
+			if (mm == vol->device_minor) {
+				is_drbd_top = res->stacked;
+				return res;
+			}
 		}
 	}
 	return NULL;
@@ -2313,8 +2474,7 @@ static int check_exit_codes(pid_t * pids)
 	return rv;
 }
 
-static int adm_wait_ci(struct d_resource *ignored __attribute((unused)),
-		       const char *unused __attribute((unused)))
+static int adm_wait_ci(struct cfg_ctx *ctx)
 {
 	struct d_resource *res, *t;
 	char *argv[20], answer[40];
@@ -2366,14 +2526,14 @@ static int adm_wait_ci(struct d_resource *ignored __attribute((unused)),
 			continue;
 		argc = 0;
 		argv[NA(argc)] = drbdsetup;
-		ssprintf(argv[NA(argc)], "%d", res->me->volumes->device_minor);
+		ssprintf(argv[NA(argc)], "%s", res->name);
 
 		argv[NA(argc)] = "wait-connect";
 		opt = res->startup_options;
 		make_options(opt);
 		argv[NA(argc)] = 0;
 
-		m__system(argv, RETURN_PID, res, &pids[i++], NULL, NULL);
+		m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
 	}
 
 	wtime = global_options.dialog_refresh ? : -1;
@@ -2451,8 +2611,7 @@ static void print_cmds(int level)
 		printf("\n");
 }
 
-static int hidden_cmds(struct d_resource *ignored __attribute((unused)),
-		       const char *ignored2 __attribute((unused)))
+static int hidden_cmds(struct cfg_ctx *ignored __attribute((unused)))
 {
 	printf("\nThese additional commands might be useful for writing\n"
 	       "nifty shell scripts around drbdadm:\n\n");
@@ -3143,7 +3302,7 @@ struct adm_cmd *find_cmd(char *cmdname)
 	unsigned int i;
 	if (!strcmp("hidden-commands", cmdname)) {
 		// before parsing the configuration file...
-		hidden_cmds(NULL, NULL);
+		hidden_cmds(NULL);
 		exit(0);
 	}
 	if (!strncmp("help", cmdname, 5))
@@ -3221,22 +3380,25 @@ void count_resources_or_die(void)
 {
 	int m, mc = global_options.minor_count;
 	struct d_resource *res, *tmp;
+	struct d_volume *vol;
 
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
 		if (res->ignore)
 			continue;
 
-		m = res->me->volumes->device_minor;
-		if (m > highest_minor)
-			highest_minor = m;
-		nr_resources++;
-		if (res->stacked)
-			nr_stacked++;
-		else if (res->ignore)
-			nr_ignore++;
-		else
-			nr_normal++;
+		for_each_volume(vol, res->me->volumes) {
+			m = vol->device_minor;
+			if (m > highest_minor)
+				highest_minor = m;
+			nr_resources++;
+			if (res->stacked)
+				nr_stacked++;
+			else if (res->ignore)
+				nr_ignore++;
+			else
+				nr_normal++;
+		}
 	}
 
 	// Just for the case that minor_of_res() returned 0 for all devices.
@@ -3509,8 +3671,10 @@ int main(int argc, char **argv)
 		}
 	} else {		// Commands which do not need a resource name
 		/* no call_cmd, as that implies register_minor,
-		 * which does not make sense for resource independent commands */
-		rv = cmd->function(config, cmd->name);
+		 * which does not make sense for resource independent commands.
+		 * It does also not need to iterate over volumes: it does not even know the resource. */
+		struct cfg_ctx ctx = { .arg = cmd->name };
+		rv = cmd->function(&ctx);
 		if (rv >= 10) {	/* why do we special case the "generic sh-*" commands? */
 			fprintf(stderr, "command %s exited with code %d\n",
 				cmd->name, rv);

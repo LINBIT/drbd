@@ -622,7 +622,7 @@ void uc_node(enum usage_count_type type)
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-char* run_admm_generic(struct d_resource* res ,const char* cmd)
+static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 {
 	const int SLURP_SIZE = 4096;
 	int rr,pipes[2];
@@ -644,9 +644,13 @@ char* run_admm_generic(struct d_resource* res ,const char* cmd)
 		close(pipes[0]); // close reading end
 		dup2(pipes[1],1); // 1 = stdout
 		close(pipes[1]);
-		exit(_admm_generic(res,cmd,
+		/* local modification in child,
+		 * no propagation to parent */
+		ctx->arg = arg_override;
+		rr = _admm_generic(ctx,
 				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
-				   DONT_REPORT_FAILED));
+				   DONT_REPORT_FAILED);
+		exit(rr);
 	}
 	close(pipes[1]); // close writing end
 
@@ -664,7 +668,7 @@ char* run_admm_generic(struct d_resource* res ,const char* cmd)
 	return buffer;
 }
 
-int adm_create_md(struct d_resource* res ,const char* cmd)
+int adm_create_md(struct cfg_ctx *ctx)
 {
 	char answer[ANSWER_SIZE];
 	struct node_info ni;
@@ -674,19 +678,18 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	int send=0;
 	char *tb;
 	int rv,fd;
-	int soi_tmp;
-	char *setup_opts_0_tmp;
 	char *unused_res;
 
-	tb = run_admm_generic(res, "read-dev-uuid");
+	tb = run_admm_generic(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
-	rv = _admm_generic(res, cmd, SLEEPS_VERY_LONG); // cmd is "create-md".
+	/* this is "drbdmeta ... create-md" */
+	rv = _admm_generic(ctx, SLEEPS_VERY_LONG);
 
 	if(rv || dry_run) return rv;
 
-	fd = open(res->me->volumes->disk,O_RDONLY);
+	fd = open(ctx->vol->disk,O_RDONLY);
 	if( fd != -1) {
 		device_size = bdev_size(fd);
 		close(fd);
@@ -727,17 +730,21 @@ int adm_create_md(struct d_resource* res ,const char* cmd)
 	}
 
 	/* HACK */
-	soi_tmp = soi;
-	setup_opts_0_tmp = setup_opts[0];
+	{
+		struct cfg_ctx local_ctx = *ctx;
+		int soi_tmp = soi;
+		char *setup_opts_0_tmp = setup_opts[0];
 
-	setup_opts[0] = NULL;
-	ssprintf( setup_opts[0], X64(016), device_uuid);
-	soi=1;
-	_admm_generic(res, "write-dev-uuid", SLEEPS_VERY_LONG);
+		setup_opts[0] = NULL;
+		ssprintf(setup_opts[0], X64(016), device_uuid);
+		soi=1;
 
-	setup_opts[0] = setup_opts_0_tmp;
-	soi = soi_tmp;
+		local_ctx.arg = "write-dev-uuid";
+		_admm_generic(&local_ctx, SLEEPS_VERY_LONG);
 
+		setup_opts[0] = setup_opts_0_tmp;
+		soi = soi_tmp;
+	}
 	return rv;
 }
 
