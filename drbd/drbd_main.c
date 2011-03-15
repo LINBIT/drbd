@@ -877,7 +877,7 @@ int drbd_send_sync_param(struct drbd_conf *mdev)
 		if (apv >= 89)
 			strcpy(p->csums_alg, mdev->tconn->net_conf->csums_alg);
 
-		rv = _drbd_send_cmd(mdev, sock, cmd, &p->head, size, 0);
+		rv = !_drbd_send_cmd(mdev, sock, cmd, &p->head, size, 0);
 	} else
 		rv = 0; /* not ok */
 
@@ -1043,7 +1043,7 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	sock = mdev->tconn->data.socket;
 
 	if (likely(sock != NULL))
-		ok = _drbd_send_cmd(mdev, sock, P_STATE, &p.head, sizeof(p), 0);
+		ok = !_drbd_send_cmd(mdev, sock, P_STATE, &p.head, sizeof(p), 0);
 
 	mutex_unlock(&mdev->tconn->data.mutex);
 
@@ -1196,8 +1196,8 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 
 	if (len) {
 		DCBP_set_code(p, RLE_VLI_Bits);
-		ok = _drbd_send_cmd(mdev, mdev->tconn->data.socket, P_COMPRESSED_BITMAP, h,
-			sizeof(*p) + len, 0);
+		ok = !_drbd_send_cmd(mdev, mdev->tconn->data.socket, P_COMPRESSED_BITMAP, h,
+				     sizeof(*p) + len, 0);
 
 		c->packets[0]++;
 		c->bytes[0] += sizeof(*p) + len;
@@ -1211,8 +1211,8 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev,
 		len = num_words * sizeof(long);
 		if (len)
 			drbd_bm_get_lel(mdev, c->word_offset, num_words, (unsigned long*)h->payload);
-		ok = _drbd_send_cmd(mdev, mdev->tconn->data.socket, P_BITMAP,
-				   h, sizeof(struct p_header80) + len, 0);
+		ok = !_drbd_send_cmd(mdev, mdev->tconn->data.socket, P_BITMAP,
+				     h, sizeof(struct p_header80) + len, 0);
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;
 
