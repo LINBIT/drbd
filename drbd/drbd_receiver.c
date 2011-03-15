@@ -4520,7 +4520,7 @@ STATIC int drbd_do_auth(struct drbd_tconn *tconn)
 
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
-	rv = conn_send_cmd2(tconn, P_AUTH_CHALLENGE, my_challenge, CHALLENGE_LEN);
+	rv = !conn_send_cmd2(tconn, P_AUTH_CHALLENGE, my_challenge, CHALLENGE_LEN);
 	if (!rv)
 		goto fail;
 
@@ -4575,7 +4575,7 @@ STATIC int drbd_do_auth(struct drbd_tconn *tconn)
 		goto fail;
 	}
 
-	rv = conn_send_cmd2(tconn, P_AUTH_RESPONSE, response, resp_size);
+	rv = !conn_send_cmd2(tconn, P_AUTH_RESPONSE, response, resp_size);
 	if (!rv)
 		goto fail;
 
