@@ -456,7 +456,7 @@ struct drbd_cmd commands[] = {
 	 (struct drbd_option[]) {
 		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
 		 CLOSE_ARGS_OPTS }} }, },
-	{"down", CTX_MINOR, 0, NO_PAYLOAD, down_cmd, get_usage, },
+	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	/* "state" is deprecated! please use "role".
 	 * find_cmd_by_name still understands "state", however. */
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
@@ -1894,18 +1894,11 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
-	cm = find_cmd_by_name("secondary");
-	/* no error message on ERR_MINOR_INVALID */
 	rv = _generic_config_cmd(cm, minor, argc, argv, 1);
-	if (rv == ERR_MINOR_INVALID)
-		return 0;
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (!success)
 		return print_config_error(rv, NULL);
-	cm = find_cmd_by_name("disconnect");
-	cm->function(cm,minor,argc,argv);
-	cm = find_cmd_by_name("detach");
-	return cm->function(cm,minor,argc,argv);
+	return 0;
 }
 
 /* printf format for minor, resource name, volume */
