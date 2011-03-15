@@ -823,7 +823,7 @@ int conn_send_cmd2(struct drbd_tconn *tconn, enum drbd_packet cmd, char *data,
 
 	prepare_header80(&h, cmd, size);
 
-	if (!drbd_get_data_sock(tconn))
+	if (drbd_get_data_sock(tconn))
 		return 0;
 
 	ok = (sizeof(h) ==
@@ -1291,7 +1291,7 @@ int drbd_send_bitmap(struct drbd_conf *mdev)
 {
 	int err;
 
-	if (!drbd_get_data_sock(mdev->tconn))
+	if (drbd_get_data_sock(mdev->tconn))
 		return -1;
 	err = !_drbd_send_bitmap(mdev);
 	drbd_put_data_sock(mdev->tconn);
@@ -1612,7 +1612,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 	void *dgb;
 	int dgs;
 
-	if (!drbd_get_data_sock(mdev->tconn))
+	if (drbd_get_data_sock(mdev->tconn))
 		return 0;
 
 	dgs = (mdev->tconn->agreed_pro_version >= 87 && mdev->tconn->integrity_w_tfm) ?
@@ -1701,7 +1701,7 @@ int drbd_send_block(struct drbd_conf *mdev, enum drbd_packet cmd,
 	 * This one may be interrupted by DRBD_SIG and/or DRBD_SIGKILL
 	 * in response to admin command or module unload.
 	 */
-	if (!drbd_get_data_sock(mdev->tconn))
+	if (drbd_get_data_sock(mdev->tconn))
 		return 0;
 
 	ok = sizeof(p) == drbd_send(mdev->tconn, mdev->tconn->data.socket, &p, sizeof(p), dgs ? MSG_MORE : 0);
