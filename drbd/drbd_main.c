@@ -74,10 +74,10 @@ static int drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static int drbd_release(struct inode *inode, struct file *file);
 #endif
-STATIC long w_md_sync(struct drbd_work *w, int unused);
+STATIC int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
-STATIC long w_bitmap_io(struct drbd_work *w, int unused);
-STATIC long w_go_diskless(struct drbd_work *w, int unused);
+STATIC int w_bitmap_io(struct drbd_work *w, int unused);
+STATIC int w_go_diskless(struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -2993,7 +2993,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
-STATIC long w_bitmap_io(struct drbd_work *w, int unused)
+STATIC int w_bitmap_io(struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = container_of(w, struct bm_io_work, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -3018,7 +3018,7 @@ STATIC long w_bitmap_io(struct drbd_work *w, int unused)
 	work->why = NULL;
 	work->flags = 0;
 
-	return 1;
+	return 0;
 }
 
 void drbd_ldev_destroy(struct drbd_conf *mdev)
@@ -3034,7 +3034,7 @@ void drbd_ldev_destroy(struct drbd_conf *mdev)
 	clear_bit(GO_DISKLESS, &mdev->flags);
 }
 
-STATIC long w_go_diskless(struct drbd_work *w, int unused)
+STATIC int w_go_diskless(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 
@@ -3044,7 +3044,7 @@ STATIC long w_go_diskless(struct drbd_work *w, int unused)
 	 * the protected members anymore, though, so once put_ldev reaches zero
 	 * again, it will be safe to free them. */
 	drbd_force_state(mdev, NS(disk, D_DISKLESS));
-	return 1;
+	return 0;
 }
 
 void drbd_go_diskless(struct drbd_conf *mdev)
@@ -3150,7 +3150,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 	drbd_queue_work_front(&mdev->tconn->data.work, &mdev->md_sync_work);
 }
 
-STATIC long w_md_sync(struct drbd_work *w, int unused)
+STATIC int w_md_sync(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 
@@ -3160,7 +3160,7 @@ STATIC long w_md_sync(struct drbd_work *w, int unused)
 		mdev->last_md_mark_dirty.func, mdev->last_md_mark_dirty.line);
 #endif
 	drbd_md_sync(mdev);
-	return 1;
+	return 0;
 }
 
 const char *cmdname(enum drbd_packet cmd)

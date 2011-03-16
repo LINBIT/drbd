@@ -81,7 +81,7 @@ STATIC int drbd_do_auth(struct drbd_tconn *tconn);
 STATIC int drbd_disconnected(int vnr, void *p, void *data);
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
-STATIC long e_end_block(struct drbd_work *, int);
+STATIC int e_end_block(struct drbd_work *, int);
 
 static struct drbd_epoch *previous_epoch(struct drbd_conf *mdev, struct drbd_epoch *epoch)
 {
@@ -464,7 +464,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	 */
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
 		/* list_del not necessary, next/prev members not touched */
-		ok = peer_req->w.cb(&peer_req->w, !ok) && ok;
+		ok = !peer_req->w.cb(&peer_req->w, !ok) && ok;
 		drbd_free_ee(mdev, peer_req);
 	}
 	wake_up(&mdev->ee_wait);
@@ -1069,7 +1069,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_conf *mdev, struct d
 	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
 }
 
-STATIC long w_flush(struct drbd_work *w, int cancel)
+STATIC int w_flush(struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = (struct flush_work *)w;
 	struct drbd_epoch *epoch = fw->epoch;
@@ -1083,7 +1083,7 @@ STATIC long w_flush(struct drbd_work *w, int cancel)
 	drbd_may_finish_epoch(mdev, epoch, EV_PUT |
 			      (mdev->state.conn < C_CONNECTED ? EV_CLEANUP : 0));
 
-	return 1;
+	return 0;
 }
 
 /**
@@ -1357,7 +1357,7 @@ static void drbd_remove_epoch_entry_interval(struct drbd_conf *mdev,
  * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-long w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
+int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -1388,7 +1388,7 @@ long w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
-		return 1;
+		return 0;
 
 	case -ENOSPC:
 		/* no other error expected, but anyways: */
@@ -1404,7 +1404,7 @@ long w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + EV_CLEANUP);
 		drbd_free_ee(mdev, peer_req);
 		dev_err(DEV, "submit failed, triggering re-connect\n");
-		return 0;
+		return err;
 	}
 }
 
@@ -1669,28 +1669,28 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 
 /* e_end_resync_block() is called via
  * drbd_process_done_ee() by asender only */
-STATIC long e_end_resync_block(struct drbd_work *w, int unused)
+STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
-	int ok;
+	int err;
 
 	D_ASSERT(drbd_interval_empty(&peer_req->i));
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(mdev, sector, peer_req->i.size);
-		ok = !drbd_send_ack(mdev, P_RS_WRITE_ACK, peer_req);
+		err = drbd_send_ack(mdev, P_RS_WRITE_ACK, peer_req);
 	} else {
 		/* Record failure to sync */
 		drbd_rs_failed_io(mdev, sector, peer_req->i.size);
 
-		ok  = !drbd_send_ack(mdev, P_NEG_ACK, peer_req);
+		err  = drbd_send_ack(mdev, P_NEG_ACK, peer_req);
 	}
 	dec_unacked(mdev);
 
-	return ok;
+	return err;
 }
 
 STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_size) __releases(local)
@@ -1805,7 +1805,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 	return ok;
 }
 
-static long w_restart_write(struct drbd_work *w, int cancel)
+static int w_restart_write(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1816,7 +1816,7 @@ static long w_restart_write(struct drbd_work *w, int cancel)
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
 	if (!expect(req->rq_state & RQ_POSTPONED)) {
 		spin_unlock_irqrestore(&mdev->tconn->req_lock, flags);
-		return 0;
+		return -EIO;
 	}
 	bio = req->master_bio;
 	start_time = req->start_time;
@@ -1826,7 +1826,7 @@ static long w_restart_write(struct drbd_work *w, int cancel)
 
 	while (__drbd_make_request(mdev, bio, start_time))
 		/* retry */ ;
-	return 1;
+	return 0;
 }
 
 static void restart_conflicting_writes(struct drbd_conf *mdev,
@@ -1853,14 +1853,14 @@ static void restart_conflicting_writes(struct drbd_conf *mdev,
 /* e_end_block() is called via drbd_process_done_ee().
  * this means this function only runs in the asender thread
  */
-STATIC long e_end_block(struct drbd_work *w, int cancel)
+STATIC int e_end_block(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
-	int ok = 1, pcmd;
+	int err = 0, pcmd;
 
 	if (peer_req->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(mdev, peer_req->epoch);
@@ -1874,11 +1874,11 @@ STATIC long e_end_block(struct drbd_work *w, int cancel)
 				mdev->state.conn <= C_PAUSED_SYNC_T &&
 				peer_req->flags & EE_MAY_SET_IN_SYNC) ?
 				P_RS_WRITE_ACK : P_WRITE_ACK;
-			ok &= !drbd_send_ack(mdev, pcmd, peer_req);
+			err = drbd_send_ack(mdev, pcmd, peer_req);
 			if (pcmd == P_RS_WRITE_ACK)
 				drbd_set_in_sync(mdev, sector, peer_req->i.size);
 		} else {
-			ok  = !drbd_send_ack(mdev, P_NEG_ACK, peer_req);
+			err = drbd_send_ack(mdev, P_NEG_ACK, peer_req);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
@@ -1898,7 +1898,7 @@ STATIC long e_end_block(struct drbd_work *w, int cancel)
 
 	drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
-	return ok;
+	return err;
 }
 
 static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
@@ -1906,20 +1906,20 @@ static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
 	struct drbd_conf *mdev = w->mdev;
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
-	int ok;
+	int err;
 
-	ok = !drbd_send_ack(mdev, ack, peer_req);
+	err = drbd_send_ack(mdev, ack, peer_req);
 	dec_unacked(mdev);
 
-	return ok;
+	return err;
 }
 
-static long e_send_discard_write(struct drbd_work *w, int unused)
+static int e_send_discard_write(struct drbd_work *w, int unused)
 {
 	return e_send_ack(w, P_DISCARD_WRITE);
 }
 
-static long e_send_retry_write(struct drbd_work *w, int unused)
+static int e_send_retry_write(struct drbd_work *w, int unused)
 {
 	struct drbd_tconn *tconn = w->mdev->tconn;
 

@@ -99,7 +99,7 @@ struct update_al_work {
 };
 
 
-static long w_al_write_transaction(struct drbd_work *, int);
+static int w_al_write_transaction(struct drbd_work *, int);
 
 STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
@@ -315,7 +315,7 @@ static unsigned int rs_extent_to_bm_page(unsigned int rs_enr)
 		 (BM_EXT_SHIFT - BM_BLOCK_SHIFT));
 }
 
-static long
+static int
 w_al_write_transaction(struct drbd_work *w, int unused)
 {
 	struct update_al_work *aw = container_of(w, struct update_al_work, w);
@@ -332,7 +332,7 @@ w_al_write_transaction(struct drbd_work *w, int unused)
 			drbd_disk_str(mdev->state.disk));
 		aw->err = -EIO;
 		complete(&((struct update_al_work *)w)->event);
-		return 1;
+		return 0;
 	}
 
 	/* The bitmap write may have failed, causing a state change. */
@@ -343,7 +343,7 @@ w_al_write_transaction(struct drbd_work *w, int unused)
 		aw->err = -EIO;
 		complete(&((struct update_al_work *)w)->event);
 		put_ldev(mdev);
-		return 1;
+		return 0;
 	}
 
 	mutex_lock(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
@@ -411,7 +411,7 @@ w_al_write_transaction(struct drbd_work *w, int unused)
 	complete(&((struct update_al_work *)w)->event);
 	put_ldev(mdev);
 
-	return 1;
+	return 0;
 }
 
 /* FIXME
@@ -705,7 +705,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-STATIC long w_update_odbm(struct drbd_work *w, int unused)
+STATIC int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -715,7 +715,7 @@ STATIC long w_update_odbm(struct drbd_work *w, int unused)
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_warn(DEV, "Can not update on disk bitmap, local IO disabled.\n");
 		kfree(udw);
-		return 1;
+		return 0;
 	}
 
 	drbd_bm_write_page(mdev, rs_extent_to_bm_page(udw->enr));
@@ -735,7 +735,7 @@ STATIC long w_update_odbm(struct drbd_work *w, int unused)
 	}
 	drbd_bcast_event(mdev, &sib);
 
-	return 1;
+	return 0;
 }
 
 
