@@ -185,10 +185,9 @@ struct d_resource *config = NULL;
 struct d_resource *common = NULL;
 struct ifreq *ifreq_list = NULL;
 int is_drbd_top;
-int nr_resources;
-int nr_stacked;
-int nr_normal;
-int nr_ignore;
+enum { NORMAL, STACKED, IGNORED, __N_RESOURCE_TYPES };
+int nr_resources[__N_RESOURCE_TYPES];
+int nr_volumes[__N_RESOURCE_TYPES];
 int highest_minor;
 int config_from_stdin = 0;
 int config_valid = 1;
@@ -2351,8 +2350,9 @@ struct d_resource *res_by_name(const char *name)
 static int childs_running(pid_t * pids, int opts)
 {
 	int i = 0, wr, rv = 0, status;
+	int N = nr_volumes[is_drbd_top ? STACKED : NORMAL];
 
-	for (i = 0; i < nr_resources; i++) {
+	for (i = 0; i < N; i++) {
 		if (pids[i] <= 0)
 			continue;
 		wr = waitpid(pids[i], &status, opts);
@@ -2381,8 +2381,9 @@ static int childs_running(pid_t * pids, int opts)
 static void kill_childs(pid_t * pids)
 {
 	int i;
+	int N = nr_volumes[is_drbd_top ? STACKED : NORMAL];
 
-	for (i = 0; i < nr_resources; i++) {
+	for (i = 0; i < N; i++) {
 		if (pids[i] <= 0)
 			continue;
 		kill(pids[i], SIGINT);
@@ -2483,7 +2484,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 	int rr, wtime, argc, i = 0;
 	time_t start;
 	int saved_stdin, saved_stdout, fd;
-
+	int N;
 	struct sigaction so, sa;
 
 	saved_stdin = -1;
@@ -2514,26 +2515,31 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 	sa.sa_flags = SA_NOCLDSTOP;
 	sigaction(SIGCHLD, &sa, &so);
 
-	pids = alloca(nr_resources * sizeof(pid_t));
+	N = nr_volumes[is_drbd_top ? STACKED : NORMAL];
+	pids = alloca(N * sizeof(pid_t));
 	/* alloca can not fail, it can "only" overflow the stack :)
 	 * but it needs to be initialized anyways! */
-	memset(pids, 0, nr_resources * sizeof(pid_t));
+	memset(pids, 0, N * sizeof(pid_t));
 
 	for_each_resource(res, t, config) {
+		struct d_volume *vol;
 		if (res->ignore)
 			continue;
 		if (is_drbd_top != res->stacked)
 			continue;
-		argc = 0;
-		argv[NA(argc)] = drbdsetup;
-		ssprintf(argv[NA(argc)], "%s", res->name);
 
-		argv[NA(argc)] = "wait-connect";
-		opt = res->startup_options;
-		make_options(opt);
-		argv[NA(argc)] = 0;
+		for_each_volume(vol, res->me->volumes) {
+			/* ctx is not used */
+			argc = 0;
+			argv[NA(argc)] = drbdsetup;
+			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
+			argv[NA(argc)] = "wait-connect";
+			opt = res->startup_options;
+			make_options(opt);
+			argv[NA(argc)] = 0;
 
-		m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
+			m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
+		}
 	}
 
 	wtime = global_options.dialog_refresh ? : -1;
@@ -3384,26 +3390,31 @@ void count_resources_or_die(void)
 
 	highest_minor = 0;
 	for_each_resource(res, tmp, config) {
-		if (res->ignore)
+		if (res->ignore) {
+			nr_resources[IGNORED]++;
+			/* How can we count ignored volumes?
+			 * Do we want to? */
 			continue;
+		} else if (res->stacked)
+			nr_resources[STACKED]++;
+		else
+			nr_resources[NORMAL]++;
 
 		for_each_volume(vol, res->me->volumes) {
 			m = vol->device_minor;
 			if (m > highest_minor)
 				highest_minor = m;
-			nr_resources++;
 			if (res->stacked)
-				nr_stacked++;
-			else if (res->ignore)
-				nr_ignore++;
+				nr_volumes[STACKED]++;
+			/* res->ignored won't come here */
 			else
-				nr_normal++;
+				nr_volumes[NORMAL]++;
 		}
 	}
 
 	// Just for the case that minor_of_res() returned 0 for all devices.
-	if (nr_resources > (highest_minor + 1))
-		highest_minor = nr_resources - 1;
+	if (nr_volumes[NORMAL]+nr_volumes[STACKED] > (highest_minor + 1))
+		highest_minor = nr_volumes[NORMAL] + nr_volumes[STACKED] -1;
 
 	if (mc && mc < (highest_minor + 1)) {
 		fprintf(stderr,
@@ -3416,20 +3427,20 @@ void count_resources_or_die(void)
 
 void die_if_no_resources(void)
 {
-	if (!is_drbd_top && nr_ignore > 0 && nr_normal == 0) {
+	if (!is_drbd_top && nr_resources[IGNORED] > 0 && nr_resources[NORMAL] == 0) {
 		fprintf(stderr,
 			"WARN: no normal resources defined for this host (%s)!?\n"
 			"Misspelled name of the local machine with the 'on' keyword ?\n",
 			nodeinfo.nodename);
 		exit(E_usage);
 	}
-	if (!is_drbd_top && nr_normal == 0) {
+	if (!is_drbd_top && nr_resources[NORMAL] == 0) {
 		fprintf(stderr,
 			"WARN: no normal resources defined for this host (%s)!?\n",
 			nodeinfo.nodename);
 		exit(E_usage);
 	}
-	if (is_drbd_top && nr_stacked == 0) {
+	if (is_drbd_top && nr_resources[STACKED] == 0) {
 		fprintf(stderr, "WARN: nothing stacked for this host (%s), "
 			"nothing to do in stacked mode!\n", nodeinfo.nodename);
 		exit(E_usage);
