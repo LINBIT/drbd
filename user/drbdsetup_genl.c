@@ -2046,8 +2046,20 @@ static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
 	state.i = si.current_state;
 	if (state.conn >= C_CONNECTED)
 		return 0;
-	if (!wait_after_sb && state.conn < C_UNCONNECTED)
-		return 0;
+	if (state.conn < C_UNCONNECTED) {
+		struct drbd_genlmsghdr *dhdr = info->userhdr;
+		struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+
+		if (!wait_after_sb)
+			return 0;
+		drbd_cfg_context_from_attrs(&cfg, global_attrs);
+
+		fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
+			       "but I'm configured to wait anways (--wait-after-sb)\n",
+			       dhdr->minor,
+			       cfg.ctx_conn_name, cfg.ctx_volume,
+			       drbd_conn_str(state.conn));
+	}
 
 	return 1;
 }
