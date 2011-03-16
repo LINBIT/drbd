@@ -1723,7 +1723,7 @@ STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_si
 
 	atomic_add(data_size >> 9, &mdev->rs_sect_ev);
 	if (drbd_submit_peer_request(mdev, peer_req, WRITE, DRBD_FAULT_RS_WR) == 0)
-		return true;
+		return 0;
 
 	/* don't care for the reason here */
 	dev_err(DEV, "submit failed, triggering re-connect\n");
@@ -1734,7 +1734,7 @@ STATIC int recv_resync_read(struct drbd_conf *mdev, sector_t sector, int data_si
 	drbd_free_ee(mdev, peer_req);
 fail:
 	put_ldev(mdev);
-	return false;
+	return -EIO;
 }
 
 static struct drbd_request *
@@ -1798,7 +1798,7 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding put_ldev done below on error,
 		 * or in drbd_peer_request_endio. */
-		ok = recv_resync_read(mdev, sector, data_size);
+		ok = !recv_resync_read(mdev, sector, data_size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Can not write resync data to local disk.\n");
