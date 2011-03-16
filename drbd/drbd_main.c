@@ -1449,13 +1449,19 @@ static void drbd_update_congested(struct drbd_tconn *tconn)
  * with page_count == 0 or PageSlab.
  */
 STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
-		   int offset, size_t size, unsigned msg_flags)
+			      int offset, size_t size, unsigned msg_flags)
 {
-	int sent = drbd_send(mdev->tconn, mdev->tconn->data.socket, kmap(page) + offset, size, msg_flags);
+	struct socket *socket;
+	void *addr;
+	int err;
+
+	socket = mdev->tconn->data.socket;
+	addr = kmap(page) + offset;
+	err = drbd_send_all(mdev->tconn, socket, addr, size, msg_flags);
 	kunmap(page);
-	if (sent == size)
-		mdev->send_cnt += size>>9;
-	return sent == size;
+	if (!err)
+		mdev->send_cnt += size >> 9;
+	return err;
 }
 
 STATIC int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
@@ -1472,7 +1478,7 @@ STATIC int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 	 * __page_cache_release a page that would actually still be referenced
 	 * by someone, leading to some obscure delayed Oops somewhere else. */
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
-		return _drbd_no_send_page(mdev, page, offset, size, msg_flags);
+		return !_drbd_no_send_page(mdev, page, offset, size, msg_flags);
 
 	msg_flags |= MSG_NOSIGNAL;
 	drbd_update_congested(mdev->tconn);
@@ -1511,9 +1517,9 @@ static int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 	int i;
 	/* hint all but last page with MSG_MORE */
 	__bio_for_each_segment(bvec, bio, i, 0) {
-		if (!_drbd_no_send_page(mdev, bvec->bv_page,
-				     bvec->bv_offset, bvec->bv_len,
-				     i == bio->bi_vcnt -1 ? 0 : MSG_MORE))
+		if (_drbd_no_send_page(mdev, bvec->bv_page,
+				       bvec->bv_offset, bvec->bv_len,
+				       i == bio->bi_vcnt -1 ? 0 : MSG_MORE))
 			return 0;
 	}
 	return 1;
