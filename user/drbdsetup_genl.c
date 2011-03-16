@@ -2039,7 +2039,8 @@ static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
 		return 1;
 	}
 
-	if (si.sib_reason != SIB_STATE_CHANGE)
+	if (si.sib_reason != SIB_STATE_CHANGE &&
+	    si.sib_reason != SIB_GET_STATUS_REPLY)
 		return 1;
 
 	state.i = si.current_state;
@@ -2064,7 +2065,8 @@ static int w_synced_state(struct genl_info *info __unused, int wait_after_sb)
 		return 1;
 	}
 
-	if (si.sib_reason != SIB_STATE_CHANGE)
+	if (si.sib_reason != SIB_STATE_CHANGE &&
+	    si.sib_reason != SIB_GET_STATUS_REPLY)
 		return 1;
 
 	state.i = si.current_state;
