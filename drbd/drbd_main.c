@@ -74,10 +74,10 @@ static int drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static int drbd_release(struct inode *inode, struct file *file);
 #endif
-STATIC int w_md_sync(struct drbd_work *w, int unused);
+STATIC long w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
-STATIC int w_bitmap_io(struct drbd_work *w, int unused);
-STATIC int w_go_diskless(struct drbd_work *w, int unused);
+STATIC long w_bitmap_io(struct drbd_work *w, int unused);
+STATIC long w_go_diskless(struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -1953,7 +1953,6 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	atomic_set(&mdev->rs_pending_cnt, 0);
 	atomic_set(&mdev->unacked_cnt, 0);
 	atomic_set(&mdev->local_cnt, 0);
-	atomic_set(&mdev->pp_in_use, 0);
 	atomic_set(&mdev->pp_in_use_by_net, 0);
 	atomic_set(&mdev->rs_sect_in, 0);
 	atomic_set(&mdev->rs_sect_ev, 0);
@@ -2994,7 +2993,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
-STATIC int w_bitmap_io(struct drbd_work *w, int unused)
+STATIC long w_bitmap_io(struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = container_of(w, struct bm_io_work, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -3035,7 +3034,7 @@ void drbd_ldev_destroy(struct drbd_conf *mdev)
 	clear_bit(GO_DISKLESS, &mdev->flags);
 }
 
-STATIC int w_go_diskless(struct drbd_work *w, int unused)
+STATIC long w_go_diskless(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 
@@ -3151,7 +3150,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 	drbd_queue_work_front(&mdev->tconn->data.work, &mdev->md_sync_work);
 }
 
-STATIC int w_md_sync(struct drbd_work *w, int unused)
+STATIC long w_md_sync(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 

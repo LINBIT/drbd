@@ -262,7 +262,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-int w_read_retry_remote(struct drbd_work *w, int cancel)
+long w_read_retry_remote(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -331,7 +331,7 @@ void drbd_csum_bio(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
-STATIC int w_e_send_csum(struct drbd_work *w, int cancel)
+STATIC long w_e_send_csum(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -418,7 +418,7 @@ defer:
 	return -EAGAIN;
 }
 
-int w_resync_timer(struct drbd_work *w, int cancel)
+long w_resync_timer(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	switch (mdev->state.conn) {
@@ -540,7 +540,7 @@ STATIC int drbd_rs_number_requests(struct drbd_conf *mdev)
 	return number;
 }
 
-int w_make_resync_request(struct drbd_work *w, int cancel)
+long w_make_resync_request(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	unsigned long bit;
@@ -748,7 +748,7 @@ STATIC int w_make_ov_request(struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int w_ov_finished(struct drbd_work *w, int cancel)
+long w_ov_finished(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	kfree(w);
@@ -758,7 +758,7 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	return 1;
 }
 
-STATIC int w_resync_finished(struct drbd_work *w, int cancel)
+STATIC long w_resync_finished(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	kfree(w);
@@ -947,7 +947,7 @@ static void move_to_net_ee_or_free(struct drbd_conf *mdev, struct drbd_peer_requ
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_e_end_data_req(struct drbd_work *w, int cancel)
+long w_e_end_data_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -984,7 +984,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
+long w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1033,7 +1033,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
+long w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1096,7 +1096,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_e_end_ov_req(struct drbd_work *w, int cancel)
+long w_e_end_ov_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1151,7 +1151,7 @@ void drbd_ov_oos_found(struct drbd_conf *mdev, sector_t sector, int size)
 	drbd_set_out_of_sync(mdev, sector, size);
 }
 
-int w_e_end_ov_reply(struct drbd_work *w, int cancel)
+long w_e_end_ov_reply(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1223,7 +1223,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_prev_work_done(struct drbd_work *w, int cancel)
+long w_prev_work_done(struct drbd_work *w, int cancel)
 {
 	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
 
@@ -1231,7 +1231,7 @@ int w_prev_work_done(struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int w_send_barrier(struct drbd_work *w, int cancel)
+long w_send_barrier(struct drbd_work *w, int cancel)
 {
 	struct drbd_tl_epoch *b = container_of(w, struct drbd_tl_epoch, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1263,7 +1263,7 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_send_write_hint(struct drbd_work *w, int cancel)
+long w_send_write_hint(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	if (cancel)
@@ -1271,7 +1271,7 @@ int w_send_write_hint(struct drbd_work *w, int cancel)
 	return !drbd_send_short_cmd(mdev, P_UNPLUG_REMOTE);
 }
 
-int w_send_oos(struct drbd_work *w, int cancel)
+long w_send_oos(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1294,7 +1294,7 @@ int w_send_oos(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_send_dblock(struct drbd_work *w, int cancel)
+long w_send_dblock(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1317,7 +1317,7 @@ int w_send_dblock(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_send_read_req(struct drbd_work *w, int cancel)
+long w_send_read_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1336,7 +1336,7 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 	return ok;
 }
 
-int w_restart_disk_io(struct drbd_work *w, int cancel)
+long w_restart_disk_io(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -1493,7 +1493,7 @@ void start_resync_timer_fn(unsigned long data)
 	drbd_queue_work(&mdev->tconn->data.work, &mdev->start_resync_work);
 }
 
-int w_start_resync(struct drbd_work *w, int cancel)
+long w_start_resync(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 

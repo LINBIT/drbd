@@ -99,7 +99,7 @@ struct update_al_work {
 };
 
 
-int w_al_write_transaction(struct drbd_work *, int);
+static long w_al_write_transaction(struct drbd_work *, int);
 
 STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
@@ -315,7 +315,7 @@ static unsigned int rs_extent_to_bm_page(unsigned int rs_enr)
 		 (BM_EXT_SHIFT - BM_BLOCK_SHIFT));
 }
 
-int
+static long
 w_al_write_transaction(struct drbd_work *w, int unused)
 {
 	struct update_al_work *aw = container_of(w, struct update_al_work, w);
@@ -705,7 +705,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-STATIC int w_update_odbm(struct drbd_work *w, int unused)
+STATIC long w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_conf *mdev = w->mdev;
