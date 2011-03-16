@@ -1012,7 +1012,7 @@ out_release_sockets:
 	return -1;
 }
 
-static bool decode_header(struct drbd_tconn *tconn, struct p_header *h, struct packet_info *pi)
+static int decode_header(struct drbd_tconn *tconn, struct p_header *h, struct packet_info *pi)
 {
 	u32 vol_n_len;
 
@@ -1030,9 +1030,9 @@ static bool decode_header(struct drbd_tconn *tconn, struct p_header *h, struct p
 		    be32_to_cpu(h->h80.magic),
 		    be16_to_cpu(h->h80.command),
 		    be16_to_cpu(h->h80.length));
-		return false;
+		return -EINVAL;
 	}
-	return true;
+	return 0;
 }
 
 STATIC int drbd_recv_header(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -1047,7 +1047,7 @@ STATIC int drbd_recv_header(struct drbd_tconn *tconn, struct packet_info *pi)
 		return false;
 	}
 
-	r = decode_header(tconn, h, pi);
+	r = !decode_header(tconn, h, pi);
 	tconn->last_received = jiffies;
 
 	return r;
@@ -5094,7 +5094,7 @@ int drbd_asender(struct drbd_thread *thi)
 		}
 
 		if (received == expect && cmd == NULL) {
-			if (!decode_header(tconn, h, &pi))
+			if (decode_header(tconn, h, &pi))
 				goto reconnect;
 			cmd = &asender_tbl[pi.cmd];
 			if (pi.cmd >= ARRAY_SIZE(asender_tbl) || !cmd) {
