@@ -2569,7 +2569,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 						   "wfc-timeout", "0"),
 		     config->name);
 
-		printf(" To abort waiting enter 'yes' [ -- ]:");
+		printf(" To abort waiting enter 'yes' [ -- ]: ");
 		do {
 			printf("\e[s\e[31G[%4d]:\e[u", (int)(time(0) - start));	// Redraw sec.
 			fflush(stdout);
@@ -2583,8 +2583,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 					check_exit_codes(pids);
 					rr = -1;
 				} else {
-					printf
-					    (" To abort waiting enter 'yes' [ -- ]:");
+					printf(" To abort waiting enter 'yes' [ -- ]: ");
 				}
 			}
 		} while (rr != -1);
