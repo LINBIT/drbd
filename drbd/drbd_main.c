@@ -1296,7 +1296,6 @@ void drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
 STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 			  u64 sector, u32 blksize, u64 block_id)
 {
-	int ok;
 	struct p_block_ack p;
 
 	p.sector   = sector;
@@ -1305,9 +1304,8 @@ STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 	p.seq_num  = cpu_to_be32(atomic_inc_return(&mdev->packet_seq));
 
 	if (!mdev->tconn->meta.socket || mdev->state.conn < C_CONNECTED)
-		return false;
-	ok = !drbd_send_cmd(mdev, &mdev->tconn->meta, cmd, &p.head, sizeof(p));
-	return ok;
+		return -EIO;
+	return drbd_send_cmd(mdev, &mdev->tconn->meta, cmd, &p.head, sizeof(p));
 }
 
 /* dp->sector and dp->block_id already/still in network byte order,
@@ -1318,14 +1316,14 @@ int drbd_send_ack_dp(struct drbd_conf *mdev, enum drbd_packet cmd,
 {
 	data_size -= (mdev->tconn->agreed_pro_version >= 87 && mdev->tconn->integrity_r_tfm) ?
 		crypto_hash_digestsize(mdev->tconn->integrity_r_tfm) : 0;
-	return _drbd_send_ack(mdev, cmd, dp->sector, cpu_to_be32(data_size),
-			      dp->block_id);
+	return !_drbd_send_ack(mdev, cmd, dp->sector, cpu_to_be32(data_size),
+			       dp->block_id);
 }
 
 int drbd_send_ack_rp(struct drbd_conf *mdev, enum drbd_packet cmd,
 		     struct p_block_req *rp)
 {
-	return _drbd_send_ack(mdev, cmd, rp->sector, rp->blksize, rp->block_id);
+	return !_drbd_send_ack(mdev, cmd, rp->sector, rp->blksize, rp->block_id);
 }
 
 /**
@@ -1337,10 +1335,10 @@ int drbd_send_ack_rp(struct drbd_conf *mdev, enum drbd_packet cmd,
 int drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 		  struct drbd_peer_request *peer_req)
 {
-	return _drbd_send_ack(mdev, cmd,
-			      cpu_to_be64(peer_req->i.sector),
-			      cpu_to_be32(peer_req->i.size),
-			      peer_req->block_id);
+	return !_drbd_send_ack(mdev, cmd,
+			       cpu_to_be64(peer_req->i.sector),
+			       cpu_to_be32(peer_req->i.size),
+			       peer_req->block_id);
 }
 
 /* This function misuses the block_id field to signal if the blocks
@@ -1348,10 +1346,10 @@ int drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 int drbd_send_ack_ex(struct drbd_conf *mdev, enum drbd_packet cmd,
 		     sector_t sector, int blksize, u64 block_id)
 {
-	return _drbd_send_ack(mdev, cmd,
-			      cpu_to_be64(sector),
-			      cpu_to_be32(blksize),
-			      cpu_to_be64(block_id));
+	return !_drbd_send_ack(mdev, cmd,
+			       cpu_to_be64(sector),
+			       cpu_to_be32(blksize),
+			       cpu_to_be64(block_id));
 }
 
 int drbd_send_drequest(struct drbd_conf *mdev, int cmd,
