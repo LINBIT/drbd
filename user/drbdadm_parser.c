@@ -1016,7 +1016,6 @@ void inherit_volumes(struct d_volume *from, struct d_host_info *host)
 			t->meta_disk = strdup(s->meta_disk);
 			if (s->meta_index)
 				t->meta_index = strdup(s->meta_index);
-			check_meta_disk(t, host);
 		}
 	}
 }
@@ -1029,6 +1028,8 @@ void check_volume_complete(struct d_resource *res, struct d_host_info *host, str
 		derror(host, res, "disk");
 	if (!vol->meta_disk)
 		derror(host, res, "meta-disk");
+	if (!vol->meta_index)
+		derror(host, res, "meta-index");
 }
 
 void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
@@ -1083,6 +1084,7 @@ static void parse_host_section(struct d_resource *res,
 			       enum parse_host_section_flags flags)
 {
 	struct d_host_info *host;
+	struct d_volume *vol;
 	struct d_name *h;
 	int in_braces = 1;
 
@@ -1171,11 +1173,8 @@ static void parse_host_section(struct d_resource *res,
 			in_braces = 0;
 			break;
 		vol0stmt:
-			if (parse_volume_stmt(volume0(&host->volumes), token)) {
-				if (token == TK_META_DISK || token == TK_FLEX_META_DISK)
-					check_meta_disk(volume0(&host->volumes), host);
+			if (parse_volume_stmt(volume0(&host->volumes), token))
 				break;
-			}
 			/* else fall through */
 		default:
 			pe_expected("disk | device | address | meta-disk "
@@ -1184,6 +1183,8 @@ static void parse_host_section(struct d_resource *res,
 	}
 
 	inherit_volumes(res->volumes, host);
+	for_each_volume(vol, host->volumes)
+		check_meta_disk(vol, host);
 
 	if (!(flags & REQUIRE_ALL))
 		return;
