@@ -1450,7 +1450,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packet cmd,
 	case WO_bio_barrier:
 	case WO_none:
 		if (rv == FE_RECYCLED)
-			return true;
+			return 0;
 		break;
 
 	case WO_bdev_flush:
@@ -1461,7 +1461,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packet cmd,
 			rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
 		}
 		if (rv == FE_RECYCLED)
-			return true;
+			return 0;
 
 		/* The asender will send all the ACKs and barrier ACKs out, since
 		   all EEs moved from the active_ee to the done_ee. We need to
@@ -1479,12 +1479,12 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packet cmd,
 		if (issue_flush) {
 			rv = drbd_flush_after_epoch(mdev, mdev->current_epoch);
 			if (rv == FE_RECYCLED)
-				return true;
+				return 0;
 		}
 
 		drbd_wait_ee_list_empty(mdev, &mdev->done_ee);
 
-		return true;
+		return 0;
 	}
 
 	epoch->flags = 0;
@@ -1502,7 +1502,7 @@ STATIC int receive_Barrier(struct drbd_conf *mdev, enum drbd_packet cmd,
 	}
 	spin_unlock(&mdev->epoch_lock);
 
-	return true;
+	return 0;
 }
 
 /* used from receive_RSDataReply (recv_resync_read)
@@ -1771,7 +1771,7 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 {
 	struct drbd_request *req;
 	sector_t sector;
-	int ok;
+	int err;
 	struct p_data *p = &mdev->tconn->data.rbuf.data;
 
 	sector = be64_to_cpu(p->sector);
@@ -1780,27 +1780,26 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 	req = find_request(mdev, &mdev->read_requests, p->block_id, sector, false, __func__);
 	spin_unlock_irq(&mdev->tconn->req_lock);
 	if (unlikely(!req))
-		return false;
+		return -EIO;
 
 	/* hlist_del(&req->colision) is done in _req_may_be_done, to avoid
 	 * special casing it there for the various failure cases.
 	 * still no race with drbd_fail_pending_reads */
-	ok = !recv_dless_read(mdev, req, sector, data_size);
-
-	if (ok)
+	err = recv_dless_read(mdev, req, sector, data_size);
+	if (!err)
 		req_mod(req, DATA_RECEIVED);
 	/* else: nothing. handled from drbd_disconnect...
 	 * I don't think we may complete this just yet
 	 * in case we are "on-disconnect: freeze" */
 
-	return ok;
+	return err;
 }
 
 STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 			       unsigned int data_size)
 {
 	sector_t sector;
-	int ok;
+	int err;
 	struct p_data *p = &mdev->tconn->data.rbuf.data;
 
 	sector = be64_to_cpu(p->sector);
@@ -1810,19 +1809,19 @@ STATIC int receive_RSDataReply(struct drbd_conf *mdev, enum drbd_packet cmd,
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding put_ldev done below on error,
 		 * or in drbd_peer_request_endio. */
-		ok = !recv_resync_read(mdev, sector, data_size);
+		err = recv_resync_read(mdev, sector, data_size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			dev_err(DEV, "Can not write resync data to local disk.\n");
 
-		ok = !drbd_drain_block(mdev, data_size);
+		err = drbd_drain_block(mdev, data_size);
 
 		drbd_send_ack_dp(mdev, P_NEG_ACK, p, data_size);
 	}
 
 	atomic_add(data_size >> 9, &mdev->rs_sect_in);
 
-	return ok;
+	return err;
 }
 
 static int w_restart_write(struct drbd_work *w, int cancel)
@@ -2208,12 +2207,16 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 	u32 dp_flags;
 	int err;
 
-
 	if (!get_ldev(mdev)) {
+		int err2;
+
 		err = wait_for_and_update_peer_seq(mdev, peer_seq);
 		drbd_send_ack_dp(mdev, P_NEG_ACK, p, data_size);
 		atomic_inc(&mdev->current_epoch->epoch_size);
-		return !drbd_drain_block(mdev, data_size) && err == 0;
+		err2 = drbd_drain_block(mdev, data_size);
+		if (!err)
+			err = err2;
+		return err;
 	}
 
 	/*
@@ -2226,7 +2229,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 	peer_req = read_in_block(mdev, p->block_id, sector, data_size);
 	if (!peer_req) {
 		put_ldev(mdev);
-		return false;
+		return -EIO;
 	}
 
 	peer_req->w.cb = e_end_block;
@@ -2285,7 +2288,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 			spin_unlock_irq(&mdev->tconn->req_lock);
 			if (err == -ENOENT) {
 				put_ldev(mdev);
-				return true;
+				return 0;
 			}
 			goto out_interrupted;
 		}
@@ -2318,8 +2321,9 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packet cmd,
 		drbd_al_begin_io(mdev, peer_req->i.sector);
 	}
 
-	if (drbd_submit_peer_request(mdev, peer_req, rw, DRBD_FAULT_DT_WR) == 0)
-		return true;
+	err = drbd_submit_peer_request(mdev, peer_req, rw, DRBD_FAULT_DT_WR);
+	if (!err)
+		return 0;
 
 	/* don't care for the reason here */
 	dev_err(DEV, "submit failed, triggering re-connect\n");
@@ -2334,7 +2338,7 @@ out_interrupted:
 	drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(mdev);
 	drbd_free_ee(mdev, peer_req);
-	return false;
+	return err;
 }
 
 /* We may throttle resync, if the lower device seems to be busy,
@@ -2419,12 +2423,12 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
 		dev_err(DEV, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
-		return false;
+		return -EINVAL;
 	}
 	if (sector + (size>>9) > capacity) {
 		dev_err(DEV, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
-		return false;
+		return -EINVAL;
 	}
 
 	if (!get_ldev_if_state(mdev, D_UP_TO_DATE)) {
@@ -2452,7 +2456,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packet cmd,
 			    "no local data.\n");
 
 		/* drain possibly payload */
-		return !drbd_drain_block(mdev, digest_size);
+		return drbd_drain_block(mdev, digest_size);
 	}
 
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
@@ -2461,7 +2465,7 @@ STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packet cmd,
 	peer_req = drbd_alloc_ee(mdev, p->block_id, sector, size, GFP_NOIO);
 	if (!peer_req) {
 		put_ldev(mdev);
-		return false;
+		return -ENOMEM;
 	}
 
 	switch (cmd) {
@@ -2574,7 +2578,7 @@ submit:
 	spin_unlock_irq(&mdev->tconn->req_lock);
 
 	if (drbd_submit_peer_request(mdev, peer_req, READ, fault_type) == 0)
-		return true;
+		return 0;
 
 	/* don't care for the reason here */
 	dev_err(DEV, "submit failed, triggering re-connect\n");
@@ -2586,7 +2590,7 @@ submit:
 out_free_e:
 	put_ldev(mdev);
 	drbd_free_ee(mdev, peer_req);
-	return false;
+	return -EIO;
 }
 
 STATIC int drbd_asb_recover_0p(struct drbd_conf *mdev) __must_hold(local)
@@ -3181,9 +3185,11 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, enum drbd_packet cmd,
 
 	if (tconn->agreed_pro_version >= 87) {
 		unsigned char *my_alg = tconn->net_conf->integrity_alg;
+		int err;
 
-		if (drbd_recv(tconn, p_integrity_alg, data_size) != data_size)
-			return false;
+		err = drbd_recv_all(tconn, p_integrity_alg, data_size);
+		if (err)
+			return err;
 
 		p_integrity_alg[SHARED_SECRET_MAX-1] = 0;
 		if (strcmp(p_integrity_alg, my_alg)) {
@@ -3194,11 +3200,11 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, enum drbd_packet cmd,
 		     my_alg[0] ? my_alg : (unsigned char *)"<not-used>");
 	}
 
-	return true;
+	return 0;
 
 disconnect:
 	conn_request_state(tconn, NS(conn, C_DISCONNECTING), CS_HARD);
-	return false;
+	return -EIO;
 }
 
 /* helper function
@@ -3231,7 +3237,6 @@ struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_conf *mdev,
 STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 			     unsigned int packet_size)
 {
-	int ok = true;
 	struct p_rs_param_95 *p = &mdev->tconn->data.rbuf.rs_param_95;
 	unsigned int header_size, data_size, exp_max_sz;
 	struct crypto_hash *verify_tfm = NULL;
@@ -3239,6 +3244,7 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 	const int apv = mdev->tconn->agreed_pro_version;
 	int *rs_plan_s = NULL;
 	int fifo_size = 0;
+	int err;
 
 	exp_max_sz  = apv <= 87 ? sizeof(struct p_rs_param)
 		    : apv == 88 ? sizeof(struct p_rs_param)
@@ -3249,7 +3255,7 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (packet_size > exp_max_sz) {
 		dev_err(DEV, "SyncParam packet too long: received %u, expected <= %u bytes\n",
 		    packet_size, exp_max_sz);
-		return false;
+		return -EIO;
 	}
 
 	if (apv <= 88) {
@@ -3268,8 +3274,9 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 	/* initialize verify_alg and csums_alg */
 	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
 
-	if (drbd_recv(mdev->tconn, &p->head.payload, header_size) != header_size)
-		return false;
+	err = drbd_recv_all(mdev->tconn, &p->head.payload, header_size);
+	if (err)
+		return err;
 
 	mdev->ldev->dc.resync_rate = be32_to_cpu(p->rate);
 
@@ -3279,11 +3286,12 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 				dev_err(DEV, "verify-alg too long, "
 				    "peer wants %u, accepting only %u byte\n",
 						data_size, SHARED_SECRET_MAX);
-				return false;
+				return -EIO;
 			}
 
-			if (drbd_recv(mdev->tconn, p->verify_alg, data_size) != data_size)
-				return false;
+			err = drbd_recv_all(mdev->tconn, p->verify_alg, data_size);
+			if (err)
+				return err;
 
 			/* we expect NUL terminated string */
 			/* but just in case someone tries to be evil */
@@ -3368,8 +3376,8 @@ STATIC int receive_SyncParam(struct drbd_conf *mdev, enum drbd_packet cmd,
 		}
 		spin_unlock(&mdev->peer_seq_lock);
 	}
+	return 0;
 
-	return ok;
 disconnect:
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
@@ -3377,7 +3385,7 @@ disconnect:
 	/* but free the verify_tfm again, if csums_tfm did not work out */
 	crypto_free_hash(verify_tfm);
 	conn_request_state(mdev->tconn, NS(conn, C_DISCONNECTING), CS_HARD);
-	return false;
+	return -EIO;
 }
 
 STATIC void drbd_setup_order_type(struct drbd_conf *mdev, int peer)
@@ -3446,7 +3454,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packet cmd,
 			conn_request_state(mdev->tconn, NS(conn, C_DISCONNECTING), CS_HARD);
 			mdev->ldev->dc.disk_size = my_usize;
 			put_ldev(mdev);
-			return false;
+			return -EIO;
 		}
 		put_ldev(mdev);
 	}
@@ -3456,7 +3464,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packet cmd,
 		dd = drbd_determin_dev_size(mdev, ddsf);
 		put_ldev(mdev);
 		if (dd == dev_size_error)
-			return false;
+			return -EIO;
 		drbd_md_sync(mdev);
 	} else {
 		/* I am diskless, need to accept the peer's size. */
@@ -3497,7 +3505,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packet cmd,
 		}
 	}
 
-	return true;
+	return 0;
 }
 
 STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packet cmd,
@@ -3522,7 +3530,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packet cmd,
 		dev_err(DEV, "Can only connect to data with current UUID=%016llX\n",
 		    (unsigned long long)mdev->ed_uuid);
 		conn_request_state(mdev->tconn, NS(conn, C_DISCONNECTING), CS_HARD);
-		return false;
+		return -EIO;
 	}
 
 	if (get_ldev(mdev)) {
@@ -3563,7 +3571,7 @@ STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (updated_uuids)
 		drbd_print_uuids(mdev, "receiver updated UUIDs to");
 
-	return true;
+	return 0;
 }
 
 /**
@@ -3609,7 +3617,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (test_bit(DISCARD_CONCURRENT, &mdev->tconn->flags) &&
 	    mutex_is_locked(mdev->state_mutex)) {
 		drbd_send_sr_reply(mdev, SS_CONCURRENT_ST_CHG);
-		return true;
+		return 0;
 	}
 
 	mask = convert_state(mask);
@@ -3620,7 +3628,7 @@ STATIC int receive_req_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 	drbd_md_sync(mdev);
 
-	return true;
+	return 0;
 }
 
 STATIC int receive_req_conn_state(struct drbd_tconn *tconn, enum drbd_packet cmd,
@@ -3636,7 +3644,7 @@ STATIC int receive_req_conn_state(struct drbd_tconn *tconn, enum drbd_packet cmd
 	if (test_bit(DISCARD_CONCURRENT, &tconn->flags) &&
 	    mutex_is_locked(&tconn->cstate_mutex)) {
 		conn_send_sr_reply(tconn, SS_CONCURRENT_ST_CHG);
-		return true;
+		return 0;
 	}
 
 	mask = convert_state(mask);
@@ -3645,7 +3653,7 @@ STATIC int receive_req_conn_state(struct drbd_tconn *tconn, enum drbd_packet cmd
 	rv = conn_request_state(tconn, mask, val, CS_VERBOSE | CS_LOCAL_ONLY);
 	conn_send_sr_reply(tconn, rv);
 
-	return true;
+	return 0;
 }
 
 STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
@@ -3691,7 +3699,7 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 			 peer_state.conn == C_CONNECTED) {
 			if (drbd_bm_total_weight(mdev) <= mdev->rs_failed)
 				drbd_resync_finished(mdev);
-			return true;
+			return 0;
 		}
 	}
 
@@ -3744,10 +3752,10 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 				real_peer_disk = D_DISKLESS;
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &mdev->tconn->flags))
-					return false;
+					return -EIO;
 				D_ASSERT(os.conn == C_WF_REPORT_PARAMS);
 				conn_request_state(mdev->tconn, NS(conn, C_DISCONNECTING), CS_HARD);
-				return false;
+				return -EIO;
 			}
 		}
 	}
@@ -3772,7 +3780,7 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 		drbd_uuid_new_current(mdev);
 		clear_bit(NEW_CUR_UUID, &mdev->flags);
 		conn_request_state(mdev->tconn, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
-		return false;
+		return -EIO;
 	}
 	rv = _drbd_set_state(mdev, ns, cs_flags, NULL);
 	ns.i = mdev->state.i;
@@ -3780,7 +3788,7 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 	if (rv < SS_SUCCESS) {
 		conn_request_state(mdev->tconn, NS(conn, C_DISCONNECTING), CS_HARD);
-		return false;
+		return -EIO;
 	}
 
 	if (os.conn > C_WF_REPORT_PARAMS) {
@@ -3798,7 +3806,7 @@ STATIC int receive_state(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 	drbd_md_sync(mdev); /* update connected indicator, la_size, ... */
 
-	return true;
+	return 0;
 }
 
 STATIC int receive_sync_uuid(struct drbd_conf *mdev, enum drbd_packet cmd,
@@ -3827,7 +3835,7 @@ STATIC int receive_sync_uuid(struct drbd_conf *mdev, enum drbd_packet cmd,
 	} else
 		dev_err(DEV, "Ignoring SyncUUID packet!\n");
 
-	return true;
+	return 0;
 }
 
 /**
@@ -3850,12 +3858,9 @@ receive_bitmap_plain(struct drbd_conf *mdev, unsigned int data_size,
 	}
 	if (want == 0)
 		return 0;
-	err = drbd_recv(mdev->tconn, buffer, want);
-	if (err != want) {
-		if (err >= 0)
-			err = -EIO;
+	err = drbd_recv_all(mdev->tconn, buffer, want);
+	if (err)
 		return err;
-	}
 
 	drbd_bm_merge_lel(mdev, c->word_offset, num_words, buffer);
 
@@ -4004,7 +4009,6 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 	struct bm_xfer_ctx c;
 	void *buffer;
 	int err;
-	int ok = false;
 	struct p_header *h = &mdev->tconn->data.rbuf.header;
 	struct packet_info pi;
 
@@ -4017,6 +4021,7 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 	buffer	 = (unsigned long *) __get_free_page(GFP_NOIO);
 	if (!buffer) {
 		dev_err(DEV, "failed to allocate one page buffer in %s\n", __func__);
+		err = -ENOMEM;
 		goto out;
 	}
 
@@ -4035,20 +4040,24 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 			if (data_size > BM_PACKET_PAYLOAD_BYTES) {
 				dev_err(DEV, "ReportCBitmap packet too large\n");
+				err = -EIO;
 				goto out;
 			}
 			/* use the page buff */
 			p = buffer;
 			memcpy(p, h, sizeof(*h));
-			if (drbd_recv(mdev->tconn, p->head.payload, data_size) != data_size)
-				goto out;
+			err = drbd_recv_all(mdev->tconn, p->head.payload, data_size);
+			if (err)
+			       goto out;
 			if (data_size <= (sizeof(*p) - sizeof(p->head))) {
 				dev_err(DEV, "ReportCBitmap packet too small (l:%u)\n", data_size);
+				err = -EIO;
 				goto out;
 			}
 			err = decode_bitmap_c(mdev, p, &c, data_size);
 		} else {
 			dev_warn(DEV, "receive_bitmap: cmd neither ReportBitMap nor ReportCBitMap (is 0x%x)", cmd);
+			err = -EIO;
 			goto out;
 		}
 
@@ -4060,7 +4069,8 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 				goto out;
 			break;
 		}
-		if (drbd_recv_header(mdev->tconn, &pi))
+		err = drbd_recv_header(mdev->tconn, &pi);
+		if (err)
 			goto out;
 		cmd = pi.cmd;
 		data_size = pi.size;
@@ -4071,8 +4081,8 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 	if (mdev->state.conn == C_WF_BITMAP_T) {
 		enum drbd_state_rv rv;
 
-		ok = !drbd_send_bitmap(mdev);
-		if (!ok)
+		err = drbd_send_bitmap(mdev);
+		if (err)
 			goto out;
 		/* Omit CS_ORDERED with this state transition to avoid deadlocks. */
 		rv = _drbd_request_state(mdev, NS(conn, C_WF_SYNC_UUID), CS_VERBOSE);
@@ -4083,14 +4093,14 @@ STATIC int receive_bitmap(struct drbd_conf *mdev, enum drbd_packet cmd,
 		dev_info(DEV, "unexpected cstate (%s) in receive_bitmap\n",
 		    drbd_conn_str(mdev->state.conn));
 	}
+	err = 0;
 
-	ok = true;
  out:
 	drbd_bm_unlock(mdev);
-	if (ok && mdev->state.conn == C_WF_BITMAP_S)
+	if (!err && mdev->state.conn == C_WF_BITMAP_S)
 		drbd_start_resync(mdev, C_SYNC_SOURCE);
 	free_page((unsigned long) buffer);
-	return ok;
+	return err;
 }
 
 STATIC int _tconn_receive_skip(struct drbd_tconn *tconn, unsigned int data_size)
@@ -4107,7 +4117,7 @@ STATIC int _tconn_receive_skip(struct drbd_tconn *tconn, unsigned int data_size)
 			break;
 		size -= r;
 	}
-	return size == 0;
+	return size ? -EIO : 0;
 }
 
 STATIC int receive_skip(struct drbd_conf *mdev, enum drbd_packet cmd,
@@ -4137,7 +4147,7 @@ STATIC int receive_UnplugRemote(struct drbd_conf *mdev, enum drbd_packet cmd,
 	 * with the data requests being unplugged */
 	drbd_tcp_quickack(mdev->tconn->data.socket);
 
-	return true;
+	return 0;
 }
 
 STATIC int receive_out_of_sync(struct drbd_conf *mdev, enum drbd_packet cmd,
@@ -4157,7 +4167,7 @@ STATIC int receive_out_of_sync(struct drbd_conf *mdev, enum drbd_packet cmd,
 
 	drbd_set_out_of_sync(mdev, be64_to_cpu(p->sector), be32_to_cpu(p->blksize));
 
-	return true;
+	return 0;
 }
 
 struct data_cmd {
@@ -4210,7 +4220,7 @@ STATIC void drbdd(struct drbd_tconn *tconn)
 	struct p_header *header = &tconn->data.rbuf.header;
 	struct packet_info pi;
 	size_t shs; /* sub header size */
-	int rv;
+	int err;
 
 	while (get_t_state(&tconn->receiver) == RUNNING) {
 		drbd_thread_current_set_cpu(&tconn->receiver);
@@ -4230,34 +4240,33 @@ STATIC void drbdd(struct drbd_tconn *tconn)
 		}
 
 		if (shs) {
-			rv = drbd_recv(tconn, &header->payload, shs);
-			if (unlikely(rv != shs)) {
+			err = drbd_recv_all(tconn, &header->payload, shs);
+			if (err) {
 				if (!signal_pending(current))
-					conn_warn(tconn, "short read while reading sub header: rv=%d\n", rv);
+					conn_warn(tconn, "short read while reading sub header: rv=%d\n", err);
 				goto err_out;
 			}
 		}
 
 		if (drbd_cmd_handler[pi.cmd].fa_type == CONN) {
-			rv = drbd_cmd_handler[pi.cmd].conn_fn(tconn, pi.cmd, pi.size - shs);
+			err = drbd_cmd_handler[pi.cmd].conn_fn(tconn, pi.cmd, pi.size - shs);
 		} else {
 			struct drbd_conf *mdev = vnr_to_mdev(tconn, pi.vnr);
-			rv = mdev ?
+			err = mdev ?
 				drbd_cmd_handler[pi.cmd].mdev_fn(mdev, pi.cmd, pi.size - shs) :
 				tconn_receive_skip(tconn, pi.cmd, pi.size - shs);
 		}
 
-		if (unlikely(!rv)) {
+		if (unlikely(err)) {
 			conn_err(tconn, "error receiving %s, l: %d!\n",
 			    cmdname(pi.cmd), pi.size);
 			goto err_out;
 		}
 	}
+	return;
 
-	if (0) {
-	err_out:
-		conn_request_state(tconn, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
-	}
+    err_out:
+	conn_request_state(tconn, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
 void conn_flush_workqueue(struct drbd_tconn *tconn)
