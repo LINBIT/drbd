@@ -1685,6 +1685,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
 	struct d_name *host_names;
+	char *opt_name;
 	int token;
 
 	check_upr_init();
@@ -1699,10 +1700,13 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		token = yylex();
 		fline = line;
 		switch(token) {
-		case TK_PROTOCOL:
+		case TK_NET_OPTION:
+			if (strcmp(yylval.txt, "protocol"))
+				goto goto_default;
 			check_upr("protocol statement","%s: protocol",res->name);
+			opt_name = yylval.txt;
 			EXP(TK_STRING);
-			res->protocol=yylval.txt;
+			res->net_options = APPEND(res->net_options, new_opt(opt_name, yylval.txt));
 			EXP(';');
 			break;
 		case TK_ON:
@@ -1806,6 +1810,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case 0:
 			goto exit_loop;
 		default:
+		goto_default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
 					" startup | handlers |"
 					" ignore-on | stacked-on-top-of",token);

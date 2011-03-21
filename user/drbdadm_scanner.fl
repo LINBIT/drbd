@@ -75,7 +75,6 @@ address			{ DP; return TK_ADDRESS;		}
 startup			{ DP; return TK_STARTUP;		}
 include			{ DP; return TK_INCLUDE;		}
 handlers		{ DP; return TK_HANDLER;		}
-protocol		{ DP; return TK_PROTOCOL;		}
 minor-count		{ DP; return TK_MINOR_COUNT;		}
 disable-ip-verification { DP; return TK_DISABLE_IP_VERIFICATION;}
 dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
@@ -101,6 +100,7 @@ no-disk-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
 no-disk-drain		{ DP; CP; return TK_DISK_SWITCH;		}
 no-md-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
+protocol		{ DP; CP; return TK_NET_OPTION;			}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}
 max-buffers		{ DP; CP; RC(MAX_BUFFERS); return TK_NET_OPTION;}

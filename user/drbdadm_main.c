@@ -2914,17 +2914,6 @@ void validate_resource(struct d_resource *res)
 	struct d_option *opt, *next;
 	struct d_name *bpo;
 
-	if (!res->protocol) {
-		if (!common || !common->protocol) {
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n\tprotocol definition missing.\n",
-				res->config_file, res->start_line, res->name);
-			config_valid = 0;
-		}		/* else:
-				 * may not have been expanded yet for "dump" subcommand */
-	} else {
-		res->protocol[0] = toupper(res->protocol[0]);
-	}
 	/* there may be more than one "resync-after" statement,
 	 * see commit 89cd0585 */
 	opt = res->disk_options;
