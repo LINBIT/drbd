@@ -96,6 +96,7 @@ struct d_volume
   int meta_minor;
   struct d_volume *next;
   unsigned int implicit :1 ; /* Do not dump an explicit volume section */
+  struct d_option* disk_options; /* Additional per volume options */
 };
 
 struct d_host_info

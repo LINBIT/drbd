@@ -790,6 +790,8 @@ static void dump_volume(int has_lower, struct d_volume *vol)
 		++indent;
 	}
 
+	dump_options("disk", vol->disk_options);
+
 	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
 	if (vol->device)
 		printf("%s ", esc(vol->device));
@@ -944,6 +946,7 @@ static void dump_volume_xml(struct d_volume *vol)
 	printI("<volume vnr=\"%d\">\n", vol->vnr);
 	++indent;
 
+	dump_options_xml("disk", vol->disk_options);
 	printI("<device minor=\"%d\">%s</device>\n", vol->device_minor,
 	       esc_xml(vol->device));
 	printI("<disk>%s</disk>\n", esc_xml(vol->disk));
@@ -1552,8 +1555,9 @@ int adm_attach(struct cfg_ctx *ctx)
 	}
 	argv[NA(argc)] = vol->meta_index;
 	argv[NA(argc)] = "--set-defaults";
-	/* FIXME per volume disk options? */
 	opt = ctx->res->disk_options;
+	make_options(opt);
+	opt = ctx->vol->disk_options;
 	make_options(opt);
 	argv[NA(argc)] = 0;
 

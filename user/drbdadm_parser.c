@@ -1000,9 +1000,20 @@ int parse_volume_stmt(struct d_volume *vol, int token)
 {
 	switch (token) {
 	case TK_DISK:
-		EXP(TK_STRING);
-		vol->disk = yylval.txt;
-		EXP(';');
+		token = yylex();
+		switch (token) {
+		case TK_STRING:
+			vol->disk = yylval.txt;
+			EXP(';');
+			break;
+		case '{':
+			vol->disk_options = parse_options(TK_DISK_SWITCH,
+							  TK_DISK_OPTION);
+			break;
+		default:
+			check_string_error(token);
+			pe_expected_got( "TK_STRING | {", token);
+		}
 		break;
 	case TK_DEVICE:
 		parse_device(NULL, vol);
