@@ -415,7 +415,7 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	char* argv[20];
 	int pid,argc, i;
 	struct d_resource* running;
-	int do_attach=0,do_connect=0,do_syncer=0;
+	int do_attach=0,do_connect=0;
 	int have_disk=0,have_net=0,can_do_proxy=1;
 	char config_file_dummy[250], *conn_name, show_conn[128];
 
@@ -489,22 +489,11 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 		do_connect |= proxy_reconf(res,running);
 	have_net = (running->protocol != NULL);
 
-	do_syncer = !opts_equal(res->sync_options, running->sync_options);
-
-	/* Special case: nothing changed, but the resource name.
-	 * Trigger a no-op syncer request, which will cause a KOBJ_CHANGE
-	 * to be broadcast, so udev may pick up the resource name change
-	 * and update its symlinks. */
-	if (!(do_attach || do_syncer || do_connect))
-		do_syncer = need_trigger_kobj_change(running);
-
 	if(do_attach) {
 		if (have_disk)
 			schedule_dcmd(adm_generic_s, res, NULL, "detach", CFG_DISK);
 		schedule_dcmd(adm_attach, res, NULL, "attach", CFG_DISK);
 	}
-	if (do_syncer)
-		schedule_dcmd(adm_syncer, res, NULL, "syncer", CFG_SETTINGS);
 	if (do_connect) {
 		if (have_net && res->peer)
 			schedule_dcmd(adm_generic_s, res, NULL, "disconnect", CFG_NET_PREREQ);

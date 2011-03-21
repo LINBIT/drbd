@@ -322,7 +322,6 @@ struct adm_cmd cmds[] = {
 	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
 	{"outdate", adm_outdate, DRBD_acf1_default},
 	{"resize", adm_resize, DRBD_acf1_defnet},
-	{"syncer", adm_syncer, DRBD_acf1_defnet},
 	{"verify", adm_generic_s, DRBD_acf1_defnet},
 	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
@@ -756,7 +755,6 @@ static void dump_common_info()
 	fake_startup_options(common);
 	dump_options("net", common->net_options);
 	dump_options("disk", common->disk_options);
-	dump_options("syncer", common->sync_options);
 	dump_options("startup", common->startup_options);
 	dump_options2("proxy", common->proxy_options,
 			dump_proxy_plugins, common->proxy_plugins);
@@ -919,7 +917,6 @@ static void dump_common_info_xml()
 	fake_startup_options(common);
 	dump_options_xml("net", common->net_options);
 	dump_options_xml("disk", common->disk_options);
-	dump_options_xml("syncer", common->sync_options);
 	dump_options_xml("startup", common->startup_options);
 	dump_options2("proxy", common->proxy_options,
 			dump_proxy_plugins, common->proxy_plugins);
@@ -1027,7 +1024,6 @@ static int adm_dump(struct cfg_ctx *ctx)
 	fake_startup_options(res);
 	dump_options("net", res->net_options);
 	dump_options("disk", res->disk_options);
-	dump_options("syncer", res->sync_options);
 	dump_options("startup", res->startup_options);
 	dump_options2("proxy", res->proxy_options,
 			dump_proxy_plugins, res->proxy_plugins);
@@ -1054,7 +1050,6 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	fake_startup_options(res);
 	dump_options_xml("net", res->net_options);
 	dump_options_xml("disk", res->disk_options);
-	dump_options_xml("syncer", res->sync_options);
 	dump_options_xml("startup", res->startup_options);
 	dump_options_xml2("proxy", res->proxy_options,
 			dump_proxy_plugins_xml, res->proxy_plugins);
@@ -1268,7 +1263,6 @@ static void free_config(struct d_resource *res)
 			free_host_info(host);
 		free_options(f->net_options);
 		free_options(f->disk_options);
-		free_options(f->sync_options);
 		free_options(f->startup_options);
 		free_options(f->proxy_options);
 		free_options(f->handlers);
@@ -1277,7 +1271,6 @@ static void free_config(struct d_resource *res)
 	if (common) {
 		free_options(common->net_options);
 		free_options(common->disk_options);
-		free_options(common->sync_options);
 		free_options(common->startup_options);
 		free_options(common->proxy_options);
 		free_options(common->handlers);
@@ -1322,7 +1315,6 @@ static void expand_common(void)
 	for_each_resource(res, tmp, config) {
 		expand_opts(common->net_options, &res->net_options);
 		expand_opts(common->disk_options, &res->disk_options);
-		expand_opts(common->sync_options, &res->sync_options);
 		expand_opts(common->startup_options, &res->startup_options);
 		expand_opts(common->proxy_options, &res->proxy_options);
 		expand_opts(common->handlers, &res->handlers);
@@ -2046,12 +2038,12 @@ void convert_after_option(struct d_resource *res)
 	if (res == NULL)
 		return;
 
-	opt = res->sync_options;
-	while ((opt = find_opt(opt, "after"))) {
+	opt = res->disk_options;
+	while ((opt = find_opt(opt, "resync-after"))) {
 		next = opt->next;
 		depends_on_res = res_by_name(opt->value);
 		if (!depends_on_res || depends_on_res->ignore) {
-			res->sync_options = del_opt(res->sync_options, opt);
+			res->disk_options = del_opt(res->disk_options, opt);
 		} else {
 			free(opt->value);
 			m_asprintf(&opt->value, "%d", depends_on_res->me->volumes->device_minor);
@@ -2221,32 +2213,6 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
 	return check_proxy(ctx, 0);
 }
 
-int adm_syncer(struct cfg_ctx *ctx)
-{
-	struct d_volume *vol = ctx->vol;
-	struct d_resource *res = ctx->res;
-	char *argv[MAX_ARGS];
-	struct d_option *opt;
-	int i, argc = 0;
-
-	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
-	argv[NA(argc)] = "syncer";
-
-	argv[NA(argc)] = "--set-defaults";
-	/* FIXME per volume syncer settings? */
-	opt = res->sync_options;
-	make_options(opt);
-
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
-	}
-
-	argv[NA(argc)] = 0;
-
-	return m_system_ex(argv, SLEEPS_SHORT, res->name);
-}
-
 /* The "main" loop iterates over resources.
  * This "sorts" the drbdsetup commands to bring those up
  * so we will later first create all objects,
@@ -2263,7 +2229,6 @@ static int adm_up(struct cfg_ctx *ctx)
 	} else {
 		schedule_dcmd(adm_new_minor, res, vol, "new-minor", CFG_PREREQ);
 		schedule_dcmd(adm_attach, res, vol, "attach", CFG_DISK);
-		schedule_dcmd(adm_syncer, res, vol, "syncer", CFG_SETTINGS);
 	}
 	return 0;
 }
@@ -2960,15 +2925,15 @@ void validate_resource(struct d_resource *res)
 	} else {
 		res->protocol[0] = toupper(res->protocol[0]);
 	}
-	/* there may be more than one "after" statement,
+	/* there may be more than one "resync-after" statement,
 	 * see commit 89cd0585 */
-	opt = res->sync_options;
-	while ((opt = find_opt(opt, "after"))) {
+	opt = res->disk_options;
+	while ((opt = find_opt(opt, "resync-after"))) {
 		next = opt->next;
 		if (res_by_name(opt->value) == NULL) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
-				"'after' option is not known.\n",
+				"'resync-after' option is not known.\n",
 				res->config_file, res->start_line, res->name,
 				opt->value);
 			/* Non-fatal if run from some script.
@@ -2978,7 +2943,7 @@ void validate_resource(struct d_resource *res)
 			 * every pacemaker-induced action, as it would
 			 * ultimately lead to all nodes committing suicide. */
 			if (no_tty)
-				res->sync_options = del_opt(res->sync_options, opt);
+				res->disk_options = del_opt(res->disk_options, opt);
 			else
 				config_valid = 0;
 		}

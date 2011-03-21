@@ -122,23 +122,25 @@ allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
 always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
 no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
 discard-my-data		{ DP; CP; return TK_NET_DELEGATE;	}
-rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
-after			{ DP; CP; return TK_SYNCER_OPTION;	}
-verify-alg              { DP; CP; return TK_SYNCER_OPTION;      }
-csums-alg               { DP; CP; return TK_SYNCER_OPTION;      }
-al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OPTION;}
-cpu-mask		{ DP; CP; return TK_SYNCER_OPTION;	}
-use-rle			{ DP; CP; return TK_SYNCER_SWITCH;	}
+rate			{ DP; CP; RC(RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+resync-rate		{ DP; CP; RC(RATE); return TK_DISK_OPTION;	}
+after			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+resync-after		{ DP; CP; return TK_DISK_OPTION;	}
+verify-alg              { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
+csums-alg               { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
+al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;}
+cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;	}
+use-rle			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_SWITCH;	}
 delay-probe-volume	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 delay-probe-interval	{ DP; CP; return TK_DEPRECATED_OPTION;  }
-c-plan-ahead		{ DP; CP; RC(C_PLAN_AHEAD); return TK_SYNCER_OPTION;	}
-c-delay-target	{ DP; CP; RC(C_DELAY_TARGET); return TK_SYNCER_OPTION;	}
-c-fill-target		{ DP; CP; RC(C_FILL_TARGET); return TK_SYNCER_OPTION;	}
-c-max-rate		{ DP; CP; RC(C_MAX_RATE); return TK_SYNCER_OPTION;	}
-c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OPTION;	}
+c-plan-ahead		{ DP; CP; RC(C_PLAN_AHEAD); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+c-delay-target	{ DP; CP; RC(C_DELAY_TARGET); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+c-fill-target		{ DP; CP; RC(C_FILL_TARGET); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+c-max-rate		{ DP; CP; RC(C_MAX_RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
+c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
 throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
-on-no-data-accessible   { DP; CP; return TK_SYNCER_OPTION;	}
+on-no-data-accessible   { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 outdated-wfc-timeout	{ DP; CP; RC(OUTDATED_WFC_TIMEOUT); return TK_STARTUP_OPTION;}

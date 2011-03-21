@@ -135,7 +135,6 @@ struct d_resource
   struct d_host_info* all_hosts;
   struct d_option* net_options;
   struct d_option* disk_options;
-  struct d_option* sync_options;
   struct d_option* startup_options;
   struct d_option* handlers;
   struct d_option* proxy_options;
@@ -308,6 +307,18 @@ extern int soi;
   typeof((ITEM)) _i = (ITEM);		      \
   typeof((ITEM)) _t;			      \
   _i->next = NULL;			      \
+  if (_l == NULL) { _l = _i; }		      \
+  else {				      \
+    for (_t = _l; _t->next; _t = _t->next);   \
+    _t->next = _i;			      \
+  };					      \
+  _l;					      \
+})
+
+#define SPLICE(LIST,ITEMS) ({		      \
+  typeof((LIST)) _l = (LIST);		      \
+  typeof((ITEMS)) _i = (ITEMS);		      \
+  typeof((ITEMS)) _t;			      \
   if (_l == NULL) { _l = _i; }		      \
   else {				      \
     for (_t = _l; _t->next; _t = _t->next);   \

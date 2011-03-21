@@ -600,13 +600,83 @@ static void parse_global(void)
 	}
 }
 
-static void check_and_change_deprecated_alias(char **name, int token_option)
+static void check_and_change_deprecated_alias(char **name, int token)
 {
-	if (token_option == TK_HANDLER_OPTION) {
-		if (!strcmp(*name, "outdate-peer")) {
-			/* fprintf(stder, "config file:line: name is deprecated ...\n") */
+	int i;
+	static struct {
+		enum yytokentype token;
+		char *old_name, *new_name;
+	} table[] = {
+		{ TK_HANDLER_OPTION, "outdate-peer", "fence-peer" },
+		{ TK_DISK_OPTION, "rate", "resync-rate" },
+		{ TK_DISK_OPTION, "after", "resync-after" },
+	};
+
+	for (i = 0; i < ARRAY_SIZE(table); i++) {
+		if (table[i].token == token &&
+		    !strcmp(table[i].old_name, *name)) {
 			free(*name);
-			*name = strdup("fence-peer");
+			*name = strdup(table[i].new_name);
+		}
+	}
+}
+
+/* The syncer section is deprecated. Distribute the options to the disk or net options. */
+void parse_options_syncer(struct d_resource *res)
+{
+	char *opt_name;
+	int token;
+	enum range_checks rc;
+
+	struct d_option **options = NULL, *ro = NULL;
+	c_section_start = line;
+	fline = line;
+
+	while (1) {
+		token = yylex();
+		fline = line;
+		if (token >= TK_GLOBAL && !(token & TK_SYNCER_OLD_OPT))
+			pe_expected("an syncer option keyword");
+		token &= ~TK_SYNCER_OLD_OPT;
+		switch (token) {
+		case TK_NET_SWITCH:
+		case TK_NET_OPTION:
+			options = &res->net_options;
+			break;
+		case TK_DISK_SWITCH:
+		case TK_DISK_OPTION:
+			options = &res->disk_options;
+			break;
+		case '}':
+			return;
+		default:
+			pe_expected("an syncer option keyword");
+		}
+		switch (token) {
+		case TK_NET_SWITCH:
+		case TK_DISK_SWITCH:
+			*options = APPEND(*options, new_opt(yylval.txt, NULL));
+			break;
+		case TK_NET_OPTION:
+		case TK_DISK_OPTION:
+			opt_name = yylval.txt;
+			check_and_change_deprecated_alias(&opt_name, token);
+			rc = yylval.rc;
+			expect_STRING_or_INT();
+			range_check(rc, opt_name, yylval.txt);
+			ro = new_opt(opt_name, yylval.txt);
+			*options = APPEND(*options, ro);
+			break;
+		}
+		switch (yylex()) {
+		case TK__IS_DEFAULT:
+			ro->is_default = 1;
+			EXP(';');
+			break;
+		case ';':
+			break;
+		default:
+			pe_expected("_is_default | ;");
 		}
 	}
 }
@@ -626,6 +696,7 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	while (1) {
 		token = yylex();
 		fline = line;
+		token &= ~TK_SYNCER_OLD_OPT;
 		if (token == token_switch) {
 			options = APPEND(options, new_opt(yylval.txt, NULL));
 		} else if (token == token_option) {
@@ -1677,8 +1748,10 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				break;
 			case '{':
 				check_upr("disk section", "%s:disk", res->name);
-				res->disk_options = parse_options(TK_DISK_SWITCH,
-								  TK_DISK_OPTION);
+				res->disk_options =
+					SPLICE(res->disk_options,
+					       parse_options(TK_DISK_SWITCH,
+							     TK_DISK_OPTION));
 				break;
 			default:
 				check_string_error(token);
@@ -1688,17 +1761,18 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_NET:
 			check_upr("net section", "%s:net", res->name);
 			EXP('{');
-			res->net_options = parse_options_d(TK_NET_SWITCH,
-							   TK_NET_OPTION,
-							   TK_NET_DELEGATE,
-							   &net_delegate,
-							   (void *)flags);
+			res->net_options =
+				SPLICE(res->net_options,
+				       parse_options_d(TK_NET_SWITCH,
+						       TK_NET_OPTION,
+						       TK_NET_DELEGATE,
+						       &net_delegate,
+						       (void *)flags));
 			break;
 		case TK_SYNCER:
 			check_upr("syncer section", "%s:syncer", res->name);
 			EXP('{');
-			res->sync_options = parse_options(TK_SYNCER_SWITCH,
-							  TK_SYNCER_OPTION);
+			parse_options_syncer(res);
 			break;
 		case TK_STARTUP:
 			check_upr("startup section", "%s:startup", res->name);
