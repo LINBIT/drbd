@@ -70,6 +70,7 @@ syncer			{ DP; return TK_SYNCER;			}
 device			{ DP; return TK_DEVICE;			}
 global			{ DP; return TK_GLOBAL;			}
 common			{ DP; return TK_COMMON;			}
+options			{ DP; return TK_OPTIONS;		}
 outside			{ DP; return TK_OUTSIDE;		}
 address			{ DP; return TK_ADDRESS;		}
 startup			{ DP; return TK_STARTUP;		}
@@ -129,7 +130,7 @@ resync-after		{ DP; CP; return TK_DISK_OPTION;	}
 verify-alg              { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 csums-alg               { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;}
-cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;	}
+cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
 use-rle			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_SWITCH;	}
 delay-probe-volume	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 delay-probe-interval	{ DP; CP; return TK_DEPRECATED_OPTION;  }
@@ -140,7 +141,7 @@ c-max-rate		{ DP; CP; RC(C_MAX_RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;
 c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
 throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
-on-no-data-accessible   { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;	}
+on-no-data-accessible   { DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 outdated-wfc-timeout	{ DP; CP; RC(OUTDATED_WFC_TIMEOUT); return TK_STARTUP_OPTION;}

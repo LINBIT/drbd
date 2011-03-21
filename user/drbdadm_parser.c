@@ -647,6 +647,9 @@ void parse_options_syncer(struct d_resource *res)
 		case TK_DISK_OPTION:
 			options = &res->disk_options;
 			break;
+		case TK_RES_OPTION:
+			options = &res->res_options;
+			break;
 		case '}':
 			return;
 		default:
@@ -659,6 +662,7 @@ void parse_options_syncer(struct d_resource *res)
 			break;
 		case TK_NET_OPTION:
 		case TK_DISK_OPTION:
+		case TK_RES_OPTION:
 			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token);
 			rc = yylval.rc;
@@ -1805,6 +1809,14 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
 			res->volumes = APPEND(res->volumes, parse_volume(atoi(yylval.txt)));
+			break;
+		case TK_OPTIONS:
+			check_upr("resource options section", "%s:res_options", res->name);
+			EXP('{');
+			res->res_options =
+				SPLICE(res->res_options,
+				       parse_options(TK_RES_SWITCH,
+						     TK_RES_OPTION));
 			break;
 		case '}':
 		case 0:

@@ -753,6 +753,7 @@ static void dump_common_info()
 	if (common->protocol)
 		printA("protocol", common->protocol);
 	fake_startup_options(common);
+	dump_options("options", common->res_options);
 	dump_options("net", common->net_options);
 	dump_options("disk", common->disk_options);
 	dump_options("startup", common->startup_options);
@@ -915,6 +916,7 @@ static void dump_common_info_xml()
 	printf(">\n");
 	++indent;
 	fake_startup_options(common);
+	dump_options_xml("options", common->res_options);
 	dump_options_xml("net", common->net_options);
 	dump_options_xml("disk", common->disk_options);
 	dump_options_xml("startup", common->startup_options);
@@ -1022,6 +1024,7 @@ static int adm_dump(struct cfg_ctx *ctx)
 		dump_host_info(host);
 
 	fake_startup_options(res);
+	dump_options("options", res->res_options);
 	dump_options("net", res->net_options);
 	dump_options("disk", res->disk_options);
 	dump_options("startup", res->startup_options);
@@ -1048,6 +1051,7 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	for (host = res->all_hosts; host; host = host->next)
 		dump_host_info_xml(host);
 	fake_startup_options(res);
+	dump_options_xml("options", res->res_options);
 	dump_options_xml("net", res->net_options);
 	dump_options_xml("disk", res->disk_options);
 	dump_options_xml("startup", res->startup_options);

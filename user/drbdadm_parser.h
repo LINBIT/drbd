@@ -64,7 +64,7 @@ enum yytokentype {
 	TK_NET,
 	TK_DISK,
 	TK_SKIP,
-	TK_SYNCER,
+	TK_SYNCER, /* depricated after 8.3 */
 	TK_STARTUP,
 	TK_DISABLE_IP_VERIFICATION,
 	TK_DIALOG_REFRESH,
@@ -117,6 +117,9 @@ enum yytokentype {
 	TK_FLOATING,
 	TK_DEPRECATED_OPTION,
 	TK_VOLUME,
+	TK_RES_SWITCH,
+	TK_RES_OPTION,
+	TK_OPTIONS,
 	TK_SYNCER_OLD_OPT = 0x1000, /* Might be or'ed to TK_[NET|DISK]_[OPTION|SWITCH] */
 };
 
