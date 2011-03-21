@@ -788,7 +788,7 @@ out:
 	return s_estab;
 }
 
-STATIC int drbd_send_fp(struct drbd_tconn *tconn, struct socket *sock, enum drbd_packet cmd)
+STATIC int drbd_send_fp(struct drbd_tconn *tconn, struct drbd_socket *sock, enum drbd_packet cmd)
 {
 	struct p_header *h = tconn->data.sbuf;
 
@@ -797,13 +797,13 @@ STATIC int drbd_send_fp(struct drbd_tconn *tconn, struct socket *sock, enum drbd
 
 STATIC enum drbd_packet drbd_recv_fp(struct drbd_tconn *tconn, struct socket *sock)
 {
-	struct p_header80 *h = tconn->data.rbuf;
+	struct p_header80 h;
 	int rr;
 
-	rr = drbd_recv_short(sock, h, sizeof(*h), 0);
+	rr = drbd_recv_short(sock, &h, sizeof(h), 0);
 
-	if (rr == sizeof(*h) && h->magic == cpu_to_be32(DRBD_MAGIC))
-		return be16_to_cpu(h->command);
+	if (rr == sizeof(h) && h.magic == cpu_to_be32(DRBD_MAGIC))
+		return be16_to_cpu(h.command);
 
 	return 0xffff;
 }
@@ -897,10 +897,10 @@ STATIC int drbd_connect(struct drbd_tconn *tconn)
 		if (s) {
 			if (!tconn->data.socket) {
 				tconn->data.socket = s;
-				drbd_send_fp(tconn, tconn->data.socket, P_HAND_SHAKE_S);
+				drbd_send_fp(tconn, &tconn->data, P_HAND_SHAKE_S);
 			} else if (!tconn->meta.socket) {
 				tconn->meta.socket = s;
-				drbd_send_fp(tconn, tconn->meta.socket, P_HAND_SHAKE_M);
+				drbd_send_fp(tconn, &tconn->meta, P_HAND_SHAKE_M);
 			} else {
 				conn_err(tconn, "Logic error in drbd_connect()\n");
 				goto out_release_sockets;
@@ -4463,7 +4463,7 @@ STATIC int drbd_send_handshake(struct drbd_tconn *tconn)
 	memset(p, 0, sizeof(*p));
 	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
-	err = _conn_send_cmd(tconn, 0, tconn->data.socket, P_HAND_SHAKE,
+	err = _conn_send_cmd(tconn, 0, &tconn->data, P_HAND_SHAKE,
 			     &p->head, sizeof(*p), 0);
 	mutex_unlock(&tconn->data.mutex);
 	return err;

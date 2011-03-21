@@ -769,14 +769,14 @@ static void prepare_header(struct drbd_conf *mdev, struct p_header *h,
 }
 
 /* the appropriate socket mutex must be held already */
-int _conn_send_cmd(struct drbd_tconn *tconn, int vnr, struct socket *sock,
+int _conn_send_cmd(struct drbd_tconn *tconn, int vnr, struct drbd_socket *sock,
 		   enum drbd_packet cmd, struct p_header *h, size_t size,
 		   unsigned msg_flags)
 {
 	int err;
 
 	_prepare_header(tconn, vnr, h, cmd, size - sizeof(struct p_header));
-	err = drbd_send_all(tconn, sock, h, size, msg_flags);
+	err = drbd_send_all(tconn, sock->socket, h, size, msg_flags);
 	if (err && !signal_pending(current))
 		conn_warn(tconn, "short send %s size=%d\n",
 			  cmdname(cmd), (int)size);
@@ -793,7 +793,7 @@ int conn_send_cmd(struct drbd_tconn *tconn, int vnr, struct drbd_socket *sock,
 
 	mutex_lock(&sock->mutex);
 	if (sock->socket)
-		err = _conn_send_cmd(tconn, vnr, sock->socket, cmd, h, size, 0);
+		err = _conn_send_cmd(tconn, vnr, sock, cmd, h, size, 0);
 	mutex_unlock(&sock->mutex);
 	return err;
 }
@@ -830,7 +830,7 @@ int drbd_send_ping_ack(struct drbd_tconn *tconn)
 int drbd_send_sync_param(struct drbd_conf *mdev)
 {
 	struct p_rs_param_95 *p;
-	struct socket *sock;
+	struct drbd_socket *sock;
 	int size, err;
 	const int apv = mdev->tconn->agreed_pro_version;
 
@@ -841,9 +841,9 @@ int drbd_send_sync_param(struct drbd_conf *mdev)
 		: /* apv >= 95 */ sizeof(struct p_rs_param_95);
 
 	mutex_lock(&mdev->tconn->data.mutex);
-	sock = mdev->tconn->data.socket;
+	sock = &mdev->tconn->data;
 
-	if (likely(sock != NULL)) {
+	if (likely(sock->socket != NULL)) {
 		enum drbd_packet cmd =
 			apv >= 89 ? P_SYNC_PARAM89 : P_SYNC_PARAM;
 
@@ -1026,16 +1026,16 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
  */
 int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line)
 {
-	struct socket *sock;
+	struct drbd_socket *sock;
 	struct p_state p;
 	int err = -EIO;
 
 	mutex_lock(&mdev->tconn->data.mutex);
 
 	p.state = cpu_to_be32(mdev->state.i); /* Within the send mutex */
-	sock = mdev->tconn->data.socket;
+	sock = &mdev->tconn->data;
 
-	if (likely(sock != NULL))
+	if (likely(sock->socket != NULL))
 		err = _drbd_send_cmd(mdev, sock, P_STATE, &p.head, sizeof(p), 0);
 
 	mutex_unlock(&mdev->tconn->data.mutex);
@@ -1204,7 +1204,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev, struct bm_xfer_ctx *c)
 
 	if (len) {
 		dcbp_set_code(p, RLE_VLI_Bits);
-		err = _drbd_send_cmd(mdev, mdev->tconn->data.socket,
+		err = _drbd_send_cmd(mdev, &mdev->tconn->data,
 				     P_COMPRESSED_BITMAP, &p->head,
 				     sizeof(*p) + len, 0);
 
@@ -1222,7 +1222,7 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev, struct bm_xfer_ctx *c)
 		if (len)
 			drbd_bm_get_lel(mdev, c->word_offset, num_words,
 					(unsigned long *)h->payload);
-		err = _drbd_send_cmd(mdev, mdev->tconn->data.socket, P_BITMAP,
+		err = _drbd_send_cmd(mdev, &mdev->tconn->data, P_BITMAP,
 				     h, sizeof(struct p_header80) + len, 0);
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;
