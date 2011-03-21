@@ -112,6 +112,7 @@ struct d_host_info
   char *lower_name;          /* for device stacking, before bind_stacked_res() */
   int config_line;
   unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
+  struct d_option* res_options; /* Additional per host options */
 };
 
 struct d_option

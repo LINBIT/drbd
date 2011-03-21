@@ -1255,6 +1255,11 @@ static void parse_host_section(struct d_resource *res,
 			EXP(TK_INTEGER);
 			host->volumes = APPEND(host->volumes, parse_volume(atoi(yylval.txt)));
 			break;
+		case TK_OPTIONS:
+			EXP('{');
+			host->res_options = parse_options(TK_RES_SWITCH,
+							  TK_RES_OPTION);
+			break;
 		case '}':
 			in_braces = 0;
 			break;

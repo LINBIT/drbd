@@ -841,6 +841,8 @@ static void dump_host_info(struct d_host_info *hi)
 		++indent;
 	}
 
+	dump_options("options", hi->res_options);
+
 	for_each_volume(vol, hi->volumes)
 		dump_volume(!!hi->lower, vol);
 
@@ -980,6 +982,7 @@ static void dump_host_info_xml(struct d_host_info *hi)
 
 	++indent;
 
+	dump_options_xml("options", hi->res_options);
 	for_each_volume(vol, hi->volumes)
 		dump_volume_xml(vol);
 
