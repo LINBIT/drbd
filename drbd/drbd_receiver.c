@@ -1059,12 +1059,9 @@ static int decode_header(struct drbd_tconn *tconn, void *header, struct packet_i
 	} else if (header_size == sizeof(struct p_header95) &&
 		   *(__be16 *)header == cpu_to_be16(DRBD_MAGIC_BIG)) {
 		struct p_header95 *h = header;
-		u32 vol_n_len;
-
 		pi->cmd = be16_to_cpu(h->command);
-		vol_n_len = be32_to_cpu(h->vol_n_len);
-		pi->size = vol_n_len & 0x00ffffff;
-		pi->vnr  = vol_n_len >> 24;
+		pi->size = be32_to_cpu(h->length);
+		pi->vnr = 0;
 	} else if (header_size == sizeof(struct p_header80) &&
 		   *(__be32 *)header == cpu_to_be32(DRBD_MAGIC)) {
 		struct p_header80 *h = header;

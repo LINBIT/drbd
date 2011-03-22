@@ -411,7 +411,7 @@ struct p_header80 {
 struct p_header95 {
 	u16	  magic;	/* use DRBD_MAGIC_BIG here */
 	u16	  command;
-	u32	  vol_n_len;	/* big endian: high byte = volume; remaining 24 bit = length */
+	u32	  length;
 } __packed;
 
 struct p_header100 {

@@ -767,11 +767,11 @@ static unsigned int prepare_header80(struct p_header80 *h, enum drbd_packet cmd,
 	return sizeof(struct p_header80);
 }
 
-static unsigned int prepare_header95(struct p_header95 *h, enum drbd_packet cmd, int size, int vnr)
+static unsigned int prepare_header95(struct p_header95 *h, enum drbd_packet cmd, int size)
 {
 	h->magic   = cpu_to_be16(DRBD_MAGIC_BIG);
 	h->command = cpu_to_be16(cmd);
-	h->vol_n_len = cpu_to_be32(vnr << 24 | size);
+	h->length = cpu_to_be32(size);
 	return sizeof(struct p_header95);
 }
 
@@ -792,7 +792,7 @@ static unsigned int prepare_header(struct drbd_tconn *tconn, int vnr,
 	if (tconn->agreed_pro_version >= 100)
 		return prepare_header100(buffer, cmd, size, vnr);
 	else if (tconn->agreed_pro_version >= 95)
-		return prepare_header95(buffer, cmd, size, vnr);
+		return prepare_header95(buffer, cmd, size);
 	else
 		return prepare_header80(buffer, cmd, size);
 }
