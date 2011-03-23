@@ -67,15 +67,22 @@ char *ppsize(char *buf, unsigned long long size)
 const char *make_optstring(struct option *options, char startc)
 {
 	static char buffer[200];
+	char seen[256];
 	struct option *opt;
 	char *c;
 
+	memset(seen, 0, sizeof(seen));
 	opt = options;
 	c = buffer;
 	if (startc)
 		*c++ = startc;
 	while (opt->name) {
-		if (0 < opt->val || opt->val < 256) {
+		if (0 < opt->val && opt->val < 256) {
+			if (seen[opt->val]++) {
+				fprintf(stderr, "internal error: --%s has duplicate opt->val '%c'\n",
+						opt->name, opt->val);
+				abort();
+			}
 			*c++ = opt->val;
 			if (opt->has_arg)
 				*c++ = ':';
