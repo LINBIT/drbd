@@ -1549,7 +1549,7 @@ int adm_attach(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
-	argv[NA(argc)] = "disk";
+	argv[NA(argc)] = "attach";
 	argv[NA(argc)] = vol->disk;
 	if (!strcmp(vol->meta_disk, "internal")) {
 		argv[NA(argc)] = vol->disk;
@@ -1985,7 +1985,7 @@ int adm_connect(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%s", res->name);
-	argv[NA(argc)] = "net";
+	argv[NA(argc)] = "connect";
 	make_address(res->me->address, res->me->port, res->me->address_family);
 	if (res->me->proxy) {
 		make_address(res->me->proxy->inside_addr,

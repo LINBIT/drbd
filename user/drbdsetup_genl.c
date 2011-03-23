@@ -189,13 +189,14 @@ struct drbd_cmd {
 			struct drbd_option *options;
 		} cp; // for generic_config_cmd, config_usage
 		struct {
-			int (*show_function)(struct drbd_cmd*, unsigned);
+			int (*show_function)(struct drbd_cmd*, struct genl_info *);
 		} gp; // for generic_get_cmd, get_usage
 		struct {
 			struct option *options;
 			int (*proc_event)(struct genl_info *, int);
 		} ep; // for events_cmd, events_usage
 	};
+	const int nlm_flags; /* may be set to NLM_F_REPLACE */
 };
 
 // other functions
@@ -226,20 +227,19 @@ static void bit_opt_xml(struct drbd_option *option);
 static void string_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
-static int show_scmd(struct drbd_cmd *cm, unsigned minor);
-static int role_scmd(struct drbd_cmd *cm, unsigned minor);
-static int status_xml_scmd(struct drbd_cmd *cm, unsigned minor);
-static int sh_status_scmd(struct drbd_cmd *cm, unsigned minor);
-static int cstate_scmd(struct drbd_cmd *cm, unsigned minor);
-static int dstate_scmd(struct drbd_cmd *cm, unsigned minor);
-static int uuids_scmd(struct drbd_cmd *cm, unsigned minor);
-static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor);
+static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int role_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int status_xml_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int cstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_protocol(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
@@ -260,6 +260,12 @@ static int print_broadcast_events(struct genl_info *, int);
 static int w_connected_state(struct genl_info *, int);
 static int w_synced_state(struct genl_info *, int);
 static int print_resources(struct genl_info *, int);
+
+const char *protocol_n[] = {
+	[DRBD_PROT_A] = "A",
+	[DRBD_PROT_B] = "B",
+	[DRBD_PROT_C] = "C",
+};
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -341,6 +347,51 @@ struct option wait_cmds_options[] = {
 #define F_EVENTS_CMD	DRBD_ADM_GET_STATUS, NO_PAYLOAD, events_cmd, events_usage
 #define POLICY(x)	x ## _nl_policy, (ARRAY_SIZE(x ## _nl_policy) -1)
 
+#define CHANGEABLE_DISK_OPTIONS						\
+	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
+	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
+	{ "no-disk-barrier",'B',T_no_disk_barrier,EB },			\
+	{ "no-disk-flushes",'F',T_no_disk_flush,EB },			\
+	{ "no-disk-drain",'D', T_no_disk_drain,EB },			\
+	{ "no-md-flushes",'M', T_no_md_flush,  EB },			\
+	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
+	{ "resync-after",'a',  T_resync_after,	EN(AFTER,1,NULL) },	\
+	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,1,NULL) }, \
+	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD,1,"1/10 seconds") }, \
+	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET,1,"1/10 seconds") }, \
+	{ "c-fill-target", 's',T_c_fill_target, EN(C_FILL_TARGET,'s',"bytes") }, \
+	{ "c-max-rate", 'R',	T_c_max_rate, EN(C_MAX_RATE,'k',"bytes/second") }, \
+	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
+
+#define CHANGEABLE_NET_OPTIONS						\
+	{ "protocol",'p',	T_wire_protocol,   EH(protocol_n, PROTOCOL) }, \
+	{ "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") }, \
+	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) }, \
+	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) }, \
+	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1,NULL) }, \
+	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") }, \
+	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") }, \
+	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") }, \
+	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,1,"bytes") }, \
+	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) }, \
+	{ "allow-two-primaries",'m',T_two_primaries, EB },		\
+	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
+	{ "shared-secret",'x',	T_shared_secret,   ES },		\
+	{ "after-sb-0pri",'0',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) }, \
+	{ "after-sb-1pri",'1',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) }, \
+	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
+	{ "always-asbp",'P',   T_always_asbp,     EB },			\
+	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
+	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") }, \
+	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
+	{ "no-tcp-cork",'o',   T_no_cork,         EB },			\
+	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
+	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
+	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) }, \
+	{ "csums-alg", 'C',T_csums_alg,        ES },			\
+	{ "verify-alg", 'V',T_verify_alg,      ES },			\
+	{ "use-rle",'E',T_use_rle,   EB },
+
 struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS, POLICY(set_role_parms),
 		F_CONFIG_CMD, {{ NULL,
@@ -350,7 +401,7 @@ struct drbd_cmd commands[] = {
 
 	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD, {{NULL, NULL}} },
 
-	{"disk", CTX_MINOR, DRBD_ADM_ATTACH, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
+	{"attach", CTX_MINOR, DRBD_ADM_ATTACH, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
 		F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
@@ -358,53 +409,38 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
-		 { "size",'d',		T_disk_size,	EN(DISK_SIZE_SECT,'s',"bytes") },
-		 { "on-io-error",'e',	T_on_io_error,	EH(on_error,ON_IO_ERROR) },
-		 { "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) },
-		 { "use-bmbv",'b',	T_use_bmbv,     EB },
-		 { "no-disk-barrier",'a',T_no_disk_barrier,EB },
-		 { "no-disk-flushes",'i',T_no_disk_flush,EB },
-		 { "no-disk-drain",'D', T_no_disk_drain,EB },
-		 { "no-md-flushes",'m', T_no_md_flush,  EB },
-		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
+		 { "size",'S',		T_disk_size,	EN(DISK_SIZE_SECT,'s',"bytes") },
+		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
+		 CHANGEABLE_DISK_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
+
+	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
+		F_CONFIG_CMD, {{ NULL, 
+	 (struct drbd_option[]) {
+		 CHANGEABLE_DISK_OPTIONS
+		 CLOSE_ARGS_OPTS } }},
+		NLM_F_REPLACE },
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD, {{ NULL, NULL }} },
 
-	{"net", CTX_CONN, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF, POLICY(net_conf),
+	{"connect", CTX_CONN, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF, POLICY(net_conf),
 		F_CONFIG_CMD, {{
 	 (struct drbd_argument[]) {
 		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
 		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
-		 { "protocol",		T_wire_protocol,conv_protocol },
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
-		 { "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") },
-		 { "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) },
-		 { "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) },
-		 { "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1,NULL) },
-		 { "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") },
-		 { "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") },
-		 { "sndbuf-size",'S',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") },
-		 { "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,1,"bytes") },
-		 { "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) },
-		 { "allow-two-primaries",'m',T_two_primaries, EB },
-		 { "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },
-		 { "shared-secret",'x',	T_shared_secret,   ES },
-		 { "after-sb-0pri",'A',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) },
-		 { "after-sb-1pri",'B',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) },
-		 { "after-sb-2pri",'C',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) },
-		 { "always-asbp",'P',   T_always_asbp,     EB },
-		 { "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) },
-		 { "ping-timeout",'p',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") },
-		 { "discard-my-data",'D', T_want_lose,     EB },
-		 { "data-integrity-alg",'d', T_integrity_alg,     ES },
-		 { "no-tcp-cork",'o',   T_no_cork,         EB },
 		 { "dry-run",'n',   T_dry_run,		   EB },
-		 { "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) },
-		 { "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") },
-		 { "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) },
+		 { "discard-my-data",'D', T_want_lose,     EB },
+		 CHANGEABLE_NET_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
+
+	{"net-options", CTX_CONN, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF, POLICY(net_conf),
+		F_CONFIG_CMD, {{ NULL,
+	 (struct drbd_option[]) {
+		 CHANGEABLE_NET_OPTIONS
+		 CLOSE_ARGS_OPTS } }},
+		NLM_F_REPLACE },
 
 	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS, POLICY(disconnect_parms),
 		F_CONFIG_CMD, {{NULL,
@@ -420,22 +456,11 @@ struct drbd_cmd commands[] = {
 		 { "assume-clean", 'c',        T_no_resync, EB },
 		 CLOSE_ARGS_OPTS }} }, },
 
-	{"syncer", CTX_MINOR, DRBD_ADM_SYNCER, DRBD_NLA_SYNCER_CONF, POLICY(syncer_conf),
+	{"resource-options", CTX_MINOR, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS, POLICY(res_opts),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "rate",'r',T_rate,			EN(RATE,'k',"bytes/second") },
-		 { "after",'a',T_after,			EN(AFTER,1,NULL) },
-		 { "al-extents",'e',T_al_extents,	EN(AL_EXTENTS,1,NULL) },
-		 { "csums-alg", 'C',T_csums_alg,        ES },
-		 { "verify-alg", 'v',T_verify_alg,      ES },
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
-		 { "use-rle",'R',T_use_rle,   EB },
 		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
-		 { "c-plan-ahead", 'p',         T_c_plan_ahead, EN(C_PLAN_AHEAD,1,"1/10 seconds") },
-		 { "c-delay-target", 'd',       T_c_delay_target, EN(C_DELAY_TARGET,1,"1/10 seconds") },
-		 { "c-fill-target", 's',        T_c_fill_target, EN(C_FILL_TARGET,'s',"bytes") },
-		 { "c-max-rate", 'M',		T_c_max_rate, EN(C_MAX_RATE,'k',"bytes/second") },
-		 { "c-min-rate", 'm',	        T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
 		 CLOSE_ARGS_OPTS } }} },
 
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS, POLICY(new_c_uuid_parms),
@@ -806,26 +831,6 @@ static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* ar
 	return NO_ERROR;
 }
 
-static int conv_protocol(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
-{
-	int prot;
-
-	if(!strcmp(arg,"A") || !strcmp(arg,"a")) {
-		prot=DRBD_PROT_A;
-	} else if (!strcmp(arg,"B") || !strcmp(arg,"b")) {
-		prot=DRBD_PROT_B;
-	} else if (!strcmp(arg,"C") || !strcmp(arg,"c")) {
-		prot=DRBD_PROT_C;
-	} else {
-		fprintf(stderr, "'%s' is no valid protocol.\n", arg);
-		return OTHER_ERROR;
-	}
-
-	nla_put_u32(msg,ad->nla_type,prot);
-
-	return NO_ERROR;
-}
-
 static int conv_bit(struct drbd_option *od, struct msg_buff *msg, char* arg __attribute((unused)))
 {
 	nla_put_flag(msg,od->nla_type);
@@ -944,7 +949,7 @@ static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg)
 	return NO_ERROR;
 }
 
-static struct option *	make_longoptions(struct drbd_option* od, struct nla_policy *policy)
+static struct option *make_longoptions(struct drbd_option* od, struct nla_policy *policy)
 {
 	/* room for up to N options,
 	 * plus set-defaults, and the terminating NULL */
@@ -1133,7 +1138,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		goto error;
 	}
 
-	dhdr = genlmsg_put(smsg, &drbd_genl_family, 0, cm->cmd_id);
+	dhdr = genlmsg_put(smsg, &drbd_genl_family, cm->nlm_flags, cm->cmd_id);
 	dhdr->minor = minor;
 	dhdr->flags = 0;
 
@@ -1304,11 +1309,38 @@ static void show_string(struct drbd_option *od, struct nlattr *nla)
 		printf("\t%-16s\t\"%s\";\n",od->name,str);
 }
 
-static void print_options(struct drbd_option *od, const char* sect_name)
+static struct drbd_cmd *find_cmd_by_name(const char *name)
 {
+	unsigned int i;
+
+	if (!strcmp(name, "state")) {
+		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
+			cmdname, cmdname);
+		name = "role";
+	}
+
+	for (i = 0; i < ARRAY_SIZE(commands); i++) {
+		if (!strcmp(name, commands[i].cmd)) {
+			return commands + i;
+		}
+	}
+	return NULL;
+}
+
+static void print_options(const char *cmd_name, const char *sect_name)
+{
+	struct drbd_cmd *cmd;
+	struct drbd_option *od;
 	int opened = 0;
 
-	for (;od->name; od++) {
+	cmd = find_cmd_by_name(cmd_name);
+	if (!cmd) {
+		fprintf(stderr, "%s internal error, no such cmd %s\n",
+				cmdname, cmd_name);
+		abort();
+	}
+
+	for (od = cmd->cp.options; od && od->name; od++) {
 		if (!ntb(od->nla_type))
 			continue;
 		if (!opened) {
@@ -1373,6 +1405,13 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	if (received > 0) {
 		struct nlmsghdr *nlh = (struct nlmsghdr*)iov.iov_base;
 		struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
+		struct genl_info info = {
+			.seq = nlh->nlmsg_seq,
+			.nlhdr = nlh,
+			.genlhdr = nlmsg_data(nlh),
+			.userhdr = genlmsg_data(nlmsg_data(nlh)),
+			.attrs = global_attrs,
+		};
 		ASSERT(dh->minor == minor);
 		rv = dh->ret_code;
 		if (rv != NO_ERROR &&
@@ -1384,7 +1423,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			rv = OTHER_ERROR;
 			goto error;
 		}
-		rv = cm->gp.show_function(cm,minor);
+		rv = cm->gp.show_function(cm, &info);
 		msg_free(smsg);
 		free(iov.iov_base);
 		return rv;
@@ -1453,44 +1492,29 @@ static void show_address(void* address, int addr_len)
  * may also be called iteratively for a "show-all", which should try to not
  * print redundant configuration information for the same resource (tconn).
  */
-static int show_scmd(struct drbd_cmd *cm, unsigned minor)
+static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 {
 	/* FIXME need some define for max len here */
 	static char last_ctx_conn_name[128];
 
-	static struct nlattr *option_attrs[ARRAY_SIZE(global_attrs)];
-	static unsigned long seen[(ARRAY_SIZE(global_attrs)+sizeof(long)-1)/sizeof(long)];
-
 	int called_by_show_all = (cm == NULL);
 	int start_new_resource = 1;
 	int close_prev_resource = 0;
-	int i;
 
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct disk_conf dc = { .disk_size = 0, };
 	struct net_conf nc = { .timeout = 0, };;
-	struct syncer_conf sc = { .rate = 0, };
 
-	memcpy(option_attrs, global_attrs, sizeof(option_attrs));
-	drbd_cfg_context_from_attrs(&cfg, global_attrs);
-	disk_conf_from_attrs(&dc, global_attrs);
-	net_conf_from_attrs(&nc, global_attrs);
-	syncer_conf_from_attrs(&sc, global_attrs);
+	drbd_cfg_context_from_attrs(&cfg, info);
+	disk_conf_from_attrs(&dc, info);
+	net_conf_from_attrs(&nc, info);
 
 	if (called_by_show_all) {
 		close_prev_resource = last_ctx_conn_name[0];
 		start_new_resource =
 			strncmp(cfg.ctx_conn_name, last_ctx_conn_name, sizeof(last_ctx_conn_name));
-		if (start_new_resource) {
+		if (start_new_resource)
 			strncpy(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name));
-			memset(seen, 0, sizeof(seen));
-		} else {
-			/* we already printed some options on the previous iteration */
-			for (i = 0; i < ARRAY_SIZE(global_attrs); i++) {
-				if (seen[i/sizeof(long)] & (1 << (i % sizeof(long))))
-					option_attrs[i] = NULL;
-			}
-		}
 	} else
 		start_new_resource = 1;
 
@@ -1500,46 +1524,25 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor)
 			printf("}\n\n");
 		}
 		printf("resource %s {\n", cfg.ctx_conn_name);
-	}
+		print_options("resource-options", "options");
+		print_options("net-options", "net");
 
-	/* find all commands that have options and print those...
-	 * Actually, this is supposed to "just" find and print
-	 * syncer {}, net {} and disk {} option sections.
-	 */
-	for ( cm = commands ; cm < commands + ARRAY_SIZE(commands) ; cm++ ) {
-		if (cm->function == generic_config_cmd && cm->cp.options) {
-			if (!option_attrs[cm->tla_id])
-				continue;
-			if (nla_parse_nested(nested_attr_tb, cm->maxattr,
-			    option_attrs[cm->tla_id], cm->policy)) {
-				fprintf(stderr, "nla_policy violation for %s payload!\n",
-						cm->cmd);
-				continue;
+		if (global_attrs[DRBD_NLA_NET_CONF]) {
+			if (nc.peer_addr_len) {
+				printf("    _remote_host {\n");
+				show_address(nc.peer_addr, nc.peer_addr_len);
+				printf("    }\n");
 			}
-			current_policy = cm->policy;
-			print_options(cm->cp.options, cm->cmd);
-			/* for now, we assume that all _options_ are identical
-			 * for the full connection, and want to avoid to print
-			 * them again for each volume. */
-			seen[cm->tla_id/sizeof(long)] |= 1 << (cm->tla_id % sizeof(long));
+		}
+		printf("    _this_host {\n");
+		if (global_attrs[DRBD_NLA_NET_CONF]) {
+			if (nc.my_addr[0])
+				show_address(nc.my_addr, nc.my_addr_len);
 		}
 	}
 
-	if (option_attrs[DRBD_NLA_NET_CONF]) {
-		printf("    protocol %c;\n", 'A' + nc.wire_protocol - 1);
-		if (nc.peer_addr_len) {
-			printf("    _remote_host {\n");
-			show_address(nc.peer_addr, nc.peer_addr_len);
-			printf("    }\n");
-		}
-	}
-	if (start_new_resource)
-		printf("    _this_host {\n");
-	if (option_attrs[DRBD_NLA_NET_CONF]) {
-		if (nc.my_addr[0])
-			show_address(nc.my_addr, nc.my_addr_len);
-	}
 	if (cfg.ctx_volume != -1U) {
+		unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 		printf("\tvolume %d {\n", cfg.ctx_volume);
 		printf("\t\tdevice\t\t\tminor %d;\n", minor);
 		if (global_attrs[DRBD_NLA_DISK_CONF]) {
@@ -1559,6 +1562,7 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor)
 				 }
 			}
 		}
+		print_options("attach", "disk");
 		printf("\t}\n"); /* close volume */
 	}
 
@@ -1570,14 +1574,15 @@ static int show_scmd(struct drbd_cmd *cm, unsigned minor)
 	return 0;
 }
 
-static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor)
+static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
 {
+	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 	struct disk_conf dc = { .disk_size = 0, };
 	struct bdev_info bd = { 0, };
 	uint64_t bd_size;
 	int fd;
 
-	disk_conf_from_attrs(&dc, global_attrs);
+	disk_conf_from_attrs(&dc, info);
 	if (!dc.backing_dev) {
 		fprintf(stderr, "Has no disk config, try with drbdmeta.\n");
 		return 1;
@@ -1609,8 +1614,9 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, unsigned minor)
 }
 
 static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
-		unsigned minor)
+		struct genl_info *info)
 {
+	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 	union drbd_state state = { .i = 0 };
 	struct state_info si = { .current_state = 0, };
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -1622,7 +1628,7 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf(" not available or not yet created -->\n");
 		return 0;
 	}
-	drbd_cfg_context_from_attrs(&cfg, global_attrs);
+	drbd_cfg_context_from_attrs(&cfg, info);
 
 	printf("<resource minor=\"%u\"", minor);
 	printf(" conn_name=\"%s\"", cfg.ctx_conn_name ? cfg.ctx_conn_name : "n/a");
@@ -1630,7 +1636,7 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	if (resname)
 		printf(" name=\"%s\"", resname);
 
-	state_info_from_attrs(&si, global_attrs);
+	state_info_from_attrs(&si, info);
 	if (ntb(T_current_state))
 		state.i = si.current_state;
 
@@ -1685,8 +1691,9 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
-		unsigned minor)
+		struct genl_info *info)
 {
+	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 /* variable prefix; maybe rather make that a command line parameter?
  * or use "drbd_sh_status"? */
 #define _P ""
@@ -1697,11 +1704,11 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 	printf("%s_minor=%u\n", _P, minor);
 	printf("%s_res_name=%s\n", _P, shell_escape(resname ?: "UNKNOWN"));
 
-	drbd_cfg_context_from_attrs(&cfg, global_attrs);
+	drbd_cfg_context_from_attrs(&cfg, info);
 	printf("%s_conn_name=%s\n", _P, cfg.ctx_conn_name ? shell_escape(cfg.ctx_conn_name) : "n/a");
 	printf("%s_volume=%d\n", _P, cfg.ctx_volume);
 
-	if (state_info_from_attrs(&si, global_attrs) == 0)
+	if (state_info_from_attrs(&si, info) == 0)
 		available = 1;
 	state.i = si.current_state;
 
@@ -1765,7 +1772,7 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
-	       unsigned minor __attribute((unused)))
+		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
@@ -1784,7 +1791,7 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		unsigned minor __attribute((unused)))
+		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
@@ -1803,7 +1810,7 @@ static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		unsigned minor __attribute((unused)))
+		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
@@ -1822,7 +1829,7 @@ static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 }
 
 static int uuids_scmd(struct drbd_cmd *cm,
-	       unsigned minor __attribute((unused)))
+		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
 	uint64_t ed_uuid;
@@ -1865,24 +1872,6 @@ static int uuids_scmd(struct drbd_cmd *cm,
 			"Maybe you need to upgrade your userland tools?\n");
 	}
 	return 0;
-}
-
-static struct drbd_cmd *find_cmd_by_name(char *name)
-{
-	unsigned int i;
-
-	if (!strcmp(name, "state")) {
-		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
-			cmdname, cmdname);
-		name = "role";
-	}
-
-	for (i = 0; i < ARRAY_SIZE(commands); i++) {
-		if (!strcmp(name, commands[i].cmd)) {
-			return commands + i;
-		}
-	}
-	return NULL;
 }
 
 static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
@@ -1940,7 +1929,7 @@ static int print_resources(struct genl_info *info, int u __unused)
 		dbg(1, "unexpected packet, configuration context missing!\n");
 	} else {
 		call_count++;
-		show_scmd(NULL, dh->minor);
+		show_scmd(NULL, info);
 	}
 	return 1;
 }
@@ -1951,24 +1940,22 @@ static int print_broadcast_events(struct genl_info *info, int u __unused)
 	struct state_info si = { .current_state = 0 };
 	struct disk_conf dc = { .disk_size = 0, };
 	struct net_conf nc = { .timeout = 0, };
-	struct syncer_conf sc = { .rate = 0, };
 	struct drbd_genlmsghdr *dh = info->userhdr;
 
-	if (drbd_cfg_context_from_attrs(&cfg, global_attrs)) {
+	if (drbd_cfg_context_from_attrs(&cfg, info)) {
 		dbg(1, "unexpected packet, configuration context missing!\n");
 		/* keep running anyways. */
 		goto out;
 	}
-	if (state_info_from_attrs(&si, global_attrs)) {
+	if (state_info_from_attrs(&si, info)) {
 		/* this is a DRBD_ADM_GET_STATUS reply
 		 * with information about a resource without any volumes */
 		printf("%u R - %s\n", info->seq, cfg.ctx_conn_name);
 		goto out;
 	}
 
-	disk_conf_from_attrs(&dc, global_attrs);
-	net_conf_from_attrs(&nc, global_attrs);
-	syncer_conf_from_attrs(&sc, global_attrs);
+	disk_conf_from_attrs(&dc, info);
+	net_conf_from_attrs(&nc, info);
 
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
@@ -2026,7 +2013,7 @@ out:
 	return 1;
 }
 
-static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
+static int w_connected_state(struct genl_info *info, int wait_after_sb)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2034,7 +2021,7 @@ static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
 		return 1;
 
-	if (state_info_from_attrs(&si, global_attrs)) {
+	if (state_info_from_attrs(&si, info)) {
 		fprintf(stderr,"nla_policy violation!?\n");
 		return 1;
 	}
@@ -2052,7 +2039,7 @@ static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
 
 		if (!wait_after_sb)
 			return 0;
-		drbd_cfg_context_from_attrs(&cfg, global_attrs);
+		drbd_cfg_context_from_attrs(&cfg, info);
 
 		fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
 			       "but I'm configured to wait anways (--wait-after-sb)\n",
@@ -2064,7 +2051,7 @@ static int w_connected_state(struct genl_info *info __unused, int wait_after_sb)
 	return 1;
 }
 
-static int w_synced_state(struct genl_info *info __unused, int wait_after_sb)
+static int w_synced_state(struct genl_info *info, int wait_after_sb)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2072,7 +2059,7 @@ static int w_synced_state(struct genl_info *info __unused, int wait_after_sb)
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
 		return 1;
 
-	if (state_info_from_attrs(&si, global_attrs)) {
+	if (state_info_from_attrs(&si, info)) {
 		fprintf(stderr,"nla_policy violation!?\n");
 		return 1;
 	}
@@ -2135,7 +2122,14 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 	rr = genl_recv_msgs(drbd_sock, ctx->iov, &desc, 120000);
 	if (rr > 0) {
 		struct nlmsghdr *nlh = (struct nlmsghdr*)ctx->iov->iov_base;
-		struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
+		struct genl_info info = {
+			.seq = nlh->nlmsg_seq,
+			.nlhdr = nlh,
+			.genlhdr = nlmsg_data(nlh),
+			.userhdr = genlmsg_data(nlmsg_data(nlh)),
+			.attrs = global_attrs,
+		};
+		struct drbd_genlmsghdr *dh = info.userhdr;
 		struct timeout_parms parms;
 		ASSERT(dh->minor == ctx->minor);
 		rr = dh->ret_code;
@@ -2146,7 +2140,7 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 		if (rr != NO_ERROR)
 			goto error;
 		if (drbd_tla_parse(nlh)
-		|| timeout_parms_from_attrs(&parms, global_attrs)) {
+		|| timeout_parms_from_attrs(&parms, &info)) {
 			desc = "reply did not validate - "
 				"do you need to upgrade your useland tools?";
 			goto error;
@@ -2271,9 +2265,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 	/* we want a dump, if this is "show-all",
 	 * or if it is "events -a" */
 	terminate_after_initial_dump = cm->ep.proc_event == print_resources;
-	dhdr = genlmsg_put(smsg, &drbd_genl_family,
-			(all_devices || terminate_after_initial_dump) ? NLM_F_DUMP : 0,
-			DRBD_ADM_GET_STATUS);
+	all_devices = all_devices || terminate_after_initial_dump;
 
 	if (genl_join_mc_group(drbd_sock, "events")) {
 		fprintf(stderr, "unable to join drbd events multicast group\n");
@@ -2351,6 +2343,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 				.userhdr = genlmsg_data(nlmsg_data(nlh)),
 				.attrs = global_attrs,
 			};
+			dhdr = info.userhdr;
 			if (minor != dhdr->minor && !all_devices)
 				continue;
 
