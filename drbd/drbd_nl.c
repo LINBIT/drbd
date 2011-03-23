@@ -78,8 +78,10 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info);
 
 int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info);
@@ -91,7 +93,7 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_syncer(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 /* .dumpit */
@@ -195,7 +197,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	if (info->attrs[DRBD_NLA_CFG_CONTEXT]) {
 		struct nlattr *nla;
 		/* parse and validate only */
-		err = drbd_cfg_context_from_attrs(NULL, info->attrs);
+		err = drbd_cfg_context_from_attrs(NULL, info);
 		if (err)
 			goto fail;
 
@@ -635,6 +637,7 @@ static const char *from_attrs_err_to_txt(int err)
 {
 	return	err == -ENOMSG ? "required attribute missing" :
 		err == -EOPNOTSUPP ? "unknown mandatory attribute" :
+		err == -EEXIST ? "can not change invariant setting" :
 		"invalid attribute value";
 }
 
@@ -652,7 +655,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_SET_ROLE_PARMS]) {
-		err = set_role_parms_from_attrs(&parms, info->attrs);
+		err = set_role_parms_from_attrs(&parms, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -924,17 +927,17 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev)
 	unsigned int in_use;
 	int i;
 
-	if (!expect(mdev->sync_conf.al_extents >= DRBD_AL_EXTENTS_MIN))
-		mdev->sync_conf.al_extents = DRBD_AL_EXTENTS_MIN;
+	if (!expect(mdev->ldev->dc.al_extents >= DRBD_AL_EXTENTS_MIN))
+		mdev->ldev->dc.al_extents = DRBD_AL_EXTENTS_MIN;
 
 	if (mdev->act_log &&
-	    mdev->act_log->nr_elements == mdev->sync_conf.al_extents)
+	    mdev->act_log->nr_elements == mdev->ldev->dc.al_extents)
 		return 0;
 
 	in_use = 0;
 	t = mdev->act_log;
 	n = lc_create("act_log", drbd_al_ext_cache, AL_UPDATES_PER_TRANSACTION,
-		mdev->sync_conf.al_extents, sizeof(struct lc_element), 0);
+		mdev->ldev->dc.al_extents, sizeof(struct lc_element), 0);
 
 	if (n == NULL) {
 		dev_err(DEV, "Cannot allocate act_log lru!\n");
@@ -1040,6 +1043,122 @@ static void drbd_suspend_al(struct drbd_conf *mdev)
 		dev_info(DEV, "Suspended AL updates\n");
 }
 
+int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
+{
+	enum drbd_ret_code retcode;
+	struct drbd_conf *mdev;
+	struct disk_conf *ndc; /* new disk conf */
+	int err, fifo_size;
+	int *rs_plan_s = NULL;
+
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+	if (retcode != NO_ERROR)
+		goto out;
+
+	mdev = adm_ctx.mdev;
+
+	/* make sure this is a CHANGE request, as expected */
+	if (!(info->nlhdr->nlmsg_flags & NLM_F_REPLACE)) {
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	/* we also need a disk
+	 * to change the options on */
+	if (!get_ldev(mdev)) {
+		retcode = ERR_NO_DISK;
+		goto out;
+	}
+
+/* FIXME freeze IO, cluster wide.
+ *
+ * We should make sure no-one uses
+ * some half-updated struct when we
+ * assign it later. */
+
+	ndc = kmalloc(sizeof(*ndc), GFP_KERNEL);
+	if (!ndc) {
+		retcode = ERR_NOMEM;
+		goto fail;
+	}
+
+	memcpy(ndc, &mdev->ldev->dc, sizeof(*ndc));
+	err = disk_conf_from_attrs(ndc, info);
+	if (err) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(from_attrs_err_to_txt(err));
+	}
+
+	if (!expect(ndc->resync_rate >= 1))
+		ndc->resync_rate = 1;
+
+	/* clip to allowed range */
+	if (!expect(ndc->al_extents >= DRBD_AL_EXTENTS_MIN))
+		ndc->al_extents = DRBD_AL_EXTENTS_MIN;
+	if (!expect(ndc->al_extents <= DRBD_AL_EXTENTS_MAX))
+		ndc->al_extents = DRBD_AL_EXTENTS_MAX;
+
+	/* most sanity checks done, try to assign the new sync-after
+	 * dependency.  need to hold the global lock in there,
+	 * to avoid a race in the dependency loop check. */
+	retcode = drbd_alter_sa(mdev, ndc->resync_after);
+	if (retcode != NO_ERROR)
+		goto fail;
+
+	fifo_size = (ndc->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
+	if (fifo_size != mdev->rs_plan_s.size && fifo_size > 0) {
+		rs_plan_s   = kzalloc(sizeof(int) * fifo_size, GFP_KERNEL);
+		if (!rs_plan_s) {
+			dev_err(DEV, "kmalloc of fifo_buffer failed");
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	}
+
+	/* FIXME
+	 * To avoid someone looking at a half-updated struct, we probably
+	 * should have a rw-semaphor on net_conf and disk_conf.
+	 */
+	mdev->ldev->dc = *ndc;
+
+	if (fifo_size != mdev->rs_plan_s.size) {
+		kfree(mdev->rs_plan_s.values);
+		mdev->rs_plan_s.values = rs_plan_s;
+		mdev->rs_plan_s.size   = fifo_size;
+		mdev->rs_planed = 0;
+		rs_plan_s = NULL;
+	}
+
+	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
+	drbd_al_shrink(mdev);
+	err = drbd_check_al_size(mdev);
+	lc_unlock(mdev->act_log);
+	wake_up(&mdev->al_wait);
+
+	drbd_md_sync(mdev);
+
+	if (err) {
+/* FIXME cannot fail here just like that:
+ * we are already attached, and the new values are assigned!
+ */
+		retcode = ERR_NOMEM;
+		goto fail;
+	}
+
+	if (mdev->state.conn >= C_CONNECTED)
+		drbd_send_sync_param(mdev);
+
+ fail:
+	put_ldev(mdev);
+	kfree(ndc);
+	kfree(rs_plan_s);
+ out:
+	drbd_adm_finish(info, retcode);
+	return 0;
+}
+
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_conf *mdev;
@@ -1088,7 +1207,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	nbc->dc.fencing       = DRBD_FENCING_DEF;
 	nbc->dc.max_bio_bvecs = DRBD_MAX_BIO_BVECS_DEF;
 
-	err = disk_conf_from_attrs(&nbc->dc, info->attrs);
+	err = disk_conf_from_attrs(&nbc->dc, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -1479,6 +1598,164 @@ out:
 	return 0;
 }
 
+static bool conn_resync_running(struct drbd_tconn *tconn)
+{
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		if (mdev->state.conn == C_SYNC_SOURCE ||
+		    mdev->state.conn == C_SYNC_TARGET ||
+		    mdev->state.conn == C_PAUSED_SYNC_S ||
+		    mdev->state.conn == C_PAUSED_SYNC_T)
+			return true;
+	}
+	return false;
+}
+
+static bool conn_ov_running(struct drbd_tconn *tconn)
+{
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		if (mdev->state.conn == C_VERIFY_S ||
+		    mdev->state.conn == C_VERIFY_T)
+			return true;
+	}
+	return false;
+}
+
+int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
+{
+	enum drbd_ret_code retcode;
+	struct drbd_tconn *tconn;
+	struct net_conf *new_conf = NULL;
+	int err;
+	int ovr; /* online verify running */
+	int rsr; /* re-sync running */
+	struct crypto_hash *verify_tfm = NULL;
+	struct crypto_hash *csums_tfm = NULL;
+
+
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_CONN);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+	if (retcode != NO_ERROR)
+		goto out;
+
+	tconn = adm_ctx.tconn;
+
+	/* make sure this is a CHANGE request, as expected */
+	if (!(info->nlhdr->nlmsg_flags & NLM_F_REPLACE)) {
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	new_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
+	if (!new_conf) {
+		retcode = ERR_NOMEM;
+		goto out;
+	}
+
+	/* we also need a net config
+	 * to change the options on */
+	if (!get_net_conf(tconn)) {
+		drbd_msg_put_info("net conf missing, try connect");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	conn_reconfig_start(tconn);
+
+	memcpy(new_conf, tconn->net_conf, sizeof(*new_conf));
+	err = net_conf_from_attrs(new_conf, info);
+	if (err) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(from_attrs_err_to_txt(err));
+		goto fail;
+	}
+
+	/* re-sync running */
+	rsr = conn_resync_running(tconn);
+	if (rsr && strcmp(new_conf->csums_alg, tconn->net_conf->csums_alg)) {
+		retcode = ERR_CSUMS_RESYNC_RUNNING;
+		goto fail;
+	}
+
+	if (!rsr && new_conf->csums_alg[0]) {
+		csums_tfm = crypto_alloc_hash(new_conf->csums_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(csums_tfm)) {
+			csums_tfm = NULL;
+			retcode = ERR_CSUMS_ALG;
+			goto fail;
+		}
+
+		if (!drbd_crypto_is_hash(crypto_hash_tfm(csums_tfm))) {
+			retcode = ERR_CSUMS_ALG_ND;
+			goto fail;
+		}
+	}
+
+	/* online verify running */
+	ovr = conn_ov_running(tconn);
+	if (ovr) {
+		if (strcmp(new_conf->verify_alg, tconn->net_conf->verify_alg)) {
+			retcode = ERR_VERIFY_RUNNING;
+			goto fail;
+		}
+	}
+
+	if (!ovr && new_conf->verify_alg[0]) {
+		verify_tfm = crypto_alloc_hash(new_conf->verify_alg, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(verify_tfm)) {
+			verify_tfm = NULL;
+			retcode = ERR_VERIFY_ALG;
+			goto fail;
+		}
+
+		if (!drbd_crypto_is_hash(crypto_hash_tfm(verify_tfm))) {
+			retcode = ERR_VERIFY_ALG_ND;
+			goto fail;
+		}
+	}
+
+
+	/* For now, use struct assignment, not pointer assignment.
+	 * We don't have any means to determine who might still
+	 * keep a local alias into the struct,
+	 * so we cannot just free it and hope for the best :(
+	 * FIXME
+	 * To avoid someone looking at a half-updated struct, we probably
+	 * should have a rw-semaphor on net_conf and disk_conf.
+	 */
+	*tconn->net_conf = *new_conf;
+
+	if (!rsr) {
+		crypto_free_hash(tconn->csums_tfm);
+		tconn->csums_tfm = csums_tfm;
+		csums_tfm = NULL;
+	}
+	if (!ovr) {
+		crypto_free_hash(tconn->verify_tfm);
+		tconn->verify_tfm = verify_tfm;
+		verify_tfm = NULL;
+	}
+
+	if (tconn->cstate >= C_WF_REPORT_PARAMS)
+		drbd_send_sync_param(minor_to_mdev(conn_lowest_minor(tconn)));
+
+ fail:
+	crypto_free_hash(csums_tfm);
+	crypto_free_hash(verify_tfm);
+	kfree(new_conf);
+	put_net_conf(tconn);
+	conn_reconfig_done(tconn);
+ out:
+	drbd_adm_finish(info, retcode);
+	return 0;
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	char hmac_name[CRYPTO_MAX_ALG_NAME];
@@ -1538,7 +1815,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	new_conf->on_congestion    = DRBD_ON_CONGESTION_DEF;
 	new_conf->cong_extents     = DRBD_CONG_EXTENTS_DEF;
 
-	err = net_conf_from_attrs(new_conf, info->attrs);
+	err = net_conf_from_attrs(new_conf, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -1770,7 +2047,7 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 	tconn = adm_ctx.tconn;
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_DISCONNECT_PARMS]) {
-		err = disconnect_parms_from_attrs(&parms, info->attrs);
+		err = disconnect_parms_from_attrs(&parms, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -1829,7 +2106,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 
 	memset(&rs, 0, sizeof(struct resize_parms));
 	if (info->attrs[DRBD_NLA_RESIZE_PARMS]) {
-		err = resize_parms_from_attrs(&rs, info->attrs);
+		err = resize_parms_from_attrs(&rs, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -1885,26 +2162,21 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_syncer(struct sk_buff *skb, struct genl_info *info)
+int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
 	enum drbd_ret_code retcode;
-	int err;
-	int ovr; /* online verify running */
-	int rsr; /* re-sync running */
-	struct crypto_hash *verify_tfm = NULL;
-	struct crypto_hash *csums_tfm = NULL;
-	struct syncer_conf sc;
 	cpumask_var_t new_cpu_mask;
+	struct drbd_tconn *tconn;
 	int *rs_plan_s = NULL;
-	int fifo_size;
+	struct res_opts sc;
+	int err;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_CONN);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 	if (retcode != NO_ERROR)
 		goto fail;
-	mdev = adm_ctx.mdev;
+	tconn = adm_ctx.tconn;
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL)) {
 		retcode = ERR_NOMEM;
@@ -1914,73 +2186,16 @@ int drbd_adm_syncer(struct sk_buff *skb, struct genl_info *info)
 
 	if (((struct drbd_genlmsghdr*)info->userhdr)->flags
 			& DRBD_GENL_F_SET_DEFAULTS) {
-		memset(&sc, 0, sizeof(struct syncer_conf));
-		sc.rate       = DRBD_RATE_DEF;
-		sc.after      = DRBD_AFTER_DEF;
-		sc.al_extents = DRBD_AL_EXTENTS_DEF;
+		memset(&sc, 0, sizeof(struct res_opts));
 		sc.on_no_data  = DRBD_ON_NO_DATA_DEF;
-		sc.c_plan_ahead = DRBD_C_PLAN_AHEAD_DEF;
-		sc.c_delay_target = DRBD_C_DELAY_TARGET_DEF;
-		sc.c_fill_target = DRBD_C_FILL_TARGET_DEF;
-		sc.c_max_rate = DRBD_C_MAX_RATE_DEF;
-		sc.c_min_rate = DRBD_C_MIN_RATE_DEF;
 	} else
-		memcpy(&sc, &mdev->sync_conf, sizeof(struct syncer_conf));
+		sc = tconn->res_opts;
 
-	err = syncer_conf_from_attrs(&sc, info->attrs);
+	err = res_opts_from_attrs(&sc, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
-	}
-
-	/* re-sync running */
-	rsr = (	mdev->state.conn == C_SYNC_SOURCE ||
-		mdev->state.conn == C_SYNC_TARGET ||
-		mdev->state.conn == C_PAUSED_SYNC_S ||
-		mdev->state.conn == C_PAUSED_SYNC_T );
-
-	if (rsr && strcmp(sc.csums_alg, mdev->sync_conf.csums_alg)) {
-		retcode = ERR_CSUMS_RESYNC_RUNNING;
-		goto fail;
-	}
-
-	if (!rsr && sc.csums_alg[0]) {
-		csums_tfm = crypto_alloc_hash(sc.csums_alg, 0, CRYPTO_ALG_ASYNC);
-		if (IS_ERR(csums_tfm)) {
-			csums_tfm = NULL;
-			retcode = ERR_CSUMS_ALG;
-			goto fail;
-		}
-
-		if (!drbd_crypto_is_hash(crypto_hash_tfm(csums_tfm))) {
-			retcode = ERR_CSUMS_ALG_ND;
-			goto fail;
-		}
-	}
-
-	/* online verify running */
-	ovr = (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T);
-
-	if (ovr) {
-		if (strcmp(sc.verify_alg, mdev->sync_conf.verify_alg)) {
-			retcode = ERR_VERIFY_RUNNING;
-			goto fail;
-		}
-	}
-
-	if (!ovr && sc.verify_alg[0]) {
-		verify_tfm = crypto_alloc_hash(sc.verify_alg, 0, CRYPTO_ALG_ASYNC);
-		if (IS_ERR(verify_tfm)) {
-			verify_tfm = NULL;
-			retcode = ERR_VERIFY_ALG;
-			goto fail;
-		}
-
-		if (!drbd_crypto_is_hash(crypto_hash_tfm(verify_tfm))) {
-			retcode = ERR_VERIFY_ALG_ND;
-			goto fail;
-		}
 	}
 
 	/* silently ignore cpu mask on UP kernel */
@@ -1988,98 +2203,26 @@ int drbd_adm_syncer(struct sk_buff *skb, struct genl_info *info)
 		err = __bitmap_parse(sc.cpu_mask, 32, 0,
 				cpumask_bits(new_cpu_mask), nr_cpu_ids);
 		if (err) {
-			dev_warn(DEV, "__bitmap_parse() failed with %d\n", err);
+			conn_warn(tconn, "__bitmap_parse() failed with %d\n", err);
 			retcode = ERR_CPU_MASK_PARSE;
 			goto fail;
 		}
 	}
 
-	if (!expect(sc.rate >= 1))
-		sc.rate = 1;
 
-	/* clip to allowed range */
-	if (!expect(sc.al_extents >= DRBD_AL_EXTENTS_MIN))
-		sc.al_extents = DRBD_AL_EXTENTS_MIN;
-	if (!expect(sc.al_extents <= DRBD_AL_EXTENTS_MAX))
-		sc.al_extents = DRBD_AL_EXTENTS_MAX;
+	tconn->res_opts = sc;
 
-	/* most sanity checks done, try to assign the new sync-after
-	 * dependency.  need to hold the global lock in there,
-	 * to avoid a race in the dependency loop check. */
-	retcode = drbd_alter_sa(mdev, sc.after);
-	if (retcode != NO_ERROR)
-		goto fail;
-
-	fifo_size = (sc.c_plan_ahead * 10 * SLEEP_TIME) / HZ;
-	if (fifo_size != mdev->rs_plan_s.size && fifo_size > 0) {
-		rs_plan_s   = kzalloc(sizeof(int) * fifo_size, GFP_KERNEL);
-		if (!rs_plan_s) {
-			dev_err(DEV, "kmalloc of fifo_buffer failed");
-			retcode = ERR_NOMEM;
-			goto fail;
-		}
+	if (!cpumask_equal(tconn->cpu_mask, new_cpu_mask)) {
+		cpumask_copy(tconn->cpu_mask, new_cpu_mask);
+		drbd_calc_cpu_mask(tconn);
+		tconn->receiver.reset_cpu_mask = 1;
+		tconn->asender.reset_cpu_mask = 1;
+		tconn->worker.reset_cpu_mask = 1;
 	}
 
-	/* ok, assign the rest of it as well.
-	 * lock against receive_SyncParam() */
-	spin_lock(&mdev->peer_seq_lock);
-	mdev->sync_conf = sc;
-
-	if (!rsr) {
-		crypto_free_hash(mdev->csums_tfm);
-		mdev->csums_tfm = csums_tfm;
-		csums_tfm = NULL;
-	}
-
-	if (!ovr) {
-		crypto_free_hash(mdev->verify_tfm);
-		mdev->verify_tfm = verify_tfm;
-		verify_tfm = NULL;
-	}
-
-	if (fifo_size != mdev->rs_plan_s.size) {
-		kfree(mdev->rs_plan_s.values);
-		mdev->rs_plan_s.values = rs_plan_s;
-		mdev->rs_plan_s.size   = fifo_size;
-		mdev->rs_planed = 0;
-		rs_plan_s = NULL;
-	}
-
-	spin_unlock(&mdev->peer_seq_lock);
-
-	if (get_ldev(mdev)) {
-		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
-		drbd_al_shrink(mdev);
-		err = drbd_check_al_size(mdev);
-		lc_unlock(mdev->act_log);
-		wake_up(&mdev->al_wait);
-
-		put_ldev(mdev);
-		drbd_md_sync(mdev);
-
-		if (err) {
-			retcode = ERR_NOMEM;
-			goto fail;
-		}
-	}
-
-	if (mdev->state.conn >= C_CONNECTED)
-		drbd_send_sync_param(mdev, &sc);
-
-	if (!cpumask_equal(mdev->tconn->cpu_mask, new_cpu_mask)) {
-		cpumask_copy(mdev->tconn->cpu_mask, new_cpu_mask);
-		drbd_calc_cpu_mask(mdev->tconn);
-		mdev->tconn->receiver.reset_cpu_mask = 1;
-		mdev->tconn->asender.reset_cpu_mask = 1;
-		mdev->tconn->worker.reset_cpu_mask = 1;
-	}
-
-	drbd_kobject_uevent(mdev);
 fail:
 	kfree(rs_plan_s);
 	free_cpumask_var(new_cpu_mask);
-	crypto_free_hash(csums_tfm);
-	crypto_free_hash(verify_tfm);
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -2288,14 +2431,14 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_conf *mdev,
 	if (nla_put_drbd_cfg_context(skb, mdev->tconn->name, mdev->vnr))
 		goto nla_put_failure;
 
+	if (res_opts_to_skb(skb, &mdev->tconn->res_opts, exclude_sensitive))
+		goto nla_put_failure;
+
 	if (got_ldev)
 		if (disk_conf_to_skb(skb, &mdev->ldev->dc, exclude_sensitive))
 			goto nla_put_failure;
 	if (got_net)
 		if (net_conf_to_skb(skb, mdev->tconn->net_conf, exclude_sensitive))
-			goto nla_put_failure;
-
-	if (syncer_conf_to_skb(skb, &mdev->sync_conf, exclude_sensitive))
 			goto nla_put_failure;
 
 	nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
@@ -2515,7 +2658,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 		/* resume from last known position, if possible */
 		struct start_ov_parms parms =
 			{ .ov_start_sector = mdev->ov_start_sector };
-		int err = start_ov_parms_from_attrs(&parms, info->attrs);
+		int err = start_ov_parms_from_attrs(&parms, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -2551,7 +2694,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	mdev = adm_ctx.mdev;
 	memset(&args, 0, sizeof(args));
 	if (info->attrs[DRBD_NLA_NEW_C_UUID_PARMS]) {
-		err = new_c_uuid_parms_from_attrs(&args, info->attrs);
+		err = new_c_uuid_parms_from_attrs(&args, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(from_attrs_err_to_txt(err));
