@@ -1994,11 +1994,6 @@ static int print_broadcast_events(struct genl_info *info, int u __unused)
 				synced / 10, synced % 10);
 		}
 		break;
-	case SIB_INTEGRITY_CHECK_FAILED:
-		/* DE: "dump epoch entry" ... */
-		printf("%u DE %d\n", info->seq, dh->minor);
-		// FIXME print_dump_ee();
-		break;
 	default:
 		/* we could add the si.reason */
 		printf("%u ?? " MNV_FMT " <other message, state info broadcast reason:%u>\n",
