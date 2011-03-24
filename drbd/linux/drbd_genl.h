@@ -137,8 +137,8 @@ GENL_struct(DRBD_NLA_RESOURCE_OPTS, 4, res_opts,
 )
 
 GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
-	__str_field(1,	GENLA_F_REQUIRED | GENLA_F_INVARIANT,	my_addr,	128)
-	__str_field(2,	GENLA_F_REQUIRED | GENLA_F_INVARIANT,	peer_addr,	128)
+	__bin_field(1,	GENLA_F_REQUIRED | GENLA_F_INVARIANT,	my_addr,	128)
+	__bin_field(2,	GENLA_F_REQUIRED | GENLA_F_INVARIANT,	peer_addr,	128)
 	__str_field(3,	GENLA_F_MANDATORY | GENLA_F_SENSITIVE,
 						shared_secret,	SHARED_SECRET_MAX)
 	__str_field(4,	GENLA_F_MANDATORY,	cram_hmac_alg,	SHARED_SECRET_MAX)
