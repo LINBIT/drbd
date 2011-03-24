@@ -1339,6 +1339,11 @@ static void print_options(const char *cmd_name, const char *sect_name)
 				cmdname, cmd_name);
 		abort();
 	}
+	if (nla_parse_nested(nested_attr_tb, cmd->maxattr, global_attrs[cmd->tla_id], cmd->policy)) {
+		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
+		/* still, print those that validated ok */
+	}
+	current_policy = cmd->policy; /* for show_numeric */
 
 	for (od = cmd->cp.options; od && od->name; od++) {
 		if (!ntb(od->nla_type))
@@ -1914,7 +1919,6 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 static int print_resources(struct genl_info *info, int u __unused)
 {
 	static int call_count;
-	struct drbd_genlmsghdr *dh;
 	if (!info) {
 		/* dump finished */
 		if (call_count) {
@@ -1924,7 +1928,6 @@ static int print_resources(struct genl_info *info, int u __unused)
 		fflush(stdout);
 		return 0;
 	}
-	dh = info->userhdr;
 	if (!global_attrs[DRBD_NLA_CFG_CONTEXT]) {
 		dbg(1, "unexpected packet, configuration context missing!\n");
 	} else {
