@@ -124,6 +124,11 @@ int main(void)
 #define PF_INET_SDP AF_INET_SDP
 #endif
 
+/* pretty print helpers */
+static int indent = 0;
+#define INDENT_WIDTH	4
+#define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
+
 enum usage_type {
 	BRIEF,
 	FULL,
@@ -1273,9 +1278,9 @@ static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 	}
 
 	if (unit_prefix == 1)
-		printf("\t%-16s\t%lld", od->name, val);
+		printI("%-16s\t%lld", od->name, val);
 	else
-		printf("\t%-16s\t%lld%c", od->name, val, unit_prefix);
+		printI("%-16s\t%lld%c", od->name, val, unit_prefix);
 	if (val == (long long)od->numeric_param.def)
 		printf(" _is_default");
 	if (od->numeric_param.unit) {
@@ -1291,14 +1296,14 @@ static void show_handler(struct drbd_option *od, struct nlattr *nla)
 	int i;
 
 	i = nla_get_u32(nla);
-	printf("\t%-16s\t%s",od->name,handler_names[i]);
+	printI("%-16s\t%s",od->name,handler_names[i]);
 	if( i == (long long)od->numeric_param.def) printf(" _is_default");
 	printf(";\n");
 }
 
 static void show_bit(struct drbd_option *od, struct nlattr *nla __unused)
 {
-	printf("\t%-16s;\n", od->name);
+	printI("%-16s;\n", od->name);
 }
 
 static void show_string(struct drbd_option *od, struct nlattr *nla)
@@ -1306,7 +1311,7 @@ static void show_string(struct drbd_option *od, struct nlattr *nla)
 
 	char *str = nla_data(nla);
 	if (str[0])
-		printf("\t%-16s\t\"%s\";\n",od->name,str);
+		printI("%-16s\t\"%s\";\n",od->name,str);
 }
 
 static struct drbd_cmd *find_cmd_by_name(const char *name)
@@ -1350,12 +1355,14 @@ static void print_options(const char *cmd_name, const char *sect_name)
 			continue;
 		if (!opened) {
 			opened=1;
-			printf("    %s {\n",sect_name);
+			printI("%s {\n",sect_name);
+			++indent;
 		}
 		od->show_function(od, ntb(od->nla_type));
 	}
 	if(opened) {
-		printf("    }\n");
+		--indent;
+		printI("}\n");
 	}
 }
 
@@ -1476,18 +1483,18 @@ static void show_address(void* address, int addr_len)
 	|| addr->sa_family == get_af_ssocks(0)
 	|| addr->sa_family == AF_INET_SDP) {
 		addr4 = (struct sockaddr_in *)address;
-		printf("\taddress\t\t\t%s %s:%d;\n",
+		printI("address\t\t\t%s %s:%d;\n",
 		       af_to_str(addr4->sin_family),
 		       inet_ntoa(addr4->sin_addr),
 		       ntohs(addr4->sin_port));
 	} else if (addr->sa_family == AF_INET6) {
 		addr6 = (struct sockaddr_in6 *)address;
-		printf("\taddress\t\t\t%s [%s]:%d;\n",
+		printI("address\t\t\t%s [%s]:%d;\n",
 		       af_to_str(addr6->sin6_family),
 		       inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
 		       ntohs(addr6->sin6_port));
 	} else {
-		printf("\taddress\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
+		printI("address\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
 	}
 }
 
@@ -1525,21 +1532,27 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 
 	if (start_new_resource) {
 		if (close_prev_resource) {
-			printf("    }\n"); /* close _this_host */
-			printf("}\n\n");
+			--indent;
+			printI("}\n"); /* close _this_host */
+			--indent;
+			printI("}\n\n");
 		}
-		printf("resource %s {\n", cfg.ctx_conn_name);
+		printI("resource %s {\n", cfg.ctx_conn_name);
+		++indent;
 		print_options("resource-options", "options");
 		print_options("net-options", "net");
 
 		if (global_attrs[DRBD_NLA_NET_CONF]) {
 			if (nc.peer_addr_len) {
-				printf("    _remote_host {\n");
+				printI("_remote_host {\n");
+				++indent;
 				show_address(nc.peer_addr, nc.peer_addr_len);
-				printf("    }\n");
+				--indent;
+				printI("}\n");
 			}
 		}
-		printf("    _this_host {\n");
+		printI("_this_host {\n");
+		++indent;
 		if (global_attrs[DRBD_NLA_NET_CONF]) {
 			if (nc.my_addr[0])
 				show_address(nc.my_addr, nc.my_addr_len);
@@ -1548,32 +1561,36 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 
 	if (cfg.ctx_volume != -1U) {
 		unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-		printf("\tvolume %d {\n", cfg.ctx_volume);
-		printf("\t\tdevice\t\t\tminor %d;\n", minor);
+		printI("volume %d {\n", cfg.ctx_volume);
+		++indent;
+		printI("device\t\t\tminor %d;\n", minor);
 		if (global_attrs[DRBD_NLA_DISK_CONF]) {
 			if (dc.backing_dev[0]) {
-				printf("\t\tdisk\t\t\t\"%s\";\n", dc.backing_dev);
+				printI("disk\t\t\t\"%s\";\n", dc.backing_dev);
 				switch(dc.meta_dev_idx) {
 				case DRBD_MD_INDEX_INTERNAL:
 				case DRBD_MD_INDEX_FLEX_INT:
-					printf("\t\tmeta-disk\t\tinternal;\n");
+					printI("meta-disk\t\t\tinternal;\n");
 					break;
 				case DRBD_MD_INDEX_FLEX_EXT:
-					printf("\t\tflexible-meta-disk\t\"%s\";\n", dc.meta_dev);
+					printI("flexible-meta-disk\t\t\"%s\";\n", dc.meta_dev);
 					break;
 				default:
-					printf("\t\tmeta-disk\t\t\"%s\" [ %d ];\n", dc.meta_dev,
+					printI("meta-disk\t\t\t\"%s\" [ %d ];\n", dc.meta_dev,
 					       dc.meta_dev_idx);
 				 }
 			}
 		}
 		print_options("attach", "disk");
-		printf("\t}\n"); /* close volume */
+		--indent;
+		printI("}\n"); /* close volume */
 	}
 
 	if (!called_by_show_all) {
-		printf("    }\n"); /* close _this_host */
-		printf("}\n"); /* close resource */
+		--indent;
+		printI("}\n"); /* close _this_host */
+		--indent;
+		printI("}\n"); /* close resource */
 	}
 
 	return 0;
@@ -1922,8 +1939,10 @@ static int print_resources(struct genl_info *info, int u __unused)
 	if (!info) {
 		/* dump finished */
 		if (call_count) {
-			printf("    }\n"); /* close _this_host */
-			printf("}\n");
+			--indent;
+			printI("}\n"); /* close _this_host */
+			--indent;
+			printI("}\n");
 		}
 		fflush(stdout);
 		return 0;
