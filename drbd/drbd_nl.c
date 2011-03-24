@@ -920,24 +920,24 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev, int ass
  * failed, and 0 on success. You should call drbd_md_sync() after you called
  * this function.
  */
-STATIC int drbd_check_al_size(struct drbd_conf *mdev)
+STATIC int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;
 	unsigned int in_use;
 	int i;
 
-	if (!expect(mdev->ldev->dc.al_extents >= DRBD_AL_EXTENTS_MIN))
-		mdev->ldev->dc.al_extents = DRBD_AL_EXTENTS_MIN;
+	if (!expect(dc->al_extents >= DRBD_AL_EXTENTS_MIN))
+		dc->al_extents = DRBD_AL_EXTENTS_MIN;
 
 	if (mdev->act_log &&
-	    mdev->act_log->nr_elements == mdev->ldev->dc.al_extents)
+	    mdev->act_log->nr_elements == dc->al_extents)
 		return 0;
 
 	in_use = 0;
 	t = mdev->act_log;
 	n = lc_create("act_log", drbd_al_ext_cache, AL_UPDATES_PER_TRANSACTION,
-		mdev->ldev->dc.al_extents, sizeof(struct lc_element), 0);
+		dc->al_extents, sizeof(struct lc_element), 0);
 
 	if (n == NULL) {
 		dev_err(DEV, "Cannot allocate act_log lru!\n");
@@ -1117,12 +1117,6 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	/* FIXME
-	 * To avoid someone looking at a half-updated struct, we probably
-	 * should have a rw-semaphor on net_conf and disk_conf.
-	 */
-	mdev->ldev->dc = *ndc;
-
 	if (fifo_size != mdev->rs_plan_s.size) {
 		kfree(mdev->rs_plan_s.values);
 		mdev->rs_plan_s.values = rs_plan_s;
@@ -1133,19 +1127,23 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 	drbd_al_shrink(mdev);
-	err = drbd_check_al_size(mdev);
+	err = drbd_check_al_size(mdev, ndc);
 	lc_unlock(mdev->act_log);
 	wake_up(&mdev->al_wait);
 
-	drbd_md_sync(mdev);
-
 	if (err) {
-/* FIXME cannot fail here just like that:
- * we are already attached, and the new values are assigned!
- */
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+
+	/* FIXME
+	 * To avoid someone looking at a half-updated struct, we probably
+	 * should have a rw-semaphor on net_conf and disk_conf.
+	 */
+	mdev->ldev->dc = *ndc;
+
+	drbd_md_sync(mdev);
+
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev);
@@ -1358,7 +1356,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Since we are diskless, fix the activity log first... */
-	if (drbd_check_al_size(mdev)) {
+	if (drbd_check_al_size(mdev, &nbc->dc)) {
 		retcode = ERR_NOMEM;
 		goto force_diskless_dec;
 	}

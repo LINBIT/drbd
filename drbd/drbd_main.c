@@ -2831,11 +2831,11 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		bdev->md.uuid[i] = be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
-	mdev->ldev->dc.al_extents = be32_to_cpu(buffer->al_nr_extents);
+	bdev->dc.al_extents = be32_to_cpu(buffer->al_nr_extents);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
-	if (mdev->ldev->dc.al_extents < 7)
-		mdev->ldev->dc.al_extents = 127;
+	if (bdev->dc.al_extents < 7)
+		bdev->dc.al_extents = 127;
 
  err:
 	mutex_unlock(&mdev->md_io_mutex);
