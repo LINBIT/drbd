@@ -1344,6 +1344,8 @@ static void print_options(const char *cmd_name, const char *sect_name)
 				cmdname, cmd_name);
 		abort();
 	}
+	if (!global_attrs[cmd->tla_id])
+		return;
 	if (nla_parse_nested(nested_attr_tb, cmd->maxattr, global_attrs[cmd->tla_id], cmd->policy)) {
 		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
 		/* still, print those that validated ok */
