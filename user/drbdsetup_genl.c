@@ -808,15 +808,14 @@ static void split_address(char* text, int *af, char** address, int* port)
 
 static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
 {
-	struct sockaddr_in addr;
-	struct sockaddr_in6 addr6;
+	struct sockaddr_in addr = { 0 };
+	struct sockaddr_in6 addr6 = { 0 };
 	int af, port;
 	char *address;
 
 	split_address(arg, &af, &address, &port);
 
 	if (af == AF_INET6) {
-		memset(&addr6, 0, sizeof(struct sockaddr_in6));
 		resolv6(address, &addr6);
 		addr6.sin6_port = htons(port);
 		/* addr6.sin6_len = sizeof(addr6); */
