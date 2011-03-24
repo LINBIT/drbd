@@ -225,10 +225,6 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	adm_ctx.mdev = minor_to_mdev(d_in->minor);
 	adm_ctx.tconn = conn_get_by_name(adm_ctx.conn_name);
 
-	pr_info("adm request: cmd=%u[%s], flags=0x%x, minor=%d, conn=%s\n",
-		cmd, drbd_genl_cmd_to_str(cmd), d_in->flags,
-		d_in->minor, adm_ctx.conn_name ?: "n/a");
-
 	if (!adm_ctx.mdev && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info("unknown minor");
 		return ERR_MINOR_INVALID;
@@ -268,7 +264,6 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 {
 	struct nlattr *nla;
 	const char *conn_name = NULL;
-	const u8 cmd = info->genlhdr->cmd;
 
 	if (adm_ctx.tconn) {
 		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
@@ -286,10 +281,6 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 		if (nla)
 			conn_name = nla_data(nla);
 	}
-
-	pr_info("adm reply: cmd=%u[%s], retcode=%d, minor=%d, conn=%s\n",
-		cmd, drbd_genl_cmd_to_str(cmd), retcode,
-		adm_ctx.minor, adm_ctx.conn_name ?: "n/a");
 
 	drbd_adm_send_reply(adm_ctx.reply_skb, info);
 	return 0;
@@ -2770,8 +2761,6 @@ next_tconn:
 		dh->minor = mdev_to_minor(mdev);
 		dh->ret_code = NO_ERROR;
 
-		pr_info("dump: minor=%u, conn=%s[%u]\n",
-			dh->minor, mdev->tconn->name, mdev->vnr);
 		if (nla_put_status_info(skb, mdev, NULL)) {
 			genlmsg_cancel(skb, dh);
 			goto out;
@@ -3220,8 +3209,6 @@ void drbd_bcast_event(struct drbd_conf *mdev, const struct sib_info *sib)
 		goto nla_put_failure;
 	d_out->minor = mdev_to_minor(mdev);
 	d_out->ret_code = NO_ERROR;
-
-	pr_info("event: minor=%u, conn=%s\n", d_out->minor, mdev->tconn->name);
 
 	if (nla_put_status_info(msg, mdev, sib))
 		goto nla_put_failure;
