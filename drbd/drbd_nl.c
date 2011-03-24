@@ -1059,11 +1059,19 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mdev = adm_ctx.mdev;
 
-	/* make sure this is a CHANGE request, as expected */
-	if (!(info->nlhdr->nlmsg_flags & NLM_F_REPLACE)) {
-		retcode = ERR_INVALID_REQUEST;
-		goto out;
-	}
+	/* make sure this is a CHANGE request, as expected.
+	 * Hm...
+	 * genl_rcv_msg can not distinguish between the "NEW" flags
+	 * (NLM_F_REPLACE and friends), and the "GET" flags
+	 * (NLM_F_ROOT, NLM_F_MATCH, ...).
+	 * They are numerically the same.
+	 * NLM_F_REPLACE would be considered a dump request, .dumpit is not
+	 * defined, and we'd get a -EOPNOTSUPP :-(
+	 * So we cannot set the REPLACE flag from userland.
+	 * To make it visible from the *_from_attrs() functions,
+	 * we set it here.
+	 */
+	info->nlhdr->nlmsg_flags |= NLM_F_REPLACE;
 
 	/* we also need a disk
 	 * to change the options on */
@@ -1644,11 +1652,19 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	tconn = adm_ctx.tconn;
 
-	/* make sure this is a CHANGE request, as expected */
-	if (!(info->nlhdr->nlmsg_flags & NLM_F_REPLACE)) {
-		retcode = ERR_INVALID_REQUEST;
-		goto out;
-	}
+	/* make sure this is a CHANGE request, as expected.
+	 * Hm...
+	 * genl_rcv_msg can not distinguish between the "NEW" flags
+	 * (NLM_F_REPLACE and friends), and the "GET" flags
+	 * (NLM_F_ROOT, NLM_F_MATCH, ...).
+	 * They are numerically the same.
+	 * NLM_F_REPLACE would be considered a dump request, .dumpit is not
+	 * defined, and we'd get a -EOPNOTSUPP :-(
+	 * So we cannot set the REPLACE flag from userland.
+	 * To make it visible from the *_from_attrs() functions,
+	 * we set it here.
+	 */
+	info->nlhdr->nlmsg_flags |= NLM_F_REPLACE;
 
 	new_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {

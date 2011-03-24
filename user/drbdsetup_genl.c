@@ -201,7 +201,6 @@ struct drbd_cmd {
 			int (*proc_event)(struct genl_info *, int);
 		} ep; // for events_cmd, events_usage
 	};
-	const int nlm_flags; /* may be set to NLM_F_REPLACE */
 };
 
 // other functions
@@ -423,8 +422,7 @@ struct drbd_cmd commands[] = {
 		F_CONFIG_CMD, {{ NULL, 
 	 (struct drbd_option[]) {
 		 CHANGEABLE_DISK_OPTIONS
-		 CLOSE_ARGS_OPTS } }},
-		NLM_F_REPLACE },
+		 CLOSE_ARGS_OPTS } }} },
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD, {{ NULL, NULL }} },
 
@@ -444,8 +442,7 @@ struct drbd_cmd commands[] = {
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 CHANGEABLE_NET_OPTIONS
-		 CLOSE_ARGS_OPTS } }},
-		NLM_F_REPLACE },
+		 CLOSE_ARGS_OPTS } }} },
 
 	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS, POLICY(disconnect_parms),
 		F_CONFIG_CMD, {{NULL,
@@ -1143,7 +1140,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		goto error;
 	}
 
-	dhdr = genlmsg_put(smsg, &drbd_genl_family, cm->nlm_flags, cm->cmd_id);
+	dhdr = genlmsg_put(smsg, &drbd_genl_family, 0, cm->cmd_id);
 	dhdr->minor = minor;
 	dhdr->flags = 0;
 
