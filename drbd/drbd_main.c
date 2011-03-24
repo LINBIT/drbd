@@ -2428,8 +2428,10 @@ struct drbd_tconn *drbd_new_tconn(const char *name)
 	drbd_thread_init(tconn, &tconn->worker, drbd_worker, "worker");
 	drbd_thread_init(tconn, &tconn->asender, drbd_asender, "asender");
 
-	/* tconn->res_opts defaults happen to be all zeros,
-	 * which was taken care of by kzalloc */
+	tconn->res_opts = (struct res_opts) {
+		{}, 0, /* cpu_mask */
+		DRBD_ON_NO_DATA_DEF, /* on_no_data */
+	};
 
 	mutex_lock(&drbd_cfg_mutex);
 	list_add_tail(&tconn->all_tconn, &drbd_tconns);

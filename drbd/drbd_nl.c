@@ -1208,16 +1208,33 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
 	/* allocation not in the IO path, drbdsetup context */
-	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
-	nbc->dc.disk_size     = DRBD_DISK_SIZE_SECT_DEF;
-	nbc->dc.on_io_error   = DRBD_ON_IO_ERROR_DEF;
-	nbc->dc.fencing       = DRBD_FENCING_DEF;
-	nbc->dc.max_bio_bvecs = DRBD_MAX_BIO_BVECS_DEF;
+	nbc->dc = (struct disk_conf) {
+		{}, 0, /* backing_dev */
+		{}, 0, /* meta_dev */
+		0, /* meta_dev_idx */
+		DRBD_DISK_SIZE_SECT_DEF, /* disk_size */
+		DRBD_MAX_BIO_BVECS_DEF, /* max_bio_bvecs */
+		DRBD_ON_IO_ERROR_DEF, /* on_io_error */
+		DRBD_FENCING_DEF, /* fencing */
+		DRBD_RATE_DEF, /* resync_rate */
+		DRBD_AFTER_DEF, /* resync_after */
+		DRBD_AL_EXTENTS_DEF, /* al_extents */
+		DRBD_C_PLAN_AHEAD_DEF, /* c_plan_ahead */
+		DRBD_C_DELAY_TARGET_DEF, /* c_delay_target */
+		DRBD_C_FILL_TARGET_DEF, /* c_fill_target */
+		DRBD_C_MAX_RATE_DEF, /* c_max_rate */
+		DRBD_C_MIN_RATE_DEF, /* c_min_rate */
+		0, /* no_disk_barrier */
+		0, /* no_disk_flush */
+		0, /* no_disk_drain */
+		0, /* no_md_flush */
+	};
 
 	err = disk_conf_from_attrs(&nbc->dc, info);
 	if (err) {
@@ -1809,31 +1826,45 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* allocation not in the IO path, cqueue thread context */
-	new_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
+	new_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
-	new_conf->timeout	   = DRBD_TIMEOUT_DEF;
-	new_conf->try_connect_int  = DRBD_CONNECT_INT_DEF;
-	new_conf->ping_int	   = DRBD_PING_INT_DEF;
-	new_conf->max_epoch_size   = DRBD_MAX_EPOCH_SIZE_DEF;
-	new_conf->max_buffers	   = DRBD_MAX_BUFFERS_DEF;
-	new_conf->unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF;
-	new_conf->sndbuf_size	   = DRBD_SNDBUF_SIZE_DEF;
-	new_conf->rcvbuf_size	   = DRBD_RCVBUF_SIZE_DEF;
-	new_conf->ko_count	   = DRBD_KO_COUNT_DEF;
-	new_conf->after_sb_0p	   = DRBD_AFTER_SB_0P_DEF;
-	new_conf->after_sb_1p	   = DRBD_AFTER_SB_1P_DEF;
-	new_conf->after_sb_2p	   = DRBD_AFTER_SB_2P_DEF;
-	new_conf->want_lose	   = 0;
-	new_conf->two_primaries    = 0;
-	new_conf->wire_protocol    = DRBD_PROT_C;
-	new_conf->ping_timeo	   = DRBD_PING_TIMEO_DEF;
-	new_conf->rr_conflict	   = DRBD_RR_CONFLICT_DEF;
-	new_conf->on_congestion    = DRBD_ON_CONGESTION_DEF;
-	new_conf->cong_extents     = DRBD_CONG_EXTENTS_DEF;
+	*new_conf = (struct net_conf) {
+		{}, 0, /* my_addr */
+		{}, 0, /* peer_addr */
+		{}, 0, /* shared_secret */
+		{}, 0, /* cram_hmac_alg */
+		{}, 0, /* integrity_alg */
+		{}, 0, /* verify_alg */
+		{}, 0, /* csums_alg */
+		DRBD_PROTOCOL_DEF, /* wire_protocol */
+		DRBD_CONNECT_INT_DEF, /* try_connect_int */
+		DRBD_TIMEOUT_DEF, /* timeout */
+		DRBD_PING_INT_DEF, /* ping_int */
+		DRBD_PING_TIMEO_DEF, /* ping_timeo */
+		DRBD_SNDBUF_SIZE_DEF, /* sndbuf_size */
+		DRBD_RCVBUF_SIZE_DEF, /* rcvbuf_size */
+		DRBD_KO_COUNT_DEF, /* ko_count */
+		DRBD_MAX_BUFFERS_DEF, /* max_buffers */
+		DRBD_MAX_EPOCH_SIZE_DEF, /* max_epoch_size */
+		DRBD_UNPLUG_WATERMARK_DEF, /* unplug_watermark */
+		DRBD_AFTER_SB_0P_DEF, /* after_sb_0p */
+		DRBD_AFTER_SB_1P_DEF, /* after_sb_1p */
+		DRBD_AFTER_SB_2P_DEF, /* after_sb_2p */
+		DRBD_RR_CONFLICT_DEF, /* rr_conflict */
+		DRBD_ON_CONGESTION_DEF, /* on_congestion */
+		DRBD_CONG_FILL_DEF, /* cong_fill */
+		DRBD_CONG_EXTENTS_DEF, /* cong_extents */
+		0, /* two_primaries */
+		0, /* want_lose */
+		0, /* no_cork */
+		0, /* always_asbp */
+		0, /* dry_run */
+		0, /* use_rle */
+	};
 
 	err = net_conf_from_attrs(new_conf, info);
 	if (err) {
