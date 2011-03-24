@@ -795,7 +795,7 @@ out:
 
 STATIC int drbd_send_fp(struct drbd_tconn *tconn, struct socket *sock, enum drbd_packet cmd)
 {
-	struct p_header *h = &tconn->data.sbuf.header;
+	struct p_header *h = tconn->data.sbuf;
 
 	return !_conn_send_cmd(tconn, 0, sock, cmd, h, sizeof(*h), 0);
 }
@@ -4393,7 +4393,7 @@ STATIC int drbd_disconnected(int vnr, void *p, void *data)
 STATIC int drbd_send_handshake(struct drbd_tconn *tconn)
 {
 	/* ASSERT current == mdev->tconn->receiver ... */
-	struct p_handshake *p = &tconn->data.sbuf.handshake;
+	struct p_handshake *p = tconn->data.sbuf;
 	int err;
 
 	if (mutex_lock_interruptible(&tconn->data.mutex)) {
