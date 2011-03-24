@@ -61,6 +61,54 @@ bool conn_all_vols_unconf(struct drbd_tconn *tconn)
 	return true;
 }
 
+enum drbd_role conn_highest_role(struct drbd_tconn *tconn)
+{
+	enum drbd_role role = R_UNKNOWN;
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr)
+		role = max_t(enum drbd_role, role, mdev->state.role);
+
+	return role;
+}
+
+enum drbd_role conn_highest_peer(struct drbd_tconn *tconn)
+{
+	enum drbd_role peer = R_UNKNOWN;
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr)
+		peer = max_t(enum drbd_role, peer, mdev->state.role);
+
+	return peer;
+}
+
+enum drbd_disk_state conn_highest_disk(struct drbd_tconn *tconn)
+{
+	enum drbd_disk_state ds = D_DISKLESS;
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr)
+		ds = max_t(enum drbd_disk_state, ds, mdev->state.disk);
+
+	return ds;
+}
+
+enum drbd_disk_state conn_highest_pdsk(struct drbd_tconn *tconn)
+{
+	enum drbd_disk_state ds = D_DISKLESS;
+	struct drbd_conf *mdev;
+	int vnr;
+
+	idr_for_each_entry(&tconn->volumes, mdev, vnr)
+		ds = max_t(enum drbd_disk_state, ds, mdev->state.pdsk);
+
+	return ds;
+}
+
 /**
  * cl_wide_st_chg() - true if the state change is a cluster wide one
  * @mdev:	DRBD device.
@@ -336,18 +384,6 @@ static void print_state_change(struct drbd_conf *mdev, union drbd_state os, unio
 		dev_info(DEV, "%s\n", pb);
 }
 
-static bool vol_has_primary_peer(struct drbd_tconn *tconn)
-{
-	struct drbd_conf *mdev;
-	int vnr;
-
-	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		if (mdev->state.peer == R_PRIMARY)
-			return true;
-	}
-	return false;
-}
-
 /**
  * is_valid_state() - Returns an SS_ error code if ns is not valid
  * @mdev:	DRBD device.
@@ -371,7 +407,7 @@ is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 		if (!mdev->tconn->net_conf->two_primaries && ns.role == R_PRIMARY) {
 			if (ns.peer == R_PRIMARY)
 				rv = SS_TWO_PRIMARIES;
-			else if (vol_has_primary_peer(mdev->tconn))
+			else if (conn_highest_peer(mdev->tconn) == R_PRIMARY)
 				rv = SS_O_VOL_PEER_PRI;
 			}
 		put_net_conf(mdev->tconn);
