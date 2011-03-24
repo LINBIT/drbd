@@ -1942,9 +1942,12 @@ static int adm_khelper(struct cfg_ctx *ctx)
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
-	snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
+	if (vol) {
+		snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
+		setenv("DRBD_MINOR", minor_string, 1);
+	}
+
 	setenv("DRBD_RESOURCE", res->name, 1);
-	setenv("DRBD_MINOR", minor_string, 1);
 	setenv("DRBD_CONF", config_save, 1);
 
 	if ((sh_cmd = get_opt_val(res->handlers, ctx->arg, NULL))) {
