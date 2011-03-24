@@ -632,7 +632,8 @@ static int drbd_recv_all(struct drbd_tconn *tconn, void *buf, size_t size)
 	if (err != size) {
 		if (err >= 0)
 			err = -EIO;
-	}
+	} else
+		err = 0;
 	return err;
 }
 
