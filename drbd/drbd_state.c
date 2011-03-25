@@ -80,7 +80,7 @@ enum drbd_role conn_highest_peer(struct drbd_tconn *tconn)
 	int vnr;
 
 	idr_for_each_entry(&tconn->volumes, mdev, vnr)
-		peer = max_t(enum drbd_role, peer, mdev->state.role);
+		peer = max_t(enum drbd_role, peer, mdev->state.peer);
 
 	return peer;
 }
