@@ -4738,7 +4738,7 @@ STATIC int got_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	struct p_req_state_reply *p = tconn->meta.rbuf;
 	int retcode = be32_to_cpu(p->retcode);
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4777,7 +4777,7 @@ STATIC int got_IsInSync(struct drbd_tconn *tconn, struct packet_info *pi)
 	sector_t sector = be64_to_cpu(p->sector);
 	int blksize = be32_to_cpu(p->blksize);
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4828,7 +4828,7 @@ STATIC int got_BlockAck(struct drbd_tconn *tconn, struct packet_info *pi)
 	int blksize = be32_to_cpu(p->blksize);
 	enum drbd_req_event what;
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4880,7 +4880,7 @@ STATIC int got_NegAck(struct drbd_tconn *tconn, struct packet_info *pi)
 			  tconn->net_conf->wire_protocol == DRBD_PROT_B;
 	bool found;
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4914,7 +4914,7 @@ STATIC int got_NegDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	struct p_block_ack *p = tconn->meta.rbuf;
 	sector_t sector = be64_to_cpu(p->sector);
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4935,7 +4935,7 @@ STATIC int got_NegRSDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	int size;
 	struct p_block_ack *p = tconn->meta.rbuf;
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4969,7 +4969,7 @@ STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
 	struct drbd_conf *mdev;
 	struct p_barrier_ack *p = tconn->meta.rbuf;
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -4993,7 +4993,7 @@ STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
 	sector_t sector;
 	int size;
 
-	mdev = vnr_to_mdev(tconn, pi->cmd);
+	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return false;
 
@@ -5188,8 +5188,10 @@ int drbd_asender(struct drbd_thread *thi)
 			bool rv;
 
 			rv = cmd->fn(tconn, &pi);
-			if (!rv)
+			if (!rv) {
+				conn_err(tconn, "%pf failed\n", cmd->fn);
 				goto reconnect;
+			}
 
 			buf	 = h;
 			received = 0;
