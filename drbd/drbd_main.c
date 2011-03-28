@@ -920,7 +920,7 @@ int drbd_send_protocol(struct drbd_tconn *tconn)
 	if (tconn->agreed_pro_version >= 87)
 		strcpy(p->integrity_alg, tconn->net_conf->integrity_alg);
 
-	err = conn_send_cmd2(tconn, P_PROTOCOL, p->head.payload, size);
+	err = conn_send_cmd2(tconn, P_PROTOCOL, p->head.payload, size - sizeof(struct p_header));
 	kfree(p);
 	return err;
 }

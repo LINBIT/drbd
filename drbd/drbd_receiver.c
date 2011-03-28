@@ -3180,6 +3180,8 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 		unsigned char *my_alg = tconn->net_conf->integrity_alg;
 		int err;
 
+		if (pi->size > sizeof(p_integrity_alg))
+			return -EIO;
 		err = drbd_recv_all(tconn, p_integrity_alg, pi->size);
 		if (err)
 			return err;
