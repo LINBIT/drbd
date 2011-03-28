@@ -1417,6 +1417,9 @@ conn_is_valid_transition(struct drbd_tconn *tconn, union drbd_state mask, union 
 		os = mdev->state;
 		ns = sanitize_state(mdev, apply_mask_val(os, mask, val), NULL);
 
+		if (flags & CS_IGN_OUTD_FAIL && ns.disk == D_OUTDATED && os.disk < D_OUTDATED)
+			ns.disk = os.disk;
+
 		if (ns.i == os.i)
 			continue;
 
@@ -1457,6 +1460,9 @@ conn_set_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state
 		os = mdev->state;
 		ns = apply_mask_val(os, mask, val);
 		ns = sanitize_state(mdev, ns, NULL);
+
+		if (flags & CS_IGN_OUTD_FAIL && ns.disk == D_OUTDATED && os.disk < D_OUTDATED)
+			ns.disk = os.disk;
 
 		rv = __drbd_set_state(mdev, ns, flags, NULL);
 		if (rv < SS_SUCCESS)
