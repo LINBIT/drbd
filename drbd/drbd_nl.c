@@ -2282,7 +2282,7 @@ fail:
 int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_conf *mdev;
-	enum drbd_ret_code retcode;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -2400,7 +2400,7 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_conf *mdev;
-	enum drbd_ret_code retcode;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -2921,8 +2921,7 @@ out:
 
 int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
-	enum drbd_ret_code retcode;
-	enum drbd_state_rv rv;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 	struct drbd_conf *mdev;
 	unsigned i;
 
@@ -2948,18 +2947,16 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* disconnect */
-	rv = conn_try_disconnect(adm_ctx.tconn, 0);
-	if (rv < SS_SUCCESS) {
-		retcode = rv; /* enum type mismatch! */
+	retcode = conn_try_disconnect(adm_ctx.tconn, 0);
+	if (retcode < SS_SUCCESS) {
 		drbd_msg_put_info("failed to disconnect");
 		goto out_unlock;
 	}
 
 	/* detach */
 	idr_for_each_entry(&adm_ctx.tconn->volumes, mdev, i) {
-		rv = adm_detach(mdev);
-		if (rv < SS_SUCCESS) {
-			retcode = rv; /* enum type mismatch! */
+		retcode = adm_detach(mdev);
+		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
 			goto out_unlock;
 		}
