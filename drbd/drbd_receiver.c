@@ -3315,7 +3315,10 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 	if (err)
 		return err;
 
-	mdev->ldev->dc.resync_rate = be32_to_cpu(p->rate);
+	if (get_ldev(mdev)) {
+		mdev->ldev->dc.resync_rate = be32_to_cpu(p->rate);
+		put_ldev(mdev);
+	}
 
 	if (apv >= 88) {
 		if (apv == 88) {
@@ -3372,7 +3375,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 			}
 		}
 
-		if (apv > 94) {
+		if (apv > 94 && get_ldev(mdev)) {
 			mdev->ldev->dc.resync_rate = be32_to_cpu(p->rate);
 			mdev->ldev->dc.c_plan_ahead = be32_to_cpu(p->c_plan_ahead);
 			mdev->ldev->dc.c_delay_target = be32_to_cpu(p->c_delay_target);
@@ -3384,9 +3387,11 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 				rs_plan_s   = kzalloc(sizeof(int) * fifo_size, GFP_KERNEL);
 				if (!rs_plan_s) {
 					dev_err(DEV, "kmalloc of fifo_buffer failed");
+					put_ldev(mdev);
 					goto disconnect;
 				}
 			}
+			put_ldev(mdev);
 		}
 
 		spin_lock(&mdev->peer_seq_lock);
