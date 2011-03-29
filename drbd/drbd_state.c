@@ -846,7 +846,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 
 	/* assignment inclusive debug info about what code path
 	 * initiated this state change. */
-	mdev->state = ns;
+	mdev->state.i = ns.i;
 	mdev->tconn->susp = ns.susp;
 	mdev->tconn->susp_nod = ns.susp_nod;
 	mdev->tconn->susp_fen = ns.susp_fen;
@@ -1376,7 +1376,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 void conn_old_common_state(struct drbd_tconn *tconn, union drbd_state *pcs, enum chg_state_flags *pf)
 {
 	enum chg_state_flags flags = ~0;
-	union drbd_state os, cs = {}; /* old_state, common_state */
+	union drbd_dev_state os, cs = {}; /* old_state, common_state */
 	struct drbd_conf *mdev;
 	int vnr, first_vol = 1;
 
@@ -1407,7 +1407,7 @@ void conn_old_common_state(struct drbd_tconn *tconn, union drbd_state *pcs, enum
 
 	*pf |= CS_DC_MASK;
 	*pf &= flags;
-	*pcs = cs;
+	(*pcs).i = cs.i;
 }
 
 static enum drbd_state_rv

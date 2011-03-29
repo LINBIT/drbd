@@ -1937,15 +1937,12 @@ STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 {
 	/* Beware! The actual layout differs
 	 * between big endian and little endian */
-	mdev->state = (union drbd_state) {
+	mdev->state = (union drbd_dev_state) {
 		{ .role = R_SECONDARY,
 		  .peer = R_UNKNOWN,
 		  .conn = C_STANDALONE,
 		  .disk = D_DISKLESS,
 		  .pdsk = D_UNKNOWN,
-		  .susp = 0,
-		  .susp_nod = 0,
-		  .susp_fen = 0
 		} };
 }
 
