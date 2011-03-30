@@ -372,7 +372,7 @@ redo_whole_conn:
 
 	/* change only a few plugin settings. */
 	for(i=0; i<used; i++)
-		schedule_dcmd(do_proxy_reconf, res, NULL, plugin_changes[i], CFG_SETTINGS);
+		schedule_dcmd(do_proxy_reconf, res, NULL, plugin_changes[i], CFG_NET);
 
 	return reconn;
 }

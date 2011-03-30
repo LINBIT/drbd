@@ -190,6 +190,9 @@ enum drbd_cfg_stage {
 	/* prerequisite stage: create objects, start daemons, ... */
 	CFG_PREREQ,
 
+	/* run time changeable settings of resources */
+	CFG_RESOURCE,
+
 	/* detach/attach local disks, */
 	CFG_DISK,
 
@@ -200,9 +203,6 @@ enum drbd_cfg_stage {
 	 * handshakes while we have an established connection.
 	 */
 	CFG_NET_PREREQ,
-
-	/* (re)set syncer parameters, */
-	CFG_SETTINGS,
 
 	/* discard/set connection parameters */
 	CFG_NET,

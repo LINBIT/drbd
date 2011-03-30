@@ -138,6 +138,7 @@ extern int adm_adjust(struct cfg_ctx *);
 
 static int adm_new_minor(struct cfg_ctx *);
 static int adm_new_connection(struct cfg_ctx *);
+static int adm_res_options(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
 static int adm_dump(struct cfg_ctx *);
 static int adm_dump_xml(struct cfg_ctx *);
@@ -363,6 +364,7 @@ struct adm_cmd cmds[] = {
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
 	{"sh-new-connection", adm_new_connection, DRBD_acf2_shell},
+	{"sh-resource-options", adm_res_options, DRBD_acf2_shell},
 	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced_need_vol},
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
@@ -1328,6 +1330,7 @@ static void expand_common(void)
 		expand_opts(common->startup_options, &res->startup_options);
 		expand_opts(common->proxy_options, &res->proxy_options);
 		expand_opts(common->handlers, &res->handlers);
+		expand_opts(common->res_options, &res->res_options);
 
 		if (common->protocol && !res->protocol)
 			res->protocol = strdup(common->protocol);
@@ -1601,6 +1604,22 @@ int adm_new_connection(struct cfg_ctx *ctx)
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	argv[NA(argc)] = "new-connection";
+	argv[NA(argc)] = NULL;
+
+	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+}
+
+int adm_res_options(struct cfg_ctx *ctx)
+{
+	char *argv[MAX_ARGS];
+	struct d_option *opt;
+	int argc = 0;
+
+	argv[NA(argc)] = drbdsetup;
+	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	argv[NA(argc)] = "resource-options";
+	opt = ctx->res->res_options;
+	make_options(opt);
 	argv[NA(argc)] = NULL;
 
 	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -2238,7 +2257,8 @@ static int adm_up(struct cfg_ctx *ctx)
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol = ctx->vol;
 	if (vol == NULL) {
-		schedule_dcmd(adm_new_connection, res, vol, "attach", CFG_PREREQ);
+		schedule_dcmd(adm_new_connection, res, vol, "new-connection", CFG_PREREQ);
+		schedule_dcmd(adm_res_options, res, vol, "resource-options", CFG_RESOURCE);
 		schedule_dcmd(adm_connect, res, vol, "connect", CFG_NET);
 	} else {
 		schedule_dcmd(adm_new_minor, res, vol, "new-minor", CFG_PREREQ);
