@@ -414,6 +414,14 @@ struct p_header95 {
 	u32	  vol_n_len;	/* big endian: high byte = volume; remaining 24 bit = length */
 } __packed;
 
+struct p_header100 {
+	u32	  magic;
+	u16	  volume;
+	u16	  command;
+	u32	  length;
+	u32	  pad;
+} __packed;
+
 extern unsigned int drbd_header_size(struct drbd_tconn *tconn);
 
 /* these defines must not be changed without changing the protocol version */
