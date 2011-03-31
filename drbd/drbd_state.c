@@ -1499,7 +1499,8 @@ conn_set_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state
 	enum drbd_state_rv rv;
 	int vnr;
 
-	tconn->cstate = val.conn;
+	if (mask.conn == C_MASK)
+		tconn->cstate = val.conn;
 
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 		os = drbd_read_state(mdev);
