@@ -128,7 +128,6 @@ struct d_option
 struct d_resource
 {
   char* name;
-  char* protocol;
 
   struct d_volume *volumes;   /* gets propagated to host_info sections later. */
 

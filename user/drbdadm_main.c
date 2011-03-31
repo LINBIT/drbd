@@ -752,8 +752,7 @@ static void dump_common_info()
 		return;
 	printI("common {\n");
 	++indent;
-	if (common->protocol)
-		printA("protocol", common->protocol);
+
 	fake_startup_options(common);
 	dump_options("options", common->res_options);
 	dump_options("net", common->net_options);
@@ -916,10 +915,7 @@ static void dump_common_info_xml()
 {
 	if (!common)
 		return;
-	printI("<common");
-	if (common->protocol)
-		printf(" protocol=\"%s\"", common->protocol);
-	printf(">\n");
+	printI("<common>\n");
 	++indent;
 	fake_startup_options(common);
 	dump_options_xml("options", common->res_options);
@@ -1025,8 +1021,6 @@ static int adm_dump(struct cfg_ctx *ctx)
 	       res->stacked ? "stacked" : "not stacked");
 	printI("resource %s {\n", esc(res->name));
 	++indent;
-	if (res->protocol)
-		printA("protocol", res->protocol);
 
 	for (host = res->all_hosts; host; host = host->next)
 		dump_host_info(host);
@@ -1050,10 +1044,7 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
 
-	printI("<resource name=\"%s\"", esc_xml(res->name));
-	if (res->protocol)
-		printf(" protocol=\"%s\"", res->protocol);
-	printf(">\n");
+	printI("<resource name=\"%s\">\n", esc_xml(res->name));
 	++indent;
 	// else if (common && common->protocol) printA("# common protocol", common->protocol);
 	for (host = res->all_hosts; host; host = host->next)
@@ -1269,7 +1260,6 @@ static void free_config(struct d_resource *res)
 
 	for_each_resource(f, t, res) {
 		free(f->name);
-		free(f->protocol);
 		free_volume(f->volumes);
 		for (host = f->all_hosts; host; host = host->next)
 			free_host_info(host);
@@ -1331,9 +1321,6 @@ static void expand_common(void)
 		expand_opts(common->proxy_options, &res->proxy_options);
 		expand_opts(common->handlers, &res->handlers);
 		expand_opts(common->res_options, &res->res_options);
-
-		if (common->protocol && !res->protocol)
-			res->protocol = strdup(common->protocol);
 
 		if (common->stacked_timeouts)
 			res->stacked_timeouts = 1;
@@ -2022,7 +2009,6 @@ int adm_connect(struct cfg_ctx *ctx)
 		fprintf(stderr, "resource %s: cannot change network config without knowing my peer.\n", res->name);
 		return dry_run ? 0 : 20;
 	}
-	argv[NA(argc)] = res->protocol;
 
 	argv[NA(argc)] = "--set-defaults";
 	opt = res->net_options;

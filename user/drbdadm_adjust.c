@@ -157,14 +157,6 @@ static int addr_equal(struct d_resource* conf, struct d_resource* running)
 	return equal;
 }
 
-static int proto_equal(struct d_resource* conf, struct d_resource* running)
-{
-	if (conf->protocol == NULL && running->protocol == NULL) return 1;
-	if (conf->protocol == NULL || running->protocol == NULL) return 0;
-
-	return !strcmp(conf->protocol, running->protocol);
-}
-
 /* Are both internal, or are both not internal. */
 static int int_eq(char* m_conf, char* m_running)
 {
@@ -483,11 +475,10 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	do_connect  = !opts_equal(res->net_options, running->net_options);
 	do_connect |= !addr_equal(res,running);
-	do_connect |= !proto_equal(res,running);
 	/* No adjust support for drbd proxy version 1. */
 	if (res->me->proxy && can_do_proxy)
 		do_connect |= proxy_reconf(res,running);
-	have_net = (running->protocol != NULL);
+	have_net = (running->net_options != NULL);
 
 	if(do_attach) {
 		if (have_disk)
