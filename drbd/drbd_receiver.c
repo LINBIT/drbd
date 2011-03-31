@@ -923,7 +923,7 @@ retry:
 			drbd_socket_okay(&tconn->meta.socket);
 			switch (try) {
 			case P_INITIAL_DATA:
-				if (&tconn->data.socket) {
+				if (tconn->data.socket) {
 					conn_warn(tconn, "initial packet S crossed\n");
 					sock_release(tconn->data.socket);
 				}
