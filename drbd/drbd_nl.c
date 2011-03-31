@@ -1208,7 +1208,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
 	/* allocation not in the IO path, drbdsetup context */
-	nbc = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
