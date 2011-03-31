@@ -2608,7 +2608,6 @@ void drbd_free_mdev(struct drbd_conf *mdev)
 	__free_page(mdev->md_io_page);
 	put_disk(mdev->vdisk);
 	blk_cleanup_queue(mdev->rq_queue);
-	free_cpumask_var(mdev->tconn->cpu_mask);
 	kfree(mdev);
 }
 
