@@ -1302,7 +1302,7 @@ void initialize_al(struct format *cfg)
 		 * valid magic, valid crc, and transaction_type = 0xffff.
 		 */
 		struct al_4k_transaction_on_disk *al = on_disk_buffer;
-		unsigned crc_be;
+		unsigned crc_be = 0;
 		int i;
 		for (i = 0; i < MD_AL_MAX_SECT_07/8; i++, al++) {
 			al->magic.be = cpu_to_be32(DRBD_AL_MAGIC);
@@ -1554,8 +1554,8 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 
 	int found_valid = 0;
 	int found_valid_updates = 0;
-	struct al_cursor oldest;
-	struct al_cursor newest;
+	struct al_cursor oldest = { 0, };
+	struct al_cursor newest = { 0, };
 
 	/* endian convert, validate, and find oldest to newest log range */
 	for (b = 0; b < mx; b++) {
@@ -1668,7 +1668,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 	const size_t bm_bytes = ALIGN(cfg->bm_bytes, cfg->md_hard_sect_size);
 	off_t bm_on_disk_off = cfg->bm_offset;
 	size_t bm_on_disk_pos = 0;
-	size_t chunk;
+	size_t chunk = 0;
 	int i, j;
 
 	/* can only be AL_EXTENTS_MAX * BM_BYTES_PER_AL_EXT * 8,
