@@ -400,7 +400,7 @@ struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS, POLICY(set_role_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "overwrite-data-of-peer",'o',T_assume_uptodate, EB   },
+		 { "force", 'f',	     T_assume_uptodate, EB   },
 		 CLOSE_ARGS_OPTS }} }, },
 
 	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD, {{NULL, NULL}} },
