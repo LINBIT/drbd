@@ -458,7 +458,7 @@ struct drbd_cmd commands[] = {
 		 { "assume-clean", 'c',        T_no_resync, EB },
 		 CLOSE_ARGS_OPTS }} }, },
 
-	{"resource-options", CTX_MINOR, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS, POLICY(res_opts),
+	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS, POLICY(res_opts),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
