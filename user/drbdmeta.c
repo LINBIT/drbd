@@ -89,13 +89,21 @@ struct option metaopt[] = {
 
 #if 0
 #define ASSERT(x) ((void)(0))
+#define d_expect(x) (x)
 #else
-#define ASSERT(x) do { if (!(x)) {			\
+#define ASSERT(x) do { if (!(x)) {				\
 	fprintf(stderr, "%s:%u:%s: ASSERT(%s) failed.\n",	\
 		__FILE__ , __LINE__ , __func__ , #x );		\
 	abort(); }						\
 	} while (0)
+#define d_expect(x) ({						\
+	int _x = (x);						\
+	if (!_x)						\
+		fprintf(stderr, "%s:%u:%s: ASSERT(%s) failed.\n",\
+			__FILE__ , __LINE__ , __func__ , #x );	\
+	_x; })
 #endif
+
 
 /*
  * FIXME
@@ -549,6 +557,12 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 /* new in 8.4: 4k al transaction blocks */
 #define AL_UPDATES_PER_TRANSACTION 64
 #define AL_CONTEXT_PER_TRANSACTION 919
+/* from DRBD 8.4 linux/drbd/drbd_limits.h, DRBD_AL_EXTENTS_MAX */
+#define AL_EXTENTS_MAX  6433
+enum al_transaction_types {
+	AL_TR_UPDATE = 0,
+	AL_TR_INITIALIZED = 0xffff
+};
 struct __packed al_4k_transaction_on_disk {
 	/* don't we all like magic */
 	be_u32	magic;
@@ -561,7 +575,8 @@ struct __packed al_4k_transaction_on_disk {
 	be_u32	crc32c;
 
 	/* type of transaction, special transaction types like:
-	 * purge-all, set-all-idle, set-all-active, ... to-be-defined */
+	 * purge-all, set-all-idle, set-all-active, ... to-be-defined
+	 * see also enum al_transaction_types */
 	be_u16	transaction_type;
 
 	/* we currently allow only a few thousand extents,
@@ -851,6 +866,7 @@ struct meta_cmd {
 int meta_get_gi(struct format *cfg, char **argv, int argc);
 int meta_show_gi(struct format *cfg, char **argv, int argc);
 int meta_dump_md(struct format *cfg, char **argv, int argc);
+int meta_apply_al(struct format *cfg, char **argv, int argc);
 int meta_restore_md(struct format *cfg, char **argv, int argc);
 int meta_verify_dump_file(struct format *cfg, char **argv, int argc);
 int meta_create_md(struct format *cfg, char **argv, int argc);
@@ -869,6 +885,7 @@ struct meta_cmd cmds[] = {
 	{"dump-md", 0, meta_dump_md, 1},
 	{"restore-md", "file", meta_restore_md, 1},
 	{"verify-dump", "file", meta_verify_dump_file, 1},
+	{"apply-al", 0, meta_apply_al, 1},
 	{"create-md", 0, meta_create_md, 1},
 	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
@@ -1274,6 +1291,32 @@ void re_initialize_md_offsets(struct format *cfg)
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
 }
 
+void initialize_al(struct format *cfg)
+{
+	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
+	if (format_version(cfg) == Drbd_08) {
+		/* DRBD <= 8.3 does not care if it is all zero,
+		 * or otherwise wrong magic.
+		 *
+		 * For 8.4, we initialize to something that is
+		 * valid magic, valid crc, and transaction_type = 0xffff.
+		 */
+		struct al_4k_transaction_on_disk *al = on_disk_buffer;
+		unsigned crc_be;
+		int i;
+		for (i = 0; i < MD_AL_MAX_SECT_07/8; i++, al++) {
+			al->magic.be = cpu_to_be32(DRBD_AL_MAGIC);
+			al->transaction_type.be = cpu_to_be16(AL_TR_INITIALIZED);
+			/* crc calculated once */
+			if (i == 0)
+				crc_be = cpu_to_be32(crc32c(0, (void*)al, 4096));
+			al->crc32c.be = crc_be;
+		}
+	}
+	pwrite_or_die(cfg->md_fd, on_disk_buffer, MD_AL_MAX_SECT_07*512, cfg->al_offset,
+		"md_initialize_common:AL");
+}
+
 /* MAYBE DOES DISK WRITES!! */
 int md_initialize_common(struct format *cfg, int do_disk_writes)
 {
@@ -1301,9 +1344,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		fprintf(stderr, "%s:%u: LOGIC BUG\n" , __FILE__ , __LINE__ );
 		exit(111);
 	}
-	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
-	pwrite_or_die(cfg->md_fd, on_disk_buffer, MD_AL_MAX_SECT_07*512, cfg->al_offset,
-		"md_initialize_common:AL");
+	initialize_al(cfg);
 
 	/* THINK
 	 * do we really need to initialize the bitmap? */
@@ -1394,7 +1435,6 @@ void printf_al_07(struct format *cfg, struct al_sector_on_disk *al_disk)
 		printf("# \txor: 0x%08x\n", al_cpu.xor_sum);
 		printf("#     }\n");
 	}
-	printf("# }\n");
 	if (max_slot_nr >= cfg->md.al_nr_extents)
 		printf(
 		"### CAUTION: maximum slot number found in AL: %u\n"
@@ -1413,9 +1453,13 @@ void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk)
 			printf("#     block %2u { INVALID }\n", b);
 			continue;
 		}
+		if (al_cpu.transaction_type == 0xffff) {
+			printf("#     block %2u { INITIALIZED }\n", b);
+			continue;
+		}
 		printf("#     block %2u {\n", b);
 		printf("# \tmagic: 0x%08x\n", al_cpu.magic);
-		printf("# \ttype: 0x%08x\n", al_cpu.transaction_type);
+		printf("# \ttype: 0x%04x\n", al_cpu.transaction_type);
 		printf("# \ttr: %10u\n", al_cpu.tr_number);
 		printf("# \tactive set size: %u\n", al_cpu.context_size);
 		if (al_cpu.context_size -1 > max_slot_nr)
@@ -1442,7 +1486,6 @@ void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk)
 		printf("# \tcrc32c: 0x%08x\n", al_cpu.crc32c);
 		printf("#     }\n");
 	}
-	printf("# }\n");
 	if (max_slot_nr >= cfg->md.al_nr_extents)
 		printf(
 		"### CAUTION: maximum slot number found in AL: %u\n"
@@ -1475,6 +1518,333 @@ void printf_al(struct format *cfg)
 	/* try the old al format anyways */
 	else
 		printf_al_07(cfg, al_512_disk);
+	printf("# }\n");
+}
+
+/* One activity log extent represents 4M of storage,
+ * one bit corresponds to 4k.
+ *                       4M / 4k / 8bit per byte */
+#define BM_BYTES_PER_AL_EXT	(1UL << (22 - 12 - 3))
+
+struct al_cursor {
+	unsigned i;
+	uint32_t tr_number;
+};
+
+static int replay_al_07(struct format *cfg, uint32_t *hot_extent)
+{
+	/* FIXME implement this */
+	fprintf(stderr, "replay of < 8.4 style activity log not yet implemented\n");
+	return -EOPNOTSUPP;
+}
+
+/* Expects the AL to be read into on_disk_buffer already.
+ * Returns negative error code for non-interpretable data,
+ * 0 for "just mark me clean, nothing more to do",
+ * and positive if we have to apply something. */
+static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
+{
+	const unsigned int mx = MD_AL_MAX_SECT_07/8;
+	struct al_4k_cpu al_cpu[mx];
+	unsigned char valid[mx];
+
+	struct al_4k_transaction_on_disk *al_disk = on_disk_buffer;
+
+	unsigned b, i;
+
+	int found_valid = 0;
+	int found_valid_updates = 0;
+	struct al_cursor oldest;
+	struct al_cursor newest;
+
+	/* endian convert, validate, and find oldest to newest log range */
+	for (b = 0; b < mx; b++) {
+		valid[b] = v84_al_disk_to_cpu(al_cpu + b, al_disk + b);
+		if (!valid[b])
+		       continue;
+		++found_valid;
+		if (al_cpu[b].transaction_type == AL_TR_INITIALIZED)
+			continue;
+		d_expect(al_cpu[b].transaction_type == AL_TR_UPDATE);
+		if (++found_valid_updates == 1) {
+			oldest.i = b;
+			oldest.tr_number = al_cpu[b].tr_number;
+			newest = oldest;
+			continue;
+		}
+		d_expect(al_cpu[b].tr_number != oldest.tr_number);
+		d_expect(al_cpu[b].tr_number != newest.tr_number);
+		if ((int)al_cpu[b].tr_number - (int)oldest.tr_number < 0) {
+			d_expect(oldest.tr_number - al_cpu[b].tr_number + b - oldest.i == mx);
+			oldest.i = b;
+			oldest.tr_number = al_cpu[b].tr_number;
+		}
+		if ((int)al_cpu[b].tr_number - (int)newest.tr_number > 0) {
+			d_expect(al_cpu[b].tr_number - newest.tr_number == b - newest.i);
+			newest.i = b;
+			newest.tr_number = al_cpu[b].tr_number;
+		}
+	}
+
+	if (!found_valid) {
+		/* not even one transaction was valid.
+		 * Has this ever been initialized correctly? */
+		fprintf(stderr, "No usable activity log found. Do you need to create-md?\n");
+		return -ENODATA;
+	}
+
+	/* we do expect at most one corrupt transaction, and only in case
+	 * things went wrong during transaction write. */
+	if (found_valid != mx)
+		fprintf(stderr, "%u corrupt AL transactions found\n", mx - found_valid);
+
+	if (!found_valid_updates) {
+		if (found_valid == mx)
+			/* nothing to do, all slots are valid AL_TR_INITIALIZED */
+			return 0;
+
+		/* this is only expected, in case the _first_ transaction
+		 * somehow failed. */
+		if (!valid[0] && found_valid == mx - 1)
+			return 0;
+
+		/* Hmm. Some transactions are valid.
+		 * Some are not.
+		 * This is not expected. */
+		/* FIXME how do we want to handle this? */
+		fprintf(stderr, "No valid AL update transaction found.\n");
+		return -EINVAL;
+	}
+
+	/* FIXME what do we do
+	 * about more than one corrupt transaction?
+	 * about corrupt transaction in the middle of the oldest -> newest range? */
+
+	/* Ok, so we found valid update transactions.  Reconstruct the "active
+	 * set" at the time of the newest transaction. */
+
+	for (b = oldest.i; b <= newest.i; b++) {
+		unsigned idx = b % mx;
+		if (!valid[idx] || al_cpu[idx].transaction_type == AL_TR_INITIALIZED)
+			continue;
+
+		for (i = 0; i < AL_CONTEXT_PER_TRANSACTION; i++) {
+			unsigned slot = al_cpu[idx].context_start_slot_nr + i;
+			if (al_cpu[idx].context[i] == ~0U && slot >= al_cpu[idx].context_size)
+				continue;
+			if (slot >= AL_EXTENTS_MAX) {
+				fprintf(stderr, "slot number out of range: tr:%u slot:%u\n",
+						b, slot);
+				continue;
+			}
+			hot_extent[slot] = al_cpu[idx].context[i];
+		}
+		for (i = 0; i < AL_UPDATES_PER_TRANSACTION; i++) {
+			unsigned slot = al_cpu[idx].update_slot_nr[i];
+			if (i >= al_cpu[idx].n_updates && slot == (uint16_t)(~0U))
+				continue;
+			if (slot >= AL_EXTENTS_MAX) {
+				fprintf(stderr, "update slot number out of range: tr:%u slot:%u\n",
+						b, slot);
+				continue;
+			}
+			hot_extent[slot] = al_cpu[idx].update_extent_nr[i];
+		}
+	}
+	return found_valid_updates;
+}
+
+int cmp_u32(const void *p1, const void *p2)
+{
+	const unsigned a = *(unsigned *)p1;
+	const unsigned b = *(unsigned *)p2;
+
+	/* how best to deal with 32bit wrap? */
+	return a < b ? -1 : a == b ? 0 : 1;
+}
+
+void apply_al(struct format *cfg, uint32_t *hot_extent)
+{
+	const size_t bm_bytes = ALIGN(cfg->bm_bytes, cfg->md_hard_sect_size);
+	off_t bm_on_disk_off = cfg->bm_offset;
+	size_t bm_on_disk_pos = 0;
+	size_t chunk;
+	int i, j;
+
+	/* can only be AL_EXTENTS_MAX * BM_BYTES_PER_AL_EXT * 8,
+	 * which currently is 6433 * 128 * 8 == 6587392;
+	 * fits easily into 32bit. */
+	unsigned additional_bits_set = 0;
+	uint64_t *w;
+	char ppb[10];
+
+	/* process hot extents in order, to reduce disk seeks. */
+	qsort(hot_extent, ARRAY_SIZE(hot_extent), sizeof(hot_extent[0]), cmp_u32);
+
+	/* Now, actually apply this stuff to the on-disk bitmap.
+	 * Since one AL extent corresponds to 128 Byte of bitmap,
+	 * we need to do some read/modify/write cycles here.
+	 *
+	 * Note that this can be slow due to the use of O_DIRECT,
+	 * worst case it does 6433 (AL_EXTENTS_MAX) cycles of
+	 *  - read 128 kByte (buffer_size)
+	 *  - memset 128 Bytes (BM_BYTES_PER_AL_EXT) to 0xff
+	 *  - write 128 kByte
+	 * This implementation could optimized in various ways:
+	 *  - don't use direct IO; has other drawbacks
+	 *  - first scan hot_extents for extent ranges,
+	 *    and optimize the IO size.
+	 *  - use aio with multiple buffers
+	 *  - ...
+	 */
+	for (i = 0; i < AL_EXTENTS_MAX; i++) {
+		size_t bm_pos;
+		unsigned bits_set = 0;
+		if (hot_extent[i] == ~0U)
+			break;
+		bm_pos = hot_extent[i] * BM_BYTES_PER_AL_EXT;
+		if (bm_pos >= bm_bytes) {
+			fprintf(stderr, "extent %u beyond end of bitmap!\n", hot_extent[i]);
+			/* could break or return error here,
+			 * but I'll just print a warning, and skip, each of them. */
+			continue;
+		}
+
+
+		if (i == 0 || bm_pos >= bm_on_disk_pos + chunk) {
+			if (i != 0)
+				pwrite_or_die(cfg->md_fd, on_disk_buffer, chunk,
+						bm_on_disk_off + bm_on_disk_pos,
+						"apply_al");
+
+			/* don't special case logical sector size != 512,
+			 * operate in 4k always. */
+			bm_on_disk_pos = bm_pos & ~(off_t)(4095);
+			chunk = bm_bytes - bm_on_disk_pos;
+			if (chunk > buffer_size)
+				chunk = buffer_size;
+			pread_or_die(cfg->md_fd, on_disk_buffer, chunk,
+					bm_on_disk_off + bm_on_disk_pos,
+					"apply_al");
+		}
+		ASSERT(bm_pos - bm_on_disk_pos < chunk - BM_BYTES_PER_AL_EXT);
+		ASSERT((bm_pos - bm_on_disk_pos) % sizeof(uint64_t) == 0);
+		w = (uint64_t *)on_disk_buffer
+			+ (bm_pos - bm_on_disk_pos)/sizeof(uint64_t);
+		for (j = 0; j < BM_BYTES_PER_AL_EXT/sizeof(uint64_t); j++)
+			bits_set += generic_hweight64(w[j]);
+
+		additional_bits_set += BM_BYTES_PER_AL_EXT * 8 - bits_set;
+		memset((char*)on_disk_buffer + (bm_pos - bm_on_disk_pos),
+			0xff, BM_BYTES_PER_AL_EXT);
+	}
+	if (i != 0) {
+		pwrite_or_die(cfg->md_fd, on_disk_buffer, chunk,
+				bm_on_disk_off + bm_on_disk_pos,
+				"apply_al");
+		fprintf(stderr, "Marked additional %s as out-of-sync based on AL.\n",
+		     ppsize(ppb, additional_bits_set * 4));
+	} else
+		fprintf(stderr, "Nothing to do.\n");
+}
+
+int need_to_apply_al(struct format *cfg)
+{
+	if (is_v08(cfg))
+		return cfg->md.flags & MDF_PRIMARY_IND;
+	else if (is_v07(cfg))
+		return cfg->md.gc[Flags] & MDF_PRIMARY_IND;
+	else
+		return 0; /* there was no activity log in 0.6, right? */
+}
+
+int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int argc)
+{
+	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
+	uint32_t hot_extent[AL_EXTENTS_MAX];
+	size_t al_size = MD_AL_MAX_SECT_07 * 512;
+	int need_to_re_init_al = 0;
+	int need_to_update_md_flags = 0;
+	int err;
+
+	if (argc > 0)
+		fprintf(stderr, "Ignoring additional arguments\n");
+
+	if (format_version(cfg) < Drbd_07) {
+		fprintf(stderr, "apply-al only implemented for DRBD >= 0.7\n");
+		return -1;
+	}
+
+	err = cfg->ops->open(cfg);
+	if (err == NO_VALID_MD_FOUND)
+		return -1;
+
+	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, cfg->al_offset, "apply_al");
+
+	/* init all extent numbers to -1U aka "unused" */
+	memset(hot_extent, 0xff, sizeof(hot_extent));
+
+	/* replay al */
+	if (is_v07(cfg))
+		err = replay_al_07(cfg, hot_extent);
+
+	/* FIXME
+	 * we should introduce a new meta data "super block" magic, so we won't
+	 * have the same super block with two different activity log
+	 * transaction layouts */
+	else if (DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
+		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
+		err = replay_al_84(cfg, hot_extent);
+		need_to_re_init_al = 1;
+	} else /* try the old al format anyways */
+		err = replay_al_07(cfg, hot_extent);
+
+	if (err < 0) {
+		/* ENODATA:
+		 * most likely this is an uninitialized,
+		 * or at least non-8.4-style activity log.
+		 * Cannot do anything about that.
+		 *
+		 * EINVAL:
+		 * Some valid 8.4 style INITIALIZED transactions found,
+		 * but others have been corrupt, and no single "usable"
+		 * update transaction was found.
+		 * FIXME: what to do about that?
+		 * We probably need some "FORCE" mode as well. */
+
+		/* 1, 2, 10, 20? FIXME sane exit codes! */
+		if (err == -ENODATA)
+			return 1;
+		return 2;
+	}
+
+	/* do we need to actually apply it? */
+	if (err > 0 && need_to_apply_al(cfg)) {
+		apply_al(cfg, hot_extent);
+		need_to_update_md_flags = 1;
+	}
+
+	/* For 8.4, we need to wipe the AL,
+	 * even if it was not necessary to apply it. */
+	if (err > 0 && need_to_re_init_al)
+		initialize_al(cfg);
+
+	err = 0;
+	if (need_to_update_md_flags) {
+		if (is_v07(cfg))
+			cfg->md.gc[Flags] &= ~MDF_PRIMARY_IND;
+		if (is_v08(cfg)) {
+			if (cfg->md.flags & MDF_PRIMARY_IND)
+				cfg->md.flags |= ~MDF_CRASHED_PRIMARY;
+			cfg->md.flags &= ~MDF_PRIMARY_IND;
+		}
+		err = cfg->ops->md_cpu_to_disk(cfg);
+		err = cfg->ops->close(cfg) || err;
+		if (err)
+			fprintf(stderr, "update of super block flags failed\n");
+	}
+
+	return err;
 }
 
 unsigned long bm_words(uint64_t sectors, int bytes_per_bit)
