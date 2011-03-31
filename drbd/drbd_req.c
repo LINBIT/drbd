@@ -160,12 +160,12 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 		if (s & RQ_LOCAL_MASK) {
 			if (get_ldev_if_state(mdev, D_FAILED)) {
 				if (s & RQ_IN_ACT_LOG)
-					drbd_al_complete_io(mdev, req->i.sector);
+					drbd_al_complete_io(mdev, &req->i);
 				put_ldev(mdev);
 			} else if (DRBD_ratelimit(5*HZ, 3)) {
-				dev_warn(DEV, "Should have called drbd_al_complete_io(, %llu), "
+				dev_warn(DEV, "Should have called drbd_al_complete_io(, %llu, %u), "
 				     "but my Disk seems to have failed :(\n",
-				     (unsigned long long) req->i.sector);
+				     (unsigned long long) req->i.sector, req->i.size);
 			}
 		}
 	}
@@ -814,7 +814,7 @@ int __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long s
 	 * of transactional on-disk meta data updates. */
 	if (rw == WRITE && local && !test_bit(AL_SUSPENDED, &mdev->flags)) {
 		req->rq_state |= RQ_IN_ACT_LOG;
-		drbd_al_begin_io(mdev, sector);
+		drbd_al_begin_io(mdev, &req->i);
 	}
 
 	remote = remote && drbd_should_do_remote(mdev->state);
@@ -1015,7 +1015,7 @@ allocate_barrier:
 
 fail_free_complete:
 	if (rw == WRITE && local)
-		drbd_al_complete_io(mdev, sector);
+		drbd_al_complete_io(mdev, &req->i);
 fail_and_free_req:
 	if (local) {
 		bio_put(req->private_bio);
