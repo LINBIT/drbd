@@ -791,7 +791,8 @@ static unsigned int prepare_header(struct drbd_tconn *tconn, int vnr,
 {
 	if (tconn->agreed_pro_version >= 100)
 		return prepare_header100(buffer, cmd, size, vnr);
-	else if (tconn->agreed_pro_version >= 95)
+	else if (tconn->agreed_pro_version >= 95 &&
+		 size > DRBD_MAX_SIZE_H80_PACKET)
 		return prepare_header95(buffer, cmd, size);
 	else
 		return prepare_header80(buffer, cmd, size);
