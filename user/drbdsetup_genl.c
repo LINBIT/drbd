@@ -929,7 +929,7 @@ static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg)
 
 	for(i=0;i<number_of_handlers;i++) {
 		if(handler_names[i]==NULL) continue;
-		if(strcmp(arg,handler_names[i])==0) {
+		if(strcasecmp(arg,handler_names[i])==0) {
 			nla_put_u32(msg,od->nla_type,i);
 			return NO_ERROR;
 		}
