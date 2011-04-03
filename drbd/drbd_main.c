@@ -2574,9 +2574,9 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	mdev->epochs = 1;
 
 	if (!idr_pre_get(&minors, GFP_KERNEL))
-		goto out_idr_remove_vol;
+		goto out_no_minor_idr;
 	if (idr_get_new_above(&minors, mdev, minor, &minor_got))
-		goto out_idr_remove_vol;
+		goto out_no_minor_idr;
 	if (minor_got != minor) {
 		err = ERR_MINOR_EXISTS;
 		drbd_msg_put_info("requested minor exists already");
@@ -2584,9 +2584,9 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	}
 
 	if (!idr_pre_get(&tconn->volumes, GFP_KERNEL))
-		goto out_no_vol_idr;
+		goto out_idr_remove_minor;
 	if (idr_get_new_above(&tconn->volumes, mdev, vnr, &vnr_got))
-		goto out_no_vol_idr;
+		goto out_idr_remove_minor;
 	if (vnr_got != vnr) {
 		err = ERR_INVALID_REQUEST;
 		drbd_msg_put_info("requested volume exists already");
@@ -2606,7 +2606,7 @@ out_idr_remove_vol:
 out_idr_remove_minor:
 	idr_remove(&minors, minor_got);
 	synchronize_rcu();
-out_no_vol_idr:
+out_no_minor_idr:
 	kfree(mdev->current_epoch);
 out_no_epoch:
 	drbd_bm_cleanup(mdev);
