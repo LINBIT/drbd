@@ -4770,7 +4770,7 @@ STATIC int got_conn_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	}
 	wake_up(&tconn->ping_wait);
 
-	return true;
+	return 0;
 }
 
 STATIC int got_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -4781,7 +4781,7 @@ STATIC int got_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	if (retcode >= SS_SUCCESS) {
 		set_bit(CL_ST_CHG_SUCCESS, &mdev->flags);
@@ -4792,12 +4792,12 @@ STATIC int got_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	}
 	wake_up(&mdev->state_wait);
 
-	return true;
+	return 0;
 }
 
 STATIC int got_Ping(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	return !drbd_send_ping_ack(tconn);
+	return drbd_send_ping_ack(tconn);
 
 }
 
@@ -4808,7 +4808,7 @@ STATIC int got_PingAck(struct drbd_tconn *tconn, struct packet_info *pi)
 	if (!test_and_set_bit(GOT_PING_ACK, &tconn->flags))
 		wake_up(&tconn->ping_wait);
 
-	return true;
+	return 0;
 }
 
 STATIC int got_IsInSync(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -4820,7 +4820,7 @@ STATIC int got_IsInSync(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	D_ASSERT(mdev->tconn->agreed_pro_version >= 89);
 
@@ -4836,7 +4836,7 @@ STATIC int got_IsInSync(struct drbd_tconn *tconn, struct packet_info *pi)
 	dec_rs_pending(mdev);
 	atomic_add(blksize >> 9, &mdev->rs_sect_in);
 
-	return true;
+	return 0;
 }
 
 static int
@@ -4871,14 +4871,14 @@ STATIC int got_BlockAck(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
 		drbd_set_in_sync(mdev, sector, blksize);
 		dec_rs_pending(mdev);
-		return true;
+		return 0;
 	}
 	switch (pi->cmd) {
 	case P_RS_WRITE_ACK:
@@ -4902,13 +4902,12 @@ STATIC int got_BlockAck(struct drbd_tconn *tconn, struct packet_info *pi)
 		what = POSTPONE_WRITE;
 		break;
 	default:
-		D_ASSERT(0);
-		return false;
+		BUG();
 	}
 
-	return !validate_req_change_req_state(mdev, p->block_id, sector,
-					      &mdev->write_requests, __func__,
-					      what, false);
+	return validate_req_change_req_state(mdev, p->block_id, sector,
+					     &mdev->write_requests, __func__,
+					     what, false);
 }
 
 STATIC int got_NegAck(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -4923,14 +4922,14 @@ STATIC int got_NegAck(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
 		dec_rs_pending(mdev);
 		drbd_rs_failed_io(mdev, sector, size);
-		return true;
+		return 0;
 	}
 
 	err = validate_req_change_req_state(mdev, p->block_id, sector,
@@ -4943,10 +4942,10 @@ STATIC int got_NegAck(struct drbd_tconn *tconn, struct packet_info *pi)
 		/* In Protocol B we might already have got a P_RECV_ACK
 		   but then get a P_NEG_ACK afterwards. */
 		if (!missing_ok)
-			return false;
+			return err;
 		drbd_set_out_of_sync(mdev, sector, size);
 	}
-	return true;
+	return 0;
 }
 
 STATIC int got_NegDReply(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -4957,16 +4956,16 @@ STATIC int got_NegDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	update_peer_seq(mdev, be32_to_cpu(p->seq_num));
 
 	dev_err(DEV, "Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
 
-	return !validate_req_change_req_state(mdev, p->block_id, sector,
-					      &mdev->read_requests, __func__,
-					      NEG_ACKED, false);
+	return validate_req_change_req_state(mdev, p->block_id, sector,
+					     &mdev->read_requests, __func__,
+					     NEG_ACKED, false);
 }
 
 STATIC int got_NegRSDReply(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -4978,7 +4977,7 @@ STATIC int got_NegRSDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
@@ -4995,14 +4994,12 @@ STATIC int got_NegRSDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 		case P_RS_CANCEL:
 			break;
 		default:
-			D_ASSERT(0);
-			put_ldev(mdev);
-			return false;
+			BUG();
 		}
 		put_ldev(mdev);
 	}
 
-	return true;
+	return 0;
 }
 
 STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -5012,7 +5009,7 @@ STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	tl_release(mdev->tconn, p->barrier, be32_to_cpu(p->set_size));
 
@@ -5023,7 +5020,7 @@ STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
 		add_timer(&mdev->start_resync_timer);
 	}
 
-	return true;
+	return 0;
 }
 
 STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
@@ -5036,7 +5033,7 @@ STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
-		return false;
+		return -EIO;
 
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
@@ -5049,7 +5046,7 @@ STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
 		ov_out_of_sync_print(mdev);
 
 	if (!get_ldev(mdev))
-		return true;
+		return 0;
 
 	drbd_rs_complete_io(mdev, sector);
 	dec_rs_pending(mdev);
@@ -5073,12 +5070,12 @@ STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
 		}
 	}
 	put_ldev(mdev);
-	return true;
+	return 0;
 }
 
 STATIC int got_skip(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	return true;
+	return 0;
 }
 
 STATIC int tconn_process_done_ee(struct drbd_tconn *tconn)
@@ -5226,10 +5223,10 @@ int drbd_asender(struct drbd_thread *thi)
 			}
 		}
 		if (received == expect) {
-			bool rv;
+			bool err;
 
-			rv = cmd->fn(tconn, &pi);
-			if (!rv) {
+			err = cmd->fn(tconn, &pi);
+			if (err) {
 				conn_err(tconn, "%pf failed\n", cmd->fn);
 				goto reconnect;
 			}
