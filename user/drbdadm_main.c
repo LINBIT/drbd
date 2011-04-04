@@ -1301,13 +1301,16 @@ static void expand_opts(struct d_option *co, struct d_option **opts)
 static void expand_common(void)
 {
 	struct d_resource *res, *tmp;
+	struct d_volume *vol;
 	struct d_host_info *h;
 
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
-			if (!h->volumes->device)
-				m_asprintf(&h->volumes->device, "/dev/drbd%u",
-					   h->volumes->device_minor);
+			for_each_volume(vol, h->volumes) {
+				if (!vol->device)
+					m_asprintf(&vol->device, "/dev/drbd%u",
+						   vol->device_minor);
+			}
 		}
 	}
 
