@@ -281,6 +281,13 @@ struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
 
 #define DRBD_acf2_shell			\
 	.show_in_usage = 2,		\
+	.iterate_volumes = 1,		\
+	.res_name_required = 1,		\
+	.verify_ips = 0,		\
+
+#define DRBD_acf2_sh_resname		\
+	.show_in_usage = 2,		\
+	.iterate_volumes = 0,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 
@@ -347,7 +354,7 @@ struct adm_cmd cmds[] = {
 
 	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1, .test_config = 1},
 	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
-	{"sh-resource", sh_resource, DRBD_acf2_shell},
+	{"sh-resource", sh_resource, DRBD_acf2_sh_resname},
 	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
 	{"sh-dev", sh_dev, DRBD_acf2_shell},
 	{"sh-udev", sh_udev, DRBD_acf2_hook},
@@ -363,9 +370,9 @@ struct adm_cmd cmds[] = {
 	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
-	{"sh-new-connection", adm_new_connection, DRBD_acf2_shell},
-	{"sh-resource-options", adm_res_options, DRBD_acf2_shell},
-	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced_need_vol},
+	{"sh-new-connection", adm_new_connection, DRBD_acf2_sh_resname},
+	{"sh-resource-options", adm_res_options, DRBD_acf2_sh_resname},
+	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
 	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
@@ -546,28 +553,32 @@ int call_cmd_fn(int (*function) (struct cfg_ctx *),
 	return rv;
 }
 
-int call_cmd(struct adm_cmd *cmd, struct d_resource *res,
+/* If ctx->vol is NULL, and cmd->iterate_volumes is set,
+ * iterate over all volumes in ctx->res.
+ * Else, just pass it on.
+ * */
+int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	     enum on_error on_error)
 {
-	struct cfg_ctx ctx = { .res = res, .arg = cmd->name, };
+	struct d_resource *res = ctx->res;
 	struct d_volume *vol;
 	int ret;
 
 	if (!res->peer)
 		set_peer_in_resource(res, cmd->need_peer);
 
-	if (!cmd->iterate_volumes)
-		return call_cmd_fn(cmd->function, &ctx, on_error);
+	if (!cmd->iterate_volumes || ctx->vol != NULL)
+		return call_cmd_fn(cmd->function, ctx, on_error);
 
 
 	/* call it once with vol == NULL,
 	 * so it can do preparations as well */
 	if (cmd->function == adm_up)
-		call_cmd_fn(cmd->function, &ctx, on_error);
+		call_cmd_fn(cmd->function, ctx, on_error);
 
 	for_each_volume(vol, res->me->volumes) {
-		ctx.vol = vol;
-		ret = call_cmd_fn(cmd->function, &ctx, on_error);
+		ctx->vol = vol;
+		ret = call_cmd_fn(cmd->function, ctx, on_error);
 		/* FIXME: Do we want to keep running?
 		 * When?
 		 * How would we determine which return value to return? */
@@ -1105,7 +1116,15 @@ static int sh_udev(struct cfg_ctx *ctx)
 	struct d_volume *vol = ctx->vol;
 
 	/* No shell escape necessary. Udev does not handle it anyways... */
-	printf("RESOURCE=%s\n", res->name);
+	if (!vol) {
+		fprintf(stderr, "volume not specified\n");
+		return 1;
+	}
+
+	if (vol->implicit)
+		printf("RESOURCE=%s\n", res->name);
+	else
+		printf("RESOURCE=%s/%u\n", res->name, vol->vnr);
 
 	if (!strncmp(vol->device, "/dev/drbd", 9))
 		printf("DEVICE=%s\n", vol->device + 5);
@@ -1626,7 +1645,9 @@ int adm_resize(struct cfg_ctx *ctx)
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	argv[NA(argc)] = "resize";
-	opt = find_opt(ctx->res->disk_options, "size");
+	opt = find_opt(ctx->vol->disk_options, "size");
+	if (!opt)
+		opt = find_opt(ctx->res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
 	for (i = 0; i < soi; i++)
@@ -2299,7 +2320,7 @@ static unsigned minor_by_id(const char *id)
 	return m_strtoll(id + 6, 1);
 }
 
-struct d_resource *res_by_minor(const char *id)
+int ctx_by_minor(struct cfg_ctx *ctx, const char *id)
 {
 	struct d_resource *res, *t;
 	struct d_volume *vol;
@@ -2307,7 +2328,7 @@ struct d_resource *res_by_minor(const char *id)
 
 	mm = minor_by_id(id);
 	if (mm == -1U)
-		return NULL;
+		return -ENOENT;
 
 	for_each_resource(res, t, config) {
 		if (res->ignore)
@@ -2315,11 +2336,13 @@ struct d_resource *res_by_minor(const char *id)
 		for_each_volume(vol, res->me->volumes) {
 			if (mm == vol->device_minor) {
 				is_drbd_top = res->stacked;
-				return res;
+				ctx->res = res;
+				ctx->vol = vol;
+				return 0;
 			}
 		}
 	}
-	return NULL;
+	return -ENOENT;
 }
 
 struct d_resource *res_by_name(const char *name)
@@ -2332,6 +2355,46 @@ struct d_resource *res_by_name(const char *name)
 	}
 	return NULL;
 }
+
+int ctx_by_name(struct cfg_ctx *ctx, const char *id)
+{
+	struct d_resource *res, *t;
+	struct d_volume *vol;
+	char *name = strdupa(id);
+	char *vol_id = strchr(name, '/');
+	unsigned vol_nr = ~0U;
+
+	if (vol_id) {
+		*vol_id++ = '\0';
+		vol_nr = m_strtoll(vol_id, 0);
+	}
+
+	for_each_resource(res, t, config) {
+		if (strcmp(name, res->name) == 0)
+			break;
+	}
+	if (!res)
+		return -ENOENT;
+
+	if (!vol_id) {
+		ctx->res = res;
+		if (res->me->volumes && res->me->volumes->implicit)
+			ctx->vol = res->me->volumes;
+		else
+			ctx->vol = NULL;
+		return 0;
+	}
+
+	for_each_volume(vol, res->me->volumes) {
+		if (vol_nr == vol->vnr) {
+			ctx->res = res;
+			ctx->vol = vol;
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
 
 /* In case a child exited, or exits, its return code is stored as
    negative number in the pids[i] array */
@@ -3447,6 +3510,7 @@ int main(int argc, char **argv)
 	char *env_drbd_nodename = NULL;
 	int is_dump_xml;
 	int is_dump;
+	struct cfg_ctx ctx = { .arg = NULL };
 
 	yyin = NULL;
 	uname(&nodeinfo);	/* FIXME maybe fold to lower case ? */
@@ -3577,6 +3641,7 @@ int main(int argc, char **argv)
 	if (cmd->uc_dialog)
 		uc_node(global_options.usage_count);
 
+	ctx.arg = cmd->name;
 	if (cmd->res_name_required) {
 		if (config == NULL) {
 			fprintf(stderr, "no resources defined!\n");
@@ -3610,7 +3675,9 @@ int main(int argc, char **argv)
 
 				if (!is_dump && is_drbd_top != res->stacked)
 					continue;
-				int r = call_cmd(cmd, res, EXIT_ON_FAIL);	/* does exit for r >= 20! */
+				ctx.res = res;
+				ctx.vol = NULL;
+				int r = call_cmd(cmd, &ctx, EXIT_ON_FAIL);	/* does exit for r >= 20! */
 				/* this super positioning of return values is soo ugly
 				 * anyone any better idea? */
 				if (r > rv)
@@ -3623,44 +3690,51 @@ int main(int argc, char **argv)
 		} else {
 			/* explicit list of resources to work on */
 			for (i = optind; (int)i < argc; i++) {
-				res = res_by_name(argv[i]);
-				if (!res)
-					res = res_by_minor(argv[i]);
-				if (!res) {
+				ctx.res = NULL;
+				ctx.vol = NULL;
+				ctx_by_name(&ctx, argv[i]);
+				if (!ctx.res)
+					ctx_by_minor(&ctx, argv[i]);
+				if (!ctx.res) {
 					fprintf(stderr,
 						"'%s' not defined in your config.\n",
 						argv[i]);
 					exit(E_usage);
 				}
-				if (res->ignore && !is_dump) {
+				if (cmd->vol_id_required && !ctx.vol) {
+					fprintf(stderr, "%s requires a specific volume id, but none is specified.\n"
+							"Try '%s minor-<minor_number>' or '%s %s/<vnr>'\n",
+							cmd->name, cmd->name,
+							cmd->name, argv[i]);
+					exit(E_usage);
+				}
+				if (ctx.res->ignore && !is_dump) {
 					fprintf(stderr,
 						"'%s' ignored, since this host (%s) is not mentioned with an 'on' keyword.\n",
-						res->name, nodeinfo.nodename);
+						ctx.res->name, nodeinfo.nodename);
 					rv = E_usage;
 					continue;
 				}
-				if (is_drbd_top != res->stacked && !is_dump) {
+				if (is_drbd_top != ctx.res->stacked && !is_dump) {
 					fprintf(stderr,
 						"'%s' is a %s resource, and not available in %s mode.\n",
-						res->name,
-						res->
-						stacked ? "stacked" : "normal",
+						ctx.res->name,
+						ctx.res->stacked ? "stacked" : "normal",
 						is_drbd_top ? "stacked" :
 						"normal");
 					rv = E_usage;
 					continue;
 				}
-				verify_ips(res);
+				verify_ips(ctx.res);
 				if (!is_dump && !config_valid)
 					exit(E_config_invalid);
-				rv = call_cmd(cmd, res, EXIT_ON_FAIL);	/* does exit for rv >= 20! */
+				rv = call_cmd(cmd, &ctx, EXIT_ON_FAIL);	/* does exit for rv >= 20! */
 			}
 		}
 	} else {		// Commands which do not need a resource name
 		/* no call_cmd, as that implies register_minor,
 		 * which does not make sense for resource independent commands.
 		 * It does also not need to iterate over volumes: it does not even know the resource. */
-		struct cfg_ctx ctx = { .arg = cmd->name };
 		rv = cmd->function(&ctx);
 		if (rv >= 10) {	/* why do we special case the "generic sh-*" commands? */
 			fprintf(stderr, "command %s exited with code %d\n",
