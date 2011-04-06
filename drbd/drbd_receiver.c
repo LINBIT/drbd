@@ -223,7 +223,8 @@ static struct page *drbd_pp_first_pages_or_try_alloc(struct drbd_conf *mdev, int
 	return NULL;
 }
 
-static void reclaim_net_ee(struct drbd_conf *mdev, struct list_head *to_be_freed)
+static void reclaim_finished_net_peer_reqs(struct drbd_conf *mdev,
+					   struct list_head *to_be_freed)
 {
 	struct drbd_peer_request *peer_req;
 	struct list_head *le, *tle;
@@ -247,7 +248,7 @@ static void drbd_reclaim_net(struct drbd_conf *mdev)
 	struct drbd_peer_request *peer_req, *t;
 
 	spin_lock_irq(&mdev->tconn->req_lock);
-	reclaim_net_ee(mdev, &reclaimed);
+	reclaim_finished_net_peer_reqs(mdev, &reclaimed);
 	spin_unlock_irq(&mdev->tconn->req_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
@@ -339,7 +340,7 @@ You must not have the req_lock:
  drbd_alloc_peer_req()
  drbd_free_peer_reqs()
  drbd_ee_fix_bhs()
- drbd_process_done_ee()
+ drbd_finish_peer_reqs()
  drbd_clear_done_ee()
  drbd_wait_ee_list_empty()
 */
@@ -419,15 +420,10 @@ int drbd_free_peer_reqs(struct drbd_conf *mdev, struct list_head *list)
 	return count;
 }
 
-
-/* See also comments in _req_mod(,BARRIER_ACKED)
- * and receive_Barrier.
- *
- * Move entries from net_ee to done_ee, if ready.
- * Grab done_ee, call all callbacks, free the entries.
- * The callbacks typically send out ACKs.
+/*
+ * See also comments in _req_mod(,BARRIER_ACKED) and receive_Barrier.
  */
-STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
+static int drbd_finish_peer_reqs(struct drbd_conf *mdev)
 {
 	LIST_HEAD(work_list);
 	LIST_HEAD(reclaimed);
@@ -435,7 +431,7 @@ STATIC int drbd_process_done_ee(struct drbd_conf *mdev)
 	int err = 0;
 
 	spin_lock_irq(&mdev->tconn->req_lock);
-	reclaim_net_ee(mdev, &reclaimed);
+	reclaim_finished_net_peer_reqs(mdev, &reclaimed);
 	list_splice_init(&mdev->done_ee, &work_list);
 	spin_unlock_irq(&mdev->tconn->req_lock);
 
@@ -1677,8 +1673,10 @@ STATIC int recv_dless_read(struct drbd_conf *mdev, struct drbd_request *req,
 	return 0;
 }
 
-/* e_end_resync_block() is called via
- * drbd_process_done_ee() by asender only */
+/*
+ * e_end_resync_block() is called in asender context via
+ * drbd_finish_peer_reqs().
+ */
 STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req =
@@ -1867,8 +1865,8 @@ static void restart_conflicting_writes(struct drbd_conf *mdev,
 	}
 }
 
-/* e_end_block() is called via drbd_process_done_ee().
- * this means this function only runs in the asender thread
+/*
+ * e_end_block() is called in asender context via drbd_finish_peer_reqs().
  */
 STATIC int e_end_block(struct drbd_work *w, int cancel)
 {
@@ -4390,9 +4388,7 @@ STATIC int drbd_disconnected(int vnr, void *p, void *data)
 	 * to be "canceled" */
 	drbd_flush_workqueue(mdev);
 
-	/* This also does reclaim_net_ee().  If we do this too early, we might
-	 * miss some resync ee and pages.*/
-	drbd_process_done_ee(mdev);
+	drbd_finish_peer_reqs(mdev);
 
 	kfree(mdev->p_uuid);
 	mdev->p_uuid = NULL;
@@ -5055,7 +5051,7 @@ STATIC int got_skip(struct drbd_tconn *tconn, struct packet_info *pi)
 	return 0;
 }
 
-STATIC int tconn_process_done_ee(struct drbd_tconn *tconn)
+static int tconn_finish_peer_reqs(struct drbd_tconn *tconn)
 {
 	struct drbd_conf *mdev;
 	int i, not_empty = 0;
@@ -5064,7 +5060,7 @@ STATIC int tconn_process_done_ee(struct drbd_tconn *tconn)
 		clear_bit(SIGNAL_ASENDER, &tconn->flags);
 		flush_signals(current);
 		idr_for_each_entry(&tconn->volumes, mdev, i) {
-			if (drbd_process_done_ee(mdev))
+			if (drbd_finish_peer_reqs(mdev))
 				return 1; /* error */
 		}
 		set_bit(SIGNAL_ASENDER, &tconn->flags);
@@ -5137,8 +5133,8 @@ int drbd_asender(struct drbd_thread *thi)
 		   much to send */
 		if (!tconn->net_conf->no_cork)
 			drbd_tcp_cork(tconn->meta.socket);
-		if (tconn_process_done_ee(tconn)) {
-			conn_err(tconn, "tconn_process_done_ee() failed\n");
+		if (tconn_finish_peer_reqs(tconn)) {
+			conn_err(tconn, "tconn_finish_peer_reqs() failed\n");
 			goto reconnect;
 		}
 		/* but unconditionally uncork unless disabled */
