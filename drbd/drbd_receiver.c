@@ -311,7 +311,7 @@ struct page *drbd_alloc_pages(struct drbd_conf *mdev, unsigned int number,
  * Is also used from inside an other spin_lock_irq(&mdev->tconn->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
-STATIC void drbd_pp_free(struct drbd_conf *mdev, struct page *page, int is_net)
+STATIC void drbd_free_pages(struct drbd_conf *mdev, struct page *page, int is_net)
 {
 	atomic_t *a = is_net ? &mdev->pp_in_use_by_net : &mdev->pp_in_use;
 	int i;
@@ -398,7 +398,7 @@ void __drbd_free_peer_req(struct drbd_conf *mdev, struct drbd_peer_request *peer
 {
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
-	drbd_pp_free(mdev, peer_req->pages, is_net);
+	drbd_free_pages(mdev, peer_req->pages, is_net);
 	D_ASSERT(atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(drbd_interval_empty(&peer_req->i));
 	mempool_free(peer_req, drbd_ee_mempool);
@@ -1624,7 +1624,7 @@ STATIC int drbd_drain_block(struct drbd_conf *mdev, int data_size)
 		data_size -= len;
 	}
 	kunmap(page);
-	drbd_pp_free(mdev, page, 0);
+	drbd_free_pages(mdev, page, 0);
 	return err;
 }
 
