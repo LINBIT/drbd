@@ -223,12 +223,14 @@ static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int string_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub usage function for config_usage as xml
 static void numeric_opt_xml(struct drbd_option *option);
 static void handler_opt_xml(struct drbd_option *option);
 static void bit_opt_xml(struct drbd_option *option);
 static void string_opt_xml(struct drbd_option *option);
+static void protocol_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -252,24 +254,20 @@ static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg)
 static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg);
 static int conv_bit(struct drbd_option *od, struct msg_buff *msg, char* arg);
 static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg);
+static int conv_protocol(struct drbd_option *od, struct msg_buff *msg, char* arg);
 
 // show functions for options (used by show_scmd)
 static void show_numeric(struct drbd_option *od, struct nlattr *nla);
 static void show_handler(struct drbd_option *od, struct nlattr *nla);
 static void show_bit(struct drbd_option *od, struct nlattr *nla);
 static void show_string(struct drbd_option *od, struct nlattr *nla);
+static void show_protocol(struct drbd_option *od, struct nlattr *nla);
 
 // sub functions for events_cmd
 static int print_broadcast_events(struct genl_info *, int);
 static int w_connected_state(struct genl_info *, int);
 static int w_synced_state(struct genl_info *, int);
 static int print_resources(struct genl_info *, int);
-
-const char *protocol_n[] = {
-	[DRBD_PROT_A] = "A",
-	[DRBD_PROT_B] = "B",
-	[DRBD_PROT_C] = "C",
-};
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -368,7 +366,8 @@ struct option wait_cmds_options[] = {
 	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
 
 #define CHANGEABLE_NET_OPTIONS						\
-	{ "protocol",'p',	T_wire_protocol,   EH(protocol_n, PROTOCOL) }, \
+	{ "protocol",'p',	T_wire_protocol, \
+		conv_protocol, show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
 	{ "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") }, \
 	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) }, \
 	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) }, \
@@ -923,6 +922,26 @@ static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg)
 	return NO_ERROR;
 }
 
+static int conv_protocol(struct drbd_option *od, struct msg_buff *msg, char* arg)
+{
+	int proto = 0; /* initialize to an invalid protocol value */
+	if (arg && arg[0] && arg[1] == 0) {
+		switch(arg[0]) {
+		case 'A': case 'a': proto = DRBD_PROT_A; break;
+		case 'B': case 'b': proto = DRBD_PROT_B; break;
+		case 'C': case 'c': proto = DRBD_PROT_C; break;
+		default: /* nothing */;
+		};
+	};
+	if (proto) {
+		nla_put_u32(msg, od->nla_type, proto);
+		return NO_ERROR;
+	}
+	/* not a valid protocol value */
+	fprintf(stderr, "Invalid protocol '%s'. Known protocols: A,B,C\n", arg);
+	return OTHER_ERROR;
+}
+
 static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg)
 {
 	const char** handler_names = od->handler_param.handler_names;
@@ -931,7 +950,7 @@ static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg)
 
 	for(i=0;i<number_of_handlers;i++) {
 		if(handler_names[i]==NULL) continue;
-		if(strcasecmp(arg,handler_names[i])==0) {
+		if(strcmp(arg,handler_names[i])==0) {
 			nla_put_u32(msg,od->nla_type,i);
 			return NO_ERROR;
 		}
@@ -1286,6 +1305,15 @@ static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 	} else {
 		printf(";\n");
 	}
+}
+
+static void show_protocol(struct drbd_option *od, struct nlattr *nla)
+{
+	int i = nla_get_u32(nla);
+	printI("%-16s\t%c",od->name, '@' + i);
+	if (i == DRBD_PROTOCOL_DEF)
+		printf(" _is_default");
+	printf(";\n");
 }
 
 static void show_handler(struct drbd_option *od, struct nlattr *nla)
@@ -2406,6 +2434,11 @@ static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 			option->numeric_param.max);
 }
 
+static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str,strlen," [--protocol {A,B,C}]");
+}
+
 static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
 	const char** handlers;
@@ -2454,6 +2487,17 @@ static void numeric_opt_xml(struct drbd_option *option)
 		printf("\t\t<unit>%s</unit>\n",option->numeric_param.unit);
 	}
 	printf("\t</option>\n");
+}
+
+static void protocol_opt_xml(struct drbd_option *option)
+{
+	printf(
+		"\t<option name=\"protocol\" type=\"handler\">\n"
+		"\t\t<handler>A</handler>\n"
+		"\t\t<handler>B</handler>\n"
+		"\t\t<handler>C</handler>\n"
+		"\t</option>\n"
+	);
 }
 
 static void handler_opt_xml(struct drbd_option *option)

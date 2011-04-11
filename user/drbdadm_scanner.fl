@@ -101,7 +101,7 @@ no-disk-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
 no-disk-drain		{ DP; CP; return TK_DISK_SWITCH;		}
 no-md-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
-protocol		{ DP; CP; return TK_NET_OPTION;			}
+protocol		{ DP; CP; RC(PROTOCOL); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}
 max-buffers		{ DP; CP; RC(MAX_BUFFERS); return TK_NET_OPTION;}

@@ -53,6 +53,7 @@ enum range_checks
 	R_C_MIN_RATE,
 	R_CONG_FILL,
 	R_CONG_EXTENTS,
+	R_PROTOCOL,
 };
 
 enum yytokentype {

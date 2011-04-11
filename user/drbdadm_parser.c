@@ -152,8 +152,9 @@ void m_strtoll_range(const char *s, char def_unit,
 }
 
 void range_check(const enum range_checks what, const char *name,
-		 const char *value)
+		 char *value)
 {
+	char proto = 0;
 	switch (what) {
 	case R_NO_CHECK:
 		break;
@@ -269,7 +270,18 @@ void range_check(const enum range_checks what, const char *name,
 		m_strtoll_range(value, 1, name, DRBD_CONG_EXTENTS_MIN,
 				DRBD_CONG_EXTENTS_MAX);
 		break;
-
+	case R_PROTOCOL:
+		if (value && value[0] && value[1] == 0) {
+			proto = value[0] & ~0x20; /* toupper */
+			if (proto == 'A' || proto == 'B' || proto == 'C')
+				value[0] = proto;
+			else
+				proto = 0;
+		}
+		if (!proto && config_valid <= 1) {
+			config_valid = 0;
+			fprintf(stderr, "unknown protocol '%s', should be one of A,B,C\n", value);
+		}
 	}
 }
 
@@ -1742,6 +1754,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			check_upr("protocol statement","%s: protocol",res->name);
 			opt_name = yylval.txt;
 			EXP(TK_STRING);
+			range_check(R_PROTOCOL, opt_name, yylval.txt);
 			res->net_options = APPEND(res->net_options, new_opt(opt_name, yylval.txt));
 			EXP(';');
 			break;
