@@ -2301,10 +2301,13 @@ void drbd_delete_device(struct drbd_conf *mdev)
 	kfree(mdev->p_uuid);
 	/* mdev->p_uuid = NULL; */
 
-	/* cleanup the rest that has been
-	 * allocated from drbd_new_device
-	 * and actually free the mdev itself */
-	drbd_free_mdev(mdev);
+	kfree(mdev->current_epoch);
+	if (mdev->bitmap) /* should no longer be there. */
+		drbd_bm_cleanup(mdev);
+	__free_page(mdev->md_io_page);
+	put_disk(mdev->vdisk);
+	blk_cleanup_queue(mdev->rq_queue);
+	kfree(mdev);
 }
 
 STATIC void drbd_cleanup(void)
@@ -2616,20 +2619,6 @@ out_no_q:
 	kfree(mdev);
 	return err;
 }
-
-/* counterpart of drbd_new_device.
- * last part of drbd_delete_device. */
-void drbd_free_mdev(struct drbd_conf *mdev)
-{
-	kfree(mdev->current_epoch);
-	if (mdev->bitmap) /* should no longer be there. */
-		drbd_bm_cleanup(mdev);
-	__free_page(mdev->md_io_page);
-	put_disk(mdev->vdisk);
-	blk_cleanup_queue(mdev->rq_queue);
-	kfree(mdev);
-}
-
 
 int __init drbd_init(void)
 {
