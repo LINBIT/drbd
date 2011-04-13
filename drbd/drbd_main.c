@@ -129,7 +129,7 @@ module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0
  */
 struct idr minors;
 struct list_head drbd_tconns;  /* list of struct drbd_tconn */
-DEFINE_MUTEX(drbd_cfg_mutex);
+DECLARE_RWSEM(drbd_cfg_rwsem);
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
@@ -2398,14 +2398,14 @@ struct drbd_tconn *conn_by_name(const char *name)
 	if (!name || !name[0])
 		return NULL;
 
-	mutex_lock(&drbd_cfg_mutex);
+	down_read(&drbd_cfg_rwsem);
 	list_for_each_entry(tconn, &drbd_tconns, all_tconn) {
 		if (!strcmp(tconn->name, name))
 			goto found;
 	}
 	tconn = NULL;
 found:
-	mutex_unlock(&drbd_cfg_mutex);
+	up_read(&drbd_cfg_rwsem);
 	return tconn;
 }
 
@@ -2472,9 +2472,9 @@ struct drbd_tconn *drbd_new_tconn(const char *name)
 		DRBD_ON_NO_DATA_DEF, /* on_no_data */
 	};
 
-	mutex_lock(&drbd_cfg_mutex);
+	down_write(&drbd_cfg_rwsem);
 	list_add_tail(&tconn->all_tconn, &drbd_tconns);
-	mutex_unlock(&drbd_cfg_mutex);
+	up_write(&drbd_cfg_rwsem);
 
 	return tconn;
 

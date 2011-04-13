@@ -278,7 +278,9 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 
 extern struct idr minors;
 extern struct list_head drbd_tconns;
-extern struct mutex drbd_cfg_mutex;
+extern struct rw_semaphore drbd_cfg_rwsem;
+/* drbd_cfg_rwsem protects: drbd_tconns list,
+   note: non sleeping iterations over the idrs are protoected by RCU */
 
 /* on the wire */
 enum drbd_packet {
