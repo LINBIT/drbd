@@ -1400,7 +1400,7 @@ void net_delegate(void *ctx)
 {
 	enum pr_flags flags = (enum pr_flags)ctx;
 
-	if (!strcmp(yytext, "discard-my-data") && flags & IgnDiscardMyData)
+	if (!strcmp(yytext, "discard-my-data") && flags & PARSE_FOR_ADJUST)
 		EXP(';');
 	else
 		pe_expected("an option keyword");
@@ -1863,9 +1863,31 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			config_file, c_section_start, res->name);
 	}
 
-	check_volumes_hosts(res);
+	if (!(flags & PARSE_FOR_ADJUST))
+		check_volumes_hosts(res);
 
 	return res;
+}
+
+struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx)
+{
+	int token;
+
+	token = yylex();
+	if (token != TK_RESOURCE)
+		return NULL;
+
+	token = yylex();
+	if (token != TK_STRING)
+		return NULL;
+
+	/* FIXME assert that string and ctx->res->name match? */
+
+	token = yylex();
+	if (token != '{')
+		return NULL;
+
+	return parse_resource(ctx->res->name, PARSE_FOR_ADJUST);
 }
 
 void post_parse(struct d_resource *config, enum pp_flags flags)

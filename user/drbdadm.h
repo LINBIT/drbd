@@ -166,13 +166,18 @@ struct cfg_ctx {
 
 
 extern char *canonify_path(char *path);
-extern int adm_create_md(struct cfg_ctx *);
+
+extern int adm_adjust(struct cfg_ctx *);
+extern int adm_new_minor(struct cfg_ctx *ctx);
+extern int adm_new_connection(struct cfg_ctx *);
+extern int adm_res_options(struct cfg_ctx *);
 extern int adm_attach(struct cfg_ctx *);
 extern int adm_connect(struct cfg_ctx *);
-extern int adm_resize(struct cfg_ctx *);
-extern int adm_syncer(struct cfg_ctx *);
 extern int adm_generic_s(struct cfg_ctx *);
+
+extern int adm_create_md(struct cfg_ctx *);
 extern int _admm_generic(struct cfg_ctx *, int flags);
+
 extern void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd, int *ex);
 static inline int m_system_ex(char **argv, int flags, const char *res_name)
 {
@@ -210,8 +215,7 @@ enum drbd_cfg_stage {
 };
 
 extern void schedule_dcmd( int (*function)(struct cfg_ctx *),
-			   struct d_resource *res,
-			   struct d_volume *vol,
+			   struct cfg_ctx *ctx,
 			   const char *arg,
 			   enum drbd_cfg_stage stage);
 
@@ -230,11 +234,13 @@ extern char *lookup_minor(int minor);
 
 enum pr_flags {
   NoneHAllowed  = 4,
-  IgnDiscardMyData = 8
+  PARSE_FOR_ADJUST = 8
 };
 enum pp_flags {
 	match_on_proxy = 1,
 };
+
+extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(struct d_resource *config, enum pp_flags);
 extern struct d_option *new_opt(char *name, char *value);

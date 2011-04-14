@@ -106,15 +106,17 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 	while(running) {
 		if((opt=find_opt(conf,running->name))) {
 			if(!ov_eq(running->value,opt->value)) {
-			/* printf("Value of '%s' differs: r=%s c=%s\n",
-			   opt->name,running->value,opt->value); */
+				if (verbose > 2)
+					fprintf(stderr, "Value of '%s' differs: r=%s c=%s\n",
+						opt->name,running->value,opt->value);
 				return 0;
 			}
 			opt->mentioned=1;
 		} else {
 			if(!running->is_default) {
-				/*printf("Only in running config %s: %s\n",
-				  running->name,running->value);*/
+				if (verbose > 2)
+					fprintf(stderr, "Only in running config %s: %s\n",
+						running->name,running->value);
 				return 0;
 			}
 		}
@@ -123,8 +125,9 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 
 	while(conf) {
 		if(conf->mentioned==0) {
-			/*printf("Only in config file %s: %s\n",
-			  conf->name,conf->value);*/
+			if (verbose > 2)
+				fprintf(stderr, "Only in config file %s: %s\n",
+					conf->name,conf->value);
 			return 0;
 		}
 		conf=conf->next;
@@ -163,17 +166,20 @@ static int int_eq(char* m_conf, char* m_running)
 	return !strcmp(m_conf,"internal") == !strcmp(m_running,"internal");
 }
 
-static int disk_equal(struct d_host_info* conf, struct d_host_info* running)
+static int disk_equal(struct d_volume *conf, struct d_volume *running)
 {
 	int eq = 1;
 
-	if (conf->volumes->disk == NULL && running->volumes->disk == NULL) return 1;
-	if (conf->volumes->disk == NULL || running->volumes->disk == NULL) return 0;
+	if (conf->disk == NULL && running->disk == NULL)
+		return 1;
+	if (conf->disk == NULL || running->disk == NULL)
+		return 0;
 
-	eq &= !strcmp(conf->volumes->disk,running->volumes->disk);
-	eq &= int_eq(conf->volumes->meta_disk,running->volumes->meta_disk);
-	if(!strcmp(conf->volumes->meta_disk,"internal")) return eq;
-	eq &= !strcmp(conf->volumes->meta_disk,running->volumes->meta_disk);
+	eq &= !strcmp(conf->disk, running->disk);
+	eq &= int_eq(conf->meta_disk, running->meta_disk);
+	if (!strcmp(conf->meta_disk, "internal"))
+		return eq;
+	eq &= !strcmp(conf->meta_disk, running->meta_disk);
 
 	return eq;
 }
@@ -252,9 +258,10 @@ int _is_plugin_in_list(char *string,
 }
 
 
-static int proxy_reconf(struct d_resource *res, struct d_resource *running)
+static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
 {
 	int reconn = 0;
+	struct d_resource *res = ctx->res;
 	struct d_option* res_o, *run_o;
 	unsigned long long v1, v2, minimum;
 	char *plugin_changes[MAX_PLUGINS], *cp, *conn_name;
@@ -283,9 +290,9 @@ redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
 		 * completely destroy and rebuild the connection. */
 
-		schedule_dcmd( do_proxy_conn_down, res, NULL, NULL, CFG_NET_PREREQ);
-		schedule_dcmd( do_proxy_conn_up, res, NULL, NULL, CFG_NET_PREREQ);
-		schedule_dcmd( do_proxy_conn_plugins, res, NULL, NULL, CFG_NET_PREREQ);
+		schedule_dcmd( do_proxy_conn_down, ctx, NULL, CFG_NET_PREREQ);
+		schedule_dcmd( do_proxy_conn_up, ctx, NULL, CFG_NET_PREREQ);
+		schedule_dcmd( do_proxy_conn_plugins, ctx, NULL, CFG_NET_PREREQ);
 
 		/* With connection cleanup and reopen everything is rebuild anyway, and
 		 * DRBD will get a reconnect too.  */
@@ -364,7 +371,7 @@ redo_whole_conn:
 
 	/* change only a few plugin settings. */
 	for(i=0; i<used; i++)
-		schedule_dcmd(do_proxy_reconf, res, NULL, plugin_changes[i], CFG_NET);
+		schedule_dcmd(do_proxy_reconf, ctx, plugin_changes[i], CFG_NET);
 
 	return reconn;
 }
@@ -402,14 +409,24 @@ int need_trigger_kobj_change(struct d_resource *res)
 /*
  * CAUTION this modifies global static char * config_file!
  */
-int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
+int adm_adjust(struct cfg_ctx *ctx)
 {
 	char* argv[20];
 	int pid,argc, i;
 	struct d_resource* running;
-	int do_attach=0,do_connect=0;
-	int have_disk=0,have_net=0,can_do_proxy=1;
-	char config_file_dummy[250], *conn_name, show_conn[128];
+
+	int do_create = 0;
+	int do_res_options = 0;
+	int do_attach = 0;
+	int do_connect = 0;
+
+	int have_disk = 0;
+	int have_net = 0;
+
+	int can_do_proxy = 1;
+	char config_file_dummy[250];
+	char show_conn[128];
+	char *conn_name;
 
 	/* disable check_uniq, so it won't interfere
 	 * with parsing of drbdsetup show output */
@@ -418,30 +435,43 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 
 	/* setup error reporting context for the parsing routines */
 	line = 1;
-	sprintf(config_file_dummy,"drbdsetup %u show", res->me->volumes->device_minor);
+	sprintf(config_file_dummy,"drbdsetup %s show-all", ctx->res->name);
 	config_file = config_file_dummy;
 
 	argc=0;
 	argv[argc++]=drbdsetup;
-	argv[argc++]=res->me->volumes->device;
-	argv[argc++]="show";
+	ssprintf(argv[argc++], "%s", ctx->res->name);
+	argv[argc++]="show-all";
 	argv[argc++]=0;
 
 	/* actually parse drbdsetup show output */
 	yyin = m_popen(&pid,argv);
-	running = parse_resource(res->name, IgnDiscardMyData);
+	running = parse_resource_for_adjust(ctx);
 	fclose(yyin);
 
 	waitpid(pid,0,0);
+
+	if (!running) {
+		do_create = 1;
+		do_res_options = 1;
+		do_attach = 1;
+		do_connect = 1;
+		goto reconfigure;
+	}
+
+
 	/* Sets "me" and "peer" pointer */
 	post_parse(running, 0);
 	set_peer_in_resource(running, 0);
 
 
-	/* Parse proxy settings, if this host has a proxy definition */
-	if (res->me->proxy) {
+	/* Parse proxy settings, if this host has a proxy definition.
+	 * FIXME what about "zombie" proxy settings, if we remove proxy
+	 * settings from the config file without prior proxy-down, this won't
+	 * clean them from the proxy. */
+	if (ctx->res->me->proxy) {
 		line = 1;
-		conn_name = proxy_connection_name(res);
+		conn_name = proxy_connection_name(ctx->res);
 		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", conn_name);
 		if (i>= sizeof(show_conn)-1) {
 			fprintf(stderr,"connection name too long");
@@ -466,29 +496,39 @@ int adm_adjust(struct d_resource* res,char* unused __attribute((unused)))
 	}
 
 
-	do_attach  = !opts_equal(res->disk_options, running->disk_options);
+	do_attach  = !opts_equal(ctx->vol->disk_options, running->me->volumes->disk_options);
 	if(running->me) {
-		do_attach |= (res->me->volumes->device_minor != running->me->volumes->device_minor);
-		do_attach |= !disk_equal(res->me, running->me);
+		do_attach |= (ctx->vol->device_minor != running->me->volumes->device_minor);
+		do_attach |= !disk_equal(ctx->vol, running->me->volumes);
 		have_disk = (running->me->volumes->disk != NULL);
 	} else  do_attach |= 1;
 
-	do_connect  = !opts_equal(res->net_options, running->net_options);
-	do_connect |= !addr_equal(res,running);
+	do_connect  = !opts_equal(ctx->res->net_options, running->net_options);
+	do_connect |= !addr_equal(ctx->res,running);
 	/* No adjust support for drbd proxy version 1. */
-	if (res->me->proxy && can_do_proxy)
-		do_connect |= proxy_reconf(res,running);
+	if (ctx->res->me->proxy && can_do_proxy)
+		do_connect |= proxy_reconf(ctx, running);
 	have_net = (running->net_options != NULL);
 
-	if(do_attach) {
+ reconfigure:
+	if (do_create) {
+		schedule_dcmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+		schedule_dcmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+	}
+	if (do_res_options)
+		schedule_dcmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
+	/* FIXME
+	 * we now can, in theory, adjust most disk and net options without
+	 * detaching/disconnecting first. Actually implement this here */
+	if (do_attach) {
 		if (have_disk)
-			schedule_dcmd(adm_generic_s, res, NULL, "detach", CFG_DISK);
-		schedule_dcmd(adm_attach, res, NULL, "attach", CFG_DISK);
+			schedule_dcmd(adm_generic_s, ctx, "detach", CFG_DISK);
+		schedule_dcmd(adm_attach, ctx, "attach", CFG_DISK);
 	}
 	if (do_connect) {
-		if (have_net && res->peer)
-			schedule_dcmd(adm_generic_s, res, NULL, "disconnect", CFG_NET_PREREQ);
-		schedule_dcmd(adm_connect, res, NULL, "connect", CFG_NET);
+		if (have_net && ctx->res->peer)
+			schedule_dcmd(adm_generic_s, ctx, "disconnect", CFG_NET_PREREQ);
+		schedule_dcmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 
 	return 0;

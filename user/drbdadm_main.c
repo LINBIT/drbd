@@ -126,19 +126,10 @@ extern int my_parse();
 extern int yydebug;
 extern FILE *yyin;
 
-int adm_attach(struct cfg_ctx *);
-int adm_connect(struct cfg_ctx *);
-int adm_generic_s(struct cfg_ctx *);
-int adm_status_xml(struct cfg_ctx *);
-int adm_generic_l(struct cfg_ctx *);
-int adm_resize(struct cfg_ctx *);
-int adm_syncer(struct cfg_ctx *);
 
-extern int adm_adjust(struct cfg_ctx *);
-
-static int adm_new_minor(struct cfg_ctx *);
-static int adm_new_connection(struct cfg_ctx *);
-static int adm_res_options(struct cfg_ctx *);
+static int adm_resize(struct cfg_ctx *);
+static int adm_generic_l(struct cfg_ctx *);
+static int adm_status_xml(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
 static int adm_dump(struct cfg_ctx *);
 static int adm_dump_xml(struct cfg_ctx *);
@@ -395,7 +386,7 @@ struct adm_cmd cmds[] = {
 
 
 void schedule_dcmd(int (*function) (struct cfg_ctx *),
-		   struct d_resource *res, struct d_volume *vol,
+		   struct cfg_ctx *ctx,
 		   const char *arg, enum drbd_cfg_stage stage)
 {
 	struct deferred_cmd *d, *t;
@@ -407,8 +398,8 @@ void schedule_dcmd(int (*function) (struct cfg_ctx *),
 	}
 
 	d->function = function;
-	d->ctx.res = res;
-	d->ctx.vol = vol;
+	d->ctx.res = ctx->res;
+	d->ctx.vol = ctx->vol;
 	d->ctx.arg = arg;
 
 	/* first to come is head */
@@ -2113,9 +2104,10 @@ char *proxy_connection_name(struct d_resource *res)
 	int counter;
 
 	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
-			 names_to_str_c(res->me->proxy->on_hosts, '_'),
 			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'));
+			 names_to_str_c(res->peer->proxy->on_hosts, '_'),
+			 names_to_str_c(res->me->proxy->on_hosts, '_')
+			 );
 	if (counter >= sizeof(conn_name)-3) {
 		fprintf(stderr,
 				"The connection name in resource %s got too long.\n",
@@ -2276,15 +2268,18 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * and then configure the network part */
 static int adm_up(struct cfg_ctx *ctx)
 {
-	struct d_resource *res = ctx->res;
-	struct d_volume *vol = ctx->vol;
-	if (vol == NULL) {
-		schedule_dcmd(adm_new_connection, res, vol, "new-connection", CFG_PREREQ);
-		schedule_dcmd(adm_res_options, res, vol, "resource-options", CFG_RESOURCE);
-		schedule_dcmd(adm_connect, res, vol, "connect", CFG_NET);
+	schedule_dcmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+
+	/* We will only touch resource-options and "connect", if we are
+	 * supposed to bring up the whole resource, not if we are asked to
+	 * bring up just one specific volume.
+	 */
+	if (ctx->vol == NULL) {
+		schedule_dcmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
+		schedule_dcmd(adm_connect, ctx, "connect", CFG_NET);
 	} else {
-		schedule_dcmd(adm_new_minor, res, vol, "new-minor", CFG_PREREQ);
-		schedule_dcmd(adm_attach, res, vol, "attach", CFG_DISK);
+		schedule_dcmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+		schedule_dcmd(adm_attach, ctx, "attach", CFG_DISK);
 	}
 	return 0;
 }
