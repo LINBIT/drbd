@@ -1670,6 +1670,45 @@ static bool conn_ov_running(struct drbd_tconn *tconn)
 	return rv;
 }
 
+static enum drbd_ret_code
+check_net_options(struct drbd_tconn *tconn, struct net_conf *new_conf)
+{
+	struct drbd_conf *mdev;
+	int i;
+
+	if (new_conf->two_primaries &&
+	    (new_conf->wire_protocol != DRBD_PROT_C))
+		return ERR_NOT_PROTO_C;
+
+	rcu_read_lock();
+	idr_for_each_entry(&tconn->volumes, mdev, i) {
+		if (get_ldev(mdev)) {
+			enum drbd_fencing_p fp = mdev->ldev->dc.fencing;
+			put_ldev(mdev);
+			if (new_conf->wire_protocol == DRBD_PROT_A && fp == FP_STONITH) {
+				rcu_read_unlock();
+				return ERR_STONITH_AND_PROT_A;
+			}
+		}
+		if (mdev->state.role == R_PRIMARY && new_conf->want_lose) {
+			rcu_read_unlock();
+			return ERR_DISCARD;
+		}
+		if (!mdev->bitmap) {
+			if(drbd_bm_init(mdev)) {
+				rcu_read_unlock();
+				return ERR_NOMEM;
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	if (new_conf->on_congestion != OC_BLOCK && new_conf->wire_protocol != DRBD_PROT_A)
+		return ERR_CONG_NOT_PROTO_A;
+
+	return NO_ERROR;
+}
+
 int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
@@ -1727,6 +1766,10 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
 	}
+
+	retcode = check_net_options(tconn, new_conf);
+	if (retcode != NO_ERROR)
+		goto fail;
 
 	/* re-sync running */
 	rsr = conn_resync_running(tconn);
@@ -1887,39 +1930,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (new_conf->two_primaries
-	    && (new_conf->wire_protocol != DRBD_PROT_C)) {
-		retcode = ERR_NOT_PROTO_C;
+	retcode = check_net_options(tconn, new_conf);
+	if (retcode != NO_ERROR)
 		goto fail;
-	}
-
-	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, mdev, i) {
-		if (get_ldev(mdev)) {
-			enum drbd_fencing_p fp = mdev->ldev->dc.fencing;
-			put_ldev(mdev);
-			if (new_conf->wire_protocol == DRBD_PROT_A && fp == FP_STONITH) {
-				retcode = ERR_STONITH_AND_PROT_A;
-				goto fail_rcu_unlock;
-			}
-		}
-		if (mdev->state.role == R_PRIMARY && new_conf->want_lose) {
-			retcode = ERR_DISCARD;
-			goto fail_rcu_unlock;
-		}
-		if (!mdev->bitmap) {
-			if(drbd_bm_init(mdev)) {
-				retcode = ERR_NOMEM;
-				goto fail_rcu_unlock;
-			}
-		}
-	}
-	rcu_read_unlock();
-
-	if (new_conf->on_congestion != OC_BLOCK && new_conf->wire_protocol != DRBD_PROT_A) {
-		retcode = ERR_CONG_NOT_PROTO_A;
-		goto fail;
-	}
 
 	retcode = NO_ERROR;
 
@@ -2039,8 +2052,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	drbd_adm_finish(info, retcode);
 	return 0;
 
-fail_rcu_unlock:
-	rcu_read_unlock();
 fail:
 	kfree(int_dig_in);
 	kfree(int_dig_vv);
