@@ -1084,7 +1084,7 @@ void inherit_volumes(struct d_volume *from, struct d_host_info *host)
 			t = calloc(1, sizeof(struct d_volume));
 			t->device_minor = -1;
 			t->vnr = s->vnr;
-			host->volumes = APPEND(host->volumes, t);
+			host->volumes = INSERT_SORTED(host->volumes, t, vnr);
 		}
 		if (!t->disk && s->disk) {
 			t->disk = strdup(s->disk);
@@ -1121,7 +1121,14 @@ void check_volume_complete(struct d_resource *res, struct d_host_info *host, str
 void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
 {
 	struct d_volume *vol = host->volumes;
+	unsigned vnr = -1U;
 	while (vol) {
+		if (vnr == -1U || vnr < vol->vnr)
+			vnr = vol->vnr;
+		else
+			fprintf(stderr,
+				"internal error: in %s: unsorted volumes list\n",
+				res->name);
 		check_volume_complete(res, host, vol);
 		vol = vol->next;
 	}
@@ -1253,7 +1260,7 @@ static void parse_host_section(struct d_resource *res,
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			host->volumes = APPEND(host->volumes, parse_volume(atoi(yylval.txt)));
+			host->volumes = INSERT_SORTED(host->volumes, parse_volume(atoi(yylval.txt)), vnr);
 			break;
 		case TK_OPTIONS:
 			EXP('{');
@@ -1358,7 +1365,7 @@ static void parse_stacked_section(struct d_resource* res)
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			host->volumes = APPEND(host->volumes, parse_stacked_volume(atoi(yylval.txt)));
+			host->volumes = INSERT_SORTED(host->volumes, parse_stacked_volume(atoi(yylval.txt)), vnr);
 			break;
 		case '}':
 			goto break_loop;
@@ -1824,7 +1831,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			res->volumes = APPEND(res->volumes, parse_volume(atoi(yylval.txt)));
+			res->volumes = INSERT_SORTED(res->volumes, parse_volume(atoi(yylval.txt)), vnr);
 			break;
 		case TK_OPTIONS:
 			check_upr("resource options section", "%s:res_options", res->name);

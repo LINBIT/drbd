@@ -317,6 +317,19 @@ extern int soi;
   _l;					      \
 })
 
+#define INSERT_SORTED(LIST,ITEM,SORT) ({	\
+	typeof((LIST)) _l = (LIST);	\
+	typeof((ITEM)) _i = (ITEM);	\
+	typeof((ITEM)) _t, _p = NULL;	\
+	for (_t = _l; _t && _t->SORT <= _i->SORT; _p = _t, _t = _t->next); \
+	if (_p)				\
+		_p->next = _i;		\
+	else				\
+		_l = _i;		\
+	_i->next = _t;			\
+	_l;				\
+})
+
 #define SPLICE(LIST,ITEMS) ({		      \
   typeof((LIST)) _l = (LIST);		      \
   typeof((ITEMS)) _i = (ITEMS);		      \
