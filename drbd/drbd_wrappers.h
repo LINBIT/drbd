@@ -1044,4 +1044,21 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 }
 #endif
 
+/*
+ * In commit c4945b9e (v2.6.39-rc1), the little-endian bit operations have been
+ * renamed to be less weird.
+ */
+#ifndef COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE
+#define find_next_zero_bit_le(addr, size, offset) \
+	generic_find_next_zero_le_bit(addr, size, offset)
+#define find_next_bit_le(addr, size, offset) \
+	generic_find_next_le_bit(addr, size, offset)
+#define test_bit_le(nr, addr) \
+	generic_test_le_bit(nr, addr)
+#define __test_and_set_bit_le(nr, addr) \
+	generic___test_and_set_le_bit(nr, addr)
+#define __test_and_clear_bit_le(nr, addr) \
+	generic___test_and_clear_le_bit(nr, addr)
+#endif
+
 #endif
