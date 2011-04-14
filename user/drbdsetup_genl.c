@@ -1933,7 +1933,14 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 	       s.user_isp ? 'u' : '-' );
 }
 
-static int print_resources(struct genl_info *info, int u __unused)
+/* err will be ignored until the last call,
+ * (NLMSG_DONE received), when it will be set to the
+ * return value of the last in-kernel dump iteration.
+ * For successful dumps, that will be 0.
+ * For "no such resource found", or any other error,
+ * that will be a negative error code.
+ */
+static int print_resources(struct genl_info *info, int err)
 {
 	static int call_count;
 	if (!info) {
@@ -1943,7 +1950,10 @@ static int print_resources(struct genl_info *info, int u __unused)
 			printI("}\n"); /* close _this_host */
 			--indent;
 			printI("}\n");
-		}
+		} else if (err)
+			printf("# error: %d: %s\n", err, strerror(-err));
+		else
+			printf("# no resources\n");
 		fflush(stdout);
 		return 0;
 	}
@@ -2282,20 +2292,36 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 	/* we want a dump, if this is "show-all",
 	 * or if it is "events -a" */
 	terminate_after_initial_dump = cm->ep.proc_event == print_resources;
-	all_devices = all_devices || terminate_after_initial_dump;
 
 	if (genl_join_mc_group(drbd_sock, "events")) {
 		fprintf(stderr, "unable to join drbd events multicast group\n");
 		return 20;
 	}
 	dhdr = genlmsg_put(smsg, &drbd_genl_family,
-			all_devices ? NLM_F_DUMP : 0,
-			DRBD_ADM_GET_STATUS);
+		(all_devices || terminate_after_initial_dump) ? NLM_F_DUMP : 0,
+		DRBD_ADM_GET_STATUS);
 	dhdr->minor = minor; /* gets ignored for DUMP */
 	dhdr->flags = 0;
 
 	dt_unlock_drbd(lock_fd);
 	lock_fd=-1;
+
+
+	/* If this is show-all, it may be specific to a single resource
+	 * (show all volumes of resource X). If the resource name is ALL,
+	 * or if --all is given, the resource name is ignored,
+	 * causing a dump of all resources and their volumes.
+	 */
+	all_devices = all_devices || !strcmp(objname, "ALL");
+	if (cm->ctx_key == CTX_CONN && !all_devices) {
+		/* we just allocated 8k,
+		 * and now we put a few bytes there.
+		 * this cannot possibly fail, can it? */
+		struct nlattr *nla;
+		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
+		nla_put_string(smsg, T_ctx_conn_name, objname);
+		nla_nest_end(smsg, nla);
+	}
 
 	if (genl_send(drbd_sock, smsg)) {
 		desc = "error sending config command";
@@ -2311,6 +2337,8 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 		gettimeofday(&before,NULL);
 		rr = genl_recv_msgs(drbd_sock, &iov, &desc, timeout_ms ?: 120000);
 		gettimeofday(&after,NULL);
+
+		nlh = (struct nlmsghdr*)iov.iov_base;
 
 		switch(rr) {
 		case E_RCV_TIMEDOUT:
@@ -2328,8 +2356,9 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 			continue;
 		case -E_RCV_NLMSG_DONE:
 			if (terminate_after_initial_dump) {
-				cm->ep.proc_event(NULL, 0);
-				return 0;
+				int ret = *(int*)nlmsg_data(nlh);
+				cm->ep.proc_event(NULL, ret);
+				return ret ? 10 : 0;
 			}
 			continue;
 		case -E_RCV_ERROR_REPLY:
@@ -2349,8 +2378,6 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 				return 5;
 		}
 
-		nlh = (struct nlmsghdr*)iov.iov_base;
-
 		/* may be multiple messages in one datagram (for dump replies) */
 		nlmsg_for_each_msg(nlh, nlh, rr, rem) {
 			struct genl_info info = {
@@ -2361,7 +2388,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 				.attrs = global_attrs,
 			};
 			dhdr = info.userhdr;
-			if (minor != dhdr->minor && !all_devices)
+			if (minor != -1U && minor != dhdr->minor && !all_devices)
 				continue;
 
 			drbd_tla_parse(nlh);
