@@ -601,6 +601,8 @@ static const char *error_messages[] = {
 	EM(ERR_MINOR_CONFIGURED) = "Minor still configured (down it first)",
 	EM(ERR_MINOR_EXISTS) = "Minor exists already (delete it first)",
 	EM(ERR_INVALID_REQUEST) = "Invalid configuration request",
+	EM(ERR_NEED_APV_100) = "Prot version 100 required in order to online change\n"
+	"between replication prot A, B or C",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)
