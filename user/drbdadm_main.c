@@ -3716,6 +3716,15 @@ int main(int argc, char **argv)
 						argv[i]);
 					exit(E_usage);
 				}
+				if (!cmd->vol_id_required && !cmd->iterate_volumes && ctx.vol != NULL) {
+					if (ctx.vol->implicit)
+						ctx.vol = NULL;
+					else {
+						fprintf(stderr, "%s operates on whole resources, but you specified a specific volume!\n",
+								cmd->name);
+						exit(E_usage);
+					}
+				}
 				if (cmd->vol_id_required && !ctx.vol) {
 					fprintf(stderr, "%s requires a specific volume id, but none is specified.\n"
 							"Try '%s minor-<minor_number>' or '%s %s/<vnr>'\n",
