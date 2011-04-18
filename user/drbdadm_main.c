@@ -1568,6 +1568,7 @@ int adm_attach(struct cfg_ctx *ctx)
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
+	int i;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1583,6 +1584,8 @@ int adm_attach(struct cfg_ctx *ctx)
 	argv[NA(argc)] = "--set-defaults";
 	opt = ctx->vol->disk_options;
 	make_options(opt);
+	for (i = 0; i < soi; i++)
+		argv[NA(argc)] = setup_opts[i];
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
