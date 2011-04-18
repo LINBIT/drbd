@@ -1323,6 +1323,7 @@ static void expand_common(void)
 	struct d_volume *vol;
 	struct d_host_info *h;
 
+	/* make sure vol->device is non-NULL */
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
 			for_each_volume(vol, h->volumes) {
@@ -1333,10 +1334,10 @@ static void expand_common(void)
 		}
 	}
 
-	if (!common)
-		return;
-
 	for_each_resource(res, tmp, config) {
+		if (!common)
+			break;
+
 		expand_opts(common->net_options, &res->net_options);
 		expand_opts(common->disk_options, &res->disk_options);
 		expand_opts(common->startup_options, &res->startup_options);
@@ -1353,6 +1354,16 @@ static void expand_common(void)
 		if (common->proxy_plugins && !res->proxy_plugins)
 			expand_opts(common->proxy_plugins, &res->proxy_plugins);
 
+	}
+
+	/* now that common disk options (if any) have been propagated to the
+	 * resource level, further propagate them to the volume level. */
+	for_each_resource(res, tmp, config) {
+		for (h = res->all_hosts; h; h = h->next) {
+			for_each_volume(vol, h->volumes) {
+				expand_opts(res->disk_options, &vol->disk_options);
+			}
+		}
 	}
 }
 
@@ -1570,8 +1581,6 @@ int adm_attach(struct cfg_ctx *ctx)
 	}
 	argv[NA(argc)] = vol->meta_index;
 	argv[NA(argc)] = "--set-defaults";
-	opt = ctx->res->disk_options;
-	make_options(opt);
 	opt = ctx->vol->disk_options;
 	make_options(opt);
 	argv[NA(argc)] = 0;
