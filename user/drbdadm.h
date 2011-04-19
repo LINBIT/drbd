@@ -214,10 +214,10 @@ enum drbd_cfg_stage {
 	__CFG_LAST
 };
 
-extern void schedule_dcmd( int (*function)(struct cfg_ctx *),
-			   struct cfg_ctx *ctx,
-			   const char *arg,
-			   enum drbd_cfg_stage stage);
+extern void schedule_deferred_cmd( int (*function)(struct cfg_ctx *),
+				   struct cfg_ctx *ctx,
+				   const char *arg,
+				   enum drbd_cfg_stage stage);
 
 extern int version_code_kernel(void);
 extern int version_code_userland(void);

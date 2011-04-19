@@ -290,9 +290,9 @@ redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
 		 * completely destroy and rebuild the connection. */
 
-		schedule_dcmd( do_proxy_conn_down, ctx, NULL, CFG_NET_PREREQ);
-		schedule_dcmd( do_proxy_conn_up, ctx, NULL, CFG_NET_PREREQ);
-		schedule_dcmd( do_proxy_conn_plugins, ctx, NULL, CFG_NET_PREREQ);
+		schedule_deferred_cmd( do_proxy_conn_down, ctx, NULL, CFG_NET_PREREQ);
+		schedule_deferred_cmd( do_proxy_conn_up, ctx, NULL, CFG_NET_PREREQ);
+		schedule_deferred_cmd( do_proxy_conn_plugins, ctx, NULL, CFG_NET_PREREQ);
 
 		/* With connection cleanup and reopen everything is rebuild anyway, and
 		 * DRBD will get a reconnect too.  */
@@ -371,7 +371,7 @@ redo_whole_conn:
 
 	/* change only a few plugin settings. */
 	for(i=0; i<used; i++)
-		schedule_dcmd(do_proxy_reconf, ctx, plugin_changes[i], CFG_NET);
+		schedule_deferred_cmd(do_proxy_reconf, ctx, plugin_changes[i], CFG_NET);
 
 	return reconn;
 }
@@ -512,23 +512,23 @@ int adm_adjust(struct cfg_ctx *ctx)
 
  reconfigure:
 	if (do_create) {
-		schedule_dcmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
-		schedule_dcmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+		schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
 	}
 	if (do_res_options)
-		schedule_dcmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
+		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 	/* FIXME
 	 * we now can, in theory, adjust most disk and net options without
 	 * detaching/disconnecting first. Actually implement this here */
 	if (do_attach) {
 		if (have_disk)
-			schedule_dcmd(adm_generic_s, ctx, "detach", CFG_DISK);
-		schedule_dcmd(adm_attach, ctx, "attach", CFG_DISK);
+			schedule_deferred_cmd(adm_generic_s, ctx, "detach", CFG_DISK);
+		schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 	}
 	if (do_connect) {
 		if (have_net && ctx->res->peer)
-			schedule_dcmd(adm_generic_s, ctx, "disconnect", CFG_NET_PREREQ);
-		schedule_dcmd(adm_connect, ctx, "connect", CFG_NET);
+			schedule_deferred_cmd(adm_generic_s, ctx, "disconnect", CFG_NET_PREREQ);
+		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 
 	return 0;
