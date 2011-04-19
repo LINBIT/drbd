@@ -2268,13 +2268,12 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * and then configure the network part */
 static int adm_up(struct cfg_ctx *ctx)
 {
-	schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
-
 	/* We will only touch resource-options and "connect", if we are
 	 * supposed to bring up the whole resource, not if we are asked to
 	 * bring up just one specific volume.
 	 */
 	if (ctx->vol == NULL) {
+		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
 		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	} else {
