@@ -469,6 +469,7 @@ is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 
 	enum drbd_fencing_p fp;
 	enum drbd_state_rv rv = SS_SUCCESS;
+	struct net_conf *nc;
 
 	fp = FP_DONT_CARE;
 	if (get_ldev(mdev)) {
@@ -476,14 +477,15 @@ is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 		put_ldev(mdev);
 	}
 
-	if (get_net_conf(mdev->tconn)) {
-		if (!mdev->tconn->net_conf->two_primaries && ns.role == R_PRIMARY) {
+	rcu_read_lock();
+	nc = rcu_dereference(mdev->tconn->net_conf);
+	if (nc) {
+		if (!nc->two_primaries && ns.role == R_PRIMARY) {
 			if (ns.peer == R_PRIMARY)
 				rv = SS_TWO_PRIMARIES;
 			else if (conn_highest_peer(mdev->tconn) == R_PRIMARY)
 				rv = SS_O_VOL_PEER_PRI;
-			}
-		put_net_conf(mdev->tconn);
+		}
 	}
 
 	if (rv <= 0)
@@ -518,12 +520,14 @@ is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 		rv = SS_CONNECTED_OUTDATES;
 
 	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
-		 (mdev->tconn->net_conf->verify_alg[0] == 0))
+		 (nc->verify_alg[0] == 0))
 		rv = SS_NO_VERIFY_ALG;
 
 	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
 		  mdev->tconn->agreed_pro_version < 88)
 		rv = SS_NOT_SUPPORTED;
+
+	rcu_read_unlock();
 
 	return rv;
 }
