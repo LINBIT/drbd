@@ -579,7 +579,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	return 0;
 }
 
-int _run_dcmds(enum drbd_cfg_stage stage)
+int _run_deferred_cmds(enum drbd_cfg_stage stage)
 {
 	struct deferred_cmd *d = deferred_cmds[stage];
 	struct deferred_cmd *t;
@@ -597,12 +597,12 @@ int _run_dcmds(enum drbd_cfg_stage stage)
 	return rv;
 }
 
-int run_dcmds(void)
+int run_deferred_cmds(void)
 {
 	enum drbd_cfg_stage stage;
 	int ret;
 	for (stage = CFG_PREREQ; stage < __CFG_LAST; stage++) {
-		ret = _run_dcmds(stage);
+		ret = _run_deferred_cmds(stage);
 		if (ret)
 			return 1; /* FIXME ret? */
 	}
@@ -3752,7 +3752,7 @@ int main(int argc, char **argv)
 
 	/* do we really have to bitor the exit code?
 	 * it is even only a Boolean value in this case! */
-	rv |= run_dcmds();
+	rv |= run_deferred_cmds();
 
 	free_config(config);
 
