@@ -451,6 +451,11 @@ int check_upr(const char *what, const char *fmt, ...)
 void check_meta_disk(struct d_volume *vol, struct d_host_info *host)
 {
 	struct d_name *h;
+	/* when parsing "drbdsetup show[-all]" output,
+	 * a detached volume will only have device/minor,
+	 * but no disk or meta disk. */
+	if (vol->meta_disk == NULL)
+		return;
 	if (strcmp(vol->meta_disk, "internal") != 0) {
 		/* external */
 		if (vol->meta_index == NULL) {
@@ -1678,12 +1683,14 @@ void proxy_delegate(void *ctx)
 		free_names(line);
 	}
 out:
-	res->proxy_plugins = options;
+	if (res)
+		res->proxy_plugins = options;
 }
 
 int parse_proxy_settings(struct d_resource *res, int flags)
 {
 	int token;
+	struct d_option *proxy_options;
 
 	if (flags & PARSER_CHECK_PROXY_KEYWORD) {
 		token = yylex();
@@ -1699,12 +1706,14 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 
 	EXP('{');
 
-	res->proxy_options =
+	proxy_options =
 		parse_options_d(TK_PROXY_SWITCH,
 				TK_PROXY_OPTION,
 				TK_PROXY_DELEGATE,
 				proxy_delegate, res);
 
+	if (res)
+		res->proxy_options = proxy_options;
 	return 0;
 }
 

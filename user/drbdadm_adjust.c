@@ -273,6 +273,8 @@ static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
 
 	reconn = 0;
 
+	if (!running)
+		goto redo_whole_conn;
 
 	find_option_in_resources("memlimit",
 			res->proxy_options, &res_o,
