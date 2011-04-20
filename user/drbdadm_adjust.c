@@ -211,6 +211,7 @@ static void find_option_in_resources(char *name,
 		list = va_arg(va, struct d_option*);
 		opt  = va_arg(va, struct d_option**);
 	}
+	va_end(va);
 }
 
 static int do_proxy_reconf(struct cfg_ctx *ctx)
