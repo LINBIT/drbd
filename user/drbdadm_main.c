@@ -127,7 +127,6 @@ extern int yydebug;
 extern FILE *yyin;
 
 
-static int adm_resize(struct cfg_ctx *);
 static int adm_generic_l(struct cfg_ctx *);
 static int adm_status_xml(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);

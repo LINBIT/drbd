@@ -95,8 +95,18 @@ struct d_volume
   int meta_major;
   int meta_minor;
   struct d_volume *next;
-  unsigned int implicit :1 ; /* Do not dump an explicit volume section */
   struct d_option* disk_options; /* Additional per volume options */
+
+  /* Do not dump an explicit volume section */
+  unsigned int implicit :1 ;
+
+  /* flags for "drbdadm adjust" */
+  unsigned int adj_del_minor :1;
+  unsigned int adj_add_minor :1;
+  unsigned int adj_detach :1;
+  unsigned int adj_attach :1;
+  unsigned int adj_resize :1;
+  unsigned int adj_disk_opts :1;
 };
 
 struct d_host_info
@@ -123,6 +133,7 @@ struct d_option
   unsigned int mentioned  :1 ; // for the adjust command.
   unsigned int is_default :1 ; // for the adjust command.
   unsigned int is_escaped :1 ;
+  unsigned int adj_skip :1;
 };
 
 struct d_resource
@@ -172,6 +183,7 @@ extern int adm_new_minor(struct cfg_ctx *ctx);
 extern int adm_new_connection(struct cfg_ctx *);
 extern int adm_res_options(struct cfg_ctx *);
 extern int adm_attach(struct cfg_ctx *);
+extern int adm_resize(struct cfg_ctx *);
 extern int adm_connect(struct cfg_ctx *);
 extern int adm_generic_s(struct cfg_ctx *);
 
@@ -198,6 +210,7 @@ enum drbd_cfg_stage {
 	CFG_RESOURCE,
 
 	/* detach/attach local disks, */
+	CFG_DISK_PREREQ,
 	CFG_DISK,
 
 	/* The stage to discard network configuration, during adjust.
