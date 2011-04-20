@@ -415,6 +415,166 @@ int need_trigger_kobj_change(struct d_resource *res)
 	return 0;
 }
 
+/* moves option to the head of the single linked option list,
+ * and marks it as to be skiped for "adjust only" commands
+ * like disk-options see e.g. adm_attach_and_or_disk_options().
+ */
+static void move_opt_to_head(struct d_option **head, struct d_option *o)
+{
+	struct d_option *t;
+	if (!o)
+		return;
+	o->adj_skip = 1;
+	if (o == *head)
+		return;
+
+	for (t = *head; t->next != o; t = t->next)
+		;
+	t->next = o->next;
+	o->next = *head;
+	*head = o;
+}
+
+void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
+{
+	struct d_option *c = find_opt(conf->disk_options, "max-bio-bvecs");
+	struct d_option *k = find_opt(kern->disk_options, "max-bio-bvecs");
+
+	/* move to front of list, so we can skip it
+	 * for the following opts_equal */
+	move_opt_to_head(&conf->disk_options, c);
+	move_opt_to_head(&kern->disk_options, k);
+
+	/* simplify logic below, would otherwise have to
+	 * (!x || x->is_default) all the time. */
+	if (k && k->is_default)
+		k = NULL;
+
+	/* there was a bvec restriction set,
+	 * but it is no longer in config, or vice versa */
+	if (!k != !c)
+		conf->adj_attach = 1;
+
+	/* restrictions differ */
+	if (k && c && !ov_eq(k->value, c->value))
+		conf->adj_attach = 1;
+}
+
+/* similar to compare_max_bio_bvecs above */
+void compare_size(struct d_volume *conf, struct d_volume *kern)
+{
+	struct d_option *c = find_opt(conf->disk_options, "size");
+	struct d_option *k = find_opt(kern->disk_options, "size");
+
+	move_opt_to_head(&conf->disk_options, c);
+	move_opt_to_head(&kern->disk_options, k);
+
+	if (k && k->is_default)
+		k = NULL;
+	if (!k != !c)
+		conf->adj_resize = 1;
+	if (k && c && !ov_eq(c->value, k->value))
+		conf->adj_resize = 1;
+}
+
+void compare_volume(struct d_volume *conf, struct d_volume *kern)
+{
+	/* Special-case "max-bio-bvecs", we do not allow to change that
+	 * while attached, yet.
+	 * Also special case "size", we need to issue a resize command to change that.
+	 * Move both options to the head of the disk_options list,
+	 * so we can easily skip them in the opts_equal, later.
+	 */
+	struct d_option *c, *k;
+
+	/* do we need to do a full attach,
+	 * potentially with a detach first? */
+	conf->adj_attach = (conf->device_minor != kern->device_minor)
+			|| !disk_equal(conf, kern);
+
+	/* do we need to do a full (detach/)attach,
+	 * because max_bio_bvec setting differs? */
+	compare_max_bio_bvecs(conf, kern);
+
+	/* do we need to resize? */
+	compare_size(conf, kern);
+
+	/* skip these two options (if present) for the opts_equal below.
+	 * These have been move_opt_to_head()ed before already. */
+	k = kern->disk_options;
+	while (k && (!strcmp(k->name, "size") || !strcmp(k->name, "max-bio-bvecs")))
+		k = k->next;
+	c = conf->disk_options;
+	while (c && (!strcmp(c->name, "size") || !strcmp(c->name, "max-bio-bvecs")))
+		c = c->next;
+
+	/* is it sufficient to only adjust the disk options? */
+	if (!conf->adj_attach)
+		conf->adj_disk_opts = !opts_equal(c, k);
+
+	if (conf->adj_attach && kern->disk)
+		conf->adj_detach = 1;
+}
+
+struct d_volume *new_to_be_deleted_minor_from_template(struct d_volume *kern)
+{
+	/* need to delete it from kernel.
+	 * Create a minimal volume,
+	 * and flag it as "del_minor". */
+	struct d_volume *conf = calloc(1, sizeof(*conf));
+	conf->vnr = kern->vnr;
+	/* conf->device: no need */
+	conf->device_minor = kern->device_minor;
+	conf->disk = strdup(kern->disk);
+	conf->meta_disk = strdup(kern->meta_disk);
+	conf->meta_index = strdup(kern->meta_index);
+
+	conf->adj_detach = 1;
+	conf->adj_del_minor = 1;
+	return conf;
+}
+
+#define ASSERT(x) do { if (!(x)) {				\
+	fprintf(stderr, "%s:%u:%s: ASSERT(%s) failed.\n",	\
+		__FILE__ , __LINE__ , __func__ , #x );		\
+	abort(); }						\
+	} while (0)
+
+/* Both conf and kern are single linked lists
+ * supposed to be ordered by ->vnr;
+ * We may need to conjure dummy volumes to issue "del-minor" on,
+ * and insert these into the conf list.
+ * The resulting new conf list head is returned.
+ */
+struct d_volume *compare_volumes(struct d_volume *conf, struct d_volume *kern)
+{
+	struct d_volume *to_be_deleted = NULL;
+	struct d_volume *conf_head = conf;
+	while (conf || kern) {
+		if (kern && (conf == NULL || kern->vnr < conf->vnr)) {
+			to_be_deleted = INSERT_SORTED(to_be_deleted,
+					new_to_be_deleted_minor_from_template(kern),
+					vnr);
+			kern = kern->next;
+		} else if (conf && (kern == NULL || kern->vnr > conf->vnr)) {
+			conf->adj_add_minor = 1;
+			conf->adj_attach = 1;
+			conf = conf->next;
+		} else {
+			ASSERT(conf);
+			ASSERT(kern);
+			ASSERT(conf->vnr == kern->vnr);
+
+			compare_volume(conf, kern);
+			conf = conf->next;
+			kern = kern->next;
+		}
+	}
+	for_each_volume(conf, to_be_deleted)
+		conf_head = INSERT_SORTED(conf_head, conf, vnr);
+	return conf_head;
+}
+
 /*
  * CAUTION this modifies global static char * config_file!
  */
@@ -423,14 +583,19 @@ int adm_adjust(struct cfg_ctx *ctx)
 	char* argv[20];
 	int pid,argc, i;
 	struct d_resource* running;
+	struct d_volume *vol;
 
-	int do_create = 0;
+	/* necessary per resource actions */
 	int do_res_options = 0;
-	int do_attach = 0;
+
+	/* necessary per connection actions
+	 * (currently we still only have one connection per resource */
+	int do_net_options = 0;
+	int do_disconnect = 0;
 	int do_connect = 0;
 
-	int have_disk = 0;
-	int have_net = 0;
+	/* necessary per volume actions are flagged
+	 * in the vol->adj_* members. */
 
 	int can_do_proxy = 1;
 	char config_file_dummy[250];
@@ -457,21 +622,13 @@ int adm_adjust(struct cfg_ctx *ctx)
 	yyin = m_popen(&pid,argv);
 	running = parse_resource_for_adjust(ctx);
 	fclose(yyin);
+	waitpid(pid, 0, 0);
 
-	waitpid(pid,0,0);
-
-	if (!running) {
-		do_create = 1;
-		do_res_options = 1;
-		do_attach = 1;
-		do_connect = 1;
-		goto reconfigure;
+	if (running) {
+		/* Sets "me" and "peer" pointer */
+		post_parse(running, 0);
+		set_peer_in_resource(running, 0);
 	}
-
-
-	/* Sets "me" and "peer" pointer */
-	post_parse(running, 0);
-	set_peer_in_resource(running, 0);
 
 
 	/* Parse proxy settings, if this host has a proxy definition.
@@ -504,41 +661,54 @@ int adm_adjust(struct cfg_ctx *ctx)
 		waitpid(pid,0,0);
 	}
 
+	ctx->res->me->volumes = compare_volumes(ctx->res->me->volumes,
+			running ? running->me->volumes : NULL);
 
-	do_attach  = !opts_equal(ctx->vol->disk_options, running->me->volumes->disk_options);
-	if(running->me) {
-		do_attach |= (ctx->vol->device_minor != running->me->volumes->device_minor);
-		do_attach |= !disk_equal(ctx->vol, running->me->volumes);
-		have_disk = (running->me->volumes->disk != NULL);
-	} else  do_attach |= 1;
+	if (running) {
+		do_connect = !addr_equal(ctx->res,running);
+		do_net_options = !opts_equal(ctx->res->net_options, running->net_options);
+	} else {
+		do_res_options = 1;
+		do_connect = 1;
+		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+	}
 
-	do_connect  = !opts_equal(ctx->res->net_options, running->net_options);
-	do_connect |= !addr_equal(ctx->res,running);
-	/* No adjust support for drbd proxy version 1. */
 	if (ctx->res->me->proxy && can_do_proxy)
 		do_connect |= proxy_reconf(ctx, running);
-	have_net = (running->net_options != NULL);
 
- reconfigure:
-	if (do_create) {
-		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
-		schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
-	}
+	if (do_connect && running)
+		do_disconnect = running->net_options != NULL;
+
 	if (do_res_options)
 		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
-	/* FIXME
-	 * we now can, in theory, adjust most disk and net options without
-	 * detaching/disconnecting first. Actually implement this here */
-	if (do_attach) {
-		if (have_disk)
-			schedule_deferred_cmd(adm_generic_s, ctx, "detach", CFG_DISK);
-		schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
+
+	/* do we need to attach,
+	 * do we need to detach first,
+	 * or is this just some attribute change? */
+	for_each_volume(vol, ctx->res->me->volumes) {
+		struct cfg_ctx tmp_ctx = { .res = ctx->res, .vol = vol };
+		if (vol->adj_detach)
+			schedule_deferred_cmd(adm_generic_s, &tmp_ctx, "detach", CFG_PREREQ);
+		if (vol->adj_del_minor)
+			schedule_deferred_cmd(adm_generic_s, &tmp_ctx, "del-minor", CFG_PREREQ);
+		if (vol->adj_add_minor)
+			schedule_deferred_cmd(adm_new_minor, &tmp_ctx, "new-minor", CFG_DISK_PREREQ);
+		if (vol->adj_attach)
+			schedule_deferred_cmd(adm_attach, &tmp_ctx, "attach", CFG_DISK);
+		if (vol->adj_disk_opts)
+			schedule_deferred_cmd(adm_attach, &tmp_ctx, "disk-options", CFG_DISK);
+		if (vol->adj_resize)
+			schedule_deferred_cmd(adm_resize, &tmp_ctx, "resize", CFG_DISK);
 	}
+
 	if (do_connect) {
-		if (have_net && ctx->res->peer)
+		if (do_disconnect && ctx->res->peer)
 			schedule_deferred_cmd(adm_generic_s, ctx, "disconnect", CFG_NET_PREREQ);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
+
+	if (do_net_options)
+		schedule_deferred_cmd(adm_connect, ctx, "net-options", CFG_NET);
 
 	return 0;
 }

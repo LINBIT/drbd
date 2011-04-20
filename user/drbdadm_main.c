@@ -225,7 +225,7 @@ struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_adjust		\
+#define DRBD_acf1_up			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 1,		\
@@ -312,7 +312,7 @@ struct adm_cmd cmds[] = {
 	{"detach", adm_generic_l, DRBD_acf1_default},
 	{"connect", adm_connect, DRBD_acf1_connect},
 	{"disconnect", adm_generic_s, DRBD_acf1_resname},
-	{"up", adm_up, DRBD_acf1_adjust},
+	{"up", adm_up, DRBD_acf1_up},
 	{"down", adm_generic_l, DRBD_acf1_resname},
 	{"primary", adm_generic_l, DRBD_acf1_default},
 	{"secondary", adm_generic_l, DRBD_acf1_default},
@@ -323,7 +323,7 @@ struct adm_cmd cmds[] = {
 	{"verify", adm_generic_s, DRBD_acf1_defnet},
 	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"adjust", adm_adjust, DRBD_acf1_adjust},
+	{"adjust", adm_adjust, DRBD_acf1_connect},
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
 	{"wait-con-int", adm_wait_ci,
 	 .show_in_usage = 1,.verify_ips = 1,},
@@ -1560,19 +1560,26 @@ int adm_attach(struct cfg_ctx *ctx)
 	struct d_option *opt;
 	int i;
 	int argc = 0;
+	int do_attach = !strcmp(ctx->arg, "attach");
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
-	argv[NA(argc)] = "attach";
-	argv[NA(argc)] = vol->disk;
-	if (!strcmp(vol->meta_disk, "internal")) {
+	argv[NA(argc)] = (char*)(ctx->arg);
+	if (do_attach) {
 		argv[NA(argc)] = vol->disk;
-	} else {
-		argv[NA(argc)] = vol->meta_disk;
+		if (!strcmp(vol->meta_disk, "internal")) {
+			argv[NA(argc)] = vol->disk;
+		} else {
+			argv[NA(argc)] = vol->meta_disk;
+		}
+		argv[NA(argc)] = vol->meta_index;
 	}
-	argv[NA(argc)] = vol->meta_index;
 	argv[NA(argc)] = "--set-defaults";
 	opt = ctx->vol->disk_options;
+	if (!do_attach) {
+		while (opt && opt->adj_skip)
+			opt = opt->next;
+	}
 	make_options(opt);
 	for (i = 0; i < soi; i++)
 		argv[NA(argc)] = setup_opts[i];
@@ -2017,23 +2024,26 @@ int adm_connect(struct cfg_ctx *ctx)
 	struct d_option *opt;
 	int i;
 	int argc = 0;
+	int do_connect = !strcmp(ctx->arg, "connect");
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%s", res->name);
-	argv[NA(argc)] = "connect";
-	make_address(res->me->address, res->me->port, res->me->address_family);
-	if (res->me->proxy) {
-		make_address(res->me->proxy->inside_addr,
-			     res->me->proxy->inside_port,
-			     res->me->proxy->inside_af);
-	} else if (res->peer) {
-		make_address(res->peer->address, res->peer->port,
-			     res->peer->address_family);
-	} else if (dry_run > 1) {
-		argv[NA(argc)] = "N/A";
-	} else {
-		fprintf(stderr, "resource %s: cannot change network config without knowing my peer.\n", res->name);
-		return dry_run ? 0 : 20;
+	argv[NA(argc)] = (char *)ctx->arg; /* connect | net-options */
+	if (do_connect) {
+		make_address(res->me->address, res->me->port, res->me->address_family);
+		if (res->me->proxy) {
+			make_address(res->me->proxy->inside_addr,
+				     res->me->proxy->inside_port,
+				     res->me->proxy->inside_af);
+		} else if (res->peer) {
+			make_address(res->peer->address, res->peer->port,
+				     res->peer->address_family);
+		} else if (dry_run > 1) {
+			argv[NA(argc)] = "N/A";
+		} else {
+			fprintf(stderr, "resource %s: cannot change network config without knowing my peer.\n", res->name);
+			return dry_run ? 0 : 20;
+		}
 	}
 
 	argv[NA(argc)] = "--set-defaults";
