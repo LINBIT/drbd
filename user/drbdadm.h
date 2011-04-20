@@ -240,11 +240,6 @@ extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);
 extern int have_ip(const char *af, const char *ip);
 
-/* See drbdadm_minor_table.c */
-extern int register_minor(int minor, const char *path);
-extern int unregister_minor(int minor);
-extern char *lookup_minor(int minor);
-
 enum pr_flags {
   NoneHAllowed  = 4,
   PARSE_FOR_ADJUST = 8

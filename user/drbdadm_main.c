@@ -51,6 +51,7 @@
 #include "linux/drbd_limits.h"
 #include "drbdtool_common.h"
 #include "drbdadm.h"
+#include "registry.h"
 
 #define MAX_ARGS 40
 
