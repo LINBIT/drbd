@@ -39,11 +39,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <limits.h>
 
 #include "config.h"
-
-#define MAX_MINOR 256
-#define MAX_REGISTER_PATH_LEN	1024
 
 /* buf has to be big enough to hold that path.
  * it is assumed that sprintf cannot fail :-] */
@@ -54,12 +52,7 @@ void linkname_from_minor(char *buf, int minor)
 
 int unregister_minor(int minor)
 {
-	char buf[255];
-
-	if (minor >= MAX_MINOR || minor < 0) {
-		fprintf(stderr, "unregister_minor: minor too big (%d).\n", minor);
-		return -1;
-	}
+	char buf[PATH_MAX];
 
 	linkname_from_minor(buf, minor);
 	if (unlink(buf) < 0) {
@@ -73,14 +66,9 @@ int unregister_minor(int minor)
 
 int register_minor(int minor, const char *path)
 {
-	char buf[255];
+	char buf[PATH_MAX];
 	struct stat stat_buf;
 	int err = -1;
-
-	if (minor >= MAX_MINOR || minor < 0) {
-		fprintf(stderr, "register_minor: minor too big (%d).\n", minor);
-		return -1;
-	}
 
 	linkname_from_minor(buf, minor);
 
@@ -89,10 +77,10 @@ int register_minor(int minor, const char *path)
 	else if (path[0] != '/')
 		fprintf(stderr, "Absolute path expected, "
 			"won't register relative path (%s).\n", path);
-	else if (strlen(path) >= MAX_REGISTER_PATH_LEN)
+	else if (strlen(path) > PATH_MAX)
 		fprintf(stderr, "path (%s):\ntoo long to be registered, "
 				"max path len supported: %u\n",
-				path, MAX_REGISTER_PATH_LEN-1);
+				path, PATH_MAX);
 	else if (stat(path, &stat_buf) < 0)
 		fprintf(stderr, "stat(%s): %m\n", path);
 	else if (unlink(buf) < 0 && errno != ENOENT)
@@ -111,15 +99,10 @@ int register_minor(int minor, const char *path)
  * If you need the return value longer, stuff it away with strdup. */
 char *lookup_minor(int minor)
 {
-	static char buf[255];
-	static char resolved_path[MAX_REGISTER_PATH_LEN+1];
+	static char buf[PATH_MAX];
+	static char resolved_path[PATH_MAX];
 	struct stat stat_buf;
 	ssize_t len;
-
-	if (minor >= MAX_MINOR || minor < 0) {
-		fprintf(stderr, "register_minor: minor too big (%d).\n", minor);
-		return NULL;
-	}
 
 	linkname_from_minor(buf, minor);
 
@@ -129,14 +112,16 @@ char *lookup_minor(int minor)
 		return NULL;
 	}
 
-	len = readlink(buf, resolved_path, sizeof(resolved_path)-1);
+	len = readlink(buf, resolved_path, sizeof(resolved_path));
 	if (len < 0) {
 		perror("readlink");
 		return NULL;
 	}
-	if (len >= MAX_REGISTER_PATH_LEN)
+	if (len >= PATH_MAX) {
 		fprintf(stderr, "readlink(%s): result has probably been truncated\n",
 				buf);
+		return NULL;
+	}
 
 	resolved_path[len] = '\0';
 	return resolved_path;
