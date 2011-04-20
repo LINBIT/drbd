@@ -46,7 +46,7 @@
 
 static void linkname_from_minor(char *linkname, int minor)
 {
-	sprintf(linkname, "%s/drbd-minor-%d.conf", DRBD_LIB_DIR, minor);
+	sprintf(linkname, "%s/drbd-minor-%d.conf", DRBD_RUN_DIR, minor);
 }
 
 int unregister_minor(int minor)
@@ -132,7 +132,7 @@ char *lookup_minor(int minor)
 
 static void linkname_from_resource_name(char *linkname, const char *name)
 {
-	sprintf(linkname, "%s/drbd-resource-%s.conf", DRBD_LIB_DIR, name);
+	sprintf(linkname, "%s/drbd-resource-%s.conf", DRBD_RUN_DIR, name);
 }
 
 int unregister_resource(const char *name)

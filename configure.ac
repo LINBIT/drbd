@@ -298,6 +298,8 @@ AC_SUBST(RPM_REQ_CHKCONFIG_PREUN)
 
 AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
 			  /var/lib/drbd or /usr/local/var/lib/drbd])
+AH_TEMPLATE(DRBD_RUN_DIR, [Runtime state directory. Commonly
+			  /var/run/drbd or /usr/local/var/run/drbd])
 AH_TEMPLATE(DRBD_LOCK_DIR, [Local lock directory. Commonly
 			   /var/lock or
 			   /usr/local/var/lock])
@@ -306,6 +308,7 @@ AH_TEMPLATE(DRBD_CONFIG_DIR, [Local configuration directory. Commonly
 			   /usr/local/etc])
 
 AC_DEFINE_UNQUOTED(DRBD_LIB_DIR, ["$localstatedir/lib/$PACKAGE_TARNAME"])
+AC_DEFINE_UNQUOTED(DRBD_RUN_DIR, ["$localstatedir/run/$PACKAGE_TARNAME"])
 AC_DEFINE_UNQUOTED(DRBD_LOCK_DIR, ["$localstatedir/lock"])
 AC_DEFINE_UNQUOTED(DRBD_CONFIG_DIR, ["$sysconfdir"])
 
