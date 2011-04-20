@@ -70,6 +70,7 @@
 #include <linux/drbd_limits.h>
 #include <linux/genl_magic_func.h>
 #include "drbdtool_common.h"
+#include "registry.h"
 
 /* for parsing of messages */
 static struct nlattr *global_attrs[128];
@@ -212,6 +213,8 @@ static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, cha
 static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc,char **argv);
+static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
@@ -520,8 +523,8 @@ struct drbd_cmd commands[] = {
 		 { "volume-number", T_ctx_volume, conv_volume },
 		 CLOSE_ARGS_OPTS }} }, },
 
-	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, F_CONFIG_CMD, }
+	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
+	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_connection_cmd, config_usage, }
 };
 
 #define OTHER_ERROR 900
@@ -1271,6 +1274,28 @@ static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	return _generic_config_cmd(cm, minor, argc, argv, 0);
 }
 
+static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
+			 char **argv)
+{
+	int rv;
+
+	rv = generic_config_cmd(cm, minor, argc, argv);
+	if (!rv)
+		unregister_minor(minor);
+	return rv;
+}
+
+static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
+			      char **argv)
+{
+	int rv;
+
+	rv = generic_config_cmd(cm, minor, argc, argv);
+	if (!rv)
+		unregister_resource(objname);
+	return rv;
+}
+
 static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 {
 	long long val;
@@ -1935,7 +1960,10 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 
 	rv = _generic_config_cmd(cm, minor, argc, argv, 1);
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
-	if (!success)
+	if (success) {
+		unregister_minor(minor);
+		unregister_resource(objname);
+	} else
 		return print_config_error(rv, NULL);
 	return 0;
 }

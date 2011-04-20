@@ -54,11 +54,11 @@ drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
 	      drbd_buildtag.o registry.o
 
-drbdsetup-obj = libgenl.o drbdsetup_genl.o drbdtool_common.o drbd_buildtag.o \
-	        drbd_strings.o
+drbdsetup-obj = libgenl.o registry.o drbdsetup_genl.o drbdtool_common.o \
+		drbd_buildtag.o drbd_strings.o
 
-drbdsetup-cn-obj = drbdsetup_cn.o drbdtool_common.o drbd_buildtag.o \
-	        drbd_strings.o
+drbdsetup-cn-obj = registry.o drbdsetup_cn.o drbdtool_common.o \
+		   drbd_buildtag.o drbd_strings.o
 
 drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 

@@ -53,6 +53,7 @@
 #include "legacy/drbd.h"
 #include "legacy/drbd_tag_magic.h"
 #include "legacy/drbd_limits.h"
+#include "registry.h"
 
 #include "legacy/unaligned.h"
 #include "drbdtool_common.h"
@@ -1816,7 +1817,17 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 	cm = find_cmd_by_name("disconnect");
 	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
-	return cm->function(cm,minor,argc,argv);
+	rv = cm->function(cm,minor,argc,argv);
+	if ((rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR) {
+		unregister_minor(minor);
+		/*
+		 * This utility talks to drbd versions before 8.4 which do not
+		 * support connection sharing, and therefore don't have
+		 * per-resource commands.  We don't need to (un)register the
+		 * resource.
+		 */
+	}
+	return rv;
 }
 
 

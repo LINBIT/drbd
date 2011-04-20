@@ -160,7 +160,6 @@ static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct d_option *opts);
 
 static char *get_opt_val(struct d_option *, const char *, char *);
-//static void register_config_file(struct d_resource *res, const char *cfname);
 
 static struct ifreq *get_ifreq();
 
@@ -187,7 +186,7 @@ int no_tty;
 int dry_run = 0;
 int verbose = 0;
 int do_verify_ips = 0;
-int do_register_minor = 1;
+int do_register = 1;
 /* whether drbdadm was called with "all" instead of resource name(s) */
 int all_resources = 0;
 char *drbdsetup = NULL;
@@ -415,117 +414,11 @@ void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
 	deferred_cmds_tail[stage] = d;
 }
 
-static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex);
-
-#if 0
-/* Returns non-zero if the resource is down. */
-/* FIXME iterate volumes */
-static int test_if_resource_is_down(struct d_resource *res)
-{
-	char buf[1024];
-	int rr, s = 0;
-	int fd;
-	pid_t pid;
-	int old_verbose = verbose;
-
-	if (dry_run) {
-		fprintf(stderr, "Logic bug: should not be dry-running here.\n");
-		exit(E_thinko);
-	}
-	if (verbose == 1)
-		verbose = 0;
-	_adm_generic(res, vol, "role", SLEEPS_SHORT | RETURN_STDOUT_FD | SUPRESS_STDERR,
-			&pid, &fd, NULL);
-	verbose = old_verbose;
-
-	if (fd < 0) {
-		fprintf(stderr, "Strange: got negative fd.\n");
-		exit(E_thinko);
-	}
-
-	while (1) {
-		rr = read(fd, buf + s, sizeof(buf) - s);
-		if (rr <= 0)
-			break;
-		s += rr;
-	}
-	close(fd);
-
-	waitpid(pid, NULL, 0);	/* Reap the child process, do not leave a zombie around. */
-	alarm(0);
-
-	if (s == 0 || strncmp(buf, "Unconfigured", strlen("Unconfigured")) == 0)
-		return 1;
-
-	return 0;
-}
-
-/* FIXME iterate volumes */
-enum do_register { SAME_ANYWAYS, DO_REGISTER };
-enum do_register if_conf_differs_confirm_or_abort(struct d_resource *res)
-{
-	int minor = res->me->volumes->device_minor;
-	char *f;
-
-	/* if the resource was down,
-	 * just register the new config file */
-	if (test_if_resource_is_down(res)) {
-		unregister_minor(minor);
-		return DO_REGISTER;
-	}
-
-	f = lookup_minor(minor);
-
-	/* if there was nothing registered before,
-	 * there is nothing to compare to */
-	if (!f)
-		return DO_REGISTER;
-
-	/* no need to register the same thing again */
-	if (strcmp(f, config_save) == 0)
-		return SAME_ANYWAYS;
-
-	fprintf(stderr, "Warning: resource %s\n"
-		"last used config file: %s\n"
-		"  current config file: %s\n", res->name, f, config_save);
-
-	/* implicitly force if we don't have a tty */
-	if (no_tty)
-		force = 1;
-
-	if (!confirmed("Do you want to proceed "
-		       "and register the current config file?")) {
-		printf("Operation canceled.\n");
-		exit(E_usage);
-	}
-	return DO_REGISTER;
-}
-
-/* FIXME iterate volumes?
- * get rid of this "register config file" completely? */
-static void register_config_file(struct d_resource *res, const char *cfname)
-{
-	int minor = res->me->volumes->device_minor;
-	if (test_if_resource_is_down(res))
-		unregister_minor(minor);
-	else
-		register_minor(minor, cfname);
-}
-#endif
-
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
 int call_cmd_fn(int (*function) (struct cfg_ctx *),
 		struct cfg_ctx *ctx, enum on_error on_error)
 {
 	int rv;
-#if 0
-	int schedule_only =
-	    function == adm_up || function == adm_adjust;
-	int really_register = do_register_minor &&
-	    DO_REGISTER == if_conf_differs_confirm_or_abort(res) &&
-	    !schedule_only;
-#endif
-
 	rv = function(ctx);
 	if (rv >= 20) {
 		fprintf(stderr, "%s %s %s: exited with code %d\n",
@@ -533,14 +426,6 @@ int call_cmd_fn(int (*function) (struct cfg_ctx *),
 		if (on_error == EXIT_ON_FAIL)
 			exit(rv);
 	}
-
-#if 0
-	/* FIXME how do we want to handle this "register config file" stuff,
-	 * now that we have multiple volumes per resource? */
-	if (rv == 0 && really_register)
-		register_config_file(res, config_save);
-#endif
-
 	return rv;
 }
 
@@ -561,12 +446,6 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	if (!cmd->iterate_volumes || ctx->vol != NULL)
 		return call_cmd_fn(cmd->function, ctx, on_error);
 
-
-	/* call it once with vol == NULL,
-	 * so it can do preparations as well */
-	if (cmd->function == adm_up)
-		call_cmd_fn(cmd->function, ctx, on_error);
-
 	for_each_volume(vol, res->me->volumes) {
 		ctx->vol = vol;
 		ret = call_cmd_fn(cmd->function, ctx, on_error);
@@ -576,6 +455,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 		if (ret)
 			return ret;
 	}
+
 	return 0;
 }
 
@@ -1603,7 +1483,7 @@ struct d_option *find_opt(struct d_option *base, char *name)
 int adm_new_minor(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
-	int argc = 0;
+	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
@@ -1612,20 +1492,32 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	ssprintf(argv[NA(argc)], "%u", ctx->vol->vnr);
 	argv[NA(argc)] = NULL;
 
-	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	if (!ex && do_register)
+		register_minor(ctx->vol->device_minor, config_save);
+	return ex;
 }
 
 int adm_new_connection(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
-	int argc = 0;
+	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	argv[NA(argc)] = "new-connection";
 	argv[NA(argc)] = NULL;
 
-	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	if (!ex && do_register) {
+		/*
+		 * FIXME: Versions of drbd before 8.4 do not support connection
+		 * sharing and therefore don't have per-resource commands.  For
+		 * them, we do not need to register resources.
+		 */
+		register_resource(ctx->res->name, config_save);
+	}
+	return ex;
 }
 
 int adm_res_options(struct cfg_ctx *ctx)
@@ -2278,18 +2170,19 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * and then configure the network part */
 static int adm_up(struct cfg_ctx *ctx)
 {
-	/* We will only touch resource-options and "connect", if we are
-	 * supposed to bring up the whole resource, not if we are asked to
-	 * bring up just one specific volume.
-	 */
-	if (ctx->vol == NULL) {
+	static char *current_res_name;
+
+	if (!current_res_name || strcmp(current_res_name, ctx->res->name)) {
+		free(current_res_name);
+		current_res_name = strdup(ctx->res->name);
+
 		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
 		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
-	} else {
-		schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
-		schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 	}
+	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
+
 	return 0;
 }
 
@@ -3395,28 +3288,31 @@ char *config_file_from_arg(char *arg)
 	char *f;
 	int minor = minor_by_id(arg);
 
-	if (minor < 0) {
-		/* this is expected, if someone wants to test the configured
-		 * handlers from the command line, using resource names */
-		fprintf(stderr,
-			"Couldn't find minor from id %s, "
-			"expecting minor-<minor> as id. "
-			"Trying default config files.\n", arg);
-		return NULL;
+	if (minor >= 0) {
+		f = lookup_minor(minor);
+		if (!f) {
+			fprintf(stderr, "Don't know which config file belongs "
+					"to minor %d, trying default ones...\n",
+				minor);
+			return NULL;
+		}
+	} else {
+		f = lookup_resource(arg);
+		if (!f) {
+			fprintf(stderr, "Don't know which config file belongs "
+					"to resource %s, trying default "
+					"ones...\n",
+				arg);
+			return NULL;
+		}
 	}
 
-	f = lookup_minor(minor);
-	if (!f) {
+	yyin = fopen(f, "r");
+	if (yyin == NULL) {
 		fprintf(stderr,
-			"Don't know which config file belongs to minor %d, "
-			"trying default ones...\n", minor);
-	} else {
-		yyin = fopen(f, "r");
-		if (yyin == NULL) {
-			fprintf(stderr,
-				"Couldn't open file %s for reading, reason: %m\n"
-				"trying default config file...\n", config_file);
-		}
+			"Couldn't open file %s for reading, reason: %m\n"
+			"trying default config file...\n", config_file);
+		return NULL;
 	}
 	return f;
 }
@@ -3649,8 +3545,8 @@ int main(int argc, char **argv)
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();
-	if (is_dump || dry_run || config_from_stdin)
-		do_register_minor = 0;
+	if (dry_run || config_from_stdin)
+		do_register = 0;
 
 	count_resources_or_die();
 
