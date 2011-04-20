@@ -111,6 +111,9 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 						opt->name,running->value,opt->value);
 				return 0;
 			}
+			if (verbose > 3)
+				fprintf(stderr, "Value of '%s' equal: r=%s c=%s\n",
+					opt->name,running->value,opt->value);
 			opt->mentioned=1;
 		} else {
 			if(!running->is_default) {
@@ -119,6 +122,9 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 						running->name,running->value);
 				return 0;
 			}
+			if (verbose > 3)
+				fprintf(stderr, "Is default: '%s' equal: r=%s\n",
+					running->name,running->value);
 		}
 		running=running->next;
 	}
