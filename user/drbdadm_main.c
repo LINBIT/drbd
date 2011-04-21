@@ -2392,11 +2392,11 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		return -ENOENT;
 
 	if (!vol_id) {
+		/* We could assign implicit volumes here.
+		 * But that broke "drbdadm up specific-resource".
+		 */
 		ctx->res = res;
-		if (res->me->volumes && res->me->volumes->implicit)
-			ctx->vol = res->me->volumes;
-		else
-			ctx->vol = NULL;
+		ctx->vol = NULL;
 		return 0;
 	}
 
@@ -3725,6 +3725,8 @@ int main(int argc, char **argv)
 						exit(E_usage);
 					}
 				}
+				if (cmd->vol_id_required && !ctx.vol && ctx.res->me->volumes->implicit)
+					ctx.vol = ctx.res->me->volumes;
 				if (cmd->vol_id_required && !ctx.vol) {
 					fprintf(stderr, "%s requires a specific volume id, but none is specified.\n"
 							"Try '%s minor-<minor_number>' or '%s %s/<vnr>'\n",
