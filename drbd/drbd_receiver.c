@@ -4305,8 +4305,8 @@ STATIC void drbdd(struct drbd_tconn *tconn)
 
 		err = cmd->fn(tconn, &pi);
 		if (err) {
-			conn_err(tconn, "error receiving %s, l: %d!\n",
-			    cmdname(pi.cmd), pi.size);
+			conn_err(tconn, "error receiving %s, e: %d l: %d!\n",
+				 cmdname(pi.cmd), err, pi.size);
 			goto err_out;
 		}
 	}

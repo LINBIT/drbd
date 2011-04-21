@@ -1094,12 +1094,28 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	return drbd_send_command(mdev, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
-int _conn_send_state_req(struct drbd_tconn *tconn, int vnr, enum drbd_packet cmd,
-			 union drbd_state mask, union drbd_state val)
+int drbd_send_state_req(struct drbd_conf *mdev, union drbd_state mask, union drbd_state val)
 {
 	struct drbd_socket *sock;
 	struct p_req_state *p;
 
+	sock = &mdev->tconn->data;
+	p = drbd_prepare_command(mdev, sock);
+	if (!p)
+		return -EIO;
+	p->mask = cpu_to_be32(mask.i);
+	p->val = cpu_to_be32(val.i);
+	return drbd_send_command(mdev, sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
+
+}
+
+int conn_send_state_req(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state val)
+{
+	enum drbd_packet cmd;
+	struct drbd_socket *sock;
+	struct p_req_state *p;
+
+	cmd = tconn->agreed_pro_version < 100 ? P_STATE_CHG_REQ : P_CONN_ST_CHG_REQ;
 	sock = &tconn->data;
 	p = conn_prepare_command(tconn, sock);
 	if (!p)

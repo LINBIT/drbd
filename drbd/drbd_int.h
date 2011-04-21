@@ -1955,19 +1955,8 @@ extern int drbd_send_command(struct drbd_conf *, struct drbd_socket *,
 
 extern int drbd_send_ping(struct drbd_tconn *tconn);
 extern int drbd_send_ping_ack(struct drbd_tconn *tconn);
-
-static inline int drbd_send_state_req(struct drbd_conf *mdev,
-				      union drbd_state mask, union drbd_state val)
-{
-	return _conn_send_state_req(mdev->tconn, mdev->vnr, P_STATE_CHG_REQ, mask, val);
-}
-
-static inline int conn_send_state_req(struct drbd_tconn *tconn,
-				      union drbd_state mask, union drbd_state val)
-{
-	enum drbd_packet cmd = tconn->agreed_pro_version < 100 ? P_STATE_CHG_REQ : P_CONN_ST_CHG_REQ;
-	return _conn_send_state_req(tconn, 0, cmd, mask, val);
-}
+extern int drbd_send_state_req(struct drbd_conf *, union drbd_state, union drbd_state);
+extern int conn_send_state_req(struct drbd_tconn *, union drbd_state, union drbd_state);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
