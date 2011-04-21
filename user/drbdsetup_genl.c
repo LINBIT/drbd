@@ -1284,7 +1284,7 @@ static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 		val = (short)nla_get_u16(nla);
 		break;
 	case NLA_U32:
-		val = (long)nla_get_u32(nla);
+		val = (int)nla_get_u32(nla);
 		break;
 	case NLA_U64:
 		val = nla_get_u64(nla);
@@ -1298,7 +1298,7 @@ static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 		printI("%-16s\t%lld", od->name, val);
 	else
 		printI("%-16s\t%lld%c", od->name, val, unit_prefix);
-	if (val == (long long)od->numeric_param.def)
+	if (val == od->numeric_param.def)
 		printf(" _is_default");
 	if (od->numeric_param.unit) {
 		printf("; # %s\n", od->numeric_param.unit);
