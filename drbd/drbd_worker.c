@@ -1693,6 +1693,7 @@ int drbd_worker(struct drbd_thread *thi)
 	struct drbd_tconn *tconn = thi->tconn;
 	struct drbd_work *w = NULL;
 	struct drbd_conf *mdev;
+	struct net_conf *nc;
 	LIST_HEAD(work_list);
 	int vnr, intr = 0;
 	int cork;
@@ -1704,7 +1705,8 @@ int drbd_worker(struct drbd_thread *thi)
 			mutex_lock(&tconn->data.mutex);
 
 			rcu_read_lock();
-			cork = !rcu_dereference(tconn->net_conf)->no_cork;
+			nc = rcu_dereference(tconn->net_conf);
+			cork = nc ? !nc->no_cork : 0;
 			rcu_read_unlock();
 
 			if (tconn->data.socket && cork)
