@@ -3025,7 +3025,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	down_write(&drbd_cfg_rwsem);
+	down_read(&drbd_cfg_rwsem);
 	/* demote */
 	idr_for_each_entry(&adm_ctx.tconn->volumes, mdev, i) {
 		retcode = drbd_set_role(mdev, R_SECONDARY, 0);
@@ -3050,14 +3050,17 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 			goto out_unlock;
 		}
 	}
+	up_read(&drbd_cfg_rwsem);
 
 	/* delete volumes */
+	down_write(&drbd_cfg_rwsem);
 	idr_for_each_entry(&adm_ctx.tconn->volumes, mdev, i) {
 		retcode = adm_delete_minor(mdev);
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */
 			drbd_msg_put_info("failed to delete volume");
-			goto out_unlock;
+			up_write(&drbd_cfg_rwsem);
+			goto out;
 		}
 	}
 
@@ -3072,10 +3075,12 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		/* "can not happen" */
 		retcode = ERR_CONN_IN_USE;
 		drbd_msg_put_info("failed to delete connection");
-		goto out_unlock;
 	}
-out_unlock:
+
 	up_write(&drbd_cfg_rwsem);
+	goto out;
+out_unlock:
+	up_read(&drbd_cfg_rwsem);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
