@@ -4155,7 +4155,7 @@ decode_bitmap_c(struct drbd_conf *mdev,
 		unsigned int len)
 {
 	if (dcbp_get_code(p) == RLE_VLI_Bits)
-		return recv_bm_rle_bits(mdev, p, c, len);
+		return recv_bm_rle_bits(mdev, p, c, len - sizeof(*p));
 
 	/* other variants had been implemented for evaluation,
 	 * but have been dropped as this one turned out to be "best"

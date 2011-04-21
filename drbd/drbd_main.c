@@ -1295,7 +1295,8 @@ send_bitmap_rle_or_plain(struct drbd_conf *mdev, struct bm_xfer_ctx *c)
 	struct p_compressed_bm *p = sock->sbuf + header_size;
 	int len, err;
 
-	len = fill_bitmap_rle_bits(mdev, p, DRBD_SOCKET_BUFFER_SIZE - header_size, c);
+	len = fill_bitmap_rle_bits(mdev, p,
+			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*p), c);
 	if (len < 0)
 		return -EIO;
 
