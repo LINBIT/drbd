@@ -1130,7 +1130,7 @@ void drbd_send_sr_reply(struct drbd_conf *mdev, enum drbd_state_rv retcode)
 	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
 
-	sock = &mdev->tconn->data;
+	sock = &mdev->tconn->meta;
 	p = drbd_prepare_command(mdev, sock);
 	if (p) {
 		p->retcode = cpu_to_be32(retcode);
@@ -1144,7 +1144,7 @@ void conn_send_sr_reply(struct drbd_tconn *tconn, enum drbd_state_rv retcode)
 	struct p_req_state_reply *p;
 	enum drbd_packet cmd = tconn->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
 
-	sock = &tconn->data;
+	sock = &tconn->meta;
 	p = conn_prepare_command(tconn, sock);
 	if (p) {
 		p->retcode = cpu_to_be32(retcode);
