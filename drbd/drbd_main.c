@@ -993,8 +993,10 @@ int _drbd_send_uuids(struct drbd_conf *mdev, u64 uuid_flags)
 
 	sock = &mdev->tconn->data;
 	p = drbd_prepare_command(mdev, sock);
-	if (!p)
+	if (!p) {
+		put_ldev(mdev);
 		return -EIO;
+	}
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		p->uuid[i] = mdev->ldev ? cpu_to_be64(mdev->ldev->md.uuid[i]) : 0;
 
