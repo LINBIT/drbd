@@ -1423,9 +1423,12 @@ STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 	struct drbd_socket *sock;
 	struct p_block_ack *p;
 
+	if (mdev->state.conn < C_CONNECTED)
+		return -EIO;
+
 	sock = &mdev->tconn->meta;
 	p = drbd_prepare_command(mdev, sock);
-	if (!p || mdev->state.conn < C_CONNECTED)
+	if (!p)
 		return -EIO;
 	p->sector = sector;
 	p->block_id = block_id;
