@@ -1861,13 +1861,14 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	if (tconn->cstate >= C_WF_REPORT_PARAMS)
 		drbd_send_sync_param(minor_to_mdev(conn_lowest_minor(tconn)));
 
-	goto out;
+	goto done;
 
  fail:
 	mutex_unlock(&tconn->net_conf_update);
 	crypto_free_hash(csums_tfm);
 	crypto_free_hash(verify_tfm);
 	kfree(new_conf);
+ done:
 	conn_reconfig_done(tconn);
  out:
 	drbd_adm_finish(info, retcode);
