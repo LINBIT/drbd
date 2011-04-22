@@ -542,6 +542,8 @@ restart:
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	/* Release mod reference taken when thread was started */
+
+	kref_put(&tconn->kref, &conn_destroy);
 	module_put(THIS_MODULE);
 	return retval;
 }
@@ -579,6 +581,8 @@ int drbd_thread_start(struct drbd_thread *thi)
 			return false;
 		}
 
+		kref_get(&thi->tconn->kref);
+
 		init_completion(&thi->startstop);
 		thi->reset_cpu_mask = 1;
 		thi->t_state = RUNNING;
@@ -589,6 +593,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		if (pid < 0) {
 			conn_err(tconn, "Couldn't start thread (%d)\n", pid);
 
+			kref_put(&tconn->kref, &conn_destroy);
 			module_put(THIS_MODULE);
 			return false;
 		}
@@ -2328,6 +2333,8 @@ static void drbd_release_all_peer_reqs(struct drbd_conf *mdev)
 /* caution. no locking. */
 void drbd_delete_device(struct drbd_conf *mdev)
 {
+	struct drbd_tconn *tconn = mdev->tconn;
+
 	idr_remove(&mdev->tconn->volumes, mdev->vnr);
 	idr_remove(&minors, mdev_to_minor(mdev));
 	synchronize_rcu();
@@ -2363,6 +2370,8 @@ void drbd_delete_device(struct drbd_conf *mdev)
 	put_disk(mdev->vdisk);
 	blk_cleanup_queue(mdev->rq_queue);
 	kfree(mdev);
+
+	kref_put(&tconn->kref, &conn_destroy);
 }
 
 STATIC void drbd_cleanup(void)
@@ -2500,7 +2509,7 @@ void conn_free_crypto(struct drbd_tconn *tconn)
 	tconn->int_dig_vv = NULL;
 }
 
-struct drbd_tconn *drbd_new_tconn(const char *name)
+struct drbd_tconn *conn_create(const char *name)
 {
 	struct drbd_tconn *tconn;
 
@@ -2546,6 +2555,7 @@ struct drbd_tconn *drbd_new_tconn(const char *name)
 	};
 
 	down_write(&drbd_cfg_rwsem);
+	kref_init(&tconn->kref);
 	list_add_tail(&tconn->all_tconn, &drbd_tconns);
 	up_write(&drbd_cfg_rwsem);
 
@@ -2562,9 +2572,10 @@ fail:
 	return NULL;
 }
 
-void drbd_free_tconn(struct drbd_tconn *tconn)
+void conn_destroy(struct kref *kref)
 {
-	list_del(&tconn->all_tconn);
+	struct drbd_tconn *tconn = container_of(kref, struct drbd_tconn, kref);
+
 	idr_destroy(&tconn->volumes);
 
 	free_cpumask_var(tconn->cpu_mask);
@@ -2594,7 +2605,9 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	if (!mdev)
 		return ERR_NOMEM;
 
+	kref_get(&tconn->kref);
 	mdev->tconn = tconn;
+
 	mdev->minor = minor;
 	mdev->vnr = vnr;
 
@@ -2694,6 +2707,7 @@ out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
 	kfree(mdev);
+	kref_put(&tconn->kref, &conn_destroy);
 	return err;
 }
 

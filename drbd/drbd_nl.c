@@ -2641,7 +2641,7 @@ int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 	 * on each iteration.
 	 */
 
-	/* synchronize with drbd_new_tconn/drbd_free_tconn */
+	/* synchronize with conn_create()/conn_destroy() */
 	down_read(&drbd_cfg_rwsem);
 	/* revalidate iterator position */
 	list_for_each_entry(tmp, &drbd_tconns, all_tconn) {
@@ -2948,7 +2948,7 @@ int drbd_adm_create_connection(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (!drbd_new_tconn(adm_ctx.conn_name))
+	if (!conn_create(adm_ctx.conn_name))
 		retcode = ERR_NOMEM;
 out:
 	drbd_adm_finish(info, retcode);
@@ -3023,7 +3023,7 @@ int drbd_adm_delete_minor(struct sk_buff *skb, struct genl_info *info)
 	/* if this was the last volume of this connection,
 	 * this will terminate all threads */
 	if (retcode == NO_ERROR)
-		conn_reconfig_done(adm_ctx.tconn);
+		conn_reconfig_done(adm_ctx.mdev->tconn);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3090,7 +3090,9 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	/* delete connection */
 	if (conn_lowest_minor(adm_ctx.tconn) < 0) {
-		drbd_free_tconn(adm_ctx.tconn);
+		list_del(&adm_ctx.tconn->all_tconn);
+		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
+
 		retcode = NO_ERROR;
 	} else {
 		/* "can not happen" */
@@ -3119,7 +3121,9 @@ int drbd_adm_delete_connection(struct sk_buff *skb, struct genl_info *info)
 
 	down_write(&drbd_cfg_rwsem);
 	if (conn_lowest_minor(adm_ctx.tconn) < 0) {
-		drbd_free_tconn(adm_ctx.tconn);
+		list_del(&adm_ctx.tconn->all_tconn);
+		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
+
 		retcode = NO_ERROR;
 	} else {
 		retcode = ERR_CONN_IN_USE;
