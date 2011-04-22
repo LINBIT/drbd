@@ -30,12 +30,6 @@ ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	INSTALL_PROGRAM += -s
 endif
 
-# module-assistant stuff
-MAJOR=$(shell echo $(KVERS) | sed -e 's/\(...\).*/\1/')
-ifeq ($(MAJOR),2.6)
-KO=k
-endif
-
 kdist_clean: unpatch
 	dh_clean
 	-$(MAKE) -C drbd clean
@@ -52,7 +46,7 @@ binary-modules: prep-deb-files
 	dh_testroot
 	dh_clean -k
 	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
-	install -m644 -b -D drbd/drbd.$(KO)o $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/kernel/drivers/block/drbd.$(KO)o
+	install -m644 -b -D drbd/drbd.ko $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/updates/drbd.ko
 	dh_installdocs
 	dh_installchangelogs
 	dh_compress
