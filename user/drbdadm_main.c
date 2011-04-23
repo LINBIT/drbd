@@ -244,6 +244,7 @@ struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 0,		\
+	.vol_id_required = 1,		\
 	.verify_ips = 0,		\
 	.use_cached_config_file = 1,	\
 
