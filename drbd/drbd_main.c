@@ -1512,7 +1512,7 @@ int drbd_send_drequest_csum(struct drbd_conf *mdev, sector_t sector, int size,
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(mdev, sock, P_STATE_CHG_REPLY, sizeof(*p),
+	return drbd_send_command(mdev, sock, cmd, sizeof(*p),
 				 digest, digest_size);
 }
 
