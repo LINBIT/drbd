@@ -3544,7 +3544,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 	return 0;
 
 disconnect:
-	mutex_lock(&mdev->tconn->net_conf_update);
+	mutex_unlock(&mdev->tconn->net_conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
 	crypto_free_hash(csums_tfm);
