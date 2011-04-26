@@ -627,7 +627,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 	/* may be called from state engine, holding the req lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
 
-	/* dev_info(DEV, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
+	/* conn_err(tconn, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
