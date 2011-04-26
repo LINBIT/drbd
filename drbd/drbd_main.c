@@ -507,7 +507,8 @@ STATIC int drbd_thread_setup(void *arg)
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
 	timeout = schedule_timeout(10*HZ);
-	sprintf(current->comm, "drbd_%s_%s", thi->name, thi->tconn->name);
+	snprintf(current->comm, sizeof(current->comm), "drbd_%c_%s",
+			thi->name[0], thi->tconn->name);
 
 restart:
 	retval = thi->function(thi);
