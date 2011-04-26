@@ -2802,9 +2802,15 @@ int main(int argc, char **argv)
 
 	objname = argv[1];
 	if (cmd->ctx_key == CTX_MINOR) {
-		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
-			lock_fd = dt_lock_drbd(argv[1]);
 		minor = dt_minor_of_dev(argv[1]);
+		if (minor < 0) {
+			fprintf(stderr, "Cannot determine minor device number of "
+					"drbd device '%s'",
+				argv[1]);
+			exit(20);
+		}
+		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
+			lock_fd = dt_lock_drbd(minor);
 	}
 
 	// by passing argc-2, argv+2 the function has the command name

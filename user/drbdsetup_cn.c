@@ -508,7 +508,7 @@ char *devname = NULL; /* "/dev/drbd12" for reporting in print_config_error */
 char *resname = NULL; /* for pretty printing in "status" only,
 			 taken from environment variable DRBD_RESOURCE */
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
-int lock_fd;
+int lock_fd = -1;
 unsigned int cn_idx;
 
 static int dump_tag_list(unsigned short *tlc)
@@ -2740,8 +2740,14 @@ int main(int argc, char** argv)
 	}
 
 	if(cmd) {
-		lock_fd = dt_lock_drbd(argv[1]);
-		minor=dt_minor_of_dev(argv[1]);
+		minor = dt_minor_of_dev(argv[1]);
+		if (minor < 0) {
+			fprintf(stderr, "Cannot determine minor device number of "
+					"drbd device '%s'",
+				argv[1]);
+			exit(20);
+		}
+		lock_fd = dt_lock_drbd(minor);
 		/* maybe rather canonicalize, using asprintf? */
 		devname = argv[1];
 		// by passing argc-2, argv+2 the function has the command name

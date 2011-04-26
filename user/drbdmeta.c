@@ -3890,8 +3890,14 @@ int main(int argc, char **argv)
 	 * unlock happens implicitly when the process dies,
 	 * but may be requested implicitly
 	 */
-	cfg->lock_fd = dt_lock_drbd(cfg->drbd_dev_name);
 	cfg->minor = dt_minor_of_dev(cfg->drbd_dev_name);
+	if (cfg->minor < 0) {
+		fprintf(stderr, "Cannot determine minor device number of "
+				"drbd device '%s'",
+			cfg->drbd_dev_name);
+		exit(20);
+	}
+	cfg->lock_fd = dt_lock_drbd(cfg->minor);
 
 	/* unconditionally check whether this is in use */
 	if (is_attached(cfg->minor)) {

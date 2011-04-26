@@ -52,7 +52,7 @@ enum new_strtoll_errs {
 struct option;
 
 extern int only_digits(const char *s);
-extern int dt_lock_drbd(const char* device);
+extern int dt_lock_drbd(int minor);
 extern void dt_unlock_drbd(int lock_fd);
 extern void dt_release_lockfile(int drbd_fd);
 extern int dt_minor_of_dev(const char *device);
