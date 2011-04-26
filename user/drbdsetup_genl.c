@@ -175,9 +175,9 @@ struct drbd_option {
  * the replication link (aka connection) name,
  * and/or the replication group (aka resource) name */
 enum cfg_ctx_key {
-	CTX_MINOR,
-	CTX_CONN,
-	/* CHT_RES, later */
+	CTX_MINOR = 1,
+	CTX_CONN = 2,
+	CTX_ALL = 4,
 };
 
 struct drbd_cmd {
@@ -270,7 +270,6 @@ static void show_protocol(struct drbd_option *od, struct nlattr *nla);
 static int print_broadcast_events(struct genl_info *, int);
 static int w_connected_state(struct genl_info *, int);
 static int w_synced_state(struct genl_info *, int);
-static int print_resources(struct genl_info *, int);
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -495,22 +494,16 @@ struct drbd_cmd commands[] = {
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
-	{"show", CTX_MINOR, F_GET_CMD(show_scmd) },
+	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd) },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
-	{"events", CTX_MINOR, F_EVENTS_CMD, { .ep = {
+	{"events", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
 		(struct option[]) {
 			{ "unfiltered", no_argument, 0, 'u' },
-			{ "all-devices",no_argument, 0, 'a' },
 			{ 0,            0,           0,  0  } },
 		print_broadcast_events } } },
-	{"show-all", CTX_CONN, F_EVENTS_CMD, { .ep = {
-		(struct option[]) {
-			{ "all", no_argument, 0, 'a' },
-			{ 0,            0,           0,  0  } },
-		print_resources } } },
-	{"wait-connect", CTX_MINOR, F_EVENTS_CMD, { .ep = {
+	{"wait-connect", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_connected_state } } },
-	{"wait-sync", CTX_MINOR, F_EVENTS_CMD, { .ep = {
+	{"wait-sync", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
 		wait_cmds_options, w_synced_state } } },
 
 	{"new-connection", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
@@ -617,9 +610,7 @@ const char * error_to_string(int err_no)
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 /*
- * For commands != CTX_MINOR, it is also passed to the kernel.
  * This is argv[1] as given on command line.
- * Resource name for CTX_RES commands.
  * Connection name for CTX_CONN commands.
  * Device name for CTX_MINOR, for reporting in
  * print_config_error.
@@ -1167,7 +1158,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	dhdr->minor = minor;
 	dhdr->flags = 0;
 
-	if (cm->ctx_key == CTX_CONN) {
+	if (cm->ctx_key & CTX_CONN) {
 		/* we just allocated 8k,
 		 * and now we put a few bytes there.
 		 * this cannot possibly fail, can it? */
@@ -1426,9 +1417,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
+	int flags;
 	int ignore_minor_not_known;
-	int received;
-	int rv;
+	int rv = NO_ERROR;
+	int err = 0;
 
 	/* pre allocate request message and reply buffer */
 	iov.iov_len = 8192;
@@ -1437,7 +1429,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	if (!smsg || !iov.iov_base) {
 		desc = "could not allocate netlink messages";
 		rv = OTHER_ERROR;
-		goto fail;
+		goto out;
 	}
 
 	if (argc > 1)
@@ -1456,55 +1448,111 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	 * of expected replies */
 	ASSERT(cm->cmd_id == DRBD_ADM_GET_STATUS);
 
-	dhdr = genlmsg_put(smsg, &drbd_genl_family, 0, cm->cmd_id);
+	flags = 0;
+	if (minor == -1)
+		flags |= NLM_F_DUMP;
+	dhdr = genlmsg_put(smsg, &drbd_genl_family, flags, cm->cmd_id);
 	dhdr->minor = minor;
 	dhdr->flags = 0;
+	if (minor == -1U && strcmp(objname, "ALL")) {
+		/* Restrict the dump to a single resource. */
+		struct nlattr *nla;
+		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
+		nla_put_string(smsg, T_ctx_conn_name, objname);
+		nla_nest_end(smsg, nla);
+	}
 
 	if (genl_send(drbd_sock, smsg)) {
 		desc = "error sending config command";
 		rv = OTHER_ERROR;
-		goto error;
+		goto out2;
 	}
 
-	received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
-	if (received > 0) {
-		struct nlmsghdr *nlh = (struct nlmsghdr*)iov.iov_base;
-		struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
-		struct genl_info info = {
-			.seq = nlh->nlmsg_seq,
-			.nlhdr = nlh,
-			.genlhdr = nlmsg_data(nlh),
-			.userhdr = genlmsg_data(nlmsg_data(nlh)),
-			.attrs = global_attrs,
-		};
-		ASSERT(dh->minor == minor);
-		rv = dh->ret_code;
-		if (rv != NO_ERROR &&
-		   !(rv == ERR_MINOR_INVALID && ignore_minor_not_known))
-			goto error;
-		if (drbd_tla_parse(nlh)) {
-			desc = "reply did not validate - "
-				"do you need to upgrade your useland tools?";
-			rv = OTHER_ERROR;
-			goto error;
+	/* disable sequence number check in genl_recv_msgs */
+	drbd_sock->s_seq_expect = 0;
+
+	for (;;) {
+		int received, rem;
+		struct nlmsghdr *nlh = (struct nlmsghdr *)iov.iov_base;
+
+		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
+		if (received < 0) {
+			switch(received) {
+			case -E_RCV_FAILED:
+				err = 20;
+				goto out2;
+			case -E_RCV_NO_SOURCE_ADDR:
+				continue; /* ignore invalid message */
+			case -E_RCV_SEQ_MISMATCH:
+				/* we disabled it, so it should not happen */
+				err = 20;
+				goto out2;
+			case -E_RCV_MSG_TRUNC:
+				continue;
+			case -E_RCV_UNEXPECTED_TYPE:
+				continue;
+			case -E_RCV_NLMSG_DONE:
+				err = cm->gp.show_function(cm, NULL);
+				if (err)
+					goto out2;
+				err = *(int*)nlmsg_data(nlh);
+				if (err)
+					printf("# error: %d: %s\n", err, strerror(-err));
+				goto out2;
+			case -E_RCV_ERROR_REPLY:
+				if (!errno) /* positive ACK message */
+					continue;
+				if (!desc)
+					desc = strerror(errno);
+				fprintf(stderr, "received netlink error reply: %s\n",
+					       desc);
+				err = 20;
+				goto out2;
+			default:
+				if (!desc)
+					desc = "error receiving config reply";
+				err = 20;
+				goto out2;
+			}
 		}
-		rv = cm->gp.show_function(cm, &info);
-		msg_free(smsg);
-		free(iov.iov_base);
-		return rv;
-	} else {
-		if (!desc)
-			desc = "error receiving config reply";
-		rv = OTHER_ERROR;
+
+		/* There may be multiple messages in one datagram (for dump replies). */
+		nlmsg_for_each_msg(nlh, nlh, received, rem) {
+			struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
+			struct genl_info info = (struct genl_info){
+				.seq = nlh->nlmsg_seq,
+				.nlhdr = nlh,
+				.genlhdr = nlmsg_data(nlh),
+				.userhdr = genlmsg_data(nlmsg_data(nlh)),
+				.attrs = global_attrs,
+			};
+			ASSERT(minor == -1 || dh->minor == minor);
+			rv = dh->ret_code;
+			if (rv != NO_ERROR &&
+			   !(rv == ERR_MINOR_INVALID && ignore_minor_not_known))
+				goto out2;
+			if (drbd_tla_parse(nlh)) {
+				desc = "reply did not validate - "
+					"do you need to upgrade your useland tools?";
+				rv = OTHER_ERROR;
+				goto out2;
+			}
+			err = cm->gp.show_function(cm, &info);
+		}
+		if (!(flags & NLM_F_DUMP)) {
+			err = cm->gp.show_function(cm, NULL);
+			goto out2;
+		}
 	}
 
-error:
+out2:
 	msg_free(smsg);
 
-fail:
-	rv = print_config_error(rv, desc);
+out:
+	if (rv != NO_ERROR)
+		err = print_config_error(rv, desc);
 	free(iov.iov_base);
-	return rv;
+	return err;
 }
 
 static char *af_to_str(int af)
@@ -1561,35 +1609,42 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 {
 	/* FIXME need some define for max len here */
 	static char last_ctx_conn_name[128];
-
-	int called_by_show_all = (cm == NULL);
-	int start_new_resource = 1;
-	int close_prev_resource = 0;
+	static int call_count;
 
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct disk_conf dc = { .disk_size = 0, };
 	struct net_conf nc = { .timeout = 0, };;
 
+	if (!info) {
+		if (call_count) {
+			--indent;
+			printI("}\n"); /* close _this_host */
+			--indent;
+			printI("}\n"); /* close resource */
+		} else
+			printf("# no resources\n");
+		fflush(stdout);
+		return 0;
+	}
+	call_count++;
+
+	/* FIXME: Is the folowing check needed? */
+	if (!global_attrs[DRBD_NLA_CFG_CONTEXT])
+		dbg(1, "unexpected packet, configuration context missing!\n");
+
 	drbd_cfg_context_from_attrs(&cfg, info);
 	disk_conf_from_attrs(&dc, info);
 	net_conf_from_attrs(&nc, info);
 
-	if (called_by_show_all) {
-		close_prev_resource = last_ctx_conn_name[0];
-		start_new_resource =
-			strncmp(cfg.ctx_conn_name, last_ctx_conn_name, sizeof(last_ctx_conn_name));
-		if (start_new_resource)
-			strncpy(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name));
-	} else
-		start_new_resource = 1;
-
-	if (start_new_resource) {
-		if (close_prev_resource) {
+	if (strncmp(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name))) {
+		if (strncmp(last_ctx_conn_name, "", sizeof(last_ctx_conn_name))) {
 			--indent;
 			printI("}\n"); /* close _this_host */
 			--indent;
 			printI("}\n\n");
 		}
+		strncpy(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name));
+
 		printI("resource %s {\n", cfg.ctx_conn_name);
 		++indent;
 		print_options("resource-options", "options");
@@ -1639,24 +1694,21 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		printI("}\n"); /* close volume */
 	}
 
-	if (!called_by_show_all) {
-		--indent;
-		printI("}\n"); /* close _this_host */
-		--indent;
-		printI("}\n"); /* close resource */
-	}
-
 	return 0;
 }
 
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
 {
-	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+	unsigned minor;
 	struct disk_conf dc = { .disk_size = 0, };
 	struct bdev_info bd = { 0, };
 	uint64_t bd_size;
 	int fd;
 
+	if (!info)
+		return 0;
+
+	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 	disk_conf_from_attrs(&dc, info);
 	if (!dc.backing_dev) {
 		fprintf(stderr, "Has no disk config, try with drbdmeta.\n");
@@ -1691,11 +1743,15 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
 static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
-	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+	unsigned minor;
 	union drbd_state state = { .i = 0 };
 	struct state_info si = { .current_state = 0, };
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
+	if (!info)
+		return 0;
+
+	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 	if (!global_attrs[DRBD_NLA_STATE_INFO]) {
 		printf( "<!-- resource minor=\"%u\"", minor);
 		if (resname)
@@ -1768,14 +1824,19 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
-	unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-/* variable prefix; maybe rather make that a command line parameter?
- * or use "drbd_sh_status"? */
-#define _P ""
+	unsigned minor;
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct state_info si = { .current_state = 0, };
 	union drbd_state state;
 	int available = 0;
+
+	if (!info)
+		return 0;
+
+	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+/* variable prefix; maybe rather make that a command line parameter?
+ * or use "drbd_sh_status"? */
+#define _P ""
 	printf("%s_minor=%u\n", _P, minor);
 	printf("%s_res_name=%s\n", _P, shell_escape(resname ?: "UNKNOWN"));
 
@@ -1850,6 +1911,10 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
+
+	if (!info)
+		return 0;
+
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
 		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
 				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
@@ -1869,6 +1934,10 @@ static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
+
+	if (!info)
+		return 0;
+
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
 		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
 				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
@@ -1888,6 +1957,10 @@ static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
+
+	if (!info)
+		return 0;
+
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
 		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
 				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
@@ -1910,6 +1983,9 @@ static int uuids_scmd(struct drbd_cmd *cm,
 	uint64_t ed_uuid;
 	uint64_t *uuids = NULL;
 	int flags = flags;
+
+	if (!info)
+		return 0;
 
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
 		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
@@ -1987,39 +2063,6 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 	       s.aftr_isp ? 'a' : '-',
 	       s.peer_isp ? 'p' : '-',
 	       s.user_isp ? 'u' : '-' );
-}
-
-/* err will be ignored until the last call,
- * (NLMSG_DONE received), when it will be set to the
- * return value of the last in-kernel dump iteration.
- * For successful dumps, that will be 0.
- * For "no such resource found", or any other error,
- * that will be a negative error code.
- */
-static int print_resources(struct genl_info *info, int err)
-{
-	static int call_count;
-	if (!info) {
-		/* dump finished */
-		if (call_count) {
-			--indent;
-			printI("}\n"); /* close _this_host */
-			--indent;
-			printI("}\n");
-		} else if (err)
-			printf("# error: %d: %s\n", err, strerror(-err));
-		else
-			printf("# no resources\n");
-		fflush(stdout);
-		return 0;
-	}
-	if (!global_attrs[DRBD_NLA_CFG_CONTEXT]) {
-		dbg(1, "unexpected packet, configuration context missing!\n");
-	} else {
-		call_count++;
-		show_scmd(NULL, info);
-	}
-	return 1;
 }
 
 static int print_broadcast_events(struct genl_info *info, int u __unused)
@@ -2245,14 +2288,14 @@ error:
 
 static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
+	int all_devices = !strcmp(objname, "ALL");
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
 	char *desc = NULL;
 	struct option *lo;
 	int c, rr;
-	int unfiltered=0, all_devices=0, timeout_ms=0;
-	int terminate_after_initial_dump = 0;
+	int unfiltered=0, timeout_ms=0;
 	int wfc_timeout=DRBD_WFC_TIMEOUT_DEF;
 	int degr_wfc_timeout=DRBD_DEGR_WFC_TIMEOUT_DEF;
 	int outdated_wfc_timeout=DRBD_OUTDATED_WFC_TIMEOUT_DEF;
@@ -2271,7 +2314,6 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 			warn_missing_required_arg(argv);
 			return 20;
 		case 'u': unfiltered=1; break;
-		case 'a': all_devices=1; break;
 		case 't':
 			wfc_timeout=m_strtoll(optarg,1);
 			if(DRBD_WFC_TIMEOUT_MIN > wfc_timeout ||
@@ -2338,22 +2380,19 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 		if (rr)
 			return rr;
 		timeout_ms = tmp.timeout_ms;
+
+		/* rewind send message buffer */
+		smsg->tail = smsg->data;
 	}
 
 	timeout_ms = timeout_ms * 1000 - 1; /* 0 -> -1 "infinite", 1000 -> 999, nobody cares...  */
-
-	/* rewind send message buffer */
-	smsg->tail = smsg->data;
-	/* we want a dump, if this is "show-all",
-	 * or if it is "events -a" */
-	terminate_after_initial_dump = cm->ep.proc_event == print_resources;
 
 	if (genl_join_mc_group(drbd_sock, "events")) {
 		fprintf(stderr, "unable to join drbd events multicast group\n");
 		return 20;
 	}
 	dhdr = genlmsg_put(smsg, &drbd_genl_family,
-		(all_devices || terminate_after_initial_dump) ? NLM_F_DUMP : 0,
+		all_devices ? NLM_F_DUMP : 0,
 		DRBD_ADM_GET_STATUS);
 	dhdr->minor = minor; /* gets ignored for DUMP */
 	dhdr->flags = 0;
@@ -2361,14 +2400,12 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 	dt_unlock_drbd(lock_fd);
 	lock_fd=-1;
 
-
-	/* If this is show-all, it may be specific to a single resource
+	/*
+	 * If this is show-all, it may be specific to a single resource
 	 * (show all volumes of resource X). If the resource name is ALL,
-	 * or if --all is given, the resource name is ignored,
-	 * causing a dump of all resources and their volumes.
+	 * we go through all resources and their volumes.
 	 */
-	all_devices = all_devices || !strcmp(objname, "ALL");
-	if (cm->ctx_key == CTX_CONN && !all_devices) {
+	if (minor == -1 && !all_devices) {
 		/* we just allocated 8k,
 		 * and now we put a few bytes there.
 		 * this cannot possibly fail, can it? */
@@ -2410,11 +2447,6 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 		case -E_RCV_UNEXPECTED_TYPE:
 			continue;
 		case -E_RCV_NLMSG_DONE:
-			if (terminate_after_initial_dump) {
-				int ret = *(int*)nlmsg_data(nlh);
-				cm->ep.proc_event(NULL, ret);
-				return ret ? 10 : 0;
-			}
 			continue;
 		case -E_RCV_ERROR_REPLY:
 			if (!errno) /* positive ACK message */
@@ -2800,9 +2832,12 @@ int main(int argc, char **argv)
 	}
 
 	objname = argv[1];
-	if (cmd->ctx_key == CTX_MINOR) {
+	if (!strcmp(objname, "ALL")) {
+		if (!(cmd->ctx_key & CTX_ALL))
+			print_usage_and_exit("command does not accept argument 'ALL'");
+	} else if (cmd->ctx_key & CTX_MINOR) {
 		minor = dt_minor_of_dev(argv[1]);
-		if (minor < 0) {
+		if (minor < 0 && !(cmd->ctx_key & CTX_CONN)) {
 			fprintf(stderr, "Cannot determine minor device number of "
 					"drbd device '%s'",
 				argv[1]);
@@ -2810,6 +2845,8 @@ int main(int argc, char **argv)
 		}
 		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
 			lock_fd = dt_lock_drbd(minor);
+	} else {
+		/* objname is expected to be a connection name. */
 	}
 
 	// by passing argc-2, argv+2 the function has the command name
