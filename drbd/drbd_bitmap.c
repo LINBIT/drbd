@@ -260,7 +260,12 @@ static void bm_set_page_need_writeout(struct page *page)
  */
 void drbd_bm_mark_for_writeout(struct drbd_conf *mdev, int page_nr)
 {
-	struct page *page = mdev->bitmap->bm_pages[page_nr];
+	struct page *page;
+	if (WARN(page_nr >= mdev->bitmap->bm_number_of_pages,
+		"BAD: page_nr: %u, number_of_pages: %u\n",
+		page_nr, (int)mdev->bitmap->bm_number_of_pages))
+		return;
+	page = mdev->bitmap->bm_pages[page_nr];
 	set_bit(BM_PAGE_HINT_WRITEOUT, &page_private(page));
 }
 
