@@ -88,7 +88,8 @@ static int register_path(const char *linkname, const char *path)
 			path);
 		return -1;
 	}
-	if (!strncmp(path, DRBD_RUN_DIR, strlen(DRBD_RUN_DIR)))
+	/* safeguard against symlink loops in DRBD_RUN_DIR */
+	if (!strncmp(path, DRBD_RUN_DIR "/", strlen(DRBD_RUN_DIR "/")))
 		return -1;
 	if (__readlink(linkname, target, sizeof(target)) >= 0 &&
 	    !strcmp(target, path))
@@ -105,7 +106,7 @@ static int register_path(const char *linkname, const char *path)
 		fprintf(stderr, "symlink(%s, %s): %m\n", path, linkname);
 		return -1;
 	}
-	return 0; 
+	return 0;
 }
 
 int register_minor(int minor, const char *path)
