@@ -367,10 +367,17 @@ w_al_write_transaction(struct drbd_work *w, int unused)
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
 
 	i = 0;
-	/* no need to grab any further lock, this list cannot change
-	 * while we hold the "LC_LOCKED" bit. */
+
+	/* Even though no one can start to change this list
+	 * once we set the LC_LOCKED -- from drbd_al_begin_io(),
+	 * lc_try_lock_for_transaction() --, someone may still
+	 * be in the process of changing it. */
+	spin_lock_irq(&mdev->al_lock);
 	list_for_each_entry(e, &mdev->act_log->to_be_changed, list) {
-		BUG_ON(i >= AL_UPDATES_PER_TRANSACTION);
+		if (i == AL_UPDATES_PER_TRANSACTION) {
+			i++;
+			break;
+		}
 		buffer->update_slot_nr[i] = cpu_to_be16(e->lc_index);
 		buffer->update_extent_nr[i] = cpu_to_be32(e->lc_new_number);
 		if (e->lc_number != LC_FREE)
@@ -378,6 +385,9 @@ w_al_write_transaction(struct drbd_work *w, int unused)
 					al_extent_to_bm_page(e->lc_number));
 		i++;
 	}
+	spin_unlock_irq(&mdev->al_lock);
+	BUG_ON(i > AL_UPDATES_PER_TRANSACTION);
+
 	buffer->n_updates = cpu_to_be16(i);
 	for ( ; i < AL_UPDATES_PER_TRANSACTION; i++) {
 		buffer->update_slot_nr[i] = cpu_to_be16(-1);
