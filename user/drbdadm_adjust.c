@@ -609,13 +609,13 @@ int adm_adjust(struct cfg_ctx *ctx)
 
 	/* setup error reporting context for the parsing routines */
 	line = 1;
-	sprintf(config_file_dummy,"drbdsetup %s show-all", ctx->res->name);
+	sprintf(config_file_dummy,"drbdsetup %s show", ctx->res->name);
 	config_file = config_file_dummy;
 
 	argc=0;
 	argv[argc++]=drbdsetup;
 	ssprintf(argv[argc++], "%s", ctx->res->name);
-	argv[argc++]="show-all";
+	argv[argc++]="show";
 	argv[argc++]=0;
 
 	/* actually parse drbdsetup show output */
