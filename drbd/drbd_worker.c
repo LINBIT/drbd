@@ -1102,6 +1102,8 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
+	sector_t sector = peer_req->i.sector;
+	unsigned int size = peer_req->i.size;
 	int digest_size;
 	void *digest;
 	int err = 0;
@@ -1131,9 +1133,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	peer_req = NULL;
 
 	inc_rs_pending(mdev);
-	err = drbd_send_drequest_csum(mdev, peer_req->i.sector,
-				      peer_req->i.size, digest, digest_size,
-				      P_OV_REPLY);
+	err = drbd_send_drequest_csum(mdev, sector, size, digest, digest_size, P_OV_REPLY);
 	if (err)
 		dec_rs_pending(mdev);
 	kfree(digest);
