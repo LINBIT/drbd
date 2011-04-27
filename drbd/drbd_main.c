@@ -195,18 +195,6 @@ int _get_ldev_if_state(struct drbd_conf *mdev, enum drbd_disk_state mins)
 
 #endif
 
-/* printk functions for connections
- */
-void conn_printk(const char *level, struct drbd_tconn *tconn, const char *fmt, ...)
-{
-	va_list args;
-
-	printk("%sd-con %s: ", level, tconn->name);
-	va_start(args, fmt);
-	vprintk(fmt, args);
-	va_end(args);
-}
-
 /**
  * DOC: The transfer log
  *

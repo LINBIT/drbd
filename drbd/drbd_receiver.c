@@ -633,7 +633,7 @@ static int drbd_recv_all_warn(struct drbd_tconn *tconn, void *buf, size_t size)
 
 	err = drbd_recv_all(tconn, buf, size);
 	if (err && !signal_pending(current))
-		conn_warn(tconn, "short read (expected size %d)\n", size);
+		conn_warn(tconn, "short read (expected size %d)\n", (int)size);
 	return err;
 }
 

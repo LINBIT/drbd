@@ -157,7 +157,8 @@ struct drbd_tconn;
 	        dev_printk(KERN_CRIT , dev , format , ## arg)
 #endif
 
-extern void conn_printk(const char *level, struct drbd_tconn *tconn, const char *fmt, ...);
+#define conn_printk(LEVEL, TCONN, FMT, ARGS...) \
+	printk(LEVEL "d-con %s: " FMT, tconn->name , ## ARGS)
 #define conn_alert(TCONN, FMT, ARGS...)  conn_printk(KERN_ALERT, TCONN, FMT, ## ARGS)
 #define conn_crit(TCONN, FMT, ARGS...)   conn_printk(KERN_CRIT, TCONN, FMT, ## ARGS)
 #define conn_err(TCONN, FMT, ARGS...)    conn_printk(KERN_ERR, TCONN, FMT, ## ARGS)
