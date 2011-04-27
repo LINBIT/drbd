@@ -2096,7 +2096,7 @@ out:
 	return 1;
 }
 
-static int w_connected_state(struct genl_info *info, int wait_after_sb)
+static int w_connected_state(struct genl_info *info, int wait_after_split_brain)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2120,7 +2120,7 @@ static int w_connected_state(struct genl_info *info, int wait_after_sb)
 		struct drbd_genlmsghdr *dhdr = info->userhdr;
 		struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
-		if (!wait_after_sb)
+		if (!wait_after_split_brain)
 			return 0;
 		drbd_cfg_context_from_attrs(&cfg, info);
 
@@ -2134,7 +2134,7 @@ static int w_connected_state(struct genl_info *info, int wait_after_sb)
 	return 1;
 }
 
-static int w_synced_state(struct genl_info *info, int wait_after_sb)
+static int w_synced_state(struct genl_info *info, int wait_after_split_brain)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2156,7 +2156,7 @@ static int w_synced_state(struct genl_info *info, int wait_after_sb)
 	if (state.conn == C_CONNECTED)
 		return 0;
 
-	if (!wait_after_sb && state.conn < C_UNCONNECTED)
+	if (!wait_after_split_brain && state.conn < C_UNCONNECTED)
 		return 0;
 
 	return 1;
@@ -2257,8 +2257,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 	int degr_wfc_timeout=DRBD_DEGR_WFC_TIMEOUT_DEF;
 	int outdated_wfc_timeout=DRBD_OUTDATED_WFC_TIMEOUT_DEF;
 	struct timeval before,after;
-	/* wait after split brain */
-	int wasb=0;
+	int wait_after_split_brain = 0;
 
 	lo = cm->ep.options;
 
@@ -2308,7 +2307,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 			break;
 
 		case 'w':
-			wasb=1;
+			wait_after_split_brain = 1;
 			break;
 		}
 	}
@@ -2448,7 +2447,7 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv
 				continue;
 
 			drbd_tla_parse(nlh);
-			if (!cm->ep.proc_event(&info, wasb))
+			if (!cm->ep.proc_event(&info, wait_after_split_brain))
 				return 0;
 		}
 	}
