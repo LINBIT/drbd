@@ -1647,7 +1647,8 @@ _conn_request_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_
 	if (rv < SS_SUCCESS)
 		goto abort;
 
-	if (oc == C_WF_REPORT_PARAMS && val.conn == C_DISCONNECTING && !(flags & CS_LOCAL_ONLY)) {
+	if (oc == C_WF_REPORT_PARAMS && val.conn == C_DISCONNECTING &&
+	    !(flags & (CS_LOCAL_ONLY | CS_HARD))) {
 		rv = conn_cl_wide(tconn, mask, val, flags);
 		if (rv < SS_SUCCESS)
 			goto abort;
