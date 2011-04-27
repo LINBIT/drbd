@@ -1339,7 +1339,8 @@ static void show_handler(struct drbd_option *od, struct nlattr *nla)
 
 	i = nla_get_u32(nla);
 	printI("%-16s\t%s",od->name,handler_names[i]);
-	if( i == (long long)od->numeric_param.def) printf(" _is_default");
+	if (i == od->handler_param.def)
+		printf(" _is_default");
 	printf(";\n");
 }
 
