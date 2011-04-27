@@ -705,6 +705,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		if (do_disconnect && ctx->res->peer)
 			schedule_deferred_cmd(adm_generic_s, ctx, "disconnect", CFG_NET_PREREQ);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+		do_net_options = 0;
 	}
 
 	if (do_net_options)
