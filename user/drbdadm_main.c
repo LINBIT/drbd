@@ -2184,6 +2184,10 @@ static int adm_up(struct cfg_ctx *ctx)
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
 	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 
+	/* quick fix to make the al-extent setting apply on freshly created meta-data.
+	 * Needs to be fixed in-kernel drbd_adm_attach(). */
+	schedule_deferred_cmd(adm_attach, ctx, "disk-options", CFG_DISK);
+
 	return 0;
 }
 
