@@ -1789,7 +1789,6 @@ struct crypto {
 	struct crypto_hash *csums_tfm;
 	struct crypto_hash *cram_hmac_tfm;
 	struct crypto_hash *integrity_tfm;
-	struct crypto_hash *peer_integrity_tfm;
 	void *int_dig_in;
 	void *int_dig_vv;
 };
@@ -1828,10 +1827,6 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_conf)
 		       ERR_INTEGRITY_ALG);
 	if (rv != NO_ERROR)
 		return rv;
-	rv = alloc_hash(&crypto->peer_integrity_tfm, new_conf->integrity_alg,
-		       ERR_INTEGRITY_ALG);
-	if (rv != NO_ERROR)
-		return rv;
 	if (new_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
 			 new_conf->cram_hmac_alg);
@@ -1858,7 +1853,6 @@ static void free_crypto(struct crypto *crypto)
 	kfree(crypto->int_dig_vv);
 	crypto_free_hash(crypto->cram_hmac_tfm);
 	crypto_free_hash(crypto->integrity_tfm);
-	crypto_free_hash(crypto->peer_integrity_tfm);
 	crypto_free_hash(crypto->csums_tfm);
 	crypto_free_hash(crypto->verify_tfm);
 }
@@ -1872,6 +1866,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	int ovr; /* online verify running */
 	int rsr; /* re-sync running */
 	struct crypto crypto = { };
+	bool change_integrity_alg;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_CONN);
 	if (!adm_ctx.reply_skb)
@@ -1903,6 +1898,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	conn_reconfig_start(tconn);
 
+	mutex_lock(&tconn->data.mutex);
 	mutex_lock(&tconn->net_conf_update);
 	old_conf = tconn->net_conf;
 
@@ -1941,6 +1937,9 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	change_integrity_alg = strcmp(old_conf->integrity_alg,
+				      new_conf->integrity_alg);
+
 	retcode = alloc_crypto(&crypto, new_conf);
 	if (retcode != NO_ERROR)
 		goto fail;
@@ -1958,21 +1957,24 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		crypto.verify_tfm = NULL;
 	}
 
-	/* FIXME can not assign these so bluntly while we have ongoing IO */
 	kfree(tconn->int_dig_in);
 	tconn->int_dig_in = crypto.int_dig_in;
 	kfree(tconn->int_dig_vv);
 	tconn->int_dig_vv = crypto.int_dig_vv;
 	crypto_free_hash(tconn->integrity_tfm);
 	tconn->integrity_tfm = crypto.integrity_tfm;
-	crypto_free_hash(tconn->peer_integrity_tfm);
-	tconn->peer_integrity_tfm = crypto.peer_integrity_tfm;
+	if (change_integrity_alg) {
+		/* Do this without trying to take tconn->data.mutex again.  */
+		if (__drbd_send_protocol(tconn))
+			goto fail;
+	}
 
 	/* FIXME Changing cram_hmac while the connection is established is useless */
 	crypto_free_hash(tconn->cram_hmac_tfm);
 	tconn->cram_hmac_tfm = crypto.cram_hmac_tfm;
 
 	mutex_unlock(&tconn->net_conf_update);
+	mutex_unlock(&tconn->data.mutex);
 	synchronize_rcu();
 	kfree(old_conf);
 
@@ -1983,6 +1985,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
  fail:
 	mutex_unlock(&tconn->net_conf_update);
+	mutex_unlock(&tconn->data.mutex);
 	free_crypto(&crypto);
 	kfree(new_conf);
  done:
@@ -2091,7 +2094,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	tconn->int_dig_vv = crypto.int_dig_vv;
 	tconn->cram_hmac_tfm = crypto.cram_hmac_tfm;
 	tconn->integrity_tfm = crypto.integrity_tfm;
-	tconn->peer_integrity_tfm = crypto.peer_integrity_tfm;
 	tconn->csums_tfm = crypto.csums_tfm;
 	tconn->verify_tfm = crypto.verify_tfm;
 
