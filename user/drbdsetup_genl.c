@@ -26,6 +26,7 @@
 #define _XOPEN_SOURCE 600
 #define _FILE_OFFSET_BITS 64
 
+#include <stdbool.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -197,11 +198,9 @@ struct drbd_cmd {
 		struct {
 			int (*show_function)(struct drbd_cmd*, struct genl_info *);
 		} gp; // for generic_get_cmd, get_usage
-		struct {
-			struct option *options;
-			int (*proc_event)(struct genl_info *, int);
-		} ep; // for events_cmd, events_usage
 	};
+	struct option *options;
+	bool continuous_poll;
 };
 
 // other functions
@@ -212,14 +211,12 @@ static void print_command_usage(int i, const char *addinfo, enum usage_type);
 static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc,char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
 static void get_usage(struct drbd_cmd *cm, enum usage_type);
-static void events_usage(struct drbd_cmd *cm, enum usage_type);
 
 // sub usage functions for config_usage
 static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
@@ -244,6 +241,9 @@ static int cstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
+static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
+static int w_connected_state(struct drbd_cmd *, struct genl_info *);
+static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
@@ -265,11 +265,6 @@ static void show_handler(struct drbd_option *od, struct nlattr *nla);
 static void show_bit(struct drbd_option *od, struct nlattr *nla);
 static void show_string(struct drbd_option *od, struct nlattr *nla);
 static void show_protocol(struct drbd_option *od, struct nlattr *nla);
-
-// sub functions for events_cmd
-static int print_broadcast_events(struct genl_info *, int);
-static int w_connected_state(struct genl_info *, int);
-static int w_synced_state(struct genl_info *, int);
 
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
@@ -348,7 +343,6 @@ struct option wait_cmds_options[] = {
 #define NO_PAYLOAD	0, NULL, 0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
 			get_usage, { .gp = { scmd } }
-#define F_EVENTS_CMD	DRBD_ADM_GET_STATUS, NO_PAYLOAD, events_cmd, events_usage
 #define POLICY(x)	x ## _nl_policy, (ARRAY_SIZE(x ## _nl_policy) -1)
 
 #define CHANGEABLE_DISK_OPTIONS						\
@@ -420,7 +414,7 @@ struct drbd_cmd commands[] = {
 		 CLOSE_ARGS_OPTS } }} },
 
 	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
-		F_CONFIG_CMD, {{ NULL, 
+		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 CHANGEABLE_DISK_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
@@ -496,15 +490,14 @@ struct drbd_cmd commands[] = {
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd) },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
-	{"events", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
-		(struct option[]) {
-			{ "unfiltered", no_argument, 0, 'u' },
-			{ 0,            0,           0,  0  } },
-		print_broadcast_events } } },
-	{"wait-connect", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
-		wait_cmds_options, w_connected_state } } },
-	{"wait-sync", CTX_MINOR | CTX_ALL, F_EVENTS_CMD, { .ep = {
-		wait_cmds_options, w_synced_state } } },
+	{"events", CTX_MINOR | CTX_ALL, F_GET_CMD(print_broadcast_events),
+		.continuous_poll = true, },
+	{"wait-connect", CTX_MINOR | CTX_ALL, F_GET_CMD(w_connected_state),
+		.options = wait_cmds_options,
+		.continuous_poll = true, },
+	{"wait-sync", CTX_MINOR | CTX_ALL, F_GET_CMD(w_synced_state),
+		.options = wait_cmds_options,
+		.continuous_poll = true, },
 
 	{"new-connection", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
 
@@ -519,6 +512,8 @@ struct drbd_cmd commands[] = {
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
 	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_connection_cmd, config_usage, }
 };
+
+bool wait_after_split_brain;
 
 #define OTHER_ERROR 900
 
@@ -1411,13 +1406,96 @@ static void print_options(const char *cmd_name, const char *sect_name)
 	}
 }
 
+struct choose_timo_ctx {
+	unsigned minor;
+	struct msg_buff *smsg;
+	struct iovec *iov;
+	int timeout_ms;
+	int wfc_timeout;
+	int degr_wfc_timeout;
+	int outdated_wfc_timeout;
+};
+
+int choose_timeout(struct choose_timo_ctx *ctx)
+{
+	char *desc = NULL;
+	struct drbd_genlmsghdr *dhdr;
+	int rr;
+
+	if (0 < ctx->wfc_timeout &&
+	      (ctx->wfc_timeout < ctx->degr_wfc_timeout || ctx->degr_wfc_timeout == 0)) {
+		ctx->degr_wfc_timeout = ctx->wfc_timeout;
+		fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
+				"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
+				ctx->degr_wfc_timeout);
+	}
+
+	if (0 < ctx->degr_wfc_timeout &&
+	    (ctx->degr_wfc_timeout < ctx->outdated_wfc_timeout || ctx->outdated_wfc_timeout == 0)) {
+		ctx->outdated_wfc_timeout = ctx->wfc_timeout;
+		fprintf(stderr, "outdated-wfc-timeout has to be shorter than degr-wfc-timeout\n"
+				"outdated-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
+				ctx->degr_wfc_timeout);
+	}
+	dhdr = genlmsg_put(ctx->smsg, &drbd_genl_family, 0, DRBD_ADM_GET_TIMEOUT_TYPE);
+	dhdr->minor = ctx->minor;
+	dhdr->flags = 0;
+
+	if (genl_send(drbd_sock, ctx->smsg)) {
+		desc = "error sending config command";
+		goto error;
+	}
+
+	rr = genl_recv_msgs(drbd_sock, ctx->iov, &desc, 120000);
+	if (rr > 0) {
+		struct nlmsghdr *nlh = (struct nlmsghdr*)ctx->iov->iov_base;
+		struct genl_info info = {
+			.seq = nlh->nlmsg_seq,
+			.nlhdr = nlh,
+			.genlhdr = nlmsg_data(nlh),
+			.userhdr = genlmsg_data(nlmsg_data(nlh)),
+			.attrs = global_attrs,
+		};
+		struct drbd_genlmsghdr *dh = info.userhdr;
+		struct timeout_parms parms;
+		ASSERT(dh->minor == ctx->minor);
+		rr = dh->ret_code;
+		if (rr == ERR_MINOR_INVALID) {
+			desc = "minor not available";
+			goto error;
+		}
+		if (rr != NO_ERROR)
+			goto error;
+		if (drbd_tla_parse(nlh)
+		|| timeout_parms_from_attrs(&parms, &info)) {
+			desc = "reply did not validate - "
+				"do you need to upgrade your useland tools?";
+			goto error;
+		}
+		rr = parms.timeout_type;
+		ctx->timeout_ms =
+			(rr == UT_DEGRADED) ? ctx->degr_wfc_timeout :
+			(rr == UT_PEER_OUTDATED) ? ctx->outdated_wfc_timeout :
+				ctx->wfc_timeout;
+		return 0;
+	}
+error:
+	if (!desc)
+		desc = "error receiving netlink reply";
+	fprintf(stderr, "error determining which timeout to use: %s\n",
+			desc);
+	return 20;
+}
+
 static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-		    char **argv __attribute((unused)))
+			   char **argv)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
+	struct choose_timo_ctx timeo_ctx;
+	int timeout_ms = -1;  /* "infinite" */
 	int flags;
 	int ignore_minor_not_known;
 	int rv = NO_ERROR;
@@ -1433,10 +1511,65 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		goto out;
 	}
 
-	if (argc > 1)
-		warn_print_excess_args(argc, argv, 1);
+	if (cm->options) {
+		const char *opts = make_optstring(cm->options, ':');
+		int c;
 
-	dump_argv(argc, argv, 1, 0);
+		while((c = getopt_long(argc, argv, opts, cm->options, 0)) != -1) {
+			switch(c) {
+			default:
+			case '?':
+				warn_unrecognized_option(argv);
+				return 20;
+			case ':':
+				warn_missing_required_arg(argv);
+				return 20;
+			case 't':
+				timeo_ctx.wfc_timeout = m_strtoll(optarg,1);
+				if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
+				   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
+					fprintf(stderr, "wfc_timeout => %d"
+						" out of range [%d..%d]\n",
+						timeo_ctx.wfc_timeout,
+						DRBD_WFC_TIMEOUT_MIN,
+						DRBD_WFC_TIMEOUT_MAX);
+					return 20;
+				}
+				break;
+			case 'd':
+				timeo_ctx.degr_wfc_timeout=m_strtoll(optarg,1);
+				if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
+				   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
+					fprintf(stderr, "degr_wfc_timeout => %d"
+						" out of range [%d..%d]\n",
+						timeo_ctx.degr_wfc_timeout,
+						DRBD_DEGR_WFC_TIMEOUT_MIN,
+						DRBD_DEGR_WFC_TIMEOUT_MAX);
+					return 20;
+				}
+				break;
+			case 'o':
+				timeo_ctx.outdated_wfc_timeout=m_strtoll(optarg,1);
+				if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
+				   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
+					fprintf(stderr, "outdated_wfc_timeout => %d"
+						" out of range [%d..%d]\n",
+						timeo_ctx.outdated_wfc_timeout, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+						DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+					return 20;
+				}
+				break;
+
+			case 'w':
+				wait_after_split_brain = true;
+				break;
+			}
+		}
+	}
+	if (optind < argc)
+		warn_print_excess_args(argc, argv, optind);
+
+	dump_argv(argc, argv, optind, 0);
 
 	/* if there was an error, report and abort --
 	 * unless it was "this device is not there",
@@ -1448,6 +1581,33 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	/* otherwise we need to change handling/parsing
 	 * of expected replies */
 	ASSERT(cm->cmd_id == DRBD_ADM_GET_STATUS);
+
+	if (cm->options == wait_cmds_options) {
+		int rr;
+
+		timeo_ctx.minor = minor;
+		timeo_ctx.smsg = smsg;
+		timeo_ctx.iov = &iov;
+		timeo_ctx.timeout_ms = timeout_ms;
+		rr = choose_timeout(&timeo_ctx);
+		if (rr)
+			return rr;
+		timeout_ms = timeo_ctx.timeout_ms;
+		if (timeout_ms)
+			timeout_ms *= 1000;
+		else
+			timeout_ms = -1;
+
+		/* rewind send message buffer */
+		smsg->tail = smsg->data;
+	}
+
+	if (cm->continuous_poll) {
+		if (genl_join_mc_group(drbd_sock, "events")) {
+			fprintf(stderr, "unable to join drbd events multicast group\n");
+			return 20;
+		}
+	}
 
 	flags = 0;
 	if (minor == -1)
@@ -1475,10 +1635,17 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	for (;;) {
 		int received, rem;
 		struct nlmsghdr *nlh = (struct nlmsghdr *)iov.iov_base;
+		struct timeval before;
+
+		if (timeout_ms != -1)
+			gettimeofday(&before, NULL);
 
 		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
 		if (received < 0) {
 			switch(received) {
+			case E_RCV_TIMEDOUT:
+				err = 5;
+				goto out2;
 			case -E_RCV_FAILED:
 				err = 20;
 				goto out2;
@@ -1493,6 +1660,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			case -E_RCV_UNEXPECTED_TYPE:
 				continue;
 			case -E_RCV_NLMSG_DONE:
+				if (cm->continuous_poll)
+					continue;
 				err = cm->gp.show_function(cm, NULL);
 				if (err)
 					goto out2;
@@ -1513,6 +1682,18 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				if (!desc)
 					desc = "error receiving config reply";
 				err = 20;
+				goto out2;
+			}
+		}
+
+		if (timeout_ms != -1) {
+			struct timeval after;
+
+			gettimeofday(&after, NULL);
+			timeout_ms -= (after.tv_sec - before.tv_sec) * 1000 +
+				      (after.tv_usec - before.tv_usec) / 1000;
+			if (timeout_ms <= 0) {
+				err = 5;
 				goto out2;
 			}
 		}
@@ -2066,7 +2247,7 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 	       s.user_isp ? 'u' : '-' );
 }
 
-static int print_broadcast_events(struct genl_info *info, int u __unused)
+static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct state_info si = { .current_state = 0 };
@@ -2140,7 +2321,7 @@ out:
 	return 1;
 }
 
-static int w_connected_state(struct genl_info *info, int wait_after_split_brain)
+static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2178,7 +2359,7 @@ static int w_connected_state(struct genl_info *info, int wait_after_split_brain)
 	return 1;
 }
 
-static int w_synced_state(struct genl_info *info, int wait_after_split_brain)
+static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2204,286 +2385,6 @@ static int w_synced_state(struct genl_info *info, int wait_after_split_brain)
 		return 0;
 
 	return 1;
-}
-
-struct choose_timo_ctx {
-	unsigned minor;
-	struct msg_buff *smsg;
-	struct iovec *iov;
-	int timeout_ms;
-	int wfc_timeout;
-	int degr_wfc_timeout;
-	int outdated_wfc_timeout;
-};
-
-int choose_timeout(struct choose_timo_ctx *ctx)
-{
-	char *desc = NULL;
-	struct drbd_genlmsghdr *dhdr;
-	int rr;
-
-	if (0 < ctx->wfc_timeout &&
-	      (ctx->wfc_timeout < ctx->degr_wfc_timeout || ctx->degr_wfc_timeout == 0)) {
-		ctx->degr_wfc_timeout = ctx->wfc_timeout;
-		fprintf(stderr, "degr-wfc-timeout has to be shorter than wfc-timeout\n"
-				"degr-wfc-timeout implicitly set to wfc-timeout (%ds)\n",
-				ctx->degr_wfc_timeout);
-	}
-
-	if (0 < ctx->degr_wfc_timeout &&
-	    (ctx->degr_wfc_timeout < ctx->outdated_wfc_timeout || ctx->outdated_wfc_timeout == 0)) {
-		ctx->outdated_wfc_timeout = ctx->wfc_timeout;
-		fprintf(stderr, "outdated-wfc-timeout has to be shorter than degr-wfc-timeout\n"
-				"outdated-wfc-timeout implicitly set to degr-wfc-timeout (%ds)\n",
-				ctx->degr_wfc_timeout);
-	}
-	dhdr = genlmsg_put(ctx->smsg, &drbd_genl_family, 0, DRBD_ADM_GET_TIMEOUT_TYPE);
-	dhdr->minor = ctx->minor;
-	dhdr->flags = 0;
-
-	if (genl_send(drbd_sock, ctx->smsg)) {
-		desc = "error sending config command";
-		goto error;
-	}
-
-	rr = genl_recv_msgs(drbd_sock, ctx->iov, &desc, 120000);
-	if (rr > 0) {
-		struct nlmsghdr *nlh = (struct nlmsghdr*)ctx->iov->iov_base;
-		struct genl_info info = {
-			.seq = nlh->nlmsg_seq,
-			.nlhdr = nlh,
-			.genlhdr = nlmsg_data(nlh),
-			.userhdr = genlmsg_data(nlmsg_data(nlh)),
-			.attrs = global_attrs,
-		};
-		struct drbd_genlmsghdr *dh = info.userhdr;
-		struct timeout_parms parms;
-		ASSERT(dh->minor == ctx->minor);
-		rr = dh->ret_code;
-		if (rr == ERR_MINOR_INVALID) {
-			desc = "minor not available";
-			goto error;
-		}
-		if (rr != NO_ERROR)
-			goto error;
-		if (drbd_tla_parse(nlh)
-		|| timeout_parms_from_attrs(&parms, &info)) {
-			desc = "reply did not validate - "
-				"do you need to upgrade your useland tools?";
-			goto error;
-		}
-		rr = parms.timeout_type;
-		ctx->timeout_ms =
-			(rr == UT_DEGRADED) ? ctx->degr_wfc_timeout :
-			(rr == UT_PEER_OUTDATED) ? ctx->outdated_wfc_timeout :
-				ctx->wfc_timeout;
-		return 0;
-	}
-error:
-	if (!desc)
-		desc = "error receiving netlink reply";
-	fprintf(stderr, "error determining which timeout to use: %s\n",
-			desc);
-	return 20;
-}
-
-static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
-{
-	int all_devices = !strcmp(objname, "ALL");
-	struct drbd_genlmsghdr *dhdr;
-	struct msg_buff *smsg;
-	struct iovec iov;
-	char *desc = NULL;
-	struct option *lo;
-	int c, rr;
-	int unfiltered=0, timeout_ms=0;
-	int wfc_timeout=DRBD_WFC_TIMEOUT_DEF;
-	int degr_wfc_timeout=DRBD_DEGR_WFC_TIMEOUT_DEF;
-	int outdated_wfc_timeout=DRBD_OUTDATED_WFC_TIMEOUT_DEF;
-	struct timeval before,after;
-	int wait_after_split_brain = 0;
-
-	lo = cm->ep.options;
-
-	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
-		switch(c) {
-		default:
-		case '?':
-			warn_unrecognized_option(argv);
-			return 20;
-		case ':':
-			warn_missing_required_arg(argv);
-			return 20;
-		case 'u': unfiltered=1; break;
-		case 't':
-			wfc_timeout=m_strtoll(optarg,1);
-			if(DRBD_WFC_TIMEOUT_MIN > wfc_timeout ||
-			   wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					wfc_timeout, DRBD_WFC_TIMEOUT_MIN,
-					DRBD_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-		case 'd':
-			degr_wfc_timeout=m_strtoll(optarg,1);
-			if(DRBD_DEGR_WFC_TIMEOUT_MIN > degr_wfc_timeout ||
-			   degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "degr_wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					degr_wfc_timeout, DRBD_DEGR_WFC_TIMEOUT_MIN,
-					DRBD_DEGR_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-		case 'o':
-			outdated_wfc_timeout=m_strtoll(optarg,1);
-			if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > degr_wfc_timeout ||
-			   degr_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "degr_wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					outdated_wfc_timeout, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
-					DRBD_OUTDATED_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-
-		case 'w':
-			wait_after_split_brain = 1;
-			break;
-		}
-	}
-	if (optind < argc)
-		warn_print_excess_args(argc, argv, optind);
-
-	dump_argv(argc, argv, optind, 0);
-
-	iov.iov_len = 8192;
-	iov.iov_base = malloc(iov.iov_len);
-	smsg = msg_new(DEFAULT_MSG_SIZE);
-	if (!smsg || !iov.iov_base) {
-		desc = "could not allocate netlink messages";
-		return 20;
-	}
-
-	if (cm->ep.options == wait_cmds_options) {
-		struct choose_timo_ctx tmp = {
-			.minor = minor,
-			.smsg                 = smsg,
-			.iov                  = &iov,
-			.timeout_ms           = timeout_ms,
-			.wfc_timeout          = wfc_timeout,
-			.degr_wfc_timeout     = degr_wfc_timeout,
-			.outdated_wfc_timeout = outdated_wfc_timeout,
-		};
-		rr = choose_timeout(&tmp);
-		if (rr)
-			return rr;
-		timeout_ms = tmp.timeout_ms;
-
-		/* rewind send message buffer */
-		smsg->tail = smsg->data;
-	}
-
-	timeout_ms = timeout_ms * 1000 - 1; /* 0 -> -1 "infinite", 1000 -> 999, nobody cares...  */
-
-	if (genl_join_mc_group(drbd_sock, "events")) {
-		fprintf(stderr, "unable to join drbd events multicast group\n");
-		return 20;
-	}
-	dhdr = genlmsg_put(smsg, &drbd_genl_family,
-		all_devices ? NLM_F_DUMP : 0,
-		DRBD_ADM_GET_STATUS);
-	dhdr->minor = minor; /* gets ignored for DUMP */
-	dhdr->flags = 0;
-
-	dt_unlock_drbd(lock_fd);
-	lock_fd=-1;
-
-	/*
-	 * If this is show-all, it may be specific to a single resource
-	 * (show all volumes of resource X). If the resource name is ALL,
-	 * we go through all resources and their volumes.
-	 */
-	if (minor == -1 && !all_devices) {
-		/* we just allocated 8k,
-		 * and now we put a few bytes there.
-		 * this cannot possibly fail, can it? */
-		struct nlattr *nla;
-		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-		nla_put_string(smsg, T_ctx_conn_name, objname);
-		nla_nest_end(smsg, nla);
-	}
-
-	if (genl_send(drbd_sock, smsg)) {
-		desc = "error sending config command";
-		return 20;
-	}
-
-	/* disable sequence number check in genl_recv_msgs */
-	drbd_sock->s_seq_expect = 0;
-
-	for (;;) {
-		int rem;
-		struct nlmsghdr *nlh;
-		gettimeofday(&before,NULL);
-		rr = genl_recv_msgs(drbd_sock, &iov, &desc, timeout_ms ?: 120000);
-		gettimeofday(&after,NULL);
-
-		nlh = (struct nlmsghdr*)iov.iov_base;
-
-		switch(rr) {
-		case E_RCV_TIMEDOUT:
-			return 5;
-		case -E_RCV_FAILED:
-			return 20;
-		case -E_RCV_NO_SOURCE_ADDR:
-			continue; /* ignore invalid message */
-		case -E_RCV_SEQ_MISMATCH:
-			/* we disabled it, so it should not happen */
-			return 20;
-		case -E_RCV_MSG_TRUNC:
-			continue;
-		case -E_RCV_UNEXPECTED_TYPE:
-			continue;
-		case -E_RCV_NLMSG_DONE:
-			continue;
-		case -E_RCV_ERROR_REPLY:
-			if (!errno) /* positive ACK message */
-				continue;
-			if (!desc)
-				desc = strerror(errno);
-			fprintf(stderr, "received netlink error reply: %s\n",
-				       desc);
-			return 20;
-		}
-
-		if (timeout_ms > 0) {
-			timeout_ms -= (after.tv_sec - before.tv_sec) * 1000 +
-				      (after.tv_usec - before.tv_usec) / 1000;
-			if (timeout_ms <= 0)
-				return 5;
-		}
-
-		/* may be multiple messages in one datagram (for dump replies) */
-		nlmsg_for_each_msg(nlh, nlh, rr, rem) {
-			struct genl_info info = {
-				.seq = nlh->nlmsg_seq,
-				.nlhdr = nlh,
-				.genlhdr = nlmsg_data(nlh),
-				.userhdr = genlmsg_data(nlmsg_data(nlh)),
-				.attrs = global_attrs,
-			};
-			dhdr = info.userhdr;
-			if (minor != -1U && minor != dhdr->minor && !all_devices)
-				continue;
-
-			drbd_tla_parse(nlh);
-			if (!cm->ep.proc_event(&info, wait_after_split_brain))
-				return 0;
-		}
-	}
 }
 
 static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
@@ -2668,15 +2569,6 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 static void get_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
-	if(ut == BRIEF) {
-		printf(" %-39s", cm->cmd);
-	} else {
-		printf(" %s\n", cm->cmd);
-	}
-}
-
-static void events_usage(struct drbd_cmd *cm, enum usage_type ut)
-{
 	struct option *lo;
 	char line[41];
 
@@ -2685,7 +2577,7 @@ static void events_usage(struct drbd_cmd *cm, enum usage_type ut)
 		printf(" %-39s",line);
 	} else {
 		printf(" %s", cm->cmd);
-		lo = cm->ep.options;
+		lo = cm->options;
 		while(lo && lo->name) {
 			printf(" [{--%s|-%c}]",lo->name,lo->val);
 			lo++;
