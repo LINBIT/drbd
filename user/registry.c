@@ -117,6 +117,15 @@ int register_minor(int minor, const char *path)
 	return register_path(linkname, path);
 }
 
+static char *resolve_symlink(const char *linkname)
+{
+	static char target[PATH_MAX];
+
+	if (__readlink(linkname, target, sizeof(target)) < 0)
+		return NULL;
+	return target;
+}
+
 char *lookup_minor(int minor)
 {
 	static char linkname[PATH_MAX];
@@ -128,7 +137,7 @@ char *lookup_minor(int minor)
 			perror(linkname);
 		return NULL;
 	}
-	return linkname;
+	return resolve_symlink(linkname);
 }
 
 static void linkname_from_resource_name(char *linkname, const char *name)
@@ -172,7 +181,7 @@ char *lookup_resource(const char *name)
 			perror(linkname);
 		return NULL;
 	}
-	return linkname;
+	return resolve_symlink(linkname);
 }
 
 
