@@ -1422,9 +1422,12 @@ void drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr, u32 set_size)
 	struct drbd_socket *sock;
 	struct p_barrier_ack *p;
 
+	if (mdev->state.conn < C_CONNECTED)
+		return;
+
 	sock = &mdev->tconn->meta;
 	p = drbd_prepare_command(mdev, sock);
-	if (!p || mdev->state.conn < C_CONNECTED)
+	if (!p)
 		return;
 	p->barrier = barrier_nr;
 	p->set_size = cpu_to_be32(set_size);
