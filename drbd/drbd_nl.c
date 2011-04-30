@@ -3066,10 +3066,6 @@ int drbd_adm_delete_minor(struct sk_buff *skb, struct genl_info *info)
 	down_write(&drbd_cfg_rwsem);
 	retcode = adm_delete_minor(adm_ctx.mdev);
 	up_write(&drbd_cfg_rwsem);
-	/* if this was the last volume of this connection,
-	 * this will terminate all threads */
-	if (retcode == NO_ERROR)
-		conn_reconfig_done(adm_ctx.mdev->tconn);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
