@@ -1774,6 +1774,61 @@ static void show_address(void* address, int addr_len)
 	}
 }
 
+struct minors_list {
+	struct minors_list *next;
+	unsigned minor;
+};
+struct minors_list *__remembered_minors;
+
+static int remember_minor(struct drbd_cmd *cmd, struct genl_info *info)
+{
+	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&cfg, info);
+	if (cfg.ctx_volume != -1U) {
+		unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+		struct minors_list *m = malloc(sizeof(*m));
+		m->next = __remembered_minors;
+		m->minor = minor;
+		__remembered_minors = m;
+	}
+	return 0;
+}
+
+static void free_minors(struct minors_list *minors)
+{
+	while (minors) {
+		struct minors_list *m = minors;
+		minors = minors->next;
+		free(m);
+	}
+}
+
+/*
+ * Expects objname to be setto the connection name or "ALL".
+ */
+static struct minors_list *enumerate_minors(void)
+{
+	struct drbd_cmd cmd = {
+		.cmd_id = DRBD_ADM_GET_STATUS,
+		.show_function = remember_minor,
+	};
+	struct minors_list *m;
+	int err;
+
+	err = generic_get_cmd(&cmd, -1, 0, NULL);
+	m = __remembered_minors;
+	__remembered_minors = NULL;
+	if (err) {
+		free_minors(m);
+		m = NULL;
+	}
+	return m;
+}
+
 /* may be called for a "show" of a single minor device.
  * prints all available configuration information in that case.
  *
@@ -2202,6 +2257,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 
 static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 {
+	struct minors_list *minors, *m;
 	int rv;
 	int success;
 
@@ -2209,13 +2265,18 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 		fprintf(stderr,"Ignoring excess arguments\n");
 	}
 
+	minors = enumerate_minors();
 	rv = _generic_config_cmd(cm, minor, argc, argv, 1);
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (success) {
-		unregister_minor(minor);
+		for (m = minors; m; m = m->next)
+			unregister_minor(m->minor);
+		free_minors(minors);
 		unregister_resource(objname);
-	} else
+	} else {
+		free_minors(minors);
 		return print_config_error(rv, NULL);
+	}
 	return 0;
 }
 
