@@ -200,6 +200,7 @@ struct drbd_cmd {
 		} gp; // for generic_get_cmd, get_usage
 	};
 	struct option *options;
+	bool ignore_minor_not_known;
 	bool continuous_poll;
 };
 
@@ -482,8 +483,10 @@ struct drbd_cmd commands[] = {
 	/* "state" is deprecated! please use "role".
 	 * find_cmd_by_name still understands "state", however. */
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
-	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd) },
-	{"sh-status", CTX_MINOR, F_GET_CMD(sh_status_scmd) },
+	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd),
+		.ignore_minor_not_known = true, },
+	{"sh-status", CTX_MINOR, F_GET_CMD(sh_status_scmd),
+		.ignore_minor_not_known = true, },
 	{"cstate", CTX_MINOR, F_GET_CMD(cstate_scmd) },
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
@@ -1497,7 +1500,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	struct choose_timo_ctx timeo_ctx;
 	int timeout_ms = -1;  /* "infinite" */
 	int flags;
-	int ignore_minor_not_known;
 	int rv = NO_ERROR;
 	int err = 0;
 
@@ -1570,13 +1572,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		warn_print_excess_args(argc, argv, optind);
 
 	dump_argv(argc, argv, optind, 0);
-
-	/* if there was an error, report and abort --
-	 * unless it was "this device is not there",
-	 * and command was "status" */
-	ignore_minor_not_known =
-		cm->gp.show_function == status_xml_scmd ||
-		cm->gp.show_function == sh_status_scmd;
 
 	/* otherwise we need to change handling/parsing
 	 * of expected replies */
@@ -1711,7 +1706,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			ASSERT(minor == -1 || dh->minor == minor);
 			rv = dh->ret_code;
 			if (rv != NO_ERROR &&
-			   !(rv == ERR_MINOR_INVALID && ignore_minor_not_known))
+			   !(rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known))
 				goto out2;
 			if (drbd_tla_parse(nlh)) {
 				desc = "reply did not validate - "
