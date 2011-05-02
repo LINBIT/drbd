@@ -2081,6 +2081,10 @@ static inline void _sub_unacked(struct drbd_conf *mdev, int n, const char *func,
 static inline void put_ldev(struct drbd_conf *mdev)
 {
 	int i = atomic_dec_return(&mdev->local_cnt);
+
+	/* This may be called from some endio handler,
+	 * so we must not sleep here. */
+
 	__release(local);
 	D_ASSERT(i >= 0);
 	if (i == 0) {
