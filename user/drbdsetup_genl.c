@@ -195,10 +195,8 @@ struct drbd_cmd {
 			struct drbd_argument *args;
 			struct drbd_option *options;
 		} cp; // for generic_config_cmd, config_usage
-		struct {
-			int (*show_function)(struct drbd_cmd*, struct genl_info *);
-		} gp; // for generic_get_cmd, get_usage
 	};
+	int (*show_function)(struct drbd_cmd*, struct genl_info *);
 	struct option *options;
 	bool ignore_minor_not_known;
 	bool continuous_poll;
@@ -343,7 +341,7 @@ struct option wait_cmds_options[] = {
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
 #define NO_PAYLOAD	0, NULL, 0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
-			get_usage, { .gp = { scmd } }
+			get_usage, .show_function = scmd
 #define POLICY(x)	x ## _nl_policy, (ARRAY_SIZE(x ## _nl_policy) -1)
 
 #define CHANGEABLE_DISK_OPTIONS						\
@@ -1657,7 +1655,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			case -E_RCV_NLMSG_DONE:
 				if (cm->continuous_poll)
 					continue;
-				err = cm->gp.show_function(cm, NULL);
+				err = cm->show_function(cm, NULL);
 				if (err)
 					goto out2;
 				err = *(int*)nlmsg_data(nlh);
@@ -1714,10 +1712,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				rv = OTHER_ERROR;
 				goto out2;
 			}
-			err = cm->gp.show_function(cm, &info);
+			err = cm->show_function(cm, &info);
 		}
 		if (!(flags & NLM_F_DUMP)) {
-			err = cm->gp.show_function(cm, NULL);
+			err = cm->show_function(cm, NULL);
 			goto out2;
 		}
 	}
