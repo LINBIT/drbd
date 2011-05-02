@@ -158,7 +158,7 @@ struct drbd_tconn;
 #endif
 
 #define conn_printk(LEVEL, TCONN, FMT, ARGS...) \
-	printk(LEVEL "d-con %s: " FMT, tconn->name , ## ARGS)
+	printk(LEVEL "d-con %s: " FMT, TCONN->name , ## ARGS)
 #define conn_alert(TCONN, FMT, ARGS...)  conn_printk(KERN_ALERT, TCONN, FMT, ## ARGS)
 #define conn_crit(TCONN, FMT, ARGS...)   conn_printk(KERN_CRIT, TCONN, FMT, ## ARGS)
 #define conn_err(TCONN, FMT, ARGS...)    conn_printk(KERN_ERR, TCONN, FMT, ## ARGS)
