@@ -525,7 +525,7 @@ restart:
 	smp_mb();
 
 	/* THINK maybe two different completions? */
-	complete(&thi->startstop); /* notify: thi->task unset. */
+	complete_all(&thi->startstop); /* notify: thi->task unset. */
 	conn_info(tconn, "Terminating %s thread\n", thi->name);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 

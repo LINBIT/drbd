@@ -40,7 +40,6 @@ struct after_state_chg_work {
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-STATIC void after_all_state_ch(struct drbd_tconn *tconn);
 STATIC enum drbd_state_rv is_valid_state(struct drbd_conf *, union drbd_state);
 STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
@@ -1366,8 +1365,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			resume_next_sg(mdev);
 	}
 
-	after_all_state_ch(mdev->tconn);
-
 	drbd_md_sync(mdev);
 }
 
@@ -1378,12 +1375,6 @@ struct after_conn_state_chg_work {
 	union drbd_state ns_max; /* new, max state, over all mdevs */
 	enum chg_state_flags flags;
 };
-
-STATIC void after_all_state_ch(struct drbd_tconn *tconn)
-{
-	if (conn_all_vols_unconf(tconn))
-		drbd_thread_stop_nowait(&tconn->worker);
-}
 
 STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 {
@@ -1447,12 +1438,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 			spin_unlock_irq(&tconn->req_lock);
 		}
 	}
-
-
-	//conn_err(tconn, STATE_FMT, STATE_ARGS("nms", nms));
-	after_all_state_ch(tconn);
 	kref_put(&tconn->kref, &conn_destroy);
-
 	return 0;
 }
 
