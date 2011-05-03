@@ -1295,7 +1295,7 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 	rcu_read_lock();
 	dc = rcu_dereference(mdev->ldev->disk_conf);
 
-	if (wo == WO_bio_barrier && dc->no_disk_barrier)
+	if (wo == WO_bio_barrier && !dc->disk_barrier)
 		wo = WO_bdev_flush;
 	if (wo == WO_bdev_flush && dc->no_disk_flush)
 		wo = WO_drain_io;

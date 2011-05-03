@@ -358,7 +358,7 @@ struct option wait_cmds_options[] = {
 #define CHANGEABLE_DISK_OPTIONS						\
 	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
 	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
-	{ "no-disk-barrier",'B', T_no_disk_barrier, EYN(0) },			\
+	{ "disk-barrier",'B', T_disk_barrier, EYN(1) },			\
 	{ "no-disk-flushes",'F', T_no_disk_flush, EYN(0) },			\
 	{ "no-disk-drain",'D', T_no_disk_drain, EYN(0) },			\
 	{ "no-md-flushes",'M', T_no_md_flush,  EYN(0) },			\
