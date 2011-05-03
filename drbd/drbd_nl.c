@@ -420,7 +420,8 @@ static enum drbd_fencing_p highest_fencing_policy(struct drbd_tconn *tconn)
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 		if (get_ldev_if_state(mdev, D_CONSISTENT)) {
-			fp = max_t(enum drbd_fencing_p, fp, mdev->ldev->dc.fencing);
+			fp = max_t(enum drbd_fencing_p, fp,
+				   rcu_dereference(mdev->ldev->disk_conf)->fencing);
 			put_ldev(mdev);
 		}
 	}
@@ -703,7 +704,12 @@ STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
-	switch (bdev->dc.meta_dev_idx) {
+	int meta_dev_idx;
+
+	rcu_read_lock();
+	meta_dev_idx = rcu_dereference(bdev->disk_conf)->meta_dev_idx;
+
+	switch (meta_dev_idx) {
 	default:
 		/* v07 style fixed size indexed meta data */
 		bdev->md.md_size_sect = MD_RESERVED_SECT;
@@ -738,6 +744,7 @@ STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 		bdev->md.bm_offset   = -md_size_sect + MD_AL_OFFSET;
 		break;
 	}
+	rcu_read_unlock();
 }
 
 /* input size is expected to be in KB */
@@ -828,7 +835,9 @@ enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *mdev, enum dds_
 	/* TODO: should only be some assert here, not (re)init... */
 	drbd_md_set_sector_offsets(mdev, mdev->ldev);
 
-	u_size = mdev->ldev->dc.disk_size;
+	rcu_read_lock();
+	u_size = rcu_dereference(mdev->ldev->disk_conf)->disk_size;
+	rcu_read_unlock();
 	size = drbd_new_dev_size(mdev, mdev->ldev, u_size, flags & DDSF_FORCED);
 
 	if (drbd_get_capacity(mdev->this_bdev) != size ||
@@ -998,8 +1007,12 @@ void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_bio_size) _
 {
 	struct request_queue * const q = mdev->rq_queue;
 	struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
-	int max_segments = mdev->ldev->dc.max_bio_bvecs;
+	int max_segments;
 	int max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
+
+	rcu_read_lock();
+	max_segments = rcu_dereference(mdev->ldev->disk_conf)->max_bio_bvecs;
+	rcu_read_unlock();
 
 	blk_queue_logical_block_size(q, 512);
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
@@ -1072,7 +1085,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
 	struct drbd_conf *mdev;
-	struct disk_conf *new_disk_conf;
+	struct disk_conf *new_disk_conf, *old_disk_conf;
 	int err, fifo_size;
 	int *rs_plan_s = NULL;
 
@@ -1105,19 +1118,15 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-/* FIXME freeze IO, cluster wide.
- *
- * We should make sure no-one uses
- * some half-updated struct when we
- * assign it later. */
-
-	new_disk_conf = kmalloc(sizeof(*new_disk_conf), GFP_KERNEL);
+	new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
-	memcpy(new_disk_conf, &mdev->ldev->dc, sizeof(*new_disk_conf));
+	mutex_lock(&mdev->tconn->conf_update);
+	old_disk_conf = mdev->ldev->disk_conf;
+	*new_disk_conf = *old_disk_conf;
 	if (should_set_defaults(info))
 		set_disk_conf_defaults(new_disk_conf);
 
@@ -1142,7 +1151,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		if (!rs_plan_s) {
 			dev_err(DEV, "kmalloc of fifo_buffer failed");
 			retcode = ERR_NOMEM;
-			goto fail;
+			goto fail_unlock;
 		}
 	}
 
@@ -1162,31 +1171,37 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	if (err) {
 		retcode = ERR_NOMEM;
-		goto fail;
+		goto fail_unlock;
 	}
 
-	/* FIXME
-	 * To avoid someone looking at a half-updated struct, we probably
-	 * should have a rw-semaphor on net_conf and disk_conf.
-	 */
 	write_lock_irq(&global_state_lock);
 	retcode = drbd_sync_after_valid(mdev, new_disk_conf->resync_after);
 	if (retcode == NO_ERROR) {
-		mdev->ldev->dc = *new_disk_conf;
+		rcu_assign_pointer(mdev->ldev->disk_conf, new_disk_conf);
 		drbd_sync_after_changed(mdev);
 	}
 	write_unlock_irq(&global_state_lock);
 
-	drbd_md_sync(mdev);
+	if (retcode != NO_ERROR)
+		goto fail_unlock;
 
+	drbd_md_sync(mdev);
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev);
 
+	mutex_unlock(&mdev->tconn->conf_update);
+	synchronize_rcu();
+	kfree(old_disk_conf);
+	goto success;
+
+fail_unlock:
+	mutex_unlock(&mdev->tconn->conf_update);
  fail:
-	put_ldev(mdev);
 	kfree(new_disk_conf);
 	kfree(rs_plan_s);
+success:
+	put_ldev(mdev);
  out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -1201,6 +1216,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	sector_t max_possible_sectors;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
+	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
 	struct lru_cache *resync_lru = NULL;
 	union drbd_state ns, os;
@@ -1235,17 +1251,22 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
+	if (!new_disk_conf) {
+		retcode = ERR_NOMEM;
+		goto fail;
+	}
+	nbc->disk_conf = new_disk_conf;
 
-	set_disk_conf_defaults(&nbc->dc);
-
-	err = disk_conf_from_attrs(&nbc->dc, info);
+	set_disk_conf_defaults(new_disk_conf);
+	err = disk_conf_from_attrs(new_disk_conf, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
 	}
 
-	if ((int)nbc->dc.meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
+	if (new_disk_conf->meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
 		goto fail;
 	}
@@ -1253,7 +1274,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	rcu_read_lock();
 	nc = rcu_dereference(mdev->tconn->net_conf);
 	if (nc) {
-		if (nbc->dc.fencing == FP_STONITH && nc->wire_protocol == DRBD_PROT_A) {
+		if (new_disk_conf->fencing == FP_STONITH && nc->wire_protocol == DRBD_PROT_A) {
 			rcu_read_unlock();
 			retcode = ERR_STONITH_AND_PROT_A;
 			goto fail;
@@ -1261,10 +1282,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	rcu_read_unlock();
 
-	bdev = blkdev_get_by_path(nbc->dc.backing_dev,
+	bdev = blkdev_get_by_path(new_disk_conf->backing_dev,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, mdev);
 	if (IS_ERR(bdev)) {
-		dev_err(DEV, "open(\"%s\") failed with %ld\n", nbc->dc.backing_dev,
+		dev_err(DEV, "open(\"%s\") failed with %ld\n", new_disk_conf->backing_dev,
 			PTR_ERR(bdev));
 		retcode = ERR_OPEN_DISK;
 		goto fail;
@@ -1279,12 +1300,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * should check it for you already; but if you don't, or
 	 * someone fooled it, we need to double check here)
 	 */
-	bdev = blkdev_get_by_path(nbc->dc.meta_dev,
+	bdev = blkdev_get_by_path(new_disk_conf->meta_dev,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL,
-				  ((int)nbc->dc.meta_dev_idx < 0) ?
+				  (new_disk_conf->meta_dev_idx < 0) ?
 				  (void *)mdev : (void *)drbd_m_holder);
 	if (IS_ERR(bdev)) {
-		dev_err(DEV, "open(\"%s\") failed with %ld\n", nbc->dc.meta_dev,
+		dev_err(DEV, "open(\"%s\") failed with %ld\n", new_disk_conf->meta_dev,
 			PTR_ERR(bdev));
 		retcode = ERR_OPEN_MD_DISK;
 		goto fail;
@@ -1292,8 +1313,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	nbc->md_bdev = bdev;
 
 	if ((nbc->backing_bdev == nbc->md_bdev) !=
-	    (nbc->dc.meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
-	     nbc->dc.meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)) {
+	    (new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
+	     new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)) {
 		retcode = ERR_MD_IDX_INVALID;
 		goto fail;
 	}
@@ -1309,21 +1330,21 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* RT - for drbd_get_max_capacity() DRBD_MD_INDEX_FLEX_INT */
 	drbd_md_set_sector_offsets(mdev, nbc);
 
-	if (drbd_get_max_capacity(nbc) < nbc->dc.disk_size) {
+	if (drbd_get_max_capacity(nbc) < new_disk_conf->disk_size) {
 		dev_err(DEV, "max capacity %llu smaller than disk size %llu\n",
 			(unsigned long long) drbd_get_max_capacity(nbc),
-			(unsigned long long) nbc->dc.disk_size);
+			(unsigned long long) new_disk_conf->disk_size);
 		retcode = ERR_DISK_TO_SMALL;
 		goto fail;
 	}
 
-	if ((int)nbc->dc.meta_dev_idx < 0) {
+	if (new_disk_conf->meta_dev_idx < 0) {
 		max_possible_sectors = DRBD_MAX_SECTORS_FLEX;
 		/* at least one MB, otherwise it does not make sense */
 		min_md_device_sectors = (2<<10);
 	} else {
 		max_possible_sectors = DRBD_MAX_SECTORS;
-		min_md_device_sectors = MD_RESERVED_SECT * (nbc->dc.meta_dev_idx + 1);
+		min_md_device_sectors = MD_RESERVED_SECT * (new_disk_conf->meta_dev_idx + 1);
 	}
 
 	if (drbd_get_capacity(nbc->md_bdev) < min_md_device_sectors) {
@@ -1348,7 +1369,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		dev_warn(DEV, "==> truncating very big lower level device "
 			"to currently maximum possible %llu sectors <==\n",
 			(unsigned long long) max_possible_sectors);
-		if ((int)nbc->dc.meta_dev_idx >= 0)
+		if (new_disk_conf->meta_dev_idx >= 0)
 			dev_warn(DEV, "==>> using internal or flexible "
 				      "meta data may help <<==\n");
 	}
@@ -1391,14 +1412,14 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Since we are diskless, fix the activity log first... */
-	if (drbd_check_al_size(mdev, &nbc->dc)) {
+	if (drbd_check_al_size(mdev, new_disk_conf)) {
 		retcode = ERR_NOMEM;
 		goto force_diskless_dec;
 	}
 
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_CONSISTENT) &&
-	    drbd_new_dev_size(mdev, nbc, nbc->dc.disk_size, 0) < nbc->md.la_size_sect) {
+	    drbd_new_dev_size(mdev, nbc, nbc->disk_conf->disk_size, 0) < nbc->md.la_size_sect) {
 		dev_warn(DEV, "refusing to truncate a consistent device\n");
 		retcode = ERR_DISK_TO_SMALL;
 		goto force_diskless_dec;
@@ -1411,10 +1432,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
-	if (nbc->dc.no_md_flush)
+	if (new_disk_conf->no_md_flush)
 		set_bit(MD_NO_BARRIER, &mdev->flags);
 	else
 		clear_bit(MD_NO_BARRIER, &mdev->flags);
+
+	/* FIXME Missing stuff: rs_plan_s, clip al range */
 
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
@@ -1425,6 +1448,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	mdev->resync = resync_lru;
 	nbc = NULL;
 	resync_lru = NULL;
+	new_disk_conf = NULL;
 
 	mdev->write_ordering = WO_bio_barrier;
 	drbd_bump_write_ordering(mdev, WO_bio_barrier);
@@ -1531,9 +1555,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (drbd_md_test_flag(mdev->ldev, MDF_PEER_OUT_DATED))
 		ns.pdsk = D_OUTDATED;
 
-	if ( ns.disk == D_CONSISTENT &&
-	    (ns.pdsk == D_OUTDATED || mdev->ldev->dc.fencing == FP_DONT_CARE))
+	rcu_read_lock();
+	if (ns.disk == D_CONSISTENT &&
+	    (ns.pdsk == D_OUTDATED || rcu_dereference(mdev->ldev->disk_conf)->fencing == FP_DONT_CARE))
 		ns.disk = D_UP_TO_DATE;
+	rcu_read_unlock();
 
 	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
 	   MDF_CONSISTENT and MDF_WAS_UP_TO_DATE must happen before
@@ -1590,6 +1616,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				   FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 		kfree(nbc);
 	}
+	kfree(new_disk_conf);
 	lc_destroy(resync_lru);
 
  finish:
@@ -1692,7 +1719,7 @@ _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct n
 
 	idr_for_each_entry(&tconn->volumes, mdev, i) {
 		if (get_ldev(mdev)) {
-			enum drbd_fencing_p fp = mdev->ldev->dc.fencing;
+			enum drbd_fencing_p fp = rcu_dereference(mdev->ldev->disk_conf)->fencing;
 			put_ldev(mdev);
 			if (new_conf->wire_protocol == DRBD_PROT_A && fp == FP_STONITH)
 				return ERR_STONITH_AND_PROT_A;
@@ -2169,11 +2196,13 @@ void resync_after_online_grow(struct drbd_conf *mdev)
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 {
+	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
 	struct resize_parms rs;
 	struct drbd_conf *mdev;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
 	enum dds_flags ddsf;
+	sector_t u_size;
 	int err;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -2214,10 +2243,31 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	rcu_read_lock();
+	u_size = rcu_dereference(mdev->ldev->disk_conf)->disk_size;
+	rcu_read_unlock();
+	if (u_size != (sector_t)rs.resize_size) {
+		new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
+		if (!new_disk_conf) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	}
+
 	if (mdev->ldev->known_size != drbd_get_capacity(mdev->ldev->backing_bdev))
 		mdev->ldev->known_size = drbd_get_capacity(mdev->ldev->backing_bdev);
 
-	mdev->ldev->dc.disk_size = (sector_t)rs.resize_size;
+	if (new_disk_conf) {
+		mutex_lock(&mdev->tconn->conf_update);
+		old_disk_conf = mdev->ldev->disk_conf;
+		*new_disk_conf = *old_disk_conf;
+		new_disk_conf->disk_size = (sector_t)rs.resize_size;
+		rcu_assign_pointer(mdev->ldev->disk_conf, new_disk_conf);
+		mutex_unlock(&mdev->tconn->conf_update);
+		synchronize_rcu();
+		kfree(old_disk_conf);
+	}
+
 	ddsf = (rs.resize_force ? DDSF_FORCED : 0) | (rs.no_resync ? DDSF_NO_RESYNC : 0);
 	dd = drbd_determin_dev_size(mdev, ddsf);
 	drbd_md_sync(mdev);
@@ -2511,11 +2561,11 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_conf *mdev,
 	if (res_opts_to_skb(skb, &mdev->tconn->res_opts, exclude_sensitive))
 		goto nla_put_failure;
 
+	rcu_read_lock();
 	if (got_ldev)
-		if (disk_conf_to_skb(skb, &mdev->ldev->dc, exclude_sensitive))
+		if (disk_conf_to_skb(skb, rcu_dereference(mdev->ldev->disk_conf), exclude_sensitive))
 			goto nla_put_failure;
 
-	rcu_read_lock();
 	nc = rcu_dereference(mdev->tconn->net_conf);
 	if (nc)
 		err = net_conf_to_skb(skb, nc, exclude_sensitive);
