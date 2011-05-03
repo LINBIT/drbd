@@ -928,10 +928,12 @@ enum write_ordering_e {
 };
 
 struct fifo_buffer {
-	int *values;
 	unsigned int head_index;
 	unsigned int size;
+	int total; /* sum of all values */
+	int values[0];
 };
+extern struct fifo_buffer *fifo_alloc(int fifo_size);
 
 /* flag bits per tconn */
 enum {
@@ -1131,9 +1133,8 @@ struct drbd_conf {
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
-	struct fifo_buffer rs_plan_s; /* correction values of resync planer */
+	struct fifo_buffer *rs_plan_s; /* correction values of resync planer */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
-	int rs_planed;    /* resync sectors already planed */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 };
 

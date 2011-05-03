@@ -1086,8 +1086,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_ret_code retcode;
 	struct drbd_conf *mdev;
 	struct disk_conf *new_disk_conf, *old_disk_conf;
+	struct fifo_buffer *rs_plan_s = NULL;
 	int err, fifo_size;
-	int *rs_plan_s = NULL;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1146,21 +1146,13 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		new_disk_conf->al_extents = DRBD_AL_EXTENTS_MAX;
 
 	fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
-	if (fifo_size != mdev->rs_plan_s.size && fifo_size > 0) {
-		rs_plan_s   = kzalloc(sizeof(int) * fifo_size, GFP_KERNEL);
+	if (fifo_size != mdev->rs_plan_s->size) {
+		rs_plan_s = fifo_alloc(fifo_size);
 		if (!rs_plan_s) {
 			dev_err(DEV, "kmalloc of fifo_buffer failed");
 			retcode = ERR_NOMEM;
 			goto fail_unlock;
 		}
-	}
-
-	if (fifo_size != mdev->rs_plan_s.size) {
-		kfree(mdev->rs_plan_s.values);
-		mdev->rs_plan_s.values = rs_plan_s;
-		mdev->rs_plan_s.size   = fifo_size;
-		mdev->rs_planed = 0;
-		rs_plan_s = NULL;
 	}
 
 	wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
@@ -1184,6 +1176,14 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	if (retcode != NO_ERROR)
 		goto fail_unlock;
+
+	spin_lock(&mdev->peer_seq_lock);
+	if (rs_plan_s) {
+		kfree(mdev->rs_plan_s);
+		mdev->rs_plan_s = rs_plan_s;
+		rs_plan_s = NULL;
+	}
+	spin_unlock(&mdev->peer_seq_lock);
 
 	drbd_md_sync(mdev);
 
@@ -1219,6 +1219,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
 	struct lru_cache *resync_lru = NULL;
+	struct fifo_buffer *new_plan = NULL;
 	union drbd_state ns, os;
 	unsigned int max_bio_size;
 	enum drbd_state_rv rv;
@@ -1263,6 +1264,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
+		goto fail;
+	}
+
+	new_plan = fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+	if (!new_plan) {
+		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
@@ -1437,7 +1444,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	else
 		clear_bit(MD_NO_BARRIER, &mdev->flags);
 
-	/* FIXME Missing stuff: rs_plan_s, clip al range */
+	/* FIXME Missing stuff: clip al range */
 
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
@@ -1446,9 +1453,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	D_ASSERT(mdev->ldev == NULL);
 	mdev->ldev = nbc;
 	mdev->resync = resync_lru;
+	mdev->rs_plan_s = new_plan;
 	nbc = NULL;
 	resync_lru = NULL;
 	new_disk_conf = NULL;
+	new_plan = NULL;
 
 	mdev->write_ordering = WO_bio_barrier;
 	drbd_bump_write_ordering(mdev, WO_bio_barrier);
@@ -1618,6 +1627,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	kfree(new_disk_conf);
 	lc_destroy(resync_lru);
+	kfree(new_plan);
 
  finish:
 	drbd_adm_finish(info, retcode);
