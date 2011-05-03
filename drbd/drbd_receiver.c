@@ -3448,7 +3448,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 			p->csums_alg[SHARED_SECRET_MAX-1] = 0;
 		}
 
-		mutex_lock(&mdev->tconn->net_conf_update);
+		mutex_lock(&mdev->tconn->conf_update);
 		old_conf = mdev->tconn->net_conf;
 
 		if (strcmp(old_conf->verify_alg, p->verify_alg)) {
@@ -3523,7 +3523,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 			}
 			rcu_assign_pointer(tconn->net_conf, new_conf);
 		}
-		mutex_unlock(&mdev->tconn->net_conf_update);
+		mutex_unlock(&mdev->tconn->conf_update);
 		if (new_conf) {
 			synchronize_rcu();
 			kfree(old_conf);
@@ -3541,7 +3541,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 	return 0;
 
 disconnect:
-	mutex_unlock(&mdev->tconn->net_conf_update);
+	mutex_unlock(&mdev->tconn->conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
 	crypto_free_hash(csums_tfm);
@@ -3980,9 +3980,9 @@ STATIC int receive_state(struct drbd_tconn *tconn, struct packet_info *pi)
 		}
 	}
 
-	mutex_lock(&mdev->tconn->net_conf_update);
+	mutex_lock(&mdev->tconn->conf_update);
 	mdev->tconn->net_conf->want_lose = 0; /* without copy; single bit op is atomic */
-	mutex_unlock(&mdev->tconn->net_conf_update);
+	mutex_unlock(&mdev->tconn->conf_update);
 
 	drbd_md_sync(mdev); /* update connected indicator, la_size, ... */
 
