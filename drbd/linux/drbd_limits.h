@@ -168,5 +168,4 @@
 
 #define DRBD_PROTOCOL_DEF DRBD_PROT_C
 
-#undef RANGE
 #endif
