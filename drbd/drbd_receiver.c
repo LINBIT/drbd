@@ -3386,7 +3386,7 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
 	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
 	const int apv = tconn->agreed_pro_version;
-	struct fifo_buffer *rs_plan_s = NULL;
+	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	int fifo_size = 0;
 	int err;
 
@@ -3505,8 +3505,8 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 
 			fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 			if (fifo_size != mdev->rs_plan_s->size) {
-				rs_plan_s = fifo_alloc(fifo_size);
-				if (!rs_plan_s) {
+				new_plan = fifo_alloc(fifo_size);
+				if (!new_plan) {
 					dev_err(DEV, "kmalloc of fifo_buffer failed");
 					put_ldev(mdev);
 					goto disconnect;
@@ -3542,23 +3542,22 @@ STATIC int receive_SyncParam(struct drbd_tconn *tconn, struct packet_info *pi)
 	}
 
 	rcu_assign_pointer(mdev->ldev->disk_conf, new_disk_conf);
-	spin_lock(&mdev->peer_seq_lock);
-	if (rs_plan_s) {
-		kfree(mdev->rs_plan_s);
-		mdev->rs_plan_s = rs_plan_s;
+	if (new_plan) {
+		old_plan = mdev->rs_plan_s;
+		rcu_assign_pointer(mdev->rs_plan_s, new_plan);
 	}
-	spin_unlock(&mdev->peer_seq_lock);
 
 	mutex_unlock(&mdev->tconn->conf_update);
 	synchronize_rcu();
 	if (new_net_conf)
 		kfree(old_net_conf);
 	kfree(old_disk_conf);
+	kfree(old_plan);
 
 	return 0;
 
 disconnect:
-	kfree(rs_plan_s);
+	kfree(new_plan);
 	mutex_unlock(&mdev->tconn->conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
