@@ -2353,20 +2353,15 @@ static void drbd_release_all_peer_reqs(struct drbd_conf *mdev)
 }
 
 /* caution. no locking. */
-void drbd_delete_device(struct drbd_conf *mdev)
+void drbd_minor_destroy(struct kref *kref)
 {
+	struct drbd_conf *mdev = container_of(kref, struct drbd_conf, kref);
 	struct drbd_tconn *tconn = mdev->tconn;
-
-	idr_remove(&mdev->tconn->volumes, mdev->vnr);
-	idr_remove(&minors, mdev_to_minor(mdev));
-	synchronize_rcu();
 
 	/* paranoia asserts */
 	D_ASSERT(mdev->open_cnt == 0);
 	D_ASSERT(list_empty(&mdev->tconn->data.work.q));
 	/* end paranoia asserts */
-
-	del_gendisk(mdev->vdisk);
 
 	/* cleanup stuff that may have been allocated during
 	 * device (re-)configuration or state changes */
@@ -2401,6 +2396,7 @@ STATIC void drbd_cleanup(void)
 {
 	unsigned int i;
 	struct drbd_conf *mdev;
+	struct drbd_tconn *tconn, *tmp;
 
 	unregister_reboot_notifier(&drbd_notifier);
 
@@ -2418,8 +2414,19 @@ STATIC void drbd_cleanup(void)
 	drbd_genl_unregister();
 
 	down_write(&drbd_cfg_rwsem);
-	idr_for_each_entry(&minors, mdev, i)
-		drbd_delete_device(mdev);
+	idr_for_each_entry(&minors, mdev, i) {
+		idr_remove(&minors, mdev_to_minor(mdev));
+		idr_remove(&mdev->tconn->volumes, mdev->vnr);
+		del_gendisk(mdev->vdisk);
+		synchronize_rcu();
+		kref_put(&mdev->kref, &drbd_minor_destroy);
+	}
+
+	list_for_each_entry_safe(tconn, tmp, &drbd_tconns, all_tconn) {
+		list_del(&tconn->all_tconn);
+		synchronize_rcu();
+		kref_put(&tconn->kref, &conn_destroy);
+	}
 	up_write(&drbd_cfg_rwsem);
 
 	drbd_destroy_mempools();
@@ -2704,6 +2711,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 		goto out_idr_remove_vol;
 	}
 	add_disk(disk);
+	kref_init(&mdev->kref); /* one ref for both idrs and the the add_disk */
 
 	/* inherit the connection state */
 	mdev->state.conn = tconn->cstate;
