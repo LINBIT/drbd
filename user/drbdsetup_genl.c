@@ -393,7 +393,7 @@ struct option wait_cmds_options[] = {
 	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
 	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") }, \
 	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
-	{ "no-tcp-cork",'o',   T_no_cork,         EYN(0) },			\
+	{ "tcp-cork",'o',   T_tcp_cork, EYN(1) },			\
 	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
 	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
 	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) }, \
