@@ -1376,10 +1376,9 @@ static void show_flag(struct drbd_option *od, struct nlattr *nla)
 {
 	bool val;
 
-	/* FIXME: what do we do with this? */
 	val = nla_get_u8(nla);
 	if (val)
-		printI("%-16s;\n", od->name);
+		printI("%-16s\t%s;\n", od->name, "yes");
 }
 
 static void show_yesno(struct drbd_option *od, struct nlattr *nla)

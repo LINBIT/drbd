@@ -1458,9 +1458,20 @@ void net_delegate(void *ctx)
 {
 	enum pr_flags flags = (enum pr_flags)ctx;
 
-	if (!strcmp(yytext, "discard-my-data") && flags & PARSE_FOR_ADJUST)
-		EXP(';');
-	else
+	if (!strcmp(yytext, "discard-my-data") && flags & PARSE_FOR_ADJUST) {
+		switch(yylex()) {
+		case TK_YES:
+		case TK_NO:
+			/* Ignore this option.  */
+			EXP(';');
+			break;
+		case ';':
+			/* Ignore this option.  */
+			return;
+		default:
+			pe_expected("yes | no | ;");
+		}
+	} else
 		pe_expected("an option keyword");
 }
 
