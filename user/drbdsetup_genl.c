@@ -359,7 +359,7 @@ struct option wait_cmds_options[] = {
 	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
 	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
 	{ "disk-barrier",'B', T_disk_barrier, EYN(1) },			\
-	{ "no-disk-flushes",'F', T_no_disk_flush, EYN(0) },			\
+	{ "disk-flushes",'F', T_disk_flushes, EYN(1) },			\
 	{ "no-disk-drain",'D', T_no_disk_drain, EYN(0) },			\
 	{ "no-md-flushes",'M', T_no_md_flush,  EYN(0) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
