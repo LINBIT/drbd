@@ -2136,7 +2136,6 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	init_waitqueue_head(&mdev->al_wait);
 	init_waitqueue_head(&mdev->seq_wait);
 
-	/* mdev->tconn->agreed_pro_version gets initialized in drbd_connect() */
 	mdev->write_ordering = WO_bio_barrier;
 	mdev->resync_wenr = LC_FREE;
 }

@@ -896,7 +896,7 @@ int drbd_connected(int vnr, void *p, void *data)
  *     no point in trying again, please go standalone.
  *  -2 We do not have a network config...
  */
-STATIC int drbd_connect(struct drbd_tconn *tconn)
+STATIC int conn_connect(struct drbd_tconn *tconn)
 {
 	struct socket *sock, *msock;
 	struct net_conf *nc;
@@ -930,7 +930,7 @@ STATIC int drbd_connect(struct drbd_tconn *tconn)
 				tconn->meta.socket = s;
 				send_first_packet(tconn, &tconn->meta, P_INITIAL_META);
 			} else {
-				conn_err(tconn, "Logic error in drbd_connect()\n");
+				conn_err(tconn, "Logic error in conn_connect()\n");
 				goto out_release_sockets;
 			}
 		}
@@ -4482,7 +4482,7 @@ void conn_flush_workqueue(struct drbd_tconn *tconn)
 	wait_for_completion(&barr.done);
 }
 
-STATIC void drbd_disconnect(struct drbd_tconn *tconn)
+STATIC void conn_disconnect(struct drbd_tconn *tconn)
 {
 	enum drbd_conns oc;
 	int rv = SS_UNKNOWN_ERROR;
@@ -4878,9 +4878,9 @@ int drbdd_init(struct drbd_thread *thi)
 	conn_info(tconn, "receiver (re)started\n");
 
 	do {
-		h = drbd_connect(tconn);
+		h = conn_connect(tconn);
 		if (h == 0) {
-			drbd_disconnect(tconn);
+			conn_disconnect(tconn);
 			schedule_timeout_interruptible(HZ);
 		}
 		if (h == -1) {
@@ -4892,7 +4892,7 @@ int drbdd_init(struct drbd_thread *thi)
 	if (h > 0)
 		drbdd(tconn);
 
-	drbd_disconnect(tconn);
+	conn_disconnect(tconn);
 
 	conn_info(tconn, "receiver terminated\n");
 	return 0;
