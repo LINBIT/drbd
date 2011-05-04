@@ -169,6 +169,7 @@ struct drbd_option {
 			const int def;
 		} handler_param; // conv_handler
 	};
+	bool optional_yesno_argument;
 };
 
 /* Configuration requests typically need a context to operate on.
@@ -220,14 +221,16 @@ static void get_usage(struct drbd_cmd *cm, enum usage_type);
 // sub usage functions for config_usage
 static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int bit_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int flag_opt_usage(struct drbd_option *option, char* str, int strlen);
+static int yesno_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int string_opt_usage(struct drbd_option *option, char* str, int strlen);
 static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen);
 
 // sub usage function for config_usage as xml
 static void numeric_opt_xml(struct drbd_option *option);
 static void handler_opt_xml(struct drbd_option *option);
-static void bit_opt_xml(struct drbd_option *option);
+static void flag_opt_xml(struct drbd_option *option);
+static void yesno_opt_xml(struct drbd_option *option);
 static void string_opt_xml(struct drbd_option *option);
 static void protocol_opt_xml(struct drbd_option *option);
 
@@ -254,14 +257,16 @@ static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg
 // convert functions for options
 static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg);
 static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_bit(struct drbd_option *od, struct msg_buff *msg, char* arg);
+static int conv_flag(struct drbd_option *od, struct msg_buff *msg, char* arg);
+static int conv_yesno(struct drbd_option *od, struct msg_buff *msg, char* arg);
 static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg);
 static int conv_protocol(struct drbd_option *od, struct msg_buff *msg, char* arg);
 
 // show functions for options (used by show_scmd)
 static void show_numeric(struct drbd_option *od, struct nlattr *nla);
 static void show_handler(struct drbd_option *od, struct nlattr *nla);
-static void show_bit(struct drbd_option *od, struct nlattr *nla);
+static void show_flag(struct drbd_option *od, struct nlattr *nla);
+static void show_yesno(struct drbd_option *od, struct nlattr *nla);
 static void show_string(struct drbd_option *od, struct nlattr *nla);
 static void show_protocol(struct drbd_option *od, struct nlattr *nla);
 
@@ -334,7 +339,13 @@ struct option wait_cmds_options[] = {
 	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRAY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
-#define EB      conv_bit, show_bit, bit_opt_usage, bit_opt_xml, { }
+#define EFLAG \
+	conv_flag, show_flag, flag_opt_usage, flag_opt_xml, \
+	.optional_yesno_argument = true
+#define EYN(D) \
+	conv_yesno, show_yesno, yesno_opt_usage, yesno_opt_xml, \
+	{ .numeric_param = { .def = D } }, \
+	.optional_yesno_argument = true
 #define ES      conv_string, show_string, string_opt_usage, string_opt_xml, { }
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
 
@@ -347,10 +358,10 @@ struct option wait_cmds_options[] = {
 #define CHANGEABLE_DISK_OPTIONS						\
 	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
 	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
-	{ "no-disk-barrier",'B',T_no_disk_barrier,EB },			\
-	{ "no-disk-flushes",'F',T_no_disk_flush,EB },			\
-	{ "no-disk-drain",'D', T_no_disk_drain,EB },			\
-	{ "no-md-flushes",'M', T_no_md_flush,  EB },			\
+	{ "no-disk-barrier",'B', T_no_disk_barrier, EYN(0) },			\
+	{ "no-disk-flushes",'F', T_no_disk_flush, EYN(0) },			\
+	{ "no-disk-drain",'D', T_no_disk_drain, EYN(0) },			\
+	{ "no-md-flushes",'M', T_no_md_flush,  EYN(0) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
 	{ "resync-after",'a',  T_resync_after,	EN(AFTER,1,NULL) },	\
 	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,1,NULL) }, \
@@ -372,29 +383,29 @@ struct option wait_cmds_options[] = {
 	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") }, \
 	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,1,"bytes") }, \
 	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) }, \
-	{ "allow-two-primaries",'m',T_two_primaries, EB },		\
+	{ "allow-two-primaries",'m',T_two_primaries, EYN(0) },		\
 	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
 	{ "shared-secret",'x',	T_shared_secret,   ES },		\
 	{ "after-sb-0pri",'0',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) }, \
 	{ "after-sb-1pri",'1',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) }, \
 	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
-	{ "always-asbp",'P',   T_always_asbp,     EB },			\
+	{ "always-asbp",'P',   T_always_asbp,     EYN(0) },			\
 	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
 	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") }, \
 	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
-	{ "no-tcp-cork",'o',   T_no_cork,         EB },			\
+	{ "no-tcp-cork",'o',   T_no_cork,         EYN(0) },			\
 	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
 	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
 	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) }, \
 	{ "csums-alg", 'C',T_csums_alg,        ES },			\
 	{ "verify-alg", 'V',T_verify_alg,      ES },			\
-	{ "use-rle",'E',T_use_rle,   EB },
+	{ "use-rle",'E',T_use_rle,   EYN(0) },
 
 struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS, POLICY(set_role_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "force", 'f',	     T_assume_uptodate, EB   },
+		 { "force", 'f',	     T_assume_uptodate, EFLAG   },
 		 CLOSE_ARGS_OPTS }} }, },
 
 	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD, {{NULL, NULL}} },
@@ -427,8 +438,8 @@ struct drbd_cmd commands[] = {
 		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
-		 { "dry-run",'n',   T_dry_run,		   EB },
-		 { "discard-my-data",'D', T_want_lose,     EB },
+		 { "dry-run",'n',   T_dry_run,		   EFLAG },
+		 { "discard-my-data",'D', T_want_lose,     EFLAG },
 		 CHANGEABLE_NET_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
 
@@ -441,15 +452,15 @@ struct drbd_cmd commands[] = {
 	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS, POLICY(disconnect_parms),
 		F_CONFIG_CMD, {{NULL,
 	 (struct drbd_option[]) {
-		 { "force", 'F',	T_force_disconnect,	EB },
+		 { "force", 'F',	T_force_disconnect,	EFLAG },
 		 CLOSE_ARGS_OPTS } }} },
 
 	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS, POLICY(resize_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
-		 { "assume-peer-has-space",'f',T_resize_force,	EB },
-		 { "assume-clean", 'c',        T_no_resync, EB },
+		 { "assume-peer-has-space",'f',T_resize_force,	EFLAG },
+		 { "assume-clean", 'c',        T_no_resync, EFLAG },
 		 CLOSE_ARGS_OPTS }} }, },
 
 	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS, POLICY(res_opts),
@@ -462,7 +473,7 @@ struct drbd_cmd commands[] = {
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS, POLICY(new_c_uuid_parms),
 		F_CONFIG_CMD, {{NULL,
 	 (struct drbd_option[]) {
-		 { "clear-bitmap",'c',T_clear_bm, EB   },
+		 { "clear-bitmap",'c',T_clear_bm, EFLAG   },
 		 CLOSE_ARGS_OPTS }} }, },
 
 	{"invalidate", CTX_MINOR, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD, },
@@ -823,13 +834,6 @@ static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* ar
 	return NO_ERROR;
 }
 
-static int conv_bit(struct drbd_option *od, struct msg_buff *msg, char* arg __attribute((unused)))
-{
-	nla_put_flag(msg,od->nla_type);
-
-	return NO_ERROR;
-}
-
 /* It will only print the WARNING if the warn flag is set
    with the _first_ call! */
 #define PROC_NET_AF_SCI_FAMILY "/proc/net/af_sci/family"
@@ -955,6 +959,43 @@ static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg)
 	return OTHER_ERROR;
 }
 
+static bool eval_optional_yesno_arg(const char *name, const char *arg,
+				    bool *flag)
+{
+	if (arg) {
+		if (!strcmp(arg, "yes"))
+			*flag = true;
+		else if (!strcmp(arg, "no"))
+			*flag = false;
+		else {
+			fprintf(stderr, "Invalid argument '%s' for option --%s. "
+				"Allowed values: yes, no\n", arg, name);
+			return false;
+		}
+	} else
+		*flag = true;
+	return true;
+}
+
+static int conv_flag(struct drbd_option *od, struct msg_buff *msg, char *arg)
+{
+	bool flag;
+	if (!eval_optional_yesno_arg(od->name, arg, &flag))
+		return OTHER_ERROR;
+	if (flag)
+		nla_put_u8(msg, od->nla_type, flag);
+	return NO_ERROR;
+}
+
+static int conv_yesno(struct drbd_option *od, struct msg_buff *msg, char *arg)
+{
+	bool flag;
+	if (!eval_optional_yesno_arg(od->name, arg, &flag))
+		return OTHER_ERROR;
+	nla_put_u8(msg, od->nla_type, flag);
+	return NO_ERROR;
+}
+
 static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg)
 {
 	nla_put_string(msg,od->nla_type,arg);
@@ -965,13 +1006,14 @@ static struct option *make_longoptions(struct drbd_option* od, struct nla_policy
 {
 	/* room for up to N options,
 	 * plus set-defaults, and the terminating NULL */
-#define N 30
+#define N 40
 	static struct option buffer[N+2];
 	int i=0;
 
 	while(od && od->name) {
 		buffer[i].name = od->name;
 		buffer[i].has_arg =
+			od->optional_yesno_argument ? optional_argument :
 			policy[__nla_type(od->nla_type)].type == NLA_FLAG ?
 			no_argument : required_argument ;
 		buffer[i].flag = NULL;
@@ -1340,9 +1382,25 @@ static void show_handler(struct drbd_option *od, struct nlattr *nla)
 	printf(";\n");
 }
 
-static void show_bit(struct drbd_option *od, struct nlattr *nla __unused)
+static void show_flag(struct drbd_option *od, struct nlattr *nla)
 {
-	printI("%-16s;\n", od->name);
+	bool val;
+
+	/* FIXME: what do we do with this? */
+	val = nla_get_u8(nla);
+	if (val)
+		printI("%-16s;\n", od->name);
+}
+
+static void show_yesno(struct drbd_option *od, struct nlattr *nla)
+{
+	bool val;
+
+	val = nla_get_u8(nla);
+	printI("%-16s\t%s", od->name, val ? "yes" : "no");
+	if (!val == !od->numeric_param.def)
+		printf(" _is_default");
+	printf(";\n");
 }
 
 static void show_string(struct drbd_option *od, struct nlattr *nla)
@@ -2443,7 +2501,7 @@ static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
 
 static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
-	return snprintf(str,strlen," [{--%s|-%c} %lld ... %lld]",
+	return snprintf(str,strlen," [{--%s|-%c}=(%lld ... %lld)]",
 			option->name, option->short_name,
 			option->numeric_param.min,
 			option->numeric_param.max);
@@ -2451,7 +2509,7 @@ static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
 
 static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
-	return snprintf(str,strlen," [--protocol {A,B,C}]");
+	return snprintf(str,strlen," [--protocol={A,B,C}]");
 }
 
 static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
@@ -2459,7 +2517,7 @@ static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 	const char** handlers;
 	int i, chars=0,first=1;
 
-	chars += snprintf(str,strlen," [{--%s|-%c} {",
+	chars += snprintf(str,strlen," [{--%s|-%c}={",
 			  option->name, option->short_name);
 	handlers = option->handler_param.handler_names;
 	for(i=0;i<option->handler_param.number_of_handlers;i++) {
@@ -2474,15 +2532,21 @@ static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
 	return chars;
 }
 
-static int bit_opt_usage(struct drbd_option *option, char* str, int strlen)
+static int flag_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
-	return snprintf(str,strlen," [{--%s|-%c}]",
+	return snprintf(str, strlen, " [{--%s|-%c}[={yes|no}]]",
+			option->name, option->short_name);
+}
+
+static int yesno_opt_usage(struct drbd_option *option, char* str, int strlen)
+{
+	return snprintf(str, strlen, " [{--%s|-%c}[={yes|no}]]",
 			option->name, option->short_name);
 }
 
 static int string_opt_usage(struct drbd_option *option, char* str, int strlen)
 {
-	return snprintf(str,strlen," [{--%s|-%c} <str>]",
+	return snprintf(str,strlen," [{--%s|-%c}=<str>]",
 			option->name, option->short_name);
 }
 
@@ -2530,10 +2594,21 @@ static void handler_opt_xml(struct drbd_option *option)
 	printf("\t</option>\n");
 }
 
-static void bit_opt_xml(struct drbd_option *option)
+static void flag_opt_xml(struct drbd_option *option)
 {
-	printf("\t<option name=\"%s\" type=\"boolean\">\n",option->name);
-	printf("\t</option>\n");
+	printf("\t<option name=\"%s\" type=\"boolean\">\n"
+	       "\t</option>\n",
+	       option->name);
+}
+
+static void yesno_opt_xml(struct drbd_option *option)
+{
+	/* FIXME: Check with Rasto if this is useful to him.  */
+	printf("\t<option name=\"%s\" type=\"handler\">\n"
+	       "\t\t<handler>yes</handler>\n"
+	       "\t\t<handler>no</handler>\n"
+	       "\t</option>\n",
+	       option->name);
 }
 
 static void string_opt_xml(struct drbd_option *option)
