@@ -360,7 +360,7 @@ struct option wait_cmds_options[] = {
 	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
 	{ "disk-barrier",'B', T_disk_barrier, EYN(1) },			\
 	{ "disk-flushes",'F', T_disk_flushes, EYN(1) },			\
-	{ "no-disk-drain",'D', T_no_disk_drain, EYN(0) },			\
+	{ "disk-drain",'D', T_disk_drain, EYN(1) },			\
 	{ "no-md-flushes",'M', T_no_md_flush,  EYN(0) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
 	{ "resync-after",'a',  T_resync_after,	EN(AFTER,1,NULL) },	\
