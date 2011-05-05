@@ -2372,7 +2372,10 @@ static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 	struct state_info si = { .current_state = 0 };
 	struct disk_conf dc = { .disk_size = 0, };
 	struct net_conf nc = { .timeout = 0, };
-	struct drbd_genlmsghdr *dh = info->userhdr;
+	struct drbd_genlmsghdr *dh;
+
+	if (!info)
+		return 0;
 
 	if (drbd_cfg_context_from_attrs(&cfg, info)) {
 		dbg(1, "unexpected packet, configuration context missing!\n");
@@ -2389,6 +2392,7 @@ static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 	disk_conf_from_attrs(&dc, info);
 	net_conf_from_attrs(&nc, info);
 
+	dh = info->userhdr;
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
 		print_state("ST-prev", info->seq,
@@ -2445,6 +2449,9 @@ static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
 
+	if (!info)
+		return 0;
+
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
 		return 1;
 
@@ -2482,6 +2489,9 @@ static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
+
+	if (!info)
+		return 0;
 
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
 		return 1;
