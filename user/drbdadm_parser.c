@@ -694,8 +694,9 @@ void parse_options_syncer(struct d_resource *res)
 			break;
 		case TK_NET_NO_FLAG:
 		case TK_DISK_NO_FLAG:
-			assert(strncmp(opt_name, "no-", 3));
-			*options = APPEND(*options, new_opt(opt_name + 3, strdup("no")));
+			/* Backward compatibility with the old config file syntax. */
+			assert(!strncmp(opt_name, "no-", 3));
+			*options = APPEND(*options, new_opt(strdup(opt_name + 3), strdup("no")));
 			token = yylex();
 			break;
 		case TK_NET_OPTION:
@@ -739,8 +740,8 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		token = yylex();
 		fline = line;
 		token &= ~TK_SYNCER_OLD_OPT;
+		opt_name = yylval.txt;
 		if (token == token_flag) {
-			opt_name = yylval.txt;
 			switch(yylex()) {
 			case TK_YES:
 				options = APPEND(options, new_opt(opt_name, strdup("yes")));
@@ -756,10 +757,10 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 				pe_expected("yes | no | ;");
 			}
 		} else if (token == token_no_flag) {
-			assert(strncmp(yylval.txt, "no-", 3));
-			options = APPEND(options, new_opt(yylval.txt + 3, strdup("no")));
+			/* Backward compatibility with the old config file syntax. */
+			assert(!strncmp(opt_name, "no-", 3));
+			options = APPEND(options, new_opt(strdup(opt_name + 3), strdup("no")));
 		} else if (token == token_option) {
-			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
 			expect_STRING_or_INT();
