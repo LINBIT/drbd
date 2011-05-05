@@ -5236,24 +5236,25 @@ static int tconn_finish_peer_reqs(struct drbd_tconn *tconn)
 
 		rcu_read_lock();
 		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+			kref_get(&mdev->kref);
+			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(mdev)) {
-				rcu_read_unlock();
+				kref_put(&mdev->kref, &drbd_minor_destroy);
 				return 1;
 			}
+			kref_put(&mdev->kref, &drbd_minor_destroy);
+			rcu_read_lock();
 		}
-		rcu_read_unlock();
-
 		set_bit(SIGNAL_ASENDER, &tconn->flags);
 
 		spin_lock_irq(&tconn->req_lock);
-		rcu_read_lock();
 		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 			not_empty = !list_empty(&mdev->done_ee);
 			if (not_empty)
 				break;
 		}
-		rcu_read_unlock();
 		spin_unlock_irq(&tconn->req_lock);
+		rcu_read_unlock();
 	} while (not_empty);
 
 	return 0;
