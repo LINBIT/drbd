@@ -1191,12 +1191,12 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		rcu_assign_pointer(mdev->rs_plan_s, new_plan);
 	}
 
+	mutex_unlock(&mdev->tconn->conf_update);
 	drbd_md_sync(mdev);
 
 	if (mdev->state.conn >= C_CONNECTED)
 		drbd_send_sync_param(mdev);
 
-	mutex_unlock(&mdev->tconn->conf_update);
 	synchronize_rcu();
 	kfree(old_disk_conf);
 	kfree(old_plan);

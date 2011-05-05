@@ -2979,12 +2979,10 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
-	mutex_lock(&mdev->tconn->conf_update);
 	/* This blocks wants to be get removed... */
 	bdev->disk_conf->al_extents = be32_to_cpu(buffer->al_nr_extents);
 	if (bdev->disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
 		bdev->disk_conf->al_extents = DRBD_AL_EXTENTS_DEF;
-	mutex_unlock(&mdev->tconn->conf_update);
 
  err:
 	mutex_unlock(&mdev->md_io_mutex);
