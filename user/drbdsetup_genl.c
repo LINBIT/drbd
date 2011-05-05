@@ -1794,7 +1794,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			}
 			err = cm->show_function(cm, &info);
 		}
-		if (!(flags & NLM_F_DUMP)) {
+		if (!cm->continuous_poll && !(flags & NLM_F_DUMP)) {
+			/* There will be no more reply packets.  */
 			err = cm->show_function(cm, NULL);
 			goto out2;
 		}
