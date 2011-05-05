@@ -646,7 +646,7 @@ void parse_options_syncer(struct d_resource *res)
 	int token;
 	enum range_checks rc;
 
-	struct d_option **options = NULL, *ro = NULL;
+	struct d_option **options = NULL, *current_option = NULL;
 	c_section_start = line;
 	fline = line;
 
@@ -682,11 +682,13 @@ void parse_options_syncer(struct d_resource *res)
 			token = yylex();
 			switch(token) {
 			case TK_NO:
-				*options = APPEND(*options, new_opt(opt_name, strdup("no")));
+				current_option = new_opt(opt_name, strdup("no"));
+				*options = APPEND(*options, current_option);
 				token = yylex();
 				break;
 			default:
-				*options = APPEND(*options, new_opt(opt_name, strdup("yes")));
+				current_option = new_opt(opt_name, strdup("yes"));
+				*options = APPEND(*options, current_option);
 				if (token == TK_YES)
 					token = yylex();
 				break;
@@ -696,7 +698,8 @@ void parse_options_syncer(struct d_resource *res)
 		case TK_DISK_NO_FLAG:
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
-			*options = APPEND(*options, new_opt(strdup(opt_name + 3), strdup("no")));
+			current_option = new_opt(strdup(opt_name + 3), strdup("no"));
+			*options = APPEND(*options, current_option);
 			free(opt_name);
 			token = yylex();
 			break;
@@ -707,14 +710,14 @@ void parse_options_syncer(struct d_resource *res)
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
-			ro = new_opt(opt_name, yylval.txt);
-			*options = APPEND(*options, ro);
+			current_option = new_opt(opt_name, yylval.txt);
+			*options = APPEND(*options, current_option);
 			token = yylex();
 			break;
 		}
 		switch (token) {
 		case TK__IS_DEFAULT:
-			ro->is_default = 1;
+			current_option->is_default = 1;
 			EXP(';');
 			break;
 		case ';':
@@ -733,7 +736,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 	int token;
 	enum range_checks rc;
 
-	struct d_option *options = NULL, *ro = NULL;
+	struct d_option *options = NULL, *current_option = NULL;
 	c_section_start = line;
 	fline = line;
 
@@ -745,10 +748,12 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		if (token == token_flag) {
 			switch(yylex()) {
 			case TK_YES:
-				options = APPEND(options, new_opt(opt_name, strdup("yes")));
+				current_option = new_opt(opt_name, strdup("yes"));
+				options = APPEND(options, current_option);
 				break;
 			case TK_NO:
-				options = APPEND(options, new_opt(opt_name, strdup("no")));
+				current_option = new_opt(opt_name, strdup("no"));
+				options = APPEND(options, current_option);
 				break;
 			case ';':
 				/* Flag value missing; assume yes.  */
@@ -760,15 +765,16 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		} else if (token == token_no_flag) {
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
-			options = APPEND(options, new_opt(strdup(opt_name + 3), strdup("no")));
+			current_option = new_opt(strdup(opt_name + 3), strdup("no"));
+			options = APPEND(options, current_option);
 			free(opt_name);
 		} else if (token == token_option) {
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
-			ro = new_opt(opt_name, yylval.txt);
-			options = APPEND(options, ro);
+			current_option = new_opt(opt_name, yylval.txt);
+			options = APPEND(options, current_option);
 		} else if (token == token_delegate) {
 			delegate(ctx);
 			continue;
@@ -782,7 +788,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		}
 		switch (yylex()) {
 		case TK__IS_DEFAULT:
-			ro->is_default = 1;
+			current_option->is_default = 1;
 			EXP(';');
 			break;
 		case ';':
