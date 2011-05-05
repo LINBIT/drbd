@@ -1666,7 +1666,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	}
 
 	flags = 0;
-	if (minor == -1)
+	if (minor == -1U)
 		flags |= NLM_F_DUMP;
 	dhdr = genlmsg_put(smsg, &drbd_genl_family, flags, cm->cmd_id);
 	dhdr->minor = minor;
@@ -1764,7 +1764,24 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				.userhdr = genlmsg_data(nlmsg_data(nlh)),
 				.attrs = global_attrs,
 			};
-			ASSERT(minor == -1 || dh->minor == minor);
+			if (cm->continuous_poll) {
+				/*
+				 * We will receive all events and have to
+				 * filter for what we want ourself.
+				 */
+				if (minor != -1U) {
+					if (minor != dh->minor)
+						continue;
+				} else if (strcmp(objname, "ALL")) {
+					struct drbd_cfg_context ctx =
+						{ .ctx_volume = -1U };
+
+					drbd_cfg_context_from_attrs(&ctx, &info);
+					if (ctx.ctx_volume != -1U &&
+					    strcmp(objname, ctx.ctx_conn_name))
+						continue;
+				}
+			}
 			rv = dh->ret_code;
 			if (rv != NO_ERROR &&
 			   !(rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known))
