@@ -2,6 +2,38 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.0 (api:genl1/proto:86-100)
+--------
+ * Fixed handling of read errors during online verify
+ * Go into inconsistent disk state with on-io-error=pass-on policy
+ * Timeouts for requests processing on the peer (previously that
+   worked only if the data socket was congested)
+ * Reworked Linux backward compatibility mechanism
+ * Conflicting write detection is now based on an interval tree,
+   removed the hash-tables (necessary for the unlimited BIO sizes)
+ * Removed the tracing framework
+ * Support for multiple volumes (minors, block devices) per connection;
+   up to 65536 volumes per connection supported
+ * Reduced IO latencies during some state changes (esp. start resync)
+ * New on disk format for the AL: double capacity; 4k aligned IO; same space
+ * Multiple AL changes in a single transaction (precondition for
+   unlimited BIO sizes)
+ * DRBD no longer imposes any limit on BIO sizes
+ * Removed DRBD's limits on the number of minor devices
+ * DRBD's minors can now be removed (not only unconfigured)
+ * Switched the user space interface form connector to generic netlink
+ * drbdadm, configuration changes: volume sections; syncer section removed;
+   bool options got yes/no values, that improves option inheritance;
+   resource options
+ * drbdsetup: new commands for creating and removing connections
+   and minors
+ * drbdsetup: new commands for changing disk options while the disk
+   is attached; ...for changing net options while the connection is
+   established
+ * drbdsetup/drbdadm the wire-protocol is now a regular connection option
+ * IO freezing/thawing is done on connection (all volumes) level
+ * fencing is done on connection (all volumes) level
+
 8.3.10rc3 (api:88/proto:86-96)
 --------
  * Fixed a subtle performance degradation that might affected synchronous
