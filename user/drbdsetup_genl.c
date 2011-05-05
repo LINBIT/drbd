@@ -201,6 +201,7 @@ struct drbd_cmd {
 	struct option *options;
 	bool ignore_minor_not_known;
 	bool continuous_poll;
+	bool wait_for_connect_timeouts;
 };
 
 // other functions
@@ -506,10 +507,12 @@ struct drbd_cmd commands[] = {
 		.continuous_poll = true, },
 	{"wait-connect", CTX_MINOR | CTX_ALL, F_GET_CMD(w_connected_state),
 		.options = wait_cmds_options,
-		.continuous_poll = true, },
+		.continuous_poll = true,
+		.wait_for_connect_timeouts = true, },
 	{"wait-sync", CTX_MINOR | CTX_ALL, F_GET_CMD(w_synced_state),
 		.options = wait_cmds_options,
-		.continuous_poll = true, },
+		.continuous_poll = true,
+		.wait_for_connect_timeouts = true, },
 
 	{"new-connection", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
 
@@ -1469,7 +1472,7 @@ struct choose_timo_ctx {
 	unsigned minor;
 	struct msg_buff *smsg;
 	struct iovec *iov;
-	int timeout_ms;
+	int timeout;
 	int wfc_timeout;
 	int degr_wfc_timeout;
 	int outdated_wfc_timeout;
@@ -1532,10 +1535,10 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 			goto error;
 		}
 		rr = parms.timeout_type;
-		ctx->timeout_ms =
+		ctx->timeout =
 			(rr == UT_DEGRADED) ? ctx->degr_wfc_timeout :
 			(rr == UT_PEER_OUTDATED) ? ctx->outdated_wfc_timeout :
-				ctx->wfc_timeout;
+			ctx->wfc_timeout;
 		return 0;
 	}
 error:
@@ -1553,8 +1556,12 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
-	struct choose_timo_ctx timeo_ctx;
-	int timeout_ms = -1;  /* "infinite" */
+	struct choose_timo_ctx timeo_ctx = {
+		.wfc_timeout = DRBD_WFC_TIMEOUT_DEF,
+		.degr_wfc_timeout = DRBD_DEGR_WFC_TIMEOUT_DEF,
+		.outdated_wfc_timeout = DRBD_OUTDATED_WFC_TIMEOUT_DEF,
+	};
+	int timeout_ms;
 	int flags;
 	int rv = NO_ERROR;
 	int err = 0;
@@ -1583,7 +1590,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				warn_missing_required_arg(argv);
 				return 20;
 			case 't':
-				timeo_ctx.wfc_timeout = m_strtoll(optarg,1);
+				timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
 				if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
 				   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
 					fprintf(stderr, "wfc_timeout => %d"
@@ -1595,7 +1602,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				}
 				break;
 			case 'd':
-				timeo_ctx.degr_wfc_timeout=m_strtoll(optarg,1);
+				timeo_ctx.degr_wfc_timeout = m_strtoll(optarg, 1);
 				if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
 				   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
 					fprintf(stderr, "degr_wfc_timeout => %d"
@@ -1607,12 +1614,13 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				}
 				break;
 			case 'o':
-				timeo_ctx.outdated_wfc_timeout=m_strtoll(optarg,1);
+				timeo_ctx.outdated_wfc_timeout = m_strtoll(optarg, 1);
 				if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
 				   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
 					fprintf(stderr, "outdated_wfc_timeout => %d"
 						" out of range [%d..%d]\n",
-						timeo_ctx.outdated_wfc_timeout, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+						timeo_ctx.outdated_wfc_timeout,
+						DRBD_OUTDATED_WFC_TIMEOUT_MIN,
 						DRBD_OUTDATED_WFC_TIMEOUT_MAX);
 					return 20;
 				}
@@ -1633,25 +1641,24 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	 * of expected replies */
 	ASSERT(cm->cmd_id == DRBD_ADM_GET_STATUS);
 
-	if (cm->options == wait_cmds_options) {
+	if (cm->wait_for_connect_timeouts) {
 		int rr;
 
 		timeo_ctx.minor = minor;
 		timeo_ctx.smsg = smsg;
 		timeo_ctx.iov = &iov;
-		timeo_ctx.timeout_ms = timeout_ms;
 		rr = choose_timeout(&timeo_ctx);
 		if (rr)
 			return rr;
-		timeout_ms = timeo_ctx.timeout_ms;
-		if (timeout_ms)
-			timeout_ms *= 1000;
+		if (timeo_ctx.timeout)
+			timeout_ms = timeo_ctx.timeout * 1000;
 		else
-			timeout_ms = -1;
+			timeout_ms = -1;  /* "infinite" */
 
 		/* rewind send message buffer */
 		smsg->tail = smsg->data;
-	}
+	} else
+		timeout_ms = 120000;
 
 	if (cm->continuous_poll) {
 		if (genl_join_mc_group(drbd_sock, "events")) {
@@ -1691,7 +1698,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		if (timeout_ms != -1)
 			gettimeofday(&before, NULL);
 
-		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
+		received = genl_recv_msgs(drbd_sock, &iov, &desc, timeout_ms);
 		if (received < 0) {
 			switch(received) {
 			case E_RCV_TIMEDOUT:
