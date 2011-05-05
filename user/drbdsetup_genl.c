@@ -504,6 +504,7 @@ struct drbd_cmd commands[] = {
 	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd) },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_ALL, F_GET_CMD(print_broadcast_events),
+		.ignore_minor_not_known = true,
 		.continuous_poll = true, },
 	{"wait-connect", CTX_MINOR | CTX_ALL, F_GET_CMD(w_connected_state),
 		.options = wait_cmds_options,
@@ -1777,14 +1778,15 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 						{ .ctx_volume = -1U };
 
 					drbd_cfg_context_from_attrs(&ctx, &info);
-					if (ctx.ctx_volume != -1U &&
+					if (ctx.ctx_volume == -1U ||
 					    strcmp(objname, ctx.ctx_conn_name))
 						continue;
 				}
 			}
 			rv = dh->ret_code;
-			if (rv != NO_ERROR &&
-			   !(rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known))
+			if (rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known)
+				continue;
+			if (rv != NO_ERROR)
 				goto out2;
 			if (drbd_tla_parse(nlh)) {
 				desc = "reply did not validate - "
