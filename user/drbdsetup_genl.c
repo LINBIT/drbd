@@ -1561,7 +1561,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		.degr_wfc_timeout = DRBD_DEGR_WFC_TIMEOUT_DEF,
 		.outdated_wfc_timeout = DRBD_OUTDATED_WFC_TIMEOUT_DEF,
 	};
-	int timeout_ms;
+	int timeout_ms = -1;  /* "infinite" */
 	int flags;
 	int rv = NO_ERROR;
 	int err = 0;
@@ -1652,12 +1652,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			return rr;
 		if (timeo_ctx.timeout)
 			timeout_ms = timeo_ctx.timeout * 1000;
-		else
-			timeout_ms = -1;  /* "infinite" */
 
 		/* rewind send message buffer */
 		smsg->tail = smsg->data;
-	} else
+	} else if (!cm->continuous_poll)
 		timeout_ms = 120000;
 
 	if (cm->continuous_poll) {
