@@ -592,8 +592,8 @@
           <listitem>
             <para>		In case it is not possible to connect to the remote DRBD
 		device immediately, DRBD keeps on trying to connect. With
-		this option you can set the time between two retries. The
-		default value is 10 seconds, the unit is 1 second.
+		this option you can set the time between two retries.
+		The default value is 10.  The unit is seconds.
 		</para>
           </listitem>
         </varlistentry>
@@ -604,7 +604,7 @@
             <para>	      If the TCP/IP connection linking a DRBD device pair is idle
 	      for more than <replaceable>time</replaceable> seconds, DRBD
 	      will generate a keep-alive packet to check if its partner is
-	      still alive. The default value is 10 seconds, the unit is 1 second.
+	      still alive. The default value is 10.  The unit is seconds.
 	      </para>
           </listitem>
         </varlistentry>
@@ -1385,6 +1385,7 @@
               node was rebooted the <replaceable>outdated_wfc_timeout</replaceable> is used.
 	      The default value for all those timeout values
 	      is 0 which means to wait forever.
+	      The unit is seconds.
 	      In case the connection status goes down to StandAlone because
               the peer appeared but the devices had a split brain situation,
               the default for the command is to terminate. You can change this

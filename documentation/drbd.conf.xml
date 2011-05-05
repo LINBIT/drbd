@@ -1296,6 +1296,7 @@ the unit is 1 second.
   is rebooted, this timeout value is used instead of wfc-timeout,
   because the peer is less likely to show up in time,
   if it had been dead before. Value 0 means unlimited.
+  The unit is seconds.
   </para>
           </listitem>
         </varlistentry>
@@ -1310,6 +1311,7 @@ the unit is 1 second.
   with an outdated peer disk is rebooted, this timeout value is used instead of wfc-timeout,
   because the peer is not allowed to become primary in the meantime.
   Value 0 means unlimited.
+  The unit is seconds.
   </para>
           </listitem>
         </varlistentry>
