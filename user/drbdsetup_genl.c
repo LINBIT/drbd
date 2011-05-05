@@ -1932,8 +1932,7 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 			printI("}\n"); /* close _this_host */
 			--indent;
 			printI("}\n"); /* close resource */
-		} else
-			printf("# no resources\n");
+		}
 		fflush(stdout);
 		return 0;
 	}
