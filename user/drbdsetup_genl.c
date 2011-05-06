@@ -1217,7 +1217,10 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 
 	lo = make_longoptions(cm->cp.options, cm->policy);
 	opts = make_optstring(lo, 0);
-	while ((c = getopt_long(argc, argv, opts, lo, 0)) != -1) {
+	for (;;) {
+		c = getopt_long(argc, argv, opts, lo, 0);
+		if (c == -1)
+			break;
 		od = find_opt_by_short_name(cm->cp.options, c);
 		if (od)
 			rv = od->convert_function(od, smsg, optarg);
@@ -1560,56 +1563,62 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		goto out;
 	}
 
-	if (cm->options) {
-		const char *opts = make_optstring(cm->options, 0);
-		int c;
+	struct option *options = cm->options;
+	if (!options) {
+		static struct option none[] = { { } };
+		options = none;
+	}
+	const char *opts = make_optstring(options, 0);
+	int c;
 
-		while((c = getopt_long(argc, argv, opts, cm->options, 0)) != -1) {
-			switch(c) {
-			default:
-			case '?':
+	for(;;) {
+		c = getopt_long(argc, argv, opts, options, 0);
+		if (c == -1)
+			break;
+		switch(c) {
+		default:
+		case '?':
+			return 20;
+		case 't':
+			timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
+			   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.wfc_timeout,
+					DRBD_WFC_TIMEOUT_MIN,
+					DRBD_WFC_TIMEOUT_MAX);
 				return 20;
-			case 't':
-				timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
-				if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
-				   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
-					fprintf(stderr, "wfc_timeout => %d"
-						" out of range [%d..%d]\n",
-						timeo_ctx.wfc_timeout,
-						DRBD_WFC_TIMEOUT_MIN,
-						DRBD_WFC_TIMEOUT_MAX);
-					return 20;
-				}
-				break;
-			case 'd':
-				timeo_ctx.degr_wfc_timeout = m_strtoll(optarg, 1);
-				if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
-				   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
-					fprintf(stderr, "degr_wfc_timeout => %d"
-						" out of range [%d..%d]\n",
-						timeo_ctx.degr_wfc_timeout,
-						DRBD_DEGR_WFC_TIMEOUT_MIN,
-						DRBD_DEGR_WFC_TIMEOUT_MAX);
-					return 20;
-				}
-				break;
-			case 'o':
-				timeo_ctx.outdated_wfc_timeout = m_strtoll(optarg, 1);
-				if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
-				   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
-					fprintf(stderr, "outdated_wfc_timeout => %d"
-						" out of range [%d..%d]\n",
-						timeo_ctx.outdated_wfc_timeout,
-						DRBD_OUTDATED_WFC_TIMEOUT_MIN,
-						DRBD_OUTDATED_WFC_TIMEOUT_MAX);
-					return 20;
-				}
-				break;
-
-			case 'w':
-				wait_after_split_brain = true;
-				break;
 			}
+			break;
+		case 'd':
+			timeo_ctx.degr_wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
+			   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "degr_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.degr_wfc_timeout,
+					DRBD_DEGR_WFC_TIMEOUT_MIN,
+					DRBD_DEGR_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+		case 'o':
+			timeo_ctx.outdated_wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
+			   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "outdated_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.outdated_wfc_timeout,
+					DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+					DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+
+		case 'w':
+			wait_after_split_brain = true;
+			break;
 		}
 	}
 	if (optind < argc) {
