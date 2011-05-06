@@ -65,6 +65,12 @@ XSLTPROC_MANPAGES_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_HTML_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_FO_OPTIONS ?= $(XSLTPROC_OPTIONS)
 
+DRBDSETUP_CMDS = new-connection new-minor del-connection del-minor
+DRBDSETUP_CMDS += attach connect disk-options net-options resource-options
+DRBDSETUP_CMDS += disconnect detach primary secondary verify invalidate invalidate-remote
+DRBDSETUP_CMDS += resize
+
+
 all:
 	@echo "To (re)make the documentation: make doc"
 
@@ -101,9 +107,14 @@ ifeq ($(WITH_UTILS),yes)
 	$(FO_STYLESHEET) $<
 endif
 
+drbdsetup_%.xml: ../user/drbdsetup
+	../user/drbdsetup xml $* |\
+	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl -
+
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
+	rm -f drbdsetup_*.xml
 
 #######
 
@@ -130,5 +141,4 @@ pdf:	$(SOURCES:.xml=.pdf)
 
 ps:	$(SOURCES:.xml=.ps)
 
-
-
+drbdsetup.8: drbdsetup.xml $(patsubst %,drbdsetup_%.xml,$(DRBDSETUP_CMDS))

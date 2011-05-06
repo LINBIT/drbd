@@ -3,11 +3,11 @@
 "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdsetup">
   <refentryinfo>
-    <date>5 Dec 2008</date>
+    <date>6 May 2011</date>
 
     <productname>DRBD</productname>
 
-    <productnumber>8.3.2</productnumber>
+    <productnumber>8.4.0</productnumber>
   </refentryinfo>
 
   <refmeta>
@@ -27,239 +27,50 @@
   </refnamediv>
 
   <refsynopsisdiv>
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_new-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+    <xi:include href="drbdsetup_new-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">disk</arg>
+    <xi:include href="drbdsetup_del-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>lower_dev</replaceable></arg>
+    <xi:include href="drbdsetup_del-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>meta_data_dev</replaceable></arg>
+    <xi:include href="drbdsetup_attach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>meta_data_index</replaceable></arg>
+    <xi:include href="drbdsetup_connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>size</replaceable></arg></arg>
+    <xi:include href="drbdsetup_disk-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-e<arg choice="req"
-      rep="norepeat"><replaceable>err_handler</replaceable></arg></arg>
+    <xi:include href="drbdsetup_net-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-f<arg choice="req"
-      rep="norepeat"><replaceable>fencing_policy</replaceable></arg></arg>
+    <xi:include href="drbdsetup_resource-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-b</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_disconnect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_detach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+    <xi:include href="drbdsetup_primary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">net</arg>
-
-      <arg choice="opt" rep="norepeat"><replaceable>af:</replaceable></arg>
-
-      <arg choice="req" rep="norepeat"><replaceable>local_addr</replaceable></arg>
-
-      <arg choice="opt" rep="norepeat"><replaceable>:port</replaceable></arg>
-
-      <arg choice="opt" rep="norepeat"><replaceable>af:</replaceable></arg>
-
-      <arg choice="req" rep="norepeat"><replaceable>remote_addr</replaceable></arg>
-
-      <arg choice="opt" rep="norepeat"><replaceable>:port</replaceable></arg>
-
-      <arg choice="req" rep="norepeat"><replaceable>protocol</replaceable></arg>
-
-      <arg choice="opt" rep="norepeat">-c<arg choice="req"
-      rep="norepeat"><replaceable>time</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-i<arg choice="req"
-      rep="norepeat"><replaceable>time</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-t<arg choice="req"
-      rep="norepeat"><replaceable>val</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-S<arg choice="req"
-      rep="norepeat"><replaceable>size</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-r<arg choice="req"
-      rep="norepeat"><replaceable>size</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-k<arg choice="req"
-      rep="norepeat"><replaceable>count</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-e<arg choice="req"
-      rep="norepeat"><replaceable>max_epoch_size</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-b<arg choice="req"
-      rep="norepeat"><replaceable>max_buffers</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-m</arg>
-
-      <arg choice="opt" rep="norepeat">-a<arg choice="req"
-      rep="norepeat"><replaceable>hash_alg</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-x<arg choice="req"
-      rep="norepeat"><replaceable>shared_secret</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-A<arg choice="req"
-      rep="norepeat"><replaceable>asb-0p-policy</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-B<arg choice="req"
-      rep="norepeat"><replaceable>asb-1p-policy</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-C<arg choice="req"
-      rep="norepeat"><replaceable>asb-2p-policy</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-D</arg>
-
-      <arg choice="opt" rep="norepeat">-R<arg choice="req"
-      rep="norepeat"><replaceable>role-resync-conflict-policy</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-p<arg choice="req"
-      rep="norepeat"><replaceable>ping_timeout</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-u<arg choice="req"
-      rep="norepeat"><replaceable>val</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>hash_alg</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-o</arg>
-
-      <arg choice="opt" rep="norepeat">-n</arg>
-
-      <arg choice="opt" rep="norepeat">-g<arg choice="req"
-      rep="norepeat"><replaceable>congestion_policy</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-f<arg choice="req"
-      rep="norepeat"><replaceable>val</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-h<arg choice="req"
-      rep="norepeat"><replaceable>val</replaceable></arg></arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_secondary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">syncer</arg>
-
-      <arg choice="opt" rep="norepeat">-a<arg choice="req"
-      rep="norepeat"><replaceable>dev_minor</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-r<arg choice="req"
-      rep="norepeat"><replaceable>rate</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-e<arg choice="req"
-      rep="norepeat"><replaceable>extents</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-v<arg choice="req"
-      rep="norepeat"><replaceable>verify-hash-alg</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-c<arg choice="req"
-      rep="norepeat"><replaceable>cpu-mask</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-C<arg choice="req"
-      rep="norepeat"><replaceable>csums-hash-alg</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-R</arg>
-
-      <arg choice="opt" rep="norepeat">-p<arg choice="req"
-      rep="norepeat"><replaceable>plan_time</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-s<arg choice="req"
-      rep="norepeat"><replaceable>fill_target</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>delay_target</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-m<arg choice="req"
-      rep="norepeat"><replaceable>max_rate</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-n<arg choice="req"
-      rep="norepeat"><replaceable>ond-policy</replaceable></arg></arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">disconnect</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">detach</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">down</arg>
     </cmdsynopsis>
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_verify.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+    <xi:include href="drbdsetup_invalidate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">primary</arg>
-
-      <arg choice="opt" rep="norepeat">-f</arg>
-
-      <arg choice="opt" rep="norepeat">-o</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_invalidate-remote.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">secondary</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">verify</arg>
-
-      <arg choice="opt" rep="norepeat">-s<arg choice="req"
-      rep="norepeat"><replaceable>start-position</replaceable></arg></arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">invalidate</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">invalidate-remote</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">wait-connect</arg>
 
@@ -278,7 +89,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">wait-sync</arg>
 
@@ -297,7 +108,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">role</arg>
     </cmdsynopsis>
@@ -305,7 +116,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">cstate</arg>
     </cmdsynopsis>
@@ -313,7 +124,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">dstate</arg>
     </cmdsynopsis>
@@ -321,32 +132,17 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">status</arg>
     </cmdsynopsis>
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">resize</arg>
-
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>size</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-f<arg choice="req"
-      rep="norepeat"><replaceable>assume-peer-has-space</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-c<arg choice="req"
-      rep="norepeat"><replaceable>assume-clean</replaceable></arg></arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">check-resize</arg>
     </cmdsynopsis>
@@ -354,7 +150,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">pause-sync</arg>
     </cmdsynopsis>
@@ -362,7 +158,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">resume-sync</arg>
     </cmdsynopsis>
@@ -370,7 +166,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">outdate</arg>
     </cmdsynopsis>
@@ -378,7 +174,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">show-gi</arg>
     </cmdsynopsis>
@@ -386,7 +182,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">get-gi</arg>
     </cmdsynopsis>
@@ -394,7 +190,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">show</arg>
     </cmdsynopsis>
@@ -402,7 +198,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">suspend-io</arg>
     </cmdsynopsis>
@@ -410,7 +206,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">resume-io</arg>
     </cmdsynopsis>
@@ -418,7 +214,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">events</arg>
 
@@ -430,7 +226,7 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
 
-      <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
 
       <arg choice="plain" rep="norepeat">new-current-uuid</arg>
 
@@ -472,21 +268,45 @@
               implicitly.</para>
             </listitem>
           </varlistentry>
-
-          <varlistentry>
-            <term><option>--set-defaults</option></term>
-
-            <listitem>
-              <para>When <option>--set-defaults</option> is given on the command line, all options
-              of the invoked sub-command that are not explicitly set are reset to their default
-              values.</para>
-            </listitem>
-          </varlistentry>
         </variablelist></para>
     </refsect2>
 
     <refsect2>
-      <title>disk</title>
+      <title>new-connection</title>
+
+      <para>Connections are the primary objects of any DRBD configuration. A connection must exist
+      before any volumes or minor devices can be created. With the <option>new-connection</option>
+      command such a connection object is created. Connections are adressed by names.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>new-minor</title>
+
+      <para>A <emphasis>minor</emphasis> is used as a synonym for replicated block device. It is
+      represented in the /dev/ directory by a block device. It is the application's interface to
+      the DRBD-replicated block devices. These block devices get addressed by their minor numbers
+      on the drbdsetup commandline.</para>
+
+      <para>A pair of replicated block devices may have different minor numbers on the two
+      machines. They are associated by a common <emphasis>volume-number</emphasis>. Volume numbers
+      are local to each connection. Minor numbers are global on one node.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>del-connection</title>
+
+      <para>Destroys a connection object. This is only possible if the connection has no
+      volumes.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>del-minor</title>
+
+      <para>Minors can only be destroyed if its disk is detached.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>attach, disk-options</title>
 
       <indexterm significance="normal">
         <primary>drbdsetup</primary>
@@ -494,12 +314,15 @@
         <secondary>disk</secondary>
       </indexterm>
 
-      <para>Associates <replaceable>device</replaceable> with
+      <para>Attach associates <replaceable>device</replaceable> with
       <replaceable>lower_device</replaceable> to store its data blocks on. The <option>-d</option>
       (or <option>--disk-size</option>) should only be used if you wish not to use as much as
       possible from the backing block devices. If you do not use <option>-d</option>, the
       <replaceable>device</replaceable> is only ready for use as soon as it was connected to its
       peer once. (See the <option>net</option> command.)</para>
+
+      <para>With the disk-options command it is possible to change the options of a minor while it
+      is attached.</para>
 
       <variablelist>
         <varlistentry>
@@ -579,33 +402,17 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-b</option>, <option>--use-bmbv</option></term>
+          <term><option>-a</option>, <option>--disk-barrier</option></term>
 
-          <listitem>
-            <para>In case the backing storage's driver has a merge_bvec_fn() function, DRBD has to
-            pretend that it can only process IO requests in units not larger than 4 KiB. (At time
-            of writing the only known drivers which have such a function are: md (software raid
-            driver), dm (device mapper - LVM) and DRBD itself)</para>
+          <term><option>-i</option>, <option>--disk-flushes</option></term>
 
-            <para>To get best performance out of DRBD on top of software raid (or any other driver
-            with a merge_bvec_fn() function) you might enable this option, if you know for sure
-            that the merge_bvec_fn() function will deliver the same results on all nodes of your
-            cluster. I.e. the physical disks of the software raid are exactly of the same type.
-            USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>-a</option>, <option>--no-disk-barrier</option></term>
-
-          <term><option>-i</option>, <option>--no-disk-flushes</option></term>
-
-          <term><option>-D</option>, <option>--no-disk-drain</option></term>
+          <term><option>-D</option>, <option>--disk-drain</option></term>
 
           <listitem>
             <para>DRBD has four implementations to express write-after-write dependencies to its
             backing storage device. DRBD will use the first method that is supported by the
-            backing storage device and that is not disabled by the user.</para>
+            backing storage device and that is not disabled by the user. By default all three
+            options are enabled.</para>
 
             <para>When selecting the method you should not only base your decision on the
             measurable performance. In case your backing storage device has a volatile write cache
@@ -625,8 +432,8 @@
                 <listitem>
                   <para>The first requires that the driver of the backing storage device support
                   barriers (called 'tagged command queuing' in SCSI and 'native command queuing'
-                  in SATA speak). The use of this method can be disabled by the
-                  <option>--no-disk-barrier</option> option.</para>
+                  in SATA speak). The use of this method can be disabled by setting the
+                  <option>disk-barrier</option> options to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -636,7 +443,7 @@
                 <listitem>
                   <para>The second requires that the backing device support disk flushes (called
                   'force unit access' in the drive vendors speak). The use of this method can be
-                  disabled using the <option>--no-disk-flushes</option> option.</para>
+                  disabled setting <option>disk-flushes</option> to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -646,8 +453,8 @@
                 <listitem>
                   <para>The third method is simply to let write requests drain before write
                   requests of a new reordering domain are issued. That was the only implementation
-                  before 8.0.9. You can prevent to use of this method by using the
-                  <option>--no-disk-drain</option> option.</para>
+                  before 8.0.9. You can disable this method by setting <option>disk-drain</option>
+                  to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -664,11 +471,11 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-m</option>, <option>--no-md-flushes</option></term>
+          <term><option>-m</option>, <option>--md-flushes</option></term>
 
           <listitem>
             <para>Disables the use of disk flushes and barrier BIOs when accessing the meta data
-            device. See the notes on <option>--no-disk-flushes</option>.</para>
+            device. See the notes on <option>--disk-flushes</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -694,11 +501,106 @@
             is no user imposed limitation.</para>
           </listitem>
         </varlistentry>
+
+        <varlistentry>
+          <term><option>-r</option>, <option>--resync-rate
+          <replaceable>rate</replaceable></option></term>
+
+          <listitem>
+            <para>To ensure smooth operation of the application on top of DRBD, it is possible to
+            limit the bandwidth that may be used by background synchronization. The default is 250
+            KiB/sec, the default unit is KiB/sec.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>-a</option>, <option>--resync-after
+          <replaceable>minor</replaceable></option></term>
+
+          <listitem>
+            <para>Start resync on this device only if the device with
+            <replaceable>minor</replaceable> is already in connected state. Otherwise this device
+            waits in SyncPause state.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>-e</option>, <option>--al-extents
+          <replaceable>extents</replaceable></option></term>
+
+          <listitem>
+            <para>DRBD automatically performs hot area detection. With this parameter you control
+            how big the hot area (=active set) can get. Each extent marks 4M of the backing
+            storage. In case a primary node leaves the cluster unexpectedly, the areas covered by
+            the active set must be resynced upon rejoining of the failed node. The data structure
+            is stored in the meta-data area, therefore each change of the active set is a write
+            operation to the meta-data device. A higher number of extents gives longer resync
+            times but less updates to the meta-data. The default number of
+            <replaceable>extents</replaceable> is 127. (Minimum: 7, Maximum: 3843)</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>-p</option>, <option>--c-plan-ahead
+          <replaceable>plan_time</replaceable></option></term>
+
+          <term><option>-s</option>, <option>--c-fill-target
+          <replaceable>fill_target</replaceable></option></term>
+
+          <term><option>-d</option>, <option>--c-delay-target
+          <replaceable>delay_target</replaceable></option></term>
+
+          <term><option>-M</option>, <option>--c-max-rate
+          <replaceable>max_rate</replaceable></option></term>
+
+          <listitem>
+            <para>The dynamic resync speed controller gets enabled with setting
+            <replaceable>plan_time</replaceable> to a positive value. It aims to fill the buffers
+            along the data path with either a constant amount of data
+            <replaceable>fill_target</replaceable>, or aims to have a constant delay time of
+            <replaceable>delay_target</replaceable> along the path. The controller has an upper
+            bound of <replaceable>max_rate</replaceable>.</para>
+
+            <para>By <replaceable>plan_time</replaceable> the agility of the controller is
+            configured. Higher values yield for slower/lower responses of the controller to
+            deviation from the target value. It should be at least 5 times RTT. For regular data
+            paths a <replaceable>fill_target</replaceable> in the area of 4k to 100k is
+            appropriate. For a setup that contains drbd-proxy it is advisable to use
+            <replaceable>delay_target</replaceable> instead. Only when
+            <replaceable>fill_target</replaceable> is set to 0 the controller will use
+            <replaceable>delay_target</replaceable>. 5 times RTT is a reasonable starting value.
+            <replaceable>Max_rate</replaceable> should be set to the bandwidth available between
+            the DRBD-hosts and the machines hosting DRBD-proxy, or to the available
+            disk-bandwidth.</para>
+
+            <para>The default value of <replaceable>plan_time</replaceable> is 0, the default unit
+            is 0.1 seconds. <replaceable>Fill_target</replaceable> has 0 and sectors as default
+            unit. <replaceable>Delay_target</replaceable> has 1 (100ms) and 0.1 as default unit.
+            <replaceable>Max_rate</replaceable> has 10240 (100MiB/s) and KiB/s as default
+            unit.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>-m</option>, <option>--c-min-rate
+          <replaceable>min_rate</replaceable></option></term>
+
+          <listitem>
+            <para>We track the disk IO rate caused by the resync, so we can detect non-resync IO
+            on the lower level device. If the lower level device seems to be busy, and the current
+            resync rate is above <replaceable>min_rate</replaceable>, we throttle the
+            resync.</para>
+
+            <para>The default value of <replaceable>min_rate</replaceable> is 4M, the default unit
+            is k. If you want to not throttle at all, set it to zero, if you want to throttle
+            always, set it to one.</para>
+          </listitem>
+        </varlistentry>
       </variablelist>
     </refsect2>
 
     <refsect2>
-      <title>net</title>
+      <title>connect, net-options</title>
 
       <indexterm significance="normal">
         <primary>drbdsetup</primary>
@@ -706,7 +608,7 @@
         <secondary>net</secondary>
       </indexterm>
 
-      <para>Sets up the <replaceable>device</replaceable> to listen on
+      <para>Connect sets up the <replaceable>device</replaceable> to listen on
       <replaceable>af:local_addr:port</replaceable> for incoming connections and to try to connect
       to <replaceable>af:remote_addr:port</replaceable>. If <replaceable>port</replaceable> is
       omitted, 7788 is used as default. If <replaceable>af</replaceable> is omitted
@@ -714,19 +616,28 @@
       <option>ssocks</option> for Dolphin Interconnect Solutions' "super sockets" and
       <option>sdp</option> for Sockets Direct Protocol (Infiniband).</para>
 
-      <para>On the TCP/IP link the specified <replaceable>protocol</replaceable> is used. Valid
-      protocol specifiers are A, B, and C.</para>
-
-      <para>Protocol A: write IO is reported as completed, if it has reached local disk and local
-      TCP send buffer.</para>
-
-      <para>Protocol B: write IO is reported as completed, if it has reached local disk and remote
-      buffer cache.</para>
-
-      <para>Protocol C: write IO is reported as completed, if it has reached both local and remote
-      disk.</para>
+      <para>The net-options command allows you to change options while the connection is
+      established.</para>
 
       <variablelist>
+        <varlistentry>
+          <term><option>--protocol <replaceable>protocol</replaceable></option></term>
+
+          <listitem>
+            <para>On the TCP/IP link the specified <replaceable>protocol</replaceable> is used.
+            Valid protocol specifiers are A, B, and C.</para>
+
+            <para>Protocol A: write IO is reported as completed, if it has reached local disk and
+            local TCP send buffer.</para>
+
+            <para>Protocol B: write IO is reported as completed, if it has reached local disk and
+            remote buffer cache.</para>
+
+            <para>Protocol C: write IO is reported as completed, if it has reached both local and
+            remote disk.</para>
+          </listitem>
+        </varlistentry>
+
         <varlistentry>
           <term><option>-c</option>, <option>--connect-int
           <replaceable>time</replaceable></option></term>
@@ -1163,59 +1074,6 @@
             <para>The AHEAD/BEHIND mode and its settings are available since DRBD 8.3.10.</para>
           </listitem>
         </varlistentry>
-      </variablelist>
-    </refsect2>
-
-    <refsect2>
-      <title>syncer</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>syncer</secondary>
-      </indexterm>
-
-      <para>Changes the synchronization daemon parameters of <replaceable>device</replaceable> at
-      runtime.</para>
-
-      <variablelist>
-        <varlistentry>
-          <term><option>-r</option>, <option>--rate
-          <replaceable>rate</replaceable></option></term>
-
-          <listitem>
-            <para>To ensure smooth operation of the application on top of DRBD, it is possible to
-            limit the bandwidth that may be used by background synchronization. The default is 250
-            KiB/sec, the default unit is KiB/sec.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>-a</option>, <option>--after
-          <replaceable>minor</replaceable></option></term>
-
-          <listitem>
-            <para>Start resync on this device only if the device with
-            <replaceable>minor</replaceable> is already in connected state. Otherwise this device
-            waits in SyncPause state.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>-e</option>, <option>--al-extents
-          <replaceable>extents</replaceable></option></term>
-
-          <listitem>
-            <para>DRBD automatically performs hot area detection. With this parameter you control
-            how big the hot area (=active set) can get. Each extent marks 4M of the backing
-            storage. In case a primary node leaves the cluster unexpectedly, the areas covered by
-            the active set must be resynced upon rejoining of the failed node. The data structure
-            is stored in the meta-data area, therefore each change of the active set is a write
-            operation to the meta-data device. A higher number of extents gives longer resync
-            times but less updates to the meta-data. The default number of
-            <replaceable>extents</replaceable> is 127. (Minimum: 7, Maximum: 3843)</para>
-          </listitem>
-        </varlistentry>
 
         <varlistentry>
           <term><option>-v</option>, <option>--verify-alg
@@ -1233,18 +1091,6 @@
             to use on-line device verification.</para>
 
             <para>See also the notes on data integrity on the drbd.conf manpage.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>-c</option>, <option>--cpu-mask
-          <replaceable>cpu-mask</replaceable></option></term>
-
-          <listitem>
-            <para>Sets the cpu-affinity-mask for DRBD's kernel threads of this device. The default
-            value of <replaceable>cpu-mask</replaceable> is 0, which means that DRBD's kernel
-            threads should be spread over all CPUs of the machine. This value must be given in
-            hexadecimal notation. If it is too big it will be truncated.</para>
           </listitem>
         </varlistentry>
 
@@ -1279,67 +1125,36 @@
             (clean) or set (dirty), a simple run-length encoding scheme can considerably reduce
             the network traffic necessary for the bitmap exchange.</para>
 
-            <para>For backward compatibilty reasons, and because on fast links this possibly does
+            <para>For backward compatibility reasons, and because on fast links this possibly does
             not improve transfer time but consumes cpu cycles, this defaults to off.</para>
 
             <para>Introduced in 8.3.2.</para>
           </listitem>
         </varlistentry>
+      </variablelist>
+    </refsect2>
 
+    <refsect2>
+      <title>resource-options</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>resource-options</secondary>
+      </indexterm>
+
+      <para>Changes the options of the resource at runtime.</para>
+
+      <variablelist>
         <varlistentry>
-          <term><option>-p</option>, <option>--c-plan-ahead
-          <replaceable>plan_time</replaceable></option></term>
-
-          <term><option>-s</option>, <option>--c-fill-target
-          <replaceable>fill_target</replaceable></option></term>
-
-          <term><option>-d</option>, <option>--c-delay-target
-          <replaceable>delay_target</replaceable></option></term>
-
-          <term><option>-M</option>, <option>--c-max-rate
-          <replaceable>max_rate</replaceable></option></term>
+          <term><option>-c</option>, <option>--cpu-mask
+          <replaceable>cpu-mask</replaceable></option></term>
 
           <listitem>
-            <para>The dynamic resync speed controller gets enabled with setting
-            <replaceable>plan_time</replaceable> to a positive value. It aims to fill the buffers
-            along the data path with either a constant amount of data
-            <replaceable>fill_target</replaceable>, or aims to have a constant delay time of
-            <replaceable>delay_target</replaceable> along the path. The controller has an upper
-            bound of <replaceable>max_rate</replaceable>.</para>
-
-            <para>By <replaceable>plan_time</replaceable> the agility of the controller is
-            configured. Higher values yield for slower/lower responses of the controller to
-            deviation from the target value. It should be at least 5 times RTT. For regular data
-            paths a <replaceable>fill_target</replaceable> in the area of 4k to 100k is
-            appropriate. For a setup that contains drbd-proxy it is advisable to use
-            <replaceable>delay_target</replaceable> instead. Only when
-            <replaceable>fill_target</replaceable> is set to 0 the controller will use
-            <replaceable>delay_target</replaceable>. 5 times RTT is a reasonable starting value.
-            <replaceable>Max_rate</replaceable> should be set to the bandwidth available between
-            the DRBD-hosts and the machines hosting DRBD-proxy, or to the available
-            disk-bandwidth.</para>
-
-            <para>The default value of <replaceable>plan_time</replaceable> is 0, the default unit
-            is 0.1 seconds. <replaceable>Fill_target</replaceable> has 0 and sectors as default
-            unit. <replaceable>Delay_target</replaceable> has 1 (100ms) and 0.1 as default unit.
-            <replaceable>Max_rate</replaceable> has 10240 (100MiB/s) and KiB/s as default
-            unit.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>-m</option>, <option>--c-min-rate
-          <replaceable>min_rate</replaceable></option></term>
-
-          <listitem>
-            <para>We track the disk IO rate caused by the resync, so we can detect non-resync IO
-            on the lower level device. If the lower level device seems to be busy, and the current
-            resync rate is above <replaceable>min_rate</replaceable>, we throttle the
-            resync.</para>
-
-            <para>The default value of <replaceable>min_rate</replaceable> is 4M, the default unit
-            is k. If you want to not throttle at all, set it to zero, if you want to throttle
-            always, set it to one.</para>
+            <para>Sets the cpu-affinity-mask for DRBD's kernel threads of this device. The default
+            value of <replaceable>cpu-mask</replaceable> is 0, which means that DRBD's kernel
+            threads should be spread over all CPUs of the machine. This value must be given in
+            hexadecimal notation. If it is too big it will be truncated.</para>
           </listitem>
         </varlistentry>
 
@@ -1526,7 +1341,7 @@
             peer was working before this node was rebooted, the
             <replaceable>wfc_timeout</replaceable> is used. If the peer was already down before
             this node was rebooted, the <replaceable>degr_wfc_timeout</replaceable> is used. If
-            the peer was sucessfully outdated before this node was rebooted the
+            the peer was successfully outdated before this node was rebooted the
             <replaceable>outdated_wfc_timeout</replaceable> is used. The default value for all
             those timeout values is 0 which means to wait forever. The unit is seconds. In case
             the connection status goes down to StandAlone because the peer appeared but the
@@ -1911,7 +1726,7 @@
       <para>The necessary steps on the current active server are: <orderedlist
           continuation="restarts" inheritnum="ignore" numeration="arabic">
           <listitem>
-            <simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable>
+            <simpara><command moreinfo="none">drbdsetup <replaceable>minor</replaceable>
             new-current-uuid --clear-bitmap</command></simpara>
           </listitem>
 
@@ -1922,7 +1737,7 @@
           </listitem>
 
           <listitem>
-            <simpara><command moreinfo="none">drbdsetup <replaceable>device</replaceable>
+            <simpara><command moreinfo="none">drbdsetup <replaceable>minor</replaceable>
             new-current-uuid</command></simpara>
           </listitem>
         </orderedlist> Now add the disk to the new secondary node, and join it to the cluster. You
