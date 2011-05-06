@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.4.0 (api:genl1/proto:86-100)
+8.4.0rc1 (api:genl1/proto:86-100)
 --------
  * Fixed handling of read errors during online verify
  * Go into inconsistent disk state with on-io-error=pass-on policy
