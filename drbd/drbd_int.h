@@ -521,7 +521,7 @@ struct p_rs_param_95 {
 } __packed;
 
 enum drbd_conn_flags {
-	CF_WANT_LOSE = 1,
+	CF_DISCARD_MY_DATA = 1,
 	CF_DRY_RUN = 2,
 };
 

@@ -440,7 +440,7 @@ struct drbd_cmd commands[] = {
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
 		 { "dry-run",'n',   T_dry_run,		   EFLAG },
-		 { "discard-my-data",'D', T_want_lose,     EFLAG },
+		 { "discard-my-data",'D', T_discard_my_data,     EFLAG },
 		 CHANGEABLE_NET_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
 
