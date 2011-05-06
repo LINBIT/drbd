@@ -84,8 +84,11 @@ const char *make_optstring(struct option *options, char startc)
 				abort();
 			}
 			*c++ = opt->val;
-			if (opt->has_arg)
+			if (opt->has_arg != no_argument) {
 				*c++ = ':';
+				if (opt->has_arg == optional_argument)
+					*c++ = ':';
+			}
 		}
 		opt++;
 	}
