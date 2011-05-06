@@ -2668,8 +2668,15 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	int maxcol,col,prevcol,startcol,toolong;
 	char *colstr;
 
+	static char *ctx_names[] = {
+	  [CTX_MINOR] = "minor",
+	  [CTX_CONN] = "connection",
+	  [CTX_ALL] = "minor_or_connection",
+	};
+
 	if(ut == XML) {
-		printf("<command name=\"%s\">\n",cm->cmd);
+		printf("<command name=\"%s\" operates_on=\"%s\">\n",
+		       cm->cmd, ctx_names[cm->ctx_key]);
 		if( (args = cm->cp.args) ) {
 			while (args->name) {
 				printf("\t<argument>%s</argument>\n",
