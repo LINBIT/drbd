@@ -64,7 +64,7 @@ char *ppsize(char *buf, unsigned long long size)
 	return buf;
 }
 
-const char *make_optstring(struct option *options, char startc)
+const char *make_optstring(struct option *options)
 {
 	static char buffer[200];
 	char seen[256];
@@ -74,8 +74,6 @@ const char *make_optstring(struct option *options, char startc)
 	memset(seen, 0, sizeof(seen));
 	opt = options;
 	c = buffer;
-	if (startc)
-		*c++ = startc;
 	while (opt->name) {
 		if (0 < opt->val && opt->val < 256) {
 			if (seen[opt->val]++) {

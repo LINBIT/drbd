@@ -58,7 +58,7 @@ extern void dt_release_lockfile(int drbd_fd);
 extern int dt_minor_of_dev(const char *device);
 extern int new_strtoll(const char *s, const char def_unit, unsigned long long *rv);
 extern unsigned long long m_strtoll(const char* s,const char def_unit);
-extern const char* make_optstring(struct option *options, char startc);
+extern const char* make_optstring(struct option *options);
 extern char* ppsize(char* buf, unsigned long long size);
 extern void dt_print_gc(const uint32_t* gen_cnt);
 extern void dt_pretty_print_gc(const uint32_t* gen_cnt);

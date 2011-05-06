@@ -3132,8 +3132,7 @@ int parse_options(int argc, char **argv)
 	while (1) {
 		int c;
 
-		c = getopt_long(argc, argv,
-				make_optstring(admopt, 0), admopt, 0);
+		c = getopt_long(argc, argv, make_optstring(admopt), admopt, 0);
 		if (c == -1)
 			break;
 		switch (c) {

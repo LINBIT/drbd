@@ -1115,7 +1115,10 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, ch
 		static struct option none[] = { { } };
 		lo = none;
 	}
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	for(;;) {
+		c = getopt_long(argc, argv, make_optstring(lo), lo, 0);
+		if (c == -1)
+			break;
 		od = find_opt_by_short_name(cm->cp.options,c);
 		if (od)
 			rv = od->convert_function(od,tl,optarg);
@@ -2071,7 +2074,10 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 		static struct option none[] = { { } };
 		lo = none;
 	}
-	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
+	for(;;) {
+		c = getopt_long(argc, argv, make_optstring(lo), lo, 0);
+		if (c == -1)
+			break;
 		switch(c) {
 		default:
 		case '?':

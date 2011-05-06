@@ -3838,7 +3838,7 @@ int main(int argc, char **argv)
 
 	/* Check for options (e.g. --force) */
 	while (1) {
-	    int c = getopt_long(argc,argv,make_optstring(metaopt,0),metaopt,0);
+	    int c = getopt_long(argc, argv, make_optstring(metaopt), metaopt, 0);
 
 	    if (c == -1)
 		break;

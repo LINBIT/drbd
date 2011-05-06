@@ -1216,7 +1216,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	n_args = i - 1;
 
 	lo = make_longoptions(cm->cp.options, cm->policy);
-	opts = make_optstring(lo, 0);
+	opts = make_optstring(lo);
 	for (;;) {
 		c = getopt_long(argc, argv, opts, lo, 0);
 		if (c == -1)
@@ -1568,7 +1568,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		static struct option none[] = { { } };
 		options = none;
 	}
-	const char *opts = make_optstring(options, 0);
+	const char *opts = make_optstring(options);
 	int c;
 
 	for(;;) {
