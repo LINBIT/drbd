@@ -1795,6 +1795,11 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				goto out2;
 			}
 			err = cm->show_function(cm, &info);
+			if (err) {
+				if (err < 0)
+					err = 0;
+				goto out2;
+			}
 		}
 		if (!cm->continuous_poll && !(flags & NLM_F_DUMP)) {
 			/* There will be no more reply packets.  */
@@ -2458,7 +2463,7 @@ static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 out:
 	fflush(stdout);
 
-	return 1;
+	return 0;
 }
 
 static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
@@ -2470,26 +2475,26 @@ static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
 		return 0;
 
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
-		return 1;
+		return 0;
 
 	if (state_info_from_attrs(&si, info)) {
 		fprintf(stderr,"nla_policy violation!?\n");
-		return 1;
+		return 0;
 	}
 
 	if (si.sib_reason != SIB_STATE_CHANGE &&
 	    si.sib_reason != SIB_GET_STATUS_REPLY)
-		return 1;
+		return 0;
 
 	state.i = si.current_state;
 	if (state.conn >= C_CONNECTED)
-		return 0;
+		return -1;  /* done waiting */
 	if (state.conn < C_UNCONNECTED) {
 		struct drbd_genlmsghdr *dhdr = info->userhdr;
 		struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
 		if (!wait_after_split_brain)
-			return 0;
+			return -1;  /* done waiting */
 		drbd_cfg_context_from_attrs(&cfg, info);
 
 		fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
@@ -2499,7 +2504,7 @@ static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
 			       drbd_conn_str(state.conn));
 	}
 
-	return 1;
+	return 0;
 }
 
 static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
@@ -2511,26 +2516,26 @@ static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
 		return 0;
 
 	if (!global_attrs[DRBD_NLA_STATE_INFO])
-		return 1;
+		return 0;
 
 	if (state_info_from_attrs(&si, info)) {
 		fprintf(stderr,"nla_policy violation!?\n");
-		return 1;
+		return 0;
 	}
 
 	if (si.sib_reason != SIB_STATE_CHANGE &&
 	    si.sib_reason != SIB_GET_STATUS_REPLY)
-		return 1;
+		return 0;
 
 	state.i = si.current_state;
 
 	if (state.conn == C_CONNECTED)
-		return 0;
+		return -1;  /* done waiting */
 
 	if (!wait_after_split_brain && state.conn < C_UNCONNECTED)
-		return 0;
+		return -1;  /* done waiting */
 
-	return 1;
+	return 0;
 }
 
 static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
