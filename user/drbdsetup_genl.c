@@ -1123,7 +1123,7 @@ static int print_config_error(int err_no, char *desc)
 static void warn_unrecognized_option(char **argv)
 {
 	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
-		cmdname, argv[0], argv[optind - 1]);
+		cmdname, argv[0], argv[optind]);
 }
 
 static void warn_missing_required_arg(char **argv)
