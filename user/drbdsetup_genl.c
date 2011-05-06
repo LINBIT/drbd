@@ -1785,7 +1785,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			}
 			rv = dh->ret_code;
 			if (rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known)
-				continue;
+				rv = NO_ERROR;
 			if (rv != NO_ERROR)
 				goto out2;
 			if (drbd_tla_parse(nlh)) {
@@ -2388,7 +2388,7 @@ static void print_state(char *tag, unsigned seq, unsigned minor,
 	       s.user_isp ? 'u' : '-' );
 }
 
-static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
+static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct state_info si = { .current_state = 0 };
@@ -2397,6 +2397,10 @@ static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 	struct drbd_genlmsghdr *dh;
 
 	if (!info)
+		return 0;
+
+	dh = info->userhdr;
+	if (dh->ret_code == ERR_MINOR_INVALID && cm->ignore_minor_not_known)
 		return 0;
 
 	if (drbd_cfg_context_from_attrs(&cfg, info)) {
@@ -2414,7 +2418,6 @@ static int print_broadcast_events(struct drbd_cmd *od, struct genl_info *info)
 	disk_conf_from_attrs(&dc, info);
 	net_conf_from_attrs(&nc, info);
 
-	dh = info->userhdr;
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
 		print_state("ST-prev", info->seq,
@@ -2466,7 +2469,7 @@ out:
 	return 0;
 }
 
-static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
+static int w_connected_state(struct drbd_cmd *cm, struct genl_info *info)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
@@ -2507,7 +2510,7 @@ static int w_connected_state(struct drbd_cmd *od, struct genl_info *info)
 	return 0;
 }
 
-static int w_synced_state(struct drbd_cmd *od, struct genl_info *info)
+static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 {
 	struct state_info si = { .current_state = 0 };
 	union drbd_state state;
