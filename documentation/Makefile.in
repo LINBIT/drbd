@@ -107,6 +107,9 @@ ifeq ($(WITH_UTILS),yes)
 	$(FO_STYLESHEET) $<
 endif
 
+../user/drbdsetup:
+	(cd ../user; make drbdsetup)
+
 drbdsetup_%.xml: ../user/drbdsetup
 	../user/drbdsetup xml $* |\
 	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl -
