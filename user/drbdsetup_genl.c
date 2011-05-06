@@ -1119,22 +1119,9 @@ static int print_config_error(int err_no, char *desc)
 	return rv;
 }
 
-/* cmdname and optind are global variables */
-static void warn_unrecognized_option(char **argv)
-{
-	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
-		cmdname, argv[0], argv[optind]);
-}
-
-static void warn_missing_required_arg(char **argv)
-{
-	fprintf(stderr, "%s %s: option '%s' requires an argument\n",
-		cmdname, argv[0], argv[optind - 1]);
-}
-
 static void warn_print_excess_args(int argc, char **argv, int i)
 {
-	fprintf(stderr, "Ignoring excess arguments:");
+	fprintf(stderr, "Excess arguments:");
 	for (; i < argc; i++)
 		fprintf(stderr, " %s", argv[i]);
 	printf("\n");
@@ -1181,6 +1168,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	int n_args;
 	int rv = NO_ERROR;
 	char *desc = NULL; /* error description from kernel reply message */
+	const char *opts;
 
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
@@ -1228,10 +1216,8 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	n_args = i - 1;
 
 	lo = make_longoptions(cm->cp.options, cm->policy);
-	opterr = 0;
-	while ((c =
-		getopt_long(argc, argv, make_optstring(lo, ':'), lo,
-			    0)) != -1) {
+	opts = make_optstring(lo, 0);
+	while ((c = getopt_long(argc, argv, opts, lo, 0)) != -1) {
 		od = find_opt_by_short_name(cm->cp.options, c);
 		if (od)
 			rv = od->convert_function(od, smsg, optarg);
@@ -1242,12 +1228,6 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				/* Used to be DRBD_GENL_F_CREATE_DEVICE.
 				 * Ignore. */;
 			else {
-				if (c == ':') {
-					warn_missing_required_arg(argv);
-					rv = OTHER_ERROR;
-					goto error;
-				}
-				warn_unrecognized_option(argv);
 				rv = OTHER_ERROR;
 				goto error;
 			}
@@ -1258,8 +1238,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 
 	/* argc should be cmd + n options + n args;
 	 * if it is more, we did not understand some */
-	if (n_args + optind < argc)
+	if (n_args + optind < argc) {
 		warn_print_excess_args(argc, argv, optind + n_args);
+		rv = OTHER_ERROR;
+		goto error;
+	}
 
 	dump_argv(argc, argv, optind, i - 1);
 
@@ -1578,17 +1561,13 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	}
 
 	if (cm->options) {
-		const char *opts = make_optstring(cm->options, ':');
+		const char *opts = make_optstring(cm->options, 0);
 		int c;
 
 		while((c = getopt_long(argc, argv, opts, cm->options, 0)) != -1) {
 			switch(c) {
 			default:
 			case '?':
-				warn_unrecognized_option(argv);
-				return 20;
-			case ':':
-				warn_missing_required_arg(argv);
 				return 20;
 			case 't':
 				timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
@@ -1633,8 +1612,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			}
 		}
 	}
-	if (optind < argc)
+	if (optind < argc) {
 		warn_print_excess_args(argc, argv, optind);
+		return 20;
+	}
 
 	dump_argv(argc, argv, optind, 0);
 
