@@ -3,11 +3,11 @@
 "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdconf">
   <refentryinfo>
-    <date>5 Dec 2008</date>
+    <date>6 May 2011</date>
 
     <productname>DRBD</productname>
 
-    <productnumber>8.3.2</productnumber>
+    <productnumber>8.4.0</productnumber>
   </refentryinfo>
 
   <refmeta>
@@ -34,36 +34,49 @@
     <para>The file format was designed as to allow to have a verbatim copy of the file on both
     nodes of the cluster. It is highly recommended to do so in order to keep your configuration
     manageable. The file <option>/etc/drbd.conf</option> should be the same on both nodes of the
-    cluster. Changes to <option>/etc/drbd.conf</option> do not apply immediately. <example>
-        <title>A small drbd.conf file</title>
+    cluster. Changes to <option>/etc/drbd.conf</option> do not apply immediately.</para>
 
-        <programlisting format="linespecific">global { usage-count yes; }
-common { syncer { rate 10M; } }
-resource r0 {
-	protocol C;
+    <para>By convention the main config contains two include statements. The first one includes
+    the file <option>/etc/drbd.d/global_common.conf</option>, the second one all file with a
+    <option>.res</option> suffix.</para>
+
+    <para><example>
+        <title>A small example.res file</title>
+
+        <programlisting format="linespecific">resource r0 {
 	net {
+		protocol C;
 		cram-hmac-alg sha1;
 		shared-secret "FooFunFactory";
 	}
+	disk {
+		resync-rate 10M;
+	}
 	on alice {
-		device    minor 1;
-		disk      /dev/sda7;
+		volume 0 {
+			device    minor 1;
+			disk      /dev/sda7;
+			meta-disk internal;
+		}
 		address   10.1.1.31:7789;
-		meta-disk internal;
 	}
 	on bob {
-		device    minor 1;
-		disk      /dev/sda7;
+		volume 0 {
+			device    minor 1;
+			disk      /dev/sda7;
+			meta-disk internal;
+		}
 		address   10.1.1.32:7789;
-		meta-disk internal;
 	}
 }</programlisting>
-      </example> In this example, there is a single DRBD resource (called r0) which uses protocol
-    C for the connection between its devices. The device which runs on host
+      </example>In this example, there is a single DRBD resource (called r0) which uses protocol C
+    for the connection between its devices. It contains a single volume which runs on host
     <replaceable>alice</replaceable> uses <replaceable>/dev/drbd1</replaceable> as devices for its
     application, and <replaceable>/dev/sda7</replaceable> as low-level storage for the data. The
     IP addresses are used to specify the networking interfaces to be used. An eventually running
-    resync process should use about 10MByte/second of IO bandwidth.</para>
+    resync process should use about 10MByte/second of IO bandwidth. This sync-rate statement is
+    valid for volume 0, but would also be valid for further volumes. In this example it assigns
+    full 10MByte/second to each volume.</para>
 
     <para>There may be multiple resource sections in a single drbd.conf file. For more examples,
     please have a look at the
@@ -135,7 +148,7 @@ resource r0 {
 
                 <secondary>common</secondary>
               </indexterm> All resources inherit the options set in this section. The common
-            section might have a <option>startup</option>, a <option>syncer</option>, a
+            section might have a <option>startup</option>, a <option>options</option>, a
             <option>handlers</option>, a <option>net</option> and a <option>disk</option>
             section.</para>
           </listitem>
@@ -151,9 +164,9 @@ resource r0 {
                 <secondary>resource</secondary>
               </indexterm> Configures a DRBD resource. Each resource section needs to have two (or
             more) <option>on <replaceable>host</replaceable></option> sections and may have a
-            <option>startup</option>, a <option>syncer</option>, a <option>handlers</option>, a
-            <option>net</option> and a <option>disk</option> section. Required parameter in this
-            section: <option>protocol</option>.</para>
+            <option>startup</option>, a <option>options</option>, a <option>handlers</option>, a
+            <option>net</option> and a <option>disk</option> section. It might contain
+            <option>volume</option>s sections.</para>
           </listitem>
         </varlistentry>
 
@@ -188,10 +201,26 @@ resource r0 {
 			disk /dev/mapper/other-san-as-seen-from-daisy;
 		}
 	}
-	</programlisting> See also the <option>floating</option> section keyword. Required parameters in
+	</programlisting>See also the <option>floating</option> section keyword. Required statements in
+            this section: <option>address</option> and <option>volume</option>. Note for backward
+            compatibility and convenience it is valid to embed the statements of a single volume
+            directly into the host section.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>volume <replaceable>vnr</replaceable></option></term>
+
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
+
+                <secondary>volume</secondary>
+              </indexterm> Defines a volume within a connection. The minor numbers of a replicated
+            volume might be different on different hosts, the volume number
+            (<replaceable>vnr</replaceable>) is what groups them together. Required parameters in
             this section: <option>device</option>, <option>disk</option>,
-            <option>address</option>, <option>meta-disk</option>,
-            <option>flexible-meta-disk</option>.</para>
+            <option>meta-disk</option>, <option>flexible-meta-disk</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -260,9 +289,13 @@ resource r0 {
                 <manvolnum>8</manvolnum>
               </citerefentry> for detailed description of the parameters. Optional parameters:
             <option>on-io-error</option>, <option>size</option>, <option>fencing</option>,
-            <option>use-bmbv</option>, <option>no-disk-barrier</option>,
-            <option>no-disk-flushes</option>, <option>no-disk-drain</option>,
-            <option>no-md-flushes</option>, <option>max-bio-bvecs</option>.</para>
+            <option>disk-barrier</option>, <option>disk-flushes</option>,
+            <option>disk-drain</option>, <option>md-flushes</option>,
+            <option>max-bio-bvecs</option>, <option>resync-rate</option>,
+            <option>resync-after</option>, <option>al-extents</option>,
+            <option>c-plan-ahead</option>, <option>c-fill-target</option>,
+            <option>c-delay-target</option>, <option>c-max-rate</option>,
+            <option>c-min-rate</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -280,16 +313,18 @@ resource r0 {
 
                 <manvolnum>8</manvolnum>
               </citerefentry> for a detailed description of this section's parameters. Optional
-            parameters: <option>sndbuf-size</option>, <option>rcvbuf-size</option>,
-            <option>timeout</option>, <option>connect-int</option>, <option>ping-int</option>,
-            <option>ping-timeout</option>, <option>max-buffers</option>,
-            <option>max-epoch-size</option>, <option>ko-count</option>,
-            <option>allow-two-primaries</option>, <option>cram-hmac-alg</option>,
-            <option>shared-secret</option>, <option>after-sb-0pri</option>,
-            <option>after-sb-1pri</option>, <option>after-sb-2pri</option>,
-            <option>data-integrity-alg</option>, <option>no-tcp-cork</option>,
-            <option>on-congestion</option>, <option>congestion-fill</option>,
-            <option>congestion-extents</option></para>
+            parameters: <option>protocol</option>, <option>sndbuf-size</option>,
+            <option>rcvbuf-size</option>, <option>timeout</option>, <option>connect-int</option>,
+            <option>ping-int</option>, <option>ping-timeout</option>,
+            <option>max-buffers</option>, <option>max-epoch-size</option>,
+            <option>ko-count</option>, <option>allow-two-primaries</option>,
+            <option>cram-hmac-alg</option>, <option>shared-secret</option>,
+            <option>after-sb-0pri</option>, <option>after-sb-1pri</option>,
+            <option>after-sb-2pri</option>, <option>data-integrity-alg</option>,
+            <option>no-tcp-cork</option>, <option>on-congestion</option>,
+            <option>congestion-fill</option>, <option>congestion-extents</option>,
+            <option>verify-alg</option>, <option>use-rle</option>,
+            <option>csums-alg</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -314,25 +349,21 @@ resource r0 {
         </varlistentry>
 
         <varlistentry>
-          <term><option>syncer</option></term>
+          <term><option>options</option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
-                <secondary>syncer</secondary>
-              </indexterm> This section is used to fine tune the synchronization daemon for the
-            device. Please refer to <citerefentry>
+                <secondary>options</secondary>
+              </indexterm> This section is used to fine tune the behaviour of the resource object.
+            Please refer to <citerefentry>
                 <refentrytitle>drbdsetup</refentrytitle>
 
                 <manvolnum>8</manvolnum>
               </citerefentry> for a detailed description of this section's parameters. Optional
-            parameters: <option>rate</option>, <option>after</option>,
-            <option>al-extents</option>, <option>use-rle</option>, <option>cpu-mask</option>,
-            <option>verify-alg</option>, <option>csums-alg</option>,
-            <option>c-plan-ahead</option>, <option>c-fill-target</option>,
-            <option>c-delay-target</option>, <option>c-max-rate</option>,
-            <option>c-min-rate</option> and <option>on-no-data-accessible</option>.</para>
+            parameters: <option>cpu-mask</option>, and
+            <option>on-no-data-accessible</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -394,11 +425,12 @@ resource r0 {
                 <primary>drbd.conf</primary>
 
                 <secondary>minor-count</secondary>
-              </indexterm><replaceable>count</replaceable> may be a number from 1 to 255.</para>
+              </indexterm><replaceable>count</replaceable> may be a number from 1 to FIXME.</para>
 
-            <para>Use <replaceable>minor-count</replaceable> if you want to define massively more
-            resources later without reloading the DRBD kernel module. Per default the module loads
-            with 11 more resources than you have currently in your config but at least 32.</para>
+            <para><replaceable>Minor-count</replaceable> is a sizing hint for DRBD. It helps to
+            right-size various memory pools. It should be set in the in the same order of
+            magnitude than the actual number of minors you use. Per default the module loads with
+            11 more resources than you have currently in your config but at least 32.</para>
           </listitem>
         </varlistentry>
 
@@ -654,57 +686,35 @@ resource r0 {
         </varlistentry>
 
         <varlistentry>
-          <term><option>use-bmbv</option></term>
+          <term><option>disk-barrier</option></term>
+
+          <term><option>disk-flushes</option></term>
+
+          <term><option>disk-drain</option></term>
 
           <listitem>
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
 
-              <secondary>use-bmbv</secondary>
-            </indexterm>
-
-            <para>In case the backing storage's driver has a merge_bvec_fn() function, DRBD has to
-            pretend that it can only process IO requests in units not larger than 4KiB. (At the
-            time of writing the only known drivers which have such a function are: md (software
-            raid driver), dm (device mapper - LVM) and DRBD itself).</para>
-
-            <para>To get the best performance out of DRBD on top of software RAID (or any other
-            driver with a merge_bvec_fn() function) you might enable this function, if you know
-            for sure that the merge_bvec_fn() function will deliver the same results on all nodes
-            of your cluster. I.e. the physical disks of the software RAID are of exactly the same
-            type. <emphasis>Use this option only if you know what you are doing.</emphasis></para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>no-disk-barrier</option></term>
-
-          <term><option>no-disk-flushes</option></term>
-
-          <term><option>no-disk-drain</option></term>
-
-          <listitem>
-            <indexterm significance="normal">
-              <primary>drbd.conf</primary>
-
-              <secondary>no-disk-flushes</secondary>
+              <secondary>disk-flushes</secondary>
             </indexterm>
 
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
 
-              <secondary>no-disk-flushes</secondary>
+              <secondary>disk-flushes</secondary>
             </indexterm>
 
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
 
-              <secondary>no-disk-flushes</secondary>
+              <secondary>disk-flushes</secondary>
             </indexterm>
 
             <para>DRBD has four implementations to express write-after-write dependencies to its
             backing storage device. DRBD will use the first method that is supported by the
-            backing storage device and that is not disabled by the user.</para>
+            backing storage device and that is not disabled by the user. By default all three
+            methods are enabled.</para>
 
             <para>When selecting the method you should not only base your decision on the
             measurable performance. In case your backing storage device has a volatile write cache
@@ -725,8 +735,8 @@ resource r0 {
                 <listitem>
                   <para>The first requires that the driver of the backing storage device support
                   barriers (called 'tagged command queuing' in SCSI and 'native command queuing'
-                  in SATA speak). The use of this method can be disabled by the
-                  <option>no-disk-barrier</option> option.</para>
+                  in SATA speak). The use of this method can be disabled by setting the
+                  <option>disk-barrier</option> options to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -736,7 +746,7 @@ resource r0 {
                 <listitem>
                   <para>The second requires that the backing device support disk flushes (called
                   'force unit access' in the drive vendors speak). The use of this method can be
-                  disabled using the <option>no-disk-flushes</option> option.</para>
+                  disabled setting <option>disk-flushes</option> to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -746,8 +756,8 @@ resource r0 {
                 <listitem>
                   <para>The third method is simply to let write requests drain before write
                   requests of a new reordering domain are issued. This was the only implementation
-                  before 8.0.9. You can disable this method by using the
-                  <option>no-disk-drain</option> option.</para>
+                  before 8.0.9. You can disable this method by setting <option>disk-drain</option>
+                  to <option>no</option>.</para>
                 </listitem>
               </varlistentry>
 
@@ -764,17 +774,17 @@ resource r0 {
         </varlistentry>
 
         <varlistentry>
-          <term><option>no-md-flushes</option></term>
+          <term><option>md-flushes</option></term>
 
           <listitem>
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
 
-              <secondary>no-md-flushes</secondary>
+              <secondary>md-flushes</secondary>
             </indexterm>
 
             <para>Disables the use of disk flushes and barrier BIOs when accessing the meta data
-            device. See the notes on <option>no-disk-flushes</option>.</para>
+            device. See the notes on <option>disk-flushes</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -1269,20 +1279,21 @@ resource r0 {
         </varlistentry>
 
         <varlistentry>
-          <term><option>no-tcp-cork</option></term>
+          <term><option>tcp-cork</option></term>
 
           <listitem>
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
 
-              <secondary>no-tcp-cork</secondary>
+              <secondary>tcp-cork</secondary>
             </indexterm>
 
             <para>DRBD usually uses the TCP socket option TCP_CORK to hint to the network stack
             when it can expect more data, and when it should flush out what it has in its send
             queue. It turned out that there is at least one network stack that performs worse when
-            one uses this hinting method. Therefore we introducted this option, which disables the
-            setting and clearing of the TCP_CORK socket option by DRBD.</para>
+            one uses this hinting method. Therefore we introducted this option. By setting
+            <option>tcp-cork</option> to <option>no</option> you can disable the setting and
+            clearing of the TCP_CORK socket option by DRBD.</para>
           </listitem>
         </varlistentry>
 
@@ -1405,13 +1416,13 @@ resource r0 {
         </varlistentry>
 
         <varlistentry>
-          <term><option>rate <replaceable>rate</replaceable></option></term>
+          <term><option>resync-rate <replaceable>rate</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
-                <secondary>rate</secondary>
+                <secondary>resync-rate</secondary>
               </indexterm> To ensure a smooth operation of the application on top of DRBD, it is
             possible to limit the bandwidth which may be used by background synchronizations. The
             default is 250 KB/sec, the default unit is KB/sec. Optional suffixes K, M, G are
@@ -1768,7 +1779,7 @@ resource r0 {
 
     <para>The <option>data-integrity-alg</option> causes the receiving side to log an error about
     "Digest integrity check FAILED: Ns +x\n", where N is the sector offset, and x is the size of
-    the requst in bytes. It will then disconnect, and reconnect, thus causing a quick resync. If
+    the request in bytes. It will then disconnect, and reconnect, thus causing a quick resync. If
     the sending side at the same time detected a modification, it warns about "Digest mismatch,
     buffer modified by upper layers during write: Ns +x\n", which shows that this was a false
     positive. The sending side may detect these buffer modifications immediately after the
@@ -1789,7 +1800,7 @@ resource r0 {
   <refsect1>
     <title>Version</title>
 
-    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.</simpara>
+    <simpara>This document was revised for version 8.4.0 of the DRBD distribution.</simpara>
   </refsect1>
 
   <refsect1>
