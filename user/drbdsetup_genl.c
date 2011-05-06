@@ -345,7 +345,7 @@ struct option wait_cmds_options[] = {
 	.optional_yesno_argument = true
 #define EYN(D) \
 	conv_yesno, show_yesno, yesno_opt_usage, yesno_opt_xml, \
-	{ .numeric_param = { .def = D } }, \
+	{ .numeric_param = { .def = DRBD_ ## D ## _DEF } }, \
 	.optional_yesno_argument = true
 #define ES      conv_string, show_string, string_opt_usage, string_opt_xml, { }
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
@@ -359,10 +359,10 @@ struct option wait_cmds_options[] = {
 #define CHANGEABLE_DISK_OPTIONS						\
 	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
 	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
-	{ "disk-barrier",'B', T_disk_barrier, EYN(1) },			\
-	{ "disk-flushes",'F', T_disk_flushes, EYN(1) },			\
-	{ "disk-drain",'D', T_disk_drain, EYN(1) },			\
-	{ "md-flushes",'M', T_md_flushes,  EYN(1) },			\
+	{ "disk-barrier",'B', T_disk_barrier, EYN(DISK_BARRIER) },			\
+	{ "disk-flushes",'F', T_disk_flushes, EYN(DISK_FLUSHES) },			\
+	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
+	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
 	{ "resync-after",'a',  T_resync_after,	EN(AFTER,1,NULL) },	\
 	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,1,NULL) }, \
@@ -384,23 +384,23 @@ struct option wait_cmds_options[] = {
 	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") }, \
 	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,1,"bytes") }, \
 	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) }, \
-	{ "allow-two-primaries",'m',T_two_primaries, EYN(0) },		\
+	{ "allow-two-primaries",'m',T_two_primaries, EYN(ALLOW_TWO_PRIMARIES) }, \
 	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
 	{ "shared-secret",'x',	T_shared_secret,   ES },		\
 	{ "after-sb-0pri",'0',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) }, \
 	{ "after-sb-1pri",'1',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) }, \
 	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
-	{ "always-asbp",'P',   T_always_asbp,     EYN(0) },			\
+	{ "always-asbp",'P',   T_always_asbp,     EYN(ALWAYS_ASBP) }, \
 	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
 	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") }, \
 	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
-	{ "tcp-cork",'o',   T_tcp_cork, EYN(1) },			\
+	{ "tcp-cork",'o',   T_tcp_cork, EYN(TCP_CORK) }, \
 	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
 	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
 	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) }, \
 	{ "csums-alg", 'C',T_csums_alg,        ES },			\
 	{ "verify-alg", 'V',T_verify_alg,      ES },			\
-	{ "use-rle",'E',T_use_rle,   EYN(0) },
+	{ "use-rle",'E',T_use_rle,   EYN(USE_RLE) },
 
 struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS, POLICY(set_role_parms),
