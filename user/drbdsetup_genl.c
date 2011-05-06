@@ -506,7 +506,7 @@ struct drbd_cmd commands[] = {
 	{"events", CTX_MINOR | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.ignore_minor_not_known = true,
 		.continuous_poll = true, },
-	{"wait-connect", CTX_MINOR | CTX_ALL, F_GET_CMD(w_connected_state),
+	{"wait-connect", CTX_MINOR, F_GET_CMD(w_connected_state),
 		.options = wait_cmds_options,
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
@@ -2893,9 +2893,9 @@ int main(int argc, char **argv)
 			print_usage_and_exit("command does not accept argument 'ALL'");
 	} else if (cmd->ctx_key & CTX_MINOR) {
 		minor = dt_minor_of_dev(argv[1]);
-		if (minor < 0 && !(cmd->ctx_key & CTX_CONN)) {
+		if (minor == -1U && !(cmd->ctx_key & CTX_CONN)) {
 			fprintf(stderr, "Cannot determine minor device number of "
-					"drbd device '%s'",
+					"device '%s'\n",
 				argv[1]);
 			exit(20);
 		}
