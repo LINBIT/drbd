@@ -1055,22 +1055,9 @@ static int print_config_error(int err_no)
 
 #define RCV_SIZE NLMSG_SPACE(sizeof(struct cn_msg)+sizeof(struct drbd_nl_cfg_reply))
 
-/* cmdname and optind are global variables */
-static void warn_unrecognized_option(char **argv)
-{
-	fprintf(stderr, "%s %s: unrecognized option '%s'\n",
-		cmdname, argv[0], argv[optind - 1]);
-}
-
-static void warn_missing_required_arg(char **argv)
-{
-	fprintf(stderr, "%s %s: option '%s' requires an argument\n",
-		cmdname, argv[0], argv[optind - 1]);
-}
-
 static void warn_print_excess_args(int argc, char **argv, int i)
 {
-	fprintf(stderr, "Ignoring excess arguments:");
+	fprintf(stderr, "Excess arguments:");
 	for (; i < argc; i++)
 		fprintf(stderr, " %s", argv[i]);
 	printf("\n");
@@ -1124,8 +1111,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, ch
 	n_args = i - 1;
 
 	lo = make_longoptions(cm->cp.options);
-	opterr=0;
-	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
+	if (!lo) {
+		static struct option none[] = { { } };
+		lo = none;
+	}
+	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
 		od = find_opt_by_short_name(cm->cp.options,c);
 		if (od)
 			rv = od->convert_function(od,tl,optarg);
@@ -1133,12 +1123,6 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, ch
 			if(c=='(') flags |= DRBD_NL_SET_DEFAULTS;
 			else if(c==')') flags |= DRBD_NL_CREATE_DEVICE;
 			else {
-				if (c == ':') {
-					warn_missing_required_arg(argv);
-					rv = OTHER_ERROR;
-					goto error;
-				}
-				warn_unrecognized_option(argv);
 				rv = OTHER_ERROR;
 				goto error;
 			}
@@ -1149,8 +1133,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, ch
 
 	/* argc should be cmd + n options + n args;
 	 * if it is more, we did not understand some */
-	if (n_args + optind < argc)
+	if (n_args + optind < argc) {
 		warn_print_excess_args(argc, argv, optind + n_args);
+		rv = OTHER_ERROR;
+		goto error;
+	}
 
 	dump_argv(argc, argv, optind, i - 1);
 
@@ -1387,8 +1374,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	int ignore_minor_not_known;
 	int dummy;
 
-	if (argc > 1)
+	if (argc > 1) {
 		warn_print_excess_args(argc, argv, 1);
+		return 20;
+	}
 
 	dump_argv(argc, argv, 1, 0);
 
@@ -2078,15 +2067,14 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 	int wasb=0;
 
 	lo = cm->ep.options;
-
-	while( (c=getopt_long(argc,argv,make_optstring(lo,':'),lo,0)) != -1 ) {
+	if (!lo) {
+		static struct option none[] = { { } };
+		lo = none;
+	}
+	while( (c=getopt_long(argc,argv,make_optstring(lo,0),lo,0)) != -1 ) {
 		switch(c) {
 		default:
 		case '?':
-			warn_unrecognized_option(argv);
-			return 20;
-		case ':':
-			warn_missing_required_arg(argv);
 			return 20;
 		case 'u': unfiltered=1; break;
 		case 'a': all_devices=1; break;
@@ -2130,8 +2118,10 @@ static int events_cmd(struct drbd_cmd *cm, unsigned minor, int argc ,char **argv
 		}
 	}
 
-	if (optind < argc)
+	if (optind < argc) {
 		warn_print_excess_args(argc, argv, optind);
+		return 20;
+	}
 
 	dump_argv(argc, argv, optind, 0);
 
