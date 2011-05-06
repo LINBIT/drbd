@@ -3,11 +3,11 @@
 "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdadm">
   <refentryinfo>
-    <date>5 Dec 2008</date>
+    <date>6 May 2011</date>
 
     <productname>DRBD</productname>
 
-    <productnumber>8.3.2</productnumber>
+    <productnumber>8.4.0</productnumber>
   </refentryinfo>
 
   <refmeta>
@@ -55,9 +55,10 @@
       <arg choice="req" rep="norepeat"><replaceable>command</replaceable></arg>
 
       <group choice="opt" rep="norepeat">
-        <arg choice="plain" rep="norepeat">all</arg>
+        <arg choice="req" rep="norepeat">all</arg>
 
-        <arg choice="plain" rep="repeat"><replaceable>resource</replaceable></arg>
+        <arg choice="req" rep="repeat"><replaceable>resource<arg choice="opt"
+        rep="norepeat">/volume&gt;</arg></replaceable></arg>
       </group>
     </cmdsynopsis>
   </refsynopsisdiv>
@@ -70,6 +71,20 @@
     <option>ifup</option>/<option>ifdown</option> is to <option>ifconfig</option>.
     <option>Drbdadm</option> reads its configuration file and performs the specified commands by
     calling the <option>drbdsetup</option> and/or the <option>drbdmeta</option> program.</para>
+
+    <para><option>Drbdadm</option> can operate on whole resources or on individual volumes in a
+    resource. The sub commands: <option>attach</option>, <option>detach</option>,
+    <option>primary</option>, <option>secondary</option>, <option>invalidate</option>,
+    <option>invalidate-remote</option>, <option>outdate</option>, <option>resize</option>,
+    <option>verify</option>, <option>pause-sync</option>, <option>resume-sync</option>,
+    <option>role</option>, <option>csytate</option>, <option>dstate</option>,
+    <option>create-md</option>, <option>show-gi</option>, <option>get-gi</option>,
+    <option>dump-md</option>, <option>wipe-md</option> are work on whole resources and on
+    individual volumes. </para>
+
+    <para>Resource level only commands are: <option>connect</option>, <option>disconnect</option>,
+    <option>up</option>, <option>down</option>, <option>wait-connect</option> and
+    <option>dump</option>.</para>
   </refsect1>
 
   <refsect1>
@@ -91,8 +106,9 @@
 
         <listitem>
           <para>Specifies the configuration file drbdadm will use. If this parameter is not
-          specified, drbdadm will look for <option>/etc/drbd-83.conf</option>,
-          <option>/etc/drbd-08.conf</option> and <option>/etc/drbd.conf</option>.</para>
+          specified, drbdadm will look for <option>/etc/drbd-84.conf</option>,
+          <option>/etc/drbd-83.conf</option>, <option>/etc/drbd-08.conf</option> and
+          <option>/etc/drbd.conf</option>.</para>
         </listitem>
       </varlistentry>
 
@@ -603,7 +619,7 @@
   <refsect1>
     <title>Version</title>
 
-    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.</simpara>
+    <simpara>This document was revised for version 8.4.0 of the DRBD distribution.</simpara>
   </refsect1>
 
   <refsect1>
@@ -622,7 +638,7 @@
   <refsect1>
     <title>Copyright</title>
 
-    <simpara>Copyright 2001-2008 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
+    <simpara>Copyright 2001-2011 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
     This is free software; see the source for copying conditions. There is NO warranty; not even
     for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</simpara>
   </refsect1>
