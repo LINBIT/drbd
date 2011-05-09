@@ -2762,7 +2762,7 @@ int __init drbd_init(void)
 
 	err = drbd_genl_register();
 	if (err) {
-		pr_err("drbd: unable to register generic netlink family\n");
+		printk(KERN_ERR "drbd: unable to register generic netlink family\n");
 		goto fail;
 	}
 
