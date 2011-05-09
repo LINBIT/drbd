@@ -1053,4 +1053,9 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 	generic___test_and_clear_le_bit(nr, addr)
 #endif
 
+#ifndef IDR_GET_NEXT_EXPORTED
+/* Body in compat/idr.c */
+extern void *idr_get_next(struct idr *idp, int *nextidp);
+#endif
+
 #endif
