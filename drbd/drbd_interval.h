@@ -4,6 +4,21 @@
 #include <linux/types.h>
 #include <linux/rbtree.h>
 
+/* Compatibility code for 2.6.16 (SLES10) */
+#ifndef RB_EMPTY_NODE
+#define rb_parent(r)   ((r)->rb_parent)
+#define RB_EMPTY_NODE(node)     (rb_parent(node) == node)
+#endif
+
+#ifndef RB_CLEAR_NODE
+static inline void rb_set_parent(struct rb_node *rb, struct rb_node *p)
+{
+        rb->rb_parent = p;
+}
+#define RB_CLEAR_NODE(node)     (rb_set_parent(node, node))
+#endif
+/* /Compatibility code */
+
 struct drbd_interval {
 	struct rb_node rb;
 	sector_t sector;	/* start sector of the interval */
