@@ -1074,6 +1074,11 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	})
 #endif
 
+/* Missing in 2.6.16... */
+#ifndef DIV_ROUND_UP
+#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
+#endif
+
 /*
  * IS_ALIGNED() was added to <linux/kernel.h> in mainline commit 0c0e6195 (and
  * improved in f10db627); 2.6.24-rc1.

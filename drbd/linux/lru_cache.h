@@ -32,6 +32,7 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h>
 
+/* Compatibility code */
 #include "compat.h"
 #ifndef COMPAT_HAVE_CLEAR_BIT_UNLOCK
 static inline void clear_bit_unlock(unsigned nr, volatile unsigned long *addr)
@@ -44,6 +45,15 @@ static inline void clear_bit_unlock(unsigned nr, volatile unsigned long *addr)
         clear_bit(nr, addr);
 }
 #endif
+#ifndef COMPAT_HAVE_BOOL_TYPE
+typedef _Bool                   bool;
+enum {
+	false = 0,
+	true = 1
+};
+#define COMPAT_HAVE_BOOL_TYPE
+#endif
+/* End of Compatibility code */
 
 /*
 This header file (and its .c file; kernel-doc of functions see there)
