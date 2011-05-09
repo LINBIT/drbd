@@ -697,6 +697,7 @@ void parse_options_syncer(struct d_resource *res)
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
 			*options = APPEND(*options, new_opt(strdup(opt_name + 3), strdup("no")));
+			free(opt_name);
 			token = yylex();
 			break;
 		case TK_NET_OPTION:
@@ -760,6 +761,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
 			options = APPEND(options, new_opt(strdup(opt_name + 3), strdup("no")));
+			free(opt_name);
 		} else if (token == token_option) {
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
