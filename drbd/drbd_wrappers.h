@@ -948,7 +948,11 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 
 #ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
 /* see comments in compat/tests/have_bioset_create_front_pad.c */
+#ifdef COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
+#define bioset_create(pool_size, front_pad)	bioset_create(pool_size, pool_size, 1)
+#else
 #define bioset_create(pool_size, front_pad)	bioset_create(pool_size, 1)
+#endif
 #endif
 
 
