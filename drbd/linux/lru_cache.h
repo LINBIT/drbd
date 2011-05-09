@@ -32,6 +32,18 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h>
 
+#include "compat.h"
+#ifndef COMPAT_HAVE_CLEAR_BIT_UNLOCK
+static inline void clear_bit_unlock(unsigned nr, volatile unsigned long *addr)
+{
+#if defined(__x86_64__) ||  defined(__i386__) || defined(__arch_um__)
+	barrier();
+#else
+	smp_mb(); /* Be on the save side for alpha, and others */
+#endif
+        clear_bit(nr, addr);
+}
+#endif
 
 /*
 This header file (and its .c file; kernel-doc of functions see there)
