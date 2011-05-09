@@ -364,10 +364,10 @@ struct option wait_cmds_options[] = {
 	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
 	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
-	{ "resync-after",'a',  T_resync_after,	EN(AFTER,1,NULL) },	\
-	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,1,NULL) }, \
-	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD,1,"1/10 seconds") }, \
-	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET,1,"1/10 seconds") }, \
+	{ "resync-after",'a',  T_resync_after,	EN(AFTER,'1',NULL) },	\
+	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,'1',NULL) }, \
+	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD,'1',"1/10 seconds") }, \
+	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET,'1',"1/10 seconds") }, \
 	{ "c-fill-target", 's',T_c_fill_target, EN(C_FILL_TARGET,'s',"bytes") }, \
 	{ "c-max-rate", 'R',	T_c_max_rate, EN(C_MAX_RATE,'k',"bytes/second") }, \
 	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
@@ -375,15 +375,15 @@ struct option wait_cmds_options[] = {
 #define CHANGEABLE_NET_OPTIONS						\
 	{ "protocol",'p',	T_wire_protocol, \
 		conv_protocol, show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
-	{ "timeout",'t',	T_timeout,	EN(TIMEOUT,1,"1/10 seconds") }, \
-	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,1,NULL) }, \
-	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,1,NULL) }, \
-	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,1,NULL) }, \
-	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,1,"seconds") }, \
-	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT,1,"seconds") }, \
-	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,1,"bytes") }, \
-	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,1,"bytes") }, \
-	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,1,NULL) }, \
+	{ "timeout",'t',	T_timeout,	EN(TIMEOUT,'1',"1/10 seconds") }, \
+	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,'1',NULL) }, \
+	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,'1',NULL) }, \
+	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,'1',NULL) }, \
+	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,'1',"seconds") }, \
+	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT,'1',"seconds") }, \
+	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,'1',"bytes") }, \
+	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,'1',"bytes") }, \
+	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,'1',NULL) }, \
 	{ "allow-two-primaries",'m',T_two_primaries, EYN(ALLOW_TWO_PRIMARIES) }, \
 	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
 	{ "shared-secret",'x',	T_shared_secret,   ES },		\
@@ -392,12 +392,12 @@ struct option wait_cmds_options[] = {
 	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
 	{ "always-asbp",'P',   T_always_asbp,     EYN(ALWAYS_ASBP) }, \
 	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
-	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,1,"1/10 seconds") }, \
+	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,'1',"1/10 seconds") }, \
 	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
 	{ "tcp-cork",'o',   T_tcp_cork, EYN(TCP_CORK) }, \
 	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
 	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
-	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,1,NULL) }, \
+	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,'1',NULL) }, \
 	{ "csums-alg", 'C',T_csums_alg,        ES },			\
 	{ "verify-alg", 'V',T_verify_alg,      ES },			\
 	{ "use-rle",'E',T_use_rle,   EYN(USE_RLE) },
@@ -420,7 +420,7 @@ struct drbd_cmd commands[] = {
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
 		 { "size",'S',		T_disk_size,	EN(DISK_SIZE_SECT,'s',"bytes") },
-		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
+		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,'1',NULL) },
 		 CHANGEABLE_DISK_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
 
@@ -895,7 +895,7 @@ static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg)
 	l = m_strtoll(arg, unit_prefix);
 
 	if (min > l || l > max) {
-		unit[0] = unit_prefix > 1 ? unit_prefix : 0;
+		unit[0] = unit_prefix != '1' ? unit_prefix : 0;
 		fprintf(stderr,"%s %s => %llu%s out of range [%llu..%llu]%s\n",
 			od->name, arg, l, unit, min, max, unit);
 		return OTHER_ERROR;
@@ -1338,7 +1338,7 @@ static void show_numeric(struct drbd_option *od, struct nlattr *nla)
 		val=0;
 	}
 
-	if (unit_prefix == 1)
+	if (unit_prefix == '1')
 		printI("%-16s\t%lld", od->name, val);
 	else
 		printI("%-16s\t%lld%c", od->name, val, unit_prefix);
@@ -2587,12 +2587,8 @@ static void numeric_opt_xml(struct drbd_option *option)
 	printf("\t\t<min>%lld</min>\n",option->numeric_param.min);
 	printf("\t\t<max>%lld</max>\n",option->numeric_param.max);
 	printf("\t\t<default>%lld</default>\n",option->numeric_param.def);
-	if(option->numeric_param.unit_prefix==1) {
-		printf("\t\t<unit_prefix>1</unit_prefix>\n");
-	} else {
-		printf("\t\t<unit_prefix>%c</unit_prefix>\n",
-		       option->numeric_param.unit_prefix);
-	}
+	printf("\t\t<unit_prefix>%c</unit_prefix>\n",
+	       option->numeric_param.unit_prefix);
 	if(option->numeric_param.unit) {
 		printf("\t\t<unit>%s</unit>\n",option->numeric_param.unit);
 	}
