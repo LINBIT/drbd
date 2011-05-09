@@ -1058,4 +1058,16 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 extern void *idr_get_next(struct idr *idp, int *nextidp);
 #endif
 
+/* #ifndef COMPAT_HAVE_LIST_ENTRY_RCU */
+#ifndef list_entry_rcu
+#ifndef rcu_dereference_raw
+/* see c26d34a rcu: Add lockdep-enabled variants of rcu_dereference() */
+#define rcu_dereference_raw(p) rcu_dereference(p)
+#endif
+#define list_entry_rcu(ptr, type, member) \
+	({typeof (*ptr) *__ptr = (typeof (*ptr) __force *)ptr; \
+	 container_of((typeof(ptr))rcu_dereference_raw(__ptr), type, member); \
+	})
+#endif
+
 #endif
