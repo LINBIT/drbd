@@ -156,6 +156,12 @@ void range_check(const enum range_checks what, const char *name,
 		 char *value)
 {
 	char proto = 0;
+
+#define M_STRTOLL_RANGE(x) \
+		m_strtoll_range(value, DRBD_ ## x ## _SCALE, name, \
+				DRBD_ ## x ## _MIN, \
+				DRBD_ ## x ## _MAX)
+
 	switch (what) {
 	case R_NO_CHECK:
 		break;
@@ -164,112 +170,88 @@ void range_check(const enum range_checks what, const char *name,
 			config_file, fline, name, value);
 		break;
 	case R_MINOR_COUNT:
-		m_strtoll_range(value, '1', name,
-				DRBD_MINOR_COUNT_MIN, DRBD_MINOR_COUNT_MAX);
+		M_STRTOLL_RANGE(MINOR_COUNT);
 		break;
 	case R_DIALOG_REFRESH:
-		m_strtoll_range(value, '1', name,
-				DRBD_DIALOG_REFRESH_MIN,
-				DRBD_DIALOG_REFRESH_MAX);
+		M_STRTOLL_RANGE(DIALOG_REFRESH);
 		break;
 	case R_DISK_SIZE:
-		m_strtoll_range(value, 's', name,
-				DRBD_DISK_SIZE_SECT_MIN,
-				DRBD_DISK_SIZE_SECT_MAX);
+		M_STRTOLL_RANGE(DISK_SIZE_SECT);
 		break;
 	case R_TIMEOUT:
-		m_strtoll_range(value, '1', name, DRBD_TIMEOUT_MIN,
-				DRBD_TIMEOUT_MAX);
+		M_STRTOLL_RANGE(TIMEOUT);
 		break;
 	case R_CONNECT_INT:
-		m_strtoll_range(value, '1', name, DRBD_CONNECT_INT_MIN,
-				DRBD_CONNECT_INT_MAX);
+		M_STRTOLL_RANGE(CONNECT_INT);
 		break;
 	case R_PING_INT:
-		m_strtoll_range(value, '1', name, DRBD_PING_INT_MIN,
-				DRBD_PING_INT_MAX);
+		M_STRTOLL_RANGE(PING_INT);
 		break;
 	case R_MAX_BUFFERS:
-		m_strtoll_range(value, '1', name, DRBD_MAX_BUFFERS_MIN,
-				DRBD_MAX_BUFFERS_MAX);
+		M_STRTOLL_RANGE(MAX_BUFFERS);
 		break;
 	case R_MAX_EPOCH_SIZE:
-		m_strtoll_range(value, '1', name, DRBD_MAX_EPOCH_SIZE_MIN,
-				DRBD_MAX_EPOCH_SIZE_MAX);
+		M_STRTOLL_RANGE(MAX_EPOCH_SIZE);
 		break;
 	case R_SNDBUF_SIZE:
-		m_strtoll_range(value, '1', name, DRBD_SNDBUF_SIZE_MIN,
-				DRBD_SNDBUF_SIZE_MAX);
+		M_STRTOLL_RANGE(SNDBUF_SIZE);
 		break;
 	case R_RCVBUF_SIZE:
-		m_strtoll_range(value, '1', name, DRBD_RCVBUF_SIZE_MIN,
-				DRBD_RCVBUF_SIZE_MAX);
+		M_STRTOLL_RANGE(RCVBUF_SIZE);
 		break;
 	case R_KO_COUNT:
-		m_strtoll_range(value, '1', name, DRBD_KO_COUNT_MIN,
-				DRBD_KO_COUNT_MAX);
+		M_STRTOLL_RANGE(KO_COUNT);
 		break;
 	case R_RATE:
-		m_strtoll_range(value, 'K', name, DRBD_RATE_MIN, DRBD_RATE_MAX);
+		M_STRTOLL_RANGE(RATE);
 		break;
 	case R_AL_EXTENTS:
-		m_strtoll_range(value, '1', name, DRBD_AL_EXTENTS_MIN,
-				DRBD_AL_EXTENTS_MAX);
+		M_STRTOLL_RANGE(AL_EXTENTS);
 		break;
 	case R_PORT:
-		m_strtoll_range(value, '1', name, DRBD_PORT_MIN, DRBD_PORT_MAX);
+		M_STRTOLL_RANGE(PORT);
 		break;
-		/* FIXME not yet implemented!
-		   case R_META_IDX:
-		   m_strtoll_range(value, '1', name, DRBD_META_IDX_MIN, DRBD_META_IDX_MAX);
-		   break;
-		 */
+	/* FIXME not yet implemented!
+	case R_META_IDX:
+		M_STRTOLL_RANGE(META_IDX);
+		break;
+	*/
 	case R_WFC_TIMEOUT:
-		m_strtoll_range(value, '1', name, DRBD_WFC_TIMEOUT_MIN,
-				DRBD_WFC_TIMEOUT_MAX);
+		M_STRTOLL_RANGE(WFC_TIMEOUT);
 		break;
 	case R_DEGR_WFC_TIMEOUT:
-		m_strtoll_range(value, '1', name, DRBD_DEGR_WFC_TIMEOUT_MIN,
-				DRBD_DEGR_WFC_TIMEOUT_MAX);
+		M_STRTOLL_RANGE(DEGR_WFC_TIMEOUT);
 		break;
 	case R_OUTDATED_WFC_TIMEOUT:
-		m_strtoll_range(value, '1', name, DRBD_OUTDATED_WFC_TIMEOUT_MIN,
-				DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+		M_STRTOLL_RANGE(OUTDATED_WFC_TIMEOUT);
 		break;
 
 	case R_C_PLAN_AHEAD:
-		m_strtoll_range(value, '1', name, DRBD_C_PLAN_AHEAD_MIN,
-				DRBD_C_PLAN_AHEAD_MAX);
+		M_STRTOLL_RANGE(C_PLAN_AHEAD);
 		break;
 
 	case R_C_DELAY_TARGET:
-		m_strtoll_range(value, '1', name, DRBD_C_DELAY_TARGET_MIN,
-				DRBD_C_DELAY_TARGET_MAX);
+		M_STRTOLL_RANGE(C_DELAY_TARGET);
 		break;
 
 	case R_C_FILL_TARGET:
-		m_strtoll_range(value, 's', name, DRBD_C_FILL_TARGET_MIN,
-				DRBD_C_FILL_TARGET_MAX);
+		M_STRTOLL_RANGE(C_FILL_TARGET);
 		break;
 
 	case R_C_MAX_RATE:
-		m_strtoll_range(value, 'k', name, DRBD_C_MAX_RATE_MIN,
-				DRBD_C_MAX_RATE_MAX);
+		M_STRTOLL_RANGE(C_MAX_RATE);
 		break;
 
 	case R_C_MIN_RATE:
-		m_strtoll_range(value, 'k', name, DRBD_C_MIN_RATE_MIN,
-				DRBD_C_MIN_RATE_MAX);
+		M_STRTOLL_RANGE(C_MIN_RATE);
 		break;
 
 	case R_CONG_FILL:
-		m_strtoll_range(value, 's', name, DRBD_CONG_FILL_MIN,
-				DRBD_CONG_FILL_MAX);
+		M_STRTOLL_RANGE(CONG_FILL);
 		break;
 
 	case R_CONG_EXTENTS:
-		m_strtoll_range(value, '1', name, DRBD_CONG_EXTENTS_MIN,
-				DRBD_CONG_EXTENTS_MAX);
+		M_STRTOLL_RANGE(CONG_EXTENTS);
 		break;
 	case R_PROTOCOL:
 		if (value && value[0] && value[1] == 0) {

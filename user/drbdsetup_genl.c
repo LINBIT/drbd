@@ -332,10 +332,10 @@ struct option wait_cmds_options[] = {
 	{ 0,            0,           0,  0  }
 };
 
-#define EN(N,U,UN) \
+#define EN(N,UN) \
 	conv_numeric, show_numeric, numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
-		DRBD_ ## N ## _DEF ,U,UN  } }
+		DRBD_ ## N ## _DEF , DRBD_ ## N ## _SCALE, UN  } }
 #define EH(N,D) \
 	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRAY_SIZE(N), \
@@ -363,27 +363,27 @@ struct option wait_cmds_options[] = {
 	{ "disk-flushes",'F', T_disk_flushes, EYN(DISK_FLUSHES) },			\
 	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
 	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
-	{ "resync-rate",'t',   T_resync_rate,	EN(RATE,'k',"bytes/second") }, \
-	{ "resync-after",'a',  T_resync_after,	EN(AFTER,'1',NULL) },	\
-	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS,'1',NULL) }, \
-	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD,'1',"1/10 seconds") }, \
-	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET,'1',"1/10 seconds") }, \
-	{ "c-fill-target", 's',T_c_fill_target, EN(C_FILL_TARGET,'s',"bytes") }, \
-	{ "c-max-rate", 'R',	T_c_max_rate, EN(C_MAX_RATE,'k',"bytes/second") }, \
-	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE,'k',"bytes/second") },
+	{ "resync-rate",'t',   T_resync_rate,	EN(RATE, "bytes/second") }, \
+	{ "resync-after",'a',  T_resync_after,	EN(AFTER, NULL) },	\
+	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS, NULL) }, \
+	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD, "1/10 seconds") }, \
+	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET, "1/10 seconds") }, \
+	{ "c-fill-target", 's',T_c_fill_target, EN(C_FILL_TARGET, "bytes") }, \
+	{ "c-max-rate", 'R',	T_c_max_rate, EN(C_MAX_RATE, "bytes/second") }, \
+	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE, "bytes/second") },
 
 #define CHANGEABLE_NET_OPTIONS						\
 	{ "protocol",'p',	T_wire_protocol, \
 		conv_protocol, show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
-	{ "timeout",'t',	T_timeout,	EN(TIMEOUT,'1',"1/10 seconds") }, \
-	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE,'1',NULL) }, \
-	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS,'1',NULL) }, \
-	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK,'1',NULL) }, \
-	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT,'1',"seconds") }, \
-	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT,'1',"seconds") }, \
-	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE,'1',"bytes") }, \
-	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE,'1',"bytes") }, \
-	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT,'1',NULL) }, \
+	{ "timeout",'t',	T_timeout,	EN(TIMEOUT, "1/10 seconds") }, \
+	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
+	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
+	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK, NULL) }, \
+	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT, "seconds") }, \
+	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT, "seconds") }, \
+	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE, "bytes") }, \
+	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE, "bytes") }, \
+	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT, NULL) }, \
 	{ "allow-two-primaries",'m',T_two_primaries, EYN(ALLOW_TWO_PRIMARIES) }, \
 	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
 	{ "shared-secret",'x',	T_shared_secret,   ES },		\
@@ -392,12 +392,12 @@ struct option wait_cmds_options[] = {
 	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
 	{ "always-asbp",'P',   T_always_asbp,     EYN(ALWAYS_ASBP) }, \
 	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
-	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO,'1',"1/10 seconds") }, \
+	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO, "1/10 seconds") }, \
 	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
 	{ "tcp-cork",'o',   T_tcp_cork, EYN(TCP_CORK) }, \
 	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
-	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL,'s',"byte") }, \
-	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS,'1',NULL) }, \
+	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL, "byte") }, \
+	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS, NULL) }, \
 	{ "csums-alg", 'C',T_csums_alg,        ES },			\
 	{ "verify-alg", 'V',T_verify_alg,      ES },			\
 	{ "use-rle",'E',T_use_rle,   EYN(USE_RLE) },
@@ -419,8 +419,8 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
-		 { "size",'S',		T_disk_size,	EN(DISK_SIZE_SECT,'s',"bytes") },
-		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,'1',NULL) },
+		 { "size",'S',		T_disk_size,	EN(DISK_SIZE_SECT, "bytes") },
+		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS, NULL) },
 		 CHANGEABLE_DISK_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
 
@@ -459,7 +459,7 @@ struct drbd_cmd commands[] = {
 	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS, POLICY(resize_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT,'s',"bytes") },
+		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT, "bytes") },
 		 { "assume-peer-has-space",'f',T_resize_force,	EFLAG },
 		 { "assume-clean", 'c',        T_no_resync, EFLAG },
 		 CLOSE_ARGS_OPTS }} }, },
@@ -487,7 +487,7 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS, POLICY(start_ov_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
+		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE_SECT, "bytes") },
 		 CLOSE_ARGS_OPTS }} }, },
 	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	/* "state" is deprecated! please use "role".
