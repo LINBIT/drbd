@@ -112,6 +112,10 @@ static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
 
+#ifndef COMPAT_HAVE_FMODE_T
+typedef unsigned __bitwise__ fmode_t;
+#endif
+
 #ifndef COMPAT_HAVE_BLKDEV_GET_BY_PATH
 /* see kernel 2.6.37,
  * d4d7762 block: clean up blkdev_get() wrappers and their users
