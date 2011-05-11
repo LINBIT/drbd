@@ -419,7 +419,7 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 CLOSE_ARGS_OPTS },
 	 (struct drbd_option[]) {
-		 { "size",'S',		T_disk_size,	EN(DISK_SIZE_SECT, "bytes") },
+		 { "size",'S',		T_disk_size,	EN(DISK_SIZE, "bytes") },
 		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS, NULL) },
 		 CHANGEABLE_DISK_OPTIONS
 		 CLOSE_ARGS_OPTS } }} },
@@ -459,7 +459,7 @@ struct drbd_cmd commands[] = {
 	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS, POLICY(resize_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN(DISK_SIZE_SECT, "bytes") },
+		 { "size",'s',T_resize_size,		EN(DISK_SIZE, "bytes") },
 		 { "assume-peer-has-space",'f',T_resize_force,	EFLAG },
 		 { "assume-clean", 'c',        T_no_resync, EFLAG },
 		 CLOSE_ARGS_OPTS }} }, },
@@ -487,7 +487,7 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS, POLICY(start_ov_parms),
 		F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
-		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE_SECT, "bytes") },
+		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE, "bytes") },
 		 CLOSE_ARGS_OPTS }} }, },
 	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	/* "state" is deprecated! please use "role".

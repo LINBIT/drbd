@@ -176,7 +176,7 @@ void range_check(const enum range_checks what, const char *name,
 		M_STRTOLL_RANGE(DIALOG_REFRESH);
 		break;
 	case R_DISK_SIZE:
-		M_STRTOLL_RANGE(DISK_SIZE_SECT);
+		M_STRTOLL_RANGE(DISK_SIZE);
 		break;
 	case R_TIMEOUT:
 		M_STRTOLL_RANGE(TIMEOUT);
