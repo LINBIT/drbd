@@ -2928,7 +2928,7 @@ void validate_resource(struct d_resource *res)
 			/* Non-fatal if run from some script.
 			 * When deleting resources, it is an easily made
 			 * oversight to leave references to the deleted
-			 * resources in sync-after statements.  Don't fail on
+			 * resources in resync-after statements.  Don't fail on
 			 * every pacemaker-induced action, as it would
 			 * ultimately lead to all nodes committing suicide. */
 			if (no_tty)

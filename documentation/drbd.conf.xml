@@ -1453,15 +1453,15 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>after <replaceable>res-name</replaceable></option></term>
+          <term><option>resync-after <replaceable>res-name</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
-                <secondary>after</secondary>
+                <secondary>resync-after</secondary>
               </indexterm> By default, resynchronization of all devices would run in parallel. By
-            defining a sync-after dependency, the resynchronization of this resource will start
+            defining a resync-after dependency, the resynchronization of this resource will start
             only if the resource <replaceable>res-name</replaceable> is already in connected state
             (i.e., has finished its resynchronization).</para>
           </listitem>

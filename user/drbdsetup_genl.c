@@ -364,7 +364,7 @@ struct option wait_cmds_options[] = {
 	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
 	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RESYNC_RATE, "bytes/second") }, \
-	{ "resync-after",'a',  T_resync_after,	EN(AFTER, NULL) },	\
+	{ "resync-after",'a',  T_resync_after,	EN(RESYNC_AFTER, NULL) },	\
 	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS, NULL) }, \
 	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD, "1/10 seconds") }, \
 	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET, "1/10 seconds") }, \
@@ -572,8 +572,8 @@ static const char *error_messages[] = {
 	EM(ERR_INTR) = "Interrupted by Signal",
 	EM(ERR_RESIZE_RESYNC) = "Resize not allowed during resync.",
 	EM(ERR_NO_PRIMARY) = "Need one Primary node to resize.",
-	EM(ERR_SYNC_AFTER) = "The sync-after minor number is invalid",
-	EM(ERR_SYNC_AFTER_CYCLE) = "This would cause a sync-after dependency cycle",
+	EM(ERR_RESYNC_AFTER) = "The resync-after minor number is invalid",
+	EM(ERR_RESYNC_AFTER_CYCLE) = "This would cause a resync-after dependency cycle",
 	EM(ERR_PAUSE_IS_SET) = "Sync-pause flag is already set",
 	EM(ERR_PAUSE_IS_CLEAR) = "Sync-pause flag is already cleared",
 	EM(136) = "Disk state is lower than outdated",
@@ -599,7 +599,7 @@ static const char *error_messages[] = {
 	EM(ERR_STONITH_AND_PROT_A) = "Fencing policy resource-and-stonith only with prot B or C allowed",
 	EM(ERR_CONG_NOT_PROTO_A) = "on-congestion policy pull-ahead only with prot A allowed",
 	EM(ERR_PIC_AFTER_DEP) = "Sync-pause flag is already cleared.\n"
-	"Note: Resync pause caused by a local sync-after dependency.",
+	"Note: Resync pause caused by a local resync-after dependency.",
 	EM(ERR_PIC_PEER_DEP) = "Sync-pause flag is already cleared.\n"
 	"Note: Resync pause caused by the peer node.",
 	EM(ERR_CONN_NOT_KNOWN) = "Unknown connection",
