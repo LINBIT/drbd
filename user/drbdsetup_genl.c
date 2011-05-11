@@ -379,7 +379,7 @@ struct option wait_cmds_options[] = {
 	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
 	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
 	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK, NULL) }, \
-	{ "connect-int",'c',	T_try_connect_int, EN(CONNECT_INT, "seconds") }, \
+	{ "connect-int",'c',	T_connect_int, EN(CONNECT_INT, "seconds") }, \
 	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT, "seconds") }, \
 	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE, "bytes") }, \
 	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE, "bytes") }, \
