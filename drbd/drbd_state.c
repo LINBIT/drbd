@@ -91,9 +91,19 @@ enum drbd_role conn_highest_peer(struct drbd_tconn *tconn)
 	struct drbd_conf *mdev;
 	int vnr;
 
+	/* Unfortunately the states where not correctly ordered, when
+	   they where defined. therefore can not use max_t() here. */
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, mdev, vnr)
-		peer = max_t(enum drbd_role, peer, mdev->state.peer);
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		switch (mdev->state.peer) {
+		case R_PRIMARY:
+			peer = R_PRIMARY;
+			goto out;
+		case R_SECONDARY:
+			peer = R_SECONDARY;
+		}
+	}
+out:
 	rcu_read_unlock();
 
 	return peer;
