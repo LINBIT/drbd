@@ -1643,7 +1643,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 static int adm_detach(struct drbd_conf *mdev)
 {
-	enum drbd_ret_code retcode;
+	enum drbd_state_rv retcode;
 	int ret;
 	drbd_suspend_io(mdev); /* so no-one is stuck in drbd_al_begin_io */
 	retcode = drbd_request_state(mdev, NS(disk, D_FAILED));

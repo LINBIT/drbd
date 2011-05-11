@@ -141,7 +141,7 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_tconn *tconn)
 	return ds;
 }
 
-enum drbd_disk_state conn_lowest_conn(struct drbd_tconn *tconn)
+enum drbd_conns conn_lowest_conn(struct drbd_tconn *tconn)
 {
 	enum drbd_conns conn = C_MASK;
 	struct drbd_conf *mdev;
