@@ -203,7 +203,7 @@ void range_check(const enum range_checks what, const char *name,
 		M_STRTOLL_RANGE(KO_COUNT);
 		break;
 	case R_RATE:
-		M_STRTOLL_RANGE(RATE);
+		M_STRTOLL_RANGE(RESYNC_RATE);
 		break;
 	case R_AL_EXTENTS:
 		M_STRTOLL_RANGE(AL_EXTENTS);
