@@ -314,8 +314,8 @@ AC_DEFINE_UNQUOTED(DRBD_CONFIG_DIR, ["$sysconfdir"])
 
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then
-   AC_CONFIG_FILES(Makefile user/Makefile scripts/Makefile documentation/Makefile)
-   AC_CONFIG_HEADERS(user/config.h)
+   AC_CONFIG_FILES(Makefile user/Makefile user/legacy/Makefile scripts/Makefile documentation/Makefile)
+   AC_CONFIG_HEADERS(user/config.h user/legacy/config.h)
 else
    if test "$WITH_UTILS" = "yes"; then
      AC_CONFIG_FILES(drbd.spec)

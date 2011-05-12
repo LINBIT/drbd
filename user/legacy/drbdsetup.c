@@ -50,12 +50,11 @@
 #include <linux/netlink.h>
 #include <linux/connector.h>
 
-#include "legacy/drbd.h"
-#include "legacy/drbd_tag_magic.h"
-#include "legacy/drbd_limits.h"
-#include "registry.h"
+#include <linux/drbd.h>
+#include <linux/drbd_tag_magic.h>
+#include <linux/drbd_limits.h>
 
-#include "legacy/unaligned.h"
+#include "unaligned.h"
 #include "drbdtool_common.h"
 
 #ifndef __CONNECTOR_H
@@ -1810,15 +1809,6 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 	cm->function(cm,minor,argc,argv);
 	cm = find_cmd_by_name("detach");
 	rv = cm->function(cm,minor,argc,argv);
-	if ((rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR) {
-		unregister_minor(minor);
-		/*
-		 * This utility talks to drbd versions before 8.4 which do not
-		 * support connection sharing, and therefore don't have
-		 * per-resource commands.  We don't need to (un)register the
-		 * resource.
-		 */
-	}
 	return rv;
 }
 

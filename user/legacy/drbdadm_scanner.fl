@@ -1,0 +1,240 @@
+%{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "drbdadm_parser.h"
+#include "drbdadm.h"
+
+void long_string(char* text);
+void long_dqstring(char* text);
+void err_dqstring(char* text);
+static void unescape(void);
+
+#if 0
+#define DP printf("'%s' ",yytext)
+#else
+#define DP
+#endif
+
+#define CP yylval.txt = strdup(yytext); yylval.rc = R_NO_CHECK
+#define RC(N) yylval.rc = R_ ## N
+
+#define YY_NO_INPUT 1
+#define YY_NO_UNPUT 1
+static void yyunput (int c, register char * yy_bp ) __attribute((unused));
+
+#ifndef YY_FLEX_SUBMINOR_VERSION
+#define MAX_INCLUDE_DEPTH 10
+YY_BUFFER_STATE include_stack[MAX_INCLUDE_DEPTH];
+int include_stack_ptr = 0;
+#endif
+
+%}
+
+%option noyywrap
+
+NUM		[0-9]{1,8}[MKGs]?
+SNUMB		[0-9]{1,3}
+IPV4ADDR	({SNUMB}"."){3}{SNUMB}
+HEX4            [0-9a-fA-F]{1,4}
+IPV6ADDR	((({HEX4}":"){0,5}{HEX4})?":"{HEX4}?":"({HEX4}(":"{HEX4}){0,5})?("%"{STRING})?)|("::"[fF]{4}":"{IPV4ADDR})
+WS		[ \t\r]
+OPCHAR		[{};\[\]:]
+DQSTRING	\"([^\"\\\n]|\\[^\n]){0,255}\"
+LONG_DQSTRING	\"([^\"\\\n]|\\[^\n]){255}.
+ERR_DQSTRING	\"([^\"\\\n]|\\[^\n]){0,255}[\\\n]
+STRING		[a-zA-Z0-9/._-]{1,80}
+LONG_STRING	[a-zA-Z0-9/._-]{81}
+
+%%
+
+\n			{ line++; 				}
+\#.*			/* ignore comments */
+{WS}			/* ignore whitespaces */
+{OPCHAR}		{ DP; return yytext[0];			}
+on			{ DP; return TK_ON;			}
+ignore-on		{ DP; return TK_IGNORE;			}
+stacked-on-top-of	{ DP; return TK_STACKED;		}
+floating		{ DP; return TK_FLOATING;		}
+no			{ DP; return TK_NO;			}
+net			{ DP; return TK_NET;			}
+yes			{ DP; return TK_YES;			}
+ask			{ DP; return TK_ASK;			}
+skip			{ DP; return TK_SKIP;			}
+disk			{ DP; return TK_DISK;			}
+proxy			{ DP; return TK_PROXY;			}
+minor			{ DP; return TK_MINOR;			}
+inside			{ DP; return TK_INSIDE;			}
+syncer			{ DP; return TK_SYNCER;			}
+device			{ DP; return TK_DEVICE;			}
+global			{ DP; return TK_GLOBAL;			}
+common			{ DP; return TK_COMMON;			}
+outside			{ DP; return TK_OUTSIDE;		}
+address			{ DP; return TK_ADDRESS;		}
+startup			{ DP; return TK_STARTUP;		}
+include			{ DP; return TK_INCLUDE;		}
+handlers		{ DP; return TK_HANDLER;		}
+protocol		{ DP; return TK_PROTOCOL;		}
+minor-count		{ DP; return TK_MINOR_COUNT;		}
+disable-ip-verification { DP; return TK_DISABLE_IP_VERIFICATION;}
+dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
+resource		{ DP; return TK_RESOURCE;		}
+meta-disk		{ DP; return TK_META_DISK;		}
+flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
+usage-count 		{ DP; return TK_USAGE_COUNT;		}
+_is_default 		{ DP; return TK__IS_DEFAULT;		}
+_this_host 		{ DP; return TK__THIS_HOST;		}
+_remote_host 		{ DP; return TK__REMOTE_HOST;		}
+sci			{ DP; CP; return TK_SCI;		}
+ssocks			{ DP; CP; return TK_SSOCKS;		}
+sdp			{ DP; CP; return TK_SDP;		}
+ipv4			{ DP; CP; return TK_IPV4;		}
+ipv6			{ DP; CP; return TK_IPV6;		}
+size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
+on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
+fencing			{ DP; CP; return TK_DISK_OPTION;	}
+max-bio-bvecs		{ DP; CP; return TK_DISK_OPTION;	}
+use-bmbv		{ DP; CP; return TK_DISK_SWITCH;		}
+no-disk-barrier		{ DP; CP; return TK_DISK_SWITCH;		}
+no-disk-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
+no-disk-drain		{ DP; CP; return TK_DISK_SWITCH;		}
+no-md-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
+timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
+ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
+ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}
+max-buffers		{ DP; CP; RC(MAX_BUFFERS); return TK_NET_OPTION;}
+sndbuf-size		{ DP; CP; RC(SNDBUF_SIZE); return TK_NET_OPTION;}
+rcvbuf-size		{ DP; CP; RC(RCVBUF_SIZE); return TK_NET_OPTION;}
+connect-int		{ DP; CP; RC(CONNECT_INT); return TK_NET_OPTION;}
+cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
+shared-secret		{ DP; CP; return TK_NET_OPTION;		}
+max-epoch-size		{ DP; CP; RC(MAX_EPOCH_SIZE); return TK_NET_OPTION;}
+after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		}
+rr-conflict 		{ DP; CP; return TK_NET_OPTION;		}
+ping-timeout 		{ DP; CP; return TK_NET_OPTION;		}
+unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
+data-integrity-alg	{ DP; CP; return TK_NET_OPTION;         }
+on-congestion		{ DP; CP; return TK_NET_OPTION;         }
+congestion-fill		{ DP; CP; RC(CONG_FILL); return TK_NET_OPTION;   }
+congestion-extents	{ DP; CP; RC(CONG_EXTENTS); return TK_NET_OPTION;}
+allow-two-primaries	{ DP; CP; return TK_NET_SWITCH;		}
+always-asbp		{ DP; CP; return TK_NET_SWITCH;		}
+no-tcp-cork		{ DP; CP; return TK_NET_SWITCH;		}
+discard-my-data		{ DP; CP; return TK_NET_DELEGATE;	}
+rate			{ DP; CP; RC(RATE); return TK_SYNCER_OPTION;	}
+after			{ DP; CP; return TK_SYNCER_OPTION;	}
+verify-alg              { DP; CP; return TK_SYNCER_OPTION;      }
+csums-alg               { DP; CP; return TK_SYNCER_OPTION;      }
+al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OPTION;}
+cpu-mask		{ DP; CP; return TK_SYNCER_OPTION;	}
+use-rle			{ DP; CP; return TK_SYNCER_SWITCH;	}
+delay-probe-volume	{ DP; CP; return TK_DEPRECATED_OPTION;  }
+delay-probe-interval	{ DP; CP; return TK_DEPRECATED_OPTION;  }
+c-plan-ahead		{ DP; CP; RC(C_PLAN_AHEAD); return TK_SYNCER_OPTION;	}
+c-delay-target	{ DP; CP; RC(C_DELAY_TARGET); return TK_SYNCER_OPTION;	}
+c-fill-target		{ DP; CP; RC(C_FILL_TARGET); return TK_SYNCER_OPTION;	}
+c-max-rate		{ DP; CP; RC(C_MAX_RATE); return TK_SYNCER_OPTION;	}
+c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OPTION;	}
+throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
+hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
+on-no-data-accessible   { DP; CP; return TK_SYNCER_OPTION;	}
+wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
+degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
+outdated-wfc-timeout	{ DP; CP; RC(OUTDATED_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
+stacked-timeouts	{ DP; return TK_STARTUP_DELEGATE;       }
+become-primary-on	{ DP; return TK_STARTUP_DELEGATE;       }
+wait-after-sb		{ DP; CP; return TK_STARTUP_SWITCH;     }
+pri-on-incon-degr	{ DP; CP; return TK_HANDLER_OPTION;	}
+pri-lost-after-sb	{ DP; CP; return TK_HANDLER_OPTION;	}
+pri-lost		{ DP; CP; return TK_HANDLER_OPTION;     }
+initial-split-brain    { DP; CP; return TK_HANDLER_OPTION;     }
+split-brain		{ DP; CP; return TK_HANDLER_OPTION;     }
+outdate-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
+fence-peer		{ DP; CP; return TK_HANDLER_OPTION;	}
+local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
+before-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
+after-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
+before-resync-source	{ DP; CP; return TK_HANDLER_OPTION;	}
+memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
+read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
+compression		{ DP; CP; return TK_PROXY_OPTION;       }
+plugin			{ DP; CP; return TK_PROXY_DELEGATE;     }
+out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
+{IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
+{IPV6ADDR}		{ DP; CP; return TK_IPADDR6;		}
+{NUM}			{ DP; CP; return TK_INTEGER;		}
+{DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
+{STRING}		{ DP; CP; return TK_STRING;		}
+{LONG_STRING}		{ return TK_ERR_STRING_TOO_LONG;	}
+{LONG_DQSTRING}		{ return TK_ERR_DQSTRING_TOO_LONG;	}
+{ERR_DQSTRING}		{ return TK_ERR_DQSTRING;		}
+.			{ DP; return TK_ELSE;			}
+
+%%
+
+
+static void unescape(void)
+{
+  /* backslash escapes from string */
+  char *ue, *e;
+  e = ue = yytext;
+  for (;;) {
+    if (*ue == '"')
+      ue++;
+    if (*ue == '\\')
+      ue++;
+    if (!*ue)
+      break;
+    *e++ = *ue++;
+  }
+  *e = '\0';
+}
+
+/* Compatibility cruft for flex version 2.5.4a */
+#ifndef YY_FLEX_SUBMINOR_VERSION
+/** Pushes the new state onto the stack. The new state becomes
+ *  the current state. This function will allocate the stack
+ *  if necessary.
+ *  @param new_buffer The new state.
+ *
+ */
+void yypush_buffer_state (YY_BUFFER_STATE new_buffer )
+{
+	if (new_buffer == NULL)
+		return;
+
+	if ( include_stack_ptr >= MAX_INCLUDE_DEPTH ) {
+		fprintf( stderr, "Includes nested too deeply" );
+		exit( 1 );
+	}
+
+	include_stack[include_stack_ptr++] = YY_CURRENT_BUFFER;
+
+	yy_switch_to_buffer(new_buffer);
+	BEGIN(INITIAL);
+}
+
+/** Removes and deletes the top of the stack, if present.
+ *  The next element becomes the new top.
+ *
+ */
+void yypop_buffer_state (void)
+{
+	if (!YY_CURRENT_BUFFER)
+		return;
+
+	if ( --include_stack_ptr < 0 ) {
+		fprintf( stderr, "error in flex compat code\n" );
+		exit( 1 );
+	}
+
+	yy_delete_buffer(YY_CURRENT_BUFFER );
+	yy_switch_to_buffer(include_stack[include_stack_ptr]);
+}
+#endif
+
+void my_yypush_buffer_state(FILE *f)
+{
+	/* Since we do not have YY_BUF_SIZE outside of the flex generated file.*/
+	yypush_buffer_state(yy_create_buffer(f, YY_BUF_SIZE));
+}
