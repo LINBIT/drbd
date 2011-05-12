@@ -363,7 +363,7 @@ struct option wait_cmds_options[] = {
 	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
 	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
 	{ "resync-rate",'t',   T_resync_rate,	EN(RESYNC_RATE, "bytes/second") }, \
-	{ "resync-after",'a',  T_resync_after,	EN(RESYNC_AFTER, NULL) },	\
+	{ "resync-after",'a',  T_resync_after,	EN(MINOR_NUMBER, NULL) },	\
 	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS, NULL) }, \
 	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD, "1/10 seconds") }, \
 	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET, "1/10 seconds") }, \
