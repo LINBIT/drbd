@@ -2927,7 +2927,7 @@ void assign_command_names_from_argv0(char **argv)
 	 * otherwise, just let execvp sort it out... */
 	if ((progname = strrchr(argv[0], '/')) == 0) {
 		progname = argv[0];
-		drbdsetup = strdup("drbdsetup");
+		drbdsetup = strdup("_drbdsetup_83");
 		drbdmeta = strdup("drbdmeta");
 		drbd_proxy_ctl = strdup("drbd-proxy-ctl");
 	} else {
@@ -2936,7 +2936,7 @@ void assign_command_names_from_argv0(char **argv)
 			char **var;
 		};
 		struct cmd_helper helpers[] = {
-			{"drbdsetup", &drbdsetup},
+			{"_drbdsetup_83", &drbdsetup},
 			{"drbdmeta", &drbdmeta},
 			{"drbd-proxy-ctl", &drbd_proxy_ctl},
 			{NULL, NULL}

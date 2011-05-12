@@ -277,6 +277,24 @@ void warn_on_version_mismatch(void)
 			msg);
 }
 
+void eventually_exec_drbdadm_83(char **argv)
+{
+	if (current_vcs_rel.version.major == 8 &&
+	    current_vcs_rel.version.minor == 3) {
+#ifdef DRBD_LEGACY_83
+		/* This drbdadm warned already... */
+		setenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH", "1", 0);
+		execvp(drbdadm_83, argv);
+		fprintf(stderr, "Execvp() failed to find _drbdadm_83\n");
+#else
+		fprintf(stderr, "This drbdadm was build without support for legacy\n"
+			"drbd kernel code. Consider to rebuild your user land\n"
+			"tools with ./configure --with-legacy-connector\n");
+#endif
+		exit(E_exec_error);
+	}
+}
+
 static char *vcs_to_str(struct vcs_rel *rev)
 {
 	static char buffer[80]; // Not generic, sufficient for the purpose.

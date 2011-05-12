@@ -306,11 +306,16 @@ AH_TEMPLATE(DRBD_LOCK_DIR, [Local lock directory. Commonly
 AH_TEMPLATE(DRBD_CONFIG_DIR, [Local configuration directory. Commonly
 			   /etc or
 			   /usr/local/etc])
+AH_TEMPLATE(DRBD_LEGACY_83, [Include support for drbd-8.3 kernel code])
 
 AC_DEFINE_UNQUOTED(DRBD_LIB_DIR, ["$localstatedir/lib/$PACKAGE_TARNAME"])
 AC_DEFINE_UNQUOTED(DRBD_RUN_DIR, ["$localstatedir/run/$PACKAGE_TARNAME"])
 AC_DEFINE_UNQUOTED(DRBD_LOCK_DIR, ["$localstatedir/lock"])
 AC_DEFINE_UNQUOTED(DRBD_CONFIG_DIR, ["$sysconfdir"])
+
+if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
+   AC_DEFINE(DRBD_LEGACY_83, [1])
+fi
 
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then

@@ -191,6 +191,7 @@ int do_register = 1;
 int all_resources = 0;
 char *drbdsetup = NULL;
 char *drbdmeta = NULL;
+char *drbdadm_83 = NULL;
 char *drbd_proxy_ctl;
 char *sh_varname = NULL;
 char *setup_opts[10];
@@ -2798,6 +2799,7 @@ void verify_ips(struct d_resource *res)
 }
 
 static char *conf_file[] = {
+	DRBD_CONFIG_DIR "/drbd-84.conf",
 	DRBD_CONFIG_DIR "/drbd-83.conf",
 	DRBD_CONFIG_DIR "/drbd-82.conf",
 	DRBD_CONFIG_DIR "/drbd-08.conf",
@@ -3094,6 +3096,7 @@ void assign_command_names_from_argv0(char **argv)
 		drbdsetup = strdup("drbdsetup");
 		drbdmeta = strdup("drbdmeta");
 		drbd_proxy_ctl = strdup("drbd-proxy-ctl");
+		drbdadm_83 = strdup("_drbdadm_83");
 	} else {
 		struct cmd_helper {
 			char *name;
@@ -3103,6 +3106,7 @@ void assign_command_names_from_argv0(char **argv)
 			{"drbdsetup", &drbdsetup},
 			{"drbdmeta", &drbdmeta},
 			{"drbd-proxy-ctl", &drbd_proxy_ctl},
+			{"_drbdadm_83", &drbdadm_83},
 			{NULL, NULL}
 		};
 		size_t len_dir, l;
@@ -3455,6 +3459,8 @@ int main(int argc, char **argv)
 
 	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
 		warn_on_version_mismatch();
+
+	eventually_exec_drbdadm_83(argv);
 
 	rv = parse_options(argc, argv);
 	if (rv)

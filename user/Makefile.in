@@ -89,12 +89,17 @@ drbdmeta: $(drbdmeta-obj)
 	$(CC) -o $@ $^
 
 legacy-tools:
+ifeq ($(WITH_LEGACY_DRBDSETUP_CN),yes)
 	$(MAKE) -C legacy
+	ln -f -s legacy/_drbdadm_83
+	ln -f -s legacy/_drbdsetup_83
+endif
 
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f drbd_buildtag.c drbd_strings.c
+	rm -f _drbdadm_83 _drbdsetup_83
 	rm -f *~
 	$(MAKE) -C legacy clean
 
