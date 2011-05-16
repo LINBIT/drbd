@@ -211,7 +211,7 @@ Group: System Environment/Base
 Requires: %{name}-utils = %{version}-%{release}, rgmanager < 3
 # RHEL 6 removed some scripts from upstream version,
 # including drbd. Heuristic only...
-%if ! 0%{?centos} = 6 || 0%{?rhel} = 6
+%if 0%{?centos} != 6 && 0%{?rhel} != 6
 Conflicts: resource-agents >= 3
 %endif
 @RPM_SUBPACKAGE_NOARCH@
