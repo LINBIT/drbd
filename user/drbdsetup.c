@@ -71,6 +71,7 @@
 #include "drbdtool_common.h"
 #include "registry.h"
 #include "config.h"
+#include "config_flags.h"
 
 /* for parsing of messages */
 static struct nlattr *global_attrs[128];
@@ -186,21 +187,16 @@ struct drbd_cmd {
 	const enum cfg_ctx_key ctx_key;
 	const int cmd_id;
 	const int tla_id; /* top level attribute id */
-	struct nla_policy *policy;
-	int maxattr;
 	int (*function)(struct drbd_cmd *, unsigned, int, char **);
 	void (*usage)(struct drbd_cmd *, enum usage_type);
-	union {
-		struct {
-			struct drbd_argument *args;
-			struct drbd_option *options;
-		} cp; // for generic_config_cmd, config_usage
-	};
+	struct drbd_argument *drbd_args;
+	struct drbd_option *drbd_options;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
 	struct option *options;
 	bool ignore_minor_not_known;
 	bool continuous_poll;
 	bool wait_for_connect_timeouts;
+	struct context_def *ctx;
 };
 
 // other functions
@@ -350,10 +346,9 @@ struct option wait_cmds_options[] = {
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
-#define NO_PAYLOAD	0, NULL, 0
+#define NO_PAYLOAD	0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
 			get_usage, .show_function = scmd
-#define POLICY(x)	x ## _nl_policy, (ARRAY_SIZE(x ## _nl_policy) -1)
 
 #define CHANGEABLE_DISK_OPTIONS						\
 	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
@@ -402,79 +397,88 @@ struct option wait_cmds_options[] = {
 	{ "use-rle",'E',T_use_rle,   EYN(USE_RLE) },
 
 struct drbd_cmd commands[] = {
-	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS, POLICY(set_role_parms),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "force", 'f',	     T_assume_uptodate, EFLAG   },
-		 CLOSE_ARGS_OPTS }} }, },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &primary_cmd_ctx },
 
-	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD, {{NULL, NULL}} },
+	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD },
 
-	{"attach", CTX_MINOR, DRBD_ADM_ATTACH, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
-		F_CONFIG_CMD, {{
-	 (struct drbd_argument[]) {
+	{"attach", CTX_MINOR, DRBD_ADM_ATTACH, DRBD_NLA_DISK_CONF,
+		F_CONFIG_CMD,
+	 .drbd_args = (struct drbd_argument[]) {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 CLOSE_ARGS_OPTS },
-	 (struct drbd_option[]) {
+	 .drbd_options = (struct drbd_option[]) {
 		 { "size",'S',		T_disk_size,	EN(DISK_SIZE, "bytes") },
 		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS, NULL) },
 		 CHANGEABLE_DISK_OPTIONS
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &attach_cmd_ctx },
 
-	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF, POLICY(disk_conf),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 CHANGEABLE_DISK_OPTIONS
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &disk_options_ctx },
 
-	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD, {{ NULL, NULL }} },
+	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
 
-	{"connect", CTX_CONN, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF, POLICY(net_conf),
-		F_CONFIG_CMD, {{
-	 (struct drbd_argument[]) {
+	{"connect", CTX_CONN, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
+		F_CONFIG_CMD,
+	 .drbd_args = (struct drbd_argument[]) {
 		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
 		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
 		 CLOSE_ARGS_OPTS },
-	 (struct drbd_option[]) {
+	 .drbd_options = (struct drbd_option[]) {
 		 { "dry-run",'n',   T_dry_run,		   EFLAG },
 		 { "discard-my-data",'D', T_discard_my_data,     EFLAG },
 		 CHANGEABLE_NET_OPTIONS
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &connect_cmd_ctx },
 
-	{"net-options", CTX_CONN, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF, POLICY(net_conf),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"net-options", CTX_CONN, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 CHANGEABLE_NET_OPTIONS
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &net_options_ctx },
 
-	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS, POLICY(disconnect_parms),
-		F_CONFIG_CMD, {{NULL,
-	 (struct drbd_option[]) {
+	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "force", 'F',	T_force_disconnect,	EFLAG },
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &disconnect_cmd_ctx },
 
-	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS, POLICY(resize_parms),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "size",'s',T_resize_size,		EN(DISK_SIZE, "bytes") },
 		 { "assume-peer-has-space",'f',T_resize_force,	EFLAG },
 		 { "assume-clean", 'c',        T_no_resync, EFLAG },
-		 CLOSE_ARGS_OPTS }} }, },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &resize_cmd_ctx },
 
-	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS, POLICY(res_opts),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "cpu-mask",'c',T_cpu_mask,           ES },
 		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
-		 CLOSE_ARGS_OPTS } }} },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &resource_options_cmd_ctx },
 
-	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS, POLICY(new_c_uuid_parms),
-		F_CONFIG_CMD, {{NULL,
-	 (struct drbd_option[]) {
+	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "clear-bitmap",'c',T_clear_bm, EFLAG   },
-		 CLOSE_ARGS_OPTS }} }, },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &new_current_uuid_cmd_ctx },
 
 	{"invalidate", CTX_MINOR, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"invalidate-remote", CTX_MINOR, DRBD_ADM_INVAL_PEER, NO_PAYLOAD, F_CONFIG_CMD, },
@@ -483,11 +487,12 @@ struct drbd_cmd commands[] = {
 	{"suspend-io", CTX_MINOR, DRBD_ADM_SUSPEND_IO, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"resume-io", CTX_MINOR, DRBD_ADM_RESUME_IO, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"outdate", CTX_MINOR, DRBD_ADM_OUTDATE, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS, POLICY(start_ov_parms),
-		F_CONFIG_CMD, {{ NULL,
-	 (struct drbd_option[]) {
+	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
+		F_CONFIG_CMD,
+	 .drbd_options = (struct drbd_option[]) {
 		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE, "bytes") },
-		 CLOSE_ARGS_OPTS }} }, },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &verify_cmd_ctx },
 	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	/* "state" is deprecated! please use "role".
 	 * find_cmd_by_name still understands "state", however. */
@@ -517,12 +522,13 @@ struct drbd_cmd commands[] = {
 	{"new-connection", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
 
 	/* only payload is connection name and volume number */
-	{"new-minor", CTX_MINOR, DRBD_ADM_ADD_MINOR, DRBD_NLA_CFG_CONTEXT, POLICY(drbd_cfg_context),
-		F_CONFIG_CMD, {{
-	 (struct drbd_argument[]) {
+	{"new-minor", CTX_MINOR, DRBD_ADM_ADD_MINOR, DRBD_NLA_CFG_CONTEXT,
+		F_CONFIG_CMD,
+	 .drbd_args = (struct drbd_argument[]) {
 		 { "conn-name", T_ctx_conn_name, conv_conn_name },
 		 { "volume-number", T_ctx_volume, conv_volume },
-		 CLOSE_ARGS_OPTS }} }, },
+		 CLOSE_ARGS_OPTS },
+	 .ctx = &new_minor_cmd_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
 	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_connection_cmd, config_usage, }
@@ -1007,7 +1013,7 @@ static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg)
 	return NO_ERROR;
 }
 
-static struct option *make_longoptions(struct drbd_option* od, struct nla_policy *policy)
+static struct option *make_longoptions(struct drbd_option* od, struct context_def *ctx)
 {
 	/* room for up to N options,
 	 * plus set-defaults, and the terminating NULL */
@@ -1019,7 +1025,7 @@ static struct option *make_longoptions(struct drbd_option* od, struct nla_policy
 		buffer[i].name = od->name;
 		buffer[i].has_arg =
 			od->optional_yesno_argument ? optional_argument :
-			policy[__nla_type(od->nla_type)].type == NLA_FLAG ?
+			ctx->nla_policy[__nla_type(od->nla_type)].type == NLA_FLAG ?
 			no_argument : required_argument ;
 		buffer[i].flag = NULL;
 		buffer[i].val = od->short_name;
@@ -1161,7 +1167,7 @@ int drbd_tla_parse(struct nlmsghdr *nlh)
 static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			       char **argv, int quiet)
 {
-	struct drbd_argument *ad = cm->cp.args;
+	struct drbd_argument *ad = cm->drbd_args;
 	struct nlattr *nla = NULL;
 	struct drbd_option *od;
 	struct option *lo;
@@ -1198,7 +1204,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		nla_nest_end(smsg, nla);
 	}
 
-	current_policy = cm->policy;
+	current_policy = cm->ctx->nla_policy;
 	if (cm->tla_id)
 		nla = nla_nest_start(smsg, cm->tla_id);
 
@@ -1216,13 +1222,13 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	}
 	n_args = i - 1;
 
-	lo = make_longoptions(cm->cp.options, cm->policy);
+	lo = make_longoptions(cm->drbd_options, cm->ctx);
 	opts = make_optstring(lo);
 	for (;;) {
 		c = getopt_long(argc, argv, opts, lo, 0);
 		if (c == -1)
 			break;
-		od = find_opt_by_short_name(cm->cp.options, c);
+		od = find_opt_by_short_name(cm->drbd_options, c);
 		if (od)
 			rv = od->convert_function(od, smsg, optarg);
 		else {
@@ -1433,13 +1439,14 @@ static void print_options(const char *cmd_name, const char *sect_name)
 	}
 	if (!global_attrs[cmd->tla_id])
 		return;
-	if (nla_parse_nested(nested_attr_tb, cmd->maxattr, global_attrs[cmd->tla_id], cmd->policy)) {
+	if (nla_parse_nested(nested_attr_tb, cmd->ctx->nla_policy_size - 1,
+			     global_attrs[cmd->tla_id], cmd->ctx->nla_policy)) {
 		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
 		/* still, print those that validated ok */
 	}
-	current_policy = cmd->policy; /* for show_numeric */
+	current_policy = cmd->ctx->nla_policy; /* for show_numeric */
 
-	for (od = cmd->cp.options; od && od->name; od++) {
+	for (od = cmd->drbd_options; od && od->name; od++) {
 		if (!ntb(od->nla_type))
 			continue;
 		if (!opened) {
@@ -2663,7 +2670,7 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	if(ut == XML) {
 		printf("<command name=\"%s\" operates_on=\"%s\">\n",
 		       cm->cmd, ctx_names[cm->ctx_key]);
-		if( (args = cm->cp.args) ) {
+		if( (args = cm->drbd_args) ) {
 			while (args->name) {
 				printf("\t<argument>%s</argument>\n",
 				       args->name);
@@ -2671,7 +2678,7 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 			}
 		}
 
-		options = cm->cp.options;
+		options = cm->drbd_options;
 		while (options && options->name) {
 			options->xml_function(options);
 			options++;
@@ -2687,7 +2694,7 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
 
-	if( (args = cm->cp.args) ) {
+	if( (args = cm->drbd_args) ) {
 		if(ut == BRIEF) {
 			col += snprintf(line+col, maxcol-col, " [args...]");
 		} else {
@@ -2705,7 +2712,7 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	}
 	startcol=prevcol=col;
 
-	options = cm->cp.options;
+	options = cm->drbd_options;
 	if(ut == BRIEF) {
 		if(options)
 			col += snprintf(line+col, maxcol-col, " [opts...]");
