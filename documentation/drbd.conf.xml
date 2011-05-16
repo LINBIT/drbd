@@ -338,28 +338,35 @@ resource r0 {
     <option>before-resync-target</option>, <option>after-resync-target</option>.
   </para>
   <para>
-        The interface is done via environment variables:
+      The interface is done via environment variables:
+      <variablelist>
         <varlistentry>
-            <listitem>
-                <option>DRBD_RESOURCE</option> is the name of the resource
-            </listitem>
-            <listitem>
-                <option>DRBD_MINOR</option> is the minor number of the DRBD device, in decimal.
-            </listitem>
-            <listitem>
-                <option>DRBD_CONF</option> is the path to the primary configuration file; if you
+	  <term><option>DRBD_RESOURCE</option></term>
+	  <listitem><para>is the name of the resource</para></listitem>
+        </varlistentry>
+        <varlistentry>
+	  <term><option>DRBD_MINOR</option></term>
+	  <listitem><para>is the minor number of the DRBD device, in decimal.</para></listitem>
+        </varlistentry>
+        <varlistentry>
+	  <term><option>DRBD_CONF</option></term>
+	  <listitem><para>
+	      is the path to the primary configuration file; if you
                 split your configuration into multiple files (e.g. in <option>/etc/drbd.conf.d/</option>),
                 this will not be helpful.
-            </listitem>
-            <listitem>
-                <option>DRBD_PEER_AF</option>, 
-                <option>DRBD_PEER_ADDRESS</option>, 
-                <option>DRBD_PEERS</option>
-                are the address family (e.g. <option>ipv6</option>),
-                the peer's address and hostnames.
-            </listitem>
+	  </para></listitem>
         </varlistentry>
-        <option>DRBD_PEER</option> is deprecated.
+        <varlistentry>
+	  <term><option>DRBD_PEER_AF</option>,
+	  <option>DRBD_PEER_ADDRESS</option>,
+	  <option>DRBD_PEERS</option></term>
+	  <listitem><para>
+	      are the address family (e.g. <option>ipv6</option>),
+	      the peer's address and hostnames.
+	  </para></listitem>
+        </varlistentry>
+      </variablelist>
+      <option>DRBD_PEER</option> (note the singular form) is deprecated, and superseeded by DRBD_PEERS.
   </para>
   <para>
       Please note that not all of these might be set for all handlers, and that some values might not be useable for a <option>floating</option> definition.
