@@ -44,6 +44,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <signal.h>
+#include <assert.h>
 
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -149,9 +150,6 @@ struct drbd_option {
 	const char* name;
 	const char short_name;
 	__u16 nla_type;
-	int (*convert_function)(struct drbd_option *,
-				struct msg_buff *,
-				char *);
 	void (*show_function)(struct drbd_option *, struct nlattr *);
 	int (*usage_function)(struct drbd_option *, char*, int);
 	void (*xml_function)(struct drbd_option *);
@@ -250,14 +248,6 @@ static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* ar
 static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
-// convert functions for options
-static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_flag(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_yesno(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg);
-static int conv_protocol(struct drbd_option *od, struct msg_buff *msg, char* arg);
-
 // show functions for options (used by show_scmd)
 static void show_numeric(struct drbd_option *od, struct nlattr *nla);
 static void show_handler(struct drbd_option *od, struct nlattr *nla);
@@ -328,21 +318,21 @@ struct option wait_cmds_options[] = {
 };
 
 #define EN(N,UN) \
-	conv_numeric, show_numeric, numeric_opt_usage, numeric_opt_xml, \
+	show_numeric, numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
 		DRBD_ ## N ## _DEF , DRBD_ ## N ## _SCALE, UN  } }
 #define EH(N,D) \
-	conv_handler, show_handler, handler_opt_usage, handler_opt_xml, \
+	show_handler, handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRAY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
 #define EFLAG \
-	conv_flag, show_flag, flag_opt_usage, flag_opt_xml, \
+	show_flag, flag_opt_usage, flag_opt_xml, \
 	.optional_yesno_argument = true
 #define EYN(D) \
-	conv_yesno, show_yesno, yesno_opt_usage, yesno_opt_xml, \
+	show_yesno, yesno_opt_usage, yesno_opt_xml, \
 	{ .numeric_param = { .def = DRBD_ ## D ## _DEF } }, \
 	.optional_yesno_argument = true
-#define ES      conv_string, show_string, string_opt_usage, string_opt_xml, { }
+#define ES      show_string, string_opt_usage, string_opt_xml, { }
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
@@ -368,7 +358,7 @@ struct option wait_cmds_options[] = {
 
 #define CHANGEABLE_NET_OPTIONS						\
 	{ "protocol",'p',	T_wire_protocol, \
-		conv_protocol, show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
+		show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
 	{ "timeout",'t',	T_timeout,	EN(TIMEOUT, "1/10 seconds") }, \
 	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
 	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
@@ -891,152 +881,27 @@ static int get_af_ssocks(int warn_and_use_default)
 	return af;
 }
 
-static int conv_numeric(struct drbd_option *od, struct msg_buff *msg, char* arg)
+static struct option *make_longoptions(struct context_def *ctx)
 {
-	const long long min = od->numeric_param.min;
-	const long long max = od->numeric_param.max;
-	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
-	long long l;
-	char unit[] = {0,0};
+	static struct option buffer[42];
+	int i = 0;
 
-	l = m_strtoll(arg, unit_prefix);
+	if (ctx) {
+		struct field_def *field;
 
-	if (min > l || l > max) {
-		unit[0] = unit_prefix != '1' ? unit_prefix : 0;
-		fprintf(stderr,"%s %s => %llu%s out of range [%llu..%llu]%s\n",
-			od->name, arg, l, unit, min, max, unit);
-		return OTHER_ERROR;
-	}
-
-	switch(current_policy[__nla_type(od->nla_type)].type) {
-	case NLA_U8:
-		nla_put_u8(msg,od->nla_type,l);
-		break;
-	case NLA_U16:
-		nla_put_u16(msg,od->nla_type,l);
-		break;
-	case NLA_U32:
-		nla_put_u32(msg,od->nla_type,l);
-		break;
-	case NLA_U64:
-		nla_put_u64(msg,od->nla_type,l);
-		break;
-	default:
-		fprintf(stderr, "internal error in conv_numeric()\n");
-	}
-	return NO_ERROR;
-}
-
-static int conv_protocol(struct drbd_option *od, struct msg_buff *msg, char* arg)
-{
-	int proto = 0; /* initialize to an invalid protocol value */
-	if (arg && arg[0] && arg[1] == 0) {
-		switch(arg[0]) {
-		case 'A': case 'a': proto = DRBD_PROT_A; break;
-		case 'B': case 'b': proto = DRBD_PROT_B; break;
-		case 'C': case 'c': proto = DRBD_PROT_C; break;
-		default: /* nothing */;
-		};
-	};
-	if (proto) {
-		nla_put_u32(msg, od->nla_type, proto);
-		return NO_ERROR;
-	}
-	/* not a valid protocol value */
-	fprintf(stderr, "Invalid protocol '%s'. Known protocols: A,B,C\n", arg);
-	return OTHER_ERROR;
-}
-
-static int conv_handler(struct drbd_option *od, struct msg_buff *msg, char* arg)
-{
-	const char** handler_names = od->handler_param.handler_names;
-	const int number_of_handlers = od->handler_param.number_of_handlers;
-	int i;
-
-	for(i=0;i<number_of_handlers;i++) {
-		if(handler_names[i]==NULL) continue;
-		if(strcmp(arg,handler_names[i])==0) {
-			nla_put_u32(msg,od->nla_type,i);
-			return NO_ERROR;
+		/*
+		 * Make sure to keep ctx->fields firsty: we use the index
+		 * returned by getopt_long() to access ctx->fields.
+		 */
+		for (field = ctx->fields; field->name; field++) {
+			buffer[i].name = field->name;
+			buffer[i].has_arg = field->argument_is_optional ?
+				optional_argument : required_argument;
+			buffer[i].flag = NULL;
+			buffer[i].val = 0;
+			assert(i++ < ARRAY_SIZE(buffer) - 2);
 		}
 	}
-
-	fprintf(stderr, "%s-handler '%s' not known\n", od->name, arg);
-	fprintf(stderr, "known %s-handlers:\n", od->name);
-	for (i = 0; i < number_of_handlers; i++) {
-		if (handler_names[i])
-			printf("\t%s\n", handler_names[i]);
-	}
-	return OTHER_ERROR;
-}
-
-static bool eval_optional_yesno_arg(const char *name, const char *arg,
-				    bool *flag)
-{
-	if (arg) {
-		if (!strcmp(arg, "yes"))
-			*flag = true;
-		else if (!strcmp(arg, "no"))
-			*flag = false;
-		else {
-			fprintf(stderr, "Invalid argument '%s' for option --%s. "
-				"Allowed values: yes, no\n", arg, name);
-			return false;
-		}
-	} else
-		*flag = true;
-	return true;
-}
-
-static int conv_flag(struct drbd_option *od, struct msg_buff *msg, char *arg)
-{
-	bool flag;
-	if (!eval_optional_yesno_arg(od->name, arg, &flag))
-		return OTHER_ERROR;
-	if (flag)
-		nla_put_u8(msg, od->nla_type, flag);
-	return NO_ERROR;
-}
-
-static int conv_yesno(struct drbd_option *od, struct msg_buff *msg, char *arg)
-{
-	bool flag;
-	if (!eval_optional_yesno_arg(od->name, arg, &flag))
-		return OTHER_ERROR;
-	nla_put_u8(msg, od->nla_type, flag);
-	return NO_ERROR;
-}
-
-static int conv_string(struct drbd_option *od, struct msg_buff *msg, char* arg)
-{
-	nla_put_string(msg,od->nla_type,arg);
-	return NO_ERROR;
-}
-
-static struct option *make_longoptions(struct drbd_option* od, struct context_def *ctx)
-{
-	/* room for up to N options,
-	 * plus set-defaults, and the terminating NULL */
-#define N 40
-	static struct option buffer[N+2];
-	int i=0;
-
-	while(od && od->name) {
-		buffer[i].name = od->name;
-		buffer[i].has_arg =
-			od->optional_yesno_argument ? optional_argument :
-			ctx->nla_policy[__nla_type(od->nla_type)].type == NLA_FLAG ?
-			no_argument : required_argument ;
-		buffer[i].flag = NULL;
-		buffer[i].val = od->short_name;
-		if (i++ == N) {
-			/* we must not leave this loop with i > N */
-			fprintf(stderr,"buffer in make_longoptions to small.\n");
-			abort();
-		}
-		od++;
-	}
-#undef N
 
 	// The two omnipresent options:
 	buffer[i].name = "set-defaults";
@@ -1051,17 +916,6 @@ static struct option *make_longoptions(struct drbd_option* od, struct context_de
 	buffer[i].val = 0;
 
 	return buffer;
-}
-
-static struct drbd_option *find_opt_by_short_name(struct drbd_option *od, int c)
-{
-	if(!od) return NULL;
-	while(od->name) {
-		if(od->short_name == c) return od;
-		od++;
-	}
-
-	return NULL;
 }
 
 /* prepends global objname to output (if any) */
@@ -1169,13 +1023,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 {
 	struct drbd_argument *ad = cm->drbd_args;
 	struct nlattr *nla = NULL;
-	struct drbd_option *od;
 	struct option *lo;
 	int c, i = 1;
 	int n_args;
 	int rv = NO_ERROR;
 	char *desc = NULL; /* error description from kernel reply message */
-	const char *opts;
 
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
@@ -1222,28 +1074,28 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	}
 	n_args = i - 1;
 
-	lo = make_longoptions(cm->drbd_options, cm->ctx);
-	opts = make_optstring(lo);
+	lo = make_longoptions(cm->ctx);
 	for (;;) {
-		c = getopt_long(argc, argv, opts, lo, 0);
+		int idx;
+
+		c = getopt_long(argc, argv, "(", lo, &idx);
 		if (c == -1)
 			break;
-		od = find_opt_by_short_name(cm->drbd_options, c);
-		if (od)
-			rv = od->convert_function(od, smsg, optarg);
-		else {
+		if (c == 0) {
+			struct field_def *field = &cm->ctx->fields[idx];
+			assert (field->name == lo[idx].name);
+			if (!field->put(cm->ctx, field, smsg, optarg)) {
+				rv = OTHER_ERROR;
+				goto error;
+			}
+		} else {
 			if (c == '(')
 				dhdr->flags |= DRBD_GENL_F_SET_DEFAULTS;
-			else if (c == ')')
-				/* Used to be DRBD_GENL_F_CREATE_DEVICE.
-				 * Ignore. */;
 			else {
 				rv = OTHER_ERROR;
 				goto error;
 			}
 		}
-		if (rv != NO_ERROR)
-			goto error;
 	}
 
 	/* argc should be cmd + n options + n args;
