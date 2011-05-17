@@ -150,8 +150,6 @@ struct drbd_option {
 	const char* name;
 	const char short_name;
 	__u16 nla_type;
-	int (*usage_function)(struct drbd_option *, char*, int);
-	void (*xml_function)(struct drbd_option *);
 	union {
 		struct {
 			const long long min;
@@ -210,22 +208,6 @@ static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc, cha
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
 static void get_usage(struct drbd_cmd *cm, enum usage_type);
-
-// sub usage functions for config_usage
-static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int handler_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int flag_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int yesno_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int string_opt_usage(struct drbd_option *option, char* str, int strlen);
-static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen);
-
-// sub usage function for config_usage as xml
-static void numeric_opt_xml(struct drbd_option *option);
-static void handler_opt_xml(struct drbd_option *option);
-static void flag_opt_xml(struct drbd_option *option);
-static void yesno_opt_xml(struct drbd_option *option);
-static void string_opt_xml(struct drbd_option *option);
-static void protocol_opt_xml(struct drbd_option *option);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -309,21 +291,17 @@ struct option wait_cmds_options[] = {
 };
 
 #define EN(N,UN) \
-	numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
 		DRBD_ ## N ## _DEF , DRBD_ ## N ## _SCALE, UN  } }
 #define EH(N,D) \
-	handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRAY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
 #define EFLAG \
-	flag_opt_usage, flag_opt_xml, \
 	.optional_yesno_argument = true
 #define EYN(D) \
-	yesno_opt_usage, yesno_opt_xml, \
 	{ .numeric_param = { .def = DRBD_ ## D ## _DEF } }, \
 	.optional_yesno_argument = true
-#define ES      string_opt_usage, string_opt_xml, { }
+#define ES      { }
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
@@ -348,8 +326,7 @@ struct option wait_cmds_options[] = {
 	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE, "bytes/second") },
 
 #define CHANGEABLE_NET_OPTIONS						\
-	{ "protocol",'p',	T_wire_protocol, \
-		protocol_opt_usage, protocol_opt_xml, }, \
+	{ "protocol",'p',	T_wire_protocol }, \
 	{ "timeout",'t',	T_timeout,	EN(TIMEOUT, "1/10 seconds") }, \
 	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
 	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
@@ -2308,125 +2285,9 @@ static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 	return 0;
 }
 
-static int numeric_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str,strlen," [{--%s|-%c}=(%lld ... %lld)]",
-			option->name, option->short_name,
-			option->numeric_param.min,
-			option->numeric_param.max);
-}
-
-static int protocol_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str,strlen," [--protocol={A,B,C}]");
-}
-
-static int handler_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	const char** handlers;
-	int i, chars=0,first=1;
-
-	chars += snprintf(str,strlen," [{--%s|-%c}={",
-			  option->name, option->short_name);
-	handlers = option->handler_param.handler_names;
-	for(i=0;i<option->handler_param.number_of_handlers;i++) {
-		if(handlers[i]) {
-			if(!first) chars += snprintf(str+chars,strlen,"|");
-			first=0;
-			chars += snprintf(str+chars,strlen,
-					  "%s",handlers[i]);
-		}
-	}
-	chars += snprintf(str+chars,strlen,"}]");
-	return chars;
-}
-
-static int flag_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str, strlen, " [{--%s|-%c}[={yes|no}]]",
-			option->name, option->short_name);
-}
-
-static int yesno_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str, strlen, " [{--%s|-%c}[={yes|no}]]",
-			option->name, option->short_name);
-}
-
-static int string_opt_usage(struct drbd_option *option, char* str, int strlen)
-{
-	return snprintf(str,strlen," [{--%s|-%c}=<str>]",
-			option->name, option->short_name);
-}
-
-static void numeric_opt_xml(struct drbd_option *option)
-{
-	printf("\t<option name=\"%s\" type=\"numeric\">\n",option->name);
-	printf("\t\t<min>%lld</min>\n",option->numeric_param.min);
-	printf("\t\t<max>%lld</max>\n",option->numeric_param.max);
-	printf("\t\t<default>%lld</default>\n",option->numeric_param.def);
-	printf("\t\t<unit_prefix>%c</unit_prefix>\n",
-	       option->numeric_param.unit_prefix);
-	if(option->numeric_param.unit) {
-		printf("\t\t<unit>%s</unit>\n",option->numeric_param.unit);
-	}
-	printf("\t</option>\n");
-}
-
-static void protocol_opt_xml(struct drbd_option *option)
-{
-	printf(
-		"\t<option name=\"protocol\" type=\"handler\">\n"
-		"\t\t<handler>A</handler>\n"
-		"\t\t<handler>B</handler>\n"
-		"\t\t<handler>C</handler>\n"
-		"\t</option>\n"
-	);
-}
-
-static void handler_opt_xml(struct drbd_option *option)
-{
-	const char** handlers;
-	int i;
-
-	printf("\t<option name=\"%s\" type=\"handler\">\n",option->name);
-	handlers = option->handler_param.handler_names;
-	for(i=0;i<option->handler_param.number_of_handlers;i++) {
-		if(handlers[i]) {
-			printf("\t\t<handler>%s</handler>\n",handlers[i]);
-		}
-	}
-	printf("\t</option>\n");
-}
-
-static void flag_opt_xml(struct drbd_option *option)
-{
-	printf("\t<option name=\"%s\" type=\"boolean\">\n"
-	       "\t</option>\n",
-	       option->name);
-}
-
-static void yesno_opt_xml(struct drbd_option *option)
-{
-	/* FIXME: Check with Rasto if this is useful to him.  */
-	printf("\t<option name=\"%s\" type=\"handler\">\n"
-	       "\t\t<handler>yes</handler>\n"
-	       "\t\t<handler>no</handler>\n"
-	       "\t</option>\n",
-	       option->name);
-}
-
-static void string_opt_xml(struct drbd_option *option)
-{
-	printf("\t<option name=\"%s\" type=\"string\">\n",option->name);
-	printf("\t</option>\n");
-}
-
-
 static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
-	struct drbd_option *options;
 	static char line[300];
 	int maxcol,col,prevcol,startcol,toolong;
 	char *colstr;
@@ -2448,10 +2309,11 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 			}
 		}
 
-		options = cm->drbd_options;
-		while (options && options->name) {
-			options->xml_function(options);
-			options++;
+		if (cm->ctx) {
+			struct field_def *field;
+
+			for (field = cm->ctx->fields; field->name; field++)
+				field->describe_xml(field);
 		}
 		printf("</command>\n");
 		return;
@@ -2482,25 +2344,30 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	}
 	startcol=prevcol=col;
 
-	options = cm->drbd_options;
 	if(ut == BRIEF) {
-		if(options)
+		if(cm->ctx && cm->ctx->fields->name)
 			col += snprintf(line+col, maxcol-col, " [opts...]");
 		printf("%-40s",line);
 		return;
 	}
 
-	while (options && options->name) {
-		col += options->usage_function(options, line+col, maxcol-col);
-		if (col >= maxcol) {
-			toolong = (prevcol == startcol);
-			if( !toolong ) line[prevcol]=0;
-			printf("%s\n",line);
-			startcol=prevcol=col = sprintf(line,"    ");
-			if( toolong) options++;
-		} else {
-			prevcol=col;
-			options++;
+	if (cm->ctx) {
+		struct field_def *field = cm->ctx->fields;
+
+		while (field->name) {
+			col += field->usage(field, line+col, maxcol-col);
+			if (col >= maxcol) {
+				toolong = (prevcol == startcol);
+				if (!toolong)
+					line[prevcol] = 0;
+				printf("%s\n" ,line);
+				startcol = prevcol = col = sprintf(line, "    ");
+				if( toolong)
+					field++;
+			} else {
+				prevcol = col;
+				field++;
+			}
 		}
 	}
 	line[col]=0;
