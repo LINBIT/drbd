@@ -25,6 +25,7 @@ struct field_def {
 			long long min;
 			long long max;
 			long long def;
+			bool is_signed;
 			char scale;
 		} n;  /* NUMERIC */
 		struct {

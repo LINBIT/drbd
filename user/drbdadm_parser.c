@@ -157,6 +157,11 @@ void range_check(const enum range_checks what, const char *name,
 {
 	char proto = 0;
 
+	/*
+	 * FIXME: Handle signed/unsigned values correctly by checking the
+	 * F_field_name_IS_SIGNED defines.
+	 */
+
 #define M_STRTOLL_RANGE(x) \
 		m_strtoll_range(value, DRBD_ ## x ## _SCALE, name, \
 				DRBD_ ## x ## _MIN, \

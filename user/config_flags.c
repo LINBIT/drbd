@@ -154,6 +154,7 @@ static bool numeric_is_default(struct field_def *field, const char *value)
 {
 	long long l;
 
+	/* FIXME: unsigned long long values are broken. */
 	l = m_strtoll(value, field->u.n.scale);
 	return l == field->u.n.def;
 }
@@ -162,6 +163,7 @@ static bool numeric_is_equal(struct field_def *field, const char *a, const char 
 {
 	long long la, lb;
 
+	/* FIXME: unsigned long long values are broken. */
 	la = m_strtoll(a, field->u.n.scale);
 	lb = m_strtoll(b, field->u.n.scale);
 	return la == lb;
@@ -171,7 +173,7 @@ static const char *get_numeric(struct context_def *ctx, struct field_def *field,
 {
 	static char buffer[1 + 20 + 2];
 	char scale = field->u.n.scale;
-	long long l;
+	unsigned long long l;
 	int n;
 
 	switch(type_of_field(ctx, field)) {
@@ -190,8 +192,29 @@ static const char *get_numeric(struct context_def *ctx, struct field_def *field,
 	default:
 		return NULL;
 	}
-	/* FIXME: We treat all numbers as signed here right now.  */
-	n = snprintf(buffer, sizeof(buffer), "%lld%c", l, scale == '1' ? 0 : scale);
+
+	if (field->u.n.is_signed) {
+		/* Sign extend.  */
+		switch(type_of_field(ctx, field)) {
+		case NLA_U8:
+			l = (int8_t)l;
+			break;
+		case NLA_U16:
+			l = (int16_t)l;
+			break;
+		case NLA_U32:
+			l = (int32_t)l;
+			break;
+		case NLA_U64:
+			l = (int64_t)l;
+			break;
+		}
+		n = snprintf(buffer, sizeof(buffer), "%lld%c",
+			     l, scale == '1' ? 0 : scale);
+	} else
+		n = snprintf(buffer, sizeof(buffer), "%llu%c",
+			     l, scale == '1' ? 0 : scale);
+
 	assert(n < sizeof(buffer));
 	return buffer;
 }
@@ -201,6 +224,7 @@ static bool put_numeric(struct context_def *ctx, struct field_def *field,
 {
 	long long l;
 
+	/* FIXME: unsigned long long values are broken. */
 	l = m_strtoll(value, field->u.n.scale);
 	switch(type_of_field(ctx, field)) {
 	case NLA_U8:
@@ -436,6 +460,7 @@ const char *double_quote_string(const char *str)
 		.min = DRBD_ ## d ## _MIN,						\
 		.max = DRBD_ ## d ## _MAX,						\
 		.def = DRBD_ ## d ## _DEF,						\
+		.is_signed = F_ ## f ## _IS_SIGNED,					\
 		.scale = DRBD_ ## d ## _SCALE } }
 
 #define BOOLEAN(f, d)									\
