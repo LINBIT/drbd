@@ -215,6 +215,11 @@ struct option wait_cmds_options[] = {
 	{ 0,            0,           0,  0  }
 };
 
+struct option show_cmd_options[] = {
+	{ "show-defaults", no_argument, 0, 'D' },
+	{ }
+};
+
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
 #define NO_PAYLOAD	0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
@@ -292,7 +297,8 @@ struct drbd_cmd commands[] = {
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
-	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd) },
+	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd),
+		.options = show_cmd_options },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.ignore_minor_not_known = true,
@@ -321,6 +327,7 @@ struct drbd_cmd commands[] = {
 	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_connection_cmd, config_usage, }
 };
 
+bool show_defaults;
 bool wait_after_split_brain;
 
 #define OTHER_ERROR 900
@@ -1012,6 +1019,7 @@ static void print_options(const char *cmd_name, const char *sect_name)
 	for (field = cmd->ctx->fields; field->name; field++) {
 		struct nlattr *nlattr;
 		const char *str;
+		bool is_default;
 
 		nlattr = ntb(field->nla_type);
 		if (!nlattr)
@@ -1022,11 +1030,21 @@ static void print_options(const char *cmd_name, const char *sect_name)
 			++indent;
 		}
 		str = field->get(cmd->ctx, field, nlattr);
+		is_default = field->is_default(field, str);
+		if (is_default && !show_defaults)
+			continue;
 		if (field->needs_double_quoting)
 			str = double_quote_string(str);
 		printI("%-16s\t%s;",field->name, str);
-		if (field->unit)
-			printf(" # %s", field->unit);
+		if (field->unit || is_default) {
+				printf(" # ");
+			if (field->unit)
+				printf("%s", field->unit);
+			if (field->unit && is_default)
+				printf(", ");
+			if (is_default)
+				printf("default");
+		}
 		printf("\n");
 	}
 	if(opened) {
@@ -1199,6 +1217,9 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		case 'w':
 			wait_after_split_brain = true;
 			break;
+
+		case 'D':
+			show_defaults = true;
 		}
 	}
 	if (optind < argc) {
