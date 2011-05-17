@@ -1263,7 +1263,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	dhdr = genlmsg_put(smsg, &drbd_genl_family, flags, cm->cmd_id);
 	dhdr->minor = minor;
 	dhdr->flags = 0;
-	if (minor == -1U && strcmp(objname, "ALL")) {
+	if (minor == -1U && strcmp(objname, "all")) {
 		/* Restrict the dump to a single resource. */
 		struct nlattr *nla;
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
@@ -1364,7 +1364,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				if (minor != -1U) {
 					if (minor != dh->minor)
 						continue;
-				} else if (strcmp(objname, "ALL")) {
+				} else if (strcmp(objname, "all")) {
 					struct drbd_cfg_context ctx =
 						{ .ctx_volume = -1U };
 
@@ -1487,7 +1487,7 @@ static void free_minors(struct minors_list *minors)
 }
 
 /*
- * Expects objname to be setto the connection name or "ALL".
+ * Expects objname to be setto the connection name or "all".
  */
 static struct minors_list *enumerate_minors(void)
 {
@@ -2413,9 +2413,9 @@ int main(int argc, char **argv)
 	}
 
 	objname = argv[1];
-	if (!strcmp(objname, "ALL")) {
+	if (!strcmp(objname, "all")) {
 		if (!(cmd->ctx_key & CTX_ALL))
-			print_usage_and_exit("command does not accept argument 'ALL'");
+			print_usage_and_exit("command does not accept argument 'all'");
 	} else if (cmd->ctx_key & CTX_MINOR) {
 		minor = dt_minor_of_dev(argv[1]);
 		if (minor == -1U && !(cmd->ctx_key & CTX_CONN)) {
