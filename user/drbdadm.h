@@ -131,7 +131,6 @@ struct d_option
   char* value;
   struct d_option* next;
   unsigned int mentioned  :1 ; // for the adjust command.
-  unsigned int is_default :1 ; // for the adjust command.
   unsigned int is_escaped :1 ;
   unsigned int adj_skip :1;
 };

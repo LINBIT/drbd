@@ -98,7 +98,6 @@ enum yytokentype {
 	TK_ASK,
 	TK_YES,
 	TK_NO,
-	TK__IS_DEFAULT,
 	TK__THIS_HOST,
 	TK__REMOTE_HOST,
 	TK_PROXY,

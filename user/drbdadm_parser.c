@@ -281,7 +281,6 @@ struct d_option *new_opt(char *name, char *value)
 	cn->name = name;
 	cn->value = value;
 	cn->mentioned = 0;
-	cn->is_default = 0;
 	cn->is_escaped = 0;
 
 	return cn;
@@ -703,14 +702,10 @@ void parse_options_syncer(struct d_resource *res)
 			break;
 		}
 		switch (token) {
-		case TK__IS_DEFAULT:
-			current_option->is_default = 1;
-			EXP(';');
-			break;
 		case ';':
 			break;
 		default:
-			pe_expected("_is_default | ;");
+			pe_expected(";");
 		}
 	}
 }
@@ -773,16 +768,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		} else {
 			pe_expected("an option keyword");
 		}
-		switch (yylex()) {
-		case TK__IS_DEFAULT:
-			current_option->is_default = 1;
-			EXP(';');
-			break;
-		case ';':
-			break;
-		default:
-			pe_expected("_is_default | ;");
-		}
+		EXP(';');
 	}
 }
 

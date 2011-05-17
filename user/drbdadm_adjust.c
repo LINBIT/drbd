@@ -38,10 +38,12 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 #include "drbdadm.h"
 #include "drbdtool_common.h"
 #include "drbdadm_parser.h"
+#include "config_flags.h"
 
 /* drbdsetup show might complain that the device minor does
    not exist at all. Redirect stderr to /dev/null therefore.
@@ -99,7 +101,19 @@ static int ov_eq(char* val1, char* val2)
 	return !strcmp(val1,val2);
 }
 
-static int opts_equal(struct d_option* conf, struct d_option* running)
+static bool is_default(struct context_def *ctx, struct d_option *opt)
+{
+	struct field_def *field;
+
+	for (field = ctx->fields; field->name; field++) {
+		if (strcmp(field->name, opt->name))
+			continue;
+		return field->is_default(field, opt->value);
+	}
+	return false;
+}
+
+static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_option* running)
 {
 	struct d_option* opt;
 
@@ -116,7 +130,7 @@ static int opts_equal(struct d_option* conf, struct d_option* running)
 					opt->name,running->value,opt->value);
 			opt->mentioned=1;
 		} else {
-			if(!running->is_default) {
+			if(!is_default(ctx, running)) {
 				if (verbose > 2)
 					fprintf(stderr, "Only in running config %s: %s\n",
 						running->name,running->value);
@@ -446,8 +460,8 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 	move_opt_to_head(&kern->disk_options, k);
 
 	/* simplify logic below, would otherwise have to
-	 * (!x || x->is_default) all the time. */
-	if (k && k->is_default)
+	 * (!x || is_default(x) all the time. */
+	if (k && is_default(&disk_options_ctx, k))
 		k = NULL;
 
 	/* there was a bvec restriction set,
@@ -469,7 +483,7 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 	move_opt_to_head(&conf->disk_options, c);
 	move_opt_to_head(&kern->disk_options, k);
 
-	if (k && k->is_default)
+	if (k && is_default(&disk_options_ctx, k))
 		k = NULL;
 	if (!k != !c)
 		conf->adj_resize = 1;
@@ -510,7 +524,7 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 
 	/* is it sufficient to only adjust the disk options? */
 	if (!conf->adj_attach)
-		conf->adj_disk_opts = !opts_equal(c, k);
+		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, c, k);
 
 	if (conf->adj_attach && kern->disk)
 		conf->adj_detach = 1;
@@ -666,7 +680,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 
 	if (running) {
 		do_connect = !addr_equal(ctx->res,running);
-		do_net_options = !opts_equal(ctx->res->net_options, running->net_options);
+		do_net_options = !opts_equal(&net_options_ctx, ctx->res->net_options, running->net_options);
 	} else {
 		do_res_options = 1;
 		do_connect = 1;

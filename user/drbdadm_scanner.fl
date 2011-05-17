@@ -83,7 +83,6 @@ resource		{ DP; return TK_RESOURCE;		}
 meta-disk		{ DP; return TK_META_DISK;		}
 flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
 usage-count 		{ DP; return TK_USAGE_COUNT;		}
-_is_default 		{ DP; return TK__IS_DEFAULT;		}
 _this_host 		{ DP; return TK__THIS_HOST;		}
 _remote_host 		{ DP; return TK__REMOTE_HOST;		}
 sci			{ DP; CP; return TK_SCI;		}
