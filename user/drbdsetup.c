@@ -150,7 +150,6 @@ struct drbd_option {
 	const char* name;
 	const char short_name;
 	__u16 nla_type;
-	void (*show_function)(struct drbd_option *, struct nlattr *);
 	int (*usage_function)(struct drbd_option *, char*, int);
 	void (*xml_function)(struct drbd_option *);
 	union {
@@ -248,14 +247,6 @@ static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* ar
 static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
-// show functions for options (used by show_scmd)
-static void show_numeric(struct drbd_option *od, struct nlattr *nla);
-static void show_handler(struct drbd_option *od, struct nlattr *nla);
-static void show_flag(struct drbd_option *od, struct nlattr *nla);
-static void show_yesno(struct drbd_option *od, struct nlattr *nla);
-static void show_string(struct drbd_option *od, struct nlattr *nla);
-static void show_protocol(struct drbd_option *od, struct nlattr *nla);
-
 const char *on_error[] = {
 	[EP_PASS_ON]         = "pass_on",
 	[EP_CALL_HELPER]  = "call-local-io-error",
@@ -318,21 +309,21 @@ struct option wait_cmds_options[] = {
 };
 
 #define EN(N,UN) \
-	show_numeric, numeric_opt_usage, numeric_opt_xml, \
+	numeric_opt_usage, numeric_opt_xml, \
 	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
 		DRBD_ ## N ## _DEF , DRBD_ ## N ## _SCALE, UN  } }
 #define EH(N,D) \
-	show_handler, handler_opt_usage, handler_opt_xml, \
+	handler_opt_usage, handler_opt_xml, \
 	{ .handler_param = { N, ARRAY_SIZE(N), \
 	DRBD_ ## D ## _DEF } }
 #define EFLAG \
-	show_flag, flag_opt_usage, flag_opt_xml, \
+	flag_opt_usage, flag_opt_xml, \
 	.optional_yesno_argument = true
 #define EYN(D) \
-	show_yesno, yesno_opt_usage, yesno_opt_xml, \
+	yesno_opt_usage, yesno_opt_xml, \
 	{ .numeric_param = { .def = DRBD_ ## D ## _DEF } }, \
 	.optional_yesno_argument = true
-#define ES      show_string, string_opt_usage, string_opt_xml, { }
+#define ES      string_opt_usage, string_opt_xml, { }
 #define CLOSE_ARGS_OPTS  { .name = NULL, }
 
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
@@ -358,7 +349,7 @@ struct option wait_cmds_options[] = {
 
 #define CHANGEABLE_NET_OPTIONS						\
 	{ "protocol",'p',	T_wire_protocol, \
-		show_protocol, protocol_opt_usage, protocol_opt_xml, }, \
+		protocol_opt_usage, protocol_opt_xml, }, \
 	{ "timeout",'t',	T_timeout,	EN(TIMEOUT, "1/10 seconds") }, \
 	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
 	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
@@ -1174,91 +1165,6 @@ static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	return rv;
 }
 
-static void show_numeric(struct drbd_option *od, struct nlattr *nla)
-{
-	long long val;
-	const unsigned char unit_prefix = od->numeric_param.unit_prefix;
-
-	switch(current_policy[nla_type(nla)].type) {
-	case NLA_U8:
-		val = (char)nla_get_u8(nla);
-		break;
-	case NLA_U16:
-		val = (short)nla_get_u16(nla);
-		break;
-	case NLA_U32:
-		val = (int)nla_get_u32(nla);
-		break;
-	case NLA_U64:
-		val = nla_get_u64(nla);
-		break;
-	default:
-		ASSERT(0);
-		val=0;
-	}
-
-	if (unit_prefix == '1')
-		printI("%-16s\t%lld", od->name, val);
-	else
-		printI("%-16s\t%lld%c", od->name, val, unit_prefix);
-	if (val == od->numeric_param.def)
-		printf(" _is_default");
-	if (od->numeric_param.unit) {
-		printf("; # %s\n", od->numeric_param.unit);
-	} else {
-		printf(";\n");
-	}
-}
-
-static void show_protocol(struct drbd_option *od, struct nlattr *nla)
-{
-	int i = nla_get_u32(nla);
-	printI("%-16s\t%c",od->name, '@' + i);
-	if (i == DRBD_PROTOCOL_DEF)
-		printf(" _is_default");
-	printf(";\n");
-}
-
-static void show_handler(struct drbd_option *od, struct nlattr *nla)
-{
-	const char** handler_names = od->handler_param.handler_names;
-	int i;
-
-	i = nla_get_u32(nla);
-	printI("%-16s\t%s",od->name,handler_names[i]);
-	if (i == od->handler_param.def)
-		printf(" _is_default");
-	printf(";\n");
-}
-
-static void show_flag(struct drbd_option *od, struct nlattr *nla)
-{
-	bool val;
-
-	val = nla_get_u8(nla);
-	if (val)
-		printI("%-16s\t%s;\n", od->name, "yes");
-}
-
-static void show_yesno(struct drbd_option *od, struct nlattr *nla)
-{
-	bool val;
-
-	val = nla_get_u8(nla);
-	printI("%-16s\t%s", od->name, val ? "yes" : "no");
-	if (!val == !od->numeric_param.def)
-		printf(" _is_default");
-	printf(";\n");
-}
-
-static void show_string(struct drbd_option *od, struct nlattr *nla)
-{
-
-	char *str = nla_data(nla);
-	if (str[0])
-		printI("%-16s\t\"%s\";\n",od->name,str);
-}
-
 static struct drbd_cmd *find_cmd_by_name(const char *name)
 {
 	unsigned int i;
@@ -1280,7 +1186,7 @@ static struct drbd_cmd *find_cmd_by_name(const char *name)
 static void print_options(const char *cmd_name, const char *sect_name)
 {
 	struct drbd_cmd *cmd;
-	struct drbd_option *od;
+	struct field_def *field;
 	int opened = 0;
 
 	cmd = find_cmd_by_name(cmd_name);
@@ -1298,15 +1204,27 @@ static void print_options(const char *cmd_name, const char *sect_name)
 	}
 	current_policy = cmd->ctx->nla_policy; /* for show_numeric */
 
-	for (od = cmd->drbd_options; od && od->name; od++) {
-		if (!ntb(od->nla_type))
+	if (!cmd->ctx)
+		return;
+	for (field = cmd->ctx->fields; field->name; field++) {
+		struct nlattr *nlattr;
+		const char *str;
+
+		nlattr = ntb(field->nla_type);
+		if (!nlattr)
 			continue;
 		if (!opened) {
 			opened=1;
 			printI("%s {\n",sect_name);
 			++indent;
 		}
-		od->show_function(od, ntb(od->nla_type));
+		str = field->get(cmd->ctx, field, nlattr);
+		if (field->needs_double_quoting)
+			str = double_quote_string(str);
+		printI("%-16s\t%s;",field->name, str);
+		if (field->unit)
+			printf(" # %s", field->unit);
+		printf("\n");
 	}
 	if(opened) {
 		--indent;
