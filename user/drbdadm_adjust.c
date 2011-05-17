@@ -144,7 +144,7 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 	}
 
 	while(conf) {
-		if(conf->mentioned==0) {
+		if(conf->mentioned==0 && !is_default(ctx, conf)) {
 			if (verbose > 2)
 				fprintf(stderr, "Only in config file %s: %s\n",
 					conf->name,conf->value);
