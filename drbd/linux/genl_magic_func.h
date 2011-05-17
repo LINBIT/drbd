@@ -68,7 +68,8 @@ static int nla_check_unknown(int maxtype, struct nlattr *head, int len)
 #define GENL_struct(tag_name, tag_number, s_name, s_fields)		\
 	[tag_name] = { .type = NLA_NESTED },
 
-static struct nla_policy CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy)[] = {
+static struct nla_policy CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy)[]	\
+		__attribute__((unused)) = {
 #include GENL_MAGIC_INCLUDE_FILE
 };
 
