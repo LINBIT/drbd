@@ -48,8 +48,6 @@
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
 
-
-
 #define EXIT_NOMEM 20
 #define EXIT_NO_FAMILY 20
 #define EXIT_SEND_ERR 20
@@ -72,6 +70,7 @@
 #include <linux/genl_magic_func.h>
 #include "drbdtool_common.h"
 #include "registry.h"
+#include "config.h"
 
 /* for parsing of messages */
 static struct nlattr *global_attrs[128];
@@ -2807,6 +2806,39 @@ static int is_drbd_driver_missing(void)
 	return 1;
 }
 
+void exec_legacy_drbdsetup(char **argv)
+{
+#ifdef DRBD_LEGACY_83
+	static const char * const legacy_drbdsetup = "_drbdsetup_83";
+	char *progname, *drbdsetup;
+
+	/* in case drbdsetup is called with an absolute or relative pathname
+	 * look for the legacy drbdsetup binary in the same location,
+	 * otherwise, just let execvp sort it out... */
+	if ((progname = strrchr(argv[0], '/')) == 0) {
+		drbdsetup = strdup(legacy_drbdsetup);
+	} else {
+		size_t len_dir, l;
+
+		++progname;
+		len_dir = progname - argv[0];
+
+		l = len_dir + strlen(legacy_drbdsetup) + 1;
+		drbdsetup = malloc(l);
+		if (!drbdsetup) {
+			fprintf(stderr, "Malloc() failed\n");
+			exit(20);
+		}
+		strncpy(drbdsetup, argv[0], len_dir);
+		strcpy(drbdsetup + len_dir, legacy_drbdsetup);
+	}
+	execvp(drbdsetup, argv);
+#else
+	fprintf(stderr, "This drbdsetup was not built with support for legacy drbd-8.3\n"
+		"Eventually rebuild with ./configure --with-legacy-connector\n");
+#endif
+}
+
 int main(int argc, char **argv)
 {
 	unsigned minor = -1U;
@@ -2872,9 +2904,9 @@ int main(int argc, char **argv)
 		drbd_sock = genl_connect_to_family(&drbd_genl_family);
 		if (!drbd_sock) {
 			try_genl = 0;
+			exec_legacy_drbdsetup(argv);
+			/* Only reached in case exec() failed... */
 			fprintf(stderr, "Could not connect to 'drbd' generic netlink family\n");
-			/* FIXME fall back to connector ... */
-			/* MAYBE re-exec drbdsetup.cn */
 			return 20;
 		}
 		if (drbd_genl_family.version != API_VERSION ||
