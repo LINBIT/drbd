@@ -71,6 +71,25 @@ bool conn_all_vols_unconf(struct drbd_tconn *tconn)
 	return rv;
 }
 
+/* Unfortunately the states where not correctly ordered, when
+   they where defined. therefore can not use max_t() here. */
+static enum drbd_role max_role(enum drbd_role role1, enum drbd_role role2)
+{
+	if (role1 == R_PRIMARY || role2 == R_PRIMARY)
+		return R_PRIMARY;
+	if (role1 == R_SECONDARY || role2 == R_SECONDARY)
+		return R_SECONDARY;
+	return R_UNKNOWN;
+}
+static enum drbd_role min_role(enum drbd_role role1, enum drbd_role role2)
+{
+	if (role1 == R_UNKNOWN || role2 == R_UNKNOWN)
+		return R_UNKNOWN;
+	if (role1 == R_SECONDARY || role2 == R_SECONDARY)
+		return R_SECONDARY;
+	return R_PRIMARY;
+}
+
 enum drbd_role conn_highest_role(struct drbd_tconn *tconn)
 {
 	enum drbd_role role = R_UNKNOWN;
@@ -79,7 +98,7 @@ enum drbd_role conn_highest_role(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr)
-		role = max_t(enum drbd_role, role, mdev->state.role);
+		role = max_role(role, mdev->state.role);
 	rcu_read_unlock();
 
 	return role;
@@ -91,19 +110,9 @@ enum drbd_role conn_highest_peer(struct drbd_tconn *tconn)
 	struct drbd_conf *mdev;
 	int vnr;
 
-	/* Unfortunately the states where not correctly ordered, when
-	   they where defined. therefore can not use max_t() here. */
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		switch (mdev->state.peer) {
-		case R_PRIMARY:
-			peer = R_PRIMARY;
-			goto out;
-		case R_SECONDARY:
-			peer = R_SECONDARY;
-		}
-	}
-out:
+	idr_for_each_entry(&tconn->volumes, mdev, vnr)
+		peer = max_role(peer, mdev->state.peer);
 	rcu_read_unlock();
 
 	return peer;
@@ -1572,15 +1581,15 @@ conn_set_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state
 			BUG();
 
 		ns.i = mdev->state.i;
-		ns_max.role = max_t(enum drbd_role, ns.role, ns_max.role);
-		ns_max.peer = max_t(enum drbd_role, ns.peer, ns_max.peer);
-		ns_max.conn = max_t(enum drbd_role, ns.conn, ns_max.conn);
+		ns_max.role = max_role(ns.role, ns_max.role);
+		ns_max.peer = max_role(ns.peer, ns_max.peer);
+		ns_max.conn = max_t(enum drbd_conns, ns.conn, ns_max.conn);
 		ns_max.disk = max_t(enum drbd_disk_state, ns.disk, ns_max.disk);
 		ns_max.pdsk = max_t(enum drbd_disk_state, ns.pdsk, ns_max.pdsk);
 
-		ns_min.role = min_t(enum drbd_role, ns.role, ns_min.role);
-		ns_min.peer = min_t(enum drbd_role, ns.peer, ns_min.peer);
-		ns_min.conn = min_t(enum drbd_role, ns.conn, ns_min.conn);
+		ns_min.role = min_role(ns.role, ns_min.role);
+		ns_min.peer = min_role(ns.peer, ns_min.peer);
+		ns_min.conn = min_t(enum drbd_conns, ns.conn, ns_min.conn);
 		ns_min.disk = min_t(enum drbd_disk_state, ns.disk, ns_min.disk);
 		ns_min.pdsk = min_t(enum drbd_disk_state, ns.pdsk, ns_min.pdsk);
 	}
