@@ -146,27 +146,6 @@ struct drbd_argument {
 				char *);
 };
 
-struct drbd_option {
-	const char* name;
-	const char short_name;
-	__u16 nla_type;
-	union {
-		struct {
-			const long long min;
-			const long long max;
-			const long long def;
-			const unsigned char unit_prefix;
-			const char* unit;
-		} numeric_param; // for conv_numeric
-		struct {
-			const char** handler_names;
-			const int number_of_handlers;
-			const int def;
-		} handler_param; // conv_handler
-	};
-	bool optional_yesno_argument;
-};
-
 /* Configuration requests typically need a context to operate on.
  * Possible keys are device minor/volume id (both fit in the drbd_genlmsghdr),
  * the replication link (aka connection) name,
@@ -185,7 +164,6 @@ struct drbd_cmd {
 	int (*function)(struct drbd_cmd *, unsigned, int, char **);
 	void (*usage)(struct drbd_cmd *, enum usage_type);
 	struct drbd_argument *drbd_args;
-	struct drbd_option *drbd_options;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
 	struct option *options;
 	bool ignore_minor_not_known;
@@ -229,59 +207,6 @@ static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* ar
 static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
-const char *on_error[] = {
-	[EP_PASS_ON]         = "pass_on",
-	[EP_CALL_HELPER]  = "call-local-io-error",
-	[EP_DETACH]         = "detach",
-};
-
-const char *fencing_n[] = {
-	[FP_DONT_CARE] = "dont-care",
-	[FP_RESOURCE] = "resource-only",
-	[FP_STONITH]  = "resource-and-stonith",
-};
-
-const char *asb0p_n[] = {
-        [ASB_DISCONNECT]        = "disconnect",
-	[ASB_DISCARD_YOUNGER_PRI] = "discard-younger-primary",
-	[ASB_DISCARD_OLDER_PRI]   = "discard-older-primary",
-	[ASB_DISCARD_ZERO_CHG]    = "discard-zero-changes",
-	[ASB_DISCARD_LEAST_CHG]   = "discard-least-changes",
-	[ASB_DISCARD_LOCAL]      = "discard-local",
-	[ASB_DISCARD_REMOTE]     = "discard-remote"
-};
-
-const char *asb1p_n[] = {
-	[ASB_DISCONNECT]        = "disconnect",
-	[ASB_CONSENSUS]         = "consensus",
-	[ASB_VIOLENTLY]         = "violently-as0p",
-	[ASB_DISCARD_SECONDARY]  = "discard-secondary",
-	[ASB_CALL_HELPER]        = "call-pri-lost-after-sb"
-};
-
-const char *asb2p_n[] = {
-	[ASB_DISCONNECT]        = "disconnect",
-	[ASB_VIOLENTLY]         = "violently-as0p",
-	[ASB_CALL_HELPER]        = "call-pri-lost-after-sb"
-};
-
-const char *rrcf_n[] = {
-	[ASB_DISCONNECT]        = "disconnect",
-	[ASB_VIOLENTLY]         = "violently",
-	[ASB_CALL_HELPER]        = "call-pri-lost"
-};
-
-const char *on_no_data_n[] = {
-	[OND_IO_ERROR]		= "io-error",
-	[OND_SUSPEND_IO]	= "suspend-io"
-};
-
-const char *on_congestion_n[] = {
-	[OC_BLOCK]              = "block",
-	[OC_PULL_AHEAD]         = "pull-ahead",
-	[OC_DISCONNECT]         = "disconnect"
-};
-
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
@@ -290,76 +215,14 @@ struct option wait_cmds_options[] = {
 	{ 0,            0,           0,  0  }
 };
 
-#define EN(N,UN) \
-	{ .numeric_param = { DRBD_ ## N ## _MIN, DRBD_ ## N ## _MAX, \
-		DRBD_ ## N ## _DEF , DRBD_ ## N ## _SCALE, UN  } }
-#define EH(N,D) \
-	{ .handler_param = { N, ARRAY_SIZE(N), \
-	DRBD_ ## D ## _DEF } }
-#define EFLAG \
-	.optional_yesno_argument = true
-#define EYN(D) \
-	{ .numeric_param = { .def = DRBD_ ## D ## _DEF } }, \
-	.optional_yesno_argument = true
-#define ES      { }
-#define CLOSE_ARGS_OPTS  { .name = NULL, }
-
 #define F_CONFIG_CMD	generic_config_cmd, config_usage
 #define NO_PAYLOAD	0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
 			get_usage, .show_function = scmd
 
-#define CHANGEABLE_DISK_OPTIONS						\
-	{ "on-io-error",'E',	T_on_io_error,	EH(on_error,ON_IO_ERROR) }, \
-	{ "fencing",'f',	T_fencing,      EH(fencing_n,FENCING) }, \
-	{ "disk-barrier",'B', T_disk_barrier, EYN(DISK_BARRIER) },			\
-	{ "disk-flushes",'F', T_disk_flushes, EYN(DISK_FLUSHES) },			\
-	{ "disk-drain",'D', T_disk_drain, EYN(DISK_DRAIN) },			\
-	{ "md-flushes",'M', T_md_flushes,  EYN(MD_FLUSHES) },			\
-	{ "resync-rate",'t',   T_resync_rate,	EN(RESYNC_RATE, "bytes/second") }, \
-	{ "resync-after",'a',  T_resync_after,	EN(MINOR_NUMBER, NULL) },	\
-	{ "al-extents",'e',    T_al_extents,	EN(AL_EXTENTS, NULL) }, \
-	{ "c-plan-ahead", 'p', T_c_plan_ahead, EN(C_PLAN_AHEAD, "1/10 seconds") }, \
-	{ "c-delay-target", 'd',T_c_delay_target, EN(C_DELAY_TARGET, "1/10 seconds") }, \
-	{ "c-fill-target", 's',T_c_fill_target, EN(C_FILL_TARGET, "bytes") }, \
-	{ "c-max-rate", 'R',	T_c_max_rate, EN(C_MAX_RATE, "bytes/second") }, \
-	{ "c-min-rate", 'r',	T_c_min_rate, EN(C_MIN_RATE, "bytes/second") },
-
-#define CHANGEABLE_NET_OPTIONS						\
-	{ "protocol",'p',	T_wire_protocol }, \
-	{ "timeout",'t',	T_timeout,	EN(TIMEOUT, "1/10 seconds") }, \
-	{ "max-epoch-size",'e',T_max_epoch_size,EN(MAX_EPOCH_SIZE, NULL) }, \
-	{ "max-buffers",'b',	T_max_buffers,	EN(MAX_BUFFERS, NULL) }, \
-	{ "unplug-watermark",'u',T_unplug_watermark, EN(UNPLUG_WATERMARK, NULL) }, \
-	{ "connect-int",'c',	T_connect_int, EN(CONNECT_INT, "seconds") }, \
-	{ "ping-int",'i',	T_ping_int,	   EN(PING_INT, "seconds") }, \
-	{ "sndbuf-size",'s',	T_sndbuf_size,	   EN(SNDBUF_SIZE, "bytes") }, \
-	{ "rcvbuf-size",'r',	T_rcvbuf_size,	   EN(RCVBUF_SIZE, "bytes") }, \
-	{ "ko-count",'k',	T_ko_count,	   EN(KO_COUNT, NULL) }, \
-	{ "allow-two-primaries",'m',T_two_primaries, EYN(ALLOW_TWO_PRIMARIES) }, \
-	{ "cram-hmac-alg",'a',	T_cram_hmac_alg,   ES },		\
-	{ "shared-secret",'x',	T_shared_secret,   ES },		\
-	{ "after-sb-0pri",'0',	T_after_sb_0p,EH(asb0p_n,AFTER_SB_0P) }, \
-	{ "after-sb-1pri",'1',	T_after_sb_1p,EH(asb1p_n,AFTER_SB_1P) }, \
-	{ "after-sb-2pri",'2',	T_after_sb_2p,EH(asb2p_n,AFTER_SB_2P) }, \
-	{ "always-asbp",'P',   T_always_asbp,     EYN(ALWAYS_ASBP) }, \
-	{ "rr-conflict",'R',	T_rr_conflict,EH(rrcf_n,RR_CONFLICT) }, \
-	{ "ping-timeout",'T',  T_ping_timeo,	   EN(PING_TIMEO, "1/10 seconds") }, \
-	{ "data-integrity-alg",'d', T_integrity_alg,     ES },		\
-	{ "tcp-cork",'o',   T_tcp_cork, EYN(TCP_CORK) }, \
-	{ "on-congestion", 'g', T_on_congestion, EH(on_congestion_n,ON_CONGESTION) }, \
-	{ "congestion-fill", 'f', T_cong_fill,    EN(CONG_FILL, "byte") }, \
-	{ "congestion-extents", 'h', T_cong_extents, EN(CONG_EXTENTS, NULL) }, \
-	{ "csums-alg", 'C',T_csums_alg,        ES },			\
-	{ "verify-alg", 'V',T_verify_alg,      ES },			\
-	{ "use-rle",'E',T_use_rle,   EYN(USE_RLE) },
-
 struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "force", 'f',	     T_assume_uptodate, EFLAG   },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &primary_cmd_ctx },
 
 	{"secondary", CTX_MINOR, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD },
@@ -370,19 +233,11 @@ struct drbd_cmd commands[] = {
 		 { "lower_dev",		T_backing_dev,	conv_block_dev },
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
-		 CLOSE_ARGS_OPTS },
-	 .drbd_options = (struct drbd_option[]) {
-		 { "size",'S',		T_disk_size,	EN(DISK_SIZE, "bytes") },
-		 { "max-bio-bvecs",'v',	T_max_bio_bvecs,EN(MAX_BIO_BVECS, NULL) },
-		 CHANGEABLE_DISK_OPTIONS
-		 CLOSE_ARGS_OPTS },
+		 { } },
 	 .ctx = &attach_cmd_ctx },
 
 	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 CHANGEABLE_DISK_OPTIONS
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &disk_options_ctx },
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
@@ -392,50 +247,27 @@ struct drbd_cmd commands[] = {
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
 		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
-		 CLOSE_ARGS_OPTS },
-	 .drbd_options = (struct drbd_option[]) {
-		 { "dry-run",'n',   T_dry_run,		   EFLAG },
-		 { "discard-my-data",'D', T_discard_my_data,     EFLAG },
-		 CHANGEABLE_NET_OPTIONS
-		 CLOSE_ARGS_OPTS },
+		 { } },
 	 .ctx = &connect_cmd_ctx },
 
 	{"net-options", CTX_CONN, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 CHANGEABLE_NET_OPTIONS
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &net_options_ctx },
 
 	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "force", 'F',	T_force_disconnect,	EFLAG },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &disconnect_cmd_ctx },
 
 	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "size",'s',T_resize_size,		EN(DISK_SIZE, "bytes") },
-		 { "assume-peer-has-space",'f',T_resize_force,	EFLAG },
-		 { "assume-clean", 'c',        T_no_resync, EFLAG },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &resize_cmd_ctx },
 
 	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "cpu-mask",'c',T_cpu_mask,           ES },
-		 { "on-no-data-accessible",'n',	T_on_no_data, EH(on_no_data_n,ON_NO_DATA) },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &resource_options_cmd_ctx },
 
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "clear-bitmap",'c',T_clear_bm, EFLAG   },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &new_current_uuid_cmd_ctx },
 
 	{"invalidate", CTX_MINOR, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD, },
@@ -447,9 +279,6 @@ struct drbd_cmd commands[] = {
 	{"outdate", CTX_MINOR, DRBD_ADM_OUTDATE, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
 		F_CONFIG_CMD,
-	 .drbd_options = (struct drbd_option[]) {
-		 { "start",'s',T_ov_start_sector, EN(DISK_SIZE, "bytes") },
-		 CLOSE_ARGS_OPTS },
 	 .ctx = &verify_cmd_ctx },
 	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	/* "state" is deprecated! please use "role".
@@ -485,7 +314,7 @@ struct drbd_cmd commands[] = {
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "conn-name", T_ctx_conn_name, conv_conn_name },
 		 { "volume-number", T_ctx_volume, conv_volume },
-		 CLOSE_ARGS_OPTS },
+		 { } },
 	 .ctx = &new_minor_cmd_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
@@ -598,7 +427,6 @@ char *resname = NULL;
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
-struct nla_policy *current_policy = NULL;
 struct genl_sock *drbd_sock = NULL;
 int try_genl = 1;
 
@@ -1024,7 +852,6 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		nla_nest_end(smsg, nla);
 	}
 
-	current_policy = cm->ctx->nla_policy;
 	if (cm->tla_id)
 		nla = nla_nest_start(smsg, cm->tla_id);
 
@@ -1179,7 +1006,6 @@ static void print_options(const char *cmd_name, const char *sect_name)
 		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
 		/* still, print those that validated ok */
 	}
-	current_policy = cmd->ctx->nla_policy; /* for show_numeric */
 
 	if (!cmd->ctx)
 		return;
