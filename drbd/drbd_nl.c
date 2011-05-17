@@ -518,6 +518,7 @@ static int _try_outdate_peer_async(void *data)
 
 	conn_try_outdate_peer(tconn);
 
+	kref_put(&tconn->kref, &conn_destroy);
 	return 0;
 }
 
@@ -525,9 +526,12 @@ void conn_try_outdate_peer_async(struct drbd_tconn *tconn)
 {
 	struct task_struct *opa;
 
+	kref_get(&tconn->kref);
 	opa = kthread_run(_try_outdate_peer_async, tconn, "drbd_async_h");
-	if (IS_ERR(opa))
+	if (IS_ERR(opa)) {
 		conn_err(tconn, "out of mem, failed to invoke fence-peer helper\n");
+		kref_put(&tconn->kref, &conn_destroy);
+	}
 }
 
 enum drbd_state_rv
