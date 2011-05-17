@@ -437,7 +437,7 @@ static enum drbd_fencing_p highest_fencing_policy(struct drbd_tconn *tconn)
 
 bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 {
-	union drbd_state mask = { { .susp_fen = 1 } };
+	union drbd_state mask = { };
 	union drbd_state val = { };
 	enum drbd_fencing_p fp;
 	char *ex_to_string;
