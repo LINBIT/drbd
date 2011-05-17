@@ -187,8 +187,10 @@ static void unescape(void)
   char *ue, *e;
   e = ue = yytext;
   for (;;) {
-    if (*ue == '"')
+    if (*ue == '"') {
       ue++;
+      continue;
+    }
     if (*ue == '\\')
       ue++;
     if (!*ue)
