@@ -1074,4 +1074,12 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	})
 #endif
 
+/*
+ * IS_ALIGNED() was added to <linux/kernel.h> in mainline commit 0c0e6195 (and
+ * improved in f10db627); 2.6.24-rc1.
+ */
+#ifndef IS_ALIGNED
+#define IS_ALIGNED(x, a) (((x) & ((typeof(x))(a) - 1)) == 0)
+#endif
+
 #endif
