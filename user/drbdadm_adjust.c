@@ -87,18 +87,17 @@ static FILE *m_popen(int *pid,char** argv)
 	return fdopen(pipes[0],"r");
 }
 
-/* option value equal? */
-static int ov_eq(char* val1, char* val2)
+static int is_equal(struct context_def *ctx, struct d_option *a, struct d_option *b)
 {
-	unsigned long long v1,v2;
+	struct field_def *field;
 
-	if(val1 == NULL && val2 == NULL) return 1;
-	if(val1 == NULL || val2 == NULL) return 0;
+	for (field = ctx->fields; field->name; field++) {
+		if (!strcmp(field->name, a->name))
+			return field->is_equal(field, a->value, b->value);
+	}
 
-	if(new_strtoll(val1,0,&v1) == MSE_OK &&
-	   new_strtoll(val2,0,&v2) == MSE_OK) return v1 == v2;
-
-	return !strcmp(val1,val2);
+	fprintf(stderr, "Internal error: option '%s' not known in this context\n", a->name);
+	abort();
 }
 
 static bool is_default(struct context_def *ctx, struct d_option *opt)
@@ -119,7 +118,7 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 
 	while(running) {
 		if((opt=find_opt(conf,running->name))) {
-			if(!ov_eq(running->value,opt->value)) {
+			if(!is_equal(ctx, running, opt)) {
 				if (verbose > 2)
 					fprintf(stderr, "Value of '%s' differs: r=%s c=%s\n",
 						opt->name,running->value,opt->value);
@@ -470,7 +469,7 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 		conf->adj_attach = 1;
 
 	/* restrictions differ */
-	if (k && c && !ov_eq(k->value, c->value))
+	if (k && c && !is_equal(&disk_options_ctx, k, c))
 		conf->adj_attach = 1;
 }
 
@@ -487,7 +486,7 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 		k = NULL;
 	if (!k != !c)
 		conf->adj_resize = 1;
-	if (k && c && !ov_eq(c->value, k->value))
+	if (k && c && !is_equal(&disk_options_ctx, c, k))
 		conf->adj_resize = 1;
 }
 
