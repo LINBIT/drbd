@@ -77,12 +77,6 @@ drbdtool_common.c: ../drbdtool_common.c
 drbdtool_common.h: ../drbdtool_common.h
 	cp $^ $@
 
-registry.c: ../registry.c
-	cp $^ $@
-
-registry.h: ../registry.h
-	cp $^ $@
-
 _drbdadm_83: $(drbdadm-obj)
 	$(CC) -o $@ $^
 
@@ -98,7 +92,7 @@ _drbdsetup_83: $(drbdsetup-obj)
 clean:
 	rm -f drbdadm_scanner.c
 	rm -f _drbdsetup_83 _drbdadm_83 *.o
-	rm -f drbd_buildtag.c drbd_endian.h drbdtool_common.[ch] registry.[ch]
+	rm -f drbd_buildtag.c drbd_endian.h drbdtool_common.[ch]
 	rm -f *~
 
 distclean: clean
