@@ -160,6 +160,9 @@ static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct d_option *opts);
 
 struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr);
+struct d_resource *res_by_name(const char *name);
+int ctx_by_name(struct cfg_ctx *ctx, const char *id);
+int ctx_set_implicit_volume(struct cfg_ctx *ctx);
 
 static char *get_opt_val(struct d_option *, const char *, char *);
 
@@ -1966,8 +1969,6 @@ int adm_connect(struct cfg_ctx *ctx)
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
 }
 
-struct d_resource *res_by_name(const char *name);
-
 struct d_option *del_opt(struct d_option *base, struct d_option *item)
 {
 	struct d_option *i;
@@ -1992,26 +1993,49 @@ struct d_option *del_opt(struct d_option *base, struct d_option *item)
 }
 
 // Need to convert after from resourcename to minor_number.
-void convert_after_option(struct d_resource *res)
+void _convert_after_option(struct d_resource *res, struct d_volume *vol)
 {
 	struct d_option *opt, *next;
-	struct d_resource *depends_on_res;
+	struct cfg_ctx depends_on_ctx = { };
+	int volumes;
 
 	if (res == NULL)
 		return;
 
-	opt = res->disk_options;
+	opt = vol->disk_options;
 	while ((opt = find_opt(opt, "resync-after"))) {
 		next = opt->next;
-		depends_on_res = res_by_name(opt->value);
-		if (!depends_on_res || depends_on_res->ignore) {
-			res->disk_options = del_opt(res->disk_options, opt);
+		ctx_by_name(&depends_on_ctx, opt->value);
+		volumes = ctx_set_implicit_volume(&depends_on_ctx);
+		if (volumes > 1) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\t"
+				"resync-after contains '%s', which is ambiguous, since it contains %d volumes\n",
+				res->config_file, res->start_line, res->name,
+				opt->value, volumes);
+			config_valid = 0;
+			return;
+		}
+
+		if (!depends_on_ctx.res || depends_on_ctx.res->ignore) {
+			vol->disk_options = del_opt(vol->disk_options, opt);
 		} else {
 			free(opt->value);
-			m_asprintf(&opt->value, "%d", depends_on_res->me->volumes->device_minor);
+			m_asprintf(&opt->value, "%d", depends_on_ctx.vol->device_minor);
 		}
 		opt = next;
 	}
+}
+
+// Need to convert after from resourcename/volume to minor_number.
+void convert_after_option(struct d_resource *res)
+{
+	struct d_volume *vol;
+	struct d_host_info *h;
+
+	for (h = res->all_hosts; h; h = h->next)
+		for_each_volume(vol, h->volumes)
+			_convert_after_option(res, vol);
 }
 
 char *proxy_connection_name(struct d_resource *res)
@@ -2333,6 +2357,24 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 	return -ENOENT;
 }
 
+int ctx_set_implicit_volume(struct cfg_ctx *ctx)
+{
+	struct d_volume *vol, *v;
+	int volumes = 0;
+
+	if (ctx->vol || !ctx->res)
+		return 0;
+
+	for_each_volume(vol, ctx->res->me->volumes) {
+		volumes++;
+		v = vol;
+	}
+
+	if (volumes == 1)
+		ctx->vol = v;
+
+	return volumes;
+}
 
 /* In case a child exited, or exits, its return code is stored as
    negative number in the pids[i] array */
@@ -3047,6 +3089,8 @@ static void global_validate_maybe_expand_die_if_invalid(int expand)
 			convert_after_option(res);
 			convert_discard_opt(res);
 		}
+		if (!config_valid)
+			exit(E_config_invalid);
 	}
 }
 
