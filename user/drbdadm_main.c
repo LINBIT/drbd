@@ -159,6 +159,8 @@ static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct d_option *opts);
 
+struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr);
+
 static char *get_opt_val(struct d_option *, const char *, char *);
 
 static struct ifreq *get_ifreq();
@@ -2271,6 +2273,17 @@ struct d_resource *res_by_name(const char *name)
 	return NULL;
 }
 
+struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr)
+{
+	struct d_volume *vol;
+
+	for_each_volume(vol, volumes)
+		if (vnr == vol->vnr)
+			return vol;
+
+	return NULL;
+}
+
 int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 {
 	struct d_resource *res, *t;
@@ -2300,13 +2313,13 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		return 0;
 	}
 
-	for_each_volume(vol, res->me->volumes) {
-		if (vol_nr == vol->vnr) {
-			ctx->res = res;
-			ctx->vol = vol;
-			return 0;
-		}
+	vol = volume_by_vnr(res->me->volumes, vol_nr);
+	if (vol) {
+		ctx->res = res;
+		ctx->vol = vol;
+		return 0;
 	}
+
 	return -ENOENT;
 }
 
