@@ -508,7 +508,16 @@ bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 		  (r>>8) & 0xff, ex_to_string);
 
  out:
-	conn_request_state(tconn, mask, val, CS_VERBOSE);
+
+	/* Not using
+	   conn_request_state(tconn, mask, val, CS_VERBOSE);
+	   here, because we might were able to re-establish the connection in the
+	   meantime. */
+	spin_lock_irq(&tconn->req_lock);
+	if (tconn->cstate < C_WF_REPORT_PARAMS)
+		_conn_request_state(tconn, mask, val, CS_VERBOSE);
+	spin_unlock_irq(&tconn->req_lock);
+
 	return conn_highest_pdsk(tconn) <= D_OUTDATED;
 }
 
