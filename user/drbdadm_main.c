@@ -1195,7 +1195,7 @@ static void expand_opts(struct d_option *co, struct d_option **opts)
 static void expand_common(void)
 {
 	struct d_resource *res, *tmp;
-	struct d_volume *vol;
+	struct d_volume *vol, *host_vol;
 	struct d_host_info *h;
 
 	/* make sure vol->device is non-NULL */
@@ -1237,6 +1237,16 @@ static void expand_common(void)
 		for (h = res->all_hosts; h; h = h->next) {
 			for_each_volume(vol, h->volumes) {
 				expand_opts(res->disk_options, &vol->disk_options);
+			}
+		}
+	}
+
+	/* now from all volume/disk-options on resource level to host level */
+	for_each_resource(res, tmp, config) {
+		for_each_volume(vol, res->volumes) {
+			for (h = res->all_hosts; h; h = h->next) {
+				host_vol = volume_by_vnr(h->volumes, vol->vnr);
+				expand_opts(vol->disk_options, &host_vol->disk_options);
 			}
 		}
 	}
