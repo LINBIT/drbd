@@ -1008,7 +1008,7 @@ static void print_options(const char *cmd_name, const char *sect_name)
 	}
 	if (!global_attrs[cmd->tla_id])
 		return;
-	if (nla_parse_nested(nested_attr_tb, cmd->ctx->nla_policy_size - 1,
+	if (drbd_nla_parse_nested(nested_attr_tb, cmd->ctx->nla_policy_size - 1,
 			     global_attrs[cmd->tla_id], cmd->ctx->nla_policy)) {
 		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
 		/* still, print those that validated ok */
@@ -1824,8 +1824,10 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 		return 0;
 
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
-				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
+		drbd_nla_parse_nested(nested_attr_tb,
+				      ARRAY_SIZE(state_info_nl_policy) - 1,
+				      global_attrs[DRBD_NLA_STATE_INFO],
+				      state_info_nl_policy);
 		if (ntb(T_current_state))
 			state.i = nla_get_u32(ntb(T_current_state));
 	}
@@ -1847,8 +1849,10 @@ static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		return 0;
 
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
-				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
+		drbd_nla_parse_nested(nested_attr_tb,
+				      ARRAY_SIZE(state_info_nl_policy) - 1,
+				      global_attrs[DRBD_NLA_STATE_INFO],
+				      state_info_nl_policy);
 		if (ntb(T_current_state))
 			state.i = nla_get_u32(ntb(T_current_state));
 	}
@@ -1870,8 +1874,10 @@ static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
 		return 0;
 
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
-				global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
+		drbd_nla_parse_nested(nested_attr_tb,
+				      ARRAY_SIZE(state_info_nl_policy)-1,
+				      global_attrs[DRBD_NLA_STATE_INFO],
+				      state_info_nl_policy);
 		if (ntb(T_current_state))
 			state.i = nla_get_u32(ntb(T_current_state));
 	}
@@ -1896,8 +1902,10 @@ static int uuids_scmd(struct drbd_cmd *cm,
 		return 0;
 
 	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		nla_parse_nested(nested_attr_tb, ARRAY_SIZE(state_info_nl_policy)-1,
-			global_attrs[DRBD_NLA_STATE_INFO], state_info_nl_policy);
+		drbd_nla_parse_nested(nested_attr_tb,
+				      ARRAY_SIZE(state_info_nl_policy)-1,
+				      global_attrs[DRBD_NLA_STATE_INFO],
+				      state_info_nl_policy);
 		if (ntb(T_current_state))
 			state.i = nla_get_u32(ntb(T_current_state));
 		if (ntb(T_uuids))
