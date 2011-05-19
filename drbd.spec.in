@@ -211,7 +211,7 @@ Group: System Environment/Base
 Requires: %{name}-utils = %{version}-%{release}, rgmanager < 3
 # RHEL 6 removed some scripts from upstream version,
 # including drbd. Heuristic only...
-%if ! 0%{?centos} = 6 || 0%{?rhel} = 6
+%if 0%{?centos} != 6 && 0%{?rhel} != 6
 Conflicts: resource-agents >= 3
 %endif
 @RPM_SUBPACKAGE_NOARCH@
@@ -313,7 +313,7 @@ fi
 * Mon May  9 2011 Philipp Reisner <phil@linbit.com> - 8.4.0rc1-1
 - New upstream release.
 
-* Fri Jan 21 2011 Philipp Reisner <phil@linbit.com> - 8.3.10rc3-1
+* Fri Jan 28 2011 Philipp Reisner <phil@linbit.com> - 8.3.10-1
 - New upstream release.
 
 * Fri Oct 22 2010 Philipp Reisner <phil@linbit.com> - 8.3.9-1

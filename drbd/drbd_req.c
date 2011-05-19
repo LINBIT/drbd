@@ -1030,7 +1030,7 @@ allocate_barrier:
 	return 0;
 
 fail_free_complete:
-	if (rw == WRITE && local)
+	if (req->rq_state & RQ_IN_ACT_LOG)
 		drbd_al_complete_io(mdev, &req->i);
 fail_and_free_req:
 	if (local) {

@@ -34,7 +34,7 @@ Latest:
  * IO freezing/thawing is done on connection (all volumes) level
  * fencing is done on connection (all volumes) level
 
-8.3.10rc3 (api:88/proto:86-96)
+8.3.10 (api:88/proto:86-96)
 --------
  * Fixed a subtle performance degradation that might affected synchronous
    work loads (databases) (introduced in 8.3.9)
