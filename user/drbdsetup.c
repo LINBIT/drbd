@@ -307,7 +307,7 @@ struct drbd_cmd commands[] = {
 		.options = wait_cmds_options,
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
-	{"wait-sync", CTX_MINOR | CTX_ALL, F_GET_CMD(w_synced_state),
+	{"wait-sync", CTX_MINOR, F_GET_CMD(w_synced_state),
 		.options = wait_cmds_options,
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
