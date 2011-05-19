@@ -936,7 +936,11 @@ STATIC int conn_connect(struct drbd_tconn *tconn)
 		}
 
 		if (tconn->data.socket && tconn->meta.socket) {
-			schedule_timeout_interruptible(HZ / 10);
+			rcu_read_lock();
+			nc = rcu_dereference(tconn->net_conf);
+			timeout = nc->ping_timeo * HZ / 10;
+			rcu_read_unlock();
+			schedule_timeout_interruptible(timeout);
 			ok = drbd_socket_okay(&tconn->data.socket);
 			ok = drbd_socket_okay(&tconn->meta.socket) && ok;
 			if (ok)
