@@ -59,6 +59,7 @@ bm-byte-per-bit DP; CP; return TK_BM_BYTE_PER_BIT;
 device-uuid	DP; CP; return TK_DEVICE_UUID;
 times		DP; CP; return TK_TIMES;
 flags		DP; CP; return TK_FLAGS;
+la-peer-max-bio-size DP; CP; return TK_LA_BIO_SIZE;
 
 {INVALID_STRING} CP; bad_token("invalid string"); return TK_INVALID;
 {EMPTY_STRING}	 CP; bad_token("invalid string"); return TK_INVALID;

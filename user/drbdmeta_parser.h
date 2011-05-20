@@ -26,6 +26,7 @@ enum yytokentype {
 	TK_FLAGS,
 	TK_INVALID,
 	TK_INVALID_CHAR,
+	TK_LA_BIO_SIZE,
 };
 
 /* avoid compiler warnings about implicit declaration */
