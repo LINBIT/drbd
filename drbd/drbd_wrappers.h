@@ -1124,4 +1124,24 @@ static inline int genlmsg_reply(struct sk_buff *skb, struct genl_info *info)
 }
 #endif
 
+/*
+ * genlmsg_msg_size() and genlmsg_total_size() were added to <net/genetlink.h>
+ * in mainline commit 17db952c (v2.6.19-rc1).
+ */
+
+#ifndef COMPAT_HAVE_GENLMSG_MSG_SIZE
+#include <linux/netlink.h>
+#include <linux/genetlink.h>
+
+static inline int genlmsg_msg_size(int payload)
+{
+	return GENL_HDRLEN + payload;
+}
+
+static inline int genlmsg_total_size(int payload)
+{
+	return NLMSG_ALIGN(genlmsg_msg_size(payload));
+}
+#endif
+
 #endif
