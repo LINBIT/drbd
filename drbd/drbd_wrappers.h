@@ -1082,4 +1082,20 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 #define IS_ALIGNED(x, a) (((x) & ((typeof(x))(a) - 1)) == 0)
 #endif
 
+/*
+ * NLA_TYPE_MASK and nla_type() were added to <linux/netlink.h> in mainline
+ * commit 8f4c1f9b; v2.6.24-rc1.  Before that, none of the nlattr->nla_type
+ * flags had a special meaning.
+ */
+
+#ifndef NLA_TYPE_MASK
+#define NLA_TYPE_MASK ~0
+
+static inline int nla_type(const struct nlattr *nla)
+{
+	return nla->nla_type & NLA_TYPE_MASK;
+}
+
+#endif
+
 #endif
