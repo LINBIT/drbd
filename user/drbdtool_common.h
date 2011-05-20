@@ -74,6 +74,11 @@ extern int confirmed(const char *text);
 
 extern const char* shell_escape(const char* s);
 
+/* In-place unescape double quotes and backslash escape sequences from a
+ * double quoted string. Note: backslash is only useful to quote itself, or
+ * double quote, no special treatment to any c-style escape sequences. */
+extern void unescape(char *txt);
+
 /* Since glibc 2.8~20080505-0ubuntu7 asprintf() is declared with the
    warn_unused_result attribute.... */
 extern int m_asprintf(char **strp, const char *fmt, ...);

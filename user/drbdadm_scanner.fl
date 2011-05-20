@@ -4,11 +4,11 @@
 #include <string.h>
 #include "drbdadm_parser.h"
 #include "drbdadm.h"
+#include "drbdtool_common.h"
 
 void long_string(char* text);
 void long_dqstring(char* text);
 void err_dqstring(char* text);
-static void unescape(void);
 
 #if 0
 #define DP printf("'%s' ",yytext)
@@ -171,7 +171,7 @@ out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}
 {IPV6ADDR}		{ DP; CP; return TK_IPADDR6;		}
 {NUM}			{ DP; CP; return TK_INTEGER;		}
-{DQSTRING}		{ unescape(); DP; CP; return TK_STRING;	}
+{DQSTRING}		{ unescape(yytext); DP; CP; return TK_STRING;	}
 {STRING}		{ DP; CP; return TK_STRING;		}
 {LONG_STRING}		{ return TK_ERR_STRING_TOO_LONG;	}
 {LONG_DQSTRING}		{ return TK_ERR_DQSTRING_TOO_LONG;	}
@@ -180,25 +180,6 @@ out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 
 %%
 
-
-static void unescape(void)
-{
-  /* backslash escapes from string */
-  char *ue, *e;
-  e = ue = yytext;
-  for (;;) {
-    if (*ue == '"') {
-      ue++;
-      continue;
-    }
-    if (*ue == '\\')
-      ue++;
-    if (!*ue)
-      break;
-    *e++ = *ue++;
-  }
-  *e = '\0';
-}
 
 /* Compatibility cruft for flex version 2.5.4a */
 #ifndef YY_FLEX_SUBMINOR_VERSION

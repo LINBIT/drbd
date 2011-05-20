@@ -46,6 +46,27 @@ int confirmed(const char *text)
 	return ok;
 }
 
+/* In-place unescape double quotes and backslash escape sequences from a
+ * double quoted string. Note: backslash is only useful to quote itself, or
+ * double quote, no special treatment to any c-style escape sequences. */
+void unescape(char *txt)
+{
+	char *ue, *e;
+	e = ue = txt;
+	for (;;) {
+		if (*ue == '"') {
+			ue++;
+			continue;
+		}
+		if (*ue == '\\')
+			ue++;
+		if (!*ue)
+			break;
+		*e++ = *ue++;
+	}
+	*e = '\0';
+}
+
 
 /* input size is expected to be in KB */
 char *ppsize(char *buf, unsigned long long size)

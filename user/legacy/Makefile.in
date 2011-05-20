@@ -66,16 +66,16 @@ tools:
 endif
 
 drbd_buildtag.c: ../../drbd/drbd_buildtag.c
-	cp $^ $@
+	cp $< $@
 
 drbd_endian.h: ../drbd_endian.h
-	cp $^ $@
+	cp $< $@
 
 drbdtool_common.c: ../drbdtool_common.c
-	cp $^ $@
+	cp $< $@
 
-drbdtool_common.h: ../drbdtool_common.h
-	cp $^ $@
+drbdtool_common.h: ../drbdtool_common.h drbd_endian.h
+	cp $< $@
 
 _drbdadm_83: $(drbdadm-obj)
 	$(LINK.c) -o $@ $^

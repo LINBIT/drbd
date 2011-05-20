@@ -2,8 +2,8 @@
 
 #include "drbd_endian.h"
 #include "drbdmeta_parser.h"
+#include "drbdtool_common.h"
 
-static void unescape(void);
 static void bad_token(char*);
 
 //#define DP printf("%s ",yytext);
@@ -46,7 +46,7 @@ INVALID_CHAR    [^-_a-zA-Z0-9 \t\r\n\";{}]
 {WS}		/* skip silently */
 {COMMENT}	/* skip silently */
 {OP}		DP; return yytext[0];
-{STRING}	unescape(); DP; CP; return TK_STRING;
+{STRING}	unescape(yytext); DP; CP; return TK_STRING;
 {U64}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U64;
 {U32}		yylval.u64 = strto_u64(yytext, NULL, 16); DP; return TK_U32;
 {NUM}		yylval.u64 = strto_u64(yytext, NULL, 10); DP; return TK_NUM;
@@ -73,21 +73,4 @@ static void bad_token(char *msg)
 {
 	fflush(stdout);
 	fprintf(stderr,"line %u: %s: %s ...\n", yylineno, msg, yytext);
-}
-
-static void unescape(void)
-{
-  /* backslash escapes from string */
-  char *ue, *e;
-  e = ue = yytext;
-  for (;;) {
-    if (*ue == '"')
-      ue++;
-    if (*ue == '\\')
-      ue++;
-    if (!*ue)
-      break;
-    *e++ = *ue++;
-  }
-  *e = '\0';
 }
