@@ -1158,4 +1158,45 @@ static inline struct sk_buff *genlmsg_new(size_t payload, gfp_t flags)
 }
 #endif
 
+/*
+ * genlmsg_put() was introduced in mainline commit 482a8524 (v2.6.15-rc1) and
+ * changed in 17c157c8 (v2.6.20-rc2).  genlmsg_put_reply() was introduced in
+ * 17c157c8.  We replace the compat_genlmsg_put() from 482a8524.
+ */
+
+#ifndef COMPAT_HAVE_GENLMSG_PUT_REPLY
+#include <net/genetlink.h>
+
+static inline void *compat_genlmsg_put(struct sk_buff *skb, u32 pid, u32 seq,
+				       struct genl_family *family, int flags,
+				       u8 cmd)
+{
+	struct nlmsghdr *nlh;
+	struct genlmsghdr *hdr;
+
+	nlh = nlmsg_put(skb, pid, seq, family->id, GENL_HDRLEN +
+			family->hdrsize, flags);
+	if (nlh == NULL)
+		return NULL;
+
+	hdr = nlmsg_data(nlh);
+	hdr->cmd = cmd;
+	hdr->version = family->version;
+	hdr->reserved = 0;
+
+	return (char *) hdr + GENL_HDRLEN;
+}
+
+#define genlmsg_put compat_genlmsg_put
+
+static inline void *genlmsg_put_reply(struct sk_buff *skb,
+                                      struct genl_info *info,
+                                      struct genl_family *family,
+                                      int flags, u8 cmd)
+{
+	return genlmsg_put(skb, info->snd_pid, info->snd_seq, family,
+			   flags, cmd);
+}
+#endif
+
 #endif
