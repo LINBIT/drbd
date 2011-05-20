@@ -1110,4 +1110,18 @@ static inline struct nlmsghdr *nlmsg_hdr(const struct sk_buff *skb)
 }
 #endif
 
+/*
+ * genlmsg_reply() was added to <net/genetlink.h> in mainline commit 81878d27
+ * (v2.6.20-rc2).
+ */
+
+#ifndef COMPAT_HAVE_GENLMSG_REPLY
+#include <net/genetlink.h>
+
+static inline int genlmsg_reply(struct sk_buff *skb, struct genl_info *info)
+{
+	return genlmsg_unicast(skb, info->snd_pid);
+}
+#endif
+
 #endif
