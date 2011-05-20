@@ -1012,32 +1012,78 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
 	return 0;
 }
 
-void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_bio_size) __must_hold(local)
+static void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_bio_size)
 {
 	struct request_queue * const q = mdev->rq_queue;
-	struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
-	int max_segments;
-	int max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
+	int max_hw_sectors = max_bio_size >> 9;
+	int max_segments = 0;
 
-	rcu_read_lock();
-	max_segments = rcu_dereference(mdev->ldev->disk_conf)->max_bio_bvecs;
-	rcu_read_unlock();
+	if (get_ldev_if_state(mdev, D_ATTACHING)) {
+		struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
+
+		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
+		rcu_read_lock();
+		max_segments = rcu_dereference(mdev->ldev->disk_conf)->max_bio_bvecs;
+		rcu_read_unlock();
+		put_ldev(mdev);
+	}
 
 	blk_queue_logical_block_size(q, 512);
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_max_segments(q, max_segments ? max_segments : BLK_MAX_SEGMENTS);
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
-	blk_queue_stack_limits(q, b);
 
-	dev_info(DEV, "max BIO size = %u\n", queue_max_hw_sectors(q) << 9);
+	if (get_ldev_if_state(mdev, D_ATTACHING)) {
+		struct request_queue * const b = mdev->ldev->backing_bdev->bd_disk->queue;
 
-	if (q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
-		dev_info(DEV, "Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
-		     q->backing_dev_info.ra_pages,
-		     b->backing_dev_info.ra_pages);
-		q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
+		blk_queue_stack_limits(q, b);
+
+		if (q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
+			dev_info(DEV, "Adjusting my ra_pages to backing device's (%lu -> %lu)\n",
+				 q->backing_dev_info.ra_pages,
+				 b->backing_dev_info.ra_pages);
+			q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
+		}
+		put_ldev(mdev);
 	}
+}
+
+void drbd_reconsider_max_bio_size(struct drbd_conf *mdev)
+{
+	int now, new, local, peer;
+
+	now = queue_max_hw_sectors(mdev->rq_queue) << 9;
+	local = mdev->local_max_bio_size; /* Eventually last known value, from volatile memory */
+	peer = mdev->peer_max_bio_size; /* Eventually last known value, from meta data */
+
+	if (get_ldev_if_state(mdev, D_ATTACHING)) {
+		local = queue_max_hw_sectors(mdev->ldev->backing_bdev->bd_disk->queue) << 9;
+		mdev->local_max_bio_size = local;
+		put_ldev(mdev);
+	}
+
+	/* We may ignore peer limits if the peer is modern enough.
+	   Because new from 8.3.8 onwards the peer can use multiple
+	   BIOs for a single peer_request */
+	if (mdev->state.conn >= C_CONNECTED) {
+		if (mdev->tconn->agreed_pro_version < 94)
+			peer = mdev->peer_max_bio_size;
+		else if (mdev->tconn->agreed_pro_version == 94)
+			peer = DRBD_MAX_SIZE_H80_PACKET;
+		else /* drbd 8.3.8 onwards */
+			peer = DRBD_MAX_BIO_SIZE;
+	}
+
+	new = min_t(int, local, peer);
+
+	if (mdev->state.role == R_PRIMARY && new < now)
+		dev_err(DEV, "ASSERT FAILED new < now; (%d < %d)\n", new, now);
+
+	if (new != now)
+		dev_info(DEV, "max BIO size = %u\n", new);
+
+	drbd_setup_queue_param(mdev, new);
 }
 
 /* Starts the worker thread */
@@ -1235,7 +1281,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct lru_cache *resync_lru = NULL;
 	struct fifo_buffer *new_plan = NULL;
 	union drbd_state ns, os;
-	unsigned int max_bio_size;
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
 	int cp_discovered = 0;
@@ -1492,16 +1537,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	mdev->read_cnt = 0;
 	mdev->writ_cnt = 0;
 
-	max_bio_size = DRBD_MAX_BIO_SIZE;
-	if (mdev->state.conn == C_CONNECTED) {
-		/* We are Primary, Connected, and now attach a new local
-		 * backing store. We must not increase the user visible maximum
-		 * bio size on this device to something the peer may not be
-		 * able to handle. */
-		max_bio_size = drbd_max_bio_size(mdev);
-	}
-
-	drbd_setup_queue_param(mdev, max_bio_size);
+	drbd_reconsider_max_bio_size(mdev);
 
 	/* If I am currently not R_PRIMARY,
 	 * but meta data primary indicator is set,

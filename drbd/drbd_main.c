@@ -1090,7 +1090,7 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
 	struct drbd_socket *sock;
 	struct p_sizes *p;
 	sector_t d_size, u_size;
-	int q_order_type;
+	int q_order_type, max_bio_size;
 
 	if (get_ldev_if_state(mdev, D_NEGOTIATING)) {
 		D_ASSERT(mdev->ldev->backing_bdev);
@@ -1099,11 +1099,14 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
 		u_size = rcu_dereference(mdev->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
 		q_order_type = drbd_queue_order_type(mdev);
+		max_bio_size = queue_max_hw_sectors(mdev->ldev->backing_bdev->bd_disk->queue) << 9;
+		max_bio_size = min_t(int, max_bio_size, DRBD_MAX_BIO_SIZE);
 		put_ldev(mdev);
 	} else {
 		d_size = 0;
 		u_size = 0;
 		q_order_type = QUEUE_ORDERED_NONE;
+		max_bio_size = DRBD_MAX_BIO_SIZE; /* ... multiple BIOs per peer_request */
 	}
 
 	sock = &mdev->tconn->data;
@@ -1113,7 +1116,7 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
 	p->d_size = cpu_to_be64(d_size);
 	p->u_size = cpu_to_be64(u_size);
 	p->c_size = cpu_to_be64(trigger_reply ? 0 : drbd_get_capacity(mdev->this_bdev));
-	p->max_bio_size = cpu_to_be32(queue_max_hw_sectors(mdev->rq_queue) << 9);
+	p->max_bio_size = cpu_to_be32(max_bio_size);
 	p->queue_order_type = cpu_to_be16(q_order_type);
 	p->dds_flags = cpu_to_be16(flags);
 	return drbd_send_command(mdev, sock, P_SIZES, sizeof(*p), NULL, 0);
@@ -2138,6 +2141,8 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 
 	mdev->write_ordering = WO_bio_barrier;
 	mdev->resync_wenr = LC_FREE;
+	mdev->peer_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
+	mdev->local_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
 }
 
 void drbd_mdev_cleanup(struct drbd_conf *mdev)
@@ -2668,7 +2673,9 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	q->backing_dev_info.congested_data = mdev;
 
 	blk_queue_make_request(q, drbd_make_request);
-	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE >> 9);
+	/* Setting the max_hw_sectors to an odd value of 8kibyte here
+	   This triggers a max_bio_size message upon first attach or connect */
+	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE_SAFE >> 8);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 	q->queue_lock = &mdev->tconn->req_lock;
@@ -2857,7 +2864,8 @@ struct meta_data_on_disk {
 	      /* `-- act_log->nr_elements <-- ldev->dc.al_extents */
 	u32 bm_offset;         /* offset to the bitmap, from here */
 	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
-	u32 reserved_u32[4];
+	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
+	u32 reserved_u32[3];
 
 } __packed;
 
@@ -2898,6 +2906,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	buffer->device_uuid = cpu_to_be64(mdev->ldev->md.device_uuid);
 
 	buffer->bm_offset = cpu_to_be32(mdev->ldev->md.bm_offset);
+	buffer->la_peer_max_bio_size = cpu_to_be32(mdev->peer_max_bio_size);
 
 	D_ASSERT(drbd_md_ss__(mdev, mdev->ldev) == mdev->ldev->md.md_offset);
 	sector = mdev->ldev->md.md_offset;
@@ -2979,6 +2988,15 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		bdev->md.uuid[i] = be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
+
+	spin_lock_irq(&mdev->tconn->req_lock);
+	if (mdev->state.conn < C_CONNECTED) {
+		int peer;
+		peer = be32_to_cpu(buffer->la_peer_max_bio_size);
+		peer = max_t(int, peer, DRBD_MAX_BIO_SIZE_SAFE);
+		mdev->peer_max_bio_size = peer;
+	}
+	spin_unlock_irq(&mdev->tconn->req_lock);
 
 	/* This blocks wants to be get removed... */
 	bdev->disk_conf->al_extents = be32_to_cpu(buffer->al_nr_extents);
@@ -3414,16 +3432,6 @@ int drbd_wait_misc(struct drbd_conf *mdev, struct drbd_interval *i)
 	if (signal_pending(current))
 		return -ERESTARTSYS;
 	return 0;
-}
-
-unsigned int drbd_max_bio_size(struct drbd_conf *mdev)
-{
-	int version = mdev->tconn->agreed_pro_version;
-
-	return (version < 94)  ? queue_max_hw_sectors(mdev->rq_queue) << 9 :
-	       (version < 95)  ? DRBD_MAX_SIZE_H80_PACKET :
-	       /* since drbd 8.3.9 */
-	       DRBD_MAX_BIO_SIZE;
 }
 
 #ifdef DRBD_ENABLE_FAULTS

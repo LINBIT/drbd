@@ -1135,6 +1135,8 @@ struct drbd_conf {
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, tconn->conn_update) */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
+	int peer_max_bio_size;
+	int local_max_bio_size;
 };
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
@@ -1400,6 +1402,7 @@ extern void drbd_ldev_destroy(struct drbd_conf *mdev);
 #if DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #error Architecture not supported: DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #endif
+#define DRBD_MAX_BIO_SIZE_SAFE (1 << 12)       /* Works always = 4k */
 
 #define DRBD_MAX_SIZE_H80_PACKET (1 << 15) /* The old header only allows packets up to 32Kib data */
 
@@ -1531,7 +1534,7 @@ extern sector_t drbd_new_dev_size(struct drbd_conf *, struct drbd_backing_dev *,
 enum determine_dev_size { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
 extern enum determine_dev_size drbd_determin_dev_size(struct drbd_conf *, enum dds_flags) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_conf *);
-extern void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int) __must_hold(local);
+extern void drbd_reconsider_max_bio_size(struct drbd_conf *mdev);
 extern enum drbd_state_rv drbd_set_role(struct drbd_conf *mdev,
 					enum drbd_role new_role,
 					int force);
@@ -2405,8 +2408,6 @@ struct bm_extent {
 #define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
 #define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
 #define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
-
-extern unsigned int drbd_max_bio_size(struct drbd_conf *mdev);
 
 /* should be moved to idr.h */
 /**

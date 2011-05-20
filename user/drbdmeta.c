@@ -228,6 +228,7 @@ struct md_cpu {
 	uint32_t flags;
 	uint64_t device_uuid;
 	uint32_t bm_bytes_per_bit;
+	uint32_t la_peer_max_bio_size;
 };
 
 /*
@@ -509,7 +510,8 @@ struct __packed md_on_disk_08 {
 	be_u32 al_nr_extents;	/* important for restoring the AL */
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
 	be_u32 bm_bytes_per_bit;
-	be_u32 reserved_u32[4];
+	be_u32 la_peer_max_bio_size; /* last peer max_bio_size */
+	be_u32 reserved_u32[3];
 
 	char reserved[8 * 512 - (8*(UI_SIZE+3)+4*11)];
 };
@@ -530,6 +532,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
 	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
+	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
 }
 
 void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
@@ -547,6 +550,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
 	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
+	disk->la_peer_max_bio_size.be = cpu_to_be32(cpu->la_peer_max_bio_size);
 	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
 
@@ -2492,6 +2496,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.bm_bytes_per_bit);
 			printf("device-uuid 0x"X64(016)";\n",
 			       cfg->md.device_uuid);
+			printf("la-peer-max-bio-size %d;\n",
+			       cfg->md.la_peer_max_bio_size);
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf_bm(cfg); /* pretty prints the whole bitmap */
@@ -2652,10 +2658,23 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		cfg->md.bm_bytes_per_bit = yylval.u64;
 		EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
 		cfg->md.device_uuid = yylval.u64;
+		int tok = yylex();
+		switch(tok) {
+		case TK_LA_BIO_SIZE:
+			EXP(TK_NUM); EXP(';');
+			cfg->md.la_peer_max_bio_size = yylval.u64;
+			break;
+		case TK_BM:
+			goto start_of_bm;
+		default:
+			md_parse_error(TK_BM, 0, "keyword 'bm' or 'la-peer-max-bio-size'");
+		}
 	} else {
 		cfg->md.bm_bytes_per_bit = 4096;
 	}
-	EXP(TK_BM); EXP('{');
+	EXP(TK_BM);
+start_of_bm:
+	EXP('{');
 	bm = (le_u64 *)on_disk_buffer;
 	i = 0;
 	bm_on_disk_off = cfg->bm_offset;

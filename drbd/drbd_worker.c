@@ -593,7 +593,7 @@ int w_make_resync_request(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	max_bio_size = drbd_max_bio_size(mdev);
+	max_bio_size = queue_max_hw_sectors(mdev->rq_queue) << 9;
 	number = drbd_rs_number_requests(mdev);
 	if (number == 0)
 		goto requeue;
