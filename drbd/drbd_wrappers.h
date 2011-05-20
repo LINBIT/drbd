@@ -1098,4 +1098,16 @@ static inline int nla_type(const struct nlattr *nla)
 
 #endif
 
+/*
+ * nlmsg_hdr was added to <linux/netlink.h> in mainline commit b529ccf2
+ * (v2.6.22-rc1).
+ */
+
+#ifndef COMPAT_HAVE_NLMSG_HDR
+static inline struct nlmsghdr *nlmsg_hdr(const struct sk_buff *skb)
+{
+	return (struct nlmsghdr *)skb->data;
+}
+#endif
+
 #endif
