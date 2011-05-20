@@ -23,7 +23,7 @@ int genl_join_mc_group(struct genl_sock *s, const char *name) {
 	return -2;
 }
 
-static struct genl_sock *genl_connect(void)
+static struct genl_sock *genl_connect(__u32 nl_groups)
 {
 	struct genl_sock *s = calloc(1, sizeof(*s));
 	int err;
@@ -36,6 +36,12 @@ static struct genl_sock *genl_connect(void)
 	 * and "everyone else does it". */
 	s->s_local.nl_pid = getpid();
 	s->s_local.nl_family = AF_NETLINK;
+	/*
+	 * If we want to receive multicast traffic on this socket, kernels
+	 * before v2.6.23-rc1 require us to indicate which multicast groups we
+	 * are interested in in nl_groups.
+	 */
+	s->s_local.nl_groups = nl_groups;
 	s->s_peer.nl_family = AF_NETLINK;
 	/* start with some sane sequence number */
 	s->s_seq_expect = s->s_seq_next = time(0);
@@ -255,7 +261,7 @@ struct genl_sock *genl_connect_to_family(struct genl_family *family)
 		goto out;
 	}
 
-	s = genl_connect();
+	s = genl_connect(family->nl_groups);
 	if (!s) {
 		dbg(1, "error creating netlink socket");
 		goto out;

@@ -937,6 +937,7 @@ struct genl_family
 	unsigned int		maxattr;
 	/* 32 should be enough for most genl families */
 	struct genl_multicast_group mc_groups[32];
+	__u32			nl_groups;
 };
 
 /**

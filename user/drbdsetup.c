@@ -1135,6 +1135,32 @@ error:
 	return 20;
 }
 
+#include <sys/utsname.h>
+static bool kernel_older_than(int version, int patchlevel, int sublevel)
+{
+	struct utsname utsname;
+	char *rel;
+	int l;
+
+	if (uname(&utsname) != 0)
+		return false;
+	rel = utsname.release;
+	l = strtol(rel, &rel, 10);
+	if (l > version)
+		return false;
+	else if (l < version || *rel == 0)
+		return true;
+	l = strtol(rel + 1, &rel, 10);
+	if (l > patchlevel)
+		return false;
+	else if (l < patchlevel || *rel == 0)
+		return true;
+	l = strtol(rel + 1, &rel, 10);
+	if (l >= sublevel)
+		return false;
+	return true;
+}
+
 static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			   char **argv)
 {
@@ -1255,7 +1281,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	/* else: events command, defaults to "infinity" */
 
 	if (cm->continuous_poll) {
-		if (genl_join_mc_group(drbd_sock, "events")) {
+		if (genl_join_mc_group(drbd_sock, "events") &&
+		    !kernel_older_than(2, 6, 23)) {
 			fprintf(stderr, "unable to join drbd events multicast group\n");
 			return 20;
 		}
@@ -2434,6 +2461,8 @@ int main(int argc, char **argv)
 	}
 
 	if (try_genl) {
+		if (cmd->continuous_poll)
+			drbd_genl_family.nl_groups = -1;
 		drbd_sock = genl_connect_to_family(&drbd_genl_family);
 		if (!drbd_sock) {
 			try_genl = 0;
