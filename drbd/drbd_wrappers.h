@@ -1199,4 +1199,22 @@ static inline void *genlmsg_put_reply(struct sk_buff *skb,
 }
 #endif
 
+/*
+ * compat_genlmsg_multicast() got a gfp_t parameter in mainline commit d387f6ad
+ * (v2.6.19-rc1).
+ */
+
+#ifdef COMPAT_NEED_GENLMSG_MULTICAST_WRAPPER
+#include <net/genetlink.h>
+
+static inline int compat_genlmsg_multicast(struct sk_buff *skb, u32 pid,
+					   unsigned int group, gfp_t flags)
+{
+	return genlmsg_multicast(skb, pid, group);
+}
+
+#define genlmsg_multicast compat_genlmsg_multicast
+
+#endif
+
 #endif
