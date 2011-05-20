@@ -1144,4 +1144,18 @@ static inline int genlmsg_total_size(int payload)
 }
 #endif
 
+/*
+ * genlmsg_new() was added to <net/genetlink.h> in mainline commit 3dabc715
+ * (v2.6.20-rc2).
+ */
+
+#ifndef COMPAT_HAVE_GENLMSG_NEW
+#include <net/genetlink.h>
+
+static inline struct sk_buff *genlmsg_new(size_t payload, gfp_t flags)
+{
+	return nlmsg_new(genlmsg_total_size(payload), flags);
+}
+#endif
+
 #endif
