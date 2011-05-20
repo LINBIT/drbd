@@ -1,6 +1,8 @@
 #include <linux/err.h>
 #include <linux/string.h>
+#include <linux/spinlock.h>
 #include <linux/idr.h>
+#include <linux/rcupdate.h>
 
 /* The idr_get_next() function exists since 2009-04-02 Linux-2.6.29 (commit 38460b48)
    but is exported for use in modules since 2010-01-29 Linux-2.6.35 (commit 4d1ee80f)  */
