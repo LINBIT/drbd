@@ -1217,4 +1217,33 @@ static inline int compat_genlmsg_multicast(struct sk_buff *skb, u32 pid,
 
 #endif
 
+/*
+ * Dynamic generic netlink multicast groups were introduced in mainline commit
+ * 2dbba6f7 (v2.6.23-rc1).  Before that, netlink had a fixed number of 32
+ * multicast groups.  Use an arbitrary hard-coded group number for that case.
+ */
+
+#ifndef COMPAT_HAVE_CTRL_ATTR_MCAST_GROUPS
+
+struct genl_multicast_group {
+	struct genl_family	*family;	/* private */
+        struct list_head	list;		/* private */
+        char			name[GENL_NAMSIZ];
+	u32			id;
+};
+
+static inline int genl_register_mc_group(struct genl_family *family,
+					 struct genl_multicast_group *grp)
+{
+	grp->id = 1;
+	return 0;
+}
+
+static inline void genl_unregister_mc_group(struct genl_family *family,
+					    struct genl_multicast_group *grp)
+{
+}
+
+#endif
+
 #endif
