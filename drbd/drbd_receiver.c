@@ -373,7 +373,7 @@ struct drbd_epoch_entry *drbd_alloc_ee(struct drbd_conf *mdev,
 	if (!page)
 		goto fail;
 
-	INIT_HLIST_NODE(&e->colision);
+	INIT_HLIST_NODE(&e->collision);
 	e->epoch = NULL;
 	e->mdev = mdev;
 	e->pages = page;
@@ -398,7 +398,7 @@ void drbd_free_some_ee(struct drbd_conf *mdev, struct drbd_epoch_entry *e, int i
 		kfree(e->digest);
 	drbd_pp_free(mdev, e->pages, is_net);
 	D_ASSERT(atomic_read(&e->pending_bios) == 0);
-	D_ASSERT(hlist_unhashed(&e->colision));
+	D_ASSERT(hlist_unhashed(&e->collision));
 	mempool_free(e, drbd_ee_mempool);
 }
 
@@ -1344,7 +1344,7 @@ int w_e_reissue(struct drbd_conf *mdev, struct drbd_work *w, int cancel) __relea
 		 * and cause a "Network failure" */
 		spin_lock_irq(&mdev->req_lock);
 		list_del(&e->w.list);
-		hlist_del_init(&e->colision);
+		hlist_del_init(&e->collision);
 		spin_unlock_irq(&mdev->req_lock);
 		if (e->flags & EE_CALL_AL_COMPLETE_IO)
 			drbd_al_complete_io(mdev, e->sector);
@@ -1620,7 +1620,7 @@ STATIC int e_end_resync_block(struct drbd_conf *mdev, struct drbd_work *w, int u
 	sector_t sector = e->sector;
 	int ok;
 
-	D_ASSERT(hlist_unhashed(&e->colision));
+	D_ASSERT(hlist_unhashed(&e->collision));
 
 	if (likely((e->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(mdev, sector, e->size);
@@ -1689,7 +1689,7 @@ STATIC int receive_DataReply(struct drbd_conf *mdev, enum drbd_packets cmd, unsi
 		return false;
 	}
 
-	/* hlist_del(&req->colision) is done in _req_may_be_done, to avoid
+	/* hlist_del(&req->collision) is done in _req_may_be_done, to avoid
 	 * special casing it there for the various failure cases.
 	 * still no race with drbd_fail_pending_reads */
 	ok = recv_dless_read(mdev, req, sector, data_size);
@@ -1767,11 +1767,11 @@ STATIC int e_end_block(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
 	if (mdev->net_conf->two_primaries) {
 		spin_lock_irq(&mdev->req_lock);
-		D_ASSERT(!hlist_unhashed(&e->colision));
-		hlist_del_init(&e->colision);
+		D_ASSERT(!hlist_unhashed(&e->collision));
+		hlist_del_init(&e->collision);
 		spin_unlock_irq(&mdev->req_lock);
 	} else {
-		D_ASSERT(hlist_unhashed(&e->colision));
+		D_ASSERT(hlist_unhashed(&e->collision));
 	}
 
 	drbd_may_finish_epoch(mdev, e->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
@@ -1788,8 +1788,8 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
 	ok = drbd_send_ack(mdev, P_DISCARD_ACK, e);
 
 	spin_lock_irq(&mdev->req_lock);
-	D_ASSERT(!hlist_unhashed(&e->colision));
-	hlist_del_init(&e->colision);
+	D_ASSERT(!hlist_unhashed(&e->collision));
+	hlist_del_init(&e->collision);
 	spin_unlock_irq(&mdev->req_lock);
 
 	dec_unacked(mdev);
@@ -2003,7 +2003,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 		spin_lock_irq(&mdev->req_lock);
 
-		hlist_add_head(&e->colision, ee_hash_slot(mdev, sector));
+		hlist_add_head(&e->collision, ee_hash_slot(mdev, sector));
 
 #define OVERLAPS overlaps(i->sector, i->size, sector, size)
 		slot = tl_hash_slot(mdev, sector);
@@ -2013,7 +2013,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 			int have_conflict = 0;
 			prepare_to_wait(&mdev->misc_wait, &wait,
 				TASK_INTERRUPTIBLE);
-			hlist_for_each_entry(i, n, slot, colision) {
+			hlist_for_each_entry(i, n, slot, collision) {
 				if (OVERLAPS) {
 					/* only ALERT on first iteration,
 					 * we may be woken up early... */
@@ -2052,7 +2052,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 			}
 
 			if (signal_pending(current)) {
-				hlist_del_init(&e->colision);
+				hlist_del_init(&e->collision);
 
 				spin_unlock_irq(&mdev->req_lock);
 
@@ -2110,7 +2110,7 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 	dev_err(DEV, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&mdev->req_lock);
 	list_del(&e->w.list);
-	hlist_del_init(&e->colision);
+	hlist_del_init(&e->collision);
 	spin_unlock_irq(&mdev->req_lock);
 	if (e->flags & EE_CALL_AL_COMPLETE_IO)
 		drbd_al_complete_io(mdev, e->sector);
@@ -3239,7 +3239,7 @@ STATIC int receive_sizes(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 
 	ddsf = be16_to_cpu(p->dds_flags);
 	if (get_ldev(mdev)) {
-		dd = drbd_determin_dev_size(mdev, ddsf);
+		dd = drbd_determine_dev_size(mdev, ddsf);
 		put_ldev(mdev);
 		if (dd == dev_size_error)
 			return false;
@@ -4528,7 +4528,7 @@ static struct drbd_request *_ack_id_to_req(struct drbd_conf *mdev,
 	struct hlist_node *n;
 	struct drbd_request *req;
 
-	hlist_for_each_entry(req, n, slot, colision) {
+	hlist_for_each_entry(req, n, slot, collision) {
 		if ((unsigned long)req == (unsigned long)id) {
 			if (req->sector != sector) {
 				dev_err(DEV, "_ack_id_to_req: found req %p but it has "
