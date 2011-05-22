@@ -39,6 +39,7 @@
 #include <linux/genhd.h>
 #include <net/tcp.h>
 #include <linux/lru_cache.h>
+#include <linux/prefetch.h>
 #include <linux/drbd_config.h>
 
 #ifdef __CHECKER__
