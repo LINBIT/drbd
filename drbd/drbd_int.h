@@ -40,6 +40,7 @@
 #include <linux/idr.h>
 #include <net/tcp.h>
 #include <linux/lru_cache.h>
+#include <linux/prefetch.h>
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
