@@ -138,6 +138,9 @@ drbd meta data, if we know there is still a Primary running in the cluster.
 Note that this does not affect fencing policies set in drbd config,
 but is an additional safety feature of this resource agent only.
 You can enable this behaviour by setting the parameter to true.
+
+If this feature seems to not do what you expect, make sure you have defined
+fencing policies in the drbd configuration as well.
 </longdesc>
 <shortdesc lang="en">outdate a secondary on stop</shortdesc>
 <content type="boolean" default="${OCF_RESKEY_stop_outdates_secondary_default}"/>
@@ -182,15 +185,19 @@ do_cmd() {
 }
 
 do_drbdadm() {
+	local ret
 	# Run drbdadm with appropriate command line options, and capture
 	# its output.
 	# $DRBDADM is defined during drbd_validate as "drbdadm" plus
 	# appropriate command line options
 	do_cmd $DRBDADM "$@"
+	ret=$?
 
 	# having the version mismatch warning once per RA invokation
 	# should be enough.
 	export DRBD_DONT_WARN_ON_VERSION_MISMATCH=
+
+	return $ret
 }
 
 set_master_score() {
@@ -204,11 +211,14 @@ remove_master_score() {
 }
 
 _sh_status_process() {
-	DRBD_ROLE_LOCAL=${_role:-Unconfigured}
-	DRBD_ROLE_REMOTE=${_peer:-Unknown}
-	DRBD_CSTATE=$_cstate
-	DRBD_DSTATE_LOCAL=${_disk:-Unconfigured}
-	DRBD_DSTATE_REMOTE=${_pdsk:-DUnknown}
+	# _volume not present should not happen,
+	# but may help make this agent work even if it talks to drbd 8.3.
+	: ${_volume:=0}
+	DRBD_ROLE_LOCAL[$_volume]=${_role:-Unconfigured}
+	DRBD_ROLE_REMOTE[$_volume]=${_peer:-Unknown}
+	DRBD_CSTATE[$_volume]=$_cstate
+	DRBD_DSTATE_LOCAL[$_volume]=${_disk:-Unconfigured}
+	DRBD_DSTATE_REMOTE[$_volume]=${_pdsk:-DUnknown}
 }
 drbd_set_status_variables() {
 	# drbdsetup sh-status prints these values to stdout,
@@ -216,44 +226,22 @@ drbd_set_status_variables() {
 	#
 	# if we eval that, we do not need several drbdadm/drbdsetup commands
 	# to figure out the various aspects of the state.
-	#
-	# also avoid the "state" -> "role" transition from drbd 8.2 -> 8.3.
-	# drbdadm --version was only introduced in 8.3.2.  so for older drbd
-	# versions we fall back to old-style state,dstate,cstate calls.
 	local _minor _res_name _known _cstate _role _peer _disk _pdisk
+	local _volume _conn_name
 	local _flags_susp _flags_aftr_isp _flags_peer_isp _flags_user_isp
-	local _resynced_percent sh_status_done X
+	local _resynced_percent
 
 	# NOT local! but "return values"
-	DRBD_ROLE_LOCAL=Unconfigured
-	DRBD_ROLE_REMOTE=Unknown
-	DRBD_CSTATE=Unconfigured
-	DRBD_DSTATE_LOCAL=Unconfigured
-	DRBD_DSTATE_REMOTE=DUnknown
+	# since 8.4 supports multi volumes per resource,
+	# these are shell arrays
+	DRBD_ROLE_LOCAL=(Unconfigured)
+	DRBD_ROLE_REMOTE=(Unknown)
+	DRBD_CSTATE=(Unconfigured)
+	DRBD_DSTATE_LOCAL=(Unconfigured)
+	DRBD_DSTATE_REMOTE=(DUnknown)
 
-	if $DRBDADM_HAS_SH_STATUS; then
-		# Populates a set of variables relevant to DRBD's status
-		eval "$($DRBDSETUP "$DRBD_DEVICE" sh-status)"
-	else
-		# redirect stderr on state, as it may print a deprecation
-		# warning on 8.3.0 and 8.3.1.
-		# not redirect on cstate, in case drbdsetup actually wants
-		# to complain about something!
-		if _cstate=$(do_cmd $DRBDSETUP "$DRBD_DEVICE" cstate) &&
-		   _role=$($DRBDSETUP "$DRBD_DEVICE" state 2>/dev/null) &&
-		   _disk=$($DRBDSETUP "$DRBD_DEVICE" dstate 2>/dev/null)
-		then
-			DRBD_CSTATE=${_cstate:-Unconfigured}
-			if [[ $_role = */* ]] ; then
-				DRBD_ROLE_LOCAL=${_role%%/*}
-				DRBD_ROLE_REMOTE=${_role##*/}
-			fi
-			if [[ $_disk = */* ]]; then
-				DRBD_DSTATE_LOCAL=${_disk%%/*}
-				DRBD_DSTATE_REMOTE=${_disk##*/}
-			fi
-		fi
-	fi
+	# Populates a set of variables relevant to DRBD's status
+	eval "$($DRBDSETUP "$DRBD_RESOURCE" sh-status)"
 }
 
 # This is not the only fencing mechanism.
@@ -271,15 +259,17 @@ maybe_outdate_self()
 	local host stop_uname
 	# We ignore $OCF_RESKEY_CRM_meta_notify_promote_uname here
 	# because: if demote and promote for a _stacked_ resource
+	# (or a "floating" one, where DRBD sits on top of some SAN)
 	# happen in the same transition, demote will see the promote
 	# hostname here, and voluntarily outdate itself. Which would
 	# result in promote failure, as it is using the same meta
 	# data, which would then be outdated.
+	# If that is not sufficient for you, you probably need to
+	# configure fencing policies in the drbd configuration.
 	host=$(printf "%s\n" $OCF_RESKEY_CRM_meta_notify_master_uname |
 		grep -vix -m1 -e "$HOSTNAME" )
 	if [[ -z $host ]] ; then
-		# no current nor future master host found
-		# do not outdate myself
+		# no current master host found, do not outdate myself
 		return 1
 	fi
 	for stop_uname in $OCF_RESKEY_CRM_meta_notify_stop_uname; do
@@ -293,23 +283,26 @@ maybe_outdate_self()
 	# e.g. post/promote of some other peer.
 	# Should not happen, fencing constraints should take care of that.
 	# But in case it does, scream out loud.
-	if [[ $DRBD_ROLE_LOCAL == Primary ]] && [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]]; then
-		# I am Primary. The other one is Primary.
-		# But we cannot talk to each other :(
-		# one of us has to die.
-		# which one, however, is not ours to decide.
+	case "${DRBD_ROLE_LOCAL[*]}" in
+	*Primary*)
+		# I am Primary.
+		# The other one is Primary (according to OCF_RESKEY_CRM_meta_notify_master_uname).
+		# But we cannot talk to each other :( (otherwise this function was not called)
+		# One of us has to die.
+		# Which one, however, is not ours to decide.
 
 		ocf_log crit "resource internal SPLIT BRAIN: both $HOSTNAME and $host are Primary for $DRBD_RESOURCE, but the replication link is down!"
 		return 1
-	fi
+	esac
 
-	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
+	# OK, I am not Primary, but there is an other node Primary
 	# Outdate myself
 	ocf_log notice "outdating $DRBD_RESOURCE: according to OCF_RESKEY_CRM_meta_notify_master_uname, '$host' is still master"
 	do_drbdadm outdate $DRBD_RESOURCE
 
-	# currently, -INFINITY may cause resource instance stop/start.  But in
-	# this case that is ok, it may even clear the replication link problem.
+	# on some pacemaker versions, -INFINITY may cause resource instance stop/start.
+	# But in this case that is ok, it may even clear the replication link
+	# problem.
 	set_master_score -INFINITY
 
 	return 0
@@ -331,19 +324,28 @@ drbd_update_master_score() {
 	#     5: please, do not promote, unless this is your only option.
 	#    10: promotion is probably a bad idea, our local data is no good,
 	#        you'd probably run into severe performance problems, and risk
-	#        application crashes in case you lose the replication
-	#        connection.
+	#        application crashes or blocking IO in case you lose the
+	#        replication connection.
 	#  1000: Ok to be promoted, we have good data locally (though we don't
 	#        know about the peer, so possibly it has even better data?).
 	#        You sould use the crm-fence-peer.sh handler or similar
 	#        mechanism to avoid data divergence.
-	# 10000: Please promote me.
+	# 10000: Please promote me/keep me Primary.
 	#        I'm confident that my data is as good as it gets.
 	#
-	: == DEBUG == $DRBD_ROLE_LOCAL/$DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
-	case $DRBD_ROLE_LOCAL/$DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE in
-	Secondary/UpToDate/DUnknown)
-		# We don't know about our peer.
+	: == DEBUG == ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]}/${DRBD_DSTATE_REMOTE[*]}/ ==
+	# For multi volume, we need to compare who is "better" a bit more sophisticated.
+	# The ${XXX[*]//UpToDate}, without being in double quotes, results in a single space,
+	# if all are UpToDate.
+	case ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]//UpToDate}/${DRBD_DSTATE_REMOTE[*]//UpToDate}/ in
+	*Primary*/\ /*/)
+		# I am Primary, all local disks are UpToDate
+		set_master_score 10000
+		;;
+	*/\ /*DUnknown*/)
+		# all local disks are UpToDate,
+		# but I'm not Primary,
+		# and I'm not sure about the peer's disk state(s).
 		# We may need to outdate ourselves?
 		# But if we outdate in a MONITOR, and are disconnected
 		# secondary because of a hard primary crash, before CRM noticed
@@ -353,36 +355,37 @@ drbd_update_master_score() {
 		# its fence-peer handler callback.
 		set_master_score  1000
 		;;
-
-	*/UpToDate/*)
+	*/\ /*/)
 		# We know something about our peer, which means that either the
 		# replication link is established, or it was not even
 		# consistent last time we talked to each other.
-		# Also our local disk is UpToDate, which means even if we are
+		# Also all our local disks are UpToDate, which means even if we are
 		# currently synchronizing, we do so as SyncSource.
 		set_master_score 10000
 		;;
 
-	*/*/UpToDate)
-		# Our local disk is not up to date.
-		# But our peer is OK.
+	*/*/\ /)
+		# At least one of our local disks is not up to date.
+		# But our peer is ALL OK.
 		# We can expect to have access to useful
 		# data, but must expect degraded performance.
 		set_master_score 10
 		;;
-	*/Consistent/*)
-		# Our local disk is Consistent.
-		# It _may_ be up to date, or not.
-		# We hope that fencing mechanisms have put constraints in
-		# place, so we won't be promoted with stale data.
-		# But in case this was a cluster crash,
-		# at least allow _someone_ to be promoted.
-		set_master_score 5
-		;;
-	*)
-		# Our local disk is not up to date.
-		# Our peer is not available.
-		# We have no access to useful data.
+	*/*Attaching*/*/|*/*Negotiating*/*/)
+		# some transitional state.
+		# just don't do anything
+		: ;;
+
+	*/*Diskless*/*/|*/*Failed*/*/|*/*Inconsistent*/*/|*/*Outdated*/*/)
+		# ALWAYS put the cluster in MAINTENANCE MODE
+		# if you add a volume to a live replication group,
+		# because the new volume will typically come up as Inconsistent
+		# the first time, which would cause a monitor to revoke the
+		# master score!
+		#
+		# At least some of our local disks are not really useable.
+		# Our peer is not all good either (or some previous case block
+		# would have matched).  We have no access to useful data.
 		# DRBD would refuse to be promoted, anyways.
 		#
 		# set_master_score -INFINITY
@@ -390,6 +393,16 @@ drbd_update_master_score() {
 		# negative master scores cause instance stop; restart cycle :(
 		# Hope that this will suffice.
 		remove_master_score
+		;;
+	*)
+		# All local disks seem to be Consistent.
+		# They _may_ be up to date, or not.
+		# We hope that fencing mechanisms have put constraints in
+		# place, so we won't be promoted with stale data.
+		# But in case this was a cluster crash,
+		# at least allow _someone_ to be promoted.
+		set_master_score 5
+		;;
 	esac
 
 	return $OCF_SUCCESS
@@ -410,33 +423,45 @@ Expects to have a fully populated OCF RA-compliant environment set."
 
 drbd_status() {
 	local rc
+	local dev
 	rc=$OCF_NOT_RUNNING
 
-	if ! is_drbd_enabled || ! [ -b "$DRBD_DEVICE" ]; then
-		return $rc
-	fi
+	is_drbd_enabled || return $rc
 
-	# ok, module is loaded, block device node exists.
-	# lets see its status
+	# Not running, if no block devices exist.
+	#
+	# FIXME what if some do, and some do not exist?
+	# Adding/removing volumes to/from existing resources should only be
+	# done with maintenance-mode enabled.
+	# If someone does manually kill/remove only some of the volumes,
+	# we tolerate that here.
+	for dev in ${DRBD_DEVICES[@]} ""; do
+		test -b $dev && break
+	done
+	[[ $dev ]] || return $rc
+
+	# ok, module is loaded, block device nodes exist.
+	# lets see the status
 	drbd_set_status_variables
-	case "${DRBD_ROLE_LOCAL}" in
-	Primary)
+	case "${DRBD_ROLE_LOCAL[*]}" in
+	*Primary*)
 		rc=$OCF_RUNNING_MASTER
 		;;
-	Secondary)
+	*Secondary*)
 		rc=$OCF_SUCCESS
 		;;
-	Unconfigured)
+	*Unconfigured*)
 		rc=$OCF_NOT_RUNNING
 		;;
 	*)
-		ocf_log err "Unexpected role ${DRBD_ROLE_LOCAL}"
+		ocf_log err "Unexpected role(s) >>${DRBD_ROLE_LOCAL[*]}<<"
 		rc=$OCF_ERR_GENERIC
 	esac
 
 	return $rc
 }
 
+# I'm sorry, but there is no $OCF_DEGRADED_MASTER or similar yet.
 drbd_monitor() {
 	local status
 
@@ -450,10 +475,6 @@ drbd_monitor() {
 
 figure_out_drbd_peer_uname()
 {
-	if ! $DRBDADM_HAS_MULTI_PEER; then
-		DRBD_TO_PEER="" # old drbdadm, no --peer option
-		return
-	fi
 	# depending on whether or not the peer is currently
 	# configured, slave, master, or about to be started,
 	# it may be mentioned in various variables (or not at all)
@@ -469,13 +490,26 @@ figure_out_drbd_peer_uname()
 	DRBD_TO_PEER=${x:+ --peer $x}
 }
 
-create_device_udev_settle() {
-	if do_drbdadm syncer $DRBD_RESOURCE ; then
-		# udevsettle
-		while [ ! -b "$DRBD_DEVICE" ]; do
-			sleep 1
+my_udevsettle()
+{
+	for dev in ${DRBD_DEVICES[@]}; do
+		while ! test -b $dev; do
+			sleep 1;
 		done
-		return 0
+	done
+	return 0
+}
+create_device_udev_settle() {
+	local dev
+	if $DRBD_HAS_MULTI_VOLUME; then
+		if do_drbdadm sh-new-connection $DRBD_RESOURCE &&
+		   do_drbdadm sh-new-minor $DRBD_RESOURCE; then
+			my_udevsettle
+		else
+			return 1
+		fi
+	elif do_drbdadm syncer $DRBD_RESOURCE ; then
+		my_udevsettle
 	else
 		return 1
 	fi
@@ -490,7 +524,7 @@ drbd_start() {
 
 	if ! is_drbd_enabled; then
 		do_cmd modprobe -s drbd `$DRBDADM sh-mod-parms` || {
-			ocf_log err "Cannot load the drbd module."$'\n';
+			ocf_log err "Cannot load the drbd module.";
 			return $OCF_ERR_INSTALLED
 		}
 		ocf_log debug "$DRBD_RESOURCE start: Module loaded."
@@ -520,7 +554,7 @@ drbd_start() {
 			$first_try && do_drbdadm check-resize $DRBD_RESOURCE
 			figure_out_drbd_peer_uname
 			if ! create_device_udev_settle; then
-				# We cannot even set syncer parameters.
+				# We cannot even create the objects
 				exit $OCF_ERR_GENERIC
 			fi
 			if ! do_drbdadm $DRBD_TO_PEER attach $DRBD_RESOURCE ; then
@@ -630,6 +664,12 @@ drbd_stop() {
 			do_drbdadm down $DRBD_RESOURCE
 			;;
 		$OCF_NOT_RUNNING)
+			# Just in case, down it anyways, in case it has been
+			# deconfigured but not yet removed.
+			# Relevant for >= 8.4.
+			do_drbdadm down $DRBD_RESOURCE
+			# But ignore any return codes,
+			# we are not running, so stop is successfull.
 			rc=$OCF_SUCCESS
 			break
 			;;
@@ -689,13 +729,9 @@ drbd_notify() {
 		drbd_set_status_variables
 		drbd_update_master_score
 
-		: == DEBUG == $DRBD_DSTATE_REMOTE ==
-		case $DRBD_DSTATE_REMOTE in
-		Outdated)
-			# Known bad, and not communicating.
-			# Nothing else to do.
-			:;;
-		DUnknown)
+		: == DEBUG == ${DRBD_DSTATE_REMOTE[*]} ==
+		case ${DRBD_DSTATE_REMOTE[*]} in
+		*DUnknown*)
 			# Still not communicating.
 			# Maybe someone else is primary (too)?
 			maybe_outdate_self
@@ -738,27 +774,19 @@ check_crm_feature_set()
 drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
+	DRBD_HAS_MULTI_VOLUME=false
 
+	# these will _exit_ if they don't find the binaries
 	check_binary $DRBDADM
 	check_binary $DRBDSETUP
 	# XXX I really take cibadmin, sed, grep, etc. for granted.
 
-	# This resource agent uses some features introduced in drbd 8.3.2.
-	# check with drbdadm --version, which is one of the new features ;)
 	local VERSION DRBDADM_VERSION_CODE=0
 	if VERSION="$($DRBDADM --version 2>/dev/null)"; then
 		eval $VERSION
 	fi
-	if (( $DRBDADM_VERSION_CODE >= 0x080302 )); then
-		DRBDADM_HAS_SH_STATUS=true
-		DRBDADM_HAS_MULTI_PEER=true
-	else
-		ocf_log warn "You may be disappointed: This RA is intended for DRBD 8.3.2 or better!"
-		#return $OCF_ERR_INSTALLED
-		# actually, sh-status is available for >= 8.2.7
-		# but that did not yet support drbdadm --version.
-		DRBDADM_HAS_SH_STATUS=false
-		DRBDADM_HAS_MULTI_PEER=false
+	if (( $DRBDADM_VERSION_CODE >= 0x080400 )); then
+		DRBD_HAS_MULTI_VOLUME=true
 	fi
 	check_crm_feature_set
 
@@ -810,10 +838,15 @@ drbd_validate_all () {
 
 	# The resource should appear in the config file,
 	# otherwise something's fishy
-	if DRBD_DEVICE=$($DRBDADM --stacked sh-dev $DRBD_RESOURCE 2>/dev/null); then
+	# NOTE
+	# since 8.4 has multi volume support,
+	# DRBD_DEVICES will be a shell array!
+	# FIXME we should double check that we explicitly restrict the set of
+	# valid characters in device names...
+	if DRBD_DEVICES=($($DRBDADM --stacked sh-dev $DRBD_RESOURCE 2>/dev/null)); then
 		# apparently a "stacked" resource. Remember for future DRBDADM calls.
 		DRBDADM="$DRBDADM -S"
-	elif DRBD_DEVICE=$($DRBDADM sh-dev $DRBD_RESOURCE 2>/dev/null); then
+	elif DRBD_DEVICES=($($DRBDADM sh-dev $DRBD_RESOURCE 2>/dev/null)); then
 		: # nothing to do.
 	else
 		if [[ $__OCF_ACTION = "monitor" && $OCF_RESKEY_CRM_meta_interval = 0 ]]; then
@@ -827,15 +860,6 @@ drbd_validate_all () {
 			remove_master_score
 			return $OCF_ERR_INSTALLED
 		fi
-	fi
-
-	# very special paranoia: someone edited the config file, and changed
-	# the device name, while drbd was configured and up.  try to recover!
-	# if you change the resource name, or the minor number, while the
-	# former config was active, result are "undefined", anyways.
-	if ! [ -b $DRBD_DEVICE ] &&
-	   ls_stat_is_block_maj_147 /dev/drbd/by-res/$DRBD_RESOURCE; then
-		DRBD_DEVICE=/dev/drbd/by-res/$DRBD_RESOURCE
 	fi
 
 	# check for master-max and allow-two-primaries on start|promote only,
