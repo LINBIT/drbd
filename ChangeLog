@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.11rc1 (api:88/proto:86-96)
+--------
+ * Fixed handling of read errors during online verify runs
+ * Fixes for possible distributed deadlocks during online verify and
+   checksum based resync processes
+ * Fixed handling of IO errors with an on-io-error=pass-on policy; the
+   disk state goes to inconsistent
+ * Fixed the behavior in case ping-timeout and ping-int are set to the
+   same value
+ * Fix for connecting on high latency network links
+ * Fixed state transitions if fence-peer handler returns after connection was
+   established again
+ * Made die max_bio_size negotiation conservative instead of optimistic
+ * Network timeouts for mirrored write requests are now always enforced,
+   no longer only when the socket is congested
+
 8.3.10 (api:88/proto:86-96)
 --------
  * Fixed a subtle performance degradation that might affected synchronous
