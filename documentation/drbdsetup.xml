@@ -382,8 +382,8 @@
 	  <option>--on-io-error <replaceable>err_handler</replaceable></option></term>
           <listitem>
             <para>	      If the driver of the <replaceable>lower_device</replaceable>
-	      reports an error to DRBD, DRBD will either pass the error
-	      to the upper layers of the operating system, call a helper
+	      reports an error to DRBD, DRBD will mark the disk as inconsistent,
+	      call a helper
 	      program, or detach the device from its backing storage and
 	      perform all further IO by requesting it from the peer. The
 	      valid <replaceable>err_handlers</replaceable> are:
