@@ -74,7 +74,7 @@ drbd_strings.c: ../drbd/drbd_strings.c
 	cp $^ $@
 
 drbdadm: $(drbdadm-obj)
-	$(CC) -o $@ $^
+	$(LINK.c) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -83,10 +83,10 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 	flex -s -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 drbdsetup: $(drbdsetup-obj)
-	$(CC) -o $@ $^
+	$(LINK.c) -o $@ $^
 
 drbdmeta: $(drbdmeta-obj)
-	$(CC) -o $@ $^
+	$(LINK.c) -o $@ $^
 
 legacy-tools:
 ifeq ($(WITH_LEGACY_DRBDSETUP_CN),yes)

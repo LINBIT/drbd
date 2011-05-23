@@ -78,16 +78,13 @@ drbdtool_common.h: ../drbdtool_common.h
 	cp $^ $@
 
 _drbdadm_83: $(drbdadm-obj)
-	$(CC) -o $@ $^
+	$(LINK.c) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
-drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
-	flex -s -odrbdmeta_scanner.c drbdmeta_scanner.fl
-
 _drbdsetup_83: $(drbdsetup-obj)
-	$(CC) -o $@ $^
+	$(LINK.c) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c
