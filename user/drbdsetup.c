@@ -1235,6 +1235,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	ASSERT(cm->cmd_id == DRBD_ADM_GET_STATUS);
 
 	if (cm->wait_for_connect_timeouts) {
+		/* wait-connect, wait-sync */
 		int rr;
 
 		timeo_ctx.minor = minor;
@@ -1249,7 +1250,9 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		/* rewind send message buffer */
 		smsg->tail = smsg->data;
 	} else if (!cm->continuous_poll)
+		/* normal "get" request, or "show" */
 		timeout_ms = 120000;
+	/* else: events command, defaults to "infinity" */
 
 	if (cm->continuous_poll) {
 		if (genl_join_mc_group(drbd_sock, "events")) {
