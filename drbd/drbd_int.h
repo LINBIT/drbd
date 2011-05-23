@@ -168,7 +168,7 @@ struct drbd_conf;
  * dev_printk() expects to be presented a struct device *;
  * in older kernels, (<= 2.6.24), there is nothing suitable there.
  * "backport" hack: redefine dev_printk.
- * Trigger is definition of dev_to_disk marcro, introduced with the
+ * Trigger is definition of dev_to_disk macro, introduced with the
  * commit edfaa7c36574f1bf09c65ad602412db9da5f96bf
  *     Driver core: convert block from raw kobjects to core devices
  */
@@ -194,7 +194,7 @@ struct drbd_conf;
 
 
 /* see kernel/printk.c:printk_ratelimit
- * macro, so it is easy do have independend rate limits at different locations
+ * macro, so it is easy do have independent rate limits at different locations
  * "initializer element not constant ..." with kernel 2.4 :(
  * so I initialize toks to something large
  */
@@ -570,11 +570,11 @@ struct p_handshake {
 	u32 protocol_max;
 
 	/* should be more than enough for future enhancements
-	 * for now, feature_flags and the reserverd array shall be zero.
+	 * for now, feature_flags and the reserved array shall be zero.
 	 */
 
 	u32 _pad;
-	u64 reserverd[7];
+	u64 reserved[7];
 } __packed;
 /* 80 bytes, FIXED for the next century */
 
@@ -763,7 +763,7 @@ DCBP_set_pad_bits(struct p_compressed_bm *p, int n)
 }
 
 /* one bitmap packet, including the p_header,
- * should fit within one _architecture independend_ page.
+ * should fit within one _architecture independent_ page.
  * so we need to use the fixed size 4KiB page size
  * most architectures have used for a long time.
  */
@@ -944,7 +944,7 @@ enum {
 	__EE_MAY_SET_IN_SYNC,
 
 	/* This epoch entry closes an epoch using a barrier.
-	 * On sucessful completion, the epoch is released,
+	 * On successful completion, the epoch is released,
 	 * and the P_BARRIER_ACK send. */
 	__EE_IS_BARRIER,
 
@@ -1002,7 +1002,7 @@ enum {
 				 * if set, also prevents the device from dying */
 	DEVICE_DYING,		/* device became unconfigured,
 				 * but worker thread is still handling the cleanup.
-				 * reconfiguring (nl_disk_conf, nl_net_conf) is dissalowed,
+				 * reconfiguring (nl_disk_conf, nl_net_conf) is disallowed,
 				 * while this is set. */
 	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
 				 * the peer, if it changed there as well. */
@@ -1183,7 +1183,7 @@ struct drbd_conf {
 	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
-	atomic_t unacked_cnt;	 /* Need to send replys for */
+	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t local_cnt;	 /* Waiting for local completion */
 	atomic_t net_cnt;	 /* Users of net_conf */
 	spinlock_t req_lock;
@@ -1251,14 +1251,14 @@ struct drbd_conf {
 	struct list_head done_ee;   /* send ack */
 	struct list_head read_ee;   /* IO in progress (any read) */
 	struct list_head net_ee;    /* zero-copy network send in progress */
-	struct hlist_head *ee_hash; /* is proteced by req_lock! */
+	struct hlist_head *ee_hash; /* is protected by req_lock! */
 	unsigned int ee_hash_s;
 
 	/* this one is protected by ee_lock, single thread */
 	struct drbd_epoch_entry *last_write_w_barrier;
 
 	int next_barrier_nr;
-	struct hlist_head *app_reads_hash; /* is proteced by req_lock */
+	struct hlist_head *app_reads_hash; /* is protected by req_lock */
 	struct list_head resync_reads;
 	atomic_t pp_in_use;		/* allocated from page pool */
 	atomic_t pp_in_use_by_net;	/* sendpage()d, still referenced by tcp */
@@ -1487,7 +1487,7 @@ extern void drbd_ldev_destroy(struct drbd_conf *mdev);
 /* Allows up to about 3.8TB */
 #define MD_BM_OFFSET (MD_AL_OFFSET + MD_AL_MAX_SIZE)
 
-/* Since the smalles IO unit is usually 512 byte */
+/* Since the smallest IO unit is usually 512 byte */
 #define MD_SECTOR_SHIFT	 9
 #define MD_SECTOR_SIZE	 (1<<MD_SECTOR_SHIFT)
 
@@ -2500,7 +2500,7 @@ static inline int drbd_state_is_stable(struct drbd_conf *mdev)
 		/* disk state is stable as well. */
 		break;
 
-	/* no new io accepted during tansitional states */
+	/* no new io accepted during transitional states */
 	case D_ATTACHING:
 	case D_FAILED:
 	case D_NEGOTIATING:
@@ -2562,7 +2562,7 @@ static inline void inc_ap_bio(struct drbd_conf *mdev, int count)
 	/* we wait here
 	 *    as long as the device is suspended
 	 *    until the bitmap is no longer on the fly during connection
-	 *    handshake as long as we would exeed the max_buffer limit.
+	 *    handshake as long as we would exceed the max_buffer limit.
 	 *
 	 * to avoid races with the reconnect code,
 	 * we need to atomic_inc within the spinlock. */
