@@ -1174,18 +1174,52 @@ void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
 	}
 }
 
-void ensure_vols_1_in_2(struct d_resource *res, struct d_host_info *host1, struct d_host_info *host2)
+void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, struct d_host_info *host2)
 {
-	struct d_volume *vol;
+	struct d_volume *a, *b;
 
-	for_each_volume(vol, host1->volumes) {
-		if (!find_volume(host2->volumes, vol->vnr)) {
+	/* change the error output, if we have been called to
+	 * compare stacked with lower resource volumes */
+	int compare_stacked = host1->lower && host1->lower->me == host2;
+
+	a = host1->volumes;
+	b = host2->volumes;
+
+	/* volume lists are supposed to be sorted on vnr */
+	while (a || b) {
+		while (a && (!b || a->vnr < b->vnr)) {
 			fprintf(stderr,
 				"%s:%d: in resource %s, on %s { ... }: "
 				"volume %d not defined on %s\n",
-				config_file, line, res->name, names_to_str(host1->on_hosts),
-				vol->vnr, names_to_str(host2->on_hosts));
+				config_file, line, res->name,
+				names_to_str(host1->on_hosts),
+				a->vnr,
+				compare_stacked ? host1->lower->name
+					: names_to_str(host2->on_hosts));
+			a = a->next;
 			config_valid = 0;
+		}
+		while (b && (!a || a->vnr > b->vnr)) {
+			/* Though unusual, it is "legal" for a lower resource
+			 * to have more volumes than the resource stacked on
+			 * top of it.  Warn (if we have a terminal),
+			 * but consider it as valid. */
+			if (!(compare_stacked && no_tty))
+				fprintf(stderr,
+					"%s:%d: in resource %s, on %s { ... }: "
+					"volume %d missing (present on %s)\n",
+					config_file, line, res->name,
+					names_to_str(host1->on_hosts),
+					b->vnr,
+					compare_stacked ? host1->lower->name
+						: names_to_str(host2->on_hosts));
+			if (!compare_stacked)
+				config_valid = 0;
+			b = b->next;
+		}
+		if (a && b && a->vnr == b->vnr) {
+			a = a->next;
+			b = b->next;
 		}
 	}
 }
@@ -1200,10 +1234,8 @@ void check_volumes_hosts(struct d_resource *res)
 	if (!host1)
 		return;
 
-	for (host2 = host1->next; host2; host2 = host2->next) {
-		ensure_vols_1_in_2(res, host1, host2);
-		ensure_vols_1_in_2(res, host2, host1);
-	}
+	for (host2 = host1->next; host2; host2 = host2->next)
+		check_volume_sets_equal(res, host1, host2);
 }
 
 
@@ -1212,7 +1244,7 @@ enum parse_host_section_flags {
 	BY_ADDRESS  = 2,
 };
 
-static void parse_host_section(struct d_resource *res,
+void parse_host_section(struct d_resource *res,
 			       struct d_name* on_hosts,
 			       enum parse_host_section_flags flags)
 {
@@ -1371,7 +1403,7 @@ void parse_skip()
 	while (level) ;
 }
 
-static void parse_stacked_section(struct d_resource* res)
+void parse_stacked_section(struct d_resource* res)
 {
 	struct d_host_info *host;
 	struct d_name *h;
@@ -1652,32 +1684,54 @@ void set_on_hosts_in_res(struct d_resource *res)
 void set_disk_in_res(struct d_resource *res)
 {
 	struct d_host_info *host;
+	struct d_volume *a, *b;
 
 	if (res->ignore)
 		return;
 
 	for (host = res->all_hosts; host; host=host->next) {
-		if (host->lower) {
-			if (res->stacked && host->lower->stacked) {
-				fprintf(stderr,
-					"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
-					"\tFIXME. I won't stack stacked resources.\n",
-					res->config_file, res->start_line, res->name, host->lower_name);
-				config_valid = 0;
+		if (!host->lower)
+			continue;
+
+		if (res->stacked && host->lower->stacked) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
+				"\tFIXME. I won't stack stacked resources.\n",
+				res->config_file, res->start_line, res->name, host->lower_name);
+			config_valid = 0;
+		}
+
+		if (host->lower->ignore)
+			continue;
+
+		check_volume_sets_equal(res, host, host->lower->me);
+		if (!config_valid)
+			/* don't even bother for broken config. */
+			continue;
+
+		/* volume lists are sorted on vnr */
+		a = host->volumes;
+		b = host->lower->me->volumes;
+		while (a) {
+			while (b && a->vnr > b->vnr) {
+				/* Lower resource has more volumes.
+				 * Probably unusual, but we decided
+				 * that it should be legal.
+				 * Skip those that do not match */
+				b = b->next;
 			}
-
-			if (host->lower->ignore)
-				continue;
-
-			ensure_vols_1_in_2(res, host, host->lower->me);
-			/* öö FIXME. Do this for all volumes...*/
-			if (host->lower->me->volumes->device)
-				m_asprintf(&host->volumes->disk, "%s", host->lower->me->volumes->device);
-			else
-				m_asprintf(&host->volumes->disk, "/dev/drbd%u", host->lower->me->volumes->device_minor);
-
-			if (!host->volumes->disk)
-				derror(host,res,"disk");
+			if (a && b && a->vnr == b->vnr) {
+				if (b->device)
+					m_asprintf(&a->disk, "%s", b->device);
+				else
+					m_asprintf(&a->disk, "/dev/drbd%u", b->device_minor);
+				a = a->next;
+				b = b->next;
+			} else {
+				/* config_invalid should have been set
+				 * by check_volume_sets_equal */
+				assert(0);
+			}
 		}
 	}
 }
