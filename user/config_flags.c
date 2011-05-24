@@ -368,7 +368,7 @@ static const char *get_string(struct context_def *ctx, struct field_def *field, 
 	assert(type_of_field(ctx, field) == NLA_NUL_STRING);
 	str = (char *)nla_data(nla);
 	len = len_of_field(ctx, field);
-	assert(strnlen(str, len + 1) <= len);
+	assert(memchr(str, 0, len + 1) != NULL);
 	return str;
 }
 
