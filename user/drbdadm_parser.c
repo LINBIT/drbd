@@ -64,8 +64,10 @@ char *_names_to_str_c(char* buffer, struct d_name *names, char c)
 {
 	int n = 0;
 
-	if (!names)
+	if (!names) {
+		snprintf(buffer, NAMES_STR_SIZE, "UNKNOWN");
 		return buffer;
+	}
 
 	while (1) {
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", names->name);
