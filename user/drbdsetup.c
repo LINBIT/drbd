@@ -1356,14 +1356,37 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				.userhdr = genlmsg_data(nlmsg_data(nlh)),
 				.attrs = global_attrs,
 			};
+
+			/* parse early, otherwise drbd_cfg_context_from_attrs
+			 * can not work */
+			if (drbd_tla_parse(nlh)) {
+				/* FIXME
+				 * should continuous_poll continue?
+				 */
+				desc = "reply did not validate - "
+					"do you need to upgrade your useland tools?";
+				rv = OTHER_ERROR;
+				goto out2;
+			}
 			if (cm->continuous_poll) {
 				/*
 				 * We will receive all events and have to
 				 * filter for what we want ourself.
 				 */
+				/* FIXME
+				 * Do we want to ignore broadcasts until the
+				 * initial get/dump requests is done? */
 				if (minor != -1U) {
-					if (minor != dh->minor)
+					/* Assert that, for an unicast reply,
+					 * reply minor matches request minor.
+					 * "unsolicited" kernel broadcasts are "pid=0" (netlink "port id")
+					 * (and expected to be genlmsghdr.cmd == DRBD_EVENT) */
+					if (minor != dh->minor) {
+						if (info.nlhdr->nlmsg_pid != 0)
+							dbg(1, "received netlink packet for minor %u, while expecting %u\n",
+								dh->minor, minor);
 						continue;
+					}
 				} else if (strcmp(objname, "all")) {
 					struct drbd_cfg_context ctx =
 						{ .ctx_volume = -1U };
@@ -1379,12 +1402,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 				rv = NO_ERROR;
 			if (rv != NO_ERROR)
 				goto out2;
-			if (drbd_tla_parse(nlh)) {
-				desc = "reply did not validate - "
-					"do you need to upgrade your useland tools?";
-				rv = OTHER_ERROR;
-				goto out2;
-			}
 			err = cm->show_function(cm, &info);
 			if (err) {
 				if (err < 0)
@@ -1995,6 +2012,7 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	struct net_conf nc = { .timeout = 0, };
 	struct drbd_genlmsghdr *dh;
 
+	/* End of initial dump. Ignore. Maybe: print some marker? */
 	if (!info)
 		return 0;
 
