@@ -826,7 +826,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			       char **argv, int quiet)
 {
 	struct drbd_argument *ad = cm->drbd_args;
-	struct nlattr *nla = NULL;
+	struct nlattr *nla;
 	struct option *lo;
 	int c, i = 1;
 	int n_args;
@@ -860,8 +860,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		nla_nest_end(smsg, nla);
 	}
 
-	if (cm->tla_id)
-		nla = nla_nest_start(smsg, cm->tla_id);
+	nla = NULL;
 
 	while (ad && ad->name) {
 		if (argc < i + 1) {
@@ -869,6 +868,10 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			print_command_usage(cm - commands, "", FULL);
 			rv = OTHER_ERROR;
 			goto error;
+		}
+		if (!nla) {
+			assert (cm->tla_id != NO_PAYLOAD);
+			nla = nla_nest_start(smsg, cm->tla_id);
 		}
 		rv = ad->convert_function(ad, smsg, argv[i++]);
 		if (rv != NO_ERROR)
@@ -887,6 +890,10 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		if (c == 0) {
 			struct field_def *field = &cm->ctx->fields[idx];
 			assert (field->name == lo[idx].name);
+			if (!nla) {
+				assert (cm->tla_id != NO_PAYLOAD);
+				nla = nla_nest_start(smsg, cm->tla_id);
+			}
 			if (!field->put(cm->ctx, field, smsg, optarg)) {
 				rv = OTHER_ERROR;
 				goto error;
