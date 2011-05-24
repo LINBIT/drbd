@@ -556,6 +556,10 @@ static inline int nla_padlen(int payload)
 	return nla_total_size(payload) - nla_attr_size(payload);
 }
 
+#ifndef NLA_TYPE_MASK
+#define NLA_TYPE_MASK ~0
+#endif
+
 /**
  * nla_type - attribute type
  * @nla: netlink attribute
