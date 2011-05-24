@@ -360,7 +360,7 @@ out:
  *				Alexey Kuznetsov <kuznet@ms2.inr.ac.ru>
  */
 
-#include <linux/string.h>
+#include <string.h>
 #include <linux/types.h>
 
 static __u16 nla_attr_minlen[NLA_TYPE_MAX+1] __read_mostly = {
