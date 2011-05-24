@@ -2024,8 +2024,20 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	if (drbd_cfg_context_from_attrs(&cfg, info)) {
 		dbg(1, "unexpected packet, configuration context missing!\n");
 		/* keep running anyways. */
+		struct nlattr *nla = NULL;
+		if (info->attrs[DRBD_NLA_CFG_REPLY])
+			nla = nla_find_nested(info->attrs[DRBD_NLA_CFG_REPLY], T_info_text);
+		if (nla) {
+			char *txt = nla_data(nla);
+			char *c;
+			for (c = txt; *c; c++)
+				if (*c == '\n')
+					*c = '_';
+			printf("%u # %s\n", info->seq, txt);
+		}
 		goto out;
 	}
+
 	if (state_info_from_attrs(&si, info)) {
 		/* this is a DRBD_ADM_GET_STATUS reply
 		 * with information about a resource without any volumes */
