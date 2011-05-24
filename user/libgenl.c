@@ -292,14 +292,21 @@ struct genl_sock *genl_connect_to_family(struct genl_family *family)
 			family->id = nla_get_u16(nla);
 			dbg(2, "'%s' genl family id: %d", family->name, family->id);
 			break;
+		case CTRL_ATTR_FAMILY_NAME:
+			break;
+#ifdef CTRL_ATTR_VERSION
 		case CTRL_ATTR_VERSION:
 			family->version = nla_get_u32(nla);
 			dbg(2, "'%s' genl family version: %d", family->name, family->version);
 			break;
+#endif
+#ifdef CTRL_ATTR_HDRSIZE
 		case CTRL_ATTR_HDRSIZE:
 			family->hdrsize = nla_get_u32(nla);
 			dbg(2, "'%s' genl family hdrsize: %d", family->name, family->hdrsize);
 			break;
+#endif
+#ifdef CTRL_ATTR_MCAST_GROUPS
 		case CTRL_ATTR_MCAST_GROUPS:
 			{
 			static struct nla_policy policy[] = {
@@ -325,6 +332,7 @@ struct genl_sock *genl_connect_to_family(struct genl_family *family)
 			}
 			break;
 			};
+#endif
 		default: ;
 		}
 	}

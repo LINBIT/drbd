@@ -439,7 +439,9 @@ struct genl_sock *drbd_sock = NULL;
 int try_genl = 1;
 
 struct genl_family drbd_genl_family = {
-	.name = "drbd"
+	.name = "drbd",
+	.version = GENL_MAGIC_VERSION,
+	.hdrsize = GENL_MAGIC_FAMILY_HDRSZ,
 };
 
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
