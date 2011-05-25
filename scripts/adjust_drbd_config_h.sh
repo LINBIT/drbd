@@ -208,6 +208,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_fmode_t=0
   fi
+  if grep_q "find_next_zero_bit_le" $KDIR/include/asm-generic/bitops/le.h ; then
+    have_find_next_zero_bit_le=1
+  else
+    have_find_next_zero_bit_le=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -267,6 +272,8 @@ perl -pe "
   { ( $have_sched_timeout_interr ? '//' : '' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_FMODE_T.*)}
   { ( $have_fmode_t ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE.*)}
+  { ( $have_find_next_zero_bit_le ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

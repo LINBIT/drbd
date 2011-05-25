@@ -149,4 +149,7 @@ extern const char *drbd_buildtag(void);
 /* Stone old kernels lack the fmode_t type */
 #define COMPAT_HAVE_FMODE_T
 
+/* In commit c4945b9e (v2.6.39-rc1), the little-endian bit ops got renamed */
+#define COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE
+
 #endif
