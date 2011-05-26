@@ -145,12 +145,6 @@ if test -z $FLEX; then
    fi
 fi
 
-if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
-   if test "$WITH_UTILS" != "yes"; then
-      AC_MSG_ERROR([You have to say --with-utils, if you want --with-legacy-connector])
-   fi
-fi
-
 if test -z $RPMBUILD; then
    AC_MSG_WARN([No rpmbuild found, building RPM packages is disabled.])
 fi
