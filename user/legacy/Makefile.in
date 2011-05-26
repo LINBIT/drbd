@@ -123,6 +123,6 @@ drbdtool_common.o: drbdtool_common.h
 drbdadm_main.o:    drbdtool_common.h drbdadm.h
 drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
 drbdadm_parser.o:  drbdtool_common.h drbdadm.h linux/drbd_limits.h drbd_endian.h
-drbdadm_scanner.o:                   drbdadm.h               drbdadm_parser.h
+drbdadm_scanner.o: drbdtool_common.h drbdadm.h drbdadm_parser.h
 drbdsetup.o:       drbdtool_common.h           linux/drbd_limits.h
-drbdadm_usage_cnt.o: drbdadm.h drbd_endian.h
+drbdadm_usage_cnt.o: drbdtool_common.h drbdadm.h drbd_endian.h
