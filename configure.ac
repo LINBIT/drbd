@@ -268,6 +268,13 @@ if test "$WITH_UDEV" = "yes"; then
    fi
 fi
 
+if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
+   RPM_LEGACY83_EXECUTABLES=$(echo -e "/sbin/_drbdadm_83\n/sbin/_drbdsetup_83")
+else
+   RPM_LEGACY83_EXECUTABLES=""
+fi
+
+
 dnl Our sub-packages can be built for noarch, but RPM only supports
 dnl this from version 4.6.0 forward
 if test "$WITH_NOARCH_SUBPACKAGES" = "yes"; then
@@ -289,6 +296,7 @@ AC_SUBST(RPM_REQ_BASH_COMPLETION)
 AC_SUBST(RPM_REQ_XEN)
 AC_SUBST(RPM_REQ_CHKCONFIG_POST)
 AC_SUBST(RPM_REQ_CHKCONFIG_PREUN)
+AC_SUBST(RPM_LEGACY83_EXECUTABLES)
 
 AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
 			  /var/lib/drbd or /usr/local/var/lib/drbd])
