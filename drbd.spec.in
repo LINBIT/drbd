@@ -21,6 +21,7 @@
 %bcond_without bashcompletion
 # --with xen is ignored on any non-x86 architecture
 %bcond_without xen
+%bcond_without legacy-connector
 %ifnarch %{ix86} x86_64
 %global _without_xen --without-xen
 %endif
@@ -284,6 +285,7 @@ management utility.
     %{?_without_heartbeat} \
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
+    %{?_without_legacy-connector} \
     --with-initdir=%{_initddir}
 make %{?_smp_mflags}
 
