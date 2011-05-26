@@ -1,6 +1,6 @@
 obj-m := drbd.o
 
-clean-files := compat.h
+clean-files := compat.h .config.timestamp
 
 LINUXINCLUDE := -I$(src) $(LINUXINCLUDE)
 
@@ -63,12 +63,14 @@ $(shell echo -e "VERSION=$(VERSION)\n"             \
 
 KBUILD_STAGE ?= $(if $(filter $(srctree)/scripts/Makefile.modpost,$(MAKEFILE_LIST)),modpost)
 
-# We want to generate compat.h only once.
-ifneq ($(USE_COMPAT_H_AS_IS),1)
-ifneq ($(KBUILD_STAGE),modpost)
-$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) FORCE
-	$(call filechk,compat.h)
+ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.timestamp 2> /dev/null))
+COMPAT_FORCE := FORCE
 endif
+
+ifneq ($(KBUILD_STAGE),modpost)
+$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
+	$(call filechk,compat.h)
+	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
 endif
 
 filechk_compat.h = \

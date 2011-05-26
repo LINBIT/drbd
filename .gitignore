@@ -26,6 +26,7 @@ drbd/drbd.ko
 drbd/.*.cmd
 drbd/compat/.*.cmd
 drbd/.compat.h.d
+drbd/.config.timestamp
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
 drbd/.drbd_kernelrelease.new
