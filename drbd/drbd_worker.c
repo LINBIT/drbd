@@ -33,17 +33,10 @@
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#include <linux/scatterlist.h>
 
 #include "drbd_int.h"
 #include "drbd_req.h"
-
-#ifdef COMPAT_HAVE_SCATTERLIST_H
-/* 2.6.11 (suse 9.3, fc4) does not include requisites
- * from linux/scatterlist.h :( */
-#include <asm/scatterlist.h>
-#include <linux/string.h>
-#include <linux/scatterlist.h>
-#endif
 
 STATIC int w_make_ov_request(struct drbd_work *w, int cancel);
 

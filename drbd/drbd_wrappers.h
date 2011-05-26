@@ -5,8 +5,8 @@
 #include <linux/net.h>
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
-# error "use a 2.6 kernel, please"
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
+# error "At least kernel version 2.6.18 (with patches) required"
 #endif
 
 /* The history of blkdev_issue_flush()
@@ -37,26 +37,6 @@
 /* for the proc_create wrapper */
 #include <linux/proc_fs.h>
 
-/* struct page has a union in 2.6.15 ...
- * an anonymous union and struct since 2.6.16
- * or in fc5 "2.6.15" */
-#include <linux/mm.h>
-#ifndef page_private
-# define page_private(page)		((page)->private)
-# define set_page_private(page, v)	((page)->private = (v))
-#endif
-
-/* mutex was not available before 2.6.16.
- * various vendors provide various degrees of backports.
- * we provide the missing parts ourselves, if neccessary.
- * this one is for RHEL/Centos 4 */
-#if defined(mutex_lock) && !defined(mutex_is_locked)
-#define mutex_is_locked(m) (atomic_read(&(m)->count) != 1)
-#endif
-
-/* see get_sb_bdev and bd_claim */
-extern char *drbd_sec_holder;
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
 static inline unsigned short queue_logical_block_size(struct request_queue *q)
 {
@@ -73,14 +53,7 @@ static inline sector_t bdev_logical_block_size(struct block_device *bdev)
 
 static inline unsigned int queue_max_hw_sectors(struct request_queue *q)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,9)
-	/* before upstream commit ba066f3a0469dfc6d8fbdf70fabfd8c069fbf306,
-	 * there is no max_hw_sectors. Simply use max_sectors here,
-	 * it should be good enough. Affected: sles9. */
-	return q->max_sectors;
-#else
 	return q->max_hw_sectors;
-#endif
 }
 
 static inline unsigned int queue_max_sectors(struct request_queue *q)
@@ -212,14 +185,6 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 
 #define sg_init_table(S,N) ({})
 
-#ifndef COMPAT_HAVE_SG_SET_BUF
-static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
-			      unsigned int buflen)
-{
-	sg_set_page(sg, virt_to_page(buf), buflen, offset_in_page(buf));
-}
-#endif
-
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
@@ -242,17 +207,11 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
 #endif
 static inline void drbd_kobject_uevent(struct drbd_conf *mdev)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,15)
-	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE, NULL);
-#else
 	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
 	/* rhel4 / sles9 and older don't have this at all,
 	 * which means user space (udev) won't get events about possible changes of
 	 * corresponding resource + disk names after the initial drbd minor creation.
 	 */
-#endif
-#endif
 }
 
 
@@ -281,11 +240,7 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev,
 static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 {
 	struct gendisk *disk = mdev->ldev->backing_bdev->bd_contains->bd_disk;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
-	/* very old kernel */
-	return (int)disk_stat_read(disk, read_sectors)
-	     + (int)disk_stat_read(disk, write_sectors);
-#elif defined(__disk_stat_inc)
+#if defined(__disk_stat_inc)
 	/* older kernel */
 	return (int)disk_stat_read(disk, sectors[0])
 	     + (int)disk_stat_read(disk, sectors[1]);
@@ -295,14 +250,6 @@ static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 	     + (int)part_stat_read(&disk->part0, sectors[1]);
 #endif
 }
-
-#ifndef COMPAT_HAVE_SOCK_CREATE
-#define sock_create_kern sock_create
-#endif
-
-#ifdef COMPAT_USE_KMEM_CACHE_S
-#define kmem_cache kmem_cache_s
-#endif
 
 #ifndef COMPAT_HAVE_SOCK_SHUTDOWN
 #define COMPAT_HAVE_SOCK_SHUTDOWN 1
@@ -326,72 +273,6 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 }
 #else
 #define drbd_unregister_blkdev unregister_blkdev
-#endif
-
-#ifndef COMPAT_HAVE_ATOMIC_ADD
-
-#if defined(__x86_64__)
-
-static __inline__ int atomic_add_return(int i, atomic_t *v)
-{
-	int __i = i;
-	__asm__ __volatile__(
-		LOCK_PREFIX "xaddl %0, %1;"
-		:"=r"(i)
-		:"m"(v->counter), "0"(i));
-	return i + __i;
-}
-
-static __inline__ int atomic_sub_return(int i, atomic_t *v)
-{
-	return atomic_add_return(-i, v);
-}
-
-#define atomic_inc_return(v)  (atomic_add_return(1,v))
-#define atomic_dec_return(v)  (atomic_sub_return(1,v))
-
-#elif defined(__i386__) || defined(__arch_um__)
-
-static __inline__ int atomic_add_return(int i, atomic_t *v)
-{
-	int __i;
-#ifdef CONFIG_M386
-	unsigned long flags;
-	if(unlikely(boot_cpu_data.x86==3))
-		goto no_xadd;
-#endif
-	/* Modern 486+ processor */
-	__i = i;
-	__asm__ __volatile__(
-		LOCK_PREFIX "xaddl %0, %1;"
-		:"=r"(i)
-		:"m"(v->counter), "0"(i));
-	return i + __i;
-
-#ifdef CONFIG_M386
-no_xadd: /* Legacy 386 processor */
-	local_irq_save(flags);
-	__i = atomic_read(v);
-	atomic_set(v, i + __i);
-	local_irq_restore(flags);
-	return i + __i;
-#endif
-}
-
-static __inline__ int atomic_sub_return(int i, atomic_t *v)
-{
-	return atomic_add_return(-i, v);
-}
-
-#define atomic_inc_return(v)  (atomic_add_return(1,v))
-#define atomic_dec_return(v)  (atomic_sub_return(1,v))
-
-#else
-# error "You need to copy/past atomic_inc_return()/atomic_dec_return() here"
-# error "for your architecture. (Hint: Kernels after 2.6.10 have those"
-# error "by default! Using a later kernel might be less effort!)"
-#endif
-
 #endif
 
 #if !defined(CRYPTO_ALG_ASYNC)
@@ -512,24 +393,6 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 	return 0;
 }
 
-#endif
-
-#ifndef COMPAT_HAVE_GFP_T
-#define COMPAT_HAVE_GFP_T
-typedef unsigned gfp_t;
-#endif
-
-
-#ifndef COMPAT_HAVE_KZALLOC
-static inline void *kzalloc(size_t size, gfp_t flags)
-{
-	void *rv = kmalloc(size, flags);
-	if (rv)
-		memset(rv, 0, size);
-
-	return rv;
-}
-#define COMPAT_HAVE_KZALLOC
 #endif
 
 /* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
@@ -683,14 +546,6 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 # define __cond_lock(x,c) (c)
 #endif
 
-
-/* struct kvec didn't exist before 2.6.8, this is an ugly
- * #define to work around it ... - jt */
-
-#ifndef COMPAT_HAVE_KVEC
-#define kvec iovec
-#endif
-
 #ifndef net_random
 #define random32 net_random
 #endif
@@ -742,45 +597,6 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 	blk_queue_max_phys_segments(q, max_segments);
 	blk_queue_max_hw_segments(q, max_segments);
 #define BLK_MAX_SEGMENTS MAX_HW_SEGMENTS /* or max MAX_PHYS_SEGMENTS. Probably does not matter */
-}
-#endif
-
-#ifndef COMPAT_HAVE_ATOMIC_ADD_UNLESS
-#ifndef atomic_xchg
-static inline int atomic_xchg(atomic_t *v, int new)
-{
-	return xchg(&v->counter, new);
-}
-#endif
-#ifndef atomic_cmpxchg
-static inline int atomic_cmpxchg(atomic_t *v, int old, int new)
-{
-	return cmpxchg(&v->counter, old, new);
-}
-#endif
-
-/**
- * atomic_add_unless - add unless the number is already a given value
- * @v: pointer of type atomic_t
- * @a: the amount to add to v...
- * @u: ...unless v is equal to u.
- *
- * Atomically adds @a to @v, so long as @v was not already @u.
- * Returns non-zero if @v was not @u, and zero otherwise.
- */
-static inline int atomic_add_unless(atomic_t *v, int a, int u)
-{
-	int c, old;
-	c = atomic_read(v);
-	for (;;) {
-		if (unlikely(c == (u)))
-			break;
-		old = atomic_cmpxchg((v), c, c + (a));
-		if (likely(old == c))
-			break;
-		c = old;
-	}
-	return c != (u);
 }
 #endif
 
@@ -896,25 +712,6 @@ enum {
 NOTE: DISCARDs likely need some work still.  We should actually never see
 DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
 */
-
-#ifndef COMPLETION_INITIALIZER_ONSTACK
-#define COMPLETION_INITIALIZER_ONSTACK(work) \
-	({ init_completion(&work); work; })
-#endif
-
-#ifndef COMPAT_HAVE_SCHEDULE_TIMEOUT_INTERR
-static inline signed long schedule_timeout_interruptible(signed long timeout)
-{
-	__set_current_state(TASK_INTERRUPTIBLE);
-        return schedule_timeout(timeout);
-}
-
-static inline signed long schedule_timeout_uninterruptible(signed long timeout)
-{
-        __set_current_state(TASK_UNINTERRUPTIBLE);
-        return schedule_timeout(timeout);
-}
-#endif
 
 #ifndef CONFIG_DYNAMIC_DEBUG
 /* At least in 2.6.34 the function macro dynamic_dev_dbg() is broken when compiling
@@ -1074,7 +871,9 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	})
 #endif
 
-/* Missing in 2.6.16... */
+/*
+ * Introduced in 930631ed (v2.6.19-rc1).
+ */
 #ifndef DIV_ROUND_UP
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 #endif

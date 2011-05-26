@@ -45,13 +45,7 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 #include "drbd_vli.h"
-#ifdef COMPAT_HAVE_SCATTERLIST_H
-/* 2.6.11 (suse 9.3, fc4) does not include requisites
- * from linux/scatterlist.h :( */
-#include <asm/scatterlist.h>
-#include <linux/string.h>
 #include <linux/scatterlist.h>
-#endif
 
 struct flush_work {
 	struct drbd_work w;
@@ -488,25 +482,6 @@ static void drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 	_drbd_wait_ee_list_empty(mdev, head);
 	spin_unlock_irq(&mdev->tconn->req_lock);
 }
-
-#ifndef COMPAT_HAVE_SOCK_CREATE
-/* if there is no sock_create_kern,
- * there is also sock_create_lite missing */
-int sock_create_lite(int family, int type, int protocol, struct socket **res)
-{
-	int err = 0;
-	struct socket *sock = NULL;
-
-	sock = sock_alloc();
-	if (!sock)
-		err = -ENOMEM;
-	else
-		sock->type = type;
-
-	*res = sock;
-	return err;
-}
-#endif
 
 /* see also kernel_accept; which is only present since 2.6.18.
  * also we want to log which part of it failed, exactly */
