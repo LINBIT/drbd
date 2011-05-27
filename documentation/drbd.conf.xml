@@ -220,7 +220,7 @@
             volume might be different on different hosts, the volume number
             (<replaceable>vnr</replaceable>) is what groups them together. Required parameters in
             this section: <option>device</option>, <option>disk</option>,
-            <option>meta-disk</option>, <option>flexible-meta-disk</option>.</para>
+            <option>meta-disk</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -252,7 +252,7 @@
             The difference to the <option>on</option> section is that the matching of the host
             sections to machines is done by the IP-address instead of the node name. Required
             parameters in this section: <option>device</option>, <option>disk</option>,
-            <option>meta-disk</option>, <option>flexible-meta-disk</option>, all of which
+            <option>meta-disk</option>, all of which
             <emphasis>may</emphasis> be inherited from the resource section, in which case you may
             shorten this section down to just the address identifier. <programlisting
             format="linespecific">	resource r2 {
@@ -574,40 +574,34 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>meta-disk <replaceable>internal</replaceable></option></term>
+          <term><option>meta-disk internal</option></term>
 
-          <term><option>flexible-meta-disk <replaceable>internal</replaceable></option></term>
+          <term><option>meta-disk <replaceable>device</replaceable></option></term>
 
-          <term><option>meta-disk <replaceable>device [index]</replaceable></option></term>
-
-          <term><option>flexible-meta-disk <replaceable>device </replaceable></option></term>
+	  <term><option>meta-disk <replaceable>device</replaceable> [<replaceable>index</replaceable>]</option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>meta-disk</secondary>
-              </indexterm><indexterm significance="normal">
-                <primary>drbd.conf</primary>
-
-                <secondary>flexible-meta-disk</secondary>
               </indexterm> Internal means that the last part of the backing device is used to
-            store the meta-data. You must not use <replaceable>[index]</replaceable> with
-            internal. Note: Regardless of whether you use the <option>meta-disk</option> or the
-            <option>flexible-meta-disk</option> keyword, it will always be of the size needed for
-            the remaining storage size.</para>
+	      store the meta-data.  The size of the meta-data is computed based on the size of the
+	      device.</para>
 
-            <para>You can use a single block <replaceable>device</replaceable> to store meta-data
-            of multiple DRBD devices. E.g. use meta-disk /dev/sde6[0]; and meta-disk /dev/sde6[1];
-            for two different resources. In this case the meta-disk would need to be at least 256
-            MB in size.</para>
+            <para>When a <replaceable>device</replaceable> is specified, either with or without an
+	    <replaceable>index</replaceable>, DRBD stores the meta-data on this device.  Without
+	    <replaceable>index</replaceable>, the size of the meta-data is determined by the size
+	    of the data device. This is usually used with LVM, which allows to have many variable
+	    sized block devices. The meta-data size is 36kB + Backing-Storage-size / 32k, rounded up
+	    to the next 4kb boundary.  (Rule of the thumb: 32kByte per 1GByte of storage, rounded up
+	    to the next MB.)</para>
 
-            <para>With the <option>flexible-meta-disk</option> keyword you specify a block device
-            as meta-data storage. You usually use this with LVM, which allows you to have many
-            variable sized block devices. The required size of the meta-disk block device is 36kB
-            + Backing-Storage-size / 32k. Round this number to the next 4kb boundary up and you
-            have the exact size. Rule of the thumb: 32kByte per 1GByte of storage, round up to the
-            next MB.</para>
+	    <para>When an <replaceable>index</replaceable> is specified, each index number refers to
+	    a fixed slot of meta-data of 128 MB, which allows a maximum data size of 4 GB. This way,
+	    multiple DBRD devices can share the same meta-data device.  For example, if /dev/sde6[0]
+	    and /dev/sde6[1] are used, /dev/sde6 must be at least 256 MB big. Because of the hard size
+	    limit, use of meta-disk indexes is discouraged.</para></para>
           </listitem>
         </varlistentry>
 

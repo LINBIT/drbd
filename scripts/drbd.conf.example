@@ -475,7 +475,7 @@ resource r0 {
     device     /dev/drbd0;
     disk       /dev/hde5;
     address    192.168.22.11:7788;
-    flexible-meta-disk  internal;
+    meta-disk  internal;
 
     # meta-disk is either 'internal' or '/dev/ice/name [idx]'
     #
@@ -648,12 +648,12 @@ resource alpha-bravo {
 		volume 0 {
 			device minor 0;
 			disk /dev/foo;
-			flexible-meta-disk /dev/bar;
+			meta-disk /dev/bar;
 		}
 		volume 1 {
 			device minor 1;
 			disk /dev/foo1;
-			flexible-meta-disk /dev/bar1;
+			meta-disk /dev/bar1;
 		}
 		address	127.0.0.6:1230;
 	}
@@ -661,12 +661,12 @@ resource alpha-bravo {
 		volume 0 {
 			device minor 0;
 			disk /dev/foo;
-			flexible-meta-disk /dev/bar;
+			meta-disk /dev/bar;
 		}
 		volume 1 {
 			device minor 1;
 			disk /dev/foo1;
-			flexible-meta-disk /dev/bar1;
+			meta-disk /dev/bar1;
 		}
 		address	127.0.0.7:1230;
 	}
@@ -677,12 +677,12 @@ resource charlie-delta {
 	volume 0 {
 		device minor 0;
 		disk /dev/foo;
-		flexible-meta-disk /dev/bar;
+		meta-disk /dev/bar;
 	}
 	volume 1 {
 		device minor 1;
 		disk /dev/foo1;
-		flexible-meta-disk /dev/bar1;
+		meta-disk /dev/bar1;
 	}
 
 	on charlie {
