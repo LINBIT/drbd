@@ -50,6 +50,9 @@ DESTDIR ?= /
 
 CFLAGS += -Wall -I../drbd -I../drbd/compat
 
+GENETLINK_H := /usr/include/linux/genetlink.h
+libgenl.o: CFLAGS += $(shell for w in CTRL_ATTR_VERSION CTRL_ATTR_HDRSIZE CTRL_ATTR_MCAST_GROUPS; do grep -qw $$w $(GENETLINK_H) && echo -DHAVE_$$w; done)
+
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
 	      drbd_buildtag.o registry.o config_flags.o libgenl.o
