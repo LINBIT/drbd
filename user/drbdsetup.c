@@ -1640,16 +1640,19 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		if (global_attrs[DRBD_NLA_DISK_CONF]) {
 			if (dc.backing_dev[0]) {
 				printI("disk\t\t\t\"%s\";\n", dc.backing_dev);
+				printI("meta-disk\t\t\t");
 				switch(dc.meta_dev_idx) {
 				case DRBD_MD_INDEX_INTERNAL:
 				case DRBD_MD_INDEX_FLEX_INT:
-					printI("meta-disk\t\t\tinternal;\n");
+					printf("internal;\n");
 					break;
 				case DRBD_MD_INDEX_FLEX_EXT:
-					printI("flexible-meta-disk\t\t\"%s\";\n", dc.meta_dev);
+					printf("%s;\n",
+					       double_quote_string(dc.meta_dev));
 					break;
 				default:
-					printI("meta-disk\t\t\t\"%s\" [ %d ];\n", dc.meta_dev,
+					printf("%s [ %d ];\n",
+					       double_quote_string(dc.meta_dev),
 					       dc.meta_dev_idx);
 				 }
 			}

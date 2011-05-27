@@ -60,8 +60,8 @@ static int indent = 0;
 #define BFMT  "%s;\n"
 #define IPV4FMT "%-16s %s %s:%s;\n"
 #define IPV6FMT "%-16s %s [%s]:%s;\n"
-#define MDISK "%-16s %s [%s];\n"
-#define FMDISK "%-16s %s;\n"
+#define MDISK "%-16s %s;\n"
+#define MDISKI "%-16s %s [%s];\n"
 #define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
 #define printA(name, val ) \
 	printf("%*s%*s %3s;\n", \
@@ -691,13 +691,12 @@ static void dump_volume(int has_lower, struct d_volume *vol)
 		printA("disk", esc(vol->disk));
 
 	if (!has_lower) {
-		if (!strncmp(vol->meta_index, "flex", 4))
-			printI(FMDISK, "flexible-meta-disk",
-			       esc(vol->meta_disk));
+		if (!strcmp(vol->meta_index, "flexible"))
+			printI(MDISK, "meta-disk", esc(vol->meta_disk));
 		else if (!strcmp(vol->meta_index, "internal"))
 			printA("meta-disk", "internal");
 		else
-			printI(MDISK, "meta-disk", esc(vol->meta_disk),
+			printI(MDISKI, "meta-disk", esc(vol->meta_disk),
 			       vol->meta_index);
 	}
 
@@ -840,8 +839,8 @@ static void dump_volume_xml(struct d_volume *vol)
 	       esc_xml(vol->device));
 	printI("<disk>%s</disk>\n", esc_xml(vol->disk));
 
-	if (!strncmp(vol->meta_index, "flex", 4))
-		printI("<flexible-meta-disk>%s</flexible-meta-disk>\n",
+	if (!strcmp(vol->meta_index, "flexible"))
+		printI("<meta-disk>%s</meta-disk>\n",
 		       esc_xml(vol->meta_disk));
 	else if (!strcmp(vol->meta_index, "internal"))
 		printI("<meta-disk>internal</meta-disk>\n");

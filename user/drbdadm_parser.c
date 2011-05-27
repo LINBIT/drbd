@@ -458,26 +458,9 @@ void check_meta_disk(struct d_volume *vol, struct d_host_info *host)
 	if (vol->meta_disk == NULL)
 		return;
 	if (strcmp(vol->meta_disk, "internal") != 0) {
-		/* external */
-		if (vol->meta_index == NULL) {
-			fprintf(stderr,
-				"%s:%d: expected 'meta-disk = %s [index]'.\n",
-				config_file, fline, vol->meta_disk);
-		}
 		/* index either some number, or "flexible" */
 		for_each_host(h, host->on_hosts)
 			check_uniq("meta-disk", "%s:%s[%s]", h->name, vol->meta_disk, vol->meta_index);
-	} else if (vol->meta_index) {
-		/* internal */
-		if (strcmp(vol->meta_index, "flexible") != 0) {
-			/* internal, not flexible, but index given: no sir! */
-			fprintf(stderr,
-				"%s:%d: no index allowed with 'meta-disk = internal'.\n",
-				config_file, fline);
-		}		/* else internal, flexible: fine */
-	} else {
-		/* internal, not flexible */
-		vol->meta_index = strdup("internal");
 	}
 }
 
@@ -905,14 +888,26 @@ void parse_meta_disk(struct d_volume *vol)
 {
 	EXP(TK_STRING);
 	vol->meta_disk = yylval.txt;
-	if (strcmp("internal", yylval.txt)) {
-		EXP('[');
-		EXP(TK_INTEGER);
-		vol->meta_index = yylval.txt;
-		EXP(']');
+	if (strcmp("internal", yylval.txt) == 0) {
+		/* internal, flexible size */
+		vol->meta_index = strdup("internal");
 		EXP(';');
 	} else {
-		EXP(';');
+		switch(yylex()) {
+		case '[':
+			EXP(TK_INTEGER);
+			/* external, static size */
+			vol->meta_index = yylval.txt;
+			EXP(']');
+			EXP(';');
+			break;
+		case ';':
+			/* external, flexible size */
+			vol->meta_index = strdup("flexible");
+			break;
+		default:
+			pe_expected("[ | ;");
+		}
 	}
 }
 
@@ -1064,8 +1059,12 @@ int parse_volume_stmt(struct d_volume *vol, int token)
 	case TK_FLEX_META_DISK:
 		EXP(TK_STRING);
 		vol->meta_disk = yylval.txt;
-		if (strcmp("internal", yylval.txt)) {
+		if (strcmp("internal", yylval.txt) != 0) {
+			/* external, flexible ize */
 			vol->meta_index = strdup("flexible");
+		} else {
+			/* internal, flexible size */
+			vol->meta_index = strdup("internal");
 		}
 		EXP(';');
 		break;
