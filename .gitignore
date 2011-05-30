@@ -23,6 +23,7 @@ documentation/Makefile
 *.o
 
 drbd/drbd.ko
+drbd/drbd.ko.unsigned
 drbd/.*.cmd
 drbd/compat/.*.cmd
 drbd/.compat.h.d
