@@ -128,7 +128,7 @@ static struct drbd_config_context {
 	struct drbd_genlmsghdr *reply_dh;
 	/* resolved from attributes, if possible */
 	struct drbd_device *device;
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 } adm_ctx;
 
 static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
@@ -228,9 +228,9 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 		adm_ctx.my_addr = nested_attr_tb[__nla_type(T_ctx_my_addr)];
 		adm_ctx.peer_addr = nested_attr_tb[__nla_type(T_ctx_peer_addr)];
 		if ((adm_ctx.my_addr &&
-		     nla_len(adm_ctx.my_addr) > sizeof(adm_ctx.tconn->my_addr)) ||
+		     nla_len(adm_ctx.my_addr) > sizeof(adm_ctx.connection->my_addr)) ||
 		    (adm_ctx.peer_addr &&
-		     nla_len(adm_ctx.peer_addr) > sizeof(adm_ctx.tconn->peer_addr))) {
+		     nla_len(adm_ctx.peer_addr) > sizeof(adm_ctx.connection->peer_addr))) {
 			err = -EINVAL;
 			goto fail;
 		}
@@ -238,19 +238,19 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 
 	adm_ctx.minor = d_in->minor;
 	adm_ctx.device = minor_to_mdev(d_in->minor);
-	adm_ctx.tconn = conn_get_by_name(adm_ctx.resource_name);
+	adm_ctx.connection = conn_get_by_name(adm_ctx.resource_name);
 
 	if (!adm_ctx.device && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info("unknown minor");
 		return ERR_MINOR_INVALID;
 	}
-	if (!adm_ctx.tconn && (flags & DRBD_ADM_NEED_RESOURCE)) {
+	if (!adm_ctx.connection && (flags & DRBD_ADM_NEED_RESOURCE)) {
 		drbd_msg_put_info("unknown resource");
 		return ERR_INVALID_REQUEST;
 	}
 
 	if (flags & DRBD_ADM_NEED_CONNECTION) {
-		if (adm_ctx.tconn && !(flags & DRBD_ADM_NEED_RESOURCE)) {
+		if (adm_ctx.connection && !(flags & DRBD_ADM_NEED_RESOURCE)) {
 			drbd_msg_put_info("no resource name expected");
 			return ERR_INVALID_REQUEST;
 		}
@@ -259,22 +259,21 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 			return ERR_INVALID_REQUEST;
 		}
 		if (adm_ctx.my_addr && adm_ctx.peer_addr)
-			adm_ctx.tconn = conn_get_by_addrs(nla_data(adm_ctx.my_addr),
-							  nla_len(adm_ctx.my_addr),
-							  nla_data(adm_ctx.peer_addr),
-							  nla_len(adm_ctx.peer_addr));
-		if (!adm_ctx.tconn) {
+			adm_ctx.connection = conn_get_by_addrs(
+				nla_data(adm_ctx.my_addr), nla_len(adm_ctx.my_addr),
+				nla_data(adm_ctx.peer_addr), nla_len(adm_ctx.peer_addr));
+		if (!adm_ctx.connection) {
 			drbd_msg_put_info("unknown connection");
 			return ERR_INVALID_REQUEST;
 		}
 	}
 
 	/* some more paranoia, if the request was over-determined */
-	if (adm_ctx.device && adm_ctx.tconn &&
-	    adm_ctx.device->tconn != adm_ctx.tconn) {
+	if (adm_ctx.device && adm_ctx.connection &&
+	    adm_ctx.device->connection != adm_ctx.connection) {
 		pr_warning("request: minor=%u, resource=%s; but that minor belongs to connection %s\n",
 				adm_ctx.minor, adm_ctx.resource_name,
-				adm_ctx.device->tconn->name);
+				adm_ctx.device->connection->name);
 		drbd_msg_put_info("minor exists in different resource");
 		return ERR_INVALID_REQUEST;
 	}
@@ -283,7 +282,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	    adm_ctx.volume != adm_ctx.device->vnr) {
 		pr_warning("request: minor=%u, volume=%u; but that minor is volume %u in %s\n",
 				adm_ctx.minor, adm_ctx.volume,
-				adm_ctx.device->vnr, adm_ctx.device->tconn->name);
+				adm_ctx.device->vnr, adm_ctx.device->connection->name);
 		drbd_msg_put_info("minor exists as different volume");
 		return ERR_INVALID_REQUEST;
 	}
@@ -298,9 +297,9 @@ fail:
 
 static int drbd_adm_finish(struct genl_info *info, int retcode)
 {
-	if (adm_ctx.tconn) {
-		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
-		adm_ctx.tconn = NULL;
+	if (adm_ctx.connection) {
+		kref_put(&adm_ctx.connection->kref, &conn_destroy);
+		adm_ctx.connection = NULL;
 	}
 
 	if (!adm_ctx.reply_skb)
@@ -311,29 +310,29 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 	return 0;
 }
 
-static void setup_khelper_env(struct drbd_tconn *tconn, char **envp)
+static void setup_khelper_env(struct drbd_connection *connection, char **envp)
 {
 	char *afs;
 
 	/* FIXME: A future version will not allow this case. */
-	if (tconn->my_addr_len == 0 || tconn->peer_addr_len == 0)
+	if (connection->my_addr_len == 0 || connection->peer_addr_len == 0)
 		return;
 
-	switch (((struct sockaddr *)&tconn->peer_addr)->sa_family) {
+	switch (((struct sockaddr *)&connection->peer_addr)->sa_family) {
 	case AF_INET6:
 		afs = "ipv6";
 		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI6",
-			 &((struct sockaddr_in6 *)&tconn->peer_addr)->sin6_addr);
+			 &((struct sockaddr_in6 *)&connection->peer_addr)->sin6_addr);
 		break;
 	case AF_INET:
 		afs = "ipv4";
 		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
-			 &((struct sockaddr_in *)&tconn->peer_addr)->sin_addr);
+			 &((struct sockaddr_in *)&connection->peer_addr)->sin_addr);
 		break;
 	default:
 		afs = "ssocks";
 		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
-			 &((struct sockaddr_in *)&tconn->peer_addr)->sin_addr);
+			 &((struct sockaddr_in *)&connection->peer_addr)->sin_addr);
 	}
 	snprintf(envp[3], 20, "DRBD_PEER_AF=%s", afs);
 }
@@ -352,7 +351,7 @@ int drbd_khelper(struct drbd_device *device, char *cmd)
 	int ret;
 
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(device));
-	setup_khelper_env(device->tconn, envp);
+	setup_khelper_env(device->connection, envp);
 
 	/* The helper may take some time.
 	 * write out any unsynced meta data changes now */
@@ -381,13 +380,13 @@ int drbd_khelper(struct drbd_device *device, char *cmd)
 	return ret;
 }
 
-static void conn_md_sync(struct drbd_tconn *tconn)
+static void conn_md_sync(struct drbd_connection *connection)
 {
 	struct drbd_device *device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, device, vnr) {
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_md_sync(device);
@@ -397,7 +396,7 @@ static void conn_md_sync(struct drbd_tconn *tconn)
 	rcu_read_unlock();
 }
 
-int conn_khelper(struct drbd_tconn *tconn, char *cmd)
+int conn_khelper(struct drbd_connection *connection, char *cmd)
 {
 	char *envp[] = { "HOME=/",
 			"TERM=linux",
@@ -405,23 +404,23 @@ int conn_khelper(struct drbd_tconn *tconn, char *cmd)
 			 (char[20]) { }, /* address family */
 			 (char[60]) { }, /* address */
 			NULL };
-	char *argv[] = {usermode_helper, cmd, tconn->name, NULL };
+	char *argv[] = {usermode_helper, cmd, connection->name, NULL };
 	int ret;
 
-	setup_khelper_env(tconn, envp);
-	conn_md_sync(tconn);
+	setup_khelper_env(connection, envp);
+	conn_md_sync(connection);
 
-	conn_info(tconn, "helper command: %s %s %s\n", usermode_helper, cmd, tconn->name);
+	conn_info(connection, "helper command: %s %s %s\n", usermode_helper, cmd, connection->name);
 	/* TODO: conn_bcast_event() ?? */
 
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
-		conn_warn(tconn, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, tconn->name,
+		conn_warn(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
+			  usermode_helper, cmd, connection->name,
 			  (ret >> 8) & 0xff, ret);
 	else
-		conn_info(tconn, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, tconn->name,
+		conn_info(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
+			  usermode_helper, cmd, connection->name,
 			  (ret >> 8) & 0xff, ret);
 	/* TODO: conn_bcast_event() ?? */
 
@@ -431,14 +430,14 @@ int conn_khelper(struct drbd_tconn *tconn, char *cmd)
 	return ret;
 }
 
-static enum drbd_fencing_p highest_fencing_policy(struct drbd_tconn *tconn)
+static enum drbd_fencing_p highest_fencing_policy(struct drbd_connection *connection)
 {
 	enum drbd_fencing_p fp = FP_NOT_AVAIL;
 	struct drbd_device *device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, device, vnr) {
 		if (get_ldev_if_state(device, D_CONSISTENT)) {
 			fp = max_t(enum drbd_fencing_p, fp,
 				   rcu_dereference(device->ldev->disk_conf)->fencing);
@@ -450,7 +449,7 @@ static enum drbd_fencing_p highest_fencing_policy(struct drbd_tconn *tconn)
 	return fp;
 }
 
-bool conn_try_outdate_peer(struct drbd_tconn *tconn)
+bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
 	union drbd_state mask = { };
 	union drbd_state val = { };
@@ -458,22 +457,22 @@ bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 	char *ex_to_string;
 	int r;
 
-	if (tconn->cstate >= C_WF_REPORT_PARAMS) {
-		conn_err(tconn, "Expected cstate < C_WF_REPORT_PARAMS\n");
+	if (connection->cstate >= C_WF_REPORT_PARAMS) {
+		conn_err(connection, "Expected cstate < C_WF_REPORT_PARAMS\n");
 		return false;
 	}
 
-	fp = highest_fencing_policy(tconn);
+	fp = highest_fencing_policy(connection);
 	switch (fp) {
 	case FP_NOT_AVAIL:
-		conn_warn(tconn, "Not fencing peer, I'm not even Consistent myself.\n");
+		conn_warn(connection, "Not fencing peer, I'm not even Consistent myself.\n");
 		goto out;
 	case FP_DONT_CARE:
 		return true;
 	default: ;
 	}
 
-	r = conn_khelper(tconn, "fence-peer");
+	r = conn_khelper(connection, "fence-peer");
 
 	switch ((r>>8) & 0xff) {
 	case 3: /* peer is inconsistent */
@@ -487,7 +486,7 @@ bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 		val.pdsk = D_OUTDATED;
 		break;
 	case 5: /* peer was down */
-		if (conn_highest_disk(tconn) == D_UP_TO_DATE) {
+		if (conn_highest_disk(connection) == D_UP_TO_DATE) {
 			/* we will(have) create(d) a new UUID anyways... */
 			ex_to_string = "peer is unreachable, assumed to be dead";
 			mask.pdsk = D_MASK;
@@ -500,7 +499,7 @@ bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 		 * This is useful when an unconnected R_SECONDARY is asked to
 		 * become R_PRIMARY, but finds the other peer being active. */
 		ex_to_string = "peer is active";
-		conn_warn(tconn, "Peer is primary, outdating myself.\n");
+		conn_warn(connection, "Peer is primary, outdating myself.\n");
 		mask.disk = D_MASK;
 		val.disk = D_OUTDATED;
 		break;
@@ -508,53 +507,53 @@ bool conn_try_outdate_peer(struct drbd_tconn *tconn)
 		/* THINK: do we need to handle this
 		 * like case 4, or more like case 5? */
 		if (fp != FP_STONITH)
-			conn_err(tconn, "fence-peer() = 7 && fencing != Stonith !!!\n");
+			conn_err(connection, "fence-peer() = 7 && fencing != Stonith !!!\n");
 		ex_to_string = "peer was stonithed";
 		mask.pdsk = D_MASK;
 		val.pdsk = D_OUTDATED;
 		break;
 	default:
 		/* The script is broken ... */
-		conn_err(tconn, "fence-peer helper broken, returned %d\n", (r>>8)&0xff);
+		conn_err(connection, "fence-peer helper broken, returned %d\n", (r>>8)&0xff);
 		return false; /* Eventually leave IO frozen */
 	}
 
-	conn_info(tconn, "fence-peer helper returned %d (%s)\n",
+	conn_info(connection, "fence-peer helper returned %d (%s)\n",
 		  (r>>8) & 0xff, ex_to_string);
 
  out:
 
 	/* Not using
-	   conn_request_state(tconn, mask, val, CS_VERBOSE);
+	   conn_request_state(connection, mask, val, CS_VERBOSE);
 	   here, because we might were able to re-establish the connection in the
 	   meantime. */
-	spin_lock_irq(&tconn->req_lock);
-	if (tconn->cstate < C_WF_REPORT_PARAMS)
-		_conn_request_state(tconn, mask, val, CS_VERBOSE);
-	spin_unlock_irq(&tconn->req_lock);
+	spin_lock_irq(&connection->req_lock);
+	if (connection->cstate < C_WF_REPORT_PARAMS)
+		_conn_request_state(connection, mask, val, CS_VERBOSE);
+	spin_unlock_irq(&connection->req_lock);
 
-	return conn_highest_pdsk(tconn) <= D_OUTDATED;
+	return conn_highest_pdsk(connection) <= D_OUTDATED;
 }
 
 static int _try_outdate_peer_async(void *data)
 {
-	struct drbd_tconn *tconn = (struct drbd_tconn *)data;
+	struct drbd_connection *connection = (struct drbd_connection *)data;
 
-	conn_try_outdate_peer(tconn);
+	conn_try_outdate_peer(connection);
 
-	kref_put(&tconn->kref, &conn_destroy);
+	kref_put(&connection->kref, &conn_destroy);
 	return 0;
 }
 
-void conn_try_outdate_peer_async(struct drbd_tconn *tconn)
+void conn_try_outdate_peer_async(struct drbd_connection *connection)
 {
 	struct task_struct *opa;
 
-	kref_get(&tconn->kref);
-	opa = kthread_run(_try_outdate_peer_async, tconn, "drbd_async_h");
+	kref_get(&connection->kref);
+	opa = kthread_run(_try_outdate_peer_async, connection, "drbd_async_h");
 	if (IS_ERR(opa)) {
-		conn_err(tconn, "out of mem, failed to invoke fence-peer helper\n");
-		kref_put(&tconn->kref, &conn_destroy);
+		conn_err(connection, "out of mem, failed to invoke fence-peer helper\n");
+		kref_put(&connection->kref, &conn_destroy);
 	}
 }
 
@@ -569,7 +568,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 	union drbd_state mask, val;
 
 	if (new_role == R_PRIMARY)
-		request_ping(device->tconn); /* Detect a dead peer ASAP */
+		request_ping(device->connection); /* Detect a dead peer ASAP */
 
 	mutex_lock(device->state_mutex);
 
@@ -600,7 +599,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		    device->state.disk == D_CONSISTENT && mask.pdsk == 0) {
 			D_ASSERT(device->state.pdsk == D_UNKNOWN);
 
-			if (conn_try_outdate_peer(device->tconn)) {
+			if (conn_try_outdate_peer(device->connection)) {
 				val.disk = D_UP_TO_DATE;
 				mask.disk = D_MASK;
 			}
@@ -610,7 +609,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		if (rv == SS_NOTHING_TO_DO)
 			goto out;
 		if (rv == SS_PRIMARY_NOP && mask.pdsk == 0) {
-			if (!conn_try_outdate_peer(device->tconn) && force) {
+			if (!conn_try_outdate_peer(device->connection) && force) {
 				dev_warn(DEV, "Forced into split brain situation!\n");
 				mask.pdsk = D_MASK;
 				val.pdsk  = D_OUTDATED;
@@ -623,7 +622,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 			   retry at most once more in this case. */
 			int timeo;
 			rcu_read_lock();
-			nc = rcu_dereference(device->tconn->net_conf);
+			nc = rcu_dereference(device->connection->net_conf);
 			timeo = nc ? (nc->ping_timeo + 1) * HZ / 10 : 1;
 			rcu_read_unlock();
 			schedule_timeout_interruptible(timeo);
@@ -656,11 +655,11 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 			put_ldev(device);
 		}
 	} else {
-		mutex_lock(&device->tconn->conf_update);
-		nc = device->tconn->net_conf;
+		mutex_lock(&device->connection->conf_update);
+		nc = device->connection->net_conf;
 		if (nc)
 			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
-		mutex_unlock(&device->tconn->conf_update);
+		mutex_unlock(&device->connection->conf_update);
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
@@ -1088,12 +1087,12 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	   Because new from 8.3.8 onwards the peer can use multiple
 	   BIOs for a single peer_request */
 	if (device->state.conn >= C_CONNECTED) {
-		if (device->tconn->agreed_pro_version < 94)
+		if (device->connection->agreed_pro_version < 94)
 			peer = min_t(int, device->peer_max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
 			/* Correct old drbd (up to 8.3.7) if it believes it can do more than 32KiB */
-		else if (device->tconn->agreed_pro_version == 94)
+		else if (device->connection->agreed_pro_version == 94)
 			peer = DRBD_MAX_SIZE_H80_PACKET;
-		else if (device->tconn->agreed_pro_version < 100)
+		else if (device->connection->agreed_pro_version < 100)
 			peer = DRBD_MAX_BIO_SIZE_P95;  /* drbd 8.3.8 onwards, before 8.4.0 */
 		else
 			peer = DRBD_MAX_BIO_SIZE;
@@ -1111,25 +1110,25 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 }
 
 /* Starts the worker thread */
-static void conn_reconfig_start(struct drbd_tconn *tconn)
+static void conn_reconfig_start(struct drbd_connection *connection)
 {
-	drbd_thread_start(&tconn->worker);
-	conn_flush_workqueue(tconn);
+	drbd_thread_start(&connection->worker);
+	conn_flush_workqueue(connection);
 }
 
 /* if still unconfigured, stops worker again. */
-static void conn_reconfig_done(struct drbd_tconn *tconn)
+static void conn_reconfig_done(struct drbd_connection *connection)
 {
 	bool stop_threads;
-	spin_lock_irq(&tconn->req_lock);
-	stop_threads = conn_all_vols_unconf(tconn) &&
-		tconn->cstate == C_STANDALONE;
-	spin_unlock_irq(&tconn->req_lock);
+	spin_lock_irq(&connection->req_lock);
+	stop_threads = conn_all_vols_unconf(connection) &&
+		connection->cstate == C_STANDALONE;
+	spin_unlock_irq(&connection->req_lock);
 	if (stop_threads) {
 		/* asender is implicitly stopped by receiver
 		 * in conn_disconnect() */
-		drbd_thread_stop(&tconn->receiver);
-		drbd_thread_stop(&tconn->worker);
+		drbd_thread_stop(&connection->receiver);
+		drbd_thread_stop(&connection->worker);
 	}
 }
 
@@ -1144,10 +1143,10 @@ static void drbd_suspend_al(struct drbd_device *device)
 	}
 
 	drbd_al_shrink(device);
-	spin_lock_irq(&device->tconn->req_lock);
+	spin_lock_irq(&device->connection->req_lock);
 	if (device->state.conn < C_CONNECTED)
 		s = !test_and_set_bit(AL_SUSPENDED, &device->flags);
-	spin_unlock_irq(&device->tconn->req_lock);
+	spin_unlock_irq(&device->connection->req_lock);
 	lc_unlock(device->act_log);
 
 	if (s)
@@ -1201,7 +1200,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	mutex_lock(&device->tconn->conf_update);
+	mutex_lock(&device->connection->conf_update);
 	old_disk_conf = device->ldev->disk_conf;
 	*new_disk_conf = *old_disk_conf;
 	if (should_set_defaults(info))
@@ -1255,7 +1254,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		rcu_assign_pointer(device->rs_plan_s, new_plan);
 	}
 
-	mutex_unlock(&device->tconn->conf_update);
+	mutex_unlock(&device->connection->conf_update);
 	drbd_md_sync(device);
 
 	if (device->state.conn >= C_CONNECTED)
@@ -1268,7 +1267,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	goto success;
 
 fail_unlock:
-	mutex_unlock(&device->tconn->conf_update);
+	mutex_unlock(&device->connection->conf_update);
  fail:
 	kfree(new_disk_conf);
 	kfree(new_plan);
@@ -1303,7 +1302,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto finish;
 
 	device = adm_ctx.device;
-	conn_reconfig_start(device->tconn);
+	conn_reconfig_start(device->connection);
 
 	/* if you want to reconfigure, please tear down first */
 	if (device->state.disk > D_DISKLESS) {
@@ -1351,7 +1350,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	rcu_read_lock();
-	nc = rcu_dereference(device->tconn->net_conf);
+	nc = rcu_dereference(device->connection->net_conf);
 	if (nc) {
 		if (new_disk_conf->fencing == FP_STONITH && nc->wire_protocol == DRBD_PROT_A) {
 			rcu_read_unlock();
@@ -1533,7 +1532,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		clear_bit(CRASHED_PRIMARY, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-	    !(device->state.role == R_PRIMARY && device->tconn->susp_nod))
+	    !(device->state.role == R_PRIMARY && device->connection->susp_nod))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
 	device->send_cnt = 0;
@@ -1589,7 +1588,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (_drbd_bm_total_weight(device) == drbd_bm_bits(device))
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
-	spin_lock_irq(&device->tconn->req_lock);
+	spin_lock_irq(&device->connection->req_lock);
 	os = drbd_read_state(device);
 	ns = os;
 	/* If MDF_CONSISTENT is not set go into inconsistent state,
@@ -1635,7 +1634,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	rv = _drbd_set_state(device, ns, CS_VERBOSE, NULL);
-	spin_unlock_irq(&device->tconn->req_lock);
+	spin_unlock_irq(&device->connection->req_lock);
 
 	if (rv < SS_SUCCESS)
 		goto force_diskless_dec;
@@ -1652,7 +1651,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_kobject_uevent(device);
 	put_ldev(device);
-	conn_reconfig_done(device->tconn);
+	conn_reconfig_done(device->connection);
 	drbd_adm_finish(info, retcode);
 	return 0;
 
@@ -1662,7 +1661,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_force_state(device, NS(disk, D_DISKLESS));
 	drbd_md_sync(device);
  fail:
-	conn_reconfig_done(device->tconn);
+	conn_reconfig_done(device->connection);
 	if (nbc) {
 		if (nbc->backing_bdev)
 			blkdev_put(nbc->backing_bdev,
@@ -1738,14 +1737,14 @@ out:
 	return 0;
 }
 
-static bool conn_resync_running(struct drbd_tconn *tconn)
+static bool conn_resync_running(struct drbd_connection *connection)
 {
 	struct drbd_device *device;
 	bool rv = false;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, device, vnr) {
 		if (device->state.conn == C_SYNC_SOURCE ||
 		    device->state.conn == C_SYNC_TARGET ||
 		    device->state.conn == C_PAUSED_SYNC_S ||
@@ -1759,14 +1758,14 @@ static bool conn_resync_running(struct drbd_tconn *tconn)
 	return rv;
 }
 
-static bool conn_ov_running(struct drbd_tconn *tconn)
+static bool conn_ov_running(struct drbd_connection *connection)
 {
 	struct drbd_device *device;
 	bool rv = false;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, device, vnr) {
 		if (device->state.conn == C_VERIFY_S ||
 		    device->state.conn == C_VERIFY_T) {
 			rv = true;
@@ -1779,12 +1778,12 @@ static bool conn_ov_running(struct drbd_tconn *tconn)
 }
 
 static enum drbd_ret_code
-_check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct net_conf *new_conf)
+_check_net_options(struct drbd_connection *connection, struct net_conf *old_conf, struct net_conf *new_conf)
 {
 	struct drbd_device *device;
 	int i;
 
-	if (old_conf && tconn->cstate == C_WF_REPORT_PARAMS && tconn->agreed_pro_version < 100) {
+	if (old_conf && connection->cstate == C_WF_REPORT_PARAMS && connection->agreed_pro_version < 100) {
 		if (new_conf->wire_protocol != old_conf->wire_protocol)
 			return ERR_NEED_APV_100;
 
@@ -1799,15 +1798,15 @@ _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct n
 	}
 
 	if (!new_conf->two_primaries &&
-	    conn_highest_role(tconn) == R_PRIMARY &&
-	    conn_highest_peer(tconn) == R_PRIMARY)
+	    conn_highest_role(connection) == R_PRIMARY &&
+	    conn_highest_peer(connection) == R_PRIMARY)
 		return ERR_NEED_ALLOW_TWO_PRI;
 
 	if (new_conf->two_primaries &&
 	    (new_conf->wire_protocol != DRBD_PROT_C))
 		return ERR_NOT_PROTO_C;
 
-	idr_for_each_entry(&tconn->volumes, device, i) {
+	idr_for_each_entry(&connection->volumes, device, i) {
 		if (get_ldev(device)) {
 			enum drbd_fencing_p fp = rcu_dereference(device->ldev->disk_conf)->fencing;
 			put_ldev(device);
@@ -1825,18 +1824,18 @@ _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct n
 }
 
 static enum drbd_ret_code
-check_net_options(struct drbd_tconn *tconn, struct net_conf *new_conf)
+check_net_options(struct drbd_connection *connection, struct net_conf *new_conf)
 {
 	static enum drbd_ret_code rv;
 	struct drbd_device *device;
 	int i;
 
 	rcu_read_lock();
-	rv = _check_net_options(tconn, rcu_dereference(tconn->net_conf), new_conf);
+	rv = _check_net_options(connection, rcu_dereference(connection->net_conf), new_conf);
 	rcu_read_unlock();
 
-	/* tconn->volumes protected by genl_lock() here */
-	idr_for_each_entry(&tconn->volumes, device, i) {
+	/* connection->volumes protected by genl_lock() here */
+	idr_for_each_entry(&connection->volumes, device, i) {
 		if (!device->bitmap) {
 			if(drbd_bm_init(device))
 				return ERR_NOMEM;
@@ -1908,7 +1907,7 @@ static void free_crypto(struct crypto *crypto)
 int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 	struct net_conf *old_conf, *new_conf = NULL;
 	int err;
 	int ovr; /* online verify running */
@@ -1921,7 +1920,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	tconn = adm_ctx.tconn;
+	connection = adm_ctx.connection;
 
 	new_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {
@@ -1929,11 +1928,11 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	conn_reconfig_start(tconn);
+	conn_reconfig_start(connection);
 
-	mutex_lock(&tconn->data.mutex);
-	mutex_lock(&tconn->conf_update);
-	old_conf = tconn->net_conf;
+	mutex_lock(&connection->data.mutex);
+	mutex_lock(&connection->conf_update);
+	old_conf = connection->net_conf;
 
 	if (!old_conf) {
 		drbd_msg_put_info("net conf missing, try connect");
@@ -1952,19 +1951,19 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	retcode = check_net_options(tconn, new_conf);
+	retcode = check_net_options(connection, new_conf);
 	if (retcode != NO_ERROR)
 		goto fail;
 
 	/* re-sync running */
-	rsr = conn_resync_running(tconn);
+	rsr = conn_resync_running(connection);
 	if (rsr && strcmp(new_conf->csums_alg, old_conf->csums_alg)) {
 		retcode = ERR_CSUMS_RESYNC_RUNNING;
 		goto fail;
 	}
 
 	/* online verify running */
-	ovr = conn_ov_running(tconn);
+	ovr = conn_ov_running(connection);
 	if (ovr && strcmp(new_conf->verify_alg, old_conf->verify_alg)) {
 		retcode = ERR_VERIFY_RUNNING;
 		goto fail;
@@ -1974,45 +1973,45 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
-	rcu_assign_pointer(tconn->net_conf, new_conf);
+	rcu_assign_pointer(connection->net_conf, new_conf);
 
 	if (!rsr) {
-		crypto_free_hash(tconn->csums_tfm);
-		tconn->csums_tfm = crypto.csums_tfm;
+		crypto_free_hash(connection->csums_tfm);
+		connection->csums_tfm = crypto.csums_tfm;
 		crypto.csums_tfm = NULL;
 	}
 	if (!ovr) {
-		crypto_free_hash(tconn->verify_tfm);
-		tconn->verify_tfm = crypto.verify_tfm;
+		crypto_free_hash(connection->verify_tfm);
+		connection->verify_tfm = crypto.verify_tfm;
 		crypto.verify_tfm = NULL;
 	}
 
-	crypto_free_hash(tconn->integrity_tfm);
-	tconn->integrity_tfm = crypto.integrity_tfm;
-	if (tconn->cstate >= C_WF_REPORT_PARAMS && tconn->agreed_pro_version >= 100)
-		/* Do this without trying to take tconn->data.mutex again.  */
-		__drbd_send_protocol(tconn, P_PROTOCOL_UPDATE);
+	crypto_free_hash(connection->integrity_tfm);
+	connection->integrity_tfm = crypto.integrity_tfm;
+	if (connection->cstate >= C_WF_REPORT_PARAMS && connection->agreed_pro_version >= 100)
+		/* Do this without trying to take connection->data.mutex again.  */
+		__drbd_send_protocol(connection, P_PROTOCOL_UPDATE);
 
-	crypto_free_hash(tconn->cram_hmac_tfm);
-	tconn->cram_hmac_tfm = crypto.cram_hmac_tfm;
+	crypto_free_hash(connection->cram_hmac_tfm);
+	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
 
-	mutex_unlock(&tconn->conf_update);
-	mutex_unlock(&tconn->data.mutex);
+	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&connection->data.mutex);
 	synchronize_rcu();
 	kfree(old_conf);
 
-	if (tconn->cstate >= C_WF_REPORT_PARAMS)
-		drbd_send_sync_param(minor_to_mdev(conn_lowest_minor(tconn)));
+	if (connection->cstate >= C_WF_REPORT_PARAMS)
+		drbd_send_sync_param(minor_to_mdev(conn_lowest_minor(connection)));
 
 	goto done;
 
  fail:
-	mutex_unlock(&tconn->conf_update);
-	mutex_unlock(&tconn->data.mutex);
+	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&connection->data.mutex);
 	free_crypto(&crypto);
 	kfree(new_conf);
  done:
-	conn_reconfig_done(tconn);
+	conn_reconfig_done(connection);
  out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -2023,7 +2022,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct net_conf *old_conf, *new_conf = NULL;
 	struct crypto crypto = { };
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 	int i;
 	int err;
@@ -2043,24 +2042,24 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	/* No need for _rcu here. All reconfiguration is
 	 * strictly serialized on genl_lock(). We are protected against
 	 * concurrent reconfiguration/addition/deletion */
-	list_for_each_entry(tconn, &drbd_tconns, all_tconn) {
-		if (nla_len(adm_ctx.my_addr) == tconn->my_addr_len &&
-		    !memcmp(nla_data(adm_ctx.my_addr), &tconn->my_addr, tconn->my_addr_len)) {
+	list_for_each_entry(connection, &drbd_connections, connections) {
+		if (nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
+		    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr, connection->my_addr_len)) {
 			retcode = ERR_LOCAL_ADDR;
 			goto out;
 		}
 
-		if (nla_len(adm_ctx.peer_addr) == tconn->peer_addr_len &&
-		    !memcmp(nla_data(adm_ctx.peer_addr), &tconn->peer_addr, tconn->peer_addr_len)) {
+		if (nla_len(adm_ctx.peer_addr) == connection->peer_addr_len &&
+		    !memcmp(nla_data(adm_ctx.peer_addr), &connection->peer_addr, connection->peer_addr_len)) {
 			retcode = ERR_PEER_ADDR;
 			goto out;
 		}
 	}
 
-	tconn = adm_ctx.tconn;
-	conn_reconfig_start(tconn);
+	connection = adm_ctx.connection;
+	conn_reconfig_start(connection);
 
-	if (tconn->cstate > C_STANDALONE) {
+	if (connection->cstate > C_STANDALONE) {
 		retcode = ERR_NET_CONFIGURED;
 		goto fail;
 	}
@@ -2081,7 +2080,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	retcode = check_net_options(tconn, new_conf);
+	retcode = check_net_options(connection, new_conf);
 	if (retcode != NO_ERROR)
 		goto fail;
 
@@ -2091,40 +2090,40 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	((char *)new_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
-	conn_flush_workqueue(tconn);
+	conn_flush_workqueue(connection);
 
-	mutex_lock(&tconn->conf_update);
-	old_conf = tconn->net_conf;
+	mutex_lock(&connection->conf_update);
+	old_conf = connection->net_conf;
 	if (old_conf) {
 		retcode = ERR_NET_CONFIGURED;
-		mutex_unlock(&tconn->conf_update);
+		mutex_unlock(&connection->conf_update);
 		goto fail;
 	}
-	rcu_assign_pointer(tconn->net_conf, new_conf);
+	rcu_assign_pointer(connection->net_conf, new_conf);
 
-	conn_free_crypto(tconn);
-	tconn->cram_hmac_tfm = crypto.cram_hmac_tfm;
-	tconn->integrity_tfm = crypto.integrity_tfm;
-	tconn->csums_tfm = crypto.csums_tfm;
-	tconn->verify_tfm = crypto.verify_tfm;
+	conn_free_crypto(connection);
+	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
+	connection->integrity_tfm = crypto.integrity_tfm;
+	connection->csums_tfm = crypto.csums_tfm;
+	connection->verify_tfm = crypto.verify_tfm;
 
-	tconn->my_addr_len = nla_len(adm_ctx.my_addr);
-	memcpy(&tconn->my_addr, nla_data(adm_ctx.my_addr), tconn->my_addr_len);
-	tconn->peer_addr_len = nla_len(adm_ctx.peer_addr);
-	memcpy(&tconn->peer_addr, nla_data(adm_ctx.peer_addr), tconn->peer_addr_len);
+	connection->my_addr_len = nla_len(adm_ctx.my_addr);
+	memcpy(&connection->my_addr, nla_data(adm_ctx.my_addr), connection->my_addr_len);
+	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
+	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
 
-	mutex_unlock(&tconn->conf_update);
+	mutex_unlock(&connection->conf_update);
 
 	rcu_read_lock();
-	idr_for_each_entry(&tconn->volumes, device, i) {
+	idr_for_each_entry(&connection->volumes, device, i) {
 		device->send_cnt = 0;
 		device->recv_cnt = 0;
 	}
 	rcu_read_unlock();
 
-	retcode = conn_request_state(tconn, NS(conn, C_UNCONNECTED), CS_VERBOSE);
+	retcode = conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
 
-	conn_reconfig_done(tconn);
+	conn_reconfig_done(connection);
 	drbd_adm_finish(info, retcode);
 	return 0;
 
@@ -2132,17 +2131,17 @@ fail:
 	free_crypto(&crypto);
 	kfree(new_conf);
 
-	conn_reconfig_done(tconn);
+	conn_reconfig_done(connection);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
 
-static enum drbd_state_rv conn_try_disconnect(struct drbd_tconn *tconn, bool force)
+static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection, bool force)
 {
 	enum drbd_state_rv rv;
 
-	rv = conn_request_state(tconn, NS(conn, C_DISCONNECTING),
+	rv = conn_request_state(connection, NS(conn, C_DISCONNECTING),
 			force ? CS_HARD : 0);
 
 	switch (rv) {
@@ -2152,15 +2151,15 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_tconn *tconn, bool for
 		return SS_SUCCESS;
 	case SS_PRIMARY_NOP:
 		/* Our state checking code wants to see the peer outdated. */
-		rv = conn_request_state(tconn, NS2(conn, C_DISCONNECTING,
+		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
 						pdsk, D_OUTDATED), CS_VERBOSE);
 		break;
 	case SS_CW_FAILED_BY_PEER:
 		/* The peer probably wants to see us outdated. */
-		rv = conn_request_state(tconn, NS2(conn, C_DISCONNECTING,
+		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
 							disk, D_OUTDATED), 0);
 		if (rv == SS_IS_DISKLESS || rv == SS_LOWER_THAN_OUTDATED) {
-			rv = conn_request_state(tconn, NS(conn, C_DISCONNECTING),
+			rv = conn_request_state(connection, NS(conn, C_DISCONNECTING),
 					CS_HARD);
 		}
 		break;
@@ -2174,7 +2173,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_tconn *tconn, bool for
 		 * The state handling only uses drbd_thread_stop_nowait(),
 		 * we want to really wait here until the receiver is no more.
 		 */
-		drbd_thread_stop(&adm_ctx.tconn->receiver);
+		drbd_thread_stop(&adm_ctx.connection->receiver);
 
 		/* Race breaker.  This additional state change request may be
 		 * necessary, if this was a forced disconnect during a receiver
@@ -2182,10 +2181,10 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_tconn *tconn, bool for
 		 * after drbdd_init() returned.  Typically, we should be
 		 * C_STANDALONE already, now, and this becomes a no-op.
 		 */
-		rv2 = conn_request_state(tconn, NS(conn, C_STANDALONE),
+		rv2 = conn_request_state(connection, NS(conn, C_STANDALONE),
 				CS_VERBOSE | CS_HARD);
 		if (rv2 < SS_SUCCESS)
-			conn_err(tconn,
+			conn_err(connection,
 				"unexpected rv2=%d in conn_try_disconnect()\n",
 				rv2);
 	}
@@ -2195,7 +2194,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_tconn *tconn, bool for
 int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct disconnect_parms parms;
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	enum drbd_ret_code retcode;
 	int err;
@@ -2206,7 +2205,7 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
-	tconn = adm_ctx.tconn;
+	connection = adm_ctx.connection;
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_DISCONNECT_PARMS]) {
 		err = disconnect_parms_from_attrs(&parms, info);
@@ -2217,7 +2216,7 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	rv = conn_try_disconnect(tconn, parms.force_disconnect);
+	rv = conn_try_disconnect(connection, parms.force_disconnect);
 	if (rv < SS_SUCCESS)
 		retcode = rv;  /* FIXME: Type mismatch. */
 	else
@@ -2235,7 +2234,7 @@ void resync_after_online_grow(struct drbd_device *device)
 	if (device->state.role != device->state.peer)
 		iass = (device->state.role == R_PRIMARY);
 	else
-		iass = test_bit(DISCARD_CONCURRENT, &device->tconn->flags);
+		iass = test_bit(DISCARD_CONCURRENT, &device->connection->flags);
 
 	if (iass)
 		drbd_start_resync(device, C_SYNC_SOURCE);
@@ -2287,7 +2286,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (rs.no_resync && device->tconn->agreed_pro_version < 93) {
+	if (rs.no_resync && device->connection->agreed_pro_version < 93) {
 		retcode = ERR_NEED_APV_93;
 		goto fail;
 	}
@@ -2307,12 +2306,12 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		device->ldev->known_size = drbd_get_capacity(device->ldev->backing_bdev);
 
 	if (new_disk_conf) {
-		mutex_lock(&device->tconn->conf_update);
+		mutex_lock(&device->connection->conf_update);
 		old_disk_conf = device->ldev->disk_conf;
 		*new_disk_conf = *old_disk_conf;
 		new_disk_conf->disk_size = (sector_t)rs.resize_size;
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
-		mutex_unlock(&device->tconn->conf_update);
+		mutex_unlock(&device->connection->conf_update);
 		synchronize_rcu();
 		kfree(old_disk_conf);
 	}
@@ -2342,7 +2341,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 	struct res_opts res_opts;
 	int err;
 
@@ -2351,9 +2350,9 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 	if (retcode != NO_ERROR)
 		goto fail;
-	tconn = adm_ctx.tconn;
+	connection = adm_ctx.connection;
 
-	res_opts = tconn->res_opts;
+	res_opts = connection->res_opts;
 	if (should_set_defaults(info))
 		set_res_opts_defaults(&res_opts);
 
@@ -2364,7 +2363,7 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	err = set_resource_options(tconn, &res_opts);
+	err = set_resource_options(connection, &res_opts);
 	if (err) {
 		retcode = ERR_INVALID_REQUEST;
 		if (err == -ENOMEM)
@@ -2399,10 +2398,10 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		retcode = drbd_request_state(device, NS(conn, C_STARTING_SYNC_T));
 
 	while (retcode == SS_NEED_CONNECTION) {
-		spin_lock_irq(&device->tconn->req_lock);
+		spin_lock_irq(&device->connection->req_lock);
 		if (device->state.conn < C_CONNECTED)
 			retcode = _drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
-		spin_unlock_irq(&device->tconn->req_lock);
+		spin_unlock_irq(&device->connection->req_lock);
 
 		if (retcode != SS_NEED_CONNECTION)
 			break;
@@ -2505,9 +2504,9 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_request_state(device, NS3(susp, 0, susp_nod, 0, susp_fen, 0));
 	if (retcode == SS_SUCCESS) {
 		if (device->state.conn < C_CONNECTED)
-			tl_clear(device->tconn);
+			tl_clear(device->connection);
 		if (device->state.disk == D_DISKLESS || device->state.disk == D_FAILED)
-			tl_restart(device->tconn, FAIL_FROZEN_DISK_IO);
+			tl_restart(device->connection, FAIL_FROZEN_DISK_IO);
 	}
 	drbd_resume_io(device);
 
@@ -2521,7 +2520,7 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_simple_request_state(skb, info, NS(disk, D_OUTDATED));
 }
 
-int nla_put_drbd_cfg_context(struct sk_buff *skb, struct drbd_tconn *tconn, unsigned vnr)
+int nla_put_drbd_cfg_context(struct sk_buff *skb, struct drbd_connection *connection, unsigned vnr)
 {
 	struct nlattr *nla;
 	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
@@ -2529,11 +2528,13 @@ int nla_put_drbd_cfg_context(struct sk_buff *skb, struct drbd_tconn *tconn, unsi
 		goto nla_put_failure;
 	if (vnr != VOLUME_UNSPECIFIED)
 		NLA_PUT_U32(skb, T_ctx_volume, vnr);
-	NLA_PUT_STRING(skb, T_ctx_resource_name, tconn->name);
-	if (tconn->my_addr_len)
-		NLA_PUT(skb, T_ctx_my_addr, tconn->my_addr_len, &tconn->my_addr);
-	if (tconn->peer_addr_len)
-		NLA_PUT(skb, T_ctx_peer_addr, tconn->peer_addr_len, &tconn->peer_addr);
+	NLA_PUT_STRING(skb, T_ctx_resource_name, connection->name);
+	if (connection->my_addr_len)
+		NLA_PUT(skb, T_ctx_my_addr,
+			connection->my_addr_len, &connection->my_addr);
+	if (connection->peer_addr_len)
+		NLA_PUT(skb, T_ctx_peer_addr,
+			connection->peer_addr_len, &connection->peer_addr);
 	nla_nest_end(skb, nla);
 	return 0;
 
@@ -2570,10 +2571,10 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_device *device,
 
 	/* We need to add connection name and volume number information still.
 	 * Minor number is in drbd_genlmsghdr. */
-	if (nla_put_drbd_cfg_context(skb, device->tconn, device->vnr))
+	if (nla_put_drbd_cfg_context(skb, device->connection, device->vnr))
 		goto nla_put_failure;
 
-	if (res_opts_to_skb(skb, &device->tconn->res_opts, exclude_sensitive))
+	if (res_opts_to_skb(skb, &device->connection->res_opts, exclude_sensitive))
 		goto nla_put_failure;
 
 	rcu_read_lock();
@@ -2581,7 +2582,7 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_device *device,
 		if (disk_conf_to_skb(skb, rcu_dereference(device->ldev->disk_conf), exclude_sensitive))
 			goto nla_put_failure;
 
-	nc = rcu_dereference(device->tconn->net_conf);
+	nc = rcu_dereference(device->connection->net_conf);
 	if (nc)
 		err = net_conf_to_skb(skb, nc, exclude_sensitive);
 	rcu_read_unlock();
@@ -2661,18 +2662,18 @@ int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_device *device;
 	struct drbd_genlmsghdr *dh;
-	struct drbd_tconn *pos = (struct drbd_tconn*)cb->args[0];
-	struct drbd_tconn *tconn = NULL;
-	struct drbd_tconn *tmp;
+	struct drbd_connection *pos = (struct drbd_connection*)cb->args[0];
+	struct drbd_connection *connection = NULL;
+	struct drbd_connection *tmp;
 	unsigned volume = cb->args[1];
 
 	/* Open coded, deferred, iteration:
-	 * list_for_each_entry_safe(tconn, tmp, &drbd_tconns, all_tconn) {
-	 *	idr_for_each_entry(&tconn->volumes, device, i) {
+	 * list_for_each_entry_safe(connection, tmp, &drbd_connections, connections) {
+	 *	idr_for_each_entry(&connection->volumes, device, i) {
 	 *	  ...
 	 *	}
 	 * }
-	 * where tconn is cb->args[0];
+	 * where connection is cb->args[0];
 	 * and i is cb->args[1];
 	 *
 	 * cb->args[2] indicates if we shall loop over all resources,
@@ -2689,36 +2690,36 @@ int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 	/* synchronize with conn_create()/conn_destroy() */
 	rcu_read_lock();
 	/* revalidate iterator position */
-	list_for_each_entry_rcu(tmp, &drbd_tconns, all_tconn) {
+	list_for_each_entry_rcu(tmp, &drbd_connections, connections) {
 		if (pos == NULL) {
 			/* first iteration */
 			pos = tmp;
-			tconn = pos;
+			connection = pos;
 			break;
 		}
 		if (tmp == pos) {
-			tconn = pos;
+			connection = pos;
 			break;
 		}
 	}
-	if (tconn) {
-next_tconn:
-		device = idr_get_next(&tconn->volumes, &volume);
+	if (connection) {
+next_connection:
+		device = idr_get_next(&connection->volumes, &volume);
 		if (!device) {
-			/* No more volumes to dump on this tconn.
-			 * Advance tconn iterator. */
-			pos = list_entry_rcu(tconn->all_tconn.next,
-					     struct drbd_tconn, all_tconn);
-			/* Did we dump any volume on this tconn yet? */
+			/* No more volumes to dump on this connection.
+			 * Advance connection iterator. */
+			pos = list_entry_rcu(connection->connections.next,
+					     struct drbd_connection, connections);
+			/* Did we dump any volume on this connection yet? */
 			if (volume != 0) {
 				/* If we reached the end of the list,
 				 * or only a single resource dump was requested,
 				 * we are done. */
-				if (&pos->all_tconn == &drbd_tconns || cb->args[2])
+				if (&pos->connections == &drbd_connections || cb->args[2])
 					goto out;
 				volume = 0;
-				tconn = pos;
-				goto next_tconn;
+				connection = pos;
+				goto next_connection;
 			}
 		}
 
@@ -2729,22 +2730,22 @@ next_tconn:
 			goto out;
 
 		if (!device) {
-			/* This is a tconn without a single volume.
+			/* This is a connection without a single volume.
 			 * Suprisingly enough, it may have a network
 			 * configuration. */
 			struct net_conf *nc;
 			dh->minor = -1U;
 			dh->ret_code = NO_ERROR;
-			if (nla_put_drbd_cfg_context(skb, tconn, VOLUME_UNSPECIFIED))
+			if (nla_put_drbd_cfg_context(skb, connection, VOLUME_UNSPECIFIED))
 				goto cancel;
-			nc = rcu_dereference(tconn->net_conf);
+			nc = rcu_dereference(connection->net_conf);
 			if (nc && net_conf_to_skb(skb, nc, 1) != 0)
 				goto cancel;
 			goto done;
 		}
 
 		D_ASSERT(device->vnr == volume);
-		D_ASSERT(device->tconn == tconn);
+		D_ASSERT(device->connection == connection);
 
 		dh->minor = mdev_to_minor(device);
 		dh->ret_code = NO_ERROR;
@@ -2762,9 +2763,9 @@ out:
 	rcu_read_unlock();
 	/* where to start the next iteration */
         cb->args[0] = (long)pos;
-        cb->args[1] = (pos == tconn) ? volume + 1 : 0;
+        cb->args[1] = (pos == connection) ? volume + 1 : 0;
 
-	/* No more tconns/volumes/minors found results in an empty skb.
+	/* No more connections/volumes/minors found results in an empty skb.
 	 * Which will terminate the dump. */
         return skb->len;
 }
@@ -2784,7 +2785,7 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 	const unsigned hdrlen = GENL_HDRLEN + GENL_MAGIC_FAMILY_HDRSZ;
 	struct nlattr *nla;
 	const char *resource_name;
-	struct drbd_tconn *tconn;
+	struct drbd_connection *connection;
 	int maxtype;
 
 	/* Is this a followup call? */
@@ -2813,18 +2814,18 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 	if (!nla)
 		return -EINVAL;
 	resource_name = nla_data(nla);
-	tconn = conn_get_by_name(resource_name);
+	connection = conn_get_by_name(resource_name);
 
-	if (!tconn)
+	if (!connection)
 		return -ENODEV;
 
-	kref_put(&tconn->kref, &conn_destroy); /* get_one_status() (re)validates tconn by itself */
+	kref_put(&connection->kref, &conn_destroy); /* get_one_status() (re)validates connection by itself */
 
 	/* prime iterators, and set "filter" mode mark:
-	 * only dump this tconn. */
-	cb->args[0] = (long)tconn;
+	 * only dump this connection. */
+	cb->args[0] = (long)connection;
 	/* cb->args[1] = 0; passed in this way. */
-	cb->args[2] = (long)tconn;
+	cb->args[2] = (long)connection;
 
 dump:
 	return get_one_status(skb, cb);
@@ -2925,7 +2926,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* this is "skip initial sync", assume to be clean */
-	if (device->state.conn == C_CONNECTED && device->tconn->agreed_pro_version >= 90 &&
+	if (device->state.conn == C_CONNECTED && device->connection->agreed_pro_version >= 90 &&
 	    device->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED && args.clear_bm) {
 		dev_info(DEV, "Preparing to skip initial sync\n");
 		skip_initial_sync = 1;
@@ -2948,10 +2949,10 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			drbd_send_uuids_skip_initial_sync(device);
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
-			spin_lock_irq(&device->tconn->req_lock);
+			spin_lock_irq(&device->connection->req_lock);
 			_drbd_set_state(_NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
 					CS_VERBOSE, NULL);
-			spin_unlock_irq(&device->tconn->req_lock);
+			spin_unlock_irq(&device->connection->req_lock);
 		}
 	}
 
@@ -3005,7 +3006,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (adm_ctx.tconn)
+	if (adm_ctx.connection)
 		goto out;
 
 	if (!conn_create(adm_ctx.resource_name, &res_opts))
@@ -3040,7 +3041,7 @@ int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.device)
 		goto out;
 
-	retcode = conn_new_minor(adm_ctx.tconn, dh->minor, adm_ctx.volume);
+	retcode = conn_new_minor(adm_ctx.connection, dh->minor, adm_ctx.volume);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3055,7 +3056,7 @@ static enum drbd_ret_code adm_delete_minor(struct drbd_device *device)
 	    device->state.role == R_SECONDARY) {
 		_drbd_request_state(device, NS(conn, C_WF_REPORT_PARAMS),
 				    CS_VERBOSE + CS_WAIT_COMPLETE);
-		idr_remove(&device->tconn->volumes, device->vnr);
+		idr_remove(&device->connection->volumes, device->vnr);
 		idr_remove(&minors, mdev_to_minor(device));
 		del_gendisk(device->vdisk);
 		synchronize_rcu();
@@ -3093,13 +3094,13 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (!adm_ctx.tconn) {
+	if (!adm_ctx.connection) {
 		retcode = ERR_RES_NOT_KNOWN;
 		goto out;
 	}
 
 	/* demote */
-	idr_for_each_entry(&adm_ctx.tconn->volumes, device, i) {
+	idr_for_each_entry(&adm_ctx.connection->volumes, device, i) {
 		retcode = drbd_set_role(device, R_SECONDARY, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to demote");
@@ -3107,14 +3108,14 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	retcode = conn_try_disconnect(adm_ctx.tconn, 0);
+	retcode = conn_try_disconnect(adm_ctx.connection, 0);
 	if (retcode < SS_SUCCESS) {
 		drbd_msg_put_info("failed to disconnect");
 		goto out;
 	}
 
 	/* detach */
-	idr_for_each_entry(&adm_ctx.tconn->volumes, device, i) {
+	idr_for_each_entry(&adm_ctx.connection->volumes, device, i) {
 		retcode = adm_detach(device, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
@@ -3122,15 +3123,15 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	/* If we reach this, all volumes (of this tconn) are Secondary,
+	/* If we reach this, all volumes (of this connection) are Secondary,
 	 * Disconnected, Diskless, aka Unconfigured. Make sure all threads have
 	 * actually stopped, state handling only does drbd_thread_stop_nowait(). */
-	drbd_thread_stop(&adm_ctx.tconn->worker);
+	drbd_thread_stop(&adm_ctx.connection->worker);
 
 	/* Now, nothing can fail anymore */
 
 	/* delete volumes */
-	idr_for_each_entry(&adm_ctx.tconn->volumes, device, i) {
+	idr_for_each_entry(&adm_ctx.connection->volumes, device, i) {
 		retcode = adm_delete_minor(device);
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */
@@ -3140,10 +3141,10 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* delete connection */
-	if (conn_lowest_minor(adm_ctx.tconn) < 0) {
-		list_del_rcu(&adm_ctx.tconn->all_tconn);
+	if (conn_lowest_minor(adm_ctx.connection) < 0) {
+		list_del_rcu(&adm_ctx.connection->connections);
 		synchronize_rcu();
-		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
+		kref_put(&adm_ctx.connection->kref, &conn_destroy);
 
 		retcode = NO_ERROR;
 	} else {
@@ -3167,10 +3168,10 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (conn_lowest_minor(adm_ctx.tconn) < 0) {
-		list_del_rcu(&adm_ctx.tconn->all_tconn);
+	if (conn_lowest_minor(adm_ctx.connection) < 0) {
+		list_del_rcu(&adm_ctx.connection->connections);
 		synchronize_rcu();
-		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
+		kref_put(&adm_ctx.connection->kref, &conn_destroy);
 
 		retcode = NO_ERROR;
 	} else {
@@ -3178,7 +3179,7 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (retcode == NO_ERROR)
-		drbd_thread_stop(&adm_ctx.tconn->worker);
+		drbd_thread_stop(&adm_ctx.connection->worker);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
