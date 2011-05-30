@@ -87,7 +87,7 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 #include "drbd_int.h"
 
 /* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
+static inline void drbd_set_my_capacity(struct drbd_device *mdev,
 					sector_t size)
 {
 	/* set_capacity(mdev->this_bdev->bd_disk, size); */
@@ -215,7 +215,7 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 # endif
 # define disk_to_kobj(disk) (&disk_to_dev(disk)->kobj)
 #endif
-static inline void drbd_kobject_uevent(struct drbd_conf *mdev)
+static inline void drbd_kobject_uevent(struct drbd_device *mdev)
 {
 	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
 	/* rhel4 / sles9 and older don't have this at all,
@@ -228,7 +228,7 @@ static inline void drbd_kobject_uevent(struct drbd_conf *mdev)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(struct drbd_conf *mdev,
+static inline void drbd_generic_make_request(struct drbd_device *mdev,
 					     int fault_type, struct bio *bio)
 {
 	__release(local);
@@ -249,7 +249,7 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev,
 
 /* see 7eaceac block: remove per-queue plugging */
 #ifdef blk_queue_plugged
-static inline void drbd_plug_device(struct drbd_conf *mdev)
+static inline void drbd_plug_device(struct drbd_device *mdev)
 {
 	struct request_queue *q;
 	q = bdev_get_queue(mdev->this_bdev);
@@ -267,12 +267,12 @@ static inline void drbd_plug_device(struct drbd_conf *mdev)
 	spin_unlock_irq(q->queue_lock);
 }
 #else
-static inline void drbd_plug_device(struct drbd_conf *mdev)
+static inline void drbd_plug_device(struct drbd_device *mdev)
 {
 }
 #endif
 
-static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
+static inline int drbd_backing_bdev_events(struct drbd_device *mdev)
 {
 	struct gendisk *disk = mdev->ldev->backing_bdev->bd_contains->bd_disk;
 #if defined(__disk_stat_inc)

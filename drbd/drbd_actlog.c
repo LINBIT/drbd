@@ -105,7 +105,7 @@ struct update_al_work {
 };
 
 
-void *drbd_md_get_buffer(struct drbd_conf *mdev)
+void *drbd_md_get_buffer(struct drbd_device *mdev)
 {
 	int r;
 
@@ -116,13 +116,13 @@ void *drbd_md_get_buffer(struct drbd_conf *mdev)
 	return r ? NULL : page_address(mdev->md_io_page);
 }
 
-void drbd_md_put_buffer(struct drbd_conf *mdev)
+void drbd_md_put_buffer(struct drbd_device *mdev)
 {
 	if (atomic_dec_and_test(&mdev->md_io_in_use))
 		wake_up(&mdev->misc_wait);
 }
 
-void wait_until_done_or_force_detached(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
+void wait_until_done_or_force_detached(struct drbd_device *mdev, struct drbd_backing_dev *bdev,
 				     unsigned int *done)
 {
 	long dt;
@@ -142,7 +142,7 @@ void wait_until_done_or_force_detached(struct drbd_conf *mdev, struct drbd_backi
 	}
 }
 
-static int _drbd_md_sync_page_io(struct drbd_conf *mdev,
+static int _drbd_md_sync_page_io(struct drbd_device *mdev,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
@@ -209,7 +209,7 @@ static int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	return err;
 }
 
-int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
+int drbd_md_sync_page_io(struct drbd_device *mdev, struct drbd_backing_dev *bdev,
 			 sector_t sector, int rw)
 {
 	int err;
@@ -246,7 +246,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 }
 
 static struct bm_extent *
-find_active_resync_extent(struct drbd_conf *mdev, unsigned int enr)
+find_active_resync_extent(struct drbd_device *mdev, unsigned int enr)
 {
 	struct lc_element *tmp;
 	tmp = lc_find(mdev->resync, enr/AL_EXT_PER_BM_SECT);
@@ -259,7 +259,7 @@ find_active_resync_extent(struct drbd_conf *mdev, unsigned int enr)
 }
 
 static
-struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr, bool nonblock)
+struct lc_element *_al_get(struct drbd_device *mdev, unsigned int enr, bool nonblock)
 {
 	struct lc_element *al_ext;
 	struct bm_extent *bm_ext;
@@ -282,7 +282,7 @@ struct lc_element *_al_get(struct drbd_conf *mdev, unsigned int enr, bool nonblo
 	return al_ext;
 }
 
-bool drbd_al_begin_io_fastpath(struct drbd_conf *mdev, struct drbd_interval *i)
+bool drbd_al_begin_io_fastpath(struct drbd_device *mdev, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
@@ -299,7 +299,7 @@ bool drbd_al_begin_io_fastpath(struct drbd_conf *mdev, struct drbd_interval *i)
 	return _al_get(mdev, first, true);
 }
 
-bool drbd_al_begin_io_prepare(struct drbd_conf *mdev, struct drbd_interval *i)
+bool drbd_al_begin_io_prepare(struct drbd_device *mdev, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
@@ -321,7 +321,7 @@ bool drbd_al_begin_io_prepare(struct drbd_conf *mdev, struct drbd_interval *i)
 	return need_transaction;
 }
 
-static int al_write_transaction(struct drbd_conf *mdev, bool delegate);
+static int al_write_transaction(struct drbd_device *mdev, bool delegate);
 
 /* When called through generic_make_request(), we must delegate
  * activity log I/O to the worker thread: a further request
@@ -335,7 +335,7 @@ static int al_write_transaction(struct drbd_conf *mdev, bool delegate);
 /*
  * @delegate:   delegate activity log I/O to the worker thread
  */
-void drbd_al_begin_io_commit(struct drbd_conf *mdev, bool delegate)
+void drbd_al_begin_io_commit(struct drbd_device *mdev, bool delegate)
 {
 	bool locked = false;
 
@@ -376,7 +376,7 @@ void drbd_al_begin_io_commit(struct drbd_conf *mdev, bool delegate)
 /*
  * @delegate:   delegate activity log I/O to the worker thread
  */
-void drbd_al_begin_io(struct drbd_conf *mdev, struct drbd_interval *i, bool delegate)
+void drbd_al_begin_io(struct drbd_device *mdev, struct drbd_interval *i, bool delegate)
 {
 	BUG_ON(delegate && current == mdev->tconn->worker.task);
 
@@ -384,7 +384,7 @@ void drbd_al_begin_io(struct drbd_conf *mdev, struct drbd_interval *i, bool dele
 		drbd_al_begin_io_commit(mdev, delegate);
 }
 
-int drbd_al_begin_io_nonblock(struct drbd_conf *mdev, struct drbd_interval *i)
+int drbd_al_begin_io_nonblock(struct drbd_device *mdev, struct drbd_interval *i)
 {
 	struct lru_cache *al = mdev->act_log;
 	/* for bios crossing activity log extent boundaries,
@@ -433,7 +433,7 @@ int drbd_al_begin_io_nonblock(struct drbd_conf *mdev, struct drbd_interval *i)
 	return 0;
 }
 
-void drbd_al_complete_io(struct drbd_conf *mdev, struct drbd_interval *i)
+void drbd_al_complete_io(struct drbd_device *mdev, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
@@ -485,7 +485,7 @@ static unsigned int rs_extent_to_bm_page(unsigned int rs_enr)
 		 (BM_EXT_SHIFT - BM_BLOCK_SHIFT));
 }
 
-static sector_t al_tr_number_to_on_disk_sector(struct drbd_conf *mdev)
+static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *mdev)
 {
 	const unsigned int stripes = mdev->ldev->md.al_stripes;
 	const unsigned int stripe_size_4kB = mdev->ldev->md.al_stripe_size_4k;
@@ -504,7 +504,7 @@ static sector_t al_tr_number_to_on_disk_sector(struct drbd_conf *mdev)
 }
 
 static int
-_al_write_transaction(struct drbd_conf *mdev)
+_al_write_transaction(struct drbd_device *mdev)
 {
 	struct al_transaction_on_disk *buffer;
 	struct lc_element *e;
@@ -618,7 +618,7 @@ _al_write_transaction(struct drbd_conf *mdev)
 static int w_al_write_transaction(struct drbd_work *w, int unused)
 {
 	struct update_al_work *aw = container_of(w, struct update_al_work, w);
-	struct drbd_conf *mdev = w->mdev;
+	struct drbd_device *mdev = w->mdev;
 	int err;
 
 	err = _al_write_transaction(mdev);
@@ -631,7 +631,7 @@ static int w_al_write_transaction(struct drbd_work *w, int unused)
 /* Calls from worker context (see w_restart_disk_io()) need to write the
    transaction directly. Others came through generic_make_request(),
    those need to delegate it to the worker. */
-static int al_write_transaction(struct drbd_conf *mdev, bool delegate)
+static int al_write_transaction(struct drbd_device *mdev, bool delegate)
 {
 	if (delegate) {
 		struct update_al_work al_work;
@@ -645,7 +645,7 @@ static int al_write_transaction(struct drbd_conf *mdev, bool delegate)
 		return _al_write_transaction(mdev);
 }
 
-static int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
+static int _try_lc_del(struct drbd_device *mdev, struct lc_element *al_ext)
 {
 	int rv;
 
@@ -667,7 +667,7 @@ static int _try_lc_del(struct drbd_conf *mdev, struct lc_element *al_ext)
  *
  * You need to lock mdev->act_log with lc_try_lock() / lc_unlock()
  */
-void drbd_al_shrink(struct drbd_conf *mdev)
+void drbd_al_shrink(struct drbd_device *mdev)
 {
 	struct lc_element *al_ext;
 	int i;
@@ -684,7 +684,7 @@ void drbd_al_shrink(struct drbd_conf *mdev)
 	wake_up(&mdev->al_wait);
 }
 
-int drbd_initialize_al(struct drbd_conf *mdev, void *buffer)
+int drbd_initialize_al(struct drbd_device *mdev, void *buffer)
 {
 	struct al_transaction_on_disk *al = buffer;
 	struct drbd_md *md = &mdev->ldev->md;
@@ -708,7 +708,7 @@ int drbd_initialize_al(struct drbd_conf *mdev, void *buffer)
 static int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
-	struct drbd_conf *mdev = w->mdev;
+	struct drbd_device *mdev = w->mdev;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 
 	if (!get_ldev(mdev)) {
@@ -745,7 +745,7 @@ static int w_update_odbm(struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-static void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
+static void drbd_try_clear_on_disk_bm(struct drbd_device *mdev, sector_t sector,
 				      int count, int success)
 {
 	struct lc_element *e;
@@ -833,7 +833,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 	}
 }
 
-void drbd_advance_rs_marks(struct drbd_conf *mdev, unsigned long still_to_go)
+void drbd_advance_rs_marks(struct drbd_device *mdev, unsigned long still_to_go)
 {
 	unsigned long now = jiffies;
 	unsigned long last = mdev->rs_mark_time[mdev->rs_last_mark];
@@ -856,7 +856,7 @@ void drbd_advance_rs_marks(struct drbd_conf *mdev, unsigned long still_to_go)
  * called by worker on C_SYNC_TARGET and receiver on SyncSource.
  *
  */
-void __drbd_set_in_sync(struct drbd_conf *mdev, sector_t sector, int size,
+void __drbd_set_in_sync(struct drbd_device *mdev, sector_t sector, int size,
 		       const char *file, const unsigned int line)
 {
 	/* Is called from worker and receiver context _only_ */
@@ -928,7 +928,7 @@ out:
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-int __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector, int size,
+int __drbd_set_out_of_sync(struct drbd_device *mdev, sector_t sector, int size,
 			    const char *file, const unsigned int line)
 {
 	unsigned long sbnr, ebnr, flags;
@@ -980,7 +980,7 @@ out:
 }
 
 static
-struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
+struct bm_extent *_bme_get(struct drbd_device *mdev, unsigned int enr)
 {
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
@@ -1020,7 +1020,7 @@ struct bm_extent *_bme_get(struct drbd_conf *mdev, unsigned int enr)
 	return bm_ext;
 }
 
-static int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
+static int _is_in_al(struct drbd_device *mdev, unsigned int enr)
 {
 	int rv;
 
@@ -1038,7 +1038,7 @@ static int _is_in_al(struct drbd_conf *mdev, unsigned int enr)
  *
  * This functions sleeps on al_wait. Returns 0 on success, -EINTR if interrupted.
  */
-int drbd_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
+int drbd_rs_begin_io(struct drbd_device *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
@@ -1091,7 +1091,7 @@ retry:
  * tries to set it to BME_LOCKED. Returns 0 upon success, and -EAGAIN
  * if there is still application IO going on in this area.
  */
-int drbd_try_rs_begin_io(struct drbd_conf *mdev, sector_t sector)
+int drbd_try_rs_begin_io(struct drbd_device *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
@@ -1191,7 +1191,7 @@ try_again:
 	return -EAGAIN;
 }
 
-void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
+void drbd_rs_complete_io(struct drbd_device *mdev, sector_t sector)
 {
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct lc_element *e;
@@ -1229,7 +1229,7 @@ void drbd_rs_complete_io(struct drbd_conf *mdev, sector_t sector)
  * drbd_rs_cancel_all() - Removes all extents from the resync LRU (even BME_LOCKED)
  * @mdev:	DRBD device.
  */
-void drbd_rs_cancel_all(struct drbd_conf *mdev)
+void drbd_rs_cancel_all(struct drbd_device *mdev)
 {
 	spin_lock_irq(&mdev->al_lock);
 
@@ -1250,7 +1250,7 @@ void drbd_rs_cancel_all(struct drbd_conf *mdev)
  * Returns 0 upon success, -EAGAIN if at least one reference count was
  * not zero.
  */
-int drbd_rs_del_all(struct drbd_conf *mdev)
+int drbd_rs_del_all(struct drbd_device *mdev)
 {
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
@@ -1301,7 +1301,7 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
  * @sector:	The sector number.
  * @size:	Size of failed IO operation, in byte.
  */
-void drbd_rs_failed_io(struct drbd_conf *mdev, sector_t sector, int size)
+void drbd_rs_failed_io(struct drbd_device *mdev, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr;
