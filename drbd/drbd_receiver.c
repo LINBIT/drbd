@@ -42,6 +42,7 @@
 #include <linux/vmalloc.h>
 #include <linux/random.h>
 #include "drbd_int.h"
+#include "drbd_protocol.h"
 #include "drbd_req.h"
 #include "drbd_vli.h"
 #include <linux/scatterlist.h>

@@ -32,6 +32,7 @@
 #include <linux/blkpg.h>
 #include <linux/cpumask.h>
 #include "drbd_int.h"
+#include "drbd_protocol.h"
 #include "drbd_req.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_limits.h>
