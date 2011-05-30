@@ -127,7 +127,7 @@ static struct drbd_config_context {
 	/* pointer into reply buffer */
 	struct drbd_genlmsghdr *reply_dh;
 	/* resolved from attributes, if possible */
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	struct drbd_tconn *tconn;
 } adm_ctx;
 
@@ -338,7 +338,7 @@ static void setup_khelper_env(struct drbd_tconn *tconn, char **envp)
 	snprintf(envp[3], 20, "DRBD_PEER_AF=%s", afs);
 }
 
-int drbd_khelper(struct drbd_conf *mdev, char *cmd)
+int drbd_khelper(struct drbd_device *mdev, char *cmd)
 {
 	char *envp[] = { "HOME=/",
 			"TERM=linux",
@@ -383,7 +383,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 
 static void conn_md_sync(struct drbd_tconn *tconn)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int vnr;
 
 	rcu_read_lock();
@@ -434,7 +434,7 @@ int conn_khelper(struct drbd_tconn *tconn, char *cmd)
 static enum drbd_fencing_p highest_fencing_policy(struct drbd_tconn *tconn)
 {
 	enum drbd_fencing_p fp = FP_NOT_AVAIL;
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int vnr;
 
 	rcu_read_lock();
@@ -559,7 +559,7 @@ void conn_try_outdate_peer_async(struct drbd_tconn *tconn)
 }
 
 enum drbd_state_rv
-drbd_set_role(struct drbd_conf *mdev, enum drbd_role new_role, int force)
+drbd_set_role(struct drbd_device *mdev, enum drbd_role new_role, int force)
 {
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
@@ -733,7 +733,7 @@ out:
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
+STATIC void drbd_md_set_sector_offsets(struct drbd_device *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
@@ -816,7 +816,7 @@ char *ppsize(char *buf, unsigned long long size)
  * and can be long lived.
  * This changes an mdev->flag, is triggered by drbd internals,
  * and should be short-lived. */
-void drbd_suspend_io(struct drbd_conf *mdev)
+void drbd_suspend_io(struct drbd_device *mdev)
 {
 	set_bit(SUSPEND_IO, &mdev->flags);
 	if (drbd_suspended(mdev))
@@ -824,7 +824,7 @@ void drbd_suspend_io(struct drbd_conf *mdev)
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
 }
 
-void drbd_resume_io(struct drbd_conf *mdev)
+void drbd_resume_io(struct drbd_device *mdev)
 {
 	clear_bit(SUSPEND_IO, &mdev->flags);
 	wake_up(&mdev->misc_wait);
@@ -837,7 +837,7 @@ void drbd_resume_io(struct drbd_conf *mdev)
  * Returns 0 on success, negative return values indicate errors.
  * You should call drbd_md_sync() after calling this function.
  */
-enum determine_dev_size drbd_determine_dev_size(struct drbd_conf *mdev, enum dds_flags flags) __must_hold(local)
+enum determine_dev_size drbd_determine_dev_size(struct drbd_device *mdev, enum dds_flags flags) __must_hold(local)
 {
 	sector_t prev_first_sect, prev_size; /* previous meta location */
 	sector_t la_size, u_size;
@@ -934,7 +934,7 @@ out:
 }
 
 sector_t
-drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
+drbd_new_dev_size(struct drbd_device *mdev, struct drbd_backing_dev *bdev,
 		  sector_t u_size, int assume_peer_has_space)
 {
 	sector_t p_size = mdev->p_size;   /* partner's disk size. */
@@ -988,7 +988,7 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
  * failed, and 0 on success. You should call drbd_md_sync() after you called
  * this function.
  */
-STATIC int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
+STATIC int drbd_check_al_size(struct drbd_device *mdev, struct disk_conf *dc)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;
@@ -1033,7 +1033,7 @@ STATIC int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
 	return 0;
 }
 
-static void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_bio_size)
+static void drbd_setup_queue_param(struct drbd_device *mdev, unsigned int max_bio_size)
 {
 	struct request_queue * const q = mdev->rq_queue;
 	int max_hw_sectors = max_bio_size >> 9;
@@ -1070,7 +1070,7 @@ static void drbd_setup_queue_param(struct drbd_conf *mdev, unsigned int max_bio_
 	}
 }
 
-void drbd_reconsider_max_bio_size(struct drbd_conf *mdev)
+void drbd_reconsider_max_bio_size(struct drbd_device *mdev)
 {
 	int now, new, local, peer;
 
@@ -1134,7 +1134,7 @@ static void conn_reconfig_done(struct drbd_tconn *tconn)
 }
 
 /* Make sure IO is suspended before calling this function(). */
-static void drbd_suspend_al(struct drbd_conf *mdev)
+static void drbd_suspend_al(struct drbd_device *mdev)
 {
 	int s = 0;
 
@@ -1175,7 +1175,7 @@ static void enforce_disk_conf_limits(struct disk_conf *dc)
 int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	struct disk_conf *new_disk_conf, *old_disk_conf;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	int err, fifo_size;
@@ -1281,7 +1281,7 @@ success:
 
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int err;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
@@ -1681,7 +1681,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static int adm_detach(struct drbd_conf *mdev, int force)
+static int adm_detach(struct drbd_device *mdev, int force)
 {
 	enum drbd_state_rv retcode;
 	int ret;
@@ -1740,7 +1740,7 @@ out:
 
 static bool conn_resync_running(struct drbd_tconn *tconn)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	bool rv = false;
 	int vnr;
 
@@ -1761,7 +1761,7 @@ static bool conn_resync_running(struct drbd_tconn *tconn)
 
 static bool conn_ov_running(struct drbd_tconn *tconn)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	bool rv = false;
 	int vnr;
 
@@ -1781,7 +1781,7 @@ static bool conn_ov_running(struct drbd_tconn *tconn)
 static enum drbd_ret_code
 _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct net_conf *new_conf)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int i;
 
 	if (old_conf && tconn->cstate == C_WF_REPORT_PARAMS && tconn->agreed_pro_version < 100) {
@@ -1828,7 +1828,7 @@ static enum drbd_ret_code
 check_net_options(struct drbd_tconn *tconn, struct net_conf *new_conf)
 {
 	static enum drbd_ret_code rv;
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int i;
 
 	rcu_read_lock();
@@ -2020,7 +2020,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	struct net_conf *old_conf, *new_conf = NULL;
 	struct crypto crypto = { };
 	struct drbd_tconn *tconn;
@@ -2227,7 +2227,7 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-void resync_after_online_grow(struct drbd_conf *mdev)
+void resync_after_online_grow(struct drbd_device *mdev)
 {
 	int iass; /* I am sync source */
 
@@ -2247,7 +2247,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 {
 	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
 	struct resize_parms rs;
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
 	enum dds_flags ddsf;
@@ -2378,7 +2378,7 @@ fail:
 
 int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -2487,7 +2487,7 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -2543,7 +2543,7 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
-int nla_put_status_info(struct sk_buff *skb, struct drbd_conf *mdev,
+int nla_put_status_info(struct sk_buff *skb, struct drbd_device *mdev,
 		const struct sib_info *sib)
 {
 	struct state_info *si = NULL; /* for sizeof(si->member); */
@@ -2659,7 +2659,7 @@ out:
 
 int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	struct drbd_genlmsghdr *dh;
 	struct drbd_tconn *pos = (struct drbd_tconn*)cb->args[0];
 	struct drbd_tconn *tconn = NULL;
@@ -2859,7 +2859,7 @@ out:
 
 int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -2894,7 +2894,7 @@ out:
 
 int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	enum drbd_ret_code retcode;
 	int skip_initial_sync = 0;
 	int err;
@@ -3046,7 +3046,7 @@ out:
 	return 0;
 }
 
-static enum drbd_ret_code adm_delete_minor(struct drbd_conf *mdev)
+static enum drbd_ret_code adm_delete_minor(struct drbd_device *mdev)
 {
 	if (mdev->state.disk == D_DISKLESS &&
 	    /* no need to be mdev->state.conn == C_STANDALONE &&
@@ -3084,7 +3084,7 @@ out:
 int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
-	struct drbd_conf *mdev;
+	struct drbd_device *mdev;
 	unsigned i;
 
 	retcode = drbd_adm_prepare(skb, info, 0);
@@ -3184,7 +3184,7 @@ out:
 	return 0;
 }
 
-void drbd_bcast_event(struct drbd_conf *mdev, const struct sib_info *sib)
+void drbd_bcast_event(struct drbd_device *mdev, const struct sib_info *sib)
 {
 	static atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
 	struct sk_buff *msg;

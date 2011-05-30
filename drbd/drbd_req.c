@@ -43,7 +43,7 @@
 #else
 
 /* Update disk stats at start of I/O request */
-static void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req, struct bio *bio)
+static void _drbd_start_io_acct(struct drbd_device *mdev, struct drbd_request *req, struct bio *bio)
 {
 	const int rw = bio_data_dir(bio);
 #ifndef __disk_stat_inc
@@ -65,7 +65,7 @@ static void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req
 }
 
 /* Update disk stats when completing request upwards */
-static void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
+static void _drbd_end_io_acct(struct drbd_device *mdev, struct drbd_request *req)
 {
 	int rw = bio_data_dir(req->master_bio);
 	unsigned long duration = jiffies - req->start_time;
@@ -88,7 +88,7 @@ static void _drbd_end_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
 
 #endif
 
-static struct drbd_request *drbd_req_new(struct drbd_conf *mdev,
+static struct drbd_request *drbd_req_new(struct drbd_device *mdev,
 					       struct bio *bio_src)
 {
 	struct drbd_request *req;
@@ -121,7 +121,7 @@ static void drbd_req_free(struct drbd_request *req)
 }
 
 /* rw is bio_data_dir(), only READ or WRITE */
-static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const int rw)
+static void _req_is_done(struct drbd_device *mdev, struct drbd_request *req, const int rw)
 {
 	const unsigned long s = req->rq_state;
 
@@ -173,7 +173,7 @@ static void _req_is_done(struct drbd_conf *mdev, struct drbd_request *req, const
 	drbd_req_free(req);
 }
 
-static void queue_barrier(struct drbd_conf *mdev)
+static void queue_barrier(struct drbd_device *mdev)
 {
 	struct drbd_tl_epoch *b;
 
@@ -197,7 +197,7 @@ static void queue_barrier(struct drbd_conf *mdev)
 	set_bit(CREATE_BARRIER, &mdev->flags);
 }
 
-static void _about_to_complete_local_write(struct drbd_conf *mdev,
+static void _about_to_complete_local_write(struct drbd_device *mdev,
 	struct drbd_request *req)
 {
 	const unsigned long s = req->rq_state;
@@ -214,7 +214,7 @@ static void _about_to_complete_local_write(struct drbd_conf *mdev,
 		queue_barrier(mdev);
 }
 
-void complete_master_bio(struct drbd_conf *mdev,
+void complete_master_bio(struct drbd_device *mdev,
 		struct bio_and_error *m)
 {
 	bio_endio(m->bio, m->error);
@@ -225,7 +225,7 @@ void complete_master_bio(struct drbd_conf *mdev,
 static void drbd_remove_request_interval(struct rb_root *root,
 					 struct drbd_request *req)
 {
-	struct drbd_conf *mdev = req->w.mdev;
+	struct drbd_device *mdev = req->w.mdev;
 	struct drbd_interval *i = &req->i;
 
 	drbd_remove_interval(root, i);
@@ -244,7 +244,7 @@ static void drbd_remove_request_interval(struct rb_root *root,
 void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 {
 	const unsigned long s = req->rq_state;
-	struct drbd_conf *mdev = req->w.mdev;
+	struct drbd_device *mdev = req->w.mdev;
 	int rw = req->rq_state & RQ_WRITE ? WRITE : READ;
 
 	/* we must not complete the master bio, while it is
@@ -334,7 +334,7 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 
 static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_error *m)
 {
-	struct drbd_conf *mdev = req->w.mdev;
+	struct drbd_device *mdev = req->w.mdev;
 
 	if (!drbd_suspended(mdev))
 		_req_may_be_done(req, m);
@@ -355,7 +355,7 @@ static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_e
 int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m)
 {
-	struct drbd_conf *mdev = req->w.mdev;
+	struct drbd_device *mdev = req->w.mdev;
 	struct net_conf *nc;
 	int p, rv = 0;
 
@@ -732,7 +732,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
-STATIC bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
+STATIC bool drbd_may_do_local_read(struct drbd_device *mdev, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
@@ -759,7 +759,7 @@ STATIC bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int 
  * currently know about.  Wait for any requests to complete which conflict with
  * the new one.
  */
-static int complete_conflicting_writes(struct drbd_conf *mdev,
+static int complete_conflicting_writes(struct drbd_device *mdev,
 				       sector_t sector, int size)
 {
 	for(;;) {
@@ -775,7 +775,7 @@ static int complete_conflicting_writes(struct drbd_conf *mdev,
 	}
 }
 
-int __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
+int __drbd_make_request(struct drbd_device *mdev, struct bio *bio, unsigned long start_time)
 {
 	const int rw = bio_rw(bio);
 	const int size = bio->bi_size;
@@ -1063,7 +1063,7 @@ fail_and_free_req:
 
 int drbd_make_request(struct request_queue *q, struct bio *bio)
 {
-	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
+	struct drbd_device *mdev = (struct drbd_device *) q->queuedata;
 	unsigned long start_time;
 
 	/* We never supported BIO_RW_BARRIER.
@@ -1107,7 +1107,7 @@ int drbd_merge_bvec(struct request_queue *q,
 #endif
 		struct bio_vec *bvec)
 {
-	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
+	struct drbd_device *mdev = (struct drbd_device *) q->queuedata;
 	unsigned int bio_size = bvm->bi_size;
 	int limit = DRBD_MAX_BIO_SIZE;
 	int backing_limit;
@@ -1126,7 +1126,7 @@ int drbd_merge_bvec(struct request_queue *q,
 
 void request_timer_fn(unsigned long data)
 {
-	struct drbd_conf *mdev = (struct drbd_conf *) data;
+	struct drbd_device *mdev = (struct drbd_device *) data;
 	struct drbd_tconn *tconn = mdev->tconn;
 	struct drbd_request *req; /* oldest request */
 	struct list_head *le;
