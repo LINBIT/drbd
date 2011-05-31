@@ -256,12 +256,6 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 /* usual integer division */
 #define div_floor(A, B) ((A)/(B))
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,8)
-# define HAVE_KERNEL_SENDMSG 1
-#else
-# define HAVE_KERNEL_SENDMSG 0
-#endif
-
 /*
  * our structs
  *************************/

@@ -1888,12 +1888,7 @@ int drbd_send_out_of_sync(struct drbd_conf *mdev, struct drbd_request *req)
 int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 	      void *buf, size_t size, unsigned msg_flags)
 {
-#if !HAVE_KERNEL_SENDMSG
-	mm_segment_t oldfs;
-	struct iovec iov;
-#else
 	struct kvec iov;
-#endif
 	struct msghdr msg;
 	int rv, sent = 0;
 
@@ -1907,18 +1902,9 @@ int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 
 	msg.msg_name       = NULL;
 	msg.msg_namelen    = 0;
-#if !HAVE_KERNEL_SENDMSG
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-#endif
 	msg.msg_control    = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
-
-#if !HAVE_KERNEL_SENDMSG
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-#endif
 
 	if (sock == tconn->data.socket) {
 		rcu_read_lock();
@@ -1936,11 +1922,7 @@ int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
  * do we need to block DRBD_SIG if sock == &meta.socket ??
  * otherwise wake_asender() might interrupt some send_*Ack !
  */
-#if !HAVE_KERNEL_SENDMSG
-		rv = sock_sendmsg(sock, &msg, iov.iov_len);
-#else
 		rv = kernel_sendmsg(sock, &msg, &iov, 1, size);
-#endif
 		if (rv == -EAGAIN) {
 			if (we_should_drop_the_connection(tconn, sock))
 				break;
@@ -1960,11 +1942,6 @@ int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 
 	if (sock == tconn->data.socket)
 		clear_bit(NET_CONGESTED, &tconn->flags);
-
-#if !HAVE_KERNEL_SENDMSG
-	set_fs(oldfs);
-#endif
-
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
