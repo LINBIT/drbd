@@ -3069,8 +3069,7 @@ int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info("requested minor out of range");
 		return ERR_INVALID_REQUEST;
 	}
-	/* FIXME we need a define here */
-	if (adm_ctx.volume >= 256) {
+	if (adm_ctx.volume > DRBD_VOLUME_MAX) {
 		drbd_msg_put_info("requested volume id out of range");
 		return ERR_INVALID_REQUEST;
 	}
