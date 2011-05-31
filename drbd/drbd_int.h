@@ -589,7 +589,7 @@ struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;
-	struct disk_conf *disk_conf; /* RCU, for updates: device->connection->conf_update */
+	struct disk_conf *disk_conf; /* RCU, for updates: first_peer_device(device)->connection->conf_update */
 	sector_t known_size; /* last known size of that backing device */
 };
 
@@ -686,11 +686,17 @@ struct drbd_connection {			/* is a resource from the config file */
 #endif
 };
 
+struct drbd_peer_device {
+	struct list_head peer_devices;
+	struct drbd_device *device;
+	struct drbd_connection *connection;
+};
+
 struct drbd_device {
 #ifdef PARANOIA
 	long magic;
 #endif
-	struct drbd_connection *connection;
+	struct list_head peer_devices;
 	int vnr;			/* volume number within the connection */
 	struct kref kref;
 
@@ -819,7 +825,7 @@ struct drbd_device {
 	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex own_state_mutex;
-	struct mutex *state_mutex; /* either own_state_mutex or device->connection->cstate_mutex */
+	struct mutex *state_mutex; /* either own_state_mutex or first_peer_device(device)->connection->cstate_mutex */
 	char congestion_reason;  /* Why we where congested... */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
@@ -838,6 +844,20 @@ static inline struct drbd_device *minor_to_mdev(unsigned int minor)
 {
 	return (struct drbd_device *)idr_find(&minors, minor);
 }
+
+static inline struct drbd_peer_device *first_peer_device(struct drbd_device *device)
+{
+	return list_first_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
+}
+
+#define for_each_peer_device(peer_device, device) \
+	list_for_each_entry(peer_device, &device->peer_devices, peer_devices)
+
+#define for_each_peer_device_rcu(peer_device, device) \
+	list_for_each_entry_rcu(peer_device, &device->peer_devices, peer_devices)
+
+#define for_each_peer_device_safe(peer_device, tmp, device) \
+	list_for_each_entry_safe(peer_device, tmp, &device->peer_devices, peer_devices)
 
 static inline unsigned int mdev_to_minor(struct drbd_device *device)
 {
@@ -1193,7 +1213,7 @@ extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 extern rwlock_t global_state_lock;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
-enum drbd_ret_code conn_new_minor(struct drbd_connection *connection, unsigned int minor, int vnr);
+enum drbd_ret_code drbd_create_minor(struct drbd_connection *connection, unsigned int minor, int vnr);
 extern void drbd_minor_destroy(struct kref *kref);
 
 extern int set_resource_options(struct drbd_connection *connection, struct res_opts *res_opts);
@@ -1311,7 +1331,7 @@ extern void conn_flush_workqueue(struct drbd_connection *connection);
 extern int drbd_connected(struct drbd_device *device);
 static inline void drbd_flush_workqueue(struct drbd_device *device)
 {
-	conn_flush_workqueue(device->connection);
+	conn_flush_workqueue(first_peer_device(device)->connection);
 }
 
 /* Yes, there is kernel_setsockopt, but only since 2.6.18.
@@ -1466,9 +1486,9 @@ static inline union drbd_state drbd_read_state(struct drbd_device *device)
 	union drbd_state rv;
 
 	rv.i = device->state.i;
-	rv.susp = device->connection->susp;
-	rv.susp_nod = device->connection->susp_nod;
-	rv.susp_fen = device->connection->susp_fen;
+	rv.susp = first_peer_device(device)->connection->susp;
+	rv.susp_nod = first_peer_device(device)->connection->susp_nod;
+	rv.susp_fen = first_peer_device(device)->connection->susp_fen;
 
 	return rv;
 }
@@ -1517,9 +1537,9 @@ static inline void drbd_chk_io_error_(struct drbd_device *device,
 {
 	if (error) {
 		unsigned long flags;
-		spin_lock_irqsave(&device->connection->req_lock, flags);
+		spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
 		__drbd_chk_io_error_(device, forcedetach, where);
-		spin_unlock_irqrestore(&device->connection->req_lock, flags);
+		spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
 	}
 }
 
@@ -1908,7 +1928,7 @@ static inline int drbd_get_max_buffers(struct drbd_device *device)
 	int mxb;
 
 	rcu_read_lock();
-	nc = rcu_dereference(device->connection->net_conf);
+	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 	mxb = nc ? nc->max_buffers : 1000000;  /* arbitrary limit on open requests */
 	rcu_read_unlock();
 
@@ -1951,7 +1971,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 
 		/* Allow IO in BM exchange states with new protocols */
 	case C_WF_BITMAP_S:
-		if (device->connection->agreed_pro_version < 96)
+		if (first_peer_device(device)->connection->agreed_pro_version < 96)
 			return 0;
 		break;
 
@@ -1987,7 +2007,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 
 static inline int drbd_suspended(struct drbd_device *device)
 {
-	struct drbd_connection *connection = device->connection;
+	struct drbd_connection *connection = first_peer_device(device)->connection;
 
 	return connection->susp || connection->susp_fen || connection->susp_nod;
 }
@@ -2022,11 +2042,11 @@ static inline bool inc_ap_bio_cond(struct drbd_device *device)
 {
 	bool rv = false;
 
-	spin_lock_irq(&device->connection->req_lock);
+	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
 	rv = may_inc_ap_bio(device);
 	if (rv)
 		atomic_inc(&device->ap_bio_cnt);
-	spin_unlock_irq(&device->connection->req_lock);
+	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 
 	return rv;
 }
@@ -2057,7 +2077,7 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		wake_up(&device->misc_wait);
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&device->connection->data.work, &device->bm_io_work.w);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.w);
 	}
 }
 

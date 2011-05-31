@@ -487,13 +487,13 @@ static int al_write_transaction(struct drbd_device *device)
 {
 	struct update_al_work al_work;
 
-	if (current == device->connection->worker.task)
+	if (current == first_peer_device(device)->connection->worker.task)
 		return _al_write_transaction(device);
 
 	init_completion(&al_work.event);
 	al_work.w.cb = w_al_write_transaction;
 	al_work.w.device = device;
-	drbd_queue_work_front(&device->connection->data.work, &al_work.w);
+	drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &al_work.w);
 	wait_for_completion(&al_work.event);
 
 	return al_work.err;
@@ -609,7 +609,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 				dump_stack();
 
 				lc_put(device->resync, &ext->lce);
-				conn_request_state(device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				conn_request_state(first_peer_device(device)->connection, NS(conn, C_DISCONNECTING), CS_HARD);
 				return;
 			}
 		} else {
@@ -649,7 +649,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 				udw->enr = ext->lce.lc_number;
 				udw->w.cb = w_update_odbm;
 				udw->w.device = device;
-				drbd_queue_work_front(&device->connection->data.work, &udw->w);
+				drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &udw->w);
 			} else {
 				dev_warn(DEV, "Could not kmalloc an udw\n");
 			}

@@ -185,7 +185,7 @@ static void queue_barrier(struct drbd_device *device)
 	if (test_bit(CREATE_BARRIER, &device->flags))
 		return;
 
-	b = device->connection->newest_tle;
+	b = first_peer_device(device)->connection->newest_tle;
 	b->w.cb = w_send_barrier;
 	b->w.device = device;
 	/* inc_ap_pending done here, so we won't
@@ -193,7 +193,7 @@ static void queue_barrier(struct drbd_device *device)
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in tl_clear.  */
 	inc_ap_pending(device);
-	drbd_queue_work(&device->connection->data.work, &b->w);
+	drbd_queue_work(&first_peer_device(device)->connection->data.work, &b->w);
 	set_bit(CREATE_BARRIER, &device->flags);
 }
 
@@ -210,7 +210,7 @@ static void _about_to_complete_local_write(struct drbd_device *device,
 	 */
 	if (device->state.conn >= C_CONNECTED &&
 	    (s & RQ_NET_SENT) != 0 &&
-	    req->epoch == device->connection->newest_tle->br_number)
+	    req->epoch == first_peer_device(device)->connection->newest_tle->br_number)
 		queue_barrier(device);
 }
 
@@ -379,7 +379,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(!(req->rq_state & RQ_NET_MASK));
 		req->rq_state |= RQ_NET_PENDING;
 		rcu_read_lock();
-		nc = rcu_dereference(device->connection->net_conf);
+		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 		p = nc->wire_protocol;
 		rcu_read_unlock();
 		req->rq_state |=
@@ -477,7 +477,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->w.cb = (req->rq_state & RQ_LOCAL_MASK)
 			? w_read_retry_remote
 			: w_send_read_req;
-		drbd_queue_work(&device->connection->data.work, &req->w);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -511,23 +511,23 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * just after it grabs the req_lock */
 		D_ASSERT(test_bit(CREATE_BARRIER, &device->flags) == 0);
 
-		req->epoch = device->connection->newest_tle->br_number;
+		req->epoch = first_peer_device(device)->connection->newest_tle->br_number;
 
 		/* increment size of current epoch */
-		device->connection->newest_tle->n_writes++;
+		first_peer_device(device)->connection->newest_tle->n_writes++;
 
 		/* queue work item to send data */
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_dblock;
-		drbd_queue_work(&device->connection->data.work, &req->w);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
-		nc = rcu_dereference(device->connection->net_conf);
+		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 		p = nc->max_epoch_size;
 		rcu_read_unlock();
-		if (device->connection->newest_tle->n_writes >= p)
+		if (first_peer_device(device)->connection->newest_tle->n_writes >= p)
 			queue_barrier(device);
 
 		break;
@@ -535,7 +535,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case QUEUE_FOR_SEND_OOS:
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&device->connection->data.work, &req->w);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
@@ -677,7 +677,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		get_ldev(device);
 		req->w.cb = w_restart_disk_io;
-		drbd_queue_work(&device->connection->data.work, &req->w);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 		break;
 
 	case RESEND:
@@ -687,7 +687,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   We ensure that the peer was not rebooted */
 		if (!(req->rq_state & RQ_NET_OK)) {
 			if (req->w.cb) {
-				drbd_queue_work(&device->connection->data.work, &req->w);
+				drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			}
 			break;
@@ -703,7 +703,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
 			dev_err(DEV, "FIXME (BARRIER_ACKED but pending)\n");
-			list_move(&req->tl_requests, &device->connection->out_of_sequence_requests);
+			list_move(&req->tl_requests, &first_peer_device(device)->connection->out_of_sequence_requests);
 		}
 		if ((req->rq_state & RQ_NET_MASK) != 0) {
 			req->rq_state |= RQ_NET_DONE;
@@ -865,7 +865,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	 * spinlock, and grabbing the spinlock.
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && (remote || send_oos) &&
-	    device->connection->unused_spare_tle == NULL &&
+	    first_peer_device(device)->connection->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &device->flags)) {
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_NOIO);
@@ -877,16 +877,16 @@ allocate_barrier:
 	}
 
 	/* GOOD, everything prepared, grab the spin_lock */
-	spin_lock_irq(&device->connection->req_lock);
+	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
 
 	if (rw == WRITE) {
 		err = complete_conflicting_writes(device, sector, size);
 		if (err) {
 			if (err != -ERESTARTSYS)
-				_conn_request_state(device->connection,
+				_conn_request_state(first_peer_device(device)->connection,
 						    NS(conn, C_TIMEOUT),
 						    CS_HARD);
-			spin_unlock_irq(&device->connection->req_lock);
+			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
 		}
@@ -898,7 +898,7 @@ allocate_barrier:
 		   bio. In the next call to drbd_make_request
 		   we sleep in inc_ap_bio() */
 		ret = 1;
-		spin_unlock_irq(&device->connection->req_lock);
+		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 		goto fail_free_complete;
 	}
 
@@ -911,22 +911,22 @@ allocate_barrier:
 			dev_warn(DEV, "lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
 			dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
-			spin_unlock_irq(&device->connection->req_lock);
+			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
 		}
 	}
 
-	if (b && device->connection->unused_spare_tle == NULL) {
-		device->connection->unused_spare_tle = b;
+	if (b && first_peer_device(device)->connection->unused_spare_tle == NULL) {
+		first_peer_device(device)->connection->unused_spare_tle = b;
 		b = NULL;
 	}
 	if (rw == WRITE && (remote || send_oos) &&
-	    device->connection->unused_spare_tle == NULL &&
+	    first_peer_device(device)->connection->unused_spare_tle == NULL &&
 	    test_bit(CREATE_BARRIER, &device->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
-		spin_unlock_irq(&device->connection->req_lock);
+		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 		goto allocate_barrier;
 	}
 
@@ -944,10 +944,11 @@ allocate_barrier:
 	 * barrier packet.  To get the write ordering right, we only have to
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
-	if ((remote || send_oos) && device->connection->unused_spare_tle &&
+	if ((remote || send_oos) && first_peer_device(device)->connection->unused_spare_tle &&
 	    test_and_clear_bit(CREATE_BARRIER, &device->flags)) {
-		_tl_add_barrier(device->connection, device->connection->unused_spare_tle);
-		device->connection->unused_spare_tle = NULL;
+		_tl_add_barrier(first_peer_device(device)->connection,
+				first_peer_device(device)->connection->unused_spare_tle);
+		first_peer_device(device)->connection->unused_spare_tle = NULL;
 	} else {
 		D_ASSERT(!(remote && rw == WRITE &&
 			   test_bit(CREATE_BARRIER, &device->flags)));
@@ -973,7 +974,7 @@ allocate_barrier:
 	if (local)
 		_req_mod(req, TO_BE_SUBMITTED);
 
-	list_add_tail(&req->tl_requests, &device->connection->newest_tle->requests);
+	list_add_tail(&req->tl_requests, &first_peer_device(device)->connection->newest_tle->requests);
 
 	/* NOTE remote first: to get the concurrent write detection right,
 	 * we must register the request before start of local IO.  */
@@ -990,9 +991,10 @@ allocate_barrier:
 		_req_mod(req, QUEUE_FOR_SEND_OOS);
 
 	rcu_read_lock();
-	nc = rcu_dereference(device->connection->net_conf);
+	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 	if (remote &&
-	    nc->on_congestion != OC_BLOCK && device->connection->agreed_pro_version >= 96) {
+	    nc->on_congestion != OC_BLOCK &&
+	    first_peer_device(device)->connection->agreed_pro_version >= 96) {
 		int congested = 0;
 
 		if (nc->cong_fill &&
@@ -1017,7 +1019,7 @@ allocate_barrier:
 	}
 	rcu_read_unlock();
 
-	spin_unlock_irq(&device->connection->req_lock);
+	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
@@ -1127,7 +1129,7 @@ int drbd_merge_bvec(struct request_queue *q,
 void request_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
-	struct drbd_connection *connection = device->connection;
+	struct drbd_connection *connection = first_peer_device(device)->connection;
 	struct drbd_request *req; /* oldest request */
 	struct list_head *le;
 	struct net_conf *nc;
