@@ -251,11 +251,6 @@ drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
 #endif
 }
 
-/* integer division, round _UP_ to the next integer */
-#define div_ceil(A, B) ((A)/(B) + ((A)%(B) ? 1 : 0))
-/* usual integer division */
-#define div_floor(A, B) ((A)/(B))
-
 /*
  * our structs
  *************************/
