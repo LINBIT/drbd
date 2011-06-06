@@ -31,7 +31,7 @@
 
     <xi:include href="drbdsetup_new-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <xi:include href="drbdsetup_del-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_del-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <xi:include href="drbdsetup_del-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
@@ -293,9 +293,9 @@
     </refsect2>
 
     <refsect2>
-      <title>del-connection</title>
+      <title>del-resource</title>
 
-      <para>Destroys a connection object. This is only possible if the connection has no
+      <para>Destroys a resource object. This is only possible if the resource has no
       volumes.</para>
     </refsect2>
 

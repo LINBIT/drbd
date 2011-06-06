@@ -181,7 +181,7 @@ static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, cha
 static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int del_resource_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
@@ -325,7 +325,7 @@ struct drbd_cmd commands[] = {
 	 .ctx = &new_minor_cmd_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
-	{"del-connection", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_connection_cmd, config_usage, }
+	{"del-resource", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_resource_cmd, config_usage, }
 };
 
 bool show_defaults;
@@ -975,8 +975,8 @@ static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	return rv;
 }
 
-static int del_connection_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-			      char **argv)
+static int del_resource_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
+			    char **argv)
 {
 	int rv;
 
