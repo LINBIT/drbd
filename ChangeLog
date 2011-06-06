@@ -2,8 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.11rc1 (api:88/proto:86-96)
+8.3.11rc2 (api:88/proto:86-96)
 --------
+ * Added missing spinlock in compressed bitmap receive (regression introduced
+   in 8.3.10, could lead to "negative" out-of-sync stats and non-terminating
+   resync when "use-rle" is enabled)
  * Fixed handling of read errors during online verify runs
  * Fixes for possible distributed deadlocks during online verify and
    checksum based resync processes
@@ -14,7 +17,7 @@ Latest:
  * Fix for connecting on high latency network links
  * Fixed state transitions if fence-peer handler returns after connection was
    established again
- * Made die max_bio_size negotiation conservative instead of optimistic
+ * Made negotiation of max_bio_size conservative instead of optimistic
  * Network timeouts for mirrored write requests are now always enforced,
    no longer only when the socket is congested
 
