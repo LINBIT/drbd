@@ -35,6 +35,7 @@
 #	OCF_RESKEY_drbd_resource
 #	OCF_RESKEY_drbdconf
 #	OCF_RESKEY_stop_outdates_secondary
+#
 #	OCF_RESKEY_CRM_meta_clone_max
 #	OCF_RESKEY_CRM_meta_clone_node_max
 #	OCF_RESKEY_CRM_meta_master_max
@@ -138,6 +139,9 @@ drbd meta data, if we know there is still a Primary running in the cluster.
 Note that this does not affect fencing policies set in drbd config,
 but is an additional safety feature of this resource agent only.
 You can enable this behaviour by setting the parameter to true.
+
+If this feature seems to not do what you expect, make sure you have defined
+fencing policies in the drbd configuration as well.
 </longdesc>
 <shortdesc lang="en">outdate a secondary on stop</shortdesc>
 <content type="boolean" default="${OCF_RESKEY_stop_outdates_secondary_default}"/>
@@ -226,7 +230,7 @@ drbd_set_status_variables() {
 	# versions we fall back to old-style state,dstate,cstate calls.
 	local _minor _res_name _known _cstate _role _peer _disk _pdisk
 	local _flags_susp _flags_aftr_isp _flags_peer_isp _flags_user_isp
-	local _resynced_percent sh_status_done X
+	local _resynced_percent
 
 	# NOT local! but "return values"
 	DRBD_ROLE_LOCAL=Unconfigured
@@ -275,15 +279,17 @@ maybe_outdate_self()
 	local host stop_uname
 	# We ignore $OCF_RESKEY_CRM_meta_notify_promote_uname here
 	# because: if demote and promote for a _stacked_ resource
+	# (or a "floating" one, where DRBD sits on top of some SAN)
 	# happen in the same transition, demote will see the promote
 	# hostname here, and voluntarily outdate itself. Which would
 	# result in promote failure, as it is using the same meta
 	# data, which would then be outdated.
+	# If that is not sufficient for you, you probably need to
+	# configure fencing policies in the drbd configuration.
 	host=$(printf "%s\n" $OCF_RESKEY_CRM_meta_notify_master_uname |
 		grep -vix -m1 -e "$HOSTNAME" )
 	if [[ -z $host ]] ; then
-		# no current nor future master host found
-		# do not outdate myself
+		# no current master host found, do not outdate myself
 		return 1
 	fi
 	for stop_uname in $OCF_RESKEY_CRM_meta_notify_stop_uname; do
@@ -298,22 +304,24 @@ maybe_outdate_self()
 	# Should not happen, fencing constraints should take care of that.
 	# But in case it does, scream out loud.
 	if [[ $DRBD_ROLE_LOCAL == Primary ]] && [[ $OCF_RESKEY_CRM_meta_master_max = 2 ]]; then
-		# I am Primary. The other one is Primary.
-		# But we cannot talk to each other :(
-		# one of us has to die.
-		# which one, however, is not ours to decide.
+		# I am Primary.
+		# The other one is Primary (according to OCF_RESKEY_CRM_meta_notify_master_uname).
+		# But we cannot talk to each other :( (otherwise this function was not called)
+		# One of us has to die.
+		# Which one, however, is not ours to decide.
 
 		ocf_log crit "resource internal SPLIT BRAIN: both $HOSTNAME and $host are Primary for $DRBD_RESOURCE, but the replication link is down!"
 		return 1
 	fi
 
-	# OK, I am not Primary, but there is an other node Primary (or about to be promoted)
+	# OK, I am not Primary, but there is an other node Primary
 	# Outdate myself
 	ocf_log notice "outdating $DRBD_RESOURCE: according to OCF_RESKEY_CRM_meta_notify_master_uname, '$host' is still master"
 	do_drbdadm outdate $DRBD_RESOURCE
 
-	# currently, -INFINITY may cause resource instance stop/start.  But in
-	# this case that is ok, it may even clear the replication link problem.
+	# on some pacemaker versions, -INFINITY may cause resource instance stop/start.
+	# But in this case that is ok, it may even clear the replication link
+	# problem.
 	set_master_score -INFINITY
 
 	return 0
@@ -335,13 +343,13 @@ drbd_update_master_score() {
 	#     5: please, do not promote, unless this is your only option.
 	#    10: promotion is probably a bad idea, our local data is no good,
 	#        you'd probably run into severe performance problems, and risk
-	#        application crashes in case you lose the replication
-	#        connection.
+	#        application crashes or blocking IO in case you lose the
+	#        replication connection.
 	#  1000: Ok to be promoted, we have good data locally (though we don't
 	#        know about the peer, so possibly it has even better data?).
 	#        You sould use the crm-fence-peer.sh handler or similar
 	#        mechanism to avoid data divergence.
-	# 10000: Please promote me.
+	# 10000: Please promote me/keep me Primary.
 	#        I'm confident that my data is as good as it gets.
 	#
 	: == DEBUG == $DRBD_ROLE_LOCAL/$DRBD_DSTATE_LOCAL/$DRBD_DSTATE_REMOTE ==
@@ -441,6 +449,7 @@ drbd_status() {
 	return $rc
 }
 
+# I'm sorry, but there is no $OCF_DEGRADED_MASTER or similar yet.
 drbd_monitor() {
 	local status
 
@@ -494,7 +503,7 @@ drbd_start() {
 
 	if ! is_drbd_enabled; then
 		do_cmd modprobe -s drbd `$DRBDADM sh-mod-parms` || {
-			ocf_log err "Cannot load the drbd module."$'\n';
+			ocf_log err "Cannot load the drbd module.";
 			return $OCF_ERR_INSTALLED
 		}
 		ocf_log debug "$DRBD_RESOURCE start: Module loaded."
@@ -743,6 +752,7 @@ drbd_validate_all () {
 	DRBDADM="drbdadm"
 	DRBDSETUP="drbdsetup"
 
+	# these will _exit_ if they don't find the binaries
 	check_binary $DRBDADM
 	check_binary $DRBDSETUP
 	# XXX I really take cibadmin, sed, grep, etc. for granted.
