@@ -367,7 +367,7 @@ struct adm_cmd cmds[] = {
 	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
-	{"sh-new-connection", adm_new_connection, DRBD_acf2_sh_resname},
+	{"sh-new-resource", adm_new_resource, DRBD_acf2_sh_resname},
 	{"sh-resource-options", adm_res_options, DRBD_acf2_sh_resname},
 	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
 
@@ -1514,14 +1514,14 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	return ex;
 }
 
-int adm_new_connection(struct cfg_ctx *ctx)
+int adm_new_resource(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	argv[NA(argc)] = "new-connection";
+	argv[NA(argc)] = "new-resource";
 	argv[NA(argc)] = NULL;
 
 	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -2213,7 +2213,7 @@ static int adm_up(struct cfg_ctx *ctx)
 		free(current_res_name);
 		current_res_name = strdup(ctx->res->name);
 
-		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
 		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}

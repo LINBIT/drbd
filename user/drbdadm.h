@@ -179,7 +179,7 @@ extern char *canonify_path(char *path);
 
 extern int adm_adjust(struct cfg_ctx *);
 extern int adm_new_minor(struct cfg_ctx *ctx);
-extern int adm_new_connection(struct cfg_ctx *);
+extern int adm_new_resource(struct cfg_ctx *);
 extern int adm_res_options(struct cfg_ctx *);
 extern int adm_attach(struct cfg_ctx *);
 extern int adm_resize(struct cfg_ctx *);

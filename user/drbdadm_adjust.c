@@ -683,7 +683,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	} else {
 		do_res_options = 1;
 		do_connect = 1;
-		schedule_deferred_cmd(adm_new_connection, ctx, "new-connection", CFG_PREREQ);
+		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
 	}
 
 	if (ctx->res->me->proxy && can_do_proxy)

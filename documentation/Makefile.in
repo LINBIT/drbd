@@ -65,7 +65,7 @@ XSLTPROC_MANPAGES_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_HTML_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_FO_OPTIONS ?= $(XSLTPROC_OPTIONS)
 
-DRBDSETUP_CMDS = new-connection new-minor del-connection del-minor
+DRBDSETUP_CMDS = new-resource new-minor del-connection del-minor
 DRBDSETUP_CMDS += attach connect disk-options net-options resource-options
 DRBDSETUP_CMDS += disconnect detach primary secondary verify invalidate invalidate-remote
 DRBDSETUP_CMDS += resize

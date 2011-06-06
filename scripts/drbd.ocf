@@ -502,7 +502,7 @@ my_udevsettle()
 create_device_udev_settle() {
 	local dev
 	if $DRBD_HAS_MULTI_VOLUME; then
-		if do_drbdadm sh-new-connection $DRBD_RESOURCE &&
+		if do_drbdadm sh-new-resource $DRBD_RESOURCE &&
 		   do_drbdadm sh-new-minor $DRBD_RESOURCE; then
 			my_udevsettle
 		else

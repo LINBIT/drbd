@@ -313,7 +313,7 @@ struct drbd_cmd commands[] = {
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
 
-	{"new-connection", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
+	{"new-resource", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
 
 	/* only payload is connection name and volume number */
 	{"new-minor", CTX_MINOR, DRBD_ADM_ADD_MINOR, DRBD_NLA_CFG_CONTEXT,

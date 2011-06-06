@@ -27,7 +27,7 @@
   </refnamediv>
 
   <refsynopsisdiv>
-    <xi:include href="drbdsetup_new-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_new-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <xi:include href="drbdsetup_new-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
@@ -272,11 +272,11 @@
     </refsect2>
 
     <refsect2>
-      <title>new-connection</title>
+      <title>new-resource</title>
 
-      <para>Connections are the primary objects of any DRBD configuration. A connection must exist
-      before any volumes or minor devices can be created. With the <option>new-connection</option>
-      command such a connection object is created. Connections are adressed by names.</para>
+      <para>Resources are the primary objects of any DRBD configuration. A resource must be created
+      with the <option>new-resource</option> command before any volumes or minor devices can be created.
+      Connections are referenced by name.</para>
     </refsect2>
 
     <refsect2>
