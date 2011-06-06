@@ -182,15 +182,19 @@ do_cmd() {
 }
 
 do_drbdadm() {
+	local ret
 	# Run drbdadm with appropriate command line options, and capture
 	# its output.
 	# $DRBDADM is defined during drbd_validate as "drbdadm" plus
 	# appropriate command line options
 	do_cmd $DRBDADM "$@"
+	ret=$?
 
 	# having the version mismatch warning once per RA invokation
 	# should be enough.
 	export DRBD_DONT_WARN_ON_VERSION_MISMATCH=
+
+	return $ret
 }
 
 set_master_score() {
