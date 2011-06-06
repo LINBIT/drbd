@@ -313,10 +313,10 @@ struct drbd_cmd commands[] = {
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
 
-	{"new-resource", CTX_CONN, DRBD_ADM_ADD_LINK, NO_PAYLOAD, F_CONFIG_CMD, },
+	{"new-resource", CTX_CONN, DRBD_ADM_NEW_RESOURCE, NO_PAYLOAD, F_CONFIG_CMD, },
 
 	/* only payload is connection name and volume number */
-	{"new-minor", CTX_MINOR, DRBD_ADM_ADD_MINOR, DRBD_NLA_CFG_CONTEXT,
+	{"new-minor", CTX_MINOR, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "conn-name", T_ctx_conn_name, conv_conn_name },
@@ -325,7 +325,7 @@ struct drbd_cmd commands[] = {
 	 .ctx = &new_minor_cmd_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
-	{"del-resource", CTX_CONN, DRBD_ADM_DEL_LINK, NO_PAYLOAD, del_resource_cmd, config_usage, }
+	{"del-resource", CTX_CONN, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, config_usage, }
 };
 
 bool show_defaults;
@@ -402,8 +402,8 @@ static const char *error_messages[] = {
 	"Note: Resync pause caused by a local resync-after dependency.",
 	EM(ERR_PIC_PEER_DEP) = "Sync-pause flag is already cleared.\n"
 	"Note: Resync pause caused by the peer node.",
-	EM(ERR_CONN_NOT_KNOWN) = "Unknown connection",
-	EM(ERR_CONN_IN_USE) = "Connection still in use (delete all minors first)",
+	EM(ERR_RES_NOT_KNOWN) = "Unknown resource",
+	EM(ERR_RES_IN_USE) = "Resource still in use (delete all minors first)",
 	EM(ERR_MINOR_CONFIGURED) = "Minor still configured (down it first)",
 	EM(ERR_MINOR_EXISTS) = "Minor exists already (delete it first)",
 	EM(ERR_INVALID_REQUEST) = "Invalid configuration request",
