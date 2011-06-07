@@ -584,7 +584,7 @@ restart:
 
 	/* Release mod reference taken when thread was started */
 
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, drbd_destroy_connection);
 	module_put(THIS_MODULE);
 	return retval;
 }
@@ -634,7 +634,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		if (pid < 0) {
 			conn_err(connection, "Couldn't start thread (%d)\n", pid);
 
-			kref_put(&connection->kref, &conn_destroy);
+			kref_put(&connection->kref, drbd_destroy_connection);
 			module_put(THIS_MODULE);
 			return false;
 		}
@@ -2395,7 +2395,7 @@ static void drbd_release_all_peer_reqs(struct drbd_device *device)
 }
 
 /* caution. no locking. */
-void drbd_minor_destroy(struct kref *kref)
+void drbd_destroy_device(struct kref *kref)
 {
 	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
 	struct drbd_connection *connection = first_peer_device(device)->connection;
@@ -2433,7 +2433,7 @@ void drbd_minor_destroy(struct kref *kref)
 	kfree(first_peer_device(device));
 	kfree(device);
 
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 STATIC void drbd_cleanup(void)
@@ -2462,14 +2462,14 @@ STATIC void drbd_cleanup(void)
 		idr_remove(&first_peer_device(device)->connection->volumes, device->vnr);
 		del_gendisk(device->vdisk);
 		/* synchronize_rcu(); No other threads running at this point */
-		kref_put(&device->kref, &drbd_minor_destroy);
+		kref_put(&device->kref, drbd_destroy_device);
 	}
 
 	/* not _rcu since, no other updater anymore. Genl already unregistered */
 	list_for_each_entry_safe(connection, tmp, &drbd_connections, connections) {
 		list_del(&connection->connections); /* not _rcu no proc, not other threads */
 		/* synchronize_rcu(); */
-		kref_put(&connection->kref, &conn_destroy);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 
 	drbd_destroy_mempools();
@@ -2705,7 +2705,7 @@ fail:
 	return NULL;
 }
 
-void conn_destroy(struct kref *kref)
+void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 
@@ -2849,7 +2849,7 @@ out_no_io_page:
 out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, drbd_destroy_connection);
 out_no_peer_device:
 	kfree(device);
 	return err;

@@ -1826,7 +1826,7 @@ int drbd_worker(struct drbd_thread *thi)
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_mdev_cleanup(device);
-		kref_put(&device->kref, &drbd_minor_destroy);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
