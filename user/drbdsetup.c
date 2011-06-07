@@ -204,7 +204,7 @@ static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
+static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
 struct option wait_cmds_options[] = {
@@ -319,7 +319,7 @@ struct drbd_cmd commands[] = {
 	{"new-minor", CTX_MINOR, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
-		 { "conn-name", T_ctx_conn_name, conv_conn_name },
+		 { "conn-name", T_ctx_resource_name, conv_resource_name },
 		 { "volume-number", T_ctx_volume, conv_volume },
 		 { } },
 	 .ctx = &new_minor_cmd_ctx },
@@ -485,10 +485,10 @@ static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg
 	return NO_ERROR;
 }
 
-static int conv_conn_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
 {
 	/* additional sanity checks? */
-	nla_put_string(msg, T_ctx_conn_name, arg);
+	nla_put_string(msg, T_ctx_resource_name, arg);
 	return NO_ERROR;
 }
 
@@ -858,7 +858,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		 * and now we put a few bytes there.
 		 * this cannot possibly fail, can it? */
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-		nla_put_string(smsg, T_ctx_conn_name, objname);
+		nla_put_string(smsg, T_ctx_resource_name, objname);
 		nla_nest_end(smsg, nla);
 	}
 
@@ -1307,7 +1307,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		/* Restrict the dump to a single resource. */
 		struct nlattr *nla;
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-		nla_put_string(smsg, T_ctx_conn_name, objname);
+		nla_put_string(smsg, T_ctx_resource_name, objname);
 		nla_nest_end(smsg, nla);
 	}
 
@@ -1433,7 +1433,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 
 					drbd_cfg_context_from_attrs(&ctx, &info);
 					if (ctx.ctx_volume == -1U ||
-					    strcmp(objname, ctx.ctx_conn_name))
+					    strcmp(objname, ctx.ctx_resource_name))
 						continue;
 				}
 			}
@@ -1574,7 +1574,7 @@ static struct minors_list *enumerate_minors(void)
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 {
 	/* FIXME need some define for max len here */
-	static char last_ctx_conn_name[128];
+	static char last_ctx_resource_name[128];
 	static int call_count;
 
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -1601,16 +1601,16 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 	disk_conf_from_attrs(&dc, info);
 	net_conf_from_attrs(&nc, info);
 
-	if (strncmp(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name))) {
-		if (strncmp(last_ctx_conn_name, "", sizeof(last_ctx_conn_name))) {
+	if (strncmp(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name))) {
+		if (strncmp(last_ctx_resource_name, "", sizeof(last_ctx_resource_name))) {
 			--indent;
 			printI("}\n"); /* close _this_host */
 			--indent;
 			printI("}\n\n");
 		}
-		strncpy(last_ctx_conn_name, cfg.ctx_conn_name, sizeof(last_ctx_conn_name));
+		strncpy(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name));
 
-		printI("resource %s {\n", cfg.ctx_conn_name);
+		printI("resource %s {\n", cfg.ctx_resource_name);
 		++indent;
 		print_options("resource-options", "options");
 		print_options("net-options", "net");
@@ -1730,7 +1730,7 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	drbd_cfg_context_from_attrs(&cfg, info);
 
 	printf("<resource minor=\"%u\"", minor);
-	printf(" conn_name=\"%s\"", cfg.ctx_conn_name ? cfg.ctx_conn_name : "n/a");
+	printf(" conn_name=\"%s\"", cfg.ctx_resource_name ? cfg.ctx_resource_name : "n/a");
 	printf(" volume=\"%u\"", cfg.ctx_volume);
 	if (resname)
 		printf(" name=\"%s\"", resname);
@@ -1809,7 +1809,7 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 	printf("%s_res_name=%s\n", _P, shell_escape(resname ?: "UNKNOWN"));
 
 	drbd_cfg_context_from_attrs(&cfg, info);
-	printf("%s_conn_name=%s\n", _P, cfg.ctx_conn_name ? shell_escape(cfg.ctx_conn_name) : "n/a");
+	printf("%s_conn_name=%s\n", _P, cfg.ctx_resource_name ? shell_escape(cfg.ctx_resource_name) : "n/a");
 	printf("%s_volume=%d\n", _P, cfg.ctx_volume);
 
 	if (state_info_from_attrs(&si, info) == 0)
@@ -2029,13 +2029,13 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 /* printf format for minor, resource name, volume */
 #define MNV_FMT	"%d,%s[%d]"
 static void print_state(char *tag, unsigned seq, unsigned minor,
-		const char *conn_name, unsigned vnr, __u32 state_i)
+		const char *resource_name, unsigned vnr, __u32 state_i)
 {
 	union drbd_state s = { .i = state_i };
 	printf("%u %s " MNV_FMT " { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
 	       seq,
 	       tag,
-	       minor, conn_name, vnr,
+	       minor, resource_name, vnr,
 	       drbd_conn_str(s.conn),
 	       drbd_role_str(s.role),
 	       drbd_role_str(s.peer),
@@ -2083,7 +2083,7 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	if (state_info_from_attrs(&si, info)) {
 		/* this is a DRBD_ADM_GET_STATUS reply
 		 * with information about a resource without any volumes */
-		printf("%u R - %s\n", info->seq, cfg.ctx_conn_name);
+		printf("%u R - %s\n", info->seq, cfg.ctx_resource_name);
 		goto out;
 	}
 
@@ -2093,25 +2093,25 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
 		print_state("ST-prev", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.prev_state);
 		print_state("ST-new", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.new_state);
 		/* fall through */
 	case SIB_GET_STATUS_REPLY:
 		print_state("ST", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.current_state);
 		break;
 	case SIB_HELPER_PRE:
 		printf("%u UH " MNV_FMT " %s\n", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.helper);
 		break;
 	case SIB_HELPER_POST:
 		printf("%u UH-post " MNV_FMT " %s 0x%04x\n", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.helper, si.helper_exit_code);
 		break;
 	case SIB_SYNC_PROGRESS:
@@ -2123,7 +2123,7 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 
 		unsigned synced = tmp;
 		printf("%u SP " MNV_FMT " %i.%i\n", info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				synced / 10, synced % 10);
 		}
 		break;
@@ -2131,7 +2131,7 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 		/* we could add the si.reason */
 		printf("%u ?? " MNV_FMT " <other message, state info broadcast reason:%u>\n",
 				info->seq,
-				dh->minor, cfg.ctx_conn_name, cfg.ctx_volume,
+				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
 				si.sib_reason);
 		break;
 	}
@@ -2175,7 +2175,7 @@ static int w_connected_state(struct drbd_cmd *cm, struct genl_info *info)
 		fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
 			       "but I'm configured to wait anways (--wait-after-sb)\n",
 			       dhdr->minor,
-			       cfg.ctx_conn_name, cfg.ctx_volume,
+			       cfg.ctx_resource_name, cfg.ctx_volume,
 			       drbd_conn_str(state.conn));
 	}
 

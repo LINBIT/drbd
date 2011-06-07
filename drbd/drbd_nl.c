@@ -116,7 +116,7 @@ static struct drbd_config_context {
 #define VOLUME_UNSPECIFIED		(-1U)
 	/* pointer into the request skb,
 	 * limited lifetime! */
-	char *conn_name;
+	char *resource_name;
 
 	/* reply buffer */
 	struct sk_buff *reply_skb;
@@ -215,15 +215,15 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 		/* and assign stuff to the global adm_ctx */
 		nla = nested_attr_tb[__nla_type(T_ctx_volume)];
 		adm_ctx.volume = nla ? nla_get_u32(nla) : VOLUME_UNSPECIFIED;
-		nla = nested_attr_tb[__nla_type(T_ctx_conn_name)];
+		nla = nested_attr_tb[__nla_type(T_ctx_resource_name)];
 		if (nla)
-			adm_ctx.conn_name = nla_data(nla);
+			adm_ctx.resource_name = nla_data(nla);
 	} else
 		adm_ctx.volume = VOLUME_UNSPECIFIED;
 
 	adm_ctx.minor = d_in->minor;
 	adm_ctx.mdev = minor_to_mdev(d_in->minor);
-	adm_ctx.tconn = conn_get_by_name(adm_ctx.conn_name);
+	adm_ctx.tconn = conn_get_by_name(adm_ctx.resource_name);
 
 	if (!adm_ctx.mdev && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info("unknown minor");
@@ -238,7 +238,8 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	if (adm_ctx.mdev && adm_ctx.tconn &&
 	    adm_ctx.mdev->tconn != adm_ctx.tconn) {
 		pr_warning("request: minor=%u, conn=%s; but that minor belongs to connection %s\n",
-				adm_ctx.minor, adm_ctx.conn_name, adm_ctx.mdev->tconn->name);
+				adm_ctx.minor, adm_ctx.resource_name,
+				adm_ctx.mdev->tconn->name);
 		drbd_msg_put_info("minor exists in different connection");
 		return ERR_INVALID_REQUEST;
 	}
@@ -263,7 +264,7 @@ fail:
 static int drbd_adm_finish(struct genl_info *info, int retcode)
 {
 	struct nlattr *nla;
-	const char *conn_name = NULL;
+	const char *resource_name = NULL;
 
 	if (adm_ctx.tconn) {
 		kref_put(&adm_ctx.tconn->kref, &conn_destroy);
@@ -277,9 +278,9 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 
 	nla = info->attrs[DRBD_NLA_CFG_CONTEXT];
 	if (nla) {
-		nla = nla_find_nested(nla, __nla_type(T_ctx_conn_name));
+		nla = nla_find_nested(nla, __nla_type(T_ctx_resource_name));
 		if (nla)
-			conn_name = nla_data(nla);
+			resource_name = nla_data(nla);
 	}
 
 	drbd_adm_send_reply(adm_ctx.reply_skb, info);
@@ -2577,7 +2578,7 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_simple_request_state(skb, info, NS(disk, D_OUTDATED));
 }
 
-int nla_put_drbd_cfg_context(struct sk_buff *skb, const char *conn_name, unsigned vnr)
+int nla_put_drbd_cfg_context(struct sk_buff *skb, const char *resource_name, unsigned vnr)
 {
 	struct nlattr *nla;
 	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
@@ -2585,7 +2586,7 @@ int nla_put_drbd_cfg_context(struct sk_buff *skb, const char *conn_name, unsigne
 		goto nla_put_failure;
 	if (vnr != VOLUME_UNSPECIFIED)
 		NLA_PUT_U32(skb, T_ctx_volume, vnr);
-	NLA_PUT_STRING(skb, T_ctx_conn_name, conn_name);
+	NLA_PUT_STRING(skb, T_ctx_resource_name, resource_name);
 	nla_nest_end(skb, nla);
 	return 0;
 
@@ -2829,7 +2830,7 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	const unsigned hdrlen = GENL_HDRLEN + GENL_MAGIC_FAMILY_HDRSZ;
 	struct nlattr *nla;
-	const char *conn_name;
+	const char *resource_name;
 	struct drbd_tconn *tconn;
 
 	/* Is this a followup call? */
@@ -2850,12 +2851,12 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 	/* No explicit context given.  Dump all. */
 	if (!nla)
 		goto dump;
-	nla = nla_find_nested(nla, __nla_type(T_ctx_conn_name));
+	nla = nla_find_nested(nla, __nla_type(T_ctx_resource_name));
 	/* context given, but no name present? */
 	if (!nla)
 		return -EINVAL;
-	conn_name = nla_data(nla);
-	tconn = conn_get_by_name(conn_name);
+	resource_name = nla_data(nla);
+	tconn = conn_get_by_name(resource_name);
 
 	if (!tconn)
 		return -ENODEV;
@@ -3008,16 +3009,16 @@ out_nolock:
 }
 
 static enum drbd_ret_code
-drbd_check_conn_name(const char *name)
+drbd_check_resource_name(const char *name)
 {
 	if (!name || !name[0]) {
-		drbd_msg_put_info("connection name missing");
+		drbd_msg_put_info("resource name missing");
 		return ERR_MANDATORY_TAG;
 	}
 	/* if we want to use these in sysfs/configfs/debugfs some day,
 	 * we must not allow slashes */
 	if (strchr(name, '/')) {
-		drbd_msg_put_info("invalid connection name");
+		drbd_msg_put_info("invalid resource name");
 		return ERR_INVALID_REQUEST;
 	}
 	return NO_ERROR;
@@ -3033,7 +3034,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	retcode = drbd_check_conn_name(adm_ctx.conn_name);
+	retcode = drbd_check_resource_name(adm_ctx.resource_name);
 	if (retcode != NO_ERROR)
 		goto out;
 
@@ -3046,7 +3047,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (!conn_create(adm_ctx.conn_name))
+	if (!conn_create(adm_ctx.resource_name))
 		retcode = ERR_NOMEM;
 out:
 	drbd_adm_finish(info, retcode);

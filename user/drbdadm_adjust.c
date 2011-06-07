@@ -613,7 +613,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	int can_do_proxy = 1;
 	char config_file_dummy[250];
 	char show_conn[128];
-	char *conn_name;
+	char *resource_name;
 
 	/* disable check_uniq, so it won't interfere
 	 * with parsing of drbdsetup show output */
@@ -650,8 +650,8 @@ int adm_adjust(struct cfg_ctx *ctx)
 	 * clean them from the proxy. */
 	if (ctx->res->me->proxy) {
 		line = 1;
-		conn_name = proxy_connection_name(ctx->res);
-		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", conn_name);
+		resource_name = proxy_connection_name(ctx->res);
+		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", resource_name);
 		if (i>= sizeof(show_conn)-1) {
 			fprintf(stderr,"connection name too long");
 			exit(E_thinko);

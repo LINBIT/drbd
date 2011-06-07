@@ -704,7 +704,7 @@ struct context_def verify_cmd_ctx = {
 struct context_def new_minor_cmd_ctx = {
 	NLA_POLICY(drbd_cfg_context),
 	.fields = {
-		/* { "*", STRING(ctx_conn_name) }, */
+		/* { "*", STRING(ctx_resource_name) }, */
 		/* { "*", NUMERIC(ctx_volume, >= 0) }, */
 		{ } },
 };
