@@ -1297,7 +1297,7 @@ enum drbd_ret_code drbd_create_minor(struct drbd_connection *connection, unsigne
 
 extern int set_resource_options(struct drbd_connection *connection, struct res_opts *res_opts);
 extern struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts);
-extern void conn_destroy(struct kref *kref);
+extern void drbd_destroy_connection(struct kref *kref);
 struct drbd_connection *conn_get_by_name(const char *name);
 extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
 					    void *peer_addr, int peer_addr_len);

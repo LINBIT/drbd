@@ -85,7 +85,7 @@ static int w_md_sync(struct drbd_work *w, int unused);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int w_go_diskless(struct drbd_work *w, int unused);
-static void drbd_minor_destroy(struct kobject *kobj);
+static void drbd_destroy_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -166,7 +166,7 @@ static const struct block_device_operations drbd_ops = {
 };
 
 static struct kobj_type drbd_device_kobj_type = {
-	.release = drbd_minor_destroy,
+	.release = drbd_destroy_device,
 };
 
 #ifdef COMPAT_HAVE_BIO_BI_DESTRUCTOR
@@ -404,7 +404,7 @@ restart:
 
 	/* Release mod reference taken when thread was started */
 
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, &drbd_destroy_connection);
 	module_put(THIS_MODULE);
 	return retval;
 }
@@ -456,7 +456,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		if (IS_ERR(nt)) {
 			conn_err(connection, "Couldn't start thread\n");
 
-			kref_put(&connection->kref, &conn_destroy);
+			kref_put(&connection->kref, &drbd_destroy_connection);
 			module_put(THIS_MODULE);
 			return false;
 		}
@@ -2252,7 +2252,7 @@ static void drbd_release_all_peer_reqs(struct drbd_device *device)
 }
 
 /* caution. no locking. */
-static void drbd_minor_destroy(struct kobject *kobj)
+static void drbd_destroy_device(struct kobject *kobj)
 {
 	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
 	struct drbd_connection *connection = first_peer_device(device)->connection;
@@ -2289,7 +2289,7 @@ static void drbd_minor_destroy(struct kobject *kobj)
 	kfree(first_peer_device(device));
 	kfree(device);
 
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, &drbd_destroy_connection);
 }
 
 /* One global retry thread, if we need to push back some bio and have it
@@ -2408,7 +2408,7 @@ static void drbd_cleanup(void)
 	list_for_each_entry_safe(connection, tmp, &drbd_connections, connections) {
 		list_del(&connection->connections); /* not _rcu no proc, not other threads */
 		/* synchronize_rcu(); */
-		kref_put(&connection->kref, &conn_destroy);
+		kref_put(&connection->kref, &drbd_destroy_connection);
 	}
 
 	drbd_destroy_mempools();
@@ -2670,7 +2670,7 @@ fail:
 	return NULL;
 }
 
-void conn_destroy(struct kref *kref)
+void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 
@@ -2851,7 +2851,7 @@ out_no_io_page:
 out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
-	kref_put(&connection->kref, &conn_destroy);
+	kref_put(&connection->kref, &drbd_destroy_connection);
 out_no_peer_device:
 	kfree(device);
 	return err;
