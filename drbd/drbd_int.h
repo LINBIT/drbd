@@ -703,6 +703,7 @@ struct drbd_device {
 #ifdef PARANOIA
 	long magic;
 #endif
+	struct drbd_resource *resource;
 	struct list_head peer_devices;
 	int vnr;			/* volume number within the connection */
 	struct kref kref;
