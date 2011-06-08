@@ -68,8 +68,8 @@ err_out:
 // int drbd_adm_create_resource(struct sk_buff *skb, struct genl_info *info);
 // int drbd_adm_delete_resource(struct sk_buff *skb, struct genl_info *info);
 
-int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_delete_minor(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info);
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info);
@@ -3307,7 +3307,7 @@ out:
 	return 0;
 }
 
-int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info)
+int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_genlmsghdr *dh = info->userhdr;
 	enum drbd_ret_code retcode;
@@ -3338,7 +3338,7 @@ out:
 	return 0;
 }
 
-static enum drbd_ret_code adm_delete_minor(struct drbd_device *device)
+static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 {
 	if (device->state.disk == D_DISKLESS &&
 	    /* no need to be device->state.conn == C_STANDALONE &&
@@ -3359,7 +3359,7 @@ static enum drbd_ret_code adm_delete_minor(struct drbd_device *device)
 		return ERR_MINOR_CONFIGURED;
 }
 
-int drbd_adm_delete_minor(struct sk_buff *skb, struct genl_info *info)
+int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
 
@@ -3369,7 +3369,7 @@ int drbd_adm_delete_minor(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	retcode = adm_delete_minor(adm_ctx.device);
+	retcode = adm_del_minor(adm_ctx.device);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3425,7 +3425,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	/* delete volumes */
 	idr_for_each_entry(&adm_ctx.connection->volumes, device, i) {
-		retcode = adm_delete_minor(device);
+		retcode = adm_del_minor(device);
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */
 			drbd_msg_put_info("failed to delete volume");
