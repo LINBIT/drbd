@@ -273,7 +273,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	    first_peer_device(adm_ctx.device)->connection != adm_ctx.connection) {
 		pr_warning("request: minor=%u, resource=%s; but that minor belongs to connection %s\n",
 				adm_ctx.minor, adm_ctx.resource_name,
-				first_peer_device(adm_ctx.device)->connection->name);
+				first_peer_device(adm_ctx.device)->connection->resource->name);
 		drbd_msg_put_info("minor exists in different resource");
 		return ERR_INVALID_REQUEST;
 	}
@@ -282,7 +282,8 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	    adm_ctx.volume != adm_ctx.device->vnr) {
 		pr_warning("request: minor=%u, volume=%u; but that minor is volume %u in %s\n",
 				adm_ctx.minor, adm_ctx.volume,
-				adm_ctx.device->vnr, first_peer_device(adm_ctx.device)->connection->name);
+				adm_ctx.device->vnr,
+				first_peer_device(adm_ctx.device)->connection->resource->name);
 		drbd_msg_put_info("minor exists as different volume");
 		return ERR_INVALID_REQUEST;
 	}
@@ -404,23 +405,24 @@ int conn_khelper(struct drbd_connection *connection, char *cmd)
 			 (char[20]) { }, /* address family */
 			 (char[60]) { }, /* address */
 			NULL };
-	char *argv[] = {usermode_helper, cmd, connection->name, NULL };
+	char *resource_name = connection->resource->name;
+	char *argv[] = {usermode_helper, cmd, resource_name, NULL };
 	int ret;
 
 	setup_khelper_env(connection, envp);
 	conn_md_sync(connection);
 
-	conn_info(connection, "helper command: %s %s %s\n", usermode_helper, cmd, connection->name);
+	conn_info(connection, "helper command: %s %s %s\n", usermode_helper, cmd, resource_name);
 	/* TODO: conn_bcast_event() ?? */
 
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
 		conn_warn(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, connection->name,
+			  usermode_helper, cmd, resource_name,
 			  (ret >> 8) & 0xff, ret);
 	else
 		conn_info(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, connection->name,
+			  usermode_helper, cmd, resource_name,
 			  (ret >> 8) & 0xff, ret);
 	/* TODO: conn_bcast_event() ?? */
 
@@ -2023,6 +2025,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct net_conf *old_conf, *new_conf = NULL;
 	struct crypto crypto = { };
+	struct drbd_resource *resource;
 	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 	int i;
@@ -2043,7 +2046,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	/* No need for _rcu here. All reconfiguration is
 	 * strictly serialized on genl_lock(). We are protected against
 	 * concurrent reconfiguration/addition/deletion */
-	list_for_each_entry(connection, &drbd_connections, connections) {
+	for_each_resource(resource, &drbd_resources) {
+		connection = first_connection(resource);
 		if (nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
 		    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr, connection->my_addr_len)) {
 			retcode = ERR_LOCAL_ADDR;
@@ -2529,7 +2533,7 @@ int nla_put_drbd_cfg_context(struct sk_buff *skb, struct drbd_connection *connec
 		goto nla_put_failure;
 	if (vnr != VOLUME_UNSPECIFIED)
 		NLA_PUT_U32(skb, T_ctx_volume, vnr);
-	NLA_PUT_STRING(skb, T_ctx_resource_name, connection->name);
+	NLA_PUT_STRING(skb, T_ctx_resource_name, connection->resource->name);
 	if (connection->my_addr_len)
 		NLA_PUT(skb, T_ctx_my_addr,
 			connection->my_addr_len, &connection->my_addr);
@@ -2659,22 +2663,24 @@ out:
 	return 0;
 }
 
-int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
+static int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_device *device;
 	struct drbd_genlmsghdr *dh;
-	struct drbd_connection *pos = (struct drbd_connection*)cb->args[0];
-	struct drbd_connection *connection = NULL;
-	struct drbd_connection *tmp;
+	struct drbd_resource *pos = (struct drbd_resource *)cb->args[0];
+	struct drbd_resource *resource = NULL;
+	struct drbd_connection *connection;
+	struct drbd_resource *tmp;
 	unsigned volume = cb->args[1];
 
 	/* Open coded, deferred, iteration:
-	 * list_for_each_entry_safe(connection, tmp, &drbd_connections, connections) {
+	 * for_each_resource_safe(resource, tmp, &drbd_resources) {
+	 *      connection = "first connection of resource";
 	 *	idr_for_each_entry(&connection->volumes, device, i) {
 	 *	  ...
 	 *	}
 	 * }
-	 * where connection is cb->args[0];
+	 * where resource is cb->args[0];
 	 * and i is cb->args[1];
 	 *
 	 * cb->args[2] indicates if we shall loop over all resources,
@@ -2691,36 +2697,37 @@ int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 	/* synchronize with conn_create()/drbd_destroy_connection() */
 	rcu_read_lock();
 	/* revalidate iterator position */
-	list_for_each_entry_rcu(tmp, &drbd_connections, connections) {
+	for_each_resource_rcu(tmp, &drbd_resources) {
 		if (pos == NULL) {
 			/* first iteration */
 			pos = tmp;
-			connection = pos;
+			resource = pos;
 			break;
 		}
 		if (tmp == pos) {
-			connection = pos;
+			resource = pos;
 			break;
 		}
 	}
-	if (connection) {
-next_connection:
+	if (resource) {
+next_resource:
+		connection = first_connection(resource);
 		device = idr_get_next(&connection->volumes, &volume);
 		if (!device) {
-			/* No more volumes to dump on this connection.
-			 * Advance connection iterator. */
-			pos = list_entry_rcu(connection->connections.next,
-					     struct drbd_connection, connections);
-			/* Did we dump any volume on this connection yet? */
+			/* No more volumes to dump on this resource.
+			 * Advance resource iterator. */
+			pos = list_entry_rcu(resource->resources.next,
+					     struct drbd_resource, resources);
+			/* Did we dump any volume of this resource yet? */
 			if (volume != 0) {
 				/* If we reached the end of the list,
 				 * or only a single resource dump was requested,
 				 * we are done. */
-				if (&pos->connections == &drbd_connections || cb->args[2])
+				if (&pos->resources == &drbd_resources || cb->args[2])
 					goto out;
 				volume = 0;
-				connection = pos;
-				goto next_connection;
+				resource = pos;
+				goto next_resource;
 			}
 		}
 
@@ -2764,9 +2771,9 @@ out:
 	rcu_read_unlock();
 	/* where to start the next iteration */
         cb->args[0] = (long)pos;
-        cb->args[1] = (pos == connection) ? volume + 1 : 0;
+        cb->args[1] = (pos == resource) ? volume + 1 : 0;
 
-	/* No more connections/volumes/minors found results in an empty skb.
+	/* No more resources/volumes/minors found results in an empty skb.
 	 * Which will terminate the dump. */
         return skb->len;
 }
@@ -3144,9 +3151,11 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	/* delete connection */
 	if (conn_lowest_minor(adm_ctx.connection) < 0) {
-		list_del_rcu(&adm_ctx.connection->connections);
+		struct drbd_resource *resource = adm_ctx.connection->resource;
+
+		list_del_rcu(&resource->resources);
 		synchronize_rcu();
-		kref_put(&adm_ctx.connection->kref, drbd_destroy_connection);
+		drbd_free_resource(resource);
 
 		retcode = NO_ERROR;
 	} else {
@@ -3171,9 +3180,11 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	if (conn_lowest_minor(adm_ctx.connection) < 0) {
-		list_del_rcu(&adm_ctx.connection->connections);
+		struct drbd_resource *resource = adm_ctx.connection->resource;
+
+		list_del_rcu(&resource->resources);
 		synchronize_rcu();
-		kref_put(&adm_ctx.connection->kref, drbd_destroy_connection);
+		drbd_free_resource(resource);
 
 		retcode = NO_ERROR;
 	} else {
