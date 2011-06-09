@@ -180,7 +180,7 @@ else
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .drbd_kernelrelease
     MODOBJ := drbd.ko
-    MODSUBDIR := kernel/drivers/block
+    MODSUBDIR := updates
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
 
     install:
@@ -188,10 +188,6 @@ else
 	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
 	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-	now=$$(date +%F_%H%M%S); \
-	for m in $$(find $(DESTDIR)/lib/modules/$(KERNELRELEASE)/ -name $(MODOBJ)) ; do \
-		mv $$m $$m.disabled.$$now ; \
-	done
 	install -m 644 $(MODOBJ) $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
     ifeq ($(DESTDIR),/)
       ifeq ($(shell uname -r),$(KERNELRELEASE))
