@@ -21,7 +21,7 @@
 %bcond_without bashcompletion
 # --with xen is ignored on any non-x86 architecture
 %bcond_without xen
-%bcond_without legacy-connector
+%bcond_without legacy_utils
 %ifnarch %{ix86} x86_64
 %global _without_xen --without-xen
 %endif
@@ -102,6 +102,10 @@ This packages includes the DRBD administration tools.
 /sbin/drbdsetup
 /sbin/drbdadm
 /sbin/drbdmeta
+%if %{with legacy_utils}
+/sbin/_drbdsetup_83
+/sbin/_drbdadm_83
+%endif
 %{_initddir}/%{name}
 %{_sbindir}/drbd-overview
 %dir %{_prefix}/lib/%{name}
@@ -117,7 +121,6 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify-pri-lost.sh
 %{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
 %{_prefix}/lib/%{name}/notify.sh
-@RPM_LEGACY83_EXECUTABLES@
 @INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root,-)
@@ -286,7 +289,7 @@ management utility.
     %{?_without_heartbeat} \
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
-    %{?_without_legacy-connector} \
+    %{?_without_legacy_utils} \
     --with-initdir=%{_initddir}
 make %{?_smp_mflags}
 

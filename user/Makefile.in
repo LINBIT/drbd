@@ -36,7 +36,7 @@ LN_S = @LN_S@
 
 # features enabled or disabled by configure
 WITH_UTILS = @WITH_UTILS@
-WITH_LEGACY_DRBDSETUP_CN = @WITH_LEGACY_DRBDSETUP_CN@
+WITH_LEGACY_UTILS = @WITH_LEGACY_UTILS@
 WITH_KM = @WITH_KM@
 WITH_UDEV = @WITH_UDEV@
 WITH_XEN = @WITH_XEN@
@@ -92,7 +92,7 @@ drbdmeta: $(drbdmeta-obj)
 	$(LINK.c) -o $@ $^
 
 legacy-tools:
-ifeq ($(WITH_LEGACY_DRBDSETUP_CN),yes)
+ifeq ($(WITH_LEGACY_UTILS),yes)
 	$(MAKE) -C legacy
 	ln -f -s legacy/_drbdadm_83
 	ln -f -s legacy/_drbdsetup_83

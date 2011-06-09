@@ -11,7 +11,7 @@ Latest:
  * Various net options update the peer when changed on one side
    (protocol, data-integrity-alg, allow-two-primaries, after-sb-*)
  * drbdadm, fixed: option inheritance, stacked resources, resync-after, ...
- * When build with --with-legacy-connector it brings all the necessary
+ * When build with --with-legacy_utils it brings all the necessary
    old executables, and the new tools transparently execute the old
    ones if necessary
  * Compatibility code down to at least kernel 2.6.18

@@ -41,7 +41,7 @@ docdir="`eval echo ${docdir}`"
 
 dnl "--with-<foo>" options (all except km enabled by default, pass --without-<foo> to disable)
 WITH_UTILS=yes
-WITH_LEGACY_DRBDSETUP_CN=yes
+WITH_LEGACY_UTILS=yes
 WITH_KM=no
 WITH_UDEV=yes
 WITH_XEN=yes
@@ -54,10 +54,10 @@ AC_ARG_WITH([utils],
 	[AS_HELP_STRING([--with-utils],
 			[Enable management utilities])],
 	[WITH_UTILS=$withval])
-AC_ARG_WITH([legacy-connector],
-	[AS_HELP_STRING([--with-legacy-connector],
-			[Enable legacy connector based drbdsetup])],
-	[WITH_LEGACY_DRBDSETUP_CN=$withval])
+AC_ARG_WITH([legacy_utils],
+	[AS_HELP_STRING([--without-legacy_utils],
+			[Do not include legacy <= 8.3 drbdsetup/drbdadm])],
+	[WITH_LEGACY_UTILS=$withval])
 AC_ARG_WITH([km],
 	[AS_HELP_STRING([--with-km],
 			[Enable kernel module])],
@@ -106,7 +106,7 @@ AC_ARG_ENABLE([spec],
 
 
 AC_SUBST(WITH_UTILS)
-AC_SUBST(WITH_LEGACY_DRBDSETUP_CN)
+AC_SUBST(WITH_LEGACY_UTILS)
 AC_SUBST(WITH_KM)
 AC_SUBST(WITH_UDEV)
 AC_SUBST(WITH_XEN)
@@ -268,13 +268,6 @@ if test "$WITH_UDEV" = "yes"; then
    fi
 fi
 
-if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
-   RPM_LEGACY83_EXECUTABLES=$(echo -e "/sbin/_drbdadm_83\n/sbin/_drbdsetup_83")
-else
-   RPM_LEGACY83_EXECUTABLES=""
-fi
-
-
 dnl Our sub-packages can be built for noarch, but RPM only supports
 dnl this from version 4.6.0 forward
 if test "$WITH_NOARCH_SUBPACKAGES" = "yes"; then
@@ -296,7 +289,6 @@ AC_SUBST(RPM_REQ_BASH_COMPLETION)
 AC_SUBST(RPM_REQ_XEN)
 AC_SUBST(RPM_REQ_CHKCONFIG_POST)
 AC_SUBST(RPM_REQ_CHKCONFIG_PREUN)
-AC_SUBST(RPM_LEGACY83_EXECUTABLES)
 
 AH_TEMPLATE(DRBD_LIB_DIR, [Local state directory. Commonly
 			  /var/lib/drbd or /usr/local/var/lib/drbd])
@@ -315,7 +307,7 @@ AC_DEFINE_UNQUOTED(DRBD_RUN_DIR, ["$localstatedir/run/$PACKAGE_TARNAME"])
 AC_DEFINE_UNQUOTED(DRBD_LOCK_DIR, ["$localstatedir/lock"])
 AC_DEFINE_UNQUOTED(DRBD_CONFIG_DIR, ["$sysconfdir"])
 
-if test "$WITH_LEGACY_DRBDSETUP_CN" = "yes"; then
+if test "$WITH_LEGACY_UTILS" = "yes"; then
    AC_DEFINE(DRBD_LEGACY_83, [1])
 fi
 
