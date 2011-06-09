@@ -601,7 +601,7 @@
 	    a fixed slot of meta-data of 128 MB, which allows a maximum data size of 4 GB. This way,
 	    multiple DBRD devices can share the same meta-data device.  For example, if /dev/sde6[0]
 	    and /dev/sde6[1] are used, /dev/sde6 must be at least 256 MB big. Because of the hard size
-	    limit, use of meta-disk indexes is discouraged.</para></para>
+	    limit, use of meta-disk indexes is discouraged.</para>
           </listitem>
         </varlistentry>
 
