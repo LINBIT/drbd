@@ -2381,7 +2381,7 @@ static int is_drbd_driver_missing(void)
 void exec_legacy_drbdsetup(char **argv)
 {
 #ifdef DRBD_LEGACY_83
-	static const char * const legacy_drbdsetup = "_drbdsetup_83";
+	static const char * const legacy_drbdsetup = "drbdsetup-83";
 	char *progname, *drbdsetup;
 
 	/* in case drbdsetup is called with an absolute or relative pathname

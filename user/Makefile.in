@@ -94,15 +94,15 @@ drbdmeta: $(drbdmeta-obj)
 legacy-tools:
 ifeq ($(WITH_LEGACY_UTILS),yes)
 	$(MAKE) -C legacy
-	ln -f -s legacy/_drbdadm_83
-	ln -f -s legacy/_drbdsetup_83
+	ln -f -s legacy/drbdadm-83
+	ln -f -s legacy/drbdsetup-83
 endif
 
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f drbd_buildtag.c drbd_strings.c
-	rm -f _drbdadm_83 _drbdsetup_83
+	rm -f drbdadm-83 drbdsetup-83
 	rm -f *~
 	$(MAKE) -C legacy clean
 

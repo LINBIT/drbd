@@ -103,8 +103,9 @@ This packages includes the DRBD administration tools.
 /sbin/drbdadm
 /sbin/drbdmeta
 %if %{with legacy_utils}
-/sbin/_drbdsetup_83
-/sbin/_drbdadm_83
+%dir /lib/drbd/
+/lib/drbd/drbdsetup-83
+/lib/drbd/drbdadm-83
 %endif
 %{_initddir}/%{name}
 %{_sbindir}/drbd-overview

@@ -60,7 +60,7 @@ drbdsetup-obj = drbdsetup.o drbdtool_common.o drbd_buildtag.o \
 all: tools
 
 ifeq ($(WITH_LEGACY_UTILS),yes)
-tools: _drbdadm_83 _drbdsetup_83
+tools: drbdadm-83 drbdsetup-83
 else
 tools:
 endif
@@ -77,18 +77,18 @@ drbdtool_common.c: ../drbdtool_common.c
 drbdtool_common.h: ../drbdtool_common.h drbd_endian.h
 	cp $< $@
 
-_drbdadm_83: $(drbdadm-obj)
+drbdadm-83: $(drbdadm-obj)
 	$(LINK.c) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
-_drbdsetup_83: $(drbdsetup-obj)
+drbdsetup-83: $(drbdsetup-obj)
 	$(LINK.c) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c
-	rm -f _drbdsetup_83 _drbdadm_83 *.o
+	rm -f drbdsetup-83 drbdadm-83 *.o
 	rm -f drbd_buildtag.c drbd_endian.h drbdtool_common.[ch]
 	rm -f *~
 
@@ -100,19 +100,20 @@ ifeq ($(WITH_LEGACY_UTILS),yes)
 	install -d $(DESTDIR)/sbin/
 	install -d $(DESTDIR)$(localstatedir)/lib/drbd
 	install -d $(DESTDIR)$(localstatedir)/lock
-	if getent group haclient > /dev/null 2> /dev/null ; then	\
-		install -g haclient -m 4750 _drbdsetup_83 $(DESTDIR)/sbin/ ;	\
-		install -m 755 _drbdadm_83 $(DESTDIR)/sbin/ ;		\
-	else								\
-		install -m 755 _drbdsetup_83 $(DESTDIR)/sbin/ ;		\
-		install -m 755 _drbdadm_83 $(DESTDIR)/sbin/ ; 		\
+	install -d $(DESTDIR)/lib/drbd/
+	if getent group haclient > /dev/null 2> /dev/null ; then		\
+		install -g haclient -m 4750 drbdsetup-83 $(DESTDIR)/lib/drbd/ ;	\
+		install -m 755 drbdadm-83 $(DESTDIR)/lib/drbd/ ;		\
+	else									\
+		install -m 755 drbdsetup-83 $(DESTDIR)/lib/drbd/ ;		\
+		install -m 755 drbdadm-83 $(DESTDIR)/lib/drbd/ ; 		\
 	fi
 endif
 endif
 
 uninstall:
-	rm -f $(DESTDIR)/sbin/_drbdsetup_83
-	rm -f $(DESTDIR)/sbin/_drbdadm_83
+	rm -f $(DESTDIR)/lib/drbd/drbdsetup-83
+	rm -f $(DESTDIR)/lib/drbd/drbdadm-83
 
 ###dependencies
 drbdsetup.o:       drbdtool_common.h linux/drbd_limits.h
