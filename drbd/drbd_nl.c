@@ -278,8 +278,9 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 
 	nla = info->attrs[DRBD_NLA_CFG_CONTEXT];
 	if (nla) {
-		nla = nla_find_nested(nla, __nla_type(T_ctx_resource_name));
-		if (nla)
+		int maxtype = ARRAY_SIZE(drbd_cfg_context_nl_policy) - 1;
+		nla = drbd_nla_find_nested(maxtype, nla, __nla_type(T_ctx_resource_name));
+		if (nla && !IS_ERR(nla))
 			resource_name = nla_data(nla);
 	}
 
@@ -2832,6 +2833,7 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 	struct nlattr *nla;
 	const char *resource_name;
 	struct drbd_tconn *tconn;
+	int maxtype;
 
 	/* Is this a followup call? */
 	if (cb->args[0]) {
@@ -2851,7 +2853,10 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 	/* No explicit context given.  Dump all. */
 	if (!nla)
 		goto dump;
-	nla = nla_find_nested(nla, __nla_type(T_ctx_resource_name));
+	maxtype = ARRAY_SIZE(drbd_cfg_context_nl_policy) - 1;
+	nla = drbd_nla_find_nested(maxtype, nla, __nla_type(T_ctx_resource_name));
+	if (IS_ERR(nla))
+		return PTR_ERR(nla);
 	/* context given, but no name present? */
 	if (!nla)
 		return -EINVAL;
@@ -3262,4 +3267,54 @@ failed:
 	dev_err(DEV, "Error %d while broadcasting event. "
 			"Event seq:%u sib_reason:%u\n",
 			err, seq, sib->sib_reason);
+}
+
+int drbd_nla_check_mandatory(int maxtype, struct nlattr *nla)
+{
+	struct nlattr *head = nla_data(nla);
+	int len = nla_len(nla);
+	int rem;
+
+	/*
+	 * validate_nla (called from nla_parse_nested) ignores attributes
+	 * beyond maxtype, and does not understand the DRBD_GENLA_F_MANDATORY flag.
+	 * In order to have it validate attributes with the DRBD_GENLA_F_MANDATORY
+	 * flag set also, check and remove that flag before calling
+	 * nla_parse_nested.
+	 */
+
+	nla_for_each_attr(nla, head, len, rem) {
+		if (nla->nla_type & DRBD_GENLA_F_MANDATORY) {
+			nla->nla_type &= ~DRBD_GENLA_F_MANDATORY;
+			if (nla_type(nla) > maxtype)
+				return -EOPNOTSUPP;
+		}
+	}
+	return 0;
+}
+
+int drbd_nla_parse_nested(struct nlattr *tb[], int maxtype, struct nlattr *nla,
+			  const struct nla_policy *policy)
+{
+	int err;
+
+	err = drbd_nla_check_mandatory(maxtype, nla);
+	if (!err)
+		err = nla_parse_nested(tb, maxtype, nla, policy);
+
+	return err;
+}
+
+struct nlattr *drbd_nla_find_nested(int maxtype, struct nlattr *nla, int attrtype)
+{
+	int err;
+	/*
+	 * If any nested attribute has the DRBD_GENLA_F_MANDATORY flag set and
+	 * we don't know about that attribute, reject all the nested
+	 * attributes.
+	 */
+	err = drbd_nla_check_mandatory(maxtype, nla);
+	if (err)
+		return ERR_PTR(err);
+	return nla_find_nested(nla, attrtype);
 }
