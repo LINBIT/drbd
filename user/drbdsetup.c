@@ -432,7 +432,6 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 char *objname = NULL;
 /* for pretty printing in "status" only,
  * taken from environment variable DRBD_RESOURCE */
-char *resname = NULL;
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
@@ -1723,18 +1722,15 @@ static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
 	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
 	if (!global_attrs[DRBD_NLA_STATE_INFO]) {
 		printf( "<!-- resource minor=\"%u\"", minor);
-		if (resname)
-			printf(" name=\"%s\"", resname);
 		printf(" not available or not yet created -->\n");
 		return 0;
 	}
 	drbd_cfg_context_from_attrs(&cfg, info);
 
 	printf("<resource minor=\"%u\"", minor);
-	printf(" conn_name=\"%s\"", cfg.ctx_resource_name ? cfg.ctx_resource_name : "n/a");
+	if (cfg.ctx_resource_name)
+		printf(" res_name=\"%s\"", cfg.ctx_resource_name);
 	printf(" volume=\"%u\"", cfg.ctx_volume);
-	if (resname)
-		printf(" name=\"%s\"", resname);
 
 	state_info_from_attrs(&si, info);
 	if (ntb(T_current_state))
@@ -1807,10 +1803,10 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
  * or use "drbd_sh_status"? */
 #define _P ""
 	printf("%s_minor=%u\n", _P, minor);
-	printf("%s_res_name=%s\n", _P, shell_escape(resname ?: "UNKNOWN"));
 
 	drbd_cfg_context_from_attrs(&cfg, info);
-	printf("%s_conn_name=%s\n", _P, cfg.ctx_resource_name ? shell_escape(cfg.ctx_resource_name) : "n/a");
+	if (cfg.ctx_resource_name)
+		printf("%s_res_name=%s\n", _P, shell_escape(cfg.ctx_resource_name));
 	printf("%s_volume=%d\n", _P, cfg.ctx_volume);
 
 	if (state_info_from_attrs(&si, info) == 0)
@@ -2444,7 +2440,6 @@ int main(int argc, char **argv)
 	/* it is enough to set it, value is ignored */
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
-	resname = getenv("DRBD_RESOURCE");
 
 	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
 		if(argc >= 3) {

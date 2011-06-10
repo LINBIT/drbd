@@ -227,7 +227,7 @@ drbd_set_status_variables() {
 	# if we eval that, we do not need several drbdadm/drbdsetup commands
 	# to figure out the various aspects of the state.
 	local _minor _res_name _known _cstate _role _peer _disk _pdisk
-	local _volume _conn_name
+	local _volume
 	local _flags_susp _flags_aftr_isp _flags_peer_isp _flags_user_isp
 	local _resynced_percent
 
