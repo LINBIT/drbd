@@ -99,6 +99,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
+#include "drbd_nla.h"
 #include <linux/genl_magic_func.h>
 
 /* used blkdev_get_by_path, to claim our meta data device(s) */
