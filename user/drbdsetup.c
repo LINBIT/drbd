@@ -65,6 +65,7 @@
  */
 
 #include "libgenl.h"
+#include "drbd_nla.h"
 #include <linux/drbd_config.h>
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd_limits.h>
@@ -2068,7 +2069,8 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 		/* keep running anyways. */
 		struct nlattr *nla = NULL;
 		if (info->attrs[DRBD_NLA_CFG_REPLY])
-			nla = nla_find_nested(info->attrs[DRBD_NLA_CFG_REPLY], T_info_text);
+			nla = drbd_nla_find_nested(ARRAY_SIZE(drbd_cfg_reply_nl_policy) - 1,
+						   info->attrs[DRBD_NLA_CFG_REPLY], T_info_text);
 		if (nla) {
 			char *txt = nla_data(nla);
 			char *c;
