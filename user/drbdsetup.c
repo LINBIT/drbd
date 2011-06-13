@@ -162,7 +162,7 @@ struct drbd_cmd {
 	const enum cfg_ctx_key ctx_key;
 	const int cmd_id;
 	const int tla_id; /* top level attribute id */
-	int (*function)(struct drbd_cmd *, unsigned, int, char **);
+	int (*function)(struct drbd_cmd *, int, char **);
 	void (*usage)(struct drbd_cmd *, enum usage_type);
 	struct drbd_argument *drbd_args;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
@@ -178,11 +178,11 @@ static int get_af_ssocks(int warn);
 static void print_command_usage(int i, const char *addinfo, enum usage_type);
 
 // command functions
-static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
-static int del_resource_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv);
+static int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int down_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // usage functions
 static void config_usage(struct drbd_cmd *cm, enum usage_type);
@@ -428,7 +428,9 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
  * Device name for CTX_MINOR, for reporting in
  * print_config_error.
  */
-char *objname = NULL;
+char *objname;
+unsigned minor = -1U;
+
 /* for pretty printing in "status" only,
  * taken from environment variable DRBD_RESOURCE */
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
@@ -823,7 +825,7 @@ int drbd_tla_parse(struct nlmsghdr *nlh)
 #define ASSERT(exp) if (!(exp)) \
 		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
 
-static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
+static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 			       char **argv, int quiet)
 {
 	struct drbd_argument *ad = cm->drbd_args;
@@ -961,29 +963,26 @@ error:
 	return rv;
 }
 
-static int generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-			       char **argv)
+static int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	return _generic_config_cmd(cm, minor, argc, argv, 0);
+	return _generic_config_cmd(cm, argc, argv, 0);
 }
 
-static int del_minor_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-			 char **argv)
+static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	int rv;
 
-	rv = generic_config_cmd(cm, minor, argc, argv);
+	rv = generic_config_cmd(cm, argc, argv);
 	if (!rv)
 		unregister_minor(minor);
 	return rv;
 }
 
-static int del_resource_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-			    char **argv)
+static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	int rv;
 
-	rv = generic_config_cmd(cm, minor, argc, argv);
+	rv = generic_config_cmd(cm, argc, argv);
 	if (!rv)
 		unregister_resource(objname);
 	return rv;
@@ -1167,8 +1166,7 @@ static bool kernel_older_than(int version, int patchlevel, int sublevel)
 	return true;
 }
 
-static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
-			   char **argv)
+static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
@@ -1559,7 +1557,7 @@ static struct minors_list *enumerate_minors(void)
 	struct minors_list *m;
 	int err;
 
-	err = generic_get_cmd(&cmd, -1, 0, NULL);
+	err = generic_get_cmd(&cmd, 0, NULL);
 	m = __remembered_minors;
 	__remembered_minors = NULL;
 	if (err) {
@@ -2007,7 +2005,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 	return 0;
 }
 
-static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
+static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct minors_list *minors, *m;
 	int rv;
@@ -2018,7 +2016,7 @@ static int down_cmd(struct drbd_cmd *cm, unsigned minor, int argc, char **argv)
 	}
 
 	minors = enumerate_minors();
-	rv = _generic_config_cmd(cm, minor, argc, argv, 1);
+	rv = _generic_config_cmd(cm, argc, argv, 1);
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (success) {
 		for (m = minors; m; m = m->next)
@@ -2419,7 +2417,6 @@ void exec_legacy_drbdsetup(char **argv)
 
 int main(int argc, char **argv)
 {
-	unsigned minor = -1U;
 	struct drbd_cmd *cmd;
 	int rv=0;
 
@@ -2532,7 +2529,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Make it so that argv[0] is the command name. */
-	rv = cmd->function(cmd, minor, argc - 1, argv + 1);
+	rv = cmd->function(cmd, argc - 1, argv + 1);
 	dt_unlock_drbd(lock_fd);
 	return rv;
 }
