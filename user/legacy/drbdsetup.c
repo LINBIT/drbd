@@ -398,8 +398,7 @@ struct drbd_cmd commands[] = {
 		 { "start",'s',T_start_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
 		 CLOSE_OPTIONS }} }, },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
-	/* "state" is deprecated! please use "role".
-	 * find_cmd_by_name still understands "state", however. */
+	{"state", P_get_state, F_GET_CMD, { .gp={ role_scmd} } },
 	{"role", P_get_state, F_GET_CMD, { .gp={ role_scmd} } },
 	{"status", P_get_state, F_GET_CMD, {.gp={ status_xml_scmd } } },
 	{"sh-status", P_get_state, F_GET_CMD, {.gp={ sh_status_scmd } } },
@@ -1699,6 +1698,12 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 	       unsigned short *rtl)
 {
 	union drbd_state state = { .i = 0 };
+
+	if (!strcmp(cm->cmd, "state")) {
+		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
+			cmdname, cmdname);
+	}
+
 	consume_tag_int(T_state_i,rtl,(int*)&state.i);
 	if ( state.conn == C_STANDALONE &&
 	     state.disk == D_DISKLESS) {
@@ -1774,12 +1779,6 @@ static int uuids_scmd(struct drbd_cmd *cm,
 static struct drbd_cmd *find_cmd_by_name(char *name)
 {
 	unsigned int i;
-
-	if (!strcmp(name, "state")) {
-		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
-			cmdname, cmdname);
-		name = "role";
-	}
 
 	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		if (!strcmp(name, commands[i].cmd)) {

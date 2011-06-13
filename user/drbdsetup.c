@@ -287,8 +287,7 @@ struct drbd_cmd commands[] = {
 		F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx },
 	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
-	/* "state" is deprecated! please use "role".
-	 * find_cmd_by_name still understands "state", however. */
+	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd),
 		.ignore_minor_not_known = true, },
@@ -989,12 +988,6 @@ static int del_resource_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 static struct drbd_cmd *find_cmd_by_name(const char *name)
 {
 	unsigned int i;
-
-	if (!strcmp(name, "state")) {
-		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
-			cmdname, cmdname);
-		name = "role";
-	}
 
 	for (i = 0; i < ARRAY_SIZE(commands); i++) {
 		if (!strcmp(name, commands[i].cmd)) {
@@ -1876,6 +1869,11 @@ static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
 		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
+
+	if (!strcmp(cm->cmd, "state")) {
+		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
+			cmdname, cmdname);
+	}
 
 	if (!info)
 		return 0;
