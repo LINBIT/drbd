@@ -2425,11 +2425,12 @@ int main(int argc, char **argv)
 	else
 		cmdname = argv[0];
 
-	/* == '-' catches -h, --help, and similar */
-	if (argc > 1 && (!strcmp(argv[1],"help") || argv[1][0] == '-')) {
+	if (argc > 1 && (!strcmp(argv[1], "help") || !strcmp(argv[1], "xml-help")  ||
+			 !strcmp(argv[1], "--help")  || !strcmp(argv[1], "-h"))) {
+		enum usage_type usage_type = !strcmp(argv[1], "xml-help") ? XML : FULL;
 		if(argc >= 3) {
 			cmd=find_cmd_by_name(argv[2]);
-			if(cmd) print_command_usage(cmd-commands,NULL,FULL);
+			if(cmd) print_command_usage(cmd-commands, NULL, usage_type);
 			else print_usage_and_exit("unknown command");
 			exit(0);
 		}
@@ -2438,15 +2439,6 @@ int main(int argc, char **argv)
 	/* it is enough to set it, value is ignored */
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
-
-	if (argc > 1 && (!strcmp(argv[1],"xml"))) {
-		if(argc >= 3) {
-			cmd=find_cmd_by_name(argv[2]);
-			if(cmd) print_command_usage(cmd-commands,NULL,XML);
-			else print_usage_and_exit("unknown command");
-			exit(0);
-		}
-	}
 
 	if (argc < 3)
 		print_usage_and_exit(argc==1 ? 0 : " Insufficient arguments");

@@ -111,7 +111,7 @@ endif
 	(cd ../user; make drbdsetup)
 
 drbdsetup_%.xml: ../user/drbdsetup
-	../user/drbdsetup xml $* |\
+	../user/drbdsetup xml-help $* |\
 	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl -
 
 distclean:
