@@ -152,9 +152,13 @@ struct drbd_argument {
  * the replication link (aka connection) name,
  * and/or the replication group (aka resource) name */
 enum cfg_ctx_key {
+	/* Only one of these can be present in a command: */
 	CTX_MINOR = 1,
 	CTX_RESOURCE = 2,
 	CTX_ALL = 4,
+	CTX_CONNECTION = 8,
+
+	CTX_RESOURCE_AND_CONNECTION = 16,
 };
 
 struct drbd_cmd {
@@ -204,7 +208,6 @@ static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
 
@@ -248,19 +251,15 @@ struct drbd_cmd commands[] = {
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
 
-	{"connect", CTX_RESOURCE, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
+	{"connect", CTX_RESOURCE_AND_CONNECTION, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
-	 .drbd_args = (struct drbd_argument[]) {
-		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
-		 { "[af:]remote_addr[:port]",T_peer_addr,conv_address },
-		 { } },
 	 .ctx = &connect_cmd_ctx },
 
-	{"net-options", CTX_RESOURCE, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
+	{"net-options", CTX_CONNECTION, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
 	 .ctx = &net_options_ctx },
 
-	{"disconnect", CTX_RESOURCE, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
+	{"disconnect", CTX_CONNECTION, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &disconnect_cmd_ctx },
 
@@ -429,6 +428,7 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
  */
 char *objname;
 unsigned minor = -1U;
+enum cfg_ctx_key context;
 
 /* for pretty printing in "status" only,
  * taken from environment variable DRBD_RESOURCE */
@@ -615,29 +615,31 @@ static void split_address(char* text, int *af, char** address, int* port)
 		*port = 7788;
 }
 
-static int conv_address(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int nla_put_address(struct msg_buff *msg, int attrtype, char* arg)
 {
-	struct sockaddr_in addr = { 0 };
-	struct sockaddr_in6 addr6 = { 0 };
 	int af, port;
 	char *address;
 
 	split_address(arg, &af, &address, &port);
-
 	if (af == AF_INET6) {
+		struct sockaddr_in6 addr6;
+
+		memset(&addr6, 0, sizeof(addr6));
 		resolv6(address, &addr6);
 		addr6.sin6_port = htons(port);
 		/* addr6.sin6_len = sizeof(addr6); */
-		nla_put(msg,ad->nla_type,sizeof(addr6),&addr6);
+		nla_put(msg, attrtype, sizeof(addr6), &addr6);
 	} else {
 		/* AF_INET, AF_SDP, AF_SSOCKS,
 		 * all use the IPv4 addressing scheme */
+		struct sockaddr_in addr;
+
+		memset(&addr, 0, sizeof(addr));
 		addr.sin_port = htons(port);
 		addr.sin_family = af;
 		addr.sin_addr.s_addr = resolv(address);
-		nla_put(msg,ad->nla_type,sizeof(addr),&addr);
+		nla_put(msg, attrtype, sizeof(addr), &addr);
 	}
-
 	return NO_ERROR;
 }
 
@@ -853,22 +855,22 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	dhdr->minor = minor;
 	dhdr->flags = 0;
 
-	if (cm->ctx_key & CTX_RESOURCE) {
-		/* we just allocated 8k,
-		 * and now we put a few bytes there.
-		 * this cannot possibly fail, can it? */
+	i = 1;
+	if (context & (CTX_RESOURCE | CTX_CONNECTION)) {
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-		nla_put_string(smsg, T_ctx_resource_name, objname);
+		if (context & CTX_RESOURCE)
+			nla_put_string(smsg, T_ctx_resource_name, argv[i++]);
+		if (context & CTX_CONNECTION) {
+			nla_put_address(smsg, T_ctx_my_addr, argv[i++]);
+			nla_put_address(smsg, T_ctx_peer_addr, argv[i++]);
+		}
 		nla_nest_end(smsg, nla);
+	} else if (context & CTX_MINOR) {
+		i++;  /* minor number already in dhdr->minor */
 	}
 
 	nla = NULL;
-
-	/*
-	 * argv[0] = command name
-	 * argv[1] = context (minor or resource name)
-	 */
-	for (i = 2; ad && ad->name; i++) {
+	for (ad = cm->drbd_args; ad && ad->name; i++) {
 		if (argc < i + 1) {
 			fprintf(stderr, "Missing argument '%s'\n", ad->name);
 			print_command_usage(cm - commands, "", FULL);
@@ -1192,12 +1194,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		goto out;
 	}
 
-	/*
-	 * argv[0] = command name
-	 * argv[1] = context (minor or resource name)
-	 */
-	n_args = 1;  /* command name "doesn't count" here */
-
 	struct option *options = cm->options;
 	if (!options) {
 		static struct option none[] = { { } };
@@ -1259,6 +1255,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			show_defaults = true;
 		}
 	}
+	n_args = 1;
 	if (n_args + optind < argc) {
 		warn_print_excess_args(argc, argv, optind + n_args);
 		return 20;
@@ -1591,7 +1588,7 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		}
 		fflush(stdout);
 		return 0;
-	}
+}
 	call_count++;
 
 	/* FIXME: Is the folowing check needed? */
@@ -1616,20 +1613,18 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		print_options("resource-options", "options");
 		print_options("net-options", "net");
 
-		if (global_attrs[DRBD_NLA_NET_CONF]) {
-			if (nc.peer_addr_len) {
-				printI("_remote_host {\n");
-				++indent;
-				show_address(nc.peer_addr, nc.peer_addr_len);
-				--indent;
-				printI("}\n");
-			}
+		if (cfg.ctx_peer_addr_len) {
+			printI("_remote_host {\n");
+			++indent;
+			show_address(cfg.ctx_peer_addr, cfg.ctx_peer_addr_len);
+			--indent;
+			printI("}\n");
 		}
 		printI("_this_host {\n");
 		++indent;
 		if (global_attrs[DRBD_NLA_NET_CONF]) {
-			if (nc.my_addr[0])
-				show_address(nc.my_addr, nc.my_addr_len);
+			if (cfg.ctx_my_addr[0])
+				show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
 		}
 	}
 
@@ -2217,6 +2212,35 @@ static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 	return 0;
 }
 
+static const char *contexts_to_text(enum cfg_ctx_key ctx)
+{
+	static char text[64];
+
+	text[0] = 0;
+	if (ctx & CTX_RESOURCE_AND_CONNECTION) {
+		strcat(text, "resource_and_connection|");
+		ctx &= ~CTX_RESOURCE_AND_CONNECTION;
+	}
+	if (ctx & CTX_RESOURCE) {
+		strcat(text, "resource|");
+		ctx &= ~CTX_RESOURCE;
+	}
+	if (ctx & CTX_MINOR) {
+		strcat(text, "minor|");
+		ctx &= ~CTX_MINOR;
+	}
+	if (ctx & CTX_ALL) {
+		strcat(text, "all|");
+		ctx &= ~CTX_ALL;
+	}
+	if (ctx & CTX_CONNECTION) {
+		strcat(text, "connection|");
+		ctx &= ~CTX_CONNECTION;
+	}
+	*strrchr(text, '|') = 0;
+	return text;
+}
+
 static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
@@ -2224,15 +2248,9 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	int maxcol,col,prevcol,startcol,toolong;
 	char *colstr;
 
-	static char *ctx_names[] = {
-	  [CTX_MINOR] = "minor",
-	  [CTX_RESOURCE] = "resource_name",
-	  [CTX_ALL] = "minor_or_resource_name",
-	};
-
 	if(ut == XML) {
 		printf("<command name=\"%s\" operates_on=\"%s\">\n",
-		       cm->cmd, ctx_names[cm->ctx_key]);
+		       cm->cmd, contexts_to_text(cm->ctx_key));
 		if( (args = cm->drbd_args) ) {
 			while (args->name) {
 				printf("\t<argument>%s</argument>\n",
@@ -2509,22 +2527,40 @@ int main(int argc, char **argv)
 		}
 	}
 
-	objname = argv[2];
-	if (!strcmp(objname, "all")) {
-		if (!(cmd->ctx_key & CTX_ALL))
-			print_usage_and_exit("command does not accept argument 'all'");
-	} else if (cmd->ctx_key & CTX_MINOR) {
-		minor = dt_minor_of_dev(objname);
-		if (minor == -1U && !(cmd->ctx_key & CTX_RESOURCE)) {
-			fprintf(stderr, "Cannot determine minor device number of "
-					"device '%s'\n",
-				objname);
+	context = 0;
+	if (cmd->ctx_key & (CTX_MINOR | CTX_RESOURCE | CTX_ALL | CTX_RESOURCE_AND_CONNECTION)) {
+		if (argc < 3) {
+			fprintf(stderr, "Missing first argument\n");
+			print_command_usage(cmd - commands, "", FULL);
 			exit(20);
 		}
-		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
-			lock_fd = dt_lock_drbd(minor);
-	} else {
-		/* objname is expected to be a resource name. */
+		objname = argv[2];
+		if (!strcmp(objname, "all")) {
+			if (!(cmd->ctx_key & CTX_ALL))
+				print_usage_and_exit("command does not accept argument 'all'");
+			context = CTX_ALL;
+		} else if (cmd->ctx_key & CTX_MINOR) {
+			minor = dt_minor_of_dev(objname);
+			if (minor == -1U && !(cmd->ctx_key &
+					(CTX_RESOURCE | CTX_RESOURCE_AND_CONNECTION))) {
+				fprintf(stderr, "Cannot determine minor device number of "
+						"device '%s'\n",
+					objname);
+				exit(20);
+			}
+			if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
+				lock_fd = dt_lock_drbd(minor);
+			context = CTX_MINOR;
+		} else
+			context = CTX_RESOURCE;
+	}
+	if (cmd->ctx_key & (CTX_CONNECTION | CTX_RESOURCE_AND_CONNECTION)) {
+		if (argc < 4 + !!context) {
+			fprintf(stderr, "Missing connection endpoint argument\n");
+			print_command_usage(cmd - commands, "", FULL);
+			exit(20);
+		}
+		context |= CTX_CONNECTION;
 	}
 
 	/* Make it so that argv[0] is the command name. */
