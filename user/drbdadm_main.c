@@ -1460,8 +1460,8 @@ int adm_attach(struct cfg_ctx *ctx)
 	int do_attach = !strcmp(ctx->arg, "attach");
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = (char*)(ctx->arg);
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	if (do_attach) {
 		argv[NA(argc)] = vol->disk;
 		if (!strcmp(vol->meta_disk, "internal")) {
@@ -1503,8 +1503,8 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
 	argv[NA(argc)] = "new-minor";
+	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	ssprintf(argv[NA(argc)], "%u", ctx->vol->vnr);
 	argv[NA(argc)] = NULL;
@@ -1521,8 +1521,8 @@ int adm_new_resource(struct cfg_ctx *ctx)
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	argv[NA(argc)] = "new-resource";
+	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	argv[NA(argc)] = NULL;
 
 	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -1544,8 +1544,8 @@ int adm_res_options(struct cfg_ctx *ctx)
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	argv[NA(argc)] = "resource-options";
+	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	opt = ctx->res->res_options;
 	make_options(opt);
 	argv[NA(argc)] = NULL;
@@ -1562,8 +1562,8 @@ int adm_resize(struct cfg_ctx *ctx)
 	int ex;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	argv[NA(argc)] = "resize";
+	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	opt = find_opt(ctx->vol->disk_options, "size");
 	if (!opt)
 		opt = find_opt(ctx->res->disk_options, "size");
@@ -1587,9 +1587,9 @@ int adm_resize(struct cfg_ctx *ctx)
 	 * Call drbdsetup again, tell it to ask the kernel for
 	 * current config, and update the last known bdev info
 	 * according to that. */
-	/* argv[0] = drbdsetup;
-	 * argv[1] = minor; */
-	argv[2] = "check-resize";
+	/* argv[0] = drbdsetup; */
+	argv[1] = "check-resize";
+	/* argv[2] = minor; */
 	argv[3] = NULL;
 	/* ignore exit code */
 	m_system_ex(argv, SLEEPS_SHORT | silent, ctx->res->name);
@@ -1647,11 +1647,11 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	}
 
 	argv[NA(argc)] = drbdsetup;
+	argv[NA(argc)] = (char *)ctx->arg;
 	if (ctx->vol)
 		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	else
 		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	argv[NA(argc)] = (char *)ctx->arg;
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
 	}
@@ -1937,8 +1937,8 @@ int adm_connect(struct cfg_ctx *ctx)
 	int do_connect = !strcmp(ctx->arg, "connect");
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%s", res->name);
 	argv[NA(argc)] = (char *)ctx->arg; /* connect | net-options */
+	ssprintf(argv[NA(argc)], "%s", res->name);
 	if (do_connect) {
 		make_address(res->me->address, res->me->port, res->me->address_family);
 		if (res->me->proxy) {
@@ -2243,8 +2243,8 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	argv[NA(argc)] = "wait-connect";
+	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	if (is_drbd_top && !res->stacked_timeouts) {
 		unsigned long timeout = 20;
 		if ((opt = find_opt(res->net_options, "connect-int"))) {
@@ -2565,8 +2565,8 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 			/* ctx is not used */
 			argc = 0;
 			argv[NA(argc)] = drbdsetup;
-			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
 			argv[NA(argc)] = "wait-connect";
+			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
 			opt = res->startup_options;
 			make_options(opt);
 			argv[NA(argc)] = 0;

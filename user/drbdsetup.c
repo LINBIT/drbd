@@ -423,7 +423,7 @@ const char * error_to_string(int err_no)
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
 /*
- * This is argv[1] as given on command line.
+ * This is argv[2] as given on command line.
  * Connection name for CTX_CONN commands.
  * Device name for CTX_MINOR, for reporting in
  * print_config_error.
@@ -829,7 +829,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	struct drbd_argument *ad = cm->drbd_args;
 	struct nlattr *nla;
 	struct option *lo;
-	int c, i = 1;
+	int c, i;
 	int n_args;
 	int rv = NO_ERROR;
 	char *desc = NULL; /* error description from kernel reply message */
@@ -863,7 +863,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 
 	nla = NULL;
 
-	while (ad && ad->name) {
+	/*
+	 * argv[0] = command name
+	 * argv[1] = context (minor or resource name)
+	 */
+	for (i = 2; ad && ad->name; i++) {
 		if (argc < i + 1) {
 			fprintf(stderr, "Missing argument '%s'\n", ad->name);
 			print_command_usage(cm - commands, "", FULL);
@@ -874,12 +878,12 @@ static int _generic_config_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			assert (cm->tla_id != NO_PAYLOAD);
 			nla = nla_nest_start(smsg, cm->tla_id);
 		}
-		rv = ad->convert_function(ad, smsg, argv[i++]);
+		rv = ad->convert_function(ad, smsg, argv[i]);
 		if (rv != NO_ERROR)
 			goto error;
 		ad++;
 	}
-	n_args = i - 1;
+	n_args = i - 1;  /* command name "doesn't count" here */
 
 	lo = make_longoptions(cm->ctx);
 	for (;;) {
@@ -1179,6 +1183,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 	int flags;
 	int rv = NO_ERROR;
 	int err = 0;
+	int n_args;
 
 	/* pre allocate request message and reply buffer */
 	iov.iov_len = 8192;
@@ -1189,6 +1194,12 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 		rv = OTHER_ERROR;
 		goto out;
 	}
+
+	/*
+	 * argv[0] = command name
+	 * argv[1] = context (minor or resource name)
+	 */
+	n_args = 1;  /* command name "doesn't count" here */
 
 	struct option *options = cm->options;
 	if (!options) {
@@ -1251,8 +1262,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, unsigned minor, int argc,
 			show_defaults = true;
 		}
 	}
-	if (optind < argc) {
-		warn_print_excess_args(argc, argv, optind);
+	if (n_args + optind < argc) {
+		warn_print_excess_args(argc, argv, optind + n_args);
 		return 20;
 	}
 
@@ -2333,9 +2344,8 @@ static void print_usage_and_exit(const char* addinfo)
 {
 	size_t i;
 
-	printf("\nUSAGE: %s device command arguments options\n\n"
+	printf("\nUSAGE: %s command device arguments options\n\n"
 	       "Device is usually /dev/drbdX or /dev/drbd/X.\n"
-	       "General options: --set-defaults\n"
 	       "\nCommands are:\n",cmdname);
 
 
@@ -2436,6 +2446,16 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/*
+	 * drbdsetup previously took the object to operate on as its first argument,
+	 * followed by the command.  For backwards compatibility, still support his.
+	 */
+	if (argc >= 3 && !find_cmd_by_name(argv[1]) && find_cmd_by_name(argv[2])) {
+		char *swap = argv[1];
+		argv[1] = argv[2];
+		argv[2] = swap;
+	}
+
 	/* it is enough to set it, value is ignored */
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
@@ -2443,15 +2463,15 @@ int main(int argc, char **argv)
 	if (argc < 3)
 		print_usage_and_exit(argc==1 ? 0 : " Insufficient arguments");
 
-	cmd = find_cmd_by_name(argv[2]);
+	cmd = find_cmd_by_name(argv[1]);
 	if (!cmd)
 		print_usage_and_exit("invalid command");
 
 	if (is_drbd_driver_missing()) {
-		if (!strcmp(argv[2], "down") ||
-		    !strcmp(argv[2], "secondary") ||
-		    !strcmp(argv[2], "disconnect") ||
-		    !strcmp(argv[2], "detach"))
+		if (!strcmp(argv[1], "down") ||
+		    !strcmp(argv[1], "secondary") ||
+		    !strcmp(argv[1], "disconnect") ||
+		    !strcmp(argv[1], "detach"))
 			return 0; /* "down" succeeds even if drbd is missing */
 
 		fprintf(stderr, "do you need to load the module?\n"
@@ -2482,16 +2502,16 @@ int main(int argc, char **argv)
 		}
 	}
 
-	objname = argv[1];
+	objname = argv[2];
 	if (!strcmp(objname, "all")) {
 		if (!(cmd->ctx_key & CTX_ALL))
 			print_usage_and_exit("command does not accept argument 'all'");
 	} else if (cmd->ctx_key & CTX_MINOR) {
-		minor = dt_minor_of_dev(argv[1]);
+		minor = dt_minor_of_dev(objname);
 		if (minor == -1U && !(cmd->ctx_key & CTX_CONN)) {
 			fprintf(stderr, "Cannot determine minor device number of "
 					"device '%s'\n",
-				argv[1]);
+				objname);
 			exit(20);
 		}
 		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
@@ -2500,9 +2520,8 @@ int main(int argc, char **argv)
 		/* objname is expected to be a connection name. */
 	}
 
-	// by passing argc-2, argv+2 the function has the command name
-	// in argv[0], e.g. "syncer"
-	rv = cmd->function(cmd,minor,argc-2,argv+2);
+	/* Make it so that argv[0] is the command name. */
+	rv = cmd->function(cmd, minor, argc - 1, argv + 1);
 	dt_unlock_drbd(lock_fd);
 	return rv;
 }

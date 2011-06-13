@@ -2694,6 +2694,17 @@ int main(int argc, char** argv)
 		}
 	}
 
+	/*
+	 * The legacy drbdsetup takes the object to operate on as its first argument,
+	 * followed by the command.  For forward compatibility, check if we got the
+	 * command name first.
+	 */
+	if (argc >= 3 && !find_cmd_by_name(argv[2]) && find_cmd_by_name(argv[1])) {
+		char *swap = argv[1];
+		argv[1] = argv[2];
+		argv[2] = swap;
+	}
+
 	/* it is enough to set it, value is ignored */
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
