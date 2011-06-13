@@ -1504,8 +1504,8 @@ int adm_new_minor(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "new-minor";
-	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
 	ssprintf(argv[NA(argc)], "%u", ctx->vol->vnr);
 	argv[NA(argc)] = NULL;
 

@@ -2467,6 +2467,17 @@ int main(int argc, char **argv)
 	if (!cmd)
 		print_usage_and_exit("invalid command");
 
+	if (!strcmp(cmd->cmd, "new-minor") && argc >= 4) {
+		/*
+		 * FIXME: The new-minor command has its first two arguments swapped
+		 * but as the code is currently laid out, there is no simple way to
+		 * fix this.
+		 */
+		char *swap = argv[2];
+		argv[2] = argv[3];
+		argv[3] = swap;
+	}
+
 	if (is_drbd_driver_missing()) {
 		if (!strcmp(argv[1], "down") ||
 		    !strcmp(argv[1], "secondary") ||
