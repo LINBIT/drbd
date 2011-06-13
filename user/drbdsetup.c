@@ -153,7 +153,7 @@ struct drbd_argument {
  * and/or the replication group (aka resource) name */
 enum cfg_ctx_key {
 	CTX_MINOR = 1,
-	CTX_CONN = 2,
+	CTX_RESOURCE = 2,
 	CTX_ALL = 4,
 };
 
@@ -248,7 +248,7 @@ struct drbd_cmd commands[] = {
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
 
-	{"connect", CTX_CONN, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
+	{"connect", CTX_RESOURCE, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "[af:]local_addr[:port]",T_my_addr,	conv_address },
@@ -256,11 +256,11 @@ struct drbd_cmd commands[] = {
 		 { } },
 	 .ctx = &connect_cmd_ctx },
 
-	{"net-options", CTX_CONN, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
+	{"net-options", CTX_RESOURCE, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
 	 .ctx = &net_options_ctx },
 
-	{"disconnect", CTX_CONN, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
+	{"disconnect", CTX_RESOURCE, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &disconnect_cmd_ctx },
 
@@ -268,7 +268,7 @@ struct drbd_cmd commands[] = {
 		F_CONFIG_CMD,
 	 .ctx = &resize_cmd_ctx },
 
-	{"resource-options", CTX_CONN, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
+	{"resource-options", CTX_RESOURCE, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
 		F_CONFIG_CMD,
 	 .ctx = &resource_options_cmd_ctx },
 
@@ -286,22 +286,22 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx },
-	{"down", CTX_CONN, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
+	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
 	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd),
 		.ignore_minor_not_known = true, },
-	{"sh-status", CTX_MINOR | CTX_CONN | CTX_ALL,
+	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
 		F_GET_CMD(sh_status_scmd),
 		.ignore_minor_not_known = true, },
 	{"cstate", CTX_MINOR, F_GET_CMD(cstate_scmd) },
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
-	{"show", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(show_scmd),
+	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
 		.options = show_cmd_options },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
-	{"events", CTX_MINOR | CTX_CONN | CTX_ALL, F_GET_CMD(print_broadcast_events),
+	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.ignore_minor_not_known = true,
 		.continuous_poll = true, },
 	{"wait-connect", CTX_MINOR, F_GET_CMD(w_connected_state),
@@ -313,19 +313,19 @@ struct drbd_cmd commands[] = {
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
 
-	{"new-resource", CTX_CONN, DRBD_ADM_NEW_RESOURCE, NO_PAYLOAD, F_CONFIG_CMD, },
+	{"new-resource", CTX_RESOURCE, DRBD_ADM_NEW_RESOURCE, NO_PAYLOAD, F_CONFIG_CMD, },
 
-	/* only payload is connection name and volume number */
+	/* only payload is resource name and volume number */
 	{"new-minor", CTX_MINOR, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
-		 { "conn-name", T_ctx_resource_name, conv_resource_name },
+		 { "resource-name", T_ctx_resource_name, conv_resource_name },
 		 { "volume-number", T_ctx_volume, conv_volume },
 		 { } },
 	 .ctx = &new_minor_cmd_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
-	{"del-resource", CTX_CONN, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, config_usage, }
+	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, config_usage, }
 };
 
 bool show_defaults;
@@ -422,11 +422,10 @@ const char * error_to_string(int err_no)
 #undef MAX_ERROR
 
 char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
+
 /*
- * This is argv[2] as given on command line.
- * Connection name for CTX_CONN commands.
- * Device name for CTX_MINOR, for reporting in
- * print_config_error.
+ * In CTX_MINOR, CTX_RESOURCE, CTX_ALL, objname and minor refer to the object
+ * the command operates on.
  */
 char *objname;
 unsigned minor = -1U;
@@ -854,7 +853,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	dhdr->minor = minor;
 	dhdr->flags = 0;
 
-	if (cm->ctx_key & CTX_CONN) {
+	if (cm->ctx_key & CTX_RESOURCE) {
 		/* we just allocated 8k,
 		 * and now we put a few bytes there.
 		 * this cannot possibly fail, can it? */
@@ -1546,7 +1545,7 @@ static void free_minors(struct minors_list *minors)
 }
 
 /*
- * Expects objname to be setto the connection name or "all".
+ * Expects objname to be set to the resource name or "all".
  */
 static struct minors_list *enumerate_minors(void)
 {
@@ -2227,8 +2226,8 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 	static char *ctx_names[] = {
 	  [CTX_MINOR] = "minor",
-	  [CTX_CONN] = "connection",
-	  [CTX_ALL] = "minor_or_connection",
+	  [CTX_RESOURCE] = "resource_name",
+	  [CTX_ALL] = "minor_or_resource_name",
 	};
 
 	if(ut == XML) {
@@ -2516,7 +2515,7 @@ int main(int argc, char **argv)
 			print_usage_and_exit("command does not accept argument 'all'");
 	} else if (cmd->ctx_key & CTX_MINOR) {
 		minor = dt_minor_of_dev(objname);
-		if (minor == -1U && !(cmd->ctx_key & CTX_CONN)) {
+		if (minor == -1U && !(cmd->ctx_key & CTX_RESOURCE)) {
 			fprintf(stderr, "Cannot determine minor device number of "
 					"device '%s'\n",
 				objname);
@@ -2525,7 +2524,7 @@ int main(int argc, char **argv)
 		if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
 			lock_fd = dt_lock_drbd(minor);
 	} else {
-		/* objname is expected to be a connection name. */
+		/* objname is expected to be a resource name. */
 	}
 
 	/* Make it so that argv[0] is the command name. */
