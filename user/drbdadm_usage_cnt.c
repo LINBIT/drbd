@@ -277,7 +277,7 @@ void warn_on_version_mismatch(void)
 			msg);
 }
 
-void eventually_exec_drbdadm_83(char **argv)
+void maybe_exec_drbdadm_83(char **argv)
 {
 	if (current_vcs_rel.version.major == 8 &&
 	    current_vcs_rel.version.minor == 3) {

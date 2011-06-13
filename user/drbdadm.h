@@ -234,7 +234,7 @@ extern void schedule_deferred_cmd( int (*function)(struct cfg_ctx *),
 extern int version_code_kernel(void);
 extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);
-extern void eventually_exec_drbdadm_83(char **argv);
+extern void maybe_exec_drbdadm_83(char **argv);
 extern void uc_node(enum usage_count_type type);
 extern void convert_discard_opt(struct d_resource* res);
 extern void convert_after_option(struct d_resource* res);

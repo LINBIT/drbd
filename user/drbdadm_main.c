@@ -3529,7 +3529,7 @@ int main(int argc, char **argv)
 	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
 		warn_on_version_mismatch();
 
-	eventually_exec_drbdadm_83(argv);
+	maybe_exec_drbdadm_83(argv);
 
 	rv = parse_options(argc, argv);
 	if (rv)
