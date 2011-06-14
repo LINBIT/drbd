@@ -1471,7 +1471,8 @@ int adm_attach(struct cfg_ctx *ctx)
 		}
 		argv[NA(argc)] = vol->meta_index;
 	}
-	argv[NA(argc)] = "--set-defaults";
+	if (!do_attach)
+		argv[NA(argc)] = "--set-defaults";
 	opt = ctx->vol->disk_options;
 	if (!do_attach) {
 		while (opt && opt->adj_skip)
@@ -1955,7 +1956,8 @@ int adm_connect(struct cfg_ctx *ctx)
 		}
 	}
 
-	argv[NA(argc)] = "--set-defaults";
+	if (!do_connect)
+		argv[NA(argc)] = "--set-defaults";
 	opt = res->net_options;
 	make_options(opt);
 
