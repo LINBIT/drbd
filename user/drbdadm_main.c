@@ -318,7 +318,7 @@ struct adm_cmd cmds[] = {
 	{"attach", adm_attach, DRBD_acf1_default},
 	{"detach", adm_generic_l, DRBD_acf1_default},
 	{"connect", adm_connect, DRBD_acf1_connect},
-	{"disconnect", adm_generic_s, DRBD_acf1_resname},
+	{"disconnect", adm_disconnect, DRBD_acf1_resname},
 	{"up", adm_up, DRBD_acf1_up},
 	{"down", adm_generic_l, DRBD_acf1_resname},
 	{"primary", adm_generic_l, DRBD_acf1_default},
@@ -1443,11 +1443,12 @@ void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd
     OPT=OPT->next; \
   }
 
+/* FIXME: Don't leak the memory allocated by asprintf. */
 #define make_address(ADDR, PORT, AF)		\
   if (!strcmp(AF, "ipv6")) { \
-    ssprintf(argv[NA(argc)],"%s:[%s]:%s", AF, ADDR, PORT); \
+    asprintf(&argv[NA(argc)], "%s:[%s]:%s", AF, ADDR, PORT); \
   } else { \
-    ssprintf(argv[NA(argc)],"%s:%s:%s", AF, ADDR, PORT); \
+    asprintf(&argv[NA(argc)], "%s:%s:%s", AF, ADDR, PORT); \
   }
 
 int adm_attach(struct cfg_ctx *ctx)
@@ -1927,6 +1928,28 @@ void convert_discard_opt(struct d_resource *res)
 	}
 }
 
+static int add_connection_endpoints(char **argv, int *argcp, struct d_resource *res)
+{
+	int argc = *argcp;
+
+	make_address(res->me->address, res->me->port, res->me->address_family);
+	if (res->me->proxy) {
+		make_address(res->me->proxy->inside_addr,
+			     res->me->proxy->inside_port,
+			     res->me->proxy->inside_af);
+	} else if (res->peer) {
+		make_address(res->peer->address, res->peer->port,
+			     res->peer->address_family);
+	} else if (dry_run) {
+		argv[NA(argc)] = "N/A";
+	} else {
+		fprintf(stderr, "resource %s: cannot configure network without knowing my peer.\n", res->name);
+		return 20;
+	}
+	*argcp = argc;
+	return 0;
+}
+
 int adm_connect(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
@@ -1935,26 +1958,15 @@ int adm_connect(struct cfg_ctx *ctx)
 	int i;
 	int argc = 0;
 	int do_connect = !strcmp(ctx->arg, "connect");
+	int err;
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->arg; /* connect | net-options */
-	ssprintf(argv[NA(argc)], "%s", res->name);
-	if (do_connect) {
-		make_address(res->me->address, res->me->port, res->me->address_family);
-		if (res->me->proxy) {
-			make_address(res->me->proxy->inside_addr,
-				     res->me->proxy->inside_port,
-				     res->me->proxy->inside_af);
-		} else if (res->peer) {
-			make_address(res->peer->address, res->peer->port,
-				     res->peer->address_family);
-		} else if (dry_run > 1) {
-			argv[NA(argc)] = "N/A";
-		} else {
-			fprintf(stderr, "resource %s: cannot change network config without knowing my peer.\n", res->name);
-			return dry_run ? 0 : 20;
-		}
-	}
+	if (do_connect)
+		ssprintf(argv[NA(argc)], "%s", res->name);
+	err = add_connection_endpoints(argv, &argc, res);
+	if (err)
+		return err;
 
 	if (!do_connect)
 		argv[NA(argc)] = "--set-defaults";
@@ -1968,6 +1980,35 @@ int adm_connect(struct cfg_ctx *ctx)
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
+}
+
+int adm_disconnect(struct cfg_ctx *ctx)
+{
+	char *argv[MAX_ARGS];
+	int argc = 0, i;
+
+	if (!ctx->res) {
+		/* ASSERT */
+		fprintf(stderr, "sorry, need at least a resource name to call drbdsetup\n");
+		abort();
+	}
+
+	argv[NA(argc)] = drbdsetup;
+	argv[NA(argc)] = (char *)ctx->arg;
+	/*
+	if (ctx->vol)
+		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
+	else
+		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	*/
+	add_connection_endpoints(argv, &argc, ctx->res);
+	for (i = 0; i < soi; i++) {
+		argv[NA(argc)] = setup_opts[i];
+	}
+	argv[NA(argc)] = 0;
+
+	setenv("DRBD_RESOURCE", ctx->res->name, 1);
+	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 }
 
 struct d_option *del_opt(struct d_option *base, struct d_option *item)
