@@ -119,6 +119,7 @@ enum yytokentype {
 	TK_FLOATING,
 	TK_DEPRECATED_OPTION,
 	TK__GROUPING_BASE = 0x1000,
+	TK_PROXY_GROUP = 0x2000, /* Gets or'ed to some options */
 };
 
 /* The higher bits define one or more token groups. */

@@ -1459,7 +1459,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 
 	res->proxy_options =
 		parse_options_d(TK_PROXY_SWITCH,
-				TK_PROXY_OPTION,
+				TK_PROXY_OPTION | TK_PROXY_GROUP,
 				TK_PROXY_DELEGATE,
 				proxy_delegate, res);
 
