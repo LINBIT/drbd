@@ -118,7 +118,12 @@ enum yytokentype {
 	TK_INCLUDE,
 	TK_FLOATING,
 	TK_DEPRECATED_OPTION,
+	TK__GROUPING_BASE = 0x1000,
 };
+
+/* The higher bits define one or more token groups. */
+#define GET_TOKEN_GROUP(__x)         ((__x) & ~(TK__GROUPING_BASE - 1))
+#define REMOVE_GROUP_FROM_TOKEN(__x) ((__x) &  (TK__GROUPING_BASE - 1))
 
 typedef struct YYSTYPE {
 	char* txt;

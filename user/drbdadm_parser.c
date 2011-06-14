@@ -614,7 +614,7 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 					void *ctx)
 {
 	char *opt_name;
-	int token;
+	int token, token_group;
 	enum range_checks rc;
 
 	struct d_option *options = NULL, *ro = NULL;
@@ -622,11 +622,15 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	fline = line;
 
 	while (1) {
-		token = yylex();
+		token_group = yylex();
+		/* Keep the higher bits in token_option, remove them from token. */
+		token = REMOVE_GROUP_FROM_TOKEN(token_group);
 		fline = line;
+
 		if (token == token_switch) {
 			options = APPEND(options, new_opt(yylval.txt, NULL));
-		} else if (token == token_option) {
+		} else if (token == token_option ||
+				GET_TOKEN_GROUP(token_option & token_group)) {
 			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
@@ -634,7 +638,8 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, ro);
-		} else if (token == token_delegate) {
+		} else if (token == token_delegate ||
+				GET_TOKEN_GROUP(token_delegate & token_group)) {
 			delegate(ctx);
 			continue;
 		} else if (token == TK_DEPRECATED_OPTION) {
