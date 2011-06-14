@@ -657,8 +657,6 @@ struct context_def connect_cmd_ctx = {
 		{ "dry-run", FLAG(dry_run) },
 		{ "discard-my-data", FLAG(discard_my_data) },
 		CHANGEABLE_NET_OPTIONS,
-		/* { "*", BINARY(my_addr) }, */
-		/* { "*", BINARY(peer_addr) }, */
 		{ } },
 };
 
@@ -707,5 +705,7 @@ struct context_def new_minor_cmd_ctx = {
 	.fields = {
 		/* { "*", STRING(ctx_resource_name) }, */
 		/* { "*", NUMERIC(ctx_volume, >= 0) }, */
+		/* { "*", BINARY(ctx_my_addr) }, */
+		/* { "*", BINARY(ctx_peer_addr) }, */
 		{ } },
 };
