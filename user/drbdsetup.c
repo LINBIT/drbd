@@ -167,7 +167,6 @@ struct drbd_cmd {
 	const int cmd_id;
 	const int tla_id; /* top level attribute id */
 	int (*function)(struct drbd_cmd *, int, char **);
-	void (*usage)(struct drbd_cmd *, enum usage_type);
 	struct drbd_argument *drbd_args;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
 	struct option *options;
@@ -179,7 +178,7 @@ struct drbd_cmd {
 
 // other functions
 static int get_af_ssocks(int warn);
-static void print_command_usage(int i, const char *addinfo, enum usage_type);
+static void print_command_usage(struct drbd_cmd *cm, enum usage_type);
 
 // command functions
 static int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv);
@@ -187,10 +186,6 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
-
-// usage functions
-static void config_usage(struct drbd_cmd *cm, enum usage_type);
-static void get_usage(struct drbd_cmd *cm, enum usage_type);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -224,10 +219,10 @@ struct option show_cmd_options[] = {
 	{ }
 };
 
-#define F_CONFIG_CMD	generic_config_cmd, config_usage
+#define F_CONFIG_CMD	generic_config_cmd
 #define NO_PAYLOAD	0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
-			get_usage, .show_function = scmd
+			.show_function = scmd
 
 struct drbd_cmd commands[] = {
 	{"primary", CTX_MINOR, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS,
@@ -285,7 +280,7 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx },
-	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, get_usage, },
+	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, },
 	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd),
@@ -323,8 +318,8 @@ struct drbd_cmd commands[] = {
 		 { } },
 	 .ctx = &new_minor_cmd_ctx },
 
-	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, config_usage, },
-	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, config_usage, }
+	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, },
+	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, }
 };
 
 bool show_defaults;
@@ -873,7 +868,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	for (ad = cm->drbd_args; ad && ad->name; i++) {
 		if (argc < i + 1) {
 			fprintf(stderr, "Missing argument '%s'\n", ad->name);
-			print_command_usage(cm - commands, "", FULL);
+			print_command_usage(cm, FULL);
 			rv = OTHER_ERROR;
 			goto error;
 		}
@@ -2212,36 +2207,53 @@ static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 	return 0;
 }
 
-static const char *contexts_to_text(enum cfg_ctx_key ctx)
+static const char *contexts_to_text(enum cfg_ctx_key ctx, enum usage_type ut)
 {
-	static char text[64];
+	static char text[128];
 
 	text[0] = 0;
 	if (ctx & CTX_RESOURCE_AND_CONNECTION) {
-		strcat(text, "resource_and_connection|");
+		if (ut == XML)
+			strcat(text, "resource_and_connection");
+		else
+			strcat(text, "{resource} "
+				     "[{af}:]{local_addr}[:{port}] "
+				     "[{af}:]{remote_addr}[:{port}]");
 		ctx &= ~CTX_RESOURCE_AND_CONNECTION;
 	}
-	if (ctx & CTX_RESOURCE) {
-		strcat(text, "resource|");
-		ctx &= ~CTX_RESOURCE;
+
+	if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+		if (ut != XML)
+			strcat(text, "{");
+		if (ctx & CTX_RESOURCE) {
+			strcat(text, "resource|");
+			ctx &= ~CTX_RESOURCE;
+		}
+		if (ctx & CTX_MINOR) {
+			strcat(text, "minor|");
+			ctx &= ~CTX_MINOR;
+		}
+		if (ctx & CTX_ALL) {
+			strcat(text, "all|");
+			ctx &= ~CTX_ALL;
+		}
+		*strrchr(text, '|') = 0;
+		if (ut != XML)
+			strcat(text, "}");
 	}
-	if (ctx & CTX_MINOR) {
-		strcat(text, "minor|");
-		ctx &= ~CTX_MINOR;
-	}
-	if (ctx & CTX_ALL) {
-		strcat(text, "all|");
-		ctx &= ~CTX_ALL;
-	}
+
 	if (ctx & CTX_CONNECTION) {
-		strcat(text, "connection|");
+		if (ut == XML)
+			strcat(text, "connection");
+		else
+			strcat(text, "[{af}:]{local_addr}[:{port}] "
+				     "[{af}:]{remote_addr}[:{port}]");
 		ctx &= ~CTX_CONNECTION;
 	}
-	*strrchr(text, '|') = 0;
 	return text;
 }
 
-static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
+static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
 	static char line[300];
@@ -2250,12 +2262,29 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 	if(ut == XML) {
 		printf("<command name=\"%s\" operates_on=\"%s\">\n",
-		       cm->cmd, contexts_to_text(cm->ctx_key));
+		       cm->cmd, contexts_to_text(cm->ctx_key, XML));
 		if( (args = cm->drbd_args) ) {
 			while (args->name) {
 				printf("\t<argument>%s</argument>\n",
 				       args->name);
 				args++;
+			}
+		}
+
+		if (cm->options) {
+			struct option *option;
+
+			for (option = cm->options; option->name; option++) {
+				/*
+				 * The "string" options here really are
+				 * timeouts, but we can't describe them
+				 * in a resonable way here.
+				 */
+				printf("\t<option name=\"%s\" type=\"%s\">\n"
+				       "\t</option>\n",
+				       option->name,
+				       option->has_arg == no_argument ?
+					 "flag" : "string");
 			}
 		}
 
@@ -2269,17 +2298,21 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 		return;
 	}
 
+	if (ut != BRIEF)
+		printf("USAGE:\n");
+
 	prevcol=col=0;
 	maxcol=100;
 
 	if((colstr=getenv("COLUMNS"))) maxcol=atoi(colstr)-1;
 
 	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
+	if (cm->ctx_key && ut != BRIEF)
+		col += snprintf(line+col, maxcol-col, " %s",
+				contexts_to_text(cm->ctx_key, ut));
 
 	if( (args = cm->drbd_args) ) {
-		if(ut == BRIEF) {
-			col += snprintf(line+col, maxcol-col, " [args...]");
-		} else {
+		if(ut != BRIEF) {
 			while (args->name) {
 				col += snprintf(line+col, maxcol-col, " %s",
 						args->name);
@@ -2295,10 +2328,23 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	startcol=prevcol=col;
 
 	if(ut == BRIEF) {
-		if(cm->ctx && cm->ctx->fields->name)
-			col += snprintf(line+col, maxcol-col, " [opts...]");
 		printf("%-40s",line);
 		return;
+	}
+
+	if (ut != BRIEF && cm->options) {
+		struct option *option;
+
+		/* Screw this horrible pretty printing mess ... */
+		printf("%s", line);
+
+		for (option = cm->options; option->name; option++) {
+			printf(" [{--%s|-%c}]",
+			       option->name,
+			       option->val);
+		}
+		printf("\n");
+		col = 0;
 	}
 
 	if (cm->ctx) {
@@ -2325,36 +2371,6 @@ static void config_usage(struct drbd_cmd *cm, enum usage_type ut)
 	printf("%s\n",line);
 }
 
-static void get_usage(struct drbd_cmd *cm, enum usage_type ut)
-{
-	struct option *lo;
-	char line[41];
-
-	if(ut == BRIEF) {
-		sprintf(line,"%s [opts...]", cm->cmd);
-		printf(" %-39s",line);
-	} else {
-		printf(" %s", cm->cmd);
-		lo = cm->options;
-		while(lo && lo->name) {
-			printf(" [{--%s|-%c}]",lo->name,lo->val);
-			lo++;
-		}
-		printf("\n");
-	}
-}
-
-static void print_command_usage(int i, const char *addinfo, enum usage_type ut)
-{
-	if(ut != XML) printf("USAGE:\n");
-	commands[i].usage(commands+i,ut);
-
-	if (addinfo) {
-		printf("%s\n",addinfo);
-		exit(20);
-	}
-}
-
 static void print_usage_and_exit(const char* addinfo)
 {
 	size_t i;
@@ -2365,7 +2381,7 @@ static void print_usage_and_exit(const char* addinfo)
 
 
 	for (i = 0; i < ARRAY_SIZE(commands); i++) {
-		commands[i].usage(commands+i,BRIEF);
+		print_command_usage(&commands[i], BRIEF);
 		if(i%2==1) printf("\n");
 	}
 
@@ -2454,7 +2470,8 @@ int main(int argc, char **argv)
 		enum usage_type usage_type = !strcmp(argv[1], "xml-help") ? XML : FULL;
 		if(argc >= 3) {
 			cmd=find_cmd_by_name(argv[2]);
-			if(cmd) print_command_usage(cmd-commands, NULL, usage_type);
+			if(cmd)
+				print_command_usage(cmd, usage_type);
 			else print_usage_and_exit("unknown command");
 			exit(0);
 		}
@@ -2531,7 +2548,7 @@ int main(int argc, char **argv)
 	if (cmd->ctx_key & (CTX_MINOR | CTX_RESOURCE | CTX_ALL | CTX_RESOURCE_AND_CONNECTION)) {
 		if (argc < 3) {
 			fprintf(stderr, "Missing first argument\n");
-			print_command_usage(cmd - commands, "", FULL);
+			print_command_usage(cmd, FULL);
 			exit(20);
 		}
 		objname = argv[2];
@@ -2557,7 +2574,7 @@ int main(int argc, char **argv)
 	if (cmd->ctx_key & (CTX_CONNECTION | CTX_RESOURCE_AND_CONNECTION)) {
 		if (argc < 4 + !!context) {
 			fprintf(stderr, "Missing connection endpoint argument\n");
-			print_command_usage(cmd - commands, "", FULL);
+			print_command_usage(cmd, FULL);
 			exit(20);
 		}
 		context |= CTX_CONNECTION;
