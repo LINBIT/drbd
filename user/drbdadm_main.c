@@ -323,6 +323,7 @@ struct adm_cmd cmds[] = {
 	{"net-options", adm_net_options, DRBD_acf1_connect},
 	{"disconnect", adm_disconnect, DRBD_acf1_resname},
 	{"up", adm_up, DRBD_acf1_up},
+	{"resource-options", adm_res_options, DRBD_acf1_resname},
 	{"down", adm_generic_l, DRBD_acf1_resname},
 	{"primary", adm_generic_l, DRBD_acf1_default},
 	{"secondary", adm_generic_l, DRBD_acf1_default},
@@ -371,7 +372,6 @@ struct adm_cmd cmds[] = {
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
 	{"sh-new-resource", adm_new_resource, DRBD_acf2_sh_resname},
-	{"sh-resource-options", adm_res_options, DRBD_acf2_sh_resname},
 	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
@@ -1557,20 +1557,39 @@ int adm_new_resource(struct cfg_ctx *ctx)
 	return ex;
 }
 
-int adm_res_options(struct cfg_ctx *ctx)
+static int __adm_res_options(struct cfg_ctx *ctx, bool reset)
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
+	int i;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "resource-options";
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	opt = ctx->res->res_options;
-	make_options(opt);
+	if (reset) {
+		argv[NA(argc)] = "--set-defaults";
+		opt = ctx->res->res_options;
+		make_options(opt);
+	}
+
+	for (i = 0; i < soi; i++) {
+		argv[NA(argc)] = setup_opts[i];
+	}
+
 	argv[NA(argc)] = NULL;
 
 	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+}
+
+int adm_res_options(struct cfg_ctx *ctx)
+{
+	return __adm_res_options(ctx, false);
+}
+
+int adm_set_default_res_options(struct cfg_ctx *ctx)
+{
+	return __adm_res_options(ctx, true);
 }
 
 int adm_resize(struct cfg_ctx *ctx)

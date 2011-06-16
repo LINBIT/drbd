@@ -693,7 +693,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		do_disconnect = running->net_options != NULL;
 
 	if (do_res_options)
-		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
+		schedule_deferred_cmd(adm_set_default_res_options, ctx, "resource-options", CFG_RESOURCE);
 
 	/* do we need to attach,
 	 * do we need to detach first,
