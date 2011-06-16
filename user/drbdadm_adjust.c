@@ -722,7 +722,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	}
 
 	if (do_net_options)
-		schedule_deferred_cmd(adm_connect, ctx, "net-options", CFG_NET);
+		schedule_deferred_cmd(adm_set_default_net_options, ctx, "net-options", CFG_NET);
 
 	return 0;
 }

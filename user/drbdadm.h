@@ -184,6 +184,8 @@ extern int adm_res_options(struct cfg_ctx *);
 extern int adm_attach(struct cfg_ctx *);
 extern int adm_resize(struct cfg_ctx *);
 extern int adm_connect(struct cfg_ctx *);
+extern int adm_net_options(struct cfg_ctx *);
+extern int adm_set_default_net_options(struct cfg_ctx *);
 extern int adm_disconnect(struct cfg_ctx *);
 extern int adm_generic_s(struct cfg_ctx *);
 

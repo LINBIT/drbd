@@ -29,6 +29,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -318,6 +319,7 @@ struct adm_cmd cmds[] = {
 	{"attach", adm_attach, DRBD_acf1_default},
 	{"detach", adm_generic_l, DRBD_acf1_default},
 	{"connect", adm_connect, DRBD_acf1_connect},
+	{"net-options", adm_net_options, DRBD_acf1_connect},
 	{"disconnect", adm_disconnect, DRBD_acf1_resname},
 	{"up", adm_up, DRBD_acf1_up},
 	{"down", adm_generic_l, DRBD_acf1_resname},
@@ -1950,28 +1952,29 @@ static int add_connection_endpoints(char **argv, int *argcp, struct d_resource *
 	return 0;
 }
 
-int adm_connect(struct cfg_ctx *ctx)
+static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool reset)
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int i;
 	int argc = 0;
-	int do_connect = !strcmp(ctx->arg, "connect");
 	int err;
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = (char *)ctx->arg; /* connect | net-options */
+	argv[NA(argc)] = do_connect ? "connect" : "net-options";
 	if (do_connect)
 		ssprintf(argv[NA(argc)], "%s", res->name);
 	err = add_connection_endpoints(argv, &argc, res);
 	if (err)
 		return err;
 
-	if (!do_connect)
+	if (reset)
 		argv[NA(argc)] = "--set-defaults";
-	opt = res->net_options;
-	make_options(opt);
+	if (reset || do_connect) {
+		opt = res->net_options;
+		make_options(opt);
+	}
 
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
@@ -1980,6 +1983,21 @@ int adm_connect(struct cfg_ctx *ctx)
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
+}
+
+int adm_connect(struct cfg_ctx *ctx)
+{
+	return adm_connect_or_net_options(ctx, true, false);
+}
+
+int adm_net_options(struct cfg_ctx *ctx)
+{
+	return adm_connect_or_net_options(ctx, false, false);
+}
+
+int adm_set_default_net_options(struct cfg_ctx *ctx)
+{
+	return adm_connect_or_net_options(ctx, false, true);
 }
 
 int adm_disconnect(struct cfg_ctx *ctx)
