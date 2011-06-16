@@ -182,6 +182,8 @@ extern int adm_new_minor(struct cfg_ctx *ctx);
 extern int adm_new_resource(struct cfg_ctx *);
 extern int adm_res_options(struct cfg_ctx *);
 extern int adm_attach(struct cfg_ctx *);
+extern int adm_disk_options(struct cfg_ctx *);
+extern int adm_set_default_disk_options(struct cfg_ctx *);
 extern int adm_resize(struct cfg_ctx *);
 extern int adm_connect(struct cfg_ctx *);
 extern int adm_net_options(struct cfg_ctx *);

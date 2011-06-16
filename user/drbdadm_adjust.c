@@ -709,7 +709,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		if (vol->adj_attach)
 			schedule_deferred_cmd(adm_attach, &tmp_ctx, "attach", CFG_DISK);
 		if (vol->adj_disk_opts)
-			schedule_deferred_cmd(adm_attach, &tmp_ctx, "disk-options", CFG_DISK);
+			schedule_deferred_cmd(adm_set_default_disk_options, &tmp_ctx, "disk-options", CFG_DISK);
 		if (vol->adj_resize)
 			schedule_deferred_cmd(adm_resize, &tmp_ctx, "resize", CFG_DISK);
 	}

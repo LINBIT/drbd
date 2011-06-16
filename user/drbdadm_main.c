@@ -317,6 +317,7 @@ struct adm_cmd cmds[] = {
 	 *  - advanced
 	 ***/
 	{"attach", adm_attach, DRBD_acf1_default},
+	{"disk-options", adm_disk_options, DRBD_acf1_default},
 	{"detach", adm_generic_l, DRBD_acf1_default},
 	{"connect", adm_connect, DRBD_acf1_connect},
 	{"net-options", adm_net_options, DRBD_acf1_connect},
@@ -1453,17 +1454,16 @@ void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd
     asprintf(&argv[NA(argc)], "%s:%s:%s", AF, ADDR, PORT); \
   }
 
-int adm_attach(struct cfg_ctx *ctx)
+static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool reset)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
 	int i;
 	int argc = 0;
-	int do_attach = !strcmp(ctx->arg, "attach");
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = (char*)(ctx->arg);
+	argv[NA(argc)] = do_attach ? "attach" : "disk-options";
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	if (do_attach) {
 		argv[NA(argc)] = vol->disk;
@@ -1474,19 +1474,36 @@ int adm_attach(struct cfg_ctx *ctx)
 		}
 		argv[NA(argc)] = vol->meta_index;
 	}
-	if (!do_attach)
+	if (reset)
 		argv[NA(argc)] = "--set-defaults";
-	opt = ctx->vol->disk_options;
-	if (!do_attach) {
-		while (opt && opt->adj_skip)
-			opt = opt->next;
+	if (reset || do_attach) {
+		opt = ctx->vol->disk_options;
+		if (!do_attach) {
+			while (opt && opt->adj_skip)
+				opt = opt->next;
+		}
+		make_options(opt);
 	}
-	make_options(opt);
 	for (i = 0; i < soi; i++)
 		argv[NA(argc)] = setup_opts[i];
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
+}
+
+int adm_attach(struct cfg_ctx *ctx)
+{
+	return adm_attach_or_disk_options(ctx, true, false);
+}
+
+int adm_disk_options(struct cfg_ctx *ctx)
+{
+	return adm_attach_or_disk_options(ctx, false, false);
+}
+
+int adm_set_default_disk_options(struct cfg_ctx *ctx)
+{
+	return adm_attach_or_disk_options(ctx, false, true);
 }
 
 struct d_option *find_opt(struct d_option *base, char *name)
@@ -2282,9 +2299,12 @@ static int adm_up(struct cfg_ctx *ctx)
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
 	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 
-	/* quick fix to make the al-extent setting apply on freshly created meta-data.
-	 * Needs to be fixed in-kernel drbd_adm_attach(). */
-	schedule_deferred_cmd(adm_attach, ctx, "disk-options", CFG_DISK);
+	/*
+	 * FIXME:
+	 * quick fix to make the al-extent setting apply on freshly created meta-data.
+	 * Needs to be fixed in-kernel drbd_adm_attach().
+	 */
+	schedule_deferred_cmd(adm_set_default_disk_options, ctx, "disk-options", CFG_DISK);
 
 	return 0;
 }
