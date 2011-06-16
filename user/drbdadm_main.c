@@ -2216,7 +2216,8 @@ static int adm_up(struct cfg_ctx *ctx)
 		current_res_name = strdup(ctx->res->name);
 
 		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
-		schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
+		if (ctx->res->res_options)
+			schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
