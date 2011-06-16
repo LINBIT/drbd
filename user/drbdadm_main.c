@@ -1535,43 +1535,19 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	return ex;
 }
 
-int adm_new_resource(struct cfg_ctx *ctx)
+static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_resource, bool reset)
 {
 	char *argv[MAX_ARGS];
+	int i;
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = "new-resource";
+	argv[NA(argc)] = do_new_resource ? "new-resource" : "resource-options";
 	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	argv[NA(argc)] = NULL;
-
-	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
-	if (!ex && do_register) {
-		/*
-		 * FIXME: Versions of drbd before 8.4 do not support connection
-		 * sharing and therefore don't have per-resource commands.  For
-		 * them, we do not need to register resources.
-		 */
-		register_resource(ctx->res->name, config_save);
-	}
-	return ex;
-}
-
-static int __adm_res_options(struct cfg_ctx *ctx, bool reset)
-{
-	char *argv[MAX_ARGS];
-	struct d_option *opt;
-	int i;
-	int argc = 0;
-
-	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = "resource-options";
-	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	if (reset) {
+	if (reset)
 		argv[NA(argc)] = "--set-defaults";
-		opt = ctx->res->res_options;
-		make_options(opt);
-	}
+	if (reset || do_new_resource)
+		make_options(ctx->res->res_options);
 
 	for (i = 0; i < soi; i++) {
 		argv[NA(argc)] = setup_opts[i];
@@ -1579,17 +1555,25 @@ static int __adm_res_options(struct cfg_ctx *ctx, bool reset)
 
 	argv[NA(argc)] = NULL;
 
-	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	if (!ex && do_new_resource && do_register)
+		register_resource(ctx->res->name, config_save);
+	return ex;
+}
+
+int adm_new_resource(struct cfg_ctx *ctx)
+{
+	return adm_new_resource_or_res_options(ctx, true, false);
 }
 
 int adm_res_options(struct cfg_ctx *ctx)
 {
-	return __adm_res_options(ctx, false);
+	return adm_new_resource_or_res_options(ctx, false, false);
 }
 
 int adm_set_default_res_options(struct cfg_ctx *ctx)
 {
-	return __adm_res_options(ctx, true);
+	return adm_new_resource_or_res_options(ctx, false, true);
 }
 
 int adm_resize(struct cfg_ctx *ctx)
@@ -2311,8 +2295,6 @@ static int adm_up(struct cfg_ctx *ctx)
 		current_res_name = strdup(ctx->res->name);
 
 		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
-		if (ctx->res->res_options)
-			schedule_deferred_cmd(adm_res_options, ctx, "resource-options", CFG_RESOURCE);
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
