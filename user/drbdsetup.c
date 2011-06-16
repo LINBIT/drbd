@@ -2000,8 +2000,9 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	int rv;
 	int success;
 
-	if(argc > 1) {
-		fprintf(stderr,"Ignoring excess arguments\n");
+	if(argc > 2) {
+		warn_print_excess_args(argc, argv, 2);
+		return OTHER_ERROR;
 	}
 
 	minors = enumerate_minors();
@@ -2491,8 +2492,8 @@ int main(int argc, char **argv)
 	if (getenv("DRBD_DEBUG_DUMP_ARGV"))
 		debug_dump_argv = 1;
 
-	if (argc < 3)
-		print_usage_and_exit(argc==1 ? 0 : " Insufficient arguments");
+	if (argc < 2)
+		print_usage_and_exit(0);
 
 	cmd = find_cmd_by_name(argv[1]);
 	if (!cmd)
