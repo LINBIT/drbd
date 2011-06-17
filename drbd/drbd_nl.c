@@ -2068,7 +2068,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_conf *mdev;
 	struct net_conf *old_conf, *new_conf = NULL;
 	struct crypto crypto = { };
-	struct drbd_tconn *oconn;
 	struct drbd_tconn *tconn;
 	enum drbd_ret_code retcode;
 	int i;
@@ -2083,6 +2082,23 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
 		drbd_msg_put_info("connection endpoint(s) missing");
 		return ERR_INVALID_REQUEST;
+	}
+
+	/* No need for _rcu here. All reconfiguration is
+	 * strictly serialized on genl_lock(). We are protected against
+	 * concurrent reconfiguration/addition/deletion */
+	list_for_each_entry(tconn, &drbd_tconns, all_tconn) {
+		if (nla_len(adm_ctx.my_addr) == tconn->my_addr_len &&
+		    !memcmp(nla_data(adm_ctx.my_addr), &tconn->my_addr, tconn->my_addr_len)) {
+			retcode = ERR_LOCAL_ADDR;
+			goto out;
+		}
+
+		if (nla_len(adm_ctx.peer_addr) == tconn->peer_addr_len &&
+		    !memcmp(nla_data(adm_ctx.peer_addr), &tconn->peer_addr, tconn->peer_addr_len)) {
+			retcode = ERR_PEER_ADDR;
+			goto out;
+		}
 	}
 
 	tconn = adm_ctx.tconn;
@@ -2112,28 +2128,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	retcode = check_net_options(tconn, new_conf);
 	if (retcode != NO_ERROR)
 		goto fail;
-
-	retcode = NO_ERROR;
-
-	/* No need for _rcu here. All reconfiguration is
-	 * strictly serialized on genl_lock(). We are protected against
-	 * concurrent reconfiguration/addition/deletion */
-	list_for_each_entry(oconn, &drbd_tconns, all_tconn) {
-		if (oconn == tconn)
-			continue;
-
-		if (nla_len(adm_ctx.my_addr) == tconn->my_addr_len &&
-		    !memcmp(nla_data(adm_ctx.my_addr), &tconn->my_addr, tconn->my_addr_len)) {
-			retcode = ERR_LOCAL_ADDR;
-			goto fail;
-		}
-
-		if (nla_len(adm_ctx.peer_addr) == tconn->peer_addr_len &&
-		    !memcmp(nla_data(adm_ctx.peer_addr), &tconn->peer_addr, tconn->peer_addr_len)) {
-			retcode = ERR_PEER_ADDR;
-			goto fail;
-		}
-	}
 
 	retcode = alloc_crypto(&crypto, new_conf);
 	if (retcode != NO_ERROR)
