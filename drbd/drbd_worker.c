@@ -1494,7 +1494,7 @@ static int _drbd_pause_after(struct drbd_device *device)
 	int i, rv = 0;
 
 	rcu_read_lock();
-	idr_for_each_entry(&minors, odev, i) {
+	idr_for_each_entry(&drbd_devices, odev, i) {
 		if (odev->state.conn == C_STANDALONE && odev->state.disk == D_DISKLESS)
 			continue;
 		if (!_drbd_may_sync_now(odev))
@@ -1518,7 +1518,7 @@ static int _drbd_resume_next(struct drbd_device *device)
 	int i, rv = 0;
 
 	rcu_read_lock();
-	idr_for_each_entry(&minors, odev, i) {
+	idr_for_each_entry(&drbd_devices, odev, i) {
 		if (odev->state.conn == C_STANDALONE && odev->state.disk == D_DISKLESS)
 			continue;
 		if (odev->state.aftr_isp) {
