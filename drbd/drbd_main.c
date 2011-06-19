@@ -128,7 +128,7 @@ module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
-struct idr minors;
+struct idr drbd_devices;
 struct list_head drbd_connections;
 
 struct kmem_cache *drbd_request_cache;
@@ -2457,8 +2457,8 @@ STATIC void drbd_cleanup(void)
 
 	drbd_genl_unregister();
 
-	idr_for_each_entry(&minors, device, i) {
-		idr_remove(&minors, mdev_to_minor(device));
+	idr_for_each_entry(&drbd_devices, device, i) {
+		idr_remove(&drbd_devices, mdev_to_minor(device));
 		idr_remove(&first_peer_device(device)->connection->volumes, device->vnr);
 		del_gendisk(device->vdisk);
 		/* synchronize_rcu(); No other threads running at this point */
@@ -2475,7 +2475,7 @@ STATIC void drbd_cleanup(void)
 	drbd_destroy_mempools();
 	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
 
-	idr_destroy(&minors);
+	idr_destroy(&drbd_devices);
 
 	printk(KERN_INFO "drbd: module cleanup done.\n");
 }
@@ -2804,9 +2804,9 @@ enum drbd_ret_code drbd_create_minor(struct drbd_connection *connection, unsigne
 	INIT_LIST_HEAD(&device->current_epoch->list);
 	device->epochs = 1;
 
-	if (!idr_pre_get(&minors, GFP_KERNEL))
+	if (!idr_pre_get(&drbd_devices, GFP_KERNEL))
 		goto out_no_minor_idr;
-	if (idr_get_new_above(&minors, device, minor, &minor_got))
+	if (idr_get_new_above(&drbd_devices, device, minor, &minor_got))
 		goto out_no_minor_idr;
 	if (minor_got != minor) {
 		err = ERR_MINOR_EXISTS;
@@ -2836,7 +2836,7 @@ enum drbd_ret_code drbd_create_minor(struct drbd_connection *connection, unsigne
 out_idr_remove_vol:
 	idr_remove(&connection->volumes, vnr_got);
 out_idr_remove_minor:
-	idr_remove(&minors, minor_got);
+	idr_remove(&drbd_devices, minor_got);
 	synchronize_rcu();
 out_no_minor_idr:
 	kfree(device->current_epoch);
@@ -2894,7 +2894,7 @@ int __init drbd_init(void)
 	init_waitqueue_head(&drbd_pp_wait);
 
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
-	idr_init(&minors);
+	idr_init(&drbd_devices);
 
 	err = drbd_create_mempools();
 	if (err)

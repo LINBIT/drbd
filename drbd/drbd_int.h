@@ -264,7 +264,7 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 	(typecheck(struct drbd_device*, x) && \
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)) : 0))
 
-extern struct idr minors; /* RCU, updates: genl_lock() */
+extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
 extern struct list_head drbd_connections; /* RCU, updates: genl_lock() */
 
 extern const char *cmdname(enum drbd_packet cmd);
@@ -842,7 +842,7 @@ struct drbd_device {
 
 static inline struct drbd_device *minor_to_mdev(unsigned int minor)
 {
-	return (struct drbd_device *)idr_find(&minors, minor);
+	return (struct drbd_device *)idr_find(&drbd_devices, minor);
 }
 
 static inline struct drbd_peer_device *first_peer_device(struct drbd_device *device)

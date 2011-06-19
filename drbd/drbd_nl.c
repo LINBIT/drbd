@@ -3059,7 +3059,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		_drbd_request_state(device, NS(conn, C_WF_REPORT_PARAMS),
 				    CS_VERBOSE + CS_WAIT_COMPLETE);
 		idr_remove(&first_peer_device(device)->connection->volumes, device->vnr);
-		idr_remove(&minors, mdev_to_minor(device));
+		idr_remove(&drbd_devices, mdev_to_minor(device));
 		del_gendisk(device->vdisk);
 		synchronize_rcu();
 		kref_put(&device->kref, drbd_destroy_device);
