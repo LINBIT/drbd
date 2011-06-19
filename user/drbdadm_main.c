@@ -358,7 +358,7 @@ struct adm_cmd cmds[] = {
 	{"sh-resource", sh_resource, DRBD_acf2_sh_resname},
 	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
 	{"sh-dev", sh_dev, DRBD_acf2_shell},
-	{"sh-udev", sh_udev, DRBD_acf2_hook},
+	{"sh-udev", sh_udev, .vol_id_required = 1, DRBD_acf2_hook},
 	{"sh-minor", sh_minor, DRBD_acf2_shell},
 	{"sh-ll-dev", sh_ll_dev, DRBD_acf2_shell},
 	{"sh-md-dev", sh_md_dev, DRBD_acf2_shell},
