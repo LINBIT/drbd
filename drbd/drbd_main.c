@@ -1804,7 +1804,7 @@ int drbd_send_dblock(struct drbd_conf *mdev, struct drbd_request *req)
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (dgs > 0 && dgs <= 64) {
-			/* 64 byte, 512 bit, is the larges digest size
+			/* 64 byte, 512 bit, is the largest digest size
 			 * currently supported in kernel crypto. */
 			unsigned char digest[64];
 			drbd_csum_bio(mdev, mdev->tconn->integrity_tfm, req->master_bio, digest);
@@ -2983,7 +2983,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
 
 	if (drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ)) {
-		/* NOTE: cant do normal error processing here as this is
+		/* NOTE: can't do normal error processing here as this is
 		   called BEFORE disk is attached */
 		dev_err(DEV, "Error while reading metadata.\n");
 		rv = ERR_IO_MD_DISK;

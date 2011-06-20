@@ -51,7 +51,7 @@
 
 /* net { */
   /* timeout, unit centi seconds
-   * more than one minute timeout is not usefull */
+   * more than one minute timeout is not useful */
 #define DRBD_TIMEOUT_MIN 1
 #define DRBD_TIMEOUT_MAX 600
 #define DRBD_TIMEOUT_DEF 60       /* 6 seconds */
@@ -81,7 +81,7 @@
 #define DRBD_MAX_EPOCH_SIZE_DEF 2048
 #define DRBD_MAX_EPOCH_SIZE_SCALE '1'
 
-  /* I don't think that a tcp send buffer of more than 10M is usefull */
+  /* I don't think that a tcp send buffer of more than 10M is useful */
 #define DRBD_SNDBUF_SIZE_MIN  0
 #define DRBD_SNDBUF_SIZE_MAX  (10<<20)
 #define DRBD_SNDBUF_SIZE_DEF  0
@@ -120,7 +120,7 @@
 #define DRBD_RESYNC_RATE_DEF 250
 #define DRBD_RESYNC_RATE_SCALE 'k'  /* kilobytes */
 
-  /* less than 7 would hit performance unneccessarily.
+  /* less than 7 would hit performance unnecessarily.
    * 919 slots context information per transaction,
    * 32k activity log, 4k transaction size,
    * one transaction in flight:

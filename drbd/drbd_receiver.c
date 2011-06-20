@@ -991,7 +991,7 @@ retry:
 	msock->sk->sk_sndtimeo = timeout;
 
 	/* we don't want delays.
-	 * we use TCP_CORK where apropriate, though */
+	 * we use TCP_CORK where appropriate, though */
 	drbd_tcp_nodelay(sock);
 	drbd_tcp_nodelay(msock);
 
@@ -1797,7 +1797,7 @@ STATIC int receive_DataReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	if (unlikely(!req))
 		return -EIO;
 
-	/* hlist_del(&req->colision) is done in _req_may_be_done, to avoid
+	/* drbd_remove_request_interval() is done in _req_may_be_done, to avoid
 	 * special casing it there for the various failure cases.
 	 * still no race with drbd_fail_pending_reads */
 	err = recv_dless_read(mdev, req, sector, pi->size);
@@ -3711,7 +3711,7 @@ STATIC int receive_sizes(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	ddsf = be16_to_cpu(p->dds_flags);
 	if (get_ldev(mdev)) {
-		dd = drbd_determin_dev_size(mdev, ddsf);
+		dd = drbd_determine_dev_size(mdev, ddsf);
 		put_ldev(mdev);
 		if (dd == dev_size_error)
 			return -EIO;
