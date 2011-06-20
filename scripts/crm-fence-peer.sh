@@ -12,7 +12,7 @@ sed_rsc_location_suitable_for_string_compare()
 		s/ *\bid="[^"]*"//  # remove id tag
 		# print each attribute on its own line, by
 		: attr
-		h # rememver the current rest line
+		h # remember the current (tail of the) line
 		# remove all but the first attribute, and print,
 		s/^\([^[:space:]]*[[:space:]][^= ]*="[^"]*"\).*$/\1/p
 		g # then restore the remembered line,

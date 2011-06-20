@@ -5381,6 +5381,11 @@ int drbd_asender(struct drbd_thread *thi)
 			conn_err(tconn, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
+			/* If the data socket received something meanwhile,
+			 * that is good enough: peer is still alive. */
+			if (time_after(tconn->last_received,
+				jiffies - tconn->meta.socket->sk->sk_rcvtimeo))
+				continue;
 			if (ping_timeout_active) {
 				conn_err(tconn, "PingAck did not arrive in time.\n");
 				goto reconnect;
@@ -5418,6 +5423,8 @@ int drbd_asender(struct drbd_thread *thi)
 				conn_err(tconn, "%pf failed\n", cmd->fn);
 				goto reconnect;
 			}
+
+			tconn->last_received = jiffies;
 
 			if (cmd == &asender_tbl[P_PING_ACK]) {
 				/* restore idle timeout */
