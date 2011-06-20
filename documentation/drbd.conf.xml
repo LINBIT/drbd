@@ -619,8 +619,8 @@
             <para><replaceable>handler</replaceable> may be <option>pass_on</option>,
             <option>call-local-io-error</option> or <option>detach.</option></para>
 
-            <para><option>pass_on</option>: Report the io-error to the upper layers. On Primary
-            report it to the mounted file system. On Secondary ignore it.</para>
+            <para><option>pass_on</option>: The node downgrades the disk status to inconsistent, marks the
+            erroneous block as inconsistent in the bitmap and retries the IO on the remote node.</para>
 
             <para><option>call-local-io-error</option>: Call the handler script
             <option>local-io-error</option>.</para>
