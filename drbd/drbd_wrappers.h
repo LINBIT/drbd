@@ -851,28 +851,25 @@ enum {
  * bi_rw (some kernel version) -> data packet flags -> bi_rw (other kernel version)
  */
 
-#if defined(BIO_RW_SYNC)
-/* see upstream commits
- * 213d9417fec62ef4c3675621b9364a667954d4dd,
- * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
- * later, the defines even became an enum ;-) */
-#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNC)
-#elif defined(REQ_SYNC)		/* introduced in 2.6.36 */
-#define DRBD_REQ_SYNC		REQ_SYNC
-#else
-/* cannot test on defined(BIO_RW_SYNCIO), it may be an enum */
+/* RHEL 6.1 backported FLUSH/FUA as BIO_RW_FLUSH/FUA
+ * and at that time also introduced the defines BIO_FLUSH/FUA.
+ * There is also REQ_FLUSH/FUA, but these do NOT share
+ * the same value space as the bio rw flags, yet.
+ */
+#ifdef BIO_FLUSH
+
+#define DRBD_REQ_FLUSH		(1UL << BIO_RW_FLUSH)
+#define DRBD_REQ_FUA		(1UL << BIO_RW_FUA)
+#define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
+#define DRBD_REQ_DISCARD	(1UL << BIO_RW_DISCARD)
 #define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
-#endif
-
-#if defined(BIO_RW_SYNC)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_SYNC)
-#elif defined(REQ_UNPLUG)
-#define DRBD_REQ_UNPLUG		REQ_UNPLUG
-#else
 #define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
-#endif
 
-#ifdef REQ_FLUSH	/* introduced in 2.6.36, now equivalent to bi_rw */
+#elif defined(REQ_FLUSH)	/* introduced in 2.6.36,
+				 * now equivalent to bi_rw */
+
+#define DRBD_REQ_SYNC		REQ_SYNC
+#define DRBD_REQ_UNPLUG		REQ_UNPLUG
 #define DRBD_REQ_FLUSH		REQ_FLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_DISCARD	REQ_DISCARD
@@ -886,7 +883,22 @@ enum {
 /* ... but REQ_HARDBARRIER was removed again in 02e031c (v2.6.37-rc4). */
 #define DRBD_REQ_HARDBARRIER	0
 #endif
+
+#else				/* "older", and hopefully not
+				 * "partially backported" kernel */
+
+#if defined(BIO_RW_SYNC)
+/* see upstream commits
+ * 213d9417fec62ef4c3675621b9364a667954d4dd,
+ * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
+ * later, the defines even became an enum ;-) */
+#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNC)
+#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_SYNC)
 #else
+/* cannot test on defined(BIO_RW_SYNCIO), it may be an enum */
+#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
+#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
+#endif
 
 #define DRBD_REQ_FLUSH		(1UL << BIO_RW_BARRIER)
 /* REQ_FUA has been around for a longer time,
