@@ -1173,10 +1173,7 @@ extern void drbd_calc_cpu_mask(struct drbd_tconn *tconn);
 extern void tl_release(struct drbd_tconn *, unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct drbd_tconn *);
-enum drbd_req_event;
-extern void tl_restart(struct drbd_tconn *tconn, enum drbd_req_event what);
 extern void _tl_add_barrier(struct drbd_tconn *, struct drbd_tl_epoch *);
-extern void _tl_restart(struct drbd_tconn *, enum drbd_req_event what);
 extern void drbd_free_sock(struct drbd_tconn *tconn);
 extern int drbd_send(struct drbd_tconn *tconn, struct socket *sock,
 		     void *buf, size_t size, unsigned msg_flags);
