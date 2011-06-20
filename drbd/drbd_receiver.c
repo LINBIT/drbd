@@ -4875,6 +4875,11 @@ int drbd_asender(struct drbd_thread *thi)
 			dev_err(DEV, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
+			/* If the data socket received something meanwhile,
+			 * that is good enough: peer is still alive. */
+			if (time_after(mdev->last_received,
+				jiffies - mdev->meta.socket->sk->sk_rcvtimeo))
+				continue;
 			if (ping_timeout_active) {
 				dev_err(DEV, "PingAck did not arrive in time.\n");
 				goto reconnect;
@@ -4913,6 +4918,7 @@ int drbd_asender(struct drbd_thread *thi)
 			}
 		}
 		if (received == expect) {
+			mdev->last_received = jiffies;
 			D_ASSERT(cmd != NULL);
 			trace_drbd_packet(mdev, mdev->meta.socket, 1, (void *)h, __FILE__, __LINE__);
 			if (!cmd->process(mdev, h))
