@@ -118,9 +118,6 @@ struct drbd_bitmap {
 	struct task_struct *bm_task;
 };
 
-STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
-			       unsigned long e, int val, const enum km_type km);
-
 #define bm_print_lock_info(m) __bm_print_lock_info(m, __func__)
 static void __bm_print_lock_info(struct drbd_conf *mdev, const char *func)
 {
@@ -1311,7 +1308,7 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_f
  * expected to be called for only a few bits (e - s about BITS_PER_LONG).
  * Must hold bitmap lock already. */
 STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
-	unsigned long e, int val, const enum km_type km)
+	unsigned long e, int val)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *p_addr = NULL;
@@ -1329,14 +1326,14 @@ STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 		unsigned int page_nr = bm_bit_to_page_idx(b, bitnr);
 		if (page_nr != last_page_nr) {
 			if (p_addr)
-				__bm_unmap(p_addr, km);
+				__bm_unmap(p_addr, KM_IRQ1);
 			if (c < 0)
 				bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
 			else if (c > 0)
 				bm_set_page_need_writeout(b->bm_pages[last_page_nr]);
 			changed_total += c;
 			c = 0;
-			p_addr = __bm_map_pidx(b, page_nr, km);
+			p_addr = __bm_map_pidx(b, page_nr, KM_IRQ1);
 			last_page_nr = page_nr;
 		}
 		if (val)
@@ -1345,7 +1342,7 @@ STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 			c -= (0 != __test_and_clear_bit_le(bitnr & BITS_PER_PAGE_MASK, p_addr));
 	}
 	if (p_addr)
-		__bm_unmap(p_addr, km);
+		__bm_unmap(p_addr, KM_IRQ1);
 	if (c < 0)
 		bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
 	else if (c > 0)
@@ -1375,7 +1372,7 @@ STATIC int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	if ((val ? BM_DONT_SET : BM_DONT_CLEAR) & b->bm_flags)
 		bm_print_lock_info(mdev);
 
-	c = __bm_change_bits_to(mdev, s, e, val, KM_IRQ1);
+	c = __bm_change_bits_to(mdev, s, e, val);
 
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 	return c;
@@ -1400,16 +1397,17 @@ static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
 {
 	int i;
 	int bits;
-	unsigned long *paddr = kmap_atomic(b->bm_pages[page_nr], KM_USER0);
+	unsigned long *paddr = kmap_atomic(b->bm_pages[page_nr], KM_IRQ1);
 	for (i = first_word; i < last_word; i++) {
 		bits = hweight_long(paddr[i]);
 		paddr[i] = ~0UL;
 		b->bm_set += BITS_PER_LONG - bits;
 	}
-	kunmap_atomic(paddr, KM_USER0);
+	kunmap_atomic(paddr, KM_IRQ1);
 }
 
-/* Same thing as drbd_bm_set_bits, but without taking the spin_lock_irqsave.
+/* Same thing as drbd_bm_set_bits,
+ * but more efficient for a large bit range.
  * You must first drbd_bm_lock().
  * Can be called to set the whole bitmap in one go.
  * Sets bits from s to e _inclusive_. */
@@ -1423,6 +1421,7 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	 * Do not use memset, because we must account for changes,
 	 * so we need to loop over the words with hweight() anyways.
 	 */
+	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long sl = ALIGN(s,BITS_PER_LONG);
 	unsigned long el = (e+1) & ~((unsigned long)BITS_PER_LONG-1);
 	int first_page;
@@ -1433,15 +1432,19 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 
 	if (e - s <= 3*BITS_PER_LONG) {
 		/* don't bother; el and sl may even be wrong. */
-		__bm_change_bits_to(mdev, s, e, 1, KM_USER0);
+		spin_lock_irq(&b->bm_lock);
+		__bm_change_bits_to(mdev, s, e, 1);
+		spin_unlock_irq(&b->bm_lock);
 		return;
 	}
 
 	/* difference is large enough that we can trust sl and el */
 
+	spin_lock_irq(&b->bm_lock);
+
 	/* bits filling the current long */
 	if (sl)
-		__bm_change_bits_to(mdev, s, sl-1, 1, KM_USER0);
+		__bm_change_bits_to(mdev, s, sl-1, 1);
 
 	first_page = sl >> (3 + PAGE_SHIFT);
 	last_page = el >> (3 + PAGE_SHIFT);
@@ -1454,8 +1457,10 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	/* first and full pages, unless first page == last page */
 	for (page_nr = first_page; page_nr < last_page; page_nr++) {
 		bm_set_full_words_within_one_page(mdev->bitmap, page_nr, first_word, last_word);
+		spin_unlock_irq(&b->bm_lock);
 		cond_resched();
 		first_word = 0;
+		spin_lock_irq(&b->bm_lock);
 	}
 
 	/* last page (respectively only page, for first page == last page) */
@@ -1468,7 +1473,8 @@ void _drbd_bm_set_bits(struct drbd_conf *mdev, const unsigned long s, const unsi
 	 * it would trigger an assert in __bm_change_bits_to()
 	 */
 	if (el <= e)
-		__bm_change_bits_to(mdev, el, e, 1, KM_USER0);
+		__bm_change_bits_to(mdev, el, e, 1);
+	spin_unlock_irq(&b->bm_lock);
 }
 
 /* returns bit state
