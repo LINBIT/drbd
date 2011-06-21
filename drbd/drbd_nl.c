@@ -2652,6 +2652,9 @@ void __exit cn_fini(void);
 
 typedef int (*cn_add_callback_req_nsp_fn)(struct cb_id *, char *,
 	void (*cb)(struct cn_msg *req, struct netlink_skb_parms *nsp));
+typedef int (*cn_add_callback_const_name_req_nsp_fn)(
+		struct cb_id *id, const char *name,
+	void (*callback)(struct cn_msg *, struct netlink_skb_parms *));
 typedef int (*cn_add_callback_req_fn)(struct cb_id *, char *,
 	void (*cb)(struct cn_msg *req));
 typedef int (*cn_add_callback_void_fn)(struct cb_id *, char *,
@@ -2678,7 +2681,9 @@ int __init drbd_nl_init(void)
 		 * otherwise it will just be a compiler _warning_,
 		 * but then BUG at runtime. */
 #ifdef KERNEL_HAS_CN_SKB_PARMS
-		BUILD_BUG_ON(!__same_type(&cn_add_callback, cn_add_callback_req_nsp_fn));
+		BUILD_BUG_ON(!(
+			__same_type(&cn_add_callback, cn_add_callback_req_nsp_fn) ||
+			__same_type(&cn_add_callback, cn_add_callback_const_name_req_nsp_fn)));
 #else
 		BUILD_BUG_ON(!(
 			__same_type(&cn_add_callback, cn_add_callback_req_fn) ||
