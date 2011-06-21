@@ -906,7 +906,7 @@ int drbd_connected(struct drbd_device *device)
 static int conn_connect(struct drbd_connection *connection)
 {
 	struct drbd_socket sock, msock;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
 	int vnr, timeout, h, ok;
 	bool discard_my_data;
@@ -1077,7 +1077,9 @@ randomize:
 	set_bit(STATE_SENT, &connection->flags);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 
@@ -1184,12 +1186,14 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
 	int rv;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	if (connection->write_ordering >= WO_bdev_flush) {
 		rcu_read_lock();
-		idr_for_each_entry(&connection->volumes, device, vnr) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+
 			if (!get_ldev(device))
 				continue;
 			kobject_get(&device->kobj);
@@ -1363,7 +1367,7 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 void drbd_bump_write_ordering(struct drbd_connection *connection, enum write_ordering_e wo)
 {
 	struct disk_conf *dc;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	enum write_ordering_e pwo;
 	int vnr, i = 0;
 	static char *write_ordering_str[] = {
@@ -1376,7 +1380,9 @@ void drbd_bump_write_ordering(struct drbd_connection *connection, enum write_ord
 	pwo = connection->write_ordering;
 	wo = min(pwo, wo);
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		if (i++ == 1 && wo == WO_bio_barrier)
 			wo = WO_bdev_flush; /* WO = barrier does not handle multiple volumes */
 		if (!get_ldev_if_state(device, D_ATTACHING))
@@ -1577,11 +1583,13 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 
 void conn_wait_active_ee_empty(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->active_ee);
@@ -1593,11 +1601,13 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection)
 
 void conn_wait_done_ee_empty(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->done_ee);
@@ -1610,11 +1620,13 @@ void conn_wait_done_ee_empty(struct drbd_connection *connection)
 #ifdef blk_queue_plugged
 static void drbd_unplug_all_devices(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_kick_lo(device);
@@ -4711,7 +4723,7 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 
 static void conn_disconnect(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	enum drbd_conns oc;
 	int vnr;
 
@@ -4730,7 +4742,9 @@ static void conn_disconnect(struct drbd_connection *connection)
 	drbd_free_sock(connection);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_disconnected(device);
@@ -5384,13 +5398,15 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_barrier_ack *p = pi->data;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	tl_release(connection, p->barrier, be32_to_cpu(p->set_size));
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
 		if (device->state.conn == C_AHEAD &&
 		    atomic_read(&device->ap_in_flight) == 0 &&
 		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
@@ -5460,7 +5476,7 @@ static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr, not_empty = 0;
 
 	do {
@@ -5468,7 +5484,9 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		flush_signals(current);
 
 		rcu_read_lock();
-		idr_for_each_entry(&connection->volumes, device, vnr) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+
 			kobject_get(&device->kobj);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(device)) {
@@ -5481,7 +5499,8 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		set_bit(SIGNAL_ASENDER, &connection->flags);
 
 		spin_lock_irq(&connection->req_lock);
-		idr_for_each_entry(&connection->volumes, device, vnr) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
 			not_empty = !list_empty(&device->done_ee);
 			if (not_empty)
 				break;

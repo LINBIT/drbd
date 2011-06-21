@@ -1926,7 +1926,7 @@ int drbd_worker(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w = NULL;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	LIST_HEAD(work_list);
 	int vnr;
 
@@ -1970,7 +1970,8 @@ int drbd_worker(struct drbd_thread *thi)
 	} while (!list_empty(&work_list));
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
 		D_ASSERT(device->state.disk == D_DISKLESS && device->state.conn == C_STANDALONE);
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
