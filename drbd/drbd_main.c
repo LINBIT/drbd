@@ -2626,8 +2626,9 @@ void conn_free_crypto(struct drbd_connection *connection)
 	connection->int_dig_vv = NULL;
 }
 
-int set_resource_options(struct drbd_connection *connection, struct res_opts *res_opts)
+int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts)
 {
+	struct drbd_connection *connection = first_connection(resource);
 	cpumask_var_t new_cpu_mask;
 	int err;
 
@@ -2649,7 +2650,7 @@ int set_resource_options(struct drbd_connection *connection, struct res_opts *re
 			goto fail;
 		}
 	}
-	connection->res_opts = *res_opts;
+	resource->res_opts = *res_opts;
 	if (!cpumask_equal(connection->cpu_mask, new_cpu_mask)) {
 		cpumask_copy(connection->cpu_mask, new_cpu_mask);
 		drbd_calc_cpu_mask(connection);
@@ -2702,9 +2703,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (!zalloc_cpumask_var(&connection->cpu_mask, GFP_KERNEL))
 		goto fail;
 
-	if (set_resource_options(connection, res_opts))
-		goto fail;
-
 	if (!tl_init(connection))
 		goto fail;
 
@@ -2735,8 +2733,13 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->resource = resource;
 	list_add_tail_rcu(&connection->connections, &resource->connections);
 
+	if (set_resource_options(resource, res_opts))
+		goto fail_resource;
+
 	return connection;
 
+fail_resource:
+	drbd_free_resource(resource);
 fail:
 	tl_cleanup(connection);
 	free_cpumask_var(connection->cpu_mask);
