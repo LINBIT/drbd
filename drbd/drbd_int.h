@@ -893,7 +893,10 @@ static inline unsigned int mdev_to_minor(struct drbd_device *device)
 
 static inline struct drbd_device *vnr_to_mdev(struct drbd_connection *connection, int vnr)
 {
-	return (struct drbd_device *)idr_find(&connection->volumes, vnr);
+	struct drbd_peer_device *peer_device;
+
+	peer_device = idr_find(&connection->volumes, vnr);
+	return peer_device ? peer_device->device : NULL;
 }
 
 /*

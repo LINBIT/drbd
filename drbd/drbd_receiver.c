@@ -866,7 +866,7 @@ int drbd_connected(struct drbd_device *device)
 STATIC int conn_connect(struct drbd_connection *connection)
 {
 	struct socket *sock, *msock;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
 	int vnr, timeout, try, h, ok;
 
@@ -1021,7 +1021,8 @@ retry:
 		return -1;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_connected(device);
@@ -4518,7 +4519,7 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 
 STATIC void conn_disconnect(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	enum drbd_conns oc;
 	int vnr, rv = SS_UNKNOWN_ERROR;
 
@@ -4530,11 +4531,12 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	drbd_free_sock(connection);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr) {
+	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_disconnected(device);
-		kref_put(&device->kref, &drbd_destroy_device);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -5252,7 +5254,7 @@ STATIC int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr, not_empty = 0;
 
 	do {
@@ -5260,7 +5262,8 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		flush_signals(current);
 
 		rcu_read_lock();
-		idr_for_each_entry(&connection->volumes, device, vnr) {
+		idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
 			kref_get(&device->kref);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(device)) {
@@ -5273,7 +5276,8 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		set_bit(SIGNAL_ASENDER, &connection->flags);
 
 		spin_lock_irq(&connection->req_lock);
-		idr_for_each_entry(&connection->volumes, device, vnr) {
+		idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
 			not_empty = !list_empty(&device->done_ee);
 			if (not_empty)
 				break;

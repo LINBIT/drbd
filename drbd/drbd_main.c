@@ -457,7 +457,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
  */
 void tl_clear(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 	int vnr;
@@ -480,8 +480,8 @@ void tl_clear(struct drbd_connection *connection)
 
 	/* ensure bit indicating barrier is required is clear */
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, device, vnr)
-		clear_bit(CREATE_BARRIER, &device->flags);
+	idr_for_each_entry(&connection->volumes, peer_device, vnr)
+		clear_bit(CREATE_BARRIER, &peer_device->device->flags);
 	rcu_read_unlock();
 
 	spin_unlock_irq(&connection->req_lock);
@@ -733,15 +733,16 @@ char *drbd_task_to_thread_name(struct drbd_connection *connection, struct task_s
 
 int conn_lowest_minor(struct drbd_connection *connection)
 {
-	struct drbd_device *device;
-	int vnr = 0, m;
+	struct drbd_peer_device *peer_device;
+	int vnr = 0, minor = -1;
 
 	rcu_read_lock();
-	device = idr_get_next(&connection->volumes, &vnr);
-	m = device ? mdev_to_minor(device) : -1;
+	peer_device = idr_get_next(&connection->volumes, &vnr);
+	if (peer_device)
+		minor = mdev_to_minor(peer_device->device);
 	rcu_read_unlock();
 
-	return m;
+	return minor;
 }
 
 #ifdef CONFIG_SMP
@@ -2877,7 +2878,7 @@ enum drbd_ret_code drbd_create_minor(struct drbd_connection *connection, unsigne
 	kref_get(&device->kref);
 
 	if (!idr_pre_get(&connection->volumes, GFP_KERNEL) ||
-	    idr_get_new_above(&connection->volumes, device, vnr, &got))
+	    idr_get_new_above(&connection->volumes, peer_device, vnr, &got))
 		goto out_idr_remove_from_resource;
 	if (got != vnr) {
 		drbd_msg_put_info("requested volume exists already");
