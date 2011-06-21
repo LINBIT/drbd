@@ -2214,17 +2214,20 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	 * strictly serialized on genl_lock(). We are protected against
 	 * concurrent reconfiguration/addition/deletion */
 	for_each_resource(resource, &drbd_resources) {
-		connection = first_connection(resource);
-		if (nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
-		    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr, connection->my_addr_len)) {
-			retcode = ERR_LOCAL_ADDR;
-			goto out;
-		}
+		for_each_connection(connection, resource) {
+			if (nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
+			    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr,
+				    connection->my_addr_len)) {
+				retcode = ERR_LOCAL_ADDR;
+				goto out;
+			}
 
-		if (nla_len(adm_ctx.peer_addr) == connection->peer_addr_len &&
-		    !memcmp(nla_data(adm_ctx.peer_addr), &connection->peer_addr, connection->peer_addr_len)) {
-			retcode = ERR_PEER_ADDR;
-			goto out;
+			if (nla_len(adm_ctx.peer_addr) == connection->peer_addr_len &&
+			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->peer_addr,
+				    connection->peer_addr_len)) {
+				retcode = ERR_PEER_ADDR;
+				goto out;
+			}
 		}
 	}
 
