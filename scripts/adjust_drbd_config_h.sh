@@ -74,7 +74,10 @@ test -e $O/include2/asm/atomic.h ||
 test -e $KDIR/include/asm-generic/atomic.h ||
 exit 1
 
-if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
+if
+	grep_q "^VERSION *= *3" $KDIR/Makefile ||
+	grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile
+then
   # do we have gfp_t?
   if grep_q "typedef.*gfp_t" $KDIR/include/linux/gfp.h $KDIR/include/linux/types.h; then
     have_gfp_t=1
