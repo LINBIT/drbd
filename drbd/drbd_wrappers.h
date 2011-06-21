@@ -276,6 +276,8 @@ static inline void drbd_generic_make_request(struct drbd_conf *mdev,
 		generic_make_request(bio);
 }
 
+/* see 7eaceac block: remove per-queue plugging */
+#ifdef blk_queue_plugged
 static inline void drbd_plug_device(struct drbd_conf *mdev)
 {
 	struct request_queue *q;
@@ -293,6 +295,11 @@ static inline void drbd_plug_device(struct drbd_conf *mdev)
 	}
 	spin_unlock_irq(q->queue_lock);
 }
+#else
+static inline void drbd_plug_device(struct drbd_conf *mdev)
+{
+}
+#endif
 
 static inline int drbd_backing_bdev_events(struct drbd_conf *mdev)
 {
@@ -869,7 +876,6 @@ enum {
 				 * now equivalent to bi_rw */
 
 #define DRBD_REQ_SYNC		REQ_SYNC
-#define DRBD_REQ_UNPLUG		REQ_UNPLUG
 #define DRBD_REQ_FLUSH		REQ_FLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_DISCARD	REQ_DISCARD
@@ -882,6 +888,14 @@ enum {
 #else
 /* ... but REQ_HARDBARRIER was removed again in 02e031c (v2.6.37-rc4). */
 #define DRBD_REQ_HARDBARRIER	0
+#endif
+
+/* again: testing on this _inside_ the ifdef REQ_FLUSH,
+ * see 721a960 block: kill off REQ_UNPLUG */
+#ifdef REQ_UNPLUG
+#define DRBD_REQ_UNPLUG		REQ_UNPLUG
+#else
+#define DRBD_REQ_UNPLUG		0
 #endif
 
 #else				/* "older", and hopefully not

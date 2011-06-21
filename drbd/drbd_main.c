@@ -3152,6 +3152,7 @@ static int drbd_release(struct inode *inode, struct file *file)
 }
 #endif
 
+#ifdef blk_queue_plugged
 STATIC void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
@@ -3182,6 +3183,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 	if (mdev->state.disk >= D_INCONSISTENT)
 		drbd_kick_lo(mdev);
 }
+#endif
 
 STATIC void drbd_set_defaults(struct drbd_conf *mdev)
 {
@@ -3691,8 +3693,10 @@ struct drbd_conf *drbd_new_device(unsigned int minor)
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 	q->queue_lock = &mdev->req_lock; /* needed since we use */
+#ifdef blk_queue_plugged
 		/* plugging on a queue, that actually has no requests! */
 	q->unplug_fn = drbd_unplug_fn;
+#endif
 
 	mdev->md_io_page = alloc_page(GFP_KERNEL);
 	if (!mdev->md_io_page)
