@@ -2335,10 +2335,17 @@ STATIC void drbd_connector_callback(void *data)
 	}
 
 #ifdef KERNEL_HAS_CN_SKB_PARMS
+# ifdef HAVE_NL_SKB_EFF_CAP
 	if (!cap_raised(nsp->eff_cap, CAP_SYS_ADMIN)) {
 		retcode = ERR_PERM;
 		goto fail;
 	}
+# else
+	if (!cap_raised(current_cap(), CAP_SYS_ADMIN)) {
+		retcode = ERR_PERM;
+		goto fail;
+	}
+# endif
 #endif
 
 	mdev = ensure_mdev(nlp->drbd_minor,

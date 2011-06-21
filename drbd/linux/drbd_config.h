@@ -110,6 +110,9 @@ extern const char *drbd_buildtag(void);
 /* In 2.6.32 we finally fixed connector to pass netlink_skb_parms to the callback
  */
 #define KERNEL_HAS_CN_SKB_PARMS
+/* 2.6.39 converts connector to be syncronous, and removes .eff_cap from the
+ *  * parameters. We then need to test on current_cap() instead. */
+#define HAVE_NL_SKB_EFF_CAP
 
 /* In the 2.6.34 mergewindow blk_queue_max_sectors() got blk_queue_max_hw_sectors() and
    blk_queue_max_(phys|hw)_segments() got blk_queue_max_segments()

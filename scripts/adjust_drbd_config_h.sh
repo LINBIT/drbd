@@ -168,6 +168,11 @@ if grep_q "^PATCHLEVEL *= *6" $KDIR/Makefile ; then
   else
     have_netlink_skb_parms=0
   fi
+  if grep_q "eff_cap" $KDIR/include/linux/netlink.h ; then
+    have_netlink_skb_parms_eff_cap=1
+  else
+    have_netlink_skb_parms_eff_cap=0
+  fi
   if grep_q "blk_queue_max_hw_sectors" $KDIR/include/linux/blkdev.h ; then
     need_blk_queue_max_hw_sectors=0
   else
@@ -254,6 +259,8 @@ perl -pe "
   { ( $have_set_cpus_allowed_ptr ? '' : '//' ) . \$1}e;
  s{.*(#define KERNEL_HAS_CN_SKB_PARMS.*)}
   { ( $have_netlink_skb_parms ? '' : '//' ) . \$1}e;
+ s{.*(#define HAVE_NL_SKB_EFF_CAP.*)}
+  { ( $have_netlink_skb_parms_eff_cap ? '' : '//' ) . \$1}e;
  s{.*(#define NEED_BLK_QUEUE_MAX_HW_SECTORS.*)}
   { ( $need_blk_queue_max_hw_sectors ? '' : '//' ) . \$1}e;
  s{.*(#define USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS.*)}
