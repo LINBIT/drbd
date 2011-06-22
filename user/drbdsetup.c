@@ -173,6 +173,7 @@ struct drbd_cmd {
 	bool ignore_minor_not_known;
 	bool continuous_poll;
 	bool wait_for_connect_timeouts;
+	bool set_defaults;
 	struct context_def *ctx;
 };
 
@@ -242,6 +243,7 @@ struct drbd_cmd commands[] = {
 
 	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF,
 		F_CONFIG_CMD,
+	 .set_defaults = true,
 	 .ctx = &disk_options_ctx },
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
@@ -252,6 +254,7 @@ struct drbd_cmd commands[] = {
 
 	{"net-options", CTX_CONNECTION, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
+	 .set_defaults = true,
 	 .ctx = &net_options_ctx },
 
 	{"disconnect", CTX_CONNECTION, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
@@ -264,6 +267,7 @@ struct drbd_cmd commands[] = {
 
 	{"resource-options", CTX_RESOURCE, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
 		F_CONFIG_CMD,
+	 .set_defaults = true,
 	 .ctx = &resource_options_cmd_ctx },
 
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS,
@@ -685,7 +689,7 @@ static int get_af_ssocks(int warn_and_use_default)
 	return af;
 }
 
-static struct option *make_longoptions(struct context_def *ctx)
+static struct option *make_longoptions(struct context_def *ctx, bool set_defaults)
 {
 	static struct option buffer[42];
 	int i = 0;
@@ -707,12 +711,13 @@ static struct option *make_longoptions(struct context_def *ctx)
 		}
 	}
 
-	// The two omnipresent options:
-	buffer[i].name = "set-defaults";
-	buffer[i].has_arg = 0;
-	buffer[i].flag = NULL;
-	buffer[i].val = '(';
-	i++;
+	if (set_defaults) {
+		buffer[i].name = "set-defaults";
+		buffer[i].has_arg = 0;
+		buffer[i].flag = NULL;
+		buffer[i].val = '(';
+		i++;
+	}
 
 	buffer[i].name = NULL;
 	buffer[i].has_arg = 0;
@@ -884,7 +889,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	}
 	n_args = i - 1;  /* command name "doesn't count" here */
 
-	lo = make_longoptions(cm->ctx);
+	lo = make_longoptions(cm->ctx, cm->set_defaults);
 	for (;;) {
 		int idx;
 
@@ -902,13 +907,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 				rv = OTHER_ERROR;
 				goto error;
 			}
-		} else {
-			if (c == '(')
-				dhdr->flags |= DRBD_GENL_F_SET_DEFAULTS;
-			else {
-				rv = OTHER_ERROR;
-				goto error;
-			}
+		} else if (c == '(')
+			dhdr->flags |= DRBD_GENL_F_SET_DEFAULTS;
+		else {
+			rv = OTHER_ERROR;
+			goto error;
 		}
 	}
 
