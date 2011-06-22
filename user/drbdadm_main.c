@@ -204,7 +204,7 @@ char *drbdmeta = NULL;
 char *drbdadm_83 = NULL;
 char *drbd_proxy_ctl;
 char *sh_varname = NULL;
-char *setup_opts[10];
+char *setup_opts[50];
 char *connect_to_host = NULL;
 int soi = 0;
 volatile int alarm_raised;

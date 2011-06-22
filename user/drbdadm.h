@@ -294,7 +294,7 @@ extern char* drbdadm_83;
 extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
 
-extern char* setup_opts[10];
+extern char* setup_opts[50];
 extern char* connect_to_host;
 extern int soi;
 
