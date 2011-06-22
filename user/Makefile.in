@@ -31,7 +31,7 @@ UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
 INITDIR = @INITDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 CC = @CC@
-CFLAGS = @CFLAGS@
+CFLAGS := @CFLAGS@
 LN_S = @LN_S@
 
 # features enabled or disabled by configure
@@ -55,7 +55,8 @@ libgenl.o: CFLAGS += $(shell for w in CTRL_ATTR_VERSION CTRL_ATTR_HDRSIZE CTRL_A
 
 drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
 	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
-	      drbd_buildtag.o registry.o config_flags.o libgenl.o
+	      drbd_buildtag.o registry.o config_flags.o libgenl.o \
+	      drbd_nla.o
 
 drbdsetup-obj = libgenl.o registry.o drbdsetup.o drbdtool_common.o \
 		drbd_buildtag.o drbd_strings.o config_flags.o drbd_nla.o
