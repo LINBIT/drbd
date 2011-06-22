@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.11rc2 (api:88/proto:86-96)
+8.3.11rc3 (api:88/proto:86-96)
 --------
  * Added missing spinlock in compressed bitmap receive (regression introduced
    in 8.3.10, could lead to "negative" out-of-sync stats and non-terminating
@@ -15,6 +15,8 @@ Latest:
  * Fixed the behavior in case ping-timeout and ping-int are set to the
    same value
  * Fix for connecting on high latency network links
+ * Fixed wrong connection drops ("PingAck did not arrive in time") with
+   asymmetrically congested networks
  * Fixed state transitions if fence-peer handler returns after connection was
    established again
  * Made negotiation of max_bio_size conservative instead of optimistic
