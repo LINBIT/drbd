@@ -2346,12 +2346,10 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 		/* Screw this horrible pretty printing mess ... */
 		printf("%s", line);
-
-		for (option = cm->options; option->name; option++) {
-			printf(" [{--%s|-%c}]",
+		for (option = cm->options; option->name; option++)
+			printf(" [--%s%s]",
 			       option->name,
-			       option->val);
-		}
+			       option->has_arg == no_argument ? "" : "=...");
 		printf("\n");
 		col = 0;
 	}
