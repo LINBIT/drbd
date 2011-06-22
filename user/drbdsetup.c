@@ -2476,16 +2476,24 @@ int main(int argc, char **argv)
 	else
 		cmdname = argv[0];
 
+	if (argc > 2 && (!strcmp(argv[2], "--help")  || !strcmp(argv[2], "-h"))) {
+		char *swap = argv[1];
+		argv[1] = argv[2];
+		argv[2] = swap;
+	}
+
 	if (argc > 1 && (!strcmp(argv[1], "help") || !strcmp(argv[1], "xml-help")  ||
 			 !strcmp(argv[1], "--help")  || !strcmp(argv[1], "-h"))) {
 		enum usage_type usage_type = !strcmp(argv[1], "xml-help") ? XML : FULL;
-		if(argc >= 3) {
-			cmd=find_cmd_by_name(argv[2]);
-			if(cmd)
+		if(argc > 2) {
+			cmd = find_cmd_by_name(argv[2]);
+			if(cmd) {
 				print_command_usage(cmd, usage_type);
-			else print_usage_and_exit("unknown command");
-			exit(0);
-		}
+				exit(0);
+			} else
+				print_usage_and_exit("unknown command");
+		} else
+			print_usage_and_exit(0);
 	}
 
 	/*
