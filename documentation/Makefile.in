@@ -68,7 +68,10 @@ XSLTPROC_FO_OPTIONS ?= $(XSLTPROC_OPTIONS)
 DRBDSETUP_CMDS = new-resource new-minor del-resource del-minor
 DRBDSETUP_CMDS += attach connect disk-options net-options resource-options
 DRBDSETUP_CMDS += disconnect detach primary secondary verify invalidate invalidate-remote
-DRBDSETUP_CMDS += resize
+DRBDSETUP_CMDS += down wait-connect wait-sync role cstate dstate status
+DRBDSETUP_CMDS += resize check-resize pause-sync resume-sync
+DRBDSETUP_CMDS += outdate show-gi get-gi show events
+DRBDSETUP_CMDS += suspend-io resume-io new-current-uuid
 
 
 all:
@@ -110,7 +113,7 @@ endif
 ../user/drbdsetup:
 	(cd ../user; make drbdsetup)
 
-drbdsetup_%.xml: ../user/drbdsetup
+drbdsetup_%.xml: ../user/drbdsetup xml-usage-to-docbook.xsl
 	../user/drbdsetup xml-help $* |\
 	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl -
 

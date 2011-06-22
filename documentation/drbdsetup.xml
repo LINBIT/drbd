@@ -53,13 +53,7 @@
 
     <xi:include href="drbdsetup_secondary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">down</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_down.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <xi:include href="drbdsetup_verify.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
@@ -67,171 +61,42 @@
 
     <xi:include href="drbdsetup_invalidate-remote.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_wait-connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
+    <xi:include href="drbdsetup_wait-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">wait-connect</arg>
+    <xi:include href="drbdsetup_role.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-t<arg choice="req"
-      rep="norepeat"><replaceable>wfc_timeout</replaceable></arg></arg>
+    <xi:include href="drbdsetup_cstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
+    <xi:include href="drbdsetup_dstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="opt" rep="norepeat">-o<arg choice="req"
-      rep="norepeat"><replaceable>outdated_wfc_timeout</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-w</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">wait-sync</arg>
-
-      <arg choice="opt" rep="norepeat">-t<arg choice="req"
-      rep="norepeat"><replaceable>wfc_timeout</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-d<arg choice="req"
-      rep="norepeat"><replaceable>degr_wfc_timeout</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-o<arg choice="req"
-      rep="norepeat"><replaceable>outdated_wfc_timeout</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-w</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">role</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">cstate</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">dstate</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">status</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_status.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <xi:include href="drbdsetup_resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_check-resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
+    <xi:include href="drbdsetup_pause-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">check-resize</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_resume-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_outdate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
+    <xi:include href="drbdsetup_show-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">pause-sync</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_get-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_show.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
+    <xi:include href="drbdsetup_suspend-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">resume-sync</arg>
-    </cmdsynopsis>
+    <xi:include href="drbdsetup_resume-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
+    <xi:include href="drbdsetup_events.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
+    <xi:include href="drbdsetup_new-current-uuid.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-      <arg choice="plain" rep="norepeat">outdate</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">show-gi</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">get-gi</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">show</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">suspend-io</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">resume-io</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">events</arg>
-
-      <arg choice="opt" rep="norepeat">-u</arg>
-
-      <arg choice="opt" rep="norepeat">-a</arg>
-    </cmdsynopsis>
-
-    <cmdsynopsis sepchar=" ">
-      <command moreinfo="none">drbdsetup</command>
-
-      <arg choice="req" rep="norepeat"><replaceable>minor</replaceable></arg>
-
-      <arg choice="plain" rep="norepeat">new-current-uuid</arg>
-
-      <arg choice="opt" rep="norepeat">-c</arg>
-    </cmdsynopsis>
   </refsynopsisdiv>
 
   <refsect1>
