@@ -3278,17 +3278,44 @@ void assign_command_names_from_argv0(char **argv)
 	}
 }
 
-int parse_options(int argc, char **argv)
+struct adm_cmd *find_cmd(char *cmdname);
+
+int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_names)
 {
+	char *optstring;
+
+	optstring = alloca(strlen(make_optstring(admopt) + 2));
+	optstring[0] = '-';
+	strcpy(optstring + 1, make_optstring(admopt));
+
+	*cmd = NULL;
+	*resource_names = malloc(sizeof(char *));
+	(*resource_names)[0] = NULL;
+
 	opterr = 1;
 	optind = 0;
 	while (1) {
 		int c;
 
-		c = getopt_long(argc, argv, make_optstring(admopt), admopt, 0);
+		c = getopt_long(argc, argv, optstring, admopt, 0);
 		if (c == -1)
 			break;
 		switch (c) {
+		case 1:  /* non-option argument */
+			if (*cmd) {
+				int n;
+				for (n = 0; (*resource_names)[n]; n++)
+					/* do nothing */ ;
+				*resource_names = realloc(*resource_names,
+							  (n + 2) * sizeof(char *));
+				(*resource_names)[n++] = optarg;
+				(*resource_names)[n] = NULL;
+			} else {
+				*cmd = find_cmd(optarg);
+				if (!*cmd)
+					setup_opts[soi++] = optarg;
+			}
+			break;
 		case 'S':
 			is_drbd_top = 1;
 			break;
@@ -3575,6 +3602,7 @@ int main(int argc, char **argv)
 	size_t i;
 	int rv = 0;
 	struct adm_cmd *cmd = NULL;
+	char **resource_names = NULL;
 	struct d_resource *res, *tmp;
 	char *env_drbd_nodename = NULL;
 	int is_dump_xml;
@@ -3611,23 +3639,12 @@ int main(int argc, char **argv)
 
 	maybe_exec_drbdadm_83(argv);
 
-	rv = parse_options(argc, argv);
+	rv = parse_options(argc, argv, &cmd, &resource_names);
 	if (rv)
 		return rv;
 
-	/* store everything before the command name as pass through option/argument */
-	while (optind < argc) {
-		cmd = find_cmd(argv[optind]);
-		if (cmd)
-			break;
-		setup_opts[soi++] = argv[optind++];
-	}
-
-	if (optind == argc)
-		print_usage_and_exit(0);
-
 	if (cmd == NULL) {
-		fprintf(stderr, "Unknown command '%s'.\n", argv[optind]);
+		fprintf(stderr, "Unknown command '%s'.\n", argv[optind] /* FIXME */);
 		exit(E_usage);
 	}
 
@@ -3638,21 +3655,16 @@ int main(int argc, char **argv)
 	}
 
 	do_verify_ips = cmd->verify_ips;
-	optind++;
 
 	is_dump_xml = (cmd->function == adm_dump_xml);
 	is_dump = (is_dump_xml || cmd->function == adm_dump);
 
-	/* remaining argv are expected to be resource names
-	 * optind     == argc: no resourcenames given.
-	 * optind + 1 == argc: exactly one resource name (or "all") given
-	 * optind + 1  < argc: multiple resource names given. */
-	if (optind == argc) {
+	if (!resource_names[0]) {
 		if (is_dump)
 			all_resources = 1;
 		else if (cmd->res_name_required)
 			print_usage_and_exit("missing resourcename arguments");
-	} else if (optind + 1 < argc) {
+	} else if (resource_names[0] && resource_names[1]) {
 		if (!cmd->res_name_required)
 			fprintf(stderr,
 				"this command will ignore resource names!\n");
@@ -3662,7 +3674,7 @@ int main(int argc, char **argv)
 	}
 
 	if (!config_file && cmd->use_cached_config_file)
-		config_file = config_file_from_arg(argv[optind]);
+		config_file = config_file_from_arg(resource_names[0]);
 
 	if (!config_file)
 		/* may exit if no config file can be used! */
@@ -3721,7 +3733,7 @@ int main(int argc, char **argv)
 
 		global_validate_maybe_expand_die_if_invalid(!is_dump);
 
-		if (optind == argc || !strcmp(argv[optind], "all")) {
+		if (!resource_names[0] || !strcmp(resource_names[0], "all")) {
 			/* either no resource arguments at all,
 			 * but command is dump / dump-xml, so implicit "all",
 			 * or an explicit "all" argument is given */
@@ -3760,16 +3772,16 @@ int main(int argc, char **argv)
 			}
 		} else {
 			/* explicit list of resources to work on */
-			for (i = optind; (int)i < argc; i++) {
+			for (i = 0; resource_names[i]; i++) {
 				ctx.res = NULL;
 				ctx.vol = NULL;
-				ctx_by_name(&ctx, argv[i]);
+				ctx_by_name(&ctx, resource_names[i]);
 				if (!ctx.res)
-					ctx_by_minor(&ctx, argv[i]);
+					ctx_by_minor(&ctx, resource_names[i]);
 				if (!ctx.res) {
 					fprintf(stderr,
 						"'%s' not defined in your config.\n",
-						argv[i]);
+						resource_names[i]);
 					exit(E_usage);
 				}
 				if (!cmd->vol_id_required && !cmd->iterate_volumes && ctx.vol != NULL) {
@@ -3787,7 +3799,7 @@ int main(int argc, char **argv)
 					fprintf(stderr, "%s requires a specific volume id, but none is specified.\n"
 							"Try '%s minor-<minor_number>' or '%s %s/<vnr>'\n",
 							cmd->name, cmd->name,
-							cmd->name, argv[i]);
+							cmd->name, resource_names[i]);
 					exit(E_usage);
 				}
 				if (ctx.res->ignore && !is_dump) {
@@ -3830,6 +3842,7 @@ int main(int argc, char **argv)
 	rv |= run_deferred_cmds();
 
 	free_config(config);
+	free(resource_names);
 
 	return rv;
 }
