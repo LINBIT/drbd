@@ -118,7 +118,7 @@ struct option admopt[] = {
 	{"drbdmeta", required_argument, 0, 'm'},
 	{"drbd-proxy-ctl", required_argument, 0, 'p'},
 	{"sh-varname", required_argument, 0, 'n'},
-	{"force", no_argument, 0, 'f'},
+	{"yes", no_argument, 0, 'y'},
 	{"peer", required_argument, 0, 'P'},
 	{"version", no_argument, 0, 'V'},
 	{0, 0, 0, 0}
@@ -3399,7 +3399,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 						optarg);
 			}
 			break;
-		case 'f':
+		case 'y':
 			force = 1;
 			break;
 		case 'V':
