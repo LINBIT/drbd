@@ -2293,6 +2293,10 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 			}
 		}
 
+		if (cm->set_defaults)
+			printf("\t<option name=\"set-defaults\" type=\"flag\">\n"
+			       "\t</option>\n");
+
 		if (cm->ctx) {
 			struct field_def *field;
 
@@ -2337,7 +2341,7 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		return;
 	}
 
-	if (ut != BRIEF && cm->options) {
+	if (cm->options) {
 		struct option *option;
 
 		/* Screw this horrible pretty printing mess ... */
@@ -2351,6 +2355,9 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		printf("\n");
 		col = 0;
 	}
+
+	if (cm->set_defaults)
+		col += sprintf(line + col, " [--set-defaults]");
 
 	if (cm->ctx) {
 		struct field_def *field = cm->ctx->fields;
@@ -2371,6 +2378,7 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 			}
 		}
 	}
+
 	line[col]=0;
 
 	printf("%s\n",line);
