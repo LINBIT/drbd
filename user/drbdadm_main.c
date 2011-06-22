@@ -53,6 +53,7 @@
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 #include "registry.h"
+#include "config_flags.h"
 
 #define MAX_ARGS 40
 
@@ -100,6 +101,7 @@ struct adm_cmd {
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
 	unsigned int test_config:1; /* Allow -t option */
+	const struct context_def *drbdsetup_ctx;
 };
 
 struct deferred_cmd {
@@ -108,7 +110,7 @@ struct deferred_cmd {
 	struct deferred_cmd *next;
 };
 
-struct option admopt[] = {
+struct option general_admopt[] = {
 	{"stacked", no_argument, 0, 'S'},
 	{"dry-run", no_argument, 0, 'd'},
 	{"verbose", no_argument, 0, 'v'},
@@ -121,8 +123,10 @@ struct option admopt[] = {
 	{"yes", no_argument, 0, 'y'},
 	{"peer", required_argument, 0, 'P'},
 	{"version", no_argument, 0, 'V'},
+	{"setup-option", required_argument, 0, 'W'},
 	{0, 0, 0, 0}
 };
+struct option *admopt = general_admopt;
 
 extern int my_parse();
 extern int yydebug;
@@ -316,16 +320,23 @@ struct adm_cmd cmds[] = {
 	 *  - handler
 	 *  - advanced
 	 ***/
-	{"attach", adm_attach, DRBD_acf1_default},
-	{"disk-options", adm_disk_options, DRBD_acf1_default},
+	{"attach", adm_attach, DRBD_acf1_default
+	 .drbdsetup_ctx = &attach_cmd_ctx, },
+	{"disk-options", adm_disk_options, DRBD_acf1_default
+	 .drbdsetup_ctx = &disk_options_ctx, },
 	{"detach", adm_generic_l, DRBD_acf1_default},
-	{"connect", adm_connect, DRBD_acf1_connect},
-	{"net-options", adm_net_options, DRBD_acf1_connect},
-	{"disconnect", adm_disconnect, DRBD_acf1_resname},
+	{"connect", adm_connect, DRBD_acf1_connect
+	 .drbdsetup_ctx = &connect_cmd_ctx, },
+	{"net-options", adm_net_options, DRBD_acf1_connect
+	 .drbdsetup_ctx = &net_options_ctx, },
+	{"disconnect", adm_disconnect, DRBD_acf1_resname
+	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
 	{"up", adm_up, DRBD_acf1_up},
-	{"resource-options", adm_res_options, DRBD_acf1_resname},
+	{"resource-options", adm_res_options, DRBD_acf1_resname
+	 .drbdsetup_ctx = &resource_options_cmd_ctx, },
 	{"down", adm_generic_l, DRBD_acf1_resname},
-	{"primary", adm_generic_l, DRBD_acf1_default},
+	{"primary", adm_generic_l, DRBD_acf1_default
+	 .drbdsetup_ctx = &primary_cmd_ctx, },
 	{"secondary", adm_generic_l, DRBD_acf1_default},
 	{"invalidate", adm_generic_b, DRBD_acf1_default},
 	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
@@ -389,7 +400,8 @@ struct adm_cmd cmds[] = {
 	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
 	{"set-gi", admm_generic, DRBD_acf4_advanced_need_vol},
-	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced_need_vol},
+	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced_need_vol
+	 .drbdsetup_ctx = &new_current_uuid_cmd_ctx, },
 	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
 };
 
@@ -2755,16 +2767,26 @@ void print_usage_and_exit(const char *addinfo)
 {
 	struct option *opt;
 
-	printf("\nUSAGE: %s [OPTION...] [-- DRBDSETUP-OPTION...] COMMAND "
-	       "{all|RESOURCE...}\n\n" "OPTIONS:\n", progname);
+	printf("\nUSAGE: %s [OPTION...] COMMAND [SETUP_OPTIONS] {all|RESOURCE...}\n\n"
+	       "OPTIONS:\n", progname);
 
-	opt = admopt;
-	while (opt->name) {
-		if (opt->has_arg == required_argument)
-			printf(" {--%s|-%c} val\n", opt->name, opt->val);
-		else
-			printf(" {--%s|-%c}\n", opt->name, opt->val);
-		opt++;
+	for (opt = admopt; opt->name; opt++) {
+		if (opt->has_arg == required_argument) {
+			printf("  --%s=...", opt->name);
+			if (opt->val > 2)
+				 printf(", -%c ...", opt->val);
+			printf("\n");
+		} else if (opt->has_arg == optional_argument) {
+			printf("  --%s[=...]", opt->name);
+			if (opt->val > 2)
+				 printf(", -%c...", opt->val);
+			printf("\n");
+		} else {
+			printf("  --%s", opt->name);
+			if (opt->val > 2)
+				 printf(", -%c", opt->val);
+			printf("\n");
+		}
 	}
 
 	printf("\nCOMMANDS:\n");
@@ -3278,11 +3300,45 @@ void assign_command_names_from_argv0(char **argv)
 	}
 }
 
+static void recognize_drbdsetup_options(const struct adm_cmd *cmd)
+{
+	const struct field_def *field;
+
+	if (!cmd->drbdsetup_ctx)
+		return;
+
+	for (field = cmd->drbdsetup_ctx->fields; field->name; field++) {
+		int n;
+
+		for (n = 0; admopt[n].name; n++) {
+			if (!strcmp(admopt[n].name, field->name))
+				goto skip;
+		}
+
+		if (admopt == general_admopt) {
+			admopt = malloc((n + 2) * sizeof(*admopt));
+			memcpy(admopt, general_admopt, (n + 1) * sizeof(*admopt));
+		} else
+			admopt = realloc(admopt, (n + 2) * sizeof(*admopt));
+		memcpy(&admopt[n+1], &admopt[n], sizeof(*admopt));
+
+		admopt[n].name = field->name;
+		admopt[n].has_arg = field->argument_is_optional ?
+			optional_argument : required_argument;
+		admopt[n].flag = NULL;
+		admopt[n].val = 2;
+
+	    skip:
+		/* dummy statement required because of label */ ;
+	}
+}
+
 struct adm_cmd *find_cmd(char *cmdname);
 
 int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_names)
 {
 	char *optstring;
+	int longindex;
 
 	optstring = alloca(strlen(make_optstring(admopt) + 2));
 	optstring[0] = '-';
@@ -3297,7 +3353,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 	while (1) {
 		int c;
 
-		c = getopt_long(argc, argv, optstring, admopt, 0);
+		c = getopt_long(argc, argv, optstring, admopt, &longindex);
 		if (c == -1)
 			break;
 		switch (c) {
@@ -3312,8 +3368,27 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				(*resource_names)[n] = NULL;
 			} else {
 				*cmd = find_cmd(optarg);
-				if (!*cmd)
+				if (*cmd)
+					recognize_drbdsetup_options(*cmd);
+				else
 					setup_opts[soi++] = optarg;
+			}
+			break;
+		case 2:  /* drbdsetup option */
+			{
+				struct option *option = &admopt[longindex];
+				int len;
+
+				len = strlen(option->name) + 2;
+				if (option->has_arg != no_argument)
+					len += 1 + strlen(optarg);
+
+				setup_opts[soi] = malloc(len + 1);
+				if (option->has_arg != no_argument)
+					sprintf(setup_opts[soi], "--%s=%s", option->name, optarg);
+				else
+					sprintf(setup_opts[soi], "--%s", option->name);
+				soi++;
 			}
 			break;
 		case 'S':
@@ -3412,6 +3487,9 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			break;
 		case 'P':
 			connect_to_host = optarg;
+			break;
+		case 'W':
+			setup_opts[soi++] = optarg;
 			break;
 		case '?':
 			/* commented out, since opterr=1
@@ -3843,6 +3921,8 @@ int main(int argc, char **argv)
 
 	free_config(config);
 	free(resource_names);
+	if (admopt != general_admopt)
+		free(admopt);
 
 	return rv;
 }
