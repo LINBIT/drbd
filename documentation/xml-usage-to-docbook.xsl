@@ -5,8 +5,8 @@
 <xsl:template match="/">
   <cmdsynopsis sepchar=" ">
     <command moreinfo="none">drbdsetup</command>
-    <arg choice="req" rep="norepeat"><replaceable><xsl:value-of select="command/@operates_on"/></replaceable></arg>
     <arg choice="plain" rep="norepeat"><xsl:value-of select="command/@name"/></arg>
+    <arg choice="req" rep="norepeat"><replaceable><xsl:value-of select="command/@operates_on"/></replaceable></arg>
 
     <xsl:for-each select="/command/argument">
       <arg choice="req" rep="norepeat">
