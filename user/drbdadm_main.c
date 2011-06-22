@@ -371,7 +371,7 @@ struct adm_cmd cmds[] = {
 	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
 	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
 
-	{"sh-new-resource", adm_new_resource, DRBD_acf2_sh_resname},
+	{"new-resource", adm_new_resource, DRBD_acf2_sh_resname},
 	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
 
 	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
