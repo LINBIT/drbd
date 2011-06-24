@@ -2,6 +2,19 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.0rc3 (api:genl1/proto:86-100)
+--------
+ * Renamed drbdsetup commands: new-connection -> new-resource,
+   del-connection -> del-resource and xml -> xml-help
+ * Renamed a configure option: --with-legacy-connector -> --with-legacy_utils
+ * Renamed drbdadm options --force to --yes
+ * drbdadm now passes drbdsetup options through, without the cumbersome
+   "--" separator. They need to be given after the command on the command line.
+   I.e. "drbdadm primary r0 --force". This is enabled for: attach, disk-options,
+   new-options, disconnect, resource-options, primary and new-current-uuid.
+ * Changes from the 8.3 branch up to 8.3.11rc3
+ * Code cleanups ; Removal of compatibility code for kernels older than 2.6.18
+
 8.4.0rc2 (api:genl1/proto:86-100)
 --------
  * Do not crash if tconn is removed while fence peer handler runs
