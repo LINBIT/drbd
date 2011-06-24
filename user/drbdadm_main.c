@@ -3383,11 +3383,11 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				int len;
 
 				len = strlen(option->name) + 2;
-				if (option->has_arg != no_argument)
+				if (optarg)
 					len += 1 + strlen(optarg);
 
 				setup_opts[soi] = malloc(len + 1);
-				if (option->has_arg != no_argument)
+				if (optarg)
 					sprintf(setup_opts[soi], "--%s=%s", option->name, optarg);
 				else
 					sprintf(setup_opts[soi], "--%s", option->name);
