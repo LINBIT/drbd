@@ -453,7 +453,7 @@ static const char *error_messages[] = {
 	"the kernel. (Maybe you need to modprobe it, or modprobe hmac?)",
 	EM(ERR_AUTH_ALG_ND) = "The 'cram-hmac-alg' you specified is not a digest.",
 	EM(ERR_NOMEM) = "kmalloc() failed. Out of memory?",
-	EM(ERR_DISCARD) = "--discard-my-data not gllowed when primary.",
+	EM(ERR_DISCARD) = "--discard-my-data not allowed when primary.",
 	EM(ERR_DISK_CONFIGURED) = "Device is attached to a disk (use detach first)",
 	EM(ERR_NET_CONFIGURED) = "Device has a net-config (use disconnect first)",
 	EM(ERR_MANDATORY_TAG) = "UnknownMandatoryTag",
