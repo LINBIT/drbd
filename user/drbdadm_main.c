@@ -3338,7 +3338,7 @@ struct adm_cmd *find_cmd(char *cmdname);
 int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_names)
 {
 	char *optstring;
-	int longindex;
+	int longindex, first_non_cmd_arg = 1;
 
 	optstring = alloca(strlen(make_optstring(admopt) + 2));
 	optstring[0] = '-';
@@ -3368,10 +3368,13 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				(*resource_names)[n] = NULL;
 			} else {
 				*cmd = find_cmd(optarg);
-				if (*cmd)
+				if (*cmd) {
 					recognize_drbdsetup_options(*cmd);
-				else
+				} else {
 					setup_opts[soi++] = optarg;
+					if (first_non_cmd_arg == 1)
+						first_non_cmd_arg = optind - 1;
+				}
 			}
 			break;
 		case 2:  /* drbdsetup option */
@@ -3499,6 +3502,12 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			break;
 		}
 	}
+
+	if (*cmd == NULL) {
+		fprintf(stderr, "Unknown command '%s'.\n", argv[first_non_cmd_arg]);
+		return E_usage;
+	}
+
 	return 0;
 }
 
@@ -3720,11 +3729,6 @@ int main(int argc, char **argv)
 	rv = parse_options(argc, argv, &cmd, &resource_names);
 	if (rv)
 		return rv;
-
-	if (cmd == NULL) {
-		fprintf(stderr, "Unknown command '%s'.\n", argv[optind] /* FIXME */);
-		exit(E_usage);
-	}
 
 	if (config_test && !cmd->test_config) {
 		fprintf(stderr, "The --config-to-test (-t) option is only allowed "
