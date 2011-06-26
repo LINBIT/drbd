@@ -77,12 +77,10 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 int rw, int size)
 {
 	struct bio *bio;
-	struct drbd_md_io md_io;
 	int ok;
 
-	md_io.mdev = mdev;
-	init_completion(&md_io.event);
-	md_io.error = 0;
+	init_completion(&mdev->md_io.event);
+	mdev->md_io.error = 0;
 
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
 		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
@@ -98,7 +96,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	ok = (bio_add_page(bio, page, size, 0) == size);
 	if (!ok)
 		goto out;
-	bio->bi_private = &md_io;
+	bio->bi_private = &mdev->md_io;
 	bio->bi_end_io = drbd_md_io_complete;
 	bio->bi_rw = rw;
 
@@ -108,8 +106,8 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 		bio_endio(bio, -EIO);
 	else
 		submit_bio(rw, bio);
-	wait_for_completion(&md_io.event);
-	ok = bio_flagged(bio, BIO_UPTODATE) && md_io.error == 0;
+	wait_for_completion(&mdev->md_io.event);
+	ok = bio_flagged(bio, BIO_UPTODATE) && mdev->md_io.error == 0;
 
 #ifndef REQ_FLUSH
 	/* check for unsupported barrier op.

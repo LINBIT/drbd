@@ -76,13 +76,16 @@ rwlock_t global_state_lock;
 BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_md_io *md_io;
+	struct drbd_conf *mdev;
 
 	BIO_ENDIO_FN_START;
 
 	md_io = (struct drbd_md_io *)bio->bi_private;
+	mdev = container_of(md_io, struct drbd_conf, md_io);
+
 	md_io->error = error;
 
-	trace_drbd_bio(md_io->mdev, "Md", bio, 1, NULL);
+	trace_drbd_bio(mdev, "Md", bio, 1, NULL);
 
 	complete(&md_io->event);
 	BIO_ENDIO_FN_RETURN;
