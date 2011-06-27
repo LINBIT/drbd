@@ -121,7 +121,6 @@ struct option general_admopt[] = {
 	{"drbdmeta", required_argument, 0, 'm'},
 	{"drbd-proxy-ctl", required_argument, 0, 'p'},
 	{"sh-varname", required_argument, 0, 'n'},
-	{"yes", no_argument, 0, 'y'},
 	{"peer", required_argument, 0, 'P'},
 	{"version", no_argument, 0, 'V'},
 	{"setup-option", required_argument, 0, 'W'},
@@ -3543,9 +3542,6 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 						optarg);
 			}
 			break;
-		case 'y':
-			force = 1;
-			break;
 		case 'V':
 			printf("DRBDADM_BUILDTAG=%s\n", shell_escape(drbd_buildtag()));
 			printf("DRBDADM_API_VERSION=%u\n", API_VERSION);
@@ -3932,7 +3928,7 @@ int main(int argc, char **argv)
 			 * but command is dump / dump-xml, so implicit "all",
 			 * or an explicit "all" argument is given */
 			all_resources = 1;
-			if (!is_dump || !force)
+			if (!is_dump)
 				die_if_no_resources();
 			/* verify ips first, for all of them */
 			for_each_resource(res, tmp, config) {
