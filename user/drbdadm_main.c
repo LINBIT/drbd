@@ -34,6 +34,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <search.h>
+#include <assert.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -204,13 +205,32 @@ char *drbdmeta = NULL;
 char *drbdadm_83 = NULL;
 char *drbd_proxy_ctl;
 char *sh_varname = NULL;
-char *setup_opts[50];
+struct setup_option *setup_options;
+
+
 char *connect_to_host = NULL;
-int soi = 0;
 volatile int alarm_raised;
 
 struct deferred_cmd *deferred_cmds[__CFG_LAST] = { NULL, };
 struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
+
+void add_setup_option(bool explicit, char *option)
+{
+	int n = 0;
+	if (setup_options) {
+		while (setup_options[n].option)
+			n++;
+	}
+
+	setup_options = realloc(setup_options, (n + 2) * sizeof(*setup_options));
+	if (!setup_options) {
+		/* ... */
+	}
+	setup_options[n].explicit = explicit;
+	setup_options[n].option = option;
+	n++;
+	setup_options[n].option = NULL;
+}
 
 /* DRBD adm_cmd flags shortcuts,
  * to avoid merge conflicts and unreadable diffs
@@ -1471,7 +1491,6 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
-	int i;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1496,8 +1515,11 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 		}
 		make_options(opt);
 	}
-	for (i = 0; i < soi; i++)
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
+	}
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
@@ -1550,7 +1572,6 @@ int adm_new_minor(struct cfg_ctx *ctx)
 static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_resource, bool reset)
 {
 	char *argv[MAX_ARGS];
-	int i;
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1561,10 +1582,11 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	if (reset || do_new_resource)
 		make_options(ctx->res->res_options);
 
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
 	}
-
 	argv[NA(argc)] = NULL;
 
 	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -1592,7 +1614,7 @@ int adm_resize(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
-	int i, argc = 0;
+	int argc = 0;
 	int silent;
 	int ex;
 
@@ -1604,8 +1626,11 @@ int adm_resize(struct cfg_ctx *ctx)
 		opt = find_opt(ctx->res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
-	for (i = 0; i < soi; i++)
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
+	}
 	argv[NA(argc)] = 0;
 
 	/* if this is not "resize", but "check-resize", be silent! */
@@ -1636,7 +1661,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
-	int argc = 0, i;
+	int argc = 0;
 
 	argv[NA(argc)] = drbdmeta;
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
@@ -1656,10 +1681,11 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 		argv[NA(argc)] = vol->meta_index;
 	}
 	argv[NA(argc)] = (char *)ctx->arg;
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
 	}
-
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, flags, ctx->res->name);
@@ -1673,7 +1699,7 @@ static int admm_generic(struct cfg_ctx *ctx)
 static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
-	int argc = 0, i;
+	int argc = 0;
 
 	if (!ctx->res) {
 		/* ASSERT */
@@ -1687,8 +1713,10 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	else
 		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
 	}
 	argv[NA(argc)] = 0;
 
@@ -1989,7 +2017,6 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
-	int i;
 	int argc = 0;
 	int err;
 
@@ -2008,8 +2035,10 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 		make_options(opt);
 	}
 
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
 	}
 
 	argv[NA(argc)] = 0;
@@ -2035,7 +2064,7 @@ int adm_set_default_net_options(struct cfg_ctx *ctx)
 int adm_disconnect(struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
-	int argc = 0, i;
+	int argc = 0;
 
 	if (!ctx->res) {
 		/* ASSERT */
@@ -2052,8 +2081,10 @@ int adm_disconnect(struct cfg_ctx *ctx)
 		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	*/
 	add_connection_endpoints(argv, &argc, ctx->res);
-	for (i = 0; i < soi; i++) {
-		argv[NA(argc)] = setup_opts[i];
+	if (setup_options) {
+		int i;
+		for (i = 0; setup_options[i].option; i++)
+			argv[NA(argc)] = setup_options[i].option;
 	}
 	argv[NA(argc)] = 0;
 
@@ -2770,20 +2801,20 @@ void print_usage_and_exit(const char *addinfo)
 	printf("\nUSAGE: %s [OPTION...] COMMAND [SETUP_OPTIONS] {all|RESOURCE...}\n\n"
 	       "OPTIONS:\n", progname);
 
-	for (opt = admopt; opt->name; opt++) {
+	for (opt = general_admopt; opt->name; opt++) {
 		if (opt->has_arg == required_argument) {
 			printf("  --%s=...", opt->name);
-			if (opt->val > 2)
+			if (opt->val > 1 && opt->val < 256)
 				 printf(", -%c ...", opt->val);
 			printf("\n");
 		} else if (opt->has_arg == optional_argument) {
 			printf("  --%s[=...]", opt->name);
-			if (opt->val > 2)
+			if (opt->val > 1 && opt->val < 256)
 				 printf(", -%c...", opt->val);
 			printf("\n");
 		} else {
 			printf("  --%s", opt->name);
-			if (opt->val > 2)
+			if (opt->val > 1 && opt->val < 256)
 				 printf(", -%c", opt->val);
 			printf("\n");
 		}
@@ -3300,36 +3331,46 @@ void assign_command_names_from_argv0(char **argv)
 	}
 }
 
-static void recognize_drbdsetup_options(const struct adm_cmd *cmd)
+static void recognize_all_drbdsetup_options(void)
 {
-	const struct field_def *field;
+	int i;
 
-	if (!cmd->drbdsetup_ctx)
-		return;
+	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
+		const struct adm_cmd *cmd = &cmds[i];
+		const struct field_def *field;
 
-	for (field = cmd->drbdsetup_ctx->fields; field->name; field++) {
-		int n;
+		if (!cmd->drbdsetup_ctx)
+			continue;
 
-		for (n = 0; admopt[n].name; n++) {
-			if (!strcmp(admopt[n].name, field->name))
-				goto skip;
+		for (field = cmd->drbdsetup_ctx->fields; field->name; field++) {
+			int has_arg = field->argument_is_optional ?
+				optional_argument : required_argument;
+			int n;
+
+			for (n = 0; admopt[n].name; n++) {
+				if (!strcmp(admopt[n].name, field->name)) {
+					if (admopt[n].val == 257)
+						assert (admopt[n].has_arg == has_arg);
+					else
+						goto skip;
+				}
+			}
+
+			if (admopt == general_admopt) {
+				admopt = malloc((n + 2) * sizeof(*admopt));
+				memcpy(admopt, general_admopt, (n + 1) * sizeof(*admopt));
+			} else
+				admopt = realloc(admopt, (n + 2) * sizeof(*admopt));
+			memcpy(&admopt[n+1], &admopt[n], sizeof(*admopt));
+
+			admopt[n].name = field->name;
+			admopt[n].has_arg = has_arg;
+			admopt[n].flag = NULL;
+			admopt[n].val = 257;
+
+		    skip:
+			/* dummy statement required because of label */ ;
 		}
-
-		if (admopt == general_admopt) {
-			admopt = malloc((n + 2) * sizeof(*admopt));
-			memcpy(admopt, general_admopt, (n + 1) * sizeof(*admopt));
-		} else
-			admopt = realloc(admopt, (n + 2) * sizeof(*admopt));
-		memcpy(&admopt[n+1], &admopt[n], sizeof(*admopt));
-
-		admopt[n].name = field->name;
-		admopt[n].has_arg = field->argument_is_optional ?
-			optional_argument : required_argument;
-		admopt[n].flag = NULL;
-		admopt[n].val = 2;
-
-	    skip:
-		/* dummy statement required because of label */ ;
 	}
 }
 
@@ -3339,6 +3380,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 {
 	char *optstring;
 	int longindex, first_non_cmd_arg = 1;
+	int i;
 
 	optstring = alloca(strlen(make_optstring(admopt) + 2));
 	optstring[0] = '-';
@@ -3368,30 +3410,28 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				(*resource_names)[n] = NULL;
 			} else {
 				*cmd = find_cmd(optarg);
-				if (*cmd) {
-					recognize_drbdsetup_options(*cmd);
-				} else {
-					setup_opts[soi++] = optarg;
+				if (!*cmd) {
+					add_setup_option(true, optarg);
 					if (first_non_cmd_arg == 1)
 						first_non_cmd_arg = optind - 1;
 				}
 			}
 			break;
-		case 2:  /* drbdsetup option */
+		case 257:  /* drbdsetup option */
 			{
 				struct option *option = &admopt[longindex];
+				char *opt;
 				int len;
 
 				len = strlen(option->name) + 2;
 				if (optarg)
 					len += 1 + strlen(optarg);
-
-				setup_opts[soi] = malloc(len + 1);
+				opt = malloc(len + 1);
 				if (optarg)
-					sprintf(setup_opts[soi], "--%s=%s", option->name, optarg);
+					sprintf(opt, "--%s=%s", option->name, optarg);
 				else
-					sprintf(setup_opts[soi], "--%s", option->name);
-				soi++;
+					sprintf(opt, "--%s", option->name);
+				add_setup_option(false, opt);
 			}
 			break;
 		case 'S':
@@ -3492,7 +3532,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			connect_to_host = optarg;
 			break;
 		case 'W':
-			setup_opts[soi++] = optarg;
+			add_setup_option(true, optarg);
 			break;
 		case '?':
 			/* commented out, since opterr=1
@@ -3506,6 +3546,44 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 	if (*cmd == NULL) {
 		fprintf(stderr, "Unknown command '%s'.\n", argv[first_non_cmd_arg]);
 		return E_usage;
+	}
+
+	if (setup_options) {
+		/*
+		 * The drbdsetup options are command specific.  Make sure that only
+		 * setup options that this command recognizes are used.
+		 */
+		for (i = 0; setup_options[i].option; i++) {
+			const struct field_def *field;
+
+			if (setup_options[i].explicit)
+				continue;
+
+			field = NULL;
+			if ((*cmd)->drbdsetup_ctx) {
+				for (field = (*cmd)->drbdsetup_ctx->fields; field->name; field++) {
+					if (setup_options[i].option[0] == '-' &&
+					    setup_options[i].option[1] == '-' &&
+					    !strcmp(setup_options[i].option + 2, field->name))
+						break;
+				}
+				if (!field->name)
+					field = NULL;
+			}
+
+			if (!field) {
+				char *equals;
+
+				equals = strchr(setup_options[i].option, '=');
+				if (equals)
+					*equals = 0;
+
+				fprintf(stderr, "%s: unrecognized option '%s'\n",
+					progname,
+					setup_options[i].option);
+				return E_usage;
+			}
+		}
 	}
 
 	return 0;
@@ -3726,6 +3804,7 @@ int main(int argc, char **argv)
 
 	maybe_exec_drbdadm_83(argv);
 
+	recognize_all_drbdsetup_options();
 	rv = parse_options(argc, argv, &cmd, &resource_names);
 	if (rv)
 		return rv;

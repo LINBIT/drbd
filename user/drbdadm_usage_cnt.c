@@ -750,18 +750,19 @@ int adm_create_md(struct cfg_ctx *ctx)
 	/* HACK */
 	{
 		struct cfg_ctx local_ctx = *ctx;
-		int soi_tmp = soi;
-		char *setup_opts_0_tmp = setup_opts[0];
+		struct setup_option *old_setup_options;
+		char *opt;
 
-		setup_opts[0] = NULL;
-		ssprintf(setup_opts[0], X64(016), device_uuid);
-		soi=1;
+		ssprintf(opt, X64(016), device_uuid);
+		old_setup_options = setup_options;
+		setup_options = NULL;
+		add_setup_option(false, opt);
 
 		local_ctx.arg = "write-dev-uuid";
 		_admm_generic(&local_ctx, SLEEPS_VERY_LONG);
 
-		setup_opts[0] = setup_opts_0_tmp;
-		soi = soi_tmp;
+		free(setup_options);
+		setup_options = old_setup_options;
 	}
 	return rv;
 }

@@ -1,6 +1,7 @@
 #ifndef DRBDADM_H
 #define DRBDADM_H
 
+#include <stdbool.h>
 #include <linux/drbd_config.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
@@ -293,11 +294,15 @@ extern char* drbd_proxy_ctl;
 extern char* drbdadm_83;
 extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
-
-extern char* setup_opts[50];
 extern char* connect_to_host;
-extern int soi;
 
+struct setup_option {
+	bool explicit;
+	char *option;
+};
+struct setup_option *setup_options;
+
+extern void add_setup_option(bool explicit, char *option);
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack
