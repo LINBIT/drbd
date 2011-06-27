@@ -335,7 +335,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		/* if nob == NULL b was the only barrier, and becomes the new
 		   barrier. Therefore connection->oldest_tle points already to b */
 	} else {
-		D_ASSERT(nob != NULL);
+		D_ASSERT(device, nob != NULL);
 		connection->oldest_tle = nob;
 		kfree(b);
 	}
@@ -1126,7 +1126,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_device *device)
 	struct p_rs_uuid *p;
 	u64 uuid;
 
-	D_ASSERT(device->state.disk == D_UP_TO_DATE);
+	D_ASSERT(device, device->state.disk == D_UP_TO_DATE);
 
 	uuid = device->ldev->md.uuid[UI_BITMAP] + UUID_NEW_BM_OFFSET;
 	drbd_uuid_set(device, UI_BITMAP, uuid);
@@ -1149,7 +1149,7 @@ int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flag
 	int q_order_type, max_bio_size;
 
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
-		D_ASSERT(device->ldev->backing_bdev);
+		D_ASSERT(device, device->ldev->backing_bdev);
 		d_size = drbd_get_max_capacity(device->ldev);
 		rcu_read_lock();
 		u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
@@ -2210,7 +2210,7 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 		device->rs_mark_left[i] = 0;
 		device->rs_mark_time[i] = 0;
 	}
-	D_ASSERT(first_peer_device(device)->connection->net_conf == NULL);
+	D_ASSERT(device, first_peer_device(device)->connection->net_conf == NULL);
 
 	drbd_set_my_capacity(device, 0);
 	if (device->bitmap) {
@@ -2224,17 +2224,17 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 
 	clear_bit(AL_SUSPENDED, &device->flags);
 
-	D_ASSERT(list_empty(&device->active_ee));
-	D_ASSERT(list_empty(&device->sync_ee));
-	D_ASSERT(list_empty(&device->done_ee));
-	D_ASSERT(list_empty(&device->read_ee));
-	D_ASSERT(list_empty(&device->net_ee));
-	D_ASSERT(list_empty(&device->resync_reads));
-	D_ASSERT(list_empty(&first_peer_device(device)->connection->data.work.q));
-	D_ASSERT(list_empty(&first_peer_device(device)->connection->meta.work.q));
-	D_ASSERT(list_empty(&device->resync_work.list));
-	D_ASSERT(list_empty(&device->unplug_work.list));
-	D_ASSERT(list_empty(&device->go_diskless.list));
+	D_ASSERT(device, list_empty(&device->active_ee));
+	D_ASSERT(device, list_empty(&device->sync_ee));
+	D_ASSERT(device, list_empty(&device->done_ee));
+	D_ASSERT(device, list_empty(&device->read_ee));
+	D_ASSERT(device, list_empty(&device->net_ee));
+	D_ASSERT(device, list_empty(&device->resync_reads));
+	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->data.work.q));
+	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
+	D_ASSERT(device, list_empty(&device->resync_work.list));
+	D_ASSERT(device, list_empty(&device->unplug_work.list));
+	D_ASSERT(device, list_empty(&device->go_diskless.list));
 
 	drbd_set_defaults(device);
 }
@@ -2251,7 +2251,7 @@ STATIC void drbd_destroy_mempools(void)
 		drbd_pp_vacant--;
 	}
 
-	/* D_ASSERT(atomic_read(&drbd_pp_vacant)==0); */
+	/* D_ASSERT(device, atomic_read(&drbd_pp_vacant)==0); */
 
 	if (drbd_md_io_bio_set)
 		bioset_free(drbd_md_io_bio_set);
@@ -2406,7 +2406,7 @@ void drbd_destroy_device(struct kref *kref)
 	del_timer_sync(&device->request_timer);
 
 	/* paranoia asserts */
-	D_ASSERT(device->open_cnt == 0);
+	D_ASSERT(device, device->open_cnt == 0);
 	/* end paranoia asserts */
 
 	/* cleanup stuff that may have been allocated during
@@ -3102,7 +3102,7 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->peer_max_bio_size);
 
-	D_ASSERT(drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
+	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
 
 	if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
@@ -3370,7 +3370,7 @@ STATIC int w_bitmap_io(struct drbd_work *w, int unused)
 	struct drbd_device *device = w->device;
 	int rv = -EIO;
 
-	D_ASSERT(atomic_read(&device->ap_bio_cnt) == 0);
+	D_ASSERT(device, atomic_read(&device->ap_bio_cnt) == 0);
 
 	if (get_ldev(device)) {
 		drbd_bm_lock(device, work->why, work->flags);
@@ -3409,7 +3409,7 @@ STATIC int w_go_diskless(struct drbd_work *w, int unused)
 {
 	struct drbd_device *device = w->device;
 
-	D_ASSERT(device->state.disk == D_FAILED);
+	D_ASSERT(device, device->state.disk == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
 	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
 	 * the protected members anymore, though, so once put_ldev reaches zero
@@ -3420,7 +3420,7 @@ STATIC int w_go_diskless(struct drbd_work *w, int unused)
 
 void drbd_go_diskless(struct drbd_device *device)
 {
-	D_ASSERT(device->state.disk == D_FAILED);
+	D_ASSERT(device, device->state.disk == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
 		drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->go_diskless);
 }
@@ -3442,11 +3442,11 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 			  void (*done)(struct drbd_device *, int),
 			  char *why, enum bm_flag flags)
 {
-	D_ASSERT(current == first_peer_device(device)->connection->worker.task);
+	D_ASSERT(device, current == first_peer_device(device)->connection->worker.task);
 
-	D_ASSERT(!test_bit(BITMAP_IO_QUEUED, &device->flags));
-	D_ASSERT(!test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(list_empty(&device->bm_io_work.w.list));
+	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
+	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
+	D_ASSERT(device, list_empty(&device->bm_io_work.w.list));
 	if (device->bm_io_work.why)
 		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, device->bm_io_work.why);
@@ -3479,7 +3479,7 @@ int drbd_bitmap_io(struct drbd_device *device, int (*io_fn)(struct drbd_device *
 {
 	int rv;
 
-	D_ASSERT(current != first_peer_device(device)->connection->worker.task);
+	D_ASSERT(device, current != first_peer_device(device)->connection->worker.task);
 
 	if ((flags & BM_LOCKED_SET_ALLOWED) == 0)
 		drbd_suspend_io(device);
