@@ -88,6 +88,8 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 	trace_drbd_bio(mdev, "Md", bio, 1, NULL);
 
 	complete(&md_io->event);
+	drbd_md_put_buffer(mdev);
+
 	BIO_ENDIO_FN_RETURN;
 }
 

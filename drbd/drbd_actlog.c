@@ -71,6 +71,23 @@ void trace_drbd_resync(struct drbd_conf *mdev, int level, const char *fmt, ...)
 	va_end(ap);
 }
 
+void *drbd_md_get_buffer(struct drbd_conf *mdev)
+{
+	int r;
+
+	wait_event(mdev->misc_wait,
+		   (r = atomic_cmpxchg(&mdev->md_io_in_use, 0, 1)) == 0 ||
+		   mdev->state.disk <= D_FAILED);
+
+	return r ? NULL : page_address(mdev->md_io_page);
+}
+
+void drbd_md_put_buffer(struct drbd_conf *mdev)
+{
+	if (atomic_dec_and_test(&mdev->md_io_in_use))
+		wake_up(&mdev->misc_wait);
+}
+
 STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
@@ -102,6 +119,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 
 	trace_drbd_bio(mdev, "Md", bio, 0, NULL);
 
+	atomic_inc(&mdev->md_io_in_use); /* drbd_md_put_buffer() is in the completion handler */
 	if (drbd_insert_fault(mdev, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
 		bio_endio(bio, -EIO);
 	else
@@ -134,7 +152,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 	int offset = 0;
 	struct page *iop = mdev->md_io_page;
 
-	D_ASSERT(mutex_is_locked(&mdev->md_io_mutex));
+	D_ASSERT(atomic_read(&mdev->md_io_in_use) == 1);
 
 	if (!bdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ, 5)) {
@@ -372,8 +390,13 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		return 1;
 	}
 
-	mutex_lock(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
-	buffer = (struct al_transaction *)page_address(mdev->md_io_page);
+	buffer = drbd_md_get_buffer(mdev); /* protects md_io_buffer, al_tr_cycle, ... */
+	if (!buffer) {
+		dev_err(DEV, "disk failed while waiting for md_io buffer\n");
+		complete(&((struct update_al_work *)w)->event);
+		put_ldev(mdev);
+		return 1;
+	}
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -418,7 +441,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	D_ASSERT(mdev->al_tr_pos < MD_AL_MAX_SIZE);
 	mdev->al_tr_number++;
 
-	mutex_unlock(&mdev->md_io_mutex);
+	drbd_md_put_buffer(mdev);
 
 	complete(&((struct update_al_work *)w)->event);
 	put_ldev(mdev);
@@ -487,8 +510,9 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	/* lock out all other meta data io for now,
 	 * and make sure the page is mapped.
 	 */
-	mutex_lock(&mdev->md_io_mutex);
-	buffer = page_address(mdev->md_io_page);
+	buffer = drbd_md_get_buffer(mdev);
+	if (!buffer)
+		return 0;
 
 	/* Find the valid transaction in the log */
 	for (i = 0; i <= mx; i++) {
@@ -496,7 +520,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		if (rv == 0)
 			continue;
 		if (rv == -1) {
-			mutex_unlock(&mdev->md_io_mutex);
+			drbd_md_put_buffer(mdev);
 			return 0;
 		}
 		cnr = be32_to_cpu(buffer->tr_number);
@@ -522,7 +546,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
 	if (!found_valid) {
 		dev_warn(DEV, "No usable activity log found.\n");
-		mutex_unlock(&mdev->md_io_mutex);
+		drbd_md_put_buffer(mdev);
 		return 1;
 	}
 
@@ -537,7 +561,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		rv = drbd_al_read_tr(mdev, bdev, buffer, i);
 		ERR_IF(rv == 0) goto cancel;
 		if (rv == -1) {
-			mutex_unlock(&mdev->md_io_mutex);
+			drbd_md_put_buffer(mdev);
 			return 0;
 		}
 
@@ -578,7 +602,7 @@ cancel:
 		mdev->al_tr_pos = 0;
 
 	/* ok, we are done with it */
-	mutex_unlock(&mdev->md_io_mutex);
+	drbd_md_put_buffer(mdev);
 
 	dev_info(DEV, "Found %d transactions (%d active extents) in activity log.\n",
 	     transactions, active_extents);
