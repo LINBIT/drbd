@@ -62,7 +62,7 @@
 extern FILE* yyin;
 YYSTYPE yylval;
 
-/* int     force = 0; now extern, see drbdtool_common.c */
+int	force = 0;
 int	verbose = 0;
 int	ignore_sanity_checks = 0;
 int	dry_run = 0;
@@ -104,6 +104,29 @@ struct option metaopt[] = {
 	_x; })
 #endif
 
+static int confirmed(const char *text)
+{
+	const char yes[] = "yes";
+	const ssize_t N = sizeof(yes);
+	char *answer = NULL;
+	size_t n = 0;
+	int ok;
+
+	printf("\n%s\n", text);
+
+	if (force) {
+	    printf("*** confirmation forced via --force option ***\n");
+	    ok = 1;
+	}
+	else {
+	    printf("[need to type '%s' to confirm] ", yes);
+	    ok = getline(&answer,&n,stdin) == N &&
+		strncmp(answer,yes,N-1) == 0;
+	    if (answer) free(answer);
+	    printf("\n");
+	}
+	return ok;
+}
 
 /*
  * FIXME

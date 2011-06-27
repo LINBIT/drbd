@@ -21,31 +21,6 @@
 #include "drbdtool_common.h"
 #include "config.h"
 
-int force = 0;
-int confirmed(const char *text)
-{
-	const char yes[] = "yes";
-	const ssize_t N = sizeof(yes);
-	char *answer = NULL;
-	size_t n = 0;
-	int ok;
-
-	printf("\n%s\n", text);
-
-	if (force) {
-	    printf("*** confirmation forced via --force option ***\n");
-	    ok = 1;
-	}
-	else {
-	    printf("[need to type '%s' to confirm] ", yes);
-	    ok = getline(&answer,&n,stdin) == N &&
-		strncmp(answer,yes,N-1) == 0;
-	    if (answer) free(answer);
-	    printf("\n");
-	}
-	return ok;
-}
-
 /* In-place unescape double quotes and backslash escape sequences from a
  * double quoted string. Note: backslash is only useful to quote itself, or
  * double quote, no special treatment to any c-style escape sequences. */

@@ -69,9 +69,6 @@ extern int sget_token(char *s, int size, const char** text);
 extern uint64_t bdev_size(int fd);
 extern void get_random_bytes(void* buffer, int len);
 
-extern int force; /* global option to force implicit confirmation */
-extern int confirmed(const char *text);
-
 extern const char* shell_escape(const char* s);
 
 /* In-place unescape double quotes and backslash escape sequences from a
