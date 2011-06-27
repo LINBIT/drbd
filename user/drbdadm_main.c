@@ -125,6 +125,7 @@ struct option general_admopt[] = {
 	{"peer", required_argument, 0, 'P'},
 	{"version", no_argument, 0, 'V'},
 	{"setup-option", required_argument, 0, 'W'},
+	{"help", no_argument, 0, 'h'},
 	{0, 0, 0, 0}
 };
 struct option *admopt = general_admopt;
@@ -196,6 +197,7 @@ int config_valid = 1;
 int no_tty;
 int dry_run = 0;
 int verbose = 0;
+bool help;
 int do_verify_ips = 0;
 int do_register = 1;
 /* whether drbdadm was called with "all" instead of resource name(s) */
@@ -2794,35 +2796,61 @@ static int hidden_cmds(struct cfg_ctx *ignored __attribute((unused)))
 	exit(0);
 }
 
-void print_usage_and_exit(const char *addinfo)
+static void field_to_option(const struct field_def *field, struct option *option)
+{
+	option->name = field->name;
+	option->has_arg = field->argument_is_optional ?
+		optional_argument : required_argument;
+	option->flag = NULL;
+	option->val = 257;
+}
+
+static void print_option(struct option *opt)
+{
+	if (opt->has_arg == required_argument) {
+		printf("  --%s=...", opt->name);
+		if (opt->val > 1 && opt->val < 256)
+			 printf(", -%c ...", opt->val);
+		printf("\n");
+	} else if (opt->has_arg == optional_argument) {
+		printf("  --%s[=...]", opt->name);
+		if (opt->val > 1 && opt->val < 256)
+			 printf(", -%c...", opt->val);
+		printf("\n");
+	} else {
+		printf("  --%s", opt->name);
+		if (opt->val > 1 && opt->val < 256)
+			 printf(", -%c", opt->val);
+		printf("\n");
+	}
+}
+
+void print_usage_and_exit(struct adm_cmd *cmd, const char *addinfo)
 {
 	struct option *opt;
 
-	printf("\nUSAGE: %s [OPTION...] COMMAND [SETUP_OPTIONS] {all|RESOURCE...}\n\n"
-	       "OPTIONS:\n", progname);
+	printf("\nUSAGE: %s [OPTION...] %s {all|RESOURCE...}\n\n"
+	       "GENERAL OPTIONS:\n", progname, cmd ? cmd->name : "COMMAND");
 
-	for (opt = general_admopt; opt->name; opt++) {
-		if (opt->has_arg == required_argument) {
-			printf("  --%s=...", opt->name);
-			if (opt->val > 1 && opt->val < 256)
-				 printf(", -%c ...", opt->val);
-			printf("\n");
-		} else if (opt->has_arg == optional_argument) {
-			printf("  --%s[=...]", opt->name);
-			if (opt->val > 1 && opt->val < 256)
-				 printf(", -%c...", opt->val);
-			printf("\n");
-		} else {
-			printf("  --%s", opt->name);
-			if (opt->val > 1 && opt->val < 256)
-				 printf(", -%c", opt->val);
-			printf("\n");
+	for (opt = general_admopt; opt->name; opt++)
+		print_option(opt);
+	if (cmd && cmd->drbdsetup_ctx) {
+		const struct field_def *field;
+
+		printf("\nOPTIONS FOR %s:\n", cmd->name);
+		for (field = cmd->drbdsetup_ctx->fields; field->name; field++) {
+			struct option opt;
+
+			field_to_option(field, &opt);
+			print_option(&opt);
 		}
 	}
 
-	printf("\nCOMMANDS:\n");
+	if (!cmd) {
+		printf("\nCOMMANDS:\n");
 
-	print_cmds(1);
+		print_cmds(1);
+	}
 
 	printf("\nVersion: " REL_VERSION " (api:%d)\n%s\n",
 	       API_VERSION, drbd_buildtag());
@@ -3343,14 +3371,14 @@ static void recognize_all_drbdsetup_options(void)
 			continue;
 
 		for (field = cmd->drbdsetup_ctx->fields; field->name; field++) {
-			int has_arg = field->argument_is_optional ?
-				optional_argument : required_argument;
+			struct option opt;
 			int n;
 
+			field_to_option(field, &opt);
 			for (n = 0; admopt[n].name; n++) {
 				if (!strcmp(admopt[n].name, field->name)) {
 					if (admopt[n].val == 257)
-						assert (admopt[n].has_arg == has_arg);
+						assert (admopt[n].has_arg == opt.has_arg);
 					else
 						goto skip;
 				}
@@ -3362,11 +3390,7 @@ static void recognize_all_drbdsetup_options(void)
 			} else
 				admopt = realloc(admopt, (n + 2) * sizeof(*admopt));
 			memcpy(&admopt[n+1], &admopt[n], sizeof(*admopt));
-
-			admopt[n].name = field->name;
-			admopt[n].has_arg = has_arg;
-			admopt[n].flag = NULL;
-			admopt[n].val = 257;
+			admopt[n] = opt;
 
 		    skip:
 			/* dummy statement required because of label */ ;
@@ -3408,7 +3432,9 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 							  (n + 2) * sizeof(char *));
 				(*resource_names)[n++] = optarg;
 				(*resource_names)[n] = NULL;
-			} else {
+			} else if (!strcmp(optarg, "help"))
+				help = true;
+			else {
 				*cmd = find_cmd(optarg);
 				if (!*cmd) {
 					add_setup_option(true, optarg);
@@ -3534,14 +3560,16 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		case 'W':
 			add_setup_option(true, optarg);
 			break;
-		case '?':
-			/* commented out, since opterr=1
-			 * fprintf(stderr,"Unknown option %s\n",argv[optind-1]); */
-			fprintf(stderr, "try '%s help'\n", progname);
-			return 20;
+		case 'h':
+			help = true;
 			break;
+		case '?':
+			goto help;
 		}
 	}
+
+	if (help)
+		print_usage_and_exit(*cmd, 0);
 
 	if (*cmd == NULL) {
 		fprintf(stderr, "Unknown command '%s'.\n", argv[first_non_cmd_arg]);
@@ -3581,12 +3609,19 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				fprintf(stderr, "%s: unrecognized option '%s'\n",
 					progname,
 					setup_options[i].option);
-				return E_usage;
+				goto help;
 			}
 		}
 	}
 
 	return 0;
+
+help:
+	if (*cmd)
+		fprintf(stderr, "try '%s help %s'\n", progname, (*cmd)->name);
+	else
+		fprintf(stderr, "try '%s help'\n", progname);
+	return E_usage;
 }
 
 static void substitute_deprecated_cmd(char **c, char *deprecated,
@@ -3608,8 +3643,6 @@ struct adm_cmd *find_cmd(char *cmdname)
 		hidden_cmds(NULL);
 		exit(0);
 	}
-	if (!strncmp("help", cmdname, 5))
-		print_usage_and_exit(0);
 
 	/* R_PRIMARY / R_SECONDARY is not a state, but a role.  Whatever that
 	 * means, actually.  But anyways, we decided to start using _role_ as
@@ -3792,7 +3825,7 @@ int main(int argc, char **argv)
 	assign_command_names_from_argv0(argv);
 
 	if (argc == 1)
-		print_usage_and_exit("missing arguments");	// arguments missing.
+		print_usage_and_exit(NULL, "missing arguments");	// arguments missing.
 
 	if (drbdsetup == NULL || drbdmeta == NULL || drbd_proxy_ctl == NULL) {
 		fprintf(stderr, "could not strdup argv[0].\n");
@@ -3824,7 +3857,7 @@ int main(int argc, char **argv)
 		if (is_dump)
 			all_resources = 1;
 		else if (cmd->res_name_required)
-			print_usage_and_exit("missing resourcename arguments");
+			print_usage_and_exit(cmd, "missing resourcename arguments");
 	} else if (resource_names[0] && resource_names[1]) {
 		if (!cmd->res_name_required)
 			fprintf(stderr,
