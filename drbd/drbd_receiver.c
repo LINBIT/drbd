@@ -84,14 +84,6 @@ static struct drbd_epoch *previous_epoch(struct drbd_device *device, struct drbd
 	return prev;
 }
 
-#ifdef DBG_ASSERTS
-void drbd_assert_breakpoint(struct drbd_device *device, char *exp,
-			    char *file, int line)
-{
-	dev_err(DEV, "ASSERT( %s ) in %s:%d\n", exp, file, line);
-}
-#endif
-
 #define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
 
 /*

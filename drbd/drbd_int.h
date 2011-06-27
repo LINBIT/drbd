@@ -201,14 +201,8 @@ struct drbd_connection;
 })
 
 
-#ifdef DBG_ASSERTS
-extern void drbd_assert_breakpoint(struct drbd_device *, char *, char *, int);
-# define D_ASSERT(exp)	if (!(exp)) \
-	 drbd_assert_breakpoint(device, #exp, __FILE__, __LINE__)
-#else
 # define D_ASSERT(exp)	if (!(exp)) \
 	 dev_err(DEV, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
-#endif
 
 /**
  * expect  -  Make an assertion

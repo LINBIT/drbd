@@ -41,10 +41,6 @@ extern const char *drbd_buildtag(void);
 #define DBG_ALL_SYMBOLS /* no static functs, improves quality of OOPS traces */
 #endif
 
-/* drbd_assert_breakpoint() function
-#define DBG_ASSERTS
- */
-
 /* Dump all cstate changes */
 #define DUMP_MD 2
 
