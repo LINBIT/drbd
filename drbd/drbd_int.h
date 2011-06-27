@@ -218,10 +218,10 @@ void drbd_printk_with_wrong_object_type(void);
 
 #ifdef DBG_ASSERTS
 extern void drbd_assert_breakpoint(struct drbd_device *, char *, char *, int);
-# define D_ASSERT(exp)	if (!(exp)) \
+# define D_ASSERT(device, exp)	if (!(exp)) \
 	 drbd_assert_breakpoint(device, #exp, __FILE__, __LINE__)
 #else
-# define D_ASSERT(exp)	if (!(exp)) \
+# define D_ASSERT(device, exp)	if (!(exp)) \
 	 drbd_err(device, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 
@@ -1963,7 +1963,7 @@ static inline void put_ldev(struct drbd_device *device)
 	 * so we must not sleep here. */
 
 	__release(local);
-	D_ASSERT(i >= 0);
+	D_ASSERT(device, i >= 0);
 	if (i == 0) {
 		if (device->state.disk == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
@@ -2194,7 +2194,7 @@ static inline void dec_ap_bio(struct drbd_device *device)
 	int mxb = drbd_get_max_buffers(device);
 	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
 
-	D_ASSERT(ap_bio >= 0);
+	D_ASSERT(device, ap_bio >= 0);
 
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
