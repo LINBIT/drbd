@@ -3,5 +3,3 @@ config.h
 drbd_buildtag.c
 drbd_endian.h
 drbdadm_scanner.c
-drbdtool_common.c
-drbdtool_common.h
