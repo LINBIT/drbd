@@ -1469,6 +1469,19 @@ void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd
      (ARGC)++; \
   })
 
+static void add_setup_options(char **argv, int *argcp)
+{
+	int argc = *argcp;
+	int i;
+
+	if (!setup_options)
+		return;
+
+	for (i = 0; setup_options[i].option; i++)
+		argv[NA(argc)] = setup_options[i].option;
+	*argcp = argc;
+}
+
 #define make_options(OPT) \
   while(OPT) { \
     if(OPT->value) { \
@@ -1516,11 +1529,7 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 		}
 		make_options(opt);
 	}
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
@@ -1583,11 +1592,7 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	if (reset || do_new_resource)
 		make_options(ctx->res->res_options);
 
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = NULL;
 
 	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -1627,11 +1632,7 @@ int adm_resize(struct cfg_ctx *ctx)
 		opt = find_opt(ctx->res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	/* if this is not "resize", but "check-resize", be silent! */
@@ -1682,11 +1683,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 		argv[NA(argc)] = vol->meta_index;
 	}
 	argv[NA(argc)] = (char *)ctx->arg;
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, flags, ctx->res->name);
@@ -1714,11 +1711,7 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
 	else
 		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	setenv("DRBD_RESOURCE", ctx->res->name, 1);
@@ -2036,12 +2029,7 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 		make_options(opt);
 	}
 
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
-
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
@@ -2082,11 +2070,7 @@ int adm_disconnect(struct cfg_ctx *ctx)
 		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
 	*/
 	add_connection_endpoints(argv, &argc, ctx->res);
-	if (setup_options) {
-		int i;
-		for (i = 0; setup_options[i].option; i++)
-			argv[NA(argc)] = setup_options[i].option;
-	}
+	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
 	setenv("DRBD_RESOURCE", ctx->res->name, 1);
