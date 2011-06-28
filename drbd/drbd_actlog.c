@@ -85,7 +85,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	md_io.error = 0;
 
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
-		rw |= DRBD_REQ_FUA;
+		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
 	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC;
 
 #ifndef REQ_FLUSH
