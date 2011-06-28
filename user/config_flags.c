@@ -93,7 +93,7 @@ static int enum_usage(struct field_def *field, char *str, int size)
 	char sep = '{';
 	int n, len = 0, l;
 
-	l = snprintf(str, size, " [--%s=", field->name);
+	l = snprintf(str, size, "[--%s=", field->name);
 	len += l; size -= l;
 	for (n = 0; n < field->u.e.size; n++) {
 		if (!map[n])
@@ -248,7 +248,7 @@ static bool put_numeric(struct context_def *ctx, struct field_def *field,
 
 static int numeric_usage(struct field_def *field, char *str, int size)
 {
-        return snprintf(str, size," [--%s=(%lld ... %lld)]",
+        return snprintf(str, size,"[--%s=(%lld ... %lld)]",
 			field->name,
 			field->u.n.min,
 			field->u.n.max);
@@ -336,7 +336,7 @@ static bool put_flag(struct context_def *ctx, struct field_def *field,
 
 static int boolean_usage(struct field_def *field, char *str, int size)
 {
-        return snprintf(str, size," [--%s={yes|no}]",
+        return snprintf(str, size,"[--%s={yes|no}]",
 			field->name);
 }
 
@@ -383,7 +383,7 @@ static bool put_string(struct context_def *ctx, struct field_def *field,
 
 static int string_usage(struct field_def *field, char *str, int size)
 {
-        return snprintf(str, size," [--%s=<str>]",
+        return snprintf(str, size,"[--%s=<str>]",
 			field->name);
 }
 

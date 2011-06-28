@@ -45,6 +45,7 @@
 #include <time.h>
 #include <signal.h>
 #include <assert.h>
+#include <libgen.h>
 
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -74,6 +75,9 @@
 #include "registry.h"
 #include "config.h"
 #include "config_flags.h"
+#include "wrap_printf.h"
+
+char *progname;
 
 /* for parsing of messages */
 static struct nlattr *global_attrs[128];
@@ -2274,9 +2278,6 @@ static const char *contexts_to_text(enum cfg_ctx_key ctx, enum usage_type ut)
 static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 {
 	struct drbd_argument *args;
-	static char line[300];
-	int maxcol,col,prevcol,startcol,toolong;
-	char *colstr;
 
 	if(ut == XML) {
 		printf("<command name=\"%s\" operates_on=\"%s\">\n",
@@ -2320,79 +2321,46 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		return;
 	}
 
-	if (ut != BRIEF)
-		printf("USAGE:\n");
+	if (ut == BRIEF)
+		wrap_printf(4, "%-18s  ", cm->cmd);
+	else {
+		wrap_printf(0, "USAGE:\n");
 
-	prevcol=col=0;
-	maxcol=100;
+		wrap_printf(1, "%s %s", progname, cm->cmd);
+		if (cm->ctx_key && ut != BRIEF)
+			wrap_printf(4, " %s", contexts_to_text(cm->ctx_key, ut));
 
-	if((colstr=getenv("COLUMNS"))) maxcol=atoi(colstr)-1;
+		if (cm->drbd_args) {
+			for (args = cm->drbd_args; args->name; args++)
+				wrap_printf(4, " {%s}", args->name);
+		}
 
-	col += snprintf(line+col, maxcol-col, " %s", cm->cmd);
-	if (cm->ctx_key && ut != BRIEF)
-		col += snprintf(line+col, maxcol-col, " %s",
-				contexts_to_text(cm->ctx_key, ut));
+		if (cm->options) {
+			struct option *option;
 
-	if( (args = cm->drbd_args) ) {
-		if(ut != BRIEF) {
-			while (args->name) {
-				col += snprintf(line+col, maxcol-col, " %s",
-						args->name);
-				args++;
+			for (option = cm->options; option->name; option++)
+				wrap_printf(4, " [--%s%s]",
+					    option->name,
+					    option->has_arg == no_argument ?
+					        "" : "=...");
+		}
+
+		if (cm->set_defaults)
+			wrap_printf(4, " [--set-defaults]");
+
+		if (cm->ctx) {
+			struct field_def *field;
+
+			for (field = cm->ctx->fields; field->name; field++) {
+				char buffer[300];
+				int n;
+				n = field->usage(field, buffer, sizeof(buffer));
+				assert(n < sizeof(buffer));
+				wrap_printf(4, " %s", buffer);
 			}
 		}
+		wrap_printf(4, "\n");
 	}
-
-	if (col > maxcol) {
-		printf("%s\n",line);
-		col=0;
-	}
-	startcol=prevcol=col;
-
-	if(ut == BRIEF) {
-		printf("%-40s",line);
-		return;
-	}
-
-	if (cm->options) {
-		struct option *option;
-
-		/* Screw this horrible pretty printing mess ... */
-		printf("%s", line);
-		for (option = cm->options; option->name; option++)
-			printf(" [--%s%s]",
-			       option->name,
-			       option->has_arg == no_argument ? "" : "=...");
-		printf("\n");
-		col = 0;
-	}
-
-	if (cm->set_defaults)
-		col += sprintf(line + col, " [--set-defaults]");
-
-	if (cm->ctx) {
-		struct field_def *field = cm->ctx->fields;
-
-		while (field->name) {
-			col += field->usage(field, line+col, maxcol-col);
-			if (col >= maxcol) {
-				toolong = (prevcol == startcol);
-				if (!toolong)
-					line[prevcol] = 0;
-				printf("%s\n" ,line);
-				startcol = prevcol = col = sprintf(line, "    ");
-				if( toolong)
-					field++;
-			} else {
-				prevcol = col;
-				field++;
-			}
-		}
-	}
-
-	line[col]=0;
-
-	printf("%s\n",line);
 }
 
 static void print_usage_and_exit(const char* addinfo)
@@ -2404,10 +2372,8 @@ static void print_usage_and_exit(const char* addinfo)
 	       "\nCommands are:\n",cmdname);
 
 
-	for (i = 0; i < ARRAY_SIZE(commands); i++) {
+	for (i = 0; i < ARRAY_SIZE(commands); i++)
 		print_command_usage(&commands[i], BRIEF);
-		if(i%2==1) printf("\n");
-	}
 
 	printf("\n\n"
 	       "To get more details about a command issue "
@@ -2476,6 +2442,8 @@ int main(int argc, char **argv)
 {
 	struct drbd_cmd *cmd;
 	int rv=0;
+
+	progname = basename(argv[0]);
 
 	if (chdir("/")) {
 		/* highly unlikely, but gcc is picky */
