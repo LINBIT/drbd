@@ -3362,8 +3362,12 @@ static void recognize_all_drbdsetup_options(void)
 				if (!strcmp(admopt[n].name, field->name)) {
 					if (admopt[n].val == 257)
 						assert (admopt[n].has_arg == opt.has_arg);
-					else
+					else {
+						fprintf(stderr, "Warning: drbdsetup %s option --%s "
+							"can only be passed as -W--%s\n",
+							cmd->name, admopt[n].name, admopt[n].name);
 						goto skip;
+					}
 				}
 			}
 

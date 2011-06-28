@@ -964,7 +964,7 @@ int __drbd_send_protocol(struct drbd_tconn *tconn, enum drbd_packet cmd)
 	rcu_read_lock();
 	nc = rcu_dereference(tconn->net_conf);
 
-	if (nc->dry_run && tconn->agreed_pro_version < 92) {
+	if (nc->tentative && tconn->agreed_pro_version < 92) {
 		rcu_read_unlock();
 		mutex_unlock(&sock->mutex);
 		conn_err(tconn, "--dry-run is not supported by peer");
@@ -983,7 +983,7 @@ int __drbd_send_protocol(struct drbd_tconn *tconn, enum drbd_packet cmd)
 	cf = 0;
 	if (nc->discard_my_data)
 		cf |= CF_DISCARD_MY_DATA;
-	if (nc->dry_run)
+	if (nc->tentative)
 		cf |= CF_DRY_RUN;
 	p->conn_flags    = cpu_to_be32(cf);
 

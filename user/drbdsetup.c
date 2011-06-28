@@ -698,16 +698,29 @@ static struct option *make_longoptions(struct context_def *ctx, bool set_default
 		struct field_def *field;
 
 		/*
-		 * Make sure to keep ctx->fields firsty: we use the index
+		 * Make sure to keep ctx->fields first: we use the index
 		 * returned by getopt_long() to access ctx->fields.
 		 */
 		for (field = ctx->fields; field->name; field++) {
-			buffer[i].name = field->name;
+			const char *name = field->name;
+
+		    add_alias:
+			buffer[i].name = name;
 			buffer[i].has_arg = field->argument_is_optional ?
 				optional_argument : required_argument;
 			buffer[i].flag = NULL;
 			buffer[i].val = 0;
 			assert(i++ < ARRAY_SIZE(buffer) - 2);
+
+			if (!strcmp(name, "tentative")) {
+				/*
+				 * The "tentative" flag was previously called
+				 * "dry-run".  For backward compatibility, add
+				 * "dry-run" as an alias.
+				 */
+				name = "dry-run";
+				goto add_alias;
+			}
 		}
 	}
 

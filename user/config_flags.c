@@ -654,7 +654,7 @@ struct context_def attach_cmd_ctx = {
 struct context_def connect_cmd_ctx = {
 	NLA_POLICY(net_conf),
 	.fields = {
-		{ "dry-run", FLAG(dry_run) },
+		{ "tentative", FLAG(tentative) },
 		{ "discard-my-data", FLAG(discard_my_data) },
 		CHANGEABLE_NET_OPTIONS,
 		{ } },
