@@ -2564,7 +2564,7 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_simple_request_state(skb, info, NS(disk, D_OUTDATED));
 }
 
-int nla_put_drbd_cfg_context(struct sk_buff *skb, const char *resource_name, unsigned vnr)
+int nla_put_drbd_cfg_context(struct sk_buff *skb, struct drbd_tconn *tconn, unsigned vnr)
 {
 	struct nlattr *nla;
 	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
@@ -2572,7 +2572,11 @@ int nla_put_drbd_cfg_context(struct sk_buff *skb, const char *resource_name, uns
 		goto nla_put_failure;
 	if (vnr != VOLUME_UNSPECIFIED)
 		NLA_PUT_U32(skb, T_ctx_volume, vnr);
-	NLA_PUT_STRING(skb, T_ctx_resource_name, resource_name);
+	NLA_PUT_STRING(skb, T_ctx_resource_name, tconn->name);
+	if (tconn->my_addr_len)
+		NLA_PUT(skb, T_ctx_my_addr, tconn->my_addr_len, &tconn->my_addr);
+	if (tconn->peer_addr_len)
+		NLA_PUT(skb, T_ctx_peer_addr, tconn->peer_addr_len, &tconn->peer_addr);
 	nla_nest_end(skb, nla);
 	return 0;
 
@@ -2609,7 +2613,7 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_conf *mdev,
 
 	/* We need to add connection name and volume number information still.
 	 * Minor number is in drbd_genlmsghdr. */
-	if (nla_put_drbd_cfg_context(skb, mdev->tconn->name, mdev->vnr))
+	if (nla_put_drbd_cfg_context(skb, mdev->tconn, mdev->vnr))
 		goto nla_put_failure;
 
 	if (res_opts_to_skb(skb, &mdev->tconn->res_opts, exclude_sensitive))
@@ -2771,7 +2775,7 @@ next_tconn:
 			/* this is a tconn without a single volume */
 			dh->minor = -1U;
 			dh->ret_code = NO_ERROR;
-			if (nla_put_drbd_cfg_context(skb, tconn->name, VOLUME_UNSPECIFIED))
+			if (nla_put_drbd_cfg_context(skb, tconn, VOLUME_UNSPECIFIED))
 				genlmsg_cancel(skb, dh);
 			else
 				genlmsg_end(skb, dh);
