@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.11rc3 (api:88/proto:86-96)
+8.3.11 (api:88/proto:86-96)
 --------
  * Added missing spinlock in compressed bitmap receive (regression introduced
    in 8.3.10, could lead to "negative" out-of-sync stats and non-terminating
@@ -19,6 +19,7 @@ Latest:
    asymmetrically congested networks
  * Fixed state transitions if fence-peer handler returns after connection was
    established again
+ * Fixes to drbdmeta and drbdsetup for the > 16TByte support
  * Made negotiation of max_bio_size conservative instead of optimistic
  * Network timeouts for mirrored write requests are now always enforced,
    no longer only when the socket is congested
