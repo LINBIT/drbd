@@ -1119,7 +1119,10 @@ static int sh_b_pri(struct cfg_ctx *ctx)
 		/* upon connect resync starts, and both sides become primary at the same time.
 		   One's try might be declined since an other state transition happens. Retry. */
 		for (i = 0; i < 5; i++) {
+			const char *old_arg = ctx->arg;
+			ctx->arg = "primary";
 			rv = adm_generic_s(ctx);
+			ctx->arg = old_arg;
 			if (rv == 0)
 				return rv;
 			sleep(1);
