@@ -693,42 +693,47 @@ static int get_af_ssocks(int warn_and_use_default)
 	return af;
 }
 
-static struct option *make_longoptions(struct context_def *ctx, bool set_defaults)
+static struct option *make_longoptions(struct drbd_cmd *cm)
 {
 	static struct option buffer[42];
 	int i = 0;
+	int connect_tentative_index = -1;
 
-	if (ctx) {
+	if (cm->ctx) {
 		struct field_def *field;
 
 		/*
-		 * Make sure to keep ctx->fields first: we use the index
-		 * returned by getopt_long() to access ctx->fields.
+		 * Make sure to keep cm->ctx->fields first: we use the index
+		 * returned by getopt_long() to access cm->ctx->fields.
 		 */
-		for (field = ctx->fields; field->name; field++) {
-			const char *name = field->name;
-
-		    add_alias:
-			buffer[i].name = name;
+		for (field = cm->ctx->fields; field->name; field++) {
+			assert(i < ARRAY_SIZE(buffer));
+			buffer[i].name = field->name;
 			buffer[i].has_arg = field->argument_is_optional ?
 				optional_argument : required_argument;
 			buffer[i].flag = NULL;
 			buffer[i].val = 0;
-			assert(i++ < ARRAY_SIZE(buffer) - 2);
-
-			if (!strcmp(name, "tentative")) {
-				/*
-				 * The "tentative" flag was previously called
-				 * "dry-run".  For backward compatibility, add
-				 * "dry-run" as an alias.
-				 */
-				name = "dry-run";
-				goto add_alias;
-			}
+			if (!strcmp(cm->cmd, "connect") && !strcmp(field->name, "tentative"))
+				connect_tentative_index = i;
+			i++;
 		}
+		assert(field - cm->ctx->fields == i);
 	}
 
-	if (set_defaults) {
+	if (connect_tentative_index != -1) {
+		/*
+		 * For backward compatibility, add --dry-run as an alias to
+		 * --tentative.
+		 */
+		assert(i < ARRAY_SIZE(buffer));
+		buffer[i] = buffer[connect_tentative_index];
+		buffer[i].name = "dry-run";
+		buffer[i].val = 1000 + connect_tentative_index;
+		i++;
+	}
+
+	if (cm->set_defaults) {
+		assert(i < ARRAY_SIZE(buffer));
 		buffer[i].name = "set-defaults";
 		buffer[i].has_arg = 0;
 		buffer[i].flag = NULL;
@@ -736,6 +741,7 @@ static struct option *make_longoptions(struct context_def *ctx, bool set_default
 		i++;
 	}
 
+	assert(i < ARRAY_SIZE(buffer));
 	buffer[i].name = NULL;
 	buffer[i].has_arg = 0;
 	buffer[i].flag = NULL;
@@ -906,13 +912,18 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	}
 	n_args = i - 1;  /* command name "doesn't count" here */
 
-	lo = make_longoptions(cm->ctx, cm->set_defaults);
+	lo = make_longoptions(cm);
 	for (;;) {
 		int idx;
 
 		c = getopt_long(argc, argv, "(", lo, &idx);
 		if (c == -1)
 			break;
+		if (c >= 1000) {
+			/* This is a field alias. */
+			idx = c - 1000;
+			c = 0;
+		}
 		if (c == 0) {
 			struct field_def *field = &cm->ctx->fields[idx];
 			assert (field->name == lo[idx].name);
