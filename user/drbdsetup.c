@@ -2255,50 +2255,12 @@ static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 	return 0;
 }
 
-static const char *contexts_to_text(enum cfg_ctx_key ctx, enum usage_type ut)
+/*
+ * Check if an integer is a power of two.
+ */
+static bool power_of_two(int i)
 {
-	static char text[128];
-
-	text[0] = 0;
-	if (ctx & CTX_RESOURCE_AND_CONNECTION) {
-		if (ut == XML)
-			strcat(text, "resource_and_connection");
-		else
-			strcat(text, "{resource} "
-				     "[{af}:]{local_addr}[:{port}] "
-				     "[{af}:]{remote_addr}[:{port}]");
-		ctx &= ~CTX_RESOURCE_AND_CONNECTION;
-	}
-
-	if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
-		if (ut != XML)
-			strcat(text, "{");
-		if (ctx & CTX_RESOURCE) {
-			strcat(text, "resource|");
-			ctx &= ~CTX_RESOURCE;
-		}
-		if (ctx & CTX_MINOR) {
-			strcat(text, "minor|");
-			ctx &= ~CTX_MINOR;
-		}
-		if (ctx & CTX_ALL) {
-			strcat(text, "all|");
-			ctx &= ~CTX_ALL;
-		}
-		*strrchr(text, '|') = 0;
-		if (ut != XML)
-			strcat(text, "}");
-	}
-
-	if (ctx & CTX_CONNECTION) {
-		if (ut == XML)
-			strcat(text, "connection");
-		else
-			strcat(text, "[{af}:]{local_addr}[:{port}] "
-				     "[{af}:]{remote_addr}[:{port}]");
-		ctx &= ~CTX_CONNECTION;
-	}
-	return text;
+	return i && !(i & (i - 1));
 }
 
 static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
@@ -2306,13 +2268,35 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 	struct drbd_argument *args;
 
 	if(ut == XML) {
-		printf("<command name=\"%s\" operates_on=\"%s\">\n",
-		       cm->cmd, contexts_to_text(cm->ctx_key, XML));
-		if( (args = cm->drbd_args) ) {
-			while (args->name) {
+		enum cfg_ctx_key ctx = cm->ctx_key;
+
+		printf("<command name=\"%s\">\n", cm->cmd);
+		if (ctx & CTX_RESOURCE_AND_CONNECTION)
+			ctx = CTX_RESOURCE | CTX_CONNECTION;
+		if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+			bool more_than_one_choice =
+				!power_of_two(ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL));
+			const char *indent = "\t\t" + !more_than_one_choice;
+			if (more_than_one_choice)
+				printf("\t<group>\n");
+			if (ctx & CTX_RESOURCE)
+				printf("%s<argument>resource</argument>\n", indent);
+			if (ctx & CTX_MINOR)
+				printf("%s<argument>minor</argument>\n", indent);
+			if (ctx & CTX_ALL)
+				printf("%s<argument>all</argument>\n", indent);
+			if (more_than_one_choice)
+				printf("\t</group>\n");
+		}
+		if (ctx & CTX_CONNECTION) {
+			printf("\t<argument>local_addr</argument>\n");
+			printf("\t<argument>remote_addr</argument>\n");
+		}
+
+		if(cm->drbd_args) {
+			for (args = cm->drbd_args; args->name; args++) {
 				printf("\t<argument>%s</argument>\n",
 				       args->name);
-				args++;
 			}
 		}
 
@@ -2353,8 +2337,34 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		wrap_printf(0, "USAGE:\n");
 
 		wrap_printf(1, "%s %s", progname, cm->cmd);
-		if (cm->ctx_key && ut != BRIEF)
-			wrap_printf(4, " %s", contexts_to_text(cm->ctx_key, ut));
+		if (cm->ctx_key && ut != BRIEF) {
+			enum cfg_ctx_key ctx = cm->ctx_key;
+
+			if (ctx & CTX_RESOURCE_AND_CONNECTION)
+				ctx = CTX_RESOURCE | CTX_CONNECTION;
+			if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+				bool first = true;
+
+				wrap_printf(4, " {");
+				if (ctx & CTX_RESOURCE) {
+					wrap_printf(4, "|resource" + first);
+					first = false;
+				}
+				if (ctx & CTX_MINOR) {
+					wrap_printf(4, "|minor" + first);
+					first = false;
+				}
+				if (ctx & CTX_ALL) {
+					wrap_printf(4, "|all" + first);
+					first = false;
+				}
+				wrap_printf(4, "}");
+			}
+			if (ctx & CTX_CONNECTION) {
+				wrap_printf(4, " [{af}:]{local_addr}[:{port}]");
+				wrap_printf(4, " [{af}:]{remote_addr}[:{port}]");
+			}
+		}
 
 		if (cm->drbd_args) {
 			for (args = cm->drbd_args; args->name; args++)
