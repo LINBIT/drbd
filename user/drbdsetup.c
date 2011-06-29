@@ -697,6 +697,7 @@ static struct option *make_longoptions(struct drbd_cmd *cm)
 {
 	static struct option buffer[42];
 	int i = 0;
+	int primary_force_index = -1;
 	int connect_tentative_index = -1;
 
 	if (cm->ctx) {
@@ -713,11 +714,25 @@ static struct option *make_longoptions(struct drbd_cmd *cm)
 				optional_argument : required_argument;
 			buffer[i].flag = NULL;
 			buffer[i].val = 0;
+			if (!strcmp(cm->cmd, "primary") && !strcmp(field->name, "force"))
+				primary_force_index = i;
 			if (!strcmp(cm->cmd, "connect") && !strcmp(field->name, "tentative"))
 				connect_tentative_index = i;
 			i++;
 		}
 		assert(field - cm->ctx->fields == i);
+	}
+
+	if (primary_force_index != -1) {
+		/*
+		 * For backward compatibility, add --overwrite-data-of-peer as
+		 * an alias to --force.
+		 */
+		assert(i < ARRAY_SIZE(buffer));
+		buffer[i] = buffer[primary_force_index];
+		buffer[i].name = "overwrite-data-of-peer";
+		buffer[i].val = 1000 + primary_force_index;
+		i++;
 	}
 
 	if (connect_tentative_index != -1) {
