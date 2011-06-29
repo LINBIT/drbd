@@ -1052,7 +1052,7 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 
 	if (ns.disk < disk_min) {
 		dev_warn(DEV, "Implicitly set disk from %s to %s\n",
-			 drbd_disk_str(disk_min), drbd_disk_str(ns.disk));
+			 drbd_disk_str(ns.disk), drbd_disk_str(disk_min));
 		ns.disk = disk_min;
 	}
 	if (ns.pdsk > pdsk_max)
@@ -1060,7 +1060,7 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 
 	if (ns.pdsk < pdsk_min) {
 		dev_warn(DEV, "Implicitly set pdsk from %s to %s\n",
-			 drbd_disk_str(pdsk_min), drbd_disk_str(ns.pdsk));
+			 drbd_disk_str(ns.pdsk), drbd_disk_str(pdsk_min));
 		ns.pdsk = pdsk_min;
 	}
 
