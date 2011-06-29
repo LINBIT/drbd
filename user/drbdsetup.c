@@ -314,6 +314,7 @@ struct drbd_cmd commands[] = {
 		 { "no-disk-drain",'D', T_no_disk_drain,EB },
 		 { "no-md-flushes",'m', T_no_md_flush,  EB },
 		 { "max-bio-bvecs",'s',	T_max_bio_bvecs,EN(MAX_BIO_BVECS,1,NULL) },
+		 { "disk-timeout",'t',	T_disk_timeout,	EN(DISK_TIMEOUT,1,"1/10 seconds") },
 		 CLOSE_OPTIONS }} }, },
 
 	{"detach", P_detach, F_CONFIG_CMD, {{NULL,

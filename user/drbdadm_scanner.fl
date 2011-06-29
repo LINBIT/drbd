@@ -94,6 +94,7 @@ size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
 fencing			{ DP; CP; return TK_DISK_OPTION;	}
 max-bio-bvecs		{ DP; CP; return TK_DISK_OPTION;	}
+disk-timeout		{ DP; CP; return TK_DISK_OPTION;	}
 use-bmbv		{ DP; CP; return TK_DISK_SWITCH;		}
 no-disk-barrier		{ DP; CP; return TK_DISK_SWITCH;		}
 no-disk-flushes		{ DP; CP; return TK_DISK_SWITCH;		}
