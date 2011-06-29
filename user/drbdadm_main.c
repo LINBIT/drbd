@@ -2066,12 +2066,6 @@ int adm_disconnect(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->arg;
-	/*
-	if (ctx->vol)
-		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
-	else
-		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	*/
 	add_connection_endpoints(argv, &argc, ctx->res);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
