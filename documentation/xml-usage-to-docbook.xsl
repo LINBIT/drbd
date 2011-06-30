@@ -1,43 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Handcrafted by phil@linbit.com -->
 <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
 
-<xsl:template match="/">
-  <cmdsynopsis sepchar=" ">
-    <command moreinfo="none">drbdsetup</command>
-    <arg choice="plain" rep="norepeat"><xsl:value-of select="command/@name"/></arg>
-    <arg choice="req" rep="norepeat"><replaceable><xsl:value-of select="command/@operates_on"/></replaceable></arg>
+  <xsl:template match="/">
+    <cmdsynopsis sepchar=" ">
+      <command moreinfo="none">drbdsetup</command>
+      <xsl:apply-templates select="command"/>
+    </cmdsynopsis>
+  </xsl:template>
 
-    <xsl:for-each select="/command/argument">
+  <xsl:template match="command">
+    <arg choice="plain" rep="norepeat">
+      <xsl:value-of select="@name"/>
+    </arg>
+    <xsl:apply-templates select="argument|group"/>
+    <xsl:apply-templates select="option"/>
+  </xsl:template>
+
+  <xsl:template match="group">
+    <group>
+      <xsl:apply-templates/>
+    </group>
+  </xsl:template>
+
+  <xsl:template match="argument">
+    <arg choice="req" rep="norepeat">
+      <replaceable><xsl:value-of select="."/></replaceable>
+    </arg>
+  </xsl:template>
+
+  <xsl:template match="option[@type = 'numeric'] | option[@type='string']">
+    <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/>
+      <arg choice="req" rep="norepeat"><replaceable>val</replaceable></arg>
+    </arg>
+  </xsl:template>
+
+  <xsl:template match="option[@type = 'handler']">
+    <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/>
       <arg choice="req" rep="norepeat">
-	<replaceable><xsl:value-of select="."/></replaceable>
+	<group choice="opt" rep="norepeat">
+	  <xsl:apply-templates select="handler"/>
+	</group>
       </arg>
-    </xsl:for-each>
+    </arg>
+  </xsl:template>
 
-    <xsl:for-each select="/command/option">
+  <xsl:template match="option[@type = 'boolean']">
+    <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/></arg>
+  </xsl:template>
 
-      <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/>
-
-	  <xsl:if test="@type = 'numeric' or @type = 'string'">
-	    <arg choice="req" rep="norepeat"><replaceable>val</replaceable></arg>
-	  </xsl:if>
-
-	  <xsl:if test="@type = 'handler'">
-	    <arg choice="req" rep="norepeat"><group choice="opt" rep="norepeat">
-	      <xsl:for-each select="handler">
-		<arg choice="plain" rep="norepeat">
-		  <xsl:value-of select="."/>
-		</arg>
-	      </xsl:for-each>
-	    </group></arg>
-	  </xsl:if>
-
-	  <!-- @type = 'boolean' gets ignored -->
-      </arg>
-
-    </xsl:for-each>
-
-  </cmdsynopsis>
-</xsl:template>
+  <xsl:template match="handler">
+    <arg choice="plain" rep="norepeat">
+      <xsl:value-of select="."/>
+    </arg>
+  </xsl:template>
 
 </xsl:stylesheet>

@@ -113,9 +113,11 @@ endif
 ../user/drbdsetup:
 	(cd ../user; make drbdsetup)
 
-drbdsetup_%.xml: ../user/drbdsetup xml-usage-to-docbook.xsl
-	../user/drbdsetup xml-help $* |\
-	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl -
+drbdsetup_xml-help_%.xml: ../user/drbdsetup
+	../user/drbdsetup xml-help $* > $@
+
+drbdsetup_%.xml: drbdsetup_xml-help_%.xml xml-usage-to-docbook.xsl
+	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl $<
 
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
