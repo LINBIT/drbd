@@ -17,13 +17,13 @@
   </xsl:template>
 
   <xsl:template match="group">
-    <group>
+    <group choice="req">
       <xsl:apply-templates/>
     </group>
   </xsl:template>
 
   <xsl:template match="argument">
-    <arg choice="req" rep="norepeat">
+    <arg choice="plain" rep="norepeat">
       <replaceable><xsl:value-of select="."/></replaceable>
     </arg>
   </xsl:template>
