@@ -36,11 +36,9 @@
 
   <xsl:template match="option[@type = 'handler']">
     <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/>
-      <arg choice="req" rep="norepeat">
-	<group choice="opt" rep="norepeat">
-	  <xsl:apply-templates select="handler"/>
-	</group>
-      </arg>
+      <group choice="req" rep="norepeat">
+	<xsl:apply-templates select="handler"/>
+      </group>
     </arg>
   </xsl:template>
 
