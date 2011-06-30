@@ -29,7 +29,10 @@
   </xsl:template>
 
   <xsl:template match="option[@type = 'numeric'] | option[@type='string']">
-    <arg choice="opt" rep="norepeat">--<xsl:value-of select="@name"/>
+    <arg choice="opt" rep="norepeat">
+      <xsl:text>--</xsl:text>
+      <xsl:value-of select="@name"/>
+      <xsl:text> </xsl:text>
       <arg choice="req" rep="norepeat"><replaceable>val</replaceable></arg>
     </arg>
   </xsl:template>
