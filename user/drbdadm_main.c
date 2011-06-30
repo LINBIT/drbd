@@ -3608,32 +3608,30 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		 */
 		for (i = 0; setup_options[i].option; i++) {
 			const struct field_def *field;
+			const char *option;
+			int len;
 
 			if (setup_options[i].explicit)
 				continue;
 
+			option = setup_options[i].option;
+			for (len = 0; option[len]; len++)
+				if (option[len] == '=')
+					break;
+
 			field = NULL;
-			if ((*cmd)->drbdsetup_ctx) {
+			if (option[0] == '-' && option[1] == '-' && (*cmd)->drbdsetup_ctx) {
 				for (field = (*cmd)->drbdsetup_ctx->fields; field->name; field++) {
-					if (setup_options[i].option[0] == '-' &&
-					    setup_options[i].option[1] == '-' &&
-					    !strcmp(setup_options[i].option + 2, field->name))
+					if (strlen(field->name) == len - 2 &&
+					    !strncmp(option + 2, field->name, len - 2))
 						break;
 				}
 				if (!field->name)
 					field = NULL;
 			}
-
 			if (!field) {
-				char *equals;
-
-				equals = strchr(setup_options[i].option, '=');
-				if (equals)
-					*equals = 0;
-
-				fprintf(stderr, "%s: unrecognized option '%s'\n",
-					progname,
-					setup_options[i].option);
+				fprintf(stderr, "%s: unrecognized option '%.*s'\n",
+					progname, len, option);
 				goto help;
 			}
 		}
