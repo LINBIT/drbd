@@ -36,12 +36,14 @@ DESTDIR ?= /
 # Lets test on PATCHLEVEL, that won't change too soon...
 
 ifneq ($(PATCHLEVEL),)
+ ifneq ($(VERSION),3)
   ifneq ($(VERSION),2)
     $(error "won't compile with this kernel version")
   endif
   ifneq ($(PATCHLEVEL),6)
     $(error "won't compile with this kernel version")
   endif
+ endif
 
   CONFIG_BLK_DEV_DRBD := m
 
