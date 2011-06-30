@@ -108,15 +108,15 @@ protocol		{ DP; CP; RC(PROTOCOL); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}
 max-buffers		{ DP; CP; RC(MAX_BUFFERS); return TK_NET_OPTION;}
-sndbuf-size		{ DP; CP; RC(SNDBUF_SIZE); return TK_NET_OPTION;}
-rcvbuf-size		{ DP; CP; RC(RCVBUF_SIZE); return TK_NET_OPTION;}
+sndbuf-size		{ DP; CP; RC(SNDBUF_SIZE); return TK_NET_OPTION | TK_PROXY_GROUP;}
+rcvbuf-size		{ DP; CP; RC(RCVBUF_SIZE); return TK_NET_OPTION | TK_PROXY_GROUP;}
 connect-int		{ DP; CP; RC(CONNECT_INT); return TK_NET_OPTION;}
 cram-hmac-alg		{ DP; CP; return TK_NET_OPTION;		}
 shared-secret		{ DP; CP; return TK_NET_OPTION;		}
 max-epoch-size		{ DP; CP; RC(MAX_EPOCH_SIZE); return TK_NET_OPTION;}
 after-sb-[012]pri	{ DP; CP; return TK_NET_OPTION;		}
 rr-conflict 		{ DP; CP; return TK_NET_OPTION;		}
-ping-timeout 		{ DP; CP; return TK_NET_OPTION;		}
+ping-timeout 		{ DP; CP; return TK_NET_OPTION | TK_PROXY_GROUP;}
 unplug-watermark	{ DP; CP; return TK_NET_OPTION;         }
 data-integrity-alg	{ DP; CP; return TK_NET_OPTION;         }
 on-congestion		{ DP; CP; return TK_NET_OPTION;         }
@@ -163,9 +163,9 @@ local-io-error		{ DP; CP; return TK_HANDLER_OPTION;     }
 before-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 after-resync-target	{ DP; CP; return TK_HANDLER_OPTION;	}
 before-resync-source	{ DP; CP; return TK_HANDLER_OPTION;	}
-memlimit		{ DP; CP; return TK_PROXY_OPTION;       }
-read-loops		{ DP; CP; return TK_PROXY_OPTION;       }
-compression		{ DP; CP; return TK_PROXY_OPTION;       }
+memlimit		{ DP; CP; return TK_PROXY_OPTION | TK_PROXY_GROUP; }
+read-loops		{ DP; CP; return TK_PROXY_OPTION | TK_PROXY_GROUP; }
+compression		{ DP; CP; return TK_PROXY_OPTION | TK_PROXY_GROUP; }
 plugin			{ DP; CP; return TK_PROXY_DELEGATE;     }
 out-of-sync             { DP; CP; return TK_HANDLER_OPTION;     }
 {IPV4ADDR}		{ DP; CP; return TK_IPADDR;		}

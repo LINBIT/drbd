@@ -134,7 +134,7 @@ struct drbd_tconn;
  * dev_printk() expects to be presented a struct device *;
  * in older kernels, (<= 2.6.24), there is nothing suitable there.
  * "backport" hack: redefine dev_printk.
- * Trigger is definition of dev_to_disk marcro, introduced with the
+ * Trigger is definition of dev_to_disk macro, introduced with the
  * commit edfaa7c36574f1bf09c65ad602412db9da5f96bf
  *     Driver core: convert block from raw kobjects to core devices
  */
@@ -168,7 +168,7 @@ struct drbd_tconn;
 #define conn_dbg(TCONN, FMT, ARGS...)    conn_printk(KERN_DEBUG, TCONN, FMT, ## ARGS)
 
 /* see kernel/printk.c:printk_ratelimit
- * macro, so it is easy do have independend rate limits at different locations
+ * macro, so it is easy do have independent rate limits at different locations
  * "initializer element not constant ..." with kernel 2.4 :(
  * so I initialize toks to something large
  */
@@ -469,11 +469,11 @@ struct p_connection_features {
 	u32 protocol_max;
 
 	/* should be more than enough for future enhancements
-	 * for now, feature_flags and the reserverd array shall be zero.
+	 * for now, feature_flags and the reserved array shall be zero.
 	 */
 
 	u32 _pad;
-	u64 reserverd[7];
+	u64 reserved[7];
 } __packed;
 
 struct p_barrier {
@@ -745,7 +745,7 @@ enum {
 	__EE_MAY_SET_IN_SYNC,
 
 	/* This peer request closes an epoch using a barrier.
-	 * On sucessful completion, the epoch is released,
+	 * On successful completion, the epoch is released,
 	 * and the P_BARRIER_ACK send. */
 	__EE_IS_BARRIER,
 
@@ -1036,7 +1036,7 @@ struct drbd_conf {
 	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
-	atomic_t unacked_cnt;	 /* Need to send replys for */
+	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t local_cnt;	 /* Waiting for local completion */
 
 	/* Interval tree of pending local write requests */
@@ -2269,7 +2269,7 @@ static inline int drbd_state_is_stable(struct drbd_conf *mdev)
 		/* disk state is stable as well. */
 		break;
 
-	/* no new io accepted during tansitional states */
+	/* no new io accepted during transitional states */
 	case D_ATTACHING:
 	case D_FAILED:
 	case D_NEGOTIATING:
@@ -2333,7 +2333,7 @@ static inline void inc_ap_bio(struct drbd_conf *mdev)
 	/* we wait here
 	 *    as long as the device is suspended
 	 *    until the bitmap is no longer on the fly during connection
-	 *    handshake as long as we would exeed the max_buffer limit.
+	 *    handshake as long as we would exceed the max_buffer limit.
 	 *
 	 * to avoid races with the reconnect code,
 	 * we need to atomic_inc within the spinlock. */

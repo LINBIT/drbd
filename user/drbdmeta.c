@@ -1314,8 +1314,8 @@ void re_initialize_md_offsets(struct format *cfg)
 		cfg->md.bm_offset = -md_size_sect + MD_AL_OFFSET_07;
 		break;
 	}
-	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
-	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
+	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
+	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
 }
 
 void initialize_al(struct format *cfg)
@@ -2049,8 +2049,8 @@ int v07_style_md_open(struct format *cfg)
 		return NO_VALID_MD_FOUND;
 	}
 
-	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
-	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
+	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
+	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
 
 	// For the case that someone modified la_sect by hand..
 	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
@@ -2485,8 +2485,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		cfg->md_offset = v07_style_md_get_byte_offset(
 			DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
 
-		cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512;
-		cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512;
+		cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
+		cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
 		cfg->bm_bytes = sizeof(long) *
 			bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
 	}
@@ -3442,7 +3442,7 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 	 */
 
 	/* move activity log, fixed size immediately preceeding the "super block". */
-	cur_offset = old_offset + cfg->md.al_offset * 512;
+	cur_offset = old_offset + cfg->md.al_offset * 512LL;
 	PREAD(cfg->md_fd, on_disk_buffer, old_offset - cur_offset, cur_offset);
 	PWRITE(cfg->md_fd, on_disk_buffer, old_offset - cur_offset, cfg->al_offset);
 
@@ -3451,10 +3451,10 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 	 * We do not initialize that part, we just leave "garbage" in there.
 	 * Once DRBD "agrees" on the new lower level device size, that part of
 	 * the bitmap will be handled by the module, anyways. */
-	old_bm_offset = old_offset + cfg->md.bm_offset * 512;
+	old_bm_offset = old_offset + cfg->md.bm_offset * 512LL;
 
 	/* move bitmap, in chunks, peel off from the end. */
-	cur_offset = old_offset + cfg->md.al_offset * 512 - buffer_size;
+	cur_offset = old_offset + cfg->md.al_offset * 512LL - buffer_size;
 	while (cur_offset > old_bm_offset) {
 		PREAD(cfg->md_fd, on_disk_buffer, buffer_size, cur_offset);
 		PWRITE(cfg->md_fd, on_disk_buffer, buffer_size,

@@ -122,8 +122,14 @@ enum yytokentype {
 	TK_VOLUME,
 	TK_RES_OPTION,
 	TK_OPTIONS,
-	TK_SYNCER_OLD_OPT = 0x1000, /* Might be or'ed to TK_[NET|DISK]_[OPTION|SWITCH] */
+	TK__GROUPING_BASE = 0x1000,
+	TK_SYNCER_OLD_OPT = 0x2000, /* Might be or'ed to TK_[NET|DISK]_[OPTION|SWITCH] */
+	TK_PROXY_GROUP = 0x3000, /* Gets or'ed to some options */
 };
+
+/* The higher bits define one or more token groups. */
+#define GET_TOKEN_GROUP(__x)         ((__x) & ~(TK__GROUPING_BASE - 1))
+#define REMOVE_GROUP_FROM_TOKEN(__x) ((__x) &  (TK__GROUPING_BASE - 1))
 
 typedef struct YYSTYPE {
 	char* txt;

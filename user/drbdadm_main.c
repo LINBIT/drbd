@@ -2694,6 +2694,21 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 	}
 
 	if (rr == 0) {
+		/* track a "yes", as well as ctrl-d and ctrl-c,
+		 * in case our tty is stuck in "raw" mode, and
+		 * we get it one character a time (-icanon) */
+		char yes_string[] = "yes\n";
+		char *yes_expect = yes_string;
+		int ctrl_c_count = 0;
+		int ctrl_d_count = 0;
+
+		/* Just in case, if plymouth or usplash is running,
+		 * tell them to step aside.
+		 * Also try to force canonical tty mode. */
+		if (system("exec > /dev/null 2>&1; plymouth quit ; usplash_write QUIT ; "
+			   "stty echo icanon icrnl"))
+			/* Ignore return value. Cannot do anything about it anyways. */;
+
 		printf
 		    ("\n***************************************************************\n"
 		     " DRBD's startup script waits for the peer node(s) to appear.\n"
@@ -2714,16 +2729,45 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 			rr = gets_timeout(pids, answer, 40, wtime * 1000);
 			check_exit_codes(pids);
 
-			if (rr == 1) {
-				if (!strcmp(answer, "yes\n")) {
-					kill_childs(pids);
-					childs_running(pids, 0);
-					check_exit_codes(pids);
-					rr = -1;
-				} else {
-					printf(" To abort waiting enter 'yes' [ -- ]: ");
-				}
+			if (rr != 1)
+				continue;
+
+			/* If our tty is in "sane" or "canonical" mode,
+			 * we get whole lines.
+			 * If it still is in "raw" mode, even though we
+			 * tried to set ICANON above, possibly some other
+			 * "boot splash thingy" is in operation.
+			 * We may be lucky to get single characters.
+			 * If a sysadmin sees things stuck during boot,
+			 * I expect that ctrl-c or ctrl-d will be one
+			 * of the first things that are tried.
+			 * In raw mode, we get these characters directly.
+			 * But I want them to try that three times ;)
+			 */
+			if (answer[0] && answer[1] == 0) {
+				if (answer[0] == '\3')
+					++ctrl_c_count;
+				if (answer[0] == '\4')
+					++ctrl_d_count;
+				if (yes_expect && answer[0] == *yes_expect)
+					++yes_expect;
+				else if (answer[0] == '\n')
+					yes_expect = yes_string;
+				else
+					yes_expect = NULL;
 			}
+
+			if (!strcmp(answer, "yes\n") ||
+			    (yes_expect && *yes_expect == '\0') ||
+			    ctrl_c_count >= 3 ||
+			    ctrl_d_count >= 3) {
+				kill_childs(pids);
+				childs_running(pids, 0);
+				check_exit_codes(pids);
+				break;
+			}
+
+			printf(" To abort waiting enter 'yes' [ -- ]:");
 		} while (rr != -1);
 		printf("\n");
 	}

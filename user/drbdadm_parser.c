@@ -700,7 +700,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 					void *ctx)
 {
 	char *opt_name;
-	int token;
+	int token, token_group;
 	enum range_checks rc;
 
 	struct d_option *options = NULL, *current_option = NULL;
@@ -708,9 +708,10 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 	fline = line;
 
 	while (1) {
-		token = yylex();
+		token_group = yylex();
+		/* Keep the higher bits in token_option, remove them from token. */
+		token = REMOVE_GROUP_FROM_TOKEN(token_group);
 		fline = line;
-		token &= ~TK_SYNCER_OLD_OPT;
 		opt_name = yylval.txt;
 		if (token == token_flag) {
 			switch(yylex()) {
@@ -735,14 +736,16 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 			current_option = new_opt(strdup(opt_name + 3), strdup("no"));
 			options = APPEND(options, current_option);
 			free(opt_name);
-		} else if (token == token_option) {
+		} else if (token == token_option ||
+				GET_TOKEN_GROUP(token_option & token_group)) {
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
 			current_option = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, current_option);
-		} else if (token == token_delegate) {
+		} else if (token == token_delegate ||
+				GET_TOKEN_GROUP(token_delegate & token_group)) {
 			delegate(ctx);
 			continue;
 		} else if (token == TK_DEPRECATED_OPTION) {
@@ -1808,7 +1811,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 
 	proxy_options = parse_options_d(0,
 					0,
-					TK_PROXY_OPTION,
+					TK_PROXY_OPTION | TK_PROXY_GROUP,
 					TK_PROXY_DELEGATE,
 					proxy_delegate,
 					res);
