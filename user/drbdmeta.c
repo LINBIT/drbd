@@ -1407,7 +1407,7 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 		}
 		fprintf(stderr,"\r100%%\n");
 	} else {
-		fprintf(stderr,"NOT initialized bitmap\n");
+		fprintf(stderr,"NOT initializing bitmap\n");
 	}
 	return 0;
 }
