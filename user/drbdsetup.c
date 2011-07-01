@@ -148,6 +148,7 @@ struct drbd_argument {
 	__u16 nla_type;
 	int (*convert_function)(struct drbd_argument *,
 				struct msg_buff *,
+				struct drbd_genlmsghdr *dhdr,
 				char *);
 };
 
@@ -206,10 +207,11 @@ static int w_connected_state(struct drbd_cmd *, struct genl_info *);
 static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 
 // convert functions for arguments
-static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
-static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg);
+static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
+static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
+static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
+static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
+static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
@@ -319,10 +321,11 @@ struct drbd_cmd commands[] = {
 	 .ctx = &resource_options_cmd_ctx },
 
 	/* only payload is resource name and volume number */
-	{"new-minor", CTX_MINOR, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
+	{"new-minor", 0, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "resource-name", T_ctx_resource_name, conv_resource_name },
+		 { "minor", 0, conv_minor },
 		 { "volume-number", T_ctx_volume, conv_volume },
 		 { } },
 	 .ctx = &new_minor_cmd_ctx },
@@ -448,7 +451,8 @@ struct genl_family drbd_genl_family = {
 	.hdrsize = GENL_MAGIC_FAMILY_HDRSZ,
 };
 
-static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg,
+			  struct drbd_genlmsghdr *dhdr, char* arg)
 {
 	struct stat sb;
 	int device_fd;
@@ -476,7 +480,8 @@ static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, char* 
 	return NO_ERROR;
 }
 
-static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg,
+		       struct drbd_genlmsghdr *dhdr, char* arg)
 {
 	int idx;
 
@@ -489,18 +494,34 @@ static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, char* arg
 	return NO_ERROR;
 }
 
-static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg,
+			      struct drbd_genlmsghdr *dhdr, char* arg)
 {
 	/* additional sanity checks? */
 	nla_put_string(msg, T_ctx_resource_name, arg);
 	return NO_ERROR;
 }
 
-static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, char* arg)
+static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg,
+		       struct drbd_genlmsghdr *dhdr, char* arg)
 {
 	unsigned vol = m_strtoll(arg,1);
 	/* sanity check on vol < 256? */
 	nla_put_u32(msg, T_ctx_volume, vol);
+	return NO_ERROR;
+}
+
+static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg,
+		      struct drbd_genlmsghdr *dhdr, char* arg)
+{
+	unsigned minor = dt_minor_of_dev(arg);
+	if (minor == -1U) {
+		fprintf(stderr, "Cannot determine minor device number of "
+				"device '%s'\n",
+			arg);
+		return OTHER_ERROR;
+	}
+	dhdr->minor = minor;
 	return NO_ERROR;
 }
 
@@ -891,7 +912,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	}
 
 	dhdr = genlmsg_put(smsg, &drbd_genl_family, 0, cm->cmd_id);
-	dhdr->minor = minor;
+	dhdr->minor = -1;
 	dhdr->flags = 0;
 
 	i = 1;
@@ -905,7 +926,8 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 		}
 		nla_nest_end(smsg, nla);
 	} else if (context & CTX_MINOR) {
-		i++;  /* minor number already in dhdr->minor */
+		dhdr->minor = minor;
+		i++;
 	}
 
 	nla = NULL;
@@ -920,12 +942,15 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 			assert (cm->tla_id != NO_PAYLOAD);
 			nla = nla_nest_start(smsg, cm->tla_id);
 		}
-		rv = ad->convert_function(ad, smsg, argv[i]);
+		rv = ad->convert_function(ad, smsg, dhdr, argv[i]);
 		if (rv != NO_ERROR)
 			goto error;
 		ad++;
 	}
 	n_args = i - 1;  /* command name "doesn't count" here */
+
+	/* dhdr->minor may have been set by one of the convert functions. */
+	minor = dhdr->minor;
 
 	lo = make_longoptions(cm);
 	for (;;) {
@@ -2533,17 +2558,6 @@ int main(int argc, char **argv)
 	cmd = find_cmd_by_name(argv[1]);
 	if (!cmd)
 		print_usage_and_exit("invalid command");
-
-	if (!strcmp(cmd->cmd, "new-minor") && argc >= 4) {
-		/*
-		 * FIXME: The new-minor command has its first two arguments swapped
-		 * but as the code is currently laid out, there is no simple way to
-		 * fix this.
-		 */
-		char *swap = argv[2];
-		argv[2] = argv[3];
-		argv[3] = swap;
-	}
 
 	if (is_drbd_driver_missing()) {
 		if (!strcmp(argv[1], "down") ||
