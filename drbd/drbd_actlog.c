@@ -165,7 +165,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio->bi_rw = rw;
 
 	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* Corresponding put_ldev in drbd_md_io_complete() */
-		dev_err(DEV, "ASSERT FAILED: get_ldev_if_state() == 1 in _drbd_md_sync_page_io()\n");
+		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in _drbd_md_sync_page_io()\n");
 		err = -ENODEV;
 		goto out;
 	}
@@ -186,7 +186,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
 	 * don't try again for ANY return value != 0 */
 	if (err && device->md_io.done && (bio->bi_rw & DRBD_REQ_HARDBARRIER)) {
 		/* Try again with no barrier */
-		dev_warn(DEV, "Barriers not supported on meta data device - disabling\n");
+		drbd_warn(device, "Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_BARRIER, &device->flags);
 		rw &= ~DRBD_REQ_HARDBARRIER;
 		bio_put(bio);
@@ -208,25 +208,25 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 
 	if (!bdev->md_bdev) {
 		if (DRBD_ratelimit(5*HZ, 5)) {
-			dev_err(DEV, "bdev->md_bdev==NULL\n");
+			drbd_err(device, "bdev->md_bdev==NULL\n");
 			dump_stack();
 		}
 		return -EIO;
 	}
 
-	dev_dbg(DEV, "meta_data io: %s [%d]:%s(,%llus,%s)\n",
+	drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s)\n",
 	     current->comm, current->pid, __func__,
 	     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 
 	if (sector < drbd_md_first_sector(bdev) ||
 	    sector + 7 > drbd_md_last_sector(bdev))
-		dev_alert(DEV, "%s [%d]:%s(,%llus,%s) out of range md access!\n",
+		drbd_alert(device, "%s [%d]:%s(,%llus,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 
 	err = _drbd_md_sync_page_io(device, bdev, iop, sector, rw, MD_BLOCK_SIZE);
 	if (err) {
-		dev_err(DEV, "drbd_md_sync_page_io(,%llus,%s) failed with error %d\n",
+		drbd_err(device, "drbd_md_sync_page_io(,%llus,%s) failed with error %d\n",
 		    (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ", err);
 	}
 	return err;
@@ -322,7 +322,7 @@ void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 	for (enr = first; enr <= last; enr++) {
 		extent = lc_find(device->act_log, enr);
 		if (!extent) {
-			dev_err(DEV, "al_complete_io() called on inactive extent %u\n", enr);
+			drbd_err(device, "al_complete_io() called on inactive extent %u\n", enr);
 			continue;
 		}
 		if (lc_put(device->act_log, extent) == 0)
@@ -371,14 +371,14 @@ _al_write_transaction(struct drbd_device *device)
 	int err = 0;
 
 	if (!get_ldev(device)) {
-		dev_err(DEV, "disk is %s, cannot start al transaction\n",
+		drbd_err(device, "disk is %s, cannot start al transaction\n",
 			drbd_disk_str(device->state.disk));
 		return -EIO;
 	}
 
 	/* The bitmap write may have failed, causing a state change. */
 	if (device->state.disk < D_INCONSISTENT) {
-		dev_err(DEV,
+		drbd_err(device,
 			"disk is %s, cannot write al transaction\n",
 			drbd_disk_str(device->state.disk));
 		put_ldev(device);
@@ -387,7 +387,7 @@ _al_write_transaction(struct drbd_device *device)
 
 	buffer = drbd_md_get_buffer(device); /* protects md_io_buffer, al_tr_cycle, ... */
 	if (!buffer) {
-		dev_err(DEV, "disk failed while waiting for md_io buffer\n");
+		drbd_err(device, "disk failed while waiting for md_io buffer\n");
 		put_ldev(device);
 		return -ENODEV;
 	}
@@ -546,7 +546,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 
 	if (!get_ldev(device)) {
 		if (DRBD_ratelimit(5*HZ, 5))
-			dev_warn(DEV, "Can not update on disk bitmap, local IO disabled.\n");
+			drbd_warn(device, "Can not update on disk bitmap, local IO disabled.\n");
 		kfree(udw);
 		return 0;
 	}
@@ -601,7 +601,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				dev_err(DEV, "BAD! sector=%llus enr=%u rs_left=%d "
+				drbd_err(device, "BAD! sector=%llus enr=%u rs_left=%d "
 				    "rs_failed=%d count=%d\n",
 				     (unsigned long long)sector,
 				     ext->lce.lc_number, ext->rs_left,
@@ -621,14 +621,14 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			 */
 			int rs_left = drbd_bm_e_weight(device, enr);
 			if (ext->flags != 0) {
-				dev_warn(DEV, "changing resync lce: %d[%u;%02lx]"
+				drbd_warn(device, "changing resync lce: %d[%u;%02lx]"
 				     " -> %d[%u;00]\n",
 				     ext->lce.lc_number, ext->rs_left,
 				     ext->flags, enr, rs_left);
 				ext->flags = 0;
 			}
 			if (ext->rs_failed) {
-				dev_warn(DEV, "Kicking resync_lru element enr=%u "
+				drbd_warn(device, "Kicking resync_lru element enr=%u "
 				     "out with rs_failed=%d\n",
 				     ext->lce.lc_number, ext->rs_failed);
 			}
@@ -651,11 +651,11 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 				udw->w.device = device;
 				drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &udw->w);
 			} else {
-				dev_warn(DEV, "Could not kmalloc an udw\n");
+				drbd_warn(device, "Could not kmalloc an udw\n");
 			}
 		}
 	} else {
-		dev_err(DEV, "lc_get() failed! locked=%d/%d flags=%lu\n",
+		drbd_err(device, "lc_get() failed! locked=%d/%d flags=%lu\n",
 		    device->resync_locked,
 		    device->resync->nr_elements,
 		    device->resync->flags);
@@ -696,7 +696,7 @@ void __drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size,
 	unsigned long flags;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
-		dev_err(DEV, "drbd_set_in_sync: sector=%llus size=%d nonsense!\n",
+		drbd_err(device, "drbd_set_in_sync: sector=%llus size=%d nonsense!\n",
 				(unsigned long long)sector, size);
 		return;
 	}
@@ -761,7 +761,7 @@ int __drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size
 	struct lc_element *e;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
-		dev_err(DEV, "sector: %llus, size: %d\n",
+		drbd_err(device, "sector: %llus, size: %d\n",
 			(unsigned long long)sector, size);
 		return 0;
 	}
@@ -834,7 +834,7 @@ struct bm_extent *_bme_get(struct drbd_device *device, unsigned int enr)
 
 	if (!bm_ext) {
 		if (rs_flags & LC_STARVING)
-			dev_warn(DEV, "Have to wait for element"
+			drbd_warn(device, "Have to wait for element"
 			     " (resync LRU too small?)\n");
 		BUG_ON(rs_flags & LC_LOCKED);
 	}
@@ -895,7 +895,7 @@ retry:
 			if (schedule_timeout_interruptible(HZ/10))
 				return -EINTR;
 			if (sa && --sa == 0)
-				dev_warn(DEV,"drbd_rs_begin_io() stepped aside for 20sec."
+				drbd_warn(device,"drbd_rs_begin_io() stepped aside for 20sec."
 					 "Resync stalled?\n");
 			goto retry;
 		}
@@ -948,7 +948,7 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 				device->resync_locked--;
 			wake_up(&device->al_wait);
 		} else {
-			dev_alert(DEV, "LOGIC BUG\n");
+			drbd_alert(device, "LOGIC BUG\n");
 		}
 	}
 	/* TRY. */
@@ -978,7 +978,7 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 		if (!bm_ext) {
 			const unsigned long rs_flags = device->resync->flags;
 			if (rs_flags & LC_STARVING)
-				dev_warn(DEV, "Have to wait for element"
+				drbd_warn(device, "Have to wait for element"
 				     " (resync LRU too small?)\n");
 			BUG_ON(rs_flags & LC_LOCKED);
 			goto try_again;
@@ -1026,13 +1026,13 @@ void drbd_rs_complete_io(struct drbd_device *device, sector_t sector)
 	if (!bm_ext) {
 		spin_unlock_irqrestore(&device->al_lock, flags);
 		if (DRBD_ratelimit(5*HZ, 5))
-			dev_err(DEV, "drbd_rs_complete_io() called, but extent not found\n");
+			drbd_err(device, "drbd_rs_complete_io() called, but extent not found\n");
 		return;
 	}
 
 	if (bm_ext->lce.refcnt == 0) {
 		spin_unlock_irqrestore(&device->al_lock, flags);
-		dev_err(DEV, "drbd_rs_complete_io(,%llu [=%u]) called, "
+		drbd_err(device, "drbd_rs_complete_io(,%llu [=%u]) called, "
 		    "but refcnt is 0!?\n",
 		    (unsigned long long)sector, enr);
 		return;
@@ -1088,7 +1088,7 @@ int drbd_rs_del_all(struct drbd_device *device)
 			if (bm_ext->lce.lc_number == LC_FREE)
 				continue;
 			if (bm_ext->lce.lc_number == device->resync_wenr) {
-				dev_info(DEV, "dropping %u in drbd_rs_del_all, apparently"
+				drbd_info(device, "dropping %u in drbd_rs_del_all, apparently"
 				     " got 'synced' by application io\n",
 				     device->resync_wenr);
 				D_ASSERT(!test_bit(BME_LOCKED, &bm_ext->flags));
@@ -1098,7 +1098,7 @@ int drbd_rs_del_all(struct drbd_device *device)
 				lc_put(device->resync, &bm_ext->lce);
 			}
 			if (bm_ext->lce.refcnt != 0) {
-				dev_info(DEV, "Retrying drbd_rs_del_all() later. "
+				drbd_info(device, "Retrying drbd_rs_del_all() later. "
 				     "refcnt=%d\n", bm_ext->lce.refcnt);
 				put_ldev(device);
 				spin_unlock_irq(&device->al_lock);
@@ -1131,7 +1131,7 @@ void drbd_rs_failed_io(struct drbd_device *device, sector_t sector, int size)
 	int wake_up = 0;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
-		dev_err(DEV, "drbd_rs_failed_io: sector=%llus size=%d nonsense!\n",
+		drbd_err(device, "drbd_rs_failed_io: sector=%llus size=%d nonsense!\n",
 				(unsigned long long)sector, size);
 		return;
 	}

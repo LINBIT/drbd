@@ -163,7 +163,7 @@ static void _req_is_done(struct drbd_device *device, struct drbd_request *req, c
 					drbd_al_complete_io(device, &req->i);
 				put_ldev(device);
 			} else if (DRBD_ratelimit(5*HZ, 3)) {
-				dev_warn(DEV, "Should have called drbd_al_complete_io(, %llu, %u), "
+				drbd_warn(device, "Should have called drbd_al_complete_io(, %llu, %u), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->i.sector, req->i.size);
 			}
@@ -364,7 +364,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	switch (what) {
 	default:
-		dev_err(DEV, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
+		drbd_err(device, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
 		break;
 
 	/* does not happen...
@@ -702,7 +702,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			/* barrier came in before all requests were acked.
 			 * this is bad, because if the connection is lost now,
 			 * we won't be able to clean them up... */
-			dev_err(DEV, "FIXME (BARRIER_ACKED but pending)\n");
+			drbd_err(device, "FIXME (BARRIER_ACKED but pending)\n");
 			list_move(&req->tl_requests, &first_peer_device(device)->connection->out_of_sequence_requests);
 		}
 		if ((req->rq_state & RQ_NET_MASK) != 0) {
@@ -793,7 +793,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 		dec_ap_bio(device);
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, that's not our business. */
-		dev_err(DEV, "could not kmalloc() req\n");
+		drbd_err(device, "could not kmalloc() req\n");
 		bio_endio(bio, -ENOMEM);
 		return 0;
 	}
@@ -853,7 +853,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 
 	if (!(local || remote) && !drbd_suspended(device)) {
 		if (DRBD_ratelimit(5*HZ, 3))
-			dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
+			drbd_err(device, "IO ERROR: neither local nor remote disk\n");
 		err = -EIO;
 		goto fail_free_complete;
 	}
@@ -870,7 +870,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_NOIO);
 		if (!b) {
-			dev_err(DEV, "Failed to alloc barrier.\n");
+			drbd_err(device, "Failed to alloc barrier.\n");
 			err = -ENOMEM;
 			goto fail_free_complete;
 		}
@@ -908,9 +908,9 @@ allocate_barrier:
 		D_ASSERT(!(remote && send_oos));
 
 		if (!(remote || send_oos))
-			dev_warn(DEV, "lost connection while grabbing the req_lock!\n");
+			drbd_warn(device, "lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
-			dev_err(DEV, "IO ERROR: neither local nor remote disk\n");
+			drbd_err(device, "IO ERROR: neither local nor remote disk\n");
 			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
@@ -999,12 +999,12 @@ allocate_barrier:
 
 		if (nc->cong_fill &&
 		    atomic_read(&device->ap_in_flight) >= nc->cong_fill) {
-			dev_info(DEV, "Congestion-fill threshold reached\n");
+			drbd_info(device, "Congestion-fill threshold reached\n");
 			congested = 1;
 		}
 
 		if (device->act_log->used >= nc->cong_extents) {
-			dev_info(DEV, "Congestion-extents threshold reached\n");
+			drbd_info(device, "Congestion-extents threshold reached\n");
 			congested = 1;
 		}
 
@@ -1163,13 +1163,13 @@ void request_timer_fn(unsigned long data)
 	req = list_entry(le, struct drbd_request, tl_requests);
 	if (ent && req->rq_state & RQ_NET_PENDING) {
 		if (time_is_before_eq_jiffies(req->start_time + ent)) {
-			dev_warn(DEV, "Remote failed to finish a request within ko-count * timeout\n");
+			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
 			_drbd_set_state(_NS(device, conn, C_TIMEOUT), CS_VERBOSE | CS_HARD, NULL);
 		}
 	}
 	if (dt && req->rq_state & RQ_LOCAL_PENDING) {
 		if (time_is_before_eq_jiffies(req->start_time + dt)) {
-			dev_warn(DEV, "Local backing device failed to meet the disk-timeout\n");
+			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
 			__drbd_chk_io_error(device, 1);
 		}
 	}
