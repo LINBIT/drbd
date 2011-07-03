@@ -191,7 +191,7 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-d</option>, <option>--disk-size
+          <term><option>--disk-size
           <replaceable>size</replaceable></option></term>
 
           <listitem>
@@ -207,7 +207,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-e</option>, <option>--on-io-error
+          <term><option>--on-io-error
           <replaceable>err_handler</replaceable></option></term>
 
           <listitem>
@@ -221,7 +221,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-f</option>, <option>--fencing
+          <term><option>--fencing
           <replaceable>fencing_policy</replaceable></option></term>
 
           <listitem>
@@ -267,11 +267,11 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-a</option>, <option>--disk-barrier</option></term>
+          <term><option>--disk-barrier</option></term>
 
-          <term><option>-i</option>, <option>--disk-flushes</option></term>
+          <term><option>--disk-flushes</option></term>
 
-          <term><option>-D</option>, <option>--disk-drain</option></term>
+          <term><option>--disk-drain</option></term>
 
           <listitem>
             <para>DRBD has four implementations to express write-after-write dependencies to its
@@ -336,7 +336,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-m</option>, <option>--md-flushes</option></term>
+          <term><option>--md-flushes</option></term>
 
           <listitem>
             <para>Disables the use of disk flushes and barrier BIOs when accessing the meta data
@@ -345,7 +345,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-s</option>, <option>--max-bio-bvecs</option></term>
+          <term><option>--max-bio-bvecs</option></term>
 
           <listitem>
             <para>In some special circumstances the device mapper stack manages to pass BIOs to
@@ -368,7 +368,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-r</option>, <option>--resync-rate
+          <term><option>--resync-rate
           <replaceable>rate</replaceable></option></term>
 
           <listitem>
@@ -379,7 +379,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-a</option>, <option>--resync-after
+          <term><option>--resync-after
           <replaceable>minor</replaceable></option></term>
 
           <listitem>
@@ -390,7 +390,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-e</option>, <option>--al-extents
+          <term><option>--al-extents
           <replaceable>extents</replaceable></option></term>
 
           <listitem>
@@ -406,16 +406,16 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-p</option>, <option>--c-plan-ahead
+          <term><option>--c-plan-ahead
           <replaceable>plan_time</replaceable></option></term>
 
-          <term><option>-s</option>, <option>--c-fill-target
+          <term><option>--c-fill-target
           <replaceable>fill_target</replaceable></option></term>
 
-          <term><option>-d</option>, <option>--c-delay-target
+          <term><option>--c-delay-target
           <replaceable>delay_target</replaceable></option></term>
 
-          <term><option>-M</option>, <option>--c-max-rate
+          <term><option>--c-max-rate
           <replaceable>max_rate</replaceable></option></term>
 
           <listitem>
@@ -447,7 +447,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-m</option>, <option>--c-min-rate
+          <term><option>--c-min-rate
           <replaceable>min_rate</replaceable></option></term>
 
           <listitem>
@@ -486,7 +486,8 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>--protocol <replaceable>protocol</replaceable></option></term>
+	  <term><option>--protocol
+	  <replaceable>protocol</replaceable></option></term>
 
           <listitem>
             <para>On the TCP/IP link the specified <replaceable>protocol</replaceable> is used.
@@ -504,7 +505,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-c</option>, <option>--connect-int
+          <term><option>--connect-int
           <replaceable>time</replaceable></option></term>
 
           <listitem>
@@ -515,7 +516,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-i</option>, <option>--ping-int
+          <term><option>--ping-int
           <replaceable>time</replaceable></option></term>
 
           <listitem>
@@ -527,7 +528,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-t</option>, <option>--timeout
+          <term><option>--timeout
           <replaceable>val</replaceable></option></term>
 
           <listitem>
@@ -539,7 +540,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-S</option>, <option>--sndbuf-size
+          <term><option>--sndbuf-size
           <replaceable>size</replaceable></option></term>
 
           <listitem>
@@ -555,7 +556,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-r</option>, <option>--rcvbuf-size
+          <term><option>--rcvbuf-size
           <replaceable>size</replaceable></option></term>
 
           <listitem>
@@ -568,7 +569,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-k</option>, <option>--ko-count
+          <term><option>--ko-count
           <replaceable>count</replaceable></option></term>
 
           <listitem>
@@ -580,7 +581,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-e</option>, <option>--max-epoch-size
+          <term><option>--max-epoch-size
           <replaceable>val</replaceable></option></term>
 
           <listitem>
@@ -591,7 +592,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-b</option>, <option>--max-buffers
+          <term><option>--max-buffers
           <replaceable>val</replaceable></option></term>
 
           <listitem>
@@ -603,7 +604,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-u</option>, <option>--unplug-watermark
+          <term><option>--unplug-watermark
           <replaceable>val</replaceable></option></term>
 
           <listitem>
@@ -616,7 +617,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-m</option>, <option>--allow-two-primaries </option></term>
+          <term><option>--allow-two-primaries </option></term>
 
           <listitem>
             <para>With this option set you may assign primary role to both nodes. You only should
@@ -627,8 +628,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-a</option>, <option>--cram-hmac-alg
-          </option><replaceable>alg</replaceable></term>
+          <term><option>--cram-hmac-alg
+          <replaceable>alg</replaceable></option></term>
 
           <listitem>
             <para>You need to specify the HMAC algorithm to enable peer authentication at all. You
@@ -639,8 +640,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-x</option>, <option>--shared-secret
-          </option><replaceable>secret</replaceable></term>
+          <term><option>--shared-secret
+          <replaceable>secret</replaceable></option></term>
 
           <listitem>
             <para>The shared secret used in peer authentication. May be up to 64
@@ -649,8 +650,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-A</option>, <option>--after-sb-0pri
-          </option><replaceable>asb-0p-policy</replaceable></term>
+          <term><option>--after-sb-0pri
+          <replaceable>asb-0p-policy</replaceable></option></term>
 
           <listitem>
             <para>possible policies are:</para>
@@ -715,8 +716,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-B</option>, <option>--after-sb-1pri
-          </option><replaceable>asb-1p-policy</replaceable></term>
+          <term><option>--after-sb-1pri
+          <replaceable>asb-1p-policy</replaceable></option></term>
 
           <listitem>
             <para>possible policies are:</para>
@@ -772,8 +773,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-C</option>, <option>--after-sb-2pri
-          </option><replaceable>asb-2p-policy</replaceable></term>
+          <term><option>--after-sb-2pri
+          <replaceable>asb-2p-policy</replaceable></option></term>
 
           <listitem>
             <para>possible policies are:</para>
@@ -811,7 +812,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-P</option>, <option>--always-asbp</option></term>
+          <term><option>--always-asbp</option></term>
 
           <listitem>
             <para>Normally the automatic after-split-brain policies are only used if current
@@ -825,8 +826,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-R</option>, <option>--rr-conflict
-          </option><replaceable>role-resync-conflict-policy</replaceable></term>
+          <term><option>--rr-conflict
+          <replaceable>role-resync-conflict-policy</replaceable></option></term>
 
           <listitem>
             <para>This option sets DRBD's behavior when DRBD deduces from its meta data that a
@@ -845,8 +846,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-d</option>, <option>--data-integrity-alg
-          </option><replaceable>hash_alg</replaceable></term>
+          <term><option>--data-integrity-alg
+          <replaceable>hash_alg</replaceable></option></term>
 
           <listitem>
             <para>DRBD can ensure the data integrity of the user's data on the network by
@@ -861,7 +862,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-o</option>, <option>--no-tcp-cork </option></term>
+          <term><option>--no-tcp-cork</option></term>
 
           <listitem>
             <para>DRBD usually uses the TCP socket option TCP_CORK to hint to the network stack
@@ -873,8 +874,8 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-p</option>, <option>--ping-timeout
-          </option><replaceable>ping_timeout</replaceable></term>
+          <term><option>--ping-timeout
+          <replaceable>ping_timeout</replaceable></option></term>
 
           <listitem>
             <para>The time the peer has to answer to a keep-alive packet. In case the peer's reply
@@ -884,7 +885,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-D</option>, <option>--discard-my-data </option></term>
+          <term><option>--discard-my-data</option></term>
 
           <listitem>
             <para>Use this option to manually recover from a split-brain situation. In case you do
@@ -895,7 +896,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-n</option>, <option>--dry-run </option></term>
+          <term><option>--tentative</option></term>
 
           <listitem>
             <para>Causes DRBD to abort the connection process after the resync handshake, i.e. no
@@ -905,14 +906,14 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-g</option>, <option>--on-congestion
-          </option><replaceable>congestion_policy</replaceable></term>
+	  <term><option>--on-congestion
+	  <replaceable>congestion_policy</replaceable></option></term>
 
-          <term><option>-f</option>, <option>--congestion-fill
-          </option><replaceable>fill_threshold</replaceable></term>
+	  <term><option>--congestion-fill
+	  <replaceable>fill_threshold</replaceable></option></term>
 
-          <term><option>-h</option>, <option>--congestion-extents
-          </option><replaceable>active_extents_threshold</replaceable></term>
+	  <term><option>--congestion-extents
+	  <replaceable>active_extents_threshold</replaceable></option></term>
 
           <listitem>
             <para>By default DRBD blocks when the available TCP send queue becomes full. That
@@ -941,7 +942,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-v</option>, <option>--verify-alg
+          <term><option>--verify-alg
           <replaceable>hash-alg</replaceable></option></term>
 
           <listitem>
@@ -960,7 +961,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-C</option>, <option>--csums-alg
+          <term><option>--csums-alg
           <replaceable>hash-alg</replaceable></option></term>
 
           <listitem>
@@ -978,7 +979,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-R</option>, <option>--use-rle</option></term>
+          <term><option>--use-rle</option></term>
 
           <listitem>
             <para>During resync-handshake, the dirty-bitmaps of the nodes are exchanged and merged
@@ -1012,7 +1013,7 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-c</option>, <option>--cpu-mask
+          <term><option>--cpu-mask
           <replaceable>cpu-mask</replaceable></option></term>
 
           <listitem>
@@ -1024,7 +1025,7 @@
         </varlistentry>
 
         <varlistentry>
-          <term><option>-n</option>, <option>--on-no-data-accessible
+          <term><option>--on-no-data-accessible
           <replaceable>ond-policy</replaceable></option></term>
 
           <listitem>
@@ -1064,7 +1065,7 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-o</option>, <option>--overwrite-data-of-peer</option></term>
+          <term><option>--overwrite-data-of-peer</option></term>
 
           <listitem>
             <para>Alias for --force.</para>
@@ -1074,7 +1075,7 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-f</option>, <option>--force</option></term>
+          <term><option>--force</option></term>
 
           <listitem>
             <para>Becoming primary fails if the local replica is not up-to-date. I.e. when it is
@@ -1126,7 +1127,7 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-s</option>, <option>--start
+          <term><option>--start
           <replaceable>start-sector</replaceable></option></term>
 
           <listitem>
@@ -1189,16 +1190,16 @@
 
       <variablelist>
         <varlistentry>
-          <term><option>-t</option>, <option>--wfc-timeout
+          <term><option>--wfc-timeout
           <replaceable>wfc_timeout</replaceable></option></term>
 
-          <term><option>-d</option>, <option>--degr-wfc-timeout
+          <term><option>--degr-wfc-timeout
           <replaceable>degr_wfc_timeout</replaceable></option></term>
 
-          <term><option>-o</option>, <option>--outdated-wfc-timeout
+          <term><option>--outdated-wfc-timeout
           <replaceable>outdated_wfc_timeout</replaceable></option></term>
 
-          <term><option>-w</option>, <option>--wait-after-sb</option></term>
+          <term><option>--wait-after-sb</option></term>
 
           <listitem>
             <para>This command will fail if the <replaceable>device</replaceable> cannot
@@ -1495,7 +1496,7 @@
       used to get notified of DRBD's state changes by piping the output to another program.
       <variablelist>
           <varlistentry>
-            <term><option>-a</option>, <option>--all-devices</option></term>
+            <term><option>--all-devices</option></term>
 
             <listitem>
               <para>Display the events of all DRBD minors.</para>
@@ -1503,7 +1504,7 @@
           </varlistentry>
 
           <varlistentry>
-            <term><option>-u</option>, <option>--unfiltered</option></term>
+            <term><option>--unfiltered</option></term>
 
             <listitem>
               <para>This is a debugging aid that displays the content of all received netlink
@@ -1528,7 +1529,7 @@
 
       <para>Available option: <variablelist>
           <varlistentry>
-            <term><option>-c</option>, <option>--clear-bitmap</option></term>
+            <term><option>--clear-bitmap</option></term>
 
             <listitem>
               <para>Clears the sync bitmap in addition to generating a new current UUID.</para>
@@ -1543,7 +1544,7 @@
             <simpara>On <emphasis>both</emphasis> nodes, initialize meta data and configure the
             device.</simpara>
 
-            <simpara><command moreinfo="none">drbdadm -- --force create-md
+            <simpara><command moreinfo="none">drbdadm create-md --force
             <replaceable>res</replaceable></command></simpara>
           </listitem>
 
@@ -1558,7 +1559,7 @@
             <simpara>They are now Connected Secondary/Secondary Inconsistent/Inconsistent.
             Generate a new current-uuid and clear the dirty bitmap.</simpara>
 
-            <simpara><command moreinfo="none">drbdadm -- --clear-bitmap new-current-uuid
+            <simpara><command moreinfo="none">drbdadm new-current-uuid --clear-bitmap
             <replaceable>res</replaceable></command></simpara>
           </listitem>
 
@@ -1591,8 +1592,8 @@
       <para>The necessary steps on the current active server are: <orderedlist
           continuation="restarts" inheritnum="ignore" numeration="arabic">
           <listitem>
-            <simpara><command moreinfo="none">drbdsetup <replaceable>minor</replaceable>
-            new-current-uuid --clear-bitmap</command></simpara>
+            <simpara><command moreinfo="none">drbdsetup new-current-uuid --clear-bitmap <replaceable>minor</replaceable>
+            </command></simpara>
           </listitem>
 
           <listitem>
@@ -1602,8 +1603,8 @@
           </listitem>
 
           <listitem>
-            <simpara><command moreinfo="none">drbdsetup <replaceable>minor</replaceable>
-            new-current-uuid</command></simpara>
+            <simpara><command moreinfo="none">drbdsetup new-current-uuid <replaceable>minor</replaceable>
+            </command></simpara>
           </listitem>
         </orderedlist> Now add the disk to the new secondary node, and join it to the cluster. You
       will get a resync of that parts that were changed since the first call to <command
