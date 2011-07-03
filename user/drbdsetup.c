@@ -324,9 +324,9 @@ struct drbd_cmd commands[] = {
 	{"new-minor", 0, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
-		 { "resource-name", T_ctx_resource_name, conv_resource_name },
+		 { "resource", T_ctx_resource_name, conv_resource_name },
 		 { "minor", 0, conv_minor },
-		 { "volume-number", T_ctx_volume, conv_volume },
+		 { "volume", T_ctx_volume, conv_volume },
 		 { } },
 	 .ctx = &new_minor_cmd_ctx },
 
