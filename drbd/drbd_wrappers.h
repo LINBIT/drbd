@@ -1080,4 +1080,16 @@ static inline void genl_unregister_mc_group(struct genl_family *family,
         printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
 #endif
 
+/*
+ * kref_sub() was introduced in mainline commit ecf7ace9 (v2.6.38-rc1).
+ */
+#ifndef COMPAT_HAVE_KREF_SUB
+static inline void kref_sub(struct kref *kref, unsigned int count,
+			    void (*release) (struct kref *kref))
+{
+	while (count--)
+		kref_put(kref, release);
+}
+#endif
+
 #endif
