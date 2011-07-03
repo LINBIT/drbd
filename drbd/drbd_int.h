@@ -137,32 +137,24 @@ extern char usermode_helper[];
 struct drbd_device;
 struct drbd_connection;
 
-/* upstream kernel wants us to use dev_warn(), ...
- * dev_printk() expects to be presented a struct device *;
- * in older kernels, (<= 2.6.24), there is nothing suitable there.
- * "backport" hack: redefine dev_printk.
- * Trigger is definition of dev_to_disk macro, introduced with the
- * commit edfaa7c36574f1bf09c65ad602412db9da5f96bf
- *     Driver core: convert block from raw kobjects to core devices
- */
-#if defined(dev_to_disk) && defined(disk_to_dev)
-/* to shorten dev_warn(DEV, "msg"); and relatives statements */
-#define DEV (disk_to_dev(device->vdisk))
-#else
-#undef dev_printk
-#define DEV device
-#define dev_printk(level, dev, format, arg...)  \
-	        printk(level "block drbd%u: " format , dev->minor , ## arg)
-#endif
-/* also, some older kernels do not have all of these. */
-#ifndef dev_emerg
-#define dev_emerg(dev, format, arg...)          \
-	        dev_printk(KERN_EMERG , dev , format , ## arg)
-#define dev_alert(dev, format, arg...)          \
-	        dev_printk(KERN_ALERT , dev , format , ## arg)
-#define dev_crit(dev, format, arg...)           \
-	        dev_printk(KERN_CRIT , dev , format , ## arg)
-#endif
+#define drbd_printk(level, device, fmt, args...) \
+	dev_printk(level, disk_to_dev(device->vdisk), fmt, ## args)
+
+#define drbd_dbg(device, fmt, args...) \
+	drbd_printk(KERN_DEBUG, device, fmt, ## args)
+#define drbd_alert(device, fmt, args...) \
+	drbd_printk(KERN_ALERT, device, fmt, ## args)
+#define drbd_err(device, fmt, args...) \
+	drbd_printk(KERN_ERR, device, fmt, ## args)
+#define drbd_warn(device, fmt, args...) \
+	drbd_printk(KERN_WARNING, device, fmt, ## args)
+#define drbd_info(device, fmt, args...) \
+	drbd_printk(KERN_INFO, device, fmt, ## args)
+#define drbd_emerg(device, fmt, args...) \
+	drbd_printk(KERN_EMERG, device, fmt, ## args)
+
+#define dynamic_drbd_dbg(device, fmt, args...) \
+	dynamic_dev_dbg(disk_to_dev(device->vdisk), fmt, ## args)
 
 #define conn_printk(LEVEL, TCONN, FMT, ARGS...) \
 	printk(LEVEL "d-con %s: " FMT, TCONN->resource->name , ## ARGS)
@@ -195,7 +187,7 @@ struct drbd_connection;
 		missed = 0;					\
 		toks -= ratelimit_jiffies;			\
 		if (lost)					\
-			dev_warn(DEV, "%d messages suppressed in %s:%d.\n", \
+			drbd_warn(device, "%d messages suppressed in %s:%d.\n", \
 				lost, __FILE__, __LINE__);	\
 		__ret = 1;					\
 	} else {						\
@@ -212,7 +204,7 @@ extern void drbd_assert_breakpoint(struct drbd_device *, char *, char *, int);
 	 drbd_assert_breakpoint(device, #exp, __FILE__, __LINE__)
 #else
 # define D_ASSERT(exp)	if (!(exp)) \
-	 dev_err(DEV, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
+	 drbd_err(device, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
 #endif
 
 /**
@@ -223,7 +215,7 @@ extern void drbd_assert_breakpoint(struct drbd_device *, char *, char *, int);
 #define expect(exp) ({								\
 		bool _bool = (exp);						\
 		if (!_bool)							\
-			dev_err(DEV, "ASSERTION %s FAILED in %s\n",		\
+			drbd_err(device, "ASSERTION %s FAILED in %s\n",		\
 			        #exp, __func__);				\
 		_bool;								\
 		})
@@ -1402,7 +1394,7 @@ extern void drbd_rs_controller_reset(struct drbd_device *device);
 static inline void ov_out_of_sync_print(struct drbd_device *device)
 {
 	if (device->ov_last_oos_size) {
-		dev_err(DEV, "Out of sync: start=%llu, size=%lu (sectors)\n",
+		drbd_err(device, "Out of sync: start=%llu, size=%lu (sectors)\n",
 		     (unsigned long long)device->ov_last_oos_start,
 		     (unsigned long)device->ov_last_oos_size);
 	}
@@ -1633,7 +1625,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device,
 		if (df == DRBD_READ_ERROR
 		||  df == DRBD_WRITE_ERROR) {
 			if (DRBD_ratelimit(5*HZ, 5))
-				dev_err(DEV, "Local IO failed in %s.\n", where);
+				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->state.disk > D_INCONSISTENT)
 				_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
 			break;
@@ -1668,7 +1660,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device,
 			set_bit(FORCE_DETACH, &device->flags);
 		if (device->state.disk > D_FAILED) {
 			_drbd_set_state(_NS(device, disk, D_FAILED), CS_HARD, NULL);
-			dev_err(DEV,
+			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
 		}
 		break;
@@ -1878,7 +1870,7 @@ static inline void inc_ap_pending(struct drbd_device *device)
 
 #define ERR_IF_CNT_IS_NEGATIVE(which, func, line)			\
 	if (atomic_read(&device->which) < 0)				\
-		dev_err(DEV, "in %s:%d: " #which " = %d < 0 !\n",	\
+		drbd_err(device, "in %s:%d: " #which " = %d < 0 !\n",	\
 			func, line,					\
 			atomic_read(&device->which))
 
@@ -2011,7 +2003,7 @@ static inline void drbd_get_syncer_progress(struct drbd_device *device,
 		 * for now, just prevent in-kernel buffer overflow.
 		 */
 		smp_rmb();
-		dev_warn(DEV, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
 				drbd_conn_str(device->state.conn),
 				*bits_left, device->rs_total, device->rs_failed);
 		*per_mil_done = 0;
@@ -2249,7 +2241,7 @@ static inline void drbd_md_flush(struct drbd_device *device)
 	int r;
 
 	if (device->ldev == NULL) {
-		dev_warn(DEV, "device->ldev == NULL in drbd_md_flush\n");
+		drbd_warn(device, "device->ldev == NULL in drbd_md_flush\n");
 		return;
 	}
 
@@ -2259,7 +2251,7 @@ static inline void drbd_md_flush(struct drbd_device *device)
 	r = blkdev_issue_flush(device->ldev->md_bdev, GFP_NOIO, NULL);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &device->flags);
-		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
+		drbd_err(device, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
 
