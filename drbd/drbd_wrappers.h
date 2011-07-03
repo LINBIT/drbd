@@ -77,12 +77,12 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 #include "drbd_int.h"
 
 /* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(struct drbd_device *mdev,
+static inline void drbd_set_my_capacity(struct drbd_device *device,
 					sector_t size)
 {
-	/* set_capacity(mdev->this_bdev->bd_disk, size); */
-	set_capacity(mdev->vdisk, size);
-	mdev->this_bdev->bd_inode->i_size = (loff_t)size << 9;
+	/* set_capacity(device->this_bdev->bd_disk, size); */
+	set_capacity(device->vdisk, size);
+	device->this_bdev->bd_inode->i_size = (loff_t)size << 9;
 }
 
 #ifndef COMPAT_HAVE_FMODE_T
@@ -205,9 +205,9 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 # endif
 # define disk_to_kobj(disk) (&disk_to_dev(disk)->kobj)
 #endif
-static inline void drbd_kobject_uevent(struct drbd_device *mdev)
+static inline void drbd_kobject_uevent(struct drbd_device *device)
 {
-	kobject_uevent(disk_to_kobj(mdev->vdisk), KOBJ_CHANGE);
+	kobject_uevent(disk_to_kobj(device->vdisk), KOBJ_CHANGE);
 	/* rhel4 / sles9 and older don't have this at all,
 	 * which means user space (udev) won't get events about possible changes of
 	 * corresponding resource + disk names after the initial drbd minor creation.
@@ -218,28 +218,28 @@ static inline void drbd_kobject_uevent(struct drbd_device *mdev)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(struct drbd_device *mdev,
+static inline void drbd_generic_make_request(struct drbd_device *device,
 					     int fault_type, struct bio *bio)
 {
 	__release(local);
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
 				"bio->bi_bdev == NULL\n",
-		       mdev_to_minor(mdev));
+		       mdev_to_minor(device));
 		dump_stack();
 		bio_endio(bio, -ENODEV);
 		return;
 	}
 
-	if (drbd_insert_fault(mdev, fault_type))
+	if (drbd_insert_fault(device, fault_type))
 		bio_endio(bio, -EIO);
 	else
 		generic_make_request(bio);
 }
 
-static inline int drbd_backing_bdev_events(struct drbd_device *mdev)
+static inline int drbd_backing_bdev_events(struct drbd_device *device)
 {
-	struct gendisk *disk = mdev->ldev->backing_bdev->bd_contains->bd_disk;
+	struct gendisk *disk = device->ldev->backing_bdev->bd_contains->bd_disk;
 #if defined(__disk_stat_inc)
 	/* older kernel */
 	return (int)disk_stat_read(disk, sectors[0])
