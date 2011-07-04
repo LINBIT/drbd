@@ -130,6 +130,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 
 	trace_drbd_bio(mdev, "Md", bio, 0, NULL);
 
+	bio_get(bio); /* one bio_put() is in the completion handler */
 	atomic_inc(&mdev->md_io_in_use); /* drbd_md_put_buffer() is in the completion handler */
 	if (drbd_insert_fault(mdev, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
 		bio_endio(bio, -EIO);

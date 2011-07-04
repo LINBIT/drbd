@@ -89,6 +89,7 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	md_io->done = 1;
 	wake_up(&mdev->misc_wait);
+	bio_put(bio);
 	drbd_md_put_buffer(mdev);
 
 	BIO_ENDIO_FN_RETURN;
