@@ -2369,8 +2369,11 @@ int meta_show_gi(struct format *cfg, char **argv __attribute((unused)), int argc
 	cfg->ops->show_gi(&cfg->md);
 
 	if (cfg->md.la_sect) {
-		printf("last agreed size: %s\n",
-		       ppsize(ppb, cfg->md.la_sect >> 1));
+		printf("last agreed size: %s (%llu sectors)\n",
+		       ppsize(ppb, cfg->md.la_sect >> 1),
+		       (unsigned long long)cfg->md.la_sect);
+		printf("last agreed max bio size: %u Byte\n",
+			       cfg->md.la_peer_max_bio_size);
 #if 0
 		/* FIXME implement count_bits() */
 		printf("%u bits set in the bitmap [ %s out of sync ]\n",
