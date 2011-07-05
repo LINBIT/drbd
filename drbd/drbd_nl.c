@@ -1709,10 +1709,17 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static int adm_detach(struct drbd_conf *mdev)
+static int adm_detach(struct drbd_conf *mdev, int force)
 {
 	enum drbd_state_rv retcode;
 	int ret;
+
+	if (force) {
+		drbd_force_state(mdev, NS(disk, D_FAILED));
+		retcode = SS_SUCCESS;
+		goto out;
+	}
+
 	drbd_suspend_io(mdev); /* so no-one is stuck in drbd_al_begin_io */
 	retcode = drbd_request_state(mdev, NS(disk, D_FAILED));
 	/* D_FAILED will transition to DISKLESS. */
@@ -1723,6 +1730,7 @@ static int adm_detach(struct drbd_conf *mdev)
 		retcode = SS_NOTHING_TO_DO;
 	if (ret)
 		retcode = ERR_INTR;
+out:
 	return retcode;
 }
 
@@ -1734,6 +1742,8 @@ static int adm_detach(struct drbd_conf *mdev)
 int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
+	struct detach_parms parms = { };
+	int err;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1741,7 +1751,16 @@ int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	retcode = adm_detach(adm_ctx.mdev);
+	if (info->attrs[DRBD_NLA_DETACH_PARMS]) {
+		err = detach_parms_from_attrs(&parms, info);
+		if (err) {
+			retcode = ERR_MANDATORY_TAG;
+			drbd_msg_put_info(from_attrs_err_to_txt(err));
+			goto out;
+		}
+	}
+
+	retcode = adm_detach(adm_ctx.mdev, parms.force_detach);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3164,7 +3183,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	/* detach */
 	idr_for_each_entry(&adm_ctx.tconn->volumes, mdev, i) {
-		retcode = adm_detach(mdev);
+		retcode = adm_detach(mdev, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
 			goto out;

@@ -47,6 +47,7 @@ extern struct context_def disk_options_ctx;
 extern struct context_def net_options_ctx;
 extern struct context_def primary_cmd_ctx;
 extern struct context_def attach_cmd_ctx;
+extern struct context_def detach_cmd_ctx;
 extern struct context_def connect_cmd_ctx;
 extern struct context_def disconnect_cmd_ctx;
 extern struct context_def resize_cmd_ctx;

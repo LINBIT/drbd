@@ -579,7 +579,9 @@ const char *on_congestion_map[] = {
 	{ "c-max-rate", NUMERIC(c_max_rate, C_MAX_RATE),				\
           .unit = "bytes/second" },							\
 	{ "c-min-rate", NUMERIC(c_min_rate, C_MIN_RATE),				\
-          .unit = "bytes/second" }
+	  .unit = "bytes/second" },							\
+	{ "disk-timeout", NUMERIC(disk_timeout,	DISK_TIMEOUT),				\
+          .unit = "1/10 seconds" }
 
 #define CHANGEABLE_NET_OPTIONS								\
 	{ "protocol", ENUM_NOCASE(wire_protocol, PROTOCOL) },				\
@@ -649,6 +651,14 @@ struct context_def attach_cmd_ctx = {
 		/* { "*", STRING(meta_dev) }, */
 		/* { "*", NUMERIC(meta_dev_idx, MINOR_NUMBER) }, */
 		{ } },
+};
+
+struct context_def detach_cmd_ctx = {
+	NLA_POLICY(detach_parms),
+	.fields = {
+		{ "force", FLAG(force_detach) },
+		{ }
+	},
 };
 
 struct context_def connect_cmd_ctx = {

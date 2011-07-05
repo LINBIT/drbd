@@ -345,7 +345,8 @@ struct adm_cmd cmds[] = {
 	 .drbdsetup_ctx = &attach_cmd_ctx, },
 	{"disk-options", adm_disk_options, DRBD_acf1_default
 	 .drbdsetup_ctx = &disk_options_ctx, },
-	{"detach", adm_generic_l, DRBD_acf1_default},
+	{"detach", adm_generic_l, DRBD_acf1_default
+	 .drbdsetup_ctx = &detach_cmd_ctx, },
 	{"connect", adm_connect, DRBD_acf1_connect
 	 .drbdsetup_ctx = &connect_cmd_ctx, },
 	{"net-options", adm_net_options, DRBD_acf1_connect

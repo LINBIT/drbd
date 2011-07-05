@@ -295,7 +295,7 @@
             <option>resync-after</option>, <option>al-extents</option>,
             <option>c-plan-ahead</option>, <option>c-fill-target</option>,
             <option>c-delay-target</option>, <option>c-max-rate</option>,
-            <option>c-min-rate</option>.</para>
+            <option>c-min-rate</option>, <option>disk-timeout</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -808,6 +808,28 @@
 
             <para>The default value of <option>max-bio-bvecs</option> is 0, which means that there
             is no user imposed limitation.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>
+            <option>disk-timeout</option>
+          </term>
+          <listitem>
+            <indexterm significance="normal">
+              <primary>drbd.conf</primary>
+              <secondary>disk-timeout</secondary>
+            </indexterm>
+	    <para>
+	      If the driver of the <replaceable>lower_device</replaceable>
+	      does not finish an IO request within <replaceable>disk_timeout</replaceable>,
+	      DRBD considers the disk as failed. If DRBD is connected to a remote host,
+	      it will reissue local pending IO requests to the peer, and ship all new
+	      IO requests to the peer only. The disk state advances to diskless, as soon
+	      as the backing block device has finished all IO requests.</para>
+	      <para> The default value of is 0, which means that no timeout is enforced.
+	      The default unit is 100ms. This option is available since 8.3.12.
+	      </para>
           </listitem>
         </varlistentry>
 

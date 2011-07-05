@@ -222,6 +222,7 @@ STATIC int tl_init(struct drbd_tconn *tconn)
 	tconn->oldest_tle = b;
 	tconn->newest_tle = b;
 	INIT_LIST_HEAD(&tconn->out_of_sequence_requests);
+	INIT_LIST_HEAD(&tconn->barrier_acked_requests);
 
 	return 1;
 }
@@ -322,7 +323,7 @@ void tl_release(struct drbd_tconn *tconn, unsigned int barrier_nr,
 	   These have been list_move'd to the out_of_sequence_requests list in
 	   _req_mod(, BARRIER_ACKED) above.
 	   */
-	list_del_init(&b->requests);
+	list_splice_init(&b->requests, &tconn->barrier_acked_requests);
 	mdev = b->w.mdev;
 
 	nob = b->next;
@@ -424,6 +425,22 @@ void _tl_restart(struct drbd_tconn *tconn, enum drbd_req_event what)
 		b = tmp;
 		list_splice(&carry_reads, &b->requests);
 	}
+
+	/* Actions operating on the disk state, also want to work on
+	   requests that got barrier acked. */
+	switch (what) {
+	case FAIL_FROZEN_DISK_IO:
+	case RESTART_FROZEN_DISK_IO:
+		list_for_each_safe(le, tle, &tconn->barrier_acked_requests) {
+			req = list_entry(le, struct drbd_request, tl_requests);
+			_req_mod(req, what);
+		}
+	case CONNECTION_LOST_WHILE_PENDING:
+	case RESEND:
+		break;
+	default:
+		conn_err(tconn, "what = %d in _tl_restart()\n", what);
+	}
 }
 
 
@@ -474,6 +491,41 @@ void tl_restart(struct drbd_tconn *tconn, enum drbd_req_event what)
 	spin_unlock_irq(&tconn->req_lock);
 }
 
+/**
+ * tl_apply() - Applies an event to all requests for a certain mdev in the TL
+ * @mdev:	DRBD device.
+ * @what:       The action/event to perform with all request objects
+ *
+ * @what might ony be ABORT_DISK_IO.
+ */
+void tl_apply(struct drbd_conf *mdev, enum drbd_req_event what)
+{
+	struct drbd_tconn *tconn = mdev->tconn;
+	struct drbd_tl_epoch *b;
+	struct list_head *le, *tle;
+	struct drbd_request *req;
+
+	D_ASSERT(what == ABORT_DISK_IO);
+
+	spin_lock_irq(&tconn->req_lock);
+	b = tconn->oldest_tle;
+	while (b) {
+		list_for_each_safe(le, tle, &b->requests) {
+			req = list_entry(le, struct drbd_request, tl_requests);
+			if (req->w.mdev == mdev)
+				_req_mod(req, what);
+		}
+		b = b->next;
+	}
+
+	list_for_each_safe(le, tle, &tconn->barrier_acked_requests) {
+		req = list_entry(le, struct drbd_request, tl_requests);
+		if (req->w.mdev == mdev)
+			_req_mod(req, what);
+	}
+
+	spin_unlock_irq(&tconn->req_lock);
+}
 
 STATIC int drbd_thread_setup(void *arg)
 {
@@ -2067,8 +2119,8 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	atomic_set(&mdev->rs_sect_in, 0);
 	atomic_set(&mdev->rs_sect_ev, 0);
 	atomic_set(&mdev->ap_in_flight, 0);
+	atomic_set(&mdev->md_io_in_use, 0);
 
-	mutex_init(&mdev->md_io_mutex);
 	mutex_init(&mdev->own_state_mutex);
 	mdev->state_mutex = &mdev->own_state_mutex;
 
@@ -2933,8 +2985,10 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	if (!get_ldev_if_state(mdev, D_FAILED))
 		return;
 
-	mutex_lock(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
+	buffer = drbd_md_get_buffer(mdev);
+	if (!buffer)
+		goto out;
+
 	memset(buffer, 0, 512);
 
 	buffer->la_size = cpu_to_be64(drbd_get_capacity(mdev->this_bdev));
@@ -2965,7 +3019,8 @@ void drbd_md_sync(struct drbd_conf *mdev)
 	 * since we updated it on metadata. */
 	mdev->ldev->md.la_size_sect = drbd_get_capacity(mdev->this_bdev);
 
-	mutex_unlock(&mdev->md_io_mutex);
+	drbd_md_put_buffer(mdev);
+out:
 	put_ldev(mdev);
 }
 
@@ -2985,8 +3040,9 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	if (!get_ldev_if_state(mdev, D_ATTACHING))
 		return ERR_IO_MD_DISK;
 
-	mutex_lock(&mdev->md_io_mutex);
-	buffer = (struct meta_data_on_disk *)page_address(mdev->md_io_page);
+	buffer = drbd_md_get_buffer(mdev);
+	if (!buffer)
+		goto out;
 
 	if (drbd_md_sync_page_io(mdev, bdev, bdev->md.md_offset, READ)) {
 		/* NOTE: can't do normal error processing here as this is
@@ -3048,7 +3104,8 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		bdev->disk_conf->al_extents = DRBD_AL_EXTENTS_DEF;
 
  err:
-	mutex_unlock(&mdev->md_io_mutex);
+	drbd_md_put_buffer(mdev);
+ out:
 	put_ldev(mdev);
 
 	return rv;

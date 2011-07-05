@@ -252,7 +252,8 @@ struct drbd_cmd commands[] = {
 	 .set_defaults = true,
 	 .ctx = &disk_options_ctx },
 
-	{"detach", CTX_MINOR, DRBD_ADM_DETACH, NO_PAYLOAD, F_CONFIG_CMD },
+	{"detach", CTX_MINOR, DRBD_ADM_DETACH, DRBD_NLA_DETACH_PARMS, F_CONFIG_CMD,
+	 .ctx = &detach_cmd_ctx },
 
 	{"connect", CTX_RESOURCE_AND_CONNECTION, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
