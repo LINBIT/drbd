@@ -196,6 +196,7 @@ static int confirmed(const char *text)
 #define DRBD_MD_MAGIC_06   (DRBD_MAGIC+2)
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
 #define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
+#define DRBD_MD_MAGIC_84_UNCLEAN   (DRBD_MAGIC+5)
 
 /*
  * }
@@ -411,12 +412,12 @@ int is_valid_md(int f,
 {
 	uint64_t md_size_sect;
 	char *v = (f == Drbd_07) ? "v07" : "v08";
-	const unsigned int magic = (f == Drbd_07) ? DRBD_MD_MAGIC_07 : DRBD_MD_MAGIC_08;
-
 
 	ASSERT(f == Drbd_07 || f == Drbd_08);
 
-	if (md->magic != magic) {
+	if ((f == Drbd_07 && md->magic != DRBD_MD_MAGIC_07) ||
+	    (f == Drbd_08 && md->magic != DRBD_MD_MAGIC_08
+			  && md->magic != DRBD_MD_MAGIC_84_UNCLEAN)) {
 		if (verbose >= 1)
 			fprintf(stderr, "%s Magic number not found\n", v);
 		return 0;
@@ -1819,7 +1820,8 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	 * we should introduce a new meta data "super block" magic, so we won't
 	 * have the same super block with two different activity log
 	 * transaction layouts */
-	else if (DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
+	else if (DRBD_MD_MAGIC_84_UNCLEAN == cfg->md.magic ||
+		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
 		err = replay_al_84(cfg, hot_extent);
 		need_to_re_init_al = 1;
@@ -1856,14 +1858,27 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	if (err > 0 && need_to_re_init_al)
 		initialize_al(cfg);
 
+	if (is_v08(cfg) &&
+		((cfg->md.flags & MDF_AL_CLEAN) == 0 ||
+		  cfg->md.magic != DRBD_MD_MAGIC_08))
+		need_to_update_md_flags = 1;
+
 	err = 0;
 	if (need_to_update_md_flags) {
-		if (is_v07(cfg))
-			cfg->md.gc[Flags] &= ~MDF_PRIMARY_IND;
+		/* Must not touch MDF_PRIMARY_IND.
+		 * This flag is used in-kernel to determine which
+		 * "wait-for-connection-timeout" is to be used.
+		 * Maybe it is time to reconsider the concept or
+		 * current implementation of "degr-wfc-timeout".
+		 * RFC:
+		 * If we set MDF_CRASHED_PRIMARY, in case MDF_PRIMARY_IND
+		 * was set, and clear MDF_PRIMARY_IND here, we can then
+		 * USE_DEGR_WFC_T as long as MDF_CRASHED_PRIMARY is set.
+		 * Maybe that even results in better semantics.
+		 */
 		if (is_v08(cfg)) {
-			if (cfg->md.flags & MDF_PRIMARY_IND)
-				cfg->md.flags |= ~MDF_CRASHED_PRIMARY;
-			cfg->md.flags &= ~MDF_PRIMARY_IND;
+			cfg->md.flags |= MDF_AL_CLEAN;
+			cfg->md.magic = DRBD_MD_MAGIC_08;
 		}
 		err = cfg->ops->md_cpu_to_disk(cfg);
 		err = cfg->ops->close(cfg) || err;

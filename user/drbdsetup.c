@@ -364,6 +364,7 @@ static const char *error_messages[] = {
 	"(up to 2TB in case you do not have CONFIG_LBD set)\n"
 	"Contact office@linbit.com, if you need more.",
 	EM(ERR_IO_MD_DISK) = "IO error(s) occurred during initial access to meta-data.\n",
+	EM(ERR_MD_UNCLEAN) = "Unclean meta-data found.\nYou need to 'drbdadm apply-al res'\n",
 	EM(ERR_MD_INVALID) = "No valid meta-data signature found.\n\n"
 	"\t==> Use 'drbdadm create-md res' to initialize meta-data area. <==\n",
 	EM(ERR_AUTH_ALG) = "The 'cram-hmac-alg' you specified is not known in "

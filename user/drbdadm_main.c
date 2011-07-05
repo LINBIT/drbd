@@ -384,6 +384,8 @@ struct adm_cmd cmds[] = {
 	{"get-gi", adm_generic_b, DRBD_acf1_default},
 	{"dump-md", admm_generic, DRBD_acf1_default},
 	{"wipe-md", admm_generic, DRBD_acf1_default},
+	{"apply-al", admm_generic, DRBD_acf1_default},
+
 	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
 
 	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1, .test_config = 1},
@@ -2324,14 +2326,8 @@ static int adm_up(struct cfg_ctx *ctx)
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+	schedule_deferred_cmd(admm_generic, ctx, "apply-al", CFG_DISK_PREREQ);
 	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
-
-	/*
-	 * FIXME:
-	 * quick fix to make the al-extent setting apply on freshly created meta-data.
-	 * Needs to be fixed in-kernel drbd_adm_attach().
-	 */
-	schedule_deferred_cmd(adm_set_default_disk_options, ctx, "disk-options", CFG_DISK);
 
 	return 0;
 }
