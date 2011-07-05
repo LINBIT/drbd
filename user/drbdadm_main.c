@@ -2854,7 +2854,7 @@ void print_usage_and_exit(struct adm_cmd *cmd, const char *addinfo)
 {
 	struct option *opt;
 
-	printf("\nUSAGE: %s [OPTION...] %s {all|RESOURCE...}\n\n"
+	printf("\nUSAGE: %s %s [OPTION...] {all|RESOURCE...}\n\n"
 	       "GENERAL OPTIONS:\n", progname, cmd ? cmd->name : "COMMAND");
 
 	for (opt = general_admopt; opt->name; opt++)
