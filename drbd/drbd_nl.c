@@ -3061,7 +3061,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (adm_ctx.connection)
+	if (adm_ctx.resource)
 		goto out;
 
 	if (!conn_create(adm_ctx.resource_name, &res_opts))
