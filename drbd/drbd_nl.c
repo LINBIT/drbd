@@ -3495,6 +3495,8 @@ out:
 
 int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_resource *resource;
+	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -3503,20 +3505,24 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (conn_lowest_minor(adm_ctx.connection) < 0) {
-		struct drbd_resource *resource = adm_ctx.connection->resource;
-
-		list_del_rcu(&resource->resources);
-		synchronize_rcu();
-		drbd_free_resource(resource);
-
-		retcode = NO_ERROR;
-	} else {
+	resource = adm_ctx.resource;
+	for_each_connection(connection, resource) {
+		if (connection->cstate > C_STANDALONE) {
+			retcode = ERR_NET_CONFIGURED;
+			goto out;
+		}
+	}
+	if (!idr_is_empty(&resource->devices)) {
 		retcode = ERR_RES_IN_USE;
+		goto out;
 	}
 
-	if (retcode == NO_ERROR)
-		drbd_thread_stop(&adm_ctx.connection->worker);
+	list_del_rcu(&resource->resources);
+	for_each_connection(connection, resource)
+		drbd_thread_stop(&connection->worker);
+	synchronize_rcu();
+	drbd_free_resource(resource);
+	retcode = NO_ERROR;
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
