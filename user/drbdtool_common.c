@@ -440,6 +440,7 @@ void dt_pretty_print_uuids(const uint64_t* uuid, unsigned int flags)
 			: "Inconsistent",
 	       (flags & MDF_FULL_SYNC) ? ", need full sync" : "",
 	       (flags & MDF_PEER_OUT_DATED) ? ", peer Outdated" : "");
+	printf("meta-data: %s\n", (flags & MDF_AL_CLEAN) ? "clean" : "need apply-al");
 }
 
 /*    s: token buffer
