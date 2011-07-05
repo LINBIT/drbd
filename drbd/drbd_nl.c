@@ -400,7 +400,7 @@ static void conn_md_sync(struct drbd_connection *connection)
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
@@ -453,7 +453,7 @@ static enum drbd_fencing_p highest_fencing_policy(struct drbd_connection *connec
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		if (get_ldev_if_state(device, D_CONSISTENT)) {
 			struct disk_conf *disk_conf =
@@ -1763,7 +1763,7 @@ static bool conn_resync_running(struct drbd_connection *connection)
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		if (device->state.conn == C_SYNC_SOURCE ||
 		    device->state.conn == C_SYNC_TARGET ||
@@ -1785,7 +1785,7 @@ static bool conn_ov_running(struct drbd_connection *connection)
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		if (device->state.conn == C_VERIFY_S ||
 		    device->state.conn == C_VERIFY_T) {
@@ -1827,7 +1827,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_conf
 	    (new_conf->wire_protocol != DRBD_PROT_C))
 		return ERR_NOT_PROTO_C;
 
-	idr_for_each_entry(&connection->volumes, peer_device, i) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 		if (get_ldev(device)) {
 			enum drbd_fencing_p fp = rcu_dereference(device->ldev->disk_conf)->fencing;
@@ -1857,7 +1857,7 @@ check_net_options(struct drbd_connection *connection, struct net_conf *new_conf)
 	rcu_read_unlock();
 
 	/* connection->volumes protected by genl_lock() here */
-	idr_for_each_entry(&connection->volumes, peer_device, i) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 		if (!device->bitmap) {
 			if(drbd_bm_init(device))
@@ -2143,7 +2143,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&connection->conf_update);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, i) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 		device->send_cnt = 0;
 		device->recv_cnt = 0;
@@ -2699,7 +2699,7 @@ static int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 	/* Open coded, deferred, iteration:
 	 * for_each_resource_safe(resource, tmp, &drbd_resources) {
 	 *      connection = "first connection of resource";
-	 *	idr_for_each_entry(&connection->volumes, peer_device, i) {
+	 *	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 	 *	  ...
 	 *	}
 	 * }
@@ -2735,7 +2735,7 @@ static int get_one_status(struct sk_buff *skb, struct netlink_callback *cb)
 	if (resource) {
 next_resource:
 		connection = first_connection(resource);
-		peer_device = idr_get_next(&connection->volumes, &volume);
+		peer_device = idr_get_next(&connection->peer_devices, &volume);
 		if (!peer_device) {
 			/* No more volumes to dump on this resource.
 			 * Advance resource iterator. */
@@ -3125,7 +3125,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	/* demote */
-	idr_for_each_entry(&adm_ctx.connection->volumes, peer_device, i) {
+	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
 		retcode = drbd_set_role(peer_device->device, R_SECONDARY, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to demote");
@@ -3140,7 +3140,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* detach */
-	idr_for_each_entry(&adm_ctx.connection->volumes, peer_device, i) {
+	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
 		retcode = adm_detach(peer_device->device, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
@@ -3156,7 +3156,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* Now, nothing can fail anymore */
 
 	/* delete volumes */
-	idr_for_each_entry(&adm_ctx.connection->volumes, peer_device, i) {
+	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
 		retcode = adm_del_minor(peer_device->device);
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */

@@ -1821,7 +1821,7 @@ int drbd_worker(struct drbd_thread *thi)
 	spin_unlock_irq(&connection->data.work.q_lock);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		D_ASSERT(device, device->state.disk == D_DISKLESS && device->state.conn == C_STANDALONE);
 		kref_get(&device->kref);

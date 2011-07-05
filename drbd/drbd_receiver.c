@@ -1013,7 +1013,7 @@ retry:
 		return -1;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
@@ -4523,7 +4523,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	drbd_free_sock(connection);
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
@@ -5254,7 +5254,7 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		flush_signals(current);
 
 		rcu_read_lock();
-		idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
 			kref_get(&device->kref);
 			rcu_read_unlock();
@@ -5268,7 +5268,7 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		set_bit(SIGNAL_ASENDER, &connection->flags);
 
 		spin_lock_irq(&connection->req_lock);
-		idr_for_each_entry(&connection->volumes, peer_device, vnr) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
 			not_empty = !list_empty(&device->done_ee);
 			if (not_empty)

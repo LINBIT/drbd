@@ -480,7 +480,7 @@ void tl_clear(struct drbd_connection *connection)
 
 	/* ensure bit indicating barrier is required is clear */
 	rcu_read_lock();
-	idr_for_each_entry(&connection->volumes, peer_device, vnr)
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		clear_bit(CREATE_BARRIER, &peer_device->device->flags);
 	rcu_read_unlock();
 
@@ -737,7 +737,7 @@ int conn_lowest_minor(struct drbd_connection *connection)
 	int vnr = 0, minor = -1;
 
 	rcu_read_lock();
-	peer_device = idr_get_next(&connection->volumes, &vnr);
+	peer_device = idr_get_next(&connection->peer_devices, &vnr);
 	if (peer_device)
 		minor = mdev_to_minor(peer_device->device);
 	rcu_read_unlock();
@@ -2716,7 +2716,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	spin_lock_init(&connection->req_lock);
 	mutex_init(&connection->conf_update);
 	init_waitqueue_head(&connection->ping_wait);
-	idr_init(&connection->volumes);
+	idr_init(&connection->peer_devices);
 
 	drbd_init_workqueue(&connection->data.work);
 	mutex_init(&connection->data.mutex);
@@ -2756,7 +2756,7 @@ void drbd_destroy_connection(struct kref *kref)
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 	struct drbd_resource *resource = connection->resource;
 
-	idr_destroy(&connection->volumes);
+	idr_destroy(&connection->peer_devices);
 
 	free_cpumask_var(connection->cpu_mask);
 	drbd_free_socket(&connection->meta);
@@ -2877,12 +2877,12 @@ enum drbd_ret_code drbd_create_device(struct drbd_connection *connection, unsign
 	}
 	kref_get(&device->kref);
 
-	if (!idr_pre_get(&connection->volumes, GFP_KERNEL) ||
-	    idr_get_new_above(&connection->volumes, peer_device, vnr, &got))
+	if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
+	    idr_get_new_above(&connection->peer_devices, peer_device, vnr, &got))
 		goto out_idr_remove_from_resource;
 	if (got != vnr) {
 		drbd_msg_put_info("requested volume exists already");
-		idr_remove(&connection->volumes, got);
+		idr_remove(&connection->peer_devices, got);
 		goto out_idr_remove_from_resource;
 	}
 	kref_get(&device->kref);
@@ -2928,7 +2928,7 @@ void drbd_delete_device(struct drbd_device *device)
 	int refs = 3;
 
 	for_each_connection(connection, resource) {
-		idr_remove(&connection->volumes, device->vnr);
+		idr_remove(&connection->peer_devices, device->vnr);
 		refs++;
 	}
 	idr_remove(&resource->devices, device->vnr);
