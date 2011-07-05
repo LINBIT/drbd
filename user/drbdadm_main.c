@@ -3347,7 +3347,7 @@ void assign_command_names_from_argv0(char **argv)
 		drbdsetup = strdup("drbdsetup");
 		drbdmeta = strdup("drbdmeta");
 		drbd_proxy_ctl = strdup("drbd-proxy-ctl");
-		drbdadm_83 = strdup("_drbdadm_83");
+		drbdadm_83 = strdup("drbdadm-83");
 	} else {
 		struct cmd_helper {
 			char *name;
@@ -3357,7 +3357,7 @@ void assign_command_names_from_argv0(char **argv)
 			{"drbdsetup", &drbdsetup},
 			{"drbdmeta", &drbdmeta},
 			{"drbd-proxy-ctl", &drbd_proxy_ctl},
-			{"_drbdadm_83", &drbdadm_83},
+			{"drbdadm-83", &drbdadm_83},
 			{NULL, NULL}
 		};
 		size_t len_dir, l;

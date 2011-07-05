@@ -277,6 +277,18 @@ void warn_on_version_mismatch(void)
 			msg);
 }
 
+void add_lib_drbd_to_path(void)
+{
+	char *new_path = NULL;
+	char *old_path = getenv("PATH");
+
+	m_asprintf(&new_path, "%s%s%s",
+			old_path,
+			old_path ? ":" : "",
+			"/lib/drbd");
+	setenv("PATH", new_path, 1);
+}
+
 void maybe_exec_drbdadm_83(char **argv)
 {
 	if (current_vcs_rel.version.major == 8 &&
@@ -284,8 +296,9 @@ void maybe_exec_drbdadm_83(char **argv)
 #ifdef DRBD_LEGACY_83
 		/* This drbdadm warned already... */
 		setenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH", "1", 0);
+		add_lib_drbd_to_path();
 		execvp(drbdadm_83, argv);
-		fprintf(stderr, "Execvp() failed to find _drbdadm_83\n");
+		fprintf(stderr, "execvp() failed to exec %s: %m\n", drbdadm_83);
 #else
 		fprintf(stderr, "This drbdadm was build without support for legacy\n"
 			"drbd kernel code. Consider to rebuild your user land\n"
