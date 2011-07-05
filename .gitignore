@@ -57,5 +57,6 @@ documentation/drbdmeta.8
 documentation/drbdsetup.8
 documentation/manpage.links
 documentation/manpage.refs
+documentation/drbdsetup_*.xml
 
 benchmark/dm
