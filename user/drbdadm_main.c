@@ -1501,9 +1501,9 @@ static void add_setup_options(char **argv, int *argcp)
 /* FIXME: Don't leak the memory allocated by asprintf. */
 #define make_address(ADDR, PORT, AF)		\
   if (!strcmp(AF, "ipv6")) { \
-    asprintf(&argv[NA(argc)], "%s:[%s]:%s", AF, ADDR, PORT); \
+    m_asprintf(&argv[NA(argc)], "%s:[%s]:%s", AF, ADDR, PORT); \
   } else { \
-    asprintf(&argv[NA(argc)], "%s:%s:%s", AF, ADDR, PORT); \
+    m_asprintf(&argv[NA(argc)], "%s:%s:%s", AF, ADDR, PORT); \
   }
 
 static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool reset)
