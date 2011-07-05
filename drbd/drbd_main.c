@@ -2583,7 +2583,7 @@ void conn_free_crypto(struct drbd_connection *connection)
 
 int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts)
 {
-	struct drbd_connection *connection = first_connection(resource);
+	struct drbd_connection *connection;
 	cpumask_var_t new_cpu_mask;
 	int err;
 
@@ -2606,12 +2606,14 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		}
 	}
 	resource->res_opts = *res_opts;
-	if (!cpumask_equal(connection->cpu_mask, new_cpu_mask)) {
-		cpumask_copy(connection->cpu_mask, new_cpu_mask);
-		drbd_calc_cpu_mask(connection);
-		connection->receiver.reset_cpu_mask = 1;
-		connection->asender.reset_cpu_mask = 1;
-		connection->worker.reset_cpu_mask = 1;
+	for_each_connection_rcu(connection, resource) {
+		if (!cpumask_equal(connection->cpu_mask, new_cpu_mask)) {
+			cpumask_copy(connection->cpu_mask, new_cpu_mask);
+			drbd_calc_cpu_mask(connection);
+			connection->receiver.reset_cpu_mask = 1;
+			connection->asender.reset_cpu_mask = 1;
+			connection->worker.reset_cpu_mask = 1;
+		}
 	}
 	err = 0;
 
