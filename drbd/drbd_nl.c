@@ -2084,7 +2084,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	connection = adm_ctx.connection;
+	connection = first_connection(adm_ctx.resource);
 	conn_reconfig_start(connection);
 
 	if (connection->cstate > C_STANDALONE) {
