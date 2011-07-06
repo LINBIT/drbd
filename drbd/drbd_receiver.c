@@ -558,12 +558,12 @@ STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 
 		if (rv < 0) {
 			if (rv == -ECONNRESET)
-				conn_info(connection, "sock was reset by peer\n");
+				drbd_info(connection, "sock was reset by peer\n");
 			else if (rv != -ERESTARTSYS)
-				conn_err(connection, "sock_recvmsg returned %d\n", rv);
+				drbd_err(connection, "sock_recvmsg returned %d\n", rv);
 			break;
 		} else if (rv == 0) {
-			conn_info(connection, "sock was shut down by peer\n");
+			drbd_info(connection, "sock was shut down by peer\n");
 			break;
 		} else	{
 			/* signal came in, or peer/link went down,
@@ -601,7 +601,7 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void *buf, siz
 
 	err = drbd_recv_all(connection, buf, size);
 	if (err && !signal_pending(current))
-		conn_warn(connection, "short read (expected size %d)\n", (int)size);
+		drbd_warn(connection, "short read (expected size %d)\n", (int)size);
 	return err;
 }
 
@@ -703,7 +703,7 @@ out:
 			disconnect_on_error = 0;
 			break;
 		default:
-			conn_err(connection, "%s failed, err = %d\n", what, err);
+			drbd_err(connection, "%s failed, err = %d\n", what, err);
 		}
 		if (disconnect_on_error)
 			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
@@ -763,7 +763,7 @@ out:
 		sock_release(s_listen);
 	if (err < 0) {
 		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-			conn_err(connection, "%s failed, err = %d\n", what, err);
+			drbd_err(connection, "%s failed, err = %d\n", what, err);
 			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
 		}
 	}
@@ -890,7 +890,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 				connection->meta.socket = s;
 				send_first_packet(connection, &connection->meta, P_INITIAL_META);
 			} else {
-				conn_err(connection, "Logic error in conn_connect()\n");
+				drbd_err(connection, "Logic error in conn_connect()\n");
 				goto out_release_sockets;
 			}
 		}
@@ -916,21 +916,21 @@ retry:
 			switch (try) {
 			case P_INITIAL_DATA:
 				if (connection->data.socket) {
-					conn_warn(connection, "initial packet S crossed\n");
+					drbd_warn(connection, "initial packet S crossed\n");
 					sock_release(connection->data.socket);
 				}
 				connection->data.socket = s;
 				break;
 			case P_INITIAL_META:
 				if (connection->meta.socket) {
-					conn_warn(connection, "initial packet M crossed\n");
+					drbd_warn(connection, "initial packet M crossed\n");
 					sock_release(connection->meta.socket);
 				}
 				connection->meta.socket = s;
 				set_bit(DISCARD_CONCURRENT, &connection->flags);
 				break;
 			default:
-				conn_warn(connection, "Error receiving initial packet\n");
+				drbd_warn(connection, "Error receiving initial packet\n");
 				sock_release(s);
 				if (random32() & 1)
 					goto retry;
@@ -998,10 +998,10 @@ retry:
 		/* drbd_request_state(device, NS(conn, WFAuth)); */
 		switch (drbd_do_auth(connection)) {
 		case -1:
-			conn_err(connection, "Authentication of peer failed\n");
+			drbd_err(connection, "Authentication of peer failed\n");
 			return -1;
 		case 0:
-			conn_err(connection, "Authentication of peer failed, trying again.\n");
+			drbd_err(connection, "Authentication of peer failed, trying again.\n");
 			return 0;
 		}
 	}
@@ -1050,7 +1050,7 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 	    *(__be32 *)header == cpu_to_be32(DRBD_MAGIC_100)) {
 		struct p_header100 *h = header;
 		if (h->pad != 0) {
-			conn_err(connection, "Header padding is not zero\n");
+			drbd_err(connection, "Header padding is not zero\n");
 			return -EINVAL;
 		}
 		pi->vnr = be16_to_cpu(h->volume);
@@ -1069,7 +1069,7 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 		pi->size = be16_to_cpu(h->length);
 		pi->vnr = 0;
 	} else {
-		conn_err(connection, "Wrong magic value 0x%08x in protocol version %d\n",
+		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d\n",
 			 be32_to_cpu(*(__be32 *)header),
 			 connection->agreed_pro_version);
 		return -EINVAL;
@@ -3230,37 +3230,37 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 		nc = rcu_dereference(connection->net_conf);
 
 		if (p_proto != nc->wire_protocol) {
-			conn_err(connection, "incompatible %s settings\n", "protocol");
+			drbd_err(connection, "incompatible %s settings\n", "protocol");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (convert_after_sb(p_after_sb_0p) != nc->after_sb_0p) {
-			conn_err(connection, "incompatible %s settings\n", "after-sb-0pri");
+			drbd_err(connection, "incompatible %s settings\n", "after-sb-0pri");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (convert_after_sb(p_after_sb_1p) != nc->after_sb_1p) {
-			conn_err(connection, "incompatible %s settings\n", "after-sb-1pri");
+			drbd_err(connection, "incompatible %s settings\n", "after-sb-1pri");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (convert_after_sb(p_after_sb_2p) != nc->after_sb_2p) {
-			conn_err(connection, "incompatible %s settings\n", "after-sb-2pri");
+			drbd_err(connection, "incompatible %s settings\n", "after-sb-2pri");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (p_discard_my_data && nc->discard_my_data) {
-			conn_err(connection, "incompatible %s settings\n", "discard-my-data");
+			drbd_err(connection, "incompatible %s settings\n", "discard-my-data");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (p_two_primaries != nc->two_primaries) {
-			conn_err(connection, "incompatible %s settings\n", "allow-two-primaries");
+			drbd_err(connection, "incompatible %s settings\n", "allow-two-primaries");
 			goto disconnect_rcu_unlock;
 		}
 
 		if (strcmp(integrity_alg, nc->integrity_alg)) {
-			conn_err(connection, "incompatible %s settings\n", "data-integrity-alg");
+			drbd_err(connection, "incompatible %s settings\n", "data-integrity-alg");
 			goto disconnect_rcu_unlock;
 		}
 
@@ -3281,7 +3281,7 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 
 		peer_integrity_tfm = crypto_alloc_hash(integrity_alg, 0, CRYPTO_ALG_ASYNC);
 		if (!peer_integrity_tfm) {
-			conn_err(connection, "peer data-integrity-alg %s not supported\n",
+			drbd_err(connection, "peer data-integrity-alg %s not supported\n",
 				 integrity_alg);
 			goto disconnect;
 		}
@@ -3290,14 +3290,14 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 		int_dig_in = kmalloc(hash_size, GFP_KERNEL);
 		int_dig_vv = kmalloc(hash_size, GFP_KERNEL);
 		if (!(int_dig_in && int_dig_vv)) {
-			conn_err(connection, "Allocation of buffers for data integrity checking failed\n");
+			drbd_err(connection, "Allocation of buffers for data integrity checking failed\n");
 			goto disconnect;
 		}
 	}
 
 	new_net_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_net_conf) {
-		conn_err(connection, "Allocation of new net_conf failed\n");
+		drbd_err(connection, "Allocation of new net_conf failed\n");
 		goto disconnect;
 	}
 
@@ -3324,7 +3324,7 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 	connection->int_dig_vv = int_dig_vv;
 
 	if (strcmp(old_net_conf->integrity_alg, integrity_alg))
-		conn_info(connection, "peer data-integrity-alg: %s\n",
+		drbd_info(connection, "peer data-integrity-alg: %s\n",
 			  integrity_alg[0] ? integrity_alg : "(none)");
 
 	synchronize_rcu();
@@ -3396,7 +3396,7 @@ static int ignore_remaining_packet(struct drbd_connection *connection, struct pa
  */
 static int config_unknown_volume(struct drbd_connection *connection, struct packet_info *pi)
 {
-	conn_warn(connection, "%s packet received for volume %u, which is not configured locally\n",
+	drbd_warn(connection, "%s packet received for volume %u, which is not configured locally\n",
 		  cmdname(pi->cmd), pi->vnr);
 	return ignore_remaining_packet(connection, pi);
 }
@@ -4373,7 +4373,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 STATIC int receive_skip(struct drbd_connection *connection, struct packet_info *pi)
 {
-	conn_warn(connection, "skipping unknown optional packet type %d, l: %d!\n",
+	drbd_warn(connection, "skipping unknown optional packet type %d, l: %d!\n",
 		 pi->cmd, pi->size);
 
 	return ignore_remaining_packet(connection, pi);
@@ -4466,14 +4466,14 @@ STATIC void drbdd(struct drbd_connection *connection)
 
 		cmd = &drbd_cmd_handler[pi.cmd];
 		if (unlikely(pi.cmd >= ARRAY_SIZE(drbd_cmd_handler) || !cmd->fn)) {
-			conn_err(connection, "Unexpected data packet %s (0x%04x)",
+			drbd_err(connection, "Unexpected data packet %s (0x%04x)",
 				 cmdname(pi.cmd), pi.cmd);
 			goto err_out;
 		}
 
 		shs = cmd->pkt_size;
 		if (pi.size > shs && !cmd->expect_payload) {
-			conn_err(connection, "No payload expected %s l:%d\n",
+			drbd_err(connection, "No payload expected %s l:%d\n",
 				 cmdname(pi.cmd), pi.size);
 			goto err_out;
 		}
@@ -4487,7 +4487,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 
 		err = cmd->fn(connection, &pi);
 		if (err) {
-			conn_err(connection, "error receiving %s, e: %d l: %d!\n",
+			drbd_err(connection, "error receiving %s, e: %d l: %d!\n",
 				 cmdname(pi.cmd), err, pi.size);
 			goto err_out;
 		}
@@ -4533,7 +4533,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 
-	conn_info(connection, "Connection closed\n");
+	drbd_info(connection, "Connection closed\n");
 
 	if (conn_highest_role(connection) == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
@@ -4684,13 +4684,13 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 		return 0;
 
 	if (pi.cmd != P_CONNECTION_FEATURES) {
-		conn_err(connection, "expected ConnectionFeatures packet, received: %s (0x%04x)\n",
+		drbd_err(connection, "expected ConnectionFeatures packet, received: %s (0x%04x)\n",
 			 cmdname(pi.cmd), pi.cmd);
 		return -1;
 	}
 
 	if (pi.size != expect) {
-		conn_err(connection, "expected ConnectionFeatures length: %u, received: %u\n",
+		drbd_err(connection, "expected ConnectionFeatures length: %u, received: %u\n",
 		     expect, pi.size);
 		return -1;
 	}
@@ -4711,13 +4711,13 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 
 	connection->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
 
-	conn_info(connection, "Handshake successful: "
+	drbd_info(connection, "Handshake successful: "
 	     "Agreed network protocol version %d\n", connection->agreed_pro_version);
 
 	return 1;
 
  incompat:
-	conn_err(connection, "incompatible DRBD dialects: "
+	drbd_err(connection, "incompatible DRBD dialects: "
 	    "I support %d-%d, peer supports %d-%d\n",
 	    PRO_VERSION_MIN, PRO_VERSION_MAX,
 	    p->protocol_min, p->protocol_max);
@@ -4769,7 +4769,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 
 	rv = crypto_hash_setkey(connection->cram_hmac_tfm, (u8 *)secret, key_len);
 	if (rv) {
-		conn_err(connection, "crypto_hash_setkey() failed with %d\n", rv);
+		drbd_err(connection, "crypto_hash_setkey() failed with %d\n", rv);
 		rv = -1;
 		goto fail;
 	}
@@ -4793,21 +4793,21 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	if (pi.cmd != P_AUTH_CHALLENGE) {
-		conn_err(connection, "expected AuthChallenge packet, received: %s (0x%04x)\n",
+		drbd_err(connection, "expected AuthChallenge packet, received: %s (0x%04x)\n",
 			 cmdname(pi.cmd), pi.cmd);
 		rv = 0;
 		goto fail;
 	}
 
 	if (pi.size > CHALLENGE_LEN * 2) {
-		conn_err(connection, "expected AuthChallenge payload too big.\n");
+		drbd_err(connection, "expected AuthChallenge payload too big.\n");
 		rv = -1;
 		goto fail;
 	}
 
 	peers_ch = kmalloc(pi.size, GFP_NOIO);
 	if (peers_ch == NULL) {
-		conn_err(connection, "kmalloc of peers_ch failed\n");
+		drbd_err(connection, "kmalloc of peers_ch failed\n");
 		rv = -1;
 		goto fail;
 	}
@@ -4821,7 +4821,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 	resp_size = crypto_hash_digestsize(connection->cram_hmac_tfm);
 	response = kmalloc(resp_size, GFP_NOIO);
 	if (response == NULL) {
-		conn_err(connection, "kmalloc of response failed\n");
+		drbd_err(connection, "kmalloc of response failed\n");
 		rv = -1;
 		goto fail;
 	}
@@ -4831,7 +4831,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
-		conn_err(connection, "crypto_hash_digest() failed with %d\n", rv);
+		drbd_err(connection, "crypto_hash_digest() failed with %d\n", rv);
 		rv = -1;
 		goto fail;
 	}
@@ -4852,14 +4852,14 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	if (pi.cmd != P_AUTH_RESPONSE) {
-		conn_err(connection, "expected AuthResponse packet, received: %s (0x%04x)\n",
+		drbd_err(connection, "expected AuthResponse packet, received: %s (0x%04x)\n",
 			 cmdname(pi.cmd), pi.cmd);
 		rv = 0;
 		goto fail;
 	}
 
 	if (pi.size != resp_size) {
-		conn_err(connection, "expected AuthResponse payload of wrong size\n");
+		drbd_err(connection, "expected AuthResponse payload of wrong size\n");
 		rv = 0;
 		goto fail;
 	}
@@ -4872,7 +4872,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 
 	right_response = kmalloc(resp_size, GFP_NOIO);
 	if (right_response == NULL) {
-		conn_err(connection, "kmalloc of right_response failed\n");
+		drbd_err(connection, "kmalloc of right_response failed\n");
 		rv = -1;
 		goto fail;
 	}
@@ -4881,7 +4881,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
-		conn_err(connection, "crypto_hash_digest() failed with %d\n", rv);
+		drbd_err(connection, "crypto_hash_digest() failed with %d\n", rv);
 		rv = -1;
 		goto fail;
 	}
@@ -4889,7 +4889,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 	rv = !memcmp(response, right_response, resp_size);
 
 	if (rv)
-		conn_info(connection, "Peer authenticated using %d bytes HMAC\n",
+		drbd_info(connection, "Peer authenticated using %d bytes HMAC\n",
 		     resp_size);
 	else
 		rv = -1;
@@ -4908,7 +4908,7 @@ int drbdd_init(struct drbd_thread *thi)
 	struct drbd_connection *connection = thi->connection;
 	int h;
 
-	conn_info(connection, "receiver (re)started\n");
+	drbd_info(connection, "receiver (re)started\n");
 
 	do {
 		h = conn_connect(connection);
@@ -4917,7 +4917,7 @@ int drbdd_init(struct drbd_thread *thi)
 			schedule_timeout_interruptible(HZ);
 		}
 		if (h == -1) {
-			conn_warn(connection, "Discarding network configuration.\n");
+			drbd_warn(connection, "Discarding network configuration.\n");
 			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
 		}
 	} while (h == 0);
@@ -4927,7 +4927,7 @@ int drbdd_init(struct drbd_thread *thi)
 
 	conn_disconnect(connection);
 
-	conn_info(connection, "receiver terminated\n");
+	drbd_info(connection, "receiver terminated\n");
 	return 0;
 }
 
@@ -4942,7 +4942,7 @@ STATIC int got_conn_RqSReply(struct drbd_connection *connection, struct packet_i
 		set_bit(CONN_WD_ST_CHG_OKAY, &connection->flags);
 	} else {
 		set_bit(CONN_WD_ST_CHG_FAIL, &connection->flags);
-		conn_err(connection, "Requested state change failed by peer: %s (%d)\n",
+		drbd_err(connection, "Requested state change failed by peer: %s (%d)\n",
 			 drbd_set_st_err_str(retcode), retcode);
 	}
 	wake_up(&connection->ping_wait);
@@ -5335,7 +5335,7 @@ int drbd_asender(struct drbd_thread *thi)
 
 		if (test_and_clear_bit(SEND_PING, &connection->flags)) {
 			if (drbd_send_ping(connection)) {
-				conn_err(connection, "drbd_send_ping has failed\n");
+				drbd_err(connection, "drbd_send_ping has failed\n");
 				goto reconnect;
 			}
 			connection->meta.socket->sk->sk_rcvtimeo = ping_timeo * HZ / 10;
@@ -5347,7 +5347,7 @@ int drbd_asender(struct drbd_thread *thi)
 		if (tcp_cork)
 			drbd_tcp_cork(connection->meta.socket);
 		if (connection_finish_peer_reqs(connection)) {
-			conn_err(connection, "connection_finish_peer_reqs() failed\n");
+			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
 			goto reconnect;
 		}
 		/* but unconditionally uncork unless disabled */
@@ -5377,7 +5377,7 @@ int drbd_asender(struct drbd_thread *thi)
 			received += rv;
 			buf	 += rv;
 		} else if (rv == 0) {
-			conn_err(connection, "meta connection shut down by peer.\n");
+			drbd_err(connection, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
 			/* If the data socket received something meanwhile,
@@ -5386,7 +5386,7 @@ int drbd_asender(struct drbd_thread *thi)
 				jiffies - connection->meta.socket->sk->sk_rcvtimeo))
 				continue;
 			if (ping_timeout_active) {
-				conn_err(connection, "PingAck did not arrive in time.\n");
+				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
 			set_bit(SEND_PING, &connection->flags);
@@ -5394,7 +5394,7 @@ int drbd_asender(struct drbd_thread *thi)
 		} else if (rv == -EINTR) {
 			continue;
 		} else {
-			conn_err(connection, "sock_recvmsg returned %d\n", rv);
+			drbd_err(connection, "sock_recvmsg returned %d\n", rv);
 			goto reconnect;
 		}
 
@@ -5403,13 +5403,13 @@ int drbd_asender(struct drbd_thread *thi)
 				goto reconnect;
 			cmd = &asender_tbl[pi.cmd];
 			if (pi.cmd >= ARRAY_SIZE(asender_tbl) || !cmd->fn) {
-				conn_err(connection, "Unexpected meta packet %s (0x%04x)\n",
+				drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
 					 cmdname(pi.cmd), pi.cmd);
 				goto disconnect;
 			}
 			expect = header_size + cmd->pkt_size;
 			if (pi.size != expect - header_size) {
-				conn_err(connection, "Wrong packet size on meta (c: %d, l: %d)\n",
+				drbd_err(connection, "Wrong packet size on meta (c: %d, l: %d)\n",
 					pi.cmd, pi.size);
 				goto reconnect;
 			}
@@ -5419,7 +5419,7 @@ int drbd_asender(struct drbd_thread *thi)
 
 			err = cmd->fn(connection, &pi);
 			if (err) {
-				conn_err(connection, "%pf failed\n", cmd->fn);
+				drbd_err(connection, "%pf failed\n", cmd->fn);
 				goto reconnect;
 			}
 
@@ -5448,7 +5448,7 @@ disconnect:
 	}
 	clear_bit(SIGNAL_ASENDER, &connection->flags);
 
-	conn_info(connection, "asender terminated\n");
+	drbd_info(connection, "asender terminated\n");
 
 	return 0;
 }

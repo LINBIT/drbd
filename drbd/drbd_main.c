@@ -231,9 +231,9 @@ STATIC int tl_init(struct drbd_connection *connection)
 STATIC void tl_cleanup(struct drbd_connection *connection)
 {
 	if (connection->oldest_tle != connection->newest_tle)
-		conn_err(connection, "ASSERT FAILED: oldest_tle == newest_tle\n");
+		drbd_err(connection, "ASSERT FAILED: oldest_tle == newest_tle\n");
 	if (!list_empty(&connection->out_of_sequence_requests))
-		conn_err(connection, "ASSERT FAILED: list_empty(out_of_sequence_requests)\n");
+		drbd_err(connection, "ASSERT FAILED: list_empty(out_of_sequence_requests)\n");
 	kfree(connection->oldest_tle);
 	connection->oldest_tle = NULL;
 	kfree(connection->unused_spare_tle);
@@ -291,17 +291,17 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 
 	/* first some paranoia code */
 	if (b == NULL) {
-		conn_err(connection, "BAD! BarrierAck #%u received, but no epoch in tl!?\n",
+		drbd_err(connection, "BAD! BarrierAck #%u received, but no epoch in tl!?\n",
 			 barrier_nr);
 		goto bail;
 	}
 	if (b->br_number != barrier_nr) {
-		conn_err(connection, "BAD! BarrierAck #%u received, expected #%u!\n",
+		drbd_err(connection, "BAD! BarrierAck #%u received, expected #%u!\n",
 			 barrier_nr, b->br_number);
 		goto bail;
 	}
 	if (b->n_writes != set_size) {
-		conn_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
+		drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
 			 barrier_nr, set_size, b->n_writes);
 		goto bail;
 	}
@@ -411,7 +411,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 			if (b == connection->newest_tle) {
 				/* recycle, but reinit! */
 				if (tmp != NULL)
-					conn_err(connection, "ASSERT FAILED tmp == NULL");
+					drbd_err(connection, "ASSERT FAILED tmp == NULL");
 				INIT_LIST_HEAD(&b->requests);
 				list_splice(&carry_reads, &b->requests);
 				INIT_LIST_HEAD(&b->w.list);
@@ -442,7 +442,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 	case RESEND:
 		break;
 	default:
-		conn_err(connection, "what = %d in _tl_restart()\n", what);
+		drbd_err(connection, "what = %d in _tl_restart()\n", what);
 	}
 }
 
@@ -468,7 +468,7 @@ void tl_clear(struct drbd_connection *connection)
 
 	/* we expect this list to be empty. */
 	if (!list_empty(&connection->out_of_sequence_requests))
-		conn_err(connection, "ASSERT FAILED list_empty(&out_of_sequence_requests)\n");
+		drbd_err(connection, "ASSERT FAILED list_empty(&out_of_sequence_requests)\n");
 
 	/* but just in case, clean it up anyways! */
 	list_for_each_safe(le, tle, &connection->out_of_sequence_requests) {
@@ -568,7 +568,7 @@ restart:
 	 */
 
 	if (thi->t_state == RESTARTING) {
-		conn_info(connection, "Restarting %s thread\n", thi->name);
+		drbd_info(connection, "Restarting %s thread\n", thi->name);
 		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		goto restart;
@@ -580,7 +580,7 @@ restart:
 
 	/* THINK maybe two different completions? */
 	complete_all(&thi->startstop); /* notify: thi->task unset. */
-	conn_info(connection, "Terminating %s thread\n", thi->name);
+	drbd_info(connection, "Terminating %s thread\n", thi->name);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	/* Release mod reference taken when thread was started */
@@ -613,12 +613,12 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 	switch (thi->t_state) {
 	case NONE:
-		conn_info(connection, "Starting %s thread (from %s [%d])\n",
+		drbd_info(connection, "Starting %s thread (from %s [%d])\n",
 			 thi->name, current->comm, current->pid);
 
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
-			conn_err(connection, "Failed to get module reference in drbd_thread_start\n");
+			drbd_err(connection, "Failed to get module reference in drbd_thread_start\n");
 			spin_unlock_irqrestore(&thi->t_lock, flags);
 			return false;
 		}
@@ -633,7 +633,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
-			conn_err(connection, "Couldn't start thread (%d)\n", pid);
+			drbd_err(connection, "Couldn't start thread (%d)\n", pid);
 
 			kref_put(&connection->kref, drbd_destroy_connection);
 			module_put(THIS_MODULE);
@@ -642,16 +642,16 @@ int drbd_thread_start(struct drbd_thread *thi)
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
 		if (thi->t_state != RUNNING)
-			conn_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
+			drbd_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 					thi->name, thi->t_state, RUNNING);
 		if (thi->task)
 			wake_up_process(thi->task);
 		else
-			conn_err(connection, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
+			drbd_err(connection, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
 		break;
 	case EXITING:
 		thi->t_state = RESTARTING;
-		conn_info(connection, "Restarting %s thread (from %s [%d])\n",
+		drbd_info(connection, "Restarting %s thread (from %s [%d])\n",
 				thi->name, current->comm, current->pid);
 		/* fall through */
 	case RUNNING:
@@ -674,7 +674,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 	/* may be called from state engine, holding the req lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
 
-	/* conn_err(connection, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
+	/* drbd_err(connection, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
@@ -697,19 +697,19 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 		if (thi->task != current)
 			force_sig(DRBD_SIGKILL, thi->task);
 		else if (wait)
-			conn_err(connection, "ASSERT FAILED: wait=%d\n", wait);
+			drbd_err(connection, "ASSERT FAILED: wait=%d\n", wait);
 	}
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	if (wait) {
 		if (thi->task == current) {
-			conn_err(connection, "ASSERT FAILED: Trying to wait for current task!\n");
+			drbd_err(connection, "ASSERT FAILED: Trying to wait for current task!\n");
 			return;
 		}
 		wait_for_completion(&thi->startstop);
 		spin_lock_irqsave(&thi->t_lock, flags);
 		if (thi->t_state != NONE)
-			conn_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
+			drbd_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 				 thi->name, thi->t_state, NONE);
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 	}
@@ -1023,7 +1023,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	if (nc->tentative && connection->agreed_pro_version < 92) {
 		rcu_read_unlock();
 		mutex_unlock(&sock->mutex);
-		conn_err(connection, "--dry-run is not supported by peer");
+		drbd_err(connection, "--dry-run is not supported by peer");
 		return -EOPNOTSUPP;
 	}
 
@@ -1642,7 +1642,7 @@ STATIC int we_should_drop_the_connection(struct drbd_connection *connection, str
 
 	drop_it = !--connection->ko_count;
 	if (!drop_it) {
-		conn_err(connection, "[%s/%d] sock_sendmsg time expired, ko = %u\n",
+		drbd_err(connection, "[%s/%d] sock_sendmsg time expired, ko = %u\n",
 			 current->comm, current->pid, connection->ko_count);
 		request_ping(connection);
 	}
@@ -2007,7 +2007,7 @@ int drbd_send(struct drbd_connection *connection, struct socket *sock,
 
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
-			conn_err(connection, "%s_sendmsg returned %d\n",
+			drbd_err(connection, "%s_sendmsg returned %d\n",
 				 sock == connection->meta.socket ? "msock" : "sock",
 				 rv);
 			conn_request_state(connection, NS(conn, C_BROKEN_PIPE), CS_HARD);

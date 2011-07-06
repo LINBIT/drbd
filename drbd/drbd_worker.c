@@ -1758,7 +1758,7 @@ int drbd_worker(struct drbd_thread *thi)
 		if (intr) {
 			flush_signals(current);
 			if (get_t_state(thi) == RUNNING) {
-				conn_warn(connection, "Worker got an unexpected signal\n");
+				drbd_warn(connection, "Worker got an unexpected signal\n");
 				continue;
 			}
 			break;
@@ -1784,7 +1784,7 @@ int drbd_worker(struct drbd_thread *thi)
 			 *
 			 * I'll try to get away just starting over this loop.
 			 */
-			conn_warn(connection, "Work list unexpectedly empty\n");
+			drbd_warn(connection, "Work list unexpectedly empty\n");
 			spin_unlock_irq(&connection->data.work.q_lock);
 			continue;
 		}

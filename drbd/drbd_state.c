@@ -498,7 +498,7 @@ static void conn_pr_state_change(struct drbd_connection *connection, union drbd_
 			       is_susp(ns));
 
 	if (pbp != pb)
-		conn_info(connection, "%s\n", pb);
+		drbd_info(connection, "%s\n", pb);
 }
 
 
@@ -1756,7 +1756,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		acscw->w.connection = connection;
 		drbd_queue_work(&connection->data.work, &acscw->w);
 	} else {
-		conn_err(connection, "Could not kmalloc an acscw\n");
+		drbd_err(connection, "Could not kmalloc an acscw\n");
 	}
 
 abort:
