@@ -1886,7 +1886,6 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
 	uint32_t hot_extent[AL_EXTENTS_MAX];
 	size_t al_size = MD_AL_MAX_SECT_07 * 512;
-	int need_to_re_init_al = 0;
 	int need_to_update_md_flags = 0;
 	int err;
 
@@ -1919,8 +1918,9 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
 		err = replay_al_84(cfg, hot_extent);
-		need_to_re_init_al = 1;
-	} else /* try the old al format anyways */
+	} else /* try the old al format anyways, this may be the first time we
+		* run after upgrading from < 8.4 to 8.4, and we need to
+		* transparently "convert" the activity log format. */
 		err = replay_al_07(cfg, hot_extent);
 
 	if (err < 0) {
@@ -1950,9 +1950,14 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		need_to_update_md_flags = 1;
 	}
 
-	/* For 8.4, we need to wipe the AL,
-	 * even if it was not necessary to apply it. */
-	if (err > 0 && need_to_re_init_al)
+	/* (Re-)initialize the activity log.
+	 * This is needed on 8.4, and does not hurt on < 8.4.
+	 * It may cause a "No usable activity log found" kernel message
+	 * if it is attached to < 8.4, but that is cosmetic.
+	 * We can skip this, if it was clean anyways (err == 0),
+	 * or if we know that this is for 0.7.
+	 */
+	if (err > 0 && !is_v07(cfg))
 		initialize_al(cfg);
 
 	if (is_v08(cfg) &&
