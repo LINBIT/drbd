@@ -232,7 +232,7 @@ STATIC void tl_cleanup(struct drbd_tconn *tconn)
 	if (tconn->oldest_tle != tconn->newest_tle)
 		conn_err(tconn, "ASSERT FAILED: oldest_tle == newest_tle\n");
 	if (!list_empty(&tconn->out_of_sequence_requests))
-		conn_err(tconn, "ASSERT FAILED: list_mepty(out_of_sequence_requests)\n");
+		conn_err(tconn, "ASSERT FAILED: list_empty(out_of_sequence_requests)\n");
 	kfree(tconn->oldest_tle);
 	tconn->oldest_tle = NULL;
 	kfree(tconn->unused_spare_tle);
