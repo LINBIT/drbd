@@ -481,10 +481,10 @@ int is_valid_md(int f,
  * these stay the same for 0.8, too:
  */
 
-struct __packed al_sector_cpu {
+struct al_sector_cpu {
 	uint32_t magic;
 	uint32_t tr_number;
-	struct __packed {
+	struct {
 		uint32_t pos;
 		uint32_t extent;
 	} updates[62];
