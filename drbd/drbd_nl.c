@@ -3135,8 +3135,10 @@ out:
 
 int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_resource *resource;
+	struct drbd_connection *connection;
+	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
-	struct drbd_peer_device *peer_device;
 	unsigned i;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -3145,24 +3147,29 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
+	resource = adm_ctx.resource;
 	/* demote */
-	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
-		retcode = drbd_set_role(peer_device->device, R_SECONDARY, 0);
+	for_each_connection(connection, resource) {
+		struct drbd_peer_device *peer_device;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+			retcode = drbd_set_role(peer_device->device, R_SECONDARY, 0);
+			if (retcode < SS_SUCCESS) {
+				drbd_msg_put_info("failed to demote");
+				goto out;
+			}
+		}
+
+		retcode = conn_try_disconnect(connection, 0);
 		if (retcode < SS_SUCCESS) {
-			drbd_msg_put_info("failed to demote");
+			drbd_msg_put_info("failed to disconnect");
 			goto out;
 		}
 	}
 
-	retcode = conn_try_disconnect(adm_ctx.connection, 0);
-	if (retcode < SS_SUCCESS) {
-		drbd_msg_put_info("failed to disconnect");
-		goto out;
-	}
-
 	/* detach */
-	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
-		retcode = adm_detach(peer_device->device, 0);
+	idr_for_each_entry(&resource->devices, device, i) {
+		retcode = adm_detach(device, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
 			goto out;
@@ -3172,13 +3179,14 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* If we reach this, all volumes (of this connection) are Secondary,
 	 * Disconnected, Diskless, aka Unconfigured. Make sure all threads have
 	 * actually stopped, state handling only does drbd_thread_stop_nowait(). */
-	drbd_thread_stop(&adm_ctx.connection->worker);
+	for_each_connection(connection, resource)
+		drbd_thread_stop(&connection->worker);
 
 	/* Now, nothing can fail anymore */
 
 	/* delete volumes */
-	idr_for_each_entry(&adm_ctx.connection->peer_devices, peer_device, i) {
-		retcode = adm_del_minor(peer_device->device);
+	idr_for_each_entry(&resource->devices, device, i) {
+		retcode = adm_del_minor(device);
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */
 			drbd_msg_put_info("failed to delete volume");
@@ -3186,21 +3194,11 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	/* delete connection */
-	if (conn_lowest_minor(adm_ctx.connection) < 0) {
-		struct drbd_resource *resource = adm_ctx.connection->resource;
+	list_del_rcu(&resource->resources);
+	synchronize_rcu();
+	drbd_free_resource(resource);
+	retcode = NO_ERROR;
 
-		list_del_rcu(&resource->resources);
-		synchronize_rcu();
-		drbd_free_resource(resource);
-
-		retcode = NO_ERROR;
-	} else {
-		/* "can not happen" */
-		retcode = ERR_RES_IN_USE;
-		drbd_msg_put_info("failed to delete connection");
-	}
-	goto out;
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
