@@ -241,10 +241,6 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	adm_ctx.device = minor_to_mdev(d_in->minor);
 	if (adm_ctx.resource_name) {
 		adm_ctx.resource = drbd_find_resource(adm_ctx.resource_name);
-		if (adm_ctx.resource) {
-			adm_ctx.connection = first_connection(adm_ctx.resource);
-			kref_get(&adm_ctx.connection->kref);
-		}
 	}
 
 	if (!adm_ctx.device && (flags & DRBD_ADM_NEED_MINOR)) {
@@ -259,7 +255,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	}
 
 	if (flags & DRBD_ADM_NEED_CONNECTION) {
-		if (adm_ctx.connection && !(flags & DRBD_ADM_NEED_RESOURCE)) {
+		if (adm_ctx.resource) {
 			drbd_msg_put_info("no resource name expected");
 			return ERR_INVALID_REQUEST;
 		}
