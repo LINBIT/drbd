@@ -3056,8 +3056,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	magic = be32_to_cpu(buffer->magic);
 	flags = be32_to_cpu(buffer->flags);
 	if (magic == DRBD_MD_MAGIC_84_UNCLEAN ||
-	    (magic == DRBD_MD_MAGIC_08 &&
-		(!(flags & MDF_AL_CLEAN) || (flags & MDF_PRIMARY_IND)))) {
+	    (magic == DRBD_MD_MAGIC_08 && !(flags & MDF_AL_CLEAN))) {
 			/* btw: that's Activity Log clean, not "all" clean. */
 		dev_err(DEV, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
 		rv = ERR_MD_UNCLEAN;
