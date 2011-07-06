@@ -1941,7 +1941,7 @@ int drbd_worker(struct drbd_thread *thi)
 		if (signal_pending(current)) {
 			flush_signals(current);
 			if (get_t_state(thi) == RUNNING) {
-				conn_warn(connection, "Worker got an unexpected signal\n");
+				drbd_warn(connection, "Worker got an unexpected signal\n");
 				continue;
 			}
 			break;
