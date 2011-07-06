@@ -1069,4 +1069,15 @@ static inline void genl_unregister_mc_group(struct genl_family *family,
 
 #endif
 
+/* pr_warning was introduced with 2.6.37 (commit 968ab183)
+ */
+#ifndef pr_fmt
+#define pr_fmt(fmt) fmt
+#endif
+
+#ifndef pr_warning
+#define pr_warning(fmt, ...) \
+        printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+
 #endif
