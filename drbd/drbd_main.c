@@ -2646,7 +2646,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		err = __bitmap_parse(res_opts->cpu_mask, 32, 0,
 				cpumask_bits(new_cpu_mask), nr_cpu_ids);
 		if (err) {
-			conn_warn(connection, "__bitmap_parse() failed with %d\n", err);
+			drbd_warn(resource, "__bitmap_parse() failed with %d\n", err);
 			/* retcode = ERR_CPU_MASK_PARSE; */
 			goto fail;
 		}

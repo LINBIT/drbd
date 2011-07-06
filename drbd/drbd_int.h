@@ -137,12 +137,44 @@ struct drbd_connection;
  * dynamic_dev_dbg() and disk_to_dev() exists since v2.6.28-rc1.
  */
 #if defined(disk_to_dev)
-#define drbd_printk(level, device, fmt, args...) \
-	dev_printk(level, disk_to_dev(device->vdisk), fmt, ## args)
+#define __drbd_printk_device(level, device, fmt, args...) \
+	dev_printk(level, disk_to_dev((device)->vdisk), fmt, ## args)
+#define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
+	dev_printk(level, disk_to_dev((peer_device)->device->vdisk), fmt, ## args)
 #else
-#define drbd_printk(level, device, fmt, args...) \
+#define __drbd_printk_device(level, device, fmt, args...) \
 	printk(level "block drbd%u: " fmt, (device)->minor, ## args)
+#define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
+	printk(level "block drbd%u: " fmt, (peer_device)->device->minor, ## args)
 #endif
+
+#define __drbd_printk_resource(level, resource, fmt, args...) \
+	printk(level "drbd %s: " fmt, (resource)->name, ## args)
+
+#define __drbd_printk_connection(level, connection, fmt, args...) \
+	printk(level "drbd %s: " fmt, (connection)->resource->name, ## args)
+
+void drbd_printk_with_wrong_object_type(void);
+
+#define __drbd_printk_if_same_type(obj, type, func, level, fmt, args...) \
+	(__builtin_types_compatible_p(typeof(obj), type) || \
+	 __builtin_types_compatible_p(typeof(obj), const type)), \
+	func(level, (const type)(obj), fmt, ## args)
+
+#define drbd_printk(level, obj, fmt, args...) \
+	__builtin_choose_expr( \
+	  __drbd_printk_if_same_type(obj, struct drbd_device *, \
+			     __drbd_printk_device, level, fmt, ## args), \
+	  __builtin_choose_expr( \
+	    __drbd_printk_if_same_type(obj, struct drbd_resource *, \
+			       __drbd_printk_resource, level, fmt, ## args), \
+	    __builtin_choose_expr( \
+	      __drbd_printk_if_same_type(obj, struct drbd_connection *, \
+				 __drbd_printk_connection, level, fmt, ## args), \
+	      __builtin_choose_expr( \
+		__drbd_printk_if_same_type(obj, struct drbd_peer_device *, \
+				 __drbd_printk_peer_device, level, fmt, ## args), \
+	        drbd_printk_with_wrong_object_type()))))
 
 #if defined(disk_to_dev)
 #define drbd_dbg(device, fmt, args...) \
