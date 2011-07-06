@@ -1561,9 +1561,95 @@ struct al_cursor {
 
 static int replay_al_07(struct format *cfg, uint32_t *hot_extent)
 {
-	/* FIXME implement this */
-	fprintf(stderr, "replay of < 8.4 style activity log not yet implemented\n");
-	return -EOPNOTSUPP;
+	unsigned int mx;
+	struct al_sector_cpu al_cpu[MD_AL_MAX_SECT_07];
+	unsigned char valid[MD_AL_MAX_SECT_07];
+
+	struct al_sector_on_disk *al_disk = on_disk_buffer;
+
+	unsigned b, i;
+
+	int found_valid = 0;
+	struct al_cursor oldest = { 0, };
+	struct al_cursor newest = { 0, };
+
+	/* Endian convert, validate, and find oldest to newest log range.
+	 * In contrast to the 8.4 log format, this log format does NOT
+	 * use all log space, but only as many sectors as absolutely necessary.
+	 *
+	 * We need to trust the "al_nr_extents" setting in the "super block".
+	 */
+#define AL_EXTENTS_PT 61
+	/* mx = 1 + div_ceil(al_nr_extents, AL_EXTENTS_PT); */
+	mx = 1 + (cfg->md.al_nr_extents + AL_EXTENTS_PT -1) / AL_EXTENTS_PT;
+	for (b = 0; b < mx; b++) {
+		valid[b] = v07_al_disk_to_cpu(al_cpu + b, al_disk + b);
+		if (!valid[b])
+		       continue;
+		if (++found_valid == 1) {
+			oldest.i = b;
+			oldest.tr_number = al_cpu[b].tr_number;
+			newest = oldest;
+			continue;
+		}
+
+		d_expect(al_cpu[b].tr_number != oldest.tr_number);
+		d_expect(al_cpu[b].tr_number != newest.tr_number);
+		if ((int)al_cpu[b].tr_number - (int)oldest.tr_number < 0) {
+			d_expect(oldest.tr_number - al_cpu[b].tr_number + b - oldest.i == mx);
+			oldest.i = b;
+			oldest.tr_number = al_cpu[b].tr_number;
+		}
+		if ((int)al_cpu[b].tr_number - (int)newest.tr_number > 0) {
+			d_expect(al_cpu[b].tr_number - newest.tr_number == b - newest.i);
+			newest.i = b;
+			newest.tr_number = al_cpu[b].tr_number;
+		}
+	}
+
+	if (!found_valid) {
+		/* not even one transaction was valid.
+		 * Has this ever been initialized correctly? */
+		fprintf(stderr, "No usable activity log found.\n");
+		/* with up to 8.3 style activity log, this is NOT an error. */
+		return 0;
+	}
+
+	/* we do expect at most one corrupt transaction, and only in case
+	 * things went wrong during transaction write. */
+	if (found_valid != mx)
+		fprintf(stderr, "%u corrupt or uninitialized AL transactions found\n", mx - found_valid);
+
+	/* Any other paranoia checks possible with this log format? */
+
+	/* Ok, so we found valid update transactions.  Reconstruct the "active
+	 * set" at the time of the newest transaction. */
+
+	/* wrap around */
+	if (newest.i < oldest.i)
+		newest.i += mx;
+
+	for (b = oldest.i; b <= newest.i; b++) {
+		unsigned idx = b % mx;
+		if (!valid[idx])
+			continue;
+
+		/* This loop processes both "context" and "update" information.
+		 * There is only one update, on index 0,
+		 * which is why this loop counts down. */
+		for (i = AL_EXTENTS_PT; (int)i >= 0; i--) {
+			unsigned slot = al_cpu[idx].updates[i].pos;
+			if (al_cpu[idx].updates[i].extent == ~0U)
+				continue;
+			if (slot >= AL_EXTENTS_MAX) {
+				fprintf(stderr, "slot number out of range: tr:%u slot:%u\n",
+						idx, slot);
+				continue;
+			}
+			hot_extent[slot] = al_cpu[idx].updates[i].extent;
+		}
+	}
+	return found_valid;
 }
 
 /* Expects the AL to be read into on_disk_buffer already.
