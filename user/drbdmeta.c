@@ -1651,6 +1651,10 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 	/* Ok, so we found valid update transactions.  Reconstruct the "active
 	 * set" at the time of the newest transaction. */
 
+	/* wrap around */
+	if (newest.i < oldest.i)
+		newest.i += mx;
+
 	for (b = oldest.i; b <= newest.i; b++) {
 		unsigned idx = b % mx;
 		if (!valid[idx] || al_cpu[idx].transaction_type == AL_TR_INITIALIZED)
@@ -1662,7 +1666,7 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 				continue;
 			if (slot >= AL_EXTENTS_MAX) {
 				fprintf(stderr, "slot number out of range: tr:%u slot:%u\n",
-						b, slot);
+						idx, slot);
 				continue;
 			}
 			hot_extent[slot] = al_cpu[idx].context[i];
@@ -1673,7 +1677,7 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 				continue;
 			if (slot >= AL_EXTENTS_MAX) {
 				fprintf(stderr, "update slot number out of range: tr:%u slot:%u\n",
-						b, slot);
+						idx, slot);
 				continue;
 			}
 			hot_extent[slot] = al_cpu[idx].update_extent_nr[i];
