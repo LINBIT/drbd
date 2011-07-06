@@ -1740,7 +1740,14 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 		}
 
 
-		if (i == 0 || bm_pos >= bm_on_disk_pos + chunk) {
+		/* On first iteration, or when the current position in the bitmap
+		 * exceeds the current buffer, write out the current buffer, if any,
+		 * and read in the next (at most buffer_size) chunk of bitmap,
+		 * containing the currently processed bitmap region.
+		 */
+
+		if (i == 0 ||
+		    bm_pos + BM_BYTES_PER_AL_EXT >= bm_on_disk_pos + chunk) {
 			if (i != 0)
 				pwrite_or_die(cfg->md_fd, on_disk_buffer, chunk,
 						bm_on_disk_off + bm_on_disk_pos,
@@ -1756,7 +1763,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 					bm_on_disk_off + bm_on_disk_pos,
 					"apply_al");
 		}
-		ASSERT(bm_pos - bm_on_disk_pos < chunk - BM_BYTES_PER_AL_EXT);
+		ASSERT(bm_pos - bm_on_disk_pos <= chunk - BM_BYTES_PER_AL_EXT);
 		ASSERT((bm_pos - bm_on_disk_pos) % sizeof(uint64_t) == 0);
 		w = (uint64_t *)on_disk_buffer
 			+ (bm_pos - bm_on_disk_pos)/sizeof(uint64_t);
@@ -1767,6 +1774,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 		memset((char*)on_disk_buffer + (bm_pos - bm_on_disk_pos),
 			0xff, BM_BYTES_PER_AL_EXT);
 	}
+	/* we still need to write out the buffer of the last iteration */
 	if (i != 0) {
 		pwrite_or_die(cfg->md_fd, on_disk_buffer, chunk,
 				bm_on_disk_off + bm_on_disk_pos,
