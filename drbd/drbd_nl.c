@@ -3096,7 +3096,7 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.device)
 		goto out;
 
-	retcode = drbd_create_device(adm_ctx.connection, dh->minor, adm_ctx.volume);
+	retcode = drbd_create_device(adm_ctx.resource, dh->minor, adm_ctx.volume);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;

@@ -2770,9 +2770,9 @@ void drbd_destroy_connection(struct kref *kref)
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
-enum drbd_ret_code drbd_create_device(struct drbd_connection *connection, unsigned int minor, int vnr)
+enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr)
 {
-	struct drbd_resource *resource = connection->resource;
+	struct drbd_connection *connection = first_connection(resource);
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	struct gendisk *disk;
