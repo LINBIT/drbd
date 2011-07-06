@@ -1710,9 +1710,6 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 	uint64_t *w;
 	char ppb[10];
 
-	/* process hot extents in order, to reduce disk seeks. */
-	qsort(hot_extent, ARRAY_SIZE(hot_extent), sizeof(hot_extent[0]), cmp_u32);
-
 	/* Now, actually apply this stuff to the on-disk bitmap.
 	 * Since one AL extent corresponds to 128 Byte of bitmap,
 	 * we need to do some read/modify/write cycles here.
@@ -1853,6 +1850,8 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 
 	/* do we need to actually apply it? */
 	if (err > 0 && need_to_apply_al(cfg)) {
+		/* process hot extents in order, to reduce disk seeks. */
+		qsort(hot_extent, ARRAY_SIZE(hot_extent), sizeof(hot_extent[0]), cmp_u32);
 		apply_al(cfg, hot_extent);
 		need_to_update_md_flags = 1;
 	}
