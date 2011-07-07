@@ -11,6 +11,14 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 BuildRequires: %kernel_module_package_buildreqs
 %endif
 
+%description
+This module is the kernel-dependent driver for DRBD.  This is split out so
+that multiple kernel driver versions can be installed, one for each
+installed kernel.
+
+%prep
+%setup -q -n drbd-%{version}
+
 %if %{defined suse_kernel_module_package}
 # Support also sles10, where kernel_module_package was not yet defined.
 # In sles11, suse_k_m_p became a wrapper around k_m_p.
@@ -35,14 +43,6 @@ BuildRequires: %kernel_module_package_buildreqs
 %define _this_kmp_version %{version}_%(echo %kernel_version | sed -r 'y/-/_/; s/\.el.\.(x86_64|i.86)$//;')
 %kernel_module_package -v %_this_kmp_version -n drbd -p drbd/preamble -f drbd/filelist-redhat
 %endif
-
-%description
-This module is the kernel-dependent driver for DRBD.  This is split out so
-that multiple kernel driver versions can be installed, one for each
-installed kernel.
-
-%prep
-%setup -q -n drbd-%{version}
 
 %build
 rm -rf obj
