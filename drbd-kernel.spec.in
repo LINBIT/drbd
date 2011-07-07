@@ -58,6 +58,10 @@ export INSTALL_MOD_DIR=extra/drbd
 %endif
 %endif
 
+# Very likely kernel_module_package_moddir did ignore the parameter,
+# so we just append it here. The weak-modules magic expects that location.
+[ $INSTALL_MOD_DIR = extra ] && INSTALL_MOD_DIR=extra/drbd
+
 for flavor in %flavors_to_build ; do
     make -C %{kernel_source $flavor} modules_install \
 	M=$PWD/obj/$flavor
