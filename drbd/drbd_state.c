@@ -235,10 +235,10 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 	union drbd_state ns;
 	enum drbd_state_rv rv;
 
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	ns = apply_mask_val(drbd_read_state(device), mask, val);
 	rv = _drbd_set_state(device, ns, f, NULL);
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	return rv;
 }
@@ -269,7 +269,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (test_and_clear_bit(CL_ST_CHG_FAIL, &device->flags))
 		return SS_CW_FAILED_BY_PEER;
 
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	os = drbd_read_state(device);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
@@ -286,7 +286,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 				rv = SS_UNKNOWN_ERROR; /* cont waiting, otherwise fail. */
 		}
 	}
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	return rv;
 }
@@ -316,12 +316,12 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		mutex_lock(device->state_mutex);
 
 	ns = val; /* assign debug info, if any */
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	os = drbd_read_state(device);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS) {
-		spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 		goto abort;
 	}
 
@@ -329,7 +329,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		rv = is_valid_state(device, ns);
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(os, ns);
-		spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 		if (rv < SS_SUCCESS) {
 			if (f & CS_VERBOSE)
@@ -352,14 +352,14 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 				print_st_err(device, os, ns, rv);
 			goto abort;
 		}
-		spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+		spin_lock_irqsave(&device->resource->req_lock, flags);
 		ns = apply_mask_val(drbd_read_state(device), mask, val);
 		rv = _drbd_set_state(device, ns, f, &done);
 	} else {
 		rv = _drbd_set_state(device, ns, f, &done);
 	}
 
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (f & CS_WAIT_COMPLETE && rv == SS_SUCCESS) {
 		D_ASSERT(device, current != first_peer_device(device)->connection->worker.task);
@@ -1208,10 +1208,10 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			what = RESTART_FROZEN_DISK_IO;
 
 		if (what != NOTHING) {
-			spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+			spin_lock_irq(&device->resource->req_lock);
 			_tl_restart(first_peer_device(device)->connection, what);
 			_drbd_set_state(_NS(device, susp_nod, 0), CS_VERBOSE, NULL);
-			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+			spin_unlock_irq(&device->resource->req_lock);
 		}
 	}
 
@@ -1497,13 +1497,13 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
 			rcu_read_unlock();
-			spin_lock_irq(&connection->req_lock);
+			spin_lock_irq(&connection->resource->req_lock);
 			_tl_restart(connection, RESEND);
 			_conn_request_state(connection,
 					    (union drbd_state) { { .susp_fen = 1 } },
 					    (union drbd_state) { { .susp_fen = 0 } },
 					    CS_VERBOSE);
-			spin_unlock_irq(&connection->req_lock);
+			spin_unlock_irq(&connection->resource->req_lock);
 		}
 	}
 	kref_put(&connection->kref, drbd_destroy_connection);
@@ -1677,7 +1677,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
 		return SS_CW_FAILED_BY_PEER;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 	rv = connection->cstate != C_WF_REPORT_PARAMS ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
 
 	if (rv == SS_UNKNOWN_ERROR)
@@ -1686,7 +1686,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 	if (rv == SS_SUCCESS)
 		rv = SS_UNKNOWN_ERROR; /* cont waiting, otherwise fail. */
 
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 
 	return rv;
 }
@@ -1697,7 +1697,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 {
 	enum drbd_state_rv rv;
 
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 	mutex_lock(&connection->cstate_mutex);
 
 	if (conn_send_state_req(connection, mask, val)) {
@@ -1711,7 +1711,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 
 abort:
 	mutex_unlock(&connection->cstate_mutex);
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 
 	return rv;
 }
@@ -1769,9 +1769,9 @@ conn_request_state(struct drbd_connection *connection, union drbd_state mask, un
 {
 	enum drbd_state_rv rv;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 	rv = _conn_request_state(connection, mask, val, flags);
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 
 	return rv;
 }

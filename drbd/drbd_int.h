@@ -670,6 +670,7 @@ struct drbd_resource {
 	struct list_head resources;
 	struct res_opts res_opts;
 	struct mutex conf_update;	/* mutex for ready-copy-update of net_conf and disk_conf */
+	spinlock_t req_lock;
 };
 
 struct drbd_connection {			/* is a resource from the config file */
@@ -698,7 +699,6 @@ struct drbd_connection {			/* is a resource from the config file */
 	unsigned long last_received;	/* in jiffies, either socket */
 	unsigned int ko_count;
 
-	spinlock_t req_lock;
 	struct drbd_tl_epoch *unused_spare_tle; /* for pre-allocation */
 	struct drbd_tl_epoch *newest_tle;
 	struct drbd_tl_epoch *oldest_tle;
@@ -1601,9 +1601,9 @@ static inline void drbd_chk_io_error_(struct drbd_device *device,
 {
 	if (error) {
 		unsigned long flags;
-		spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+		spin_lock_irqsave(&device->resource->req_lock, flags);
 		__drbd_chk_io_error_(device, forcedetach, where);
-		spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 	}
 }
 
@@ -2106,11 +2106,11 @@ static inline bool inc_ap_bio_cond(struct drbd_device *device)
 {
 	bool rv = false;
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	rv = may_inc_ap_bio(device);
 	if (rv)
 		atomic_inc(&device->ap_bio_cnt);
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	return rv;
 }

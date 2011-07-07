@@ -95,14 +95,14 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 	unsigned long flags = 0;
 	struct drbd_device *device = peer_req->w.device;
 
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
 	list_del(&peer_req->w.list);
 	if (list_empty(&device->read_ee))
 		wake_up(&device->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
 		__drbd_chk_io_error(device, false);
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	drbd_queue_work(&first_peer_device(device)->connection->data.work, &peer_req->w);
 	put_ldev(device);
@@ -129,13 +129,13 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	 * and schedule for resubmission */
 	if (is_failed_barrier(peer_req->flags)) {
 		drbd_bump_write_ordering(device, WO_bdev_flush);
-		spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+		spin_lock_irqsave(&device->resource->req_lock, flags);
 		list_del(&peer_req->w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
 		peer_req->w.cb = w_e_reissue;
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
-		spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 		drbd_queue_work(&first_peer_device(device)->connection->data.work, &peer_req->w);
 		return;
 	}
@@ -148,7 +148,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	do_al_complete_io = peer_req->flags & EE_CALL_AL_COMPLETE_IO;
 	block_id = peer_req->block_id;
 
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->writ_cnt += peer_req->i.size >> 9;
 	list_del(&peer_req->w.list); /* has been on active_ee or sync_ee */
 	list_add_tail(&peer_req->w.list, &device->done_ee);
@@ -165,7 +165,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
 		__drbd_chk_io_error(device, false);
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (block_id == ID_SYNCER)
 		drbd_rs_complete_io(device, i.sector);
@@ -254,9 +254,9 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	req->private_bio = ERR_PTR(error);
 
 	/* not req_mod(), we need irqsave here! */
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	__req_mod(req, what, &m);
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
@@ -272,13 +272,13 @@ int w_read_retry_remote(struct drbd_work *w, int cancel)
 	 * but try to WRITE the P_DATA_REPLY to the failed location,
 	 * to give the disk the chance to relocate that block */
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	if (cancel || device->state.pdsk != D_UP_TO_DATE) {
 		_req_mod(req, READ_RETRY_REMOTE_CANCELED);
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		return 0;
 	}
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	return w_send_read_req(w, 0);
 }
@@ -398,9 +398,9 @@ STATIC int read_for_csum(struct drbd_device *device, sector_t sector, int size)
 		goto defer;
 
 	peer_req->w.cb = w_e_send_csum;
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	list_add(&peer_req->w.list, &device->read_ee);
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
 	if (drbd_submit_peer_request(device, peer_req, READ, DRBD_FAULT_RS_RD) == 0)
@@ -410,9 +410,9 @@ STATIC int read_for_csum(struct drbd_device *device, sector_t sector, int size)
 	 * because bio_add_page failed (probably broken lower level driver),
 	 * retry may or may not help.
 	 * If it does not, you may need to force disconnect. */
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(device, peer_req);
 defer:
@@ -846,7 +846,7 @@ int drbd_resync_finished(struct drbd_device *device)
 
 	ping_peer(device);
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	os = drbd_read_state(device);
 
 	verify_done = (os.conn == C_VERIFY_S || os.conn == C_VERIFY_T);
@@ -935,7 +935,7 @@ int drbd_resync_finished(struct drbd_device *device)
 
 	_drbd_set_state(device, ns, CS_VERBOSE, NULL);
 out_unlock:
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 	put_ldev(device);
 out:
 	device->rs_total  = 0;
@@ -960,9 +960,9 @@ static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_
 		int i = (peer_req->i.size + PAGE_SIZE -1) >> PAGE_SHIFT;
 		atomic_add(i, &device->pp_in_use_by_net);
 		atomic_sub(i, &device->pp_in_use);
-		spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_lock_irq(&device->resource->req_lock);
 		list_add_tail(&peer_req->w.list, &device->net_ee);
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		wake_up(&drbd_pp_wait);
 	} else
 		drbd_free_peer_req(device, peer_req);
@@ -1268,10 +1268,10 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 	 * actually, this race was harmless, since we only try to send the
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	if (w->cb != w_send_barrier || device->state.conn < C_CONNECTED)
 		cancel = 1;
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 	if (cancel)
 		return 0;
 

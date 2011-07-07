@@ -285,7 +285,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	struct list_head *le, *tle;
 	struct drbd_request *r;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 
 	b = connection->oldest_tle;
 
@@ -340,13 +340,13 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		kfree(b);
 	}
 
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 	dec_ap_pending(device);
 
 	return;
 
 bail:
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
@@ -462,7 +462,7 @@ void tl_clear(struct drbd_connection *connection)
 	struct drbd_request *r;
 	int vnr;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 
 	_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 
@@ -484,14 +484,14 @@ void tl_clear(struct drbd_connection *connection)
 		clear_bit(CREATE_BARRIER, &peer_device->device->flags);
 	rcu_read_unlock();
 
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 }
 
 void tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 {
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 	_tl_restart(connection, what);
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 }
 
 /**
@@ -505,7 +505,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 	struct list_head *le, *tle;
 	struct drbd_request *req;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
 	b = connection->oldest_tle;
 	while (b) {
 		list_for_each_safe(le, tle, &b->requests) {
@@ -526,7 +526,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 			_req_mod(req, ABORT_DISK_IO);
 	}
 
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 }
 
 STATIC int drbd_thread_setup(void *arg)
@@ -2051,7 +2051,7 @@ static int drbd_open(struct inode *inode, struct file *file)
 	unsigned long flags;
 	int rv = 0;
 
-	spin_lock_irqsave(&first_peer_device(device)->connection->req_lock, flags);
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	/* to have a stable device->state.role
 	 * and no race with updating open_cnt */
 
@@ -2064,7 +2064,7 @@ static int drbd_open(struct inode *inode, struct file *file)
 
 	if (!rv)
 		device->open_cnt++;
-	spin_unlock_irqrestore(&first_peer_device(device)->connection->req_lock, flags);
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	return rv;
 }
@@ -2687,6 +2687,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	INIT_LIST_HEAD(&resource->connections);
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
+	spin_lock_init(&resource->req_lock);
 	return resource;
 }
 
@@ -2717,7 +2718,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 
 	connection->cstate = C_STANDALONE;
 	mutex_init(&connection->cstate_mutex);
-	spin_lock_init(&connection->req_lock);
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
@@ -2840,7 +2840,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE_SAFE >> 8);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
-	q->queue_lock = &connection->req_lock;
+	q->queue_lock = &resource->req_lock;
 
 	device->md_io_page = alloc_page(GFP_KERNEL);
 	if (!device->md_io_page)
@@ -3201,14 +3201,14 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	if (device->state.conn < C_CONNECTED) {
 		int peer;
 		peer = be32_to_cpu(buffer->la_peer_max_bio_size);
 		peer = max_t(int, peer, DRBD_MAX_BIO_SIZE_SAFE);
 		device->peer_max_bio_size = peer;
 	}
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
  err:
 	drbd_md_put_buffer(device);
@@ -3459,13 +3459,13 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	device->bm_io_work.why = why;
 	device->bm_io_work.flags = flags;
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	set_bit(BITMAP_IO, &device->flags);
 	if (atomic_read(&device->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
 			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.w);
 	}
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 }
 
 /**
@@ -3631,10 +3631,10 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_interval *i)
 	/* Indicate to wake up device->misc_wait on progress.  */
 	i->waiting = true;
 	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 	timeout = schedule_timeout(timeout);
 	finish_wait(&device->misc_wait, &wait);
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	if (!timeout || device->state.conn < C_CONNECTED)
 		return -ETIMEDOUT;
 	if (signal_pending(current))

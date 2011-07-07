@@ -877,7 +877,7 @@ allocate_barrier:
 	}
 
 	/* GOOD, everything prepared, grab the spin_lock */
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 
 	if (rw == WRITE) {
 		err = complete_conflicting_writes(device, sector, size);
@@ -886,7 +886,7 @@ allocate_barrier:
 				_conn_request_state(first_peer_device(device)->connection,
 						    NS(conn, C_TIMEOUT),
 						    CS_HARD);
-			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+			spin_unlock_irq(&device->resource->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
 		}
@@ -898,7 +898,7 @@ allocate_barrier:
 		   bio. In the next call to drbd_make_request
 		   we sleep in inc_ap_bio() */
 		ret = 1;
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		goto fail_free_complete;
 	}
 
@@ -911,7 +911,7 @@ allocate_barrier:
 			drbd_warn(device, "lost connection while grabbing the req_lock!\n");
 		if (!(local || remote)) {
 			drbd_err(device, "IO ERROR: neither local nor remote disk\n");
-			spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+			spin_unlock_irq(&device->resource->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
 		}
@@ -926,7 +926,7 @@ allocate_barrier:
 	    test_bit(CREATE_BARRIER, &device->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		goto allocate_barrier;
 	}
 
@@ -1019,7 +1019,7 @@ allocate_barrier:
 	}
 	rcu_read_unlock();
 
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (local) {
@@ -1151,10 +1151,10 @@ void request_timer_fn(unsigned long data)
 		    device->state.disk <= D_FAILED))
 		return; /* Recurring timer stopped */
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	le = &connection->oldest_tle->requests;
 	if (list_empty(le)) {
-		spin_unlock_irq(&connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		mod_timer(&device->request_timer, jiffies + et);
 		return;
 	}
@@ -1174,6 +1174,6 @@ void request_timer_fn(unsigned long data)
 		}
 	}
 	nt = (time_is_before_eq_jiffies(req->start_time + et) ? jiffies : req->start_time) + et;
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 	mod_timer(&device->request_timer, nt);
 }
