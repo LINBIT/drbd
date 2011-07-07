@@ -52,7 +52,7 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 #endif
 
 #ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 #endif
 
 #ifdef __disk_stat_inc
@@ -72,7 +72,7 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 #endif
 
 #ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 #endif
 }
 
@@ -889,9 +889,9 @@ static void complete_conflicting_writes(struct drbd_request *req)
 			break;
 		/* Indicate to wake up device->misc_wait on progress.  */
 		i->waiting = true;
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		schedule();
-		spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_lock_irq(&device->resource->req_lock);
 	}
 	finish_wait(&device->misc_wait, &wait);
 }
@@ -1116,7 +1116,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
 
-	spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-aquire it before it returns here.
@@ -1178,9 +1178,9 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		/* needs to be marked within the same spinlock */
 		_req_mod(req, TO_BE_SUBMITTED);
 		/* but we need to give up the spinlock to submit */
-		spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		drbd_submit_req_private_bio(req);
-		spin_lock_irq(&first_peer_device(device)->connection->req_lock);
+		spin_lock_irq(&device->resource->req_lock);
 	} else if (no_remote) {
 nodata:
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -1193,7 +1193,7 @@ nodata:
 out:
 	if (drbd_req_put_completion_ref(req, &m, 1))
 		kref_put(&req->kref, drbd_req_destroy);
-	spin_unlock_irq(&first_peer_device(device)->connection->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
@@ -1415,10 +1415,10 @@ void request_timer_fn(unsigned long data)
 
 	now = jiffies;
 
-	spin_lock_irq(&connection->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	req = find_oldest_request(connection);
 	if (!req) {
-		spin_unlock_irq(&connection->req_lock);
+		spin_unlock_irq(&device->resource->req_lock);
 		mod_timer(&device->request_timer, now + et);
 		return;
 	}
@@ -1452,6 +1452,6 @@ void request_timer_fn(unsigned long data)
 		__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
 	}
 	nt = (time_after(now, req->start_time + et) ? now : req->start_time) + et;
-	spin_unlock_irq(&connection->req_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 	mod_timer(&device->request_timer, nt);
 }
