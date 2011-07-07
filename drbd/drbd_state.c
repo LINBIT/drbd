@@ -1459,13 +1459,13 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 	if (oc == C_DISCONNECTING && ns_max.conn == C_STANDALONE) {
 		struct net_conf *old_conf;
 
-		mutex_lock(&connection->conf_update);
+		mutex_lock(&connection->resource->conf_update);
 		old_conf = connection->net_conf;
 		connection->my_addr_len = 0;
 		connection->peer_addr_len = 0;
 		rcu_assign_pointer(connection->net_conf, NULL);
 		conn_free_crypto(connection);
-		mutex_unlock(&connection->conf_update);
+		mutex_unlock(&connection->resource->conf_update);
 
 		synchronize_rcu();
 		kfree(old_conf);

@@ -618,7 +618,7 @@ struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;
-	struct disk_conf *disk_conf; /* RCU, for updates: first_peer_device(device)->connection->conf_update */
+	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
 };
 
@@ -669,6 +669,7 @@ struct drbd_resource {
 	struct list_head connections;
 	struct list_head resources;
 	struct res_opts res_opts;
+	struct mutex conf_update;	/* mutex for ready-copy-update of net_conf and disk_conf */
 };
 
 struct drbd_connection {			/* is a resource from the config file */
@@ -684,7 +685,6 @@ struct drbd_connection {			/* is a resource from the config file */
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
-	struct mutex conf_update;	/* mutex for ready-copy-update of net_conf and disk_conf */
 	wait_queue_head_t ping_wait;	/* Woken upon reception of a ping, and a state change */
 
 	struct sockaddr_storage my_addr;

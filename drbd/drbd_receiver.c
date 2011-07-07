@@ -3302,7 +3302,7 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 	}
 
 	mutex_lock(&connection->data.mutex);
-	mutex_lock(&connection->conf_update);
+	mutex_lock(&connection->resource->conf_update);
 	old_net_conf = connection->net_conf;
 	*new_net_conf = *old_net_conf;
 
@@ -3313,7 +3313,7 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 	new_net_conf->two_primaries = p_two_primaries;
 
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
-	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
 
 	crypto_free_hash(connection->peer_integrity_tfm);
@@ -3452,13 +3452,13 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	if (err)
 		return err;
 
-	mutex_lock(&first_peer_device(device)->connection->conf_update);
+	mutex_lock(&connection->resource->conf_update);
 	old_net_conf = first_peer_device(device)->connection->net_conf;
 	if (get_ldev(device)) {
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
 			put_ldev(device);
-			mutex_unlock(&first_peer_device(device)->connection->conf_update);
+			mutex_unlock(&connection->resource->conf_update);
 			drbd_err(device, "Allocation of new disk_conf failed\n");
 			return -ENOMEM;
 		}
@@ -3578,7 +3578,7 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		rcu_assign_pointer(device->rs_plan_s, new_plan);
 	}
 
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	synchronize_rcu();
 	if (new_net_conf)
 		kfree(old_net_conf);
@@ -3592,7 +3592,7 @@ reconnect:
 		put_ldev(device);
 		kfree(new_disk_conf);
 	}
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	return -EIO;
 
 disconnect:
@@ -3601,7 +3601,7 @@ disconnect:
 		put_ldev(device);
 		kfree(new_disk_conf);
 	}
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
 	crypto_free_hash(csums_tfm);
@@ -3687,13 +3687,13 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				return -ENOMEM;
 			}
 
-			mutex_lock(&first_peer_device(device)->connection->conf_update);
+			mutex_lock(&connection->resource->conf_update);
 			old_disk_conf = device->ldev->disk_conf;
 			*new_disk_conf = *old_disk_conf;
 			new_disk_conf->disk_size = p_usize;
 
 			rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
-			mutex_unlock(&first_peer_device(device)->connection->conf_update);
+			mutex_unlock(&connection->resource->conf_update);
 			synchronize_rcu();
 			kfree(old_disk_conf);
 
@@ -4058,9 +4058,9 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	mutex_lock(&first_peer_device(device)->connection->conf_update);
+	mutex_lock(&connection->resource->conf_update);
 	first_peer_device(device)->connection->net_conf->discard_my_data = 0; /* without copy; single bit op is atomic */
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 
 	drbd_md_sync(device); /* update connected indicator, la_size, ... */
 

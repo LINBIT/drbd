@@ -2686,6 +2686,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
+	mutex_init(&resource->conf_update);
 	return resource;
 }
 
@@ -2717,7 +2718,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->cstate = C_STANDALONE;
 	mutex_init(&connection->cstate_mutex);
 	spin_lock_init(&connection->req_lock);
-	mutex_init(&connection->conf_update);
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 

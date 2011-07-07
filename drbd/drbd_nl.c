@@ -669,11 +669,11 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 			put_ldev(device);
 		}
 	} else {
-		mutex_lock(&first_peer_device(device)->connection->conf_update);
+		mutex_lock(&device->resource->conf_update);
 		nc = first_peer_device(device)->connection->net_conf;
 		if (nc)
 			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
-		mutex_unlock(&first_peer_device(device)->connection->conf_update);
+		mutex_unlock(&device->resource->conf_update);
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
@@ -1214,7 +1214,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	mutex_lock(&first_peer_device(device)->connection->conf_update);
+	mutex_lock(&device->resource->conf_update);
 	old_disk_conf = device->ldev->disk_conf;
 	*new_disk_conf = *old_disk_conf;
 	if (should_set_defaults(info))
@@ -1268,7 +1268,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		rcu_assign_pointer(device->rs_plan_s, new_plan);
 	}
 
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&device->resource->conf_update);
 	drbd_md_sync(device);
 
 	if (device->state.conn >= C_CONNECTED)
@@ -1281,7 +1281,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	goto success;
 
 fail_unlock:
-	mutex_unlock(&first_peer_device(device)->connection->conf_update);
+	mutex_unlock(&device->resource->conf_update);
  fail:
 	kfree(new_disk_conf);
 	kfree(new_plan);
@@ -1950,7 +1950,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	conn_reconfig_start(connection);
 
 	mutex_lock(&connection->data.mutex);
-	mutex_lock(&connection->conf_update);
+	mutex_lock(&connection->resource->conf_update);
 	old_net_conf = connection->net_conf;
 
 	if (!old_net_conf) {
@@ -2014,7 +2014,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	crypto_free_hash(connection->cram_hmac_tfm);
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
 
-	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
 	synchronize_rcu();
 	kfree(old_net_conf);
@@ -2025,7 +2025,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	goto done;
 
  fail:
-	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
 	free_crypto(&crypto);
 	kfree(new_net_conf);
@@ -2116,11 +2116,11 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	conn_flush_workqueue(connection);
 
-	mutex_lock(&connection->conf_update);
+	mutex_lock(&adm_ctx.resource->conf_update);
 	old_net_conf = connection->net_conf;
 	if (old_net_conf) {
 		retcode = ERR_NET_CONFIGURED;
-		mutex_unlock(&connection->conf_update);
+		mutex_unlock(&adm_ctx.resource->conf_update);
 		goto fail;
 	}
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
@@ -2136,7 +2136,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
 
-	mutex_unlock(&connection->conf_update);
+	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
@@ -2331,12 +2331,12 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		device->ldev->known_size = drbd_get_capacity(device->ldev->backing_bdev);
 
 	if (new_disk_conf) {
-		mutex_lock(&first_peer_device(device)->connection->conf_update);
+		mutex_lock(&device->resource->conf_update);
 		old_disk_conf = device->ldev->disk_conf;
 		*new_disk_conf = *old_disk_conf;
 		new_disk_conf->disk_size = (sector_t)rs.resize_size;
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
-		mutex_unlock(&first_peer_device(device)->connection->conf_update);
+		mutex_unlock(&device->resource->conf_update);
 		synchronize_rcu();
 		kfree(old_disk_conf);
 	}
