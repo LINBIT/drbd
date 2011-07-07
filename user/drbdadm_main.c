@@ -1541,6 +1541,12 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 
 int adm_attach(struct cfg_ctx *ctx)
 {
+	int rv;
+
+	ctx->arg = "apply-al";
+	rv = admm_generic(ctx);
+	if (rv)
+		return rv;
 	return adm_attach_or_disk_options(ctx, true, false);
 }
 
@@ -2290,7 +2296,6 @@ static int adm_up(struct cfg_ctx *ctx)
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 	}
 	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
-	schedule_deferred_cmd(admm_generic, ctx, "apply-al", CFG_DISK_PREREQ);
 	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 
 	return 0;
