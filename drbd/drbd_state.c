@@ -975,9 +975,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	/* assignment inclusive debug info about what code path
 	 * initiated this state change. */
 	device->state.i = ns.i;
-	first_peer_device(device)->connection->susp = ns.susp;
-	first_peer_device(device)->connection->susp_nod = ns.susp_nod;
-	first_peer_device(device)->connection->susp_fen = ns.susp_fen;
+	device->resource->susp = ns.susp;
+	device->resource->susp_nod = ns.susp_nod;
+	device->resource->susp_fen = ns.susp_fen;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
@@ -1658,9 +1658,9 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 			} };
 	}
 
-	ns_min.susp = ns_max.susp = connection->susp;
-	ns_min.susp_nod = ns_max.susp_nod = connection->susp_nod;
-	ns_min.susp_fen = ns_max.susp_fen = connection->susp_fen;
+	ns_min.susp = ns_max.susp = connection->resource->susp;
+	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod;
+	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen;
 
 	*pns_min = ns_min;
 	*pns_max = ns_max;
