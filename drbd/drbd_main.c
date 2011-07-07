@@ -3583,6 +3583,8 @@ static void drbd_delete_device(unsigned int minor)
 	if (!mdev)
 		return;
 
+	del_timer_sync(&mdev->request_timer);
+
 	/* paranoia asserts */
 	if (mdev->open_cnt != 0)
 		dev_err(DEV, "open_cnt = %d in %s:%u", mdev->open_cnt,
