@@ -1278,6 +1278,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	synchronize_rcu();
 	kfree(old_disk_conf);
 	kfree(old_plan);
+	mod_timer(&mdev->request_timer, jiffies + HZ);
 	goto success;
 
 fail_unlock:
@@ -1652,6 +1653,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (rv < SS_SUCCESS)
 		goto force_diskless_dec;
+
+	mod_timer(&mdev->request_timer, jiffies + HZ);
 
 	if (mdev->state.role == R_PRIMARY)
 		mdev->ldev->md.uuid[UI_CURRENT] |=  (u64)1;

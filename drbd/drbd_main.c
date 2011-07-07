@@ -2398,6 +2398,8 @@ void drbd_minor_destroy(struct kref *kref)
 	struct drbd_conf *mdev = container_of(kref, struct drbd_conf, kref);
 	struct drbd_tconn *tconn = mdev->tconn;
 
+	del_timer_sync(&mdev->request_timer);
+
 	/* paranoia asserts */
 	D_ASSERT(mdev->open_cnt == 0);
 	D_ASSERT(list_empty(&mdev->tconn->data.work.q));

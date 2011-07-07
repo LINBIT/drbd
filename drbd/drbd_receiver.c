@@ -4581,8 +4581,6 @@ STATIC int drbd_disconnected(struct drbd_conf *mdev)
 	atomic_set(&mdev->rs_pending_cnt, 0);
 	wake_up(&mdev->misc_wait);
 
-	del_timer(&mdev->request_timer);
-
 	del_timer_sync(&mdev->resync_timer);
 	resync_timer_fn((unsigned long)mdev);
 
