@@ -23,7 +23,17 @@ BuildRequires: %kernel_module_package_buildreqs
 %suse_kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-suse
 %endif
 %else
-%kernel_module_package -n drbd -p drbd/preamble -f drbd/filelist-redhat
+# Concept stolen from sles kernel-module-subpackage:
+# include the kernel version in the package version,
+# so we can have more than one kmod-drbd.
+# Needed, because even though kABI is still "compatible" in RHEL 6.0 to 6.1,
+# the actual functionality differs very much: 6.1 does no longer do BARRIERS,
+# but wants FLUSH/FUA instead.
+# For convenience, we want both 6.0 and 6.1 in the same repository,
+# and have yum/rpm figure out via dependencies, which kmod version should be installed.
+# This is a dirty hack, non generic, and should probably be enclosed in some "if-on-rhel6".
+%define _this_kmp_version %{version}_%(echo %kernel_version | sed -r 'y/-/_/; s/\.el.\.(x86_64|i.86)$//;')
+%kernel_module_package -v %_this_kmp_version -n drbd -p drbd/preamble -f drbd/filelist-redhat
 %endif
 
 %description
