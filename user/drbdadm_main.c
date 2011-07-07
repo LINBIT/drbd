@@ -3339,29 +3339,28 @@ char *canonify_path(char *path)
 
 void assign_command_names_from_argv0(char **argv)
 {
+	struct cmd_helper {
+		char *name;
+		char **var;
+	};
+	static struct cmd_helper helpers[] = {
+		{"drbdsetup", &drbdsetup},
+		{"drbdmeta", &drbdmeta},
+		{"drbd-proxy-ctl", &drbd_proxy_ctl},
+		{"drbdadm-83", &drbdadm_83},
+		{NULL, NULL}
+	};
+	struct cmd_helper *c;
+
 	/* in case drbdadm is called with an absolute or relative pathname
 	 * look for the drbdsetup binary in the same location,
 	 * otherwise, just let execvp sort it out... */
-	if ((progname = strrchr(argv[0], '/')) == 0) {
+	if ((progname = strrchr(argv[0], '/')) == NULL) {
 		progname = argv[0];
-		drbdsetup = strdup("drbdsetup");
-		drbdmeta = strdup("drbdmeta");
-		drbd_proxy_ctl = strdup("drbd-proxy-ctl");
-		drbdadm_83 = strdup("drbdadm-83");
+		for (c = helpers; c->name; ++c)
+			*(c->var) = strdup(c->name);
 	} else {
-		struct cmd_helper {
-			char *name;
-			char **var;
-		};
-		struct cmd_helper helpers[] = {
-			{"drbdsetup", &drbdsetup},
-			{"drbdmeta", &drbdmeta},
-			{"drbd-proxy-ctl", &drbd_proxy_ctl},
-			{"drbdadm-83", &drbdadm_83},
-			{NULL, NULL}
-		};
 		size_t len_dir, l;
-		struct cmd_helper *c;
 
 		++progname;
 		len_dir = progname - argv[0];
@@ -3372,6 +3371,8 @@ void assign_command_names_from_argv0(char **argv)
 			if (*(c->var)) {
 				strncpy(*(c->var), argv[0], len_dir);
 				strcpy(*(c->var) + len_dir, c->name);
+				if (access(*(c->var), X_OK))
+					strcpy(*(c->var), c->name); /* see add_lib_drbd_to_path() */
 			}
 		}
 
