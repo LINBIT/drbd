@@ -135,7 +135,6 @@ extern FILE *yyin;
 
 
 static int adm_generic_l(struct cfg_ctx *);
-static int adm_status_xml(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
 static int adm_dump(struct cfg_ctx *);
 static int adm_dump_xml(struct cfg_ctx *);
@@ -371,7 +370,6 @@ struct adm_cmd cmds[] = {
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
 	{"wait-con-int", adm_wait_ci,
 	 .show_in_usage = 1,.verify_ips = 1,},
-	{"status", adm_status_xml, DRBD_acf2_gen_shell},
 	{"role", adm_generic_s, DRBD_acf1_default},
 	{"cstate", adm_generic_s, DRBD_acf1_default},
 	{"dstate", adm_generic_b, DRBD_acf1_default},
@@ -1734,40 +1732,6 @@ static int adm_generic(struct cfg_ctx *ctx, int flags)
 int adm_generic_s(struct cfg_ctx *ctx)
 {
 	return adm_generic(ctx, SLEEPS_SHORT);
-}
-
-int adm_status_xml(struct cfg_ctx *ctx)
-{
-	int rv, max_rv = 0;
-	struct d_resource *r, *t;
-	struct d_volume *vol;
-
-	if (!dry_run) {
-		printf("<drbd-status version=\"%s\" api=\"%u\">\n",
-		       REL_VERSION, API_VERSION);
-		printf("<resources config_file=\"%s\">\n", config_save);
-	}
-
-	/* TODO: remove thes loops, have drbdsetup use dump
-	 * and optionally filter on resource name.
-	 * Fix adm_generic to figure out how to call drbdsetup
-	 * if neither volume nor resource is set in ctx. */
-	for_each_resource(r, t, config) {
-		if (r->ignore)
-			continue;
-		ctx->res = r;
-		for_each_volume(vol, r->me->volumes) {
-			ctx->vol = vol;
-			rv = adm_generic(ctx, SLEEPS_SHORT);
-			/* FIXME what if rv != 0 */
-			if (rv > max_rv)
-				max_rv = rv;
-		}
-	}
-
-	if (!dry_run)
-		printf("</resources>\n</drbd-status>\n");
-	return max_rv;
 }
 
 int sh_status(struct cfg_ctx *ctx)

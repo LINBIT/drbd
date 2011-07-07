@@ -1355,20 +1355,6 @@
     </refsect2>
 
     <refsect2>
-      <title>status</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>status</secondary>
-      </indexterm>
-
-      <para>Shows the current status of the device in XML-like format. Example output:
-      <programlisting format="linespecific">&lt;resource minor="0" name="s0" cs="SyncTarget" st1="Secondary" st2="Secondary"
-         ds1="Inconsistent" ds2="UpToDate" resynced_precent="5.9" /&gt;</programlisting></para>
-    </refsect2>
-
-    <refsect2>
       <title>resize</title>
 
       <indexterm significance="normal">

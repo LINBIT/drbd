@@ -196,7 +196,6 @@ static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int role_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int status_xml_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int cstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -294,8 +293,6 @@ struct drbd_cmd commands[] = {
 	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, },
 	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
-	{"status", CTX_MINOR, F_GET_CMD(status_xml_scmd),
-		.ignore_minor_not_known = true, },
 	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
 		F_GET_CMD(sh_status_scmd),
 		.ignore_minor_not_known = true, },
@@ -439,8 +436,6 @@ char *objname;
 unsigned minor = -1U;
 enum cfg_ctx_key context;
 
-/* for pretty printing in "status" only,
- * taken from environment variable DRBD_RESOURCE */
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
 int lock_fd;
 
@@ -1770,84 +1765,6 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
 	bd.bd_name = dc.backing_dev;
 	lk_bdev_save(minor, &bd);
 
-	return 0;
-}
-
-static int status_xml_scmd(struct drbd_cmd *cm __attribute((unused)),
-		struct genl_info *info)
-{
-	unsigned minor;
-	union drbd_state state = { .i = 0 };
-	struct state_info si = { .current_state = 0, };
-	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-
-	if (!info)
-		return 0;
-
-	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-	if (!global_attrs[DRBD_NLA_STATE_INFO]) {
-		printf( "<!-- resource minor=\"%u\"", minor);
-		printf(" not available or not yet created -->\n");
-		return 0;
-	}
-	drbd_cfg_context_from_attrs(&cfg, info);
-
-	printf("<resource minor=\"%u\"", minor);
-	if (cfg.ctx_resource_name)
-		printf(" res_name=\"%s\"", cfg.ctx_resource_name);
-	printf(" volume=\"%u\"", cfg.ctx_volume);
-
-	state_info_from_attrs(&si, info);
-	if (ntb(T_current_state))
-		state.i = si.current_state;
-
-	if (state.conn == C_STANDALONE && state.disk == D_DISKLESS) {
-		printf(" cs=\"Unconfigured\" />\n");
-		return 0;
-	}
-
-	printf( /* connection state */
-		" cs=\"%s\""
-		/* role */
-		" ro1=\"%s\" ro2=\"%s\""
-		/* disk state */
-		" ds1=\"%s\" ds2=\"%s\"",
-	       drbd_conn_str(state.conn),
-	       drbd_role_str(state.role),
-	       drbd_role_str(state.peer),
-	       drbd_disk_str(state.disk),
-	       drbd_disk_str(state.pdsk));
-
-	/* io suspended ? */
-	if (state.susp)
-		printf(" suspended");
-	/* reason why sync is paused */
-	if (state.aftr_isp)
-		printf(" aftr_isp");
-	if (state.peer_isp)
-		printf(" peer_isp");
-	if (state.user_isp)
-		printf(" user_isp");
-	printf(" capacity_sect=\"%llu\"", (unsigned long long)si.capacity);
-	printf(" ed_uuid=\"%016llX\"", (unsigned long long)si.ed_uuid);
-	printf(" bits_total=\"%lli\"", (unsigned long long)si.bits_total);
-	printf(" bits_oos=\"%lli\"", (unsigned long long)si.bits_oos);
-	if (ntb(T_bits_rs_total)) {
-		printf(" rs_failed=\"%lli\"", (unsigned long long)si.bits_rs_failed);
-		printf(" rs_total=\"%lli\"", (unsigned long long)si.bits_rs_total);
-
-		uint32_t shift = si.bits_rs_total >= (1ULL << 32) ? 16 : 10;
-		uint64_t left = (si.bits_oos - si.bits_rs_failed) >> shift;
-		uint64_t total = 1UL + (si.bits_rs_total >> shift);
-		uint64_t tmp = 1000UL - left * 1000UL/total;
-
-		unsigned synced = tmp;
-		printf(" resynced_percent=\"%i.%i\"", synced / 10, synced % 10);
-	}
-	/* what else do you want to know rasto?
-	 * pick your format... everything available! */
-
-	printf(" />\n");
 	return 0;
 }
 
