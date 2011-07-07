@@ -86,7 +86,7 @@ done
 rm -f drbd.conf
 %else
 mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
-echo "override drbd * $INSTALL_MOD_DIR" \
+echo "override drbd * weak-updates" \
     > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
 %endif
 
