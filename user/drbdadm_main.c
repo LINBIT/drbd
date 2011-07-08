@@ -2815,7 +2815,7 @@ static void print_option(struct option *opt)
 	}
 }
 
-void print_usage_and_exit(struct adm_cmd *cmd, const char *addinfo)
+void print_usage_and_exit(struct adm_cmd *cmd, const char *addinfo, int status)
 {
 	struct option *opt;
 
@@ -2848,7 +2848,7 @@ void print_usage_and_exit(struct adm_cmd *cmd, const char *addinfo)
 	if (addinfo)
 		printf("\n%s\n", addinfo);
 
-	exit(E_usage);
+	exit(status);
 }
 
 /*
@@ -3397,13 +3397,9 @@ struct adm_cmd *find_cmd(char *cmdname);
 
 int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_names)
 {
-	char *optstring;
-	int longindex, first_non_cmd_arg = 1;
+	const char *optstring = make_optstring(admopt);
+	int longindex, first_arg_index;
 	int i;
-
-	optstring = alloca(strlen(make_optstring(admopt) + 2));
-	optstring[0] = '-';
-	strcpy(optstring + 1, make_optstring(admopt));
 
 	*cmd = NULL;
 	*resource_names = malloc(sizeof(char *));
@@ -3418,26 +3414,6 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		if (c == -1)
 			break;
 		switch (c) {
-		case 1:  /* non-option argument */
-			if (*cmd) {
-				int n;
-				for (n = 0; (*resource_names)[n]; n++)
-					/* do nothing */ ;
-				*resource_names = realloc(*resource_names,
-							  (n + 2) * sizeof(char *));
-				(*resource_names)[n++] = optarg;
-				(*resource_names)[n] = NULL;
-			} else if (!strcmp(optarg, "help"))
-				help = true;
-			else {
-				*cmd = find_cmd(optarg);
-				if (!*cmd) {
-					add_setup_option(true, optarg);
-					if (first_non_cmd_arg == 1)
-						first_non_cmd_arg = optind - 1;
-				}
-			}
-			break;
 		case 257:  /* drbdsetup option */
 			{
 				struct option *option = &admopt[longindex];
@@ -3560,12 +3536,38 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		}
 	}
 
+	first_arg_index = optind;
+	for (; optind < argc; optind++) {
+		optarg = argv[optind];
+		if (*cmd) {
+			int n;
+			for (n = 0; (*resource_names)[n]; n++)
+				/* do nothing */ ;
+			*resource_names = realloc(*resource_names,
+						  (n + 2) * sizeof(char *));
+			(*resource_names)[n++] = optarg;
+			(*resource_names)[n] = NULL;
+		} else if (!strcmp(optarg, "help"))
+			help = true;
+		else {
+			*cmd = find_cmd(optarg);
+			if (!*cmd) {
+				/* Passing drbdsetup options like this is discouraged! */
+				add_setup_option(true, optarg);
+			}
+		}
+	}
+
 	if (help)
-		print_usage_and_exit(*cmd, 0);
+		print_usage_and_exit(*cmd, 0, 0);
 
 	if (*cmd == NULL) {
-		fprintf(stderr, "Unknown command '%s'.\n", argv[first_non_cmd_arg]);
-		return E_usage;
+		if (first_arg_index < argc) {
+			fprintf(stderr, "%s: Unknown command '%s'\n",
+				progname, argv[first_arg_index]);
+			return E_usage;
+		}
+		print_usage_and_exit(*cmd, "No command specified", E_usage);
 	}
 
 	if (setup_options) {
@@ -3814,9 +3816,6 @@ int main(int argc, char **argv)
 
 	assign_command_names_from_argv0(argv);
 
-	if (argc == 1)
-		print_usage_and_exit(NULL, "missing arguments");	// arguments missing.
-
 	if (drbdsetup == NULL || drbdmeta == NULL || drbd_proxy_ctl == NULL) {
 		fprintf(stderr, "could not strdup argv[0].\n");
 		exit(E_exec_error);
@@ -3847,11 +3846,11 @@ int main(int argc, char **argv)
 		if (is_dump)
 			all_resources = 1;
 		else if (cmd->res_name_required)
-			print_usage_and_exit(cmd, "missing resourcename arguments");
+			print_usage_and_exit(cmd, "No resource names specified", E_usage);
 	} else if (resource_names[0] && resource_names[1]) {
 		if (!cmd->res_name_required)
 			fprintf(stderr,
-				"this command will ignore resource names!\n");
+				"This command will ignore resource names!\n");
 		else if (cmd->use_cached_config_file)
 			fprintf(stderr,
 				"You should not use this command with multiple resources!\n");
