@@ -1083,6 +1083,7 @@ struct d_volume *parse_volume(int vnr)
 	int token;
 
 	vol = calloc(1,sizeof(struct d_volume));
+	vol->device_minor = -1;
 	vol->vnr = vnr;
 
 	EXP('{');
@@ -1103,6 +1104,7 @@ struct d_volume *parse_stacked_volume(int vnr)
 	struct d_volume *vol;
 
 	vol = calloc(1,sizeof(struct d_volume));
+	vol->device_minor = -1;
 	vol->vnr = vnr;
 
 	EXP('{');
