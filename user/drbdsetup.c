@@ -175,7 +175,7 @@ struct drbd_cmd {
 	struct drbd_argument *drbd_args;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
 	struct option *options;
-	bool ignore_minor_not_known;
+	bool missing_ok;
 	bool continuous_poll;
 	bool wait_for_connect_timeouts;
 	bool set_defaults;
@@ -290,12 +290,13 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx },
-	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd, },
+	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
+		.missing_ok = true, },
 	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
 	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
 		F_GET_CMD(sh_status_scmd),
-		.ignore_minor_not_known = true, },
+		.missing_ok = true, },
 	{"cstate", CTX_MINOR, F_GET_CMD(cstate_scmd) },
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
@@ -304,7 +305,7 @@ struct drbd_cmd commands[] = {
 		.options = show_cmd_options },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
-		.ignore_minor_not_known = true,
+		.missing_ok = true,
 		.continuous_poll = true, },
 	{"wait-connect", CTX_MINOR, F_GET_CMD(w_connected_state),
 		.options = wait_cmds_options,
@@ -1009,6 +1010,8 @@ retry_recv:
 			struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
 			ASSERT(dh->minor == minor);
 			rv = dh->ret_code;
+			if (rv == ERR_RES_NOT_KNOWN && cm->missing_ok)
+				rv = NO_ERROR;
 			drbd_tla_parse(nlh);
 		} else {
 			if (received == -E_RCV_ERROR_REPLY && !errno)
@@ -1416,8 +1419,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				if (err)
 					goto out2;
 				err = *(int*)nlmsg_data(nlh);
-				if (err)
-					printf("# error: %d: %s\n", err, strerror(-err));
+				if (err &&
+				    (err != -ENODEV || !cm->missing_ok))
+					fprintf(stderr, "received netlink error reply: %s\n",
+						strerror(-err));
 				goto out2;
 			case -E_RCV_ERROR_REPLY:
 				if (!errno) /* positive ACK message */
@@ -1500,7 +1505,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				}
 			}
 			rv = dh->ret_code;
-			if (rv == ERR_MINOR_INVALID && cm->ignore_minor_not_known)
+			if (rv == ERR_MINOR_INVALID && cm->missing_ok)
 				rv = NO_ERROR;
 			if (rv != NO_ERROR)
 				goto out2;
@@ -1613,6 +1618,7 @@ static struct minors_list *enumerate_minors(void)
 	struct drbd_cmd cmd = {
 		.cmd_id = DRBD_ADM_GET_STATUS,
 		.show_function = remember_minor,
+		.missing_ok = true,
 	};
 	struct minors_list *m;
 	int err;
@@ -2045,7 +2051,7 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 		return 0;
 
 	dh = info->userhdr;
-	if (dh->ret_code == ERR_MINOR_INVALID && cm->ignore_minor_not_known)
+	if (dh->ret_code == ERR_MINOR_INVALID && cm->missing_ok)
 		return 0;
 
 	if (drbd_cfg_context_from_attrs(&cfg, info)) {
