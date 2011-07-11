@@ -1089,15 +1089,17 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned lazy_writeout_upper_id
 
 	/*
 	 * We initialize ctx->in_flight to one to make sure bm_async_io_complete
-	 * will not complete() early, and decrement / test it here.  If there
+	 * will not set ctx->done early, and decrement / test it here.  If there
 	 * are still some bios in flight, we need to wait for them here.
+	 * If all IO is done already (or nothing had been submitted), there is
+	 * no need to wait.  Still, we need to put the kref associated with the
+	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight)) {
 		drbd_blk_run_queue(bdev_get_queue(mdev->ldev->md_bdev));
 		wait_until_done_or_disk_failure(mdev, &ctx->done);
-	}
-	if (!count)
-		put_ldev(mdev); /* Since no IO was started, the completion handler was not invoked */
+	} else
+		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 
 	dev_info(DEV, "bitmap %s of %u pages took %lu jiffies\n",
 			rw == WRITE ? "WRITE" : "READ",
