@@ -995,7 +995,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 
 STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must_hold(local)
 {
-	struct bio *bio = bio_alloc_drbd(GFP_KERNEL);
+	struct bio *bio = bio_alloc_drbd(GFP_NOIO);
 	struct drbd_conf *mdev = ctx->mdev;
 	struct drbd_bitmap *b = mdev->bitmap;
 	struct page *page;
@@ -1069,7 +1069,7 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 	 * as we submit copies of pages anyways.
 	 */
 
-	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_KERNEL);
+	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
 	if (!ctx)
 		return -ENOMEM;
 
@@ -1125,14 +1125,16 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 
 	/*
 	 * We initialize ctx->in_flight to one to make sure bm_async_io_complete
-	 * will not complete() early, and decrement / test it here.  If there
+	 * will not set ctx->done early, and decrement / test it here.  If there
 	 * are still some bios in flight, we need to wait for them here.
+	 * If all IO is done already (or nothing had been submitted), there is
+	 * no need to wait.  Still, we need to put the kref associated with the
+	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight))
 		wait_until_done_or_disk_failure(mdev, &ctx->done);
-
-	if (!count)
-		put_ldev(mdev); /* Since no IO was started, the completion handler was not invoked */
+	else
+		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 
 	/* summary for global bitmap IO */
 	if (flags == 0)
@@ -1229,7 +1231,7 @@ int drbd_bm_write_page(struct drbd_conf *mdev, unsigned int idx) __must_hold(loc
 		return 0;
 	}
 
-	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_KERNEL);
+	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
 	if (!ctx)
 		return -ENOMEM;
 
