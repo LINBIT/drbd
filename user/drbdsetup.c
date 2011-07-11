@@ -1692,10 +1692,8 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		}
 		printI("_this_host {\n");
 		++indent;
-		if (global_attrs[DRBD_NLA_NET_CONF]) {
-			if (cfg.ctx_my_addr[0])
-				show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
-		}
+		if (cfg.ctx_my_addr_len)
+			show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
 	}
 
 	if (cfg.ctx_volume != -1U) {
