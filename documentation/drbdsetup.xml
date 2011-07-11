@@ -71,8 +71,6 @@
 
     <xi:include href="drbdsetup_dstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
-    <xi:include href="drbdsetup_status.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
     <xi:include href="drbdsetup_resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 
     <xi:include href="drbdsetup_check-resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
