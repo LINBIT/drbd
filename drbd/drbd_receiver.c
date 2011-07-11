@@ -3401,8 +3401,8 @@ static int ignore_remaining_packet(struct drbd_tconn *tconn, struct packet_info 
  */
 static int config_unknown_volume(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	conn_warn(tconn, "Volume %u unknown; ignoring packet %s (0x%04x)\n",
-		  pi->vnr, cmdname(pi->cmd), pi->cmd);
+	conn_warn(tconn, "%s packet received for volume %u, which is not configured locally\n",
+		  cmdname(pi->cmd), pi->vnr);
 	return ignore_remaining_packet(tconn, pi);
 }
 
