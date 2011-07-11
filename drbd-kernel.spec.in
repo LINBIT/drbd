@@ -14,21 +14,6 @@ BuildRequires: redhat-rpm-config
 BuildRequires: %kernel_module_package_buildreqs
 %endif
 
-%if %{defined suse_kernel_module_package}
-# Support also sles10, where kernel_module_package was not yet defined.
-# In sles11, suse_k_m_p became a wrapper around k_m_p.
-
-%if 0%{?suse_version} < 1110
-# We need to exclude some flavours on sles10 etc,
-# or we hit an rpm internal buffer limit.
-%suse_kernel_module_package -n drbd -p preamble -f filelist-suse kdump kdumppae vmi vmipae
-%else
-%suse_kernel_module_package -n drbd -p preamble -f filelist-suse
-%endif
-%else
-%kernel_module_package -n drbd -p preamble -f filelist-redhat
-%endif
-
 %description
 This module is the kernel-dependent driver for DRBD.  This is split out so
 that multiple kernel driver versions can be installed, one for each
@@ -36,6 +21,31 @@ installed kernel.
 
 %prep
 %setup -q -n drbd-%{version}
+
+%if %{defined suse_kernel_module_package}
+# Support also sles10, where kernel_module_package was not yet defined.
+# In sles11, suse_k_m_p became a wrapper around k_m_p.
+
+%if 0%{?suse_version} < 1110
+# We need to exclude some flavours on sles10 etc,
+# or we hit an rpm internal buffer limit.
+%suse_kernel_module_package -n drbd -p preamble -f filelist-suse kdump kdumppae vmi vmipae um
+%else
+%suse_kernel_module_package -n drbd -p preamble -f filelist-suse
+%endif
+%else
+# Concept stolen from sles kernel-module-subpackage:
+# include the kernel version in the package version,
+# so we can have more than one kmod-drbd.
+# Needed, because even though kABI is still "compatible" in RHEL 6.0 to 6.1,
+# the actual functionality differs very much: 6.1 does no longer do BARRIERS,
+# but wants FLUSH/FUA instead.
+# For convenience, we want both 6.0 and 6.1 in the same repository,
+# and have yum/rpm figure out via dependencies, which kmod version should be installed.
+# This is a dirty hack, non generic, and should probably be enclosed in some "if-on-rhel6".
+%define _this_kmp_version %{version}_%(echo %kernel_version | sed -r 'y/-/_/; s/\.el.\.(x86_64|i.86)$//;')
+%kernel_module_package -v %_this_kmp_version -n drbd -p preamble -f filelist-redhat
+%endif
 
 %build
 rm -rf obj
@@ -61,6 +71,10 @@ export INSTALL_MOD_DIR=extra/drbd
 %endif
 %endif
 
+# Very likely kernel_module_package_moddir did ignore the parameter,
+# so we just append it here. The weak-modules magic expects that location.
+[ $INSTALL_MOD_DIR = extra ] && INSTALL_MOD_DIR=extra/drbd
+
 for flavor in %flavors_to_build ; do
     make -C %{kernel_source $flavor} modules_install \
 	M=$PWD/obj/$flavor
@@ -75,7 +89,7 @@ done
 rm -f drbd.conf
 %else
 mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
-echo "override drbd * $INSTALL_MOD_DIR" \
+echo "override drbd * weak-updates" \
     > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
 %endif
 
