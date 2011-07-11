@@ -1658,7 +1658,7 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		}
 		fflush(stdout);
 		return 0;
-}
+	}
 	call_count++;
 
 	/* FIXME: Is the folowing check needed? */
