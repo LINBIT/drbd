@@ -60,30 +60,25 @@ function adjust_with_progress
     NEWLINE='
 '
     IFS=$NEWLINE
-    local res out
+    local res last_res
 
     COMMANDS=`$DRBDADM -d -n res adjust all` || exit 20
-    echo -n "[ "
+    printf "[ "
 
     for CMD in $COMMANDS; do
 	case "$CMD" in
-		res=*)		eval "$CMD";;
-		*\ disk\ *)
-			# Check for offline resize. If using internal meta data,
-			# we may need to move it first to its expected location.
-				out=$($DRBDADM check-resize "$res" 2>&1)
-				[[ -z $out ]] ||
-				printf "\n%s\n%s\n" "$res" "$out"
-				echo -n "d($res) " ;;
-		*\ syncer\ *)	echo -n "s($res) " ;;
-		*\ net\ *)	echo -n "n($res) " ;;
-		*)		echo ".. " ;;
+		res=*)
+			eval "$CMD"
+			[[ $res = $last_res ]] ||
+			printf "\n\t%s:" "$res"
+			last_res=$res ;;
+		*)		printf " .." ;;
 	esac
 	if ! eval "$CMD"; then
 	    echo -e "\n[$res] cmd $CMD failed - continuing!\n "
 	fi
     done
-    echo -n "]"
+    printf "\n]"
 
     IFS=$IFS_O
 }
@@ -206,7 +201,9 @@ case "$1" in
 			*" not mounted") :;;
 			*) echo "$M" >&2 ;;
 			esac
-			$DRBDSETUP "$d" down
+		done
+		for res in $(drbdsetup all show | sed -ne 's/^resource \(.*\) {$/\1/p'); do
+			drbdsetup "$res" down
 		done
 		_udev_settle &> /dev/null
 		$RMMOD drbd
