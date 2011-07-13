@@ -1835,7 +1835,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	res=calloc(1,sizeof(struct d_resource));
 	res->name = res_name;
-	res->config_file = config_file;
+	res->config_file = config_save;
 	res->start_line = line;
 
 	while(1) {

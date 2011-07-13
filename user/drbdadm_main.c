@@ -944,6 +944,7 @@ static int adm_dump(struct cfg_ctx *ctx)
 	       esc(res->name), nodeinfo.nodename,
 	       res->ignore ? "ignored" : "not ignored",
 	       res->stacked ? "stacked" : "not stacked");
+	printI("# defined at %s:%u\n", res->config_file, res->start_line);
 	printI("resource %s {\n", esc(res->name));
 	++indent;
 
@@ -969,7 +970,9 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
 
-	printI("<resource name=\"%s\">\n", esc_xml(res->name));
+	printI("<resource name=\"%s\" conf-file-line=\"%s:%u\">\n",
+		esc_xml(res->name),
+		esc_xml(res->config_file), res->start_line);
 	++indent;
 	// else if (common && common->protocol) printA("# common protocol", common->protocol);
 	for (host = res->all_hosts; host; host = host->next)
@@ -1758,6 +1761,7 @@ int sh_status(struct cfg_ctx *ctx)
 		ctx->res = r;
 
 		printf("_conf_res_name=%s\n", shell_escape(r->name));
+		printf("_conf_file_line=%s:%u\n\n", shell_escape(r->config_file), r->start_line);
 		if (r->stacked && r->me->lower) {
 			printf("_stacked_on=%s\n", shell_escape(r->me->lower->name));
 			lower_vol = r->me->lower->me->volumes;
