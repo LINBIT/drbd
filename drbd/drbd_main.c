@@ -2762,12 +2762,12 @@ int init_submitter(struct drbd_device *device)
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr)
 {
 	struct kobject *parent;
-	struct drbd_connection *connection = first_connection(resource);
+	struct drbd_connection *connection;
 	struct drbd_device *device;
-	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *peer_device, *tmp_peer_device;
 	struct gendisk *disk;
 	struct request_queue *q;
-	int id;
+	int id, refs = 3;
 	enum drbd_ret_code err = ERR_NOMEM;
 
 	device = minor_to_device(minor);
@@ -2779,18 +2779,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	if (!device)
 		return ERR_NOMEM;
 
-	peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
-	if (!peer_device)
-		goto out_no_peer_device;
-
-	INIT_LIST_HEAD(&device->peer_devices);
-	list_add(&peer_device->peer_devices, &device->peer_devices);
 	kref_get(&resource->kref);
 	device->resource = resource;
-	kref_get(&connection->kref);
-	peer_device->connection = connection;
-	peer_device->device = device;
-
 	device->minor = minor;
 	device->vnr = vnr;
 
@@ -2865,13 +2855,26 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		goto out_idr_remove_minor;
 	}
 
-	id = idr_alloc(&connection->peer_devices, peer_device, vnr, vnr + 1, GFP_KERNEL);
-	if (id < 0) {
-		if (id == -ENOSPC) {
-			err = ERR_INVALID_REQUEST;
-			drbd_msg_put_info("requested volume exists already");
+	INIT_LIST_HEAD(&device->peer_devices);
+	for_each_connection(connection, resource) {
+		peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
+		if (!peer_device)
+			goto out_idr_remove_from_resource;
+		peer_device->connection = connection;
+		peer_device->device = device;
+
+		list_add(&peer_device->peer_devices, &device->peer_devices);
+		refs++;
+
+		id = idr_alloc(&connection->peer_devices, peer_device, vnr, vnr + 1, GFP_KERNEL);
+		if (id < 0) {
+			if (id == -ENOSPC) {
+				err = ERR_INVALID_REQUEST;
+				drbd_msg_put_info("requested volume exists already");
+			}
+			goto out_idr_remove_from_resource;
 		}
-		goto out_idr_remove_from_resource;
+		kref_get(&connection->kref);
 	}
 
 	if (init_submitter(device)) {
@@ -2886,12 +2889,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	/* one ref for both idrs and the the add_disk */
 	if (kobject_init_and_add(&device->kobj, &drbd_device_kobj_type, parent, "drbd"))
 		goto out_del_disk;
-	kobject_get(&device->kobj);
-	kobject_get(&device->kobj);
-	kobject_get(&device->kobj);
+	while (refs--)
+		kobject_get(&device->kobj);
 
 	/* inherit the connection state */
-	device->state.conn = connection->cstate;
+	device->state.conn = first_connection(resource)->cstate;
 	if (device->state.conn == C_WF_REPORT_PARAMS)
 		drbd_connected(device);
 
@@ -2903,6 +2905,17 @@ out_del_disk:
 out_idr_remove_vol:
 	idr_remove(&connection->peer_devices, vnr);
 out_idr_remove_from_resource:
+	for_each_connection(connection, resource) {
+		peer_device = idr_find(&connection->peer_devices, vnr);
+		if (peer_device) {
+			idr_remove(&connection->peer_devices, vnr);
+			kref_put(&connection->kref, drbd_destroy_connection);
+		}
+	}
+	for_each_peer_device_safe(peer_device, tmp_peer_device, device) {
+		list_del(&peer_device->peer_devices);
+		kfree(peer_device);
+	}
 	idr_remove(&resource->devices, vnr);
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
@@ -2916,9 +2929,7 @@ out_no_io_page:
 out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
-	kref_put(&connection->kref, drbd_destroy_connection);
 	kref_put(&resource->kref, drbd_destroy_resource);
-out_no_peer_device:
 	kfree(device);
 	return err;
 }
