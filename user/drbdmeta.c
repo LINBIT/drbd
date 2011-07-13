@@ -1881,6 +1881,7 @@ int need_to_apply_al(struct format *cfg)
 		return 0; /* there was no activity log in 0.6, right? */
 }
 
+int v08_move_internal_md_after_resize(struct format *cfg);
 int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
@@ -1898,7 +1899,11 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	}
 
 	err = cfg->ops->open(cfg);
-	if (err == NO_VALID_MD_FOUND) {
+	if (err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
+		if (v08_move_internal_md_after_resize(cfg) == 0)
+			err = cfg->ops->open(cfg);
+	}
+	if (err != VALID_MD_FOUND) {
 		fprintf(stderr, "No valid meta data found\n");
 		return -1;
 	}
