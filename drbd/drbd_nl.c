@@ -312,7 +312,7 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 
 static void setup_khelper_env(struct drbd_tconn *tconn, char **envp)
 {
-	char af[20], ad[60], *afs;
+	char *afs;
 
 	/* FIXME: A future version will not allow this case. */
 	if (tconn->my_addr_len == 0 || tconn->peer_addr_len == 0)
@@ -321,22 +321,20 @@ static void setup_khelper_env(struct drbd_tconn *tconn, char **envp)
 	switch (((struct sockaddr *)&tconn->peer_addr)->sa_family) {
 	case AF_INET6:
 		afs = "ipv6";
-		snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI6",
+		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI6",
 			 &((struct sockaddr_in6 *)&tconn->peer_addr)->sin6_addr);
 		break;
 	case AF_INET:
 		afs = "ipv4";
-		snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI4",
+		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
 			 &((struct sockaddr_in *)&tconn->peer_addr)->sin_addr);
 		break;
 	default:
 		afs = "ssocks";
-		snprintf(ad, 60, "DRBD_PEER_ADDRESS=%pI4",
+		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
 			 &((struct sockaddr_in *)&tconn->peer_addr)->sin_addr);
 	}
-	snprintf(af, 20, "DRBD_PEER_AF=%s", afs);
-	envp[3]=af;
-	envp[4]=ad;
+	snprintf(envp[3], 20, "DRBD_PEER_AF=%s", afs);
 }
 
 int drbd_khelper(struct drbd_conf *mdev, char *cmd)
@@ -344,8 +342,8 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	char *envp[] = { "HOME=/",
 			"TERM=linux",
 			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-			NULL, /* Will be set to address family */
-			NULL, /* Will be set to address */
+			 (char[20]) { }, /* address family */
+			 (char[60]) { }, /* address */
 			NULL };
 	char mb[12];
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
@@ -403,8 +401,8 @@ int conn_khelper(struct drbd_tconn *tconn, char *cmd)
 	char *envp[] = { "HOME=/",
 			"TERM=linux",
 			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-			NULL, /* Will be set to address family */
-			NULL, /* Will be set to address */
+			 (char[20]) { }, /* address family */
+			 (char[60]) { }, /* address */
 			NULL };
 	char *argv[] = {usermode_helper, cmd, tconn->name, NULL };
 	int ret;
