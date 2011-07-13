@@ -659,6 +659,9 @@ struct drbd_resource {
 #else
 	cpumask_var_t cpu_mask;
 #endif
+
+	struct drbd_work_queue work;
+	struct drbd_thread worker;
 };
 
 struct drbd_connection {			/* is a resource from the config file */
@@ -1291,6 +1294,7 @@ extern int drbd_khelper(struct drbd_device *device, char *cmd);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);
+extern int drbd_worker(struct drbd_thread *thi);
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor);
 void drbd_resync_after_changed(struct drbd_device *device);
 extern void drbd_start_resync(struct drbd_device *device, enum drbd_conns side);

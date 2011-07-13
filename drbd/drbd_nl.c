@@ -1136,6 +1136,8 @@ static void conn_reconfig_start(struct drbd_connection *connection)
 {
 	drbd_thread_start(&connection->sender);
 	drbd_flush_workqueue(&connection->data.work);
+	drbd_thread_start(&connection->resource->worker);
+	drbd_flush_workqueue(&connection->resource->work);
 }
 
 /* if still unconfigured, stops sender again. */
@@ -1151,6 +1153,7 @@ static void conn_reconfig_done(struct drbd_connection *connection)
 		 * in conn_disconnect() */
 		drbd_thread_stop(&connection->receiver);
 		drbd_thread_stop(&connection->sender);
+		drbd_thread_stop(&connection->resource->worker);
 	}
 }
 
@@ -3193,6 +3196,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	 * actually stopped, state handling only does drbd_thread_stop_nowait(). */
 	for_each_connection(connection, resource)
 		drbd_thread_stop(&connection->sender);
+	drbd_thread_stop(&resource->worker);
 
 	/* Now, nothing can fail anymore */
 
@@ -3243,6 +3247,7 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	list_del_rcu(&resource->resources);
 	for_each_connection(connection, resource)
 		drbd_thread_stop(&connection->sender);
+	drbd_thread_stop(&resource->worker);
 	synchronize_rcu();
 	drbd_free_resource(resource);
 	retcode = NO_ERROR;

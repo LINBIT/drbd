@@ -1809,3 +1809,37 @@ int drbd_sender(struct drbd_thread *thi)
 
 	return 0;
 }
+
+int drbd_worker(struct drbd_thread *thi)
+{
+	struct drbd_resource *resource = thi->resource;
+	struct drbd_work *w;
+
+	while (get_t_state(thi) == RUNNING) {
+		drbd_thread_current_set_cpu(thi);
+
+		if (down_interruptible(&resource->work.s)) {
+			flush_signals(current);
+			if (get_t_state(thi) == RUNNING) {
+				drbd_warn(resource, "Worker got an unexpected signal\n");
+				continue;
+			}
+			break;
+		}
+
+		if (get_t_state(thi) != RUNNING) {
+			up(&resource->work.s);
+			break;
+		}
+
+		w = consume_work(&resource->work);
+		w->cb(w, 0);
+	}
+
+	while (!down_trylock(&resource->work.s)) {
+		w = consume_work(&resource->work);
+		w->cb(w, 1);
+	}
+
+	return 0;
+}
