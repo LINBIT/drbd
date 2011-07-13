@@ -2556,7 +2556,7 @@ int main(int argc, char **argv)
 	if (objname == NULL && (cmd->ctx_key & CTX_CONNECTION)) {
 		objname = getenv("DRBD_RESOURCE");
 		if (objname == NULL)
-			asprintf(&objname, "connection %s %s", argv[2], argv[3]);
+			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);
 		if (objname == NULL)
 			objname = "??";
 	}
