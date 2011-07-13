@@ -1131,14 +1131,14 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	drbd_setup_queue_param(device, new);
 }
 
-/* Starts the worker thread */
+/* Starts the sender thread */
 static void conn_reconfig_start(struct drbd_connection *connection)
 {
-	drbd_thread_start(&connection->worker);
+	drbd_thread_start(&connection->sender);
 	drbd_flush_workqueue(&connection->data.work);
 }
 
-/* if still unconfigured, stops worker again. */
+/* if still unconfigured, stops sender again. */
 static void conn_reconfig_done(struct drbd_connection *connection)
 {
 	bool stop_threads;
@@ -1150,7 +1150,7 @@ static void conn_reconfig_done(struct drbd_connection *connection)
 		/* asender is implicitly stopped by receiver
 		 * in conn_disconnect() */
 		drbd_thread_stop(&connection->receiver);
-		drbd_thread_stop(&connection->worker);
+		drbd_thread_stop(&connection->sender);
 	}
 }
 
@@ -3192,7 +3192,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	 * Disconnected, Diskless, aka Unconfigured. Make sure all threads have
 	 * actually stopped, state handling only does drbd_thread_stop_nowait(). */
 	for_each_connection(connection, resource)
-		drbd_thread_stop(&connection->worker);
+		drbd_thread_stop(&connection->sender);
 
 	/* Now, nothing can fail anymore */
 
@@ -3242,7 +3242,7 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 
 	list_del_rcu(&resource->resources);
 	for_each_connection(connection, resource)
-		drbd_thread_stop(&connection->worker);
+		drbd_thread_stop(&connection->sender);
 	synchronize_rcu();
 	drbd_free_resource(resource);
 	retcode = NO_ERROR;

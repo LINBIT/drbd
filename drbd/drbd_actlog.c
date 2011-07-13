@@ -493,7 +493,7 @@ static int al_write_transaction(struct drbd_device *device, bool delegate)
 		 * after this function returns (see generic_make_request()).
 		 */
 
-		BUG_ON(current == first_peer_device(device)->connection->worker.task);
+		BUG_ON(current == first_peer_device(device)->connection->sender.task);
 
 		init_completion(&al_work.event);
 		al_work.w.cb = w_al_write_transaction;

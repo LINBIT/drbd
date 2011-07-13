@@ -699,7 +699,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	void *int_dig_vv;
 
 	struct drbd_thread receiver;
-	struct drbd_thread worker;
+	struct drbd_thread sender;
 	struct drbd_thread asender;
 };
 
@@ -1289,8 +1289,8 @@ extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_khelper(struct drbd_device *device, char *cmd);
 
-/* drbd_worker.c */
-extern int drbd_worker(struct drbd_thread *thi);
+/* drbd_sender.c */
+extern int drbd_sender(struct drbd_thread *thi);
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor);
 void drbd_resync_after_changed(struct drbd_device *device);
 extern void drbd_start_resync(struct drbd_device *device, enum drbd_conns side);
@@ -1763,7 +1763,7 @@ static inline void drbd_thread_restart_nowait(struct drbd_thread *thi)
  *  w_send_barrier
  *  _req_mod(req, QUEUE_FOR_NET_WRITE or QUEUE_FOR_NET_READ);
  *    it is much easier and equally valid to count what we queue for the
- *    worker, even before it actually was queued or send.
+ *    sender, even before it actually was queued or sent.
  *    (drbd_make_request_common; recovery path on read io-error)
  * decreased:
  *  got_BarrierAck (respective tl_clear, tl_clear_barrier)

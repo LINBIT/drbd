@@ -363,7 +363,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (f & CS_WAIT_COMPLETE && rv == SS_SUCCESS) {
-		D_ASSERT(device, current != first_peer_device(device)->connection->worker.task);
+		D_ASSERT(device, current != first_peer_device(device)->connection->sender.task);
 		wait_for_completion(&done);
 	}
 
@@ -1136,13 +1136,13 @@ static void abw_start_sync(struct drbd_device *device, int rv)
 	}
 }
 
-static int drbd_bitmap_io_from_worker(struct drbd_device *device,
+static int drbd_bitmap_io_from_sender(struct drbd_device *device,
 		int (*io_fn)(struct drbd_device *),
 		char *why, enum bm_flag flags)
 {
 	int rv;
 
-	D_ASSERT(device, current == first_peer_device(device)->connection->worker.task);
+	D_ASSERT(device, current == first_peer_device(device)->connection->sender.task);
 
 	/* open coded non-blocking drbd_suspend_io(device); */
 	set_bit(SUSPEND_IO, &device->flags);
@@ -1268,7 +1268,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			/* We may still be Primary ourselves.
 			 * No harm done if the bitmap still changes,
 			 * redirtied pages will follow later. */
-			drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+			drbd_bitmap_io_from_sender(device, &drbd_bm_write,
 				"demote diskless peer", BM_LOCKED_SET_ALLOWED);
 		put_ldev(device);
 	}
@@ -1280,7 +1280,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 		device->state.conn <= C_CONNECTED && get_ldev(device)) {
 		/* No changes to the bitmap expected this time, so assert that,
 		 * even though no harm was done if it did change. */
-		drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+		drbd_bitmap_io_from_sender(device, &drbd_bm_write,
 				"demote", BM_LOCKED_TEST_ALLOWED);
 		put_ldev(device);
 	}

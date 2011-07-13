@@ -1,5 +1,5 @@
 /*
-   drbd_worker.c
+   drbd_sender.c
 
    This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
@@ -822,7 +822,7 @@ int drbd_resync_finished(struct drbd_device *device)
 		struct drbd_device_work *dw;
 
 		/* In case this is not possible now, most probably because
-		 * there are P_RS_DATA_REPLY Packets lingering on the worker's
+		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
 		 * queue (or even the read operations for those packets
 		 * is not finished by now).   Retry in 100ms. */
 
@@ -1433,7 +1433,7 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
  * _drbd_resume_next() - Resume resync on all devices that may resync now
  * @device:	DRBD device.
  *
- * Called from process context only (admin command and worker).
+ * Called from process context only (admin command and sender).
  */
 STATIC int _drbd_resume_next(struct drbd_device *device)
 {
@@ -1610,8 +1610,8 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 		}
 	}
 
-	if (current == first_peer_device(device)->connection->worker.task) {
-		/* The worker should not sleep waiting for state_mutex,
+	if (current == first_peer_device(device)->connection->sender.task) {
+		/* The sender should not sleep waiting for state_mutex,
 		   that can take long */
 		if (!mutex_trylock(device->state_mutex)) {
 			set_bit(B_RS_H_DONE, &device->flags);
@@ -1737,7 +1737,7 @@ static struct drbd_work *consume_work(struct drbd_work_queue *queue)
 	return work;
 }
 
-int drbd_worker(struct drbd_thread *thi)
+int drbd_sender(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
@@ -1772,7 +1772,7 @@ int drbd_worker(struct drbd_thread *thi)
 		if (intr) {
 			flush_signals(current);
 			if (get_t_state(thi) == RUNNING) {
-				drbd_warn(connection, "Worker got an unexpected signal\n");
+				drbd_warn(connection, "Sender got an unexpected signal\n");
 				continue;
 			}
 			break;

@@ -254,6 +254,7 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 	 *	not yet completed by the local io subsystem
 	 * these flags may get cleared in any order by
 	 *	the worker,
+	 *	the sender,
 	 *	the receiver,
 	 *	the bio_endio completion callbacks.
 	 */
@@ -548,7 +549,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* treat it the same */
 	case SEND_FAILED:
 		/* real cleanup will be done from tl_clear.  just update flags
-		 * so it is no longer marked as on the worker queue */
+		 * so it is no longer marked as on the sender queue */
 		req->rq_state &= ~RQ_NET_QUEUED;
 		/* if we did it right, tl_clear should be scheduled only after
 		 * this, so this should not be necessary! */

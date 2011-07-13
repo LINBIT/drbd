@@ -450,7 +450,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
  *
  * This is called after the connection to the peer was lost. The storage covered
  * by the requests on the transfer gets marked as our of sync. Called from the
- * receiver thread and the worker thread.
+ * receiver thread and the sender thread.
  */
 void tl_clear(struct drbd_connection *connection)
 {
@@ -2679,7 +2679,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		for_each_connection_rcu(connection, resource) {
 			connection->receiver.reset_cpu_mask = 1;
 			connection->asender.reset_cpu_mask = 1;
-			connection->worker.reset_cpu_mask = 1;
+			connection->sender.reset_cpu_mask = 1;
 		}
 	}
 	err = 0;
@@ -2753,8 +2753,8 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 
 	drbd_thread_init(resource, &connection->receiver, drbd_receiver, "receiver");
 	connection->receiver.connection = connection;
-	drbd_thread_init(resource, &connection->worker, drbd_worker, "worker");
-	connection->worker.connection = connection;
+	drbd_thread_init(resource, &connection->sender, drbd_sender, "sender");
+	connection->sender.connection = connection;
 	drbd_thread_init(resource, &connection->asender, drbd_asender, "asender");
 	connection->asender.connection = connection;
 
@@ -3479,7 +3479,7 @@ void drbd_go_diskless(struct drbd_device *device)
  *
  * While IO on the bitmap happens we freeze application IO thus we ensure
  * that drbd_set_out_of_sync() can not be called. This function MAY ONLY be
- * called from worker context. It MUST NOT be used while a previous such
+ * called from sender context. It MUST NOT be used while a previous such
  * work is still pending!
  */
 void drbd_queue_bitmap_io(struct drbd_device *device,
@@ -3487,7 +3487,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 			  void (*done)(struct drbd_device *, int),
 			  char *why, enum bm_flag flags)
 {
-	D_ASSERT(device, current == first_peer_device(device)->connection->worker.task);
+	D_ASSERT(device, current == first_peer_device(device)->connection->sender.task);
 
 	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
 	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
@@ -3518,14 +3518,14 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
  * @why:	Descriptive text of the reason for doing the IO
  *
  * freezes application IO while that the actual IO operations runs. This
- * functions MAY NOT be called from worker context.
+ * functions MAY NOT be called from sender context.
  */
 int drbd_bitmap_io(struct drbd_device *device, int (*io_fn)(struct drbd_device *),
 		char *why, enum bm_flag flags)
 {
 	int rv;
 
-	D_ASSERT(device, current != first_peer_device(device)->connection->worker.task);
+	D_ASSERT(device, current != first_peer_device(device)->connection->sender.task);
 
 	if ((flags & BM_LOCKED_SET_ALLOWED) == 0)
 		drbd_suspend_io(device);
