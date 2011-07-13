@@ -1722,13 +1722,24 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 	mutex_unlock(device->state_mutex);
 }
 
+static struct drbd_work *consume_work(struct drbd_work_queue *queue)
+{
+	struct drbd_work *work;
+
+	spin_lock_irq(&queue->q_lock);
+	work = list_first_entry(&queue->q, struct drbd_work, list);
+	list_del_init(&work->list);
+	spin_unlock_irq(&queue->q_lock);
+
+	return work;
+}
+
 int drbd_worker(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
-	struct drbd_work *w = NULL;
+	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
-	LIST_HEAD(work_list);
 	int vnr, intr = 0;
 	int cork;
 
@@ -1764,61 +1775,22 @@ int drbd_worker(struct drbd_thread *thi)
 			break;
 		}
 
-		if (get_t_state(thi) != RUNNING)
+		if (get_t_state(thi) != RUNNING) {
+			up(&connection->data.work.s);
 			break;
-		/* With this break, we have done a down() but not consumed
-		   the entry from the list. The cleanup code takes care of
-		   this...   */
-
-		w = NULL;
-		spin_lock_irq(&connection->data.work.q_lock);
-		if (list_empty(&connection->data.work.q)) {
-			/* something terribly wrong in our logic.
-			 * we were able to down() the semaphore,
-			 * but the list is empty... doh.
-			 *
-			 * what is the best thing to do now?
-			 * try again from scratch, restarting the receiver,
-			 * asender, whatnot? could break even more ugly,
-			 * e.g. when we are primary, but no good local data.
-			 *
-			 * I'll try to get away just starting over this loop.
-			 */
-			drbd_warn(connection, "Work list unexpectedly empty\n");
-			spin_unlock_irq(&connection->data.work.q_lock);
-			continue;
 		}
-		w = list_entry(connection->data.work.q.next, struct drbd_work, list);
-		list_del_init(&w->list);
-		spin_unlock_irq(&connection->data.work.q_lock);
 
+		w = consume_work(&connection->data.work);
 		if (w->cb(w, connection->cstate < C_WF_REPORT_PARAMS)) {
-			/* drbd_warn(device, "worker: a callback failed! \n"); */
 			if (connection->cstate >= C_WF_REPORT_PARAMS)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 		}
 	}
 
-	spin_lock_irq(&connection->data.work.q_lock);
-	while (!list_empty(&connection->data.work.q)) {
-		list_splice_init(&connection->data.work.q, &work_list);
-		spin_unlock_irq(&connection->data.work.q_lock);
-
-		while (!list_empty(&work_list)) {
-			w = list_entry(work_list.next, struct drbd_work, list);
-			list_del_init(&w->list);
-			w->cb(w, 1);
-		}
-
-		spin_lock_irq(&connection->data.work.q_lock);
+	while (!down_trylock(&connection->data.work.s)) {
+		w = consume_work(&connection->data.work);
+		w->cb(w, 1);
 	}
-	sema_init(&connection->data.work.s, 0);
-	/* DANGEROUS race: if someone did queue his work within the spinlock,
-	 * but up() ed outside the spinlock, we could get an up() on the
-	 * semaphore without corresponding list entry.
-	 * So don't do that.
-	 */
-	spin_unlock_irq(&connection->data.work.q_lock);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {

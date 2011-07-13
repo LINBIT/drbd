@@ -1739,9 +1739,8 @@ drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
 	list_add(&w->list, &q->q);
-	up(&q->s); /* within the spinlock,
-		      see comment near end of drbd_worker() */
 	spin_unlock_irqrestore(&q->q_lock, flags);
+	up(&q->s);
 }
 
 static inline void
@@ -1750,9 +1749,8 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
 	list_add_tail(&w->list, &q->q);
-	up(&q->s); /* within the spinlock,
-		      see comment near end of drbd_worker() */
 	spin_unlock_irqrestore(&q->q_lock, flags);
+	up(&q->s);
 }
 
 static inline void wake_asender(struct drbd_connection *connection)
