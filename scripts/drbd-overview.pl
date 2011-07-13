@@ -122,6 +122,7 @@ sub slurp_proc_drbd_or_exit() {
 		};
 	}
 	close PD;
+	for (values %drbd) { $_->{state} ||= "Unconfigured . . . ."; }
 }
 
 # sets $drbd{minor}->{pv_info}
