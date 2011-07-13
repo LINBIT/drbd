@@ -3113,11 +3113,6 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	}
 	spin_unlock_irq(&mdev->tconn->req_lock);
 
-	/* This blocks wants to be get removed... */
-	bdev->disk_conf->al_extents = be32_to_cpu(buffer->al_nr_extents);
-	if (bdev->disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
-		bdev->disk_conf->al_extents = DRBD_AL_EXTENTS_DEF;
-
  err:
 	drbd_md_put_buffer(mdev);
  out:
