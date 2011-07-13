@@ -1749,23 +1749,29 @@ int sh_status(struct cfg_ctx *ctx)
 	if (!dry_run) {
 		printf("_drbd_version=%s\n_drbd_api=%u\n",
 		       shell_escape(REL_VERSION), API_VERSION);
-		printf("_config_file=%s\n\n", shell_escape(config_save));
+		printf("_config_file=%s\n\n\n", shell_escape(config_save));
 	}
 
 	for_each_resource(r, t, config) {
 		if (r->ignore)
 			continue;
-		printf("_res_name=%s\n", r->name);
-		printf("_stacked_on=%s\n", r->stacked && r->me->lower ?
-		       shell_escape(r->me->lower->name) : "");
-		/* reset stuff */
-		printf("_stacked_on_device=\n");
-		printf("_stacked_on_minor=\n");
 		ctx->res = r;
-		lower_vol = r->stacked && r->me->lower ?
-			r->me->lower->me->volumes : NULL;
+
+		printf("_conf_res_name=%s\n", shell_escape(r->name));
+		if (r->stacked && r->me->lower) {
+			printf("_stacked_on=%s\n", shell_escape(r->me->lower->name));
+			lower_vol = r->me->lower->me->volumes;
+		} else {
+			/* reset stuff */
+			printf("_stacked_on=\n");
+			printf("_stacked_on_device=\n");
+			printf("_stacked_on_minor=\n");
+			lower_vol = NULL;
+		}
 		/* TODO: remove this loop, have drbdsetup use dump
-		 * and optionally filter on resource name. */
+		 * and optionally filter on resource name.
+		 * "stacked" information is not directly known to drbdsetup, though.
+		 */
 		for_each_volume(vol, r->me->volumes) {
 			/* do not continue in this loop,
 			 * or lower_vol will get out of sync */
@@ -1778,6 +1784,8 @@ int sh_status(struct cfg_ctx *ctx)
 						r->name, vol->vnr);
 				abort();
 			}
+			printf("_conf_volume=%d\n", vol->vnr);
+
 			ctx->vol = vol;
 			rv = adm_generic(ctx, SLEEPS_SHORT);
 			if (rv)
