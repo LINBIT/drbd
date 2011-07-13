@@ -2553,6 +2553,13 @@ int main(int argc, char **argv)
 		}
 		context |= CTX_CONNECTION;
 	}
+	if (objname == NULL && (cmd->ctx_key & CTX_CONNECTION)) {
+		objname = getenv("DRBD_RESOURCE");
+		if (objname == NULL)
+			asprintf(&objname, "connection %s %s", argv[2], argv[3]);
+		if (objname == NULL)
+			objname = "??";
+	}
 
 	/* Make it so that argv[0] is the command name. */
 	rv = cmd->function(cmd, argc - 1, argv + 1);
