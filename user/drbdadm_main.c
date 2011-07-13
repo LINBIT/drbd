@@ -279,6 +279,14 @@ void add_setup_option(bool explicit, char *option)
 	.verify_ips = 0,		\
 	.use_cached_config_file = 1,	\
 
+#define DRBD_acf3_res_handler		\
+	.show_in_usage = 3,		\
+	.res_name_required = 1,		\
+	.iterate_volumes = 0,		\
+	.vol_id_required = 0,		\
+	.verify_ips = 0,		\
+	.use_cached_config_file = 1,	\
+
 #define DRBD_acf4_advanced		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
@@ -412,7 +420,7 @@ struct adm_cmd cmds[] = {
 	{"before-resync-source", adm_khelper, DRBD_acf3_handler},
 	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_handler},
 	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_handler},
-	{"fence-peer", adm_khelper, DRBD_acf3_handler},
+	{"fence-peer", adm_khelper, DRBD_acf3_res_handler},
 	{"local-io-error", adm_khelper, DRBD_acf3_handler},
 	{"pri-lost", adm_khelper, DRBD_acf3_handler},
 	{"initial-split-brain", adm_khelper, DRBD_acf3_handler},
@@ -1939,6 +1947,36 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	if (vol) {
 		snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
 		setenv("DRBD_MINOR", minor_string, 1);
+	} else {
+		char *minor_list;
+		char *separator = "";
+		char *pos;
+		int volumes = 0;
+		int bufsize;
+		int n;
+
+		for_each_volume(vol, res->me->volumes)
+			volumes++;
+
+		/* max minor number is 2**20 - 1, which is 7 decimal digits.
+		 * plus separator respective trailing zero. */
+		bufsize = volumes * 8 + 1;
+		minor_list = alloca(bufsize);
+
+		pos = minor_list;
+		for_each_volume(vol, res->me->volumes) {
+			n = snprintf(pos, bufsize, "%s%d", separator, vol->device_minor);
+			if (n >= bufsize) {
+				/* "can not happen" */
+				fprintf(stderr, "buffer too small when generating the minor list\n");
+				abort();
+				break;
+			}
+			bufsize -= n;
+			pos += n;
+			separator = " ";
+		}
+		setenv("DRBD_MINOR", minor_list, 1);
 	}
 
 	setenv("DRBD_RESOURCE", res->name, 1);
