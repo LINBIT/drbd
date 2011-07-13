@@ -1418,11 +1418,12 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				err = cm->show_function(cm, NULL);
 				if (err)
 					goto out2;
-				err = *(int*)nlmsg_data(nlh);
+				err = -*(int*)nlmsg_data(nlh);
 				if (err &&
-				    (err != -ENODEV || !cm->missing_ok))
+				    (err != ENODEV || !cm->missing_ok))
 					fprintf(stderr, "received netlink error reply: %s\n",
-						strerror(-err));
+						strerror(err));
+				err = 20;
 				goto out2;
 			case -E_RCV_ERROR_REPLY:
 				if (!errno) /* positive ACK message */
