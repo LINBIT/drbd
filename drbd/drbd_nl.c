@@ -1829,11 +1829,6 @@ _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct n
 		}
 		if (mdev->state.role == R_PRIMARY && new_conf->discard_my_data)
 			return ERR_DISCARD;
-
-		if (!mdev->bitmap) {
-			if(drbd_bm_init(mdev))
-				return ERR_NOMEM;
-		}
 	}
 
 	if (new_conf->on_congestion != OC_BLOCK && new_conf->wire_protocol != DRBD_PROT_A)
@@ -1846,10 +1841,20 @@ static enum drbd_ret_code
 check_net_options(struct drbd_tconn *tconn, struct net_conf *new_conf)
 {
 	static enum drbd_ret_code rv;
+	struct drbd_conf *mdev;
+	int i;
 
 	rcu_read_lock();
 	rv = _check_net_options(tconn, rcu_dereference(tconn->net_conf), new_conf);
 	rcu_read_unlock();
+
+	/* tconn->volumes protected by genl_lock() here */
+	idr_for_each_entry(&tconn->volumes, mdev, i) {
+		if (!mdev->bitmap) {
+			if(drbd_bm_init(mdev))
+				return ERR_NOMEM;
+		}
+	}
 
 	return rv;
 }
