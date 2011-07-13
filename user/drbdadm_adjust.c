@@ -680,8 +680,9 @@ int adm_adjust(struct cfg_ctx *ctx)
 	if (running) {
 		do_connect = !addr_equal(ctx->res,running);
 		do_net_options = !opts_equal(&net_options_ctx, ctx->res->net_options, running->net_options);
+		do_res_options = !opts_equal(&resource_options_cmd_ctx, ctx->res->res_options, running->res_options);
 	} else {
-		do_res_options = 1;
+		do_res_options = 0;
 		do_connect = 1;
 		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
 	}
