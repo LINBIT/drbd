@@ -1898,8 +1898,10 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	}
 
 	err = cfg->ops->open(cfg);
-	if (err == NO_VALID_MD_FOUND)
+	if (err == NO_VALID_MD_FOUND) {
+		fprintf(stderr, "No valid meta data found\n");
 		return -1;
+	}
 
 	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, cfg->al_offset, "apply_al");
 
@@ -2577,8 +2579,10 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	}
 
 	i = cfg->ops->open(cfg);
-	if (i == NO_VALID_MD_FOUND)
+	if (i == NO_VALID_MD_FOUND) {
+		fprintf(stderr, "No valid meta data found\n");
 		return -1;
+	}
 
 	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
