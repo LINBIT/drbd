@@ -155,18 +155,21 @@ try_place_constraint()
 	local peer_state
 	check_peer_node_reachable
 	set_states_from_proc_drbd
-	case $DRBD_peer in
-	Secondary|Primary)
+	: == DEBUG == DRBD_peer=${DRBD_peer[*]} ===
+	case "${DRBD_peer[*]}" in
+	*Secondary*|*Primary*)
 		# WTF? We are supposed to fence the peer,
 		# but the replication link is just fine?
-		echo WARNING "peer is $DRBD_peer, did not place the constraint!"
+		echo WARNING "peer is not Unknown, did not place the constraint!"
 		rc=0
 		return
 		;;
 	esac
-	: == DEBUG == $peer_state/$DRBD_disk/$unreachable_peer_is ==
-	case $peer_state/$DRBD_disk/$unreachable_peer_is in
-	*//*)
+	: == DEBUG == CTS_mode=$CTS_mode ==
+	: == DEBUG == DRBD_disk_all_consistent=$DRBD_disk_all_consistent ==
+	: == DEBUG == DRBD_disk_all_uptodate=$DRBD_disk_all_uptodate ==
+	: == DEBUG == $peer_state/${DRBD_disk[*]}/$unreachable_peer_is ==
+	if [[ ${#DRBD_disk[*]} = 0 ]]; then
 		# Someone called this script, without the corresponding drbd
 		# resource being configured. That's not very useful.
 		echo WARNING "could not determine my disk state: did not place the constraint!"
@@ -174,14 +177,11 @@ try_place_constraint()
 		# keep drbd_fence_peer_exit_code at "generic error",
 		# which will cause a "script is broken" message in case it was
 		# indeed called as handler from within drbd
-		;;
-	reachable/Consistent/*|\
-	reachable/UpToDate/*)
+	elif [[ $peer_state = reachable ]] && $DRBD_disk_all_consistent; then
 		cibadmin -C -o constraints -X "$new_constraint" &&
 		drbd_fence_peer_exit_code=4 rc=0 &&
-		echo INFO "peer is $peer_state, my disk is $DRBD_disk: placed constraint '$id_prefix-$master_id'"
-		;;
-	*/UpToDate/*)
+		echo INFO "peer is $peer_state, my disk is ${DRBD_disk[*]}: placed constraint '$id_prefix-$master_id'"
+	elif $DRBD_disk_all_uptodate ; then
 		# We could differentiate between unreachable,
 		# and DC-unreachable.  In the latter case, placing the
 		# constraint will fail anyways, and  drbd_fence_peer_exit_code
@@ -189,8 +189,7 @@ try_place_constraint()
 		cibadmin -C -o constraints -X "$new_constraint" &&
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo INFO "peer is not reachable, my disk is UpToDate: placed constraint '$id_prefix-$master_id'"
-		;;
-	unreachable/Consistent/outdated)
+	elif [[ $peer_state = unreachable ]] && [[ $unreachable_peer_is = outdated ]] && $DRBD_disk_all_consistent; then
 		# If the peer is not reachable, but we are only Consistent, we
 		# may need some way to still allow promotion.
 		# Easy way out: --force primary with drbdsetup.
@@ -203,14 +202,12 @@ try_place_constraint()
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo WARNING "peer is unreachable, my disk is only Consistent: --unreachable-peer-is-outdated FORCED constraint '$id_prefix-$master_id'" &&
 		echo WARNING "This MAY RISK DATA INTEGRITY"
-		;;
-	*)
-		echo WARNING "peer is $peer_state, my disk is $DRBD_disk: did not place the constraint!"
+	else
+		echo WARNING "peer is $peer_state, my disk is ${DRBD_disk[*]}: did not place the constraint!"
 		drbd_fence_peer_exit_code=5 rc=0
 		# I'd like to return 6 here, otherwise pacemaker will retry
 		# forever to promote, even though 6 is not strictly correct.
-		;;
-	esac
+	fi
 }
 
 # drbd_peer_fencing fence|unfence
@@ -411,15 +408,52 @@ check_peer_node_reachable()
 
 set_states_from_proc_drbd()
 {
+	local IFS line lines i disk
 	# DRBD_MINOR exported by drbdadm since 8.3.3
 	[[ $DRBD_MINOR ]] || DRBD_MINOR=$(drbdadm ${DRBD_CONF:+ -c "$DRBD_CONF"} sh-minor $DRBD_RESOURCE) || return
+
+	# if we have more than one minor, do a word split, ...
+	set -- $DRBD_MINOR
+	# ... and convert into regex:
+	IFS="|$IFS"; DRBD_MINOR="($*)"; IFS=${IFS#?}
+
 	# We must not recurse into netlink,
 	# this may be a callback triggered by "drbdsetup primary".
 	# grep /proc/drbd instead
-	set -- $(sed -ne "/^ *$DRBD_MINOR: cs:/ { s/:/ /g; p; q; }" /proc/drbd)
-	DRBD_peer=${5#*/}
-	DRBD_role=${5%/*}
-	DRBD_disk=${7%/*}
+	# This magic does not work, if 
+	#
+
+	DRBD_peer=()
+	DRBD_role=()
+	DRBD_disk=()
+	DRBD_disk_all_uptodate=true
+	DRBD_disk_all_consistent=true
+
+	IFS=$'\n'
+	lines=($(sed -nre "/^ *$DRBD_MINOR: cs:/ { s/:/ /g; p; }" /proc/drbd))
+	IFS=$' \t\n'
+
+	i=0
+	for line in "${lines[@]}"; do
+		set -- $line
+		DRBD_peer[i]=${5#*/}
+		DRBD_role[i]=${5%/*}
+		disk=${7%/*}
+		DRBD_disk[i]=${disk:-Unconfigured}
+		case $disk in
+		UpToDate) ;;
+		Consistent)
+			DRBD_disk_all_uptodate=false ;;
+		*)
+			DRBD_disk_all_uptodate=false
+			DRBD_disk_all_consistent=false ;;
+		esac
+		let i++
+	done
+	if (( i = 0 )) ; then
+		DRBD_disk_all_uptodate=false
+		DRBD_disk_all_consistent=false
+	fi
 }
 ############################################################
 
