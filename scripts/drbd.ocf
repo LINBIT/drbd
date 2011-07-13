@@ -214,6 +214,8 @@ _sh_status_process() {
 	# _volume not present should not happen,
 	# but may help make this agent work even if it talks to drbd 8.3.
 	: ${_volume:=0}
+	# not-yet-created volumes are reported as -1
+	(( _volume >= 0 )) || _volume=$[1 << 16]
 	DRBD_ROLE_LOCAL[$_volume]=${_role:-Unconfigured}
 	DRBD_ROLE_REMOTE[$_volume]=${_peer:-Unknown}
 	DRBD_CSTATE[$_volume]=$_cstate
