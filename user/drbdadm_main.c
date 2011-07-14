@@ -1979,6 +1979,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	int rv = 0;
 	char *sh_cmd;
 	char minor_string[8];
+	char volume_string[8];
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
 
 	if (!res->peer) {
@@ -2009,7 +2010,10 @@ static int adm_khelper(struct cfg_ctx *ctx)
 
 	if (vol) {
 		snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
+		snprintf(volume_string, sizeof(volume_string), "%u", vol->vnr);
 		setenv("DRBD_MINOR", minor_string, 1);
+		setenv("DRBD_VOLUME", volume_string, 1);
+		setenv("DRBD_LL_DISK", vol->disk, 1);
 	} else {
 		char *minor_list;
 		char *separator = "";
