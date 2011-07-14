@@ -163,8 +163,14 @@ case "$1" in
 	# file, or we need to ask the user about registering this installation
 	# at http://usage.drbd.org, we call drbdadm here without any IO
 	# redirection.
-	$DRBDADM sh-nop
+	# If "no op" has a non-zero exit code, the config is unusable,
+	# and every other command will fail.
 	log_daemon_msg "Starting DRBD resources"
+	if ! out=$($DRBDADM sh-nop 2>&1) ; then
+	    printf "\n%s\n" "$out" >&2
+	    log_end_msg 1
+	    exit 1
+	fi
 	assure_module_is_loaded
 	adjust_with_progress
 
