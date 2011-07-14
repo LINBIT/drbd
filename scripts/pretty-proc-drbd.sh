@@ -52,26 +52,64 @@ done
 
 drbd_pretty_status()
 {
-	# add resource names
+    if ! $short ||
+       ! type column &> /dev/null ||
+       ! type paste &> /dev/null ||
+       ! type join &> /dev/null ||
+       ! type sed &> /dev/null ||
+       ! type tr &> /dev/null
+    then
+	cat /proc/drbd
+    else
+	sed -e '2q' < /proc/drbd
 	sed_script=$(
-	   (
-	   paste <(drbdadm sh-dev all) \
-		 <(drbdadm sh-resources| tr ' /' '\n_') ;
-	   paste <(drbdadm -S sh-dev all) \
-		 <(drbdadm -S sh-resources | tr ' /' '\n_' )
-	   ) | sed -e 's,^/dev/drbd,s/^ *,;s,\t,:/,;s,$, \&/;,')
-	sed -e "$sed_script;s/^ *\([0-9]\+:\)/??not-found?? \1/" < /proc/drbd |
-	if [[ $short == true ]]; then
-		sed -e '1,2d;/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' | column -t
-	else
-		sed -e 's/ cs:/\n    cs:/;'
-	fi |
+		i=0;
+		_sh_status_process() {
+			let i++ ;
+			stacked=${_stacked_on:+"^^${_stacked_on_minor:-${_stacked_on//[!a-zA-Z0-9_ -]/_}}"}
+			printf "s|^ *%u:|%6u\t&%s%s|\n" \
+				$_minor $i \
+				"${_res_name//[!a-zA-Z0-9_ -]/_}" "$stacked"
+		};
+		eval "$(drbdadm sh-status)" )
+
+	p() {
+		sed -e "1,2d" \
+		      -e "$sed_script" \
+		      -e '/^ *[0-9]\+: cs:Unconfigured/d;' \
+		      -e 's/^\(.* cs:.*[^ ]\)   \([rs]...\)$/\1 - \2/g' \
+		      -e 's/^\(.* \)cs:\([^ ]* \)st:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
+		      -e 's/^\(.* \)cs:\([^ ]* \)ro:\([^ ]* \)ds:\([^ ]*\)/\1\2\3\4/' \
+		      -e 's/^\(.* \)cs:\([^ ]*\)$/\1\2/' \
+		      -e 's/^ *[0-9]\+:/ x &??not-found??/;' \
+		      -e '/^$/d;/ns:.*nr:.*dw:/d;/resync:/d;/act_log:/d;' \
+		      -e 's/^\(.\[.*\)\(sync.ed:\)/... ... \2/;/^.finish:/d;' \
+		      -e 's/^\(.[0-9 %]*oos:\)/... ... \1/' \
+		      < "/proc/drbd" | tr -s '\t ' '  ' 
+	}
+	m() {
+		join -1 2 -2 1 -o 1.1,2.2,2.3 \
+			<( ( drbdadm sh-dev all ; drbdadm -S sh-dev all ) | cat -n | sort -k2,2) \
+			<(sort < /proc/mounts ) |
+			sort -n | tr -s '\t ' '  ' | sed -e 's/^ *//'
+	}
+	# echo "=== p ==="
+	# p
+	# echo "=== m ==="
+	# m
+	# echo "========="
+	# join -a1 <(p|sort) <(m|sort)
+	# echo "========="
+	(
+	echo m:res cs ro ds p mounted fstype
+	join -a1 <(p|sort) <(m|sort) | cut -d' ' -f2-6,8- | sort -k1,1n -k2,2
+	) | column -t
+    fi |
 	if [[ $colorize != true ]]; then
 		cat
 	else
 		c_bold=$'\e[1m' c_norm=$'\e[0m'
 		sed -e "
-$sed_script
 s/^??not-found??/$c_dsk_bad_1&$c_dsk_bad_0/g;
 s/^[^\t ]\+/$c_bold&$c_norm/;
 s/Primary/$c_pri_1&$c_pri_0/g;
