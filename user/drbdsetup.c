@@ -2557,9 +2557,11 @@ int main(int argc, char **argv)
 		objname = getenv("DRBD_RESOURCE");
 		if (objname == NULL)
 			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);
-		if (objname == NULL)
-			objname = "??";
 	}
+	if (objname == NULL && cmd->ctx == &new_minor_cmd_ctx)
+		objname = argv[2];
+	if (objname == NULL)
+		objname = "??";
 
 	/* Make it so that argv[0] is the command name. */
 	rv = cmd->function(cmd, argc - 1, argv + 1);
