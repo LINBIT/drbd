@@ -54,10 +54,11 @@ drbd_verify_all()
 
       # Is the backing device a locally available block device?
       backing_dev=$(drbdadm sh-ll-dev $OCF_RESKEY_resource)
-      if [ ! -b $backing_dev ]; then
-  	ocf_log error "Backing device for DRBD resource \"$OCF_RESKEY_resource\" ($backing_dev) not found or not a block device."
-  	return $OCF_ERR_INSTALLED
-      fi
+      for dev in $backing_dev ; do
+	[ -b $dev ] && continue;
+	ocf_log error "Backing device for DRBD resource \"$OCF_RESKEY_resource\" ($dev) not found or not a block device."
+	return $OCF_ERR_INSTALLED
+      done
 
     fi
 
@@ -65,17 +66,21 @@ drbd_verify_all()
 }
 
 drbd_status() {
-    role=$(drbdadm role $OCF_RESKEY_resource)
-    case $role in
-	Primary/*)
-	    return $OCF_SUCCESS
-	    ;;
-	Secondary/*)
-	    return $OCF_NOT_RUNNING
-	    ;;
-
-    esac
-    return $OCF_ERR_GENERIC
+    local all_primary=true
+    for role in $(drbdadm role $OCF_RESKEY_resource); do
+	case $role in
+	    Primary/*)
+		;;
+	    Secondary/*)
+		all_primary=false
+		;;
+	    *)
+		return $OCF_ERR_GENERIC
+		;;
+	esac
+    done
+    $all_primary && return $OCF_SUCCESS
+    return $OCF_NOT_RUNNING
 }
 
 drbd_promote() {
