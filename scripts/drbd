@@ -54,35 +54,6 @@ function assure_module_is_loaded
     [ -e /var/run/klogd.pid ] && [ -x /sbin/klogd ] && /sbin/klogd -i
 }
 
-function adjust_with_progress
-{
-    IFS_O=$IFS
-    NEWLINE='
-'
-    IFS=$NEWLINE
-    local res last_res
-
-    COMMANDS=`$DRBDADM -d -n res adjust all` || exit 20
-    printf "[ "
-
-    for CMD in $COMMANDS; do
-	case "$CMD" in
-		res=*)
-			eval "$CMD"
-			[[ $res = $last_res ]] ||
-			printf "\n\t%s:" "$res"
-			last_res=$res ;;
-		*)		printf " .." ;;
-	esac
-	if ! eval "$CMD"; then
-	    echo -e "\n[$res] cmd $CMD failed - continuing!\n "
-	fi
-    done
-    printf "\n]"
-
-    IFS=$IFS_O
-}
-
 drbd_pretty_status()
 {
 	local proc_drbd=$1
@@ -172,7 +143,9 @@ case "$1" in
 	    exit 1
 	fi
 	assure_module_is_loaded
-	adjust_with_progress
+
+	$DRBDADM adjust-with-progress all
+	[[ $? -gt 1 ]] && exit 20
 
 	# make sure udev has time to create the device files
 	for RESOURCE in `$DRBDADM sh-resources`; do
