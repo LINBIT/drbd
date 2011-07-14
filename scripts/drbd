@@ -167,7 +167,9 @@ case "$1" in
     stop)
 	$DRBDADM sh-nop
 	log_daemon_msg "Stopping all DRBD resources"
-	if [ -e $PROC_DRBD ] ; then
+	for try in 1 2; do
+	    if [ -e $PROC_DRBD ] ; then
+		[[ $try = 2 ]] && echo "Retrying once..."
 		# bypass drbdadm and drbd config file and everything,
 		# to avoid leaving devices around that are not referenced by
 		# the current config file, or in case the current config file
@@ -185,8 +187,9 @@ case "$1" in
 			drbdsetup "$res" down
 		done
 		_udev_settle &> /dev/null
-		$RMMOD drbd
-	fi
+		$RMMOD drbd && break
+	    fi
+	done
 	[ -f /var/lock/subsys/drbd ] && rm /var/lock/subsys/drbd
 	log_end_msg 0
 	;;
