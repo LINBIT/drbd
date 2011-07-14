@@ -1237,8 +1237,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *device,
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
 			fw->device = device;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&fw->w);
+			drbd_queue_work(&device->resource->work, &fw->w);
 		} else {
 			drbd_warn(device, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -1900,8 +1899,7 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (expect(list_empty(&req->w.list))) {
 			req->device = device;
 			req->w.cb = w_restart_write;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&req->w);
+			drbd_queue_work(&device->resource->work, &req->w);
 		}
 	}
 }
@@ -5296,8 +5294,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		if (dw) {
 			dw->w.cb = w_ov_finished;
 			dw->device = device;
-			drbd_queue_work_front(&peer_device->connection->data.work,
-					      &dw->w);
+			drbd_queue_work_front(&device->resource->work, &dw->w);
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(device);

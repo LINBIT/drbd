@@ -3469,8 +3469,7 @@ void drbd_go_diskless(struct drbd_device *device)
 {
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
-		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&device->go_diskless);
+		drbd_queue_work(&device->resource->work, &device->go_diskless);
 }
 
 /**
@@ -3567,8 +3566,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	drbd_queue_work_front(&first_peer_device(device)->connection->data.work,
-			      &device->md_sync_work);
+	drbd_queue_work_front(&device->resource->work, &device->md_sync_work);
 }
 
 STATIC int w_md_sync(struct drbd_work *w, int unused)

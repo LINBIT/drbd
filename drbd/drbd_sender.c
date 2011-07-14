@@ -1532,8 +1532,7 @@ void start_resync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	drbd_queue_work(&first_peer_device(device)->connection->data.work,
-			&device->start_resync_work);
+	drbd_queue_work(&device->resource->work, &device->start_resync_work);
 }
 
 int w_start_resync(struct drbd_work *w, int cancel)
