@@ -1166,7 +1166,7 @@ void request_timer_fn(unsigned long data)
 	if (dt && req->rq_state & RQ_LOCAL_PENDING) {
 		if (time_is_before_eq_jiffies(req->start_time + dt)) {
 			dev_warn(DEV, "Local backing device failed to meet the disk-timeout\n");
-			_drbd_set_state(_NS(mdev, disk, D_FAILED), CS_VERBOSE | CS_HARD, NULL);
+			__drbd_chk_io_error(mdev, 1);
 		}
 	}
 	spin_unlock_irq(&tconn->req_lock);
