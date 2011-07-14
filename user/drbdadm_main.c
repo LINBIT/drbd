@@ -1558,6 +1558,7 @@ int adm_attach(struct cfg_ctx *ctx)
 	rv = admm_generic(ctx);
 	if (rv)
 		return rv;
+	ctx->arg = "attach";
 	return adm_attach_or_disk_options(ctx, true, false);
 }
 
