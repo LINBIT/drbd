@@ -3,7 +3,8 @@
 #  snapshot-resync-target-lvm.sh
 #  This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 #
-# The caller (drbdadm) sets DRBD_RESOURCE for us.
+# The caller (drbdadm) sets for us:
+# DRBD_RESOURCE, DRBD_VOLUME, DRBD_MINOR, DRBD_LL_DISK etc.
 #
 ###########
 #
@@ -11,15 +12,15 @@
 # exit code != 0. So be carefull with the exit code!
 #
 
-if [ -z "$DRBD_RESOURCE" ]; then
-	echo "DRBD_RESOURCE not set. This script is supposed to"
+if [ -z "$DRBD_RESOURCE" || -z "$DRBD_LL_DISK" ]; then
+	echo "DRBD_RESOURCE/DRBD_LL_DISK is not set. This script is supposed to"
 	echo "get called by drbdadm as a handler script"
 	exit 0
 fi
 
 PROG=$(basename $0)
 exec > >(exec 2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
-echo "invoked for $DRBD_RESOURCE"
+echo "invoked for $DRBD_RESOURCE/$DRBD_VOLUME (drbd$DRBD_MINOR)"
 
 TEMP=$(getopt -o p:a:nv --long percent:,additional:,disconnect-on-error,verbose -- "$@")
 
@@ -28,15 +29,14 @@ if [ $? != 0 ]; then
 	exit 0
 fi
 
-BACKING_BDEV=$(drbdadm sh-ll-dev $DRBD_RESOURCE)
-lvdisplay $BACKING_BDEV > /dev/null || exit 0 # not a LV
+lvdisplay "$DRBD_LL_DISK" > /dev/null || exit 0 # not a LV
 
 SNAP_PERC=10
 SNAP_ADDITIONAL=10240
 DISCONNECT_ON_ERROR=0
 LVC_OPTIONS=""
 BE_VERBOSE=0
-SNAP_NAME=${BACKING_BDEV##*/}-before-resync
+SNAP_NAME=${DRBD_LL_DISK##*/}-before-resync
 DEFAULTFILE="/etc/default/drbd-snapshot"
 
 if [ -f $DEFAULTFILE ]; then
@@ -74,25 +74,23 @@ LVC_OPTIONS="$@"
 
 if [[ $0 == *unsnapshot* ]]; then
 	[ $BE_VERBOSE = 1 ] && set -x
-	VG_PATH=${BACKING_BDEV%/*}
+	VG_PATH=${DRBD_LL_DISK%/*}
 	lvremove -f ${VG_PATH}/${SNAP_NAME}
 	exit 0
 else
 	(
 		set -e
 		[ $BE_VERBOSE = 1 ] && set -x
-		# it may even be a stacked resource :-/
-		DRBD_MINOR=$(drbdadm sh-minor $DRBD_RESOURCE || drbdadm -S sh-minor $DRBD_RESOURCE)
 		OUT_OF_SYNC=$(sed -ne "/^ *$DRBD_MINOR:/ "'{
 				n;
 				s/^.* oos:\([0-9]*\).*$/\1/;
 				s/^$/0/; # default if not found
 				p;
 				q; }' < /proc/drbd) # unit KiB
-		_BDS=$(blockdev --getsize64 $BACKING_BDEV)
+		_BDS=$(blockdev --getsize64 $DRBD_LL_DISK)
 		BACKING=$((_BDS / 1024)) # unit KiB
 		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + BACKING * SNAP_PERC / 100))
-		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $LVC_OPTIONS $BACKING_BDEV
+		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $LVC_OPTIONS $DRBD_LL_DISK
 	)
 	RV=$?
 	[ $DISCONNECT_ON_ERROR = 0 ] && exit 0
