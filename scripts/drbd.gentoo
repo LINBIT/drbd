@@ -5,6 +5,12 @@
 # Original script adapted to gentoo environment
 
 
+# I so do not see why gentoo would need it's own init script.
+# But if you think it does, well, you get to fix it.
+# See what we do in the generic one.
+echo "FIXME, contributers welcome. This is broken for 8.4" >&2
+exit 255
+
 depend() {
 	use logger
 	need net
