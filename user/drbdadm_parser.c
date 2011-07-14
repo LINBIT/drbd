@@ -996,7 +996,8 @@ static void parse_device(struct d_name* on_hosts, struct d_volume *vol)
 out:
 	for_each_host(h, on_hosts) {
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, vol->device_minor);
-		check_uniq("device", "device:%s:%s", h->name, vol->device);
+		if (vol->device)
+			check_uniq("device", "device:%s:%s", h->name, vol->device);
 	}
 }
 
@@ -1033,7 +1034,7 @@ struct d_volume *volume0(struct d_volume **volp)
 	}
 }
 
-int parse_volume_stmt(struct d_volume *vol, int token)
+int parse_volume_stmt(struct d_volume *vol, struct d_name* on_hosts, int token)
 {
 	switch (token) {
 	case TK_DISK:
@@ -1054,7 +1055,7 @@ int parse_volume_stmt(struct d_volume *vol, int token)
 		}
 		break;
 	case TK_DEVICE:
-		parse_device(NULL, vol);
+		parse_device(on_hosts, vol);
 		break;
 	case TK_META_DISK:
 		parse_meta_disk(vol);
@@ -1077,7 +1078,7 @@ int parse_volume_stmt(struct d_volume *vol, int token)
 	return 1;
 }
 
-struct d_volume *parse_volume(int vnr)
+struct d_volume *parse_volume(int vnr, struct d_name* on_hosts)
 {
 	struct d_volume *vol;
 	int token;
@@ -1091,7 +1092,7 @@ struct d_volume *parse_volume(int vnr)
 		token = yylex();
 		if (token == '}')
 			break;
-		if (!parse_volume_stmt(vol, token))
+		if (!parse_volume_stmt(vol, on_hosts, token))
 			pe_expected_got("device | disk | meta-disk | flex-meta-disk | }",
 					token);
 	}
@@ -1336,7 +1337,9 @@ void parse_host_section(struct d_resource *res,
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			host->volumes = INSERT_SORTED(host->volumes, parse_volume(atoi(yylval.txt)), vnr);
+			host->volumes = INSERT_SORTED(host->volumes,
+						      parse_volume(atoi(yylval.txt), on_hosts),
+						      vnr);
 			break;
 		case TK_OPTIONS:
 			EXP('{');
@@ -1348,7 +1351,7 @@ void parse_host_section(struct d_resource *res,
 			in_braces = 0;
 			break;
 		vol0stmt:
-			if (parse_volume_stmt(volume0(&host->volumes), token))
+			if (parse_volume_stmt(volume0(&host->volumes), on_hosts, token))
 				break;
 			/* else fall through */
 		default:
@@ -1946,11 +1949,13 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			check_upr("device statement", "%s:device", res->name);
 		case TK_META_DISK:
 		case TK_FLEX_META_DISK:
-			parse_volume_stmt(volume0(&res->volumes), token);
+			parse_volume_stmt(volume0(&res->volumes), NULL, token);
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			res->volumes = INSERT_SORTED(res->volumes, parse_volume(atoi(yylval.txt)), vnr);
+			res->volumes = INSERT_SORTED(res->volumes,
+						     parse_volume(atoi(yylval.txt), NULL),
+						     vnr);
 			break;
 		case TK_OPTIONS:
 			check_upr("resource options section", "%s:res_options", res->name);
