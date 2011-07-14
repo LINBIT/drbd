@@ -1648,7 +1648,6 @@ conn_set_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state
 static enum drbd_state_rv
 _conn_rq_cond(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state val)
 {
-	enum drbd_conns oc = tconn->cstate;
 	enum drbd_state_rv rv;
 
 	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &tconn->flags))
@@ -1658,7 +1657,7 @@ _conn_rq_cond(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state 
 		return SS_CW_FAILED_BY_PEER;
 
 	spin_lock_irq(&tconn->req_lock);
-	rv = oc != C_WF_REPORT_PARAMS ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
+	rv = tconn->cstate != C_WF_REPORT_PARAMS ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
 
 	if (rv == SS_UNKNOWN_ERROR)
 		rv = conn_is_valid_transition(tconn, mask, val, 0);
@@ -1747,7 +1746,7 @@ enum drbd_state_rv
 conn_request_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_state val,
 		   enum chg_state_flags flags)
 {
-	static enum drbd_state_rv rv;
+	enum drbd_state_rv rv;
 
 	spin_lock_irq(&tconn->req_lock);
 	rv = _conn_request_state(tconn, mask, val, flags);
