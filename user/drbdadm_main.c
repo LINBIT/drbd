@@ -164,6 +164,7 @@ static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct d_option *opts);
 
+
 struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr);
 struct d_resource *res_by_name(const char *name);
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
@@ -195,6 +196,7 @@ int config_valid = 1;
 int no_tty;
 int dry_run = 0;
 int verbose = 0;
+int adjust_with_progress = 0;
 bool help;
 int do_verify_ips = 0;
 int do_register = 1;
@@ -230,6 +232,13 @@ void add_setup_option(bool explicit, char *option)
 	setup_options[n].option = option;
 	n++;
 	setup_options[n].option = NULL;
+}
+
+int adm_adjust_wp(struct cfg_ctx *ctx)
+{
+	if (!verbose && !dry_run)
+		adjust_with_progress = 1;
+	return adm_adjust(ctx);
 }
 
 /* DRBD adm_cmd flags shortcuts,
@@ -375,6 +384,7 @@ struct adm_cmd cmds[] = {
 	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"adjust", adm_adjust, DRBD_acf1_connect},
+	{"adjust-with-progress", adm_adjust_wp, DRBD_acf1_connect},
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
 	{"wait-con-int", adm_wait_ci,
 	 .show_in_usage = 1,.verify_ips = 1,},
@@ -471,10 +481,9 @@ int call_cmd_fn(int (*function) (struct cfg_ctx *),
 		struct cfg_ctx *ctx, enum on_error on_error)
 {
 	int rv;
+
 	rv = function(ctx);
 	if (rv >= 20) {
-		fprintf(stderr, "%s %s %s: exited with code %d\n",
-			progname, ctx->arg, ctx->res->name, rv);
 		if (on_error == EXIT_ON_FAIL)
 			exit(rv);
 	}
@@ -511,15 +520,57 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	return 0;
 }
 
+static char *drbd_cfg_stage_string[] = {
+	[CFG_PREREQ] = "create res",
+	[CFG_RESOURCE] = "adjust res",
+	[CFG_DISK_PREREQ] = "prepare disk",
+	[CFG_DISK] = "adjust disk",
+	[CFG_NET_PREREQ] = "prepare net",
+	[CFG_NET] = "adjust net",
+};
+
 int _run_deferred_cmds(enum drbd_cfg_stage stage)
 {
+	struct d_resource *last_res = NULL;
 	struct deferred_cmd *d = deferred_cmds[stage];
 	struct deferred_cmd *t;
-	int r = 0;
+	int r;
 	int rv = 0;
 
+	if (d && adjust_with_progress) {
+		printf("\n%15s:", drbd_cfg_stage_string[stage]);
+		fflush(stdout);
+	}
+
 	while (d) {
-		r = call_cmd_fn(d->function, &d->ctx, KEEP_RUNNING);
+		if (d->ctx.res->skip_further_deferred_command) {
+			if (adjust_with_progress) {
+				if (d->ctx.res != last_res)
+					printf(" [skipped:%s]", d->ctx.res->name);
+			} else
+				fprintf(stderr, "%s: %s %s: skipped due to earlier error\n",
+					progname, d->ctx.arg, d->ctx.res->name);
+			r = 0;
+		} else {
+			if (adjust_with_progress) {
+				if (d->ctx.res != last_res)
+					printf(" %s", d->ctx.res->name);
+			}
+			r = call_cmd_fn(d->function, &d->ctx, KEEP_RUNNING);
+			if (r) {
+				/* If something in the "prerequisite" stages failed,
+				 * there is no point in trying to continue.
+				 * However if we just failed to adjust some
+				 * options, or failed to attach, we still want
+				 * to adjust other options, or try to connect.
+				 */
+				if (stage == CFG_PREREQ || stage == CFG_DISK_PREREQ)
+					d->ctx.res->skip_further_deferred_command = 1;
+				if (adjust_with_progress)
+					printf(":failed(%s:%u)", d->ctx.arg, r);
+			}
+		}
+		last_res = d->ctx.res;
 		t = d->next;
 		free(d);
 		d = t;
@@ -532,13 +583,21 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 int run_deferred_cmds(void)
 {
 	enum drbd_cfg_stage stage;
-	int ret;
+	int r;
+	int ret = 0;
+	if (adjust_with_progress)
+		printf("[");
 	for (stage = CFG_PREREQ; stage < __CFG_LAST; stage++) {
-		ret = _run_deferred_cmds(stage);
-		if (ret)
-			return 1; /* FIXME ret? */
+		r = _run_deferred_cmds(stage);
+		if (r) {
+			if (!adjust_with_progress)
+				return 1; /* FIXME r? */
+			ret = 1;
+		}
 	}
-	return 0;
+	if (adjust_with_progress)
+		printf("\n]\n");
+	return ret;
 }
 
 /*** These functions are used to the print the config ***/
@@ -1365,6 +1424,9 @@ void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd
 	 * and helper binaries is reported in order! */
 	fflush(stdout);
 	fflush(stderr);
+
+	if (adjust_with_progress && !(flags & RETURN_STDERR_FD))
+		flags |= SUPRESS_STDERR;
 
 	if (flags & (RETURN_STDOUT_FD | RETURN_STDERR_FD)) {
 		if (pipe(pipe_fds) < 0) {

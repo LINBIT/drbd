@@ -160,6 +160,10 @@ struct d_resource
   unsigned int ignore:1;
   unsigned int stacked:1;        /* Stacked on this node */
   unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
+
+  /* if a prerequisite command failed, don't try any further commands.
+   * see run_deferred_cmds() */
+  unsigned int skip_further_deferred_command:1;
 };
 
 struct adm_cmd;
