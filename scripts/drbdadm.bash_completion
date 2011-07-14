@@ -40,6 +40,9 @@ __drbdadm_resources_by_status() {
 	local res
 	for res in $resources; do
 		local resource_status="$(${DRBDADM} $status_type $res 2>/dev/null)"
+		# In case of multiple volumes, consider only the first line
+		set -- $resource_status
+		resource_status=$1
 		local i
 		for i in $status_filter; do
 			if [ "${resource_status%%/*}" = $i ]; then
@@ -52,25 +55,32 @@ __drbdadm_resources_by_status() {
 
 __drbdadm_commands() {
 	# Lists drbdadm sub-commands
-	local commands='attach detach connect disconnect up down primary secondary invalidate invalidate-remote outdate verify syncer pause-sync resume-sync resize adjust wait-connect role state cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help hidden-commands'
-	COMPREPLY=( $(compgen -W "$commands" -- "$current") )
+	COMPREPLY=( $(compgen -W "$drbdadm_command_list" -- "$current") )
 }
 
 __drbdadm_options() {
 	# Lists global drbdadm options
-	local options='-d --dry-run -v --verbose -S --stacked'
+	local options='-d --dry-run -v --verbose -S --stacked -t --config-to-test'
 	COMPREPLY=( $(compgen -W "$options" -- "$current") )
 }
 
-__drbdadm_drbdsetup_options() {
-	# Lists those drbdadm options that are in fact options for drbdsetup,
-	# and which are passed though using "--" syntax
-	local drbdsetup_options='-D --discard-my-data -o --overwrite-data-of-peer'
-	COMPREPLY=( $(compgen -W "$drbdsetup_options" -- "$current") )
+__drbdadm_subcmd_options() {
+	local subcmd="$1"
+	local options=($(drbdadm help $subcmd | sed -e '1,/OPTIONS FOR/ d;/^$/,$ d;s/  \(--[a-z-]*\).*/\1/'))
+	local filtered
+	local o have
+	for o in ${options[@]}; do
+		for have in ${COMP_WORDS[@]}; do
+			[[ $o = "$have" ]] && continue 2
+		done
+		filtered="$filtered $o"
+	done
+	COMPREPLY=( $(compgen -W "$filtered" -- "$current") )
 }
 
 _drbdadm() {
 	local DRBDADM=${COMP_WORDS[0]}
+	local drbdadm_command_list=' attach disk-options detach connect net-options disconnect up resource-options down primary secondary invalidate invalidate-remote outdate verify pause-sync resume-sync resize adjust wait-connect role cstate dstate dump wait-connect wait-con-int create-md dump-md wipe-md get-gi show-gi help apply-al hidden-commands '
 
 	# Redefine the drbdadm we use in __drbdadm_all_resources and
 	# __drbdadm_resources_by_status, if running in stacked mode
@@ -79,7 +89,7 @@ _drbdadm() {
 		DRBDADM="$DRBDADM --stacked"
 		;;
 	esac
-	
+
 	local current previous
 	# The word currently being evaluated for completion
 	current=${COMP_WORDS[COMP_CWORD]}
@@ -97,31 +107,19 @@ _drbdadm() {
 					;;
 			esac
 			;;
-		--)
-			__drbdadm_drbdsetup_options
-			;;
-		-D|--discard-my-data)
-			COMPREPLY=( $(compgen -W "connect" -- "$current") )
-			;;
-		-o|--overwrite-data-of-peer)
-			COMPREPLY=( $(compgen -W "primary" -- "$current") )
-			;;
-		-*)
-			__drbdadm_commands
-			;;
 		primary)
 			__drbdadm_resources_by_status "role" "Secondary"
 			;;
 		secondary)
 			__drbdadm_resources_by_status "role" "Primary"
 			;;
-		detach)
+		detach|disk-options)
 			__drbdadm_resources_by_status "dstate" "UpToDate" "Inconsistent" "Outdated"
 			;;
 		outdate)
 			__drbdadm_resources_by_status "dstate" "UpToDate"
 			;;
-		attach|up)
+		attach|apply-al)
 			__drbdadm_resources_by_status "dstate" "Diskless" "Unconfigured"
 			;;
 		connect)
@@ -130,7 +128,7 @@ _drbdadm() {
 		invalidate-remote)
 			__drbdadm_resources_by_status "cstate" "Connected"
 			;;
-		disconnect)
+		disconnect|net-options)
 			__drbdadm_resources_by_status "cstate" "Connected" "WFConnection" "VerifyT" "VerifyS"
 			;;
 		verify)
@@ -142,8 +140,18 @@ _drbdadm() {
 		resume-sync)
 			__drbdadm_resources_by_status "cstate" "PausedSyncS" "PausedSyncT"
 			;;
-		*) 
-			__drbdadm_all_resources
+		*)
+			if (( COMP_CWORD > 2 )); then
+				local subcmd
+				subcmd=${COMP_WORDS[1]}
+				case "$drbdadm_command_list" in
+				    *" $subcmd "*)
+					__drbdadm_subcmd_options $subcmd
+					;;
+				esac
+			else
+				__drbdadm_all_resources
+			fi
 			;;
 	esac
 }
