@@ -148,13 +148,13 @@ case "$1" in
 	[[ $? -gt 1 ]] && exit 20
 
 	# make sure udev has time to create the device files
-	for RESOURCE in `$DRBDADM sh-resources`; do
-	    for DEVICE in `$DRBDADM sh-dev $RESOURCE`; do
-		UDEV_TIMEOUT_LOCAL=$UDEV_TIMEOUT
-		while [ ! -e $DEVICE ] && [ $UDEV_TIMEOUT_LOCAL -gt 0 ] ; do
-		    sleep 1
+	# FIXME this probably should, on platforms that have it,
+	# use udevadm settle --timeout=X --exit-if-exists=$DEVICE
+	for DEVICE in `$DRBDADM sh-dev all`; do
+	    UDEV_TIMEOUT_LOCAL=$UDEV_TIMEOUT
+	    while [ ! -e $DEVICE ] && [ $UDEV_TIMEOUT_LOCAL -gt 0 ] ; do
+		sleep 1
 		UDEV_TIMEOUT_LOCAL=$(( $UDEV_TIMEOUT_LOCAL-1 ))
-		done
 	    done
 	done
 
