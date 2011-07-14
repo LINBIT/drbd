@@ -7,7 +7,14 @@
 # try to get possible output on stdout/err to syslog
 PROG=${0##*/}
 exec > >(2>&- ; logger -t "$PROG[$$]" -p local5.info) 2>&1
-echo "invoked for $DRBD_RESOURCE"
+
+if [[ $DRBD_VOLUME ]]; then
+	pretty_print="$DRBD_RESOURCE/$DRBD_VOLUME (drbd$DRBD_MINOR)"
+else
+	pretty_print="$DRBD_RESOURCE"
+fi
+
+echo "invoked for $pretty_print"
 
 # Default to sending email to root, unless otherwise specified
 RECIPIENT=${1:-root}
@@ -32,45 +39,45 @@ DRBD_LOCAL_HOST=$(hostname)
 
 case "$0" in
 	*split-brain.sh)
-		SUBJECT="DRBD split brain on resource $DRBD_RESOURCE"
+		SUBJECT="DRBD split brain on resource $pretty_print"
 		BODY="
-DRBD has detected split brain on resource $DRBD_RESOURCE
+DRBD has detected split brain on resource $pretty_print
 between $DRBD_LOCAL_HOST and $DRBD_PEER.
 Please rectify this immediately.
 Please see http://www.drbd.org/users-guide/s-resolve-split-brain.html for details on doing so."
 		;;
 	*out-of-sync.sh)
-		SUBJECT="DRBD resource $DRBD_RESOURCE has out-of-sync blocks"
+		SUBJECT="DRBD resource $pretty_print has out-of-sync blocks"
 		BODY="
-DRBD has detected out-of-sync blocks on resource $DRBD_RESOURCE
+DRBD has detected out-of-sync blocks on resource $pretty_print
 between $DRBD_LOCAL_HOST and $DRBD_PEER.
 Please see the system logs for details."
 		;;
     *io-error.sh)
-		SUBJECT="DRBD resource $DRBD_RESOURCE detected a local I/O error"
+		SUBJECT="DRBD resource $pretty_print detected a local I/O error"
 		BODY="
-DRBD has detected an I/O error on resource $DRBD_RESOURCE
+DRBD has detected an I/O error on resource $pretty_print
 on $DRBD_LOCAL_HOST.
 Please see the system logs for details."
 		;;
 	*pri-lost.sh)
-		SUBJECT="DRBD resource $DRBD_RESOURCE is currently Primary, but is to become SyncTarget on $DRBD_LOCAL_HOST"
+		SUBJECT="DRBD resource $pretty_print is currently Primary, but is to become SyncTarget on $DRBD_LOCAL_HOST"
 		BODY="
-The DRBD resource $DRBD_RESOURCE is currently in the Primary
+The DRBD resource $pretty_print is currently in the Primary
 role on host $DRBD_LOCAL_HOST, but lost the SyncSource election
 process."
 		;;
 	*pri-lost-after-sb.sh)
-		SUBJECT="DRBD resource $DRBD_RESOURCE is currently Primary, but lost split brain auto recovery on $DRBD_LOCAL_HOST"
+		SUBJECT="DRBD resource $pretty_print is currently Primary, but lost split brain auto recovery on $DRBD_LOCAL_HOST"
 		BODY="
-The DRBD resource $DRBD_RESOURCE is currently in the Primary
+The DRBD resource $pretty_print is currently in the Primary
 role on host $DRBD_LOCAL_HOST, but was selected as the split
 brain victim in a post split brain auto-recovery."
 		;;
 	*pri-on-incon-degr.sh)
-		SUBJECT="DRBD resource $DRBD_RESOURCE no longer has access to valid data on $DRBD_LOCAL_HOST"
+		SUBJECT="DRBD resource $pretty_print no longer has access to valid data on $DRBD_LOCAL_HOST"
 		BODY="
-DRBD has detected that the resource $DRBD_RESOURCE
+DRBD has detected that the resource $pretty_print
 on $DRBD_LOCAL_HOST has lost access to its backing device,
 and has also lost connection to its peer, $DRBD_PEER.
 This resource now no longer has access to valid data."
@@ -93,7 +100,7 @@ your DRBD configuration file ($DRBD_CONF)."
 		SUBJECT="Unspecified DRBD notification"
 		BODY="
 DRBD on $DRBD_LOCAL_HOST was configured to launch a notification handler
-for resource $DRBD_RESOURCE,
+for resource $pretty_print,
 but no specific notification event was set.
 This is most likely due to DRBD misconfiguration.
 Please check your configuration file ($DRBD_CONF)."
