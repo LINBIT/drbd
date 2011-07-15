@@ -1188,7 +1188,8 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		if (os.conn < C_CONNECTED && conn_lowest_conn(mdev->tconn) >= C_CONNECTED)
 			what = RESEND;
 
-		if (os.disk == D_ATTACHING && conn_lowest_disk(mdev->tconn) > D_ATTACHING)
+		if ((os.disk == D_ATTACHING || os.disk == D_NEGOTIATING) &&
+		    conn_lowest_disk(mdev->tconn) > D_NEGOTIATING)
 			what = RESTART_FROZEN_DISK_IO;
 
 		if (what != NOTHING) {
@@ -1247,11 +1248,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	}
 
 	if (ns.pdsk < D_INCONSISTENT && get_ldev(mdev)) {
-		if (ns.peer == R_PRIMARY && mdev->ldev->md.uuid[UI_BITMAP] == 0) {
-			drbd_uuid_new_current(mdev);
-			drbd_send_uuids(mdev);
-		}
-
 		/* D_DISKLESS Peer becomes secondary */
 		if (os.peer == R_PRIMARY && ns.peer == R_SECONDARY)
 			/* We may still be Primary ourselves.
