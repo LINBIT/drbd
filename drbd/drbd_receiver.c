@@ -3203,7 +3203,7 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 	int p_proto, p_discard_my_data, p_two_primaries, cf;
 	struct net_conf *nc, *old_net_conf, *new_net_conf = NULL;
 	char integrity_alg[SHARED_SECRET_MAX] = "";
-	struct crypto_hash *peer_tfm = NULL, *tfm = NULL;
+	struct crypto_hash *peer_integrity_tfm = NULL, *integrity_tfm = NULL;
 	void *int_dig_in = NULL, *int_dig_vv = NULL;
 
 	p_proto		= be32_to_cpu(p->protocol);
@@ -3229,15 +3229,15 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 		if (integrity_alg[0]) {
 			int hash_size;
 
-			peer_tfm = crypto_alloc_hash(integrity_alg, 0, CRYPTO_ALG_ASYNC);
-			tfm      = crypto_alloc_hash(integrity_alg, 0, CRYPTO_ALG_ASYNC);
-			if (!(peer_tfm && tfm)) {
+			peer_integrity_tfm = crypto_alloc_hash(integrity_alg, 0, CRYPTO_ALG_ASYNC);
+			integrity_tfm = crypto_alloc_hash(integrity_alg, 0, CRYPTO_ALG_ASYNC);
+			if (!(peer_integrity_tfm && integrity_tfm)) {
 				conn_err(tconn, "peer data-integrity-alg %s not supported\n",
 					 integrity_alg);
 				goto disconnect;
 			}
 
-			hash_size = crypto_hash_digestsize(tfm);
+			hash_size = crypto_hash_digestsize(integrity_tfm);
 			int_dig_in = kmalloc(hash_size, GFP_KERNEL);
 			int_dig_vv = kmalloc(hash_size, GFP_KERNEL);
 			if (!(int_dig_in && int_dig_vv)) {
@@ -3266,7 +3266,7 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 		new_net_conf->integrity_alg_len = strlen(integrity_alg) + 1;
 
 		crypto_free_hash(tconn->integrity_tfm);
-		tconn->integrity_tfm = tfm;
+		tconn->integrity_tfm = integrity_tfm;
 
 		rcu_assign_pointer(tconn->net_conf, new_net_conf);
 		mutex_unlock(&tconn->conf_update);
@@ -3275,7 +3275,7 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 		crypto_free_hash(tconn->peer_integrity_tfm);
 		kfree(tconn->int_dig_in);
 		kfree(tconn->int_dig_vv);
-		tconn->peer_integrity_tfm = peer_tfm;
+		tconn->peer_integrity_tfm = peer_integrity_tfm;
 		tconn->int_dig_in = int_dig_in;
 		tconn->int_dig_vv = int_dig_vv;
 
@@ -3338,8 +3338,8 @@ STATIC int receive_protocol(struct drbd_tconn *tconn, struct packet_info *pi)
 disconnect_rcu_unlock:
 	rcu_read_unlock();
 disconnect:
-	crypto_free_hash(peer_tfm);
-	crypto_free_hash(tfm);
+	crypto_free_hash(peer_integrity_tfm);
+	crypto_free_hash(integrity_tfm);
 	kfree(int_dig_in);
 	kfree(int_dig_vv);
 	conn_request_state(tconn, NS(conn, C_DISCONNECTING), CS_HARD);
