@@ -191,6 +191,7 @@ enum { NORMAL, STACKED, IGNORED, __N_RESOURCE_TYPES };
 int nr_resources[__N_RESOURCE_TYPES];
 int nr_volumes[__N_RESOURCE_TYPES];
 int highest_minor;
+int number_of_minors = 0;
 int config_from_stdin = 0;
 int config_valid = 1;
 int no_tty;
@@ -1209,7 +1210,7 @@ static int sh_mod_parms(struct cfg_ctx *ctx)
 	int mc = global_options.minor_count;
 
 	if (mc == 0) {
-		mc = highest_minor + 11;
+		mc = number_of_minors + 3;
 		if (mc > DRBD_MINOR_COUNT_MAX)
 			mc = DRBD_MINOR_COUNT_MAX;
 
@@ -3831,6 +3832,7 @@ void count_resources_or_die(void)
 	struct d_volume *vol;
 
 	highest_minor = 0;
+	number_of_minors = 0;
 	for_each_resource(res, tmp, config) {
 		if (res->ignore) {
 			nr_resources[IGNORED]++;
@@ -3843,6 +3845,7 @@ void count_resources_or_die(void)
 			nr_resources[NORMAL]++;
 
 		for_each_volume(vol, res->me->volumes) {
+			number_of_minors++;
 			m = vol->device_minor;
 			if (m > highest_minor)
 				highest_minor = m;
