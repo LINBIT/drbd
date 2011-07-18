@@ -3061,14 +3061,8 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (adm_ctx.tconn) {
-		if (info->nlhdr->nlmsg_flags & NLM_F_EXCL) {
-			retcode = ERR_INVALID_REQUEST;
-			drbd_msg_put_info("resource exists");
-		}
-		/* else: still NO_ERROR */
+	if (adm_ctx.tconn)
 		goto out;
-	}
 
 	if (!conn_create(adm_ctx.resource_name, &res_opts))
 		retcode = ERR_NOMEM;
@@ -3099,14 +3093,8 @@ int drbd_adm_add_minor(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	/* drbd_adm_prepare made sure already
-	 * that mdev->tconn and mdev->vnr match the request. */
-	if (adm_ctx.mdev) {
-		if (info->nlhdr->nlmsg_flags & NLM_F_EXCL)
-			retcode = ERR_MINOR_EXISTS;
-		/* else: still NO_ERROR */
+	if (adm_ctx.mdev)
 		goto out;
-	}
 
 	retcode = conn_new_minor(adm_ctx.tconn, dh->minor, adm_ctx.volume);
 out:
