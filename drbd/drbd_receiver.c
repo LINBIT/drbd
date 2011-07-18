@@ -1182,7 +1182,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 
 		if (epoch_size != 0 &&
 		    atomic_read(&epoch->active) == 0 &&
-		    test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) &&
+		    (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) || ev & EV_CLEANUP) &&
 		    epoch->list.prev == &mdev->current_epoch->list &&
 		    !test_bit(DE_IS_FINISHING, &epoch->flags)) {
 			/* Nearly all conditions are met to finish that epoch... */
@@ -1204,7 +1204,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 				drbd_send_b_ack(mdev, epoch->barrier_nr, epoch_size);
 				spin_lock(&mdev->epoch_lock);
 			}
-			dec_unacked(mdev);
+			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))
+				dec_unacked(mdev);
 
 			if (mdev->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
