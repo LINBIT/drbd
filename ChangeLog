@@ -2,55 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.4.0rc4 (api:genl1/proto:86-100)
+8.4.0 (api:genl1/proto:86-100)
 --------
- * Enforce application of activity log after primary crash in user space
- * Features from drbd-8.3: Allow detach from frozen backing devices with the
-   new --force option; configurable timeout for backing devices by the new
-   disk-timeout option
- * Fixes from drbd-8.3: RHEL 6.1 compatibility, fixes for >16TiB support,
-   fixed bit_size negotiation with drbd < 8.3.7
- * Fixed state transitions in case attach fails
- * Fixed OOPS on RHEL5 kernels; By delivering a workaround for a bug in
-   RHEL5's header files
- * Renamed --dry-run of connect to --tentative; plus alias in drbdsetup
- * Removed drbdadm --yes option
- * drbdadm got a "help" sub command, that shows the specific options
- * drbdadm can now process all options in random order, and ignores the "--"
-   separator; compatibility aliases with the old calling conventions; now it
-   is compatible with the pre 8.4 way of calling.
-
-8.4.0rc3 (api:genl1/proto:86-100)
---------
- * Renamed drbdsetup commands: new-connection -> new-resource,
-   del-connection -> del-resource and xml -> xml-help
- * Renamed a configure option: --with-legacy-connector -> --with-legacy_utils
- * Renamed drbdadm options --force to --yes
- * drbdadm now passes drbdsetup options through, without the cumbersome
-   "--" separator. They need to be given after the command on the command line.
-   I.e. "drbdadm primary r0 --force". This is enabled for: attach, disk-options,
-   new-options, disconnect, resource-options, primary and new-current-uuid.
- * Changes from the 8.3 branch up to 8.3.11rc3
- * Code cleanups ; Removal of compatibility code for kernels older than 2.6.18
-
-8.4.0rc2 (api:genl1/proto:86-100)
---------
- * Do not crash if tconn is removed while fence peer handler runs
+ * Fixed handling of read errors during online verify
  * Fix for connecting on high latency network links
  * Fixed state transitions if fence-peer handler returns after connection was
    established again
- * Various net options update the peer when changed on one side
-   (protocol, data-integrity-alg, allow-two-primaries, after-sb-*)
- * drbdadm, fixed: option inheritance, stacked resources, resync-after, ...
- * When build with --with-legacy_utils it brings all the necessary
-   old executables, and the new tools transparently execute the old
-   ones if necessary
- * Compatibility code down to at least kernel 2.6.18
- * Code cleanups ; New way of dealing with default values
-
-8.4.0rc1 (api:genl1/proto:86-100)
---------
- * Fixed handling of read errors during online verify
  * Go into inconsistent disk state with on-io-error=pass-on policy
  * Timeouts for requests processing on the peer (previously that
    worked only if the data socket was congested)
@@ -71,14 +28,27 @@ Latest:
  * drbdadm, configuration changes: volume sections; syncer section removed;
    bool options got yes/no values, that improves option inheritance;
    resource options
- * drbdsetup: new commands for creating and removing connections
+ * drbdsetup: new commands for creating and removing resources
    and minors
  * drbdsetup: new commands for changing disk options while the disk
    is attached; ...for changing net options while the connection is
    established
  * drbdsetup/drbdadm the wire-protocol is now a regular connection option
+ * Removed drbdadm option --force
  * IO freezing/thawing is done on connection (all volumes) level
  * fencing is done on connection (all volumes) level
+ * Enforce application of activity log after primary crash in user space
+ * Features from drbd-8.3: Allow detach from frozen backing devices with the
+   new --force option; configurable timeout for backing devices by the new
+   disk-timeout option
+ * Renamed --dry-run of connect to --tentative; plus alias in drbdsetup
+ * drbdadm got a "help" sub command, that shows the specific options
+ * drbdadm now knows all drbdsetup options, and verify ...
+ * drbdadm can now process all options in random order, and ignores the "--"
+   separator; compatibility aliases with the old calling conventions; now it
+   is compatible with the pre 8.4 way of calling.
+ * New default values (compared to drbd-8.3) for: minor-count, ko-count, al-extents,
+   c-plan-ahead, c-fill-target, c-min-rate, use-rle, on-io-error
 
 8.3.10 (api:88/proto:86-96)
 --------
