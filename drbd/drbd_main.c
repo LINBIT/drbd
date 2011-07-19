@@ -2401,7 +2401,6 @@ void drbd_minor_destroy(struct kref *kref)
 
 	/* paranoia asserts */
 	D_ASSERT(mdev->open_cnt == 0);
-	D_ASSERT(list_empty(&mdev->tconn->data.work.q));
 	/* end paranoia asserts */
 
 	/* cleanup stuff that may have been allocated during
