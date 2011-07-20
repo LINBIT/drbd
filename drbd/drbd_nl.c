@@ -1864,8 +1864,6 @@ struct crypto {
 	struct crypto_hash *csums_tfm;
 	struct crypto_hash *cram_hmac_tfm;
 	struct crypto_hash *integrity_tfm;
-	void *int_dig_in;
-	void *int_dig_vv;
 };
 
 static int
@@ -1888,7 +1886,6 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_conf)
 {
 	char hmac_name[CRYPTO_MAX_ALG_NAME];
 	enum drbd_ret_code rv;
-	int hash_size;
 
 	rv = alloc_hash(&crypto->csums_tfm, new_conf->csums_alg,
 		       ERR_CSUMS_ALG);
@@ -1909,23 +1906,12 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_conf)
 		rv = alloc_hash(&crypto->cram_hmac_tfm, hmac_name,
 			       ERR_AUTH_ALG);
 	}
-	if (crypto->integrity_tfm) {
-		hash_size = crypto_hash_digestsize(crypto->integrity_tfm);
-		crypto->int_dig_in = kmalloc(hash_size, GFP_KERNEL);
-		if (!crypto->int_dig_in)
-			return ERR_NOMEM;
-		crypto->int_dig_vv = kmalloc(hash_size, GFP_KERNEL);
-		if (!crypto->int_dig_vv)
-			return ERR_NOMEM;
-	}
 
 	return rv;
 }
 
 static void free_crypto(struct crypto *crypto)
 {
-	kfree(crypto->int_dig_in);
-	kfree(crypto->int_dig_vv);
 	crypto_free_hash(crypto->cram_hmac_tfm);
 	crypto_free_hash(crypto->integrity_tfm);
 	crypto_free_hash(crypto->csums_tfm);
@@ -2028,10 +2014,6 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		crypto.verify_tfm = NULL;
 	}
 
-	kfree(tconn->int_dig_in);
-	tconn->int_dig_in = crypto.int_dig_in;
-	kfree(tconn->int_dig_vv);
-	tconn->int_dig_vv = crypto.int_dig_vv;
 	crypto_free_hash(tconn->integrity_tfm);
 	tconn->integrity_tfm = crypto.integrity_tfm;
 	if (tconn->cstate >= C_WF_REPORT_PARAMS && tconn->agreed_pro_version >= 100)
@@ -2148,8 +2130,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	rcu_assign_pointer(tconn->net_conf, new_conf);
 
 	conn_free_crypto(tconn);
-	tconn->int_dig_in = crypto.int_dig_in;
-	tconn->int_dig_vv = crypto.int_dig_vv;
 	tconn->cram_hmac_tfm = crypto.cram_hmac_tfm;
 	tconn->integrity_tfm = crypto.integrity_tfm;
 	tconn->csums_tfm = crypto.csums_tfm;
