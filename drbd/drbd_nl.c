@@ -1187,20 +1187,6 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mdev = adm_ctx.mdev;
 
-	/* make sure this is a CHANGE request, as expected.
-	 * Hm...
-	 * genl_rcv_msg can not distinguish between the "NEW" flags
-	 * (NLM_F_REPLACE and friends), and the "GET" flags
-	 * (NLM_F_ROOT, NLM_F_MATCH, ...).
-	 * They are numerically the same.
-	 * NLM_F_REPLACE would be considered a dump request, .dumpit is not
-	 * defined, and we'd get a -EOPNOTSUPP :-(
-	 * So we cannot set the REPLACE flag from userland.
-	 * To make it visible from the *_from_attrs() functions,
-	 * we set it here.
-	 */
-	info->nlhdr->nlmsg_flags |= NLM_F_REPLACE;
-
 	/* we also need a disk
 	 * to change the options on */
 	if (!get_ldev(mdev)) {
@@ -1220,7 +1206,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	if (should_set_defaults(info))
 		set_disk_conf_defaults(new_disk_conf);
 
-	err = disk_conf_from_attrs(new_disk_conf, info);
+	err = disk_conf_from_attrs_for_change(new_disk_conf, info);
 	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
@@ -1936,20 +1922,6 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	tconn = adm_ctx.tconn;
 
-	/* make sure this is a CHANGE request, as expected.
-	 * Hm...
-	 * genl_rcv_msg can not distinguish between the "NEW" flags
-	 * (NLM_F_REPLACE and friends), and the "GET" flags
-	 * (NLM_F_ROOT, NLM_F_MATCH, ...).
-	 * They are numerically the same.
-	 * NLM_F_REPLACE would be considered a dump request, .dumpit is not
-	 * defined, and we'd get a -EOPNOTSUPP :-(
-	 * So we cannot set the REPLACE flag from userland.
-	 * To make it visible from the *_from_attrs() functions,
-	 * we set it here.
-	 */
-	info->nlhdr->nlmsg_flags |= NLM_F_REPLACE;
-
 	new_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
 	if (!new_conf) {
 		retcode = ERR_NOMEM;
@@ -1972,7 +1944,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	if (should_set_defaults(info))
 		set_net_conf_defaults(new_conf);
 
-	err = net_conf_from_attrs(new_conf, info);
+	err = net_conf_from_attrs_for_change(new_conf, info);
 	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));

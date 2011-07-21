@@ -145,17 +145,13 @@ static struct nlattr *nested_attr_tb[128];
 
 #undef GENL_struct
 #define GENL_struct(tag_name, tag_number, s_name, s_fields)		\
-static int s_name ## _from_attrs(struct s_name *s, struct genl_info *info) __attribute__((unused)); \
-static int s_name ## _from_attrs(struct s_name *s, struct genl_info *info)	\
+static int __ ## s_name ## _from_attrs(struct s_name *s,		\
+		struct genl_info *info, bool exclude_invariants)	\
 {									\
 	const int maxtype = ARRAY_SIZE(s_name ## _nl_policy)-1;		\
 	struct nlattr *tla = info->attrs[tag_number];			\
 	struct nlattr **ntb = nested_attr_tb;				\
 	struct nlattr *nla;						\
-	/* invariants can only be set on object creation, */		\
-	/* not for CHANGE */						\
-	int exclude_invariants =					\
-		info->nlhdr->nlmsg_flags & NLM_F_REPLACE;		\
 	int err;							\
 	BUILD_BUG_ON(ARRAY_SIZE(s_name ## _nl_policy) > ARRAY_SIZE(nested_attr_tb));	\
 	if (!tla)							\
@@ -167,8 +163,17 @@ static int s_name ## _from_attrs(struct s_name *s, struct genl_info *info)	\
 									\
 	s_fields							\
 	return 0;							\
-}
-
+}					__attribute__((unused))		\
+static int s_name ## _from_attrs(struct s_name *s,			\
+						struct genl_info *info)	\
+{									\
+	return __ ## s_name ## _from_attrs(s, info, false);		\
+}					__attribute__((unused))		\
+static int s_name ## _from_attrs_for_change(struct s_name *s,		\
+						struct genl_info *info)	\
+{									\
+	return __ ## s_name ## _from_attrs(s, info, true);		\
+}					__attribute__((unused))		\
 
 #define __assign(attr_nr, attr_flag, name, nla_type, type, assignment...)	\
 		nla = ntb[attr_nr];						\
