@@ -529,12 +529,12 @@ void tl_abort_disk_io(struct drbd_device *device)
 STATIC int drbd_thread_setup(void *arg)
 {
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
-	struct drbd_connection *connection = thi->connection;
+	struct drbd_resource *resource = thi->resource;
 	unsigned long flags;
 	long timeout;
 	int retval;
 
-	daemonize("drbd_%c_%s", thi->name[0], connection->resource->name);
+	daemonize("drbd_%c_%s", thi->name[0], resource->name);
 	/* state engine takes this lock (in drbd_thread_stop_nowait)
 	 * while holding the req_lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
@@ -562,7 +562,7 @@ restart:
 	 */
 
 	if (thi->t_state == RESTARTING) {
-		drbd_info(connection, "Restarting %s thread\n", thi->name);
+		drbd_info(resource, "Restarting %s thread\n", thi->name);
 		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		goto restart;
@@ -574,30 +574,33 @@ restart:
 
 	/* THINK maybe two different completions? */
 	complete_all(&thi->startstop); /* notify: thi->task unset. */
-	drbd_info(connection, "Terminating %s thread\n", thi->name);
+	drbd_info(resource, "Terminating %s thread\n", thi->name);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	/* Release mod reference taken when thread was started */
 
-	kref_put(&connection->kref, drbd_destroy_connection);
+	if (thi->connection)
+		kref_put(&thi->connection->kref, drbd_destroy_connection);
+	kref_put(&resource->kref, drbd_destroy_resource);
 	module_put(THIS_MODULE);
 	return retval;
 }
 
-STATIC void drbd_thread_init(struct drbd_connection *connection, struct drbd_thread *thi,
+STATIC void drbd_thread_init(struct drbd_resource *resource, struct drbd_thread *thi,
 			     int (*func) (struct drbd_thread *), const char *name)
 {
 	spin_lock_init(&thi->t_lock);
 	thi->task    = NULL;
 	thi->t_state = NONE;
 	thi->function = func;
-	thi->connection = connection;
+	thi->resource = resource;
+	thi->connection = NULL;
 	thi->name = name;
 }
 
 int drbd_thread_start(struct drbd_thread *thi)
 {
-	struct drbd_connection *connection = thi->connection;
+	struct drbd_resource *resource = thi->resource;
 	unsigned long flags;
 	int pid;
 
@@ -607,17 +610,19 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 	switch (thi->t_state) {
 	case NONE:
-		drbd_info(connection, "Starting %s thread (from %s [%d])\n",
+		drbd_info(resource, "Starting %s thread (from %s [%d])\n",
 			 thi->name, current->comm, current->pid);
 
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
-			drbd_err(connection, "Failed to get module reference in drbd_thread_start\n");
+			drbd_err(resource, "Failed to get module reference in drbd_thread_start\n");
 			spin_unlock_irqrestore(&thi->t_lock, flags);
 			return false;
 		}
 
-		kref_get(&thi->connection->kref);
+		kref_get(&resource->kref);
+		if (thi->connection)
+			kref_get(&thi->connection->kref);
 
 		init_completion(&thi->startstop);
 		thi->reset_cpu_mask = 1;
@@ -627,25 +632,27 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
 		if (pid < 0) {
-			drbd_err(connection, "Couldn't start thread (%d)\n", pid);
+			drbd_err(resource, "Couldn't start thread (%d)\n", pid);
 
-			kref_put(&connection->kref, drbd_destroy_connection);
+			if (thi->connection)
+				kref_put(&thi->connection->kref, drbd_destroy_connection);
+			kref_put(&resource->kref, drbd_destroy_resource);
 			module_put(THIS_MODULE);
 			return false;
 		}
 		/* waits until thi->task is set */
 		wait_for_completion(&thi->startstop);
 		if (thi->t_state != RUNNING)
-			drbd_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
+			drbd_err(resource, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 					thi->name, thi->t_state, RUNNING);
 		if (thi->task)
 			wake_up_process(thi->task);
 		else
-			drbd_err(connection, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
+			drbd_err(resource, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
 		break;
 	case EXITING:
 		thi->t_state = RESTARTING;
-		drbd_info(connection, "Restarting %s thread (from %s [%d])\n",
+		drbd_info(resource, "Restarting %s thread (from %s [%d])\n",
 				thi->name, current->comm, current->pid);
 		/* fall through */
 	case RUNNING:
@@ -661,14 +668,14 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 {
-	struct drbd_connection *connection = thi->connection;
+	struct drbd_resource *resource = thi->resource;
 	unsigned long flags;
 	enum drbd_thread_state ns = restart ? RESTARTING : EXITING;
 
 	/* may be called from state engine, holding the req lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
 
-	/* drbd_err(connection, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
+	/* drbd_err(resource, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
 	     current->comm, current->pid,
 	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
@@ -691,19 +698,19 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 		if (thi->task != current)
 			force_sig(DRBD_SIGKILL, thi->task);
 		else if (wait)
-			drbd_err(connection, "ASSERT FAILED: wait=%d\n", wait);
+			drbd_err(resource, "ASSERT FAILED: wait=%d\n", wait);
 	}
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	if (wait) {
 		if (thi->task == current) {
-			drbd_err(connection, "ASSERT FAILED: Trying to wait for current task!\n");
+			drbd_err(resource, "ASSERT FAILED: Trying to wait for current task!\n");
 			return;
 		}
 		wait_for_completion(&thi->startstop);
 		spin_lock_irqsave(&thi->t_lock, flags);
 		if (thi->t_state != NONE)
-			drbd_err(connection, "ASSERT FAILED: %s t_state == %d expected %d.\n",
+			drbd_err(resource, "ASSERT FAILED: %s t_state == %d expected %d.\n",
 				 thi->name, thi->t_state, NONE);
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 	}
@@ -770,12 +777,13 @@ static void drbd_calc_cpu_mask(cpumask_var_t *cpu_mask)
  */
 void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 {
+	struct drbd_resource *resource = thi->resource;
 	struct task_struct *p = current;
 
 	if (!thi->reset_cpu_mask)
 		return;
 	thi->reset_cpu_mask = 0;
-	set_cpus_allowed_ptr(p, thi->connection->resource->cpu_mask);
+	set_cpus_allowed_ptr(p, resource->cpu_mask);
 }
 #else
 #define drbd_calc_cpu_mask(A) ({})
@@ -2743,9 +2751,12 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	drbd_init_workqueue(&connection->meta.work);
 	mutex_init(&connection->meta.mutex);
 
-	drbd_thread_init(connection, &connection->receiver, drbd_receiver, "receiver");
-	drbd_thread_init(connection, &connection->worker, drbd_worker, "worker");
-	drbd_thread_init(connection, &connection->asender, drbd_asender, "asender");
+	drbd_thread_init(resource, &connection->receiver, drbd_receiver, "receiver");
+	connection->receiver.connection = connection;
+	drbd_thread_init(resource, &connection->worker, drbd_worker, "worker");
+	connection->worker.connection = connection;
+	drbd_thread_init(resource, &connection->asender, drbd_asender, "asender");
+	connection->asender.connection = connection;
 
 	kref_init(&connection->kref);
 
