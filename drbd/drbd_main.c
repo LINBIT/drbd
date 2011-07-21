@@ -534,7 +534,7 @@ STATIC int drbd_thread_setup(void *arg)
 	long timeout;
 	int retval;
 
-	daemonize("drbd_thread");
+	daemonize("drbd_%c_%s", thi->name[0], connection->resource->name);
 	/* state engine takes this lock (in drbd_thread_stop_nowait)
 	 * while holding the req_lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
@@ -545,9 +545,6 @@ STATIC int drbd_thread_setup(void *arg)
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
 	timeout = schedule_timeout(10*HZ);
-	snprintf(current->comm, sizeof(current->comm), "drbd_%c_%s",
-			thi->name[0],
-			thi->connection->resource->name);
 
 restart:
 	retval = thi->function(thi);
