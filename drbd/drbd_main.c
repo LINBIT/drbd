@@ -62,11 +62,6 @@
 #include <linux/swab.h>
 #endif
 
-int drbd_receiver(struct drbd_thread *);
-int drbd_worker(struct drbd_thread *);
-int drbd_asender(struct drbd_thread *);
-
-int drbd_init(void);
 #ifdef BD_OPS_USE_FMODE
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static int drbd_release(struct gendisk *gd, fmode_t mode);
