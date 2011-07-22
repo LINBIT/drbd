@@ -62,7 +62,7 @@
 #include <linux/swab.h>
 #endif
 
-int drbdd_init(struct drbd_thread *);
+int drbd_receiver(struct drbd_thread *);
 int drbd_worker(struct drbd_thread *);
 int drbd_asender(struct drbd_thread *);
 
@@ -2744,7 +2744,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	drbd_init_workqueue(&connection->meta.work);
 	mutex_init(&connection->meta.mutex);
 
-	drbd_thread_init(connection, &connection->receiver, drbdd_init, "receiver");
+	drbd_thread_init(connection, &connection->receiver, drbd_receiver, "receiver");
 	drbd_thread_init(connection, &connection->worker, drbd_worker, "worker");
 	drbd_thread_init(connection, &connection->asender, drbd_asender, "asender");
 
