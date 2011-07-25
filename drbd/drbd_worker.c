@@ -1248,14 +1248,6 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	return err;
 }
 
-int w_prev_work_done(struct drbd_work *w, int cancel)
-{
-	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
-
-	complete(&b->done);
-	return 0;
-}
-
 int w_send_barrier(struct drbd_work *w, int cancel)
 {
 	struct drbd_socket *sock;
