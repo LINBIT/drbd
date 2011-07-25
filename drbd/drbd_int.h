@@ -1698,16 +1698,6 @@ static inline sector_t drbd_md_ss__(struct drbd_device *device,
 }
 
 static inline void
-drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&q->q_lock, flags);
-	list_add(&w->list, &q->q);
-	spin_unlock_irqrestore(&q->q_lock, flags);
-	up(&q->s);
-}
-
-static inline void
 drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;

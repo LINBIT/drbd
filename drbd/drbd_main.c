@@ -3566,7 +3566,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	drbd_queue_work_front(&device->resource->work, &device->md_sync_work);
+	drbd_queue_work(&device->resource->work, &device->md_sync_work);
 }
 
 STATIC int w_md_sync(struct drbd_work *w, int unused)
