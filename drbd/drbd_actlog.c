@@ -685,8 +685,7 @@ void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go
  * called by worker on C_SYNC_TARGET and receiver on SyncSource.
  *
  */
-void __drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size,
-		       const char *file, const unsigned int line)
+void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr;
@@ -752,8 +751,7 @@ void __drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size,
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-int __drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size,
-			    const char *file, const unsigned int line)
+int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr, lbnr, flags;
 	sector_t esector, nr_sectors;
