@@ -1435,13 +1435,14 @@ struct after_conn_state_chg_work {
 	union drbd_state ns_min;
 	union drbd_state ns_max; /* new, max state, over all mdevs */
 	enum chg_state_flags flags;
+	struct drbd_connection *connection;
 };
 
 STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 {
 	struct after_conn_state_chg_work *acscw =
 		container_of(w, struct after_conn_state_chg_work, w);
-	struct drbd_connection *connection = w->connection;
+	struct drbd_connection *connection = acscw->connection;
 	enum drbd_conns oc = acscw->oc;
 	union drbd_state ns_max = acscw->ns_max;
 	union drbd_state ns_min = acscw->ns_min;
@@ -1751,7 +1752,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		acscw->flags = flags;
 		acscw->w.cb = w_after_conn_state_ch;
 		kref_get(&connection->kref);
-		acscw->w.connection = connection;
+		acscw->connection = connection;
 		drbd_queue_work(&connection->data.work, &acscw->w);
 	} else {
 		drbd_err(connection, "Could not kmalloc an acscw\n");

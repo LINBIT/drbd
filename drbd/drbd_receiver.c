@@ -4550,7 +4550,6 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 	struct drbd_wq_barrier barr;
 
 	barr.w.cb = w_complete;
-	barr.w.connection = connection;
 	init_completion(&barr.done);
 	drbd_queue_work(&connection->data.work, &barr.w);
 	wait_for_completion(&barr.done);
