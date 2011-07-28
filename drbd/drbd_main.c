@@ -2450,6 +2450,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection, *tmp;
 
+	drbd_thread_stop(&resource->worker);
 	for_each_connection_safe(connection, tmp, resource) {
 		list_del(&connection->connections);
 		kref_put(&connection->kref, drbd_destroy_connection);
@@ -2710,6 +2711,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	spin_lock_init(&resource->req_lock);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
+	drbd_thread_start(&resource->worker);
 
 	return resource;
 

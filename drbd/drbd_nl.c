@@ -1136,8 +1136,6 @@ static void conn_reconfig_start(struct drbd_connection *connection)
 {
 	drbd_thread_start(&connection->sender);
 	drbd_flush_workqueue(&connection->data.work);
-	drbd_thread_start(&connection->resource->worker);
-	drbd_flush_workqueue(&connection->resource->work);
 }
 
 /* if still unconfigured, stops sender again. */
@@ -1153,7 +1151,6 @@ static void conn_reconfig_done(struct drbd_connection *connection)
 		 * in conn_disconnect() */
 		drbd_thread_stop(&connection->receiver);
 		drbd_thread_stop(&connection->sender);
-		drbd_thread_stop(&connection->resource->worker);
 	}
 }
 
@@ -3164,7 +3161,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 	 * does drbd_thread_stop_nowait(). */
 	list_for_each_entry(connection, &resource->connections, connections)
 		drbd_thread_stop(&connection->sender);
-	drbd_thread_stop(&resource->worker);
 	synchronize_rcu();
 	drbd_free_resource(resource);
 	return NO_ERROR;
