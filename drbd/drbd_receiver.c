@@ -4546,24 +4546,6 @@ STATIC void drbdd(struct drbd_connection *connection)
 	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
-static int w_complete(struct drbd_work *w, int cancel)
-{
-	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
-
-	complete(&b->done);
-	return 0;
-}
-
-void conn_flush_workqueue(struct drbd_connection *connection)
-{
-	struct drbd_wq_barrier barr;
-
-	barr.w.cb = w_complete;
-	init_completion(&barr.done);
-	drbd_queue_work(&connection->data.work, &barr.w);
-	wait_for_completion(&barr.done);
-}
-
 STATIC void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -4638,7 +4620,7 @@ STATIC int drbd_disconnected(struct drbd_device *device)
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
 	 * to be "canceled" */
-	drbd_flush_workqueue(device);
+	drbd_flush_workqueue(&first_peer_device(device)->connection->data.work);
 
 	drbd_finish_peer_reqs(device);
 

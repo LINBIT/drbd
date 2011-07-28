@@ -1127,7 +1127,7 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 static void conn_reconfig_start(struct drbd_connection *connection)
 {
 	drbd_thread_start(&connection->worker);
-	conn_flush_workqueue(connection);
+	drbd_flush_workqueue(&connection->data.work);
 }
 
 /* if still unconfigured, stops worker again. */
@@ -1474,7 +1474,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* also wait for the last barrier ack. */
 	wait_event(device->misc_wait, !atomic_read(&device->ap_pending_cnt) || drbd_suspended(device));
 	/* and for any other previously queued work */
-	drbd_flush_workqueue(device);
+	drbd_flush_workqueue(&first_peer_device(device)->connection->data.work);
 
 	rv = _drbd_request_state(device, NS(disk, D_ATTACHING), CS_VERBOSE);
 	retcode = rv;  /* FIXME: Type mismatch. */
@@ -2122,7 +2122,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	((char *)new_net_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
-	conn_flush_workqueue(connection);
+	drbd_flush_workqueue(&connection->data.work);
 
 	mutex_lock(&adm_ctx.resource->conf_update);
 	old_net_conf = connection->net_conf;
