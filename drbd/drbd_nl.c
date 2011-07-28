@@ -3148,6 +3148,28 @@ out:
 	return 0;
 }
 
+static int adm_del_resource(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate > C_STANDALONE)
+			return ERR_NET_CONFIGURED;
+	}
+	if (!idr_is_empty(&resource->devices))
+		return ERR_RES_IN_USE;
+
+	list_del_rcu(&resource->resources);
+	/* Make sure all threads have actually stopped: state handling only
+	 * does drbd_thread_stop_nowait(). */
+	list_for_each_entry(connection, &resource->connections, connections)
+		drbd_thread_stop(&connection->sender);
+	drbd_thread_stop(&resource->worker);
+	synchronize_rcu();
+	drbd_free_resource(resource);
+	return NO_ERROR;
+}
+
 int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_resource *resource;
@@ -3191,15 +3213,6 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	/* If we reach this, all volumes (of this connection) are Secondary,
-	 * Disconnected, Diskless, aka Unconfigured. Make sure all threads have
-	 * actually stopped, state handling only does drbd_thread_stop_nowait(). */
-	for_each_connection(connection, resource)
-		drbd_thread_stop(&connection->sender);
-	drbd_thread_stop(&resource->worker);
-
-	/* Now, nothing can fail anymore */
-
 	/* delete volumes */
 	idr_for_each_entry(&resource->devices, device, i) {
 		retcode = adm_del_minor(device);
@@ -3210,10 +3223,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	list_del_rcu(&resource->resources);
-	synchronize_rcu();
-	drbd_free_resource(resource);
-	retcode = NO_ERROR;
+	retcode = adm_del_resource(resource);
 
 out:
 	drbd_adm_finish(info, retcode);
@@ -3222,8 +3232,6 @@ out:
 
 int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_resource *resource;
-	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -3232,25 +3240,7 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	resource = adm_ctx.resource;
-	for_each_connection(connection, resource) {
-		if (connection->cstate > C_STANDALONE) {
-			retcode = ERR_NET_CONFIGURED;
-			goto out;
-		}
-	}
-	if (!idr_is_empty(&resource->devices)) {
-		retcode = ERR_RES_IN_USE;
-		goto out;
-	}
-
-	list_del_rcu(&resource->resources);
-	for_each_connection(connection, resource)
-		drbd_thread_stop(&connection->sender);
-	drbd_thread_stop(&resource->worker);
-	synchronize_rcu();
-	drbd_free_resource(resource);
-	retcode = NO_ERROR;
+	retcode = adm_del_resource(adm_ctx.resource);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
