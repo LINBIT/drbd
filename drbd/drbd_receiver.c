@@ -1348,7 +1348,6 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 		if (fw) {
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
-			fw->w.connection = connection;
 			drbd_queue_work(&connection->sender_work, &fw->w);
 		} else {
 			drbd_warn(connection, "Could not kmalloc a flush_work obj\n");
@@ -4775,7 +4774,6 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 	struct drbd_wq_barrier barr;
 
 	barr.w.cb = w_complete;
-	barr.w.connection = connection;
 	init_completion(&barr.done);
 	drbd_queue_work(&connection->sender_work, &barr.w);
 	wait_for_completion(&barr.done);

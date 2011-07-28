@@ -359,10 +359,7 @@ static inline enum drbd_thread_state get_t_state(struct drbd_thread *thi)
 struct drbd_work {
 	struct list_head list;
 	int (*cb)(struct drbd_work *, int cancel);
-	union {
-		struct drbd_device *device;
-		struct drbd_connection *connection;
-	};
+	struct drbd_device *device;
 };
 
 #include "drbd_interval.h"
