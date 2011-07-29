@@ -1558,7 +1558,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			    peer_device->repl_state[NOW] == L_WF_BITMAP_S)
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
-						BM_LOCKED_TEST_ALLOWED,
+						BM_LOCK_SET | BM_LOCK_CLEAR,
 						peer_device);
 
 			/* Lost contact to peer's copy of the data */
@@ -1583,7 +1583,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					 * No harm done if the bitmap still changes,
 					 * redirtied pages will follow later. */
 					drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote diskless peer", BM_LOCKED_SET_ALLOWED,
+						"demote diskless peer", BM_LOCK_CLEAR,
 						NULL);
 				put_ldev(device);
 			}
@@ -1596,7 +1596,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				/* No changes to the bitmap expected this time, so assert that,
 				 * even though no harm was done if it did change. */
 				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote", BM_LOCKED_TEST_ALLOWED,
+						"demote", BM_LOCK_SET | BM_LOCK_CLEAR,
 						NULL);
 				put_ldev(device);
 			}
@@ -1634,7 +1634,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				/* no other bitmap changes expected during this phase */
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
-					"set_n_write from StartingSync", BM_LOCKED_TEST_ALLOWED,
+					"set_n_write from StartingSync", BM_LOCK_SET | BM_LOCK_CLEAR,
 					NULL);
 
 			/* We are invalidating our self... */
@@ -1642,7 +1642,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			    disk_state[OLD] > D_INCONSISTENT && disk_state[NEW] == D_INCONSISTENT)
 				/* other bitmap operation expected during this phase */
 				drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
-					"set_n_write from invalidate", BM_LOCKED_MASK,
+					"set_n_write from invalidate", BM_LOCK_ALL,
 					NULL);
 
 			/* Disks got bigger while they were detached */
@@ -1672,7 +1672,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			 */
 			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED && get_ldev(device)) {
 				drbd_queue_bitmap_io(device, &drbd_bm_write, NULL,
-					"write from resync_finished", BM_LOCKED_SET_ALLOWED,
+					"write from resync_finished", BM_LOCK_CLEAR,
 					NULL);
 				put_ldev(device);
 			}

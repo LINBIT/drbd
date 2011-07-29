@@ -523,26 +523,23 @@ enum {
 /* definition of bits in bm_flags to be used in drbd_bm_lock
  * and drbd_bitmap_io and friends. */
 enum bm_flag {
-	/* do we need to kfree, or vfree bm_pages? */
-	BM_P_VMALLOCED = 0x10000, /* internal use only, will be masked out */
+	BM_P_VMALLOCED = 0x10000,  /* do we need to kfree or vfree bm_pages? */
 
-	/* currently locked for bulk operation */
-	BM_LOCKED_MASK = 0x7,
+	/*
+	 * The bitmap can be locked to prevent others from clearing, setting,
+	 * and/or testing bits.  The following combinations of lock flags make
+	 * sense:
+	 *
+	 *   BM_LOCK_CLEAR,
+	 *   BM_LOCK_SET, | BM_LOCK_CLEAR,
+	 *   BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR.
+	 */
 
-	/* in detail, that is: */
-	BM_DONT_CLEAR = 0x1,
-	BM_DONT_SET   = 0x2,
-	BM_DONT_TEST  = 0x4,
+	BM_LOCK_TEST = 0x1,
+	BM_LOCK_SET = 0x2,
+	BM_LOCK_CLEAR = 0x4,
 
-	/* (test bit, count bit) allowed (common case) */
-	BM_LOCKED_TEST_ALLOWED = 0x3,
-
-	/* testing bits, as well as setting new bits allowed, but clearing bits
-	 * would be unexpected.  Used during bitmap receive.  Setting new bits
-	 * requires sending of "out-of-sync" information, though. */
-	BM_LOCKED_SET_ALLOWED = 0x1,
-
-	/* clear is not expected while bitmap is locked for bulk operation */
+	BM_LOCK_ALL = BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR,
 };
 
 struct drbd_bitmap {

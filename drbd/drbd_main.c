@@ -3762,14 +3762,14 @@ int drbd_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, current != device->resource->worker.task);
 
-	if ((flags & BM_LOCKED_SET_ALLOWED) == 0)
+	if (!(flags & BM_LOCK_CLEAR))
 		drbd_suspend_io(device);
 
 	drbd_bm_lock(device, why, flags);
 	rv = io_fn(device, peer_device);
 	drbd_bm_unlock(device);
 
-	if ((flags & BM_LOCKED_SET_ALLOWED) == 0)
+	if (!(flags & BM_LOCK_CLEAR))
 		drbd_resume_io(device);
 
 	return rv;

@@ -3270,7 +3270,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (abs(hg) >= 2) {
 		drbd_info(device, "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
-					BM_LOCKED_SET_ALLOWED, NULL))
+					BM_LOCK_CLEAR, NULL))
 			return -1;
 	}
 
@@ -3939,7 +3939,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			drbd_info(device, "Accepted new current UUID, preparing to skip initial sync\n");
 			drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
 					"clear_n_write from receive_uuids",
-					BM_LOCKED_TEST_ALLOWED, NULL);
+					BM_LOCK_SET | BM_LOCK_CLEAR, NULL);
 			_drbd_uuid_set(peer_device, UI_CURRENT, p_uuid[UI_CURRENT]);
 			_drbd_uuid_set(peer_device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
@@ -4642,7 +4642,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		return -EIO;
 	device = peer_device->device;
 
-	drbd_bm_lock(device, "receive bitmap", BM_LOCKED_SET_ALLOWED);
+	drbd_bm_lock(device, "receive bitmap", BM_LOCK_CLEAR);
 	/* you are supposed to send additional out-of-sync information
 	 * if you actually set bits during this phase */
 

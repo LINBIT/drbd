@@ -916,7 +916,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 			 la_size_changed ? "size changed" : "md moved");
 		/* next line implicitly does drbd_suspend_io()+drbd_resume_io() */
 		err = drbd_bitmap_io(device, &drbd_bm_write,
-				"size changed", BM_LOCKED_MASK, NULL);
+				"size changed", BM_LOCK_ALL, NULL);
 		if (err) {
 			rv = DEV_SIZE_ERROR;
 			goto out;
@@ -1540,14 +1540,14 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_info(device, "Assuming that all blocks are out of sync "
 		     "(aka FullSync)\n");
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
-			"set_n_write from attaching", BM_LOCKED_MASK,
+			"set_n_write from attaching", BM_LOCK_ALL,
 			NULL)) {
 			retcode = ERR_IO_MD_DISK;
 			goto force_diskless_dec;
 		}
 	} else {
 		if (drbd_bitmap_io(device, &drbd_bm_read,
-			"read from attaching", BM_LOCKED_MASK,
+			"read from attaching", BM_LOCK_ALL,
 			NULL)) {
 			retcode = ERR_IO_MD_DISK;
 			goto force_diskless_dec;
@@ -3253,7 +3253,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 
 	if (args.clear_bm) {
 		err = drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
-			"clear_n_write from new_c_uuid", BM_LOCKED_MASK, NULL);
+			"clear_n_write from new_c_uuid", BM_LOCK_ALL, NULL);
 		if (err) {
 			drbd_err(device, "Writing bitmap failed with %d\n",err);
 			retcode = ERR_IO_MD_DISK;

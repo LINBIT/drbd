@@ -128,9 +128,9 @@ void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
 			  b->bm_task->comm, task_pid_nr(b->bm_task));
 		mutex_lock(&b->bm_change);
 	}
-	if (BM_LOCKED_MASK & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_ALL)
 		drbd_err(device, "FIXME bitmap already locked in bm_lock\n");
-	b->bm_flags |= flags & BM_LOCKED_MASK;
+	b->bm_flags |= flags & BM_LOCK_ALL;
 
 	b->bm_why  = why;
 	b->bm_task = current;
@@ -144,10 +144,10 @@ void drbd_bm_unlock(struct drbd_device *device)
 		return;
 	}
 
-	if (!(BM_LOCKED_MASK & device->bitmap->bm_flags))
+	if (!(device->bitmap->bm_flags & BM_LOCK_ALL))
 		drbd_err(device, "FIXME bitmap not locked in bm_unlock\n");
 
-	b->bm_flags &= ~BM_LOCKED_MASK;
+	b->bm_flags &= ~BM_LOCK_ALL;
 	b->bm_why  = NULL;
 	b->bm_task = NULL;
 	mutex_unlock(&b->bm_change);
@@ -604,7 +604,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	if (!expect(device, b))
 		return -ENOMEM;
 
-	drbd_bm_lock(device, "resize", BM_LOCKED_MASK);
+	drbd_bm_lock(device, "resize", BM_LOCK_ALL);
 
 	drbd_info(device, "drbd_bm_resize called with capacity == %llu\n",
 			(unsigned long long)capacity);
@@ -1056,7 +1056,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	}
 
 	if (!ctx->flags)
-		WARN_ON(!(BM_LOCKED_MASK & b->bm_flags));
+		WARN_ON(!(b->bm_flags & BM_LOCK_ALL));
 
 	num_pages = b->bm_number_of_pages;
 
@@ -1294,7 +1294,7 @@ static unsigned long bm_find_next(struct drbd_device *device,
 		return i;
 
 	spin_lock_irq(&b->bm_lock);
-	if (BM_DONT_TEST & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_TEST)
 		bm_print_lock_info(device);
 
 	i = __bm_find_next(device, bm_fo, find_zero_bit, KM_IRQ1);
@@ -1320,13 +1320,13 @@ unsigned long drbd_bm_find_next_zero(struct drbd_device *device, unsigned long b
  * you must take drbd_bm_lock() first */
 unsigned long _drbd_bm_find_next(struct drbd_device *device, unsigned long bm_fo)
 {
-	/* WARN_ON(!(BM_DONT_SET & device->b->bm_flags)); */
+	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
 	return __bm_find_next(device, bm_fo, 0, KM_USER1);
 }
 
 unsigned long _drbd_bm_find_next_zero(struct drbd_device *device, unsigned long bm_fo)
 {
-	/* WARN_ON(!(BM_DONT_SET & device->b->bm_flags)); */
+	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
 	return __bm_find_next(device, bm_fo, 1, KM_USER1);
 }
 
@@ -1464,11 +1464,11 @@ drbd_bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
 	}
 	switch(op) {
 	case BM_OP_CLEAR:
-		if (bitmap->bm_flags & BM_DONT_CLEAR)
+		if (bitmap->bm_flags & BM_LOCK_CLEAR)
 			bm_print_lock_info(device);
 		break;
 	case BM_OP_SET:
-		if (bitmap->bm_flags & BM_DONT_SET)
+		if (bitmap->bm_flags & BM_LOCK_SET)
 			bm_print_lock_info(device);
 		break;
 	}
@@ -1528,7 +1528,7 @@ int drbd_bm_test_bit(struct drbd_device *device, const unsigned long bitnr)
 		return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	if (BM_DONT_TEST & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_TEST)
 		bm_print_lock_info(device);
 	if (bitnr < b->bm_bits) {
 		p_addr = bm_kmap(b, bm_bit_to_page_idx(b, bitnr), KM_IRQ1);
@@ -1565,7 +1565,7 @@ int drbd_bm_count_bits(struct drbd_device *device, const unsigned long s, const 
 		return 1;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	if (BM_DONT_TEST & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_TEST)
 		bm_print_lock_info(device);
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		unsigned int idx = bm_bit_to_page_idx(b, bitnr);
@@ -1614,7 +1614,7 @@ int drbd_bm_e_weight(struct drbd_device *device, unsigned long enr)
 		return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	if (BM_DONT_TEST & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_TEST)
 		bm_print_lock_info(device);
 
 	s = S2W(enr);
@@ -1652,7 +1652,7 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_device *device, unsigned long al_e
 		return 0;
 
 	spin_lock_irq(&b->bm_lock);
-	if (BM_DONT_SET & b->bm_flags)
+	if (b->bm_flags & BM_LOCK_SET)
 		bm_print_lock_info(device);
 	weight = b->bm_set;
 
