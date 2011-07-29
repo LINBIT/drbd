@@ -601,6 +601,9 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
+				struct drbd_resource *resource = device->resource;
+				struct drbd_connection *connection;
+
 				drbd_err(device, "BAD! sector=%llus enr=%u rs_left=%d "
 				    "rs_failed=%d count=%d\n",
 				     (unsigned long long)sector,
@@ -609,7 +612,11 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 				dump_stack();
 
 				lc_put(device->resync, &ext->lce);
-				conn_request_state(first_peer_device(device)->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				/* FIXME: Move the state handling code elsewhere or eliminate it. */
+				mutex_lock(&resource->conf_update);
+				list_for_each_entry_rcu(connection, &resource->connections, connections)
+					conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				mutex_unlock(&resource->conf_update);
 				return;
 			}
 		} else {
