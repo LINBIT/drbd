@@ -1334,9 +1334,9 @@ int w_send_write_hint(struct drbd_work *w, int cancel)
 	if (cancel)
 		return 0;
 	sock = &first_peer_device(device)->connection->data;
-	if (!drbd_prepare_command(device, sock))
+	if (!drbd_prepare_command(first_peer_device(device), sock))
 		return -EIO;
-	return drbd_send_command(device, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_UNPLUG_REMOTE, 0, NULL, 0);
 }
 
 static void re_init_if_first_write(struct drbd_connection *connection, unsigned int epoch)

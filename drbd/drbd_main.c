@@ -678,9 +678,9 @@ void *conn_prepare_command(struct drbd_connection *connection, struct drbd_socke
 	return p;
 }
 
-void *drbd_prepare_command(struct drbd_device *device, struct drbd_socket *sock)
+void *drbd_prepare_command(struct drbd_peer_device *peer_device, struct drbd_socket *sock)
 {
-	return conn_prepare_command(first_peer_device(device)->connection, sock);
+	return conn_prepare_command(peer_device->connection, sock);
 }
 
 static int __send_command(struct drbd_connection *connection, int vnr,
@@ -727,14 +727,14 @@ int conn_send_command(struct drbd_connection *connection, struct drbd_socket *so
 	return err;
 }
 
-int drbd_send_command(struct drbd_device *device, struct drbd_socket *sock,
+int drbd_send_command(struct drbd_peer_device *peer_device, struct drbd_socket *sock,
 		      enum drbd_packet cmd, unsigned int header_size,
 		      void *data, unsigned int size)
 {
 	int err;
 
-	err = __send_command(first_peer_device(device)->connection, device->vnr, sock, cmd, header_size,
-			     data, size);
+	err = __send_command(peer_device->connection, peer_device->device->vnr,
+			     sock, cmd, header_size, data, size);
 	mutex_unlock(&sock->mutex);
 	return err;
 }
@@ -770,7 +770,7 @@ int drbd_send_sync_param(struct drbd_device *device)
 	struct disk_conf *dc;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 
@@ -810,7 +810,7 @@ int drbd_send_sync_param(struct drbd_device *device)
 		strcpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
-	return drbd_send_command(device, sock, cmd, size, NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, cmd, size, NULL, 0);
 }
 
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)
@@ -879,7 +879,7 @@ int _drbd_send_uuids(struct drbd_device *device, u64 uuid_flags)
 		return 0;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p) {
 		put_ldev(device);
 		return -EIO;
@@ -899,7 +899,7 @@ int _drbd_send_uuids(struct drbd_device *device, u64 uuid_flags)
 	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
-	return drbd_send_command(device, sock, P_UUIDS, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_UUIDS, sizeof(*p), NULL, 0);
 }
 
 int drbd_send_uuids(struct drbd_device *device)
@@ -948,10 +948,10 @@ void drbd_gen_and_send_sync_uuid(struct drbd_device *device)
 	drbd_md_sync(device);
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (p) {
 		p->uuid = cpu_to_be64(uuid);
-		drbd_send_command(device, sock, P_SYNC_UUID, sizeof(*p), NULL, 0);
+		drbd_send_command(first_peer_device(device), sock, P_SYNC_UUID, sizeof(*p), NULL, 0);
 	}
 }
 
@@ -981,7 +981,7 @@ int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flag
 	}
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 
@@ -996,7 +996,7 @@ int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flag
 	p->max_bio_size = cpu_to_be32(max_bio_size);
 	p->queue_order_type = cpu_to_be16(q_order_type);
 	p->dds_flags = cpu_to_be16(flags);
-	return drbd_send_command(device, sock, P_SIZES, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_SIZES, sizeof(*p), NULL, 0);
 }
 
 /**
@@ -1009,11 +1009,11 @@ int drbd_send_current_state_(struct drbd_device *device, const char *func, unsig
 	struct p_state *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->state = cpu_to_be32(device->state.i); /* Within the send mutex */
-	return drbd_send_command(device, sock, P_STATE, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
 /**
@@ -1032,11 +1032,11 @@ int drbd_send_state_(struct drbd_device *device, union drbd_state state, const c
 	struct p_state *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
-	return drbd_send_command(device, sock, P_STATE, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
 int drbd_send_state_req(struct drbd_device *device, union drbd_state mask, union drbd_state val)
@@ -1045,12 +1045,12 @@ int drbd_send_state_req(struct drbd_device *device, union drbd_state mask, union
 	struct p_req_state *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
-	return drbd_send_command(device, sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
 }
 
 int conn_send_state_req(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
@@ -1075,10 +1075,10 @@ void drbd_send_sr_reply(struct drbd_device *device, enum drbd_state_rv retcode)
 	struct p_req_state_reply *p;
 
 	sock = &first_peer_device(device)->connection->meta;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (p) {
 		p->retcode = cpu_to_be32(retcode);
-		drbd_send_command(device, sock, P_STATE_CHG_REPLY, sizeof(*p), NULL, 0);
+		drbd_send_command(first_peer_device(device), sock, P_STATE_CHG_REPLY, sizeof(*p), NULL, 0);
 	}
 }
 
@@ -1357,14 +1357,14 @@ static int _drbd_send_ack(struct drbd_device *device, enum drbd_packet cmd,
 		return -EIO;
 
 	sock = &first_peer_device(device)->connection->meta;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->sector = sector;
 	p->block_id = block_id;
 	p->blksize = blksize;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&device->packet_seq));
-	return drbd_send_command(device, sock, cmd, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p), NULL, 0);
 }
 
 /* dp->sector and dp->block_id already/still in network byte order,
@@ -1418,13 +1418,13 @@ int drbd_send_drequest(struct drbd_device *device, int cmd,
 	struct p_block_req *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = block_id;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(device, sock, cmd, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p), NULL, 0);
 }
 
 int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector, int size,
@@ -1436,13 +1436,13 @@ int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector, int siz
 	/* FIXME: Put the digest into the preallocated socket buffer.  */
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(device, sock, cmd, sizeof(*p),
+	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p),
 				 digest, digest_size);
 }
 
@@ -1452,13 +1452,13 @@ int drbd_send_ov_request(struct drbd_device *device, sector_t sector, int size)
 	struct p_block_req *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(device, sock, P_OV_REQUEST, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_OV_REQUEST, sizeof(*p), NULL, 0);
 }
 
 /* called on sndtimeo
@@ -1662,7 +1662,7 @@ int drbd_send_dblock(struct drbd_device *device, struct drbd_request *req)
 	int err;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	dgs = first_peer_device(device)->connection->integrity_tfm ?
 	      crypto_hash_digestsize(first_peer_device(device)->connection->integrity_tfm) : 0;
 
@@ -1735,7 +1735,7 @@ int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
 	int dgs;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 
 	dgs = first_peer_device(device)->connection->integrity_tfm ?
 	      crypto_hash_digestsize(first_peer_device(device)->connection->integrity_tfm) : 0;
@@ -1762,12 +1762,12 @@ int drbd_send_out_of_sync(struct drbd_device *device, struct drbd_request *req)
 	struct p_block_desc *p;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->blksize = cpu_to_be32(req->i.size);
-	return drbd_send_command(device, sock, P_OUT_OF_SYNC, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_OUT_OF_SYNC, sizeof(*p), NULL, 0);
 }
 
 /*
