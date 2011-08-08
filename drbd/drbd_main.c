@@ -1128,8 +1128,9 @@ void drbd_print_uuids(struct drbd_device *device, const char *text)
 	}
 }
 
-void drbd_gen_and_send_sync_uuid(struct drbd_device *device)
+void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
 	struct p_rs_uuid *p;
 	u64 uuid;
@@ -1141,11 +1142,11 @@ void drbd_gen_and_send_sync_uuid(struct drbd_device *device)
 	drbd_print_uuids(device, "updated sync UUID");
 	drbd_md_sync(device);
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (p) {
 		p->uuid = cpu_to_be64(uuid);
-		drbd_send_command(first_peer_device(device), sock, P_SYNC_UUID, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, sock, P_SYNC_UUID, sizeof(*p), NULL, 0);
 	}
 }
 

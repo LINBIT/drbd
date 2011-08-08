@@ -1681,7 +1681,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 		 * and from after_state_ch otherwise. */
 		if (side == C_SYNC_SOURCE &&
 		    first_peer_device(device)->connection->agreed_pro_version < 96)
-			drbd_gen_and_send_sync_uuid(device);
+			drbd_gen_and_send_sync_uuid(first_peer_device(device));
 
 		if (first_peer_device(device)->connection->agreed_pro_version < 95 &&
 		    device->rs_total == 0) {
