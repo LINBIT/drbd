@@ -578,7 +578,6 @@ done
 : "== timeout             == ${timeout:=1}"
 : "== dc_timeout          == ${dc_timeout:=$[20+timeout]}"
 
-
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
 # xpath query, in case someone is crazy enough to use different
@@ -591,6 +590,17 @@ for var in DRBD_RESOURCE; do
 		exit 1
 	fi
 done
+
+# Fixup id-prefix to include the resource name
+# There may be multiple drbd instances part of the same M/S Group, pointing to
+# the same master-id. Still they need to all have their own constraint, to be
+# able to unfence independently when they finish their resync independently.
+# Be nice to people who already explicitly configure an id prefix containing
+# the resource name.
+if [[ $id_prefix != *"-$DRBD_RESOURCE" ]] ; then
+	id_prefix="$id_prefix-$DRBD_RESOURCE"
+	: "== id_prefix           == ${id_prefix}"
+fi
 
 # make sure it contains what we expect
 HOSTNAME=$(uname -n)
