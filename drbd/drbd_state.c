@@ -1288,7 +1288,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	/* Last part of the attaching process ... */
 	if (ns.conn >= C_CONNECTED &&
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
-		drbd_send_sizes(device, 0, 0);  /* to start sync... */
+		drbd_send_sizes(first_peer_device(device), 0, 0);  /* to start sync... */
 		drbd_send_uuids(first_peer_device(device));
 		drbd_send_state(device);
 	}

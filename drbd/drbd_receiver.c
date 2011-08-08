@@ -836,7 +836,7 @@ int drbd_connected(struct drbd_device *device)
 
 	err = drbd_send_sync_param(first_peer_device(device));
 	if (!err)
-		err = drbd_send_sizes(device, 0, 0);
+		err = drbd_send_sizes(first_peer_device(device), 0, 0);
 	if (!err)
 		err = drbd_send_uuids(first_peer_device(device));
 	if (!err)
@@ -3734,7 +3734,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		    drbd_get_capacity(device->this_bdev) || ldsc) {
 			/* we have different sizes, probably peer
 			 * needs to know my new size... */
-			drbd_send_sizes(device, 0, ddsf);
+			drbd_send_sizes(first_peer_device(device), 0, ddsf);
 		}
 		if (test_and_clear_bit(RESIZE_PENDING, &device->flags) ||
 		    (dd == grew && device->state.conn == C_CONNECTED)) {

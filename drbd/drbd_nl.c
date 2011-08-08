@@ -2363,7 +2363,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 			set_bit(RESIZE_PENDING, &device->flags);
 
 		drbd_send_uuids(first_peer_device(device));
-		drbd_send_sizes(device, 1, ddsf);
+		drbd_send_sizes(first_peer_device(device), 1, ddsf);
 	}
 
  fail:
