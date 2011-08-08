@@ -1302,7 +1302,7 @@ static void after_state_ch(struct drbd_device *device, union drbd_state os,
 	if ((os.conn != C_SYNC_SOURCE && os.conn != C_PAUSED_SYNC_S) &&
 	    (ns.conn == C_SYNC_SOURCE || ns.conn == C_PAUSED_SYNC_S) &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 96 && get_ldev(device)) {
-		drbd_gen_and_send_sync_uuid(device);
+		drbd_gen_and_send_sync_uuid(first_peer_device(device));
 		put_ldev(device);
 	}
 
