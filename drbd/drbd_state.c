@@ -1229,7 +1229,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	/* Do not change the order of the if above and the two below... */
 	if (os.pdsk == D_DISKLESS &&
 	    ns.pdsk > D_DISKLESS && ns.pdsk != D_UNKNOWN) {      /* attach on the peer */
-		drbd_send_uuids(device);
+		drbd_send_uuids(first_peer_device(device));
 		drbd_send_state(device);
 	}
 	/* No point in queuing send_bitmap if we don't have a connection
@@ -1255,7 +1255,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 					set_bit(NEW_CUR_UUID, &device->flags);
 				} else {
 					drbd_uuid_new_current(device);
-					drbd_send_uuids(device);
+					drbd_send_uuids(first_peer_device(device));
 				}
 			}
 			put_ldev(device);
@@ -1289,7 +1289,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	if (ns.conn >= C_CONNECTED &&
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
 		drbd_send_sizes(device, 0, 0);  /* to start sync... */
-		drbd_send_uuids(device);
+		drbd_send_uuids(first_peer_device(device));
 		drbd_send_state(device);
 	}
 
