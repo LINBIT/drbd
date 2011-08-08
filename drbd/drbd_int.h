@@ -648,6 +648,7 @@ struct drbd_work {
 #include "drbd_interval.h"
 
 extern int drbd_wait_misc(struct drbd_conf *, struct drbd_interval *);
+extern bool idr_is_empty(struct idr *idr);
 
 struct drbd_request {
 	struct drbd_work w;

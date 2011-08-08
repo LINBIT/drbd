@@ -3772,6 +3772,16 @@ int drbd_wait_misc(struct drbd_conf *mdev, struct drbd_interval *i)
 	return 0;
 }
 
+static int idr_has_entry(int id, void *p, void *data)
+{
+	return 1;
+}
+
+bool idr_is_empty(struct idr *idr)
+{
+	return !idr_for_each(idr, idr_has_entry, NULL);
+}
+
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 /* Fault insertion support including random number generator shamelessly
  * stolen from kernel/rcutorture.c */
