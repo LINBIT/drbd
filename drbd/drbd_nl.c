@@ -1271,8 +1271,12 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&device->resource->conf_update);
 	drbd_md_sync(device);
 
-	if (device->state.conn >= C_CONNECTED)
-		drbd_send_sync_param(device);
+	if (device->state.conn >= C_CONNECTED) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device)
+			drbd_send_sync_param(peer_device);
+	}
 
 	synchronize_rcu();
 	kfree(old_disk_conf);
@@ -2018,8 +2022,13 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	synchronize_rcu();
 	kfree(old_net_conf);
 
-	if (connection->cstate >= C_WF_REPORT_PARAMS)
-		drbd_send_sync_param(minor_to_mdev(conn_lowest_minor(connection)));
+	if (connection->cstate >= C_WF_REPORT_PARAMS) {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+			drbd_send_sync_param(peer_device);
+	}
 
 	goto done;
 
