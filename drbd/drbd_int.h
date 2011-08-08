@@ -996,7 +996,7 @@ extern int drbd_send_state_(struct drbd_device *device,
                const char *func, unsigned int line);
 extern int drbd_send_current_state_(struct drbd_device *device,
                const char *func, unsigned int line);
-extern int drbd_send_sync_param(struct drbd_device *device);
+extern int drbd_send_sync_param(struct drbd_peer_device *peer_device);
 extern void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr,
 			    u32 set_size);
 extern int drbd_send_ack(struct drbd_device *, enum drbd_packet,

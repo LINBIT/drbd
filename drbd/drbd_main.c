@@ -759,23 +759,23 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 	return conn_send_command(connection, sock, P_PING_ACK, 0, NULL, 0);
 }
 
-int drbd_send_sync_param(struct drbd_device *device)
+int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
 	struct drbd_socket *sock;
 	struct p_rs_param_95 *p;
 	int size;
-	const int apv = first_peer_device(device)->connection->agreed_pro_version;
+	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
 	struct net_conf *nc;
 	struct disk_conf *dc;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 
 	rcu_read_lock();
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->net_conf);
 
 	size = apv <= 87 ? sizeof(struct p_rs_param)
 		: apv == 88 ? sizeof(struct p_rs_param)
@@ -788,14 +788,14 @@ int drbd_send_sync_param(struct drbd_device *device)
 	/* initialize verify_alg and csums_alg */
 	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
 
-	if (get_ldev(device)) {
-		dc = rcu_dereference(device->ldev->disk_conf);
+	if (get_ldev(peer_device->device)) {
+		dc = rcu_dereference(peer_device->device->ldev->disk_conf);
 		p->resync_rate = cpu_to_be32(dc->resync_rate);
 		p->c_plan_ahead = cpu_to_be32(dc->c_plan_ahead);
 		p->c_delay_target = cpu_to_be32(dc->c_delay_target);
 		p->c_fill_target = cpu_to_be32(dc->c_fill_target);
 		p->c_max_rate = cpu_to_be32(dc->c_max_rate);
-		put_ldev(device);
+		put_ldev(peer_device->device);
 	} else {
 		p->resync_rate = cpu_to_be32(DRBD_RESYNC_RATE_DEF);
 		p->c_plan_ahead = cpu_to_be32(DRBD_C_PLAN_AHEAD_DEF);
@@ -810,7 +810,7 @@ int drbd_send_sync_param(struct drbd_device *device)
 		strcpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
-	return drbd_send_command(first_peer_device(device), sock, cmd, size, NULL, 0);
+	return drbd_send_command(peer_device, sock, cmd, size, NULL, 0);
 }
 
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)

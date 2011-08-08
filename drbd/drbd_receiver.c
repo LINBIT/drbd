@@ -881,7 +881,7 @@ int drbd_connected(struct drbd_device *device)
 		&first_peer_device(device)->connection->cstate_mutex :
 		&device->own_state_mutex;
 
-	err = drbd_send_sync_param(device);
+	err = drbd_send_sync_param(first_peer_device(device));
 	if (!err)
 		err = drbd_send_sizes(device, 0, 0);
 	if (!err)
