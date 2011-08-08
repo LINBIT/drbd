@@ -709,7 +709,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 	if (device->state.conn >= C_WF_REPORT_PARAMS) {
 		/* if this was forced, we should consider sync */
 		if (forced)
-			drbd_send_uuids(device);
+			drbd_send_uuids(first_peer_device(device));
 		drbd_send_current_state(device);
 	}
 
@@ -2562,7 +2562,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		if (dd == DS_GREW)
 			set_bit(RESIZE_PENDING, &device->flags);
 
-		drbd_send_uuids(device);
+		drbd_send_uuids(first_peer_device(device));
 		drbd_send_sizes(device, 1, ddsf);
 	}
 
@@ -3292,7 +3292,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_IO_MD_DISK;
 		}
 		if (skip_initial_sync) {
-			drbd_send_uuids_skip_initial_sync(device);
+			drbd_send_uuids_skip_initial_sync(first_peer_device(device));
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
 			spin_lock_irq(&device->resource->req_lock);

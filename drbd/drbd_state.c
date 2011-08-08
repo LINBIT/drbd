@@ -1316,7 +1316,7 @@ static void after_state_ch(struct drbd_device *device, union drbd_state os,
 		atomic_set(&device->rs_pending_cnt, 0);
 		drbd_rs_cancel_all(device);
 
-		drbd_send_uuids(device);
+		drbd_send_uuids(first_peer_device(device));
 		drbd_send_state(device, ns);
 	}
 	/* No point in queuing send_bitmap if we don't have a connection
@@ -1342,7 +1342,7 @@ static void after_state_ch(struct drbd_device *device, union drbd_state os,
 					set_bit(NEW_CUR_UUID, &device->flags);
 				} else {
 					drbd_uuid_new_current(device);
-					drbd_send_uuids(device);
+					drbd_send_uuids(first_peer_device(device));
 				}
 			}
 			put_ldev(device);
@@ -1353,7 +1353,7 @@ static void after_state_ch(struct drbd_device *device, union drbd_state os,
 		if (os.peer == R_SECONDARY && ns.peer == R_PRIMARY &&
 		    device->ldev->md.uuid[UI_BITMAP] == 0 && ns.disk >= D_UP_TO_DATE) {
 			drbd_uuid_new_current(device);
-			drbd_send_uuids(device);
+			drbd_send_uuids(first_peer_device(device));
 		}
 		/* D_DISKLESS Peer becomes secondary */
 		if (os.peer == R_PRIMARY && ns.peer == R_SECONDARY)
@@ -1381,7 +1381,7 @@ static void after_state_ch(struct drbd_device *device, union drbd_state os,
 	if (ns.conn >= C_CONNECTED &&
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
 		drbd_send_sizes(device, 0, 0);  /* to start sync... */
-		drbd_send_uuids(device);
+		drbd_send_uuids(first_peer_device(device));
 		drbd_send_state(device, ns);
 	}
 
