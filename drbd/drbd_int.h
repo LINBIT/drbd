@@ -1766,11 +1766,11 @@ static inline void request_ping(struct drbd_connection *connection)
 }
 
 extern void *conn_prepare_command(struct drbd_connection *, struct drbd_socket *);
-extern void *drbd_prepare_command(struct drbd_device *, struct drbd_socket *);
+extern void *drbd_prepare_command(struct drbd_peer_device *, struct drbd_socket *);
 extern int conn_send_command(struct drbd_connection *, struct drbd_socket *,
 			     enum drbd_packet, unsigned int, void *,
 			     unsigned int);
-extern int drbd_send_command(struct drbd_device *, struct drbd_socket *,
+extern int drbd_send_command(struct drbd_peer_device *, struct drbd_socket *,
 			     enum drbd_packet, unsigned int, void *,
 			     unsigned int);
 

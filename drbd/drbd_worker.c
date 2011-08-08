@@ -1276,14 +1276,14 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 		return 0;
 
 	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(device, sock);
+	p = drbd_prepare_command(first_peer_device(device), sock);
 	if (!p)
 		return -EIO;
 	p->barrier = b->br_number;
 	/* inc_ap_pending was done where this was queued.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in w_clear_epoch.  */
-	return drbd_send_command(device, sock, P_BARRIER, sizeof(*p), NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_BARRIER, sizeof(*p), NULL, 0);
 }
 
 int w_send_write_hint(struct drbd_work *w, int cancel)
@@ -1294,9 +1294,9 @@ int w_send_write_hint(struct drbd_work *w, int cancel)
 	if (cancel)
 		return 0;
 	sock = &first_peer_device(device)->connection->data;
-	if (!drbd_prepare_command(device, sock))
+	if (!drbd_prepare_command(first_peer_device(device), sock))
 		return -EIO;
-	return drbd_send_command(device, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
+	return drbd_send_command(first_peer_device(device), sock, P_UNPLUG_REMOTE, 0, NULL, 0);
 }
 
 int w_send_out_of_sync(struct drbd_work *w, int cancel)
