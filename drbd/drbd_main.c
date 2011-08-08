@@ -957,8 +957,9 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	}
 }
 
-int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flags flags)
+int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enum dds_flags flags)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
 	struct p_sizes *p;
 	sector_t d_size, u_size;
@@ -982,14 +983,14 @@ int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flag
 		max_bio_size = DRBD_MAX_BIO_SIZE; /* ... multiple BIOs per peer_request */
 	}
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 
-	if (first_peer_device(device)->connection->agreed_pro_version <= 94)
+	if (peer_device->connection->agreed_pro_version <= 94)
 		max_bio_size = min(max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
-	else if (first_peer_device(device)->connection->agreed_pro_version < 100)
+	else if (peer_device->connection->agreed_pro_version < 100)
 		max_bio_size = min(max_bio_size, DRBD_MAX_BIO_SIZE_P95);
 
 	p->d_size = cpu_to_be64(d_size);
@@ -998,7 +999,7 @@ int drbd_send_sizes(struct drbd_device *device, int trigger_reply, enum dds_flag
 	p->max_bio_size = cpu_to_be32(max_bio_size);
 	p->queue_order_type = cpu_to_be16(q_order_type);
 	p->dds_flags = cpu_to_be16(flags);
-	return drbd_send_command(first_peer_device(device), sock, P_SIZES, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, sock, P_SIZES, sizeof(*p), NULL, 0);
 }
 
 /**
