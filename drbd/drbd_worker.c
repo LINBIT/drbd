@@ -407,8 +407,9 @@ out:
 
 #define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
 
-static int read_for_csum(struct drbd_device *device, sector_t sector, int size)
+static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
 
 	if (!get_ldev(device))
@@ -709,7 +710,7 @@ next_sector:
 			size = (capacity-sector)<<9;
 		if (first_peer_device(device)->connection->agreed_pro_version >= 89 &&
 		    first_peer_device(device)->connection->csums_tfm) {
-			switch (read_for_csum(device, sector, size)) {
+			switch (read_for_csum(first_peer_device(device), sector, size)) {
 			case -EIO: /* Disk failure */
 				put_ldev(device);
 				return -EIO;
