@@ -1836,19 +1836,19 @@ static int drbd_drain_block(struct drbd_device *device, int data_size)
 	return err;
 }
 
-static int recv_dless_read(struct drbd_device *device, struct drbd_request *req,
+static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_request *req,
 			   sector_t sector, int data_size)
 {
 	struct bio_vec *bvec;
 	struct bio *bio;
 	int dgs, err, i, expect;
-	void *dig_in = first_peer_device(device)->connection->int_dig_in;
-	void *dig_vv = first_peer_device(device)->connection->int_dig_vv;
+	void *dig_in = peer_device->connection->int_dig_in;
+	void *dig_vv = peer_device->connection->int_dig_vv;
 
 	dgs = 0;
-	if (first_peer_device(device)->connection->peer_integrity_tfm) {
-		dgs = crypto_hash_digestsize(first_peer_device(device)->connection->peer_integrity_tfm);
-		err = drbd_recv_all_warn(first_peer_device(device)->connection, dig_in, dgs);
+	if (peer_device->connection->peer_integrity_tfm) {
+		dgs = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
+		err = drbd_recv_all_warn(peer_device->connection, dig_in, dgs);
 		if (err)
 			return err;
 		data_size -= dgs;
@@ -1856,15 +1856,15 @@ static int recv_dless_read(struct drbd_device *device, struct drbd_request *req,
 
 	/* optimistically update recv_cnt.  if receiving fails below,
 	 * we disconnect anyways, and counters will be reset. */
-	device->recv_cnt += data_size>>9;
+	peer_device->device->recv_cnt += data_size>>9;
 
 	bio = req->master_bio;
-	D_ASSERT(device, sector == bio->bi_sector);
+	D_ASSERT(peer_device->device, sector == bio->bi_sector);
 
 	bio_for_each_segment(bvec, bio, i) {
 		void *mapped = kmap(bvec->bv_page) + bvec->bv_offset;
 		expect = min_t(int, data_size, bvec->bv_len);
-		err = drbd_recv_all_warn(first_peer_device(device)->connection, mapped, expect);
+		err = drbd_recv_all_warn(peer_device->connection, mapped, expect);
 		kunmap(bvec->bv_page);
 		if (err)
 			return err;
@@ -1872,14 +1872,14 @@ static int recv_dless_read(struct drbd_device *device, struct drbd_request *req,
 	}
 
 	if (dgs) {
-		drbd_csum_bio(first_peer_device(device)->connection->peer_integrity_tfm, bio, dig_vv);
+		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
 		if (memcmp(dig_in, dig_vv, dgs)) {
-			drbd_err(device, "Digest integrity check FAILED. Broken NICs?\n");
+			drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
 			return -EINVAL;
 		}
 	}
 
-	D_ASSERT(device, data_size == 0);
+	D_ASSERT(peer_device->device, data_size == 0);
 	return 0;
 }
 
@@ -1989,7 +1989,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	/* drbd_remove_request_interval() is done in _req_may_be_done, to avoid
 	 * special casing it there for the various failure cases.
 	 * still no race with drbd_fail_pending_reads */
-	err = recv_dless_read(device, req, sector, pi->size);
+	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED);
 	/* else: nothing. handled from drbd_disconnect...
