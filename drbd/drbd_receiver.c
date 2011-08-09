@@ -1195,7 +1195,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *device,
 		if (finish) {
 			if (!(ev & EV_CLEANUP)) {
 				spin_unlock(&device->epoch_lock);
-				drbd_send_b_ack(device, epoch->barrier_nr, epoch_size);
+				drbd_send_b_ack(first_peer_device(device), epoch->barrier_nr, epoch_size);
 				spin_lock(&device->epoch_lock);
 			}
 			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))

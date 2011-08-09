@@ -971,8 +971,7 @@ extern int _conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_pac
 #define drbd_send_state(peer_device) drbd_send_state_(peer_device, __func__ , __LINE__ )
 extern int drbd_send_state_(struct drbd_peer_device *, const char *func, unsigned int line);
 extern int drbd_send_sync_param(struct drbd_peer_device *);
-extern void drbd_send_b_ack(struct drbd_device *device, u32 barrier_nr,
-			    u32 set_size);
+extern void drbd_send_b_ack(struct drbd_peer_device *, u32 barrier_nr, u32 set_size);
 extern int drbd_send_ack(struct drbd_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
 extern void drbd_send_ack_rp(struct drbd_device *device, enum drbd_packet cmd,
