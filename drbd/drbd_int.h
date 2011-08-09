@@ -1016,7 +1016,7 @@ extern int drbd_send_drequest(struct drbd_peer_device *, int cmd,
 extern int drbd_send_drequest_csum(struct drbd_peer_device *, sector_t sector,
 				   int size, void *digest, int digest_size,
 				   enum drbd_packet cmd);
-extern int drbd_send_ov_request(struct drbd_device *device,sector_t sector,int size);
+extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int size);
 
 extern int drbd_send_bitmap(struct drbd_device *device);
 extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv retcode);
