@@ -993,7 +993,7 @@ extern int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector,
 extern int drbd_send_ov_request(struct drbd_device *device,sector_t sector,int size);
 
 extern int drbd_send_bitmap(struct drbd_device *device);
-extern void drbd_send_sr_reply(struct drbd_device *device, enum drbd_state_rv retcode);
+extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv retcode);
 extern void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern void drbd_mdev_cleanup(struct drbd_device *device);

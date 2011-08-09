@@ -1242,16 +1242,16 @@ int conn_send_state_req(struct drbd_connection *connection, union drbd_state mas
 	return conn_send_command(connection, sock, cmd, sizeof(*p), NULL, 0);
 }
 
-void drbd_send_sr_reply(struct drbd_device *device, enum drbd_state_rv retcode)
+void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv retcode)
 {
 	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
 
-	sock = &first_peer_device(device)->connection->meta;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->meta;
+	p = drbd_prepare_command(peer_device, sock);
 	if (p) {
 		p->retcode = cpu_to_be32(retcode);
-		drbd_send_command(first_peer_device(device), sock, P_STATE_CHG_REPLY, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, sock, P_STATE_CHG_REPLY, sizeof(*p), NULL, 0);
 	}
 }
 
