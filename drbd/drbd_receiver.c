@@ -1811,7 +1811,7 @@ read_in_block(struct drbd_device *device, u64 id, sector_t sector,
 /* drbd_drain_block() just takes a data block
  * out of the socket input buffer, and discards it.
  */
-static int drbd_drain_block(struct drbd_device *device, int data_size)
+static int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
 {
 	struct page *page;
 	int err = 0;
@@ -1820,19 +1820,19 @@ static int drbd_drain_block(struct drbd_device *device, int data_size)
 	if (!data_size)
 		return 0;
 
-	page = drbd_alloc_pages(device, 1, 1);
+	page = drbd_alloc_pages(peer_device->device, 1, 1);
 
 	data = kmap(page);
 	while (data_size) {
 		unsigned int len = min_t(int, data_size, PAGE_SIZE);
 
-		err = drbd_recv_all_warn(first_peer_device(device)->connection, data, len);
+		err = drbd_recv_all_warn(peer_device->connection, data, len);
 		if (err)
 			break;
 		data_size -= len;
 	}
 	kunmap(page);
-	drbd_free_pages(device, page, 0);
+	drbd_free_pages(peer_device->device, page, 0);
 	return err;
 }
 
@@ -2024,7 +2024,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		if (DRBD_ratelimit(5*HZ, 5))
 			drbd_err(device, "Can not write resync data to local disk.\n");
 
-		err = drbd_drain_block(device, pi->size);
+		err = drbd_drain_block(peer_device, pi->size);
 
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 	}
@@ -2426,7 +2426,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		err = wait_for_and_update_peer_seq(device, peer_seq);
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 		atomic_inc(&connection->current_epoch->epoch_size);
-		err2 = drbd_drain_block(device, pi->size);
+		err2 = drbd_drain_block(peer_device, pi->size);
 		if (!err)
 			err = err2;
 		return err;
@@ -2703,7 +2703,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			    "no local data.\n");
 
 		/* drain possibly payload */
-		return drbd_drain_block(device, pi->size);
+		return drbd_drain_block(peer_device, pi->size);
 	}
 
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
