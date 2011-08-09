@@ -255,9 +255,10 @@ static void drbd_reclaim_net(struct drbd_device *device)
  *
  * Returns a page chain linked via page->private.
  */
-struct page *drbd_alloc_pages(struct drbd_device *device, unsigned int number,
+struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int number,
 			      bool retry)
 {
+	struct drbd_device *device = peer_device->device;
 	struct page *page = NULL;
 	struct net_conf *nc;
 	DEFINE_WAIT(wait);
@@ -266,7 +267,7 @@ struct page *drbd_alloc_pages(struct drbd_device *device, unsigned int number,
 	/* Yes, we may run up to @number over max_buffers. If we
 	 * follow it strictly, the admin will get it wrong anyways. */
 	rcu_read_lock();
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->net_conf);
 	mxb = nc ? nc->max_buffers : 1000000;
 	rcu_read_unlock();
 
@@ -342,9 +343,10 @@ You must not have the req_lock:
 */
 
 struct drbd_peer_request *
-drbd_alloc_peer_req(struct drbd_device *device, u64 id, sector_t sector,
+drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		    unsigned int data_size, gfp_t gfp_mask) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
 	struct page *page;
 	unsigned nr_pages = (data_size + PAGE_SIZE -1) >> PAGE_SHIFT;
@@ -359,7 +361,7 @@ drbd_alloc_peer_req(struct drbd_device *device, u64 id, sector_t sector,
 		return NULL;
 	}
 
-	page = drbd_alloc_pages(device, nr_pages, (gfp_mask & __GFP_WAIT));
+	page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_WAIT));
 	if (!page)
 		goto fail;
 
@@ -1590,7 +1592,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
 	 * "criss-cross" setup, that might cause write-out on some other DRBD,
 	 * which in turn might block on the other node at this very place.  */
-	peer_req = drbd_alloc_peer_req(device, id, sector, data_size, GFP_NOIO);
+	peer_req = drbd_alloc_peer_req(peer_device, id, sector, data_size, GFP_NOIO);
 	if (!peer_req)
 		return NULL;
 
@@ -1637,7 +1639,7 @@ STATIC int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
 	if (!data_size)
 		return 0;
 
-	page = drbd_alloc_pages(peer_device->device, 1, 1);
+	page = drbd_alloc_pages(peer_device, 1, 1);
 
 	data = kmap(page);
 	while (data_size) {
@@ -2528,7 +2530,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
 	 * "criss-cross" setup, that might cause write-out on some other DRBD,
 	 * which in turn might block on the other node at this very place.  */
-	peer_req = drbd_alloc_peer_req(device, p->block_id, sector, size, GFP_NOIO);
+	peer_req = drbd_alloc_peer_req(peer_device, p->block_id, sector, size, GFP_NOIO);
 	if (!peer_req) {
 		put_ldev(device);
 		return -ENOMEM;
