@@ -1520,42 +1520,42 @@ void drbd_send_b_ack(struct drbd_peer_device *peer_device, u32 barrier_nr, u32 s
  * @blksize:	size in byte, needs to be in big endian byte order
  * @block_id:	Id, big endian byte order
  */
-STATIC int _drbd_send_ack(struct drbd_device *device, enum drbd_packet cmd,
+STATIC int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 			  u64 sector, u32 blksize, u64 block_id)
 {
 	struct drbd_socket *sock;
 	struct p_block_ack *p;
 
-	if (device->state.conn < C_CONNECTED)
+	if (peer_device->device->state.conn < C_CONNECTED)
 		return -EIO;
 
-	sock = &first_peer_device(device)->connection->meta;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->meta;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 	p->sector = sector;
 	p->block_id = block_id;
 	p->blksize = blksize;
-	p->seq_num = cpu_to_be32(atomic_inc_return(&device->packet_seq));
-	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p), NULL, 0);
+	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->device->packet_seq));
+	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
 }
 
 /* dp->sector and dp->block_id already/still in network byte order,
  * data_size is payload size according to dp->head,
  * and may need to be corrected for digest size. */
-void drbd_send_ack_dp(struct drbd_device *device, enum drbd_packet cmd,
+void drbd_send_ack_dp(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		      struct p_data *dp, int data_size)
 {
-	if (first_peer_device(device)->connection->peer_integrity_tfm)
-		data_size -= crypto_hash_digestsize(first_peer_device(device)->connection->peer_integrity_tfm);
-	_drbd_send_ack(device, cmd, dp->sector, cpu_to_be32(data_size),
+	if (peer_device->connection->peer_integrity_tfm)
+		data_size -= crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
+	_drbd_send_ack(peer_device, cmd, dp->sector, cpu_to_be32(data_size),
 		       dp->block_id);
 }
 
-void drbd_send_ack_rp(struct drbd_device *device, enum drbd_packet cmd,
+void drbd_send_ack_rp(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		      struct p_block_req *rp)
 {
-	_drbd_send_ack(device, cmd, rp->sector, rp->blksize, rp->block_id);
+	_drbd_send_ack(peer_device, cmd, rp->sector, rp->blksize, rp->block_id);
 }
 
 /**
@@ -1564,10 +1564,10 @@ void drbd_send_ack_rp(struct drbd_device *device, enum drbd_packet cmd,
  * @cmd:	packet command code
  * @peer_req:	peer request
  */
-int drbd_send_ack(struct drbd_device *device, enum drbd_packet cmd,
+int drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		  struct drbd_peer_request *peer_req)
 {
-	return _drbd_send_ack(device, cmd,
+	return _drbd_send_ack(peer_device, cmd,
 			      cpu_to_be64(peer_req->i.sector),
 			      cpu_to_be32(peer_req->i.size),
 			      peer_req->block_id);
@@ -1575,10 +1575,10 @@ int drbd_send_ack(struct drbd_device *device, enum drbd_packet cmd,
 
 /* This function misuses the block_id field to signal if the blocks
  * are is sync or not. */
-int drbd_send_ack_ex(struct drbd_device *device, enum drbd_packet cmd,
+int drbd_send_ack_ex(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		     sector_t sector, int blksize, u64 block_id)
 {
-	return _drbd_send_ack(device, cmd,
+	return _drbd_send_ack(peer_device, cmd,
 			      cpu_to_be64(sector),
 			      cpu_to_be32(blksize),
 			      cpu_to_be64(block_id));

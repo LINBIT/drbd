@@ -972,13 +972,13 @@ extern int _conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_pac
 extern int drbd_send_state_(struct drbd_peer_device *, const char *func, unsigned int line);
 extern int drbd_send_sync_param(struct drbd_peer_device *);
 extern void drbd_send_b_ack(struct drbd_peer_device *, u32 barrier_nr, u32 set_size);
-extern int drbd_send_ack(struct drbd_device *, enum drbd_packet,
+extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
-extern void drbd_send_ack_rp(struct drbd_device *device, enum drbd_packet cmd,
+extern void drbd_send_ack_rp(struct drbd_peer_device *, enum drbd_packet,
 			     struct p_block_req *rp);
-extern void drbd_send_ack_dp(struct drbd_device *device, enum drbd_packet cmd,
+extern void drbd_send_ack_dp(struct drbd_peer_device *, enum drbd_packet,
 			     struct p_data *dp, int data_size);
-extern int drbd_send_ack_ex(struct drbd_device *device, enum drbd_packet cmd,
+extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
 			    sector_t sector, int blksize, u64 block_id);
 extern int drbd_send_out_of_sync(struct drbd_device *, struct drbd_request *);
 extern int drbd_send_block(struct drbd_device *, enum drbd_packet,
