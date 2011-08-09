@@ -1855,7 +1855,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	}
 	p->dp_flags = cpu_to_be32(dp_flags);
 	if (dgs)
-		drbd_csum_bio(device, peer_device->connection->integrity_tfm, req->master_bio, p + 1);
+		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, p + 1);
 	err = __send_command(peer_device->connection, device->vnr, sock, P_DATA, sizeof(*p) + dgs, NULL, req->i.size);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
@@ -1879,7 +1879,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 			/* 64 byte, 512 bit, is the largest digest size
 			 * currently supported in kernel crypto. */
 			unsigned char digest[64];
-			drbd_csum_bio(device, peer_device->connection->integrity_tfm, req->master_bio, digest);
+			drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, digest);
 			if (memcmp(p + 1, digest, dgs)) {
 				drbd_warn(device,
 					"Digest mismatch, buffer modified by upper layers during write: %llus +%u\n",
@@ -1918,7 +1918,7 @@ int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
 	p->block_id = peer_req->block_id;
 	p->seq_num = 0;  /* unused */
 	if (dgs)
-		drbd_csum_ee(device, first_peer_device(device)->connection->integrity_tfm, peer_req, p + 1);
+		drbd_csum_ee(first_peer_device(device)->connection->integrity_tfm, peer_req, p + 1);
 	err = __send_command(first_peer_device(device)->connection, device->vnr, sock, cmd, sizeof(*p) + dgs, NULL, peer_req->i.size);
 	if (!err)
 		err = _drbd_send_zc_ee(first_peer_device(device), peer_req);
