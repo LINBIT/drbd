@@ -387,7 +387,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 		drbd_free_peer_req(device, peer_req);
 		peer_req = NULL;
 		inc_rs_pending(device);
-		err = drbd_send_drequest_csum(device, sector, size,
+		err = drbd_send_drequest_csum(first_peer_device(device), sector, size,
 					      digest, digest_size,
 					      P_CSUM_RS_REQUEST);
 		kfree(digest);
@@ -728,7 +728,7 @@ next_sector:
 			int err;
 
 			inc_rs_pending(device);
-			err = drbd_send_drequest(device, P_RS_DATA_REQUEST,
+			err = drbd_send_drequest(first_peer_device(device), P_RS_DATA_REQUEST,
 						 sector, size, ID_SYNCER);
 			if (err) {
 				drbd_err(device, "drbd_send_drequest() failed, aborting...\n");
@@ -1202,7 +1202,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	peer_req = NULL;
 
 	inc_rs_pending(device);
-	err = drbd_send_drequest_csum(device, sector, size, digest, digest_size, P_OV_REPLY);
+	err = drbd_send_drequest_csum(first_peer_device(device), sector, size, digest, digest_size, P_OV_REPLY);
 	if (err)
 		dec_rs_pending(device);
 	kfree(digest);
@@ -1434,7 +1434,7 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 	 * if there was any yet. */
 	maybe_send_barrier(connection, req->epoch);
 
-	err = drbd_send_drequest(device, P_DATA_REQUEST, req->i.sector, req->i.size,
+	err = drbd_send_drequest(first_peer_device(device), P_DATA_REQUEST, req->i.sector, req->i.size,
 				 (unsigned long)req);
 
 	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK);

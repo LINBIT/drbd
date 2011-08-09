@@ -1011,9 +1011,9 @@ extern int drbd_send_out_of_sync(struct drbd_device *, struct drbd_request *);
 extern int drbd_send_block(struct drbd_device *, enum drbd_packet,
 			   struct drbd_peer_request *);
 extern int drbd_send_dblock(struct drbd_device *device, struct drbd_request *req);
-extern int drbd_send_drequest(struct drbd_device *device, int cmd,
+extern int drbd_send_drequest(struct drbd_peer_device *, int cmd,
 			      sector_t sector, int size, u64 block_id);
-extern int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector,
+extern int drbd_send_drequest_csum(struct drbd_peer_device *, sector_t sector,
 				   int size, void *digest, int digest_size,
 				   enum drbd_packet cmd);
 extern int drbd_send_ov_request(struct drbd_device *device,sector_t sector,int size);
