@@ -1898,7 +1898,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
  *  Peer       -> (diskless) R_PRIMARY   (P_DATA_REPLY)
  *  C_SYNC_SOURCE -> C_SYNC_TARGET         (P_RS_DATA_REPLY)
  */
-int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
+int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		    struct drbd_peer_request *peer_req)
 {
 	struct drbd_socket *sock;
@@ -1906,11 +1906,11 @@ int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
 	int err;
 	int dgs;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 
-	dgs = first_peer_device(device)->connection->integrity_tfm ?
-	      crypto_hash_digestsize(first_peer_device(device)->connection->integrity_tfm) : 0;
+	dgs = peer_device->connection->integrity_tfm ?
+	      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
 
 	if (!p)
 		return -EIO;
@@ -1918,10 +1918,11 @@ int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
 	p->block_id = peer_req->block_id;
 	p->seq_num = 0;  /* unused */
 	if (dgs)
-		drbd_csum_ee(first_peer_device(device)->connection->integrity_tfm, peer_req, p + 1);
-	err = __send_command(first_peer_device(device)->connection, device->vnr, sock, cmd, sizeof(*p) + dgs, NULL, peer_req->i.size);
+		drbd_csum_ee(peer_device->connection->integrity_tfm, peer_req, p + 1);
+	err = __send_command(peer_device->connection, peer_device->device->vnr, sock, cmd,
+			     sizeof(*p) + dgs, NULL, peer_req->i.size);
 	if (!err)
-		err = _drbd_send_zc_ee(first_peer_device(device), peer_req);
+		err = _drbd_send_zc_ee(peer_device, peer_req);
 	mutex_unlock(&sock->mutex);  /* locked by drbd_prepare_command() */
 
 	return err;
