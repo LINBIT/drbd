@@ -4135,27 +4135,27 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
  * code upon failure.
  */
 static int
-receive_bitmap_plain(struct drbd_device *device, unsigned int size,
+receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
 		     unsigned long *p, struct bm_xfer_ctx *c)
 {
 	unsigned int data_size = DRBD_SOCKET_BUFFER_SIZE -
-				 drbd_header_size(first_peer_device(device)->connection);
+				 drbd_header_size(peer_device->connection);
 	unsigned int num_words = min_t(size_t, data_size / sizeof(*p),
 				       c->bm_words - c->word_offset);
 	unsigned int want = num_words * sizeof(*p);
 	int err;
 
 	if (want != size) {
-		drbd_err(device, "%s:want (%u) != size (%u)\n", __func__, want, size);
+		drbd_err(peer_device, "%s:want (%u) != size (%u)\n", __func__, want, size);
 		return -EIO;
 	}
 	if (want == 0)
 		return 0;
-	err = drbd_recv_all(first_peer_device(device)->connection, p, want);
+	err = drbd_recv_all(peer_device->connection, p, want);
 	if (err)
 		return err;
 
-	drbd_bm_merge_lel(device, c->word_offset, num_words, p);
+	drbd_bm_merge_lel(peer_device->device, c->word_offset, num_words, p);
 
 	c->word_offset += num_words;
 	c->bit_offset = c->word_offset * BITS_PER_LONG;
@@ -4336,7 +4336,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 	for(;;) {
 		if (pi->cmd == P_BITMAP)
-			err = receive_bitmap_plain(device, pi->size, pi->data, &c);
+			err = receive_bitmap_plain(peer_device, pi->size, pi->data, &c);
 		else if (pi->cmd == P_COMPRESSED_BITMAP) {
 			/* MAYBE: sanity check that we speak proto >= 90,
 			 * and the feature is enabled! */
