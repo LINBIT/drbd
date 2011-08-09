@@ -1406,7 +1406,7 @@ int w_send_dblock(struct drbd_work *w, int cancel)
 	maybe_send_barrier(connection, req->epoch);
 	connection->send.current_epoch_writes++;
 
-	err = drbd_send_dblock(device, req);
+	err = drbd_send_dblock(first_peer_device(device), req);
 	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK);
 
 	return err;
