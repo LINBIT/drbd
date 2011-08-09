@@ -1687,26 +1687,26 @@ static void drbd_update_congested(struct drbd_connection *connection)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-STATIC int _drbd_no_send_page(struct drbd_device *device, struct page *page,
+STATIC int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket;
 	void *addr;
 	int err;
 
-	socket = first_peer_device(device)->connection->data.socket;
+	socket = peer_device->connection->data.socket;
 	addr = kmap(page) + offset;
-	err = drbd_send_all(first_peer_device(device)->connection, socket, addr, size, msg_flags);
+	err = drbd_send_all(peer_device->connection, socket, addr, size, msg_flags);
 	kunmap(page);
 	if (!err)
-		device->send_cnt += size >> 9;
+		peer_device->device->send_cnt += size >> 9;
 	return err;
 }
 
-STATIC int _drbd_send_page(struct drbd_device *device, struct page *page,
+STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 		    int offset, size_t size, unsigned msg_flags)
 {
-	struct socket *socket = first_peer_device(device)->connection->data.socket;
+	struct socket *socket = peer_device->connection->data.socket;
 	mm_segment_t oldfs = get_fs();
 	int len = size;
 	int err = -EIO;
@@ -1718,10 +1718,10 @@ STATIC int _drbd_send_page(struct drbd_device *device, struct page *page,
 	 * __page_cache_release a page that would actually still be referenced
 	 * by someone, leading to some obscure delayed Oops somewhere else. */
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
-		return _drbd_no_send_page(device, page, offset, size, msg_flags);
+		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
 	msg_flags |= MSG_NOSIGNAL;
-	drbd_update_congested(first_peer_device(device)->connection);
+	drbd_update_congested(peer_device->connection);
 	set_fs(KERNEL_DS);
 	do {
 		int sent;
@@ -1729,11 +1729,11 @@ STATIC int _drbd_send_page(struct drbd_device *device, struct page *page,
 		sent = socket->ops->sendpage(socket, page, offset, len, msg_flags);
 		if (sent <= 0) {
 			if (sent == -EAGAIN) {
-				if (we_should_drop_the_connection(first_peer_device(device)->connection, socket))
+				if (we_should_drop_the_connection(peer_device->connection, socket))
 					break;
 				continue;
 			}
-			drbd_warn(device, "%s: size=%d len=%d sent=%d\n",
+			drbd_warn(peer_device->device, "%s: size=%d len=%d sent=%d\n",
 			     __func__, (int)size, len, sent);
 			if (sent < 0)
 				err = sent;
@@ -1743,16 +1743,16 @@ STATIC int _drbd_send_page(struct drbd_device *device, struct page *page,
 		offset += sent;
 	} while (len > 0 /* THINK && device->cstate >= C_CONNECTED*/);
 	set_fs(oldfs);
-	clear_bit(NET_CONGESTED, &first_peer_device(device)->connection->flags);
+	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
 
 	if (len == 0) {
 		err = 0;
-		device->send_cnt += size >> 9;
+		peer_device->device->send_cnt += size >> 9;
 	}
 	return err;
 }
 
-static int _drbd_send_bio(struct drbd_device *device, struct bio *bio)
+static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
@@ -1760,7 +1760,7 @@ static int _drbd_send_bio(struct drbd_device *device, struct bio *bio)
 	__bio_for_each_segment(bvec, bio, i, 0) {
 		int err;
 
-		err = _drbd_no_send_page(device, bvec->bv_page,
+		err = _drbd_no_send_page(peer_device, bvec->bv_page,
 					 bvec->bv_offset, bvec->bv_len,
 					 i == bio->bi_vcnt - 1 ? 0 : MSG_MORE);
 		if (err)
@@ -1769,7 +1769,7 @@ static int _drbd_send_bio(struct drbd_device *device, struct bio *bio)
 	return 0;
 }
 
-static int _drbd_send_zc_bio(struct drbd_device *device, struct bio *bio)
+static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
 	struct bio_vec *bvec;
 	int i;
@@ -1777,7 +1777,7 @@ static int _drbd_send_zc_bio(struct drbd_device *device, struct bio *bio)
 	__bio_for_each_segment(bvec, bio, i, 0) {
 		int err;
 
-		err = _drbd_send_page(device, bvec->bv_page,
+		err = _drbd_send_page(peer_device, bvec->bv_page,
 				      bvec->bv_offset, bvec->bv_len,
 				      i == bio->bi_vcnt - 1 ? 0 : MSG_MORE);
 		if (err)
@@ -1786,7 +1786,7 @@ static int _drbd_send_zc_bio(struct drbd_device *device, struct bio *bio)
 	return 0;
 }
 
-static int _drbd_send_zc_ee(struct drbd_device *device,
+static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
 {
 	struct page *page = peer_req->pages;
@@ -1797,7 +1797,7 @@ static int _drbd_send_zc_ee(struct drbd_device *device,
 	page_chain_for_each(page) {
 		unsigned l = min_t(unsigned, len, PAGE_SIZE);
 
-		err = _drbd_send_page(device, page, 0, l,
+		err = _drbd_send_page(peer_device, page, 0, l,
 				      page_chain_next(page) ? MSG_MORE : 0);
 		if (err)
 			return err;
@@ -1809,9 +1809,9 @@ static int _drbd_send_zc_ee(struct drbd_device *device,
 /* see also wire_flags_to_bio()
  * DRBD_REQ_*, because we need to semantically map the flags to data packet
  * flags and back. We may replicate to other kernel versions. */
-static u32 bio_flags_to_wire(struct drbd_device *device, unsigned long bi_rw)
+static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long bi_rw)
 {
-	if (first_peer_device(device)->connection->agreed_pro_version >= 95)
+	if (connection->agreed_pro_version >= 95)
 		return  (bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
 			(bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
 			(bi_rw & DRBD_REQ_FLUSH ? DP_FLUSH : 0) |
@@ -1824,29 +1824,30 @@ static u32 bio_flags_to_wire(struct drbd_device *device, unsigned long bi_rw)
 /* Used to send write requests
  * R_PRIMARY -> Peer	(P_DATA)
  */
-int drbd_send_dblock(struct drbd_device *device, struct drbd_request *req)
+int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
 	struct p_data *p;
 	unsigned int dp_flags = 0;
 	int dgs;
 	int err;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
-	dgs = first_peer_device(device)->connection->integrity_tfm ?
-	      crypto_hash_digestsize(first_peer_device(device)->connection->integrity_tfm) : 0;
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
+	dgs = peer_device->connection->integrity_tfm ?
+	      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
 
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(req->seq_num = atomic_inc_return(&device->packet_seq));
-	dp_flags = bio_flags_to_wire(device, req->master_bio->bi_rw);
+	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio->bi_rw);
 	if (device->state.conn >= C_SYNC_SOURCE &&
 	    device->state.conn <= C_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
-	if (first_peer_device(device)->connection->agreed_pro_version >= 100) {
+	if (peer_device->connection->agreed_pro_version >= 100) {
 		if (req->rq_state & RQ_EXP_RECEIVE_ACK)
 			dp_flags |= DP_SEND_RECEIVE_ACK;
 		if (req->rq_state & RQ_EXP_WRITE_ACK)
@@ -1854,8 +1855,8 @@ int drbd_send_dblock(struct drbd_device *device, struct drbd_request *req)
 	}
 	p->dp_flags = cpu_to_be32(dp_flags);
 	if (dgs)
-		drbd_csum_bio(device, first_peer_device(device)->connection->integrity_tfm, req->master_bio, p + 1);
-	err = __send_command(first_peer_device(device)->connection, device->vnr, sock, P_DATA, sizeof(*p) + dgs, NULL, req->i.size);
+		drbd_csum_bio(device, peer_device->connection->integrity_tfm, req->master_bio, p + 1);
+	err = __send_command(peer_device->connection, device->vnr, sock, P_DATA, sizeof(*p) + dgs, NULL, req->i.size);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
 		 * socket buffers, as we may complete right away
@@ -1869,16 +1870,16 @@ int drbd_send_dblock(struct drbd_device *device, struct drbd_request *req)
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
 		if (!(req->rq_state & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || dgs)
-			err = _drbd_send_bio(device, req->master_bio);
+			err = _drbd_send_bio(peer_device, req->master_bio);
 		else
-			err = _drbd_send_zc_bio(device, req->master_bio);
+			err = _drbd_send_zc_bio(peer_device, req->master_bio);
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (dgs > 0 && dgs <= 64) {
 			/* 64 byte, 512 bit, is the largest digest size
 			 * currently supported in kernel crypto. */
 			unsigned char digest[64];
-			drbd_csum_bio(device, first_peer_device(device)->connection->integrity_tfm, req->master_bio, digest);
+			drbd_csum_bio(device, peer_device->connection->integrity_tfm, req->master_bio, digest);
 			if (memcmp(p + 1, digest, dgs)) {
 				drbd_warn(device,
 					"Digest mismatch, buffer modified by upper layers during write: %llus +%u\n",
@@ -1920,7 +1921,7 @@ int drbd_send_block(struct drbd_device *device, enum drbd_packet cmd,
 		drbd_csum_ee(device, first_peer_device(device)->connection->integrity_tfm, peer_req, p + 1);
 	err = __send_command(first_peer_device(device)->connection, device->vnr, sock, cmd, sizeof(*p) + dgs, NULL, peer_req->i.size);
 	if (!err)
-		err = _drbd_send_zc_ee(device, peer_req);
+		err = _drbd_send_zc_ee(first_peer_device(device), peer_req);
 	mutex_unlock(&sock->mutex);  /* locked by drbd_prepare_command() */
 
 	return err;
