@@ -1728,25 +1728,26 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data */
 static struct drbd_peer_request *
-read_in_block(struct drbd_device *device, u64 id, sector_t sector,
+read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	      int data_size) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
 	struct drbd_peer_request *peer_req;
 	struct page *page;
 	int dgs, ds, err;
-	void *dig_in = first_peer_device(device)->connection->int_dig_in;
-	void *dig_vv = first_peer_device(device)->connection->int_dig_vv;
+	void *dig_in = peer_device->connection->int_dig_in;
+	void *dig_vv = peer_device->connection->int_dig_vv;
 	unsigned long *data;
 
 	dgs = 0;
-	if (first_peer_device(device)->connection->peer_integrity_tfm) {
-		dgs = crypto_hash_digestsize(first_peer_device(device)->connection->peer_integrity_tfm);
+	if (peer_device->connection->peer_integrity_tfm) {
+		dgs = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
 		/*
 		 * FIXME: Receive the incoming digest into the receive buffer
 		 *	  here, together with its struct p_data?
 		 */
-		err = drbd_recv_all_warn(first_peer_device(device)->connection, dig_in, dgs);
+		err = drbd_recv_all_warn(peer_device->connection, dig_in, dgs);
 		if (err)
 			return NULL;
 		data_size -= dgs;
@@ -1782,7 +1783,7 @@ read_in_block(struct drbd_device *device, u64 id, sector_t sector,
 	page_chain_for_each(page) {
 		unsigned len = min_t(int, ds, PAGE_SIZE);
 		data = kmap(page);
-		err = drbd_recv_all_warn(first_peer_device(device)->connection, data, len);
+		err = drbd_recv_all_warn(peer_device->connection, data, len);
 		if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 			drbd_err(device, "Fault injection: Corrupting data on receive\n");
 			data[0] = data[0] ^ (unsigned long)-1;
@@ -1796,7 +1797,7 @@ read_in_block(struct drbd_device *device, u64 id, sector_t sector,
 	}
 
 	if (dgs) {
-		drbd_csum_ee(first_peer_device(device)->connection->peer_integrity_tfm, peer_req, dig_vv);
+		drbd_csum_ee(peer_device->connection->peer_integrity_tfm, peer_req, dig_vv);
 		if (memcmp(dig_in, dig_vv, dgs)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				(unsigned long long)sector, data_size);
@@ -1917,7 +1918,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
 
-	peer_req = read_in_block(device, ID_SYNCER, sector, data_size);
+	peer_req = read_in_block(peer_device, ID_SYNCER, sector, data_size);
 	if (!peer_req)
 		goto fail;
 
@@ -2441,7 +2442,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 */
 
 	sector = be64_to_cpu(p->sector);
-	peer_req = read_in_block(device, p->block_id, sector, pi->size);
+	peer_req = read_in_block(peer_device, p->block_id, sector, pi->size);
 	if (!peer_req) {
 		put_ldev(device);
 		return -EIO;
