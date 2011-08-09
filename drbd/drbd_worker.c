@@ -1309,7 +1309,7 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	err = drbd_send_out_of_sync(device, req);
+	err = drbd_send_out_of_sync(first_peer_device(device), req);
 	req_mod(req, OOS_HANDED_TO_NETWORK);
 
 	return err;

@@ -980,7 +980,7 @@ extern void drbd_send_ack_dp(struct drbd_peer_device *, enum drbd_packet,
 			     struct p_data *dp, int data_size);
 extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
 			    sector_t sector, int blksize, u64 block_id);
-extern int drbd_send_out_of_sync(struct drbd_device *, struct drbd_request *);
+extern int drbd_send_out_of_sync(struct drbd_peer_device *, struct drbd_request *);
 extern int drbd_send_block(struct drbd_peer_device *, enum drbd_packet,
 			   struct drbd_peer_request *);
 extern int drbd_send_dblock(struct drbd_peer_device *, struct drbd_request *req);
