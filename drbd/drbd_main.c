@@ -1584,23 +1584,23 @@ int drbd_send_ack_ex(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 			      cpu_to_be64(block_id));
 }
 
-int drbd_send_drequest(struct drbd_device *device, int cmd,
+int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 		       sector_t sector, int size, u64 block_id)
 {
 	struct drbd_socket *sock;
 	struct p_block_req *p;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = block_id;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
 }
 
-int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector, int size,
+int drbd_send_drequest_csum(struct drbd_peer_device *peer_device, sector_t sector, int size,
 			    void *digest, int digest_size, enum drbd_packet cmd)
 {
 	struct drbd_socket *sock;
@@ -1608,15 +1608,14 @@ int drbd_send_drequest_csum(struct drbd_device *device, sector_t sector, int siz
 
 	/* FIXME: Put the digest into the preallocated socket buffer.  */
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(first_peer_device(device), sock, cmd, sizeof(*p),
-				 digest, digest_size);
+	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), digest, digest_size);
 }
 
 int drbd_send_ov_request(struct drbd_device *device, sector_t sector, int size)
