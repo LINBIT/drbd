@@ -887,7 +887,7 @@ int drbd_connected(struct drbd_device *device)
 	if (!err)
 		err = drbd_send_uuids(first_peer_device(device));
 	if (!err)
-		err = drbd_send_current_state(device);
+		err = drbd_send_current_state(first_peer_device(device));
 	clear_bit(USE_DEGR_WFC_T, &device->flags);
 	clear_bit(RESIZE_PENDING, &device->flags);
 	atomic_set(&device->ap_in_flight, 0);
@@ -4291,7 +4291,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			/* Nowadays only used when forcing a node into primary role and
 			   setting its disk to UpToDate with that */
 			drbd_send_uuids(peer_device);
-			drbd_send_current_state(device);
+			drbd_send_current_state(peer_device);
 		}
 	}
 

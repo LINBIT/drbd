@@ -710,7 +710,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		/* if this was forced, we should consider sync */
 		if (forced)
 			drbd_send_uuids(first_peer_device(device));
-		drbd_send_current_state(device);
+		drbd_send_current_state(first_peer_device(device));
 	}
 
 	drbd_md_sync(device);
