@@ -1037,7 +1037,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 			drbd_err(device, "Sending NegDReply. sector=%llus.\n",
 			    (unsigned long long)peer_req->i.sector);
 
-		err = drbd_send_ack(device, P_NEG_DREPLY, peer_req);
+		err = drbd_send_ack(first_peer_device(device), P_NEG_DREPLY, peer_req);
 	}
 
 	dec_unacked(device);
@@ -1073,7 +1073,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	}
 
 	if (device->state.conn == C_AHEAD) {
-		err = drbd_send_ack(device, P_RS_CANCEL, peer_req);
+		err = drbd_send_ack(first_peer_device(device), P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(device->state.pdsk >= D_INCONSISTENT)) {
 			inc_rs_pending(device);
@@ -1089,7 +1089,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 			drbd_err(device, "Sending NegRSDReply. sector %llus.\n",
 			    (unsigned long long)peer_req->i.sector);
 
-		err = drbd_send_ack(device, P_NEG_RS_DREPLY, peer_req);
+		err = drbd_send_ack(first_peer_device(device), P_NEG_RS_DREPLY, peer_req);
 
 		/* update resync data with failure */
 		drbd_rs_failed_io(device, peer_req->i.sector, peer_req->i.size);
@@ -1145,7 +1145,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			drbd_set_in_sync(device, peer_req->i.sector, peer_req->i.size);
 			/* rs_same_csums unit is BM_BLOCK_SIZE */
 			device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
-			err = drbd_send_ack(device, P_RS_IS_IN_SYNC, peer_req);
+			err = drbd_send_ack(first_peer_device(device), P_RS_IS_IN_SYNC, peer_req);
 		} else {
 			inc_rs_pending(device);
 			peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
@@ -1154,7 +1154,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			err = drbd_send_block(device, P_RS_DATA_REPLY, peer_req);
 		}
 	} else {
-		err = drbd_send_ack(device, P_NEG_RS_DREPLY, peer_req);
+		err = drbd_send_ack(first_peer_device(device), P_NEG_RS_DREPLY, peer_req);
 		if (DRBD_ratelimit(5*HZ, 5))
 			drbd_err(device, "Sending NegDReply. I guess it gets messy.\n");
 	}
@@ -1275,7 +1275,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	else
 		ov_out_of_sync_print(device);
 
-	err = drbd_send_ack_ex(device, P_OV_RESULT, sector, size,
+	err = drbd_send_ack_ex(first_peer_device(device), P_OV_RESULT, sector, size,
 			       eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
 
 	dec_unacked(device);

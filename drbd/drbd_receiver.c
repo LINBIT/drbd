@@ -1899,12 +1899,12 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(device, sector, peer_req->i.size);
-		err = drbd_send_ack(device, P_RS_WRITE_ACK, peer_req);
+		err = drbd_send_ack(first_peer_device(device), P_RS_WRITE_ACK, peer_req);
 	} else {
 		/* Record failure to sync */
 		drbd_rs_failed_io(device, sector, peer_req->i.size);
 
-		err  = drbd_send_ack(device, P_NEG_ACK, peer_req);
+		err  = drbd_send_ack(first_peer_device(device), P_NEG_ACK, peer_req);
 	}
 	dec_unacked(device);
 
@@ -2026,7 +2026,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 
 		err = drbd_drain_block(device, pi->size);
 
-		drbd_send_ack_dp(device, P_NEG_ACK, p, pi->size);
+		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 	}
 
 	atomic_add(pi->size >> 9, &device->rs_sect_in);
@@ -2077,11 +2077,11 @@ static int e_end_block(struct drbd_work *w, int cancel)
 				device->state.conn <= C_PAUSED_SYNC_T &&
 				peer_req->flags & EE_MAY_SET_IN_SYNC) ?
 				P_RS_WRITE_ACK : P_WRITE_ACK;
-			err = drbd_send_ack(device, pcmd, peer_req);
+			err = drbd_send_ack(first_peer_device(device), pcmd, peer_req);
 			if (pcmd == P_RS_WRITE_ACK)
 				drbd_set_in_sync(device, sector, peer_req->i.size);
 		} else {
-			err = drbd_send_ack(device, P_NEG_ACK, peer_req);
+			err = drbd_send_ack(first_peer_device(device), P_NEG_ACK, peer_req);
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
@@ -2111,7 +2111,7 @@ static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
 		container_of(w, struct drbd_peer_request, w);
 	int err;
 
-	err = drbd_send_ack(device, ack, peer_req);
+	err = drbd_send_ack(first_peer_device(device), ack, peer_req);
 	dec_unacked(device);
 
 	return err;
@@ -2424,7 +2424,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		int err2;
 
 		err = wait_for_and_update_peer_seq(device, peer_seq);
-		drbd_send_ack_dp(device, P_NEG_ACK, p, pi->size);
+		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 		atomic_inc(&connection->current_epoch->epoch_size);
 		err2 = drbd_drain_block(device, pi->size);
 		if (!err)
@@ -2546,7 +2546,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (dp_flags & DP_SEND_RECEIVE_ACK) {
 		/* I really don't like it that the receiver thread
 		 * sends on the msock, but anyways */
-		drbd_send_ack(device, P_RECV_ACK, peer_req);
+		drbd_send_ack(first_peer_device(device), P_RECV_ACK, peer_req);
 	}
 
 	if (device->state.pdsk < D_INCONSISTENT) {
@@ -2683,17 +2683,17 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		verb = 1;
 		switch (pi->cmd) {
 		case P_DATA_REQUEST:
-			drbd_send_ack_rp(device, P_NEG_DREPLY, p);
+			drbd_send_ack_rp(peer_device, P_NEG_DREPLY, p);
 			break;
 		case P_RS_DATA_REQUEST:
 		case P_CSUM_RS_REQUEST:
 		case P_OV_REQUEST:
-			drbd_send_ack_rp(device, P_NEG_RS_DREPLY , p);
+			drbd_send_ack_rp(peer_device, P_NEG_RS_DREPLY , p);
 			break;
 		case P_OV_REPLY:
 			verb = 0;
 			dec_rs_pending(device);
-			drbd_send_ack_ex(device, P_OV_RESULT, sector, size, ID_IN_SYNC);
+			drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, ID_IN_SYNC);
 			break;
 		default:
 			BUG();
