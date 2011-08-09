@@ -1198,31 +1198,31 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
  * drbd_send_state() - Sends the drbd state to the peer
  * @device:	DRBD device.
  */
-int drbd_send_state_(struct drbd_device *device, const char *func, unsigned int line)
+int drbd_send_state_(struct drbd_peer_device *peer_device, const char *func, unsigned int line)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
-	p->state = cpu_to_be32(device->state.i); /* Within the send mutex */
-	return drbd_send_command(first_peer_device(device), sock, P_STATE, sizeof(*p), NULL, 0);
+	p->state = cpu_to_be32(peer_device->device->state.i); /* Within the send mutex */
+	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
-int drbd_send_state_req(struct drbd_device *device, union drbd_state mask, union drbd_state val)
+int drbd_send_state_req(struct drbd_peer_device *peer_device, union drbd_state mask, union drbd_state val)
 {
 	struct drbd_socket *sock;
 	struct p_req_state *p;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
-	return drbd_send_command(first_peer_device(device), sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
 
 }
 
