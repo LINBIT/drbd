@@ -1911,8 +1911,10 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 	return err;
 }
 
-static int recv_resync_read(struct drbd_device *device, sector_t sector, int data_size) __releases(local)
+static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t sector,
+			    int data_size) __releases(local)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
 
 	peer_req = read_in_block(device, ID_SYNCER, sector, data_size);
@@ -2019,7 +2021,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		/* data is submitted to disk within recv_resync_read.
 		 * corresponding put_ldev done below on error,
 		 * or in drbd_peer_request_endio. */
-		err = recv_resync_read(device, sector, pi->size);
+		err = recv_resync_read(peer_device, sector, pi->size);
 	} else {
 		if (DRBD_ratelimit(5*HZ, 5))
 			drbd_err(device, "Can not write resync data to local disk.\n");
