@@ -4085,7 +4085,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags) &&
 	    mutex_is_locked(device->state_mutex)) {
-		drbd_send_sr_reply(device, SS_CONCURRENT_ST_CHG);
+		drbd_send_sr_reply(peer_device, SS_CONCURRENT_ST_CHG);
 		return 0;
 	}
 
@@ -4093,7 +4093,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	val = convert_state(val);
 
 	rv = drbd_change_state(device, CS_VERBOSE, mask, val);
-	drbd_send_sr_reply(device, rv);
+	drbd_send_sr_reply(peer_device, rv);
 
 	drbd_md_sync(device);
 
