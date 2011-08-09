@@ -761,7 +761,7 @@ STATIC int w_make_ov_request(struct drbd_work *w, int cancel)
 			size = (capacity-sector)<<9;
 
 		inc_rs_pending(device);
-		if (drbd_send_ov_request(device, sector, size)) {
+		if (drbd_send_ov_request(first_peer_device(device), sector, size)) {
 			dec_rs_pending(device);
 			return 0;
 		}

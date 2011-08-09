@@ -1618,19 +1618,19 @@ int drbd_send_drequest_csum(struct drbd_peer_device *peer_device, sector_t secto
 	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), digest, digest_size);
 }
 
-int drbd_send_ov_request(struct drbd_device *device, sector_t sector, int size)
+int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
 	struct drbd_socket *sock;
 	struct p_block_req *p;
 
-	sock = &first_peer_device(device)->connection->data;
-	p = drbd_prepare_command(first_peer_device(device), sock);
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(first_peer_device(device), sock, P_OV_REQUEST, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, sock, P_OV_REQUEST, sizeof(*p), NULL, 0);
 }
 
 /* called on sndtimeo
