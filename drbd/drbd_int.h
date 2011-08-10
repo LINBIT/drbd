@@ -332,7 +332,7 @@ struct drbd_thread {
 	int (*function) (struct drbd_thread *);
 	struct drbd_connection *connection;
 	int reset_cpu_mask;
-	char name[9];
+	const char *name;
 };
 
 static inline enum drbd_thread_state get_t_state(struct drbd_thread *thi)
