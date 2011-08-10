@@ -967,7 +967,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 	if (atomic_dec_and_test(&ctx->in_flight)) {
 		ctx->done = 1;
 		wake_up(&device->misc_wait);
-		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
+		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	}
 
 	BIO_ENDIO_FN_RETURN;
@@ -1114,7 +1114,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	if (!atomic_dec_and_test(&ctx->in_flight))
 		wait_until_done_or_disk_failure(device, &ctx->done);
 	else
-		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
+		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 
 	/* summary for global bitmap IO */
 	if (flags == 0)
@@ -1146,7 +1146,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 		     ppsize(ppb, now << (BM_BLOCK_SHIFT-10)), now);
 
 out:
-	kref_put(&ctx->kref, &bm_aio_ctx_destroy);
+	kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	return err;
 }
 
@@ -1243,7 +1243,7 @@ int drbd_bm_write_page(struct drbd_device *device, unsigned int idx) __must_hold
 	device->bm_writ_cnt++;
 	err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
  out:
-	kref_put(&ctx->kref, &bm_aio_ctx_destroy);
+	kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	return err;
 }
 
