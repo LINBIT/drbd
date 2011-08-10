@@ -712,22 +712,6 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 	}
 }
 
-static struct drbd_thread *drbd_task_to_thread(struct drbd_connection *connection, struct task_struct *task)
-{
-	struct drbd_thread *thi =
-		task == connection->receiver.task ? &connection->receiver :
-		task == connection->asender.task  ? &connection->asender :
-		task == connection->worker.task   ? &connection->worker : NULL;
-
-	return thi;
-}
-
-char *drbd_task_to_thread_name(struct drbd_connection *connection, struct task_struct *task)
-{
-	struct drbd_thread *thi = drbd_task_to_thread(connection, task);
-	return thi ? thi->name : task->comm;
-}
-
 int conn_lowest_minor(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
