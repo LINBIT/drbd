@@ -289,26 +289,16 @@ static unsigned int bm_bit_to_page_idx(struct drbd_bitmap *b, u64 bitnr)
 	return page_nr;
 }
 
-static unsigned long *__bm_map_pidx(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
+static unsigned long *bm_kmap(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
 {
 	struct page *page = b->bm_pages[idx];
 	return (unsigned long *) kmap_atomic(page, km);
 }
 
-static unsigned long *bm_map_pidx(struct drbd_bitmap *b, unsigned int idx)
-{
-	return __bm_map_pidx(b, idx, KM_IRQ1);
-}
-
-static void __bm_unmap(unsigned long *p_addr, const enum km_type km)
+static void bm_kunmap(unsigned long *p_addr, const enum km_type km)
 {
 	kunmap_atomic(p_addr, km);
 };
-
-static void bm_unmap(unsigned long *p_addr)
-{
-	return __bm_unmap(p_addr, KM_IRQ1);
-}
 
 /* long word offset of _bitmap_ sector */
 #define S2W(s)	((s)<<(BM_EXT_SHIFT-BM_BLOCK_SHIFT-LN2_BPL))
@@ -478,7 +468,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 	 * on disk and in core memory alike */
 	mask = cpu_to_lel(mask);
 
-	p_addr = bm_map_pidx(b, b->bm_number_of_pages - 1);
+	p_addr = bm_kmap(b, b->bm_number_of_pages - 1, KM_IRQ1);
 	bm = p_addr + (tmp/BITS_PER_LONG);
 	if (mask) {
 		/* If mask != 0, we are not exactly aligned, so bm now points
@@ -496,7 +486,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 		cleared += hweight_long(*bm);
 		*bm = 0;
 	}
-	bm_unmap(p_addr);
+	bm_kunmap(p_addr, KM_IRQ1);
 	return cleared;
 }
 
@@ -514,7 +504,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 	 * on disk and in core memory alike */
 	mask = cpu_to_lel(mask);
 
-	p_addr = bm_map_pidx(b, b->bm_number_of_pages - 1);
+	p_addr = bm_kmap(b, b->bm_number_of_pages - 1, KM_IRQ1);
 	bm = p_addr + (tmp/BITS_PER_LONG);
 	if (mask) {
 		/* If mask != 0, we are not exactly aligned, so bm now points
@@ -530,7 +520,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 		 * a padding long to align with a 64bit remote */
 		*bm = ~0UL;
 	}
-	bm_unmap(p_addr);
+	bm_kunmap(p_addr, KM_IRQ1);
 }
 
 /* you better not modify the bitmap while this is running,
@@ -544,15 +534,15 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap *b)
 
 	/* all but last page */
 	for (idx = 0; idx < b->bm_number_of_pages - 1; idx++) {
-		p_addr = __bm_map_pidx(b, idx, KM_USER0);
+		p_addr = bm_kmap(b, idx, KM_USER0);
 		for (i = 0; i < LWPP; i++)
 			bits += hweight_long(p_addr[i]);
-		__bm_unmap(p_addr, KM_USER0);
+		bm_kunmap(p_addr, KM_USER0);
 		cond_resched();
 	}
 	/* last (or only) page */
 	last_word = ((b->bm_bits - 1) & BITS_PER_PAGE_MASK) >> LN2_BPL;
-	p_addr = __bm_map_pidx(b, idx, KM_USER0);
+	p_addr = bm_kmap(b, idx, KM_USER0);
 	for (i = 0; i < last_word; i++)
 		bits += hweight_long(p_addr[i]);
 	p_addr[last_word] &= cpu_to_lel(mask);
@@ -560,7 +550,7 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap *b)
 	/* 32bit arch, may have an unused padding long */
 	if (BITS_PER_LONG == 32 && (last_word & 1) == 0)
 		p_addr[last_word+1] = 0;
-	__bm_unmap(p_addr, KM_USER0);
+	bm_kunmap(p_addr, KM_USER0);
 	return bits;
 }
 
@@ -581,14 +571,14 @@ STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 	while (offset < end) {
 		do_now = min_t(size_t, ALIGN(offset + 1, LWPP), end) - offset;
 		idx = bm_word_to_page_idx(b, offset);
-		p_addr = bm_map_pidx(b, idx);
+		p_addr = bm_kmap(b, idx, KM_IRQ1);
 		bm = p_addr + MLPP(offset);
 		if (bm+do_now > p_addr + LWPP) {
 			printk(KERN_ALERT "drbd: BUG BUG BUG! p_addr:%p bm:%p do_now:%d\n",
 			       p_addr, bm, (int)do_now);
 		} else
 			memset(bm, c, do_now * sizeof(long));
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 		bm_set_page_need_writeout(b->bm_pages[idx]);
 		offset += do_now;
 	}
@@ -806,7 +796,7 @@ void drbd_bm_merge_lel(struct drbd_device *device, size_t offset, size_t number,
 	while (offset < end) {
 		do_now = min_t(size_t, ALIGN(offset+1, LWPP), end) - offset;
 		idx = bm_word_to_page_idx(b, offset);
-		p_addr = bm_map_pidx(b, idx);
+		p_addr = bm_kmap(b, idx, KM_IRQ1);
 		bm = p_addr + MLPP(offset);
 		offset += do_now;
 		while (do_now--) {
@@ -815,7 +805,7 @@ void drbd_bm_merge_lel(struct drbd_device *device, size_t offset, size_t number,
 			*bm++ = word;
 			b->bm_set += hweight_long(word) - bits;
 		}
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 		bm_set_page_need_writeout(b->bm_pages[idx]);
 	}
 	/* with 32bit <-> 64bit cross-platform connect
@@ -856,12 +846,12 @@ void drbd_bm_get_lel(struct drbd_device *device, size_t offset, size_t number,
 	else {
 		while (offset < end) {
 			do_now = min_t(size_t, ALIGN(offset+1, LWPP), end) - offset;
-			p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, offset));
+			p_addr = bm_kmap(b, bm_word_to_page_idx(b, offset), KM_IRQ1);
 			bm = p_addr + MLPP(offset);
 			offset += do_now;
 			while (do_now--)
 				*buffer++ = *bm++;
-			bm_unmap(p_addr);
+			bm_kunmap(p_addr, KM_IRQ1);
 		}
 	}
 	spin_unlock_irq(&b->bm_lock);
@@ -1268,7 +1258,7 @@ static unsigned long __bm_find_next(struct drbd_device *device, unsigned long bm
 		while (bm_fo < b->bm_bits) {
 			/* bit offset of the first bit in the page */
 			bit_offset = bm_fo & ~BITS_PER_PAGE_MASK;
-			p_addr = __bm_map_pidx(b, bm_bit_to_page_idx(b, bm_fo), km);
+			p_addr = bm_kmap(b, bm_bit_to_page_idx(b, bm_fo), km);
 
 			if (find_zero_bit)
 				i = find_next_zero_bit_le(p_addr,
@@ -1277,7 +1267,7 @@ static unsigned long __bm_find_next(struct drbd_device *device, unsigned long bm
 				i = find_next_bit_le(p_addr,
 						PAGE_SIZE*8, bm_fo & BITS_PER_PAGE_MASK);
 
-			__bm_unmap(p_addr, km);
+			bm_kunmap(p_addr, km);
 			if (i < PAGE_SIZE*8) {
 				bm_fo = bit_offset + i;
 				if (bm_fo >= b->bm_bits)
@@ -1365,14 +1355,14 @@ STATIC int __bm_change_bits_to(struct drbd_device *device, const unsigned long s
 		unsigned int page_nr = bm_bit_to_page_idx(b, bitnr);
 		if (page_nr != last_page_nr) {
 			if (p_addr)
-				__bm_unmap(p_addr, KM_IRQ1);
+				bm_kunmap(p_addr, KM_IRQ1);
 			if (c < 0)
 				bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
 			else if (c > 0)
 				bm_set_page_need_writeout(b->bm_pages[last_page_nr]);
 			changed_total += c;
 			c = 0;
-			p_addr = __bm_map_pidx(b, page_nr, KM_IRQ1);
+			p_addr = bm_kmap(b, page_nr, KM_IRQ1);
 			last_page_nr = page_nr;
 		}
 		if (val)
@@ -1381,7 +1371,7 @@ STATIC int __bm_change_bits_to(struct drbd_device *device, const unsigned long s
 			c -= (0 != __test_and_clear_bit_le(bitnr & BITS_PER_PAGE_MASK, p_addr));
 	}
 	if (p_addr)
-		__bm_unmap(p_addr, KM_IRQ1);
+		bm_kunmap(p_addr, KM_IRQ1);
 	if (c < 0)
 		bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
 	else if (c > 0)
@@ -1547,9 +1537,9 @@ int drbd_bm_test_bit(struct drbd_device *device, const unsigned long bitnr)
 	if (BM_DONT_TEST & b->bm_flags)
 		bm_print_lock_info(device);
 	if (bitnr < b->bm_bits) {
-		p_addr = bm_map_pidx(b, bm_bit_to_page_idx(b, bitnr));
+		p_addr = bm_kmap(b, bm_bit_to_page_idx(b, bitnr), KM_IRQ1);
 		i = test_bit_le(bitnr & BITS_PER_PAGE_MASK, p_addr) ? 1 : 0;
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 	} else if (bitnr == b->bm_bits) {
 		i = -1;
 	} else { /* (bitnr > b->bm_bits) */
@@ -1588,8 +1578,8 @@ int drbd_bm_count_bits(struct drbd_device *device, const unsigned long s, const 
 		if (page_nr != idx) {
 			page_nr = idx;
 			if (p_addr)
-				bm_unmap(p_addr);
-			p_addr = bm_map_pidx(b, idx);
+				bm_kunmap(p_addr, KM_IRQ1);
+			p_addr = bm_kmap(b, idx, KM_IRQ1);
 		}
 		if (expect(device, bitnr < b->bm_bits))
 			c += (0 != test_bit_le(bitnr - (page_nr << (PAGE_SHIFT+3)), p_addr));
@@ -1597,7 +1587,7 @@ int drbd_bm_count_bits(struct drbd_device *device, const unsigned long s, const 
 			drbd_err(device, "bitnr=%lu bm_bits=%lu\n", bitnr, b->bm_bits);
 	}
 	if (p_addr)
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 	return c;
 }
@@ -1638,11 +1628,11 @@ int drbd_bm_e_weight(struct drbd_device *device, unsigned long enr)
 	count = 0;
 	if (s < b->bm_words) {
 		int n = e-s;
-		p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, s));
+		p_addr = bm_kmap(b, bm_word_to_page_idx(b, s), KM_IRQ1);
 		bm = p_addr + MLPP(s);
 		while (n--)
 			count += hweight_long(*bm++);
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 	} else {
 		drbd_err(device, "start offset (%d) too large in drbd_bm_e_weight\n", s);
 	}
@@ -1680,14 +1670,14 @@ unsigned long drbd_bm_ALe_set_all(struct drbd_device *device, unsigned long al_e
 	count = 0;
 	if (s < b->bm_words) {
 		i = do_now = e-s;
-		p_addr = bm_map_pidx(b, bm_word_to_page_idx(b, s));
+		p_addr = bm_kmap(b, bm_word_to_page_idx(b, s), KM_IRQ1);
 		bm = p_addr + MLPP(s);
 		while (i--) {
 			count += hweight_long(*bm);
 			*bm = -1UL;
 			bm++;
 		}
-		bm_unmap(p_addr);
+		bm_kunmap(p_addr, KM_IRQ1);
 		b->bm_set += do_now*BITS_PER_LONG - count;
 		if (e == b->bm_words)
 			b->bm_set -= bm_clear_surplus(b);
