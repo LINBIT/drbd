@@ -622,7 +622,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 
 		if (rv == SS_NO_UP_TO_DATE_DISK &&
 		    device->state.disk == D_CONSISTENT && mask.pdsk == 0) {
-			D_ASSERT(device, device->state.pdsk == D_UNKNOWN);
+			D_ASSERT(device, first_peer_device(device)->disk_state == D_UNKNOWN);
 
 			if (conn_try_outdate_peer(first_peer_device(device)->connection)) {
 				val.disk = D_UP_TO_DATE;
@@ -689,7 +689,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
 			if (((device->state.conn < C_CONNECTED ||
-			       device->state.pdsk <= D_FAILED)
+			      first_peer_device(device)->disk_state <= D_FAILED)
 			      && device->ldev->md.uuid[UI_BITMAP] == 0) || forced)
 				drbd_uuid_new_current(device);
 
@@ -3060,7 +3060,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	tp.timeout_type =
-		adm_ctx.device->state.pdsk == D_OUTDATED ? UT_PEER_OUTDATED :
+		first_peer_device(adm_ctx.device)->disk_state == D_OUTDATED ? UT_PEER_OUTDATED :
 		test_bit(USE_DEGR_WFC_T, &adm_ctx.device->flags) ? UT_DEGRADED :
 		UT_DEFAULT;
 

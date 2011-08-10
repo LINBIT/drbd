@@ -709,6 +709,7 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+	enum drbd_disk_state disk_state;
 };
 
 struct drbd_device {
@@ -1514,6 +1515,7 @@ static inline union drbd_state drbd_read_state(struct drbd_device *device)
 	rv.susp = resource->susp;
 	rv.susp_nod = resource->susp_nod;
 	rv.susp_fen = resource->susp_fen;
+	rv.pdsk = first_peer_device(device)->disk_state;
 
 	return rv;
 }

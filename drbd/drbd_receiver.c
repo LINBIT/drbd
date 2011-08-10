@@ -2378,7 +2378,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
 	}
 
-	if (device->state.pdsk < D_INCONSISTENT) {
+	if (peer_device->disk_state < D_INCONSISTENT) {
 		/* In case we have the only disk of the cluster, */
 		drbd_set_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
 		peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
@@ -3785,7 +3785,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 		if (test_and_clear_bit(RESIZE_PENDING, &device->flags) ||
 		    (dd == grew && device->state.conn == C_CONNECTED)) {
-			if (device->state.pdsk >= D_INCONSISTENT &&
+			if (peer_device->disk_state >= D_INCONSISTENT &&
 			    device->state.disk >= D_INCONSISTENT) {
 				if (ddsf & DDSF_NO_RESYNC)
 					drbd_info(device, "Resync of new storage suppressed with --assume-clean\n");

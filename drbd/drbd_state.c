@@ -155,10 +155,8 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		ds = max_t(enum drbd_disk_state, ds, device->state.pdsk);
-	}
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		ds = max_t(enum drbd_disk_state, ds, peer_device->disk_state);
 	rcu_read_unlock();
 
 	return ds;
@@ -958,6 +956,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	device->resource->susp = ns.susp;
 	device->resource->susp_nod = ns.susp_nod;
 	device->resource->susp_fen = ns.susp_fen;
+	first_peer_device(device)->disk_state = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
@@ -1020,12 +1019,13 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 						 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
 						 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY);
-
+		struct drbd_peer_device *peer_device = first_peer_device(device);
 		mdf &= ~MDF_AL_CLEAN;
 		if (test_bit(CRASHED_PRIMARY, &device->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
 		if (device->state.role == R_PRIMARY ||
-		    (device->state.pdsk < D_INCONSISTENT && device->state.peer == R_PRIMARY))
+		    (peer_device->disk_state < D_INCONSISTENT &&
+		     device->state.peer == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
 		if (device->state.conn > C_WF_REPORT_PARAMS)
 			mdf |= MDF_CONNECTED_IND;
@@ -1033,7 +1033,8 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 			mdf |= MDF_CONSISTENT;
 		if (device->state.disk > D_OUTDATED)
 			mdf |= MDF_WAS_UP_TO_DATE;
-		if (device->state.pdsk <= D_OUTDATED && device->state.pdsk >= D_INCONSISTENT)
+		if (peer_device->disk_state <= D_OUTDATED &&
+		    peer_device->disk_state >= D_INCONSISTENT)
 			mdf |= MDF_PEER_OUT_DATED;
 		if (mdf != device->ldev->md.flags) {
 			device->ldev->md.flags = mdf;
@@ -1506,7 +1507,6 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 		  .peer = R_UNKNOWN,
 		  .conn = connection->cstate,
 		  .disk = D_DISKLESS,
-		  .pdsk = D_UNKNOWN,
 		} };
 
 	rcu_read_lock();
@@ -1531,9 +1531,6 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 
 		if (cs.disk != os.disk)
 			flags &= ~CS_DC_DISK;
-
-		if (cs.pdsk != os.pdsk)
-			flags &= ~CS_DC_PDSK;
 	}
 	rcu_read_unlock();
 
@@ -1624,13 +1621,13 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 		ns_max.peer = max_role(ns.peer, ns_max.peer);
 		ns_max.conn = max_t(enum drbd_conns, ns.conn, ns_max.conn);
 		ns_max.disk = max_t(enum drbd_disk_state, ns.disk, ns_max.disk);
-		ns_max.pdsk = max_t(enum drbd_disk_state, ns.pdsk, ns_max.pdsk);
+		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state, ns_max.pdsk);
 
 		ns_min.role = min_role(ns.role, ns_min.role);
 		ns_min.peer = min_role(ns.peer, ns_min.peer);
 		ns_min.conn = min_t(enum drbd_conns, ns.conn, ns_min.conn);
 		ns_min.disk = min_t(enum drbd_disk_state, ns.disk, ns_min.disk);
-		ns_min.pdsk = min_t(enum drbd_disk_state, ns.pdsk, ns_min.pdsk);
+		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state, ns_min.pdsk);
 	}
 	rcu_read_unlock();
 

@@ -274,7 +274,7 @@ int w_read_retry_remote(struct drbd_work *w, int cancel)
 	 * to give the disk the chance to relocate that block */
 
 	spin_lock_irq(&device->resource->req_lock);
-	if (cancel || device->state.pdsk != D_UP_TO_DATE) {
+	if (cancel || first_peer_device(device)->disk_state != D_UP_TO_DATE) {
 		_req_mod(req, READ_RETRY_REMOTE_CANCELED);
 		spin_unlock_irq(&device->resource->req_lock);
 		return 0;
@@ -1036,7 +1036,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	if (device->state.conn == C_AHEAD) {
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		if (likely(device->state.pdsk >= D_INCONSISTENT)) {
+		if (likely(first_peer_device(device)->disk_state >= D_INCONSISTENT)) {
 			inc_rs_pending(device);
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {

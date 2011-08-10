@@ -256,7 +256,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   drbd_role_str(device->state.role),
 			   drbd_role_str(device->state.peer),
 			   drbd_disk_str(device->state.disk),
-			   drbd_disk_str(device->state.pdsk),
+			   drbd_disk_str(first_peer_device(device)->disk_state),
 			   wp,
 			   drbd_suspended(device) ? 's' : 'r',
 			   device->state.aftr_isp ? 'a' : '-',

@@ -84,8 +84,7 @@ union drbd_dev_state {
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned conn:5 ;   /* 17/32	 cstates */
 		unsigned disk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
-		unsigned pdsk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
-		unsigned _unused:1 ;
+		unsigned _unused:5 ;
 		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
 		unsigned peer_isp:1 ;
 		unsigned user_isp:1 ;
@@ -95,8 +94,7 @@ union drbd_dev_state {
 		unsigned user_isp:1 ;
 		unsigned peer_isp:1 ;
 		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
-		unsigned _unused:1 ;
-		unsigned pdsk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
+		unsigned _unused:5 ;
 		unsigned disk:4 ;   /* 8/16	 from D_DISKLESS to D_UP_TO_DATE */
 		unsigned conn:5 ;   /* 17/32	 cstates */
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */

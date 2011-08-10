@@ -2098,7 +2098,6 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 		  .peer = R_UNKNOWN,
 		  .conn = C_STANDALONE,
 		  .disk = D_DISKLESS,
-		  .pdsk = D_UNKNOWN,
 		} };
 }
 
@@ -2903,6 +2902,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 			goto out_no_peer_device;
 		peer_device->connection = connection;
 		peer_device->device = device;
+		peer_device->disk_state = D_UNKNOWN;
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);

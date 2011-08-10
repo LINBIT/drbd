@@ -449,7 +449,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* no point in retrying if there is no good remote data,
 		 * or we have no connection. */
-		if (device->state.pdsk != D_UP_TO_DATE) {
+		if (first_peer_device(device)->disk_state != D_UP_TO_DATE) {
 			_req_may_be_done_not_susp(req, m);
 			break;
 		}
@@ -781,12 +781,15 @@ static int complete_conflicting_writes(struct drbd_device *device,
 	}
 }
 
-static bool drbd_should_do_remote(union drbd_dev_state s)
+static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
 {
-	return s.pdsk == D_UP_TO_DATE ||
-		(s.pdsk >= D_INCONSISTENT &&
-		 s.conn >= C_WF_BITMAP_T &&
-		 s.conn < C_AHEAD);
+	enum drbd_disk_state peer_disk_state = peer_device->disk_state;
+	union drbd_dev_state state = peer_device->device->state;
+
+	return peer_disk_state == D_UP_TO_DATE ||
+	       (peer_disk_state == D_INCONSISTENT &&
+		state.conn >= C_WF_BITMAP_T &&
+		state.conn < C_AHEAD);
 	/* Before proto 96 that was >= CONNECTED instead of >= C_WF_BITMAP_T.
 	   That is equivalent since before 96 IO was frozen in the C_WF_BITMAP*
 	   states. */
@@ -845,7 +848,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 				put_ldev(device);
 			}
 		}
-		remote = !local && device->state.pdsk >= D_UP_TO_DATE;
+		remote = !local && first_peer_device(device)->disk_state >= D_UP_TO_DATE;
 	}
 
 	/* If we have a disk, but a READA request is mapped to remote,
@@ -871,7 +874,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 		drbd_al_begin_io(device, &req->i, true);
 	}
 
-	remote = remote && drbd_should_do_remote(device->state);
+	remote = remote && drbd_should_do_remote(first_peer_device(device));
 	send_oos = rw == WRITE && drbd_should_send_out_of_sync(device->state);
 	D_ASSERT(device, !(remote && send_oos));
 
@@ -927,7 +930,7 @@ allocate_barrier:
 	}
 
 	if (remote || send_oos) {
-		remote = drbd_should_do_remote(device->state);
+		remote = drbd_should_do_remote(first_peer_device(device));
 		send_oos = rw == WRITE && drbd_should_send_out_of_sync(device->state);
 		D_ASSERT(device, !(remote && send_oos));
 
