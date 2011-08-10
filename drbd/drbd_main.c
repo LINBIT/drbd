@@ -405,14 +405,14 @@ restart:
 }
 
 static void drbd_thread_init(struct drbd_connection *connection, struct drbd_thread *thi,
-			     int (*func) (struct drbd_thread *), char *name)
+			     int (*func) (struct drbd_thread *), const char *name)
 {
 	spin_lock_init(&thi->t_lock);
 	thi->task    = NULL;
 	thi->t_state = NONE;
 	thi->function = func;
 	thi->connection = connection;
-	strncpy(thi->name, name, ARRAY_SIZE(thi->name));
+	thi->name = name;
 }
 
 int drbd_thread_start(struct drbd_thread *thi)
