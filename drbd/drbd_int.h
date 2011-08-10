@@ -34,6 +34,7 @@
 #include <linux/bitops.h>
 #include <linux/slab.h>
 #include <linux/crypto.h>
+#include <linux/ratelimit.h>
 #include <linux/tcp.h>
 #include <linux/mutex.h>
 #include <linux/genhd.h>
@@ -204,36 +205,12 @@ void drbd_printk_with_wrong_object_type(void);
 #define drbd_info(device, fmt, args...) \
 	drbd_printk(KERN_INFO, device, fmt, ## args)
 
-/* see kernel/printk.c:printk_ratelimit
- * macro, so it is easy do have independent rate limits at different locations
- * "initializer element not constant ..." with kernel 2.4 :(
- * so I initialize toks to something large
- */
-#define DRBD_ratelimit(ratelimit_jiffies, ratelimit_burst)	\
-({								\
-	int __ret;						\
-	static unsigned long toks = 0x80000000UL;		\
-	static unsigned long last_msg;				\
-	static int missed;					\
-	unsigned long now = jiffies;				\
-	toks += now - last_msg;					\
-	last_msg = now;						\
-	if (toks > (ratelimit_burst * ratelimit_jiffies))	\
-		toks = ratelimit_burst * ratelimit_jiffies;	\
-	if (toks >= ratelimit_jiffies) {			\
-		int lost = missed;				\
-		missed = 0;					\
-		toks -= ratelimit_jiffies;			\
-		if (lost)					\
-			drbd_warn(device, "%d messages suppressed in %s:%d.\n", \
-				lost, __FILE__, __LINE__);	\
-		__ret = 1;					\
-	} else {						\
-		missed++;					\
-		__ret = 0;					\
-	}							\
-	__ret;							\
-})
+extern struct ratelimit_state drbd_ratelimit_state;
+
+static inline int drbd_ratelimit(void)
+{
+	return __ratelimit(&drbd_ratelimit_state);
+}
 
 # define D_ASSERT(device, exp)	if (!(exp)) \
 	 drbd_err(device, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
@@ -1555,7 +1532,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	switch (ep) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (!forcedetach) {
-			if (DRBD_ratelimit(5*HZ, 5))
+			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->state.disk > D_INCONSISTENT)
 				_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
@@ -1710,7 +1687,7 @@ static inline sector_t drbd_md_ss__(struct drbd_device *device,
 		/* sizeof(struct md_on_disk_07) == 4k
 		 * position: last 4k aligned block of 4k size */
 		if (!bdev->backing_bdev) {
-			if (DRBD_ratelimit(5*HZ, 5)) {
+			if (drbd_ratelimit()) {
 				drbd_err(device, "bdev->backing_bdev==NULL\n");
 				dump_stack();
 			}

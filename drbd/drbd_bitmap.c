@@ -122,7 +122,7 @@ struct drbd_bitmap {
 static void __bm_print_lock_info(struct drbd_device *device, const char *func)
 {
 	struct drbd_bitmap *b = device->bitmap;
-	if (!DRBD_ratelimit(5*HZ, 5))
+	if (!drbd_ratelimit())
 		return;
 	drbd_err(device, "FIXME %s in %s, bitmap locked for '%s' by %s\n",
 		drbd_task_to_thread_name(first_peer_device(device)->connection, current),
@@ -969,7 +969,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 		bm_set_page_io_err(b->bm_pages[idx]);
 		/* Not identical to on disk version of it.
 		 * Is BM_PAGE_IO_ERROR enough? */
-		if (DRBD_ratelimit(5*HZ, 5))
+		if (drbd_ratelimit())
 			drbd_err(device, "IO ERROR %d on bitmap page idx %u\n",
 					error, idx);
 	} else {

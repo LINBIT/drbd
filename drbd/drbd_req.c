@@ -162,7 +162,7 @@ static void _req_is_done(struct drbd_device *device, struct drbd_request *req, c
 				if (s & RQ_IN_ACT_LOG)
 					drbd_al_complete_io(device, &req->i);
 				put_ldev(device);
-			} else if (DRBD_ratelimit(5*HZ, 3)) {
+			} else if (drbd_ratelimit()) {
 				drbd_warn(device, "Should have called drbd_al_complete_io(, %llu, %u), "
 				     "but my Disk seems to have failed :(\n",
 				     (unsigned long long) req->i.sector, req->i.size);
@@ -852,7 +852,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	D_ASSERT(device, !(remote && send_oos));
 
 	if (!(local || remote) && !drbd_suspended(device)) {
-		if (DRBD_ratelimit(5*HZ, 3))
+		if (drbd_ratelimit())
 			drbd_err(device, "IO ERROR: neither local nor remote disk\n");
 		err = -EIO;
 		goto fail_free_complete;
