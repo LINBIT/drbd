@@ -1346,10 +1346,10 @@ STATIC int __bm_change_bits_to(struct drbd_device *device, const unsigned long s
 	int c = 0;
 	int changed_total = 0;
 
-	if (e >= b->bm_bits) {
-		drbd_err(device, "ASSERT FAILED: bit_s=%lu bit_e=%lu bm_bits=%lu\n",
-				s, e, b->bm_bits);
-		e = b->bm_bits ? b->bm_bits -1 : 0;
+	if (!expect(device, e < b->bm_bits)) {
+		if (!b->bm_bits)
+			return 0;
+		e = b->bm_bits - 1;
 	}
 	for (bitnr = s; bitnr <= e; bitnr++) {
 		unsigned int page_nr = bm_bit_to_page_idx(b, bitnr);
