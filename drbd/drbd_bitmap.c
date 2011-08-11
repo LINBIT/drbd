@@ -1330,93 +1330,125 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_device *device, unsigned long 
 	return __bm_find_next(device, bm_fo, 1, KM_USER1);
 }
 
-/* returns number of bits actually changed.
- * for val != 0, we change 0 -> 1, return code positive
- * for val == 0, we change 1 -> 0, return code negative
- * wants bitnr, not sector.
- * expected to be called for only a few bits (e - s about BITS_PER_LONG).
- * Must hold bitmap lock already. */
-STATIC int __bm_change_bits_to(struct drbd_device *device, const unsigned long s,
-	unsigned long e, int val)
-{
-	struct drbd_bitmap *b = device->bitmap;
-	unsigned long *p_addr = NULL;
-	unsigned long bitnr;
-	unsigned int last_page_nr = -1U;
-	int c = 0;
-	int changed_total = 0;
+enum bitmap_operations {
+	BM_OP_CLEAR,
+	BM_OP_SET,
+};
 
-	if (!expect(device, e < b->bm_bits)) {
-		if (!b->bm_bits)
-			return 0;
-		e = b->bm_bits - 1;
-	}
-	for (bitnr = s; bitnr <= e; bitnr++) {
-		unsigned int page_nr = bm_bit_to_page_idx(b, bitnr);
-		if (page_nr != last_page_nr) {
-			if (p_addr)
-				bm_kunmap(p_addr, KM_IRQ1);
-			if (c < 0)
-				bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
-			else if (c > 0)
-				bm_set_page_need_writeout(b->bm_pages[last_page_nr]);
-			changed_total += c;
-			c = 0;
-			p_addr = bm_kmap(b, page_nr, KM_IRQ1);
-			last_page_nr = page_nr;
+static __always_inline unsigned int
+___bm_op_page(struct drbd_bitmap *bitmap, unsigned int page,
+	      unsigned int start, unsigned int end, enum bitmap_operations op)
+{
+	unsigned int changed = 0;
+	unsigned long *addr;
+
+	addr = bm_kmap(bitmap, page, KM_IRQ1);
+	while (start <= end) {
+		switch(op) {
+		case BM_OP_CLEAR:
+			if (__test_and_clear_bit_le(start, addr))
+				changed++;
+			break;
+		case BM_OP_SET:
+			if (!__test_and_set_bit_le(start, addr))
+				changed++;
+			break;
 		}
-		if (val)
-			c += (0 == __test_and_set_bit_le(bitnr & BITS_PER_PAGE_MASK, p_addr));
-		else
-			c -= (0 != __test_and_clear_bit_le(bitnr & BITS_PER_PAGE_MASK, p_addr));
+		start++;
 	}
-	if (p_addr)
-		bm_kunmap(p_addr, KM_IRQ1);
-	if (c < 0)
-		bm_set_page_lazy_writeout(b->bm_pages[last_page_nr]);
-	else if (c > 0)
-		bm_set_page_need_writeout(b->bm_pages[last_page_nr]);
-	changed_total += c;
-	b->bm_set += changed_total;
+	bm_kunmap(addr, KM_IRQ1);
+	if (changed) {
+		switch(op) {
+		case BM_OP_CLEAR:
+			bm_set_page_lazy_writeout(bitmap->bm_pages[page]);
+			break;
+		case BM_OP_SET:
+			bm_set_page_need_writeout(bitmap->bm_pages[page]);
+			break;
+		}
+	}
+	return changed;
+}
+
+static __always_inline unsigned int
+__bm_op_page(struct drbd_bitmap *bitmap, unsigned long start, unsigned long end,
+	     enum bitmap_operations op)
+{
+	return ___bm_op_page(bitmap, start >> (PAGE_SHIFT + 3),
+			     start & BITS_PER_PAGE_MASK,
+			     end & BITS_PER_PAGE_MASK, op);
+}
+
+static __always_inline unsigned long
+__bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
+	enum bitmap_operations op)
+{
+	struct drbd_bitmap *bitmap = device->bitmap;
+	unsigned long changed_total = 0;
+	unsigned long last_page_start;
+
+	last_page_start = end & ~BITS_PER_PAGE_MASK;
+	while (start < last_page_start) {
+		unsigned long page_end = start | BITS_PER_PAGE_MASK;
+		changed_total += __bm_op_page(bitmap, start, page_end, op);
+		start = page_end + 1;
+	}
+	changed_total += __bm_op_page(bitmap, start, end, op);
+	switch(op) {
+	case BM_OP_CLEAR:
+		bitmap->bm_set -= changed_total;
+		break;
+	case BM_OP_SET:
+		bitmap->bm_set += changed_total;
+		break;
+	}
 	return changed_total;
 }
 
-/* returns number of bits actually changed.
- * for val != 0, we change 0 -> 1, return code positive
- * for val == 0, we change 1 -> 0, return code negative
- * wants bitnr, not sector */
-STATIC int bm_change_bits_to(struct drbd_device *device, const unsigned long s,
-	const unsigned long e, int val)
+/* Returns the number of bits changed.  */
+static __always_inline unsigned int
+drbd_bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
+	   enum bitmap_operations op)
 {
 	unsigned long flags;
-	struct drbd_bitmap *b = device->bitmap;
-	int c = 0;
+	struct drbd_bitmap *bitmap = device->bitmap;
+	unsigned int changed = 0;
 
-	if (!expect(device, b))
+	if (!expect(device, bitmap))
 		return 1;
-	if (!expect(device, b->bm_pages))
+	if (!expect(device, bitmap->bm_pages))
 		return 0;
 
-	spin_lock_irqsave(&b->bm_lock, flags);
-	if ((val ? BM_DONT_SET : BM_DONT_CLEAR) & b->bm_flags)
-		bm_print_lock_info(device);
-
-	c = __bm_change_bits_to(device, s, e, val);
-
-	spin_unlock_irqrestore(&b->bm_lock, flags);
-	return c;
+	spin_lock_irqsave(&bitmap->bm_lock, flags);
+	if (!expect(device, end < bitmap->bm_bits)) {
+		if (!bitmap->bm_bits)
+			goto out;
+		end = bitmap->bm_bits - 1;
+	}
+	switch(op) {
+	case BM_OP_CLEAR:
+		if (bitmap->bm_flags & BM_DONT_CLEAR)
+			bm_print_lock_info(device);
+		break;
+	case BM_OP_SET:
+		if (bitmap->bm_flags & BM_DONT_SET)
+			bm_print_lock_info(device);
+		break;
+	}
+	changed += __bm_op(device, start, end, op);
+out:
+	spin_unlock_irqrestore(&bitmap->bm_lock, flags);
+	return changed;
 }
 
-/* returns number of bits changed 0 -> 1 */
-int drbd_bm_set_bits(struct drbd_device *device, const unsigned long s, const unsigned long e)
+unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned long start, unsigned long end)
 {
-	return bm_change_bits_to(device, s, e, 1);
+	return drbd_bm_op(device, start, end, BM_OP_SET);
 }
 
-/* returns number of bits changed 1 -> 0 */
-int drbd_bm_clear_bits(struct drbd_device *device, const unsigned long s, const unsigned long e)
+unsigned int drbd_bm_clear_bits(struct drbd_device *device, unsigned long start, unsigned long end)
 {
-	return -bm_change_bits_to(device, s, e, 0);
+	return drbd_bm_op(device, start, end, BM_OP_CLEAR);
 }
 
 /* sets all bits in full words,
@@ -1470,7 +1502,7 @@ void _drbd_bm_set_bits(struct drbd_device *device, const unsigned long s, const 
 	if (e - s <= 3*BITS_PER_LONG) {
 		/* don't bother; el and sl may even be wrong. */
 		spin_lock_irq(&b->bm_lock);
-		__bm_change_bits_to(device, s, e, 1);
+		__bm_op(device, s, e, BM_OP_SET);
 		spin_unlock_irq(&b->bm_lock);
 		return;
 	}
@@ -1481,7 +1513,7 @@ void _drbd_bm_set_bits(struct drbd_device *device, const unsigned long s, const 
 
 	/* bits filling the current long */
 	if (sl)
-		__bm_change_bits_to(device, s, sl-1, 1);
+		__bm_op(device, s, sl-1, BM_OP_SET);
 
 	first_page = sl >> (3 + PAGE_SHIFT);
 	last_page = el >> (3 + PAGE_SHIFT);
@@ -1507,10 +1539,10 @@ void _drbd_bm_set_bits(struct drbd_device *device, const unsigned long s, const 
 	/* possibly trailing bits.
 	 * example: (e & 63) == 63, el will be e+1.
 	 * if that even was the very last bit,
-	 * it would trigger an assert in __bm_change_bits_to()
+	 * it would trigger an assert in __bm_op()
 	 */
 	if (el <= e)
-		__bm_change_bits_to(device, el, e, 1);
+		__bm_op(device, el, e, BM_OP_SET);
 	spin_unlock_irq(&b->bm_lock);
 }
 

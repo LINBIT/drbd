@@ -1232,10 +1232,8 @@ void drbd_bm_free(struct drbd_bitmap *bitmap);
 extern void drbd_bm_set_all(struct drbd_device *device);
 extern void drbd_bm_clear_all(struct drbd_device *device);
 /* set/clear/test only a few bits at a time */
-extern int  drbd_bm_set_bits(
-		struct drbd_device *device, unsigned long s, unsigned long e);
-extern int  drbd_bm_clear_bits(
-		struct drbd_device *device, unsigned long s, unsigned long e);
+extern unsigned int drbd_bm_set_bits(struct drbd_device *, unsigned long, unsigned long);
+extern unsigned int drbd_bm_clear_bits(struct drbd_device *, unsigned long, unsigned long);
 extern int drbd_bm_count_bits(
 	struct drbd_device *device, const unsigned long s, const unsigned long e);
 /* bm_set_bits variant for use while holding drbd_bm_lock,
