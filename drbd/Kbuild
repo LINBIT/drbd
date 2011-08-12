@@ -71,6 +71,7 @@ endif
 ifneq ($(KBUILD_STAGE),modpost)
 $(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
 	$(call filechk,compat.h)
+	$(Q)touch $@
 	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
 endif
 
