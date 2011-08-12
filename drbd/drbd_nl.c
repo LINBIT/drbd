@@ -1419,7 +1419,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless;
 
 	if (!device->bitmap) {
-		if (drbd_bm_init(device)) {
+		device->bitmap = drbd_bm_alloc();
+		if (!device->bitmap) {
 			retcode = ERR_NOMEM;
 			goto force_diskless_dec;
 		}
@@ -1805,7 +1806,8 @@ check_net_options(struct drbd_connection *connection, struct net_conf *new_net_c
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 		if (!device->bitmap) {
-			if(drbd_bm_init(device))
+			device->bitmap = drbd_bm_alloc();
+			if (!device->bitmap)
 				return ERR_NOMEM;
 		}
 	}

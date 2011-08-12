@@ -2232,7 +2232,8 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	if (device->bitmap) {
 		/* maybe never allocated. */
 		drbd_bm_resize(device, 0, 1);
-		drbd_bm_cleanup(device);
+		drbd_bm_free(device->bitmap);
+		device->bitmap = NULL;
 	}
 
 	drbd_free_bc(device->ldev);
@@ -2472,8 +2473,10 @@ void drbd_destroy_device(struct kref *kref)
 		free_peer_device(peer_device);
 	}
 
-	if (device->bitmap) /* should no longer be there. */
-		drbd_bm_cleanup(device);
+	if (device->bitmap) { /* should no longer be there. */
+		drbd_bm_free(device->bitmap);
+		device->bitmap = NULL;
+	}
 	__free_page(device->md_io_page);
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
@@ -3018,7 +3021,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	if (!device->md_io_page)
 		goto out_no_io_page;
 
-	if (drbd_bm_init(device))
+	device->bitmap = drbd_bm_alloc();
+	if (!device->bitmap)
 		goto out_no_bitmap;
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
@@ -3077,7 +3081,7 @@ out_idr_remove_minor:
 out_idr_synchronize_rcu:
 	synchronize_rcu();
 out_no_minor_idr:
-	drbd_bm_cleanup(device);
+	drbd_bm_free(device->bitmap);
 out_no_bitmap:
 	__free_page(device->md_io_page);
 out_no_io_page:

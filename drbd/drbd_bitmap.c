@@ -422,21 +422,21 @@ STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
  * called on driver init only. TODO call when a device is created.
  * allocates the drbd_bitmap, and stores it in device->bitmap.
  */
-int drbd_bm_init(struct drbd_device *device)
+struct drbd_bitmap *drbd_bm_alloc(void)
 {
-	struct drbd_bitmap *b = device->bitmap;
-	WARN_ON(b != NULL);
+	struct drbd_bitmap *b;
+
 	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
 	if (!b)
-		return -ENOMEM;
+		return NULL;
+
 	spin_lock_init(&b->bm_lock);
 	mutex_init(&b->bm_change);
 	init_waitqueue_head(&b->bm_io_wait);
 
 	b->bm_max_peers = 1;
-	device->bitmap = b;
 
-	return 0;
+	return b;
 }
 
 sector_t drbd_bm_capacity(struct drbd_device *device)
@@ -448,14 +448,11 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 
 /* called on driver unload. TODO: call when a device is destroyed.
  */
-void drbd_bm_cleanup(struct drbd_device *device)
+void drbd_bm_free(struct drbd_bitmap *bitmap)
 {
-	if (!expect(device, device->bitmap))
-		return;
-	bm_free_pages(device->bitmap->bm_pages, device->bitmap->bm_number_of_pages);
-	bm_vk_free(device->bitmap->bm_pages, (BM_P_VMALLOCED & device->bitmap->bm_flags));
-	kfree(device->bitmap);
-	device->bitmap = NULL;
+	bm_free_pages(bitmap->bm_pages, bitmap->bm_number_of_pages);
+	bm_vk_free(bitmap->bm_pages, (BM_P_VMALLOCED & bitmap->bm_flags));
+	kfree(bitmap);
 }
 
 /*

@@ -1226,9 +1226,9 @@ extern void drbd_ldev_destroy(struct drbd_device *device);
 #define DRBD_MAX_SIZE_H80_PACKET (1 << 15) /* Header 80 only allows packets up to 32KiB data */
 #define DRBD_MAX_BIO_SIZE_P95    (1 << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
 
-extern int  drbd_bm_init(struct drbd_device *device);
+extern struct drbd_bitmap *drbd_bm_alloc(void);
 extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);
-extern void drbd_bm_cleanup(struct drbd_device *device);
+void drbd_bm_free(struct drbd_bitmap *bitmap);
 extern void drbd_bm_set_all(struct drbd_device *device);
 extern void drbd_bm_clear_all(struct drbd_device *device);
 /* set/clear/test only a few bits at a time */
