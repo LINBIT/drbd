@@ -4536,7 +4536,7 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 				drbd_err(peer_device, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
 				return -EIO;
 			}
-			_drbd_bm_set_bits(peer_device->device, s, e);
+			drbd_bm_set_many_bits(peer_device->device, s, e);
 		}
 
 		if (have < bits) {

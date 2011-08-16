@@ -1337,12 +1337,48 @@ enum bitmap_operations {
 
 static __always_inline unsigned int
 ___bm_op_page(struct drbd_bitmap *bitmap, unsigned int page,
-	      unsigned int start, unsigned int end, enum bitmap_operations op)
+	      unsigned int start, unsigned int end,
+	      enum bitmap_operations op, bool wordwise)
 {
 	unsigned int changed = 0;
 	unsigned long *addr;
 
 	addr = bm_kmap(bitmap, page, KM_IRQ1);
+	if (wordwise && (end - start) >= BITS_PER_LONG) {
+		unsigned long word_end;
+
+		if (start & BITS_PER_LONG_MASK) {
+			word_end = start | BITS_PER_LONG_MASK;
+			while (start <= word_end) {
+				switch(op) {
+				case BM_OP_CLEAR:
+					if (__test_and_clear_bit_le(start, addr))
+						changed++;
+					break;
+				case BM_OP_SET:
+					if (!__test_and_set_bit_le(start, addr))
+						changed++;
+					break;
+				}
+				start++;
+			}
+		}
+		word_end = (end + 1) & ~BITS_PER_LONG_MASK;
+		while (start < word_end) {
+			unsigned long *word = addr + start / BITS_PER_LONG;
+			switch(op) {
+			case BM_OP_CLEAR:
+				changed += hweight_long(*word);
+				*word = 0;
+				break;
+			case BM_OP_SET:
+				changed += hweight_long(~*word);
+				*word = -1;
+				break;
+			}
+			start += BITS_PER_LONG;
+		}
+	}
 	while (start <= end) {
 		switch(op) {
 		case BM_OP_CLEAR:
@@ -1372,16 +1408,17 @@ ___bm_op_page(struct drbd_bitmap *bitmap, unsigned int page,
 
 static __always_inline unsigned int
 __bm_op_page(struct drbd_bitmap *bitmap, unsigned long start, unsigned long end,
-	     enum bitmap_operations op)
+	     enum bitmap_operations op, bool wordwise)
 {
 	return ___bm_op_page(bitmap, start >> (PAGE_SHIFT + 3),
 			     start & BITS_PER_PAGE_MASK,
-			     end & BITS_PER_PAGE_MASK, op);
+			     end & BITS_PER_PAGE_MASK,
+			     op, wordwise);
 }
 
 static __always_inline unsigned long
 __bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
-	enum bitmap_operations op)
+	enum bitmap_operations op, bool wordwise)
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned long changed_total = 0;
@@ -1390,10 +1427,10 @@ __bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
 	last_page_start = end & ~BITS_PER_PAGE_MASK;
 	while (start < last_page_start) {
 		unsigned long page_end = start | BITS_PER_PAGE_MASK;
-		changed_total += __bm_op_page(bitmap, start, page_end, op);
+		changed_total += __bm_op_page(bitmap, start, page_end, op, wordwise);
 		start = page_end + 1;
 	}
-	changed_total += __bm_op_page(bitmap, start, end, op);
+	changed_total += __bm_op_page(bitmap, start, end, op, wordwise);
 	switch(op) {
 	case BM_OP_CLEAR:
 		bitmap->bm_set -= changed_total;
@@ -1408,7 +1445,7 @@ __bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
 /* Returns the number of bits changed.  */
 static __always_inline unsigned int
 drbd_bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
-	   enum bitmap_operations op)
+	   enum bitmap_operations op, bool wordwise, bool schedule)
 {
 	unsigned long flags;
 	struct drbd_bitmap *bitmap = device->bitmap;
@@ -1435,7 +1472,22 @@ drbd_bm_op(struct drbd_device *device, unsigned long start, unsigned long end,
 			bm_print_lock_info(device);
 		break;
 	}
-	changed += __bm_op(device, start, end, op);
+	if (schedule) {
+		unsigned long last_page_start = end & ~BITS_PER_PAGE_MASK;
+
+		while (start < last_page_start) {
+			unsigned long page_end = start | BITS_PER_PAGE_MASK;
+
+			changed += __bm_op(device, start, page_end, BM_OP_SET, true);
+			start = page_end + 1;
+			if (need_resched()) {
+				spin_unlock_irqrestore(&bitmap->bm_lock, flags);
+				cond_resched();
+				spin_lock_irqsave(&bitmap->bm_lock, flags);
+			}
+		}
+	}
+	changed += __bm_op(device, start, end, op, wordwise);
 out:
 	spin_unlock_irqrestore(&bitmap->bm_lock, flags);
 	return changed;
@@ -1443,107 +1495,17 @@ out:
 
 unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned long start, unsigned long end)
 {
-	return drbd_bm_op(device, start, end, BM_OP_SET);
+	return drbd_bm_op(device, start, end, BM_OP_SET, false, false);
+}
+
+void drbd_bm_set_many_bits(struct drbd_device *device, unsigned long start, unsigned long end)
+{
+	drbd_bm_op(device, start, end, BM_OP_SET, true, true);
 }
 
 unsigned int drbd_bm_clear_bits(struct drbd_device *device, unsigned long start, unsigned long end)
 {
-	return drbd_bm_op(device, start, end, BM_OP_CLEAR);
-}
-
-/* sets all bits in full words,
- * from first_word up to, but not including, last_word */
-static inline void bm_set_full_words_within_one_page(struct drbd_bitmap *b,
-		int page_nr, int first_word, int last_word)
-{
-	int i;
-	int bits;
-	int changed = 0;
-	unsigned long *paddr = kmap_atomic(b->bm_pages[page_nr], KM_IRQ1);
-	for (i = first_word; i < last_word; i++) {
-		bits = hweight_long(paddr[i]);
-		paddr[i] = ~0UL;
-		changed += BITS_PER_LONG - bits;
-	}
-	kunmap_atomic(paddr, KM_IRQ1);
-	if (changed) {
-		/* We only need lazy writeout, the information is still in the
-		 * remote bitmap as well, and is reconstructed during the next
-		 * bitmap exchange, if lost locally due to a crash. */
-		bm_set_page_lazy_writeout(b->bm_pages[page_nr]);
-		b->bm_set += changed;
-	}
-}
-
-/* Same thing as drbd_bm_set_bits,
- * but more efficient for a large bit range.
- * You must first drbd_bm_lock().
- * Can be called to set the whole bitmap in one go.
- * Sets bits from s to e _inclusive_. */
-void _drbd_bm_set_bits(struct drbd_device *device, const unsigned long s, const unsigned long e)
-{
-	/* First set_bit from the first bit (s)
-	 * up to the next long boundary (sl),
-	 * then assign full words up to the last long boundary (el),
-	 * then set_bit up to and including the last bit (e).
-	 *
-	 * Do not use memset, because we must account for changes,
-	 * so we need to loop over the words with hweight() anyways.
-	 */
-	struct drbd_bitmap *b = device->bitmap;
-	unsigned long sl = ALIGN(s,BITS_PER_LONG);
-	unsigned long el = (e+1) & ~((unsigned long)BITS_PER_LONG-1);
-	int first_page;
-	int last_page;
-	int page_nr;
-	int first_word;
-	int last_word;
-
-	if (e - s <= 3*BITS_PER_LONG) {
-		/* don't bother; el and sl may even be wrong. */
-		spin_lock_irq(&b->bm_lock);
-		__bm_op(device, s, e, BM_OP_SET);
-		spin_unlock_irq(&b->bm_lock);
-		return;
-	}
-
-	/* difference is large enough that we can trust sl and el */
-
-	spin_lock_irq(&b->bm_lock);
-
-	/* bits filling the current long */
-	if (sl)
-		__bm_op(device, s, sl-1, BM_OP_SET);
-
-	first_page = sl >> (3 + PAGE_SHIFT);
-	last_page = el >> (3 + PAGE_SHIFT);
-
-	/* MLPP: modulo longs per page */
-	/* LWPP: long words per page */
-	first_word = MLPP(sl >> LN2_BPL);
-	last_word = LWPP;
-
-	/* first and full pages, unless first page == last page */
-	for (page_nr = first_page; page_nr < last_page; page_nr++) {
-		bm_set_full_words_within_one_page(device->bitmap, page_nr, first_word, last_word);
-		spin_unlock_irq(&b->bm_lock);
-		cond_resched();
-		first_word = 0;
-		spin_lock_irq(&b->bm_lock);
-	}
-
-	/* last page (respectively only page, for first page == last page) */
-	last_word = MLPP(el >> LN2_BPL);
-	bm_set_full_words_within_one_page(device->bitmap, last_page, first_word, last_word);
-
-	/* possibly trailing bits.
-	 * example: (e & 63) == 63, el will be e+1.
-	 * if that even was the very last bit,
-	 * it would trigger an assert in __bm_op()
-	 */
-	if (el <= e)
-		__bm_op(device, el, e, BM_OP_SET);
-	spin_unlock_irq(&b->bm_lock);
+	return drbd_bm_op(device, start, end, BM_OP_CLEAR, false, false);
 }
 
 /* returns bit state
