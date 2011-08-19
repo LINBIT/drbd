@@ -1370,7 +1370,7 @@ int w_restart_disk_io(struct drbd_work *w, int cancel)
 	struct drbd_device *device = w->device;
 
 	if (bio_data_dir(req->master_bio) == WRITE && req->rq_state & RQ_IN_ACT_LOG)
-		drbd_al_begin_io(device, &req->i);
+		drbd_al_begin_io(device, &req->i, false);
 
 	drbd_req_make_private_bio(req, req->master_bio);
 	req->private_bio->bi_bdev = device->ldev->backing_bdev;

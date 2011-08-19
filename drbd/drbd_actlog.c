@@ -105,7 +105,7 @@ struct update_al_work {
 };
 
 
-static int al_write_transaction(struct drbd_device *device);
+static int al_write_transaction(struct drbd_device *device, bool delegate);
 
 void *drbd_md_get_buffer(struct drbd_device *device)
 {
@@ -256,7 +256,10 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 	return al_ext;
 }
 
-void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i)
+/*
+ * @delegate:	delegate activity log I/O to the worker thread
+ */
+void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
@@ -279,18 +282,11 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i)
 			(locked = lc_try_lock_for_transaction(device->act_log)));
 
 	if (locked) {
-		/* drbd_al_write_transaction(device,al_ext,enr);
-		 * recurses into generic_make_request(), which
-		 * disallows recursion, bios being serialized on the
-		 * current->bio_tail list now.
-		 * we have to delegate updates to the activity log
-		 * to the worker thread. */
-
-		/* Double check: it may have been committed by someone else,
-		 * while we have been waiting for the lock. */
+		/* Double check: it may have been committed by someone else
+		 * while we were waiting for the lock. */
 		if (device->act_log->pending_changes) {
 			int err;
-			err = al_write_transaction(device);
+			err = al_write_transaction(device, delegate);
 			device->al_writ_cnt++;
 
 			spin_lock_irq(&device->al_lock);
@@ -480,23 +476,31 @@ static int w_al_write_transaction(struct drbd_work *w, int unused)
 	return err != -EIO ? err : 0;
 }
 
-/* Calls from worker context (see w_restart_disk_io()) need to write the
-   transaction directly. Others came through generic_make_request(),
-   those need to delegate it to the worker. */
-static int al_write_transaction(struct drbd_device *device)
+/*
+ * @delegate:	delegate activity log I/O to the worker thread
+ */
+static int al_write_transaction(struct drbd_device *device, bool delegate)
 {
-	struct update_al_work al_work;
+	if (delegate) {
+		struct update_al_work al_work;
 
-	if (current == first_peer_device(device)->connection->worker.task)
+		/* When called through generic_make_request(), we must delegate
+		 * activity log I/O to the worker thread: a further request
+		 * submitted via generic_make_request() within the same task
+		 * would be queued on current->bio_list, and would only start
+		 * after this function returns (see generic_make_request()).
+		 */
+
+		BUG_ON(current == first_peer_device(device)->connection->worker.task);
+
+		init_completion(&al_work.event);
+		al_work.w.cb = w_al_write_transaction;
+		al_work.w.device = device;
+		drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &al_work.w);
+		wait_for_completion(&al_work.event);
+		return al_work.err;
+	} else
 		return _al_write_transaction(device);
-
-	init_completion(&al_work.event);
-	al_work.w.cb = w_al_write_transaction;
-	al_work.w.device = device;
-	drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &al_work.w);
-	wait_for_completion(&al_work.event);
-
-	return al_work.err;
 }
 
 static int _try_lc_del(struct drbd_device *device, struct lc_element *al_ext)

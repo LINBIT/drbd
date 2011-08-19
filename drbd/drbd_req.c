@@ -844,7 +844,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	 * of transactional on-disk meta data updates. */
 	if (rw == WRITE && local && !test_bit(AL_SUSPENDED, &device->flags)) {
 		req->rq_state |= RQ_IN_ACT_LOG;
-		drbd_al_begin_io(device, &req->i);
+		drbd_al_begin_io(device, &req->i, true);
 	}
 
 	remote = remote && drbd_should_do_remote(device->state);
