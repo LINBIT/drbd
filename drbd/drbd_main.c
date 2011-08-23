@@ -1181,7 +1181,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
  * drbd_send_state() - Sends the drbd state to the peer
  * @device:	DRBD device.
  */
-int drbd_send_state_(struct drbd_peer_device *peer_device, const char *func, unsigned int line)
+int drbd_send_state(struct drbd_peer_device *peer_device)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
