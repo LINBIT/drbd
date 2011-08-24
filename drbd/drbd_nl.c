@@ -1143,8 +1143,7 @@ static void conn_reconfig_done(struct drbd_connection *connection)
 {
 	bool stop_threads;
 	spin_lock_irq(&connection->resource->req_lock);
-	stop_threads = conn_all_vols_unconf(connection) &&
-		connection->cstate == C_STANDALONE;
+	stop_threads = connection->cstate == C_STANDALONE;
 	spin_unlock_irq(&connection->resource->req_lock);
 	if (stop_threads) {
 		/* asender is implicitly stopped by receiver
@@ -1328,7 +1327,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto finish;
 
 	device = adm_ctx.device;
-	conn_reconfig_start(first_peer_device(device)->connection);
 
 	/* if you want to reconfigure, please tear down first */
 	if (device->state.disk > D_DISKLESS) {
@@ -1677,7 +1675,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_kobject_uevent(device);
 	put_ldev(device);
-	conn_reconfig_done(first_peer_device(device)->connection);
 	drbd_adm_finish(info, retcode);
 	return 0;
 
@@ -1687,7 +1684,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_force_state(device, NS(disk, D_DISKLESS));
 	drbd_md_sync(device);
  fail:
-	conn_reconfig_done(first_peer_device(device)->connection);
 	if (nbc) {
 		if (nbc->backing_bdev)
 			blkdev_put(nbc->backing_bdev,

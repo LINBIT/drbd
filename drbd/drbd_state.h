@@ -133,7 +133,6 @@ conn_request_state(struct drbd_connection *connection, union drbd_state mask, un
 		   enum chg_state_flags flags);
 
 extern void drbd_resume_al(struct drbd_device *device);
-extern bool conn_all_vols_unconf(struct drbd_connection *connection);
 
 /**
  * drbd_request_state() - Reqest a state change

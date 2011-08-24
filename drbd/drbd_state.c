@@ -65,27 +65,6 @@ static inline bool is_susp(union drbd_state s)
         return s.susp || s.susp_nod || s.susp_fen;
 }
 
-bool conn_all_vols_unconf(struct drbd_connection *connection)
-{
-	struct drbd_peer_device *peer_device;
-	bool rv = true;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		if (device->state.disk != D_DISKLESS ||
-		    device->state.conn != C_STANDALONE ||
-		    device->state.role != R_SECONDARY) {
-			rv = false;
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	return rv;
-}
-
 /* Unfortunately the states where not correctly ordered, when
    they where defined. therefore can not use max_t() here. */
 static enum drbd_role max_role(enum drbd_role role1, enum drbd_role role2)
