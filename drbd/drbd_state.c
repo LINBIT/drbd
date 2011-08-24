@@ -50,7 +50,7 @@ enum sanitize_state_warnings {
 	IMPLICITLY_UPGRADED_PDSK,
 };
 
-static int w_after_state_ch(struct drbd_device_work *dw, int unused);
+static int w_after_state_ch(struct drbd_work *w, int unused);
 static void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 static enum drbd_state_rv is_valid_state(struct drbd_device *, union drbd_state);
@@ -1164,8 +1164,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	return rv;
 }
 
-static int w_after_state_ch(struct drbd_device_work *dw, int unused)
+static int w_after_state_ch(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct after_state_chg_work *ascw =
 		container_of(dw, struct after_state_chg_work, dw);
 	struct drbd_device *device = dw->device;
@@ -1545,10 +1546,10 @@ struct after_conn_state_chg_work {
 	struct drbd_connection *connection;
 };
 
-static int w_after_conn_state_ch(struct drbd_device_work *dw, int unused)
+static int w_after_conn_state_ch(struct drbd_work *w, int unused)
 {
 	struct after_conn_state_chg_work *acscw =
-		container_of(dw, struct after_conn_state_chg_work, dw);
+		container_of(w, struct after_conn_state_chg_work, dw.w);
 	struct drbd_connection *connection = acscw->connection;
 	enum drbd_conns oc = acscw->oc;
 	union drbd_state ns_max = acscw->ns_max;

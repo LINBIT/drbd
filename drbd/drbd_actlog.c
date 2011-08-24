@@ -615,8 +615,9 @@ _al_write_transaction(struct drbd_device *device)
 }
 
 
-static int w_al_write_transaction(struct drbd_device_work *dw, int unused)
+static int w_al_write_transaction(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct update_al_work *aw = container_of(dw, struct update_al_work, dw);
 	struct drbd_device *device = dw->device;
 	int err;
@@ -705,8 +706,9 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-static int w_update_odbm(struct drbd_device_work *dw, int unused)
+static int w_update_odbm(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct update_odbm_work *udw = container_of(dw, struct update_odbm_work, dw);
 	struct drbd_device *device = dw->device;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };

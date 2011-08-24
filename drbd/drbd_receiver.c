@@ -70,7 +70,7 @@ static int drbd_do_auth(struct drbd_connection *connection);
 static int drbd_disconnected(struct drbd_peer_device *);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
-static int e_end_block(struct drbd_device_work *, int);
+static int e_end_block(struct drbd_work *, int);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -474,7 +474,7 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 		int err2;
 
 		/* list_del not necessary, next/prev members not touched */
-		err2 = peer_req->dw.w.cb(&peer_req->dw, !!err);
+		err2 = peer_req->dw.w.cb(&peer_req->dw.w, !!err);
 		if (!err)
 			err = err2;
 		drbd_free_peer_req(device, peer_req);
@@ -1224,8 +1224,9 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 	return drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE);
 }
 
-static int w_flush(struct drbd_device_work *dw, int cancel)
+static int w_flush(struct drbd_work *w, int cancel)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct flush_work *fw = container_of(dw, struct flush_work, dw);
 	struct drbd_epoch *epoch = fw->epoch;
 	struct drbd_connection *connection = epoch->connection;
@@ -1532,8 +1533,9 @@ static void drbd_remove_epoch_entry_interval(struct drbd_device *device,
  * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-int w_e_reissue(struct drbd_device_work *dw, int cancel) __releases(local)
+int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct drbd_peer_request *peer_req =
 		container_of(dw, struct drbd_peer_request, dw);
 	struct drbd_device *device = dw->device;
@@ -1890,8 +1892,9 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
  * e_end_resync_block() is called in asender context via
  * drbd_finish_peer_reqs().
  */
-static int e_end_resync_block(struct drbd_device_work *dw, int unused)
+static int e_end_resync_block(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct drbd_peer_request *peer_req =
 		container_of(dw, struct drbd_peer_request, dw);
 	struct drbd_device *device = dw->device;
@@ -2061,8 +2064,9 @@ static void restart_conflicting_writes(struct drbd_device *device,
 /*
  * e_end_block() is called in asender context via drbd_finish_peer_reqs().
  */
-static int e_end_block(struct drbd_device_work *dw, int cancel)
+static int e_end_block(struct drbd_work *w, int cancel)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct drbd_peer_request *peer_req =
 		container_of(dw, struct drbd_peer_request, dw);
 	struct drbd_device *device = dw->device;
@@ -2122,13 +2126,14 @@ static int e_send_ack(struct drbd_device_work *dw, enum drbd_packet ack)
 	return err;
 }
 
-static int e_send_superseded(struct drbd_device_work *dw, int unused)
+static int e_send_superseded(struct drbd_work *w, int unused)
 {
-	return e_send_ack(dw, P_SUPERSEDED);
+	return e_send_ack(device_work(w), P_SUPERSEDED);
 }
 
-static int e_send_retry_write(struct drbd_device_work *dw, int unused)
+static int e_send_retry_write(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct drbd_connection *connection = first_peer_device(dw->device)->connection;
 
 	return e_send_ack(dw, connection->agreed_pro_version >= 100 ?
@@ -4761,9 +4766,9 @@ static void drbdd(struct drbd_connection *connection)
 	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
-static int w_complete(struct drbd_device_work *dw, int cancel)
+static int w_complete(struct drbd_work *w, int cancel)
 {
-	struct drbd_wq_barrier *b = container_of(dw, struct drbd_wq_barrier, dw);
+	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, dw.w);
 
 	complete(&b->done);
 	return 0;

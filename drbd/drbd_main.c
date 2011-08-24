@@ -76,10 +76,10 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file);
 #endif
-static int w_md_sync(struct drbd_device_work *dw, int unused);
+static int w_md_sync(struct drbd_work *w, int unused);
 static void md_sync_timer_fn(unsigned long data);
-static int w_bitmap_io(struct drbd_device_work *dw, int unused);
-static int w_go_diskless(struct drbd_device_work *dw, int unused);
+static int w_bitmap_io(struct drbd_work *w, int unused);
+static int w_go_diskless(struct drbd_work *w, int unused);
 static void drbd_destroy_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
@@ -3586,8 +3586,9 @@ int drbd_bmio_clear_n_write(struct drbd_device *device)
 	return rv;
 }
 
-static int w_bitmap_io(struct drbd_device_work *dw, int unused)
+static int w_bitmap_io(struct drbd_work *w, int unused)
 {
+	struct drbd_device_work *dw = device_work(w);
 	struct bm_io_work *work = container_of(dw, struct bm_io_work, dw);
 	struct drbd_device *device = dw->device;
 	int rv = -EIO;
@@ -3627,9 +3628,9 @@ void drbd_ldev_destroy(struct drbd_device *device)
 	clear_bit(GO_DISKLESS, &device->flags);
 }
 
-static int w_go_diskless(struct drbd_device_work *dw, int unused)
+static int w_go_diskless(struct drbd_work *w, int unused)
 {
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device = device_work(w)->device;
 
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
@@ -3766,9 +3767,9 @@ static void md_sync_timer_fn(unsigned long data)
 		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &device->md_sync_work);
 }
 
-static int w_md_sync(struct drbd_device_work *dw, int unused)
+static int w_md_sync(struct drbd_work *w, int unused)
 {
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device = device_work(w)->device;
 
 	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
 #ifdef DRBD_DEBUG_MD_SYNC

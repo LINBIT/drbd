@@ -356,17 +356,18 @@ static inline enum drbd_thread_state get_t_state(struct drbd_thread *thi)
 	return thi->t_state;
 }
 
-struct drbd_device_work;
-
 struct drbd_work {
 	struct list_head list;
-	int (*cb)(struct drbd_device_work *, int cancel);
+	int (*cb)(struct drbd_work *, int cancel);
 };
 
 struct drbd_device_work {
 	struct drbd_work w;
 	struct drbd_device *device;
 };
+
+#define device_work(work) \
+	container_of(work, struct drbd_device_work, w)
 
 #include "drbd_interval.h"
 
@@ -1417,21 +1418,21 @@ static inline void ov_out_of_sync_print(struct drbd_device *device)
 extern void drbd_csum_bio(struct crypto_hash *, struct bio *, void *);
 extern void drbd_csum_ee(struct crypto_hash *, struct drbd_peer_request *, void *);
 /* worker callbacks */
-extern int w_e_end_data_req(struct drbd_device_work *, int);
-extern int w_e_end_rsdata_req(struct drbd_device_work *, int);
-extern int w_e_end_csum_rs_req(struct drbd_device_work *, int);
-extern int w_e_end_ov_reply(struct drbd_device_work *, int);
-extern int w_e_end_ov_req(struct drbd_device_work *, int);
-extern int w_ov_finished(struct drbd_device_work *, int);
-extern int w_resync_timer(struct drbd_device_work *, int);
-extern int w_send_write_hint(struct drbd_device_work *, int);
-extern int w_make_resync_request(struct drbd_device_work *, int);
-extern int w_send_dblock(struct drbd_device_work *, int);
-extern int w_send_read_req(struct drbd_device_work *, int);
-extern int w_e_reissue(struct drbd_device_work *, int);
-extern int w_restart_disk_io(struct drbd_device_work *, int);
-extern int w_send_out_of_sync(struct drbd_device_work *, int);
-extern int w_start_resync(struct drbd_device_work *, int);
+extern int w_e_end_data_req(struct drbd_work *, int);
+extern int w_e_end_rsdata_req(struct drbd_work *, int);
+extern int w_e_end_csum_rs_req(struct drbd_work *, int);
+extern int w_e_end_ov_reply(struct drbd_work *, int);
+extern int w_e_end_ov_req(struct drbd_work *, int);
+extern int w_ov_finished(struct drbd_work *, int);
+extern int w_resync_timer(struct drbd_work *, int);
+extern int w_send_write_hint(struct drbd_work *, int);
+extern int w_make_resync_request(struct drbd_work *, int);
+extern int w_send_dblock(struct drbd_work *, int);
+extern int w_send_read_req(struct drbd_work *, int);
+extern int w_e_reissue(struct drbd_work *, int);
+extern int w_restart_disk_io(struct drbd_work *, int);
+extern int w_send_out_of_sync(struct drbd_work *, int);
+extern int w_start_resync(struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 extern void start_resync_timer_fn(unsigned long data);
