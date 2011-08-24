@@ -21,7 +21,7 @@
    along with drbd; see the file COPYING.  If not, write to
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
- */
+*/
 
 #include <linux/module.h>
 #include <linux/drbd.h>
@@ -108,7 +108,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
-	list_del(&peer_req->dw.list);
+	list_del(&peer_req->dw.w.list);
 	if (list_empty(&device->read_ee))
 		wake_up(&device->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
@@ -141,9 +141,9 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	if (is_failed_barrier(peer_req->flags)) {
 		drbd_bump_write_ordering(first_peer_device(device)->connection, WO_bdev_flush);
 		spin_lock_irqsave(&device->resource->req_lock, flags);
-		list_del(&peer_req->dw.list);
+		list_del(&peer_req->dw.w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
-		peer_req->dw.cb = w_e_reissue;
+		peer_req->dw.w.cb = w_e_reissue;
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
@@ -161,7 +161,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->writ_cnt += peer_req->i.size >> 9;
-	list_move_tail(&peer_req->dw.list, &device->done_ee);
+	list_move_tail(&peer_req->dw.w.list, &device->done_ee);
 
 	/*
 	 * Do not remove from the write_requests tree here: we did not send the
@@ -425,9 +425,9 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!peer_req)
 		goto defer;
 
-	peer_req->dw.cb = w_e_send_csum;
+	peer_req->dw.w.cb = w_e_send_csum;
 	spin_lock_irq(&device->resource->req_lock);
-	list_add(&peer_req->dw.list, &device->read_ee);
+	list_add(&peer_req->dw.w.list, &device->read_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
@@ -439,7 +439,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * retry may or may not help.
 	 * If it does not, you may need to force disconnect. */
 	spin_lock_irq(&device->resource->req_lock);
-	list_del(&peer_req->dw.list);
+	list_del(&peer_req->dw.w.list);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(device, peer_req);
@@ -467,8 +467,9 @@ void resync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	if (list_empty(&device->resync_work.list))
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &device->resync_work);
+	if (list_empty(&device->resync_work.w.list))
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				&device->resync_work);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
@@ -864,7 +865,7 @@ int drbd_resync_finished(struct drbd_device *device)
 		schedule_timeout_interruptible(HZ / 10);
 		dw = kmalloc(sizeof(struct drbd_device_work), GFP_ATOMIC);
 		if (dw) {
-			dw->cb = w_resync_finished;
+			dw->w.cb = w_resync_finished;
 			dw->device = device;
 			drbd_queue_work(&first_peer_device(device)->connection->sender_work, dw);
 			return 1;
@@ -1006,7 +1007,7 @@ static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_
 		atomic_add(i, &device->pp_in_use_by_net);
 		atomic_sub(i, &device->pp_in_use);
 		spin_lock_irq(&device->resource->req_lock);
-		list_add_tail(&peer_req->dw.list, &device->net_ee);
+		list_add_tail(&peer_req->dw.w.list, &device->net_ee);
 		spin_unlock_irq(&device->resource->req_lock);
 		wake_up(&drbd_pp_wait);
 	} else
@@ -1943,9 +1944,9 @@ int drbd_worker(struct drbd_thread *thi)
 			break;
 
 		while (!list_empty(&work_list)) {
-			dw = list_first_entry(&work_list, struct drbd_device_work, list);
-			list_del_init(&dw->list);
-			if (dw->cb(dw, connection->cstate < C_WF_REPORT_PARAMS) == 0)
+			dw = list_first_entry(&work_list, struct drbd_device_work, w.list);
+			list_del_init(&dw->w.list);
+			if (dw->w.cb(dw, connection->cstate < C_WF_REPORT_PARAMS) == 0)
 				continue;
 			if (connection->cstate >= C_WF_REPORT_PARAMS)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
@@ -1954,9 +1955,9 @@ int drbd_worker(struct drbd_thread *thi)
 
 	do {
 		while (!list_empty(&work_list)) {
-			dw = list_first_entry(&work_list, struct drbd_device_work, list);
-			list_del_init(&dw->list);
-			dw->cb(dw, 1);
+			dw = list_first_entry(&work_list, struct drbd_device_work, w.list);
+			list_del_init(&dw->w.list);
+			dw->w.cb(dw, 1);
 		}
 		dequeue_work_batch(&connection->sender_work, &work_list);
 	} while (!list_empty(&work_list));

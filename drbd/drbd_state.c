@@ -1153,7 +1153,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		ascw->os = os;
 		ascw->ns = ns;
 		ascw->flags = flags;
-		ascw->dw.cb = w_after_state_ch;
+		ascw->dw.w.cb = w_after_state_ch;
 		ascw->dw.device = device;
 		ascw->done = done;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &ascw->dw);
@@ -1850,7 +1850,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		acscw->ns_min = ns_min;
 		acscw->ns_max = ns_max;
 		acscw->flags = flags;
-		acscw->dw.cb = w_after_conn_state_ch;
+		acscw->dw.w.cb = w_after_conn_state_ch;
 		kref_get(&connection->kref);
 		acscw->connection = connection;
 		drbd_queue_work(&connection->sender_work, &acscw->dw);

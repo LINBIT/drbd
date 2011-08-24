@@ -356,9 +356,15 @@ static inline enum drbd_thread_state get_t_state(struct drbd_thread *thi)
 	return thi->t_state;
 }
 
-struct drbd_device_work {
+struct drbd_device_work;
+
+struct drbd_work {
 	struct list_head list;
 	int (*cb)(struct drbd_device_work *, int cancel);
+};
+
+struct drbd_device_work {
+	struct drbd_work w;
 	struct drbd_device *device;
 };
 
@@ -1791,7 +1797,7 @@ drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *dw)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add(&dw->list, &q->q);
+	list_add(&dw->w.list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	wake_up(&q->q_wait);
 }
@@ -1801,7 +1807,7 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *dw)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add_tail(&dw->list, &q->q);
+	list_add_tail(&dw->w.list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	wake_up(&q->q_wait);
 }

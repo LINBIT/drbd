@@ -1935,7 +1935,7 @@ static void drbd_unplug_fn(struct request_queue *q)
 			 * unless already queued.
 			 * XXX this might be a good addition to drbd_queue_work
 			 * anyways, to detect "double queuing" ... */
-			if (list_empty(&device->unplug_work.list))
+			if (list_empty(&device->unplug_work.w.list))
 				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
 						&device->unplug_work);
 		}
@@ -1994,19 +1994,19 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
 	INIT_LIST_HEAD(&device->resync_reads);
-	INIT_LIST_HEAD(&device->resync_work.list);
-	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->go_diskless.list);
-	INIT_LIST_HEAD(&device->md_sync_work.list);
-	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->bm_io_work.dw.list);
+	INIT_LIST_HEAD(&device->resync_work.w.list);
+	INIT_LIST_HEAD(&device->unplug_work.w.list);
+	INIT_LIST_HEAD(&device->go_diskless.w.list);
+	INIT_LIST_HEAD(&device->md_sync_work.w.list);
+	INIT_LIST_HEAD(&device->start_resync_work.w.list);
+	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
 
-	device->resync_work.cb  = w_resync_timer;
-	device->unplug_work.cb  = w_send_write_hint;
-	device->go_diskless.cb  = w_go_diskless;
-	device->md_sync_work.cb = w_md_sync;
-	device->bm_io_work.dw.cb = w_bitmap_io;
-	device->start_resync_work.cb = w_start_resync;
+	device->resync_work.w.cb  = w_resync_timer;
+	device->unplug_work.w.cb  = w_send_write_hint;
+	device->go_diskless.w.cb  = w_go_diskless;
+	device->md_sync_work.w.cb = w_md_sync;
+	device->bm_io_work.dw.w.cb = w_bitmap_io;
+	device->start_resync_work.w.cb = w_start_resync;
 
 	device->resync_work.device  = device;
 	device->unplug_work.device  = device;
@@ -2083,9 +2083,9 @@ void drbd_device_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->net_ee));
 	D_ASSERT(device, list_empty(&device->resync_reads));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->sender_work.q));
-	D_ASSERT(device, list_empty(&device->resync_work.list));
-	D_ASSERT(device, list_empty(&device->unplug_work.list));
-	D_ASSERT(device, list_empty(&device->go_diskless.list));
+	D_ASSERT(device, list_empty(&device->resync_work.w.list));
+	D_ASSERT(device, list_empty(&device->unplug_work.w.list));
+	D_ASSERT(device, list_empty(&device->go_diskless.w.list));
 
 	drbd_set_defaults(device);
 }
@@ -3689,7 +3689,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
 	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(device, list_empty(&device->bm_io_work.dw.list));
+	D_ASSERT(device, list_empty(&device->bm_io_work.dw.w.list));
 	if (device->bm_io_work.why)
 		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, device->bm_io_work.why);
@@ -3762,7 +3762,7 @@ static void md_sync_timer_fn(unsigned long data)
 	struct drbd_device *device = (struct drbd_device *) data;
 
 	/* must not double-queue! */
-	if (list_empty(&device->md_sync_work.list))
+	if (list_empty(&device->md_sync_work.w.list))
 		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &device->md_sync_work);
 }
 

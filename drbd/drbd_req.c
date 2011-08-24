@@ -122,7 +122,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	req->i.waiting = false;
 
 	INIT_LIST_HEAD(&req->tl_requests);
-	INIT_LIST_HEAD(&req->dw.list);
+	INIT_LIST_HEAD(&req->dw.w.list);
 
 	/* one reference to be put by __drbd_make_request */
 	atomic_set(&req->completion_ref, 1);
@@ -579,7 +579,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		D_ASSERT(device, (req->rq_state & RQ_LOCAL_MASK) == 0);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
-		req->dw.cb = w_send_read_req;
+		req->dw.w.cb = w_send_read_req;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
 		break;
 
@@ -614,7 +614,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* queue work item to send data */
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
-		req->dw.cb =  w_send_dblock;
+		req->dw.w.cb =  w_send_dblock;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
 
 		/* close the epoch, in case it outgrew the limit */
@@ -629,7 +629,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case QUEUE_FOR_SEND_OOS:
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
-		req->dw.cb =  w_send_out_of_sync;
+		req->dw.w.cb =  w_send_out_of_sync;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
 		break;
 
@@ -741,13 +741,13 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			rv = MR_WRITE;
 
 		get_ldev(device); /* always succeeds in this call path */
-		req->dw.cb = w_restart_disk_io;
+		req->dw.w.cb = w_restart_disk_io;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
 		break;
 
 	case RESEND:
 		/* Simply complete (local only) READs. */
-		if (!(req->rq_state & RQ_WRITE) && !req->dw.cb) {
+		if (!(req->rq_state & RQ_WRITE) && !req->dw.w.cb) {
 			mod_rq_state(req, m, RQ_COMPLETION_SUSP, 0);
 			break;
 		}
@@ -762,7 +762,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			 * in that case we must not set RQ_NET_PENDING. */
 
 			mod_rq_state(req, m, RQ_COMPLETION_SUSP, RQ_NET_QUEUED|RQ_NET_PENDING);
-			if (req->dw.cb) {
+			if (req->dw.w.cb) {
 				drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			} /* else: FIXME can this happen? */
