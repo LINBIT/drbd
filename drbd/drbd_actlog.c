@@ -494,7 +494,7 @@ static int al_write_transaction(struct drbd_device *device, bool delegate)
 		BUG_ON(current == first_peer_device(device)->connection->worker.task);
 
 		init_completion(&al_work.event);
-		al_work.dw.cb = w_al_write_transaction;
+		al_work.dw.w.cb = w_al_write_transaction;
 		al_work.dw.device = device;
 		drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &al_work.dw);
 		wait_for_completion(&al_work.event);
@@ -658,7 +658,7 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			udw = kmalloc(sizeof(*udw), GFP_ATOMIC);
 			if (udw) {
 				udw->enr = ext->lce.lc_number;
-				udw->dw.cb = w_update_odbm;
+				udw->dw.w.cb = w_update_odbm;
 				udw->dw.device = device;
 				drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &udw->dw);
 			} else {

@@ -211,11 +211,11 @@ STATIC int tl_init(struct drbd_connection *connection)
 	if (!b)
 		return 0;
 	INIT_LIST_HEAD(&b->requests);
-	INIT_LIST_HEAD(&b->dw.list);
+	INIT_LIST_HEAD(&b->dw.w.list);
 	b->next = NULL;
 	b->br_number = 4711;
 	b->n_writes = 0;
-	b->dw.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	b->dw.w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
 	connection->oldest_tle = b;
 	connection->newest_tle = b;
@@ -249,8 +249,8 @@ void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *n
 	struct drbd_tl_epoch *newest_before;
 
 	INIT_LIST_HEAD(&new->requests);
-	INIT_LIST_HEAD(&new->dw.list);
-	new->dw.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	INIT_LIST_HEAD(&new->dw.w.list);
+	new->dw.w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 	new->next = NULL;
 	new->n_writes = 0;
 
@@ -383,8 +383,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 		if (n_writes) {
 			if (what == RESEND) {
 				b->n_writes = n_writes;
-				if (b->dw.cb == NULL) {
-					b->dw.cb = w_send_barrier;
+				if (b->dw.w.cb == NULL) {
+					b->dw.w.cb = w_send_barrier;
 					inc_ap_pending(b->dw.device);
 					set_bit(CREATE_BARRIER, &b->dw.device->flags);
 				}
@@ -401,8 +401,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 
 			/* dec_ap_pending corresponding to queue_barrier.
 			 * the newest barrier may not have been queued yet,
-			 * in which case dw.cb is still NULL. */
-			if (b->dw.cb != NULL)
+			 * in which case dw.w.cb is still NULL. */
+			if (b->dw.w.cb != NULL)
 				dec_ap_pending(b->dw.device);
 
 			if (b == connection->newest_tle) {
@@ -411,8 +411,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 					drbd_err(connection, "ASSERT FAILED tmp == NULL");
 				INIT_LIST_HEAD(&b->requests);
 				list_splice(&carry_reads, &b->requests);
-				INIT_LIST_HEAD(&b->dw.list);
-				b->dw.cb = NULL;
+				INIT_LIST_HEAD(&b->dw.w.list);
+				b->dw.w.cb = NULL;
 				b->br_number = net_random();
 				b->n_writes = 0;
 
@@ -2132,19 +2132,19 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
 	INIT_LIST_HEAD(&device->resync_reads);
-	INIT_LIST_HEAD(&device->resync_work.list);
-	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->go_diskless.list);
-	INIT_LIST_HEAD(&device->md_sync_work.list);
-	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->bm_io_work.dw.list);
+	INIT_LIST_HEAD(&device->resync_work.w.list);
+	INIT_LIST_HEAD(&device->unplug_work.w.list);
+	INIT_LIST_HEAD(&device->go_diskless.w.list);
+	INIT_LIST_HEAD(&device->md_sync_work.w.list);
+	INIT_LIST_HEAD(&device->start_resync_work.w.list);
+	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
 
-	device->resync_work.cb  = w_resync_timer;
-	device->unplug_work.cb  = w_send_write_hint;
-	device->go_diskless.cb  = w_go_diskless;
-	device->md_sync_work.cb = w_md_sync;
-	device->bm_io_work.dw.cb = w_bitmap_io;
-	device->start_resync_work.cb = w_start_resync;
+	device->resync_work.w.cb  = w_resync_timer;
+	device->unplug_work.w.cb  = w_send_write_hint;
+	device->go_diskless.w.cb  = w_go_diskless;
+	device->md_sync_work.w.cb = w_md_sync;
+	device->bm_io_work.dw.w.cb = w_bitmap_io;
+	device->start_resync_work.w.cb = w_start_resync;
 
 	device->resync_work.device  = device;
 	device->unplug_work.device  = device;
@@ -2226,9 +2226,9 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->resync_reads));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->data.work.q));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
-	D_ASSERT(device, list_empty(&device->resync_work.list));
-	D_ASSERT(device, list_empty(&device->unplug_work.list));
-	D_ASSERT(device, list_empty(&device->go_diskless.list));
+	D_ASSERT(device, list_empty(&device->resync_work.w.list));
+	D_ASSERT(device, list_empty(&device->unplug_work.w.list));
+	D_ASSERT(device, list_empty(&device->go_diskless.w.list));
 
 	drbd_set_defaults(device);
 }
@@ -3458,7 +3458,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
 	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(device, list_empty(&device->bm_io_work.dw.list));
+	D_ASSERT(device, list_empty(&device->bm_io_work.dw.w.list));
 	if (device->bm_io_work.why)
 		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, device->bm_io_work.why);

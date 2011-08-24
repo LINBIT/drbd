@@ -21,7 +21,7 @@
    along with drbd; see the file COPYING.  If not, write to
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
- */
+*/
 
 #include <linux/autoconf.h>
 #include <linux/module.h>
@@ -97,7 +97,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
-	list_del(&peer_req->dw.list);
+	list_del(&peer_req->dw.w.list);
 	if (list_empty(&device->read_ee))
 		wake_up(&device->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
@@ -111,7 +111,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 static int is_failed_barrier(int ee_flags)
 {
 	return (ee_flags & (EE_IS_BARRIER|EE_WAS_ERROR|EE_RESUBMITTED))
-			== (EE_IS_BARRIER|EE_WAS_ERROR);
+		== (EE_IS_BARRIER|EE_WAS_ERROR);
 }
 
 /* writes on behalf of the partner, or resync writes,
@@ -130,9 +130,9 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	if (is_failed_barrier(peer_req->flags)) {
 		drbd_bump_write_ordering(device, WO_bdev_flush);
 		spin_lock_irqsave(&device->resource->req_lock, flags);
-		list_del(&peer_req->dw.list);
+		list_del(&peer_req->dw.w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
-		peer_req->dw.cb = w_e_reissue;
+		peer_req->dw.w.cb = w_e_reissue;
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
@@ -150,8 +150,8 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->writ_cnt += peer_req->i.size >> 9;
-	list_del(&peer_req->dw.list); /* has been on active_ee or sync_ee */
-	list_add_tail(&peer_req->dw.list, &device->done_ee);
+	list_del(&peer_req->dw.w.list); /* has been on active_ee or sync_ee */
+	list_add_tail(&peer_req->dw.w.list, &device->done_ee);
 
 	/*
 	 * Do not remove from the write_requests tree here: we did not send the
@@ -397,9 +397,9 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!peer_req)
 		goto defer;
 
-	peer_req->dw.cb = w_e_send_csum;
+	peer_req->dw.w.cb = w_e_send_csum;
 	spin_lock_irq(&device->resource->req_lock);
-	list_add(&peer_req->dw.list, &device->read_ee);
+	list_add(&peer_req->dw.w.list, &device->read_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
@@ -411,7 +411,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * retry may or may not help.
 	 * If it does not, you may need to force disconnect. */
 	spin_lock_irq(&device->resource->req_lock);
-	list_del(&peer_req->dw.list);
+	list_del(&peer_req->dw.w.list);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(device, peer_req);
@@ -439,7 +439,7 @@ void resync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	if (list_empty(&device->resync_work.list))
+	if (list_empty(&device->resync_work.w.list))
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
 				&device->resync_work);
 }
@@ -827,7 +827,7 @@ int drbd_resync_finished(struct drbd_device *device)
 		schedule_timeout_interruptible(HZ / 10);
 		dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
 		if (dw) {
-			dw->cb = w_resync_finished;
+			dw->w.cb = w_resync_finished;
 			dw->device = device;
 			drbd_queue_work(&first_peer_device(device)->connection->data.work, dw);
 			return 1;
@@ -962,7 +962,7 @@ static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_
 		atomic_add(i, &device->pp_in_use_by_net);
 		atomic_sub(i, &device->pp_in_use);
 		spin_lock_irq(&device->resource->req_lock);
-		list_add_tail(&peer_req->dw.list, &device->net_ee);
+		list_add_tail(&peer_req->dw.w.list, &device->net_ee);
 		spin_unlock_irq(&device->resource->req_lock);
 		wake_up(&drbd_pp_wait);
 	} else
@@ -1256,13 +1256,13 @@ int w_send_barrier(struct drbd_device_work *dw, int cancel)
 	struct drbd_device *device = dw->device;
 	struct p_barrier *p;
 
-	/* really avoid racing with tl_clear.  dw.cb may have been referenced
+	/* really avoid racing with tl_clear.  dw.w.cb may have been referenced
 	 * just before it was reassigned and re-queued, so double check that.
 	 * actually, this race was harmless, since we only try to send the
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */
 	spin_lock_irq(&device->resource->req_lock);
-	if (dw->cb != w_send_barrier || device->state.conn < C_CONNECTED)
+	if (dw->w.cb != w_send_barrier || device->state.conn < C_CONNECTED)
 		cancel = 1;
 	spin_unlock_irq(&device->resource->req_lock);
 	if (cancel)
@@ -1720,8 +1720,8 @@ static struct drbd_device_work *consume_work(struct drbd_work_queue *queue)
 	struct drbd_device_work *work;
 
 	spin_lock_irq(&queue->q_lock);
-	work = list_first_entry(&queue->q, struct drbd_device_work, list);
-	list_del_init(&work->list);
+	work = list_first_entry(&queue->q, struct drbd_device_work, w.list);
+	list_del_init(&work->w.list);
 	spin_unlock_irq(&queue->q_lock);
 
 	return work;
@@ -1774,7 +1774,7 @@ int drbd_worker(struct drbd_thread *thi)
 		}
 
 		dw = consume_work(&connection->data.work);
-		if (dw->cb(dw, connection->cstate < C_WF_REPORT_PARAMS)) {
+		if (dw->w.cb(dw, connection->cstate < C_WF_REPORT_PARAMS)) {
 			if (connection->cstate >= C_WF_REPORT_PARAMS)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 		}
@@ -1782,7 +1782,7 @@ int drbd_worker(struct drbd_thread *thi)
 
 	while (!down_trylock(&connection->data.work.s)) {
 		dw = consume_work(&connection->data.work);
-		dw->cb(dw, 1);
+		dw->w.cb(dw, 1);
 	}
 
 	rcu_read_lock();
