@@ -94,12 +94,12 @@ struct __packed al_transaction_on_disk {
 };
 
 struct update_odbm_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	unsigned int enr;
 };
 
 struct update_al_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	struct completion event;
 	int err;
 };
@@ -615,10 +615,10 @@ _al_write_transaction(struct drbd_device *device)
 }
 
 
-static int w_al_write_transaction(struct drbd_device_work *w, int unused)
+static int w_al_write_transaction(struct drbd_device_work *dw, int unused)
 {
-	struct update_al_work *aw = container_of(w, struct update_al_work, w);
-	struct drbd_device *device = w->device;
+	struct update_al_work *aw = container_of(dw, struct update_al_work, dw);
+	struct drbd_device *device = dw->device;
 	int err;
 
 	err = _al_write_transaction(device);
@@ -636,9 +636,9 @@ static int al_write_transaction(struct drbd_device *device, bool delegate)
 	if (delegate) {
 		struct update_al_work al_work;
 		init_completion(&al_work.event);
-		al_work.w.cb = w_al_write_transaction;
-		al_work.w.device = device;
-		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &al_work.w);
+		al_work.dw.cb = w_al_write_transaction;
+		al_work.dw.device = device;
+		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &al_work.dw);
 		wait_for_completion(&al_work.event);
 		return al_work.err;
 	} else
@@ -705,10 +705,10 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-static int w_update_odbm(struct drbd_device_work *w, int unused)
+static int w_update_odbm(struct drbd_device_work *dw, int unused)
 {
-	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
-	struct drbd_device *device = w->device;
+	struct update_odbm_work *udw = container_of(dw, struct update_odbm_work, dw);
+	struct drbd_device *device = dw->device;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 
 	if (!get_ldev(device)) {
@@ -818,9 +818,9 @@ static void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			udw = kmalloc(sizeof(*udw), GFP_ATOMIC);
 			if (udw) {
 				udw->enr = ext->lce.lc_number;
-				udw->w.cb = w_update_odbm;
-				udw->w.device = device;
-				drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &udw->w);
+				udw->dw.cb = w_update_odbm;
+				udw->dw.device = device;
+				drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &udw->dw);
 			} else {
 				drbd_warn(device, "Could not kmalloc an udw\n");
 			}
