@@ -48,7 +48,7 @@
 #include <linux/scatterlist.h>
 
 struct flush_work {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	struct drbd_epoch *epoch;
 };
 
@@ -70,7 +70,7 @@ static int drbd_do_auth(struct drbd_connection *connection);
 static int drbd_disconnected(struct drbd_peer_device *);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
-static int e_end_block(struct drbd_work *, int);
+static int e_end_block(struct drbd_device_work *, int);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -1224,7 +1224,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 	return drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE);
 }
 
-static int w_flush(struct drbd_work *w, int cancel)
+static int w_flush(struct drbd_device_work *w, int cancel)
 {
 	struct flush_work *fw = container_of(w, struct flush_work, w);
 	struct drbd_epoch *epoch = fw->epoch;
@@ -1532,7 +1532,7 @@ static void drbd_remove_epoch_entry_interval(struct drbd_device *device,
  * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
+int w_e_reissue(struct drbd_device_work *w, int cancel) __releases(local)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -1890,7 +1890,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
  * e_end_resync_block() is called in asender context via
  * drbd_finish_peer_reqs().
  */
-static int e_end_resync_block(struct drbd_work *w, int unused)
+static int e_end_resync_block(struct drbd_device_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -2061,7 +2061,7 @@ static void restart_conflicting_writes(struct drbd_device *device,
 /*
  * e_end_block() is called in asender context via drbd_finish_peer_reqs().
  */
-static int e_end_block(struct drbd_work *w, int cancel)
+static int e_end_block(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -2109,7 +2109,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	return err;
 }
 
-static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
+static int e_send_ack(struct drbd_device_work *w, enum drbd_packet ack)
 {
 	struct drbd_device *device = w->device;
 	struct drbd_peer_request *peer_req =
@@ -2122,12 +2122,12 @@ static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
 	return err;
 }
 
-static int e_send_superseded(struct drbd_work *w, int unused)
+static int e_send_superseded(struct drbd_device_work *w, int unused)
 {
 	return e_send_ack(w, P_SUPERSEDED);
 }
 
-static int e_send_retry_write(struct drbd_work *w, int unused)
+static int e_send_retry_write(struct drbd_device_work *w, int unused)
 {
 	struct drbd_connection *connection = first_peer_device(w->device)->connection;
 
@@ -4761,7 +4761,7 @@ static void drbdd(struct drbd_connection *connection)
 	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
-static int w_complete(struct drbd_work *w, int cancel)
+static int w_complete(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
 
@@ -5495,7 +5495,7 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_block_ack *p = pi->data;
-	struct drbd_work *w;
+	struct drbd_device_work *w;
 	sector_t sector;
 	int size;
 

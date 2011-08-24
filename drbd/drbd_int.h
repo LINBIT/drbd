@@ -356,9 +356,9 @@ static inline enum drbd_thread_state get_t_state(struct drbd_thread *thi)
 	return thi->t_state;
 }
 
-struct drbd_work {
+struct drbd_device_work {
 	struct list_head list;
-	int (*cb)(struct drbd_work *, int cancel);
+	int (*cb)(struct drbd_device_work *, int cancel);
 	struct drbd_device *device;
 };
 
@@ -368,7 +368,7 @@ extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
 extern bool idr_is_empty(struct idr *idr);
 
 struct drbd_request {
-	struct drbd_work w;
+	struct drbd_device_work w;
 
 	/* if local IO is not allowed, will be NULL.
 	 * if local IO _is_ allowed, holds the locally submitted bio clone,
@@ -427,7 +427,7 @@ enum epoch_event {
 };
 
 struct drbd_wq_barrier {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	struct completion done;
 };
 
@@ -437,7 +437,7 @@ struct digest_info {
 };
 
 struct drbd_peer_request {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	struct drbd_epoch *epoch; /* for writes */
 	struct page *pages;
 	atomic_t pending_bios;
@@ -614,7 +614,7 @@ struct drbd_md_io {
 };
 
 struct bm_io_work {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	char *why;
 	enum bm_flag flags;
 	int (*io_fn)(struct drbd_device *device);
@@ -779,7 +779,7 @@ struct drbd_device {
 	struct gendisk	    *vdisk;
 
 	unsigned long last_reattach_jif;
-	struct drbd_work  resync_work,
+	struct drbd_device_work  resync_work,
 			  unplug_work,
 			  go_diskless,
 			  md_sync_work,
@@ -1411,21 +1411,21 @@ static inline void ov_out_of_sync_print(struct drbd_device *device)
 extern void drbd_csum_bio(struct crypto_hash *, struct bio *, void *);
 extern void drbd_csum_ee(struct crypto_hash *, struct drbd_peer_request *, void *);
 /* worker callbacks */
-extern int w_e_end_data_req(struct drbd_work *, int);
-extern int w_e_end_rsdata_req(struct drbd_work *, int);
-extern int w_e_end_csum_rs_req(struct drbd_work *, int);
-extern int w_e_end_ov_reply(struct drbd_work *, int);
-extern int w_e_end_ov_req(struct drbd_work *, int);
-extern int w_ov_finished(struct drbd_work *, int);
-extern int w_resync_timer(struct drbd_work *, int);
-extern int w_send_write_hint(struct drbd_work *, int);
-extern int w_make_resync_request(struct drbd_work *, int);
-extern int w_send_dblock(struct drbd_work *, int);
-extern int w_send_read_req(struct drbd_work *, int);
-extern int w_e_reissue(struct drbd_work *, int);
-extern int w_restart_disk_io(struct drbd_work *, int);
-extern int w_send_out_of_sync(struct drbd_work *, int);
-extern int w_start_resync(struct drbd_work *, int);
+extern int w_e_end_data_req(struct drbd_device_work *, int);
+extern int w_e_end_rsdata_req(struct drbd_device_work *, int);
+extern int w_e_end_csum_rs_req(struct drbd_device_work *, int);
+extern int w_e_end_ov_reply(struct drbd_device_work *, int);
+extern int w_e_end_ov_req(struct drbd_device_work *, int);
+extern int w_ov_finished(struct drbd_device_work *, int);
+extern int w_resync_timer(struct drbd_device_work *, int);
+extern int w_send_write_hint(struct drbd_device_work *, int);
+extern int w_make_resync_request(struct drbd_device_work *, int);
+extern int w_send_dblock(struct drbd_device_work *, int);
+extern int w_send_read_req(struct drbd_device_work *, int);
+extern int w_e_reissue(struct drbd_device_work *, int);
+extern int w_restart_disk_io(struct drbd_device_work *, int);
+extern int w_send_out_of_sync(struct drbd_device_work *, int);
+extern int w_start_resync(struct drbd_device_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 extern void start_resync_timer_fn(unsigned long data);
@@ -1787,7 +1787,7 @@ static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 }
 
 static inline void
-drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
+drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
@@ -1797,7 +1797,7 @@ drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 }
 
 static inline void
-drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
+drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);

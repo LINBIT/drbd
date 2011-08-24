@@ -94,12 +94,12 @@ struct __packed al_transaction_on_disk {
 };
 
 struct update_odbm_work {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	unsigned int enr;
 };
 
 struct update_al_work {
-	struct drbd_work w;
+	struct drbd_device_work w;
 	struct completion event;
 	int err;
 };
@@ -615,7 +615,7 @@ _al_write_transaction(struct drbd_device *device)
 }
 
 
-static int w_al_write_transaction(struct drbd_work *w, int unused)
+static int w_al_write_transaction(struct drbd_device_work *w, int unused)
 {
 	struct update_al_work *aw = container_of(w, struct update_al_work, w);
 	struct drbd_device *device = w->device;
@@ -705,7 +705,7 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-static int w_update_odbm(struct drbd_work *w, int unused)
+static int w_update_odbm(struct drbd_device_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_device *device = w->device;

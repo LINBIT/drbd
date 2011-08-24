@@ -38,7 +38,7 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 
-static int w_make_ov_request(struct drbd_work *w, int cancel);
+static int w_make_ov_request(struct drbd_device_work *w, int cancel);
 
 
 
@@ -359,7 +359,7 @@ void drbd_csum_bio(struct crypto_hash *tfm, struct bio *bio, void *digest)
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
-static int w_e_send_csum(struct drbd_work *w, int cancel)
+static int w_e_send_csum(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -448,7 +448,7 @@ defer:
 	return -EAGAIN;
 }
 
-int w_resync_timer(struct drbd_work *w, int cancel)
+int w_resync_timer(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	switch (device->state.conn) {
@@ -590,7 +590,7 @@ static int drbd_rs_number_requests(struct drbd_device *device)
 	return number;
 }
 
-int w_make_resync_request(struct drbd_work *w, int cancel)
+int w_make_resync_request(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	unsigned long bit;
@@ -758,7 +758,7 @@ next_sector:
 	return 0;
 }
 
-static int w_make_ov_request(struct drbd_work *w, int cancel)
+static int w_make_ov_request(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	int number, i, size;
@@ -812,7 +812,7 @@ static int w_make_ov_request(struct drbd_work *w, int cancel)
 	return 1;
 }
 
-int w_ov_finished(struct drbd_work *w, int cancel)
+int w_ov_finished(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	kfree(w);
@@ -822,7 +822,7 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-static int w_resync_finished(struct drbd_work *w, int cancel)
+static int w_resync_finished(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	kfree(w);
@@ -847,7 +847,7 @@ int drbd_resync_finished(struct drbd_device *device)
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
 	union drbd_state os, ns;
-	struct drbd_work *w;
+	struct drbd_device_work *w;
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
 
@@ -862,7 +862,7 @@ int drbd_resync_finished(struct drbd_device *device)
 
 		drbd_kick_lo(device);
 		schedule_timeout_interruptible(HZ / 10);
-		w = kmalloc(sizeof(struct drbd_work), GFP_ATOMIC);
+		w = kmalloc(sizeof(struct drbd_device_work), GFP_ATOMIC);
 		if (w) {
 			w->cb = w_resync_finished;
 			w->device = device;
@@ -1019,7 +1019,7 @@ static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_e_end_data_req(struct drbd_work *w, int cancel)
+int w_e_end_data_req(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -1056,7 +1056,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
+int w_e_end_rsdata_req(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -1105,7 +1105,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
-int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
+int w_e_end_csum_rs_req(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -1168,7 +1168,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
-int w_e_end_ov_req(struct drbd_work *w, int cancel)
+int w_e_end_ov_req(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -1226,7 +1226,7 @@ void drbd_ov_out_of_sync_found(struct drbd_device *device, sector_t sector, int 
 	drbd_set_out_of_sync(device, sector, size);
 }
 
-int w_e_end_ov_reply(struct drbd_work *w, int cancel)
+int w_e_end_ov_reply(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_device *device = w->device;
@@ -1319,7 +1319,7 @@ int drbd_send_barrier(struct drbd_connection *connection)
 	return conn_send_command(connection, sock, P_BARRIER, sizeof(*p), NULL, 0);
 }
 
-int w_send_write_hint(struct drbd_work *w, int cancel)
+int w_send_write_hint(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 	struct drbd_socket *sock;
@@ -1353,7 +1353,7 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 	}
 }
 
-int w_send_out_of_sync(struct drbd_work *w, int cancel)
+int w_send_out_of_sync(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = w->device;
@@ -1383,7 +1383,7 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_send_dblock(struct drbd_work *w, int cancel)
+int w_send_dblock(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = w->device;
@@ -1411,7 +1411,7 @@ int w_send_dblock(struct drbd_work *w, int cancel)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
-int w_send_read_req(struct drbd_work *w, int cancel)
+int w_send_read_req(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = w->device;
@@ -1435,7 +1435,7 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
-int w_restart_disk_io(struct drbd_work *w, int cancel)
+int w_restart_disk_io(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = w->device;
@@ -1613,7 +1613,7 @@ void start_resync_timer_fn(unsigned long data)
 	drbd_queue_work(&first_peer_device(device)->connection->sender_work, &device->start_resync_work);
 }
 
-int w_start_resync(struct drbd_work *w, int cancel)
+int w_start_resync(struct drbd_device_work *w, int cancel)
 {
 	struct drbd_device *device = w->device;
 
@@ -1917,7 +1917,7 @@ void wait_for_work(struct drbd_connection *connection, struct list_head *work_li
 int drbd_worker(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
-	struct drbd_work *w = NULL;
+	struct drbd_device_work *w = NULL;
 	struct drbd_peer_device *peer_device;
 	LIST_HEAD(work_list);
 	int vnr;
@@ -1943,7 +1943,7 @@ int drbd_worker(struct drbd_thread *thi)
 			break;
 
 		while (!list_empty(&work_list)) {
-			w = list_first_entry(&work_list, struct drbd_work, list);
+			w = list_first_entry(&work_list, struct drbd_device_work, list);
 			list_del_init(&w->list);
 			if (w->cb(w, connection->cstate < C_WF_REPORT_PARAMS) == 0)
 				continue;
@@ -1954,7 +1954,7 @@ int drbd_worker(struct drbd_thread *thi)
 
 	do {
 		while (!list_empty(&work_list)) {
-			w = list_first_entry(&work_list, struct drbd_work, list);
+			w = list_first_entry(&work_list, struct drbd_device_work, list);
 			list_del_init(&w->list);
 			w->cb(w, 1);
 		}
