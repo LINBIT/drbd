@@ -1131,28 +1131,6 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	drbd_setup_queue_param(device, new);
 }
 
-/* Starts the sender thread */
-static void conn_reconfig_start(struct drbd_connection *connection)
-{
-	drbd_thread_start(&connection->sender);
-	drbd_flush_workqueue(&connection->data.work);
-}
-
-/* if still unconfigured, stops sender again. */
-static void conn_reconfig_done(struct drbd_connection *connection)
-{
-	bool stop_threads;
-	spin_lock_irq(&connection->resource->req_lock);
-	stop_threads = connection->cstate == C_STANDALONE;
-	spin_unlock_irq(&connection->resource->req_lock);
-	if (stop_threads) {
-		/* asender is implicitly stopped by receiver
-		 * in conn_disconnect() */
-		drbd_thread_stop(&connection->receiver);
-		drbd_thread_stop(&connection->sender);
-	}
-}
-
 /* Make sure IO is suspended before calling this function(). */
 static void drbd_suspend_al(struct drbd_device *device)
 {
@@ -1954,7 +1932,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	conn_reconfig_start(connection);
+	drbd_flush_workqueue(&connection->data.work);
 
 	mutex_lock(&connection->data.mutex);
 	mutex_lock(&connection->resource->conf_update);
@@ -2034,15 +2012,13 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 			drbd_send_sync_param(peer_device);
 	}
 
-	goto done;
+	goto out;
 
  fail:
 	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
 	free_crypto(&crypto);
 	kfree(new_net_conf);
- done:
-	conn_reconfig_done(connection);
  out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -2093,7 +2069,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	connection = first_connection(adm_ctx.resource);
-	conn_reconfig_start(connection);
 
 	if (connection->cstate > C_STANDALONE) {
 		retcode = ERR_NET_CONFIGURED;
@@ -2125,8 +2100,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 
 	((char *)new_net_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
-
-	drbd_flush_workqueue(&connection->data.work);
 
 	mutex_lock(&adm_ctx.resource->conf_update);
 	old_net_conf = connection->net_conf;
@@ -2160,15 +2133,12 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	retcode = conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
 
-	conn_reconfig_done(connection);
-	drbd_adm_finish(info, retcode);
-	return 0;
+	drbd_thread_start(&connection->sender);
+	goto out;
 
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);
-
-	conn_reconfig_done(connection);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
