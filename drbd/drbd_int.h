@@ -358,7 +358,7 @@ extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
 extern bool idr_is_empty(struct idr *idr);
 
 struct drbd_request {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 
 	/* if local IO is not allowed, will be NULL.
 	 * if local IO _is_ allowed, holds the locally submitted bio clone,
@@ -382,7 +382,7 @@ struct drbd_request {
 };
 
 struct drbd_tl_epoch {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	struct list_head requests; /* requests before */
 	struct drbd_tl_epoch *next; /* pointer to the next barrier */
 	unsigned int br_number;  /* the barriers identifier. */
@@ -415,7 +415,7 @@ enum epoch_event {
 };
 
 struct drbd_wq_barrier {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	struct completion done;
 };
 
@@ -425,7 +425,7 @@ struct digest_info {
 };
 
 struct drbd_peer_request {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	struct drbd_epoch *epoch; /* for writes */
 	struct page *pages;
 	atomic_t pending_bios;
@@ -603,7 +603,7 @@ struct drbd_md_io {
 };
 
 struct bm_io_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	char *why;
 	enum bm_flag flags;
 	int (*io_fn)(struct drbd_device *device);
@@ -1696,21 +1696,21 @@ static inline sector_t drbd_md_ss__(struct drbd_device *device,
 }
 
 static inline void
-drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *w)
+drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *dw)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add(&w->list, &q->q);
+	list_add(&dw->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	up(&q->s);
 }
 
 static inline void
-drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *w)
+drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *dw)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add_tail(&w->list, &q->q);
+	list_add_tail(&dw->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	up(&q->s);
 }
@@ -2098,7 +2098,7 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		wake_up(&device->misc_wait);
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.w);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.dw);
 	}
 }
 

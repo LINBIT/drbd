@@ -49,7 +49,7 @@
 #include <linux/scatterlist.h>
 
 struct flush_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	struct drbd_epoch *epoch;
 };
 
@@ -223,7 +223,7 @@ static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 	   stop to examine the list... */
 
 	list_for_each_safe(le, tle, &device->net_ee) {
-		peer_req = list_entry(le, struct drbd_peer_request, w.list);
+		peer_req = list_entry(le, struct drbd_peer_request, dw.list);
 		if (drbd_peer_req_has_active_page(peer_req))
 			break;
 		list_move(le, to_be_freed);
@@ -239,7 +239,7 @@ static void drbd_reclaim_net(struct drbd_device *device)
 	reclaim_finished_net_peer_reqs(device, &reclaimed);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
+	list_for_each_entry_safe(peer_req, t, &reclaimed, dw.list)
 		drbd_free_net_peer_req(device, peer_req);
 }
 
@@ -372,7 +372,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 	peer_req->i.waiting = false;
 
 	peer_req->epoch = NULL;
-	peer_req->w.device = device;
+	peer_req->dw.device = device;
 	peer_req->pages = page;
 	atomic_set(&peer_req->pending_bios, 0);
 	peer_req->flags = 0;
@@ -411,7 +411,7 @@ int drbd_free_peer_reqs(struct drbd_device *device, struct list_head *list)
 	list_splice_init(list, &work_list);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+	list_for_each_entry_safe(peer_req, t, &work_list, dw.list) {
 		__drbd_free_peer_req(device, peer_req, is_net);
 		count++;
 	}
@@ -433,18 +433,18 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 	list_splice_init(&device->done_ee, &work_list);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
+	list_for_each_entry_safe(peer_req, t, &reclaimed, dw.list)
 		drbd_free_net_peer_req(device, peer_req);
 
 	/* possible callbacks here:
 	 * e_end_block, and e_end_resync_block, e_send_discard_write.
 	 * all ignore the last argument.
 	 */
-	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+	list_for_each_entry_safe(peer_req, t, &work_list, dw.list) {
 		int err2;
 
 		/* list_del not necessary, next/prev members not touched */
-		err2 = peer_req->w.cb(&peer_req->w, !!err);
+		err2 = peer_req->dw.cb(&peer_req->dw, !!err);
 		if (!err)
 			err = err2;
 		drbd_free_peer_req(device, peer_req);
@@ -1115,13 +1115,13 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_device *device, stru
 	return drbd_may_finish_epoch(device, epoch, EV_BARRIER_DONE);
 }
 
-STATIC int w_flush(struct drbd_device_work *w, int cancel)
+STATIC int w_flush(struct drbd_device_work *dw, int cancel)
 {
-	struct flush_work *fw = (struct flush_work *)w;
+	struct flush_work *fw = (struct flush_work *)dw;
 	struct drbd_epoch *epoch = fw->epoch;
-	struct drbd_device *device = w->device;
+	struct drbd_device *device = dw->device;
 
-	kfree(w);
+	kfree(dw);
 
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(device, epoch);
@@ -1233,10 +1233,10 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *device,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
-			fw->w.cb = w_flush;
+			fw->dw.cb = w_flush;
 			fw->epoch = epoch;
-			fw->w.device = device;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &fw->w);
+			fw->dw.device = device;
+			drbd_queue_work(&first_peer_device(device)->connection->data.work, &fw->dw);
 		} else {
 			drbd_warn(device, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -1402,14 +1402,14 @@ static void drbd_remove_epoch_entry_interval(struct drbd_device *device,
 /**
  * w_e_reissue() - Worker callback; Resubmit a bio, without REQ_HARDBARRIER set
  * @device:	DRBD device.
- * @w:		work object.
+ * @dw:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-int w_e_reissue(struct drbd_device_work *w, int cancel) __releases(local)
+int w_e_reissue(struct drbd_device_work *dw, int cancel) __releases(local)
 {
 	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
-	struct drbd_device *device = w->device;
+		container_of(dw, struct drbd_peer_request, dw);
+	struct drbd_device *device = dw->device;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
@@ -1427,12 +1427,12 @@ int w_e_reissue(struct drbd_device_work *w, int cancel) __releases(local)
 	/* we still have a local reference,
 	 * get_ldev was done in receive_Data. */
 
-	peer_req->w.cb = e_end_block;
+	peer_req->dw.cb = e_end_block;
 	err = drbd_submit_peer_request(device, peer_req, WRITE, DRBD_FAULT_DT_WR);
 	switch (err) {
 	case -ENOMEM:
-		peer_req->w.cb = w_e_reissue;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &peer_req->w);
+		peer_req->dw.cb = w_e_reissue;
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &peer_req->dw);
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
@@ -1444,7 +1444,7 @@ int w_e_reissue(struct drbd_device_work *w, int cancel) __releases(local)
 		/* forget the object,
 		 * and cause a "Network failure" */
 		spin_lock_irq(&device->resource->req_lock);
-		list_del(&peer_req->w.list);
+		list_del(&peer_req->dw.list);
 		drbd_remove_epoch_entry_interval(device, peer_req);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
@@ -1706,11 +1706,11 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
  * e_end_resync_block() is called in asender context via
  * drbd_finish_peer_reqs().
  */
-STATIC int e_end_resync_block(struct drbd_device_work *w, int unused)
+STATIC int e_end_resync_block(struct drbd_device_work *dw, int unused)
 {
 	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
-	struct drbd_device *device = w->device;
+		container_of(dw, struct drbd_peer_request, dw);
+	struct drbd_device *device = dw->device;
 	sector_t sector = peer_req->i.sector;
 	int err;
 
@@ -1746,10 +1746,10 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	/* corresponding dec_unacked() in e_end_resync_block()
 	 * respective _drbd_clear_done_ee */
 
-	peer_req->w.cb = e_end_resync_block;
+	peer_req->dw.cb = e_end_resync_block;
 
 	spin_lock_irq(&device->resource->req_lock);
-	list_add(&peer_req->w.list, &device->sync_ee);
+	list_add(&peer_req->dw.list, &device->sync_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	atomic_add(data_size >> 9, &device->rs_sect_ev);
@@ -1759,7 +1759,7 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
-	list_del(&peer_req->w.list);
+	list_del(&peer_req->dw.list);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(device, peer_req);
@@ -1855,10 +1855,10 @@ STATIC int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	return err;
 }
 
-static int w_restart_write(struct drbd_device_work *w, int cancel)
+static int w_restart_write(struct drbd_device_work *dw, int cancel)
 {
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = w->device;
+	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
+	struct drbd_device *device = dw->device;
 	struct bio *bio;
 	unsigned long start_time;
 	unsigned long flags;
@@ -1892,10 +1892,10 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (req->rq_state & RQ_LOCAL_PENDING ||
 		    !(req->rq_state & RQ_POSTPONED))
 			continue;
-		if (expect(list_empty(&req->w.list))) {
-			req->w.device = device;
-			req->w.cb = w_restart_write;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
+		if (expect(list_empty(&req->dw.list))) {
+			req->dw.device = device;
+			req->dw.cb = w_restart_write;
+			drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
 		}
 	}
 }
@@ -1903,11 +1903,11 @@ static void restart_conflicting_writes(struct drbd_device *device,
 /*
  * e_end_block() is called in asender context via drbd_finish_peer_reqs().
  */
-STATIC int e_end_block(struct drbd_device_work *w, int cancel)
+STATIC int e_end_block(struct drbd_device_work *dw, int cancel)
 {
 	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
-	struct drbd_device *device = w->device;
+		container_of(dw, struct drbd_peer_request, dw);
+	struct drbd_device *device = dw->device;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
@@ -1951,11 +1951,11 @@ STATIC int e_end_block(struct drbd_device_work *w, int cancel)
 	return err;
 }
 
-static int e_send_ack(struct drbd_device_work *w, enum drbd_packet ack)
+static int e_send_ack(struct drbd_device_work *dw, enum drbd_packet ack)
 {
-	struct drbd_device *device = w->device;
+	struct drbd_device *device = dw->device;
 	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
+		container_of(dw, struct drbd_peer_request, dw);
 	int err;
 
 	err = drbd_send_ack(first_peer_device(device), ack, peer_req);
@@ -1964,16 +1964,16 @@ static int e_send_ack(struct drbd_device_work *w, enum drbd_packet ack)
 	return err;
 }
 
-static int e_send_discard_write(struct drbd_device_work *w, int unused)
+static int e_send_discard_write(struct drbd_device_work *dw, int unused)
 {
-	return e_send_ack(w, P_DISCARD_WRITE);
+	return e_send_ack(dw, P_DISCARD_WRITE);
 }
 
-static int e_send_retry_write(struct drbd_device_work *w, int unused)
+static int e_send_retry_write(struct drbd_device_work *dw, int unused)
 {
-	struct drbd_connection *connection = first_peer_device(w->device)->connection;
+	struct drbd_connection *connection = first_peer_device(dw->device)->connection;
 
-	return e_send_ack(w, connection->agreed_pro_version >= 100 ?
+	return e_send_ack(dw, connection->agreed_pro_version >= 100 ?
 			     P_RETRY_WRITE : P_DISCARD_WRITE);
 }
 
@@ -2178,9 +2178,9 @@ static int handle_write_conflicts(struct drbd_device *device,
 					  discard ? "local" : "remote");
 
 			inc_unacked(device);
-			peer_req->w.cb = discard ? e_send_discard_write :
+			peer_req->dw.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
-			list_add_tail(&peer_req->w.list, &device->done_ee);
+			list_add_tail(&peer_req->dw.list, &device->done_ee);
 			wake_asender(first_peer_device(device)->connection);
 
 			err = -ENOENT;
@@ -2275,7 +2275,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 	}
 
-	peer_req->w.cb = e_end_block;
+	peer_req->dw.cb = e_end_block;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	rw |= wire_flags_to_bio(device, dp_flags);
@@ -2341,7 +2341,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		}
 	} else
 		spin_lock_irq(&device->resource->req_lock);
-	list_add(&peer_req->w.list, &device->active_ee);
+	list_add(&peer_req->dw.list, &device->active_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (peer_device->connection->agreed_pro_version < 100) {
@@ -2385,7 +2385,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
-	list_del(&peer_req->w.list);
+	list_del(&peer_req->dw.list);
 	drbd_remove_epoch_entry_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
 	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
@@ -2538,13 +2538,13 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:
-		peer_req->w.cb = w_e_end_data_req;
+		peer_req->dw.cb = w_e_end_data_req;
 		fault_type = DRBD_FAULT_DT_RD;
 		/* application IO, don't drbd_rs_begin_io */
 		goto submit;
 
 	case P_RS_DATA_REQUEST:
-		peer_req->w.cb = w_e_end_rsdata_req;
+		peer_req->dw.cb = w_e_end_rsdata_req;
 		fault_type = DRBD_FAULT_RS_RD;
 		/* used in the sector offset progress display */
 		device->bm_resync_fo = BM_SECT_TO_BIT(sector);
@@ -2568,13 +2568,13 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 
 		if (pi->cmd == P_CSUM_RS_REQUEST) {
 			D_ASSERT(device, peer_device->connection->agreed_pro_version >= 89);
-			peer_req->w.cb = w_e_end_csum_rs_req;
+			peer_req->dw.cb = w_e_end_csum_rs_req;
 			/* used in the sector offset progress display */
 			device->bm_resync_fo = BM_SECT_TO_BIT(sector);
 		} else if (pi->cmd == P_OV_REPLY) {
 			/* track progress, we may need to throttle */
 			atomic_add(size >> 9, &device->rs_sect_in);
-			peer_req->w.cb = w_e_end_ov_reply;
+			peer_req->dw.cb = w_e_end_ov_reply;
 			dec_rs_pending(device);
 			/* drbd_rs_begin_io done when we sent this request,
 			 * but accounting still needs to be done. */
@@ -2598,7 +2598,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 			drbd_info(device, "Online Verify start sector: %llu\n",
 					(unsigned long long)sector);
 		}
-		peer_req->w.cb = w_e_end_ov_req;
+		peer_req->dw.cb = w_e_end_ov_req;
 		fault_type = DRBD_FAULT_RS_RD;
 		break;
 
@@ -2639,7 +2639,7 @@ submit_for_resync:
 submit:
 	inc_unacked(device);
 	spin_lock_irq(&device->resource->req_lock);
-	list_add_tail(&peer_req->w.list, &device->read_ee);
+	list_add_tail(&peer_req->dw.list, &device->read_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (drbd_submit_peer_request(device, peer_req, READ, fault_type) == 0)
@@ -2648,7 +2648,7 @@ submit:
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
-	list_del(&peer_req->w.list);
+	list_del(&peer_req->dw.list);
 	spin_unlock_irq(&device->resource->req_lock);
 	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
 
@@ -4537,9 +4537,9 @@ STATIC void drbdd(struct drbd_connection *connection)
 	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 }
 
-static int w_complete(struct drbd_device_work *w, int cancel)
+static int w_complete(struct drbd_device_work *dw, int cancel)
 {
-	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
+	struct drbd_wq_barrier *b = container_of(dw, struct drbd_wq_barrier, dw);
 
 	complete(&b->done);
 	return 0;
@@ -4549,9 +4549,9 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 {
 	struct drbd_wq_barrier barr;
 
-	barr.w.cb = w_complete;
+	barr.dw.cb = w_complete;
 	init_completion(&barr.done);
-	drbd_queue_work(&connection->data.work, &barr.w);
+	drbd_queue_work(&connection->data.work, &barr.dw);
 	wait_for_completion(&barr.done);
 }
 
@@ -5285,13 +5285,13 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		drbd_advance_rs_marks(device, device->ov_left);
 
 	if (device->ov_left == 0) {
-		struct drbd_device_work *w = kmalloc(sizeof(*w), GFP_NOIO);
-		if (w) {
-			w->cb = w_ov_finished;
-			w->device = device;
-			drbd_queue_work_front(&peer_device->connection->data.work, w);
+		struct drbd_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
+		if (dw) {
+			dw->cb = w_ov_finished;
+			dw->device = device;
+			drbd_queue_work_front(&peer_device->connection->data.work, dw);
 		} else {
-			drbd_err(device, "kmalloc(w) failed.");
+			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(device);
 			drbd_resync_finished(device);
 		}

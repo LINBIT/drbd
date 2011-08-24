@@ -34,7 +34,7 @@
 extern void tl_abort_disk_io(struct drbd_device *device);
 
 struct after_state_chg_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	union drbd_state os;
 	union drbd_state ns;
 	enum chg_state_flags flags;
@@ -50,7 +50,7 @@ enum sanitize_state_warnings {
 	IMPLICITLY_UPGRADED_PDSK,
 };
 
-STATIC int w_after_state_ch(struct drbd_device_work *w, int unused);
+STATIC int w_after_state_ch(struct drbd_device_work *dw, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 STATIC enum drbd_state_rv is_valid_state(struct drbd_device *, union drbd_state);
@@ -1091,10 +1091,10 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		ascw->os = os;
 		ascw->ns = ns;
 		ascw->flags = flags;
-		ascw->w.cb = w_after_state_ch;
-		ascw->w.device = device;
+		ascw->dw.cb = w_after_state_ch;
+		ascw->dw.device = device;
 		ascw->done = done;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &ascw->w);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &ascw->dw);
 	} else {
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
@@ -1102,11 +1102,11 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	return rv;
 }
 
-STATIC int w_after_state_ch(struct drbd_device_work *w, int unused)
+STATIC int w_after_state_ch(struct drbd_device_work *dw, int unused)
 {
 	struct after_state_chg_work *ascw =
-		container_of(w, struct after_state_chg_work, w);
-	struct drbd_device *device = w->device;
+		container_of(dw, struct after_state_chg_work, dw);
+	struct drbd_device *device = dw->device;
 
 	after_state_ch(device, ascw->os, ascw->ns, ascw->flags);
 	if (ascw->flags & CS_WAIT_COMPLETE)
@@ -1430,7 +1430,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 }
 
 struct after_conn_state_chg_work {
-	struct drbd_device_work w;
+	struct drbd_device_work dw;
 	enum drbd_conns oc;
 	union drbd_state ns_min;
 	union drbd_state ns_max; /* new, max state, over all mdevs */
@@ -1438,10 +1438,10 @@ struct after_conn_state_chg_work {
 	struct drbd_connection *connection;
 };
 
-STATIC int w_after_conn_state_ch(struct drbd_device_work *w, int unused)
+STATIC int w_after_conn_state_ch(struct drbd_device_work *dw, int unused)
 {
 	struct after_conn_state_chg_work *acscw =
-		container_of(w, struct after_conn_state_chg_work, w);
+		container_of(dw, struct after_conn_state_chg_work, dw);
 	struct drbd_connection *connection = acscw->connection;
 	enum drbd_conns oc = acscw->oc;
 	union drbd_state ns_max = acscw->ns_max;
@@ -1750,10 +1750,10 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		acscw->ns_min = ns_min;
 		acscw->ns_max = ns_max;
 		acscw->flags = flags;
-		acscw->w.cb = w_after_conn_state_ch;
+		acscw->dw.cb = w_after_conn_state_ch;
 		kref_get(&connection->kref);
 		acscw->connection = connection;
-		drbd_queue_work(&connection->data.work, &acscw->w);
+		drbd_queue_work(&connection->data.work, &acscw->dw);
 	} else {
 		drbd_err(connection, "Could not kmalloc an acscw\n");
 	}

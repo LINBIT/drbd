@@ -69,10 +69,10 @@ static int drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static int drbd_release(struct inode *inode, struct file *file);
 #endif
-STATIC int w_md_sync(struct drbd_device_work *w, int unused);
+STATIC int w_md_sync(struct drbd_device_work *dw, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
-STATIC int w_bitmap_io(struct drbd_device_work *w, int unused);
-STATIC int w_go_diskless(struct drbd_device_work *w, int unused);
+STATIC int w_bitmap_io(struct drbd_device_work *dw, int unused);
+STATIC int w_go_diskless(struct drbd_device_work *dw, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -211,11 +211,11 @@ STATIC int tl_init(struct drbd_connection *connection)
 	if (!b)
 		return 0;
 	INIT_LIST_HEAD(&b->requests);
-	INIT_LIST_HEAD(&b->w.list);
+	INIT_LIST_HEAD(&b->dw.list);
 	b->next = NULL;
 	b->br_number = 4711;
 	b->n_writes = 0;
-	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	b->dw.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
 	connection->oldest_tle = b;
 	connection->newest_tle = b;
@@ -249,8 +249,8 @@ void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *n
 	struct drbd_tl_epoch *newest_before;
 
 	INIT_LIST_HEAD(&new->requests);
-	INIT_LIST_HEAD(&new->w.list);
-	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	INIT_LIST_HEAD(&new->dw.list);
+	new->dw.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 	new->next = NULL;
 	new->n_writes = 0;
 
@@ -322,7 +322,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	   _req_mod(, BARRIER_ACKED) above.
 	   */
 	list_splice_init(&b->requests, &connection->barrier_acked_requests);
-	device = b->w.device;
+	device = b->dw.device;
 
 	nob = b->next;
 	if (test_and_clear_bit(CREATE_BARRIER, &device->flags)) {
@@ -383,13 +383,13 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 		if (n_writes) {
 			if (what == RESEND) {
 				b->n_writes = n_writes;
-				if (b->w.cb == NULL) {
-					b->w.cb = w_send_barrier;
-					inc_ap_pending(b->w.device);
-					set_bit(CREATE_BARRIER, &b->w.device->flags);
+				if (b->dw.cb == NULL) {
+					b->dw.cb = w_send_barrier;
+					inc_ap_pending(b->dw.device);
+					set_bit(CREATE_BARRIER, &b->dw.device->flags);
 				}
 
-				drbd_queue_work(&connection->data.work, &b->w);
+				drbd_queue_work(&connection->data.work, &b->dw);
 			}
 			pn = &b->next;
 		} else {
@@ -401,9 +401,9 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 
 			/* dec_ap_pending corresponding to queue_barrier.
 			 * the newest barrier may not have been queued yet,
-			 * in which case w.cb is still NULL. */
-			if (b->w.cb != NULL)
-				dec_ap_pending(b->w.device);
+			 * in which case dw.cb is still NULL. */
+			if (b->dw.cb != NULL)
+				dec_ap_pending(b->dw.device);
 
 			if (b == connection->newest_tle) {
 				/* recycle, but reinit! */
@@ -411,8 +411,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 					drbd_err(connection, "ASSERT FAILED tmp == NULL");
 				INIT_LIST_HEAD(&b->requests);
 				list_splice(&carry_reads, &b->requests);
-				INIT_LIST_HEAD(&b->w.list);
-				b->w.cb = NULL;
+				INIT_LIST_HEAD(&b->dw.list);
+				b->dw.cb = NULL;
 				b->br_number = net_random();
 				b->n_writes = 0;
 
@@ -509,7 +509,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 			req = list_entry(le, struct drbd_request, tl_requests);
 			if (!(req->rq_state & RQ_LOCAL_PENDING))
 				continue;
-			if (req->w.device == device)
+			if (req->dw.device == device)
 				_req_mod(req, ABORT_DISK_IO);
 		}
 		b = b->next;
@@ -519,7 +519,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 		req = list_entry(le, struct drbd_request, tl_requests);
 		if (!(req->rq_state & RQ_LOCAL_PENDING))
 			continue;
-		if (req->w.device == device)
+		if (req->dw.device == device)
 			_req_mod(req, ABORT_DISK_IO);
 	}
 
@@ -2137,20 +2137,20 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->bm_io_work.w.list);
+	INIT_LIST_HEAD(&device->bm_io_work.dw.list);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
-	device->bm_io_work.w.cb = w_bitmap_io;
+	device->bm_io_work.dw.cb = w_bitmap_io;
 	device->start_resync_work.cb = w_start_resync;
 
 	device->resync_work.device  = device;
 	device->unplug_work.device  = device;
 	device->go_diskless.device  = device;
 	device->md_sync_work.device = device;
-	device->bm_io_work.w.device = device;
+	device->bm_io_work.dw.device = device;
 	device->start_resync_work.device = device;
 
 	init_timer(&device->resync_timer);
@@ -3376,10 +3376,10 @@ int drbd_bmio_clear_n_write(struct drbd_device *device)
 	return rv;
 }
 
-STATIC int w_bitmap_io(struct drbd_device_work *w, int unused)
+STATIC int w_bitmap_io(struct drbd_device_work *dw, int unused)
 {
-	struct bm_io_work *work = container_of(w, struct bm_io_work, w);
-	struct drbd_device *device = w->device;
+	struct bm_io_work *work = container_of(dw, struct bm_io_work, dw);
+	struct drbd_device *device = dw->device;
 	int rv = -EIO;
 
 	D_ASSERT(device, atomic_read(&device->ap_bio_cnt) == 0);
@@ -3417,9 +3417,9 @@ void drbd_ldev_destroy(struct drbd_device *device)
 	clear_bit(GO_DISKLESS, &device->flags);
 }
 
-STATIC int w_go_diskless(struct drbd_device_work *w, int unused)
+STATIC int w_go_diskless(struct drbd_device_work *dw, int unused)
 {
-	struct drbd_device *device = w->device;
+	struct drbd_device *device = dw->device;
 
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
@@ -3458,7 +3458,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
 	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(device, list_empty(&device->bm_io_work.w.list));
+	D_ASSERT(device, list_empty(&device->bm_io_work.dw.list));
 	if (device->bm_io_work.why)
 		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, device->bm_io_work.why);
@@ -3472,7 +3472,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	set_bit(BITMAP_IO, &device->flags);
 	if (atomic_read(&device->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.w);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.dw);
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 }
@@ -3533,9 +3533,9 @@ STATIC void md_sync_timer_fn(unsigned long data)
 	drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &device->md_sync_work);
 }
 
-STATIC int w_md_sync(struct drbd_device_work *w, int unused)
+STATIC int w_md_sync(struct drbd_device_work *dw, int unused)
 {
-	struct drbd_device *device = w->device;
+	struct drbd_device *device = dw->device;
 
 	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
 #ifdef DRBD_DEBUG_MD_SYNC
