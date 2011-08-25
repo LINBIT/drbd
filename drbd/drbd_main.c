@@ -71,7 +71,7 @@ static int drbd_release(struct inode *inode, struct file *file);
 #endif
 static int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
-STATIC int w_bitmap_io(struct drbd_work *w, int unused);
+static int w_bitmap_io(struct drbd_work *w, int unused);
 static int w_go_diskless(struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
@@ -2137,16 +2137,14 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
+	INIT_LIST_HEAD(&device->bm_io_work.w.list);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
-	device->bm_io_work.dw.w.cb = w_bitmap_io;
+	device->bm_io_work.w.cb = w_bitmap_io;
 	device->start_resync_work.cb = w_start_resync;
-
-	device->bm_io_work.dw.device = device;
 
 	init_timer(&device->resync_timer);
 	init_timer(&device->md_sync_timer);
@@ -3395,11 +3393,11 @@ int drbd_bmio_clear_n_write(struct drbd_device *device)
 	return rv;
 }
 
-STATIC int w_bitmap_io(struct drbd_work *w, int unused)
+static int w_bitmap_io(struct drbd_work *w, int unused)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct bm_io_work *work = container_of(dw, struct bm_io_work, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, bm_io_work.w);
+	struct bm_io_work *work = &device->bm_io_work;
 	int rv = -EIO;
 
 	D_ASSERT(device, atomic_read(&device->ap_bio_cnt) == 0);
@@ -3480,7 +3478,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
 	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(device, list_empty(&device->bm_io_work.dw.w.list));
+	D_ASSERT(device, list_empty(&device->bm_io_work.w.list));
 	if (device->bm_io_work.why)
 		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
 			why, device->bm_io_work.why);
@@ -3495,7 +3493,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	if (atomic_read(&device->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
 			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&device->bm_io_work.dw.w);
+					&device->bm_io_work.w);
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 }
