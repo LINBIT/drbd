@@ -786,7 +786,7 @@ struct drbd_device {
 	struct drbd_work unplug_work;
 	struct drbd_work go_diskless;
 	struct drbd_work md_sync_work;
-	struct drbd_device_work start_resync_work;
+	struct drbd_work start_resync_work;
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
 	struct timer_list start_resync_timer;

@@ -1998,7 +1998,7 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->unplug_work.list);
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
-	INIT_LIST_HEAD(&device->start_resync_work.w.list);
+	INIT_LIST_HEAD(&device->start_resync_work.list);
 	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
 
 	device->resync_work.cb  = w_resync_timer;
@@ -2006,10 +2006,9 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
 	device->bm_io_work.dw.w.cb = w_bitmap_io;
-	device->start_resync_work.w.cb = w_start_resync;
+	device->start_resync_work.cb = w_start_resync;
 
 	device->bm_io_work.dw.device = device;
-	device->start_resync_work.device = device;
 
 	init_timer(&device->resync_timer);
 	init_timer(&device->md_sync_timer);
