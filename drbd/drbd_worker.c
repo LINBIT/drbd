@@ -40,8 +40,7 @@
 #include "drbd_req.h"
 
 STATIC int w_make_ov_request(struct drbd_work *, int);
-
-
+static int w_make_resync_request(struct drbd_work *, int);
 
 /* endio handlers:
  *   drbd_md_io_complete (defined here)
@@ -567,7 +566,7 @@ STATIC int drbd_rs_number_requests(struct drbd_device *device)
 	return number;
 }
 
-int w_make_resync_request(struct drbd_work *w, int cancel)
+static int w_make_resync_request(struct drbd_work *w, int cancel)
 {
 	struct drbd_device_work *dw = device_work(w);
 	struct drbd_device *device = dw->device;
