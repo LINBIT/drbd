@@ -1531,13 +1531,13 @@ void start_resync_timer_fn(unsigned long data)
 	struct drbd_device *device = (struct drbd_device *) data;
 
 	drbd_queue_work(&first_peer_device(device)->connection->data.work,
-			&device->start_resync_work.w);
+			&device->start_resync_work);
 }
 
 int w_start_resync(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, start_resync_work);
 
 	if (atomic_read(&device->unacked_cnt) || atomic_read(&device->rs_pending_cnt)) {
 		drbd_warn(device, "w_start_resync later...\n");
