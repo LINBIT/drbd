@@ -1996,19 +1996,18 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->resync_reads);
 	INIT_LIST_HEAD(&device->resync_work.list);
 	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->go_diskless.w.list);
+	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.w.list);
 	INIT_LIST_HEAD(&device->start_resync_work.w.list);
 	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
-	device->go_diskless.w.cb  = w_go_diskless;
+	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.w.cb = w_md_sync;
 	device->bm_io_work.dw.w.cb = w_bitmap_io;
 	device->start_resync_work.w.cb = w_start_resync;
 
-	device->go_diskless.device  = device;
 	device->md_sync_work.device = device;
 	device->bm_io_work.dw.device = device;
 	device->start_resync_work.device = device;
@@ -2083,7 +2082,7 @@ void drbd_device_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->sender_work.q));
 	D_ASSERT(device, list_empty(&device->resync_work.list));
 	D_ASSERT(device, list_empty(&device->unplug_work.list));
-	D_ASSERT(device, list_empty(&device->go_diskless.w.list));
+	D_ASSERT(device, list_empty(&device->go_diskless.list));
 
 	drbd_set_defaults(device);
 }
@@ -3652,7 +3651,8 @@ void drbd_ldev_destroy(struct drbd_device *device)
 
 static int w_go_diskless(struct drbd_work *w, int unused)
 {
-	struct drbd_device *device = device_work(w)->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, go_diskless);
 
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
