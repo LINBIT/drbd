@@ -1283,7 +1283,8 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 
 int w_send_write_hint(struct drbd_work *w, int cancel)
 {
-	struct drbd_device *device = device_work(w)->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, unplug_work);
 	struct drbd_socket *sock;
 
 	if (cancel)
