@@ -580,7 +580,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, (req->rq_state & RQ_LOCAL_MASK) == 0);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
 		req->dw.w.cb = w_send_read_req;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				&req->dw.w);
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -615,7 +616,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
 		req->dw.w.cb =  w_send_dblock;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				&req->dw.w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
@@ -630,7 +632,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case QUEUE_FOR_SEND_OOS:
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
 		req->dw.w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				&req->dw.w);
 		break;
 
 	case READ_RETRY_REMOTE_CANCELED:
@@ -742,7 +745,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		get_ldev(device); /* always succeeds in this call path */
 		req->dw.w.cb = w_restart_disk_io;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				&req->dw.w);
 		break;
 
 	case RESEND:
@@ -763,7 +767,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 			mod_rq_state(req, m, RQ_COMPLETION_SUSP, RQ_NET_QUEUED|RQ_NET_PENDING);
 			if (req->dw.w.cb) {
-				drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->dw);
+				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+						&req->dw.w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			} /* else: FIXME can this happen? */
 			break;

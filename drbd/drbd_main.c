@@ -1937,7 +1937,7 @@ static void drbd_unplug_fn(struct request_queue *q)
 			 * anyways, to detect "double queuing" ... */
 			if (list_empty(&device->unplug_work.w.list))
 				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
-						&device->unplug_work);
+						&device->unplug_work.w);
 		}
 	}
 	spin_unlock_irq(&device->resource->req_lock);
@@ -3704,7 +3704,8 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	set_bit(BITMAP_IO, &device->flags);
 	if (atomic_read(&device->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->sender_work, &device->bm_io_work.dw);
+			drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+					&device->bm_io_work.dw.w);
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 }
@@ -3764,7 +3765,8 @@ static void md_sync_timer_fn(unsigned long data)
 
 	/* must not double-queue! */
 	if (list_empty(&device->md_sync_work.w.list))
-		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work, &device->md_sync_work);
+		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work,
+				      &device->md_sync_work.w);
 }
 
 static int w_md_sync(struct drbd_work *w, int unused)

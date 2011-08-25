@@ -115,7 +115,8 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 		__drbd_chk_io_error(device, DRBD_READ_ERROR);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
-	drbd_queue_work(&first_peer_device(device)->connection->sender_work, &peer_req->dw);
+	drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+			&peer_req->dw.w);
 	put_ldev(device);
 }
 
@@ -147,7 +148,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &peer_req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &peer_req->dw.w);
 		return;
 	}
 
@@ -471,7 +472,7 @@ void resync_timer_fn(unsigned long data)
 
 	if (list_empty(&device->resync_work.w.list))
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
-				&device->resync_work);
+				&device->resync_work.w);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
@@ -872,7 +873,8 @@ int drbd_resync_finished(struct drbd_device *device)
 		if (dw) {
 			dw->w.cb = w_resync_finished;
 			dw->device = device;
-			drbd_queue_work(&first_peer_device(device)->connection->sender_work, dw);
+			drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+					&dw->w);
 			return 1;
 		}
 		drbd_err(device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
@@ -1622,7 +1624,8 @@ void start_resync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	drbd_queue_work(&first_peer_device(device)->connection->sender_work, &device->start_resync_work);
+	drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+			&device->start_resync_work.w);
 }
 
 int w_start_resync(struct drbd_work *w, int cancel)

@@ -434,7 +434,7 @@ enum epoch_event {
 };
 
 struct drbd_wq_barrier {
-	struct drbd_device_work dw;
+	struct drbd_work w;
 	struct completion done;
 };
 
@@ -1794,21 +1794,21 @@ static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 }
 
 static inline void
-drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *dw)
+drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add(&dw->w.list, &q->q);
+	list_add(&w->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	wake_up(&q->q_wait);
 }
 
 static inline void
-drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *dw)
+drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add_tail(&dw->w.list, &q->q);
+	list_add_tail(&w->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	wake_up(&q->q_wait);
 }
@@ -1967,7 +1967,8 @@ static inline void put_ldev(struct drbd_device *device)
 		if (device->state.disk == D_FAILED) {
 			/* all application IO references gone. */
 			if (!test_and_set_bit(GO_DISKLESS, &device->flags))
-				drbd_queue_work(&first_peer_device(device)->connection->sender_work, &device->go_diskless);
+				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+						&device->go_diskless.w);
 		}
 		wake_up(&device->misc_wait);
 	}
@@ -2196,7 +2197,7 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
 			drbd_queue_work(&first_peer_device(device)->
 				connection->sender_work,
-				&device->bm_io_work.dw);
+				&device->bm_io_work.dw.w);
 	}
 
 	/* this currently does wake_up for every dec_ap_bio!
