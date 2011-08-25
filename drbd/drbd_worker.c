@@ -424,8 +424,9 @@ defer:
 
 int w_resync_timer(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, resync_work);
+
 	switch (device->state.conn) {
 	case C_VERIFY_S:
 		make_ov_request(device, cancel);
@@ -442,9 +443,9 @@ void resync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	if (list_empty(&device->resync_work.w.list))
+	if (list_empty(&device->resync_work.list))
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&device->resync_work.w);
+				&device->resync_work);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
