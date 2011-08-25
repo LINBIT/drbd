@@ -72,7 +72,7 @@ static int drbd_release(struct inode *inode, struct file *file);
 STATIC int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 STATIC int w_bitmap_io(struct drbd_work *w, int unused);
-STATIC int w_go_diskless(struct drbd_work *w, int unused);
+static int w_go_diskless(struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -2134,19 +2134,18 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->resync_reads);
 	INIT_LIST_HEAD(&device->resync_work.list);
 	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->go_diskless.w.list);
+	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.w.list);
 	INIT_LIST_HEAD(&device->start_resync_work.w.list);
 	INIT_LIST_HEAD(&device->bm_io_work.dw.w.list);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
-	device->go_diskless.w.cb  = w_go_diskless;
+	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.w.cb = w_md_sync;
 	device->bm_io_work.dw.w.cb = w_bitmap_io;
 	device->start_resync_work.w.cb = w_start_resync;
 
-	device->go_diskless.device  = device;
 	device->md_sync_work.device = device;
 	device->bm_io_work.dw.device = device;
 	device->start_resync_work.device = device;
@@ -2226,7 +2225,7 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
 	D_ASSERT(device, list_empty(&device->resync_work.list));
 	D_ASSERT(device, list_empty(&device->unplug_work.list));
-	D_ASSERT(device, list_empty(&device->go_diskless.w.list));
+	D_ASSERT(device, list_empty(&device->go_diskless.list));
 
 	drbd_set_defaults(device);
 }
@@ -3440,9 +3439,10 @@ void drbd_ldev_destroy(struct drbd_device *device)
 	clear_bit(GO_DISKLESS, &device->flags);
 }
 
-STATIC int w_go_diskless(struct drbd_work *w, int unused)
+static int w_go_diskless(struct drbd_work *w, int unused)
 {
-	struct drbd_device *device = device_work(w)->device;
+	struct drbd_device *device =
+		container_of(w, struct drbd_device, go_diskless);
 
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
@@ -3458,7 +3458,7 @@ void drbd_go_diskless(struct drbd_device *device)
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&device->go_diskless.w);
+				&device->go_diskless);
 }
 
 /**
