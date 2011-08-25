@@ -783,7 +783,7 @@ struct drbd_device {
 
 	unsigned long last_reattach_jif;
 	struct drbd_work resync_work;
-	struct drbd_device_work unplug_work;
+	struct drbd_work unplug_work;
 	struct drbd_device_work go_diskless;
 	struct drbd_device_work md_sync_work;
 	struct drbd_device_work start_resync_work;
