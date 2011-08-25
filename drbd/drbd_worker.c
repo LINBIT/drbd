@@ -38,8 +38,8 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 
-static int w_make_ov_request(struct drbd_work *, int);
-static int w_make_resync_request(struct drbd_work *, int);
+static int make_ov_request(struct drbd_device *, int);
+static int make_resync_request(struct drbd_device *, int);
 
 
 /* endio handlers:
@@ -455,10 +455,10 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	struct drbd_device *device = dw->device;
 	switch (device->state.conn) {
 	case C_VERIFY_S:
-		w_make_ov_request(w, cancel);
+		make_ov_request(device, cancel);
 		break;
 	case C_SYNC_TARGET:
-		w_make_resync_request(w, cancel);
+		make_resync_request(device, cancel);
 		break;
 	}
 
@@ -593,10 +593,8 @@ static int drbd_rs_number_requests(struct drbd_device *device)
 	return number;
 }
 
-static int w_make_resync_request(struct drbd_work *w, int cancel)
+static int make_resync_request(struct drbd_device *device, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_device *device = dw->device;
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
@@ -762,9 +760,8 @@ next_sector:
 	return 0;
 }
 
-static int w_make_ov_request(struct drbd_work *w, int cancel)
+static int make_ov_request(struct drbd_device *device, int cancel)
 {
-	struct drbd_device *device = device_work(w)->device;
 	int number, i, size;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
