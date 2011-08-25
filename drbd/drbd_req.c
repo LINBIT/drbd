@@ -193,7 +193,8 @@ static void queue_barrier(struct drbd_device *device)
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in tl_clear.  */
 	inc_ap_pending(device);
-	drbd_queue_work(&first_peer_device(device)->connection->data.work, &b->dw);
+	drbd_queue_work(&first_peer_device(device)->connection->data.work,
+			&b->dw.w);
 	set_bit(CREATE_BARRIER, &device->flags);
 }
 
@@ -477,7 +478,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->dw.w.cb = (req->rq_state & RQ_LOCAL_MASK)
 			? w_read_retry_remote
 			: w_send_read_req;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&req->dw.w);
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -520,7 +522,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
 		req->dw.w.cb =  w_send_dblock;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&req->dw.w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
@@ -535,7 +538,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case QUEUE_FOR_SEND_OOS:
 		req->rq_state |= RQ_NET_QUEUED;
 		req->dw.w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&req->dw.w);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
@@ -677,7 +681,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		get_ldev(device);
 		req->dw.w.cb = w_restart_disk_io;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&req->dw.w);
 		break;
 
 	case RESEND:
@@ -687,7 +692,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   We ensure that the peer was not rebooted */
 		if (!(req->rq_state & RQ_NET_OK)) {
 			if (req->dw.w.cb) {
-				drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+				drbd_queue_work(&first_peer_device(device)->connection->data.work,
+						&req->dw.w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			}
 			break;

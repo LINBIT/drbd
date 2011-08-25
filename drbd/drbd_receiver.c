@@ -1237,7 +1237,8 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *device,
 			fw->dw.w.cb = w_flush;
 			fw->epoch = epoch;
 			fw->dw.device = device;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &fw->dw);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work,
+					&fw->dw.w);
 		} else {
 			drbd_warn(device, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -1434,7 +1435,8 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	switch (err) {
 	case -ENOMEM:
 		peer_req->dw.w.cb = w_e_reissue;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &peer_req->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&peer_req->dw.w);
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
@@ -1899,7 +1901,8 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (expect(list_empty(&req->dw.w.list))) {
 			req->dw.device = device;
 			req->dw.w.cb = w_restart_write;
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->dw);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work,
+					&req->dw.w);
 		}
 	}
 }
@@ -4545,7 +4548,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 
 static int w_complete(struct drbd_work *w, int cancel)
 {
-	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, dw.w);
+	struct drbd_wq_barrier *b = container_of(w, struct drbd_wq_barrier, w);
 
 	complete(&b->done);
 	return 0;
@@ -4555,9 +4558,9 @@ void conn_flush_workqueue(struct drbd_connection *connection)
 {
 	struct drbd_wq_barrier barr;
 
-	barr.dw.w.cb = w_complete;
+	barr.w.cb = w_complete;
 	init_completion(&barr.done);
-	drbd_queue_work(&connection->data.work, &barr.dw);
+	drbd_queue_work(&connection->data.work, &barr.w);
 	wait_for_completion(&barr.done);
 }
 
@@ -5295,7 +5298,8 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		if (dw) {
 			dw->w.cb = w_ov_finished;
 			dw->device = device;
-			drbd_queue_work_front(&peer_device->connection->data.work, dw);
+			drbd_queue_work_front(&peer_device->connection->data.work,
+					      &dw->w);
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(device);

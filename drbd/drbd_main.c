@@ -389,7 +389,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 					set_bit(CREATE_BARRIER, &b->dw.device->flags);
 				}
 
-				drbd_queue_work(&connection->data.work, &b->dw);
+				drbd_queue_work(&connection->data.work, &b->dw.w);
 			}
 			pn = &b->next;
 		} else {
@@ -3435,7 +3435,8 @@ void drbd_go_diskless(struct drbd_device *device)
 {
 	D_ASSERT(device, device->state.disk == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->go_diskless);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&device->go_diskless.w);
 }
 
 /**
@@ -3473,7 +3474,8 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	set_bit(BITMAP_IO, &device->flags);
 	if (atomic_read(&device->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.dw);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work,
+					&device->bm_io_work.dw.w);
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 }
@@ -3531,7 +3533,8 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
-	drbd_queue_work_front(&first_peer_device(device)->connection->data.work, &device->md_sync_work);
+	drbd_queue_work_front(&first_peer_device(device)->connection->data.work,
+			      &device->md_sync_work.w);
 }
 
 STATIC int w_md_sync(struct drbd_work *w, int unused)

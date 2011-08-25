@@ -1094,7 +1094,8 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		ascw->dw.w.cb = w_after_state_ch;
 		ascw->dw.device = device;
 		ascw->done = done;
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &ascw->dw);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work,
+				&ascw->dw.w);
 	} else {
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
@@ -1754,7 +1755,8 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		acscw->dw.w.cb = w_after_conn_state_ch;
 		kref_get(&connection->kref);
 		acscw->connection = connection;
-		drbd_queue_work(&connection->data.work, &acscw->dw);
+		drbd_queue_work(&connection->data.work,
+				&acscw->dw.w);
 	} else {
 		drbd_err(connection, "Could not kmalloc an acscw\n");
 	}

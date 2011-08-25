@@ -422,7 +422,7 @@ enum epoch_event {
 };
 
 struct drbd_wq_barrier {
-	struct drbd_device_work dw;
+	struct drbd_work w;
 	struct completion done;
 };
 
@@ -1703,21 +1703,21 @@ static inline sector_t drbd_md_ss__(struct drbd_device *device,
 }
 
 static inline void
-drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_device_work *dw)
+drbd_queue_work_front(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add(&dw->w.list, &q->q);
+	list_add(&w->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	up(&q->s);
 }
 
 static inline void
-drbd_queue_work(struct drbd_work_queue *q, struct drbd_device_work *dw)
+drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&q->q_lock, flags);
-	list_add_tail(&dw->w.list, &q->q);
+	list_add_tail(&w->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
 	up(&q->s);
 }
@@ -2105,7 +2105,8 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		wake_up(&device->misc_wait);
 	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work, &device->bm_io_work.dw);
+			drbd_queue_work(&first_peer_device(device)->connection->data.work,
+					&device->bm_io_work.dw.w);
 	}
 }
 
