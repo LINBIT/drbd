@@ -617,7 +617,7 @@ struct drbd_md_io {
 };
 
 struct bm_io_work {
-	struct drbd_device_work dw;
+	struct drbd_work w;
 	char *why;
 	enum bm_flag flags;
 	int (*io_fn)(struct drbd_device *device);
@@ -2189,7 +2189,7 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
 			drbd_queue_work(&first_peer_device(device)->
 				connection->sender_work,
-				&device->bm_io_work.dw.w);
+				&device->bm_io_work.w);
 	}
 
 	/* this currently does wake_up for every dec_ap_bio!
