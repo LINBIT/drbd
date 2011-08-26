@@ -1717,13 +1717,13 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 	mutex_unlock(device->state_mutex);
 }
 
-static struct drbd_device_work *consume_work(struct drbd_work_queue *queue)
+static struct drbd_work *consume_work(struct drbd_work_queue *queue)
 {
-	struct drbd_device_work *work;
+	struct drbd_work *work;
 
 	spin_lock_irq(&queue->q_lock);
-	work = list_first_entry(&queue->q, struct drbd_device_work, w.list);
-	list_del_init(&work->w.list);
+	work = list_first_entry(&queue->q, struct drbd_work, list);
+	list_del_init(&work->list);
 	spin_unlock_irq(&queue->q_lock);
 
 	return work;
@@ -1732,7 +1732,7 @@ static struct drbd_device_work *consume_work(struct drbd_work_queue *queue)
 int drbd_worker(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
-	struct drbd_device_work *dw;
+	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
 	int vnr, intr = 0;
@@ -1775,16 +1775,16 @@ int drbd_worker(struct drbd_thread *thi)
 			break;
 		}
 
-		dw = consume_work(&connection->data.work);
-		if (dw->w.cb(&dw->w, connection->cstate < C_WF_REPORT_PARAMS)) {
+		w = consume_work(&connection->data.work);
+		if (w->cb(w, connection->cstate < C_WF_REPORT_PARAMS)) {
 			if (connection->cstate >= C_WF_REPORT_PARAMS)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 		}
 	}
 
 	while (!down_trylock(&connection->data.work.s)) {
-		dw = consume_work(&connection->data.work);
-		dw->w.cb(&dw->w, 1);
+		w = consume_work(&connection->data.work);
+		w->cb(w, 1);
 	}
 
 	rcu_read_lock();
