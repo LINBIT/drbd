@@ -211,11 +211,11 @@ STATIC int tl_init(struct drbd_connection *connection)
 	if (!b)
 		return 0;
 	INIT_LIST_HEAD(&b->requests);
-	INIT_LIST_HEAD(&b->dw.w.list);
+	INIT_LIST_HEAD(&b->w.list);
 	b->next = NULL;
 	b->br_number = 4711;
 	b->n_writes = 0;
-	b->dw.w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
 	connection->oldest_tle = b;
 	connection->newest_tle = b;
@@ -249,8 +249,8 @@ void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *n
 	struct drbd_tl_epoch *newest_before;
 
 	INIT_LIST_HEAD(&new->requests);
-	INIT_LIST_HEAD(&new->dw.w.list);
-	new->dw.w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
+	INIT_LIST_HEAD(&new->w.list);
+	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 	new->next = NULL;
 	new->n_writes = 0;
 
@@ -322,7 +322,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	   _req_mod(, BARRIER_ACKED) above.
 	   */
 	list_splice_init(&b->requests, &connection->barrier_acked_requests);
-	device = b->dw.device;
+	device = b->device;
 
 	nob = b->next;
 	if (test_and_clear_bit(CREATE_BARRIER, &device->flags)) {
@@ -383,13 +383,13 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 		if (n_writes) {
 			if (what == RESEND) {
 				b->n_writes = n_writes;
-				if (b->dw.w.cb == NULL) {
-					b->dw.w.cb = w_send_barrier;
-					inc_ap_pending(b->dw.device);
-					set_bit(CREATE_BARRIER, &b->dw.device->flags);
+				if (b->w.cb == NULL) {
+					b->w.cb = w_send_barrier;
+					inc_ap_pending(b->device);
+					set_bit(CREATE_BARRIER, &b->device->flags);
 				}
 
-				drbd_queue_work(&connection->data.work, &b->dw.w);
+				drbd_queue_work(&connection->data.work, &b->w);
 			}
 			pn = &b->next;
 		} else {
@@ -401,9 +401,9 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 
 			/* dec_ap_pending corresponding to queue_barrier.
 			 * the newest barrier may not have been queued yet,
-			 * in which case dw.w.cb is still NULL. */
-			if (b->dw.w.cb != NULL)
-				dec_ap_pending(b->dw.device);
+			 * in which case w.cb is still NULL. */
+			if (b->w.cb != NULL)
+				dec_ap_pending(b->device);
 
 			if (b == connection->newest_tle) {
 				/* recycle, but reinit! */
@@ -411,8 +411,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 					drbd_err(connection, "ASSERT FAILED tmp == NULL");
 				INIT_LIST_HEAD(&b->requests);
 				list_splice(&carry_reads, &b->requests);
-				INIT_LIST_HEAD(&b->dw.w.list);
-				b->dw.w.cb = NULL;
+				INIT_LIST_HEAD(&b->w.list);
+				b->w.cb = NULL;
 				b->br_number = net_random();
 				b->n_writes = 0;
 

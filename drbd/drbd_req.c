@@ -186,15 +186,15 @@ static void queue_barrier(struct drbd_device *device)
 		return;
 
 	b = first_peer_device(device)->connection->newest_tle;
-	b->dw.w.cb = w_send_barrier;
-	b->dw.device = device;
+	b->w.cb = w_send_barrier;
+	b->device = device;
 	/* inc_ap_pending done here, so we won't
 	 * get imbalanced on connection loss.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in tl_clear.  */
 	inc_ap_pending(device);
 	drbd_queue_work(&first_peer_device(device)->connection->data.work,
-			&b->dw.w);
+			&b->w);
 	set_bit(CREATE_BARRIER, &device->flags);
 }
 

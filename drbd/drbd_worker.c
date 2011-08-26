@@ -1251,19 +1251,18 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 
 int w_send_barrier(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
 	struct drbd_socket *sock;
-	struct drbd_tl_epoch *b = container_of(dw, struct drbd_tl_epoch, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_tl_epoch *b = container_of(w, struct drbd_tl_epoch, w);
+	struct drbd_device *device = b->device;
 	struct p_barrier *p;
 
-	/* really avoid racing with tl_clear.  dw.w.cb may have been referenced
+	/* really avoid racing with tl_clear.  w.cb may have been referenced
 	 * just before it was reassigned and re-queued, so double check that.
 	 * actually, this race was harmless, since we only try to send the
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */
 	spin_lock_irq(&device->resource->req_lock);
-	if (dw->w.cb != w_send_barrier || device->state.conn < C_CONNECTED)
+	if (w->cb != w_send_barrier || device->state.conn < C_CONNECTED)
 		cancel = 1;
 	spin_unlock_irq(&device->resource->req_lock);
 	if (cancel)

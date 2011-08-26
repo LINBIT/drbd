@@ -390,7 +390,8 @@ struct drbd_request {
 };
 
 struct drbd_tl_epoch {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 	struct list_head requests; /* requests before */
 	struct drbd_tl_epoch *next; /* pointer to the next barrier */
 	unsigned int br_number;  /* the barriers identifier. */
