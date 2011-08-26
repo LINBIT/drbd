@@ -774,7 +774,8 @@ static int make_ov_request(struct drbd_device *device, int cancel)
 
 int w_ov_finished(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
+	struct drbd_device_work *dw =
+		container_of(w, struct drbd_device_work, w);
 	struct drbd_device *device = dw->device;
 	kfree(dw);
 	ov_out_of_sync_print(device);
@@ -785,7 +786,8 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 
 STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
+	struct drbd_device_work *dw =
+		container_of(w, struct drbd_device_work, w);
 	struct drbd_device *device = dw->device;
 	kfree(dw);
 
