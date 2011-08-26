@@ -94,7 +94,8 @@ struct __packed al_transaction_on_disk {
 };
 
 struct update_odbm_work {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 	unsigned int enr;
 };
 
@@ -709,9 +710,8 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 
 static int w_update_odbm(struct drbd_work *w, int unused)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct update_odbm_work *udw = container_of(dw, struct update_odbm_work, dw);
-	struct drbd_device *device = dw->device;
+	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
+	struct drbd_device *device = udw->device;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 
 	if (!get_ldev(device)) {
@@ -821,10 +821,10 @@ static void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 			udw = kmalloc(sizeof(*udw), GFP_ATOMIC);
 			if (udw) {
 				udw->enr = ext->lce.lc_number;
-				udw->dw.w.cb = w_update_odbm;
-				udw->dw.device = device;
+				udw->w.cb = w_update_odbm;
+				udw->device = device;
 				drbd_queue_work_front(&first_peer_device(device)->connection->sender_work,
-						      &udw->dw.w);
+						      &udw->w);
 			} else {
 				drbd_warn(device, "Could not kmalloc an udw\n");
 			}
