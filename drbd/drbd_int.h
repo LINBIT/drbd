@@ -375,7 +375,8 @@ extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
 extern bool idr_is_empty(struct idr *idr);
 
 struct drbd_request {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 
 	/* if local IO is not allowed, will be NULL.
 	 * if local IO _is_ allowed, holds the locally submitted bio clone,

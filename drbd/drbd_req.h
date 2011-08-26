@@ -293,7 +293,7 @@ extern void drbd_restart_request(struct drbd_request *req);
  * outside the spinlock, e.g. when walking some list on cleanup. */
 static inline int _req_mod(struct drbd_request *req, enum drbd_req_event what)
 {
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	struct bio_and_error m;
 	int rv;
 
@@ -311,7 +311,7 @@ static inline int _req_mod(struct drbd_request *req, enum drbd_req_event what)
 static inline int req_mod(struct drbd_request *req,
 		enum drbd_req_event what)
 {
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	struct bio_and_error m;
 	int rv;
 

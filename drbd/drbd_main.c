@@ -353,7 +353,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 	list_for_each_entry_safe(req, r, &connection->transfer_log, tl_requests) {
 		if (!(req->rq_state & RQ_LOCAL_PENDING))
 			continue;
-		if (req->dw.device != device)
+		if (req->device != device)
 			continue;
 		_req_mod(req, ABORT_DISK_IO);
 	}
@@ -2306,7 +2306,7 @@ static void do_retry(struct work_struct *ws)
 	spin_unlock_irq(&retry->lock);
 
 	list_for_each_entry_safe(req, tmp, &writes, tl_requests) {
-		struct drbd_device *device = req->dw.device;
+		struct drbd_device *device = req->device;
 		struct bio *bio = req->master_bio;
 		unsigned long start_time = req->start_time;
 		bool expected;
@@ -2357,7 +2357,7 @@ void drbd_restart_request(struct drbd_request *req)
 	/* Drop the extra reference that would otherwise
 	 * have been dropped by complete_master_bio.
 	 * do_retry() needs to grab a new one. */
-	dec_ap_bio(req->dw.device);
+	dec_ap_bio(req->device);
 
 	queue_work(retry.wq, &retry.worker);
 }
