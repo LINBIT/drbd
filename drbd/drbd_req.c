@@ -99,7 +99,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 
 	drbd_req_make_private_bio(req, bio_src);
 	req->rq_state    = bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0;
-	req->dw.device      = device;
+	req->device      = device;
 	req->master_bio  = bio_src;
 	req->epoch       = 0;
 
@@ -110,7 +110,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	req->i.waiting = false;
 
 	INIT_LIST_HEAD(&req->tl_requests);
-	INIT_LIST_HEAD(&req->dw.w.list);
+	INIT_LIST_HEAD(&req->w.list);
 
 	return req;
 }
@@ -226,7 +226,7 @@ void complete_master_bio(struct drbd_device *device,
 static void drbd_remove_request_interval(struct rb_root *root,
 					 struct drbd_request *req)
 {
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	struct drbd_interval *i = &req->i;
 
 	drbd_remove_interval(root, i);
@@ -245,7 +245,7 @@ static void drbd_remove_request_interval(struct rb_root *root,
 void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 {
 	const unsigned long s = req->rq_state;
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	int rw = req->rq_state & RQ_WRITE ? WRITE : READ;
 
 	/* we must not complete the master bio, while it is
@@ -335,7 +335,7 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 
 static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_error *m)
 {
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 
 	if (!drbd_suspended(device))
 		_req_may_be_done(req, m);
@@ -356,7 +356,7 @@ static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_e
 int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m)
 {
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	struct net_conf *nc;
 	int p, rv = 0;
 
@@ -475,11 +475,11 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
-		req->dw.w.cb = (req->rq_state & RQ_LOCAL_MASK)
+		req->w.cb = (req->rq_state & RQ_LOCAL_MASK)
 			? w_read_retry_remote
 			: w_send_read_req;
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&req->dw.w);
+				&req->w);
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -521,9 +521,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* queue work item to send data */
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
-		req->dw.w.cb =  w_send_dblock;
+		req->w.cb =  w_send_dblock;
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&req->dw.w);
+				&req->w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
@@ -537,9 +537,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case QUEUE_FOR_SEND_OOS:
 		req->rq_state |= RQ_NET_QUEUED;
-		req->dw.w.cb =  w_send_out_of_sync;
+		req->w.cb =  w_send_out_of_sync;
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&req->dw.w);
+				&req->w);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
@@ -680,9 +680,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			rv = MR_WRITE;
 
 		get_ldev(device);
-		req->dw.w.cb = w_restart_disk_io;
+		req->w.cb = w_restart_disk_io;
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&req->dw.w);
+				&req->w);
 		break;
 
 	case RESEND:
@@ -691,9 +691,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   Trowing them out of the TL here by pretending we got a BARRIER_ACK
 		   We ensure that the peer was not rebooted */
 		if (!(req->rq_state & RQ_NET_OK)) {
-			if (req->dw.w.cb) {
+			if (req->w.cb) {
 				drbd_queue_work(&first_peer_device(device)->connection->data.work,
-						&req->dw.w);
+						&req->w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			}
 			break;

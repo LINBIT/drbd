@@ -226,7 +226,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
-	struct drbd_device *device = req->dw.device;
+	struct drbd_device *device = req->device;
 	struct bio_and_error m;
 	enum drbd_req_event what;
 	int uptodate = bio_flagged(bio, BIO_UPTODATE);
@@ -266,9 +266,8 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 int w_read_retry_remote(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 
 	/* We should not detach for read io-error,
 	 * but try to WRITE the P_DATA_REPLY to the failed location,
@@ -1297,9 +1296,8 @@ int w_send_write_hint(struct drbd_work *w, int cancel)
 
 int w_send_out_of_sync(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 	int err;
 
 	if (unlikely(cancel)) {
@@ -1321,9 +1319,8 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
  */
 int w_send_dblock(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 	int err;
 
 	if (unlikely(cancel)) {
@@ -1345,9 +1342,8 @@ int w_send_dblock(struct drbd_work *w, int cancel)
  */
 int w_send_read_req(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 	int err;
 
 	if (unlikely(cancel)) {
@@ -1365,9 +1361,8 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 
 int w_restart_disk_io(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 
 	if (bio_data_dir(req->master_bio) == WRITE && req->rq_state & RQ_IN_ACT_LOG)
 		drbd_al_begin_io(device, &req->i, false);

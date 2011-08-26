@@ -1860,9 +1860,8 @@ STATIC int receive_RSDataReply(struct drbd_connection *connection, struct packet
 
 static int w_restart_write(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct drbd_request *req = container_of(dw, struct drbd_request, dw);
-	struct drbd_device *device = dw->device;
+	struct drbd_request *req = container_of(w, struct drbd_request, w);
+	struct drbd_device *device = req->device;
 	struct bio *bio;
 	unsigned long start_time;
 	unsigned long flags;
@@ -1896,11 +1895,11 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (req->rq_state & RQ_LOCAL_PENDING ||
 		    !(req->rq_state & RQ_POSTPONED))
 			continue;
-		if (expect(list_empty(&req->dw.w.list))) {
-			req->dw.device = device;
-			req->dw.w.cb = w_restart_write;
+		if (expect(list_empty(&req->w.list))) {
+			req->device = device;
+			req->w.cb = w_restart_write;
 			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&req->dw.w);
+					&req->w);
 		}
 	}
 }

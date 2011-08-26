@@ -509,7 +509,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 			req = list_entry(le, struct drbd_request, tl_requests);
 			if (!(req->rq_state & RQ_LOCAL_PENDING))
 				continue;
-			if (req->dw.device == device)
+			if (req->device == device)
 				_req_mod(req, ABORT_DISK_IO);
 		}
 		b = b->next;
@@ -519,7 +519,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 		req = list_entry(le, struct drbd_request, tl_requests);
 		if (!(req->rq_state & RQ_LOCAL_PENDING))
 			continue;
-		if (req->dw.device == device)
+		if (req->device == device)
 			_req_mod(req, ABORT_DISK_IO);
 	}
 
