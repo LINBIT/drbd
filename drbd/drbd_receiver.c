@@ -49,7 +49,8 @@
 #include <linux/scatterlist.h>
 
 struct flush_work {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 	struct drbd_epoch *epoch;
 };
 
@@ -1115,12 +1116,11 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_device *device, stru
 
 STATIC int w_flush(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct flush_work *fw = container_of(dw, struct flush_work, dw);
+	struct flush_work *fw = container_of(w, struct flush_work, w);
 	struct drbd_epoch *epoch = fw->epoch;
-	struct drbd_device *device = dw->device;
+	struct drbd_device *device = fw->device;
 
-	kfree(dw);
+	kfree(fw);
 
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(device, epoch);
@@ -1232,11 +1232,11 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *device,
 		struct flush_work *fw;
 		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
 		if (fw) {
-			fw->dw.w.cb = w_flush;
+			fw->w.cb = w_flush;
 			fw->epoch = epoch;
-			fw->dw.device = device;
+			fw->device = device;
 			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&fw->dw.w);
+					&fw->w);
 		} else {
 			drbd_warn(device, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
