@@ -366,9 +366,6 @@ struct drbd_device_work {
 	struct drbd_device *device;
 };
 
-#define device_work(work) \
-	container_of(work, struct drbd_device_work, w)
-
 #include "drbd_interval.h"
 
 extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
