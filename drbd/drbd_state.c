@@ -34,7 +34,8 @@
 extern void tl_abort_disk_io(struct drbd_device *device);
 
 struct after_state_chg_work {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 	union drbd_state os;
 	union drbd_state ns;
 	enum chg_state_flags flags;
@@ -1091,11 +1092,11 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		ascw->os = os;
 		ascw->ns = ns;
 		ascw->flags = flags;
-		ascw->dw.w.cb = w_after_state_ch;
-		ascw->dw.device = device;
+		ascw->w.cb = w_after_state_ch;
+		ascw->device = device;
 		ascw->done = done;
 		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&ascw->dw.w);
+				&ascw->w);
 	} else {
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
@@ -1105,10 +1106,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 {
-	struct drbd_device_work *dw = device_work(w);
 	struct after_state_chg_work *ascw =
-		container_of(dw, struct after_state_chg_work, dw);
-	struct drbd_device *device = dw->device;
+		container_of(w, struct after_state_chg_work, w);
+	struct drbd_device *device = ascw->device;
 
 	after_state_ch(device, ascw->os, ascw->ns, ascw->flags);
 	if (ascw->flags & CS_WAIT_COMPLETE)
