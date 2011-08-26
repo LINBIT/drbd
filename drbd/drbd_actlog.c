@@ -99,7 +99,8 @@ struct update_odbm_work {
 };
 
 struct update_al_work {
-	struct drbd_device_work dw;
+	struct drbd_work w;
+	struct drbd_device *device;
 	struct completion event;
 	int err;
 };
@@ -465,9 +466,8 @@ _al_write_transaction(struct drbd_device *device)
 
 static int w_al_write_transaction(struct drbd_work *w, int unused)
 {
-	struct drbd_device_work *dw = device_work(w);
-	struct update_al_work *aw = container_of(dw, struct update_al_work, dw);
-	struct drbd_device *device = dw->device;
+	struct update_al_work *aw = container_of(w, struct update_al_work, w);
+	struct drbd_device *device = aw->device;
 	int err;
 
 	err = _al_write_transaction(device);
@@ -495,10 +495,10 @@ static int al_write_transaction(struct drbd_device *device, bool delegate)
 		BUG_ON(current == first_peer_device(device)->connection->worker.task);
 
 		init_completion(&al_work.event);
-		al_work.dw.w.cb = w_al_write_transaction;
-		al_work.dw.device = device;
+		al_work.w.cb = w_al_write_transaction;
+		al_work.device = device;
 		drbd_queue_work_front(&first_peer_device(device)->connection->data.work,
-				      &al_work.dw.w);
+				      &al_work.w);
 		wait_for_completion(&al_work.event);
 		return al_work.err;
 	} else
