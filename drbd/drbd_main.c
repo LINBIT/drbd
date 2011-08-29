@@ -2450,6 +2450,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection, *tmp;
 
+	drbd_flush_workqueue(&resource->work);
 	drbd_thread_stop(&resource->worker);
 	for_each_connection_safe(connection, tmp, resource) {
 		list_del(&connection->connections);
