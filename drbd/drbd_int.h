@@ -1453,7 +1453,7 @@ extern struct page *drbd_alloc_pages(struct drbd_peer_device *, unsigned int, bo
 extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern void conn_flush_workqueue(struct drbd_connection *connection);
-extern int drbd_connected(struct drbd_device *device);
+extern int drbd_connected(struct drbd_peer_device *);
 static inline void drbd_flush_workqueue(struct drbd_device *device)
 {
 	conn_flush_workqueue(first_peer_device(device)->connection);

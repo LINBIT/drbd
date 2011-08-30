@@ -2908,8 +2908,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	/* inherit the connection state */
 	device->state.conn = first_connection(resource)->cstate;
-	if (device->state.conn == C_WF_REPORT_PARAMS)
-		drbd_connected(device);
+	if (device->state.conn == C_WF_REPORT_PARAMS) {
+		for_each_peer_device(peer_device, device)
+			drbd_connected(peer_device);
+	}
 
 	return NO_ERROR;
 
