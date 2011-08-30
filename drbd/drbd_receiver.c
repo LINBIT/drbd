@@ -4418,7 +4418,7 @@ static int dcbp_get_pad_bits(struct p_compressed_bm *p)
  * code upon failure.
  */
 static int
-recv_bm_rle_bits(struct drbd_device *device,
+recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 		struct p_compressed_bm *p,
 		 struct bm_xfer_ctx *c,
 		 unsigned int len)
@@ -4447,14 +4447,14 @@ recv_bm_rle_bits(struct drbd_device *device,
 		if (toggle) {
 			e = s + rl -1;
 			if (e >= c->bm_bits) {
-				drbd_err(device, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
+				drbd_err(peer_device, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
 				return -EIO;
 			}
-			_drbd_bm_set_bits(device, s, e);
+			_drbd_bm_set_bits(peer_device->device, s, e);
 		}
 
 		if (have < bits) {
-			drbd_err(device, "bitmap decoding error: h:%d b:%d la:0x%08llx l:%u/%u\n",
+			drbd_err(peer_device, "bitmap decoding error: h:%d b:%d la:0x%08llx l:%u/%u\n",
 				have, bits, look_ahead,
 				(unsigned int)(bs.cur.b - p->code),
 				(unsigned int)bs.buf_len);
@@ -4487,20 +4487,20 @@ recv_bm_rle_bits(struct drbd_device *device,
  * code upon failure.
  */
 static int
-decode_bitmap_c(struct drbd_device *device,
+decode_bitmap_c(struct drbd_peer_device *peer_device,
 		struct p_compressed_bm *p,
 		struct bm_xfer_ctx *c,
 		unsigned int len)
 {
 	if (dcbp_get_code(p) == RLE_VLI_Bits)
-		return recv_bm_rle_bits(device, p, c, len - sizeof(*p));
+		return recv_bm_rle_bits(peer_device, p, c, len - sizeof(*p));
 
 	/* other variants had been implemented for evaluation,
 	 * but have been dropped as this one turned out to be "best"
 	 * during all our tests. */
 
-	drbd_err(device, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
-	conn_request_state(first_peer_device(device)->connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
+	drbd_err(peer_device, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
+	conn_request_state(peer_device->connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
 	return -EIO;
 }
 
@@ -4590,7 +4590,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 			err = drbd_recv_all(peer_device->connection, p, pi->size);
 			if (err)
 			       goto out;
-			err = decode_bitmap_c(device, p, &c, pi->size);
+			err = decode_bitmap_c(peer_device, p, &c, pi->size);
 		} else {
 			drbd_warn(device, "receive_bitmap: cmd neither ReportBitMap nor ReportCBitMap (is 0x%x)", pi->cmd);
 			err = -EIO;
