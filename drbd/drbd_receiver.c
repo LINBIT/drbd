@@ -2135,7 +2135,7 @@ static void fail_postponed_requests(struct drbd_device *device, sector_t sector,
 static int handle_write_conflicts(struct drbd_device *device,
 				  struct drbd_peer_request *peer_req)
 {
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	struct drbd_connection *connection = peer_req->peer_device->connection;
 	bool resolve_conflicts = test_bit(DISCARD_CONCURRENT, &connection->flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
@@ -2189,7 +2189,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
-			wake_asender(first_peer_device(device)->connection);
+			wake_asender(connection);
 
 			err = -ENOENT;
 			goto out;
@@ -2217,9 +2217,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 				 */
 				err = drbd_wait_misc(device, &req->i);
 				if (err) {
-					_conn_request_state(first_peer_device(device)->connection,
-							    NS(conn, C_TIMEOUT),
-							    CS_HARD);
+					_conn_request_state(connection, NS(conn, C_TIMEOUT), CS_HARD);
 					fail_postponed_requests(device, sector, size);
 					goto out;
 				}
