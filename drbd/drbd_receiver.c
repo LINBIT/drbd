@@ -2844,8 +2844,12 @@ out_free_e:
 	return -EIO;
 }
 
-static int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
+/**
+ * drbd_asb_recover_0p  -  Recover after split-brain with no remaining primaries
+ */
+static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	int self, peer, rv = -100;
 	unsigned long ch_self, ch_peer;
 	enum drbd_after_sb_p after_sb_0p;
@@ -2857,7 +2861,7 @@ static int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 	ch_self = device->comm_bm_set;
 
 	rcu_read_lock();
-	after_sb_0p = rcu_dereference(first_peer_device(device)->connection->net_conf)->after_sb_0p;
+	after_sb_0p = rcu_dereference(peer_device->connection->net_conf)->after_sb_0p;
 	rcu_read_unlock();
 	switch (after_sb_0p) {
 	case ASB_CONSENSUS:
@@ -2892,7 +2896,7 @@ static int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 		     "Using discard-least-changes instead\n");
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
-			rv = test_bit(RESOLVE_CONFLICTS, &first_peer_device(device)->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
 				? -1 : 1;
 			break;
 		} else {
@@ -2908,7 +2912,7 @@ static int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 			rv =  1;
 		else /* ( ch_self == ch_peer ) */
 		     /* Well, then use something else. */
-			rv = test_bit(RESOLVE_CONFLICTS, &first_peer_device(device)->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
 				? -1 : 1;
 		break;
 	case ASB_DISCARD_LOCAL:
@@ -2921,13 +2925,17 @@ static int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 	return rv;
 }
 
-static int drbd_asb_recover_1p(struct drbd_device *device) __must_hold(local)
+/**
+ * drbd_asb_recover_1p  -  Recover after split-brain with one remaining primary
+ */
+static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	int hg, rv = -100;
 	enum drbd_after_sb_p after_sb_1p;
 
 	rcu_read_lock();
-	after_sb_1p = rcu_dereference(first_peer_device(device)->connection->net_conf)->after_sb_1p;
+	after_sb_1p = rcu_dereference(peer_device->connection->net_conf)->after_sb_1p;
 	rcu_read_unlock();
 	switch (after_sb_1p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -2941,19 +2949,19 @@ static int drbd_asb_recover_1p(struct drbd_device *device) __must_hold(local)
 	case ASB_DISCONNECT:
 		break;
 	case ASB_CONSENSUS:
-		hg = drbd_asb_recover_0p(device);
+		hg = drbd_asb_recover_0p(peer_device);
 		if (hg == -1 && device->state.role == R_SECONDARY)
 			rv = hg;
 		if (hg == 1  && device->state.role == R_PRIMARY)
 			rv = hg;
 		break;
 	case ASB_VIOLENTLY:
-		rv = drbd_asb_recover_0p(device);
+		rv = drbd_asb_recover_0p(peer_device);
 		break;
 	case ASB_DISCARD_SECONDARY:
 		return device->state.role == R_PRIMARY ? 1 : -1;
 	case ASB_CALL_HELPER:
-		hg = drbd_asb_recover_0p(device);
+		hg = drbd_asb_recover_0p(peer_device);
 		if (hg == -1 && device->state.role == R_PRIMARY) {
 			enum drbd_state_rv rv2;
 
@@ -2974,13 +2982,17 @@ static int drbd_asb_recover_1p(struct drbd_device *device) __must_hold(local)
 	return rv;
 }
 
-static int drbd_asb_recover_2p(struct drbd_device *device) __must_hold(local)
+/**
+ * drbd_asb_recover_2p  -  Recover after split-brain with two remaining primaries
+ */
+static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	int hg, rv = -100;
 	enum drbd_after_sb_p after_sb_2p;
 
 	rcu_read_lock();
-	after_sb_2p = rcu_dereference(first_peer_device(device)->connection->net_conf)->after_sb_2p;
+	after_sb_2p = rcu_dereference(peer_device->connection->net_conf)->after_sb_2p;
 	rcu_read_unlock();
 	switch (after_sb_2p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -2994,12 +3006,12 @@ static int drbd_asb_recover_2p(struct drbd_device *device) __must_hold(local)
 		drbd_err(device, "Configuration error.\n");
 		break;
 	case ASB_VIOLENTLY:
-		rv = drbd_asb_recover_0p(device);
+		rv = drbd_asb_recover_0p(peer_device);
 		break;
 	case ASB_DISCONNECT:
 		break;
 	case ASB_CALL_HELPER:
-		hg = drbd_asb_recover_0p(device);
+		hg = drbd_asb_recover_0p(peer_device);
 		if (hg == -1) {
 			enum drbd_state_rv rv2;
 
@@ -3292,13 +3304,13 @@ static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
 
 		switch (pcount) {
 		case 0:
-			hg = drbd_asb_recover_0p(device);
+			hg = drbd_asb_recover_0p(peer_device);
 			break;
 		case 1:
-			hg = drbd_asb_recover_1p(device);
+			hg = drbd_asb_recover_1p(peer_device);
 			break;
 		case 2:
-			hg = drbd_asb_recover_2p(device);
+			hg = drbd_asb_recover_2p(peer_device);
 			break;
 		}
 		if (abs(hg) < 100) {
