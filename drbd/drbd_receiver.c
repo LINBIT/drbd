@@ -824,24 +824,25 @@ static int drbd_socket_okay(struct socket **sock)
 }
 /* Gets called if a connection is established, or if a new minor gets created
    in a connection */
-int drbd_connected(struct drbd_device *device)
+int drbd_connected(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	int err;
 
 	atomic_set(&device->packet_seq, 0);
 	device->peer_seq = 0;
 
-	device->state_mutex = first_peer_device(device)->connection->agreed_pro_version < 100 ?
-		&first_peer_device(device)->connection->cstate_mutex :
+	device->state_mutex = peer_device->connection->agreed_pro_version < 100 ?
+		&peer_device->connection->cstate_mutex :
 		&device->own_state_mutex;
 
-	err = drbd_send_sync_param(first_peer_device(device));
+	err = drbd_send_sync_param(peer_device);
 	if (!err)
-		err = drbd_send_sizes(first_peer_device(device), 0, 0);
+		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)
-		err = drbd_send_uuids(first_peer_device(device));
+		err = drbd_send_uuids(peer_device);
 	if (!err)
-		err = drbd_send_state(first_peer_device(device));
+		err = drbd_send_state(peer_device);
 	clear_bit(USE_DEGR_WFC_T, &device->flags);
 	clear_bit(RESIZE_PENDING, &device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
@@ -1017,8 +1018,9 @@ retry:
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
+		/* peer_device->connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
-		drbd_connected(device);
+		drbd_connected(peer_device);
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
