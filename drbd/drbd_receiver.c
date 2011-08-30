@@ -3064,9 +3064,11 @@ STATIC int drbd_uuid_compare(struct drbd_device *device, int *rule_nr) __must_ho
 /* drbd_sync_handshake() returns the new conn state on success, or
    CONN_MASK (-1) on failure.
  */
-STATIC enum drbd_conns drbd_sync_handshake(struct drbd_device *device, enum drbd_role peer_role,
+static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
+					   enum drbd_role peer_role,
 					   enum drbd_disk_state peer_disk) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	enum drbd_conns rv = C_MASK;
 	enum drbd_disk_state mydisk;
 	struct net_conf *nc;
@@ -3108,7 +3110,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_device *device, enum drbd
 		drbd_khelper(device, "initial-split-brain");
 
 	rcu_read_lock();
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->net_conf);
 
 	if (hg == 100 || (hg == -100 && nc->always_asbp)) {
 		int pcount = (device->state.role == R_PRIMARY)
@@ -3183,7 +3185,7 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_device *device, enum drbd
 		}
 	}
 
-	if (tentative || test_bit(CONN_DRY_RUN, &first_peer_device(device)->connection->flags)) {
+	if (tentative || test_bit(CONN_DRY_RUN, &peer_device->connection->flags)) {
 		if (hg == 0)
 			drbd_info(device, "dry-run connect: No resync, would become Connected immediately.\n");
 		else
@@ -4043,7 +4045,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 				 peer_state.conn <= C_WF_BITMAP_T));
 
 		if (cr)
-			ns.conn = drbd_sync_handshake(device, peer_state.role, real_peer_disk);
+			ns.conn = drbd_sync_handshake(peer_device, peer_state.role, real_peer_disk);
 
 		put_ldev(device);
 		if (ns.conn == C_MASK) {
