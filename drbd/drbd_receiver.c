@@ -2000,9 +2000,9 @@ static u32 seq_max(u32 a, u32 b)
 	return seq_greater(a, b) ? a : b;
 }
 
-static bool need_peer_seq(struct drbd_device *device)
+static bool need_peer_seq(struct drbd_peer_device *peer_device)
 {
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	struct drbd_connection *connection = peer_device->connection;
 	int tp;
 
 	/*
@@ -2012,17 +2012,18 @@ static bool need_peer_seq(struct drbd_device *device)
 	 */
 
 	rcu_read_lock();
-	tp = rcu_dereference(first_peer_device(device)->connection->net_conf)->two_primaries;
+	tp = rcu_dereference(connection->net_conf)->two_primaries;
 	rcu_read_unlock();
 
 	return tp && test_bit(DISCARD_CONCURRENT, &connection->flags);
 }
 
-static void update_peer_seq(struct drbd_device *device, unsigned int peer_seq)
+static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int peer_seq)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned int newest_peer_seq;
 
-	if (need_peer_seq(device)) {
+	if (need_peer_seq(peer_device)) {
 		spin_lock(&device->peer_seq_lock);
 		newest_peer_seq = seq_max(device->peer_seq, peer_seq);
 		device->peer_seq = newest_peer_seq;
@@ -2054,13 +2055,14 @@ static void update_peer_seq(struct drbd_device *device, unsigned int peer_seq)
  *
  * returns 0 if we may process the packet,
  * -ERESTARTSYS if we were interrupted (by disconnect signal). */
-static int wait_for_and_update_peer_seq(struct drbd_device *device, const u32 peer_seq)
+static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, const u32 peer_seq)
 {
+	struct drbd_device *device = peer_device->device;
 	DEFINE_WAIT(wait);
 	long timeout;
 	int ret;
 
-	if (!need_peer_seq(device))
+	if (!need_peer_seq(peer_device))
 		return 0;
 
 	spin_lock(&device->peer_seq_lock);
@@ -2077,7 +2079,7 @@ static int wait_for_and_update_peer_seq(struct drbd_device *device, const u32 pe
 		prepare_to_wait(&device->seq_wait, &wait, TASK_INTERRUPTIBLE);
 		spin_unlock(&device->peer_seq_lock);
 		rcu_read_lock();
-		timeout = rcu_dereference(first_peer_device(device)->connection->net_conf)->ping_timeo*HZ/10;
+		timeout = rcu_dereference(peer_device->connection->net_conf)->ping_timeo*HZ/10;
 		rcu_read_unlock();
 		timeout = schedule_timeout(timeout);
 		spin_lock(&device->peer_seq_lock);
@@ -2259,7 +2261,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (!get_ldev(device)) {
 		int err2;
 
-		err = wait_for_and_update_peer_seq(device, peer_seq);
+		err = wait_for_and_update_peer_seq(peer_device, peer_seq);
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 		atomic_inc(&device->current_epoch->epoch_size);
 		err2 = drbd_drain_block(peer_device, pi->size);
@@ -2332,7 +2334,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	rcu_read_unlock();
 	if (tp) {
 		peer_req->flags |= EE_IN_INTERVAL_TREE;
-		err = wait_for_and_update_peer_seq(device, peer_seq);
+		err = wait_for_and_update_peer_seq(peer_device, peer_seq);
 		if (err)
 			goto out_interrupted;
 		spin_lock_irq(&device->resource->req_lock);
@@ -5037,7 +5039,7 @@ STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 
 	D_ASSERT(device, peer_device->connection->agreed_pro_version >= 89);
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (get_ldev(device)) {
 		drbd_rs_complete_io(device, sector);
@@ -5088,7 +5090,7 @@ STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 	device = peer_device->device;
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
 		drbd_set_in_sync(device, sector, blksize);
@@ -5134,7 +5136,7 @@ STATIC int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 		return -EIO;
 	device = peer_device->device;
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
 		dec_rs_pending(device);
@@ -5168,7 +5170,7 @@ STATIC int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	device = peer_device->device;
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	drbd_err(device, "Got NegDReply; Sector %llus, len %u; Fail original request.\n",
 	    (unsigned long long)sector, be32_to_cpu(p->blksize));
@@ -5194,7 +5196,7 @@ STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	dec_rs_pending(device);
 
@@ -5253,7 +5255,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
-	update_peer_seq(device, be32_to_cpu(p->seq_num));
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC)
 		drbd_ov_out_of_sync_found(device, sector, size);
