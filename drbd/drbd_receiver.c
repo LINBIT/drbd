@@ -2666,6 +2666,9 @@ out_free_e:
 	return -EIO;
 }
 
+/**
+ * drbd_asb_recover_0p  -  Recover after split-brain with no remaining primaries
+ */
 STATIC int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 {
 	int self, peer, rv = -100;
@@ -2743,6 +2746,9 @@ STATIC int drbd_asb_recover_0p(struct drbd_device *device) __must_hold(local)
 	return rv;
 }
 
+/**
+ * drbd_asb_recover_1p  -  Recover after split-brain with one remaining primary
+ */
 STATIC int drbd_asb_recover_1p(struct drbd_device *device) __must_hold(local)
 {
 	int hg, rv = -100;
@@ -2797,6 +2803,9 @@ STATIC int drbd_asb_recover_1p(struct drbd_device *device) __must_hold(local)
 	return rv;
 }
 
+/**
+ * drbd_asb_recover_2p  -  Recover after split-brain with two remaining primaries
+ */
 STATIC int drbd_asb_recover_2p(struct drbd_device *device) __must_hold(local)
 {
 	int hg, rv = -100;
