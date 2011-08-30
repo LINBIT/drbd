@@ -67,7 +67,7 @@ enum finish_epoch {
 
 static int drbd_do_features(struct drbd_connection *connection);
 static int drbd_do_auth(struct drbd_connection *connection);
-static int drbd_disconnected(struct drbd_device *device);
+static int drbd_disconnected(struct drbd_peer_device *);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 static int e_end_block(struct drbd_work *, int);
@@ -4799,7 +4799,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
-		drbd_disconnected(device);
+		drbd_disconnected(peer_device);
 		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
@@ -4827,8 +4827,9 @@ static void conn_disconnect(struct drbd_connection *connection)
 		conn_request_state(connection, NS(conn, C_STANDALONE), CS_VERBOSE | CS_HARD);
 }
 
-static int drbd_disconnected(struct drbd_device *device)
+static int drbd_disconnected(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned int i;
 
 	/* wait for current activity to cease. */
@@ -4877,7 +4878,7 @@ static int drbd_disconnected(struct drbd_device *device)
 	device->p_uuid = NULL;
 
 	if (!drbd_suspended(device))
-		tl_clear(first_peer_device(device)->connection);
+		tl_clear(peer_device->connection);
 
 	drbd_md_sync(device);
 
