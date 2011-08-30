@@ -69,7 +69,7 @@ enum finish_epoch {
 
 STATIC int drbd_do_features(struct drbd_connection *connection);
 STATIC int drbd_do_auth(struct drbd_connection *connection);
-STATIC int drbd_disconnected(struct drbd_device *device);
+static int drbd_disconnected(struct drbd_peer_device *);
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_device *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_work *, int);
@@ -4579,7 +4579,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
-		drbd_disconnected(device);
+		drbd_disconnected(peer_device);
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
@@ -4601,8 +4601,9 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 		conn_request_state(connection, NS(conn, C_STANDALONE), CS_VERBOSE | CS_HARD);
 }
 
-STATIC int drbd_disconnected(struct drbd_device *device)
+static int drbd_disconnected(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	enum drbd_fencing_p fp;
 	unsigned int i;
 
@@ -4635,7 +4636,7 @@ STATIC int drbd_disconnected(struct drbd_device *device)
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
 	 * to be "canceled" */
-	drbd_flush_workqueue(&first_peer_device(device)->connection->data.work);
+	drbd_flush_workqueue(&peer_device->connection->data.work);
 
 	drbd_finish_peer_reqs(device);
 
@@ -4643,7 +4644,7 @@ STATIC int drbd_disconnected(struct drbd_device *device)
 	device->p_uuid = NULL;
 
 	if (!drbd_suspended(device))
-		tl_clear(first_peer_device(device)->connection);
+		tl_clear(peer_device->connection);
 
 	drbd_md_sync(device);
 
