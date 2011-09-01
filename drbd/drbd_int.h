@@ -46,6 +46,7 @@
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
 
+#include "drbd_strings.h"
 #include "compat.h"
 #include "drbd_state.h"
 #include "drbd_protocol.h"

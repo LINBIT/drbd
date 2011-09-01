@@ -72,6 +72,7 @@
 #include <linux/drbd_limits.h>
 #include <linux/genl_magic_func.h>
 #include "drbdtool_common.h"
+#include "drbd_strings.h"
 #include "registry.h"
 #include "config.h"
 #include "config_flags.h"
