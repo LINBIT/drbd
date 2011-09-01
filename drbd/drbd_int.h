@@ -605,9 +605,10 @@ struct drbd_md_io {
 struct bm_io_work {
 	struct drbd_work w;
 	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	char *why;
 	enum bm_flag flags;
-	int (*io_fn)(struct drbd_device *device);
+	int (*io_fn)(struct drbd_device *, struct drbd_peer_device *);
 	void (*done)(struct drbd_device *device, int rv);
 };
 
@@ -961,7 +962,7 @@ extern int drbd_send_drequest_csum(struct drbd_peer_device *, sector_t sector,
 				   enum drbd_packet cmd);
 extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int size);
 
-extern int drbd_send_bitmap(struct drbd_device *device);
+extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
 extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv retcode);
 extern void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);
@@ -985,15 +986,17 @@ extern void drbd_md_mark_dirty(struct drbd_device *device);
 extern void drbd_md_mark_dirty_(struct drbd_device *device,
 		unsigned int line, const char *func);
 #endif
-extern void drbd_queue_bitmap_io(struct drbd_device *device,
-				 int (*io_fn)(struct drbd_device *),
+extern void drbd_queue_bitmap_io(struct drbd_device *,
+				 int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
 				 void (*done)(struct drbd_device *, int),
-				 char *why, enum bm_flag flags);
-extern int drbd_bitmap_io(struct drbd_device *device,
-		int (*io_fn)(struct drbd_device *),
-		char *why, enum bm_flag flags);
-extern int drbd_bmio_set_n_write(struct drbd_device *device);
-extern int drbd_bmio_clear_n_write(struct drbd_device *device);
+				 char *why, enum bm_flag flags,
+				 struct drbd_peer_device *);
+extern int drbd_bitmap_io(struct drbd_device *,
+		int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
+		char *why, enum bm_flag flags,
+		struct drbd_peer_device *);
+extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *);
+extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern void drbd_go_diskless(struct drbd_device *device);
 extern void drbd_ldev_destroy(struct drbd_device *device);
 
@@ -1166,9 +1169,9 @@ extern void _drbd_bm_set_bits(struct drbd_device *device,
 extern int  drbd_bm_test_bit(struct drbd_device *device, unsigned long bitnr);
 extern int  drbd_bm_e_weight(struct drbd_device *device, unsigned long enr);
 extern int  drbd_bm_write_page(struct drbd_device *device, unsigned int idx) __must_hold(local);
-extern int  drbd_bm_read(struct drbd_device *device) __must_hold(local);
+extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_bm_mark_for_writeout(struct drbd_device *device, int page_nr);
-extern int  drbd_bm_write(struct drbd_device *device) __must_hold(local);
+extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
 extern unsigned long drbd_bm_ALe_set_all(struct drbd_device *device,
 		unsigned long al_enr);
