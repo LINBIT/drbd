@@ -4656,7 +4656,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 
 	/* serialize with bitmap writeout triggered by the state change,
 	 * if any. */
-	wait_event(device->misc_wait, !test_bit(BITMAP_IO, &device->flags));
+	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
 	/* tcp_close and release of sendpage pages can be deferred.  I don't
 	 * want to use SO_LINGER, because apparently it can be deferred for

@@ -2145,13 +2145,12 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->bm_io_work.w.list);
+	INIT_LIST_HEAD(&device->pending_bitmap_work);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
-	device->bm_io_work.w.cb = w_bitmap_io;
 	device->start_resync_work.cb = w_start_resync;
 
 	init_timer(&device->resync_timer);
@@ -3414,9 +3413,9 @@ int drbd_bmio_clear_n_write(struct drbd_device *device)
 
 static int w_bitmap_io(struct drbd_work *w, int unused)
 {
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, bm_io_work.w);
-	struct bm_io_work *work = &device->bm_io_work;
+	struct bm_io_work *work =
+		container_of(w, struct bm_io_work, w);
+	struct drbd_device *device = work->device;
 	int rv = -EIO;
 
 	if (get_ldev(device)) {
@@ -3426,15 +3425,12 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 		put_ldev(device);
 	}
 
-	clear_bit_unlock(BITMAP_IO, &device->flags);
-	wake_up(&device->misc_wait);
+	if (!list_empty(&device->pending_bitmap_work))
+		wake_up(&device->misc_wait);
 
 	if (work->done)
 		work->done(device, rv);
-
-	clear_bit(BITMAP_IO_QUEUED, &device->flags);
-	work->why = NULL;
-	work->flags = 0;
+	kfree(work);
 
 	return 0;
 }
@@ -3473,6 +3469,19 @@ void drbd_go_diskless(struct drbd_device *device)
 		drbd_queue_work(&device->resource->work, &device->go_diskless);
 }
 
+void drbd_queue_pending_bitmap_work(struct drbd_device *device)
+{
+	unsigned long flags;
+	struct bm_io_work *work, *tmp;
+
+	spin_lock_irqsave(&device->resource->req_lock, flags);
+	list_for_each_entry_safe(work, tmp, &device->pending_bitmap_work, w.list) {
+		list_del(&work->w.list);
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &work->w);
+	}
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+}
+
 /**
  * drbd_queue_bitmap_io() - Queues an IO operation on the whole bitmap
  * @device:	DRBD device.
@@ -3490,19 +3499,17 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 			  void (*done)(struct drbd_device *, int),
 			  char *why, enum bm_flag flags)
 {
+	struct bm_io_work *bm_io_work;
+
 	D_ASSERT(device, current == first_peer_device(device)->connection->sender.task);
 
-	D_ASSERT(device, !test_bit(BITMAP_IO_QUEUED, &device->flags));
-	D_ASSERT(device, !test_bit(BITMAP_IO, &device->flags));
-	D_ASSERT(device, list_empty(&device->bm_io_work.w.list));
-	if (device->bm_io_work.why)
-		drbd_err(device, "FIXME going to queue '%s' but '%s' still pending?\n",
-			why, device->bm_io_work.why);
-
-	device->bm_io_work.io_fn = io_fn;
-	device->bm_io_work.done = done;
-	device->bm_io_work.why = why;
-	device->bm_io_work.flags = flags;
+	bm_io_work = kmalloc(sizeof(*bm_io_work), GFP_NOIO);
+	bm_io_work->w.cb = w_bitmap_io;
+	bm_io_work->device = device;
+	bm_io_work->io_fn = io_fn;
+	bm_io_work->done = done;
+	bm_io_work->why = why;
+	bm_io_work->flags = flags;
 
 	/*
 	 * Whole-bitmap operations can only take place when there is no
@@ -3512,26 +3519,28 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	 *  - device->ap_bio_cnt keeps track of the number of application I/O
 	 *    requests in progress.
 	 *
-	 *  - Flag BITMAP_IO in device->flags indicates that whole-bitmap I/O
-	 *    is pending, and no new application I/O should be started.  We
-	 *    make sure that this flag is visible system wide before trying
-	 *    to queue the whole-bitmap I/O.
+	 *  - A non-empty device->pending_bitmap_work list indicates that
+	 *    whole-bitmap I/O operations are pending, and no new application
+	 *    I/O should be started.  We make sure that the list doesn't appear
+	 *    empty system wide before trying to queue the whole-bitmap I/O.
 	 *
 	 *  - In dec_ap_bio(), we decrement device->ap_bio_cnt.  If it reaches
-	 *    zero and the BITMAP_IO flag is set, we queue the whole-bitmap
-	 *    operation.
+	 *    zero and the device->pending_bitmap_work list is non-empty, we
+	 *    queue the whole-bitmap operations.
 	 *
 	 *  - In inc_ap_bio(), we increment device->ap_bio_cnt before checking
-	 *    if the BITMAP_IO flag is set.  If the BITMAP_IO flag is set, we
-	 *    immediately call dec_ap_bio().
+	 *    if the device->pending_bitmap_work list is non-empty.  If
+	 *    device->pending_bitmap_work is non-empty, we immediately call
+	 *    dec_ap_bio().
 	 *
-	 * This ensures that whenver there is pending whole-bitmap I/O, the
-	 * BITMAP_IO flag is visible and device->ap_bio_cnt reaches zero in
-	 * dec_ap_bio(), which queues the whole-bitmap I/O.
+	 * This ensures that whenver there is pending whole-bitmap I/O, we
+	 * realize in dec_ap_bio().
+	 *
 	 */
 
-	set_bit(BITMAP_IO, &device->flags);
-	smp_wmb();
+	spin_lock(&device->resource->req_lock);
+	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work);
+	spin_unlock(&device->resource->req_lock);
 	atomic_inc(&device->ap_bio_cnt);
 	dec_ap_bio(device);
 }

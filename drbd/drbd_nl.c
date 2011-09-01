@@ -2395,7 +2395,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync. */
-	wait_event(device->misc_wait, !test_bit(BITMAP_IO, &device->flags));
+	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
 	retcode = _drbd_request_state(device, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
 
@@ -2917,7 +2917,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	}
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
-	wait_event(device->misc_wait, !test_bit(BITMAP_IO, &device->flags));
+	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	retcode = drbd_request_state(device,NS(conn,C_VERIFY_S));
 out:
 	drbd_adm_finish(info, retcode);

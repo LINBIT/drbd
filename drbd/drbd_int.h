@@ -505,9 +505,6 @@ enum {
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	SUSPEND_IO,		/* suspend application io */
-	BITMAP_IO,		/* suspend application io;
-				   once no more io in flight, start bitmap io */
-	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_IO_ERROR,		/* Local disk failed returned IO error */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
@@ -607,6 +604,7 @@ struct drbd_md_io {
 
 struct bm_io_work {
 	struct drbd_work w;
+	struct drbd_device *device;
 	char *why;
 	enum bm_flag flags;
 	int (*io_fn)(struct drbd_device *device);
@@ -844,7 +842,6 @@ struct drbd_device {
 	spinlock_t peer_seq_lock;
 	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
-	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
 	struct mutex own_state_mutex;
 	struct mutex *state_mutex; /* either own_state_mutex or first_peer_device(device)->connection->cstate_mutex */
@@ -858,6 +855,7 @@ struct drbd_device {
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
+	struct list_head pending_bitmap_work;
 	int peer_max_bio_size;
 	int local_max_bio_size;
 };
@@ -2020,6 +2018,8 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	return 1;
 }
 
+extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
+
 static inline void dec_ap_bio(struct drbd_device *device)
 {
 	int mxb = drbd_get_max_buffers(device);
@@ -2033,11 +2033,8 @@ static inline void dec_ap_bio(struct drbd_device *device)
 		wake_up(&device->misc_wait);
 	if (ap_bio == 0) {
 		smp_rmb();
-		if (test_bit(BITMAP_IO, &device->flags)) {
-			if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-				drbd_queue_work(&first_peer_device(device)->connection->data.work,
-						&device->bm_io_work.w);
-		}
+		if (!list_empty(&device->pending_bitmap_work))
+			drbd_queue_pending_bitmap_work(device);
 	}
 }
 
@@ -2069,7 +2066,7 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&device->ap_bio_cnt) > mxb)
 		return false;
-	if (test_bit(BITMAP_IO, &device->flags))
+	if (!list_empty(&device->pending_bitmap_work))
 		return false;
 	return true;
 }
