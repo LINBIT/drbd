@@ -3419,8 +3419,6 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 	struct bm_io_work *work = &device->bm_io_work;
 	int rv = -EIO;
 
-	D_ASSERT(device, atomic_read(&device->ap_bio_cnt) == 0);
-
 	if (get_ldev(device)) {
 		drbd_bm_lock(device, work->why, work->flags);
 		rv = work->io_fn(device);
@@ -3506,14 +3504,36 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	device->bm_io_work.why = why;
 	device->bm_io_work.flags = flags;
 
-	spin_lock_irq(&device->resource->req_lock);
+	/*
+	 * Whole-bitmap operations can only take place when there is no
+	 * concurrent application I/O.  We ensure exclusion between the two
+	 * types of I/O  with the following mechanism:
+	 *
+	 *  - device->ap_bio_cnt keeps track of the number of application I/O
+	 *    requests in progress.
+	 *
+	 *  - Flag BITMAP_IO in device->flags indicates that whole-bitmap I/O
+	 *    is pending, and no new application I/O should be started.  We
+	 *    make sure that this flag is visible system wide before trying
+	 *    to queue the whole-bitmap I/O.
+	 *
+	 *  - In dec_ap_bio(), we decrement device->ap_bio_cnt.  If it reaches
+	 *    zero and the BITMAP_IO flag is set, we queue the whole-bitmap
+	 *    operation.
+	 *
+	 *  - In inc_ap_bio(), we increment device->ap_bio_cnt before checking
+	 *    if the BITMAP_IO flag is set.  If the BITMAP_IO flag is set, we
+	 *    immediately call dec_ap_bio().
+	 *
+	 * This ensures that whenver there is pending whole-bitmap I/O, the
+	 * BITMAP_IO flag is visible and device->ap_bio_cnt reaches zero in
+	 * dec_ap_bio(), which queues the whole-bitmap I/O.
+	 */
+
 	set_bit(BITMAP_IO, &device->flags);
-	if (atomic_read(&device->ap_bio_cnt) == 0) {
-		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&device->bm_io_work.w);
-	}
-	spin_unlock_irq(&device->resource->req_lock);
+	smp_wmb();
+	atomic_inc(&device->ap_bio_cnt);
+	dec_ap_bio(device);
 }
 
 /**

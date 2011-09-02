@@ -2031,10 +2031,13 @@ static inline void dec_ap_bio(struct drbd_device *device)
 	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
 	if (ap_bio < mxb)
 		wake_up(&device->misc_wait);
-	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
-		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&device->bm_io_work.w);
+	if (ap_bio == 0) {
+		smp_rmb();
+		if (test_bit(BITMAP_IO, &device->flags)) {
+			if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
+				drbd_queue_work(&first_peer_device(device)->connection->data.work,
+						&device->bm_io_work.w);
+		}
 	}
 }
 
@@ -2075,11 +2078,12 @@ static inline bool inc_ap_bio_cond(struct drbd_device *device)
 {
 	bool rv = false;
 
+	atomic_inc(&device->ap_bio_cnt);
 	spin_lock_irq(&device->resource->req_lock);
 	rv = may_inc_ap_bio(device);
-	if (rv)
-		atomic_inc(&device->ap_bio_cnt);
 	spin_unlock_irq(&device->resource->req_lock);
+	if (!rv)
+		dec_ap_bio(device);
 
 	return rv;
 }
