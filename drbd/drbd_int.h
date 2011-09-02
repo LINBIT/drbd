@@ -2020,6 +2020,24 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	return 1;
 }
 
+static inline void dec_ap_bio(struct drbd_device *device)
+{
+	int mxb = drbd_get_max_buffers(device);
+	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
+
+	D_ASSERT(device, ap_bio >= 0);
+	/* this currently does wake_up for every dec_ap_bio!
+	 * maybe rather introduce some type of hysteresis?
+	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
+	if (ap_bio < mxb)
+		wake_up(&device->misc_wait);
+	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
+		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
+			drbd_queue_work(&first_peer_device(device)->connection->data.work,
+					&device->bm_io_work.w);
+	}
+}
+
 static inline int drbd_suspended(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
@@ -2077,24 +2095,6 @@ static inline void inc_ap_bio(struct drbd_device *device)
 	 * we need to atomic_inc within the spinlock. */
 
 	wait_event(device->misc_wait, inc_ap_bio_cond(device));
-}
-
-static inline void dec_ap_bio(struct drbd_device *device)
-{
-	int mxb = drbd_get_max_buffers(device);
-	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
-
-	D_ASSERT(device, ap_bio >= 0);
-	/* this currently does wake_up for every dec_ap_bio!
-	 * maybe rather introduce some type of hysteresis?
-	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
-	if (ap_bio < mxb)
-		wake_up(&device->misc_wait);
-	if (ap_bio == 0 && test_bit(BITMAP_IO, &device->flags)) {
-		if (!test_and_set_bit(BITMAP_IO_QUEUED, &device->flags))
-			drbd_queue_work(&first_peer_device(device)->connection->data.work,
-					&device->bm_io_work.w);
-	}
 }
 
 static inline int drbd_set_ed_uuid(struct drbd_device *device, u64 val)
