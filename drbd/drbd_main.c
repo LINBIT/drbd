@@ -3481,7 +3481,7 @@ void drbd_queue_pending_bitmap_work(struct drbd_device *device)
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	list_for_each_entry_safe(work, tmp, &device->pending_bitmap_work, w.list) {
 		list_del(&work->w.list);
-		drbd_queue_work(&first_peer_device(device)->connection->data.work, &work->w);
+		drbd_queue_work(&device->resource->work, &work->w);
 	}
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 }
@@ -3506,7 +3506,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 {
 	struct bm_io_work *bm_io_work;
 
-	D_ASSERT(device, current == first_peer_device(device)->connection->sender.task);
+	D_ASSERT(device, current == device->resource->worker.task);
 
 	bm_io_work = kmalloc(sizeof(*bm_io_work), GFP_NOIO);
 	bm_io_work->w.cb = w_bitmap_io;
@@ -3567,7 +3567,7 @@ int drbd_bitmap_io(struct drbd_device *device,
 {
 	int rv;
 
-	D_ASSERT(device, current != first_peer_device(device)->connection->sender.task);
+	D_ASSERT(device, current != device->resource->worker.task);
 
 	if ((flags & BM_LOCKED_SET_ALLOWED) == 0)
 		drbd_suspend_io(device);
