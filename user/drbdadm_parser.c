@@ -887,7 +887,8 @@ static void parse_device(struct d_name* on_hosts, unsigned *minor, char **device
 out:
 	for_each_host(h, on_hosts) {
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, *minor);
-		check_uniq("device", "device:%s:%s", h->name, *device);
+		if (*device)
+			check_uniq("device", "device:%s:%s", h->name, *device);
 	}
 }
 
@@ -1125,8 +1126,10 @@ static void parse_stacked_section(struct d_resource* res)
 	/* inherit device */
 	if (!host->device && res->device) {
 		host->device = strdup(res->device);
-		for_each_host(h, host->on_hosts)
-			check_uniq("device", "device:%s:%s", h->name, host->device);
+		for_each_host(h, host->on_hosts) {
+			if (host->device)
+				check_uniq("device", "device:%s:%s", h->name, host->device);
+		}
 	}
 
 	if (host->device_minor == -1U && res->device_minor != -1U) {
