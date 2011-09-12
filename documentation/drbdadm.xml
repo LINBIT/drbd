@@ -79,7 +79,7 @@
     <option>verify</option>, <option>pause-sync</option>, <option>resume-sync</option>,
     <option>role</option>, <option>csytate</option>, <option>dstate</option>,
     <option>create-md</option>, <option>show-gi</option>, <option>get-gi</option>,
-    <option>dump-md</option>, <option>wipe-md</option> are work on whole resources and on
+    <option>dump-md</option>, <option>wipe-md</option> work on whole resources and on
     individual volumes. </para>
 
     <para>Resource level only commands are: <option>connect</option>, <option>disconnect</option>,
