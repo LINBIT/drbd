@@ -2556,6 +2556,10 @@ int ctx_set_implicit_volume(struct cfg_ctx *ctx)
 	if (ctx->vol || !ctx->res)
 		return 0;
 
+	if (!ctx->res->me) {
+		return 0;
+	}
+
 	for_each_volume(vol, ctx->res->me->volumes) {
 		volumes++;
 		v = vol;
