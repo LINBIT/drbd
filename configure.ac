@@ -124,7 +124,7 @@ AC_PATH_PROG(DPKG_BUILDPACKAGE, dpkg-buildpackage)
 AC_PATH_PROG(UDEVADM, udevadm, [false], [/sbin$PATH_SEPARATOR$PATH])
 AC_PATH_PROG(UDEVINFO, udevinfo, [false], [/sbin$PATH_SEPARATOR$PATH])
 
-if test -z $CC; then
+if test -z "$CC"; then
    if test "$WITH_UTILS" = "yes"; then
       AC_MSG_ERROR([Cannot build utils without a C compiler, either install a compiler or pass the --without-utils option.])
    fi 
