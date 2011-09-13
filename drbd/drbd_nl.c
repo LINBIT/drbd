@@ -595,8 +595,16 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 	int forced = 0;
 	union drbd_state mask, val;
 
-	if (new_role == R_PRIMARY)
-		request_ping(first_peer_device(device)->connection); /* Detect a dead peer ASAP */
+	if (new_role == R_PRIMARY) {
+		struct drbd_connection *connection;
+
+		/* Detect dead peers as soon as possible.  */
+
+		rcu_read_lock();
+		for_each_connection(connection, device->resource)
+			request_ping(connection);
+		rcu_read_unlock();
+	}
 
 	mutex_lock(device->state_mutex);
 
