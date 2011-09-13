@@ -104,7 +104,8 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
-	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
@@ -115,8 +116,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 		__drbd_chk_io_error(device, DRBD_READ_ERROR);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
-	drbd_queue_work(&first_peer_device(device)->connection->sender_work,
-			&peer_req->w);
+	drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
 	put_ldev(device);
 }
 
@@ -131,7 +131,8 @@ static int is_failed_barrier(int ee_flags)
 static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
-	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 	struct drbd_interval i;
 	int do_wake;
 	u64 block_id;
@@ -187,7 +188,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	if (do_al_complete_io)
 		drbd_al_complete_io(device, &i);
 
-	wake_asender(first_peer_device(device)->connection);
+	wake_asender(peer_device->connection);
 	put_ldev(device);
 }
 
