@@ -848,7 +848,19 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 				put_ldev(device);
 			}
 		}
-		remote = !local && first_peer_device(device)->disk_state >= D_UP_TO_DATE;
+		if (!local) {
+			struct drbd_peer_device *peer_device;
+
+			rcu_read_lock();
+			for_each_peer_device(peer_device, device) {
+				if (peer_device->disk_state >= D_UP_TO_DATE) {
+					/* FIXME: Send read request to this peer. */
+					remote = 1;
+					break;
+				}
+			}
+			rcu_read_unlock();
+		}
 	}
 
 	/* If we have a disk, but a READA request is mapped to remote,
