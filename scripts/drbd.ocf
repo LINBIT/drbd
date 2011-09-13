@@ -228,7 +228,7 @@ drbd_set_status_variables() {
 	# also avoid the "state" -> "role" transition from drbd 8.2 -> 8.3.
 	# drbdadm --version was only introduced in 8.3.2.  so for older drbd
 	# versions we fall back to old-style state,dstate,cstate calls.
-	local _minor _res_name _known _cstate _role _peer _disk _pdisk
+	local _minor _res_name _known _cstate _role _peer _disk _pdsk
 	local _flags_susp _flags_aftr_isp _flags_peer_isp _flags_user_isp
 	local _resynced_percent
 
