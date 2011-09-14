@@ -58,7 +58,7 @@ struct drbd_connection;
 
 
 enum chg_state_flags {
-	CS_HARD	         = 1 << 0,
+	CS_HARD          = 1 << 0, /* Forced state change, such as a connection loss */
 	CS_VERBOSE       = 1 << 1,
 	CS_WAIT_COMPLETE = 1 << 2,
 	CS_SERIALIZE     = 1 << 3,
@@ -110,8 +110,6 @@ extern enum drbd_state_rv drbd_change_state(struct drbd_device *device,
 					    enum chg_state_flags f,
 					    union drbd_state mask,
 					    union drbd_state val);
-extern void drbd_force_state(struct drbd_device *, union drbd_state,
-			union drbd_state);
 extern enum drbd_state_rv _drbd_request_state(struct drbd_device *,
 					      union drbd_state,
 					      union drbd_state,

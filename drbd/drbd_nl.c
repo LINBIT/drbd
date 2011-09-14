@@ -1664,7 +1664,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
  force_diskless_dec:
 	put_ldev(device);
  force_diskless:
-	drbd_force_state(device, NS(disk, D_DISKLESS));
+	drbd_change_state(device, CS_HARD, NS(disk, D_DISKLESS));
 	drbd_md_sync(device);
  fail:
 	if (nbc) {
@@ -1691,7 +1691,7 @@ static int adm_detach(struct drbd_device *device, int force)
 	int ret;
 
 	if (force) {
-		drbd_force_state(device, NS(disk, D_FAILED));
+		drbd_change_state(device, CS_HARD, NS(disk, D_FAILED));
 		retcode = SS_SUCCESS;
 		goto out;
 	}

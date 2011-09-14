@@ -221,18 +221,6 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 	return rv;
 }
 
-/**
- * drbd_force_state() - Impose a change which happens outside our control on our state
- * @device:	DRBD device.
- * @mask:	mask of state bits to change.
- * @val:	value of new state bits.
- */
-void drbd_force_state(struct drbd_device *device,
-	union drbd_state mask, union drbd_state val)
-{
-	drbd_change_state(device, CS_HARD, mask, val);
-}
-
 STATIC enum drbd_state_rv
 _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	     union drbd_state val)

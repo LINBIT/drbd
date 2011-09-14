@@ -4054,7 +4054,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (ns.conn == C_MASK) {
 			ns.conn = C_CONNECTED;
 			if (device->state.disk == D_NEGOTIATING) {
-				drbd_force_state(device, NS(disk, D_FAILED));
+				drbd_change_state(device, CS_HARD, NS(disk, D_FAILED));
 			} else if (peer_state.disk == D_NEGOTIATING) {
 				drbd_err(device, "Disk attach process on the peer node was aborted.\n");
 				peer_state.disk = D_DISKLESS;
