@@ -713,6 +713,9 @@ struct drbd_peer_device {
 	enum drbd_repl_state repl_state;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
+	atomic_t packet_seq;
+	unsigned int peer_seq;
+	spinlock_t peer_seq_lock;
 };
 
 struct drbd_device {
@@ -840,9 +843,6 @@ struct drbd_device {
 	int al_tr_cycle;
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	wait_queue_head_t seq_wait;
-	atomic_t packet_seq;
-	unsigned int peer_seq;
-	spinlock_t peer_seq_lock;
 	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 ed_uuid; /* UUID of the exposed data */

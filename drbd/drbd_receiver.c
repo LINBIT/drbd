@@ -829,8 +829,8 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	struct drbd_device *device = peer_device->device;
 	int err;
 
-	atomic_set(&device->packet_seq, 0);
-	device->peer_seq = 0;
+	atomic_set(&peer_device->packet_seq, 0);
+	peer_device->peer_seq = 0;
 
 	device->state_mutex = peer_device->connection->agreed_pro_version < 100 ?
 		&peer_device->connection->cstate_mutex :
@@ -2020,17 +2020,16 @@ static bool need_peer_seq(struct drbd_peer_device *peer_device)
 
 static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int peer_seq)
 {
-	struct drbd_device *device = peer_device->device;
 	unsigned int newest_peer_seq;
 
 	if (need_peer_seq(peer_device)) {
-		spin_lock(&device->peer_seq_lock);
-		newest_peer_seq = seq_max(device->peer_seq, peer_seq);
-		device->peer_seq = newest_peer_seq;
-		spin_unlock(&device->peer_seq_lock);
-		/* wake up only if we actually changed device->peer_seq */
+		spin_lock(&peer_device->peer_seq_lock);
+		newest_peer_seq = seq_max(peer_device->peer_seq, peer_seq);
+		peer_device->peer_seq = newest_peer_seq;
+		spin_unlock(&peer_device->peer_seq_lock);
+		/* wake up only if we actually changed peer_device->peer_seq */
 		if (peer_seq == newest_peer_seq)
-			wake_up(&device->seq_wait);
+			wake_up(&peer_device->device->seq_wait);
 	}
 }
 
@@ -2043,9 +2042,9 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
  *
  * Note: we don't care for Ack packets overtaking P_DATA packets.
  *
- * In case packet_seq is larger than device->peer_seq number, there are
+ * In case packet_seq is larger than peer_device->peer_seq number, there are
  * outstanding packets on the msock. We wait for them to arrive.
- * In case we are the logically next packet, we update device->peer_seq
+ * In case we are the logically next packet, we update peer_device->peer_seq
  * ourselves. Correctly handles 32bit wrap around.
  *
  * Assume we have a 10 GBit connection, that is about 1<<30 byte per second,
@@ -2057,7 +2056,6 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
  * -ERESTARTSYS if we were interrupted (by disconnect signal). */
 static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, const u32 peer_seq)
 {
-	struct drbd_device *device = peer_device->device;
 	DEFINE_WAIT(wait);
 	long timeout;
 	int ret;
@@ -2065,10 +2063,10 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	if (!need_peer_seq(peer_device))
 		return 0;
 
-	spin_lock(&device->peer_seq_lock);
+	spin_lock(&peer_device->peer_seq_lock);
 	for (;;) {
-		if (!seq_greater(peer_seq - 1, device->peer_seq)) {
-			device->peer_seq = seq_max(device->peer_seq, peer_seq);
+		if (!seq_greater(peer_seq - 1, peer_device->peer_seq)) {
+			peer_device->peer_seq = seq_max(peer_device->peer_seq, peer_seq);
 			ret = 0;
 			break;
 		}
@@ -2076,21 +2074,21 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 			ret = -ERESTARTSYS;
 			break;
 		}
-		prepare_to_wait(&device->seq_wait, &wait, TASK_INTERRUPTIBLE);
-		spin_unlock(&device->peer_seq_lock);
+		prepare_to_wait(&peer_device->device->seq_wait, &wait, TASK_INTERRUPTIBLE);
+		spin_unlock(&peer_device->peer_seq_lock);
 		rcu_read_lock();
 		timeout = rcu_dereference(peer_device->connection->net_conf)->ping_timeo*HZ/10;
 		rcu_read_unlock();
 		timeout = schedule_timeout(timeout);
-		spin_lock(&device->peer_seq_lock);
+		spin_lock(&peer_device->peer_seq_lock);
 		if (!timeout) {
 			ret = -ETIMEDOUT;
-			drbd_err(device, "Timed out waiting for missing ack packets; disconnecting\n");
+			drbd_err(peer_device, "Timed out waiting for missing ack packets; disconnecting\n");
 			break;
 		}
 	}
-	spin_unlock(&device->peer_seq_lock);
-	finish_wait(&device->seq_wait, &wait);
+	spin_unlock(&peer_device->peer_seq_lock);
+	finish_wait(&peer_device->device->seq_wait, &wait);
 	return ret;
 }
 

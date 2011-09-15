@@ -1529,7 +1529,7 @@ STATIC int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet
 	p->sector = sector;
 	p->block_id = block_id;
 	p->blksize = blksize;
-	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->device->packet_seq));
+	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
 	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
 }
 
@@ -1835,7 +1835,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
-	p->seq_num = cpu_to_be32(req->seq_num = atomic_inc_return(&device->packet_seq));
+	p->seq_num = cpu_to_be32(req->seq_num = atomic_inc_return(&peer_device->packet_seq));
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio->bi_rw);
 	if (peer_device->repl_state >= L_SYNC_SOURCE && peer_device->repl_state <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
@@ -2130,7 +2130,6 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	device->state_mutex = &device->own_state_mutex;
 
 	spin_lock_init(&device->al_lock);
-	spin_lock_init(&device->peer_seq_lock);
 	spin_lock_init(&device->epoch_lock);
 
 	INIT_LIST_HEAD(&device->active_ee);
@@ -2900,6 +2899,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		peer_device->device = device;
 		peer_device->disk_state = D_UNKNOWN;
 		peer_device->repl_state = L_STANDALONE;
+		spin_lock_init(&peer_device->peer_seq_lock);
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);
