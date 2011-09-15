@@ -1753,6 +1753,13 @@ int drbd_sender(struct drbd_thread *thi)
 	int vnr, intr = 0;
 	int cork;
 
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		peer_device->send_cnt = 0;
+		peer_device->recv_cnt = 0;
+	}
+	rcu_read_unlock();
+
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 

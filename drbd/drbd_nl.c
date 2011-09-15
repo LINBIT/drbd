@@ -1544,8 +1544,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	    !(device->state.role == R_PRIMARY && device->resource->susp_nod))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
-	device->send_cnt = 0;
-	device->recv_cnt = 0;
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
@@ -2132,9 +2130,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		struct drbd_device *device = peer_device->device;
-		device->send_cnt = 0;
-		device->recv_cnt = 0;
+		peer_device->send_cnt = 0;
+		peer_device->recv_cnt = 0;
 	}
 	rcu_read_unlock();
 

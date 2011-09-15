@@ -1626,7 +1626,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 			return NULL;
 		}
 	}
-	device->recv_cnt += data_size>>9;
+	peer_device->recv_cnt += data_size >> 9;
 	return peer_req;
 }
 
@@ -1678,7 +1678,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 
 	/* optimistically update recv_cnt.  if receiving fails below,
 	 * we disconnect anyways, and counters will be reset. */
-	peer_device->device->recv_cnt += data_size>>9;
+	peer_device->recv_cnt += data_size >> 9;
 
 	bio = req->master_bio;
 	D_ASSERT(peer_device->device, sector == bio->bi_sector);

@@ -246,6 +246,15 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		    device->state.role == R_SECONDARY) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
 		} else {
+			struct drbd_peer_device *peer_device;
+			unsigned int send_cnt = 0;
+			unsigned int recv_cnt = 0;
+
+			for_each_peer_device(peer_device, device) {
+				send_cnt += peer_device->send_cnt;
+				recv_cnt += peer_device->recv_cnt;
+			}
+
 			nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 			wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
 			seq_printf(seq,
@@ -264,8 +273,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   device->state.user_isp ? 'u' : '-',
 			   device->congestion_reason ?: '-',
 			   test_bit(AL_SUSPENDED, &device->flags) ? 's' : '-',
-			   device->send_cnt/2,
-			   device->recv_cnt/2,
+			   send_cnt/2,
+			   recv_cnt/2,
 			   device->writ_cnt/2,
 			   device->read_cnt/2,
 			   device->al_writ_cnt,

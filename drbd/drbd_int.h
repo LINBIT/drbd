@@ -711,6 +711,8 @@ struct drbd_peer_device {
 	struct drbd_connection *connection;
 	enum drbd_disk_state disk_state;
 	enum drbd_repl_state repl_state;
+	unsigned int send_cnt;
+	unsigned int recv_cnt;
 };
 
 struct drbd_device {
@@ -756,8 +758,6 @@ struct drbd_device {
 	union drbd_dev_state state;
 	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  /* upon each state change. */
-	unsigned int send_cnt;
-	unsigned int recv_cnt;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;

@@ -1692,7 +1692,7 @@ STATIC int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 	err = drbd_send_all(peer_device->connection, socket, addr, size, msg_flags);
 	kunmap(page);
 	if (!err)
-		peer_device->device->send_cnt += size >> 9;
+		peer_device->send_cnt += size >> 9;
 	return err;
 }
 
@@ -1740,7 +1740,7 @@ STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 
 	if (len == 0) {
 		err = 0;
-		peer_device->device->send_cnt += size >> 9;
+		peer_device->send_cnt += size >> 9;
 	}
 	return err;
 }
@@ -2190,8 +2190,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	device->al_writ_cnt  =
 	device->bm_writ_cnt  =
 	device->read_cnt     =
-	device->recv_cnt     =
-	device->send_cnt     =
 	device->writ_cnt     =
 	device->p_size       =
 	device->rs_start     =
