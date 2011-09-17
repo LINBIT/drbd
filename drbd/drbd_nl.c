@@ -2787,6 +2787,24 @@ out:
 }
 
 /*
+ * The generic netlink dump callbacks are called outside the genl_lock(), so
+ * they cannot use the simple attribute parsing code which uses global
+ * attribute tables.
+ */
+static struct nlattr *find_cfg_context_attr(const struct nlmsghdr *nlh, int attr)
+{
+	const unsigned hdrlen = GENL_HDRLEN + GENL_MAGIC_FAMILY_HDRSZ;
+	const int maxtype = ARRAY_SIZE(drbd_cfg_context_nl_policy) - 1;
+	struct nlattr *nla;
+
+	nla = nla_find(nlmsg_attrdata(nlh, hdrlen), nlmsg_attrlen(nlh, hdrlen),
+		       DRBD_NLA_CFG_CONTEXT);
+	if (!nla)
+		return NULL;
+	return drbd_nla_find_nested(maxtype, nla, __nla_type(attr));
+}
+
+/*
  * Request status of all resources, or of all volumes within a single resource.
  *
  * This is a dump, as the answer may not fit in a single reply skb otherwise.
@@ -2798,11 +2816,9 @@ out:
  */
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	const unsigned hdrlen = GENL_HDRLEN + GENL_MAGIC_FAMILY_HDRSZ;
 	struct nlattr *nla;
 	const char *resource_name;
 	struct drbd_resource *resource;
-	int maxtype;
 
 	/* Is this a followup call? */
 	if (cb->args[0]) {
@@ -2813,22 +2829,11 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb)
 		goto dump;
 	}
 
-	/* First call (from netlink_dump_start).  We need to figure out
-	 * which resource(s) the user wants us to dump. */
-	nla = nla_find(nlmsg_attrdata(cb->nlh, hdrlen),
-			nlmsg_attrlen(cb->nlh, hdrlen),
-			DRBD_NLA_CFG_CONTEXT);
-
-	/* No explicit context given.  Dump all. */
-	if (!nla)
-		goto dump;
-	maxtype = ARRAY_SIZE(drbd_cfg_context_nl_policy) - 1;
-	nla = drbd_nla_find_nested(maxtype, nla, __nla_type(T_ctx_resource_name));
+	nla = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
 	if (IS_ERR(nla))
 		return PTR_ERR(nla);
-	/* context given, but no name present? */
 	if (!nla)
-		return -EINVAL;
+		goto dump;
 	resource_name = nla_data(nla);
 	if (!*resource_name)
 		return -ENODEV;
