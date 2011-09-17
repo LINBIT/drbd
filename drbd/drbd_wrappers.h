@@ -1092,4 +1092,16 @@ static inline void kref_sub(struct kref *kref, unsigned int count,
 }
 #endif
 
+/*
+ * list_for_each_entry_continue_rcu() was introduced in mainline commit
+ * 254245d2 (v2.6.33-rc1).
+ */
+#ifndef list_for_each_entry_continue_rcu
+#define list_for_each_entry_continue_rcu(pos, head, member)             \
+	for (pos = list_entry_rcu(pos->member.next, typeof(*pos), member); \
+	     &pos->member != (head);    \
+	     pos = list_entry_rcu(pos->member.next, typeof(*pos), member))
+
+#endif
+
 #endif
