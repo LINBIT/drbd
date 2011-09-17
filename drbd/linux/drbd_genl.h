@@ -361,3 +361,9 @@ GENL_op(DRBD_ADM_GET_TIMEOUT_TYPE, 26, GENL_doit(drbd_adm_get_timeout_type),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED))
 GENL_op(DRBD_ADM_DOWN,		27, GENL_doit(drbd_adm_down),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED))
+
+GENL_op(DRBD_ADM_GET_RESOURCES, 30,
+	GENL_op_init(
+		.dumpit = drbd_adm_dump_resources,
+	),
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
