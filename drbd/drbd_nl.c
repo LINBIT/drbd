@@ -2569,14 +2569,13 @@ static struct drbd_connection *the_only_connection(struct drbd_resource *resourc
 	return list_first_entry(&resource->connections, struct drbd_connection, connections);
 }
 
-int nla_put_status_info(struct sk_buff *skb, struct drbd_device *device,
-		const struct sib_info *sib)
+static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resource,
+			       struct drbd_device *device, const struct sib_info *sib)
 {
-	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
 	struct state_info *si = NULL; /* for sizeof(si->member); */
-	struct net_conf *nc;
 	struct nlattr *nla;
-	int got_ldev;
+	int got_ldev = 0;
 	int err = 0;
 	int exclude_sensitive;
 
@@ -2593,67 +2592,75 @@ int nla_put_status_info(struct sk_buff *skb, struct drbd_device *device,
 	 * always in the context of the receiving process */
 	exclude_sensitive = sib || !capable(CAP_SYS_ADMIN);
 
-	got_ldev = get_ldev(device);
+	if (device)
+		got_ldev = get_ldev(device);
 
-	/* We need to add connection name and volume number information still.
-	 * Minor number is in drbd_genlmsghdr. */
-	if (nla_put_drbd_cfg_context(skb, resource, the_only_connection(resource), device))
+	connection = the_only_connection(resource);
+	if (nla_put_drbd_cfg_context(skb, resource, connection, device))
 		goto nla_put_failure;
 
-	if (res_opts_to_skb(skb, &device->resource->res_opts, exclude_sensitive))
+	if (res_opts_to_skb(skb, &resource->res_opts, exclude_sensitive))
 		goto nla_put_failure;
 
 	rcu_read_lock();
-	if (got_ldev)
-		if (disk_conf_to_skb(skb, rcu_dereference(device->ldev->disk_conf), exclude_sensitive))
-			goto nla_put_failure;
+	if (got_ldev) {
+		struct disk_conf *disk_conf;
 
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
-	if (nc)
-		err = net_conf_to_skb(skb, nc, exclude_sensitive);
+		disk_conf = rcu_dereference(device->ldev->disk_conf);
+		err = disk_conf_to_skb(skb, disk_conf, exclude_sensitive);
+	}
+	if (!err && connection) {
+		struct net_conf *net_conf;
+
+		net_conf = rcu_dereference(connection->net_conf);
+		if (net_conf)
+			err = net_conf_to_skb(skb, net_conf, exclude_sensitive);
+	}
 	rcu_read_unlock();
 	if (err)
 		goto nla_put_failure;
 
-	nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
-	if (!nla)
-		goto nla_put_failure;
-	NLA_PUT_U32(skb, T_sib_reason, sib ? sib->sib_reason : SIB_GET_STATUS_REPLY);
-	NLA_PUT_U32(skb, T_current_state, device->state.i);
-	NLA_PUT_U64(skb, T_ed_uuid, device->ed_uuid);
-	NLA_PUT_U64(skb, T_capacity, drbd_get_capacity(device->this_bdev));
+	if (device) {
+		nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
+		if (!nla)
+			goto nla_put_failure;
+		NLA_PUT_U32(skb, T_sib_reason, sib ? sib->sib_reason : SIB_GET_STATUS_REPLY);
+		NLA_PUT_U32(skb, T_current_state, device->state.i);
+		NLA_PUT_U64(skb, T_ed_uuid, device->ed_uuid);
+		NLA_PUT_U64(skb, T_capacity, drbd_get_capacity(device->this_bdev));
 
-	if (got_ldev) {
-		NLA_PUT_U32(skb, T_disk_flags, device->ldev->md.flags);
-		NLA_PUT(skb, T_uuids, sizeof(si->uuids), device->ldev->md.uuid);
-		NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
-		NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
-		if (C_SYNC_SOURCE <= device->state.conn &&
-		    C_PAUSED_SYNC_T >= device->state.conn) {
-			NLA_PUT_U64(skb, T_bits_rs_total, device->rs_total);
-			NLA_PUT_U64(skb, T_bits_rs_failed, device->rs_failed);
+		if (got_ldev) {
+			NLA_PUT_U32(skb, T_disk_flags, device->ldev->md.flags);
+			NLA_PUT(skb, T_uuids, sizeof(si->uuids), device->ldev->md.uuid);
+			NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
+			NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
+			if (C_SYNC_SOURCE <= device->state.conn &&
+			    C_PAUSED_SYNC_T >= device->state.conn) {
+				NLA_PUT_U64(skb, T_bits_rs_total, device->rs_total);
+				NLA_PUT_U64(skb, T_bits_rs_failed, device->rs_failed);
+			}
 		}
-	}
 
-	if (sib) {
-		switch(sib->sib_reason) {
-		case SIB_SYNC_PROGRESS:
-		case SIB_GET_STATUS_REPLY:
-			break;
-		case SIB_STATE_CHANGE:
-			NLA_PUT_U32(skb, T_prev_state, sib->os.i);
-			NLA_PUT_U32(skb, T_new_state, sib->ns.i);
-			break;
-		case SIB_HELPER_POST:
-			NLA_PUT_U32(skb,
-				T_helper_exit_code, sib->helper_exit_code);
-			/* fall through */
-		case SIB_HELPER_PRE:
-			NLA_PUT_STRING(skb, T_helper, sib->helper_name);
-			break;
+		if (sib) {
+			switch(sib->sib_reason) {
+			case SIB_SYNC_PROGRESS:
+			case SIB_GET_STATUS_REPLY:
+				break;
+			case SIB_STATE_CHANGE:
+				NLA_PUT_U32(skb, T_prev_state, sib->os.i);
+				NLA_PUT_U32(skb, T_new_state, sib->ns.i);
+				break;
+			case SIB_HELPER_POST:
+				NLA_PUT_U32(skb,
+					T_helper_exit_code, sib->helper_exit_code);
+				/* fall through */
+			case SIB_HELPER_PRE:
+				NLA_PUT_STRING(skb, T_helper, sib->helper_name);
+				break;
+			}
 		}
+		nla_nest_end(skb, nla);
 	}
-	nla_nest_end(skb, nla);
 
 	if (0)
 nla_put_failure:
@@ -2665,6 +2672,7 @@ nla_put_failure:
 
 int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 	int err;
 
@@ -2674,7 +2682,8 @@ int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	err = nla_put_status_info(adm_ctx.reply_skb, adm_ctx.device, NULL);
+	resource = adm_ctx.device->resource;
+	err = nla_put_status_info(adm_ctx.reply_skb, resource, adm_ctx.device, NULL);
 	if (err) {
 		nlmsg_free(adm_ctx.reply_skb);
 		return err;
@@ -2755,40 +2764,13 @@ next_resource:
 				NLM_F_MULTI, DRBD_ADM_GET_STATUS);
 		if (!dh)
 			goto out;
-
-		if (!device) {
-			/* This is a connection without a single volume.
-			 * Suprisingly enough, it may have a network
-			 * configuration. */
-			struct drbd_connection *connection;
-
-			dh->minor = -1U;
-			dh->ret_code = NO_ERROR;
-			connection = the_only_connection(resource);
-			if (nla_put_drbd_cfg_context(skb, resource, connection, NULL))
-				goto cancel;
-			if (connection) {
-				struct net_conf *nc;
-
-				nc = rcu_dereference(connection->net_conf);
-				if (nc && net_conf_to_skb(skb, nc, 1) != 0)
-					goto cancel;
-			}
-			goto done;
-		}
-
-		D_ASSERT(device, device->vnr == volume);
-		D_ASSERT(device, device->resource == resource);
-
-		dh->minor = mdev_to_minor(device);
+		dh->minor = device ? mdev_to_minor(device) : -1U;
 		dh->ret_code = NO_ERROR;
 
-		if (nla_put_status_info(skb, device, NULL)) {
-cancel:
+		if (nla_put_status_info(skb, resource, device, NULL)) {
 			genlmsg_cancel(skb, dh);
 			goto out;
 		}
-done:
 		genlmsg_end(skb, dh);
         }
 
@@ -3230,7 +3212,7 @@ void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib)
 	d_out->minor = mdev_to_minor(device);
 	d_out->ret_code = NO_ERROR;
 
-	if (nla_put_status_info(msg, device, sib))
+	if (nla_put_status_info(msg, device->resource, device, sib))
 		goto nla_put_failure;
 	genlmsg_end(msg, d_out);
 	err = drbd_genl_multicast_events(msg, 0);
