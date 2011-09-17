@@ -367,3 +367,9 @@ GENL_op(DRBD_ADM_GET_RESOURCES, 30,
 		.dumpit = drbd_adm_dump_resources,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
+
+GENL_op(DRBD_ADM_GET_DEVICES, 31,
+	GENL_op_init(
+		.dumpit = drbd_adm_dump_devices,
+	),
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))

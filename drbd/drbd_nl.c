@@ -99,6 +99,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 /* .dumpit */
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
 #include "drbd_nla.h"
@@ -2893,6 +2894,71 @@ put_result:
 	if (err)
 		goto out;
 	cb->args[0] = (long)resource;
+	genlmsg_end(skb, dh);
+	err = 0;
+
+out:
+	rcu_read_unlock();
+	if (err)
+		return err;
+	return skb->len;
+}
+
+int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct nlattr *resource_filter;
+	struct drbd_resource *resource = NULL;
+	struct drbd_device *device;
+	int minor, err, retcode;
+	struct drbd_genlmsghdr *dh;
+
+	retcode = ERR_INVALID_REQUEST;
+	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+	if (!resource_filter)
+		goto put_result;
+	retcode = ERR_RES_NOT_KNOWN;
+	resource = drbd_find_resource(nla_data(resource_filter));
+	if (!resource)
+		goto put_result;
+
+	rcu_read_lock();
+	minor = cb->args[0];
+	device = idr_get_next(&resource->devices, &minor);
+	if (!device) {
+		err = 0;
+		goto out;
+	}
+	idr_for_each_entry_continue(&resource->devices, device, minor) {
+		retcode = NO_ERROR;
+		break;  /* only one iteration */
+	}
+	err = 0;
+	goto out;  /* no more devices */
+
+put_result:
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+			cb->nlh->nlmsg_seq, &drbd_genl_family,
+			NLM_F_MULTI, DRBD_ADM_GET_DEVICES);
+	err = -ENOMEM;
+	if (!dh)
+		goto out;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode == NO_ERROR) {
+		dh->minor = device->minor;
+		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device);
+		if (err)
+			goto out;
+		if (get_ldev(device)) {
+			struct disk_conf *disk_conf =
+				rcu_dereference(device->ldev->disk_conf);
+			err = disk_conf_to_skb(skb, disk_conf, !capable(CAP_SYS_ADMIN));
+			put_ldev(device);
+			if (err)
+				goto out;
+		}
+		cb->args[0] = minor + 1;
+	}
 	genlmsg_end(skb, dh);
 	err = 0;
 
