@@ -412,7 +412,7 @@ static const char *error_messages[] = {
 	EM(ERR_RES_NOT_KNOWN) = "Unknown resource",
 	EM(ERR_RES_IN_USE) = "Resource still in use (delete all minors first)",
 	EM(ERR_MINOR_CONFIGURED) = "Minor still configured (down it first)",
-	EM(ERR_MINOR_EXISTS) = "Minor exists already (delete it first)",
+	EM(ERR_MINOR_OR_VOLUME_EXISTS) = "Minor or volume exists already (delete it first)",
 	EM(ERR_INVALID_REQUEST) = "Invalid configuration request",
 	EM(ERR_NEED_APV_100) = "Prot version 100 required in order to change\n"
 	"these network options while connected",

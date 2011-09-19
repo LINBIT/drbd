@@ -2814,7 +2814,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	device = minor_to_mdev(minor);
 	if (device)
-		return ERR_MINOR_EXISTS;
+		return ERR_MINOR_OR_VOLUME_EXISTS;
 
 	/* GFP_KERNEL, we are outside of all write-out paths */
 	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
@@ -2884,7 +2884,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	    idr_get_new_above(&drbd_devices, device, minor, &got))
 		goto out_no_minor_idr;
 	if (got != minor) {
-		err = ERR_MINOR_EXISTS;
+		err = ERR_MINOR_OR_VOLUME_EXISTS;
 		drbd_msg_put_info("requested minor exists already");
 		idr_remove(&drbd_devices, got);
 		goto out_idr_synchronize_rcu;
