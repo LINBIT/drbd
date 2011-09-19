@@ -2659,10 +2659,6 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
-		/*
-		retcode = ERR_NOMEM;
-		drbd_msg_put_info("unable to allocate cpumask");
-		*/
 
 	/* silently ignore cpu mask on UP kernel */
 	if (nr_cpu_ids > 1 && res_opts->cpu_mask[0] != 0) {
@@ -2885,7 +2881,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		goto out_no_minor_idr;
 	if (got != minor) {
 		err = ERR_MINOR_OR_VOLUME_EXISTS;
-		drbd_msg_put_info("requested minor exists already");
 		idr_remove(&drbd_devices, got);
 		goto out_idr_synchronize_rcu;
 	}
@@ -2895,8 +2890,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	    idr_get_new_above(&resource->devices, device, vnr, &got))
 		goto out_idr_remove_minor;
 	if (got != vnr) {
-		err = ERR_INVALID_REQUEST;
-		drbd_msg_put_info("requested volume exists already");
+		err = ERR_MINOR_OR_VOLUME_EXISTS;
 		idr_remove(&resource->devices, got);
 		goto out_idr_remove_minor;
 	}
