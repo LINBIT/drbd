@@ -2617,10 +2617,6 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
-		/*
-		retcode = ERR_NOMEM;
-		drbd_msg_put_info("unable to allocate cpumask");
-		*/
 
 	/* silently ignore cpu mask on UP kernel */
 	if (nr_cpu_ids > 1 && res_opts->cpu_mask[0] != 0) {
@@ -2891,20 +2887,16 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_KERNEL);
 	if (id < 0) {
-		if (id == -ENOSPC) {
+		if (id == -ENOSPC)
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
-			drbd_msg_put_info(adm_ctx->reply_skb, "requested minor exists already");
-		}
 		goto out_no_minor_idr;
 	}
 	kref_get(&device->kref);
 
 	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
 	if (id < 0) {
-		if (id == -ENOSPC) {
+		if (id == -ENOSPC)
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
-			drbd_msg_put_info(adm_ctx->reply_skb, "requested minor exists already");
-		}
 		goto out_idr_remove_minor;
 	}
 	kref_get(&device->kref);
@@ -2923,10 +2915,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 		id = idr_alloc(&connection->peer_devices, peer_device, vnr, vnr + 1, GFP_KERNEL);
 		if (id < 0) {
-			if (id == -ENOSPC) {
+			if (id == -ENOSPC)
 				err = ERR_INVALID_REQUEST;
-				drbd_msg_put_info(adm_ctx->reply_skb, "requested volume exists already");
-			}
 			goto out_idr_remove_from_resource;
 		}
 		kref_get(&connection->kref);
@@ -2934,7 +2924,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
-		drbd_msg_put_info(adm_ctx->reply_skb, "unable to create submit workqueue");
 		goto out_idr_remove_vol;
 	}
 
