@@ -100,6 +100,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
 #include "drbd_nla.h"
@@ -2964,6 +2965,79 @@ put_result:
 
 out:
 	rcu_read_unlock();
+	if (err)
+		return err;
+	return skb->len;
+}
+
+int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct nlattr *resource_filter;
+	struct drbd_resource *resource = NULL;
+	struct drbd_connection *connection;
+	int err, retcode;
+	struct drbd_genlmsghdr *dh;
+
+	retcode = ERR_INVALID_REQUEST;
+	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+	if (!resource_filter)
+		goto put_result;
+	retcode = ERR_RES_NOT_KNOWN;
+	resource = drbd_find_resource(nla_data(resource_filter));
+	if (!resource)
+		goto put_result;
+
+	mutex_lock(&resource->conf_update);
+	rcu_read_lock();
+	if (cb->args[0]) {
+		for_each_connection_rcu(connection, resource)
+			if (connection == (struct drbd_connection *)cb->args[0])
+				goto found_resource;
+		err = 0;  /* connection was probably deleted */
+		goto out;
+	}
+	connection = list_entry(&resource->connections, struct drbd_connection, connections);
+
+found_resource:
+	list_for_each_entry_continue_rcu(connection, &resource->connections, connections) {
+		if (connection->my_addr_len == 0 || connection->peer_addr_len == 0)
+			continue;
+
+		retcode = NO_ERROR;
+		break;  /* only one iteration */
+	}
+	err = 0;
+	goto out;  /* no more connections */
+
+put_result:
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+			cb->nlh->nlmsg_seq, &drbd_genl_family,
+			NLM_F_MULTI, DRBD_ADM_GET_CONNECTIONS);
+	err = -ENOMEM;
+	if (!dh)
+		goto out;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode == NO_ERROR) {
+		struct net_conf *net_conf;
+
+		err = nla_put_drbd_cfg_context(skb, resource, connection, NULL);
+		if (err)
+			goto out;
+		net_conf = rcu_dereference(connection->net_conf);
+		if (net_conf) {
+			err = net_conf_to_skb(skb, net_conf, !capable(CAP_SYS_ADMIN));
+			if (err)
+				goto out;
+		}
+		cb->args[0] = (long)connection;
+	}
+	genlmsg_end(skb, dh);
+	err = 0;
+
+out:
+	rcu_read_unlock();
+	mutex_unlock(&resource->conf_update);
 	if (err)
 		return err;
 	return skb->len;
