@@ -213,6 +213,20 @@ static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, st
 static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 
+struct resources_list {
+	struct resources_list *next;
+	char *name;
+};
+static struct resources_list *list_resources(void);
+static void free_resources(struct resources_list *);
+
+struct minors_list {
+	struct minors_list *next;
+	unsigned minor;
+};
+static struct minors_list *enumerate_minors(void);
+static void free_minors(struct minors_list *);
+
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
@@ -1330,10 +1344,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	dump_argv(argc, argv, optind, 0);
 
-	/* otherwise we need to change handling/parsing
-	 * of expected replies */
-	ASSERT(cm->cmd_id == DRBD_ADM_GET_STATUS);
-
 	if (cm->wait_for_connect_timeouts) {
 		/* wait-connect, wait-sync */
 		int rr;
@@ -1579,10 +1589,60 @@ static void show_address(void* address, int addr_len)
 	}
 }
 
-struct minors_list {
-	struct minors_list *next;
-	unsigned minor;
-};
+struct resources_list *__remembered_resources, **__remembered_resources_tail;
+
+static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info)
+{
+	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&cfg, info);
+	if (cfg.ctx_resource_name) {
+		struct resources_list *r = malloc(sizeof(*r));
+		r->next = NULL;
+		r->name = strdup(cfg.ctx_resource_name);
+		*__remembered_resources_tail = r;
+		__remembered_resources_tail = &r->next;
+	}
+	return 0;
+}
+
+static void free_resources(struct resources_list *resources)
+{
+	while (resources) {
+		struct resources_list *r = resources;
+		resources = resources->next;
+		free(r->name);
+		free(r);
+	}
+}
+
+/*
+ * Expects objname to be set to the resource name or "all".
+ */
+static struct resources_list *list_resources(void)
+{
+	struct drbd_cmd cmd = {
+		.cmd_id = DRBD_ADM_GET_RESOURCES,
+		.show_function = remember_resource,
+		.missing_ok = false,
+	};
+	struct resources_list *r;
+	int err;
+
+	__remembered_resources_tail = &__remembered_resources;
+	err = generic_get_cmd(&cmd, 0, NULL);
+	r = __remembered_resources;
+	__remembered_resources = NULL;
+	if (err) {
+		free_resources(r);
+		r = NULL;
+	}
+	return r;
+}
+
 struct minors_list *__remembered_minors;
 
 static int remember_minor(struct drbd_cmd *cmd, struct genl_info *info)
