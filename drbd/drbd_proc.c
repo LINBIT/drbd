@@ -243,7 +243,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 		if (first_peer_device(device)->repl_state == L_STANDALONE &&
 		    device->disk_state == D_DISKLESS &&
-		    device->state.role == R_SECONDARY) {
+		    device->resource->role == R_SECONDARY) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
 		} else {
 			struct drbd_peer_device *peer_device;
@@ -262,7 +262,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 			   i, sn,
-			   drbd_role_str(device->state.role),
+			   drbd_role_str(device->resource->role),
 			   drbd_role_str(device->state.peer),
 			   drbd_disk_str(device->disk_state),
 			   drbd_disk_str(first_peer_device(device)->disk_state),

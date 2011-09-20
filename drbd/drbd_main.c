@@ -2055,10 +2055,9 @@ static int drbd_open(struct inode *inode, struct file *file)
 	int rv = 0;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	/* to have a stable device->state.role
-	 * and no race with updating open_cnt */
+	/* to have a stable role and no race with updating open_cnt */
 
-	if (device->state.role != R_PRIMARY) {
+	if (device->resource->role != R_PRIMARY) {
 		if (mode & FMODE_WRITE)
 			rv = -EROFS;
 		else if (!allow_oos)
@@ -2093,8 +2092,7 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 	/* Beware! The actual layout differs
 	 * between big endian and little endian */
 	device->state = (union drbd_dev_state) {
-		{ .role = R_SECONDARY,
-		  .peer = R_UNKNOWN,
+		{ .peer = R_UNKNOWN,
 		} };
 	device->disk_state = D_DISKLESS;
 }
@@ -2622,6 +2620,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	mutex_init(&resource->state_mutex);
+	resource->role = R_SECONDARY;
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
@@ -3266,7 +3265,7 @@ static void drbd_uuid_move_history(struct drbd_device *device) __must_hold(local
 void _drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local)
 {
 	if (idx == UI_CURRENT) {
-		if (device->state.role == R_PRIMARY)
+		if (device->resource->role == R_PRIMARY)
 			val |= 1;
 		else
 			val &= ~((u64)1);

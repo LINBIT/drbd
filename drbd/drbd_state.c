@@ -93,7 +93,7 @@ enum drbd_role conn_highest_role(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		role = max_role(role, device->state.role);
+		role = max_role(role, device->resource->role);
 	}
 	rcu_read_unlock();
 
@@ -883,8 +883,10 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	enum drbd_state_rv rv = SS_SUCCESS;
 	enum sanitize_state_warnings ssw;
 	struct after_state_chg_work *ascw;
+	struct drbd_resource *resource;
 	struct drbd_peer_device *peer_device;
 
+	resource = device->resource;
 	peer_device = first_peer_device(device);
 	os = drbd_get_peer_device_state(peer_device);
 	ns = sanitize_state(device, ns, &ssw);
@@ -941,9 +943,10 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	peer_device->resync_susp_peer = ns.peer_isp;
 	peer_device->resync_susp_dependency = ns.aftr_isp;
 	peer_device->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
-	device->resource->susp = ns.susp;
-	device->resource->susp_nod = ns.susp_nod;
-	device->resource->susp_fen = ns.susp_fen;
+	resource->role = ns.role;
+	resource->susp = ns.susp;
+	resource->susp_nod = ns.susp_nod;
+	resource->susp_fen = ns.susp_fen;
 	peer_device->disk_state = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
@@ -1010,7 +1013,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		mdf &= ~MDF_AL_CLEAN;
 		if (test_bit(CRASHED_PRIMARY, &device->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
-		if (device->state.role == R_PRIMARY ||
+		if (device->resource->role == R_PRIMARY ||
 		    (peer_device->disk_state < D_INCONSISTENT &&
 		     device->state.peer == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
@@ -1493,8 +1496,7 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 	struct drbd_peer_device *peer_device;
 	int vnr, first_vol = 1;
 	union drbd_dev_state os, cs = {
-		{ .role = R_SECONDARY,
-		  .peer = R_UNKNOWN,
+		{ .peer = R_UNKNOWN,
 		} };
 	enum drbd_disk_state common_disk_state = D_DISKLESS;
 
@@ -1510,9 +1512,6 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 			continue;
 		}
 
-		if (cs.role != os.role)
-			flags &= ~CS_DC_ROLE;
-
 		if (cs.peer != os.peer)
 			flags &= ~CS_DC_PEER;
 
@@ -1524,6 +1523,7 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 	*pf |= CS_DC_MASK;
 	*pf &= flags;
 	pcs->i = cs.i;
+	pcs->role = connection->resource->role;
 	pcs->disk = common_disk_state;
 	pcs->conn = connection->cstate;
 }
@@ -1577,8 +1577,7 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 {
 	union drbd_state ns, os, ns_max = { };
 	union drbd_state ns_min = {
-		{ .role = R_MASK,
-		  .peer = R_MASK,
+		{ .peer = R_MASK,
 		  .disk = D_MASK,
 		  .pdsk = D_MASK
 		} };
@@ -1605,12 +1604,10 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 			BUG();
 
 		ns.i = device->state.i;
-		ns_max.role = max_role(ns.role, ns_max.role);
 		ns_max.peer = max_role(ns.peer, ns_max.peer);
 		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state, ns_max.disk);
 		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state, ns_max.pdsk);
 
-		ns_min.role = min_role(ns.role, ns_min.role);
 		ns_min.peer = min_role(ns.peer, ns_min.peer);
 		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state, ns_min.disk);
 		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state, ns_min.pdsk);
@@ -1618,14 +1615,12 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 	rcu_read_unlock();
 
 	if (number_of_volumes == 0) {
-		ns_min = ns_max = (union drbd_state) { {
-				.role = R_SECONDARY,
-				.peer = R_UNKNOWN,
-				.disk = D_DISKLESS,
-				.pdsk = D_UNKNOWN
-			} };
+		ns_min.peer = ns_max.peer = R_UNKNOWN;
+		ns_min.disk = ns_max.disk = D_DISKLESS;
+		ns_min.pdsk = ns_max.pdsk = D_UNKNOWN;
 	}
 
+	ns_min.role = ns_max.role = connection->resource->role;
 	ns_min.conn = ns_max.conn = connection->cstate;
 	ns_min.susp = ns_max.susp = connection->resource->susp;
 	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod;

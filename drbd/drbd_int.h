@@ -650,6 +650,7 @@ struct drbd_resource {
 	spinlock_t req_lock;
 
 	struct mutex state_mutex;
+	enum drbd_role role;
 	unsigned susp:1;		/* IO suspended by user */
 	unsigned susp_nod:1;		/* IO suspended because no data */
 	unsigned susp_fen:1;		/* IO suspended because fence peer handler runs */
@@ -1531,6 +1532,7 @@ static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 	rv.conn = C_STANDALONE;  /* really: undefined */
 	/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
 	rv.disk = device->disk_state;
+	rv.role = resource->role;
 	rv.susp = resource->susp;
 	rv.susp_nod = resource->susp_nod;
 	rv.susp_fen = resource->susp_fen;

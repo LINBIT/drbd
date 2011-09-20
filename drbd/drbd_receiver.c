@@ -2766,19 +2766,19 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 		break;
 	case ASB_CONSENSUS:
 		hg = drbd_asb_recover_0p(peer_device);
-		if (hg == -1 && device->state.role == R_SECONDARY)
+		if (hg == -1 && device->resource->role == R_SECONDARY)
 			rv = hg;
-		if (hg == 1  && device->state.role == R_PRIMARY)
+		if (hg == 1  && device->resource->role == R_PRIMARY)
 			rv = hg;
 		break;
 	case ASB_VIOLENTLY:
 		rv = drbd_asb_recover_0p(peer_device);
 		break;
 	case ASB_DISCARD_SECONDARY:
-		return device->state.role == R_PRIMARY ? 1 : -1;
+		return device->resource->role == R_PRIMARY ? 1 : -1;
 	case ASB_CALL_HELPER:
 		hg = drbd_asb_recover_0p(peer_device);
-		if (hg == -1 && device->state.role == R_PRIMARY) {
+		if (hg == -1 && device->resource->role == R_PRIMARY) {
 			enum drbd_state_rv rv2;
 
 			drbd_set_role(device, R_SECONDARY, 0);
@@ -3110,7 +3110,7 @@ static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
 	nc = rcu_dereference(peer_device->connection->net_conf);
 
 	if (hg == 100 || (hg == -100 && nc->always_asbp)) {
-		int pcount = (device->state.role == R_PRIMARY)
+		int pcount = (device->resource->role == R_PRIMARY)
 			   + (peer_role == R_PRIMARY);
 		int forced = (hg == -100);
 
@@ -3168,7 +3168,7 @@ static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
 	}
 
 	if (hg < 0 && /* by intention we do not use mydisk here. */
-	    device->state.role == R_PRIMARY && device->disk_state >= D_CONSISTENT) {
+	    device->resource->role == R_PRIMARY && device->disk_state >= D_CONSISTENT) {
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
 			drbd_khelper(device, "pri-lost");
@@ -3844,7 +3844,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 	if (peer_device->repl_state < L_CONNECTED &&
 	    device->disk_state < D_INCONSISTENT &&
-	    device->state.role == R_PRIMARY &&
+	    device->resource->role == R_PRIMARY &&
 	    (device->ed_uuid & ~((u64)1)) != (p_uuid[UI_CURRENT] & ~((u64)1))) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
 		    (unsigned long long)device->ed_uuid);
@@ -3872,7 +3872,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		}
 		put_ldev(device);
 	} else if (device->disk_state < D_INCONSISTENT &&
-		   device->state.role == R_PRIMARY) {
+		   device->resource->role == R_PRIMARY) {
 		/* I am a diskless primary, the peer just created a new current UUID
 		   for me. */
 		updated_uuids = drbd_set_ed_uuid(device, p_uuid[UI_CURRENT]);

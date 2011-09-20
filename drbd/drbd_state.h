@@ -79,13 +79,13 @@ enum chg_state_flags {
 union drbd_dev_state {
 	struct {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
+		unsigned _unused2:2 ;
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned _pad:28 ;
 #elif defined(__BIG_ENDIAN_BITFIELD)
 		unsigned _pad:28;
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
-		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
+		unsigned _unused2:2 ;
 #else
 # error "this endianess is not supported"
 #endif

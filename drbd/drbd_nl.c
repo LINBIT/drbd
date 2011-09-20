@@ -1473,7 +1473,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state < L_CONNECTED &&
-		    device->state.role == R_PRIMARY &&
+		    device->resource->role == R_PRIMARY &&
 		    (device->ed_uuid & ~((u64)1)) != (nbc->md.uuid[UI_CURRENT] & ~((u64)1))) {
 			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
 			    (unsigned long long)device->ed_uuid);
@@ -1525,7 +1525,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		clear_bit(CRASHED_PRIMARY, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-	    !(device->state.role == R_PRIMARY && device->resource->susp_nod))
+	    !(device->resource->role == R_PRIMARY && device->resource->susp_nod))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
 	device->read_cnt = 0;
@@ -1548,7 +1548,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * degraded but active "cluster" after a certain timeout.
 	 */
 	clear_bit(USE_DEGR_WFC_T, &device->flags);
-	if (device->state.role != R_PRIMARY &&
+	if (device->resource->role != R_PRIMARY &&
 	     drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
 	    !drbd_md_test_flag(device->ldev, MDF_CONNECTED_IND))
 		set_bit(USE_DEGR_WFC_T, &device->flags);
@@ -1634,7 +1634,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
-	if (device->state.role == R_PRIMARY)
+	if (device->resource->role == R_PRIMARY)
 		device->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
 	else
 		device->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
@@ -1805,7 +1805,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 			if (new_net_conf->wire_protocol == DRBD_PROT_A && fp == FP_STONITH)
 				return ERR_STONITH_AND_PROT_A;
 		}
-		if (device->state.role == R_PRIMARY && new_net_conf->discard_my_data)
+		if (device->resource->role == R_PRIMARY && new_net_conf->discard_my_data)
 			return ERR_DISCARD;
 	}
 
@@ -2226,8 +2226,8 @@ void resync_after_online_grow(struct drbd_device *device)
 	int iass; /* I am sync source */
 
 	drbd_info(device, "Resync of new storage after online grow\n");
-	if (device->state.role != device->state.peer)
-		iass = (device->state.role == R_PRIMARY);
+	if (device->resource->role != device->state.peer)
+		iass = (device->resource->role == R_PRIMARY);
 	else
 		iass = test_bit(DISCARD_CONCURRENT, &first_peer_device(device)->connection->flags);
 
@@ -2273,7 +2273,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (device->state.role == R_SECONDARY &&
+	if (device->resource->role == R_SECONDARY &&
 	    device->state.peer == R_SECONDARY) {
 		retcode = ERR_NO_PRIMARY;
 		goto fail;
@@ -3400,7 +3400,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	    /* no need to be first_peer_device(device)->repl_state == L_STANDALONE &&
 	     * we may want to delete a minor from a live replication group.
 	     */
-	    device->state.role == R_SECONDARY) {
+	    device->resource->role == R_SECONDARY) {
 		_drbd_request_state(device, NS(conn, L_STANDALONE),
 				    CS_VERBOSE + CS_WAIT_COMPLETE);
 		drbd_delete_device(device);
