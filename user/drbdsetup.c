@@ -193,6 +193,7 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -205,6 +206,8 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
 static int w_connected_state(struct drbd_cmd *, struct genl_info *);
 static int w_synced_state(struct drbd_cmd *, struct genl_info *);
+static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
+static void show_address(void* address, int addr_len);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
@@ -319,6 +322,7 @@ struct drbd_cmd commands[] = {
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
 		.options = show_cmd_options },
+	{"new-show", CTX_RESOURCE | CTX_ALL, 0, 0, generic_show_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.missing_ok = true,
@@ -1546,6 +1550,91 @@ out:
 	return err;
 }
 
+static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info)
+{
+	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&cfg, info);
+
+	printI("connection {\n");
+	++indent;
+	if (cfg.ctx_my_addr_len) {
+		printI("_this_host {\n");
+		++indent;
+		show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
+		--indent;
+		printI("}\n");
+	}
+	if (cfg.ctx_peer_addr_len) {
+		printI("_remote_host {\n");
+		++indent;
+		show_address(cfg.ctx_peer_addr, cfg.ctx_peer_addr_len);
+		--indent;
+		printI("}\n");
+	}
+	print_current_options(&net_options_ctx, "net");
+	--indent;
+	printI("}\n");
+
+	return 0;
+}
+
+static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	struct resources_list *resources_list, *resource;
+	char *old_objname = objname;
+	int c;
+
+	optind = 0;  /* reset getopt_long() */
+	for (;;) {
+		c = getopt_long(argc, argv, "D", show_cmd_options, 0);
+		if (c == -1)
+			break;
+		switch(c) {
+		default:
+		case '?':
+			return 20;
+		case 'D':
+			show_defaults = true;
+			break;
+		}
+	}
+
+	resources_list = list_resources();
+
+	for (resource = resources_list; resource; resource = resource->next) {
+		struct drbd_cmd cmd = {};
+
+		if (strcmp(old_objname, "all") && strcmp(old_objname, resource->name))
+			continue;
+
+		objname = resource->name;
+
+		printI("resource %s {\n", resource->name);
+		++indent;
+
+		print_options(resource->res_opts, &resource_options_ctx, "options");
+
+		cmd.cmd_id = DRBD_ADM_GET_DEVICES;
+		cmd.show_function = show_current_volume;
+		generic_get_cmd(&cmd, 0, NULL);
+
+		cmd.cmd_id = DRBD_ADM_GET_CONNECTIONS;
+		cmd.show_function = print_current_connection;
+		generic_get_cmd(&cmd, 0, NULL);
+
+		--indent;
+		printI("}\n\n");
+	}
+
+	free(resources_list);
+	objname = old_objname;
+	return 0;
+}
+
 static char *af_to_str(int af)
 {
 	if (af == AF_INET)
@@ -1706,7 +1795,7 @@ static struct minors_list *enumerate_minors(void)
 	return m;
 }
 
-static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
+static int __show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 {
 	unsigned minor;
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -1747,6 +1836,27 @@ static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 	printI("}\n"); /* close volume */
 
 	return 0;
+}
+
+static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
+{
+	static bool in_this_host_section;
+
+	if (info) {
+		if (!in_this_host_section) {
+			printI("_this_host {\n");
+			++indent;
+			in_this_host_section = true;
+		}
+	} else {
+		if (in_this_host_section) {
+			--indent;
+			printI("}\n");
+			in_this_host_section = false;
+		}
+	}
+
+	return __show_current_volume(cm, info);
 }
 
 /* may be called for a "show" of a single minor device.
@@ -1809,7 +1919,7 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 	}
 
 	if (cfg.ctx_volume != -1U)
-		show_current_volume(cm, info);
+		__show_current_volume(cm, info);
 
 	return 0;
 }
