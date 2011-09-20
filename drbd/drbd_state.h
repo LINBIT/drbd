@@ -33,19 +33,22 @@ struct drbd_connection;
 #define susp_nod_MASK 1
 #define susp_fen_MASK 1
 
+#define STATE_MASK(T) \
+	({ union drbd_state mask; mask.i = 0; mask.T = T##_MASK; mask.i; })
+#define STATE_VALUE(T, S) \
+	({ union drbd_state val; val.i = 0; val.T = (S); val.i; })
+#define STATE_TYPE(S) \
+	((union drbd_state)(S))
+
 #define NS(T, S) \
-	({ union drbd_state mask; mask.i = 0; mask.T = T##_MASK; mask; }), \
-	({ union drbd_state val; val.i = 0; val.T = (S); val; })
+	STATE_TYPE(STATE_MASK(T)), \
+	STATE_TYPE(STATE_VALUE(T, S))
 #define NS2(T1, S1, T2, S2) \
-	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
-	  mask.T2 = T2##_MASK; mask; }), \
-	({ union drbd_state val; val.i = 0; val.T1 = (S1); \
-	  val.T2 = (S2); val; })
+	STATE_TYPE(STATE_MASK(T1) | STATE_MASK(T2)), \
+	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2))
 #define NS3(T1, S1, T2, S2, T3, S3) \
-	({ union drbd_state mask; mask.i = 0; mask.T1 = T1##_MASK; \
-	  mask.T2 = T2##_MASK; mask.T3 = T3##_MASK; mask; }), \
-	({ union drbd_state val; val.i = 0; val.T1 = (S1); \
-	  val.T2 = (S2); val.T3 = (S3); val; })
+	STATE_TYPE(STATE_MASK(T1) | STATE_MASK(T2) | STATE_MASK(T3)), \
+	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2) | STATE_VALUE(T3, S3))
 
 #define _NS(D, T, S) \
 	D, ({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D)); __ns.T = (S); __ns; })
