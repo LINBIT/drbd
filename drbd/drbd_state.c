@@ -1474,7 +1474,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 	return 0;
 }
 
-void conn_old_common_state(struct drbd_connection *connection, union drbd_state *pcs, enum chg_state_flags *pf)
+static void conn_old_common_state(struct drbd_connection *connection, union drbd_state *pcs, enum chg_state_flags *pf)
 {
 	enum chg_state_flags flags = ~0;
 	struct drbd_peer_device *peer_device;
