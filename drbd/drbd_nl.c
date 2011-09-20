@@ -1789,7 +1789,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 	}
 
 	if (!new_net_conf->two_primaries &&
-	    conn_highest_role(connection) == R_PRIMARY &&
+	    connection->resource->role == R_PRIMARY &&
 	    conn_highest_peer(connection) == R_PRIMARY)
 		return ERR_NEED_ALLOW_TWO_PRI;
 
@@ -2919,7 +2919,7 @@ put_result:
 	err = res_opts_to_skb(skb, &resource->res_opts, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;
-	resource_info.res_role = conn_highest_role(first_connection(resource));
+	resource_info.res_role = resource->role;
 	resource_info.res_susp = resource->susp;
 	resource_info.res_susp_nod = resource->susp_nod;
 	resource_info.res_susp_fen = resource->susp_fen;

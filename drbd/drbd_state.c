@@ -84,22 +84,6 @@ static enum drbd_role min_role(enum drbd_role role1, enum drbd_role role2)
 	return R_PRIMARY;
 }
 
-enum drbd_role conn_highest_role(struct drbd_connection *connection)
-{
-	enum drbd_role role = R_UNKNOWN;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		role = max_role(role, device->resource->role);
-	}
-	rcu_read_unlock();
-
-	return role;
-}
-
 enum drbd_role conn_highest_peer(struct drbd_connection *connection)
 {
 	enum drbd_role peer = R_UNKNOWN;

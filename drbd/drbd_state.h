@@ -134,7 +134,6 @@ static inline int drbd_request_state(struct drbd_device *device,
 	return _drbd_request_state(device, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
-enum drbd_role conn_highest_role(struct drbd_connection *connection);
 enum drbd_role conn_highest_peer(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection);

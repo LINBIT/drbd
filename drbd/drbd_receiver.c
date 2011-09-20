@@ -4607,7 +4607,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 
 	drbd_info(connection, "Connection closed\n");
 
-	if (conn_highest_role(connection) == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
+	if (connection->resource->role == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
 
 	spin_lock_irq(&connection->resource->req_lock);
