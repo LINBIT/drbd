@@ -2157,6 +2157,11 @@ struct bm_extent {
 	     entry != NULL;						\
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
 
+#define idr_for_each_entry_continue(idp, entry, id)			\
+	for (entry = (typeof(entry))idr_get_next((idp), &(id));		\
+	     entry;							\
+	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {
 	return list_first_entry(&resource->connections, struct drbd_connection, connections);
