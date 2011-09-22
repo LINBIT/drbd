@@ -216,6 +216,7 @@ static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg, struct drb
 struct resources_list {
 	struct resources_list *next;
 	char *name;
+	struct nlattr *res_opts;
 };
 static struct resources_list *list_resources(void);
 static void free_resources(struct resources_list *);
@@ -1601,8 +1602,17 @@ static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info)
 	drbd_cfg_context_from_attrs(&cfg, info);
 	if (cfg.ctx_resource_name) {
 		struct resources_list *r = malloc(sizeof(*r));
+		struct nlattr *res_opts = global_attrs[DRBD_NLA_RESOURCE_OPTS];
+
 		r->next = NULL;
 		r->name = strdup(cfg.ctx_resource_name);
+		r->res_opts = NULL;
+		if (res_opts) {
+			int size = nla_total_size(nla_len(res_opts));
+
+			r->res_opts = malloc(size);
+			memcpy(r->res_opts, res_opts, size);
+		}
 		*__remembered_resources_tail = r;
 		__remembered_resources_tail = &r->next;
 	}
@@ -1615,6 +1625,7 @@ static void free_resources(struct resources_list *resources)
 		struct resources_list *r = resources;
 		resources = resources->next;
 		free(r->name);
+		free(r->res_opts);
 		free(r);
 	}
 }
