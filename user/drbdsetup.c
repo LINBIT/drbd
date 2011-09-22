@@ -1650,7 +1650,6 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct disk_conf dc = { .disk_size = 0, };
-	struct net_conf nc = { .timeout = 0, };;
 
 	if (!info) {
 		if (call_count) {
@@ -1670,7 +1669,6 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 
 	drbd_cfg_context_from_attrs(&cfg, info);
 	disk_conf_from_attrs(&dc, info);
-	net_conf_from_attrs(&nc, info);
 
 	if (strncmp(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name))) {
 		if (strncmp(last_ctx_resource_name, "", sizeof(last_ctx_resource_name))) {
@@ -2044,7 +2042,6 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct state_info si = { .current_state = 0 };
 	struct disk_conf dc = { .disk_size = 0, };
-	struct net_conf nc = { .timeout = 0, };
 	struct drbd_genlmsghdr *dh;
 
 	/* End of initial dump. Ignore. Maybe: print some marker? */
@@ -2081,7 +2078,6 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 	}
 
 	disk_conf_from_attrs(&dc, info);
-	net_conf_from_attrs(&nc, info);
 
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
