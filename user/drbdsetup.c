@@ -1069,29 +1069,21 @@ static struct drbd_cmd *find_cmd_by_name(const char *name)
 	return NULL;
 }
 
-static void print_options(const char *cmd_name, const char *sect_name)
+static void print_options(struct nlattr *attr, struct context_def *ctx, const char *sect_name)
 {
-	struct drbd_cmd *cmd;
 	struct field_def *field;
 	int opened = 0;
 
-	cmd = find_cmd_by_name(cmd_name);
-	if (!cmd) {
-		fprintf(stderr, "%s internal error, no such cmd %s\n",
-				cmdname, cmd_name);
-		abort();
-	}
-	if (!global_attrs[cmd->tla_id])
+	if (!attr)
 		return;
-	if (drbd_nla_parse_nested(nested_attr_tb, cmd->ctx->nla_policy_size - 1,
-			     global_attrs[cmd->tla_id], cmd->ctx->nla_policy)) {
+
+	if (drbd_nla_parse_nested(nested_attr_tb, ctx->nla_policy_size - 1,
+				  attr, ctx->nla_policy)) {
 		fprintf(stderr, "nla_policy violation for %s payload!\n", sect_name);
 		/* still, print those that validated ok */
 	}
 
-	if (!cmd->ctx)
-		return;
-	for (field = cmd->ctx->fields; field->name; field++) {
+	for (field = ctx->fields; field->name; field++) {
 		struct nlattr *nlattr;
 		const char *str;
 		bool is_default;
@@ -1104,7 +1096,7 @@ static void print_options(const char *cmd_name, const char *sect_name)
 			printI("%s {\n",sect_name);
 			++indent;
 		}
-		str = field->get(cmd->ctx, field, nlattr);
+		str = field->get(ctx, field, nlattr);
 		is_default = field->is_default(field, str);
 		if (is_default && !show_defaults)
 			continue;
@@ -1126,6 +1118,11 @@ static void print_options(const char *cmd_name, const char *sect_name)
 		--indent;
 		printI("}\n");
 	}
+}
+
+static void print_current_options(struct context_def *ctx, const char *sect_name)
+{
+	print_options(global_attrs[ctx->nla_type], ctx, sect_name);
 }
 
 struct choose_timo_ctx {
@@ -1681,8 +1678,8 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 
 		printI("resource %s {\n", cfg.ctx_resource_name);
 		++indent;
-		print_options("resource-options", "options");
-		print_options("net-options", "net");
+		print_current_options(&resource_options_ctx, "options");
+		print_current_options(&net_options_ctx, "net");
 
 		if (cfg.ctx_peer_addr_len) {
 			printI("_remote_host {\n");
@@ -1722,7 +1719,7 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 				 }
 			}
 		}
-		print_options("attach", "disk");
+		print_current_options(&attach_cmd_ctx, "disk");
 		--indent;
 		printI("}\n"); /* close volume */
 	}
