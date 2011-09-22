@@ -1706,6 +1706,49 @@ static struct minors_list *enumerate_minors(void)
 	return m;
 }
 
+static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
+{
+	unsigned minor;
+	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+	struct disk_conf dc = { .disk_size = 0, };
+
+	if (!info)
+		return 0;
+
+	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+	drbd_cfg_context_from_attrs(&cfg, info);
+	disk_conf_from_attrs(&dc, info);
+
+	printI("volume %d {\n", cfg.ctx_volume);
+	++indent;
+	printI("device\t\t\tminor %d;\n", minor);
+	if (global_attrs[DRBD_NLA_DISK_CONF]) {
+		if (dc.backing_dev[0]) {
+			printI("disk\t\t\t\"%s\";\n", dc.backing_dev);
+			printI("meta-disk\t\t\t");
+			switch(dc.meta_dev_idx) {
+			case DRBD_MD_INDEX_INTERNAL:
+			case DRBD_MD_INDEX_FLEX_INT:
+				printf("internal;\n");
+				break;
+			case DRBD_MD_INDEX_FLEX_EXT:
+				printf("%s;\n",
+				       double_quote_string(dc.meta_dev));
+				break;
+			default:
+				printf("%s [ %d ];\n",
+				       double_quote_string(dc.meta_dev),
+				       dc.meta_dev_idx);
+			 }
+		}
+	}
+	print_current_options(&attach_cmd_ctx, "disk");
+	--indent;
+	printI("}\n"); /* close volume */
+
+	return 0;
+}
+
 /* may be called for a "show" of a single minor device.
  * prints all available configuration information in that case.
  *
@@ -1719,7 +1762,6 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 	static int call_count;
 
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-	struct disk_conf dc = { .disk_size = 0, };
 
 	if (!info) {
 		if (call_count) {
@@ -1738,7 +1780,6 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 		dbg(1, "unexpected packet, configuration context missing!\n");
 
 	drbd_cfg_context_from_attrs(&cfg, info);
-	disk_conf_from_attrs(&dc, info);
 
 	if (strncmp(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name))) {
 		if (strncmp(last_ctx_resource_name, "", sizeof(last_ctx_resource_name))) {
@@ -1767,35 +1808,8 @@ static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
 			show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
 	}
 
-	if (cfg.ctx_volume != -1U) {
-		unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-		printI("volume %d {\n", cfg.ctx_volume);
-		++indent;
-		printI("device\t\t\tminor %d;\n", minor);
-		if (global_attrs[DRBD_NLA_DISK_CONF]) {
-			if (dc.backing_dev[0]) {
-				printI("disk\t\t\t\"%s\";\n", dc.backing_dev);
-				printI("meta-disk\t\t\t");
-				switch(dc.meta_dev_idx) {
-				case DRBD_MD_INDEX_INTERNAL:
-				case DRBD_MD_INDEX_FLEX_INT:
-					printf("internal;\n");
-					break;
-				case DRBD_MD_INDEX_FLEX_EXT:
-					printf("%s;\n",
-					       double_quote_string(dc.meta_dev));
-					break;
-				default:
-					printf("%s [ %d ];\n",
-					       double_quote_string(dc.meta_dev),
-					       dc.meta_dev_idx);
-				 }
-			}
-		}
-		print_current_options(&attach_cmd_ctx, "disk");
-		--indent;
-		printI("}\n"); /* close volume */
-	}
+	if (cfg.ctx_volume != -1U)
+		show_current_volume(cm, info);
 
 	return 0;
 }
