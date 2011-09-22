@@ -169,9 +169,9 @@ enum cfg_ctx_key {
 
 struct drbd_cmd {
 	const char* cmd;
-	const enum cfg_ctx_key ctx_key;
-	const int cmd_id;
-	const int tla_id; /* top level attribute id */
+	enum cfg_ctx_key ctx_key;
+	int cmd_id;
+	int tla_id; /* top level attribute id */
 	int (*function)(struct drbd_cmd *, int, char **);
 	struct drbd_argument *drbd_args;
 	int (*show_function)(struct drbd_cmd*, struct genl_info *);
