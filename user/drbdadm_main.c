@@ -372,7 +372,7 @@ struct adm_cmd cmds[] = {
 	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
 	{"up", adm_up, DRBD_acf1_up},
 	{"resource-options", adm_res_options, DRBD_acf1_resname
-	 .drbdsetup_ctx = &resource_options_cmd_ctx, },
+	 .drbdsetup_ctx = &resource_options_ctx, },
 	{"down", adm_generic_l, DRBD_acf1_resname},
 	{"primary", adm_generic_l, DRBD_acf1_default
 	 .drbdsetup_ctx = &primary_cmd_ctx, },

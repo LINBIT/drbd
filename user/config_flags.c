@@ -687,7 +687,7 @@ struct context_def resize_cmd_ctx = {
 		{ } },
 };
 
-struct context_def resource_options_cmd_ctx = {
+struct context_def resource_options_ctx = {
 	NLA_POLICY(res_opts),
 	.fields = {
 		{ "cpu-mask", STRING(cpu_mask) },

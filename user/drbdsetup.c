@@ -275,7 +275,7 @@ struct drbd_cmd commands[] = {
 	{"resource-options", CTX_RESOURCE, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
 		F_CONFIG_CMD,
 	 .set_defaults = true,
-	 .ctx = &resource_options_cmd_ctx },
+	 .ctx = &resource_options_ctx },
 
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS,
 		F_CONFIG_CMD,
@@ -318,7 +318,7 @@ struct drbd_cmd commands[] = {
 		.wait_for_connect_timeouts = true, },
 
 	{"new-resource", CTX_RESOURCE, DRBD_ADM_NEW_RESOURCE, DRBD_NLA_RESOURCE_OPTS, F_CONFIG_CMD,
-	 .ctx = &resource_options_cmd_ctx },
+	 .ctx = &resource_options_ctx },
 
 	/* only payload is resource name and volume number */
 	{"new-minor", 0, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,

@@ -51,7 +51,7 @@ extern struct context_def detach_cmd_ctx;
 extern struct context_def connect_cmd_ctx;
 extern struct context_def disconnect_cmd_ctx;
 extern struct context_def resize_cmd_ctx;
-extern struct context_def resource_options_cmd_ctx;
+extern struct context_def resource_options_ctx;
 extern struct context_def new_current_uuid_cmd_ctx;
 extern struct context_def verify_cmd_ctx;
 extern struct context_def new_minor_cmd_ctx;
