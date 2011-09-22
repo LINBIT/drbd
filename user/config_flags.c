@@ -621,6 +621,7 @@ const char *on_congestion_map[] = {
 
 struct context_def disk_options_ctx = {
 	NLA_POLICY(disk_conf),
+	.nla_type = DRBD_NLA_DISK_CONF,
 	.fields = {
 		CHANGEABLE_DISK_OPTIONS,
 		{ } },
@@ -628,6 +629,7 @@ struct context_def disk_options_ctx = {
 
 struct context_def net_options_ctx = {
 	NLA_POLICY(net_conf),
+	.nla_type = DRBD_NLA_NET_CONF,
 	.fields = {
 		CHANGEABLE_NET_OPTIONS,
 		{ } },
@@ -635,6 +637,7 @@ struct context_def net_options_ctx = {
 
 struct context_def primary_cmd_ctx = {
 	NLA_POLICY(set_role_parms),
+	.nla_type = DRBD_NLA_SET_ROLE_PARMS,
 	.fields = {
 		{ "force", FLAG(assume_uptodate) },
 		{ } },
@@ -642,6 +645,7 @@ struct context_def primary_cmd_ctx = {
 
 struct context_def attach_cmd_ctx = {
 	NLA_POLICY(disk_conf),
+	.nla_type = DRBD_NLA_DISK_CONF,
 	.fields = {
 		{ "size", NUMERIC(disk_size, DISK_SIZE),
 		  .unit = "bytes" },
@@ -655,6 +659,7 @@ struct context_def attach_cmd_ctx = {
 
 struct context_def detach_cmd_ctx = {
 	NLA_POLICY(detach_parms),
+	.nla_type = DRBD_NLA_DETACH_PARMS,
 	.fields = {
 		{ "force", FLAG(force_detach) },
 		{ }
@@ -663,6 +668,7 @@ struct context_def detach_cmd_ctx = {
 
 struct context_def connect_cmd_ctx = {
 	NLA_POLICY(net_conf),
+	.nla_type = DRBD_NLA_NET_CONF,
 	.fields = {
 		{ "tentative", FLAG(tentative) },
 		{ "discard-my-data", FLAG(discard_my_data) },
@@ -672,6 +678,7 @@ struct context_def connect_cmd_ctx = {
 
 struct context_def disconnect_cmd_ctx = {
 	NLA_POLICY(disconnect_parms),
+	.nla_type = DRBD_NLA_DISCONNECT_PARMS,
 	.fields = {
 		{ "force", FLAG(force_disconnect) },
 		{ } },
@@ -679,6 +686,7 @@ struct context_def disconnect_cmd_ctx = {
 
 struct context_def resize_cmd_ctx = {
 	NLA_POLICY(resize_parms),
+	.nla_type = DRBD_NLA_RESIZE_PARMS,
 	.fields = {
 		{ "size", NUMERIC(resize_size, DISK_SIZE),
 		  .unit = "bytes" },
@@ -689,6 +697,7 @@ struct context_def resize_cmd_ctx = {
 
 struct context_def resource_options_ctx = {
 	NLA_POLICY(res_opts),
+	.nla_type = DRBD_NLA_RESOURCE_OPTS,
 	.fields = {
 		{ "cpu-mask", STRING(cpu_mask) },
 		{ "on-no-data-accessible", ENUM(on_no_data, ON_NO_DATA) },
@@ -697,6 +706,7 @@ struct context_def resource_options_ctx = {
 
 struct context_def new_current_uuid_cmd_ctx = {
 	NLA_POLICY(new_c_uuid_parms),
+	.nla_type = DRBD_NLA_NEW_C_UUID_PARMS,
 	.fields = {
 		{ "clear-bitmap", FLAG(clear_bm) },
 		{ } },
@@ -704,6 +714,7 @@ struct context_def new_current_uuid_cmd_ctx = {
 
 struct context_def verify_cmd_ctx = {
 	NLA_POLICY(start_ov_parms),
+	.nla_type = DRBD_NLA_START_OV_PARMS,
 	.fields = {
 		{ "start", NUMERIC(ov_start_sector, DISK_SIZE),
 		  .unit = "bytes" },
@@ -712,6 +723,7 @@ struct context_def verify_cmd_ctx = {
 
 struct context_def new_minor_cmd_ctx = {
 	NLA_POLICY(drbd_cfg_context),
+	.nla_type = DRBD_NLA_CFG_CONTEXT,
 	.fields = {
 		/* { "*", STRING(ctx_resource_name) }, */
 		/* { "*", NUMERIC(ctx_volume, >= 0) }, */
