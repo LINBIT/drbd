@@ -1091,15 +1091,15 @@ static void print_options(struct nlattr *attr, struct context_def *ctx, const ch
 		nlattr = ntb(field->nla_type);
 		if (!nlattr)
 			continue;
+		str = field->get(ctx, field, nlattr);
+		is_default = field->is_default(field, str);
+		if (is_default && !show_defaults)
+			continue;
 		if (!opened) {
 			opened=1;
 			printI("%s {\n",sect_name);
 			++indent;
 		}
-		str = field->get(ctx, field, nlattr);
-		is_default = field->is_default(field, str);
-		if (is_default && !show_defaults)
-			continue;
 		if (field->needs_double_quoting)
 			str = double_quote_string(str);
 		printI("%-16s\t%s;",field->name, str);
