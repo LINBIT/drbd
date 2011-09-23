@@ -44,8 +44,24 @@
 #######################################################################
 # Initialization:
 
-: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
-. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
+# Resource-agents have moved their ocf-shellfuncs file around.
+# There are supposed to be symlinks or wrapper files in the old location,
+# pointing to the new one, but people seem to get it wrong all the time.
+# Try several locations.
+
+if test -n "${OCF_FUNCTIONS_DIR}" ; then
+	if test -e "${OCF_FUNCTIONS_DIR}/ocf-shellfuncs" ; then
+		. "${OCF_FUNCTIONS_DIR}/ocf-shellfuncs"
+	elif test -e "${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs" ; then
+		. "${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs"
+	fi
+else
+	if test -e "${OCF_ROOT}/lib/heartbeat/ocf-shellfuncs" ; then
+		. "${OCF_ROOT}/lib/heartbeat/ocf-shellfuncs"
+	elif test -e "${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs"; then
+		. "${OCF_ROOT}/resource.d/heartbeat/.ocf-shellfuncs"
+	fi
+fi
 
 # Defaults
 OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
