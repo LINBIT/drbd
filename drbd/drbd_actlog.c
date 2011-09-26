@@ -143,9 +143,6 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	struct bio *bio;
 	int err;
 
-	mdev->md_io.done = 0;
-	mdev->md_io.error = -ENODEV;
-
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
 		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
 	rw |= DRBD_REQ_SYNC;
@@ -154,6 +151,9 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
  retry:
 #endif
+	mdev->md_io.done = 0;
+	mdev->md_io.error = -ENODEV;
+
 	bio = bio_alloc_drbd(GFP_NOIO);
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
