@@ -180,10 +180,10 @@ enum drbd_role {
  */
 enum drbd_conns {
 	C_STANDALONE,
-	C_DISCONNECTING,  /* Temporal state on the way to StandAlone. */
+	C_DISCONNECTING,  /* Temporary state on the way to C_STANDALONE. */
 	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */
 
-	/* These temporal states are all used on the way
+	/* These temporary states are used on the way
 	 * from >= C_CONNECTED to Unconnected.
 	 * The 'disconnect reason' states
 	 * I do not allow to change between them. */
