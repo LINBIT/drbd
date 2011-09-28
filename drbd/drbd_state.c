@@ -941,6 +941,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	/* assignment inclusive debug info about what code path
 	 * initiated this state change. */
 	device->state.i = ns.i;
+	device->state.conn = max_t(unsigned, ns.conn, L_STANDALONE);
 	device->resource->susp = ns.susp;
 	device->resource->susp_nod = ns.susp_nod;
 	device->resource->susp_fen = ns.susp_fen;

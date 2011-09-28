@@ -3147,7 +3147,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	    device->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED && args.clear_bm) {
 		drbd_info(device, "Preparing to skip initial sync\n");
 		skip_initial_sync = 1;
-	} else if (device->state.conn != C_STANDALONE) {
+	} else if (device->state.conn != L_STANDALONE) {
 		retcode = ERR_CONNECTED;
 		goto out_dec;
 	}
@@ -3267,7 +3267,7 @@ out:
 static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 {
 	if (device->state.disk == D_DISKLESS &&
-	    /* no need to be device->state.conn == C_STANDALONE &&
+	    /* no need to be device->state.conn == L_STANDALONE &&
 	     * we may want to delete a minor from a live replication group.
 	     */
 	    device->state.role == R_SECONDARY) {

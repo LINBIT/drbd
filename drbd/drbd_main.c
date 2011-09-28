@@ -2921,10 +2921,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	/* kref_get(&device->kref); */
 	add_disk(disk);
 
-	/* inherit the connection state */
-	device->state.conn = first_connection(resource)->cstate;
-	if (device->state.conn == L_STANDALONE) {
-		for_each_peer_device(peer_device, device)
+	device->state.conn = L_STANDALONE;
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->cstate >= C_CONNECTED)
 			drbd_connected(peer_device);
 	}
 

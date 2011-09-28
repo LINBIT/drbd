@@ -241,7 +241,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 		sn = drbd_conn_str(combined_conn_state(first_peer_device(device)));
 
-		if (device->state.conn == C_STANDALONE &&
+		if (device->state.conn == L_STANDALONE &&
 		    device->state.disk == D_DISKLESS &&
 		    device->state.role == R_SECONDARY) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
