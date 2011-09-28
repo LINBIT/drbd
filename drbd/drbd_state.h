@@ -152,6 +152,5 @@ enum drbd_role conn_highest_peer(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection);
-enum drbd_conns conn_lowest_conn(struct drbd_connection *connection);
 
 #endif
