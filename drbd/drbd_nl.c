@@ -1299,6 +1299,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	union drbd_state ns, os;
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
+	struct drbd_peer_device *peer_device;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1354,8 +1355,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	rcu_read_lock();
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
-	if (nc) {
+	for_each_peer_device(peer_device, device) {
+		nc = rcu_dereference(peer_device->connection->net_conf);
+		if (!nc)
+			continue;
 		if (new_disk_conf->fencing == FP_STONITH && nc->wire_protocol == DRBD_PROT_A) {
 			rcu_read_unlock();
 			retcode = ERR_STONITH_AND_PROT_A;
@@ -1484,13 +1487,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto force_diskless_dec;
 
-	if (first_peer_device(device)->repl_state < L_CONNECTED &&
-	    device->state.role == R_PRIMARY &&
-	    (device->ed_uuid & ~((u64)1)) != (nbc->md.uuid[UI_CURRENT] & ~((u64)1))) {
-		drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
-		    (unsigned long long)device->ed_uuid);
-		retcode = ERR_DATA_NOT_CURRENT;
-		goto force_diskless_dec;
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state < L_CONNECTED &&
+		    device->state.role == R_PRIMARY &&
+		    (device->ed_uuid & ~((u64)1)) != (nbc->md.uuid[UI_CURRENT] & ~((u64)1))) {
+			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
+			    (unsigned long long)device->ed_uuid);
+			retcode = ERR_DATA_NOT_CURRENT;
+			goto force_diskless_dec;
+		}
 	}
 
 	/* Since we are diskless, fix the activity log first... */
