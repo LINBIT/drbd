@@ -1180,6 +1180,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *new_disk_conf, *old_disk_conf;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	int err, fifo_size;
+	struct drbd_peer_device *peer_device;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1259,10 +1260,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&device->resource->conf_update);
 	drbd_md_sync(device);
 
-	if (first_peer_device(device)->repl_state >= L_CONNECTED) {
-		struct drbd_peer_device *peer_device;
-
-		for_each_peer_device(peer_device, device)
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state >= L_CONNECTED)
 			drbd_send_sync_param(peer_device);
 	}
 
