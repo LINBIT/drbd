@@ -474,8 +474,8 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	char *ex_to_string;
 	int r;
 
-	if (connection->cstate >= C_WF_REPORT_PARAMS) {
-		drbd_err(connection, "Expected cstate < C_WF_REPORT_PARAMS\n");
+	if (connection->cstate >= C_CONNECTED) {
+		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
 		return false;
 	}
 
@@ -545,7 +545,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	   here, because we might were able to re-establish the connection in the
 	   meantime. */
 	spin_lock_irq(&connection->resource->req_lock);
-	if (connection->cstate < C_WF_REPORT_PARAMS)
+	if (connection->cstate < C_CONNECTED)
 		_conn_request_state(connection, mask, val, CS_VERBOSE);
 	spin_unlock_irq(&connection->resource->req_lock);
 
@@ -688,7 +688,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
-			if (((device->state.conn < C_CONNECTED ||
+			if (((device->state.conn < L_CONNECTED ||
 			      first_peer_device(device)->disk_state <= D_FAILED)
 			      && device->ldev->md.uuid[UI_BITMAP] == 0) || forced)
 				drbd_uuid_new_current(device);
@@ -701,7 +701,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 	/* writeout of activity log covered areas of the bitmap
 	 * to stable storage done in after state change already */
 
-	if (device->state.conn >= C_WF_REPORT_PARAMS) {
+	if (device->state.conn >= L_STANDALONE) {
 		/* if this was forced, we should consider sync */
 		if (forced)
 			drbd_send_uuids(first_peer_device(device));
@@ -831,7 +831,7 @@ char *ppsize(char *buf, unsigned long long size)
  *  R_PRIMARY D_INCONSISTENT, and peer's disk is unreachable
  *  (not connected, or bad/no disk on peer):
  *  see drbd_fail_request_early, ap_bio_cnt is zero.
- *  R_PRIMARY D_INCONSISTENT, and C_SYNC_TARGET:
+ *  R_PRIMARY D_INCONSISTENT, and L_SYNC_TARGET:
  *  peer may not initiate a resize.
  */
 /* Note these are not to be confused with
@@ -968,7 +968,7 @@ drbd_new_dev_size(struct drbd_device *device, struct drbd_backing_dev *bdev,
 
 	m_size = drbd_get_max_capacity(bdev);
 
-	if (device->state.conn < C_CONNECTED && assume_peer_has_space) {
+	if (device->state.conn < L_CONNECTED && assume_peer_has_space) {
 		drbd_warn(device, "Resize while not connected was forced by the user!\n");
 		p_size = m_size;
 	}
@@ -1111,7 +1111,7 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	/* We may ignore peer limits if the peer is modern enough.
 	   Because new from 8.3.8 onwards the peer can use multiple
 	   BIOs for a single peer_request */
-	if (device->state.conn >= C_CONNECTED) {
+	if (device->state.conn >= L_CONNECTED) {
 		if (first_peer_device(device)->connection->agreed_pro_version < 94)
 			peer = min_t(int, device->peer_max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
 			/* Correct old drbd (up to 8.3.7) if it believes it can do more than 32KiB */
@@ -1146,7 +1146,7 @@ static void drbd_suspend_al(struct drbd_device *device)
 
 	drbd_al_shrink(device);
 	spin_lock_irq(&device->resource->req_lock);
-	if (device->state.conn < C_CONNECTED)
+	if (device->state.conn < L_CONNECTED)
 		s = !test_and_set_bit(AL_SUSPENDED, &device->flags);
 	spin_unlock_irq(&device->resource->req_lock);
 	lc_unlock(device->act_log);
@@ -1259,7 +1259,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&device->resource->conf_update);
 	drbd_md_sync(device);
 
-	if (device->state.conn >= C_CONNECTED) {
+	if (device->state.conn >= L_CONNECTED) {
 		struct drbd_peer_device *peer_device;
 
 		for_each_peer_device(peer_device, device)
@@ -1485,7 +1485,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto force_diskless_dec;
 
-	if (device->state.conn < C_CONNECTED &&
+	if (device->state.conn < L_CONNECTED &&
 	    device->state.role == R_PRIMARY &&
 	    (device->ed_uuid & ~((u64)1)) != (nbc->md.uuid[UI_CURRENT] & ~((u64)1))) {
 		drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
@@ -1626,9 +1626,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	   this point, because drbd_request_state() modifies these
 	   flags. */
 
-	/* In case we are C_CONNECTED postpone any decision on the new disk
+	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
-	if (device->state.conn == C_CONNECTED) {
+	if (device->state.conn == L_CONNECTED) {
 		device->new_state_tmp.i = ns.i;
 		ns.i = os.i;
 		ns.disk = D_NEGOTIATING;
@@ -1751,10 +1751,10 @@ static bool conn_resync_running(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		if (device->state.conn == C_SYNC_SOURCE ||
-		    device->state.conn == C_SYNC_TARGET ||
-		    device->state.conn == C_PAUSED_SYNC_S ||
-		    device->state.conn == C_PAUSED_SYNC_T) {
+		if (device->state.conn == L_SYNC_SOURCE ||
+		    device->state.conn == L_SYNC_TARGET ||
+		    device->state.conn == L_PAUSED_SYNC_S ||
+		    device->state.conn == L_PAUSED_SYNC_T) {
 			rv = true;
 			break;
 		}
@@ -1773,8 +1773,8 @@ static bool conn_ov_running(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		if (device->state.conn == C_VERIFY_S ||
-		    device->state.conn == C_VERIFY_T) {
+		if (device->state.conn == L_VERIFY_S ||
+		    device->state.conn == L_VERIFY_T) {
 			rv = true;
 			break;
 		}
@@ -1790,7 +1790,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 	struct drbd_peer_device *peer_device;
 	int i;
 
-	if (old_net_conf && connection->cstate == C_WF_REPORT_PARAMS && connection->agreed_pro_version < 100) {
+	if (old_net_conf && connection->cstate == C_CONNECTED && connection->agreed_pro_version < 100) {
 		if (new_net_conf->wire_protocol != old_net_conf->wire_protocol)
 			return ERR_NEED_APV_100;
 
@@ -1997,7 +1997,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	crypto_free_hash(connection->integrity_tfm);
 	connection->integrity_tfm = crypto.integrity_tfm;
-	if (connection->cstate >= C_WF_REPORT_PARAMS && connection->agreed_pro_version >= 100)
+	if (connection->cstate >= C_CONNECTED && connection->agreed_pro_version >= 100)
 		/* Do this without trying to take connection->data.mutex again.  */
 		__drbd_send_protocol(connection, P_PROTOCOL_UPDATE);
 
@@ -2009,7 +2009,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	synchronize_rcu();
 	kfree(old_net_conf);
 
-	if (connection->cstate >= C_WF_REPORT_PARAMS) {
+	if (connection->cstate >= C_CONNECTED) {
 		struct drbd_peer_device *peer_device;
 		int vnr;
 
@@ -2249,9 +2249,9 @@ void resync_after_online_grow(struct drbd_device *device)
 		iass = test_bit(DISCARD_CONCURRENT, &first_peer_device(device)->connection->flags);
 
 	if (iass)
-		drbd_start_resync(device, C_SYNC_SOURCE);
+		drbd_start_resync(device, L_SYNC_SOURCE);
 	else
-		_drbd_request_state(device, NS(conn, C_WF_SYNC_UUID), CS_VERBOSE + CS_SERIALIZE);
+		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE + CS_SERIALIZE);
 }
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
@@ -2282,7 +2282,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	device = adm_ctx.device;
-	if (device->state.conn > C_CONNECTED) {
+	if (device->state.conn > L_CONNECTED) {
 		retcode = ERR_RESIZE_RESYNC;
 		goto fail;
 	}
@@ -2337,7 +2337,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (device->state.conn == C_CONNECTED) {
+	if (device->state.conn == L_CONNECTED) {
 		if (dd == grew)
 			set_bit(RESIZE_PENDING, &device->flags);
 
@@ -2406,21 +2406,21 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
-	retcode = _drbd_request_state(device, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
+	retcode = _drbd_request_state(device, NS(conn, L_STARTING_SYNC_T), CS_ORDERED);
 
 	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
-		retcode = drbd_request_state(device, NS(conn, C_STARTING_SYNC_T));
+		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
 
 	while (retcode == SS_NEED_CONNECTION) {
 		spin_lock_irq(&device->resource->req_lock);
-		if (device->state.conn < C_CONNECTED)
+		if (device->state.conn < L_CONNECTED)
 			retcode = _drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
 		spin_unlock_irq(&device->resource->req_lock);
 
 		if (retcode != SS_NEED_CONNECTION)
 			break;
 
-		retcode = drbd_request_state(device, NS(conn, C_STARTING_SYNC_T));
+		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
 	}
 
 out:
@@ -2447,7 +2447,7 @@ out:
 
 int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
-	return drbd_adm_simple_request_state(skb, info, NS(conn, C_STARTING_SYNC_S));
+	return drbd_adm_simple_request_state(skb, info, NS(conn, L_STARTING_SYNC_S));
 }
 
 int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
@@ -2480,7 +2480,7 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 
 	if (drbd_request_state(adm_ctx.device, NS(user_isp, 0)) == SS_NOTHING_TO_DO) {
 		s = adm_ctx.device->state;
-		if (s.conn == C_PAUSED_SYNC_S || s.conn == C_PAUSED_SYNC_T) {
+		if (s.conn == L_PAUSED_SYNC_S || s.conn == L_PAUSED_SYNC_T) {
 			retcode = s.aftr_isp ? ERR_PIC_AFTER_DEP :
 				  s.peer_isp ? ERR_PIC_PEER_DEP : ERR_PAUSE_IS_CLEAR;
 		} else {
@@ -2517,7 +2517,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	drbd_suspend_io(device);
 	retcode = drbd_request_state(device, NS3(susp, 0, susp_nod, 0, susp_fen, 0));
 	if (retcode == SS_SUCCESS) {
-		if (device->state.conn < C_CONNECTED)
+		if (device->state.conn < L_CONNECTED)
 			tl_clear(first_peer_device(device)->connection);
 		if (device->state.disk == D_DISKLESS || device->state.disk == D_FAILED)
 			tl_restart(first_peer_device(device)->connection, FAIL_FROZEN_DISK_IO);
@@ -2641,8 +2641,8 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 			NLA_PUT(skb, T_uuids, sizeof(si->uuids), device->ldev->md.uuid);
 			NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
 			NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
-			if (C_SYNC_SOURCE <= device->state.conn &&
-			    C_PAUSED_SYNC_T >= device->state.conn) {
+			if (L_SYNC_SOURCE <= device->state.conn &&
+			    L_PAUSED_SYNC_T >= device->state.conn) {
 				NLA_PUT_U64(skb, T_bits_rs_total, device->rs_total);
 				NLA_PUT_U64(skb, T_bits_rs_failed, device->rs_failed);
 			}
@@ -3102,7 +3102,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
-	retcode = drbd_request_state(device,NS(conn,C_VERIFY_S));
+	retcode = drbd_request_state(device,NS(conn,L_VERIFY_S));
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3142,7 +3142,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* this is "skip initial sync", assume to be clean */
-	if (device->state.conn == C_CONNECTED &&
+	if (device->state.conn == L_CONNECTED &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 90 &&
 	    device->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED && args.clear_bm) {
 		drbd_info(device, "Preparing to skip initial sync\n");
@@ -3271,7 +3271,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	     * we may want to delete a minor from a live replication group.
 	     */
 	    device->state.role == R_SECONDARY) {
-		_drbd_request_state(device, NS(conn, C_WF_REPORT_PARAMS),
+		_drbd_request_state(device, NS(conn, L_STANDALONE),
 				    CS_VERBOSE + CS_WAIT_COMPLETE);
 		drbd_delete_device(device);
 		return NO_ERROR;

@@ -564,8 +564,8 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 
 	if (drbd_bm_total_weight(device) <= device->rs_failed) {
 		switch (device->state.conn) {
-		case C_SYNC_SOURCE:  case C_SYNC_TARGET:
-		case C_PAUSED_SYNC_S: case C_PAUSED_SYNC_T:
+		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
+		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
 			drbd_resync_finished(device);
 		default:
 			/* nothing to do */
@@ -682,8 +682,8 @@ void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go
 	int next = (device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
 	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
 		if (device->rs_mark_left[device->rs_last_mark] != still_to_go &&
-		    device->state.conn != C_PAUSED_SYNC_T &&
-		    device->state.conn != C_PAUSED_SYNC_S) {
+		    device->state.conn != L_PAUSED_SYNC_T &&
+		    device->state.conn != L_PAUSED_SYNC_S) {
 			device->rs_mark_time[next] = now;
 			device->rs_mark_left[next] = still_to_go;
 			device->rs_last_mark = next;
@@ -695,7 +695,7 @@ void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one ore more _aligned_ BM_BLOCK_SIZE blocks.
  *
- * called by worker on C_SYNC_TARGET and receiver on SyncSource.
+ * called by worker on L_SYNC_TARGET and receiver on SyncSource.
  *
  */
 void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)

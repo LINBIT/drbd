@@ -174,9 +174,9 @@ enum drbd_role {
 };
 
 /* The order of these constants is important.
- * The lower ones (<C_WF_REPORT_PARAMS) indicate
+ * The lower ones (< C_CONNECTED) indicate
  * that there is no socket!
- * >=C_WF_REPORT_PARAMS ==> There is a socket
+ * >= C_CONNECTED ==> There is a socket
  */
 enum drbd_conns {
 	C_STANDALONE,
@@ -184,7 +184,7 @@ enum drbd_conns {
 	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */
 
 	/* These temporary states are used on the way
-	 * from >= C_CONNECTED to Unconnected.
+	 * from >= L_CONNECTED to Unconnected.
 	 * The 'disconnect reason' states
 	 * I do not allow to change between them. */
 	C_TIMEOUT,
@@ -194,25 +194,28 @@ enum drbd_conns {
 	C_TEAR_DOWN,
 
 	C_WF_CONNECTION,
-	C_WF_REPORT_PARAMS, /* we have a socket */
-	C_CONNECTED,      /* we have introduced each other */
-	C_STARTING_SYNC_S,  /* starting full sync by admin request. */
-	C_STARTING_SYNC_T,  /* starting full sync by admin request. */
-	C_WF_BITMAP_S,
-	C_WF_BITMAP_T,
-	C_WF_SYNC_UUID,
+
+	C_CONNECTED, /* we have a socket */
+	L_STANDALONE = C_CONNECTED,
+
+	L_CONNECTED,      /* we have introduced each other */
+	L_STARTING_SYNC_S,  /* starting full sync by admin request. */
+	L_STARTING_SYNC_T,  /* starting full sync by admin request. */
+	L_WF_BITMAP_S,
+	L_WF_BITMAP_T,
+	L_WF_SYNC_UUID,
 
 	/* All SyncStates are tested with this comparison
-	 * xx >= C_SYNC_SOURCE && xx <= C_PAUSED_SYNC_T */
-	C_SYNC_SOURCE,
-	C_SYNC_TARGET,
-	C_VERIFY_S,
-	C_VERIFY_T,
-	C_PAUSED_SYNC_S,
-	C_PAUSED_SYNC_T,
+	 * xx >= L_SYNC_SOURCE && xx <= L_PAUSED_SYNC_T */
+	L_SYNC_SOURCE,
+	L_SYNC_TARGET,
+	L_VERIFY_S,
+	L_VERIFY_T,
+	L_PAUSED_SYNC_S,
+	L_PAUSED_SYNC_T,
 
-	C_AHEAD,
-	C_BEHIND,
+	L_AHEAD,
+	L_BEHIND,
 
 	C_MASK = 31
 };

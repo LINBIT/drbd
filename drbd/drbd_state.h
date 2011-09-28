@@ -18,7 +18,7 @@ struct drbd_connection;
  * Besides the basic forms NS() and _NS() additional _?NS[23] are defined
  * to express state changes that affect more than one aspect of the state.
  *
- * E.g. NS2(conn, C_CONNECTED, peer, R_SECONDARY)
+ * E.g. NS2(conn, L_CONNECTED, peer, R_SECONDARY)
  * Means that the network connection was established and that the peer
  * is in secondary role.
  */

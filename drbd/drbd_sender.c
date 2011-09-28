@@ -428,10 +428,10 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_device, resync_work);
 
 	switch (device->state.conn) {
-	case C_VERIFY_S:
+	case L_VERIFY_S:
 		make_ov_request(device, cancel);
 		break;
-	case C_SYNC_TARGET:
+	case L_SYNC_TARGET:
 		make_resync_request(device, cancel);
 		break;
 	}
@@ -804,7 +804,7 @@ STATIC void ping_peer(struct drbd_device *device)
 	clear_bit(GOT_PING_ACK, &connection->flags);
 	request_ping(connection);
 	wait_event(connection->ping_wait,
-		   test_bit(GOT_PING_ACK, &connection->flags) || device->state.conn < C_CONNECTED);
+		   test_bit(GOT_PING_ACK, &connection->flags) || device->state.conn < L_CONNECTED);
 }
 
 int drbd_resync_finished(struct drbd_device *device)
@@ -853,15 +853,15 @@ int drbd_resync_finished(struct drbd_device *device)
 	spin_lock_irq(&device->resource->req_lock);
 	os = drbd_read_state(device);
 
-	verify_done = (os.conn == C_VERIFY_S || os.conn == C_VERIFY_T);
+	verify_done = (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T);
 
 	/* This protects us against multiple calls (that can happen in the presence
 	   of application IO), and against connectivity loss just before we arrive here. */
-	if (os.conn <= C_CONNECTED)
+	if (os.conn <= L_CONNECTED)
 		goto out_unlock;
 
 	ns = os;
-	ns.conn = C_CONNECTED;
+	ns.conn = L_CONNECTED;
 
 	drbd_info(device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     verify_done ? "Online verify " : "Resync",
@@ -869,7 +869,7 @@ int drbd_resync_finished(struct drbd_device *device)
 
 	n_oos = drbd_bm_total_weight(device);
 
-	if (os.conn == C_VERIFY_S || os.conn == C_VERIFY_T) {
+	if (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) {
 		if (n_oos) {
 			drbd_alert(device, "Online verify found %lu %dk block out of sync!\n",
 			      n_oos, Bit2KB(1));
@@ -878,7 +878,7 @@ int drbd_resync_finished(struct drbd_device *device)
 	} else {
 		D_ASSERT(device, (n_oos - device->rs_failed) == 0);
 
-		if (os.conn == C_SYNC_TARGET || os.conn == C_PAUSED_SYNC_T)
+		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
 
 		if (first_peer_device(device)->connection->csums_tfm && device->rs_total) {
@@ -899,7 +899,7 @@ int drbd_resync_finished(struct drbd_device *device)
 	if (device->rs_failed) {
 		drbd_info(device, "            %lu failed blocks\n", device->rs_failed);
 
-		if (os.conn == C_SYNC_TARGET || os.conn == C_PAUSED_SYNC_T) {
+		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T) {
 			ns.disk = D_INCONSISTENT;
 			ns.pdsk = D_UP_TO_DATE;
 		} else {
@@ -910,7 +910,7 @@ int drbd_resync_finished(struct drbd_device *device)
 		ns.disk = D_UP_TO_DATE;
 		ns.pdsk = D_UP_TO_DATE;
 
-		if (os.conn == C_SYNC_TARGET || os.conn == C_PAUSED_SYNC_T) {
+		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T) {
 			if (device->p_uuid) {
 				int i;
 				for (i = UI_BITMAP ; i <= UI_HISTORY_END ; i++)
@@ -922,7 +922,7 @@ int drbd_resync_finished(struct drbd_device *device)
 			}
 		}
 
-		if (!(os.conn == C_VERIFY_S || os.conn == C_VERIFY_T)) {
+		if (!(os.conn == L_VERIFY_S || os.conn == L_VERIFY_T)) {
 			/* for verify runs, we don't update uuids here,
 			 * so there would be nothing to report. */
 			drbd_uuid_set_bm(device, 0UL);
@@ -1033,7 +1033,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		put_ldev(device);
 	}
 
-	if (device->state.conn == C_AHEAD) {
+	if (device->state.conn == L_AHEAD) {
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(first_peer_device(device)->disk_state >= D_INCONSISTENT)) {
@@ -1270,7 +1270,7 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */
 	spin_lock_irq(&device->resource->req_lock);
-	if (w->cb != w_send_barrier || device->state.conn < C_CONNECTED)
+	if (w->cb != w_send_barrier || device->state.conn < L_CONNECTED)
 		cancel = 1;
 	spin_unlock_irq(&device->resource->req_lock);
 	if (cancel)
@@ -1397,8 +1397,8 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
 		odev = minor_to_mdev(resync_after);
 		if (!expect(odev))
 			return 1;
-		if ((odev->state.conn >= C_SYNC_SOURCE &&
-		     odev->state.conn <= C_PAUSED_SYNC_T) ||
+		if ((odev->state.conn >= L_SYNC_SOURCE &&
+		     odev->state.conn <= L_PAUSED_SYNC_T) ||
 		    odev->state.aftr_isp || odev->state.peer_isp ||
 		    odev->state.user_isp)
 			return 0;
@@ -1547,7 +1547,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	drbd_start_resync(device, C_SYNC_SOURCE);
+	drbd_start_resync(device, L_SYNC_SOURCE);
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->current_epoch->flags);
 	return 0;
 }
@@ -1555,7 +1555,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 /**
  * drbd_start_resync() - Start the resync process
  * @device:	DRBD device.
- * @side:	Either C_SYNC_SOURCE or C_SYNC_TARGET
+ * @side:	Either L_SYNC_SOURCE or L_SYNC_TARGET
  *
  * This function might bring you directly into one of the
  * C_PAUSED_SYNC_* states.
@@ -1565,12 +1565,12 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 	union drbd_state ns;
 	int r;
 
-	if (device->state.conn >= C_SYNC_SOURCE && device->state.conn < C_AHEAD) {
+	if (device->state.conn >= L_SYNC_SOURCE && device->state.conn < L_AHEAD) {
 		drbd_err(device, "Resync already running!\n");
 		return;
 	}
 
-	if (device->state.conn < C_AHEAD) {
+	if (device->state.conn < L_AHEAD) {
 		/* In case a previous resync run was aborted by an IO error/detach on the peer. */
 		drbd_rs_cancel_all(device);
 		/* This should be done when we abort the resync. We definitely do not
@@ -1579,9 +1579,9 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 	}
 
 	if (!test_bit(B_RS_H_DONE, &device->flags)) {
-		if (side == C_SYNC_TARGET) {
-			/* Since application IO was locked out during C_WF_BITMAP_T and
-			   C_WF_SYNC_UUID we are still unmodified. Before going to C_SYNC_TARGET
+		if (side == L_SYNC_TARGET) {
+			/* Since application IO was locked out during L_WF_BITMAP_T and
+			   L_WF_SYNC_UUID we are still unmodified. Before going to L_SYNC_TARGET
 			   we check that we might make the data inconsistent. */
 			r = drbd_khelper(device, "before-resync-target");
 			r = (r >> 8) & 0xff;
@@ -1591,7 +1591,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 				conn_request_state(first_peer_device(device)->connection, NS(conn, C_DISCONNECTING), CS_HARD);
 				return;
 			}
-		} else /* C_SYNC_SOURCE */ {
+		} else /* L_SYNC_SOURCE */ {
 			r = drbd_khelper(device, "before-resync-source");
 			r = (r >> 8) & 0xff;
 			if (r > 0) {
@@ -1635,15 +1635,15 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 
 	ns.conn = side;
 
-	if (side == C_SYNC_TARGET)
+	if (side == L_SYNC_TARGET)
 		ns.disk = D_INCONSISTENT;
-	else /* side == C_SYNC_SOURCE */
+	else /* side == L_SYNC_SOURCE */
 		ns.pdsk = D_INCONSISTENT;
 
 	r = __drbd_set_state(device, ns, CS_VERBOSE, NULL);
 	ns = drbd_read_state(device);
 
-	if (ns.conn < C_CONNECTED)
+	if (ns.conn < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;
 
 	if (r == SS_SUCCESS) {
@@ -1671,7 +1671,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 		     drbd_conn_str(ns.conn),
 		     (unsigned long) device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) device->rs_total);
-		if (side == C_SYNC_TARGET)
+		if (side == L_SYNC_TARGET)
 			device->bm_resync_fo = 0;
 
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
@@ -1681,7 +1681,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 		 * drbd_resync_finished from here in that case.
 		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
 		 * and from after_state_ch otherwise. */
-		if (side == C_SYNC_SOURCE &&
+		if (side == L_SYNC_SOURCE &&
 		    first_peer_device(device)->connection->agreed_pro_version < 96)
 			drbd_gen_and_send_sync_uuid(first_peer_device(device));
 
@@ -1697,7 +1697,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 			 * detect connection loss, then waiting for a ping
 			 * response (implicit in drbd_resync_finished) reduces
 			 * the race considerably, but does not solve it. */
-			if (side == C_SYNC_SOURCE) {
+			if (side == L_SYNC_SOURCE) {
 				struct net_conf *nc;
 				int timeo;
 
@@ -1715,7 +1715,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
-		if (ns.conn == C_SYNC_TARGET)
+		if (ns.conn == L_SYNC_TARGET)
 			mod_timer(&device->resync_timer, jiffies);
 
 		drbd_md_sync(device);
@@ -1783,8 +1783,8 @@ int drbd_sender(struct drbd_thread *thi)
 		}
 
 		w = consume_work(&connection->data.work);
-		if (w->cb(w, connection->cstate < C_WF_REPORT_PARAMS)) {
-			if (connection->cstate >= C_WF_REPORT_PARAMS)
+		if (w->cb(w, connection->cstate < C_CONNECTED)) {
+			if (connection->cstate >= C_CONNECTED)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 		}
 	}

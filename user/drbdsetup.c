@@ -2345,7 +2345,7 @@ static int w_connected_state(struct drbd_cmd *cm, struct genl_info *info)
 		return 0;
 
 	state.i = si.current_state;
-	if (state.conn >= C_CONNECTED)
+	if (state.conn >= L_CONNECTED)
 		return -1;  /* done waiting */
 	if (state.conn < C_UNCONNECTED) {
 		struct drbd_genlmsghdr *dhdr = info->userhdr;
@@ -2387,7 +2387,7 @@ static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
 
 	state.i = si.current_state;
 
-	if (state.conn == C_CONNECTED)
+	if (state.conn == L_CONNECTED)
 		return -1;  /* done waiting */
 
 	if (!wait_after_split_brain && state.conn < C_UNCONNECTED)

@@ -187,14 +187,14 @@ enum drbd_conns conn_lowest_conn(struct drbd_connection *connection)
 STATIC int cl_wide_st_chg(struct drbd_device *device,
 			  union drbd_state os, union drbd_state ns)
 {
-	return (os.conn >= C_CONNECTED && ns.conn >= C_CONNECTED &&
+	return (os.conn >= L_CONNECTED && ns.conn >= L_CONNECTED &&
 		 ((os.role != R_PRIMARY && ns.role == R_PRIMARY) ||
-		  (os.conn != C_STARTING_SYNC_T && ns.conn == C_STARTING_SYNC_T) ||
-		  (os.conn != C_STARTING_SYNC_S && ns.conn == C_STARTING_SYNC_S) ||
+		  (os.conn != L_STARTING_SYNC_T && ns.conn == L_STARTING_SYNC_T) ||
+		  (os.conn != L_STARTING_SYNC_S && ns.conn == L_STARTING_SYNC_S) ||
 		  (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))) ||
-		(os.conn >= C_CONNECTED && ns.conn == C_DISCONNECTING) ||
-		(os.conn == C_CONNECTED && ns.conn == C_VERIFY_S) ||
-		(os.conn == C_CONNECTED && ns.conn == C_WF_REPORT_PARAMS);
+		(os.conn >= L_CONNECTED && ns.conn == C_DISCONNECTING) ||
+		(os.conn == L_CONNECTED && ns.conn == L_VERIFY_S) ||
+		(os.conn == L_CONNECTED && ns.conn == L_STANDALONE);
 }
 
 static union drbd_state
@@ -504,41 +504,41 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 	else if (ns.role == R_SECONDARY && device->open_cnt)
 		rv = SS_DEVICE_IN_USE;
 
-	else if (ns.role == R_PRIMARY && ns.conn < C_CONNECTED && ns.disk < D_UP_TO_DATE)
+	else if (ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.disk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
 	else if (fp >= FP_RESOURCE &&
-		 ns.role == R_PRIMARY && ns.conn < C_CONNECTED && ns.pdsk >= D_UNKNOWN)
+		 ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk >= D_UNKNOWN)
 		rv = SS_PRIMARY_NOP;
 
 	else if (ns.role == R_PRIMARY && ns.disk <= D_INCONSISTENT && ns.pdsk <= D_INCONSISTENT)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if (ns.conn > C_CONNECTED && ns.disk < D_INCONSISTENT)
+	else if (ns.conn > L_CONNECTED && ns.disk < D_INCONSISTENT)
 		rv = SS_NO_LOCAL_DISK;
 
-	else if (ns.conn > C_CONNECTED && ns.pdsk < D_INCONSISTENT)
+	else if (ns.conn > L_CONNECTED && ns.pdsk < D_INCONSISTENT)
 		rv = SS_NO_REMOTE_DISK;
 
-	else if (ns.conn > C_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
+	else if (ns.conn > L_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if ((ns.conn == C_CONNECTED ||
-		  ns.conn == C_WF_BITMAP_S ||
-		  ns.conn == C_SYNC_SOURCE ||
-		  ns.conn == C_PAUSED_SYNC_S) &&
+	else if ((ns.conn == L_CONNECTED ||
+		  ns.conn == L_WF_BITMAP_S ||
+		  ns.conn == L_SYNC_SOURCE ||
+		  ns.conn == L_PAUSED_SYNC_S) &&
 		  ns.disk == D_OUTDATED)
 		rv = SS_CONNECTED_OUTDATES;
 
-	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
+	else if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
 		 (nc->verify_alg[0] == 0))
 		rv = SS_NO_VERIFY_ALG;
 
-	else if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
+	else if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
 		  first_peer_device(device)->connection->agreed_pro_version < 88)
 		rv = SS_NOT_SUPPORTED;
 
-	else if (ns.conn >= C_CONNECTED && ns.pdsk == D_UNKNOWN)
+	else if (ns.conn >= L_CONNECTED && ns.pdsk == D_UNKNOWN)
 		rv = SS_CONNECTED_OUTDATES;
 
 	rcu_read_unlock();
@@ -559,8 +559,8 @@ is_valid_soft_transition(union drbd_state os, union drbd_state ns)
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
 
-	if ((ns.conn == C_STARTING_SYNC_T || ns.conn == C_STARTING_SYNC_S) &&
-	    os.conn > C_CONNECTED)
+	if ((ns.conn == L_STARTING_SYNC_T || ns.conn == L_STARTING_SYNC_S) &&
+	    os.conn > L_CONNECTED)
 		rv = SS_RESYNC_RUNNING;
 
 	if (ns.conn == C_DISCONNECTING && os.conn == C_STANDALONE)
@@ -578,22 +578,22 @@ is_valid_soft_transition(union drbd_state os, union drbd_state ns)
 	if (ns.conn == C_DISCONNECTING && os.conn == C_UNCONNECTED)
 		rv = SS_IN_TRANSIENT_STATE;
 
-	/* if (ns.conn == os.conn && ns.conn == C_WF_REPORT_PARAMS)
+	/* if (ns.conn == os.conn && ns.conn == L_STANDALONE)
 	   rv = SS_IN_TRANSIENT_STATE; */
 
-	if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) && os.conn < C_CONNECTED)
+	if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) && os.conn < L_CONNECTED)
 		rv = SS_NEED_CONNECTION;
 
-	if ((ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T) &&
-	    ns.conn != os.conn && os.conn > C_CONNECTED)
+	if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
+	    ns.conn != os.conn && os.conn > L_CONNECTED)
 		rv = SS_RESYNC_RUNNING;
 
-	if ((ns.conn == C_STARTING_SYNC_S || ns.conn == C_STARTING_SYNC_T) &&
-	    os.conn < C_CONNECTED)
+	if ((ns.conn == L_STARTING_SYNC_S || ns.conn == L_STARTING_SYNC_T) &&
+	    os.conn < L_CONNECTED)
 		rv = SS_NEED_CONNECTION;
 
-	if ((ns.conn == C_SYNC_TARGET || ns.conn == C_SYNC_SOURCE)
-	    && os.conn < C_WF_REPORT_PARAMS)
+	if ((ns.conn == L_SYNC_TARGET || ns.conn == L_SYNC_SOURCE)
+	    && os.conn < L_STANDALONE)
 		rv = SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
 
 	return rv;
@@ -691,7 +691,7 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	}
 
 	/* Implications from connection to peer and peer_isp */
-	if (ns.conn < C_CONNECTED) {
+	if (ns.conn < L_CONNECTED) {
 		ns.peer_isp = 0;
 		ns.peer = R_UNKNOWN;
 		if (ns.pdsk > D_UNKNOWN || ns.pdsk < D_INCONSISTENT)
@@ -704,15 +704,15 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 
 	/* An implication of the disk states onto the connection state */
 	/* Abort resync if a disk fails/detaches */
-	if (ns.conn > C_CONNECTED && (ns.disk <= D_FAILED || ns.pdsk <= D_FAILED)) {
+	if (ns.conn > L_CONNECTED && (ns.disk <= D_FAILED || ns.pdsk <= D_FAILED)) {
 		if (warn)
-			*warn = ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T ?
+			*warn = ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T ?
 				ABORTED_ONLINE_VERIFY : ABORTED_RESYNC;
-		ns.conn = C_CONNECTED;
+		ns.conn = L_CONNECTED;
 	}
 
 	/* Connection breaks down before we finished "Negotiating" */
-	if (ns.conn < C_CONNECTED && ns.disk == D_NEGOTIATING &&
+	if (ns.conn < L_CONNECTED && ns.disk == D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		if (device->ed_uuid == device->ldev->md.uuid[UI_CURRENT]) {
 			ns.disk = device->new_state_tmp.disk;
@@ -727,7 +727,7 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	}
 
 	/* D_CONSISTENT and D_OUTDATED vanish when we get connected */
-	if (ns.conn >= C_CONNECTED && ns.conn < C_AHEAD) {
+	if (ns.conn >= L_CONNECTED && ns.conn < L_AHEAD) {
 		if (ns.disk == D_CONSISTENT || ns.disk == D_OUTDATED)
 			ns.disk = D_UP_TO_DATE;
 		if (ns.pdsk == D_CONSISTENT || ns.pdsk == D_OUTDATED)
@@ -740,45 +740,45 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	pdsk_min = D_INCONSISTENT;
 	pdsk_max = D_UNKNOWN;
 	switch ((enum drbd_conns)ns.conn) {
-	case C_WF_BITMAP_T:
-	case C_PAUSED_SYNC_T:
-	case C_STARTING_SYNC_T:
-	case C_WF_SYNC_UUID:
-	case C_BEHIND:
+	case L_WF_BITMAP_T:
+	case L_PAUSED_SYNC_T:
+	case L_STARTING_SYNC_T:
+	case L_WF_SYNC_UUID:
+	case L_BEHIND:
 		disk_min = D_INCONSISTENT;
 		disk_max = D_OUTDATED;
 		pdsk_min = D_UP_TO_DATE;
 		pdsk_max = D_UP_TO_DATE;
 		break;
-	case C_VERIFY_S:
-	case C_VERIFY_T:
+	case L_VERIFY_S:
+	case L_VERIFY_T:
 		disk_min = D_UP_TO_DATE;
 		disk_max = D_UP_TO_DATE;
 		pdsk_min = D_UP_TO_DATE;
 		pdsk_max = D_UP_TO_DATE;
 		break;
-	case C_CONNECTED:
+	case L_CONNECTED:
 		disk_min = D_DISKLESS;
 		disk_max = D_UP_TO_DATE;
 		pdsk_min = D_DISKLESS;
 		pdsk_max = D_UP_TO_DATE;
 		break;
-	case C_WF_BITMAP_S:
-	case C_PAUSED_SYNC_S:
-	case C_STARTING_SYNC_S:
-	case C_AHEAD:
+	case L_WF_BITMAP_S:
+	case L_PAUSED_SYNC_S:
+	case L_STARTING_SYNC_S:
+	case L_AHEAD:
 		disk_min = D_UP_TO_DATE;
 		disk_max = D_UP_TO_DATE;
 		pdsk_min = D_INCONSISTENT;
 		pdsk_max = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
 		break;
-	case C_SYNC_TARGET:
+	case L_SYNC_TARGET:
 		disk_min = D_INCONSISTENT;
 		disk_max = D_INCONSISTENT;
 		pdsk_min = D_UP_TO_DATE;
 		pdsk_max = D_UP_TO_DATE;
 		break;
-	case C_SYNC_SOURCE:
+	case L_SYNC_SOURCE:
 		disk_min = D_UP_TO_DATE;
 		disk_max = D_UP_TO_DATE;
 		pdsk_min = D_INCONSISTENT;
@@ -793,7 +793,7 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	case C_PROTOCOL_ERROR:
 	case C_TEAR_DOWN:
 	case C_WF_CONNECTION:
-	case C_WF_REPORT_PARAMS:
+	case L_STANDALONE:
 	case C_MASK:
 		break;
 	}
@@ -815,7 +815,7 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	}
 
 	if (fp == FP_STONITH &&
-	    (ns.role == R_PRIMARY && ns.conn < C_CONNECTED && ns.pdsk > D_OUTDATED))
+	    (ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk > D_OUTDATED))
 		ns.susp_fen = 1; /* Suspend IO while fence-peer handler runs (peer lost) */
 
 	if (device->resource->res_opts.on_no_data == OND_SUSPEND_IO &&
@@ -823,15 +823,15 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 		ns.susp_nod = 1; /* Suspend IO while no data available (no accessible data available) */
 
 	if (ns.aftr_isp || ns.peer_isp || ns.user_isp) {
-		if (ns.conn == C_SYNC_SOURCE)
-			ns.conn = C_PAUSED_SYNC_S;
-		if (ns.conn == C_SYNC_TARGET)
-			ns.conn = C_PAUSED_SYNC_T;
+		if (ns.conn == L_SYNC_SOURCE)
+			ns.conn = L_PAUSED_SYNC_S;
+		if (ns.conn == L_SYNC_TARGET)
+			ns.conn = L_PAUSED_SYNC_T;
 	} else {
-		if (ns.conn == C_PAUSED_SYNC_S)
-			ns.conn = C_SYNC_SOURCE;
-		if (ns.conn == C_PAUSED_SYNC_T)
-			ns.conn = C_SYNC_TARGET;
+		if (ns.conn == L_PAUSED_SYNC_S)
+			ns.conn = L_SYNC_SOURCE;
+		if (ns.conn == L_PAUSED_SYNC_T)
+			ns.conn = L_SYNC_TARGET;
 	}
 
 	return ns;
@@ -850,10 +850,10 @@ static void set_ov_position(struct drbd_device *device, enum drbd_conns cs)
 		device->ov_start_sector = 0;
 	device->rs_total = drbd_bm_bits(device);
 	device->ov_position = 0;
-	if (cs == C_VERIFY_T) {
+	if (cs == L_VERIFY_T) {
 		/* starting online verify from an arbitrary position
 		 * does not fit well into the existing protocol.
-		 * on C_VERIFY_T, we initialize ov_left and friends
+		 * on L_VERIFY_T, we initialize ov_left and friends
 		 * implicitly in receive_DataRequest once the
 		 * first P_OV_REQUEST is received */
 		device->ov_start_sector = ~(sector_t)0;
@@ -954,31 +954,31 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	wake_up(&first_peer_device(device)->connection->ping_wait);
 
 	/* aborted verify run. log the last position */
-	if ((os.conn == C_VERIFY_S || os.conn == C_VERIFY_T) &&
-	    ns.conn < C_CONNECTED) {
+	if ((os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
+	    ns.conn < L_CONNECTED) {
 		device->ov_start_sector =
 			BM_BIT_TO_SECT(drbd_bm_bits(device) - device->ov_left);
 		drbd_info(device, "Online Verify reached sector %llu\n",
 			(unsigned long long)device->ov_start_sector);
 	}
 
-	if ((os.conn == C_PAUSED_SYNC_T || os.conn == C_PAUSED_SYNC_S) &&
-	    (ns.conn == C_SYNC_TARGET  || ns.conn == C_SYNC_SOURCE)) {
+	if ((os.conn == L_PAUSED_SYNC_T || os.conn == L_PAUSED_SYNC_S) &&
+	    (ns.conn == L_SYNC_TARGET  || ns.conn == L_SYNC_SOURCE)) {
 		drbd_info(device, "Syncer continues.\n");
 		device->rs_paused += (long)jiffies
 				  -(long)device->rs_mark_time[device->rs_last_mark];
-		if (ns.conn == C_SYNC_TARGET)
+		if (ns.conn == L_SYNC_TARGET)
 			mod_timer(&device->resync_timer, jiffies);
 	}
 
-	if ((os.conn == C_SYNC_TARGET  || os.conn == C_SYNC_SOURCE) &&
-	    (ns.conn == C_PAUSED_SYNC_T || ns.conn == C_PAUSED_SYNC_S)) {
+	if ((os.conn == L_SYNC_TARGET  || os.conn == L_SYNC_SOURCE) &&
+	    (ns.conn == L_PAUSED_SYNC_T || ns.conn == L_PAUSED_SYNC_S)) {
 		drbd_info(device, "Resync suspended\n");
 		device->rs_mark_time[device->rs_last_mark] = jiffies;
 	}
 
-	if (os.conn == C_CONNECTED &&
-	    (ns.conn == C_VERIFY_S || ns.conn == C_VERIFY_T)) {
+	if (os.conn == L_CONNECTED &&
+	    (ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T)) {
 		unsigned long now = jiffies;
 		int i;
 
@@ -996,7 +996,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 		drbd_rs_controller_reset(device);
 
-		if (ns.conn == C_VERIFY_S) {
+		if (ns.conn == L_VERIFY_S) {
 			drbd_info(device, "Starting Online Verify from sector %llu\n",
 					(unsigned long long)device->ov_position);
 			mod_timer(&device->resync_timer, jiffies);
@@ -1015,7 +1015,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		    (peer_device->disk_state < D_INCONSISTENT &&
 		     device->state.peer == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
-		if (device->state.conn > C_WF_REPORT_PARAMS)
+		if (device->state.conn > L_STANDALONE)
 			mdf |= MDF_CONNECTED_IND;
 		if (device->state.disk > D_INCONSISTENT)
 			mdf |= MDF_CONSISTENT;
@@ -1052,7 +1052,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		drbd_thread_restart_nowait(&first_peer_device(device)->connection->receiver);
 
 	/* Resume AL writing if we get a connection */
-	if (os.conn < C_CONNECTED && ns.conn >= C_CONNECTED)
+	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED)
 		drbd_resume_al(device);
 
 	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
@@ -1089,16 +1089,16 @@ static void abw_start_sync(struct drbd_device *device, int rv)
 {
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
-		_drbd_request_state(device, NS(conn, C_CONNECTED), CS_VERBOSE);
+		_drbd_request_state(device, NS(conn, L_CONNECTED), CS_VERBOSE);
 		return;
 	}
 
 	switch (device->state.conn) {
-	case C_STARTING_SYNC_T:
-		_drbd_request_state(device, NS(conn, C_WF_SYNC_UUID), CS_VERBOSE);
+	case L_STARTING_SYNC_T:
+		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE);
 		break;
-	case C_STARTING_SYNC_S:
-		drbd_start_resync(device, C_SYNC_SOURCE);
+	case L_STARTING_SYNC_S:
+		drbd_start_resync(device, L_SYNC_SOURCE);
 		break;
 	}
 }
@@ -1141,7 +1141,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	sib.os = os;
 	sib.ns = ns;
 
-	if (os.conn != C_CONNECTED && ns.conn == C_CONNECTED) {
+	if (os.conn != L_CONNECTED && ns.conn == L_CONNECTED) {
 		clear_bit(CRASHED_PRIMARY, &device->flags);
 		if (device->p_uuid)
 			device->p_uuid[UI_FLAGS] &= ~((u64)2);
@@ -1168,7 +1168,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	if (ns.susp_nod) {
 		enum drbd_req_event what = NOTHING;
 
-		if (os.conn < C_CONNECTED && conn_lowest_conn(first_peer_device(device)->connection) >= C_CONNECTED)
+		if (os.conn < L_CONNECTED && conn_lowest_conn(first_peer_device(device)->connection) >= L_CONNECTED)
 			what = RESEND;
 
 		if ((os.disk == D_ATTACHING || os.disk == D_NEGOTIATING) &&
@@ -1187,8 +1187,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * the sync uuid now. Need to do that before any drbd_send_state, or
 	 * the other side may go "paused sync" before receiving the sync uuids,
 	 * which is unexpected. */
-	if ((os.conn != C_SYNC_SOURCE && os.conn != C_PAUSED_SYNC_S) &&
-	    (ns.conn == C_SYNC_SOURCE || ns.conn == C_PAUSED_SYNC_S) &&
+	if ((os.conn != L_SYNC_SOURCE && os.conn != L_PAUSED_SYNC_S) &&
+	    (ns.conn == L_SYNC_SOURCE || ns.conn == L_PAUSED_SYNC_S) &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 96 && get_ldev(device)) {
 		drbd_gen_and_send_sync_uuid(first_peer_device(device));
 		put_ldev(device);
@@ -1203,8 +1203,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	/* No point in queuing send_bitmap if we don't have a connection
 	 * anymore, so check also the _current_ state, not only the new state
 	 * at the time this work was queued. */
-	if (os.conn != C_WF_BITMAP_S && ns.conn == C_WF_BITMAP_S &&
-	    device->state.conn == C_WF_BITMAP_S)
+	if (os.conn != L_WF_BITMAP_S && ns.conn == L_WF_BITMAP_S &&
+	    device->state.conn == L_WF_BITMAP_S)
 		drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 				"send_bitmap (WFBitMapS)",
 				BM_LOCKED_TEST_ALLOWED,
@@ -1247,7 +1247,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * Though, no need to da that just yet
 	 * if there is a resync going on still */
 	if (os.role == R_PRIMARY && ns.role == R_SECONDARY &&
-		device->state.conn <= C_CONNECTED && get_ldev(device)) {
+		device->state.conn <= L_CONNECTED && get_ldev(device)) {
 		/* No changes to the bitmap expected this time, so assert that,
 		 * even though no harm was done if it did change. */
 		drbd_bitmap_io_from_worker(device, &drbd_bm_write,
@@ -1257,7 +1257,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	}
 
 	/* Last part of the attaching process ... */
-	if (ns.conn >= C_CONNECTED &&
+	if (ns.conn >= L_CONNECTED &&
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
 		drbd_send_sizes(first_peer_device(device), 0, 0);  /* to start sync... */
 		drbd_send_uuids(first_peer_device(device));
@@ -1265,7 +1265,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	}
 
 	/* We want to pause/continue resync, tell peer. */
-	if (ns.conn >= C_CONNECTED &&
+	if (ns.conn >= L_CONNECTED &&
 	     ((os.aftr_isp != ns.aftr_isp) ||
 	      (os.user_isp != ns.user_isp)))
 		drbd_send_state(first_peer_device(device));
@@ -1276,16 +1276,16 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 		suspend_other_sg(device);
 
 	/* Make sure the peer gets informed about eventual state
-	   changes (ISP bits) while we were in WFReportParams. */
-	if (os.conn == C_WF_REPORT_PARAMS && ns.conn >= C_CONNECTED)
+	   changes (ISP bits) while we were in L_STANDALONE. */
+	if (os.conn == L_STANDALONE && ns.conn >= L_CONNECTED)
 		drbd_send_state(first_peer_device(device));
 
-	if (os.conn != C_AHEAD && ns.conn == C_AHEAD)
+	if (os.conn != L_AHEAD && ns.conn == L_AHEAD)
 		drbd_send_state(first_peer_device(device));
 
 	/* We are in the progress to start a full sync... */
-	if ((os.conn != C_STARTING_SYNC_T && ns.conn == C_STARTING_SYNC_T) ||
-	    (os.conn != C_STARTING_SYNC_S && ns.conn == C_STARTING_SYNC_S))
+	if ((os.conn != L_STARTING_SYNC_T && ns.conn == L_STARTING_SYNC_T) ||
+	    (os.conn != L_STARTING_SYNC_S && ns.conn == L_STARTING_SYNC_S))
 		/* no other bitmap changes expected during this phase */
 		drbd_queue_bitmap_io(device,
 			&drbd_bmio_set_n_write, &abw_start_sync,
@@ -1293,7 +1293,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			NULL);
 
 	/* We are invalidating our self... */
-	if (os.conn < C_CONNECTED && ns.conn < C_CONNECTED &&
+	if (os.conn < L_CONNECTED && ns.conn < L_CONNECTED &&
 	    os.disk > D_INCONSISTENT && ns.disk == D_INCONSISTENT)
 		/* other bitmap operation expected during this phase */
 		drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
@@ -1366,19 +1366,19 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	/* Disks got bigger while they were detached */
 	if (ns.disk > D_NEGOTIATING && ns.pdsk > D_NEGOTIATING &&
 	    test_and_clear_bit(RESYNC_AFTER_NEG, &device->flags)) {
-		if (ns.conn == C_CONNECTED)
+		if (ns.conn == L_CONNECTED)
 			resync_after_online_grow(device);
 	}
 
 	/* A resync finished or aborted, wake paused devices... */
-	if ((os.conn > C_CONNECTED && ns.conn <= C_CONNECTED) ||
+	if ((os.conn > L_CONNECTED && ns.conn <= L_CONNECTED) ||
 	    (os.peer_isp && !ns.peer_isp) ||
 	    (os.user_isp && !ns.user_isp))
 		resume_next_sg(device);
 
 	/* sync target done with resync.  Explicitly notify peer, even though
 	 * it should (at least for non-empty resyncs) already know itself. */
-	if (os.disk < D_UP_TO_DATE && os.conn >= C_SYNC_SOURCE && ns.conn == C_CONNECTED)
+	if (os.disk < D_UP_TO_DATE && os.conn >= L_SYNC_SOURCE && ns.conn == L_CONNECTED)
 		drbd_send_state(first_peer_device(device));
 
 	/* This triggers bitmap writeout of potentially still unwritten pages
@@ -1388,7 +1388,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * any bitmap writeout anymore.
 	 * No harm done if some bits change during this phase.
 	 */
-	if (os.conn > C_CONNECTED && ns.conn <= C_CONNECTED && get_ldev(device)) {
+	if (os.conn > L_CONNECTED && ns.conn <= L_CONNECTED && get_ldev(device)) {
 		drbd_queue_bitmap_io(device, &drbd_bm_write, NULL,
 			"write from resync_finished", BM_LOCKED_SET_ALLOWED,
 			NULL);
@@ -1465,7 +1465,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 					   CS_VERBOSE);
 		}
 		/* case2: The connection was established again: */
-		if (ns_min.conn >= C_CONNECTED) {
+		if (ns_min.conn >= L_CONNECTED) {
 			rcu_read_lock();
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				struct drbd_device *device = peer_device->device;
@@ -1649,7 +1649,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 		return SS_CW_FAILED_BY_PEER;
 
 	spin_lock_irq(&connection->resource->req_lock);
-	rv = connection->cstate != C_WF_REPORT_PARAMS ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
+	rv = connection->cstate != C_CONNECTED ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
 
 	if (rv == SS_UNKNOWN_ERROR)
 		rv = conn_is_valid_transition(connection, mask, val, 0);
@@ -1704,7 +1704,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 	if (rv < SS_SUCCESS)
 		goto abort;
 
-	if (oc == C_WF_REPORT_PARAMS && val.conn == C_DISCONNECTING &&
+	if (oc == C_CONNECTED && val.conn == C_DISCONNECTING &&
 	    !(flags & (CS_LOCAL_ONLY | CS_HARD))) {
 		rv = conn_cl_wide(connection, mask, val, flags);
 		if (rv < SS_SUCCESS)

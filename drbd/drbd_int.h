@@ -498,7 +498,7 @@ enum {
 	CL_ST_CHG_FAIL,
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
-				 * goes into C_CONNECTED state. */
+				 * goes into L_CONNECTED state. */
 	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
 	CONSIDER_RESYNC,
 
@@ -668,7 +668,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_resource *resource;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
-	enum drbd_conns cstate;		/* Only C_STANDALONE to C_WF_REPORT_PARAMS */
+	enum drbd_conns cstate;		/* Only C_STANDALONE to C_CONNECTED */
 	struct mutex cstate_mutex;	/* Protects graceful disconnects */
 
 	unsigned long flags;
@@ -1796,8 +1796,8 @@ static inline void _dec_ap_pending(struct drbd_device *device, const char *func,
 
 /* counts how many resync-related answers we still expect from the peer
  *		     increase			decrease
- * C_SYNC_TARGET sends P_RS_DATA_REQUEST (and expects P_RS_DATA_REPLY)
- * C_SYNC_SOURCE sends P_RS_DATA_REPLY   (and expects P_WRITE_ACK with ID_SYNCER)
+ * L_SYNC_TARGET sends P_RS_DATA_REQUEST (and expects P_RS_DATA_REPLY)
+ * L_SYNC_SOURCE sends P_RS_DATA_REPLY   (and expects P_WRITE_ACK with ID_SYNCER)
  *					   (or P_NEG_ACK with ID_SYNCER)
  */
 static inline void inc_rs_pending(struct drbd_device *device)
@@ -1900,7 +1900,7 @@ static inline void drbd_get_syncer_progress(struct drbd_device *device,
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
-	if (device->state.conn == C_VERIFY_S || device->state.conn == C_VERIFY_T)
+	if (device->state.conn == L_VERIFY_S || device->state.conn == L_VERIFY_T)
 		*bits_left = device->ov_left;
 	else
 		*bits_left = drbd_bm_total_weight(device) - device->rs_failed;
@@ -1964,15 +1964,15 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	case C_STANDALONE:
 	case C_WF_CONNECTION:
 	/* ... or there is a well established connection. */
-	case C_CONNECTED:
-	case C_SYNC_SOURCE:
-	case C_SYNC_TARGET:
-	case C_VERIFY_S:
-	case C_VERIFY_T:
-	case C_PAUSED_SYNC_S:
-	case C_PAUSED_SYNC_T:
-	case C_AHEAD:
-	case C_BEHIND:
+	case L_CONNECTED:
+	case L_SYNC_SOURCE:
+	case L_SYNC_TARGET:
+	case L_VERIFY_S:
+	case L_VERIFY_T:
+	case L_PAUSED_SYNC_S:
+	case L_PAUSED_SYNC_T:
+	case L_AHEAD:
+	case L_BEHIND:
 		/* transitional states, IO allowed */
 	case C_DISCONNECTING:
 	case C_UNCONNECTED:
@@ -1981,20 +1981,20 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	case C_NETWORK_FAILURE:
 	case C_PROTOCOL_ERROR:
 	case C_TEAR_DOWN:
-	case C_WF_REPORT_PARAMS:
-	case C_STARTING_SYNC_S:
-	case C_STARTING_SYNC_T:
+	case C_CONNECTED: /* == L_STANDALONE */
+	case L_STARTING_SYNC_S:
+	case L_STARTING_SYNC_T:
 		break;
 
 		/* Allow IO in BM exchange states with new protocols */
-	case C_WF_BITMAP_S:
+	case L_WF_BITMAP_S:
 		if (first_peer_device(device)->connection->agreed_pro_version < 96)
 			return 0;
 		break;
 
 		/* no new io accepted in these states */
-	case C_WF_BITMAP_T:
-	case C_WF_SYNC_UUID:
+	case L_WF_BITMAP_T:
+	case L_WF_SYNC_UUID:
 	case C_MASK:
 		/* not "stable" */
 		return 0;

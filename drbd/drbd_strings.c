@@ -35,22 +35,22 @@ static const char *drbd_conn_s_names[] = {
 	[C_NETWORK_FAILURE]  = "NetworkFailure",
 	[C_PROTOCOL_ERROR]   = "ProtocolError",
 	[C_WF_CONNECTION]    = "WFConnection",
-	[C_WF_REPORT_PARAMS] = "WFReportParams",
+	[L_STANDALONE] = "WFReportParams",
 	[C_TEAR_DOWN]        = "TearDown",
-	[C_CONNECTED]        = "Connected",
-	[C_STARTING_SYNC_S]  = "StartingSyncS",
-	[C_STARTING_SYNC_T]  = "StartingSyncT",
-	[C_WF_BITMAP_S]      = "WFBitMapS",
-	[C_WF_BITMAP_T]      = "WFBitMapT",
-	[C_WF_SYNC_UUID]     = "WFSyncUUID",
-	[C_SYNC_SOURCE]      = "SyncSource",
-	[C_SYNC_TARGET]      = "SyncTarget",
-	[C_PAUSED_SYNC_S]    = "PausedSyncS",
-	[C_PAUSED_SYNC_T]    = "PausedSyncT",
-	[C_VERIFY_S]         = "VerifyS",
-	[C_VERIFY_T]         = "VerifyT",
-	[C_AHEAD]            = "Ahead",
-	[C_BEHIND]           = "Behind",
+	[L_CONNECTED]        = "Connected",
+	[L_STARTING_SYNC_S]  = "StartingSyncS",
+	[L_STARTING_SYNC_T]  = "StartingSyncT",
+	[L_WF_BITMAP_S]      = "WFBitMapS",
+	[L_WF_BITMAP_T]      = "WFBitMapT",
+	[L_WF_SYNC_UUID]     = "WFSyncUUID",
+	[L_SYNC_SOURCE]      = "SyncSource",
+	[L_SYNC_TARGET]      = "SyncTarget",
+	[L_PAUSED_SYNC_S]    = "PausedSyncS",
+	[L_PAUSED_SYNC_T]    = "PausedSyncT",
+	[L_VERIFY_S]         = "VerifyS",
+	[L_VERIFY_T]         = "VerifyT",
+	[L_AHEAD]            = "Ahead",
+	[L_BEHIND]           = "Behind",
 };
 
 static const char *drbd_role_s_names[] = {
@@ -96,7 +96,7 @@ static const char *drbd_state_sw_errors[] = {
 const char *drbd_conn_str(enum drbd_conns s)
 {
 	/* enums are unsigned... */
-	return s > C_BEHIND ? "TOO_LARGE" : drbd_conn_s_names[s];
+	return s > L_BEHIND ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 
 const char *drbd_role_str(enum drbd_role s)
