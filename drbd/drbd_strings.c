@@ -93,9 +93,8 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_O_VOL_PEER_PRI] = "Other vol primary on peer not allowed by config",
 };
 
-const char *drbd_conn_str(enum drbd_conns s)
+const char *drbd_conn_str(unsigned int s)
 {
-	/* enums are unsigned... */
 	return s > L_BEHIND ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 

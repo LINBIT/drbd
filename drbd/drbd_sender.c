@@ -1560,7 +1560,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
  * This function might bring you directly into one of the
  * C_PAUSED_SYNC_* states.
  */
-void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
+void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 {
 	union drbd_state ns;
 	int r;

@@ -668,7 +668,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_resource *resource;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
-	enum drbd_conns cstate;		/* Only C_STANDALONE to C_CONNECTED */
+	enum drbd_conns cstate;
 	struct mutex cstate_mutex;	/* Protects graceful disconnects */
 
 	unsigned long flags;
@@ -1298,7 +1298,7 @@ extern int drbd_sender(struct drbd_thread *thi);
 extern int drbd_worker(struct drbd_thread *thi);
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor);
 void drbd_resync_after_changed(struct drbd_device *device);
-extern void drbd_start_resync(struct drbd_device *device, enum drbd_conns side);
+extern void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
 extern int drbd_resync_finished(struct drbd_device *device);
@@ -1975,11 +1975,10 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	/* DO NOT add a default clause, we want the compiler to warn us
 	 * for any newly introduced state we may have forgotten to add here */
 
-	switch ((enum drbd_conns)s.conn) {
-	/* new io only accepted when there is no connection, ... */
-	case C_STANDALONE:
-	case C_WF_CONNECTION:
-	/* ... or there is a well established connection. */
+	switch ((enum drbd_repl_state)s.conn) {
+	/* New io is only accepted when the peer device is unknown or there is
+	 * a well-established connection. */
+	case L_STANDALONE:
 	case L_CONNECTED:
 	case L_SYNC_SOURCE:
 	case L_SYNC_TARGET:
@@ -1989,15 +1988,6 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	case L_PAUSED_SYNC_T:
 	case L_AHEAD:
 	case L_BEHIND:
-		/* transitional states, IO allowed */
-	case C_DISCONNECTING:
-	case C_UNCONNECTED:
-	case C_TIMEOUT:
-	case C_BROKEN_PIPE:
-	case C_NETWORK_FAILURE:
-	case C_PROTOCOL_ERROR:
-	case C_TEAR_DOWN:
-	case C_CONNECTED: /* == L_STANDALONE */
 	case L_STARTING_SYNC_S:
 	case L_STARTING_SYNC_T:
 		break;
@@ -2011,7 +2001,6 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 		/* no new io accepted in these states */
 	case L_WF_BITMAP_T:
 	case L_WF_SYNC_UUID:
-	case C_MASK:
 		/* not "stable" */
 		return 0;
 	}

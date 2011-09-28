@@ -162,24 +162,24 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 	return ds;
 }
 
-static enum drbd_conns conn_lowest_conn(struct drbd_connection *connection)
+static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *connection)
 {
-	unsigned int peer_device_state = -1U;
+	unsigned int repl_state = -1U;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		if (device->state.conn < peer_device_state)
-			peer_device_state = device->state.conn;
+		if (device->state.conn < repl_state)
+			repl_state = device->state.conn;
 	}
 	rcu_read_unlock();
 
-	if (peer_device_state == -1U)
+	if (repl_state == -1U)
 		return L_STANDALONE;
 
-	return peer_device_state;
+	return repl_state;
 }
 
 /**
@@ -743,63 +743,55 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	disk_max = D_UP_TO_DATE;
 	pdsk_min = D_INCONSISTENT;
 	pdsk_max = D_UNKNOWN;
-	switch ((enum drbd_conns)ns.conn) {
-	case L_WF_BITMAP_T:
-	case L_PAUSED_SYNC_T:
-	case L_STARTING_SYNC_T:
-	case L_WF_SYNC_UUID:
-	case L_BEHIND:
-		disk_min = D_INCONSISTENT;
-		disk_max = D_OUTDATED;
-		pdsk_min = D_UP_TO_DATE;
-		pdsk_max = D_UP_TO_DATE;
-		break;
-	case L_VERIFY_S:
-	case L_VERIFY_T:
-		disk_min = D_UP_TO_DATE;
-		disk_max = D_UP_TO_DATE;
-		pdsk_min = D_UP_TO_DATE;
-		pdsk_max = D_UP_TO_DATE;
-		break;
-	case L_CONNECTED:
-		disk_min = D_DISKLESS;
-		disk_max = D_UP_TO_DATE;
-		pdsk_min = D_DISKLESS;
-		pdsk_max = D_UP_TO_DATE;
-		break;
-	case L_WF_BITMAP_S:
-	case L_PAUSED_SYNC_S:
-	case L_STARTING_SYNC_S:
-	case L_AHEAD:
-		disk_min = D_UP_TO_DATE;
-		disk_max = D_UP_TO_DATE;
-		pdsk_min = D_INCONSISTENT;
-		pdsk_max = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
-		break;
-	case L_SYNC_TARGET:
-		disk_min = D_INCONSISTENT;
-		disk_max = D_INCONSISTENT;
-		pdsk_min = D_UP_TO_DATE;
-		pdsk_max = D_UP_TO_DATE;
-		break;
-	case L_SYNC_SOURCE:
-		disk_min = D_UP_TO_DATE;
-		disk_max = D_UP_TO_DATE;
-		pdsk_min = D_INCONSISTENT;
-		pdsk_max = D_INCONSISTENT;
-		break;
-	case C_STANDALONE:
-	case C_DISCONNECTING:
-	case C_UNCONNECTED:
-	case C_TIMEOUT:
-	case C_BROKEN_PIPE:
-	case C_NETWORK_FAILURE:
-	case C_PROTOCOL_ERROR:
-	case C_TEAR_DOWN:
-	case C_WF_CONNECTION:
-	case L_STANDALONE:
-	case C_MASK:
-		break;
+	if (ns.conn >= L_STANDALONE) {
+		switch ((enum drbd_repl_state)ns.conn) {
+		case L_WF_BITMAP_T:
+		case L_PAUSED_SYNC_T:
+		case L_STARTING_SYNC_T:
+		case L_WF_SYNC_UUID:
+		case L_BEHIND:
+			disk_min = D_INCONSISTENT;
+			disk_max = D_OUTDATED;
+			pdsk_min = D_UP_TO_DATE;
+			pdsk_max = D_UP_TO_DATE;
+			break;
+		case L_VERIFY_S:
+		case L_VERIFY_T:
+			disk_min = D_UP_TO_DATE;
+			disk_max = D_UP_TO_DATE;
+			pdsk_min = D_UP_TO_DATE;
+			pdsk_max = D_UP_TO_DATE;
+			break;
+		case L_CONNECTED:
+			disk_min = D_DISKLESS;
+			disk_max = D_UP_TO_DATE;
+			pdsk_min = D_DISKLESS;
+			pdsk_max = D_UP_TO_DATE;
+			break;
+		case L_WF_BITMAP_S:
+		case L_PAUSED_SYNC_S:
+		case L_STARTING_SYNC_S:
+		case L_AHEAD:
+			disk_min = D_UP_TO_DATE;
+			disk_max = D_UP_TO_DATE;
+			pdsk_min = D_INCONSISTENT;
+			pdsk_max = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
+			break;
+		case L_SYNC_TARGET:
+			disk_min = D_INCONSISTENT;
+			disk_max = D_INCONSISTENT;
+			pdsk_min = D_UP_TO_DATE;
+			pdsk_max = D_UP_TO_DATE;
+			break;
+		case L_SYNC_SOURCE:
+			disk_min = D_UP_TO_DATE;
+			disk_max = D_UP_TO_DATE;
+			pdsk_min = D_INCONSISTENT;
+			pdsk_max = D_INCONSISTENT;
+			break;
+		case L_STANDALONE:
+			break;
+		}
 	}
 	if (ns.disk > disk_max)
 		ns.disk = disk_max;
@@ -848,13 +840,14 @@ void drbd_resume_al(struct drbd_device *device)
 }
 
 /* helper for __drbd_set_state */
-static void set_ov_position(struct drbd_device *device, enum drbd_conns cs)
+static void set_ov_position(struct drbd_device *device,
+			    enum drbd_repl_state repl_state)
 {
 	if (first_peer_device(device)->connection->agreed_pro_version < 90)
 		device->ov_start_sector = 0;
 	device->rs_total = drbd_bm_bits(device);
 	device->ov_position = 0;
-	if (cs == L_VERIFY_T) {
+	if (repl_state == L_VERIFY_T) {
 		/* starting online verify from an arbitrary position
 		 * does not fit well into the existing protocol.
 		 * on L_VERIFY_T, we initialize ov_left and friends
@@ -987,7 +980,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		unsigned long now = jiffies;
 		int i;
 
-		set_ov_position(device, ns.conn);
+		set_ov_position(device, (enum drbd_repl_state)ns.conn);
 		device->rs_start = now;
 		device->rs_last_events = 0;
 		device->rs_last_sect_ev = 0;
@@ -1173,7 +1166,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	if (ns.susp_nod) {
 		enum drbd_req_event what = NOTHING;
 
-		if (os.conn < L_CONNECTED && conn_lowest_conn(first_peer_device(device)->connection) >= L_CONNECTED)
+		if (os.conn < L_CONNECTED &&
+		    conn_lowest_repl_state(first_peer_device(device)->connection) >= L_CONNECTED)
 			what = RESEND;
 
 		if ((os.disk == D_ATTACHING || os.disk == D_NEGOTIATING) &&

@@ -196,6 +196,11 @@ enum drbd_conns {
 	C_WF_CONNECTION,
 
 	C_CONNECTED, /* we have a socket */
+
+	C_MASK = 31,
+};
+
+enum drbd_repl_state {
 	L_STANDALONE = C_CONNECTED,
 
 	L_CONNECTED,      /* we have introduced each other */
@@ -216,8 +221,6 @@ enum drbd_conns {
 
 	L_AHEAD,
 	L_BEHIND,
-
-	C_MASK = 31
 };
 
 enum drbd_disk_state {
