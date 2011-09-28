@@ -1734,7 +1734,7 @@ STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 		}
 		len    -= sent;
 		offset += sent;
-	} while (len > 0 /* THINK && device->cstate >= C_CONNECTED*/);
+	} while (len > 0 /* THINK && device->state.conn >= C_CONNECTED */);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
 
