@@ -1588,7 +1588,7 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 	int vnr, number_of_volumes = 0;
 
 	if (mask.conn == C_MASK)
-		connection->cstate = val.conn;
+		connection->cstate = min_t(unsigned, val.conn, C_CONNECTED);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
