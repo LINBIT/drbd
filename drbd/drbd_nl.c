@@ -2650,12 +2650,27 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 		NLA_PUT_U64(skb, T_capacity, drbd_get_capacity(device->this_bdev));
 
 		if (got_ldev) {
+			bool resync_or_verify_active = false;
+
 			NLA_PUT_U32(skb, T_disk_flags, device->ldev->md.flags);
 			NLA_PUT(skb, T_uuids, sizeof(si->uuids), device->ldev->md.uuid);
 			NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
 			NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
-			if (L_SYNC_SOURCE <= first_peer_device(device)->repl_state &&
-			    L_PAUSED_SYNC_T >= first_peer_device(device)->repl_state) {
+
+			if (connection) {
+				struct drbd_peer_device *peer_device;
+				int vnr;
+
+				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+					if (peer_device->repl_state >= L_SYNC_SOURCE &&
+					    peer_device->repl_state <= L_PAUSED_SYNC_T) {
+						resync_or_verify_active = true;
+						break;
+					}
+				}
+			}
+
+			if (resync_or_verify_active) {
 				NLA_PUT_U64(skb, T_bits_rs_total, device->rs_total);
 				NLA_PUT_U64(skb, T_bits_rs_failed, device->rs_failed);
 			}
