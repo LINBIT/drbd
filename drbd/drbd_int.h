@@ -710,6 +710,7 @@ struct drbd_peer_device {
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	enum drbd_disk_state disk_state;
+	enum drbd_repl_state repl_state;
 };
 
 struct drbd_device {
@@ -1513,7 +1514,7 @@ _drbd_set_state(struct drbd_device *device, union drbd_state ns,
  */
 static inline int combined_conn_state(struct drbd_peer_device *peer_device)
 {
-	enum drbd_conns repl_state = peer_device->device->state.conn;
+	enum drbd_repl_state repl_state = peer_device->repl_state;
 
 	if (repl_state > L_STANDALONE)
 		return repl_state;
@@ -1916,7 +1917,7 @@ static inline void drbd_get_syncer_progress(struct drbd_device *device,
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
-	if (device->state.conn == L_VERIFY_S || device->state.conn == L_VERIFY_T)
+	if (first_peer_device(device)->repl_state == L_VERIFY_S || first_peer_device(device)->repl_state == L_VERIFY_T)
 		*bits_left = device->ov_left;
 	else
 		*bits_left = drbd_bm_total_weight(device) - device->rs_failed;
@@ -1930,7 +1931,7 @@ static inline void drbd_get_syncer_progress(struct drbd_device *device,
 		 */
 		smp_rmb();
 		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-				drbd_conn_str(device->state.conn),
+				drbd_conn_str(first_peer_device(device)->repl_state),
 				*bits_left, device->rs_total, device->rs_failed);
 		*per_mil_done = 0;
 	} else {
@@ -1975,7 +1976,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	/* DO NOT add a default clause, we want the compiler to warn us
 	 * for any newly introduced state we may have forgotten to add here */
 
-	switch ((enum drbd_repl_state)s.conn) {
+	switch (first_peer_device(device)->repl_state) {
 	/* New io is only accepted when the peer device is unknown or there is
 	 * a well-established connection. */
 	case L_STANDALONE:

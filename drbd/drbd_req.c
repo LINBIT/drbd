@@ -209,7 +209,7 @@ static void _about_to_complete_local_write(struct drbd_device *device,
 	 * did not have a fully established connection yet/anymore, during
 	 * bitmap exchange, or while we are L_AHEAD due to congestion policy.
 	 */
-	if (device->state.conn >= L_CONNECTED &&
+	if (first_peer_device(device)->repl_state >= L_CONNECTED &&
 	    (s & RQ_NET_SENT) != 0 &&
 	    req->epoch == first_peer_device(device)->connection->newest_tle->br_number)
 		queue_barrier(device);
@@ -784,22 +784,21 @@ static int complete_conflicting_writes(struct drbd_device *device,
 static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
 {
 	enum drbd_disk_state peer_disk_state = peer_device->disk_state;
-	union drbd_dev_state state = peer_device->device->state;
 
 	return peer_disk_state == D_UP_TO_DATE ||
-	       (peer_disk_state == D_INCONSISTENT &&
-		state.conn >= L_WF_BITMAP_T &&
-		state.conn < L_AHEAD);
+		(peer_disk_state == D_INCONSISTENT &&
+		 peer_device->repl_state >= L_WF_BITMAP_T &&
+		 peer_device->repl_state < L_AHEAD);
 	/* Before proto 96 that was >= CONNECTED instead of >= L_WF_BITMAP_T.
 	   That is equivalent since before 96 IO was frozen in the L_WF_BITMAP*
 	   states. */
 }
 
-static bool drbd_should_send_out_of_sync(union drbd_dev_state s)
+static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 {
-	return s.conn == L_AHEAD || s.conn == L_WF_BITMAP_S;
+	return peer_device->repl_state == L_AHEAD || peer_device->repl_state == L_WF_BITMAP_S;
 	/* pdsk = D_INCONSISTENT as a consequence. Protocol 96 check not necessary
-	   since we enter state C_AHEAD only if proto >= 96 */
+	   since we enter state L_AHEAD only if proto >= 96 */
 }
 
 int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_time)
@@ -887,7 +886,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	}
 
 	remote = remote && drbd_should_do_remote(first_peer_device(device));
-	send_oos = rw == WRITE && drbd_should_send_out_of_sync(device->state);
+	send_oos = rw == WRITE && drbd_should_send_out_of_sync(first_peer_device(device));
 	D_ASSERT(device, !(remote && send_oos));
 
 	if (!(local || remote) && !drbd_suspended(device)) {
@@ -943,7 +942,7 @@ allocate_barrier:
 
 	if (remote || send_oos) {
 		remote = drbd_should_do_remote(first_peer_device(device));
-		send_oos = rw == WRITE && drbd_should_send_out_of_sync(device->state);
+		send_oos = rw == WRITE && drbd_should_send_out_of_sync(first_peer_device(device));
 		D_ASSERT(device, !(remote && send_oos));
 
 		if (!(remote || send_oos))
@@ -1186,7 +1185,7 @@ void request_timer_fn(unsigned long data)
 
 	et = min_not_zero(dt, ent);
 
-	if (!et || (device->state.conn < L_STANDALONE &&
+	if (!et || (first_peer_device(device)->repl_state < L_STANDALONE &&
 		    device->state.disk <= D_FAILED))
 		return; /* Recurring timer stopped */
 

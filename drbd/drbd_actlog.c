@@ -563,7 +563,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	kfree(udw);
 
 	if (drbd_bm_total_weight(device) <= device->rs_failed) {
-		switch (device->state.conn) {
+		switch (first_peer_device(device)->repl_state) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
 			drbd_resync_finished(device);
@@ -682,8 +682,8 @@ void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go
 	int next = (device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
 	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
 		if (device->rs_mark_left[device->rs_last_mark] != still_to_go &&
-		    device->state.conn != L_PAUSED_SYNC_T &&
-		    device->state.conn != L_PAUSED_SYNC_S) {
+		    first_peer_device(device)->repl_state != L_PAUSED_SYNC_T &&
+		    first_peer_device(device)->repl_state != L_PAUSED_SYNC_S) {
 			device->rs_mark_time[next] = now;
 			device->rs_mark_left[next] = still_to_go;
 			device->rs_last_mark = next;
