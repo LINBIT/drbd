@@ -2266,6 +2266,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	enum dds_flags ddsf;
 	sector_t u_size;
 	int err;
+	struct drbd_peer_device *peer_device;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -2284,9 +2285,11 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	device = adm_ctx.device;
-	if (first_peer_device(device)->repl_state > L_CONNECTED) {
-		retcode = ERR_RESIZE_RESYNC;
-		goto fail;
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state > L_CONNECTED) {
+			retcode = ERR_RESIZE_RESYNC;
+			goto fail;
+		}
 	}
 
 	if (device->state.role == R_SECONDARY &&
@@ -2300,9 +2303,11 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (rs.no_resync && first_peer_device(device)->connection->agreed_pro_version < 93) {
-		retcode = ERR_NEED_APV_93;
-		goto fail_ldev;
+	for_each_peer_device(peer_device, device) {
+		if (rs.no_resync && peer_device->connection->agreed_pro_version < 93) {
+			retcode = ERR_NEED_APV_93;
+			goto fail_ldev;
+		}
 	}
 
 	rcu_read_lock();
@@ -2339,12 +2344,14 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (first_peer_device(device)->repl_state == L_CONNECTED) {
-		if (dd == grew)
-			set_bit(RESIZE_PENDING, &device->flags);
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state == L_CONNECTED) {
+			if (dd == grew)
+				set_bit(RESIZE_PENDING, &device->flags);
 
-		drbd_send_uuids(first_peer_device(device));
-		drbd_send_sizes(first_peer_device(device), 1, ddsf);
+			drbd_send_uuids(peer_device);
+			drbd_send_sizes(peer_device, 1, ddsf);
+		}
 	}
 
  fail:
