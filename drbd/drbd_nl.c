@@ -1460,8 +1460,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_suspend_io(device);
 	/* also wait for the last barrier ack. */
 	wait_event(device->misc_wait, !atomic_read(&device->ap_pending_cnt) || drbd_suspended(device));
-	/* and for any other previously queued work */
-	drbd_flush_workqueue(&first_peer_device(device)->connection->data.work);
+	/* and for other previously queued resource work */
+	drbd_flush_workqueue(&device->resource->work);
 
 	rv = _drbd_request_state(device, NS(disk, D_ATTACHING), CS_VERBOSE);
 	retcode = rv;  /* FIXME: Type mismatch. */
