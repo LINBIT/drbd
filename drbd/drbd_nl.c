@@ -3270,13 +3270,23 @@ out:
 int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_genlmsghdr *dh = info->userhdr;
+	struct device_conf device_conf;
 	enum drbd_ret_code retcode;
+	int err;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 	if (retcode != NO_ERROR)
 		goto out;
+
+	set_device_conf_defaults(&device_conf);
+	err = device_conf_from_attrs(&device_conf, info);
+	if (err && err != -ENOMSG) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(from_attrs_err_to_txt(err));
+		goto out;
+	}
 
 	if (dh->minor > MINORMASK) {
 		drbd_msg_put_info("requested minor out of range");
@@ -3292,7 +3302,7 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.device)
 		goto out;
 
-	retcode = drbd_create_device(adm_ctx.resource, dh->minor, adm_ctx.volume);
+	retcode = drbd_create_device(adm_ctx.resource, dh->minor, adm_ctx.volume, &device_conf);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;

@@ -2792,7 +2792,8 @@ void drbd_destroy_connection(struct kref *kref)
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
-enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr)
+enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
+				      struct device_conf *device_conf)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -2816,6 +2817,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device->resource = resource;
 	device->minor = minor;
 	device->vnr = vnr;
+	device->device_conf = *device_conf;
 
 	drbd_init_set_defaults(device);
 

@@ -861,6 +861,7 @@ struct drbd_device {
 	struct list_head pending_bitmap_work;
 	int peer_max_bio_size;
 	int local_max_bio_size;
+	struct device_conf device_conf;
 };
 
 static inline struct drbd_device *minor_to_mdev(unsigned int minor)
@@ -1245,7 +1246,8 @@ extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 extern rwlock_t global_state_lock;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
-enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr);
+enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
+				      struct device_conf *);
 extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_delete_device(struct drbd_device *mdev);
 

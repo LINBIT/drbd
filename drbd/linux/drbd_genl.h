@@ -229,6 +229,10 @@ GENL_struct(DRBD_NLA_DETACH_PARMS, 13, detach_parms,
 	__flg_field(1, DRBD_GENLA_F_MANDATORY,	force_detach)
 )
 
+GENL_struct(DRBD_NLA_DEVICE_CONF, 14, device_conf,
+	__u32_field_def(1, DRBD_F_REQUIRED | DRBD_F_INVARIANT,	max_bio_size, DRBD_MAX_BIO_SIZE_DEF)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -260,7 +264,8 @@ GENL_op(
 
 	/* add DRBD minor devices as volumes to resources */
 GENL_op(DRBD_ADM_NEW_MINOR, 5, GENL_doit(drbd_adm_new_minor),
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED))
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
+	GENL_tla_expected(DRBD_NLA_DEVICE_CONF, DRBD_GENLA_F_MANDATORY))
 GENL_op(DRBD_ADM_DEL_MINOR, 6, GENL_doit(drbd_adm_del_minor),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED))
 
