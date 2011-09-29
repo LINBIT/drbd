@@ -159,13 +159,53 @@ struct drbd_argument {
  * and/or the replication group (aka resource) name */
 enum cfg_ctx_key {
 	/* Only one of these can be present in a command: */
-	CTX_MINOR = 1,
-	CTX_RESOURCE = 2,
-	CTX_ALL = 4,
-	CTX_CONNECTION = 8,
+	CTX_RESOURCE = 1,
+	CTX_MINOR = 2,
+	CTX_VOLUME = 4,
+	CTX_MY_ADDR = 8,
+	CTX_PEER_ADDR = 16,
+	CTX_ALL = 32,
 
-	CTX_RESOURCE_AND_CONNECTION = 16,
+	CTX_MULTIPLE_ARGUMENTS = 64,
+
+	CTX_CONNECTION = CTX_MY_ADDR | CTX_PEER_ADDR | CTX_MULTIPLE_ARGUMENTS,
+
+	CTX_RESOURCE_AND_CONNECTION = 0,
 };
+
+enum cfg_ctx_key ctx_next_arg(enum cfg_ctx_key *key)
+{
+	enum cfg_ctx_key next_arg;
+
+	if (*key & CTX_MULTIPLE_ARGUMENTS) {
+		next_arg = *key & ~(*key - 1);  /* the lowest set bit */
+		next_arg &= ~CTX_MULTIPLE_ARGUMENTS;
+	} else
+		next_arg = *key;
+
+	*key &= ~next_arg;
+	return next_arg;
+}
+
+const char *ctx_arg_string(enum cfg_ctx_key key)
+{
+	switch(key) {
+	case CTX_RESOURCE:
+		return "{resource}";
+	case CTX_MINOR:
+		return "{minor}";
+	case CTX_VOLUME:
+		return "{volume}";
+	case CTX_MY_ADDR:
+		return "[{af}:]{local_addr}[:{port}]";
+	case CTX_PEER_ADDR:
+		return "[{af}:]{remote_addr}[:{port}]";
+	case CTX_ALL:
+		return "all";
+	default:
+		assert(0);
+	}
+}
 
 struct drbd_cmd {
 	const char* cmd;
@@ -212,9 +252,6 @@ static void show_address(void* address, int addr_len);
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
-static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
-static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
-static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 
 struct resources_list {
 	struct resources_list *next;
@@ -273,7 +310,8 @@ struct drbd_cmd commands[] = {
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, DRBD_NLA_DETACH_PARMS, F_CONFIG_CMD,
 	 .ctx = &detach_cmd_ctx },
 
-	{"connect", CTX_RESOURCE_AND_CONNECTION, DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
+	{"connect", CTX_RESOURCE | CTX_CONNECTION,
+		DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
 	 .ctx = &connect_cmd_ctx },
 
@@ -340,14 +378,9 @@ struct drbd_cmd commands[] = {
 	 .ctx = &resource_options_ctx },
 
 	/* only payload is resource name and volume number */
-	{"new-minor", 0, DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
-		F_CONFIG_CMD,
-	 .drbd_args = (struct drbd_argument[]) {
-		 { "resource", T_ctx_resource_name, conv_resource_name },
-		 { "minor", 0, conv_minor },
-		 { "volume", T_ctx_volume, conv_volume },
-		 { } },
-	 .ctx = &new_minor_cmd_ctx },
+	{"new-minor", CTX_RESOURCE | CTX_MINOR | CTX_VOLUME | CTX_MULTIPLE_ARGUMENTS,
+		DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
+		F_CONFIG_CMD, },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, },
 	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, }
@@ -512,37 +545,6 @@ static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg,
 	return NO_ERROR;
 }
 
-static int conv_resource_name(struct drbd_argument *ad, struct msg_buff *msg,
-			      struct drbd_genlmsghdr *dhdr, char* arg)
-{
-	/* additional sanity checks? */
-	nla_put_string(msg, T_ctx_resource_name, arg);
-	return NO_ERROR;
-}
-
-static int conv_volume(struct drbd_argument *ad, struct msg_buff *msg,
-		       struct drbd_genlmsghdr *dhdr, char* arg)
-{
-	unsigned vol = m_strtoll(arg,1);
-	/* sanity check on vol < 256? */
-	nla_put_u32(msg, T_ctx_volume, vol);
-	return NO_ERROR;
-}
-
-static int conv_minor(struct drbd_argument *ad, struct msg_buff *msg,
-		      struct drbd_genlmsghdr *dhdr, char* arg)
-{
-	unsigned minor = dt_minor_of_dev(arg);
-	if (minor == -1U) {
-		fprintf(stderr, "Cannot determine minor device number of "
-				"device '%s'\n",
-			arg);
-		return OTHER_ERROR;
-	}
-	dhdr->minor = minor;
-	return NO_ERROR;
-}
-
 static void resolv6(char *name, struct sockaddr_in6 *addr)
 {
 	struct addrinfo hints, *res, *tmp;
@@ -683,6 +685,14 @@ static int nla_put_address(struct msg_buff *msg, int attrtype, char* arg)
 		addr.sin_addr.s_addr = resolv(address);
 		nla_put(msg, attrtype, sizeof(addr), &addr);
 	}
+	return NO_ERROR;
+}
+
+static int nla_put_volume(struct msg_buff *msg, char* arg)
+{
+	unsigned int vol = m_strtoll(arg, 1);
+	/* sanity check on vol < 256? */
+	nla_put_u32(msg, T_ctx_volume, vol);
 	return NO_ERROR;
 }
 
@@ -934,19 +944,22 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	dhdr->flags = 0;
 
 	i = 1;
-	if (context & (CTX_RESOURCE | CTX_CONNECTION)) {
+	if (context & ~CTX_MINOR)
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-		if (context & CTX_RESOURCE)
-			nla_put_string(smsg, T_ctx_resource_name, argv[i++]);
-		if (context & CTX_CONNECTION) {
-			nla_put_address(smsg, T_ctx_my_addr, argv[i++]);
-			nla_put_address(smsg, T_ctx_peer_addr, argv[i++]);
-		}
-		nla_nest_end(smsg, nla);
-	} else if (context & CTX_MINOR) {
+	if (context & CTX_RESOURCE)
+		nla_put_string(smsg, T_ctx_resource_name, argv[i++]);
+	if (context & CTX_MINOR) {
 		dhdr->minor = minor;
 		i++;
 	}
+	if (context & CTX_VOLUME)
+		nla_put_volume(smsg, argv[i++]);
+	if (context & CTX_MY_ADDR)
+		nla_put_address(smsg, T_ctx_my_addr, argv[i++]);
+	if (context & CTX_PEER_ADDR)
+		nla_put_address(smsg, T_ctx_peer_addr, argv[i++]);
+	if (context & ~CTX_MINOR)
+		nla_nest_end(smsg, nla);
 
 	nla = NULL;
 	for (ad = cm->drbd_args; ad && ad->name; i++) {
@@ -2412,10 +2425,9 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		enum cfg_ctx_key ctx = cm->ctx_key;
 
 		printf("<command name=\"%s\">\n", cm->cmd);
-		if (ctx & CTX_RESOURCE_AND_CONNECTION)
-			ctx = CTX_RESOURCE | CTX_CONNECTION;
 		if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
 			bool more_than_one_choice =
+				!(ctx & CTX_MULTIPLE_ARGUMENTS) &&
 				!power_of_two(ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL));
 			const char *indent = "\t\t" + !more_than_one_choice;
 			if (more_than_one_choice)
@@ -2479,32 +2491,23 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 
 		wrap_printf(1, "%s %s", progname, cm->cmd);
 		if (cm->ctx_key && ut != BRIEF) {
-			enum cfg_ctx_key ctx = cm->ctx_key;
+			enum cfg_ctx_key ctx = cm->ctx_key, arg;
+			bool more_than_one_choice =
+				!power_of_two(ctx & ~CTX_MULTIPLE_ARGUMENTS) &&
+				!(ctx & CTX_MULTIPLE_ARGUMENTS);
+			bool first = true;
 
-			if (ctx & CTX_RESOURCE_AND_CONNECTION)
-				ctx = CTX_RESOURCE | CTX_CONNECTION;
-			if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
-				bool first = true;
-
+			if (more_than_one_choice)
 				wrap_printf(4, " {");
-				if (ctx & CTX_RESOURCE) {
-					wrap_printf(4, "|resource" + first);
-					first = false;
-				}
-				if (ctx & CTX_MINOR) {
-					wrap_printf(4, "|minor" + first);
-					first = false;
-				}
-				if (ctx & CTX_ALL) {
-					wrap_printf(4, "|all" + first);
-					first = false;
-				}
-				wrap_printf(4, "}");
+			ctx |= CTX_MULTIPLE_ARGUMENTS;
+			for (arg = ctx_next_arg(&ctx); arg; arg = ctx_next_arg(&ctx)) {
+				if (more_than_one_choice && !first)
+					wrap_printf(4, " |");
+				first = false;
+				wrap_printf(4, " %s", ctx_arg_string(arg));
 			}
-			if (ctx & CTX_CONNECTION) {
-				wrap_printf(4, " [{af}:]{local_addr}[:{port}]");
-				wrap_printf(4, " [{af}:]{remote_addr}[:{port}]");
-			}
+			if (more_than_one_choice)
+				wrap_printf(4, " }");
 		}
 
 		if (cm->drbd_args) {
@@ -2711,53 +2714,51 @@ int main(int argc, char **argv)
 	}
 
 	context = 0;
-	if (cmd->ctx_key & (CTX_MINOR | CTX_RESOURCE | CTX_ALL | CTX_RESOURCE_AND_CONNECTION)) {
-		if (argc < 3) {
-			fprintf(stderr, "Missing first argument\n");
+	enum cfg_ctx_key ctx_key = cmd->ctx_key, next_arg;
+	for (next_arg = ctx_next_arg(&ctx_key), optind = 2;
+	     next_arg;
+	     next_arg = ctx_next_arg(&ctx_key), optind++) {
+		if (argc <= optind) {
+			fprintf(stderr, "Missing argument %d\n", optind);
 			print_command_usage(cmd, FULL);
 			exit(20);
 		}
-		objname = argv[2];
-		if (!strcmp(objname, "all")) {
-			if (!(cmd->ctx_key & CTX_ALL))
-				print_usage_and_exit("command does not accept argument 'all'");
-			context = CTX_ALL;
-		} else if (cmd->ctx_key & CTX_MINOR) {
-			minor = dt_minor_of_dev(objname);
-			if (minor == -1U && !(cmd->ctx_key &
-					(CTX_RESOURCE | CTX_RESOURCE_AND_CONNECTION))) {
-				fprintf(stderr, "Cannot determine minor device number of "
-						"device '%s'\n",
-					objname);
-				exit(20);
-			}
-			if (cmd->cmd_id != DRBD_ADM_GET_STATUS)
-				lock_fd = dt_lock_drbd(minor);
-			context = CTX_MINOR;
+		if (next_arg & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+			objname = argv[optind];
+			if (!strcmp(objname, "all")) {
+				if (!(next_arg & CTX_ALL))
+					print_usage_and_exit("command does not accept argument 'all'");
+				context |= CTX_ALL;
+			} else if (next_arg & CTX_MINOR) {
+				minor = dt_minor_of_dev(objname);
+				if (minor == -1U && next_arg == CTX_MINOR) {
+					fprintf(stderr, "Cannot determine minor device number of "
+							"device '%s'\n",
+						objname);
+					exit(20);
+				}
+				context |= CTX_MINOR;
+			} else
+				context |= CTX_RESOURCE;
 		} else
-			context = CTX_RESOURCE;
+			context |= next_arg;
 	}
-	if (cmd->ctx_key & (CTX_CONNECTION | CTX_RESOURCE_AND_CONNECTION)) {
-		if (argc < 4 + !!context) {
-			fprintf(stderr, "Missing connection endpoint argument\n");
-			print_command_usage(cmd, FULL);
-			exit(20);
-		}
-		context |= CTX_CONNECTION;
+
+	if (objname == NULL) {
+		if ((context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR))
+			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);  /* FIXME: Which indexes? */
+		else
+			objname = "all";
 	}
-	if (objname == NULL && (cmd->ctx_key & CTX_CONNECTION)) {
-		objname = getenv("DRBD_RESOURCE");
-		if (objname == NULL)
-			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);
-	}
-	if (objname == NULL && cmd->ctx == &new_minor_cmd_ctx)
-		objname = argv[2];
-	if (objname == NULL)
-		objname = "??";
+
+	if ((context & CTX_MINOR) && cmd->cmd_id != DRBD_ADM_GET_STATUS)
+		lock_fd = dt_lock_drbd(minor);
 
 	/* Make it so that argv[0] is the command name. */
 	rv = cmd->function(cmd, argc - 1, argv + 1);
-	dt_unlock_drbd(lock_fd);
+
+	if ((context & CTX_MINOR) && cmd->cmd_id != DRBD_ADM_GET_STATUS)
+		dt_unlock_drbd(lock_fd);
 	return rv;
 }
 #endif

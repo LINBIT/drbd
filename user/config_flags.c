@@ -720,14 +720,3 @@ struct context_def verify_cmd_ctx = {
 		  .unit = "bytes" },
 		{ } },
 };
-
-struct context_def new_minor_cmd_ctx = {
-	NLA_POLICY(drbd_cfg_context),
-	.nla_type = DRBD_NLA_CFG_CONTEXT,
-	.fields = {
-		/* { "*", STRING(ctx_resource_name) }, */
-		/* { "*", NUMERIC(ctx_volume, >= 0) }, */
-		/* { "*", BINARY(ctx_my_addr) }, */
-		/* { "*", BINARY(ctx_peer_addr) }, */
-		{ } },
-};
