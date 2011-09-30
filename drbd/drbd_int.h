@@ -1143,7 +1143,6 @@ extern void drbd_ldev_destroy(struct drbd_device *device);
  * we limit us to a platform agnostic constant here for now.
  * A followup commit may allow even bigger BIO sizes,
  * once we thought that through. */
-#define DRBD_MAX_BIO_SIZE (1 << 20)
 #if DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #error Architecture not supported: DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #endif

@@ -358,4 +358,6 @@ enum drbd_timeout_flag {
 
 #define DRBD_CPU_MASK_SIZE 32
 
+#define DRBD_MAX_BIO_SIZE (1 << 20)
+
 #endif
