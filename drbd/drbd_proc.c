@@ -239,7 +239,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "\n");
 		prev_i = i;
 
-		sn = drbd_conn_str(device->state.conn);
+		sn = drbd_conn_str(combined_conn_state(first_peer_device(device)));
 
 		if (device->state.conn == C_STANDALONE &&
 		    device->state.disk == D_DISKLESS &&
