@@ -934,8 +934,6 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
 
-	/* assignment inclusive debug info about what code path
-	 * initiated this state change. */
 	device->state.i = ns.i;
 	first_peer_device(device)->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
 	device->resource->susp = ns.susp;
