@@ -720,3 +720,11 @@ struct context_def verify_cmd_ctx = {
 		  .unit = "bytes" },
 		{ } },
 };
+
+struct context_def device_options_ctx = {
+	NLA_POLICY(device_conf),
+	.nla_type = DRBD_NLA_DEVICE_CONF,
+	.fields = {
+		{ "max-bio-size", NUMERIC(max_bio_size, MAX_BIO_SIZE) },
+		{ } },
+};

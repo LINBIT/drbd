@@ -380,7 +380,8 @@ struct drbd_cmd commands[] = {
 	/* only payload is resource name and volume number */
 	{"new-minor", CTX_RESOURCE | CTX_MINOR | CTX_VOLUME | CTX_MULTIPLE_ARGUMENTS,
 		DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
-		F_CONFIG_CMD, },
+		F_CONFIG_CMD,
+	 .ctx = &device_options_ctx },
 
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, },
 	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, }
