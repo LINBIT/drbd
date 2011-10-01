@@ -1097,6 +1097,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 void drbd_reconsider_max_bio_size(struct drbd_device *device)
 {
 	unsigned int max_bio_size = device->device_conf.max_bio_size;
+	struct drbd_peer_device *peer_device;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		max_bio_size = min(max_bio_size, queue_max_hw_sectors(
@@ -1105,8 +1106,12 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
-	if (first_peer_device(device)->repl_state >= L_CONNECTED)
-		max_bio_size = min(max_bio_size, device->peer_max_bio_size);
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state >= L_CONNECTED)
+			max_bio_size = min(max_bio_size, device->peer_max_bio_size);
+	}
+	rcu_read_unlock();
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_setup_queue_param(device, max_bio_size);
