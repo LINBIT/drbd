@@ -2810,8 +2810,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	device->write_ordering = WO_bio_barrier;
 	device->resync_wenr = LC_FREE;
-	device->peer_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
-	device->local_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
 
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
@@ -2841,9 +2839,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	q->backing_dev_info.congested_data = device;
 
 	blk_queue_make_request(q, drbd_make_request);
-	/* Setting the max_hw_sectors to an odd value of 8kibyte here
-	   This triggers a max_bio_size message upon first attach or connect */
-	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE_SAFE >> 8);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 	q->queue_lock = &resource->req_lock;
@@ -3132,7 +3127,7 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->device_uuid = cpu_to_be64(device->ldev->md.device_uuid);
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
-	buffer->la_peer_max_bio_size = cpu_to_be32(device->peer_max_bio_size);
+	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
@@ -3229,15 +3224,6 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		bdev->md.uuid[i] = be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
-
-	spin_lock_irq(&device->resource->req_lock);
-	if (first_peer_device(device)->repl_state < L_CONNECTED) {
-		int peer;
-		peer = be32_to_cpu(buffer->la_peer_max_bio_size);
-		peer = max_t(int, peer, DRBD_MAX_BIO_SIZE_SAFE);
-		device->peer_max_bio_size = peer;
-	}
-	spin_unlock_irq(&device->resource->req_lock);
 
  err:
 	drbd_md_put_buffer(device);

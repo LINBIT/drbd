@@ -1096,24 +1096,27 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 
 void drbd_reconsider_max_bio_size(struct drbd_device *device)
 {
-	int now, new, local, peer;
-
-	now = queue_max_hw_sectors(device->rq_queue) << 9;
-	local = device->local_max_bio_size; /* Eventually last known value, from volatile memory */
-	peer = device->peer_max_bio_size; /* Eventually last known value, from meta data */
+	unsigned int max_bio_size = device->device_conf.max_bio_size;
+	unsigned int peer;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
-		local = queue_max_hw_sectors(device->ldev->backing_bdev->bd_disk->queue) << 9;
-		device->local_max_bio_size = local;
+		max_bio_size = min(max_bio_size, queue_max_hw_sectors(
+			device->ldev->backing_bdev->bd_disk->queue) << 9);
 		put_ldev(device);
 	}
+
+	peer = device->device_conf.max_bio_size;
+	spin_lock_irq(&device->resource->req_lock);
+	if (first_peer_device(device)->repl_state >= L_CONNECTED)
+		peer = device->peer_max_bio_size;
+	spin_unlock_irq(&device->resource->req_lock);
 
 	/* We may ignore peer limits if the peer is modern enough.
 	   Because new from 8.3.8 onwards the peer can use multiple
 	   BIOs for a single peer_request */
 	if (first_peer_device(device)->repl_state >= L_CONNECTED) {
 		if (first_peer_device(device)->connection->agreed_pro_version < 94)
-			peer = min_t(int, device->peer_max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
+			peer = min_t(unsigned int, device->peer_max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
 			/* Correct old drbd (up to 8.3.7) if it believes it can do more than 32KiB */
 		else if (first_peer_device(device)->connection->agreed_pro_version == 94)
 			peer = DRBD_MAX_SIZE_H80_PACKET;
@@ -1123,15 +1126,7 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 			peer = DRBD_MAX_BIO_SIZE;
 	}
 
-	new = min_t(int, local, peer);
-
-	if (device->state.role == R_PRIMARY && new < now)
-		drbd_err(device, "ASSERT FAILED new < now; (%d < %d)\n", new, now);
-
-	if (new != now)
-		drbd_info(device, "max BIO size = %u\n", new);
-
-	drbd_setup_queue_param(device, new);
+	drbd_setup_queue_param(device, min(max_bio_size, peer));
 }
 
 /* Make sure IO is suspended before calling this function(). */
