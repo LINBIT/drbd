@@ -3673,6 +3673,17 @@ static void warn_if_differ_considerably(struct drbd_device *device,
 		     (unsigned long long)a, (unsigned long long)b);
 }
 
+/* Maximum bio size that a protocol version supports. */
+static unsigned int conn_max_bio_size(struct drbd_connection *connection)
+{
+	if (connection->agreed_pro_version >= 100)
+		return DRBD_MAX_BIO_SIZE;
+	else if (connection->agreed_pro_version >= 95)
+		return DRBD_MAX_BIO_SIZE_P95;
+	else
+		return DRBD_MAX_SIZE_H80_PACKET;
+}
+
 STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -3682,6 +3693,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
 	enum dds_flags ddsf;
+	unsigned int protocol_max_bio_size;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -3761,7 +3773,23 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_set_my_capacity(device, p_size);
 	}
 
-	device->peer_max_bio_size = be32_to_cpu(p->max_bio_size);
+	/* The protocol version limits how big requests can be.  In addition,
+	 * peers before protocol version 94 cannot split large requests into
+	 * multiple bios; their reported max_bio_size is a hard limit.
+	 */
+	protocol_max_bio_size = conn_max_bio_size(connection);
+	device->peer_max_bio_size = min(be32_to_cpu(p->max_bio_size), protocol_max_bio_size);
+	if (device->device_conf.max_bio_size > protocol_max_bio_size ||
+	    (connection->agreed_pro_version < 94 &&
+	     device->device_conf.max_bio_size > device->peer_max_bio_size)) {
+		drbd_err(device, "Peer cannot deal with requests bigger than %u. "
+			 "Please reduce max_bio_size in the configuration.\n",
+			 device->peer_max_bio_size);
+		conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		put_ldev(device);
+		return -EIO;
+	}
+
 	drbd_reconsider_max_bio_size(device);
 
 	if (get_ldev(device)) {

@@ -1097,7 +1097,6 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 void drbd_reconsider_max_bio_size(struct drbd_device *device)
 {
 	unsigned int max_bio_size = device->device_conf.max_bio_size;
-	unsigned int peer;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		max_bio_size = min(max_bio_size, queue_max_hw_sectors(
@@ -1105,28 +1104,12 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 		put_ldev(device);
 	}
 
-	peer = device->device_conf.max_bio_size;
 	spin_lock_irq(&device->resource->req_lock);
 	if (first_peer_device(device)->repl_state >= L_CONNECTED)
-		peer = device->peer_max_bio_size;
+		max_bio_size = min(max_bio_size, device->peer_max_bio_size);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	/* We may ignore peer limits if the peer is modern enough.
-	   Because new from 8.3.8 onwards the peer can use multiple
-	   BIOs for a single peer_request */
-	if (first_peer_device(device)->repl_state >= L_CONNECTED) {
-		if (first_peer_device(device)->connection->agreed_pro_version < 94)
-			peer = min_t(unsigned int, device->peer_max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
-			/* Correct old drbd (up to 8.3.7) if it believes it can do more than 32KiB */
-		else if (first_peer_device(device)->connection->agreed_pro_version == 94)
-			peer = DRBD_MAX_SIZE_H80_PACKET;
-		else if (first_peer_device(device)->connection->agreed_pro_version < 100)
-			peer = DRBD_MAX_BIO_SIZE_P95;  /* drbd 8.3.8 onwards, before 8.4.0 */
-		else
-			peer = DRBD_MAX_BIO_SIZE;
-	}
-
-	drbd_setup_queue_param(device, min(max_bio_size, peer));
+	drbd_setup_queue_param(device, max_bio_size);
 }
 
 /* Make sure IO is suspended before calling this function(). */
