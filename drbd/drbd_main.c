@@ -2099,83 +2099,6 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 		} };
 }
 
-void drbd_init_set_defaults(struct drbd_device *device)
-{
-	/* the memset(,0,) did most of this.
-	 * note: only assignments, no allocation in here */
-
-#ifdef PARANOIA
-	SET_MDEV_MAGIC(device);
-#endif
-
-	drbd_set_defaults(device);
-
-	/* for now, we do NOT yet support it,
-	 * even though we start some framework
-	 * to eventually support barriers */
-	set_bit(NO_BARRIER_SUPP, &device->flags);
-
-	atomic_set(&device->ap_bio_cnt, 0);
-	atomic_set(&device->ap_pending_cnt, 0);
-	atomic_set(&device->rs_pending_cnt, 0);
-	atomic_set(&device->unacked_cnt, 0);
-	atomic_set(&device->local_cnt, 0);
-	atomic_set(&device->pp_in_use_by_net, 0);
-	atomic_set(&device->rs_sect_in, 0);
-	atomic_set(&device->rs_sect_ev, 0);
-	atomic_set(&device->ap_in_flight, 0);
-	atomic_set(&device->md_io_in_use, 0);
-
-	mutex_init(&device->own_state_mutex);
-	device->state_mutex = &device->own_state_mutex;
-
-	spin_lock_init(&device->al_lock);
-	spin_lock_init(&device->epoch_lock);
-
-	INIT_LIST_HEAD(&device->active_ee);
-	INIT_LIST_HEAD(&device->sync_ee);
-	INIT_LIST_HEAD(&device->done_ee);
-	INIT_LIST_HEAD(&device->read_ee);
-	INIT_LIST_HEAD(&device->net_ee);
-	INIT_LIST_HEAD(&device->resync_reads);
-	INIT_LIST_HEAD(&device->resync_work.list);
-	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->go_diskless.list);
-	INIT_LIST_HEAD(&device->md_sync_work.list);
-	INIT_LIST_HEAD(&device->start_resync_work.list);
-	INIT_LIST_HEAD(&device->pending_bitmap_work);
-
-	device->resync_work.cb  = w_resync_timer;
-	device->unplug_work.cb  = w_send_write_hint;
-	device->go_diskless.cb  = w_go_diskless;
-	device->md_sync_work.cb = w_md_sync;
-	device->start_resync_work.cb = w_start_resync;
-
-	init_timer(&device->resync_timer);
-	init_timer(&device->md_sync_timer);
-	init_timer(&device->start_resync_timer);
-	init_timer(&device->request_timer);
-	device->resync_timer.function = resync_timer_fn;
-	device->resync_timer.data = (unsigned long) device;
-	device->md_sync_timer.function = md_sync_timer_fn;
-	device->md_sync_timer.data = (unsigned long) device;
-	device->start_resync_timer.function = start_resync_timer_fn;
-	device->start_resync_timer.data = (unsigned long) device;
-	device->request_timer.function = request_timer_fn;
-	device->request_timer.data = (unsigned long) device;
-
-	init_waitqueue_head(&device->misc_wait);
-	init_waitqueue_head(&device->state_wait);
-	init_waitqueue_head(&device->ee_wait);
-	init_waitqueue_head(&device->al_wait);
-	init_waitqueue_head(&device->seq_wait);
-
-	device->write_ordering = WO_bio_barrier;
-	device->resync_wenr = LC_FREE;
-	device->peer_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
-	device->local_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
-}
-
 void drbd_mdev_cleanup(struct drbd_device *device)
 {
 	int i;
@@ -2819,7 +2742,76 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
 
-	drbd_init_set_defaults(device);
+#ifdef PARANOIA
+	SET_MDEV_MAGIC(device);
+#endif
+
+	drbd_set_defaults(device);
+
+	/* for now, we do NOT yet support it,
+	 * even though we start some framework
+	 * to eventually support barriers */
+	set_bit(NO_BARRIER_SUPP, &device->flags);
+
+	atomic_set(&device->ap_bio_cnt, 0);
+	atomic_set(&device->ap_pending_cnt, 0);
+	atomic_set(&device->rs_pending_cnt, 0);
+	atomic_set(&device->unacked_cnt, 0);
+	atomic_set(&device->local_cnt, 0);
+	atomic_set(&device->pp_in_use_by_net, 0);
+	atomic_set(&device->rs_sect_in, 0);
+	atomic_set(&device->rs_sect_ev, 0);
+	atomic_set(&device->ap_in_flight, 0);
+	atomic_set(&device->md_io_in_use, 0);
+
+	mutex_init(&device->own_state_mutex);
+	device->state_mutex = &device->own_state_mutex;
+
+	spin_lock_init(&device->al_lock);
+	spin_lock_init(&device->epoch_lock);
+
+	INIT_LIST_HEAD(&device->active_ee);
+	INIT_LIST_HEAD(&device->sync_ee);
+	INIT_LIST_HEAD(&device->done_ee);
+	INIT_LIST_HEAD(&device->read_ee);
+	INIT_LIST_HEAD(&device->net_ee);
+	INIT_LIST_HEAD(&device->resync_reads);
+	INIT_LIST_HEAD(&device->resync_work.list);
+	INIT_LIST_HEAD(&device->unplug_work.list);
+	INIT_LIST_HEAD(&device->go_diskless.list);
+	INIT_LIST_HEAD(&device->md_sync_work.list);
+	INIT_LIST_HEAD(&device->start_resync_work.list);
+	INIT_LIST_HEAD(&device->pending_bitmap_work);
+
+	device->resync_work.cb  = w_resync_timer;
+	device->unplug_work.cb  = w_send_write_hint;
+	device->go_diskless.cb  = w_go_diskless;
+	device->md_sync_work.cb = w_md_sync;
+	device->start_resync_work.cb = w_start_resync;
+
+	init_timer(&device->resync_timer);
+	init_timer(&device->md_sync_timer);
+	init_timer(&device->start_resync_timer);
+	init_timer(&device->request_timer);
+	device->resync_timer.function = resync_timer_fn;
+	device->resync_timer.data = (unsigned long) device;
+	device->md_sync_timer.function = md_sync_timer_fn;
+	device->md_sync_timer.data = (unsigned long) device;
+	device->start_resync_timer.function = start_resync_timer_fn;
+	device->start_resync_timer.data = (unsigned long) device;
+	device->request_timer.function = request_timer_fn;
+	device->request_timer.data = (unsigned long) device;
+
+	init_waitqueue_head(&device->misc_wait);
+	init_waitqueue_head(&device->state_wait);
+	init_waitqueue_head(&device->ee_wait);
+	init_waitqueue_head(&device->al_wait);
+	init_waitqueue_head(&device->seq_wait);
+
+	device->write_ordering = WO_bio_barrier;
+	device->resync_wenr = LC_FREE;
+	device->peer_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
+	device->local_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
 
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
