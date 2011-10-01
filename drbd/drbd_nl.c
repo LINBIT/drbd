@@ -1109,7 +1109,7 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state >= L_CONNECTED)
-			max_bio_size = min(max_bio_size, device->peer_max_bio_size);
+			max_bio_size = min(max_bio_size, peer_device->max_bio_size);
 	}
 	rcu_read_unlock();
 	spin_unlock_irq(&device->resource->req_lock);

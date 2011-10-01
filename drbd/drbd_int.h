@@ -716,6 +716,7 @@ struct drbd_peer_device {
 	atomic_t packet_seq;
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
+	unsigned int max_bio_size;
 };
 
 struct drbd_device {
@@ -859,7 +860,6 @@ struct drbd_device {
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
-	unsigned int peer_max_bio_size;
 	struct device_conf device_conf;
 };
 
