@@ -2578,20 +2578,21 @@ nla_put_failure:
 }
 
 /*
- * Return the connection of @resource if @resource has exactly one connection.
+ * Return the peer device of @device if @device has exactly one peer device.
  */
-static struct drbd_connection *the_only_connection(struct drbd_resource *resource)
+static struct drbd_peer_device *the_only_peer_device(struct drbd_device *device)
 {
-	struct list_head *connections = &resource->connections;
+	struct list_head *peer_devices = &device->peer_devices;
 
-	if (list_empty(connections) || connections->next->next != connections)
+	if (list_empty(peer_devices) || peer_devices->next->next != peer_devices)
 		return NULL;
-	return list_first_entry(&resource->connections, struct drbd_connection, connections);
+	return list_first_entry(peer_devices, struct drbd_peer_device, peer_devices);
 }
 
 static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resource,
 			       struct drbd_device *device, const struct sib_info *sib)
 {
+	struct drbd_peer_device *peer_device;
 	struct drbd_connection *connection;
 	struct state_info *si = NULL; /* for sizeof(si->member); */
 	struct nlattr *nla;
@@ -2615,7 +2616,8 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 	if (device)
 		got_ldev = get_ldev(device);
 
-	connection = the_only_connection(resource);
+	peer_device = the_only_peer_device(device);
+	connection = peer_device ? peer_device->connection : NULL;
 	if (nla_put_drbd_cfg_context(skb, resource, connection, device))
 		goto nla_put_failure;
 
