@@ -883,9 +883,10 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	enum drbd_state_rv rv = SS_SUCCESS;
 	enum sanitize_state_warnings ssw;
 	struct after_state_chg_work *ascw;
+	struct drbd_peer_device *peer_device;
 
+	peer_device = first_peer_device(device);
 	os = drbd_read_state(device);
-
 	ns = sanitize_state(device, ns, &ssw);
 	if (ns.i == os.i)
 		return SS_NOTHING_TO_DO;
@@ -923,7 +924,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	   sanitize_state(). Only display it here if we where not called from
 	   _conn_request_state() */
 	if (!(flags & CS_DC_SUSP))
-		conn_pr_state_change(first_peer_device(device)->connection, os, ns,
+		conn_pr_state_change(peer_device->connection, os, ns,
 				     (flags & ~CS_DC_MASK) | CS_DC_SUSP);
 
 	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
@@ -935,18 +936,18 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		atomic_inc(&device->local_cnt);
 
 	device->state.i = ns.i;
-	first_peer_device(device)->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
+	peer_device->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
 	device->resource->susp = ns.susp;
 	device->resource->susp_nod = ns.susp_nod;
 	device->resource->susp_fen = ns.susp_fen;
-	first_peer_device(device)->disk_state = ns.pdsk;
+	peer_device->disk_state = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
 
 	wake_up(&device->misc_wait);
 	wake_up(&device->state_wait);
-	wake_up(&first_peer_device(device)->connection->ping_wait);
+	wake_up(&peer_device->connection->ping_wait);
 
 	/* aborted verify run. log the last position */
 	if ((os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
@@ -1002,7 +1003,6 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 						 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
 						 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY);
-		struct drbd_peer_device *peer_device = first_peer_device(device);
 		mdf &= ~MDF_AL_CLEAN;
 		if (test_bit(CRASHED_PRIMARY, &device->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
@@ -1010,7 +1010,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		    (peer_device->disk_state < D_INCONSISTENT &&
 		     device->state.peer == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
-		if (first_peer_device(device)->repl_state > L_STANDALONE)
+		if (peer_device->repl_state > L_STANDALONE)
 			mdf |= MDF_CONNECTED_IND;
 		if (device->state.disk > D_INCONSISTENT)
 			mdf |= MDF_CONSISTENT;
@@ -1035,16 +1035,16 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 	/* Receiver should clean up itself */
 	if (os.conn != C_DISCONNECTING && ns.conn == C_DISCONNECTING)
-		drbd_thread_stop_nowait(&first_peer_device(device)->connection->receiver);
+		drbd_thread_stop_nowait(&peer_device->connection->receiver);
 
 	/* Now the receiver finished cleaning up itself, it should die */
 	if (os.conn != C_STANDALONE && ns.conn == C_STANDALONE)
-		drbd_thread_stop_nowait(&first_peer_device(device)->connection->receiver);
+		drbd_thread_stop_nowait(&peer_device->connection->receiver);
 
 	/* Upon network failure, we need to restart the receiver. */
 	if (os.conn > C_WF_CONNECTION &&
 	    ns.conn <= C_TEAR_DOWN && ns.conn >= C_TIMEOUT)
-		drbd_thread_restart_nowait(&first_peer_device(device)->connection->receiver);
+		drbd_thread_restart_nowait(&peer_device->connection->receiver);
 
 	/* Resume AL writing if we get a connection */
 	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED)
