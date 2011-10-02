@@ -760,6 +760,7 @@ struct drbd_device {
 	union drbd_state new_state_tmp;
 
 	union drbd_dev_state state;
+	enum drbd_disk_state disk_state;
 	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	unsigned int read_cnt;
@@ -1527,6 +1528,7 @@ static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 
 	rv.i = device->state.i;
 	rv.conn = C_STANDALONE;  /* really: undefined */
+	rv.disk = device->disk_state;
 	rv.susp = resource->susp;
 	rv.susp_nod = resource->susp_nod;
 	rv.susp_fen = resource->susp_fen;
@@ -1559,7 +1561,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 		if (!forcedetach) {
 			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
-			if (device->state.disk > D_INCONSISTENT)
+			if (device->disk_state > D_INCONSISTENT)
 				_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
 			break;
 		}
@@ -1567,7 +1569,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	case EP_DETACH:
 	case EP_CALL_HELPER:
 		set_bit(WAS_IO_ERROR, &device->flags);
-		if (device->state.disk > D_FAILED) {
+		if (device->disk_state > D_FAILED) {
 			_drbd_set_state(_NS(device, disk, D_FAILED), CS_HARD, NULL);
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
@@ -1885,10 +1887,10 @@ static inline void put_ldev(struct drbd_device *device)
 	__release(local);
 	D_ASSERT(device, i >= 0);
 	if (i == 0) {
-		if (device->state.disk == D_DISKLESS)
+		if (device->disk_state == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
 			drbd_ldev_destroy(device);
-		if (device->state.disk == D_FAILED)
+		if (device->disk_state == D_FAILED)
 			/* all application IO references gone. */
 			drbd_go_diskless(device);
 		wake_up(&device->misc_wait);
@@ -1901,11 +1903,11 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 	int io_allowed;
 
 	/* never get a reference while D_DISKLESS */
-	if (device->state.disk == D_DISKLESS)
+	if (device->disk_state == D_DISKLESS)
 		return 0;
 
 	atomic_inc(&device->local_cnt);
-	io_allowed = (device->state.disk >= mins);
+	io_allowed = (device->disk_state >= mins);
 	if (!io_allowed)
 		put_ldev(device);
 	return io_allowed;
@@ -1980,8 +1982,6 @@ static inline int drbd_get_max_buffers(struct drbd_device *device)
 
 static inline int drbd_state_is_stable(struct drbd_device *device)
 {
-	union drbd_dev_state s = device->state;
-
 	/* DO NOT add a default clause, we want the compiler to warn us
 	 * for any newly introduced state we may have forgotten to add here */
 
@@ -2015,7 +2015,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 		return 0;
 	}
 
-	switch ((enum drbd_disk_state)s.disk) {
+	switch (device->disk_state) {
 	case D_DISKLESS:
 	case D_INCONSISTENT:
 	case D_OUTDATED:

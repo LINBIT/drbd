@@ -115,7 +115,7 @@ void *drbd_md_get_buffer(struct drbd_device *device)
 
 	wait_event(device->misc_wait,
 		   (r = atomic_cmpxchg(&device->md_io_in_use, 0, 1)) == 0 ||
-		   device->state.disk <= D_FAILED);
+		   device->disk_state <= D_FAILED);
 
 	return r ? NULL : page_address(device->md_io_page);
 }
@@ -128,7 +128,7 @@ void drbd_md_put_buffer(struct drbd_device *device)
 
 static bool md_io_allowed(struct drbd_device *device)
 {
-	enum drbd_disk_state ds = device->state.disk;
+	enum drbd_disk_state ds = device->disk_state;
 	return ds >= D_NEGOTIATING || ds == D_ATTACHING;
 }
 
@@ -370,15 +370,15 @@ _al_write_transaction(struct drbd_device *device)
 
 	if (!get_ldev(device)) {
 		drbd_err(device, "disk is %s, cannot start al transaction\n",
-			drbd_disk_str(device->state.disk));
+			drbd_disk_str(device->disk_state));
 		return -EIO;
 	}
 
 	/* The bitmap write may have failed, causing a state change. */
-	if (device->state.disk < D_INCONSISTENT) {
+	if (device->disk_state < D_INCONSISTENT) {
 		drbd_err(device,
 			"disk is %s, cannot write al transaction\n",
-			drbd_disk_str(device->state.disk));
+			drbd_disk_str(device->disk_state));
 		put_ldev(device);
 		return -EIO;
 	}

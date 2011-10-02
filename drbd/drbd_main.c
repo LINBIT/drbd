@@ -182,7 +182,7 @@ int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
 	int io_allowed;
 
 	atomic_inc(&device->local_cnt);
-	io_allowed = (device->state.disk >= mins);
+	io_allowed = (device->disk_state >= mins);
 	if (!io_allowed) {
 		if (atomic_dec_and_test(&device->local_cnt))
 			wake_up(&device->misc_wait);
@@ -1126,7 +1126,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	struct p_rs_uuid *p;
 	u64 uuid;
 
-	D_ASSERT(device, device->state.disk == D_UP_TO_DATE);
+	D_ASSERT(device, device->disk_state == D_UP_TO_DATE);
 
 	uuid = device->ldev->md.uuid[UI_BITMAP] + UUID_NEW_BM_OFFSET;
 	drbd_uuid_set(device, UI_BITMAP, uuid);
@@ -2095,8 +2095,8 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 	device->state = (union drbd_dev_state) {
 		{ .role = R_SECONDARY,
 		  .peer = R_UNKNOWN,
-		  .disk = D_DISKLESS,
 		} };
+	device->disk_state = D_DISKLESS;
 }
 
 void drbd_mdev_cleanup(struct drbd_device *device)
@@ -3426,7 +3426,7 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	struct drbd_device *device =
 		container_of(w, struct drbd_device, go_diskless);
 
-	D_ASSERT(device, device->state.disk == D_FAILED);
+	D_ASSERT(device, device->disk_state == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
 	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
 	 * the protected members anymore, though, so once put_ldev reaches zero
@@ -3437,7 +3437,7 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 
 void drbd_go_diskless(struct drbd_device *device)
 {
-	D_ASSERT(device, device->state.disk == D_FAILED);
+	D_ASSERT(device, device->disk_state == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
 		drbd_queue_work(&device->resource->work, &device->go_diskless);
 }

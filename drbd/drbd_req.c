@@ -743,9 +743,9 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
-	if (device->state.disk == D_UP_TO_DATE)
+	if (device->disk_state == D_UP_TO_DATE)
 		return true;
-	if (device->state.disk != D_INCONSISTENT)
+	if (device->disk_state != D_INCONSISTENT)
 		return false;
 	esector = sector + (size >> 9) - 1;
 	nr_sectors = drbd_get_capacity(device->this_bdev);
@@ -870,7 +870,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	 *        or make this configurable...
 	 *        if network is slow, READA won't do any good.
 	 */
-	if (rw == READA && device->state.disk >= D_INCONSISTENT && !local) {
+	if (rw == READA && device->disk_state >= D_INCONSISTENT && !local) {
 		err = -EWOULDBLOCK;
 		goto fail_and_free_req;
 	}
@@ -1186,7 +1186,7 @@ void request_timer_fn(unsigned long data)
 	et = min_not_zero(dt, ent);
 
 	if (!et || (first_peer_device(device)->repl_state < L_STANDALONE &&
-		    device->state.disk <= D_FAILED))
+		    device->disk_state <= D_FAILED))
 		return; /* Recurring timer stopped */
 
 	spin_lock_irq(&device->resource->req_lock);

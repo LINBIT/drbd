@@ -1425,7 +1425,7 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, odev, i) {
 		if (first_peer_device(device)->repl_state == L_STANDALONE &&
-		    odev->state.disk == D_DISKLESS)
+		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (!_drbd_may_sync_now(odev))
 			rv |= (__drbd_set_state(_NS(odev, aftr_isp, 1), CS_HARD, NULL)
@@ -1450,7 +1450,7 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, odev, i) {
 		if (first_peer_device(device)->repl_state == L_STANDALONE &&
-		    odev->state.disk == D_DISKLESS)
+		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (odev->state.aftr_isp) {
 			if (_drbd_may_sync_now(odev))
@@ -1812,7 +1812,7 @@ int drbd_sender(struct drbd_thread *thi)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		D_ASSERT(device, device->state.disk == D_DISKLESS && first_peer_device(device)->repl_state == L_STANDALONE);
+		D_ASSERT(device, device->disk_state == D_DISKLESS && first_peer_device(device)->repl_state == L_STANDALONE);
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_mdev_cleanup(device);

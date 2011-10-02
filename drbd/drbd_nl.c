@@ -612,8 +612,8 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && force &&
-		    (device->state.disk < D_UP_TO_DATE &&
-		     device->state.disk >= D_INCONSISTENT)) {
+		    (device->disk_state < D_UP_TO_DATE &&
+		     device->disk_state >= D_INCONSISTENT)) {
 			mask.disk = D_MASK;
 			val.disk  = D_UP_TO_DATE;
 			forced = 1;
@@ -621,7 +621,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK &&
-		    device->state.disk == D_CONSISTENT && mask.pdsk == 0) {
+		    device->disk_state == D_CONSISTENT && mask.pdsk == 0) {
 			D_ASSERT(device, first_peer_device(device)->disk_state == D_UNKNOWN);
 
 			if (conn_try_outdate_peer(first_peer_device(device)->connection)) {
@@ -1293,7 +1293,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	device = adm_ctx.device;
 
 	/* if you want to reconfigure, please tear down first */
-	if (device->state.disk > D_DISKLESS) {
+	if (device->disk_state > D_DISKLESS) {
 		retcode = ERR_DISK_CONFIGURED;
 		goto fail;
 	}
@@ -1685,7 +1685,7 @@ static int adm_detach(struct drbd_device *device, int force)
 	retcode = drbd_request_state(device, NS(disk, D_FAILED));
 	/* D_FAILED will transition to DISKLESS. */
 	ret = wait_event_interruptible(device->misc_wait,
-			device->state.disk != D_FAILED);
+			device->disk_state != D_FAILED);
 	drbd_resume_io(device);
 	if (retcode == SS_IS_DISKLESS)
 		retcode = SS_NOTHING_TO_DO;
@@ -2512,7 +2512,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	if (retcode == SS_SUCCESS) {
 		if (first_peer_device(device)->repl_state < L_CONNECTED)
 			tl_clear(first_peer_device(device)->connection);
-		if (device->state.disk == D_DISKLESS || device->state.disk == D_FAILED)
+		if (device->disk_state == D_DISKLESS || device->disk_state == D_FAILED)
 			tl_restart(first_peer_device(device)->connection, FAIL_FROZEN_DISK_IO);
 	}
 	drbd_resume_io(device);
@@ -3293,7 +3293,7 @@ out:
 
 static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 {
-	if (device->state.disk == D_DISKLESS &&
+	if (device->disk_state == D_DISKLESS &&
 	    /* no need to be first_peer_device(device)->repl_state == L_STANDALONE &&
 	     * we may want to delete a minor from a live replication group.
 	     */

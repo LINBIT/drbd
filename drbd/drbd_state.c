@@ -125,7 +125,7 @@ enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = max_t(enum drbd_disk_state, ds, device->state.disk);
+		ds = max_t(enum drbd_disk_state, ds, device->disk_state);
 	}
 	rcu_read_unlock();
 
@@ -141,7 +141,7 @@ enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = min_t(enum drbd_disk_state, ds, device->state.disk);
+		ds = min_t(enum drbd_disk_state, ds, device->disk_state);
 	}
 	rcu_read_unlock();
 
@@ -936,6 +936,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		atomic_inc(&device->local_cnt);
 
 	device->state.i = ns.i;
+	device->disk_state = ns.disk;
 	peer_device->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
 	device->resource->susp = ns.susp;
 	device->resource->susp_nod = ns.susp_nod;
@@ -1012,9 +1013,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 			mdf |= MDF_PRIMARY_IND;
 		if (peer_device->repl_state > L_STANDALONE)
 			mdf |= MDF_CONNECTED_IND;
-		if (device->state.disk > D_INCONSISTENT)
+		if (device->disk_state > D_INCONSISTENT)
 			mdf |= MDF_CONSISTENT;
-		if (device->state.disk > D_OUTDATED)
+		if (device->disk_state > D_OUTDATED)
 			mdf |= MDF_WAS_UP_TO_DATE;
 		if (peer_device->disk_state <= D_OUTDATED &&
 		    peer_device->disk_state >= D_INCONSISTENT)
@@ -1318,10 +1319,10 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 		/* current state still has to be D_FAILED,
 		 * there is only one way out: to D_DISKLESS,
 		 * and that may only happen after our put_ldev below. */
-		if (device->state.disk != D_FAILED)
+		if (device->disk_state != D_FAILED)
 			drbd_err(device,
 				"ASSERT FAILED: disk is %s during detach\n",
-				drbd_disk_str(device->state.disk));
+				drbd_disk_str(device->disk_state));
 
 		drbd_send_state(first_peer_device(device));
 		drbd_rs_cancel_all(device);
@@ -1342,10 +1343,10 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
         if (os.disk != D_DISKLESS && ns.disk == D_DISKLESS) {
                 /* We must still be diskless,
                  * re-attach has to be serialized with this! */
-                if (device->state.disk != D_DISKLESS)
+                if (device->disk_state != D_DISKLESS)
                         drbd_err(device,
                                 "ASSERT FAILED: disk is %s while going diskless\n",
-                                drbd_disk_str(device->state.disk));
+                                drbd_disk_str(device->disk_state));
 
                 device->rs_total = 0;
                 device->rs_failed = 0;
@@ -1491,8 +1492,8 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 	union drbd_dev_state os, cs = {
 		{ .role = R_SECONDARY,
 		  .peer = R_UNKNOWN,
-		  .disk = D_DISKLESS,
 		} };
+	enum drbd_disk_state common_disk_state = D_DISKLESS;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1501,6 +1502,7 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 
 		if (first_vol) {
 			cs = os;
+			common_disk_state = device->disk_state;
 			first_vol = 0;
 			continue;
 		}
@@ -1511,7 +1513,7 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 		if (cs.peer != os.peer)
 			flags &= ~CS_DC_PEER;
 
-		if (cs.disk != os.disk)
+		if (common_disk_state != device->disk_state)
 			flags &= ~CS_DC_DISK;
 	}
 	rcu_read_unlock();
@@ -1519,6 +1521,7 @@ void conn_old_common_state(struct drbd_connection *connection, union drbd_state 
 	*pf |= CS_DC_MASK;
 	*pf &= flags;
 	pcs->i = cs.i;
+	pcs->disk = common_disk_state;
 	pcs->conn = connection->cstate;
 }
 
@@ -1601,12 +1604,12 @@ conn_set_state(struct drbd_connection *connection, union drbd_state mask, union 
 		ns.i = device->state.i;
 		ns_max.role = max_role(ns.role, ns_max.role);
 		ns_max.peer = max_role(ns.peer, ns_max.peer);
-		ns_max.disk = max_t(enum drbd_disk_state, ns.disk, ns_max.disk);
+		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state, ns_max.disk);
 		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state, ns_max.pdsk);
 
 		ns_min.role = min_role(ns.role, ns_min.role);
 		ns_min.peer = min_role(ns.peer, ns_min.peer);
-		ns_min.disk = min_t(enum drbd_disk_state, ns.disk, ns_min.disk);
+		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state, ns_min.disk);
 		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state, ns_min.pdsk);
 	}
 	rcu_read_unlock();
