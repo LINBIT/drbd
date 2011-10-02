@@ -1198,7 +1198,7 @@ int drbd_send_state(struct drbd_peer_device *peer_device)
 	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
-	p->state = cpu_to_be32(peer_device->device->state.i); /* Within the send mutex */
+	p->state = cpu_to_be32(drbd_get_peer_device_state(peer_device).i); /* Within the send mutex */
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 

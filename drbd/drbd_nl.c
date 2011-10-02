@@ -2643,11 +2643,18 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 		goto nla_put_failure;
 
 	if (device) {
+		union drbd_state state;
+
+		if (peer_device)
+			state = drbd_get_peer_device_state(peer_device);
+		else
+			state = drbd_get_device_state(device);
+
 		nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
 		if (!nla)
 			goto nla_put_failure;
 		NLA_PUT_U32(skb, T_sib_reason, sib ? sib->sib_reason : SIB_GET_STATUS_REPLY);
-		NLA_PUT_U32(skb, T_current_state, device->state.i);
+		NLA_PUT_U32(skb, T_current_state, state.i);
 		NLA_PUT_U64(skb, T_ed_uuid, device->ed_uuid);
 		NLA_PUT_U64(skb, T_capacity, drbd_get_capacity(device->this_bdev));
 
