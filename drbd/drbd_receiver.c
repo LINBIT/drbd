@@ -3899,11 +3899,11 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 /**
  * convert_state() - Converts the peer's view of the cluster state to our point of view
- * @ps:		The state as seen by the peer.
+ * @peer_state:	The state as seen by the peer.
  */
-STATIC union drbd_state convert_state(union drbd_state ps)
+STATIC union drbd_state convert_state(union drbd_state peer_state)
 {
-	union drbd_state ms;
+	union drbd_state state;
 
 	static enum drbd_conns c_tab[] = {
 		[L_STANDALONE] = L_STANDALONE,
@@ -3916,16 +3916,16 @@ STATIC union drbd_state convert_state(union drbd_state ps)
 		[C_MASK]   = C_MASK,
 	};
 
-	ms.i = ps.i;
+	state.i = peer_state.i;
 
-	ms.conn = c_tab[ps.conn];
-	ms.peer = ps.role;
-	ms.role = ps.peer;
-	ms.pdsk = ps.disk;
-	ms.disk = ps.pdsk;
-	ms.peer_isp = (ps.aftr_isp | ps.user_isp);
+	state.conn = c_tab[peer_state.conn];
+	state.peer = peer_state.role;
+	state.role = peer_state.peer;
+	state.pdsk = peer_state.disk;
+	state.disk = peer_state.pdsk;
+	state.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
 
-	return ms;
+	return state;
 }
 
 STATIC int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
