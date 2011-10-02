@@ -1522,17 +1522,28 @@ static inline int combined_conn_state(struct drbd_peer_device *peer_device)
 		return peer_device->connection->cstate;
 }
 
-static inline union drbd_state drbd_read_state(struct drbd_device *device)
+static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	union drbd_state rv;
 
 	rv.i = device->state.i;
-	rv.conn = combined_conn_state(first_peer_device(device));
+	rv.conn = C_STANDALONE;  /* really: undefined */
 	rv.susp = resource->susp;
 	rv.susp_nod = resource->susp_nod;
 	rv.susp_fen = resource->susp_fen;
-	rv.pdsk = first_peer_device(device)->disk_state;
+	rv.pdsk = D_UNKNOWN;  /* really: undefined */
+
+	return rv;
+}
+
+static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device)
+{
+	union drbd_state rv;
+
+	rv = drbd_get_device_state(peer_device->device);
+	rv.conn = combined_conn_state(peer_device);
+	rv.pdsk = peer_device->disk_state;
 
 	return rv;
 }

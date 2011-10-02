@@ -3984,7 +3984,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	spin_lock_irq(&device->resource->req_lock);
  retry:
-	os = ns = drbd_read_state(device);
+	os = ns = drbd_get_peer_device_state(peer_device);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	/* peer says his disk is uptodate, while we think it is inconsistent,
@@ -4070,7 +4070,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
-	if (os.i != drbd_read_state(device).i)
+	if (os.i != drbd_get_peer_device_state(peer_device).i)
 		goto retry;
 	clear_bit(CONSIDER_RESYNC, &device->flags);
 	ns.peer = peer_state.role;
@@ -4092,7 +4092,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 	rv = _drbd_set_state(device, ns, cs_flags, NULL);
-	ns = drbd_read_state(device);
+	ns = drbd_get_peer_device_state(peer_device);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (rv < SS_SUCCESS) {

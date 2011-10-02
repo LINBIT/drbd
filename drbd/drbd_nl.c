@@ -1600,7 +1600,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
 	spin_lock_irq(&device->resource->req_lock);
-	os = drbd_read_state(device);
+	os = drbd_get_peer_device_state(first_peer_device(device));
 	ns = os;
 	/* If MDF_CONSISTENT is not set go into inconsistent state,
 	   otherwise investigate MDF_WasUpToDate...
