@@ -2467,15 +2467,16 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	if (drbd_request_state(adm_ctx.device, NS(user_isp, 0)) == SS_NOTHING_TO_DO) {
-		union drbd_dev_state s;
-		enum drbd_repl_state repl_state;
+		struct drbd_peer_device *peer_device = first_peer_device(adm_ctx.device);
 
-		s = adm_ctx.device->state;
-		repl_state = first_peer_device(adm_ctx.device)->repl_state;
-		if (repl_state == L_PAUSED_SYNC_S ||
-		    repl_state == L_PAUSED_SYNC_T) {
-			retcode = s.aftr_isp ? ERR_PIC_AFTER_DEP :
-				  s.peer_isp ? ERR_PIC_PEER_DEP : ERR_PAUSE_IS_CLEAR;
+		if (peer_device->repl_state == L_PAUSED_SYNC_S ||
+		    peer_device->repl_state == L_PAUSED_SYNC_T) {
+			if (peer_device->resync_susp_dependency)
+				retcode = ERR_PIC_AFTER_DEP;
+			else if (peer_device->resync_susp_peer)
+				retcode = ERR_PIC_PEER_DEP;
+			else
+				retcode = ERR_PAUSE_IS_CLEAR;
 		} else {
 			retcode = ERR_PAUSE_IS_CLEAR;
 		}

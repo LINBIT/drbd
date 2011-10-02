@@ -82,17 +82,9 @@ union drbd_dev_state {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
-		unsigned _unused:14 ;
-		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
-		unsigned peer_isp:1 ;
-		unsigned user_isp:1 ;
-		unsigned _pad:11;   /* 0	 unused */
+		unsigned _pad:28 ;
 #elif defined(__BIG_ENDIAN_BITFIELD)
-		unsigned _pad:11;
-		unsigned user_isp:1 ;
-		unsigned peer_isp:1 ;
-		unsigned aftr_isp:1 ; /* isp .. imposed sync pause */
-		unsigned _unused:14 ;
+		unsigned _pad:28;
 		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
 		unsigned role:2 ;   /* 3/4	 primary/secondary/unknown */
 #else

@@ -1389,9 +1389,7 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
 	int resync_after;
 
 	while (1) {
-		enum drbd_repl_state repl_state;
-
-		repl_state = first_peer_device(device)->repl_state;
+		struct drbd_peer_device *peer_device = first_peer_device(device);
 
 		if (!odev->ldev)
 			return 1;
@@ -1403,10 +1401,11 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
 		odev = minor_to_mdev(resync_after);
 		if (!expect(odev))
 			return 1;
-		if ((repl_state >= L_SYNC_SOURCE &&
-		     repl_state <= L_PAUSED_SYNC_T) ||
-		    odev->state.aftr_isp || odev->state.peer_isp ||
-		    odev->state.user_isp)
+		if ((peer_device->repl_state >= L_SYNC_SOURCE &&
+		     peer_device->repl_state <= L_PAUSED_SYNC_T) ||
+		    peer_device->resync_susp_dependency ||
+		    peer_device->resync_susp_peer ||
+		    peer_device->resync_susp_user)
 			return 0;
 	}
 }
@@ -1452,7 +1451,7 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 		if (first_peer_device(device)->repl_state == L_STANDALONE &&
 		    odev->disk_state == D_DISKLESS)
 			continue;
-		if (odev->state.aftr_isp) {
+		if (first_peer_device(odev)->resync_susp_dependency) {
 			if (_drbd_may_sync_now(odev))
 				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
 							CS_HARD, NULL)

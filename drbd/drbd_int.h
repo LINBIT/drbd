@@ -711,6 +711,9 @@ struct drbd_peer_device {
 	struct drbd_connection *connection;
 	enum drbd_disk_state disk_state;
 	enum drbd_repl_state repl_state;
+	bool resync_susp_user;
+	bool resync_susp_peer;
+	bool resync_susp_dependency;
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	atomic_t packet_seq;
@@ -1528,6 +1531,7 @@ static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 
 	rv.i = device->state.i;
 	rv.conn = C_STANDALONE;  /* really: undefined */
+	/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
 	rv.disk = device->disk_state;
 	rv.susp = resource->susp;
 	rv.susp_nod = resource->susp_nod;
@@ -1542,6 +1546,9 @@ static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_devic
 	union drbd_state rv;
 
 	rv = drbd_get_device_state(peer_device->device);
+	rv.user_isp = peer_device->resync_susp_user;
+	rv.peer_isp = peer_device->resync_susp_peer;
+	rv.aftr_isp = peer_device->resync_susp_dependency;
 	rv.conn = combined_conn_state(peer_device);
 	rv.pdsk = peer_device->disk_state;
 

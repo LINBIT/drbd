@@ -937,6 +937,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 	device->state.i = ns.i;
 	device->disk_state = ns.disk;
+	peer_device->resync_susp_user = ns.user_isp;
+	peer_device->resync_susp_peer = ns.peer_isp;
+	peer_device->resync_susp_dependency = ns.aftr_isp;
 	peer_device->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
 	device->resource->susp = ns.susp;
 	device->resource->susp_nod = ns.susp_nod;
