@@ -101,6 +101,7 @@ int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
 #include "drbd_nla.h"
@@ -2881,6 +2882,7 @@ int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_genlmsghdr *dh;
 	struct drbd_resource *resource;
+	struct resource_info resource_info;
 	int err;
 
 	rcu_read_lock();
@@ -2916,6 +2918,13 @@ put_result:
 	err = res_opts_to_skb(skb, &resource->res_opts, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;
+	resource_info.res_role = conn_highest_role(first_connection(resource));
+	resource_info.res_susp = resource->susp;
+	resource_info.res_susp_nod = resource->susp_nod;
+	resource_info.res_susp_fen = resource->susp_fen;
+	err = resource_info_to_skb(skb, &resource_info, !capable(CAP_SYS_ADMIN));
+	if (err)
+		goto out;
 	cb->args[0] = (long)resource;
 	genlmsg_end(skb, dh);
 	err = 0;
@@ -2930,10 +2939,11 @@ out:
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
-	struct drbd_resource *resource = NULL;
-	struct drbd_device *device;
+	struct drbd_resource *resource;
+	struct drbd_device *uninitialized_var(device);
 	int minor, err, retcode;
 	struct drbd_genlmsghdr *dh;
+	struct device_info device_info;
 
 	retcode = ERR_INVALID_REQUEST;
 	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
@@ -2953,7 +2963,7 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 	idr_for_each_entry_continue(&resource->devices, device, minor) {
 		retcode = NO_ERROR;
-		break;  /* only one iteration */
+		goto put_result;  /* only one iteration */
 	}
 	err = 0;
 	goto out;  /* no more devices */
@@ -2980,6 +2990,13 @@ put_result:
 			if (err)
 				goto out;
 		}
+		err = device_conf_to_skb(skb, &device->device_conf, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
+		device_info.dev_disk_state = device->disk_state;
+		err = device_info_to_skb(skb, &device_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
 		cb->args[0] = minor + 1;
 	}
 	genlmsg_end(skb, dh);
@@ -2996,9 +3013,10 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
 	struct drbd_resource *resource = NULL;
-	struct drbd_connection *connection;
+	struct drbd_connection *uninitialized_var(connection);
 	int err, retcode;
 	struct drbd_genlmsghdr *dh;
+	struct connection_info connection_info;
 
 	retcode = ERR_INVALID_REQUEST;
 	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
@@ -3014,19 +3032,19 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 	if (cb->args[0]) {
 		for_each_connection_rcu(connection, resource)
 			if (connection == (struct drbd_connection *)cb->args[0])
-				goto found_resource;
+				goto found_connection;
 		err = 0;  /* connection was probably deleted */
 		goto out;
 	}
 	connection = list_entry(&resource->connections, struct drbd_connection, connections);
 
-found_resource:
+found_connection:
 	list_for_each_entry_continue_rcu(connection, &resource->connections, connections) {
 		if (connection->my_addr_len == 0 || connection->peer_addr_len == 0)
 			continue;
 
 		retcode = NO_ERROR;
-		break;  /* only one iteration */
+		goto put_result;  /* only one iteration */
 	}
 	err = 0;
 	goto out;  /* no more connections */
@@ -3052,6 +3070,9 @@ put_result:
 			if (err)
 				goto out;
 		}
+		connection_info.conn_connection_state = connection->cstate;
+		connection_info.conn_role = conn_highest_peer(connection);
+		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		cb->args[0] = (long)connection;
 	}
 	genlmsg_end(skb, dh);
@@ -3059,7 +3080,87 @@ put_result:
 
 out:
 	rcu_read_unlock();
-	mutex_unlock(&resource->conf_update);
+	if (resource)
+		mutex_unlock(&resource->conf_update);
+	if (err)
+		return err;
+	return skb->len;
+}
+
+int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct nlattr *resource_filter;
+	struct drbd_resource *resource = NULL;
+	struct drbd_device *uninitialized_var(device);
+	struct drbd_peer_device *peer_device = NULL;
+	int minor, err, retcode;
+	struct drbd_genlmsghdr *dh;
+	struct peer_device_info peer_device_info;
+
+	retcode = ERR_INVALID_REQUEST;
+	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+	if (!resource_filter)
+		goto put_result;
+	retcode = ERR_RES_NOT_KNOWN;
+	resource = drbd_find_resource(nla_data(resource_filter));
+	if (!resource)
+		goto put_result;
+
+	rcu_read_lock();
+	minor = cb->args[0];
+	device = idr_get_next(&resource->devices, &minor);
+	if (!device) {
+		err = 0;
+		goto out;
+	}
+	if (cb->args[1]) {
+		for_each_peer_device(peer_device, device)
+			if (peer_device == (struct drbd_peer_device *)cb->args[0])
+				goto found_peer_device;
+	}
+	peer_device = list_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
+
+found_peer_device:
+	list_for_each_entry_continue_rcu(peer_device, &device->peer_devices, peer_devices) {
+		retcode = NO_ERROR;
+		goto put_result;  /* only one iteration */
+	}
+	err = 0;
+	goto out;  /* no more connections */
+
+put_result:
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+			cb->nlh->nlmsg_seq, &drbd_genl_family,
+			NLM_F_MULTI, DRBD_ADM_GET_PEER_DEVICES);
+	err = -ENOMEM;
+	if (!dh)
+		goto out;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode == NO_ERROR) {
+		dh->minor = device->minor;
+		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
+		if (err)
+			goto out;
+		peer_device_info.peer_disk_state = peer_device->disk_state;
+		peer_device_info.peer_repl_state = peer_device->repl_state;
+		peer_device_info.peer_resync_susp_user =
+			peer_device->resync_susp_user;
+		peer_device_info.peer_resync_susp_peer =
+			peer_device->resync_susp_peer;
+		peer_device_info.peer_resync_susp_dependency =
+			peer_device->resync_susp_dependency;
+		err = peer_device_info_to_skb(skb, &peer_device_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
+		cb->args[0] = minor + 1;
+		cb->args[1] = (long)peer_device;
+	}
+	genlmsg_end(skb, dh);
+	err = 0;
+
+out:
+	rcu_read_unlock();
 	if (err)
 		return err;
 	return skb->len;

@@ -233,6 +233,30 @@ GENL_struct(DRBD_NLA_DEVICE_CONF, 14, device_conf,
 	__u32_field_def(1, DRBD_F_REQUIRED | DRBD_F_INVARIANT,	max_bio_size, DRBD_MAX_BIO_SIZE_DEF)
 )
 
+GENL_struct(DRBD_NLA_RESOURCE_INFO, 15, resource_info,
+	__u32_field(1, 0, res_role)
+	__flg_field(2, 0, res_susp)
+	__flg_field(3, 0, res_susp_nod)
+	__flg_field(4, 0, res_susp_fen)
+)
+
+GENL_struct(DRBD_NLA_DEVICE_INFO, 16, device_info,
+	__u32_field(1, 0, dev_disk_state)
+)
+
+GENL_struct(DRBD_NLA_CONNECTION_INFO, 17, connection_info,
+	__u32_field(1, 0, conn_connection_state)
+	__u32_field(2, 0, conn_role)
+)
+
+GENL_struct(DRBD_NLA_PEER_DEVICE_INFO, 18, peer_device_info,
+	__u32_field(1, 0, peer_repl_state)
+	__u32_field(2, 0, peer_disk_state)
+	__u32_field(3, 0, peer_resync_susp_user)
+	__u32_field(4, 0, peer_resync_susp_peer)
+	__u32_field(5, 0, peer_resync_susp_dependency)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -371,16 +395,26 @@ GENL_op(DRBD_ADM_GET_RESOURCES, 30,
 	GENL_op_init(
 		.dumpit = drbd_adm_dump_resources,
 	),
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_RESOURCE_INFO, DRBD_GENLA_F_MANDATORY))
 
 GENL_op(DRBD_ADM_GET_DEVICES, 31,
 	GENL_op_init(
 		.dumpit = drbd_adm_dump_devices,
 	),
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_DEVICE_INFO, DRBD_GENLA_F_MANDATORY))
 
 GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 	GENL_op_init(
 		.dumpit = drbd_adm_dump_connections,
 	),
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_CONNECTION_INFO, DRBD_GENLA_F_MANDATORY))
+
+GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
+	GENL_op_init(
+		.dumpit = drbd_adm_dump_peer_devices,
+	),
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY))
