@@ -392,6 +392,7 @@ struct adm_cmd cmds[] = {
 	{"role", adm_generic_s, DRBD_acf1_default},
 	{"cstate", adm_generic_s, DRBD_acf1_default},
 	{"dstate", adm_generic_b, DRBD_acf1_default},
+	{"status", adm_generic_l, DRBD_acf1_resname},
 
 	{"dump", adm_dump, DRBD_acf1_dump},
 	{"dump-xml", adm_dump_xml, DRBD_acf1_dump},
