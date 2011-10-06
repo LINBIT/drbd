@@ -257,6 +257,7 @@ struct resources_list {
 	struct resources_list *next;
 	char *name;
 	struct nlattr *res_opts;
+	struct resource_info info;
 };
 static struct resources_list *list_resources(void);
 static void free_resources(struct resources_list *);
@@ -1707,15 +1708,15 @@ static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info)
 		struct resources_list *r = malloc(sizeof(*r));
 		struct nlattr *res_opts = global_attrs[DRBD_NLA_RESOURCE_OPTS];
 
-		r->next = NULL;
+		memset(r, 0, sizeof(*r));
 		r->name = strdup(cfg.ctx_resource_name);
-		r->res_opts = NULL;
 		if (res_opts) {
 			int size = nla_total_size(nla_len(res_opts));
 
 			r->res_opts = malloc(size);
 			memcpy(r->res_opts, res_opts, size);
 		}
+		resource_info_from_attrs(&r->info, info);
 		*__remembered_resources_tail = r;
 		__remembered_resources_tail = &r->next;
 	}
