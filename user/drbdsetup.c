@@ -234,6 +234,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -248,6 +249,7 @@ static int w_connected_state(struct drbd_cmd *, struct genl_info *);
 static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
 static void show_address(void* address, int addr_len);
+static const char *address_str(void* address, int addr_len);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
@@ -388,6 +390,7 @@ struct drbd_cmd commands[] = {
 	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
 		.options = show_cmd_options },
 	{"new-show", CTX_RESOURCE | CTX_ALL, 0, 0, generic_show_cmd, },
+	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, generic_status_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.missing_ok = true,
@@ -1676,6 +1679,189 @@ static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
+static bool opt_verbose;
+
+void resource_status(struct resources_list *resource)
+{
+	wrap_printf(0, "%s", resource->name);
+	wrap_printf(4, " role:%s", drbd_role_str(resource->info.res_role));
+	if (opt_verbose ||
+	    resource->info.res_susp ||
+	    resource->info.res_susp_nod ||
+	    resource->info.res_susp_fen) {
+		const char *x1 = "", *x2 = "", *x3 = "";
+		bool first = true;
+
+		if (resource->info.res_susp) {
+			x1 = ",user" + first;
+			first = false;
+		}
+		if (resource->info.res_susp_nod) {
+			x2 = ",no-disk" + first;
+			first = false;
+		}
+		if (resource->info.res_susp_fen) {
+			x3 = ",fencing" + first;
+			first = false;
+		}
+		if (first)
+			x1 = "no";
+
+		wrap_printf(4, " suspended:%s%s%s", x1, x2, x3);
+	}
+	wrap_printf(0, "\n");
+}
+
+static void device_status(struct devices_list *device, bool single_device)
+{
+	int indent = 2;
+
+	if (opt_verbose || !(single_device && device->ctx.ctx_volume == 0)) {
+		wrap_printf(indent, "volume:%u",  device->ctx.ctx_volume);
+		indent = 6;
+		if (opt_verbose)
+			wrap_printf(indent, " minor:%u", device->minor);
+	}
+	wrap_printf(indent, " disk:%s", drbd_disk_str(device->info.dev_disk_state));
+	wrap_printf(indent, "\n");
+}
+
+static void peer_device_status(struct peer_devices_list *peer_device, bool single_device)
+{
+	int indent = 4;
+
+	if (opt_verbose || !(single_device && peer_device->ctx.ctx_volume == 0)) {
+		wrap_printf(indent, "volume:%d", peer_device->ctx.ctx_volume);
+		indent = 8;
+	}
+	if (opt_verbose || peer_device->info.peer_repl_state != L_CONNECTED) {
+		wrap_printf(indent, " replication:%s", drbd_conn_str(peer_device->info.peer_repl_state));
+		indent = 8;
+	}
+	if (peer_device->info.peer_repl_state != L_STANDALONE) {
+		wrap_printf(indent, " disk:%s", drbd_disk_str(peer_device->info.peer_disk_state));
+		indent = 8;
+		if (opt_verbose ||
+		    peer_device->info.peer_resync_susp_user ||
+		    peer_device->info.peer_resync_susp_peer ||
+		    peer_device->info.peer_resync_susp_dependency) {
+			const char *x1 = "", *x2 = "", *x3 = "";
+			bool first = true;
+
+			if (peer_device->info.peer_resync_susp_user) {
+				x1 = ",user" + first;
+				first = false;
+			}
+			if (peer_device->info.peer_resync_susp_peer) {
+				x2 = ",peer" + first;
+				first = false;
+			}
+			if (peer_device->info.peer_resync_susp_dependency) {
+				x3 = ",dependency" + first;
+				first = false;
+			}
+			if (first)
+				x1 = "no";
+			wrap_printf(indent, " resync-suspended:%s%s%s", x1, x2, x3);
+		}
+	}
+	wrap_printf(0, "\n");
+}
+
+static void peer_devices_status(struct drbd_cfg_context *ctx, struct peer_devices_list *peer_devices, bool single_device)
+{
+	struct peer_devices_list *peer_device;
+
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
+		if (ctx->ctx_my_addr_len != peer_device->ctx.ctx_my_addr_len ||
+		    memcmp(ctx->ctx_my_addr, peer_device->ctx.ctx_my_addr, ctx->ctx_my_addr_len) ||
+		    ctx->ctx_peer_addr_len != peer_device->ctx.ctx_peer_addr_len ||
+		    memcmp(ctx->ctx_peer_addr, peer_device->ctx.ctx_peer_addr, ctx->ctx_peer_addr_len))
+			continue;
+		peer_device_status(peer_device, peer_device);
+	}
+}
+
+static void connection_status(struct connections_list *connection,
+			      struct peer_devices_list *peer_devices,
+			      bool single_device)
+{
+	const char *str;
+
+	str = address_str(connection->ctx.ctx_my_addr, connection->ctx.ctx_my_addr_len);
+	wrap_printf(2, "local:%s", str ? str : "?");
+	str = address_str(connection->ctx.ctx_peer_addr, connection->ctx.ctx_peer_addr_len);
+	wrap_printf(6, " peer:%s", str ? str : "?");
+	if (opt_verbose || connection->info.conn_connection_state != C_CONNECTED)
+		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
+	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
+		wrap_printf(6, " role:%s", drbd_role_str(connection->info.conn_role));
+	wrap_printf(0, "\n");
+	if (connection->info.conn_connection_state == C_CONNECTED)
+		peer_devices_status(&connection->ctx, peer_devices, single_device);
+}
+
+static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	struct resources_list *resources, *resource;
+	char *old_objname = objname;
+	int c;
+
+	optind = 0;  /* reset getopt_long() */
+	for (;;) {
+		static struct option status_cmd_options[] = {
+			{ "verbose", no_argument, 0, 'v' },
+			{ }
+		};
+
+		c = getopt_long(argc, argv, "v", status_cmd_options, 0);
+		if (c == -1)
+			break;
+		switch(c) {
+		default:
+		case '?':
+			return 20;
+		case 'v':
+			opt_verbose = true;
+		}
+	}
+
+	resources = list_resources();
+
+	for (resource = resources; resource; resource = resource->next) {
+		struct devices_list *devices, *device;
+		struct connections_list *connections, *connection;
+		struct peer_devices_list *peer_devices = NULL;
+		bool single_device;
+
+		if (strcmp(old_objname, "all") && strcmp(old_objname, resource->name))
+			continue;
+
+		objname = resource->name;
+
+		devices = list_devices();
+		connections = list_connections();
+		if (devices && connections)
+			peer_devices = list_peer_devices();
+
+		resource_status(resource);
+		single_device = devices && !devices->next;
+		for (device = devices; device; device = device->next)
+			device_status(device, single_device);
+		for (connection = connections; connection; connection = connection->next)
+			connection_status(connection, peer_devices, single_device);
+		wrap_printf(0, "\n");
+
+		free_connections(connections);
+		free_devices(devices);
+		free_peer_devices(peer_devices);
+	}
+
+	free(resources);
+	objname = old_objname;
+	return 0;
+}
+
 static char *af_to_str(int af)
 {
 	if (af == AF_INET)
@@ -1718,6 +1904,36 @@ static void show_address(void* address, int addr_len)
 	} else {
 		printI("address\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
 	}
+}
+
+static const char *address_str(void* address, int addr_len)
+{
+	static char str[256];
+
+	struct sockaddr     *addr;
+	struct sockaddr_in  *addr4;
+	struct sockaddr_in6 *addr6;
+	char buffer[INET6_ADDRSTRLEN];
+
+	addr = (struct sockaddr *)address;
+	if (addr->sa_family == AF_INET
+	|| addr->sa_family == get_af_ssocks(0)
+	|| addr->sa_family == AF_INET_SDP) {
+		addr4 = (struct sockaddr_in *)address;
+		snprintf(str, sizeof(str), "%s:%s:%u",
+			 af_to_str(addr4->sin_family),
+			 inet_ntoa(addr4->sin_addr),
+			 ntohs(addr4->sin_port));
+		return str;
+	} else if (addr->sa_family == AF_INET6) {
+		addr6 = (struct sockaddr_in6 *)address;
+		snprintf(str, sizeof(str), "%s:[%s]:%u",
+		        af_to_str(addr6->sin6_family),
+		        inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
+		        ntohs(addr6->sin6_port));
+		return str;
+	} else
+		return NULL;
 }
 
 struct resources_list *__remembered_resources, **__remembered_resources_tail;
