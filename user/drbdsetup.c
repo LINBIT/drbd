@@ -952,6 +952,7 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	minor = dhdr->minor;
 
 	lo = make_longoptions(cm);
+	optind = 0;  /* reset getopt_long() */
 	for (;;) {
 		int idx;
 
@@ -1267,6 +1268,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	const char *opts = make_optstring(options);
 	int c;
 
+	optind = 0;  /* reset getopt_long() */
 	for(;;) {
 		c = getopt_long(argc, argv, opts, options, 0);
 		if (c == -1)
