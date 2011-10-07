@@ -262,6 +262,16 @@ struct resources_list {
 static struct resources_list *list_resources(void);
 static void free_resources(struct resources_list *);
 
+struct devices_list {
+	struct devices_list *next;
+	unsigned minor;
+	struct drbd_cfg_context ctx;
+	struct disk_conf disk_conf;
+	struct device_info info;
+};
+static struct devices_list *list_devices(void);
+static void free_devices(struct devices_list *);
+
 struct minors_list {
 	struct minors_list *next;
 	unsigned minor;
@@ -1756,6 +1766,65 @@ static struct resources_list *list_resources(void)
 		r = NULL;
 	}
 	return r;
+}
+
+struct devices_list *__remembered_devices, **__remembered_devices_tail;
+
+static int remember_device(struct drbd_cmd *cm, struct genl_info *info)
+{
+	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&ctx, info);
+
+	if (ctx.ctx_volume != -1U) {
+		struct devices_list *d = malloc(sizeof(*d));
+
+		memset(d, 0, sizeof(*d));
+		d->minor =  ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
+		d->ctx = ctx;
+		disk_conf_from_attrs(&d->disk_conf, info);
+		d->info.dev_disk_state = D_DISKLESS;
+		device_info_from_attrs(&d->info, info);
+		*__remembered_devices_tail = d;
+		__remembered_devices_tail = &d->next;
+	}
+	return 0;
+}
+
+/*
+ * Expects objname to be set to the resource name or "all".
+ */
+static struct devices_list *list_devices(void)
+{
+	struct drbd_cmd cmd = {
+		.cmd_id = DRBD_ADM_GET_DEVICES,
+		.show_function = remember_device,
+		.missing_ok = false,
+	};
+	struct devices_list *r;
+	int err;
+
+	__remembered_devices_tail = &__remembered_devices;
+	err = generic_get_cmd(&cmd, 0, NULL);
+	r = __remembered_devices;
+	__remembered_devices = NULL;
+	if (err) {
+		free_devices(r);
+		r = NULL;
+	}
+	return r;
+}
+
+static void free_devices(struct devices_list *devices)
+{
+	while (devices) {
+		struct devices_list *d = devices;
+		devices = devices->next;
+		free(d);
+	}
 }
 
 struct minors_list *__remembered_minors;
