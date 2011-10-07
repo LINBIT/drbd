@@ -280,6 +280,14 @@ struct connections_list {
 static struct connections_list *list_connections(void);
 static void free_connections(struct connections_list *);
 
+struct peer_devices_list {
+	struct peer_devices_list *next;
+	struct drbd_cfg_context ctx;
+	struct peer_device_info info;
+};
+static struct peer_devices_list *list_peer_devices(void);
+static void free_peer_devices(struct peer_devices_list *);
+
 struct minors_list {
 	struct minors_list *next;
 	unsigned minor;
@@ -1887,6 +1895,61 @@ static void free_connections(struct connections_list *connections)
 		struct connections_list *l = connections;
 		connections = connections->next;
 		free(l);
+	}
+}
+
+struct peer_devices_list *__remembered_peer_devices, **__remembered_peer_devices_tail;
+
+static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info)
+{
+	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&ctx, info);
+	if (ctx.ctx_resource_name) {
+		struct peer_devices_list *p = malloc(sizeof(*p));
+
+		memset(p, 0, sizeof(*p));
+		p->ctx = ctx;
+		peer_device_info_from_attrs(&p->info, info);
+		*__remembered_peer_devices_tail = p;
+		__remembered_peer_devices_tail = &p->next;
+	}
+	return 0;
+}
+
+/*
+ * Expects objname to be set to the resource name or "all".
+ */
+static struct peer_devices_list *list_peer_devices(void)
+{
+	struct drbd_cmd cmd = {
+		.cmd_id = DRBD_ADM_GET_PEER_DEVICES,
+		.show_function = remember_peer_device,
+		.missing_ok = false,
+	};
+	struct peer_devices_list *r;
+	int err;
+
+	__remembered_peer_devices_tail = &__remembered_peer_devices;
+	err = generic_get_cmd(&cmd, 0, NULL);
+	r = __remembered_peer_devices;
+	__remembered_peer_devices = NULL;
+	if (err) {
+		free_peer_devices(r);
+		r = NULL;
+	}
+	return r;
+}
+
+static void free_peer_devices(struct peer_devices_list *peer_devices)
+{
+	while (peer_devices) {
+		struct peer_devices_list *p = peer_devices;
+		peer_devices = peer_devices->next;
+		free(p);
 	}
 }
 
