@@ -272,6 +272,14 @@ struct devices_list {
 static struct devices_list *list_devices(void);
 static void free_devices(struct devices_list *);
 
+struct connections_list {
+	struct connections_list *next;
+	struct drbd_cfg_context ctx;
+	struct connection_info info;
+};
+static struct connections_list *list_connections(void);
+static void free_connections(struct connections_list *);
+
 struct minors_list {
 	struct minors_list *next;
 	unsigned minor;
@@ -1824,6 +1832,61 @@ static void free_devices(struct devices_list *devices)
 		struct devices_list *d = devices;
 		devices = devices->next;
 		free(d);
+	}
+}
+
+struct connections_list *__remembered_connections, **__remembered_connections_tail;
+
+static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
+{
+	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
+
+	if (!info)
+		return 0;
+
+	drbd_cfg_context_from_attrs(&ctx, info);
+	if (ctx.ctx_resource_name) {
+		struct connections_list *r = malloc(sizeof(*r));
+
+		memset(r, 0, sizeof(*r));
+		r->ctx = ctx;
+		connection_info_from_attrs(&r->info, info);
+		*__remembered_connections_tail = r;
+		__remembered_connections_tail = &r->next;
+	}
+	return 0;
+}
+
+/*
+ * Expects objname to be set to the resource name or "all".
+ */
+static struct connections_list *list_connections(void)
+{
+	struct drbd_cmd cmd = {
+		.cmd_id = DRBD_ADM_GET_CONNECTIONS,
+		.show_function = remember_connection,
+		.missing_ok = true,
+	};
+	struct connections_list *c;
+	int err;
+
+	__remembered_connections_tail = &__remembered_connections;
+	err = generic_get_cmd(&cmd, 0, NULL);
+	c = __remembered_connections;
+	__remembered_connections = NULL;
+	if (err) {
+		free_connections(c);
+		c = NULL;
+	}
+	return c;
+}
+
+static void free_connections(struct connections_list *connections)
+{
+	while (connections) {
+		struct connections_list *l = connections;
+		connections = connections->next;
+		free(l);
 	}
 }
 
