@@ -155,4 +155,7 @@ extern const char *drbd_buildtag(void);
 /* In commit c4945b9e (v2.6.39-rc1), the little-endian bit ops got renamed */
 #define COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE
 
+/* In ancient kernels (2.6.5) kref_put() only takes a kref as argument */
+//#define COMPAT_KREF_PUT_HAS_SINGLE_ARG
+
 #endif

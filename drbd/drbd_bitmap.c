@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/dynamic_debug.h>
 #include <asm/kmap_types.h>
+#include <linux/kref.h>
 
 #include "drbd_int.h"
 

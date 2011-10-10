@@ -1042,4 +1042,8 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 	generic___test_and_clear_le_bit(nr, addr)
 #endif
 
+#ifdef COMPAT_KREF_PUT_HAS_SINGLE_ARG
+#define kref_put(KREF, RELEASE)	({ (KREF)->release=RELEASE; kref_put(KREF); })
+#endif
+
 #endif

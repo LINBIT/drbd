@@ -221,6 +221,11 @@ then
   else
     have_find_next_zero_bit_le=0
   fi
+  if grep_q "kref_put(struct kref \*kref)" $KDIR/include/linux/kref.h ; then
+    kref_put_has_single_arg=1
+  else
+    kref_put_has_single_arg=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -284,6 +289,8 @@ perl -pe "
   { ( $have_fmode_t ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE.*)}
   { ( $have_find_next_zero_bit_le ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_KREF_PUT_HAS_SINGLE_ARG.*)}
+  { ( $kref_put_has_single_arg ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
