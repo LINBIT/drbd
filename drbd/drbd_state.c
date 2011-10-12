@@ -65,25 +65,6 @@ static inline bool is_susp(union drbd_state s)
         return s.susp || s.susp_nod || s.susp_fen;
 }
 
-/* Unfortunately the states where not correctly ordered, when
-   they where defined. therefore can not use max_t() here. */
-static enum drbd_role max_role(enum drbd_role role1, enum drbd_role role2)
-{
-	if (role1 == R_PRIMARY || role2 == R_PRIMARY)
-		return R_PRIMARY;
-	if (role1 == R_SECONDARY || role2 == R_SECONDARY)
-		return R_SECONDARY;
-	return R_UNKNOWN;
-}
-static enum drbd_role min_role(enum drbd_role role1, enum drbd_role role2)
-{
-	if (role1 == R_UNKNOWN || role2 == R_UNKNOWN)
-		return R_UNKNOWN;
-	if (role1 == R_SECONDARY || role2 == R_SECONDARY)
-		return R_SECONDARY;
-	return R_PRIMARY;
-}
-
 enum drbd_role highest_peer_role(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
