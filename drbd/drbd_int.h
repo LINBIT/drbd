@@ -649,6 +649,7 @@ struct drbd_resource {
 	struct mutex conf_update;	/* mutex for ready-copy-update of net_conf and disk_conf */
 	spinlock_t req_lock;
 
+	struct mutex state_mutex;
 	unsigned susp:1;		/* IO suspended by user */
 	unsigned susp_nod:1;		/* IO suspended because no data */
 	unsigned susp_fen:1;		/* IO suspended because fence peer handler runs */
@@ -669,7 +670,6 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conns cstate;
-	struct mutex cstate_mutex;	/* Protects graceful disconnects */
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
@@ -851,8 +851,6 @@ struct drbd_device {
 	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 ed_uuid; /* UUID of the exposed data */
-	struct mutex own_state_mutex;
-	struct mutex *state_mutex; /* either own_state_mutex or first_peer_device(device)->connection->cstate_mutex */
 	char congestion_reason;  /* Why we where congested... */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */

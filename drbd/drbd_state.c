@@ -282,7 +282,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	init_completion(&done);
 
 	if (f & CS_SERIALIZE)
-		mutex_lock(device->state_mutex);
+		mutex_lock(&device->resource->state_mutex);
 
 	ns = val; /* assign debug info, if any */
 	spin_lock_irqsave(&device->resource->req_lock, flags);
@@ -337,7 +337,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 
 abort:
 	if (f & CS_SERIALIZE)
-		mutex_unlock(device->state_mutex);
+		mutex_unlock(&device->resource->state_mutex);
 
 	return rv;
 }
@@ -1667,7 +1667,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 	enum drbd_state_rv rv;
 
 	spin_unlock_irq(&connection->resource->req_lock);
-	mutex_lock(&connection->cstate_mutex);
+	mutex_lock(&connection->resource->state_mutex);
 
 	if (conn_send_state_req(connection, mask, val)) {
 		rv = SS_CW_FAILED_BY_PEER;
@@ -1679,7 +1679,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 	wait_event(connection->ping_wait, (rv = _conn_rq_cond(connection, mask, val)));
 
 abort:
-	mutex_unlock(&connection->cstate_mutex);
+	mutex_unlock(&connection->resource->state_mutex);
 	spin_lock_irq(&connection->resource->req_lock);
 
 	return rv;

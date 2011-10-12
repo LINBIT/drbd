@@ -1619,19 +1619,19 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	if (current == first_peer_device(device)->connection->sender.task) {
 		/* The sender should not sleep waiting for state_mutex,
 		   that can take long */
-		if (!mutex_trylock(device->state_mutex)) {
+		if (!mutex_trylock(&device->resource->state_mutex)) {
 			set_bit(B_RS_H_DONE, &device->flags);
 			device->start_resync_timer.expires = jiffies + HZ/5;
 			add_timer(&device->start_resync_timer);
 			return;
 		}
 	} else {
-		mutex_lock(device->state_mutex);
+		mutex_lock(&device->resource->state_mutex);
 	}
 	clear_bit(B_RS_H_DONE, &device->flags);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
-		mutex_unlock(device->state_mutex);
+		mutex_unlock(&device->resource->state_mutex);
 		return;
 	}
 
@@ -1728,7 +1728,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		drbd_md_sync(device);
 	}
 	put_ldev(device);
-	mutex_unlock(device->state_mutex);
+	mutex_unlock(&device->resource->state_mutex);
 }
 
 static struct drbd_work *consume_work(struct drbd_work_queue *queue)

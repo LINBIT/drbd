@@ -2621,6 +2621,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	kref_init(&resource->kref);
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
+	mutex_init(&resource->state_mutex);
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
@@ -2661,7 +2662,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 		goto fail;
 
 	connection->cstate = C_STANDALONE;
-	mutex_init(&connection->cstate_mutex);
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
@@ -2763,9 +2763,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	atomic_set(&device->rs_sect_ev, 0);
 	atomic_set(&device->ap_in_flight, 0);
 	atomic_set(&device->md_io_in_use, 0);
-
-	mutex_init(&device->own_state_mutex);
-	device->state_mutex = &device->own_state_mutex;
 
 	spin_lock_init(&device->al_lock);
 	spin_lock_init(&device->epoch_lock);

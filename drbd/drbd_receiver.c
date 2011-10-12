@@ -832,10 +832,6 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	atomic_set(&peer_device->packet_seq, 0);
 	peer_device->peer_seq = 0;
 
-	device->state_mutex = peer_device->connection->agreed_pro_version < 100 ?
-		&peer_device->connection->cstate_mutex :
-		&device->own_state_mutex;
-
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
@@ -3886,8 +3882,8 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	   ongoing cluster wide state change is finished. That is important if
 	   we are primary and are detaching from our disk. We need to see the
 	   new disk state... */
-	mutex_lock(device->state_mutex);
-	mutex_unlock(device->state_mutex);
+	mutex_lock(&device->resource->state_mutex);
+	mutex_unlock(&device->resource->state_mutex);
 	if (peer_device->repl_state >= L_CONNECTED && device->disk_state < D_INCONSISTENT)
 		updated_uuids |= drbd_set_ed_uuid(device, p_uuid[UI_CURRENT]);
 
@@ -3945,7 +3941,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	val.i = be32_to_cpu(p->val);
 
 	if (test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags) &&
-	    mutex_is_locked(device->state_mutex)) {
+	    mutex_is_locked(&device->resource->state_mutex)) {
 		drbd_send_sr_reply(peer_device, SS_CONCURRENT_ST_CHG);
 		return 0;
 	}
@@ -3971,7 +3967,7 @@ STATIC int receive_req_conn_state(struct drbd_connection *connection, struct pac
 	val.i = be32_to_cpu(p->val);
 
 	if (test_bit(DISCARD_CONCURRENT, &connection->flags) &&
-	    mutex_is_locked(&connection->cstate_mutex)) {
+	    mutex_is_locked(&connection->resource->state_mutex)) {
 		conn_send_sr_reply(connection, SS_CONCURRENT_ST_CHG);
 		return 0;
 	}

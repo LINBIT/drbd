@@ -596,7 +596,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		rcu_read_unlock();
 	}
 
-	mutex_lock(device->state_mutex);
+	mutex_lock(&device->resource->state_mutex);
 
 	mask.i = 0; mask.role = R_MASK;
 	val.i  = 0; val.role  = new_role;
@@ -713,7 +713,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 
 	drbd_kobject_uevent(device);
 out:
-	mutex_unlock(device->state_mutex);
+	mutex_unlock(&device->resource->state_mutex);
 	return rv;
 }
 
@@ -3254,7 +3254,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	mutex_lock(device->state_mutex); /* Protects us against serialized state changes. */
+	mutex_lock(&device->resource->state_mutex);
 
 	if (!get_ldev(device)) {
 		retcode = ERR_NO_DISK;
@@ -3297,7 +3297,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 out_dec:
 	put_ldev(device);
 out:
-	mutex_unlock(device->state_mutex);
+	mutex_unlock(&device->resource->state_mutex);
 out_nolock:
 	drbd_adm_finish(info, retcode);
 	return 0;
