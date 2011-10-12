@@ -1555,9 +1555,10 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 	return rv;
 }
 
-void
-conn_set_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-	       union drbd_state *pns_min, union drbd_state *pns_max, enum chg_state_flags flags)
+static void conn_set_state(struct drbd_connection *connection,
+			   union drbd_state mask, union drbd_state val,
+			   union drbd_state *pns_min, union drbd_state *pns_max,
+			   enum chg_state_flags flags)
 {
 	union drbd_state ns, os, ns_max = { };
 	union drbd_state ns_min = {
