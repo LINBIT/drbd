@@ -263,7 +263,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 			   i, sn,
 			   drbd_role_str(device->resource->role),
-			   drbd_role_str(device->state.peer),
+			   drbd_role_str(first_connection(device->resource)->peer_role),
 			   drbd_disk_str(device->disk_state),
 			   drbd_disk_str(first_peer_device(device)->disk_state),
 			   wp,

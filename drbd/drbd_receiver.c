@@ -2630,7 +2630,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 	 * we would also throttle its application reads.
 	 * In that case, throttling is done on the SyncTarget only.
 	 */
-	if (device->state.peer != R_PRIMARY && drbd_rs_should_slow_down(device, sector))
+	if (connection->peer_role != R_PRIMARY && drbd_rs_should_slow_down(device, sector))
 		schedule_timeout_uninterruptible(HZ/10);
 	if (drbd_rs_begin_io(device, sector))
 		goto out_free_e;

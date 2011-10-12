@@ -1790,7 +1790,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 
 	if (!new_net_conf->two_primaries &&
 	    connection->resource->role == R_PRIMARY &&
-	    conn_highest_peer(connection) == R_PRIMARY)
+	    connection->peer_role == R_PRIMARY)
 		return ERR_NEED_ALLOW_TWO_PRI;
 
 	if (new_net_conf->two_primaries &&
@@ -2226,7 +2226,7 @@ void resync_after_online_grow(struct drbd_device *device)
 	int iass; /* I am sync source */
 
 	drbd_info(device, "Resync of new storage after online grow\n");
-	if (device->resource->role != device->state.peer)
+	if (device->resource->role != first_peer_device(device)->connection->peer_role)
 		iass = (device->resource->role == R_PRIMARY);
 	else
 		iass = test_bit(DISCARD_CONCURRENT, &first_peer_device(device)->connection->flags);
@@ -2274,7 +2274,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (device->resource->role == R_SECONDARY &&
-	    device->state.peer == R_SECONDARY) {
+	    first_peer_device(device)->connection->peer_role == R_SECONDARY) {
 		retcode = ERR_NO_PRIMARY;
 		goto fail;
 	}
@@ -3072,7 +3072,7 @@ put_result:
 				goto out;
 		}
 		connection_info.conn_connection_state = connection->cstate;
-		connection_info.conn_role = conn_highest_peer(connection);
+		connection_info.conn_role = connection->peer_role;
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		cb->args[0] = (long)connection;
 	}

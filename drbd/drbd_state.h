@@ -1,6 +1,7 @@
 #ifndef DRBD_STATE_H
 #define DRBD_STATE_H
 
+struct drbd_resource;
 struct drbd_device;
 struct drbd_connection;
 
@@ -73,26 +74,6 @@ enum chg_state_flags {
 	CS_IGN_OUTD_FAIL = 1 << 11,
 };
 
-/* drbd_dev_state and drbd_state are different types. This is to stress the
-   small difference. There is no suspended flag (.susp), and no suspended
-   while fence handler runs flas (susp_fen). */
-union drbd_dev_state {
-	struct {
-#if defined(__LITTLE_ENDIAN_BITFIELD)
-		unsigned _unused2:2 ;
-		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
-		unsigned _pad:28 ;
-#elif defined(__BIG_ENDIAN_BITFIELD)
-		unsigned _pad:28;
-		unsigned peer:2 ;   /* 3/4	 primary/secondary/unknown */
-		unsigned _unused2:2 ;
-#else
-# error "this endianess is not supported"
-#endif
-	};
-	unsigned int i;
-};
-
 extern enum drbd_state_rv drbd_change_state(struct drbd_device *device,
 					    enum chg_state_flags f,
 					    union drbd_state mask,
@@ -134,7 +115,7 @@ static inline int drbd_request_state(struct drbd_device *device,
 	return _drbd_request_state(device, mask, val, CS_VERBOSE + CS_ORDERED);
 }
 
-enum drbd_role conn_highest_peer(struct drbd_connection *connection);
+enum drbd_role highest_peer_role(struct drbd_resource *);
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection);

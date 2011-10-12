@@ -671,6 +671,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conns cstate;
+	enum drbd_role peer_role;
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
@@ -763,7 +764,6 @@ struct drbd_device {
 	/* Used after attach while negotiating new disk state. */
 	union drbd_state new_state_tmp;
 
-	union drbd_dev_state state;
 	enum drbd_disk_state disk_state;
 	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  /* upon each state change. */
@@ -1526,23 +1526,24 @@ static inline int combined_conn_state(struct drbd_peer_device *peer_device)
 static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
-	union drbd_state rv;
-
-	rv.i = device->state.i;
-	rv.conn = C_STANDALONE;  /* really: undefined */
-	/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
-	rv.disk = device->disk_state;
-	rv.role = resource->role;
-	rv.susp = resource->susp;
-	rv.susp_nod = resource->susp_nod;
-	rv.susp_fen = resource->susp_fen;
-	rv.pdsk = D_UNKNOWN;  /* really: undefined */
+	union drbd_state rv = { {
+		.conn = C_STANDALONE,  /* really: undefined */
+		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
+		.disk = device->disk_state,
+		.role = resource->role,
+		.peer = R_UNKNOWN,  /* really: undefined */
+		.susp = resource->susp,
+		.susp_nod = resource->susp_nod,
+		.susp_fen = resource->susp_fen,
+		.pdsk = D_UNKNOWN,  /* really: undefined */
+	} };
 
 	return rv;
 }
 
 static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	union drbd_state rv;
 
 	rv = drbd_get_device_state(peer_device->device);
@@ -1550,6 +1551,7 @@ static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_devic
 	rv.peer_isp = peer_device->resync_susp_peer;
 	rv.aftr_isp = peer_device->resync_susp_dependency;
 	rv.conn = combined_conn_state(peer_device);
+	rv.peer = connection->peer_role;
 	rv.pdsk = peer_device->disk_state;
 
 	return rv;

@@ -2089,11 +2089,6 @@ static int drbd_release(struct inode *inode, struct file *file)
 
 STATIC void drbd_set_defaults(struct drbd_device *device)
 {
-	/* Beware! The actual layout differs
-	 * between big endian and little endian */
-	device->state = (union drbd_dev_state) {
-		{ .peer = R_UNKNOWN,
-		} };
 	device->disk_state = D_DISKLESS;
 }
 
@@ -2661,6 +2656,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 		goto fail;
 
 	connection->cstate = C_STANDALONE;
+	connection->peer_role = R_UNKNOWN;
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
