@@ -658,7 +658,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 		}
 		if (rv < SS_SUCCESS) {
 			rv = _drbd_request_state(device, mask, val,
-						CS_VERBOSE + CS_WAIT_COMPLETE);
+						CS_VERBOSE | CS_WAIT_COMPLETE);
 			if (rv < SS_SUCCESS)
 				goto out;
 		}
@@ -2234,7 +2234,7 @@ void resync_after_online_grow(struct drbd_device *device)
 	if (iass)
 		drbd_start_resync(device, L_SYNC_SOURCE);
 	else
-		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE + CS_SERIALIZE);
+		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE | CS_SERIALIZE);
 }
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
@@ -3402,7 +3402,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	     */
 	    device->resource->role == R_SECONDARY) {
 		_drbd_request_state(device, NS(conn, L_STANDALONE),
-				    CS_VERBOSE + CS_WAIT_COMPLETE);
+				    CS_VERBOSE | CS_WAIT_COMPLETE);
 		drbd_delete_device(device);
 		return NO_ERROR;
 	} else

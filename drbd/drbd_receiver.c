@@ -4100,7 +4100,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
 	if ((ns.conn == L_CONNECTED || ns.conn == L_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
 		ns.disk = device->new_state_tmp.disk;
-	cs_flags = CS_VERBOSE + (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED ? 0 : CS_HARD);
+	cs_flags = CS_VERBOSE | (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED ? 0 : CS_HARD);
 	if (ns.pdsk == D_CONSISTENT && drbd_suspended(device) && ns.conn == L_CONNECTED && os.conn < L_CONNECTED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this

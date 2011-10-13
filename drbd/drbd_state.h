@@ -62,7 +62,7 @@ enum chg_state_flags {
 	CS_VERBOSE       = 1 << 1,
 	CS_WAIT_COMPLETE = 1 << 2,
 	CS_SERIALIZE     = 1 << 3,
-	CS_ORDERED       = CS_WAIT_COMPLETE + CS_SERIALIZE,
+	CS_ORDERED       = CS_WAIT_COMPLETE | CS_SERIALIZE,
 	CS_LOCAL_ONLY    = 1 << 4, /* Do not consider a device pair wide state change */
 	CS_DC_ROLE       = 1 << 5, /* DC = display as connection state change */
 	CS_DC_PEER       = 1 << 6,
@@ -70,7 +70,7 @@ enum chg_state_flags {
 	CS_DC_DISK       = 1 << 8,
 	CS_DC_PDSK       = 1 << 9,
 	CS_DC_SUSP       = 1 << 10,
-	CS_DC_MASK       = CS_DC_ROLE + CS_DC_PEER + CS_DC_CONN + CS_DC_DISK + CS_DC_PDSK,
+	CS_DC_MASK       = CS_DC_ROLE | CS_DC_PEER | CS_DC_CONN | CS_DC_DISK | CS_DC_PDSK,
 	CS_IGN_OUTD_FAIL = 1 << 11,
 };
 
@@ -112,7 +112,7 @@ static inline int drbd_request_state(struct drbd_device *device,
 				     union drbd_state mask,
 				     union drbd_state val)
 {
-	return _drbd_request_state(device, mask, val, CS_VERBOSE + CS_ORDERED);
+	return _drbd_request_state(device, mask, val, CS_VERBOSE | CS_ORDERED);
 }
 
 enum drbd_role highest_peer_role(struct drbd_resource *);
