@@ -247,7 +247,6 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	if (f & CS_SERIALIZE)
 		mutex_lock(&device->resource->state_mutex);
 
-	ns = val; /* assign debug info, if any */
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	os = drbd_get_peer_device_state(first_peer_device(device));
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
