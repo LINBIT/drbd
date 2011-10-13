@@ -2396,7 +2396,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
-	retcode = _drbd_request_state(device, NS(conn, L_STARTING_SYNC_T), CS_ORDERED);
+	retcode = _drbd_request_state(device, NS(conn, L_STARTING_SYNC_T), CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
 		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));

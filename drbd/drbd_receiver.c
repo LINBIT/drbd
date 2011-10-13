@@ -4432,7 +4432,8 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		err = drbd_send_bitmap(device, peer_device);
 		if (err)
 			goto out;
-		/* Omit CS_ORDERED with this state transition to avoid deadlocks. */
+		/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
+		 * transition to avoid deadlocks. */
 		rv = _drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE);
 		D_ASSERT(device, rv == SS_SUCCESS);
 	} else if (peer_device->repl_state != L_WF_BITMAP_S) {
