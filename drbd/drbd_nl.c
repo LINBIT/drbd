@@ -2145,12 +2145,12 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	case SS_ALREADY_STANDALONE:
 		return SS_SUCCESS;
 	case SS_PRIMARY_NOP:
-		/* Our state checking code wants to see the peer outdated. */
+		/* Our state checking code wants to see all peer disks outdated. */
 		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
 						pdsk, D_OUTDATED), CS_VERBOSE);
 		break;
 	case SS_CW_FAILED_BY_PEER:
-		/* The peer probably wants to see us outdated. */
+		/* The peer probably wants to see all our disks outdated. */
 		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
 							disk, D_OUTDATED), 0);
 		if (rv == SS_IS_DISKLESS || rv == SS_LOWER_THAN_OUTDATED) {

@@ -993,7 +993,6 @@ retry:
 		return h;
 
 	if (connection->cram_hmac_tfm) {
-		/* drbd_request_state(device, NS(conn, WFAuth)); */
 		switch (drbd_do_auth(connection)) {
 		case -1:
 			drbd_err(connection, "Authentication of peer failed\n");
