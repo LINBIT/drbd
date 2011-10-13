@@ -2574,8 +2574,8 @@ static struct drbd_peer_device *the_only_peer_device(struct drbd_device *device)
 static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resource,
 			       struct drbd_device *device, const struct sib_info *sib)
 {
-	struct drbd_peer_device *peer_device;
-	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device = NULL;
+	struct drbd_connection *connection = NULL;
 	struct state_info *si = NULL; /* for sizeof(si->member); */
 	struct nlattr *nla;
 	int got_ldev = 0;
@@ -2595,11 +2595,12 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 	 * always in the context of the receiving process */
 	exclude_sensitive = sib || !capable(CAP_SYS_ADMIN);
 
-	if (device)
+	if (device) {
 		got_ldev = get_ldev(device);
-
-	peer_device = the_only_peer_device(device);
-	connection = peer_device ? peer_device->connection : NULL;
+		peer_device = the_only_peer_device(device);
+		if (peer_device)
+			connection = peer_device->connection;
+	}
 	if (nla_put_drbd_cfg_context(skb, resource, connection, device))
 		goto nla_put_failure;
 
