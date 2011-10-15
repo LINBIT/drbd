@@ -443,14 +443,14 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
-	enum drbd_fencing_p fp;
+	enum drbd_fencing_policy fencing_policy;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct net_conf *nc;
 
 	rcu_read_lock();
-	fp = FP_DONT_CARE;
+	fencing_policy = FP_DONT_CARE;
 	if (get_ldev(device)) {
-		fp = rcu_dereference(device->ldev->disk_conf)->fencing;
+		fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
 		put_ldev(device);
 	}
 
@@ -472,7 +472,7 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 	else if (ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.disk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if (fp >= FP_RESOURCE &&
+	else if (fencing_policy >= FP_RESOURCE &&
 		 ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk >= D_UNKNOWN)
 		rv = SS_PRIMARY_NOP;
 
@@ -641,16 +641,16 @@ static void print_sanitize_warnings(struct drbd_device *device, enum sanitize_st
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns,
 				       enum sanitize_state_warnings *warn)
 {
-	enum drbd_fencing_p fp;
+	enum drbd_fencing_policy fencing_policy;
 	enum drbd_disk_state disk_min, disk_max, pdsk_min, pdsk_max;
 
 	if (warn)
 		*warn = NO_WARNING;
 
-	fp = FP_DONT_CARE;
+	fencing_policy = FP_DONT_CARE;
 	if (get_ldev(device)) {
 		rcu_read_lock();
-		fp = rcu_dereference(device->ldev->disk_conf)->fencing;
+		fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
 		rcu_read_unlock();
 		put_ldev(device);
 	}
@@ -771,7 +771,7 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 		ns.pdsk = pdsk_min;
 	}
 
-	if (fp == FP_STONITH &&
+	if (fencing_policy == FP_STONITH &&
 	    (ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk > D_OUTDATED))
 		ns.susp_fen = 1; /* Suspend IO while fence-peer handler runs (peer lost) */
 
