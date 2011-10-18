@@ -206,7 +206,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv == SS_SUCCESS)
-		rv = SS_UNKNOWN_ERROR;  /* cont waiting, otherwise fail. */
+		rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 
 	if (!cl_wide_st_chg(device, os, ns))
 		rv = SS_CW_NO_NEED;
@@ -215,7 +215,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 		if (rv == SS_SUCCESS) {
 			rv = is_valid_soft_transition(os, ns);
 			if (rv == SS_SUCCESS)
-				rv = SS_UNKNOWN_ERROR; /* cont waiting, otherwise fail. */
+				rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 		}
 	}
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
@@ -276,7 +276,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		}
 
 		wait_event(device->state_wait,
-			(rv = _req_st_cond(device, mask, val)));
+			(rv = _req_st_cond(device, mask, val)) != SS_UNKNOWN_ERROR);
 
 		if (rv < SS_SUCCESS) {
 			if (f & CS_VERBOSE)
@@ -1596,7 +1596,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 		rv = conn_is_valid_transition(connection, mask, val, 0);
 
 	if (rv == SS_SUCCESS)
-		rv = SS_UNKNOWN_ERROR; /* cont waiting, otherwise fail. */
+		rv = SS_UNKNOWN_ERROR; /* continue waiting */
 
 	spin_unlock_irq(&connection->resource->req_lock);
 
@@ -1619,7 +1619,8 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 		goto abort;
 	}
 
-	wait_event(connection->ping_wait, (rv = _conn_rq_cond(connection, mask, val)));
+	wait_event(connection->ping_wait,
+		(rv = _conn_rq_cond(connection, mask, val)) != SS_UNKNOWN_ERROR);
 
 abort:
 	mutex_unlock(&connection->resource->state_mutex);
