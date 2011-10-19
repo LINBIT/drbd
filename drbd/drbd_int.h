@@ -643,6 +643,8 @@ enum {
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 };
 
+enum which_state { NOW, OLD = NOW, NEW };
+
 struct drbd_resource {
 	char *name;
 	struct kref kref;
@@ -654,10 +656,10 @@ struct drbd_resource {
 	spinlock_t req_lock;
 
 	struct mutex state_mutex;
-	enum drbd_role role;
-	unsigned susp:1;		/* IO suspended by user */
-	unsigned susp_nod:1;		/* IO suspended because no data */
-	unsigned susp_fen:1;		/* IO suspended because fence peer handler runs */
+	enum drbd_role role[2];
+	bool susp[2];			/* IO suspended by user */
+	bool susp_nod[2];		/* IO suspended because no data */
+	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
 
 	enum write_ordering_e write_ordering;
 
@@ -676,8 +678,8 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_resource *resource;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
-	enum drbd_conns cstate;
-	enum drbd_role peer_role;
+	enum drbd_conns cstate[2];
+	enum drbd_role peer_role[2];
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
@@ -721,11 +723,11 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
-	enum drbd_disk_state disk_state;
-	enum drbd_repl_state repl_state;
-	bool resync_susp_user;
-	bool resync_susp_peer;
-	bool resync_susp_dependency;
+	enum drbd_disk_state disk_state[2];
+	enum drbd_repl_state repl_state[2];
+	bool resync_susp_user[2];
+	bool resync_susp_peer[2];
+	bool resync_susp_dependency[2];
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	atomic_t packet_seq;
@@ -823,7 +825,7 @@ struct drbd_device {
 	/* Used after attach while negotiating new disk state. */
 	union drbd_state new_state_tmp;
 
-	enum drbd_disk_state disk_state;
+	enum drbd_disk_state disk_state[2];
 	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	unsigned int read_cnt;
