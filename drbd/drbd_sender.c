@@ -285,7 +285,7 @@ int w_read_retry_remote(struct drbd_work *w, int cancel)
 	 * to give the disk the chance to relocate that block */
 
 	spin_lock_irq(&device->resource->req_lock);
-	if (cancel || first_peer_device(device)->disk_state != D_UP_TO_DATE) {
+	if (cancel || first_peer_device(device)->disk_state[NOW] != D_UP_TO_DATE) {
 		_req_mod(req, READ_RETRY_REMOTE_CANCELED);
 		spin_unlock_irq(&device->resource->req_lock);
 		return 0;
@@ -438,7 +438,7 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, resync_work);
 
-	switch (peer_device->repl_state) {
+	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
 		make_ov_request(peer_device, cancel);
 		break;
@@ -820,7 +820,7 @@ STATIC void ping_peer(struct drbd_device *device)
 	clear_bit(GOT_PING_ACK, &connection->flags);
 	request_ping(connection);
 	wait_event(connection->ping_wait,
-		   test_bit(GOT_PING_ACK, &connection->flags) || first_peer_device(device)->repl_state < L_CONNECTED);
+		   test_bit(GOT_PING_ACK, &connection->flags) || first_peer_device(device)->repl_state[NOW] < L_CONNECTED);
 }
 
 int drbd_resync_finished(struct drbd_peer_device *peer_device)
@@ -1050,10 +1050,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		put_ldev(device);
 	}
 
-	if (first_peer_device(device)->repl_state == L_AHEAD) {
+	if (first_peer_device(device)->repl_state[NOW] == L_AHEAD) {
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		if (likely(first_peer_device(device)->disk_state >= D_INCONSISTENT)) {
+		if (likely(first_peer_device(device)->disk_state[NOW] >= D_INCONSISTENT)) {
 			inc_rs_pending(peer_device);
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {
@@ -1287,7 +1287,7 @@ int w_send_barrier(struct drbd_work *w, int cancel)
 	 * barrier packet here, and otherwise do nothing with the object.
 	 * but compare with the head of w_clear_epoch */
 	spin_lock_irq(&device->resource->req_lock);
-	if (w->cb != w_send_barrier || first_peer_device(device)->repl_state < L_CONNECTED)
+	if (w->cb != w_send_barrier || first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
 		cancel = 1;
 	spin_unlock_irq(&device->resource->req_lock);
 	if (cancel)
@@ -1416,11 +1416,11 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
 		odev = minor_to_mdev(resync_after);
 		if (!expect(device, odev))
 			return 1;
-		if ((peer_device->repl_state >= L_SYNC_SOURCE &&
-		     peer_device->repl_state <= L_PAUSED_SYNC_T) ||
-		    peer_device->resync_susp_dependency ||
-		    peer_device->resync_susp_peer ||
-		    peer_device->resync_susp_user)
+		if ((peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
+		     peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
+		    peer_device->resync_susp_dependency[NOW] ||
+		    peer_device->resync_susp_peer[NOW] ||
+		    peer_device->resync_susp_user[NOW])
 			return 0;
 	}
 }
@@ -1438,7 +1438,7 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, odev, i) {
-		if (first_peer_device(device)->repl_state == L_STANDALONE &&
+		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
 		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (!_drbd_may_sync_now(odev))
@@ -1463,10 +1463,10 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, odev, i) {
-		if (first_peer_device(device)->repl_state == L_STANDALONE &&
+		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
 		    odev->disk_state == D_DISKLESS)
 			continue;
-		if (first_peer_device(odev)->resync_susp_dependency) {
+		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
 			if (_drbd_may_sync_now(odev))
 				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
 							CS_HARD, NULL)
@@ -1590,12 +1590,12 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	union drbd_state ns;
 	int r;
 
-	if (peer_device->repl_state >= L_SYNC_SOURCE && peer_device->repl_state < L_AHEAD) {
+	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
 		drbd_err(device, "Resync already running!\n");
 		return;
 	}
 
-	if (peer_device->repl_state < L_AHEAD) {
+	if (peer_device->repl_state[NOW] < L_AHEAD) {
 		/* In case a previous resync run was aborted by an IO error/detach on the peer. */
 		drbd_rs_cancel_all(peer_device);
 		/* This should be done when we abort the resync. We definitely do not
@@ -1737,7 +1737,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		}
 
 		drbd_rs_controller_reset(peer_device);
-		/* ns.conn may already be != peer_device->repl_state,
+		/* ns.conn may already be != peer_device->repl_state[NOW],
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
@@ -1816,8 +1816,8 @@ int drbd_sender(struct drbd_thread *thi)
 		}
 
 		w = consume_work(&connection->data.work);
-		if (w->cb(w, connection->cstate < C_CONNECTED)) {
-			if (connection->cstate >= C_CONNECTED)
+		if (w->cb(w, connection->cstate[NOW] < C_CONNECTED)) {
+			if (connection->cstate[NOW] >= C_CONNECTED)
 				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 		}
 	}
@@ -1830,8 +1830,8 @@ int drbd_sender(struct drbd_thread *thi)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		D_ASSERT(device, device->disk_state == D_DISKLESS &&
-			 peer_device->repl_state == L_STANDALONE);
+		D_ASSERT(device, device->disk_state[NOW] == D_DISKLESS &&
+			 peer_device->repl_state[NOW] == L_STANDALONE);
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_mdev_cleanup(device);  /* FIXME: we "clean up" the wrong stuff here! */

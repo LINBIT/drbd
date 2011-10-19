@@ -211,7 +211,7 @@ static void _about_to_complete_local_write(struct drbd_device *device,
 	 * did not have a fully established connection yet/anymore, during
 	 * bitmap exchange, or while we are L_AHEAD due to congestion policy.
 	 */
-	if (first_peer_device(device)->repl_state >= L_CONNECTED &&
+	if (first_peer_device(device)->repl_state[NOW] >= L_CONNECTED &&
 	    (s & RQ_NET_SENT) != 0 &&
 	    req->epoch == first_peer_device(device)->connection->newest_tle->br_number)
 		queue_barrier(device);
@@ -451,7 +451,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* no point in retrying if there is no good remote data,
 		 * or we have no connection. */
-		if (first_peer_device(device)->disk_state != D_UP_TO_DATE) {
+		if (first_peer_device(device)->disk_state[NOW] != D_UP_TO_DATE) {
 			_req_may_be_done_not_susp(req, m);
 			break;
 		}
@@ -748,9 +748,9 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
-	if (device->disk_state == D_UP_TO_DATE)
+	if (device->disk_state[NOW] == D_UP_TO_DATE)
 		return true;
-	if (device->disk_state != D_INCONSISTENT)
+	if (device->disk_state[NOW] != D_INCONSISTENT)
 		return false;
 	esector = sector + (size >> 9) - 1;
 	nr_sectors = drbd_get_capacity(device->this_bdev);
@@ -788,12 +788,12 @@ static int complete_conflicting_writes(struct drbd_device *device,
 
 static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
 {
-	enum drbd_disk_state peer_disk_state = peer_device->disk_state;
+	enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
 
 	return peer_disk_state == D_UP_TO_DATE ||
 		(peer_disk_state == D_INCONSISTENT &&
-		 peer_device->repl_state >= L_WF_BITMAP_T &&
-		 peer_device->repl_state < L_AHEAD);
+		 peer_device->repl_state[NOW] >= L_WF_BITMAP_T &&
+		 peer_device->repl_state[NOW] < L_AHEAD);
 	/* Before proto 96 that was >= CONNECTED instead of >= L_WF_BITMAP_T.
 	   That is equivalent since before 96 IO was frozen in the L_WF_BITMAP*
 	   states. */
@@ -801,7 +801,7 @@ static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
 
 static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 {
-	return peer_device->repl_state == L_AHEAD || peer_device->repl_state == L_WF_BITMAP_S;
+	return peer_device->repl_state[NOW] == L_AHEAD || peer_device->repl_state[NOW] == L_WF_BITMAP_S;
 	/* pdsk = D_INCONSISTENT as a consequence. Protocol 96 check not necessary
 	   since we enter state L_AHEAD only if proto >= 96 */
 }
@@ -857,7 +857,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 
 			rcu_read_lock();
 			for_each_peer_device(peer_device, device) {
-				if (peer_device->disk_state >= D_UP_TO_DATE) {
+				if (peer_device->disk_state[NOW] >= D_UP_TO_DATE) {
 					/* FIXME: Send read request to this peer. */
 					remote = 1;
 					break;
@@ -875,7 +875,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	 *        or make this configurable...
 	 *        if network is slow, READA won't do any good.
 	 */
-	if (rw == READA && device->disk_state >= D_INCONSISTENT && !local) {
+	if (rw == READA && device->disk_state[NOW] >= D_INCONSISTENT && !local) {
 		err = -EWOULDBLOCK;
 		goto fail_and_free_req;
 	}
@@ -1190,8 +1190,8 @@ void request_timer_fn(unsigned long data)
 
 	et = min_not_zero(dt, ent);
 
-	if (!et || (first_peer_device(device)->repl_state < L_STANDALONE &&
-		    device->disk_state <= D_FAILED))
+	if (!et || (first_peer_device(device)->repl_state[NOW] < L_STANDALONE &&
+		    device->disk_state[NOW] <= D_FAILED))
 		return; /* Recurring timer stopped */
 
 	spin_lock_irq(&device->resource->req_lock);

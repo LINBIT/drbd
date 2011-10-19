@@ -75,7 +75,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
-	if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
+	if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_VERIFY_T)
 		*bits_left = peer_device->ov_left;
 	else
 		*bits_left = drbd_bm_total_weight(device) - peer_device->rs_failed;
@@ -89,7 +89,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 		 */
 		smp_rmb();
 		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-				drbd_conn_str(peer_device->repl_state),
+				drbd_conn_str(peer_device->repl_state[NOW]),
 				*bits_left, peer_device->rs_total, peer_device->rs_failed);
 		*per_mil_done = 0;
 	} else {
@@ -137,7 +137,7 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 		seq_printf(seq, ".");
 	seq_printf(seq, "] ");
 
-	if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
+	if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_VERIFY_T)
 		seq_printf(seq, "verified:");
 	else
 		seq_printf(seq, "sync'ed:");
@@ -209,8 +209,8 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_printf(seq, ")");
 
-	if (peer_device->repl_state == L_SYNC_TARGET ||
-	    peer_device->repl_state == L_VERIFY_S) {
+	if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
+	    peer_device->repl_state[NOW] == L_VERIFY_S) {
 		seq_printf(seq, " want: ");
 		seq_printf_with_thousands_grouping(seq, peer_device->c_sync_rate);
 	}
@@ -221,8 +221,8 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 		 * we convert to sectors in the display below. */
 		unsigned long bm_bits = drbd_bm_bits(device);
 		unsigned long bit_pos;
-		if (peer_device->repl_state == L_VERIFY_S ||
-		    peer_device->repl_state == L_VERIFY_T)
+		if (peer_device->repl_state[NOW] == L_VERIFY_S ||
+		    peer_device->repl_state[NOW] == L_VERIFY_T)
 			bit_pos = bm_bits - peer_device->ov_left;
 		else
 			bit_pos = device->bm_resync_fo;
@@ -302,9 +302,9 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		prev_i = i;
 
 		if (!peer_device ||
-		    (peer_device->repl_state == L_STANDALONE &&
-		     device->disk_state == D_DISKLESS &&
-		     device->resource->role == R_SECONDARY)) {
+		    (peer_device->repl_state[NOW] == L_STANDALONE &&
+		     device->disk_state[NOW] == D_DISKLESS &&
+		     device->resource->role[NOW] == R_SECONDARY)) {
 			seq_printf(seq, "%2d: cs:%s\n", i,
 				   multiple ? "Multiple" : "Unconfigured");
 			continue;
@@ -318,15 +318,15 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 		   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
 		   i, sn,
-		   drbd_role_str(device->resource->role),
-		   drbd_role_str(first_connection(device->resource)->peer_role),
-		   drbd_disk_str(device->disk_state),
-		   drbd_disk_str(peer_device->disk_state),
+		   drbd_role_str(device->resource->role[NOW]),
+		   drbd_role_str(first_connection(device->resource)->peer_role[NOW]),
+		   drbd_disk_str(device->disk_state[NOW]),
+		   drbd_disk_str(peer_device->disk_state[NOW]),
 		   wp,
 		   drbd_suspended(device) ? 's' : 'r',
-		   peer_device->resync_susp_dependency ? 'a' : '-',
-		   peer_device->resync_susp_peer ? 'p' : '-',
-		   peer_device->resync_susp_user ? 'u' : '-',
+		   peer_device->resync_susp_dependency[NOW] ? 'a' : '-',
+		   peer_device->resync_susp_peer[NOW] ? 'p' : '-',
+		   peer_device->resync_susp_user[NOW] ? 'u' : '-',
 		   device->congestion_reason ?: '-',
 		   test_bit(AL_SUSPENDED, &device->flags) ? 's' : '-',
 		   peer_device->send_cnt/2,
@@ -346,10 +346,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		seq_printf(seq, " oos:%llu\n",
 			   Bit2KB((unsigned long long)
 				   drbd_bm_total_weight(device)));
-		if (peer_device->repl_state == L_SYNC_SOURCE ||
-		    peer_device->repl_state == L_SYNC_TARGET ||
-		    peer_device->repl_state == L_VERIFY_S ||
-		    peer_device->repl_state == L_VERIFY_T)
+		if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+		    peer_device->repl_state[NOW] == L_SYNC_TARGET ||
+		    peer_device->repl_state[NOW] == L_VERIFY_S ||
+		    peer_device->repl_state[NOW] == L_VERIFY_T)
 			drbd_syncer_progress(device, seq);
 
 		if (proc_details >= 1 && get_ldev_if_state(device, D_FAILED)) {

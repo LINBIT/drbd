@@ -1537,12 +1537,12 @@ _drbd_set_state(struct drbd_device *device, union drbd_state ns,
  */
 static inline int combined_conn_state(struct drbd_peer_device *peer_device)
 {
-	enum drbd_repl_state repl_state = peer_device->repl_state;
+	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 
 	if (repl_state > L_STANDALONE)
 		return repl_state;
 	else
-		return peer_device->connection->cstate;
+		return peer_device->connection->cstate[NOW];
 }
 
 static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
@@ -1551,12 +1551,12 @@ static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
 	union drbd_state rv = { {
 		.conn = C_STANDALONE,  /* really: undefined */
 		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
-		.disk = device->disk_state,
-		.role = resource->role,
+		.disk = device->disk_state[NOW],
+		.role = resource->role[NOW],
 		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp,
-		.susp_nod = resource->susp_nod,
-		.susp_fen = resource->susp_fen,
+		.susp = resource->susp[NOW],
+		.susp_nod = resource->susp_nod[NOW],
+		.susp_fen = resource->susp_fen[NOW],
 		.pdsk = D_UNKNOWN,  /* really: undefined */
 	} };
 
@@ -1569,12 +1569,12 @@ static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_devic
 	union drbd_state rv;
 
 	rv = drbd_get_device_state(peer_device->device);
-	rv.user_isp = peer_device->resync_susp_user;
-	rv.peer_isp = peer_device->resync_susp_peer;
-	rv.aftr_isp = peer_device->resync_susp_dependency;
+	rv.user_isp = peer_device->resync_susp_user[NOW];
+	rv.peer_isp = peer_device->resync_susp_peer[NOW];
+	rv.aftr_isp = peer_device->resync_susp_dependency[NOW];
 	rv.conn = combined_conn_state(peer_device);
-	rv.peer = connection->peer_role;
-	rv.pdsk = peer_device->disk_state;
+	rv.peer = connection->peer_role[NOW];
+	rv.pdsk = peer_device->disk_state[NOW];
 
 	return rv;
 }
@@ -1592,7 +1592,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 		if (!forcedetach) {
 			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
-			if (device->disk_state > D_INCONSISTENT)
+			if (device->disk_state[NOW] > D_INCONSISTENT)
 				_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
 			break;
 		}
@@ -1600,7 +1600,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	case EP_DETACH:
 	case EP_CALL_HELPER:
 		set_bit(WAS_IO_ERROR, &device->flags);
-		if (device->disk_state > D_FAILED) {
+		if (device->disk_state[NOW] > D_FAILED) {
 			_drbd_set_state(_NS(device, disk, D_FAILED), CS_HARD, NULL);
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
@@ -1911,10 +1911,10 @@ static inline void put_ldev(struct drbd_device *device)
 	__release(local);
 	D_ASSERT(device, i >= 0);
 	if (i == 0) {
-		if (device->disk_state == D_DISKLESS)
+		if (device->disk_state[NOW] == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
 			drbd_ldev_destroy(device);
-		if (device->disk_state == D_FAILED)
+		if (device->disk_state[NOW] == D_FAILED)
 			/* all application IO references gone. */
 			drbd_go_diskless(device);
 		wake_up(&device->misc_wait);
@@ -1927,11 +1927,11 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 	int io_allowed;
 
 	/* never get a reference while D_DISKLESS */
-	if (device->disk_state == D_DISKLESS)
+	if (device->disk_state[NOW] == D_DISKLESS)
 		return 0;
 
 	atomic_inc(&device->local_cnt);
-	io_allowed = (device->disk_state >= mins);
+	io_allowed = (device->disk_state[NOW] >= mins);
 	if (!io_allowed)
 		put_ldev(device);
 	return io_allowed;
@@ -1961,7 +1961,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	/* DO NOT add a default clause, we want the compiler to warn us
 	 * for any newly introduced state we may have forgotten to add here */
 
-	switch (first_peer_device(device)->repl_state) {
+	switch (first_peer_device(device)->repl_state[NOW]) {
 	/* New io is only accepted when the peer device is unknown or there is
 	 * a well-established connection. */
 	case L_STANDALONE:
@@ -1991,7 +1991,7 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 		return 0;
 	}
 
-	switch (device->disk_state) {
+	switch (device->disk_state[NOW]) {
 	case D_DISKLESS:
 	case D_INCONSISTENT:
 	case D_OUTDATED:
@@ -2037,7 +2037,7 @@ static inline int drbd_suspended(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
-	return resource->susp || resource->susp_fen || resource->susp_nod;
+	return resource->susp[NOW] || resource->susp_fen[NOW] || resource->susp_nod[NOW];
 }
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)

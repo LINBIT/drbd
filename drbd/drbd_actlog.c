@@ -115,7 +115,7 @@ void *drbd_md_get_buffer(struct drbd_device *device)
 
 	wait_event(device->misc_wait,
 		   (r = atomic_cmpxchg(&device->md_io_in_use, 0, 1)) == 0 ||
-		   device->disk_state <= D_FAILED);
+		   device->disk_state[NOW] <= D_FAILED);
 
 	return r ? NULL : page_address(device->md_io_page);
 }
@@ -128,7 +128,7 @@ void drbd_md_put_buffer(struct drbd_device *device)
 
 static bool md_io_allowed(struct drbd_device *device)
 {
-	enum drbd_disk_state ds = device->disk_state;
+	enum drbd_disk_state ds = device->disk_state[NOW];
 	return ds >= D_NEGOTIATING || ds == D_ATTACHING;
 }
 
@@ -373,15 +373,15 @@ _al_write_transaction(struct drbd_device *device)
 
 	if (!get_ldev(device)) {
 		drbd_err(device, "disk is %s, cannot start al transaction\n",
-			drbd_disk_str(device->disk_state));
+			drbd_disk_str(device->disk_state[NOW]));
 		return -EIO;
 	}
 
 	/* The bitmap write may have failed, causing a state change. */
-	if (device->disk_state < D_INCONSISTENT) {
+	if (device->disk_state[NOW] < D_INCONSISTENT) {
 		drbd_err(device,
 			"disk is %s, cannot write al transaction\n",
-			drbd_disk_str(device->disk_state));
+			drbd_disk_str(device->disk_state[NOW]));
 		put_ldev(device);
 		return -EIO;
 	}
@@ -566,7 +566,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	kfree(udw);
 
 	if (drbd_bm_total_weight(device) <= first_peer_device(device)->rs_failed) {
-		switch (first_peer_device(device)->repl_state) {
+		switch (first_peer_device(device)->repl_state[NEW]) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
 			drbd_resync_finished(first_peer_device(device));
@@ -685,8 +685,8 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 	int next = (peer_device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
 	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
 		if (peer_device->rs_mark_left[peer_device->rs_last_mark] != still_to_go &&
-		    peer_device->repl_state != L_PAUSED_SYNC_T &&
-		    peer_device->repl_state != L_PAUSED_SYNC_S) {
+		    peer_device->repl_state[NOW] != L_PAUSED_SYNC_T &&
+		    peer_device->repl_state[NOW] != L_PAUSED_SYNC_S) {
 			peer_device->rs_mark_time[next] = now;
 			peer_device->rs_mark_left[next] = still_to_go;
 			peer_device->rs_last_mark = next;

@@ -71,9 +71,9 @@ enum drbd_role highest_peer_role(struct drbd_resource *resource)
 	enum drbd_role role = R_UNKNOWN;
 
 	for_each_connection(connection, resource) {
-		if (connection->peer_role == R_PRIMARY)
+		if (connection->peer_role[NOW] == R_PRIMARY)
 			return R_PRIMARY;
-		if (connection->peer_role == R_SECONDARY)
+		if (connection->peer_role[NOW] == R_SECONDARY)
 			role = R_SECONDARY;
 	}
 	return role;
@@ -88,7 +88,7 @@ enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = max_t(enum drbd_disk_state, ds, device->disk_state);
+		ds = max_t(enum drbd_disk_state, ds, device->disk_state[NOW]);
 	}
 	rcu_read_unlock();
 
@@ -104,7 +104,7 @@ enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = min_t(enum drbd_disk_state, ds, device->disk_state);
+		ds = min_t(enum drbd_disk_state, ds, device->disk_state[NOW]);
 	}
 	rcu_read_unlock();
 
@@ -119,7 +119,7 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		ds = max_t(enum drbd_disk_state, ds, peer_device->disk_state);
+		ds = max_t(enum drbd_disk_state, ds, peer_device->disk_state[NOW]);
 	rcu_read_unlock();
 
 	return ds;
@@ -133,8 +133,8 @@ static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *conne
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state < repl_state)
-			repl_state = peer_device->repl_state;
+		if (peer_device->repl_state[NOW] < repl_state)
+			repl_state = peer_device->repl_state[NOW];
 	}
 	rcu_read_unlock();
 
@@ -919,17 +919,17 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
 
-	device->disk_state = ns.disk;
-	peer_device->resync_susp_user = ns.user_isp;
-	peer_device->resync_susp_peer = ns.peer_isp;
-	peer_device->resync_susp_dependency = ns.aftr_isp;
-	peer_device->repl_state = max_t(unsigned, ns.conn, L_STANDALONE);
-	peer_device->connection->peer_role = ns.peer;
-	resource->role = ns.role;
-	resource->susp = ns.susp;
-	resource->susp_nod = ns.susp_nod;
-	resource->susp_fen = ns.susp_fen;
-	peer_device->disk_state = ns.pdsk;
+	device->disk_state[NOW] = ns.disk;
+	peer_device->resync_susp_user[NOW] = ns.user_isp;
+	peer_device->resync_susp_peer[NOW] = ns.peer_isp;
+	peer_device->resync_susp_dependency[NOW] = ns.aftr_isp;
+	peer_device->repl_state[NOW] = max_t(unsigned, ns.conn, L_STANDALONE);
+	peer_device->connection->peer_role[NOW] = ns.peer;
+	resource->role[NOW] = ns.role;
+	resource->susp[NOW] = ns.susp;
+	resource->susp_nod[NOW] = ns.susp_nod;
+	resource->susp_fen[NOW] = ns.susp_fen;
+	peer_device->disk_state[NOW] = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
@@ -995,18 +995,18 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		mdf &= ~MDF_AL_CLEAN;
 		if (test_bit(CRASHED_PRIMARY, &device->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
-		if (device->resource->role == R_PRIMARY ||
-		    (peer_device->disk_state < D_INCONSISTENT &&
+		if (device->resource->role[NOW] == R_PRIMARY ||
+		    (peer_device->disk_state[NOW] < D_INCONSISTENT &&
 		     highest_peer_role(device->resource) == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
-		if (peer_device->repl_state > L_STANDALONE)
+		if (peer_device->repl_state[NOW] > L_STANDALONE)
 			mdf |= MDF_CONNECTED_IND;
-		if (device->disk_state > D_INCONSISTENT)
+		if (device->disk_state[NOW] > D_INCONSISTENT)
 			mdf |= MDF_CONSISTENT;
-		if (device->disk_state > D_OUTDATED)
+		if (device->disk_state[NOW] > D_OUTDATED)
 			mdf |= MDF_WAS_UP_TO_DATE;
-		if (peer_device->disk_state <= D_OUTDATED &&
-		    peer_device->disk_state >= D_INCONSISTENT)
+		if (peer_device->disk_state[NOW] <= D_OUTDATED &&
+		    peer_device->disk_state[NOW] >= D_INCONSISTENT)
 			mdf |= MDF_PEER_OUT_DATED;
 		if (mdf != device->ldev->md.flags) {
 			device->ldev->md.flags = mdf;
@@ -1077,7 +1077,7 @@ static void abw_start_sync(struct drbd_device *device, int rv)
 		return;
 	}
 
-	switch (first_peer_device(device)->repl_state) {
+	switch (first_peer_device(device)->repl_state[NOW]) {
 	case L_STARTING_SYNC_T:
 		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE);
 		break;
@@ -1182,7 +1182,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * anymore, so check also the _current_ state, not only the new state
 	 * at the time this work was queued. */
 	if (os.conn != L_WF_BITMAP_S && ns.conn == L_WF_BITMAP_S &&
-	    first_peer_device(device)->repl_state == L_WF_BITMAP_S)
+	    first_peer_device(device)->repl_state[NOW] == L_WF_BITMAP_S)
 		drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 				"send_bitmap (WFBitMapS)",
 				BM_LOCKED_TEST_ALLOWED,
@@ -1230,7 +1230,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * Though, no need to da that just yet
 	 * if there is a resync going on still */
 	if (os.role == R_PRIMARY && ns.role == R_SECONDARY &&
-		first_peer_device(device)->repl_state <= L_CONNECTED && get_ldev(device)) {
+		first_peer_device(device)->repl_state[NOW] <= L_CONNECTED && get_ldev(device)) {
 		/* No changes to the bitmap expected this time, so assert that,
 		 * even though no harm was done if it did change. */
 		drbd_bitmap_io_from_worker(device, &drbd_bm_write,
@@ -1303,10 +1303,10 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 		/* current state still has to be D_FAILED,
 		 * there is only one way out: to D_DISKLESS,
 		 * and that may only happen after our put_ldev below. */
-		if (device->disk_state != D_FAILED)
+		if (device->disk_state[NOW] != D_FAILED)
 			drbd_err(device,
 				"ASSERT FAILED: disk is %s during detach\n",
-				drbd_disk_str(device->disk_state));
+				drbd_disk_str(device->disk_state[NOW]));
 
 		drbd_send_state(first_peer_device(device), ns);
 		drbd_rs_cancel_all(first_peer_device(device));
@@ -1327,10 +1327,10 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
         if (os.disk != D_DISKLESS && ns.disk == D_DISKLESS) {
                 /* We must still be diskless,
                  * re-attach has to be serialized with this! */
-                if (device->disk_state != D_DISKLESS)
+                if (device->disk_state[NOW] != D_DISKLESS)
                         drbd_err(device,
                                 "ASSERT FAILED: disk is %s while going diskless\n",
-                                drbd_disk_str(device->disk_state));
+                                drbd_disk_str(device->disk_state[NOW]));
 
                 first_peer_device(device)->rs_total = 0;
                 first_peer_device(device)->rs_failed = 0;
@@ -1480,22 +1480,22 @@ static void conn_old_common_state(struct drbd_connection *connection, union drbd
 		struct drbd_device *device = peer_device->device;
 
 		if (first_vol) {
-			common_disk_state = device->disk_state;
+			common_disk_state = device->disk_state[NOW];
 			first_vol = 0;
 			continue;
 		}
 
-		if (common_disk_state != device->disk_state)
+		if (common_disk_state != device->disk_state[NOW])
 			flags &= ~CS_DC_DISK;
 	}
 	rcu_read_unlock();
 
 	*pf |= CS_DC_MASK;
 	*pf &= flags;
-	pcs->role = connection->resource->role;
-	pcs->peer = connection->peer_role;
+	pcs->role = connection->resource->role[NOW];
+	pcs->peer = connection->peer_role[NOW];
 	pcs->disk = common_disk_state;
-	pcs->conn = connection->cstate;
+	pcs->conn = connection->cstate[NOW];
 }
 
 static enum drbd_state_rv
@@ -1553,7 +1553,7 @@ static void conn_set_state(struct drbd_connection *connection,
 	int vnr, number_of_volumes = 0;
 
 	if (mask.conn == C_MASK)
-		connection->cstate = min_t(unsigned, val.conn, C_CONNECTED);
+		connection->cstate[NOW] = min_t(unsigned, val.conn, C_CONNECTED);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1570,11 +1570,11 @@ static void conn_set_state(struct drbd_connection *connection,
 		if (rv < SS_SUCCESS)
 			BUG();
 
-		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state, ns_max.disk);
-		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state, ns_max.pdsk);
+		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state[NOW], ns_max.disk);
+		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state[NOW], ns_max.pdsk);
 
-		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state, ns_min.disk);
-		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state, ns_min.pdsk);
+		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state[NOW], ns_min.disk);
+		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state[NOW], ns_min.pdsk);
 	}
 	rcu_read_unlock();
 
@@ -1583,12 +1583,12 @@ static void conn_set_state(struct drbd_connection *connection,
 		ns_min.pdsk = ns_max.pdsk = D_UNKNOWN;
 	}
 
-	ns_min.peer = ns_max.peer = connection->peer_role;
-	ns_min.role = ns_max.role = connection->resource->role;
-	ns_min.conn = ns_max.conn = connection->cstate;
-	ns_min.susp = ns_max.susp = connection->resource->susp;
-	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod;
-	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen;
+	ns_min.peer = ns_max.peer = connection->peer_role[NOW];
+	ns_min.role = ns_max.role = connection->resource->role[NOW];
+	ns_min.conn = ns_max.conn = connection->cstate[NOW];
+	ns_min.susp = ns_max.susp = connection->resource->susp[NOW];
+	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod[NOW];
+	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen[NOW];
 
 	*pns_min = ns_min;
 	*pns_max = ns_max;
@@ -1606,7 +1606,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 		return SS_CW_FAILED_BY_PEER;
 
 	spin_lock_irq(&connection->resource->req_lock);
-	rv = connection->cstate != C_CONNECTED ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
+	rv = connection->cstate[NOW] != C_CONNECTED ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
 
 	if (rv == SS_UNKNOWN_ERROR)
 		rv = conn_is_valid_transition(connection, mask, val, 0);
@@ -1651,7 +1651,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct after_conn_state_chg_work *acscw;
-	enum drbd_conns oc = connection->cstate;
+	enum drbd_conns oc = connection->cstate[NOW];
 	union drbd_state ns_max, ns_min, os;
 
 	rv = is_valid_conn_transition(oc, val.conn);

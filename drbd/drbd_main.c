@@ -182,7 +182,7 @@ int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
 	int io_allowed;
 
 	atomic_inc(&device->local_cnt);
-	io_allowed = (device->disk_state >= mins);
+	io_allowed = (device->disk_state[NOW] >= mins);
 	if (!io_allowed) {
 		if (atomic_dec_and_test(&device->local_cnt))
 			wake_up(&device->misc_wait);
@@ -1120,7 +1120,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	struct p_rs_uuid *p;
 	u64 uuid;
 
-	D_ASSERT(device, device->disk_state == D_UP_TO_DATE);
+	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
 
 	uuid = device->ldev->md.uuid[UI_BITMAP];
 	if (uuid && uuid != UUID_JUST_CREATED)
@@ -1513,7 +1513,7 @@ void drbd_send_b_ack(struct drbd_peer_device *peer_device, u32 barrier_nr, u32 s
 	struct drbd_socket *sock;
 	struct p_barrier_ack *p;
 
-	if (peer_device->repl_state < L_CONNECTED)
+	if (peer_device->repl_state[NOW] < L_CONNECTED)
 		return;
 
 	sock = &peer_device->connection->meta;
@@ -1539,7 +1539,7 @@ STATIC int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet
 	struct drbd_socket *sock;
 	struct p_block_ack *p;
 
-	if (peer_device->repl_state < L_CONNECTED)
+	if (peer_device->repl_state[NOW] < L_CONNECTED)
 		return -EIO;
 
 	sock = &peer_device->connection->meta;
@@ -1657,7 +1657,7 @@ STATIC int we_should_drop_the_connection(struct drbd_connection *connection, str
 	drop_it =   connection->meta.socket == sock
 		|| !connection->asender.task
 		|| get_t_state(&connection->asender) != RUNNING
-		|| connection->cstate < C_CONNECTED;
+		|| connection->cstate[NOW] < C_CONNECTED;
 
 	if (drop_it)
 		return true;
@@ -1754,7 +1754,7 @@ STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 		}
 		len    -= sent;
 		offset += sent;
-	} while (len > 0 /* THINK && peer_device->repl_state >= L_CONNECTED */);
+	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_CONNECTED */);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
 
@@ -1857,7 +1857,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(req->seq_num = atomic_inc_return(&peer_device->packet_seq));
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio->bi_rw);
-	if (peer_device->repl_state >= L_SYNC_SOURCE && peer_device->repl_state <= L_PAUSED_SYNC_T)
+	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 	if (peer_device->connection->agreed_pro_version >= 100) {
 		if (req->rq_state & RQ_EXP_RECEIVE_ACK)
@@ -2077,7 +2077,7 @@ static int drbd_open(struct inode *inode, struct file *file)
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
 
-	if (device->resource->role != R_PRIMARY) {
+	if (device->resource->role[NOW] != R_PRIMARY) {
 		if (mode & FMODE_WRITE)
 			rv = -EROFS;
 		else if (!allow_oos)
@@ -2109,7 +2109,7 @@ static int drbd_release(struct inode *inode, struct file *file)
 
 STATIC void drbd_set_defaults(struct drbd_device *device)
 {
-	device->disk_state = D_DISKLESS;
+	device->disk_state[NOW] = D_DISKLESS;
 }
 
 void drbd_mdev_cleanup(struct drbd_device *device)
@@ -2645,7 +2645,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	mutex_init(&resource->state_mutex);
-	resource->role = R_SECONDARY;
+	resource->role[NOW] = R_SECONDARY;
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
@@ -2693,8 +2693,8 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->epochs = 1;
 	spin_lock_init(&connection->epoch_lock);
 
-	connection->cstate = C_STANDALONE;
-	connection->peer_role = R_UNKNOWN;
+	connection->cstate[NOW] = C_STANDALONE;
+	connection->peer_role[NOW] = R_UNKNOWN;
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
@@ -2764,8 +2764,8 @@ static struct drbd_peer_device *create_peer_device(struct drbd_device *device, s
 
 	peer_device->connection = connection;
 	peer_device->device = device;
-	peer_device->disk_state = D_UNKNOWN;
-	peer_device->repl_state = L_STANDALONE;
+	peer_device->disk_state[NOW] = D_UNKNOWN;
+	peer_device->repl_state[NOW] = L_STANDALONE;
 	spin_lock_init(&peer_device->peer_seq_lock);
 
 	INIT_LIST_HEAD(&peer_device->start_resync_work.list);
@@ -2946,7 +2946,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	add_disk(disk);
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->cstate >= C_CONNECTED)
+		if (peer_device->connection->cstate[NOW] >= C_CONNECTED)
 			drbd_connected(peer_device);
 	}
 
@@ -3305,7 +3305,7 @@ static void drbd_uuid_move_history(struct drbd_device *device) __must_hold(local
 void _drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local)
 {
 	if (idx == UI_CURRENT) {
-		if (device->resource->role == R_PRIMARY)
+		if (device->resource->role[NOW] == R_PRIMARY)
 			val |= 1;
 		else
 			val &= ~((u64)1);
@@ -3468,7 +3468,7 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	struct drbd_device *device =
 		container_of(w, struct drbd_device, go_diskless);
 
-	D_ASSERT(device, device->disk_state == D_FAILED);
+	D_ASSERT(device, device->disk_state[NOW] == D_FAILED);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
 	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
 	 * the protected members anymore, though, so once put_ldev reaches zero
@@ -3479,7 +3479,7 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 
 void drbd_go_diskless(struct drbd_device *device)
 {
-	D_ASSERT(device, device->disk_state == D_FAILED);
+	D_ASSERT(device, device->disk_state[NOW] == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
 		drbd_queue_work(&device->resource->work, &device->go_diskless);
 }
@@ -3732,7 +3732,7 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_interval *i)
 	timeout = schedule_timeout(timeout);
 	finish_wait(&device->misc_wait, &wait);
 	spin_lock_irq(&device->resource->req_lock);
-	if (!timeout || first_peer_device(device)->repl_state < L_CONNECTED)
+	if (!timeout || first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
 		return -ETIMEDOUT;
 	if (signal_pending(current))
 		return -ERESTARTSYS;
