@@ -656,6 +656,9 @@ struct drbd_resource {
 	spinlock_t req_lock;
 
 	struct mutex state_mutex;
+	enum drbd_state_rv state_change_rv;
+	enum chg_state_flags state_change_flags;
+
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */

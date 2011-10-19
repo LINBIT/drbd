@@ -119,4 +119,13 @@ enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection);
 
+extern void begin_state_change(struct drbd_resource *, unsigned long *, enum chg_state_flags);
+extern enum drbd_state_rv end_state_change(struct drbd_resource *, unsigned long *);
+extern void fail_state_change(struct drbd_resource *, enum drbd_state_rv);
+extern void abort_state_change(struct drbd_resource *, unsigned long *);
+extern void abort_state_change_locked(struct drbd_resource *resource);
+
+extern void begin_state_change_locked(struct drbd_resource *, enum chg_state_flags);
+extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
+
 #endif

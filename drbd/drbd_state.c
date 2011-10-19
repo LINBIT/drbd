@@ -50,6 +50,171 @@ STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_
 STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
 
+static bool state_has_changed(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	int minor;
+
+	if (resource->role[OLD] != resource->role[NEW] ||
+	    resource->susp[OLD] != resource->susp[NEW] ||
+	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
+	    resource->susp_fen[OLD] != resource->susp_fen[NEW])
+		return true;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[OLD] != connection->cstate[NEW] ||
+		    connection->peer_role[OLD] != connection->peer_role[NEW])
+			return true;
+	}
+
+	idr_for_each_entry(&resource->devices, device, minor) {
+		struct drbd_peer_device *peer_device;
+
+		if (device->disk_state[OLD] != device->disk_state[NEW])
+			return true;
+
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->disk_state[OLD] != peer_device->disk_state[NEW] ||
+			    peer_device->repl_state[OLD] != peer_device->repl_state[NEW] ||
+			    peer_device->resync_susp_user[OLD] !=
+				peer_device->resync_susp_user[NEW] ||
+			    peer_device->resync_susp_peer[OLD] !=
+				peer_device->resync_susp_peer[NEW] ||
+			    peer_device->resync_susp_dependency[OLD] !=
+				peer_device->resync_susp_dependency[NEW])
+				return true;
+		}
+	}
+	return false;
+}
+
+static void __begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
+{
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	int minor;
+
+	resource->state_change_rv = SS_SUCCESS;
+	resource->state_change_flags = flags;
+
+	resource->role[NEW] = resource->role[NOW];
+	resource->susp[NEW] = resource->susp[NOW];
+	resource->susp_nod[NEW] = resource->susp_nod[NOW];
+	resource->susp_fen[NEW] = resource->susp_fen[NOW];
+
+	for_each_connection(connection, resource) {
+		connection->cstate[NEW] = connection->cstate[NOW];
+		connection->peer_role[NEW] = connection->peer_role[NOW];
+	}
+
+	idr_for_each_entry(&resource->devices, device, minor) {
+		struct drbd_peer_device *peer_device;
+
+		device->disk_state[NEW] = device->disk_state[NOW];
+
+		for_each_peer_device(peer_device, device) {
+			peer_device->disk_state[NEW] = peer_device->disk_state[NOW];
+			peer_device->repl_state[NEW] = peer_device->repl_state[NOW];
+			peer_device->resync_susp_user[NEW] =
+				peer_device->resync_susp_user[NOW];
+			peer_device->resync_susp_peer[NEW] =
+				peer_device->resync_susp_peer[NOW];
+			peer_device->resync_susp_dependency[NEW] =
+				peer_device->resync_susp_dependency[NOW];
+		}
+	}
+	rcu_read_lock();
+}
+
+static enum drbd_state_rv __end_state_change(struct drbd_resource *resource)
+{
+	enum drbd_state_rv rv = resource->state_change_rv;
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	int minor;
+
+	if (rv >= SS_SUCCESS) {
+		if (!state_has_changed(resource))
+			return SS_NOTHING_TO_DO;
+	}
+	if (rv < SS_SUCCESS)
+		goto out;
+
+	resource->role[NOW] = resource->role[NEW];
+	resource->susp[NOW] = resource->susp[NEW];
+	resource->susp_nod[NOW] = resource->susp_nod[NEW];
+	resource->susp_fen[NOW] = resource->susp_fen[NEW];
+
+	for_each_connection(connection, resource) {
+		connection->cstate[NOW] = connection->cstate[NEW];
+		connection->peer_role[NOW] = connection->peer_role[NEW];
+	}
+
+	idr_for_each_entry(&resource->devices, device, minor) {
+		struct drbd_peer_device *peer_device;
+
+		device->disk_state[NOW] = device->disk_state[NEW];
+
+		for_each_peer_device(peer_device, device) {
+			peer_device->disk_state[NOW] = peer_device->disk_state[NEW];
+			peer_device->repl_state[NOW] = peer_device->repl_state[NEW];
+			peer_device->resync_susp_user[NOW] =
+				peer_device->resync_susp_user[NEW];
+			peer_device->resync_susp_peer[NOW] =
+				peer_device->resync_susp_peer[NEW];
+			peer_device->resync_susp_dependency[NOW] =
+				peer_device->resync_susp_dependency[NEW];
+		}
+	}
+out:
+	rcu_read_unlock();
+	return rv;
+}
+
+void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
+{
+	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE));
+	__begin_state_change(resource, flags);
+}
+
+enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
+{
+	return __end_state_change(resource);
+}
+
+void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
+{
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	__begin_state_change(resource, flags);
+}
+
+enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
+{
+	enum drbd_state_rv rv;
+
+	rv = __end_state_change(resource);
+	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	return rv;
+}
+
+void fail_state_change(struct drbd_resource *resource, enum drbd_state_rv rv)
+{
+	resource->state_change_rv = rv;
+}
+
+void abort_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
+{
+	resource->state_change_rv = SS_UNKNOWN_ERROR;
+	end_state_change(resource, irq_flags);
+}
+
+void abort_state_change_locked(struct drbd_resource *resource)
+{
+	resource->state_change_rv = SS_UNKNOWN_ERROR;
+	end_state_change_locked(resource);
+}
+
 static inline bool is_susp(union drbd_state s)
 {
         return s.susp || s.susp_nod || s.susp_fen;
