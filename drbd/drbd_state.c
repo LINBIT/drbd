@@ -55,6 +55,7 @@ STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 STATIC enum drbd_state_rv is_valid_state(struct drbd_device *, union drbd_state);
+static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *, union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns,
@@ -211,9 +212,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (!cl_wide_st_chg(device, os, ns))
 		rv = SS_CW_NO_NEED;
 	if (rv == SS_UNKNOWN_ERROR) {
-		rv = is_valid_state(device, ns);
-		if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
-			rv = SS_SUCCESS;
+		rv = is_allowed_soft_transition(device, os, ns);
 		if (rv == SS_SUCCESS) {
 			rv = is_valid_soft_transition(os, ns);
 			if (rv == SS_SUCCESS)
@@ -259,9 +258,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	}
 
 	if (cl_wide_st_chg(device, os, ns)) {
-		rv = is_valid_state(device, ns);
-		if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
-			rv = SS_SUCCESS;
+		rv = is_allowed_soft_transition(device, os, ns);
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(os, ns);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
@@ -511,6 +508,23 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 		rv = SS_CONNECTED_OUTDATES;
 
 	rcu_read_unlock();
+
+	return rv;
+}
+
+/* Allow a device which went "bad" because of an involuntary state change (such
+ * as a connection loss or disk failure) to go to a "valid" state through
+ * several similar "invalid" states: it is not always possible to go to a valid
+ * state directly.  */
+static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *device,
+						  union drbd_state os,
+						  union drbd_state ns)
+{
+	enum drbd_state_rv rv;
+
+	rv = is_valid_state(device, ns);
+	if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
+		rv = SS_SUCCESS;
 
 	return rv;
 }
@@ -868,14 +882,8 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		rv = is_valid_state(device, ns);
-		if (rv < SS_SUCCESS) {
-			/* If the old state was illegal as well, then let
-			   this happen...*/
-
-			if (is_valid_state(device, os) == rv)
-				rv = is_valid_soft_transition(os, ns);
-		} else
+		rv = is_allowed_soft_transition(device, os, ns);
+		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(os, ns);
 	}
 
@@ -1507,11 +1515,8 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 		rv = is_valid_transition(os, ns);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
-			rv = is_valid_state(device, ns);
-			if (rv < SS_SUCCESS) {
-				if (is_valid_state(device, os) == rv)
-					rv = is_valid_soft_transition(os, ns);
-			} else
+			rv = is_allowed_soft_transition(device, os, ns);
+			if (rv == SS_SUCCESS)
 				rv = is_valid_soft_transition(os, ns);
 		}
 
