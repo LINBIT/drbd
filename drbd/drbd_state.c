@@ -54,7 +54,6 @@ enum sanitize_state_warnings {
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-STATIC enum drbd_state_rv is_valid_state(struct drbd_device *, union drbd_state);
 static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *, union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
@@ -448,12 +447,18 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 }
 
 /**
- * is_valid_state() - Returns an SS_ error code if ns is not valid
+ * is_allowed_soft_transition() - Returns an SS_ error code if ns is not valid
  * @device:	DRBD device.
- * @ns:		State to consider.
+ * @os:		Old (current) state.
+ * @ns:		New state.
+ *
+ * Allows a device which went "bad" because of an involuntary state change (such
+ * as a connection loss or disk failure) to go to a "valid" state through
+ * several similar "invalid" states: it is not always possible to go to a valid
+ * state directly.
  */
-STATIC enum drbd_state_rv
-is_valid_state(struct drbd_device *device, union drbd_state ns)
+static enum drbd_state_rv
+is_allowed_soft_transition(struct drbd_device *device, union drbd_state os, union drbd_state ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
@@ -470,7 +475,7 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 
 	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
 	if (nc) {
-		if (!nc->two_primaries && ns.role == R_PRIMARY) {
+		if (os.role != R_PRIMARY && ns.role == R_PRIMARY && !nc->two_primaries) {
 			if (ns.peer == R_PRIMARY)
 				rv = SS_TWO_PRIMARIES;
 			else if (highest_peer_role(device->resource) == R_PRIMARY)
@@ -480,60 +485,53 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 
 	if (rv <= 0)
 		/* already found a reason to abort */;
-	else if (ns.role == R_SECONDARY && device->open_cnt)
+	else if (os.role != R_SECONDARY && ns.role == R_SECONDARY && device->open_cnt)
 		rv = SS_DEVICE_IN_USE;
 
-	else if (ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.disk < D_UP_TO_DATE)
+	else if (!(os.role == R_PRIMARY && os.conn < L_CONNECTED && os.disk < D_UP_TO_DATE) &&
+		   ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.disk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
 	else if (fencing_policy >= FP_RESOURCE &&
-		 ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk >= D_UNKNOWN)
+		 !(os.role == R_PRIMARY && os.conn < L_CONNECTED && os.pdsk >= D_UNKNOWN) &&
+		   ns.role == R_PRIMARY && ns.conn < L_CONNECTED && ns.pdsk >= D_UNKNOWN)
 		rv = SS_PRIMARY_NOP;
 
-	else if (ns.role == R_PRIMARY && ns.disk <= D_INCONSISTENT && ns.pdsk <= D_INCONSISTENT)
+	else if (!(os.role == R_PRIMARY && os.disk <= D_INCONSISTENT && os.pdsk <= D_INCONSISTENT) &&
+		   ns.role == R_PRIMARY && ns.disk <= D_INCONSISTENT && ns.pdsk <= D_INCONSISTENT)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if (ns.conn > L_CONNECTED && ns.disk < D_INCONSISTENT)
+	else if (!(os.conn > L_CONNECTED && os.disk < D_INCONSISTENT) &&
+		   ns.conn > L_CONNECTED && ns.disk < D_INCONSISTENT)
 		rv = SS_NO_LOCAL_DISK;
 
-	else if (ns.conn > L_CONNECTED && ns.pdsk < D_INCONSISTENT)
+	else if (!(os.conn > L_CONNECTED && os.pdsk < D_INCONSISTENT) &&
+		   ns.conn > L_CONNECTED && ns.pdsk < D_INCONSISTENT)
 		rv = SS_NO_REMOTE_DISK;
 
-	else if (ns.conn > L_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
+	else if (!(os.conn > L_CONNECTED && os.disk < D_UP_TO_DATE && os.pdsk < D_UP_TO_DATE) &&
+		   ns.conn > L_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if (ns.disk == D_OUTDATED && !local_disk_may_be_outdated(ns.conn))
+	else if (!(os.disk == D_OUTDATED && !local_disk_may_be_outdated(os.conn)) &&
+		   ns.disk == D_OUTDATED && !local_disk_may_be_outdated(ns.conn))
 		rv = SS_CONNECTED_OUTDATES;
 
-	else if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
+	else if (!(os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
+		  (ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
 		 (nc->verify_alg[0] == 0))
 		rv = SS_NO_VERIFY_ALG;
 
-	else if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
+	else if (!(os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
+		  (ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
 		  first_peer_device(device)->connection->agreed_pro_version < 88)
 		rv = SS_NOT_SUPPORTED;
 
-	else if (ns.conn >= L_CONNECTED && ns.pdsk == D_UNKNOWN)
+	else if (!(os.conn >= L_CONNECTED && os.pdsk == D_UNKNOWN) &&
+		   ns.conn >= L_CONNECTED && ns.pdsk == D_UNKNOWN)
 		rv = SS_CONNECTED_OUTDATES;
 
 	rcu_read_unlock();
-
-	return rv;
-}
-
-/* Allow a device which went "bad" because of an involuntary state change (such
- * as a connection loss or disk failure) to go to a "valid" state through
- * several similar "invalid" states: it is not always possible to go to a valid
- * state directly.  */
-static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *device,
-						  union drbd_state os,
-						  union drbd_state ns)
-{
-	enum drbd_state_rv rv;
-
-	rv = is_valid_state(device, ns);
-	if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
-		rv = SS_SUCCESS;
 
 	return rv;
 }
