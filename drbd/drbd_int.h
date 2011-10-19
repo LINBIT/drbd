@@ -564,8 +564,8 @@ struct drbd_bitmap {
 
 struct drbd_work_queue {
 	struct list_head q;
-	struct semaphore s; /* producers up it, worker down()s it */
 	spinlock_t q_lock;  /* to protect the list. */
+	wait_queue_head_t q_wait;
 };
 
 struct drbd_socket {
@@ -1742,7 +1742,7 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 	spin_lock_irqsave(&q->q_lock, flags);
 	list_add_tail(&w->list, &q->q);
 	spin_unlock_irqrestore(&q->q_lock, flags);
-	up(&q->s);
+	wake_up(&q->q_wait);
 }
 
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);

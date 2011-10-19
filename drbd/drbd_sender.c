@@ -1757,25 +1757,22 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	mutex_unlock(&device->resource->state_mutex);
 }
 
-static struct drbd_work *consume_work(struct drbd_work_queue *queue)
+bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
-	struct drbd_work *work;
-
 	spin_lock_irq(&queue->q_lock);
-	work = list_first_entry(&queue->q, struct drbd_work, list);
-	list_del_init(&work->list);
+	list_splice_init(&queue->q, work_list);
 	spin_unlock_irq(&queue->q_lock);
-
-	return work;
+	return !list_empty(work_list);
 }
 
 int drbd_sender(struct drbd_thread *thi)
 {
+	LIST_HEAD(work_list);
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
-	int vnr, intr = 0;
+	int vnr;
 	int cork;
 
 	rcu_read_lock();
@@ -1786,11 +1783,16 @@ int drbd_sender(struct drbd_thread *thi)
 	rcu_read_unlock();
 
 	while (get_t_state(thi) == RUNNING) {
+
 		drbd_thread_current_set_cpu(thi);
 
-		if (down_trylock(&connection->data.work.s)) {
-			mutex_lock(&connection->data.mutex);
+		if (list_empty(&work_list))
+			dequeue_work_batch(&connection->data.work, &work_list);
 
+		/* Still nothing to do? Poke TCP, just in case,
+		 * then wait for new work (or signal). */
+		if (list_empty(&work_list)) {
+			mutex_lock(&connection->data.mutex);
 			rcu_read_lock();
 			nc = rcu_dereference(connection->net_conf);
 			cork = nc ? nc->tcp_cork : 0;
@@ -1800,15 +1802,16 @@ int drbd_sender(struct drbd_thread *thi)
 				drbd_tcp_uncork(connection->data.socket);
 			mutex_unlock(&connection->data.mutex);
 
-			intr = down_interruptible(&connection->data.work.s);
+			wait_event_interruptible(connection->data.work.q_wait,
+				dequeue_work_batch(&connection->data.work, &work_list));
 
 			mutex_lock(&connection->data.mutex);
-			if (connection->data.socket  && cork)
+			if (connection->data.socket && cork)
 				drbd_tcp_cork(connection->data.socket);
 			mutex_unlock(&connection->data.mutex);
 		}
 
-		if (intr) {
+		if (signal_pending(current)) {
 			flush_signals(current);
 			if (get_t_state(thi) == RUNNING) {
 				drbd_warn(connection, "Sender got an unexpected signal\n");
@@ -1817,22 +1820,27 @@ int drbd_sender(struct drbd_thread *thi)
 			break;
 		}
 
-		if (get_t_state(thi) != RUNNING) {
-			up(&connection->data.work.s);
+		if (get_t_state(thi) != RUNNING)
 			break;
-		}
 
-		w = consume_work(&connection->data.work);
-		if (w->cb(w, connection->cstate[NOW] < C_CONNECTED)) {
+		while (!list_empty(&work_list)) {
+			w = list_first_entry(&work_list, struct drbd_work, list);
+			list_del_init(&w->list);
+			if (w->cb(w, connection->cstate[NOW] < C_CONNECTED) == 0)
+				continue;
 			if (connection->cstate[NOW] >= C_CONNECTED)
 				change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 		}
 	}
 
-	while (!down_trylock(&connection->data.work.s)) {
-		w = consume_work(&connection->data.work);
-		w->cb(w, 1);
-	}
+	do {
+		while (!list_empty(&work_list)) {
+			w = list_first_entry(&work_list, struct drbd_work, list);
+			list_del_init(&w->list);
+			w->cb(w, 1);
+		}
+		dequeue_work_batch(&connection->data.work, &work_list);
+	} while (!list_empty(&work_list));
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1852,13 +1860,19 @@ int drbd_sender(struct drbd_thread *thi)
 
 int drbd_worker(struct drbd_thread *thi)
 {
+	LIST_HEAD(work_list);
 	struct drbd_resource *resource = thi->resource;
 	struct drbd_work *w;
 
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
-		if (down_interruptible(&resource->work.s)) {
+		if (list_empty(&work_list)) {
+			wait_event_interruptible(resource->work.q_wait,
+				dequeue_work_batch(&resource->work, &work_list));
+		}
+
+		if (signal_pending(current)) {
 			flush_signals(current);
 			if (get_t_state(thi) == RUNNING) {
 				drbd_warn(resource, "Worker got an unexpected signal\n");
@@ -1867,19 +1881,25 @@ int drbd_worker(struct drbd_thread *thi)
 			break;
 		}
 
-		if (get_t_state(thi) != RUNNING) {
-			up(&resource->work.s);
+		if (get_t_state(thi) != RUNNING)
 			break;
+
+
+		while (!list_empty(&work_list)) {
+			w = list_first_entry(&work_list, struct drbd_work, list);
+			list_del_init(&w->list);
+			w->cb(w, 0);
 		}
-
-		w = consume_work(&resource->work);
-		w->cb(w, 0);
 	}
 
-	while (!down_trylock(&resource->work.s)) {
-		w = consume_work(&resource->work);
-		w->cb(w, 1);
-	}
+	do {
+		while (!list_empty(&work_list)) {
+			w = list_first_entry(&work_list, struct drbd_work, list);
+			list_del_init(&w->list);
+			w->cb(w, 1);
+		}
+		dequeue_work_batch(&resource->work, &work_list);
+	} while (!list_empty(&work_list));
 
 	return 0;
 }
