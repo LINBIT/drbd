@@ -212,6 +212,8 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 		rv = SS_CW_NO_NEED;
 	if (rv == SS_UNKNOWN_ERROR) {
 		rv = is_valid_state(device, ns);
+		if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
+			rv = SS_SUCCESS;
 		if (rv == SS_SUCCESS) {
 			rv = is_valid_soft_transition(os, ns);
 			if (rv == SS_SUCCESS)
@@ -258,6 +260,8 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 
 	if (cl_wide_st_chg(device, os, ns)) {
 		rv = is_valid_state(device, ns);
+		if (rv != SS_SUCCESS && rv == is_valid_state(device, os))
+			rv = SS_SUCCESS;
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(os, ns);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
