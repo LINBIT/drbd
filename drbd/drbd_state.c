@@ -434,6 +434,19 @@ static void conn_pr_state_change(struct drbd_connection *connection, union drbd_
 }
 
 
+static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
+{
+	switch(repl_state) {
+	case L_CONNECTED:
+	case L_WF_BITMAP_S:
+	case L_SYNC_SOURCE:
+	case L_PAUSED_SYNC_S:
+		return false;
+	default:
+		return true;
+	}
+}
+
 /**
  * is_valid_state() - Returns an SS_ error code if ns is not valid
  * @device:	DRBD device.
@@ -489,11 +502,7 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 	else if (ns.conn > L_CONNECTED && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE)
 		rv = SS_NO_UP_TO_DATE_DISK;
 
-	else if ((ns.conn == L_CONNECTED ||
-		  ns.conn == L_WF_BITMAP_S ||
-		  ns.conn == L_SYNC_SOURCE ||
-		  ns.conn == L_PAUSED_SYNC_S) &&
-		  ns.disk == D_OUTDATED)
+	else if (ns.disk == D_OUTDATED && !local_disk_may_be_outdated(ns.conn))
 		rv = SS_CONNECTED_OUTDATES;
 
 	else if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
