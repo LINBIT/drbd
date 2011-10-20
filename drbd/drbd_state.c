@@ -418,6 +418,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	begin_state_change(device->resource, &irq_flags, f);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
+	drbd_set_new_peer_device_state(first_peer_device(device), ns);
 	rv = is_valid_transition(os, ns);
 	if (rv == SS_SUCCESS)
 		rv = SS_UNKNOWN_ERROR;  /* continue waiting */
@@ -464,6 +465,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	begin_state_change(device->resource, &irq_flags, f);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
+	drbd_set_new_peer_device_state(first_peer_device(device), ns);
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS) {
 		abort_state_change(device->resource, &irq_flags);
@@ -1061,6 +1063,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if (ns.i == os.i)
 		return SS_NOTHING_TO_DO;
 
+	drbd_set_new_peer_device_state(peer_device, ns);
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS)
 		goto out;
@@ -1096,18 +1099,6 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if ((os.disk != D_FAILED && ns.disk == D_FAILED) ||
 	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
-
-	device->disk_state[NEW] = ns.disk;
-	peer_device->resync_susp_user[NEW] = ns.user_isp;
-	peer_device->resync_susp_peer[NEW] = ns.peer_isp;
-	peer_device->resync_susp_dependency[NEW] = ns.aftr_isp;
-	peer_device->repl_state[NEW] = max_t(unsigned, ns.conn, L_STANDALONE);
-	peer_device->connection->peer_role[NEW] = ns.peer;
-	resource->role[NEW] = ns.role;
-	resource->susp[NEW] = ns.susp;
-	resource->susp_nod[NEW] = ns.susp_nod;
-	resource->susp_fen[NEW] = ns.susp_fen;
-	peer_device->disk_state[NEW] = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
@@ -1705,6 +1696,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 		if (ns.i == os.i)
 			continue;
 
+		drbd_set_new_peer_device_state(peer_device, ns);
 		rv = is_valid_transition(os, ns);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
@@ -1737,9 +1729,6 @@ static void conn_set_state(struct drbd_connection *connection,
 	struct drbd_peer_device *peer_device;
 	enum drbd_state_rv rv;
 	int vnr, number_of_volumes = 0;
-
-	if (mask.conn == C_MASK)
-		connection->cstate[NEW] = min_t(unsigned, val.conn, C_CONNECTED);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
