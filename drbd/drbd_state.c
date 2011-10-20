@@ -46,7 +46,7 @@ STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *);
-STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
+STATIC enum drbd_state_rv is_valid_soft_transition(struct drbd_peer_device *);
 STATIC enum drbd_state_rv is_valid_transition(struct drbd_peer_device *peer_device);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
 
@@ -428,7 +428,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (rv == SS_UNKNOWN_ERROR) {
 		rv = is_allowed_soft_transition(device);
 		if (rv == SS_SUCCESS) {
-			rv = is_valid_soft_transition(os, ns);
+			rv = is_valid_soft_transition(first_peer_device(device));
 			if (rv == SS_SUCCESS)
 				rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 		}
@@ -475,7 +475,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	if (cl_wide_st_chg(device, os, ns)) {
 		rv = is_allowed_soft_transition(device);
 		if (rv == SS_SUCCESS)
-			rv = is_valid_soft_transition(os, ns);
+			rv = is_valid_soft_transition(first_peer_device(device));
 		abort_state_change(device->resource, &irq_flags);
 
 		if (rv < SS_SUCCESS) {
@@ -763,50 +763,50 @@ is_allowed_soft_transition(struct drbd_device *device)
  * is_valid_soft_transition() - Returns an SS_ error code if the state transition is not possible
  * This function limits state transitions that may be declined by DRBD. I.e.
  * user requests (aka soft transitions).
- * @device:	DRBD device.
- * @ns:		new state.
- * @os:		old state.
  */
 STATIC enum drbd_state_rv
-is_valid_soft_transition(union drbd_state os, union drbd_state ns)
+is_valid_soft_transition(struct drbd_peer_device *peer_device)
 {
+	enum drbd_conns *cstate = peer_device->connection->cstate;
+	enum drbd_repl_state *repl_state = peer_device->repl_state;
+	enum drbd_disk_state *disk_state = peer_device->device->disk_state;
 	enum drbd_state_rv rv = SS_SUCCESS;
 
-	if ((ns.conn == L_STARTING_SYNC_T || ns.conn == L_STARTING_SYNC_S) &&
-	    os.conn > L_CONNECTED)
+	if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
+	    repl_state[OLD] > L_CONNECTED)
 		rv = SS_RESYNC_RUNNING;
 
-	if (ns.conn == C_DISCONNECTING && os.conn == C_STANDALONE)
+	if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
 		rv = SS_ALREADY_STANDALONE;
 
-	if (ns.disk > D_ATTACHING && os.disk == D_DISKLESS)
+	if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
 		rv = SS_IS_DISKLESS;
 
-	if (ns.conn == C_WF_CONNECTION && os.conn < C_UNCONNECTED)
+	if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
 		rv = SS_NO_NET_CONFIG;
 
-	if (ns.disk == D_OUTDATED && os.disk < D_OUTDATED && os.disk != D_ATTACHING)
+	if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
 		rv = SS_LOWER_THAN_OUTDATED;
 
-	if (ns.conn == C_DISCONNECTING && os.conn == C_UNCONNECTED)
+	if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
 		rv = SS_IN_TRANSIENT_STATE;
 
-	/* if (ns.conn == os.conn && ns.conn == L_STANDALONE)
+	/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)
 	   rv = SS_IN_TRANSIENT_STATE; */
 
-	if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) && os.conn < L_CONNECTED)
+	if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_CONNECTED)
 		rv = SS_NEED_CONNECTION;
 
-	if ((ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T) &&
-	    ns.conn != os.conn && os.conn > L_CONNECTED)
+	if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+	    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_CONNECTED)
 		rv = SS_RESYNC_RUNNING;
 
-	if ((ns.conn == L_STARTING_SYNC_S || ns.conn == L_STARTING_SYNC_T) &&
-	    os.conn < L_CONNECTED)
+	if ((repl_state[NEW] == L_STARTING_SYNC_S || repl_state[NEW] == L_STARTING_SYNC_T) &&
+	    repl_state[OLD] < L_CONNECTED)
 		rv = SS_NEED_CONNECTION;
 
-	if ((ns.conn == L_SYNC_TARGET || ns.conn == L_SYNC_SOURCE)
-	    && os.conn < L_STANDALONE)
+	if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
+	    && repl_state[OLD] < L_STANDALONE)
 		rv = SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
 
 	return rv;
@@ -1081,7 +1081,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 		rv = is_allowed_soft_transition(device);
 		if (rv == SS_SUCCESS)
-			rv = is_valid_soft_transition(os, ns);
+			rv = is_valid_soft_transition(peer_device);
 	}
 
 	if (rv < SS_SUCCESS) {
@@ -1709,7 +1709,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
 			rv = is_allowed_soft_transition(device);
 			if (rv == SS_SUCCESS)
-				rv = is_valid_soft_transition(os, ns);
+				rv = is_valid_soft_transition(peer_device);
 		}
 
 		if (rv < SS_SUCCESS) {
