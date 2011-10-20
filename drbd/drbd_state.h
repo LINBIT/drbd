@@ -133,4 +133,7 @@ enum which_state;
 extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_state);
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);
 
+extern void drbd_set_new_device_state(struct drbd_device *, union drbd_state);
+extern void drbd_set_new_peer_device_state(struct drbd_peer_device *, union drbd_state);
+
 #endif

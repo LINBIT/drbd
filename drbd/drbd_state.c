@@ -249,6 +249,31 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	return rv;
 }
 
+void drbd_set_new_device_state(struct drbd_device *device, union drbd_state state)
+{
+	struct drbd_resource *resource = device->resource;
+
+	device->disk_state[NEW] = state.disk;
+	resource->role[NEW] = state.role;
+	resource->susp[NEW] = state.susp;
+	resource->susp_nod[NEW] = state.susp_nod;
+	resource->susp_fen[NEW] = state.susp_fen;
+}
+
+void drbd_set_new_peer_device_state(struct drbd_peer_device *peer_device, union drbd_state state)
+{
+	struct drbd_connection *connection = peer_device->connection;
+
+	drbd_set_new_device_state(peer_device->device, state);
+	peer_device->resync_susp_user[NEW] = state.user_isp;
+	peer_device->resync_susp_peer[NEW] = state.peer_isp;
+	peer_device->resync_susp_dependency[NEW] = state.aftr_isp;
+	peer_device->repl_state[NEW] = max_t(unsigned, state.conn, L_STANDALONE);
+	peer_device->disk_state[NEW] = state.pdsk;
+	connection->cstate[NEW] = min_t(unsigned, state.conn, C_CONNECTED);
+	connection->peer_role[NEW] = state.peer;
+}
+
 static inline bool is_susp(union drbd_state s)
 {
         return s.susp || s.susp_nod || s.susp_fen;
