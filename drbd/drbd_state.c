@@ -215,6 +215,40 @@ void abort_state_change_locked(struct drbd_resource *resource)
 	end_state_change_locked(resource);
 }
 
+union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
+{
+	struct drbd_resource *resource = device->resource;
+	union drbd_state rv = { {
+		.conn = C_STANDALONE,  /* really: undefined */
+		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
+		.disk = device->disk_state[which],
+		.role = resource->role[which],
+		.peer = R_UNKNOWN,  /* really: undefined */
+		.susp = resource->susp[which],
+		.susp_nod = resource->susp_nod[which],
+		.susp_fen = resource->susp_fen[which],
+		.pdsk = D_UNKNOWN,  /* really: undefined */
+	} };
+
+	return rv;
+}
+
+union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	union drbd_state rv;
+
+	rv = drbd_get_device_state(peer_device->device, which);
+	rv.user_isp = peer_device->resync_susp_user[which];
+	rv.peer_isp = peer_device->resync_susp_peer[which];
+	rv.aftr_isp = peer_device->resync_susp_dependency[which];
+	rv.conn = combined_conn_state(peer_device, which);
+	rv.peer = connection->peer_role[which];
+	rv.pdsk = peer_device->disk_state[which];
+
+	return rv;
+}
+
 static inline bool is_susp(union drbd_state s)
 {
         return s.susp || s.susp_nod || s.susp_fen;

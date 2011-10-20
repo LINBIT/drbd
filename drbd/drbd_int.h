@@ -1548,40 +1548,6 @@ static inline int combined_conn_state(struct drbd_peer_device *peer_device, enum
 		return peer_device->connection->cstate[which];
 }
 
-static inline union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
-{
-	struct drbd_resource *resource = device->resource;
-	union drbd_state rv = { {
-		.conn = C_STANDALONE,  /* really: undefined */
-		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
-		.disk = device->disk_state[which],
-		.role = resource->role[which],
-		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp[which],
-		.susp_nod = resource->susp_nod[which],
-		.susp_fen = resource->susp_fen[which],
-		.pdsk = D_UNKNOWN,  /* really: undefined */
-	} };
-
-	return rv;
-}
-
-static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	union drbd_state rv;
-
-	rv = drbd_get_device_state(peer_device->device, which);
-	rv.user_isp = peer_device->resync_susp_user[which];
-	rv.peer_isp = peer_device->resync_susp_peer[which];
-	rv.aftr_isp = peer_device->resync_susp_dependency[which];
-	rv.conn = combined_conn_state(peer_device, which);
-	rv.peer = connection->peer_role[which];
-	rv.pdsk = peer_device->disk_state[which];
-
-	return rv;
-}
-
 #define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
 static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedetach, const char *where)
 {
