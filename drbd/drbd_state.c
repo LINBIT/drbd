@@ -47,7 +47,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
 static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *, union drbd_state, union drbd_state);
 STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state);
-STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
+STATIC enum drbd_state_rv is_valid_transition(struct drbd_peer_device *peer_device);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
 
 static bool state_has_changed(struct drbd_resource *resource)
@@ -419,7 +419,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
 	drbd_set_new_peer_device_state(first_peer_device(device), ns);
-	rv = is_valid_transition(os, ns);
+	rv = is_valid_transition(first_peer_device(device));
 	if (rv == SS_SUCCESS)
 		rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 
@@ -466,7 +466,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
 	drbd_set_new_peer_device_state(first_peer_device(device), ns);
-	rv = is_valid_transition(os, ns);
+	rv = is_valid_transition(first_peer_device(device));
 	if (rv < SS_SUCCESS) {
 		abort_state_change(device->resource, &irq_flags);
 		goto abort;
@@ -837,18 +837,18 @@ is_valid_conn_transition(enum drbd_conns oc, enum drbd_conns nc)
  * This limits hard state transitions. Hard state transitions are facts there are
  * imposed on DRBD by the environment. E.g. disk broke or network broke down.
  * But those hard state transitions are still not allowed to do everything.
- * @ns:		new state.
- * @os:		old state.
  */
 STATIC enum drbd_state_rv
-is_valid_transition(union drbd_state os, union drbd_state ns)
+is_valid_transition(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_state_rv rv;
 
-	rv = is_valid_conn_transition(os.conn, ns.conn);
+	rv = is_valid_conn_transition(connection->cstate[OLD], connection->cstate[NEW]);
 
 	/* we cannot fail (again) if we already detached */
-	if (ns.disk == D_FAILED && os.disk == D_DISKLESS)
+	if (device->disk_state[NEW] == D_FAILED && device->disk_state[OLD] == D_DISKLESS)
 		rv = SS_IS_DISKLESS;
 
 	return rv;
@@ -1064,7 +1064,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		return SS_NOTHING_TO_DO;
 
 	drbd_set_new_peer_device_state(peer_device, ns);
-	rv = is_valid_transition(os, ns);
+	rv = is_valid_transition(peer_device);
 	if (rv < SS_SUCCESS)
 		goto out;
 
@@ -1697,7 +1697,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 			continue;
 
 		drbd_set_new_peer_device_state(peer_device, ns);
-		rv = is_valid_transition(os, ns);
+		rv = is_valid_transition(peer_device);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
 			rv = is_allowed_soft_transition(device, os, ns);
