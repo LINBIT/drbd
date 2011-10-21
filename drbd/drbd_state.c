@@ -664,7 +664,6 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 
 static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *resource)
 {
-	enum drbd_state_rv rv = SS_SUCCESS;
 	enum drbd_role *role = resource->role;
 	struct drbd_device *device;
 	int vnr;
@@ -692,65 +691,60 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 		if (nc) {
 			if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY && !nc->two_primaries) {
 				if (connection->peer_role[NEW] == R_PRIMARY)
-					rv = SS_TWO_PRIMARIES;
-				else if (highest_peer_role(resource) == R_PRIMARY)
-					rv = SS_O_VOL_PEER_PRI;
+					return SS_TWO_PRIMARIES;
+				if (highest_peer_role(resource) == R_PRIMARY)
+					return SS_O_VOL_PEER_PRI;
 			}
 		}
 
-		if (rv <= 0)
-			/* already found a reason to abort */;
-		else if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
-			rv = SS_DEVICE_IN_USE;
+		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
+			return SS_DEVICE_IN_USE;
 
-		else if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
-			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
-			rv = SS_NO_UP_TO_DATE_DISK;
+		if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
+		     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
+			return SS_NO_UP_TO_DATE_DISK;
 
-		else if (fencing_policy >= FP_RESOURCE &&
-			 !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
-			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
-			rv = SS_PRIMARY_NOP;
+		if (fencing_policy >= FP_RESOURCE &&
+		    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
+		     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
+			return SS_PRIMARY_NOP;
 
-		else if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
-			  (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
-			rv = SS_NO_UP_TO_DATE_DISK;
+		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
+		     (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
+			return SS_NO_UP_TO_DATE_DISK;
 
-		else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
-			  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
-			rv = SS_NO_LOCAL_DISK;
+		if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
+		     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
+			return SS_NO_LOCAL_DISK;
 
-		else if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
-			  (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
-			rv = SS_NO_REMOTE_DISK;
+		if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
+		     (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
+			return SS_NO_REMOTE_DISK;
 
-		else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-			  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
-			rv = SS_NO_UP_TO_DATE_DISK;
+		if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
+		     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+			return SS_NO_UP_TO_DATE_DISK;
 
-		else if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
-			  (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
-			rv = SS_CONNECTED_OUTDATES;
+		if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
+		     (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
+			return SS_CONNECTED_OUTDATES;
 
-		else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-			  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+		     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
 			 (nc->verify_alg[0] == 0))
-			rv = SS_NO_VERIFY_ALG;
+			return SS_NO_VERIFY_ALG;
 
-		else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-			  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+		     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
 			  connection->agreed_pro_version < 88)
-			rv = SS_NOT_SUPPORTED;
+			return SS_NOT_SUPPORTED;
 
-		else if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
-			  (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
-			rv = SS_CONNECTED_OUTDATES;
-
-		if (rv != SS_SUCCESS)
-			break;
+		if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
+		     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
+			return SS_CONNECTED_OUTDATES;
 	}
 
-	return rv;
+	return SS_SUCCESS;
 }
 
 /**
@@ -774,7 +768,6 @@ static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *resou
 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
-	enum drbd_state_rv rv = SS_SUCCESS;
 	struct drbd_device *device;
 	int vnr;
 
@@ -787,46 +780,43 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
 		    repl_state[OLD] > L_CONNECTED)
-			rv = SS_RESYNC_RUNNING;
+			return SS_RESYNC_RUNNING;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
-			rv = SS_ALREADY_STANDALONE;
+			return SS_ALREADY_STANDALONE;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
-			rv = SS_IS_DISKLESS;
+			return SS_IS_DISKLESS;
 
 		if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
-			rv = SS_NO_NET_CONFIG;
+			return SS_NO_NET_CONFIG;
 
 		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
-			rv = SS_LOWER_THAN_OUTDATED;
+			return SS_LOWER_THAN_OUTDATED;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
-			rv = SS_IN_TRANSIENT_STATE;
+			return SS_IN_TRANSIENT_STATE;
 
 		/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)
-		   rv = SS_IN_TRANSIENT_STATE; */
+			return SS_IN_TRANSIENT_STATE; */
 
 		if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_CONNECTED)
-			rv = SS_NEED_CONNECTION;
+			return SS_NEED_CONNECTION;
 
 		if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
 		    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_CONNECTED)
-			rv = SS_RESYNC_RUNNING;
+			return SS_RESYNC_RUNNING;
 
 		if ((repl_state[NEW] == L_STARTING_SYNC_S || repl_state[NEW] == L_STARTING_SYNC_T) &&
 		    repl_state[OLD] < L_CONNECTED)
-			rv = SS_NEED_CONNECTION;
+			return SS_NEED_CONNECTION;
 
 		if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
 		    && repl_state[OLD] < L_STANDALONE)
-			rv = SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
-
-		if (rv != SS_SUCCESS)
-			break;
+			return SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
 	}
 
-	return rv;
+	return SS_SUCCESS;
 }
 
 /**
