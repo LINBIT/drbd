@@ -731,7 +731,7 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 
 		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
 		     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-			 (nc->verify_alg[0] == 0))
+			 (!nc || nc->verify_alg[0] == 0))
 			return SS_NO_VERIFY_ALG;
 
 		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
