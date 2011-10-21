@@ -1120,44 +1120,13 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 }
 
 /**
- * __drbd_set_state() - Set a new DRBD state
- * @device:	DRBD device.
- * @ns:		new state.
- * @flags:	Flags
- * @done:	Optional completion, that will get completed after the after_state_ch() finished
- *
- * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
+ * finish_state_change  -  carry out actions triggered by a state change
  */
-enum drbd_state_rv
-__drbd_set_state(struct drbd_device *device, union drbd_state ns,
-	         enum chg_state_flags flags, struct completion *done)
+static void finish_state_change(struct drbd_device *device, union drbd_state os,
+				union drbd_state ns, struct completion *done)
 {
-	union drbd_state os;
-	enum drbd_state_rv rv = SS_SUCCESS;
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	struct after_state_chg_work *ascw;
-	struct drbd_resource *resource;
-	struct drbd_peer_device *peer_device;
-
-	resource = device->resource;
-	peer_device = first_peer_device(device);
-	os = drbd_get_peer_device_state(peer_device, NOW);
-	ns = sanitize_state(device, ns);
-	if (ns.i == os.i)
-		return SS_NOTHING_TO_DO;
-
-	drbd_set_new_peer_device_state(peer_device, ns);
-	rv = is_valid_transition(resource);
-	if (rv < SS_SUCCESS)
-		goto out;
-
-	if (!(flags & CS_HARD))
-		rv = is_valid_soft_transition(resource);
-
-	if (rv < SS_SUCCESS) {
-		if (flags & CS_VERBOSE)
-			print_st_err(device, os, ns, rv);
-		goto out;
-	}
 
 	print_state_change(device->resource, "");
 
@@ -1281,7 +1250,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if (ascw) {
 		ascw->os = os;
 		ascw->ns = ns;
-		ascw->flags = flags;
+		ascw->flags = device->resource->state_change_flags;
 		ascw->w.cb = w_after_state_ch;
 		ascw->device = device;
 		ascw->done = done;
@@ -1289,10 +1258,51 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	} else {
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
+}
+
+/**
+ * __drbd_set_state() - Set a new DRBD state
+ * @device:	DRBD device.
+ * @ns:		new state.
+ * @flags:	Flags
+ * @done:	Optional completion, that will get completed after the after_state_ch() finished
+ *
+ * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
+ */
+enum drbd_state_rv
+__drbd_set_state(struct drbd_device *device, union drbd_state ns,
+	         enum chg_state_flags flags, struct completion *done)
+{
+	union drbd_state os;
+	enum drbd_state_rv rv = SS_SUCCESS;
+	struct drbd_resource *resource;
+	struct drbd_peer_device *peer_device;
+
+	resource = device->resource;
+	peer_device = first_peer_device(device);
+	os = drbd_get_peer_device_state(peer_device, NEW);
+	ns = sanitize_state(device, ns);
+	if (ns.i == os.i)
+		return SS_NOTHING_TO_DO;
+
+	drbd_set_new_peer_device_state(peer_device, ns);
+	rv = is_valid_transition(resource);
+	if (rv < SS_SUCCESS)
+		goto out;
+
+	if (!(flags & CS_HARD))
+		rv = is_valid_soft_transition(resource);
+
+	if (rv < SS_SUCCESS) {
+		if (flags & CS_VERBOSE)
+			print_st_err(device, os, ns, rv);
+		goto out;
+	}
 
 out:
 	if (rv < SS_SUCCESS)
 		fail_state_change(resource, rv);
+	finish_state_change(device, os, ns, done);
 	return rv;
 }
 
