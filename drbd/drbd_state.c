@@ -665,21 +665,31 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
+	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int vnr;
 
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		struct drbd_peer_device *peer_device = first_peer_device(device);
-		struct drbd_connection *connection = peer_device->connection;
+	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
+		for_each_connection(connection, resource) {
+			struct net_conf *nc;
 
+			nc = rcu_dereference(connection->net_conf);
+			if (!nc || nc->two_primaries)
+				continue;
+			if (connection->peer_role[NEW] == R_PRIMARY)
+				return SS_TWO_PRIMARIES;
+			if (connection->peer_role[OLD] == R_PRIMARY)
+				return SS_O_VOL_PEER_PRI;
+		}
+	}
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
-		enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
-		enum drbd_repl_state *repl_state = peer_device->repl_state;
+		struct drbd_peer_device *peer_device;
 
 		enum drbd_fencing_policy fencing_policy;
-		struct net_conf *nc;
 
 		fencing_policy = FP_DONT_CARE;
 		if (get_ldev(device)) {
@@ -687,61 +697,59 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 			put_ldev(device);
 		}
 
-		nc = rcu_dereference(connection->net_conf);
-		if (nc) {
-			if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY && !nc->two_primaries) {
-				if (connection->peer_role[NEW] == R_PRIMARY)
-					return SS_TWO_PRIMARIES;
-				if (highest_peer_role(resource) == R_PRIMARY)
-					return SS_O_VOL_PEER_PRI;
-			}
-		}
-
 		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
 			return SS_DEVICE_IN_USE;
 
-		if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
-		     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
-			return SS_NO_UP_TO_DATE_DISK;
+		for_each_peer_device(peer_device, device) {
+			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
 
-		if (fencing_policy >= FP_RESOURCE &&
-		    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
-		     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
-			return SS_PRIMARY_NOP;
+			if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
+			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
+				return SS_NO_UP_TO_DATE_DISK;
 
-		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
-		     (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
-			return SS_NO_UP_TO_DATE_DISK;
+			if (fencing_policy >= FP_RESOURCE &&
+			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
+			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
+				return SS_PRIMARY_NOP;
 
-		if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
-		     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
-			return SS_NO_LOCAL_DISK;
+			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
+			     (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
+				return SS_NO_UP_TO_DATE_DISK;
 
-		if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
-		     (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
-			return SS_NO_REMOTE_DISK;
+			if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
+			     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
+				return SS_NO_LOCAL_DISK;
 
-		if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-		     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
-			return SS_NO_UP_TO_DATE_DISK;
+			if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
+			     (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
+				return SS_NO_REMOTE_DISK;
 
-		if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
-		     (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
-			return SS_CONNECTED_OUTDATES;
+			if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
+			     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+				return SS_NO_UP_TO_DATE_DISK;
 
-		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-		     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-			 (!nc || nc->verify_alg[0] == 0))
-			return SS_NO_VERIFY_ALG;
+			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
+			     (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
+				return SS_CONNECTED_OUTDATES;
 
-		if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-		     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-			  connection->agreed_pro_version < 88)
-			return SS_NOT_SUPPORTED;
+			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+			     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
+				struct net_conf *nc = rcu_dereference(peer_device->connection->net_conf);
 
-		if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
-		     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
-			return SS_CONNECTED_OUTDATES;
+				if (!nc || nc->verify_alg[0] == 0)
+					return SS_NO_VERIFY_ALG;
+			}
+
+			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+			     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+				  peer_device->connection->agreed_pro_version < 88)
+				return SS_NOT_SUPPORTED;
+
+			if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
+			     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
+				return SS_CONNECTED_OUTDATES;
+		}
 	}
 
 	return SS_SUCCESS;
