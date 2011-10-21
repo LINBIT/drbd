@@ -45,7 +45,7 @@ struct after_state_chg_work {
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-static enum drbd_state_rv is_allowed_soft_transition(struct drbd_device *);
+static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *);
 STATIC enum drbd_state_rv is_valid_soft_transition(struct drbd_peer_device *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
@@ -426,7 +426,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (!cl_wide_st_chg(device, os, ns))
 		rv = SS_CW_NO_NEED;
 	if (rv == SS_UNKNOWN_ERROR) {
-		rv = is_allowed_soft_transition(device);
+		rv = is_allowed_soft_transition(device->resource);
 		if (rv == SS_SUCCESS) {
 			rv = is_valid_soft_transition(first_peer_device(device));
 			if (rv == SS_SUCCESS)
@@ -473,7 +473,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	}
 
 	if (cl_wide_st_chg(device, os, ns)) {
-		rv = is_allowed_soft_transition(device);
+		rv = is_allowed_soft_transition(device->resource);
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(first_peer_device(device));
 		abort_state_change(device->resource, &irq_flags);
@@ -662,98 +662,111 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 	}
 }
 
+static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *resource)
+{
+	enum drbd_state_rv rv = SS_SUCCESS;
+	enum drbd_role *role = resource->role;
+	struct drbd_device *device;
+	int vnr;
+
+	/* See drbd_state_sw_errors in drbd_strings.c */
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device = first_peer_device(device);
+		struct drbd_connection *connection = peer_device->connection;
+
+		enum drbd_disk_state *disk_state = device->disk_state;
+		enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+		enum drbd_repl_state *repl_state = peer_device->repl_state;
+
+		enum drbd_fencing_policy fencing_policy;
+		struct net_conf *nc;
+
+		fencing_policy = FP_DONT_CARE;
+		if (get_ldev(device)) {
+			fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
+			put_ldev(device);
+		}
+
+		nc = rcu_dereference(connection->net_conf);
+		if (nc) {
+			if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY && !nc->two_primaries) {
+				if (connection->peer_role[NEW] == R_PRIMARY)
+					rv = SS_TWO_PRIMARIES;
+				else if (highest_peer_role(resource) == R_PRIMARY)
+					rv = SS_O_VOL_PEER_PRI;
+			}
+		}
+
+		if (rv <= 0)
+			/* already found a reason to abort */;
+		else if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
+			rv = SS_DEVICE_IN_USE;
+
+		else if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
+			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
+			rv = SS_NO_UP_TO_DATE_DISK;
+
+		else if (fencing_policy >= FP_RESOURCE &&
+			 !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && peer_disk_state[OLD] >= D_UNKNOWN) &&
+			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && peer_disk_state[NEW] >= D_UNKNOWN))
+			rv = SS_PRIMARY_NOP;
+
+		else if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
+			  (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
+			rv = SS_NO_UP_TO_DATE_DISK;
+
+		else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
+			  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
+			rv = SS_NO_LOCAL_DISK;
+
+		else if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
+			  (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
+			rv = SS_NO_REMOTE_DISK;
+
+		else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
+			  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+			rv = SS_NO_UP_TO_DATE_DISK;
+
+		else if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
+			  (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
+			rv = SS_CONNECTED_OUTDATES;
+
+		else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+			  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+			 (nc->verify_alg[0] == 0))
+			rv = SS_NO_VERIFY_ALG;
+
+		else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+			  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+			  connection->agreed_pro_version < 88)
+			rv = SS_NOT_SUPPORTED;
+
+		else if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
+			  (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
+			rv = SS_CONNECTED_OUTDATES;
+
+		if (rv != SS_SUCCESS)
+			break;
+	}
+
+	return rv;
+}
+
 /**
  * is_allowed_soft_transition() - Returns an SS_ error code if ns is not valid
- * @device:	DRBD device.
  *
  * Allows a device which went "bad" because of an involuntary state change (such
  * as a connection loss or disk failure) to go to a "valid" state through
  * several similar "invalid" states: it is not always possible to go to a valid
  * state directly.
  */
-static enum drbd_state_rv
-is_allowed_soft_transition(struct drbd_device *device)
+static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *resource)
 {
-	/* See drbd_state_sw_errors in drbd_strings.c */
-
-	struct drbd_resource *resource = device->resource;
-	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct drbd_connection *connection = peer_device->connection;
-
-	enum drbd_disk_state *disk_state = device->disk_state;
-	enum drbd_role *role = resource->role;
-	enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
-	enum drbd_repl_state *repl_state = peer_device->repl_state;
-
-	enum drbd_fencing_policy fencing_policy;
-	enum drbd_state_rv rv = SS_SUCCESS;
-	struct net_conf *nc;
+	enum drbd_state_rv rv;
 
 	rcu_read_lock();
-	fencing_policy = FP_DONT_CARE;
-	if (get_ldev(device)) {
-		fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
-		put_ldev(device);
-	}
-
-	nc = rcu_dereference(connection->net_conf);
-	if (nc) {
-		if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY && !nc->two_primaries) {
-			if (connection->peer_role[NEW] == R_PRIMARY)
-				rv = SS_TWO_PRIMARIES;
-			else if (highest_peer_role(resource) == R_PRIMARY)
-				rv = SS_O_VOL_PEER_PRI;
-		}
-	}
-
-	if (rv <= 0)
-		/* already found a reason to abort */;
-	else if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
-		rv = SS_DEVICE_IN_USE;
-
-	else if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
-		  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
-		rv = SS_NO_UP_TO_DATE_DISK;
-
-	else if (fencing_policy >= FP_RESOURCE &&
-		 !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && peer_disk_state[OLD] >= D_UNKNOWN) &&
-		  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && peer_disk_state[NEW] >= D_UNKNOWN))
-		rv = SS_PRIMARY_NOP;
-
-	else if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
-		  (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
-		rv = SS_NO_UP_TO_DATE_DISK;
-
-	else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
-		  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
-		rv = SS_NO_LOCAL_DISK;
-
-	else if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
-		  (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
-		rv = SS_NO_REMOTE_DISK;
-
-	else if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-		  (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
-		rv = SS_NO_UP_TO_DATE_DISK;
-
-	else if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
-		  (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
-		rv = SS_CONNECTED_OUTDATES;
-
-	else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-		  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-		 (nc->verify_alg[0] == 0))
-		rv = SS_NO_VERIFY_ALG;
-
-	else if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-		  (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-		  connection->agreed_pro_version < 88)
-		rv = SS_NOT_SUPPORTED;
-
-	else if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
-		  (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
-		rv = SS_CONNECTED_OUTDATES;
-
+	rv = __is_allowed_soft_transition(resource);
 	rcu_read_unlock();
 
 	return rv;
@@ -1087,7 +1100,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		/*  pre-state-change checks ; only look at ns  */
 		/* See drbd_state_sw_errors in drbd_strings.c */
 
-		rv = is_allowed_soft_transition(device);
+		rv = is_allowed_soft_transition(resource);
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(peer_device);
 	}
@@ -1715,7 +1728,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 		rv = is_valid_transition(connection->resource);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
-			rv = is_allowed_soft_transition(device);
+			rv = is_allowed_soft_transition(connection->resource);
 			if (rv == SS_SUCCESS)
 				rv = is_valid_soft_transition(peer_device);
 		}
