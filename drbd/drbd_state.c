@@ -1127,6 +1127,11 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
 	struct after_state_chg_work *ascw;
+	enum drbd_disk_state *disk_state = device->disk_state;
+	enum drbd_conns *cstate = peer_device->connection->cstate;
+	enum drbd_repl_state *repl_state = peer_device->repl_state;
+	enum drbd_role *peer_role = peer_device->connection->peer_role;
+	enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 
 	print_state_change(device->resource, "");
 
@@ -1134,11 +1139,11 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
 	 * drbd_ldev_destroy() won't happen before our corresponding
 	 * after_state_ch works run, where we put_ldev again. */
-	if ((os.disk != D_FAILED && ns.disk == D_FAILED) ||
-	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
+	if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
+	    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
 
-	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
+	if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
 
 	wake_up(&device->misc_wait);
@@ -1146,35 +1151,35 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	wake_up(&peer_device->connection->ping_wait);
 
 	/* aborted verify run. log the last position */
-	if ((os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
-	    ns.conn < L_CONNECTED) {
+	if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
+	    repl_state[NEW] < L_CONNECTED) {
 		peer_device->ov_start_sector =
 			BM_BIT_TO_SECT(drbd_bm_bits(device) - peer_device->ov_left);
 		drbd_info(peer_device, "Online Verify reached sector %llu\n",
 			(unsigned long long)peer_device->ov_start_sector);
 	}
 
-	if ((os.conn == L_PAUSED_SYNC_T || os.conn == L_PAUSED_SYNC_S) &&
-	    (ns.conn == L_SYNC_TARGET  || ns.conn == L_SYNC_SOURCE)) {
+	if ((repl_state[OLD] == L_PAUSED_SYNC_T || repl_state[OLD] == L_PAUSED_SYNC_S) &&
+	    (repl_state[NEW] == L_SYNC_TARGET  || repl_state[NEW] == L_SYNC_SOURCE)) {
 		drbd_info(peer_device, "Syncer continues.\n");
 		peer_device->rs_paused += (long)jiffies
 				  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
-		if (ns.conn == L_SYNC_TARGET)
+		if (repl_state[NEW] == L_SYNC_TARGET)
 			mod_timer(&peer_device->resync_timer, jiffies);
 	}
 
-	if ((os.conn == L_SYNC_TARGET  || os.conn == L_SYNC_SOURCE) &&
-	    (ns.conn == L_PAUSED_SYNC_T || ns.conn == L_PAUSED_SYNC_S)) {
+	if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&
+	    (repl_state[NEW] == L_PAUSED_SYNC_T || repl_state[NEW] == L_PAUSED_SYNC_S)) {
 		drbd_info(peer_device, "Resync suspended\n");
 		peer_device->rs_mark_time[peer_device->rs_last_mark] = jiffies;
 	}
 
-	if (os.conn == L_CONNECTED &&
-	    (ns.conn == L_VERIFY_S || ns.conn == L_VERIFY_T)) {
+	if (repl_state[OLD] == L_CONNECTED &&
+	    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
 		unsigned long now = jiffies;
 		int i;
 
-		set_ov_position(peer_device, (enum drbd_repl_state)ns.conn);
+		set_ov_position(peer_device, repl_state[NEW]);
 		peer_device->rs_start = now;
 		peer_device->rs_last_events = 0;
 		peer_device->rs_last_sect_ev = 0;
@@ -1188,7 +1193,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 
 		drbd_rs_controller_reset(peer_device);
 
-		if (ns.conn == L_VERIFY_S) {
+		if (repl_state[NEW] == L_VERIFY_S) {
 			drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
 					(unsigned long long)peer_device->ov_position);
 			mod_timer(&peer_device->resync_timer, jiffies);
@@ -1219,31 +1224,31 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 			device->ldev->md.flags = mdf;
 			drbd_md_mark_dirty(device);
 		}
-		if (os.disk < D_CONSISTENT && ns.disk >= D_CONSISTENT)
+		if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
 			drbd_set_ed_uuid(device, device->ldev->md.uuid[UI_CURRENT]);
 		put_ldev(device);
 	}
 
 	/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
-	if (os.disk == D_INCONSISTENT && os.pdsk == D_INCONSISTENT &&
-	    os.peer == R_SECONDARY && ns.peer == R_PRIMARY)
+	if (disk_state[OLD] == D_INCONSISTENT && peer_disk_state[OLD] == D_INCONSISTENT &&
+	    peer_role[OLD] == R_SECONDARY && peer_role[NEW] == R_PRIMARY)
 		set_bit(CONSIDER_RESYNC, &peer_device->flags);
 
 	/* Receiver should clean up itself */
-	if (os.conn != C_DISCONNECTING && ns.conn == C_DISCONNECTING)
+	if (cstate[OLD] != C_DISCONNECTING && cstate[NEW] == C_DISCONNECTING)
 		drbd_thread_stop_nowait(&peer_device->connection->receiver);
 
 	/* Now the receiver finished cleaning up itself, it should die */
-	if (os.conn != C_STANDALONE && ns.conn == C_STANDALONE)
+	if (cstate[OLD] != C_STANDALONE && cstate[NEW] == C_STANDALONE)
 		drbd_thread_stop_nowait(&peer_device->connection->receiver);
 
 	/* Upon network failure, we need to restart the receiver. */
-	if (os.conn > C_WF_CONNECTION &&
-	    ns.conn <= C_TEAR_DOWN && ns.conn >= C_TIMEOUT)
+	if (cstate[OLD] > C_WF_CONNECTION &&
+	    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
 		drbd_thread_restart_nowait(&peer_device->connection->receiver);
 
 	/* Resume AL writing if we get a connection */
-	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED)
+	if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
 		drbd_resume_al(device);
 
 	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
