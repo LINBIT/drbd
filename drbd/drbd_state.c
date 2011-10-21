@@ -774,52 +774,59 @@ static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *resou
 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
+	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int vnr;
 
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		struct drbd_peer_device *peer_device = first_peer_device(device);
-		struct drbd_connection *connection = peer_device->connection;
+	for_each_connection(connection, resource) {
 		enum drbd_conns *cstate = connection->cstate;
-		enum drbd_repl_state *repl_state = peer_device->repl_state;
-		enum drbd_disk_state *disk_state = device->disk_state;
-
-		if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
-		    repl_state[OLD] > L_CONNECTED)
-			return SS_RESYNC_RUNNING;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
 			return SS_ALREADY_STANDALONE;
 
-		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
-			return SS_IS_DISKLESS;
-
 		if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
 			return SS_NO_NET_CONFIG;
-
-		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
-			return SS_LOWER_THAN_OUTDATED;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
 			return SS_IN_TRANSIENT_STATE;
 
-		/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)
-			return SS_IN_TRANSIENT_STATE; */
+	}
 
-		if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_CONNECTED)
-			return SS_NEED_CONNECTION;
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		enum drbd_disk_state *disk_state = device->disk_state;
+		struct drbd_peer_device *peer_device;
 
-		if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-		    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_CONNECTED)
-			return SS_RESYNC_RUNNING;
+		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
+			return SS_IS_DISKLESS;
 
-		if ((repl_state[NEW] == L_STARTING_SYNC_S || repl_state[NEW] == L_STARTING_SYNC_T) &&
-		    repl_state[OLD] < L_CONNECTED)
-			return SS_NEED_CONNECTION;
+		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
+			return SS_LOWER_THAN_OUTDATED;
 
-		if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
-		    && repl_state[OLD] < L_STANDALONE)
-			return SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
+		for_each_peer_device(peer_device, device) {
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
+
+			if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
+			    repl_state[OLD] > L_CONNECTED)
+				return SS_RESYNC_RUNNING;
+
+			/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)
+				return SS_IN_TRANSIENT_STATE; */
+
+			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_CONNECTED)
+				return SS_NEED_CONNECTION;
+
+			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
+			    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_CONNECTED)
+				return SS_RESYNC_RUNNING;
+
+			if ((repl_state[NEW] == L_STARTING_SYNC_S || repl_state[NEW] == L_STARTING_SYNC_T) &&
+			    repl_state[OLD] < L_CONNECTED)
+				return SS_NEED_CONNECTION;
+
+			if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
+			    && repl_state[OLD] < L_STANDALONE)
+				return SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
+		}
 	}
 
 	return SS_SUCCESS;
