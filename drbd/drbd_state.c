@@ -569,79 +569,145 @@ void print_st_err(struct drbd_device *device, union drbd_state os,
 	print_st(device, "wanted", ns);
 }
 
-static long print_state_change(char *pb, union drbd_state os, union drbd_state ns,
-			       enum chg_state_flags flags)
+static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_state which)
 {
-	char *pbp;
-	pbp = pb;
-	*pbp = 0;
-
-	if (ns.role != os.role && flags & CS_DC_ROLE)
-		pbp += sprintf(pbp, "role( %s -> %s ) ",
-			       drbd_role_str(os.role),
-			       drbd_role_str(ns.role));
-	if (ns.peer != os.peer && flags & CS_DC_PEER)
-		pbp += sprintf(pbp, "peer( %s -> %s ) ",
-			       drbd_role_str(os.peer),
-			       drbd_role_str(ns.peer));
-	if (ns.conn != os.conn && flags & CS_DC_CONN)
-		pbp += sprintf(pbp, "conn( %s -> %s ) ",
-			       drbd_conn_str(os.conn),
-			       drbd_conn_str(ns.conn));
-	if (ns.disk != os.disk && flags & CS_DC_DISK)
-		pbp += sprintf(pbp, "disk( %s -> %s ) ",
-			       drbd_disk_str(os.disk),
-			       drbd_disk_str(ns.disk));
-	if (ns.pdsk != os.pdsk && flags & CS_DC_PDSK)
-		pbp += sprintf(pbp, "pdsk( %s -> %s ) ",
-			       drbd_disk_str(os.pdsk),
-			       drbd_disk_str(ns.pdsk));
-
-	return pbp - pb;
+	return peer_device->resync_susp_user[which] ||
+	       peer_device->resync_susp_peer[which] ||
+	       peer_device->resync_susp_dependency[which];
 }
 
-static void drbd_pr_state_change(struct drbd_device *device, union drbd_state os, union drbd_state ns,
-				 enum chg_state_flags flags)
+static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
+					  struct drbd_peer_device *peer_device,
+					  enum which_state which)
 {
-	char pb[300];
-	char *pbp = pb;
+	char *b = buffer, *end = buffer + size;
 
-	pbp += print_state_change(pbp, os, ns, flags ^ CS_DC_MASK);
+	if (!resync_suspended(peer_device, which))
+		return scnprintf(buffer, size, "no");
 
-	if (ns.aftr_isp != os.aftr_isp)
-		pbp += sprintf(pbp, "aftr_isp( %d -> %d ) ",
-			       os.aftr_isp,
-			       ns.aftr_isp);
-	if (ns.peer_isp != os.peer_isp)
-		pbp += sprintf(pbp, "peer_isp( %d -> %d ) ",
-			       os.peer_isp,
-			       ns.peer_isp);
-	if (ns.user_isp != os.user_isp)
-		pbp += sprintf(pbp, "user_isp( %d -> %d ) ",
-			       os.user_isp,
-			       ns.user_isp);
+	if (peer_device->resync_susp_user[which])
+		b += scnprintf(b, end - b, "user,");
+	if (peer_device->resync_susp_peer[which])
+		b += scnprintf(b, end - b, "peer,");
+	if (peer_device->resync_susp_dependency[which])
+		b += scnprintf(b, end - b, "dependency,");
+	*(--b) = 0;
 
-	if (pbp != pb)
-		drbd_info(device, "%s\n", pb);
+	return b - buffer;
 }
 
-static void conn_pr_state_change(struct drbd_connection *connection, union drbd_state os, union drbd_state ns,
-				 enum chg_state_flags flags)
+static bool io_suspended(struct drbd_resource *resource, enum which_state which)
 {
-	char pb[300];
-	char *pbp = pb;
-
-	pbp += print_state_change(pbp, os, ns, flags);
-
-	if (is_susp(ns) != is_susp(os) && flags & CS_DC_SUSP)
-		pbp += sprintf(pbp, "susp( %d -> %d ) ",
-			       is_susp(os),
-			       is_susp(ns));
-
-	if (pbp != pb)
-		drbd_info(connection, "%s\n", pb);
+	return resource->susp[which] ||
+	       resource->susp_nod[which] ||
+	       resource->susp_fen[which];
 }
 
+static int scnprintf_io_suspend_flags(char *buffer, size_t size,
+				      struct drbd_resource *resource,
+				      enum which_state which)
+{
+	char *b = buffer, *end = buffer + size;
+
+	if (!io_suspended(resource, which))
+		return scnprintf(buffer, size, "no");
+
+	if (resource->susp[which])
+		b += scnprintf(b, end - b, "user,");
+	if (resource->susp_nod[which])
+		b += scnprintf(b, end - b, "no-disk,");
+	if (resource->susp_fen[which])
+		b += scnprintf(b, end - b, "fencing,");
+	*(--b) = 0;
+
+	return b - buffer;
+}
+
+static void print_state_change(struct drbd_resource *resource, const char *prefix)
+{
+	char buffer[150], *b, *end = buffer + sizeof(buffer);
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	enum drbd_role *role = resource->role;
+	int vnr;
+
+	b = buffer;
+	if (role[OLD] != role[NEW])
+		b += scnprintf(b, end - b, "role( %s -> %s ) ",
+			       drbd_role_str(role[OLD]),
+			       drbd_role_str(role[NEW]));
+	if (io_suspended(resource, OLD) != io_suspended(resource, NEW)) {
+		b += scnprintf(b, end - b, "susp-io( ");
+		b += scnprintf_io_suspend_flags(b, end - b, resource, OLD);
+		b += scnprintf(b, end - b, " -> ");
+		b += scnprintf_io_suspend_flags(b, end - b, resource, NEW);
+		b += scnprintf(b, end - b, ") ");
+	}
+	if (b != buffer) {
+		*(b-1) = 0;
+		drbd_info(resource, "%s%s\n", prefix, buffer);
+	}
+
+	for_each_connection(connection, resource) {
+		enum drbd_conns *cstate = connection->cstate;
+		enum drbd_role *peer_role = connection->peer_role;
+
+		b = buffer;
+		if (cstate[OLD] != cstate[NEW])
+			b += scnprintf(b, end - b, "conn( %s -> %s ) ",
+				       drbd_conn_str(cstate[OLD]),
+				       drbd_conn_str(cstate[NEW]));
+		if (peer_role[OLD] != peer_role[NEW])
+			b += scnprintf(b, end - b, "peer( %s -> %s ) ",
+				       drbd_role_str(peer_role[OLD]),
+				       drbd_role_str(peer_role[NEW]));
+
+		if (b != buffer) {
+			*(b-1) = 0;
+			drbd_info(connection, "%s%s\n", prefix, buffer);
+		}
+	}
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+		enum drbd_disk_state *disk_state = device->disk_state;
+
+		if (disk_state[OLD] != disk_state[NEW])
+			drbd_info(device, "%sdisk( %s -> %s )\n",
+				  prefix,
+				  drbd_disk_str(disk_state[OLD]),
+				  drbd_disk_str(disk_state[NEW]));
+
+		for_each_peer_device(peer_device, device) {
+			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
+
+			b = buffer;
+			if (peer_disk_state[OLD] != peer_disk_state[NEW])
+				b += scnprintf(b, end - b, "pdsk( %s -> %s ) ",
+					       drbd_disk_str(peer_disk_state[OLD]),
+					       drbd_disk_str(peer_disk_state[NEW]));
+			if (repl_state[OLD] != repl_state[NEW])
+				b += scnprintf(b, end - b, "repl( %s -> %s ) ",
+					       drbd_conn_str(repl_state[OLD]),
+					       drbd_conn_str(repl_state[NEW]));
+
+			if (resync_suspended(peer_device, OLD) !=
+			    resync_suspended(peer_device, NEW)) {
+				b += scnprintf(b, end - b, "resync-susp( ");
+				b += scnprintf_resync_suspend_flags(b, end - b, peer_device, OLD);
+				b += scnprintf(b, end - b, " -> ");
+				b += scnprintf_resync_suspend_flags(b, end - b, peer_device, NEW);
+				b += scnprintf(b, end - b, " ) ");
+			}
+
+			if (b != buffer) {
+				*(b-1) = 0;
+				drbd_info(peer_device, "%s%s\n", prefix, buffer);
+			}
+		}
+	}
+}
 
 static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 {
@@ -1093,14 +1159,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		goto out;
 	}
 
-	drbd_pr_state_change(device, os, ns, flags);
-
-	/* Display changes to the susp* flags that where caused by the call to
-	   sanitize_state(). Only display it here if we where not called from
-	   _conn_request_state() */
-	if (!(flags & CS_DC_SUSP))
-		conn_pr_state_change(peer_device->connection, os, ns,
-				     (flags & ~CS_DC_MASK) | CS_DC_SUSP);
+	print_state_change(device->resource, "");
 
 	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
@@ -1655,36 +1714,6 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 	return 0;
 }
 
-static void conn_old_common_state(struct drbd_connection *connection, union drbd_state *pcs, enum chg_state_flags *pf)
-{
-	enum chg_state_flags flags = ~0;
-	struct drbd_peer_device *peer_device;
-	int vnr, first_vol = 1;
-	enum drbd_disk_state common_disk_state = D_DISKLESS;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-
-		if (first_vol) {
-			common_disk_state = device->disk_state[NOW];
-			first_vol = 0;
-			continue;
-		}
-
-		if (common_disk_state != device->disk_state[NOW])
-			flags &= ~CS_DC_DISK;
-	}
-	rcu_read_unlock();
-
-	*pf |= CS_DC_MASK;
-	*pf &= flags;
-	pcs->role = connection->resource->role[NOW];
-	pcs->peer = connection->peer_role[NOW];
-	pcs->disk = common_disk_state;
-	pcs->conn = connection->cstate[NOW];
-}
-
 static enum drbd_state_rv
 conn_is_valid_transition(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
 			 enum chg_state_flags flags)
@@ -1837,7 +1866,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct after_conn_state_chg_work *acscw;
 	enum drbd_conns oc = connection->cstate[NEW];
-	union drbd_state ns_max, ns_min, os;
+	union drbd_state ns_max, ns_min;
 
 	rv = is_valid_conn_transition(oc, val.conn);
 	if (rv < SS_SUCCESS)
@@ -1854,14 +1883,11 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 			goto out;
 	}
 
-	conn_old_common_state(connection, &os, &flags);
-	flags |= CS_DC_SUSP;
 	conn_set_state(connection, mask, val, &ns_min, &ns_max, flags);
-	conn_pr_state_change(connection, os, ns_max, flags);
 
 	acscw = kmalloc(sizeof(*acscw), GFP_ATOMIC);
 	if (acscw) {
-		acscw->oc = os.conn;
+		acscw->oc = oc;
 		acscw->ns_min = ns_min;
 		acscw->ns_max = ns_max;
 		acscw->flags = flags;
