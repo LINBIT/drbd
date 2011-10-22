@@ -44,7 +44,7 @@ struct after_state_chg_work {
 
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
-			   union drbd_state ns, enum chg_state_flags flags);
+			   union drbd_state ns);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
@@ -1317,7 +1317,7 @@ STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 		container_of(w, struct after_state_chg_work, w);
 	struct drbd_device *device = ascw->device;
 
-	after_state_ch(device, ascw->os, ascw->ns, ascw->flags);
+	after_state_ch(device, ascw->os, ascw->ns);
 	if (ascw->flags & CS_WAIT_COMPLETE)
 		complete(ascw->done);
 	kfree(ascw);
@@ -1371,10 +1371,9 @@ static int drbd_bitmap_io_from_worker(struct drbd_device *device,
  * @device:	DRBD device.
  * @os:		old state.
  * @ns:		new state.
- * @flags:	Flags
  */
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
-			   union drbd_state ns, enum chg_state_flags flags)
+			   union drbd_state ns)
 {
 	struct sib_info sib;
 
@@ -1392,7 +1391,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	drbd_bcast_event(device, &sib);
 
 	if (!(os.role == R_PRIMARY && os.disk < D_UP_TO_DATE && os.pdsk < D_UP_TO_DATE) &&
-	    (ns.role == R_PRIMARY && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE))
+	     (ns.role == R_PRIMARY && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE))
 		drbd_khelper(device, "pri-on-incon-degr");
 
 	/* Here we have the actions that are performed after a
@@ -1423,8 +1422,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	 * the sync uuid now. Need to do that before any drbd_send_state, or
 	 * the other side may go "paused sync" before receiving the sync uuids,
 	 * which is unexpected. */
-	if ((os.conn != L_SYNC_SOURCE && os.conn != L_PAUSED_SYNC_S) &&
-	    (ns.conn == L_SYNC_SOURCE || ns.conn == L_PAUSED_SYNC_S) &&
+	if (!(os.conn == L_SYNC_SOURCE || os.conn == L_PAUSED_SYNC_S) &&
+	     (ns.conn == L_SYNC_SOURCE || ns.conn == L_PAUSED_SYNC_S) &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 96 && get_ldev(device)) {
 		drbd_gen_and_send_sync_uuid(first_peer_device(device));
 		put_ldev(device);
@@ -1447,12 +1446,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 				first_peer_device(device));
 
 	/* Lost contact to peer's copy of the data */
-	if ((os.pdsk >= D_INCONSISTENT &&
-	     os.pdsk != D_UNKNOWN &&
-	     os.pdsk != D_OUTDATED)
-	&&  (ns.pdsk < D_INCONSISTENT ||
-	     ns.pdsk == D_UNKNOWN ||
-	     ns.pdsk == D_OUTDATED)) {
+	if (!(os.pdsk < D_INCONSISTENT || os.pdsk == D_UNKNOWN || os.pdsk == D_OUTDATED) &&
+	     (ns.pdsk < D_INCONSISTENT || ns.pdsk == D_UNKNOWN || ns.pdsk == D_OUTDATED)) {
 		if (get_ldev(device)) {
 			if ((ns.role == R_PRIMARY || ns.peer == R_PRIMARY) &&
 			    device->ldev->md.uuid[UI_BITMAP] == 0 && ns.disk >= D_UP_TO_DATE) {
@@ -1512,8 +1507,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 		drbd_send_state(first_peer_device(device), ns);
 
 	/* In case one of the isp bits got set, suspend other devices. */
-	if ((!os.aftr_isp && !os.peer_isp && !os.user_isp) &&
-	    (ns.aftr_isp || ns.peer_isp || ns.user_isp))
+	if (!(os.aftr_isp || os.peer_isp || os.user_isp) &&
+	     (ns.aftr_isp || ns.peer_isp || ns.user_isp))
 		suspend_other_sg(device);
 
 	/* Make sure the peer gets informed about eventual state
