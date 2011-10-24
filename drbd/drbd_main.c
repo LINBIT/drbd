@@ -1078,7 +1078,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	uuid_flags |= rcu_dereference(peer_device->connection->net_conf)->discard_my_data ? 1 : 0;
 	rcu_read_unlock();
 	uuid_flags |= test_bit(CRASHED_PRIMARY, &device->flags) ? 2 : 0;
-	uuid_flags |= device->new_state_tmp.disk == D_INCONSISTENT ? 4 : 0;
+	uuid_flags |= device->disk_state_from_metadata == D_INCONSISTENT ? 4 : 0;
 	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);

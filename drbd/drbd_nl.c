@@ -1291,11 +1291,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
-	union drbd_state ns, os;
+	union drbd_state ns;
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
+	enum drbd_disk_state disk_state_from_metadata;
+	enum drbd_disk_state peer_disk_state_from_metadata;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1589,30 +1591,23 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
-	ns = os;
-	/* If MDF_CONSISTENT is not set go into inconsistent state,
-	   otherwise investigate MDF_WasUpToDate...
-	   If MDF_WAS_UP_TO_DATE is not set go into D_OUTDATED disk state,
-	   otherwise into D_CONSISTENT state.
-	*/
+	disk_state_from_metadata = D_INCONSISTENT;
 	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT)) {
 		if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
-			ns.disk = D_CONSISTENT;
+			disk_state_from_metadata = D_CONSISTENT;
 		else
-			ns.disk = D_OUTDATED;
-	} else {
-		ns.disk = D_INCONSISTENT;
+			disk_state_from_metadata = D_OUTDATED;
 	}
 
-	if (drbd_md_test_flag(device->ldev, MDF_PEER_OUT_DATED))
-		ns.pdsk = D_OUTDATED;
-
 	rcu_read_lock();
-	if (ns.disk == D_CONSISTENT &&
-	    (ns.pdsk == D_OUTDATED ||
+	peer_disk_state_from_metadata = D_UNKNOWN;
+	if (drbd_md_test_flag(device->ldev, MDF_PEER_OUT_DATED))
+		peer_disk_state_from_metadata = D_OUTDATED;
+
+	if (disk_state_from_metadata == D_CONSISTENT &&
+	    (peer_disk_state_from_metadata == D_OUTDATED ||
 	     rcu_dereference(device->ldev->disk_conf)->fencing_policy == FP_DONT_CARE))
-		ns.disk = D_UP_TO_DATE;
+		disk_state_from_metadata = D_UP_TO_DATE;
 	rcu_read_unlock();
 
 	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
@@ -1621,9 +1616,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
+	ns = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED) {
-		device->new_state_tmp.i = ns.i;
-		ns.i = os.i;
+		device->disk_state_from_metadata = disk_state_from_metadata;
+		device->peer_disk_state_from_metadata = peer_disk_state_from_metadata;
+
 		ns.disk = D_NEGOTIATING;
 
 		/* We expect to receive up-to-date UUIDs soon.
@@ -1631,6 +1628,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		   holding req_lock. I.e. atomic with the state change */
 		kfree(device->p_uuid);
 		device->p_uuid = NULL;
+	} else {
+		ns.disk = disk_state_from_metadata;
+		if (peer_disk_state_from_metadata != D_UNKNOWN)
+			ns.pdsk = peer_disk_state_from_metadata;
 	}
 
 	_drbd_set_state(device, ns, CS_VERBOSE, NULL);

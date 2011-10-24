@@ -825,10 +825,9 @@ struct drbd_device {
 	} last_md_mark_dirty;
 #endif
 
-	/* Used after attach while negotiating new disk state. */
-	union drbd_state new_state_tmp;
-
 	enum drbd_disk_state disk_state[2];
+	enum drbd_disk_state disk_state_from_metadata;
+	enum drbd_disk_state peer_disk_state_from_metadata;
 	wait_queue_head_t misc_wait;
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	unsigned int read_cnt;

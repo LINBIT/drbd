@@ -978,8 +978,8 @@ STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_st
 	if (ns.conn < L_CONNECTED && ns.disk == D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		if (device->ed_uuid == device->ldev->md.uuid[UI_CURRENT]) {
-			ns.disk = device->new_state_tmp.disk;
-			ns.pdsk = device->new_state_tmp.pdsk;
+			ns.disk = device->disk_state_from_metadata;
+			ns.pdsk = device->peer_disk_state_from_metadata;
 		} else {
 			ns.disk = D_DISKLESS;
 			ns.pdsk = D_UNKNOWN;

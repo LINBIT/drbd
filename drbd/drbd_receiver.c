@@ -3140,7 +3140,7 @@ static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
 
 	mydisk = device->disk_state[NOW];
 	if (mydisk == D_NEGOTIATING)
-		mydisk = device->new_state_tmp.disk;
+		mydisk = device->disk_state_from_metadata;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
 	drbd_uuid_dump(device, "self", device->ldev->md.uuid, device->comm_bm_set, 0);
@@ -4180,7 +4180,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	ns.pdsk = real_peer_disk;
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
 	if ((ns.conn == L_CONNECTED || ns.conn == L_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
-		ns.disk = device->new_state_tmp.disk;
+		ns.disk = device->disk_state_from_metadata;
 	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED) {
 		device->resource->state_change_flags |= CS_HARD;
 		cs_flags |= CS_HARD;
