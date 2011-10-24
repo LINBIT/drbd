@@ -1443,7 +1443,7 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (!_drbd_may_sync_now(odev))
-			__drbd_set_state(_NS(odev, aftr_isp, 1), CS_HARD, NULL);
+			__drbd_set_state(odev, _NS(odev, aftr_isp, 1), CS_HARD, NULL);
 	}
 	rcu_read_unlock();
 
@@ -1468,7 +1468,7 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 			continue;
 		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
 			if (_drbd_may_sync_now(odev))
-				__drbd_set_state(_NS(odev, aftr_isp, 0), CS_HARD, NULL);
+				__drbd_set_state(odev, _NS(odev, aftr_isp, 0), CS_HARD, NULL);
 		}
 	}
 	rcu_read_unlock();

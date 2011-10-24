@@ -1413,7 +1413,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			_tl_restart(first_peer_device(device)->connection, what);
-			_drbd_set_state(_NS(device, susp_nod, 0), CS_VERBOSE, NULL);
+			_drbd_set_state(device,_NS(device, susp_nod, 0), CS_VERBOSE, NULL);
 			end_state_change(device->resource, &irq_flags);
 		}
 	}

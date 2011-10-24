@@ -3936,7 +3936,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
-			_drbd_set_state(_NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
+			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
 					CS_VERBOSE, NULL);
 			end_state_change(device->resource, &irq_flags);
 			drbd_md_sync(device);

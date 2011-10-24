@@ -2405,7 +2405,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-			_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
+			_drbd_set_state(device, _NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
 		retcode = end_state_change(device->resource, &irq_flags);
 
 		if (retcode != SS_NEED_CONNECTION)
@@ -3275,7 +3275,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			_drbd_set_state(_NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
+			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
 					CS_VERBOSE, NULL);
 			end_state_change(device->resource, &irq_flags);
 		}
