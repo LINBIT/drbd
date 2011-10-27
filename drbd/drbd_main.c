@@ -793,9 +793,9 @@ void drbd_state_dbg(struct drbd_conf *mdev, const unsigned long long seq,
 		WARN_ON_ONCE(1);
 		return;
 	}
-	for (i = 0; i < 8 && name[i]; i++)
+	for (i = 0; i < 16 && name[i]; i++)
 		;
-	if (i == 8) {
+	if (i == 16) {
 		WARN_ON_ONCE(1);
 		return;
 	}
@@ -1610,7 +1610,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	/* Do not change the order of the if above and the two below... */
 	if (os.pdsk == D_DISKLESS && ns.pdsk > D_DISKLESS) {      /* attach on the peer */
 		drbd_send_uuids(mdev);
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 	}
 	/* No point in queuing send_bitmap if we don't have a connection
 	 * anymore, so check also the _current_ state, not only the new state
@@ -1675,14 +1675,14 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	    os.disk == D_ATTACHING && ns.disk == D_NEGOTIATING) {
 		drbd_send_sizes(mdev, 0, 0);  /* to start sync... */
 		drbd_send_uuids(mdev);
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 	}
 
 	/* We want to pause/continue resync, tell peer. */
 	if (ns.conn >= C_CONNECTED &&
 	     ((os.aftr_isp != ns.aftr_isp) ||
 	      (os.user_isp != ns.user_isp)))
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 
 	/* In case one of the isp bits got set, suspend other devices. */
 	if ((!os.aftr_isp && !os.peer_isp && !os.user_isp) &&
@@ -1692,10 +1692,10 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	/* Make sure the peer gets informed about eventual state
 	   changes (ISP bits) while we were in WFReportParams. */
 	if (os.conn == C_WF_REPORT_PARAMS && ns.conn >= C_CONNECTED)
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 
 	if (os.conn != C_AHEAD && ns.conn == C_AHEAD)
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 
 	/* We are in the progress to start a full sync... */
 	if ((os.conn != C_STARTING_SYNC_T && ns.conn == C_STARTING_SYNC_T) ||
@@ -1735,7 +1735,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 				"ASSERT FAILED: disk is %s during detach\n",
 				drbd_disk_str(mdev->state.disk));
 
-		if (drbd_send_state(mdev))
+		if (drbd_send_state(mdev, ns))
 			dev_info(DEV, "Notified peer that I am detaching my disk\n");
 
 		drbd_rs_cancel_all(mdev);
@@ -1765,7 +1765,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
                 mdev->rs_failed = 0;
                 atomic_set(&mdev->rs_pending_cnt, 0);
 
-		if (drbd_send_state(mdev))
+		if (drbd_send_state(mdev, ns))
 			dev_info(DEV, "Notified peer that I'm now diskless.\n");
 		/* corresponding get_ldev in __drbd_set_state
 		 * this may finally trigger drbd_ldev_destroy. */
@@ -1774,7 +1774,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	/* Notify peer that I had a local IO error, and did not detached.. */
 	if (os.disk == D_UP_TO_DATE && ns.disk == D_INCONSISTENT)
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 
 	/* Disks got bigger while they were detached */
 	if (ns.disk > D_NEGOTIATING && ns.pdsk > D_NEGOTIATING &&
@@ -1792,7 +1792,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	/* sync target done with resync.  Explicitly notify peer, even though
 	 * it should (at least for non-empty resyncs) already know itself. */
 	if (os.disk < D_UP_TO_DATE && os.conn >= C_SYNC_SOURCE && ns.conn == C_CONNECTED)
-		drbd_send_state(mdev);
+		drbd_send_state(mdev, ns);
 
 	/* This triggers bitmap writeout of potentially still unwritten pages
 	 * if the resync finished cleanly, or aborted because of peer disk
@@ -2355,10 +2355,10 @@ int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags fl
 }
 
 /**
- * drbd_send_state() - Sends the drbd state to the peer
+ * drbd_send_current_state() - Sends the drbd state to the peer
  * @mdev:	DRBD device.
  */
-int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line)
+int drbd_send_current_state_(struct drbd_conf *mdev, const char *func, unsigned int line)
 {
 	struct socket *sock;
 	struct p_state p;
@@ -2374,7 +2374,7 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	sock = mdev->data.socket;
 
 	if (likely(sock != NULL)) {
-		drbd_state_dbg(mdev, mdev->state.seq, func, line, "send", mdev->state);
+		drbd_state_dbg(mdev, mdev->state.seq, func, line, "send-current", mdev->state);
 		ok = _drbd_send_cmd(mdev, sock, P_STATE,
 				    (struct p_header80 *)&p, sizeof(p), 0);
 	}
@@ -2382,6 +2382,38 @@ int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line
 	mutex_unlock(&mdev->data.mutex);
 
 	drbd_state_unlock(mdev);
+	return ok;
+}
+
+/**
+ * drbd_send_state() - After a state change, sends the new state to the peer
+ * @mdev:	DRBD device.
+ * @state:	the state to send, not necessarily the current state.
+ *
+ * Each state change queues an "after_state_ch" work, which will eventually
+ * send the resulting new state to the peer. If more state changes happen
+ * between queuing and processing of the after_state_ch work, we still
+ * want to send each intermediary state in the order it occurred.
+ */
+int drbd_send_state_(struct drbd_conf *mdev, union drbd_state state, const char *func, unsigned int line)
+{
+	struct socket *sock;
+	struct p_state p;
+	int ok = 0;
+
+	mutex_lock(&mdev->data.mutex);
+
+	p.state = cpu_to_be32(state.i);
+	sock = mdev->data.socket;
+
+	if (likely(sock != NULL)) {
+		drbd_state_dbg(mdev, state.seq, func, line, "send", state);
+		ok = _drbd_send_cmd(mdev, sock, P_STATE,
+				    (struct p_header80 *)&p, sizeof(p), 0);
+	}
+
+	mutex_unlock(&mdev->data.mutex);
+
 	return ok;
 }
 
