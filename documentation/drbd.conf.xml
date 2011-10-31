@@ -378,7 +378,7 @@
               </indexterm> In this section you can define handlers (executables) that are started
             by the DRBD system in response to certain events. Optional parameters:
             <option>pri-on-incon-degr</option>, <option>pri-lost-after-sb</option>,
-            <option>pri-lost</option>, <option>fence-peer</option> (formerly oudate-peer),
+            <option>pri-lost</option>, <option>fence-peer</option> (formerly outdate-peer),
             <option>local-io-error</option>, <option>initial-split-brain</option>,
             <option>split-brain</option>, <option>before-resync-target</option>,
             <option>after-resync-target</option>.</para>
