@@ -90,11 +90,6 @@ else
     endif
   endif
 
-  KDIR_Makefile_PATCHLEVEL = $(shell test -e $(KDIR)/Makefile && grep "^PATCHLEVEL = " $(KDIR)/Makefile | cut -d " " -f 3)
-  ifneq ($(findstring $(KDIR_Makefile_PATCHLEVEL),12345),)
-    $(error "won't compile with this kernel version")
-  endif
-
   .PHONY: drbd.o default all greeting clean kbuild install dep tags
 
   drbd.o: greeting kbuild
