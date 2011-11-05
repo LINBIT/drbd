@@ -681,7 +681,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_resource *resource;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
-	enum drbd_conns cstate[2];
+	enum drbd_conn_state cstate[2];
 	enum drbd_role peer_role[2];
 
 	unsigned long flags;
@@ -1446,7 +1446,7 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_orderin
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;
 extern const struct file_operations drbd_proc_fops;
-extern const char *drbd_conn_str(enum drbd_conns s);
+extern const char *drbd_conn_str(enum drbd_conn_state s);
 extern const char *drbd_role_str(enum drbd_role s);
 
 /* drbd_actlog.c */

@@ -649,7 +649,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	}
 
 	for_each_connection(connection, resource) {
-		enum drbd_conns *cstate = connection->cstate;
+		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
 
 		b = buffer;
@@ -744,7 +744,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	}
 
 	for_each_connection(connection, resource) {
-		enum drbd_conns *cstate = connection->cstate;
+		enum drbd_conn_state *cstate = connection->cstate;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
 			return SS_ALREADY_STANDALONE;
@@ -880,7 +880,7 @@ static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *resourc
 }
 
 STATIC enum drbd_state_rv
-is_valid_conn_transition(enum drbd_conns oc, enum drbd_conns nc)
+is_valid_conn_transition(enum drbd_conn_state oc, enum drbd_conn_state nc)
 {
 	/* no change -> nothing to do, at least for the connection part */
 	if (oc == nc)
@@ -1128,7 +1128,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	struct drbd_peer_device *peer_device = first_peer_device(device);
 	struct after_state_chg_work *ascw;
 	enum drbd_disk_state *disk_state = device->disk_state;
-	enum drbd_conns *cstate = peer_device->connection->cstate;
+	enum drbd_conn_state *cstate = peer_device->connection->cstate;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	enum drbd_role *peer_role = peer_device->connection->peer_role;
 	enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
@@ -1643,7 +1643,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 
 struct after_conn_state_chg_work {
 	struct drbd_work w;
-	enum drbd_conns oc;
+	enum drbd_conn_state oc;
 	union drbd_state ns_min;
 	union drbd_state ns_max; /* new, max state, over all mdevs */
 	enum chg_state_flags flags;
@@ -1655,7 +1655,7 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 	struct after_conn_state_chg_work *acscw =
 		container_of(w, struct after_conn_state_chg_work, w);
 	struct drbd_connection *connection = acscw->connection;
-	enum drbd_conns oc = acscw->oc;
+	enum drbd_conn_state oc = acscw->oc;
 	union drbd_state ns_max = acscw->ns_max;
 	union drbd_state ns_min = acscw->ns_min;
 	struct drbd_peer_device *peer_device;
@@ -1875,7 +1875,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct after_conn_state_chg_work *acscw;
-	enum drbd_conns oc = connection->cstate[NEW];
+	enum drbd_conn_state oc = connection->cstate[NEW];
 	union drbd_state ns_max, ns_min;
 
 	rv = is_valid_conn_transition(oc, val.conn);

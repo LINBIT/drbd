@@ -178,7 +178,7 @@ enum drbd_role {
  * that there is no socket!
  * >= C_CONNECTED ==> There is a socket
  */
-enum drbd_conns {
+enum drbd_conn_state {
 	C_STANDALONE,
 	C_DISCONNECTING,  /* Temporary state on the way to C_STANDALONE. */
 	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */

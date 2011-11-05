@@ -3128,12 +3128,12 @@ STATIC int drbd_uuid_compare(struct drbd_device *device, int *rule_nr) __must_ho
 /* drbd_sync_handshake() returns the new conn state on success, or
    CONN_MASK (-1) on failure.
  */
-static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
+static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
 					   enum drbd_role peer_role,
 					   enum drbd_disk_state peer_disk) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	enum drbd_conns rv = C_MASK;
+	enum drbd_conn_state rv = C_MASK;
 	enum drbd_disk_state mydisk;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative;
@@ -3973,7 +3973,7 @@ STATIC union drbd_state convert_state(union drbd_state peer_state)
 {
 	union drbd_state state;
 
-	static enum drbd_conns c_tab[] = {
+	static enum drbd_conn_state c_tab[] = {
 		[L_STANDALONE] = L_STANDALONE,
 		[L_CONNECTED] = L_CONNECTED,
 
@@ -4667,7 +4667,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 STATIC void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
-	enum drbd_conns oc;
+	enum drbd_conn_state oc;
 	unsigned long irq_flags;
 	int vnr;
 
