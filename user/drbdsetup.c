@@ -2661,7 +2661,6 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 	struct state_info si = { .current_state = 0 };
-	struct disk_conf dc = { .disk_size = 0, };
 	struct drbd_genlmsghdr *dh;
 
 	/* End of initial dump. Ignore. Maybe: print some marker? */
@@ -2696,8 +2695,6 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 		printf("%u R - %s\n", info->seq, cfg.ctx_resource_name);
 		goto out;
 	}
-
-	disk_conf_from_attrs(&dc, info);
 
 	switch (si.sib_reason) {
 	case SIB_STATE_CHANGE:
