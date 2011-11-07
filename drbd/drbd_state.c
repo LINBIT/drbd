@@ -235,8 +235,6 @@ enum sanitize_state_warnings {
 };
 
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
-STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
-			   union drbd_state ns);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
@@ -1330,7 +1328,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
 	 * drbd_ldev_destroy() won't happen before our corresponding
-	 * after_state_ch works run, where we put_ldev again. */
+	 * w_after_state_ch works run, where we put_ldev again. */
 	if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
 	    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
@@ -1466,7 +1464,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
  * @device:	DRBD device.
  * @ns:		new state.
  * @flags:	Flags
- * @done:	Optional completion, that will get completed after the after_state_ch() finished
+ * @done:	Optional completion, that will get completed in w_after_state_ch()
  *
  * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
  */
@@ -1505,21 +1503,6 @@ out:
 		fail_state_change(resource, rv);
 	finish_state_change(device, os, ns, done);
 	return rv;
-}
-
-STATIC int w_after_state_ch(struct drbd_work *w, int unused)
-{
-	struct after_state_chg_work *ascw =
-		container_of(w, struct after_state_chg_work, w);
-	struct drbd_device *device = ascw->device;
-
-	after_state_ch(device, ascw->os, ascw->ns);
-	if (ascw->flags & CS_WAIT_COMPLETE)
-		complete(ascw->done);
-	forget_state_change(ascw->state_change);
-	kfree(ascw);
-
-	return 0;
 }
 
 static void abw_start_sync(struct drbd_device *device, int rv)
@@ -1563,15 +1546,15 @@ static int drbd_bitmap_io_from_worker(struct drbd_device *device,
 	return rv;
 }
 
-/**
- * after_state_ch() - Perform after state change actions that may sleep
- * @device:	DRBD device.
- * @os:		old state.
- * @ns:		new state.
+/*
+ * Perform after state change actions that may sleep.
  */
-STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
-			   union drbd_state ns)
+STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 {
+	struct after_state_chg_work *work =
+		container_of(w, struct after_state_chg_work, w);
+	struct drbd_device *device = work->device;
+	union drbd_state os = work->os, ns = work->ns;
 	struct sib_info sib;
 
 	sib.sib_reason = SIB_STATE_CHANGE;
@@ -1836,6 +1819,12 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 	}
 
 	drbd_md_sync(device);
+	if (work->flags & CS_WAIT_COMPLETE)
+		complete(work->done);
+	forget_state_change(work->state_change);
+	kfree(work);
+
+	return 0;
 }
 
 struct after_conn_state_chg_work {
