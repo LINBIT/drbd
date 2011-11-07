@@ -38,6 +38,7 @@ struct after_state_chg_work {
 	struct drbd_device *device;
 	union drbd_state os;
 	union drbd_state ns;
+	struct drbd_state_change *state_change;
 	enum chg_state_flags flags;
 	struct completion *done;
 };
@@ -1443,7 +1444,9 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 		drbd_resume_al(device);
 
 	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
-	if (ascw) {
+	if (ascw)
+		ascw->state_change = remember_state_change(device->resource, GFP_ATOMIC);
+	if (ascw && ascw->state_change) {
 		ascw->os = os;
 		ascw->ns = ns;
 		ascw->flags = device->resource->state_change_flags;
@@ -1452,6 +1455,8 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 		ascw->done = done;
 		drbd_queue_work(&device->resource->work, &ascw->w);
 	} else {
+		if (ascw)
+			forget_state_change(ascw->state_change);
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
 }
@@ -1511,6 +1516,7 @@ STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 	after_state_ch(device, ascw->os, ascw->ns);
 	if (ascw->flags & CS_WAIT_COMPLETE)
 		complete(ascw->done);
+	forget_state_change(ascw->state_change);
 	kfree(ascw);
 
 	return 0;
