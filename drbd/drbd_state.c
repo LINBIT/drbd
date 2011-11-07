@@ -42,6 +42,197 @@ struct after_state_chg_work {
 	struct completion *done;
 };
 
+struct drbd_resource_state_change {
+	struct drbd_resource *resource;
+	enum drbd_role role[2];
+	bool susp[2];
+	bool susp_nod[2];
+	bool susp_fen[2];
+};
+
+struct drbd_device_state_change {
+	struct drbd_device *device;
+	enum drbd_disk_state disk_state[2];
+};
+
+struct drbd_connection_state_change {
+	struct drbd_connection *connection;
+	enum drbd_conn_state cstate[2];
+	enum drbd_role peer_role[2];
+};
+
+struct drbd_peer_device_state_change {
+	struct drbd_peer_device *peer_device;
+	enum drbd_disk_state disk_state[2];
+	enum drbd_repl_state repl_state[2];
+	bool resync_susp_user[2];
+	bool resync_susp_peer[2];
+	bool resync_susp_dependency[2];
+};
+
+struct drbd_state_change {
+	unsigned int n_devices;
+	unsigned int n_connections;
+	struct drbd_resource_state_change resource[1];
+	struct drbd_device_state_change *devices;
+	struct drbd_connection_state_change *connections;
+	struct drbd_peer_device_state_change *peer_devices;
+};
+
+static struct drbd_state_change *alloc_state_change(struct drbd_resource *resource, gfp_t flags)
+{
+	struct drbd_state_change *state_change;
+	unsigned int n_devices = 0, n_connections = 0, size, n;
+	struct drbd_device *device;
+	struct drbd_connection *connection;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr)
+		n_devices++;
+	for_each_connection(connection, resource)
+		n_connections++;
+	rcu_read_unlock();
+
+	size = sizeof(struct drbd_state_change) +
+	       n_devices * sizeof(struct drbd_device_state_change) +
+	       n_connections * sizeof(struct drbd_connection_state_change) +
+	       n_devices * n_connections * sizeof(struct drbd_peer_device_state_change);
+	state_change = kmalloc(size, flags);
+	if (!state_change)
+		return NULL;
+	state_change->n_devices = n_devices;
+	state_change->n_connections = n_connections;
+	state_change->devices = (void *)(state_change + 1);
+	state_change->connections = (void *)&state_change->devices[n_devices];
+	state_change->peer_devices = (void *)&state_change->connections[n_connections];
+	state_change->resource->resource = NULL;
+	for (n = 0; n < n_devices; n++)
+		state_change->devices[n].device = NULL;
+	for (n = 0; n < n_connections; n++)
+		state_change->connections[n].connection = NULL;
+	return state_change;
+}
+
+static struct drbd_state_change *remember_state_change(struct drbd_resource *resource, gfp_t gfp)
+{
+	struct drbd_state_change *state_change;
+	struct drbd_device *device;
+	unsigned int n_devices = 0;
+	struct drbd_connection *connection;
+	unsigned int n_connections = 0;
+	int vnr;
+
+	struct drbd_device_state_change *device_state_change;
+	struct drbd_peer_device_state_change *peer_device_state_change;
+	struct drbd_connection_state_change *connection_state_change;
+
+retry:
+	state_change = alloc_state_change(resource, gfp);
+	if (!state_change)
+		return NULL;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr)
+		n_devices++;
+	for_each_connection(connection, resource)
+		n_connections++;
+	if (n_devices != state_change->n_devices ||
+	    n_connections != state_change->n_connections) {
+		kfree(state_change);
+		rcu_read_unlock();
+		goto retry;
+	}
+
+	kref_get(&resource->kref);
+	state_change->resource->resource = resource;
+	memcpy(state_change->resource->role,
+	       resource->role, sizeof(resource->role));
+	memcpy(state_change->resource->susp,
+	       resource->susp, sizeof(resource->susp));
+	memcpy(state_change->resource->susp_nod,
+	       resource->susp_nod, sizeof(resource->susp_nod));
+	memcpy(state_change->resource->susp_fen,
+	       resource->susp_fen, sizeof(resource->susp_fen));
+
+	device_state_change = state_change->devices;
+	peer_device_state_change = state_change->peer_devices;
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+
+		kref_get(&device->kref);
+		device_state_change->device = device;
+		memcpy(device_state_change->disk_state,
+		       device->disk_state, sizeof(device->disk_state));
+
+		for_each_peer_device(peer_device, device) {
+			peer_device_state_change->peer_device = peer_device;
+			memcpy(peer_device_state_change->disk_state,
+			       peer_device->disk_state, sizeof(peer_device->disk_state));
+			memcpy(peer_device_state_change->repl_state,
+			       peer_device->repl_state, sizeof(peer_device->repl_state));
+			memcpy(peer_device_state_change->resync_susp_user,
+			       peer_device->resync_susp_user,
+			       sizeof(peer_device->resync_susp_user));
+			memcpy(peer_device_state_change->resync_susp_peer,
+			       peer_device->resync_susp_peer,
+			       sizeof(peer_device->resync_susp_peer));
+			memcpy(peer_device_state_change->resync_susp_dependency,
+			       peer_device->resync_susp_dependency,
+			       sizeof(peer_device->resync_susp_dependency));
+			peer_device_state_change++;
+		}
+		device_state_change++;
+	}
+
+	connection_state_change = state_change->connections;
+	for_each_connection(connection, resource) {
+		kref_get(&connection->kref);
+		connection_state_change->connection = connection;
+		memcpy(connection_state_change->cstate,
+		       connection->cstate, sizeof(connection->cstate));
+		memcpy(connection_state_change->peer_role,
+		       connection->peer_role, sizeof(connection->peer_role));
+	}
+	rcu_read_unlock();
+
+	return state_change;
+}
+
+static void forget_state_change(struct drbd_state_change *state_change)
+{
+	unsigned int n;
+
+	if (!state_change)
+		return;
+
+	if (state_change->resource->resource)
+		kref_put(&state_change->resource->resource->kref, drbd_destroy_resource);
+	for (n = 0; n < state_change->n_devices; n++) {
+		struct drbd_device *device = state_change->devices[n].device;
+
+		if (device)
+			kref_put(&device->kref, drbd_destroy_device);
+	}
+	for (n = 0; n < state_change->n_connections; n++) {
+		struct drbd_connection *connection =
+			state_change->connections[n].connection;
+
+		if (connection)
+			kref_put(&connection->kref, drbd_destroy_connection);
+	}
+	kfree(state_change);
+}
+
+enum sanitize_state_warnings {
+	NO_WARNING,
+	ABORTED_ONLINE_VERIFY,
+	ABORTED_RESYNC,
+	CONNECTION_LOST_NEGOTIATING,
+	IMPLICITLY_UPGRADED_DISK,
+	IMPLICITLY_UPGRADED_PDSK,
+};
+
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns);
