@@ -36,8 +36,6 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 struct after_state_change_work {
 	struct drbd_work w;
 	struct drbd_device *device;
-	union drbd_state os;
-	union drbd_state ns;
 	struct drbd_state_change *state_change;
 	enum chg_state_flags flags;
 	struct completion *done;
@@ -1312,8 +1310,7 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
-static void finish_state_change(struct drbd_device *device, union drbd_state os,
-				union drbd_state ns, struct completion *done)
+static void finish_state_change(struct drbd_device *device, struct completion *done)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
 	struct after_state_change_work *ascw;
@@ -1445,8 +1442,6 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	if (ascw)
 		ascw->state_change = remember_state_change(device->resource, GFP_ATOMIC);
 	if (ascw && ascw->state_change) {
-		ascw->os = os;
-		ascw->ns = ns;
 		ascw->flags = device->resource->state_change_flags;
 		ascw->w.cb = w_after_state_change;
 		ascw->device = device;
@@ -1501,7 +1496,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 out:
 	if (rv < SS_SUCCESS)
 		fail_state_change(resource, rv);
-	finish_state_change(device, os, ns, done);
+	finish_state_change(device, done);
 	return rv;
 }
 
