@@ -3518,7 +3518,7 @@ void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib)
 	d_out = genlmsg_put(msg, 0, seq, &drbd_genl_family, 0, DRBD_EVENT);
 	if (!d_out) /* cannot happen, but anyways. */
 		goto nla_put_failure;
-	d_out->minor = mdev_to_minor(device);
+	d_out->minor = device ? mdev_to_minor(device) : -1U;
 	d_out->ret_code = NO_ERROR;
 
 	if (nla_put_status_info(msg, device->resource, device, sib))
