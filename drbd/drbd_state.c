@@ -33,7 +33,7 @@
 /* in drbd_main.c */
 extern void tl_abort_disk_io(struct drbd_device *device);
 
-struct after_state_chg_work {
+struct after_state_change_work {
 	struct drbd_work w;
 	struct drbd_device *device;
 	union drbd_state os;
@@ -234,7 +234,7 @@ enum sanitize_state_warnings {
 	IMPLICITLY_UPGRADED_PDSK,
 };
 
-STATIC int w_after_state_ch(struct drbd_work *w, int unused);
+STATIC int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
@@ -1316,7 +1316,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 				union drbd_state ns, struct completion *done)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct after_state_chg_work *ascw;
+	struct after_state_change_work *ascw;
 	enum drbd_disk_state *disk_state = device->disk_state;
 	enum drbd_conn_state *cstate = peer_device->connection->cstate;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
@@ -1328,7 +1328,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 	/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 	 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
 	 * drbd_ldev_destroy() won't happen before our corresponding
-	 * w_after_state_ch works run, where we put_ldev again. */
+	 * w_after_state_change works run, where we put_ldev again. */
 	if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
 	    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
@@ -1448,7 +1448,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
 		ascw->os = os;
 		ascw->ns = ns;
 		ascw->flags = device->resource->state_change_flags;
-		ascw->w.cb = w_after_state_ch;
+		ascw->w.cb = w_after_state_change;
 		ascw->device = device;
 		ascw->done = done;
 		drbd_queue_work(&device->resource->work, &ascw->w);
@@ -1464,7 +1464,7 @@ static void finish_state_change(struct drbd_device *device, union drbd_state os,
  * @device:	DRBD device.
  * @ns:		new state.
  * @flags:	Flags
- * @done:	Optional completion, that will get completed in w_after_state_ch()
+ * @done:	Optional completion, that will get completed in w_after_state_change()
  *
  * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
  */
@@ -1546,20 +1546,105 @@ static int drbd_bitmap_io_from_worker(struct drbd_device *device,
 	return rv;
 }
 
+static union drbd_state state_change_word(struct drbd_state_change *state_change,
+					  unsigned int n_device, int n_connection,
+					  enum which_state which)
+{
+	struct drbd_resource_state_change *resource_state_change =
+		&state_change->resource[0];
+	struct drbd_device_state_change *device_state_change =
+		&state_change->devices[n_device];
+	union drbd_state state = { {
+		.role = R_UNKNOWN,
+		.peer = R_UNKNOWN,
+		.conn = C_STANDALONE,
+		.disk = D_UNKNOWN,
+		.pdsk = D_UNKNOWN,
+	} };
+
+	state.role = resource_state_change->role[which];
+	state.susp = resource_state_change->susp[which];
+	state.susp_nod = resource_state_change->susp_nod[which];
+	state.susp_fen = resource_state_change->susp_fen[which];
+	state.disk = device_state_change->disk_state[which];
+	if (n_connection != -1) {
+		struct drbd_connection_state_change *connection_state_change =
+			&state_change->connections[n_connection];
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+
+		state.peer = connection_state_change->peer_role[which];
+		state.conn = peer_device_state_change->repl_state[which];
+		if (state.conn <= L_STANDALONE)
+			state.conn = connection_state_change->cstate[which];
+		state.pdsk = peer_device_state_change->disk_state[which];
+		state.aftr_isp = peer_device_state_change->resync_susp_dependency[which];
+		state.peer_isp = peer_device_state_change->resync_susp_peer[which];
+		state.user_isp = peer_device_state_change->resync_susp_user[which];
+	}
+	return state;
+}
+
+static void broadcast_state_change(struct drbd_state_change *state_change)
+{
+	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
+	bool resource_state_has_changed;
+	unsigned int n_device;
+
+#define HAS_CHANGED(state) ((state)[OLD] != (state)[NEW])
+
+	resource_state_has_changed =
+	    HAS_CHANGED(resource_state_change->role) ||
+	    HAS_CHANGED(resource_state_change->susp) ||
+	    HAS_CHANGED(resource_state_change->susp_nod) ||
+	    HAS_CHANGED(resource_state_change->susp_fen);
+
+	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+		struct drbd_device_state_change *device_state_change =
+			&state_change->devices[n_device];
+		struct drbd_peer_device_state_change *peer_device_state_change = NULL;
+		struct drbd_connection_state_change *connection_state_change = NULL;
+		int n_connection = -1;
+
+		if (state_change->n_connections == 1) {
+			connection_state_change = &state_change->connections[0];
+			peer_device_state_change = &state_change->peer_devices[n_device];
+			n_connection = 0;
+		}
+
+		if (resource_state_has_changed ||
+		    HAS_CHANGED(device_state_change->disk_state) ||
+		    (connection_state_change &&
+		     (HAS_CHANGED(connection_state_change->peer_role) ||
+		      HAS_CHANGED(connection_state_change->cstate))) ||
+		    (peer_device_state_change &&
+		     (HAS_CHANGED(peer_device_state_change->disk_state) ||
+		      HAS_CHANGED(peer_device_state_change->repl_state) ||
+		      HAS_CHANGED(peer_device_state_change->resync_susp_user) ||
+		      HAS_CHANGED(peer_device_state_change->resync_susp_peer) ||
+		      HAS_CHANGED(peer_device_state_change->resync_susp_dependency)))) {
+			struct sib_info sib;
+
+			sib.sib_reason = SIB_STATE_CHANGE;
+			sib.os = state_change_word(state_change, n_device, n_connection, OLD);
+			sib.ns = state_change_word(state_change, n_device, n_connection, NEW);
+			drbd_bcast_event(device_state_change->device, &sib);
+		}
+	}
+
+#undef HAS_CHANGED
+}
+
 /*
  * Perform after state change actions that may sleep.
  */
-STATIC int w_after_state_ch(struct drbd_work *w, int unused)
+STATIC int w_after_state_change(struct drbd_work *w, int unused)
 {
-	struct after_state_chg_work *work =
-		container_of(w, struct after_state_chg_work, w);
+	struct after_state_change_work *work =
+		container_of(w, struct after_state_change_work, w);
+	struct drbd_state_change *state_change = work->state_change;
 	struct drbd_device *device = work->device;
 	union drbd_state os = work->os, ns = work->ns;
-	struct sib_info sib;
-
-	sib.sib_reason = SIB_STATE_CHANGE;
-	sib.os = os;
-	sib.ns = ns;
 
 	if (os.conn != L_CONNECTED && ns.conn == L_CONNECTED) {
 		clear_bit(CRASHED_PRIMARY, &device->flags);
@@ -1567,8 +1652,7 @@ STATIC int w_after_state_ch(struct drbd_work *w, int unused)
 			device->p_uuid[UI_FLAGS] &= ~((u64)2);
 	}
 
-	/* Inform userspace about the change... */
-	drbd_bcast_event(device, &sib);
+	broadcast_state_change(state_change);
 
 	if (!(os.role == R_PRIMARY && os.disk < D_UP_TO_DATE && os.pdsk < D_UP_TO_DATE) &&
 	     (ns.role == R_PRIMARY && ns.disk < D_UP_TO_DATE && ns.pdsk < D_UP_TO_DATE))
