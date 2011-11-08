@@ -35,7 +35,6 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 
 struct after_state_change_work {
 	struct drbd_work w;
-	struct drbd_device *device;
 	struct drbd_state_change *state_change;
 	enum chg_state_flags flags;
 	struct completion *done;
@@ -1444,7 +1443,6 @@ static void finish_state_change(struct drbd_device *device, struct completion *d
 	if (ascw && ascw->state_change) {
 		ascw->flags = device->resource->state_change_flags;
 		ascw->w.cb = w_after_state_change;
-		ascw->device = device;
 		ascw->done = done;
 		drbd_queue_work(&device->resource->work, &ascw->w);
 	} else {
@@ -1630,48 +1628,18 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 #undef HAS_CHANGED
 }
 
-static struct drbd_device_state_change *state_change_of_device(
-		struct drbd_state_change *state_change, struct drbd_device *device)
+static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_change, unsigned int n_device)
 {
-	unsigned int n_device;
+	unsigned int n_connection;
 
-	for (n_device = 0; n_device < state_change->n_devices; n_device++)
-		if (state_change->devices[n_device].device == device)
-			return &state_change->devices[n_device];
-	return NULL;
-}
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 
-static struct drbd_peer_device_state_change *state_change_of_peer_device(
-		struct drbd_state_change *state_change, struct drbd_device *device,
-		struct drbd_connection *connection)
-{
-	unsigned int n_device;
-
-	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
-		unsigned int n_connection;
-		if (state_change->devices[n_device].device == device) {
-			struct drbd_peer_device_state_change *peer_device_state_change =
-				&state_change->peer_devices[n_device * state_change->n_connections];
-			for (n_connection = 0; n_connection < state_change->n_connections; n_connection++, peer_device_state_change++)
-				if (state_change->connections[n_connection].connection == connection)
-					return peer_device_state_change;
-			break;
-		}
+		drbd_send_state(peer_device,
+			state_change_word(state_change, n_device, n_connection, NEW));
 	}
-	return NULL;
-}
-
-static union drbd_state state_change_word_of_peer_device(
-		struct drbd_state_change *state_change, struct drbd_device *device,
-		struct drbd_connection *connection, int which)
-{
-	struct drbd_peer_device_state_change *peer_device_state_change =
-		state_change_of_peer_device(state_change, device, connection);
-	int n = peer_device_state_change - state_change->peer_devices;
-
-	return state_change_word(state_change,
-				 n / state_change->n_connections,
-				 n % state_change->n_connections, which);
 }
 
 /*
@@ -1682,282 +1650,303 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	struct after_state_change_work *work =
 		container_of(w, struct after_state_change_work, w);
 	struct drbd_state_change *state_change = work->state_change;
-	struct drbd_device *device = work->device;
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
+	struct drbd_resource *resource = resource_state_change->resource;
 	enum drbd_role *role = resource_state_change->role;
 	bool *susp_nod = resource_state_change->susp_nod;
-	struct drbd_device_state_change *device_state_change = state_change_of_device(state_change, device);
-	enum drbd_disk_state *disk_state = device_state_change->disk_state;
-	struct drbd_connection_state_change *connection_state_change = &state_change->connections[0];
-	enum drbd_conn_state *cstate = connection_state_change->cstate;
-	enum drbd_role *peer_role = connection_state_change->peer_role;
-	struct drbd_peer_device_state_change *peer_device_state_change =
-		state_change_of_peer_device(state_change, device, connection_state_change->connection);
-	enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
-	enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
-	bool *resync_susp_user = peer_device_state_change->resync_susp_user;
-	bool *resync_susp_peer = peer_device_state_change->resync_susp_peer;
-	bool *resync_susp_dependency = peer_device_state_change->resync_susp_dependency;
-	union drbd_state new_state = state_change_word_of_peer_device(state_change, device,
-		connection_state_change->connection, NEW);
-
-	if (repl_state[OLD] != L_CONNECTED && repl_state[NEW] == L_CONNECTED) {
-		clear_bit(CRASHED_PRIMARY, &device->flags);
-		if (device->p_uuid)
-			device->p_uuid[UI_FLAGS] &= ~((u64)2);
-	}
+	struct drbd_peer_device_state_change *peer_device_state_change;
+	int n_device, n_connection;
 
 	broadcast_state_change(state_change);
 
-	if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-	     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
-		drbd_khelper(device, "pri-on-incon-degr");
+	peer_device_state_change = &state_change->peer_devices[0];
+	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
+		struct drbd_device *device = device_state_change->device;
+		enum drbd_disk_state *disk_state = device_state_change->disk_state;
 
-	/* Here we have the actions that are performed after a
-	   state change. This function might sleep */
+		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++, peer_device_state_change++) {
+			struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
+			struct drbd_connection *connection = connection_state_change->connection;
+			enum drbd_conn_state *cstate = connection_state_change->cstate;
+			enum drbd_role *peer_role = connection_state_change->peer_role;
+			struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
+			enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
+			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
+			bool *resync_susp_user = peer_device_state_change->resync_susp_user;
+			bool *resync_susp_peer = peer_device_state_change->resync_susp_peer;
+			bool *resync_susp_dependency = peer_device_state_change->resync_susp_dependency;
+			union drbd_state new_state =
+				state_change_word(state_change, n_device, n_connection, NEW);
 
-	if (susp_nod[NEW]) {
-		enum drbd_req_event what = NOTHING;
+			if (repl_state[OLD] != L_CONNECTED && repl_state[NEW] == L_CONNECTED) {
+				clear_bit(CRASHED_PRIMARY, &device->flags);
+				if (device->p_uuid)
+					device->p_uuid[UI_FLAGS] &= ~((u64)2);
+			}
 
-		if (repl_state[OLD] < L_CONNECTED &&
-		    conn_lowest_repl_state(first_peer_device(device)->connection) >= L_CONNECTED)
-			what = RESEND;
+			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
+			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+				drbd_khelper(device, "pri-on-incon-degr");
 
-		if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
-		    conn_lowest_disk(first_peer_device(device)->connection) > D_NEGOTIATING)
-			what = RESTART_FROZEN_DISK_IO;
+			if (susp_nod[NEW]) {
+				enum drbd_req_event what = NOTHING;
 
-		if (what != NOTHING) {
-			unsigned long irq_flags;
+				if (repl_state[OLD] < L_CONNECTED &&
+				    conn_lowest_repl_state(connection) >= L_CONNECTED)
+					what = RESEND;
 
-			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			_tl_restart(first_peer_device(device)->connection, what);
-			_drbd_set_state(device,_NS(device, susp_nod, 0), CS_VERBOSE, NULL);
-			end_state_change(device->resource, &irq_flags);
-		}
-	}
+				if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
+				    conn_lowest_disk(connection) > D_NEGOTIATING)
+					what = RESTART_FROZEN_DISK_IO;
 
-	/* Became sync source.  With protocol >= 96, we still need to send out
-	 * the sync uuid now. Need to do that before any drbd_send_state, or
-	 * the other side may go "paused sync" before receiving the sync uuids,
-	 * which is unexpected. */
-	if (!(repl_state[OLD] == L_SYNC_SOURCE || repl_state[OLD] == L_PAUSED_SYNC_S) &&
-	     (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_PAUSED_SYNC_S) &&
-	    first_peer_device(device)->connection->agreed_pro_version >= 96 && get_ldev(device)) {
-		drbd_gen_and_send_sync_uuid(first_peer_device(device));
-		put_ldev(device);
-	}
+				if (what != NOTHING) {
+					unsigned long irq_flags;
 
-	/* Do not change the order of the if above and the two below... */
-	if (peer_disk_state[OLD] == D_DISKLESS &&
-	    peer_disk_state[NEW] > D_DISKLESS && peer_disk_state[NEW] != D_UNKNOWN) {      /* attach on the peer */
-		drbd_send_uuids(first_peer_device(device));
-		drbd_send_state(first_peer_device(device), new_state);
-	}
-	/* No point in queuing send_bitmap if we don't have a connection
-	 * anymore, so check also the _current_ state, not only the new state
-	 * at the time this work was queued. */
-	if (repl_state[OLD] != L_WF_BITMAP_S && repl_state[NEW] == L_WF_BITMAP_S &&
-	    first_peer_device(device)->repl_state[NOW] == L_WF_BITMAP_S)
-		drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
-				"send_bitmap (WFBitMapS)",
-				BM_LOCKED_TEST_ALLOWED,
-				first_peer_device(device));
-
-	/* Lost contact to peer's copy of the data */
-	if (!(peer_disk_state[OLD] < D_INCONSISTENT || peer_disk_state[OLD] == D_UNKNOWN || peer_disk_state[OLD] == D_OUTDATED) &&
-	     (peer_disk_state[NEW] < D_INCONSISTENT || peer_disk_state[NEW] == D_UNKNOWN || peer_disk_state[NEW] == D_OUTDATED)) {
-		if (get_ldev(device)) {
-			if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
-			    device->ldev->md.uuid[UI_BITMAP] == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
-				if (drbd_suspended(device)) {
-					set_bit(NEW_CUR_UUID, &device->flags);
-				} else {
-					drbd_uuid_new_current(device);
-					drbd_send_uuids(first_peer_device(device));
+					begin_state_change(resource, &irq_flags, CS_VERBOSE);
+					_tl_restart(connection, what);
+					_drbd_set_state(device, _NS(device, susp_nod, 0), CS_VERBOSE, NULL);
+					end_state_change(resource, &irq_flags);
 				}
 			}
+
+			/* Became sync source.  With protocol >= 96, we still need to send out
+			 * the sync uuid now. Need to do that before any drbd_send_state, or
+			 * the other side may go "paused sync" before receiving the sync uuids,
+			 * which is unexpected. */
+			if (!(repl_state[OLD] == L_SYNC_SOURCE || repl_state[OLD] == L_PAUSED_SYNC_S) &&
+			     (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_PAUSED_SYNC_S) &&
+			    connection->agreed_pro_version >= 96 && get_ldev(device)) {
+				drbd_gen_and_send_sync_uuid(peer_device);
+				put_ldev(device);
+			}
+
+			/* Do not change the order of the if above and the two below... */
+			if (peer_disk_state[OLD] == D_DISKLESS &&
+			    peer_disk_state[NEW] > D_DISKLESS && peer_disk_state[NEW] != D_UNKNOWN) {      /* attach on the peer */
+				drbd_send_uuids(peer_device);
+				drbd_send_state(peer_device, new_state);
+			}
+			/* No point in queuing send_bitmap if we don't have a connection
+			 * anymore, so check also the _current_ state, not only the new state
+			 * at the time this work was queued. */
+			if (repl_state[OLD] != L_WF_BITMAP_S && repl_state[NEW] == L_WF_BITMAP_S &&
+			    peer_device->repl_state[NOW] == L_WF_BITMAP_S)
+				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
+						"send_bitmap (WFBitMapS)",
+						BM_LOCKED_TEST_ALLOWED,
+						peer_device);
+
+			/* Lost contact to peer's copy of the data */
+			if (!(peer_disk_state[OLD] < D_INCONSISTENT || peer_disk_state[OLD] == D_UNKNOWN || peer_disk_state[OLD] == D_OUTDATED) &&
+			     (peer_disk_state[NEW] < D_INCONSISTENT || peer_disk_state[NEW] == D_UNKNOWN || peer_disk_state[NEW] == D_OUTDATED)) {
+				if (get_ldev(device)) {
+					if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
+					    device->ldev->md.uuid[UI_BITMAP] == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
+						if (drbd_suspended(device)) {
+							set_bit(NEW_CUR_UUID, &device->flags);
+						} else {
+							drbd_uuid_new_current(device);
+							drbd_send_uuids(peer_device);
+						}
+					}
+					put_ldev(device);
+				}
+			}
+
+			if (peer_disk_state[NEW] < D_INCONSISTENT && get_ldev(device)) {
+				/* D_DISKLESS Peer becomes secondary */
+				if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_SECONDARY)
+					/* We may still be Primary ourselves.
+					 * No harm done if the bitmap still changes,
+					 * redirtied pages will follow later. */
+					drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+						"demote diskless peer", BM_LOCKED_SET_ALLOWED,
+						NULL);
+				put_ldev(device);
+			}
+
+			/* Write out all changed bits on demote.
+			 * Though, no need to da that just yet
+			 * if there is a resync going on still */
+			if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY &&
+				peer_device->repl_state[NOW] <= L_CONNECTED && get_ldev(device)) {
+				/* No changes to the bitmap expected this time, so assert that,
+				 * even though no harm was done if it did change. */
+				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+						"demote", BM_LOCKED_TEST_ALLOWED,
+						NULL);
+				put_ldev(device);
+			}
+
+			/* Last part of the attaching process ... */
+			if (repl_state[NEW] >= L_CONNECTED &&
+			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] == D_NEGOTIATING) {
+				drbd_send_sizes(peer_device, 0, 0);  /* to start sync... */
+				drbd_send_uuids(peer_device);
+				drbd_send_state(peer_device, new_state);
+			}
+
+			/* We want to pause/continue resync, tell peer. */
+			if (repl_state[NEW] >= L_CONNECTED &&
+			     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
+			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
+				drbd_send_state(peer_device, new_state);
+
+			/* In case one of the isp bits got set, suspend other devices. */
+			if (!(resync_susp_dependency[OLD] || resync_susp_peer[OLD] || resync_susp_user[OLD]) &&
+			     (resync_susp_dependency[NEW] || resync_susp_peer[NEW] || resync_susp_user[NEW]))
+				suspend_other_sg(device);
+
+			/* Make sure the peer gets informed about eventual state
+			   changes (ISP bits) while we were in L_STANDALONE. */
+			if (repl_state[OLD] == L_STANDALONE && repl_state[NEW] >= L_CONNECTED)
+				drbd_send_state(peer_device, new_state);
+
+			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
+				drbd_send_state(peer_device, new_state);
+
+			/* We are in the progress to start a full sync... */
+			if ((repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T) ||
+			    (repl_state[OLD] != L_STARTING_SYNC_S && repl_state[NEW] == L_STARTING_SYNC_S))
+				/* no other bitmap changes expected during this phase */
+				drbd_queue_bitmap_io(device,
+					&drbd_bmio_set_n_write, &abw_start_sync,
+					"set_n_write from StartingSync", BM_LOCKED_TEST_ALLOWED,
+					NULL);
+
+			/* We are invalidating our self... */
+			if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] < L_CONNECTED &&
+			    disk_state[OLD] > D_INCONSISTENT && disk_state[NEW] == D_INCONSISTENT)
+				/* other bitmap operation expected during this phase */
+				drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
+					"set_n_write from invalidate", BM_LOCKED_MASK,
+					NULL);
+
+			/* Disks got bigger while they were detached */
+			if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&
+			    test_and_clear_bit(RESYNC_AFTER_NEG, &peer_device->flags)) {
+				if (repl_state[NEW] == L_CONNECTED)
+					resync_after_online_grow(device);
+			}
+
+			/* A resync finished or aborted, wake paused devices... */
+			if ((repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED) ||
+			    (resync_susp_peer[OLD] && !resync_susp_peer[NEW]) ||
+			    (resync_susp_user[OLD] && !resync_susp_user[NEW]))
+				resume_next_sg(device);
+
+			/* sync target done with resync.  Explicitly notify peer, even though
+			 * it should (at least for non-empty resyncs) already know itself. */
+			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_CONNECTED)
+				drbd_send_state(peer_device, new_state);
+
+			/* This triggers bitmap writeout of potentially still unwritten pages
+			 * if the resync finished cleanly, or aborted because of peer disk
+			 * failure, or because of connection loss.
+			 * For resync aborted because of local disk failure, we cannot do
+			 * any bitmap writeout anymore.
+			 * No harm done if some bits change during this phase.
+			 */
+			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED && get_ldev(device)) {
+				drbd_queue_bitmap_io(device, &drbd_bm_write, NULL,
+					"write from resync_finished", BM_LOCKED_SET_ALLOWED,
+					NULL);
+				put_ldev(device);
+			}
+
+			if (disk_state[NEW] == D_DISKLESS &&
+			    cstate[NEW] == C_STANDALONE &&
+			    role[NEW] == R_SECONDARY) {
+				if (resync_susp_dependency[OLD] != resync_susp_dependency[NEW])
+					resume_next_sg(device);
+			}
+		}
+
+		/* first half of local IO error, failure to attach,
+		 * or administrative detach */
+		if (disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) {
+			enum drbd_io_error_p eh;
+			int was_io_error;
+
+			/*
+			 * finish_state_change() has grabbed a reference on
+			 * ldev in this case.
+			 */
+			rcu_read_lock();
+			eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
+			rcu_read_unlock();
+			was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
+
+			/* Immediately allow completion of all application IO, that waits
+			   for completion from the local disk. */
+			tl_abort_disk_io(device);
+
+			/* current state still has to be D_FAILED,
+			 * there is only one way out: to D_DISKLESS,
+			 * and that may only happen after our put_ldev below. */
+			if (device->disk_state[NOW] != D_FAILED)
+				drbd_err(device,
+					"ASSERT FAILED: disk is %s during detach\n",
+					drbd_disk_str(device->disk_state[NOW]));
+
+			send_new_state_to_all_peer_devices(state_change, n_device);
+
+			for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+				struct drbd_peer_device *peer_device;
+
+				peer_device_state_change = &state_change->peer_devices[
+					n_device * state_change->n_connections + n_connection];
+				peer_device = peer_device_state_change->peer_device;
+				drbd_rs_cancel_all(peer_device);
+			}
+
+			/* In case we want to get something to stable storage still,
+			 * this may be the last chance.
+			 * Following put_ldev may transition to D_DISKLESS. */
+			drbd_md_sync(device);
+			put_ldev(device);
+
+			if (was_io_error && eh == EP_CALL_HELPER)
+				drbd_khelper(device, "local-io-error");
+		}
+
+		/* second half of local IO error, failure to attach,
+		 * or administrative detach,
+		 * after local_cnt references have reached zero again */
+		if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS) {
+			struct drbd_peer_device *peer_device;
+
+			/* We must still be diskless,
+			 * re-attach has to be serialized with this! */
+			if (device->disk_state[NOW] != D_DISKLESS)
+				drbd_err(device,
+					"ASSERT FAILED: disk is %s while going diskless\n",
+					drbd_disk_str(device->disk_state[NOW]));
+
+			rcu_read_lock();
+			for_each_peer_device(peer_device, device) {
+				peer_device->rs_total = 0;
+				peer_device->rs_failed = 0;
+				atomic_set(&peer_device->rs_pending_cnt, 0);
+			}
+			rcu_read_unlock();
+
+			send_new_state_to_all_peer_devices(state_change, n_device);
+			/*
+			 * finish_state_change() has grabbed a reference on
+			 * ldev in this case.
+			 */
 			put_ldev(device);
 		}
-	}
 
-	if (peer_disk_state[NEW] < D_INCONSISTENT && get_ldev(device)) {
-		if (peer_role[OLD] == R_SECONDARY && peer_role[NEW] == R_PRIMARY &&
-		    device->ldev->md.uuid[UI_BITMAP] == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
-			drbd_uuid_new_current(device);
-			drbd_send_uuids(first_peer_device(device));
-		}
-		/* D_DISKLESS Peer becomes secondary */
-		if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_SECONDARY)
-			/* We may still be Primary ourselves.
-			 * No harm done if the bitmap still changes,
-			 * redirtied pages will follow later. */
-			drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-				"demote diskless peer", BM_LOCKED_SET_ALLOWED,
-				NULL);
-		put_ldev(device);
-	}
+		/* Notify peers that I had a local IO error and did not detach. */
+		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
+			send_new_state_to_all_peer_devices(state_change, n_device);
 
-	/* Write out all changed bits on demote.
-	 * Though, no need to da that just yet
-	 * if there is a resync going on still */
-	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY &&
-		first_peer_device(device)->repl_state[NOW] <= L_CONNECTED && get_ldev(device)) {
-		/* No changes to the bitmap expected this time, so assert that,
-		 * even though no harm was done if it did change. */
-		drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-				"demote", BM_LOCKED_TEST_ALLOWED,
-				NULL);
-		put_ldev(device);
-	}
-
-	/* Last part of the attaching process ... */
-	if (repl_state[NEW] >= L_CONNECTED &&
-	    disk_state[OLD] == D_ATTACHING && disk_state[NEW] == D_NEGOTIATING) {
-		drbd_send_sizes(first_peer_device(device), 0, 0);  /* to start sync... */
-		drbd_send_uuids(first_peer_device(device));
-		drbd_send_state(first_peer_device(device), new_state);
-	}
-
-	/* We want to pause/continue resync, tell peer. */
-	if (repl_state[NEW] >= L_CONNECTED &&
-	     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
-	      (resync_susp_user[OLD] != resync_susp_user[NEW])))
-		drbd_send_state(first_peer_device(device), new_state);
-
-	/* In case one of the isp bits got set, suspend other devices. */
-	if (!(resync_susp_dependency[OLD] || resync_susp_peer[OLD] || resync_susp_user[OLD]) &&
-	     (resync_susp_dependency[NEW] || resync_susp_peer[NEW] || resync_susp_user[NEW]))
-		suspend_other_sg(device);
-
-	/* Make sure the peer gets informed about eventual state
-	   changes (ISP bits) while we were in L_STANDALONE. */
-	if (repl_state[OLD] == L_STANDALONE && repl_state[NEW] >= L_CONNECTED)
-		drbd_send_state(first_peer_device(device), new_state);
-
-	if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
-		drbd_send_state(first_peer_device(device), new_state);
-
-	/* We are in the progress to start a full sync... */
-	if ((repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T) ||
-	    (repl_state[OLD] != L_STARTING_SYNC_S && repl_state[NEW] == L_STARTING_SYNC_S))
-		/* no other bitmap changes expected during this phase */
-		drbd_queue_bitmap_io(device,
-			&drbd_bmio_set_n_write, &abw_start_sync,
-			"set_n_write from StartingSync", BM_LOCKED_TEST_ALLOWED,
-			NULL);
-
-	/* We are invalidating our self... */
-	if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] < L_CONNECTED &&
-	    disk_state[OLD] > D_INCONSISTENT && disk_state[NEW] == D_INCONSISTENT)
-		/* other bitmap operation expected during this phase */
-		drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
-			"set_n_write from invalidate", BM_LOCKED_MASK,
-			NULL);
-
-	/* first half of local IO error, failure to attach,
-	 * or administrative detach */
-	if (disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) {
-		enum drbd_io_error_p eh;
-		int was_io_error;
-		/* corresponding get_ldev was in __drbd_set_state, to serialize
-		 * our cleanup here with the transition to D_DISKLESS,
-		 * so it is safe to dreference ldev here. */
-		rcu_read_lock();
-		eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
-		rcu_read_unlock();
-		was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
-
-		/* Immediately allow completion of all application IO, that waits
-		   for completion from the local disk. */
-		tl_abort_disk_io(device);
-
-		/* current state still has to be D_FAILED,
-		 * there is only one way out: to D_DISKLESS,
-		 * and that may only happen after our put_ldev below. */
-		if (device->disk_state[NOW] != D_FAILED)
-			drbd_err(device,
-				"ASSERT FAILED: disk is %s during detach\n",
-				drbd_disk_str(device->disk_state[NOW]));
-
-		drbd_send_state(first_peer_device(device), new_state);
-		drbd_rs_cancel_all(first_peer_device(device));
-
-		/* In case we want to get something to stable storage still,
-		 * this may be the last chance.
-		 * Following put_ldev may transition to D_DISKLESS. */
 		drbd_md_sync(device);
-		put_ldev(device);
-
-		if (was_io_error && eh == EP_CALL_HELPER)
-			drbd_khelper(device, "local-io-error");
 	}
 
-        /* second half of local IO error, failure to attach,
-         * or administrative detach,
-         * after local_cnt references have reached zero again */
-        if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS) {
-                /* We must still be diskless,
-                 * re-attach has to be serialized with this! */
-                if (device->disk_state[NOW] != D_DISKLESS)
-                        drbd_err(device,
-                                "ASSERT FAILED: disk is %s while going diskless\n",
-                                drbd_disk_str(device->disk_state[NOW]));
-
-                first_peer_device(device)->rs_total = 0;
-                first_peer_device(device)->rs_failed = 0;
-                atomic_set(&first_peer_device(device)->rs_pending_cnt, 0);
-
-		drbd_send_state(first_peer_device(device), new_state);
-		/* corresponding get_ldev in __drbd_set_state
-		 * this may finaly trigger drbd_ldev_destroy. */
-		put_ldev(device);
-	}
-
-	/* Notify peer that I had a local IO error and did not detach. */
-	if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
-		drbd_send_state(first_peer_device(device), new_state);
-
-	/* Disks got bigger while they were detached */
-	if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&
-	    test_and_clear_bit(RESYNC_AFTER_NEG, &first_peer_device(device)->flags)) {
-		if (repl_state[NEW] == L_CONNECTED)
-			resync_after_online_grow(device);
-	}
-
-	/* A resync finished or aborted, wake paused devices... */
-	if ((repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED) ||
-	    (resync_susp_peer[OLD] && !resync_susp_peer[NEW]) ||
-	    (resync_susp_user[OLD] && !resync_susp_user[NEW]))
-		resume_next_sg(device);
-
-	/* sync target done with resync.  Explicitly notify peer, even though
-	 * it should (at least for non-empty resyncs) already know itself. */
-	if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_CONNECTED)
-		drbd_send_state(first_peer_device(device), new_state);
-
-	/* This triggers bitmap writeout of potentially still unwritten pages
-	 * if the resync finished cleanly, or aborted because of peer disk
-	 * failure, or because of connection loss.
-	 * For resync aborted because of local disk failure, we cannot do
-	 * any bitmap writeout anymore.
-	 * No harm done if some bits change during this phase.
-	 */
-	if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED && get_ldev(device)) {
-		drbd_queue_bitmap_io(device, &drbd_bm_write, NULL,
-			"write from resync_finished", BM_LOCKED_SET_ALLOWED,
-			NULL);
-		put_ldev(device);
-	}
-
-	if (disk_state[NEW] == D_DISKLESS &&
-	    cstate[NEW] == C_STANDALONE &&
-	    role[NEW] == R_SECONDARY) {
-		if (resync_susp_dependency[OLD] != resync_susp_dependency[NEW])
-			resume_next_sg(device);
-	}
-
-	drbd_md_sync(device);
 	if (work->flags & CS_WAIT_COMPLETE)
 		complete(work->done);
 	forget_state_change(state_change);
