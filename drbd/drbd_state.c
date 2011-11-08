@@ -2101,22 +2101,16 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 
 static void conn_set_state(struct drbd_connection *connection,
 			   union drbd_state mask, union drbd_state val,
-			   union drbd_state *pns_min, union drbd_state *pns_max,
 			   enum chg_state_flags flags)
 {
-	union drbd_state ns, os, ns_max = { };
-	union drbd_state ns_min = {
-		{ .disk = D_MASK,
-		  .pdsk = D_MASK
-		} };
+	union drbd_state ns, os;
 	struct drbd_peer_device *peer_device;
 	enum drbd_state_rv rv;
-	int vnr, number_of_volumes = 0;
+	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		number_of_volumes++;
 		os = drbd_get_peer_device_state(peer_device, NOW);
 		ns = apply_mask_val(os, mask, val);
 		ns = sanitize_state(device, ns);
@@ -2127,29 +2121,8 @@ static void conn_set_state(struct drbd_connection *connection,
 		rv = __drbd_set_state(device, ns, flags, NULL);
 		if (rv < SS_SUCCESS)
 			BUG();
-
-		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state[NEW], ns_max.disk);
-		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state[NEW], ns_max.pdsk);
-
-		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state[NEW], ns_min.disk);
-		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state[NEW], ns_min.pdsk);
 	}
 	rcu_read_unlock();
-
-	if (number_of_volumes == 0) {
-		ns_min.disk = ns_max.disk = D_DISKLESS;
-		ns_min.pdsk = ns_max.pdsk = D_UNKNOWN;
-	}
-
-	ns_min.peer = ns_max.peer = connection->peer_role[NEW];
-	ns_min.role = ns_max.role = connection->resource->role[NEW];
-	ns_min.conn = ns_max.conn = connection->cstate[NEW];
-	ns_min.susp = ns_max.susp = connection->resource->susp[NEW];
-	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod[NEW];
-	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen[NEW];
-
-	*pns_min = ns_min;
-	*pns_max = ns_max;
 }
 
 static enum drbd_state_rv
@@ -2212,7 +2185,6 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
 	enum drbd_conn_state oc = connection->cstate[NEW];
-	union drbd_state ns_max, ns_min;
 
 	rv = is_valid_conn_transition(oc, val.conn);
 	if (rv < SS_SUCCESS)
@@ -2229,7 +2201,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 			goto out;
 	}
 
-	conn_set_state(connection, mask, val, &ns_min, &ns_max, flags);
+	conn_set_state(connection, mask, val, flags);
 
 	queue_after_state_change_work(connection->resource, NULL, GFP_ATOMIC);
 
