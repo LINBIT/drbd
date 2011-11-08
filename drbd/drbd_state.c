@@ -1306,12 +1306,31 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 	peer_device->ov_left = peer_device->rs_total;
 }
 
+static void queue_after_state_change_work(struct drbd_resource *resource,
+					  struct completion *done, gfp_t gfp)
+{
+	struct after_state_change_work *work;
+
+	work = kmalloc(sizeof(*work), gfp);
+	if (work)
+		work->state_change = remember_state_change(resource, gfp);
+	if (work && work->state_change) {
+		work->flags = resource->state_change_flags;
+		work->w.cb = w_after_state_change;
+		work->done = done;
+		drbd_queue_work(&resource->work, &work->w);
+	} else {
+		if (work)
+			forget_state_change(work->state_change);
+		drbd_err(resource, "Could not allocate after state change work\n");
+	}
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
 static void finish_state_change(struct drbd_resource *resource, struct completion *done)
 {
-	struct after_state_change_work *ascw;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
@@ -1451,19 +1470,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			drbd_thread_restart_nowait(&connection->receiver);
 	}
 
-	ascw = kmalloc(sizeof(*ascw), GFP_ATOMIC);
-	if (ascw)
-		ascw->state_change = remember_state_change(resource, GFP_ATOMIC);
-	if (ascw && ascw->state_change) {
-		ascw->flags = device->resource->state_change_flags;
-		ascw->w.cb = w_after_state_change;
-		ascw->done = done;
-		drbd_queue_work(&resource->work, &ascw->w);
-	} else {
-		if (ascw)
-			forget_state_change(ascw->state_change);
-		drbd_err(resource, "Could not kmalloc an ascw\n");
-	}
+	queue_after_state_change_work(resource, done, GFP_ATOMIC);
 }
 
 /**
@@ -2054,89 +2061,6 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	return 0;
 }
 
-struct after_conn_state_chg_work {
-	struct drbd_work w;
-	enum drbd_conn_state oc;
-	union drbd_state ns_min;
-	union drbd_state ns_max; /* new, max state, over all mdevs */
-	enum chg_state_flags flags;
-	struct drbd_connection *connection;
-};
-
-STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
-{
-	struct after_conn_state_chg_work *acscw =
-		container_of(w, struct after_conn_state_chg_work, w);
-	struct drbd_connection *connection = acscw->connection;
-	enum drbd_conn_state oc = acscw->oc;
-	union drbd_state ns_max = acscw->ns_max;
-	union drbd_state ns_min = acscw->ns_min;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	kfree(acscw);
-
-	/* Upon network configuration, we need to start the receiver */
-	if (oc == C_STANDALONE && ns_max.conn == C_UNCONNECTED)
-		drbd_thread_start(&connection->receiver);
-
-	if (oc == C_DISCONNECTING && ns_max.conn == C_STANDALONE) {
-		struct net_conf *old_conf;
-
-		mutex_lock(&connection->resource->conf_update);
-		old_conf = connection->net_conf;
-		connection->my_addr_len = 0;
-		connection->peer_addr_len = 0;
-		rcu_assign_pointer(connection->net_conf, NULL);
-		conn_free_crypto(connection);
-		mutex_unlock(&connection->resource->conf_update);
-
-		synchronize_rcu();
-		kfree(old_conf);
-	}
-
-	if (ns_max.susp_fen) {
-		/* case1: The outdate peer handler is successful: */
-		if (ns_max.pdsk <= D_OUTDATED) {
-			tl_clear(connection);
-			rcu_read_lock();
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				struct drbd_device *device = peer_device->device;
-				if (test_bit(NEW_CUR_UUID, &device->flags)) {
-					drbd_uuid_new_current(device);
-					clear_bit(NEW_CUR_UUID, &device->flags);
-				}
-			}
-			rcu_read_unlock();
-			conn_request_state(connection,
-					   (union drbd_state) { { .susp_fen = 1 } },
-					   (union drbd_state) { { .susp_fen = 0 } },
-					   CS_VERBOSE);
-		}
-		/* case2: The connection was established again: */
-		if (ns_min.conn >= L_CONNECTED) {
-			unsigned long irq_flags;
-			enum drbd_state_rv rv;
-
-			rcu_read_lock();
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				struct drbd_device *device = peer_device->device;
-				clear_bit(NEW_CUR_UUID, &device->flags);
-			}
-			rcu_read_unlock();
-			begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
-			_tl_restart(connection, RESEND);
-			_conn_request_state(connection,
-					    (union drbd_state) { { .susp_fen = 1 } },
-					    (union drbd_state) { { .susp_fen = 0 } },
-					    CS_VERBOSE, &irq_flags);
-			rv = end_state_change(connection->resource, &irq_flags);
-		}
-	}
-	kref_put(&connection->kref, drbd_destroy_connection);
-	return 0;
-}
-
 static enum drbd_state_rv
 conn_is_valid_transition(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
 			 enum chg_state_flags flags)
@@ -2287,7 +2211,6 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		    enum chg_state_flags flags, unsigned long *irq_flags)
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
-	struct after_conn_state_chg_work *acscw;
 	enum drbd_conn_state oc = connection->cstate[NEW];
 	union drbd_state ns_max, ns_min;
 
@@ -2308,19 +2231,7 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 
 	conn_set_state(connection, mask, val, &ns_min, &ns_max, flags);
 
-	acscw = kmalloc(sizeof(*acscw), GFP_ATOMIC);
-	if (acscw) {
-		acscw->oc = oc;
-		acscw->ns_min = ns_min;
-		acscw->ns_max = ns_max;
-		acscw->flags = flags;
-		acscw->w.cb = w_after_conn_state_ch;
-		kref_get(&connection->kref);
-		acscw->connection = connection;
-		drbd_queue_work(&connection->data.work, &acscw->w);
-	} else {
-		drbd_err(connection, "Could not kmalloc an acscw\n");
-	}
+	queue_after_state_change_work(connection->resource, NULL, GFP_ATOMIC);
 
 out:
 	if (rv < SS_SUCCESS)
