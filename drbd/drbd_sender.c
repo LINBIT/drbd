@@ -955,7 +955,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		}
 	}
 
-	_drbd_set_state(device, ns, CS_VERBOSE, NULL);
+	_drbd_set_state(device, ns);
 out_unlock:
 	end_state_change(device->resource, &irq_flags);
 	put_ldev(device);
@@ -1443,7 +1443,7 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (!_drbd_may_sync_now(odev))
-			__drbd_set_state(odev, _NS(odev, aftr_isp, 1), CS_HARD, NULL);
+			__drbd_set_state(odev, _NS(odev, aftr_isp, 1));
 	}
 	rcu_read_unlock();
 
@@ -1468,7 +1468,7 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 			continue;
 		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
 			if (_drbd_may_sync_now(odev))
-				__drbd_set_state(odev, _NS(odev, aftr_isp, 0), CS_HARD, NULL);
+				__drbd_set_state(odev, _NS(odev, aftr_isp, 0));
 		}
 	}
 	rcu_read_unlock();
@@ -1679,7 +1679,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	else /* side == L_SYNC_SOURCE */
 		ns.pdsk = D_INCONSISTENT;
 
-	__drbd_set_state(device, ns, CS_VERBOSE, NULL);
+	__drbd_set_state(device, ns);
 	ns = drbd_get_peer_device_state(peer_device, NEW);
 	r = end_state_change(device->resource, &irq_flags);
 

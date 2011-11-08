@@ -1067,9 +1067,9 @@ allocate_barrier:
 	begin_state_change(device->resource, &irq_flags, 0);
 	if (congested) {
 		if (on_congestion == OC_PULL_AHEAD)
-			_drbd_set_state(device, _NS(device, conn, L_AHEAD), 0, NULL);
+			_drbd_set_state(device, _NS(device, conn, L_AHEAD));
 		else  /*on_congestion == OC_DISCONNECT */
-			_drbd_set_state(device, _NS(device, conn, C_DISCONNECTING), 0, NULL);
+			_drbd_set_state(device, _NS(device, conn, C_DISCONNECTING));
 	}
 	end_state_change(device->resource, &irq_flags);
 
@@ -1216,7 +1216,7 @@ void request_timer_fn(unsigned long data)
 		if (time_is_before_eq_jiffies(req->start_time + ent)) {
 			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
 			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
-			_drbd_set_state(device, _NS(device, conn, C_TIMEOUT), CS_VERBOSE | CS_HARD, NULL);
+			_drbd_set_state(device, _NS(device, conn, C_TIMEOUT));
 			end_state_change_locked(device->resource);
 		}
 	}

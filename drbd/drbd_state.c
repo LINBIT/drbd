@@ -36,7 +36,6 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 struct after_state_change_work {
 	struct drbd_work w;
 	struct drbd_state_change *state_change;
-	enum chg_state_flags flags;
 	struct completion *done;
 };
 
@@ -597,7 +596,7 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 
 	begin_state_change(device->resource, &irq_flags, f);
 	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-	_drbd_set_state(device, ns, f, NULL);
+	_drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 	return rv;
@@ -692,9 +691,9 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		}
 		begin_state_change(device->resource, &irq_flags, f);
 		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-		_drbd_set_state(device, ns, f, NULL);
+		_drbd_set_state(device, ns);
 	} else {
-		_drbd_set_state(device, ns, f, NULL);
+		_drbd_set_state(device, ns);
 	}
 
 	rv = end_state_change(device->resource, &irq_flags);
@@ -1317,7 +1316,6 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	if (work)
 		work->state_change = remember_state_change(resource, gfp);
 	if (work && work->state_change) {
-		work->flags = resource->state_change_flags;
 		work->w.cb = w_after_state_change;
 		work->done = done;
 		drbd_queue_work(&resource->work, &work->w);
@@ -1480,13 +1478,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
  * @device:	DRBD device.
  * @ns:		new state.
  * @flags:	Flags
- * @done:	Optional completion, that will get completed in w_after_state_change()
  *
  * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
  */
-enum drbd_state_rv
-__drbd_set_state(struct drbd_device *device, union drbd_state ns,
-	         enum chg_state_flags flags, struct completion *done)
+enum drbd_state_rv __drbd_set_state(struct drbd_device *device, union drbd_state ns)
 {
 	union drbd_state os;
 	enum drbd_state_rv rv = SS_SUCCESS;
@@ -1505,11 +1500,11 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if (rv < SS_SUCCESS)
 		goto out;
 
-	if (!(flags & CS_HARD))
+	if (!(resource->state_change_flags & CS_HARD))
 		rv = is_valid_soft_transition(resource);
 
 	if (rv < SS_SUCCESS) {
-		if (flags & CS_VERBOSE)
+		if (resource->state_change_flags & CS_VERBOSE)
 			print_st_err(device, os, ns, rv);
 		goto out;
 	}
@@ -1728,7 +1723,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
 					_tl_restart(connection, what);
-					_drbd_set_state(device, _NS(device, susp_nod, 0), CS_VERBOSE, NULL);
+					_drbd_set_state(device, _NS(device, susp_nod, 0));
 					end_state_change(resource, &irq_flags);
 				}
 			}
@@ -2054,7 +2049,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		}
 	}
 
-	if (work->flags & CS_WAIT_COMPLETE)
+	if (work->done)
 		complete(work->done);
 	forget_state_change(state_change);
 	kfree(work);
@@ -2119,7 +2114,7 @@ static void conn_set_state(struct drbd_connection *connection,
 		if (flags & CS_IGN_OUTD_FAIL && ns.disk == D_OUTDATED && os.disk < D_OUTDATED)
 			ns.disk = os.disk;
 
-		rv = __drbd_set_state(device, ns, flags, NULL);
+		rv = __drbd_set_state(device, ns);
 		if (rv < SS_SUCCESS)
 			BUG();
 	}

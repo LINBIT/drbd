@@ -1520,13 +1520,12 @@ static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_r
 }
 
 static inline enum drbd_state_rv
-_drbd_set_state(struct drbd_device *device, union drbd_state ns,
-		enum chg_state_flags flags, struct completion *done)
+_drbd_set_state(struct drbd_device *device, union drbd_state ns)
 {
 	enum drbd_state_rv rv;
 
 	read_lock(&global_state_lock);
-	rv = __drbd_set_state(device, ns, flags, done);
+	rv = __drbd_set_state(device, ns);
 	read_unlock(&global_state_lock);
 
 	return rv;
@@ -1562,7 +1561,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
 				begin_state_change_locked(device->resource, CS_HARD);
-				_drbd_set_state(device, _NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
+				_drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
 				end_state_change_locked(device->resource);
 			}
 			break;
@@ -1573,7 +1572,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 		set_bit(WAS_IO_ERROR, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {
 			begin_state_change_locked(device->resource, CS_HARD);
-			_drbd_set_state(device, _NS(device, disk, D_FAILED), CS_HARD, NULL);
+			_drbd_set_state(device, _NS(device, disk, D_FAILED));
 			end_state_change_locked(device->resource);
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);

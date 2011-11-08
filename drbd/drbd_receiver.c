@@ -3936,8 +3936,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
-			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
-					CS_VERBOSE, NULL);
+			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
 			end_state_change(device->resource, &irq_flags);
 			drbd_md_sync(device);
 			updated_uuids = 1;
@@ -4060,7 +4059,6 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	struct p_state *p = pi->data;
 	union drbd_state os, ns, peer_state;
 	enum drbd_disk_state real_peer_disk;
-	enum chg_state_flags cs_flags = CS_VERBOSE;
 	int rv;
 	unsigned long irq_flags;
 
@@ -4169,7 +4167,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	begin_state_change(device->resource, &irq_flags, cs_flags);
+	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		os = ns = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change(device->resource, &irq_flags);
@@ -4181,10 +4179,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
 	if ((ns.conn == L_CONNECTED || ns.conn == L_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
 		ns.disk = device->disk_state_from_metadata;
-	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED) {
+	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED)
 		device->resource->state_change_flags |= CS_HARD;
-		cs_flags |= CS_HARD;
-	}
 	if (ns.pdsk == D_CONSISTENT && drbd_suspended(device) && ns.conn == L_CONNECTED && os.conn < L_CONNECTED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
@@ -4197,7 +4193,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		conn_request_state(peer_device->connection, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
 		return -EIO;
 	}
-	_drbd_set_state(device, ns, cs_flags, NULL);
+	_drbd_set_state(device, ns);
 	ns = drbd_get_peer_device_state(peer_device, NEW);
 	rv = end_state_change(device->resource, &irq_flags);
 
