@@ -975,6 +975,9 @@ struct drbd_tconn {			/* is a resource from the config file */
 	void *int_dig_in;
 	void *int_dig_vv;
 
+	struct drbd_epoch *current_epoch;
+	spinlock_t epoch_lock;
+	unsigned int epochs;
 	enum write_ordering_e write_ordering;
 
 	struct drbd_thread receiver;
@@ -1087,9 +1090,6 @@ struct drbd_conf {
 	u64 *p_uuid;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
-	struct drbd_epoch *current_epoch;
-	spinlock_t epoch_lock;
-	unsigned int epochs;
 
 	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
 	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
