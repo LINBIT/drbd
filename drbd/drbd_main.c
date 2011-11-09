@@ -2193,7 +2193,6 @@ void drbd_init_set_defaults(struct drbd_conf *mdev)
 	init_waitqueue_head(&mdev->al_wait);
 	init_waitqueue_head(&mdev->seq_wait);
 
-	mdev->write_ordering = WO_bio_barrier;
 	mdev->resync_wenr = LC_FREE;
 	mdev->peer_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
 	mdev->local_max_bio_size = DRBD_MAX_BIO_SIZE_SAFE;
@@ -2686,6 +2685,8 @@ struct drbd_tconn *conn_create(const char *name, struct res_opts *res_opts)
 
 	if (!tl_init(tconn))
 		goto fail;
+
+	tconn->write_ordering = WO_bio_barrier;
 
 	tconn->cstate = C_STANDALONE;
 	mutex_init(&tconn->cstate_mutex);

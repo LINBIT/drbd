@@ -1523,8 +1523,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	new_disk_conf = NULL;
 	new_plan = NULL;
 
-	mdev->write_ordering = WO_bio_barrier;
-	drbd_bump_write_ordering(mdev, WO_bio_barrier);
+	drbd_bump_write_ordering(mdev->tconn, WO_bio_barrier);
 
 	if (drbd_md_test_flag(mdev->ldev, MDF_CRASHED_PRIMARY))
 		set_bit(CRASHED_PRIMARY, &mdev->flags);
