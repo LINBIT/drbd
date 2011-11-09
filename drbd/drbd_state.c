@@ -1657,9 +1657,9 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 		struct drbd_peer_device_state_change *peer_device_state_change =
 			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
 		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
+		union drbd_state new_state = state_change_word(state_change, n_device, n_connection, NEW);
 
-		drbd_send_state(peer_device,
-			state_change_word(state_change, n_device, n_connection, NEW));
+		drbd_send_state(peer_device, new_state);
 	}
 }
 

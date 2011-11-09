@@ -1183,32 +1183,15 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 	return drbd_send_command(peer_device, sock, P_SIZES, sizeof(*p), NULL, 0);
 }
 
-/**
- * drbd_send_current_state() - Sends the drbd state to the peer
- * @device:	DRBD device.
- */
 int drbd_send_current_state(struct drbd_peer_device *peer_device)
 {
-	struct drbd_socket *sock;
-	struct p_state *p;
-
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
-	if (!p)
-		return -EIO;
-	p->state = cpu_to_be32(drbd_get_peer_device_state(peer_device, NOW).i); /* Within the send mutex */
-	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
+	return drbd_send_state(peer_device, drbd_get_peer_device_state(peer_device, NOW));
 }
 
 /**
- * drbd_send_state() - After a state change, sends the new state to the peer
- * @peer_device:      DRBD peer device.
- * @state:     the state to send, not necessarily the current state.
- *
- * Each state change queues an "after_state_ch" work, which will eventually
- * send the resulting new state to the peer. If more state changes happen
- * between queuing and processing of the after_state_ch work, we still
- * want to send each intermediary state in the order it occurred.
+ * drbd_send_state() - Sends the drbd state to the peer
+ * @device:	DRBD device.
+ * @state:	state to send
  */
 int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
 {
