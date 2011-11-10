@@ -45,7 +45,6 @@ struct after_state_chg_work {
 STATIC int w_after_state_ch(struct drbd_work *w, int unused);
 STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 STATIC union drbd_state sanitize_state(struct drbd_device *device, union drbd_state ns);
@@ -426,12 +425,9 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (!cl_wide_st_chg(device, os, ns))
 		rv = SS_CW_NO_NEED;
 	if (rv == SS_UNKNOWN_ERROR) {
-		rv = is_allowed_soft_transition(device->resource);
-		if (rv == SS_SUCCESS) {
-			rv = is_valid_soft_transition(device->resource);
-			if (rv == SS_SUCCESS)
-				rv = SS_UNKNOWN_ERROR;  /* continue waiting */
-		}
+		rv = is_valid_soft_transition(device->resource);
+		if (rv == SS_SUCCESS)
+			rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 	}
 	abort_state_change(device->resource, &irq_flags);
 
@@ -473,9 +469,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	}
 
 	if (cl_wide_st_chg(device, os, ns)) {
-		rv = is_allowed_soft_transition(device->resource);
-		if (rv == SS_SUCCESS)
-			rv = is_valid_soft_transition(device->resource);
+		rv = is_valid_soft_transition(device->resource);
 		abort_state_change(device->resource, &irq_flags);
 
 		if (rv < SS_SUCCESS) {
@@ -662,7 +656,7 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 	}
 }
 
-static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *resource)
+static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
@@ -683,6 +677,20 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 		}
 	}
 
+	for_each_connection(connection, resource) {
+		enum drbd_conns *cstate = connection->cstate;
+
+		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
+			return SS_ALREADY_STANDALONE;
+
+		if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
+			return SS_NO_NET_CONFIG;
+
+		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
+			return SS_IN_TRANSIENT_STATE;
+
+	}
+
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
@@ -697,6 +705,12 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 
 		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
 			return SS_DEVICE_IN_USE;
+
+		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
+			return SS_IS_DISKLESS;
+
+		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
+			return SS_LOWER_THAN_OUTDATED;
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
@@ -747,63 +761,6 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 			if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
 			     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
 				return SS_CONNECTED_OUTDATES;
-		}
-	}
-
-	return SS_SUCCESS;
-}
-
-/**
- * is_allowed_soft_transition() - Returns an SS_ error code if ns is not valid
- *
- * Allows a device which went "bad" because of an involuntary state change (such
- * as a connection loss or disk failure) to go to a "valid" state through
- * several similar "invalid" states: it is not always possible to go to a valid
- * state directly.
- */
-static enum drbd_state_rv is_allowed_soft_transition(struct drbd_resource *resource)
-{
-	enum drbd_state_rv rv;
-
-	rcu_read_lock();
-	rv = __is_allowed_soft_transition(resource);
-	rcu_read_unlock();
-
-	return rv;
-}
-
-static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection;
-	struct drbd_device *device;
-	int vnr;
-
-	for_each_connection(connection, resource) {
-		enum drbd_conns *cstate = connection->cstate;
-
-		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
-			return SS_ALREADY_STANDALONE;
-
-		if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
-			return SS_NO_NET_CONFIG;
-
-		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
-			return SS_IN_TRANSIENT_STATE;
-
-	}
-
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		enum drbd_disk_state *disk_state = device->disk_state;
-		struct drbd_peer_device *peer_device;
-
-		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
-			return SS_IS_DISKLESS;
-
-		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
-			return SS_LOWER_THAN_OUTDATED;
-
-		for_each_peer_device(peer_device, device) {
-			enum drbd_repl_state *repl_state = peer_device->repl_state;
 
 			if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
 			    repl_state[OLD] > L_CONNECTED)
@@ -833,9 +790,17 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 }
 
 /**
- * is_valid_soft_transition() - Returns an SS_ error code if the state transition is not possible
- * This function limits state transitions that may be declined by DRBD. I.e.
- * user requests (aka soft transitions).
+ * is_valid_soft_transition() - Returns an SS_ error code if state[NEW] is not valid
+ *
+ * "Soft" transitions are voluntary state changes which drbd may decline, such
+ * as a user request to promote a resource to primary.  Opposed to that are
+ * involuntary or "hard" transitions like a network connection loss.
+ *
+ * When deciding if a "soft" transition should be allowed, "hard" transitions
+ * may already have forced the resource into a critical state.  It may take
+ * several "soft" transitions to get the resource back to normal.  To allow
+ * those, rather than checking if the desired new state is valid, we can only
+ * check if the desired new state is "at least as good" as the current state.
  */
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *resource)
 {
@@ -1119,14 +1084,8 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if (rv < SS_SUCCESS)
 		goto out;
 
-	if (!(flags & CS_HARD)) {
-		/*  pre-state-change checks ; only look at ns  */
-		/* See drbd_state_sw_errors in drbd_strings.c */
-
-		rv = is_allowed_soft_transition(resource);
-		if (rv == SS_SUCCESS)
-			rv = is_valid_soft_transition(resource);
-	}
+	if (!(flags & CS_HARD))
+		rv = is_valid_soft_transition(resource);
 
 	if (rv < SS_SUCCESS) {
 		if (flags & CS_VERBOSE)
@@ -1750,11 +1709,8 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 		drbd_set_new_peer_device_state(peer_device, ns);
 		rv = is_valid_transition(connection->resource);
 
-		if (rv >= SS_SUCCESS && !(flags & CS_HARD)) {
-			rv = is_allowed_soft_transition(connection->resource);
-			if (rv == SS_SUCCESS)
-				rv = is_valid_soft_transition(connection->resource);
-		}
+		if (rv >= SS_SUCCESS && !(flags & CS_HARD))
+			rv = is_valid_soft_transition(connection->resource);
 
 		if (rv < SS_SUCCESS) {
 			if (flags & CS_VERBOSE)
