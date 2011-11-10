@@ -69,7 +69,7 @@ STATIC int drbd_do_features(struct drbd_tconn *tconn);
 STATIC int drbd_do_auth(struct drbd_tconn *tconn);
 STATIC int drbd_disconnected(struct drbd_conf *mdev);
 
-STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *, struct drbd_epoch *, enum epoch_event);
+STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_tconn *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_work *, int);
 
 static struct drbd_epoch *previous_epoch(struct drbd_tconn *tconn, struct drbd_epoch *epoch)
@@ -1140,7 +1140,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_tconn *tconn, struct
 		}
 	}
 
-	return drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
+	return drbd_may_finish_epoch(tconn, epoch, EV_BARRIER_DONE);
 }
 
 STATIC int w_flush(struct drbd_work *w, int cancel)
@@ -1154,7 +1154,7 @@ STATIC int w_flush(struct drbd_work *w, int cancel)
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(mdev->tconn, epoch);
 
-	drbd_may_finish_epoch(mdev, epoch, EV_PUT |
+	drbd_may_finish_epoch(mdev->tconn, epoch, EV_PUT |
 			      (mdev->state.conn < C_CONNECTED ? EV_CLEANUP : 0));
 
 	return 0;
@@ -1166,7 +1166,7 @@ STATIC int w_flush(struct drbd_work *w, int cancel)
  * @epoch:	Epoch object.
  * @ev:		Epoch event.
  */
-STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
+STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_tconn *tconn,
 					       struct drbd_epoch *epoch,
 					       enum epoch_event ev)
 {
@@ -1174,7 +1174,6 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 	struct drbd_epoch *next_epoch;
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_STILL_LIVE;
-	struct drbd_tconn *tconn = mdev->tconn;
 
 	spin_lock(&tconn->epoch_lock);
 	do {
@@ -1264,14 +1263,14 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_conf *mdev,
 		if (fw) {
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
-			fw->w.mdev = mdev;
-			drbd_queue_work(&mdev->tconn->data.work, &fw->w);
+			fw->w.mdev = epoch->mdev;
+			drbd_queue_work(&tconn->data.work, &fw->w);
 		} else {
-			dev_warn(DEV, "Could not kmalloc a flush_work obj\n");
+			conn_warn(tconn, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 			/* That is not a recursion, only one level */
-			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE);
-			drbd_may_finish_epoch(mdev, epoch, EV_PUT);
+			drbd_may_finish_epoch(tconn, epoch, EV_BARRIER_DONE);
+			drbd_may_finish_epoch(tconn, epoch, EV_PUT);
 		}
 	}
 
@@ -1485,7 +1484,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		spin_unlock_irq(&mdev->tconn->req_lock);
 		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
 			drbd_al_complete_io(mdev, &peer_req->i);
-		drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + EV_CLEANUP);
+		drbd_may_finish_epoch(mdev->tconn, peer_req->epoch, EV_PUT + EV_CLEANUP);
 		drbd_free_peer_req(mdev, peer_req);
 		dev_err(DEV, "submit failed, triggering re-connect\n");
 		return err;
@@ -1507,7 +1506,7 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 
 	tconn->current_epoch->barrier_nr = p->barrier;
 	tconn->current_epoch->mdev = mdev;
-	rv = drbd_may_finish_epoch(mdev, tconn->current_epoch, EV_GOT_BARRIER_NR);
+	rv = drbd_may_finish_epoch(tconn, tconn->current_epoch, EV_GOT_BARRIER_NR);
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
@@ -1937,7 +1936,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 	if (peer_req->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(mdev->tconn, peer_req->epoch);
 		if (epoch)
-			drbd_may_finish_epoch(mdev, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
+			drbd_may_finish_epoch(mdev->tconn, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
 	}
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
@@ -1968,7 +1967,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 	} else
 		D_ASSERT(drbd_interval_empty(&peer_req->i));
 
-	drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
+	drbd_may_finish_epoch(mdev->tconn, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
 	return err;
 }
@@ -2412,7 +2411,7 @@ STATIC int receive_Data(struct drbd_tconn *tconn, struct packet_info *pi)
 		drbd_al_complete_io(mdev, &peer_req->i);
 
 out_interrupted:
-	drbd_may_finish_epoch(mdev, peer_req->epoch, EV_PUT + EV_CLEANUP);
+	drbd_may_finish_epoch(tconn, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(mdev);
 	drbd_free_peer_req(mdev, peer_req);
 	return err;
