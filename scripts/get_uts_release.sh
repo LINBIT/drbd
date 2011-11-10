@@ -1,6 +1,6 @@
 #!/bin/bash
 {
-    for x in include/linux/{utsrelease,version}.h;
+    for x in include/generated/utsrelease.h include/linux/{utsrelease,version}.h;
     do
         for d in $KDIR $O;
         do
