@@ -1187,8 +1187,13 @@ extern void drbd_gen_and_send_sync_uuid(struct drbd_conf *mdev);
 extern int drbd_send_sizes(struct drbd_conf *mdev, int trigger_reply, enum dds_flags flags);
 extern int _conn_send_state_req(struct drbd_tconn *, int vnr, enum drbd_packet cmd,
 				union drbd_state, union drbd_state);
-#define drbd_send_state(m) drbd_send_state_(m, __func__ , __LINE__ )
-extern int drbd_send_state_(struct drbd_conf *mdev, const char *func, unsigned int line);
+#define drbd_send_state(m, s) drbd_send_state_(m, s, __func__ , __LINE__ )
+#define drbd_send_current_state(m) drbd_send_current_state_(m, __func__ , __LINE__ )
+extern int drbd_send_state_(struct drbd_conf *mdev,
+               union drbd_state s,
+               const char *func, unsigned int line);
+extern int drbd_send_current_state_(struct drbd_conf *mdev,
+               const char *func, unsigned int line);
 extern int drbd_send_sync_param(struct drbd_conf *mdev);
 extern void drbd_send_b_ack(struct drbd_conf *mdev, u32 barrier_nr,
 			    u32 set_size);
