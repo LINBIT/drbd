@@ -1491,6 +1491,22 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	}
 }
 
+void conn_wait_active_ee_empty(struct drbd_tconn *tconn)
+{
+	struct drbd_conf *mdev;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		kref_get(&mdev->kref);
+		rcu_read_unlock();
+		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
+		kref_put(&mdev->kref, &drbd_minor_destroy);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+
 STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 {
 	struct drbd_conf *mdev;
@@ -1524,7 +1540,7 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 	case WO_drain_io:
 		if (rv == FE_STILL_LIVE) {
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &tconn->current_epoch->flags);
-			drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
+			conn_wait_active_ee_empty(tconn);
 			rv = drbd_flush_after_epoch(tconn, tconn->current_epoch);
 		}
 		if (rv == FE_RECYCLED)
@@ -1542,7 +1558,7 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 	if (!epoch) {
 		dev_warn(DEV, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &tconn->current_epoch->flags);
-		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
+		conn_wait_active_ee_empty(tconn);
 		if (issue_flush) {
 			rv = drbd_flush_after_epoch(tconn, tconn->current_epoch);
 			if (rv == FE_RECYCLED)
