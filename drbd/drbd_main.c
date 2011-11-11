@@ -1464,7 +1464,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 	struct bm_xfer_ctx c;
 	int err;
 
-	if (!expect(device->bitmap))
+	if (!expect(device, device->bitmap))
 		return false;
 
 	if (get_ldev(device)) {
@@ -2909,7 +2909,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		    idr_get_new_above(&connection->peer_devices, peer_device, vnr, &got))
 			goto out_no_peer_device;
 
-		if (!expect(got == vnr)) {
+		if (!expect(device, got == vnr)) {
 			idr_remove(&connection->peer_devices, got);
 			goto out_no_peer_device;
 		}

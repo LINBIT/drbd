@@ -1633,11 +1633,11 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		data_size -= dgs;
 	}
 
-	if (!expect(data_size != 0))
+	if (!expect(peer_device, data_size != 0))
 		return NULL;
-	if (!expect(IS_ALIGNED(data_size, 512)))
+	if (!expect(peer_device, IS_ALIGNED(data_size, 512)))
 		return NULL;
-	if (!expect(data_size <= DRBD_MAX_BIO_SIZE))
+	if (!expect(peer_device, data_size <= DRBD_MAX_BIO_SIZE))
 		return NULL;
 
 	/* even though we trust out peer,
@@ -1926,7 +1926,7 @@ static int w_restart_write(struct drbd_work *w, int cancel)
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	if (!expect(req->rq_state & RQ_POSTPONED)) {
+	if (!expect(device, req->rq_state & RQ_POSTPONED)) {
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 		return -EIO;
 	}
@@ -1954,7 +1954,7 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (req->rq_state & RQ_LOCAL_PENDING ||
 		    !(req->rq_state & RQ_POSTPONED))
 			continue;
-		if (expect(list_empty(&req->w.list))) {
+		if (expect(device, list_empty(&req->w.list))) {
 			req->device = device;
 			req->w.cb = w_restart_write;
 			drbd_queue_work(&device->resource->work, &req->w);

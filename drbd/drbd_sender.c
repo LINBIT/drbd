@@ -1410,7 +1410,7 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
 		if (resync_after == -1)
 			return 1;
 		odev = minor_to_mdev(resync_after);
-		if (!expect(odev))
+		if (!expect(device, odev))
 			return 1;
 		if ((peer_device->repl_state >= L_SYNC_SOURCE &&
 		     peer_device->repl_state <= L_PAUSED_SYNC_T) ||

@@ -1199,7 +1199,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 	}
 
-	if (!expect(new_disk_conf->resync_rate >= 1))
+	if (!expect(device, new_disk_conf->resync_rate >= 1))
 		new_disk_conf->resync_rate = 1;
 
 	enforce_disk_conf_limits(new_disk_conf);

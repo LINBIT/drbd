@@ -221,10 +221,10 @@ static inline int drbd_ratelimit(void)
  *
  * Unlike the assert macro, this macro returns a boolean result.
  */
-#define expect(exp) ({								\
+#define expect(x, exp) ({								\
 		bool _bool = (exp);						\
 		if (!_bool)							\
-			drbd_err(device, "ASSERTION %s FAILED in %s\n",		\
+			drbd_err(x, "ASSERTION %s FAILED in %s\n",		\
 			        #exp, __func__);				\
 		_bool;								\
 		})

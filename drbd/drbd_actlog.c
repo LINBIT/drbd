@@ -714,9 +714,9 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 	nr_sectors = drbd_get_capacity(device->this_bdev);
 	esector = sector + (size >> 9) - 1;
 
-	if (!expect(sector < nr_sectors))
+	if (!expect(device, sector < nr_sectors))
 		return;
-	if (!expect(esector < nr_sectors))
+	if (!expect(device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
 	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
@@ -782,9 +782,9 @@ int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 	nr_sectors = drbd_get_capacity(device->this_bdev);
 	esector = sector + (size >> 9) - 1;
 
-	if (!expect(sector < nr_sectors))
+	if (!expect(device, sector < nr_sectors))
 		goto out;
-	if (!expect(esector < nr_sectors))
+	if (!expect(device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
 	/* we set it out of sync,
@@ -1146,9 +1146,9 @@ void drbd_rs_failed_io(struct drbd_device *device, sector_t sector, int size)
 	nr_sectors = drbd_get_capacity(device->this_bdev);
 	esector = sector + (size >> 9) - 1;
 
-	if (!expect(sector < nr_sectors))
+	if (!expect(device, sector < nr_sectors))
 		return;
-	if (!expect(esector < nr_sectors))
+	if (!expect(device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
 	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
