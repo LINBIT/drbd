@@ -231,6 +231,7 @@ enum sanitize_state_warnings {
 	IMPLICITLY_UPGRADED_PDSK,
 };
 
+static void finish_state_change(struct drbd_resource *, struct completion *);
 STATIC int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
@@ -313,7 +314,7 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 	rcu_read_lock();
 }
 
-static enum drbd_state_rv __end_state_change(struct drbd_resource *resource)
+static enum drbd_state_rv __end_state_change(struct drbd_resource *resource, struct completion *done)
 {
 	enum drbd_state_rv rv = resource->state_change_rv;
 	struct drbd_connection *connection;
@@ -326,6 +327,8 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource)
 	}
 	if (rv < SS_SUCCESS)
 		goto out;
+
+	finish_state_change(resource, done);
 
 	resource->role[NOW] = resource->role[NEW];
 	resource->susp[NOW] = resource->susp[NEW];
@@ -366,7 +369,7 @@ void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_fl
 
 enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
 {
-	return __end_state_change(resource);
+	return __end_state_change(resource, NULL);
 }
 
 void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
@@ -377,10 +380,18 @@ void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags
 
 enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
+	struct completion __done, *done = NULL;
 	enum drbd_state_rv rv;
 
-	rv = __end_state_change(resource);
+	if (resource->state_change_flags & CS_WAIT_COMPLETE) {
+		done = &__done;
+		init_completion(done);
+	}
+	rv = __end_state_change(resource, done);
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	if (done && rv >= SS_SUCCESS &&
+	    expect(resource, current != resource->worker.task))
+		wait_for_completion(done);
 	return rv;
 }
 
@@ -635,12 +646,9 @@ STATIC enum drbd_state_rv
 drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	       union drbd_state val, enum chg_state_flags f)
 {
-	struct completion done;
 	unsigned long irq_flags;
 	union drbd_state os, ns;
 	enum drbd_state_rv rv;
-
-	init_completion(&done);
 
 	if (f & CS_SERIALIZE)
 		mutex_lock(&device->resource->state_mutex);
@@ -682,17 +690,12 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		}
 		begin_state_change(device->resource, &irq_flags, f);
 		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-		_drbd_set_state(device, ns, f, &done);
+		_drbd_set_state(device, ns, f, NULL);
 	} else {
-		_drbd_set_state(device, ns, f, &done);
+		_drbd_set_state(device, ns, f, NULL);
 	}
 
 	rv = end_state_change(device->resource, &irq_flags);
-
-	if (f & CS_WAIT_COMPLETE && rv == SS_SUCCESS) {
-		D_ASSERT(device, current != first_peer_device(device)->connection->sender.task);
-		wait_for_completion(&done);
-	}
 
 abort:
 	if (f & CS_SERIALIZE)
@@ -1515,7 +1518,6 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 out:
 	if (rv < SS_SUCCESS)
 		fail_state_change(resource, rv);
-	finish_state_change(resource, done);
 	return rv;
 }
 
@@ -2202,8 +2204,6 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 	}
 
 	conn_set_state(connection, mask, val, flags);
-
-	queue_after_state_change_work(connection->resource, NULL, GFP_ATOMIC);
 
 out:
 	if (rv < SS_SUCCESS)
