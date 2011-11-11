@@ -295,7 +295,8 @@
             <option>resync-after</option>, <option>al-extents</option>,
             <option>c-plan-ahead</option>, <option>c-fill-target</option>,
             <option>c-delay-target</option>, <option>c-max-rate</option>,
-            <option>c-min-rate</option>, <option>disk-timeout</option>.</para>
+            <option>c-min-rate</option>, <option>disk-timeout</option>,
+	    <option>read-balancing</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -835,6 +836,26 @@
 	      as the backing block device has finished all IO requests.</para>
 	      <para> The default value of is 0, which means that no timeout is enforced.
 	      The default unit is 100ms. This option is available since 8.3.12.
+	      </para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>
+            <option>read-balancing <replaceable>method</replaceable></option>
+          </term>
+          <listitem>
+            <indexterm significance="normal">
+              <primary>drbd.conf</primary>
+              <secondary>read-balancing</secondary>
+            </indexterm>
+	    <para>
+	      The supported <replaceable>methods</replaceable> for load balancing of
+	      read requests are <option>prefer-local</option>, <option>prefer-remote</option>,
+	      <option>round-robin</option>, <option>least-pending</option>
+	      and <option>when-congested-remote</option>.</para>
+	      <para> The default value of is <option>prefer-local</option>.
+	      This option is available since 8.4.1.
 	      </para>
           </listitem>
         </varlistentry>
