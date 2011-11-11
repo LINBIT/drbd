@@ -1287,7 +1287,7 @@ void drbd_bump_write_ordering(struct drbd_tconn *tconn, enum write_ordering_e wo
 	struct disk_conf *dc;
 	struct drbd_conf *mdev;
 	enum write_ordering_e pwo;
-	int vnr;
+	int vnr, i = 0;
 	static char *write_ordering_str[] = {
 		[WO_none] = "none",
 		[WO_drain_io] = "drain",
@@ -1299,6 +1299,8 @@ void drbd_bump_write_ordering(struct drbd_tconn *tconn, enum write_ordering_e wo
 	wo = min(pwo, wo);
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		if (i++ == 1 && wo == WO_bio_barrier)
+			wo = WO_bdev_flush; /* WO = barrier does not handle multiple volumes */
 		if (!get_ldev(mdev))
 			continue;
 		dc = rcu_dereference(mdev->ldev->disk_conf);
