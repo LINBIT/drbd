@@ -386,7 +386,7 @@ void _tl_restart(struct drbd_tconn *tconn, enum drbd_req_event what)
 					set_bit(CREATE_BARRIER, &tconn->flags);
 				}
 
-				drbd_queue_work(&tconn->data.work, &b->w);
+				drbd_queue_work(&tconn->sender_work, &b->w);
 			}
 			pn = &b->next;
 		} else {
@@ -2112,12 +2112,12 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 	if (mdev->state.pdsk >= D_INCONSISTENT && mdev->state.conn >= C_CONNECTED) {
 		D_ASSERT(mdev->state.role == R_PRIMARY);
 		if (test_and_clear_bit(UNPLUG_REMOTE, &mdev->flags)) {
-			/* add to the data.work queue,
+			/* add to the sender_work queue,
 			 * unless already queued.
 			 * XXX this might be a good addition to drbd_queue_work
 			 * anyways, to detect "double queuing" ... */
 			if (list_empty(&mdev->unplug_work.list))
-				drbd_queue_work(&mdev->tconn->data.work,
+				drbd_queue_work(&mdev->tconn->sender_work,
 						&mdev->unplug_work);
 		}
 	}
@@ -2268,8 +2268,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	D_ASSERT(list_empty(&mdev->read_ee));
 	D_ASSERT(list_empty(&mdev->net_ee));
 	D_ASSERT(list_empty(&mdev->resync_reads));
-	D_ASSERT(list_empty(&mdev->tconn->data.work.q));
-	D_ASSERT(list_empty(&mdev->tconn->meta.work.q));
+	D_ASSERT(list_empty(&mdev->tconn->sender_work.q));
 	D_ASSERT(list_empty(&mdev->resync_work.list));
 	D_ASSERT(list_empty(&mdev->unplug_work.list));
 	D_ASSERT(list_empty(&mdev->go_diskless.list));
@@ -2794,10 +2793,8 @@ struct drbd_tconn *conn_create(const char *name, struct res_opts *res_opts)
 	init_waitqueue_head(&tconn->ping_wait);
 	idr_init(&tconn->volumes);
 
-	drbd_init_workqueue(&tconn->data.work);
+	drbd_init_workqueue(&tconn->sender_work);
 	mutex_init(&tconn->data.mutex);
-
-	drbd_init_workqueue(&tconn->meta.work);
 	mutex_init(&tconn->meta.mutex);
 
 	drbd_thread_init(tconn, &tconn->receiver, drbdd_init, "receiver");
@@ -3459,7 +3456,7 @@ void drbd_go_diskless(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->state.disk == D_FAILED);
 	if (!test_and_set_bit(GO_DISKLESS, &mdev->flags))
-		drbd_queue_work(&mdev->tconn->data.work, &mdev->go_diskless);
+		drbd_queue_work(&mdev->tconn->sender_work, &mdev->go_diskless);
 }
 
 /**
@@ -3497,7 +3494,7 @@ void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 	set_bit(BITMAP_IO, &mdev->flags);
 	if (atomic_read(&mdev->ap_bio_cnt) == 0) {
 		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
-			drbd_queue_work(&mdev->tconn->data.work, &mdev->bm_io_work.w);
+			drbd_queue_work(&mdev->tconn->sender_work, &mdev->bm_io_work.w);
 	}
 	spin_unlock_irq(&mdev->tconn->req_lock);
 }
@@ -3555,7 +3552,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) data;
 
-	drbd_queue_work_front(&mdev->tconn->data.work, &mdev->md_sync_work);
+	drbd_queue_work_front(&mdev->tconn->sender_work, &mdev->md_sync_work);
 }
 
 STATIC int w_md_sync(struct drbd_work *w, int unused)

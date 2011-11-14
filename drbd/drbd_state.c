@@ -1098,7 +1098,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 		ascw->w.cb = w_after_state_ch;
 		ascw->w.mdev = mdev;
 		ascw->done = done;
-		drbd_queue_work(&mdev->tconn->data.work, &ascw->w);
+		drbd_queue_work(&mdev->tconn->sender_work, &ascw->w);
 	} else {
 		dev_err(DEV, "Could not kmalloc an ascw\n");
 	}
@@ -1772,7 +1772,7 @@ _conn_request_state(struct drbd_tconn *tconn, union drbd_state mask, union drbd_
 		acscw->w.cb = w_after_conn_state_ch;
 		kref_get(&tconn->kref);
 		acscw->w.tconn = tconn;
-		drbd_queue_work(&tconn->data.work, &acscw->w);
+		drbd_queue_work(&tconn->sender_work, &acscw->w);
 	} else {
 		conn_err(tconn, "Could not kmalloc an acscw\n");
 	}

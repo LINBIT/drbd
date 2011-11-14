@@ -1348,7 +1348,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_tconn *tconn,
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
 			fw->w.tconn = tconn;
-			drbd_queue_work(&tconn->data.work, &fw->w);
+			drbd_queue_work(&tconn->sender_work, &fw->w);
 		} else {
 			conn_warn(tconn, "Could not kmalloc a flush_work obj\n");
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
@@ -1557,7 +1557,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
-		drbd_queue_work(&mdev->tconn->data.work, &peer_req->w);
+		drbd_queue_work(&mdev->tconn->sender_work, &peer_req->w);
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
@@ -4692,7 +4692,7 @@ void conn_flush_workqueue(struct drbd_tconn *tconn)
 	barr.w.cb = w_prev_work_done;
 	barr.w.tconn = tconn;
 	init_completion(&barr.done);
-	drbd_queue_work(&tconn->data.work, &barr.w);
+	drbd_queue_work(&tconn->sender_work, &barr.w);
 	wait_for_completion(&barr.done);
 }
 
@@ -5424,7 +5424,7 @@ STATIC int got_OVResult(struct drbd_tconn *tconn, struct packet_info *pi)
 		if (w) {
 			w->cb = w_ov_finished;
 			w->mdev = mdev;
-			drbd_queue_work_front(&mdev->tconn->data.work, w);
+			drbd_queue_work(&mdev->tconn->sender_work, w);
 		} else {
 			dev_err(DEV, "kmalloc(w) failed.");
 			ov_out_of_sync_print(mdev);
