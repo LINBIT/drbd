@@ -559,25 +559,6 @@ static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *conne
 	return repl_state;
 }
 
-/**
- * cl_wide_st_chg() - true if the state change is a cluster wide one
- * @device:	DRBD device.
- * @os:		old (current) state.
- * @ns:		new (wanted) state.
- */
-STATIC int cl_wide_st_chg(struct drbd_device *device,
-			  union drbd_state os, union drbd_state ns)
-{
-	return (os.conn >= L_CONNECTED && ns.conn >= L_CONNECTED &&
-		 ((os.role != R_PRIMARY && ns.role == R_PRIMARY) ||
-		  (os.conn != L_STARTING_SYNC_T && ns.conn == L_STARTING_SYNC_T) ||
-		  (os.conn != L_STARTING_SYNC_S && ns.conn == L_STARTING_SYNC_S) ||
-		  (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))) ||
-		(os.conn >= L_CONNECTED && ns.conn == C_DISCONNECTING) ||
-		(os.conn == L_CONNECTED && ns.conn == L_VERIFY_S) ||
-		(os.conn == L_CONNECTED && ns.conn == L_STANDALONE);
-}
-
 static union drbd_state
 apply_mask_val(union drbd_state os, union drbd_state mask, union drbd_state val)
 {
@@ -602,42 +583,8 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 	return rv;
 }
 
-STATIC enum drbd_state_rv
-_req_st_cond(struct drbd_device *device, union drbd_state mask,
-	     union drbd_state val, enum chg_state_flags f)
-{
-	union drbd_state os, ns;
-	unsigned long irq_flags;
-	enum drbd_state_rv rv;
-
-	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &first_peer_device(device)->connection->flags))
-		return SS_CW_SUCCESS;
-
-	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &first_peer_device(device)->connection->flags))
-		return SS_CW_FAILED_BY_PEER;
-
-	begin_state_change(device->resource, &irq_flags, f);
-	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
-	ns = sanitize_state(device, apply_mask_val(os, mask, val));
-	drbd_set_new_peer_device_state(first_peer_device(device), ns);
-	rv = is_valid_transition(device->resource);
-	if (rv == SS_SUCCESS)
-		rv = SS_UNKNOWN_ERROR;  /* continue waiting */
-
-	if (!cl_wide_st_chg(device, os, ns))
-		rv = SS_CW_NO_NEED;
-	if (rv == SS_UNKNOWN_ERROR) {
-		rv = is_valid_soft_transition(device->resource);
-		if (rv == SS_SUCCESS)
-			rv = SS_UNKNOWN_ERROR;  /* continue waiting */
-	}
-	abort_state_change(device->resource, &irq_flags);
-
-	return rv;
-}
-
 /**
- * drbd_req_state() - Perform an eventually cluster wide state change
+ * drbd_req_state() - Perform a state change
  * @device:	DRBD device.
  * @mask:	mask of state bits to change.
  * @val:	value of new state bits.
@@ -664,41 +611,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		abort_state_change(device->resource, &irq_flags);
 		goto abort;
 	}
-
-	if (cl_wide_st_chg(device, os, ns)) {
-		struct drbd_connection *connection = peer_device->connection;
-
-		rv = is_valid_soft_transition(device->resource);
-		abort_state_change(device->resource, &irq_flags);
-
-		if (rv < SS_SUCCESS) {
-			if (f & CS_VERBOSE)
-				print_st_err(device, os, ns, rv);
-			goto abort;
-		}
-
-		rv = SS_CW_FAILED_BY_PEER;
-		if (f & CS_SERIALIZE)
-			mutex_lock(&connection->resource->state_mutex);
-		if (!conn_send_state_req(connection, device->vnr, mask, val)) {
-			wait_event(device->resource->state_wait,
-				(rv = _req_st_cond(device, mask, val, f)) != SS_UNKNOWN_ERROR);
-		}
-		if (f & CS_SERIALIZE)
-			mutex_unlock(&connection->resource->state_mutex);
-
-		if (rv < SS_SUCCESS) {
-			if (f & CS_VERBOSE)
-				print_st_err(device, os, ns, rv);
-			goto abort;
-		}
-		begin_state_change(device->resource, &irq_flags, f);
-		ns = apply_mask_val(drbd_get_peer_device_state(peer_device, NOW), mask, val);
-		_drbd_set_state(device, ns);
-	} else {
-		_drbd_set_state(device, ns);
-	}
-
+	_drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 abort:
@@ -2124,60 +2037,6 @@ static void conn_set_state(struct drbd_connection *connection,
 	rcu_read_unlock();
 }
 
-static enum drbd_state_rv
-_conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-	      enum chg_state_flags f)
-{
-	unsigned long irq_flags;
-	enum drbd_state_rv rv;
-
-	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &connection->flags))
-		return SS_CW_SUCCESS;
-
-	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
-		return SS_CW_FAILED_BY_PEER;
-
-	begin_state_change(connection->resource, &irq_flags, f);
-	rv = connection->cstate[NOW] != C_CONNECTED ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
-
-	if (rv == SS_UNKNOWN_ERROR)
-		rv = conn_is_valid_transition(connection, mask, val, 0);
-
-	if (rv == SS_SUCCESS)
-		rv = SS_UNKNOWN_ERROR; /* continue waiting */
-	if (rv < SS_SUCCESS)
-		fail_state_change(connection->resource, rv);
-	abort_state_change(connection->resource, &irq_flags);
-
-	return rv;
-}
-
-static enum drbd_state_rv
-conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-	     enum chg_state_flags f, unsigned long *irq_flags)
-{
-	enum drbd_state_rv rv;
-
-	abort_state_change(connection->resource, irq_flags);
-	mutex_lock(&connection->resource->state_mutex);
-
-	if (conn_send_state_req(connection, -1, mask, val)) {
-		rv = SS_CW_FAILED_BY_PEER;
-		/* if (f & CS_VERBOSE)
-		   print_st_err(device, os, ns, rv); */
-		goto abort;
-	}
-
-	wait_event(connection->ping_wait,
-		(rv = _conn_rq_cond(connection, mask, val, f)) != SS_UNKNOWN_ERROR);
-
-abort:
-	mutex_unlock(&connection->resource->state_mutex);
-	begin_state_change(connection->resource, irq_flags, f);
-
-	return rv;
-}
-
 enum drbd_state_rv
 _conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
 		    enum chg_state_flags flags, unsigned long *irq_flags)
@@ -2192,13 +2051,6 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 	rv = conn_is_valid_transition(connection, mask, val, flags);
 	if (rv < SS_SUCCESS)
 		goto out;
-
-	if (oc == C_CONNECTED && val.conn == C_DISCONNECTING &&
-	    !(flags & (CS_LOCAL_ONLY | CS_HARD))) {
-		rv = conn_cl_wide(connection, mask, val, flags, irq_flags);
-		if (rv < SS_SUCCESS)
-			goto out;
-	}
 
 	conn_set_state(connection, mask, val, flags);
 
