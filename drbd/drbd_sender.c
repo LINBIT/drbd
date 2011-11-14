@@ -831,6 +831,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	union drbd_state os, ns;
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
+	unsigned long irq_flags;
 
 	/* Remove all elements from the resync LRU. Since future actions
 	 * might set bits in the (main) bitmap, then the entries in the
@@ -867,7 +868,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 	ping_peer(device);
 
-	spin_lock_irq(&device->resource->req_lock);
+	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 	os = drbd_get_peer_device_state(peer_device, NOW);
 
 	verify_done = (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T);
@@ -956,7 +957,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 	_drbd_set_state(device, ns, CS_VERBOSE, NULL);
 out_unlock:
-	spin_unlock_irq(&device->resource->req_lock);
+	end_state_change(device->resource, &irq_flags);
 	put_ldev(device);
 out:
 	peer_device->rs_total  = 0;
@@ -1441,9 +1442,10 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
 		    odev->disk_state == D_DISKLESS)
 			continue;
-		if (!_drbd_may_sync_now(odev))
+		if (!_drbd_may_sync_now(odev)) {
 			rv |= (__drbd_set_state(_NS(odev, aftr_isp, 1), CS_HARD, NULL)
 			       != SS_NOTHING_TO_DO);
+		}
 	}
 	rcu_read_unlock();
 
@@ -1467,10 +1469,11 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
-			if (_drbd_may_sync_now(odev))
+			if (_drbd_may_sync_now(odev)) {
 				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
 							CS_HARD, NULL)
 				       != SS_NOTHING_TO_DO) ;
+			}
 		}
 	}
 	rcu_read_unlock();
@@ -1479,15 +1482,23 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 
 void resume_next_sg(struct drbd_device *device)
 {
+	unsigned long irq_flags;
+
 	write_lock_irq(&global_state_lock);
+	begin_state_change(device->resource, &irq_flags, CS_HARD);
 	_drbd_resume_next(device);
+	end_state_change(device->resource, &irq_flags);
 	write_unlock_irq(&global_state_lock);
 }
 
 void suspend_other_sg(struct drbd_device *device)
 {
+	unsigned long irq_flags;
+
 	write_lock_irq(&global_state_lock);
+	begin_state_change(device->resource, &irq_flags, CS_HARD);
 	_drbd_pause_after(device);
+	end_state_change(device->resource, &irq_flags);
 	write_unlock_irq(&global_state_lock);
 }
 
@@ -1526,8 +1537,12 @@ void drbd_resync_after_changed(struct drbd_device *device)
 	int changes;
 
 	do {
+		unsigned long irq_flags;
+
+		begin_state_change(device->resource, &irq_flags, CS_HARD);
 		changes  = _drbd_pause_after(device);
 		changes |= _drbd_resume_next(device);
+		end_state_change(device->resource, &irq_flags);
 	} while (changes);
 }
 
@@ -1588,6 +1603,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
 	union drbd_state ns;
+	unsigned long irq_flags;
 	int r;
 
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
@@ -1655,6 +1671,8 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		return;
 	}
 
+	/* FIXME: Note that req_lock was not taken here before! */
+	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 	ns = drbd_get_peer_device_state(peer_device, NOW);
 
 	ns.aftr_isp = !_drbd_may_sync_now(device);
@@ -1666,8 +1684,9 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	else /* side == L_SYNC_SOURCE */
 		ns.pdsk = D_INCONSISTENT;
 
-	r = __drbd_set_state(device, ns, CS_VERBOSE, NULL);
-	ns = drbd_get_peer_device_state(peer_device, NOW);
+	__drbd_set_state(device, ns, CS_VERBOSE, NULL);
+	ns = drbd_get_peer_device_state(peer_device, NEW);
+	r = end_state_change(device->resource, &irq_flags);
 
 	if (ns.conn < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;
@@ -1675,6 +1694,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	if (r == SS_SUCCESS) {
 		unsigned long tw = drbd_bm_total_weight(device);
 		unsigned long now = jiffies;
+		unsigned long irq_flags;
 		int i;
 
 		peer_device->rs_failed    = 0;
@@ -1688,7 +1708,9 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 			peer_device->rs_mark_left[i] = tw;
 			peer_device->rs_mark_time[i] = now;
 		}
+		begin_state_change(device->resource, &irq_flags, CS_HARD);
 		_drbd_pause_after(device);
+		end_state_change(device->resource, &irq_flags);
 	}
 	write_unlock_irq(&global_state_lock);
 

@@ -2275,7 +2275,9 @@ static int handle_write_conflicts(struct drbd_device *device,
 				 */
 				err = drbd_wait_misc(device, &req->i);
 				if (err) {
-					_conn_request_state(connection, NS(conn, C_TIMEOUT), CS_HARD);
+					begin_state_change_locked(connection->resource, CS_HARD);
+					_conn_request_state(connection, NS(conn, C_TIMEOUT), CS_HARD, NULL);
+					end_state_change_locked(connection->resource);
 					fail_postponed_requests(device, sector, size);
 					goto out;
 				}
@@ -3924,14 +3926,19 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			device->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED &&
 			(p_uuid[UI_FLAGS] & 8);
 		if (skip_initial_sync) {
+			unsigned long irq_flags;
+
 			drbd_info(device, "Accepted new current UUID, preparing to skip initial sync\n");
 			drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
 					"clear_n_write from receive_uuids",
 					BM_LOCKED_TEST_ALLOWED, NULL);
 			_drbd_uuid_set(device, UI_CURRENT, p_uuid[UI_CURRENT]);
 			_drbd_uuid_set(device, UI_BITMAP, 0);
+			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+			/* FIXME: Note that req_lock was not taken here before! */
 			_drbd_set_state(_NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
 					CS_VERBOSE, NULL);
+			end_state_change(device->resource, &irq_flags);
 			drbd_md_sync(device);
 			updated_uuids = 1;
 		}
@@ -4053,8 +4060,9 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	struct p_state *p = pi->data;
 	union drbd_state os, ns, peer_state;
 	enum drbd_disk_state real_peer_disk;
-	enum chg_state_flags cs_flags;
+	enum chg_state_flags cs_flags = CS_VERBOSE;
 	int rv;
+	unsigned long irq_flags;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -4070,9 +4078,9 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
- retry:
 	os = ns = drbd_get_peer_device_state(peer_device, NOW);
 	spin_unlock_irq(&device->resource->req_lock);
+ retry:
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * transitions from D_INCONSISTENT to D_UP_TO_DATE. For empty (0 bits
@@ -4161,21 +4169,27 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	spin_lock_irq(&device->resource->req_lock);
-	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i)
+	begin_state_change(device->resource, &irq_flags, cs_flags);
+	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i) {
+		os = ns = drbd_get_peer_device_state(peer_device, NOW);
+		abort_state_change(device->resource, &irq_flags);
 		goto retry;
+	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	ns.peer = peer_state.role;
 	ns.pdsk = real_peer_disk;
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
 	if ((ns.conn == L_CONNECTED || ns.conn == L_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
 		ns.disk = device->new_state_tmp.disk;
-	cs_flags = CS_VERBOSE | (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED ? 0 : CS_HARD);
+	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED) {
+		device->resource->state_change_flags |= CS_HARD;
+		cs_flags |= CS_HARD;
+	}
 	if (ns.pdsk == D_CONSISTENT && drbd_suspended(device) && ns.conn == L_CONNECTED && os.conn < L_CONNECTED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
 		   for temporary network outages! */
-		spin_unlock_irq(&device->resource->req_lock);
+		abort_state_change(device->resource, &irq_flags);
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_clear(peer_device->connection);
 		drbd_uuid_new_current(device);
@@ -4183,9 +4197,9 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		conn_request_state(peer_device->connection, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
 		return -EIO;
 	}
-	rv = _drbd_set_state(device, ns, cs_flags, NULL);
-	ns = drbd_get_peer_device_state(peer_device, NOW);
-	spin_unlock_irq(&device->resource->req_lock);
+	_drbd_set_state(device, ns, cs_flags, NULL);
+	ns = drbd_get_peer_device_state(peer_device, NEW);
+	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS) {
 		conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
@@ -4654,6 +4668,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	enum drbd_conns oc;
+	unsigned long irq_flags;
 	int vnr;
 
 	if (connection->cstate[NOW] == C_STANDALONE)
@@ -4684,12 +4699,11 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	if (connection->resource->role[NOW] == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
 
-	spin_lock_irq(&connection->resource->req_lock);
+	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED)
-		_conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
-
-	spin_unlock_irq(&connection->resource->req_lock);
+		_conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE, &irq_flags);
+	end_state_change(connection->resource, &irq_flags);
 
 	if (oc == C_DISCONNECTING)
 		conn_request_state(connection, NS(conn, C_STANDALONE), CS_VERBOSE | CS_HARD);

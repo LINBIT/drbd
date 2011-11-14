@@ -89,7 +89,7 @@ extern void print_st_err(struct drbd_device *, union drbd_state,
 
 enum drbd_state_rv
 _conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-		    enum chg_state_flags flags);
+		    enum chg_state_flags flags, unsigned long *irq_flags);
 
 enum drbd_state_rv
 conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,

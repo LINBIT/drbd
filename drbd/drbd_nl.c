@@ -488,6 +488,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	enum drbd_fencing_policy fencing_policy;
 	char *ex_to_string;
 	int r;
+	unsigned long irq_flags;
 
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
@@ -559,10 +560,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	   conn_request_state(connection, mask, val, CS_VERBOSE);
 	   here, because we might were able to re-establish the connection in the
 	   meantime. */
-	spin_lock_irq(&connection->resource->req_lock);
+	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	if (connection->cstate[NOW] < C_CONNECTED)
-		_conn_request_state(connection, mask, val, CS_VERBOSE);
-	spin_unlock_irq(&connection->resource->req_lock);
+		_conn_request_state(connection, mask, val, CS_VERBOSE, &irq_flags);
+	end_state_change(connection->resource, &irq_flags);
 
 	return conn_highest_pdsk(connection) <= D_OUTDATED;
 }
@@ -1294,6 +1295,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
 	struct drbd_peer_device *peer_device;
+	unsigned long irq_flags;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1586,7 +1588,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (_drbd_bm_total_weight(device) == drbd_bm_bits(device))
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
-	spin_lock_irq(&device->resource->req_lock);
+	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = os;
 	/* If MDF_CONSISTENT is not set go into inconsistent state,
@@ -1631,8 +1633,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		device->p_uuid = NULL;
 	}
 
-	rv = _drbd_set_state(device, ns, CS_VERBOSE, NULL);
-	spin_unlock_irq(&device->resource->req_lock);
+	_drbd_set_state(device, ns, CS_VERBOSE, NULL);
+	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)
 		goto force_diskless_dec;
@@ -2399,10 +2401,12 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
 
 	while (retcode == SS_NEED_CONNECTION) {
-		spin_lock_irq(&device->resource->req_lock);
+		unsigned long irq_flags;
+
+		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-			retcode = _drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
-		spin_unlock_irq(&device->resource->req_lock);
+			_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
+		retcode = end_state_change(device->resource, &irq_flags);
 
 		if (retcode != SS_NEED_CONNECTION)
 			break;
@@ -3265,13 +3269,15 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_IO_MD_DISK;
 		}
 		if (skip_initial_sync) {
+			unsigned long irq_flags;
+
 			drbd_send_uuids_skip_initial_sync(first_peer_device(device));
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
-			spin_lock_irq(&device->resource->req_lock);
+			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			_drbd_set_state(_NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE),
 					CS_VERBOSE, NULL);
-			spin_unlock_irq(&device->resource->req_lock);
+			end_state_change(device->resource, &irq_flags);
 		}
 	}
 

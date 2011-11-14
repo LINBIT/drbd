@@ -330,14 +330,14 @@ enum drbd_state_rv
 drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 		  union drbd_state mask, union drbd_state val)
 {
-	unsigned long flags;
+	unsigned long irq_flags;
 	union drbd_state ns;
 	enum drbd_state_rv rv;
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+	begin_state_change(device->resource, &irq_flags, f);
 	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-	rv = _drbd_set_state(device, ns, f, NULL);
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	_drbd_set_state(device, ns, f, NULL);
+	rv = end_state_change(device->resource, &irq_flags);
 
 	return rv;
 }
@@ -393,7 +393,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	       union drbd_state val, enum chg_state_flags f)
 {
 	struct completion done;
-	unsigned long flags;
+	unsigned long irq_flags;
 	union drbd_state os, ns;
 	enum drbd_state_rv rv;
 
@@ -402,12 +402,12 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	if (f & CS_SERIALIZE)
 		mutex_lock(&device->resource->state_mutex);
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+	begin_state_change(device->resource, &irq_flags, f);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS) {
-		spin_unlock_irqrestore(&device->resource->req_lock, flags);
+		abort_state_change(device->resource, &irq_flags);
 		goto abort;
 	}
 
@@ -415,7 +415,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		rv = is_allowed_soft_transition(device, os, ns);
 		if (rv == SS_SUCCESS)
 			rv = is_valid_soft_transition(os, ns);
-		spin_unlock_irqrestore(&device->resource->req_lock, flags);
+		abort_state_change(device->resource, &irq_flags);
 
 		if (rv < SS_SUCCESS) {
 			if (f & CS_VERBOSE)
@@ -438,14 +438,14 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 				print_st_err(device, os, ns, rv);
 			goto abort;
 		}
-		spin_lock_irqsave(&device->resource->req_lock, flags);
+		begin_state_change(device->resource, &irq_flags, f);
 		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-		rv = _drbd_set_state(device, ns, f, &done);
+		_drbd_set_state(device, ns, f, &done);
 	} else {
-		rv = _drbd_set_state(device, ns, f, &done);
+		_drbd_set_state(device, ns, f, &done);
 	}
 
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	rv = end_state_change(device->resource, &irq_flags);
 
 	if (f & CS_WAIT_COMPLETE && rv == SS_SUCCESS) {
 		D_ASSERT(device, current != first_peer_device(device)->connection->sender.task);
@@ -1004,7 +1004,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS)
-		return rv;
+		goto out;
 
 	if (!(flags & CS_HARD)) {
 		/*  pre-state-change checks ; only look at ns  */
@@ -1018,7 +1018,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	if (rv < SS_SUCCESS) {
 		if (flags & CS_VERBOSE)
 			print_st_err(device, os, ns, rv);
-		return rv;
+		goto out;
 	}
 
 	drbd_pr_state_change(device, os, ns, flags);
@@ -1038,17 +1038,17 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	    (os.disk != D_DISKLESS && ns.disk == D_DISKLESS))
 		atomic_inc(&device->local_cnt);
 
-	device->disk_state[NOW] = ns.disk;
-	peer_device->resync_susp_user[NOW] = ns.user_isp;
-	peer_device->resync_susp_peer[NOW] = ns.peer_isp;
-	peer_device->resync_susp_dependency[NOW] = ns.aftr_isp;
-	peer_device->repl_state[NOW] = max_t(unsigned, ns.conn, L_STANDALONE);
-	peer_device->connection->peer_role[NOW] = ns.peer;
-	resource->role[NOW] = ns.role;
-	resource->susp[NOW] = ns.susp;
-	resource->susp_nod[NOW] = ns.susp_nod;
-	resource->susp_fen[NOW] = ns.susp_fen;
-	peer_device->disk_state[NOW] = ns.pdsk;
+	device->disk_state[NEW] = ns.disk;
+	peer_device->resync_susp_user[NEW] = ns.user_isp;
+	peer_device->resync_susp_peer[NEW] = ns.peer_isp;
+	peer_device->resync_susp_dependency[NEW] = ns.aftr_isp;
+	peer_device->repl_state[NEW] = max_t(unsigned, ns.conn, L_STANDALONE);
+	peer_device->connection->peer_role[NEW] = ns.peer;
+	resource->role[NEW] = ns.role;
+	resource->susp[NEW] = ns.susp;
+	resource->susp_nod[NEW] = ns.susp_nod;
+	resource->susp_fen[NEW] = ns.susp_fen;
+	peer_device->disk_state[NEW] = ns.pdsk;
 
 	if (os.disk == D_ATTACHING && ns.disk >= D_NEGOTIATING)
 		drbd_print_uuids(device, "attached to UUIDs");
@@ -1114,18 +1114,18 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		mdf &= ~MDF_AL_CLEAN;
 		if (test_bit(CRASHED_PRIMARY, &device->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
-		if (device->resource->role[NOW] == R_PRIMARY ||
-		    (peer_device->disk_state[NOW] < D_INCONSISTENT &&
+		if (device->resource->role[NEW] == R_PRIMARY ||
+		    (peer_device->disk_state[NEW] < D_INCONSISTENT &&
 		     highest_peer_role(device->resource) == R_PRIMARY))
 			mdf |= MDF_PRIMARY_IND;
-		if (peer_device->repl_state[NOW] > L_STANDALONE)
+		if (peer_device->repl_state[NEW] > L_STANDALONE)
 			mdf |= MDF_CONNECTED_IND;
-		if (device->disk_state[NOW] > D_INCONSISTENT)
+		if (device->disk_state[NEW] > D_INCONSISTENT)
 			mdf |= MDF_CONSISTENT;
-		if (device->disk_state[NOW] > D_OUTDATED)
+		if (device->disk_state[NEW] > D_OUTDATED)
 			mdf |= MDF_WAS_UP_TO_DATE;
-		if (peer_device->disk_state[NOW] <= D_OUTDATED &&
-		    peer_device->disk_state[NOW] >= D_INCONSISTENT)
+		if (peer_device->disk_state[NEW] <= D_OUTDATED &&
+		    peer_device->disk_state[NEW] >= D_INCONSISTENT)
 			mdf |= MDF_PEER_OUT_DATED;
 		if (mdf != device->ldev->md.flags) {
 			device->ldev->md.flags = mdf;
@@ -1171,6 +1171,9 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		drbd_err(device, "Could not kmalloc an ascw\n");
 	}
 
+out:
+	if (rv < SS_SUCCESS)
+		fail_state_change(resource, rv);
 	return rv;
 }
 
@@ -1273,10 +1276,12 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 			what = RESTART_FROZEN_DISK_IO;
 
 		if (what != NOTHING) {
-			spin_lock_irq(&device->resource->req_lock);
+			unsigned long irq_flags;
+
+			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			_tl_restart(first_peer_device(device)->connection, what);
 			_drbd_set_state(_NS(device, susp_nod, 0), CS_VERBOSE, NULL);
-			spin_unlock_irq(&device->resource->req_lock);
+			end_state_change(device->resource, &irq_flags);
 		}
 	}
 
@@ -1568,19 +1573,22 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 		}
 		/* case2: The connection was established again: */
 		if (ns_min.conn >= L_CONNECTED) {
+			unsigned long irq_flags;
+			enum drbd_state_rv rv;
+
 			rcu_read_lock();
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				struct drbd_device *device = peer_device->device;
 				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
 			rcu_read_unlock();
-			spin_lock_irq(&connection->resource->req_lock);
+			begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 			_tl_restart(connection, RESEND);
 			_conn_request_state(connection,
 					    (union drbd_state) { { .susp_fen = 1 } },
 					    (union drbd_state) { { .susp_fen = 0 } },
-					    CS_VERBOSE);
-			spin_unlock_irq(&connection->resource->req_lock);
+					    CS_VERBOSE, &irq_flags);
+			rv = end_state_change(connection->resource, &irq_flags);
 		}
 	}
 	kref_put(&connection->kref, drbd_destroy_connection);
@@ -1672,7 +1680,7 @@ static void conn_set_state(struct drbd_connection *connection,
 	int vnr, number_of_volumes = 0;
 
 	if (mask.conn == C_MASK)
-		connection->cstate[NOW] = min_t(unsigned, val.conn, C_CONNECTED);
+		connection->cstate[NEW] = min_t(unsigned, val.conn, C_CONNECTED);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1689,11 +1697,11 @@ static void conn_set_state(struct drbd_connection *connection,
 		if (rv < SS_SUCCESS)
 			BUG();
 
-		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state[NOW], ns_max.disk);
-		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state[NOW], ns_max.pdsk);
+		ns_max.disk = max_t(enum drbd_disk_state, device->disk_state[NEW], ns_max.disk);
+		ns_max.pdsk = max_t(enum drbd_disk_state, peer_device->disk_state[NEW], ns_max.pdsk);
 
-		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state[NOW], ns_min.disk);
-		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state[NOW], ns_min.pdsk);
+		ns_min.disk = min_t(enum drbd_disk_state, device->disk_state[NEW], ns_min.disk);
+		ns_min.pdsk = min_t(enum drbd_disk_state, peer_device->disk_state[NEW], ns_min.pdsk);
 	}
 	rcu_read_unlock();
 
@@ -1702,12 +1710,12 @@ static void conn_set_state(struct drbd_connection *connection,
 		ns_min.pdsk = ns_max.pdsk = D_UNKNOWN;
 	}
 
-	ns_min.peer = ns_max.peer = connection->peer_role[NOW];
-	ns_min.role = ns_max.role = connection->resource->role[NOW];
-	ns_min.conn = ns_max.conn = connection->cstate[NOW];
-	ns_min.susp = ns_max.susp = connection->resource->susp[NOW];
-	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod[NOW];
-	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen[NOW];
+	ns_min.peer = ns_max.peer = connection->peer_role[NEW];
+	ns_min.role = ns_max.role = connection->resource->role[NEW];
+	ns_min.conn = ns_max.conn = connection->cstate[NEW];
+	ns_min.susp = ns_max.susp = connection->resource->susp[NEW];
+	ns_min.susp_nod = ns_max.susp_nod = connection->resource->susp_nod[NEW];
+	ns_min.susp_fen = ns_max.susp_fen = connection->resource->susp_fen[NEW];
 
 	*pns_min = ns_min;
 	*pns_max = ns_max;
@@ -1740,11 +1748,11 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 
 static enum drbd_state_rv
 conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-	     enum chg_state_flags f)
+	     enum chg_state_flags f, unsigned long *irq_flags)
 {
 	enum drbd_state_rv rv;
 
-	spin_unlock_irq(&connection->resource->req_lock);
+	abort_state_change(connection->resource, irq_flags);
 	mutex_lock(&connection->resource->state_mutex);
 
 	if (conn_send_state_req(connection, mask, val)) {
@@ -1759,33 +1767,33 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 
 abort:
 	mutex_unlock(&connection->resource->state_mutex);
-	spin_lock_irq(&connection->resource->req_lock);
+	begin_state_change(connection->resource, irq_flags, f);
 
 	return rv;
 }
 
 enum drbd_state_rv
 _conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-		    enum chg_state_flags flags)
+		    enum chg_state_flags flags, unsigned long *irq_flags)
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct after_conn_state_chg_work *acscw;
-	enum drbd_conns oc = connection->cstate[NOW];
+	enum drbd_conns oc = connection->cstate[NEW];
 	union drbd_state ns_max, ns_min, os;
 
 	rv = is_valid_conn_transition(oc, val.conn);
 	if (rv < SS_SUCCESS)
-		goto abort;
+		goto out;
 
 	rv = conn_is_valid_transition(connection, mask, val, flags);
 	if (rv < SS_SUCCESS)
-		goto abort;
+		goto out;
 
 	if (oc == C_CONNECTED && val.conn == C_DISCONNECTING &&
 	    !(flags & (CS_LOCAL_ONLY | CS_HARD))) {
-		rv = conn_cl_wide(connection, mask, val, flags);
+		rv = conn_cl_wide(connection, mask, val, flags, irq_flags);
 		if (rv < SS_SUCCESS)
-			goto abort;
+			goto out;
 	}
 
 	conn_old_common_state(connection, &os, &flags);
@@ -1807,7 +1815,9 @@ _conn_request_state(struct drbd_connection *connection, union drbd_state mask, u
 		drbd_err(connection, "Could not kmalloc an acscw\n");
 	}
 
-abort:
+out:
+	if (rv < SS_SUCCESS)
+		fail_state_change(connection->resource, rv);
 	return rv;
 }
 
@@ -1815,11 +1825,12 @@ enum drbd_state_rv
 conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
 		   enum chg_state_flags flags)
 {
+	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 
-	spin_lock_irq(&connection->resource->req_lock);
-	rv = _conn_request_state(connection, mask, val, flags);
-	spin_unlock_irq(&connection->resource->req_lock);
+	begin_state_change(connection->resource, &irq_flags, flags);
+	_conn_request_state(connection, mask, val, flags, &irq_flags);
+	rv = end_state_change(connection->resource, &irq_flags);
 
 	return rv;
 }

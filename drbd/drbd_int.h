@@ -1595,8 +1595,11 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 		if (!forcedetach) {
 			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
-			if (device->disk_state[NOW] > D_INCONSISTENT)
+			if (device->disk_state[NOW] > D_INCONSISTENT) {
+				begin_state_change_locked(device->resource, CS_HARD);
 				_drbd_set_state(_NS(device, disk, D_INCONSISTENT), CS_HARD, NULL);
+				end_state_change_locked(device->resource);
+			}
 			break;
 		}
 		/* NOTE fall through to detach case if forcedetach set */
@@ -1604,7 +1607,9 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	case EP_CALL_HELPER:
 		set_bit(WAS_IO_ERROR, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {
+			begin_state_change_locked(device->resource, CS_HARD);
 			_drbd_set_state(_NS(device, disk, D_FAILED), CS_HARD, NULL);
+			end_state_change_locked(device->resource);
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
 		}

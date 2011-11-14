@@ -819,6 +819,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	int ret = 0;
 	int congested = 0;
 	enum drbd_on_congestion on_congestion;
+	unsigned long irq_flags;
 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
@@ -927,10 +928,13 @@ allocate_barrier:
 	if (rw == WRITE) {
 		err = complete_conflicting_writes(device, sector, size);
 		if (err) {
-			if (err != -ERESTARTSYS)
+			if (err != -ERESTARTSYS) {
+				begin_state_change_locked(device->resource, CS_HARD);
 				_conn_request_state(first_peer_device(device)->connection,
 						    NS(conn, C_TIMEOUT),
-						    CS_HARD);
+						    CS_HARD, NULL);
+				end_state_change_locked(device->resource);
+			}
 			spin_unlock_irq(&device->resource->req_lock);
 			err = -EIO;
 			goto fail_free_complete;
@@ -1060,14 +1064,14 @@ allocate_barrier:
 	spin_unlock_irq(&device->resource->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
 
-	spin_lock_irq(&device->resource->req_lock);
+	begin_state_change(device->resource, &irq_flags, 0);
 	if (congested) {
 		if (on_congestion == OC_PULL_AHEAD)
 			_drbd_set_state(_NS(device, conn, L_AHEAD), 0, NULL);
 		else  /*on_congestion == OC_DISCONNECT */
 			_drbd_set_state(_NS(device, conn, C_DISCONNECTING), 0, NULL);
 	}
-	spin_unlock_irq(&device->resource->req_lock);
+	end_state_change(device->resource, &irq_flags);
 
 	if (local) {
 		req->private_bio->bi_bdev = device->ldev->backing_bdev;
@@ -1211,7 +1215,9 @@ void request_timer_fn(unsigned long data)
 	if (ent && req->rq_state & RQ_NET_PENDING) {
 		if (time_is_before_eq_jiffies(req->start_time + ent)) {
 			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
+			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
 			_drbd_set_state(_NS(device, conn, C_TIMEOUT), CS_VERBOSE | CS_HARD, NULL);
+			end_state_change_locked(device->resource);
 		}
 	}
 	if (dt && req->rq_state & RQ_LOCAL_PENDING) {
