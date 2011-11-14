@@ -110,7 +110,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 		__drbd_chk_io_error(device, false);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
-	drbd_queue_work(&peer_device->connection->data.work, &peer_req->w);
+	drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
 	put_ldev(device);
 }
 
@@ -143,7 +143,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
-		drbd_queue_work(&peer_device->connection->data.work, &peer_req->w);
+		drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
 		return;
 	}
 
@@ -452,7 +452,7 @@ void resync_timer_fn(unsigned long data)
 	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
 
 	if (list_empty(&peer_device->resync_work.list))
-		drbd_queue_work(&peer_device->connection->data.work,
+		drbd_queue_work(&peer_device->connection->sender_work,
 				&peer_device->resync_work);
 }
 
@@ -844,7 +844,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		if (dw) {
 			dw->w.cb = w_resync_finished;
 			dw->peer_device = peer_device;
-			drbd_queue_work(&connection->data.work, &dw->w);
+			drbd_queue_work(&connection->sender_work, &dw->w);
 			return 1;
 		}
 		drbd_err(peer_device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
@@ -1787,7 +1787,7 @@ int drbd_sender(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&work_list))
-			dequeue_work_batch(&connection->data.work, &work_list);
+			dequeue_work_batch(&connection->sender_work, &work_list);
 
 		/* Still nothing to do? Poke TCP, just in case,
 		 * then wait for new work (or signal). */
@@ -1802,8 +1802,8 @@ int drbd_sender(struct drbd_thread *thi)
 				drbd_tcp_uncork(connection->data.socket);
 			mutex_unlock(&connection->data.mutex);
 
-			wait_event_interruptible(connection->data.work.q_wait,
-				dequeue_work_batch(&connection->data.work, &work_list));
+			wait_event_interruptible(connection->sender_work.q_wait,
+				dequeue_work_batch(&connection->sender_work, &work_list));
 
 			mutex_lock(&connection->data.mutex);
 			if (connection->data.socket && cork)
@@ -1839,7 +1839,7 @@ int drbd_sender(struct drbd_thread *thi)
 			list_del_init(&w->list);
 			w->cb(w, 1);
 		}
-		dequeue_work_batch(&connection->data.work, &work_list);
+		dequeue_work_batch(&connection->sender_work, &work_list);
 	} while (!list_empty(&work_list));
 
 	rcu_read_lock();

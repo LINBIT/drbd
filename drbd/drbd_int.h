@@ -569,7 +569,6 @@ struct drbd_work_queue {
 };
 
 struct drbd_socket {
-	struct drbd_work_queue work;
 	struct mutex mutex;
 	struct socket    *socket;
 	/* this way we get our
@@ -734,6 +733,8 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread sender;
 	struct drbd_thread asender;
 	bool alive;  /* temporary */
+
+	struct drbd_work_queue sender_work;
 };
 
 struct drbd_peer_device {

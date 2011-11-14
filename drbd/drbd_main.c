@@ -384,7 +384,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 					set_bit(CREATE_BARRIER, &connection->flags);
 				}
 
-				drbd_queue_work(&connection->data.work, &b->w);
+				drbd_queue_work(&connection->sender_work, &b->w);
 			}
 			pn = &b->next;
 		} else {
@@ -2297,8 +2297,7 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 			drbd_err(connection, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				 connection->receiver.t_state);
 		D_ASSERT(device, connection->net_conf == NULL);
-		D_ASSERT(device, list_empty(&connection->data.work.q));
-		D_ASSERT(device, list_empty(&connection->meta.work.q));
+		D_ASSERT(device, list_empty(&connection->sender_work.q));
 
 		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
 		peer_device->disk_size = 0;
@@ -2849,10 +2848,8 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
-	drbd_init_workqueue(&connection->data.work);
+	drbd_init_workqueue(&connection->sender_work);
 	mutex_init(&connection->data.mutex);
-
-	drbd_init_workqueue(&connection->meta.work);
 	mutex_init(&connection->meta.mutex);
 
 	drbd_thread_init(resource, &connection->receiver, drbd_receiver, "receiver");

@@ -1472,7 +1472,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
-		drbd_queue_work(&peer_device->connection->data.work,
+		drbd_queue_work(&peer_device->connection->sender_work,
 				&peer_req->w);
 		/* retry later; fall through */
 	case 0:
@@ -4984,14 +4984,14 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * w_make_resync_request etc. which may still be on the worker queue
 	 * to be "canceled" */
-	drbd_flush_workqueue(&peer_device->connection->data.work);
+	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
 	drbd_finish_peer_reqs(device);
 
 	/* This second workqueue flush is necessary, since drbd_finish_peer_reqs()
 	   might have issued a work again. The one before drbd_finish_peer_reqs() is
 	   necessary to reclain net_ee in drbd_finish_peer_reqs(). */
-	drbd_flush_workqueue(&peer_device->connection->data.work);
+	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
 	kfree(peer_device->p_uuid);
 	peer_device->p_uuid = NULL;
@@ -5625,7 +5625,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		if (dw) {
 			dw->w.cb = w_ov_finished;
 			dw->peer_device = peer_device;
-			drbd_queue_work(&peer_device->connection->data.work, &dw->w);
+			drbd_queue_work(&peer_device->connection->sender_work, &dw->w);
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(peer_device);

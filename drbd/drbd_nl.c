@@ -2009,7 +2009,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	drbd_flush_workqueue(&connection->data.work);
+	drbd_flush_workqueue(&connection->sender_work);
 
 	mutex_lock(&connection->data.mutex);
 	mutex_lock(&connection->resource->conf_update);
