@@ -1535,46 +1535,46 @@ _drbd_set_state(struct drbd_device *device, union drbd_state ns,
  * connected.  Otherwise, we report the connection state, which has values up
  * to C_CONNECTED == L_STANDALONE.
  */
-static inline int combined_conn_state(struct drbd_peer_device *peer_device)
+static inline int combined_conn_state(struct drbd_peer_device *peer_device, enum which_state which)
 {
-	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+	enum drbd_repl_state repl_state = peer_device->repl_state[which];
 
 	if (repl_state > L_STANDALONE)
 		return repl_state;
 	else
-		return peer_device->connection->cstate[NOW];
+		return peer_device->connection->cstate[which];
 }
 
-static inline union drbd_state drbd_get_device_state(struct drbd_device *device)
+static inline union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_resource *resource = device->resource;
 	union drbd_state rv = { {
 		.conn = C_STANDALONE,  /* really: undefined */
 		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
-		.disk = device->disk_state[NOW],
-		.role = resource->role[NOW],
+		.disk = device->disk_state[which],
+		.role = resource->role[which],
 		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp[NOW],
-		.susp_nod = resource->susp_nod[NOW],
-		.susp_fen = resource->susp_fen[NOW],
+		.susp = resource->susp[which],
+		.susp_nod = resource->susp_nod[which],
+		.susp_fen = resource->susp_fen[which],
 		.pdsk = D_UNKNOWN,  /* really: undefined */
 	} };
 
 	return rv;
 }
 
-static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device)
+static inline union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	union drbd_state rv;
 
-	rv = drbd_get_device_state(peer_device->device);
-	rv.user_isp = peer_device->resync_susp_user[NOW];
-	rv.peer_isp = peer_device->resync_susp_peer[NOW];
-	rv.aftr_isp = peer_device->resync_susp_dependency[NOW];
-	rv.conn = combined_conn_state(peer_device);
-	rv.peer = connection->peer_role[NOW];
-	rv.pdsk = peer_device->disk_state[NOW];
+	rv = drbd_get_device_state(peer_device->device, which);
+	rv.user_isp = peer_device->resync_susp_user[which];
+	rv.peer_isp = peer_device->resync_susp_peer[which];
+	rv.aftr_isp = peer_device->resync_susp_dependency[which];
+	rv.conn = combined_conn_state(peer_device, which);
+	rv.peer = connection->peer_role[which];
+	rv.pdsk = peer_device->disk_state[which];
 
 	return rv;
 }

@@ -310,7 +310,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			continue;
 		}
 
-		sn = drbd_conn_str(combined_conn_state(peer_device));
+		sn = drbd_conn_str(combined_conn_state(peer_device, NOW));
 		nc = rcu_dereference(peer_device->connection->net_conf);
 		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
 		seq_printf(seq,

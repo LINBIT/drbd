@@ -612,7 +612,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
 				struct drbd_peer_device *pd = first_peer_device(device);
-				unsigned s = combined_conn_state(pd);
+				unsigned s = combined_conn_state(pd, NOW);
 				drbd_warn(device, "BAD! sector=%llus enr=%u rs_left=%d "
 				    "rs_failed=%d count=%d cstate=%s\n",
 				     (unsigned long long)sector,

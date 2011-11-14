@@ -1579,7 +1579,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
 	spin_lock_irq(&device->resource->req_lock);
-	os = drbd_get_peer_device_state(first_peer_device(device));
+	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = os;
 	/* If MDF_CONSISTENT is not set go into inconsistent state,
 	   otherwise investigate MDF_WasUpToDate...
@@ -2622,9 +2622,9 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 		union drbd_state state;
 
 		if (peer_device)
-			state = drbd_get_peer_device_state(peer_device);
+			state = drbd_get_peer_device_state(peer_device, NOW);
 		else
-			state = drbd_get_device_state(device);
+			state = drbd_get_device_state(device, NOW);
 
 		nla = nla_nest_start(skb, DRBD_NLA_STATE_INFO);
 		if (!nla)

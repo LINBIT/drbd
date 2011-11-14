@@ -868,7 +868,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	ping_peer(device);
 
 	spin_lock_irq(&device->resource->req_lock);
-	os = drbd_get_peer_device_state(peer_device);
+	os = drbd_get_peer_device_state(peer_device, NOW);
 
 	verify_done = (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T);
 
@@ -1655,7 +1655,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		return;
 	}
 
-	ns = drbd_get_peer_device_state(peer_device);
+	ns = drbd_get_peer_device_state(peer_device, NOW);
 
 	ns.aftr_isp = !_drbd_may_sync_now(device);
 
@@ -1667,7 +1667,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		ns.pdsk = D_INCONSISTENT;
 
 	r = __drbd_set_state(device, ns, CS_VERBOSE, NULL);
-	ns = drbd_get_peer_device_state(peer_device);
+	ns = drbd_get_peer_device_state(peer_device, NOW);
 
 	if (ns.conn < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;

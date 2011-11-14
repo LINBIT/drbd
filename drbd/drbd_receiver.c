@@ -4071,7 +4071,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	spin_lock_irq(&device->resource->req_lock);
  retry:
-	os = ns = drbd_get_peer_device_state(peer_device);
+	os = ns = drbd_get_peer_device_state(peer_device, NOW);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
@@ -4162,7 +4162,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
-	if (os.i != drbd_get_peer_device_state(peer_device).i)
+	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i)
 		goto retry;
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	ns.peer = peer_state.role;
@@ -4184,7 +4184,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 	rv = _drbd_set_state(device, ns, cs_flags, NULL);
-	ns = drbd_get_peer_device_state(peer_device);
+	ns = drbd_get_peer_device_state(peer_device, NOW);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (rv < SS_SUCCESS) {

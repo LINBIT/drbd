@@ -52,9 +52,9 @@ struct drbd_connection;
 	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2) | STATE_VALUE(T3, S3))
 
 #define _NS(D, T, S) \
-	D, ({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D)); __ns.T = (S); __ns; })
+	D, ({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D), NOW); __ns.T = (S); __ns; })
 #define _NS2(D, T1, S1, T2, S2) \
-	D, ({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D)); __ns.T1 = (S1); \
+	D, ({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D), NOW); __ns.T1 = (S1); \
 	__ns.T2 = (S2); __ns; })
 
 enum chg_state_flags {

@@ -180,7 +180,7 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 	enum drbd_state_rv rv;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device)), mask, val);
+	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
 	rv = _drbd_set_state(device, ns, f, NULL);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
@@ -202,7 +202,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 		return SS_CW_FAILED_BY_PEER;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	os = drbd_get_peer_device_state(first_peer_device(device));
+	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv == SS_SUCCESS)
@@ -248,7 +248,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		mutex_lock(&device->resource->state_mutex);
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	os = drbd_get_peer_device_state(first_peer_device(device));
+	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 	rv = is_valid_transition(os, ns);
 	if (rv < SS_SUCCESS) {
@@ -284,7 +284,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 			goto abort;
 		}
 		spin_lock_irqsave(&device->resource->req_lock, flags);
-		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device)), mask, val);
+		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
 		rv = _drbd_set_state(device, ns, f, &done);
 	} else {
 		rv = _drbd_set_state(device, ns, f, &done);
@@ -876,7 +876,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 
 	resource = device->resource;
 	peer_device = first_peer_device(device);
-	os = drbd_get_peer_device_state(peer_device);
+	os = drbd_get_peer_device_state(peer_device, NOW);
 	ns = sanitize_state(device, ns, &ssw);
 	if (ns.i == os.i)
 		return SS_NOTHING_TO_DO;
@@ -1510,7 +1510,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		os = drbd_get_peer_device_state(peer_device);
+		os = drbd_get_peer_device_state(peer_device, NOW);
 		ns = sanitize_state(device, apply_mask_val(os, mask, val), NULL);
 
 		if (flags & CS_IGN_OUTD_FAIL && ns.disk == D_OUTDATED && os.disk < D_OUTDATED)
@@ -1559,7 +1559,7 @@ static void conn_set_state(struct drbd_connection *connection,
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		number_of_volumes++;
-		os = drbd_get_peer_device_state(peer_device);
+		os = drbd_get_peer_device_state(peer_device, NOW);
 		ns = apply_mask_val(os, mask, val);
 		ns = sanitize_state(device, ns, NULL);
 
