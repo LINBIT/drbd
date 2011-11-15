@@ -221,15 +221,7 @@ static void forget_state_change(struct drbd_state_change *state_change)
 	kfree(state_change);
 }
 
-enum sanitize_state_warnings {
-	NO_WARNING,
-	ABORTED_ONLINE_VERIFY,
-	ABORTED_RESYNC,
-	CONNECTION_LOST_NEGOTIATING,
-	IMPLICITLY_UPGRADED_DISK,
-	IMPLICITLY_UPGRADED_PDSK,
-};
-
+static void print_state_change(struct drbd_resource *resource, const char *prefix);
 static void finish_state_change(struct drbd_resource *, struct completion *);
 STATIC int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
@@ -316,6 +308,7 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 static enum drbd_state_rv __end_state_change(struct drbd_resource *resource, struct completion *done)
 {
 	enum drbd_state_rv rv = resource->state_change_rv;
+	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int minor;
@@ -324,8 +317,13 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource, str
 		if (!state_has_changed(resource))
 			return SS_NOTHING_TO_DO;
 	}
-	if (rv < SS_SUCCESS)
+	if (rv < SS_SUCCESS) {
+		if (flags & CS_VERBOSE) {
+			drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
+			print_state_change(resource, "Failed: ");
+		}
 		goto out;
+	}
 
 	finish_state_change(resource, done);
 
@@ -407,12 +405,14 @@ void fail_state_change(struct drbd_resource *resource, enum drbd_state_rv rv)
 void abort_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
 	resource->state_change_rv = SS_UNKNOWN_ERROR;
+	resource->state_change_flags &= ~CS_VERBOSE;
 	end_state_change(resource, irq_flags);
 }
 
 void abort_state_change_locked(struct drbd_resource *resource)
 {
 	resource->state_change_rv = SS_UNKNOWN_ERROR;
+	resource->state_change_flags &= ~CS_VERBOSE;
 	end_state_change_locked(resource);
 }
 
@@ -638,39 +638,6 @@ _drbd_request_state(struct drbd_device *device, union drbd_state mask,
 		   (rv = drbd_req_state(device, mask, val, f)) != SS_IN_TRANSIENT_STATE);
 
 	return rv;
-}
-
-/* pretty print of drbd internal state */
-
-#define STATE_FMT	" %s = { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c%c%c }\n"
-#define STATE_ARGS(tag, s)		\
-		tag,			\
-		drbd_conn_str(s.conn),	\
-		drbd_role_str(s.role),	\
-		drbd_role_str(s.peer),	\
-		drbd_disk_str(s.disk),	\
-		drbd_disk_str(s.pdsk),	\
-		is_susp(s) ? 's' : 'r',	\
-		s.aftr_isp ? 'a' : '-',	\
-		s.peer_isp ? 'p' : '-',	\
-		s.user_isp ? 'u' : '-', \
-		s.susp_fen ? 'F' : '-', \
-		s.susp_nod ? 'N' : '-'
-
-void print_st(struct drbd_device *device, const char *tag, union drbd_state s)
-{
-	drbd_err(device, STATE_FMT, STATE_ARGS(tag, s));
-}
-
-
-void print_st_err(struct drbd_device *device, union drbd_state os,
-	          union drbd_state ns, enum drbd_state_rv err)
-{
-	if (err == SS_IN_TRANSIENT_STATE)
-		return;
-	drbd_err(device, "State change failed: %s\n", drbd_set_st_err_str(err));
-	print_st(device, " state", os);
-	print_st(device, "wanted", ns);
 }
 
 static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_state which)
@@ -1419,12 +1386,6 @@ enum drbd_state_rv __drbd_set_state(struct drbd_device *device, union drbd_state
 	if (!(resource->state_change_flags & CS_HARD))
 		rv = is_valid_soft_transition(resource);
 
-	if (rv < SS_SUCCESS) {
-		if (resource->state_change_flags & CS_VERBOSE)
-			print_st_err(device, os, ns, rv);
-		goto out;
-	}
-
 out:
 	if (rv < SS_SUCCESS)
 		fail_state_change(resource, rv);
@@ -1999,12 +1960,6 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 
 		if (rv >= SS_SUCCESS && !(flags & CS_HARD))
 			rv = is_valid_soft_transition(connection->resource);
-
-		if (rv < SS_SUCCESS) {
-			if (flags & CS_VERBOSE)
-				print_st_err(device, os, ns, rv);
-			break;
-		}
 	}
 	rcu_read_unlock();
 
