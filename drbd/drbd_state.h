@@ -63,7 +63,8 @@ enum chg_state_flags {
 	CS_VERBOSE       = 1 << 1,
 	CS_WAIT_COMPLETE = 1 << 2,
 	CS_SERIALIZE     = 1 << 3,
-	CS_LOCAL_ONLY    = 1 << 4, /* Do not consider a device pair wide state change */
+	CS_ALREADY_SERIALIZED = 1 << 4, /* resource->state_mutex already taken */
+	CS_LOCAL_ONLY    = 1 << 5, /* Do not consider a device pair wide state change */
 	CS_IGN_OUTD_FAIL = 1 << 11,
 };
 

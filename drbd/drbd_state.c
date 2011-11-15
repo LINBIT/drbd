@@ -374,16 +374,19 @@ enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
 
 void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
+	if ((flags & CS_SERIALIZE) && !(flags & CS_ALREADY_SERIALIZED))
+		mutex_lock(&resource->state_mutex);
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	__begin_state_change(resource, flags);
 }
 
 enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
+	enum chg_state_flags flags = resource->state_change_flags;
 	struct completion __done, *done = NULL;
 	enum drbd_state_rv rv;
 
-	if (resource->state_change_flags & CS_WAIT_COMPLETE) {
+	if (flags & CS_WAIT_COMPLETE) {
 		done = &__done;
 		init_completion(done);
 	}
@@ -392,6 +395,8 @@ enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned lon
 	if (done && rv >= SS_SUCCESS &&
 	    expect(resource, current != resource->worker.task))
 		wait_for_completion(done);
+	if ((flags & CS_SERIALIZE) && !(flags & CS_ALREADY_SERIALIZED))
+		mutex_unlock(&resource->state_mutex);
 	return rv;
 }
 
@@ -650,9 +655,6 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	union drbd_state os, ns;
 	enum drbd_state_rv rv;
 
-	if (f & CS_SERIALIZE)
-		mutex_lock(&device->resource->state_mutex);
-
 	begin_state_change(device->resource, &irq_flags, f);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
@@ -698,9 +700,6 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	rv = end_state_change(device->resource, &irq_flags);
 
 abort:
-	if (f & CS_SERIALIZE)
-		mutex_unlock(&device->resource->state_mutex);
-
 	return rv;
 }
 
