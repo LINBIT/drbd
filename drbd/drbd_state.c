@@ -1364,7 +1364,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
  *
  * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
  */
-enum drbd_state_rv __drbd_set_state(struct drbd_device *device, union drbd_state ns)
+void __drbd_set_state(struct drbd_device *device, union drbd_state ns)
 {
 	union drbd_state os;
 	enum drbd_state_rv rv = SS_SUCCESS;
@@ -1376,7 +1376,7 @@ enum drbd_state_rv __drbd_set_state(struct drbd_device *device, union drbd_state
 	os = drbd_get_peer_device_state(peer_device, NEW);
 	ns = sanitize_state(device, ns);
 	if (ns.i == os.i)
-		return SS_NOTHING_TO_DO;
+		return;
 
 	drbd_set_new_peer_device_state(peer_device, ns);
 	rv = is_valid_transition(resource);
@@ -1389,7 +1389,6 @@ enum drbd_state_rv __drbd_set_state(struct drbd_device *device, union drbd_state
 out:
 	if (rv < SS_SUCCESS)
 		fail_state_change(resource, rv);
-	return rv;
 }
 
 static void abw_start_sync(struct drbd_device *device, int rv)
@@ -1972,7 +1971,6 @@ static void conn_set_state(struct drbd_connection *connection,
 {
 	union drbd_state ns, os;
 	struct drbd_peer_device *peer_device;
-	enum drbd_state_rv rv;
 	int vnr;
 
 	rcu_read_lock();
@@ -1985,9 +1983,7 @@ static void conn_set_state(struct drbd_connection *connection,
 		if (flags & CS_IGN_OUTD_FAIL && ns.disk == D_OUTDATED && os.disk < D_OUTDATED)
 			ns.disk = os.disk;
 
-		rv = __drbd_set_state(device, ns);
-		if (rv < SS_SUCCESS)
-			BUG();
+		__drbd_set_state(device, ns);
 	}
 	rcu_read_unlock();
 }

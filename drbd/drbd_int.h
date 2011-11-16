@@ -1517,16 +1517,12 @@ static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_r
 	return 0;
 }
 
-static inline enum drbd_state_rv
+static inline void
 _drbd_set_state(struct drbd_device *device, union drbd_state ns)
 {
-	enum drbd_state_rv rv;
-
 	read_lock(&global_state_lock);
-	rv = __drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 	read_unlock(&global_state_lock);
-
-	return rv;
 }
 
 /*
