@@ -344,10 +344,10 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 
 STATIC enum drbd_state_rv
 _req_st_cond(struct drbd_device *device, union drbd_state mask,
-	     union drbd_state val)
+	     union drbd_state val, enum chg_state_flags f)
 {
 	union drbd_state os, ns;
-	unsigned long flags;
+	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 
 	if (test_and_clear_bit(CL_ST_CHG_SUCCESS, &device->flags))
@@ -356,7 +356,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	if (test_and_clear_bit(CL_ST_CHG_FAIL, &device->flags))
 		return SS_CW_FAILED_BY_PEER;
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+	begin_state_change(device->resource, &irq_flags, f);
 	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
 	rv = is_valid_transition(os, ns);
@@ -373,7 +373,7 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 				rv = SS_UNKNOWN_ERROR;  /* continue waiting */
 		}
 	}
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	abort_state_change(device->resource, &irq_flags);
 
 	return rv;
 }
@@ -431,7 +431,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		}
 
 		wait_event(device->state_wait,
-			(rv = _req_st_cond(device, mask, val)) != SS_UNKNOWN_ERROR);
+			(rv = _req_st_cond(device, mask, val, f)) != SS_UNKNOWN_ERROR);
 
 		if (rv < SS_SUCCESS) {
 			if (f & CS_VERBOSE)
@@ -1722,8 +1722,10 @@ static void conn_set_state(struct drbd_connection *connection,
 }
 
 static enum drbd_state_rv
-_conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
+_conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
+	      enum chg_state_flags f)
 {
+	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 
 	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &connection->flags))
@@ -1732,7 +1734,7 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
 		return SS_CW_FAILED_BY_PEER;
 
-	spin_lock_irq(&connection->resource->req_lock);
+	begin_state_change(connection->resource, &irq_flags, f);
 	rv = connection->cstate[NOW] != C_CONNECTED ? SS_CW_NO_NEED : SS_UNKNOWN_ERROR;
 
 	if (rv == SS_UNKNOWN_ERROR)
@@ -1740,8 +1742,9 @@ _conn_rq_cond(struct drbd_connection *connection, union drbd_state mask, union d
 
 	if (rv == SS_SUCCESS)
 		rv = SS_UNKNOWN_ERROR; /* continue waiting */
-
-	spin_unlock_irq(&connection->resource->req_lock);
+	if (rv < SS_SUCCESS)
+		fail_state_change(connection->resource, rv);
+	abort_state_change(connection->resource, &irq_flags);
 
 	return rv;
 }
@@ -1763,7 +1766,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 	}
 
 	wait_event(connection->ping_wait,
-		(rv = _conn_rq_cond(connection, mask, val)) != SS_UNKNOWN_ERROR);
+		(rv = _conn_rq_cond(connection, mask, val, f)) != SS_UNKNOWN_ERROR);
 
 abort:
 	mutex_unlock(&connection->resource->state_mutex);

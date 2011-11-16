@@ -1442,10 +1442,8 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
 		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
 		    odev->disk_state == D_DISKLESS)
 			continue;
-		if (!_drbd_may_sync_now(odev)) {
-			rv |= (__drbd_set_state(_NS(odev, aftr_isp, 1), CS_HARD, NULL)
-			       != SS_NOTHING_TO_DO);
-		}
+		if (!_drbd_may_sync_now(odev))
+			__drbd_set_state(_NS(odev, aftr_isp, 1), CS_HARD, NULL);
 	}
 	rcu_read_unlock();
 
@@ -1469,11 +1467,8 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 		    odev->disk_state == D_DISKLESS)
 			continue;
 		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
-			if (_drbd_may_sync_now(odev)) {
-				rv |= (__drbd_set_state(_NS(odev, aftr_isp, 0),
-							CS_HARD, NULL)
-				       != SS_NOTHING_TO_DO) ;
-			}
+			if (_drbd_may_sync_now(odev))
+				__drbd_set_state(_NS(odev, aftr_isp, 0), CS_HARD, NULL);
 		}
 	}
 	rcu_read_unlock();
@@ -1534,16 +1529,16 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_min
 /* caller must hold global_state_lock */
 void drbd_resync_after_changed(struct drbd_device *device)
 {
-	int changes;
+	enum drbd_state_rv rv;
 
 	do {
 		unsigned long irq_flags;
 
 		begin_state_change(device->resource, &irq_flags, CS_HARD);
-		changes  = _drbd_pause_after(device);
-		changes |= _drbd_resume_next(device);
-		end_state_change(device->resource, &irq_flags);
-	} while (changes);
+		_drbd_pause_after(device);
+		_drbd_resume_next(device);
+		rv = end_state_change(device->resource, &irq_flags);
+	} while (rv != SS_NOTHING_TO_DO);
 }
 
 void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
