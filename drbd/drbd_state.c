@@ -2058,3 +2058,31 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	end_remote_state_change(resource, irq_flags, flags);
 	return rv;
 }
+
+void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)
+{
+	device->disk_state[NEW] = disk_state;
+}
+
+void __change_disk_states(struct drbd_resource *resource, enum drbd_disk_state disk_state)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr)
+		__change_disk_state(device, disk_state);
+	rcu_read_unlock();
+}
+
+enum drbd_state_rv change_disk_state(struct drbd_device *device,
+				     enum drbd_disk_state disk_state,
+				     enum chg_state_flags flags)
+{
+	struct drbd_resource *resource = device->resource;
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_disk_state(device, disk_state);
+	return end_state_change(resource, &irq_flags);
+}

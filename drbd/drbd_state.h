@@ -131,4 +131,8 @@ extern void drbd_set_new_peer_device_state(struct drbd_peer_device *, union drbd
 		rv;											\
 	})
 
+extern void __change_disk_state(struct drbd_device *, enum drbd_disk_state);
+extern void __change_disk_states(struct drbd_resource *, enum drbd_disk_state);
+extern enum drbd_state_rv change_disk_state(struct drbd_device *, enum drbd_disk_state, enum chg_state_flags);
+
 #endif
