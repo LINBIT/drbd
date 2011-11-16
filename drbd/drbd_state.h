@@ -146,4 +146,9 @@ extern void __change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_s
 extern void __change_peer_disk_states(struct drbd_connection *, enum drbd_disk_state);
 extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state, enum chg_state_flags);
 
+extern void __change_resync_susp_user(struct drbd_peer_device *, bool);
+extern enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *, bool, enum chg_state_flags);
+extern void __change_resync_susp_peer(struct drbd_peer_device *, bool);
+extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
+
 #endif

@@ -2431,13 +2431,16 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	if (drbd_request_state(adm_ctx.device, NS(user_isp, 1)) == SS_NOTHING_TO_DO)
+	peer_device = first_peer_device(adm_ctx.device);
+	if (change_resync_susp_user(peer_device, true,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) == SS_NOTHING_TO_DO)
 		retcode = ERR_PAUSE_IS_SET;
 
 	drbd_adm_finish(info, retcode);
@@ -2446,14 +2449,16 @@ int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	if (drbd_request_state(adm_ctx.device, NS(user_isp, 0)) == SS_NOTHING_TO_DO) {
-		struct drbd_peer_device *peer_device = first_peer_device(adm_ctx.device);
+	peer_device = first_peer_device(adm_ctx.device);
+	if (change_resync_susp_user(peer_device, false,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) == SS_NOTHING_TO_DO) {
 
 		if (peer_device->repl_state[NOW] == L_PAUSED_SYNC_S ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {

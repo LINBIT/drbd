@@ -2294,3 +2294,33 @@ enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *peer_device,
 	__change_peer_disk_state(peer_device, disk_state);
 	return end_state_change(resource, &irq_flags);
 }
+
+void __change_resync_susp_user(struct drbd_peer_device *peer_device,
+				       bool value)
+{
+	peer_device->resync_susp_user[NEW] = value;
+}
+
+enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *peer_device,
+						   bool value,
+						   enum chg_state_flags flags)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_resync_susp_user(peer_device, value);
+	return end_state_change(resource, &irq_flags);
+}
+
+void __change_resync_susp_peer(struct drbd_peer_device *peer_device,
+				       bool value)
+{
+	peer_device->resync_susp_peer[NEW] = value;
+}
+
+void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
+					     bool value)
+{
+	peer_device->resync_susp_dependency[NEW] = value;
+}
