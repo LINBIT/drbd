@@ -2112,6 +2112,33 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 	return end_state_change(resource, &irq_flags);
 }
 
+void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cstate)
+{
+	connection->cstate[NEW] = cstate;
+	if (cstate < C_CONNECTED) {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			peer_device->repl_state[NEW] = L_STANDALONE;
+		}
+		rcu_read_unlock();
+	}
+}
+
+enum drbd_state_rv change_cstate(struct drbd_connection *connection,
+				 enum drbd_conn_state cstate,
+				 enum chg_state_flags flags)
+{
+	struct drbd_resource *resource = connection->resource;
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_cstate(connection, cstate);
+	return end_state_change(resource, &irq_flags);
+}
+
 void __change_peer_disk_state(struct drbd_peer_device *peer_device, enum drbd_disk_state disk_state)
 {
 	peer_device->disk_state[NEW] = disk_state;
