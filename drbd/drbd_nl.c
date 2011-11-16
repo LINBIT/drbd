@@ -1336,6 +1336,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
 	}
+	/* FIXME: drbd_resync_after_valid() (under global_state_lock) missing! */
 
 	enforce_disk_conf_limits(new_disk_conf);
 
@@ -1634,7 +1635,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			ns.pdsk = peer_disk_state_from_metadata;
 	}
 
-	_drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)
@@ -2406,7 +2407,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-			_drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
+			__drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
 		retcode = end_state_change(device->resource, &irq_flags);
 
 		if (retcode != SS_NEED_CONNECTION)
@@ -3276,7 +3277,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
+			__drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
 			end_state_change(device->resource, &irq_flags);
 		}
 	}

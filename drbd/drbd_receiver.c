@@ -3936,7 +3936,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
-			_drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
+			__drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
 			end_state_change(device->resource, &irq_flags);
 			drbd_md_sync(device);
 			updated_uuids = 1;
@@ -4193,7 +4193,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		conn_request_state(peer_device->connection, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
 		return -EIO;
 	}
-	_drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 	ns = drbd_get_peer_device_state(peer_device, NEW);
 	rv = end_state_change(device->resource, &irq_flags);
 

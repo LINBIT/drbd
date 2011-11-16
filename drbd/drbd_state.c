@@ -273,6 +273,9 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 	struct drbd_device *device;
 	int minor;
 
+	if (!(flags & CS_GLOBAL_LOCKED))
+		read_lock(&global_state_lock);
+
 	resource->state_change_rv = SS_SUCCESS;
 	resource->state_change_flags = flags;
 
@@ -355,6 +358,8 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource, str
 	}
 out:
 	rcu_read_unlock();
+	if (!(flags & CS_GLOBAL_LOCKED))
+		read_unlock(&global_state_lock);
 	return rv;
 }
 
@@ -577,7 +582,7 @@ drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
 
 	begin_state_change(device->resource, &irq_flags, f);
 	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-	_drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 	return rv;
@@ -611,7 +616,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 		abort_state_change(device->resource, &irq_flags);
 		goto abort;
 	}
-	_drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 abort:
@@ -1599,7 +1604,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
 					_tl_restart(connection, what);
-					_drbd_set_state(device, _NS(device, susp_nod, 0));
+					__drbd_set_state(device, _NS(device, susp_nod, 0));
 					end_state_change(resource, &irq_flags);
 				}
 			}

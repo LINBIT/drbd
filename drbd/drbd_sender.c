@@ -955,7 +955,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		}
 	}
 
-	_drbd_set_state(device, ns);
+	__drbd_set_state(device, ns);
 out_unlock:
 	end_state_change(device->resource, &irq_flags);
 	put_ldev(device);
@@ -1477,23 +1477,23 @@ STATIC int _drbd_resume_next(struct drbd_device *device)
 
 void resume_next_sg(struct drbd_device *device)
 {
-	unsigned long irq_flags;
-
 	write_lock_irq(&global_state_lock);
-	begin_state_change(device->resource, &irq_flags, CS_HARD);
+	/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
+	begin_state_change_locked(device->resource, CS_HARD | CS_GLOBAL_LOCKED);
 	_drbd_resume_next(device);
-	end_state_change(device->resource, &irq_flags);
+	end_state_change_locked(device->resource);
+	/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 	write_unlock_irq(&global_state_lock);
 }
 
 void suspend_other_sg(struct drbd_device *device)
 {
-	unsigned long irq_flags;
-
 	write_lock_irq(&global_state_lock);
-	begin_state_change(device->resource, &irq_flags, CS_HARD);
+	/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
+	begin_state_change_locked(device->resource, CS_HARD | CS_GLOBAL_LOCKED);
 	_drbd_pause_after(device);
-	end_state_change(device->resource, &irq_flags);
+	end_state_change_locked(device->resource);
+	/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 	write_unlock_irq(&global_state_lock);
 }
 
@@ -1532,12 +1532,12 @@ void drbd_resync_after_changed(struct drbd_device *device)
 	enum drbd_state_rv rv;
 
 	do {
-		unsigned long irq_flags;
-
-		begin_state_change(device->resource, &irq_flags, CS_HARD);
+		/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
+		begin_state_change_locked(device->resource, CS_HARD | CS_GLOBAL_LOCKED);
 		_drbd_pause_after(device);
 		_drbd_resume_next(device);
-		rv = end_state_change(device->resource, &irq_flags);
+		rv = end_state_change_locked(device->resource);
+		/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 	} while (rv != SS_NOTHING_TO_DO);
 }
 
@@ -1598,7 +1598,6 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
 	union drbd_state ns;
-	unsigned long irq_flags;
 	int r;
 
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
@@ -1666,8 +1665,8 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		return;
 	}
 
-	/* FIXME: Note that req_lock was not taken here before! */
-	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
+	begin_state_change_locked(device->resource, CS_VERBOSE | CS_GLOBAL_LOCKED);
 	ns = drbd_get_peer_device_state(peer_device, NOW);
 
 	ns.aftr_isp = !_drbd_may_sync_now(device);
@@ -1681,7 +1680,8 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 
 	__drbd_set_state(device, ns);
 	ns = drbd_get_peer_device_state(peer_device, NEW);
-	r = end_state_change(device->resource, &irq_flags);
+	r = end_state_change_locked(device->resource);
+	/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 
 	if (ns.conn < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;
@@ -1689,7 +1689,6 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	if (r == SS_SUCCESS) {
 		unsigned long tw = drbd_bm_total_weight(device);
 		unsigned long now = jiffies;
-		unsigned long irq_flags;
 		int i;
 
 		peer_device->rs_failed    = 0;
@@ -1703,9 +1702,11 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 			peer_device->rs_mark_left[i] = tw;
 			peer_device->rs_mark_time[i] = now;
 		}
-		begin_state_change(device->resource, &irq_flags, CS_HARD);
+		/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
+		begin_state_change_locked(device->resource, CS_HARD | CS_GLOBAL_LOCKED);
 		_drbd_pause_after(device);
-		end_state_change(device->resource, &irq_flags);
+		end_state_change_locked(device->resource);
+		/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 	}
 	write_unlock_irq(&global_state_lock);
 

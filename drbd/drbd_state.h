@@ -66,6 +66,7 @@ enum chg_state_flags {
 	CS_ALREADY_SERIALIZED = 1 << 4, /* resource->state_mutex already taken */
 	CS_LOCAL_ONLY    = 1 << 5, /* Do not consider a device pair wide state change */
 	CS_IGN_OUTD_FAIL = 1 << 11,
+	CS_GLOBAL_LOCKED = 1 << 12,  /* global_state_lock already taken */
 };
 
 extern enum drbd_state_rv drbd_change_state(struct drbd_device *device,

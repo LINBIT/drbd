@@ -1517,14 +1517,6 @@ static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_r
 	return 0;
 }
 
-static inline void
-_drbd_set_state(struct drbd_device *device, union drbd_state ns)
-{
-	read_lock(&global_state_lock);
-	__drbd_set_state(device, ns);
-	read_unlock(&global_state_lock);
-}
-
 /*
  * When a device has a replication state above L_STANDALONE, it must be
  * connected.  Otherwise, we report the connection state, which has values up
@@ -1555,7 +1547,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
 				begin_state_change_locked(device->resource, CS_HARD);
-				_drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
+				__drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
 				end_state_change_locked(device->resource);
 			}
 			break;
@@ -1566,7 +1558,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 		set_bit(WAS_IO_ERROR, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {
 			begin_state_change_locked(device->resource, CS_HARD);
-			_drbd_set_state(device, _NS(device, disk, D_FAILED));
+			__drbd_set_state(device, _NS(device, disk, D_FAILED));
 			end_state_change_locked(device->resource);
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
