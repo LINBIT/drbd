@@ -125,4 +125,10 @@ extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, en
 extern void drbd_set_new_device_state(struct drbd_device *, union drbd_state);
 extern void drbd_set_new_peer_device_state(struct drbd_peer_device *, union drbd_state);
 
+#define stable_state_change(resource, change_state) ({							\
+		enum drbd_state_rv rv;									\
+		wait_event((resource)->state_wait, (rv = (change_state)) != SS_IN_TRANSIENT_STATE);	\
+		rv;											\
+	})
+
 #endif
