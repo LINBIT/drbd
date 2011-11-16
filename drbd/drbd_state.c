@@ -2120,9 +2120,8 @@ void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cs
 		int vnr;
 
 		rcu_read_lock();
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			peer_device->repl_state[NEW] = L_STANDALONE;
-		}
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+			__change_repl_state(peer_device, L_STANDALONE);
 		rcu_read_unlock();
 	}
 }
@@ -2220,6 +2219,33 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 	}
 	__change_cstate_and_outdate(connection, cstate, outdate_what);
 	return end_state_change(resource, &irq_flags);
+}
+
+void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
+{
+	peer_device->repl_state[NEW] = repl_state;
+	if (repl_state > L_STANDALONE)
+		peer_device->connection->cstate[NEW] = C_CONNECTED;
+}
+
+enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
+				     enum drbd_repl_state repl_state,
+				     enum chg_state_flags flags)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_repl_state(peer_device, repl_state);
+	return end_state_change(resource, &irq_flags);
+}
+
+enum drbd_state_rv stable_change_repl_state(struct drbd_peer_device *peer_device,
+					    enum drbd_repl_state repl_state,
+					    enum chg_state_flags flags)
+{
+	return stable_state_change(peer_device->device->resource,
+		change_repl_state(peer_device, repl_state, flags));
 }
 
 void __change_peer_disk_state(struct drbd_peer_device *peer_device, enum drbd_disk_state disk_state)
