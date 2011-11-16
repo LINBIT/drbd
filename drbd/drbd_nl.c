@@ -483,8 +483,6 @@ enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *connecti
 
 bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
-	union drbd_state mask = { };
-	union drbd_state val = { };
 	enum drbd_fencing_policy fencing_policy;
 	char *ex_to_string;
 	int r;
@@ -507,23 +505,21 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 
 	r = conn_khelper(connection, "fence-peer");
 
+	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	switch ((r>>8) & 0xff) {
 	case 3: /* peer is inconsistent */
 		ex_to_string = "peer is inconsistent or worse";
-		mask.pdsk = D_MASK;
-		val.pdsk = D_INCONSISTENT;
+		__change_peer_disk_states(connection, D_INCONSISTENT);
 		break;
 	case 4: /* peer got outdated, or was already outdated */
 		ex_to_string = "peer was fenced";
-		mask.pdsk = D_MASK;
-		val.pdsk = D_OUTDATED;
+		__change_peer_disk_states(connection, D_OUTDATED);
 		break;
 	case 5: /* peer was down */
 		if (conn_highest_disk(connection) == D_UP_TO_DATE) {
 			/* we will(have) create(d) a new UUID anyways... */
 			ex_to_string = "peer is unreachable, assumed to be dead";
-			mask.pdsk = D_MASK;
-			val.pdsk = D_OUTDATED;
+			__change_peer_disk_states(connection, D_OUTDATED);
 		} else {
 			ex_to_string = "peer unreachable, doing nothing since disk != UpToDate";
 		}
@@ -533,8 +529,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		 * become R_PRIMARY, but finds the other peer being active. */
 		ex_to_string = "peer is active";
 		drbd_warn(connection, "Peer is primary, outdating myself.\n");
-		mask.disk = D_MASK;
-		val.disk = D_OUTDATED;
+		__change_disk_states(connection->resource, D_OUTDATED);
 		break;
 	case 7:
 		/* THINK: do we need to handle this
@@ -542,29 +537,26 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		if (fencing_policy != FP_STONITH)
 			drbd_err(connection, "fence-peer() = 7 && fencing != Stonith !!!\n");
 		ex_to_string = "peer was stonithed";
-		mask.pdsk = D_MASK;
-		val.pdsk = D_OUTDATED;
+		__change_peer_disk_states(connection, D_OUTDATED);
 		break;
 	default:
 		/* The script is broken ... */
 		drbd_err(connection, "fence-peer helper broken, returned %d\n", (r>>8)&0xff);
+		abort_state_change(connection->resource, &irq_flags);
 		return false; /* Eventually leave IO frozen */
 	}
 
 	drbd_info(connection, "fence-peer helper returned %d (%s)\n",
 		  (r>>8) & 0xff, ex_to_string);
 
- out:
-
-	/* Not using
-	   conn_request_state(connection, mask, val, CS_VERBOSE);
-	   here, because we might were able to re-establish the connection in the
-	   meantime. */
-	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
-	if (connection->cstate[NOW] < C_CONNECTED)
-		_conn_request_state(connection, mask, val);
+	if (connection->cstate[NOW] >= C_CONNECTED) {
+		/* connection re-established; do not fence */
+		abort_state_change(connection->resource, &irq_flags);
+		goto out;
+	}
 	end_state_change(connection->resource, &irq_flags);
 
+ out:
 	return conn_highest_pdsk(connection) <= D_OUTDATED;
 }
 
