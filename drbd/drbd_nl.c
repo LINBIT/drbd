@@ -3283,7 +3283,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			drbd_print_uuids(device, "cleared bitmap UUID");
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			__change_disk_state(device, D_UP_TO_DATE);
-			__drbd_set_state(device, _NS(device, pdsk, D_UP_TO_DATE));
+			__change_peer_disk_state(first_peer_device(device), D_UP_TO_DATE);
 			end_state_change(device->resource, &irq_flags);
 		}
 	}
