@@ -2487,7 +2487,9 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 	resource = adm_ctx.device->resource;
 
-	retcode = drbd_request_state(adm_ctx.device, NS(susp, 1));
+	retcode = stable_state_change(resource,
+		change_io_susp_user(resource, true,
+			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -2495,7 +2497,9 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_resource *resource;
 	struct drbd_device *device;
+	unsigned long irq_flags;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -2503,12 +2507,17 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	device = adm_ctx.device;
+	resource = device->resource;
 	if (test_bit(NEW_CUR_UUID, &device->flags)) {
 		drbd_uuid_new_current(device);
 		clear_bit(NEW_CUR_UUID, &device->flags);
 	}
 	drbd_suspend_io(device);
-	retcode = drbd_request_state(device, NS3(susp, 0, susp_nod, 0, susp_fen, 0));
+	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+	__change_io_susp_user(resource, false);
+	__change_io_susp_no_data(resource, false);
+	__change_io_susp_fencing(resource, false);
+	retcode = end_state_change(resource, &irq_flags);
 	if (retcode == SS_SUCCESS) {
 		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
 			tl_clear(first_peer_device(device)->connection);

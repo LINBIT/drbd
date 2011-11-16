@@ -4197,7 +4197,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		clear_bit(NEW_CUR_UUID, &device->flags);
 		begin_state_change(device->resource, &irq_flags, CS_HARD);
 		__change_cstate(peer_device->connection, C_PROTOCOL_ERROR);
-		conn_request_state(peer_device->connection, NS(susp, 0), CS_HARD);
+		__change_io_susp_user(device->resource, false);
 		end_state_change(device->resource, &irq_flags);
 		return -EIO;
 	}

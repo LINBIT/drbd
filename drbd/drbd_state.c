@@ -1638,7 +1638,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
 					_tl_restart(connection, what);
-					__drbd_set_state(device, _NS(device, susp_nod, 0));
+					__change_io_susp_no_data(resource, false);
 					end_state_change(resource, &irq_flags);
 				}
 			}
@@ -1924,6 +1924,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* case1: The outdate peer handler is successful: */
 			if (all_peer_disks_outdated) {
 				struct drbd_peer_device *peer_device;
+				unsigned long irq_flags;
 				int vnr;
 
 				tl_clear(connection);
@@ -1936,10 +1937,9 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					}
 				}
 				rcu_read_unlock();
-				conn_request_state(connection,
-						   (union drbd_state) { { .susp_fen = 1 } },
-						   (union drbd_state) { { .susp_fen = 0 } },
-						   CS_VERBOSE);
+				begin_state_change(resource, &irq_flags, CS_VERBOSE);
+				__change_io_susp_fencing(resource, false);
+				end_state_change(resource, &irq_flags);
 			}
 			/* case2: The connection was established again: */
 			if (all_peer_disks_connected) {
@@ -1955,9 +1955,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				rcu_read_unlock();
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);
 				_tl_restart(connection, RESEND);
-				_conn_request_state(connection,
-						    (union drbd_state) { { .susp_fen = 1 } },
-						    (union drbd_state) { { .susp_fen = 0 } });
+				__change_io_susp_fencing(resource, false);
 				end_state_change(resource, &irq_flags);
 			}
 		}
@@ -2057,6 +2055,32 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 	return rv;
+}
+
+void __change_io_susp_user(struct drbd_resource *resource, bool value)
+{
+	resource->susp[NEW] = value;
+}
+
+enum drbd_state_rv change_io_susp_user(struct drbd_resource *resource,
+				       bool value,
+				       enum chg_state_flags flags)
+{
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_io_susp_user(resource, value);
+	return end_state_change(resource, &irq_flags);
+}
+
+void __change_io_susp_no_data(struct drbd_resource *resource, bool value)
+{
+	resource->susp_nod[NEW] = value;
+}
+
+void __change_io_susp_fencing(struct drbd_resource *resource, bool value)
+{
+	resource->susp_fen[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)
