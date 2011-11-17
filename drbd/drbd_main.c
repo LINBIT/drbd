@@ -213,7 +213,7 @@ STATIC int tl_init(struct drbd_connection *connection)
 	INIT_LIST_HEAD(&b->requests);
 	INIT_LIST_HEAD(&b->w.list);
 	b->next = NULL;
-	b->br_number = 4711;
+	b->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
 	b->n_writes = 0;
 	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 
@@ -246,16 +246,13 @@ STATIC void tl_cleanup(struct drbd_connection *connection)
  */
 void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *new)
 {
-	struct drbd_tl_epoch *newest_before;
-
 	INIT_LIST_HEAD(&new->requests);
 	INIT_LIST_HEAD(&new->w.list);
 	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
 	new->next = NULL;
 	new->n_writes = 0;
 
-	newest_before = connection->newest_tle;
-	new->br_number = newest_before->br_number+1;
+	new->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
 	if (connection->newest_tle != new) {
 		connection->newest_tle->next = new;
 		connection->newest_tle = new;
@@ -411,7 +408,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 				list_splice(&carry_reads, &b->requests);
 				INIT_LIST_HEAD(&b->w.list);
 				b->w.cb = NULL;
-				b->br_number = net_random();
+				b->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
 				b->n_writes = 0;
 
 				*pn = b;

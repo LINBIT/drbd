@@ -676,6 +676,7 @@ struct drbd_resource {
 	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
 
 	enum write_ordering_e write_ordering;
+	atomic_t current_tle_nr;	/* transfer log epoch number */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)
 	cpumask_t cpu_mask[1];

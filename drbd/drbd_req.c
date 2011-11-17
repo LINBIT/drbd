@@ -216,7 +216,7 @@ static void _about_to_complete_local_write(struct drbd_device *device,
 	 */
 	if (first_peer_device(device)->repl_state[NOW] >= L_CONNECTED &&
 	    (s & RQ_NET_SENT) != 0 &&
-	    req->epoch == first_peer_device(device)->connection->newest_tle->br_number)
+	    req->epoch == atomic_read(&device->resource->current_tle_nr))
 		queue_barrier(device);
 }
 
@@ -523,7 +523,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, test_bit(CREATE_BARRIER, &device->flags) == 0);
 		 */
 
-		req->epoch = first_peer_device(device)->connection->newest_tle->br_number;
+		req->epoch = atomic_read(&device->resource->current_tle_nr);
 
 		/* increment size of current epoch */
 		first_peer_device(device)->connection->newest_tle->n_writes++;
