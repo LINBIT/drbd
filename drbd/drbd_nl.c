@@ -1615,8 +1615,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
 	   MDF_CONSISTENT and MDF_WAS_UP_TO_DATE must happen before
-	   this point, because drbd_request_state() modifies these
-	   flags. */
+	   this point because state changes modify these flags. */
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
@@ -2415,8 +2414,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static int drbd_adm_simple_request_state(struct sk_buff *skb, struct genl_info *info,
-		union drbd_state mask, union drbd_state val)
+int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	enum drbd_ret_code retcode;
 
@@ -2424,14 +2422,10 @@ static int drbd_adm_simple_request_state(struct sk_buff *skb, struct genl_info *
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	retcode = drbd_request_state(adm_ctx.device, mask, val);
+	retcode = drbd_request_state(adm_ctx.device, NS(conn, L_STARTING_SYNC_S));
+
 	drbd_adm_finish(info, retcode);
 	return 0;
-}
-
-int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
-{
-	return drbd_adm_simple_request_state(skb, info, NS(conn, L_STARTING_SYNC_S));
 }
 
 int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
@@ -2479,7 +2473,18 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 {
-	return drbd_adm_simple_request_state(skb, info, NS(susp, 1));
+	struct drbd_resource *resource;
+	enum drbd_ret_code retcode;
+
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+	resource = adm_ctx.device->resource;
+
+	retcode = drbd_request_state(adm_ctx.device, NS(susp, 1));
+
+	drbd_adm_finish(info, retcode);
+	return 0;
 }
 
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
@@ -2512,7 +2517,16 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 {
-	return drbd_adm_simple_request_state(skb, info, NS(disk, D_OUTDATED));
+	enum drbd_ret_code retcode;
+
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	retcode = drbd_request_state(adm_ctx.device, NS(disk, D_OUTDATED));
+
+	drbd_adm_finish(info, retcode);
+	return 0;
 }
 
 static int nla_put_drbd_cfg_context(struct sk_buff *skb,
