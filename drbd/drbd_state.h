@@ -131,6 +131,9 @@ extern void drbd_set_new_peer_device_state(struct drbd_peer_device *, union drbd
 		rv;											\
 	})
 
+extern void __change_role(struct drbd_resource *, enum drbd_role);
+extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags);
+
 extern void __change_io_susp_user(struct drbd_resource *, bool);
 extern enum drbd_state_rv change_io_susp_user(struct drbd_resource *, bool, enum chg_state_flags);
 extern void __change_io_susp_no_data(struct drbd_resource *, bool);

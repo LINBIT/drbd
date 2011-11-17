@@ -2057,6 +2057,22 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	return rv;
 }
 
+void __change_role(struct drbd_resource *resource, enum drbd_role role)
+{
+	resource->role[NEW] = role;
+}
+
+enum drbd_state_rv change_role(struct drbd_resource *resource,
+				     enum drbd_role role,
+				     enum chg_state_flags flags)
+{
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, flags);
+	__change_role(resource, role);
+	return end_state_change(resource, &irq_flags);
+}
+
 void __change_io_susp_user(struct drbd_resource *resource, bool value)
 {
 	resource->susp[NEW] = value;
