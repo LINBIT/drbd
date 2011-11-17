@@ -1597,7 +1597,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
-	union drbd_state ns;
+	enum drbd_repl_state repl_state;
 	int r;
 
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
@@ -1666,23 +1666,17 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 
 	/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
 	begin_state_change_locked(device->resource, CS_VERBOSE | CS_GLOBAL_LOCKED);
-	ns = drbd_get_peer_device_state(peer_device, NOW);
-
-	ns.aftr_isp = !_drbd_may_sync_now(device);
-
-	ns.conn = side;
-
+	__change_resync_susp_dependency(peer_device, !_drbd_may_sync_now(device));
+	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET)
-		ns.disk = D_INCONSISTENT;
+		__change_disk_state(device, D_INCONSISTENT);
 	else /* side == L_SYNC_SOURCE */
-		ns.pdsk = D_INCONSISTENT;
-
-	__drbd_set_state(device, ns);
-	ns = drbd_get_peer_device_state(peer_device, NEW);
+		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	r = end_state_change_locked(device->resource);
+	repl_state = peer_device->repl_state[NOW];
 	/* spin_unlock_irqrestore(&device->resource->req_lock, irq_flags); */
 
-	if (ns.conn < L_CONNECTED)
+	if (repl_state < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;
 
 	if (r == SS_SUCCESS) {
@@ -1711,7 +1705,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 
 	if (r == SS_SUCCESS) {
 		drbd_info(device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
-		     drbd_conn_str(ns.conn),
+		     drbd_conn_str(repl_state),
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
 		if (side == L_SYNC_TARGET)
@@ -1758,7 +1752,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
-		if (ns.conn == L_SYNC_TARGET)
+		if (repl_state == L_SYNC_TARGET)
 			mod_timer(&peer_device->resync_timer, jiffies);
 
 		drbd_md_sync(device);
