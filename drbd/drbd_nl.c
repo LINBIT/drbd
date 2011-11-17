@@ -1283,7 +1283,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
-	union drbd_state ns;
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
 	struct drbd_peer_device *peer_device;
@@ -1610,12 +1609,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
-	ns = drbd_get_peer_device_state(first_peer_device(device), NOW);
 	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED) {
 		device->disk_state_from_metadata = disk_state_from_metadata;
 		device->peer_disk_state_from_metadata = peer_disk_state_from_metadata;
 
-		ns.disk = D_NEGOTIATING;
+		__change_disk_state(device, D_NEGOTIATING);
 
 		/* We expect to receive up-to-date UUIDs soon.
 		   To avoid a race in receive_state, free p_uuid while
@@ -1623,12 +1621,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		kfree(device->p_uuid);
 		device->p_uuid = NULL;
 	} else {
-		ns.disk = disk_state_from_metadata;
+		__change_disk_state(device, disk_state_from_metadata);
 		if (peer_disk_state_from_metadata != D_UNKNOWN)
-			ns.pdsk = peer_disk_state_from_metadata;
+			__change_peer_disk_state(first_peer_device(device),
+				peer_disk_state_from_metadata);
 	}
 
-	__drbd_set_state(device, ns);
 	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)
