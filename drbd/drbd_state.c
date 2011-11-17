@@ -2057,14 +2057,40 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	return rv;
 }
 
-void __change_role(struct drbd_resource *resource, enum drbd_role role)
+static bool has_up_to_date_peer_disks(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device)
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
+			return true;
+	return false;
+}
+
+void __change_role(struct drbd_resource *resource, enum drbd_role role,
+		   bool force)
 {
 	resource->role[NEW] = role;
+
+	if (role == R_PRIMARY && force) {
+		struct drbd_device *device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (device->disk_state[NEW] < D_UP_TO_DATE &&
+			    device->disk_state[NEW] >= D_INCONSISTENT &&
+			    !has_up_to_date_peer_disks(device))
+				device->disk_state[NEW] = D_UP_TO_DATE;
+		}
+		rcu_read_unlock();
+	}
 }
 
 enum drbd_state_rv change_role(struct drbd_resource *resource,
 			       enum drbd_role role,
-			       enum chg_state_flags flags)
+			       enum chg_state_flags flags,
+			       bool force)
 {
 	unsigned long irq_flags;
 
@@ -2073,7 +2099,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 	    resource->role[NOW] != R_PRIMARY && role == R_PRIMARY) {
 		enum drbd_state_rv rv;
 
-		__change_role(resource, role);
+		__change_role(resource, role, force);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_peer_state(first_connection(resource), -1, NS(role, role), &irq_flags);
@@ -2082,7 +2108,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 			return rv;
 		}
 	}
-	__change_role(resource, role);
+	__change_role(resource, role, force);
 	return end_state_change(resource, &irq_flags);
 }
 

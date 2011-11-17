@@ -583,16 +583,16 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 }
 
 enum drbd_state_rv
-drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
+drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 {
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	struct net_conf *nc;
 	int try = 0;
 	int forced = 0;
-	union drbd_state mask, val;
+	bool with_force = false;
 
-	if (new_role == R_PRIMARY) {
+	if (role == R_PRIMARY) {
 		struct drbd_connection *connection;
 
 		/* Detect dead peers as soon as possible.  */
@@ -605,48 +605,40 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 
 	mutex_lock(&device->resource->state_mutex);
 
-	mask.i = 0; mask.role = R_MASK;
-	val.i  = 0; val.role  = new_role;
-
 	while (try++ < max_tries) {
-		rv = _drbd_request_state(device, mask, val, CS_WAIT_COMPLETE);
+		rv = stable_state_change(device->resource,
+			change_role(device->resource, role,
+				    CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
+				    with_force));
 
 		/* in case we first succeeded to outdate,
 		 * but now suddenly could establish a connection */
-		if (rv == SS_CW_FAILED_BY_PEER && mask.pdsk != 0) {
-			val.pdsk = 0;
-			mask.pdsk = 0;
+		if (rv == SS_CW_FAILED_BY_PEER) {
+			with_force = false;
 			continue;
 		}
 
-		if (rv == SS_NO_UP_TO_DATE_DISK && force &&
-		    (device->disk_state[NOW] < D_UP_TO_DATE &&
-		     device->disk_state[NOW] >= D_INCONSISTENT)) {
-			mask.disk = D_MASK;
-			val.disk  = D_UP_TO_DATE;
+		if (rv == SS_NO_UP_TO_DATE_DISK && force && !with_force) {
+			with_force = true;
 			forced = 1;
 			continue;
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK &&
-		    device->disk_state[NOW] == D_CONSISTENT && mask.pdsk == 0) {
-			D_ASSERT(device, first_peer_device(device)->disk_state[NOW] == D_UNKNOWN);
+		    device->disk_state[NOW] == D_CONSISTENT && !with_force) {
+			D_ASSERT(device, conn_highest_pdsk(first_peer_device(device)->connection) == D_UNKNOWN);
 
-			if (conn_try_outdate_peer(first_peer_device(device)->connection)) {
-				val.disk = D_UP_TO_DATE;
-				mask.disk = D_MASK;
-			}
+			if (conn_try_outdate_peer(first_peer_device(device)->connection))
+				with_force = true;
 			continue;
 		}
 
 		if (rv == SS_NOTHING_TO_DO)
 			goto out;
-		if (rv == SS_PRIMARY_NOP && mask.pdsk == 0) {
+		if (rv == SS_PRIMARY_NOP && !with_force) {
 			if (!conn_try_outdate_peer(first_peer_device(device)->connection) && force) {
 				drbd_warn(device, "Forced into split brain situation!\n");
-				mask.pdsk = D_MASK;
-				val.pdsk  = D_OUTDATED;
-
+				with_force = true;
 			}
 			continue;
 		}
@@ -664,8 +656,10 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 			continue;
 		}
 		if (rv < SS_SUCCESS) {
-			rv = _drbd_request_state(device, mask, val,
-						CS_VERBOSE | CS_WAIT_COMPLETE);
+			rv = stable_state_change(device->resource,
+				change_role(device->resource, role,
+					    CS_VERBOSE | CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
+					    with_force));
 			if (rv < SS_SUCCESS)
 				goto out;
 		}
@@ -681,7 +675,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 	/* Wait until nothing is on the fly :) */
 	wait_event(device->misc_wait, atomic_read(&device->ap_pending_cnt) == 0);
 
-	if (new_role == R_SECONDARY) {
+	if (role == R_SECONDARY) {
 		set_disk_ro(device->vdisk, true);
 		if (get_ldev(device)) {
 			device->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
