@@ -487,31 +487,6 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	return rv;
 }
 
-void drbd_set_new_device_state(struct drbd_device *device, union drbd_state state)
-{
-	struct drbd_resource *resource = device->resource;
-
-	device->disk_state[NEW] = state.disk;
-	resource->role[NEW] = state.role;
-	resource->susp[NEW] = state.susp;
-	resource->susp_nod[NEW] = state.susp_nod;
-	resource->susp_fen[NEW] = state.susp_fen;
-}
-
-void drbd_set_new_peer_device_state(struct drbd_peer_device *peer_device, union drbd_state state)
-{
-	struct drbd_connection *connection = peer_device->connection;
-
-	drbd_set_new_device_state(peer_device->device, state);
-	peer_device->resync_susp_user[NEW] = state.user_isp;
-	peer_device->resync_susp_peer[NEW] = state.peer_isp;
-	peer_device->resync_susp_dependency[NEW] = state.aftr_isp;
-	peer_device->repl_state[NEW] = max_t(unsigned, state.conn, L_STANDALONE);
-	peer_device->disk_state[NEW] = state.pdsk;
-	connection->cstate[NEW] = min_t(unsigned, state.conn, C_CONNECTED);
-	connection->peer_role[NEW] = state.peer;
-}
-
 static inline bool is_susp(union drbd_state s)
 {
         return s.susp || s.susp_nod || s.susp_fen;
@@ -594,79 +569,6 @@ static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *conne
 		return L_STANDALONE;
 
 	return repl_state;
-}
-
-static union drbd_state
-apply_mask_val(union drbd_state os, union drbd_state mask, union drbd_state val)
-{
-	union drbd_state ns;
-	ns.i = (os.i & ~mask.i) | val.i;
-	return ns;
-}
-
-enum drbd_state_rv
-drbd_change_state(struct drbd_device *device, enum chg_state_flags f,
-		  union drbd_state mask, union drbd_state val)
-{
-	unsigned long irq_flags;
-	union drbd_state ns;
-	enum drbd_state_rv rv;
-
-	begin_state_change(device->resource, &irq_flags, f);
-	ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
-	__drbd_set_state(device, ns);
-	rv = end_state_change(device->resource, &irq_flags);
-
-	return rv;
-}
-
-/**
- * drbd_req_state() - Perform a state change
- * @device:	DRBD device.
- * @mask:	mask of state bits to change.
- * @val:	value of new state bits.
- * @f:		flags
- *
- * Should not be called directly, use drbd_request_state() or
- * _drbd_request_state().
- */
-STATIC enum drbd_state_rv
-drbd_req_state(struct drbd_device *device, union drbd_state mask,
-	       union drbd_state val, enum chg_state_flags f)
-{
-	unsigned long irq_flags;
-	union drbd_state os, ns;
-	enum drbd_state_rv rv;
-
-	begin_state_change(device->resource, &irq_flags, f);
-	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
-	ns = apply_mask_val(os, mask, val);
-	drbd_set_new_peer_device_state(first_peer_device(device), ns);
-	rv = end_state_change(device->resource, &irq_flags);
-
-	return rv;
-}
-
-/**
- * _drbd_request_state() - Request a state change (with flags)
- * @device:	DRBD device.
- * @mask:	mask of state bits to change.
- * @val:	value of new state bits.
- * @f:		flags
- *
- * Cousin of drbd_request_state(), useful with the CS_WAIT_COMPLETE
- * flag, or when logging of failed state change requests is not desired.
- */
-enum drbd_state_rv
-_drbd_request_state(struct drbd_device *device, union drbd_state mask,
-		    union drbd_state val, enum chg_state_flags f)
-{
-	enum drbd_state_rv rv;
-
-	wait_event(device->resource->state_wait,
-		   (rv = drbd_req_state(device, mask, val, f)) != SS_IN_TRANSIENT_STATE);
-
-	return rv;
 }
 
 static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_state which)
@@ -1218,7 +1120,6 @@ void drbd_resume_al(struct drbd_device *device)
 		drbd_info(device, "Resumed AL updates\n");
 }
 
-/* helper for __drbd_set_state */
 static void set_ov_position(struct drbd_peer_device *peer_device,
 			    enum drbd_repl_state repl_state)
 {
@@ -1415,19 +1316,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	}
 
 	queue_after_state_change_work(resource, done, GFP_ATOMIC);
-}
-
-/**
- * __drbd_set_state() - Set a new DRBD state
- * @device:	DRBD device.
- * @ns:		new state.
- * @flags:	Flags
- *
- * Caller needs to hold req_lock, and global_state_lock. Do not call directly.
- */
-void __drbd_set_state(struct drbd_device *device, union drbd_state ns)
-{
-	drbd_set_new_peer_device_state(first_peer_device(device), ns);
 }
 
 static void abw_start_sync(struct drbd_device *device, int rv)
@@ -1967,43 +1855,6 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	kfree(work);
 
 	return 0;
-}
-
-static void conn_set_state(struct drbd_connection *connection,
-			   union drbd_state mask, union drbd_state val)
-{
-	union drbd_state ns, os;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		os = drbd_get_peer_device_state(peer_device, NOW);
-		ns = apply_mask_val(os, mask, val);
-		__drbd_set_state(device, ns);
-	}
-	rcu_read_unlock();
-}
-
-void
-_conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
-{
-	conn_set_state(connection, mask, val);
-}
-
-enum drbd_state_rv
-conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-		   enum chg_state_flags flags)
-{
-	unsigned long irq_flags;
-	enum drbd_state_rv rv;
-
-	begin_state_change(connection->resource, &irq_flags, flags);
-	_conn_request_state(connection, mask, val);
-	rv = end_state_change(connection->resource, &irq_flags);
-
-	return rv;
 }
 
 static inline bool local_state_change(enum chg_state_flags flags)

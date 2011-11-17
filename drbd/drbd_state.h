@@ -52,12 +52,6 @@ struct drbd_peer_device;
 	STATE_TYPE(STATE_MASK(T1) | STATE_MASK(T2) | STATE_MASK(T3)), \
 	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2) | STATE_VALUE(T3, S3))
 
-#define _NS(D, T, S) \
-	({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D), NOW); __ns.T = (S); __ns; })
-#define _NS2(D, T1, S1, T2, S2) \
-	({ union drbd_state __ns; __ns = drbd_get_peer_device_state(first_peer_device(D), NOW); __ns.T1 = (S1); \
-	__ns.T2 = (S2); __ns; })
-
 enum chg_state_flags {
 	CS_HARD          = 1 << 0, /* Forced state change, such as a connection loss */
 	CS_VERBOSE       = 1 << 1,
@@ -69,41 +63,7 @@ enum chg_state_flags {
 	CS_GLOBAL_LOCKED = 1 << 12,  /* global_state_lock already taken */
 };
 
-extern enum drbd_state_rv drbd_change_state(struct drbd_device *device,
-					    enum chg_state_flags f,
-					    union drbd_state mask,
-					    union drbd_state val);
-extern enum drbd_state_rv _drbd_request_state(struct drbd_device *,
-					      union drbd_state,
-					      union drbd_state,
-					      enum chg_state_flags);
-extern void __drbd_set_state(struct drbd_device *, union drbd_state);
-
-void
-_conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val);
-
-enum drbd_state_rv
-conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-		   enum chg_state_flags flags);
-
 extern void drbd_resume_al(struct drbd_device *device);
-
-/**
- * drbd_request_state() - Reqest a state change
- * @device:	DRBD device.
- * @mask:	mask of state bits to change.
- * @val:	value of new state bits.
- *
- * This is the most graceful way of requesting a state change. It is verbose
- * quite verbose in case the state change is not possible, and all those
- * state changes are globally serialized.
- */
-static inline int drbd_request_state(struct drbd_device *device,
-				     union drbd_state mask,
-				     union drbd_state val)
-{
-	return _drbd_request_state(device, mask, val, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
-}
 
 enum drbd_role highest_peer_role(struct drbd_resource *);
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
@@ -121,9 +81,6 @@ extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
 enum which_state;
 extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_state);
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);
-
-extern void drbd_set_new_device_state(struct drbd_device *, union drbd_state);
-extern void drbd_set_new_peer_device_state(struct drbd_peer_device *, union drbd_state);
 
 #define stable_state_change(resource, change_state) ({							\
 		enum drbd_state_rv rv;									\
