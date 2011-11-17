@@ -565,6 +565,12 @@ const char *read_balancing_map[] = {
 	[RB_ROUND_ROBIN] = "round-robin",
 	[RB_LEAST_PENDING] = "least-pending",
 	[RB_CONGESTED_REMOTE] = "when-congested-remote",
+	[RB_32K_STRIPING] = "32K-striping",
+	[RB_64K_STRIPING] = "64K-striping",
+	[RB_128K_STRIPING] = "128K-striping",
+	[RB_256K_STRIPING] = "256K-striping",
+	[RB_512K_STRIPING] = "512K-striping",
+	[RB_1M_STRIPING] = "1M-striping"
 };
 
 #define CHANGEABLE_DISK_OPTIONS								\

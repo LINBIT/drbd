@@ -853,7 +853,10 @@
 	      The supported <replaceable>methods</replaceable> for load balancing of
 	      read requests are <option>prefer-local</option>, <option>prefer-remote</option>,
 	      <option>round-robin</option>, <option>least-pending</option>
-	      and <option>when-congested-remote</option>.</para>
+	      <option>when-congested-remote</option>, <option>32K-striping</option>,
+	      <option>64K-striping</option>, <option>128K-striping</option>,
+	      <option>256K-striping</option>, <option>512K-striping</option>
+	      and <option>1M-striping</option>.</para>
 	      <para> The default value of is <option>prefer-local</option>.
 	      This option is available since 8.4.1.
 	      </para>
