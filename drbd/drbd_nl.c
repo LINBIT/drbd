@@ -167,6 +167,8 @@ static int drbd_msg_put_info(const char *info)
 	return 0;
 }
 
+static int drbd_adm_finish(struct genl_info *info, int retcode);
+
 /* This would be a good candidate for a "pre_doit" hook,
  * and per-family private info->pointers.
  * But we need to stay compatible with older kernels.
@@ -249,23 +251,27 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 
 	if (!adm_ctx.device && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info("unknown minor");
-		return ERR_MINOR_INVALID;
+		err = ERR_MINOR_INVALID;
+		goto finish;
 	}
 	if (!adm_ctx.resource && (flags & DRBD_ADM_NEED_RESOURCE)) {
 		drbd_msg_put_info("unknown resource");
+		err = ERR_INVALID_REQUEST;
 		if (adm_ctx.resource_name)
-			return ERR_RES_NOT_KNOWN;
-		return ERR_INVALID_REQUEST;
+			err = ERR_RES_NOT_KNOWN;
+		goto finish;
 	}
 
 	if (flags & DRBD_ADM_NEED_CONNECTION) {
 		if (adm_ctx.resource) {
 			drbd_msg_put_info("no resource name expected");
-			return ERR_INVALID_REQUEST;
+			err = ERR_INVALID_REQUEST;
+			goto finish;
 		}
 		if (adm_ctx.device) {
 			drbd_msg_put_info("no minor number expected");
-			return ERR_INVALID_REQUEST;
+			err = ERR_INVALID_REQUEST;
+			goto finish;
 		}
 		if (adm_ctx.my_addr && adm_ctx.peer_addr)
 			adm_ctx.connection = conn_get_by_addrs(
@@ -273,7 +279,8 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 				nla_data(adm_ctx.peer_addr), nla_len(adm_ctx.peer_addr));
 		if (!adm_ctx.connection) {
 			drbd_msg_put_info("unknown connection");
-			return ERR_INVALID_REQUEST;
+			err = ERR_INVALID_REQUEST;
+			goto finish;
 		}
 	}
 
@@ -284,7 +291,8 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 				adm_ctx.minor, adm_ctx.resource->name,
 				adm_ctx.device->resource->name);
 		drbd_msg_put_info("minor exists in different resource");
-		return ERR_INVALID_REQUEST;
+		err = ERR_INVALID_REQUEST;
+		goto finish;
 	}
 	if (adm_ctx.device &&
 	    adm_ctx.volume != VOLUME_UNSPECIFIED &&
@@ -294,7 +302,8 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 				adm_ctx.device->vnr,
 				adm_ctx.device->resource->name);
 		drbd_msg_put_info("minor exists as different volume");
-		return ERR_INVALID_REQUEST;
+		err = ERR_INVALID_REQUEST;
+		goto finish;
 	}
 
 	return NO_ERROR;
@@ -302,6 +311,10 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 fail:
 	nlmsg_free(adm_ctx.reply_skb);
 	adm_ctx.reply_skb = NULL;
+	return err;
+
+finish:
+	drbd_adm_finish(info, err);
 	return err;
 }
 
@@ -321,6 +334,7 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 
 	adm_ctx.reply_dh->ret_code = retcode;
 	drbd_adm_send_reply(adm_ctx.reply_skb, info);
+	adm_ctx.reply_skb = NULL;
 	return 0;
 }
 
@@ -734,8 +748,6 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_SET_ROLE_PARMS]) {
@@ -1168,8 +1180,6 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	device = adm_ctx.device;
 
@@ -1288,8 +1298,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto finish;
 
 	device = adm_ctx.device;
 
@@ -1668,7 +1676,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		peer_device->rs_plan_s = NULL;
 	}
 
- finish:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -1714,8 +1721,6 @@ int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	if (info->attrs[DRBD_NLA_DETACH_PARMS]) {
 		err = detach_parms_from_attrs(&parms, info);
@@ -1916,8 +1921,6 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_CONNECTION);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	connection = adm_ctx.connection;
 
@@ -2031,11 +2034,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	int err;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
-
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
+
 	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
 		drbd_msg_put_info("connection endpoint(s) missing");
 		retcode = ERR_INVALID_REQUEST;
@@ -2203,8 +2204,6 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_CONNECTION);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto fail;
 
 	connection = adm_ctx.connection;
 	memset(&parms, 0, sizeof(parms));
@@ -2258,8 +2257,6 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto fail;
 
 	memset(&rs, 0, sizeof(struct resize_parms));
 	if (info->attrs[DRBD_NLA_RESIZE_PARMS]) {
@@ -2358,8 +2355,6 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto fail;
 
 	res_opts = adm_ctx.resource->res_opts;
 	if (should_set_defaults(info))
@@ -2392,8 +2387,6 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	device = adm_ctx.device;
 
@@ -2418,7 +2411,6 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
 	}
 
-out:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -2431,11 +2423,8 @@ static int drbd_adm_simple_request_state(struct sk_buff *skb, struct genl_info *
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	retcode = drbd_request_state(adm_ctx.device, mask, val);
-out:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -2452,12 +2441,10 @@ int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	if (drbd_request_state(adm_ctx.device, NS(user_isp, 1)) == SS_NOTHING_TO_DO)
 		retcode = ERR_PAUSE_IS_SET;
-out:
+
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -2469,8 +2456,6 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	if (drbd_request_state(adm_ctx.device, NS(user_isp, 0)) == SS_NOTHING_TO_DO) {
 		struct drbd_peer_device *peer_device = first_peer_device(adm_ctx.device);
@@ -2488,7 +2473,6 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-out:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -2506,8 +2490,6 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	device = adm_ctx.device;
 	if (test_bit(NEW_CUR_UUID, &device->flags)) {
@@ -2524,7 +2506,6 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	}
 	drbd_resume_io(device);
 
-out:
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -2699,8 +2680,6 @@ int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	resource = adm_ctx.device->resource;
 	err = nla_put_status_info(adm_ctx.reply_skb, resource, adm_ctx.device, NULL);
@@ -2708,7 +2687,7 @@ int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info)
 		nlmsg_free(adm_ctx.reply_skb);
 		return err;
 	}
-out:
+
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -3169,8 +3148,6 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	tp.timeout_type =
 		first_peer_device(adm_ctx.device)->disk_state[NOW] == D_OUTDATED ? UT_PEER_OUTDATED :
@@ -3182,7 +3159,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 		nlmsg_free(adm_ctx.reply_skb);
 		return err;
 	}
-out:
+
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -3196,8 +3173,6 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	device = adm_ctx.device;
 	peer_device = first_peer_device(device);
@@ -3235,8 +3210,6 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out_nolock;
 
 	device = adm_ctx.device;
 	memset(&args, 0, sizeof(args));
@@ -3323,8 +3296,6 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, 0);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	set_res_opts_defaults(&res_opts);
 	err = res_opts_from_attrs(&res_opts, info);
@@ -3358,8 +3329,6 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	set_device_conf_defaults(&device_conf);
 	err = device_conf_from_attrs(&device_conf, info);
@@ -3411,11 +3380,9 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	retcode = adm_del_minor(adm_ctx.device);
-out:
+
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -3452,8 +3419,6 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	resource = adm_ctx.resource;
 	/* demote */
@@ -3508,11 +3473,9 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	if (retcode != NO_ERROR)
-		goto out;
 
 	retcode = adm_del_resource(adm_ctx.resource);
-out:
+
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
