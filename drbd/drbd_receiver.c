@@ -2276,7 +2276,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 				err = drbd_wait_misc(device, &req->i);
 				if (err) {
 					begin_state_change_locked(connection->resource, CS_HARD);
-					_conn_request_state(connection, NS(conn, C_TIMEOUT), CS_HARD, NULL);
+					_conn_request_state(connection, NS(conn, C_TIMEOUT));
 					end_state_change_locked(connection->resource);
 					fail_postponed_requests(device, sector, size);
 					goto out;
@@ -4698,7 +4698,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED)
-		_conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE, &irq_flags);
+		_conn_request_state(connection, NS(conn, C_UNCONNECTED));
 	end_state_change(connection->resource, &irq_flags);
 
 	if (oc == C_DISCONNECTING)

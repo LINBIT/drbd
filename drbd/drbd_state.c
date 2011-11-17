@@ -1923,8 +1923,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				_tl_restart(connection, RESEND);
 				_conn_request_state(connection,
 						    (union drbd_state) { { .susp_fen = 1 } },
-						    (union drbd_state) { { .susp_fen = 0 } },
-						    CS_VERBOSE, &irq_flags);
+						    (union drbd_state) { { .susp_fen = 0 } });
 				end_state_change(resource, &irq_flags);
 			}
 		}
@@ -1939,8 +1938,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 }
 
 static void conn_set_state(struct drbd_connection *connection,
-			   union drbd_state mask, union drbd_state val,
-			   enum chg_state_flags flags)
+			   union drbd_state mask, union drbd_state val)
 {
 	union drbd_state ns, os;
 	struct drbd_peer_device *peer_device;
@@ -1957,10 +1955,9 @@ static void conn_set_state(struct drbd_connection *connection,
 }
 
 void
-_conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
-		    enum chg_state_flags flags, unsigned long *irq_flags)
+_conn_request_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
 {
-	conn_set_state(connection, mask, val, flags);
+	conn_set_state(connection, mask, val);
 }
 
 enum drbd_state_rv
@@ -1971,7 +1968,7 @@ conn_request_state(struct drbd_connection *connection, union drbd_state mask, un
 	enum drbd_state_rv rv;
 
 	begin_state_change(connection->resource, &irq_flags, flags);
-	_conn_request_state(connection, mask, val, flags, &irq_flags);
+	_conn_request_state(connection, mask, val);
 	rv = end_state_change(connection->resource, &irq_flags);
 
 	return rv;

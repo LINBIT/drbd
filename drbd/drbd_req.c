@@ -931,8 +931,7 @@ allocate_barrier:
 			if (err != -ERESTARTSYS) {
 				begin_state_change_locked(device->resource, CS_HARD);
 				_conn_request_state(first_peer_device(device)->connection,
-						    NS(conn, C_TIMEOUT),
-						    CS_HARD, NULL);
+						    NS(conn, C_TIMEOUT));
 				end_state_change_locked(device->resource);
 			}
 			spin_unlock_irq(&device->resource->req_lock);

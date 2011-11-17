@@ -562,7 +562,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	   meantime. */
 	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	if (connection->cstate[NOW] < C_CONNECTED)
-		_conn_request_state(connection, mask, val, CS_VERBOSE, &irq_flags);
+		_conn_request_state(connection, mask, val);
 	end_state_change(connection->resource, &irq_flags);
 
 	return conn_highest_pdsk(connection) <= D_OUTDATED;
