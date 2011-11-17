@@ -2283,6 +2283,11 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 	return end_state_change(resource, &irq_flags);
 }
 
+void __change_peer_role(struct drbd_connection *connection, enum drbd_role peer_role)
+{
+	connection->peer_role[NEW] = peer_role;
+}
+
 void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
 {
 	peer_device->repl_state[NEW] = repl_state;
