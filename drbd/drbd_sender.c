@@ -826,9 +826,9 @@ STATIC void ping_peer(struct drbd_device *device)
 int drbd_resync_finished(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
-	union drbd_state os, ns;
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
 	unsigned long irq_flags;
@@ -869,17 +869,14 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	ping_peer(device);
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-	os = drbd_get_peer_device_state(peer_device, NOW);
 
-	verify_done = (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T);
+	verify_done = (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T);
 
 	/* This protects us against multiple calls (that can happen in the presence
 	   of application IO), and against connectivity loss just before we arrive here. */
-	if (os.conn <= L_CONNECTED)
+	if (peer_device->repl_state[NOW] <= L_CONNECTED)
 		goto out_unlock;
-
-	ns = os;
-	ns.conn = L_CONNECTED;
+	__change_repl_state(peer_device, L_CONNECTED);
 
 	drbd_info(device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     verify_done ? "Online verify " : "Resync",
@@ -887,7 +884,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 	n_oos = drbd_bm_total_weight(device);
 
-	if (os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) {
+	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T) {
 		if (n_oos) {
 			drbd_alert(device, "Online verify found %lu %dk block out of sync!\n",
 			      n_oos, Bit2KB(1));
@@ -896,7 +893,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	} else {
 		D_ASSERT(device, (n_oos - peer_device->rs_failed) == 0);
 
-		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T)
+		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
 
 		if (peer_device->connection->csums_tfm && peer_device->rs_total) {
@@ -917,18 +914,18 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	if (peer_device->rs_failed) {
 		drbd_info(device, "            %lu failed blocks\n", peer_device->rs_failed);
 
-		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T) {
-			ns.disk = D_INCONSISTENT;
-			ns.pdsk = D_UP_TO_DATE;
+		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
+			__change_disk_state(device, D_INCONSISTENT);
+			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 		} else {
-			ns.disk = D_UP_TO_DATE;
-			ns.pdsk = D_INCONSISTENT;
+			__change_disk_state(device, D_UP_TO_DATE);
+			__change_peer_disk_state(peer_device, D_INCONSISTENT);
 		}
 	} else {
-		ns.disk = D_UP_TO_DATE;
-		ns.pdsk = D_UP_TO_DATE;
+		__change_disk_state(device, D_UP_TO_DATE);
+		__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 
-		if (os.conn == L_SYNC_TARGET || os.conn == L_PAUSED_SYNC_T) {
+		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			if (device->p_uuid) {
 				int i;
 				for (i = UI_BITMAP ; i <= UI_HISTORY_END ; i++)
@@ -940,7 +937,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 			}
 		}
 
-		if (!(os.conn == L_VERIFY_S || os.conn == L_VERIFY_T)) {
+		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
 			/* for verify runs, we don't update uuids here,
 			 * so there would be nothing to report. */
 			drbd_uuid_set_bm(device, 0UL);
@@ -955,7 +952,6 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		}
 	}
 
-	__drbd_set_state(device, ns);
 out_unlock:
 	end_state_change(device->resource, &irq_flags);
 	put_ldev(device);
