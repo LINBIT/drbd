@@ -4181,13 +4181,15 @@ STATIC int receive_req_conn_state(struct drbd_connection *connection, struct pac
 
 STATIC int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
+	enum drbd_repl_state *repl_state;
 	struct drbd_device *device;
 	struct p_state *p = pi->data;
-	union drbd_state os, ns, peer_state;
-	enum drbd_disk_state real_peer_disk;
+	union drbd_state os, peer_state;
+	enum drbd_disk_state peer_disk_state;
+	enum drbd_repl_state new_repl_state;
 	int rv;
-	unsigned long irq_flags;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -4196,16 +4198,17 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	real_peer_disk = peer_state.disk;
+	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
-		real_peer_disk = device->p_uuid[UI_FLAGS] & 4 ? D_INCONSISTENT : D_CONSISTENT;
-		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(real_peer_disk));
+		peer_disk_state = device->p_uuid[UI_FLAGS] & 4 ? D_INCONSISTENT : D_CONSISTENT;
+		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
 
-	spin_lock_irq(&device->resource->req_lock);
-	os = ns = drbd_get_peer_device_state(peer_device, NOW);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
+	os = drbd_get_peer_device_state(peer_device, NOW);
+	spin_unlock_irq(&resource->req_lock);
  retry:
+	new_repl_state = max_t(enum drbd_repl_state, os.conn, L_STANDALONE);
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * transitions from D_INCONSISTENT to D_UP_TO_DATE. For empty (0 bits
@@ -4214,7 +4217,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	 * transition from D_CONSISTENT to D_UP_TO_DATE as well.
 	 */
 	if ((os.pdsk == D_INCONSISTENT || os.pdsk == D_CONSISTENT) &&
-	    real_peer_disk == D_UP_TO_DATE &&
+	    peer_disk_state == D_UP_TO_DATE &&
 	    os.conn > L_CONNECTED && os.disk == D_UP_TO_DATE) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
@@ -4224,7 +4227,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		 * cannot ignore this completely. */
 		if (peer_state.conn > L_CONNECTED &&
 		    peer_state.conn < L_SYNC_SOURCE)
-			real_peer_disk = D_INCONSISTENT;
+			peer_disk_state = D_INCONSISTENT;
 
 		/* if peer_state changes to connected at the same time,
 		 * it explicitly notifies us that it finished resync.
@@ -4242,15 +4245,15 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	 * but we think we are already done with the sync.
 	 * We ignore this to avoid flapping pdsk.
 	 * This should not happen, if the peer is a recent version of drbd. */
-	if (os.pdsk == D_UP_TO_DATE && real_peer_disk == D_INCONSISTENT &&
+	if (os.pdsk == D_UP_TO_DATE && peer_disk_state == D_INCONSISTENT &&
 	    os.conn == L_CONNECTED && peer_state.conn > L_SYNC_SOURCE)
-		real_peer_disk = D_UP_TO_DATE;
+		peer_disk_state = D_UP_TO_DATE;
 
-	if (ns.conn == L_STANDALONE)
-		ns.conn = L_CONNECTED;
+	if (new_repl_state == L_STANDALONE)
+		new_repl_state = L_CONNECTED;
 
 	if (peer_state.conn == L_AHEAD)
-		ns.conn = L_BEHIND;
+		new_repl_state = L_BEHIND;
 
 	if (device->p_uuid && peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
@@ -4273,69 +4276,78 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 				 peer_state.conn <= L_WF_BITMAP_T));
 
 		if (cr)
-			ns.conn = drbd_sync_handshake(peer_device, peer_state.role, real_peer_disk);
+			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
 
 		put_ldev(device);
-		if (ns.conn == C_MASK) {
-			ns.conn = L_CONNECTED;
+		if (new_repl_state == C_MASK) {
+			new_repl_state = L_CONNECTED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				change_disk_state(device, D_FAILED, CS_HARD);
 			} else if (peer_state.disk == D_NEGOTIATING) {
 				drbd_err(device, "Disk attach process on the peer node was aborted.\n");
 				peer_state.disk = D_DISKLESS;
-				real_peer_disk = D_DISKLESS;
+				peer_disk_state = D_DISKLESS;
 			} else {
-				if (test_and_clear_bit(CONN_DRY_RUN, &peer_device->connection->flags))
+				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
 				D_ASSERT(device, os.conn == L_STANDALONE);
-				change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+				change_cstate(connection, C_DISCONNECTING, CS_HARD);
 				return -EIO;
 			}
 		}
 	}
 
-	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	spin_lock_irq(&resource->req_lock);
+	begin_state_change_locked(resource, CS_VERBOSE);
 	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i) {
-		os = ns = drbd_get_peer_device_state(peer_device, NOW);
-		abort_state_change(device->resource, &irq_flags);
+		os = drbd_get_peer_device_state(peer_device, NOW);
+		abort_state_change_locked(resource);
+		spin_unlock_irq(&resource->req_lock);
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
-	ns.peer = peer_state.role;
-	ns.pdsk = real_peer_disk;
-	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
-	if ((ns.conn == L_CONNECTED || ns.conn == L_WF_BITMAP_S) && ns.disk == D_NEGOTIATING)
-		ns.disk = device->disk_state_from_metadata;
-	if (os.conn < L_CONNECTED && ns.conn >= L_CONNECTED)
-		device->resource->state_change_flags |= CS_HARD;
-	if (ns.pdsk == D_CONSISTENT && drbd_suspended(device) && ns.conn == L_CONNECTED && os.conn < L_CONNECTED &&
+	__change_repl_state(peer_device, new_repl_state);
+	__change_peer_role(connection, peer_state.role);
+	__change_peer_disk_state(peer_device, peer_disk_state);
+	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
+	repl_state = peer_device->repl_state;
+	if ((repl_state[NEW] == L_CONNECTED || repl_state[NEW] == L_WF_BITMAP_S) &&
+	    device->disk_state[NEW] == D_NEGOTIATING)
+		__change_disk_state(device, device->disk_state_from_metadata);
+	if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
+		resource->state_change_flags |= CS_HARD;
+	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
+	    drbd_suspended(device) &&
+	    repl_state[OLD] < L_CONNECTED && repl_state[NEW] == L_CONNECTED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		unsigned long irq_flags;
 
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
 		   for temporary network outages! */
-		abort_state_change(device->resource, &irq_flags);
+		abort_state_change_locked(resource);
+		spin_unlock_irq(&resource->req_lock);
+
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		tl_clear(peer_device->connection);
+		tl_clear(connection);
 		drbd_uuid_new_current(device);
 		clear_bit(NEW_CUR_UUID, &device->flags);
-		begin_state_change(device->resource, &irq_flags, CS_HARD);
-		__change_cstate(peer_device->connection, C_PROTOCOL_ERROR);
-		__change_io_susp_user(device->resource, false);
-		end_state_change(device->resource, &irq_flags);
+		begin_state_change(resource, &irq_flags, CS_HARD);
+		__change_cstate(connection, C_PROTOCOL_ERROR);
+		__change_io_susp_user(resource, false);
+		end_state_change(resource, &irq_flags);
 		return -EIO;
 	}
-	__drbd_set_state(device, ns);
-	ns = drbd_get_peer_device_state(peer_device, NEW);
-	rv = end_state_change(device->resource, &irq_flags);
+	rv = end_state_change_locked(resource);
+	new_repl_state = peer_device->repl_state[NOW];
+	spin_unlock_irq(&resource->req_lock);
 
 	if (rv < SS_SUCCESS) {
-		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 		return -EIO;
 	}
 
 	if (os.conn > L_STANDALONE) {
-		if (ns.conn > L_CONNECTED && peer_state.conn <= L_CONNECTED &&
+		if (new_repl_state > L_CONNECTED && peer_state.conn <= L_CONNECTED &&
 		    peer_state.disk != D_NEGOTIATING ) {
 			/* we want resync, peer has not yet decided to sync... */
 			/* Nowadays only used when forcing a node into primary role and
