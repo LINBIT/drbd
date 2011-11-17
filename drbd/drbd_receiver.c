@@ -3999,12 +3999,135 @@ STATIC union drbd_state convert_state(union drbd_state peer_state)
 	return state;
 }
 
+static union drbd_state
+__change_connection_state(struct drbd_connection *connection,
+			  union drbd_state mask, union drbd_state val)
+{
+	struct drbd_resource *resource = connection->resource;
+
+	if (mask.role) {
+		/* not allowed */
+	}
+	if (mask.susp) {
+		mask.susp ^= -1;
+		__change_io_susp_user(resource, val.susp);
+	}
+	if (mask.susp_nod) {
+		mask.susp_nod ^= -1;
+		__change_io_susp_no_data(resource, val.susp_nod);
+	}
+	if (mask.susp_fen) {
+		mask.susp_fen ^= -1;
+		__change_io_susp_fencing(resource, val.susp_fen);
+	}
+
+	if (mask.conn) {
+		mask.conn ^= -1;
+		__change_cstate(connection,
+				min_t(enum drbd_conn_state, val.conn, C_CONNECTED));
+	}
+	if (mask.peer) {
+		mask.peer ^= -1;
+		__change_peer_role(connection, val.peer);
+	}
+	return mask;
+}
+
+static union drbd_state
+__change_peer_device_state(struct drbd_peer_device *peer_device,
+			   union drbd_state mask, union drbd_state val)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (mask.disk) {
+		mask.disk ^= -1;
+		__change_disk_state(device, val.disk);
+	}
+
+	if (mask.conn) {
+		mask.conn ^= -1;
+		__change_repl_state(peer_device,
+				max_t(enum drbd_repl_state, val.conn, L_STANDALONE));
+	if (mask.pdsk)
+		mask.pdsk ^= -1;
+		__change_peer_disk_state(peer_device, val.pdsk);
+	}
+	if (mask.user_isp) {
+		mask.user_isp ^= -1;
+		__change_resync_susp_user(peer_device, val.user_isp);
+	}
+	if (mask.peer_isp) {
+		mask.peer_isp ^= -1;
+		__change_resync_susp_peer(peer_device, val.peer_isp);
+	}
+	if (mask.aftr_isp) {
+		mask.aftr_isp ^= -1;
+		__change_resync_susp_dependency(peer_device, val.aftr_isp);
+	}
+	return mask;
+}
+
+/**
+ * change_connection_state()  -  change state of a connection and all its peer devices
+ *
+ * Also changes the state of the peer devices' devices and of the resource.
+ * Cluster-wide state changes are not supported.
+ */
+static enum drbd_state_rv
+change_connection_state(struct drbd_connection *connection,
+			union drbd_state mask,
+			union drbd_state val,
+			enum chg_state_flags flags)
+{
+	struct drbd_peer_device *peer_device;
+	union drbd_state mask_unused = mask;
+	unsigned long irq_flags;
+	int vnr;
+
+	begin_state_change(connection->resource, &irq_flags, flags);
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
+	mask_unused.i &= __change_connection_state(connection, mask, val).i;
+	if (mask_unused.i) {
+		abort_state_change(connection->resource, &irq_flags);
+		return SS_NOT_SUPPORTED;
+	}
+	return end_state_change(connection->resource, &irq_flags);
+}
+
+/**
+ * change_peer_device_state()  -  change state of a peer and its connection
+ *
+ * Also changes the state of the peer device's device and of the resource.
+ * Cluster-wide state changes are not supported.
+ */
+static enum drbd_state_rv
+change_peer_device_state(struct drbd_peer_device *peer_device,
+			 union drbd_state mask,
+			 union drbd_state val,
+			 enum chg_state_flags flags)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	union drbd_state mask_unused = mask;
+	unsigned long irq_flags;
+
+	begin_state_change(connection->resource, &irq_flags, flags);
+	mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
+	mask_unused.i &= __change_connection_state(connection, mask, val).i;
+	if (mask_unused.i) {
+		abort_state_change(connection->resource, &irq_flags);
+		return SS_NOT_SUPPORTED;
+	}
+	return end_state_change(connection->resource, &irq_flags);
+}
+
 STATIC int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_req_state *p = pi->data;
 	union drbd_state mask, val;
+	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -4024,7 +4147,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	rv = drbd_change_state(device, CS_VERBOSE, mask, val);
+	rv = change_peer_device_state(peer_device, mask, val, flags);
 	drbd_send_sr_reply(peer_device, rv);
 
 	drbd_md_sync(device);
@@ -4050,7 +4173,7 @@ STATIC int receive_req_conn_state(struct drbd_connection *connection, struct pac
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	rv = conn_request_state(connection, mask, val, CS_VERBOSE | CS_LOCAL_ONLY | CS_IGN_OUTD_FAIL);
+	rv = change_connection_state(connection, mask, val, CS_VERBOSE | CS_IGN_OUTD_FAIL);
 	conn_send_sr_reply(connection, rv);
 
 	return 0;

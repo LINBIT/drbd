@@ -301,7 +301,7 @@ enum drbd_state_rv {
 	SS_NO_VERIFY_ALG = -14,       /* drbd-8.2 only */
 	SS_NEED_CONNECTION = -15,    /* drbd-8.2 only */
 	SS_LOWER_THAN_OUTDATED = -16,
-	SS_NOT_SUPPORTED = -17,      /* drbd-8.2 only */
+	SS_NOT_SUPPORTED = -17,
 	SS_IN_TRANSIENT_STATE = -18,  /* Retry after the next state change */
 	SS_CONCURRENT_ST_CHG = -19,   /* Concurrent cluster side state change! */
 	SS_O_VOL_PEER_PRI = -20,
