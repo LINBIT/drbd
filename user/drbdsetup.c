@@ -2428,7 +2428,7 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 		printf("%s_role=\n", _P);
 		printf("%s_peer=\n", _P);
 		printf("%s_disk=\n", _P);
-		printf("%s_pdisk=\n", _P);
+		printf("%s_pdsk=\n", _P);
 		printf("%s_flags_susp=\n", _P);
 		printf("%s_flags_aftr_isp=\n", _P);
 		printf("%s_flags_peer_isp=\n", _P);

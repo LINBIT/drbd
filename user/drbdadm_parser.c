@@ -1732,6 +1732,11 @@ void set_disk_in_res(struct d_resource *res)
 					m_asprintf(&a->disk, "%s", b->device);
 				else
 					m_asprintf(&a->disk, "/dev/drbd%u", b->device_minor);
+				/* stacked implicit volumes need internal meta data, too */
+				if (!a->meta_disk)
+					m_asprintf(&a->meta_disk, "internal");
+				if (!a->meta_index)
+					m_asprintf(&a->meta_index, "internal");
 				a = a->next;
 				b = b->next;
 			} else {
