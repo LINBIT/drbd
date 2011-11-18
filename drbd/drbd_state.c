@@ -674,7 +674,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 			goto abort;
 		}
 
-		if (drbd_send_state_req(first_peer_device(device), mask, val)) {
+		if (conn_send_state_req(first_peer_device(device)->connection, device->vnr, mask, val)) {
 			rv = SS_CW_FAILED_BY_PEER;
 			if (f & CS_VERBOSE)
 				print_st_err(device, os, ns, rv);
@@ -2158,7 +2158,7 @@ conn_cl_wide(struct drbd_connection *connection, union drbd_state mask, union dr
 	abort_state_change(connection->resource, irq_flags);
 	mutex_lock(&connection->resource->state_mutex);
 
-	if (conn_send_state_req(connection, mask, val)) {
+	if (conn_send_state_req(connection, -1, mask, val)) {
 		rv = SS_CW_FAILED_BY_PEER;
 		/* if (f & CS_VERBOSE)
 		   print_st_err(device, os, ns, rv); */

@@ -1206,34 +1206,24 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
-int drbd_send_state_req(struct drbd_peer_device *peer_device, union drbd_state mask, union drbd_state val)
+int conn_send_state_req(struct drbd_connection *connection, int vnr,
+			union drbd_state mask, union drbd_state val)
 {
+	enum drbd_packet cmd = (vnr == -1 && connection->agreed_pro_version >= 100) ?
+		P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
 	struct drbd_socket *sock;
 	struct p_req_state *p;
+	int err;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
-	if (!p)
-		return -EIO;
-	p->mask = cpu_to_be32(mask.i);
-	p->val = cpu_to_be32(val.i);
-	return drbd_send_command(peer_device, sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
-}
-
-int conn_send_state_req(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
-{
-	enum drbd_packet cmd;
-	struct drbd_socket *sock;
-	struct p_req_state *p;
-
-	cmd = connection->agreed_pro_version < 100 ? P_STATE_CHG_REQ : P_CONN_ST_CHG_REQ;
 	sock = &connection->data;
 	p = conn_prepare_command(connection, sock);
 	if (!p)
 		return -EIO;
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
-	return conn_send_command(connection, sock, cmd, sizeof(*p), NULL, 0);
+	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
+	mutex_unlock(&sock->mutex);
+	return err;
 }
 
 void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv retcode)

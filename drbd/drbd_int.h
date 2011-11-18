@@ -1765,8 +1765,7 @@ extern int drbd_send_command(struct drbd_peer_device *, struct drbd_socket *,
 
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
-extern int drbd_send_state_req(struct drbd_peer_device *, union drbd_state, union drbd_state);
-extern int conn_send_state_req(struct drbd_connection *, union drbd_state, union drbd_state);
+extern int conn_send_state_req(struct drbd_connection *, int vnr, union drbd_state, union drbd_state);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
