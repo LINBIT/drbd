@@ -2622,6 +2622,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
+	init_waitqueue_head(&resource->state_wait);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
@@ -2844,7 +2845,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device->request_timer.data = (unsigned long) device;
 
 	init_waitqueue_head(&device->misc_wait);
-	init_waitqueue_head(&device->state_wait);
 	init_waitqueue_head(&device->ee_wait);
 	init_waitqueue_head(&device->al_wait);
 	init_waitqueue_head(&device->seq_wait);

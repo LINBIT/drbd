@@ -656,6 +656,7 @@ struct drbd_resource {
 	spinlock_t req_lock;
 
 	struct mutex state_mutex;
+	wait_queue_head_t state_wait;  /* upon each state change. */
 	enum drbd_state_rv state_change_rv;
 	enum chg_state_flags state_change_flags;
 
@@ -829,7 +830,6 @@ struct drbd_device {
 	enum drbd_disk_state disk_state_from_metadata;
 	enum drbd_disk_state peer_disk_state_from_metadata;
 	wait_queue_head_t misc_wait;
-	wait_queue_head_t state_wait;  /* upon each state change. */
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;

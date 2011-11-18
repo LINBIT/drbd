@@ -681,7 +681,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 			goto abort;
 		}
 
-		wait_event(device->state_wait,
+		wait_event(device->resource->state_wait,
 			(rv = _req_st_cond(device, mask, val, f)) != SS_UNKNOWN_ERROR);
 
 		if (rv < SS_SUCCESS) {
@@ -718,7 +718,7 @@ _drbd_request_state(struct drbd_device *device, union drbd_state mask,
 {
 	enum drbd_state_rv rv;
 
-	wait_event(device->state_wait,
+	wait_event(device->resource->state_wait,
 		   (rv = drbd_req_state(device, mask, val, f)) != SS_IN_TRANSIENT_STATE);
 
 	return rv;
@@ -1353,7 +1353,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			drbd_print_uuids(device, "attached to UUIDs");
 
 		wake_up(&device->misc_wait);
-		wake_up(&device->state_wait);
+		wake_up(&device->resource->state_wait);
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;

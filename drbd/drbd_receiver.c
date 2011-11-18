@@ -5113,7 +5113,7 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 		drbd_err(device, "Requested state change failed by peer: %s (%d)\n",
 			drbd_set_st_err_str(retcode), retcode);
 	}
-	wake_up(&device->state_wait);
+	wake_up(&device->resource->state_wait);
 
 	return 0;
 }
