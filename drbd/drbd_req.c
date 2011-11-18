@@ -178,16 +178,17 @@ static void _req_is_done(struct drbd_device *device, struct drbd_request *req, c
 static void queue_barrier(struct drbd_device *device)
 {
 	struct drbd_tl_epoch *b;
+	struct drbd_connection *connection = first_peer_device(device)->connection;
 
 	/* We are within the req_lock. Once we queued the barrier for sending,
 	 * we set the CREATE_BARRIER bit. It is cleared as soon as a new
 	 * barrier/epoch object is added. This is the only place this bit is
 	 * set. It indicates that the barrier for this epoch is already queued,
 	 * and no new epoch has been created yet. */
-	if (test_bit(CREATE_BARRIER, &device->flags))
+	if (test_bit(CREATE_BARRIER, &connection->flags))
 		return;
 
-	b = first_peer_device(device)->connection->newest_tle;
+	b = connection->newest_tle;
 	b->w.cb = w_send_barrier;
 	b->device = device;
 	/* inc_ap_pending done here, so we won't
@@ -195,9 +196,8 @@ static void queue_barrier(struct drbd_device *device)
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in tl_clear.  */
 	inc_ap_pending(device);
-	drbd_queue_work(&first_peer_device(device)->connection->data.work,
-			&b->w);
-	set_bit(CREATE_BARRIER, &device->flags);
+	drbd_queue_work(&connection->data.work, &b->w);
+	set_bit(CREATE_BARRIER, &connection->flags);
 }
 
 static void _about_to_complete_local_write(struct drbd_device *device,
@@ -514,7 +514,10 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* see __drbd_make_request,
 		 * just after it grabs the req_lock */
+		/* FIXME: CREATE_BARRIER flag will become a resource flag soon.
+		 * re-enable this assert then.
 		D_ASSERT(device, test_bit(CREATE_BARRIER, &device->flags) == 0);
+		 */
 
 		req->epoch = first_peer_device(device)->connection->newest_tle->br_number;
 
@@ -906,7 +909,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	 * if we lost that race, we retry.  */
 	if (rw == WRITE && (remote || send_oos) &&
 	    first_peer_device(device)->connection->unused_spare_tle == NULL &&
-	    test_bit(CREATE_BARRIER, &device->flags)) {
+	    test_bit(CREATE_BARRIER, &first_peer_device(device)->connection->flags)) {
 allocate_barrier:
 		b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_NOIO);
 		if (!b) {
@@ -963,7 +966,7 @@ allocate_barrier:
 	}
 	if (rw == WRITE && (remote || send_oos) &&
 	    first_peer_device(device)->connection->unused_spare_tle == NULL &&
-	    test_bit(CREATE_BARRIER, &device->flags)) {
+	    test_bit(CREATE_BARRIER, &first_peer_device(device)->connection->flags)) {
 		/* someone closed the current epoch
 		 * while we were grabbing the spinlock */
 		spin_unlock_irq(&device->resource->req_lock);
@@ -985,13 +988,13 @@ allocate_barrier:
 	 * make sure that, if this is a write request and it triggered a
 	 * barrier packet, this request is queued within the same spinlock. */
 	if ((remote || send_oos) && first_peer_device(device)->connection->unused_spare_tle &&
-	    test_and_clear_bit(CREATE_BARRIER, &device->flags)) {
+	    test_and_clear_bit(CREATE_BARRIER, &first_peer_device(device)->connection->flags)) {
 		_tl_add_barrier(first_peer_device(device)->connection,
 				first_peer_device(device)->connection->unused_spare_tle);
 		first_peer_device(device)->connection->unused_spare_tle = NULL;
 	} else {
 		D_ASSERT(device, !(remote && rw == WRITE &&
-			   test_bit(CREATE_BARRIER, &device->flags)));
+			   test_bit(CREATE_BARRIER, &first_peer_device(device)->connection->flags)));
 	}
 
 	/* NOTE

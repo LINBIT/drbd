@@ -325,7 +325,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	device = b->device;
 
 	nob = b->next;
-	if (test_and_clear_bit(CREATE_BARRIER, &device->flags)) {
+	if (test_and_clear_bit(CREATE_BARRIER, &connection->flags)) {
 		_tl_add_barrier(connection, b);
 		if (nob)
 			connection->oldest_tle = nob;
@@ -386,7 +386,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 				if (b->w.cb == NULL) {
 					b->w.cb = w_send_barrier;
 					inc_ap_pending(b->device);
-					set_bit(CREATE_BARRIER, &b->device->flags);
+					set_bit(CREATE_BARRIER, &connection->flags);
 				}
 
 				drbd_queue_work(&connection->data.work, &b->w);
@@ -454,10 +454,8 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
  */
 void tl_clear(struct drbd_connection *connection)
 {
-	struct drbd_peer_device *peer_device;
 	struct list_head *le, *tle;
 	struct drbd_request *r;
-	int vnr;
 
 	spin_lock_irq(&connection->resource->req_lock);
 
@@ -476,10 +474,7 @@ void tl_clear(struct drbd_connection *connection)
 	}
 
 	/* ensure bit indicating barrier is required is clear */
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		clear_bit(CREATE_BARRIER, &peer_device->device->flags);
-	rcu_read_unlock();
+	clear_bit(CREATE_BARRIER, &connection->flags);
 
 	spin_unlock_irq(&connection->resource->req_lock);
 }
