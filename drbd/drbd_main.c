@@ -531,7 +531,6 @@ STATIC int drbd_thread_setup(void *arg)
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
 	struct drbd_resource *resource = thi->resource;
 	unsigned long flags;
-	long timeout;
 	int retval;
 
 	daemonize("drbd_%c_%s", thi->name[0], resource->name);
@@ -544,7 +543,7 @@ STATIC int drbd_thread_setup(void *arg)
 
 	__set_current_state(TASK_UNINTERRUPTIBLE);
 	complete(&thi->startstop); /* notify: thi->task is set. */
-	timeout = schedule_timeout(10*HZ);
+	schedule_timeout(10*HZ);
 
 restart:
 	retval = thi->function(thi);

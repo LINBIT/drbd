@@ -287,8 +287,7 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 		/* Double check: it may have been committed by someone else
 		 * while we were waiting for the lock. */
 		if (device->act_log->pending_changes) {
-			int err;
-			err = al_write_transaction(device, delegate);
+			al_write_transaction(device, delegate);
 			device->al_writ_cnt++;
 
 			spin_lock_irq(&device->al_lock);
@@ -327,7 +326,8 @@ void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 			wake = true;
 	}
 	spin_unlock_irqrestore(&device->al_lock, flags);
-	wake_up(&device->al_wait);
+	if (wake)
+		wake_up(&device->al_wait);
 }
 
 #if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
@@ -766,7 +766,7 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
  */
 int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
-	unsigned long sbnr, ebnr, lbnr, flags;
+	unsigned long sbnr, ebnr, flags;
 	sector_t esector, nr_sectors;
 	unsigned int enr, count = 0;
 	struct lc_element *e;
@@ -787,8 +787,6 @@ int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 		goto out;
 	if (!expect(esector < nr_sectors))
 		esector = nr_sectors - 1;
-
-	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
 
 	/* we set it out of sync,
 	 * we do not need to round anything here */

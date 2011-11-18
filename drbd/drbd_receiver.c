@@ -4604,7 +4604,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	enum drbd_conns oc;
-	int vnr, rv = SS_UNKNOWN_ERROR;
+	int vnr;
 
 	if (connection->cstate == C_STANDALONE)
 		return;
@@ -4632,7 +4632,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	spin_lock_irq(&connection->resource->req_lock);
 	oc = connection->cstate;
 	if (oc >= C_UNCONNECTED)
-		rv = _conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
+		_conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
 
 	spin_unlock_irq(&connection->resource->req_lock);
 
@@ -4643,7 +4643,6 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 static int drbd_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	enum drbd_fencing_p fp;
 	unsigned int i;
 
 	/* wait for current activity to cease. */
@@ -4686,14 +4685,6 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 		tl_clear(peer_device->connection);
 
 	drbd_md_sync(device);
-
-	fp = FP_DONT_CARE;
-	if (get_ldev(device)) {
-		rcu_read_lock();
-		fp = rcu_dereference(device->ldev->disk_conf)->fencing;
-		rcu_read_unlock();
-		put_ldev(device);
-	}
 
 	/* serialize with bitmap writeout triggered by the state change,
 	 * if any. */

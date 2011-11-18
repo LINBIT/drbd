@@ -2590,8 +2590,9 @@ static int uuids_scmd(struct drbd_cmd *cm,
 		return 1;
 	}
 	if (state.disk == D_DISKLESS) {
-		/* XXX we could print the ed_uuid anyways:
-		printf("X64(016)\n", ed_uuid); */
+		/* XXX we could print the ed_uuid anyways: */
+		if (0)
+			printf(X64(016)"\n", ed_uuid);
 		fprintf(stderr, "Device has no disk\n");
 		return 1;
 	}

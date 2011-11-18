@@ -59,6 +59,8 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 	cpu = part_stat_lock();
 	part_stat_inc(cpu, &device->vdisk->part0, ios[rw]);
 	part_stat_add(cpu, &device->vdisk->part0, sectors[rw], bio_sectors(bio));
+	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
+		       the compiler warning about cpu only assigned but never used... */
 	part_inc_in_flight(&device->vdisk->part0, rw);
 	part_stat_unlock();
 #endif
