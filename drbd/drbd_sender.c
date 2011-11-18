@@ -77,10 +77,21 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	md_io->error = error;
 
+	/* We grabbed an extra reference in _drbd_md_sync_page_io() to be able
+	 * to timeout on the lower level device, and eventually detach from it.
+	 * If this io completion runs after that timeout expired, this
+	 * drbd_md_put_buffer() may allow us to finally try and re-attach.
+	 * During normal operation, this only puts that extra reference
+	 * down to 1 again.
+	 * Make sure we first drop the reference, and only then signal
+	 * completion, or we may (in drbd_al_read_log()) cycle so fast into the
+	 * next drbd_md_sync_page_io(), that we trigger the
+	 * ASSERT(atomic_read(&mdev->md_io_in_use) == 1) there.
+	 */
+	drbd_md_put_buffer(device);
 	md_io->done = 1;
 	wake_up(&device->misc_wait);
 	bio_put(bio);
-	drbd_md_put_buffer(device);
 	put_ldev(device);
 
 	BIO_ENDIO_FN_RETURN;
@@ -1630,12 +1641,13 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	}
 	clear_bit(B_RS_H_DONE, &device->flags);
 
+	write_lock_irq(&global_state_lock);
 	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
+		write_unlock_irq(&global_state_lock);
 		mutex_unlock(&device->resource->state_mutex);
 		return;
 	}
 
-	write_lock_irq(&global_state_lock);
 	ns = drbd_get_peer_device_state(first_peer_device(device));
 
 	ns.aftr_isp = !_drbd_may_sync_now(device);

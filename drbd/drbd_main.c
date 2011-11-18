@@ -1127,7 +1127,11 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 
 	D_ASSERT(device, device->disk_state == D_UP_TO_DATE);
 
-	uuid = device->ldev->md.uuid[UI_BITMAP] + UUID_NEW_BM_OFFSET;
+	uuid = device->ldev->md.uuid[UI_BITMAP];
+	if (uuid && uuid != UUID_JUST_CREATED)
+		uuid = uuid + UUID_NEW_BM_OFFSET;
+	else
+		get_random_bytes(&uuid, sizeof(u64));
 	drbd_uuid_set(device, UI_BITMAP, uuid);
 	drbd_print_uuids(device, "updated sync UUID");
 	drbd_md_sync(device);
