@@ -1566,7 +1566,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 	}
 
 	drbd_start_resync(device, L_SYNC_SOURCE);
-	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->current_epoch->flags);
+	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
 	return 0;
 }
 

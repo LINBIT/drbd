@@ -689,8 +689,7 @@
           <listitem>
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
-
-              <secondary>disk-flushes</secondary>
+              <secondary>disk-barrier</secondary>
             </indexterm>
 
             <indexterm significance="normal">
@@ -701,8 +700,7 @@
 
             <indexterm significance="normal">
               <primary>drbd.conf</primary>
-
-              <secondary>disk-flushes</secondary>
+              <secondary>disk-drain</secondary>
             </indexterm>
 
             <para>DRBD has four implementations to express write-after-write dependencies to its
@@ -713,8 +711,12 @@
             <para>When selecting the method you should not only base your decision on the
             measurable performance. In case your backing storage device has a volatile write cache
             (plain disks, RAID of plain disks) you should use one of the first two. In case your
-            backing storage device has battery-backed write cache you may go with option 3 or 4.
-            Option 4 will deliver the best performance on such devices.</para>
+            backing storage device has battery-backed write cache you may go with option 3.
+	    Option 4 (disable everything, use "none") <emphasis>is dangerous</emphasis>
+	    on most IO stacks, may result in write-reordering, and if so,
+	    can theoretically be the reason for data corruption, or disturb
+	    the DRBD protocol, causing spurious disconnect/reconnect cycles.
+	    <emphasis>Do not use</emphasis> <option>no-disk-drain</option>.</para>
 
             <para>Unfortunately device mapper (LVM) might not support barriers.</para>
 
@@ -750,8 +752,7 @@
                 <listitem>
                   <para>The third method is simply to let write requests drain before write
                   requests of a new reordering domain are issued. This was the only implementation
-                  before 8.0.9. You can disable this method by setting <option>disk-drain</option>
-                  to <option>no</option>.</para>
+                  before 8.0.9.</para>
                 </listitem>
               </varlistentry>
 
@@ -759,8 +760,13 @@
                 <term>none</term>
 
                 <listitem>
-                  <para>The fourth method is to not express write-after-write dependencies to the
-                  backing store at all.</para>
+                  <para>The fourth method is to not express write-after-write dependencies to
+		  the backing store at all, by also specifying <option>no-disk-drain</option>.
+		  This <emphasis>is dangerous</emphasis>
+		  on most IO stacks, may result in write-reordering, and if so,
+		  can theoretically be the reason for data corruption, or disturb
+		  the DRBD protocol, causing spurious disconnect/reconnect cycles.
+		  <emphasis>Do not use</emphasis> <option>no-disk-drain</option>.</para>
                 </listitem>
               </varlistentry>
             </variablelist>
