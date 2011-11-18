@@ -680,8 +680,6 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 				continue;
 			if (connection->peer_role[NEW] == R_PRIMARY)
 				return SS_TWO_PRIMARIES;
-			if (connection->peer_role[OLD] == R_PRIMARY)
-				return SS_O_VOL_PEER_PRI;
 		}
 	}
 
