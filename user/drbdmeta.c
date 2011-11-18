@@ -1250,6 +1250,9 @@ int v06_md_open(struct format *cfg)
 
 int generic_md_close(struct format *cfg)
 {
+	/* On /dev/ram0 we may not use O_SYNC for some kernels (eg. RHEL6 2.6.32),
+	 * and fsync() returns EIO, too. So we don't do error checking here. */
+	fsync(cfg->md_fd);
 	if (close(cfg->md_fd)) {
 		PERROR("close() failed");
 		return -1;
@@ -2092,7 +2095,7 @@ int v07_style_md_open(struct format *cfg)
 	unsigned long words;
 	unsigned long hard_sect_size = 0;
 	int ioctl_err;
-	int open_flags = O_RDWR | O_SYNC | O_DIRECT;
+	int open_flags = O_RDWR | O_DIRECT;
 
  retry:
 	cfg->md_fd = open(cfg->md_device_name, open_flags );

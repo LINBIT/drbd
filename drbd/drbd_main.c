@@ -1189,10 +1189,10 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 }
 
 /**
- * drbd_send_state() - Sends the drbd state to the peer
+ * drbd_send_current_state() - Sends the drbd state to the peer
  * @device:	DRBD device.
  */
-int drbd_send_state(struct drbd_peer_device *peer_device)
+int drbd_send_current_state(struct drbd_peer_device *peer_device)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
@@ -1202,6 +1202,29 @@ int drbd_send_state(struct drbd_peer_device *peer_device)
 	if (!p)
 		return -EIO;
 	p->state = cpu_to_be32(drbd_get_peer_device_state(peer_device).i); /* Within the send mutex */
+	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
+}
+
+/**
+ * drbd_send_state() - After a state change, sends the new state to the peer
+ * @peer_device:      DRBD peer device.
+ * @state:     the state to send, not necessarily the current state.
+ *
+ * Each state change queues an "after_state_ch" work, which will eventually
+ * send the resulting new state to the peer. If more state changes happen
+ * between queuing and processing of the after_state_ch work, we still
+ * want to send each intermediary state in the order it occurred.
+ */
+int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
+{
+	struct drbd_socket *sock;
+	struct p_state *p;
+
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
+	if (!p)
+		return -EIO;
+	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
@@ -1217,7 +1240,6 @@ int drbd_send_state_req(struct drbd_peer_device *peer_device, union drbd_state m
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
 	return drbd_send_command(peer_device, sock, P_STATE_CHG_REQ, sizeof(*p), NULL, 0);
-
 }
 
 int conn_send_state_req(struct drbd_connection *connection, union drbd_state mask, union drbd_state val)
@@ -3181,7 +3203,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		goto err;
 	}
 	if (magic != DRBD_MD_MAGIC_08) {
-		if (magic == DRBD_MD_MAGIC_07) 
+		if (magic == DRBD_MD_MAGIC_07)
 			drbd_err(device, "Found old (0.7) meta data magic. Did you \"drbdadm create-md\"?\n");
 		else
 			drbd_err(device, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
