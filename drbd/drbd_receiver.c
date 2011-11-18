@@ -5077,7 +5077,7 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
-STATIC int got_conn_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
+STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_req_state_reply *p = pi->data;
 	int retcode = be32_to_cpu(p->retcode);
@@ -5087,33 +5087,10 @@ STATIC int got_conn_RqSReply(struct drbd_connection *connection, struct packet_i
 	} else {
 		set_bit(CONN_WD_ST_CHG_FAIL, &connection->flags);
 		drbd_err(connection, "Requested state change failed by peer: %s (%d)\n",
-			 drbd_set_st_err_str(retcode), retcode);
-	}
-	wake_up(&connection->ping_wait);
-
-	return 0;
-}
-
-STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
-{
-	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
-	struct p_req_state_reply *p = pi->data;
-	int retcode = be32_to_cpu(p->retcode);
-
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return -EIO;
-	device = peer_device->device;
-
-	if (retcode >= SS_SUCCESS) {
-		set_bit(CL_ST_CHG_SUCCESS, &device->flags);
-	} else {
-		set_bit(CL_ST_CHG_FAIL, &device->flags);
-		drbd_err(device, "Requested state change failed by peer: %s (%d)\n",
 			drbd_set_st_err_str(retcode), retcode);
 	}
-	wake_up(&device->resource->state_wait);
+	wake_up(&connection->resource->state_wait);
+	wake_up(&connection->ping_wait);
 
 	return 0;
 }
@@ -5461,7 +5438,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
 	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
 	[P_RS_CANCEL]       = { sizeof(struct p_block_ack), got_NegRSDReply },
-	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_conn_RqSReply },
+	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 };
 

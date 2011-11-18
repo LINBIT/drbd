@@ -610,10 +610,10 @@ _req_st_cond(struct drbd_device *device, union drbd_state mask,
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 
-	if (test_and_clear_bit(CL_ST_CHG_SUCCESS, &device->flags))
+	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &first_peer_device(device)->connection->flags))
 		return SS_CW_SUCCESS;
 
-	if (test_and_clear_bit(CL_ST_CHG_FAIL, &device->flags))
+	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &first_peer_device(device)->connection->flags))
 		return SS_CW_FAILED_BY_PEER;
 
 	begin_state_change(device->resource, &irq_flags, f);
