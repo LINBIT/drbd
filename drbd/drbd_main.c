@@ -2119,9 +2119,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 		drbd_err(device, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
 				first_peer_device(device)->connection->receiver.t_state);
 
-	/* no need to lock it, I'm the only thread alive */
-	if (atomic_read(&device->current_epoch->epoch_size) !=  0)
-		drbd_err(device, "epoch_size:%d\n", atomic_read(&device->current_epoch->epoch_size));
 	device->al_writ_cnt  =
 	device->bm_writ_cnt  =
 	device->read_cnt     =
@@ -2352,7 +2349,6 @@ void drbd_destroy_device(struct kref *kref)
 	kfree(device->p_uuid);
 	/* device->p_uuid = NULL; */
 
-	kfree(device->current_epoch);
 	if (device->bitmap) /* should no longer be there. */
 		drbd_bm_cleanup(device);
 	__free_page(device->md_io_page);
@@ -2675,6 +2671,14 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (!resource)
 		goto fail;
 
+	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+	if (!connection->current_epoch)
+		goto fail;
+
+	INIT_LIST_HEAD(&connection->current_epoch->list);
+	connection->epochs = 1;
+	spin_lock_init(&connection->epoch_lock);
+
 	connection->cstate = C_STANDALONE;
 	connection->peer_role = R_UNKNOWN;
 	init_waitqueue_head(&connection->ping_wait);
@@ -2707,6 +2711,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 fail_resource:
 	drbd_free_resource(resource);
 fail:
+	kfree(connection->current_epoch);
 	tl_cleanup(connection);
 	drbd_free_socket(&connection->meta);
 	drbd_free_socket(&connection->data);
@@ -2719,6 +2724,10 @@ void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 	struct drbd_resource *resource = connection->resource;
+
+	if (atomic_read(&connection->current_epoch->epoch_size) !=  0)
+		drbd_err(connection, "epoch_size:%d\n", atomic_read(&connection->current_epoch->epoch_size));
+	kfree(connection->current_epoch);
 
 	idr_destroy(&connection->peer_devices);
 
@@ -2780,7 +2789,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	atomic_set(&device->md_io_in_use, 0);
 
 	spin_lock_init(&device->al_lock);
-	spin_lock_init(&device->epoch_lock);
 
 	INIT_LIST_HEAD(&device->active_ee);
 	INIT_LIST_HEAD(&device->sync_ee);
@@ -2820,7 +2828,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	init_waitqueue_head(&device->al_wait);
 	init_waitqueue_head(&device->seq_wait);
 
-	device->write_ordering = WO_bio_barrier;
 	device->resync_wenr = LC_FREE;
 
 	q = blk_alloc_queue(GFP_KERNEL);
@@ -2863,13 +2870,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		goto out_no_bitmap;
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
-
-	device->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
-	if (!device->current_epoch)
-		goto out_no_epoch;
-
-	INIT_LIST_HEAD(&device->current_epoch->list);
-	device->epochs = 1;
 
 	if (!idr_pre_get(&drbd_devices, GFP_KERNEL) ||
 	    idr_get_new_above(&drbd_devices, device, minor, &got))
@@ -2945,8 +2945,6 @@ out_idr_remove_minor:
 out_idr_synchronize_rcu:
 	synchronize_rcu();
 out_no_minor_idr:
-	kfree(device->current_epoch);
-out_no_epoch:
 	drbd_bm_cleanup(device);
 out_no_bitmap:
 	__free_page(device->md_io_page);

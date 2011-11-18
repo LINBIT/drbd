@@ -397,6 +397,7 @@ struct drbd_tl_epoch {
 };
 
 struct drbd_epoch {
+	struct drbd_peer_device *peer_device;
 	struct list_head list;
 	unsigned int barrier_nr;
 	atomic_t epoch_size; /* increased on every request added. */
@@ -656,6 +657,8 @@ struct drbd_resource {
 	unsigned susp_nod:1;		/* IO suspended because no data */
 	unsigned susp_fen:1;		/* IO suspended because fence peer handler runs */
 
+	enum write_ordering_e write_ordering;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)
 	cpumask_t cpu_mask[1];
 #else
@@ -702,6 +705,10 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct crypto_hash *verify_tfm;
 	void *int_dig_in;
 	void *int_dig_vv;
+
+	struct drbd_epoch *current_epoch;
+	spinlock_t epoch_lock;
+	unsigned int epochs;
 
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
@@ -825,10 +832,7 @@ struct drbd_device {
 	u64 *p_uuid;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
-	struct drbd_epoch *current_epoch;
-	spinlock_t epoch_lock;
-	unsigned int epochs;
-	enum write_ordering_e write_ordering;
+
 	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
 	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
 	struct list_head done_ee;   /* need to send P_WRITE_ACK */
@@ -943,8 +947,6 @@ extern int drbd_send_uuids(struct drbd_peer_device *);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *);
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, int trigger_reply, enum dds_flags flags);
-extern int _conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet cmd,
-				union drbd_state, union drbd_state);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state s);
 extern int drbd_send_current_state(struct drbd_peer_device *);
 extern int drbd_send_sync_param(struct drbd_peer_device *);
@@ -1418,7 +1420,7 @@ static inline void drbd_tcp_quickack(struct socket *sock)
 			(char*)&val, sizeof(val));
 }
 
-void drbd_bump_write_ordering(struct drbd_device *device, enum write_ordering_e wo);
+void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

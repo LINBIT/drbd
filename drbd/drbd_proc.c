@@ -284,8 +284,8 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   atomic_read(&device->rs_pending_cnt),
 			   atomic_read(&device->unacked_cnt),
 			   atomic_read(&device->ap_bio_cnt),
-			   device->epochs,
-			   write_ordering_chars[device->write_ordering]
+			   first_peer_device(device)->connection->epochs,
+			   write_ordering_chars[device->resource->write_ordering]
 			);
 			seq_printf(seq, " oos:%llu\n",
 				   Bit2KB((unsigned long long)

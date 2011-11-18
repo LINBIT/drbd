@@ -280,7 +280,7 @@ for my $m (sort { $a <=> $b } keys %drbd) {
 
 	$out[$line] = [
 		sprintf("%3u:%s", $m, $t->{name} || "??not-found??"),
-		$t->{ll_dev} ? "^^$t->{ll_dev}" : "",
+		defined($t->{ll_dev}) ? "^^$t->{ll_dev}" : "",
 		split(/\s+/, $t->{state}),
 		@used_by
 	];
