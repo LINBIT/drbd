@@ -859,6 +859,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
 	int vnr, timeout, try, h, ok;
+	bool discard_my_data;
 
 	if (conn_request_state(connection, NS(conn, C_WF_CONNECTION), CS_VERBOSE) < SS_SUCCESS)
 		return -2;
@@ -977,6 +978,7 @@ retry:
 
 	msock->sk->sk_rcvtimeo = nc->ping_int*HZ;
 	timeout = nc->timeout * HZ / 10;
+	discard_my_data = nc->discard_my_data;
 	rcu_read_unlock();
 
 	msock->sk->sk_sndtimeo = timeout;
@@ -1015,6 +1017,12 @@ retry:
 		kref_get(&device->kref);
 		/* peer_device->connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
+
+		if (discard_my_data)
+			set_bit(DISCARD_MY_DATA, &device->flags);
+		else
+			clear_bit(DISCARD_MY_DATA, &device->flags);
+
 		drbd_connected(peer_device);
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
@@ -1025,6 +1033,14 @@ retry:
 		return 0;
 
 	drbd_thread_start(&connection->asender);
+
+	mutex_lock(&connection->resource->conf_update);
+	/* The discard_my_data flag is a single-shot modifier to the next
+	 * connection attempt, the handshake of which is now well underway.
+	 * No need for rcu style copying of the whole struct
+	 * just to clear a single value. */
+	connection->net_conf->discard_my_data = 0;
+	mutex_unlock(&connection->resource->conf_update);
 
 	return h;
 
@@ -3137,9 +3153,9 @@ static enum drbd_conns drbd_sync_handshake(struct drbd_peer_device *peer_device,
 	}
 
 	if (hg == -100) {
-		if (nc->discard_my_data && !(device->p_uuid[UI_FLAGS]&1))
+		if (test_bit(DISCARD_MY_DATA, &device->flags) && !(device->p_uuid[UI_FLAGS]&1))
 			hg = -1;
-		if (!nc->discard_my_data && (device->p_uuid[UI_FLAGS]&1))
+		if (!test_bit(DISCARD_MY_DATA, &device->flags) && (device->p_uuid[UI_FLAGS]&1))
 			hg = 1;
 
 		if (abs(hg) < 100)
@@ -4132,9 +4148,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	mutex_lock(&connection->resource->conf_update);
-	peer_device->connection->net_conf->discard_my_data = 0; /* without copy; single bit op is atomic */
-	mutex_unlock(&connection->resource->conf_update);
+	clear_bit(DISCARD_MY_DATA, &device->flags);
 
 	drbd_md_sync(device); /* update connected indicator, la_size, ... */
 
