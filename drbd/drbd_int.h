@@ -655,7 +655,6 @@ struct drbd_resource {
 
 	struct mutex state_mutex;
 	wait_queue_head_t state_wait;  /* upon each state change. */
-	enum drbd_state_rv state_change_rv;
 	enum chg_state_flags state_change_flags;
 
 	enum drbd_role role[2];

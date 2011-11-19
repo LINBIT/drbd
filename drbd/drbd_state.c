@@ -276,7 +276,6 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 	if (!(flags & CS_GLOBAL_LOCKED))
 		read_lock(&global_state_lock);
 
-	resource->state_change_rv = SS_SUCCESS;
 	resource->state_change_flags = flags;
 
 	resource->role[NEW] = resource->role[NOW];
@@ -308,9 +307,9 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 	rcu_read_lock();
 }
 
-static enum drbd_state_rv __end_state_change(struct drbd_resource *resource, struct completion *done)
+static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
+					      enum drbd_state_rv rv)
 {
-	enum drbd_state_rv rv = resource->state_change_rv;
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -375,7 +374,7 @@ void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_fl
 
 enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
 {
-	return __end_state_change(resource, NULL);
+	return ___end_state_change(resource, NULL, SS_SUCCESS);
 }
 
 void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
@@ -386,17 +385,18 @@ void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags
 	__begin_state_change(resource, flags);
 }
 
-enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
+static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
+					     unsigned long *irq_flags,
+					     enum drbd_state_rv rv)
 {
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct completion __done, *done = NULL;
-	enum drbd_state_rv rv;
 
 	if (flags & CS_WAIT_COMPLETE) {
 		done = &__done;
 		init_completion(done);
 	}
-	rv = __end_state_change(resource, done);
+	rv = ___end_state_change(resource, done, rv);
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 	if (done && rv >= SS_SUCCESS &&
 	    expect(resource, current != resource->worker.task))
@@ -406,23 +406,21 @@ enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned lon
 	return rv;
 }
 
-void fail_state_change(struct drbd_resource *resource, enum drbd_state_rv rv)
+enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
-	resource->state_change_rv = rv;
+	return __end_state_change(resource, irq_flags, SS_SUCCESS);
 }
 
 void abort_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
-	resource->state_change_rv = SS_UNKNOWN_ERROR;
 	resource->state_change_flags &= ~CS_VERBOSE;
-	end_state_change(resource, irq_flags);
+	__end_state_change(resource, irq_flags, SS_UNKNOWN_ERROR);
 }
 
 void abort_state_change_locked(struct drbd_resource *resource)
 {
-	resource->state_change_rv = SS_UNKNOWN_ERROR;
 	resource->state_change_flags &= ~CS_VERBOSE;
-	end_state_change_locked(resource);
+	___end_state_change(resource, NULL, SS_UNKNOWN_ERROR);
 }
 
 union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
