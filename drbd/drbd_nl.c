@@ -460,7 +460,7 @@ int conn_khelper(struct drbd_connection *connection, char *cmd)
 	return ret;
 }
 
-static enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *connection)
+enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *connection)
 {
 	enum drbd_fencing_policy fencing_policy = FP_NOT_AVAIL;
 	struct drbd_peer_device *peer_device;

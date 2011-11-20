@@ -1317,6 +1317,7 @@ extern enum drbd_state_rv drbd_set_role(struct drbd_device *device,
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_khelper(struct drbd_device *device, char *cmd);
+extern enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);
