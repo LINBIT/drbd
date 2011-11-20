@@ -817,6 +817,8 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	int local, remote, send_oos = 0;
 	int err;
 	int ret = 0;
+	int congested = 0;
+	enum drbd_on_congestion on_congestion;
 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
@@ -1035,11 +1037,10 @@ allocate_barrier:
 
 	rcu_read_lock();
 	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+	on_congestion = nc ? nc->on_congestion : OC_BLOCK;
 	if (remote &&
-	    nc->on_congestion != OC_BLOCK &&
+	    on_congestion != OC_BLOCK &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 96) {
-		int congested = 0;
-
 		if (nc->cong_fill &&
 		    atomic_read(&device->ap_in_flight) >= nc->cong_fill) {
 			drbd_info(device, "Congestion-fill threshold reached\n");
@@ -1051,19 +1052,22 @@ allocate_barrier:
 			congested = 1;
 		}
 
-		if (congested) {
+		if (congested)
 			queue_barrier(device); /* last barrier, after mirrored writes */
-
-			if (nc->on_congestion == OC_PULL_AHEAD)
-				_drbd_set_state(_NS(device, conn, L_AHEAD), 0, NULL);
-			else  /*nc->on_congestion == OC_DISCONNECT */
-				_drbd_set_state(_NS(device, conn, C_DISCONNECTING), 0, NULL);
-		}
 	}
 	rcu_read_unlock();
 
 	spin_unlock_irq(&device->resource->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
+
+	spin_lock_irq(&device->resource->req_lock);
+	if (congested) {
+		if (on_congestion == OC_PULL_AHEAD)
+			_drbd_set_state(_NS(device, conn, L_AHEAD), 0, NULL);
+		else  /*on_congestion == OC_DISCONNECT */
+			_drbd_set_state(_NS(device, conn, C_DISCONNECTING), 0, NULL);
+	}
+	spin_unlock_irq(&device->resource->req_lock);
 
 	if (local) {
 		req->private_bio->bi_bdev = device->ldev->backing_bdev;
