@@ -2075,6 +2075,16 @@ void __change_disk_states(struct drbd_resource *resource, enum drbd_disk_state d
 	rcu_read_unlock();
 }
 
+static bool device_has_connected_peer_devices(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device)
+		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+			return true;
+	return false;
+}
+
 enum drbd_state_rv change_disk_state(struct drbd_device *device,
 				     enum drbd_disk_state disk_state,
 				     enum chg_state_flags flags)
@@ -2082,7 +2092,22 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 	struct drbd_resource *resource = device->resource;
 	unsigned long irq_flags;
 
-	begin_state_change(resource, &irq_flags, flags);
+	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	if (!local_state_change(flags) &&
+	    device->disk_state[NOW] != D_DISKLESS && disk_state == D_DISKLESS &&
+	    device_has_connected_peer_devices(device)) {
+		enum drbd_state_rv rv;
+
+		__change_disk_state(device, disk_state);
+		rv = try_state_change(resource);
+		if (rv == SS_SUCCESS)
+			rv = change_peer_state(first_connection(resource), device->vnr,
+					       NS(disk, disk_state), &irq_flags);
+		if (rv < SS_SUCCESS) {
+			abort_state_change(resource, &irq_flags);
+			return rv;
+		}
+	}
 	__change_disk_state(device, disk_state);
 	return end_state_change(resource, &irq_flags);
 }
