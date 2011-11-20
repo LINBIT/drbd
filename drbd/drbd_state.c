@@ -650,14 +650,15 @@ STATIC enum drbd_state_rv
 drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	       union drbd_state val, enum chg_state_flags f)
 {
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	unsigned long irq_flags;
 	union drbd_state os, ns;
 	enum drbd_state_rv rv;
 
 	begin_state_change(device->resource, &irq_flags, f);
-	os = drbd_get_peer_device_state(first_peer_device(device), NOW);
+	os = drbd_get_peer_device_state(peer_device, NOW);
 	ns = sanitize_state(device, apply_mask_val(os, mask, val));
-	drbd_set_new_peer_device_state(first_peer_device(device), ns);
+	drbd_set_new_peer_device_state(peer_device, ns);
 	rv = is_valid_transition(device->resource);
 	if (rv < SS_SUCCESS) {
 		abort_state_change(device->resource, &irq_flags);
@@ -665,6 +666,8 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 	}
 
 	if (cl_wide_st_chg(device, os, ns)) {
+		struct drbd_connection *connection = peer_device->connection;
+
 		rv = is_valid_soft_transition(device->resource);
 		abort_state_change(device->resource, &irq_flags);
 
@@ -674,15 +677,15 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 			goto abort;
 		}
 
-		if (conn_send_state_req(first_peer_device(device)->connection, device->vnr, mask, val)) {
-			rv = SS_CW_FAILED_BY_PEER;
-			if (f & CS_VERBOSE)
-				print_st_err(device, os, ns, rv);
-			goto abort;
+		rv = SS_CW_FAILED_BY_PEER;
+		if (f & CS_SERIALIZE)
+			mutex_lock(&connection->resource->state_mutex);
+		if (!conn_send_state_req(connection, device->vnr, mask, val)) {
+			wait_event(device->resource->state_wait,
+				(rv = _req_st_cond(device, mask, val, f)) != SS_UNKNOWN_ERROR);
 		}
-
-		wait_event(device->resource->state_wait,
-			(rv = _req_st_cond(device, mask, val, f)) != SS_UNKNOWN_ERROR);
+		if (f & CS_SERIALIZE)
+			mutex_unlock(&connection->resource->state_mutex);
 
 		if (rv < SS_SUCCESS) {
 			if (f & CS_VERBOSE)
@@ -690,7 +693,7 @@ drbd_req_state(struct drbd_device *device, union drbd_state mask,
 			goto abort;
 		}
 		begin_state_change(device->resource, &irq_flags, f);
-		ns = apply_mask_val(drbd_get_peer_device_state(first_peer_device(device), NOW), mask, val);
+		ns = apply_mask_val(drbd_get_peer_device_state(peer_device, NOW), mask, val);
 		_drbd_set_state(device, ns);
 	} else {
 		_drbd_set_state(device, ns);
