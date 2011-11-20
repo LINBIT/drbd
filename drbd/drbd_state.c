@@ -2127,15 +2127,98 @@ void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cs
 	}
 }
 
+static bool connection_has_connected_peer_devices(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+			return true;
+	}
+	return false;
+}
+
+enum outdate_what { OUTDATE_NOTHING, OUTDATE_DISKS, OUTDATE_PEER_DISKS };
+
+static enum outdate_what outdate_on_disconnect(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	enum drbd_fencing_policy fencing_policy = highest_fencing_policy(connection);
+
+	if (fencing_policy >= FP_RESOURCE &&
+	    resource->role[NOW] != connection->peer_role[NOW]) {
+		if (resource->role[NOW] == R_PRIMARY)
+			return OUTDATE_PEER_DISKS;
+		if (connection->peer_role[NOW] != R_PRIMARY)
+			return OUTDATE_DISKS;
+	}
+	return OUTDATE_NOTHING;
+}
+
+static void __change_cstate_and_outdate(struct drbd_connection *connection,
+					enum drbd_conn_state cstate,
+					enum outdate_what outdate_what)
+{
+	__change_cstate(connection, cstate);
+	switch(outdate_what) {
+		case OUTDATE_DISKS:
+			__change_disk_states(connection->resource, D_OUTDATED);
+			break;
+		case OUTDATE_PEER_DISKS:
+			__change_peer_disk_states(connection, D_OUTDATED);
+			break;
+		case OUTDATE_NOTHING:
+			break;
+	}
+}
+
+/**
+ * change_cstate()  -  change the connection state of a connection
+ *
+ * When disconnecting from a peer, we may also need to outdate the local or
+ * peer disks depending on the fencing policy.  This cannot easily be split
+ * into two state changes.
+ */
 enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 				 enum drbd_conn_state cstate,
 				 enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
 	unsigned long irq_flags;
+	enum outdate_what outdate_what = OUTDATE_NOTHING;
 
-	begin_state_change(resource, &irq_flags, flags);
-	__change_cstate(connection, cstate);
+	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	if (!local_state_change(flags) &&
+	    cstate == C_DISCONNECTING &&
+	    connection_has_connected_peer_devices(connection)) {
+		enum drbd_state_rv rv;
+
+		outdate_what = outdate_on_disconnect(connection);
+		__change_cstate_and_outdate(connection, cstate, outdate_what);
+		rv = try_state_change(resource);
+		if (rv == SS_SUCCESS) {
+			switch(outdate_what) {
+			case OUTDATE_DISKS:
+				rv = change_peer_state(connection, -1,
+					NS2(conn, cstate, disk, D_OUTDATED), &irq_flags);
+				break;
+			case OUTDATE_PEER_DISKS:
+				rv = change_peer_state(connection, -1,
+					NS2(conn, cstate, pdsk, D_OUTDATED), &irq_flags);
+				break;
+			case OUTDATE_NOTHING:
+				rv = change_peer_state(connection, -1,
+					NS(conn, cstate), &irq_flags);
+				break;
+			}
+		}
+		if (rv < SS_SUCCESS) {
+			abort_state_change(resource, &irq_flags);
+			return rv;
+		}
+	}
+	__change_cstate_and_outdate(connection, cstate, outdate_what);
 	return end_state_change(resource, &irq_flags);
 }
 
