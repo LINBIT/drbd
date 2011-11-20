@@ -1462,7 +1462,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* and for other previously queued resource work */
 	drbd_flush_workqueue(&device->resource->work);
 
-	rv = _drbd_request_state(device, NS(disk, D_ATTACHING), CS_VERBOSE);
+	rv = stable_state_change(device->resource,
+		change_disk_state(device, D_ATTACHING, CS_VERBOSE));
 	retcode = rv;  /* FIXME: Type mismatch. */
 	drbd_resume_io(device);
 	if (rv < SS_SUCCESS)
@@ -1659,7 +1660,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
  force_diskless_dec:
 	put_ldev(device);
  force_diskless:
-	drbd_change_state(device, CS_HARD, NS(disk, D_DISKLESS));
+	change_disk_state(device, D_DISKLESS, CS_HARD);
 	drbd_md_sync(device);
  fail:
 	if (nbc) {
@@ -1689,14 +1690,16 @@ static int adm_detach(struct drbd_device *device, int force)
 	int ret;
 
 	if (force) {
-		drbd_change_state(device, CS_HARD, NS(disk, D_FAILED));
+		change_disk_state(device, D_FAILED, CS_HARD);
 		retcode = SS_SUCCESS;
 		goto out;
 	}
 
 	drbd_suspend_io(device); /* so no-one is stuck in drbd_al_begin_io */
 	drbd_md_get_buffer(device); /* make sure there is no in-flight meta-data IO */
-	retcode = drbd_request_state(device, NS(disk, D_FAILED));
+	retcode = stable_state_change(device->resource,
+		change_disk_state(device, D_FAILED,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 	drbd_md_put_buffer(device);
 	/* D_FAILED will transition to DISKLESS. */
 	ret = wait_event_interruptible(device->misc_wait,
@@ -2407,7 +2410,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-			__drbd_set_state(device, _NS(device, disk, D_INCONSISTENT));
+			__change_disk_state(device, D_INCONSISTENT);
 		retcode = end_state_change(device->resource, &irq_flags);
 
 		if (retcode != SS_NEED_CONNECTION)
@@ -2529,7 +2532,9 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	retcode = drbd_request_state(adm_ctx.device, NS(disk, D_OUTDATED));
+	retcode = stable_state_change(adm_ctx.device->resource,
+		change_disk_state(adm_ctx.device, D_OUTDATED,
+			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3277,7 +3282,8 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			drbd_print_uuids(device, "cleared bitmap UUID");
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			__drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
+			__change_disk_state(device, D_UP_TO_DATE);
+			__drbd_set_state(device, _NS(device, pdsk, D_UP_TO_DATE));
 			end_state_change(device->resource, &irq_flags);
 		}
 	}

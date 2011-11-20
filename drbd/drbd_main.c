@@ -3446,7 +3446,7 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
 	 * the protected members anymore, though, so once put_ldev reaches zero
 	 * again, it will be safe to free them. */
-	drbd_change_state(device, CS_HARD, NS(disk, D_DISKLESS));
+	change_disk_state(device, D_DISKLESS, CS_HARD);
 	return 0;
 }
 

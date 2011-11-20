@@ -3936,7 +3936,8 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			_drbd_uuid_set(device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
-			__drbd_set_state(device, _NS2(device, disk, D_UP_TO_DATE, pdsk, D_UP_TO_DATE));
+			__change_disk_state(device, D_UP_TO_DATE);
+			__drbd_set_state(device, _NS(device, pdsk, D_UP_TO_DATE));
 			end_state_change(device->resource, &irq_flags);
 			drbd_md_sync(device);
 			updated_uuids = 1;
@@ -4152,7 +4153,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (ns.conn == C_MASK) {
 			ns.conn = L_CONNECTED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
-				drbd_change_state(device, CS_HARD, NS(disk, D_FAILED));
+				change_disk_state(device, D_FAILED, CS_HARD);
 			} else if (peer_state.disk == D_NEGOTIATING) {
 				drbd_err(device, "Disk attach process on the peer node was aborted.\n");
 				peer_state.disk = D_DISKLESS;
