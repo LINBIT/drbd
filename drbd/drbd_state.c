@@ -2229,14 +2229,32 @@ void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_st
 }
 
 enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
-				     enum drbd_repl_state repl_state,
+				     enum drbd_repl_state new_repl_state,
 				     enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = peer_device->device->resource;
+	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	unsigned long irq_flags;
 
-	begin_state_change(resource, &irq_flags, flags);
-	__change_repl_state(peer_device, repl_state);
+	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	if (!local_state_change(flags) && repl_state[NOW] != new_repl_state &&
+	    ((repl_state[NOW] >= L_CONNECTED &&
+	      (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
+	     (repl_state[NOW] == L_CONNECTED &&
+	      (new_repl_state == L_VERIFY_S || new_repl_state == L_STANDALONE)))) {
+		enum drbd_state_rv rv;
+
+		__change_repl_state(peer_device, new_repl_state);
+		rv = try_state_change(resource);
+		if (rv == SS_SUCCESS)
+			rv = change_peer_state(peer_device->connection, peer_device->device->vnr,
+					       NS(conn, new_repl_state), &irq_flags);
+		if (rv < SS_SUCCESS) {
+			abort_state_change(resource, &irq_flags);
+			return rv;
+		}
+	}
+	__change_repl_state(peer_device, new_repl_state);
 	return end_state_change(resource, &irq_flags);
 }
 
