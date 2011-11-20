@@ -2063,12 +2063,25 @@ void __change_role(struct drbd_resource *resource, enum drbd_role role)
 }
 
 enum drbd_state_rv change_role(struct drbd_resource *resource,
-				     enum drbd_role role,
-				     enum chg_state_flags flags)
+			       enum drbd_role role,
+			       enum chg_state_flags flags)
 {
 	unsigned long irq_flags;
 
-	begin_state_change(resource, &irq_flags, flags);
+	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	if (!local_state_change(flags) &&
+	    resource->role[NOW] != R_PRIMARY && role == R_PRIMARY) {
+		enum drbd_state_rv rv;
+
+		__change_role(resource, role);
+		rv = try_state_change(resource);
+		if (rv == SS_SUCCESS)
+			rv = change_peer_state(first_connection(resource), -1, NS(role, role), &irq_flags);
+		if (rv < SS_SUCCESS) {
+			abort_state_change(resource, &irq_flags);
+			return rv;
+		}
+	}
 	__change_role(resource, role);
 	return end_state_change(resource, &irq_flags);
 }
@@ -2227,7 +2240,16 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 	unsigned long irq_flags;
 	enum outdate_what outdate_what = OUTDATE_NOTHING;
 
-	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	/*
+	 * Hard connection state changes like a protocol error or forced
+	 * disconnect may occur while we are holding resource->state_mutex.  In
+	 * that case, omit CS_SERIALIZE so that we don't deadlock trying to
+	 * grab that mutex again.
+	 */
+	if (!(flags & CS_HARD))
+		flags |= CS_SERIALIZE;
+
+	begin_state_change(resource, &irq_flags, flags | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) &&
 	    cstate == C_DISCONNECTING &&
 	    connection_has_connected_peer_devices(connection)) {
