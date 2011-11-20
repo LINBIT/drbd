@@ -2816,6 +2816,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_resource *resource = device->resource;
 	int hg, rv = -100;
 	enum drbd_after_sb_p after_sb_1p;
 
@@ -2835,26 +2836,26 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 		break;
 	case ASB_CONSENSUS:
 		hg = drbd_asb_recover_0p(peer_device);
-		if (hg == -1 && device->resource->role[NOW] == R_SECONDARY)
+		if (hg == -1 && resource->role[NOW] == R_SECONDARY)
 			rv = hg;
-		if (hg == 1  && device->resource->role[NOW] == R_PRIMARY)
+		if (hg == 1  && resource->role[NOW] == R_PRIMARY)
 			rv = hg;
 		break;
 	case ASB_VIOLENTLY:
 		rv = drbd_asb_recover_0p(peer_device);
 		break;
 	case ASB_DISCARD_SECONDARY:
-		return device->resource->role[NOW] == R_PRIMARY ? 1 : -1;
+		return resource->role[NOW] == R_PRIMARY ? 1 : -1;
 	case ASB_CALL_HELPER:
 		hg = drbd_asb_recover_0p(peer_device);
-		if (hg == -1 && device->resource->role[NOW] == R_PRIMARY) {
+		if (hg == -1 && resource->role[NOW] == R_PRIMARY) {
 			enum drbd_state_rv rv2;
 
 			drbd_set_role(device, R_SECONDARY, 0);
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_STANDALONE which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = drbd_change_state(device, CS_VERBOSE, NS(role, R_SECONDARY));
+			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE);
 			if (rv2 != SS_SUCCESS) {
 				drbd_khelper(device, "pri-lost-after-sb");
 			} else {
@@ -2904,7 +2905,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_STANDALONE which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = drbd_change_state(device, CS_VERBOSE, NS(role, R_SECONDARY));
+			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE);
 			if (rv2 != SS_SUCCESS) {
 				drbd_khelper(device, "pri-lost-after-sb");
 			} else {
