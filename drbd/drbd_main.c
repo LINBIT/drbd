@@ -344,7 +344,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 
 bail:
 	spin_unlock_irq(&connection->resource->req_lock);
-	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
+	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
 
@@ -2006,9 +2006,9 @@ int drbd_send(struct drbd_connection *connection, struct socket *sock,
 			drbd_err(connection, "%s_sendmsg returned %d\n",
 				 sock == connection->meta.socket ? "msock" : "sock",
 				 rv);
-			conn_request_state(connection, NS(conn, C_BROKEN_PIPE), CS_HARD);
+			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 		} else
-			conn_request_state(connection, NS(conn, C_TIMEOUT), CS_HARD);
+			change_cstate(connection, C_TIMEOUT, CS_HARD);
 	}
 
 	return sent;

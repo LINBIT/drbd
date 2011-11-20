@@ -930,8 +930,7 @@ allocate_barrier:
 		if (err) {
 			if (err != -ERESTARTSYS) {
 				begin_state_change_locked(device->resource, CS_HARD);
-				_conn_request_state(first_peer_device(device)->connection,
-						    NS(conn, C_TIMEOUT));
+				__change_cstate(first_peer_device(device)->connection, C_TIMEOUT);
 				end_state_change_locked(device->resource);
 			}
 			spin_unlock_irq(&device->resource->req_lock);
@@ -1063,14 +1062,14 @@ allocate_barrier:
 	spin_unlock_irq(&device->resource->req_lock);
 	kfree(b); /* if someone else has beaten us to it... */
 
-	begin_state_change(device->resource, &irq_flags, 0);
 	if (congested) {
-		if (on_congestion == OC_PULL_AHEAD)
+		if (on_congestion == OC_PULL_AHEAD) {
+			begin_state_change(device->resource, &irq_flags, 0);
 			__drbd_set_state(device, _NS(device, conn, L_AHEAD));
-		else  /*on_congestion == OC_DISCONNECT */
-			__drbd_set_state(device, _NS(device, conn, C_DISCONNECTING));
+			end_state_change(device->resource, &irq_flags);
+		} else  /*on_congestion == OC_DISCONNECT */
+			change_cstate(first_peer_device(device)->connection, C_DISCONNECTING, 0);
 	}
-	end_state_change(device->resource, &irq_flags);
 
 	if (local) {
 		req->private_bio->bi_bdev = device->ldev->backing_bdev;
@@ -1215,7 +1214,7 @@ void request_timer_fn(unsigned long data)
 		if (time_is_before_eq_jiffies(req->start_time + ent)) {
 			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
 			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
-			__drbd_set_state(device, _NS(device, conn, C_TIMEOUT));
+			__change_cstate(connection, C_TIMEOUT);
 			end_state_change_locked(device->resource);
 		}
 	}

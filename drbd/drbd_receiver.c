@@ -578,7 +578,7 @@ STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 	set_fs(oldfs);
 
 	if (rv != size)
-		conn_request_state(connection, NS(conn, C_BROKEN_PIPE), CS_HARD);
+		change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 
 	return rv;
 }
@@ -707,7 +707,7 @@ out:
 			drbd_err(connection, "%s failed, err = %d\n", what, err);
 		}
 		if (disconnect_on_error)
-			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	}
 
 	return sock;
@@ -765,7 +765,7 @@ out:
 	if (err < 0) {
 		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
 			drbd_err(connection, "%s failed, err = %d\n", what, err);
-			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 		}
 	}
 
@@ -861,7 +861,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	int vnr, timeout, try, h, ok;
 	bool discard_my_data;
 
-	if (conn_request_state(connection, NS(conn, C_WF_CONNECTION), CS_VERBOSE) < SS_SUCCESS)
+	if (change_cstate(connection, C_WF_CONNECTION, CS_VERBOSE) < SS_SUCCESS)
 		return -2;
 
 	clear_bit(DISCARD_CONCURRENT, &connection->flags);
@@ -1029,7 +1029,9 @@ retry:
 	}
 	rcu_read_unlock();
 
-	if (conn_request_state(connection, NS(conn, L_STANDALONE), CS_VERBOSE) < SS_SUCCESS)
+	if (stable_state_change(connection->resource,
+		change_cstate(connection, C_CONNECTED,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE)) < SS_SUCCESS)
 		return 0;
 
 	drbd_thread_start(&connection->asender);
@@ -2276,7 +2278,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 				err = drbd_wait_misc(device, &req->i);
 				if (err) {
 					begin_state_change_locked(connection->resource, CS_HARD);
-					_conn_request_state(connection, NS(conn, C_TIMEOUT));
+					__change_cstate(connection, C_TIMEOUT);
 					end_state_change_locked(connection->resource);
 					fail_postponed_requests(device, sector, size);
 					goto out;
@@ -3441,7 +3443,7 @@ disconnect:
 	crypto_free_hash(peer_integrity_tfm);
 	kfree(int_dig_in);
 	kfree(int_dig_vv);
-	conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+	change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	return -EIO;
 }
 
@@ -3713,7 +3715,7 @@ disconnect:
 	crypto_free_hash(csums_tfm);
 	/* but free the verify_tfm again, if csums_tfm did not work out */
 	crypto_free_hash(verify_tfm);
-	conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+	change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 	return -EIO;
 }
 
@@ -3792,7 +3794,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		    device->disk_state[NOW] >= D_OUTDATED &&
 		    peer_device->repl_state[NOW] < L_CONNECTED) {
 			drbd_err(device, "The peer's disk size is too small!\n");
-			conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+			change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 			put_ldev(device);
 			return -EIO;
 		}
@@ -3848,7 +3850,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_err(device, "Peer cannot deal with requests bigger than %u. "
 			 "Please reduce max_bio_size in the configuration.\n",
 			 peer_device->max_bio_size);
-		conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 		put_ldev(device);
 		return -EIO;
 	}
@@ -3915,7 +3917,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	    (device->ed_uuid & ~((u64)1)) != (p_uuid[UI_CURRENT] & ~((u64)1))) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
 		    (unsigned long long)device->ed_uuid);
-		conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 		return -EIO;
 	}
 
@@ -4162,7 +4164,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 				if (test_and_clear_bit(CONN_DRY_RUN, &peer_device->connection->flags))
 					return -EIO;
 				D_ASSERT(device, os.conn == L_STANDALONE);
-				conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 				return -EIO;
 			}
 		}
@@ -4184,6 +4186,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		device->resource->state_change_flags |= CS_HARD;
 	if (ns.pdsk == D_CONSISTENT && drbd_suspended(device) && ns.conn == L_CONNECTED && os.conn < L_CONNECTED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
+		unsigned long irq_flags;
+
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		abort_state_change(device->resource, &irq_flags);
@@ -4191,7 +4195,10 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		tl_clear(peer_device->connection);
 		drbd_uuid_new_current(device);
 		clear_bit(NEW_CUR_UUID, &device->flags);
-		conn_request_state(peer_device->connection, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
+		begin_state_change(device->resource, &irq_flags, CS_HARD);
+		__change_cstate(peer_device->connection, C_PROTOCOL_ERROR);
+		conn_request_state(peer_device->connection, NS(susp, 0), CS_HARD);
+		end_state_change(device->resource, &irq_flags);
 		return -EIO;
 	}
 	__drbd_set_state(device, ns);
@@ -4199,7 +4206,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS) {
-		conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 		return -EIO;
 	}
 
@@ -4393,7 +4400,7 @@ decode_bitmap_c(struct drbd_peer_device *peer_device,
 	 * during all our tests. */
 
 	drbd_err(peer_device, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
-	conn_request_state(peer_device->connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
+	change_cstate(peer_device->connection, C_PROTOCOL_ERROR, CS_HARD);
 	return -EIO;
 }
 
@@ -4658,7 +4665,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 	return;
 
     err_out:
-	conn_request_state(connection, NS(conn, C_PROTOCOL_ERROR), CS_HARD);
+	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
 STATIC void conn_disconnect(struct drbd_connection *connection)
@@ -4696,14 +4703,14 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	if (connection->resource->role[NOW] == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
 
-	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
+	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED)
-		_conn_request_state(connection, NS(conn, C_UNCONNECTED));
+		__change_cstate(connection, C_UNCONNECTED);
 	end_state_change(connection->resource, &irq_flags);
 
 	if (oc == C_DISCONNECTING)
-		conn_request_state(connection, NS(conn, C_STANDALONE), CS_VERBOSE | CS_HARD);
+		change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY);
 }
 
 static int drbd_disconnected(struct drbd_peer_device *peer_device)
@@ -5063,7 +5070,7 @@ int drbd_receiver(struct drbd_thread *thi)
 		}
 		if (h == -1) {
 			drbd_warn(connection, "Discarding network configuration.\n");
-			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 		}
 	} while (h == 0);
 
@@ -5577,11 +5584,11 @@ int drbd_asender(struct drbd_thread *thi)
 
 	if (0) {
 reconnect:
-		conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
 	if (0) {
 disconnect:
-		conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	}
 	clear_bit(SIGNAL_ASENDER, &connection->flags);
 

@@ -2132,7 +2132,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 	rcu_read_unlock();
 
-	retcode = conn_request_state(connection, NS(conn, C_UNCONNECTED), CS_VERBOSE);
+	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
 
 	drbd_thread_start(&connection->sender);
 	goto out;
@@ -2149,28 +2149,14 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 {
 	enum drbd_state_rv rv;
 
-	rv = conn_request_state(connection, NS(conn, C_DISCONNECTING),
-			force ? CS_HARD : 0);
+	rv = change_cstate(connection, C_DISCONNECTING, force ? CS_HARD : 0);
 
 	switch (rv) {
-	case SS_NOTHING_TO_DO:
-		break;
 	case SS_ALREADY_STANDALONE:
 		return SS_SUCCESS;
-	case SS_PRIMARY_NOP:
-		/* Our state checking code wants to see all peer disks outdated. */
-		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
-						pdsk, D_OUTDATED), CS_VERBOSE);
-		break;
-	case SS_CW_FAILED_BY_PEER:
-		/* The peer probably wants to see all our disks outdated. */
-		rv = conn_request_state(connection, NS2(conn, C_DISCONNECTING,
-							disk, D_OUTDATED), 0);
-		if (rv == SS_IS_DISKLESS || rv == SS_LOWER_THAN_OUTDATED) {
-			rv = conn_request_state(connection, NS(conn, C_DISCONNECTING),
-					CS_HARD);
-		}
-		break;
+	case SS_IS_DISKLESS:
+	case SS_LOWER_THAN_OUTDATED:
+		rv = change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	default:;
 		/* no special handling necessary */
 	}
@@ -2189,8 +2175,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 		 * after drbd_receiver() returned.  Typically, we should be
 		 * C_STANDALONE already, now, and this becomes a no-op.
 		 */
-		rv2 = conn_request_state(connection, NS(conn, C_STANDALONE),
-				CS_VERBOSE | CS_HARD);
+		rv2 = change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD);
 		if (rv2 < SS_SUCCESS)
 			drbd_err(connection,
 				"unexpected rv2=%d in conn_try_disconnect()\n",

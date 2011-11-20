@@ -1623,7 +1623,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 			if (r > 0) {
 				drbd_info(device, "before-resync-target handler returned %d, "
 					 "dropping connection.\n", r);
-				conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 				return;
 			}
 		} else /* L_SYNC_SOURCE */ {
@@ -1636,8 +1636,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 				} else {
 					drbd_info(device, "before-resync-source handler returned %d, "
 						 "dropping connection.\n", r);
-					conn_request_state(peer_device->connection,
-							   NS(conn, C_DISCONNECTING), CS_HARD);
+					change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 					return;
 				}
 			}
@@ -1836,7 +1835,7 @@ int drbd_sender(struct drbd_thread *thi)
 		w = consume_work(&connection->data.work);
 		if (w->cb(w, connection->cstate[NOW] < C_CONNECTED)) {
 			if (connection->cstate[NOW] >= C_CONNECTED)
-				conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
+				change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 		}
 	}
 
