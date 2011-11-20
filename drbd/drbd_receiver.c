@@ -4520,7 +4520,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 			goto out;
 		/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
 		 * transition to avoid deadlocks. */
-		rv = _drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE);
+		rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
 		D_ASSERT(device, rv == SS_SUCCESS);
 	} else if (peer_device->repl_state[NOW] != L_WF_BITMAP_S) {
 		/* admin may have requested C_DISCONNECTING,

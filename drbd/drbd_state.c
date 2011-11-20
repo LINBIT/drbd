@@ -1434,13 +1434,13 @@ static void abw_start_sync(struct drbd_device *device, int rv)
 {
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
-		_drbd_request_state(device, NS(conn, L_CONNECTED), CS_VERBOSE);
+		stable_change_repl_state(first_peer_device(device), L_CONNECTED, CS_VERBOSE);
 		return;
 	}
 
 	switch (first_peer_device(device)->repl_state[NOW]) {
 	case L_STARTING_SYNC_T:
-		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE);
+		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID, CS_VERBOSE);
 		break;
 	case L_STARTING_SYNC_S:
 		drbd_start_resync(device, L_SYNC_SOURCE);

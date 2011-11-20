@@ -819,7 +819,6 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	int ret = 0;
 	int congested = 0;
 	enum drbd_on_congestion on_congestion;
-	unsigned long irq_flags;
 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
@@ -1063,11 +1062,9 @@ allocate_barrier:
 	kfree(b); /* if someone else has beaten us to it... */
 
 	if (congested) {
-		if (on_congestion == OC_PULL_AHEAD) {
-			begin_state_change(device->resource, &irq_flags, 0);
-			__drbd_set_state(device, _NS(device, conn, L_AHEAD));
-			end_state_change(device->resource, &irq_flags);
-		} else  /*on_congestion == OC_DISCONNECT */
+		if (on_congestion == OC_PULL_AHEAD)
+			change_repl_state(first_peer_device(device), L_AHEAD, 0);
+		else  /*on_congestion == OC_DISCONNECT */
 			change_cstate(first_peer_device(device)->connection, C_DISCONNECTING, 0);
 	}
 

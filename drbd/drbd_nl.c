@@ -2230,7 +2230,8 @@ void resync_after_online_grow(struct drbd_device *device)
 	if (iass)
 		drbd_start_resync(device, L_SYNC_SOURCE);
 	else
-		_drbd_request_state(device, NS(conn, L_WF_SYNC_UUID), CS_VERBOSE | CS_SERIALIZE);
+		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID,
+						CS_VERBOSE | CS_SERIALIZE);
 }
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
@@ -2385,10 +2386,12 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
-	retcode = _drbd_request_state(device, NS(conn, L_STARTING_SYNC_T), CS_WAIT_COMPLETE | CS_SERIALIZE);
+	retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+					   CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
-		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
+		retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	while (retcode == SS_NEED_CONNECTION) {
 		unsigned long irq_flags;
@@ -2401,7 +2404,8 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		if (retcode != SS_NEED_CONNECTION)
 			break;
 
-		retcode = drbd_request_state(device, NS(conn, L_STARTING_SYNC_T));
+		retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	}
 
 	drbd_adm_finish(info, retcode);
@@ -2410,13 +2414,16 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
+	peer_device = first_peer_device(adm_ctx.device);
 
-	retcode = drbd_request_state(adm_ctx.device, NS(conn, L_STARTING_SYNC_S));
+	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
+			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3202,7 +3209,8 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
-	retcode = drbd_request_state(device,NS(conn,L_VERIFY_S));
+	retcode = stable_change_repl_state(first_peer_device(device),
+		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3377,8 +3385,8 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	     * we may want to delete a minor from a live replication group.
 	     */
 	    device->resource->role[NOW] == R_SECONDARY) {
-		_drbd_request_state(device, NS(conn, L_STANDALONE),
-				    CS_VERBOSE | CS_WAIT_COMPLETE);
+		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
+			CS_VERBOSE | CS_WAIT_COMPLETE);
 		drbd_delete_device(device);
 		return NO_ERROR;
 	} else
