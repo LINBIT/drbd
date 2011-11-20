@@ -708,8 +708,8 @@ static enum drbd_state_rv __is_allowed_soft_transition(struct drbd_resource *res
 			rv = SS_NO_UP_TO_DATE_DISK;
 
 		else if (fencing_policy >= FP_RESOURCE &&
-			 !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && peer_disk_state[OLD] >= D_UNKNOWN) &&
-			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && peer_disk_state[NEW] >= D_UNKNOWN))
+			 !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
+			  (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
 			rv = SS_PRIMARY_NOP;
 
 		else if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
