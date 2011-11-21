@@ -227,6 +227,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 static void sanitize_state(struct drbd_resource *resource);
+static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
+					    union drbd_state, unsigned long *);
 
 static bool state_has_changed(struct drbd_resource *resource)
 {
@@ -1392,6 +1394,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED &&
+		    test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+			wake_up(&resource->state_wait);
+
 		wake_up(&connection->ping_wait);
 
 		/* Receiver should clean up itself */
@@ -2005,4 +2011,50 @@ conn_request_state(struct drbd_connection *connection, union drbd_state mask, un
 static inline bool local_state_change(enum chg_state_flags flags)
 {
 	return flags & (CS_HARD | CS_LOCAL_ONLY);
+}
+
+static enum drbd_state_rv
+__peer_request(struct drbd_connection *connection, int vnr,
+	       union drbd_state mask, union drbd_state val)
+{
+	enum drbd_state_rv rv = SS_SUCCESS;
+
+	if (connection->cstate[NOW] == C_CONNECTED) {
+		if (!conn_send_state_req(connection, vnr, mask, val)) {
+			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			rv = SS_CW_SUCCESS;
+		}
+	}
+	return rv;
+}
+
+static enum drbd_state_rv __peer_reply(struct drbd_connection *connection)
+{
+	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
+		return SS_CW_FAILED_BY_PEER;
+	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &connection->flags) ||
+	    !test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+		return SS_CW_SUCCESS;
+	return SS_UNKNOWN_ERROR;
+}
+
+static enum drbd_state_rv
+change_peer_state(struct drbd_connection *connection, int vnr,
+		  union drbd_state mask, union drbd_state val, unsigned long *irq_flags)
+{
+	struct drbd_resource *resource = connection->resource;
+	enum chg_state_flags flags = resource->state_change_flags;
+	enum drbd_state_rv rv;
+
+	if (!expect(resource, flags & CS_SERIALIZE))
+		return SS_CW_FAILED_BY_PEER;
+	begin_remote_state_change(resource, irq_flags);
+	rv = __peer_request(connection, vnr, mask, val);
+	if (rv == SS_CW_SUCCESS) {
+		wait_event(resource->state_wait,
+			((rv = __peer_reply(connection)) != SS_UNKNOWN_ERROR));
+		clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+	}
+	end_remote_state_change(resource, irq_flags, flags);
+	return rv;
 }
