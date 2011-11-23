@@ -5324,7 +5324,7 @@ STATIC int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 
 	tl_release(peer_device->connection, p->barrier, be32_to_cpu(p->set_size));
 
-	if (first_peer_device(device)->repl_state == L_AHEAD &&
+	if (peer_device->repl_state == L_AHEAD &&
 	    atomic_read(&device->ap_in_flight) == 0 &&
 	    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
 		device->start_resync_timer.expires = jiffies + HZ;
