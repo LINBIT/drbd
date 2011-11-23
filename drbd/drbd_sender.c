@@ -1566,7 +1566,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device, start_resync_work);
 	struct drbd_device *device = peer_device->device;
 
-	if (atomic_read(&device->unacked_cnt) || atomic_read(&device->rs_pending_cnt)) {
+	if (atomic_read(&device->unacked_cnt) || atomic_read(&peer_device->rs_pending_cnt)) {
 		drbd_warn(peer_device, "w_start_resync later...\n");
 		peer_device->start_resync_timer.expires = jiffies + HZ/10;
 		add_timer(&peer_device->start_resync_timer);

@@ -735,6 +735,8 @@ struct drbd_peer_device {
 	struct timer_list start_resync_timer;
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
+
+	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 };
 
 struct drbd_device {
@@ -782,7 +784,6 @@ struct drbd_device {
 	unsigned int bm_writ_cnt;
 	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
-	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t local_cnt;	 /* Waiting for local completion */
 
@@ -1839,14 +1840,14 @@ static inline int __dec_ap_pending(struct drbd_device *device)
  */
 static inline void inc_rs_pending(struct drbd_peer_device *peer_device)
 {
-	atomic_inc(&peer_device->device->rs_pending_cnt);
+	atomic_inc(&peer_device->rs_pending_cnt);
 }
 
 #define dec_rs_pending(peer_device) \
 	((void)expect((peer_device), __dec_rs_pending(peer_device) >= 0))
 static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
 {
-	return atomic_dec_return(&peer_device->device->rs_pending_cnt);
+	return atomic_dec_return(&peer_device->rs_pending_cnt);
 }
 
 /* counts how many answers we still need to send to the peer.

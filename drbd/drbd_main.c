@@ -2784,7 +2784,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	atomic_set(&device->ap_bio_cnt, 0);
 	atomic_set(&device->ap_pending_cnt, 0);
-	atomic_set(&device->rs_pending_cnt, 0);
 	atomic_set(&device->unacked_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
@@ -2907,6 +2906,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		init_timer(&peer_device->resync_timer);
 		peer_device->resync_timer.function = resync_timer_fn;
 		peer_device->resync_timer.data = (unsigned long) peer_device;
+
+		atomic_set(&peer_device->rs_pending_cnt, 0);
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);

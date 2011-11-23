@@ -1315,7 +1315,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 
                 device->rs_total = 0;
                 device->rs_failed = 0;
-                atomic_set(&device->rs_pending_cnt, 0);
+                atomic_set(&first_peer_device(device)->rs_pending_cnt, 0);
 
 		drbd_send_state(first_peer_device(device), ns);
 		/* corresponding get_ldev in __drbd_set_state

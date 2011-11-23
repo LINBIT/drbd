@@ -281,7 +281,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   device->bm_writ_cnt,
 			   atomic_read(&device->local_cnt),
 			   atomic_read(&device->ap_pending_cnt) +
-			   atomic_read(&device->rs_pending_cnt),
+			   atomic_read(&first_peer_device(device)->rs_pending_cnt),
 			   atomic_read(&device->unacked_cnt),
 			   atomic_read(&device->ap_bio_cnt),
 			   first_peer_device(device)->connection->epochs,
