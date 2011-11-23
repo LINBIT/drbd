@@ -730,6 +730,9 @@ struct drbd_peer_device {
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
 	unsigned int max_bio_size;
+
+	struct drbd_work start_resync_work;
+	struct timer_list start_resync_timer;
 };
 
 struct drbd_device {
@@ -756,11 +759,9 @@ struct drbd_device {
 	struct drbd_work unplug_work;
 	struct drbd_work go_diskless;
 	struct drbd_work md_sync_work;
-	struct drbd_work start_resync_work;
 
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
-	struct timer_list start_resync_timer;
 	struct timer_list request_timer;
 #ifdef DRBD_DEBUG_MD_SYNC
 	struct {

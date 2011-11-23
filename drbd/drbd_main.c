@@ -2798,25 +2798,20 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	INIT_LIST_HEAD(&device->unplug_work.list);
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
-	INIT_LIST_HEAD(&device->start_resync_work.list);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
-	device->start_resync_work.cb = w_start_resync;
 
 	init_timer(&device->resync_timer);
 	init_timer(&device->md_sync_timer);
-	init_timer(&device->start_resync_timer);
 	init_timer(&device->request_timer);
 	device->resync_timer.function = resync_timer_fn;
 	device->resync_timer.data = (unsigned long) device;
 	device->md_sync_timer.function = md_sync_timer_fn;
 	device->md_sync_timer.data = (unsigned long) device;
-	device->start_resync_timer.function = start_resync_timer_fn;
-	device->start_resync_timer.data = (unsigned long) device;
 	device->request_timer.function = request_timer_fn;
 	device->request_timer.data = (unsigned long) device;
 
@@ -2899,6 +2894,12 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		peer_device->disk_state = D_UNKNOWN;
 		peer_device->repl_state = L_STANDALONE;
 		spin_lock_init(&peer_device->peer_seq_lock);
+
+		INIT_LIST_HEAD(&peer_device->start_resync_work.list);
+		peer_device->start_resync_work.cb = w_start_resync;
+		init_timer(&peer_device->start_resync_timer);
+		peer_device->start_resync_timer.function = start_resync_timer_fn;
+		peer_device->start_resync_timer.data = (unsigned long) device;
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);

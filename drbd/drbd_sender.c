@@ -1555,20 +1555,22 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 
 void start_resync_timer_fn(unsigned long data)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
+	struct drbd_resource *resource = peer_device->device->resource;
 
-	drbd_queue_work(&device->resource->work, &device->start_resync_work);
+	drbd_queue_work(&resource->work, &peer_device->start_resync_work);
 }
 
 int w_start_resync(struct drbd_work *w, int cancel)
 {
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, start_resync_work);
+	struct drbd_peer_device *peer_device =
+		container_of(w, struct drbd_peer_device, start_resync_work);
+	struct drbd_device *device = peer_device->device;
 
 	if (atomic_read(&device->unacked_cnt) || atomic_read(&device->rs_pending_cnt)) {
-		drbd_warn(device, "w_start_resync later...\n");
-		device->start_resync_timer.expires = jiffies + HZ/10;
-		add_timer(&device->start_resync_timer);
+		drbd_warn(peer_device, "w_start_resync later...\n");
+		peer_device->start_resync_timer.expires = jiffies + HZ/10;
+		add_timer(&peer_device->start_resync_timer);
 		return 0;
 	}
 
@@ -1640,8 +1642,8 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		   that can take long */
 		if (!mutex_trylock(&device->resource->state_mutex)) {
 			set_bit(B_RS_H_DONE, &device->flags);
-			device->start_resync_timer.expires = jiffies + HZ/5;
-			add_timer(&device->start_resync_timer);
+			peer_device->start_resync_timer.expires = jiffies + HZ/5;
+			add_timer(&peer_device->start_resync_timer);
 			return;
 		}
 	} else {
