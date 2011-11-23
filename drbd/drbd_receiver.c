@@ -5372,11 +5372,11 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		drbd_advance_rs_marks(peer_device, device->ov_left);
 
 	if (device->ov_left == 0) {
-		struct drbd_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
+		struct drbd_peer_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
 		if (dw) {
 			dw->w.cb = w_ov_finished;
-			dw->device = device;
-			drbd_queue_work(&device->resource->work, &dw->w);
+			dw->peer_device = peer_device;
+			drbd_queue_work(&peer_device->connection->data.work, &dw->w);
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(peer_device);

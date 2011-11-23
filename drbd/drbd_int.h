@@ -352,9 +352,9 @@ struct drbd_work {
 	int (*cb)(struct drbd_work *, int cancel);
 };
 
-struct drbd_device_work {
+struct drbd_peer_device_work {
 	struct drbd_work w;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 };
 
 #include "drbd_interval.h"

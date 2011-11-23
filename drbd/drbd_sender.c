@@ -792,24 +792,23 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 int w_ov_finished(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw =
-		container_of(w, struct drbd_device_work, w);
-	struct drbd_device *device = dw->device;
+	struct drbd_peer_device_work *dw =
+		container_of(w, struct drbd_peer_device_work, w);
+	struct drbd_peer_device *peer_device = dw->peer_device;
 	kfree(dw);
-	ov_out_of_sync_print(first_peer_device(device));
-	drbd_resync_finished(first_peer_device(device));
+	ov_out_of_sync_print(peer_device);
+	drbd_resync_finished(peer_device);
 
 	return 0;
 }
 
 STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 {
-	struct drbd_device_work *dw =
-		container_of(w, struct drbd_device_work, w);
-	struct drbd_device *device = dw->device;
+	struct drbd_peer_device_work *dw =
+		container_of(w, struct drbd_peer_device_work, w);
+	struct drbd_peer_device *peer_device = dw->peer_device;
 	kfree(dw);
-
-	drbd_resync_finished(first_peer_device(device));
+	drbd_resync_finished(peer_device);
 
 	return 0;
 }
@@ -837,7 +836,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
 	if (drbd_rs_del_all(device)) {
-		struct drbd_device_work *dw;
+		struct drbd_peer_device_work *dw;
 
 		/* In case this is not possible now, most probably because
 		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
@@ -848,7 +847,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
 		if (dw) {
 			dw->w.cb = w_resync_finished;
-			dw->device = device;
+			dw->peer_device = peer_device;
 			drbd_queue_work(&peer_device->connection->data.work,
 					&dw->w);
 			return 1;
