@@ -582,6 +582,7 @@ STATIC int drbd_rs_number_requests(struct drbd_device *device)
 
 static int make_resync_request(struct drbd_device *device, int cancel)
 {
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
@@ -615,15 +616,15 @@ static int make_resync_request(struct drbd_device *device, int cancel)
 
 	for (i = 0; i < number; i++) {
 		/* Stop generating RS requests, when half of the send buffer is filled */
-		mutex_lock(&first_peer_device(device)->connection->data.mutex);
-		if (first_peer_device(device)->connection->data.socket) {
-			queued = first_peer_device(device)->connection->data.socket->sk->sk_wmem_queued;
-			sndbuf = first_peer_device(device)->connection->data.socket->sk->sk_sndbuf;
+		mutex_lock(&peer_device->connection->data.mutex);
+		if (peer_device->connection->data.socket) {
+			queued = peer_device->connection->data.socket->sk->sk_wmem_queued;
+			sndbuf = peer_device->connection->data.socket->sk->sk_sndbuf;
 		} else {
 			queued = 1;
 			sndbuf = 0;
 		}
-		mutex_unlock(&first_peer_device(device)->connection->data.mutex);
+		mutex_unlock(&peer_device->connection->data.mutex);
 		if (queued > sndbuf / 2)
 			goto requeue;
 
@@ -693,9 +694,9 @@ next_sector:
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
-		if (first_peer_device(device)->connection->agreed_pro_version >= 89 &&
-		    first_peer_device(device)->connection->csums_tfm) {
-			switch (read_for_csum(first_peer_device(device), sector, size)) {
+		if (peer_device->connection->agreed_pro_version >= 89 &&
+		    peer_device->connection->csums_tfm) {
+			switch (read_for_csum(peer_device, sector, size)) {
 			case -EIO: /* Disk failure */
 				put_ldev(device);
 				return -EIO;
@@ -714,7 +715,7 @@ next_sector:
 			int err;
 
 			inc_rs_pending(device);
-			err = drbd_send_drequest(first_peer_device(device), P_RS_DATA_REQUEST,
+			err = drbd_send_drequest(peer_device, P_RS_DATA_REQUEST,
 						 sector, size, ID_SYNCER);
 			if (err) {
 				drbd_err(device, "drbd_send_drequest() failed, aborting...\n");
