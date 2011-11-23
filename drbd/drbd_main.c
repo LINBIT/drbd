@@ -2121,7 +2121,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	device->bm_writ_cnt = 0;
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
-	device->p_size = 0;
 	device->rs_start = 0;
 	device->rs_total = 0;
 	device->rs_failed = 0;
@@ -2164,6 +2163,7 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 		D_ASSERT(device, list_empty(&connection->meta.work.q));
 
 		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
+		peer_device->disk_size = 0;
 	}
 	rcu_read_unlock();
 

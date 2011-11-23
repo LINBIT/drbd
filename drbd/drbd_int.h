@@ -730,6 +730,7 @@ struct drbd_peer_device {
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
 	unsigned int max_bio_size;
+	sector_t disk_size;
 
 	struct drbd_work start_resync_work;
 	struct timer_list start_resync_timer;
@@ -754,7 +755,6 @@ struct drbd_device {
 	/* configured by drbdsetup */
 	struct drbd_backing_dev *ldev __protected_by(local);
 
-	sector_t p_size;     /* partner's disk size */
 	struct request_queue *rq_queue;
 	struct block_device *this_bdev;
 	struct gendisk	    *vdisk;

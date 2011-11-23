@@ -962,7 +962,7 @@ sector_t
 drbd_new_dev_size(struct drbd_device *device, struct drbd_backing_dev *bdev,
 		  sector_t u_size, int assume_peer_has_space)
 {
-	sector_t p_size = device->p_size;   /* partner's disk size. */
+	sector_t p_size = first_peer_device(device)->disk_size;
 	sector_t la_size = bdev->md.la_size_sect; /* last agreed size. */
 	sector_t m_size; /* my size */
 	sector_t size = 0;
