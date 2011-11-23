@@ -1580,15 +1580,16 @@ int w_start_resync(struct drbd_work *w, int cancel)
  */
 void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 {
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	union drbd_state ns;
 	int r;
 
-	if (first_peer_device(device)->repl_state >= L_SYNC_SOURCE && first_peer_device(device)->repl_state < L_AHEAD) {
+	if (peer_device->repl_state >= L_SYNC_SOURCE && peer_device->repl_state < L_AHEAD) {
 		drbd_err(device, "Resync already running!\n");
 		return;
 	}
 
-	if (first_peer_device(device)->repl_state < L_AHEAD) {
+	if (peer_device->repl_state < L_AHEAD) {
 		/* In case a previous resync run was aborted by an IO error/detach on the peer. */
 		drbd_rs_cancel_all(device);
 		/* This should be done when we abort the resync. We definitely do not
@@ -1606,7 +1607,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 			if (r > 0) {
 				drbd_info(device, "before-resync-target handler returned %d, "
 					 "dropping connection.\n", r);
-				conn_request_state(first_peer_device(device)->connection, NS(conn, C_DISCONNECTING), CS_HARD);
+				conn_request_state(peer_device->connection, NS(conn, C_DISCONNECTING), CS_HARD);
 				return;
 			}
 		} else /* L_SYNC_SOURCE */ {
@@ -1619,7 +1620,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 				} else {
 					drbd_info(device, "before-resync-source handler returned %d, "
 						 "dropping connection.\n", r);
-					conn_request_state(first_peer_device(device)->connection,
+					conn_request_state(peer_device->connection,
 							   NS(conn, C_DISCONNECTING), CS_HARD);
 					return;
 				}
@@ -1627,7 +1628,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		}
 	}
 
-	if (current == first_peer_device(device)->connection->sender.task) {
+	if (current == peer_device->connection->sender.task) {
 		/* The sender should not sleep waiting for state_mutex,
 		   that can take long */
 		if (!mutex_trylock(&device->resource->state_mutex)) {
@@ -1648,7 +1649,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		return;
 	}
 
-	ns = drbd_get_peer_device_state(first_peer_device(device));
+	ns = drbd_get_peer_device_state(peer_device);
 
 	ns.aftr_isp = !_drbd_may_sync_now(device);
 
@@ -1660,7 +1661,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		ns.pdsk = D_INCONSISTENT;
 
 	r = __drbd_set_state(device, ns, CS_VERBOSE, NULL);
-	ns = drbd_get_peer_device_state(first_peer_device(device));
+	ns = drbd_get_peer_device_state(peer_device);
 
 	if (ns.conn < L_CONNECTED)
 		r = SS_UNKNOWN_ERROR;
@@ -1701,10 +1702,10 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
 		 * and from after_state_ch otherwise. */
 		if (side == L_SYNC_SOURCE &&
-		    first_peer_device(device)->connection->agreed_pro_version < 96)
-			drbd_gen_and_send_sync_uuid(first_peer_device(device));
+		    peer_device->connection->agreed_pro_version < 96)
+			drbd_gen_and_send_sync_uuid(peer_device);
 
-		if (first_peer_device(device)->connection->agreed_pro_version < 95 &&
+		if (peer_device->connection->agreed_pro_version < 95 &&
 		    device->rs_total == 0) {
 			/* This still has a race (about when exactly the peers
 			 * detect connection loss) that can lead to a full sync
@@ -1721,7 +1722,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 				int timeo;
 
 				rcu_read_lock();
-				nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+				nc = rcu_dereference(peer_device->connection->net_conf);
 				timeo = nc->ping_int * HZ + nc->ping_timeo * HZ / 9;
 				rcu_read_unlock();
 				schedule_timeout_interruptible(timeo);
@@ -1730,7 +1731,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		}
 
 		drbd_rs_controller_reset(device);
-		/* ns.conn may already be != first_peer_device(device)->repl_state,
+		/* ns.conn may already be != peer_device->repl_state,
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
