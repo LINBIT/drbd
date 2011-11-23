@@ -2116,25 +2116,21 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 	int i;
-	if (first_peer_device(device)->connection->receiver.t_state != NONE)
-		drbd_err(device, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
-				first_peer_device(device)->connection->receiver.t_state);
 
-	device->al_writ_cnt  =
-	device->bm_writ_cnt  =
-	device->read_cnt     =
-	device->writ_cnt     =
-	device->p_size       =
-	device->rs_start     =
-	device->rs_total     =
-	device->rs_failed    = 0;
+	device->al_writ_cnt = 0;
+	device->bm_writ_cnt = 0;
+	device->read_cnt = 0;
+	device->writ_cnt = 0;
+	device->p_size = 0;
+	device->rs_start = 0;
+	device->rs_total = 0;
+	device->rs_failed = 0;
 	device->rs_last_events = 0;
 	device->rs_last_sect_ev = 0;
 	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 		device->rs_mark_left[i] = 0;
 		device->rs_mark_time[i] = 0;
 	}
-	D_ASSERT(device, first_peer_device(device)->connection->net_conf == NULL);
 
 	drbd_set_my_capacity(device, 0);
 	if (device->bitmap) {
@@ -2153,13 +2149,20 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->done_ee));
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->net_ee));
-	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->data.work.q));
-	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
 	D_ASSERT(device, list_empty(&device->unplug_work.list));
 	D_ASSERT(device, list_empty(&device->go_diskless.list));
 
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		if (connection->receiver.t_state != NONE)
+			drbd_err(connection, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
+				 connection->receiver.t_state);
+		D_ASSERT(device, connection->net_conf == NULL);
+		D_ASSERT(device, list_empty(&connection->data.work.q));
+		D_ASSERT(device, list_empty(&connection->meta.work.q));
+
 		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
 	}
 	rcu_read_unlock();
