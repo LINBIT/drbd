@@ -1832,7 +1832,8 @@ int drbd_sender(struct drbd_thread *thi)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		D_ASSERT(device, device->disk_state == D_DISKLESS && first_peer_device(device)->repl_state == L_STANDALONE);
+		D_ASSERT(device, device->disk_state == D_DISKLESS &&
+			 peer_device->repl_state == L_STANDALONE);
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_mdev_cleanup(device);  /* FIXME: we "clean up" the wrong stuff here! */
