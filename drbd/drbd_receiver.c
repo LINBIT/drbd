@@ -1783,7 +1783,7 @@ STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 		err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
 	} else {
 		/* Record failure to sync */
-		drbd_rs_failed_io(device, sector, peer_req->i.size);
+		drbd_rs_failed_io(peer_device, sector, peer_req->i.size);
 
 		err  = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
 	}
@@ -1802,7 +1802,7 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	if (!peer_req)
 		goto fail;
 
-	dec_rs_pending(device);
+	dec_rs_pending(peer_device);
 
 	inc_unacked(device);
 	/* corresponding dec_unacked() in e_end_resync_block()
@@ -2473,8 +2473,9 @@ out_interrupted:
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-int drbd_rs_should_slow_down(struct drbd_device *device, sector_t sector)
+int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned long db, dt, dbdt;
 	struct lc_element *tmp;
 	int curr_events;
@@ -2514,7 +2515,7 @@ int drbd_rs_should_slow_down(struct drbd_device *device, sector_t sector)
 		 * approx. */
 		i = (device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
 
-		if (first_peer_device(device)->repl_state == L_VERIFY_S || first_peer_device(device)->repl_state == L_VERIFY_T)
+		if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
 			rs_left = device->ov_left;
 		else
 			rs_left = drbd_bm_total_weight(device) - device->rs_failed;
@@ -2577,7 +2578,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 			break;
 		case P_OV_REPLY:
 			verb = 0;
-			dec_rs_pending(device);
+			dec_rs_pending(peer_device);
 			drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, ID_IN_SYNC);
 			break;
 		default:
@@ -2639,7 +2640,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 			/* track progress, we may need to throttle */
 			atomic_add(size >> 9, &device->rs_sect_in);
 			peer_req->w.cb = w_e_end_ov_reply;
-			dec_rs_pending(device);
+			dec_rs_pending(peer_device);
 			/* drbd_rs_begin_io done when we sent this request,
 			 * but accounting still needs to be done. */
 			goto submit_for_resync;
@@ -2692,7 +2693,8 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 	 * we would also throttle its application reads.
 	 * In that case, throttling is done on the SyncTarget only.
 	 */
-	if (connection->peer_role != R_PRIMARY && drbd_rs_should_slow_down(device, sector))
+	if (connection->peer_role != R_PRIMARY &&
+	    drbd_rs_should_slow_down(peer_device, sector))
 		schedule_timeout_uninterruptible(HZ/10);
 	if (drbd_rs_begin_io(device, sector))
 		goto out_free_e;
@@ -4096,7 +4098,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		else if (os.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_CONNECTED) {
 			if (drbd_bm_total_weight(device) <= device->rs_failed)
-				drbd_resync_finished(device);
+				drbd_resync_finished(peer_device);
 			return 0;
 		}
 	}
@@ -5143,7 +5145,7 @@ STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 		device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
 		put_ldev(device);
 	}
-	dec_rs_pending(device);
+	dec_rs_pending(peer_device);
 	atomic_add(blksize >> 9, &device->rs_sect_in);
 
 	return 0;
@@ -5189,7 +5191,7 @@ STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 
 	if (p->block_id == ID_SYNCER) {
 		drbd_set_in_sync(device, sector, blksize);
-		dec_rs_pending(device);
+		dec_rs_pending(peer_device);
 		return 0;
 	}
 	switch (pi->cmd) {
@@ -5234,8 +5236,8 @@ STATIC int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
-		dec_rs_pending(device);
-		drbd_rs_failed_io(device, sector, size);
+		dec_rs_pending(peer_device);
+		drbd_rs_failed_io(peer_device, sector, size);
 		return 0;
 	}
 
@@ -5293,13 +5295,13 @@ STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
-	dec_rs_pending(device);
+	dec_rs_pending(peer_device);
 
 	if (get_ldev_if_state(device, D_FAILED)) {
 		drbd_rs_complete_io(device, sector);
 		switch (pi->cmd) {
 		case P_NEG_RS_DREPLY:
-			drbd_rs_failed_io(device, sector, size);
+			drbd_rs_failed_io(peer_device, sector, size);
 		case P_RS_CANCEL:
 			break;
 		default:
@@ -5353,21 +5355,21 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (be64_to_cpu(p->block_id) == ID_OUT_OF_SYNC)
-		drbd_ov_out_of_sync_found(device, sector, size);
+		drbd_ov_out_of_sync_found(peer_device, sector, size);
 	else
-		ov_out_of_sync_print(device);
+		ov_out_of_sync_print(peer_device);
 
 	if (!get_ldev(device))
 		return 0;
 
 	drbd_rs_complete_io(device, sector);
-	dec_rs_pending(device);
+	dec_rs_pending(peer_device);
 
 	--device->ov_left;
 
 	/* let's advance progress step marks only for every other megabyte */
 	if ((device->ov_left & 0x200) == 0x200)
-		drbd_advance_rs_marks(device, device->ov_left);
+		drbd_advance_rs_marks(peer_device, device->ov_left);
 
 	if (device->ov_left == 0) {
 		struct drbd_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
@@ -5377,8 +5379,8 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 			drbd_queue_work(&device->resource->work, &dw->w);
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
-			ov_out_of_sync_print(device);
-			drbd_resync_finished(device);
+			ov_out_of_sync_print(peer_device);
+			drbd_resync_finished(peer_device);
 		}
 	}
 	put_ldev(device);

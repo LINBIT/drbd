@@ -1306,20 +1306,22 @@ void drbd_resync_after_changed(struct drbd_device *device);
 extern void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
-extern int drbd_resync_finished(struct drbd_device *device);
+extern int drbd_resync_finished(struct drbd_peer_device *);
 /* maybe rather drbd_main.c ? */
 extern void *drbd_md_get_buffer(struct drbd_device *device);
 extern void drbd_md_put_buffer(struct drbd_device *device);
 extern int drbd_md_sync_page_io(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, sector_t sector, int rw);
-extern void drbd_ov_out_of_sync_found(struct drbd_device *, sector_t, int);
+extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
 extern void wait_until_done_or_disk_failure(struct drbd_device *device, unsigned int *done);
-extern void drbd_rs_controller_reset(struct drbd_device *device);
+extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 
-static inline void ov_out_of_sync_print(struct drbd_device *device)
+static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (device->ov_last_oos_size) {
-		drbd_err(device, "Out of sync: start=%llu, size=%lu (sectors)\n",
+		drbd_err(peer_device, "Out of sync: start=%llu, size=%lu (sectors)\n",
 		     (unsigned long long)device->ov_last_oos_start,
 		     (unsigned long)device->ov_last_oos_size);
 	}
@@ -1353,7 +1355,7 @@ extern void start_resync_timer_fn(unsigned long data);
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
 extern int drbd_asender(struct drbd_thread *thi);
-extern int drbd_rs_should_slow_down(struct drbd_device *device, sector_t sector);
+extern int drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t);
 extern int drbd_submit_peer_request(struct drbd_device *,
 				    struct drbd_peer_request *, const unsigned,
 				    const int);
@@ -1435,9 +1437,8 @@ extern int drbd_rs_begin_io(struct drbd_device *device, sector_t sector);
 extern int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector);
 extern void drbd_rs_cancel_all(struct drbd_device *device);
 extern int drbd_rs_del_all(struct drbd_device *device);
-extern void drbd_rs_failed_io(struct drbd_device *device,
-		sector_t sector, int size);
-extern void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go);
+extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
+extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
 extern void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size);
 extern int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size);
 extern void drbd_al_shrink(struct drbd_device *device);
@@ -1835,15 +1836,16 @@ static inline int __dec_ap_pending(struct drbd_device *device)
  * L_SYNC_SOURCE sends P_RS_DATA_REPLY   (and expects P_WRITE_ACK with ID_SYNCER)
  *					   (or P_NEG_ACK with ID_SYNCER)
  */
-static inline void inc_rs_pending(struct drbd_device *device)
+static inline void inc_rs_pending(struct drbd_peer_device *peer_device)
 {
-	atomic_inc(&device->rs_pending_cnt);
+	atomic_inc(&peer_device->device->rs_pending_cnt);
 }
 
-#define dec_rs_pending(device) ((void)expect((device), __dec_rs_pending(device) >= 0))
-static inline int __dec_rs_pending(struct drbd_device *device)
+#define dec_rs_pending(peer_device) \
+	((void)expect((peer_device), __dec_rs_pending(peer_device) >= 0))
+static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
 {
-	return atomic_dec_return(&device->rs_pending_cnt);
+	return atomic_dec_return(&peer_device->device->rs_pending_cnt);
 }
 
 /* counts how many answers we still need to send to the peer.

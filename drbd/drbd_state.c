@@ -801,10 +801,11 @@ void drbd_resume_al(struct drbd_device *device)
 }
 
 /* helper for __drbd_set_state */
-static void set_ov_position(struct drbd_device *device,
+static void set_ov_position(struct drbd_peer_device *peer_device,
 			    enum drbd_repl_state repl_state)
 {
-	if (first_peer_device(device)->connection->agreed_pro_version < 90)
+	struct drbd_device *device = peer_device->device;
+	if (peer_device->connection->agreed_pro_version < 90)
 		device->ov_start_sector = 0;
 	device->rs_total = drbd_bm_bits(device);
 	device->ov_position = 0;
@@ -947,7 +948,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		unsigned long now = jiffies;
 		int i;
 
-		set_ov_position(device, (enum drbd_repl_state)ns.conn);
+		set_ov_position(peer_device, (enum drbd_repl_state)ns.conn);
 		device->rs_start = now;
 		device->rs_last_events = 0;
 		device->rs_last_sect_ev = 0;
@@ -959,7 +960,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 			device->rs_mark_time[i] = now;
 		}
 
-		drbd_rs_controller_reset(device);
+		drbd_rs_controller_reset(peer_device);
 
 		if (ns.conn == L_VERIFY_S) {
 			drbd_info(device, "Starting Online Verify from sector %llu\n",

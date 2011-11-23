@@ -566,7 +566,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 		switch (first_peer_device(device)->repl_state) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
-			drbd_resync_finished(device);
+			drbd_resync_finished(first_peer_device(device));
 		default:
 			/* nothing to do */
 			break;
@@ -674,15 +674,16 @@ STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t secto
 	}
 }
 
-void drbd_advance_rs_marks(struct drbd_device *device, unsigned long still_to_go)
+void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long still_to_go)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned long now = jiffies;
 	unsigned long last = device->rs_mark_time[device->rs_last_mark];
 	int next = (device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
 	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
 		if (device->rs_mark_left[device->rs_last_mark] != still_to_go &&
-		    first_peer_device(device)->repl_state != L_PAUSED_SYNC_T &&
-		    first_peer_device(device)->repl_state != L_PAUSED_SYNC_S) {
+		    peer_device->repl_state != L_PAUSED_SYNC_T &&
+		    peer_device->repl_state != L_PAUSED_SYNC_S) {
 			device->rs_mark_time[next] = now;
 			device->rs_mark_left[next] = still_to_go;
 			device->rs_last_mark = next;
@@ -741,7 +742,7 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 	 */
 	count = drbd_bm_clear_bits(device, sbnr, ebnr);
 	if (count && get_ldev(device)) {
-		drbd_advance_rs_marks(device, drbd_bm_total_weight(device));
+		drbd_advance_rs_marks(first_peer_device(device), drbd_bm_total_weight(device));
 		spin_lock_irqsave(&device->al_lock, flags);
 		drbd_try_clear_on_disk_bm(device, sector, count, true);
 		spin_unlock_irqrestore(&device->al_lock, flags);
@@ -1124,15 +1125,13 @@ int drbd_rs_del_all(struct drbd_device *device)
 	return 0;
 }
 
-/**
- * drbd_rs_failed_io() - Record information on a failure to resync the specified blocks
- * @device:	DRBD device.
- * @sector:	The sector number.
- * @size:	Size of failed IO operation, in byte.
+/*
+ * Record information on a failure to resync the specified blocks
  */
-void drbd_rs_failed_io(struct drbd_device *device, sector_t sector, int size)
+void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
+	struct drbd_device *device = peer_device->device;
 	unsigned long sbnr, ebnr, lbnr;
 	unsigned long count;
 	sector_t esector, nr_sectors;
