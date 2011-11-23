@@ -2152,7 +2152,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->done_ee));
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->net_ee));
-	D_ASSERT(device, list_empty(&device->resync_reads));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->data.work.q));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
 	D_ASSERT(device, list_empty(&device->resync_work.list));
@@ -2795,7 +2794,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
-	INIT_LIST_HEAD(&device->resync_reads);
 	INIT_LIST_HEAD(&device->resync_work.list);
 	INIT_LIST_HEAD(&device->unplug_work.list);
 	INIT_LIST_HEAD(&device->go_diskless.list);
