@@ -2114,6 +2114,7 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 
 void drbd_mdev_cleanup(struct drbd_device *device)
 {
+	struct drbd_peer_device *peer_device;
 	int i;
 	if (first_peer_device(device)->connection->receiver.t_state != NONE)
 		drbd_err(device, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
@@ -2154,9 +2155,14 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->net_ee));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->data.work.q));
 	D_ASSERT(device, list_empty(&first_peer_device(device)->connection->meta.work.q));
-	D_ASSERT(device, list_empty(&device->resync_work.list));
 	D_ASSERT(device, list_empty(&device->unplug_work.list));
 	D_ASSERT(device, list_empty(&device->go_diskless.list));
+
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
+	}
+	rcu_read_unlock();
 
 	drbd_set_defaults(device);
 }
@@ -2794,22 +2800,17 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
-	INIT_LIST_HEAD(&device->resync_work.list);
 	INIT_LIST_HEAD(&device->unplug_work.list);
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
 
-	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
 
-	init_timer(&device->resync_timer);
 	init_timer(&device->md_sync_timer);
 	init_timer(&device->request_timer);
-	device->resync_timer.function = resync_timer_fn;
-	device->resync_timer.data = (unsigned long) device;
 	device->md_sync_timer.function = md_sync_timer_fn;
 	device->md_sync_timer.data = (unsigned long) device;
 	device->request_timer.function = request_timer_fn;
@@ -2899,7 +2900,13 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		peer_device->start_resync_work.cb = w_start_resync;
 		init_timer(&peer_device->start_resync_timer);
 		peer_device->start_resync_timer.function = start_resync_timer_fn;
-		peer_device->start_resync_timer.data = (unsigned long) device;
+		peer_device->start_resync_timer.data = (unsigned long) peer_device;
+
+		INIT_LIST_HEAD(&peer_device->resync_work.list);
+		peer_device->resync_work.cb  = w_resync_timer;
+		init_timer(&peer_device->resync_timer);
+		peer_device->resync_timer.function = resync_timer_fn;
+		peer_device->resync_timer.data = (unsigned long) peer_device;
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);

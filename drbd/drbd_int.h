@@ -733,6 +733,8 @@ struct drbd_peer_device {
 
 	struct drbd_work start_resync_work;
 	struct timer_list start_resync_timer;
+	struct drbd_work resync_work;
+	struct timer_list resync_timer;
 };
 
 struct drbd_device {
@@ -755,12 +757,10 @@ struct drbd_device {
 	struct block_device *this_bdev;
 	struct gendisk	    *vdisk;
 
-	struct drbd_work resync_work;
 	struct drbd_work unplug_work;
 	struct drbd_work go_diskless;
 	struct drbd_work md_sync_work;
 
-	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;
 	struct timer_list request_timer;
 #ifdef DRBD_DEBUG_MD_SYNC

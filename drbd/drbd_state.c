@@ -934,7 +934,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		device->rs_paused += (long)jiffies
 				  -(long)device->rs_mark_time[device->rs_last_mark];
 		if (ns.conn == L_SYNC_TARGET)
-			mod_timer(&device->resync_timer, jiffies);
+			mod_timer(&peer_device->resync_timer, jiffies);
 	}
 
 	if ((os.conn == L_SYNC_TARGET  || os.conn == L_SYNC_SOURCE) &&
@@ -965,7 +965,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		if (ns.conn == L_VERIFY_S) {
 			drbd_info(device, "Starting Online Verify from sector %llu\n",
 					(unsigned long long)device->ov_position);
-			mod_timer(&device->resync_timer, jiffies);
+			mod_timer(&peer_device->resync_timer, jiffies);
 		}
 	}
 

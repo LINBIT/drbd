@@ -435,15 +435,15 @@ defer:
 
 int w_resync_timer(struct drbd_work *w, int cancel)
 {
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, resync_work);
+	struct drbd_peer_device *peer_device =
+		container_of(w, struct drbd_peer_device, resync_work);
 
-	switch (first_peer_device(device)->repl_state) {
+	switch (peer_device->repl_state) {
 	case L_VERIFY_S:
-		make_ov_request(first_peer_device(device), cancel);
+		make_ov_request(peer_device, cancel);
 		break;
 	case L_SYNC_TARGET:
-		make_resync_request(first_peer_device(device), cancel);
+		make_resync_request(peer_device, cancel);
 		break;
 	default:
 		break;
@@ -454,11 +454,11 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 
 void resync_timer_fn(unsigned long data)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
 
-	if (list_empty(&device->resync_work.list))
-		drbd_queue_work(&first_peer_device(device)->connection->data.work,
-				&device->resync_work);
+	if (list_empty(&peer_device->resync_work.list))
+		drbd_queue_work(&peer_device->connection->data.work,
+				&peer_device->resync_work);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
@@ -741,7 +741,7 @@ next_sector:
 
  requeue:
 	device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&device->resync_timer, jiffies + SLEEP_TIME);
+	mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
 	put_ldev(device);
 	return 0;
 }
@@ -786,7 +786,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
  requeue:
 	device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&device->resync_timer, jiffies + SLEEP_TIME);
+	mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
 	return 1;
 }
 
@@ -1745,7 +1745,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
 		if (ns.conn == L_SYNC_TARGET)
-			mod_timer(&device->resync_timer, jiffies);
+			mod_timer(&peer_device->resync_timer, jiffies);
 
 		drbd_md_sync(device);
 	}
