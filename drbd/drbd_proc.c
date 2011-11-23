@@ -61,6 +61,54 @@ void seq_printf_with_thousands_grouping(struct seq_file *seq, long v)
 		seq_printf(seq, "%ld", v);
 }
 
+/* you must have an "get_ldev" reference */
+static void drbd_get_syncer_progress(struct drbd_device *device,
+		unsigned long *bits_left, unsigned int *per_mil_done)
+{
+	/* this is to break it at compile time when we change that, in case we
+	 * want to support more than (1<<32) bits on a 32bit arch. */
+	typecheck(unsigned long, device->rs_total);
+
+	/* note: both rs_total and rs_left are in bits, i.e. in
+	 * units of BM_BLOCK_SIZE.
+	 * for the percentage, we don't care. */
+
+	if (first_peer_device(device)->repl_state == L_VERIFY_S || first_peer_device(device)->repl_state == L_VERIFY_T)
+		*bits_left = device->ov_left;
+	else
+		*bits_left = drbd_bm_total_weight(device) - device->rs_failed;
+	/* >> 10 to prevent overflow,
+	 * +1 to prevent division by zero */
+	if (*bits_left > device->rs_total) {
+		/* doh. maybe a logic bug somewhere.
+		 * may also be just a race condition
+		 * between this and a disconnect during sync.
+		 * for now, just prevent in-kernel buffer overflow.
+		 */
+		smp_rmb();
+		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
+				drbd_conn_str(first_peer_device(device)->repl_state),
+				*bits_left, device->rs_total, device->rs_failed);
+		*per_mil_done = 0;
+	} else {
+		/* Make sure the division happens in long context.
+		 * We allow up to one petabyte storage right now,
+		 * at a granularity of 4k per bit that is 2**38 bits.
+		 * After shift right and multiplication by 1000,
+		 * this should still fit easily into a 32bit long,
+		 * so we don't need a 64bit division on 32bit arch.
+		 * Note: currently we don't support such large bitmaps on 32bit
+		 * arch anyways, but no harm done to be prepared for it here.
+		 */
+		unsigned int shift = device->rs_total > UINT_MAX ? 16 : 10;
+		unsigned long left = *bits_left >> shift;
+		unsigned long total = 1UL + (device->rs_total >> shift);
+		unsigned long tmp = 1000UL - left * 1000UL/total;
+		*per_mil_done = tmp;
+	}
+}
+
+
 /*lge
  * progress bars shamelessly adapted from driver/md/md.c
  * output looks like
