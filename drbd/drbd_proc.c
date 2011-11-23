@@ -65,6 +65,8 @@ void seq_printf_with_thousands_grouping(struct seq_file *seq, long v)
 static void drbd_get_syncer_progress(struct drbd_device *device,
 		unsigned long *bits_left, unsigned int *per_mil_done)
 {
+	struct drbd_peer_device *peer_device = first_peer_device(device);
+
 	/* this is to break it at compile time when we change that, in case we
 	 * want to support more than (1<<32) bits on a 32bit arch. */
 	typecheck(unsigned long, device->rs_total);
@@ -73,7 +75,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
-	if (first_peer_device(device)->repl_state == L_VERIFY_S || first_peer_device(device)->repl_state == L_VERIFY_T)
+	if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
 		*bits_left = device->ov_left;
 	else
 		*bits_left = drbd_bm_total_weight(device) - device->rs_failed;
@@ -87,7 +89,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 		 */
 		smp_rmb();
 		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
-				drbd_conn_str(first_peer_device(device)->repl_state),
+				drbd_conn_str(peer_device->repl_state),
 				*bits_left, device->rs_total, device->rs_failed);
 		*per_mil_done = 0;
 	} else {
@@ -117,6 +119,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
  */
 STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *seq)
 {
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	unsigned long db, dt, dbdt, rt, rs_left;
 	unsigned int res;
 	int i, x, y;
@@ -134,7 +137,7 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 		seq_printf(seq, ".");
 	seq_printf(seq, "] ");
 
-	if (first_peer_device(device)->repl_state == L_VERIFY_S || first_peer_device(device)->repl_state == L_VERIFY_T)
+	if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
 		seq_printf(seq, "verified:");
 	else
 		seq_printf(seq, "sync'ed:");
@@ -206,8 +209,8 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_printf(seq, ")");
 
-	if (first_peer_device(device)->repl_state == L_SYNC_TARGET ||
-	    first_peer_device(device)->repl_state == L_VERIFY_S) {
+	if (peer_device->repl_state == L_SYNC_TARGET ||
+	    peer_device->repl_state == L_VERIFY_S) {
 		seq_printf(seq, " want: ");
 		seq_printf_with_thousands_grouping(seq, device->c_sync_rate);
 	}
@@ -218,8 +221,8 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 		 * we convert to sectors in the display below. */
 		unsigned long bm_bits = drbd_bm_bits(device);
 		unsigned long bit_pos;
-		if (first_peer_device(device)->repl_state == L_VERIFY_S ||
-		    first_peer_device(device)->repl_state == L_VERIFY_T)
+		if (peer_device->repl_state == L_VERIFY_S ||
+		    peer_device->repl_state == L_VERIFY_T)
 			bit_pos = bm_bits - device->ov_left;
 		else
 			bit_pos = device->bm_resync_fo;
@@ -283,13 +286,15 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, device, i) {
+		struct drbd_peer_device *peer_device = first_peer_device(device);
+
 		if (prev_i != i - 1)
 			seq_printf(seq, "\n");
 		prev_i = i;
 
-		sn = drbd_conn_str(combined_conn_state(first_peer_device(device)));
+		sn = drbd_conn_str(combined_conn_state(peer_device));
 
-		if (first_peer_device(device)->repl_state == L_STANDALONE &&
+		if (peer_device->repl_state == L_STANDALONE &&
 		    device->disk_state == D_DISKLESS &&
 		    device->resource->role == R_SECONDARY) {
 			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
@@ -303,7 +308,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 				recv_cnt += peer_device->recv_cnt;
 			}
 
-			nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+			nc = rcu_dereference(peer_device->connection->net_conf);
 			wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
 			seq_printf(seq,
 			   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c%c%c\n"
@@ -313,12 +318,12 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   drbd_role_str(device->resource->role),
 			   drbd_role_str(first_connection(device->resource)->peer_role),
 			   drbd_disk_str(device->disk_state),
-			   drbd_disk_str(first_peer_device(device)->disk_state),
+			   drbd_disk_str(peer_device->disk_state),
 			   wp,
 			   drbd_suspended(device) ? 's' : 'r',
-			   first_peer_device(device)->resync_susp_dependency ? 'a' : '-',
-			   first_peer_device(device)->resync_susp_peer ? 'p' : '-',
-			   first_peer_device(device)->resync_susp_user ? 'u' : '-',
+			   peer_device->resync_susp_dependency ? 'a' : '-',
+			   peer_device->resync_susp_peer ? 'p' : '-',
+			   peer_device->resync_susp_user ? 'u' : '-',
 			   device->congestion_reason ?: '-',
 			   test_bit(AL_SUSPENDED, &device->flags) ? 's' : '-',
 			   send_cnt/2,
@@ -329,7 +334,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			   device->bm_writ_cnt,
 			   atomic_read(&device->local_cnt),
 			   atomic_read(&device->ap_pending_cnt) +
-			   atomic_read(&first_peer_device(device)->rs_pending_cnt),
+			   atomic_read(&peer_device->rs_pending_cnt),
 			   atomic_read(&device->unacked_cnt),
 			   atomic_read(&device->ap_bio_cnt),
 			   first_peer_device(device)->connection->epochs,
@@ -339,10 +344,10 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 				   Bit2KB((unsigned long long)
 					   drbd_bm_total_weight(device)));
 		}
-		if (first_peer_device(device)->repl_state == L_SYNC_SOURCE ||
-		    first_peer_device(device)->repl_state == L_SYNC_TARGET ||
-		    first_peer_device(device)->repl_state == L_VERIFY_S ||
-		    first_peer_device(device)->repl_state == L_VERIFY_T)
+		if (peer_device->repl_state == L_SYNC_SOURCE ||
+		    peer_device->repl_state == L_SYNC_TARGET ||
+		    peer_device->repl_state == L_VERIFY_S ||
+		    peer_device->repl_state == L_VERIFY_T)
 			drbd_syncer_progress(device, seq);
 
 		if (proc_details >= 1 && get_ldev_if_state(device, D_FAILED)) {
