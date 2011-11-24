@@ -565,7 +565,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 
 	kfree(udw);
 
-	if (drbd_bm_total_weight(device) <= device->rs_failed) {
+	if (drbd_bm_total_weight(device) <= first_peer_device(device)->rs_failed) {
 		switch (first_peer_device(device)->repl_state) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
@@ -680,17 +680,16 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long still_to_go)
 {
-	struct drbd_device *device = peer_device->device;
 	unsigned long now = jiffies;
-	unsigned long last = device->rs_mark_time[device->rs_last_mark];
-	int next = (device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
+	unsigned long last = peer_device->rs_mark_time[peer_device->rs_last_mark];
+	int next = (peer_device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
 	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
-		if (device->rs_mark_left[device->rs_last_mark] != still_to_go &&
+		if (peer_device->rs_mark_left[peer_device->rs_last_mark] != still_to_go &&
 		    peer_device->repl_state != L_PAUSED_SYNC_T &&
 		    peer_device->repl_state != L_PAUSED_SYNC_S) {
-			device->rs_mark_time[next] = now;
-			device->rs_mark_left[next] = still_to_go;
-			device->rs_last_mark = next;
+			peer_device->rs_mark_time[next] = now;
+			peer_device->rs_mark_left[next] = still_to_go;
+			peer_device->rs_last_mark = next;
 		}
 	}
 }
@@ -1181,7 +1180,7 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 	spin_lock_irq(&device->al_lock);
 	count = drbd_bm_count_bits(device, sbnr, ebnr);
 	if (count) {
-		device->rs_failed += count;
+		peer_device->rs_failed += count;
 
 		if (get_ldev(device)) {
 			drbd_try_clear_on_disk_bm(peer_device, sector, count, false);

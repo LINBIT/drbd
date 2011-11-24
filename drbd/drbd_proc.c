@@ -69,19 +69,19 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 
 	/* this is to break it at compile time when we change that, in case we
 	 * want to support more than (1<<32) bits on a 32bit arch. */
-	typecheck(unsigned long, device->rs_total);
+	typecheck(unsigned long, peer_device->rs_total);
 
 	/* note: both rs_total and rs_left are in bits, i.e. in
 	 * units of BM_BLOCK_SIZE.
 	 * for the percentage, we don't care. */
 
 	if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
-		*bits_left = device->ov_left;
+		*bits_left = peer_device->ov_left;
 	else
-		*bits_left = drbd_bm_total_weight(device) - device->rs_failed;
+		*bits_left = drbd_bm_total_weight(device) - peer_device->rs_failed;
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
-	if (*bits_left > device->rs_total) {
+	if (*bits_left > peer_device->rs_total) {
 		/* doh. maybe a logic bug somewhere.
 		 * may also be just a race condition
 		 * between this and a disconnect during sync.
@@ -90,7 +90,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 		smp_rmb();
 		drbd_warn(device, "cs:%s rs_left=%lu > rs_total=%lu (rs_failed %lu)\n",
 				drbd_conn_str(peer_device->repl_state),
-				*bits_left, device->rs_total, device->rs_failed);
+				*bits_left, peer_device->rs_total, peer_device->rs_failed);
 		*per_mil_done = 0;
 	} else {
 		/* Make sure the division happens in long context.
@@ -102,9 +102,9 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 		 * Note: currently we don't support such large bitmaps on 32bit
 		 * arch anyways, but no harm done to be prepared for it here.
 		 */
-		unsigned int shift = device->rs_total > UINT_MAX ? 16 : 10;
+		unsigned int shift = peer_device->rs_total > UINT_MAX ? 16 : 10;
 		unsigned long left = *bits_left >> shift;
-		unsigned long total = 1UL + (device->rs_total >> shift);
+		unsigned long total = 1UL + (peer_device->rs_total >> shift);
 		unsigned long tmp = 1000UL - left * 1000UL/total;
 		*per_mil_done = tmp;
 	}
@@ -144,14 +144,14 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	seq_printf(seq, "%3u.%u%% ", res / 10, res % 10);
 
 	/* if more than a few GB, display in MB */
-	if (device->rs_total > (4UL << (30 - BM_BLOCK_SHIFT)))
+	if (peer_device->rs_total > (4UL << (30 - BM_BLOCK_SHIFT)))
 		seq_printf(seq, "(%lu/%lu)M",
 			    (unsigned long) Bit2KB(rs_left >> 10),
-			    (unsigned long) Bit2KB(device->rs_total >> 10));
+			    (unsigned long) Bit2KB(peer_device->rs_total >> 10));
 	else
 		seq_printf(seq, "(%lu/%lu)K",
 			    (unsigned long) Bit2KB(rs_left),
-			    (unsigned long) Bit2KB(device->rs_total));
+			    (unsigned long) Bit2KB(peer_device->rs_total));
 
 	seq_printf(seq, "\n\t");
 
@@ -168,14 +168,14 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	 * at least (DRBD_SYNC_MARKS-2)*DRBD_SYNC_MARK_STEP old, and has at
 	 * least DRBD_SYNC_MARK_STEP time before it will be modified. */
 	/* ------------------------ ~18s average ------------------------ */
-	i = (device->rs_last_mark + 2) % DRBD_SYNC_MARKS;
-	dt = (jiffies - device->rs_mark_time[i]) / HZ;
+	i = (peer_device->rs_last_mark + 2) % DRBD_SYNC_MARKS;
+	dt = (jiffies - peer_device->rs_mark_time[i]) / HZ;
 	if (dt > (DRBD_SYNC_MARK_STEP * DRBD_SYNC_MARKS))
 		stalled = 1;
 
 	if (!dt)
 		dt++;
-	db = device->rs_mark_left[i] - rs_left;
+	db = peer_device->rs_mark_left[i] - rs_left;
 	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
 
 	seq_printf(seq, "finish: %lu:%02lu:%02lu",
@@ -188,11 +188,11 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	/* ------------------------- ~3s average ------------------------ */
 	if (proc_details >= 1) {
 		/* this is what drbd_rs_should_slow_down() uses */
-		i = (device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
-		dt = (jiffies - device->rs_mark_time[i]) / HZ;
+		i = (peer_device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
+		dt = (jiffies - peer_device->rs_mark_time[i]) / HZ;
 		if (!dt)
 			dt++;
-		db = device->rs_mark_left[i] - rs_left;
+		db = peer_device->rs_mark_left[i] - rs_left;
 		dbdt = Bit2KB(db/dt);
 		seq_printf_with_thousands_grouping(seq, dbdt);
 		seq_printf(seq, " -- ");
@@ -201,10 +201,10 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	/* --------------------- long term average ---------------------- */
 	/* mean speed since syncer started
 	 * we do account for PausedSync periods */
-	dt = (jiffies - device->rs_start - device->rs_paused) / HZ;
+	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;
 	if (dt == 0)
 		dt = 1;
-	db = device->rs_total - rs_left;
+	db = peer_device->rs_total - rs_left;
 	dbdt = Bit2KB(db/dt);
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_printf(seq, ")");
@@ -212,7 +212,7 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 	if (peer_device->repl_state == L_SYNC_TARGET ||
 	    peer_device->repl_state == L_VERIFY_S) {
 		seq_printf(seq, " want: ");
-		seq_printf_with_thousands_grouping(seq, device->c_sync_rate);
+		seq_printf_with_thousands_grouping(seq, peer_device->c_sync_rate);
 	}
 	seq_printf(seq, " K/sec%s\n", stalled ? " (stalled)" : "");
 
@@ -223,7 +223,7 @@ STATIC void drbd_syncer_progress(struct drbd_device *device, struct seq_file *se
 		unsigned long bit_pos;
 		if (peer_device->repl_state == L_VERIFY_S ||
 		    peer_device->repl_state == L_VERIFY_T)
-			bit_pos = bm_bits - device->ov_left;
+			bit_pos = bm_bits - peer_device->ov_left;
 		else
 			bit_pos = device->bm_resync_fo;
 		/* Total sectors may be slightly off for oddly

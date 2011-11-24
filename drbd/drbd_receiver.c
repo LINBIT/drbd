@@ -1814,7 +1814,7 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	list_add(&peer_req->w.list, &device->sync_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	atomic_add(data_size >> 9, &device->rs_sect_ev);
+	atomic_add(data_size >> 9, &peer_device->rs_sect_ev);
 	if (drbd_submit_peer_request(device, peer_req, WRITE, DRBD_FAULT_RS_WR) == 0)
 		return 0;
 
@@ -1912,7 +1912,7 @@ STATIC int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 	}
 
-	atomic_add(pi->size >> 9, &device->rs_sect_in);
+	atomic_add(pi->size >> 9, &peer_device->rs_sect_in);
 
 	return err;
 }
@@ -2503,27 +2503,28 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 	spin_unlock_irq(&device->al_lock);
 
 	curr_events = drbd_backing_bdev_events(device)
-		    - atomic_read(&device->rs_sect_ev);
+		    - atomic_read(&peer_device->rs_sect_ev);
 
-	if (!device->rs_last_events || curr_events - device->rs_last_events > 64) {
+	if (!peer_device->rs_last_events ||
+	    curr_events - peer_device->rs_last_events > 64) {
 		unsigned long rs_left;
 		int i;
 
-		device->rs_last_events = curr_events;
+		peer_device->rs_last_events = curr_events;
 
 		/* sync speed average over the last 2*DRBD_SYNC_MARK_STEP,
 		 * approx. */
-		i = (device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
+		i = (peer_device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
 
 		if (peer_device->repl_state == L_VERIFY_S || peer_device->repl_state == L_VERIFY_T)
-			rs_left = device->ov_left;
+			rs_left = peer_device->ov_left;
 		else
-			rs_left = drbd_bm_total_weight(device) - device->rs_failed;
+			rs_left = drbd_bm_total_weight(device) - peer_device->rs_failed;
 
-		dt = ((long)jiffies - (long)device->rs_mark_time[i]) / HZ;
+		dt = ((long)jiffies - (long)peer_device->rs_mark_time[i]) / HZ;
 		if (!dt)
 			dt++;
-		db = device->rs_mark_left[i] - rs_left;
+		db = peer_device->rs_mark_left[i] - rs_left;
 		dbdt = Bit2KB(db/dt);
 
 		if (dbdt > c_min_rate)
@@ -2638,7 +2639,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 			device->bm_resync_fo = BM_SECT_TO_BIT(sector);
 		} else if (pi->cmd == P_OV_REPLY) {
 			/* track progress, we may need to throttle */
-			atomic_add(size >> 9, &device->rs_sect_in);
+			atomic_add(size >> 9, &peer_device->rs_sect_in);
 			peer_req->w.cb = w_e_end_ov_reply;
 			dec_rs_pending(peer_device);
 			/* drbd_rs_begin_io done when we sent this request,
@@ -2648,17 +2649,17 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 		break;
 
 	case P_OV_REQUEST:
-		if (device->ov_start_sector == ~(sector_t)0 &&
+		if (peer_device->ov_start_sector == ~(sector_t)0 &&
 		    peer_device->connection->agreed_pro_version >= 90) {
 			unsigned long now = jiffies;
 			int i;
-			device->ov_start_sector = sector;
-			device->ov_position = sector;
-			device->ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
-			device->rs_total = device->ov_left;
+			peer_device->ov_start_sector = sector;
+			peer_device->ov_position = sector;
+			peer_device->ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
+			peer_device->rs_total = peer_device->ov_left;
 			for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-				device->rs_mark_left[i] = device->ov_left;
-				device->rs_mark_time[i] = now;
+				peer_device->rs_mark_left[i] = peer_device->ov_left;
+				peer_device->rs_mark_time[i] = now;
 			}
 			drbd_info(device, "Online Verify start sector: %llu\n",
 					(unsigned long long)sector);
@@ -2700,7 +2701,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 		goto out_free_e;
 
 submit_for_resync:
-	atomic_add(size >> 9, &device->rs_sect_ev);
+	atomic_add(size >> 9, &peer_device->rs_sect_ev);
 
 submit:
 	inc_unacked(device);
@@ -4097,7 +4098,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		 * Maybe we should finish it up, too? */
 		else if (os.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_CONNECTED) {
-			if (drbd_bm_total_weight(device) <= device->rs_failed)
+			if (drbd_bm_total_weight(device) <= peer_device->rs_failed)
 				drbd_resync_finished(peer_device);
 			return 0;
 		}
@@ -4717,8 +4718,8 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	 *  the disk-IO, while the rs_pending_cnt only tracks the blocks
 	 *  on the fly. */
 	drbd_rs_cancel_all(device);
-	device->rs_total = 0;
-	device->rs_failed = 0;
+	peer_device->rs_total = 0;
+	peer_device->rs_failed = 0;
 	atomic_set(&peer_device->rs_pending_cnt, 0);
 	wake_up(&device->misc_wait);
 
@@ -5142,11 +5143,11 @@ STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 		drbd_rs_complete_io(device, sector);
 		drbd_set_in_sync(device, sector, blksize);
 		/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
-		device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
+		peer_device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
 		put_ldev(device);
 	}
 	dec_rs_pending(peer_device);
-	atomic_add(blksize >> 9, &device->rs_sect_in);
+	atomic_add(blksize >> 9, &peer_device->rs_sect_in);
 
 	return 0;
 }
@@ -5365,13 +5366,13 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	drbd_rs_complete_io(device, sector);
 	dec_rs_pending(peer_device);
 
-	--device->ov_left;
+	--peer_device->ov_left;
 
 	/* let's advance progress step marks only for every other megabyte */
-	if ((device->ov_left & 0x200) == 0x200)
-		drbd_advance_rs_marks(peer_device, device->ov_left);
+	if ((peer_device->ov_left & 0x200) == 0x200)
+		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
 
-	if (device->ov_left == 0) {
+	if (peer_device->ov_left == 0) {
 		struct drbd_peer_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
 		if (dw) {
 			dw->w.cb = w_ov_finished;

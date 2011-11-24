@@ -806,27 +806,27 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 {
 	struct drbd_device *device = peer_device->device;
 	if (peer_device->connection->agreed_pro_version < 90)
-		device->ov_start_sector = 0;
-	device->rs_total = drbd_bm_bits(device);
-	device->ov_position = 0;
+		peer_device->ov_start_sector = 0;
+	peer_device->rs_total = drbd_bm_bits(device);
+	peer_device->ov_position = 0;
 	if (repl_state == L_VERIFY_T) {
 		/* starting online verify from an arbitrary position
 		 * does not fit well into the existing protocol.
 		 * on L_VERIFY_T, we initialize ov_left and friends
 		 * implicitly in receive_DataRequest once the
 		 * first P_OV_REQUEST is received */
-		device->ov_start_sector = ~(sector_t)0;
+		peer_device->ov_start_sector = ~(sector_t)0;
 	} else {
-		unsigned long bit = BM_SECT_TO_BIT(device->ov_start_sector);
-		if (bit >= device->rs_total) {
-			device->ov_start_sector =
-				BM_BIT_TO_SECT(device->rs_total - 1);
-			device->rs_total = 1;
+		unsigned long bit = BM_SECT_TO_BIT(peer_device->ov_start_sector);
+		if (bit >= peer_device->rs_total) {
+			peer_device->ov_start_sector =
+				BM_BIT_TO_SECT(peer_device->rs_total - 1);
+			peer_device->rs_total = 1;
 		} else
-			device->rs_total -= bit;
-		device->ov_position = device->ov_start_sector;
+			peer_device->rs_total -= bit;
+		peer_device->ov_position = peer_device->ov_start_sector;
 	}
-	device->ov_left = device->rs_total;
+	peer_device->ov_left = peer_device->rs_total;
 }
 
 /**
@@ -922,25 +922,25 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	/* aborted verify run. log the last position */
 	if ((os.conn == L_VERIFY_S || os.conn == L_VERIFY_T) &&
 	    ns.conn < L_CONNECTED) {
-		device->ov_start_sector =
-			BM_BIT_TO_SECT(drbd_bm_bits(device) - device->ov_left);
-		drbd_info(device, "Online Verify reached sector %llu\n",
-			(unsigned long long)device->ov_start_sector);
+		peer_device->ov_start_sector =
+			BM_BIT_TO_SECT(drbd_bm_bits(device) - peer_device->ov_left);
+		drbd_info(peer_device, "Online Verify reached sector %llu\n",
+			(unsigned long long)peer_device->ov_start_sector);
 	}
 
 	if ((os.conn == L_PAUSED_SYNC_T || os.conn == L_PAUSED_SYNC_S) &&
 	    (ns.conn == L_SYNC_TARGET  || ns.conn == L_SYNC_SOURCE)) {
-		drbd_info(device, "Syncer continues.\n");
-		device->rs_paused += (long)jiffies
-				  -(long)device->rs_mark_time[device->rs_last_mark];
+		drbd_info(peer_device, "Syncer continues.\n");
+		peer_device->rs_paused += (long)jiffies
+				  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 		if (ns.conn == L_SYNC_TARGET)
 			mod_timer(&peer_device->resync_timer, jiffies);
 	}
 
 	if ((os.conn == L_SYNC_TARGET  || os.conn == L_SYNC_SOURCE) &&
 	    (ns.conn == L_PAUSED_SYNC_T || ns.conn == L_PAUSED_SYNC_S)) {
-		drbd_info(device, "Resync suspended\n");
-		device->rs_mark_time[device->rs_last_mark] = jiffies;
+		drbd_info(peer_device, "Resync suspended\n");
+		peer_device->rs_mark_time[peer_device->rs_last_mark] = jiffies;
 	}
 
 	if (os.conn == L_CONNECTED &&
@@ -949,22 +949,22 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 		int i;
 
 		set_ov_position(peer_device, (enum drbd_repl_state)ns.conn);
-		device->rs_start = now;
-		device->rs_last_events = 0;
-		device->rs_last_sect_ev = 0;
-		device->ov_last_oos_size = 0;
-		device->ov_last_oos_start = 0;
+		peer_device->rs_start = now;
+		peer_device->rs_last_events = 0;
+		peer_device->rs_last_sect_ev = 0;
+		peer_device->ov_last_oos_size = 0;
+		peer_device->ov_last_oos_start = 0;
 
 		for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-			device->rs_mark_left[i] = device->ov_left;
-			device->rs_mark_time[i] = now;
+			peer_device->rs_mark_left[i] = peer_device->ov_left;
+			peer_device->rs_mark_time[i] = now;
 		}
 
 		drbd_rs_controller_reset(peer_device);
 
 		if (ns.conn == L_VERIFY_S) {
-			drbd_info(device, "Starting Online Verify from sector %llu\n",
-					(unsigned long long)device->ov_position);
+			drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
+					(unsigned long long)peer_device->ov_position);
 			mod_timer(&peer_device->resync_timer, jiffies);
 		}
 	}
@@ -1313,8 +1313,8 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
                                 "ASSERT FAILED: disk is %s while going diskless\n",
                                 drbd_disk_str(device->disk_state));
 
-                device->rs_total = 0;
-                device->rs_failed = 0;
+                first_peer_device(device)->rs_total = 0;
+                first_peer_device(device)->rs_failed = 0;
                 atomic_set(&first_peer_device(device)->rs_pending_cnt, 0);
 
 		drbd_send_state(first_peer_device(device), ns);

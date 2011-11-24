@@ -2121,15 +2121,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	device->bm_writ_cnt = 0;
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
-	device->rs_start = 0;
-	device->rs_total = 0;
-	device->rs_failed = 0;
-	device->rs_last_events = 0;
-	device->rs_last_sect_ev = 0;
-	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-		device->rs_mark_left[i] = 0;
-		device->rs_mark_time[i] = 0;
-	}
 
 	drbd_set_my_capacity(device, 0);
 	if (device->bitmap) {
@@ -2164,6 +2155,15 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 
 		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
 		peer_device->disk_size = 0;
+		peer_device->rs_start = 0;
+		peer_device->rs_total = 0;
+		peer_device->rs_failed = 0;
+		peer_device->rs_last_events = 0;
+		peer_device->rs_last_sect_ev = 0;
+		for (i = 0; i < DRBD_SYNC_MARKS; i++) {
+			peer_device->rs_mark_left[i] = 0;
+			peer_device->rs_mark_time[i] = 0;
+		}
 	}
 	rcu_read_unlock();
 
@@ -2790,8 +2790,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	atomic_set(&device->unacked_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
-	atomic_set(&device->rs_sect_in, 0);
-	atomic_set(&device->rs_sect_ev, 0);
 	atomic_set(&device->ap_in_flight, 0);
 	atomic_set(&device->md_io_in_use, 0);
 
@@ -2909,6 +2907,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		peer_device->resync_timer.data = (unsigned long) peer_device;
 
 		atomic_set(&peer_device->rs_pending_cnt, 0);
+		atomic_set(&peer_device->rs_sect_in, 0);
+		atomic_set(&peer_device->rs_sect_ev, 0);
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&device->kref);

@@ -2662,9 +2662,9 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 				}
 			}
 
-			if (resync_or_verify_active) {
-				NLA_PUT_U64(skb, T_bits_rs_total, device->rs_total);
-				NLA_PUT_U64(skb, T_bits_rs_failed, device->rs_failed);
+			if (resync_or_verify_active && peer_device) {
+				NLA_PUT_U64(skb, T_bits_rs_total, peer_device->rs_total);
+				NLA_PUT_U64(skb, T_bits_rs_failed, peer_device->rs_failed);
 			}
 		}
 
@@ -3197,6 +3197,7 @@ out:
 int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
@@ -3206,10 +3207,11 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	device = adm_ctx.device;
+	peer_device = first_peer_device(device);
 	if (info->attrs[DRBD_NLA_START_OV_PARMS]) {
 		/* resume from last known position, if possible */
 		struct start_ov_parms parms =
-			{ .ov_start_sector = device->ov_start_sector };
+			{ .ov_start_sector = peer_device->ov_start_sector };
 		int err = start_ov_parms_from_attrs(&parms, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
@@ -3217,7 +3219,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 		/* w_make_ov_request expects position to be aligned */
-		device->ov_start_sector = parms.ov_start_sector & ~BM_SECT_PER_BIT;
+		peer_device->ov_start_sector = parms.ov_start_sector & ~BM_SECT_PER_BIT;
 	}
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */

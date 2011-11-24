@@ -746,7 +746,42 @@ struct drbd_peer_device {
 
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 
+	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
+	unsigned long rs_total;
+	/* number of resync blocks that failed in this run */
+	unsigned long rs_failed;
+	/* Syncer's start time [unit jiffies] */
+	unsigned long rs_start;
+	/* cumulated time in PausedSyncX state [unit jiffies] */
+	unsigned long rs_paused;
+	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
+	unsigned long rs_same_csum;
+#define DRBD_SYNC_MARKS 8
+#define DRBD_SYNC_MARK_STEP (3*HZ)
+	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
+	unsigned long rs_mark_left[DRBD_SYNC_MARKS];
+	/* marks's time [unit jiffies] */
+	unsigned long rs_mark_time[DRBD_SYNC_MARKS];
+	/* current index into rs_mark_{left,time} */
+	int rs_last_mark;
+
+	/* where does the admin want us to start? (sector) */
+	sector_t ov_start_sector;
+	/* where are we now? (sector) */
+	sector_t ov_position;
+	/* Start sector of out of sync range (to merge printk reporting). */
+	sector_t ov_last_oos_start;
+	/* size of out-of-sync range in sectors. */
+	sector_t ov_last_oos_size;
+	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
+	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
+	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
+	int rs_last_sect_ev; /* counter to compare with */
+	int rs_last_events;  /* counter of read or write "events" (unit sectors)
+			      * on the lower level device when we last looked. */
+	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
+	unsigned long ov_left; /* in bits */
 };
 
 struct drbd_device {
@@ -800,35 +835,6 @@ struct drbd_device {
 	struct rb_root read_requests;
 	struct rb_root write_requests;
 
-	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
-	unsigned long rs_total;
-	/* number of resync blocks that failed in this run */
-	unsigned long rs_failed;
-	/* Syncer's start time [unit jiffies] */
-	unsigned long rs_start;
-	/* cumulated time in PausedSyncX state [unit jiffies] */
-	unsigned long rs_paused;
-	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
-	unsigned long rs_same_csum;
-#define DRBD_SYNC_MARKS 8
-#define DRBD_SYNC_MARK_STEP (3*HZ)
-	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
-	unsigned long rs_mark_left[DRBD_SYNC_MARKS];
-	/* marks's time [unit jiffies] */
-	unsigned long rs_mark_time[DRBD_SYNC_MARKS];
-	/* current index into rs_mark_{left,time} */
-	int rs_last_mark;
-
-	/* where does the admin want us to start? (sector) */
-	sector_t ov_start_sector;
-	/* where are we now? (sector) */
-	sector_t ov_position;
-	/* Start sector of out of sync range (to merge printk reporting). */
-	sector_t ov_last_oos_start;
-	/* size of out-of-sync range in sectors. */
-	sector_t ov_last_oos_size;
-	unsigned long ov_left; /* in bits */
-
 	struct drbd_bitmap *bitmap;
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
@@ -861,13 +867,6 @@ struct drbd_device {
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 ed_uuid; /* UUID of the exposed data */
 	char congestion_reason;  /* Why we where congested... */
-	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
-	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
-	int rs_last_sect_ev; /* counter to compare with */
-	int rs_last_events;  /* counter of read or write "events" (unit sectors)
-			      * on the lower level device when we last looked. */
-	int c_sync_rate; /* current resync rate after syncer throttle magic */
-	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
 	struct device_conf device_conf;
@@ -1321,14 +1320,12 @@ extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
-
-	if (device->ov_last_oos_size) {
+	if (peer_device->ov_last_oos_size) {
 		drbd_err(peer_device, "Out of sync: start=%llu, size=%lu (sectors)\n",
-		     (unsigned long long)device->ov_last_oos_start,
-		     (unsigned long)device->ov_last_oos_size);
+		     (unsigned long long)peer_device->ov_last_oos_start,
+		     (unsigned long)peer_device->ov_last_oos_size);
 	}
-	device->ov_last_oos_size=0;
+	peer_device->ov_last_oos_size = 0;
 }
 
 
