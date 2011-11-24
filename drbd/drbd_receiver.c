@@ -2491,7 +2491,7 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 		return 0;
 
 	spin_lock_irq(&device->al_lock);
-	tmp = lc_find(device->resync, BM_SECT_TO_EXT(sector));
+	tmp = lc_find(device->resync_lru, BM_SECT_TO_EXT(sector));
 	if (tmp) {
 		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
 		if (test_bit(BME_PRIORITY, &bm_ext->flags)) {

@@ -824,7 +824,7 @@ struct drbd_device {
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
 	/* Used to track operations of resync... */
-	struct lru_cache *resync;
+	struct lru_cache *resync_lru;
 	/* Number of locked elements in resync LRU */
 	unsigned int resync_locked;
 	/* resync extent number waiting for application requests */

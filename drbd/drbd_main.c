@@ -2352,7 +2352,7 @@ void drbd_destroy_device(struct kref *kref)
 	drbd_release_all_peer_reqs(device);
 
 	lc_destroy(device->act_log);
-	lc_destroy(device->resync);
+	lc_destroy(device->resync_lru);
 
 	kfree(device->p_uuid);
 	/* device->p_uuid = NULL; */
@@ -3430,8 +3430,8 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 
 void drbd_ldev_destroy(struct drbd_device *device)
 {
-	lc_destroy(device->resync);
-	device->resync = NULL;
+	lc_destroy(device->resync_lru);
+	device->resync_lru = NULL;
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
 	__no_warn(local,

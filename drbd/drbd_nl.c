@@ -1509,7 +1509,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * clean it up somewhere.  */
 	D_ASSERT(device, device->ldev == NULL);
 	device->ldev = nbc;
-	device->resync = resync_lru;
+	device->resync_lru = resync_lru;
 	device->rs_plan_s = new_plan;
 	nbc = NULL;
 	resync_lru = NULL;

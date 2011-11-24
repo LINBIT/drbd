@@ -351,14 +351,14 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 			drbd_syncer_progress(device, seq);
 
 		if (proc_details >= 1 && get_ldev_if_state(device, D_FAILED)) {
-			lc_seq_printf_stats(seq, device->resync);
+			lc_seq_printf_stats(seq, device->resync_lru);
 			lc_seq_printf_stats(seq, device->act_log);
 			put_ldev(device);
 		}
 
 		if (proc_details >= 2) {
-			if (device->resync) {
-				lc_seq_dump_details(seq, device->resync, "rs_left",
+			if (device->resync_lru) {
+				lc_seq_dump_details(seq, device->resync_lru, "rs_left",
 					resync_dump_detail);
 			}
 		}
