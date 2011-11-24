@@ -285,6 +285,17 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 	unsigned enr;
 	bool locked = false;
 
+	/* When called through generic_make_request(), we must delegate
+	 * activity log I/O to the worker thread: a further request
+	 * submitted via generic_make_request() within the same task
+	 * would be queued on current->bio_list, and would only start
+	 * after this function returns (see generic_make_request()).
+	 *
+	 * However, if we *are* the worker, we must not delegate to ourselves.
+	 */
+
+	if (delegate)
+		BUG_ON(current == device->resource->worker.task);
 
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
 
@@ -496,16 +507,6 @@ static int al_write_transaction(struct drbd_device *device, bool delegate)
 {
 	if (delegate) {
 		struct update_al_work al_work;
-
-		/* When called through generic_make_request(), we must delegate
-		 * activity log I/O to the worker thread: a further request
-		 * submitted via generic_make_request() within the same task
-		 * would be queued on current->bio_list, and would only start
-		 * after this function returns (see generic_make_request()).
-		 */
-
-		BUG_ON(current == device->resource->worker.task);
-
 		init_completion(&al_work.event);
 		al_work.w.cb = w_al_write_transaction;
 		al_work.device = device;
