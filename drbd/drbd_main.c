@@ -2352,7 +2352,7 @@ void drbd_destroy_device(struct kref *kref)
 	drbd_release_all_peer_reqs(device);
 
 	lc_destroy(device->act_log);
-	lc_destroy(device->resync_lru);
+	lc_destroy(first_peer_device(device)->resync_lru);
 
 	kfree(device->p_uuid);
 	/* device->p_uuid = NULL; */
@@ -2824,8 +2824,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	init_waitqueue_head(&device->al_wait);
 	init_waitqueue_head(&device->seq_wait);
 
-	device->resync_wenr = LC_FREE;
-
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
 		goto out_no_q;
@@ -2924,6 +2922,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 			goto out_no_peer_device;
 		}
 		kref_get(&connection->kref);
+
+		peer_device->resync_wenr = LC_FREE;
 	}
 
 	/* kref_get(&device->kref); */
@@ -3430,8 +3430,14 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 
 void drbd_ldev_destroy(struct drbd_device *device)
 {
-	lc_destroy(device->resync_lru);
-	device->resync_lru = NULL;
+	struct drbd_peer_device *peer_device;
+
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		lc_destroy(peer_device->resync_lru);
+		peer_device->resync_lru = NULL;
+	}
+	rcu_read_unlock();
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
 	__no_warn(local,

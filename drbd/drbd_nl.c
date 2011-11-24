@@ -1278,8 +1278,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
-	struct lru_cache *resync_lru = NULL;
-	struct fifo_buffer *new_plan = NULL;
 	union drbd_state ns, os;
 	enum drbd_state_rv rv;
 	struct net_conf *nc;
@@ -1327,12 +1325,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	enforce_disk_conf_limits(new_disk_conf);
 
-	new_plan = fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
-	if (!new_plan) {
-		retcode = ERR_NOMEM;
-		goto fail;
-	}
-
 	if (new_disk_conf->meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
 		goto fail;
@@ -1350,6 +1342,23 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 	rcu_read_unlock();
+
+	device->rs_plan_s =
+		fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+	if (!device->rs_plan_s) {
+		retcode = ERR_NOMEM;
+		goto fail;
+	}
+	for_each_peer_device(peer_device, device) {
+		peer_device->resync_lru =
+			 lc_create("resync", drbd_bm_ext_cache,
+				   1, 61, sizeof(struct bm_extent),
+				   offsetof(struct bm_extent, lce));
+		if (!peer_device->resync_lru) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	}
 
 	bdev = blkdev_get_by_path(new_disk_conf->backing_dev,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, device);
@@ -1385,14 +1394,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	    (new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
 	     new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)) {
 		retcode = ERR_MD_IDX_INVALID;
-		goto fail;
-	}
-
-	resync_lru = lc_create("resync", drbd_bm_ext_cache,
-			1, 61, sizeof(struct bm_extent),
-			offsetof(struct bm_extent, lce));
-	if (!resync_lru) {
-		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
@@ -1509,12 +1510,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * clean it up somewhere.  */
 	D_ASSERT(device, device->ldev == NULL);
 	device->ldev = nbc;
-	device->resync_lru = resync_lru;
-	device->rs_plan_s = new_plan;
 	nbc = NULL;
-	resync_lru = NULL;
 	new_disk_conf = NULL;
-	new_plan = NULL;
 
 	drbd_bump_write_ordering(device->resource, WO_bio_barrier);
 
@@ -1662,8 +1659,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		kfree(nbc);
 	}
 	kfree(new_disk_conf);
-	lc_destroy(resync_lru);
-	kfree(new_plan);
+	for_each_peer_device(peer_device, device) {
+		lc_destroy(peer_device->resync_lru);
+		peer_device->resync_lru = NULL;
+	}
+	kfree(device->rs_plan_s);
+	device->rs_plan_s = NULL;
 
  finish:
 	drbd_adm_finish(info, retcode);

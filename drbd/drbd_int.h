@@ -737,6 +737,13 @@ struct drbd_peer_device {
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
 
+	/* Used to track operations of resync... */
+	struct lru_cache *resync_lru;
+	/* Number of locked elements in resync LRU */
+	unsigned int resync_locked;
+	/* resync extent number waiting for application requests */
+	unsigned int resync_wenr;
+
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 };
 
@@ -822,13 +829,6 @@ struct drbd_device {
 
 	struct drbd_bitmap *bitmap;
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
-
-	/* Used to track operations of resync... */
-	struct lru_cache *resync_lru;
-	/* Number of locked elements in resync LRU */
-	unsigned int resync_locked;
-	/* resync extent number waiting for application requests */
-	unsigned int resync_wenr;
 
 	int open_cnt;
 	u64 *p_uuid;
