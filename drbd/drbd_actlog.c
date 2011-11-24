@@ -237,20 +237,23 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 {
+	struct drbd_peer_device *peer_device;
 	struct lc_element *al_ext;
 	struct lc_element *tmp;
 	int wake;
 
 	spin_lock_irq(&device->al_lock);
-	tmp = lc_find(first_peer_device(device)->resync_lru, enr/AL_EXT_PER_BM_SECT);
-	if (unlikely(tmp != NULL)) {
-		struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-		if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
-			wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
-			spin_unlock_irq(&device->al_lock);
-			if (wake)
-				wake_up(&device->al_wait);
-			return NULL;
+	for_each_peer_device(peer_device, device) {
+		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
+		if (unlikely(tmp != NULL)) {
+			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
+				wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+				spin_unlock_irq(&device->al_lock);
+				if (wake)
+					wake_up(&device->al_wait);
+				return NULL;
+			}
 		}
 	}
 	al_ext = lc_get(device->act_log, enr);
@@ -584,9 +587,10 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-STATIC void drbd_try_clear_on_disk_bm(struct drbd_device *device, sector_t sector,
+static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sector_t sector,
 				      int count, int success)
 {
+	struct drbd_device *device = peer_device->device;
 	struct lc_element *e;
 	struct update_odbm_work *udw;
 
@@ -742,9 +746,13 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 	 */
 	count = drbd_bm_clear_bits(device, sbnr, ebnr);
 	if (count && get_ldev(device)) {
+		struct drbd_peer_device *peer_device;
+
 		drbd_advance_rs_marks(first_peer_device(device), drbd_bm_total_weight(device));
 		spin_lock_irqsave(&device->al_lock, flags);
-		drbd_try_clear_on_disk_bm(device, sector, count, true);
+		/* FIXME: Make sure the list of peer devices cannot change here. */
+		for_each_peer_device_rcu(peer_device, device)
+			drbd_try_clear_on_disk_bm(peer_device, sector, count, true);
 		spin_unlock_irqrestore(&device->al_lock, flags);
 
 		/* just wake_up unconditional now, various lc_chaged(),
@@ -1176,7 +1184,7 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 		device->rs_failed += count;
 
 		if (get_ldev(device)) {
-			drbd_try_clear_on_disk_bm(device, sector, count, false);
+			drbd_try_clear_on_disk_bm(peer_device, sector, count, false);
 			put_ldev(device);
 		}
 
