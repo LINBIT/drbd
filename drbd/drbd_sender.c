@@ -523,7 +523,7 @@ STATIC int drbd_rs_controller(struct drbd_peer_device *peer_device)
 	device->rs_in_flight -= sect_in;
 
 	dc = rcu_dereference(device->ldev->disk_conf);
-	plan = rcu_dereference(device->rs_plan_s);
+	plan = rcu_dereference(peer_device->rs_plan_s);
 
 	steps = plan->size; /* (dc->c_plan_ahead * 10 * SLEEP_TIME) / HZ; */
 
@@ -568,7 +568,7 @@ STATIC int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	int number;
 
 	rcu_read_lock();
-	if (rcu_dereference(device->rs_plan_s)->size) {
+	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device) >> (BM_BLOCK_SHIFT - 9);
 		device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;
 	} else {
@@ -1546,7 +1546,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	   It is valid since all other updates also lead to an completely
 	   empty fifo */
 	rcu_read_lock();
-	plan = rcu_dereference(device->rs_plan_s);
+	plan = rcu_dereference(peer_device->rs_plan_s);
 	plan->total = 0;
 	fifo_set(plan, 0);
 	rcu_read_unlock();

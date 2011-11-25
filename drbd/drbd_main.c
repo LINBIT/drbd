@@ -2362,7 +2362,7 @@ void drbd_destroy_device(struct kref *kref)
 	__free_page(device->md_io_page);
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
-	kfree(device->rs_plan_s);
+	kfree(first_peer_device(device)->rs_plan_s);
 	kfree(first_peer_device(device));
 	kfree(device);
 

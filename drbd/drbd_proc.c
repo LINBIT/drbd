@@ -286,64 +286,66 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, device, i) {
-		struct drbd_peer_device *peer_device = first_peer_device(device);
+		struct drbd_peer_device *peer_device = NULL;
+		bool multiple = false;
+
+		if (!list_empty(&device->peer_devices)) {
+			peer_device = first_peer_device(device);
+			if (device->peer_devices.next->next != &device->peer_devices) {
+				peer_device = NULL;
+				multiple = true;
+			}
+		}
 
 		if (prev_i != i - 1)
 			seq_printf(seq, "\n");
 		prev_i = i;
 
-		sn = drbd_conn_str(combined_conn_state(peer_device));
-
-		if (peer_device->repl_state == L_STANDALONE &&
-		    device->disk_state == D_DISKLESS &&
-		    device->resource->role == R_SECONDARY) {
-			seq_printf(seq, "%2d: cs:Unconfigured\n", i);
-		} else {
-			struct drbd_peer_device *peer_device;
-			unsigned int send_cnt = 0;
-			unsigned int recv_cnt = 0;
-
-			for_each_peer_device(peer_device, device) {
-				send_cnt += peer_device->send_cnt;
-				recv_cnt += peer_device->recv_cnt;
-			}
-
-			nc = rcu_dereference(peer_device->connection->net_conf);
-			wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
-			seq_printf(seq,
-			   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c%c%c\n"
-			   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
-			   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
-			   i, sn,
-			   drbd_role_str(device->resource->role),
-			   drbd_role_str(first_connection(device->resource)->peer_role),
-			   drbd_disk_str(device->disk_state),
-			   drbd_disk_str(peer_device->disk_state),
-			   wp,
-			   drbd_suspended(device) ? 's' : 'r',
-			   peer_device->resync_susp_dependency ? 'a' : '-',
-			   peer_device->resync_susp_peer ? 'p' : '-',
-			   peer_device->resync_susp_user ? 'u' : '-',
-			   device->congestion_reason ?: '-',
-			   test_bit(AL_SUSPENDED, &device->flags) ? 's' : '-',
-			   send_cnt/2,
-			   recv_cnt/2,
-			   device->writ_cnt/2,
-			   device->read_cnt/2,
-			   device->al_writ_cnt,
-			   device->bm_writ_cnt,
-			   atomic_read(&device->local_cnt),
-			   atomic_read(&device->ap_pending_cnt) +
-			   atomic_read(&peer_device->rs_pending_cnt),
-			   atomic_read(&device->unacked_cnt),
-			   atomic_read(&device->ap_bio_cnt),
-			   first_peer_device(device)->connection->epochs,
-			   write_ordering_chars[device->resource->write_ordering]
-			);
-			seq_printf(seq, " oos:%llu\n",
-				   Bit2KB((unsigned long long)
-					   drbd_bm_total_weight(device)));
+		if (!peer_device ||
+		    (peer_device->repl_state == L_STANDALONE &&
+		     device->disk_state == D_DISKLESS &&
+		     device->resource->role == R_SECONDARY)) {
+			seq_printf(seq, "%2d: cs:%s\n", i,
+				   multiple ? "Multiple" : "Unconfigured");
+			continue;
 		}
+
+		sn = drbd_conn_str(combined_conn_state(peer_device));
+		nc = rcu_dereference(peer_device->connection->net_conf);
+		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
+		seq_printf(seq,
+		   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c%c%c\n"
+		   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
+		   "lo:%d pe:%d ua:%d ap:%d ep:%d wo:%c",
+		   i, sn,
+		   drbd_role_str(device->resource->role),
+		   drbd_role_str(first_connection(device->resource)->peer_role),
+		   drbd_disk_str(device->disk_state),
+		   drbd_disk_str(peer_device->disk_state),
+		   wp,
+		   drbd_suspended(device) ? 's' : 'r',
+		   peer_device->resync_susp_dependency ? 'a' : '-',
+		   peer_device->resync_susp_peer ? 'p' : '-',
+		   peer_device->resync_susp_user ? 'u' : '-',
+		   device->congestion_reason ?: '-',
+		   test_bit(AL_SUSPENDED, &device->flags) ? 's' : '-',
+		   peer_device->send_cnt/2,
+		   peer_device->recv_cnt/2,
+		   device->writ_cnt/2,
+		   device->read_cnt/2,
+		   device->al_writ_cnt,
+		   device->bm_writ_cnt,
+		   atomic_read(&device->local_cnt),
+		   atomic_read(&device->ap_pending_cnt) +
+		   atomic_read(&peer_device->rs_pending_cnt),
+		   atomic_read(&device->unacked_cnt),
+		   atomic_read(&device->ap_bio_cnt),
+		   peer_device->connection->epochs,
+		   write_ordering_chars[device->resource->write_ordering]
+		);
+		seq_printf(seq, " oos:%llu\n",
+			   Bit2KB((unsigned long long)
+				   drbd_bm_total_weight(device)));
 		if (peer_device->repl_state == L_SYNC_SOURCE ||
 		    peer_device->repl_state == L_SYNC_TARGET ||
 		    peer_device->repl_state == L_VERIFY_S ||

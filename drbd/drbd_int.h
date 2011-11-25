@@ -745,6 +745,8 @@ struct drbd_peer_device {
 	unsigned int resync_wenr;
 
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
+
+	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 };
 
 struct drbd_device {
@@ -865,7 +867,6 @@ struct drbd_device {
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
-	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
