@@ -882,6 +882,18 @@ static inline struct drbd_peer_device *first_peer_device(struct drbd_device *dev
 	return list_first_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
 }
 
+/*
+ * Return the peer device of @device if @device has exactly one peer device.
+ */
+static inline struct drbd_peer_device *the_only_peer_device(struct drbd_device *device)
+{
+	struct list_head *peer_devices = &device->peer_devices;
+
+	if (list_empty(peer_devices) || peer_devices->next->next != peer_devices)
+		return NULL;
+	return first_peer_device(device);
+}
+
 #define for_each_resource(resource, _resources) \
 	list_for_each_entry(resource, _resources, resources)
 

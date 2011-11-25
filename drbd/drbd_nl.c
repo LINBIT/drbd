@@ -2559,18 +2559,6 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
-/*
- * Return the peer device of @device if @device has exactly one peer device.
- */
-static struct drbd_peer_device *the_only_peer_device(struct drbd_device *device)
-{
-	struct list_head *peer_devices = &device->peer_devices;
-
-	if (list_empty(peer_devices) || peer_devices->next->next != peer_devices)
-		return NULL;
-	return list_first_entry(peer_devices, struct drbd_peer_device, peer_devices);
-}
-
 static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resource,
 			       struct drbd_device *device, const struct sib_info *sib)
 {
