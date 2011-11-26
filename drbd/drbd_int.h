@@ -1301,7 +1301,7 @@ extern void drbd_suspend_io(struct drbd_device *device);
 extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_device *, struct drbd_backing_dev *, sector_t, int);
-enum determine_dev_size { dev_size_error = -1, unchanged = 0, shrunk = 1, grew = 2 };
+enum determine_dev_size { DEV_SIZE_ERROR = -1, UNCHANGED = 0, SHRUNK = 1, GREW = 2 };
 extern enum determine_dev_size drbd_determine_dev_size(struct drbd_device *, enum dds_flags) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_device *);
 extern void drbd_reconsider_max_bio_size(struct drbd_device *device);

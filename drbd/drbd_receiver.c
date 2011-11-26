@@ -3750,7 +3750,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_sizes *p = pi->data;
-	enum determine_dev_size dd = unchanged;
+	enum determine_dev_size dd = UNCHANGED;
 	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
 	enum dds_flags ddsf;
@@ -3826,7 +3826,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	if (get_ldev(device)) {
 		dd = drbd_determine_dev_size(device, ddsf);
 		put_ldev(device);
-		if (dd == dev_size_error)
+		if (dd == DEV_SIZE_ERROR)
 			return -EIO;
 		drbd_md_sync(device);
 	} else {
@@ -3871,7 +3871,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			drbd_send_sizes(peer_device, 0, ddsf);
 		}
 		if (test_and_clear_bit(RESIZE_PENDING, &device->flags) ||
-		    (dd == grew && peer_device->repl_state == L_CONNECTED)) {
+		    (dd == GREW && peer_device->repl_state == L_CONNECTED)) {
 			if (peer_device->disk_state >= D_INCONSISTENT &&
 			    device->disk_state >= D_INCONSISTENT) {
 				if (ddsf & DDSF_NO_RESYNC)

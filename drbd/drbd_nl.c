@@ -870,7 +870,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 	char ppb[10];
 
 	int md_moved, la_size_changed;
-	enum determine_dev_size rv = unchanged;
+	enum determine_dev_size rv = UNCHANGED;
 
 	/* race:
 	 * application request passes inc_ap_bio,
@@ -913,7 +913,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 				    "Leaving size unchanged at size = %lu KB\n",
 				    (unsigned long)size);
 			}
-			rv = dev_size_error;
+			rv = DEV_SIZE_ERROR;
 		}
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
@@ -921,7 +921,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size>>1),
 		     (unsigned long long)size>>1);
 	}
-	if (rv == dev_size_error)
+	if (rv == DEV_SIZE_ERROR)
 		goto out;
 
 	la_size_changed = (la_size != device->ldev->md.la_size_sect);
@@ -940,16 +940,16 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 		err = drbd_bitmap_io(device, &drbd_bm_write,
 				"size changed", BM_LOCKED_MASK, NULL);
 		if (err) {
-			rv = dev_size_error;
+			rv = DEV_SIZE_ERROR;
 			goto out;
 		}
 		drbd_md_mark_dirty(device);
 	}
 
 	if (size > la_size)
-		rv = grew;
+		rv = GREW;
 	if (size < la_size)
-		rv = shrunk;
+		rv = SHRUNK;
 out:
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
@@ -1548,10 +1548,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		set_bit(USE_DEGR_WFC_T, &device->flags);
 
 	dd = drbd_determine_dev_size(device, 0);
-	if (dd == dev_size_error) {
+	if (dd == DEV_SIZE_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
-	} else if (dd == grew)
+	} else if (dd == GREW)
 		set_bit(RESYNC_AFTER_NEG, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_FULL_SYNC)) {
@@ -2320,14 +2320,14 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	dd = drbd_determine_dev_size(device, ddsf);
 	drbd_md_sync(device);
 	put_ldev(device);
-	if (dd == dev_size_error) {
+	if (dd == DEV_SIZE_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto fail;
 	}
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state == L_CONNECTED) {
-			if (dd == grew)
+			if (dd == GREW)
 				set_bit(RESIZE_PENDING, &device->flags);
 
 			drbd_send_uuids(peer_device);
