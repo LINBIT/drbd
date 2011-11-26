@@ -499,7 +499,6 @@ enum {
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
 				 * goes into L_CONNECTED state. */
-	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	SUSPEND_IO,		/* suspend application io */

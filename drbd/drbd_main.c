@@ -2786,11 +2786,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	drbd_set_defaults(device);
 
-	/* for now, we do NOT yet support it,
-	 * even though we start some framework
-	 * to eventually support barriers */
-	set_bit(NO_BARRIER_SUPP, &device->flags);
-
 	atomic_set(&device->ap_bio_cnt, 0);
 	atomic_set(&device->ap_pending_cnt, 0);
 	atomic_set(&device->unacked_cnt, 0);
