@@ -840,7 +840,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	if (!err)
 		err = drbd_send_current_state(peer_device);
 	clear_bit(USE_DEGR_WFC_T, &device->flags);
-	clear_bit(RESIZE_PENDING, &device->flags);
+	clear_bit(RESIZE_PENDING, &peer_device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
 	return err;
 }
@@ -3870,7 +3870,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			 * needs to know my new size... */
 			drbd_send_sizes(peer_device, 0, ddsf);
 		}
-		if (test_and_clear_bit(RESIZE_PENDING, &device->flags) ||
+		if (test_and_clear_bit(RESIZE_PENDING, &peer_device->flags) ||
 		    (dd == GREW && peer_device->repl_state == L_CONNECTED)) {
 			if (peer_device->disk_state >= D_INCONSISTENT &&
 			    device->disk_state >= D_INCONSISTENT) {
@@ -3879,7 +3879,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				else
 					resync_after_online_grow(device);
 			} else
-				set_bit(RESYNC_AFTER_NEG, &device->flags);
+				set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 		}
 	}
 
@@ -4132,7 +4132,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 			os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --overwrite-data */
-		cr |= test_bit(CONSIDER_RESYNC, &device->flags);
+		cr |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
 		cr |= (os.conn == L_CONNECTED &&
@@ -4164,7 +4164,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	spin_lock_irq(&device->resource->req_lock);
 	if (os.i != drbd_get_peer_device_state(peer_device).i)
 		goto retry;
-	clear_bit(CONSIDER_RESYNC, &device->flags);
+	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	ns.peer = peer_state.role;
 	ns.pdsk = real_peer_disk;
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);

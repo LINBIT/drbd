@@ -500,19 +500,22 @@ enum {
 				 * Gets cleared when the state.conn
 				 * goes into L_CONNECTED state. */
 	NO_BARRIER_SUPP,	/* underlying block device doesn't implement barriers */
-	CONSIDER_RESYNC,
-
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	SUSPEND_IO,		/* suspend application io */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_IO_ERROR,		/* Local disk failed returned IO error */
-	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
-	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
-				 * the peer, if it changed there as well. */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
+};
+
+/* flag bits per peer device */
+enum {
+	CONSIDER_RESYNC,
+	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
+	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
+				 * the peer, if it changed there as well. */
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 };
@@ -731,6 +734,8 @@ struct drbd_peer_device {
 	spinlock_t peer_seq_lock;
 	unsigned int max_bio_size;
 	sector_t disk_size;
+
+	unsigned long flags;
 
 	struct drbd_work start_resync_work;
 	struct timer_list start_resync_timer;

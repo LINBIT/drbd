@@ -1001,7 +1001,7 @@ __drbd_set_state(struct drbd_device *device, union drbd_state ns,
 	/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
 	if (os.disk == D_INCONSISTENT && os.pdsk == D_INCONSISTENT &&
 	    os.peer == R_SECONDARY && ns.peer == R_PRIMARY)
-		set_bit(CONSIDER_RESYNC, &device->flags);
+		set_bit(CONSIDER_RESYNC, &peer_device->flags);
 
 	/* Receiver should clean up itself */
 	if (os.conn != C_DISCONNECTING && ns.conn == C_DISCONNECTING)
@@ -1329,7 +1329,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 
 	/* Disks got bigger while they were detached */
 	if (ns.disk > D_NEGOTIATING && ns.pdsk > D_NEGOTIATING &&
-	    test_and_clear_bit(RESYNC_AFTER_NEG, &device->flags)) {
+	    test_and_clear_bit(RESYNC_AFTER_NEG, &first_peer_device(device)->flags)) {
 		if (ns.conn == L_CONNECTED)
 			resync_after_online_grow(device);
 	}

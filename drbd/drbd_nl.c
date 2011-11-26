@@ -1551,8 +1551,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (dd == DEV_SIZE_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
-	} else if (dd == GREW)
-		set_bit(RESYNC_AFTER_NEG, &device->flags);
+	} else if (dd == GREW) {
+		for_each_peer_device(peer_device, device)
+			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
+	}
 
 	if (drbd_md_test_flag(device->ldev, MDF_FULL_SYNC)) {
 		drbd_info(device, "Assuming that all blocks are out of sync "
@@ -2328,8 +2330,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state == L_CONNECTED) {
 			if (dd == GREW)
-				set_bit(RESIZE_PENDING, &device->flags);
-
+				set_bit(RESIZE_PENDING, &peer_device->flags);
 			drbd_send_uuids(peer_device);
 			drbd_send_sizes(peer_device, 1, ddsf);
 		}

@@ -1603,7 +1603,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		   Ahead/Behind and SyncSource/SyncTarget */
 	}
 
-	if (!test_bit(B_RS_H_DONE, &device->flags)) {
+	if (!test_bit(B_RS_H_DONE, &peer_device->flags)) {
 		if (side == L_SYNC_TARGET) {
 			/* Since application IO was locked out during L_WF_BITMAP_T and
 			   L_WF_SYNC_UUID we are still unmodified. Before going to L_SYNC_TARGET
@@ -1638,7 +1638,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 		/* The sender should not sleep waiting for state_mutex,
 		   that can take long */
 		if (!mutex_trylock(&device->resource->state_mutex)) {
-			set_bit(B_RS_H_DONE, &device->flags);
+			set_bit(B_RS_H_DONE, &peer_device->flags);
 			peer_device->start_resync_timer.expires = jiffies + HZ/5;
 			add_timer(&peer_device->start_resync_timer);
 			return;
@@ -1646,7 +1646,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	} else {
 		mutex_lock(&device->resource->state_mutex);
 	}
-	clear_bit(B_RS_H_DONE, &device->flags);
+	clear_bit(B_RS_H_DONE, &peer_device->flags);
 
 	write_lock_irq(&global_state_lock);
 	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
