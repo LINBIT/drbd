@@ -193,147 +193,76 @@ int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
 #endif
 
 /**
- * DOC: The transfer log
- *
- * The transfer log is a single linked list of &struct drbd_tl_epoch objects.
- * connection->newest_tle points to the head, connection->oldest_tle points to the tail
- * of the list. There is always at least one &struct drbd_tl_epoch object.
- *
- * Each &struct drbd_tl_epoch has a circular double linked list of requests
- * attached.
- */
-STATIC int tl_init(struct drbd_connection *connection)
-{
-	struct drbd_tl_epoch *b;
-
-	/* during device minor initialization, we may well use GFP_KERNEL */
-	b = kmalloc(sizeof(struct drbd_tl_epoch), GFP_KERNEL);
-	if (!b)
-		return 0;
-	INIT_LIST_HEAD(&b->requests);
-	INIT_LIST_HEAD(&b->w.list);
-	b->next = NULL;
-	b->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
-	b->n_writes = 0;
-	b->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
-
-	connection->oldest_tle = b;
-	connection->newest_tle = b;
-	INIT_LIST_HEAD(&connection->out_of_sequence_requests);
-	INIT_LIST_HEAD(&connection->barrier_acked_requests);
-
-	return 1;
-}
-
-STATIC void tl_cleanup(struct drbd_connection *connection)
-{
-	if (connection->oldest_tle != connection->newest_tle)
-		drbd_err(connection, "ASSERT FAILED: oldest_tle == newest_tle\n");
-	if (!list_empty(&connection->out_of_sequence_requests))
-		drbd_err(connection, "ASSERT FAILED: list_empty(out_of_sequence_requests)\n");
-	kfree(connection->oldest_tle);
-	connection->oldest_tle = NULL;
-	kfree(connection->unused_spare_tle);
-	connection->unused_spare_tle = NULL;
-}
-
-/**
- * _tl_add_barrier() - Adds a barrier to the transfer log
- * @device:	DRBD device.
- * @new:	Barrier to be added before the current head of the TL.
- *
- * The caller must hold the req_lock.
- */
-void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *new)
-{
-	INIT_LIST_HEAD(&new->requests);
-	INIT_LIST_HEAD(&new->w.list);
-	new->w.cb = NULL; /* if this is != NULL, we need to dec_ap_pending in tl_clear */
-	new->next = NULL;
-	new->n_writes = 0;
-
-	new->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
-	if (connection->newest_tle != new) {
-		connection->newest_tle->next = new;
-		connection->newest_tle = new;
-	}
-}
-
-/**
- * tl_release() - Free or recycle the oldest &struct drbd_tl_epoch object of the TL
+ * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
  * @barrier_nr:	Expected identifier of the DRBD write barrier packet.
  * @set_size:	Expected number of requests before that barrier.
  *
  * In case the passed barrier_nr or set_size does not match the oldest
- * &struct drbd_tl_epoch objects this function will cause a termination
- * of the connection.
+ * epoch of not yet barrier-acked requests, this function will cause a
+ * termination of the connection.
  */
 void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		unsigned int set_size)
 {
-	struct drbd_device *device;
-	struct drbd_tl_epoch *b, *nob; /* next old barrier */
-	struct list_head *le, *tle;
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_request *r;
+	struct drbd_request *req = NULL;
+	int expect_epoch = 0;
+	int expect_size = 0;
 
 	spin_lock_irq(&connection->resource->req_lock);
 
-	b = connection->oldest_tle;
+	/* find latest not yet barrier-acked write request,
+	 * count writes in its epoch. */
+	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
+		const unsigned long s = r->rq_state;
+		if (!req) {
+			if (!(s & RQ_WRITE))
+				continue;
+			if (!(s & RQ_NET_MASK))
+				continue;
+			if (s & RQ_NET_DONE)
+				continue;
+			req = r;
+			expect_epoch = req->epoch;
+			expect_size ++;
+		} else {
+			if (r->epoch != expect_epoch)
+				break;
+			if (!(s & RQ_WRITE))
+				continue;
+			/* if (s & RQ_DONE): not expected */
+			/* if (!(s & RQ_NET_MASK)): not expected */
+			expect_size++;
+		}
+	}
 
 	/* first some paranoia code */
-	if (b == NULL) {
+	if (req == NULL) {
 		drbd_err(connection, "BAD! BarrierAck #%u received, but no epoch in tl!?\n",
 			 barrier_nr);
 		goto bail;
 	}
-	if (b->br_number != barrier_nr) {
+	if (expect_epoch != barrier_nr) {
 		drbd_err(connection, "BAD! BarrierAck #%u received, expected #%u!\n",
-			 barrier_nr, b->br_number);
+			 barrier_nr, expect_epoch);
 		goto bail;
 	}
-	if (b->n_writes != set_size) {
+
+	if (expect_size != set_size) {
 		drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
-			 barrier_nr, set_size, b->n_writes);
+			 barrier_nr, set_size, expect_size);
 		goto bail;
 	}
 
 	/* Clean up list of requests processed during current epoch */
-	list_for_each_safe(le, tle, &b->requests) {
-		r = list_entry(le, struct drbd_request, tl_requests);
-		_req_mod(r, BARRIER_ACKED);
+	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
+		if (req->epoch != expect_epoch)
+			break;
+		_req_mod(req, BARRIER_ACKED);
 	}
-	/* There could be requests on the list waiting for completion
-	   of the write to the local disk. To avoid corruptions of
-	   slab's data structures we have to remove the lists head.
-
-	   Also there could have been a barrier ack out of sequence, overtaking
-	   the write acks - which would be a bug and violating write ordering.
-	   To not deadlock in case we lose connection while such requests are
-	   still pending, we need some way to find them for the
-	   _req_mode(CONNECTION_LOST_WHILE_PENDING).
-
-	   These have been list_move'd to the out_of_sequence_requests list in
-	   _req_mod(, BARRIER_ACKED) above.
-	   */
-	list_splice_init(&b->requests, &connection->barrier_acked_requests);
-	device = b->device;
-
-	nob = b->next;
-	if (test_and_clear_bit(CREATE_BARRIER, &connection->flags)) {
-		_tl_add_barrier(connection, b);
-		if (nob)
-			connection->oldest_tle = nob;
-		/* if nob == NULL b was the only barrier, and becomes the new
-		   barrier. Therefore connection->oldest_tle points already to b */
-	} else {
-		D_ASSERT(device, nob != NULL);
-		connection->oldest_tle = nob;
-		kfree(b);
-	}
-
 	spin_unlock_irq(&connection->resource->req_lock);
-	dec_ap_pending(first_peer_device(device));
 
 	return;
 
@@ -351,91 +280,21 @@ bail:
  * @what might be one of CONNECTION_LOST_WHILE_PENDING, RESEND, FAIL_FROZEN_DISK_IO,
  * RESTART_FROZEN_DISK_IO.
  */
+/* must hold resource->req_lock */
 void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 {
-	struct drbd_tl_epoch *b, *tmp, **pn;
-	struct list_head *le, *tle, carry_reads;
-	struct drbd_request *req;
-	int rv, n_writes, n_reads;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_request *req, *r;
 
-	b = connection->oldest_tle;
-	pn = &connection->oldest_tle;
-	while (b) {
-		n_writes = 0;
-		n_reads = 0;
-		INIT_LIST_HEAD(&carry_reads);
-		list_for_each_safe(le, tle, &b->requests) {
-			req = list_entry(le, struct drbd_request, tl_requests);
-			rv = _req_mod(req, what);
+	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests)
+		_req_mod(req, what);
+}
 
-			if (rv & MR_WRITE)
-				n_writes++;
-			if (rv & MR_READ)
-				n_reads++;
-		}
-		tmp = b->next;
-
-		if (n_writes) {
-			if (what == RESEND) {
-				b->n_writes = n_writes;
-				if (b->w.cb == NULL) {
-					b->w.cb = w_send_barrier;
-					inc_ap_pending(first_peer_device(b->device));
-					set_bit(CREATE_BARRIER, &connection->flags);
-				}
-
-				drbd_queue_work(&connection->sender_work, &b->w);
-			}
-			pn = &b->next;
-		} else {
-			if (n_reads)
-				list_add(&carry_reads, &b->requests);
-			/* there could still be requests on that ring list,
-			 * in case local io is still pending */
-			list_del(&b->requests);
-
-			/* dec_ap_pending corresponding to queue_barrier.
-			 * the newest barrier may not have been queued yet,
-			 * in which case w.cb is still NULL. */
-			if (b->w.cb != NULL)
-				dec_ap_pending(first_peer_device(b->device));
-
-			if (b == connection->newest_tle) {
-				/* recycle, but reinit! */
-				if (tmp != NULL)
-					drbd_err(connection, "ASSERT FAILED tmp == NULL");
-				INIT_LIST_HEAD(&b->requests);
-				list_splice(&carry_reads, &b->requests);
-				INIT_LIST_HEAD(&b->w.list);
-				b->w.cb = NULL;
-				b->br_number = atomic_inc_return(&connection->resource->current_tle_nr);
-				b->n_writes = 0;
-
-				*pn = b;
-				break;
-			}
-			*pn = tmp;
-			kfree(b);
-		}
-		b = tmp;
-		list_splice(&carry_reads, &b->requests);
-	}
-
-	/* Actions operating on the disk state, also want to work on
-	   requests that got barrier acked. */
-	switch (what) {
-	case FAIL_FROZEN_DISK_IO:
-	case RESTART_FROZEN_DISK_IO:
-		list_for_each_safe(le, tle, &connection->barrier_acked_requests) {
-			req = list_entry(le, struct drbd_request, tl_requests);
-			_req_mod(req, what);
-		}
-	case CONNECTION_LOST_WHILE_PENDING:
-	case RESEND:
-		break;
-	default:
-		drbd_err(connection, "what = %d in _tl_restart()\n", what);
-	}
+void tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
+{
+	spin_lock_irq(&connection->resource->req_lock);
+	_tl_restart(connection, what);
+	spin_unlock_irq(&connection->resource->req_lock);
 }
 
 
@@ -449,36 +308,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
  */
 void tl_clear(struct drbd_connection *connection)
 {
-	struct list_head *le, *tle;
-	struct drbd_request *r;
-
-	spin_lock_irq(&connection->resource->req_lock);
-
-	_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
-
-	/* we expect this list to be empty. */
-	if (!list_empty(&connection->out_of_sequence_requests))
-		drbd_err(connection, "ASSERT FAILED list_empty(&out_of_sequence_requests)\n");
-
-	/* but just in case, clean it up anyways! */
-	list_for_each_safe(le, tle, &connection->out_of_sequence_requests) {
-		r = list_entry(le, struct drbd_request, tl_requests);
-		/* It would be nice to complete outside of spinlock.
-		 * But this is easier for now. */
-		_req_mod(r, CONNECTION_LOST_WHILE_PENDING);
-	}
-
-	/* ensure bit indicating barrier is required is clear */
-	clear_bit(CREATE_BARRIER, &connection->flags);
-
-	spin_unlock_irq(&connection->resource->req_lock);
-}
-
-void tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
-{
-	spin_lock_irq(&connection->resource->req_lock);
-	_tl_restart(connection, what);
-	spin_unlock_irq(&connection->resource->req_lock);
+	tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 }
 
 /**
@@ -488,31 +318,17 @@ void tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 void tl_abort_disk_io(struct drbd_device *device)
 {
 	struct drbd_connection *connection = first_peer_device(device)->connection;
-	struct drbd_tl_epoch *b;
-	struct list_head *le, *tle;
-	struct drbd_request *req;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_request *req, *r;
 
 	spin_lock_irq(&connection->resource->req_lock);
-	b = connection->oldest_tle;
-	while (b) {
-		list_for_each_safe(le, tle, &b->requests) {
-			req = list_entry(le, struct drbd_request, tl_requests);
-			if (!(req->rq_state & RQ_LOCAL_PENDING))
-				continue;
-			if (req->device == device)
-				_req_mod(req, ABORT_DISK_IO);
-		}
-		b = b->next;
-	}
-
-	list_for_each_safe(le, tle, &connection->barrier_acked_requests) {
-		req = list_entry(le, struct drbd_request, tl_requests);
+	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
 		if (!(req->rq_state & RQ_LOCAL_PENDING))
 			continue;
-		if (req->device == device)
-			_req_mod(req, ABORT_DISK_IO);
+		if (req->device != device)
+			continue;
+		_req_mod(req, ABORT_DISK_IO);
 	}
-
 	spin_unlock_irq(&connection->resource->req_lock);
 }
 
@@ -2898,9 +2714,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (drbd_alloc_socket(&connection->meta))
 		goto fail;
 
-	if (!tl_init(connection))
-		goto fail;
-
 	resource = drbd_create_resource(name);
 	if (!resource)
 		goto fail;
@@ -2909,9 +2722,15 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (!connection->current_epoch)
 		goto fail;
 
+	INIT_LIST_HEAD(&resource->transfer_log);
+
 	INIT_LIST_HEAD(&connection->current_epoch->list);
 	connection->epochs = 1;
 	spin_lock_init(&connection->epoch_lock);
+
+	connection->send.seen_any_write_yet = false;
+	connection->send.current_epoch_nr = 0;
+	connection->send.current_epoch_writes = 0;
 
 	connection->cstate[NOW] = C_STANDALONE;
 	connection->peer_role[NOW] = R_UNKNOWN;
@@ -2944,7 +2763,6 @@ fail_resource:
 	drbd_free_resource(resource);
 fail:
 	kfree(connection->current_epoch);
-	tl_cleanup(connection);
 	drbd_free_socket(&connection->meta);
 	drbd_free_socket(&connection->data);
 	kfree(connection);

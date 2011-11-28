@@ -375,26 +375,21 @@ struct drbd_request {
 	struct bio *private_bio;
 
 	struct drbd_interval i;
-	unsigned int epoch; /* barrier_nr */
 
-	/* barrier_nr: used to check on "completion" whether this req was in
+	/* epoch: used to check on "completion" whether this req was in
 	 * the current epoch, and we therefore have to close it,
-	 * starting a new epoch...
+	 * causing a p_barrier packet to be send, starting a new epoch.
+	 *
+	 * This corresponds to "barrier" in struct p_barrier[_ack],
+	 * and to "barrier_nr" in struct drbd_epoch (and various
+	 * comments/function parameters/local variable names).
 	 */
+	unsigned int epoch;
 
 	struct list_head tl_requests; /* ring list in the transfer log */
 	struct bio *master_bio;       /* master bio pointer */
 	unsigned long rq_state; /* see comments above _req_mod() */
 	unsigned long start_time;
-};
-
-struct drbd_tl_epoch {
-	struct drbd_work w;
-	struct drbd_device *device;
-	struct list_head requests; /* requests before */
-	struct drbd_tl_epoch *next; /* pointer to the next barrier */
-	unsigned int br_number;  /* the barriers identifier. */
-	int n_writes;	/* number of requests attached before this barrier */
 };
 
 struct drbd_epoch {
@@ -663,6 +658,8 @@ struct drbd_resource {
 	struct mutex conf_update;
 	spinlock_t req_lock;
 
+	struct list_head transfer_log;	/* all requests not yet fully processed */
+
 	struct mutex state_mutex;
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	enum chg_state_flags state_change_flags;
@@ -676,6 +673,8 @@ struct drbd_resource {
 
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
+	unsigned current_tle_writes;	/* writes seen within this tl epoch */
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)
 	cpumask_t cpu_mask[1];
@@ -711,12 +710,6 @@ struct drbd_connection {			/* is a resource from the config file */
 	unsigned long last_received;	/* in jiffies, either socket */
 	unsigned int ko_count;
 
-	struct drbd_tl_epoch *unused_spare_tle; /* for pre-allocation */
-	struct drbd_tl_epoch *newest_tle;
-	struct drbd_tl_epoch *oldest_tle;
-	struct list_head out_of_sequence_requests;
-	struct list_head barrier_acked_requests;
-
 	struct crypto_hash *cram_hmac_tfm;
 	struct crypto_hash *integrity_tfm;  /* checksums we compute, updates protected by connection->data->mutex */
 	struct crypto_hash *peer_integrity_tfm;  /* checksums we verify, only accessed from receiver thread  */
@@ -725,6 +718,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	void *int_dig_in;
 	void *int_dig_vv;
 
+	/* receiver side */
 	struct drbd_epoch *current_epoch;
 	spinlock_t epoch_lock;
 	unsigned int epochs;
@@ -734,7 +728,22 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread asender;
 	bool alive;  /* temporary */
 
+	/* sender side */
 	struct drbd_work_queue sender_work;
+
+	struct {
+		/* whether this sender thread
+		 * has processed a single write yet. */
+		bool seen_any_write_yet;
+
+		/* Which barrier number to send with the next P_BARRIER */
+		int current_epoch_nr;
+
+		/* how many write requests have been sent
+		 * with req->epoch == current_epoch_nr.
+		 * If none, no P_BARRIER will be sent. */
+		unsigned current_epoch_writes;
+	} send;
 };
 
 struct drbd_peer_device {
@@ -969,7 +978,6 @@ extern void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 extern void tl_release(struct drbd_connection *, unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct drbd_connection *);
-extern void _tl_add_barrier(struct drbd_connection *, struct drbd_tl_epoch *);
 extern void drbd_free_sock(struct drbd_connection *connection);
 extern int drbd_send(struct drbd_connection *connection, struct socket *sock,
 		     void *buf, size_t size, unsigned msg_flags);
@@ -1375,7 +1383,6 @@ extern int w_ov_finished(struct drbd_work *, int);
 extern int w_resync_timer(struct drbd_work *, int);
 extern int w_send_write_hint(struct drbd_work *, int);
 extern int w_send_dblock(struct drbd_work *, int);
-extern int w_send_barrier(struct drbd_work *, int);
 extern int w_send_read_req(struct drbd_work *, int);
 extern int w_e_reissue(struct drbd_work *, int);
 extern int w_restart_disk_io(struct drbd_work *, int);
