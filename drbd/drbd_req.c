@@ -1204,6 +1204,9 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	if (rw == WRITE)
 		device->resource->current_tle_writes++;
 
+	if (rw == WRITE)
+		device->resource->dagtag_sector += bio_sectors(bio);
+	req->dagtag_sector = device->resource->dagtag_sector;
 	list_add_tail(&req->tl_requests, &device->resource->transfer_log);
 
 	if (rw == WRITE) {

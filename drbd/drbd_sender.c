@@ -1346,6 +1346,7 @@ int w_send_dblock(struct drbd_work *w, int cancel)
 		connection->send.current_epoch_nr = req->epoch;
 	}
 	connection->send.current_epoch_writes++;
+	connection->send.current_dagtag_sector = req->dagtag_sector;
 
 	err = drbd_send_dblock(peer_device, req);
 	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK, peer_device);

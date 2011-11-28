@@ -386,6 +386,15 @@ struct drbd_request {
 	 */
 	unsigned int epoch;
 
+	/* Position of this request in the serialized per-resource change
+	 * stream. Can be used to serialize with other events when
+	 * communicating the change stream via multiple connections.
+	 * Assigned from device->resource->dagtag_sector.
+	 *
+	 * Given that some IO backends write several GB per second meanwhile,
+	 * lets just use a 64bit sequence space. */
+	u64 dagtag_sector;
+
 	struct list_head tl_requests; /* ring list in the transfer log */
 	struct bio *master_bio;       /* master bio pointer */
 	unsigned long start_time;
@@ -665,6 +674,9 @@ struct drbd_resource {
 	/* conf_update protects the devices, connections, peer devices, net_conf, disk_conf */
 	struct mutex conf_update;
 	spinlock_t req_lock;
+	u64 dagtag_sector;		/* Protected by req_lock.
+					 * See also dagtag_sector in
+					 * &drbd_request */
 
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 
@@ -751,6 +763,9 @@ struct drbd_connection {			/* is a resource from the config file */
 		 * with req->epoch == current_epoch_nr.
 		 * If none, no P_BARRIER will be sent. */
 		unsigned current_epoch_writes;
+
+		/* position in change stream */
+		u64 current_dagtag_sector;
 	} send;
 };
 

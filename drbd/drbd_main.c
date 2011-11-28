@@ -2740,6 +2740,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->send.seen_any_write_yet = false;
 	connection->send.current_epoch_nr = 0;
 	connection->send.current_epoch_writes = 0;
+	connection->send.current_dagtag_sector = 0;
 
 	connection->cstate[NOW] = C_STANDALONE;
 	connection->peer_role[NOW] = R_UNKNOWN;
