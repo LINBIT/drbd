@@ -4504,7 +4504,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	} else if (peer_device->repl_state != L_WF_BITMAP_S) {
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
-		drbd_info(device, "unexpected cstate (%s) in receive_bitmap\n",
+		drbd_info(device, "unexpected repl_state (%s) in receive_bitmap\n",
 		    drbd_conn_str(peer_device->repl_state));
 	}
 	err = 0;
