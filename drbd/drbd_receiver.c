@@ -4657,6 +4657,11 @@ STATIC int drbd_disconnected(struct drbd_conf *mdev)
 
 	drbd_finish_peer_reqs(mdev);
 
+	/* This second workqueue flush is necessary, since drbd_finish_peer_reqs()
+	   might have issued a work again. The one before drbd_finish_peer_reqs() is
+	   necessary to reclain net_ee in drbd_finish_peer_reqs(). */
+	drbd_flush_workqueue(mdev);
+
 	kfree(mdev->p_uuid);
 	mdev->p_uuid = NULL;
 
