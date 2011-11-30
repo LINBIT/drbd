@@ -3531,9 +3531,9 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	 *
 	 */
 
-	spin_lock(&device->resource->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work);
-	spin_unlock(&device->resource->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 	atomic_inc(&device->ap_bio_cnt);
 	dec_ap_bio(device);
 }
