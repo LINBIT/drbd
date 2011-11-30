@@ -334,6 +334,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	struct drbd_device *device;
 	int minor;
 
+	if (flags & CS_ABORT)
+		goto out;
 	if (rv >= SS_SUCCESS)
 		rv = try_state_change(resource);
 	if (rv < SS_SUCCESS) {
@@ -343,6 +345,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		}
 		goto out;
 	}
+	if (flags & CS_PREPARE)
+		goto out;
 
 	finish_state_change(resource, done);
 
@@ -381,7 +385,7 @@ out:
 
 void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
 {
-	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE));
+	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE | CS_PREPARE | CS_ABORT));
 	__begin_state_change(resource, flags);
 }
 
@@ -392,7 +396,7 @@ enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
 
 void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
-	if ((flags & CS_SERIALIZE) && !(flags & CS_ALREADY_SERIALIZED))
+	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED)))
 		mutex_lock(&resource->state_mutex);
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	__begin_state_change(resource, flags);
@@ -405,7 +409,7 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct completion __done, *done = NULL;
 
-	if (flags & CS_WAIT_COMPLETE) {
+	if ((flags & CS_WAIT_COMPLETE) && !(flags & (CS_PREPARE | CS_ABORT))) {
 		done = &__done;
 		init_completion(done);
 	}
@@ -414,7 +418,7 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
 	if (done && rv >= SS_SUCCESS &&
 	    expect(resource, current != resource->worker.task))
 		wait_for_completion(done);
-	if ((flags & CS_SERIALIZE) && !(flags & CS_ALREADY_SERIALIZED))
+	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARE)))
 		mutex_unlock(&resource->state_mutex);
 	return rv;
 }
@@ -1295,9 +1299,16 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED &&
-		    test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
-			wake_up(&resource->state_wait);
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED) {
+			if (test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+				wake_up(&resource->state_wait);
+			if (resource->remote_state_change_prepared == connection) {
+				/* Remote state change request was prepared but
+				 * neither executed nor aborted; it still holds
+				 * the state mutex.  */
+				mutex_unlock(&resource->state_mutex);
+			}
+		}
 
 		wake_up(&connection->ping_wait);
 
@@ -1869,7 +1880,8 @@ __peer_request(struct drbd_connection *connection, int vnr,
 	enum drbd_state_rv rv = SS_SUCCESS;
 
 	if (connection->cstate[NOW] == C_CONNECTED) {
-		if (!conn_send_state_req(connection, vnr, mask, val)) {
+		enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
+		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
 			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
 			rv = SS_CW_SUCCESS;
 		}
@@ -1897,6 +1909,7 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
+	resource->remote_state_change = true;
 	begin_remote_state_change(resource, irq_flags);
 	rv = __peer_request(connection, vnr, mask, val);
 	if (rv == SS_CW_SUCCESS) {
@@ -1905,6 +1918,144 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 		clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
 	}
 	end_remote_state_change(resource, irq_flags, flags);
+	resource->remote_state_change = false;
+	return rv;
+}
+
+static enum drbd_state_rv
+__cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
+		       union drbd_state mask, union drbd_state val, bool all)
+{
+	struct drbd_connection *connection;
+	enum drbd_state_rv rv = SS_SUCCESS;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (!(test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags) || all))
+			continue;
+		if (connection->cstate[NOW] < C_CONNECTED)
+			continue;
+		kref_get(&connection->kref);
+		rcu_read_unlock();
+		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
+			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			rv = SS_CW_SUCCESS;
+		}
+		rcu_read_lock();
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+	rcu_read_unlock();
+	return rv;
+}
+
+static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	enum drbd_state_rv rv = SS_CW_SUCCESS;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (!test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+			continue;
+		if (!(test_bit(CONN_WD_ST_CHG_OKAY, &connection->flags) ||
+		      test_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))) {
+			/* Keep waiting until all replies have arrived.  */
+			rv = SS_UNKNOWN_ERROR;
+			break;
+		}
+	}
+	if (rv != SS_UNKNOWN_ERROR) {
+		for_each_connection(connection, resource) {
+			if (!test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+				continue;
+			clear_bit(CONN_WD_ST_CHG_OKAY,  &connection->flags);
+			if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
+			        rv = SS_CW_FAILED_BY_PEER;
+		}
+	}
+	rcu_read_unlock();
+	return rv;
+}
+
+static bool supports_two_phase_commit(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool supported = true;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] != C_CONNECTED)
+			continue;
+		if (connection->agreed_pro_version < 110) {
+			supported = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return supported;
+}
+
+static struct drbd_connection *get_first_connection(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection = NULL;
+
+	rcu_read_lock();
+	if (!list_empty(&resource->connections)) {
+		connection = first_connection(resource);
+		kref_get(&connection->kref);
+	}
+	rcu_read_unlock();
+	return connection;
+}
+
+static enum drbd_state_rv
+change_cluster_wide_state(struct drbd_resource *resource, int vnr,
+			  union drbd_state mask, union drbd_state val,
+			  unsigned long *irq_flags)
+{
+	enum chg_state_flags flags = resource->state_change_flags;
+	struct drbd_connection *connection;
+	enum drbd_state_rv rv;
+
+	if (!supports_two_phase_commit(resource)) {
+		connection = get_first_connection(resource);
+		rv = SS_SUCCESS;
+		if (connection) {
+			rv = change_peer_state(connection, vnr, mask, val, irq_flags);
+			kref_put(&connection->kref, drbd_destroy_connection);
+		}
+		return rv;
+	}
+
+	if (!expect(resource, flags & CS_SERIALIZE))
+		return SS_CW_FAILED_BY_PEER;
+	resource->remote_state_change = true;
+	begin_remote_state_change(resource, irq_flags);
+	rv = __cluster_wide_request(resource, vnr, P_CONN_ST_CHG_PREPARE, mask, val, true);
+	if (rv == SS_CW_SUCCESS) {
+		wait_event(resource->state_wait,
+			((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
+		if (rv == SS_CW_SUCCESS) {
+			enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
+
+			rv = __cluster_wide_request(resource, vnr, cmd, mask, val, false);
+			if (rv == SS_CW_SUCCESS) {
+				wait_event(resource->state_wait,
+					((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
+				if (rv == SS_CW_FAILED_BY_PEER)
+					/* this is fatal! */ ;
+			}
+		} else
+			__cluster_wide_request(resource, vnr, P_CONN_ST_CHG_ABORT, mask, val, false);
+
+		rcu_read_lock();
+		for_each_connection(connection, resource)
+			clear_bit(CONN_WD_ST_CHG_REQ,  &connection->flags);
+		rcu_read_unlock();
+	}
+	end_remote_state_change(resource, irq_flags, flags);
+	resource->remote_state_change = false;
 	return rv;
 }
 
@@ -1953,7 +2104,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 		__change_role(resource, role, force);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
-			rv = change_peer_state(first_connection(resource), -1, NS(role, role), &irq_flags);
+			rv = change_cluster_wide_state(resource, -1, NS(role, role), &irq_flags);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;
@@ -2031,8 +2182,8 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 		__change_disk_state(device, disk_state);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
-			rv = change_peer_state(first_connection(resource), device->vnr,
-					       NS(disk, disk_state), &irq_flags);
+			rv = change_cluster_wide_state(resource, device->vnr,
+						       NS(disk, disk_state), &irq_flags);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;

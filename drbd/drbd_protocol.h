@@ -50,10 +50,12 @@ enum drbd_packet {
 	P_DELAY_PROBE         = 0x27, /* is used on BOTH sockets */
 	P_OUT_OF_SYNC         = 0x28, /* Mark as out of sync (Outrunning), data socket */
 	P_RS_CANCEL           = 0x29, /* meta: Used to cancel RS_DATA_REQUEST packet by SyncSource */
-	P_CONN_ST_CHG_REQ     = 0x2a, /* data sock: Connection wide state request */
-	P_CONN_ST_CHG_REPLY   = 0x2b, /* meta sock: Connection side state req reply */
+	P_CONN_ST_CHG_REQ     = 0x2a, /* data sock: state change request */
+	P_CONN_ST_CHG_REPLY   = 0x2b, /* meta sock: state change reply */
 	P_RETRY_WRITE	      = 0x2c, /* Protocol C: retry conflicting write request */
 	P_PROTOCOL_UPDATE     = 0x2d, /* data sock: is used in established connections */
+	P_CONN_ST_CHG_PREPARE = 0x2e, /* data sock: prepare state change */
+	P_CONN_ST_CHG_ABORT   = 0x2f, /* data sock: abort state change */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 	P_MAX_OPT_CMD	      = 0x101,

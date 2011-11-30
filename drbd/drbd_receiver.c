@@ -4123,58 +4123,84 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 
 STATIC int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device = NULL;
 	struct p_req_state *p = pi->data;
 	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
 
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return -EIO;
-	device = peer_device->device;
+	if (pi->cmd == P_STATE_CHG_REQ || (pi->cmd != P_CONN_ST_CHG_REQ && pi->vnr != -1)) {
+		peer_device = conn_peer_device(connection, pi->vnr);
+		if (!peer_device)
+			return -EIO;
+	}
+
+	rv = SS_SUCCESS;
+	spin_lock_irq(&resource->req_lock);
+	if (resource->remote_state_change) {
+		if (resource->remote_state_change_prepared == connection)
+			flags |= CS_PREPARED;
+		else
+			rv = SS_CONCURRENT_ST_CHG;
+	} else
+		resource->remote_state_change = true;
+	spin_unlock_irq(&resource->req_lock);
+
+	if (rv != SS_SUCCESS) {
+		drbd_info(connection, "Rejecting concurrent remote state change\n");
+		if (peer_device)
+			drbd_send_sr_reply(peer_device, rv);
+		else
+			conn_send_sr_reply(connection, rv);
+		return 0;
+	}
+
+	switch(pi->cmd) {
+	case P_CONN_ST_CHG_PREPARE:
+		drbd_info(connection, "Preparing remote state change\n");
+		flags |= CS_PREPARE;
+		break;
+	case P_CONN_ST_CHG_ABORT:
+		if (!(flags & CS_PREPARED)) {
+			/* P_CONN_ST_CHG_ABORT without prior P_CONN_ST_CHG_PREPARE */
+			rv = SS_NOT_SUPPORTED;
+			drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
+			return rv;
+		}
+		drbd_info(connection, "Aborting remote state change\n");
+		flags |= CS_ABORT;
+		break;
+	default:
+		break;
+	}
 
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
 
-	if (test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags) &&
-	    mutex_is_locked(&device->resource->state_mutex)) {
-		drbd_send_sr_reply(peer_device, SS_CONCURRENT_ST_CHG);
-		return 0;
-	}
-
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	rv = change_peer_device_state(peer_device, mask, val, flags);
-	drbd_send_sr_reply(peer_device, rv);
-
-	drbd_md_sync(device);
-
-	return 0;
-}
-
-STATIC int receive_req_conn_state(struct drbd_connection *connection, struct packet_info *pi)
-{
-	struct p_req_state *p = pi->data;
-	union drbd_state mask, val;
-	enum drbd_state_rv rv;
-
-	mask.i = be32_to_cpu(p->mask);
-	val.i = be32_to_cpu(p->val);
-
-	if (test_bit(DISCARD_CONCURRENT, &connection->flags) &&
-	    mutex_is_locked(&connection->resource->state_mutex)) {
-		conn_send_sr_reply(connection, SS_CONCURRENT_ST_CHG);
-		return 0;
+	if (peer_device) {
+		rv = change_peer_device_state(peer_device, mask, val, flags);
+		drbd_send_sr_reply(peer_device, rv);
+		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
+			drbd_md_sync(peer_device->device);
+	} else {
+		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
+		conn_send_sr_reply(connection, rv);
 	}
 
-	mask = convert_state(mask);
-	val = convert_state(val);
-
-	rv = change_connection_state(connection, mask, val, CS_VERBOSE | CS_IGN_OUTD_FAIL);
-	conn_send_sr_reply(connection, rv);
+	spin_lock_irq(&resource->req_lock);
+	if ((flags & CS_PREPARE) && rv >= SS_SUCCESS)
+		resource->remote_state_change_prepared = connection;
+	else {
+		if (flags & CS_PREPARED)
+			drbd_info(connection, "Remote state change finished\n");
+		resource->remote_state_change = false;
+		resource->remote_state_change_prepared = NULL;
+	}
+	spin_unlock_irq(&resource->req_lock);
 
 	return 0;
 }
@@ -4753,8 +4779,10 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_CSUM_RS_REQUEST] = { 1, sizeof(struct p_block_req), receive_DataRequest },
 	[P_DELAY_PROBE]     = { 0, sizeof(struct p_delay_probe93), receive_skip },
 	[P_OUT_OF_SYNC]     = { 0, sizeof(struct p_block_desc), receive_out_of_sync },
-	[P_CONN_ST_CHG_REQ] = { 0, sizeof(struct p_req_state), receive_req_conn_state },
+	[P_CONN_ST_CHG_REQ] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_PROTOCOL_UPDATE] = { 1, sizeof(struct p_protocol), receive_protocol },
+	[P_CONN_ST_CHG_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_CONN_ST_CHG_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)
@@ -4994,22 +5022,33 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 		p->protocol_max = p->protocol_min;
 
 	if (PRO_VERSION_MAX < p->protocol_min ||
-	    PRO_VERSION_MIN > p->protocol_max)
-		goto incompat;
+	    PRO_VERSION_MIN > p->protocol_max) {
+		drbd_err(connection, "incompatible DRBD dialects: "
+		    "I support %d-%d, peer supports %d-%d\n",
+		    PRO_VERSION_MIN, PRO_VERSION_MAX,
+		    p->protocol_min, p->protocol_max);
+		return -1;
+	}
 
 	connection->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
+
+	if (connection->agreed_pro_version < 110) {
+		struct drbd_connection *connection2;
+
+		for_each_connection(connection2, connection->resource) {
+			if (connection == connection2)
+				continue;
+			drbd_err(connection, "Peer supports protocols %d-%d, but "
+				 "multiple connections are only supported in protocol "
+				 "110 and above\n", p->protocol_min, p->protocol_max);
+			return -1;
+		}
+	}
 
 	drbd_info(connection, "Handshake successful: "
 	     "Agreed network protocol version %d\n", connection->agreed_pro_version);
 
 	return 1;
-
- incompat:
-	drbd_err(connection, "incompatible DRBD dialects: "
-	    "I support %d-%d, peer supports %d-%d\n",
-	    PRO_VERSION_MIN, PRO_VERSION_MAX,
-	    p->protocol_min, p->protocol_max);
-	return -1;
 }
 
 #if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)

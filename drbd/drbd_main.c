@@ -1206,14 +1206,17 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
-int conn_send_state_req(struct drbd_connection *connection, int vnr,
+int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
 			union drbd_state mask, union drbd_state val)
 {
-	enum drbd_packet cmd = (vnr == -1 && connection->agreed_pro_version >= 100) ?
-		P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
 	struct drbd_socket *sock;
 	struct p_req_state *p;
 	int err;
+
+	/* Protocols before version 100 only support one volume and connection.
+	 * All state change requests are via P_STATE_CHG_REQ. */
+	if (connection->agreed_pro_version < 100)
+		cmd = P_STATE_CHG_REQ;
 
 	sock = &connection->data;
 	p = conn_prepare_command(connection, sock);
@@ -3658,6 +3661,8 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_CONN_ST_CHG_REPLY]	= "conn_st_chg_reply",
 		[P_RETRY_WRITE]		= "retry_write",
 		[P_PROTOCOL_UPDATE]	= "protocol_update",
+		[P_CONN_ST_CHG_PREPARE] = "conn_st_chg_prepare",
+		[P_CONN_ST_CHG_ABORT]	= "conn_st_chg_abort",
 
 		/* enum drbd_packet, but not commands - obsoleted flags:
 		 *	P_MAY_IGNORE
