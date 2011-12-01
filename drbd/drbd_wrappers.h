@@ -398,7 +398,9 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 /* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
 #ifndef cpumask_bits
+#ifndef COMPAT_HAVE_NR_CPU_IDS
 #define nr_cpu_ids NR_CPUS
+#endif
 #define nr_cpumask_bits nr_cpu_ids
 
 typedef cpumask_t cpumask_var_t[1];
