@@ -57,7 +57,7 @@ struct flush_work {
 struct packet_info {
 	enum drbd_packet cmd;
 	unsigned int size;
-	unsigned int vnr;
+	int vnr;
 	void *data;
 };
 
@@ -1069,7 +1069,7 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 			drbd_err(connection, "Header padding is not zero\n");
 			return -EINVAL;
 		}
-		pi->vnr = be16_to_cpu(h->volume);
+		pi->vnr = (s16)be16_to_cpu(h->volume);
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be32_to_cpu(h->length);
 	} else if (header_size == sizeof(struct p_header95) &&
@@ -3503,7 +3503,7 @@ static int ignore_remaining_packet(struct drbd_connection *connection, struct pa
  */
 static int config_unknown_volume(struct drbd_connection *connection, struct packet_info *pi)
 {
-	drbd_warn(connection, "%s packet received for volume %u, which is not configured locally\n",
+	drbd_warn(connection, "%s packet received for volume %d, which is not configured locally\n",
 		  cmdname(pi->cmd), pi->vnr);
 	return ignore_remaining_packet(connection, pi);
 }
