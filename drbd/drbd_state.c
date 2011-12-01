@@ -267,14 +267,11 @@ static bool state_has_changed(struct drbd_resource *resource)
 	return false;
 }
 
-static void __begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
+static void ___begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int minor;
-
-	if (!(flags & CS_GLOBAL_LOCKED))
-		read_lock(&global_state_lock);
 
 	resource->state_change_flags = flags;
 
@@ -304,7 +301,27 @@ static void __begin_state_change(struct drbd_resource *resource, enum chg_state_
 				peer_device->resync_susp_dependency[NOW];
 		}
 	}
+}
+
+static void __begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
+{
+	if (!(flags & CS_GLOBAL_LOCKED))
+		read_lock(&global_state_lock);
 	rcu_read_lock();
+	___begin_state_change(resource, flags);
+}
+
+static enum drbd_state_rv try_state_change(struct drbd_resource *resource)
+{
+	enum drbd_state_rv rv;
+
+	if (!state_has_changed(resource))
+		return SS_NOTHING_TO_DO;
+	sanitize_state(resource);
+	rv = is_valid_transition(resource);
+	if (rv >= SS_SUCCESS && !(resource->state_change_flags & CS_HARD))
+		rv = is_valid_soft_transition(resource);
+	return rv;
 }
 
 static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
@@ -315,14 +332,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	struct drbd_device *device;
 	int minor;
 
-	if (rv >= SS_SUCCESS) {
-		if (!state_has_changed(resource))
-			return SS_NOTHING_TO_DO;
-		sanitize_state(resource);
-		rv = is_valid_transition(resource);
-		if (rv >= SS_SUCCESS && !(flags & CS_HARD))
-			rv = is_valid_soft_transition(resource);
-	}
+	if (rv >= SS_SUCCESS)
+		rv = try_state_change(resource);
 	if (rv < SS_SUCCESS) {
 		if (flags & CS_VERBOSE) {
 			drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
@@ -421,6 +432,23 @@ void abort_state_change_locked(struct drbd_resource *resource)
 {
 	resource->state_change_flags &= ~CS_VERBOSE;
 	___end_state_change(resource, NULL, SS_UNKNOWN_ERROR);
+}
+
+static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
+{
+	rcu_read_unlock();
+	if (!(resource->state_change_flags & CS_GLOBAL_LOCKED))
+		read_unlock(&global_state_lock);
+	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+}
+
+static void end_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
+{
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	if (!(flags & CS_GLOBAL_LOCKED))
+		read_lock(&global_state_lock);
+	rcu_read_lock();
+	___begin_state_change(resource, flags);
 }
 
 union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
@@ -1972,4 +2000,9 @@ conn_request_state(struct drbd_connection *connection, union drbd_state mask, un
 	rv = end_state_change(connection->resource, &irq_flags);
 
 	return rv;
+}
+
+static inline bool local_state_change(enum chg_state_flags flags)
+{
+	return flags & (CS_HARD | CS_LOCAL_ONLY);
 }
