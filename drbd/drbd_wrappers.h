@@ -1080,4 +1080,11 @@ static inline void genl_unregister_mc_group(struct genl_family *family,
         printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
 #endif
 
+#ifndef COMPAT_HAVE_IS_ERR_OR_NULL
+static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
+{
+	return !ptr || IS_ERR_VALUE((unsigned long)ptr);
+}
+#endif
+
 #endif
