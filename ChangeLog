@@ -2,6 +2,24 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.1rc1 (api:genl1/proto:86-100)
+--------
+ * Fixed a bug that might cause in kernel list corruption triggered by
+   simultaneous IO on multiple volumes in a single resource
+ * Fixed an issue in the receiver that could cause connection triggered by
+   simultaneous IO on multiple volumes in a single resource
+ * Consider the discard-my-data flag for all volumes
+ * Fixed a rare compatibility issue with DRBD's older than 8.3.7
+   when negotiating the bio_size
+ * Fixed a rare race condition where an empty resync could stall with
+   if pause/unpause events happen in parallel
+ * Made the re-establishing of connections quicker, if it got a broken pipe
+   once. Previously there was a bug in the code caused it to waste the first
+   successful established connection after a broken pipe event.
+ * crm-fence-peer.sh: Can now deal with multiple DRBD instances being in
+   a master/slave group
+ * Optional load balancing for read requests: new keyword "read-balance"
+
 8.4.0 (api:genl1/proto:86-100)
 --------
  * Fixed handling of read errors during online verify
