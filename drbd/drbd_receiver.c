@@ -3128,15 +3128,15 @@ STATIC int drbd_uuid_compare(struct drbd_device *device, int *rule_nr) __must_ho
 	return -1000;
 }
 
-/* drbd_sync_handshake() returns the new conn state on success, or
-   CONN_MASK (-1) on failure.
+/* drbd_sync_handshake() returns the new replication state on success, and -1
+ * on failure.
  */
-static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
-					   enum drbd_role peer_role,
-					   enum drbd_disk_state peer_disk) __must_hold(local)
+static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
+						enum drbd_role peer_role,
+						enum drbd_disk_state peer_disk) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	enum drbd_conn_state rv = C_MASK;
+	enum drbd_repl_state rv = -1;
 	enum drbd_disk_state mydisk;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative;
@@ -3156,11 +3156,11 @@ static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	if (hg == -1000) {
 		drbd_alert(device, "Unrelated data, aborting!\n");
-		return C_MASK;
+		return -1;
 	}
 	if (hg < -1000) {
 		drbd_alert(device, "To resolve this both sides have to support at least protocol %d\n", -hg - 1000);
-		return C_MASK;
+		return -1;
 	}
 
 	if    ((mydisk == D_INCONSISTENT && peer_disk > D_INCONSISTENT) ||
@@ -3229,12 +3229,12 @@ static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		 * to that disk, in a way... */
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_khelper(device, "split-brain");
-		return C_MASK;
+		return -1;
 	}
 
 	if (hg > 0 && mydisk <= D_INCONSISTENT) {
 		drbd_err(device, "I shall become SyncSource, but I am inconsistent!\n");
-		return C_MASK;
+		return -1;
 	}
 
 	if (hg < 0 && /* by intention we do not use mydisk here. */
@@ -3245,7 +3245,7 @@ static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			/* fall through */
 		case ASB_DISCONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
-			return C_MASK;
+			return -1;
 		case ASB_VIOLENTLY:
 			drbd_warn(device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
@@ -3259,14 +3259,14 @@ static enum drbd_conn_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			drbd_info(device, "dry-run connect: Would become %s, doing a %s resync.",
 				 drbd_conn_str(hg > 0 ? L_SYNC_SOURCE : L_SYNC_TARGET),
 				 abs(hg) >= 2 ? "full" : "bit-map based");
-		return C_MASK;
+		return -1;
 	}
 
 	if (abs(hg) >= 2) {
 		drbd_info(device, "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
 					BM_LOCKED_SET_ALLOWED, NULL))
-			return C_MASK;
+			return -1;
 	}
 
 	if (hg > 0) { /* become sync source. */
@@ -4305,7 +4305,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
 
 		put_ldev(device);
-		if (new_repl_state == C_MASK) {
+		if (new_repl_state == -1) {
 			new_repl_state = L_CONNECTED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				change_disk_state(device, D_FAILED, CS_HARD);
