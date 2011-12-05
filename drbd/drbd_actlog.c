@@ -818,39 +818,40 @@ out:
 }
 
 static
-struct bm_extent *_bme_get(struct drbd_device *device, unsigned int enr)
+struct bm_extent *_bme_get(struct drbd_peer_device *peer_device, unsigned int enr)
 {
+	struct drbd_device *device = peer_device->device;
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
 	int wakeup = 0;
 	unsigned long rs_flags;
 
 	spin_lock_irq(&device->al_lock);
-	if (first_peer_device(device)->resync_locked > first_peer_device(device)->resync_lru->nr_elements/2) {
+	if (peer_device->resync_locked > peer_device->resync_lru->nr_elements/2) {
 		spin_unlock_irq(&device->al_lock);
 		return NULL;
 	}
-	e = lc_get(first_peer_device(device)->resync_lru, enr);
+	e = lc_get(peer_device->resync_lru, enr);
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (bm_ext) {
 		if (bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(device, enr);
 			bm_ext->rs_failed = 0;
-			lc_committed(first_peer_device(device)->resync_lru);
+			lc_committed(peer_device->resync_lru);
 			wakeup = 1;
 		}
 		if (bm_ext->lce.refcnt == 1)
-			first_peer_device(device)->resync_locked++;
+			peer_device->resync_locked++;
 		set_bit(BME_NO_WRITES, &bm_ext->flags);
 	}
-	rs_flags = first_peer_device(device)->resync_lru->flags;
+	rs_flags = peer_device->resync_lru->flags;
 	spin_unlock_irq(&device->al_lock);
 	if (wakeup)
 		wake_up(&device->al_wait);
 
 	if (!bm_ext) {
 		if (rs_flags & LC_STARVING)
-			drbd_warn(device, "Have to wait for element"
+			drbd_warn(peer_device, "Have to wait for element"
 			     " (resync LRU too small?)\n");
 		BUG_ON(rs_flags & LC_LOCKED);
 	}
@@ -886,7 +887,7 @@ int drbd_rs_begin_io(struct drbd_device *device, sector_t sector)
 
 retry:
 	sig = wait_event_interruptible(device->al_wait,
-			(bm_ext = _bme_get(device, enr)));
+			(bm_ext = _bme_get(first_peer_device(device), enr)));
 	if (sig)
 		return -EINTR;
 
