@@ -2753,6 +2753,59 @@ void drbd_destroy_connection(struct kref *kref)
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
+static struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int got;
+
+	peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
+	if (!peer_device)
+		return NULL;
+
+	peer_device->connection = connection;
+	peer_device->device = device;
+	peer_device->disk_state = D_UNKNOWN;
+	peer_device->repl_state = L_STANDALONE;
+	spin_lock_init(&peer_device->peer_seq_lock);
+
+	INIT_LIST_HEAD(&peer_device->start_resync_work.list);
+	peer_device->start_resync_work.cb = w_start_resync;
+	init_timer(&peer_device->start_resync_timer);
+	peer_device->start_resync_timer.function = start_resync_timer_fn;
+	peer_device->start_resync_timer.data = (unsigned long) peer_device;
+
+	INIT_LIST_HEAD(&peer_device->resync_work.list);
+	peer_device->resync_work.cb  = w_resync_timer;
+	init_timer(&peer_device->resync_timer);
+	peer_device->resync_timer.function = resync_timer_fn;
+	peer_device->resync_timer.data = (unsigned long) peer_device;
+
+	atomic_set(&peer_device->rs_pending_cnt, 0);
+	atomic_set(&peer_device->rs_sect_in, 0);
+	atomic_set(&peer_device->rs_sect_ev, 0);
+
+	peer_device->resync_wenr = LC_FREE;
+
+	list_add(&peer_device->peer_devices, &device->peer_devices);
+
+	if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
+	    idr_get_new_above(&connection->peer_devices, peer_device, device->vnr, &got))
+		goto fail;
+
+	if (!expect(device, got == device->vnr)) {
+		idr_remove(&connection->peer_devices, got);
+		goto fail;
+	}
+	kref_get(&connection->kref);
+	kref_get(&device->kref);
+	return peer_device;
+
+fail:
+	list_del(&peer_device->peer_devices);
+	kfree(peer_device);
+	return NULL;
+}
+
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
 				      struct device_conf *device_conf)
 {
@@ -2885,47 +2938,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	kref_get(&device->kref);
 
 	INIT_LIST_HEAD(&device->peer_devices);
-	for_each_connection(connection, resource) {
-		peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
-		if (!peer_device)
+	for_each_connection(connection, resource)
+		if (!create_peer_device(device, connection))
 			goto out_no_peer_device;
-		peer_device->connection = connection;
-		peer_device->device = device;
-		peer_device->disk_state = D_UNKNOWN;
-		peer_device->repl_state = L_STANDALONE;
-		spin_lock_init(&peer_device->peer_seq_lock);
-
-		INIT_LIST_HEAD(&peer_device->start_resync_work.list);
-		peer_device->start_resync_work.cb = w_start_resync;
-		init_timer(&peer_device->start_resync_timer);
-		peer_device->start_resync_timer.function = start_resync_timer_fn;
-		peer_device->start_resync_timer.data = (unsigned long) peer_device;
-
-		INIT_LIST_HEAD(&peer_device->resync_work.list);
-		peer_device->resync_work.cb  = w_resync_timer;
-		init_timer(&peer_device->resync_timer);
-		peer_device->resync_timer.function = resync_timer_fn;
-		peer_device->resync_timer.data = (unsigned long) peer_device;
-
-		atomic_set(&peer_device->rs_pending_cnt, 0);
-		atomic_set(&peer_device->rs_sect_in, 0);
-		atomic_set(&peer_device->rs_sect_ev, 0);
-
-		list_add(&peer_device->peer_devices, &device->peer_devices);
-		kref_get(&device->kref);
-
-		if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
-		    idr_get_new_above(&connection->peer_devices, peer_device, vnr, &got))
-			goto out_no_peer_device;
-
-		if (!expect(device, got == vnr)) {
-			idr_remove(&connection->peer_devices, got);
-			goto out_no_peer_device;
-		}
-		kref_get(&connection->kref);
-
-		peer_device->resync_wenr = LC_FREE;
-	}
 
 	/* kref_get(&device->kref); */
 	add_disk(disk);
