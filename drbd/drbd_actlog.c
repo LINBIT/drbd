@@ -1028,15 +1028,16 @@ try_again:
 	return -EAGAIN;
 }
 
-void drbd_rs_complete_io(struct drbd_device *device, sector_t sector)
+void drbd_rs_complete_io(struct drbd_peer_device *peer_device, sector_t sector)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->al_lock, flags);
-	e = lc_find(first_peer_device(device)->resync_lru, enr);
+	e = lc_find(peer_device->resync_lru, enr);
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (!bm_ext) {
 		spin_unlock_irqrestore(&device->al_lock, flags);
@@ -1053,9 +1054,9 @@ void drbd_rs_complete_io(struct drbd_device *device, sector_t sector)
 		return;
 	}
 
-	if (lc_put(first_peer_device(device)->resync_lru, &bm_ext->lce) == 0) {
+	if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
 		bm_ext->flags = 0; /* clear BME_LOCKED, BME_NO_WRITES and BME_PRIORITY */
-		first_peer_device(device)->resync_locked--;
+		peer_device->resync_locked--;
 		wake_up(&device->al_wait);
 	}
 

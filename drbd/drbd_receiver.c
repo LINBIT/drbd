@@ -5140,7 +5140,7 @@ STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (get_ldev(device)) {
-		drbd_rs_complete_io(device, sector);
+		drbd_rs_complete_io(peer_device, sector);
 		drbd_set_in_sync(device, sector, blksize);
 		/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
 		peer_device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
@@ -5299,7 +5299,7 @@ STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	dec_rs_pending(peer_device);
 
 	if (get_ldev_if_state(device, D_FAILED)) {
-		drbd_rs_complete_io(device, sector);
+		drbd_rs_complete_io(peer_device, sector);
 		switch (pi->cmd) {
 		case P_NEG_RS_DREPLY:
 			drbd_rs_failed_io(peer_device, sector, size);
@@ -5363,7 +5363,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	if (!get_ldev(device))
 		return 0;
 
-	drbd_rs_complete_io(device, sector);
+	drbd_rs_complete_io(peer_device, sector);
 	dec_rs_pending(peer_device);
 
 	--peer_device->ov_left;
