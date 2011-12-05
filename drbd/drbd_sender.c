@@ -835,7 +835,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	/* Remove all elements from the resync LRU. Since future actions
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
-	if (drbd_rs_del_all(device)) {
+	if (drbd_rs_del_all(peer_device)) {
 		struct drbd_peer_device_work *dw;
 
 		/* In case this is not possible now, most probably because
@@ -852,7 +852,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 					&dw->w);
 			return 1;
 		}
-		drbd_err(device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
+		drbd_err(peer_device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
 	}
 
 	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;

@@ -1452,7 +1452,7 @@ extern void drbd_rs_complete_io(struct drbd_peer_device *, sector_t);
 extern int drbd_rs_begin_io(struct drbd_peer_device *, sector_t);
 extern int drbd_try_rs_begin_io(struct drbd_peer_device *, sector_t);
 extern void drbd_rs_cancel_all(struct drbd_peer_device *);
-extern int drbd_rs_del_all(struct drbd_device *device);
+extern int drbd_rs_del_all(struct drbd_peer_device *);
 extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
 extern void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size);

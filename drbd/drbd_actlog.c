@@ -1083,13 +1083,13 @@ void drbd_rs_cancel_all(struct drbd_peer_device *peer_device)
 
 /**
  * drbd_rs_del_all() - Gracefully remove all extents from the resync LRU
- * @device:	DRBD device.
  *
  * Returns 0 upon success, -EAGAIN if at least one reference count was
  * not zero.
  */
-int drbd_rs_del_all(struct drbd_device *device)
+int drbd_rs_del_all(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
 	int i;
@@ -1098,20 +1098,20 @@ int drbd_rs_del_all(struct drbd_device *device)
 
 	if (get_ldev_if_state(device, D_FAILED)) {
 		/* ok, ->resync is there. */
-		for (i = 0; i < first_peer_device(device)->resync_lru->nr_elements; i++) {
-			e = lc_element_by_index(first_peer_device(device)->resync_lru, i);
+		for (i = 0; i < peer_device->resync_lru->nr_elements; i++) {
+			e = lc_element_by_index(peer_device->resync_lru, i);
 			bm_ext = lc_entry(e, struct bm_extent, lce);
 			if (bm_ext->lce.lc_number == LC_FREE)
 				continue;
-			if (bm_ext->lce.lc_number == first_peer_device(device)->resync_wenr) {
+			if (bm_ext->lce.lc_number == peer_device->resync_wenr) {
 				drbd_info(device, "dropping %u in drbd_rs_del_all, apparently"
 				     " got 'synced' by application io\n",
-				     first_peer_device(device)->resync_wenr);
+				     peer_device->resync_wenr);
 				D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
 				D_ASSERT(device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 				clear_bit(BME_NO_WRITES, &bm_ext->flags);
-				first_peer_device(device)->resync_wenr = LC_FREE;
-				lc_put(first_peer_device(device)->resync_lru, &bm_ext->lce);
+				peer_device->resync_wenr = LC_FREE;
+				lc_put(peer_device->resync_lru, &bm_ext->lce);
 			}
 			if (bm_ext->lce.refcnt != 0) {
 				drbd_info(device, "Retrying drbd_rs_del_all() later. "
@@ -1122,9 +1122,9 @@ int drbd_rs_del_all(struct drbd_device *device)
 			}
 			D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(device, !test_bit(BME_NO_WRITES, &bm_ext->flags));
-			lc_del(first_peer_device(device)->resync_lru, &bm_ext->lce);
+			lc_del(peer_device->resync_lru, &bm_ext->lce);
 		}
-		D_ASSERT(device, first_peer_device(device)->resync_lru->used == 0);
+		D_ASSERT(device, peer_device->resync_lru->used == 0);
 		put_ldev(device);
 	}
 	spin_unlock_irq(&device->al_lock);
