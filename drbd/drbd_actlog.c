@@ -922,15 +922,14 @@ retry:
 
 /**
  * drbd_try_rs_begin_io() - Gets an extent in the resync LRU cache, does not sleep
- * @device:	DRBD device.
- * @sector:	The sector number.
  *
  * Gets an extent in the resync LRU cache, sets it to BME_NO_WRITES, then
  * tries to set it to BME_LOCKED. Returns 0 upon success, and -EAGAIN
  * if there is still application IO going on in this area.
  */
-int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
+int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
 	struct lc_element *e;
@@ -938,7 +937,7 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 	int i;
 
 	spin_lock_irq(&device->al_lock);
-	if (first_peer_device(device)->resync_wenr != LC_FREE && first_peer_device(device)->resync_wenr != enr) {
+	if (peer_device->resync_wenr != LC_FREE && peer_device->resync_wenr != enr) {
 		/* in case you have very heavy scattered io, it may
 		 * stall the syncer undefined if we give up the ref count
 		 * when we try again and requeue.
@@ -953,28 +952,28 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 		 * we also have to wake_up
 		 */
 
-		e = lc_find(first_peer_device(device)->resync_lru, first_peer_device(device)->resync_wenr);
+		e = lc_find(peer_device->resync_lru, peer_device->resync_wenr);
 		bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 		if (bm_ext) {
 			D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 			clear_bit(BME_NO_WRITES, &bm_ext->flags);
-			first_peer_device(device)->resync_wenr = LC_FREE;
-			if (lc_put(first_peer_device(device)->resync_lru, &bm_ext->lce) == 0)
-				first_peer_device(device)->resync_locked--;
+			peer_device->resync_wenr = LC_FREE;
+			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0)
+				peer_device->resync_locked--;
 			wake_up(&device->al_wait);
 		} else {
 			drbd_alert(device, "LOGIC BUG\n");
 		}
 	}
 	/* TRY. */
-	e = lc_try_get(first_peer_device(device)->resync_lru, enr);
+	e = lc_try_get(peer_device->resync_lru, enr);
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (bm_ext) {
 		if (test_bit(BME_LOCKED, &bm_ext->flags))
 			goto proceed;
 		if (!test_and_set_bit(BME_NO_WRITES, &bm_ext->flags)) {
-			first_peer_device(device)->resync_locked++;
+			peer_device->resync_locked++;
 		} else {
 			/* we did set the BME_NO_WRITES,
 			 * but then could not set BME_LOCKED,
@@ -986,13 +985,13 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 		goto check_al;
 	} else {
 		/* do we rather want to try later? */
-		if (first_peer_device(device)->resync_locked > first_peer_device(device)->resync_lru->nr_elements-3)
+		if (peer_device->resync_locked > peer_device->resync_lru->nr_elements-3)
 			goto try_again;
 		/* Do or do not. There is no try. -- Yoda */
-		e = lc_get(first_peer_device(device)->resync_lru, enr);
+		e = lc_get(peer_device->resync_lru, enr);
 		bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 		if (!bm_ext) {
-			const unsigned long rs_flags = first_peer_device(device)->resync_lru->flags;
+			const unsigned long rs_flags = peer_device->resync_lru->flags;
 			if (rs_flags & LC_STARVING)
 				drbd_warn(device, "Have to wait for element"
 				     " (resync LRU too small?)\n");
@@ -1002,13 +1001,13 @@ int drbd_try_rs_begin_io(struct drbd_device *device, sector_t sector)
 		if (bm_ext->lce.lc_number != enr) {
 			bm_ext->rs_left = drbd_bm_e_weight(device, enr);
 			bm_ext->rs_failed = 0;
-			lc_committed(first_peer_device(device)->resync_lru);
+			lc_committed(peer_device->resync_lru);
 			wake_up(&device->al_wait);
 			D_ASSERT(device, test_bit(BME_LOCKED, &bm_ext->flags) == 0);
 		}
 		set_bit(BME_NO_WRITES, &bm_ext->flags);
 		D_ASSERT(device, bm_ext->lce.refcnt == 1);
-		first_peer_device(device)->resync_locked++;
+		peer_device->resync_locked++;
 		goto check_al;
 	}
 check_al:
@@ -1018,13 +1017,13 @@ check_al:
 	}
 	set_bit(BME_LOCKED, &bm_ext->flags);
 proceed:
-	first_peer_device(device)->resync_wenr = LC_FREE;
+	peer_device->resync_wenr = LC_FREE;
 	spin_unlock_irq(&device->al_lock);
 	return 0;
 
 try_again:
 	if (bm_ext)
-		first_peer_device(device)->resync_wenr = enr;
+		peer_device->resync_wenr = enr;
 	spin_unlock_irq(&device->al_lock);
 	return -EAGAIN;
 }

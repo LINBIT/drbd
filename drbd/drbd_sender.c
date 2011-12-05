@@ -643,7 +643,7 @@ next_sector:
 		sector = BM_BIT_TO_SECT(bit);
 
 		if (drbd_rs_should_slow_down(peer_device, sector) ||
-		    drbd_try_rs_begin_io(device, sector)) {
+		    drbd_try_rs_begin_io(peer_device, sector)) {
 			device->bm_resync_fo = bit;
 			goto requeue;
 		}
@@ -767,7 +767,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		size = BM_BLOCK_SIZE;
 
 		if (drbd_rs_should_slow_down(peer_device, sector) ||
-		    drbd_try_rs_begin_io(device, sector)) {
+		    drbd_try_rs_begin_io(peer_device, sector)) {
 			peer_device->ov_position = sector;
 			goto requeue;
 		}
