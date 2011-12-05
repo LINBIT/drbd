@@ -872,13 +872,12 @@ static int _is_in_al(struct drbd_device *device, unsigned int enr)
 
 /**
  * drbd_rs_begin_io() - Gets an extent in the resync LRU cache and sets it to BME_LOCKED
- * @device:	DRBD device.
- * @sector:	The sector number.
  *
  * This functions sleeps on al_wait. Returns 0 on success, -EINTR if interrupted.
  */
-int drbd_rs_begin_io(struct drbd_device *device, sector_t sector)
+int drbd_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 {
+	struct drbd_device *device = peer_device->device;
 	unsigned int enr = BM_SECT_TO_EXT(sector);
 	struct bm_extent *bm_ext;
 	int i, sig;
@@ -887,7 +886,7 @@ int drbd_rs_begin_io(struct drbd_device *device, sector_t sector)
 
 retry:
 	sig = wait_event_interruptible(device->al_wait,
-			(bm_ext = _bme_get(first_peer_device(device), enr)));
+			(bm_ext = _bme_get(peer_device, enr)));
 	if (sig)
 		return -EINTR;
 
@@ -901,9 +900,9 @@ retry:
 
 		if (sig || (test_bit(BME_PRIORITY, &bm_ext->flags) && sa)) {
 			spin_lock_irq(&device->al_lock);
-			if (lc_put(first_peer_device(device)->resync_lru, &bm_ext->lce) == 0) {
+			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
 				bm_ext->flags = 0; /* clears BME_NO_WRITES and eventually BME_PRIORITY */
-				first_peer_device(device)->resync_locked--;
+				peer_device->resync_locked--;
 				wake_up(&device->al_wait);
 			}
 			spin_unlock_irq(&device->al_lock);

@@ -2697,7 +2697,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (connection->peer_role != R_PRIMARY &&
 	    drbd_rs_should_slow_down(peer_device, sector))
 		schedule_timeout_uninterruptible(HZ/10);
-	if (drbd_rs_begin_io(device, sector))
+	if (drbd_rs_begin_io(peer_device, sector))
 		goto out_free_e;
 
 submit_for_resync:
