@@ -42,7 +42,7 @@ drbd/linux/drbd_config.h.orig
 user/config.h
 user/config.h.in
 user/drbd_buildtag.c
-user/drbd_strings.c
+user/drbd_strings.[ch]
 user/drbdadm
 user/drbdadm_scanner.c
 user/drbdmeta
