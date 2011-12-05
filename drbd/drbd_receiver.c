@@ -4717,7 +4717,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	 *  resync_LRU. The resync_LRU tracks the whole operation including
 	 *  the disk-IO, while the rs_pending_cnt only tracks the blocks
 	 *  on the fly. */
-	drbd_rs_cancel_all(device);
+	drbd_rs_cancel_all(peer_device);
 	peer_device->rs_total = 0;
 	peer_device->rs_failed = 0;
 	atomic_set(&peer_device->rs_pending_cnt, 0);

@@ -1065,18 +1065,18 @@ void drbd_rs_complete_io(struct drbd_peer_device *peer_device, sector_t sector)
 
 /**
  * drbd_rs_cancel_all() - Removes all extents from the resync LRU (even BME_LOCKED)
- * @device:	DRBD device.
  */
-void drbd_rs_cancel_all(struct drbd_device *device)
+void drbd_rs_cancel_all(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	spin_lock_irq(&device->al_lock);
 
 	if (get_ldev_if_state(device, D_FAILED)) { /* Makes sure ->resync is there. */
-		lc_reset(first_peer_device(device)->resync_lru);
+		lc_reset(peer_device->resync_lru);
 		put_ldev(device);
 	}
-	first_peer_device(device)->resync_locked = 0;
-	first_peer_device(device)->resync_wenr = LC_FREE;
+	peer_device->resync_locked = 0;
+	peer_device->resync_wenr = LC_FREE;
 	spin_unlock_irq(&device->al_lock);
 	wake_up(&device->al_wait);
 }

@@ -1597,7 +1597,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 
 	if (peer_device->repl_state < L_AHEAD) {
 		/* In case a previous resync run was aborted by an IO error/detach on the peer. */
-		drbd_rs_cancel_all(device);
+		drbd_rs_cancel_all(peer_device);
 		/* This should be done when we abort the resync. We definitely do not
 		   want to have this for connections going back and forth between
 		   Ahead/Behind and SyncSource/SyncTarget */

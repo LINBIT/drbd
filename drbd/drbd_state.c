@@ -1290,7 +1290,7 @@ STATIC void after_state_ch(struct drbd_device *device, union drbd_state os,
 				drbd_disk_str(device->disk_state));
 
 		drbd_send_state(first_peer_device(device), ns);
-		drbd_rs_cancel_all(device);
+		drbd_rs_cancel_all(first_peer_device(device));
 
 		/* In case we want to get something to stable storage still,
 		 * this may be the last chance.
