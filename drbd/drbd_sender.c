@@ -1506,32 +1506,38 @@ void suspend_other_sg(struct drbd_device *device)
 }
 
 /* caller must hold global_state_lock */
-enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor)
+enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resync_after)
 {
-	struct drbd_device *odev;
-	int resync_after;
+	struct drbd_device *other_device;
+	int rv = NO_ERROR;
 
-	if (o_minor == -1)
+	if (resync_after == -1)
 		return NO_ERROR;
-	if (o_minor < -1 || minor_to_mdev(o_minor) == NULL)
+	if (resync_after < -1)
+		return ERR_RESYNC_AFTER;
+	other_device = minor_to_mdev(resync_after);
+	if (!other_device)
 		return ERR_RESYNC_AFTER;
 
 	/* check for loops */
-	odev = minor_to_mdev(o_minor);
+	rcu_read_lock();
 	while (1) {
-		if (odev == device)
-			return ERR_RESYNC_AFTER_CYCLE;
+		if (other_device == device) {
+			rv = ERR_RESYNC_AFTER_CYCLE;
+			break;
+		}
 
-		rcu_read_lock();
-		resync_after = rcu_dereference(odev->ldev->disk_conf)->resync_after;
-		rcu_read_unlock();
+		resync_after = rcu_dereference(other_device->ldev->disk_conf)->resync_after;
 		/* dependency chain ends here, no cycles. */
 		if (resync_after == -1)
-			return NO_ERROR;
+			break;
 
 		/* follow the dependency chain */
-		odev = minor_to_mdev(resync_after);
+		other_device = minor_to_mdev(resync_after);
 	}
+	rcu_read_unlock();
+
+	return rv;
 }
 
 /* caller must hold global_state_lock */

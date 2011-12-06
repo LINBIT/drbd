@@ -1321,13 +1321,16 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
 	}
-	/* FIXME: drbd_resync_after_valid() (under global_state_lock) missing! */
+	write_lock(&global_state_lock);
+	retcode = drbd_resync_after_valid(device, new_disk_conf->resync_after);
+	if (retcode != NO_ERROR)
+		goto fail_unlock;
 
 	enforce_disk_conf_limits(new_disk_conf);
 
 	if (new_disk_conf->meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
-		goto fail;
+		goto fail_unlock;
 	}
 
 	rcu_read_lock();
@@ -1339,7 +1342,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		    nc->wire_protocol == DRBD_PROT_A) {
 			rcu_read_unlock();
 			retcode = ERR_STONITH_AND_PROT_A;
-			goto fail;
+			goto fail_unlock;
 		}
 	}
 	rcu_read_unlock();
@@ -1353,7 +1356,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				   offsetof(struct bm_extent, lce));
 		if (!peer_device->rs_plan_s || !peer_device->resync_lru) {
 			retcode = ERR_NOMEM;
-			goto fail;
+			goto fail_unlock;
 		}
 	}
 
@@ -1363,7 +1366,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_err(device, "open(\"%s\") failed with %ld\n", new_disk_conf->backing_dev,
 			PTR_ERR(bdev));
 		retcode = ERR_OPEN_DISK;
-		goto fail;
+		goto fail_unlock;
 	}
 	nbc->backing_bdev = bdev;
 
@@ -1383,7 +1386,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_err(device, "open(\"%s\") failed with %ld\n", new_disk_conf->meta_dev,
 			PTR_ERR(bdev));
 		retcode = ERR_OPEN_MD_DISK;
-		goto fail;
+		goto fail_unlock;
 	}
 	nbc->md_bdev = bdev;
 
@@ -1391,7 +1394,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	    (new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
 	     new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)) {
 		retcode = ERR_MD_IDX_INVALID;
-		goto fail;
+		goto fail_unlock;
 	}
 
 	/* RT - for drbd_get_max_capacity() DRBD_MD_INDEX_FLEX_INT */
@@ -1402,7 +1405,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			(unsigned long long) drbd_get_max_capacity(nbc),
 			(unsigned long long) new_disk_conf->disk_size);
 		retcode = ERR_DISK_TOO_SMALL;
-		goto fail;
+		goto fail_unlock;
 	}
 
 	if (new_disk_conf->meta_dev_idx < 0) {
@@ -1419,7 +1422,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_warn(device, "refusing attach: md-device too small, "
 		     "at least %llu sectors needed for this meta-disk type\n",
 		     (unsigned long long) min_md_device_sectors);
-		goto fail;
+		goto fail_unlock;
 	}
 
 	/* Make sure the new disk is big enough
@@ -1427,7 +1430,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (drbd_get_max_capacity(nbc) <
 	    drbd_get_capacity(device->this_bdev)) {
 		retcode = ERR_DISK_TOO_SMALL;
-		goto fail;
+		goto fail_unlock;
 	}
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
@@ -1452,7 +1455,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	retcode = rv;  /* FIXME: Type mismatch. */
 	drbd_resume_io(device);
 	if (rv < SS_SUCCESS)
-		goto fail;
+		goto fail_unlock;
 
 	if (!get_ldev_if_state(device, D_ATTACHING))
 		goto force_diskless;
@@ -1511,6 +1514,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	nbc = NULL;
 	new_disk_conf = NULL;
 
+	drbd_resync_after_changed(device);
 	drbd_bump_write_ordering(device->resource, WO_bio_barrier);
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
@@ -1626,6 +1630,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (rv < SS_SUCCESS)
 		goto force_diskless_dec;
 
+	write_unlock(&global_state_lock);
+
 	mod_timer(&device->request_timer, jiffies + HZ);
 
 	if (device->resource->role[NOW] == R_PRIMARY)
@@ -1646,6 +1652,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
  force_diskless:
 	change_disk_state(device, D_DISKLESS, CS_HARD);
 	drbd_md_sync(device);
+ fail_unlock:
+	write_unlock(&global_state_lock);
  fail:
 	if (nbc) {
 		if (nbc->backing_bdev)
