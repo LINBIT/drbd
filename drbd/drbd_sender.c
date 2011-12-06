@@ -808,14 +808,13 @@ STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC void ping_peer(struct drbd_device *device)
+static void ping_peer(struct drbd_connection *connection)
 {
-	struct drbd_connection *connection = first_peer_device(device)->connection;
-
 	clear_bit(GOT_PING_ACK, &connection->flags);
 	request_ping(connection);
 	wait_event(connection->ping_wait,
-		   test_bit(GOT_PING_ACK, &connection->flags) || first_peer_device(device)->repl_state[NOW] < L_CONNECTED);
+		   test_bit(GOT_PING_ACK, &connection->flags) ||
+		   connection->cstate[NOW] < C_CONNECTED);
 }
 
 int drbd_resync_finished(struct drbd_peer_device *peer_device)
@@ -861,7 +860,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	if (!get_ldev(device))
 		goto out;
 
-	ping_peer(device);
+	ping_peer(peer_device->connection);
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 
