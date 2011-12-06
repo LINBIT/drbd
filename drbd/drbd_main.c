@@ -3028,7 +3028,7 @@ int __init drbd_init(void)
 		goto fail;
 	}
 
-	rwlock_init(&global_state_lock);
+	mutex_init(&global_state_mutex);
 	INIT_LIST_HEAD(&drbd_resources);
 
 	printk(KERN_INFO "drbd: initialized. "
@@ -3725,6 +3725,26 @@ static int idr_has_entry(int id, void *p, void *data)
 bool idr_is_empty(struct idr *idr)
 {
 	return !idr_for_each(idr, idr_has_entry, NULL);
+}
+
+void lock_all_resources(void)
+{
+	struct drbd_resource *resource;
+
+	mutex_lock(&global_state_mutex);
+	local_irq_disable();
+	for_each_resource(resource, &drbd_resources)
+		spin_lock(&resource->req_lock);
+}
+
+void unlock_all_resources(void)
+{
+	struct drbd_resource *resource;
+
+	for_each_resource(resource, &drbd_resources)
+		spin_unlock(&resource->req_lock);
+	local_irq_enable();
+	mutex_unlock(&global_state_mutex);
 }
 
 #ifdef DRBD_ENABLE_FAULTS

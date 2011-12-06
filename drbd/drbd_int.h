@@ -362,6 +362,9 @@ struct drbd_peer_device_work {
 extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
 extern bool idr_is_empty(struct idr *idr);
 
+extern void lock_all_resources(void);
+extern void unlock_all_resources(void);
+
 struct drbd_request {
 	struct drbd_work w;
 	struct drbd_device *device;
@@ -1279,7 +1282,7 @@ extern struct bio_set *drbd_md_io_bio_set;
 /* to allocate from that set */
 extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 
-extern rwlock_t global_state_lock;
+extern struct mutex global_state_mutex;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,

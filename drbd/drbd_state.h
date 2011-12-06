@@ -63,7 +63,6 @@ enum chg_state_flags {
 	CS_PREPARED	 = 1 << 7,
 	CS_ABORT	 = 1 << 8,
 	CS_IGN_OUTD_FAIL = 1 << 11,
-	CS_GLOBAL_LOCKED = 1 << 12,  /* global_state_lock already taken */
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

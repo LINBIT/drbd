@@ -307,8 +307,6 @@ static void ___begin_state_change(struct drbd_resource *resource, enum chg_state
 
 static void __begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
-	if (!(flags & CS_GLOBAL_LOCKED))
-		read_lock(&global_state_lock);
 	rcu_read_lock();
 	___begin_state_change(resource, flags);
 }
@@ -378,8 +376,6 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	}
 out:
 	rcu_read_unlock();
-	if (!(flags & CS_GLOBAL_LOCKED))
-		read_unlock(&global_state_lock);
 	return rv;
 }
 
@@ -443,16 +439,12 @@ void abort_state_change_locked(struct drbd_resource *resource)
 static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
 	rcu_read_unlock();
-	if (!(resource->state_change_flags & CS_GLOBAL_LOCKED))
-		read_unlock(&global_state_lock);
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 }
 
 static void end_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
-	if (!(flags & CS_GLOBAL_LOCKED))
-		read_lock(&global_state_lock);
 	rcu_read_lock();
 	___begin_state_change(resource, flags);
 }
