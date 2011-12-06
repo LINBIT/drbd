@@ -4416,7 +4416,7 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 		_drbd_uuid_set(device, UI_BITMAP, 0UL);
 
 		drbd_print_uuids(device, "updated sync uuid");
-		drbd_start_resync(device, L_SYNC_TARGET);
+		drbd_start_resync(peer_device, L_SYNC_TARGET);
 
 		put_ldev(device);
 	} else
@@ -4695,7 +4695,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
  out:
 	drbd_bm_unlock(device);
 	if (!err && peer_device->repl_state[NOW] == L_WF_BITMAP_S)
-		drbd_start_resync(device, L_SYNC_SOURCE);
+		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	return err;
 }
 

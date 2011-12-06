@@ -1334,7 +1334,7 @@ static void abw_start_sync(struct drbd_device *device, int rv)
 		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID, CS_VERBOSE);
 		break;
 	case L_STARTING_SYNC_S:
-		drbd_start_resync(device, L_SYNC_SOURCE);
+		drbd_start_resync(first_peer_device(device), L_SYNC_SOURCE);
 		break;
 	default:
 		break;

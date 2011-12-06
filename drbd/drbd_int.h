@@ -1340,7 +1340,7 @@ extern int drbd_sender(struct drbd_thread *thi);
 extern int drbd_worker(struct drbd_thread *thi);
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor);
 void drbd_resync_after_changed(struct drbd_device *device);
-extern void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side);
+extern void drbd_start_resync(struct drbd_peer_device *, enum drbd_repl_state);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
 extern int drbd_resync_finished(struct drbd_peer_device *);

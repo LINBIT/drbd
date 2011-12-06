@@ -2220,7 +2220,7 @@ void resync_after_online_grow(struct drbd_device *device)
 		iass = test_bit(DISCARD_CONCURRENT, &first_peer_device(device)->connection->flags);
 
 	if (iass)
-		drbd_start_resync(device, L_SYNC_SOURCE);
+		drbd_start_resync(first_peer_device(device), L_SYNC_SOURCE);
 	else
 		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID,
 						CS_VERBOSE | CS_SERIALIZE);

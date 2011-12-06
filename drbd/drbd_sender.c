@@ -1588,27 +1588,26 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	drbd_start_resync(device, L_SYNC_SOURCE);
+	drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
 	return 0;
 }
 
 /**
  * drbd_start_resync() - Start the resync process
- * @device:	DRBD device.
  * @side:	Either L_SYNC_SOURCE or L_SYNC_TARGET
  *
  * This function might bring you directly into one of the
  * C_PAUSED_SYNC_* states.
  */
-void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
+void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state side)
 {
-	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_device *device = peer_device->device;
 	enum drbd_repl_state repl_state;
 	int r;
 
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
-		drbd_err(device, "Resync already running!\n");
+		drbd_err(peer_device, "Resync already running!\n");
 		return;
 	}
 
@@ -1701,7 +1700,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 	unlock_all_resources();
 
 	if (r == SS_SUCCESS) {
-		drbd_info(device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
+		drbd_info(peer_device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
 		     drbd_conn_str(repl_state),
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
