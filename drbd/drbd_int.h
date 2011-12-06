@@ -613,7 +613,7 @@ struct bm_io_work {
 	char *why;
 	enum bm_flag flags;
 	int (*io_fn)(struct drbd_device *, struct drbd_peer_device *);
-	void (*done)(struct drbd_device *device, int rv);
+	void (*done)(struct drbd_device *device, struct drbd_peer_device *, int rv);
 };
 
 enum write_ordering_e {
@@ -1031,7 +1031,7 @@ extern void drbd_md_mark_dirty_(struct drbd_device *device,
 #endif
 extern void drbd_queue_bitmap_io(struct drbd_device *,
 				 int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
-				 void (*done)(struct drbd_device *, int),
+				 void (*done)(struct drbd_device *, struct drbd_peer_device *, int),
 				 char *why, enum bm_flag flags,
 				 struct drbd_peer_device *);
 extern int drbd_bitmap_io(struct drbd_device *,

@@ -1321,20 +1321,21 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	queue_after_state_change_work(resource, done, GFP_ATOMIC);
 }
 
-static void abw_start_sync(struct drbd_device *device, int rv)
+static void abw_start_sync(struct drbd_device *device,
+			   struct drbd_peer_device *peer_device, int rv)
 {
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
-		stable_change_repl_state(first_peer_device(device), L_CONNECTED, CS_VERBOSE);
+		stable_change_repl_state(peer_device, L_CONNECTED, CS_VERBOSE);
 		return;
 	}
 
-	switch (first_peer_device(device)->repl_state[NOW]) {
+	switch (peer_device->repl_state[NOW]) {
 	case L_STARTING_SYNC_T:
-		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID, CS_VERBOSE);
+		stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
 		break;
 	case L_STARTING_SYNC_S:
-		drbd_start_resync(first_peer_device(device), L_SYNC_SOURCE);
+		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 		break;
 	default:
 		break;

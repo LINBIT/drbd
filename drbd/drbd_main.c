@@ -3414,7 +3414,7 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 		wake_up(&device->misc_wait);
 
 	if (work->done)
-		work->done(device, rv);
+		work->done(device, work->peer_device, rv);
 	kfree(work);
 
 	return 0;
@@ -3487,7 +3487,7 @@ void drbd_queue_pending_bitmap_work(struct drbd_device *device)
  */
 void drbd_queue_bitmap_io(struct drbd_device *device,
 			  int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
-			  void (*done)(struct drbd_device *, int),
+			  void (*done)(struct drbd_device *, struct drbd_peer_device *, int),
 			  char *why, enum bm_flag flags,
 			  struct drbd_peer_device *peer_device)
 {
