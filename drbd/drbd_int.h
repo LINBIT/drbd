@@ -929,6 +929,17 @@ static inline struct drbd_peer_device *the_only_peer_device(struct drbd_device *
 #define for_each_peer_device_safe(peer_device, tmp, device) \
 	list_for_each_entry_safe(peer_device, tmp, &device->peer_devices, peer_devices)
 
+static inline struct drbd_peer_device *find_peer_device(struct drbd_device *device,
+							struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device)
+		if (peer_device->connection == connection)
+			return peer_device;
+	return NULL;
+}
+
 static inline unsigned int mdev_to_minor(struct drbd_device *device)
 {
 	return device->minor;
