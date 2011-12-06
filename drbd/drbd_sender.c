@@ -1395,31 +1395,37 @@ int w_restart_disk_io(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC int _drbd_may_sync_now(struct drbd_device *device)
+static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *odev = device;
-	int resync_after;
+	struct drbd_device *other_device = peer_device->device;
+	int ret = true;
 
+	rcu_read_lock();
 	while (1) {
-		struct drbd_peer_device *peer_device = first_peer_device(device);
+		struct drbd_peer_device *other_peer_device;
+		int resync_after;
 
-		if (!odev->ldev)
-			return 1;
-		rcu_read_lock();
-		resync_after = rcu_dereference(odev->ldev->disk_conf)->resync_after;
-		rcu_read_unlock();
+		if (!other_device->ldev)
+			break;
+		resync_after = rcu_dereference(other_device->ldev->disk_conf)->resync_after;
 		if (resync_after == -1)
-			return 1;
-		odev = minor_to_mdev(resync_after);
-		if (!expect(device, odev))
-			return 1;
-		if ((peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
-		     peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
-		    peer_device->resync_susp_dependency[NOW] ||
-		    peer_device->resync_susp_peer[NOW] ||
-		    peer_device->resync_susp_user[NOW])
-			return 0;
+			break;
+		other_device = minor_to_mdev(resync_after);
+		if (!expect(peer_device, other_device))
+			break;
+		other_peer_device = find_peer_device(other_device, peer_device->connection);
+		if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
+		     other_peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
+		    other_peer_device->resync_susp_dependency[NOW] ||
+		    other_peer_device->resync_susp_peer[NOW] ||
+		    other_peer_device->resync_susp_user[NOW]) {
+			ret = false;
+			break;
+		}
 	}
+	rcu_read_unlock();
+
+	return ret;
 }
 
 /**
@@ -1428,22 +1434,25 @@ STATIC int _drbd_may_sync_now(struct drbd_device *device)
  *
  * Called from process context only (admin command and after_state_ch).
  */
-STATIC int _drbd_pause_after(struct drbd_device *device)
+static void _drbd_pause_after(struct drbd_device *device)
 {
-	struct drbd_device *odev;
-	int i, rv = 0;
+	struct drbd_device *other_device;
+	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&drbd_devices, odev, i) {
-		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
-		    odev->disk_state == D_DISKLESS)
+	idr_for_each_entry(&drbd_devices, other_device, vnr) {
+		struct drbd_peer_device *other_peer_device;
+
+		if (other_device->disk_state == D_DISKLESS)
 			continue;
-		if (!_drbd_may_sync_now(odev))
-			__change_resync_susp_dependency(first_peer_device(odev), true);
+		for_each_peer_device(other_peer_device, other_device) {
+			if (other_peer_device->repl_state[NOW] == L_STANDALONE)
+				continue;
+			if (!__drbd_may_sync_now(other_peer_device))
+				__change_resync_susp_dependency(other_peer_device, true);
+		}
 	}
 	rcu_read_unlock();
-
-	return rv;
 }
 
 /**
@@ -1452,23 +1461,26 @@ STATIC int _drbd_pause_after(struct drbd_device *device)
  *
  * Called from process context only (admin command and sender).
  */
-STATIC int _drbd_resume_next(struct drbd_device *device)
+static void _drbd_resume_next(struct drbd_device *device)
 {
-	struct drbd_device *odev;
-	int i, rv = 0;
+	struct drbd_device *other_device;
+	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&drbd_devices, odev, i) {
-		if (first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
-		    odev->disk_state == D_DISKLESS)
+	idr_for_each_entry(&drbd_devices, other_device, vnr) {
+		struct drbd_peer_device *other_peer_device;
+
+		if (other_device->disk_state == D_DISKLESS)
 			continue;
-		if (first_peer_device(odev)->resync_susp_dependency[NOW]) {
-			if (_drbd_may_sync_now(odev))
-				__change_resync_susp_dependency(first_peer_device(odev), false);
+		for_each_peer_device(other_peer_device, other_device) {
+			if (other_peer_device->repl_state[NOW] == L_STANDALONE)
+				continue;
+			if (other_peer_device->resync_susp_dependency[NOW] &&
+			    __drbd_may_sync_now(other_peer_device))
+				__change_resync_susp_dependency(other_peer_device, false);
 		}
 	}
 	rcu_read_unlock();
-	return rv;
 }
 
 void resume_next_sg(struct drbd_device *device)
@@ -1662,7 +1674,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_repl_state side)
 
 	/* spin_lock_irqsave(&device->resource->req_lock, irq_flags); */
 	begin_state_change_locked(device->resource, CS_VERBOSE | CS_GLOBAL_LOCKED);
-	__change_resync_susp_dependency(peer_device, !_drbd_may_sync_now(device));
+	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
 	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET)
 		__change_disk_state(device, D_INCONSISTENT);
