@@ -1041,10 +1041,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		put_ldev(device);
 	}
 
-	if (first_peer_device(device)->repl_state[NOW] == L_AHEAD) {
+	if (peer_device->repl_state[NOW] == L_AHEAD) {
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		if (likely(first_peer_device(device)->disk_state[NOW] >= D_INCONSISTENT)) {
+		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
 			inc_rs_pending(peer_device);
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {
