@@ -561,7 +561,7 @@ const char *on_congestion_map[] = {
 
 #define CHANGEABLE_DISK_OPTIONS								\
 	{ "on-io-error", ENUM(on_io_error, ON_IO_ERROR) },				\
-	{ "fencing", ENUM(fencing_policy, FENCING) },					\
+	/*{ "fencing", ENUM(fencing_policy, FENCING) },*/				\
 	{ "disk-barrier", BOOLEAN(disk_barrier, DISK_BARRIER) },			\
 	{ "disk-flushes", BOOLEAN(disk_flushes, DISK_FLUSHES) },			\
 	{ "disk-drain", BOOLEAN(disk_drain, DISK_DRAIN) },				\
@@ -617,7 +617,8 @@ const char *on_congestion_map[] = {
 	{ "congestion-extents", NUMERIC(cong_extents, CONG_EXTENTS) },			\
 	{ "csums-alg", STRING(csums_alg) },						\
 	{ "verify-alg", STRING(verify_alg) },						\
-	{ "use-rle", BOOLEAN(use_rle, USE_RLE) }
+	{ "use-rle", BOOLEAN(use_rle, USE_RLE) },					\
+	{ "fencing", ENUM(fencing_policy, FENCING) }
 
 struct context_def disk_options_ctx = {
 	NLA_POLICY(disk_conf),

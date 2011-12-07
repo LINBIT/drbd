@@ -690,6 +690,7 @@ struct drbd_connection {			/* is a resource from the config file */
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
+	enum drbd_fencing_policy fencing_policy;
 	wait_queue_head_t ping_wait;	/* Woken upon reception of a ping, and a state change */
 
 	struct sockaddr_storage my_addr;
@@ -1333,7 +1334,6 @@ extern enum drbd_state_rv drbd_set_role(struct drbd_device *device,
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_khelper(struct drbd_device *device, char *cmd);
-extern enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);

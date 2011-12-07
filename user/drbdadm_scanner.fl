@@ -92,7 +92,6 @@ ipv4			{ DP; CP; return TK_IPV4;		}
 ipv6			{ DP; CP; return TK_IPV6;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
-fencing			{ DP; CP; return TK_DISK_OPTION;	}
 max-bio-bvecs		{ DP; CP; return TK_DISK_OPTION;	}
 disk-timeout		{ DP; CP; return TK_DISK_OPTION;	}
 use-bmbv		{ DP; CP; return TK_DISK_FLAG;		}
@@ -105,6 +104,7 @@ no-disk-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
 no-disk-drain		{ DP; CP; return TK_DISK_NO_FLAG;		}
 no-md-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
+fencing			{ DP; CP; return TK_NET_OPTION;	}  /* FIXME, TODO: 8.4 compatibility */
 protocol		{ DP; CP; RC(PROTOCOL); return TK_NET_OPTION;	}
 ko-count		{ DP; CP; RC(KO_COUNT); return TK_NET_OPTION;	}
 ping-int		{ DP; CP; RC(PING_INT); return TK_NET_OPTION;	}

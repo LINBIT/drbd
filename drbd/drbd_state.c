@@ -759,14 +759,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
 
-		enum drbd_fencing_policy fencing_policy;
-
-		fencing_policy = FP_DONT_CARE;
-		if (get_ldev(device)) {
-			fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
-			put_ldev(device);
-		}
-
 		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
 			return SS_DEVICE_IN_USE;
 
@@ -784,7 +776,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
 				return SS_NO_UP_TO_DATE_DISK;
 
-			if (fencing_policy >= FP_RESOURCE &&
+			if (peer_device->connection->fencing_policy >= FP_RESOURCE &&
 			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
 			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
 				return SS_PRIMARY_NOP;
@@ -952,13 +944,6 @@ static void sanitize_state(struct drbd_resource *resource)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
-		enum drbd_fencing_policy fencing_policy;
-
-		fencing_policy = FP_DONT_CARE;
-		if (get_ldev(device)) {
-			fencing_policy = rcu_dereference(device->ldev->disk_conf)->fencing_policy;
-			put_ldev(device);
-		}
 
 		if ((resource->state_change_flags & CS_IGN_OUTD_FAIL) &&
 		    disk_state[OLD] < D_OUTDATED && disk_state[NEW] == D_OUTDATED)
@@ -1081,7 +1066,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				peer_disk_state[NEW] = min_peer_disk_state;
 
 			/* Suspend IO while fence-peer handler runs (peer lost) */
-			if (fencing_policy == FP_STONITH &&
+			if (connection->fencing_policy == FP_STONITH &&
 			    (role[NEW] == R_PRIMARY &&
 			     repl_state[NEW] < L_CONNECTED &&
 			     peer_disk_state[NEW] > D_OUTDATED)) {
@@ -1251,7 +1236,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if (get_ldev(device)) {
 				u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 								 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
-								 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY);
+								 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY|
+								 MDF_FENCING_IND);
 				mdf &= ~MDF_AL_CLEAN;
 				if (test_bit(CRASHED_PRIMARY, &device->flags))
 					mdf |= MDF_CRASHED_PRIMARY;
@@ -1268,6 +1254,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				if (peer_device->disk_state[NEW] <= D_OUTDATED &&
 				    peer_device->disk_state[NEW] >= D_INCONSISTENT)
 					mdf |= MDF_PEER_OUT_DATED;
+				if (peer_device->connection->fencing_policy != FP_DONT_CARE)
+					mdf |= MDF_FENCING_IND;
 				if (mdf != device->ldev->md.flags) {
 					device->ldev->md.flags = mdf;
 					drbd_md_mark_dirty(device);
@@ -2217,9 +2205,8 @@ enum outdate_what { OUTDATE_NOTHING, OUTDATE_DISKS, OUTDATE_PEER_DISKS };
 static enum outdate_what outdate_on_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
-	enum drbd_fencing_policy fencing_policy = highest_fencing_policy(connection);
 
-	if (fencing_policy >= FP_RESOURCE &&
+	if (connection->fencing_policy >= FP_RESOURCE &&
 	    resource->role[NOW] != connection->peer_role[NOW]) {
 		if (resource->role[NOW] == R_PRIMARY)
 			return OUTDATE_PEER_DISKS;

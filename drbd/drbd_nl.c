@@ -460,27 +460,6 @@ int conn_khelper(struct drbd_connection *connection, char *cmd)
 	return ret;
 }
 
-enum drbd_fencing_policy highest_fencing_policy(struct drbd_connection *connection)
-{
-	enum drbd_fencing_policy fencing_policy = FP_NOT_AVAIL;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		if (get_ldev_if_state(device, D_CONSISTENT)) {
-			struct disk_conf *disk_conf =
-				rcu_dereference(peer_device->device->ldev->disk_conf);
-			fencing_policy = max_t(enum drbd_fencing_policy, fencing_policy, disk_conf->fencing_policy);
-			put_ldev(device);
-		}
-	}
-	rcu_read_unlock();
-
-	return fencing_policy;
-}
-
 bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
 	enum drbd_fencing_policy fencing_policy;
@@ -493,7 +472,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		return false;
 	}
 
-	fencing_policy = highest_fencing_policy(connection);
+	fencing_policy = connection->fencing_policy;
 	switch (fencing_policy) {
 	case FP_NOT_AVAIL:
 		drbd_warn(connection, "Not fencing peer, I'm not even Consistent myself.\n");
@@ -1278,7 +1257,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
 	enum drbd_state_rv rv;
-	struct net_conf *nc;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_disk_state disk_state_from_metadata;
@@ -1328,20 +1306,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_MD_IDX_INVALID;
 		goto fail;
 	}
-
-	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
-		nc = rcu_dereference(peer_device->connection->net_conf);
-		if (!nc)
-			continue;
-		if (new_disk_conf->fencing_policy == FP_STONITH &&
-		    nc->wire_protocol == DRBD_PROT_A) {
-			rcu_read_unlock();
-			retcode = ERR_STONITH_AND_PROT_A;
-			goto fail;
-		}
-	}
-	rcu_read_unlock();
 
 	for_each_peer_device(peer_device, device) {
 		peer_device->rs_plan_s =
@@ -1601,7 +1565,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (disk_state_from_metadata == D_CONSISTENT &&
 	    (peer_disk_state_from_metadata == D_OUTDATED ||
-	     rcu_dereference(device->ldev->disk_conf)->fencing_policy == FP_DONT_CARE))
+	     !drbd_md_test_flag(device->ldev, MDF_FENCING_IND)))
 		disk_state_from_metadata = D_UP_TO_DATE;
 	rcu_read_unlock();
 
@@ -1804,17 +1768,13 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 	    (new_net_conf->wire_protocol != DRBD_PROT_C))
 		return ERR_NOT_PROTO_C;
 
+	if (new_net_conf->wire_protocol == DRBD_PROT_A &&
+	    new_net_conf->fencing_policy == FP_STONITH)
+		return ERR_STONITH_AND_PROT_A;
+
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		struct drbd_device *device = peer_device->device;
-		if (get_ldev(device)) {
-			enum drbd_fencing_policy fencing_policy =
-				rcu_dereference(device->ldev->disk_conf)->fencing_policy;
-			put_ldev(device);
-			if (new_net_conf->wire_protocol == DRBD_PROT_A &&
-			    fencing_policy == FP_STONITH)
-				return ERR_STONITH_AND_PROT_A;
-		}
-		if (device->resource->role[NOW] == R_PRIMARY && new_net_conf->discard_my_data)
+		if (peer_device->device->resource->role[NOW] == R_PRIMARY &&
+		    new_net_conf->discard_my_data)
 			return ERR_DISCARD;
 	}
 
@@ -1974,6 +1934,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
+	connection->fencing_policy = new_net_conf->fencing_policy;
 
 	if (!rsr) {
 		crypto_free_hash(connection->csums_tfm);
@@ -2103,6 +2064,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
+	connection->fencing_policy = new_net_conf->fencing_policy;
 
 	conn_free_crypto(connection);
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
