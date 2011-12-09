@@ -3569,7 +3569,7 @@ int drbd_bitmap_io(struct drbd_device *device,
 	return rv;
 }
 
-void drbd_md_set_flag(struct drbd_device *device, int flag) __must_hold(local)
+void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag flag) __must_hold(local)
 {
 	if ((device->ldev->md.flags & flag) != flag) {
 		drbd_md_mark_dirty(device);
@@ -3577,14 +3577,14 @@ void drbd_md_set_flag(struct drbd_device *device, int flag) __must_hold(local)
 	}
 }
 
-void drbd_md_clear_flag(struct drbd_device *device, int flag) __must_hold(local)
+void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag flag) __must_hold(local)
 {
 	if ((device->ldev->md.flags & flag) != 0) {
 		drbd_md_mark_dirty(device);
 		device->ldev->md.flags &= ~flag;
 	}
 }
-int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
+int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
 {
 	return (bdev->md.flags & flag) != 0;
 }
