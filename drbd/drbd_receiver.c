@@ -3133,17 +3133,17 @@ STATIC int drbd_uuid_compare(struct drbd_device *device, int *rule_nr) __must_ho
  */
 static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
 						enum drbd_role peer_role,
-						enum drbd_disk_state peer_disk) __must_hold(local)
+						enum drbd_disk_state peer_disk_state) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	enum drbd_repl_state rv = -1;
-	enum drbd_disk_state mydisk;
+	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative;
 
-	mydisk = device->disk_state[NOW];
-	if (mydisk == D_NEGOTIATING)
-		mydisk = device->disk_state_from_metadata;
+	disk_state = device->disk_state[NOW];
+	if (disk_state == D_NEGOTIATING)
+		disk_state = device->disk_state_from_metadata;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
 	drbd_uuid_dump(device, "self", device->ldev->md.uuid, device->comm_bm_set, 0);
@@ -3163,10 +3163,10 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if    ((mydisk == D_INCONSISTENT && peer_disk > D_INCONSISTENT) ||
-	    (peer_disk == D_INCONSISTENT && mydisk    > D_INCONSISTENT)) {
+	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
+	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
 		int f = (hg == -100) || abs(hg) == 2;
-		hg = mydisk > D_INCONSISTENT ? 1 : -1;
+		hg = disk_state > D_INCONSISTENT ? 1 : -1;
 		if (f)
 			hg = hg*2;
 		drbd_info(device, "Becoming sync %s due to disk states.\n",
@@ -3232,12 +3232,12 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if (hg > 0 && mydisk <= D_INCONSISTENT) {
+	if (hg > 0 && disk_state <= D_INCONSISTENT) {
 		drbd_err(device, "I shall become SyncSource, but I am inconsistent!\n");
 		return -1;
 	}
 
-	if (hg < 0 && /* by intention we do not use mydisk here. */
+	if (hg < 0 && /* by intention we do not use disk_state here. */
 	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT) {
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
@@ -4283,25 +4283,25 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (device->p_uuid && peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
-		int cr; /* consider resync */
+		bool consider_resync;
 
 		/* if we established a new connection */
-		cr  = (os.conn < L_CONNECTED);
+		consider_resync = (os.conn < L_CONNECTED);
 		/* if we had an established connection
 		 * and one of the nodes newly attaches a disk */
-		cr |= (os.conn == L_CONNECTED &&
-		       (peer_state.disk == D_NEGOTIATING ||
-			os.disk == D_NEGOTIATING));
+		consider_resync |= (os.conn == L_CONNECTED &&
+				    (peer_state.disk == D_NEGOTIATING ||
+				     os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --overwrite-data */
-		cr |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
+		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
-		cr |= (os.conn == L_CONNECTED &&
+		consider_resync |= (os.conn == L_CONNECTED &&
 				(peer_state.conn >= L_STARTING_SYNC_S &&
 				 peer_state.conn <= L_WF_BITMAP_T));
 
-		if (cr)
+		if (consider_resync)
 			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
 
 		put_ldev(device);
