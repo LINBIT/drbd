@@ -968,8 +968,9 @@ static void sanitize_state(struct drbd_resource *resource)
 					disk_state[NEW] = D_DISKLESS;
 					peer_disk_state[NEW] = D_UNKNOWN;
 					if (device->ed_uuid == device->ldev->md.uuid[UI_CURRENT]) {
+						/* FIXME: This makes no sense anymore. */
 						disk_state[NEW] = device->disk_state_from_metadata;
-						peer_disk_state[NEW] = device->peer_disk_state_from_metadata;
+						peer_disk_state[NEW] = peer_device->disk_state_from_metadata;
 					}
 					put_ldev(device);
 				}

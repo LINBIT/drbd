@@ -1259,8 +1259,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
-	enum drbd_disk_state disk_state_from_metadata;
-	enum drbd_disk_state peer_disk_state_from_metadata;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1557,24 +1555,24 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-	disk_state_from_metadata = D_INCONSISTENT;
+	device->disk_state_from_metadata = D_INCONSISTENT;
 	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT)) {
 		if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
-			disk_state_from_metadata = D_CONSISTENT;
+			device->disk_state_from_metadata = D_CONSISTENT;
 		else
-			disk_state_from_metadata = D_OUTDATED;
+			device->disk_state_from_metadata = D_OUTDATED;
 	}
 
-	rcu_read_lock();
-	peer_disk_state_from_metadata = D_UNKNOWN;
-	if (drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_OUTDATED))
-		peer_disk_state_from_metadata = D_OUTDATED;
+	for_each_peer_device(peer_device, device) {
+		peer_device->disk_state_from_metadata = D_UNKNOWN;
+		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_OUTDATED))
+			peer_device->disk_state_from_metadata = D_OUTDATED;
+	}
 
-	if (disk_state_from_metadata == D_CONSISTENT &&
-	    (peer_disk_state_from_metadata == D_OUTDATED ||
+	if (device->disk_state_from_metadata == D_CONSISTENT &&
+	    (first_peer_device(device)->disk_state_from_metadata == D_OUTDATED ||
 	     !drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_FENCING)))
-		disk_state_from_metadata = D_UP_TO_DATE;
-	rcu_read_unlock();
+		device->disk_state_from_metadata = D_UP_TO_DATE;
 
 	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
 	   MDF_CONSISTENT and MDF_WAS_UP_TO_DATE must happen before
@@ -1583,9 +1581,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
 	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED) {
-		device->disk_state_from_metadata = disk_state_from_metadata;
-		device->peer_disk_state_from_metadata = peer_disk_state_from_metadata;
-
 		__change_disk_state(device, D_NEGOTIATING);
 
 		/* We expect to receive up-to-date UUIDs soon.
@@ -1594,10 +1589,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		kfree(device->p_uuid);
 		device->p_uuid = NULL;
 	} else {
-		__change_disk_state(device, disk_state_from_metadata);
-		if (peer_disk_state_from_metadata != D_UNKNOWN)
-			__change_peer_disk_state(first_peer_device(device),
-				peer_disk_state_from_metadata);
+		__change_disk_state(device, device->disk_state_from_metadata);
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->disk_state_from_metadata != D_UNKNOWN)
+				__change_peer_disk_state(peer_device,
+					peer_device->disk_state_from_metadata);
+		}
 	}
 
 	rv = end_state_change(device->resource, &irq_flags);

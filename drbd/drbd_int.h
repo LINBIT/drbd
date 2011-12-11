@@ -735,6 +735,7 @@ struct drbd_peer_device {
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	enum drbd_disk_state disk_state[2];
+	enum drbd_disk_state disk_state_from_metadata;
 	enum drbd_repl_state repl_state[2];
 	bool resync_susp_user[2];
 	bool resync_susp_peer[2];
@@ -835,7 +836,6 @@ struct drbd_device {
 
 	enum drbd_disk_state disk_state[2];
 	enum drbd_disk_state disk_state_from_metadata;
-	enum drbd_disk_state peer_disk_state_from_metadata;
 	wait_queue_head_t misc_wait;
 	unsigned int read_cnt;
 	unsigned int writ_cnt;
