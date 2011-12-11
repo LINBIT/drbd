@@ -593,6 +593,7 @@ struct drbd_md {
 	 */
 
 	u32 bm_max_peers;
+	u8 peer_flags[MAX_PEERS];
 };
 
 struct drbd_backing_dev {
@@ -1025,6 +1026,7 @@ extern void drbd_uuid_set_bm(struct drbd_device *device, u64 val) __must_hold(lo
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);
+extern bool drbd_md_test_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
 #ifndef DRBD_DEBUG_MD_SYNC
 extern void drbd_md_mark_dirty(struct drbd_device *device);
 #else

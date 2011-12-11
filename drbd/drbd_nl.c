@@ -1516,11 +1516,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * so we can automatically recover from a crash of a
 	 * degraded but active "cluster" after a certain timeout.
 	 */
-	clear_bit(USE_DEGR_WFC_T, &first_peer_device(device)->flags);
-	if (device->resource->role[NOW] != R_PRIMARY &&
-	     drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-	    !drbd_md_test_flag(device->ldev, MDF_CONNECTED_IND))
-		set_bit(USE_DEGR_WFC_T, &first_peer_device(device)->flags);
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
+		if (device->resource->role[NOW] != R_PRIMARY &&
+		    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
+		    !drbd_md_test_peer_flag(peer_device, MDF_PEER_CONNECTED))
+			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
+	}
+	rcu_read_unlock();
 
 	dd = drbd_determine_dev_size(device, 0);
 	if (dd == DEV_SIZE_ERROR) {
@@ -1563,12 +1567,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	rcu_read_lock();
 	peer_disk_state_from_metadata = D_UNKNOWN;
-	if (drbd_md_test_flag(device->ldev, MDF_PEER_OUT_DATED))
+	if (drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_OUTDATED))
 		peer_disk_state_from_metadata = D_OUTDATED;
 
 	if (disk_state_from_metadata == D_CONSISTENT &&
 	    (peer_disk_state_from_metadata == D_OUTDATED ||
-	     !drbd_md_test_flag(device->ldev, MDF_FENCING_IND)))
+	     !drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_FENCING)))
 		disk_state_from_metadata = D_UP_TO_DATE;
 	rcu_read_unlock();
 

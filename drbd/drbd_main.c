@@ -3099,6 +3099,7 @@ struct meta_data_on_disk {
 	u32 bm_max_peers;
 	u32 reserved_u32[2];
 
+	u8 peer_flags[MAX_PEERS];
 } __packed;
 
 /**
@@ -3142,6 +3143,8 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
 	buffer->bm_max_peers = cpu_to_be32(device->ldev->md.bm_max_peers);
+	for (i = 0; i < MAX_PEERS; i++)
+		buffer->peer_flags[i] = device->ldev->md.peer_flags[i];
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
@@ -3239,6 +3242,8 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 	bdev->md.bm_max_peers = be32_to_cpu(buffer->bm_max_peers);
+	for (i = 0; i < MAX_PEERS; i++)
+		bdev->md.peer_flags[i] = buffer->peer_flags[i];
 
  err:
 	drbd_md_put_buffer(device);
@@ -3590,6 +3595,13 @@ void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag flag) __must_h
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
 {
 	return (bdev->md.flags & flag) != 0;
+}
+
+bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_flag flag)
+{
+	struct drbd_md *md = &peer_device->device->ldev->md;
+
+	return md->peer_flags[0] & flag;
 }
 
 STATIC void md_sync_timer_fn(unsigned long data)

@@ -49,6 +49,13 @@ enum new_strtoll_errs {
 	MSE_OUT_OF_RANGE,
 };
 
+/* Flags which used to be in enum mdf_flag before version 09 */
+enum mdf_flag_08 {
+	MDF_CONNECTED_IND =  1 << 2,
+	MDF_PEER_OUT_DATED = 1 << 5,
+	MDF_FENCING_IND =    1 << 8,
+};
+
 struct option;
 
 extern int only_digits(const char *s);

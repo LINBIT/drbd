@@ -313,14 +313,19 @@ enum drbd_state_rv {
 enum mdf_flag {
 	MDF_CONSISTENT =	1 << 0,
 	MDF_PRIMARY_IND =	1 << 1,
-	MDF_CONNECTED_IND =	1 << 2,
 	MDF_FULL_SYNC =		1 << 3,
 	MDF_WAS_UP_TO_DATE =	1 << 4,
-	MDF_PEER_OUT_DATED =	1 << 5,
 	MDF_CRASHED_PRIMARY =	1 << 6,
 	MDF_AL_CLEAN =		1 << 7,
-	MDF_FENCING_IND =	1 << 8,
 };
+
+enum mdf_peer_flag {
+	MDF_PEER_CONNECTED =	1 << 0,
+	MDF_PEER_OUTDATED =	1 << 1,
+	MDF_PEER_FENCING =	1 << 2,
+};
+
+#define MAX_PEERS 16
 
 enum drbd_uuid_index {
 	UI_CURRENT,

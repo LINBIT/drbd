@@ -1234,35 +1234,19 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 			if (get_ldev(device)) {
-				u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
-								 MDF_CONNECTED_IND|MDF_WAS_UP_TO_DATE|
-								 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY|
-								 MDF_FENCING_IND);
-				mdf &= ~MDF_AL_CLEAN;
-				if (test_bit(CRASHED_PRIMARY, &device->flags))
-					mdf |= MDF_CRASHED_PRIMARY;
-				if (device->resource->role[NEW] == R_PRIMARY ||
-				    (peer_device->disk_state[NEW] < D_INCONSISTENT &&
-				     highest_peer_role(device->resource) == R_PRIMARY))
-					mdf |= MDF_PRIMARY_IND;
+				u32 mdf = device->ldev->md.peer_flags[0];
+				mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
 				if (peer_device->repl_state[NEW] > L_STANDALONE)
-					mdf |= MDF_CONNECTED_IND;
-				if (disk_state[NEW] > D_INCONSISTENT)
-					mdf |= MDF_CONSISTENT;
-				if (disk_state[NEW] > D_OUTDATED)
-					mdf |= MDF_WAS_UP_TO_DATE;
+					mdf |= MDF_PEER_CONNECTED;
 				if (peer_device->disk_state[NEW] <= D_OUTDATED &&
 				    peer_device->disk_state[NEW] >= D_INCONSISTENT)
-					mdf |= MDF_PEER_OUT_DATED;
+					mdf |= MDF_PEER_OUTDATED;
 				if (peer_device->connection->fencing_policy != FP_DONT_CARE)
-					mdf |= MDF_FENCING_IND;
-				if (mdf != device->ldev->md.flags) {
-					device->ldev->md.flags = mdf;
+					mdf |= MDF_PEER_FENCING;
+				if (mdf != device->ldev->md.peer_flags[0]) {
+					device->ldev->md.peer_flags[0] = mdf;
 					drbd_md_mark_dirty(device);
 				}
-				if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
-					drbd_set_ed_uuid(device, device->ldev->md.uuid[UI_CURRENT]);
-				put_ldev(device);
 
 				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
 				if (disk_state[OLD] == D_INCONSISTENT && peer_disk_state[OLD] == D_INCONSISTENT &&
@@ -1272,7 +1256,31 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				/* Resume AL writing if we get a connection */
 				if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
 					drbd_resume_al(device);
+				put_ldev(device);
 			}
+		}
+
+		if (get_ldev(device)) {
+			u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
+							 MDF_WAS_UP_TO_DATE|MDF_CRASHED_PRIMARY);
+			mdf &= ~MDF_AL_CLEAN;
+			if (test_bit(CRASHED_PRIMARY, &device->flags))
+				mdf |= MDF_CRASHED_PRIMARY;
+			if (device->resource->role[NEW] == R_PRIMARY ||
+			    (first_peer_device(device)->disk_state[NEW] < D_INCONSISTENT &&
+			     highest_peer_role(device->resource) == R_PRIMARY))
+				mdf |= MDF_PRIMARY_IND;
+			if (disk_state[NEW] > D_INCONSISTENT)
+				mdf |= MDF_CONSISTENT;
+			if (disk_state[NEW] > D_OUTDATED)
+				mdf |= MDF_WAS_UP_TO_DATE;
+			if (mdf != device->ldev->md.flags) {
+				device->ldev->md.flags = mdf;
+				drbd_md_mark_dirty(device);
+			}
+			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
+				drbd_set_ed_uuid(device, device->ldev->md.uuid[UI_CURRENT]);
+			put_ldev(device);
 		}
 	}
 
