@@ -3922,6 +3922,9 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 
+	if (drbd_attach_peer_device(peer_device))
+		return 0;
+
 	if (get_ldev(device)) {
 		int skip_initial_sync =
 			peer_device->repl_state[NOW] == L_CONNECTED &&

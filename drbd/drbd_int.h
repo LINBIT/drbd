@@ -594,6 +594,7 @@ struct drbd_md {
 
 	u32 bm_max_peers;
 	u8 peer_flags[MAX_PEERS];
+	u32 peer_addr_hashes[MAX_PEERS];
 };
 
 struct drbd_backing_dev {
@@ -747,6 +748,7 @@ struct drbd_peer_device {
 	spinlock_t peer_seq_lock;
 	unsigned int max_bio_size;
 	sector_t disk_size;
+	int bitmap_index;
 
 	unsigned long flags;
 
@@ -985,6 +987,7 @@ extern int drbd_send_protocol(struct drbd_connection *connection);
 extern int drbd_send_uuids(struct drbd_peer_device *);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *);
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
+extern int drbd_attach_peer_device(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, int trigger_reply, enum dds_flags flags);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state s);
 extern int drbd_send_current_state(struct drbd_peer_device *);

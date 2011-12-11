@@ -1466,6 +1466,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
+	for_each_peer_device(peer_device, device)
+		drbd_attach_peer_device(peer_device);
+
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (new_disk_conf->md_flushes)
@@ -2085,6 +2088,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		drbd_attach_peer_device(peer_device);
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}

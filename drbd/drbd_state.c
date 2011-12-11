@@ -1235,18 +1235,20 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 			if (get_ldev(device)) {
-				u32 mdf = device->ldev->md.peer_flags[0];
-				mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
-				if (peer_device->repl_state[NEW] > L_STANDALONE)
-					mdf |= MDF_PEER_CONNECTED;
-				if (peer_device->disk_state[NEW] <= D_OUTDATED &&
-				    peer_device->disk_state[NEW] >= D_INCONSISTENT)
-					mdf |= MDF_PEER_OUTDATED;
-				if (peer_device->connection->fencing_policy != FP_DONT_CARE)
-					mdf |= MDF_PEER_FENCING;
-				if (mdf != device->ldev->md.peer_flags[0]) {
-					device->ldev->md.peer_flags[0] = mdf;
-					drbd_md_mark_dirty(device);
+				if (peer_device->bitmap_index != -1) {
+					u32 mdf = device->ldev->md.peer_flags[peer_device->bitmap_index];
+					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
+					if (repl_state[NEW] > L_STANDALONE)
+						mdf |= MDF_PEER_CONNECTED;
+					if (peer_device->disk_state[NEW] <= D_OUTDATED &&
+					    peer_device->disk_state[NEW] >= D_INCONSISTENT)
+						mdf |= MDF_PEER_OUTDATED;
+					if (peer_device->connection->fencing_policy != FP_DONT_CARE)
+						mdf |= MDF_PEER_FENCING;
+					if (mdf != device->ldev->md.peer_flags[peer_device->bitmap_index]) {
+						device->ldev->md.peer_flags[peer_device->bitmap_index] = mdf;
+						drbd_md_mark_dirty(device);
+					}
 				}
 
 				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
