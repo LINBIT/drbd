@@ -496,7 +496,6 @@ enum {
 	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
 	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
 	MD_DIRTY,		/* current uuids and flags not yet on disk */
-	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
 				 * goes into L_CONNECTED state. */
@@ -518,6 +517,7 @@ enum {
 				 * the peer, if it changed there as well. */
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
+	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
 };
 
 struct drbd_bitmap; /* opaque for drbd_device */

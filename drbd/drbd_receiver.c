@@ -839,7 +839,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 		err = drbd_send_uuids(peer_device);
 	if (!err)
 		err = drbd_send_current_state(peer_device);
-	clear_bit(USE_DEGR_WFC_T, &device->flags);
+	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
 	return err;

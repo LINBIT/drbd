@@ -1513,11 +1513,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * so we can automatically recover from a crash of a
 	 * degraded but active "cluster" after a certain timeout.
 	 */
-	clear_bit(USE_DEGR_WFC_T, &device->flags);
+	clear_bit(USE_DEGR_WFC_T, &first_peer_device(device)->flags);
 	if (device->resource->role[NOW] != R_PRIMARY &&
 	     drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
 	    !drbd_md_test_flag(device->ldev, MDF_CONNECTED_IND))
-		set_bit(USE_DEGR_WFC_T, &device->flags);
+		set_bit(USE_DEGR_WFC_T, &first_peer_device(device)->flags);
 
 	dd = drbd_determine_dev_size(device, 0);
 	if (dd == DEV_SIZE_ERROR) {
@@ -3126,6 +3126,7 @@ out:
 
 int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 	struct timeout_parms tp;
 	int err;
@@ -3133,10 +3134,11 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
+	peer_device = first_peer_device(adm_ctx.device);
 
 	tp.timeout_type =
-		first_peer_device(adm_ctx.device)->disk_state[NOW] == D_OUTDATED ? UT_PEER_OUTDATED :
-		test_bit(USE_DEGR_WFC_T, &adm_ctx.device->flags) ? UT_DEGRADED :
+		peer_device->disk_state[NOW] == D_OUTDATED ? UT_PEER_OUTDATED :
+		test_bit(USE_DEGR_WFC_T, &peer_device->flags) ? UT_DEGRADED :
 		UT_DEFAULT;
 
 	err = timeout_parms_to_priv_skb(adm_ctx.reply_skb, &tp);
