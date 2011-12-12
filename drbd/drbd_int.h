@@ -591,6 +591,8 @@ struct drbd_md {
 	 * is stored into  ldev->dc.al_extents, which in turn
 	 * gets applied to act_log->nr_elements
 	 */
+
+	u32 bm_max_peers;
 };
 
 struct drbd_backing_dev {

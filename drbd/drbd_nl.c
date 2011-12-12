@@ -1433,6 +1433,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto force_diskless_dec;
 
+	drbd_info(device, "Maximum number of peer devices = %u\n",
+		  nbc->md.bm_max_peers);
+
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
 		    device->resource->role[NOW] == R_PRIMARY &&

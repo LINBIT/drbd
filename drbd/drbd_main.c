@@ -3096,7 +3096,8 @@ struct meta_data_on_disk {
 	u32 bm_offset;         /* offset to the bitmap, from here */
 	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
-	u32 reserved_u32[3];
+	u32 bm_max_peers;
+	u32 reserved_u32[2];
 
 } __packed;
 
@@ -3140,6 +3141,7 @@ void drbd_md_sync(struct drbd_device *device)
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
+	buffer->bm_max_peers = cpu_to_be32(device->ldev->md.bm_max_peers);
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
@@ -3236,6 +3238,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		bdev->md.uuid[i] = be64_to_cpu(buffer->uuid[i]);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
+	bdev->md.bm_max_peers = be32_to_cpu(buffer->bm_max_peers);
 
  err:
 	drbd_md_put_buffer(device);
