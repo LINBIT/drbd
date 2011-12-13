@@ -100,7 +100,7 @@ uname -r | grep BOOT ||
 
 
 %changelog
-* Thu Dec  1 2011 Philipp Reisner <phil@linbit.com> - 8.4.1rc1-1
+* Tue Dec 13 2011 Philipp Reisner <phil@linbit.com> - 8.4.1rc2-1
 - New upstream release.
 
 * Mon Jul 18 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1

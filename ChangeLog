@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.4.1rc1 (api:genl1/proto:86-100)
+8.4.1rc2 (api:genl1/proto:86-100)
 --------
  * Fixed a bug that might cause in kernel list corruption triggered by
    simultaneous IO on multiple volumes in a single resource
