@@ -94,9 +94,16 @@ static bool md_io_allowed(struct drbd_conf *mdev)
 	return ds >= D_NEGOTIATING || ds == D_ATTACHING;
 }
 
-void wait_until_done_or_disk_failure(struct drbd_conf *mdev, unsigned int *done)
+void wait_until_done_or_disk_failure(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
+				     unsigned int *done)
 {
-	wait_event(mdev->misc_wait, *done || !md_io_allowed(mdev));
+	long dt = bdev->dc.disk_timeout * HZ / 10;
+	if (dt == 0)
+		dt = MAX_SCHEDULE_TIMEOUT;
+
+	dt = wait_event_timeout(mdev->misc_wait, *done || !md_io_allowed(mdev), dt);
+	if (dt == 0)
+		dev_err(DEV, "meta-data IO operation timed out\n");
 }
 
 STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
@@ -142,7 +149,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 		bio_endio(bio, -EIO);
 	else
 		submit_bio(rw, bio);
-	wait_until_done_or_disk_failure(mdev, &mdev->md_io.done);
+	wait_until_done_or_disk_failure(mdev, bdev, &mdev->md_io.done);
 	ok = bio_flagged(bio, BIO_UPTODATE) && mdev->md_io.error == 0;
 
 #ifndef REQ_FLUSH
