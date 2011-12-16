@@ -1891,6 +1891,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	uint32_t hot_extent[AL_EXTENTS_MAX];
 	size_t al_size = MD_AL_MAX_SECT_07 * 512;
 	int need_to_update_md_flags = 0;
+	int re_initialize_anyways = 0;
 	int err;
 
 	if (argc > 0)
@@ -1928,10 +1929,13 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
 		err = replay_al_84(cfg, hot_extent);
-	} else /* try the old al format anyways, this may be the first time we
+	} else {
+		/* try the old al format anyways, this may be the first time we
 		* run after upgrading from < 8.4 to 8.4, and we need to
 		* transparently "convert" the activity log format. */
 		err = replay_al_07(cfg, hot_extent);
+		re_initialize_anyways = 1;
+	}
 
 	if (err < 0) {
 		/* ENODATA:
@@ -1946,10 +1950,15 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		 * FIXME: what to do about that?
 		 * We probably need some "FORCE" mode as well. */
 
-		/* 1, 2, 10, 20? FIXME sane exit codes! */
-		if (err == -ENODATA)
-			return 1;
-		return 2;
+		if (need_to_apply_al(cfg)) {
+			/* 1, 2, 10, 20? FIXME sane exit codes! */
+			if (err == -ENODATA)
+				return 1;
+			return 2;
+		} else if (is_v08(cfg)) {
+			fprintf(stderr, "Error ignored, no need to apply the AL\n");
+			re_initialize_anyways = 1;
+		}
 	}
 
 	/* do we need to actually apply it? */
@@ -1967,7 +1976,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	 * We can skip this, if it was clean anyways (err == 0),
 	 * or if we know that this is for 0.7.
 	 */
-	if (err > 0 && !is_v07(cfg))
+	if (re_initialize_anyways || err > 0 && !is_v07(cfg))
 		initialize_al(cfg);
 
 	if (is_v08(cfg) &&
