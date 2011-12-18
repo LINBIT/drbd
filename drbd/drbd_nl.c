@@ -1584,8 +1584,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		/* We expect to receive up-to-date UUIDs soon.
 		   To avoid a race in receive_state, free p_uuid while
 		   holding req_lock. I.e. atomic with the state change */
-		kfree(device->p_uuid);
-		device->p_uuid = NULL;
+		kfree(first_peer_device(device)->p_uuid);
+		first_peer_device(device)->p_uuid = NULL;
 	} else {
 		__change_disk_state(device, device->disk_state_from_metadata);
 		for_each_peer_device(peer_device, device) {

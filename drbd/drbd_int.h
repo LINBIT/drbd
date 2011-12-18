@@ -807,6 +807,8 @@ struct drbd_peer_device {
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	unsigned long ov_left; /* in bits */
+
+	u64 *p_uuid; /* The peer's UUIDs */
 };
 
 struct drbd_device {
@@ -861,7 +863,6 @@ struct drbd_device {
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
 	int open_cnt;
-	u64 *p_uuid;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 

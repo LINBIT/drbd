@@ -1505,8 +1505,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (repl_state[OLD] != L_CONNECTED && repl_state[NEW] == L_CONNECTED) {
 				clear_bit(CRASHED_PRIMARY, &device->flags);
-				if (device->p_uuid)
-					device->p_uuid[UI_FLAGS] &= ~((u64)2);
+				if (peer_device->p_uuid)
+					peer_device->p_uuid[UI_FLAGS] &= ~((u64)2);
 			}
 
 			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&

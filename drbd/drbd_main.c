@@ -2346,6 +2346,7 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 {
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
+	kfree(peer_device->p_uuid);
 	kfree(peer_device);
 }
 
@@ -2378,9 +2379,6 @@ void drbd_destroy_device(struct kref *kref)
 		kref_put(&peer_device->connection->kref, drbd_destroy_connection);
 		free_peer_device(peer_device);
 	}
-
-	kfree(device->p_uuid);
-	/* device->p_uuid = NULL; */
 
 	if (device->bitmap) /* should no longer be there. */
 		drbd_bm_cleanup(device);
