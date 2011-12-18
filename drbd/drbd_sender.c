@@ -924,7 +924,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				int i;
 				for (i = UI_BITMAP ; i <= UI_HISTORY_END ; i++)
 					_drbd_uuid_set(device, i, device->p_uuid[i]);
-				drbd_uuid_set(device, UI_BITMAP, device->ldev->md.uuid[UI_CURRENT]);
+				drbd_uuid_set(device, UI_BITMAP, drbd_uuid(peer_device, UI_CURRENT));
 				_drbd_uuid_set(device, UI_CURRENT, device->p_uuid[UI_CURRENT]);
 			} else {
 				drbd_err(device, "device->p_uuid is NULL! BUG\n");
@@ -941,7 +941,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				 * know of the peer. */
 				int i;
 				for (i = UI_CURRENT ; i <= UI_HISTORY_END ; i++)
-					device->p_uuid[i] = device->ldev->md.uuid[i];
+					device->p_uuid[i] = drbd_uuid(peer_device, i);
 			}
 		}
 	}

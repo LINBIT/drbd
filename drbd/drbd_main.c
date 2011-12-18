@@ -1070,7 +1070,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 		return -EIO;
 	}
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
-		p->uuid[i] = device->ldev ? cpu_to_be64(device->ldev->md.uuid[i]) : 0;
+		p->uuid[i] = cpu_to_be64(drbd_uuid(peer_device, i));
 
 	device->comm_bm_set = drbd_bm_total_weight(device);
 	p->uuid[UI_SIZE] = cpu_to_be64(device->comm_bm_set);
@@ -1122,7 +1122,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 
 	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
 
-	uuid = device->ldev->md.uuid[UI_BITMAP];
+	uuid = drbd_uuid(peer_device, UI_BITMAP);
 	if (uuid && uuid != UUID_JUST_CREATED)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else

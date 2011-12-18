@@ -671,7 +671,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 		if (get_ldev(device)) {
 			if (((first_peer_device(device)->repl_state[NOW] < L_CONNECTED ||
 			      first_peer_device(device)->disk_state[NOW] <= D_FAILED)
-			      && device->ldev->md.uuid[UI_BITMAP] == 0) || forced)
+			     && drbd_uuid(first_peer_device(device), UI_BITMAP) == 0) || forced)
 				drbd_uuid_new_current(device);
 
 			device->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
@@ -3228,7 +3228,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	/* this is "skip initial sync", assume to be clean */
 	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED &&
 	    first_peer_device(device)->connection->agreed_pro_version >= 90 &&
-	    device->ldev->md.uuid[UI_CURRENT] == UUID_JUST_CREATED && args.clear_bm) {
+	    drbd_uuid(first_peer_device(device), UI_CURRENT) == UUID_JUST_CREATED && args.clear_bm) {
 		drbd_info(device, "Preparing to skip initial sync\n");
 		skip_initial_sync = 1;
 	} else if (first_peer_device(device)->repl_state[NOW] != L_STANDALONE) {

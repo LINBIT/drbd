@@ -2081,6 +2081,16 @@ static inline int drbd_set_ed_uuid(struct drbd_device *device, u64 val)
 	return changed;
 }
 
+static inline u64 drbd_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (!device->ldev)
+		return 0;
+
+	return device->ldev->md.uuid[i];
+}
+
 static inline int drbd_queue_order_type(struct drbd_device *device)
 {
 	/* sorry, we currently have no working implementation

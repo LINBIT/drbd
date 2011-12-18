@@ -967,7 +967,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				    get_ldev_if_state(device, D_NEGOTIATING)) {
 					disk_state[NEW] = D_DISKLESS;
 					peer_disk_state[NEW] = D_UNKNOWN;
-					if (device->ed_uuid == device->ldev->md.uuid[UI_CURRENT]) {
+					if (device->ed_uuid == drbd_uuid(peer_device, UI_CURRENT)) {
 						/* FIXME: This makes no sense anymore. */
 						disk_state[NEW] = device->disk_state_from_metadata;
 						peer_disk_state[NEW] = peer_device->disk_state_from_metadata;
@@ -1282,7 +1282,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				drbd_md_mark_dirty(device);
 			}
 			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
-				drbd_set_ed_uuid(device, device->ldev->md.uuid[UI_CURRENT]);
+				drbd_set_ed_uuid(device, drbd_uuid(peer_device, UI_CURRENT));
 			put_ldev(device);
 		}
 	}
@@ -1566,7 +1566,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			     (peer_disk_state[NEW] < D_INCONSISTENT || peer_disk_state[NEW] == D_UNKNOWN || peer_disk_state[NEW] == D_OUTDATED)) {
 				if (get_ldev(device)) {
 					if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
-					    device->ldev->md.uuid[UI_BITMAP] == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
+					    drbd_uuid(peer_device, UI_BITMAP) == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
 						if (drbd_suspended(device)) {
 							set_bit(NEW_CUR_UUID, &device->flags);
 						} else {
