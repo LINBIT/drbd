@@ -934,7 +934,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
 			/* for verify runs, we don't update uuids here,
 			 * so there would be nothing to report. */
-			drbd_uuid_set_bm(device, 0UL);
+			drbd_uuid_set_bm(peer_device, 0UL);
 			drbd_print_uuids(device, "updated UUIDs");
 			if (device->p_uuid) {
 				/* Now the two UUID sets are equal, update what we

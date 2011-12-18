@@ -3385,8 +3385,10 @@ void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 	drbd_md_sync(device);
 }
 
-void drbd_uuid_set_bm(struct drbd_device *device, u64 val) __must_hold(local)
+void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (device->ldev->md.uuid[UI_BITMAP] == 0 && val == 0)
 		return;
 

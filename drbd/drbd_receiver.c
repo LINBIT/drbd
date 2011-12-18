@@ -2982,7 +2982,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 			if ((drbd_uuid(peer_device, UI_BITMAP) & ~((u64)1)) == (device->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
 			    (drbd_uuid(peer_device, UI_HISTORY_START) & ~((u64)1)) == (device->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
 				drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
-				drbd_uuid_set_bm(device, 0UL);
+				drbd_uuid_set_bm(peer_device, 0UL);
 
 				drbd_uuid_dump(device, "self", device->ldev->md.uuid,
 					       device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(device) : 0, 0);
