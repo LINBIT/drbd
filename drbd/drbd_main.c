@@ -3334,21 +3334,27 @@ static void drbd_uuid_move_history(struct drbd_peer_device *peer_device) __must_
 		device->ldev->md.uuid[i+1] = device->ldev->md.uuid[i];
 }
 
+static void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
+{
+	if (device->resource->role[NOW] == R_PRIMARY)
+		val |= 1;
+	else
+		val &= ~((u64)1);
+
+	device->ldev->md.uuid[UI_CURRENT] = val;
+	drbd_set_ed_uuid(device, val);
+}
+
 void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 
-	if (idx == UI_CURRENT) {
-		if (device->resource->role[NOW] == R_PRIMARY)
-			val |= 1;
-		else
-			val &= ~((u64)1);
-
-		drbd_set_ed_uuid(device, val);
-	}
-
-	device->ldev->md.uuid[idx] = val;
 	drbd_md_mark_dirty(device);
+
+	if (idx == UI_CURRENT)
+		_drbd_uuid_set_current(device, val);
+	else
+		device->ldev->md.uuid[idx] = val;
 }
 
 
@@ -3372,19 +3378,36 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
  */
 void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 {
+	unsigned long long bm_uuid;
+	struct drbd_peer_device *peer_device;
+	enum drbd_disk_state pdsk;
+	int do_it = 0;
 	u64 val;
-	unsigned long long bm_uuid = device->ldev->md.uuid[UI_BITMAP];
 
-	if (bm_uuid)
-		drbd_warn(device, "bm UUID was already set: %llX\n", bm_uuid);
+	for_each_peer_device(peer_device, device) {
+		bm_uuid = drbd_uuid(peer_device, UI_BITMAP);
+		pdsk = peer_device->disk_state[NOW];
+		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
+		    (pdsk < D_INCONSISTENT || pdsk == D_UNKNOWN || pdsk == D_OUTDATED) &&
+		    bm_uuid == 0) {
+			_drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.uuid[UI_CURRENT]);
+			do_it = 1;
+		}
+	}
 
-	device->ldev->md.uuid[UI_BITMAP] = device->ldev->md.uuid[UI_CURRENT];
+	if (!do_it)
+		return;
 
 	get_random_bytes(&val, sizeof(u64));
-	_drbd_uuid_set(first_peer_device(device), UI_CURRENT, val);
+	_drbd_uuid_set_current(device, val);
 	drbd_info(device, "new current UUID: %016llX\n", device->ldev->md.uuid[UI_CURRENT]);
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+			drbd_send_uuids(peer_device);
+	}
 }
 
 void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)

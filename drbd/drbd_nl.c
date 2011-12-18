@@ -669,12 +669,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
-			if (((first_peer_device(device)->repl_state[NOW] < L_CONNECTED ||
-			      first_peer_device(device)->disk_state[NOW] <= D_FAILED)
-			     && drbd_uuid(first_peer_device(device), UI_BITMAP) == 0) || forced)
-				drbd_uuid_new_current(device);
-
-			device->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
+			drbd_uuid_new_current(device);
 			put_ldev(device);
 		}
 	}

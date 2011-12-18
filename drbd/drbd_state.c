@@ -1566,13 +1566,11 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			     (peer_disk_state[NEW] < D_INCONSISTENT || peer_disk_state[NEW] == D_UNKNOWN || peer_disk_state[NEW] == D_OUTDATED)) {
 				if (get_ldev(device)) {
 					if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
-					    drbd_uuid(peer_device, UI_BITMAP) == 0 && disk_state[NEW] >= D_UP_TO_DATE) {
-						if (drbd_suspended(device)) {
+					    disk_state[NEW] >= D_UP_TO_DATE) {
+						if (drbd_suspended(device))
 							set_bit(NEW_CUR_UUID, &device->flags);
-						} else {
+						else
 							drbd_uuid_new_current(device);
-							drbd_send_uuids(peer_device);
-						}
 					}
 					put_ldev(device);
 				}
