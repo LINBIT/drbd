@@ -3332,8 +3332,10 @@ static void drbd_uuid_move_history(struct drbd_device *device) __must_hold(local
 		device->ldev->md.uuid[i+1] = device->ldev->md.uuid[i];
 }
 
-void _drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local)
+void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (idx == UI_CURRENT) {
 		if (device->resource->role[NOW] == R_PRIMARY)
 			val |= 1;
@@ -3354,7 +3356,7 @@ void drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(loc
 		drbd_uuid_move_history(device);
 		device->ldev->md.uuid[UI_HISTORY_START] = device->ldev->md.uuid[idx];
 	}
-	_drbd_uuid_set(device, idx, val);
+	_drbd_uuid_set(first_peer_device(device), idx, val);
 }
 
 /**
@@ -3375,7 +3377,7 @@ void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 	device->ldev->md.uuid[UI_BITMAP] = device->ldev->md.uuid[UI_CURRENT];
 
 	get_random_bytes(&val, sizeof(u64));
-	_drbd_uuid_set(device, UI_CURRENT, val);
+	_drbd_uuid_set(first_peer_device(device), UI_CURRENT, val);
 	drbd_print_uuids(device, "new current UUID");
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);

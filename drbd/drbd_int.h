@@ -1022,7 +1022,7 @@ void drbd_print_uuids(struct drbd_device *device, const char *text);
 extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local);
-extern void _drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local);
+extern void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local);
 extern void _drbd_uuid_new_current(struct drbd_device *device) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_device *device, u64 val) __must_hold(local);

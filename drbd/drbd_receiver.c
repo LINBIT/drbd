@@ -3090,8 +3090,8 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 			if (peer_device->connection->agreed_pro_version < 91)
 				return -1091;
 
-			_drbd_uuid_set(device, UI_BITMAP, drbd_uuid(peer_device, UI_HISTORY_START));
-			_drbd_uuid_set(device, UI_HISTORY_START, drbd_uuid(peer_device, UI_HISTORY_START + 1));
+			_drbd_uuid_set(peer_device, UI_BITMAP, drbd_uuid(peer_device, UI_HISTORY_START));
+			_drbd_uuid_set(peer_device, UI_HISTORY_START, drbd_uuid(peer_device, UI_HISTORY_START + 1));
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump(device, "self", device->ldev->md.uuid,
@@ -3939,8 +3939,8 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
 					"clear_n_write from receive_uuids",
 					BM_LOCKED_TEST_ALLOWED, NULL);
-			_drbd_uuid_set(device, UI_CURRENT, p_uuid[UI_CURRENT]);
-			_drbd_uuid_set(device, UI_BITMAP, 0);
+			_drbd_uuid_set(peer_device, UI_CURRENT, p_uuid[UI_CURRENT]);
+			_drbd_uuid_set(peer_device, UI_BITMAP, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
 			__change_disk_state(device, D_UP_TO_DATE);
@@ -4416,8 +4416,8 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 	/* Here the _drbd_uuid_ functions are right, current should
 	   _not_ be rotated into the history */
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
-		_drbd_uuid_set(device, UI_CURRENT, be64_to_cpu(p->uuid));
-		_drbd_uuid_set(device, UI_BITMAP, 0UL);
+		_drbd_uuid_set(peer_device, UI_CURRENT, be64_to_cpu(p->uuid));
+		_drbd_uuid_set(peer_device, UI_BITMAP, 0UL);
 
 		drbd_print_uuids(device, "updated sync uuid");
 		drbd_start_resync(peer_device, L_SYNC_TARGET);
