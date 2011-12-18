@@ -1173,7 +1173,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			atomic_inc(&device->local_cnt);
 
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
-			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.uuid[UI_CURRENT]);
+			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.current_uuid);
 
 		wake_up(&device->misc_wait);
 		wake_up(&device->resource->state_wait);
@@ -1236,7 +1236,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (get_ldev(device)) {
 				if (peer_device->bitmap_index != -1) {
-					u32 mdf = device->ldev->md.peer_flags[peer_device->bitmap_index];
+					u32 mdf = device->ldev->md.peers[peer_device->bitmap_index].flags;
 					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
 					if (repl_state[NEW] > L_STANDALONE)
 						mdf |= MDF_PEER_CONNECTED;
@@ -1245,8 +1245,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						mdf |= MDF_PEER_OUTDATED;
 					if (peer_device->connection->fencing_policy != FP_DONT_CARE)
 						mdf |= MDF_PEER_FENCING;
-					if (mdf != device->ldev->md.peer_flags[peer_device->bitmap_index]) {
-						device->ldev->md.peer_flags[peer_device->bitmap_index] = mdf;
+					if (mdf != device->ldev->md.peers[peer_device->bitmap_index].flags) {
+						device->ldev->md.peers[peer_device->bitmap_index].flags = mdf;
 						drbd_md_mark_dirty(device);
 					}
 				}
@@ -1282,7 +1282,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				drbd_md_mark_dirty(device);
 			}
 			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
-				drbd_set_ed_uuid(device, drbd_uuid(peer_device, UI_CURRENT));
+				drbd_set_ed_uuid(device, device->ldev->md.current_uuid);
 			put_ldev(device);
 		}
 	}

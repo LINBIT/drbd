@@ -575,11 +575,17 @@ struct drbd_socket {
 	void *rbuf;
 };
 
+struct drbd_md_peer {
+	u64 uuid[UI_HISTORY_END - UI_BITMAP + 1];
+	u32 addr_hash;
+	u32 flags;
+};
+
 struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
 	u64 la_size_sect;	/* last agreed size, unit sectors */
-	u64 uuid[UI_SIZE];
+	u64 current_uuid;
 	u64 device_uuid;
 	u32 flags;
 	u32 md_size_sect;
@@ -593,8 +599,7 @@ struct drbd_md {
 	 */
 
 	u32 bm_max_peers;
-	u8 peer_flags[MAX_PEERS];
-	u32 peer_addr_hashes[MAX_PEERS];
+	struct drbd_md_peer *peers;
 };
 
 struct drbd_backing_dev {
@@ -2087,7 +2092,13 @@ static inline u64 drbd_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid
 	if (!device->ldev)
 		return 0;
 
-	return device->ldev->md.uuid[i];
+	if (i == UI_CURRENT)
+		return device->ldev->md.current_uuid;
+
+	if (peer_device->bitmap_index != -1)
+		return device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(i)];
+	else
+		return 0;
 }
 
 static inline int drbd_queue_order_type(struct drbd_device *device)

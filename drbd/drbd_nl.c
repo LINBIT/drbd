@@ -657,7 +657,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 	if (role == R_SECONDARY) {
 		set_disk_ro(device->vdisk, true);
 		if (get_ldev(device)) {
-			device->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
+			device->ldev->md.current_uuid &= ~(u64)1;
 			put_ldev(device);
 		}
 	} else {
@@ -1432,7 +1432,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
 		    device->resource->role[NOW] == R_PRIMARY &&
-		    (device->ed_uuid & ~((u64)1)) != (nbc->md.uuid[UI_CURRENT] & ~((u64)1))) {
+		    (device->ed_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
 			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
 			    (unsigned long long)device->ed_uuid);
 			retcode = ERR_DATA_NOT_CURRENT;
@@ -1603,9 +1603,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	mod_timer(&device->request_timer, jiffies + HZ);
 
 	if (device->resource->role[NOW] == R_PRIMARY)
-		device->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
+		device->ldev->md.current_uuid |=  (u64)1;
 	else
-		device->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
+		device->ldev->md.current_uuid &= ~(u64)1;
 
 	drbd_md_mark_dirty(device);
 	drbd_md_sync(device);
@@ -2543,6 +2543,7 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 	int got_ldev = 0;
 	int err = 0;
 	int exclude_sensitive;
+	u64 uuid[UI_SIZE];
 
 	/* If sib != NULL, this is drbd_bcast_event, which anyone can listen
 	 * to.  So we better exclude_sensitive information.
@@ -2605,9 +2606,19 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 
 		if (got_ldev) {
 			bool resync_or_verify_active = false;
+			int i;
+
+			if (peer_device) {
+				for (i = UI_CURRENT; i < UI_SIZE; i++)
+					uuid[i] = drbd_uuid(peer_device, i);
+			} else {
+				uuid[UI_CURRENT] = device->ldev->md.current_uuid;
+				for (i = UI_BITMAP; i < UI_SIZE; i++)
+					uuid[i] = 0;
+			}
 
 			NLA_PUT_U32(skb, T_disk_flags, device->ldev->md.flags);
-			NLA_PUT(skb, T_uuids, sizeof(si->uuids), device->ldev->md.uuid);
+			NLA_PUT(skb, T_uuids, sizeof(si->uuids), uuid);
 			NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
 			NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
 
