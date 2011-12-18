@@ -4713,12 +4713,10 @@ STATIC int receive_skip(struct drbd_connection *connection, struct packet_info *
 STATIC int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return -EIO;
-	device = peer_device->device;
 
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
