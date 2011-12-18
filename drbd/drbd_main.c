@@ -1127,7 +1127,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else
 		get_random_bytes(&uuid, sizeof(u64));
-	drbd_uuid_set(device, UI_BITMAP, uuid);
+	drbd_uuid_set(peer_device, UI_BITMAP, uuid);
 	drbd_print_uuids(device, "updated sync UUID");
 	drbd_md_sync(device);
 
@@ -3350,13 +3350,15 @@ void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mu
 }
 
 
-void drbd_uuid_set(struct drbd_device *device, int idx, u64 val) __must_hold(local)
+void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (device->ldev->md.uuid[idx]) {
 		drbd_uuid_move_history(device);
 		device->ldev->md.uuid[UI_HISTORY_START] = device->ldev->md.uuid[idx];
 	}
-	_drbd_uuid_set(first_peer_device(device), idx, val);
+	_drbd_uuid_set(peer_device, idx, val);
 }
 
 /**
