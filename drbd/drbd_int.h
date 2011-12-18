@@ -809,6 +809,7 @@ struct drbd_peer_device {
 	unsigned long ov_left; /* in bits */
 
 	u64 *p_uuid; /* The peer's UUIDs */
+	unsigned long comm_bm_set; /* communicated number of set bits. */
 };
 
 struct drbd_device {
@@ -887,7 +888,6 @@ struct drbd_device {
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	wait_queue_head_t seq_wait;
 	unsigned int minor;
-	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 ed_uuid; /* UUID of the exposed data */
 	char congestion_reason;  /* Why we where congested... */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */

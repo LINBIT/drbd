@@ -1072,8 +1072,8 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		p->uuid[i] = cpu_to_be64(drbd_uuid(peer_device, i));
 
-	device->comm_bm_set = drbd_bm_total_weight(device);
-	p->uuid[UI_SIZE] = cpu_to_be64(device->comm_bm_set);
+	peer_device->comm_bm_set = drbd_bm_total_weight(device);
+	p->uuid[UI_SIZE] = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
 	uuid_flags |= rcu_dereference(peer_device->connection->net_conf)->discard_my_data ? 1 : 0;
 	rcu_read_unlock();

@@ -2734,7 +2734,6 @@ out_free_e:
  */
 static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	struct drbd_device *device = peer_device->device;
 	int self, peer, rv = -100;
 	unsigned long ch_self, ch_peer;
 	enum drbd_after_sb_p after_sb_0p;
@@ -2743,7 +2742,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 	peer = peer_device->p_uuid[UI_BITMAP] & 1;
 
 	ch_peer = peer_device->p_uuid[UI_SIZE];
-	ch_self = device->comm_bm_set;
+	ch_self = peer_device->comm_bm_set;
 
 	rcu_read_lock();
 	after_sb_0p = rcu_dereference(peer_device->connection->net_conf)->after_sb_0p;
@@ -2753,7 +2752,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 	case ASB_DISCARD_SECONDARY:
 	case ASB_CALL_HELPER:
 	case ASB_VIOLENTLY:
-		drbd_err(device, "Configuration error.\n");
+		drbd_err(peer_device, "Configuration error.\n");
 		break;
 	case ASB_DISCONNECT:
 		break;
@@ -2777,8 +2776,8 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			break;
 		}
 		/* Else fall through to one of the other strategies... */
-		drbd_warn(device, "Discard younger/older primary did not find a decision\n"
-		     "Using discard-least-changes instead\n");
+		drbd_warn(peer_device, "Discard younger/older primary did not find a decision\n"
+			  "Using discard-least-changes instead\n");
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
 			rv = test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags)
@@ -3153,7 +3152,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		disk_state = device->disk_state_from_metadata;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
-	drbd_uuid_dump_self(peer_device, device->comm_bm_set, 0);
+	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
 	drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
 
 	hg = drbd_uuid_compare(peer_device, &rule_nr);
