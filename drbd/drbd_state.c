@@ -1173,7 +1173,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			atomic_inc(&device->local_cnt);
 
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
-			drbd_print_uuids(device, "attached to UUIDs");
+			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.uuid[UI_CURRENT]);
 
 		wake_up(&device->misc_wait);
 		wake_up(&device->resource->state_wait);

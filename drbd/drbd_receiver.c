@@ -3967,7 +3967,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		updated_uuids |= drbd_set_ed_uuid(device, p_uuid[UI_CURRENT]);
 
 	if (updated_uuids)
-		drbd_print_uuids(device, "receiver updated UUIDs to");
+		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
 	return 0;
 }
@@ -4419,7 +4419,7 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 		_drbd_uuid_set(peer_device, UI_CURRENT, be64_to_cpu(p->uuid));
 		_drbd_uuid_set(peer_device, UI_BITMAP, 0UL);
 
-		drbd_print_uuids(device, "updated sync uuid");
+		drbd_print_uuids(peer_device, "updated sync uuid");
 		drbd_start_resync(peer_device, L_SYNC_TARGET);
 
 		put_ldev(device);

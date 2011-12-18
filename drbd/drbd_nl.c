@@ -3251,7 +3251,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 
 			drbd_send_uuids_skip_initial_sync(first_peer_device(device));
 			_drbd_uuid_set(first_peer_device(device), UI_BITMAP, 0);
-			drbd_print_uuids(device, "cleared bitmap UUID");
+			drbd_print_uuids(first_peer_device(device), "cleared bitmap UUID");
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			__change_disk_state(device, D_UP_TO_DATE);
 			__change_peer_disk_state(first_peer_device(device), D_UP_TO_DATE);

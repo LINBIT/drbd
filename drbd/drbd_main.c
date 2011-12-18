@@ -1095,21 +1095,22 @@ int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *peer_device)
 	return _drbd_send_uuids(peer_device, 8);
 }
 
-void drbd_print_uuids(struct drbd_device *device, const char *text)
+void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
-		u64 *uuid = device->ldev->md.uuid;
-		drbd_info(device, "%s %016llX:%016llX:%016llX:%016llX\n",
-		     text,
-		     (unsigned long long)uuid[UI_CURRENT],
-		     (unsigned long long)uuid[UI_BITMAP],
-		     (unsigned long long)uuid[UI_HISTORY_START],
-		     (unsigned long long)uuid[UI_HISTORY_END]);
+		drbd_info(peer_device, "%s %016llX:%016llX:%016llX:%016llX\n",
+			  text,
+			  (unsigned long long)drbd_uuid(peer_device, UI_CURRENT),
+			  (unsigned long long)drbd_uuid(peer_device, UI_BITMAP),
+			  (unsigned long long)drbd_uuid(peer_device, UI_HISTORY_START),
+			  (unsigned long long)drbd_uuid(peer_device, UI_HISTORY_END));
 		put_ldev(device);
 	} else {
 		drbd_info(device, "%s effective data uuid: %016llX\n",
-				text,
-				(unsigned long long)device->ed_uuid);
+			  text,
+			  (unsigned long long)device->ed_uuid);
 	}
 }
 
@@ -1128,7 +1129,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	else
 		get_random_bytes(&uuid, sizeof(u64));
 	drbd_uuid_set(peer_device, UI_BITMAP, uuid);
-	drbd_print_uuids(device, "updated sync UUID");
+	drbd_print_uuids(peer_device, "updated sync UUID");
 	drbd_md_sync(device);
 
 	sock = &peer_device->connection->data;
@@ -3381,7 +3382,7 @@ void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 
 	get_random_bytes(&val, sizeof(u64));
 	_drbd_uuid_set(first_peer_device(device), UI_CURRENT, val);
-	drbd_print_uuids(device, "new current UUID");
+	drbd_info(device, "new current UUID: %016llX\n", device->ldev->md.uuid[UI_CURRENT]);
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
 }

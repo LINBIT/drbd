@@ -1017,7 +1017,7 @@ extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv ret
 extern void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern void drbd_mdev_cleanup(struct drbd_device *device);
-void drbd_print_uuids(struct drbd_device *device, const char *text);
+void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 
 extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
