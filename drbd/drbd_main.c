@@ -3324,8 +3324,9 @@ void drbd_md_mark_dirty(struct drbd_device *device)
 }
 #endif
 
-static void drbd_uuid_move_history(struct drbd_device *device) __must_hold(local)
+static void drbd_uuid_move_history(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	struct drbd_device *device = peer_device->device;
 	int i;
 
 	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++)
@@ -3355,7 +3356,7 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
 	struct drbd_device *device = peer_device->device;
 
 	if (device->ldev->md.uuid[idx]) {
-		drbd_uuid_move_history(device);
+		drbd_uuid_move_history(peer_device);
 		device->ldev->md.uuid[UI_HISTORY_START] = device->ldev->md.uuid[idx];
 	}
 	_drbd_uuid_set(peer_device, idx, val);
@@ -3393,7 +3394,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 		return;
 
 	if (val == 0) {
-		drbd_uuid_move_history(device);
+		drbd_uuid_move_history(peer_device);
 		device->ldev->md.uuid[UI_HISTORY_START] = device->ldev->md.uuid[UI_BITMAP];
 		device->ldev->md.uuid[UI_BITMAP] = 0;
 	} else {
