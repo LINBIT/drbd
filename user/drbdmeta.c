@@ -214,6 +214,7 @@ int opened_odirect = 1;
 void *on_disk_buffer = NULL;
 int global_argc;
 char **global_argv;
+char *progname = NULL;
 
 enum Known_Formats {
 	Drbd_06,
@@ -324,7 +325,7 @@ struct format_ops {
 	int (*parse) (struct format *, char **, int, int *);
 	int (*open) (struct format *);
 	int (*close) (struct format *);
-	int (*md_initialize) (struct format *, int do_disk_writes);
+	int (*md_initialize) (struct format *, int do_disk_writes, int max_peers);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
 	void (*get_gi) (struct md_cpu *md);
@@ -891,19 +892,19 @@ int v06_md_cpu_to_disk(struct format *cfg);
 int v06_md_disk_to_cpu(struct format *cfg);
 int v06_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v06_md_open(struct format *cfg);
-int v06_md_initialize(struct format *cfg, int do_disk_writes);
+int v06_md_initialize(struct format *cfg, int do_disk_writes, int max_peers);
 
 int v07_md_cpu_to_disk(struct format *cfg);
 int v07_md_disk_to_cpu(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
-int v07_md_initialize(struct format *cfg, int do_disk_writes);
+int v07_md_initialize(struct format *cfg, int do_disk_writes, int max_peers);
 
 int v07_style_md_open(struct format *cfg);
 
 int v08_md_open(struct format *cfg);
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
-int v08_md_initialize(struct format *cfg, int do_disk_writes);
+int v08_md_initialize(struct format *cfg, int do_disk_writes, int max_peers);
 int v08_md_close(struct format *cfg);
 
 /* return codes for md_open */
@@ -977,6 +978,10 @@ static inline int is_v08(struct format *cfg)
 {
 	return format_version(cfg) == Drbd_08;
 }
+static inline int is_v09(struct format *cfg)
+{
+	return format_version(cfg) == Drbd_09;
+}
 
 /******************************************
   Commands we know about:
@@ -1013,7 +1018,7 @@ struct meta_cmd cmds[] = {
 	{"restore-md", "file", meta_restore_md, 1},
 	{"verify-dump", "file", meta_verify_dump_file, 1},
 	{"apply-al", 0, meta_apply_al, 1},
-	{"create-md", 0, meta_create_md, 1},
+	{"create-md", "[max_peers]", meta_create_md, 1},
 	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
 	{"invalidate", 0, meta_invalidate, 1},
@@ -1359,7 +1364,9 @@ int generic_md_close(struct format *cfg)
 	return 0;
 }
 
-int v06_md_initialize(struct format *cfg, int do_disk_writes __attribute((unused)))
+int v06_md_initialize(struct format *cfg,
+		      int do_disk_writes __attribute((unused)),
+		      int max_peers __attribute((unused)))
 {
 	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
@@ -2362,7 +2369,8 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 	return 0;
 }
 
-int v07_md_initialize(struct format *cfg, int do_disk_writes)
+int v07_md_initialize(struct format *cfg, int do_disk_writes,
+		      int max_peers __attribute((unused)))
 {
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
@@ -2506,7 +2514,8 @@ int v08_md_cpu_to_disk(struct format *cfg)
 	return 0;
 }
 
-int v08_md_initialize(struct format *cfg, int do_disk_writes)
+int v08_md_initialize(struct format *cfg, int do_disk_writes,
+		      int max_peers __attribute((unused)))
 {
 	size_t i;
 
@@ -2868,7 +2877,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			ASSERT(!is_v06(cfg));
 		}
 		fprintf(stderr, "reinitializing\n");
-		cfg->ops->md_initialize(cfg, 0);
+		cfg->ops->md_initialize(cfg, 0, 1);
 	}
 
 	EXP(TK_VERSION); EXP(TK_STRING);
@@ -3713,10 +3722,20 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	int err = 0;
+	int max_peers = 1;
 
-	if (argc > 0) {
+	if (is_v09(cfg)) {
+		if (argc < 1) {
+			fprintf(stderr, "USAGE: %s MINOR v09 ... create-md MAX_PEERS\n"
+				"\n"
+				"  MAX_PEERS argument missing\n", progname);
+			exit(20);
+		} else if (argc > 1)
+			fprintf(stderr, "Ignoring additional arguments\n");
+
+		max_peers = m_strtoll(argv[0], 1);
+	} else if (argc > 0)
 		fprintf(stderr, "Ignoring additional arguments\n");
-	}
 
 	err = cfg->ops->open(cfg);
 
@@ -3759,7 +3778,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 
 	printf("Writing meta data...\n");
 	if (!cfg->md.magic) /* not converted: initialize */
-		err = cfg->ops->md_initialize(cfg, 1); /* Clears on disk AL implicitly */
+		err = cfg->ops->md_initialize(cfg, 1, max_peers); /* Clears on disk AL implicitly */
 	else
 		err = 0; /* we have sucessfully converted somthing */
 
@@ -3900,7 +3919,6 @@ int meta_write_dev_uuid(struct format *cfg, char **argv, int argc)
 	return err;
 }
 
-char *progname = NULL;
 void print_usage_and_exit()
 {
 	char **args;
