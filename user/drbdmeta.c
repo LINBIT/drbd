@@ -253,6 +253,8 @@ struct md_cpu {
 	uint64_t device_uuid;
 	uint32_t bm_bytes_per_bit;
 	uint32_t la_peer_max_bio_size;
+	/* Since DRBD 9.0 the following new stuff: */
+	uint32_t bm_max_peers;
 };
 
 /*
@@ -341,6 +343,7 @@ void md_disk_06_to_cpu(struct md_cpu *cpu, const struct md_on_disk_06 *disk)
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
+	cpu->bm_max_peers = 1;
 }
 
 void md_cpu_to_disk_06(struct md_on_disk_06 *disk, struct md_cpu *cpu)
@@ -390,6 +393,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
 	cpu->bm_bytes_per_bit = 4096;
+	cpu->bm_max_peers = 1;
 }
 
 void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cpu)
@@ -557,6 +561,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
 	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
 	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
+	cpu->bm_max_peers = 1;
 }
 
 void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
@@ -1267,6 +1272,7 @@ int v06_md_initialize(struct format *cfg)
 	cfg->md.gc[TimeoutCnt] = 1;
 	cfg->md.gc[ConnectedCnt] = 1;
 	cfg->md.gc[ArbitraryCnt] = 1;
+	cfg->md.bm_max_peers = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_06;
 	return 0;
 }
@@ -2272,6 +2278,7 @@ int _v07_md_initialize(struct format *cfg, int do_disk_writes)
 	cfg->md.gc[TimeoutCnt] = 1;
 	cfg->md.gc[ConnectedCnt] = 1;
 	cfg->md.gc[ArbitraryCnt] = 1;
+	cfg->md.bm_max_peers = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_07;
 
 	return md_initialize_common(cfg, do_disk_writes);
@@ -2423,6 +2430,7 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 		cfg->md.uuid[i]=0;
 	}
 	cfg->md.flags = 0;
+	cfg->md.bm_max_peers = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	return md_initialize_common(cfg, do_disk_writes);
