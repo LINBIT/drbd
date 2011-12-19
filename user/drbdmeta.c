@@ -324,7 +324,7 @@ struct format_ops {
 	int (*parse) (struct format *, char **, int, int *);
 	int (*open) (struct format *);
 	int (*close) (struct format *);
-	int (*md_initialize) (struct format *);
+	int (*md_initialize) (struct format *, int do_disk_writes);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
 	void (*get_gi) (struct md_cpu *md);
@@ -891,19 +891,19 @@ int v06_md_cpu_to_disk(struct format *cfg);
 int v06_md_disk_to_cpu(struct format *cfg);
 int v06_parse(struct format *cfg, char **argv, int argc, int *ai);
 int v06_md_open(struct format *cfg);
-int v06_md_initialize(struct format *cfg);
+int v06_md_initialize(struct format *cfg, int do_disk_writes);
 
 int v07_md_cpu_to_disk(struct format *cfg);
 int v07_md_disk_to_cpu(struct format *cfg);
 int v07_parse(struct format *cfg, char **argv, int argc, int *ai);
-int v07_md_initialize(struct format *cfg);
+int v07_md_initialize(struct format *cfg, int do_disk_writes);
 
 int v07_style_md_open(struct format *cfg);
 
 int v08_md_open(struct format *cfg);
 int v08_md_cpu_to_disk(struct format *cfg);
 int v08_md_disk_to_cpu(struct format *cfg);
-int v08_md_initialize(struct format *cfg);
+int v08_md_initialize(struct format *cfg, int do_disk_writes);
 int v08_md_close(struct format *cfg);
 
 /* return codes for md_open */
@@ -1359,7 +1359,7 @@ int generic_md_close(struct format *cfg)
 	return 0;
 }
 
-int v06_md_initialize(struct format *cfg)
+int v06_md_initialize(struct format *cfg, int do_disk_writes __attribute((unused)))
 {
 	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
@@ -2362,7 +2362,7 @@ int v07_parse(struct format *cfg, char **argv, int argc, int *ai)
 	return 0;
 }
 
-int _v07_md_initialize(struct format *cfg, int do_disk_writes)
+int v07_md_initialize(struct format *cfg, int do_disk_writes)
 {
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
@@ -2376,11 +2376,6 @@ int _v07_md_initialize(struct format *cfg, int do_disk_writes)
 	cfg->md.magic = DRBD_MD_MAGIC_07;
 
 	return md_initialize_common(cfg, do_disk_writes);
-}
-
-int v07_md_initialize(struct format *cfg)
-{
-	return _v07_md_initialize(cfg, 1);
 }
 
 /******************************************
@@ -2511,7 +2506,7 @@ int v08_md_cpu_to_disk(struct format *cfg)
 	return 0;
 }
 
-int _v08_md_initialize(struct format *cfg, int do_disk_writes)
+int v08_md_initialize(struct format *cfg, int do_disk_writes)
 {
 	size_t i;
 
@@ -2528,11 +2523,6 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	return md_initialize_common(cfg, do_disk_writes);
-}
-
-int v08_md_initialize(struct format *cfg)
-{
-	return _v08_md_initialize(cfg, 1);
 }
 
 int v08_md_close(struct format *cfg)
@@ -2878,10 +2868,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			ASSERT(!is_v06(cfg));
 		}
 		fprintf(stderr, "reinitializing\n");
-		if (is_v07(cfg))
-			_v07_md_initialize(cfg,0);
-		else
-			_v08_md_initialize(cfg,0);
+		cfg->ops->md_initialize(cfg, 0);
 	}
 
 	EXP(TK_VERSION); EXP(TK_STRING);
@@ -3772,7 +3759,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 
 	printf("Writing meta data...\n");
 	if (!cfg->md.magic) /* not converted: initialize */
-		err = cfg->ops->md_initialize(cfg); /* Clears on disk AL implicitly */
+		err = cfg->ops->md_initialize(cfg, 1); /* Clears on disk AL implicitly */
 	else
 		err = 0; /* we have sucessfully converted somthing */
 
