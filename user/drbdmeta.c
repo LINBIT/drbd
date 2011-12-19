@@ -1983,12 +1983,18 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 
 int need_to_apply_al(struct format *cfg)
 {
-	if (is_v08(cfg))
-		return cfg->md.flags & MDF_PRIMARY_IND;
-	else if (is_v07(cfg))
+	switch (format_version(cfg)) {
+	case Drbd_06:
+		return 0; /* there was no activity log in 0.6 */
+	case Drbd_07:
 		return cfg->md.gc[Flags] & MDF_PRIMARY_IND;
-	else
-		return 0; /* there was no activity log in 0.6, right? */
+	case Drbd_08:
+	case Drbd_09:
+		return cfg->md.flags & MDF_PRIMARY_IND;
+	case Drbd_Unknown:
+		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
+	}
+	return 0;
 }
 
 int v08_move_internal_md_after_resize(struct format *cfg);
@@ -2032,6 +2038,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	 * have the same super block with two different activity log
 	 * transaction layouts */
 	else if (DRBD_MD_MAGIC_84_UNCLEAN == cfg->md.magic ||
+		 DRBD_MD_MAGIC_09 == cfg->md.magic ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
 		err = replay_al_84(cfg, hot_extent);
@@ -2077,9 +2084,9 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	if (err > 0 && !is_v07(cfg))
 		initialize_al(cfg);
 
-	if (is_v08(cfg) &&
-		((cfg->md.flags & MDF_AL_CLEAN) == 0 ||
-		  cfg->md.magic != DRBD_MD_MAGIC_08))
+	if (format_version(cfg) >= Drbd_08 &&
+	    ((cfg->md.flags & MDF_AL_CLEAN) == 0 ||
+	     cfg->md.magic != DRBD_MD_MAGIC_08))
 		need_to_update_md_flags = 1;
 
 	err = 0;
@@ -2095,10 +2102,11 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		 * USE_DEGR_WFC_T as long as MDF_CRASHED_PRIMARY is set.
 		 * Maybe that even results in better semantics.
 		 */
-		if (is_v08(cfg)) {
+		if (format_version(cfg) >= Drbd_08)
 			cfg->md.flags |= MDF_AL_CLEAN;
+		if (is_v08(cfg))
 			cfg->md.magic = DRBD_MD_MAGIC_08;
-		}
+
 		err = cfg->ops->md_cpu_to_disk(cfg);
 		err = cfg->ops->close(cfg) || err;
 		if (err)
