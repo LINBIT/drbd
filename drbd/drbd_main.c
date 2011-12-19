@@ -3173,7 +3173,7 @@ void drbd_md_sync(struct drbd_device *device)
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		buffer->uuid[i] = cpu_to_be64(device->ldev->md.uuid[i]);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);
-	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_84_UNCLEAN);
+	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_09);
 
 	buffer->md_size_sect  = cpu_to_be32(device->ldev->md.md_size_sect);
 	buffer->al_offset     = cpu_to_be32(device->ldev->md.al_offset);
@@ -3239,16 +3239,17 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 
 	magic = be32_to_cpu(buffer->magic);
 	flags = be32_to_cpu(buffer->flags);
-	if (magic == DRBD_MD_MAGIC_84_UNCLEAN ||
-	    (magic == DRBD_MD_MAGIC_08 && !(flags & MDF_AL_CLEAN))) {
+	if (magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) {
 			/* btw: that's Activity Log clean, not "all" clean. */
 		drbd_err(device, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
 		rv = ERR_MD_UNCLEAN;
 		goto err;
 	}
-	if (magic != DRBD_MD_MAGIC_08) {
-		if (magic == DRBD_MD_MAGIC_07)
-			drbd_err(device, "Found old (0.7) meta data magic. Did you \"drbdadm create-md\"?\n");
+	if (magic != DRBD_MD_MAGIC_09) {
+		if (magic == DRBD_MD_MAGIC_07 ||
+		    magic == DRBD_MD_MAGIC_08 ||
+		    magic == DRBD_MD_MAGIC_84_UNCLEAN)
+			drbd_err(device, "Found old meta data magic. Did you \"drbdadm create-md\"?\n");
 		else
 			drbd_err(device, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
 		rv = ERR_MD_INVALID;
