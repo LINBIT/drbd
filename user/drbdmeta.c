@@ -907,6 +907,10 @@ int v08_md_disk_to_cpu(struct format *cfg);
 int v08_md_initialize(struct format *cfg, int do_disk_writes, int max_peers);
 int v08_md_close(struct format *cfg);
 
+int v09_md_disk_to_cpu(struct format *cfg);
+int v09_md_cpu_to_disk(struct format *cfg);
+int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers);
+
 /* return codes for md_open */
 enum {
 	VALID_MD_FOUND = 0,
@@ -954,6 +958,21 @@ struct format_ops f_ops[] = {
 		     .md_initialize = v08_md_initialize,
 		     .md_disk_to_cpu = v08_md_disk_to_cpu,
 		     .md_cpu_to_disk = v08_md_cpu_to_disk,
+		     .get_gi = m_get_uuid,
+		     .show_gi = m_show_uuid,
+		     .set_gi = m_set_uuid,
+		     .outdate_gi = m_outdate_uuid,
+		     .invalidate_gi = m_invalidate_uuid,
+		     },
+	[Drbd_09] = {
+		     .name = "v09",
+		     .args = (char *[]){"device", "index", NULL},
+		     .parse = v07_parse,
+		     .open = v08_md_open,
+		     .close = v08_md_close,
+		     .md_initialize = v09_md_initialize,
+		     .md_disk_to_cpu = v09_md_disk_to_cpu,
+		     .md_cpu_to_disk = v09_md_cpu_to_disk,
 		     .get_gi = m_get_uuid,
 		     .show_gi = m_show_uuid,
 		     .set_gi = m_set_uuid,
@@ -1432,11 +1451,11 @@ void re_initialize_md_offsets(struct format *cfg)
 void initialize_al(struct format *cfg)
 {
 	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
-	if (format_version(cfg) == Drbd_08) {
+	if (format_version(cfg) >= Drbd_08) {
 		/* DRBD <= 8.3 does not care if it is all zero,
 		 * or otherwise wrong magic.
 		 *
-		 * For 8.4, we initialize to something that is
+		 * For 8.4 and 9.0, we initialize to something that is
 		 * valid magic, valid crc, and transaction_type = 0xffff.
 		 */
 		struct al_4k_transaction_on_disk *al = on_disk_buffer;
@@ -2560,8 +2579,60 @@ int v08_md_close(struct format *cfg)
 }
 
 /******************************************
-  }}} end of v08
+ begin of v09 {{{
  ******************************************/
+int v09_md_disk_to_cpu(struct format *cfg)
+{
+	struct md_cpu md;
+	int ok;
+	PREAD(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_09), cfg->md_offset);
+	md_disk_09_to_cpu(&md, (struct md_on_disk_09*)on_disk_buffer);
+	ok = is_valid_md(Drbd_09, &md, cfg->md_index, cfg->bd_size);
+	if (ok)
+		cfg->md = md;
+	if (verbose >= 3 + !!ok && verbose <= 10)
+		fprintf_hex(stderr, cfg->md_offset, on_disk_buffer, 4096);
+	return ok ? 0 : -1;
+}
+
+int v09_md_cpu_to_disk(struct format *cfg)
+{
+	if (!is_valid_md(Drbd_09, &cfg->md, cfg->md_index, cfg->bd_size))
+		return -1;
+	md_cpu_to_disk_09((struct md_on_disk_09 *)on_disk_buffer, &cfg->md);
+	PWRITE(cfg->md_fd, on_disk_buffer,
+		sizeof(struct md_on_disk_09), cfg->md_offset);
+	cfg->update_lk_bdev = 1;
+	return 0;
+}
+
+int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
+{
+	int p, i;
+
+	memset(&cfg->md, 0, sizeof(cfg->md));
+
+	cfg->md.la_sect = 0;
+	cfg->md.bm_max_peers = max_peers;
+	cfg->md.flags = 0;
+	cfg->md.magic = DRBD_MD_MAGIC_09;
+
+	for (p = 0; p < max_peers; p++) {
+		cfg->md.peers[p].uuid[UI_CURRENT] = UUID_JUST_CREATED;
+		for (i = UI_BITMAP; i <= UI_HISTORY_END; i++)
+			cfg->md.peers[p].uuid[i] = 0;
+		cfg->md.peers[p].addr_hash = 0;
+		cfg->md.peers[p].flags = 0;
+	}
+
+	return md_initialize_common(cfg, do_disk_writes);
+}
+
+/******************************************
+  }}} end of v09
+ ******************************************/
+
 int meta_get_gi(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	if (argc > 0) {
@@ -3552,7 +3623,7 @@ void check_internal_md_flavours(struct format * cfg) {
 				exit(1); // 1 to avoid online resource counting
 			}
 		}
-	} else { /* is_v07(cfg) */
+	} else if (is_v07(cfg)) {
 		if (have_fixed_v07 || have_flex_v07) {
 			if (!confirmed("Do you really want to overwrite the existing v07 meta-data?")) {
 				printf("Operation cancelled.\n");
