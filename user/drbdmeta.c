@@ -235,6 +235,12 @@ typedef struct { unsigned long be; } be_ulong;
 /* NOTE that this structure does not need to be packed,
  * aligned, nor does it need to be in the same order as the on_disk variants.
  */
+struct md_peer_cpu {
+	uint64_t uuid[UI_SIZE];
+	uint32_t addr_hash;
+	uint32_t flags;
+};
+
 struct md_cpu {
 	/* present since drbd 0.6 */
 	uint32_t gc[GEN_CNT_SIZE];	/* generation counter */
@@ -248,13 +254,13 @@ struct md_cpu {
 	uint32_t al_nr_extents;	/* important for restoring the AL */
 	int32_t bm_offset;		/* signed sector offset to the bitmap, from here */
 	/* Since DRBD 0.8 we have uuid instead of gc */
-	uint64_t uuid[UI_SIZE];
 	uint32_t flags;
 	uint64_t device_uuid;
 	uint32_t bm_bytes_per_bit;
 	uint32_t la_peer_max_bio_size;
 	/* Since DRBD 9.0 the following new stuff: */
 	uint32_t bm_max_peers;
+	struct md_peer_cpu peers[MAX_PEERS];
 };
 
 /*
@@ -551,7 +557,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	memset(cpu, 0, sizeof(*cpu));
 	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
 	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ )
-		cpu->uuid[i] = be64_to_cpu(disk->uuid[i].be);
+		cpu->peers[0].uuid[i] = be64_to_cpu(disk->uuid[i].be);
 	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
 	cpu->flags = be32_to_cpu(disk->flags.be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
@@ -569,7 +575,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	int i;
 	disk->la_sect.be = cpu_to_be64(cpu->la_sect);
 	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
-		disk->uuid[i].be = cpu_to_be64(cpu->uuid[i]);
+		disk->uuid[i].be = cpu_to_be64(cpu->peers[0].uuid[i]);
 	}
 	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
 	disk->flags.be = cpu_to_be32(cpu->flags);
@@ -1012,12 +1018,12 @@ void m_show_gc(struct md_cpu *md)
 
 void m_get_uuid(struct md_cpu *md)
 {
-	dt_print_uuids(md->uuid,md->flags);
+	dt_print_uuids(md->peers[0].uuid,md->flags);
 }
 
 void m_show_uuid(struct md_cpu *md)
 {
-	dt_pretty_print_uuids(md->uuid,md->flags);
+	dt_pretty_print_uuids(md->peers[0].uuid,md->flags);
 }
 
 int m_strsep_u32(char **s, uint32_t *val)
@@ -1127,7 +1133,7 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 
 	do {
 		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
-			if (!m_strsep_u64(str, &md->uuid[i])) return;
+			if (!m_strsep_u64(str, &md->peers[0].uuid[i])) return;
 		}
 		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
@@ -2424,10 +2430,10 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
 	cfg->md.la_sect = 0;
-	cfg->md.uuid[UI_CURRENT] = UUID_JUST_CREATED;
-	cfg->md.uuid[UI_BITMAP] = 0;
+	cfg->md.peers[0].uuid[UI_CURRENT] = UUID_JUST_CREATED;
+	cfg->md.peers[0].uuid[UI_BITMAP] = 0;
 	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
-		cfg->md.uuid[i]=0;
+		cfg->md.peers[0].uuid[i]=0;
 	}
 	cfg->md.flags = 0;
 	cfg->md.bm_max_peers = 1;
@@ -2644,7 +2650,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	} else { // >= 08
 		printf("uuid {\n   ");
 		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
-			printf(" 0x"X64(016)";", cfg->md.uuid[i]);
+			printf(" 0x"X64(016)";", cfg->md.peers[0].uuid[i]);
 		}
 		printf("\n");
 		printf("    flags 0x"X32(08)";\n",cfg->md.flags);
@@ -2808,7 +2814,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		EXP(TK_UUID); EXP('{');
 		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 			EXP(TK_U64); EXP(';');
-			cfg->md.uuid[i] = yylval.u64;
+			cfg->md.peers[0].uuid[i] = yylval.u64;
 		}
 		EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
 		cfg->md.flags = (uint32_t)yylval.u64;
@@ -2963,17 +2969,17 @@ void md_convert_07_to_08(struct format *cfg)
 	// The MDF Flags are (nearly) the same in 07 and 08
 	cfg->md.flags = cfg->md.gc[Flags];
 
-	cfg->md.uuid[UI_CURRENT] =
+	cfg->md.peers[0].uuid[UI_CURRENT] =
 		(uint64_t)(cfg->md.gc[HumanCnt] & 0xffff) << 48 |
 		(uint64_t)(cfg->md.gc[TimeoutCnt] & 0xffff) << 32 |
 		(uint64_t)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
 		       & 0xffff) << 16 |
 		(uint64_t)0xbabe;
-	cfg->md.uuid[UI_BITMAP] = (uint64_t)0;
+	cfg->md.peers[0].uuid[UI_BITMAP] = (uint64_t)0;
 
 	for (i = cfg->bits_set ? UI_BITMAP : UI_HISTORY_START, j = 1;
 		i <= UI_HISTORY_END ; i++, j++)
-		cfg->md.uuid[i] = cfg->md.uuid[UI_CURRENT] - j*0x10000;
+		cfg->md.peers[0].uuid[i] = cfg->md.peers[0].uuid[UI_CURRENT] - j*0x10000;
 
 	/* unconditionally re-initialize offsets,
 	 * not necessary if fixed size external,
