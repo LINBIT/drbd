@@ -219,6 +219,7 @@ enum Known_Formats {
 	Drbd_06,
 	Drbd_07,
 	Drbd_08,
+	Drbd_09,
 	Drbd_Unknown,
 };
 
@@ -333,6 +334,7 @@ struct format_ops {
 	int (*invalidate_gi) (struct md_cpu *md);
 };
 
+struct format_ops f_ops[];
 /*
  * -- DRBD 0.6 --------------------------------------
  */
@@ -418,17 +420,18 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cp
 	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
 
-int is_valid_md(int f,
+int is_valid_md(enum Known_Formats f,
 	const struct md_cpu const *md, const int md_index, const uint64_t ll_size)
 {
 	uint64_t md_size_sect;
-	char *v = (f == Drbd_07) ? "v07" : "v08";
+	const char *v = f_ops[f].name;
 
-	ASSERT(f == Drbd_07 || f == Drbd_08);
+	ASSERT(f == Drbd_07 || f == Drbd_08 || f == Drbd_09);
 
 	if ((f == Drbd_07 && md->magic != DRBD_MD_MAGIC_07) ||
 	    (f == Drbd_08 && md->magic != DRBD_MD_MAGIC_08
-			  && md->magic != DRBD_MD_MAGIC_84_UNCLEAN)) {
+			  && md->magic != DRBD_MD_MAGIC_84_UNCLEAN) ||
+	    (f == Drbd_09 && md->magic != DRBD_MD_MAGIC_09)) {
 		if (verbose >= 1)
 			fprintf(stderr, "%s Magic number not found\n", v);
 		return 0;
