@@ -2240,7 +2240,7 @@ int v07_style_md_open(struct format *cfg)
 		exit(20);
 	}
 
-	if (is_v08(cfg)) {
+	if (format_version(cfg) >= Drbd_08) {
 		ASSERT(cfg->md_index != DRBD_MD_INDEX_INTERNAL);
 	}
 	ioctl_err = ioctl(cfg->md_fd, BLKSSZGET, &hard_sect_size);
@@ -2413,7 +2413,7 @@ void v08_check_for_resize(struct format *cfg)
 	ASSERT(cfg->md.magic == 0);
 
 	/* check for resized lower level device ... only check for drbd 8 */
-	if (!is_v08(cfg))
+	if (format_version(cfg) < Drbd_08)
 		return;
 	if (cfg->md_index != DRBD_MD_INDEX_FLEX_INT)
 		return;
@@ -3657,7 +3657,7 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 	off_t last_chunk_size;
 	int err;
 
-	ASSERT(is_v08(cfg));
+	ASSERT(format_version(cfg) >= Drbd_08);
 	ASSERT(cfg->md_index == DRBD_MD_INDEX_FLEX_INT);
 	ASSERT(cfg->lk_bd.bd_size <= cfg->bd_size);
 
@@ -4040,15 +4040,15 @@ int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
 			cfg->update_lk_bdev = 1;
 		return cfg->ops->close(cfg);
 	} else if (err == NO_VALID_MD_FOUND) {
-		if (!is_v08(cfg) || cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
-			fprintf(stderr, "Operation only supported for v8 internal meta data\n");
+		if (format_version(cfg) < Drbd_08 || cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
+			fprintf(stderr, "Operation only supported for >= v8 internal meta data\n");
 			return -1;
 		}
 		fprintf(stderr, "no suitable meta data found :(\n");
 		return -1; /* sorry :( */
 	}
 
-	ASSERT(is_v08(cfg));
+	ASSERT(format_version(cfg) >= Drbd_08);
 	ASSERT(cfg->md_index == DRBD_MD_INDEX_FLEX_INT);
 	ASSERT(cfg->lk_bd.bd_size);
 	ASSERT(cfg->md.magic);
