@@ -197,6 +197,7 @@ static int confirmed(const char *text)
 #define DRBD_MD_MAGIC_07   (DRBD_MAGIC+3)
 #define DRBD_MD_MAGIC_08   (DRBD_MAGIC+4)
 #define DRBD_MD_MAGIC_84_UNCLEAN   (DRBD_MAGIC+5)
+#define DRBD_MD_MAGIC_09   (DRBD_MAGIC+6)
 
 /*
  * }
@@ -779,6 +780,90 @@ int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_dis
 	al_disk->crc32c.be = 0;
 	crc = crc32c(crc, (void*)al_disk, 4096);
 	return al_cpu->magic == DRBD_AL_MAGIC && al_cpu->crc32c == crc;
+}
+
+/*
+ * -- DRBD 9.0 --------------------------------------
+ */
+
+struct peer_dev_md_on_disk {
+	be_u64 uuid[UI_HISTORY_END - UI_BITMAP + 1];
+	be_u32 addr_hash;
+	be_u32 flags;
+	be_u32 reserved_u32[4];
+} __packed;
+
+struct md_on_disk_09 {
+	be_u64 la_size;           /* last agreed size. */
+	be_u64 current_uuid;
+	be_u64 reserved_u64[4];   /* to have the magic at the same position as in v07, and v08 */
+	be_u64 device_uuid;
+	be_u32 flags;             /* MDF */
+	be_u32 magic;
+	be_u32 md_size_sect;
+	be_u32 al_offset;         /* offset to this block */
+	be_u32 al_nr_extents;     /* important for restoring the AL */
+	be_u32 bm_offset;         /* offset to the bitmap, from here */
+	be_u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
+	be_u32 la_peer_max_bio_size;   /* last peer max_bio_size */
+	be_u32 bm_max_peers;
+	be_u32 reserved_u32[5];
+
+	struct peer_dev_md_on_disk peers[MAX_PEERS];
+
+	char padding[0] __attribute__((aligned(4096)));
+} __packed;
+
+void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
+{
+	int p, i;
+
+	memset(cpu, 0, sizeof(*cpu));
+	cpu->la_sect = be64_to_cpu(disk->la_size.be);
+	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
+	cpu->flags = be32_to_cpu(disk->flags.be);
+	cpu->magic = be32_to_cpu(disk->magic.be);
+	cpu->md_size_sect = be32_to_cpu(disk->md_size_sect.be);
+	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
+	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
+	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
+	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
+	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
+	cpu->bm_max_peers = be32_to_cpu(disk->bm_max_peers.be);
+
+	for (p = 0; p < cpu->bm_max_peers; p++) {
+		cpu->peers[p].uuid[UI_CURRENT] = be64_to_cpu(disk->current_uuid.be);
+		cpu->peers[p].addr_hash = be32_to_cpu(disk->peers[p].addr_hash.be);
+		cpu->peers[p].flags = be32_to_cpu(disk->peers[p].flags.be);
+		for (i=UI_BITMAP ; i<UI_SIZE ; i++)
+			cpu->peers[p].uuid[i] = be64_to_cpu(disk->peers[p].uuid[MD_UI(i)].be);
+	}
+}
+
+void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
+{
+	int p, i;
+
+	memset(disk, 0, sizeof(disk));
+	disk->la_size.be = cpu_to_be64(cpu->la_sect);
+	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
+	disk->flags.be = cpu_to_be32(cpu->flags);
+	disk->magic.be = cpu_to_be32(cpu->magic);
+	disk->md_size_sect.be = cpu_to_be32(cpu->md_size_sect);
+	disk->al_offset.be = cpu_to_be32(cpu->al_offset);
+	disk->al_nr_extents.be = cpu_to_be32(cpu->al_nr_extents);
+	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
+	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
+	disk->la_peer_max_bio_size.be = cpu_to_be32(cpu->la_peer_max_bio_size);
+	disk->bm_max_peers.be = cpu_to_be32(cpu->bm_max_peers);
+
+	disk->current_uuid.be = cpu_to_be64(cpu->peers[0].uuid[UI_CURRENT]);
+	for (p = 0; p < cpu->bm_max_peers; p++) {
+		disk->peers[p].addr_hash.be = cpu_to_be32(cpu->peers[p].addr_hash);
+		disk->peers[p].flags.be = cpu_to_be32(cpu->peers[p].flags);
+		for (i=UI_BITMAP ; i<UI_SIZE ; i++)
+			disk->peers[p].uuid[MD_UI(i)].be = cpu_to_be64(cpu->peers[p].uuid[i]);
+	}
 }
 
 /*
@@ -4000,6 +4085,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Where did you get this broken build!?\n"
 				"sizeof(md_on_disk_08) == %lu, should be 4096\n",
 				(unsigned long)sizeof(struct md_on_disk_08));
+		exit(111);
+	}
+	if (sizeof(struct md_on_disk_09) != 4096) {
+		fprintf(stderr, "Where did you get this broken build!?\n"
+				"sizeof(md_on_disk_09) == %lu, should be 4096\n",
+				(unsigned long)sizeof(struct md_on_disk_09));
 		exit(111);
 	}
 #if 0
