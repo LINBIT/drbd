@@ -216,12 +216,12 @@ int global_argc;
 char **global_argv;
 char *progname = NULL;
 
-enum Known_Formats {
-	Drbd_06,
-	Drbd_07,
-	Drbd_08,
-	Drbd_09,
-	Drbd_Unknown,
+enum md_format {
+	DRBD_V06,
+	DRBD_V07,
+	DRBD_V08,
+	DRBD_V09,
+	DRBD_UNKNOWN,
 };
 
 /* let gcc help us get it right.
@@ -421,18 +421,18 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cp
 	memset(disk->reserved, 0, sizeof(disk->reserved));
 }
 
-int is_valid_md(enum Known_Formats f,
+int is_valid_md(enum md_format f,
 	const struct md_cpu const *md, const int md_index, const uint64_t ll_size)
 {
 	uint64_t md_size_sect;
 	const char *v = f_ops[f].name;
 
-	ASSERT(f == Drbd_07 || f == Drbd_08 || f == Drbd_09);
+	ASSERT(f == DRBD_V07 || f == DRBD_V08 || f == DRBD_V09);
 
-	if ((f == Drbd_07 && md->magic != DRBD_MD_MAGIC_07) ||
-	    (f == Drbd_08 && md->magic != DRBD_MD_MAGIC_08
+	if ((f == DRBD_V07 && md->magic != DRBD_MD_MAGIC_07) ||
+	    (f == DRBD_V08 && md->magic != DRBD_MD_MAGIC_08
 			  && md->magic != DRBD_MD_MAGIC_84_UNCLEAN) ||
-	    (f == Drbd_09 && md->magic != DRBD_MD_MAGIC_09)) {
+	    (f == DRBD_V09 && md->magic != DRBD_MD_MAGIC_09)) {
 		if (verbose >= 1)
 			fprintf(stderr, "%s Magic number not found\n", v);
 		return 0;
@@ -476,7 +476,7 @@ int is_valid_md(enum Known_Formats f,
 		if (md->md_size_sect != md_size_sect) {
 			fprintf(stderr, "strange md_size_sect %u (expected: "U64")\n",
 					md->md_size_sect, md_size_sect);
-			if (f == Drbd_08) return 0;
+			if (f == DRBD_V08) return 0;
 			/* else not an error,
 			 * was inconsistently implemented in v07 */
 		}
@@ -919,7 +919,7 @@ enum {
 };
 
 struct format_ops f_ops[] = {
-	[Drbd_06] = {
+	[DRBD_V06] = {
 		     .name = "v06",
 		     .args = (char *[]){"minor", NULL},
 		     .parse = v06_parse,
@@ -934,7 +934,7 @@ struct format_ops f_ops[] = {
 		     .outdate_gi = m_outdate_gc,
 		     .invalidate_gi = m_invalidate_gc,
 		     },
-	[Drbd_07] = {
+	[DRBD_V07] = {
 		     .name = "v07",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
@@ -949,7 +949,7 @@ struct format_ops f_ops[] = {
 		     .outdate_gi = m_outdate_gc,
 		     .invalidate_gi = m_invalidate_gc,
 		     },
-	[Drbd_08] = {
+	[DRBD_V08] = {
 		     .name = "v08",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
@@ -964,7 +964,7 @@ struct format_ops f_ops[] = {
 		     .outdate_gi = m_outdate_uuid,
 		     .invalidate_gi = m_invalidate_uuid,
 		     },
-	[Drbd_09] = {
+	[DRBD_V09] = {
 		     .name = "v09",
 		     .args = (char *[]){"device", "index", NULL},
 		     .parse = v07_parse,
@@ -981,25 +981,25 @@ struct format_ops f_ops[] = {
 		     },
 };
 
-static inline enum Known_Formats format_version(struct format *cfg)
+static inline enum md_format format_version(struct format *cfg)
 {
 	return (cfg->ops - f_ops);
 }
 static inline int is_v06(struct format *cfg)
 {
-	return format_version(cfg) == Drbd_06;
+	return format_version(cfg) == DRBD_V06;
 }
 static inline int is_v07(struct format *cfg)
 {
-	return format_version(cfg) == Drbd_07;
+	return format_version(cfg) == DRBD_V07;
 }
 static inline int is_v08(struct format *cfg)
 {
-	return format_version(cfg) == Drbd_08;
+	return format_version(cfg) == DRBD_V08;
 }
 static inline int is_v09(struct format *cfg)
 {
-	return format_version(cfg) == Drbd_09;
+	return format_version(cfg) == DRBD_V09;
 }
 
 /******************************************
@@ -1451,7 +1451,7 @@ void re_initialize_md_offsets(struct format *cfg)
 void initialize_al(struct format *cfg)
 {
 	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
-	if (format_version(cfg) >= Drbd_08) {
+	if (format_version(cfg) >= DRBD_V08) {
 		/* DRBD <= 8.3 does not care if it is all zero,
 		 * or otherwise wrong magic.
 		 *
@@ -1664,7 +1664,7 @@ void printf_al(struct format *cfg)
 	 * we should introduce a new meta data "super block" magic, so we won't
 	 * have the same super block with two different activity log
 	 * transaction layouts */
-	if (format_version(cfg) < Drbd_08)
+	if (format_version(cfg) < DRBD_V08)
 		printf_al_07(cfg, al_512_disk);
 
 	/* looks like we have the new al format */
@@ -2003,14 +2003,14 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 int need_to_apply_al(struct format *cfg)
 {
 	switch (format_version(cfg)) {
-	case Drbd_06:
+	case DRBD_V06:
 		return 0; /* there was no activity log in 0.6 */
-	case Drbd_07:
+	case DRBD_V07:
 		return cfg->md.gc[Flags] & MDF_PRIMARY_IND;
-	case Drbd_08:
-	case Drbd_09:
+	case DRBD_V08:
+	case DRBD_V09:
 		return cfg->md.flags & MDF_PRIMARY_IND;
-	case Drbd_Unknown:
+	case DRBD_UNKNOWN:
 		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
 	}
 	return 0;
@@ -2028,7 +2028,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	if (argc > 0)
 		fprintf(stderr, "Ignoring additional arguments\n");
 
-	if (format_version(cfg) < Drbd_07) {
+	if (format_version(cfg) < DRBD_V07) {
 		fprintf(stderr, "apply-al only implemented for DRBD >= 0.7\n");
 		return -1;
 	}
@@ -2103,7 +2103,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	if (err > 0 && !is_v07(cfg))
 		initialize_al(cfg);
 
-	if (format_version(cfg) >= Drbd_08 &&
+	if (format_version(cfg) >= DRBD_V08 &&
 	    ((cfg->md.flags & MDF_AL_CLEAN) == 0 ||
 	     cfg->md.magic != DRBD_MD_MAGIC_08))
 		need_to_update_md_flags = 1;
@@ -2121,7 +2121,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		 * USE_DEGR_WFC_T as long as MDF_CRASHED_PRIMARY is set.
 		 * Maybe that even results in better semantics.
 		 */
-		if (format_version(cfg) >= Drbd_08)
+		if (format_version(cfg) >= DRBD_V08)
 			cfg->md.flags |= MDF_AL_CLEAN;
 		if (is_v08(cfg))
 			cfg->md.magic = DRBD_MD_MAGIC_08;
@@ -2259,7 +2259,7 @@ int v07_style_md_open(struct format *cfg)
 		exit(20);
 	}
 
-	if (format_version(cfg) >= Drbd_08) {
+	if (format_version(cfg) >= DRBD_V08) {
 		ASSERT(cfg->md_index != DRBD_MD_INDEX_INTERNAL);
 	}
 	ioctl_err = ioctl(cfg->md_fd, BLKSSZGET, &hard_sect_size);
@@ -2345,7 +2345,7 @@ int v07_md_disk_to_cpu(struct format *cfg)
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_07), cfg->md_offset);
 	md_disk_07_to_cpu(&md, (struct md_on_disk_07*)on_disk_buffer);
-	ok = is_valid_md(Drbd_07, &md, cfg->md_index, cfg->bd_size);
+	ok = is_valid_md(DRBD_V07, &md, cfg->md_index, cfg->bd_size);
 	if (ok)
 		cfg->md = md;
 	return ok ? 0 : -1;
@@ -2353,7 +2353,7 @@ int v07_md_disk_to_cpu(struct format *cfg)
 
 int v07_md_cpu_to_disk(struct format *cfg)
 {
-	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size))
+	if (!is_valid_md(DRBD_V07, &cfg->md, cfg->md_index, cfg->bd_size))
 		return -1;
 	md_cpu_to_disk_07(on_disk_buffer, &cfg->md);
 	PWRITE(cfg->md_fd, on_disk_buffer,
@@ -2432,7 +2432,7 @@ void v08_check_for_resize(struct format *cfg)
 	ASSERT(cfg->md.magic == 0);
 
 	/* check for resized lower level device ... only check for drbd 8 */
-	if (format_version(cfg) < Drbd_08)
+	if (format_version(cfg) < DRBD_V08)
 		return;
 	if (cfg->md_index != DRBD_MD_INDEX_FLEX_INT)
 		return;
@@ -2465,7 +2465,7 @@ void v08_check_for_resize(struct format *cfg)
 	if (flex_offset < cfg->bd_size) {
 		PREAD(cfg->md_fd, on_disk_buffer, 4096, flex_offset);
 		md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
-		found = is_valid_md(Drbd_08, &md_08, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
+		found = is_valid_md(DRBD_V08, &md_08, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size);
 	}
 
 	if (verbose) {
@@ -2522,7 +2522,7 @@ int v08_md_disk_to_cpu(struct format *cfg)
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_08), cfg->md_offset);
 	md_disk_08_to_cpu(&md, (struct md_on_disk_08*)on_disk_buffer);
-	ok = is_valid_md(Drbd_08, &md, cfg->md_index, cfg->bd_size);
+	ok = is_valid_md(DRBD_V08, &md, cfg->md_index, cfg->bd_size);
 	if (ok)
 		cfg->md = md;
 	if (verbose >= 3 + !!ok && verbose <= 10)
@@ -2532,7 +2532,7 @@ int v08_md_disk_to_cpu(struct format *cfg)
 
 int v08_md_cpu_to_disk(struct format *cfg)
 {
-	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size))
+	if (!is_valid_md(DRBD_V08, &cfg->md, cfg->md_index, cfg->bd_size))
 		return -1;
 	md_cpu_to_disk_08((struct md_on_disk_08 *)on_disk_buffer, &cfg->md);
 	PWRITE(cfg->md_fd, on_disk_buffer,
@@ -2588,7 +2588,7 @@ int v09_md_disk_to_cpu(struct format *cfg)
 	PREAD(cfg->md_fd, on_disk_buffer,
 		sizeof(struct md_on_disk_09), cfg->md_offset);
 	md_disk_09_to_cpu(&md, (struct md_on_disk_09*)on_disk_buffer);
-	ok = is_valid_md(Drbd_09, &md, cfg->md_index, cfg->bd_size);
+	ok = is_valid_md(DRBD_V09, &md, cfg->md_index, cfg->bd_size);
 	if (ok)
 		cfg->md = md;
 	if (verbose >= 3 + !!ok && verbose <= 10)
@@ -2598,7 +2598,7 @@ int v09_md_disk_to_cpu(struct format *cfg)
 
 int v09_md_cpu_to_disk(struct format *cfg)
 {
-	if (!is_valid_md(Drbd_09, &cfg->md, cfg->md_index, cfg->bd_size))
+	if (!is_valid_md(DRBD_V09, &cfg->md, cfg->md_index, cfg->bd_size))
 		return -1;
 	md_cpu_to_disk_09((struct md_on_disk_09 *)on_disk_buffer, &cfg->md);
 	PWRITE(cfg->md_fd, on_disk_buffer,
@@ -2807,7 +2807,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	printf("# bm_offset %llu\n", (long long unsigned)cfg->bm_offset);
 	printf("\n");
 
-	if (format_version(cfg) < Drbd_08) {
+	if (format_version(cfg) < DRBD_V08) {
 		printf("gc {\n   ");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
 			printf(" %d;", cfg->md.gc[i]);
@@ -2823,10 +2823,10 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		printf("}\n");
 	}
 
-	if (format_version(cfg) >= Drbd_07) {
+	if (format_version(cfg) >= DRBD_V07) {
 		printf("# al-extents %u;\n", cfg->md.al_nr_extents);
 		printf("la-size-sect "U64";\n", cfg->md.la_sect);
-		if (format_version(cfg) >= Drbd_08) {
+		if (format_version(cfg) >= DRBD_V08) {
 			printf("bm-byte-per-bit "U32";\n",
 			       cfg->md.bm_bytes_per_bit);
 			printf("device-uuid 0x"X64(016)";\n",
@@ -2966,7 +2966,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		exit(10);
 	}
 	EXP(';');
-	if (format_version(cfg) < Drbd_08) {
+	if (format_version(cfg) < DRBD_V08) {
 		EXP(TK_GC); EXP('{');
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
 			EXP(TK_NUM); EXP(';');
@@ -2985,7 +2985,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.la_sect = yylval.u64;
-	if (format_version(cfg) >= Drbd_08) {
+	if (format_version(cfg) >= DRBD_V08) {
 		EXP(TK_BM_BYTE_PER_BIT); EXP(TK_NUM); EXP(';');
 		cfg->md.bm_bytes_per_bit = yylval.u64;
 		EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
@@ -3149,7 +3149,7 @@ void md_convert_07_to_08(struct format *cfg)
 	 * necessary if flex external or internal */
 	re_initialize_md_offsets(cfg);
 
-	if (!is_valid_md(Drbd_08, &cfg->md, cfg->md_index, cfg->bd_size)) {
+	if (!is_valid_md(DRBD_V08, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
 	}
@@ -3192,7 +3192,7 @@ void md_convert_08_to_07(struct format *cfg)
 	 * necessary if flex external or internal */
 	re_initialize_md_offsets(cfg);
 
-	if (!is_valid_md(Drbd_07, &cfg->md, cfg->md_index, cfg->bd_size)) {
+	if (!is_valid_md(DRBD_V07, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
 	}
@@ -3553,7 +3553,7 @@ void check_internal_md_flavours(struct format * cfg) {
 
 		md_disk_07_to_cpu(&md_07,
 			(struct md_on_disk_07*)on_disk_buffer);
-		have_fixed_v07 = is_valid_md(Drbd_07,
+		have_fixed_v07 = is_valid_md(DRBD_V07,
 			&md_07, DRBD_MD_INDEX_INTERNAL, cfg->bd_size);
 	}
 
@@ -3561,13 +3561,13 @@ void check_internal_md_flavours(struct format * cfg) {
 
 	/* ... v07 (plus) flex-internal meta data? */
 	md_disk_07_to_cpu(&md_07p, (struct md_on_disk_07*)on_disk_buffer);
-	have_flex_v07 = is_valid_md(Drbd_07,
+	have_flex_v07 = is_valid_md(DRBD_V07,
 		&md_07p, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
 	/* ... v08 flex-internal meta data?
 	 * (same offset, same on disk data) */
 	md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
-	have_flex_v08 = is_valid_md(Drbd_08,
+	have_flex_v08 = is_valid_md(DRBD_V08,
 		&md_08, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
 
 	if (!(have_fixed_v07 || have_flex_v07 || have_flex_v08))
@@ -3683,7 +3683,7 @@ void check_external_md_flavours(struct format * cfg) {
 	PREAD(cfg->md_fd, on_disk_buffer, 4096, cfg->md_offset);
 	if (is_v08(cfg)) {
 		md_disk_07_to_cpu(&md_07, (struct md_on_disk_07*)on_disk_buffer);
-		if (!is_valid_md(Drbd_07, &md_07, cfg->md_index, cfg->bd_size))
+		if (!is_valid_md(DRBD_V07, &md_07, cfg->md_index, cfg->bd_size))
 			return;
 		if (confirmed("Valid v07 meta-data found, convert to v08?")) {
 			cfg->md = md_07;
@@ -3697,7 +3697,7 @@ void check_external_md_flavours(struct format * cfg) {
 		}
 	} else if (is_v07(cfg)) {
 		md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
-		if (!is_valid_md(Drbd_08, &md_08, cfg->md_index, cfg->bd_size))
+		if (!is_valid_md(DRBD_V08, &md_08, cfg->md_index, cfg->bd_size))
 			return;
 		if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
 			cfg->md = md_08;
@@ -3728,7 +3728,7 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 	off_t last_chunk_size;
 	int err;
 
-	ASSERT(format_version(cfg) >= Drbd_08);
+	ASSERT(format_version(cfg) >= DRBD_V08);
 	ASSERT(cfg->md_index == DRBD_MD_INDEX_FLEX_INT);
 	ASSERT(cfg->lk_bd.bd_size <= cfg->bd_size);
 
@@ -3739,7 +3739,7 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 	PREAD(cfg->md_fd, on_disk_buffer, 4096, old_offset);
 	md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
 	*/
-	ASSERT(is_valid_md(Drbd_08, &cfg->md, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size));
+	ASSERT(is_valid_md(DRBD_V08, &cfg->md, DRBD_MD_INDEX_FLEX_INT, cfg->lk_bd.bd_size));
 
 	fprintf(stderr, "Moving the internal meta data to its proper location\n");
 
@@ -4008,7 +4008,7 @@ void print_usage_and_exit()
 	     progname);
 
 	printf("\nFORMATS:\n");
-	for (i = Drbd_06; i < Drbd_Unknown; i++) {
+	for (i = DRBD_V06; i < DRBD_UNKNOWN; i++) {
 		printf("  %s", f_ops[i].name);
 		if ((args = f_ops[i].args)) {
 			while (*args) {
@@ -4031,18 +4031,18 @@ void print_usage_and_exit()
 
 int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 {
-	enum Known_Formats f;
+	enum md_format f;
 
 	if (argc < 1) {
 		fprintf(stderr, "Format identifier missing\n");
 		return -1;
 	}
 
-	for (f = Drbd_06; f < Drbd_Unknown; f++) {
+	for (f = DRBD_V06; f < DRBD_UNKNOWN; f++) {
 		if (!strcmp(f_ops[f].name, argv[0]))
 			break;
 	}
-	if (f == Drbd_Unknown) {
+	if (f == DRBD_UNKNOWN) {
 		fprintf(stderr, "Unknown format '%s'.\n", argv[0]);
 		return -1;
 	}
@@ -4111,7 +4111,7 @@ int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
 			cfg->update_lk_bdev = 1;
 		return cfg->ops->close(cfg);
 	} else if (err == NO_VALID_MD_FOUND) {
-		if (format_version(cfg) < Drbd_08 || cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
+		if (format_version(cfg) < DRBD_V08 || cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
 			fprintf(stderr, "Operation only supported for >= v8 internal meta data\n");
 			return -1;
 		}
@@ -4119,7 +4119,7 @@ int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
 		return -1; /* sorry :( */
 	}
 
-	ASSERT(format_version(cfg) >= Drbd_08);
+	ASSERT(format_version(cfg) >= DRBD_V08);
 	ASSERT(cfg->md_index == DRBD_MD_INDEX_FLEX_INT);
 	ASSERT(cfg->lk_bd.bd_size);
 	ASSERT(cfg->md.magic);
