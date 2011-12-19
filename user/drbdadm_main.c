@@ -1745,7 +1745,7 @@ int adm_resize(struct cfg_ctx *ctx)
 	return 0;
 }
 
-int _admm_generic(struct cfg_ctx *ctx, int flags)
+int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
@@ -1753,7 +1753,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 
 	argv[NA(argc)] = drbdmeta;
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
-	argv[NA(argc)] = "v08";
+	argv[NA(argc)] = "v09";
 	if (!strcmp(vol->meta_disk, "internal")) {
 		argv[NA(argc)] = vol->disk;
 	} else {
@@ -1769,6 +1769,8 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 		argv[NA(argc)] = vol->meta_index;
 	}
 	argv[NA(argc)] = (char *)ctx->arg;
+	if (argument)
+		argv[NA(argc)] = argument;
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
@@ -1777,7 +1779,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags)
 
 static int admm_generic(struct cfg_ctx *ctx)
 {
-	return _admm_generic(ctx, SLEEPS_VERY_LONG);
+	return _admm_generic(ctx, SLEEPS_VERY_LONG, NULL);
 }
 
 static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)

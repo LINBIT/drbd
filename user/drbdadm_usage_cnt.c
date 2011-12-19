@@ -680,7 +680,8 @@ static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 		ctx->arg = arg_override;
 		rr = _admm_generic(ctx,
 				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
-				   DONT_REPORT_FAILED);
+				   DONT_REPORT_FAILED,
+				   NULL);
 		exit(rr);
 	}
 	close(pipes[1]); // close writing end
@@ -716,7 +717,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 	free(tb);
 
 	/* this is "drbdmeta ... create-md" */
-	rv = _admm_generic(ctx, SLEEPS_VERY_LONG);
+	rv = _admm_generic(ctx, SLEEPS_VERY_LONG, "1"); /* TODO: Actual number of peers */
 
 	if(rv || dry_run) return rv;
 
@@ -772,7 +773,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 		add_setup_option(false, opt);
 
 		local_ctx.arg = "write-dev-uuid";
-		_admm_generic(&local_ctx, SLEEPS_VERY_LONG);
+		_admm_generic(&local_ctx, SLEEPS_VERY_LONG, NULL);
 
 		free(setup_options);
 		setup_options = old_setup_options;
