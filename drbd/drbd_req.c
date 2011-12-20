@@ -1129,7 +1129,7 @@ fail_and_free_req:
 	return ret;
 }
 
-int drbd_make_request(struct request_queue *q, struct bio *bio)
+MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) q->queuedata;
 	unsigned long start_time;
@@ -1140,7 +1140,7 @@ int drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * by the block layer. */
 	if (unlikely(bio->bi_rw & DRBD_REQ_HARDBARRIER)) {
 		bio_endio(bio, -EOPNOTSUPP);
-		return 0;
+		MAKE_REQUEST_RETURN;
 	}
 
 	start_time = jiffies;
@@ -1155,7 +1155,7 @@ int drbd_make_request(struct request_queue *q, struct bio *bio)
 		inc_ap_bio(mdev);
 	} while (__drbd_make_request(mdev, bio, start_time));
 
-	return 0;
+	MAKE_REQUEST_RETURN;
 }
 
 /* This is called by bio_add_page().
