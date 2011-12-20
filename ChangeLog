@@ -2,13 +2,18 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.4.1rc2 (api:genl1/proto:86-100)
+8.4.1 (api:genl1/proto:86-100)
 --------
  * Fixed a bug that might cause in kernel list corruption triggered by
    simultaneous IO on multiple volumes in a single resource
+ * Fixed a bug that might cause a kernel OOPS in the worker thread while
+   the receiver tied to establish a connection (drbd-8.4.0 regression)
  * Fixed an issue in the receiver that could cause connection triggered by
    simultaneous IO on multiple volumes in a single resource
  * Consider the discard-my-data flag for all volumes
+ * Fixed attaching to backing devices that do not support barriers/flushes,
+   when barriers/flushes are not disabled by the configuration.
+   (drbd-8.4.0 regression)
  * Fixed a rare compatibility issue with DRBD's older than 8.3.7
    when negotiating the bio_size
  * Fixed a rare race condition where an empty resync could stall with
