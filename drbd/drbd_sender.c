@@ -627,7 +627,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 next_sector:
 		size = BM_BLOCK_SIZE;
-		bit  = drbd_bm_find_next(device, device->bm_resync_fo);
+		bit  = drbd_bm_find_next(peer_device, device->bm_resync_fo);
 
 		if (bit == DRBD_END_OF_BITMAP) {
 			device->bm_resync_fo = drbd_bm_bits(device);
@@ -644,7 +644,7 @@ next_sector:
 		}
 		device->bm_resync_fo = bit + 1;
 
-		if (unlikely(drbd_bm_test_bit(device, bit) == 0)) {
+		if (unlikely(drbd_bm_test_bit(peer_device, bit) == 0)) {
 			drbd_rs_complete_io(peer_device, sector);
 			goto next_sector;
 		}
@@ -674,7 +674,7 @@ next_sector:
 			 * obscure reason; ( b == 0 ) would get the out-of-band
 			 * only accidentally right because of the "oddly sized"
 			 * adjustment below */
-			if (drbd_bm_test_bit(device, bit+1) != 1)
+			if (drbd_bm_test_bit(peer_device, bit + 1) != 1)
 				break;
 			bit++;
 			size += BM_BLOCK_SIZE;
@@ -876,7 +876,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	     verify_done ? "Online verify " : "Resync",
 	     dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
 
-	n_oos = drbd_bm_total_weight(device);
+	n_oos = drbd_bm_total_weight(peer_device);
 
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T) {
 		if (n_oos) {
@@ -1112,7 +1112,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 		}
 
 		if (eq) {
-			drbd_set_in_sync(device, peer_req->i.sector, peer_req->i.size);
+			drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 			/* rs_same_csums unit is BM_BLOCK_SIZE */
 			peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
 			err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
@@ -1193,7 +1193,7 @@ void drbd_ov_out_of_sync_found(struct drbd_peer_device *peer_device, sector_t se
 		peer_device->ov_last_oos_start = sector;
 		peer_device->ov_last_oos_size = size>>9;
 	}
-	drbd_set_out_of_sync(peer_device->device, sector, size);
+	drbd_set_out_of_sync(peer_device, sector, size);
 }
 
 int w_e_end_ov_reply(struct drbd_work *w, int cancel)
@@ -1679,7 +1679,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		r = SS_UNKNOWN_ERROR;
 
 	if (r == SS_SUCCESS) {
-		unsigned long tw = drbd_bm_total_weight(device);
+		unsigned long tw = drbd_bm_total_weight(peer_device);
 		unsigned long now = jiffies;
 		int i;
 

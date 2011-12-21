@@ -565,7 +565,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 
 	kfree(udw);
 
-	if (drbd_bm_total_weight(device) <= first_peer_device(device)->rs_failed) {
+	if (drbd_bm_total_weight(first_peer_device(device)) <= first_peer_device(device)->rs_failed) {
 		switch (first_peer_device(device)->repl_state[NEW]) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
@@ -626,7 +626,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 				 * Whatever the reason (disconnect during resync,
 				 * delayed local completion of an application write),
 				 * try to fix it up by recounting here. */
-				ext->rs_left = drbd_bm_e_weight(device, enr);
+				ext->rs_left = drbd_bm_e_weight(first_peer_device(device), enr);
 			}
 		} else {
 			/* Normally this element should be in the cache,
@@ -635,7 +635,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			 * But maybe an application write finished, and we set
 			 * something outside the resync lru_cache in sync.
 			 */
-			int rs_left = drbd_bm_e_weight(device, enr);
+			int rs_left = drbd_bm_e_weight(first_peer_device(device), enr);
 			if (ext->flags != 0) {
 				drbd_warn(device, "changing resync lce: %d[%u;%02lx]"
 				     " -> %d[%u;00]\n",
@@ -701,7 +701,7 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
  * called by worker on L_SYNC_TARGET and receiver on SyncSource.
  *
  */
-void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
+static void set_in_sync(struct drbd_device *device, int bitmap_index, sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr;
@@ -743,11 +743,11 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
-	count = drbd_bm_clear_bits(device, sbnr, ebnr);
+	count = drbd_bm_clear_bits(device, bitmap_index, sbnr, ebnr);
 	if (count && get_ldev(device)) {
 		struct drbd_peer_device *peer_device;
 
-		drbd_advance_rs_marks(first_peer_device(device), drbd_bm_total_weight(device));
+		drbd_advance_rs_marks(first_peer_device(device), drbd_bm_total_weight(first_peer_device(device)));
 		spin_lock_irqsave(&device->al_lock, flags);
 		/* FIXME: Make sure the list of peer devices cannot change here. */
 		for_each_peer_device_rcu(peer_device, device)
@@ -763,6 +763,16 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
 		wake_up(&device->al_wait);
 }
 
+void drbd_set_in_sync(struct drbd_peer_device *peer_device, sector_t sector, int size)
+{
+	set_in_sync(peer_device->device, peer_device->bitmap_index, sector, size);
+}
+
+void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
+{
+	set_in_sync(device, -1, sector, size);
+}
+
 /*
  * this is intended to set one request worth of data out of sync.
  * affects at least 1 bit,
@@ -771,7 +781,7 @@ void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size)
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+static int set_out_of_sync(struct drbd_device *device, int bitmap_index, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr, flags;
 	sector_t esector, nr_sectors;
@@ -803,7 +813,7 @@ int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
 	spin_lock_irqsave(&device->al_lock, flags);
-	count = drbd_bm_set_bits(device, sbnr, ebnr);
+	count = drbd_bm_set_bits(device, bitmap_index, sbnr, ebnr);
 
 	enr = BM_SECT_TO_EXT(sector);
 	e = lc_find(first_peer_device(device)->resync_lru, enr);
@@ -815,6 +825,16 @@ out:
 	put_ldev(device);
 
 	return count;
+}
+
+int drbd_set_out_of_sync(struct drbd_peer_device *peer_device, sector_t sector, int size)
+{
+	return set_out_of_sync(peer_device->device, peer_device->bitmap_index, sector, size);
+}
+
+int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+{
+	return set_out_of_sync(device, -1, sector, size);
 }
 
 static
@@ -835,7 +855,7 @@ struct bm_extent *_bme_get(struct drbd_peer_device *peer_device, unsigned int en
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (bm_ext) {
 		if (bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = drbd_bm_e_weight(device, enr);
+			bm_ext->rs_left = drbd_bm_e_weight(peer_device, enr);
 			bm_ext->rs_failed = 0;
 			lc_committed(peer_device->resync_lru);
 			wakeup = 1;
@@ -999,7 +1019,7 @@ int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 			goto try_again;
 		}
 		if (bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = drbd_bm_e_weight(device, enr);
+			bm_ext->rs_left = drbd_bm_e_weight(peer_device, enr);
 			bm_ext->rs_failed = 0;
 			lc_committed(peer_device->resync_lru);
 			wake_up(&device->al_wait);
@@ -1178,7 +1198,7 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	spin_lock_irq(&device->al_lock);
-	count = drbd_bm_count_bits(device, sbnr, ebnr);
+	count = drbd_bm_count_bits(device, peer_device->bitmap_index, sbnr, ebnr);
 	if (count) {
 		peer_device->rs_failed += count;
 

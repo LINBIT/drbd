@@ -1072,7 +1072,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	for (i = UI_CURRENT; i < UI_SIZE; i++)
 		p->uuid[i] = cpu_to_be64(drbd_uuid(peer_device, i));
 
-	peer_device->comm_bm_set = drbd_bm_total_weight(device);
+	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->uuid[UI_SIZE] = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
 	uuid_flags |= rcu_dereference(peer_device->connection->net_conf)->discard_my_data ? 1 : 0;
@@ -1440,8 +1440,8 @@ int fill_bitmap_rle_bits(struct drbd_device *device,
 	/* see how much plain bits we can stuff into one packet
 	 * using RLE and VLI. */
 	do {
-		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(device, c->bit_offset)
-				    : _drbd_bm_find_next(device, c->bit_offset);
+		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(first_peer_device(device), c->bit_offset)
+				    : _drbd_bm_find_next(first_peer_device(device), c->bit_offset);
 		if (tmp == -1UL)
 			tmp = c->bm_bits;
 		rl = tmp - c->bit_offset;
@@ -1542,7 +1542,7 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 				  c->bm_words - c->word_offset);
 		len = num_words * sizeof(*p);
 		if (len)
-			drbd_bm_get_lel(device, c->word_offset, num_words, p);
+			drbd_bm_get_lel(peer_device, c->word_offset, num_words, p);
 		err = __send_command(peer_device->connection, device->vnr, sock, P_BITMAP, len, NULL, 0);
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;

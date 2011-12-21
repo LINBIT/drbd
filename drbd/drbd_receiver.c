@@ -1781,7 +1781,7 @@ STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 	D_ASSERT(device, drbd_interval_empty(&peer_req->i));
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		drbd_set_in_sync(device, sector, peer_req->i.size);
+		drbd_set_in_sync(peer_device, sector, peer_req->i.size);
 		err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
 	} else {
 		/* Record failure to sync */
@@ -1991,7 +1991,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 				P_RS_WRITE_ACK : P_WRITE_ACK;
 			err = drbd_send_ack(peer_device, pcmd, peer_req);
 			if (pcmd == P_RS_WRITE_ACK)
-				drbd_set_in_sync(device, sector, peer_req->i.size);
+				drbd_set_in_sync(peer_device, sector, peer_req->i.size);
 		} else {
 			err = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
 			/* we expect it to be marked out of sync anyways...
@@ -2440,7 +2440,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	if (peer_device->disk_state[NOW] < D_INCONSISTENT) {
 		/* In case we have the only disk of the cluster, */
-		drbd_set_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
+		drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
 		peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
 		peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
 		drbd_al_begin_io(device, &peer_req->i, true);
@@ -2522,7 +2522,7 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 		if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_VERIFY_T)
 			rs_left = peer_device->ov_left;
 		else
-			rs_left = drbd_bm_total_weight(device) - peer_device->rs_failed;
+			rs_left = drbd_bm_total_weight(peer_device) - peer_device->rs_failed;
 
 		dt = ((long)jiffies - (long)peer_device->rs_mark_time[i]) / HZ;
 		if (!dt)
@@ -2989,7 +2989,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 				drbd_uuid_set_bm(peer_device, 0UL);
 
 				drbd_uuid_dump_self(peer_device,
-						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(device) : 0, 0);
+						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(first_peer_device(device)) : 0, 0);
 				*rule_nr = 34;
 			} else {
 				drbd_info(device, "was SyncSource (peer failed to write sync_uuid)\n");
@@ -3099,7 +3099,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
-					    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(device) : 0, 0);
+					    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(first_peer_device(device)) : 0, 0);
 
 			return 1;
 		}
@@ -3279,9 +3279,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		rv = L_WF_BITMAP_T;
 	} else {
 		rv = L_CONNECTED;
-		if (drbd_bm_total_weight(device)) {
+		if (drbd_bm_total_weight(peer_device)) {
 			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
-			     drbd_bm_total_weight(device));
+			     drbd_bm_total_weight(peer_device));
 		}
 	}
 
@@ -4279,7 +4279,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		 * Maybe we should finish it up, too? */
 		else if (os.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_CONNECTED) {
-			if (drbd_bm_total_weight(device) <= peer_device->rs_failed)
+			if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
 				drbd_resync_finished(peer_device);
 			return 0;
 		}
@@ -4471,7 +4471,7 @@ receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
 	if (err)
 		return err;
 
-	drbd_bm_merge_lel(peer_device->device, c->word_offset, num_words, p);
+	drbd_bm_merge_lel(peer_device, c->word_offset, num_words, p);
 
 	c->word_offset += num_words;
 	c->bit_offset = c->word_offset * BITS_PER_LONG;
@@ -4535,7 +4535,7 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 				drbd_err(peer_device, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
 				return -EIO;
 			}
-			drbd_bm_set_many_bits(peer_device->device, s, e);
+			drbd_bm_set_many_bits(peer_device, s, e);
 		}
 
 		if (have < bits) {
@@ -4762,7 +4762,7 @@ STATIC int receive_out_of_sync(struct drbd_connection *connection, struct packet
 				drbd_conn_str(peer_device->repl_state[NOW]));
 	}
 
-	drbd_set_out_of_sync(device, be64_to_cpu(p->sector), be32_to_cpu(p->blksize));
+	drbd_set_out_of_sync(peer_device, be64_to_cpu(p->sector), be32_to_cpu(p->blksize));
 
 	return 0;
 }
@@ -5328,7 +5328,7 @@ STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 
 	if (get_ldev(device)) {
 		drbd_rs_complete_io(peer_device, sector);
-		drbd_set_in_sync(device, sector, blksize);
+		drbd_set_in_sync(peer_device, sector, blksize);
 		/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
 		peer_device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
 		put_ldev(device);
@@ -5378,7 +5378,7 @@ STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
-		drbd_set_in_sync(device, sector, blksize);
+		drbd_set_in_sync(peer_device, sector, blksize);
 		dec_rs_pending(peer_device);
 		return 0;
 	}
@@ -5438,7 +5438,7 @@ STATIC int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 		   request is no longer in the collision hash. */
 		/* In Protocol B we might already have got a P_RECV_ACK
 		   but then get a P_NEG_ACK afterwards. */
-		drbd_set_out_of_sync(device, sector, size);
+		drbd_set_out_of_sync(peer_device, sector, size);
 	}
 	return 0;
 }

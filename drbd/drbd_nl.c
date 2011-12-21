@@ -1555,7 +1555,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (_drbd_bm_total_weight(device) == drbd_bm_bits(device))
+	if (_drbd_bm_total_weight(first_peer_device(device)) == drbd_bm_bits(device))
 		drbd_suspend_al(device); /* IO is still suspended here... */
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
@@ -2629,7 +2629,8 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 			NLA_PUT_U32(skb, T_disk_flags, device->ldev->md.flags);
 			NLA_PUT(skb, T_uuids, sizeof(si->uuids), uuid);
 			NLA_PUT_U64(skb, T_bits_total, drbd_bm_bits(device));
-			NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(device));
+			if (peer_device)
+				NLA_PUT_U64(skb, T_bits_oos, drbd_bm_total_weight(peer_device));
 
 			if (connection) {
 				struct drbd_peer_device *peer_device;

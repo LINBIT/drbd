@@ -1230,15 +1230,14 @@ void drbd_bm_free(struct drbd_bitmap *bitmap);
 extern void drbd_bm_set_all(struct drbd_device *device);
 extern void drbd_bm_clear_all(struct drbd_device *device);
 /* set/clear/test only a few bits at a time */
-extern unsigned int drbd_bm_set_bits(struct drbd_device *, unsigned long, unsigned long);
-extern unsigned int drbd_bm_clear_bits(struct drbd_device *, unsigned long, unsigned long);
-extern int drbd_bm_count_bits(
-	struct drbd_device *device, const unsigned long s, const unsigned long e);
+extern unsigned int drbd_bm_set_bits(struct drbd_device *, unsigned int, unsigned long, unsigned long);
+extern unsigned int drbd_bm_clear_bits(struct drbd_device *, unsigned int, unsigned long, unsigned long);
+extern int drbd_bm_count_bits(struct drbd_device *, unsigned int, unsigned long, unsigned long);
 /* bm_set_bits variant for use while holding drbd_bm_lock,
  * may process the whole bitmap in one go */
-extern void drbd_bm_set_many_bits(struct drbd_device *, unsigned long, unsigned long);
-extern int  drbd_bm_test_bit(struct drbd_device *device, unsigned long bitnr);
-extern int  drbd_bm_e_weight(struct drbd_device *device, unsigned long enr);
+extern void drbd_bm_set_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
+extern int drbd_bm_test_bit(struct drbd_peer_device *, unsigned long);
+extern int  drbd_bm_e_weight(struct drbd_peer_device *, unsigned long);
 extern int  drbd_bm_write_page(struct drbd_device *device, unsigned int idx) __must_hold(local);
 extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_bm_mark_for_writeout(struct drbd_device *device, int page_nr);
@@ -1249,18 +1248,18 @@ extern unsigned long drbd_bm_bits(struct drbd_device *device);
 extern sector_t      drbd_bm_capacity(struct drbd_device *device);
 
 #define DRBD_END_OF_BITMAP	(~(unsigned long)0)
-extern unsigned long drbd_bm_find_next(struct drbd_device *device, unsigned long bm_fo);
+extern unsigned long drbd_bm_find_next(struct drbd_peer_device *, unsigned long);
 /* bm_find_next variants for use while you hold drbd_bm_lock() */
-extern unsigned long _drbd_bm_find_next(struct drbd_device *device, unsigned long bm_fo);
-extern unsigned long _drbd_bm_find_next_zero(struct drbd_device *device, unsigned long bm_fo);
-extern unsigned long _drbd_bm_total_weight(struct drbd_device *device);
-extern unsigned long drbd_bm_total_weight(struct drbd_device *device);
+extern unsigned long _drbd_bm_find_next(struct drbd_peer_device *, unsigned long);
+extern unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *, unsigned long);
+extern unsigned long _drbd_bm_total_weight(struct drbd_peer_device *);
+extern unsigned long drbd_bm_total_weight(struct drbd_peer_device *);
 extern int drbd_bm_rs_done(struct drbd_device *device);
 /* for receive_bitmap */
-extern void drbd_bm_merge_lel(struct drbd_device *device, size_t offset,
+extern void drbd_bm_merge_lel(struct drbd_peer_device *peer_device, size_t offset,
 		size_t number, unsigned long *buffer);
 /* for _drbd_send_bitmap */
-extern void drbd_bm_get_lel(struct drbd_device *device, size_t offset,
+extern void drbd_bm_get_lel(struct drbd_peer_device *peer_device, size_t offset,
 		size_t number, unsigned long *buffer);
 
 extern void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags);
@@ -1501,8 +1500,10 @@ extern void drbd_rs_cancel_all(struct drbd_peer_device *);
 extern int drbd_rs_del_all(struct drbd_peer_device *);
 extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
-extern void drbd_set_in_sync(struct drbd_device *device, sector_t sector, int size);
-extern int drbd_set_out_of_sync(struct drbd_device *device, sector_t sector, int size);
+extern void drbd_set_in_sync(struct drbd_peer_device *, sector_t, int);
+extern void drbd_set_all_in_sync(struct drbd_device *, sector_t, int);
+extern int drbd_set_out_of_sync(struct drbd_peer_device *, sector_t, int);
+extern int drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern void drbd_al_shrink(struct drbd_device *device);
 
 /* drbd_nl.c */

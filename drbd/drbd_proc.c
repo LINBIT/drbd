@@ -78,7 +78,7 @@ static void drbd_get_syncer_progress(struct drbd_device *device,
 	if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_VERIFY_T)
 		*bits_left = peer_device->ov_left;
 	else
-		*bits_left = drbd_bm_total_weight(device) - peer_device->rs_failed;
+		*bits_left = drbd_bm_total_weight(peer_device) - peer_device->rs_failed;
 	/* >> 10 to prevent overflow,
 	 * +1 to prevent division by zero */
 	if (*bits_left > peer_device->rs_total) {
@@ -345,7 +345,7 @@ STATIC int drbd_seq_show(struct seq_file *seq, void *v)
 		);
 		seq_printf(seq, " oos:%llu\n",
 			   Bit2KB((unsigned long long)
-				   drbd_bm_total_weight(device)));
+				   drbd_bm_total_weight(peer_device)));
 		if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
 		    peer_device->repl_state[NOW] == L_SYNC_TARGET ||
 		    peer_device->repl_state[NOW] == L_VERIFY_S ||

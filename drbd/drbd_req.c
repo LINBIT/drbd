@@ -144,10 +144,10 @@ static void _req_is_done(struct drbd_device *device, struct drbd_request *req, c
 		 * Other places where we set out-of-sync:
 		 * READ with local io-error */
 		if (!(s & RQ_NET_OK) || !(s & RQ_LOCAL_OK))
-			drbd_set_out_of_sync(device, req->i.sector, req->i.size);
+			drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
 
 		if ((s & RQ_NET_OK) && (s & RQ_LOCAL_OK) && (s & RQ_NET_SIS))
-			drbd_set_in_sync(device, req->i.sector, req->i.size);
+			drbd_set_all_in_sync(device, req->i.sector, req->i.size);
 
 		/* one might be tempted to move the drbd_al_complete_io
 		 * to the local io completion callback drbd_request_endio.
@@ -437,7 +437,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case READ_COMPLETED_WITH_ERROR:
-		drbd_set_out_of_sync(device, req->i.sector, req->i.size);
+		/* FIXME: Which peers do we want to become out of sync here? */
+		drbd_set_out_of_sync(first_peer_device(device), req->i.sector, req->i.size);
 
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
@@ -745,6 +746,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
  */
 STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
 {
+	struct drbd_peer_device *peer_device;
+
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
 
@@ -760,7 +763,16 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	return drbd_bm_count_bits(device, sbnr, ebnr) == 0;
+	/* FIXME: Which policy do we want here? */
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		if (drbd_bm_count_bits(peer_device->device, peer_device->bitmap_index, sbnr, ebnr)) {
+			rcu_read_unlock();
+			return false;
+		}
+	}
+	rcu_read_unlock();
+	return true;
 }
 
 /*
@@ -1033,7 +1045,7 @@ allocate_barrier:
 				? QUEUE_FOR_NET_WRITE
 				: QUEUE_FOR_NET_READ);
 	}
-	if (send_oos && drbd_set_out_of_sync(device, sector, size))
+	if (send_oos && drbd_set_out_of_sync(first_peer_device(device), sector, size))
 		_req_mod(req, QUEUE_FOR_SEND_OOS);
 
 	rcu_read_lock();
