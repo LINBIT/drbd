@@ -1791,9 +1791,6 @@ _check_net_options(struct drbd_tconn *tconn, struct net_conf *old_conf, struct n
 		if (new_conf->two_primaries != old_conf->two_primaries)
 			return ERR_NEED_APV_100;
 
-		if (!new_conf->integrity_alg != !old_conf->integrity_alg)
-			return ERR_NEED_APV_100;
-
 		if (strcmp(new_conf->integrity_alg, old_conf->integrity_alg))
 			return ERR_NEED_APV_100;
 	}
