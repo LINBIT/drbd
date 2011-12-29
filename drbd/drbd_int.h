@@ -1244,8 +1244,6 @@ extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must
 extern void drbd_bm_mark_for_writeout(struct drbd_device *device, int page_nr);
 extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
-extern unsigned long drbd_bm_ALe_set_all(struct drbd_device *device,
-		unsigned long al_enr);
 extern size_t	     drbd_bm_words(struct drbd_device *device);
 extern unsigned long drbd_bm_bits(struct drbd_device *device);
 extern sector_t      drbd_bm_capacity(struct drbd_device *device);
