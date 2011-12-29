@@ -750,6 +750,7 @@ unsigned long drbd_bm_total_weight(struct drbd_device *device)
 size_t drbd_bm_words(struct drbd_device *device)
 {
 	struct drbd_bitmap *b = device->bitmap;
+
 	if (!expect(device, b))
 		return 0;
 	if (!expect(device, b->bm_pages))
@@ -761,6 +762,7 @@ size_t drbd_bm_words(struct drbd_device *device)
 unsigned long drbd_bm_bits(struct drbd_device *device)
 {
 	struct drbd_bitmap *b = device->bitmap;
+
 	if (!expect(device, b))
 		return 0;
 
@@ -1011,7 +1013,7 @@ STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 		submit_bio(rw, bio);
 		/* this should not count as user activity and cause the
 		 * resync to throttle -- see drbd_rs_should_slow_down(). */
-		atomic_add(len >> 9, &first_peer_device(device)->rs_sect_ev);
+		atomic_add(len >> 9, &device->rs_sect_ev);
 	}
 }
 

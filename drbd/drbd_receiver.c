@@ -1816,7 +1816,7 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	list_add(&peer_req->w.list, &device->sync_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	atomic_add(data_size >> 9, &peer_device->rs_sect_ev);
+	atomic_add(data_size >> 9, &device->rs_sect_ev);
 	if (drbd_submit_peer_request(device, peer_req, WRITE, DRBD_FAULT_RS_WR) == 0)
 		return 0;
 
@@ -2506,8 +2506,7 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 	}
 	spin_unlock_irq(&device->al_lock);
 
-	curr_events = drbd_backing_bdev_events(device)
-		    - atomic_read(&peer_device->rs_sect_ev);
+	curr_events = drbd_backing_bdev_events(device) - atomic_read(&device->rs_sect_ev);
 
 	if (!peer_device->rs_last_events ||
 	    curr_events - peer_device->rs_last_events > 64) {
@@ -2705,7 +2704,7 @@ STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet
 		goto out_free_e;
 
 submit_for_resync:
-	atomic_add(size >> 9, &peer_device->rs_sect_ev);
+	atomic_add(size >> 9, &device->rs_sect_ev);
 
 submit:
 	inc_unacked(device);

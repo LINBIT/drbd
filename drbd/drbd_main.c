@@ -2891,7 +2891,6 @@ static struct drbd_peer_device *create_peer_device(struct drbd_device *device, s
 
 	atomic_set(&peer_device->rs_pending_cnt, 0);
 	atomic_set(&peer_device->rs_sect_in, 0);
-	atomic_set(&peer_device->rs_sect_ev, 0);
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
@@ -2954,6 +2953,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	atomic_set(&device->unacked_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
+	atomic_set(&device->rs_sect_ev, 0);
 	atomic_set(&device->ap_in_flight, 0);
 	atomic_set(&device->md_io_in_use, 0);
 

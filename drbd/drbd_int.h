@@ -818,7 +818,6 @@ struct drbd_peer_device {
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
-	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	int rs_last_sect_ev; /* counter to compare with */
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
@@ -907,6 +906,7 @@ struct drbd_device {
 	unsigned int minor;
 	u64 ed_uuid; /* UUID of the exposed data */
 	char congestion_reason;  /* Why we where congested... */
+	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
 	struct device_conf device_conf;
