@@ -4144,8 +4144,7 @@ struct format *new_cfg()
 		fprintf(stderr, "could not calloc() cfg\n");
 		exit(20);
 	}
-	err = posix_memalign(&on_disk_buffer,pagesize,
-		(buffer_size+pagesize-1)/pagesize*pagesize);
+	err = posix_memalign(&on_disk_buffer, pagesize, ALIGN(buffer_size, pagesize));
 	if (err) {
 		fprintf(stderr, "could not posix_memalign() on_disk_buffer\n");
 		exit(20);
