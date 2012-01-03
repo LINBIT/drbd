@@ -1140,12 +1140,12 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	}
 }
 
-static int find_peer_addr_hash(struct drbd_md *md, u32 peer_addr_hash)
+static int find_peer_addr_hash(struct drbd_device *device, u32 peer_addr_hash)
 {
 	int i;
 
-	for (i = 0; i < md->bm_max_peers; i++)
-		if (md->peers[i].addr_hash == peer_addr_hash)
+	for (i = 0; i < device->bitmap->bm_max_peers; i++)
+		if (device->ldev->md.peers[i].addr_hash == peer_addr_hash)
 			return i;
 	return -1;
 }
@@ -1154,7 +1154,6 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_md *md;
 	u32 peer_addr_hash;
 	int i, err = 0;
 
@@ -1162,9 +1161,8 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 	    !get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
 
-	md = &device->ldev->md;
 	peer_addr_hash = crc32c(0, &connection->peer_addr, connection->peer_addr_len);
-	i = find_peer_addr_hash(md, peer_addr_hash);
+	i = find_peer_addr_hash(device, peer_addr_hash);
 	if (i != -1) {
 		drbd_info(peer_device, "Bitmap slot %u was assigned to "
 			  "peer with address hash %08X\n", i, peer_addr_hash);
@@ -1190,13 +1188,13 @@ static int get_bitmap_index_from_uuids(struct drbd_peer_device *peer_device)
 
 	if (peer == UUID_JUST_CREATED) {
 		bi = peer_device->bitmap_index == -1 ?
-			find_peer_addr_hash(md, 0 /* UNUSED_SLOT */) :
+			find_peer_addr_hash(device, 0 /* UNUSED_SLOT */) :
 			peer_device->bitmap_index;
 
 		return bi;
 	}
 
-	for (bi = 0; bi < md->bm_max_peers; bi++) {
+	for (bi = 0; bi < device->bitmap->bm_max_peers; bi++) {
 		if ((peer_device->p_uuid[UI_CURRENT] & ~((u64)1)) == self_current)
 			return bi;
 
@@ -3281,8 +3279,8 @@ void drbd_md_sync(struct drbd_device *device)
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
-	buffer->bm_max_peers = cpu_to_be32(device->ldev->md.bm_max_peers);
-	for (i = 0; i < device->ldev->md.bm_max_peers; i++) {
+	buffer->bm_max_peers = cpu_to_be32(device->bitmap->bm_max_peers);
+	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		int j;
 		for (j = 0; j < ARRAY_SIZE(buffer->peers[i].uuid); j++)
 			buffer->peers[i].uuid[j] = cpu_to_be64(device->ldev->md.peers[i].uuid[j]);
@@ -3373,7 +3371,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		rv = ERR_MD_INVALID;
 		goto err;
 	}
-	bdev->md.bm_max_peers = i;
+	device->bitmap->bm_max_peers = i;
 	drbd_md_set_sector_offsets(device, bdev); /* recalc bm_offset and md_size_sect with bm_max_peers */
 
 	if (be32_to_cpu(buffer->bm_offset) != bdev->md.bm_offset) {
@@ -3400,7 +3398,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
-	for (i = 0; i < bdev->md.bm_max_peers; i++) {
+	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		int j;
 		for (j = 0; j < ARRAY_SIZE(buffer->peers[i].uuid); j++)
 			bdev->md.peers[i].uuid[j] = be64_to_cpu(buffer->peers[i].uuid[j]);

@@ -433,6 +433,7 @@ int drbd_bm_init(struct drbd_device *device)
 	mutex_init(&b->bm_change);
 	init_waitqueue_head(&b->bm_io_wait);
 
+	b->bm_max_peers = 1;
 	device->bitmap = b;
 
 	return 0;

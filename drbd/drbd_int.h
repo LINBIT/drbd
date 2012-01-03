@@ -559,6 +559,7 @@ struct drbd_bitmap {
 	wait_queue_head_t bm_io_wait; /* used to serialize IO of single pages */
 
 	enum bm_flag bm_flags;
+	unsigned int bm_max_peers;
 
 	/* debugging aid, in case we are still racy somewhere */
 	char          *bm_why;
@@ -615,7 +616,6 @@ struct drbd_md {
 	 * gets applied to act_log->nr_elements
 	 */
 
-	u32 bm_max_peers;
 	struct drbd_md_peer *peers;
 };
 

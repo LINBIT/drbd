@@ -735,13 +735,15 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 				struct drbd_backing_dev *bdev)
 {
 	sector_t capacity_sect, bits, bytes, md_size_sect = 0;
-	int meta_dev_idx;
+	int meta_dev_idx, max_peers;
 
 	rcu_read_lock();
 	meta_dev_idx = rcu_dereference(bdev->disk_conf)->meta_dev_idx;
 
-	if (!bdev->md.bm_max_peers)
-		bdev->md.bm_max_peers = 1;
+	if (device->bitmap)
+		max_peers = device->bitmap->bm_max_peers;
+	else
+		max_peers = 1;
 
 	switch (meta_dev_idx) {
 	default:
@@ -766,7 +768,7 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 
 		capacity_sect = drbd_get_capacity(bdev->backing_bdev);
 		bits = ALIGN(BM_SECT_TO_BIT(ALIGN(capacity_sect, BM_SECT_PER_BIT)), 64);
-		bytes = ALIGN(bits / 8 * bdev->md.bm_max_peers, BM_BLOCK_SIZE);
+		bytes = ALIGN(bits / 8 * max_peers, BM_BLOCK_SIZE);
 		md_size_sect = bytes >> 9;
 
 		/* plus the "drbd meta data super block",
@@ -1416,8 +1418,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (!get_ldev_if_state(device, D_ATTACHING))
 		goto force_diskless;
 
-	drbd_md_set_sector_offsets(device, nbc);
-
 	if (!device->bitmap) {
 		if (drbd_bm_init(device)) {
 			retcode = ERR_NOMEM;
@@ -1425,12 +1425,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	drbd_md_set_sector_offsets(device, nbc);
 	retcode = drbd_md_read(device, nbc);
 	if (retcode != NO_ERROR)
 		goto force_diskless_dec;
 
 	drbd_info(device, "Maximum number of peer devices = %u\n",
-		  nbc->md.bm_max_peers);
+		  device->bitmap->bm_max_peers);
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
