@@ -546,7 +546,7 @@ struct drbd_bitmap {
 	struct page **bm_pages;
 	spinlock_t bm_lock;
 
-	unsigned long bm_set; /* number of bits set */
+	unsigned long bm_set[MAX_PEERS]; /* number of bits set */
 	unsigned long bm_bits;  /* bits per peer */
 	size_t   bm_words;
 	size_t   bm_number_of_pages;

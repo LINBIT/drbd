@@ -647,12 +647,12 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 	switch(op) {
 	case BM_OP_CLEAR:
 		if (total)
-			bitmap->bm_set -= total;
+			bitmap->bm_set[bitmap_index] -= total;
 		break;
 	case BM_OP_SET:
 	case BM_OP_MERGE:
 		if (total)
-			bitmap->bm_set += total;
+			bitmap->bm_set[bitmap_index] += total;
 		break;
 	case BM_OP_FIND_BIT:
 	case BM_OP_FIND_ZERO_BIT:
@@ -748,17 +748,17 @@ static void bm_count_bits(struct drbd_device *device)
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int bitmap_index;
 
-	bitmap->bm_set = 0;
 	for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
-		unsigned long bit = 0;
+		unsigned long bit = 0, bits_set = 0;
 
 		while (bit < bitmap->bm_bits) {
 			unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
-			bitmap->bm_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL);
+			bits_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL);
 			bit = last_bit + 1;
 			cond_resched();
 		}
+		bitmap->bm_set[bitmap_index] = bits_set;
 	}
 }
 
@@ -793,13 +793,16 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	opages_vmalloced = (BM_P_VMALLOCED & b->bm_flags);
 
 	if (capacity == 0) {
+		unsigned int bitmap_index;
+
 		spin_lock_irq(&b->bm_lock);
 		opages = b->bm_pages;
 		onpages = b->bm_number_of_pages;
 		owords = b->bm_words;
 		b->bm_pages = NULL;
 		b->bm_number_of_pages = 0;
-		b->bm_set = 0;
+		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
+			b->bm_set[bitmap_index] = 0;
 		b->bm_bits = 0;
 		b->bm_words = 0;
 		b->bm_dev_capacity = 0;
@@ -891,8 +894,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
  * leaving this function...
  * we still need to lock it, since it is important that this returns
  * bm_set == 0 precisely.
- *
- * maybe bm_set should be atomic_t ?
  */
 unsigned long _drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 {
@@ -907,7 +908,7 @@ unsigned long _drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 		return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	s = b->bm_set;
+	s = b->bm_set[peer_device->bitmap_index];
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 
 	return s;
@@ -1159,7 +1160,6 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	struct drbd_bitmap *b = device->bitmap;
 	int num_pages, i, count = 0;
 	unsigned long now;
-	char ppb[10];
 	int err = 0;
 
 	/*
@@ -1260,12 +1260,6 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 		bm_count_bits(device);
 		drbd_info(device, "recounting of set bits took additional %lu jiffies\n",
 		     jiffies - now);
-	}
-
-	if (flags == 0) {
-		unsigned long bits_set = b->bm_set;
-		drbd_info(device, "%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
-		     ppsize(ppb, bits_set << (BM_BLOCK_SHIFT-10)), bits_set);
 	}
 
 out:
