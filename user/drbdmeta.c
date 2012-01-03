@@ -402,7 +402,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->al_offset = be32_to_cpu(disk->al_offset.be);
 	cpu->al_nr_extents = be32_to_cpu(disk->al_nr_extents.be);
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
-	cpu->bm_bytes_per_bit = 4096;
+	cpu->bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	cpu->bm_max_peers = 1;
 }
 
@@ -2322,7 +2322,7 @@ int v07_style_md_open(struct format *cfg)
 	}
 	if(cfg->md.bm_bytes_per_bit == 0 ) {
 		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
-		cfg->md.bm_bytes_per_bit = 4096;
+		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
 	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
 	cfg->bm_bytes = words * sizeof(long);
@@ -3002,7 +3002,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			md_parse_error(TK_BM, 0, "keyword 'bm' or 'la-peer-max-bio-size'");
 		}
 	} else {
-		cfg->md.bm_bytes_per_bit = 4096;
+		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
 	EXP(TK_BM);
 start_of_bm:
