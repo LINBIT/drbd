@@ -2760,6 +2760,19 @@ void print_dump_header()
 	printf("\n#\n\n");
 }
 
+void print_dump_uuids(struct md_peer_cpu *peer, int ui_start, const char* indent)
+{
+	int i;
+
+	printf("{\n%s   ", indent);
+	for (i = ui_start; i < UI_SIZE; i++ ) {
+		printf(" 0x"X64(016)";", peer->uuid[i]);
+	}
+	printf("\n");
+	printf("%s    flags 0x"X32(08)";\n", indent, peer->flags);
+	printf("%s}\n", indent);
+}
+
 int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	int i;
@@ -2776,6 +2789,8 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
+	if (format_version(cfg) >= DRBD_V09)
+		printf("bm-max-peers %d;\n", cfg->md.bm_max_peers);
 	printf("# md_size_sect %llu\n", (long long unsigned)cfg->md.md_size_sect);
 
 	if (i == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
@@ -2808,20 +2823,32 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	printf("# bm_offset %llu\n", (long long unsigned)cfg->bm_offset);
 	printf("\n");
 
-	if (format_version(cfg) < DRBD_V08) {
+	switch (format_version(cfg)) {
+	case DRBD_V06:
+	case DRBD_V07:
 		printf("gc {\n   ");
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
 			printf(" %d;", cfg->md.gc[i]);
 		}
 		printf("\n}\n");
-	} else { // >= 08
-		printf("uuid {\n   ");
-		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
-			printf(" 0x"X64(016)";", cfg->md.peers[0].uuid[i]);
+		break;
+	case DRBD_V08:
+		printf("uuid ");
+		print_dump_uuids(&cfg->md.peers[0], UI_CURRENT, "");
+		break;
+	case DRBD_V09:
+		printf("uuid {\n"
+		       "   current 0x"X64(016)";\n"
+		       "   flags 0x"X32(08)";\n",
+		       cfg->md.peers[0].uuid[UI_CURRENT], cfg->md.flags);
+		for (i = 0; i < cfg->md.bm_max_peers; i++) {
+			printf("   peer[%d] hash 0x%08X ", i, cfg->md.peers[i].addr_hash);
+			print_dump_uuids(&cfg->md.peers[i], UI_BITMAP, "   ");
 		}
-		printf("\n");
-		printf("    flags 0x"X32(08)";\n",cfg->md.flags);
 		printf("}\n");
+		break;
+	case DRBD_UNKNOWN:
+		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
 	}
 
 	if (format_version(cfg) >= DRBD_V07) {
