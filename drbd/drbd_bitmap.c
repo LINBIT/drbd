@@ -96,27 +96,6 @@
  *  so we need spin_lock_irqsave().
  *  And we need the kmap_atomic.
  */
-struct drbd_bitmap {
-	struct page **bm_pages;
-	spinlock_t bm_lock;
-
-	/* see LIMITATIONS: above */
-
-	unsigned long bm_set;       /* nr of set bits; THINK maybe atomic_t? */
-	unsigned long bm_bits;
-	size_t   bm_words;
-	size_t   bm_number_of_pages;
-	sector_t bm_dev_capacity;
-	struct mutex bm_change; /* serializes resize operations */
-
-	wait_queue_head_t bm_io_wait; /* used to serialize IO of single pages */
-
-	enum bm_flag bm_flags;
-
-	/* debugging aid, in case we are still racy somewhere */
-	char          *bm_why;
-	struct task_struct *bm_task;
-};
 
 #define bm_print_lock_info(m) __bm_print_lock_info(m, __func__)
 static void __bm_print_lock_info(struct drbd_device *device, const char *func)

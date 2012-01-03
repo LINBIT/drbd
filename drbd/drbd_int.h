@@ -520,8 +520,6 @@ enum {
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
 };
 
-struct drbd_bitmap; /* opaque for drbd_device */
-
 /* definition of bits in bm_flags to be used in drbd_bm_lock
  * and drbd_bitmap_io and friends. */
 enum bm_flag {
@@ -547,6 +545,25 @@ enum bm_flag {
 	/* clear is not expected while bitmap is locked for bulk operation */
 };
 
+struct drbd_bitmap {
+	struct page **bm_pages;
+	spinlock_t bm_lock;
+
+	unsigned long bm_set; /* number of bits set */
+	unsigned long bm_bits;  /* bits per peer */
+	size_t   bm_words;
+	size_t   bm_number_of_pages;
+	sector_t bm_dev_capacity;
+	struct mutex bm_change; /* serializes resize operations */
+
+	wait_queue_head_t bm_io_wait; /* used to serialize IO of single pages */
+
+	enum bm_flag bm_flags;
+
+	/* debugging aid, in case we are still racy somewhere */
+	char          *bm_why;
+	struct task_struct *bm_task;
+};
 
 /* TODO sort members for performance
  * MAYBE group them further */
