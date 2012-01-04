@@ -3665,17 +3665,19 @@ void check_internal_md_flavours(struct format * cfg) {
 		cfg->md_device_name,
 		fixed ? (long long unsigned)fixed_offset : (long long unsigned)flex_offset);
 
+	if (format_version(cfg) == have) {
+		if (!confirmed("Do you really want to overwrite the existing meta-data?")) {
+			printf("Operation cancelled.\n");
+			exit(1); // 1 to avoid online resource counting
+		}
+		/* no need to wipe flex offset,
+		 * will be overwritten with new data */
+		cfg->md.magic = 0;
+		have = DRBD_UNKNOWN;
+	}
+
 	if (is_v08(cfg)) {
-		if (have == DRBD_V08) {
-			if (!confirmed("Do you really want to overwrite the existing v08 meta-data?")) {
-				printf("Operation cancelled.\n");
-				exit(1); // 1 to avoid online resource counting
-			}
-			/* no need to wipe flex offset,
-			 * will be overwritten with new data */
-			cfg->md.magic = 0;
-			have = DRBD_UNKNOWN;
-		} else if (have == DRBD_V07) {
+		if (have == DRBD_V07) {
 			if (confirmed("Convert the existing v07 meta-data to v08?")) {
 				cfg->md = md_now;
 				md_convert_07_to_08(cfg);
@@ -3686,17 +3688,7 @@ void check_internal_md_flavours(struct format * cfg) {
 			}
 		}
 	} else if (is_v07(cfg)) {
-		if (have == DRBD_V07) {
-			if (!confirmed("Do you really want to overwrite the existing v07 meta-data?")) {
-				printf("Operation cancelled.\n");
-				exit(1); // 1 to avoid online resource counting
-			}
-			/* no need to wipe the requested flavor,
-			 * will be overwritten with new data */
-			cfg->md.magic = 0;
-			have = DRBD_UNKNOWN;
-
-		} else if (have == DRBD_V08) {
+		if (have == DRBD_V08) {
 			if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
 				cfg->md = md_now;
 				md_convert_08_to_07(cfg);
