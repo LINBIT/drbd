@@ -2152,12 +2152,12 @@ unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors)
 	return words;
 }
 
-static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr)
+static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr, const char* indent)
 {
 	if ((i & 31) == peer_nr)
-		fprintf(f, "\n   # at %llukB\n   ", (256LLU * (i - peer_nr)));
+		fprintf(f, "\n%s   # at %llukB\n%s   ", indent, (256LLU * (i - peer_nr)), indent);
 	else
-		fprintf(f, "\n   ");
+		fprintf(f, "\n%s   ", indent);
 }
 
 static unsigned int round_down(unsigned int i, unsigned int g)
@@ -2168,7 +2168,7 @@ static unsigned int round_down(unsigned int i, unsigned int g)
 
 /* le_u64, because we want to be able to hexdump it reliably
  * regardless of sizeof(long) */
-static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr)
+static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr, const char* indent)
 {
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u64 const *bm = on_disk_buffer;
@@ -2185,7 +2185,7 @@ static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr)
 	i = peer_nr;
 	r = peer_nr;
 	cw.le = 0; /* silence compiler warning */
-	fprintf(f, "bm {");
+	fprintf(f, "{");
 
 	if (r < n)
 		goto start;
@@ -2212,7 +2212,7 @@ next:
 		if (count == 0) cw = bm[i];
 		if (i % (4 * max_peers) == peer_nr) {
 			if (!count)
-				fprintf_bm_eol(f, r, peer_nr);
+				fprintf_bm_eol(f, r, peer_nr, indent);
 
 			/* j = i, because it may be continuation after buffer wrap */
 			for (j = i; j < n_buffer && cw.le == bm[j].le; j += max_peers)
@@ -2227,7 +2227,7 @@ next:
 			}
 			if (count) {
 				fprintf(f, " %u times 0x"X64(016)";",
-				       count, le64_to_cpu(cw.le));
+					count, le64_to_cpu(cw.le));
 				bits_set += count * generic_hweight64(cw.le);
 				count = 0;
 				if (r >= n)
@@ -2243,13 +2243,14 @@ next:
 		r += max_peers;
 		i += max_peers;
 	}
-	fprintf(f, "\n}\n");
+	fprintf(f, "\n%s}\n", indent);
 	cfg->bits_set = bits_set;
 }
 
 void printf_bm(struct format *cfg)
 {
-	fprintf_bm(stdout, cfg, 0);
+	printf("bm ");
+	fprintf_bm(stdout, cfg, 0, "");
 }
 
 int v07_style_md_open(struct format *cfg)
