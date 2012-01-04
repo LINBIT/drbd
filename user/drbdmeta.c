@@ -2249,8 +2249,27 @@ next:
 
 void printf_bm(struct format *cfg)
 {
-	printf("bm ");
-	fprintf_bm(stdout, cfg, 0, "");
+	int i;
+
+	switch (format_version(cfg)) {
+	case DRBD_V06:
+		return;
+	case DRBD_V07:
+	case DRBD_V08:
+		printf("bm ");
+		fprintf_bm(stdout, cfg, 0, "");
+		break;
+	case DRBD_V09:
+		printf("bm {\n");
+		for (i = 0; i < cfg->md.bm_max_peers; i++) {
+			printf("   peer[%d] hash 0x%08X ", i, cfg->md.peers[i].addr_hash);
+			fprintf_bm(stdout, cfg, i, "   ");
+		}
+		printf("}\n");
+		break;
+	case DRBD_UNKNOWN:
+		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
+	}
 }
 
 int v07_style_md_open(struct format *cfg)
