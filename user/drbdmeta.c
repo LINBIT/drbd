@@ -2152,17 +2152,17 @@ unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors)
 	return words;
 }
 
-static void printf_bm_eol(unsigned int i)
+static void fprintf_bm_eol(FILE *f, unsigned int i)
 {
 	if ((i & 31) == 0)
-		printf("\n   # at %llukB\n   ", (256LLU * i));
+		fprintf(f, "\n   # at %llukB\n   ", (256LLU * i));
 	else
-		printf("\n   ");
+		fprintf(f, "\n   ");
 }
 
 /* le_u64, because we want to be able to hexdump it reliably
  * regardless of sizeof(long) */
-void printf_bm(struct format *cfg)
+static void fprintf_bm(FILE *f, struct format *cfg)
 {
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u64 const *bm = on_disk_buffer;
@@ -2177,7 +2177,7 @@ void printf_bm(struct format *cfg)
 
 	i=0; r=0;
 	cw.le = 0; /* silence compiler warning */
-	printf("bm {");
+	fprintf(f, "bm {");
 	while (r < n) {
 		/* need to read on first iteration,
 		 * and on buffer wrap */
@@ -2195,7 +2195,8 @@ next:
 		ASSERT(i < n_buffer);
 		if (count == 0) cw = bm[i];
 		if ((i & 3) == 0) {
-			if (!count) printf_bm_eol(r);
+			if (!count)
+				fprintf_bm_eol(f, r);
 
 			/* j = i, because it may be continuation after buffer wrap */
 			for (j = i; j < n_buffer && cw.le == bm[j].le; j++)
@@ -2209,7 +2210,7 @@ next:
 				if (j == n_buffer && r < n) continue;
 			}
 			if (count) {
-				printf(" %u times 0x"X64(016)";",
+				fprintf(f, " %u times 0x"X64(016)";",
 				       count, le64_to_cpu(cw.le));
 				bits_set += count * generic_hweight64(cw.le);
 				count = 0;
@@ -2221,12 +2222,17 @@ next:
 			}
 		}
 		ASSERT(i < n_buffer);
-		printf(" 0x"X64(016)";", le64_to_cpu(bm[i].le));
+		fprintf(f, " 0x"X64(016)";", le64_to_cpu(bm[i].le));
 		bits_set += generic_hweight64(bm[i].le);
 		r++; i++;
 	}
-	printf("\n}\n");
+	fprintf(f, "\n}\n");
 	cfg->bits_set = bits_set;
+}
+
+void printf_bm(struct format *cfg)
+{
+	fprintf_bm(stdout, cfg);
 }
 
 int v07_style_md_open(struct format *cfg)
