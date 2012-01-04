@@ -3605,13 +3605,10 @@ void check_for_existing_data(struct format *cfg)
 }
 
 void check_internal_md_flavours(struct format * cfg) {
-	struct md_cpu md_07;
-	struct md_cpu md_07p;
-	struct md_cpu md_08;
+	struct md_cpu md_test, md_now;
 	off_t fixed_offset, flex_offset;
-	int have_fixed_v07 = 0;
-	int have_flex_v07  = 0;
-	int have_flex_v08  = 0;
+	enum md_format have = DRBD_UNKNOWN;
+	int fixed = 0; /* as opposed to flex */
 
 	ASSERT( cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
 		cfg->md_index == DRBD_MD_INDEX_FLEX_INT );
@@ -3627,59 +3624,49 @@ void check_internal_md_flavours(struct format * cfg) {
 		/* ... v07 fixed-size internal meta data? */
 		PREAD(cfg->md_fd, on_disk_buffer, 4096, fixed_offset);
 
-		md_disk_07_to_cpu(&md_07,
+		md_disk_07_to_cpu(&md_test,
 			(struct md_on_disk_07*)on_disk_buffer);
-		have_fixed_v07 = is_valid_md(DRBD_V07,
-			&md_07, DRBD_MD_INDEX_INTERNAL, cfg->bd_size);
+		if (is_valid_md(DRBD_V07, &md_test, DRBD_MD_INDEX_INTERNAL, cfg->bd_size)) {
+			have = DRBD_V07;
+			fixed = 1;
+			md_now = md_test;
+		}
 	}
 
 	PREAD(cfg->md_fd, on_disk_buffer, 4096, flex_offset);
 
 	/* ... v07 (plus) flex-internal meta data? */
-	md_disk_07_to_cpu(&md_07p, (struct md_on_disk_07*)on_disk_buffer);
-	have_flex_v07 = is_valid_md(DRBD_V07,
-		&md_07p, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
+	md_disk_07_to_cpu(&md_test, (struct md_on_disk_07*)on_disk_buffer);
+	if (is_valid_md(DRBD_V07, &md_test, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size)) {
+		have = DRBD_V07;
+		md_now = md_test;
+	}
 
 	/* ... v08 flex-internal meta data?
 	 * (same offset, same on disk data) */
-	md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
-	have_flex_v08 = is_valid_md(DRBD_V08,
-		&md_08, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size);
+	md_disk_08_to_cpu(&md_test, (struct md_on_disk_08*)on_disk_buffer);
+	if (is_valid_md(DRBD_V08, &md_test, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size)) {
+		have = DRBD_V08;
+		md_now = md_test;
+	}
 
-	if (!(have_fixed_v07 || have_flex_v07 || have_flex_v08))
+	if (have == DRBD_UNKNOWN)
 		return;
-
-	ASSERT(have_flex_v07 == 0 || have_flex_v08 == 0); /* :-) */
 
 	fprintf(stderr, "You want me to create a %s%s style %s internal meta data block.\n",
 		cfg->ops->name,
 		(is_v07(cfg) && cfg->md_index == DRBD_MD_INDEX_FLEX_INT) ? "(plus)" : "",
 		cfg->md_index == DRBD_MD_INDEX_FLEX_INT ? "flexible-size" : "fixed-size");
 
-	if (have_fixed_v07) {
-		fprintf(stderr, "There appears to be a v07 fixed-size internal meta data block\n"
-				"already in place on %s at byte offset %llu\n",
-				cfg->md_device_name, (long long unsigned)fixed_offset);
-	}
-	if (have_flex_v07) {
-		fprintf(stderr, "There appears to be a v07(plus) flexible-size internal meta data block\n"
-				"already in place on %s at byte offset %llu",
-		cfg->md_device_name, (long long unsigned)flex_offset);
-	}
-	if (have_flex_v08) {
-		fprintf(stderr, "There appears to be a v08 flexible-size internal meta data block\n"
-				"already in place on %s at byte offset %llu",
-		cfg->md_device_name, (long long unsigned)flex_offset);
-	}
 
-	if (have_fixed_v07 && have_flex_v07) {
-		fprintf(stderr, "Don't know what to do now. If you want this to work,\n"
-				"Please wipe out at least one of these.\n");
-		exit(10);
-	}
+	fprintf(stderr, "There appears to be a %s %s internal meta data block\n"
+		"already in place on %s at byte offset %llu\n",
+		f_ops[have].name, fixed ? "fixed-size" : "flexible-size",
+		cfg->md_device_name,
+		fixed ? (long long unsigned)fixed_offset : (long long unsigned)flex_offset);
 
 	if (is_v08(cfg)) {
-		if (have_flex_v08) {
+		if (have == DRBD_V08) {
 			if (!confirmed("Do you really want to overwrite the existing v08 meta-data?")) {
 				printf("Operation cancelled.\n");
 				exit(1); // 1 to avoid online resource counting
@@ -3687,11 +3674,10 @@ void check_internal_md_flavours(struct format * cfg) {
 			/* no need to wipe flex offset,
 			 * will be overwritten with new data */
 			cfg->md.magic = 0;
-			have_flex_v08 = 0;
-		}
-		if ( (have_fixed_v07||have_flex_v07) ) {
+			have = DRBD_UNKNOWN;
+		} else if (have == DRBD_V07) {
 			if (confirmed("Convert the existing v07 meta-data to v08?")) {
-				cfg->md = have_fixed_v07 ? md_07 : md_07p;
+				cfg->md = md_now;
 				md_convert_07_to_08(cfg);
 				/* goto wipe; */
 			} else if (!confirmed("So you want me to wipe out the v07 meta-data?")) {
@@ -3700,7 +3686,7 @@ void check_internal_md_flavours(struct format * cfg) {
 			}
 		}
 	} else if (is_v07(cfg)) {
-		if (have_fixed_v07 || have_flex_v07) {
+		if (have == DRBD_V07) {
 			if (!confirmed("Do you really want to overwrite the existing v07 meta-data?")) {
 				printf("Operation cancelled.\n");
 				exit(1); // 1 to avoid online resource counting
@@ -3708,25 +3694,24 @@ void check_internal_md_flavours(struct format * cfg) {
 			/* no need to wipe the requested flavor,
 			 * will be overwritten with new data */
 			cfg->md.magic = 0;
-			if (cfg->md_index == DRBD_MD_INDEX_INTERNAL)
-				have_fixed_v07 = 0;
-			else
-				have_flex_v07 = 0;
-		}
-		if (have_flex_v08) {
+			have = DRBD_UNKNOWN;
+
+		} else if (have == DRBD_V08) {
 			if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
-				cfg->md = md_08;
+				cfg->md = md_now;
 				md_convert_08_to_07(cfg);
 				if (cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
-					have_flex_v08 = 0;
+					have = DRBD_UNKNOWN;
 				/* goto wipe; */
 			}
 		}
 	}
-	if (have_fixed_v07)
-		cfg->wipe_fixed = fixed_offset;
-	if (have_flex_v08 || have_flex_v07)
-		cfg->wipe_flex = flex_offset;
+	if (have != DRBD_UNKNOWN) {
+		if (fixed)
+			cfg->wipe_fixed = fixed_offset;
+		else
+			cfg->wipe_flex = flex_offset;
+	}
 }
 
 void wipe_after_convert(struct format *cfg)
