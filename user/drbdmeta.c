@@ -2152,22 +2152,29 @@ unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors)
 	return words;
 }
 
-static void fprintf_bm_eol(FILE *f, unsigned int i)
+static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr)
 {
-	if ((i & 31) == 0)
-		fprintf(f, "\n   # at %llukB\n   ", (256LLU * i));
+	if ((i & 31) == peer_nr)
+		fprintf(f, "\n   # at %llukB\n   ", (256LLU * (i - peer_nr)));
 	else
 		fprintf(f, "\n   ");
 }
 
+static unsigned int round_down(unsigned int i, unsigned int g)
+{
+	return i / g * g;
+	/* return i - i % g; */
+}
+
 /* le_u64, because we want to be able to hexdump it reliably
  * regardless of sizeof(long) */
-static void fprintf_bm(FILE *f, struct format *cfg)
+static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr)
 {
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u64 const *bm = on_disk_buffer;
 	le_u64 cw; /* current word for rl encoding */
 	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
+	unsigned int max_peers = cfg->md.bm_max_peers;
 	unsigned int count = 0;
 	unsigned int bits_set = 0;
 	unsigned int n_buffer = 0;
@@ -2175,39 +2182,48 @@ static void fprintf_bm(FILE *f, struct format *cfg)
 	unsigned int i; /* in-buffer offset */
 	unsigned int j;
 
-	i=0; r=0;
+	i = peer_nr;
+	r = peer_nr;
 	cw.le = 0; /* silence compiler warning */
 	fprintf(f, "bm {");
+
+	if (r < n)
+		goto start;
+
 	while (r < n) {
 		/* need to read on first iteration,
 		 * and on buffer wrap */
-		if (r*sizeof(*bm) % buffer_size == 0) {
-			size_t chunk = ALIGN( (n-r)*sizeof(*bm), cfg->md_hard_sect_size );
-			if (chunk > buffer_size) chunk = buffer_size;
+		if (i * sizeof(*bm) >= buffer_size) {
+			size_t chunk;
+			i -= buffer_size / sizeof(*bm);
+		start:
+			chunk = ALIGN((n - round_down(r, max_peers)) * sizeof(*bm), cfg->md_hard_sect_size);
+			if (chunk > buffer_size)
+				chunk = buffer_size;
 			ASSERT(chunk);
 			pread_or_die(cfg->md_fd, on_disk_buffer,
-				chunk, bm_on_disk_off, "printf_bm");
+				chunk, bm_on_disk_off, "fprintf_bm");
 			bm_on_disk_off += chunk;
-			i = 0;
-			n_buffer = chunk/sizeof(*bm);
+
+			n_buffer = chunk / sizeof(*bm);
 		}
 next:
 		ASSERT(i < n_buffer);
 		if (count == 0) cw = bm[i];
-		if ((i & 3) == 0) {
+		if (i % (4 * max_peers) == peer_nr) {
 			if (!count)
-				fprintf_bm_eol(f, r);
+				fprintf_bm_eol(f, r, peer_nr);
 
 			/* j = i, because it may be continuation after buffer wrap */
-			for (j = i; j < n_buffer && cw.le == bm[j].le; j++)
+			for (j = i; j < n_buffer && cw.le == bm[j].le; j += max_peers)
 				;
-			j &= ~3; // round down to a multiple of 4
-			unsigned int tmp = (j-i);
+			unsigned int tmp = (j / max_peers - i / max_peers) & ~3;
 			if (tmp > 4) {
 				count += tmp;
-				r += tmp;
-				i = j;
-				if (j == n_buffer && r < n) continue;
+				r += tmp * max_peers;
+				i += tmp * max_peers;
+				if (j == n_buffer && r < n)
+					continue;
 			}
 			if (count) {
 				fprintf(f, " %u times 0x"X64(016)";",
@@ -2224,7 +2240,8 @@ next:
 		ASSERT(i < n_buffer);
 		fprintf(f, " 0x"X64(016)";", le64_to_cpu(bm[i].le));
 		bits_set += generic_hweight64(bm[i].le);
-		r++; i++;
+		r += max_peers;
+		i += max_peers;
 	}
 	fprintf(f, "\n}\n");
 	cfg->bits_set = bits_set;
@@ -2232,7 +2249,7 @@ next:
 
 void printf_bm(struct format *cfg)
 {
-	fprintf_bm(stdout, cfg);
+	fprintf_bm(stdout, cfg, 0);
 }
 
 int v07_style_md_open(struct format *cfg)
