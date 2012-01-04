@@ -3274,6 +3274,29 @@ void md_convert_08_to_07(struct format *cfg)
 	}
 }
 
+void md_convert_08_to_09(struct format *cfg)
+{
+	/* These two are no longer known in the drbd-9.0 world */
+	const int MDF_CONNECTED_IND =  (1 << 2);
+	const int MDF_PEER_OUT_DATED = (1 << 5);
+
+	if (cfg->md.flags & MDF_CONNECTED_IND)
+		cfg->md.peers[0].flags |= MDF_PEER_CONNECTED;
+
+	if (cfg->md.flags & MDF_PEER_OUT_DATED)
+		cfg->md.peers[0].flags |= MDF_PEER_OUTDATED;
+
+	cfg->md.flags &= ~(MDF_CONNECTED_IND | MDF_PEER_OUT_DATED);
+
+	cfg->md.magic = DRBD_MD_MAGIC_09;
+	re_initialize_md_offsets(cfg);
+
+	if (!is_valid_md(DRBD_V09, &cfg->md, cfg->md_index, cfg->bd_size)) {
+		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
+		exit(111);
+	}
+}
+
 /* if on the physical device we find some data we can interpret,
  * print some informational message about what we found,
  * and what we think how much room it needs.
@@ -3650,6 +3673,12 @@ void check_internal_md_flavours(struct format * cfg) {
 		md_now = md_test;
 	}
 
+	md_disk_09_to_cpu(&md_test, (struct md_on_disk_09*)on_disk_buffer);
+	if (is_valid_md(DRBD_V09, &md_test, DRBD_MD_INDEX_FLEX_INT, cfg->bd_size)) {
+		have = DRBD_V09;
+		md_now = md_test;
+	}
+
 	if (have == DRBD_UNKNOWN)
 		return;
 
@@ -3674,9 +3703,20 @@ void check_internal_md_flavours(struct format * cfg) {
 		 * will be overwritten with new data */
 		cfg->md.magic = 0;
 		have = DRBD_UNKNOWN;
-	}
-
-	if (is_v08(cfg)) {
+	} else if (is_v09(cfg)) {
+		ASSERT(have == DRBD_V07 || have == DRBD_V08);
+		if (confirmed("Convert the existing meta-data to v09?")) {
+			cfg->md = md_now;
+			if (have == DRBD_V07)
+				md_convert_07_to_08(cfg);
+			md_convert_08_to_09(cfg);
+			/* goto wipe; */
+		} else if (!confirmed("So you want me to wipe out the existing meta-data?")) {
+			printf("Operation cancelled.\n");
+			exit(1); // 1 to avoid online resource counting
+		}
+	} else if (is_v08(cfg)) {
+		ASSERT(have == DRBD_V07 || have == DRBD_V09);
 		if (have == DRBD_V07) {
 			if (confirmed("Convert the existing v07 meta-data to v08?")) {
 				cfg->md = md_now;
@@ -3686,8 +3726,14 @@ void check_internal_md_flavours(struct format * cfg) {
 				printf("Operation cancelled.\n");
 				exit(1); // 1 to avoid online resource counting
 			}
+		} else /* have == DRBD_V09 */ {
+			if (!confirmed("So you want me to wipe out the v09 meta-data?")) {
+				printf("Operation cancelled.\n");
+				exit(1); // 1 to avoid online resource counting
+			}
 		}
 	} else if (is_v07(cfg)) {
+		ASSERT(have == DRBD_V08 || have == DRBD_V09);
 		if (have == DRBD_V08) {
 			if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
 				cfg->md = md_now;
@@ -3695,6 +3741,11 @@ void check_internal_md_flavours(struct format * cfg) {
 				if (cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
 					have = DRBD_UNKNOWN;
 				/* goto wipe; */
+			}
+		} else /* have == DRBD_V09 */ {
+			if (!confirmed("So you want me to wipe out the v09 meta-data?")) {
+				printf("Operation cancelled.\n");
+				exit(1); // 1 to avoid online resource counting
 			}
 		}
 	}
