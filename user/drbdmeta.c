@@ -2135,13 +2135,13 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	return err;
 }
 
-unsigned long bm_words(uint64_t sectors, int bytes_per_bit)
+unsigned long bm_words(uint64_t sectors, int bytes_per_bit, int max_peers)
 {
 	unsigned long long bits;
 	unsigned long long words;
 
 	bits = ALIGN(sectors, 8) / (bytes_per_bit / 512);
-	words = ALIGN(bits, 64) >> LN2_BPL;
+	words = (ALIGN(bits, 64) >> LN2_BPL) * max_peers;
 
 	return words;
 }
@@ -2324,7 +2324,7 @@ int v07_style_md_open(struct format *cfg)
 		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
 		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
-	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
+	words = bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit, cfg->md.bm_max_peers);
 	cfg->bm_bytes = words * sizeof(long);
 
 	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
@@ -2800,7 +2800,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 		cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
 		cfg->bm_bytes = sizeof(long) *
-			bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit);
+		  bm_words(cfg->md.la_sect, cfg->md.bm_bytes_per_bit, cfg->md.bm_max_peers);
 	}
 	printf("# md_offset %llu\n", (long long unsigned)cfg->md_offset);
 	printf("# al_offset %llu\n", (long long unsigned)cfg->al_offset);
