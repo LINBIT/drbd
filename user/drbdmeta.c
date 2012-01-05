@@ -377,6 +377,7 @@ int v06_validate_md(struct format *cfg)
 /*
  * -- DRBD 0.7 --------------------------------------
  */
+unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors);
 
 struct __packed md_on_disk_07 {
 	be_u64 la_kb;		/* last agreed size. */
@@ -461,9 +462,8 @@ int is_valid_md(enum md_format f,
 			return 0;
 		}
 
-		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = (ll_size + (1UL<<24)-1) >> 24; /* BM_EXT_SIZE_B */
-		md_size_sect = (md_size_sect + 7) & ~7ULL;    /* align on 4K blocks */
+		md_size_sect = bm_words(md, ll_size >> 9) * sizeof(long) >> 9;
+		md_size_sect = ALIGN(md_size_sect, 8);    /* align on 4K blocks */
 		/* plus the "drbd meta data super block",
 		 * and the activity log; unit still sectors */
 		md_size_sect += MD_BM_OFFSET_07;
@@ -1433,9 +1433,8 @@ void re_initialize_md_offsets(struct format *cfg)
 		cfg->md.al_offset = -MD_AL_MAX_SECT_07;
 
 		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = (cfg->bd_size + (1UL<<24)-1) >> 24; /* BM_EXT_SIZE_B */
-		md_size_sect = (md_size_sect + 7) & ~7ULL;         /* align on 4K blocks */
-
+		md_size_sect = bm_words(&cfg->md, cfg->bd_size >> 9) * sizeof(long) >> 9;
+		md_size_sect = ALIGN(md_size_sect, 8);    /* align on 4K blocks */
 		if (md_size_sect > (MD_BM_MAX_BYTE_FLEX>>9)) {
 			char ppbuf[10];
 			fprintf(stderr, "Device too large. We only support up to %s.\n",
