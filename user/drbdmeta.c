@@ -1404,6 +1404,13 @@ int v06_md_initialize(struct format *cfg,
 void re_initialize_md_offsets(struct format *cfg)
 {
 	uint64_t md_size_sect;
+
+	/* These two are needed for bm_words()... Ensure sane defaults... */
+	if (cfg->md.bm_bytes_per_bit == 0)
+		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
+	if (cfg->md.bm_max_peers == 0)
+		cfg->md.bm_max_peers = 1;
+
 	switch(cfg->md_index) {
 	default:
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
@@ -2319,10 +2326,6 @@ int v07_style_md_open(struct format *cfg)
 	    (cfg->md.la_sect*512 > cfg->md_offset) ) {
 		printf("la-size-sect was too big, fixed.\n");
 		cfg->md.la_sect = cfg->md_offset/512;
-	}
-	if(cfg->md.bm_bytes_per_bit == 0 ) {
-		printf("bm-byte-per-bit was 0, fixed. (Set to 4096)\n");
-		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
 	words = bm_words(&cfg->md, cfg->md.la_sect);
 	cfg->bm_bytes = words * sizeof(long);
