@@ -3779,8 +3779,9 @@ void wipe_after_convert(struct format *cfg)
 }
 
 void check_external_md_flavours(struct format * cfg) {
-	struct md_cpu md_07;
-	struct md_cpu md_08;
+	struct md_cpu md_now;
+	enum md_format have = DRBD_UNKNOWN;
+	char msg[160];
 
 	ASSERT( cfg->md_index >= 0 ||
 		cfg->md_index == DRBD_MD_INDEX_FLEX_EXT );
@@ -3791,38 +3792,35 @@ void check_external_md_flavours(struct format * cfg) {
 			printf("Operation cancelled.\n");
 			exit(1);
 		}
-		cfg->md.magic = 0; /* will be re-initialized below */
+		cfg->md.magic = 0;
 		return;
 	}
+
 	PREAD(cfg->md_fd, on_disk_buffer, 4096, cfg->md_offset);
-	if (is_v08(cfg)) {
-		md_disk_07_to_cpu(&md_07, (struct md_on_disk_07*)on_disk_buffer);
-		if (!is_valid_md(DRBD_V07, &md_07, cfg->md_index, cfg->bd_size))
-			return;
-		if (confirmed("Valid v07 meta-data found, convert to v08?")) {
-			cfg->md = md_07;
-			md_convert_07_to_08(cfg);
-			return;
+	have = detect_md(&md_now, cfg->bd_size);
+
+	snprintf(msg, 160, "Valid %s meta-data found, convert to %s?",
+		 f_ops[have].name, cfg->ops->name);
+	if (confirmed(msg)) {
+		cfg->md = md_now;
+		if (is_v08(cfg)) {
+			if (have == DRBD_V07)
+				md_convert_07_to_08(cfg);
+		} else if (is_v07(cfg)) {
+			if (have == DRBD_V08)
+				md_convert_08_to_07(cfg);
 		}
-		if (!confirmed("So you want me to replace the v07 meta-data\n"
-				"with newly initialized v08 meta-data?")) {
-			printf("Operation cancelled.\n");
-			exit(1);
-		}
-	} else if (is_v07(cfg)) {
-		md_disk_08_to_cpu(&md_08, (struct md_on_disk_08*)on_disk_buffer);
-		if (!is_valid_md(DRBD_V08, &md_08, cfg->md_index, cfg->bd_size))
-			return;
-		if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
-			cfg->md = md_08;
-			md_convert_08_to_07(cfg);
+	} else {
+		snprintf(msg, 160, "So you want me to replace the %s meta-data\n"
+			 "with newly initialized %s meta-data?",
+			 f_ops[have].name, cfg->ops->name);
+		if (confirmed(msg)) {
+			cfg->md.magic = 0;
 			return;
 		}
-		if (!confirmed("So you want me to replace the v08 meta-data\n"
-				"with newly initialized v07 meta-data?")) {
-			printf("Operation cancelled.\n");
-			exit(1);
-		}
+
+		printf("Operation cancelled.\n");
+		exit(1);
 	}
 }
 
