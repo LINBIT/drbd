@@ -3276,10 +3276,6 @@ void md_convert_08_to_07(struct format *cfg)
 
 void md_convert_08_to_09(struct format *cfg)
 {
-	/* These two are no longer known in the drbd-9.0 world */
-	const int MDF_CONNECTED_IND =  (1 << 2);
-	const int MDF_PEER_OUT_DATED = (1 << 5);
-
 	if (cfg->md.flags & MDF_CONNECTED_IND)
 		cfg->md.peers[0].flags |= MDF_PEER_CONNECTED;
 
@@ -3294,6 +3290,80 @@ void md_convert_08_to_09(struct format *cfg)
 	if (!is_valid_md(DRBD_V09, &cfg->md, cfg->md_index, cfg->bd_size)) {
 		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
 		exit(111);
+	}
+}
+
+void md_convert_09_to_08(struct format *cfg)
+{
+	if (cfg->md.peers[0].flags & MDF_PEER_CONNECTED)
+		cfg->md.flags |= MDF_CONNECTED_IND;
+
+	if (cfg->md.peers[0].flags & MDF_PEER_OUTDATED)
+		cfg->md.flags |= MDF_PEER_OUT_DATED;
+
+	cfg->md.magic = DRBD_MD_MAGIC_08;
+	re_initialize_md_offsets(cfg);
+
+	if (!is_valid_md(DRBD_V08, &cfg->md, cfg->md_index, cfg->bd_size)) {
+		fprintf(stderr, "Conversion failed.\nThis is a bug :(\n");
+		exit(111);
+	}
+}
+
+void convert_md(struct format *cfg, enum md_format from)
+{
+	enum md_format to = format_version(cfg);
+
+	switch(to) {
+	default:
+	case DRBD_UNKNOWN:
+	case DRBD_V06:
+		fprintf(stderr, "BUG in %s() %d.\n", __FUNCTION__, __LINE__);
+		exit(10);
+	case DRBD_V07:
+		switch(from) {
+		case DRBD_V09:
+			md_convert_09_to_08(cfg);
+		case DRBD_V08:
+			md_convert_08_to_07(cfg);
+		case DRBD_V07:
+			break;
+		case DRBD_V06:
+		case DRBD_UNKNOWN:
+		default:
+			fprintf(stderr, "BUG in %s() %d.\n", __FUNCTION__, __LINE__);
+			exit(10);
+		}
+		break;
+	case DRBD_V08:
+		switch(from) {
+		default:
+		case DRBD_UNKNOWN:
+		case DRBD_V06:
+			fprintf(stderr, "BUG in %s() %d.\n", __FUNCTION__, __LINE__);
+			exit(10);
+		case DRBD_V07:
+			md_convert_07_to_08(cfg);
+		case DRBD_V08:
+			break;
+		case DRBD_V09:
+			md_convert_09_to_08(cfg);
+		}
+		break;
+	case DRBD_V09:
+		switch(from) {
+		default:
+		case DRBD_UNKNOWN:
+		case DRBD_V06:
+			fprintf(stderr, "BUG in %s() %d.\n", __FUNCTION__, __LINE__);
+			exit(10);
+		case DRBD_V07:
+			md_convert_07_to_08(cfg);
+		case DRBD_V08:
+			md_convert_08_to_09(cfg);
+		case DRBD_V09:
+			;
+		}
 	}
 }
 
@@ -3713,52 +3783,28 @@ void check_internal_md_flavours(struct format * cfg) {
 		 * will be overwritten with new data */
 		cfg->md.magic = 0;
 		have = DRBD_UNKNOWN;
-	} else if (is_v09(cfg)) {
-		ASSERT(have == DRBD_V07 || have == DRBD_V08);
-		if (confirmed("Convert the existing meta-data to v09?")) {
+	} else {
+		char msg[160];
+
+		snprintf(msg, 160, "Valid %s meta-data found, convert to %s?",
+			 f_ops[have].name, cfg->ops->name);
+		if (confirmed(msg)) {
 			cfg->md = md_now;
-			if (have == DRBD_V07)
-				md_convert_07_to_08(cfg);
-			md_convert_08_to_09(cfg);
-			/* goto wipe; */
-		} else if (!confirmed("So you want me to wipe out the existing meta-data?")) {
-			printf("Operation cancelled.\n");
-			exit(1); // 1 to avoid online resource counting
-		}
-	} else if (is_v08(cfg)) {
-		ASSERT(have == DRBD_V07 || have == DRBD_V09);
-		if (have == DRBD_V07) {
-			if (confirmed("Convert the existing v07 meta-data to v08?")) {
-				cfg->md = md_now;
-				md_convert_07_to_08(cfg);
-				/* goto wipe; */
-			} else if (!confirmed("So you want me to wipe out the v07 meta-data?")) {
+			convert_md(cfg, have);
+			if (is_v07(cfg) && have == DRBD_V08 && cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
+				have = DRBD_UNKNOWN;
+		} else {
+			snprintf(msg, 160, "So you want me to replace the %s meta-data\n"
+				 "with newly initialized %s meta-data?",
+				 f_ops[have].name, cfg->ops->name);
+			if (!confirmed(msg)) {
 				printf("Operation cancelled.\n");
 				exit(1); // 1 to avoid online resource counting
 			}
-		} else /* have == DRBD_V09 */ {
-			if (!confirmed("So you want me to wipe out the v09 meta-data?")) {
-				printf("Operation cancelled.\n");
-				exit(1); // 1 to avoid online resource counting
-			}
-		}
-	} else if (is_v07(cfg)) {
-		ASSERT(have == DRBD_V08 || have == DRBD_V09);
-		if (have == DRBD_V08) {
-			if (confirmed("Valid v08 meta-data found, convert back to v07?")) {
-				cfg->md = md_now;
-				md_convert_08_to_07(cfg);
-				if (cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
-					have = DRBD_UNKNOWN;
-				/* goto wipe; */
-			}
-		} else /* have == DRBD_V09 */ {
-			if (!confirmed("So you want me to wipe out the v09 meta-data?")) {
-				printf("Operation cancelled.\n");
-				exit(1); // 1 to avoid online resource counting
-			}
+			cfg->md.magic = 0;
 		}
 	}
+
 	if (have != DRBD_UNKNOWN) {
 		if (fixed)
 			cfg->wipe_fixed = fixed_offset;
@@ -3803,13 +3849,7 @@ void check_external_md_flavours(struct format * cfg) {
 		 f_ops[have].name, cfg->ops->name);
 	if (confirmed(msg)) {
 		cfg->md = md_now;
-		if (is_v08(cfg)) {
-			if (have == DRBD_V07)
-				md_convert_07_to_08(cfg);
-		} else if (is_v07(cfg)) {
-			if (have == DRBD_V08)
-				md_convert_08_to_07(cfg);
-		}
+		convert_md(cfg, have);
 	} else {
 		snprintf(msg, 160, "So you want me to replace the %s meta-data\n"
 			 "with newly initialized %s meta-data?",
