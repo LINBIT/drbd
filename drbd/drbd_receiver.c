@@ -3902,7 +3902,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	struct drbd_device *device;
 	struct p_uuids *p = pi->data;
 	u64 *p_uuid;
-	int i, updated_uuids = 0;
+	int i, updated_uuids = 0, err;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -3926,9 +3926,6 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 		return -EIO;
 	}
-
-	if (drbd_attach_peer_device(peer_device))
-		return 0;
 
 	if (get_ldev(device)) {
 		int skip_initial_sync =
@@ -3973,7 +3970,14 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
-	return 0;
+	err = drbd_validate_bitmap_index(peer_device);
+	if (err == -EAGAIN) {
+		err = drbd_send_uuids(peer_device);
+		if (!err)
+			err = drbd_send_current_state(peer_device);
+	}
+
+	return err;
 }
 
 /**

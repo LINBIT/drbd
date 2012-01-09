@@ -994,6 +994,7 @@ extern int drbd_send_uuids(struct drbd_peer_device *);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *);
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_attach_peer_device(struct drbd_peer_device *);
+extern int drbd_validate_bitmap_index(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, int trigger_reply, enum dds_flags flags);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state s);
 extern int drbd_send_current_state(struct drbd_peer_device *);

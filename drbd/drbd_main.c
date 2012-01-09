@@ -1177,6 +1177,100 @@ out:
 	return err;
 }
 
+static int get_bitmap_index_from_uuids(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_md *md = &device->ldev->md;
+	enum drbd_uuid_index ui;
+	u64 peer, self_current;
+	int bi;
+
+	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
+	self_current = device->ldev->md.current_uuid;
+
+	if (peer == UUID_JUST_CREATED) {
+		bi = peer_device->bitmap_index == -1 ?
+			find_peer_addr_hash(md, 0 /* UNUSED_SLOT */) :
+			peer_device->bitmap_index;
+
+		return bi;
+	}
+
+	for (bi = 0; bi < md->bm_max_peers; bi++) {
+		if ((peer_device->p_uuid[UI_CURRENT] & ~((u64)1)) == self_current)
+			return bi;
+
+		for (ui = UI_BITMAP; ui <= UI_HISTORY_END; ui++) {
+			if ((md->peers[bi].uuid[MD_UI(ui)] & ~((u64)1)) == peer ||
+			    (peer_device->p_uuid[ui] & ~((u64)1))== self_current)
+				return bi;
+		}
+	}
+
+	return -1;
+}
+
+static int _drbd_validate_bitmap_index(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_md *md = &device->ldev->md;
+	int old_bi, new_bi;
+	u32 peer_addr_hash;
+
+	old_bi = peer_device->bitmap_index;
+	new_bi = get_bitmap_index_from_uuids(peer_device);
+
+	if (new_bi == -1) {
+		if (old_bi == -1)
+			return -ENOSPC;
+		new_bi = old_bi;
+		drbd_warn(peer_device, "WARN: Could not affirm bitmap slot association by UUIDs.\n");
+	}
+	if (old_bi == new_bi)
+		return 0;
+
+	if (old_bi == -1) {
+		drbd_info(peer_device, "Using bitmap slot %u, based on UUIDs\n", new_bi);
+	} else {
+		/* Uhhhh */
+
+		drbd_warn(peer_device, "ATTENTION: Using bitmap slot %u instead of %u\n",
+			  new_bi, old_bi);
+		drbd_warn(peer_device, "ATTENTION: Marking bitmap slot %u as unused\n", old_bi);
+		device->ldev->md.peers[old_bi].addr_hash = 0;
+	}
+
+	peer_device->bitmap_index = new_bi;
+	peer_addr_hash = crc32c(0, &connection->peer_addr, connection->peer_addr_len);
+	md->peers[new_bi].addr_hash = peer_addr_hash;
+	drbd_md_mark_dirty(device);
+
+	return -EAGAIN;
+}
+/**
+ * drbd_validate_bitmap_index()
+ * @peer_device
+ *
+ * Validates the bitmap_index based on the UUIDs
+ *
+ * Returns 0 if bitmap_index was not changed,
+ * -ENOSPC when it was not possible to find a vacant bitmap stop,
+ * -EAGAIN when the bitmap_index was changed.
+ */
+int drbd_validate_bitmap_index(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	int err = 0;
+
+	if (get_ldev_if_state(device, D_NEGOTIATING)) {
+		err = _drbd_validate_bitmap_index(peer_device);
+		put_ldev(device);
+	}
+	return err;
+}
+
+
 int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enum dds_flags flags)
 {
 	struct drbd_device *device = peer_device->device;
