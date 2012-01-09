@@ -1487,7 +1487,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	new_disk_conf = NULL;
 
 	drbd_resync_after_changed(device);
-	drbd_bump_write_ordering(device->resource, WO_bio_barrier);
+	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
 	unlock_all_resources();
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
