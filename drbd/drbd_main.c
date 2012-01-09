@@ -3361,6 +3361,21 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		rv = ERR_MD_INVALID;
 		goto err;
 	}
+	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
+		drbd_err(device, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
+		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
+		rv = ERR_MD_INVALID;
+		goto err;
+	}
+	i = be32_to_cpu(buffer->bm_max_peers);
+	if (i > MAX_PEERS) {
+		drbd_err(device, "bm_max_peers too high\n");
+		rv = ERR_MD_INVALID;
+		goto err;
+	}
+	bdev->md.bm_max_peers = i;
+	drbd_md_set_sector_offsets(device, bdev); /* recalc bm_offset and md_size_sect with bm_max_peers */
+
 	if (be32_to_cpu(buffer->bm_offset) != bdev->md.bm_offset) {
 		drbd_err(device, "unexpected bm_offset: %d (expected %d)\n",
 		    be32_to_cpu(buffer->bm_offset), bdev->md.bm_offset);
@@ -3374,27 +3389,12 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		goto err;
 	}
 
-	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
-		drbd_err(device, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
-		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
-		rv = ERR_MD_INVALID;
-		goto err;
-	}
-
-	if (be32_to_cpu(buffer->bm_max_peers) > MAX_PEERS) {
-		drbd_err(device, "bm_max_peers too high\n");
-		rv = ERR_MD_INVALID;
-		goto err;
-	}
-
-	i = be32_to_cpu(buffer->bm_max_peers);
 	bdev->md.peers = kmalloc(sizeof(struct drbd_md_peer) * i, GFP_NOIO);
 	if (!bdev->md.peers) {
 		rv = ERR_NOMEM;
 		goto err;
 	}
 
-	bdev->md.bm_max_peers = i;
 	bdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
 	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
 	bdev->md.flags = be32_to_cpu(buffer->flags);

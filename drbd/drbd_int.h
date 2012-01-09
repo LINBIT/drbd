@@ -1028,6 +1028,8 @@ extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern void drbd_mdev_cleanup(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 
+extern void drbd_md_set_sector_offsets(struct drbd_device *device,
+				       struct drbd_backing_dev *bdev);
 extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);

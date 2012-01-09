@@ -731,14 +731,17 @@ out:
 
 /* initializes the md.*_offset members, so we are able to find
  * the on disk meta data */
-STATIC void drbd_md_set_sector_offsets(struct drbd_device *device,
-				       struct drbd_backing_dev *bdev)
+void drbd_md_set_sector_offsets(struct drbd_device *device,
+				struct drbd_backing_dev *bdev)
 {
-	sector_t md_size_sect = 0;
+	sector_t capacity_sect, bits, bytes, md_size_sect = 0;
 	int meta_dev_idx;
 
 	rcu_read_lock();
 	meta_dev_idx = rcu_dereference(bdev->disk_conf)->meta_dev_idx;
+
+	if (!bdev->md.bm_max_peers)
+		bdev->md.bm_max_peers = 1;
 
 	switch (meta_dev_idx) {
 	default:
@@ -760,11 +763,11 @@ STATIC void drbd_md_set_sector_offsets(struct drbd_device *device,
 		bdev->md.md_offset = drbd_md_ss__(device, bdev);
 		/* al size is still fixed */
 		bdev->md.al_offset = -MD_AL_SECTORS;
-		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = drbd_get_capacity(bdev->backing_bdev);
-		md_size_sect = ALIGN(md_size_sect, BM_SECT_PER_EXT);
-		md_size_sect = BM_SECT_TO_EXT(md_size_sect);
-		md_size_sect = ALIGN(md_size_sect, 8);
+
+		capacity_sect = drbd_get_capacity(bdev->backing_bdev);
+		bits = ALIGN(BM_SECT_TO_BIT(ALIGN(capacity_sect, BM_SECT_PER_BIT)), 64);
+		bytes = ALIGN(bits / 8 * bdev->md.bm_max_peers, BM_BLOCK_SIZE);
+		md_size_sect = bytes >> 9;
 
 		/* plus the "drbd meta data super block",
 		 * and the activity log; */
