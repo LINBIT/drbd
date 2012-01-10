@@ -2932,6 +2932,8 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 		case ';': etext = "semicolon (;)"; break;
 		case '{': etext = "opening brace ({)"; break;
 		case '}': etext = "closing brace (})"; break;
+		case '[': etext = "opening bracket ([)"; break;
+		case ']': etext = "closing bracket (])"; break;
 		case TK_BM:
 			etext = "keyword 'bm'"; break;
 		case TK_BM_BYTE_PER_BIT:
@@ -2950,6 +2952,14 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 			etext = "keyword 'uuid'"; break;
 		case TK_VERSION:
 			etext = "keyword 'version'"; break;
+		case TK_CURRENT:
+			etext = "keyword 'current'"; break;
+		case TK_PEER:
+			etext = "keyword 'peer'"; break;
+		case TK_HASH:
+			etext = "keyword 'hash'"; break;
+		case TK_BM_MAX_PEERS:
+			etext = "keyword 'bm-max-peers'"; break;
 		case TK_NUM:
 			etext = "number ([0-9], up to 20 digits)"; break;
 		case TK_STRING:
@@ -3117,6 +3127,12 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		exit(10);
 	}
 	EXP(';');
+	if (is_v09(cfg)) {
+		EXP(TK_BM_MAX_PEERS);
+		EXP(TK_NUM); EXP(';');
+		cfg->md.bm_max_peers = yylval.u64;
+	}
+
 	if (format_version(cfg) < DRBD_V08) {
 		EXP(TK_GC); EXP('{');
 		for (i = 0; i < GEN_CNT_SIZE; i++) {
@@ -3126,13 +3142,45 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		EXP('}');
 	} else { // >= 08
 		EXP(TK_UUID); EXP('{');
-		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
+		if (is_v08(cfg)) {
+			for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
+				EXP(TK_U64); EXP(';');
+				cfg->md.peers[0].uuid[i] = yylval.u64;
+			}
+			EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
+			cfg->md.flags = (uint32_t)yylval.u64;
+			EXP('}');
+		} else /* >= 09 */ {
+			EXP(TK_CURRENT);
 			EXP(TK_U64); EXP(';');
-			cfg->md.peers[0].uuid[i] = yylval.u64;
+			cfg->md.peers[0].uuid[UI_CURRENT] = yylval.u64;
+			EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
+			cfg->md.flags = (uint32_t)yylval.u64;
+
+			for (i = 0; i < cfg->md.bm_max_peers; i++) {
+				int j;
+
+				EXP(TK_PEER); EXP('[');
+				EXP(TK_NUM); EXP(']');
+				if (yylval.u64 != i) {
+					fprintf(stderr, "Parse error in line %u: "
+						"Expected peer slot %d but found %d\n",
+						yylineno, i, (int)yylval.u64);
+					exit(10);
+				}
+				EXP(TK_HASH); EXP(TK_U32); EXP('{');
+				cfg->md.peers[i].addr_hash = (uint32_t)yylval.u64;
+				cfg->md.peers[i].uuid[UI_CURRENT] = cfg->md.peers[0].uuid[UI_CURRENT];
+				for (j = UI_BITMAP; j < UI_SIZE; j++) {
+					EXP(TK_U64); EXP(';');
+					cfg->md.peers[i].uuid[j] = yylval.u64;
+				}
+				EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
+				cfg->md.peers[i].flags = (uint32_t)yylval.u64;
+				EXP('}');
+			}
+			EXP('}');
 		}
-		EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
-		cfg->md.flags = (uint32_t)yylval.u64;
-		EXP('}');
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.la_sect = yylval.u64;
@@ -3157,7 +3205,34 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(TK_BM);
 start_of_bm:
-	parse_bitmap(cfg, parse_only);
+	if (format_version(cfg) < DRBD_V09) {
+		parse_bitmap(cfg, parse_only);
+	} else /* >= DRBD_V09 */ {
+		if (!parse_only) {
+			fprintf(stderr, "So far only verify-dump implemented\n");
+			exit(10);
+		}
+		EXP('{');
+		for (i = 0; i < cfg->md.bm_max_peers; i++) {
+			EXP(TK_PEER); EXP('[');
+			EXP(TK_NUM); EXP(']');
+			if (yylval.u64 != i) {
+				fprintf(stderr, "Parse error in line %u: "
+					"Expected peer slot %d but found %d\n",
+					yylineno, i, (int)yylval.u64);
+				exit(10);
+			}
+			EXP(TK_HASH); EXP(TK_U32);
+			if (cfg->md.peers[i].addr_hash != (uint32_t)yylval.u64) {
+				fprintf(stderr, "Parse error in line %u: "
+					"Expected hash value %08X but found %08X\n",
+					yylineno, cfg->md.peers[i].addr_hash,  (uint32_t)yylval.u64);
+				exit(10);
+			}
+			parse_bitmap(cfg, parse_only);
+		}
+		EXP('}');
+	}
 
 	/* there should be no trailing garbage in the input file */
 	EXP(0);

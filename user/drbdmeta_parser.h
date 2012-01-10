@@ -27,6 +27,10 @@ enum yytokentype {
 	TK_INVALID,
 	TK_INVALID_CHAR,
 	TK_LA_BIO_SIZE,
+	TK_CURRENT,
+	TK_PEER,
+	TK_HASH,
+	TK_BM_MAX_PEERS,
 };
 
 /* avoid compiler warnings about implicit declaration */

@@ -21,7 +21,7 @@ static void yyunput (int c, register char * yy_bp ) __attribute((unused));
 /* remember to avoid backing up.
  * tell user about bad/unexpected tokens. */
 
-OP		[{};]
+OP		[{};\[\]]
 WS		[ \r\t\n]
 COMMENT		\#[^\n]*
 
@@ -60,6 +60,10 @@ device-uuid	DP; CP; return TK_DEVICE_UUID;
 times		DP; CP; return TK_TIMES;
 flags		DP; CP; return TK_FLAGS;
 la-peer-max-bio-size DP; CP; return TK_LA_BIO_SIZE;
+current		DP; CP; return TK_CURRENT;
+peer		DP; CP; return TK_PEER;
+hash		DP; CP; return TK_HASH;
+bm-max-peers	DP; CP; return TK_BM_MAX_PEERS;
 
 {INVALID_STRING} CP; bad_token("invalid string"); return TK_INVALID;
 {EMPTY_STRING}	 CP; bad_token("invalid string"); return TK_INVALID;
