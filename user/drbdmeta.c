@@ -3005,14 +3005,89 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
+void parse_bitmap(struct format *cfg, int parse_only)
+{
+	int i, times;
+	le_u64 *bm, value;
+	off_t bm_on_disk_off;
+
+	EXP('{');
+	bm = (le_u64 *)on_disk_buffer;
+	i = 0;
+	bm_on_disk_off = cfg->bm_offset;
+	while(1) {
+		int tok = yylex();
+		switch(tok) {
+		case TK_U64:
+			EXP(';');
+			/* NOTE:
+			 * even though this EXP(';'); already advanced
+			 * to the next token, yylval will *not* be updated
+			 * for * ';', so it is still valid.
+			 *
+			 * This seemed to be the least ugly way to implement a
+			 * "parse_only" functionality without ugly if-branches
+			 * or the maintenance nightmare of code duplication */
+			if (parse_only) break;
+			bm[i].le = cpu_to_le64(yylval.u64);
+			if ((unsigned)++i == buffer_size/sizeof(*bm)) {
+				pwrite_or_die(cfg->md_fd, on_disk_buffer,
+					buffer_size, bm_on_disk_off,
+					"meta_restore_md:TK_U64");
+				bm_on_disk_off += buffer_size;
+				i = 0;
+			}
+			break;
+		case TK_NUM:
+			times = yylval.u64;
+			EXP(TK_TIMES);
+			EXP(TK_U64);
+			EXP(';');
+			if (parse_only) break;
+			value.le = cpu_to_le64(yylval.u64);
+			while(times--) {
+				bm[i] = value;
+				if ((unsigned)++i == buffer_size/sizeof(*bm)) {
+					pwrite_or_die(cfg->md_fd, on_disk_buffer,
+						buffer_size, bm_on_disk_off,
+						"meta_restore_md:TK_NUM");
+					bm_on_disk_off += buffer_size;
+					i = 0;
+				}
+			}
+			break;
+		case '}':
+			goto break_loop;
+		default:
+			md_parse_error(0 /* ignored, since etext is set */,
+				tok, "repeat count, 16-digit hex number, or closing brace (})");
+			goto break_loop;
+		}
+	}
+break_loop:
+
+	if (parse_only)
+		return;
+
+	/* not reached if parse_only */
+	if (i) {
+		size_t s = i * sizeof(*bm);
+		memset(bm+i, 0x00, buffer_size - s);
+		/* need to sector-align this for O_DIRECT. to be
+		 * generic, maybe we even need to PAGE align it? */
+		s = ALIGN(s, cfg->md_hard_sect_size);
+		pwrite_or_die(cfg->md_fd, on_disk_buffer,
+			s, bm_on_disk_off, "meta_restore_md");
+	}
+
+}
+
 void check_for_existing_data(struct format *cfg);
 
 int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int parse_only)
 {
-	int i,times;
+	int i;
 	int err;
-	off_t bm_on_disk_off;
-	le_u64 *bm, value;
 
 	if (argc > 0) {
 		yyin = fopen(argv[0],"r");
@@ -3082,60 +3157,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(TK_BM);
 start_of_bm:
-	EXP('{');
-	bm = (le_u64 *)on_disk_buffer;
-	i = 0;
-	bm_on_disk_off = cfg->bm_offset;
-	while(1) {
-		int tok = yylex();
-		switch(tok) {
-		case TK_U64:
-			EXP(';');
-			/* NOTE:
-			 * even though this EXP(';'); already advanced
-			 * to the next token, yylval will *not* be updated
-			 * for * ';', so it is still valid.
-			 *
-			 * This seemed to be the least ugly way to implement a
-			 * "parse_only" functionality without ugly if-branches
-			 * or the maintenance nightmare of code duplication */
-			if (parse_only) break;
-			bm[i].le = cpu_to_le64(yylval.u64);
-			if ((unsigned)++i == buffer_size/sizeof(*bm)) {
-				pwrite_or_die(cfg->md_fd, on_disk_buffer,
-					buffer_size, bm_on_disk_off,
-					"meta_restore_md:TK_U64");
-				bm_on_disk_off += buffer_size;
-				i = 0;
-			}
-			break;
-		case TK_NUM:
-			times = yylval.u64;
-			EXP(TK_TIMES);
-			EXP(TK_U64);
-			EXP(';');
-			if (parse_only) break;
-			value.le = cpu_to_le64(yylval.u64);
-			while(times--) {
-				bm[i] = value;
-				if ((unsigned)++i == buffer_size/sizeof(*bm)) {
-					pwrite_or_die(cfg->md_fd, on_disk_buffer,
-						buffer_size, bm_on_disk_off,
-						"meta_restore_md:TK_NUM");
-					bm_on_disk_off += buffer_size;
-					i = 0;
-				}
-			}
-			break;
-		case '}':
-			goto break_loop;
-		default:
-			md_parse_error(0 /* ignored, since etext is set */,
-				tok, "repeat count, 16-digit hex number, or closing brace (})");
-			goto break_loop;
-		}
-	}
-	break_loop:
+	parse_bitmap(cfg, parse_only);
 
 	/* there should be no trailing garbage in the input file */
 	EXP(0);
@@ -3143,17 +3165,6 @@ start_of_bm:
 	if (parse_only) {
 		printf("input file parsed ok\n");
 		return 0;
-	}
-
-	/* not reached if parse_only */
-	if (i) {
-		size_t s = i * sizeof(*bm);
-		memset(bm+i, 0x00, buffer_size - s);
-		/* need to sector-align this for O_DIRECT. to be
-		 * generic, maybe we even need to PAGE align it? */
-		s = ALIGN(s, cfg->md_hard_sect_size);
-		pwrite_or_die(cfg->md_fd, on_disk_buffer,
-			s, bm_on_disk_off, "meta_restore_md");
 	}
 
 	err = cfg->ops->md_cpu_to_disk(cfg);
