@@ -2170,10 +2170,11 @@ static unsigned int round_down(unsigned int i, unsigned int g)
  * regardless of sizeof(long) */
 static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr, const char* indent)
 {
-	const int WPL = 6;
+	const int WPL = 8;
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u32 const *bm = on_disk_buffer;
 	le_u32 cw; /* current word for rl encoding */
+	le_u32 lw; /* low word for 64 bit output */
 	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
 	unsigned int max_peers = cfg->md.bm_max_peers;
 	unsigned int count = 0;
@@ -2227,8 +2228,8 @@ next:
 					continue;
 			}
 			if (count) {
-				fprintf(f, " %u times 0x%08X;",
-					count, le32_to_cpu(cw.le));
+				fprintf(f, " %u times 0x%08X%08X;",
+					count / 2, le32_to_cpu(cw.le), le32_to_cpu(cw.le));
 				bits_set += count * generic_hweight32(cw.le);
 				count = 0;
 				if (r >= n)
@@ -2239,7 +2240,10 @@ next:
 			}
 		}
 		ASSERT(i < n_buffer);
-		fprintf(f, " 0x%08X;", le32_to_cpu(bm[i].le));
+		if (((i / max_peers) & 1) == 0)
+			lw = bm[i];
+		else
+			fprintf(f, " 0x%08X%08X;", le32_to_cpu(bm[i].le), le32_to_cpu(lw.le));
 		bits_set += generic_hweight32(bm[i].le);
 		r += max_peers;
 		i += max_peers;
