@@ -2154,8 +2154,8 @@ unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors)
 
 static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr, const char* indent)
 {
-	if ((i & 31) == peer_nr)
-		fprintf(f, "\n%s   # at %llukB\n%s   ", indent, (256LLU * (i - peer_nr)), indent);
+	if ((i & 63) == peer_nr)
+		fprintf(f, "\n%s   # at %llukB\n%s   ", indent, (128LLU * (i - peer_nr)), indent);
 	else
 		fprintf(f, "\n%s   ", indent);
 }
@@ -2170,10 +2170,10 @@ static unsigned int round_down(unsigned int i, unsigned int g)
  * regardless of sizeof(long) */
 static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr, const char* indent)
 {
-	const int WPL = 4;
+	const int WPL = 6;
 	off_t bm_on_disk_off = cfg->bm_offset;
-	le_u64 const *bm = on_disk_buffer;
-	le_u64 cw; /* current word for rl encoding */
+	le_u32 const *bm = on_disk_buffer;
+	le_u32 cw; /* current word for rl encoding */
 	const unsigned int n = cfg->bm_bytes/sizeof(*bm);
 	unsigned int max_peers = cfg->md.bm_max_peers;
 	unsigned int count = 0;
@@ -2227,9 +2227,9 @@ next:
 					continue;
 			}
 			if (count) {
-				fprintf(f, " %u times 0x"X64(016)";",
-					count, le64_to_cpu(cw.le));
-				bits_set += count * generic_hweight64(cw.le);
+				fprintf(f, " %u times 0x%08X;",
+					count, le32_to_cpu(cw.le));
+				bits_set += count * generic_hweight32(cw.le);
 				count = 0;
 				if (r >= n)
 					break;
@@ -2239,8 +2239,8 @@ next:
 			}
 		}
 		ASSERT(i < n_buffer);
-		fprintf(f, " 0x"X64(016)";", le64_to_cpu(bm[i].le));
-		bits_set += generic_hweight64(bm[i].le);
+		fprintf(f, " 0x%08X;", le32_to_cpu(bm[i].le));
+		bits_set += generic_hweight32(bm[i].le);
 		r += max_peers;
 		i += max_peers;
 	}
