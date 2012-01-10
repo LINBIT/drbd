@@ -2170,6 +2170,7 @@ static unsigned int round_down(unsigned int i, unsigned int g)
  * regardless of sizeof(long) */
 static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr, const char* indent)
 {
+	const int WPL = 4;
 	off_t bm_on_disk_off = cfg->bm_offset;
 	le_u64 const *bm = on_disk_buffer;
 	le_u64 cw; /* current word for rl encoding */
@@ -2210,15 +2211,15 @@ static void fprintf_bm(FILE *f, struct format *cfg, int peer_nr, const char* ind
 next:
 		ASSERT(i < n_buffer);
 		if (count == 0) cw = bm[i];
-		if (i % (4 * max_peers) == peer_nr) {
+		if (i % (WPL * max_peers) == peer_nr) {
 			if (!count)
 				fprintf_bm_eol(f, r, peer_nr, indent);
 
 			/* j = i, because it may be continuation after buffer wrap */
 			for (j = i; j < n_buffer && cw.le == bm[j].le; j += max_peers)
 				;
-			unsigned int tmp = (j / max_peers - i / max_peers) & ~3;
-			if (tmp > 4) {
+			unsigned int tmp = round_down(j / max_peers - i / max_peers, WPL);
+			if (tmp > WPL) {
 				count += tmp;
 				r += tmp * max_peers;
 				i += tmp * max_peers;
