@@ -35,3 +35,5 @@ enum yytokentype {
 
 /* avoid compiler warnings about implicit declaration */
 int yylex(void);
+void yyrestart (FILE *input_file);
+int my_yy_unscaned_characters(void);

@@ -3015,16 +3015,14 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
-void parse_bitmap(struct format *cfg, int parse_only)
+int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 {
 	int i, times;
-	le_u64 *bm, value;
-	off_t bm_on_disk_off;
+	le_u64 value, *bm = on_disk_buffer;
 
+	i = - window * (buffer_size / sizeof(*bm));
 	EXP('{');
-	bm = (le_u64 *)on_disk_buffer;
-	i = 0;
-	bm_on_disk_off = cfg->bm_offset;
+
 	while(1) {
 		int tok = yylex();
 		switch(tok) {
@@ -3038,58 +3036,113 @@ void parse_bitmap(struct format *cfg, int parse_only)
 			 * This seemed to be the least ugly way to implement a
 			 * "parse_only" functionality without ugly if-branches
 			 * or the maintenance nightmare of code duplication */
-			if (parse_only) break;
-			bm[i].le = cpu_to_le64(yylval.u64);
-			if ((unsigned)++i == buffer_size/sizeof(*bm)) {
-				pwrite_or_die(cfg->md_fd, on_disk_buffer,
-					buffer_size, bm_on_disk_off,
-					"meta_restore_md:TK_U64");
-				bm_on_disk_off += buffer_size;
-				i = 0;
+			if (parse_only) {
+				i++;
+				break;
 			}
+			value.le = cpu_to_le64(yylval.u64);
+			if (i >= 0)
+				bm[i] = value;
+			i++;
+			if (i >= buffer_size / sizeof(*bm))
+				return i;
 			break;
 		case TK_NUM:
 			times = yylval.u64;
 			EXP(TK_TIMES);
 			EXP(TK_U64);
 			EXP(';');
-			if (parse_only) break;
+			if (parse_only) {
+				i += times;
+				break;
+			}
 			value.le = cpu_to_le64(yylval.u64);
 			while(times--) {
-				bm[i] = value;
-				if ((unsigned)++i == buffer_size/sizeof(*bm)) {
-					pwrite_or_die(cfg->md_fd, on_disk_buffer,
-						buffer_size, bm_on_disk_off,
-						"meta_restore_md:TK_NUM");
-					bm_on_disk_off += buffer_size;
-					i = 0;
-				}
+				if (i >= 0)
+					bm[i] = value;
+				i++;
+				if (i >= buffer_size / sizeof(*bm))
+					return i;
 			}
 			break;
 		case '}':
 			goto break_loop;
 		default:
 			md_parse_error(0 /* ignored, since etext is set */,
-				tok, "repeat count, 16-digit hex number, or closing brace (})");
+				       tok, "repeat count, 16-digit hex number, or closing brace (})");
 			goto break_loop;
 		}
 	}
 break_loop:
 
-	if (parse_only)
-		return;
+	return i;
+}
 
-	/* not reached if parse_only */
-	if (i) {
-		size_t s = i * sizeof(*bm);
-		memset(bm+i, 0x00, buffer_size - s);
-		/* need to sector-align this for O_DIRECT. to be
-		 * generic, maybe we even need to PAGE align it? */
-		s = ALIGN(s, cfg->md_hard_sect_size);
-		pwrite_or_die(cfg->md_fd, on_disk_buffer,
-			s, bm_on_disk_off, "meta_restore_md");
+int parse_bitmap_window(struct format *cfg, int window, int parse_only)
+{
+	int words = 0, i;
+
+	if (format_version(cfg) < DRBD_V09) {
+		return parse_bitmap_window_one_peer(cfg, window, parse_only);
+	} else /* >= DRBD_V09 */ {
+		if (!parse_only) {
+			fprintf(stderr, "So far only verify-dump implemented\n");
+			exit(10);
+		}
+		EXP('{');
+		for (i = 0; i < cfg->md.bm_max_peers; i++) {
+			EXP(TK_PEER); EXP('[');
+			EXP(TK_NUM); EXP(']');
+			if (yylval.u64 != i) {
+				fprintf(stderr, "Parse error in line %u: "
+					"Expected peer slot %d but found %d\n",
+					yylineno, i, (int)yylval.u64);
+				exit(10);
+			}
+			EXP(TK_HASH); EXP(TK_U32);
+			if (cfg->md.peers[i].addr_hash != (uint32_t)yylval.u64) {
+				fprintf(stderr, "Parse error in line %u: "
+					"Expected hash value %08X but found %08X\n"
+					"Hash values in uuid and in bm sections have to match!\n",
+					yylineno, cfg->md.peers[i].addr_hash,  (uint32_t)yylval.u64);
+				exit(10);
+			}
+			words = parse_bitmap_window_one_peer(cfg, window, parse_only);
+		}
+		EXP('}');
 	}
+	return words;
+}
 
+void parse_bitmap(struct format *cfg, int parse_only)
+{
+	le_u64 *bm = on_disk_buffer;
+	long start_pos;
+	int window = 0;
+	int words;
+
+	start_pos = ftell(yyin) - my_yy_unscaned_characters();
+
+	do {
+		fseek(yyin, start_pos, SEEK_SET);
+		yyrestart(yyin);
+
+		words = parse_bitmap_window(cfg, window, parse_only);
+
+		if (words > 0 && !parse_only) {
+			size_t s = words * sizeof(*bm);
+
+			memset(bm + words, 0x00, buffer_size - s);
+			/* need to sector-align this for O_DIRECT. to be
+			 * generic, maybe we even need to PAGE align it? */
+			s = ALIGN(s, cfg->md_hard_sect_size);
+			pwrite_or_die(cfg->md_fd, on_disk_buffer,
+				      s, cfg->bm_offset + window * buffer_size,
+				      "meta_restore_md");
+		}
+
+		window++;
+	} while (words == buffer_size / sizeof(*bm));
 }
 
 void check_for_existing_data(struct format *cfg);
@@ -3205,34 +3258,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(TK_BM);
 start_of_bm:
-	if (format_version(cfg) < DRBD_V09) {
-		parse_bitmap(cfg, parse_only);
-	} else /* >= DRBD_V09 */ {
-		if (!parse_only) {
-			fprintf(stderr, "So far only verify-dump implemented\n");
-			exit(10);
-		}
-		EXP('{');
-		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			EXP(TK_PEER); EXP('[');
-			EXP(TK_NUM); EXP(']');
-			if (yylval.u64 != i) {
-				fprintf(stderr, "Parse error in line %u: "
-					"Expected peer slot %d but found %d\n",
-					yylineno, i, (int)yylval.u64);
-				exit(10);
-			}
-			EXP(TK_HASH); EXP(TK_U32);
-			if (cfg->md.peers[i].addr_hash != (uint32_t)yylval.u64) {
-				fprintf(stderr, "Parse error in line %u: "
-					"Expected hash value %08X but found %08X\n",
-					yylineno, cfg->md.peers[i].addr_hash,  (uint32_t)yylval.u64);
-				exit(10);
-			}
-			parse_bitmap(cfg, parse_only);
-		}
-		EXP('}');
-	}
+	parse_bitmap(cfg, parse_only);
 
 	/* there should be no trailing garbage in the input file */
 	EXP(0);
