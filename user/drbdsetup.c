@@ -280,6 +280,7 @@ struct connections_list {
 	struct connections_list *next;
 	struct drbd_cfg_context ctx;
 	struct connection_info info;
+	struct connection_statistics statistics;
 };
 static struct connections_list *list_connections(void);
 static void free_connections(struct connections_list *);
@@ -1858,6 +1859,10 @@ static void connection_status(struct connections_list *connection,
 		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
 	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
 		wrap_printf(6, " role:%s", drbd_role_str(connection->info.conn_role));
+	if (opt_verbose || connection->statistics.conn_congested > 0) {
+		wrap_printf(6, "\n");
+		wrap_printf(6, " congested:%s", connection->statistics.conn_congested ? "yes" : "no");
+	}
 	wrap_printf(0, "\n");
 	if (connection->info.conn_connection_state == C_CONNECTED)
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
@@ -2141,13 +2146,15 @@ static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
 
 	drbd_cfg_context_from_attrs(&ctx, info);
 	if (ctx.ctx_resource_name) {
-		struct connections_list *r = malloc(sizeof(*r));
+		struct connections_list *c = malloc(sizeof(*c));
 
-		memset(r, 0, sizeof(*r));
-		r->ctx = ctx;
-		connection_info_from_attrs(&r->info, info);
-		*__remembered_connections_tail = r;
-		__remembered_connections_tail = &r->next;
+		memset(c, 0, sizeof(*c));
+		c->ctx = ctx;
+		connection_info_from_attrs(&c->info, info);
+		memset(&c->statistics, -1, sizeof(c->statistics));
+		connection_statistics_from_attrs(&c->statistics, info);
+		*__remembered_connections_tail = c;
+		__remembered_connections_tail = &c->next;
 	}
 	return 0;
 }

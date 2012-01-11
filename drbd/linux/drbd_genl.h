@@ -275,6 +275,10 @@ GENL_struct(DRBD_NLA_DEVICE_STATISTICS, 20, device_statistics,
 	__flg_field(10, 0, dev_al_suspended)  /* activity log suspended */
 )
 
+GENL_struct(DRBD_NLA_CONNECTION_STATISTICS, 21, connection_statistics,
+	__flg_field(1, 0, conn_congested)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -430,7 +434,8 @@ GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 		.dumpit = drbd_adm_dump_connections,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_CONNECTION_INFO, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_CONNECTION_INFO, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_CONNECTION_STATISTICS, DRBD_GENLA_F_MANDATORY))
 
 GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
 	GENL_op_init(

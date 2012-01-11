@@ -3031,6 +3031,7 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 	int err, retcode;
 	struct drbd_genlmsghdr *dh;
 	struct connection_info connection_info;
+	struct connection_statistics connection_statistics;
 
 	retcode = ERR_INVALID_REQUEST;
 	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
@@ -3087,6 +3088,12 @@ put_result:
 		connection_info.conn_connection_state = connection->cstate[NOW];
 		connection_info.conn_role = connection->peer_role[NOW];
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
+		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->flags);
+		err = connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
 		cb->args[0] = (long)connection;
 	}
 	genlmsg_end(skb, dh);
