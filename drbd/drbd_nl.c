@@ -2869,6 +2869,7 @@ int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
 	struct drbd_genlmsghdr *dh;
 	struct drbd_resource *resource;
 	struct resource_info resource_info;
+	struct resource_statistics resource_statistics;
 	int err;
 
 	rcu_read_lock();
@@ -2909,6 +2910,10 @@ put_result:
 	resource_info.res_susp_nod = resource->susp_nod[NOW];
 	resource_info.res_susp_fen = resource->susp_fen[NOW];
 	err = resource_info_to_skb(skb, &resource_info, !capable(CAP_SYS_ADMIN));
+	if (err)
+		goto out;
+	resource_statistics.res_stat_write_ordering = resource->write_ordering;
+	err = resource_statistics_to_skb(skb, &resource_statistics, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;
 	cb->args[0] = (long)resource;

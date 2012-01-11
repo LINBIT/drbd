@@ -258,6 +258,10 @@ GENL_struct(DRBD_NLA_PEER_DEVICE_INFO, 18, peer_device_info,
 	__u32_field(5, 0, peer_resync_susp_dependency)
 )
 
+GENL_struct(DRBD_NLA_RESOURCE_STATISTICS, 19, resource_statistics,
+	__u32_field(1, 0, res_stat_write_ordering)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -397,7 +401,8 @@ GENL_op(DRBD_ADM_GET_RESOURCES, 30,
 		.dumpit = drbd_adm_dump_resources,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_RESOURCE_INFO, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_RESOURCE_INFO, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_RESOURCE_STATISTICS, DRBD_GENLA_F_MANDATORY))
 
 GENL_op(DRBD_ADM_GET_DEVICES, 31,
 	GENL_op_init(

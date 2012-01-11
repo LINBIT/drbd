@@ -260,6 +260,7 @@ struct resources_list {
 	char *name;
 	struct nlattr *res_opts;
 	struct resource_info info;
+	struct resource_statistics statistics;
 };
 static struct resources_list *list_resources(void);
 static void free_resources(struct resources_list *);
@@ -1680,6 +1681,7 @@ static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 }
 
 static bool opt_verbose;
+static bool opt_statistics;
 
 void resource_status(struct resources_list *resource)
 {
@@ -1708,6 +1710,22 @@ void resource_status(struct resources_list *resource)
 			x1 = "no";
 
 		wrap_printf(4, " suspended:%s%s%s", x1, x2, x3);
+	}
+	if (opt_statistics && opt_verbose) {
+		const char *write_ordering_str[] = {
+			[WO_NONE] = "none",
+			[WO_DRAIN_IO] = "drain",
+			[WO_BDEV_FLUSH] = "flush",
+			[WO_BIO_BARRIER] = "barrier",
+		};
+		uint32_t wo = resource->statistics.res_stat_write_ordering;
+
+		if (wo < ARRAY_SIZE(write_ordering_str) && write_ordering_str[wo]) {
+			wrap_printf(4, "\n");
+			wrap_printf(4, " write-ordering:%s",
+				    write_ordering_str[wo]);
+		}
+
 	}
 	wrap_printf(0, "\n");
 }
@@ -1812,10 +1830,11 @@ static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	for (;;) {
 		static struct option status_cmd_options[] = {
 			{ "verbose", no_argument, 0, 'v' },
+			{ "statistics", no_argument, 0, 's' },
 			{ }
 		};
 
-		c = getopt_long(argc, argv, "v", status_cmd_options, 0);
+		c = getopt_long(argc, argv, "vs", status_cmd_options, 0);
 		if (c == -1)
 			break;
 		switch(c) {
@@ -1824,6 +1843,10 @@ static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			return 20;
 		case 'v':
 			opt_verbose = true;
+			break;
+		case 's':
+			opt_statistics = true;
+			break;
 		}
 	}
 
@@ -1960,6 +1983,8 @@ static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info)
 			memcpy(r->res_opts, res_opts, size);
 		}
 		resource_info_from_attrs(&r->info, info);
+		memset(&r->statistics, -1, sizeof(r->statistics));
+		resource_statistics_from_attrs(&r->statistics, info);
 		*__remembered_resources_tail = r;
 		__remembered_resources_tail = &r->next;
 	}
