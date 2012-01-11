@@ -289,6 +289,7 @@ struct peer_devices_list {
 	struct peer_devices_list *next;
 	struct drbd_cfg_context ctx;
 	struct peer_device_info info;
+	struct peer_device_statistics statistics;
 };
 static struct peer_devices_list *list_peer_devices(void);
 static void free_peer_devices(struct peer_devices_list *);
@@ -1827,6 +1828,22 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 				x1 = "no";
 			wrap_printf(indent, " resync-suspended:%s%s%s", x1, x2, x3);
 		}
+		if (opt_statistics && peer_device->statistics.peer_dev_received != -1) {
+			wrap_printf(indent, "\n");
+			wrap_printf(indent, " received:" U64,
+				    peer_device->statistics.peer_dev_received / 2);
+			wrap_printf(indent, " sent:" U64,
+				    peer_device->statistics.peer_dev_sent / 2);
+			if (opt_verbose || peer_device->statistics.peer_dev_out_of_sync != 0)
+				wrap_printf(indent, " out-of-sync:" U64,
+					    peer_device->statistics.peer_dev_out_of_sync / 2);
+			if (opt_verbose) {
+				wrap_printf(indent, " pending:" U32,
+					    peer_device->statistics.peer_dev_pending);
+				wrap_printf(indent, " unacked:" U32,
+					    peer_device->statistics.peer_dev_unacked);
+			}
+		}
 	}
 	wrap_printf(0, "\n");
 }
@@ -2208,6 +2225,8 @@ static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info)
 		memset(p, 0, sizeof(*p));
 		p->ctx = ctx;
 		peer_device_info_from_attrs(&p->info, info);
+		memset(&p->statistics, -1, sizeof(p->statistics));
+		peer_device_statistics_from_attrs(&p->statistics, info);
 		*__remembered_peer_devices_tail = p;
 		__remembered_peer_devices_tail = &p->next;
 	}

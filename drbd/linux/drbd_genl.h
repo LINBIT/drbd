@@ -279,6 +279,15 @@ GENL_struct(DRBD_NLA_CONNECTION_STATISTICS, 21, connection_statistics,
 	__flg_field(1, 0, conn_congested)
 )
 
+GENL_struct(DRBD_NLA_PEER_DEVICE_STATISTICS, 22, peer_device_statistics,
+	__u64_field(1, 0, peer_dev_received)  /* sectors */
+	__u64_field(2, 0, peer_dev_sent)  /* sectors */
+	__u32_field(3, 0, peer_dev_pending)  /* number of requests */
+	__u32_field(4, 0, peer_dev_unacked)  /* number of requests */
+	__u64_field(5, 0, peer_dev_out_of_sync)  /* sectors */
+	__u64_field(6, 0, peer_dev_resync_failed)  /* sectors */
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -442,4 +451,5 @@ GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
 		.dumpit = drbd_adm_dump_peer_devices,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_STATISTICS, DRBD_GENLA_F_MANDATORY))

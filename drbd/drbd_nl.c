@@ -3116,7 +3116,6 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct drbd_peer_device *peer_device = NULL;
 	int minor, err, retcode;
 	struct drbd_genlmsghdr *dh;
-	struct peer_device_info peer_device_info;
 
 	retcode = ERR_INVALID_REQUEST;
 	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
@@ -3159,6 +3158,9 @@ put_result:
 	dh->ret_code = retcode;
 	dh->minor = -1U;
 	if (retcode == NO_ERROR) {
+		struct peer_device_info peer_device_info;
+		struct peer_device_statistics peer_device_statistics;
+
 		dh->minor = device->minor;
 		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
 		if (err)
@@ -3172,6 +3174,18 @@ put_result:
 		peer_device_info.peer_resync_susp_dependency =
 			peer_device->resync_susp_dependency[NOW];
 		err = peer_device_info_to_skb(skb, &peer_device_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
+		peer_device_statistics.peer_dev_received = peer_device->recv_cnt;
+		peer_device_statistics.peer_dev_sent = peer_device->send_cnt;
+		peer_device_statistics.peer_dev_pending = atomic_read(&peer_device->ap_pending_cnt) +
+							  atomic_read(&peer_device->rs_pending_cnt);
+		peer_device_statistics.peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
+		peer_device_statistics.peer_dev_out_of_sync =
+			drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
+		peer_device_statistics.peer_dev_resync_failed =
+			peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
+		err = peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
 		cb->args[0] = minor + 1;
