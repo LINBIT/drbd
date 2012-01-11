@@ -995,7 +995,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(device, peer_req);
-		dec_unacked(device);
+		dec_unacked(peer_device);
 		return 0;
 	}
 
@@ -1009,7 +1009,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 		err = drbd_send_ack(peer_device, P_NEG_DREPLY, peer_req);
 	}
 
-	dec_unacked(device);
+	dec_unacked(peer_device);
 
 	move_to_net_ee_or_free(device, peer_req);
 
@@ -1032,7 +1032,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(device, peer_req);
-		dec_unacked(device);
+		dec_unacked(peer_device);
 		return 0;
 	}
 
@@ -1064,7 +1064,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		drbd_rs_failed_io(peer_device, peer_req->i.sector, peer_req->i.size);
 	}
 
-	dec_unacked(device);
+	dec_unacked(peer_device);
 
 	move_to_net_ee_or_free(device, peer_req);
 
@@ -1085,7 +1085,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(device, peer_req);
-		dec_unacked(device);
+		dec_unacked(peer_device);
 		return 0;
 	}
 
@@ -1129,7 +1129,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			drbd_err(device, "Sending NegDReply. I guess it gets messy.\n");
 	}
 
-	dec_unacked(device);
+	dec_unacked(peer_device);
 	move_to_net_ee_or_free(device, peer_req);
 
 	if (unlikely(err))
@@ -1181,7 +1181,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 out:
 	if (peer_req)
 		drbd_free_peer_req(device, peer_req);
-	dec_unacked(device);
+	dec_unacked(peer_device);
 	return err;
 }
 
@@ -1210,7 +1210,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(device, peer_req);
-		dec_unacked(device);
+		dec_unacked(peer_device);
 		return 0;
 	}
 
@@ -1249,7 +1249,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	err = drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size,
 			       eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
 
-	dec_unacked(device);
+	dec_unacked(peer_device);
 
 	--peer_device->ov_left;
 
@@ -1580,7 +1580,8 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device, start_resync_work);
 	struct drbd_device *device = peer_device->device;
 
-	if (atomic_read(&device->unacked_cnt) || atomic_read(&peer_device->rs_pending_cnt)) {
+	if (atomic_read(&peer_device->unacked_cnt) ||
+	    atomic_read(&peer_device->rs_pending_cnt)) {
 		drbd_warn(peer_device, "w_start_resync later...\n");
 		peer_device->start_resync_timer.expires = jiffies + HZ/10;
 		add_timer(&peer_device->start_resync_timer);

@@ -338,7 +338,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	}
 
 	spin_unlock_irq(&connection->resource->req_lock);
-	dec_ap_pending(device);
+	dec_ap_pending(first_peer_device(device));
 
 	return;
 
@@ -385,7 +385,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 				b->n_writes = n_writes;
 				if (b->w.cb == NULL) {
 					b->w.cb = w_send_barrier;
-					inc_ap_pending(b->device);
+					inc_ap_pending(first_peer_device(b->device));
 					set_bit(CREATE_BARRIER, &connection->flags);
 				}
 
@@ -403,7 +403,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 			 * the newest barrier may not have been queued yet,
 			 * in which case w.cb is still NULL. */
 			if (b->w.cb != NULL)
-				dec_ap_pending(b->device);
+				dec_ap_pending(first_peer_device(b->device));
 
 			if (b == connection->newest_tle) {
 				/* recycle, but reinit! */
@@ -2889,6 +2889,8 @@ static struct drbd_peer_device *create_peer_device(struct drbd_device *device, s
 	peer_device->resync_timer.function = resync_timer_fn;
 	peer_device->resync_timer.data = (unsigned long) peer_device;
 
+	atomic_set(&peer_device->ap_pending_cnt, 0);
+	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);
 	atomic_set(&peer_device->rs_sect_in, 0);
 
@@ -2949,8 +2951,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	drbd_set_defaults(device);
 
 	atomic_set(&device->ap_bio_cnt, 0);
-	atomic_set(&device->ap_pending_cnt, 0);
-	atomic_set(&device->unacked_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
 	atomic_set(&device->rs_sect_ev, 0);

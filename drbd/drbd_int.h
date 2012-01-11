@@ -779,6 +779,8 @@ struct drbd_peer_device {
 	/* resync extent number waiting for application requests */
 	unsigned int resync_wenr;
 
+	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
+	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 
 	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
@@ -861,8 +863,6 @@ struct drbd_device {
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
 	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
-	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
-	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t local_cnt;	 /* Waiting for local completion */
 
 	/* Interval trees of pending local requests */
@@ -1830,17 +1830,18 @@ static inline void drbd_thread_restart_nowait(struct drbd_thread *thi)
  *  _req_mod(req, CONNECTION_LOST_WHILE_PENDING)
  *     [from tl_clear_barrier]
  */
-static inline void inc_ap_pending(struct drbd_device *device)
+static inline void inc_ap_pending(struct drbd_peer_device *peer_device)
 {
-	atomic_inc(&device->ap_pending_cnt);
+	atomic_inc(&peer_device->ap_pending_cnt);
 }
 
-#define dec_ap_pending(device) ((void)expect((device), __dec_ap_pending(device) >= 0))
-static inline int __dec_ap_pending(struct drbd_device *device)
+#define dec_ap_pending(peer_device) \
+	((void)expect((peer_device), __dec_ap_pending(peer_device) >= 0))
+static inline int __dec_ap_pending(struct drbd_peer_device *peer_device)
 {
-	int ap_pending_cnt = atomic_dec_return(&device->ap_pending_cnt);
+	int ap_pending_cnt = atomic_dec_return(&peer_device->ap_pending_cnt);
 	if (ap_pending_cnt == 0)
-		wake_up(&device->misc_wait);
+		wake_up(&peer_device->device->misc_wait);
 	return ap_pending_cnt;
 }
 
@@ -1871,21 +1872,23 @@ static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
  *  receive_DataRequest (receive_RSDataRequest) we need to send back P_DATA
  *  receive_Barrier_*	we need to send a P_BARRIER_ACK
  */
-static inline void inc_unacked(struct drbd_device *device)
+static inline void inc_unacked(struct drbd_peer_device *peer_device)
 {
-	atomic_inc(&device->unacked_cnt);
+	atomic_inc(&peer_device->unacked_cnt);
 }
 
-#define dec_unacked(device) ((void)expect(device, __dec_unacked(device) >= 0))
-static inline int __dec_unacked(struct drbd_device *device)
+#define dec_unacked(peer_device) \
+	((void)expect(peer_device, __dec_unacked(peer_device) >= 0))
+static inline int __dec_unacked(struct drbd_peer_device *peer_device)
 {
-	return atomic_dec_return(&device->unacked_cnt);
+	return atomic_dec_return(&peer_device->unacked_cnt);
 }
 
-#define sub_unacked(device, n) ((void)expect(device, __sub_unacked(device) >= 0))
-static inline int __sub_unacked(struct drbd_device *device, int n)
+#define sub_unacked(peer_device, n) \
+	((void)expect(peer_device, __sub_unacked(peer_device) >= 0))
+static inline int __sub_unacked(struct drbd_peer_device *peer_device, int n)
 {
-	return atomic_sub_return(n, &device->unacked_cnt);
+	return atomic_sub_return(n, &peer_device->unacked_cnt);
 }
 
 /**

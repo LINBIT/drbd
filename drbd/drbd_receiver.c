@@ -1234,7 +1234,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 				spin_lock(&connection->epoch_lock);
 			}
 			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))
-				dec_unacked(epoch->peer_device->device);
+				dec_unacked(epoch->peer_device);
 
 			if (connection->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
@@ -1537,7 +1537,7 @@ STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 		return -EIO;
 	device = peer_device->device;
 
-	inc_unacked(device);
+	inc_unacked(peer_device);
 
 	connection->current_epoch->barrier_nr = p->barrier;
 	connection->current_epoch->peer_device = peer_device;
@@ -1789,7 +1789,7 @@ STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 
 		err  = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
 	}
-	dec_unacked(device);
+	dec_unacked(peer_device);
 
 	return err;
 }
@@ -1806,7 +1806,7 @@ STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 
 	dec_rs_pending(peer_device);
 
-	inc_unacked(device);
+	inc_unacked(peer_device);
 	/* corresponding dec_unacked() in e_end_resync_block()
 	 * respective _drbd_clear_done_ee */
 
@@ -1997,7 +1997,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
 		}
-		dec_unacked(device);
+		dec_unacked(peer_device);
 	}
 	/* we delete from the conflict detection hash _after_ we sent out the
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
@@ -2024,7 +2024,7 @@ static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
 	int err;
 
 	err = drbd_send_ack(peer_device, ack, peer_req);
-	dec_unacked(peer_device->device);
+	dec_unacked(peer_device);
 
 	return err;
 }
@@ -2245,7 +2245,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 					  (unsigned long long)sector, size,
 					  discard ? "local" : "remote");
 
-			inc_unacked(device);
+			inc_unacked(peer_req->peer_device);
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
@@ -2427,7 +2427,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	if (dp_flags & DP_SEND_WRITE_ACK) {
 		peer_req->flags |= EE_SEND_WRITE_ACK;
-		inc_unacked(device);
+		inc_unacked(peer_device);
 		/* corresponding dec_unacked() in e_end_block()
 		 * respective _drbd_clear_done_ee */
 	}
@@ -2707,7 +2707,7 @@ submit_for_resync:
 	atomic_add(size >> 9, &device->rs_sect_ev);
 
 submit:
-	inc_unacked(device);
+	inc_unacked(peer_device);
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&peer_req->w.list, &device->read_ee);
 	spin_unlock_irq(&device->resource->req_lock);

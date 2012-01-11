@@ -195,7 +195,7 @@ static void queue_barrier(struct drbd_device *device)
 	 * get imbalanced on connection loss.
 	 * dec_ap_pending will be done in got_BarrierAck
 	 * or (on connection loss) in tl_clear.  */
-	inc_ap_pending(device);
+	inc_ap_pending(first_peer_device(device));
 	drbd_queue_work(&connection->data.work, &b->w);
 	set_bit(CREATE_BARRIER, &connection->flags);
 }
@@ -389,7 +389,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |=
 			p == DRBD_PROT_C ? RQ_EXP_WRITE_ACK :
 			p == DRBD_PROT_B ? RQ_EXP_RECEIVE_ACK : 0;
-		inc_ap_pending(device);
+		inc_ap_pending(first_peer_device(device));
 		break;
 
 	case TO_BE_SUBMITTED: /* locally */
@@ -459,7 +459,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* _req_mod(req,TO_BE_SENT); oops, recursion... */
 		req->rq_state |= RQ_NET_PENDING;
-		inc_ap_pending(device);
+		inc_ap_pending(first_peer_device(device));
 		/* fall through: _req_mod(req,QUEUE_FOR_NET_READ); */
 
 	case QUEUE_FOR_NET_READ:
@@ -572,7 +572,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			/* this is what is dangerous about protocol A:
 			 * pretend it was successfully written on the peer. */
 			if (req->rq_state & RQ_NET_PENDING) {
-				dec_ap_pending(device);
+				dec_ap_pending(first_peer_device(device));
 				req->rq_state &= ~RQ_NET_PENDING;
 				req->rq_state |= RQ_NET_OK;
 			} /* else: neg-ack was faster... */
@@ -597,7 +597,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* transfer log cleanup after connection loss */
 		/* assert something? */
 		if (req->rq_state & RQ_NET_PENDING)
-			dec_ap_pending(device);
+			dec_ap_pending(first_peer_device(device));
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_DONE;
 		if (req->rq_state & RQ_NET_SENT && req->rq_state & RQ_WRITE)
@@ -639,7 +639,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	ack_common:
 		req->rq_state |= RQ_NET_OK;
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
-		dec_ap_pending(device);
+		dec_ap_pending(first_peer_device(device));
 		atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 		req->rq_state &= ~RQ_NET_PENDING;
 		_req_may_be_done_not_susp(req, m);
@@ -659,7 +659,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case NEG_ACKED:
 		/* assert something? */
 		if (req->rq_state & RQ_NET_PENDING) {
-			dec_ap_pending(device);
+			dec_ap_pending(first_peer_device(device));
 			atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 		}
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
@@ -727,7 +727,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case DATA_RECEIVED:
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
-		dec_ap_pending(device);
+		dec_ap_pending(first_peer_device(device));
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
 		_req_may_be_done_not_susp(req, m);

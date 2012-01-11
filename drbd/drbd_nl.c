@@ -652,7 +652,7 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 		drbd_warn(device, "Forced to consider local data as UpToDate!\n");
 
 	/* Wait until nothing is on the fly :) */
-	wait_event(device->misc_wait, atomic_read(&device->ap_pending_cnt) == 0);
+	wait_event(device->misc_wait, atomic_read(&first_peer_device(device)->ap_pending_cnt) == 0);
 
 	if (role == R_SECONDARY) {
 		set_disk_ro(device->vdisk, true);
@@ -1405,7 +1405,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_suspend_io(device);
 	/* also wait for the last barrier ack. */
-	wait_event(device->misc_wait, !atomic_read(&device->ap_pending_cnt) || drbd_suspended(device));
+	wait_event(device->misc_wait,
+		   (!atomic_read(&first_peer_device(device)->ap_pending_cnt) ||
+		    drbd_suspended(device)));
 	/* and for other previously queued resource work */
 	drbd_flush_workqueue(&device->resource->work);
 
