@@ -3015,26 +3015,27 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
-static void assign_32_of_64bit(int i, uint64_t value)
+static void assign_32_of_64bit(int i, uint64_t value, int max_peers)
 {
 	le_u32 *bm = on_disk_buffer;
 
 	if (i < 0)
 		return;
 
-	if ((i & 1) == 0)
+	if (((i / max_peers) & 1) == 0)
 		bm[i].le = cpu_to_le32((uint32_t) value); // little endian low word => lower address
 	else
 		bm[i].le = cpu_to_le32((uint32_t) (value >> 32));
 }
 
-int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
+int parse_bitmap_window_one_peer(struct format *cfg, int window, int peer_nr, int parse_only)
 {
+	unsigned int max_peers = cfg->md.bm_max_peers;
 	le_u32 *bm = on_disk_buffer;
 	uint64_t value;
 	int i, times;
 
-	i = - window * (buffer_size / sizeof(*bm));
+	i = peer_nr - window * (buffer_size / sizeof(*bm));
 	EXP('{');
 
 	while(1) {
@@ -3051,17 +3052,19 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 			 * "parse_only" functionality without ugly if-branches
 			 * or the maintenance nightmare of code duplication */
 			if (parse_only) {
-				i += sizeof(value) / sizeof(*bm);
+				i += max_peers * (sizeof(value) / sizeof(*bm));
 				break;
 			}
 			value = yylval.u64;
 
-			assign_32_of_64bit(i++, value);
+			assign_32_of_64bit(i, value, max_peers);
+			i += max_peers;
 			if (i >= buffer_size / sizeof(*bm))
-				return i;
-			assign_32_of_64bit(i++, value);
+				goto break_loop;
+			assign_32_of_64bit(i, value, max_peers);
+			i += max_peers;
 			if (i >= buffer_size / sizeof(*bm))
-				return i;
+				goto break_loop;
 			break;
 		case TK_NUM:
 			times = yylval.u64;
@@ -3069,17 +3072,19 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 			EXP(TK_U64);
 			EXP(';');
 			if (parse_only) {
-				i += times * (sizeof(value) / sizeof(*bm));
+				i += times * max_peers * (sizeof(value) / sizeof(*bm));
 				break;
 			}
 			value = yylval.u64;
 			while(times--) {
-				assign_32_of_64bit(i++, value);
+				assign_32_of_64bit(i, value, max_peers);
+				i += max_peers;
 				if (i >= buffer_size / sizeof(*bm))
-					return i;
-				assign_32_of_64bit(i++, value);
+					goto break_loop;
+				assign_32_of_64bit(i, value, max_peers);
+				i += max_peers;
 				if (i >= buffer_size / sizeof(*bm))
-					return i;
+					goto break_loop;
 			}
 			break;
 		case '}':
@@ -3092,7 +3097,7 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 	}
 break_loop:
 
-	return i;
+	return i - peer_nr;
 }
 
 int parse_bitmap_window(struct format *cfg, int window, int parse_only)
@@ -3100,12 +3105,8 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 	int words = 0, i;
 
 	if (format_version(cfg) < DRBD_V09) {
-		return parse_bitmap_window_one_peer(cfg, window, parse_only);
+		return parse_bitmap_window_one_peer(cfg, window, 0, parse_only);
 	} else /* >= DRBD_V09 */ {
-		if (!parse_only) {
-			fprintf(stderr, "So far only verify-dump implemented\n");
-			exit(10);
-		}
 		EXP('{');
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
 			EXP(TK_PEER); EXP('[');
@@ -3124,7 +3125,7 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 					yylineno, cfg->md.peers[i].addr_hash,  (uint32_t)yylval.u64);
 				exit(10);
 			}
-			words = parse_bitmap_window_one_peer(cfg, window, parse_only);
+			words = parse_bitmap_window_one_peer(cfg, window, i, parse_only);
 		}
 		EXP('}');
 	}
