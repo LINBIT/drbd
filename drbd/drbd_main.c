@@ -2557,13 +2557,11 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 {
 	struct drbd_device *device = congested_data;
 	struct request_queue *q;
-	char reason = '-';
 	int r = 0;
 
 	if (!may_inc_ap_bio(device)) {
 		/* DRBD has frozen IO */
 		r = bdi_bits;
-		reason = 'd';
 		goto out;
 	}
 
@@ -2571,18 +2569,14 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		q = bdev_get_queue(device->ldev->backing_bdev);
 		r = bdi_congested(&q->backing_dev_info, bdi_bits);
 		put_ldev(device);
-		if (r)
-			reason = 'b';
 	}
 
 	if (bdi_bits & (1 << BDI_async_congested) &&
 	    test_bit(NET_CONGESTED, &first_peer_device(device)->connection->flags)) {
 		r |= (1 << BDI_async_congested);
-		reason = reason == 'b' ? 'a' : 'n';
 	}
 
 out:
-	device->congestion_reason = reason;
 	return r;
 }
 

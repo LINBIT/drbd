@@ -898,7 +898,6 @@ struct drbd_device {
 	wait_queue_head_t seq_wait;
 	unsigned int minor;
 	u64 ed_uuid; /* UUID of the exposed data */
-	char congestion_reason;  /* Why we where congested... */
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
