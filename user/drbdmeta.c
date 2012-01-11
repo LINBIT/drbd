@@ -3167,6 +3167,8 @@ void check_for_existing_data(struct format *cfg);
 
 int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int parse_only)
 {
+	int old_max_peers = -1;
+	int new_max_peers = 1;
 	int i;
 	int err;
 
@@ -3179,16 +3181,13 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 
 	if (!parse_only) {
-		if (!cfg->ops->open(cfg)) {
+		if (cfg->ops->open(cfg) != NO_VALID_MD_FOUND) {
+			old_max_peers = cfg->md.bm_max_peers;
 			if (!confirmed("Valid meta-data in place, overwrite?"))
 				return -1;
 		} else {
-			check_for_existing_data(cfg);
-
 			ASSERT(!is_v06(cfg));
 		}
-		fprintf(stderr, "reinitializing\n");
-		cfg->ops->md_initialize(cfg, 0, 1);
 	}
 
 	EXP(TK_VERSION); EXP(TK_STRING);
@@ -3201,8 +3200,22 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	if (is_v09(cfg)) {
 		EXP(TK_BM_MAX_PEERS);
 		EXP(TK_NUM); EXP(';');
-		cfg->md.bm_max_peers = yylval.u64;
+		new_max_peers = yylval.u64;
 	}
+
+	if (!parse_only) {
+		fprintf(stderr, "reinitializing\n");
+		cfg->ops->md_initialize(cfg, 0, new_max_peers);
+		if (old_max_peers < new_max_peers &&
+		    cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
+			printf("Meta data needs more space now, since max_peers\n"
+			       "is bigger than in existing meta_data. (%d -> %d)\n",
+			       old_max_peers, new_max_peers);
+		}
+
+		check_for_existing_data(cfg);
+	}
+
 
 	if (format_version(cfg) < DRBD_V08) {
 		EXP(TK_GC); EXP('{');
