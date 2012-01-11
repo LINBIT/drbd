@@ -262,6 +262,18 @@ GENL_struct(DRBD_NLA_RESOURCE_STATISTICS, 19, resource_statistics,
 	__u32_field(1, 0, res_stat_write_ordering)
 )
 
+GENL_struct(DRBD_NLA_DEVICE_STATISTICS, 20, device_statistics,
+	__u64_field(1, 0, dev_size)  /* (sectors) */
+	__u64_field(2, 0, dev_read)  /* (sectors) */
+	__u64_field(3, 0, dev_write)  /* (sectors) */
+	__u64_field(4, 0, dev_al_writes)  /* activity log writes (count) */
+	__u64_field(5, 0, dev_bm_writes)  /*  bitmap writes  (count) */
+	__u32_field(6, 0, dev_upper_pending)  /* application requests in progress */
+	__u32_field(7, 0, dev_lower_pending)  /* backing device requests in progress */
+	__flg_field(8, 0, dev_upper_blocked)
+	__flg_field(9, 0, dev_lower_blocked)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -409,7 +421,8 @@ GENL_op(DRBD_ADM_GET_DEVICES, 31,
 		.dumpit = drbd_adm_dump_devices,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_DEVICE_INFO, DRBD_GENLA_F_MANDATORY))
+	GENL_tla_expected(DRBD_NLA_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
+	GENL_tla_expected(DRBD_NLA_DEVICE_STATISTICS, DRBD_GENLA_F_MANDATORY))
 
 GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 	GENL_op_init(

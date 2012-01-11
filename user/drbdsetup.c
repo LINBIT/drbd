@@ -271,6 +271,7 @@ struct devices_list {
 	struct drbd_cfg_context ctx;
 	struct disk_conf disk_conf;
 	struct device_info info;
+	struct device_statistics statistics;
 };
 static struct devices_list *list_devices(void);
 static void free_devices(struct devices_list *);
@@ -1741,6 +1742,46 @@ static void device_status(struct devices_list *device, bool single_device)
 			wrap_printf(indent, " minor:%u", device->minor);
 	}
 	wrap_printf(indent, " disk:%s", drbd_disk_str(device->info.dev_disk_state));
+	indent = 6;
+	if (opt_statistics && device->statistics.dev_size != -1) {
+		wrap_printf(indent, "\n");
+		if (opt_verbose)
+			wrap_printf(indent, " size:" U64,
+				    device->statistics.dev_size / 2);
+		wrap_printf(indent, " read:" U64,
+			    device->statistics.dev_read / 2);
+		wrap_printf(indent, " written:" U64,
+			    device->statistics.dev_write / 2);
+		if (opt_verbose) {
+			wrap_printf(indent, " al-writes:" U64,
+				    device->statistics.dev_al_writes);
+			wrap_printf(indent, " bm-writes:" U64,
+				    device->statistics.dev_bm_writes);
+			wrap_printf(indent, " upper-pending:" U32,
+				    device->statistics.dev_upper_pending);
+			wrap_printf(indent, " lower-pending:" U32,
+				    device->statistics.dev_lower_pending);
+		}
+	}
+	if (device->statistics.dev_size != -1 && (opt_verbose ||
+	    device->statistics.dev_upper_blocked ||
+	    device->statistics.dev_lower_blocked)) {
+		const char *x1 = "", *x2 = "";
+		bool first = true;
+
+		if (device->statistics.dev_upper_blocked) {
+			x1 = ",upper" + first;
+			first = false;
+		}
+		if (device->statistics.dev_lower_blocked) {
+			x2 = ",lower" + first;
+			first = false;
+		}
+		if (first)
+			x1 = "no";
+
+		wrap_printf(indent, " blocked:%s%s", x1, x2);
+	}
 	wrap_printf(indent, "\n");
 }
 
@@ -2046,6 +2087,8 @@ static int remember_device(struct drbd_cmd *cm, struct genl_info *info)
 		disk_conf_from_attrs(&d->disk_conf, info);
 		d->info.dev_disk_state = D_DISKLESS;
 		device_info_from_attrs(&d->info, info);
+		memset(&d->statistics, -1, sizeof(d->statistics));
+		device_statistics_from_attrs(&d->statistics, info);
 		*__remembered_devices_tail = d;
 		__remembered_devices_tail = &d->next;
 	}
