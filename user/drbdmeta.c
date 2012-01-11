@@ -3015,10 +3015,24 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
+static void assign_32_of_64bit(int i, uint64_t value)
+{
+	le_u32 *bm = on_disk_buffer;
+
+	if (i < 0)
+		return;
+
+	if ((i & 1) == 0)
+		bm[i].le = cpu_to_le32((uint32_t) value); // little endian low word => lower address
+	else
+		bm[i].le = cpu_to_le32((uint32_t) (value >> 32));
+}
+
 int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 {
+	le_u32 *bm = on_disk_buffer;
+	uint64_t value;
 	int i, times;
-	le_u64 value, *bm = on_disk_buffer;
 
 	i = - window * (buffer_size / sizeof(*bm));
 	EXP('{');
@@ -3037,13 +3051,15 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 			 * "parse_only" functionality without ugly if-branches
 			 * or the maintenance nightmare of code duplication */
 			if (parse_only) {
-				i++;
+				i += sizeof(value) / sizeof(*bm);
 				break;
 			}
-			value.le = cpu_to_le64(yylval.u64);
-			if (i >= 0)
-				bm[i] = value;
-			i++;
+			value = yylval.u64;
+
+			assign_32_of_64bit(i++, value);
+			if (i >= buffer_size / sizeof(*bm))
+				return i;
+			assign_32_of_64bit(i++, value);
 			if (i >= buffer_size / sizeof(*bm))
 				return i;
 			break;
@@ -3053,14 +3069,15 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int parse_only)
 			EXP(TK_U64);
 			EXP(';');
 			if (parse_only) {
-				i += times;
+				i += times * (sizeof(value) / sizeof(*bm));
 				break;
 			}
-			value.le = cpu_to_le64(yylval.u64);
+			value = yylval.u64;
 			while(times--) {
-				if (i >= 0)
-					bm[i] = value;
-				i++;
+				assign_32_of_64bit(i++, value);
+				if (i >= buffer_size / sizeof(*bm))
+					return i;
+				assign_32_of_64bit(i++, value);
 				if (i >= buffer_size / sizeof(*bm))
 					return i;
 			}
@@ -3116,7 +3133,7 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 
 void parse_bitmap(struct format *cfg, int parse_only)
 {
-	le_u64 *bm = on_disk_buffer;
+	le_u32 *bm = on_disk_buffer;
 	long start_pos;
 	int window = 0;
 	int words;
