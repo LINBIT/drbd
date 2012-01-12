@@ -95,7 +95,7 @@ struct __packed al_transaction_on_disk {
 
 struct update_odbm_work {
 	struct drbd_work w;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	unsigned int enr;
 };
 
@@ -550,7 +550,8 @@ void drbd_al_shrink(struct drbd_device *device)
 STATIC int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
-	struct drbd_device *device = udw->device;
+	struct drbd_peer_device *peer_device = udw->peer_device;
+	struct drbd_device *device = peer_device->device;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 
 	if (!get_ldev(device)) {
@@ -560,26 +561,27 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 		return 0;
 	}
 
-	drbd_bm_write_page(device, rs_extent_to_bm_page(udw->enr));
+	drbd_bm_write_page(device, rs_extent_to_bm_page(udw->enr));  /* FIXME: !!! */
 	put_ldev(device);
 
 	kfree(udw);
 
-	if (drbd_bm_total_weight(first_peer_device(device)) <= first_peer_device(device)->rs_failed) {
-		switch (first_peer_device(device)->repl_state[NEW]) {
+	if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed) {
+		switch (peer_device->repl_state[NEW]) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
-			drbd_resync_finished(first_peer_device(device));
+			drbd_resync_finished(peer_device);
+			break;
 		default:
 			/* nothing to do */
 			break;
 		}
 	}
+
 	drbd_bcast_event(device, &sib);
 
 	return 0;
 }
-
 
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the
  * resync LRU-cache are 16MB each.
@@ -664,7 +666,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			if (udw) {
 				udw->enr = ext->lce.lc_number;
 				udw->w.cb = w_update_odbm;
-				udw->device = device;
+				udw->peer_device = peer_device;
 				drbd_queue_work(&device->resource->work, &udw->w);
 			} else {
 				drbd_warn(device, "Could not kmalloc an udw\n");
