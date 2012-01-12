@@ -1577,7 +1577,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 		if (drbd_md_test_flag(device->ldev, MDF_FULL_SYNC)) {
 			drbd_info(device, "Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(device);
-			if (drbd_bm_write(device, peer_device)) {
+			if (drbd_bm_write(device, NULL)) {
 				/* write_bm did fail! Leave full sync flag set in Meta P_DATA
 				 * but otherwise process as per normal - need to tell other
 				 * side that a full resync is required! */
@@ -3568,7 +3568,7 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 		drbd_md_sync(device);
 		drbd_bm_set_all(device);
 
-		rv = drbd_bm_write(device, peer_device);
+		rv = drbd_bm_write(device, NULL);
 
 		if (!rv) {
 			drbd_md_clear_flag(device, MDF_FULL_SYNC);
@@ -3595,7 +3595,7 @@ int drbd_bmio_clear_n_write(struct drbd_device *device,
 	drbd_resume_al(device);
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		drbd_bm_clear_all(device);
-		rv = drbd_bm_write(device, peer_device);
+		rv = drbd_bm_write(device, NULL);
 		put_ldev(device);
 	}
 
