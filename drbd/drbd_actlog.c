@@ -801,6 +801,19 @@ void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
 	set_in_sync(device, -1, sector, size);
 }
 
+static int __set_out_of_sync(struct drbd_peer_device *peer_device, unsigned long sbnr,
+			     unsigned long ebnr, unsigned int enr)
+{
+	struct lc_element *e;
+	unsigned int count;
+
+	count = drbd_bm_set_bits(peer_device->device, peer_device->bitmap_index, sbnr, ebnr);
+	e = lc_find(peer_device->resync_lru, enr);
+	if (e)
+		lc_entry(e, struct bm_extent, lce)->rs_left += count;
+	return count;
+}
+
 /*
  * this is intended to set one request worth of data out of sync.
  * affects at least 1 bit,
@@ -809,12 +822,12 @@ void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
  * called by tl_clear and drbd_send_dblock (==drbd_make_request).
  * so this can be _any_ process.
  */
-static int set_out_of_sync(struct drbd_device *device, int bitmap_index, sector_t sector, int size)
+static int set_out_of_sync(struct drbd_device *device, struct drbd_peer_device *peer_device,
+			   sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr, flags;
 	sector_t esector, nr_sectors;
-	unsigned int enr, count = 0;
-	struct lc_element *e;
+	unsigned int enr, total = 0;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
 		drbd_err(device, "sector: %llus, size: %d\n",
@@ -837,32 +850,35 @@ static int set_out_of_sync(struct drbd_device *device, int bitmap_index, sector_
 	 * we do not need to round anything here */
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
+	enr = BM_SECT_TO_EXT(sector);
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
 	spin_lock_irqsave(&device->al_lock, flags);
-	count = drbd_bm_set_bits(device, bitmap_index, sbnr, ebnr);
-
-	enr = BM_SECT_TO_EXT(sector);
-	e = lc_find(first_peer_device(device)->resync_lru, enr);
-	if (e)
-		lc_entry(e, struct bm_extent, lce)->rs_left += count;
+	if (peer_device)
+		total = __set_out_of_sync(peer_device, sbnr, ebnr, enr);
+	else {
+		rcu_read_lock();
+		for_each_peer_device(peer_device, device)
+			total += __set_out_of_sync(peer_device, sbnr, ebnr, enr);
+		rcu_read_unlock();
+	}
 	spin_unlock_irqrestore(&device->al_lock, flags);
 
 out:
 	put_ldev(device);
 
-	return count;
+	return total;
 }
 
 int drbd_set_out_of_sync(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
-	return set_out_of_sync(peer_device->device, peer_device->bitmap_index, sector, size);
+	return set_out_of_sync(peer_device->device, peer_device, sector, size);
 }
 
 int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
-	return set_out_of_sync(device, -1, sector, size);
+	return set_out_of_sync(device, NULL, sector, size);
 }
 
 static
