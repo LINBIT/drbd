@@ -630,7 +630,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 	 * a 16 MB extent border. (Currently this is true...) */
 	enr = BM_SECT_TO_EXT(sector);
 
-	e = lc_get(first_peer_device(device)->resync_lru, enr);
+	e = lc_get(peer_device->resync_lru, enr);
 	if (e) {
 		struct bm_extent *ext = lc_entry(e, struct bm_extent, lce);
 		if (ext->lce.lc_number == enr) {
@@ -639,7 +639,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				struct drbd_peer_device *pd = first_peer_device(device);
+				struct drbd_peer_device *pd = peer_device;
 				unsigned s = combined_conn_state(pd, NOW);
 				drbd_warn(device, "BAD! sector=%llus enr=%u rs_left=%d "
 				    "rs_failed=%d count=%d cstate=%s\n",
@@ -654,7 +654,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 				 * Whatever the reason (disconnect during resync,
 				 * delayed local completion of an application write),
 				 * try to fix it up by recounting here. */
-				ext->rs_left = bm_e_weight(first_peer_device(device), enr);
+				ext->rs_left = bm_e_weight(peer_device, enr);
 			}
 		} else {
 			/* Normally this element should be in the cache,
@@ -663,7 +663,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			 * But maybe an application write finished, and we set
 			 * something outside the resync lru_cache in sync.
 			 */
-			int rs_left = bm_e_weight(first_peer_device(device), enr);
+			int rs_left = bm_e_weight(peer_device, enr);
 			if (ext->flags != 0) {
 				drbd_warn(device, "changing resync lce: %d[%u;%02lx]"
 				     " -> %d[%u;00]\n",
@@ -680,9 +680,9 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			ext->rs_failed = success ? 0 : count;
 			/* we don't keep a persistent log of the resync lru,
 			 * we can commit any change right away. */
-			lc_committed(first_peer_device(device)->resync_lru);
+			lc_committed(peer_device->resync_lru);
 		}
-		lc_put(first_peer_device(device)->resync_lru, &ext->lce);
+		lc_put(peer_device->resync_lru, &ext->lce);
 		/* no race, we are within the al_lock! */
 
 		if (ext->rs_left == ext->rs_failed) {
@@ -700,9 +700,9 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 		}
 	} else {
 		drbd_err(device, "lc_get() failed! locked=%d/%d flags=%lu\n",
-		    first_peer_device(device)->resync_locked,
-		    first_peer_device(device)->resync_lru->nr_elements,
-		    first_peer_device(device)->resync_lru->flags);
+		    peer_device->resync_locked,
+		    peer_device->resync_lru->nr_elements,
+		    peer_device->resync_lru->flags);
 	}
 }
 
