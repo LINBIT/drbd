@@ -75,8 +75,8 @@
 
 /* module parameter, defined in drbd_main.c */
 extern unsigned int minor_count;
-extern int disable_sendpage;
-extern int allow_oos;
+extern bool disable_sendpage;
+extern bool allow_oos;
 extern unsigned int cn_idx;
 
 #ifdef DRBD_ENABLE_FAULTS
