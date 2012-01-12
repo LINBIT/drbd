@@ -3226,12 +3226,13 @@ int main(int argc, char **argv)
 	for (next_arg = ctx_next_arg(&ctx_key), optind = 2;
 	     next_arg;
 	     next_arg = ctx_next_arg(&ctx_key), optind++) {
-		if (argc <= optind) {
+		if (argc == optind && !(ctx_key & CTX_MULTIPLE_ARGUMENTS) && (next_arg & CTX_ALL))
+			context |= CTX_ALL;  /* assume "all" if no argument is given */
+		else if (argc <= optind) {
 			fprintf(stderr, "Missing argument %d\n", optind);
 			print_command_usage(cmd, FULL);
 			exit(20);
-		}
-		if (next_arg & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+		} else if (next_arg & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
 			objname = argv[optind];
 			if (!strcmp(objname, "all")) {
 				if (!(next_arg & CTX_ALL))
