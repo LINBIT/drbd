@@ -652,6 +652,8 @@ enum {
 	CONN_WD_ST_CHG_FAIL,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
+	INITIAL_STATE_SENT,
+	INITIAL_STATE_RECEIVED,
 };
 
 enum which_state { NOW, OLD = NOW, NEW };

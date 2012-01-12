@@ -837,8 +837,6 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)
 		err = drbd_send_uuids(peer_device);
-	if (!err)
-		err = drbd_send_current_state(peer_device);
 	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
@@ -1011,6 +1009,8 @@ retry:
 	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
 		return -1;
 
+	clear_bit(INITIAL_STATE_SENT, &connection->flags);
+	clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
@@ -3902,7 +3902,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	struct drbd_device *device;
 	struct p_uuids *p = pi->data;
 	u64 *p_uuid;
-	int i, updated_uuids = 0, err;
+	int i, updated_uuids = 0, err = 0;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -3970,11 +3970,18 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
-	err = drbd_validate_bitmap_index(peer_device);
-	if (err == -EAGAIN) {
-		err = drbd_send_uuids(peer_device);
-		if (!err)
-			err = drbd_send_current_state(peer_device);
+	if (!test_bit(INITIAL_STATE_RECEIVED, &connection->flags)) {
+		err = drbd_validate_bitmap_index(peer_device);
+		if (!test_bit(INITIAL_STATE_SENT, &connection->flags)) {
+			if (err == -EAGAIN)
+				err = drbd_send_uuids(peer_device);
+
+			if (!err)
+				err = drbd_send_current_state(peer_device);
+			set_bit(INITIAL_STATE_SENT, &connection->flags);
+		} else if (err) {
+			drbd_err(peer_device, "Needed to change bitmap slot late! Aborting handshake.\n");
+		}
 	}
 
 	return err;
@@ -4234,6 +4241,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return config_unknown_volume(connection, pi);
 	device = peer_device->device;
 
+	set_bit(INITIAL_STATE_RECEIVED, &connection->flags);
 	peer_state.i = be32_to_cpu(p->state);
 
 	peer_disk_state = peer_state.disk;
