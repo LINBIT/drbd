@@ -722,6 +722,26 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 	}
 }
 
+static bool __set_in_sync(struct drbd_peer_device *peer_device, sector_t sector,
+			  unsigned long sbnr, unsigned long ebnr)
+{
+	struct drbd_device *device = peer_device->device;
+	unsigned long count;
+
+	count = drbd_bm_clear_bits(device, peer_device->bitmap_index, sbnr, ebnr);
+	if (count && get_ldev(device)) {
+		unsigned long flags;
+
+		drbd_advance_rs_marks(peer_device, drbd_bm_total_weight(peer_device));
+		spin_lock_irqsave(&device->al_lock, flags);
+		drbd_try_clear_on_disk_bm(peer_device, sector, count, true);
+		spin_unlock_irqrestore(&device->al_lock, flags);
+		put_ldev(device);
+		return true;
+	}
+	return false;
+}
+
 /* clear the bit corresponding to the piece of storage in question:
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one ore more _aligned_ BM_BLOCK_SIZE blocks.
@@ -729,14 +749,13 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
  * called by worker on L_SYNC_TARGET and receiver on SyncSource.
  *
  */
-static void set_in_sync(struct drbd_device *device, int bitmap_index, sector_t sector, int size)
+static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *peer_device,
+			sector_t sector, int size)
 {
 	/* Is called from worker and receiver context _only_ */
 	unsigned long sbnr, ebnr, lbnr;
-	unsigned long count = 0;
 	sector_t esector, nr_sectors;
-	int wake_up = 0;
-	unsigned long flags;
+	bool wake_up = false;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
 		drbd_err(device, "drbd_set_in_sync: sector=%llus size=%d nonsense!\n",
@@ -771,21 +790,13 @@ static void set_in_sync(struct drbd_device *device, int bitmap_index, sector_t s
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
-	count = drbd_bm_clear_bits(device, bitmap_index, sbnr, ebnr);
-	if (count && get_ldev(device)) {
-		struct drbd_peer_device *peer_device;
-
-		drbd_advance_rs_marks(first_peer_device(device), drbd_bm_total_weight(first_peer_device(device)));
-		spin_lock_irqsave(&device->al_lock, flags);
-		/* FIXME: Make sure the list of peer devices cannot change here. */
-		for_each_peer_device_rcu(peer_device, device)
-			drbd_try_clear_on_disk_bm(peer_device, sector, count, true);
-		spin_unlock_irqrestore(&device->al_lock, flags);
-
-		/* just wake_up unconditional now, various lc_chaged(),
-		 * lc_put() in drbd_try_clear_on_disk_bm(). */
-		wake_up = 1;
-		put_ldev(device);
+	if (peer_device)
+		wake_up = __set_in_sync(peer_device, sector, sbnr, ebnr);
+	else {
+		rcu_read_lock();
+		for_each_peer_device(peer_device, device)
+			wake_up |= __set_in_sync(peer_device, sector, sbnr, ebnr);
+		rcu_read_unlock();
 	}
 	if (wake_up)
 		wake_up(&device->al_wait);
@@ -793,12 +804,12 @@ static void set_in_sync(struct drbd_device *device, int bitmap_index, sector_t s
 
 void drbd_set_in_sync(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
-	set_in_sync(peer_device->device, peer_device->bitmap_index, sector, size);
+	set_in_sync(peer_device->device, peer_device, sector, size);
 }
 
 void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
 {
-	set_in_sync(device, -1, sector, size);
+	set_in_sync(device, NULL, sector, size);
 }
 
 static int __set_out_of_sync(struct drbd_peer_device *peer_device, unsigned long sbnr,
