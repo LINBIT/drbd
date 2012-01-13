@@ -11,11 +11,11 @@
 
 #include "config.h"
 
-#define E_syntax	  2
-#define E_usage		  3
-#define E_config_invalid 10
-#define E_exec_error     20
-#define E_thinko	 42 /* :) */
+#define E_SYNTAX	  2
+#define E_USAGE		  3
+#define E_CONFIG_INVALID 10
+#define E_EXEC_ERROR     20
+#define E_THINKO	 42 /* :) */
 
 enum {
 	SLEEPS_FINITE        = 1,
@@ -252,11 +252,11 @@ extern void convert_after_option(struct d_resource* res);
 extern int have_ip(const char *af, const char *ip);
 
 enum pr_flags {
-	NoneHAllowed  = 4,
+	NO_HOST_SECT_ALLOWED  = 4,
 	PARSE_FOR_ADJUST = 8
 };
 enum pp_flags {
-	match_on_proxy = 1,
+	MATCH_ON_PROXY = 1,
 };
 
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);

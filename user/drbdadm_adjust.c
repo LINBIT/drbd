@@ -56,19 +56,19 @@ static FILE *m_popen(int *pid,char** argv)
 
 	if(pipe(pipes)) {
 		perror("Creation of pipes failed");
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 
 	dev_null = open("/dev/null", O_WRONLY);
 	if (dev_null == -1) {
 		perror("Opening /dev/null failed");
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 
 	mpid = fork();
 	if(mpid == -1) {
 		fprintf(stderr,"Can not fork");
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 	if(mpid == 0) {
 		close(pipes[0]); // close reading end
@@ -78,7 +78,7 @@ static FILE *m_popen(int *pid,char** argv)
 		close(dev_null);
 		execvp(argv[0],argv);
 		fprintf(stderr,"Can not exec");
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 
 	close(pipes[1]); // close writing end
@@ -255,7 +255,7 @@ int _is_plugin_in_list(char *string,
 	if (word_len+1 >= MAX_PLUGIN_NAME) {
 		fprintf(stderr, "Wrong proxy plugin name %*.*s",
 				word_len, word_len, string);
-		exit(E_config_invalid);
+		exit(E_CONFIG_INVALID);
 	}
 
 	copy = alist[list_len];
@@ -271,7 +271,7 @@ int _is_plugin_in_list(char *string,
 	/* Not found, insert into list. */
 	if (list_len >= MAX_PLUGINS) {
 		fprintf(stderr, "Too many proxy plugins.");
-		exit(E_config_invalid);
+		exit(E_CONFIG_INVALID);
 	}
 
 	return 0;
@@ -330,7 +330,7 @@ redo_whole_conn:
 	{
 		if (used >= sizeof(plugin_changes)-1) {
 			fprintf(stderr, "Too many proxy plugin changes");
-			exit(E_config_invalid);
+			exit(E_CONFIG_INVALID);
 		}
 		/* Now we can be sure that we can store another pointer. */
 
@@ -654,7 +654,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", resource_name);
 		if (i>= sizeof(show_conn)-1) {
 			fprintf(stderr,"connection name too long");
-			exit(E_thinko);
+			exit(E_THINKO);
 		}
 		sprintf(config_file_dummy,"drbd-proxy-ctl -c '%s'", show_conn);
 		config_file = config_file_dummy;

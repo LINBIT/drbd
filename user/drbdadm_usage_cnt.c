@@ -304,7 +304,7 @@ void maybe_exec_drbdadm_83(char **argv)
 			"drbd kernel code. Consider to rebuild your user land\n"
 			"tools with ./configure --with-legacy-connector\n");
 #endif
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 }
 
@@ -668,7 +668,7 @@ static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 	pid = fork();
 	if(pid == -1) {
 		fprintf(stderr,"Can not fork\n");
-		exit(E_exec_error);
+		exit(E_EXEC_ERROR);
 	}
 	if(pid == 0) {
 		// child
