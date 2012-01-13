@@ -335,6 +335,13 @@
           <para>The <option>--assume-peer-has-space</option> allows you to resize a device which
           is currently not connected to the peer. Use with care, since if you do not resize the
           peer's disk as well, further connect attempts of the two will fail.</para>
+
+	  <para>The <option>--assume-clean</option> allows you to resize an existing device and avoid
+          syncing the new space. This is useful when adding addtional blank storage to your device.
+          Example:
+          <programlisting format="linespecific">
+# drbdadm -- --assume-clean resize r0</programlisting>
+        </para>
         </listitem>
       </varlistentry>
 
