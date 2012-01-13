@@ -53,7 +53,6 @@ LONG_STRING	[a-zA-Z0-9/._-]{81}
 {WS}			/* ignore whitespaces */
 {OPCHAR}		{ DP; return yytext[0];			}
 on			{ DP; return TK_ON;			}
-ignore-on		{ DP; return TK_IGNORE;			}
 stacked-on-top-of	{ DP; return TK_STACKED;		}
 floating		{ DP; return TK_FLOATING;		}
 no			{ DP; return TK_NO;			}

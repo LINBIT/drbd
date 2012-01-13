@@ -61,7 +61,6 @@ enum yytokentype {
 	TK_RESOURCE,
 	TK_ON,
 	TK_STACKED,
-	TK_IGNORE,
 	TK_NET,
 	TK_DISK,
 	TK_SKIP,

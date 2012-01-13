@@ -1867,20 +1867,6 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_STACKED:
 			parse_stacked_section(res);
 			break;
-		case TK_IGNORE:
-			if (res->me || res->peer) {
-				fprintf(stderr,
-					"%s:%d: in resource %s, "
-					"'ignore-on' statement must precede any real host section (on ... { ... }).\n",
-					config_file, line, res->name);
-				exit(E_config_invalid);
-			}
-			EXP(TK_STRING);
-			fprintf(stderr, "%s:%d: in resource %s, "
-			       "WARN: The 'ignore-on' keyword is deprecated.\n",
-			       config_file, line, res->name);
-			EXP(';');
-			break;
 		case TK__THIS_HOST:
 			EXP('{');
 			host_names = names_from_str("_this_host");
