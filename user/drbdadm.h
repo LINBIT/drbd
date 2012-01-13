@@ -18,19 +18,19 @@
 #define E_thinko	 42 /* :) */
 
 enum {
-  SLEEPS_FINITE        = 1,
-  SLEEPS_SHORT         = 2+1,
-  SLEEPS_LONG          = 4+1,
-  SLEEPS_VERY_LONG     = 8+1,
-  SLEEPS_MASK          = 15,
+	SLEEPS_FINITE        = 1,
+	SLEEPS_SHORT         = 2+1,
+	SLEEPS_LONG          = 4+1,
+	SLEEPS_VERY_LONG     = 8+1,
+	SLEEPS_MASK          = 15,
 
-  RETURN_PID           = 2,
-  SLEEPS_FOREVER       = 4,
+	RETURN_PID           = 2,
+	SLEEPS_FOREVER       = 4,
 
-  SUPRESS_STDERR       = 0x10,
-  RETURN_STDOUT_FD     = 0x20,
-  RETURN_STDERR_FD     = 0x40,
-  DONT_REPORT_FAILED   = 0x80,
+	SUPRESS_STDERR       = 0x10,
+	RETURN_STDOUT_FD     = 0x20,
+	RETURN_STDERR_FD     = 0x40,
+	DONT_REPORT_FAILED   = 0x80,
 };
 
 /* for check_uniq(): Check for uniqueness of certain values...
@@ -41,129 +41,129 @@ enum {
 #define INVALID_IP_IS_INVALID_CONF 1
 
 enum usage_count_type {
-  UC_YES,
-  UC_NO,
-  UC_ASK,
+	UC_YES,
+	UC_NO,
+	UC_ASK,
 };
 
 struct d_globals
 {
-  int disable_io_hints;
-  int disable_ip_verification;
-  int minor_count;
-  int dialog_refresh;
-  enum usage_count_type usage_count;
+	int disable_io_hints;
+	int disable_ip_verification;
+	int minor_count;
+	int dialog_refresh;
+	enum usage_count_type usage_count;
 };
 
 #define IFI_HADDR 8
 #define IFI_ALIAS 1
 
 struct ifi_info {
-  char ifi_name[IFNAMSIZ];      /* interface name, nul terminated */
-  uint8_t ifi_haddr[IFI_HADDR]; /* hardware address */
-  uint16_t ifi_hlen;            /* bytes in hardware address, 0, 6, 8 */
-  short ifi_flags;              /* IFF_xxx constants from <net/if.h> */
-  short ifi_myflags;            /* our own IFI_xxx flags */
-  struct sockaddr *ifi_addr;    /* primary address */
-  struct ifi_info *ifi_next;    /* next ifi_info structure */
+	char ifi_name[IFNAMSIZ];      /* interface name, nul terminated */
+	uint8_t ifi_haddr[IFI_HADDR]; /* hardware address */
+	uint16_t ifi_hlen;            /* bytes in hardware address, 0, 6, 8 */
+	short ifi_flags;              /* IFF_xxx constants from <net/if.h> */
+	short ifi_myflags;            /* our own IFI_xxx flags */
+	struct sockaddr *ifi_addr;    /* primary address */
+	struct ifi_info *ifi_next;    /* next ifi_info structure */
 };
 
 struct d_name
 {
-  char *name;
-  struct d_name *next;
+	char *name;
+	struct d_name *next;
 };
 
 struct d_proxy_info
 {
-  struct d_name *on_hosts;
-  char* inside_addr;
-  char* inside_port;
-  char* inside_af;
-  char* outside_addr;
-  char* outside_port;
-  char* outside_af;
+	struct d_name *on_hosts;
+	char* inside_addr;
+	char* inside_port;
+	char* inside_af;
+	char* outside_addr;
+	char* outside_port;
+	char* outside_af;
 };
 
 struct d_volume
 {
-  unsigned vnr;
-  char* device;
-  unsigned device_minor;
-  char* disk;
-  char* meta_disk;
-  char* meta_index;
-  int meta_major;
-  int meta_minor;
-  struct d_volume *next;
-  struct d_option* disk_options; /* Additional per volume options */
+	unsigned vnr;
+	char* device;
+	unsigned device_minor;
+	char* disk;
+	char* meta_disk;
+	char* meta_index;
+	int meta_major;
+	int meta_minor;
+	struct d_volume *next;
+	struct d_option* disk_options; /* Additional per volume options */
 
-  /* Do not dump an explicit volume section */
-  unsigned int implicit :1 ;
+	/* Do not dump an explicit volume section */
+	unsigned int implicit :1 ;
 
-  /* flags for "drbdadm adjust" */
-  unsigned int adj_del_minor :1;
-  unsigned int adj_add_minor :1;
-  unsigned int adj_detach :1;
-  unsigned int adj_attach :1;
-  unsigned int adj_resize :1;
-  unsigned int adj_disk_opts :1;
+	/* flags for "drbdadm adjust" */
+	unsigned int adj_del_minor :1;
+	unsigned int adj_add_minor :1;
+	unsigned int adj_detach :1;
+	unsigned int adj_attach :1;
+	unsigned int adj_resize :1;
+	unsigned int adj_disk_opts :1;
 };
 
 struct d_host_info
 {
-  struct d_name *on_hosts;
-  struct d_volume *volumes;
-  char* address;
-  char* port;
-  char* address_family;
-  struct d_proxy_info *proxy;
-  struct d_host_info* next;
-  struct d_resource* lower;  /* for device stacking */
-  char *lower_name;          /* for device stacking, before bind_stacked_res() */
-  int config_line;
-  unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
-  struct d_option* res_options; /* Additional per host options */
+	struct d_name *on_hosts;
+	struct d_volume *volumes;
+	char* address;
+	char* port;
+	char* address_family;
+	struct d_proxy_info *proxy;
+	struct d_host_info* next;
+	struct d_resource* lower;  /* for device stacking */
+	char *lower_name;          /* for device stacking, before bind_stacked_res() */
+	int config_line;
+	unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
+	struct d_option* res_options; /* Additional per host options */
 };
 
 struct d_option
 {
-  char* name;
-  char* value;
-  struct d_option* next;
-  unsigned int mentioned  :1 ; // for the adjust command.
-  unsigned int is_escaped :1 ;
-  unsigned int adj_skip :1;
+	char* name;
+	char* value;
+	struct d_option* next;
+	unsigned int mentioned  :1 ; // for the adjust command.
+	unsigned int is_escaped :1 ;
+	unsigned int adj_skip :1;
 };
 
 struct d_resource
 {
-  char* name;
+	char* name;
 
-  struct d_volume *volumes;   /* gets propagated to host_info sections later. */
+	struct d_volume *volumes;   /* gets propagated to host_info sections later. */
 
-  struct d_host_info* me;
-  struct d_host_info* peer;
-  struct d_host_info* all_hosts;
-  struct d_option* net_options;
-  struct d_option* disk_options;
-  struct d_option* res_options;
-  struct d_option* startup_options;
-  struct d_option* handlers;
-  struct d_option* proxy_options;
-  struct d_option* proxy_plugins;
-  struct d_resource* next;
-  struct d_name *become_primary_on;
-  char *config_file; /* The config file this resource is define in.*/
-  int start_line;
-  unsigned int stacked_timeouts:1;
-  unsigned int ignore:1;
-  unsigned int stacked:1;        /* Stacked on this node */
-  unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
+	struct d_host_info* me;
+	struct d_host_info* peer;
+	struct d_host_info* all_hosts;
+	struct d_option* net_options;
+	struct d_option* disk_options;
+	struct d_option* res_options;
+	struct d_option* startup_options;
+	struct d_option* handlers;
+	struct d_option* proxy_options;
+	struct d_option* proxy_plugins;
+	struct d_resource* next;
+	struct d_name *become_primary_on;
+	char *config_file; /* The config file this resource is define in.*/
+	int start_line;
+	unsigned int stacked_timeouts:1;
+	unsigned int ignore:1;
+	unsigned int stacked:1;        /* Stacked on this node */
+	unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
 
-  /* if a prerequisite command failed, don't try any further commands.
-   * see run_deferred_cmds() */
-  unsigned int skip_further_deferred_command:1;
+	/* if a prerequisite command failed, don't try any further commands.
+	 * see run_deferred_cmds() */
+	unsigned int skip_further_deferred_command:1;
 };
 
 struct adm_cmd;
@@ -252,8 +252,8 @@ extern void convert_after_option(struct d_resource* res);
 extern int have_ip(const char *af, const char *ip);
 
 enum pr_flags {
-  NoneHAllowed  = 4,
-  PARSE_FOR_ADJUST = 8
+	NoneHAllowed  = 4,
+	PARSE_FOR_ADJUST = 8
 };
 enum pp_flags {
 	match_on_proxy = 1,
@@ -325,7 +325,7 @@ extern void add_setup_option(bool explicit, char *option);
 */
 
 #define ssprintf(ptr,...) \
-  ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
+	ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
 
 /* CAUTION: arguments may not have side effects! */
 #define for_each_resource(res,tmp,config) \
@@ -334,42 +334,45 @@ extern void add_setup_option(bool explicit, char *option);
 #define for_each_volume(v_,volumes_) \
 	for (v_ = volumes_; v_; v_ = v_->next)
 
-#define APPEND(LIST,ITEM) ({		      \
-  typeof((LIST)) _l = (LIST);		      \
-  typeof((ITEM)) _i = (ITEM);		      \
-  typeof((ITEM)) _t;			      \
-  _i->next = NULL;			      \
-  if (_l == NULL) { _l = _i; }		      \
-  else {				      \
-    for (_t = _l; _t->next; _t = _t->next);   \
-    _t->next = _i;			      \
-  };					      \
-  _l;					      \
+#define APPEND(LIST, ITEM)				\
+({							\
+	typeof((LIST)) _l = (LIST);			\
+	typeof((ITEM)) _i = (ITEM);			\
+	typeof((ITEM)) _t;				\
+	_i->next = NULL;				\
+	if (_l == NULL) { _l = _i; }			\
+	else {						\
+		for (_t = _l; _t->next; _t = _t->next);	\
+		_t->next = _i;				\
+	};						\
+	_l;						\
 })
 
-#define INSERT_SORTED(LIST,ITEM,SORT) ({	\
-	typeof((LIST)) _l = (LIST);	\
-	typeof((ITEM)) _i = (ITEM);	\
-	typeof((ITEM)) _t, _p = NULL;	\
+#define INSERT_SORTED(LIST, ITEM, SORT)					\
+({									\
+	typeof((LIST)) _l = (LIST);					\
+	typeof((ITEM)) _i = (ITEM);					\
+	typeof((ITEM)) _t, _p = NULL;					\
 	for (_t = _l; _t && _t->SORT <= _i->SORT; _p = _t, _t = _t->next); \
-	if (_p)				\
-		_p->next = _i;		\
-	else				\
-		_l = _i;		\
-	_i->next = _t;			\
-	_l;				\
+	if (_p)								\
+		_p->next = _i;						\
+	else								\
+		_l = _i;						\
+	_i->next = _t;							\
+	_l;								\
 })
 
-#define SPLICE(LIST,ITEMS) ({		      \
-  typeof((LIST)) _l = (LIST);		      \
-  typeof((ITEMS)) _i = (ITEMS);		      \
-  typeof((ITEMS)) _t;			      \
-  if (_l == NULL) { _l = _i; }		      \
-  else {				      \
-    for (_t = _l; _t->next; _t = _t->next);   \
-    _t->next = _i;			      \
-  };					      \
-  _l;					      \
+#define SPLICE(LIST, ITEMS)				\
+({							\
+	typeof((LIST)) _l = (LIST);			\
+	typeof((ITEMS)) _i = (ITEMS);			\
+	typeof((ITEMS)) _t;				\
+	if (_l == NULL) { _l = _i; }			\
+	else {						\
+		for (_t = _l; _t->next; _t = _t->next);	\
+		_t->next = _i;				\
+	};						\
+	_l;						\
 })
 
 
