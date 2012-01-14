@@ -1403,10 +1403,10 @@ static void dcbp_set_pad_bits(struct p_compressed_bm *p, int n)
 	p->encoding = (p->encoding & (~0x7 << 4)) | (n << 4);
 }
 
-int fill_bitmap_rle_bits(struct drbd_device *device,
-			 struct p_compressed_bm *p,
-			 unsigned int size,
-			 struct bm_xfer_ctx *c)
+static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
+				struct p_compressed_bm *p,
+				unsigned int size,
+				struct bm_xfer_ctx *c)
 {
 	struct bitstream bs;
 	unsigned long plain_bits;
@@ -1418,9 +1418,9 @@ int fill_bitmap_rle_bits(struct drbd_device *device,
 
 	/* may we use this feature? */
 	rcu_read_lock();
-	use_rle = rcu_dereference(first_peer_device(device)->connection->net_conf)->use_rle;
+	use_rle = rcu_dereference(peer_device->connection->net_conf)->use_rle;
 	rcu_read_unlock();
-	if (!use_rle || first_peer_device(device)->connection->agreed_pro_version < 90)
+	if (!use_rle || peer_device->connection->agreed_pro_version < 90)
 		return 0;
 
 	if (c->bit_offset >= c->bm_bits)
@@ -1440,8 +1440,8 @@ int fill_bitmap_rle_bits(struct drbd_device *device,
 	/* see how much plain bits we can stuff into one packet
 	 * using RLE and VLI. */
 	do {
-		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(first_peer_device(device), c->bit_offset)
-				    : _drbd_bm_find_next(first_peer_device(device), c->bit_offset);
+		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(peer_device, c->bit_offset)
+				    : _drbd_bm_find_next(peer_device, c->bit_offset);
 		if (tmp == -1UL)
 			tmp = c->bm_bits;
 		rl = tmp - c->bit_offset;
@@ -1461,7 +1461,7 @@ int fill_bitmap_rle_bits(struct drbd_device *device,
 		/* paranoia: catch zero runlength.
 		 * can only happen if bitmap is modified while we scan it. */
 		if (rl == 0) {
-			drbd_err(device, "unexpected zero runlength while encoding bitmap "
+			drbd_err(peer_device, "unexpected zero runlength while encoding bitmap "
 			    "t:%u bo:%lu\n", toggle, c->bit_offset);
 			return -1;
 		}
@@ -1470,7 +1470,7 @@ int fill_bitmap_rle_bits(struct drbd_device *device,
 		if (bits == -ENOBUFS) /* buffer full */
 			break;
 		if (bits <= 0) {
-			drbd_err(device, "error while encoding bitmap: %d\n", bits);
+			drbd_err(peer_device, "error while encoding bitmap: %d\n", bits);
 			return 0;
 		}
 
@@ -1515,7 +1515,7 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 	struct p_compressed_bm *p = sock->sbuf + header_size;
 	int len, err;
 
-	len = fill_bitmap_rle_bits(device, p,
+	len = fill_bitmap_rle_bits(peer_device, p,
 			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*p), c);
 	if (len < 0)
 		return -EIO;
