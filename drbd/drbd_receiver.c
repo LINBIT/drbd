@@ -2980,7 +2980,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 				drbd_uuid_set_bm(peer_device, 0UL);
 
 				drbd_uuid_dump_self(peer_device,
-						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(first_peer_device(device)) : 0, 0);
+						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(peer_device) : 0, 0);
 				*rule_nr = 34;
 			} else {
 				drbd_info(device, "was SyncSource (peer failed to write sync_uuid)\n");
@@ -3090,7 +3090,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
-					    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(first_peer_device(device)) : 0, 0);
+					    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(peer_device) : 0, 0);
 
 			return 1;
 		}
