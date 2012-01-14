@@ -1938,22 +1938,6 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 extern int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins);
 #endif
 
-/* this throttles on-the-fly application requests
- * according to max_buffers settings;
- * maybe re-implement using semaphores? */
-static inline int drbd_get_max_buffers(struct drbd_device *device)
-{
-	struct net_conf *nc;
-	int mxb;
-
-	rcu_read_lock();
-	nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
-	mxb = nc ? nc->max_buffers : 1000000;  /* arbitrary limit on open requests */
-	rcu_read_unlock();
-
-	return mxb;
-}
-
 static inline int drbd_state_is_stable(struct drbd_device *device)
 {
 	/* DO NOT add a default clause, we want the compiler to warn us
@@ -2015,14 +1999,13 @@ extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
 
 static inline void dec_ap_bio(struct drbd_device *device)
 {
-	int mxb = drbd_get_max_buffers(device);
 	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
 
 	D_ASSERT(device, ap_bio >= 0);
 	/* this currently does wake_up for every dec_ap_bio!
 	 * maybe rather introduce some type of hysteresis?
-	 * e.g. (ap_bio == mxb/2 || ap_bio == 0) ? */
-	if (ap_bio < mxb)
+	 * e.g. (ap_bio == max_buffers/2 || ap_bio == 0) ? */
+	if (ap_bio < device->device_conf.max_buffers)
 		wake_up(&device->misc_wait);
 	if (ap_bio == 0) {
 		smp_rmb();
@@ -2040,8 +2023,6 @@ static inline int drbd_suspended(struct drbd_device *device)
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)
 {
-	int mxb = drbd_get_max_buffers(device);
-
 	if (drbd_suspended(device))
 		return false;
 	if (test_bit(SUSPEND_IO, &device->flags))
@@ -2057,7 +2038,7 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
-	if (atomic_read(&device->ap_bio_cnt) > mxb)
+	if (atomic_read(&device->ap_bio_cnt) > device->device_conf.max_buffers)
 		return false;
 	if (!list_empty(&device->pending_bitmap_work))
 		return false;

@@ -259,18 +259,9 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 {
 	struct drbd_device *device = peer_device->device;
 	struct page *page = NULL;
-	struct net_conf *nc;
 	DEFINE_WAIT(wait);
-	int mxb;
 
-	/* Yes, we may run up to @number over max_buffers. If we
-	 * follow it strictly, the admin will get it wrong anyways. */
-	rcu_read_lock();
-	nc = rcu_dereference(peer_device->connection->net_conf);
-	mxb = nc ? nc->max_buffers : 1000000;
-	rcu_read_unlock();
-
-	if (atomic_read(&device->pp_in_use) < mxb)
+	if (atomic_read(&device->pp_in_use) < device->device_conf.max_buffers)
 		page = __drbd_alloc_pages(device, number);
 
 	while (page == NULL) {
@@ -278,7 +269,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 
 		drbd_reclaim_net(device);
 
-		if (atomic_read(&device->pp_in_use) < mxb) {
+		if (atomic_read(&device->pp_in_use) < device->device_conf.max_buffers) {
 			page = __drbd_alloc_pages(device, number);
 			if (page)
 				break;

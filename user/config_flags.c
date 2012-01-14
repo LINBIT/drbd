@@ -588,7 +588,6 @@ const char *on_congestion_map[] = {
 	{ "timeout", NUMERIC(timeout, TIMEOUT),						\
           .unit = "1/10 seconds" },							\
 	{ "max-epoch-size", NUMERIC(max_epoch_size, MAX_EPOCH_SIZE) },			\
-	{ "max-buffers", NUMERIC(max_buffers, MAX_BUFFERS) },				\
 	{ "unplug-watermark", NUMERIC(unplug_watermark, UNPLUG_WATERMARK) },		\
 	{ "connect-int", NUMERIC(connect_int, CONNECT_INT),				\
           .unit = "seconds" },								\
@@ -727,5 +726,6 @@ struct context_def device_options_ctx = {
 	.nla_type = DRBD_NLA_DEVICE_CONF,
 	.fields = {
 		{ "max-bio-size", NUMERIC(max_bio_size, MAX_BIO_SIZE) },
+		{ "max-buffers", NUMERIC(max_buffers, MAX_BUFFERS) },
 		{ } },
 };
