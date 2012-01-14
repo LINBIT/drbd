@@ -1938,40 +1938,49 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 extern int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins);
 #endif
 
-static inline int drbd_state_is_stable(struct drbd_device *device)
+static inline bool drbd_state_is_stable(struct drbd_device *device)
 {
+	struct drbd_peer_device *peer_device;
+	bool stable = true;
+
 	/* DO NOT add a default clause, we want the compiler to warn us
 	 * for any newly introduced state we may have forgotten to add here */
 
-	switch (first_peer_device(device)->repl_state[NOW]) {
-	/* New io is only accepted when the peer device is unknown or there is
-	 * a well-established connection. */
-	case L_STANDALONE:
-	case L_CONNECTED:
-	case L_SYNC_SOURCE:
-	case L_SYNC_TARGET:
-	case L_VERIFY_S:
-	case L_VERIFY_T:
-	case L_PAUSED_SYNC_S:
-	case L_PAUSED_SYNC_T:
-	case L_AHEAD:
-	case L_BEHIND:
-	case L_STARTING_SYNC_S:
-	case L_STARTING_SYNC_T:
-		break;
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		switch (peer_device->repl_state[NOW]) {
+		/* New io is only accepted when the peer device is unknown or there is
+		 * a well-established connection. */
+		case L_STANDALONE:
+		case L_CONNECTED:
+		case L_SYNC_SOURCE:
+		case L_SYNC_TARGET:
+		case L_VERIFY_S:
+		case L_VERIFY_T:
+		case L_PAUSED_SYNC_S:
+		case L_PAUSED_SYNC_T:
+		case L_AHEAD:
+		case L_BEHIND:
+		case L_STARTING_SYNC_S:
+		case L_STARTING_SYNC_T:
+			break;
 
-		/* Allow IO in BM exchange states with new protocols */
-	case L_WF_BITMAP_S:
-		if (first_peer_device(device)->connection->agreed_pro_version < 96)
-			return 0;
-		break;
+			/* Allow IO in BM exchange states with new protocols */
+		case L_WF_BITMAP_S:
+			if (peer_device->connection->agreed_pro_version < 96)
+				stable = false;
+			break;
 
-		/* no new io accepted in these states */
-	case L_WF_BITMAP_T:
-	case L_WF_SYNC_UUID:
-		/* not "stable" */
-		return 0;
+			/* no new io accepted in these states */
+		case L_WF_BITMAP_T:
+		case L_WF_SYNC_UUID:
+			stable = false;
+			break;
+		}
+		if (!stable)
+			break;
 	}
+	rcu_read_unlock();
 
 	switch (device->disk_state[NOW]) {
 	case D_DISKLESS:
@@ -1988,11 +1997,10 @@ static inline int drbd_state_is_stable(struct drbd_device *device)
 	case D_NEGOTIATING:
 	case D_UNKNOWN:
 	case D_MASK:
-		/* not "stable" */
-		return 0;
+		stable = false;
 	}
 
-	return 1;
+	return stable;
 }
 
 extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
