@@ -1976,8 +1976,8 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
 		if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-			pcmd = (first_peer_device(device)->repl_state[NOW] >= L_SYNC_SOURCE &&
-				first_peer_device(device)->repl_state[NOW] <= L_PAUSED_SYNC_T &&
+			pcmd = (peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
+				peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T &&
 				peer_req->flags & EE_MAY_SET_IN_SYNC) ?
 				P_RS_WRITE_ACK : P_WRITE_ACK;
 			err = drbd_send_ack(peer_device, pcmd, peer_req);
