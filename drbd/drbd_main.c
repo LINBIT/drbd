@@ -2571,9 +2571,17 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		put_ldev(device);
 	}
 
-	if (bdi_bits & (1 << BDI_async_congested) &&
-	    test_bit(NET_CONGESTED, &first_peer_device(device)->connection->flags)) {
-		r |= (1 << BDI_async_congested);
+	if (bdi_bits & (1 << BDI_async_congested)) {
+		struct drbd_peer_device *peer_device;
+
+		rcu_read_lock();
+		for_each_peer_device(peer_device, device) {
+			if (test_bit(NET_CONGESTED, &peer_device->connection->flags)) {
+				r |= (1 << BDI_async_congested);
+				break;
+			}
+		}
+		rcu_read_unlock();
 	}
 
 out:
