@@ -154,27 +154,28 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 	return 1;
 }
 
-static int addr_equal(struct d_resource* conf, struct d_resource* running)
+static int addr_equal(struct d_address *a1, struct d_address *a2)
+{
+	return  !strcmp(a1->addr, a2->addr) &&
+		!strcmp(a1->port, a2->port) &&
+		!strcmp(a1->af, a2->af);
+}
+
+static int address_equal(struct d_resource* conf, struct d_resource* running)
 {
 	int equal;
 
 	if (conf->peer == NULL && running->peer == NULL) return 1;
 	if (running->peer == NULL) return 0;
 
-	equal = !strcmp(conf->me->address,        running->me->address) &&
-		!strcmp(conf->me->port,           running->me->port) &&
-		!strcmp(conf->me->address_family, running->me->address_family);
+	equal = addr_equal(&conf->me->address, &running->me->address);
 
 	if(conf->me->proxy)
 		equal = equal &&
-			!strcmp(conf->me->proxy->inside_addr, running->peer->address) &&
-			!strcmp(conf->me->proxy->inside_port, running->peer->port) &&
-			!strcmp(conf->me->proxy->inside_af,   running->peer->address_family);
+			addr_equal(&conf->me->proxy->inside, &running->peer->address);
 	else
 		equal = equal && conf->peer &&
-			!strcmp(conf->peer->address,        running->peer->address) &&
-			!strcmp(conf->peer->port,           running->peer->port) &&
-			!strcmp(conf->peer->address_family, running->peer->address_family);
+			addr_equal(&conf->peer->address, &running->peer->address);
 
 	return equal;
 }
@@ -678,7 +679,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 			running ? running->me->volumes : NULL);
 
 	if (running) {
-		do_connect = !addr_equal(ctx->res,running);
+		do_connect = !address_equal(ctx->res,running);
 		do_net_options = !opts_equal(&net_options_ctx, ctx->res->net_options, running->net_options);
 		do_res_options = !opts_equal(&resource_options_ctx, ctx->res->res_options, running->res_options);
 	} else {

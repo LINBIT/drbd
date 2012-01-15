@@ -765,30 +765,26 @@ static struct d_option *parse_options(int token_flag, int token_no_flag, int tok
 	return parse_options_d(token_flag, token_no_flag, token_option, 0, NULL, NULL);
 }
 
-static void __parse_address(char** addr, char** port, char** af)
+static void __parse_address(struct d_address *a)
 {
 	switch(yylex()) {
 	case TK_SCI:   /* 'ssocks' was names 'sci' before. */
-		if (af)
-			*af = strdup("ssocks");
+		a->af = strdup("ssocks");
 		EXP(TK_IPADDR);
 		break;
 	case TK_SSOCKS:
 	case TK_SDP:
 	case TK_IPV4:
-		if (af)
-			*af = yylval.txt;
+		a->af = yylval.txt;
 		EXP(TK_IPADDR);
 		break;
 	case TK_IPV6:
-		if (af)
-			*af = yylval.txt;
+		a->af = yylval.txt;
 		EXP('[');
 		EXP(TK_IPADDR6);
 		break;
 	case TK_IPADDR:
-		if (af)
-			*af = strdup("ipv4");
+		a->af = strdup("ipv4");
 		break;
 	/* case '[': // Do not foster people's laziness ;)
 		EXP(TK_IPADDR6);
@@ -798,26 +794,25 @@ static void __parse_address(char** addr, char** port, char** af)
 		pe_expected("ssocks | sdp | ipv4 | ipv6 | <ipv4 address> ");
 	}
 
-	if (addr)
-		*addr = yylval.txt;
-	if (af && !strcmp(*af, "ipv6"))
+	a->addr = yylval.txt;
+	if (!strcmp(a->af, "ipv6"))
 		EXP(']');
 	EXP(':');
 	EXP(TK_INTEGER);
-	if (port)
-		*port = yylval.txt;
+	a->port = yylval.txt;
 	range_check(R_PORT, "port", yylval.txt);
 }
 
-static void parse_address(struct d_name *on_hosts, char** addr, char** port, char** af)
+static void parse_address(struct d_name *on_hosts, struct d_address *address)
 {
 	struct d_name *h;
-	__parse_address(addr, port, af);
-	if (!strcmp(*addr, "127.0.0.1") || !strcmp(*addr, "::1"))
+	__parse_address(address);
+	if (!strcmp(address->addr, "127.0.0.1") || !strcmp(address->addr, "::1"))
 		for_each_host(h, on_hosts)
-			check_uniq("IP", "%s:%s:%s", h->name, *addr, *port);
+			check_uniq("IP", "%s:%s:%s", h->name, address->addr,
+				   address->port);
 	else
-		check_uniq("IP", "%s:%s", *addr, *port);
+		check_uniq("IP", "%s:%s", address->addr, address->port);
 	EXP(';');
 }
 
@@ -864,10 +859,10 @@ static void parse_proxy_section(struct d_host_info *host)
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
-			parse_address(proxy->on_hosts, &proxy->inside_addr, &proxy->inside_port, &proxy->inside_af);
+			parse_address(proxy->on_hosts, &proxy->inside);
 			break;
 		case TK_OUTSIDE:
-			parse_address(proxy->on_hosts, &proxy->outside_addr, &proxy->outside_port, &proxy->outside_af);
+			parse_address(proxy->on_hosts, &proxy->outside);
 			break;
 		case '}':
 			goto break_loop;
@@ -878,10 +873,10 @@ static void parse_proxy_section(struct d_host_info *host)
 	}
 
  break_loop:
-	if (!proxy->inside_addr)
+	if (!proxy->inside.addr)
 		pperror(host, proxy, "inside");
 
-	if (!proxy->outside_addr)
+	if (!proxy->outside.addr)
 		pperror(host, proxy, "outside");
 
 	return;
@@ -1271,12 +1266,12 @@ void parse_host_section(struct d_resource *res,
 		int token;
 
 		host->by_address = 1;
-		__parse_address(&host->address, &host->port, &host->address_family);
-		check_uniq("IP", "%s:%s", host->address, host->port);
-		if (!strcmp(host->address_family, "ipv6"))
-			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address, host->port);
+		__parse_address(&host->address);
+		check_uniq("IP", "%s:%s", host->address.addr, host->address.port);
+		if (!strcmp(host->address.af, "ipv6"))
+			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address.addr, host->address.port);
 		else
-			m_asprintf(&fake_uname, "%s:%s", host->address, host->port);
+			m_asprintf(&fake_uname, "%s:%s", host->address.addr, host->address.port);
 		on_hosts = names_from_str(fake_uname);
 		host->on_hosts = on_hosts;
 
@@ -1329,8 +1324,8 @@ void parse_host_section(struct d_resource *res,
 			}
 			for_each_host(h, on_hosts)
 				check_upr("address statement", "%s:%s:address", res->name, h->name);
-			parse_address(on_hosts, &host->address, &host->port, &host->address_family);
-			range_check(R_PORT, "port", host->port);
+			parse_address(on_hosts, &host->address);
+			range_check(R_PORT, "port", host->address.port);
 			break;
 		case TK_PROXY:
 			parse_proxy_section(host);
@@ -1366,7 +1361,7 @@ void parse_host_section(struct d_resource *res,
 
 	if (!(flags & REQUIRE_ALL))
 		return;
-	if (!host->address)
+	if (!host->address.addr)
 		derror(host, res, "address");
 	check_volumes_complete(res, host);
 }
@@ -1437,7 +1432,7 @@ void parse_stacked_section(struct d_resource* res)
 		case TK_ADDRESS:
 			for_each_host(h, host->on_hosts)
 				check_upr("address statement", "%s:%s:address", res->name, h->name);
-			parse_address(NULL, &host->address, &host->port, &host->address_family);
+			parse_address(NULL, &host->address);
 			range_check(R_PORT, "port", yylval.txt);
 			break;
 		case TK_PROXY:
@@ -1459,7 +1454,7 @@ void parse_stacked_section(struct d_resource* res)
 
 	inherit_volumes(res->volumes, host);
 
-	if (!host->address)
+	if (!host->address.addr)
 		derror(host,res,"address");
 }
 
@@ -1508,9 +1503,9 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 		       if (!host->proxy || !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
 			       continue;
 		} else if (host->by_address) {
-			if (!have_ip(host->address_family, host->address) &&
+			if (!have_ip(host->address.af, host->address.addr) &&
 				/* for debugging only, e.g. __DRBD_NODE__=10.0.0.1 */
-			    strcmp(nodeinfo.nodename, host->address))
+			    strcmp(nodeinfo.nodename, host->address.addr))
 				continue;
 		} else if (host->lower) {
 			if (!host->lower->me)
@@ -1612,7 +1607,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	}
 
 	for (host = res->all_hosts; host; host=host->next) {
-		if (host->by_address && strcmp(connect_to_host, host->address))
+		if (host->by_address && strcmp(connect_to_host, host->address.addr))
 			continue;
 		if (host->proxy && !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
 			continue;
@@ -1680,9 +1675,9 @@ void set_on_hosts_in_res(struct d_resource *res)
 			host->lower = l_res;
 
 			/* */
-			if (!strcmp(host->address, "127.0.0.1") || !strcmp(host->address, "::1"))
+			if (!strcmp(host->address.addr, "127.0.0.1") || !strcmp(host->address.addr, "::1"))
 				for_each_host(h, host->on_hosts)
-					check_uniq("IP", "%s:%s:%s", h->name, host->address, host->port);
+					check_uniq("IP", "%s:%s:%s", h->name, host->address.addr, host->address.port);
 
 		}
 	}

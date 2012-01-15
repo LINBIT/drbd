@@ -61,8 +61,8 @@
 static int indent = 0;
 #define INDENT_WIDTH 4
 #define BFMT  "%s;\n"
-#define IPV4FMT "%-16s %s %s:%s;\n"
-#define IPV6FMT "%-16s %s [%s]:%s;\n"
+#define IPV4FMT "%-16s %s %s:%s%s"
+#define IPV6FMT "%-16s %s [%s]:%s%s"
 #define MDISK "%-16s %s;\n"
 #define MDISKI "%-16s %s [%s];\n"
 #define printI(fmt, args... ) printf("%*s" fmt,INDENT_WIDTH * indent,"" , ## args )
@@ -760,21 +760,20 @@ static void dump_common_info()
 	printf("}\n\n");
 }
 
-static void dump_address(char *name, char *addr, char *port, char *af)
+static void dump_address(char *name, struct d_address *address, char *postfix)
 {
-	if (!strcmp(af, "ipv6"))
-		printI(IPV6FMT, name, af, addr, port);
+	if (!strcmp(address->af, "ipv6"))
+		printI(IPV6FMT, name, address->af, address->addr, address->port, postfix);
 	else
-		printI(IPV4FMT, name, af, addr, port);
+		printI(IPV4FMT, name, address->af, address->addr, address->port, postfix);
 }
 
 static void dump_proxy_info(struct d_proxy_info *pi)
 {
 	printI("proxy on %s {\n", names_to_str(pi->on_hosts));
 	++indent;
-	dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
-	dump_address("outside", pi->outside_addr, pi->outside_port,
-		     pi->outside_af);
+	dump_address("inside", &pi->inside, ";\n");
+	dump_address("outside", &pi->outside, ";\n");
 	--indent;
 	printI("}\n");
 }
@@ -826,10 +825,7 @@ static void dump_host_info(struct d_host_info *hi)
 		++indent;
 		printI("# on %s \n", names_to_str(hi->on_hosts));
 	} else if (hi->by_address) {
-		if (!strcmp(hi->address_family, "ipv6"))
-			printI("floating ipv6 [%s]:%s {\n", hi->address, hi->port);
-		else
-			printI("floating %s %s:%s {\n", hi->address_family, hi->address, hi->port);
+		dump_address("floating", &hi->address, " {\n");
 		++indent;
 	} else {
 		printI("on %s {\n", names_to_str(hi->on_hosts));
@@ -842,7 +838,7 @@ static void dump_host_info(struct d_host_info *hi)
 		dump_volume(!!hi->lower, vol);
 
 	if (!hi->by_address)
-		dump_address("address", hi->address, hi->port, hi->address_family);
+		dump_address("address", &hi->address, ";\n");
 	if (hi->proxy)
 		dump_proxy_info(hi->proxy);
 	--indent;
@@ -927,10 +923,10 @@ static void dump_proxy_info_xml(struct d_proxy_info *pi)
 {
 	printI("<proxy hostname=\"%s\">\n", names_to_str(pi->on_hosts));
 	++indent;
-	printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside_af,
-	       pi->inside_port, pi->inside_addr);
+	printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside.af,
+	       pi->inside.port, pi->inside.addr);
 	printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n",
-	       pi->outside_af, pi->outside_port, pi->outside_addr);
+	       pi->outside.af, pi->outside.port, pi->outside.addr);
 	--indent;
 	printI("</proxy>\n");
 }
@@ -979,7 +975,7 @@ static void dump_host_info_xml(struct d_host_info *hi)
 		dump_volume_xml(vol);
 
 	printI("<address family=\"%s\" port=\"%s\">%s</address>\n",
-	       hi->address_family, hi->port, hi->address);
+	       hi->address.af, hi->address.port, hi->address.addr);
 	if (hi->proxy)
 		dump_proxy_info_xml(hi->proxy);
 	--indent;
@@ -1133,7 +1129,7 @@ static int sh_minor(struct cfg_ctx *ctx)
 
 static int sh_ip(struct cfg_ctx *ctx)
 {
-	printf("%s\n", ctx->res->me->address);
+	printf("%s\n", ctx->res->me->address.addr);
 	return 0;
 }
 
@@ -1244,9 +1240,9 @@ static void free_host_info(struct d_host_info *hi)
 	free_names(hi->on_hosts);
 	for_each_volume(vol, hi->volumes)
 		free_volume(vol);
-	free(hi->address);
-	free(hi->address_family);
-	free(hi->port);
+	free(hi->address.addr);
+	free(hi->address.af);
+	free(hi->address.port);
 }
 
 static void free_options(struct d_option *opts)
@@ -1572,12 +1568,12 @@ static void add_setup_options(char **argv, int *argcp)
   }
 
 /* FIXME: Don't leak the memory allocated by asprintf. */
-#define make_address(ADDR, PORT, AF)		\
-  if (!strcmp(AF, "ipv6")) { \
-    m_asprintf(&argv[NA(argc)], "%s:[%s]:%s", AF, ADDR, PORT); \
-  } else { \
-    m_asprintf(&argv[NA(argc)], "%s:%s:%s", AF, ADDR, PORT); \
-  }
+#define make_address(A)				       				\
+	if (!strcmp((A)->af, "ipv6")) {						\
+		m_asprintf(&argv[NA(argc)], "%s:[%s]:%s", (A)->af, (A)->addr, (A)->port); \
+	} else {								\
+		m_asprintf(&argv[NA(argc)], "%s:%s:%s", (A)->af, (A)->addr, (A)->port); \
+	}
 
 static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool reset)
 {
@@ -1995,8 +1991,8 @@ static int adm_khelper(struct cfg_ctx *ctx)
 
 		if (peer_address && peer_af) {
 			for (host = res->all_hosts; host; host = host->next) {
-				if (!strcmp(host->address_family, peer_af) &&
-				    !strcmp(host->address, peer_address)) {
+				if (!strcmp(host->address.af, peer_af) &&
+				    !strcmp(host->address.addr, peer_address)) {
 					res->peer = host;
 					break;
 				}
@@ -2005,8 +2001,8 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	}
 
 	if (res->peer) {
-		setenv("DRBD_PEER_AF", res->peer->address_family, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEER_ADDRESS", res->peer->address, 1);	/* since 8.3.0 */
+		setenv("DRBD_PEER_AF", res->peer->address.af, 1);	/* since 8.3.0 */
+		setenv("DRBD_PEER_ADDRESS", res->peer->address.addr, 1);	/* since 8.3.0 */
 		setenv("DRBD_PEER", res->peer->on_hosts->name, 1);	/* deprecated */
 		setenv("DRBD_PEERS", names_to_str(res->peer->on_hosts), 1);
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
@@ -2085,14 +2081,11 @@ static int add_connection_endpoints(char **argv, int *argcp, struct d_resource *
 {
 	int argc = *argcp;
 
-	make_address(res->me->address, res->me->port, res->me->address_family);
+	make_address(&res->me->address);
 	if (res->me->proxy) {
-		make_address(res->me->proxy->inside_addr,
-			     res->me->proxy->inside_port,
-			     res->me->proxy->inside_af);
+		make_address(&res->me->proxy->inside);
 	} else if (res->peer) {
-		make_address(res->peer->address, res->peer->port,
-			     res->peer->address_family);
+		make_address(&res->peer->address);
 	} else if (dry_run) {
 		argv[NA(argc)] = "N/A";
 	} else {
@@ -2267,15 +2260,16 @@ int do_proxy_conn_up(struct cfg_ctx *ctx)
 	conn_name = proxy_connection_name(res);
 
 	ssprintf(argv[2],
-			"add connection %s %s:%s %s:%s %s:%s %s:%s",
-			conn_name,
-			res->me->proxy->inside_addr,
-			res->me->proxy->inside_port,
-			res->peer->proxy->outside_addr,
-			res->peer->proxy->outside_port,
-			res->me->proxy->outside_addr,
-			res->me->proxy->outside_port, res->me->address,
-			res->me->port);
+		 "add connection %s %s:%s %s:%s %s:%s %s:%s",
+		 conn_name,
+		 res->me->proxy->inside.addr,
+		 res->me->proxy->inside.port,
+		 res->peer->proxy->outside.addr,
+		 res->peer->proxy->outside.port,
+		 res->me->proxy->outside.addr,
+		 res->me->proxy->outside.port,
+		 res->me->address.addr,
+		 res->me->address.port);
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, res->name);
 	return rv;
@@ -3128,16 +3122,16 @@ void verify_ips(struct d_resource *res)
 	if (res->stacked && !is_drbd_top)
 		return;
 
-	if (!have_ip(res->me->address_family, res->me->address)) {
+	if (!have_ip(res->me->address.af, res->me->address.addr)) {
 		ENTRY e, *ep;
 		e.key = e.data = ep = NULL;
-		m_asprintf(&e.key, "%s:%s", res->me->address, res->me->port);
+		m_asprintf(&e.key, "%s:%s", res->me->address.addr, res->me->address.port);
 		hsearch_r(e, FIND, &ep, &global_htable);
 		fprintf(stderr, "%s: in resource %s, on %s:\n\t"
 			"IP %s not found on this host.\n",
 			ep ? (char *)ep->data : res->config_file,
 			res->name, names_to_str(res->me->on_hosts),
-			res->me->address);
+			res->me->address.addr);
 		if (INVALID_IP_IS_INVALID_CONF)
 			config_valid = 0;
 	}

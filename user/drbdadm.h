@@ -74,15 +74,18 @@ struct d_name
 	struct d_name *next;
 };
 
+struct d_address
+{
+	char* addr;
+	char* port;
+	char* af;
+};
+
 struct d_proxy_info
 {
 	struct d_name *on_hosts;
-	char* inside_addr;
-	char* inside_port;
-	char* inside_af;
-	char* outside_addr;
-	char* outside_port;
-	char* outside_af;
+	struct d_address inside;
+	struct d_address outside;
 };
 
 struct d_volume
@@ -114,9 +117,7 @@ struct d_host_info
 {
 	struct d_name *on_hosts;
 	struct d_volume *volumes;
-	char* address;
-	char* port;
-	char* address_family;
+	struct d_address address;
 	struct d_proxy_info *proxy;
 	struct d_host_info* next;
 	struct d_resource* lower;  /* for device stacking */
