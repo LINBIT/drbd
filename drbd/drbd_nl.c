@@ -564,6 +564,7 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 enum drbd_state_rv
 drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 {
+	struct drbd_resource *resource = device->resource;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	struct net_conf *nc;
@@ -571,22 +572,21 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 	int forced = 0;
 	bool with_force = false;
 
+	mutex_lock(&resource->conf_update);
+	mutex_lock(&resource->state_mutex);
+
 	if (role == R_PRIMARY) {
 		struct drbd_connection *connection;
 
 		/* Detect dead peers as soon as possible.  */
 
-		rcu_read_lock();
-		for_each_connection(connection, device->resource)
+		for_each_connection(connection, resource)
 			request_ping(connection);
-		rcu_read_unlock();
 	}
 
-	mutex_lock(&device->resource->state_mutex);
-
 	while (try++ < max_tries) {
-		rv = stable_state_change(device->resource,
-			change_role(device->resource, role,
+		rv = stable_state_change(resource,
+			change_role(resource, role,
 				    CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
 				    with_force));
 
@@ -635,8 +635,8 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 			continue;
 		}
 		if (rv < SS_SUCCESS) {
-			rv = stable_state_change(device->resource,
-				change_role(device->resource, role,
+			rv = stable_state_change(resource,
+				change_role(resource, role,
 					    CS_VERBOSE | CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
 					    with_force));
 			if (rv < SS_SUCCESS)
@@ -661,11 +661,9 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 			put_ldev(device);
 		}
 	} else {
-		mutex_lock(&device->resource->conf_update);
 		nc = first_peer_device(device)->connection->net_conf;
 		if (nc)
 			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
-		mutex_unlock(&device->resource->conf_update);
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
@@ -688,7 +686,8 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 
 	drbd_kobject_uevent(device);
 out:
-	mutex_unlock(&device->resource->state_mutex);
+	mutex_unlock(&resource->state_mutex);
+	mutex_unlock(&resource->conf_update);
 	return rv;
 }
 
@@ -1248,6 +1247,7 @@ success:
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_device *device;
+	struct drbd_resource *resource;
 	int err;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
@@ -1263,8 +1263,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-
 	device = adm_ctx.device;
+	resource = device->resource;
+	mutex_lock(&resource->conf_update);
 
 	/* if you want to reconfigure, please tear down first */
 	if (device->disk_state[NOW] > D_DISKLESS) {
@@ -1617,6 +1618,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_kobject_uevent(device);
 	put_ldev(device);
+	mutex_unlock(&resource->conf_update);
 	drbd_adm_finish(info, retcode);
 	return 0;
 
@@ -1643,6 +1645,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		peer_device->rs_plan_s = NULL;
 	}
 
+	mutex_unlock(&resource->conf_update);
 	drbd_adm_finish(info, retcode);
 	return 0;
 }
@@ -3335,6 +3338,7 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_genlmsghdr *dh = info->userhdr;
 	struct device_conf device_conf;
+	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 	int err;
 
@@ -3364,7 +3368,10 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.device)
 		goto out;
 
-	retcode = drbd_create_device(adm_ctx.resource, dh->minor, adm_ctx.volume, &device_conf);
+	resource = adm_ctx.resource;
+	mutex_lock(&resource->conf_update);
+	retcode = drbd_create_device(resource, dh->minor, adm_ctx.volume, &device_conf);
+	mutex_unlock(&resource->conf_update);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3387,13 +3394,17 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 
 int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
+	resource = adm_ctx.device->resource;
+	mutex_lock(&resource->conf_update);
 	retcode = adm_del_minor(adm_ctx.device);
+	mutex_unlock(&resource->conf_update);
 
 	drbd_adm_finish(info, retcode);
 	return 0;

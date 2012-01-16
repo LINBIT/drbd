@@ -38,3 +38,6 @@ The drbd_resource, drbd_connection, and drbd_device objects are reference
 counted.  The peer_device objects only serve to establish the links between
 devices and connections; their lifetime is determined by the lifetime of the
 device and connection which they reference.
+
+The objects below a resource (devices, connections, peer devices) are modified
+in a lru-safe way.  They are modified under the resource->conf_update mutex.

@@ -3413,8 +3413,8 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 		goto disconnect;
 	}
 
-	mutex_lock(&connection->data.mutex);
 	mutex_lock(&connection->resource->conf_update);
+	mutex_lock(&connection->data.mutex);
 	old_net_conf = connection->net_conf;
 	*new_net_conf = *old_net_conf;
 
@@ -3425,8 +3425,8 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 	new_net_conf->two_primaries = p_two_primaries;
 
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
-	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->resource->conf_update);
 
 	crypto_free_hash(connection->peer_integrity_tfm);
 	kfree(connection->int_dig_in);

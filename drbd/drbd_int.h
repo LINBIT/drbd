@@ -679,7 +679,8 @@ struct drbd_resource {
 	struct list_head connections;
 	struct list_head resources;
 	struct res_opts res_opts;
-	struct mutex conf_update;	/* mutex for ready-copy-update of net_conf and disk_conf */
+	/* conf_update protects the devices, connections, peer devices, net_conf, disk_conf */
+	struct mutex conf_update;
 	spinlock_t req_lock;
 
 	struct mutex state_mutex;
