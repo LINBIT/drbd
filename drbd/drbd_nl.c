@@ -561,13 +561,23 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 	}
 }
 
-enum drbd_state_rv
-drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
+static bool no_more_ap_pending(struct drbd_device *device)
 {
-	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device)
+		if (atomic_read(&peer_device->ap_pending_cnt) != 0)
+			return false;
+	return true;
+}
+
+enum drbd_state_rv
+drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
+{
+	struct drbd_device *device;
+	int minor;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
-	struct net_conf *nc;
 	int try = 0;
 	int forced = 0;
 	bool with_force = false;
@@ -603,37 +613,73 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 			continue;
 		}
 
-		if (rv == SS_NO_UP_TO_DATE_DISK &&
-		    device->disk_state[NOW] == D_CONSISTENT && !with_force) {
-			D_ASSERT(device, conn_highest_pdsk(first_peer_device(device)->connection) == D_UNKNOWN);
+		if (rv == SS_NO_UP_TO_DATE_DISK && !with_force) {
+			struct drbd_connection *connection;
 
-			if (conn_try_outdate_peer(first_peer_device(device)->connection))
-				with_force = true;
-			continue;
+			for_each_connection(connection, resource) {
+				struct drbd_peer_device *peer_device;
+				int vnr;
+
+				if (conn_highest_pdsk(connection) != D_UNKNOWN)
+					continue;
+
+				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+					struct drbd_device *device = peer_device->device;
+
+					if (device->disk_state[NOW] != D_CONSISTENT)
+						continue;
+
+					if (conn_try_outdate_peer(connection))
+						with_force = true;
+				}
+			}
+			if (with_force)
+				continue;
 		}
 
 		if (rv == SS_NOTHING_TO_DO)
 			goto out;
 		if (rv == SS_PRIMARY_NOP && !with_force) {
-			if (!conn_try_outdate_peer(first_peer_device(device)->connection) && force) {
-				drbd_warn(device, "Forced into split brain situation!\n");
-				with_force = true;
+			struct drbd_connection *connection;
+
+			for_each_connection(connection, resource) {
+				if (!conn_try_outdate_peer(connection) && force) {
+					drbd_warn(connection, "Forced into split brain situation!\n");
+					with_force = true;
+				}
 			}
-			continue;
+			if (with_force)
+				continue;
 		}
+
 		if (rv == SS_TWO_PRIMARIES) {
-			/* Maybe the peer is detected as dead very soon...
-			   retry at most once more in this case. */
-			int timeo;
-			rcu_read_lock();
-			nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
-			timeo = nc ? (nc->ping_timeo + 1) * HZ / 10 : 1;
-			rcu_read_unlock();
-			schedule_timeout_interruptible(timeo);
+			struct drbd_connection *connection;
+			struct net_conf *nc;
+			int timeout = 0;
+
+			/*
+			 * Catch the case where we discover that the other
+			 * primary has died soon after the state change
+			 * failure: retry once after a short timeout.
+			 */
+
+			for_each_connection(connection, resource) {
+				rcu_read_lock();
+				nc = rcu_dereference(connection->net_conf);
+				if (nc && nc->ping_timeo > timeout)
+					timeout = nc->ping_timeo;
+				rcu_read_unlock();
+			}
+			timeout = timeout * HZ / 10;
+			if (timeout == 0)
+				timeout = 1;
+
+			schedule_timeout_interruptible(timeout);
 			if (try < max_tries)
 				try = max_tries - 1;
 			continue;
 		}
+
 		if (rv < SS_SUCCESS) {
 			rv = stable_state_change(resource,
 				change_role(resource, role,
@@ -649,42 +695,74 @@ drbd_set_role(struct drbd_device *device, enum drbd_role role, int force)
 		goto out;
 
 	if (forced)
-		drbd_warn(device, "Forced to consider local data as UpToDate!\n");
+		drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
 
-	/* Wait until nothing is on the fly :) */
-	wait_event(device->misc_wait, atomic_read(&first_peer_device(device)->ap_pending_cnt) == 0);
+	idr_for_each_entry(&resource->devices, device, minor)
+		wait_event(device->misc_wait, no_more_ap_pending(device));
 
 	if (role == R_SECONDARY) {
-		set_disk_ro(device->vdisk, true);
-		if (get_ldev(device)) {
-			device->ldev->md.current_uuid &= ~(u64)1;
-			put_ldev(device);
+		idr_for_each_entry(&resource->devices, device, minor) {
+			set_disk_ro(device->vdisk, true);
+			if (get_ldev(device)) {
+				device->ldev->md.current_uuid &= ~(u64)1;
+				put_ldev(device);
+			}
 		}
 	} else {
-		nc = first_peer_device(device)->connection->net_conf;
-		if (nc)
-			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
+		struct drbd_connection *connection;
 
-		set_disk_ro(device->vdisk, false);
-		if (get_ldev(device)) {
-			drbd_uuid_new_current(device);
-			put_ldev(device);
+		for_each_connection(connection, resource) {
+			struct net_conf *nc;
+
+			nc = connection->net_conf;
+			if (nc)
+				nc->discard_my_data = 0; /* without copy; single bit op is atomic */
+		}
+
+		idr_for_each_entry(&resource->devices, device, minor) {
+			set_disk_ro(device->vdisk, false);
+			if (get_ldev(device)) {
+				drbd_uuid_new_current(device);
+				put_ldev(device);
+			}
 		}
 	}
 
-	/* writeout of activity log covered areas of the bitmap
-	 * to stable storage done in after state change already */
+	if (role == R_SECONDARY) {
+		struct drbd_connection *connection;
 
-	if (first_peer_device(device)->repl_state[NOW] >= L_STANDALONE) {
-		/* if this was forced, we should consider sync */
-		if (forced)
-			drbd_send_uuids(first_peer_device(device));
-		drbd_send_current_state(first_peer_device(device));
+		/* When changing our role from primary to secondary, we inform
+		 * peers about the state change with a per-connection packet:
+		 * otherwise, if no volumes were defined, the peer wouldn't be
+		 * notified.
+		 */
+		for_each_connection(connection, resource) {
+			if (connection->cstate[NOW] == C_CONNECTED)
+				conn_send_current_state(connection, true);
+		}
 	}
 
-	drbd_md_sync(device);
+	idr_for_each_entry(&resource->devices, device, minor) {
+		 struct drbd_peer_device *peer_device;
 
-	drbd_kobject_uevent(device);
+		for_each_peer_device(peer_device, device) {
+			/* writeout of activity log covered areas of the bitmap
+			 * to stable storage done in after state change already */
+
+			if (peer_device->repl_state[NOW] >= L_STANDALONE) {
+				/* if this was forced, we should consider sync */
+				if (forced)
+					drbd_send_uuids(peer_device);
+				drbd_send_current_state(peer_device);
+			}
+		}
+	}
+
+	idr_for_each_entry(&resource->devices, device, minor) {
+		drbd_md_sync(device);
+		drbd_kobject_uevent(device);
+	}
+
 out:
 	mutex_unlock(&resource->state_mutex);
 	mutex_unlock(&resource->conf_update);
@@ -705,7 +783,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	int err;
 	enum drbd_ret_code retcode;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
@@ -720,9 +798,9 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY)
-		retcode = drbd_set_role(adm_ctx.device, R_PRIMARY, parms.assume_uptodate);
+		retcode = drbd_set_role(adm_ctx.resource, R_PRIMARY, parms.assume_uptodate);
 	else
-		retcode = drbd_set_role(adm_ctx.device, R_SECONDARY, 0);
+		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -1643,8 +1721,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	kfree(new_disk_conf);
 	for_each_peer_device(peer_device, device) {
-		lc_destroy(peer_device->resync_lru);
-		peer_device->resync_lru = NULL;
 		kfree(peer_device->rs_plan_s);
 		peer_device->rs_plan_s = NULL;
 	}
@@ -3505,17 +3581,13 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.resource;
 	/* demote */
+	retcode = drbd_set_role(resource, R_SECONDARY, false);
+	if (retcode < SS_SUCCESS) {
+		drbd_msg_put_info("failed to demote");
+		goto out;
+	}
+
 	for_each_connection(connection, resource) {
-		struct drbd_peer_device *peer_device;
-
-		idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-			retcode = drbd_set_role(peer_device->device, R_SECONDARY, 0);
-			if (retcode < SS_SUCCESS) {
-				drbd_msg_put_info("failed to demote");
-				goto out;
-			}
-		}
-
 		retcode = conn_try_disconnect(connection, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to disconnect");

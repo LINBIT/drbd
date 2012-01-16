@@ -374,9 +374,9 @@ struct adm_cmd cmds[] = {
 	{"resource-options", adm_res_options, DRBD_acf1_resname
 	 .drbdsetup_ctx = &resource_options_ctx, },
 	{"down", adm_generic_l, DRBD_acf1_resname},
-	{"primary", adm_generic_l, DRBD_acf1_default
+	{"primary", adm_generic_l, DRBD_acf1_resname
 	 .drbdsetup_ctx = &primary_cmd_ctx, },
-	{"secondary", adm_generic_l, DRBD_acf1_default},
+	{"secondary", adm_generic_l, DRBD_acf1_resname},
 	{"invalidate", adm_generic_b, DRBD_acf1_default},
 	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
 	{"outdate", adm_outdate, DRBD_acf1_default},
