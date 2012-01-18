@@ -204,30 +204,6 @@ static int disk_equal(struct d_volume *conf, struct d_volume *running)
 	return eq;
 }
 
-
-/* NULL terminated */
-static void find_option_in_resources(char *name,
-		struct d_option *list, struct d_option **opt, ...)
-{
-	va_list va;
-
-	va_start(va, opt);
-	/* We need to keep setting *opt to NULL, even if a list == NULL. */
-	while (list || opt) {
-		while (list) {
-			if (strcmp(list->name, name) == 0)
-				break;
-			list = list->next;
-		}
-
-		*opt = list;
-
-		list = va_arg(va, struct d_option*);
-		opt  = va_arg(va, struct d_option**);
-	}
-	va_end(va);
-}
-
 static int do_proxy_reconf(struct cfg_ctx *ctx)
 {
 	int rv;
@@ -297,10 +273,8 @@ static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
 	if (!running)
 		goto redo_whole_conn;
 
-	find_option_in_resources("memlimit",
-			res->proxy_options, &res_o,
-			running->proxy_options, &run_o,
-			NULL, NULL);
+	res_o = find_opt(res->proxy_options, "memlimit");
+	run_o = find_opt(running->proxy_options, "memlimit");
 	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
 	v2 = run_o ? m_strtoll(run_o->value, 1) : 0;
 	minimum = v1 < v2 ? v1 : v2;
