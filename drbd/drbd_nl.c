@@ -1258,7 +1258,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 	for_each_peer_device(peer_device, device) {
-		if (fifo_size != peer_device->rs_plan_s->size) {
+		if (fifo_size != rcu_dereference(peer_device->rs_plan_s)->size) {
 			struct fifo_buffer *old_plan, *new_plan;
 
 			new_plan = fifo_alloc(fifo_size);
@@ -1267,7 +1267,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 				retcode = ERR_NOMEM;
 				goto fail_unlock;
 			}
-			old_plan = peer_device->rs_plan_s;
+			old_plan = rcu_dereference(peer_device->rs_plan_s);
 			rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 			if (old_plan) {
 				synchronize_rcu();
@@ -1385,13 +1385,19 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_peer_device(peer_device, device) {
-		peer_device->rs_plan_s =
-			fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+		struct fifo_buffer *new_plan;
+
+		new_plan = fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+		if (!new_plan) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 		peer_device->resync_lru =
 			 lc_create("resync", drbd_bm_ext_cache,
 				   1, 61, sizeof(struct bm_extent),
 				   offsetof(struct bm_extent, lce));
-		if (!peer_device->rs_plan_s || !peer_device->resync_lru) {
+		if (!peer_device->resync_lru) {
 			retcode = ERR_NOMEM;
 			goto fail;
 		}
@@ -1721,8 +1727,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	kfree(new_disk_conf);
 	for_each_peer_device(peer_device, device) {
-		kfree(peer_device->rs_plan_s);
-		peer_device->rs_plan_s = NULL;
+		kfree(rcu_dereference(peer_device->rs_plan_s));
+		rcu_assign_pointer(peer_device->rs_plan_s, NULL);
 	}
 
 	mutex_unlock(&resource->conf_update);

@@ -3635,7 +3635,7 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			new_disk_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
 
 			fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
-			if (fifo_size != peer_device->rs_plan_s->size) {
+			if (fifo_size != rcu_dereference(peer_device->rs_plan_s)->size) {
 				new_plan = fifo_alloc(fifo_size);
 				if (!new_plan) {
 					drbd_err(device, "kmalloc of fifo_buffer failed");
@@ -3678,7 +3678,7 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	}
 
 	if (new_plan) {
-		old_plan = peer_device->rs_plan_s;
+		old_plan = rcu_dereference(peer_device->rs_plan_s);
 		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 	}
 
