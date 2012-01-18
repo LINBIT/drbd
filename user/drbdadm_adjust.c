@@ -117,6 +117,10 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 	struct d_option* opt;
 
 	while(running) {
+		if (running->adj_skip) {
+			running = running->next;
+			continue;
+		}
 		if((opt=find_opt(conf,running->name))) {
 			if(!is_equal(ctx, running, opt)) {
 				if (verbose > 2)
@@ -143,6 +147,10 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 	}
 
 	while(conf) {
+		if (conf->adj_skip) {
+			conf = conf->next;
+			continue;
+		}
 		if(conf->mentioned==0 && !is_default(ctx, conf)) {
 			if (verbose > 2)
 				fprintf(stderr, "Only in config file %s: %s\n",
@@ -403,35 +411,15 @@ int need_trigger_kobj_change(struct d_resource *res)
 	return 0;
 }
 
-/* moves option to the head of the single linked option list,
- * and marks it as to be skiped for "adjust only" commands
- * like disk-options see e.g. adm_attach_and_or_disk_options().
- */
-static void move_opt_to_head(struct d_option **head, struct d_option *o)
-{
-	struct d_option *t;
-	if (!o)
-		return;
-	o->adj_skip = 1;
-	if (o == *head)
-		return;
-
-	for (t = *head; t->next != o; t = t->next)
-		;
-	t->next = o->next;
-	o->next = *head;
-	*head = o;
-}
-
 void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 {
 	struct d_option *c = find_opt(conf->disk_options, "max-bio-bvecs");
 	struct d_option *k = find_opt(kern->disk_options, "max-bio-bvecs");
 
-	/* move to front of list, so we can skip it
-	 * for the following opts_equal */
-	move_opt_to_head(&conf->disk_options, c);
-	move_opt_to_head(&kern->disk_options, k);
+	if (c)
+		c->adj_skip = 1;
+	if (k)
+		k->adj_skip = 1;
 
 	/* simplify logic below, would otherwise have to
 	 * (!x || is_default(x) all the time. */
@@ -454,8 +442,10 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 	struct d_option *c = find_opt(conf->disk_options, "size");
 	struct d_option *k = find_opt(kern->disk_options, "size");
 
-	move_opt_to_head(&conf->disk_options, c);
-	move_opt_to_head(&kern->disk_options, k);
+	if (c)
+		c->adj_skip = 1;
+	if (k)
+		k->adj_skip = 1;
 
 	if (k && is_default(&disk_options_ctx, k))
 		k = NULL;
@@ -473,7 +463,6 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 	 * Move both options to the head of the disk_options list,
 	 * so we can easily skip them in the opts_equal, later.
 	 */
-	struct d_option *c, *k;
 
 	/* do we need to do a full attach,
 	 * potentially with a detach first? */
@@ -487,18 +476,9 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 	/* do we need to resize? */
 	compare_size(conf, kern);
 
-	/* skip these two options (if present) for the opts_equal below.
-	 * These have been move_opt_to_head()ed before already. */
-	k = kern->disk_options;
-	while (k && (!strcmp(k->name, "size") || !strcmp(k->name, "max-bio-bvecs")))
-		k = k->next;
-	c = conf->disk_options;
-	while (c && (!strcmp(c->name, "size") || !strcmp(c->name, "max-bio-bvecs")))
-		c = c->next;
-
 	/* is it sufficient to only adjust the disk options? */
 	if (!conf->adj_attach)
-		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, c, k);
+		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, conf->disk_options, kern->disk_options);
 
 	if (conf->adj_attach && kern->disk)
 		conf->adj_detach = 1;

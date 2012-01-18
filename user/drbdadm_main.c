@@ -1557,15 +1557,19 @@ static void add_setup_options(char **argv, int *argcp)
 	*argcp = argc;
 }
 
-#define make_options(OPT) \
-  while(OPT) { \
-    if(OPT->value) { \
-      ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
-    } else { \
-      ssprintf(argv[NA(argc)],"--%s",OPT->name); \
-    } \
-    OPT=OPT->next; \
-  }
+#define make_option(OPT) do {						\
+	if(OPT->value)							\
+		ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
+	else 								\
+		ssprintf(argv[NA(argc)],"--%s",OPT->name);		\
+} while (0)
+
+
+#define make_options(OPT)			\
+	while(OPT) {				\
+		make_option(OPT);		\
+		OPT=OPT->next;			\
+	}
 
 /* FIXME: Don't leak the memory allocated by asprintf. */
 #define make_address(A)				       				\
@@ -1599,10 +1603,12 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 	if (reset || do_attach) {
 		opt = ctx->vol->disk_options;
 		if (!do_attach) {
-			while (opt && opt->adj_skip)
-				opt = opt->next;
+			while (opt)
+				if (!opt->adj_skip)
+					make_option(opt);
+		} else {
+			make_options(opt);
 		}
-		make_options(opt);
 	}
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
