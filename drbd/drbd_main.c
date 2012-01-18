@@ -897,7 +897,7 @@ static int __conn_send_command(struct drbd_connection *connection, struct drbd_s
 			       enum drbd_packet cmd, unsigned int header_size,
 			       void *data, unsigned int size)
 {
-	return __send_command(connection, 0, sock, cmd, header_size, data, size);
+	return __send_command(connection, -1, sock, cmd, header_size, data, size);
 }
 
 int conn_send_command(struct drbd_connection *connection, struct drbd_socket *sock,
@@ -1318,6 +1318,37 @@ int drbd_send_current_state(struct drbd_peer_device *peer_device)
 	return drbd_send_state(peer_device, drbd_get_peer_device_state(peer_device, NOW));
 }
 
+int conn_send_current_state(struct drbd_connection *connection, bool conf_update_locked)
+{
+	if (connection->agreed_pro_version >= 100 &&
+	    connection->agreed_pro_version < 110) {
+		struct drbd_resource *resource = connection->resource;
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		/* We are talking to drbd 8.4, which does not understand this
+		 * packet type.  Send one old-style packet per peer device
+		 * instead.  (Protocols before that don't support volumes, and
+		 * they will be happy with the one packet that drbd 9 uses.
+		 */
+
+		if (!conf_update_locked)
+			mutex_lock(&resource->conf_update);
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			int rv;
+
+			rv = drbd_send_current_state(peer_device);
+			if (rv)
+				break;
+		}
+		if (!conf_update_locked)
+			mutex_unlock(&resource->conf_update);
+		return 0;
+	}
+
+	return conn_send_state(connection, drbd_get_connection_state(connection, NOW));
+}
+
 /**
  * drbd_send_state() - Sends the drbd state to the peer
  * @device:	DRBD device.
@@ -1334,6 +1365,19 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 		return -EIO;
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
+}
+
+int conn_send_state(struct drbd_connection *connection, union drbd_state state)
+{
+	struct drbd_socket *sock;
+	struct p_state *p;
+
+	sock = &connection->data;
+	p = conn_prepare_command(connection, sock);
+	if (!p)
+		return -EIO;
+	p->state = cpu_to_be32(state.i); /* Within the send mutex */
+	return conn_send_command(connection, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
 int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,

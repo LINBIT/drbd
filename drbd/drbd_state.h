@@ -83,6 +83,7 @@ extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
 enum which_state;
 extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_state);
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);
+extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum which_state);
 
 #define stable_state_change(resource, change_state) ({							\
 		enum drbd_state_rv rv;									\

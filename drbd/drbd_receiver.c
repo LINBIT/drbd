@@ -4217,22 +4217,36 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 STATIC int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *peer_device = NULL;
 	enum drbd_repl_state *repl_state;
-	struct drbd_device *device;
+	struct drbd_device *device = NULL;
 	struct p_state *p = pi->data;
 	union drbd_state os, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
 	int rv;
 
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return config_unknown_volume(connection, pi);
-	device = peer_device->device;
+	if (pi->vnr != -1) {
+		peer_device = conn_peer_device(connection, pi->vnr);
+		if (!peer_device)
+			return config_unknown_volume(connection, pi);
+		device = peer_device->device;
+	}
+
+	peer_state.i = be32_to_cpu(p->state);
+
+	if (!peer_device) {
+		unsigned long irq_flags;
+
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		__change_peer_role(connection, peer_state.role);
+		rv = end_state_change(resource, &irq_flags);
+		if (rv < SS_SUCCESS)
+			return -EIO;
+		return 0;
+	}
 
 	set_bit(INITIAL_STATE_RECEIVED, &connection->flags);
-	peer_state.i = be32_to_cpu(p->state);
 
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {

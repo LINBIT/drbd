@@ -449,13 +449,12 @@ static void end_remote_state_change(struct drbd_resource *resource, unsigned lon
 	___begin_state_change(resource, flags);
 }
 
-union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
+static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
 {
-	struct drbd_resource *resource = device->resource;
 	union drbd_state rv = { {
 		.conn = C_STANDALONE,  /* really: undefined */
 		/* (user_isp, peer_isp, and aftr_isp are undefined as well.) */
-		.disk = device->disk_state[which],
+		.disk = D_UNKNOWN,  /* really: undefined */
 		.role = resource->role[which],
 		.peer = R_UNKNOWN,  /* really: undefined */
 		.susp = resource->susp[which],
@@ -463,6 +462,15 @@ union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_st
 		.susp_fen = resource->susp_fen[which],
 		.pdsk = D_UNKNOWN,  /* really: undefined */
 	} };
+
+	return rv;
+}
+
+union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_state which)
+{
+	union drbd_state rv = drbd_get_resource_state(device->resource, which);
+
+	rv.disk = device->disk_state[which];
 
 	return rv;
 }
@@ -479,6 +487,16 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	rv.conn = combined_conn_state(peer_device, which);
 	rv.peer = connection->peer_role[which];
 	rv.pdsk = peer_device->disk_state[which];
+
+	return rv;
+}
+
+union drbd_state drbd_get_connection_state(struct drbd_connection *connection, enum which_state which)
+{
+	union drbd_state rv = drbd_get_resource_state(connection->resource, which);
+
+	rv.conn = connection->cstate[which];
+	rv.peer = connection->peer_role[which];
 
 	return rv;
 }
