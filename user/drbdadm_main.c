@@ -769,7 +769,7 @@ static void dump_address(char *name, struct d_address *address, char *postfix)
 
 static void dump_proxy_info(struct d_proxy_info *pi)
 {
-	printI("proxy on %s {\n", names_to_str(pi->on_hosts));
+	printI("proxy on %s {\n", names_to_str(&pi->on_hosts));
 	++indent;
 	dump_address("inside", &pi->inside, ";\n");
 	dump_address("outside", &pi->outside, ";\n");
@@ -822,12 +822,12 @@ static void dump_host_info(struct d_host_info *hi)
 	if (hi->lower) {
 		printI("stacked-on-top-of %s {\n", esc(hi->lower->name));
 		++indent;
-		printI("# on %s \n", names_to_str(hi->on_hosts));
+		printI("# on %s \n", names_to_str(&hi->on_hosts));
 	} else if (hi->by_address) {
 		dump_address("floating", &hi->address, " {\n");
 		++indent;
 	} else {
-		printI("on %s {\n", names_to_str(hi->on_hosts));
+		printI("on %s {\n", names_to_str(&hi->on_hosts));
 		++indent;
 	}
 
@@ -919,7 +919,7 @@ static void dump_common_info_xml()
 
 static void dump_proxy_info_xml(struct d_proxy_info *pi)
 {
-	printI("<proxy hostname=\"%s\">\n", names_to_str(pi->on_hosts));
+	printI("<proxy hostname=\"%s\">\n", names_to_str(&pi->on_hosts));
 	++indent;
 	printI("<inside family=\"%s\" port=\"%s\">%s</inside>\n", pi->inside.af,
 	       pi->inside.port, pi->inside.addr);
@@ -964,7 +964,7 @@ static void dump_host_info_xml(struct d_host_info *hi)
 	if (hi->by_address)
 		printI("<host floating=\"1\">\n");
 	else
-		printI("<host name=\"%s\">\n", names_to_str(hi->on_hosts));
+		printI("<host name=\"%s\">\n", names_to_str(&hi->on_hosts));
 
 	++indent;
 
@@ -990,8 +990,8 @@ static void fake_startup_options(struct d_resource *res)
 		insert_tail(&res->startup_options, opt);
 	}
 
-	if (res->become_primary_on) {
-		val = strdup(names_to_str(res->become_primary_on));
+	if (!STAILQ_EMPTY(&res->become_primary_on)) {
+		val = strdup(names_to_str(&res->become_primary_on));
 		opt = new_opt(strdup("become-primary-on"), val);
 		opt->is_escaped = 1;
 		insert_tail(&res->startup_options, opt);
@@ -1181,8 +1181,8 @@ static int sh_b_pri(struct cfg_ctx *ctx)
 	struct d_resource *res = ctx->res;
 	int i, rv;
 
-	if (name_in_names(nodeinfo.nodename, res->become_primary_on) ||
-	    name_in_names("both", res->become_primary_on)) {
+	if (name_in_names(nodeinfo.nodename, &res->become_primary_on) ||
+	    name_in_names("both", &res->become_primary_on)) {
 		/* upon connect resync starts, and both sides become primary at the same time.
 		   One's try might be declined since an other state transition happens. Retry. */
 		for (i = 0; i < 5; i++) {
@@ -1235,7 +1235,7 @@ static void free_host_info(struct d_host_info *hi)
 	if (!hi)
 		return;
 
-	free_names(hi->on_hosts);
+	free_names(&hi->on_hosts);
 	for_each_volume(vol, hi->volumes)
 		free_volume(vol);
 	free(hi->address.addr);
@@ -1328,7 +1328,7 @@ static void expand_common(void)
 		if (common->stacked_timeouts)
 			res->stacked_timeouts = 1;
 
-		if (!res->become_primary_on)
+		if (STAILQ_EMPTY(&res->become_primary_on))
 			res->become_primary_on = common->become_primary_on;
 
 		expand_opts(&common->proxy_plugins, &res->proxy_plugins);
@@ -2001,8 +2001,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	if (res->peer) {
 		setenv("DRBD_PEER_AF", res->peer->address.af, 1);	/* since 8.3.0 */
 		setenv("DRBD_PEER_ADDRESS", res->peer->address.addr, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEER", res->peer->on_hosts->name, 1);	/* deprecated */
-		setenv("DRBD_PEERS", names_to_str(res->peer->on_hosts), 1);
+		setenv("DRBD_PEERS", names_to_str(&res->peer->on_hosts), 1);
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
@@ -2218,8 +2217,8 @@ char *proxy_connection_name(struct d_resource *res)
 
 	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
 			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'),
-			 names_to_str_c(res->me->proxy->on_hosts, '_')
+			 names_to_str_c(&res->peer->proxy->on_hosts, '_'),
+			 names_to_str_c(&res->me->proxy->on_hosts, '_')
 			 );
 	if (counter >= sizeof(conn_name)-3) {
 		fprintf(stderr,
@@ -2324,7 +2323,7 @@ static int check_proxy(struct cfg_ctx *ctx, int do_up)
 		exit(E_CONFIG_INVALID);
 	}
 
-	if (!name_in_names(nodeinfo.nodename, res->me->proxy->on_hosts)) {
+	if (!name_in_names(nodeinfo.nodename, &res->me->proxy->on_hosts)) {
 		if (all_resources)
 			return 0;
 		fprintf(stderr,
@@ -3100,7 +3099,7 @@ void verify_ips(struct d_resource *res)
 		fprintf(stderr, "%s: in resource %s, on %s:\n\t"
 			"IP %s not found on this host.\n",
 			ep ? (char *)ep->data : res->config_file,
-			res->name, names_to_str(res->me->on_hosts),
+			res->name, names_to_str(&res->me->on_hosts),
 			res->me->address.addr);
 		if (INVALID_IP_IS_INVALID_CONF)
 			config_valid = 0;
@@ -3268,9 +3267,9 @@ void validate_resource(struct d_resource *res)
 	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
 			if (res->peer &&
-			    !name_in_names(opt->value + 13, res->peer->on_hosts)
+			    !name_in_names(opt->value + 13, &res->peer->on_hosts)
 			    && !name_in_names(opt->value + 13,
-					      res->me->on_hosts)) {
+					      &res->me->on_hosts)) {
 				fprintf(stderr,
 					"%s:%d: in resource %s:\n\t"
 					"the nodename in the '%s' option is "
@@ -3278,8 +3277,8 @@ void validate_resource(struct d_resource *res)
 					"valid nodenames are: '%s %s'.\n",
 					res->config_file, res->start_line,
 					res->name, opt->value,
-					names_to_str(res->me->on_hosts),
-					names_to_str(res->peer->on_hosts));
+					names_to_str(&res->me->on_hosts),
+					names_to_str(&res->peer->on_hosts));
 				config_valid = 0;
 			}
 		}
@@ -3291,7 +3290,7 @@ void validate_resource(struct d_resource *res)
 	}
 
 	opt = find_opt(&res->net_options, "allow-two-primaries");
-	if (name_in_names("both", res->become_primary_on) && opt == NULL) {
+	if (name_in_names("both", &res->become_primary_on) && opt == NULL) {
 		fprintf(stderr,
 			"%s:%d: in resource %s:\n"
 			"become-primary-on is set to both, but allow-two-primaries "
@@ -3312,10 +3311,10 @@ void validate_resource(struct d_resource *res)
 		config_valid = 0;
 	}
 
-	for (bpo = res->become_primary_on; bpo; bpo = bpo->next) {
+	STAILQ_FOREACH(bpo, &res->become_primary_on, link) {
 		if (res->peer &&
-		    !name_in_names(bpo->name, res->me->on_hosts) &&
-		    !name_in_names(bpo->name, res->peer->on_hosts) &&
+		    !name_in_names(bpo->name, &res->me->on_hosts) &&
+		    !name_in_names(bpo->name, &res->peer->on_hosts) &&
 		    strcmp(bpo->name, "both")) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\t"

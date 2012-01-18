@@ -54,82 +54,69 @@ struct d_name *names_from_str(char* str)
 	struct d_name *names;
 
 	names = malloc(sizeof(struct d_name));
-	names->next = NULL;
 	names->name = strdup(str);
 
 	return names;
 }
 
-char *_names_to_str_c(char* buffer, struct d_name *names, char c)
+char *_names_to_str_c(char* buffer, struct names *names, char c)
 {
 	int n = 0;
+	struct d_name *name;
 
-	if (!names) {
+	if (STAILQ_EMPTY(names)) {
 		snprintf(buffer, NAMES_STR_SIZE, "UNKNOWN");
 		return buffer;
 	}
 
+	name = STAILQ_FIRST(names);
 	while (1) {
-		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", names->name);
-		names = names->next;
-		if (!names)
+		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%s", name->name);
+		name = STAILQ_NEXT(name, link);
+		if (!name)
 			return buffer;
 		n += snprintf(buffer + n, NAMES_STR_SIZE - n, "%c", c);
 	}
 }
 
-char *_names_to_str(char* buffer, struct d_name *names)
+char *_names_to_str(char* buffer, struct names *names)
 {
 	return _names_to_str_c(buffer, names, ' ');
 }
 
-int name_in_names(char *name, struct d_name *names)
+int name_in_names(char *name, struct names *names)
 {
-	while (names) {
-		if (!strcmp(names->name, name))
+	struct d_name *n;
+
+	STAILQ_FOREACH(n, names, link)
+		if (!strcmp(n->name, name))
 			return 1;
-		names = names->next;
-	}
+
 	return 0;
 }
 
-void free_names(struct d_name *names)
+void free_names(struct names *names)
 {
-	struct d_name *nf;
-	while (names) {
-		nf = names->next;
-		free(names->name);
-		free(names);
-		names = nf;
+	struct d_name *n, *nf;
+
+	n = STAILQ_FIRST(names);
+	while (n) {
+		nf = STAILQ_NEXT(n, link);
+		free(n->name);
+		free(n);
+		n = nf;
 	}
 }
 
-static void append_names(struct d_name **head, struct d_name ***last, struct d_name *to_copy)
+static void append_names(struct names *head, struct names *to_copy)
 {
-	struct d_name *new;
+	struct d_name *new, *copy;
 
-	while (to_copy) {
+	STAILQ_FOREACH(copy, to_copy, link) {
 		new = malloc(sizeof(struct d_name));
-		if (!*head)
-			*head = new;
-		new->name = strdup(to_copy->name);
-		new->next = NULL;
-		if (*last)
-			**last = new;
-		*last = &new->next;
-		to_copy = to_copy->next;
+		new->name = strdup(copy->name);
+		insert_tail(head, new);
 	}
-}
-
-
-struct d_name *concat_names(struct d_name *to_copy1, struct d_name *to_copy2)
-{
-	struct d_name *head = NULL, **last = NULL;
-
-	append_names(&head, &last, to_copy1);
-	append_names(&head, &last, to_copy2);
-
-	return head;
 }
 
 void m_strtoll_range(const char *s, char def_unit,
@@ -292,7 +279,7 @@ static void derror(struct d_host_info *host, struct d_resource *res, char *text)
 	config_valid = 0;
 	fprintf(stderr, "%s:%d: in resource %s, on %s { ... }:"
 		" '%s' keyword missing.\n",
-		config_file, c_section_start, res->name, names_to_str(host->on_hosts), text);
+		config_file, c_section_start, res->name, names_to_str(&host->on_hosts), text);
 }
 
 void pdperror(char *text)
@@ -308,8 +295,8 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
 	config_valid = 0;
 	fprintf(stderr, "%s:%d: in section: on %s { proxy on %s { ... } }:"
 		" '%s' keyword missing.\n",
-		config_file, c_section_start, names_to_str(host->on_hosts),
-		names_to_str(proxy->on_hosts), text);
+		config_file, c_section_start, names_to_str(&host->on_hosts),
+		names_to_str(&proxy->on_hosts), text);
 }
 
 #define typecheck(type,x) \
@@ -318,11 +305,6 @@ static void pperror(struct d_host_info *host, struct d_proxy_info *proxy, char *
 	(void)(&__dummy == &__dummy2); \
 	1; \
 })
-
-#define for_each_host(h_,hosts_) \
-	for ( ({ typecheck(struct d_name*, h_); \
-		h_ = hosts_; }); \
-	 	h_; h_ = h_->next)
 
 /*
  * for check_uniq: check uniqueness of
@@ -459,7 +441,7 @@ void check_meta_disk(struct d_volume *vol, struct d_host_info *host)
 		return;
 	if (strcmp(vol->meta_disk, "internal") != 0) {
 		/* index either some number, or "flexible" */
-		for_each_host(h, host->on_hosts)
+		STAILQ_FOREACH(h, &host->on_hosts, link)
 			check_uniq("meta-disk", "%s:%s[%s]", h->name, vol->meta_disk, vol->meta_index);
 	}
 }
@@ -795,12 +777,13 @@ static void __parse_address(struct d_address *a)
 	range_check(R_PORT, "port", yylval.txt);
 }
 
-static void parse_address(struct d_name *on_hosts, struct d_address *address)
+static void parse_address(struct names *on_hosts, struct d_address *address)
 {
 	struct d_name *h;
 	__parse_address(address);
-	if (!strcmp(address->addr, "127.0.0.1") || !strcmp(address->addr, "::1"))
-		for_each_host(h, on_hosts)
+	if ((!strcmp(address->addr, "127.0.0.1") || !strcmp(address->addr, "::1")) &&
+		on_hosts)
+		STAILQ_FOREACH(h, on_hosts, link)
 			check_uniq("IP", "%s:%s:%s", h->name, address->addr,
 				   address->port);
 	else
@@ -808,11 +791,11 @@ static void parse_address(struct d_name *on_hosts, struct d_address *address)
 	EXP(';');
 }
 
-static void parse_hosts(struct d_name **pnp, char delimeter)
+static void parse_hosts(struct names *hosts, char delimeter)
 {
 	char errstr[20];
 	struct d_name *name;
-	int hosts = 0;
+	int nr_hosts = 0;
 	int token;
 
 	while (1) {
@@ -821,14 +804,12 @@ static void parse_hosts(struct d_name **pnp, char delimeter)
 		case TK_STRING:
 			name = malloc(sizeof(struct d_name));
 			name->name = yylval.txt;
-			name->next = NULL;
-			*pnp = name;
-			pnp = &name->next;
-			hosts++;
+			insert_tail(hosts, name);
+			nr_hosts++;
 			break;
 		default:
 			if (token == delimeter) {
-				if (!hosts)
+				if (nr_hosts == 0)
 					pe_expected_got("TK_STRING", token);
 				return;
 			} else {
@@ -843,7 +824,8 @@ static void parse_proxy_section(struct d_host_info *host)
 {
 	struct d_proxy_info *proxy;
 
-	proxy=calloc(1,sizeof(struct d_proxy_info));
+	proxy = calloc(1, sizeof(struct d_proxy_info));
+	STAILQ_INIT(&proxy->on_hosts);
 	host->proxy = proxy;
 
 	EXP(TK_ON);
@@ -851,10 +833,10 @@ static void parse_proxy_section(struct d_host_info *host)
 	while (1) {
 		switch (yylex()) {
 		case TK_INSIDE:
-			parse_address(proxy->on_hosts, &proxy->inside);
+			parse_address(&proxy->on_hosts, &proxy->inside);
 			break;
 		case TK_OUTSIDE:
-			parse_address(proxy->on_hosts, &proxy->outside);
+			parse_address(&proxy->on_hosts, &proxy->outside);
 			break;
 		case '}':
 			goto break_loop;
@@ -932,7 +914,7 @@ static void check_minor_nonsense(const char *devname, const int explicit_minor)
 	return;
 }
 
-static void parse_device(struct d_name* on_hosts, struct d_volume *vol)
+static void parse_device(struct names* on_hosts, struct d_volume *vol)
 {
 	struct d_name *h;
 	int m;
@@ -981,7 +963,10 @@ static void parse_device(struct d_name* on_hosts, struct d_volume *vol)
 		check_minor_nonsense(vol->device, vol->device_minor);
 	}
 out:
-	for_each_host(h, on_hosts) {
+	if (!on_hosts)
+		return;
+
+	STAILQ_FOREACH(h, on_hosts, link) {
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, vol->device_minor);
 		if (vol->device)
 			check_uniq("device", "device:%s:%s", h->name, vol->device);
@@ -1021,7 +1006,7 @@ struct d_volume *volume0(struct d_volume **volp)
 	}
 }
 
-int parse_volume_stmt(struct d_volume *vol, struct d_name* on_hosts, int token)
+int parse_volume_stmt(struct d_volume *vol, struct names* on_hosts, int token)
 {
 	switch (token) {
 	case TK_DISK:
@@ -1065,7 +1050,7 @@ int parse_volume_stmt(struct d_volume *vol, struct d_name* on_hosts, int token)
 	return 1;
 }
 
-struct d_volume *parse_volume(int vnr, struct d_name* on_hosts)
+struct d_volume *parse_volume(int vnr, struct names* on_hosts)
 {
 	struct d_volume *vol;
 	int token;
@@ -1122,14 +1107,14 @@ void inherit_volumes(struct d_volume *from, struct d_host_info *host)
 		}
 		if (!t->disk && s->disk) {
 			t->disk = strdup(s->disk);
-			for_each_host(h, host->on_hosts)
+			STAILQ_FOREACH(h, &host->on_hosts, link)
 				check_uniq("disk", "disk:%s:%s", h->name, t->disk);
 		}
 		if (!t->device && s->device)
 			t->device = strdup(s->device);
 		if (t->device_minor == -1U && s->device_minor != -1U) {
 			t->device_minor = s->device_minor;
-			for_each_host(h, host->on_hosts)
+			STAILQ_FOREACH(h, &host->on_hosts, link)
 				check_uniq("device-minor", "device-minor:%s:%d", h->name, t->device_minor);
 		}
 		if (!t->meta_disk && s->meta_disk) {
@@ -1186,10 +1171,10 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 				"%s:%d: in resource %s, on %s { ... }: "
 				"volume %d not defined on %s\n",
 				config_file, line, res->name,
-				names_to_str(host1->on_hosts),
+				names_to_str(&host1->on_hosts),
 				a->vnr,
 				compare_stacked ? host1->lower->name
-					: names_to_str(host2->on_hosts));
+					: names_to_str(&host2->on_hosts));
 			a = a->next;
 			config_valid = 0;
 		}
@@ -1203,10 +1188,10 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 					"%s:%d: in resource %s, on %s { ... }: "
 					"volume %d missing (present on %s)\n",
 					config_file, line, res->name,
-					names_to_str(host1->on_hosts),
+					names_to_str(&host1->on_hosts),
 					b->vnr,
 					compare_stacked ? host1->lower->name
-						: names_to_str(host2->on_hosts));
+						: names_to_str(&host2->on_hosts));
 			if (!compare_stacked)
 				config_valid = 0;
 			b = b->next;
@@ -1239,7 +1224,7 @@ enum parse_host_section_flags {
 };
 
 void parse_host_section(struct d_resource *res,
-			       struct d_name* on_hosts,
+			       struct names *on_hosts,
 			       enum parse_host_section_flags flags)
 {
 	struct d_host_info *host;
@@ -1252,7 +1237,7 @@ void parse_host_section(struct d_resource *res,
 
 	host = calloc(1,sizeof(struct d_host_info));
 	STAILQ_INIT(&host->res_options);
-	host->on_hosts = on_hosts;
+	host->on_hosts = *on_hosts;
 	host->config_line = c_section_start;
 
 	if (flags & BY_ADDRESS) {
@@ -1267,8 +1252,7 @@ void parse_host_section(struct d_resource *res,
 			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address.addr, host->address.port);
 		else
 			m_asprintf(&fake_uname, "%s:%s", host->address.addr, host->address.port);
-		on_hosts = names_from_str(fake_uname);
-		host->on_hosts = on_hosts;
+		STAILQ_INSERT_HEAD(&host->on_hosts, names_from_str(fake_uname), link);
 
 		token = yylex();
 		switch(token) {
@@ -1282,7 +1266,7 @@ void parse_host_section(struct d_resource *res,
 		}
 	}
 
-	for_each_host(h, on_hosts)
+	STAILQ_FOREACH(h, on_hosts, link)
 		check_upr("host section", "%s: on %s", res->name, h->name);
 	res->all_hosts = APPEND(res->all_hosts, host);
 
@@ -1291,21 +1275,21 @@ void parse_host_section(struct d_resource *res,
 		fline = line;
 		switch (token) {
 		case TK_DISK:
-			for_each_host(h, on_hosts)
+			STAILQ_FOREACH(h, on_hosts, link)
 				check_upr("disk statement", "%s:%s:disk", res->name, h->name);
 			goto vol0stmt;
-			/* for_each_host(h, on_hosts)
+			/* STAILQ_FOREACH(h, on_hosts)
 			  check_uniq("disk", "disk:%s:%s", h->name, yylval.txt); */
 		case TK_DEVICE:
-			for_each_host(h, on_hosts)
+			STAILQ_FOREACH(h, on_hosts, link)
 				check_upr("device statement", "%s:%s:device", res->name, h->name);
 			goto vol0stmt;
 		case TK_META_DISK:
-			for_each_host(h, on_hosts)
+			STAILQ_FOREACH(h, on_hosts, link)
 				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			goto vol0stmt;
 		case TK_FLEX_META_DISK:
-			for_each_host(h, on_hosts)
+			STAILQ_FOREACH(h, on_hosts, link)
 				check_upr("meta-disk statement", "%s:%s:meta-disk", res->name, h->name);
 			goto vol0stmt;
 			break;
@@ -1317,7 +1301,7 @@ void parse_host_section(struct d_resource *res,
 				config_valid = 0;
 				exit(E_CONFIG_INVALID);
 			}
-			for_each_host(h, on_hosts)
+			STAILQ_FOREACH(h, on_hosts, link)
 				check_upr("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(on_hosts, &host->address);
 			range_check(R_PORT, "port", host->address.port);
@@ -1410,6 +1394,7 @@ void parse_stacked_section(struct d_resource* res)
 
 	host = calloc(1, sizeof(struct d_host_info));
 	STAILQ_INIT(&host->res_options);
+	STAILQ_INIT(&host->on_hosts);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
 	host->lower_name = yylval.txt;
@@ -1418,14 +1403,14 @@ void parse_stacked_section(struct d_resource* res)
 	while (1) {
 		switch(yylex()) {
 		case TK_DEVICE:
-			/* for_each_host(h, host->on_hosts)
+			/* STAILQ_FOREACH(h, host->on_hosts)
 			  check_upr("device statement", "%s:%s:device", res->name, h->name); */
-			parse_device(host->on_hosts, volume0(&host->volumes));
+			parse_device(&host->on_hosts, volume0(&host->volumes));
 			volume0(&host->volumes)->meta_disk = strdup("internal");
 			volume0(&host->volumes)->meta_index = strdup("internal");
 			break;
 		case TK_ADDRESS:
-			for_each_host(h, host->on_hosts)
+			STAILQ_FOREACH(h, &host->on_hosts, link)
 				check_upr("address statement", "%s:%s:address", res->name, h->name);
 			parse_address(NULL, &host->address);
 			range_check(R_PORT, "port", yylval.txt);
@@ -1495,7 +1480,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 	for (host = res->all_hosts; host; host=host->next) {
 		/* do we match  this host? */
 		if (match_on_proxy) {
-		       if (!host->proxy || !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
+		       if (!host->proxy || !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
 			       continue;
 		} else if (host->by_address) {
 			if (!have_ip(host->address.af, host->address.addr) &&
@@ -1505,12 +1490,12 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 		} else if (host->lower) {
 			if (!host->lower->me)
 				continue;
-		} else if (!host->on_hosts) {
+		} else if (STAILQ_EMPTY(&host->on_hosts)) {
 			/* huh? a resource without hosts to run on?! */
 			continue;
 		} else {
-			if (!name_in_names(nodeinfo.nodename, host->on_hosts) &&
-			    strcmp("_this_host", host->on_hosts->name))
+			if (!name_in_names(nodeinfo.nodename, &host->on_hosts) &&
+			    strcmp("_this_host", STAILQ_FIRST(&host->on_hosts)->name))
 				continue;
 		}
 		/* we matched. */
@@ -1521,7 +1506,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 				"\tYou cannot ignore and define at the same time.\n",
 				res->config_file, host->config_line, res->name,
 				host->lower ? "stacked-on-top-of" : "on",
-				host->lower ? host->lower->name : names_to_str(host->on_hosts));
+				host->lower ? host->lower->name : names_to_str(&host->on_hosts));
 		}
 		if (res->me) {
 			config_valid = 0;
@@ -1530,9 +1515,9 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 				"\tThere are multiple host sections for this node.\n",
 				res->config_file, host->config_line, res->name,
 				res->me->lower ? "stacked-on-top-of" : "on",
-				res->me->lower ? res->me->lower->name : names_to_str(res->me->on_hosts),
+				res->me->lower ? res->me->lower->name : names_to_str(&res->me->on_hosts),
 				host->lower ? "stacked-on-top-of" : "on",
-				host->lower ? host->lower->name : names_to_str(host->on_hosts));
+				host->lower ? host->lower->name : names_to_str(&host->on_hosts));
 		}
 		res->me = host;
 		if (host->lower)
@@ -1604,9 +1589,9 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	for (host = res->all_hosts; host; host=host->next) {
 		if (host->by_address && strcmp(connect_to_host, host->address.addr))
 			continue;
-		if (host->proxy && !name_in_names(nodeinfo.nodename, host->proxy->on_hosts))
+		if (host->proxy && !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
 			continue;
-		if (!name_in_names(connect_to_host, host->on_hosts))
+		if (!name_in_names(connect_to_host, &host->on_hosts))
 			continue;
 
 		if (host == res->me) {
@@ -1643,7 +1628,7 @@ void set_on_hosts_in_res(struct d_resource *res)
 {
 	struct d_resource *l_res, *tmp;
 	struct d_host_info *host, *host2;
-	struct d_name *h, **last;
+	struct d_name *h;
 
 	for (host = res->all_hosts; host; host=host->next) {
 		if (host->lower_name) {
@@ -1662,16 +1647,15 @@ void set_on_hosts_in_res(struct d_resource *res)
 			}
 
 			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
-			last = NULL;
 			for (host2 = l_res->all_hosts; host2; host2 = host2->next)
 				if (!host2->lower_name)
-					append_names(&host->on_hosts, &last, host2->on_hosts);
+					append_names(&host->on_hosts, &host2->on_hosts);
 
 			host->lower = l_res;
 
 			/* */
 			if (!strcmp(host->address.addr, "127.0.0.1") || !strcmp(host->address.addr, "::1"))
-				for_each_host(h, host->on_hosts)
+				STAILQ_FOREACH(h, &host->on_hosts, link)
 					check_uniq("IP", "%s:%s:%s", h->name, host->address.addr, host->address.port);
 
 		}
@@ -1744,7 +1728,8 @@ void proxy_delegate(void *ctx)
 	int token;
 	struct options options = STAILQ_HEAD_INITIALIZER(options);
 	struct d_option *opt;
-	struct d_name *line, *word, **pnp;
+	struct names line;
+	struct d_name *word;
 
 	opt = NULL;
 	token = yylex();
@@ -1755,13 +1740,13 @@ void proxy_delegate(void *ctx)
 	}
 
 	while (1) {
-		pnp = &line;
+		STAILQ_INIT(&line);
 		while (1) {
 			token = yylex();
 			if (token == ';')
 				break;
 			if (token == '}') {
-				if (pnp == &line)
+				if (STAILQ_EMPTY(&line))
 					goto out;
 
 				fprintf(stderr,	"%s:%d: Missing \";\" before  \"}\"\n",
@@ -1773,17 +1758,15 @@ void proxy_delegate(void *ctx)
 			if (!word)
 				pdperror("out of memory.");
 			word->name = yylval.txt;
-			word->next = NULL;
-			*pnp = word;
-			pnp = &word->next;
+			insert_tail(&line, word);
 		}
 
 		opt = calloc(1, sizeof(struct d_option));
 		if (!opt)
 			pdperror("out of memory.");
-		opt->name = strdup(names_to_str(line));
+		opt->name = strdup(names_to_str(&line));
 		insert_tail(&options, opt);
-		free_names(line);
+		free_names(&line);
 	}
 out:
 	if (res)
@@ -1824,7 +1807,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
-	struct d_name *host_names;
+	struct names host_names;
 	struct options options;
 	char *opt_name;
 	int token;
@@ -1859,24 +1842,28 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP(';');
 			break;
 		case TK_ON:
+			STAILQ_INIT(&host_names);
 			parse_hosts(&host_names, '{');
-			parse_host_section(res, host_names, REQUIRE_ALL);
+			parse_host_section(res, &host_names, REQUIRE_ALL);
 			break;
 		case TK_STACKED:
 			parse_stacked_section(res);
 			break;
 		case TK__THIS_HOST:
 			EXP('{');
-			host_names = names_from_str("_this_host");
-			parse_host_section(res, host_names, 0);
+			STAILQ_INIT(&host_names);
+			insert_head(&host_names, names_from_str("_this_host"));
+			parse_host_section(res, &host_names, 0);
 			break;
 		case TK__REMOTE_HOST:
 			EXP('{');
-			host_names = names_from_str("_remote_host");
-			parse_host_section(res, host_names, 0);
+			STAILQ_INIT(&host_names);
+			insert_head(&host_names, names_from_str("_remote_host"));
+			parse_host_section(res, &host_names, 0);
 			break;
 		case TK_FLOATING:
-			parse_host_section(res, NULL, REQUIRE_ALL + BY_ADDRESS);
+			STAILQ_INIT(&host_names);
+			parse_host_section(res, &host_names, REQUIRE_ALL + BY_ADDRESS);
 			break;
 		case TK_DISK:
 			switch (token=yylex()) {

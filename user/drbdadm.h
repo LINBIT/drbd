@@ -72,8 +72,10 @@ struct ifi_info {
 struct d_name
 {
 	char *name;
-	struct d_name *next;
+	STAILQ_ENTRY(d_name) link;
 };
+
+STAILQ_HEAD(names, d_name);
 
 struct d_option
 {
@@ -96,7 +98,7 @@ struct d_address
 
 struct d_proxy_info
 {
-	struct d_name *on_hosts;
+	struct names on_hosts;
 	struct d_address inside;
 	struct d_address outside;
 };
@@ -128,7 +130,7 @@ struct d_volume
 
 struct d_host_info
 {
-	struct d_name *on_hosts;
+	struct names on_hosts;
 	struct d_volume *volumes;
 	struct d_address address;
 	struct d_proxy_info *proxy;
@@ -158,7 +160,7 @@ struct d_resource
 	struct options proxy_options;
 	struct options proxy_plugins;
 	struct d_resource* next;
-	struct d_name *become_primary_on;
+	struct names become_primary_on;
 	char *config_file; /* The config file this resource is define in.*/
 	int start_line;
 	unsigned int stacked_timeouts:1;
@@ -268,13 +270,13 @@ extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(struct d_resource *config, enum pp_flags);
 extern struct d_option *new_opt(char *name, char *value);
-extern int name_in_names(char *name, struct d_name *names);
-extern char *_names_to_str(char* buffer, struct d_name *names);
-extern char *_names_to_str_c(char* buffer, struct d_name *names, char c);
+extern int name_in_names(char *name, struct names *names);
+extern char *_names_to_str(char* buffer, struct names *names);
+extern char *_names_to_str_c(char* buffer, struct names *names, char c);
 #define NAMES_STR_SIZE 255
 #define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
-extern void free_names(struct d_name *names);
+extern void free_names(struct names *names);
 extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
