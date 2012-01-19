@@ -1524,6 +1524,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 				host->lower ? host->lower->name : names_to_str(&host->on_hosts));
 		}
 		res->me = host;
+		host->used_as_me = 1;
 		if (host->lower)
 			res->stacked = 1;
 	}
@@ -1537,7 +1538,8 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 
 void set_peer_in_resource(struct d_resource* res, int peer_required)
 {
-	struct d_host_info *host = NULL;
+	struct d_host_info *host = NULL, *candidate = NULL;
+	int nr_hosts = 0, candidates = 0;
 
 	if (res->ignore)
 		return;
@@ -1551,8 +1553,15 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 		exit(E_THINKO);
 	}
 
-	/* only one host section? */
-	if (STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link) == NULL) {
+	for_each_host(host, &res->all_hosts) {
+		nr_hosts++;
+		if (!host->used_as_me) {
+			candidates++;
+			candidate = host;
+		}
+	}
+
+	if (nr_hosts == 1) {
 		if (peer_required) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
@@ -1565,9 +1574,8 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 
 	/* short cut for exactly two host sections.
 	 * silently ignore any --peer connect_to_host option. */
-	if (STAILQ_NEXT(STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link), link) == NULL) {
-		res->peer = STAILQ_FIRST(&res->all_hosts) == res->me ?
-			STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link) : STAILQ_FIRST(&res->all_hosts);
+	if (candidates == 1 && nr_hosts == 2) {
+		res->peer = candidate;
 		if (dry_run > 1 && connect_to_host)
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
