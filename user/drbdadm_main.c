@@ -1011,7 +1011,7 @@ static int adm_dump(struct cfg_ctx *ctx)
 	printI("resource %s {\n", esc(res->name));
 	++indent;
 
-	for (host = res->all_hosts; host; host = host->next)
+	for_each_host(host, &res->all_hosts)
 		dump_host_info(host);
 
 	fake_startup_options(res);
@@ -1038,7 +1038,7 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 		esc_xml(res->config_file), res->start_line);
 	++indent;
 	// else if (common && common->protocol) printA("# common protocol", common->protocol);
-	for (host = res->all_hosts; host; host = host->next)
+	for_each_host(host, &res->all_hosts)
 		dump_host_info_xml(host);
 	fake_startup_options(res);
 	dump_options_xml("options", &res->res_options);
@@ -1263,7 +1263,7 @@ static void free_config(struct d_resource *res)
 	for_each_resource(f, t, res) {
 		free(f->name);
 		free_volume(f->volumes);
-		for (host = f->all_hosts; host; host = host->next)
+		for_each_host(host, &f->all_hosts)
 			free_host_info(host);
 		free_options(&f->net_options);
 		free_options(&f->disk_options);
@@ -1305,7 +1305,7 @@ static void expand_common(void)
 
 	/* make sure vol->device is non-NULL */
 	for_each_resource(res, tmp, config) {
-		for (h = res->all_hosts; h; h = h->next) {
+		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, h->volumes) {
 				if (!vol->device)
 					m_asprintf(&vol->device, "/dev/drbd%u",
@@ -1338,7 +1338,7 @@ static void expand_common(void)
 	/* now that common disk options (if any) have been propagated to the
 	 * resource level, further propagate them to the volume level. */
 	for_each_resource(res, tmp, config) {
-		for (h = res->all_hosts; h; h = h->next) {
+		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, h->volumes) {
 				expand_opts(&res->disk_options, &vol->disk_options);
 			}
@@ -1348,7 +1348,7 @@ static void expand_common(void)
 	/* now from all volume/disk-options on resource level to host level */
 	for_each_resource(res, tmp, config) {
 		for_each_volume(vol, res->volumes) {
-			for (h = res->all_hosts; h; h = h->next) {
+			for_each_host(h, &res->all_hosts) {
 				host_vol = volume_by_vnr(h->volumes, vol->vnr);
 				expand_opts(&vol->disk_options, &host_vol->disk_options);
 			}
@@ -1988,7 +1988,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 		char *peer_af = getenv("DRBD_PEER_AF");
 
 		if (peer_address && peer_af) {
-			for (host = res->all_hosts; host; host = host->next) {
+			for_each_host(host, &res->all_hosts) {
 				if (!strcmp(host->address.af, peer_af) &&
 				    !strcmp(host->address.addr, peer_address)) {
 					res->peer = host;
@@ -2205,7 +2205,7 @@ void convert_after_option(struct d_resource *res)
 	struct d_volume *vol;
 	struct d_host_info *h;
 
-	for (h = res->all_hosts; h; h = h->next)
+	for_each_host(h, &res->all_hosts)
 		for_each_volume(vol, h->volumes)
 			_convert_after_option(res, vol);
 }

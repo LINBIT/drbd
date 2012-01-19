@@ -1161,6 +1161,9 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 	 * compare stacked with lower resource volumes */
 	int compare_stacked = host1->lower && host1->lower->me == host2;
 
+	if (host1 == host2)
+		return;
+
 	a = host1->volumes;
 	b = host2->volumes;
 
@@ -1208,12 +1211,12 @@ void check_volumes_hosts(struct d_resource *res)
 {
 	struct d_host_info *host1, *host2;
 
-	host1 = res->all_hosts;
+	host1 = STAILQ_FIRST(&res->all_hosts);
 
 	if (!host1)
 		return;
 
-	for (host2 = host1->next; host2; host2 = host2->next)
+	for_each_host(host2, &res->all_hosts)
 		check_volume_sets_equal(res, host1, host2);
 }
 
@@ -1268,7 +1271,7 @@ void parse_host_section(struct d_resource *res,
 
 	STAILQ_FOREACH(h, on_hosts, link)
 		check_upr("host section", "%s: on %s", res->name, h->name);
-	res->all_hosts = APPEND(res->all_hosts, host);
+	insert_tail(&res->all_hosts, host);
 
 	while (in_braces) {
 		int token = yylex();
@@ -1395,6 +1398,7 @@ void parse_stacked_section(struct d_resource* res)
 	host = calloc(1, sizeof(struct d_host_info));
 	STAILQ_INIT(&host->res_options);
 	STAILQ_INIT(&host->on_hosts);
+	insert_tail(&res->all_hosts, host);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
 	host->lower_name = yylval.txt;
@@ -1477,7 +1481,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 	struct d_host_info *host;
 
 	/* Determine the local host section */
-	for (host = res->all_hosts; host; host=host->next) {
+	for_each_host(host, &res->all_hosts) {
 		/* do we match  this host? */
 		if (match_on_proxy) {
 		       if (!host->proxy || !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
@@ -1548,7 +1552,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	}
 
 	/* only one host section? */
-	if (!res->all_hosts->next) {
+	if (STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link) == NULL) {
 		if (peer_required) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
@@ -1561,9 +1565,9 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 
 	/* short cut for exactly two host sections.
 	 * silently ignore any --peer connect_to_host option. */
-	if (res->all_hosts->next->next == NULL) {
-		res->peer = res->all_hosts == res->me ?
-			res->all_hosts->next : res->all_hosts;
+	if (STAILQ_NEXT(STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link), link) == NULL) {
+		res->peer = STAILQ_FIRST(&res->all_hosts) == res->me ?
+			STAILQ_NEXT(STAILQ_FIRST(&res->all_hosts), link) : STAILQ_FIRST(&res->all_hosts);
 		if (dry_run > 1 && connect_to_host)
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
@@ -1586,7 +1590,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 		return;
 	}
 
-	for (host = res->all_hosts; host; host=host->next) {
+	for_each_host(host, &res->all_hosts) {
 		if (host->by_address && strcmp(connect_to_host, host->address.addr))
 			continue;
 		if (host->proxy && !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
@@ -1630,7 +1634,7 @@ void set_on_hosts_in_res(struct d_resource *res)
 	struct d_host_info *host, *host2;
 	struct d_name *h;
 
-	for (host = res->all_hosts; host; host=host->next) {
+	for_each_host(host, &res->all_hosts) {
 		if (host->lower_name) {
 			for_each_resource(l_res, tmp, config) {
 				if (!strcmp(l_res->name, host->lower_name))
@@ -1647,7 +1651,7 @@ void set_on_hosts_in_res(struct d_resource *res)
 			}
 
 			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
-			for (host2 = l_res->all_hosts; host2; host2 = host2->next)
+			for_each_host(host2, &l_res->all_hosts)
 				if (!host2->lower_name)
 					append_names(&host->on_hosts, &host2->on_hosts);
 
@@ -1670,7 +1674,7 @@ void set_disk_in_res(struct d_resource *res)
 	if (res->ignore)
 		return;
 
-	for (host = res->all_hosts; host; host=host->next) {
+	for_each_host(host, &res->all_hosts) {
 		if (!host->lower)
 			continue;
 
@@ -1816,6 +1820,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	check_uniq("resource section", res_name);
 
 	res = calloc(1, sizeof(struct d_resource));
+	STAILQ_INIT(&res->all_hosts);
 	STAILQ_INIT(&res->net_options);
 	STAILQ_INIT(&res->disk_options);
 	STAILQ_INIT(&res->res_options);
@@ -1944,7 +1949,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
  exit_loop:
 
-	if (flags == NO_HOST_SECT_ALLOWED && res->all_hosts) {
+	if (flags == NO_HOST_SECT_ALLOWED && !STAILQ_EMPTY(&res->all_hosts)) {
 		config_valid = 0;
 
 		fprintf(stderr,

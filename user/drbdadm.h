@@ -134,13 +134,15 @@ struct d_host_info
 	struct d_volume *volumes;
 	struct d_address address;
 	struct d_proxy_info *proxy;
-	struct d_host_info* next;
+	STAILQ_ENTRY(d_host_info) link;
 	struct d_resource* lower;  /* for device stacking */
 	char *lower_name;          /* for device stacking, before bind_stacked_res() */
 	int config_line;
 	unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
 	struct options res_options; /* Additional per host options */
 };
+
+STAILQ_HEAD(hosts, d_host_info);
 
 struct d_resource
 {
@@ -150,7 +152,7 @@ struct d_resource
 
 	struct d_host_info* me;
 	struct d_host_info* peer;
-	struct d_host_info* all_hosts;
+	struct hosts all_hosts;
 
 	struct options net_options;
 	struct options disk_options;
@@ -340,6 +342,8 @@ extern void add_setup_option(bool explicit, char *option);
 
 #define for_each_volume(v_,volumes_) \
 	for (v_ = volumes_; v_; v_ = v_->next)
+
+#define for_each_host(var, head) STAILQ_FOREACH(var, head, link)
 
 #define insert_tail(head, elem) do {			\
 	typeof(*elem) *e = (elem); /* evaluate once */	\
