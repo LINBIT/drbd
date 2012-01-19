@@ -183,7 +183,7 @@ struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
 char *config_file = NULL;
 char *config_save = NULL;
 char *config_test = NULL;
-struct d_resource *config = NULL;
+struct resources config = STAILQ_HEAD_INITIALIZER(config);
 struct d_resource *common = NULL;
 struct ifreq *ifreq_list = NULL;
 int is_drbd_top;
@@ -1061,10 +1061,10 @@ static int sh_nop(struct cfg_ctx *ctx)
 
 static int sh_resources(struct cfg_ctx *ctx)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 	int first = 1;
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		if (res->ignore)
 			continue;
 		if (is_drbd_top != res->stacked)
@@ -1255,12 +1255,13 @@ static void free_options(struct options *options)
 	}
 }
 
-static void free_config(struct d_resource *res)
+static void free_config()
 {
 	struct d_resource *f, *t;
 	struct d_host_info *host;
 
-	for_each_resource(f, t, res) {
+	f = STAILQ_FIRST(&config);
+	while (f) {
 		free(f->name);
 		free_volume(f->volumes);
 		for_each_host(host, &f->all_hosts)
@@ -1270,7 +1271,9 @@ static void free_config(struct d_resource *res)
 		free_options(&f->startup_options);
 		free_options(&f->proxy_options);
 		free_options(&f->handlers);
+		t = STAILQ_NEXT(f, link);
 		free(f);
+		f = t;
 	}
 	if (common) {
 		free_options(&common->net_options);
@@ -1299,12 +1302,12 @@ static void expand_opts(struct options *common, struct options *options)
 
 static void expand_common(void)
 {
-	struct d_resource *res, *tmp;
+	struct d_resource *res;
 	struct d_volume *vol, *host_vol;
 	struct d_host_info *h;
 
 	/* make sure vol->device is non-NULL */
-	for_each_resource(res, tmp, config) {
+	for_each_resource(res, &config) {
 		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, h->volumes) {
 				if (!vol->device)
@@ -1314,7 +1317,7 @@ static void expand_common(void)
 		}
 	}
 
-	for_each_resource(res, tmp, config) {
+	for_each_resource(res, &config) {
 		if (!common)
 			break;
 
@@ -1337,7 +1340,7 @@ static void expand_common(void)
 
 	/* now that common disk options (if any) have been propagated to the
 	 * resource level, further propagate them to the volume level. */
-	for_each_resource(res, tmp, config) {
+	for_each_resource(res, &config) {
 		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, h->volumes) {
 				expand_opts(&res->disk_options, &vol->disk_options);
@@ -1346,7 +1349,7 @@ static void expand_common(void)
 	}
 
 	/* now from all volume/disk-options on resource level to host level */
-	for_each_resource(res, tmp, config) {
+	for_each_resource(res, &config) {
 		for_each_volume(vol, res->volumes) {
 			for_each_host(h, &res->all_hosts) {
 				host_vol = volume_by_vnr(h->volumes, vol->vnr);
@@ -1814,7 +1817,7 @@ int adm_generic_s(struct cfg_ctx *ctx)
 
 int sh_status(struct cfg_ctx *ctx)
 {
-	struct d_resource *r, *t;
+	struct d_resource *r;
 	struct d_volume *vol, *lower_vol;
 	int rv = 0;
 
@@ -1824,7 +1827,7 @@ int sh_status(struct cfg_ctx *ctx)
 		printf("_config_file=%s\n\n\n", shell_escape(config_save));
 	}
 
-	for_each_resource(r, t, config) {
+	for_each_resource(r, &config) {
 		if (r->ignore)
 			continue;
 		ctx->res = r;
@@ -2435,7 +2438,7 @@ static unsigned minor_by_id(const char *id)
 
 int ctx_by_minor(struct cfg_ctx *ctx, const char *id)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 	struct d_volume *vol;
 	unsigned int mm;
 
@@ -2443,7 +2446,7 @@ int ctx_by_minor(struct cfg_ctx *ctx, const char *id)
 	if (mm == -1U)
 		return -ENOENT;
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		if (res->ignore)
 			continue;
 		for_each_volume(vol, res->me->volumes) {
@@ -2460,9 +2463,9 @@ int ctx_by_minor(struct cfg_ctx *ctx, const char *id)
 
 struct d_resource *res_by_name(const char *name)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		if (strcmp(name, res->name) == 0)
 			return res;
 	}
@@ -2482,7 +2485,7 @@ struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr)
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 	struct d_volume *vol;
 	char *name = strdupa(id);
 	char *vol_id = strchr(name, '/');
@@ -2493,7 +2496,7 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		vol_nr = m_strtoll(vol_id, 0);
 	}
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		if (res->ignore)
 			continue;
 		if (strcmp(name, res->name) == 0)
@@ -2653,10 +2656,10 @@ void chld_sig_hand(int __attribute((unused)) unused)
 
 static int check_exit_codes(pid_t * pids)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 	int i = 0, rv = 0;
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		if (res->ignore)
 			continue;
 		if (is_drbd_top != res->stacked)
@@ -2673,7 +2676,7 @@ static int check_exit_codes(pid_t * pids)
 
 static int adm_wait_ci(struct cfg_ctx *ctx)
 {
-	struct d_resource *res, *t;
+	struct d_resource *res;
 	char *argv[20], answer[40];
 	pid_t *pids;
 	int rr, wtime, argc, i = 0;
@@ -2716,7 +2719,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 	 * but it needs to be initialized anyways! */
 	memset(pids, 0, N * sizeof(pid_t));
 
-	for_each_resource(res, t, config) {
+	for_each_resource(res, &config) {
 		struct d_volume *vol;
 		if (res->ignore)
 			continue;
@@ -2773,10 +2776,10 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 		     " - If the peer was available before the reboot the timeout will\n"
 		     "   expire after %s seconds. [wfc-timeout]\n"
 		     "   (These values are for resource '%s'; 0 sec -> wait forever)\n",
-		     get_opt_val(&config->startup_options, "degr-wfc-timeout",
-				 "0"), get_opt_val(&config->startup_options,
+		     get_opt_val(&STAILQ_FIRST(&config)->startup_options, "degr-wfc-timeout",
+				 "0"), get_opt_val(&STAILQ_FIRST(&config)->startup_options,
 						   "wfc-timeout", "0"),
-		     config->name);
+		     STAILQ_FIRST(&config)->name);
 
 		printf(" To abort waiting enter 'yes' [ -- ]: ");
 		do {
@@ -3328,8 +3331,8 @@ void validate_resource(struct d_resource *res)
 
 static void global_validate_maybe_expand_die_if_invalid(int expand)
 {
-	struct d_resource *res, *tmp;
-	for_each_resource(res, tmp, config) {
+	struct d_resource *res;
+	for_each_resource(res, &config) {
 		validate_resource(res);
 		if (!config_valid)
 			exit(E_CONFIG_INVALID);
@@ -3823,12 +3826,12 @@ void assign_default_config_file(void)
 void count_resources_or_die(void)
 {
 	int m, mc = global_options.minor_count;
-	struct d_resource *res, *tmp;
+	struct d_resource *res;
 	struct d_volume *vol;
 
 	highest_minor = 0;
 	number_of_minors = 0;
-	for_each_resource(res, tmp, config) {
+	for_each_resource(res, &config) {
 		if (res->ignore) {
 			nr_resources[IGNORED]++;
 			/* How can we count ignored volumes?
@@ -3908,7 +3911,7 @@ int main(int argc, char **argv)
 	int rv = 0;
 	struct adm_cmd *cmd = NULL;
 	char **resource_names = NULL;
-	struct d_resource *res, *tmp;
+	struct d_resource *res;
 	char *env_drbd_nodename = NULL;
 	int is_dump_xml;
 	int is_dump;
@@ -4010,7 +4013,7 @@ int main(int argc, char **argv)
 	if (!config_valid)
 		exit(E_CONFIG_INVALID);
 
-	post_parse(config, cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
+	post_parse(cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();
@@ -4024,7 +4027,7 @@ int main(int argc, char **argv)
 
 	ctx.arg = cmd->name;
 	if (cmd->res_name_required) {
-		if (config == NULL) {
+		if (STAILQ_EMPTY(&config)) {
 			fprintf(stderr, "no resources defined!\n");
 			exit(E_USAGE);
 		}
@@ -4039,7 +4042,7 @@ int main(int argc, char **argv)
 			if (!is_dump)
 				die_if_no_resources();
 			/* verify ips first, for all of them */
-			for_each_resource(res, tmp, config) {
+			for_each_resource(res, &config) {
 				verify_ips(res);
 			}
 			if (!config_valid)
@@ -4050,7 +4053,7 @@ int main(int argc, char **argv)
 			else if (is_dump)
 				print_dump_header();
 
-			for_each_resource(res, tmp, config) {
+			for_each_resource(res, &config) {
 				if (!is_dump && res->ignore)
 					continue;
 
@@ -4139,7 +4142,7 @@ int main(int argc, char **argv)
 	 * it is even only a Boolean value in this case! */
 	rv |= run_deferred_cmds();
 
-	free_config(config);
+	free_config();
 	free(resource_names);
 	if (admopt != general_admopt)
 		free(admopt);

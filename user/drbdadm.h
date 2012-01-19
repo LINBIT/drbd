@@ -161,7 +161,7 @@ struct d_resource
 	struct options handlers;
 	struct options proxy_options;
 	struct options proxy_plugins;
-	struct d_resource* next;
+	STAILQ_ENTRY(d_resource) link;
 	struct names become_primary_on;
 	char *config_file; /* The config file this resource is define in.*/
 	int start_line;
@@ -174,6 +174,8 @@ struct d_resource
 	 * see run_deferred_cmds() */
 	unsigned int skip_further_deferred_command:1;
 };
+
+STAILQ_HEAD(resources, d_resource);
 
 struct adm_cmd;
 
@@ -270,7 +272,7 @@ enum pp_flags {
 
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
-extern void post_parse(struct d_resource *config, enum pp_flags);
+extern void post_parse(enum pp_flags);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct names *names);
 extern char *_names_to_str(char* buffer, struct names *names);
@@ -293,7 +295,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx);
 extern char *config_file;
 extern char *config_save;
 extern int config_valid;
-extern struct d_resource* config;
+extern struct resources config;
 extern struct d_resource* common;
 extern struct d_globals global_options;
 extern int line, fline;
@@ -337,9 +339,7 @@ extern void add_setup_option(bool explicit, char *option);
 	ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
 
 /* CAUTION: arguments may not have side effects! */
-#define for_each_resource(res,tmp,config) \
-	for (res = (config); res && (tmp = res->next, 1); res = tmp)
-
+#define for_each_resource(var, head) STAILQ_FOREACH(var, head, link)
 #define for_each_volume(v_,volumes_) \
 	for (v_ = volumes_; v_; v_ = v_->next)
 
@@ -354,20 +354,6 @@ extern void add_setup_option(bool explicit, char *option);
 	typeof(*elem) *e = (elem); /* evaluate once */	\
 	STAILQ_INSERT_HEAD(head, e, link);		\
 } while (0)
-
-#define APPEND(LIST, ITEM)				\
-({							\
-	typeof((LIST)) _l = (LIST);			\
-	typeof((ITEM)) _i = (ITEM);			\
-	typeof((ITEM)) _t;				\
-	_i->next = NULL;				\
-	if (_l == NULL) { _l = _i; }			\
-	else {						\
-		for (_t = _l; _t->next; _t = _t->next);	\
-		_t->next = _i;				\
-	};						\
-	_l;						\
-})
 
 #define INSERT_SORTED(LIST, ITEM, SORT)					\
 ({									\

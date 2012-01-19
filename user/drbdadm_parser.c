@@ -521,7 +521,7 @@ static void parse_global(void)
 {
 	fline = line;
 	check_uniq("global section", "global");
-	if (config) {
+	if (!STAILQ_EMPTY(&config)) {
 		fprintf(stderr,
 			"%s:%u: You should put the global {} section\n\t"
 			"in front of any resource {} section\n",
@@ -1255,7 +1255,7 @@ void parse_host_section(struct d_resource *res,
 			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address.addr, host->address.port);
 		else
 			m_asprintf(&fake_uname, "%s:%s", host->address.addr, host->address.port);
-		STAILQ_INSERT_HEAD(&host->on_hosts, names_from_str(fake_uname), link);
+		insert_head(&host->on_hosts, names_from_str(fake_uname));
 
 		token = yylex();
 		switch(token) {
@@ -1630,13 +1630,13 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 
 void set_on_hosts_in_res(struct d_resource *res)
 {
-	struct d_resource *l_res, *tmp;
+	struct d_resource *l_res;
 	struct d_host_info *host, *host2;
 	struct d_name *h;
 
 	for_each_host(host, &res->all_hosts) {
 		if (host->lower_name) {
-			for_each_resource(l_res, tmp, config) {
+			for_each_resource(l_res, &config) {
 				if (!strcmp(l_res->name, host->lower_name))
 					break;
 			}
@@ -1985,26 +1985,26 @@ struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx)
 	return parse_resource(ctx->res->name, PARSE_FOR_ADJUST);
 }
 
-void post_parse(struct d_resource *config, enum pp_flags flags)
+void post_parse(enum pp_flags flags)
 {
-	struct d_resource *res,*tmp;
+	struct d_resource *res;
 
-	for_each_resource(res, tmp, config)
+	for_each_resource(res, &config)
 		if (res->stacked_on_one)
 			set_on_hosts_in_res(res); /* sets on_hosts and host->lower */
 
 	/* Needs "on_hosts" and host->lower already set */
-	for_each_resource(res, tmp, config)
+	for_each_resource(res, &config)
 		if (!res->stacked_on_one)
 			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	/* Needs host->lower->me already set */
-	for_each_resource(res, tmp, config)
+	for_each_resource(res, &config)
 		if (res->stacked_on_one)
 			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	// Needs "me" set already
-	for_each_resource(res, tmp, config)
+	for_each_resource(res, &config)
 		if (res->stacked_on_one)
 			set_disk_in_res(res);
 }
@@ -2112,7 +2112,7 @@ void my_parse(void)
 		case TK_RESOURCE:
 			EXP(TK_STRING);
 			EXP('{');
-			config = APPEND(config, parse_resource(yylval.txt, 0));
+			insert_tail(&config, parse_resource(yylval.txt, 0));
 			break;
 		case TK_SKIP:
 			parse_skip();

@@ -591,7 +591,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 
 	if (running) {
 		/* Sets "me" and "peer" pointer */
-		post_parse(running, 0);
+		post_parse(0);
 		set_peer_in_resource(running, 0);
 	}
 
