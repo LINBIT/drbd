@@ -3783,6 +3783,18 @@ void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag flag) __must_hol
 	}
 }
 
+void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
+			   enum mdf_peer_flag flag) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_md *md = &device->ldev->md;
+
+	if (!(md->peers[peer_device->bitmap_index].flags & flag)) {
+		drbd_md_mark_dirty(device);
+		md->peers[peer_device->bitmap_index].flags |= flag;
+	}
+}
+
 void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag flag) __must_hold(local)
 {
 	if ((device->ldev->md.flags & flag) != 0) {
@@ -3790,6 +3802,19 @@ void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag flag) __must_h
 		device->ldev->md.flags &= ~flag;
 	}
 }
+
+void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
+			     enum mdf_peer_flag flag) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_md *md = &device->ldev->md;
+
+	if (md->peers[peer_device->bitmap_index].flags & flag) {
+		drbd_md_mark_dirty(device);
+		md->peers[peer_device->bitmap_index].flags &= ~flag;
+	}
+}
+
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
 {
 	return (bdev->md.flags & flag) != 0;
