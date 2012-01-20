@@ -820,7 +820,8 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 		   a 32bit host could present the wrong number of words
 		   to a 64bit host.
 		*/
-		words_on_disk = (((u64)md->md_size_sect - MD_BM_OFFSET) << (12 - LN2_BPL)) / b->bm_max_peers;
+		words_on_disk = ((u64)md->md_size_sect - MD_BM_OFFSET) << (12 - LN2_BPL);
+		do_div(words_on_disk, b->bm_max_peers);
 		bits_on_disk = words_on_disk << LN2_BPL;
 		put_ldev(device);
 		if (bits > bits_on_disk) {
