@@ -1477,31 +1477,3 @@ int drbd_bm_count_bits(struct drbd_device *device, unsigned int bitmap_index, un
 {
 	return bm_op(device, bitmap_index, s, e, BM_OP_COUNT, NULL);
 }
-
-/* inherently racy...
- * return value may be already out-of-date when this function returns.
- * but the general usage is that this is only use during a cstate when bits are
- * only cleared, not set, and typically only care for the case when the return
- * value is zero, or we already "locked" this "bitmap extent" by other means.
- *
- * enr is bm-extent number, since we chose to name one sector (512 bytes)
- * worth of the bitmap a "bitmap extent".
- *
- * TODO
- * I think since we use it like a reference count, we should use the real
- * reference count of some bitmap extent element from some lru instead...
- *
- */
-int drbd_bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
-{
-	unsigned long start, end, count;
-
-	start = enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
-	end = ((enr + 1) << (BM_EXT_SHIFT - BM_BLOCK_SHIFT)) - 1;
-	count = bm_op(peer_device->device, peer_device->bitmap_index, start, end,
-		      BM_OP_COUNT, NULL);
-#if DUMP_MD >= 3
-	drbd_info(peer_device, "enr=%lu weight=%d\n", enr, count);
-#endif
-	return count;
-}

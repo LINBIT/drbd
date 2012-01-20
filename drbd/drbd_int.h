@@ -1237,7 +1237,6 @@ extern int drbd_bm_count_bits(struct drbd_device *, unsigned int, unsigned long,
  * may process the whole bitmap in one go */
 extern void drbd_bm_set_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
 extern int drbd_bm_test_bit(struct drbd_peer_device *, unsigned long);
-extern int  drbd_bm_e_weight(struct drbd_peer_device *, unsigned long);
 extern int drbd_bm_write_range(struct drbd_peer_device *, unsigned long, unsigned long) __must_hold(local);
 extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_bm_mark_range_for_writeout(struct drbd_device *, unsigned long, unsigned long);

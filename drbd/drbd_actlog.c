@@ -582,6 +582,33 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	return 0;
 }
 
+/* inherently racy...
+ * return value may be already out-of-date when this function returns.
+ * but the general usage is that this is only use during a cstate when bits are
+ * only cleared, not set, and typically only care for the case when the return
+ * value is zero, or we already "locked" this "bitmap extent" by other means.
+ *
+ * enr is bm-extent number, since we chose to name one sector (512 bytes)
+ * worth of the bitmap a "bitmap extent".
+ *
+ * TODO
+ * I think since we use it like a reference count, we should use the real
+ * reference count of some bitmap extent element from some lru instead...
+ *
+ */
+static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
+{
+	unsigned long start, end, count;
+
+	start = enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
+	end = ((enr + 1) << (BM_EXT_SHIFT - BM_BLOCK_SHIFT)) - 1;
+	count = drbd_bm_count_bits(peer_device->device, peer_device->bitmap_index, start, end);
+#if DUMP_MD >= 3
+	drbd_info(peer_device, "enr=%lu weight=%d\n", enr, count);
+#endif
+	return count;
+}
+
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the
  * resync LRU-cache are 16MB each.
  * The caller of this function has to hold an get_ldev() reference.
@@ -627,7 +654,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 				 * Whatever the reason (disconnect during resync,
 				 * delayed local completion of an application write),
 				 * try to fix it up by recounting here. */
-				ext->rs_left = drbd_bm_e_weight(first_peer_device(device), enr);
+				ext->rs_left = bm_e_weight(first_peer_device(device), enr);
 			}
 		} else {
 			/* Normally this element should be in the cache,
@@ -636,7 +663,7 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			 * But maybe an application write finished, and we set
 			 * something outside the resync lru_cache in sync.
 			 */
-			int rs_left = drbd_bm_e_weight(first_peer_device(device), enr);
+			int rs_left = bm_e_weight(first_peer_device(device), enr);
 			if (ext->flags != 0) {
 				drbd_warn(device, "changing resync lce: %d[%u;%02lx]"
 				     " -> %d[%u;00]\n",
@@ -856,7 +883,7 @@ struct bm_extent *_bme_get(struct drbd_peer_device *peer_device, unsigned int en
 	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
 	if (bm_ext) {
 		if (bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = drbd_bm_e_weight(peer_device, enr);
+			bm_ext->rs_left = bm_e_weight(peer_device, enr);
 			bm_ext->rs_failed = 0;
 			lc_committed(peer_device->resync_lru);
 			wakeup = 1;
@@ -1020,7 +1047,7 @@ int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 			goto try_again;
 		}
 		if (bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = drbd_bm_e_weight(peer_device, enr);
+			bm_ext->rs_left = bm_e_weight(peer_device, enr);
 			bm_ext->rs_failed = 0;
 			lc_committed(peer_device->resync_lru);
 			wake_up(&device->al_wait);
