@@ -342,13 +342,9 @@ void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 # error FIXME
 #endif
 
-static unsigned int al_extent_to_bm_page(unsigned int al_enr)
+static unsigned long al_extent_to_bm_bit(unsigned int al_enr)
 {
-	return al_enr >>
-		/* bit to page */
-		((PAGE_SHIFT + 3) -
-		/* al extent number to bit */
-		 (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT));
+	return (unsigned long)al_enr << (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT);
 }
 
 static unsigned long rs_extent_to_bm_bit(unsigned int rs_enr)
@@ -407,9 +403,13 @@ _al_write_transaction(struct drbd_device *device)
 		}
 		buffer->update_slot_nr[i] = cpu_to_be16(e->lc_index);
 		buffer->update_extent_nr[i] = cpu_to_be32(e->lc_new_number);
-		if (e->lc_number != LC_FREE)
-			drbd_bm_mark_for_writeout(device,
-					al_extent_to_bm_page(e->lc_number));
+		if (e->lc_number != LC_FREE) {
+			unsigned long start, end;
+
+			start = al_extent_to_bm_bit(e->lc_number);
+			end = al_extent_to_bm_bit(e->lc_number + 1) - 1;
+			drbd_bm_mark_range_for_writeout(device, start, end);
+		}
 		i++;
 	}
 	spin_unlock_irq(&device->al_lock);
