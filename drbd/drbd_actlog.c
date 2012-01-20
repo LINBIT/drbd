@@ -351,13 +351,9 @@ static unsigned int al_extent_to_bm_page(unsigned int al_enr)
 		 (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT));
 }
 
-static unsigned int rs_extent_to_bm_page(unsigned int rs_enr)
+static unsigned long rs_extent_to_bm_bit(unsigned int rs_enr)
 {
-	return rs_enr >>
-		/* bit to page */
-		((PAGE_SHIFT + 3) -
-		/* resync extent number to bit */
-		 (BM_EXT_SHIFT - BM_BLOCK_SHIFT));
+	return (unsigned long)rs_enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
 }
 
 static int
@@ -553,6 +549,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	struct drbd_peer_device *peer_device = udw->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
+	unsigned long start, end;
 
 	if (!get_ldev(device)) {
 		if (drbd_ratelimit())
@@ -561,7 +558,9 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 		return 0;
 	}
 
-	drbd_bm_write_page(device, rs_extent_to_bm_page(udw->enr));  /* FIXME: !!! */
+	start = rs_extent_to_bm_bit(udw->enr);
+	end = rs_extent_to_bm_bit(udw->enr + 1) - 1;
+	drbd_bm_write_range(peer_device, start, end);
 	put_ldev(device);
 
 	kfree(udw);

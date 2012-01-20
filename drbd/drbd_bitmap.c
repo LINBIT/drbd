@@ -454,6 +454,13 @@ static inline unsigned long last_bit_on_page(struct drbd_bitmap *bitmap,
 	return (bit | 31) + ((word32_in_page(-(word + 1)) / bitmap->bm_max_peers) << 5);
 }
 
+static inline unsigned long bit_to_page_interleaved(struct drbd_bitmap *bitmap,
+						    unsigned int bitmap_index,
+						    unsigned long bit)
+{
+	return word32_to_page(interleaved_word32(bitmap, bitmap_index, bit));
+}
+
 static __always_inline unsigned long
 ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
 	 enum bitmap_operations op, __le32 *buffer)
@@ -1309,9 +1316,8 @@ int drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local)
 }
 
 /**
- * drbd_bm_write_page() - Writes a PAGE_SIZE aligned piece of bitmap
+ * drbd_bm_write_range() - Writes a range of bitmap pages
  * @device:	DRBD device.
- * @idx:	bitmap page index
  *
  * We don't want to special case on logical_block_size of the backend device,
  * so we submit PAGE_SIZE aligned pieces.
@@ -1320,47 +1326,57 @@ int drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local)
  * In case this becomes an issue on systems with larger PAGE_SIZE,
  * we may want to change this again to write 4k aligned 4k pieces.
  */
-int drbd_bm_write_page(struct drbd_device *device, unsigned int idx) __must_hold(local)
+int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end) __must_hold(local)
 {
-	struct bm_aio_ctx *ctx;
-	int err;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bitmap = device->bitmap;
+	unsigned int page_nr, end_page;
+	int err = 0;
 
-	if (bm_test_page_unchanged(device->bitmap->bm_pages[idx])) {
-		dynamic_drbd_dbg(device, "skipped bm page write for idx %u\n", idx);
-		return 0;
+	if (end >= bitmap->bm_bits)
+		end = bitmap->bm_bits - 1;
+
+	page_nr = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, start);
+	end_page = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, end);
+	for (; page_nr <= end_page; page_nr++) {
+		struct bm_aio_ctx *ctx;
+
+		if (bm_test_page_unchanged(device->bitmap->bm_pages[page_nr])) {
+			dynamic_drbd_dbg(device, "skipped bm page write for page %u\n", page_nr);
+			continue;
+		}
+
+		ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
+		if (!ctx)
+			return -ENOMEM;
+
+		*ctx = (struct bm_aio_ctx) {
+			.device = device,
+			.in_flight = ATOMIC_INIT(1),
+			.done = 0,
+			.flags = BM_AIO_COPY_PAGES,
+			.error = 0,
+			.kref = { ATOMIC_INIT(2) },
+		};
+
+		if (!expect(device, get_ldev_if_state(device, D_ATTACHING))) {  /* put is in bm_aio_ctx_destroy() */
+			err = -ENODEV;
+			goto out;
+		}
+
+		bm_page_io_async(ctx, page_nr, WRITE_SYNC);
+		wait_until_done_or_disk_failure(device, &ctx->done);
+
+		if (ctx->error)
+			drbd_chk_io_error(device, 1, true);
+			/* that should force detach, so the in memory bitmap will be
+			 * gone in a moment as well. */
+
+		device->bm_writ_cnt++;
+		err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
+	 out:
+		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	}
-
-	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
-	if (!ctx)
-		return -ENOMEM;
-
-	*ctx = (struct bm_aio_ctx) {
-		.device = device,
-		.in_flight = ATOMIC_INIT(1),
-		.done = 0,
-		.flags = BM_AIO_COPY_PAGES,
-		.error = 0,
-		.kref = { ATOMIC_INIT(2) },
-	};
-
-	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
-		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in drbd_bm_write_page()\n");
-		err = -ENODEV;
-		goto out;
-	}
-
-	bm_page_io_async(ctx, idx, WRITE_SYNC);
-	wait_until_done_or_disk_failure(device, &ctx->done);
-
-	if (ctx->error)
-		drbd_chk_io_error(device, 1, true);
-		/* that should force detach, so the in memory bitmap will be
-		 * gone in a moment as well. */
-
-	device->bm_writ_cnt++;
-	err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
- out:
-	kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	return err;
 }
 
