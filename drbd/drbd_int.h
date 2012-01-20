@@ -2037,12 +2037,11 @@ static inline bool inc_ap_bio_cond(struct drbd_device *device)
 {
 	bool rv = false;
 
-	atomic_inc(&device->ap_bio_cnt);
 	spin_lock_irq(&device->resource->req_lock);
 	rv = may_inc_ap_bio(device);
+	if (rv)
+		atomic_inc(&device->ap_bio_cnt);
 	spin_unlock_irq(&device->resource->req_lock);
-	if (!rv)
-		dec_ap_bio(device);
 
 	return rv;
 }
