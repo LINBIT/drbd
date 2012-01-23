@@ -461,9 +461,7 @@ void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
 	}
 
 	d->function = function;
-	d->ctx.res = ctx->res;
-	d->ctx.vol = ctx->vol;
-	d->ctx.arg = arg;
+	d->ctx = *ctx;
 
 	STAILQ_INSERT_TAIL(&deferred_cmds[stage], d, link);
 }
@@ -493,7 +491,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	struct d_volume *vol;
 	int ret;
 
-	if (!res->peer)
+	if (!res->peers_addrs_set && cmd->need_peer)
 		set_peer_in_resource(res, cmd->need_peer);
 
 	if (!cmd->iterate_volumes || ctx->vol != NULL)
@@ -1890,38 +1888,58 @@ static int adm_generic_b(struct cfg_ctx *ctx)
 	return rv;
 }
 
+static struct connection
+*determin_connection(struct d_resource *res, char *peer_af, char *peer_addr)
+{
+	struct connection *conn;
+	struct hname_address *ha;
+	int hit = 0;
+
+	for_each_connection(conn, &res->connections) {
+		STAILQ_FOREACH(ha, &conn->hname_address_pairs, link) {
+			if (!strcmp(ha->address.af, peer_af) &&
+			    !strcmp(ha->address.addr, peer_addr)) {
+				if (!conn->peer_address)
+					conn->peer_address = &ha->address;
+				hit = 1;
+			}
+			if (!strcmp(ha->host_info->address.af, peer_af) &&
+			    !strcmp(ha->host_info->address.addr, peer_addr)) {
+				if (!conn->peer_address)
+					conn->peer_address = &ha->host_info->address;
+				hit = 1;
+			}
+
+			if (hit)
+				return conn;
+		}
+	}
+
+	return NULL;
+}
+
 static int adm_khelper(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol = ctx->vol;
+	struct connection *conn;
 	int rv = 0;
 	char *sh_cmd;
 	char minor_string[8];
 	char volume_string[8];
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
 
-	if (!res->peer) {
-		/* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
-		   If we do not know the peer by now, use these to find the peer. */
-		struct d_host_info *host;
-		char *peer_address = getenv("DRBD_PEER_ADDRESS");
-		char *peer_af = getenv("DRBD_PEER_AF");
+	/* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
+	   If we do not know the peer by now, use these to find the peer. */
+	conn = determin_connection(res,
+				   getenv("DRBD_PEER_AF"),
+				   getenv("DRBD_PEER_ADDRESS"));
+	/* ctx->conn = conn */
 
-		if (peer_address && peer_af) {
-			for_each_host(host, &res->all_hosts) {
-				if (!strcmp(host->address.af, peer_af) &&
-				    !strcmp(host->address.addr, peer_address)) {
-					res->peer = host;
-					break;
-				}
-			}
-		}
-	}
-
-	if (res->peer) {
-		setenv("DRBD_PEER_AF", res->peer->address.af, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEER_ADDRESS", res->peer->address.addr, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEERS", names_to_str(&res->peer->on_hosts), 1);
+	if (conn) {
+		setenv("DRBD_PEER_AF", conn->peer_address->af, 1);	/* since 8.3.0 */
+		setenv("DRBD_PEER_ADDRESS", conn->peer_address->addr, 1);	/* since 8.3.0 */
+		setenv("DRBD_PEERS", names_to_str(&conn->peer->on_hosts), 1);
 			/* since 8.3.0, but not usable when using a config with "floating" statements. */
 	}
 
@@ -1976,6 +1994,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool reset)
 {
 	struct d_resource *res = ctx->res;
+	struct connection *conn = ctx->conn;
 	char *argv[MAX_ARGS];
 	int argc = 0;
 
@@ -1983,13 +2002,13 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 	argv[NA(argc)] = do_connect ? "connect" : "net-options";
 	if (do_connect)
 		argv[NA(argc)] = ssprintf("%s", res->name);
-	argv[NA(argc)] = ssprintf_addr(&res->me->address);
-	argv[NA(argc)] = ssprintf_addr(res->connect_to);
+	argv[NA(argc)] = ssprintf_addr(conn->my_address);
+	argv[NA(argc)] = ssprintf_addr(conn->connect_to);
 
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_connect)
-		make_options(argv[NA(argc)], &res->net_options);
+		make_options(argv[NA(argc)], &conn->net_options);
 
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
@@ -2025,8 +2044,8 @@ int adm_disconnect(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->arg;
-	argv[NA(argc)] = ssprintf_addr(&ctx->res->me->address);
-	argv[NA(argc)] = ssprintf_addr(ctx->res->connect_to);
+	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
+	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
@@ -2041,14 +2060,16 @@ void free_opt(struct d_option *item)
 	free(item);
 }
 
-char *proxy_connection_name(struct d_resource *res)
+char *proxy_connection_name(struct cfg_ctx *ctx)
 {
+	struct d_resource *res = ctx->res;
+	struct connection *conn = ctx->conn;
 	static char conn_name[128];
 	int counter;
 
 	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
 			 res->name,
-			 names_to_str_c(&res->peer->proxy->on_hosts, '_'),
+			 names_to_str_c(&conn->peer->proxy->on_hosts, '_'),
 			 names_to_str_c(&res->me->proxy->on_hosts, '_')
 			 );
 	if (counter >= sizeof(conn_name)-3) {
@@ -2064,19 +2085,20 @@ char *proxy_connection_name(struct d_resource *res)
 int do_proxy_conn_up(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
+	struct connection *conn = ctx->conn;
 	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL };
 	char *conn_name;
 	int rv;
 
-	conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(ctx);
 
 	argv[2] = ssprintf(
 		 "add connection %s %s:%s %s:%s %s:%s %s:%s",
 		 conn_name,
 		 res->me->proxy->inside.addr,
 		 res->me->proxy->inside.port,
-		 res->peer->proxy->outside.addr,
-		 res->peer->proxy->outside.port,
+		 conn->peer->proxy->outside.addr,
+		 conn->peer->proxy->outside.port,
 		 res->me->proxy->outside.addr,
 		 res->me->proxy->outside.port,
 		 res->me->address.addr,
@@ -2095,7 +2117,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 	struct d_option *opt;
 	int counter;
 
-	conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(ctx);
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
@@ -2132,7 +2154,7 @@ int do_proxy_conn_down(struct cfg_ctx *ctx)
 	char *argv[4] = { drbd_proxy_ctl, "-c", NULL, NULL};
 	int rv;
 
-	conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(ctx);
 	argv[2] = ssprintf("del connection %s", conn_name);
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, res->name);
@@ -2143,6 +2165,7 @@ int do_proxy_conn_down(struct cfg_ctx *ctx)
 static int check_proxy(struct cfg_ctx *ctx, int do_up)
 {
 	struct d_resource *res = ctx->res;
+	struct connection *conn = ctx->conn;
 	int rv;
 
 	if (!res->me->proxy) {
@@ -2163,13 +2186,7 @@ static int check_proxy(struct cfg_ctx *ctx, int do_up)
 		exit(E_CONFIG_INVALID);
 	}
 
-	if (!res->peer) {
-		fprintf(stderr, "Cannot determine the peer in resource %s.\n",
-			res->name);
-		exit(E_CONFIG_INVALID);
-	}
-
-	if (!res->peer->proxy) {
+	if (!conn->peer->proxy) {
 		fprintf(stderr,
 			"There is no proxy config for the peer in resource %s.\n",
 			res->name);

@@ -1382,6 +1382,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 
 	res = calloc(1, sizeof(struct d_resource));
 	STAILQ_INIT(&res->volumes);
+	STAILQ_INIT(&res->connections);
 	STAILQ_INIT(&res->all_hosts);
 	STAILQ_INIT(&res->net_options);
 	STAILQ_INIT(&res->disk_options);

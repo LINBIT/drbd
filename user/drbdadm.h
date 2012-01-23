@@ -148,18 +148,45 @@ struct d_host_info
 
 STAILQ_HEAD(hosts, d_host_info);
 
+struct hname_address
+{
+	char *name;			/* parsed */
+	int config_line;		/* parsed here */
+	struct d_address address;	/* parsed */
+	struct d_host_info *host_info;	/* determined in post_parse */
+	unsigned int used_as_me:1;
+	STAILQ_ENTRY(hname_address) link;
+};
+STAILQ_HEAD(hname_address_pairs, hname_address);
+
+struct connection
+{
+	struct hname_address_pairs hname_address_pairs; /* parsed here */
+	int config_line; /* parsed here */
+
+	struct d_host_info *peer;
+	struct d_address *my_address; /* determined in set_me_in_resource() */
+	struct d_address *peer_address;
+	struct d_address *connect_to;
+
+	struct options net_options; /* parsed here, inherited from res, used here */
+	unsigned int ignore:1;
+	unsigned int implicit:1;
+	STAILQ_ENTRY(connection) link;
+};
+STAILQ_HEAD(connections, connection);
+
 struct d_resource
 {
 	char* name;
 
 	struct volumes volumes;
+	struct connections connections;
 
 	struct d_host_info* me;
-	struct d_host_info* peer;
-	struct d_address *connect_to;
 	struct hosts all_hosts;
 
-	struct options net_options;
+	struct options net_options; /* parsed here, inherited to connections */
 	struct options disk_options;
 	struct options res_options;
 	struct options startup_options;
@@ -174,6 +201,7 @@ struct d_resource
 	unsigned int ignore:1;
 	unsigned int stacked:1;        /* Stacked on this node */
 	unsigned int stacked_on_one:1; /* Stacked either on me or on peer */
+	unsigned int peers_addrs_set:1; /* all peer addresses set */
 
 	/* if a prerequisite command failed, don't try any further commands.
 	 * see run_deferred_cmds() */
@@ -191,6 +219,8 @@ struct cfg_ctx {
 	/* vol == NULL: operate on the resource itself, or iterates over all
 	 * volumes in res */
 	struct d_volume *vol;
+
+	struct connection *conn;
 
 	const char *arg;
 };
@@ -286,13 +316,14 @@ extern char *_names_to_str_c(char* buffer, struct names *names, char c);
 #define NAMES_STR_SIZE 255
 #define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
+extern struct d_name *names_from_str(char* str);
 extern struct d_volume *volume_by_vnr(struct volumes *volumes, int vnr);
 extern void free_names(struct names *names);
 extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
-extern char *proxy_connection_name(struct d_resource *res);
+extern char *proxy_connection_name(struct cfg_ctx *ctx);
 int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
 /* conn_name is optional and mostly for compatibility with dcmd */
 int do_proxy_conn_up(struct cfg_ctx *ctx);
@@ -386,6 +417,7 @@ extern void add_setup_option(bool explicit, char *option);
 #define for_each_resource(var, head) STAILQ_FOREACH(var, head, link)
 #define for_each_volume(var, head) STAILQ_FOREACH(var, head, link)
 #define for_each_host(var, head) STAILQ_FOREACH(var, head, link)
+#define for_each_connection(var, head) STAILQ_FOREACH(var, head, link)
 
 #define insert_volume(head, elem) STAILQ_INSERT_ORDERED(head, elem, link)
 

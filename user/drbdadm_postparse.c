@@ -83,9 +83,59 @@ void set_on_hosts_in_res(struct d_resource *res)
 	}
 }
 
+static struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name)
+{
+	struct d_host_info *host;
+
+	for_each_host(host, &res->all_hosts)
+		if (name_in_names(name, &host->on_hosts))
+			return host;
+
+	return NULL;
+}
+
+static void set_host_info_in_host_address_pairs(struct d_resource *res, struct connection *con)
+{
+	struct hname_address *ha;
+	struct d_host_info *host_info;
+
+	STAILQ_FOREACH(ha, &con->hname_address_pairs, link) {
+		if (ha->host_info) /* Implicit connection have that already set. */
+			continue;
+		host_info = find_host_info_by_name(res, ha->name);
+		if (!host_info) {
+			if (ha->address.addr) {
+				/* Consider this as an implicit declaration of a host section */
+				host_info = calloc(1, sizeof(struct d_host_info));
+				STAILQ_INIT(&host_info->res_options);
+				STAILQ_INIT(&host_info->on_hosts);
+				STAILQ_INIT(&host_info->volumes);
+
+				insert_head(&host_info->on_hosts, names_from_str(ha->name));
+				host_info->config_line = ha->config_line;
+
+				inherit_volumes(&res->volumes, host_info);
+			} else {
+				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
+					"with a \"host\" keyword, has no \"address\" keyword, and not mathing\n"
+					"host section (\"on\" keyword)\n",
+					config_file, ha->config_line, res->name, ha->name);
+				config_valid = 0;
+			}
+		}
+		ha->host_info = host_info;
+		if (!ha->address.addr && !ha->address.af && ha->address.port) {
+			/* this was the 'port' keyword in the config file */
+			ha->address.addr = host_info->address.addr;
+			ha->address.af = host_info->address.af;
+		}
+	}
+}
+
 void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 {
 	struct d_host_info *host;
+	struct connection *conn;
 
 	/* Determine the local host section */
 	for_each_host(host, &res->all_hosts) {
@@ -141,15 +191,33 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 		res->ignore = 1;
 		return;
 	}
+
+	/* set con->my_address in every connection */
+	for_each_connection(conn, &res->connections) {
+		struct hname_address *h;
+
+		STAILQ_FOREACH(h, &conn->hname_address_pairs, link) {
+			if (h->host_info == res->me)
+				break;
+		}
+
+		if (h) {
+			h->used_as_me = 1;
+			conn->my_address = h->address.addr ? &h->address : &res->me->address;
+		} else {
+			conn->ignore = 1;
+		}
+	}
 }
 
 
-void set_peer_in_resource(struct d_resource* res, int peer_required)
+static void set_peer_in_connection(struct d_resource* res, struct connection *conn, int peer_required)
 {
-	struct d_host_info *host = NULL, *candidate = NULL;
+	struct hname_address *host = NULL, *candidate = NULL;
+	struct d_host_info *host_info;
 	int nr_hosts = 0, candidates = 0;
 
-	if (res->ignore)
+	if (res->ignore || conn->ignore)
 		return;
 
 	/* me must be already set */
@@ -161,7 +229,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 		exit(E_THINKO);
 	}
 
-	for_each_host(host, &res->all_hosts) {
+	STAILQ_FOREACH(host, &conn->hname_address_pairs, link) {
 		nr_hosts++;
 		if (!host->used_as_me) {
 			candidates++;
@@ -172,9 +240,9 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	if (nr_hosts == 1) {
 		if (peer_required) {
 			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
-				"\tMissing section 'on <PEER> { ... }'.\n",
-				res->config_file, res->start_line, res->name);
+				"%s:%d: in connection in resource %s:\n"
+				"\tMissing statement 'host <PEER> '.\n",
+				res->config_file, conn->config_line, res->name);
 			config_valid = 0;
 		}
 		return;
@@ -183,13 +251,15 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	/* short cut for exactly two host sections.
 	 * silently ignore any --peer connect_to_host option. */
 	if (candidates == 1 && nr_hosts == 2) {
-		res->peer = candidate;
-		res->connect_to = candidate->proxy ? &candidate->proxy->inside : &candidate->address;
+		host_info = find_host_info_by_name(res, candidate->name);
+		conn->peer = host_info;
+		conn->peer_address = candidate->address.addr ? &candidate->address : &host_info->address;
+		conn->connect_to = host_info->proxy ? &host_info->proxy->inside : conn->peer_address;
 		if (dry_run > 1 && connect_to_host)
 			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
+				"%s:%d: in connection in resource %s:\n"
 				"\tIgnoring --peer '%s': there are only two host sections.\n",
-				res->config_file, res->start_line, res->name, connect_to_host);
+				res->config_file, conn->config_line, res->name, connect_to_host);
 		return;
 	}
 
@@ -207,38 +277,47 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 		return;
 	}
 
-	for_each_host(host, &res->all_hosts) {
-		if (host->by_address && strcmp(connect_to_host, host->address.addr))
-			continue;
-		if (host->proxy && !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
-			continue;
-		if (!name_in_names(connect_to_host, &host->on_hosts))
+	STAILQ_FOREACH(host, &conn->hname_address_pairs, link) {
+		host_info = host->host_info;
+		if (!host_info)
 			continue;
 
-		if (host == res->me) {
+		if (host_info->by_address && strcmp(connect_to_host, host_info->address.addr))
+			continue;
+
+		if (host_info->proxy && !name_in_names(nodeinfo.nodename, &host_info->proxy->on_hosts))
+			continue;
+
+		if (!name_in_names(connect_to_host, &host_info->on_hosts))
+			continue;
+
+		if (host_info == res->me) {
 			fprintf(stderr,
 				"%s:%d: in resource %s\n"
 				"\tInvoked with --peer '%s', but that matches myself!\n",
 				res->config_file, res->start_line, res->name, connect_to_host);
-			res->peer = NULL;
-			res->connect_to = NULL;
+			conn->peer = NULL;
+			conn->peer_address = NULL;
+			conn->connect_to = NULL;
 			break;
 		}
 
-		if (res->peer) {
+		if (conn->peer_address) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
 				"\tInvoked with --peer '%s', but that matches multiple times!\n",
 				res->config_file, res->start_line, res->name, connect_to_host);
-			res->peer = NULL;
-			res->connect_to = NULL;
+			conn->peer = NULL;
+			conn->peer_address = NULL;
+			conn->connect_to = NULL;
 			break;
 		}
-		res->peer = host;
-		res->connect_to = host->proxy ? &host->proxy->inside : &host->address;
+		conn->peer = host_info;
+		conn->peer_address = host->address.addr ? &host->address : &host_info->address;
+		conn->connect_to = host_info->proxy ? &host_info->proxy->inside : conn->peer_address;
 	}
 
-	if (peer_required && !res->peer) {
+	if (peer_required && !conn->peer_address) {
 		config_valid = 0;
 		if (!host)
 			fprintf(stderr,
@@ -248,6 +327,18 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	}
 }
 
+void set_peer_in_resource(struct d_resource* res, int peer_required)
+{
+	struct connection *conn;
+	int peers_addrs_set = 1;
+
+	for_each_connection(conn, &res->connections) {
+		set_peer_in_connection(res, conn, peer_required);
+		if (!conn->peer_address)
+			peers_addrs_set = 0;
+	}
+	res->peers_addrs_set = peers_addrs_set;
+}
 
 void set_disk_in_res(struct d_resource *res)
 {
@@ -471,9 +562,56 @@ static void check_volumes_hosts(struct d_resource *res)
 		check_volume_sets_equal(res, host1, host2);
 }
 
+static void create_implicit_connections(struct d_resource *res)
+{
+	struct connection *conn;
+	struct hname_address *ha;
+	struct d_host_info *host_info;
+	int hosts = 0;
+
+	if (!STAILQ_EMPTY(&res->connections))
+		return;
+
+	conn = calloc(1, sizeof(struct connection));
+	if (conn == NULL) {
+		perror("calloc");
+		exit(E_EXEC_ERROR);
+	}
+	STAILQ_INIT(&conn->net_options);
+	STAILQ_INIT(&conn->hname_address_pairs);
+	conn->implicit = 1;
+
+	for_each_host(host_info, &res->all_hosts) {
+		ha = calloc(1, sizeof(struct hname_address));
+		if (ha == NULL) {
+			perror("calloc");
+			exit(E_EXEC_ERROR);
+		}
+		ha->host_info = host_info;
+		if (!host_info->lower) {
+			ha->name = STAILQ_FIRST(&host_info->on_hosts)->name;
+		} else {
+			ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
+			ha->address = host_info->address;
+			ha->parsed_address = 1; /* not true, but makes dump nicer */
+		}
+		if (++hosts == 3) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\t"
+				"Use explicit 'connection' sections with more than two 'on' sections.\n",
+				res->config_file, res->start_line, res->name);
+			config_valid = 0;
+		}
+		STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
+	}
+
+	STAILQ_INSERT_TAIL(&res->connections, conn, link);
+}
+
 void post_parse(enum pp_flags flags)
 {
 	struct d_resource *res;
+	struct connection *con;
 
 	/* inherit volumes from resource level into the d_host_info objects */
 	for_each_resource(res, &config) {
@@ -499,6 +637,11 @@ void post_parse(enum pp_flags flags)
 		if (res->stacked_on_one)
 			set_on_hosts_in_res(res); /* sets on_hosts and host->lower */
 
+	for_each_resource(res, &config) {
+		create_implicit_connections(res);
+		for_each_connection(con, &res->connections)
+			set_host_info_in_host_address_pairs(res, con);
+	}
 	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, &config)
 		if (!res->stacked_on_one)
@@ -702,6 +845,38 @@ static void sanity_check_perm()
 	checked = 1;
 }
 
+static bool host_name_known(struct d_resource *res, char *name)
+{
+	struct d_host_info *host;
+
+	for_each_host(host, &res->all_hosts)
+		if (name_in_names(name, &host->on_hosts))
+			return 1;
+
+	return 0;
+}
+
+/* Check that either all host sections have a proxy subsection, or none */
+static void ensure_proxy_sections(struct d_resource *res)
+{
+	struct d_host_info *host;
+	enum { INIT, HAVE, MISSING } proxy_sect = INIT, prev_proxy_sect;
+
+	for_each_host(host, &res->all_hosts) {
+		prev_proxy_sect = proxy_sect;
+		proxy_sect = host->proxy ? HAVE : MISSING;
+		if (prev_proxy_sect == INIT)
+			continue;
+		if (prev_proxy_sect != proxy_sect) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\t"
+				"Either all 'on' sections must contain a proxy subsection, or none.\n",
+				res->config_file, res->start_line, res->name);
+			config_valid = 0;
+		}
+	}
+}
+
 static void validate_resource(struct d_resource *res)
 {
 	struct d_option *opt, *next;
@@ -749,19 +924,13 @@ static void validate_resource(struct d_resource *res)
 	// nodenames are mentioned.
 	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
-			if (res->peer &&
-			    !name_in_names(opt->value + 13, &res->peer->on_hosts)
-			    && !name_in_names(opt->value + 13,
-					      &res->me->on_hosts)) {
+			if (!host_name_known(res, opt->value + 13)) {
 				fprintf(stderr,
 					"%s:%d: in resource %s:\n\t"
 					"the nodename in the '%s' option is "
-					"not known.\n\t"
-					"valid nodenames are: '%s %s'.\n",
+					"not known.\n",
 					res->config_file, res->start_line,
-					res->name, opt->value,
-					names_to_str(&res->me->on_hosts),
-					names_to_str(&res->peer->on_hosts));
+					res->name, opt->value);
 				config_valid = 0;
 			}
 		}
@@ -782,23 +951,17 @@ static void validate_resource(struct d_resource *res)
 		config_valid = 0;
 	}
 
-	if (!res->peer)
-		set_peer_in_resource(res, 0);
-
-	if (res->peer
-	    && ((res->me->proxy == NULL) != (res->peer->proxy == NULL))) {
-		fprintf(stderr,
-			"%s:%d: in resource %s:\n\t"
-			"Either both 'on' sections must contain a proxy subsection, or none.\n",
-			res->config_file, res->start_line, res->name);
-		config_valid = 0;
-	}
+	ensure_proxy_sections(res); /* All or none. */
 
 	STAILQ_FOREACH(bpo, &res->become_primary_on, link) {
-		if (res->peer &&
-		    !name_in_names(bpo->name, &res->me->on_hosts) &&
-		    !name_in_names(bpo->name, &res->peer->on_hosts) &&
-		    strcmp(bpo->name, "both")) {
+		struct d_host_info *host;
+		if (!strcmp(bpo->name, "both"))
+			break;
+
+		for_each_host(host, &res->all_hosts) {
+			if (name_in_names(bpo->name, &host->on_hosts))
+				break;
+
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\t"
 				"become-primary-on contains '%s', which is not named with the 'on' sections.\n",

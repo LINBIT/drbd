@@ -166,23 +166,17 @@ static int addr_equal(struct d_address *a1, struct d_address *a2)
 		!strcmp(a1->af, a2->af);
 }
 
-static int address_equal(struct d_resource* conf, struct d_resource* running)
+static struct connection *matching_conn(struct connection *pattern, struct connections *pool)
 {
-	int equal;
+	struct connection *conn;
 
-	if (conf->peer == NULL && running->peer == NULL) return 1;
-	if (running->peer == NULL) return 0;
+	for_each_connection(conn, pool) {
+		if (addr_equal(pattern->my_address, conn->my_address) &&
+		    addr_equal(pattern->connect_to, conn->connect_to))
+			return conn;
+	}
 
-	equal = addr_equal(&conf->me->address, &running->me->address);
-
-	if(conf->me->proxy)
-		equal = equal &&
-			addr_equal(&conf->me->proxy->inside, &running->peer->address);
-	else
-		equal = equal && conf->peer &&
-			addr_equal(&conf->peer->address, &running->peer->address);
-
-	return equal;
+	return NULL;
 }
 
 /* Are both internal, or are both not internal. */
@@ -305,7 +299,7 @@ redo_whole_conn:
 	res_o = STAILQ_FIRST(&res->proxy_plugins);
 	run_o = STAILQ_FIRST(&running->proxy_plugins);
 	used = 0;
-	conn_name = proxy_connection_name(res);
+	conn_name = proxy_connection_name(ctx);
 	for(i=0; i<MAX_PLUGINS; i++)
 	{
 		if (used >= sizeof(plugin_changes)-1) {
@@ -546,16 +540,11 @@ int adm_adjust(struct cfg_ctx *ctx)
 	int pid,argc, i;
 	struct d_resource* running;
 	struct d_volume *vol;
+	struct connection *conn;
 	struct volumes empty = STAILQ_HEAD_INITIALIZER(empty);
 
 	/* necessary per resource actions */
 	int do_res_options = 0;
-
-	/* necessary per connection actions
-	 * (currently we still only have one connection per resource */
-	int do_net_options = 0;
-	int do_disconnect = 0;
-	int do_connect = 0;
 
 	/* necessary per volume actions are flagged
 	 * in the vol->adj_* members. */
@@ -600,7 +589,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	 * clean them from the proxy. */
 	if (ctx->res->me->proxy) {
 		line = 1;
-		resource_name = proxy_connection_name(ctx->res);
+		resource_name = proxy_connection_name(ctx);
 		i=snprintf(show_conn, sizeof(show_conn), "show proxy-settings %s", resource_name);
 		if (i>= sizeof(show_conn)-1) {
 			fprintf(stderr,"connection name too long");
@@ -627,20 +616,25 @@ int adm_adjust(struct cfg_ctx *ctx)
 	compare_volumes(&ctx->res->me->volumes, running ? &running->me->volumes : &empty);
 
 	if (running) {
-		do_connect = !address_equal(ctx->res,running);
-		do_net_options = !opts_equal(&net_options_ctx, &ctx->res->net_options, &running->net_options);
 		do_res_options = !opts_equal(&resource_options_ctx, &ctx->res->res_options, &running->res_options);
 	} else {
-		do_res_options = 0;
-		do_connect = 1;
 		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
 	}
 
-	if (ctx->res->me->proxy && can_do_proxy)
-		do_connect |= proxy_reconf(ctx, running);
+	for_each_connection(conn, &ctx->res->connections) {
+		struct connection *configured_conn;
 
-	if (do_connect && running)
-		do_disconnect = !STAILQ_EMPTY(&running->net_options);
+		configured_conn = matching_conn(conn, &running->connections);
+		if (!configured_conn) {
+			schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+		} else {
+			if (!opts_equal(&net_options_ctx, &ctx->res->net_options, &running->net_options))
+				schedule_deferred_cmd(adm_set_default_net_options, ctx, "net-options", CFG_NET);
+		}
+	}
+
+	if (ctx->res->me->proxy && can_do_proxy)
+		proxy_reconf(ctx, running);
 
 	if (do_res_options)
 		schedule_deferred_cmd(adm_set_default_res_options, ctx, "resource-options", CFG_RESOURCE);
@@ -663,16 +657,6 @@ int adm_adjust(struct cfg_ctx *ctx)
 		if (vol->adj_resize)
 			schedule_deferred_cmd(adm_resize, &tmp_ctx, "resize", CFG_DISK);
 	}
-
-	if (do_connect) {
-		if (do_disconnect && ctx->res->peer)
-			schedule_deferred_cmd(adm_disconnect, ctx, "disconnect", CFG_NET_PREREQ);
-		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
-		do_net_options = 0;
-	}
-
-	if (do_net_options)
-		schedule_deferred_cmd(adm_set_default_net_options, ctx, "net-options", CFG_NET);
 
 	return 0;
 }
