@@ -977,7 +977,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 		bio_endio(bio, -EIO);
 }
 
-int __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
+void __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
 {
 	const int rw = bio_rw(bio);
 	struct bio_and_error m = { NULL, };
@@ -992,7 +992,7 @@ int __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long s
 		 * if user cannot handle io errors, that's not our business. */
 		dev_err(DEV, "could not kmalloc() req\n");
 		bio_endio(bio, -ENOMEM);
-		return 0;
+		return;
 	}
 	req->start_time = start_time;
 
@@ -1071,7 +1071,7 @@ int __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long s
 		drbd_submit_req_private_bio(req);
 		/* once we have submitted, we must no longer look at req,
 		 * it may already be destroyed. */
-		return 0;
+		return;
 	} else if (no_remote) {
 nodata:
 		if (DRBD_ratelimit(5*HZ, 5))
@@ -1086,7 +1086,7 @@ out:
 
 	if (m.bio)
 		complete_master_bio(mdev, &m);
-	return 0;
+	return;
 }
 
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
@@ -1111,9 +1111,8 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	D_ASSERT(bio->bi_size > 0);
 	D_ASSERT(IS_ALIGNED(bio->bi_size, 512));
 
-	do {
-		inc_ap_bio(mdev);
-	} while (__drbd_make_request(mdev, bio, start_time));
+	inc_ap_bio(mdev);
+	__drbd_make_request(mdev, bio, start_time);
 
 	MAKE_REQUEST_RETURN;
 }
