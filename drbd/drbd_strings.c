@@ -91,6 +91,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_IN_TRANSIENT_STATE] = "In transient state, retry after next state change",
 	[-SS_CONCURRENT_ST_CHG] = "Concurrent state changes detected and aborted",
 	[-SS_O_VOL_PEER_PRI] = "Other vol primary on peer not allowed by config",
+	[-SS_INTERRUPTED] = "Interrupted state change",
 };
 
 const char *drbd_conn_str(unsigned int s)

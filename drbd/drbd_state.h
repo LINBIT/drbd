@@ -85,10 +85,16 @@ extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_s
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);
 extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum which_state);
 
-#define stable_state_change(resource, change_state) ({							\
-		enum drbd_state_rv rv;									\
-		wait_event((resource)->state_wait, (rv = (change_state)) != SS_IN_TRANSIENT_STATE);	\
-		rv;											\
+#define stable_state_change(resource, change_state) ({				\
+		enum drbd_state_rv rv;						\
+		int err;							\
+		err = wait_event_interruptible((resource)->state_wait,		\
+			(rv = (change_state)) != SS_IN_TRANSIENT_STATE);	\
+		if (err)							\
+			err = -SS_UNKNOWN_ERROR;				\
+		else								\
+			err = rv;						\
+		err;								\
 	})
 
 extern void __change_role(struct drbd_resource *, enum drbd_role, bool);
