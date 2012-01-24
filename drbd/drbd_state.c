@@ -1635,7 +1635,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
 					"set_n_write from StartingSync", BM_LOCK_SET | BM_LOCK_CLEAR,
-					NULL);
+					peer_device);
 
 			/* We are invalidating our self... */
 			if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] < L_CONNECTED &&
@@ -1643,7 +1643,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				/* other bitmap operation expected during this phase */
 				drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
 					"set_n_write from invalidate", BM_LOCK_ALL,
-					NULL);
+					peer_device);
 
 			/* Disks got bigger while they were detached */
 			if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&

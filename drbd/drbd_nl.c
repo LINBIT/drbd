@@ -1537,21 +1537,23 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 	}
 
-	if (drbd_md_test_flag(device->ldev, MDF_FULL_SYNC)) {
-		drbd_info(device, "Assuming that all blocks are out of sync "
-		     "(aka FullSync)\n");
-		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
-			"set_n_write from attaching", BM_LOCK_ALL,
-			NULL)) {
-			retcode = ERR_IO_MD_DISK;
-			goto force_diskless_dec;
-		}
-	} else {
-		if (drbd_bitmap_io(device, &drbd_bm_read,
-			"read from attaching", BM_LOCK_ALL,
-			NULL)) {
-			retcode = ERR_IO_MD_DISK;
-			goto force_diskless_dec;
+	if (drbd_bitmap_io(device, &drbd_bm_read,
+		"read from attaching", BM_LOCK_ALL,
+		NULL)) {
+		retcode = ERR_IO_MD_DISK;
+		goto force_diskless_dec;
+	}
+
+	for_each_peer_device(peer_device, device) {
+		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
+			drbd_info(peer_device, "Assuming that all blocks are out of sync "
+			     "(aka FullSync)\n");
+			if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
+				"set_n_write from attaching", BM_LOCK_ALL,
+				peer_device)) {
+				retcode = ERR_IO_MD_DISK;
+				goto force_diskless_dec;
+			}
 		}
 	}
 

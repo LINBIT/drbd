@@ -1574,7 +1574,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 		return false;
 
 	if (get_ldev(device)) {
-		if (drbd_md_test_flag(device->ldev, MDF_FULL_SYNC)) {
+		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
 			drbd_info(device, "Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_all(device);
 			if (drbd_bm_write(device, NULL)) {
@@ -1583,7 +1583,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 				 * side that a full resync is required! */
 				drbd_err(device, "Failed to write bitmap to disk!\n");
 			} else {
-				drbd_md_clear_flag(device, MDF_FULL_SYNC);
+				drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 				drbd_md_sync(device);
 			}
 		}
@@ -3564,14 +3564,14 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 	int rv = -EIO;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
-		drbd_md_set_flag(device, MDF_FULL_SYNC);
+		drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 		drbd_md_sync(device);
-		drbd_bm_set_all(device);
+		drbd_bm_set_bits(device, peer_device->bitmap_index, 0, -1UL);
 
 		rv = drbd_bm_write(device, NULL);
 
 		if (!rv) {
-			drbd_md_clear_flag(device, MDF_FULL_SYNC);
+			drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 			drbd_md_sync(device);
 		}
 

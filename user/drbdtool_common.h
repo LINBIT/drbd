@@ -52,6 +52,7 @@ enum new_strtoll_errs {
 /* Flags which used to be in enum mdf_flag before version 09 */
 enum mdf_flag_08 {
 	MDF_CONNECTED_IND =  1 << 2,
+	MDF_FULL_SYNC =      1 << 3,
 	MDF_PEER_OUT_DATED = 1 << 5,
 	MDF_FENCING_IND =    1 << 8,
 };

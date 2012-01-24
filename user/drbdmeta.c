@@ -3422,10 +3422,13 @@ void md_convert_08_to_09(struct format *cfg)
 	if (cfg->md.flags & MDF_CONNECTED_IND)
 		cfg->md.peers[0].flags |= MDF_PEER_CONNECTED;
 
+	if (cfg->md.flags & MDF_FULL_SYNC)
+		cfg->md.peers[0].flags |= MDF_PEER_FULL_SYNC;
+
 	if (cfg->md.flags & MDF_PEER_OUT_DATED)
 		cfg->md.peers[0].flags |= MDF_PEER_OUTDATED;
 
-	cfg->md.flags &= ~(MDF_CONNECTED_IND | MDF_PEER_OUT_DATED);
+	cfg->md.flags &= ~(MDF_CONNECTED_IND | MDF_FULL_SYNC | MDF_PEER_OUT_DATED);
 
 	cfg->md.magic = DRBD_MD_MAGIC_09;
 	re_initialize_md_offsets(cfg);
@@ -3440,6 +3443,9 @@ void md_convert_09_to_08(struct format *cfg)
 {
 	if (cfg->md.peers[0].flags & MDF_PEER_CONNECTED)
 		cfg->md.flags |= MDF_CONNECTED_IND;
+
+	if (cfg->md.peers[0].flags & MDF_PEER_FULL_SYNC)
+		cfg->md.flags |= MDF_FULL_SYNC;
 
 	if (cfg->md.peers[0].flags & MDF_PEER_OUTDATED)
 		cfg->md.flags |= MDF_PEER_OUT_DATED;
