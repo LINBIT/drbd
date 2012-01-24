@@ -262,7 +262,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	/* not req_mod(), we need irqsave here! */
 	spin_lock_irqsave(&device->resource->req_lock, flags);
-	__req_mod(req, what, &m);
+	__req_mod(req, what, NULL, &m);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 	put_ldev(device);
 
@@ -1286,11 +1286,13 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = req->device;
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	/* FIXME needs to become a function parameter */
+	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_connection *connection = peer_device->connection;
 	int err;
 
 	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED);
+		req_mod(req, SEND_CANCELED, peer_device);
 		return 0;
 	}
 
@@ -1308,8 +1310,8 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
 	 * replicated epoch, before we went into AHEAD mode.
 	 * No more barriers will be sent, until we leave AHEAD mode again. */
 
-	err = drbd_send_out_of_sync(first_peer_device(device), req);
-	req_mod(req, OOS_HANDED_TO_NETWORK);
+	err = drbd_send_out_of_sync(peer_device, req);
+	req_mod(req, OOS_HANDED_TO_NETWORK, peer_device);
 
 	return err;
 }
@@ -1324,11 +1326,13 @@ int w_send_dblock(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = req->device;
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	/* FIXME needs to become a function parameter */
+	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_connection *connection = peer_device->connection;
 	int err;
 
 	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED);
+		req_mod(req, SEND_CANCELED, peer_device);
 		return 0;
 	}
 
@@ -1343,8 +1347,8 @@ int w_send_dblock(struct drbd_work *w, int cancel)
 	}
 	connection->send.current_epoch_writes++;
 
-	err = drbd_send_dblock(first_peer_device(device), req);
-	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK);
+	err = drbd_send_dblock(peer_device, req);
+	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK, peer_device);
 
 	return err;
 }
@@ -1359,11 +1363,13 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = req->device;
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	/* FIXME needs to become a function parameter */
+	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_connection *connection = peer_device->connection;
 	int err;
 
 	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED);
+		req_mod(req, SEND_CANCELED, peer_device);
 		return 0;
 	}
 
@@ -1376,10 +1382,10 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 		connection->send.current_epoch_nr = req->epoch;
 	}
 
-	err = drbd_send_drequest(first_peer_device(device), P_DATA_REQUEST, req->i.sector, req->i.size,
+	err = drbd_send_drequest(peer_device, P_DATA_REQUEST, req->i.sector, req->i.size,
 				 (unsigned long)req);
 
-	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK);
+	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK, peer_device);
 
 	return err;
 }

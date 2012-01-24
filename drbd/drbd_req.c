@@ -397,8 +397,12 @@ static void req_may_be_completed_not_susp(struct drbd_request *req, struct bio_a
  *  happen "atomically" within the req_lock,
  *  and it enforces that we have to think in a very structured manner
  *  about the "events" that may happen to a request during its life time ...
+ *
+ *
+ * peer_device == NULL means local disk
  */
 int __req_mod(struct drbd_request *req, enum drbd_req_event what,
+		struct drbd_peer_device *peer_device,
 		struct bio_and_error *m)
 {
 	struct drbd_device *device = req->device;
@@ -425,7 +429,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, !(req->rq_state & RQ_NET_MASK));
 		req->rq_state |= RQ_NET_PENDING;
 		rcu_read_lock();
-		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+		nc = rcu_dereference(peer_device->connection->net_conf);
 		p = nc->wire_protocol;
 		rcu_read_unlock();
 		req->rq_state |=
@@ -506,7 +510,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, (req->rq_state & RQ_LOCAL_MASK) == 0);
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb = w_send_read_req;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&peer_device->connection->sender_work,
 				&req->w);
 		break;
 
@@ -537,12 +541,12 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_dblock;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&peer_device->connection->sender_work,
 				&req->w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
-		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+		nc = rcu_dereference(peer_device->connection->net_conf);
 		p = nc->max_epoch_size;
 		rcu_read_unlock();
 		if (device->resource->current_tle_writes >= p)
@@ -553,7 +557,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case QUEUE_FOR_SEND_OOS:
 		req->rq_state |= RQ_NET_QUEUED;
 		req->w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&peer_device->connection->sender_work,
 				&req->w);
 		break;
 
@@ -705,7 +709,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (!(req->rq_state & RQ_NET_OK)) {
 			if (req->w.cb) {
 				/* w.cb expected to be w_send_dblock, or w_send_read_req */
-				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				drbd_queue_work(&peer_device->connection->sender_work,
 						&req->w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			}
@@ -977,24 +981,22 @@ static int drbd_process_write_request(struct drbd_request *req)
 		send_oos = drbd_should_send_out_of_sync(peer_device);
 
 		if (!remote && !send_oos)
-			break; /* FIXME: continue; */
+			continue;
 
 		D_ASSERT(device, !(remote && send_oos));
 
 		if (remote) {
 			++count;
-			_req_mod(req, TO_BE_SENT);
+			_req_mod(req, TO_BE_SENT, peer_device);
 			if (!in_tree) {
 				/* Corresponding drbd_remove_request_interval is in
 				 * drbd_req_complete() */
 				drbd_insert_interval(&device->write_requests, &req->i);
 				in_tree = true;
 			}
-			_req_mod(req, QUEUE_FOR_NET_WRITE);
+			_req_mod(req, QUEUE_FOR_NET_WRITE, peer_device);
 		} else if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size))
-			_req_mod(req, QUEUE_FOR_SEND_OOS);
-
-		break; /* FIXME: add peer_device argument to _req_mod */
+			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
 	}
 	rcu_read_unlock();
 
@@ -1108,16 +1110,15 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 			no_remote = true;
 	} else {
 		if (peer_device) {
-			/* FIXME: actually use that peer_device */
-			_req_mod(req, TO_BE_SENT);
-			_req_mod(req, QUEUE_FOR_NET_READ);
+			_req_mod(req, TO_BE_SENT, peer_device);
+			_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
 		} else
 			no_remote = true;
 	}
 
 	if (req->private_bio) {
 		/* needs to be marked within the same spinlock */
-		_req_mod(req, TO_BE_SUBMITTED);
+		_req_mod(req, TO_BE_SUBMITTED, NULL);
 		/* but we need to give up the spinlock to submit */
 		spin_unlock_irq(&device->resource->req_lock);
 		drbd_submit_req_private_bio(req);
