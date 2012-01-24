@@ -227,27 +227,6 @@ static void bm_set_page_need_writeout(struct page *page)
 	set_bit(BM_PAGE_NEED_WRITEOUT, &page_private(page));
 }
 
-/**
- * drbd_bm_mark_for_writeout() - mark a page with a "hint" to be considered for writeout
- * @device:	DRBD device.
- * @page_nr:	the bitmap page to mark with the "hint" flag
- *
- * From within an activity log transaction, we mark a few pages with these
- * hints, then call drbd_bm_write_hinted(), which will only write out changed
- * pages which are flagged with this mark.
- */
-void drbd_bm_mark_for_writeout(struct drbd_device *device, int page_nr)
-{
-	struct page *page;
-	if (page_nr >= device->bitmap->bm_number_of_pages) {
-		drbd_warn(device, "BAD: page_nr: %u, number_of_pages: %u\n",
-			  page_nr, (int)device->bitmap->bm_number_of_pages);
-		return;
-	}
-	page = device->bitmap->bm_pages[page_nr];
-	set_bit(BM_PAGE_HINT_WRITEOUT, &page_private(page));
-}
-
 static int bm_test_page_unchanged(struct page *page)
 {
 	volatile const unsigned long *addr = &page_private(page);
@@ -1282,6 +1261,27 @@ int drbd_bm_read(struct drbd_device *device,
 		 struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	return bm_rw(device, READ, 0, 0);
+}
+
+/**
+ * drbd_bm_mark_for_writeout() - mark a page with a "hint" to be considered for writeout
+ * @device:	DRBD device.
+ * @page_nr:	the bitmap page to mark with the "hint" flag
+ *
+ * From within an activity log transaction, we mark a few pages with these
+ * hints, then call drbd_bm_write_hinted(), which will only write out changed
+ * pages which are flagged with this mark.
+ */
+void drbd_bm_mark_for_writeout(struct drbd_device *device, int page_nr)
+{
+	struct page *page;
+	if (page_nr >= device->bitmap->bm_number_of_pages) {
+		drbd_warn(device, "BAD: page_nr: %u, number_of_pages: %u\n",
+			  page_nr, (int)device->bitmap->bm_number_of_pages);
+		return;
+	}
+	page = device->bitmap->bm_pages[page_nr];
+	set_bit(BM_PAGE_HINT_WRITEOUT, &page_private(page));
 }
 
 /**
