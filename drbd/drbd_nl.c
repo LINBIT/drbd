@@ -3006,6 +3006,7 @@ put_result:
 		device_statistics.dev_bm_writes = device->bm_writ_cnt;
 		device_statistics.dev_upper_pending = atomic_read(&device->ap_bio_cnt);
 		device_statistics.dev_lower_pending = atomic_read(&device->local_cnt);
+		device_statistics.dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
 
 		err = device_statistics_to_skb(skb, &device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)

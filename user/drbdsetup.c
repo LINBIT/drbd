@@ -1761,6 +1761,8 @@ static void device_status(struct devices_list *device, bool single_device)
 				    device->statistics.dev_upper_pending);
 			wrap_printf(indent, " lower-pending:" U32,
 				    device->statistics.dev_lower_pending);
+			wrap_printf(indent, " al-suspended:%s",
+				    device->statistics.dev_al_suspended ? "yes" : "no");
 		}
 	}
 	if (device->statistics.dev_size != -1 && (opt_verbose ||

@@ -272,6 +272,7 @@ GENL_struct(DRBD_NLA_DEVICE_STATISTICS, 20, device_statistics,
 	__u32_field(7, 0, dev_lower_pending)  /* backing device requests in progress */
 	__flg_field(8, 0, dev_upper_blocked)
 	__flg_field(9, 0, dev_lower_blocked)
+	__flg_field(10, 0, dev_al_suspended)  /* activity log suspended */
 )
 
 /*
