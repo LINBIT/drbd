@@ -400,7 +400,7 @@ int need_trigger_kobj_change(struct d_resource *res)
 		return 1;
 	if (major(sbuf.st_rdev) != DRBD_MAJOR)
 		return 1;
-	if (minor(sbuf.st_rdev) != res->me->volumes->device_minor)
+	if (minor(sbuf.st_rdev) != STAILQ_FIRST(&res->me->volumes)->device_minor)
 		return 1;
 
 	/* Link exists, and is expected block major:minor.
@@ -509,35 +509,32 @@ struct d_volume *new_to_be_deleted_minor_from_template(struct d_volume *kern)
  * supposed to be ordered by ->vnr;
  * We may need to conjure dummy volumes to issue "del-minor" on,
  * and insert these into the conf list.
- * The resulting new conf list head is returned.
  */
-struct d_volume *compare_volumes(struct d_volume *conf, struct d_volume *kern)
+void compare_volumes(struct volumes *conf_head, struct volumes *kern_head)
 {
-	struct d_volume *to_be_deleted = NULL;
-	struct d_volume *conf_head = conf;
+	struct volumes to_be_deleted = STAILQ_HEAD_INITIALIZER(to_be_deleted);
+	struct d_volume *conf = STAILQ_FIRST(conf_head);
+	struct d_volume *kern = STAILQ_FIRST(kern_head);
 	while (conf || kern) {
 		if (kern && (conf == NULL || kern->vnr < conf->vnr)) {
-			to_be_deleted = INSERT_SORTED(to_be_deleted,
-					new_to_be_deleted_minor_from_template(kern),
-					vnr);
-			kern = kern->next;
+			insert_volume(&to_be_deleted, new_to_be_deleted_minor_from_template(kern));
+			kern = STAILQ_NEXT(kern, link);
 		} else if (conf && (kern == NULL || kern->vnr > conf->vnr)) {
 			conf->adj_add_minor = 1;
 			conf->adj_attach = 1;
-			conf = conf->next;
+			conf = STAILQ_NEXT(conf, link);
 		} else {
 			ASSERT(conf);
 			ASSERT(kern);
 			ASSERT(conf->vnr == kern->vnr);
 
 			compare_volume(conf, kern);
-			conf = conf->next;
-			kern = kern->next;
+			conf = STAILQ_NEXT(conf, link);
+			kern = STAILQ_NEXT(kern, link);
 		}
 	}
-	for_each_volume(conf, to_be_deleted)
-		conf_head = INSERT_SORTED(conf_head, conf, vnr);
-	return conf_head;
+	for_each_volume(conf, &to_be_deleted)
+		insert_volume(conf_head, conf);
 }
 
 /*
@@ -549,6 +546,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	int pid,argc, i;
 	struct d_resource* running;
 	struct d_volume *vol;
+	struct volumes empty = STAILQ_HEAD_INITIALIZER(empty);
 
 	/* necessary per resource actions */
 	int do_res_options = 0;
@@ -626,8 +624,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		waitpid(pid,0,0);
 	}
 
-	ctx->res->me->volumes = compare_volumes(ctx->res->me->volumes,
-			running ? running->me->volumes : NULL);
+	compare_volumes(&ctx->res->me->volumes, running ? &running->me->volumes : &empty);
 
 	if (running) {
 		do_connect = !address_equal(ctx->res,running);
@@ -651,7 +648,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	/* do we need to attach,
 	 * do we need to detach first,
 	 * or is this just some attribute change? */
-	for_each_volume(vol, ctx->res->me->volumes) {
+	for_each_volume(vol, &ctx->res->me->volumes) {
 		struct cfg_ctx tmp_ctx = { .res = ctx->res, .vol = vol };
 		if (vol->adj_detach)
 			schedule_deferred_cmd(adm_generic_s, &tmp_ctx, "detach", CFG_PREREQ);

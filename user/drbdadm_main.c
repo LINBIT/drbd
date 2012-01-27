@@ -165,7 +165,7 @@ static int adm_chk_resize(struct cfg_ctx *);
 static void dump_options(char *name, struct options *options);
 
 
-struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr);
+struct d_volume *volume_by_vnr(struct volumes *volumes, int vnr);
 struct d_resource *res_by_name(const char *name);
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 int ctx_set_implicit_volume(struct cfg_ctx *ctx);
@@ -509,7 +509,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	if (!cmd->iterate_volumes || ctx->vol != NULL)
 		return call_cmd_fn(cmd->function, ctx, on_error);
 
-	for_each_volume(vol, res->me->volumes) {
+	for_each_volume(vol, &res->me->volumes) {
 		ctx->vol = vol;
 		ret = call_cmd_fn(cmd->function, ctx, on_error);
 		/* FIXME: Do we want to keep running?
@@ -833,7 +833,7 @@ static void dump_host_info(struct d_host_info *hi)
 
 	dump_options("options", &hi->res_options);
 
-	for_each_volume(vol, hi->volumes)
+	for_each_volume(vol, &hi->volumes)
 		dump_volume(!!hi->lower, vol);
 
 	if (!hi->by_address)
@@ -969,7 +969,7 @@ static void dump_host_info_xml(struct d_host_info *hi)
 	++indent;
 
 	dump_options_xml("options", &hi->res_options);
-	for_each_volume(vol, hi->volumes)
+	for_each_volume(vol, &hi->volumes)
 		dump_volume_xml(vol);
 
 	printI("<address family=\"%s\" port=\"%s\">%s</address>\n",
@@ -1230,14 +1230,18 @@ static void free_volume(struct d_volume *vol)
 
 static void free_host_info(struct d_host_info *hi)
 {
-	struct d_volume *vol;
+	struct d_volume *vol, *n;
 
 	if (!hi)
 		return;
 
 	free_names(&hi->on_hosts);
-	for_each_volume(vol, hi->volumes)
+	vol = STAILQ_FIRST(&hi->volumes);
+	while (vol) {
+		n = STAILQ_NEXT(vol, link);
 		free_volume(vol);
+		vol = n;
+	}
 	free(hi->address.addr);
 	free(hi->address.af);
 	free(hi->address.port);
@@ -1263,7 +1267,6 @@ static void free_config()
 	f = STAILQ_FIRST(&config);
 	while (f) {
 		free(f->name);
-		free_volume(f->volumes);
 		for_each_host(host, &f->all_hosts)
 			free_host_info(host);
 		free_options(&f->net_options);
@@ -1309,7 +1312,7 @@ static void expand_common(void)
 	/* make sure vol->device is non-NULL */
 	for_each_resource(res, &config) {
 		for_each_host(h, &res->all_hosts) {
-			for_each_volume(vol, h->volumes) {
+			for_each_volume(vol, &h->volumes) {
 				if (!vol->device)
 					m_asprintf(&vol->device, "/dev/drbd%u",
 						   vol->device_minor);
@@ -1342,7 +1345,7 @@ static void expand_common(void)
 	 * resource level, further propagate them to the volume level. */
 	for_each_resource(res, &config) {
 		for_each_host(h, &res->all_hosts) {
-			for_each_volume(vol, h->volumes) {
+			for_each_volume(vol, &h->volumes) {
 				expand_opts(&res->disk_options, &vol->disk_options);
 			}
 		}
@@ -1350,9 +1353,9 @@ static void expand_common(void)
 
 	/* now from all volume/disk-options on resource level to host level */
 	for_each_resource(res, &config) {
-		for_each_volume(vol, res->volumes) {
+		for_each_volume(vol, &res->volumes) {
 			for_each_host(h, &res->all_hosts) {
-				host_vol = volume_by_vnr(h->volumes, vol->vnr);
+				host_vol = volume_by_vnr(&h->volumes, vol->vnr);
 				expand_opts(&vol->disk_options, &host_vol->disk_options);
 			}
 		}
@@ -1836,7 +1839,7 @@ int sh_status(struct cfg_ctx *ctx)
 		printf("_conf_file_line=%s:%u\n\n", shell_escape(r->config_file), r->start_line);
 		if (r->stacked && r->me->lower) {
 			printf("_stacked_on=%s\n", shell_escape(r->me->lower->name));
-			lower_vol = r->me->lower->me->volumes;
+			lower_vol = STAILQ_FIRST(&r->me->lower->me->volumes);
 		} else {
 			/* reset stuff */
 			printf("_stacked_on=\n");
@@ -1848,7 +1851,7 @@ int sh_status(struct cfg_ctx *ctx)
 		 * and optionally filter on resource name.
 		 * "stacked" information is not directly known to drbdsetup, though.
 		 */
-		for_each_volume(vol, r->me->volumes) {
+		for_each_volume(vol, &r->me->volumes) {
 			/* do not continue in this loop,
 			 * or lower_vol will get out of sync */
 			if (lower_vol) {
@@ -1868,7 +1871,7 @@ int sh_status(struct cfg_ctx *ctx)
 				return rv;
 
 			if (lower_vol)
-				lower_vol = lower_vol->next;
+				lower_vol = STAILQ_NEXT(lower_vol, link);
 			/* vol is advanced by for_each_volume */
 		}
 	}
@@ -2022,7 +2025,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 		int bufsize;
 		int n;
 
-		for_each_volume(vol, res->me->volumes)
+		for_each_volume(vol, &res->me->volumes)
 			volumes++;
 
 		/* max minor number is 2**20 - 1, which is 7 decimal digits.
@@ -2031,7 +2034,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 		minor_list = alloca(bufsize);
 
 		pos = minor_list;
-		for_each_volume(vol, res->me->volumes) {
+		for_each_volume(vol, &res->me->volumes) {
 			n = snprintf(pos, bufsize, "%s%d", separator, vol->device_minor);
 			if (n >= bufsize) {
 				/* "can not happen" */
@@ -2209,7 +2212,7 @@ void convert_after_option(struct d_resource *res)
 	struct d_host_info *h;
 
 	for_each_host(h, &res->all_hosts)
-		for_each_volume(vol, h->volumes)
+		for_each_volume(vol, &h->volumes)
 			_convert_after_option(res, vol);
 }
 
@@ -2449,7 +2452,7 @@ int ctx_by_minor(struct cfg_ctx *ctx, const char *id)
 	for_each_resource(res, &config) {
 		if (res->ignore)
 			continue;
-		for_each_volume(vol, res->me->volumes) {
+		for_each_volume(vol, &res->me->volumes) {
 			if (mm == vol->device_minor) {
 				is_drbd_top = res->stacked;
 				ctx->res = res;
@@ -2472,7 +2475,7 @@ struct d_resource *res_by_name(const char *name)
 	return NULL;
 }
 
-struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr)
+struct d_volume *volume_by_vnr(struct volumes *volumes, int vnr)
 {
 	struct d_volume *vol;
 
@@ -2514,7 +2517,7 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		return 0;
 	}
 
-	vol = volume_by_vnr(res->me->volumes, vol_nr);
+	vol = volume_by_vnr(&res->me->volumes, vol_nr);
 	if (vol) {
 		ctx->res = res;
 		ctx->vol = vol;
@@ -2536,7 +2539,7 @@ int ctx_set_implicit_volume(struct cfg_ctx *ctx)
 		return 0;
 	}
 
-	for_each_volume(vol, ctx->res->me->volumes) {
+	for_each_volume(vol, &ctx->res->me->volumes) {
 		volumes++;
 		v = vol;
 	}
@@ -2726,7 +2729,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 		if (is_drbd_top != res->stacked)
 			continue;
 
-		for_each_volume(vol, res->me->volumes) {
+		for_each_volume(vol, &res->me->volumes) {
 			/* ctx is not used */
 			argc = 0;
 			argv[NA(argc)] = drbdsetup;
@@ -3842,7 +3845,7 @@ void count_resources_or_die(void)
 		else
 			nr_resources[NORMAL]++;
 
-		for_each_volume(vol, res->me->volumes) {
+		for_each_volume(vol, &res->me->volumes) {
 			number_of_minors++;
 			m = vol->device_minor;
 			if (m > highest_minor)
@@ -4094,8 +4097,8 @@ int main(int argc, char **argv)
 						exit(E_USAGE);
 					}
 				}
-				if (cmd->vol_id_required && !ctx.vol && ctx.res->me->volumes->implicit)
-					ctx.vol = ctx.res->me->volumes;
+				if (cmd->vol_id_required && !ctx.vol && STAILQ_FIRST(&ctx.res->me->volumes)->implicit)
+					ctx.vol = STAILQ_FIRST(&ctx.res->me->volumes);
 				if (cmd->vol_id_required && !ctx.vol) {
 					fprintf(stderr, "%s requires a specific volume id, but none is specified.\n"
 							"Try '%s minor-<minor_number>' or '%s %s/<vnr>'\n",

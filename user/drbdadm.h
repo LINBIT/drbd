@@ -113,7 +113,7 @@ struct d_volume
 	char* meta_index;
 	int meta_major;
 	int meta_minor;
-	struct d_volume *next;
+	STAILQ_ENTRY(d_volume) link;
 	struct options disk_options; /* Additional per volume options */
 
 	/* Do not dump an explicit volume section */
@@ -128,10 +128,12 @@ struct d_volume
 	unsigned int adj_disk_opts :1;
 };
 
+STAILQ_HEAD(volumes, d_volume);
+
 struct d_host_info
 {
 	struct names on_hosts;
-	struct d_volume *volumes;
+	struct volumes volumes;
 	struct d_address address;
 	struct d_proxy_info *proxy;
 	STAILQ_ENTRY(d_host_info) link;
@@ -149,7 +151,7 @@ struct d_resource
 {
 	char* name;
 
-	struct d_volume *volumes;   /* gets propagated to host_info sections later. */
+	struct volumes volumes;
 
 	struct d_host_info* me;
 	struct d_host_info* peer;
@@ -339,12 +341,48 @@ extern void add_setup_option(bool explicit, char *option);
 #define ssprintf(ptr,...) \
 	ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
 
+#ifndef offsetof
+/* I do not care about non GCC compilers */
+#define offsetof(type, member)  __builtin_offsetof(type, member)
+#endif
+
+/* Linux's edition of sys/queue.h misses STAILQ_LAST */
+#ifndef STAILQ_LAST
+#define STAILQ_LAST(head, field)					\
+	(STAILQ_EMPTY((head)) ?						\
+	 NULL :								\
+	 ((typeof((head)->stqh_first))					\
+	  ((char *)((head)->stqh_last) - offsetof(typeof(*(head)->stqh_first), field))))
+#endif
+
+#define STAILQ_INSERT_ORDERED(head, elem, field) do {			\
+	typeof(*elem) *e = (elem); /* evaluate once */			\
+	typeof(*elem) *t = STAILQ_LAST(head, field);			\
+	if (t == NULL) { /* STAILQ is empty */				\
+		STAILQ_INSERT_HEAD(head, e, field);			\
+	} else if (t->vnr <= e->vnr) {					\
+		STAILQ_INSERT_TAIL(head, e, field);			\
+	} else {							\
+		typeof(*elem) *p = NULL;				\
+		STAILQ_FOREACH(t, head, field) {			\
+			if (t->vnr > e->vnr) {				\
+				if (p == NULL)				\
+					STAILQ_INSERT_HEAD(head, e, field); \
+				else					\
+					STAILQ_INSERT_AFTER(head, p, e, field); \
+				break;					\
+			}						\
+			p = t;						\
+		}							\
+	}								\
+} while (0)
+
 /* CAUTION: arguments may not have side effects! */
 #define for_each_resource(var, head) STAILQ_FOREACH(var, head, link)
-#define for_each_volume(v_,volumes_) \
-	for (v_ = volumes_; v_; v_ = v_->next)
-
+#define for_each_volume(var, head) STAILQ_FOREACH(var, head, link)
 #define for_each_host(var, head) STAILQ_FOREACH(var, head, link)
+
+#define insert_volume(head, elem) STAILQ_INSERT_ORDERED(head, elem, link)
 
 #define insert_tail(head, elem) do {			\
 	typeof(*elem) *e = (elem); /* evaluate once */	\
@@ -355,20 +393,6 @@ extern void add_setup_option(bool explicit, char *option);
 	typeof(*elem) *e = (elem); /* evaluate once */	\
 	STAILQ_INSERT_HEAD(head, e, link);		\
 } while (0)
-
-#define INSERT_SORTED(LIST, ITEM, SORT)					\
-({									\
-	typeof((LIST)) _l = (LIST);					\
-	typeof((ITEM)) _i = (ITEM);					\
-	typeof((ITEM)) _t, _p = NULL;					\
-	for (_t = _l; _t && _t->SORT <= _i->SORT; _p = _t, _t = _t->next); \
-	if (_p)								\
-		_p->next = _i;						\
-	else								\
-		_l = _i;						\
-	_i->next = _t;							\
-	_l;								\
-})
 
 #define PARSER_CHECK_PROXY_KEYWORD (1)
 #define PARSER_STOP_IF_INVALID (2)

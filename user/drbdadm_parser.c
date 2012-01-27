@@ -973,29 +973,29 @@ out:
 	}
 }
 
-struct d_volume *find_volume(struct d_volume *vol, int vnr)
-{
-	while (vol) {
-		if (vol->vnr == vnr)
-			return vol;
-		vol = vol->next;
-	}
-	return NULL;
-}
-
-struct d_volume *volume0(struct d_volume **volp)
+struct d_volume *find_volume(struct volumes *volumes, int vnr)
 {
 	struct d_volume *vol;
 
-	if (!*volp) {
+	for_each_volume(vol, volumes)
+		if (vol->vnr == vnr)
+			return vol;
+
+	return NULL;
+}
+
+struct d_volume *volume0(struct volumes *volumes)
+{
+	struct d_volume *vol = STAILQ_FIRST(volumes);
+
+	if (!vol) {
 		vol = calloc(1, sizeof(struct d_volume));
 		vol->device_minor = -1;
-		*volp = vol;
 		vol->implicit = 1;
+		insert_head(volumes, vol);
 		return vol;
 	} else {
-		vol = *volp;
-		if (vol->vnr == 0 && vol->next == NULL && vol->implicit)
+		if (vol->vnr == 0 && STAILQ_NEXT(vol, link) == NULL && vol->implicit)
 			return vol;
 
 		config_valid = 0;
@@ -1092,18 +1092,18 @@ struct d_volume *parse_stacked_volume(int vnr)
 	return vol;
 }
 
-void inherit_volumes(struct d_volume *from, struct d_host_info *host)
+void inherit_volumes(struct volumes *from, struct d_host_info *host)
 {
 	struct d_volume *s, *t;
 	struct d_name *h;
 
-	for (s = from; s != NULL ; s = s->next) {
-		t = find_volume(host->volumes, s->vnr);
+	for_each_volume(s, from) {
+		t = find_volume(&host->volumes, s->vnr);
 		if (!t) {
 			t = calloc(1, sizeof(struct d_volume));
 			t->device_minor = -1;
 			t->vnr = s->vnr;
-			host->volumes = INSERT_SORTED(host->volumes, t, vnr);
+			insert_volume(&host->volumes, t);
 		}
 		if (!t->disk && s->disk) {
 			t->disk = strdup(s->disk);
@@ -1139,9 +1139,10 @@ void check_volume_complete(struct d_resource *res, struct d_host_info *host, str
 
 void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
 {
-	struct d_volume *vol = host->volumes;
+	struct d_volume *vol;
 	unsigned vnr = -1U;
-	while (vol) {
+
+	for_each_volume(vol, &host->volumes) {
 		if (vnr == -1U || vnr < vol->vnr)
 			vnr = vol->vnr;
 		else
@@ -1149,7 +1150,6 @@ void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
 				"internal error: in %s: unsorted volumes list\n",
 				res->name);
 		check_volume_complete(res, host, vol);
-		vol = vol->next;
 	}
 }
 
@@ -1164,8 +1164,8 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 	if (host1 == host2)
 		return;
 
-	a = host1->volumes;
-	b = host2->volumes;
+	a = STAILQ_FIRST(&host1->volumes);
+	b = STAILQ_FIRST(&host2->volumes);
 
 	/* volume lists are supposed to be sorted on vnr */
 	while (a || b) {
@@ -1178,7 +1178,7 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 				a->vnr,
 				compare_stacked ? host1->lower->name
 					: names_to_str(&host2->on_hosts));
-			a = a->next;
+			a = STAILQ_NEXT(a, link);
 			config_valid = 0;
 		}
 		while (b && (!a || a->vnr > b->vnr)) {
@@ -1197,11 +1197,11 @@ void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, 
 						: names_to_str(&host2->on_hosts));
 			if (!compare_stacked)
 				config_valid = 0;
-			b = b->next;
+			b = STAILQ_NEXT(b, link);
 		}
 		if (a && b && a->vnr == b->vnr) {
-			a = a->next;
-			b = b->next;
+			a = STAILQ_NEXT(a, link);
+			b = STAILQ_NEXT(b, link);
 		}
 	}
 }
@@ -1240,6 +1240,7 @@ void parse_host_section(struct d_resource *res,
 
 	host = calloc(1,sizeof(struct d_host_info));
 	STAILQ_INIT(&host->res_options);
+	STAILQ_INIT(&host->volumes);
 	host->on_hosts = *on_hosts;
 	host->config_line = c_section_start;
 
@@ -1314,9 +1315,7 @@ void parse_host_section(struct d_resource *res,
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			host->volumes = INSERT_SORTED(host->volumes,
-						      parse_volume(atoi(yylval.txt), on_hosts),
-						      vnr);
+			insert_volume(&host->volumes, parse_volume(atoi(yylval.txt), on_hosts));
 			break;
 		case TK_OPTIONS:
 			EXP('{');
@@ -1337,8 +1336,8 @@ void parse_host_section(struct d_resource *res,
 		}
 	}
 
-	inherit_volumes(res->volumes, host);
-	for_each_volume(vol, host->volumes)
+	inherit_volumes(&res->volumes, host);
+	for_each_volume(vol, &host->volumes)
 		check_meta_disk(vol, host);
 
 	if (!(flags & REQUIRE_ALL))
@@ -1398,6 +1397,7 @@ void parse_stacked_section(struct d_resource* res)
 	host = calloc(1, sizeof(struct d_host_info));
 	STAILQ_INIT(&host->res_options);
 	STAILQ_INIT(&host->on_hosts);
+	STAILQ_INIT(&host->volumes);
 	insert_tail(&res->all_hosts, host);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
@@ -1424,7 +1424,7 @@ void parse_stacked_section(struct d_resource* res)
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			host->volumes = INSERT_SORTED(host->volumes, parse_stacked_volume(atoi(yylval.txt)), vnr);
+			insert_volume(&host->volumes, parse_stacked_volume(atoi(yylval.txt)));
 			break;
 		case '}':
 			goto break_loop;
@@ -1436,7 +1436,7 @@ void parse_stacked_section(struct d_resource* res)
 
 	res->stacked_on_one = 1;
 
-	inherit_volumes(res->volumes, host);
+	inherit_volumes(&res->volumes, host);
 
 	if (!host->address.addr)
 		derror(host,res,"address");
@@ -1703,15 +1703,15 @@ void set_disk_in_res(struct d_resource *res)
 			continue;
 
 		/* volume lists are sorted on vnr */
-		a = host->volumes;
-		b = host->lower->me->volumes;
+		a = STAILQ_FIRST(&host->volumes);
+		b = STAILQ_FIRST(&host->lower->me->volumes);
 		while (a) {
 			while (b && a->vnr > b->vnr) {
 				/* Lower resource has more volumes.
 				 * Probably unusual, but we decided
 				 * that it should be legal.
 				 * Skip those that do not match */
-				b = b->next;
+				b = STAILQ_NEXT(b, link);
 			}
 			if (a && b && a->vnr == b->vnr) {
 				if (b->device)
@@ -1723,8 +1723,8 @@ void set_disk_in_res(struct d_resource *res)
 					m_asprintf(&a->meta_disk, "internal");
 				if (!a->meta_index)
 					m_asprintf(&a->meta_index, "internal");
-				a = a->next;
-				b = b->next;
+				a = STAILQ_NEXT(a, link);
+				b = STAILQ_NEXT(b, link);
 			} else {
 				/* config_invalid should have been set
 				 * by check_volume_sets_equal */
@@ -1828,6 +1828,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	check_uniq("resource section", res_name);
 
 	res = calloc(1, sizeof(struct d_resource));
+	STAILQ_INIT(&res->volumes);
 	STAILQ_INIT(&res->all_hosts);
 	STAILQ_INIT(&res->net_options);
 	STAILQ_INIT(&res->disk_options);
@@ -1934,9 +1935,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_VOLUME:
 			EXP(TK_INTEGER);
-			res->volumes = INSERT_SORTED(res->volumes,
-						     parse_volume(atoi(yylval.txt), NULL),
-						     vnr);
+			insert_volume(&res->volumes, parse_volume(atoi(yylval.txt), NULL));
 			break;
 		case TK_OPTIONS:
 			check_upr("resource options section", "%s:res_options", res->name);
