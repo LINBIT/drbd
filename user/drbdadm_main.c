@@ -1554,17 +1554,17 @@ static void add_setup_options(char **argv, int *argcp)
 	*argcp = argc;
 }
 
-#define make_option(OPT) do {						\
+#define make_option(ARG, OPT) do {					\
 	if(OPT->value)							\
-		ssprintf(argv[NA(argc)],"--%s=%s",OPT->name,OPT->value); \
+		ssprintf(ARG, "--%s=%s", OPT->name, OPT->value);	\
 	else 								\
-		ssprintf(argv[NA(argc)],"--%s",OPT->name);		\
+		ssprintf(ARG, "--%s", OPT->name);			\
 } while (0)
 
-#define make_options(OPTIONS) do {					\
+#define make_options(ARG, OPTIONS) do {					\
 	struct d_option *option;					\
 	STAILQ_FOREACH(option, OPTIONS, link) 				\
-		make_option(option);					\
+		make_option(ARG, option);				\
 } while (0)
 
 /* FIXME: Don't leak the memory allocated by asprintf. */
@@ -1600,9 +1600,9 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 			struct d_option *option;
 			STAILQ_FOREACH(option, &ctx->vol->disk_options, link)
 				if (!option->adj_skip)
-					make_option(option);
+					make_option(argv[NA(argc)], option);
 		} else {
-			make_options(&ctx->vol->disk_options);
+			make_options(argv[NA(argc)], &ctx->vol->disk_options);
 		}
 	}
 	add_setup_options(argv, &argc);
@@ -1673,7 +1673,7 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_new_resource)
-		make_options(&ctx->res->res_options);
+		make_options(argv[NA(argc)], &ctx->res->res_options);
 
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = NULL;
@@ -2114,7 +2114,7 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_connect)
-		make_options(&res->net_options);
+		make_options(argv[NA(argc)], &res->net_options);
 
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
@@ -2421,7 +2421,7 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 		ssprintf(argv[argc], "%lu", timeout);
 		argc++;
 	} else
-		make_options(&res->startup_options);
+		make_options(argv[NA(argc)], &res->startup_options);
 	argv[NA(argc)] = 0;
 
 	rv = m_system_ex(argv, SLEEPS_FOREVER, res->name);
@@ -2732,7 +2732,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 			argv[NA(argc)] = drbdsetup;
 			argv[NA(argc)] = "wait-connect";
 			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
-			make_options(&res->startup_options);
+			make_options(argv[NA(argc)], &res->startup_options);
 			argv[NA(argc)] = 0;
 
 			m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
