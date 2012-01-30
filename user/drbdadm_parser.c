@@ -1383,7 +1383,6 @@ void parse_skip()
 			exit(E_CONFIG_INVALID);
 		}
 	}
-	while (level) ;
 }
 
 void parse_stacked_section(struct d_resource* res)
