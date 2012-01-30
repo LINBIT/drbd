@@ -6,6 +6,7 @@
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <net/if.h>
+#include <sys/queue.h>
 #include <stdint.h>
 #include <stdarg.h>
 
@@ -74,6 +75,18 @@ struct d_name
 	struct d_name *next;
 };
 
+struct d_option
+{
+	STAILQ_ENTRY(d_option) link;
+	char* name;
+	char* value;
+	unsigned int mentioned  :1 ; // for the adjust command.
+	unsigned int is_escaped :1 ;
+	unsigned int adj_skip :1;
+};
+
+STAILQ_HEAD(options, d_option);
+
 struct d_address
 {
 	char* addr;
@@ -99,7 +112,7 @@ struct d_volume
 	int meta_major;
 	int meta_minor;
 	struct d_volume *next;
-	struct d_option* disk_options; /* Additional per volume options */
+	struct options disk_options; /* Additional per volume options */
 
 	/* Do not dump an explicit volume section */
 	unsigned int implicit :1 ;
@@ -124,17 +137,7 @@ struct d_host_info
 	char *lower_name;          /* for device stacking, before bind_stacked_res() */
 	int config_line;
 	unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
-	struct d_option* res_options; /* Additional per host options */
-};
-
-struct d_option
-{
-	char* name;
-	char* value;
-	struct d_option* next;
-	unsigned int mentioned  :1 ; // for the adjust command.
-	unsigned int is_escaped :1 ;
-	unsigned int adj_skip :1;
+	struct options res_options; /* Additional per host options */
 };
 
 struct d_resource
@@ -146,13 +149,14 @@ struct d_resource
 	struct d_host_info* me;
 	struct d_host_info* peer;
 	struct d_host_info* all_hosts;
-	struct d_option* net_options;
-	struct d_option* disk_options;
-	struct d_option* res_options;
-	struct d_option* startup_options;
-	struct d_option* handlers;
-	struct d_option* proxy_options;
-	struct d_option* proxy_plugins;
+
+	struct options net_options;
+	struct options disk_options;
+	struct options res_options;
+	struct options startup_options;
+	struct options handlers;
+	struct options proxy_options;
+	struct options proxy_plugins;
 	struct d_resource* next;
 	struct d_name *become_primary_on;
 	char *config_file; /* The config file this resource is define in.*/
@@ -208,7 +212,7 @@ static inline int m_system_ex(char **argv, int flags, const char *res_name)
 	m__system(argv, flags, res_name, NULL, NULL, &ex);
 	return ex;
 }
-extern struct d_option* find_opt(struct d_option*,char*);
+extern struct d_option *find_opt(struct options *base, const char *name);
 extern void validate_resource(struct d_resource *);
 /* stages of configuration, as performed on "drbdadm up"
  * or "drbdadm adjust":
@@ -335,6 +339,16 @@ extern void add_setup_option(bool explicit, char *option);
 #define for_each_volume(v_,volumes_) \
 	for (v_ = volumes_; v_; v_ = v_->next)
 
+#define insert_tail(head, elem) do {			\
+	typeof(*elem) *e = (elem); /* evaluate once */	\
+	STAILQ_INSERT_TAIL(head, e, link);		\
+} while (0)
+
+#define insert_head(head, elem) do {			\
+	typeof(*elem) *e = (elem); /* evaluate once */	\
+	STAILQ_INSERT_HEAD(head, e, link);		\
+} while (0)
+
 #define APPEND(LIST, ITEM)				\
 ({							\
 	typeof((LIST)) _l = (LIST);			\
@@ -362,20 +376,6 @@ extern void add_setup_option(bool explicit, char *option);
 	_i->next = _t;							\
 	_l;								\
 })
-
-#define SPLICE(LIST, ITEMS)				\
-({							\
-	typeof((LIST)) _l = (LIST);			\
-	typeof((ITEMS)) _i = (ITEMS);			\
-	typeof((ITEMS)) _t;				\
-	if (_l == NULL) { _l = _i; }			\
-	else {						\
-		for (_t = _l; _t->next; _t = _t->next);	\
-		_t->next = _i;				\
-	};						\
-	_l;						\
-})
-
 
 #define PARSER_CHECK_PROXY_KEYWORD (1)
 #define PARSER_STOP_IF_INVALID (2)

@@ -112,52 +112,49 @@ static bool is_default(struct context_def *ctx, struct d_option *opt)
 	return false;
 }
 
-static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_option* running)
+static int opts_equal(struct context_def *ctx, struct options *conf, struct options *run_base)
 {
-	struct d_option* opt;
+	struct d_option *opt, *run_opt;
 
-	while(running) {
-		if (running->adj_skip) {
-			running = running->next;
+	STAILQ_FOREACH(run_opt, run_base, link) {
+		if (run_opt->adj_skip)
 			continue;
-		}
-		if((opt=find_opt(conf,running->name))) {
-			if(!is_equal(ctx, running, opt)) {
+
+		opt = find_opt(conf, run_opt->name);
+		if (opt) {
+			if (!is_equal(ctx, run_opt, opt)) {
 				if (verbose > 2)
 					fprintf(stderr, "Value of '%s' differs: r=%s c=%s\n",
-						opt->name,running->value,opt->value);
+						opt->name,run_opt->value,opt->value);
 				return 0;
 			}
 			if (verbose > 3)
 				fprintf(stderr, "Value of '%s' equal: r=%s c=%s\n",
-					opt->name,running->value,opt->value);
-			opt->mentioned=1;
+					opt->name,run_opt->value,opt->value);
+			opt->mentioned = 1;
 		} else {
-			if(!is_default(ctx, running)) {
+			if (!is_default(ctx, run_opt)) {
 				if (verbose > 2)
 					fprintf(stderr, "Only in running config %s: %s\n",
-						running->name,running->value);
+						run_opt->name,run_opt->value);
 				return 0;
 			}
 			if (verbose > 3)
 				fprintf(stderr, "Is default: '%s' equal: r=%s\n",
-					running->name,running->value);
+					run_opt->name,run_opt->value);
 		}
-		running=running->next;
 	}
 
-	while(conf) {
-		if (conf->adj_skip) {
-			conf = conf->next;
+	STAILQ_FOREACH(opt, conf, link) {
+		if (opt->adj_skip)
 			continue;
-		}
-		if(conf->mentioned==0 && !is_default(ctx, conf)) {
+
+		if (opt->mentioned==0 && !is_default(ctx, opt)) {
 			if (verbose > 2)
-				fprintf(stderr, "Only in config file %s: %s\n",
-					conf->name,conf->value);
+				fprintf(stderr, "Only in optig file %s: %s\n",
+					opt->name, opt->value);
 			return 0;
 		}
-		conf=conf->next;
 	}
 	return 1;
 }
@@ -281,8 +278,8 @@ static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
 	if (!running)
 		goto redo_whole_conn;
 
-	res_o = find_opt(res->proxy_options, "memlimit");
-	run_o = find_opt(running->proxy_options, "memlimit");
+	res_o = find_opt(&res->proxy_options, "memlimit");
+	run_o = find_opt(&running->proxy_options, "memlimit");
 	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
 	v2 = run_o ? m_strtoll(run_o->value, 1) : 0;
 	minimum = v1 < v2 ? v1 : v2;
@@ -305,8 +302,8 @@ redo_whole_conn:
 	}
 
 
-	res_o = res->proxy_plugins;
-	run_o = running->proxy_plugins;
+	res_o = STAILQ_FIRST(&res->proxy_plugins);
+	run_o = STAILQ_FIRST(&running->proxy_plugins);
 	used = 0;
 	conn_name = proxy_connection_name(res);
 	for(i=0; i<MAX_PLUGINS; i++)
@@ -369,9 +366,9 @@ redo_whole_conn:
 
 
 		if (res_o)
-			res_o = res_o->next;
+			res_o = STAILQ_NEXT(res_o, link);
 		if (run_o)
-			run_o = run_o->next;
+			run_o = STAILQ_NEXT(run_o, link);
 	}
 
 	/* change only a few plugin settings. */
@@ -413,8 +410,8 @@ int need_trigger_kobj_change(struct d_resource *res)
 
 void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 {
-	struct d_option *c = find_opt(conf->disk_options, "max-bio-bvecs");
-	struct d_option *k = find_opt(kern->disk_options, "max-bio-bvecs");
+	struct d_option *c = find_opt(&conf->disk_options, "max-bio-bvecs");
+	struct d_option *k = find_opt(&kern->disk_options, "max-bio-bvecs");
 
 	if (c)
 		c->adj_skip = 1;
@@ -439,8 +436,8 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 /* similar to compare_max_bio_bvecs above */
 void compare_size(struct d_volume *conf, struct d_volume *kern)
 {
-	struct d_option *c = find_opt(conf->disk_options, "size");
-	struct d_option *k = find_opt(kern->disk_options, "size");
+	struct d_option *c = find_opt(&conf->disk_options, "size");
+	struct d_option *k = find_opt(&kern->disk_options, "size");
 
 	if (c)
 		c->adj_skip = 1;
@@ -478,7 +475,7 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 
 	/* is it sufficient to only adjust the disk options? */
 	if (!conf->adj_attach)
-		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, conf->disk_options, kern->disk_options);
+		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, &conf->disk_options, &kern->disk_options);
 
 	if (conf->adj_attach && kern->disk)
 		conf->adj_detach = 1;
@@ -634,8 +631,8 @@ int adm_adjust(struct cfg_ctx *ctx)
 
 	if (running) {
 		do_connect = !address_equal(ctx->res,running);
-		do_net_options = !opts_equal(&net_options_ctx, ctx->res->net_options, running->net_options);
-		do_res_options = !opts_equal(&resource_options_ctx, ctx->res->res_options, running->res_options);
+		do_net_options = !opts_equal(&net_options_ctx, &ctx->res->net_options, &running->net_options);
+		do_res_options = !opts_equal(&resource_options_ctx, &ctx->res->res_options, &running->res_options);
 	} else {
 		do_res_options = 0;
 		do_connect = 1;
@@ -646,7 +643,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		do_connect |= proxy_reconf(ctx, running);
 
 	if (do_connect && running)
-		do_disconnect = running->net_options != NULL;
+		do_disconnect = !STAILQ_EMPTY(&running->net_options);
 
 	if (do_res_options)
 		schedule_deferred_cmd(adm_set_default_res_options, ctx, "resource-options", CFG_RESOURCE);

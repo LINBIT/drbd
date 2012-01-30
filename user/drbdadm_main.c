@@ -162,7 +162,7 @@ static int adm_generic_b(struct cfg_ctx *);
 static int hidden_cmds(struct cfg_ctx *);
 static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
-static void dump_options(char *name, struct d_option *opts);
+static void dump_options(char *name, struct options *options);
 
 
 struct d_volume *volume_by_vnr(struct d_volume *volumes, int vnr);
@@ -170,7 +170,7 @@ struct d_resource *res_by_name(const char *name);
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 int ctx_set_implicit_volume(struct cfg_ctx *ctx);
 
-static char *get_opt_val(struct d_option *, const char *, char *);
+static char *get_opt_val(struct options *, const char *, char *);
 
 static struct ifreq *get_ifreq();
 
@@ -686,22 +686,23 @@ static char *esc_xml(char *str)
 	return str;
 }
 
-static void dump_options2(char *name, struct d_option *opts,
-		void(*within)(void*), void *ctx)
+static void dump_options2(char *name, struct options *options,
+			  void(*within)(struct options *), struct options *ctx)
 {
-	if (!opts && !(within && ctx))
+	struct d_option *option;
+
+	if (STAILQ_EMPTY(options) && (!ctx || (ctx && STAILQ_EMPTY(ctx))))
 		return;
 
 	printI("%s {\n", name);
 	++indent;
-	while (opts) {
-		if (opts->value)
-			printA(opts->name,
-			       opts->is_escaped ? opts->value : esc(opts->
-								    value));
+	STAILQ_FOREACH(option, options, link) {
+		if (option->value)
+			printA(option->name,
+			       option->is_escaped ? option->value : esc(option->
+									value));
 		else
-			printI(BFMT, opts->name);
-		opts = opts->next;
+			printI(BFMT, option->name);
 	}
 	if (within)
 		within(ctx);
@@ -709,16 +710,14 @@ static void dump_options2(char *name, struct d_option *opts,
 	printI("}\n");
 }
 
-static void dump_options(char *name, struct d_option *opts)
+static void dump_options(char *name, struct options *options)
 {
-	dump_options2(name, opts, NULL, NULL);
+	dump_options2(name, options, NULL, NULL);
 }
 
-void dump_proxy_plugins(void *ctx)
+void dump_proxy_plugins(struct options *options)
 {
-	struct d_option *opt = ctx;
-
-	dump_options("plugin", opt);
+	dump_options("plugin", options);
 }
 
 static void dump_global_info()
@@ -749,13 +748,13 @@ static void dump_common_info()
 	++indent;
 
 	fake_startup_options(common);
-	dump_options("options", common->res_options);
-	dump_options("net", common->net_options);
-	dump_options("disk", common->disk_options);
-	dump_options("startup", common->startup_options);
-	dump_options2("proxy", common->proxy_options,
-			dump_proxy_plugins, common->proxy_plugins);
-	dump_options("handlers", common->handlers);
+	dump_options("options", &common->res_options);
+	dump_options("net", &common->net_options);
+	dump_options("disk", &common->disk_options);
+	dump_options("startup", &common->startup_options);
+	dump_options2("proxy", &common->proxy_options,
+			dump_proxy_plugins, &common->proxy_plugins);
+	dump_options("handlers", &common->handlers);
 	--indent;
 	printf("}\n\n");
 }
@@ -785,7 +784,7 @@ static void dump_volume(int has_lower, struct d_volume *vol)
 		++indent;
 	}
 
-	dump_options("disk", vol->disk_options);
+	dump_options("disk", &vol->disk_options);
 
 	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
 	if (vol->device)
@@ -832,7 +831,7 @@ static void dump_host_info(struct d_host_info *hi)
 		++indent;
 	}
 
-	dump_options("options", hi->res_options);
+	dump_options("options", &hi->res_options);
 
 	for_each_volume(vol, hi->volumes)
 		dump_volume(!!hi->lower, vol);
@@ -845,23 +844,24 @@ static void dump_host_info(struct d_host_info *hi)
 	printI("}\n");
 }
 
-static void dump_options_xml2(char *name, struct d_option *opts,
-		void(*within)(void*), void *ctx)
+static void dump_options_xml2(char *name, struct options *options,
+			      void(*within)(struct options *), struct options *ctx)
 {
-	if (!opts && !(within && ctx))
+	struct d_option *option;
+
+	if (STAILQ_EMPTY(options) && (!ctx || (ctx && STAILQ_EMPTY(ctx))))
 		return;
 
 	printI("<section name=\"%s\">\n", name);
 	++indent;
-	while (opts) {
-		if (opts->value)
+	STAILQ_FOREACH(option, options, link) {
+		if (option->value)
 			printI("<option name=\"%s\" value=\"%s\"/>\n",
-			       opts->name,
-			       opts->is_escaped ? opts->value : esc_xml(opts->
-									value));
+			       option->name,
+			       option->is_escaped ? option->value : esc_xml(option->
+									    value));
 		else
-			printI("<option name=\"%s\"/>\n", opts->name);
-		opts = opts->next;
+			printI("<option name=\"%s\"/>\n", option->name);
 	}
 	if (within)
 		within(ctx);
@@ -869,16 +869,14 @@ static void dump_options_xml2(char *name, struct d_option *opts,
 	printI("</section>\n");
 }
 
-static void dump_options_xml(char *name, struct d_option *opts)
+static void dump_options_xml(char *name, struct options *options)
 {
-	dump_options_xml2(name, opts, NULL, NULL);
+	dump_options_xml2(name, options, NULL, NULL);
 }
 
-void dump_proxy_plugins_xml(void *ctx)
+void dump_proxy_plugins_xml(struct options *options)
 {
-	struct d_option *opt = ctx;
-
-	dump_options_xml("plugin", opt);
+	dump_options_xml("plugin", options);
 }
 
 static void dump_global_info_xml()
@@ -908,13 +906,13 @@ static void dump_common_info_xml()
 	printI("<common>\n");
 	++indent;
 	fake_startup_options(common);
-	dump_options_xml("options", common->res_options);
-	dump_options_xml("net", common->net_options);
-	dump_options_xml("disk", common->disk_options);
-	dump_options_xml("startup", common->startup_options);
-	dump_options2("proxy", common->proxy_options,
-			dump_proxy_plugins, common->proxy_plugins);
-	dump_options_xml("handlers", common->handlers);
+	dump_options_xml("options", &common->res_options);
+	dump_options_xml("net", &common->net_options);
+	dump_options_xml("disk", &common->disk_options);
+	dump_options_xml("startup", &common->startup_options);
+	dump_options2("proxy", &common->proxy_options,
+			dump_proxy_plugins, &common->proxy_plugins);
+	dump_options_xml("handlers", &common->handlers);
 	--indent;
 	printI("</common>\n");
 }
@@ -936,7 +934,7 @@ static void dump_volume_xml(struct d_volume *vol)
 	printI("<volume vnr=\"%d\">\n", vol->vnr);
 	++indent;
 
-	dump_options_xml("disk", vol->disk_options);
+	dump_options_xml("disk", &vol->disk_options);
 	printI("<device minor=\"%d\">%s</device>\n", vol->device_minor,
 	       esc_xml(vol->device));
 	printI("<disk>%s</disk>\n", esc_xml(vol->disk));
@@ -970,7 +968,7 @@ static void dump_host_info_xml(struct d_host_info *hi)
 
 	++indent;
 
-	dump_options_xml("options", hi->res_options);
+	dump_options_xml("options", &hi->res_options);
 	for_each_volume(vol, hi->volumes)
 		dump_volume_xml(vol);
 
@@ -989,14 +987,14 @@ static void fake_startup_options(struct d_resource *res)
 
 	if (res->stacked_timeouts) {
 		opt = new_opt(strdup("stacked-timeouts"), NULL);
-		res->startup_options = APPEND(res->startup_options, opt);
+		insert_tail(&res->startup_options, opt);
 	}
 
 	if (res->become_primary_on) {
 		val = strdup(names_to_str(res->become_primary_on));
 		opt = new_opt(strdup("become-primary-on"), val);
 		opt->is_escaped = 1;
-		res->startup_options = APPEND(res->startup_options, opt);
+		insert_tail(&res->startup_options, opt);
 	}
 }
 
@@ -1017,13 +1015,13 @@ static int adm_dump(struct cfg_ctx *ctx)
 		dump_host_info(host);
 
 	fake_startup_options(res);
-	dump_options("options", res->res_options);
-	dump_options("net", res->net_options);
-	dump_options("disk", res->disk_options);
-	dump_options("startup", res->startup_options);
-	dump_options2("proxy", res->proxy_options,
-			dump_proxy_plugins, res->proxy_plugins);
-	dump_options("handlers", res->handlers);
+	dump_options("options", &res->res_options);
+	dump_options("net", &res->net_options);
+	dump_options("disk", &res->disk_options);
+	dump_options("startup", &res->startup_options);
+	dump_options2("proxy", &res->proxy_options,
+			dump_proxy_plugins, &res->proxy_plugins);
+	dump_options("handlers", &res->handlers);
 	--indent;
 	printf("}\n\n");
 
@@ -1043,13 +1041,13 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	for (host = res->all_hosts; host; host = host->next)
 		dump_host_info_xml(host);
 	fake_startup_options(res);
-	dump_options_xml("options", res->res_options);
-	dump_options_xml("net", res->net_options);
-	dump_options_xml("disk", res->disk_options);
-	dump_options_xml("startup", res->startup_options);
-	dump_options_xml2("proxy", res->proxy_options,
-			dump_proxy_plugins_xml, res->proxy_plugins);
-	dump_options_xml("handlers", res->handlers);
+	dump_options_xml("options", &res->res_options);
+	dump_options_xml("net", &res->net_options);
+	dump_options_xml("disk", &res->disk_options);
+	dump_options_xml("startup", &res->startup_options);
+	dump_options_xml2("proxy", &res->proxy_options,
+			dump_proxy_plugins_xml, &res->proxy_plugins);
+	dump_options_xml("handlers", &res->handlers);
 	--indent;
 	printI("</resource>\n");
 
@@ -1245,14 +1243,14 @@ static void free_host_info(struct d_host_info *hi)
 	free(hi->address.port);
 }
 
-static void free_options(struct d_option *opts)
+static void free_options(struct options *options)
 {
-	struct d_option *f;
-	while (opts) {
-		free(opts->name);
-		free(opts->value);
-		f = opts;
-		opts = opts->next;
+	struct d_option *f, *option = STAILQ_FIRST(options);
+	while (option) {
+		free(option->name);
+		free(option->value);
+		f = option;
+		option = STAILQ_NEXT(option, link);
 		free(f);
 	}
 }
@@ -1267,38 +1265,35 @@ static void free_config(struct d_resource *res)
 		free_volume(f->volumes);
 		for (host = f->all_hosts; host; host = host->next)
 			free_host_info(host);
-		free_options(f->net_options);
-		free_options(f->disk_options);
-		free_options(f->startup_options);
-		free_options(f->proxy_options);
-		free_options(f->handlers);
+		free_options(&f->net_options);
+		free_options(&f->disk_options);
+		free_options(&f->startup_options);
+		free_options(&f->proxy_options);
+		free_options(&f->handlers);
 		free(f);
 	}
 	if (common) {
-		free_options(common->net_options);
-		free_options(common->disk_options);
-		free_options(common->startup_options);
-		free_options(common->proxy_options);
-		free_options(common->handlers);
+		free_options(&common->net_options);
+		free_options(&common->disk_options);
+		free_options(&common->startup_options);
+		free_options(&common->proxy_options);
+		free_options(&common->handlers);
 		free(common);
 	}
 	if (ifreq_list)
 		free(ifreq_list);
 }
 
-static void expand_opts(struct d_option *co, struct d_option **opts)
+static void expand_opts(struct options *common, struct options *options)
 {
-	struct d_option *no;
+	struct d_option *option, *new_option;
 
-	while (co) {
-		if (!find_opt(*opts, co->name)) {
-			// prepend new item to opts
-			no = new_opt(strdup(co->name),
-				     co->value ? strdup(co->value) : NULL);
-			no->next = *opts;
-			*opts = no;
+	STAILQ_FOREACH(option, common, link) {
+		if (!find_opt(options, option->name)) {
+			new_option = new_opt(strdup(option->name),
+					     option->value ? strdup(option->value) : NULL);
+			insert_head(options, new_option);
 		}
-		co = co->next;
 	}
 }
 
@@ -1323,12 +1318,12 @@ static void expand_common(void)
 		if (!common)
 			break;
 
-		expand_opts(common->net_options, &res->net_options);
-		expand_opts(common->disk_options, &res->disk_options);
-		expand_opts(common->startup_options, &res->startup_options);
-		expand_opts(common->proxy_options, &res->proxy_options);
-		expand_opts(common->handlers, &res->handlers);
-		expand_opts(common->res_options, &res->res_options);
+		expand_opts(&common->net_options, &res->net_options);
+		expand_opts(&common->disk_options, &res->disk_options);
+		expand_opts(&common->startup_options, &res->startup_options);
+		expand_opts(&common->proxy_options, &res->proxy_options);
+		expand_opts(&common->handlers, &res->handlers);
+		expand_opts(&common->res_options, &res->res_options);
 
 		if (common->stacked_timeouts)
 			res->stacked_timeouts = 1;
@@ -1336,8 +1331,7 @@ static void expand_common(void)
 		if (!res->become_primary_on)
 			res->become_primary_on = common->become_primary_on;
 
-		if (common->proxy_plugins && !res->proxy_plugins)
-			expand_opts(common->proxy_plugins, &res->proxy_plugins);
+		expand_opts(&common->proxy_plugins, &res->proxy_plugins);
 
 	}
 
@@ -1346,7 +1340,7 @@ static void expand_common(void)
 	for_each_resource(res, tmp, config) {
 		for (h = res->all_hosts; h; h = h->next) {
 			for_each_volume(vol, h->volumes) {
-				expand_opts(res->disk_options, &vol->disk_options);
+				expand_opts(&res->disk_options, &vol->disk_options);
 			}
 		}
 	}
@@ -1356,7 +1350,7 @@ static void expand_common(void)
 		for_each_volume(vol, res->volumes) {
 			for (h = res->all_hosts; h; h = h->next) {
 				host_vol = volume_by_vnr(h->volumes, vol->vnr);
-				expand_opts(vol->disk_options, &host_vol->disk_options);
+				expand_opts(&vol->disk_options, &host_vol->disk_options);
 			}
 		}
 	}
@@ -1564,12 +1558,11 @@ static void add_setup_options(char **argv, int *argcp)
 		ssprintf(argv[NA(argc)],"--%s",OPT->name);		\
 } while (0)
 
-
-#define make_options(OPT)			\
-	while(OPT) {				\
-		make_option(OPT);		\
-		OPT=OPT->next;			\
-	}
+#define make_options(OPTIONS) do {					\
+	struct d_option *option;					\
+	STAILQ_FOREACH(option, OPTIONS, link) 				\
+		make_option(option);					\
+} while (0)
 
 /* FIXME: Don't leak the memory allocated by asprintf. */
 #define make_address(A)				       				\
@@ -1583,7 +1576,6 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
-	struct d_option *opt;
 	int argc = 0;
 
 	argv[NA(argc)] = drbdsetup;
@@ -1601,13 +1593,13 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_attach) {
-		opt = ctx->vol->disk_options;
 		if (!do_attach) {
-			while (opt)
-				if (!opt->adj_skip)
-					make_option(opt);
+			struct d_option *option;
+			STAILQ_FOREACH(option, &ctx->vol->disk_options, link)
+				if (!option->adj_skip)
+					make_option(option);
 		} else {
-			make_options(opt);
+			make_options(&ctx->vol->disk_options);
 		}
 	}
 	add_setup_options(argv, &argc);
@@ -1638,15 +1630,15 @@ int adm_set_default_disk_options(struct cfg_ctx *ctx)
 	return adm_attach_or_disk_options(ctx, false, true);
 }
 
-struct d_option *find_opt(struct d_option *base, char *name)
+struct d_option *find_opt(struct options *base, const char *name)
 {
-	while (base) {
-		if (!strcmp(base->name, name)) {
-			return base;
-		}
-		base = base->next;
-	}
-	return 0;
+	struct d_option *option;
+
+	STAILQ_FOREACH(option, base, link)
+		if (!strcmp(option->name, name))
+			return option;
+
+	return NULL;
 }
 
 int adm_new_minor(struct cfg_ctx *ctx)
@@ -1678,7 +1670,7 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_new_resource)
-		make_options(ctx->res->res_options);
+		make_options(&ctx->res->res_options);
 
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = NULL;
@@ -1715,9 +1707,9 @@ int adm_resize(struct cfg_ctx *ctx)
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "resize";
 	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
-	opt = find_opt(ctx->vol->disk_options, "size");
+	opt = find_opt(&ctx->vol->disk_options, "size");
 	if (!opt)
-		opt = find_opt(ctx->res->disk_options, "size");
+		opt = find_opt(&ctx->res->disk_options, "size");
 	if (opt)
 		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
 	add_setup_options(argv, &argc);
@@ -2055,7 +2047,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	setenv("DRBD_RESOURCE", res->name, 1);
 	setenv("DRBD_CONF", config_save, 1);
 
-	if ((sh_cmd = get_opt_val(res->handlers, ctx->arg, NULL))) {
+	if ((sh_cmd = get_opt_val(&res->handlers, ctx->arg, NULL))) {
 		argv[2] = sh_cmd;
 		rv = m_system_ex(argv, SLEEPS_VERY_LONG, res->name);
 	}
@@ -2070,7 +2062,7 @@ void convert_discard_opt(struct d_resource *res)
 	if (res == NULL)
 		return;
 
-	if ((opt = find_opt(res->net_options, "after-sb-0pri"))) {
+	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
 			if (!strcmp(nodeinfo.nodename, opt->value + 13)) {
 				free(opt->value);
@@ -2106,7 +2098,6 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
-	struct d_option *opt;
 	int argc = 0;
 	int err;
 
@@ -2120,10 +2111,8 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
-	if (reset || do_connect) {
-		opt = res->net_options;
-		make_options(opt);
-	}
+	if (reset || do_connect)
+		make_options(&res->net_options);
 
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
@@ -2167,27 +2156,11 @@ int adm_disconnect(struct cfg_ctx *ctx)
 	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 }
 
-struct d_option *del_opt(struct d_option *base, struct d_option *item)
+void free_opt(struct d_option *item)
 {
-	struct d_option *i;
-	if (base == item) {
-		base = item->next;
-		free(item->name);
-		free(item->value);
-		free(item);
-		return base;
-	}
-
-	for (i = base; i; i = i->next) {
-		if (i->next == item) {
-			i->next = item->next;
-			free(item->name);
-			free(item->value);
-			free(item);
-			return base;
-		}
-	}
-	return base;
+	free(item->name);
+	free(item->value);
+	free(item);
 }
 
 // Need to convert after from resourcename to minor_number.
@@ -2200,9 +2173,9 @@ void _convert_after_option(struct d_resource *res, struct d_volume *vol)
 	if (res == NULL)
 		return;
 
-	opt = vol->disk_options;
-	while ((opt = find_opt(opt, "resync-after"))) {
-		next = opt->next;
+	STAILQ_FOREACH(opt, &vol->disk_options, link) {
+		if (strcpy(opt->name, "resync-after"))
+			continue;
 		ctx_by_name(&depends_on_ctx, opt->value);
 		volumes = ctx_set_implicit_volume(&depends_on_ctx);
 		if (volumes > 1) {
@@ -2216,12 +2189,14 @@ void _convert_after_option(struct d_resource *res, struct d_volume *vol)
 		}
 
 		if (!depends_on_ctx.res || depends_on_ctx.res->ignore) {
-			vol->disk_options = del_opt(vol->disk_options, opt);
+			next = STAILQ_NEXT(opt, link);
+			STAILQ_REMOVE(&vol->disk_options, opt, d_option, link);
+			free_opt(opt);
+			opt = next;
 		} else {
 			free(opt->value);
 			m_asprintf(&opt->value, "%d", depends_on_ctx.vol->device_minor);
 		}
-		opt = next;
 	}
 }
 
@@ -2294,27 +2269,23 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
-	opt = res->proxy_options;
-	while (opt) {
+	STAILQ_FOREACH(opt, &res->proxy_options, link) {
 		argv[NA(argc)] = "-c";
 		ssprintf(argv[NA(argc)], "set %s %s %s",
 			 opt->name, conn_name, opt->value);
-		opt = opt->next;
 	}
 
 	counter = 0;
-	opt = res->proxy_plugins;
-	/* Don't send the "set plugin ... END" line if no plugins are defined 
+	/* Don't send the "set plugin ... END" line if no plugins are defined
 	 * - that's incompatible with the drbd proxy version 1. */
-	if (opt) {
-		while (1) {
+	if (!STAILQ_EMPTY(&res->proxy_plugins)) {
+		STAILQ_FOREACH(opt, &res->proxy_options, link) {
 			argv[NA(argc)] = "-c";
 			ssprintf(argv[NA(argc)], "set plugin %s %d %s",
-					conn_name, counter, opt ? opt->name : "END");
-			if (!opt) break;
-			opt = opt->next;
-			counter ++;
+					conn_name, counter, opt->name);
+			counter++;
 		}
+		ssprintf(argv[NA(argc)], "set plugin %s %d END", conn_name, counter);
 	}
 
 	argv[NA(argc)] = 0;
@@ -2431,15 +2402,15 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
-	struct d_option *opt;
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "wait-connect";
 	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
 	if (is_drbd_top && !res->stacked_timeouts) {
+		struct d_option *opt;
 		unsigned long timeout = 20;
-		if ((opt = find_opt(res->net_options, "connect-int"))) {
+		if ((opt = find_opt(&res->net_options, "connect-int"))) {
 			timeout = strtoul(opt->value, NULL, 10);
 			// one connect-interval? two?
 			timeout *= 2;
@@ -2447,10 +2418,8 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 		argv[argc++] = "-t";
 		ssprintf(argv[argc], "%lu", timeout);
 		argc++;
-	} else {
-		opt = res->startup_options;
-		make_options(opt);
-	}
+	} else
+		make_options(&res->startup_options);
 	argv[NA(argc)] = 0;
 
 	rv = m_system_ex(argv, SLEEPS_FOREVER, res->name);
@@ -2670,15 +2639,12 @@ out:
 	return pr;
 }
 
-static char *get_opt_val(struct d_option *base, const char *name, char *def)
+static char *get_opt_val(struct options *base, const char *name, char *def)
 {
-	while (base) {
-		if (!strcmp(base->name, name)) {
-			return base->value;
-		}
-		base = base->next;
-	}
-	return def;
+	struct d_option *option;
+
+	option = find_opt(base, name);
+	return option ? option->value : def;
 }
 
 void chld_sig_hand(int __attribute((unused)) unused)
@@ -2711,7 +2677,6 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 	struct d_resource *res, *t;
 	char *argv[20], answer[40];
 	pid_t *pids;
-	struct d_option *opt;
 	int rr, wtime, argc, i = 0;
 	time_t start;
 	int saved_stdin, saved_stdout, fd;
@@ -2765,8 +2730,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 			argv[NA(argc)] = drbdsetup;
 			argv[NA(argc)] = "wait-connect";
 			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
-			opt = res->startup_options;
-			make_options(opt);
+			make_options(&res->startup_options);
 			argv[NA(argc)] = 0;
 
 			m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
@@ -2810,8 +2774,8 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 		     " - If the peer was available before the reboot the timeout will\n"
 		     "   expire after %s seconds. [wfc-timeout]\n"
 		     "   (These values are for resource '%s'; 0 sec -> wait forever)\n",
-		     get_opt_val(config->startup_options, "degr-wfc-timeout",
-				 "0"), get_opt_val(config->startup_options,
+		     get_opt_val(&config->startup_options, "degr-wfc-timeout",
+				 "0"), get_opt_val(&config->startup_options,
 						   "wfc-timeout", "0"),
 		     config->name);
 
@@ -3263,10 +3227,11 @@ void validate_resource(struct d_resource *res)
 
 	/* there may be more than one "resync-after" statement,
 	 * see commit 89cd0585 */
-	opt = res->disk_options;
-	while ((opt = find_opt(opt, "resync-after"))) {
-		struct d_resource *rs_after_res = res_by_name(opt->value);
-		next = opt->next;
+	STAILQ_FOREACH(opt, &res->disk_options, link) {
+	  struct d_resource *rs_after_res;
+		if (strcmp(opt->name, "resync-after"))
+			continue;
+		rs_after_res = res_by_name(opt->value);
 		if (rs_after_res == NULL || rs_after_res->ignore) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
@@ -3280,12 +3245,14 @@ void validate_resource(struct d_resource *res)
 			 * resources in resync-after statements.  Don't fail on
 			 * every pacemaker-induced action, as it would
 			 * ultimately lead to all nodes committing suicide. */
-			if (no_tty)
-				res->disk_options = del_opt(res->disk_options, opt);
-			else
+			if (no_tty) {
+				next = opt;
+				STAILQ_REMOVE(&res->disk_options, opt, d_option, link);
+				free_opt(opt);
+				opt = next;
+			} else
 				config_valid = 0;
 		}
-		opt = next;
 	}
 	if (res->ignore)
 		return;
@@ -3298,7 +3265,7 @@ void validate_resource(struct d_resource *res)
 	}
 	// need to verify that in the discard-node-nodename options only known
 	// nodenames are mentioned.
-	if ((opt = find_opt(res->net_options, "after-sb-0pri"))) {
+	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
 			if (res->peer &&
 			    !name_in_names(opt->value + 13, res->peer->on_hosts)
@@ -3318,12 +3285,12 @@ void validate_resource(struct d_resource *res)
 		}
 	}
 
-	if ((opt = find_opt(res->handlers, "fence-peer"))) {
+	if ((opt = find_opt(&res->handlers, "fence-peer"))) {
 		if (strstr(opt->value, "drbd-peer-outdater"))
 			sanity_check_perm();
 	}
 
-	opt = find_opt(res->net_options, "allow-two-primaries");
+	opt = find_opt(&res->net_options, "allow-two-primaries");
 	if (name_in_names("both", res->become_primary_on) && opt == NULL) {
 		fprintf(stderr,
 			"%s:%d: in resource %s:\n"

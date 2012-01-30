@@ -617,7 +617,7 @@ void parse_options_syncer(struct d_resource *res)
 	int token;
 	enum range_checks rc;
 
-	struct d_option **options = NULL, *current_option = NULL;
+	struct options *options = NULL;
 	c_section_start = line;
 	fline = line;
 
@@ -653,13 +653,11 @@ void parse_options_syncer(struct d_resource *res)
 			token = yylex();
 			switch(token) {
 			case TK_NO:
-				current_option = new_opt(opt_name, strdup("no"));
-				*options = APPEND(*options, current_option);
+				insert_tail(options, new_opt(opt_name, strdup("no")));
 				token = yylex();
 				break;
 			default:
-				current_option = new_opt(opt_name, strdup("yes"));
-				*options = APPEND(*options, current_option);
+				insert_tail(options, new_opt(opt_name, strdup("yes")));
 				if (token == TK_YES)
 					token = yylex();
 				break;
@@ -669,8 +667,7 @@ void parse_options_syncer(struct d_resource *res)
 		case TK_DISK_NO_FLAG:
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
-			current_option = new_opt(strdup(opt_name + 3), strdup("no"));
-			*options = APPEND(*options, current_option);
+			insert_tail(options, new_opt(strdup(opt_name + 3), strdup("no")));
 			free(opt_name);
 			token = yylex();
 			break;
@@ -681,8 +678,7 @@ void parse_options_syncer(struct d_resource *res)
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
-			current_option = new_opt(opt_name, yylval.txt);
-			*options = APPEND(*options, current_option);
+			insert_tail(options, new_opt(opt_name, yylval.txt));
 			token = yylex();
 			break;
 		}
@@ -695,15 +691,15 @@ void parse_options_syncer(struct d_resource *res)
 	}
 }
 
-static struct d_option *parse_options_d(int token_flag, int token_no_flag, int token_option,
-					int token_delegate, void (*delegate)(void*),
-					void *ctx)
+static struct options parse_options_d(int token_flag, int token_no_flag, int token_option,
+				      int token_delegate, void (*delegate)(void*),
+				      void *ctx)
 {
 	char *opt_name;
 	int token, token_group;
 	enum range_checks rc;
+	struct options options = STAILQ_HEAD_INITIALIZER(options);
 
-	struct d_option *options = NULL, *current_option = NULL;
 	c_section_start = line;
 	fline = line;
 
@@ -716,16 +712,14 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		if (token == token_flag) {
 			switch(yylex()) {
 			case TK_YES:
-				current_option = new_opt(opt_name, strdup("yes"));
-				options = APPEND(options, current_option);
+				insert_tail(&options, new_opt(opt_name, strdup("yes")));
 				break;
 			case TK_NO:
-				current_option = new_opt(opt_name, strdup("no"));
-				options = APPEND(options, current_option);
+				insert_tail(&options, new_opt(opt_name, strdup("no")));
 				break;
 			case ';':
 				/* Flag value missing; assume yes.  */
-				options = APPEND(options, new_opt(opt_name, strdup("yes")));
+				insert_tail(&options, new_opt(opt_name, strdup("yes")));
 				continue;
 			default:
 				pe_expected("yes | no | ;");
@@ -733,8 +727,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 		} else if (token == token_no_flag) {
 			/* Backward compatibility with the old config file syntax. */
 			assert(!strncmp(opt_name, "no-", 3));
-			current_option = new_opt(strdup(opt_name + 3), strdup("no"));
-			options = APPEND(options, current_option);
+			insert_tail(&options, new_opt(strdup(opt_name + 3), strdup("no")));
 			free(opt_name);
 		} else if (token == token_option ||
 				GET_TOKEN_GROUP(token_option & token_group)) {
@@ -742,8 +735,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 			rc = yylval.rc;
 			expect_STRING_or_INT();
 			range_check(rc, opt_name, yylval.txt);
-			current_option = new_opt(opt_name, yylval.txt);
-			options = APPEND(options, current_option);
+			insert_tail(&options, new_opt(opt_name, yylval.txt));
 		} else if (token == token_delegate ||
 				GET_TOKEN_GROUP(token_delegate & token_group)) {
 			delegate(ctx);
@@ -760,7 +752,7 @@ static struct d_option *parse_options_d(int token_flag, int token_no_flag, int t
 	}
 }
 
-static struct d_option *parse_options(int token_flag, int token_no_flag, int token_option)
+static struct options parse_options(int token_flag, int token_no_flag, int token_option)
 {
 	return parse_options_d(token_flag, token_no_flag, token_option, 0, NULL, NULL);
 }
@@ -1079,6 +1071,7 @@ struct d_volume *parse_volume(int vnr, struct d_name* on_hosts)
 	int token;
 
 	vol = calloc(1,sizeof(struct d_volume));
+	STAILQ_INIT(&vol->disk_options);
 	vol->device_minor = -1;
 	vol->vnr = vnr;
 
@@ -1100,6 +1093,7 @@ struct d_volume *parse_stacked_volume(int vnr)
 	struct d_volume *vol;
 
 	vol = calloc(1,sizeof(struct d_volume));
+	STAILQ_INIT(&vol->disk_options);
 	vol->device_minor = -1;
 	vol->vnr = vnr;
 
@@ -1257,6 +1251,7 @@ void parse_host_section(struct d_resource *res,
 	fline = line;
 
 	host = calloc(1,sizeof(struct d_host_info));
+	STAILQ_INIT(&host->res_options);
 	host->on_hosts = on_hosts;
 	host->config_line = c_section_start;
 
@@ -1413,8 +1408,8 @@ void parse_stacked_section(struct d_resource* res)
 	c_section_start = line;
 	fline = line;
 
-	host=calloc(1,sizeof(struct d_host_info));
-	res->all_hosts = APPEND(res->all_hosts, host);
+	host = calloc(1, sizeof(struct d_host_info));
+	STAILQ_INIT(&host->res_options);
 	EXP(TK_STRING);
 	check_uniq("stacked-on-top-of", "stacked:%s", yylval.txt);
 	host->lower_name = yylval.txt;
@@ -1747,7 +1742,8 @@ void proxy_delegate(void *ctx)
 {
 	struct d_resource *res = (struct d_resource *)ctx;
 	int token;
-	struct d_option *options, *opt;
+	struct options options = STAILQ_HEAD_INITIALIZER(options);
+	struct d_option *opt;
 	struct d_name *line, *word, **pnp;
 
 	opt = NULL;
@@ -1758,7 +1754,6 @@ void proxy_delegate(void *ctx)
 		exit(E_CONFIG_INVALID);
 	}
 
-	options = NULL;
 	while (1) {
 		pnp = &line;
 		while (1) {
@@ -1787,7 +1782,7 @@ void proxy_delegate(void *ctx)
 		if (!opt)
 			pdperror("out of memory.");
 		opt->name = strdup(names_to_str(line));
-		options = APPEND(options, opt);
+		insert_tail(&options, opt);
 		free_names(line);
 	}
 out:
@@ -1798,7 +1793,7 @@ out:
 int parse_proxy_settings(struct d_resource *res, int flags)
 {
 	int token;
-	struct d_option *proxy_options;
+	struct options proxy_options;
 
 	if (flags & PARSER_CHECK_PROXY_KEYWORD) {
 		token = yylex();
@@ -1830,13 +1825,21 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
 	struct d_name *host_names;
+	struct options options;
 	char *opt_name;
 	int token;
 
 	check_upr_init();
 	check_uniq("resource section", res_name);
 
-	res=calloc(1,sizeof(struct d_resource));
+	res = calloc(1, sizeof(struct d_resource));
+	STAILQ_INIT(&res->net_options);
+	STAILQ_INIT(&res->disk_options);
+	STAILQ_INIT(&res->res_options);
+	STAILQ_INIT(&res->startup_options);
+	STAILQ_INIT(&res->handlers);
+	STAILQ_INIT(&res->proxy_options);
+	STAILQ_INIT(&res->proxy_plugins);
 	res->name = res_name;
 	res->config_file = config_save;
 	res->start_line = line;
@@ -1852,7 +1855,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			opt_name = yylval.txt;
 			EXP(TK_STRING);
 			range_check(R_PROTOCOL, opt_name, yylval.txt);
-			res->net_options = APPEND(res->net_options, new_opt(opt_name, yylval.txt));
+			insert_tail(&res->net_options, new_opt(opt_name, yylval.txt));
 			EXP(';');
 			break;
 		case TK_ON:
@@ -1884,11 +1887,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 				break;
 			case '{':
 				check_upr("disk section", "%s:disk", res->name);
-				res->disk_options =
-					SPLICE(res->disk_options,
-					       parse_options(TK_DISK_FLAG,
-							     TK_DISK_NO_FLAG,
-							     TK_DISK_OPTION));
+				options = parse_options(TK_DISK_FLAG, TK_DISK_NO_FLAG, TK_DISK_OPTION);
+				STAILQ_CONCAT(&res->disk_options, &options);
 				break;
 			default:
 				check_string_error(token);
@@ -1898,14 +1898,9 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_NET:
 			check_upr("net section", "%s:net", res->name);
 			EXP('{');
-			res->net_options =
-				SPLICE(res->net_options,
-				       parse_options_d(TK_NET_FLAG,
-						       TK_NET_NO_FLAG,
-						       TK_NET_OPTION,
-						       TK_NET_DELEGATE,
-						       &net_delegate,
-						       (void *)flags));
+			options = parse_options_d(TK_NET_FLAG, TK_NET_NO_FLAG, TK_NET_OPTION,
+						  TK_NET_DELEGATE, &net_delegate, (void *)flags);
+			STAILQ_CONCAT(&res->net_options, &options);
 			break;
 		case TK_SYNCER:
 			check_upr("syncer section", "%s:syncer", res->name);
@@ -1946,11 +1941,8 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_OPTIONS:
 			check_upr("resource options section", "%s:res_options", res->name);
 			EXP('{');
-			res->res_options =
-				SPLICE(res->res_options,
-				       parse_options(0,
-						     0,
-						     TK_RES_OPTION));
+			options = parse_options(0, 0, TK_RES_OPTION);
+			STAILQ_CONCAT(&res->res_options, &options);
 			break;
 		case '}':
 		case 0:
