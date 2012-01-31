@@ -340,8 +340,8 @@ extern void add_setup_option(bool explicit, char *option);
 	 _ss_ret; })
 */
 
-#define ssprintf(ptr,...) \
-	ptr=strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
+#define ssprintf(...) \
+	strcpy(alloca(snprintf(ss_buffer,sizeof(ss_buffer),##__VA_ARGS__)+1),ss_buffer)
 
 #ifndef offsetof
 /* I do not care about non GCC compilers */

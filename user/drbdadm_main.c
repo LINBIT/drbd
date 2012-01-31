@@ -1559,9 +1559,9 @@ static void add_setup_options(char **argv, int *argcp)
 
 #define make_option(ARG, OPT) do {					\
 	if(OPT->value)							\
-		ssprintf(ARG, "--%s=%s", OPT->name, OPT->value);	\
+		ARG = ssprintf("--%s=%s", OPT->name, OPT->value);	\
 	else 								\
-		ssprintf(ARG, "--%s", OPT->name);			\
+		ARG = ssprintf("--%s", OPT->name);			\
 } while (0)
 
 #define make_options(ARG, OPTIONS) do {					\
@@ -1586,7 +1586,7 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_attach ? "attach" : "disk-options";
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
+	argv[NA(argc)] = ssprintf("%d", vol->device_minor);
 	if (do_attach) {
 		argv[NA(argc)] = vol->disk;
 		if (!strcmp(vol->meta_disk, "internal")) {
@@ -1654,9 +1654,9 @@ int adm_new_minor(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "new-minor";
-	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
-	ssprintf(argv[NA(argc)], "%u", ctx->vol->device_minor);
-	ssprintf(argv[NA(argc)], "%u", ctx->vol->vnr);
+	argv[NA(argc)] = ssprintf("%s", ctx->res->name);
+	argv[NA(argc)] = ssprintf("%u", ctx->vol->device_minor);
+	argv[NA(argc)] = ssprintf("%u", ctx->vol->vnr);
 	argv[NA(argc)] = NULL;
 
 	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
@@ -1672,7 +1672,7 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_new_resource ? "new-resource" : "resource-options";
-	ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+	argv[NA(argc)] = ssprintf("%s", ctx->res->name);
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
 	if (reset || do_new_resource)
@@ -1712,12 +1712,12 @@ int adm_resize(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "resize";
-	ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
+	argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
 	opt = find_opt(&ctx->vol->disk_options, "size");
 	if (!opt)
 		opt = find_opt(&ctx->res->disk_options, "size");
 	if (opt)
-		ssprintf(argv[NA(argc)], "--%s=%s", opt->name, opt->value);
+		argv[NA(argc)] = ssprintf("--%s=%s", opt->name, opt->value);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
@@ -1752,7 +1752,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
 	int argc = 0;
 
 	argv[NA(argc)] = drbdmeta;
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
+	argv[NA(argc)] = ssprintf("%d", vol->device_minor);
 	argv[NA(argc)] = "v09";
 	if (!strcmp(vol->meta_disk, "internal")) {
 		argv[NA(argc)] = vol->disk;
@@ -1796,9 +1796,9 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->arg;
 	if (ctx->vol)
-		ssprintf(argv[NA(argc)], "%d", ctx->vol->device_minor);
+		argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
 	else
-		ssprintf(argv[NA(argc)], "%s", ctx->res->name);
+		argv[NA(argc)] = ssprintf("%s", ctx->res->name);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
@@ -2109,7 +2109,7 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_connect ? "connect" : "net-options";
 	if (do_connect)
-		ssprintf(argv[NA(argc)], "%s", res->name);
+		argv[NA(argc)] = ssprintf("%s", res->name);
 	err = add_connection_endpoints(argv, &argc, res);
 	if (err)
 		return err;
@@ -2245,7 +2245,7 @@ int do_proxy_conn_up(struct cfg_ctx *ctx)
 
 	conn_name = proxy_connection_name(res);
 
-	ssprintf(argv[2],
+	argv[2] = ssprintf(
 		 "add connection %s %s:%s %s:%s %s:%s %s:%s",
 		 conn_name,
 		 res->me->proxy->inside.addr,
@@ -2276,7 +2276,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 	argv[NA(argc)] = drbd_proxy_ctl;
 	STAILQ_FOREACH(opt, &res->proxy_options, link) {
 		argv[NA(argc)] = "-c";
-		ssprintf(argv[NA(argc)], "set %s %s %s",
+		argv[NA(argc)] = ssprintf("set %s %s %s",
 			 opt->name, conn_name, opt->value);
 	}
 
@@ -2286,11 +2286,11 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 	if (!STAILQ_EMPTY(&res->proxy_plugins)) {
 		STAILQ_FOREACH(opt, &res->proxy_options, link) {
 			argv[NA(argc)] = "-c";
-			ssprintf(argv[NA(argc)], "set plugin %s %d %s",
+			argv[NA(argc)] = ssprintf("set plugin %s %d %s",
 					conn_name, counter, opt->name);
 			counter++;
 		}
-		ssprintf(argv[NA(argc)], "set plugin %s %d END", conn_name, counter);
+		argv[NA(argc)] = ssprintf("set plugin %s %d END", conn_name, counter);
 	}
 
 	argv[NA(argc)] = 0;
@@ -2308,7 +2308,7 @@ int do_proxy_conn_down(struct cfg_ctx *ctx)
 	int rv;
 
 	conn_name = proxy_connection_name(res);
-	ssprintf(argv[2], "del connection %s", conn_name);
+	argv[2] = ssprintf("del connection %s", conn_name);
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, res->name);
 	return rv;
@@ -2411,7 +2411,7 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "wait-connect";
-	ssprintf(argv[NA(argc)], "%d", vol->device_minor);
+	argv[NA(argc)] = ssprintf("%d", vol->device_minor);
 	if (is_drbd_top && !res->stacked_timeouts) {
 		struct d_option *opt;
 		unsigned long timeout = 20;
@@ -2421,7 +2421,7 @@ static int adm_wait_c(struct cfg_ctx *ctx)
 			timeout *= 2;
 		}
 		argv[argc++] = "-t";
-		ssprintf(argv[argc], "%lu", timeout);
+		argv[argc] = ssprintf("%lu", timeout);
 		argc++;
 	} else
 		make_options(argv[NA(argc)], &res->startup_options);
@@ -2734,7 +2734,7 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 			argc = 0;
 			argv[NA(argc)] = drbdsetup;
 			argv[NA(argc)] = "wait-connect";
-			ssprintf(argv[NA(argc)], "%u", vol->device_minor);
+			argv[NA(argc)] = ssprintf("%u", vol->device_minor);
 			make_options(argv[NA(argc)], &res->startup_options);
 			argv[NA(argc)] = 0;
 

@@ -575,11 +575,11 @@ int adm_adjust(struct cfg_ctx *ctx)
 	sprintf(config_file_dummy,"drbdsetup show %s", ctx->res->name);
 	config_file = config_file_dummy;
 
-	argc=0;
-	argv[argc++]=drbdsetup;
-	argv[argc++]="show";
-	ssprintf(argv[argc++], "%s", ctx->res->name);
-	argv[argc++]=0;
+	argc = 0;
+	argv[argc++] = drbdsetup;
+	argv[argc++] = "show";
+	argv[argc++] = ctx->res->name;
+	argv[argc++] = NULL;
 
 	/* actually parse drbdsetup show output */
 	yyin = m_popen(&pid,argv);

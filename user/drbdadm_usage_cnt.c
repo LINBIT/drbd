@@ -488,14 +488,13 @@ static int make_get_request(char *uri) {
 	}
 
 
-	ssprintf(req_buf,
-		"GET %s HTTP/1.0\r\n"
-		"Host: "HTTP_HOST"\r\n"
-		"User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"
-		"\r\n",
-		uri,
-		nodeinfo.sysname, nodeinfo.release,
-		nodeinfo.version, nodeinfo.machine);
+	req_buf = ssprintf("GET %s HTTP/1.0\r\n"
+			   "Host: "HTTP_HOST"\r\n"
+			   "User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"
+			   "\r\n",
+			   uri,
+			   nodeinfo.sysname, nodeinfo.release,
+			   nodeinfo.version, nodeinfo.machine);
 
 	server.sin_family = AF_INET;
 	server.sin_port = htons(HTTP_PORT);
@@ -626,9 +625,9 @@ void uc_node(enum usage_count_type type)
 		url_encode(answer,n_comment);
 	}
 
-	ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s%s%s",
-		 ni.node_uuid, vcs_to_str(&ni.rev),
-		 n_comment[0] ? "&nc=" : "", n_comment);
+	uri = ssprintf("http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s%s%s",
+		       ni.node_uuid, vcs_to_str(&ni.rev),
+		       n_comment[0] ? "&nc=" : "", n_comment);
 
 	if (send) {
 		write_node_id(&ni);
@@ -755,9 +754,9 @@ int adm_create_md(struct cfg_ctx *ctx)
 	}
 
 	if (send) {
-		ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-			 "nu="U64"&ru="U64"&rs="U64,
-			 ni.node_uuid, device_uuid, device_size);
+		uri = ssprintf("http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
+			       "nu="U64"&ru="U64"&rs="U64,
+			       ni.node_uuid, device_uuid, device_size);
 		make_get_request(uri);
 	}
 
@@ -767,7 +766,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 		struct setup_option *old_setup_options;
 		char *opt;
 
-		ssprintf(opt, X64(016), device_uuid);
+		opt = ssprintf(X64(016), device_uuid);
 		old_setup_options = setup_options;
 		setup_options = NULL;
 		add_setup_option(false, opt);
