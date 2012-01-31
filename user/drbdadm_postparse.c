@@ -21,6 +21,9 @@
 
  */
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -392,5 +395,335 @@ void expand_common(void)
 				expand_opts(&vol->disk_options, &host_vol->disk_options);
 			}
 		}
+	}
+}
+
+static struct d_resource *res_by_name(const char *name)
+{
+	struct d_resource *res;
+
+	for_each_resource(res, &config) {
+		if (strcmp(name, res->name) == 0)
+			return res;
+	}
+	return NULL;
+}
+
+static int sanity_check_abs_cmd(char *cmd_name)
+{
+	struct stat sb;
+
+	if (stat(cmd_name, &sb)) {
+		/* If stat fails, just ignore this sanity check,
+		 * we are still iterating over $PATH probably. */
+		return 0;
+	}
+
+	if (!(sb.st_mode & S_ISUID) || sb.st_mode & S_IXOTH || sb.st_gid == 0) {
+		static int did_header = 0;
+		if (!did_header)
+			fprintf(stderr,
+				"WARN:\n"
+				"  You are using the 'drbd-peer-outdater' as fence-peer program.\n"
+				"  If you use that mechanism the dopd heartbeat plugin program needs\n"
+				"  to be able to call drbdsetup and drbdmeta with root privileges.\n\n"
+				"  You need to fix this with these commands:\n");
+		did_header = 1;
+		fprintf(stderr,
+			"  chgrp haclient %s\n"
+			"  chmod o-x %s\n"
+			"  chmod u+s %s\n\n", cmd_name, cmd_name, cmd_name);
+	}
+	return 1;
+}
+
+static void sanity_check_cmd(char *cmd_name)
+{
+	char *path, *pp, *c;
+	char abs_path[100];
+
+	if (strchr(cmd_name, '/')) {
+		sanity_check_abs_cmd(cmd_name);
+	} else {
+		path = pp = c = strdup(getenv("PATH"));
+
+		while (1) {
+			c = strchr(pp, ':');
+			if (c)
+				*c = 0;
+			snprintf(abs_path, 100, "%s/%s", pp, cmd_name);
+			if (sanity_check_abs_cmd(abs_path))
+				break;
+			if (!c)
+				break;
+			c++;
+			if (!*c)
+				break;
+			pp = c;
+		}
+		free(path);
+	}
+}
+
+/* if the config file is not readable by haclient,
+ * dopd cannot work.
+ * NOTE: we assume that any gid != 0 will be the group dopd will run as,
+ * typically haclient. */
+static void sanity_check_conf(char *c)
+{
+	struct stat sb;
+
+	/* if we cannot stat the config file,
+	 * we have other things to worry about. */
+	if (stat(c, &sb))
+		return;
+
+	/* permissions are funny: if it is world readable,
+	 * but not group readable, and it belongs to my group,
+	 * I am denied access.
+	 * For the file to be readable by dopd (hacluster:haclient),
+	 * it is not enough to be world readable. */
+
+	/* ok if world readable, and NOT group haclient (see NOTE above) */
+	if (sb.st_mode & S_IROTH && sb.st_gid == 0)
+		return;
+
+	/* ok if group readable, and group haclient (see NOTE above) */
+	if (sb.st_mode & S_IRGRP && sb.st_gid != 0)
+		return;
+
+	fprintf(stderr,
+		"WARN:\n"
+		"  You are using the 'drbd-peer-outdater' as fence-peer program.\n"
+		"  If you use that mechanism the dopd heartbeat plugin program needs\n"
+		"  to be able to read the drbd.config file.\n\n"
+		"  You need to fix this with these commands:\n"
+		"  chgrp haclient %s\n" "  chmod g+r %s\n\n", c, c);
+}
+
+static void sanity_check_perm()
+{
+	static int checked = 0;
+	if (checked)
+		return;
+
+	sanity_check_cmd(drbdsetup);
+	sanity_check_cmd(drbdmeta);
+	sanity_check_conf(config_file);
+	checked = 1;
+}
+
+static void validate_resource(struct d_resource *res)
+{
+	struct d_option *opt, *next;
+	struct d_name *bpo;
+
+	/* there may be more than one "resync-after" statement,
+	 * see commit 89cd0585 */
+	STAILQ_FOREACH(opt, &res->disk_options, link) {
+	  struct d_resource *rs_after_res;
+		if (strcmp(opt->name, "resync-after"))
+			continue;
+		rs_after_res = res_by_name(opt->value);
+		if (rs_after_res == NULL || rs_after_res->ignore) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
+				"'resync-after' option is not known%s.\n",
+				res->config_file, res->start_line, res->name,
+				opt->value,
+				rs_after_res ? " on this host" : "");
+			/* Non-fatal if run from some script.
+			 * When deleting resources, it is an easily made
+			 * oversight to leave references to the deleted
+			 * resources in resync-after statements.  Don't fail on
+			 * every pacemaker-induced action, as it would
+			 * ultimately lead to all nodes committing suicide. */
+			if (no_tty) {
+				next = opt;
+				STAILQ_REMOVE(&res->disk_options, opt, d_option, link);
+				free_opt(opt);
+				opt = next;
+			} else
+				config_valid = 0;
+		}
+	}
+	if (res->ignore)
+		return;
+	if (!res->me) {
+		fprintf(stderr,
+			"%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
+			res->config_file, res->start_line, res->name,
+			nodeinfo.nodename);
+		config_valid = 0;
+	}
+	// need to verify that in the discard-node-nodename options only known
+	// nodenames are mentioned.
+	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
+		if (!strncmp(opt->value, "discard-node-", 13)) {
+			if (res->peer &&
+			    !name_in_names(opt->value + 13, &res->peer->on_hosts)
+			    && !name_in_names(opt->value + 13,
+					      &res->me->on_hosts)) {
+				fprintf(stderr,
+					"%s:%d: in resource %s:\n\t"
+					"the nodename in the '%s' option is "
+					"not known.\n\t"
+					"valid nodenames are: '%s %s'.\n",
+					res->config_file, res->start_line,
+					res->name, opt->value,
+					names_to_str(&res->me->on_hosts),
+					names_to_str(&res->peer->on_hosts));
+				config_valid = 0;
+			}
+		}
+	}
+
+	if ((opt = find_opt(&res->handlers, "fence-peer"))) {
+		if (strstr(opt->value, "drbd-peer-outdater"))
+			sanity_check_perm();
+	}
+
+	opt = find_opt(&res->net_options, "allow-two-primaries");
+	if (name_in_names("both", &res->become_primary_on) && opt == NULL) {
+		fprintf(stderr,
+			"%s:%d: in resource %s:\n"
+			"become-primary-on is set to both, but allow-two-primaries "
+			"is not set.\n", res->config_file, res->start_line,
+			res->name);
+		config_valid = 0;
+	}
+
+	if (!res->peer)
+		set_peer_in_resource(res, 0);
+
+	if (res->peer
+	    && ((res->me->proxy == NULL) != (res->peer->proxy == NULL))) {
+		fprintf(stderr,
+			"%s:%d: in resource %s:\n\t"
+			"Either both 'on' sections must contain a proxy subsection, or none.\n",
+			res->config_file, res->start_line, res->name);
+		config_valid = 0;
+	}
+
+	STAILQ_FOREACH(bpo, &res->become_primary_on, link) {
+		if (res->peer &&
+		    !name_in_names(bpo->name, &res->me->on_hosts) &&
+		    !name_in_names(bpo->name, &res->peer->on_hosts) &&
+		    strcmp(bpo->name, "both")) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\t"
+				"become-primary-on contains '%s', which is not named with the 'on' sections.\n",
+				res->config_file, res->start_line, res->name,
+				bpo->name);
+			config_valid = 0;
+		}
+	}
+}
+
+static int ctx_set_implicit_volume(struct cfg_ctx *ctx)
+{
+	struct d_volume *vol, *v;
+	int volumes = 0;
+
+	if (ctx->vol || !ctx->res)
+		return 0;
+
+	if (!ctx->res->me) {
+		return 0;
+	}
+
+	for_each_volume(vol, &ctx->res->me->volumes) {
+		volumes++;
+		v = vol;
+	}
+
+	if (volumes == 1)
+		ctx->vol = v;
+
+	return volumes;
+}
+
+// Need to convert after from resourcename to minor_number.
+static void _convert_after_option(struct d_resource *res, struct d_volume *vol)
+{
+	struct d_option *opt, *next;
+	struct cfg_ctx depends_on_ctx = { };
+	int volumes;
+
+	if (res == NULL)
+		return;
+
+	STAILQ_FOREACH(opt, &vol->disk_options, link) {
+		if (strcpy(opt->name, "resync-after"))
+			continue;
+		ctx_by_name(&depends_on_ctx, opt->value);
+		volumes = ctx_set_implicit_volume(&depends_on_ctx);
+		if (volumes > 1) {
+			fprintf(stderr,
+				"%s:%d: in resource %s:\n\t"
+				"resync-after contains '%s', which is ambiguous, since it contains %d volumes\n",
+				res->config_file, res->start_line, res->name,
+				opt->value, volumes);
+			config_valid = 0;
+			return;
+		}
+
+		if (!depends_on_ctx.res || depends_on_ctx.res->ignore) {
+			next = STAILQ_NEXT(opt, link);
+			STAILQ_REMOVE(&vol->disk_options, opt, d_option, link);
+			free_opt(opt);
+			opt = next;
+		} else {
+			free(opt->value);
+			m_asprintf(&opt->value, "%d", depends_on_ctx.vol->device_minor);
+		}
+	}
+}
+
+// Need to convert after from resourcename/volume to minor_number.
+static void convert_after_option(struct d_resource *res)
+{
+	struct d_volume *vol;
+	struct d_host_info *h;
+
+	for_each_host(h, &res->all_hosts)
+		for_each_volume(vol, &h->volumes)
+			_convert_after_option(res, vol);
+}
+
+// need to convert discard-node-nodename to discard-local or discard-remote.
+static void convert_discard_opt(struct d_resource *res)
+{
+	struct d_option *opt;
+
+	if (res == NULL)
+		return;
+
+	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
+		if (!strncmp(opt->value, "discard-node-", 13)) {
+			if (!strcmp(nodeinfo.nodename, opt->value + 13)) {
+				free(opt->value);
+				opt->value = strdup("discard-local");
+			} else {
+				free(opt->value);
+				opt->value = strdup("discard-remote");
+			}
+		}
+	}
+}
+
+void global_validate_maybe_expand_die_if_invalid(int expand)
+{
+	struct d_resource *res;
+	for_each_resource(res, &config) {
+		validate_resource(res);
+		if (!config_valid)
+			exit(E_CONFIG_INVALID);
+		if (expand) {
+			convert_after_option(res);
+			convert_discard_opt(res);
+		}
+		if (!config_valid)
+			exit(E_CONFIG_INVALID);
 	}
 }

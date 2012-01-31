@@ -222,7 +222,6 @@ static inline int m_system_ex(char **argv, int flags, const char *res_name)
 	return ex;
 }
 extern struct d_option *find_opt(struct options *base, const char *name);
-extern void validate_resource(struct d_resource *);
 /* stages of configuration, as performed on "drbdadm up"
  * or "drbdadm adjust":
  */
@@ -261,10 +260,9 @@ extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);
 extern void maybe_exec_drbdadm_83(char **argv);
 extern void uc_node(enum usage_count_type type);
-extern void convert_discard_opt(struct d_resource* res);
-extern void convert_after_option(struct d_resource* res);
 extern int have_ip(const char *af, const char *ip);
-
+extern void free_opt(struct d_option *item);
+extern int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 enum pr_flags {
 	NO_HOST_SECT_ALLOWED  = 4,
 	PARSE_FOR_ADJUST = 8
@@ -279,6 +277,7 @@ extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(enum pp_flags);
 extern void expand_common(void);
+extern void global_validate_maybe_expand_die_if_invalid(int expand);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct names *names);
 extern char *_names_to_str(char* buffer, struct names *names);
@@ -312,6 +311,7 @@ extern int no_tty;
 extern int dry_run;
 extern int verbose;
 extern char* drbdsetup;
+extern char* drbdmeta;
 extern char* drbd_proxy_ctl;
 extern char* drbdadm_83;
 extern char ss_buffer[1024];
