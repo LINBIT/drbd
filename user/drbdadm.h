@@ -273,6 +273,8 @@ enum pp_flags {
 	MATCH_ON_PROXY = 1,
 };
 
+extern int check_uniq(const char *what, const char *fmt, ...);
+extern void check_volume_sets_equal(struct d_resource *, struct d_host_info *, struct d_host_info *);
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(enum pp_flags);
