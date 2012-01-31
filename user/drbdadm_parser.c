@@ -263,13 +263,6 @@ struct d_option *new_opt(char *name, char *value)
 
 	return cn;
 }
-static void derror(struct d_host_info *host, struct d_resource *res, char *text)
-{
-	config_valid = 0;
-	fprintf(stderr, "%s:%d: in resource %s, on %s { ... }:"
-		" '%s' keyword missing.\n",
-		config_file, c_section_start, res->name, names_to_str(&host->on_hosts), text);
-}
 
 void pdperror(char *text)
 {
@@ -418,21 +411,6 @@ int check_upr(const char *what, const char *fmt, ...)
 	va_end(ap);
 
 	return rv;
-}
-
-void check_meta_disk(struct d_volume *vol, struct d_host_info *host)
-{
-	struct d_name *h;
-	/* when parsing "drbdsetup show[-all]" output,
-	 * a detached volume will only have device/minor,
-	 * but no disk or meta disk. */
-	if (vol->meta_disk == NULL)
-		return;
-	if (strcmp(vol->meta_disk, "internal") != 0) {
-		/* index either some number, or "flexible" */
-		STAILQ_FOREACH(h, &host->on_hosts, link)
-			check_uniq("meta-disk", "%s:%s[%s]", h->name, vol->meta_disk, vol->meta_index);
-	}
 }
 
 static void pe_expected(const char *exp)
@@ -962,17 +940,6 @@ out:
 	}
 }
 
-struct d_volume *find_volume(struct volumes *volumes, int vnr)
-{
-	struct d_volume *vol;
-
-	for_each_volume(vol, volumes)
-		if (vol->vnr == vnr)
-			return vol;
-
-	return NULL;
-}
-
 struct d_volume *volume0(struct volumes *volumes)
 {
 	struct d_volume *vol = STAILQ_FIRST(volumes);
@@ -1081,66 +1048,6 @@ struct d_volume *parse_stacked_volume(int vnr)
 	return vol;
 }
 
-void inherit_volumes(struct volumes *from, struct d_host_info *host)
-{
-	struct d_volume *s, *t;
-	struct d_name *h;
-
-	for_each_volume(s, from) {
-		t = find_volume(&host->volumes, s->vnr);
-		if (!t) {
-			t = calloc(1, sizeof(struct d_volume));
-			t->device_minor = -1;
-			t->vnr = s->vnr;
-			insert_volume(&host->volumes, t);
-		}
-		if (!t->disk && s->disk) {
-			t->disk = strdup(s->disk);
-			STAILQ_FOREACH(h, &host->on_hosts, link)
-				check_uniq("disk", "disk:%s:%s", h->name, t->disk);
-		}
-		if (!t->device && s->device)
-			t->device = strdup(s->device);
-		if (t->device_minor == -1U && s->device_minor != -1U) {
-			t->device_minor = s->device_minor;
-			STAILQ_FOREACH(h, &host->on_hosts, link)
-				check_uniq("device-minor", "device-minor:%s:%d", h->name, t->device_minor);
-		}
-		if (!t->meta_disk && s->meta_disk) {
-			t->meta_disk = strdup(s->meta_disk);
-			if (s->meta_index)
-				t->meta_index = strdup(s->meta_index);
-		}
-	}
-}
-
-void check_volume_complete(struct d_resource *res, struct d_host_info *host, struct d_volume *vol)
-{
-	if (!vol->device && vol->device_minor == -1U)
-		derror(host, res, "device");
-	if (!vol->disk)
-		derror(host, res, "disk");
-	if (!vol->meta_disk)
-		derror(host, res, "meta-disk");
-	if (!vol->meta_index)
-		derror(host, res, "meta-index");
-}
-
-void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
-{
-	struct d_volume *vol;
-	unsigned vnr = -1U;
-
-	for_each_volume(vol, &host->volumes) {
-		if (vnr == -1U || vnr < vol->vnr)
-			vnr = vol->vnr;
-		else
-			fprintf(stderr,
-				"internal error: in %s: unsorted volumes list\n",
-				res->name);
-		check_volume_complete(res, host, vol);
-	}
-}
 
 void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, struct d_host_info *host2)
 {
@@ -1215,12 +1122,11 @@ enum parse_host_section_flags {
 	BY_ADDRESS  = 2,
 };
 
-void parse_host_section(struct d_resource *res,
+static void parse_host_section(struct d_resource *res,
 			       struct names *on_hosts,
 			       enum parse_host_section_flags flags)
 {
 	struct d_host_info *host;
-	struct d_volume *vol;
 	struct d_name *h;
 	int in_braces = 1;
 
@@ -1232,6 +1138,7 @@ void parse_host_section(struct d_resource *res,
 	STAILQ_INIT(&host->volumes);
 	host->on_hosts = *on_hosts;
 	host->config_line = c_section_start;
+	host->require_all = flags & REQUIRE_ALL ? 1 : 0;
 
 	if (flags & BY_ADDRESS) {
 		/* floating <address> {} */
@@ -1324,16 +1231,6 @@ void parse_host_section(struct d_resource *res,
 				    "| flexible-meta-disk");
 		}
 	}
-
-	inherit_volumes(&res->volumes, host);
-	for_each_volume(vol, &host->volumes)
-		check_meta_disk(vol, host);
-
-	if (!(flags & REQUIRE_ALL))
-		return;
-	if (!host->address.addr)
-		derror(host, res, "address");
-	check_volumes_complete(res, host);
 }
 
 void parse_skip()
@@ -1423,11 +1320,6 @@ void parse_stacked_section(struct d_resource* res)
  break_loop:
 
 	res->stacked_on_one = 1;
-
-	inherit_volumes(&res->volumes, host);
-
-	if (!host->address.addr)
-		derror(host,res,"address");
 }
 
 void startup_delegate(void *ctx)
