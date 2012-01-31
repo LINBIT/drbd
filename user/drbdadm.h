@@ -278,6 +278,7 @@ extern void check_volume_sets_equal(struct d_resource *, struct d_host_info *, s
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(enum pp_flags);
+extern void expand_common(void);
 extern struct d_option *new_opt(char *name, char *value);
 extern int name_in_names(char *name, struct names *names);
 extern char *_names_to_str(char* buffer, struct names *names);
@@ -285,6 +286,7 @@ extern char *_names_to_str_c(char* buffer, struct names *names, char c);
 #define NAMES_STR_SIZE 255
 #define names_to_str(N) _names_to_str(alloca(NAMES_STR_SIZE+1), N)
 #define names_to_str_c(N, C) _names_to_str_c(alloca(NAMES_STR_SIZE+1), N, C)
+extern struct d_volume *volume_by_vnr(struct volumes *volumes, int vnr);
 extern void free_names(struct names *names);
 extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);

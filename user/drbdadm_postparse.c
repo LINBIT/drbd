@@ -322,3 +322,75 @@ void post_parse(enum pp_flags flags)
 		if (res->stacked_on_one)
 			set_disk_in_res(res);
 }
+
+static void expand_opts(struct options *common, struct options *options)
+{
+	struct d_option *option, *new_option;
+
+	STAILQ_FOREACH(option, common, link) {
+		if (!find_opt(options, option->name)) {
+			new_option = new_opt(strdup(option->name),
+					     option->value ? strdup(option->value) : NULL);
+			insert_head(options, new_option);
+		}
+	}
+}
+
+void expand_common(void)
+{
+	struct d_resource *res;
+	struct d_volume *vol, *host_vol;
+	struct d_host_info *h;
+
+	/* make sure vol->device is non-NULL */
+	for_each_resource(res, &config) {
+		for_each_host(h, &res->all_hosts) {
+			for_each_volume(vol, &h->volumes) {
+				if (!vol->device)
+					m_asprintf(&vol->device, "/dev/drbd%u",
+						   vol->device_minor);
+			}
+		}
+	}
+
+	for_each_resource(res, &config) {
+		if (!common)
+			break;
+
+		expand_opts(&common->net_options, &res->net_options);
+		expand_opts(&common->disk_options, &res->disk_options);
+		expand_opts(&common->startup_options, &res->startup_options);
+		expand_opts(&common->proxy_options, &res->proxy_options);
+		expand_opts(&common->handlers, &res->handlers);
+		expand_opts(&common->res_options, &res->res_options);
+
+		if (common->stacked_timeouts)
+			res->stacked_timeouts = 1;
+
+		if (STAILQ_EMPTY(&res->become_primary_on))
+			res->become_primary_on = common->become_primary_on;
+
+		expand_opts(&common->proxy_plugins, &res->proxy_plugins);
+
+	}
+
+	/* now that common disk options (if any) have been propagated to the
+	 * resource level, further propagate them to the volume level. */
+	for_each_resource(res, &config) {
+		for_each_host(h, &res->all_hosts) {
+			for_each_volume(vol, &h->volumes) {
+				expand_opts(&res->disk_options, &vol->disk_options);
+			}
+		}
+	}
+
+	/* now from all volume/disk-options on resource level to host level */
+	for_each_resource(res, &config) {
+		for_each_volume(vol, &res->volumes) {
+			for_each_host(h, &res->all_hosts) {
+				host_vol = volume_by_vnr(&h->volumes, vol->vnr);
+				expand_opts(&vol->disk_options, &host_vol->disk_options);
+			}
+		}
+	}
+}
