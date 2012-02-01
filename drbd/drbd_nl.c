@@ -3669,9 +3669,10 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
+
 void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib)
 {
-	static atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
 	struct sk_buff *msg;
 	struct drbd_genlmsghdr *d_out;
 	unsigned seq;
