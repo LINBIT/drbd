@@ -289,6 +289,10 @@ GENL_struct(DRBD_NLA_PEER_DEVICE_STATISTICS, 22, peer_device_statistics,
 	__u64_field(6, 0, peer_dev_resync_failed)  /* sectors */
 )
 
+GENL_struct(DRBD_NLA_NOTIFICATION_HEADER, 23, drbd_notification_header,
+	__u32_field(1, DRBD_GENLA_F_MANDATORY, nh_type)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -454,3 +458,9 @@ GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
 	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_STATISTICS, DRBD_GENLA_F_MANDATORY))
+
+GENL_notification(
+	DRBD_RESOURCE_STATE, 34, events,
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
+	GENL_tla_expected(DRBD_NLA_NOTIFICATION_HEADER, DRBD_F_REQUIRED)
+	GENL_tla_expected(DRBD_NLA_RESOURCE_INFO, DRBD_F_REQUIRED))

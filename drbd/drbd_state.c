@@ -1442,6 +1442,18 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 	    HAS_CHANGED(resource_state_change->susp_nod) ||
 	    HAS_CHANGED(resource_state_change->susp_fen);
 
+	if (resource_state_has_changed) {
+		struct drbd_resource *resource = resource_state_change->resource;
+		struct resource_info resource_info = {
+			.res_role = resource_state_change->role[NEW],
+			.res_susp = resource_state_change->susp[NEW],
+			.res_susp_nod = resource_state_change->susp_nod[NEW],
+			.res_susp_fen = resource_state_change->susp_fen[NEW],
+		};
+
+		notify_resource_state(resource, &resource_info, NOTIFY_CHANGE);
+	}
+
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change =
 			&state_change->devices[n_device];

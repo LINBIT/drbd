@@ -3464,8 +3464,19 @@ drbd_check_resource_name(const char *name)
 	return NO_ERROR;
 }
 
+static void resource_to_info(struct resource_info *info,
+			     struct drbd_resource *resource,
+			     enum which_state which)
+{
+	info->res_role = resource->role[which];
+	info->res_susp = resource->susp[which];
+	info->res_susp_nod = resource->susp_nod[which];
+	info->res_susp_fen = resource->susp_fen[which];
+}
+
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 	struct res_opts res_opts;
 	int err;
@@ -3490,9 +3501,19 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	mutex_lock(&global_state_mutex);
-	if (!conn_create(adm_ctx.resource_name, &res_opts))
+	connection = conn_create(adm_ctx.resource_name, &res_opts);
+	if (!connection)
 		retcode = ERR_NOMEM;
 	mutex_unlock(&global_state_mutex);
+
+	if (connection) {
+		struct drbd_resource *resource = connection->resource;
+		struct resource_info resource_info;
+
+		resource_to_info(&resource_info, resource, NOW);
+		notify_resource_state(resource, &resource_info, NOTIFY_CREATE);
+	}
+
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3588,6 +3609,8 @@ static int adm_del_resource(struct drbd_resource *resource)
 	if (!idr_is_empty(&resource->devices))
 		goto out;
 	err = NO_ERROR;
+
+	notify_resource_state(resource, NULL, NOTIFY_DESTROY);
 
 	list_del_rcu(&resource->resources);
 	/* Make sure all threads have actually stopped: state handling only
@@ -3706,4 +3729,53 @@ failed:
 	drbd_err(device, "Error %d while broadcasting event. "
 			"Event seq:%u sib_reason:%u\n",
 			err, seq, sib->sib_reason);
+}
+
+static int nla_put_notification_header(struct sk_buff *msg,
+				       enum drbd_notification_type type)
+{
+	struct drbd_notification_header nh = {
+		.nh_type = type,
+	};
+
+	return drbd_notification_header_to_skb(msg, &nh, true);
+}
+
+void notify_resource_state(struct drbd_resource *resource,
+			   struct resource_info *resource_info,
+			   enum drbd_notification_type type)
+{
+	struct sk_buff *skb;
+	struct drbd_genlmsghdr *dh;
+	unsigned seq;
+	int err = -ENOMEM;
+
+	seq = atomic_inc_return(&drbd_genl_seq);
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	if (!skb)
+		goto failed;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_RESOURCE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL) ||
+	    nla_put_notification_header(skb, type) ||
+	    (type != NOTIFY_DESTROY &&
+	     resource_info_to_skb(skb, resource_info, true)))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, 0);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed;
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
+			err, seq);
 }

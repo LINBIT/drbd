@@ -1517,6 +1517,9 @@ struct sib_info {
 };
 void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib);
 
+extern void notify_resource_state(struct drbd_resource *,
+				  struct resource_info *,
+				  enum drbd_notification_type);
 
 /*
  * inline helper functions
