@@ -12,12 +12,6 @@
  *     is used instead.
  * @flags: possible operation modifiers (relevant only for user->kernel):
  *     DRBD_GENL_F_SET_DEFAULTS
- * @volume:
- *     When creating a new minor (adding it to a resource), the resource needs
- *     to know which volume number within the resource this is supposed to be.
- *     The volume number corresponds to the same volume number on the remote side,
- *     whereas the minor number on the remote side may be different
- *     (union with flags).
  * @ret_code: kernel->userland unicast cfg reply return code (union with flags);
  */
 struct drbd_genlmsghdr {
