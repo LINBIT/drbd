@@ -181,6 +181,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 	 * silently ignore any --peer connect_to_host option. */
 	if (candidates == 1 && nr_hosts == 2) {
 		res->peer = candidate;
+		res->connect_to = candidate->proxy ? &candidate->proxy->inside : &candidate->address;
 		if (dry_run > 1 && connect_to_host)
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n"
@@ -217,6 +218,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 				"\tInvoked with --peer '%s', but that matches myself!\n",
 				res->config_file, res->start_line, res->name, connect_to_host);
 			res->peer = NULL;
+			res->connect_to = NULL;
 			break;
 		}
 
@@ -226,9 +228,11 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 				"\tInvoked with --peer '%s', but that matches multiple times!\n",
 				res->config_file, res->start_line, res->name, connect_to_host);
 			res->peer = NULL;
+			res->connect_to = NULL;
 			break;
 		}
 		res->peer = host;
+		res->connect_to = host->proxy ? &host->proxy->inside : &host->address;
 	}
 
 	if (peer_required && !res->peer) {

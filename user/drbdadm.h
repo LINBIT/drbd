@@ -156,6 +156,7 @@ struct d_resource
 
 	struct d_host_info* me;
 	struct d_host_info* peer;
+	struct d_address *connect_to;
 	struct hosts all_hosts;
 
 	struct options net_options;

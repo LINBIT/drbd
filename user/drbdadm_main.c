@@ -1493,13 +1493,9 @@ static void add_setup_options(char **argv, int *argcp)
 		make_option(ARG, option);				\
 } while (0)
 
-/* FIXME: Don't leak the memory allocated by asprintf. */
-#define make_address(A)				       				\
-	if (!strcmp((A)->af, "ipv6")) {						\
-		m_asprintf(&argv[NA(argc)], "%s:[%s]:%s", (A)->af, (A)->addr, (A)->port); \
-	} else {								\
-		m_asprintf(&argv[NA(argc)], "%s:%s:%s", (A)->af, (A)->addr, (A)->port); \
-	}
+#define ssprintf_addr(A)					\
+ssprintf(strcmp((A)->af, "ipv6") ? "%s:%s:%s" : "%s:[%s]:%s",	\
+	 (A)->af, (A)->addr, (A)->port);
 
 static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool reset)
 {
@@ -1982,39 +1978,18 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static int add_connection_endpoints(char **argv, int *argcp, struct d_resource *res)
-{
-	int argc = *argcp;
-
-	make_address(&res->me->address);
-	if (res->me->proxy) {
-		make_address(&res->me->proxy->inside);
-	} else if (res->peer) {
-		make_address(&res->peer->address);
-	} else if (dry_run) {
-		argv[NA(argc)] = "N/A";
-	} else {
-		fprintf(stderr, "resource %s: cannot configure network without knowing my peer.\n", res->name);
-		return 20;
-	}
-	*argcp = argc;
-	return 0;
-}
-
 static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool reset)
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	int argc = 0;
-	int err;
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_connect ? "connect" : "net-options";
 	if (do_connect)
 		argv[NA(argc)] = ssprintf("%s", res->name);
-	err = add_connection_endpoints(argv, &argc, res);
-	if (err)
-		return err;
+	argv[NA(argc)] = ssprintf_addr(&res->me->address);
+	argv[NA(argc)] = ssprintf_addr(res->connect_to);
 
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
@@ -2055,7 +2030,8 @@ int adm_disconnect(struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->arg;
-	add_connection_endpoints(argv, &argc, ctx->res);
+	argv[NA(argc)] = ssprintf_addr(&ctx->res->me->address);
+	argv[NA(argc)] = ssprintf_addr(ctx->res->connect_to);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
