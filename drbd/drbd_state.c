@@ -1459,8 +1459,18 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 			&state_change->devices[n_device];
 		struct drbd_peer_device_state_change *peer_device_state_change = NULL;
 		struct drbd_connection_state_change *connection_state_change = NULL;
-		int n_connection = -1;
+		int n_connection;
 
+		if (HAS_CHANGED(device_state_change->disk_state)) {
+			struct drbd_device *device = device_state_change->device;
+			struct device_info device_info = {
+				.dev_disk_state = device_state_change->disk_state[NEW],
+			};
+
+			notify_device_state(device, &device_info, NOTIFY_CHANGE);
+		}
+
+		n_connection = -1;
 		if (state_change->n_connections == 1) {
 			connection_state_change = &state_change->connections[0];
 			peer_device_state_change = &state_change->peer_devices[n_device];

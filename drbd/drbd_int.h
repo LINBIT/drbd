@@ -1308,7 +1308,7 @@ extern struct mutex global_state_mutex;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
-				      struct device_conf *);
+				      struct device_conf *, struct drbd_device **);
 extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_delete_device(struct drbd_device *mdev);
 
@@ -1520,6 +1520,9 @@ void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib);
 extern void notify_resource_state(struct drbd_resource *,
 				  struct resource_info *,
 				  enum drbd_notification_type);
+extern void notify_device_state(struct drbd_device *,
+				struct device_info *,
+				enum drbd_notification_type);
 
 /*
  * inline helper functions

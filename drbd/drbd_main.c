@@ -2965,7 +2965,7 @@ fail:
 }
 
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
-				      struct device_conf *device_conf)
+				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -3107,6 +3107,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 			drbd_connected(peer_device);
 	}
 
+	*p_device = device;
 	return NO_ERROR;
 
 out_no_peer_device:

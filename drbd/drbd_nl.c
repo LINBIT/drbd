@@ -3519,11 +3519,19 @@ out:
 	return 0;
 }
 
+static void device_to_info(struct device_info *info,
+			   struct drbd_device *device,
+			   enum which_state which)
+{
+	info->dev_disk_state = device->disk_state[which];
+}
+
 int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_genlmsghdr *dh = info->userhdr;
 	struct device_conf device_conf;
 	struct drbd_resource *resource;
+	struct drbd_device *device;
 	enum drbd_ret_code retcode;
 	int err;
 
@@ -3555,7 +3563,13 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.resource;
 	mutex_lock(&resource->conf_update);
-	retcode = drbd_create_device(resource, dh->minor, adm_ctx.volume, &device_conf);
+	retcode = drbd_create_device(resource, dh->minor, adm_ctx.volume, &device_conf, &device);
+	if (retcode == NO_ERROR) {
+		struct device_info info;
+
+		device_to_info(&info, device, NOW);
+		notify_device_state(device, &info, NOTIFY_CREATE);
+	}
 	mutex_unlock(&resource->conf_update);
 out:
 	drbd_adm_finish(info, retcode);
@@ -3571,6 +3585,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	    device->resource->role[NOW] == R_SECONDARY) {
 		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
 			CS_VERBOSE | CS_WAIT_COMPLETE);
+		notify_device_state(device, NULL, NOTIFY_DESTROY);
 		drbd_delete_device(device);
 		return NO_ERROR;
 	} else
@@ -3778,4 +3793,43 @@ nla_put_failure:
 failed:
 	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 			err, seq);
+}
+
+void notify_device_state(struct drbd_device *device,
+			 struct device_info *device_info,
+			 enum drbd_notification_type type)
+{
+	struct sk_buff *skb;
+	struct drbd_genlmsghdr *dh;
+	unsigned seq;
+	int err = -ENOMEM;
+
+	seq = atomic_inc_return(&drbd_genl_seq);
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	if (!skb)
+		goto failed;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_DEVICE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = device->minor;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device) ||
+	    nla_put_notification_header(skb, type) ||
+	    (type != NOTIFY_DESTROY &&
+	     device_info_to_skb(skb, device_info, true)))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, 0);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed;
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n",
+		 err, seq);
 }
