@@ -1526,6 +1526,9 @@ extern void notify_device_state(struct drbd_device *,
 extern void notify_connection_state(struct drbd_connection *,
 				    struct connection_info *,
 				    enum drbd_notification_type);
+extern void notify_peer_device_state(struct drbd_peer_device *,
+				     struct peer_device_info *,
+				     enum drbd_notification_type);
 
 /*
  * inline helper functions

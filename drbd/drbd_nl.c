@@ -2086,6 +2086,17 @@ static void connection_to_info(struct connection_info *info,
 	info->conn_role = connection->peer_role[which];
 }
 
+static void peer_device_to_info(struct peer_device_info *info,
+				struct drbd_peer_device *peer_device,
+				enum which_state which)
+{
+	info->peer_repl_state = peer_device->repl_state[which];
+	info->peer_disk_state = peer_device->disk_state[which];
+	info->peer_resync_susp_user = peer_device->resync_susp_user[which];
+	info->peer_resync_susp_peer = peer_device->resync_susp_peer[which];
+	info->peer_resync_susp_dependency = peer_device->resync_susp_dependency[which];
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_peer_device *peer_device;
@@ -3576,10 +3587,17 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&resource->conf_update);
 	retcode = drbd_create_device(resource, dh->minor, adm_ctx.volume, &device_conf, &device);
 	if (retcode == NO_ERROR) {
+		struct drbd_peer_device *peer_device;
 		struct device_info info;
 
 		device_to_info(&info, device, NOW);
 		notify_device_state(device, &info, NOTIFY_CREATE);
+		for_each_peer_device(peer_device, device) {
+			struct peer_device_info peer_device_info;
+
+			peer_device_to_info(&peer_device_info, peer_device, NOW);
+			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CREATE);
+		}
 	}
 	mutex_unlock(&resource->conf_update);
 out:
@@ -3594,8 +3612,12 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	     * we may want to delete a minor from a live replication group.
 	     */
 	    device->resource->role[NOW] == R_SECONDARY) {
+		struct drbd_peer_device *peer_device;
+
 		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
 			CS_VERBOSE | CS_WAIT_COMPLETE);
+		for_each_peer_device(peer_device, device)
+			notify_peer_device_state(peer_device, NULL, NOTIFY_DESTROY);
 		notify_device_state(device, NULL, NOTIFY_DESTROY);
 		drbd_delete_device(device);
 		return NO_ERROR;
@@ -3883,5 +3905,45 @@ nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n",
+		 err, seq);
+}
+
+void notify_peer_device_state(struct drbd_peer_device *peer_device,
+			      struct peer_device_info *peer_device_info,
+			      enum drbd_notification_type type)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	struct sk_buff *skb;
+	struct drbd_genlmsghdr *dh;
+	unsigned seq;
+	int err = -ENOMEM;
+
+	seq = atomic_inc_return(&drbd_genl_seq);
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	if (!skb)
+		goto failed;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_PEER_DEVICE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
+	    nla_put_notification_header(skb, type) ||
+	    (type != NOTIFY_DESTROY &&
+	     peer_device_info_to_skb(skb, peer_device_info, true)))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, 0);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed;
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
 }
