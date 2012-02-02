@@ -115,7 +115,6 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	req->i.waiting = false;
 
 	INIT_LIST_HEAD(&req->tl_requests);
-	INIT_LIST_HEAD(&req->w.list);
 
 	/* one reference to be put by __drbd_make_request */
 	atomic_set(&req->completion_ref, 1);
@@ -386,7 +385,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		req->master_bio = NULL;
 	} else {
 		/* Assert that this will be drbd_req_destroy()ed
-		 * with this very invokation. */
+		 * with this very invocation. */
 		D_ASSERT(device, atomic_read(&req->kref.refcount) == 1);
 	}
 }
@@ -398,9 +397,12 @@ static int drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_
 	if (!atomic_sub_and_test(put, &req->completion_ref))
 		return 0;
 
-	if (drbd_suspended(req->device)) {
-		/* We do not allow completion while suspended.  Re-get a
-		 * reference, so whatever happens when this is resumed
+	if (drbd_req_is_write(req) && drbd_suspended(req->device)) {
+		/* We do not allow completion of WRITE requests while suspended.
+		 * Successful READ may be completed. Failed READ will be queued
+		 * for retry anyways.
+		 *
+		 * Re-get a reference, so whatever happens when this is resumed
 		 * may put and complete. */
 
 		D_ASSERT(req->device, !(req->rq_state[0] & RQ_COMPLETION_SUSP));
@@ -639,9 +641,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state[idx] & RQ_NET_PENDING);
 		D_ASSERT(device, (req->rq_state[0] & RQ_LOCAL_MASK) == 0);
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
-		req->w.cb = w_send_read_req;
-		drbd_queue_work(&peer_device->connection->sender_work,
-				&req->w);
+		if (!peer_device->connection->todo.req_next)
+			peer_device->connection->todo.req_next = req;
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -670,9 +671,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* queue work item to send data */
 		D_ASSERT(device, req->rq_state[idx] & RQ_NET_PENDING);
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
-		req->w.cb =  w_send_dblock;
-		drbd_queue_work(&peer_device->connection->sender_work,
-				&req->w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
@@ -681,14 +679,14 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		rcu_read_unlock();
 		if (device->resource->current_tle_writes >= p)
 			start_new_tl_epoch(device->resource);
-
+		if (!peer_device->connection->todo.req_next)
+			peer_device->connection->todo.req_next = req;
 		break;
 
 	case QUEUE_FOR_SEND_OOS:
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
-		req->w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&peer_device->connection->sender_work,
-				&req->w);
+		if (!peer_device->connection->todo.req_next)
+			peer_device->connection->todo.req_next = req;
 		break;
 
 	case READ_RETRY_REMOTE_CANCELED:
@@ -783,6 +781,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case RESTART_FROZEN_DISK_IO:
+#if 0
+		/* FIXME; do we need a (temporary) dedicated thread for this? */
 		if (!(req->rq_state[0] & RQ_LOCAL_COMPLETED))
 			break;
 
@@ -798,24 +798,27 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->w.cb = w_restart_disk_io;
 		drbd_queue_work(&device->resource->work, &req->w);
 		break;
+#else
+		BUG(); /* FIXME */
+		break;
+#endif
 
 	case RESEND:
 		/* If RQ_NET_OK is already set, we got a P_WRITE_ACK or P_RECV_ACK
 		   before the connection loss (B&C only); only P_BARRIER_ACK
 		   (or the local completion?) was missing when we suspended.
 		   Throwing them out of the TL here by pretending we got a BARRIER_ACK.
-		   During connection handshake, we ensure that the peer was not rebooted. */
-		if (!(req->rq_state[idx] & RQ_NET_OK)) {
-			/* FIXME could this possibly be a req->w.cb == w_send_out_of_sync?
-			 * in that case we must not set RQ_NET_PENDING. */
+		   During connection handshake, we ensure that the peer was not rebooted.
 
-			mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, RQ_NET_QUEUED|RQ_NET_PENDING);
-			if (req->w.cb) {
-				/* w.cb expected to be w_send_dblock, or w_send_read_req */
-				drbd_queue_work(&peer_device->connection->sender_work,
-						&req->w);
-				rv = req->rq_state[0] & RQ_WRITE ? MR_WRITE : MR_READ;
-			} /* else: FIXME can this happen? */
+		   Resending is only allowed on synchronous connections,
+		   where all requests not yet completed to upper layers whould
+		   be in the same "reorder-domain", there can not possibly be
+		   any dependency between incomplete requests, and we are
+		   allowed to complete this one "out-of-sequence".
+		 */
+		if (!(req->rq_state[idx] & RQ_NET_OK)) {
+			mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP,
+					RQ_NET_QUEUED|RQ_NET_PENDING);
 			break;
 		}
 		/* else, fall through to BARRIER_ACKED */
@@ -1212,10 +1215,13 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	if (rw == WRITE) {
 		if (!drbd_process_write_request(req))
 			no_remote = true;
+		else
+			wake_all_senders(device->resource);
 	} else {
 		if (peer_device) {
 			_req_mod(req, TO_BE_SENT, peer_device);
 			_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
+			wake_up(&peer_device->connection->sender_work.q_wait);
 		} else
 			no_remote = true;
 	}

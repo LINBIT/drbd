@@ -268,6 +268,11 @@ static inline void drbd_req_make_private_bio(struct drbd_request *req, struct bi
 	bio->bi_next     = NULL;
 }
 
+static inline bool drbd_req_is_write(struct drbd_request *req)
+{
+	return req->rq_state[0] & RQ_WRITE;
+}
+
 /* Short lived temporary struct on the stack.
  * We could squirrel the error to be returned into
  * bio->bi_size, or similar. But that would be too ugly. */

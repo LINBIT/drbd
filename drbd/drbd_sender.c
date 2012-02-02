@@ -1282,131 +1282,6 @@ int w_send_write_hint(struct drbd_work *w, int cancel)
 	return drbd_send_command(first_peer_device(device), sock, P_UNPLUG_REMOTE, 0, NULL, 0);
 }
 
-int w_send_out_of_sync(struct drbd_work *w, int cancel)
-{
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = req->device;
-	/* FIXME needs to become a function parameter */
-	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct drbd_connection *connection = peer_device->connection;
-	int err;
-
-	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED, peer_device);
-		return 0;
-	}
-
-	if (!connection->send.seen_any_write_yet) {
-		connection->send.seen_any_write_yet = true;
-		connection->send.current_epoch_nr = req->epoch;
-	}
-	if (connection->send.current_epoch_nr != req->epoch) {
-		if (connection->send.current_epoch_writes)
-			drbd_send_barrier(connection);
-		connection->send.current_epoch_nr = req->epoch;
-	}
-	/* this time, no connection->send.current_epoch_writes++;
-	 * If it was sent, it was the closing barrier for the last
-	 * replicated epoch, before we went into AHEAD mode.
-	 * No more barriers will be sent, until we leave AHEAD mode again. */
-
-	err = drbd_send_out_of_sync(peer_device, req);
-	req_mod(req, OOS_HANDED_TO_NETWORK, peer_device);
-
-	return err;
-}
-
-/**
- * w_send_dblock() - Worker callback to send a P_DATA packet in order to mirror a write request
- * @device:	DRBD device.
- * @w:		work object.
- * @cancel:	The connection will be closed anyways
- */
-int w_send_dblock(struct drbd_work *w, int cancel)
-{
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = req->device;
-	/* FIXME needs to become a function parameter */
-	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct drbd_connection *connection = peer_device->connection;
-	int err;
-
-	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED, peer_device);
-		return 0;
-	}
-
-	if (!connection->send.seen_any_write_yet) {
-		connection->send.seen_any_write_yet = true;
-		connection->send.current_epoch_nr = req->epoch;
-	}
-	if (connection->send.current_epoch_nr != req->epoch) {
-		if (connection->send.current_epoch_writes)
-			drbd_send_barrier(connection);
-		connection->send.current_epoch_nr = req->epoch;
-	}
-	connection->send.current_epoch_writes++;
-	connection->send.current_dagtag_sector = req->dagtag_sector;
-
-	err = drbd_send_dblock(peer_device, req);
-	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK, peer_device);
-
-	return err;
-}
-
-/**
- * w_send_read_req() - Worker callback to send a read request (P_DATA_REQUEST) packet
- * @device:	DRBD device.
- * @w:		work object.
- * @cancel:	The connection will be closed anyways
- */
-int w_send_read_req(struct drbd_work *w, int cancel)
-{
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = req->device;
-	/* FIXME needs to become a function parameter */
-	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct drbd_connection *connection = peer_device->connection;
-	int err;
-
-	if (unlikely(cancel)) {
-		req_mod(req, SEND_CANCELED, peer_device);
-		return 0;
-	}
-
-	/* Even read requests may close a write epoch,
-	 * if there was any yet. */
-	if (connection->send.seen_any_write_yet &&
-	    connection->send.current_epoch_nr != req->epoch) {
-		if (connection->send.current_epoch_writes)
-			drbd_send_barrier(connection);
-		connection->send.current_epoch_nr = req->epoch;
-	}
-
-	err = drbd_send_drequest(peer_device, P_DATA_REQUEST, req->i.sector, req->i.size,
-				 (unsigned long)req);
-
-	req_mod(req, err ? SEND_FAILED : HANDED_OVER_TO_NETWORK, peer_device);
-
-	return err;
-}
-
-int w_restart_disk_io(struct drbd_work *w, int cancel)
-{
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = req->device;
-
-	if (bio_data_dir(req->master_bio) == WRITE &&
-		req->rq_state[0] & RQ_IN_ACT_LOG)
-		drbd_al_begin_io(device, &req->i, false);
-
-	drbd_req_make_private_bio(req, req->master_bio);
-	req->private_bio->bi_bdev = device->ldev->backing_bdev;
-	generic_make_request(req->private_bio);
-
-	return 0;
-}
-
 static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *other_device = peer_device->device;
@@ -1806,19 +1681,151 @@ bool need_to_send_barrier(struct drbd_connection *connection)
 bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
 	spin_lock_irq(&queue->q_lock);
-	list_splice_init(&queue->q, work_list);
+	list_splice_tail_init(&queue->q, work_list);
 	spin_unlock_irq(&queue->q_lock);
 	return !list_empty(work_list);
 }
 
-void wait_for_sender_work(struct drbd_connection *connection, struct list_head *work_list)
+static struct drbd_request *__next_request_for_connection(
+		struct drbd_connection *connection, struct drbd_request *r)
+{
+	r = list_prepare_entry(r, &connection->resource->transfer_log, tl_requests);
+	list_for_each_entry_continue(r, &connection->resource->transfer_log, tl_requests) {
+		unsigned s = drbd_req_state_by_conn(r, connection);
+		if (!(s & RQ_NET_QUEUED))
+			continue;
+		return r;
+	}
+	return NULL;
+}
+
+/* holds req_lock on entry, may give up and reaquire temporarily */
+static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection)
+{
+	struct bio_and_error m;
+	struct drbd_request *req;
+	struct drbd_request *req_oldest = NULL;
+	struct drbd_request *tmp = NULL;
+	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
+	unsigned s;
+
+	/* In the unlikely case that we need to give up the spinlock
+	 * temporarily below, we need to restart the loop, as the request
+	 * pointer, or any next pointers, may become invalid meanwhile.
+	 *
+	 * We can restart from a known safe position, though:
+	 * the last request we successfully marked for resend,
+	 * without it disappearing.
+	 */
+restart:
+	req = list_prepare_entry(tmp, &connection->resource->transfer_log, tl_requests);
+	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
+		/* potentially needed in complete_master_bio below */
+		device = req->device;
+		peer_device = conn_peer_device(connection, device->vnr);
+		s = drbd_req_state_by_peer_device(req, peer_device);
+
+		if (!(s & RQ_NET_MASK))
+			continue;
+
+		/* if it is marked QUEUED, it can not be an old one,
+		 * so we can stop marking for RESEND here. */
+		if (s & RQ_NET_QUEUED)
+			break;
+
+		/* Skip old requests which are uninteresting for this connection.
+		 * Could happen, if this connection was restarted,
+		 * while some other connection was lagging seriously. */
+		if (s & RQ_NET_DONE)
+			continue;
+
+		/* FIXME what about QUEUE_FOR_SEND_OOS?
+		 * Is it even possible to encounter those here?
+		 * It should not.
+		 */
+		if (drbd_req_is_write(req))
+			expect(peer_device, s & RQ_EXP_BARR_ACK);
+
+		__req_mod(req, RESEND, peer_device, &m);
+
+		/* If this is now RQ_NET_PENDING (it should), it won't
+		 * disappear, even if we give up the spinlock below. */
+		if (drbd_req_state_by_peer_device(req, peer_device) & RQ_NET_PENDING)
+			tmp = req;
+
+		/* We crunch through a potentially very long list, so be nice
+		 * and eventually temporarily give up the spinlock/re-enable
+		 * interrupts.
+		 *
+		 * Also, in the very unlikely case that trying to mark it for
+		 * RESEND actually caused this request to be finished off, we
+		 * complete the master bio, outside of the lock. */
+		if (m.bio || need_resched()) {
+			spin_unlock_irq(&connection->resource->req_lock);
+			if (m.bio)
+				complete_master_bio(device, &m);
+			cond_resched();
+			spin_lock_irq(&connection->resource->req_lock);
+			goto restart;
+		}
+		if (!req_oldest)
+			req_oldest = req;
+	}
+	return req_oldest;
+}
+
+static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
+{
+	if (connection->todo.req_next == TL_NEXT_REQUEST_RESEND)
+		connection->todo.req_next = tl_mark_for_resend_by_connection(connection);
+
+	else if (connection->todo.req_next == NULL)
+		connection->todo.req_next = __next_request_for_connection(connection, NULL);
+
+	connection->todo.req = connection->todo.req_next;
+
+	if (connection->todo.req_next != NULL)
+		connection->todo.req_next =
+			__next_request_for_connection(connection, connection->todo.req_next);
+
+	return connection->todo.req;
+}
+
+
+/* This finds the next not yet processed request from
+ * connection->resource->transfer_log.
+ * It also moves all currently queued connection->sender_work
+ * to connection->todo.work_list.
+ */
+bool check_sender_todo(struct drbd_connection *connection)
+{
+	tl_next_request_for_connection(connection);
+
+	/* we did lock_irq above already. */
+	/* FIXME can we get rid of this additional lock? */
+	spin_lock(&connection->sender_work.q_lock);
+	list_splice_tail_init(&connection->sender_work.q, &connection->todo.work_list);
+	spin_unlock(&connection->sender_work.q_lock);
+
+	/* MAYBE: if (req == NULL), kref_get() the previous request,
+	 * and remember that, so we do not need to walk the full transfer log
+	 * next time. */
+
+	return connection->todo.req || !list_empty(&connection->todo.work_list);
+}
+
+void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
 	int uncork, cork;
+	bool got_something = 0;
 
-	dequeue_work_batch(&connection->sender_work, work_list);
-	if (!list_empty(work_list))
+	spin_lock_irq(&connection->resource->req_lock);
+	got_something = check_sender_todo(connection);
+	spin_unlock_irq(&connection->resource->req_lock);
+	if (got_something)
 		return;
 
 	/* Still nothing to do?
@@ -1840,12 +1847,10 @@ void wait_for_sender_work(struct drbd_connection *connection, struct list_head *
 
 	for (;;) {
 		int send_barrier;
-		prepare_to_wait(&connection->sender_work.q_wait, &wait, TASK_INTERRUPTIBLE);
+		prepare_to_wait(&connection->sender_work.q_wait, &wait,
+				TASK_INTERRUPTIBLE);
 		spin_lock_irq(&connection->resource->req_lock);
-		spin_lock(&connection->sender_work.q_lock);	/* FIXME get rid of this one? */
-		list_splice_init(&connection->sender_work.q, work_list);
-		spin_unlock(&connection->sender_work.q_lock);	/* FIXME get rid of this one? */
-		if (!list_empty(work_list) || signal_pending(current)) {
+		if (check_sender_todo(connection) || signal_pending(current)) {
 			spin_unlock_irq(&connection->resource->req_lock);
 			break;
 		}
@@ -1877,14 +1882,120 @@ void wait_for_sender_work(struct drbd_connection *connection, struct list_head *
 	mutex_unlock(&connection->data.mutex);
 }
 
+int process_one_request(struct drbd_connection *connection)
+{
+	struct bio_and_error m;
+	struct drbd_request *req = connection->todo.req;
+	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device =
+			conn_peer_device(connection, device->vnr);
+	unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+	int err;
+	enum drbd_req_event what;
+
+	if (drbd_req_is_write(req)) {
+		/* need to send a P_BARRIER first? */
+		if (!connection->send.seen_any_write_yet) {
+			connection->send.seen_any_write_yet = true;
+			connection->send.current_epoch_nr = req->epoch;
+		}
+		if (connection->send.current_epoch_nr != req->epoch) {
+			if (connection->send.current_epoch_writes)
+				drbd_send_barrier(connection);
+			connection->send.current_epoch_nr = req->epoch;
+		}
+
+		/* If a WRITE does not expect a barrier ack,
+		 * we are supposed to only send an "out of sync" info packet */
+		if (s & RQ_EXP_BARR_ACK) {
+			connection->send.current_epoch_writes++;
+			connection->send.current_dagtag_sector = req->dagtag_sector;
+
+			err = drbd_send_dblock(peer_device, req);
+			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
+		} else {
+			/* this time, no connection->send.current_epoch_writes++;
+			 * If it was sent, it was the closing barrier for the last
+			 * replicated epoch, before we went into AHEAD mode.
+			 * No more barriers will be sent, until we leave AHEAD mode again. */
+
+			err = drbd_send_out_of_sync(peer_device, req);
+			what = OOS_HANDED_TO_NETWORK;
+		}
+	} else {
+		if (connection->send.seen_any_write_yet &&
+		    connection->send.current_epoch_nr != req->epoch) {
+			if (connection->send.current_epoch_writes)
+				drbd_send_barrier(connection);
+			connection->send.current_epoch_nr = req->epoch;
+		}
+
+		err = drbd_send_drequest(peer_device, P_DATA_REQUEST,
+				req->i.sector, req->i.size, (unsigned long)req);
+		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
+	}
+
+	spin_lock_irq(&connection->resource->req_lock);
+	__req_mod(req, what, peer_device, &m);
+
+	/* As we hold the request lock anyways here,
+	 * this is a convenient place to check for new things to do. */
+	check_sender_todo(connection);
+
+	spin_unlock_irq(&connection->resource->req_lock);
+
+	if (m.bio)
+		complete_master_bio(device, &m);
+	return err;
+}
+
+int process_sender_todo(struct drbd_connection *connection)
+{
+	struct drbd_work *w = NULL;
+
+	/* Process all currently pending work items,
+	 * or requests from the transfer log.
+	 *
+	 * Right now, work items do not require any strict ordering wrt. the
+	 * request stream, so lets just do simple interleaved processing.
+	 *
+	 * Stop processing as soon as an error is encountered.
+	 */
+
+	if (list_empty(&connection->todo.work_list) && connection->todo.req)
+		return process_one_request(connection);
+
+	while (!list_empty(&connection->todo.work_list)) {
+		int err;
+
+		w = list_first_entry(&connection->todo.work_list, struct drbd_work, list);
+		list_del_init(&w->list);
+		err = w->cb(w, connection->cstate[NOW] < C_CONNECTED);
+		if (err)
+			return err;
+
+		/* If we would need strict ordering for work items, we could
+		 * add a dagtag member to struct drbd_work, and serialize based on that.
+		 * && !dagtag_newer(connection->todo.req->dagtag_sector, w->dagtag_sector))
+		 * to the following condition. */
+		if (connection->todo.req)
+			err = process_one_request(connection);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 int drbd_sender(struct drbd_thread *thi)
 {
-	LIST_HEAD(work_list);
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
 	int vnr;
+	int err;
 
+	/* Should we drop this? Or reset even more stuff? */
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		peer_device->send_cnt = 0;
@@ -1895,8 +2006,9 @@ int drbd_sender(struct drbd_thread *thi)
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
-		if (list_empty(&work_list))
-			wait_for_sender_work(connection, &work_list);
+		if (list_empty(&connection->todo.work_list) &&
+		    connection->todo.req == NULL)
+			wait_for_sender_todo(connection);
 
 		if (signal_pending(current)) {
 			flush_signals(current);
@@ -1910,24 +2022,40 @@ int drbd_sender(struct drbd_thread *thi)
 		if (get_t_state(thi) != RUNNING)
 			break;
 
-		while (!list_empty(&work_list)) {
-			w = list_first_entry(&work_list, struct drbd_work, list);
-			list_del_init(&w->list);
-			if (w->cb(w, connection->cstate[NOW] < C_CONNECTED) == 0)
-				continue;
-			if (connection->cstate[NOW] >= C_CONNECTED)
-				change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-		}
+		err = process_sender_todo(connection);
+		if (err)
+			change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
 
+	/* cleanup all currently unprocessed requests */
+	if (!connection->todo.req) {
+		spin_lock_irq(&connection->resource->req_lock);
+		tl_next_request_for_connection(connection);
+		spin_unlock_irq(&connection->resource->req_lock);
+	}
+	while (connection->todo.req) {
+		struct bio_and_error m;
+		struct drbd_request *req = connection->todo.req;
+		struct drbd_device *device = req->device;
+		peer_device = conn_peer_device(connection, device->vnr);
+
+		spin_lock_irq(&connection->resource->req_lock);
+		tl_next_request_for_connection(connection);
+		__req_mod(req, SEND_CANCELED, peer_device, &m);
+		spin_unlock_irq(&connection->resource->req_lock);
+		if (m.bio)
+			complete_master_bio(device, &m);
+	}
+
+	/* cancel all still pending works */
 	do {
-		while (!list_empty(&work_list)) {
-			w = list_first_entry(&work_list, struct drbd_work, list);
+		while (!list_empty(&connection->todo.work_list)) {
+			w = list_first_entry(&connection->todo.work_list, struct drbd_work, list);
 			list_del_init(&w->list);
 			w->cb(w, 1);
 		}
-		dequeue_work_batch(&connection->sender_work, &work_list);
-	} while (!list_empty(&work_list));
+		dequeue_work_batch(&connection->sender_work, &connection->todo.work_list);
+	} while (!list_empty(&connection->todo.work_list));
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {

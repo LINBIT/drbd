@@ -1606,15 +1606,24 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				    conn_lowest_repl_state(connection) >= L_CONNECTED)
 					what = RESEND;
 
+#if 0
+/* FIXME currently broken.
+ * RESTART_FROZEN_DISK_IO may need a (temporary?) dedicated kernel thread */
 				if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
 				    conn_lowest_disk(connection) > D_NEGOTIATING)
 					what = RESTART_FROZEN_DISK_IO;
+#endif
 
 				if (what != NOTHING) {
 					unsigned long irq_flags;
 
+					/* Is this too early?  We should only
+					 * resume after the iteration over all
+					 * connections?
+					 */
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
-					_tl_restart(connection, what);
+					if (what == RESEND)
+						connection->todo.req_next = TL_NEXT_REQUEST_RESEND;
 					__change_io_susp_no_data(resource, false);
 					end_state_change(resource, &irq_flags);
 				}

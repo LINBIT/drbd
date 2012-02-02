@@ -365,7 +365,6 @@ extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
 struct drbd_request {
-	struct drbd_work w;
 	struct drbd_device *device;
 
 	/* if local IO is not allowed, will be NULL.
@@ -751,6 +750,30 @@ struct drbd_connection {			/* is a resource from the config file */
 	/* sender side */
 	struct drbd_work_queue sender_work;
 
+	struct sender_todo {
+		struct list_head work_list;
+
+		/* the currently (or last) processed request,
+		 * see process_sender_todo() */
+		struct drbd_request *req;
+
+		/* Points to the next request on the resource->transfer_log,
+		 * which is RQ_NET_QUEUED for this connection, and so can
+		 * safely be used as next starting point for the list walk
+		 * in tl_next_request_for_connection().
+		 *
+		 * If it is NULL (we walked off the tail last time), it will be
+		 * set by __req_mod( QUEUE_FOR.* ), so fast connections don't
+		 * need to walk the full transfer_log list every time, even if
+		 * the list is kept long by some slow connections.
+		 *
+		 * There is also a special value to reliably re-start
+		 * the transfer log walk after having scheduled the requests
+		 * for RESEND. */
+#define TL_NEXT_REQUEST_RESEND	((void*)1)
+		struct drbd_request *req_next;
+	} todo;
+
 	struct {
 		/* whether this sender thread
 		 * has processed a single write yet. */
@@ -952,6 +975,13 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 		return 0;
 	}
 	return req->rq_state[1 + idx];
+}
+
+static inline unsigned drbd_req_state_by_conn(struct drbd_request *req,
+		struct drbd_connection *connection)
+{
+	return drbd_req_state_by_peer_device(req,
+			conn_peer_device(connection, req->device->vnr));
 }
 
 #define for_each_resource(resource, _resources) \

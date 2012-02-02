@@ -2737,6 +2737,9 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->epochs = 1;
 	spin_lock_init(&connection->epoch_lock);
 
+	INIT_LIST_HEAD(&connection->todo.work_list);
+	connection->todo.req = NULL;
+
 	connection->send.seen_any_write_yet = false;
 	connection->send.current_epoch_nr = 0;
 	connection->send.current_epoch_writes = 0;

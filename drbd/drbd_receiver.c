@@ -4403,7 +4403,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		unsigned long irq_flags;
 
-		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
+		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		abort_state_change_locked(resource);
 		spin_unlock_irq(&resource->req_lock);
