@@ -1432,7 +1432,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 {
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	bool resource_state_has_changed;
-	unsigned int n_device;
+	unsigned int n_device, n_connection;
 
 #define HAS_CHANGED(state) ((state)[OLD] != (state)[NEW])
 
@@ -1454,12 +1454,28 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 		notify_resource_state(resource, &resource_info, NOTIFY_CHANGE);
 	}
 
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_connection_state_change *connection_state_change =
+				&state_change->connections[n_connection];
+
+		if (HAS_CHANGED(connection_state_change->peer_role) ||
+		    HAS_CHANGED(connection_state_change->cstate)) {
+			struct drbd_connection *connection =
+					connection_state_change->connection;
+			struct connection_info connection_info = {
+				.conn_connection_state = connection_state_change->cstate[NEW],
+				.conn_role = connection_state_change->peer_role[NEW],
+			};
+
+			notify_connection_state(connection, &connection_info, NOTIFY_CHANGE);
+		}
+	}
+
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change =
 			&state_change->devices[n_device];
 		struct drbd_peer_device_state_change *peer_device_state_change = NULL;
 		struct drbd_connection_state_change *connection_state_change = NULL;
-		int n_connection;
 
 		if (HAS_CHANGED(device_state_change->disk_state)) {
 			struct drbd_device *device = device_state_change->device;

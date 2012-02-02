@@ -2078,6 +2078,14 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static void connection_to_info(struct connection_info *info,
+			       struct drbd_connection *connection,
+			       enum which_state which)
+{
+	info->conn_connection_state = connection->cstate[which];
+	info->conn_role = connection->peer_role[which];
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_peer_device *peer_device;
@@ -3509,9 +3517,12 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (connection) {
 		struct drbd_resource *resource = connection->resource;
 		struct resource_info resource_info;
+		struct connection_info connection_info;
 
 		resource_to_info(&resource_info, resource, NOW);
 		notify_resource_state(resource, &resource_info, NOTIFY_CREATE);
+		connection_to_info(&connection_info, connection, NOW);
+		notify_connection_state(connection, &connection_info, NOTIFY_CREATE);
 	}
 
 out:
@@ -3626,6 +3637,8 @@ static int adm_del_resource(struct drbd_resource *resource)
 	err = NO_ERROR;
 
 	notify_resource_state(resource, NULL, NOTIFY_DESTROY);
+	for_each_connection(connection, resource)
+		notify_connection_state(connection, NULL, NOTIFY_DESTROY);
 
 	list_del_rcu(&resource->resources);
 	/* Make sure all threads have actually stopped: state handling only
@@ -3831,5 +3844,44 @@ nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n",
+		 err, seq);
+}
+
+void notify_connection_state(struct drbd_connection *connection,
+			     struct connection_info *connection_info,
+			     enum drbd_notification_type type)
+{
+	struct sk_buff *skb;
+	struct drbd_genlmsghdr *dh;
+	unsigned seq;
+	int err = -ENOMEM;
+
+	seq = atomic_inc_return(&drbd_genl_seq);
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	if (!skb)
+		goto failed;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_CONNECTION_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL) ||
+	    nla_put_notification_header(skb, type) ||
+	    (type != NOTIFY_DESTROY &&
+	     connection_info_to_skb(skb, connection_info, true)))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, 0);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed;
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
 }
