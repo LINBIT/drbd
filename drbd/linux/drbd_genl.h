@@ -291,6 +291,7 @@ GENL_struct(DRBD_NLA_PEER_DEVICE_STATISTICS, 22, peer_device_statistics,
 
 GENL_struct(DRBD_NLA_NOTIFICATION_HEADER, 23, drbd_notification_header,
 	__u32_field(1, DRBD_GENLA_F_MANDATORY, nh_type)
+	__u32_field(2, DRBD_GENLA_F_MANDATORY, nh_id)
 )
 
 /*

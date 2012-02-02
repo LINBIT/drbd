@@ -1517,18 +1517,23 @@ struct sib_info {
 };
 void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib);
 
+extern atomic_t drbd_notify_id;
 extern void notify_resource_state(struct drbd_resource *,
 				  struct resource_info *,
-				  enum drbd_notification_type);
+				  enum drbd_notification_type,
+				  unsigned int);
 extern void notify_device_state(struct drbd_device *,
 				struct device_info *,
-				enum drbd_notification_type);
+				enum drbd_notification_type,
+				unsigned int);
 extern void notify_connection_state(struct drbd_connection *,
 				    struct connection_info *,
-				    enum drbd_notification_type);
+				    enum drbd_notification_type,
+				    unsigned int);
 extern void notify_peer_device_state(struct drbd_peer_device *,
 				     struct peer_device_info *,
-				     enum drbd_notification_type);
+				     enum drbd_notification_type,
+				     unsigned int);
 
 /*
  * inline helper functions

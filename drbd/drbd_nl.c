@@ -107,6 +107,9 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 #include "drbd_nla.h"
 #include <linux/genl_magic_func.h>
 
+atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
+atomic_t drbd_notify_id = ATOMIC_INIT(0);
+
 /* used blkdev_get_by_path, to claim our meta data device(s) */
 static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
 
@@ -3529,11 +3532,12 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		struct drbd_resource *resource = connection->resource;
 		struct resource_info resource_info;
 		struct connection_info connection_info;
+		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		resource_to_info(&resource_info, resource, NOW);
-		notify_resource_state(resource, &resource_info, NOTIFY_CREATE);
+		notify_resource_state(resource, &resource_info, NOTIFY_CREATE, id);
 		connection_to_info(&connection_info, connection, NOW);
-		notify_connection_state(connection, &connection_info, NOTIFY_CREATE);
+		notify_connection_state(connection, &connection_info, NOTIFY_CREATE, id);
 	}
 
 out:
@@ -3589,14 +3593,15 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	if (retcode == NO_ERROR) {
 		struct drbd_peer_device *peer_device;
 		struct device_info info;
+		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		device_to_info(&info, device, NOW);
-		notify_device_state(device, &info, NOTIFY_CREATE);
+		notify_device_state(device, &info, NOTIFY_CREATE, id);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
 			peer_device_to_info(&peer_device_info, peer_device, NOW);
-			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CREATE);
+			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CREATE, id);
 		}
 	}
 	mutex_unlock(&resource->conf_update);
@@ -3613,12 +3618,13 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	     */
 	    device->resource->role[NOW] == R_SECONDARY) {
 		struct drbd_peer_device *peer_device;
+		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
 			CS_VERBOSE | CS_WAIT_COMPLETE);
 		for_each_peer_device(peer_device, device)
-			notify_peer_device_state(peer_device, NULL, NOTIFY_DESTROY);
-		notify_device_state(device, NULL, NOTIFY_DESTROY);
+			notify_peer_device_state(peer_device, NULL, NOTIFY_DESTROY, id);
+		notify_device_state(device, NULL, NOTIFY_DESTROY, id);
 		drbd_delete_device(device);
 		return NO_ERROR;
 	} else
@@ -3646,6 +3652,7 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 static int adm_del_resource(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	unsigned int id = atomic_inc_return(&drbd_notify_id);
 	int err;
 
 	mutex_lock(&global_state_mutex);
@@ -3658,9 +3665,9 @@ static int adm_del_resource(struct drbd_resource *resource)
 		goto out;
 	err = NO_ERROR;
 
-	notify_resource_state(resource, NULL, NOTIFY_DESTROY);
 	for_each_connection(connection, resource)
-		notify_connection_state(connection, NULL, NOTIFY_DESTROY);
+		notify_connection_state(connection, NULL, NOTIFY_DESTROY, id);
+	notify_resource_state(resource, NULL, NOTIFY_DESTROY, id);
 
 	list_del_rcu(&resource->resources);
 	/* Make sure all threads have actually stopped: state handling only
@@ -3742,8 +3749,6 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
-
 void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib)
 {
 	struct sk_buff *msg;
@@ -3782,10 +3787,12 @@ failed:
 }
 
 static int nla_put_notification_header(struct sk_buff *msg,
-				       enum drbd_notification_type type)
+				       enum drbd_notification_type type,
+				       unsigned int id)
 {
 	struct drbd_notification_header nh = {
 		.nh_type = type,
+		.nh_id = id,
 	};
 
 	return drbd_notification_header_to_skb(msg, &nh, true);
@@ -3793,14 +3800,14 @@ static int nla_put_notification_header(struct sk_buff *msg,
 
 void notify_resource_state(struct drbd_resource *resource,
 			   struct resource_info *resource_info,
-			   enum drbd_notification_type type)
+			   enum drbd_notification_type type,
+			   unsigned int id)
 {
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
 	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	unsigned seq;
 	int err = -ENOMEM;
 
-	seq = atomic_inc_return(&drbd_genl_seq);
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
 	if (!skb)
 		goto failed;
@@ -3812,7 +3819,7 @@ void notify_resource_state(struct drbd_resource *resource,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL) ||
-	    nla_put_notification_header(skb, type) ||
+	    nla_put_notification_header(skb, type, id) ||
 	    (type != NOTIFY_DESTROY &&
 	     resource_info_to_skb(skb, resource_info, true)))
 		goto nla_put_failure;
@@ -3832,14 +3839,14 @@ failed:
 
 void notify_device_state(struct drbd_device *device,
 			 struct device_info *device_info,
-			 enum drbd_notification_type type)
+			 enum drbd_notification_type type,
+			 unsigned int id)
 {
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
 	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	unsigned seq;
 	int err = -ENOMEM;
 
-	seq = atomic_inc_return(&drbd_genl_seq);
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
 	if (!skb)
 		goto failed;
@@ -3851,7 +3858,7 @@ void notify_device_state(struct drbd_device *device,
 	dh->minor = device->minor;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device) ||
-	    nla_put_notification_header(skb, type) ||
+	    nla_put_notification_header(skb, type, id) ||
 	    (type != NOTIFY_DESTROY &&
 	     device_info_to_skb(skb, device_info, true)))
 		goto nla_put_failure;
@@ -3871,14 +3878,14 @@ failed:
 
 void notify_connection_state(struct drbd_connection *connection,
 			     struct connection_info *connection_info,
-			     enum drbd_notification_type type)
+			     enum drbd_notification_type type,
+			     unsigned int id)
 {
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
 	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	unsigned seq;
 	int err = -ENOMEM;
 
-	seq = atomic_inc_return(&drbd_genl_seq);
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
 	if (!skb)
 		goto failed;
@@ -3890,7 +3897,7 @@ void notify_connection_state(struct drbd_connection *connection,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL) ||
-	    nla_put_notification_header(skb, type) ||
+	    nla_put_notification_header(skb, type, id) ||
 	    (type != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
@@ -3910,15 +3917,15 @@ failed:
 
 void notify_peer_device_state(struct drbd_peer_device *peer_device,
 			      struct peer_device_info *peer_device_info,
-			      enum drbd_notification_type type)
+			      enum drbd_notification_type type,
+			      unsigned int id)
 {
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
 	struct drbd_resource *resource = peer_device->device->resource;
 	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	unsigned seq;
 	int err = -ENOMEM;
 
-	seq = atomic_inc_return(&drbd_genl_seq);
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
 	if (!skb)
 		goto failed;
@@ -3930,7 +3937,7 @@ void notify_peer_device_state(struct drbd_peer_device *peer_device,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
-	    nla_put_notification_header(skb, type) ||
+	    nla_put_notification_header(skb, type, id) ||
 	    (type != NOTIFY_DESTROY &&
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
 		goto nla_put_failure;

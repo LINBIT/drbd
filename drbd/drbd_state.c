@@ -36,6 +36,7 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 struct after_state_change_work {
 	struct drbd_work w;
 	struct drbd_state_change *state_change;
+	unsigned int id;
 	struct completion *done;
 };
 
@@ -1163,8 +1164,10 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	struct after_state_change_work *work;
 
 	work = kmalloc(sizeof(*work), gfp);
-	if (work)
+	if (work) {
 		work->state_change = remember_state_change(resource, gfp);
+		work->id = atomic_inc_return(&drbd_notify_id);
+	}
 	if (work && work->state_change) {
 		work->w.cb = w_after_state_change;
 		work->done = done;
@@ -1428,7 +1431,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	return state;
 }
 
-static void broadcast_state_change(struct drbd_state_change *state_change)
+static void broadcast_state_change(struct drbd_state_change *state_change, unsigned int id)
 {
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	bool resource_state_has_changed;
@@ -1451,7 +1454,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 			.res_susp_fen = resource_state_change->susp_fen[NEW],
 		};
 
-		notify_resource_state(resource, &resource_info, NOTIFY_CHANGE);
+		notify_resource_state(resource, &resource_info, NOTIFY_CHANGE, id);
 	}
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
@@ -1467,7 +1470,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 				.conn_role = connection_state_change->peer_role[NEW],
 			};
 
-			notify_connection_state(connection, &connection_info, NOTIFY_CHANGE);
+			notify_connection_state(connection, &connection_info, NOTIFY_CHANGE, id);
 		}
 	}
 
@@ -1483,7 +1486,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 				.dev_disk_state = device_state_change->disk_state[NEW],
 			};
 
-			notify_device_state(device, &device_info, NOTIFY_CHANGE);
+			notify_device_state(device, &device_info, NOTIFY_CHANGE, id);
 		}
 
 		n_connection = -1;
@@ -1532,7 +1535,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change)
 				.peer_resync_susp_dependency = p->resync_susp_dependency[NEW],
 			};
 
-			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CHANGE);
+			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CHANGE, id);
 		}
 	}
 
@@ -1570,7 +1573,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	struct drbd_peer_device_state_change *peer_device_state_change;
 	int n_device, n_connection;
 
-	broadcast_state_change(state_change);
+	broadcast_state_change(state_change, work->id);
 
 	peer_device_state_change = &state_change->peer_devices[0];
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
