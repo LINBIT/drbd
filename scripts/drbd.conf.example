@@ -168,3 +168,39 @@ resource stacked_multi_volume {
 		}
 	}
 }
+
+resource drbd_9_two_connection {
+	volume 0 {
+	       device minor 10;
+	       disk /dev/foo/bar;
+	       meta-disk internal;
+	}
+
+	on alpha {
+		address 192.168.31.1:7800;
+	}
+	on bravo {
+		address 192.168.31.2:7800;
+	}
+	on charlie {
+		address 192.168.31.3:7800;
+	}
+
+	connection {
+		host alpha;
+		host bravo;
+		net { protocol C; }
+	}
+
+	connection {
+		host alpha port 7801;
+		host charlie address 192.168.31.3:7801;
+		net { protocol A; }
+	}
+
+	connection {
+		host bravo port 7802;
+		host charlie port 7802;
+		net { protocol A; }
+	}
+}

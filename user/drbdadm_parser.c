@@ -1369,6 +1369,87 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 	return 0;
 }
 
+static struct hname_address *parse_hname_address_pair()
+{
+	struct hname_address *ha;
+	int token;
+
+	ha = calloc(1, sizeof(struct hname_address));
+	ha->config_line = line;
+
+	EXP(TK_STRING);
+	ha->name = yylval.txt;
+
+	token = yylex();
+	switch (token) {
+	case TK_ADDRESS:
+		__parse_address(&ha->address);
+		EXP(';');
+		break;
+	case TK_PORT:
+		EXP(TK_INTEGER);
+		ha->address.port = yylval.txt;
+		EXP(';');
+		break;
+	case ';':
+		break;
+	default:
+		pe_expected_got( "address | port | ;", token);
+	}
+
+	return ha;
+}
+
+static struct connection *parse_connection(enum pr_flags flags)
+{
+	struct connection *conn;
+	int hosts = 0, token;
+
+	conn = calloc(1, sizeof(struct connection));
+	STAILQ_INIT(&conn->hname_address_pairs);
+	STAILQ_INIT(&conn->net_options);
+	conn->config_line = line;
+
+	token = yylex();
+	switch (token) {
+	case '{':
+		break;
+	case TK_STRING:
+		conn->name = yylval.txt;
+		EXP('{');
+		break;
+	default:
+		pe_expected_got( "<connection name> | {", token);
+	}
+	while (1) {
+		token = yylex();
+		switch(token) {
+		case TK_HOST:
+			insert_tail(&conn->hname_address_pairs, parse_hname_address_pair());
+			if (++hosts >= 3) {
+				fprintf(stderr,	"%s:%d: only two 'host' keywords per connection allowed\n",
+					config_file, fline);
+				config_valid = 0;
+			}
+			break;
+		case TK_NET:
+			if (!STAILQ_EMPTY(&conn->net_options)) {
+				fprintf(stderr,	"%s:%d: only one 'net' section per connection allowed\n",
+					config_file, fline);
+				config_valid = 0;
+			}
+			EXP('{');
+			conn->net_options = parse_options_d(TK_NET_FLAG, TK_NET_NO_FLAG, TK_NET_OPTION,
+							    TK_NET_DELEGATE, &net_delegate, (void *)flags);
+			break;
+		case '}':
+			return conn;
+		default:
+			pe_expected_got( "host | net | }", token);
+		}
+	}
+}
+
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 {
 	struct d_resource* res;
@@ -1497,13 +1578,16 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			options = parse_options(0, 0, TK_RES_OPTION);
 			STAILQ_CONCAT(&res->res_options, &options);
 			break;
+		case TK_CONNECTION:
+			insert_tail(&res->connections, parse_connection(flags));
+			break;
 		case '}':
 		case 0:
 			goto exit_loop;
 		default:
 		goto_default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
-					" startup | handlers |"
+					" startup | handlers | connection |"
 					" ignore-on | stacked-on-top-of",token);
 		}
 	}

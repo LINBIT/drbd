@@ -161,6 +161,7 @@ STAILQ_HEAD(hname_address_pairs, hname_address);
 
 struct connection
 {
+	char *name; /* parsed */
 	struct hname_address_pairs hname_address_pairs; /* parsed here */
 	int config_line; /* parsed here */
 

@@ -61,6 +61,8 @@ yes			{ DP; return TK_YES;			}
 ask			{ DP; return TK_ASK;			}
 skip			{ DP; return TK_SKIP;			}
 disk			{ DP; return TK_DISK;			}
+host			{ DP; return TK_HOST;			}
+port			{ DP; return TK_PORT;			}
 proxy			{ DP; return TK_PROXY;			}
 minor			{ DP; return TK_MINOR;			}
 inside			{ DP; return TK_INSIDE;			}
@@ -75,6 +77,7 @@ address			{ DP; return TK_ADDRESS;		}
 startup			{ DP; return TK_STARTUP;		}
 include			{ DP; return TK_INCLUDE;		}
 handlers		{ DP; return TK_HANDLER;		}
+connection		{ DP; return TK_CONNECTION;		}
 minor-count		{ DP; return TK_MINOR_COUNT;		}
 disable-ip-verification { DP; return TK_DISABLE_IP_VERIFICATION;}
 dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
