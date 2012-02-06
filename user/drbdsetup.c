@@ -1686,6 +1686,23 @@ static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 static bool opt_verbose;
 static bool opt_statistics;
 
+static const char *susp_str(struct resource_info *info)
+{
+	static char buffer[32];
+
+	*buffer = 0;
+	if (info->res_susp)
+		strcat(buffer, ",user" + (*buffer == 0));
+	if (info->res_susp_nod)
+		strcat(buffer, ",no-disk" + (*buffer == 0));
+	if (info->res_susp_fen)
+		strcat(buffer, ",fencing" + (*buffer == 0));
+	if (*buffer == 0)
+		strcat(buffer, "no");
+
+	return buffer;
+}
+
 void resource_status(struct resources_list *resource)
 {
 	wrap_printf(0, "%s", resource->name);
@@ -1693,27 +1710,8 @@ void resource_status(struct resources_list *resource)
 	if (opt_verbose ||
 	    resource->info.res_susp ||
 	    resource->info.res_susp_nod ||
-	    resource->info.res_susp_fen) {
-		const char *x1 = "", *x2 = "", *x3 = "";
-		bool first = true;
-
-		if (resource->info.res_susp) {
-			x1 = ",user" + first;
-			first = false;
-		}
-		if (resource->info.res_susp_nod) {
-			x2 = ",no-disk" + first;
-			first = false;
-		}
-		if (resource->info.res_susp_fen) {
-			x3 = ",fencing" + first;
-			first = false;
-		}
-		if (first)
-			x1 = "no";
-
-		wrap_printf(4, " suspended:%s%s%s", x1, x2, x3);
-	}
+	    resource->info.res_susp_fen)
+		wrap_printf(4, " suspended:%s", susp_str(&resource->info));
 	if (opt_statistics && opt_verbose) {
 		const char *write_ordering_str[] = {
 			[WO_NONE] = "none",
