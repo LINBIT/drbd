@@ -107,7 +107,7 @@ struct adm_cmd {
 struct deferred_cmd {
 	int (*function) (struct cfg_ctx *);
 	struct cfg_ctx ctx;
-	struct deferred_cmd *next;
+	STAILQ_ENTRY(deferred_cmd) link;
 };
 
 struct option general_admopt[] = {
@@ -209,8 +209,7 @@ struct setup_option *setup_options;
 char *connect_to_host = NULL;
 volatile int alarm_raised;
 
-struct deferred_cmd *deferred_cmds[__CFG_LAST] = { NULL, };
-struct deferred_cmd *deferred_cmds_tail[__CFG_LAST] = { NULL, };
+STAILQ_HEAD(deferred_cmds, deferred_cmd) deferred_cmds[__CFG_LAST];
 
 void add_setup_option(bool explicit, char *option)
 {
@@ -442,12 +441,18 @@ struct adm_cmd cmds[] = {
 	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
 };
 
+static void initialize_deferred_cmds()
+{
+	enum drbd_cfg_stage stage;
+	for (stage = CFG_PREREQ; stage < __CFG_LAST; stage++)
+		STAILQ_INIT(&deferred_cmds[stage]);
+}
 
 void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
 		   struct cfg_ctx *ctx,
 		   const char *arg, enum drbd_cfg_stage stage)
 {
-	struct deferred_cmd *d, *t;
+	struct deferred_cmd *d;
 
 	d = calloc(1, sizeof(struct deferred_cmd));
 	if (d == NULL) {
@@ -460,17 +465,7 @@ void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
 	d->ctx.vol = ctx->vol;
 	d->ctx.arg = arg;
 
-	/* first to come is head */
-	if (!deferred_cmds[stage])
-		deferred_cmds[stage] = d;
-
-	/* link it in at tail */
-	t = deferred_cmds_tail[stage];
-	if (t)
-		t->next = d;
-
-	/* advance tail */
-	deferred_cmds_tail[stage] = d;
+	STAILQ_INSERT_TAIL(&deferred_cmds[stage], d, link);
 }
 
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
@@ -529,7 +524,7 @@ static char *drbd_cfg_stage_string[] = {
 int _run_deferred_cmds(enum drbd_cfg_stage stage)
 {
 	struct d_resource *last_res = NULL;
-	struct deferred_cmd *d = deferred_cmds[stage];
+	struct deferred_cmd *d = STAILQ_FIRST(&deferred_cmds[stage]);
 	struct deferred_cmd *t;
 	int r;
 	int rv = 0;
@@ -568,7 +563,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 			}
 		}
 		last_res = d->ctx.res;
-		t = d->next;
+		t = STAILQ_NEXT(d, link);
 		free(d);
 		d = t;
 		if (r > rv)
@@ -3490,6 +3485,7 @@ int main(int argc, char **argv)
 	int is_dump;
 	struct cfg_ctx ctx = { .arg = NULL };
 
+	initialize_deferred_cmds();
 	yyin = NULL;
 	uname(&nodeinfo);	/* FIXME maybe fold to lower case ? */
 	no_tty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
