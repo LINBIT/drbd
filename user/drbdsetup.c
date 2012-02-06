@@ -249,7 +249,9 @@ static int w_connected_state(struct drbd_cmd *, struct genl_info *);
 static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
 static void show_address(void* address, int addr_len);
-static const char *address_str(void* address, int addr_len);
+
+#define ADDRESS_STR_MAX 256
+static char *address_str(char *buffer, void* address, int addr_len);
 
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
@@ -1864,12 +1866,15 @@ static void connection_status(struct connections_list *connection,
 			      struct peer_devices_list *peer_devices,
 			      bool single_device)
 {
-	const char *str;
+	char local_addr[ADDRESS_STR_MAX], peer_addr[ADDRESS_STR_MAX];
 
-	str = address_str(connection->ctx.ctx_my_addr, connection->ctx.ctx_my_addr_len);
-	wrap_printf(2, "local:%s", str ? str : "?");
-	str = address_str(connection->ctx.ctx_peer_addr, connection->ctx.ctx_peer_addr_len);
-	wrap_printf(6, " peer:%s", str ? str : "?");
+	if (!address_str(local_addr, connection->ctx.ctx_my_addr, connection->ctx.ctx_my_addr_len))
+		strcpy(local_addr, "?");
+	if (!address_str(peer_addr, connection->ctx.ctx_peer_addr, connection->ctx.ctx_peer_addr_len))
+		strcpy(peer_addr, "?");
+	/* FIXME: Reject undefined endpoints once the kernel stops creating NULL connections. */
+	wrap_printf(2, "local:%s", local_addr);
+	wrap_printf(6, " peer:%s", peer_addr);
 	if (opt_verbose || connection->info.conn_connection_state != C_CONNECTED)
 		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
 	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
@@ -1993,32 +1998,30 @@ static void show_address(void* address, int addr_len)
 	}
 }
 
-static const char *address_str(void* address, int addr_len)
+static char *address_str(char *buffer, void* address, int addr_len)
 {
-	static char str[256];
-
 	struct sockaddr     *addr;
 	struct sockaddr_in  *addr4;
 	struct sockaddr_in6 *addr6;
-	char buffer[INET6_ADDRSTRLEN];
 
 	addr = (struct sockaddr *)address;
 	if (addr->sa_family == AF_INET
 	|| addr->sa_family == get_af_ssocks(0)
 	|| addr->sa_family == AF_INET_SDP) {
 		addr4 = (struct sockaddr_in *)address;
-		snprintf(str, sizeof(str), "%s:%s:%u",
+		snprintf(buffer, ADDRESS_STR_MAX, "%s:%s:%u",
 			 af_to_str(addr4->sin_family),
 			 inet_ntoa(addr4->sin_addr),
 			 ntohs(addr4->sin_port));
-		return str;
+		return buffer;
 	} else if (addr->sa_family == AF_INET6) {
+		char buffer2[INET6_ADDRSTRLEN];
 		addr6 = (struct sockaddr_in6 *)address;
-		snprintf(str, sizeof(str), "%s:[%s]:%u",
+		snprintf(buffer, ADDRESS_STR_MAX, "%s:[%s]:%u",
 		        af_to_str(addr6->sin6_family),
-		        inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
+		        inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer2, INET6_ADDRSTRLEN),
 		        ntohs(addr6->sin6_port));
-		return str;
+		return buffer;
 	} else
 		return NULL;
 }
