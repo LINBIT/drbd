@@ -245,6 +245,7 @@ static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
+static int print_notifications(struct drbd_cmd *, struct genl_info *);
 static int w_connected_state(struct drbd_cmd *, struct genl_info *);
 static int w_synced_state(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
@@ -319,6 +320,8 @@ struct option show_cmd_options[] = {
 #define F_CONFIG_CMD	generic_config_cmd
 #define NO_PAYLOAD	0
 #define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
+			.show_function = scmd
+#define F_NEW_EVENTS_CMD(scmd)	DRBD_ADM_GET_INITIAL_STATE, NO_PAYLOAD, generic_get_cmd, \
 			.show_function = scmd
 
 struct drbd_cmd commands[] = {
@@ -399,6 +402,9 @@ struct drbd_cmd commands[] = {
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, generic_status_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
+		.missing_ok = true,
+		.continuous_poll = true, },
+	{"new-events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
 		.missing_ok = true,
 		.continuous_poll = true, },
 	{"wait-connect", CTX_MINOR, F_GET_CMD(w_connected_state),
@@ -2840,6 +2846,143 @@ static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
 				si.sib_reason);
 		break;
 	}
+out:
+	fflush(stdout);
+
+	return 0;
+}
+
+static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
+{
+	static const char *action_name[] = {
+		[NOTIFY_EXISTS] = "exists",
+		[NOTIFY_CREATE] = "create",
+		[NOTIFY_CHANGE] = "change",
+		[NOTIFY_DESTROY] = "destroy",
+	};
+	static char *object_name[] = {
+		[DRBD_RESOURCE_STATE] = "resource",
+		[DRBD_DEVICE_STATE] = "device",
+		[DRBD_CONNECTION_STATE] = "connection",
+		[DRBD_PEER_DEVICE_STATE] = "peer-device",
+	};
+	static uint32_t last_seq;
+	static bool last_seq_known;
+
+	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
+	struct drbd_notification_header nh = { .nh_type = -1U };
+	enum drbd_notification_type action;
+	char addr[ADDRESS_STR_MAX];
+	struct drbd_genlmsghdr *dh;
+
+	if (!info)
+		return 0;
+
+	dh = info->userhdr;
+	if (dh->ret_code == ERR_MINOR_INVALID && cm->missing_ok)
+		return 0;
+	if (dh->ret_code != NO_ERROR)
+		return dh->ret_code;
+
+	if (drbd_cfg_context_from_attrs(&ctx, info) ||
+	    drbd_notification_header_from_attrs(&nh, info))
+		return 0;
+	if (info->genlhdr->cmd >= ARRAY_SIZE(object_name) ||
+	    !object_name[info->genlhdr->cmd]) {
+		dbg(1, "unknown notification\n");
+		goto out;
+	}
+	action = nh.nh_type;
+	if (action >= ARRAY_SIZE(action_name) ||
+	    !action_name[action]) {
+		dbg(1, "unknown notification type\n");
+		goto out;
+	}
+
+	if (action != NOTIFY_EXISTS) {
+		if (last_seq_known) {
+			uint32_t skipped = info->nlhdr->nlmsg_seq - (last_seq + 1);
+
+			if (skipped)
+				printf("- skipped %u\n", skipped);
+		}
+		last_seq = info->nlhdr->nlmsg_seq;
+		last_seq_known = true;
+	}
+
+	printf("%u %s %s",
+	       nh.nh_id,
+	       action_name[action],
+	       object_name[info->genlhdr->cmd]);
+	if (ctx.ctx_resource_name)
+		printf(" name:%s", ctx.ctx_resource_name);
+	if (ctx.ctx_my_addr_len &&
+	    address_str(addr, ctx.ctx_my_addr, ctx.ctx_my_addr_len))
+		printf(" local:%s", addr);
+	if (ctx.ctx_peer_addr_len &&
+	    address_str(addr, ctx.ctx_peer_addr, ctx.ctx_peer_addr_len))
+		printf(" peer:%s", addr);
+	if (ctx.ctx_volume != -1U)
+		printf(" volume:%u", ctx.ctx_volume);
+	if (dh->minor != -1U)
+		printf(" minor:%u", dh->minor);
+
+	switch(info->genlhdr->cmd) {
+	case DRBD_RESOURCE_STATE:
+		if (action != NOTIFY_DESTROY) {
+			struct resource_info resource_info;
+
+			if (resource_info_from_attrs(&resource_info, info)) {
+				dbg(1, "resource info missing\n");
+				goto out;
+			}
+			printf(" role:%s suspended:%s",
+			       drbd_role_str(resource_info.res_role),
+			       susp_str(&resource_info));
+		}
+		break;
+	case DRBD_DEVICE_STATE:
+		if (action != NOTIFY_DESTROY) {
+			struct device_info device_info;
+
+			if (device_info_from_attrs(&device_info, info)) {
+				dbg(1, "device info missing\n");
+				goto out;
+			}
+			printf(" disk:%s",
+			       drbd_disk_str(device_info.dev_disk_state));
+		}
+		break;
+	case DRBD_CONNECTION_STATE:
+		if (action != NOTIFY_DESTROY) {
+			struct connection_info connection_info;
+
+			if (connection_info_from_attrs(&connection_info, info)) {
+				dbg(1, "connection info missing\n");
+				goto out;
+			}
+			printf(" connection:%s role:%s",
+			       drbd_conn_str(connection_info.conn_connection_state),
+			       drbd_role_str(connection_info.conn_role));
+		}
+		break;
+	case DRBD_PEER_DEVICE_STATE:
+		if (action != NOTIFY_DESTROY) {
+			struct peer_device_info peer_device_info;
+
+			if (peer_device_info_from_attrs(&peer_device_info, info)) {
+				dbg(1, "peer device info missing\n");
+				goto out;
+			}
+			printf(" replication:%s disk:%s resync-suspended:%s",
+			       drbd_conn_str(peer_device_info.peer_repl_state),
+			       drbd_disk_str(peer_device_info.peer_disk_state),
+			       resync_susp_str(&peer_device_info));
+		}
+		break;
+	}
+	printf("\n");
+
 out:
 	fflush(stdout);
 

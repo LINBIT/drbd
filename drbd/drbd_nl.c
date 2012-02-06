@@ -35,6 +35,7 @@
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
+#include "drbd_state_change.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
@@ -102,6 +103,7 @@ int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
 #include "drbd_nla.h"
@@ -3985,4 +3987,102 @@ nla_put_failure:
 failed:
 	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+}
+
+static void free_state_changes(struct list_head *list)
+{
+	while (!list_empty(list)) {
+		struct drbd_state_change *state_change =
+			list_first_entry(list, struct drbd_state_change, list);
+		list_del(&state_change->list);
+		forget_state_change(state_change);
+	}
+}
+
+static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct drbd_state_change *state_change;
+	unsigned int id = cb->args[3];
+	unsigned int seq = cb->args[4];
+	struct list_head head;
+	unsigned int n;
+
+    next_resource:
+	state_change = list_entry((struct list_head *)cb->args[0],
+				  struct drbd_state_change, list);
+	n = cb->args[2];
+
+	if (n < 1) {
+		notify_resource_state_change(skb, seq, state_change->resource,
+					     OLD, NOTIFY_EXISTS, id);
+		goto next;
+	}
+	n--;
+	if (n < state_change->n_connections) {
+		notify_connection_state_change(skb, seq, &state_change->connections[n],
+					       OLD, NOTIFY_EXISTS, id);
+		goto next;
+	}
+	n -= state_change->n_connections;
+	if (n < state_change->n_devices) {
+		notify_device_state_change(skb, seq, &state_change->devices[n],
+					   OLD, NOTIFY_EXISTS, id);
+		goto next;
+	}
+	n -= state_change->n_devices;
+	if (n < state_change->n_devices * state_change->n_connections) {
+		notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
+						OLD, NOTIFY_EXISTS, id);
+		goto next;
+	}
+
+	cb->args[1]--;
+	if (cb->args[1] > 0) {
+		cb->args[0] = (long)state_change->list.next;
+		cb->args[2] = 0;
+		goto next_resource;
+	}
+
+	/* connect list to head */
+	list_add(&head, (struct list_head *)cb->args[0]);
+	free_state_changes(&head);
+	return 0;
+
+next:
+	cb->args[2]++;
+	return skb->len;
+}
+
+int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct drbd_resource *resource;
+	LIST_HEAD(head);
+	unsigned int number_of_resources = 0;
+
+	if (cb->args[0])
+		return get_initial_state(skb, cb);
+
+	mutex_lock(&global_state_mutex);
+	for_each_resource(resource, &drbd_resources) {
+		struct drbd_state_change *state_change;
+
+		state_change = remember_state_change(resource, GFP_KERNEL);
+		if (!state_change) {
+			if (!list_empty(&head))
+				free_state_changes(&head);
+			return -ENOMEM;
+		}
+		list_add_tail(&state_change->list, &head);
+		number_of_resources++;
+	}
+	mutex_unlock(&global_state_mutex);
+
+	if (list_empty(&head))
+		return 0;
+	cb->args[0] = (long)head.next;
+	list_del(&head);  /* disconnect list from head */
+	cb->args[1] = number_of_resources;
+	cb->args[3] = atomic_inc_return(&drbd_notify_id);
+	cb->args[4] = cb->nlh->nlmsg_seq;
+	return get_initial_state(skb, cb);
 }

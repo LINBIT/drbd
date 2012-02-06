@@ -483,3 +483,10 @@ GENL_notification(
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
 	GENL_tla_expected(DRBD_NLA_NOTIFICATION_HEADER, DRBD_F_REQUIRED)
 	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_F_REQUIRED))
+
+GENL_op(
+	DRBD_ADM_GET_INITIAL_STATE, 38,
+	GENL_op_init(
+		.dumpit = drbd_adm_get_initial_state,
+	),
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
