@@ -31,6 +31,9 @@
 #include "drbdtool_common.h"
 #include "drbdadm.h"
 
+static void inherit_volumes(struct volumes *from, struct d_host_info *host);
+static void check_volume_sets_equal(struct d_resource *, struct d_host_info *, struct d_host_info *);
+
 static void append_names(struct names *head, struct names *to_copy)
 {
 	struct d_name *new, *copy;
@@ -401,6 +404,73 @@ static void check_meta_disk(struct d_volume *vol, struct d_host_info *host)
 	}
 }
 
+static void check_volume_sets_equal(struct d_resource *res, struct d_host_info *host1, struct d_host_info *host2)
+{
+	struct d_volume *a, *b;
+
+	/* change the error output, if we have been called to
+	 * compare stacked with lower resource volumes */
+	int compare_stacked = host1->lower && host1->lower->me == host2;
+
+	if (host1 == host2)
+		return;
+
+	a = STAILQ_FIRST(&host1->volumes);
+	b = STAILQ_FIRST(&host2->volumes);
+
+	/* volume lists are supposed to be sorted on vnr */
+	while (a || b) {
+		while (a && (!b || a->vnr < b->vnr)) {
+			fprintf(stderr,
+				"%s:%d: in resource %s, on %s { ... }: "
+				"volume %d not defined on %s\n",
+				config_file, line, res->name,
+				names_to_str(&host1->on_hosts),
+				a->vnr,
+				compare_stacked ? host1->lower->name
+					: names_to_str(&host2->on_hosts));
+			a = STAILQ_NEXT(a, link);
+			config_valid = 0;
+		}
+		while (b && (!a || a->vnr > b->vnr)) {
+			/* Though unusual, it is "legal" for a lower resource
+			 * to have more volumes than the resource stacked on
+			 * top of it.  Warn (if we have a terminal),
+			 * but consider it as valid. */
+			if (!(compare_stacked && no_tty))
+				fprintf(stderr,
+					"%s:%d: in resource %s, on %s { ... }: "
+					"volume %d missing (present on %s)\n",
+					config_file, line, res->name,
+					names_to_str(&host1->on_hosts),
+					b->vnr,
+					compare_stacked ? host1->lower->name
+						: names_to_str(&host2->on_hosts));
+			if (!compare_stacked)
+				config_valid = 0;
+			b = STAILQ_NEXT(b, link);
+		}
+		if (a && b && a->vnr == b->vnr) {
+			a = STAILQ_NEXT(a, link);
+			b = STAILQ_NEXT(b, link);
+		}
+	}
+}
+
+/* Ensure that in all host sections the same volumes are defined */
+static void check_volumes_hosts(struct d_resource *res)
+{
+	struct d_host_info *host1, *host2;
+
+	host1 = STAILQ_FIRST(&res->all_hosts);
+
+	if (!host1)
+		return;
+
+	for_each_host(host2, &res->all_hosts)
+		check_volume_sets_equal(res, host1, host2);
+}
+
 void post_parse(enum pp_flags flags)
 {
 	struct d_resource *res;
@@ -421,6 +491,8 @@ void post_parse(enum pp_flags flags)
 				check_volumes_complete(res, host);
 			}
 		}
+
+		check_volumes_hosts(res);
 	}
 
 	for_each_resource(res, &config)
