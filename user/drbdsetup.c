@@ -1789,6 +1789,23 @@ static void device_status(struct devices_list *device, bool single_device)
 	wrap_printf(indent, "\n");
 }
 
+static const char *resync_susp_str(struct peer_device_info *info)
+{
+	static char buffer[64];
+
+	*buffer = 0;
+	if (info->peer_resync_susp_user)
+		strcat(buffer, ",user" + (*buffer == 0));
+	if (info->peer_resync_susp_peer)
+		strcat(buffer, ",peer" + (*buffer == 0));
+	if (info->peer_resync_susp_dependency)
+		strcat(buffer, ",dependency" + (*buffer == 0));
+	if (*buffer == 0)
+		strcat(buffer, "no");
+
+	return buffer;
+}
+
 static void peer_device_status(struct peer_devices_list *peer_device, bool single_device)
 {
 	int indent = 4;
@@ -1808,26 +1825,9 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		if (opt_verbose ||
 		    peer_device->info.peer_resync_susp_user ||
 		    peer_device->info.peer_resync_susp_peer ||
-		    peer_device->info.peer_resync_susp_dependency) {
-			const char *x1 = "", *x2 = "", *x3 = "";
-			bool first = true;
-
-			if (peer_device->info.peer_resync_susp_user) {
-				x1 = ",user" + first;
-				first = false;
-			}
-			if (peer_device->info.peer_resync_susp_peer) {
-				x2 = ",peer" + first;
-				first = false;
-			}
-			if (peer_device->info.peer_resync_susp_dependency) {
-				x3 = ",dependency" + first;
-				first = false;
-			}
-			if (first)
-				x1 = "no";
-			wrap_printf(indent, " resync-suspended:%s%s%s", x1, x2, x3);
-		}
+		    peer_device->info.peer_resync_susp_dependency)
+			wrap_printf(indent, " resync-suspended:%s",
+				    resync_susp_str(&peer_device->info));
 		if (opt_statistics && peer_device->statistics.peer_dev_received != -1) {
 			wrap_printf(indent, "\n");
 			wrap_printf(indent, " received:" U64,
