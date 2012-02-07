@@ -29,6 +29,7 @@
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
+#include "drbd_state_change.h"
 
 /* in drbd_main.c */
 extern void tl_abort_disk_io(struct drbd_device *device);
@@ -38,43 +39,6 @@ struct after_state_change_work {
 	struct drbd_state_change *state_change;
 	unsigned int id;
 	struct completion *done;
-};
-
-struct drbd_resource_state_change {
-	struct drbd_resource *resource;
-	enum drbd_role role[2];
-	bool susp[2];
-	bool susp_nod[2];
-	bool susp_fen[2];
-};
-
-struct drbd_device_state_change {
-	struct drbd_device *device;
-	enum drbd_disk_state disk_state[2];
-};
-
-struct drbd_connection_state_change {
-	struct drbd_connection *connection;
-	enum drbd_conn_state cstate[2];
-	enum drbd_role peer_role[2];
-};
-
-struct drbd_peer_device_state_change {
-	struct drbd_peer_device *peer_device;
-	enum drbd_disk_state disk_state[2];
-	enum drbd_repl_state repl_state[2];
-	bool resync_susp_user[2];
-	bool resync_susp_peer[2];
-	bool resync_susp_dependency[2];
-};
-
-struct drbd_state_change {
-	unsigned int n_devices;
-	unsigned int n_connections;
-	struct drbd_resource_state_change resource[1];
-	struct drbd_device_state_change *devices;
-	struct drbd_connection_state_change *connections;
-	struct drbd_peer_device_state_change *peer_devices;
 };
 
 static struct drbd_state_change *alloc_state_change(struct drbd_resource *resource, gfp_t flags)
@@ -112,7 +76,7 @@ static struct drbd_state_change *alloc_state_change(struct drbd_resource *resour
 	return state_change;
 }
 
-static struct drbd_state_change *remember_state_change(struct drbd_resource *resource, gfp_t gfp)
+struct drbd_state_change *remember_state_change(struct drbd_resource *resource, gfp_t gfp)
 {
 	struct drbd_state_change *state_change;
 	struct drbd_device *device;
@@ -197,7 +161,7 @@ retry:
 	return state_change;
 }
 
-static void forget_state_change(struct drbd_state_change *state_change)
+void forget_state_change(struct drbd_state_change *state_change)
 {
 	unsigned int n;
 
