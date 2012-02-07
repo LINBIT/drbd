@@ -1373,7 +1373,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 	return 0;
 }
 
-static struct hname_address *parse_hname_address_pair()
+static struct hname_address *parse_hname_address_pair(int prev_token)
 {
 	struct hname_address *ha;
 	int token;
@@ -1381,12 +1381,19 @@ static struct hname_address *parse_hname_address_pair()
 	ha = calloc(1, sizeof(struct hname_address));
 	ha->config_line = line;
 
+	if (prev_token == TK_ADDRESS) {
+		ha->name = "UNKNOWN"; /* updated in set_host_info_in_host_address_pairs() */
+		ha->by_address = 1;
+		goto parse_address;
+	}
+
 	EXP(TK_STRING);
 	ha->name = yylval.txt;
 
 	token = yylex();
 	switch (token) {
 	case TK_ADDRESS:
+	parse_address:
 		__parse_address(&ha->address);
 		ha->parsed_address = 1;
 		EXP(';');
@@ -1430,8 +1437,9 @@ static struct connection *parse_connection(enum pr_flags flags)
 	while (1) {
 		token = yylex();
 		switch(token) {
+		case TK_ADDRESS:
 		case TK_HOST:
-			insert_tail(&conn->hname_address_pairs, parse_hname_address_pair());
+			insert_tail(&conn->hname_address_pairs, parse_hname_address_pair(token));
 			if (++hosts >= 3) {
 				fprintf(stderr,	"%s:%d: only two 'host' keywords per connection allowed\n",
 					config_file, fline);

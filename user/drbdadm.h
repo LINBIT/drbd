@@ -158,6 +158,8 @@ struct hname_address
 	struct d_address address;	/* parsed */
 	struct d_host_info *host_info;	/* determined in post_parse */
 	unsigned int used_as_me:1;
+	unsigned int faked_hostname;
+	unsigned int by_address;
 	unsigned int parsed_address:1;
 	unsigned int parsed_port:1;
 	STAILQ_ENTRY(hname_address) link;

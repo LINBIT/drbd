@@ -94,6 +94,19 @@ static struct d_host_info *find_host_info_by_name(struct d_resource* res, char *
 	return NULL;
 }
 
+static struct d_host_info *find_host_info_by_address(struct d_resource* res, struct d_address *address)
+{
+	struct d_host_info *host;
+
+	for_each_host(host, &res->all_hosts)
+		if (!strcmp(host->address.addr, address->addr) &&
+		    !strcmp(host->address.af, address->af) &&
+		    !strcmp(host->address.port, address->port))
+			return host;
+
+	return NULL;
+}
+
 static void set_host_info_in_host_address_pairs(struct d_resource *res, struct connection *con)
 {
 	struct hname_address *ha;
@@ -102,7 +115,13 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 	STAILQ_FOREACH(ha, &con->hname_address_pairs, link) {
 		if (ha->host_info) /* Implicit connection have that already set. */
 			continue;
-		host_info = find_host_info_by_name(res, ha->name);
+		if (ha->by_address) {
+			host_info = find_host_info_by_address(res, &ha->address);
+			/* The name will be used for nice comments only ... */
+			ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
+		} else {
+			host_info = find_host_info_by_name(res, ha->name);
+		}
 		if (!host_info) {
 			if (ha->address.addr) {
 				/* Consider this as an implicit declaration of a host section */
@@ -593,6 +612,7 @@ static void create_implicit_connections(struct d_resource *res)
 		} else {
 			ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
 			ha->address = host_info->address;
+			ha->faked_hostname = 1;
 			ha->parsed_address = 1; /* not true, but makes dump nicer */
 		}
 		if (++hosts == 3) {

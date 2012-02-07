@@ -851,6 +851,11 @@ static void dump_connection(struct connection *conn)
 	++indent;
 
 	STAILQ_FOREACH(ha, &conn->hname_address_pairs, link) {
+		if (ha->by_address || ha->faked_hostname) {
+			dump_address("address", &ha->address,
+				     ssprintf("; # on %s\n", ha->name));
+			continue;
+		}
 		printI("host %s", ha->name);
 		if (ha->parsed_address || (verbose && ha->address.addr))
 			dump_address(" address", &ha->address, ";\n");
