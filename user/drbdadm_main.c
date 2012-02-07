@@ -832,6 +832,34 @@ static void dump_host_info(struct d_host_info *hi)
 	printI("}\n");
 }
 
+static void dump_connection(struct connection *conn)
+{
+	struct hname_address *ha;
+
+	if (conn->implicit && !verbose)
+		return;
+
+	printI("connection");
+	if (conn->name)
+		printf(" %s", esc(conn->name));
+	printf(" {\n");
+	++indent;
+
+	STAILQ_FOREACH(ha, &conn->hname_address_pairs, link) {
+		printI("host %s", ha->name);
+		if (ha->parsed_address || (verbose && ha->address.addr))
+			dump_address(" address", &ha->address, ";\n");
+		else if (ha->parsed_port)
+			printf(" port %s;\n", ha->address.port);
+		else
+			printf(";\n");
+	}
+
+	dump_options("net", &conn->net_options);
+	--indent;
+	printI("}\n");
+}
+
 static void dump_options_xml2(char *name, struct options *options,
 			      void(*within)(struct options *), struct options *ctx)
 {
@@ -990,6 +1018,7 @@ static int adm_dump(struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
+	struct connection *conn;
 
 	printI("# resource %s on %s: %s, %s\n",
 	       esc(res->name), nodeinfo.nodename,
@@ -1001,6 +1030,9 @@ static int adm_dump(struct cfg_ctx *ctx)
 
 	for_each_host(host, &res->all_hosts)
 		dump_host_info(host);
+
+	for_each_connection(conn, &res->connections)
+		dump_connection(conn);
 
 	fake_startup_options(res);
 	dump_options("options", &res->res_options);

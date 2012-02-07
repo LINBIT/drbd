@@ -1384,11 +1384,13 @@ static struct hname_address *parse_hname_address_pair()
 	switch (token) {
 	case TK_ADDRESS:
 		__parse_address(&ha->address);
+		ha->parsed_address = 1;
 		EXP(';');
 		break;
 	case TK_PORT:
 		EXP(TK_INTEGER);
 		ha->address.port = yylval.txt;
+		ha->parsed_port = 1;
 		EXP(';');
 		break;
 	case ';':
