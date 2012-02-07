@@ -999,6 +999,33 @@ static void dump_host_info_xml(struct d_host_info *hi)
 	printI("</host>\n");
 }
 
+static void dump_connection_xml(struct connection *conn)
+{
+	struct hname_address *ha;
+
+	if (conn->name)
+		printI("<connection name=\"%s\">\n", esc_xml(conn->name));
+	else
+		printI("<connection>\n");
+	++indent;
+
+	STAILQ_FOREACH(ha, &conn->hname_address_pairs, link) {
+		printI("<host name=\"%s\">", ha->name);
+		if (ha->address.addr)
+			printf("<address family=\"%s\" port=\"%s\">%s</address>",
+			       ha->address.af, ha->address.port, ha->address.addr);
+		else
+			printf("<address family=\"%s\" port=\"%s\">%s</address>",
+			       ha->host_info->address.af, ha->host_info->address.port,
+			       ha->host_info->address.addr);
+		printf("</host>\n");
+	}
+
+	dump_options_xml("net", &conn->net_options);
+	--indent;
+	printI("</connection>\n");
+}
+
 static void fake_startup_options(struct d_resource *res)
 {
 	struct d_option *opt;
@@ -1055,6 +1082,7 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
+	struct connection *conn;
 
 	printI("<resource name=\"%s\" conf-file-line=\"%s:%u\">\n",
 		esc_xml(res->name),
@@ -1063,6 +1091,8 @@ static int adm_dump_xml(struct cfg_ctx *ctx)
 	// else if (common && common->protocol) printA("# common protocol", common->protocol);
 	for_each_host(host, &res->all_hosts)
 		dump_host_info_xml(host);
+	for_each_connection(conn, &res->connections)
+		dump_connection_xml(conn);
 	fake_startup_options(res);
 	dump_options_xml("options", &res->res_options);
 	dump_options_xml("net", &res->net_options);
