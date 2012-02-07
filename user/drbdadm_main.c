@@ -955,14 +955,17 @@ static void dump_volume_xml(struct d_volume *vol)
 	       esc_xml(vol->device));
 	printI("<disk>%s</disk>\n", esc_xml(vol->disk));
 
-	if (!strcmp(vol->meta_index, "flexible"))
-		printI("<meta-disk>%s</meta-disk>\n",
-		       esc_xml(vol->meta_disk));
-	else if (!strcmp(vol->meta_index, "internal"))
-		printI("<meta-disk>internal</meta-disk>\n");
-	else {
-		printI("<meta-disk index=\"%s\">%s</meta-disk>\n",
-		       vol->meta_index, esc_xml(vol->meta_disk));
+	if (vol->meta_index) {
+		/* Stacked do not have this... */
+		if (!strcmp(vol->meta_index, "flexible"))
+			printI("<meta-disk>%s</meta-disk>\n",
+			       esc_xml(vol->meta_disk));
+		else if (!strcmp(vol->meta_index, "internal"))
+			printI("<meta-disk>internal</meta-disk>\n");
+		else {
+			printI("<meta-disk index=\"%s\">%s</meta-disk>\n",
+			       vol->meta_index, esc_xml(vol->meta_disk));
+		}
 	}
 	--indent;
 	printI("</volume>\n");
