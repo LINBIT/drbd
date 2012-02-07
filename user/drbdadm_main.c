@@ -767,6 +767,9 @@ static void dump_proxy_info(struct d_proxy_info *pi)
 
 static void dump_volume(int has_lower, struct d_volume *vol)
 {
+	if (!(vol->parsed_device || vol->parsed_disk || vol->parsed_meta_disk || verbose))
+		return;
+
 	if (!vol->implicit) {
 		printI("volume %d {\n", vol->vnr);
 		++indent;
@@ -774,15 +777,17 @@ static void dump_volume(int has_lower, struct d_volume *vol)
 
 	dump_options("disk", &vol->disk_options);
 
-	printI("device%*s", -19 + INDENT_WIDTH * indent, "");
-	if (vol->device)
-		printf("%s ", esc(vol->device));
-	printf("minor %d;\n", vol->device_minor);
+	if (vol->parsed_device || verbose) {
+		printI("device%*s", -19 + INDENT_WIDTH * indent, "");
+		if (vol->device)
+			printf("%s ", esc(vol->device));
+		printf("minor %d;\n", vol->device_minor);
+	}
 
-	if (!has_lower)
+	if (!has_lower && (vol->parsed_disk || verbose))
 		printA("disk", esc(vol->disk));
 
-	if (!has_lower) {
+	if (!has_lower && (vol->parsed_meta_disk || verbose)) {
 		if (!strcmp(vol->meta_index, "flexible"))
 			printI(MDISK, "meta-disk", esc(vol->meta_disk));
 		else if (!strcmp(vol->meta_index, "internal"))
@@ -1049,6 +1054,7 @@ static int adm_dump(struct cfg_ctx *ctx)
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
 	struct connection *conn;
+	struct d_volume *vol;
 
 	printI("# resource %s on %s: %s, %s\n",
 	       esc(res->name), nodeinfo.nodename,
@@ -1057,6 +1063,10 @@ static int adm_dump(struct cfg_ctx *ctx)
 	printI("# defined at %s:%u\n", res->config_file, res->start_line);
 	printI("resource %s {\n", esc(res->name));
 	++indent;
+
+	if (!verbose)
+		for_each_volume(vol, &res->volumes)
+			dump_volume(res->stacked, vol);
 
 	for_each_host(host, &res->all_hosts)
 		dump_host_info(host);

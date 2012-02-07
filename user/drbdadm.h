@@ -126,6 +126,9 @@ struct d_volume
 	unsigned int adj_attach :1;
 	unsigned int adj_resize :1;
 	unsigned int adj_disk_opts :1;
+	unsigned int parsed_device :1;
+	unsigned int parsed_disk :1;
+	unsigned int parsed_meta_disk :1;
 };
 
 STAILQ_HEAD(volumes, d_volume);

@@ -981,12 +981,15 @@ int parse_volume_stmt(struct d_volume *vol, struct names* on_hosts, int token)
 			check_string_error(token);
 			pe_expected_got( "TK_STRING | {", token);
 		}
+		vol->parsed_disk = 1;
 		break;
 	case TK_DEVICE:
 		parse_device(on_hosts, vol);
+		vol->parsed_device = 1;
 		break;
 	case TK_META_DISK:
 		parse_meta_disk(vol);
+		vol->parsed_meta_disk = 1;
 		break;
 	case TK_FLEX_META_DISK:
 		EXP(TK_STRING);
@@ -999,6 +1002,7 @@ int parse_volume_stmt(struct d_volume *vol, struct names* on_hosts, int token)
 			vol->meta_index = strdup("internal");
 		}
 		EXP(';');
+		vol->parsed_meta_disk = 1;
 		break;
 	default:
 		return 0;
