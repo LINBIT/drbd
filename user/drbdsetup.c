@@ -1755,16 +1755,16 @@ static void device_status(struct devices_list *device, bool single_device)
 		wrap_printf(indent, "\n");
 		if (opt_verbose)
 			wrap_printf(indent, " size:" U64,
-				    device->statistics.dev_size / 2);
+				    (uint64_t)device->statistics.dev_size / 2);
 		wrap_printf(indent, " read:" U64,
-			    device->statistics.dev_read / 2);
+			    (uint64_t)device->statistics.dev_read / 2);
 		wrap_printf(indent, " written:" U64,
-			    device->statistics.dev_write / 2);
+			    (uint64_t)device->statistics.dev_write / 2);
 		if (opt_verbose) {
 			wrap_printf(indent, " al-writes:" U64,
-				    device->statistics.dev_al_writes);
+				    (uint64_t)device->statistics.dev_al_writes);
 			wrap_printf(indent, " bm-writes:" U64,
-				    device->statistics.dev_bm_writes);
+				    (uint64_t)device->statistics.dev_bm_writes);
 			wrap_printf(indent, " upper-pending:" U32,
 				    device->statistics.dev_upper_pending);
 			wrap_printf(indent, " lower-pending:" U32,
@@ -1837,12 +1837,12 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		if (opt_statistics && peer_device->statistics.peer_dev_received != -1) {
 			wrap_printf(indent, "\n");
 			wrap_printf(indent, " received:" U64,
-				    peer_device->statistics.peer_dev_received / 2);
+				    (uint64_t)peer_device->statistics.peer_dev_received / 2);
 			wrap_printf(indent, " sent:" U64,
-				    peer_device->statistics.peer_dev_sent / 2);
+				    (uint64_t)peer_device->statistics.peer_dev_sent / 2);
 			if (opt_verbose || peer_device->statistics.peer_dev_out_of_sync != 0)
 				wrap_printf(indent, " out-of-sync:" U64,
-					    peer_device->statistics.peer_dev_out_of_sync / 2);
+					    (uint64_t)peer_device->statistics.peer_dev_out_of_sync / 2);
 			if (opt_verbose) {
 				wrap_printf(indent, " pending:" U32,
 					    peer_device->statistics.peer_dev_pending);
