@@ -3061,6 +3061,31 @@ out:
 	return skb->len;
 }
 
+static void device_to_statistics(struct device_statistics *s,
+				 struct drbd_device *device)
+{
+	s->dev_upper_blocked = !may_inc_ap_bio(device);
+	s->dev_lower_blocked = 0;
+	if (get_ldev(device)) {
+		struct request_queue *q;
+
+		q = bdev_get_queue(device->ldev->backing_bdev);
+		s->dev_lower_blocked =
+			bdi_congested(&q->backing_dev_info,
+				      (1 << BDI_async_congested) |
+				      (1 << BDI_sync_congested));
+		put_ldev(device);
+	}
+	s->dev_size = drbd_get_capacity(device->this_bdev);
+	s->dev_read = device->read_cnt;
+	s->dev_write = device->writ_cnt;
+	s->dev_al_writes = device->al_writ_cnt;
+	s->dev_bm_writes = device->bm_writ_cnt;
+	s->dev_upper_pending = atomic_read(&device->ap_bio_cnt);
+	s->dev_lower_pending = atomic_read(&device->local_cnt);
+	s->dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
+}
+
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -3108,18 +3133,9 @@ put_result:
 		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device);
 		if (err)
 			goto out;
-		device_statistics.dev_upper_blocked = !may_inc_ap_bio(device);
-		device_statistics.dev_lower_blocked = 0;
 		if (get_ldev(device)) {
 			struct disk_conf *disk_conf =
 				rcu_dereference(device->ldev->disk_conf);
-			struct request_queue *q;
-
-			q = bdev_get_queue(device->ldev->backing_bdev);
-			device_statistics.dev_lower_blocked =
-				bdi_congested(&q->backing_dev_info,
-					      (1 << BDI_async_congested) |
-					      (1 << BDI_sync_congested));
 
 			err = disk_conf_to_skb(skb, disk_conf, !capable(CAP_SYS_ADMIN));
 			put_ldev(device);
@@ -3133,15 +3149,8 @@ put_result:
 		err = device_info_to_skb(skb, &device_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		device_statistics.dev_size = drbd_get_capacity(device->this_bdev);
-		device_statistics.dev_read = device->read_cnt;
-		device_statistics.dev_write = device->writ_cnt;
-		device_statistics.dev_al_writes = device->al_writ_cnt;
-		device_statistics.dev_bm_writes = device->bm_writ_cnt;
-		device_statistics.dev_upper_pending = atomic_read(&device->ap_bio_cnt);
-		device_statistics.dev_lower_pending = atomic_read(&device->local_cnt);
-		device_statistics.dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
 
+		device_to_statistics(&device_statistics, device);
 		err = device_statistics_to_skb(skb, &device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
