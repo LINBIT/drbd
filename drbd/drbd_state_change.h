@@ -30,6 +30,7 @@ struct drbd_peer_device_state_change {
 };
 
 struct drbd_state_change {
+	struct list_head list;
 	unsigned int n_devices;
 	unsigned int n_connections;
 	struct drbd_resource_state_change resource[1];
