@@ -3242,6 +3242,18 @@ out:
 	return skb->len;
 }
 
+static void peer_device_to_statistics(struct peer_device_statistics *s,
+				      struct drbd_peer_device *peer_device)
+{
+	s->peer_dev_received = peer_device->recv_cnt;
+	s->peer_dev_sent = peer_device->send_cnt;
+	s->peer_dev_pending = atomic_read(&peer_device->ap_pending_cnt) +
+			      atomic_read(&peer_device->rs_pending_cnt);
+	s->peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
+	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
+	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
+}
+
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -3310,15 +3322,7 @@ put_result:
 		err = peer_device_info_to_skb(skb, &peer_device_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		peer_device_statistics.peer_dev_received = peer_device->recv_cnt;
-		peer_device_statistics.peer_dev_sent = peer_device->send_cnt;
-		peer_device_statistics.peer_dev_pending = atomic_read(&peer_device->ap_pending_cnt) +
-							  atomic_read(&peer_device->rs_pending_cnt);
-		peer_device_statistics.peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
-		peer_device_statistics.peer_dev_out_of_sync =
-			drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
-		peer_device_statistics.peer_dev_resync_failed =
-			peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
+		peer_device_to_statistics(&peer_device_statistics, peer_device);
 		err = peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
