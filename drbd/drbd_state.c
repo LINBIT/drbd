@@ -1395,7 +1395,9 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	return state;
 }
 
-void notify_resource_state_change(struct drbd_resource_state_change *resource_state_change,
+void notify_resource_state_change(struct sk_buff *skb,
+				  unsigned int seq,
+				  struct drbd_resource_state_change *resource_state_change,
 				  enum which_state which, enum drbd_notification_type type,
 				  unsigned int id)
 {
@@ -1407,10 +1409,12 @@ void notify_resource_state_change(struct drbd_resource_state_change *resource_st
 		.res_susp_fen = resource_state_change->susp_fen[which],
 	};
 
-	notify_resource_state(resource, &resource_info, type, id);
+	notify_resource_state(skb, seq, resource, &resource_info, type, id);
 }
 
-void notify_connection_state_change(struct drbd_connection_state_change *connection_state_change,
+void notify_connection_state_change(struct sk_buff *skb,
+				    unsigned int seq,
+				    struct drbd_connection_state_change *connection_state_change,
 				    enum which_state which,
 				    enum drbd_notification_type type, unsigned int id)
 {
@@ -1420,10 +1424,12 @@ void notify_connection_state_change(struct drbd_connection_state_change *connect
 		.conn_role = connection_state_change->peer_role[which],
 	};
 
-	notify_connection_state(connection, &connection_info, type, id);
+	notify_connection_state(skb, seq, connection, &connection_info, type, id);
 }
 
-void notify_device_state_change(struct drbd_device_state_change *device_state_change,
+void notify_device_state_change(struct sk_buff *skb,
+				unsigned int seq,
+				struct drbd_device_state_change *device_state_change,
 				enum which_state which,
 				enum drbd_notification_type type,
 				unsigned int id)
@@ -1433,10 +1439,12 @@ void notify_device_state_change(struct drbd_device_state_change *device_state_ch
 		.dev_disk_state = device_state_change->disk_state[which],
 	};
 
-	notify_device_state(device, &device_info, type, id);
+	notify_device_state(skb, seq, device, &device_info, type, id);
 }
 
-void notify_peer_device_state_change(struct drbd_peer_device_state_change *p,
+void notify_peer_device_state_change(struct sk_buff *skb,
+				     unsigned int seq,
+				     struct drbd_peer_device_state_change *p,
 				     enum which_state which,
 				     enum drbd_notification_type type,
 				     unsigned int id)
@@ -1450,7 +1458,7 @@ void notify_peer_device_state_change(struct drbd_peer_device_state_change *p,
 		.peer_resync_susp_dependency = p->resync_susp_dependency[which],
 	};
 
-	notify_peer_device_state(peer_device, &peer_device_info, type, id);
+	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type, id);
 }
 
 static void broadcast_state_change(struct drbd_state_change *state_change, unsigned int id)
@@ -1468,7 +1476,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 	    HAS_CHANGED(resource_state_change->susp_fen);
 
 	if (resource_state_has_changed)
-		notify_resource_state_change(resource_state_change, NEW, NOTIFY_CHANGE, id);
+		notify_resource_state_change(NULL, 0, resource_state_change, NEW, NOTIFY_CHANGE, id);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -1476,7 +1484,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 
 		if (HAS_CHANGED(connection_state_change->peer_role) ||
 		    HAS_CHANGED(connection_state_change->cstate))
-			notify_connection_state_change(connection_state_change, NEW, NOTIFY_CHANGE, id);
+			notify_connection_state_change(NULL, 0, connection_state_change, NEW, NOTIFY_CHANGE, id);
 	}
 
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
@@ -1486,7 +1494,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 		struct drbd_connection_state_change *connection_state_change = NULL;
 
 		if (HAS_CHANGED(device_state_change->disk_state))
-			notify_device_state_change(device_state_change, NEW, NOTIFY_CHANGE, id);
+			notify_device_state_change(NULL, 0, device_state_change, NEW, NOTIFY_CHANGE, id);
 
 		n_connection = -1;
 		if (state_change->n_connections == 1) {
@@ -1525,7 +1533,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 		    HAS_CHANGED(p->resync_susp_user) ||
 		    HAS_CHANGED(p->resync_susp_peer) ||
 		    HAS_CHANGED(p->resync_susp_dependency))
-			notify_peer_device_state_change(p, NEW, NOTIFY_CHANGE, id);
+			notify_peer_device_state_change(NULL, 0, p, NEW, NOTIFY_CHANGE, id);
 	}
 
 #undef HAS_CHANGED

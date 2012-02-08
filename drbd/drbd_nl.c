@@ -3535,9 +3535,9 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		resource_to_info(&resource_info, resource, NOW);
-		notify_resource_state(resource, &resource_info, NOTIFY_CREATE, id);
+		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE, id);
 		connection_to_info(&connection_info, connection, NOW);
-		notify_connection_state(connection, &connection_info, NOTIFY_CREATE, id);
+		notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE, id);
 	}
 
 out:
@@ -3596,12 +3596,12 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		device_to_info(&info, device, NOW);
-		notify_device_state(device, &info, NOTIFY_CREATE, id);
+		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE, id);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
 			peer_device_to_info(&peer_device_info, peer_device, NOW);
-			notify_peer_device_state(peer_device, &peer_device_info, NOTIFY_CREATE, id);
+			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE, id);
 		}
 	}
 	mutex_unlock(&resource->conf_update);
@@ -3623,8 +3623,8 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
 			CS_VERBOSE | CS_WAIT_COMPLETE);
 		for_each_peer_device(peer_device, device)
-			notify_peer_device_state(peer_device, NULL, NOTIFY_DESTROY, id);
-		notify_device_state(device, NULL, NOTIFY_DESTROY, id);
+			notify_peer_device_state(NULL, 0, peer_device, NULL, NOTIFY_DESTROY, id);
+		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
 		drbd_delete_device(device);
 		return NO_ERROR;
 	} else
@@ -3666,8 +3666,8 @@ static int adm_del_resource(struct drbd_resource *resource)
 	err = NO_ERROR;
 
 	for_each_connection(connection, resource)
-		notify_connection_state(connection, NULL, NOTIFY_DESTROY, id);
-	notify_resource_state(resource, NULL, NOTIFY_DESTROY, id);
+		notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY, id);
+	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY, id);
 
 	list_del_rcu(&resource->resources);
 	/* Make sure all threads have actually stopped: state handling only
@@ -3798,19 +3798,25 @@ static int nla_put_notification_header(struct sk_buff *msg,
 	return drbd_notification_header_to_skb(msg, &nh, true);
 }
 
-void notify_resource_state(struct drbd_resource *resource,
+void notify_resource_state(struct sk_buff *skb,
+			   unsigned int seq,
+			   struct drbd_resource *resource,
 			   struct resource_info *resource_info,
 			   enum drbd_notification_type type,
 			   unsigned int id)
 {
-	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
-	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	int err = -ENOMEM;
+	bool multicast = false;
+	int err;
 
-	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
-	if (!skb)
-		goto failed;
+	if (!skb) {
+		seq = atomic_inc_return(&drbd_genl_seq);
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+	}
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_RESOURCE_STATE);
@@ -3824,10 +3830,12 @@ void notify_resource_state(struct drbd_resource *resource,
 	     resource_info_to_skb(skb, resource_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	err = drbd_genl_multicast_events(skb, 0);
-	/* skb has been consumed or freed in netlink_broadcast() */
-	if (err && err != -ESRCH)
-		goto failed;
+	if (multicast) {
+		err = drbd_genl_multicast_events(skb, 0);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return;
 
 nla_put_failure:
@@ -3837,19 +3845,25 @@ failed:
 			err, seq);
 }
 
-void notify_device_state(struct drbd_device *device,
+void notify_device_state(struct sk_buff *skb,
+			 unsigned int seq,
+			 struct drbd_device *device,
 			 struct device_info *device_info,
 			 enum drbd_notification_type type,
 			 unsigned int id)
 {
-	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
-	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	int err = -ENOMEM;
+	bool multicast = false;
+	int err;
 
-	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
-	if (!skb)
-		goto failed;
+	if (!skb) {
+		seq = atomic_inc_return(&drbd_genl_seq);
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+	}
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_DEVICE_STATE);
@@ -3863,10 +3877,12 @@ void notify_device_state(struct drbd_device *device,
 	     device_info_to_skb(skb, device_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	err = drbd_genl_multicast_events(skb, 0);
-	/* skb has been consumed or freed in netlink_broadcast() */
-	if (err && err != -ESRCH)
-		goto failed;
+	if (multicast) {
+		err = drbd_genl_multicast_events(skb, 0);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return;
 
 nla_put_failure:
@@ -3876,19 +3892,25 @@ failed:
 		 err, seq);
 }
 
-void notify_connection_state(struct drbd_connection *connection,
+void notify_connection_state(struct sk_buff *skb,
+			     unsigned int seq,
+			     struct drbd_connection *connection,
 			     struct connection_info *connection_info,
 			     enum drbd_notification_type type,
 			     unsigned int id)
 {
-	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
-	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	int err = -ENOMEM;
+	bool multicast = false;
+	int err;
 
-	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
-	if (!skb)
-		goto failed;
+	if (!skb) {
+		seq = atomic_inc_return(&drbd_genl_seq);
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+	}
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_CONNECTION_STATE);
@@ -3902,10 +3924,12 @@ void notify_connection_state(struct drbd_connection *connection,
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	err = drbd_genl_multicast_events(skb, 0);
-	/* skb has been consumed or freed in netlink_broadcast() */
-	if (err && err != -ESRCH)
-		goto failed;
+	if (multicast) {
+		err = drbd_genl_multicast_events(skb, 0);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return;
 
 nla_put_failure:
@@ -3915,20 +3939,26 @@ failed:
 		 err, seq);
 }
 
-void notify_peer_device_state(struct drbd_peer_device *peer_device,
+void notify_peer_device_state(struct sk_buff *skb,
+			      unsigned int seq,
+			      struct drbd_peer_device *peer_device,
 			      struct peer_device_info *peer_device_info,
 			      enum drbd_notification_type type,
 			      unsigned int id)
 {
-	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
 	struct drbd_resource *resource = peer_device->device->resource;
-	struct sk_buff *skb;
 	struct drbd_genlmsghdr *dh;
-	int err = -ENOMEM;
+	bool multicast = false;
+	int err;
 
-	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
-	if (!skb)
-		goto failed;
+	if (!skb) {
+		seq = atomic_inc_return(&drbd_genl_seq);
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+	}
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_PEER_DEVICE_STATE);
@@ -3942,10 +3972,12 @@ void notify_peer_device_state(struct drbd_peer_device *peer_device,
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	err = drbd_genl_multicast_events(skb, 0);
-	/* skb has been consumed or freed in netlink_broadcast() */
-	if (err && err != -ESRCH)
-		goto failed;
+	if (multicast) {
+		err = drbd_genl_multicast_events(skb, 0);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return;
 
 nla_put_failure:
