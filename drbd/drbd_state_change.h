@@ -42,4 +42,21 @@ struct drbd_state_change {
 extern struct drbd_state_change *remember_state_change(struct drbd_resource *, gfp_t);
 extern void forget_state_change(struct drbd_state_change *);
 
+extern void notify_resource_state_change(struct drbd_resource_state_change *,
+					 enum which_state,
+					 enum drbd_notification_type type,
+					 unsigned int);
+extern void notify_connection_state_change(struct drbd_connection_state_change *,
+					   enum which_state,
+					   enum drbd_notification_type type,
+					   unsigned int);
+extern void notify_device_state_change(struct drbd_device_state_change *,
+				       enum which_state,
+				       enum drbd_notification_type type,
+				       unsigned int);
+extern void notify_peer_device_state_change(struct drbd_peer_device_state_change *,
+					    enum which_state,
+					    enum drbd_notification_type type,
+					    unsigned int);
+
 #endif  /* DRBD_STATE_CHANGE_H */
