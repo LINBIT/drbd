@@ -380,7 +380,6 @@ int drbd_khelper(struct drbd_device *device, char *cmd)
 			NULL };
 	char mb[12];
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
-	struct sib_info sib;
 	int ret;
 
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(device));
@@ -391,9 +390,7 @@ int drbd_khelper(struct drbd_device *device, char *cmd)
 	drbd_md_sync(device);
 
 	drbd_info(device, "helper command: %s %s %s\n", usermode_helper, cmd, mb);
-	sib.sib_reason = SIB_HELPER_PRE;
-	sib.helper_name = cmd;
-	drbd_bcast_event(device, &sib);
+	notify_helper(NOTIFY_CALL, device, NULL, cmd, 0);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
 		drbd_warn(device, "helper command: %s %s %s exit code %u (0x%x)\n",
@@ -403,9 +400,7 @@ int drbd_khelper(struct drbd_device *device, char *cmd)
 		drbd_info(device, "helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
 				(ret >> 8) & 0xff, ret);
-	sib.sib_reason = SIB_HELPER_POST;
-	sib.helper_exit_code = ret;
-	drbd_bcast_event(device, &sib);
+	notify_helper(NOTIFY_RESPONSE, device, NULL, cmd, ret);
 
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;
@@ -448,6 +443,7 @@ int conn_khelper(struct drbd_connection *connection, char *cmd)
 	drbd_info(connection, "helper command: %s %s %s\n", usermode_helper, cmd, resource_name);
 	/* TODO: conn_bcast_event() ?? */
 
+	notify_helper(NOTIFY_CALL, NULL, connection, cmd, 0);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
 		drbd_warn(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
@@ -458,6 +454,7 @@ int conn_khelper(struct drbd_connection *connection, char *cmd)
 			  usermode_helper, cmd, resource_name,
 			  (ret >> 8) & 0xff, ret);
 	/* TODO: conn_bcast_event() ?? */
+	notify_helper(NOTIFY_RESPONSE, NULL, connection, cmd, ret);
 
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;
@@ -3999,6 +3996,50 @@ nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
+		 err, seq);
+}
+
+void notify_helper(enum drbd_notification_type type,
+		   struct drbd_device *device, struct drbd_connection *connection,
+		   const char *name, int status)
+{
+	struct drbd_resource *resource = device ? device->resource : connection->resource;
+	struct drbd_helper_info helper_info;
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
+	unsigned int id = atomic_inc_return(&drbd_notify_id);
+	struct sk_buff *skb;
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	strlcpy(helper_info.helper_name, name, sizeof(helper_info.helper_name));
+	helper_info.helper_status = status;
+
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	err = -ENOMEM;
+	if (!skb)
+		goto failed;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_HELPER);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = device ? device->minor : -1;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_drbd_cfg_context(skb, resource, connection, device) ||
+	    nla_put_notification_header(skb, type, id) ||
+	    drbd_helper_info_to_skb(skb, &helper_info, true))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, 0);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed;
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
 }
 

@@ -2859,12 +2859,15 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		[NOTIFY_CREATE] = "create",
 		[NOTIFY_CHANGE] = "change",
 		[NOTIFY_DESTROY] = "destroy",
+		[NOTIFY_CALL] = "call",
+		[NOTIFY_RESPONSE] = "response",
 	};
 	static char *object_name[] = {
 		[DRBD_RESOURCE_STATE] = "resource",
 		[DRBD_DEVICE_STATE] = "device",
 		[DRBD_CONNECTION_STATE] = "connection",
 		[DRBD_PEER_DEVICE_STATE] = "peer-device",
+		[DRBD_HELPER] = "helper",
 	};
 	static uint32_t last_seq;
 	static bool last_seq_known;
@@ -2892,7 +2895,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		dbg(1, "unknown notification\n");
 		goto out;
 	}
-	action = nh.nh_type;
+	action = nh.nh_type & ~NOTIFY_FLAGS;
 	if (action >= ARRAY_SIZE(action_name) ||
 	    !action_name[action]) {
 		dbg(1, "unknown notification type\n");
@@ -2978,6 +2981,19 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 			       drbd_conn_str(peer_device_info.peer_repl_state),
 			       drbd_disk_str(peer_device_info.peer_disk_state),
 			       resync_susp_str(&peer_device_info));
+		}
+		break;
+	case DRBD_HELPER: {
+		struct drbd_helper_info helper_info;
+
+		if (!drbd_helper_info_from_attrs(&helper_info, info)) {
+			printf(" helper:%s", helper_info.helper_name);
+			if (action == NOTIFY_RESPONSE)
+				printf(" status:%u", helper_info.helper_status);
+		} else {
+			dbg(1, "helper info missing\n");
+			goto out;
+		}
 		}
 		break;
 	}

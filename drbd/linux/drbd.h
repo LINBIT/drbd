@@ -373,6 +373,8 @@ enum drbd_notification_type {
 	NOTIFY_CREATE,
 	NOTIFY_CHANGE,
 	NOTIFY_DESTROY,
+	NOTIFY_CALL,
+	NOTIFY_RESPONSE,
 };
 
 /* magic numbers used in meta data and network packets */

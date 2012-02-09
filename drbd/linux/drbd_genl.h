@@ -294,6 +294,11 @@ GENL_struct(DRBD_NLA_NOTIFICATION_HEADER, 23, drbd_notification_header,
 	__u32_field(2, DRBD_GENLA_F_MANDATORY, nh_id)
 )
 
+GENL_struct(DRBD_NLA_HELPER, 24, drbd_helper_info,
+	__str_field(1, DRBD_GENLA_F_MANDATORY, helper_name, 32)
+	__u32_field(2, DRBD_GENLA_F_MANDATORY, helper_status)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -490,3 +495,8 @@ GENL_op(
 		.dumpit = drbd_adm_get_initial_state,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY))
+
+GENL_notification(
+	DRBD_HELPER, 40, events,
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
+	GENL_tla_expected(DRBD_NLA_HELPER, DRBD_F_REQUIRED))
