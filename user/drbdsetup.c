@@ -236,11 +236,11 @@ static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int cstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -391,7 +391,7 @@ struct drbd_cmd commands[] = {
 	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
 		F_GET_CMD(sh_status_scmd),
 		.missing_ok = true, },
-	{"cstate", CTX_MINOR, F_GET_CMD(cstate_scmd) },
+	{"cstate", CTX_CONNECTION, 0, NO_PAYLOAD, cstate_cmd },
 	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
@@ -587,7 +587,7 @@ static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg,
 	return NO_ERROR;
 }
 
-static void resolv6(char *name, struct sockaddr_in6 *addr)
+static void resolv6(const char *name, struct sockaddr_in6 *addr)
 {
 	struct addrinfo hints, *res, *tmp;
 	int err;
@@ -640,7 +640,7 @@ static unsigned long resolv(const char* name)
 	return retval;
 }
 
-static void split_ipv6_addr(char **address, int *port)
+static void split_ipv6_addr(const char **address, int *port)
 {
 	/* ipv6:[fe80::0234:5678:9abc:def1]:8000; */
 	char *b = strrchr(*address,']');
@@ -659,7 +659,7 @@ static void split_ipv6_addr(char **address, int *port)
 		*port = 7788; /* will we ever get rid of that default port? */
 }
 
-static void split_address(char* text, int *af, char** address, int* port)
+static void split_address(const char* text, int *af, const char** address, int* port)
 {
 	static struct { char* text; int af; } afs[] = {
 		{ "ipv4:", AF_INET  },
@@ -702,31 +702,41 @@ static void split_address(char* text, int *af, char** address, int* port)
 		*port = 7788;
 }
 
-static int nla_put_address(struct msg_buff *msg, int attrtype, char* arg)
+static int sockaddr_from_str(struct sockaddr_storage *storage, const char *str)
 {
 	int af, port;
-	char *address;
+	const char *address;
 
-	split_address(arg, &af, &address, &port);
+	split_address(str, &af, &address, &port);
 	if (af == AF_INET6) {
-		struct sockaddr_in6 addr6;
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)storage;
 
-		memset(&addr6, 0, sizeof(addr6));
-		resolv6(address, &addr6);
-		addr6.sin6_port = htons(port);
-		/* addr6.sin6_len = sizeof(addr6); */
-		nla_put(msg, attrtype, sizeof(addr6), &addr6);
+		memset(sin6, 0, sizeof(*sin6));
+		resolv6(address, sin6);
+		sin6->sin6_port = htons(port);
+		/* sin6->sin6_len = sizeof(*sin6); */
+		return sizeof(*sin6);
 	} else {
 		/* AF_INET, AF_SDP, AF_SSOCKS,
 		 * all use the IPv4 addressing scheme */
-		struct sockaddr_in addr;
+		struct sockaddr_in *sin = (struct sockaddr_in *)storage;
 
-		memset(&addr, 0, sizeof(addr));
-		addr.sin_port = htons(port);
-		addr.sin_family = af;
-		addr.sin_addr.s_addr = resolv(address);
-		nla_put(msg, attrtype, sizeof(addr), &addr);
+		memset(sin, 0, sizeof(*sin));
+		sin->sin_port = htons(port);
+		sin->sin_family = af;
+		sin->sin_addr.s_addr = resolv(address);
+		return sizeof(*sin);
 	}
+	return 0;
+}
+
+static int nla_put_address(struct msg_buff *msg, int attrtype, char* arg)
+{
+	struct sockaddr_storage storage;
+	int len;
+
+	len = sockaddr_from_str(&storage, arg);
+	nla_put(msg, attrtype, len, &storage);
 	return NO_ERROR;
 }
 
@@ -1990,6 +2000,35 @@ static int role_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
+static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	struct connections_list *connections, *connection;
+	char *old_objname = objname;
+	bool found = false;
+
+	objname = "all";
+	connections = list_connections();
+	for (connection = connections; connection; connection = connection->next) {
+		if (my_addr_len != connection->ctx.ctx_my_addr_len ||
+		    memcmp(&my_addr, connection->ctx.ctx_my_addr, my_addr_len) ||
+		    peer_addr_len != connection->ctx.ctx_peer_addr_len ||
+		    memcmp(&peer_addr, connection->ctx.ctx_peer_addr, peer_addr_len))
+			continue;
+
+		printf("%s\n", drbd_conn_str(connection->info.conn_connection_state));
+		found = true;
+		break;
+	}
+	free_connections(connections);
+	objname = old_objname;
+
+	if (!found) {
+		fprintf(stderr, "%s: No such connection\n", objname);
+		return 10;
+	}
+	return 0;
+}
+
 static char *af_to_str(int af)
 {
 	if (af == AF_INET)
@@ -2611,31 +2650,6 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 	fflush(stdout);
 	return 0;
 #undef _P
-}
-
-static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		struct genl_info *info)
-{
-	union drbd_state state = { .i = 0 };
-
-	if (!info)
-		return 0;
-
-	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		drbd_nla_parse_nested(nested_attr_tb,
-				      ARRAY_SIZE(state_info_nl_policy) - 1,
-				      global_attrs[DRBD_NLA_STATE_INFO],
-				      state_info_nl_policy);
-		if (ntb(T_current_state))
-			state.i = nla_get_u32(ntb(T_current_state));
-	}
-	if (state.conn == C_STANDALONE &&
-	    state.disk == D_DISKLESS) {
-		printf("Unconfigured\n");
-	} else {
-		printf("%s\n",drbd_conn_str(state.conn));
-	}
-	return 0;
 }
 
 static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
