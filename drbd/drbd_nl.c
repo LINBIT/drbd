@@ -3333,31 +3333,36 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
-	struct drbd_resource *resource = NULL;
+	struct drbd_resource *resource;
 	struct drbd_device *uninitialized_var(device);
 	struct drbd_peer_device *peer_device = NULL;
 	int minor, err, retcode;
 	struct drbd_genlmsghdr *dh;
+	struct idr *idr_to_search;
 
-	retcode = ERR_INVALID_REQUEST;
-	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-	if (!resource_filter)
-		goto put_result;
-	retcode = ERR_RES_NOT_KNOWN;
-	resource = drbd_find_resource(nla_data(resource_filter));
-	if (!resource)
-		goto put_result;
+	resource = (struct drbd_resource *)cb->args[0];
+	if (!cb->args[0] && !cb->args[1]) {
+		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+		if (resource_filter) {
+			retcode = ERR_RES_NOT_KNOWN;
+			resource = drbd_find_resource(nla_data(resource_filter));
+			if (!resource)
+				goto put_result;
+		}
+		cb->args[0] = (long)resource;
+	}
 
 	rcu_read_lock();
-	minor = cb->args[0];
-	device = idr_get_next(&resource->devices, &minor);
+	minor = cb->args[1];
+	idr_to_search = resource ? &resource->devices : &drbd_devices;
+	device = idr_get_next(idr_to_search, &minor);
 	if (!device) {
 		err = 0;
 		goto out;
 	}
-	if (cb->args[1]) {
+	if (cb->args[2]) {
 		for_each_peer_device(peer_device, device)
-			if (peer_device == (struct drbd_peer_device *)cb->args[0])
+			if (peer_device == (struct drbd_peer_device *)cb->args[1])
 				goto found_peer_device;
 	}
 	peer_device = list_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
@@ -3402,8 +3407,8 @@ put_result:
 		err = peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		cb->args[0] = minor + 1;
-		cb->args[1] = (long)peer_device;
+		cb->args[1] = minor + 1;
+		cb->args[2] = (long)peer_device;
 	}
 	genlmsg_end(skb, dh);
 	err = 0;
