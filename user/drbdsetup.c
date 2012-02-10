@@ -234,7 +234,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
-static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -399,7 +399,7 @@ struct drbd_cmd commands[] = {
 	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
 		.options = show_cmd_options },
 	{"new-show", CTX_RESOURCE | CTX_ALL, 0, 0, generic_show_cmd, },
-	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, generic_status_cmd, },
+	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
 		.missing_ok = true,
@@ -1894,10 +1894,11 @@ static void connection_status(struct connections_list *connection,
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
 }
 
-static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv)
+static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct resources_list *resources, *resource;
 	char *old_objname = objname;
+	bool found = false;
 	int c;
 
 	optind = 0;  /* reset getopt_long() */
@@ -1953,10 +1954,15 @@ static int generic_status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		free_connections(connections);
 		free_devices(devices);
 		free_peer_devices(peer_devices);
+		found = true;
 	}
 
-	free(resources);
+	free_resources(resources);
 	objname = old_objname;
+	if (!found && strcmp(objname, "all")) {
+		fprintf(stderr, "%s: No such resource\n", objname);
+		return 10;
+	}
 	return 0;
 }
 
