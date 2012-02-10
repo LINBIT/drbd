@@ -698,8 +698,8 @@ void expand_common(void)
 	struct d_host_info *h;
 	struct connection *conn;
 
-	/* make sure vol->device is non-NULL */
 	for_each_resource(res, &config) {
+		/* make sure vol->device is non-NULL */
 		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, &h->volumes) {
 				if (!vol->device)
@@ -707,55 +707,42 @@ void expand_common(void)
 						   vol->device_minor);
 			}
 		}
-	}
 
-	for_each_resource(res, &config) {
-		if (!common)
-			break;
+		if (common) {
+			expand_opts(&common->net_options, &res->net_options);
+			expand_opts(&common->disk_options, &res->disk_options);
+			expand_opts(&common->startup_options, &res->startup_options);
+			expand_opts(&common->proxy_options, &res->proxy_options);
+			expand_opts(&common->handlers, &res->handlers);
+			expand_opts(&common->res_options, &res->res_options);
 
-		expand_opts(&common->net_options, &res->net_options);
-		expand_opts(&common->disk_options, &res->disk_options);
-		expand_opts(&common->startup_options, &res->startup_options);
-		expand_opts(&common->proxy_options, &res->proxy_options);
-		expand_opts(&common->handlers, &res->handlers);
-		expand_opts(&common->res_options, &res->res_options);
+			if (common->stacked_timeouts)
+				res->stacked_timeouts = 1;
 
-		if (common->stacked_timeouts)
-			res->stacked_timeouts = 1;
+			if (STAILQ_EMPTY(&res->become_primary_on))
+				res->become_primary_on = common->become_primary_on;
 
-		if (STAILQ_EMPTY(&res->become_primary_on))
-			res->become_primary_on = common->become_primary_on;
-
-		expand_opts(&common->proxy_plugins, &res->proxy_plugins);
-
-	}
-
-	/* now that common disk options (if any) have been propagated to the
-	 * resource level, further propagate them to the volume level. */
-	for_each_resource(res, &config) {
-		for_each_host(h, &res->all_hosts) {
-			for_each_volume(vol, &h->volumes) {
-				expand_opts(&res->disk_options, &vol->disk_options);
-			}
+			expand_opts(&common->proxy_plugins, &res->proxy_plugins);
 		}
-	}
 
-	/* now from all volume/disk-options on resource level to host level */
-	for_each_resource(res, &config) {
+		/* now that common disk options (if any) have been propagated to the
+		 * resource level, further propagate them to the volume level. */
+		for_each_host(h, &res->all_hosts)
+			for_each_volume(vol, &h->volumes)
+				expand_opts(&res->disk_options, &vol->disk_options);
+
+		/* now from all volume/disk-options on resource level to host level */
 		for_each_volume(vol, &res->volumes) {
 			for_each_host(h, &res->all_hosts) {
 				host_vol = volume_by_vnr(&h->volumes, vol->vnr);
 				expand_opts(&vol->disk_options, &host_vol->disk_options);
 			}
 		}
-	}
 
-	/* inherit network options from resource objects into connection objects */
-	for_each_resource(res, &config) {
+		/* inherit network options from resource objects into connection objects */
 		for_each_connection(conn, &res->connections)
 			expand_opts(&res->net_options, &conn->net_options);
 	}
-
 }
 
 static struct d_resource *res_by_name(const char *name)
