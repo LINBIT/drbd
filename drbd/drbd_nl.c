@@ -103,6 +103,7 @@ int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices_done(struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_connections_done(struct netlink_callback *cb);
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
 
@@ -3190,33 +3191,55 @@ out:
 	return skb->len;
 }
 
+int drbd_adm_dump_connections_done(struct netlink_callback *cb)
+{
+	return put_resource_in_arg0(cb);
+}
+
+enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
+
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
-	struct drbd_resource *resource = NULL;
+	struct drbd_resource *resource = NULL, *next_resource;
 	struct drbd_connection *uninitialized_var(connection);
-	int err, retcode;
+	int err = 0, retcode;
 	struct drbd_genlmsghdr *dh;
 	struct connection_info connection_info;
 	struct connection_statistics connection_statistics;
 
-	retcode = ERR_INVALID_REQUEST;
-	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-	if (!resource_filter)
-		goto put_result;
-	retcode = ERR_RES_NOT_KNOWN;
-	resource = drbd_find_resource(nla_data(resource_filter));
-	if (!resource)
-		goto put_result;
+	rcu_read_lock();
+	resource = (struct drbd_resource *)cb->args[0];
+	if (!cb->args[0]) {
+		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+		if (resource_filter) {
+			retcode = ERR_RES_NOT_KNOWN;
+			resource = drbd_find_resource(nla_data(resource_filter));
+			if (!resource)
+				goto put_result;
+			cb->args[0] = (long)resource;
+			cb->args[1] = SINGLE_RESOURCE;
+		}
+	}
+	if (!resource) {
+		if (list_empty(&drbd_resources))
+			goto out;
+		resource = list_first_entry(&drbd_resources, struct drbd_resource, resources);
+		kref_get(&resource->kref);
+		cb->args[0] = (long)resource;
+		cb->args[1] = ITERATE_RESOURCES;
+	}
 
+    next_resource:
+	rcu_read_unlock();
 	mutex_lock(&resource->conf_update);
 	rcu_read_lock();
-	if (cb->args[0]) {
+	if (cb->args[2]) {
 		for_each_connection_rcu(connection, resource)
-			if (connection == (struct drbd_connection *)cb->args[0])
+			if (connection == (struct drbd_connection *)cb->args[2])
 				goto found_connection;
-		err = 0;  /* connection was probably deleted */
-		goto out;
+		/* connection was probably deleted */
+		goto no_more_connections;
 	}
 	connection = list_entry(&resource->connections, struct drbd_connection, connections);
 
@@ -3228,8 +3251,28 @@ found_connection:
 		retcode = NO_ERROR;
 		goto put_result;  /* only one iteration */
 	}
-	err = 0;
-	goto out;  /* no more connections */
+
+no_more_connections:
+	if (cb->args[1] == ITERATE_RESOURCES) {
+		for_each_resource_rcu(next_resource, &drbd_resources) {
+			if (next_resource == resource)
+				goto found_resource;
+		}
+		/* resource was probably deleted */
+	}
+	goto out;
+
+found_resource:
+	list_for_each_entry_continue_rcu(next_resource, &drbd_resources, resources) {
+		mutex_unlock(&resource->conf_update);
+		kref_put(&resource->kref, drbd_destroy_resource);
+		resource = next_resource;
+		kref_get(&resource->kref);
+		cb->args[0] = (long)resource;
+		cb->args[2] = 0;
+		goto next_resource;
+	}
+	goto out;  /* no more resources */
 
 put_result:
 	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
@@ -3261,7 +3304,7 @@ put_result:
 		err = connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		cb->args[0] = (long)connection;
+		cb->args[2] = (long)connection;
 	}
 	genlmsg_end(skb, dh);
 	err = 0;
