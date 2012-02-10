@@ -1036,6 +1036,7 @@ struct d_volume *parse_volume(int vnr, struct names* on_hosts)
 struct d_volume *parse_stacked_volume(int vnr)
 {
 	struct d_volume *vol;
+	int token;
 
 	vol = calloc(1,sizeof(struct d_volume));
 	STAILQ_INIT(&vol->disk_options);
@@ -1043,9 +1044,24 @@ struct d_volume *parse_stacked_volume(int vnr)
 	vol->vnr = vnr;
 
 	EXP('{');
-	EXP(TK_DEVICE);
-	parse_device(NULL, vol);
-	EXP('}');
+	while (1) {
+		token = yylex();
+		switch (token) {
+		case TK_DEVICE:
+			parse_device(NULL, vol);
+			break;
+		case TK_DISK:
+			EXP('{');
+			vol->disk_options = parse_options(TK_DISK_FLAG, TK_DISK_NO_FLAG, TK_DISK_OPTION);
+			break;
+		case '}':
+			goto exit_loop;
+		default:
+			pe_expected_got("device | disk | }", token);
+			break;
+		}
+	}
+exit_loop:
 	vol->meta_disk = strdup("internal");
 	vol->meta_index = strdup("internal");
 
