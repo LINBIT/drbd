@@ -696,6 +696,7 @@ void expand_common(void)
 	struct d_resource *res;
 	struct d_volume *vol, *host_vol;
 	struct d_host_info *h;
+	struct connection *conn;
 
 	/* make sure vol->device is non-NULL */
 	for_each_resource(res, &config) {
@@ -748,6 +749,13 @@ void expand_common(void)
 			}
 		}
 	}
+
+	/* inherit network options from resource objects into connection objects */
+	for_each_resource(res, &config) {
+		for_each_connection(conn, &res->connections)
+			expand_opts(&res->net_options, &conn->net_options);
+	}
+
 }
 
 static struct d_resource *res_by_name(const char *name)

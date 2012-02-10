@@ -186,7 +186,11 @@ resource drbd_9_two_connection {
 		address 192.168.31.3:7800;
 	}
 
-	connection {
+	net {
+		ko-count 3;
+	}
+
+	connection "optinal name" {
 		host alpha;
 		host bravo;
 		net { protocol C; }
