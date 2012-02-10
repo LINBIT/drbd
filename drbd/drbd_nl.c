@@ -101,6 +101,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_devices_done(struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
@@ -3089,6 +3090,21 @@ static void device_to_statistics(struct device_statistics *s,
 	s->dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
 }
 
+static int put_resource_in_arg0(struct netlink_callback *cb)
+{
+	if (cb->args[0]) {
+		struct drbd_resource *resource =
+			(struct drbd_resource *)cb->args[0];
+
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
+	return 0;
+}
+
+int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
+	return put_resource_in_arg0(cb);
+}
+
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -3098,24 +3114,29 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct drbd_genlmsghdr *dh;
 	struct device_info device_info;
 	struct device_statistics device_statistics;
+	struct idr *idr_to_search;
 
-	retcode = ERR_INVALID_REQUEST;
-	resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-	if (!resource_filter)
-		goto put_result;
-	retcode = ERR_RES_NOT_KNOWN;
-	resource = drbd_find_resource(nla_data(resource_filter));
-	if (!resource)
-		goto put_result;
+	resource = (struct drbd_resource *)cb->args[0];
+	if (!cb->args[0] && !cb->args[1]) {
+		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+		if (resource_filter) {
+			retcode = ERR_RES_NOT_KNOWN;
+			resource = drbd_find_resource(nla_data(resource_filter));
+			if (!resource)
+				goto put_result;
+			cb->args[0] = (long)resource;
+		}
+	}
 
 	rcu_read_lock();
-	minor = cb->args[0];
-	device = idr_get_next(&resource->devices, &minor);
+	minor = cb->args[1];
+	idr_to_search = resource ? &resource->devices : &drbd_devices;
+	device = idr_get_next(idr_to_search, &minor);
 	if (!device) {
 		err = 0;
 		goto out;
 	}
-	idr_for_each_entry_continue(&resource->devices, device, minor) {
+	idr_for_each_entry_continue(idr_to_search, device, minor) {
 		retcode = NO_ERROR;
 		goto put_result;  /* only one iteration */
 	}
@@ -3157,7 +3178,7 @@ put_result:
 		err = device_statistics_to_skb(skb, &device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		cb->args[0] = minor + 1;
+		cb->args[1] = minor + 1;
 	}
 	genlmsg_end(skb, dh);
 	err = 0;

@@ -444,6 +444,7 @@ GENL_op(DRBD_ADM_GET_RESOURCES, 30,
 GENL_op(DRBD_ADM_GET_DEVICES, 31,
 	GENL_op_init(
 		.dumpit = drbd_adm_dump_devices,
+		.done = drbd_adm_dump_devices_done,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	GENL_tla_expected(DRBD_NLA_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
