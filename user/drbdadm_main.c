@@ -260,14 +260,6 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_up			\
-	.show_in_usage = 1,		\
-	.res_name_required = 1,		\
-	.iterate_volumes = 1,		\
-	.verify_ips = 1,		\
-	.need_peer = 1,			\
-	.uc_dialog = 1,			\
-
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
@@ -364,7 +356,7 @@ struct adm_cmd cmds[] = {
 	 .drbdsetup_ctx = &net_options_ctx, },
 	{"disconnect", adm_disconnect, DRBD_acf1_resname
 	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
-	{"up", adm_up, DRBD_acf1_up},
+	{"up", adm_up, DRBD_acf1_connect},
 	{"resource-options", adm_res_options, DRBD_acf1_resname
 	 .drbdsetup_ctx = &resource_options_ctx, },
 	{"down", adm_generic_l, DRBD_acf1_resname},
@@ -2305,17 +2297,16 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * and then configure the network part */
 static int adm_up(struct cfg_ctx *ctx)
 {
-	static char *current_res_name;
+	struct d_volume *vol;
 
-	if (!current_res_name || strcmp(current_res_name, ctx->res->name)) {
-		free(current_res_name);
-		current_res_name = strdup(ctx->res->name);
+	schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
+	schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 
-		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
-		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+	for_each_volume(vol, &ctx->res->me->volumes) {
+		ctx->vol = vol;
+		schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
+		schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 	}
-	schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
-	schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
 
 	return 0;
 }
