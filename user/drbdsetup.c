@@ -235,10 +235,10 @@ static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int role_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int cstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
@@ -387,8 +387,7 @@ struct drbd_cmd commands[] = {
 	 .ctx = &verify_cmd_ctx },
 	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
 		.missing_ok = true, },
-	{"state", CTX_MINOR, F_GET_CMD(role_scmd) },
-	{"role", CTX_MINOR, F_GET_CMD(role_scmd) },
+	{"role", CTX_RESOURCE, 0, NO_PAYLOAD, role_cmd },
 	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
 		F_GET_CMD(sh_status_scmd),
 		.missing_ok = true, },
@@ -1966,6 +1965,31 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
+static int role_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	struct resources_list *resources, *resource;
+	int ret = ERR_RES_NOT_KNOWN;
+
+	resources = list_resources();
+
+	for (resource = resources; resource; resource = resource->next) {
+		if (strcmp(objname, resource->name))
+			continue;
+
+		printf("%s\n", drbd_role_str(resource->info.res_role));
+		ret = NO_ERROR;
+		break;
+	}
+
+	free_resources(resources);
+
+	if (ret != NO_ERROR) {
+		fprintf(stderr, "%s: %s\n", objname, error_to_string(ret));
+		return 10;
+	}
+	return 0;
+}
+
 static char *af_to_str(int af)
 {
 	if (af == AF_INET)
@@ -2587,36 +2611,6 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 	fflush(stdout);
 	return 0;
 #undef _P
-}
-
-static int role_scmd(struct drbd_cmd *cm __attribute((unused)),
-		struct genl_info *info)
-{
-	union drbd_state state = { .i = 0 };
-
-	if (!strcmp(cm->cmd, "state")) {
-		fprintf(stderr, "'%s ... state' is deprecated, use '%s ... role' instead.\n",
-			cmdname, cmdname);
-	}
-
-	if (!info)
-		return 0;
-
-	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		drbd_nla_parse_nested(nested_attr_tb,
-				      ARRAY_SIZE(state_info_nl_policy) - 1,
-				      global_attrs[DRBD_NLA_STATE_INFO],
-				      state_info_nl_policy);
-		if (ntb(T_current_state))
-			state.i = nla_get_u32(ntb(T_current_state));
-	}
-	if (state.conn == C_STANDALONE &&
-	    state.disk == D_DISKLESS) {
-		printf("Unconfigured\n");
-	} else {
-		printf("%s/%s\n",drbd_role_str(state.role),drbd_role_str(state.peer));
-	}
-	return 0;
 }
 
 static int cstate_scmd(struct drbd_cmd *cm __attribute((unused)),
