@@ -237,11 +237,11 @@ static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int dstate_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
@@ -392,7 +392,7 @@ struct drbd_cmd commands[] = {
 		F_GET_CMD(sh_status_scmd),
 		.missing_ok = true, },
 	{"cstate", CTX_CONNECTION, 0, NO_PAYLOAD, cstate_cmd },
-	{"dstate", CTX_MINOR, F_GET_CMD(dstate_scmd) },
+	{"dstate", CTX_MINOR, 0, NO_PAYLOAD, dstate_cmd },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
@@ -2029,6 +2029,35 @@ static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
+static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	struct devices_list *devices, *device;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	bool found = false;
+
+	objname = "all";
+	minor = -1;
+	devices = list_devices();
+	for (device = devices; device; device = device->next) {
+		if (device->minor != old_minor)
+			continue;
+
+		printf("%s\n", drbd_disk_str(device->info.dev_disk_state));
+		/* printf("%s/%s\n",drbd_disk_str(state.disk),drbd_disk_str(state.pdsk)); */
+		found = true;
+		break;
+	}
+	free_devices(devices);
+	objname = old_objname;
+
+	if (!found) {
+		fprintf(stderr, "%s: No such device\n", objname);
+		return 10;
+	}
+	return 0;
+}
+
 static char *af_to_str(int af)
 {
 	if (af == AF_INET)
@@ -2650,31 +2679,6 @@ static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
 	fflush(stdout);
 	return 0;
 #undef _P
-}
-
-static int dstate_scmd(struct drbd_cmd *cm __attribute((unused)),
-		struct genl_info *info)
-{
-	union drbd_state state = { .i = 0 };
-
-	if (!info)
-		return 0;
-
-	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		drbd_nla_parse_nested(nested_attr_tb,
-				      ARRAY_SIZE(state_info_nl_policy)-1,
-				      global_attrs[DRBD_NLA_STATE_INFO],
-				      state_info_nl_policy);
-		if (ntb(T_current_state))
-			state.i = nla_get_u32(ntb(T_current_state));
-	}
-	if ( state.conn == C_STANDALONE &&
-	     state.disk == D_DISKLESS) {
-		printf("Unconfigured\n");
-	} else {
-		printf("%s/%s\n",drbd_disk_str(state.disk),drbd_disk_str(state.pdsk));
-	}
-	return 0;
 }
 
 static int uuids_scmd(struct drbd_cmd *cm,
