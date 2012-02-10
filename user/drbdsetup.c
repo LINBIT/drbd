@@ -169,6 +169,7 @@ enum cfg_ctx_key {
 	CTX_MULTIPLE_ARGUMENTS = 64,
 
 	CTX_CONNECTION = CTX_MY_ADDR | CTX_PEER_ADDR | CTX_MULTIPLE_ARGUMENTS,
+	CTX_PEER_DEVICE = CTX_MY_ADDR | CTX_PEER_ADDR | CTX_VOLUME | CTX_MULTIPLE_ARGUMENTS,
 
 	CTX_RESOURCE_AND_CONNECTION = 0,
 };
@@ -246,8 +247,7 @@ static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
 static int print_notifications(struct drbd_cmd *, struct genl_info *);
-static int w_connected_state(struct drbd_cmd *, struct genl_info *);
-static int w_synced_state(struct drbd_cmd *, struct genl_info *);
+static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
 static void show_address(void* address, int addr_len);
 
@@ -406,11 +406,11 @@ struct drbd_cmd commands[] = {
 	{"new-events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
 		.missing_ok = true,
 		.continuous_poll = true, },
-	{"wait-connect", CTX_MINOR, F_GET_CMD(w_connected_state),
+	{"wait-connect", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
 		.options = wait_cmds_options,
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
-	{"wait-sync", CTX_MINOR, F_GET_CMD(w_synced_state),
+	{"wait-sync", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
 		.options = wait_cmds_options,
 		.continuous_poll = true,
 		.wait_for_connect_timeouts = true, },
@@ -3003,75 +3003,70 @@ out:
 	return 0;
 }
 
-static int w_connected_state(struct drbd_cmd *cm, struct genl_info *info)
+static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 {
-	struct state_info si = { .current_state = 0 };
-	union drbd_state state;
+	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
+	struct drbd_notification_header nh = { .nh_type = -1U };
+	struct drbd_genlmsghdr *dh;
 
 	if (!info)
 		return 0;
 
-	if (!global_attrs[DRBD_NLA_STATE_INFO])
+	if (drbd_cfg_context_from_attrs(&ctx, info) ||
+	    drbd_notification_header_from_attrs(&nh, info))
 		return 0;
 
-	if (state_info_from_attrs(&si, info)) {
-		fprintf(stderr,"nla_policy violation!?\n");
+	dh = info->userhdr;
+	if (dh->ret_code != NO_ERROR)
+		return dh->ret_code;
+
+	if (nh.nh_type == NOTIFY_DESTROY)
 		return 0;
-	}
-
-	if (si.sib_reason != SIB_STATE_CHANGE &&
-	    si.sib_reason != SIB_GET_STATUS_REPLY)
+	if (info->genlhdr->cmd != DRBD_CONNECTION_STATE &&
+	    info->genlhdr->cmd != DRBD_PEER_DEVICE_STATE)
+		return 0;
+	if (my_addr_len != ctx.ctx_my_addr_len ||
+	    memcmp(&my_addr, ctx.ctx_my_addr, my_addr_len) ||
+	    peer_addr_len != ctx.ctx_peer_addr_len ||
+	    memcmp(&peer_addr, ctx.ctx_peer_addr, peer_addr_len))
 		return 0;
 
-	state.i = si.current_state;
-	if (state.conn >= L_CONNECTED)
-		return -1;  /* done waiting */
-	if (state.conn < C_UNCONNECTED) {
-		struct drbd_genlmsghdr *dhdr = info->userhdr;
-		struct drbd_cfg_context cfg = { .ctx_volume = -1U };
+	switch(info->genlhdr->cmd) {
+	case DRBD_CONNECTION_STATE: {
+		struct connection_info connection_info;
 
-		if (!wait_after_split_brain)
+		if (connection_info_from_attrs(&connection_info, info)) {
+			dbg(1, "connection info missing\n");
+			goto out;
+		}
+		if (connection_info.conn_connection_state < C_CONNECTED)
+			if (!wait_after_split_brain)
+				return -1;  /* done waiting */
+
+			fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
+				       "but I'm configured to wait anways (--wait-after-sb)\n",
+				       dh->minor,
+				       ctx.ctx_resource_name, ctx.ctx_volume,
+				       drbd_conn_str(connection_info.conn_connection_state));
+		}
+		break;
+	case DRBD_PEER_DEVICE_STATE: {
+		struct peer_device_info peer_device_info;
+
+		if (peer_device_info_from_attrs(&peer_device_info, info)) {
+			dbg(1, "peer device info missing\n");
+			goto out;
+		}
+		if ((!strcmp(cm->cmd, "wait-connect") &&
+		     peer_device_info.peer_repl_state >= L_CONNECTED) ||
+		    (/* !strcmp(cm->cmd, "wait-sync") && */
+		     peer_device_info.peer_repl_state == L_CONNECTED))
 			return -1;  /* done waiting */
-		drbd_cfg_context_from_attrs(&cfg, info);
-
-		fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
-			       "but I'm configured to wait anways (--wait-after-sb)\n",
-			       dhdr->minor,
-			       cfg.ctx_resource_name, cfg.ctx_volume,
-			       drbd_conn_str(state.conn));
+		}
+		break;
 	}
 
-	return 0;
-}
-
-static int w_synced_state(struct drbd_cmd *cm, struct genl_info *info)
-{
-	struct state_info si = { .current_state = 0 };
-	union drbd_state state;
-
-	if (!info)
-		return 0;
-
-	if (!global_attrs[DRBD_NLA_STATE_INFO])
-		return 0;
-
-	if (state_info_from_attrs(&si, info)) {
-		fprintf(stderr,"nla_policy violation!?\n");
-		return 0;
-	}
-
-	if (si.sib_reason != SIB_STATE_CHANGE &&
-	    si.sib_reason != SIB_GET_STATUS_REPLY)
-		return 0;
-
-	state.i = si.current_state;
-
-	if (state.conn == L_CONNECTED)
-		return -1;  /* done waiting */
-
-	if (!wait_after_split_brain && state.conn < C_UNCONNECTED)
-		return -1;  /* done waiting */
-
+out:
 	return 0;
 }
 
