@@ -174,6 +174,8 @@ static int drbd_msg_put_info(const char *info)
 
 static int drbd_adm_finish(struct genl_info *info, int retcode);
 
+extern struct genl_ops drbd_genl_ops[];
+
 /* This would be a good candidate for a "pre_doit" hook,
  * and per-family private info->pointers.
  * But we need to stay compatible with older kernels.
@@ -191,10 +193,14 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 
 	memset(&adm_ctx, 0, sizeof(adm_ctx));
 
-	/* genl_rcv_msg only checks for CAP_NET_ADMIN on "GENL_ADMIN_PERM" :( */
-	if (cmd != DRBD_ADM_GET_STATUS
-	&& security_netlink_recv(skb, CAP_SYS_ADMIN))
-	       return -EPERM;
+	/*
+	 * genl_rcv_msg() only checks if commands with the GENL_ADMIN_PERM flag
+	 * set have CAP_NET_ADMIN; we also require CAP_SYS_ADMIN for
+	 * administrative commands.
+	 */
+	if ((drbd_genl_ops[cmd].flags & GENL_ADMIN_PERM) &&
+	    security_netlink_recv(skb, CAP_SYS_ADMIN))
+		return -EPERM;
 
 	adm_ctx.reply_skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (!adm_ctx.reply_skb) {
