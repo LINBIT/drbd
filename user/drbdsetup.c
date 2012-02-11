@@ -234,21 +234,19 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int del_resource_cmd(struct drbd_cmd *cm, int argc, char **argv);
-static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int show_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
-static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
 static int print_notifications(struct drbd_cmd *, struct genl_info *);
 static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
-static void show_address(void* address, int addr_len);
 
 #define ADDRESS_STR_MAX 256
 static char *address_str(char *buffer, void* address, int addr_len);
@@ -391,9 +389,7 @@ struct drbd_cmd commands[] = {
 	{"dstate", CTX_MINOR, 0, NO_PAYLOAD, dstate_cmd },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
-	{"show", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(show_scmd),
-		.options = show_cmd_options },
-	{"new-show", CTX_RESOURCE | CTX_ALL, 0, 0, generic_show_cmd, },
+	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd, },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
 	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
@@ -1603,18 +1599,22 @@ static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info)
 	printI("connection {\n");
 	++indent;
 	if (cfg.ctx_my_addr_len) {
-		printI("_this_host {\n");
-		++indent;
-		show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
-		--indent;
-		printI("}\n");
+		char address[ADDRESS_STR_MAX];
+		if (address_str(address, cfg.ctx_my_addr, cfg.ctx_my_addr_len)) {
+			char *colon = strchr(address, ':');
+			if (colon)
+				*colon = ' ';
+			printI("_this_host %s;\n", address);
+		}
 	}
 	if (cfg.ctx_peer_addr_len) {
-		printI("_remote_host {\n");
-		++indent;
-		show_address(cfg.ctx_peer_addr, cfg.ctx_peer_addr_len);
-		--indent;
-		printI("}\n");
+		char address[ADDRESS_STR_MAX];
+		if (address_str(address, cfg.ctx_peer_addr, cfg.ctx_peer_addr_len)) {
+			char *colon = strchr(address, ':');
+			if (colon)
+				*colon = ' ';
+			printI("_remote_host %s;\n", address);
+		}
 	}
 	print_current_options(&net_options_ctx, "net");
 	--indent;
@@ -1623,7 +1623,7 @@ static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info)
 	return 0;
 }
 
-static int generic_show_cmd(struct drbd_cmd *cm, int argc, char **argv)
+static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct resources_list *resources_list, *resource;
 	char *old_objname = objname;
@@ -2051,33 +2051,6 @@ static char *af_to_str(int af)
 	else return "unknown";
 }
 
-static void show_address(void* address, int addr_len)
-{
-	struct sockaddr     *addr;
-	struct sockaddr_in  *addr4;
-	struct sockaddr_in6 *addr6;
-	char buffer[INET6_ADDRSTRLEN];
-
-	addr = (struct sockaddr *)address;
-	if (addr->sa_family == AF_INET
-	|| addr->sa_family == get_af_ssocks(0)
-	|| addr->sa_family == AF_INET_SDP) {
-		addr4 = (struct sockaddr_in *)address;
-		printI("address\t\t\t%s %s:%d;\n",
-		       af_to_str(addr4->sin_family),
-		       inet_ntoa(addr4->sin_addr),
-		       ntohs(addr4->sin_port));
-	} else if (addr->sa_family == AF_INET6) {
-		addr6 = (struct sockaddr_in6 *)address;
-		printI("address\t\t\t%s [%s]:%d;\n",
-		       af_to_str(addr6->sin6_family),
-		       inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
-		       ntohs(addr6->sin6_port));
-	} else {
-		printI("address\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
-	}
-}
-
 static char *address_str(char *buffer, void* address, int addr_len)
 {
 	struct sockaddr     *addr;
@@ -2461,71 +2434,6 @@ static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 	}
 
 	return __show_current_volume(cm, info);
-}
-
-/* may be called for a "show" of a single minor device.
- * prints all available configuration information in that case.
- *
- * may also be called iteratively for a "show-all", which should try to not
- * print redundant configuration information for the same resource (tconn).
- */
-static int show_scmd(struct drbd_cmd *cm, struct genl_info *info)
-{
-	/* FIXME need some define for max len here */
-	static char last_ctx_resource_name[128];
-	static int call_count;
-
-	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-
-	if (!info) {
-		if (call_count) {
-			--indent;
-			printI("}\n"); /* close _this_host */
-			--indent;
-			printI("}\n"); /* close resource */
-		}
-		fflush(stdout);
-		return 0;
-	}
-	call_count++;
-
-	/* FIXME: Is the folowing check needed? */
-	if (!global_attrs[DRBD_NLA_CFG_CONTEXT])
-		dbg(1, "unexpected packet, configuration context missing!\n");
-
-	drbd_cfg_context_from_attrs(&cfg, info);
-
-	if (strncmp(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name))) {
-		if (strncmp(last_ctx_resource_name, "", sizeof(last_ctx_resource_name))) {
-			--indent;
-			printI("}\n"); /* close _this_host */
-			--indent;
-			printI("}\n\n");
-		}
-		strncpy(last_ctx_resource_name, cfg.ctx_resource_name, sizeof(last_ctx_resource_name));
-
-		printI("resource %s {\n", cfg.ctx_resource_name);
-		++indent;
-		print_current_options(&resource_options_ctx, "options");
-		print_current_options(&net_options_ctx, "net");
-
-		if (cfg.ctx_peer_addr_len) {
-			printI("_remote_host {\n");
-			++indent;
-			show_address(cfg.ctx_peer_addr, cfg.ctx_peer_addr_len);
-			--indent;
-			printI("}\n");
-		}
-		printI("_this_host {\n");
-		++indent;
-		if (cfg.ctx_my_addr_len)
-			show_address(cfg.ctx_my_addr, cfg.ctx_my_addr_len);
-	}
-
-	if (cfg.ctx_volume != -1U)
-		__show_current_volume(cm, info);
-
-	return 0;
 }
 
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
