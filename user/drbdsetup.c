@@ -242,7 +242,6 @@ static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int show_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int sh_status_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
@@ -388,9 +387,6 @@ struct drbd_cmd commands[] = {
 	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
 		.missing_ok = true, },
 	{"role", CTX_RESOURCE, 0, NO_PAYLOAD, role_cmd },
-	{"sh-status", CTX_MINOR | CTX_RESOURCE | CTX_ALL,
-		F_GET_CMD(sh_status_scmd),
-		.missing_ok = true, },
 	{"cstate", CTX_CONNECTION, 0, NO_PAYLOAD, cstate_cmd },
 	{"dstate", CTX_MINOR, 0, NO_PAYLOAD, dstate_cmd },
 	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
@@ -2573,92 +2569,6 @@ static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
 	lk_bdev_save(minor, &bd);
 
 	return 0;
-}
-
-static int sh_status_scmd(struct drbd_cmd *cm __attribute((unused)),
-		struct genl_info *info)
-{
-	unsigned minor;
-	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-	struct state_info si = { .current_state = 0, };
-	union drbd_state state;
-	int available = 0;
-
-	if (!info)
-		return 0;
-
-	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-/* variable prefix; maybe rather make that a command line parameter?
- * or use "drbd_sh_status"? */
-#define _P ""
-	printf("%s_minor=%u\n", _P, minor);
-
-	drbd_cfg_context_from_attrs(&cfg, info);
-	if (cfg.ctx_resource_name)
-		printf("%s_res_name=%s\n", _P, shell_escape(cfg.ctx_resource_name));
-	printf("%s_volume=%d\n", _P, cfg.ctx_volume);
-
-	if (state_info_from_attrs(&si, info) == 0)
-		available = 1;
-	state.i = si.current_state;
-
-	if (state.conn == C_STANDALONE && state.disk == D_DISKLESS) {
-		printf("%s_known=%s\n\n", _P,
-			available ? "Unconfigured"
-			          : "NA # not available or not yet created");
-		printf("%s_cstate=Unconfigured\n", _P);
-		printf("%s_role=\n", _P);
-		printf("%s_peer=\n", _P);
-		printf("%s_disk=\n", _P);
-		printf("%s_pdsk=\n", _P);
-		printf("%s_flags_susp=\n", _P);
-		printf("%s_flags_aftr_isp=\n", _P);
-		printf("%s_flags_peer_isp=\n", _P);
-		printf("%s_flags_user_isp=\n", _P);
-		printf("%s_resynced_percent=\n", _P);
-	} else {
-		printf( "%s_known=Configured\n\n"
-			/* connection state */
-			"%s_cstate=%s\n"
-			/* role */
-			"%s_role=%s\n"
-			"%s_peer=%s\n"
-			/* disk state */
-			"%s_disk=%s\n"
-			"%s_pdsk=%s\n\n",
-			_P,
-			_P, drbd_conn_str(state.conn),
-			_P, drbd_role_str(state.role),
-			_P, drbd_role_str(state.peer),
-			_P, drbd_disk_str(state.disk),
-			_P, drbd_disk_str(state.pdsk));
-
-		/* io suspended ? */
-		printf("%s_flags_susp=%s\n", _P, state.susp ? "1" : "");
-		/* reason why sync is paused */
-		printf("%s_flags_aftr_isp=%s\n", _P, state.aftr_isp ? "1" : "");
-		printf("%s_flags_peer_isp=%s\n", _P, state.peer_isp ? "1" : "");
-		printf("%s_flags_user_isp=%s\n\n", _P, state.user_isp ? "1" : "");
-
-		printf("%s_resynced_percent=", _P);
-
-		if (ntb(T_bits_rs_total)) {
-			uint32_t shift = si.bits_rs_total >= (1ULL << 32) ? 16 : 10;
-			uint64_t left = (si.bits_oos - si.bits_rs_failed) >> shift;
-			uint64_t total = 1UL + (si.bits_rs_total >> shift);
-			uint64_t tmp = 1000UL - left * 1000UL/total;
-
-			unsigned synced = tmp;
-			printf("%i.%i\n", synced / 10, synced % 10);
-			/* what else? everything available! */
-		} else
-			printf("\n");
-	}
-	printf("\n%s_sh_status_process\n\n\n", _P);
-
-	fflush(stdout);
-	return 0;
-#undef _P
 }
 
 static int uuids_scmd(struct drbd_cmd *cm,
