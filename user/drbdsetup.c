@@ -243,7 +243,6 @@ static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 // sub commands for generic_get_cmd
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int print_broadcast_events(struct drbd_cmd *, struct genl_info *);
 static int print_notifications(struct drbd_cmd *, struct genl_info *);
 static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
@@ -392,10 +391,7 @@ struct drbd_cmd commands[] = {
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd, },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd, },
 	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
-	{"events", CTX_MINOR | CTX_RESOURCE | CTX_ALL, F_GET_CMD(print_broadcast_events),
-		.missing_ok = true,
-		.continuous_poll = true, },
-	{"new-events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
+	{"events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
 		.missing_ok = true,
 		.continuous_poll = true, },
 	{"wait-connect", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
@@ -2554,117 +2550,6 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		free_minors(minors);
 		return print_config_error(rv, NULL);
 	}
-	return 0;
-}
-
-/* printf format for minor, resource name, volume */
-#define MNV_FMT	"%d,%s[%d]"
-static void print_state(char *tag, unsigned seq, unsigned minor,
-		const char *resource_name, unsigned vnr, __u32 state_i)
-{
-	union drbd_state s = { .i = state_i };
-	printf("%u %s " MNV_FMT " { cs:%s ro:%s/%s ds:%s/%s %c%c%c%c }\n",
-	       seq,
-	       tag,
-	       minor, resource_name, vnr,
-	       drbd_conn_str(s.conn),
-	       drbd_role_str(s.role),
-	       drbd_role_str(s.peer),
-	       drbd_disk_str(s.disk),
-	       drbd_disk_str(s.pdsk),
-	       s.susp ? 's' : 'r',
-	       s.aftr_isp ? 'a' : '-',
-	       s.peer_isp ? 'p' : '-',
-	       s.user_isp ? 'u' : '-' );
-}
-
-static int print_broadcast_events(struct drbd_cmd *cm, struct genl_info *info)
-{
-	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-	struct state_info si = { .current_state = 0 };
-	struct drbd_genlmsghdr *dh;
-
-	/* End of initial dump. Ignore. Maybe: print some marker? */
-	if (!info)
-		return 0;
-
-	dh = info->userhdr;
-	if (dh->ret_code == ERR_MINOR_INVALID && cm->missing_ok)
-		return 0;
-
-	if (drbd_cfg_context_from_attrs(&cfg, info)) {
-		dbg(1, "unexpected packet, configuration context missing!\n");
-		/* keep running anyways. */
-		struct nlattr *nla = NULL;
-		if (info->attrs[DRBD_NLA_CFG_REPLY])
-			nla = drbd_nla_find_nested(ARRAY_SIZE(drbd_cfg_reply_nl_policy) - 1,
-						   info->attrs[DRBD_NLA_CFG_REPLY], T_info_text);
-		if (nla) {
-			char *txt = nla_data(nla);
-			char *c;
-			for (c = txt; *c; c++)
-				if (*c == '\n')
-					*c = '_';
-			printf("%u # %s\n", info->seq, txt);
-		}
-		goto out;
-	}
-
-	if (state_info_from_attrs(&si, info)) {
-		/* this is a DRBD_ADM_GET_STATUS reply
-		 * with information about a resource without any volumes */
-		printf("%u R - %s\n", info->seq, cfg.ctx_resource_name);
-		goto out;
-	}
-
-	switch (si.sib_reason) {
-	case SIB_STATE_CHANGE:
-		print_state("ST-prev", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.prev_state);
-		print_state("ST-new", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.new_state);
-		/* fall through */
-	case SIB_GET_STATUS_REPLY:
-		print_state("ST", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.current_state);
-		break;
-	case SIB_HELPER_PRE:
-		printf("%u UH " MNV_FMT " %s\n", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.helper);
-		break;
-	case SIB_HELPER_POST:
-		printf("%u UH-post " MNV_FMT " %s 0x%04x\n", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.helper, si.helper_exit_code);
-		break;
-	case SIB_SYNC_PROGRESS:
-		{
-		uint32_t shift = si.bits_rs_total >= (1ULL << 32) ? 16 : 10;
-		uint64_t left = (si.bits_oos - si.bits_rs_failed) >> shift;
-		uint64_t total = 1UL + (si.bits_rs_total >> shift);
-		uint64_t tmp = 1000UL - left * 1000UL/total;
-
-		unsigned synced = tmp;
-		printf("%u SP " MNV_FMT " %i.%i\n", info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				synced / 10, synced % 10);
-		}
-		break;
-	default:
-		/* we could add the si.reason */
-		printf("%u ?? " MNV_FMT " <other message, state info broadcast reason:%u>\n",
-				info->seq,
-				dh->minor, cfg.ctx_resource_name, cfg.ctx_volume,
-				si.sib_reason);
-		break;
-	}
-out:
-	fflush(stdout);
-
 	return 0;
 }
 
