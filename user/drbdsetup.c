@@ -293,13 +293,6 @@ struct peer_devices_list {
 static struct peer_devices_list *list_peer_devices(char *);
 static void free_peer_devices(struct peer_devices_list *);
 
-struct minors_list {
-	struct minors_list *next;
-	unsigned minor;
-};
-static struct minors_list *enumerate_minors(void);
-static void free_minors(struct minors_list *);
-
 struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
@@ -2352,58 +2345,6 @@ static void free_peer_devices(struct peer_devices_list *peer_devices)
 	}
 }
 
-struct minors_list *__remembered_minors;
-
-static int remember_minor(struct drbd_cmd *cmd, struct genl_info *info)
-{
-	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
-
-	if (!info)
-		return 0;
-
-	drbd_cfg_context_from_attrs(&cfg, info);
-	if (cfg.ctx_volume != -1U) {
-		unsigned minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-		struct minors_list *m = malloc(sizeof(*m));
-		m->next = __remembered_minors;
-		m->minor = minor;
-		__remembered_minors = m;
-	}
-	return 0;
-}
-
-static void free_minors(struct minors_list *minors)
-{
-	while (minors) {
-		struct minors_list *m = minors;
-		minors = minors->next;
-		free(m);
-	}
-}
-
-/*
- * Expects objname to be set to the resource name or "all".
- */
-static struct minors_list *enumerate_minors(void)
-{
-	struct drbd_cmd cmd = {
-		.cmd_id = DRBD_ADM_GET_STATUS,
-		.show_function = remember_minor,
-		.missing_ok = true,
-	};
-	struct minors_list *m;
-	int err;
-
-	err = generic_get_cmd(&cmd, 0, NULL);
-	m = __remembered_minors;
-	__remembered_minors = NULL;
-	if (err) {
-		free_minors(m);
-		m = NULL;
-	}
-	return m;
-}
-
 static int __show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 {
 	unsigned minor;
@@ -2578,7 +2519,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 
 static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	struct minors_list *minors, *m;
+	struct devices_list *devices;
 	int rv;
 	int success;
 
@@ -2587,16 +2528,18 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		return OTHER_ERROR;
 	}
 
-	minors = enumerate_minors();
+	devices = list_devices(NULL);
 	rv = _generic_config_cmd(cm, argc, argv, 1);
 	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
 	if (success) {
-		for (m = minors; m; m = m->next)
-			unregister_minor(m->minor);
-		free_minors(minors);
+		struct devices_list *device;
+
+		for (device = devices; device; device = device->next)
+			unregister_minor(device->minor);
+		free_devices(devices);
 		unregister_resource(objname);
 	} else {
-		free_minors(minors);
+		free_devices(devices);
 		return print_config_error(rv, NULL);
 	}
 	return 0;
