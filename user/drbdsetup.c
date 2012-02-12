@@ -239,10 +239,10 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
-static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_notifications(struct drbd_cmd *, struct genl_info *);
 static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
@@ -390,7 +390,7 @@ struct drbd_cmd commands[] = {
 	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd) },
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd, },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd, },
-	{"check-resize", CTX_MINOR, F_GET_CMD(lk_bdev_scmd) },
+	{"check-resize", CTX_MINOR, 0, NO_PAYLOAD, check_resize_cmd },
 	{"events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
 		.missing_ok = true,
 		.continuous_poll = true, },
@@ -2432,47 +2432,65 @@ static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 	return __show_current_volume(cm, info);
 }
 
-static int lk_bdev_scmd(struct drbd_cmd *cm, struct genl_info *info)
+static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	unsigned minor;
-	struct disk_conf dc = { .disk_size = 0, };
-	struct bdev_info bd = { 0, };
-	uint64_t bd_size;
-	int fd;
+	struct devices_list *devices, *device;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	bool found = false;
+	bool ret = 0;
 
-	if (!info)
-		return 0;
+	objname = "all";
+	minor = -1;
+	devices = list_devices();
+	for (device = devices; device; device = device->next) {
+		struct bdev_info bd = { 0, };
+		uint64_t bd_size;
+		int fd;
 
-	minor = ((struct drbd_genlmsghdr*)(info->userhdr))->minor;
-	disk_conf_from_attrs(&dc, info);
-	if (!dc.backing_dev) {
-		fprintf(stderr, "Has no disk config, try with drbdmeta.\n");
-		return 1;
+		if (device->minor != old_minor)
+			continue;
+		found = true;
+
+		if (!device->disk_conf.backing_dev) {
+			fprintf(stderr, "Has no disk config, try with drbdmeta.\n");
+			ret = 1;
+			break;
+		}
+
+		if (device->disk_conf.meta_dev_idx >= 0 ||
+		    device->disk_conf.meta_dev_idx == DRBD_MD_INDEX_FLEX_EXT) {
+			lk_bdev_delete(minor);
+			break;
+		}
+
+		fd = open(device->disk_conf.backing_dev, O_RDONLY);
+		if (fd == -1) {
+			fprintf(stderr, "Could not open %s: %m.\n", device->disk_conf.backing_dev);
+			ret = 1;
+			break;
+		}
+		bd_size = bdev_size(fd);
+		close(fd);
+
+		if (lk_bdev_load(minor, &bd) == 0 &&
+		    bd.bd_size == bd_size &&
+		    bd.bd_name && !strcmp(bd.bd_name, device->disk_conf.backing_dev))
+			break;	/* nothing changed. */
+
+		bd.bd_size = bd_size;
+		bd.bd_name = device->disk_conf.backing_dev;
+		lk_bdev_save(minor, &bd);
+		break;
 	}
+	free_devices(devices);
+	objname = old_objname;
 
-	if (dc.meta_dev_idx >= 0 || dc.meta_dev_idx == DRBD_MD_INDEX_FLEX_EXT) {
-		lk_bdev_delete(minor);
-		return 0;
+	if (!found) {
+		fprintf(stderr, "%s: No such device\n", objname);
+		return 10;
 	}
-
-	fd = open(dc.backing_dev, O_RDONLY);
-	if (fd == -1) {
-		fprintf(stderr, "Could not open %s: %m.\n", dc.backing_dev);
-		return 1;
-	}
-	bd_size = bdev_size(fd);
-	close(fd);
-
-	if (lk_bdev_load(minor, &bd) == 0 &&
-	    bd.bd_size == bd_size &&
-	    bd.bd_name && !strcmp(bd.bd_name, dc.backing_dev))
-		return 0;	/* nothing changed. */
-
-	bd.bd_size = bd_size;
-	bd.bd_name = dc.backing_dev;
-	lk_bdev_save(minor, &bd);
-
-	return 0;
+	return ret;
 }
 
 static int uuids_scmd(struct drbd_cmd *cm,
