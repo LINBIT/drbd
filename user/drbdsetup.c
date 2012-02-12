@@ -530,6 +530,9 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
  */
 char *objname;
 unsigned minor = -1U;
+struct sockaddr_storage my_addr, peer_addr;
+int my_addr_len, peer_addr_len;
+unsigned int volume;
 enum cfg_ctx_key context;
 
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
@@ -728,24 +731,6 @@ static int sockaddr_from_str(struct sockaddr_storage *storage, const char *str)
 		return sizeof(*sin);
 	}
 	return 0;
-}
-
-static int nla_put_address(struct msg_buff *msg, int attrtype, char* arg)
-{
-	struct sockaddr_storage storage;
-	int len;
-
-	len = sockaddr_from_str(&storage, arg);
-	nla_put(msg, attrtype, len, &storage);
-	return NO_ERROR;
-}
-
-static int nla_put_volume(struct msg_buff *msg, char* arg)
-{
-	unsigned int vol = m_strtoll(arg, 1);
-	/* sanity check on vol < 256? */
-	nla_put_u32(msg, T_ctx_volume, vol);
-	return NO_ERROR;
 }
 
 /* It will only print the WARNING if the warn flag is set
@@ -995,26 +980,23 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	dhdr->minor = -1;
 	dhdr->flags = 0;
 
-	i = 1;
 	if (context & ~CTX_MINOR)
 		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
 	if (context & CTX_RESOURCE)
-		nla_put_string(smsg, T_ctx_resource_name, argv[i++]);
-	if (context & CTX_MINOR) {
+		nla_put_string(smsg, T_ctx_resource_name, objname);
+	if (context & CTX_MINOR)
 		dhdr->minor = minor;
-		i++;
-	}
 	if (context & CTX_VOLUME)
-		nla_put_volume(smsg, argv[i++]);
+		nla_put_u32(smsg, T_ctx_volume, volume);
 	if (context & CTX_MY_ADDR)
-		nla_put_address(smsg, T_ctx_my_addr, argv[i++]);
+		nla_put(smsg, T_ctx_my_addr, my_addr_len, &my_addr);
 	if (context & CTX_PEER_ADDR)
-		nla_put_address(smsg, T_ctx_peer_addr, argv[i++]);
+		nla_put(smsg, T_ctx_peer_addr, peer_addr_len, &peer_addr);
 	if (context & ~CTX_MINOR)
 		nla_nest_end(smsg, nla);
 
 	nla = NULL;
-	for (ad = cm->drbd_args; ad && ad->name; i++) {
+	for (i = 1, ad = cm->drbd_args; ad && ad->name; i++) {
 		if (argc < i + 1) {
 			fprintf(stderr, "Missing argument '%s'\n", ad->name);
 			print_command_usage(cm, FULL);
@@ -1332,7 +1314,6 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	int flags;
 	int rv = NO_ERROR;
 	int err = 0;
-	int n_args;
 
 	/* pre allocate request message and reply buffer */
 	iov.iov_len = 8192;
@@ -1406,9 +1387,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			show_defaults = true;
 		}
 	}
-	n_args = 1;
-	if (n_args + optind < argc) {
-		warn_print_excess_args(argc, argv, optind + n_args);
+	if (optind + 1 < argc) {
+		warn_print_excess_args(argc, argv, optind + 1);
 		return 20;
 	}
 
@@ -3411,24 +3391,32 @@ int main(int argc, char **argv)
 			print_command_usage(cmd, FULL);
 			exit(20);
 		} else if (next_arg & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
-			objname = argv[optind];
-			if (!strcmp(objname, "all")) {
+			if (!objname)
+				objname = argv[optind];
+			if (!strcmp(argv[optind], "all")) {
 				if (!(next_arg & CTX_ALL))
 					print_usage_and_exit("command does not accept argument 'all'");
 				context |= CTX_ALL;
 			} else if (next_arg & CTX_MINOR) {
-				minor = dt_minor_of_dev(objname);
+				minor = dt_minor_of_dev(argv[optind]);
 				if (minor == -1U && next_arg == CTX_MINOR) {
 					fprintf(stderr, "Cannot determine minor device number of "
 							"device '%s'\n",
-						objname);
+						argv[optind]);
 					exit(20);
 				}
 				context |= CTX_MINOR;
 			} else
 				context |= CTX_RESOURCE;
-		} else
+		} else {
+			if (next_arg == CTX_MY_ADDR)
+				my_addr_len = sockaddr_from_str(&my_addr, argv[optind]);
+			else if (next_arg == CTX_PEER_ADDR)
+				peer_addr_len = sockaddr_from_str(&peer_addr, argv[optind]);
+			else if (next_arg == CTX_VOLUME)
+				volume = m_strtoll(argv[optind], 1);
 			context |= next_arg;
+		}
 	}
 
 	if (objname == NULL) {
@@ -3442,7 +3430,9 @@ int main(int argc, char **argv)
 		lock_fd = dt_lock_drbd(minor);
 
 	/* Make it so that argv[0] is the command name. */
-	rv = cmd->function(cmd, argc - 1, argv + 1);
+	optind--;
+	argv[optind] = argv[1];
+	rv = cmd->function(cmd, argc - optind, argv + optind);
 
 	if ((context & CTX_MINOR) && cmd->cmd_id != DRBD_ADM_GET_STATUS)
 		dt_unlock_drbd(lock_fd);
