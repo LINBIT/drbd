@@ -272,7 +272,7 @@ struct devices_list {
 	struct device_info info;
 	struct device_statistics statistics;
 };
-static struct devices_list *list_devices(void);
+static struct devices_list *list_devices(char *);
 static void free_devices(struct devices_list *);
 
 struct connections_list {
@@ -281,7 +281,7 @@ struct connections_list {
 	struct connection_info info;
 	struct connection_statistics statistics;
 };
-static struct connections_list *list_connections(void);
+static struct connections_list *list_connections(char *);
 static void free_connections(struct connections_list *);
 
 struct peer_devices_list {
@@ -290,7 +290,7 @@ struct peer_devices_list {
 	struct peer_device_info info;
 	struct peer_device_statistics statistics;
 };
-static struct peer_devices_list *list_peer_devices(void);
+static struct peer_devices_list *list_peer_devices(char *);
 static void free_peer_devices(struct peer_devices_list *);
 
 struct minors_list {
@@ -1878,7 +1878,6 @@ static void connection_status(struct connections_list *connection,
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct resources_list *resources, *resource;
-	char *old_objname = objname;
 	bool found = false;
 	int c;
 
@@ -1914,15 +1913,13 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		struct peer_devices_list *peer_devices = NULL;
 		bool single_device;
 
-		if (strcmp(old_objname, "all") && strcmp(old_objname, resource->name))
+		if (strcmp(objname, "all") && strcmp(objname, resource->name))
 			continue;
 
-		objname = resource->name;
-
-		devices = list_devices();
-		connections = list_connections();
+		devices = list_devices(resource->name);
+		connections = list_connections(resource->name);
 		if (devices && connections)
-			peer_devices = list_peer_devices();
+			peer_devices = list_peer_devices(resource->name);
 
 		resource_status(resource);
 		single_device = devices && !devices->next;
@@ -1939,7 +1936,6 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	}
 
 	free_resources(resources);
-	objname = old_objname;
 	if (!found && strcmp(objname, "all")) {
 		fprintf(stderr, "%s: No such resource\n", objname);
 		return 10;
@@ -1975,11 +1971,9 @@ static int role_cmd(struct drbd_cmd *cm, int argc, char **argv)
 static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct connections_list *connections, *connection;
-	char *old_objname = objname;
 	bool found = false;
 
-	objname = "all";
-	connections = list_connections();
+	connections = list_connections(NULL);
 	for (connection = connections; connection; connection = connection->next) {
 		if (my_addr_len != connection->ctx.ctx_my_addr_len ||
 		    memcmp(&my_addr, connection->ctx.ctx_my_addr, my_addr_len) ||
@@ -1992,7 +1986,6 @@ static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		break;
 	}
 	free_connections(connections);
-	objname = old_objname;
 
 	if (!found) {
 		fprintf(stderr, "%s: No such connection\n", objname);
@@ -2004,15 +1997,11 @@ static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct devices_list *devices, *device;
-	char *old_objname = objname;
-	unsigned old_minor = minor;
 	bool found = false;
 
-	objname = "all";
-	minor = -1;
-	devices = list_devices();
+	devices = list_devices(NULL);
 	for (device = devices; device; device = device->next) {
-		if (device->minor != old_minor)
+		if (device->minor != minor)
 			continue;
 
 		printf("%s\n", drbd_disk_str(device->info.dev_disk_state));
@@ -2021,7 +2010,6 @@ static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		break;
 	}
 	free_devices(devices);
-	objname = old_objname;
 
 	if (!found) {
 		fprintf(stderr, "%s: No such device\n", objname);
@@ -2128,10 +2116,22 @@ static struct resources_list *list_resources(void)
 		.missing_ok = false,
 	};
 	struct resources_list *r;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	int old_my_addr_len = my_addr_len;
+	int old_peer_addr_len = peer_addr_len;
 	int err;
 
 	__remembered_resources_tail = &__remembered_resources;
+	objname = "all";
+	minor = -1;
+	my_addr_len = 0;
+	peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
+	objname = old_objname;
+	minor = old_minor;
+	my_addr_len = old_my_addr_len;
+	peer_addr_len = old_peer_addr_len;
 	r = __remembered_resources;
 	__remembered_resources = NULL;
 	if (err) {
@@ -2172,7 +2172,7 @@ static int remember_device(struct drbd_cmd *cm, struct genl_info *info)
 /*
  * Expects objname to be set to the resource name or "all".
  */
-static struct devices_list *list_devices(void)
+static struct devices_list *list_devices(char *resource_name)
 {
 	struct drbd_cmd cmd = {
 		.cmd_id = DRBD_ADM_GET_DEVICES,
@@ -2180,10 +2180,22 @@ static struct devices_list *list_devices(void)
 		.missing_ok = false,
 	};
 	struct devices_list *r;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	int old_my_addr_len = my_addr_len;
+	int old_peer_addr_len = peer_addr_len;
 	int err;
 
 	__remembered_devices_tail = &__remembered_devices;
+	objname = resource_name ? resource_name : "all";
+	minor = -1;
+	my_addr_len = 0;
+	peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
+	objname = old_objname;
+	minor = old_minor;
+	my_addr_len = old_my_addr_len;
+	peer_addr_len = old_peer_addr_len;
 	r = __remembered_devices;
 	__remembered_devices = NULL;
 	if (err) {
@@ -2229,7 +2241,7 @@ static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
 /*
  * Expects objname to be set to the resource name or "all".
  */
-static struct connections_list *list_connections(void)
+static struct connections_list *list_connections(char *resource_name)
 {
 	struct drbd_cmd cmd = {
 		.cmd_id = DRBD_ADM_GET_CONNECTIONS,
@@ -2237,10 +2249,22 @@ static struct connections_list *list_connections(void)
 		.missing_ok = true,
 	};
 	struct connections_list *c;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	int old_my_addr_len = my_addr_len;
+	int old_peer_addr_len = peer_addr_len;
 	int err;
 
 	__remembered_connections_tail = &__remembered_connections;
+	objname = resource_name ? resource_name : "all";
+	minor = -1;
+	my_addr_len = 0;
+	peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
+	objname = old_objname;
+	minor = old_minor;
+	my_addr_len = old_my_addr_len;
+	peer_addr_len = old_peer_addr_len;
 	c = __remembered_connections;
 	__remembered_connections = NULL;
 	if (err) {
@@ -2286,7 +2310,7 @@ static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info)
 /*
  * Expects objname to be set to the resource name or "all".
  */
-static struct peer_devices_list *list_peer_devices(void)
+static struct peer_devices_list *list_peer_devices(char *resource_name)
 {
 	struct drbd_cmd cmd = {
 		.cmd_id = DRBD_ADM_GET_PEER_DEVICES,
@@ -2294,10 +2318,22 @@ static struct peer_devices_list *list_peer_devices(void)
 		.missing_ok = false,
 	};
 	struct peer_devices_list *r;
+	char *old_objname = objname;
+	unsigned old_minor = minor;
+	int old_my_addr_len = my_addr_len;
+	int old_peer_addr_len = peer_addr_len;
 	int err;
 
 	__remembered_peer_devices_tail = &__remembered_peer_devices;
+	objname = resource_name ? resource_name : "all";
+	minor = -1;
+	my_addr_len = 0;
+	peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
+	objname = old_objname;
+	minor = old_minor;
+	my_addr_len = old_my_addr_len;
+	peer_addr_len = old_peer_addr_len;
 	r = __remembered_peer_devices;
 	__remembered_peer_devices = NULL;
 	if (err) {
@@ -2435,20 +2471,16 @@ static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct devices_list *devices, *device;
-	char *old_objname = objname;
-	unsigned old_minor = minor;
 	bool found = false;
 	bool ret = 0;
 
-	objname = "all";
-	minor = -1;
-	devices = list_devices();
+	devices = list_devices(NULL);
 	for (device = devices; device; device = device->next) {
 		struct bdev_info bd = { 0, };
 		uint64_t bd_size;
 		int fd;
 
-		if (device->minor != old_minor)
+		if (device->minor != minor)
 			continue;
 		found = true;
 
@@ -2484,7 +2516,6 @@ static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		break;
 	}
 	free_devices(devices);
-	objname = old_objname;
 
 	if (!found) {
 		fprintf(stderr, "%s: No such device\n", objname);
