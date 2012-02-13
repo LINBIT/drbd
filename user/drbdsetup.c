@@ -540,6 +540,14 @@ struct genl_family drbd_genl_family = {
 	.hdrsize = GENL_MAGIC_FAMILY_HDRSZ,
 };
 
+static bool endpoints_found(struct drbd_cfg_context *ctx)
+{
+	return my_addr_len == ctx->ctx_my_addr_len &&
+	       peer_addr_len == ctx->ctx_peer_addr_len &&
+	       !memcmp(&my_addr, ctx->ctx_my_addr, my_addr_len) &&
+	       !memcmp(&peer_addr, ctx->ctx_peer_addr, peer_addr_len);
+}
+
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg,
 			  struct drbd_genlmsghdr *dhdr, char* arg)
 {
@@ -1845,10 +1853,7 @@ static void peer_devices_status(struct drbd_cfg_context *ctx, struct peer_device
 	struct peer_devices_list *peer_device;
 
 	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
-		if (ctx->ctx_my_addr_len != peer_device->ctx.ctx_my_addr_len ||
-		    memcmp(ctx->ctx_my_addr, peer_device->ctx.ctx_my_addr, ctx->ctx_my_addr_len) ||
-		    ctx->ctx_peer_addr_len != peer_device->ctx.ctx_peer_addr_len ||
-		    memcmp(ctx->ctx_peer_addr, peer_device->ctx.ctx_peer_addr, ctx->ctx_peer_addr_len))
+		if (!endpoints_found(ctx))
 			continue;
 		peer_device_status(peer_device, peer_device);
 	}
@@ -1980,10 +1985,7 @@ static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	connections = list_connections(NULL);
 	for (connection = connections; connection; connection = connection->next) {
-		if (my_addr_len != connection->ctx.ctx_my_addr_len ||
-		    memcmp(&my_addr, connection->ctx.ctx_my_addr, my_addr_len) ||
-		    peer_addr_len != connection->ctx.ctx_peer_addr_len ||
-		    memcmp(&peer_addr, connection->ctx.ctx_peer_addr, peer_addr_len))
+		if (!endpoints_found(&connection->ctx))
 			continue;
 
 		printf("%s\n", drbd_conn_str(connection->info.conn_connection_state));
@@ -2732,10 +2734,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 	if (info->genlhdr->cmd != DRBD_CONNECTION_STATE &&
 	    info->genlhdr->cmd != DRBD_PEER_DEVICE_STATE)
 		return 0;
-	if (my_addr_len != ctx.ctx_my_addr_len ||
-	    memcmp(&my_addr, ctx.ctx_my_addr, my_addr_len) ||
-	    peer_addr_len != ctx.ctx_peer_addr_len ||
-	    memcmp(&peer_addr, ctx.ctx_peer_addr, peer_addr_len))
+	if (!endpoints_found(&ctx))
 		return 0;
 
 	switch(info->genlhdr->cmd) {
