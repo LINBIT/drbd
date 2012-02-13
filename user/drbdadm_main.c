@@ -98,6 +98,7 @@ struct adm_cmd {
 	 * when using "drbdadm -c /some/other/config/file" */
 	unsigned int use_cached_config_file:1;
 	unsigned int need_peer:1;
+	/* need_peer and iterate_volumes may not be set together! */
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
 	unsigned int test_config:1; /* Allow -t option */
@@ -481,25 +482,43 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 {
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol;
+	struct connection *conn;
+	bool iterate_vols, iterate_conns;
 	int ret;
 
 	if (!res->peers_addrs_set && cmd->need_peer)
 		set_peer_in_resource(res, cmd->need_peer);
 
-	if (!cmd->iterate_volumes || ctx->vol != NULL)
-		return call_cmd_fn(cmd->function, ctx, on_error);
+	iterate_vols = ctx->vol ? 0 : cmd->iterate_volumes;
+	iterate_conns = ctx->conn ? 0 : cmd->need_peer;
 
-	for_each_volume(vol, &res->me->volumes) {
-		ctx->vol = vol;
-		ret = call_cmd_fn(cmd->function, ctx, on_error);
-		/* FIXME: Do we want to keep running?
-		 * When?
-		 * How would we determine which return value to return? */
-		if (ret)
-			return ret;
+	if (iterate_vols && iterate_conns) {
+		fprintf(stderr, "logic bug in %s:%d\n", __FILE__,
+			__LINE__);
+		exit(E_THINKO);
 	}
 
-	return 0;
+	if (iterate_vols) {
+		for_each_volume(vol, &res->me->volumes) {
+			ctx->vol = vol;
+			ret = call_cmd_fn(cmd->function, ctx, on_error);
+			if (ret)
+				return ret;
+		}
+	} else if (iterate_conns) {
+		for_each_connection(conn, &res->connections) {
+			if (conn->ignore)
+				continue;
+			ctx->conn = conn;
+			ret = call_cmd_fn(cmd->function, ctx, on_error);
+			if (ret)
+				return ret;
+		}
+	} else {
+		ret = call_cmd_fn(cmd->function, ctx, on_error);
+	}
+
+	return ret;
 }
 
 static char *drbd_cfg_stage_string[] = {
