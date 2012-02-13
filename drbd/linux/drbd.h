@@ -351,6 +351,8 @@ enum drbd_uuid_index {
 	UI_EXTENDED_SIZE   /* Everything. */
 };
 
+#define HISTORY_UUIDS (UI_HISTORY_END - UI_HISTORY_START + 1)
+
 #define MD_UI(i) ((i)-1)
 
 enum drbd_timeout_flag {

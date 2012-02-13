@@ -3069,11 +3069,13 @@ out:
 static void device_to_statistics(struct device_statistics *s,
 				 struct drbd_device *device)
 {
+	memset(s, 0, sizeof(*s));
 	s->dev_upper_blocked = !may_inc_ap_bio(device);
-	s->dev_lower_blocked = 0;
 	if (get_ldev(device)) {
 		struct request_queue *q;
 
+		s->dev_current_uuid = device->ldev->md.current_uuid;
+		s->dev_disk_flags = device->ldev->md.flags;
 		q = bdev_get_queue(device->ldev->backing_bdev);
 		s->dev_lower_blocked =
 			bdi_congested(&q->backing_dev_info,
@@ -3089,6 +3091,7 @@ static void device_to_statistics(struct device_statistics *s,
 	s->dev_upper_pending = atomic_read(&device->ap_bio_cnt);
 	s->dev_lower_pending = atomic_read(&device->local_cnt);
 	s->dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
+	s->dev_exposed_data_uuid = device->exposed_data_uuid;
 }
 
 static int put_resource_in_arg0(struct netlink_callback *cb)
@@ -3321,6 +3324,9 @@ out:
 static void peer_device_to_statistics(struct peer_device_statistics *s,
 				      struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
+
+	memset(s, 0, sizeof(*s));
 	s->peer_dev_received = peer_device->recv_cnt;
 	s->peer_dev_sent = peer_device->send_cnt;
 	s->peer_dev_pending = atomic_read(&peer_device->ap_pending_cnt) +
@@ -3328,6 +3334,17 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
 	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
 	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
+	if (peer_device->bitmap_index != -1 && get_ldev(device)) {
+		u64 *peer_device_uuids = device->ldev->md.peers[peer_device->bitmap_index].uuid;
+		u64 *history_uuids = (u64 *)s->peer_dev_history_uuids;
+		int n;
+
+		s->peer_dev_bitmap_uuid = peer_device_uuids[MD_UI(UI_BITMAP)];
+		for (n = 0; n < HISTORY_UUIDS; n++)
+			history_uuids[n] = peer_device_uuids[MD_UI(UI_HISTORY_START + n)];
+		s->peer_dev_history_uuids_len = HISTORY_UUIDS * sizeof(u64);
+		put_ldev(device);
+	}
 }
 
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
