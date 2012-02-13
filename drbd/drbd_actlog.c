@@ -560,7 +560,6 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_peer_device *peer_device = udw->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct sib_info sib = { .sib_reason = SIB_SYNC_PROGRESS, };
 	unsigned long start, end;
 
 	if (!get_ldev(device)) {
@@ -588,8 +587,6 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 			break;
 		}
 	}
-
-	drbd_bcast_event(device, &sib);
 
 	return 0;
 }

@@ -309,8 +309,6 @@ struct option show_cmd_options[] = {
 
 #define F_CONFIG_CMD	generic_config_cmd
 #define NO_PAYLOAD	0
-#define F_GET_CMD(scmd)	DRBD_ADM_GET_STATUS, NO_PAYLOAD, generic_get_cmd, \
-			.show_function = scmd
 #define F_NEW_EVENTS_CMD(scmd)	DRBD_ADM_GET_INITIAL_STATE, NO_PAYLOAD, generic_get_cmd, \
 			.show_function = scmd
 

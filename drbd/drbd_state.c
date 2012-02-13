@@ -1490,37 +1490,9 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change =
 			&state_change->devices[n_device];
-		struct drbd_peer_device_state_change *peer_device_state_change = NULL;
-		struct drbd_connection_state_change *connection_state_change = NULL;
 
 		if (HAS_CHANGED(device_state_change->disk_state))
 			notify_device_state_change(NULL, 0, device_state_change, NEW, NOTIFY_CHANGE, id);
-
-		n_connection = -1;
-		if (state_change->n_connections == 1) {
-			connection_state_change = &state_change->connections[0];
-			peer_device_state_change = &state_change->peer_devices[n_device];
-			n_connection = 0;
-		}
-
-		if (resource_state_has_changed ||
-		    HAS_CHANGED(device_state_change->disk_state) ||
-		    (connection_state_change &&
-		     (HAS_CHANGED(connection_state_change->peer_role) ||
-		      HAS_CHANGED(connection_state_change->cstate))) ||
-		    (peer_device_state_change &&
-		     (HAS_CHANGED(peer_device_state_change->disk_state) ||
-		      HAS_CHANGED(peer_device_state_change->repl_state) ||
-		      HAS_CHANGED(peer_device_state_change->resync_susp_user) ||
-		      HAS_CHANGED(peer_device_state_change->resync_susp_peer) ||
-		      HAS_CHANGED(peer_device_state_change->resync_susp_dependency)))) {
-			struct sib_info sib;
-
-			sib.sib_reason = SIB_STATE_CHANGE;
-			sib.os = state_change_word(state_change, n_device, n_connection, OLD);
-			sib.ns = state_change_word(state_change, n_device, n_connection, NEW);
-			drbd_bcast_event(device_state_change->device, &sib);
-		}
 	}
 
 	n_peer_devices = state_change->n_devices * state_change->n_connections;

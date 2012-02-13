@@ -1501,21 +1501,6 @@ extern int drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern void drbd_al_shrink(struct drbd_device *device);
 
 /* drbd_nl.c */
-/* state info broadcast */
-struct sib_info {
-	enum drbd_state_info_bcast_reason sib_reason;
-	union {
-		struct {
-			char *helper_name;
-			unsigned helper_exit_code;
-		};
-		struct {
-			union drbd_state os;
-			union drbd_state ns;
-		};
-	};
-};
-void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib);
 
 extern atomic_t drbd_notify_id;
 extern atomic_t drbd_genl_seq;

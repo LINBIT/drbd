@@ -180,36 +180,6 @@ GENL_struct(DRBD_NLA_RESIZE_PARMS, 7, resize_parms,
 	__flg_field(3, DRBD_GENLA_F_MANDATORY,	no_resync)
 )
 
-GENL_struct(DRBD_NLA_STATE_INFO, 8, state_info,
-	/* the reason of the broadcast,
-	 * if this is an event triggered broadcast. */
-	__u32_field(1, DRBD_GENLA_F_MANDATORY,	sib_reason)
-	__u32_field(2, DRBD_F_REQUIRED,	current_state)
-	__u64_field(3, DRBD_GENLA_F_MANDATORY,	capacity)
-	__u64_field(4, DRBD_GENLA_F_MANDATORY,	exposed_data_uuid)
-
-	/* These are for broadcast from after state change work.
-	 * prev_state and new_state are from the moment the state change took
-	 * place, new_state is not neccessarily the same as current_state,
-	 * there may have been more state changes since.  Which will be
-	 * broadcasted soon, in their respective after state change work.  */
-	__u32_field(5, DRBD_GENLA_F_MANDATORY,	prev_state)
-	__u32_field(6, DRBD_GENLA_F_MANDATORY,	new_state)
-
-	/* if we have a local disk: */
-	__bin_field(7, DRBD_GENLA_F_MANDATORY,	uuids, (UI_SIZE*sizeof(__u64)))
-	__u32_field(8, DRBD_GENLA_F_MANDATORY,	disk_flags)
-	__u64_field(9, DRBD_GENLA_F_MANDATORY,	bits_total)
-	__u64_field(10, DRBD_GENLA_F_MANDATORY,	bits_oos)
-	/* and in case resync or online verify is active */
-	__u64_field(11, DRBD_GENLA_F_MANDATORY,	bits_rs_total)
-	__u64_field(12, DRBD_GENLA_F_MANDATORY,	bits_rs_failed)
-
-	/* for pre and post notifications of helper execution */
-	__str_field(13, DRBD_GENLA_F_MANDATORY,	helper, 32)
-	__u32_field(14, DRBD_GENLA_F_MANDATORY,	helper_exit_code)
-)
-
 GENL_struct(DRBD_NLA_START_OV_PARMS, 9, start_ov_parms,
 	__u64_field(1, DRBD_GENLA_F_MANDATORY,	ov_start_sector)
 )
@@ -308,30 +278,6 @@ GENL_struct(DRBD_NLA_HELPER, 24, drbd_helper_info,
  * Notifications and commands (genlmsghdr->cmd)
  */
 GENL_mc_group(events)
-
-	/* kernel -> userspace announcement of changes */
-GENL_notification(
-	DRBD_EVENT, 1, events,
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
-	GENL_tla_expected(DRBD_NLA_STATE_INFO, DRBD_F_REQUIRED)
-	GENL_tla_expected(DRBD_NLA_NET_CONF, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_DISK_CONF, DRBD_GENLA_F_MANDATORY)
-	GENL_tla_expected(DRBD_NLA_SYNCER_CONF, DRBD_GENLA_F_MANDATORY)
-)
-
-	/* query kernel for specific or all info */
-GENL_op(
-	DRBD_ADM_GET_STATUS, 2,
-	GENL_op_init(
-		.doit = drbd_adm_get_status,
-		.dumpit = drbd_adm_get_status_all,
-		/* anyone may ask for the status,
-		 * it is broadcasted anyways */
-	),
-	/* To select the object .doit.
-	 * Or a subset of objects in .dumpit. */
-	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
-)
 
 	/* add DRBD minor devices as volumes to resources */
 GENL_op(DRBD_ADM_NEW_MINOR, 5, GENL_doit(drbd_adm_new_minor),
