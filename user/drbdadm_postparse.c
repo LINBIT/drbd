@@ -267,83 +267,19 @@ static void set_peer_in_connection(struct d_resource* res, struct connection *co
 		return;
 	}
 
-	/* short cut for exactly two host sections.
-	 * silently ignore any --peer connect_to_host option. */
 	if (candidates == 1 && nr_hosts == 2) {
 		host_info = find_host_info_by_name(res, candidate->name);
 		conn->peer = host_info;
 		conn->peer_address = candidate->address.addr ? &candidate->address : &host_info->address;
 		conn->connect_to = host_info->proxy ? &host_info->proxy->inside : conn->peer_address;
-		if (dry_run > 1 && connect_to_host)
-			fprintf(stderr,
-				"%s:%d: in connection in resource %s:\n"
-				"\tIgnoring --peer '%s': there are only two host sections.\n",
-				res->config_file, conn->config_line, res->name, connect_to_host);
 		return;
 	}
 
-	/* Multiple peer hosts to choose from.
-	 * we need some help! */
-	if (!connect_to_host) {
-		if (peer_required) {
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
-				"\tThere are multiple host sections for the peer node.\n"
-				"\tUse the --peer option to select which peer section to use.\n",
-				res->config_file, res->start_line, res->name);
-			config_valid = 0;
-		}
-		return;
-	}
-
-	STAILQ_FOREACH(host, &conn->hname_address_pairs, link) {
-		host_info = host->host_info;
-		if (!host_info)
-			continue;
-
-		if (host_info->by_address && strcmp(connect_to_host, host_info->address.addr))
-			continue;
-
-		if (host_info->proxy && !name_in_names(nodeinfo.nodename, &host_info->proxy->on_hosts))
-			continue;
-
-		if (!name_in_names(connect_to_host, &host_info->on_hosts))
-			continue;
-
-		if (host_info == res->me) {
-			fprintf(stderr,
-				"%s:%d: in resource %s\n"
-				"\tInvoked with --peer '%s', but that matches myself!\n",
-				res->config_file, res->start_line, res->name, connect_to_host);
-			conn->peer = NULL;
-			conn->peer_address = NULL;
-			conn->connect_to = NULL;
-			break;
-		}
-
-		if (conn->peer_address) {
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
-				"\tInvoked with --peer '%s', but that matches multiple times!\n",
-				res->config_file, res->start_line, res->name, connect_to_host);
-			conn->peer = NULL;
-			conn->peer_address = NULL;
-			conn->connect_to = NULL;
-			break;
-		}
-		conn->peer = host_info;
-		conn->peer_address = host->address.addr ? &host->address : &host_info->address;
-		conn->connect_to = host_info->proxy ? &host_info->proxy->inside : conn->peer_address;
-	}
-
-	if (peer_required && !conn->peer_address) {
-		config_valid = 0;
-		if (!host)
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n"
-				"\tNo host ('on' or 'floating') section matches --peer '%s'\n",
-				res->config_file, res->start_line, res->name, connect_to_host);
-	}
+	fprintf(stderr,
+		"%s:%d: in connection in resource %s:\n"
+		"\tBug in set_peer_in_connection()\n",
+		res->config_file, conn->config_line, res->name);
+	config_valid = 0;
 }
 
 void set_peer_in_resource(struct d_resource* res, int peer_required)

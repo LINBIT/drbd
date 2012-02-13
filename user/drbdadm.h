@@ -356,7 +356,6 @@ extern char* drbd_proxy_ctl;
 extern char* drbdadm_83;
 extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
-extern char* connect_to_host;
 
 struct setup_option {
 	bool explicit;
