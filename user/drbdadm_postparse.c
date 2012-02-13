@@ -83,7 +83,7 @@ void set_on_hosts_in_res(struct d_resource *res)
 	}
 }
 
-static struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name)
+struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name)
 {
 	struct d_host_info *host;
 

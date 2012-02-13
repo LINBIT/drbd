@@ -2411,6 +2411,7 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 {
 	struct d_resource *res;
 	struct d_volume *vol;
+	struct connection *conn;
 	char *input = strdupa(id);
 	char *vol_id = strchr(input, '/');
 	char *res_name, *conn_name;
@@ -2436,14 +2437,30 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 	ctx->res = res;
 
 	if (conn_name) {
-		struct connection *conn;
-
 		ctx->conn = NULL;
 		for_each_connection(conn, &res->connections) {
 			if (conn->name && !strcmp(conn->name, conn_name))
 				goto found;
 		}
 		return -ENOENT;
+	} else if (connect_to_host) {
+		struct d_host_info *hi;
+
+		hi = find_host_info_by_name(res, connect_to_host);
+		if (!hi) {
+			fprintf(stderr,
+				"Host name '%s' (given with --peer option) is not "
+				"mentioned in any connection section\n", connect_to_host);
+		}
+		set_peer_in_resource(res, 1);
+		ctx->conn = NULL;
+		for_each_connection(conn, &res->connections) {
+			if (conn->peer == hi)
+				goto found;
+		}
+		return -ENOENT;
+	}
+	if (0) {
 	found:
 		if (conn->ignore) {
 			fprintf(stderr, "Connection '%s' has the ignore flag set\n", conn_name);
