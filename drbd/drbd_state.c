@@ -1066,15 +1066,16 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (connection->fencing_policy == FP_STONITH &&
 			    (role[NEW] == R_PRIMARY &&
 			     repl_state[NEW] < L_CONNECTED &&
-			     peer_disk_state[NEW] > D_OUTDATED)) {
+			     peer_disk_state[NEW] == D_UNKNOWN) &&
+			    (role[OLD] != R_PRIMARY ||
+			     peer_disk_state[OLD] != D_UNKNOWN))
 				resource->susp_fen[NEW] = true;
-			}
 
 			/* Suspend IO while no data available (no accessible data available) */
 			if (resource->res_opts.on_no_data == OND_SUSPEND_IO &&
 			    (role[NEW] == R_PRIMARY &&
-			     disk_state[NEW] < D_UP_TO_DATE &&
-			     peer_disk_state[NEW] < D_UP_TO_DATE))
+			     (disk_state[OLD] != disk_state[NEW] && disk_state[NEW] < D_UP_TO_DATE) &&
+			     (peer_disk_state[OLD] != peer_disk_state[NEW] && peer_disk_state[NEW] < D_UP_TO_DATE)))
 				resource->susp_nod[NEW] = true;
 
 			if (resync_suspended(peer_device, NEW)) {
