@@ -2411,8 +2411,9 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 {
 	struct d_resource *res;
 	struct d_volume *vol;
-	char *name = strdupa(id);
-	char *vol_id = strchr(name, '/');
+	char *input = strdupa(id);
+	char *vol_id = strchr(input, '/');
+	char *res_name, *conn_name;
 	unsigned vol_nr = ~0U;
 
 	if (vol_id) {
@@ -2420,27 +2421,48 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		vol_nr = m_strtoll(vol_id, 0);
 	}
 
-	for_each_resource(res, &config) {
-		if (res->ignore)
-			continue;
-		if (strcmp(name, res->name) == 0)
-			break;
+	res_name = strchr(input, '@');
+	if (res_name) {
+		*res_name++ = '\0';
+		conn_name = input;
+	} else {
+		res_name = input;
+		conn_name = NULL;
 	}
-	if (!res)
+
+	res = res_by_name(res_name);
+	if (!res || res->ignore)
 		return -ENOENT;
+	ctx->res = res;
+
+	if (conn_name) {
+		struct connection *conn;
+
+		ctx->conn = NULL;
+		for_each_connection(conn, &res->connections) {
+			if (conn->name && !strcmp(conn->name, conn_name))
+				goto found;
+		}
+		return -ENOENT;
+	found:
+		if (conn->ignore) {
+			fprintf(stderr, "Connection '%s' has the ignore flag set\n", conn_name);
+			return -ENOENT;
+		}
+
+		ctx->conn = conn;
+	}
 
 	if (!vol_id) {
 		/* We could assign implicit volumes here.
 		 * But that broke "drbdadm up specific-resource".
 		 */
-		ctx->res = res;
 		ctx->vol = NULL;
 		return 0;
 	}
 
 	vol = volume_by_vnr(&res->me->volumes, vol_nr);
 	if (vol) {
-		ctx->res = res;
 		ctx->vol = vol;
 		return 0;
 	}

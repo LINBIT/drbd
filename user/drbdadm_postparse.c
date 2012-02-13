@@ -681,7 +681,7 @@ void expand_common(void)
 	}
 }
 
-static struct d_resource *res_by_name(const char *name)
+struct d_resource *res_by_name(const char *name)
 {
 	struct d_resource *res;
 
