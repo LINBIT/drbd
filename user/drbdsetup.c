@@ -241,9 +241,9 @@ static int role_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int dstate_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv);
+static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
-static int uuids_scmd(struct drbd_cmd *cm, struct genl_info *info);
 static int print_notifications(struct drbd_cmd *, struct genl_info *);
 static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
 static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
@@ -383,9 +383,9 @@ struct drbd_cmd commands[] = {
 		.lockless = true, },
 	{"dstate", CTX_MINOR, 0, NO_PAYLOAD, dstate_cmd,
 		.lockless = true, },
-	{"show-gi", CTX_MINOR, F_GET_CMD(uuids_scmd),
+	{"show-gi", CTX_PEER_DEVICE, 0, NO_PAYLOAD, show_or_get_gi_cmd,
 		.lockless = true, },
-	{"get-gi", CTX_MINOR, F_GET_CMD(uuids_scmd),
+	{"get-gi", CTX_PEER_DEVICE, 0, NO_PAYLOAD, show_or_get_gi_cmd,
 		.lockless = true, },
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd,
 		.lockless = true, },
@@ -2479,56 +2479,62 @@ static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return ret;
 }
 
-static int uuids_scmd(struct drbd_cmd *cm,
-		struct genl_info *info)
+static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	union drbd_state state = { .i = 0 };
-	uint64_t exposed_data_uuid;
-	uint64_t *uuids = NULL;
-	int flags = flags;
+	struct peer_devices_list *peer_devices, *peer_device;
+	struct devices_list *devices = NULL, *device;
+	uint64_t uuids[UI_SIZE];
+	int ret = 0, i;
 
-	if (!info)
-		return 0;
+	peer_devices = list_peer_devices(NULL);
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
+		if (!endpoints_found(&peer_device->ctx) ||
+		    peer_device->ctx.ctx_volume != volume)
+			continue;
 
-	if (global_attrs[DRBD_NLA_STATE_INFO]) {
-		drbd_nla_parse_nested(nested_attr_tb,
-				      ARRAY_SIZE(state_info_nl_policy)-1,
-				      global_attrs[DRBD_NLA_STATE_INFO],
-				      state_info_nl_policy);
-		if (ntb(T_current_state))
-			state.i = nla_get_u32(ntb(T_current_state));
-		if (ntb(T_uuids))
-			uuids = nla_data(ntb(T_uuids));
-		if (ntb(T_disk_flags))
-			flags = nla_get_u32(ntb(T_disk_flags));
-		if (ntb(T_exposed_data_uuid))
-			exposed_data_uuid = nla_get_u64(ntb(T_exposed_data_uuid));
+		devices = list_devices(peer_device->ctx.ctx_resource_name);
+		for (device = devices; device; device = device->next) {
+			if (device->ctx.ctx_volume == volume)
+				goto found;
+		}
 	}
-	if (state.conn == C_STANDALONE &&
-	    state.disk == D_DISKLESS) {
+	fprintf(stderr, "%s: No such peer device\n", objname);
+	ret = 10;
+
+out:
+	free_devices(devices);
+	free_peer_devices(peer_devices);
+	return ret;
+
+found:
+	if (peer_device->info.peer_repl_state == L_STANDALONE &&
+	    device->info.dev_disk_state == D_DISKLESS) {
 		fprintf(stderr, "Device is unconfigured\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
-	if (state.disk == D_DISKLESS) {
+	if (device->info.dev_disk_state == D_DISKLESS) {
 		/* XXX we could print the exposed_data_uuid anyways: */
 		if (0)
-			printf(X64(016)"\n", exposed_data_uuid);
+			printf(X64(016)"\n", (uint64_t)device->statistics.dev_exposed_data_uuid);
 		fprintf(stderr, "Device has no disk\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
-	if (uuids) {
-		if(!strcmp(cm->cmd,"show-gi")) {
-			dt_pretty_print_uuids(uuids,flags);
-		} else if(!strcmp(cm->cmd,"get-gi")) {
-			dt_print_uuids(uuids,flags);
-		} else {
-			ASSERT( 0 );
-		}
-	} else {
-		fprintf(stderr, "No uuids found in reply!\n"
-			"Maybe you need to upgrade your userland tools?\n");
-	}
-	return 0;
+	memset(uuids, 0, sizeof(uuids));
+	uuids[UI_CURRENT] = device->statistics.dev_current_uuid;
+	uuids[UI_BITMAP] = peer_device->statistics.peer_dev_bitmap_uuid;
+	i = peer_device->statistics.peer_dev_history_uuids_len / 8;
+	if (i > HISTORY_UUIDS)
+		i = HISTORY_UUIDS;
+	for (; i >= 0; i--)
+		uuids[UI_HISTORY_START + i] =
+			((uint64_t *)peer_device->statistics.peer_dev_history_uuids)[i];
+	if(!strcmp(cm->cmd, "show-gi"))
+		dt_pretty_print_uuids(uuids, device->statistics.dev_disk_flags);
+	else
+		dt_print_uuids(uuids, device->statistics.dev_disk_flags);
+	goto out;
 }
 
 static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
@@ -3121,8 +3127,10 @@ int main(int argc, char **argv)
 	}
 
 	if (objname == NULL) {
+		if ((context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR) && (context & CTX_VOLUME))
+			m_asprintf(&objname, "peer device %s %s %s", argv[2], argv[3], argv[4]);
 		if ((context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR))
-			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);  /* FIXME: Which indexes? */
+			m_asprintf(&objname, "connection %s %s", argv[2], argv[3]);
 		else
 			objname = "all";
 	}
