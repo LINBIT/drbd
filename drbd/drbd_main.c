@@ -1110,7 +1110,7 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 	} else {
 		drbd_info(device, "%s effective data uuid: %016llX\n",
 			  text,
-			  (unsigned long long)device->ed_uuid);
+			  (unsigned long long)device->exposed_data_uuid);
 	}
 }
 
@@ -3509,7 +3509,7 @@ static void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
 		val &= ~((u64)1);
 
 	device->ldev->md.current_uuid = val;
-	drbd_set_ed_uuid(device, val);
+	drbd_set_exposed_data_uuid(device, val);
 }
 
 void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)

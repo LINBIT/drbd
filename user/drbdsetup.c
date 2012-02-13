@@ -2481,7 +2481,7 @@ static int uuids_scmd(struct drbd_cmd *cm,
 		struct genl_info *info)
 {
 	union drbd_state state = { .i = 0 };
-	uint64_t ed_uuid;
+	uint64_t exposed_data_uuid;
 	uint64_t *uuids = NULL;
 	int flags = flags;
 
@@ -2499,8 +2499,8 @@ static int uuids_scmd(struct drbd_cmd *cm,
 			uuids = nla_data(ntb(T_uuids));
 		if (ntb(T_disk_flags))
 			flags = nla_get_u32(ntb(T_disk_flags));
-		if (ntb(T_ed_uuid))
-			ed_uuid = nla_get_u64(ntb(T_ed_uuid));
+		if (ntb(T_exposed_data_uuid))
+			exposed_data_uuid = nla_get_u64(ntb(T_exposed_data_uuid));
 	}
 	if (state.conn == C_STANDALONE &&
 	    state.disk == D_DISKLESS) {
@@ -2508,9 +2508,9 @@ static int uuids_scmd(struct drbd_cmd *cm,
 		return 1;
 	}
 	if (state.disk == D_DISKLESS) {
-		/* XXX we could print the ed_uuid anyways: */
+		/* XXX we could print the exposed_data_uuid anyways: */
 		if (0)
-			printf(X64(016)"\n", ed_uuid);
+			printf(X64(016)"\n", exposed_data_uuid);
 		fprintf(stderr, "Device has no disk\n");
 		return 1;
 	}

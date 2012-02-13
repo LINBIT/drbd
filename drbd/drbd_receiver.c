@@ -3915,9 +3915,9 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	if (peer_device->repl_state[NOW] < L_CONNECTED &&
 	    device->disk_state[NOW] < D_INCONSISTENT &&
 	    device->resource->role[NOW] == R_PRIMARY &&
-	    (device->ed_uuid & ~((u64)1)) != (p_uuid[UI_CURRENT] & ~((u64)1))) {
+	    (device->exposed_data_uuid & ~((u64)1)) != (p_uuid[UI_CURRENT] & ~((u64)1))) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
-		    (unsigned long long)device->ed_uuid);
+		    (unsigned long long)device->exposed_data_uuid);
 		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 		return -EIO;
 	}
@@ -3950,7 +3950,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		   device->resource->role[NOW] == R_PRIMARY) {
 		/* I am a diskless primary, the peer just created a new current UUID
 		   for me. */
-		updated_uuids = drbd_set_ed_uuid(device, p_uuid[UI_CURRENT]);
+		updated_uuids = drbd_set_exposed_data_uuid(device, p_uuid[UI_CURRENT]);
 	}
 
 	/* Before we test for the disk state, we should wait until an eventually
@@ -3960,7 +3960,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	mutex_lock(&device->resource->state_mutex);
 	mutex_unlock(&device->resource->state_mutex);
 	if (peer_device->repl_state[NOW] >= L_CONNECTED && device->disk_state[NOW] < D_INCONSISTENT)
-		updated_uuids |= drbd_set_ed_uuid(device, p_uuid[UI_CURRENT]);
+		updated_uuids |= drbd_set_exposed_data_uuid(device, p_uuid[UI_CURRENT]);
 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");

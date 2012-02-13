@@ -897,7 +897,7 @@ struct drbd_device {
 	int al_tr_pos;   /* position of the next transaction in the journal */
 	wait_queue_head_t seq_wait;
 	unsigned int minor;
-	u64 ed_uuid; /* UUID of the exposed data */
+	u64 exposed_data_uuid; /* UUID of the exposed data */
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
@@ -2110,10 +2110,10 @@ static inline void inc_ap_bio(struct drbd_device *device)
 	wait_event(device->misc_wait, inc_ap_bio_cond(device));
 }
 
-static inline int drbd_set_ed_uuid(struct drbd_device *device, u64 val)
+static inline int drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
 {
-	int changed = device->ed_uuid != val;
-	device->ed_uuid = val;
+	int changed = device->exposed_data_uuid != val;
+	device->exposed_data_uuid = val;
 	return changed;
 }
 

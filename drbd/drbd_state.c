@@ -959,7 +959,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				    get_ldev_if_state(device, D_NEGOTIATING)) {
 					disk_state[NEW] = D_DISKLESS;
 					peer_disk_state[NEW] = D_UNKNOWN;
-					if (device->ed_uuid == drbd_uuid(peer_device, UI_CURRENT)) {
+					if (device->exposed_data_uuid == drbd_uuid(peer_device, UI_CURRENT)) {
 						/* FIXME: This makes no sense anymore. */
 						disk_state[NEW] = device->disk_state_from_metadata;
 						peer_disk_state[NEW] = peer_device->disk_state_from_metadata;
@@ -1276,7 +1276,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				drbd_md_mark_dirty(device);
 			}
 			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
-				drbd_set_ed_uuid(device, device->ldev->md.current_uuid);
+				drbd_set_exposed_data_uuid(device, device->ldev->md.current_uuid);
 			put_ldev(device);
 		}
 	}

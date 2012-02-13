@@ -186,7 +186,7 @@ GENL_struct(DRBD_NLA_STATE_INFO, 8, state_info,
 	__u32_field(1, DRBD_GENLA_F_MANDATORY,	sib_reason)
 	__u32_field(2, DRBD_F_REQUIRED,	current_state)
 	__u64_field(3, DRBD_GENLA_F_MANDATORY,	capacity)
-	__u64_field(4, DRBD_GENLA_F_MANDATORY,	ed_uuid)
+	__u64_field(4, DRBD_GENLA_F_MANDATORY,	exposed_data_uuid)
 
 	/* These are for broadcast from after state change work.
 	 * prev_state and new_state are from the moment the state change took

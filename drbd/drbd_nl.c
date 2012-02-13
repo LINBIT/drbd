@@ -1534,9 +1534,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
 		    device->resource->role[NOW] == R_PRIMARY &&
-		    (device->ed_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
+		    (device->exposed_data_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
 			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
-			    (unsigned long long)device->ed_uuid);
+			    (unsigned long long)device->exposed_data_uuid);
 			retcode = ERR_DATA_NOT_CURRENT;
 			goto force_diskless_dec;
 		}
@@ -2753,7 +2753,7 @@ static int nla_put_status_info(struct sk_buff *skb, struct drbd_resource *resour
 			goto nla_put_failure;
 		NLA_PUT_U32(skb, T_sib_reason, sib ? sib->sib_reason : SIB_GET_STATUS_REPLY);
 		NLA_PUT_U32(skb, T_current_state, state.i);
-		NLA_PUT_U64(skb, T_ed_uuid, device->ed_uuid);
+		NLA_PUT_U64(skb, T_exposed_data_uuid, device->exposed_data_uuid);
 		NLA_PUT_U64(skb, T_capacity, drbd_get_capacity(device->this_bdev));
 
 		if (got_ldev) {
