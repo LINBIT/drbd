@@ -1157,7 +1157,7 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 	u32 peer_addr_hash;
 	int i, err = 0;
 
-	if (!connection || !connection->peer_addr_len ||
+	if (!connection || !connection_is_alive(connection) ||
 	    !get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
 

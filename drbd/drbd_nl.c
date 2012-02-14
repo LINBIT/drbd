@@ -356,7 +356,7 @@ static void setup_khelper_env(struct drbd_connection *connection, char **envp)
 	char *afs;
 
 	/* FIXME: A future version will not allow this case. */
-	if (connection->my_addr_len == 0 || connection->peer_addr_len == 0)
+	if (!connection_is_alive(connection))
 		return;
 
 	switch (((struct sockaddr *)&connection->peer_addr)->sa_family) {
@@ -2948,7 +2948,7 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 
 found_connection:
 	list_for_each_entry_continue_rcu(connection, &resource->connections, connections) {
-		if (connection->my_addr_len == 0 || connection->peer_addr_len == 0)
+		if (!connection_is_alive(connection))
 			continue;
 
 		retcode = NO_ERROR;

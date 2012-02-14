@@ -2177,4 +2177,9 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 	return list_first_entry(&resource->connections, struct drbd_connection, connections);
 }
 
+static inline bool connection_is_alive(struct drbd_connection *connection)
+{
+	return connection->my_addr_len && connection->peer_addr_len;
+}
+
 #endif
