@@ -2202,6 +2202,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	memcpy(&connection->my_addr, nla_data(adm_ctx.my_addr), connection->my_addr_len);
 	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
+	connection->alive = true;
 
 	mutex_unlock(&adm_ctx.resource->conf_update);
 

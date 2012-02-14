@@ -744,6 +744,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
 	struct drbd_thread asender;
+	bool alive;  /* temporary */
 };
 
 struct drbd_peer_device {
@@ -2179,7 +2180,7 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 
 static inline bool connection_is_alive(struct drbd_connection *connection)
 {
-	return connection->my_addr_len && connection->peer_addr_len;
+	return connection->alive;
 }
 
 #endif

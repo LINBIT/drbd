@@ -1854,8 +1854,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 			mutex_lock(&resource->conf_update);
 			old_conf = connection->net_conf;
-			connection->my_addr_len = 0;
-			connection->peer_addr_len = 0;
+			connection->alive = false;
 			rcu_assign_pointer(connection->net_conf, NULL);
 			conn_free_crypto(connection);
 			mutex_unlock(&resource->conf_update);
