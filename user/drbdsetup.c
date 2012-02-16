@@ -1694,7 +1694,7 @@ static const char *susp_str(struct resource_info *info)
 	if (info->res_susp)
 		strcat(buffer, ",user" + (*buffer == 0));
 	if (info->res_susp_nod)
-		strcat(buffer, ",no-disk" + (*buffer == 0));
+		strcat(buffer, ",no-data" + (*buffer == 0));
 	if (info->res_susp_fen)
 		strcat(buffer, ",fencing" + (*buffer == 0));
 	if (*buffer == 0)
