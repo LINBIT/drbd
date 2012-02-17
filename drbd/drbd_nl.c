@@ -2300,21 +2300,23 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-void resync_after_online_grow(struct drbd_device *device)
+void resync_after_online_grow(struct drbd_peer_device *peer_device)
 {
-	int iass; /* I am sync source */
+	struct drbd_device *device = peer_device->device;
+	bool sync_source;
 
-	drbd_info(device, "Resync of new storage after online grow\n");
-	if (device->resource->role[NOW] != first_peer_device(device)->connection->peer_role[NOW])
-		iass = (device->resource->role[NOW] == R_PRIMARY);
+	drbd_info(peer_device, "Resync of new storage after online grow\n");
+	if (device->resource->role[NOW] != peer_device->connection->peer_role[NOW])
+		sync_source = (device->resource->role[NOW] == R_PRIMARY);
 	else
-		iass = test_bit(DISCARD_CONCURRENT, &first_peer_device(device)->connection->flags);
+		sync_source = test_bit(DISCARD_CONCURRENT,
+				       &peer_device->connection->flags);
 
-	if (iass)
-		drbd_start_resync(first_peer_device(device), L_SYNC_SOURCE);
+	if (sync_source)
+		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	else
-		stable_change_repl_state(first_peer_device(device), L_WF_SYNC_UUID,
-						CS_VERBOSE | CS_SERIALIZE);
+		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
+					 CS_VERBOSE | CS_SERIALIZE);
 }
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)

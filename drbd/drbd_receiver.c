@@ -3885,7 +3885,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				if (ddsf & DDSF_NO_RESYNC)
 					drbd_info(device, "Resync of new storage suppressed with --assume-clean\n");
 				else
-					resync_after_online_grow(device);
+					resync_after_online_grow(peer_device);
 			} else
 				set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 		}

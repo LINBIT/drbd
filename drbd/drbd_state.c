@@ -1735,7 +1735,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&
 			    test_and_clear_bit(RESYNC_AFTER_NEG, &peer_device->flags)) {
 				if (repl_state[NEW] == L_CONNECTED)
-					resync_after_online_grow(device);
+					resync_after_online_grow(peer_device);
 			}
 
 			/* A resync finished or aborted, wake paused devices... */
