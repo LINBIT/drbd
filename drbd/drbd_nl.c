@@ -1500,9 +1500,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_suspend_io(device);
 	/* also wait for the last barrier ack. */
-	wait_event(device->misc_wait,
-		   (!atomic_read(&first_peer_device(device)->ap_pending_cnt) ||
-		    drbd_suspended(device)));
+	for_each_peer_device(peer_device, device)
+		wait_event(device->misc_wait,
+			   (!atomic_read(&peer_device->ap_pending_cnt) ||
+			    drbd_suspended(device)));
 	/* and for other previously queued resource work */
 	drbd_flush_workqueue(&device->resource->work);
 
