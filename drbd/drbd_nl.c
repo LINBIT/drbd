@@ -1173,23 +1173,35 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 }
 
 /* Make sure IO is suspended before calling this function(). */
-static void drbd_suspend_al(struct drbd_device *device)
+static void drbd_try_suspend_al(struct drbd_device *device)
 {
-	int s = 0;
+	struct drbd_peer_device *peer_device;
+	bool suspend = true;
+
+	for_each_peer_device(peer_device, device) {
+		if (_drbd_bm_total_weight(peer_device) != drbd_bm_bits(device))
+			return;
+	}
 
 	if (!lc_try_lock(device->act_log)) {
-		drbd_warn(device, "Failed to lock al in drbd_suspend_al()\n");
+		drbd_warn(device, "Failed to lock al in %s()", __func__);
 		return;
 	}
 
 	drbd_al_shrink(device);
 	spin_lock_irq(&device->resource->req_lock);
-	if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-		s = !test_and_set_bit(AL_SUSPENDED, &device->flags);
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NOW] >= L_CONNECTED) {
+			suspend = false;
+			break;
+		}
+	}
+	if (suspend)
+		suspend = !test_and_set_bit(AL_SUSPENDED, &device->flags);
 	spin_unlock_irq(&device->resource->req_lock);
 	lc_unlock(device->act_log);
 
-	if (s)
+	if (suspend)
 		drbd_info(device, "Suspended AL updates\n");
 }
 
@@ -1642,8 +1654,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (_drbd_bm_total_weight(first_peer_device(device)) == drbd_bm_bits(device))
-		drbd_suspend_al(device); /* IO is still suspended here... */
+	drbd_try_suspend_al(device); /* IO is still suspended here... */
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 	device->disk_state_from_metadata = D_INCONSISTENT;
@@ -2489,7 +2500,7 @@ static int drbd_bmio_set_susp_al(struct drbd_device *device,
 	int rv;
 
 	rv = drbd_bmio_set_n_write(device, peer_device);
-	drbd_suspend_al(device);
+	drbd_try_suspend_al(device);
 	return rv;
 }
 
