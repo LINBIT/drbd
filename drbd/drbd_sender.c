@@ -820,6 +820,7 @@ static void ping_peer(struct drbd_connection *connection)
 int drbd_resync_finished(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
@@ -843,8 +844,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		if (dw) {
 			dw->w.cb = w_resync_finished;
 			dw->peer_device = peer_device;
-			drbd_queue_work(&peer_device->connection->data.work,
-					&dw->w);
+			drbd_queue_work(&connection->data.work, &dw->w);
 			return 1;
 		}
 		drbd_err(peer_device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
@@ -860,7 +860,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	if (!get_ldev(device))
 		goto out;
 
-	ping_peer(peer_device->connection);
+	ping_peer(connection);
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 
@@ -890,7 +890,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
 
-		if (peer_device->connection->csums_tfm && peer_device->rs_total) {
+		if (connection->csums_tfm && peer_device->rs_total) {
 			const unsigned long s = peer_device->rs_same_csum;
 			const unsigned long t = peer_device->rs_total;
 			const int ratio =
@@ -959,7 +959,7 @@ out:
 	drbd_md_sync(device);
 
 	if (khelper_cmd)
-		drbd_khelper(device, khelper_cmd);
+		drbd_khelper(device, connection, khelper_cmd);
 
 	return 1;
 }
@@ -1603,6 +1603,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state side)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state repl_state;
 	int r;
 
@@ -1624,16 +1625,16 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 			/* Since application IO was locked out during L_WF_BITMAP_T and
 			   L_WF_SYNC_UUID we are still unmodified. Before going to L_SYNC_TARGET
 			   we check that we might make the data inconsistent. */
-			r = drbd_khelper(device, "before-resync-target");
+			r = drbd_khelper(device, connection, "before-resync-target");
 			r = (r >> 8) & 0xff;
 			if (r > 0) {
 				drbd_info(device, "before-resync-target handler returned %d, "
 					 "dropping connection.\n", r);
-				change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+				change_cstate(connection, C_DISCONNECTING, CS_HARD);
 				return;
 			}
 		} else /* L_SYNC_SOURCE */ {
-			r = drbd_khelper(device, "before-resync-source");
+			r = drbd_khelper(device, connection, "before-resync-source");
 			r = (r >> 8) & 0xff;
 			if (r > 0) {
 				if (r == 3) {
@@ -1642,14 +1643,14 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 				} else {
 					drbd_info(device, "before-resync-source handler returned %d, "
 						 "dropping connection.\n", r);
-					change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+					change_cstate(connection, C_DISCONNECTING, CS_HARD);
 					return;
 				}
 			}
 		}
 	}
 
-	if (current == peer_device->connection->sender.task) {
+	if (current == connection->sender.task) {
 		/* The sender should not sleep waiting for state_mutex,
 		   that can take long */
 		set_bit(B_RS_H_DONE, &peer_device->flags);
@@ -1714,12 +1715,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		 * drbd_resync_finished from here in that case.
 		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
 		 * and from after_state_ch otherwise. */
-		if (side == L_SYNC_SOURCE &&
-		    peer_device->connection->agreed_pro_version < 96)
+		if (side == L_SYNC_SOURCE && connection->agreed_pro_version < 96)
 			drbd_gen_and_send_sync_uuid(peer_device);
 
-		if (peer_device->connection->agreed_pro_version < 95 &&
-		    peer_device->rs_total == 0) {
+		if (connection->agreed_pro_version < 95 && peer_device->rs_total == 0) {
 			/* This still has a race (about when exactly the peers
 			 * detect connection loss) that can lead to a full sync
 			 * on next handshake. In 8.3.9 we fixed this with explicit
@@ -1735,7 +1734,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 				int timeo;
 
 				rcu_read_lock();
-				nc = rcu_dereference(peer_device->connection->net_conf);
+				nc = rcu_dereference(connection->net_conf);
 				timeo = nc->ping_int * HZ + nc->ping_timeo * HZ / 9;
 				rcu_read_unlock();
 				schedule_timeout_interruptible(timeo);

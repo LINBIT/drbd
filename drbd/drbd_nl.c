@@ -351,71 +351,6 @@ static int drbd_adm_finish(struct genl_info *info, int retcode)
 	return 0;
 }
 
-static void setup_khelper_env(struct drbd_connection *connection, char **envp)
-{
-	char *afs;
-
-	/* FIXME: A future version will not allow this case. */
-	if (!connection_is_alive(connection))
-		return;
-
-	switch (((struct sockaddr *)&connection->peer_addr)->sa_family) {
-	case AF_INET6:
-		afs = "ipv6";
-		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI6",
-			 &((struct sockaddr_in6 *)&connection->peer_addr)->sin6_addr);
-		break;
-	case AF_INET:
-		afs = "ipv4";
-		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
-			 &((struct sockaddr_in *)&connection->peer_addr)->sin_addr);
-		break;
-	default:
-		afs = "ssocks";
-		snprintf(envp[4], 60, "DRBD_PEER_ADDRESS=%pI4",
-			 &((struct sockaddr_in *)&connection->peer_addr)->sin_addr);
-	}
-	snprintf(envp[3], 20, "DRBD_PEER_AF=%s", afs);
-}
-
-int drbd_khelper(struct drbd_device *device, char *cmd)
-{
-	char *envp[] = { "HOME=/",
-			"TERM=linux",
-			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-			 (char[20]) { }, /* address family */
-			 (char[60]) { }, /* address */
-			NULL };
-	char mb[12];
-	char *argv[] = {usermode_helper, cmd, mb, NULL };
-	int ret;
-
-	snprintf(mb, 12, "minor-%d", mdev_to_minor(device));
-	setup_khelper_env(first_peer_device(device)->connection, envp);
-
-	/* The helper may take some time.
-	 * write out any unsynced meta data changes now */
-	drbd_md_sync(device);
-
-	drbd_info(device, "helper command: %s %s %s\n", usermode_helper, cmd, mb);
-	notify_helper(NOTIFY_CALL, device, NULL, cmd, 0);
-	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
-	if (ret)
-		drbd_warn(device, "helper command: %s %s %s exit code %u (0x%x)\n",
-				usermode_helper, cmd, mb,
-				(ret >> 8) & 0xff, ret);
-	else
-		drbd_info(device, "helper command: %s %s %s exit code %u (0x%x)\n",
-				usermode_helper, cmd, mb,
-				(ret >> 8) & 0xff, ret);
-	notify_helper(NOTIFY_RESPONSE, device, NULL, cmd, ret);
-
-	if (ret < 0) /* Ignore any ERRNOs we got. */
-		ret = 0;
-
-	return ret;
-}
-
 static void conn_md_sync(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -433,36 +368,90 @@ static void conn_md_sync(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-int conn_khelper(struct drbd_connection *connection, char *cmd)
+struct khelper_address_buffer {
+	char family[20];
+	char address[60];
+};
+
+static void khelper_put_address(struct khelper_address_buffer *buffer,
+				const char *prefix, struct sockaddr_storage *storage)
 {
-	char *envp[] = { "HOME=/",
-			"TERM=linux",
-			"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
-			 (char[20]) { }, /* address family */
-			 (char[60]) { }, /* address */
-			NULL };
-	char *resource_name = connection->resource->name;
-	char *argv[] = {usermode_helper, cmd, resource_name, NULL };
-	int ret;
+	char *afs;
 
-	setup_khelper_env(connection, envp);
-	conn_md_sync(connection);
+	switch (((struct sockaddr *)storage)->sa_family) {
+	case AF_INET6:
+		afs = "ipv6";
+		snprintf(buffer->address, sizeof(buffer->address),
+			 "%sADDRESS=%pI6", prefix,
+			 &((struct sockaddr_in6 *)storage)->sin6_addr);
+		break;
+	case AF_INET:
+		afs = "ipv4";
+		snprintf(buffer->address, sizeof(buffer->address),
+			 "%sADDRESS=%pI4", prefix,
+			 &((struct sockaddr_in *)storage)->sin_addr);
+		break;
+	default:
+		afs = "ssocks";
+		snprintf(buffer->address, sizeof(buffer->address),
+			 "%sADDRESS=%pI4", prefix,
+			 &((struct sockaddr_in *)storage)->sin_addr);
+	}
+	snprintf(buffer->family, sizeof(buffer->family), "%sAF=%s", prefix, afs);
+}
 
-	drbd_info(connection, "helper command: %s %s %s\n", usermode_helper, cmd, resource_name);
-	/* TODO: conn_bcast_event() ?? */
+int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
+{
+	struct drbd_resource *resource = device ? device->resource : connection->resource;
+	char *argv[] = {usermode_helper, cmd, NULL };
+	char resource_name[14 + 128];
+	char minor[30];
+	char volume[30];
+	struct khelper_address_buffer my_addr, peer_addr;
+	char *envp[11];
+	int envi = 0, ret;
 
-	notify_helper(NOTIFY_CALL, NULL, connection, cmd, 0);
+	envp[envi++] = "HOME=/";
+	envp[envi++] = "TERM=linux";
+	envp[envi++] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
+	snprintf(resource_name, sizeof(resource_name), "DRBD_RESOURCE=%s", resource->name);
+	envp[envi++] = resource_name;
+	if (device) {
+		snprintf(minor, sizeof(minor), "DRBD_MINOR=%u", mdev_to_minor(device));
+		envp[envi++] = minor;
+		snprintf(volume, sizeof(volume), "DRBD_VOLUME=%u", device->vnr);
+		envp[envi++] = volume;
+	}
+	if (connection && connection_is_alive(connection)) {
+			khelper_put_address(&my_addr, "DRBD_MY_", &connection->my_addr);
+			envp[envi++] = my_addr.family;
+			envp[envi++] = my_addr.address;
+			khelper_put_address(&peer_addr, "DRBD_PEER_", &connection->peer_addr);
+			envp[envi++] = peer_addr.family;
+			envp[envi++] = peer_addr.address;
+	}
+	envp[envi++] = NULL;
+	BUG_ON(envi > ARRAY_SIZE(envp));
+
+	/* The helper may take some time.
+	 * write out any unsynced meta data changes now */
+	if (device)
+		drbd_md_sync(device);
+	else if (connection)
+		conn_md_sync(connection);
+
+	drbd_info(resource, "helper command: %s %s\n", usermode_helper, cmd);
+	notify_helper(NOTIFY_CALL, device, connection, cmd, 0);
 	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
 	if (ret)
-		drbd_warn(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, resource_name,
-			  (ret >> 8) & 0xff, ret);
+		drbd_warn(resource, "helper command: %s %s exit code %u (0x%x)\n",
+				usermode_helper, cmd,
+				(ret >> 8) & 0xff, ret);
 	else
-		drbd_info(connection, "helper command: %s %s %s exit code %u (0x%x)\n",
-			  usermode_helper, cmd, resource_name,
-			  (ret >> 8) & 0xff, ret);
-	/* TODO: conn_bcast_event() ?? */
-	notify_helper(NOTIFY_RESPONSE, NULL, connection, cmd, ret);
+		drbd_info(resource, "helper command: %s %s exit code %u (0x%x)\n",
+				usermode_helper, cmd,
+				(ret >> 8) & 0xff, ret);
+	notify_helper(NOTIFY_RESPONSE, device, connection, cmd, ret);
 
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;
@@ -492,7 +481,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	default: ;
 	}
 
-	r = conn_khelper(connection, "fence-peer");
+	r = drbd_khelper(NULL, connection, "fence-peer");
 
 	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
 	switch ((r>>8) & 0xff) {

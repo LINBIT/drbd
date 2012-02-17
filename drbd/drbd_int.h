@@ -1353,7 +1353,7 @@ extern void drbd_reconsider_max_bio_size(struct drbd_device *device);
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool);
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
-extern int drbd_khelper(struct drbd_device *device, char *cmd);
+extern int drbd_khelper(struct drbd_device *, struct drbd_connection *, char *);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);

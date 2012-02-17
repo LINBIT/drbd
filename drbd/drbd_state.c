@@ -1597,7 +1597,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
 			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
-				drbd_khelper(device, "pri-on-incon-degr");
+				drbd_khelper(device, connection, "pri-on-incon-degr");
 
 			if (susp_nod[NEW]) {
 				enum drbd_req_event what = NOTHING;
@@ -1822,7 +1822,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			put_ldev(device);
 
 			if (was_io_error && eh == EP_CALL_HELPER)
-				drbd_khelper(device, "local-io-error");
+				drbd_khelper(device, NULL, "local-io-error");
 		}
 
 		/* second half of local IO error, failure to attach,

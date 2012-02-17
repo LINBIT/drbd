@@ -2810,12 +2810,13 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_resource *resource = device->resource;
 	int hg, rv = -100;
 	enum drbd_after_sb_p after_sb_1p;
 
 	rcu_read_lock();
-	after_sb_1p = rcu_dereference(peer_device->connection->net_conf)->after_sb_1p;
+	after_sb_1p = rcu_dereference(connection->net_conf)->after_sb_1p;
 	rcu_read_unlock();
 	switch (after_sb_1p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -2851,7 +2852,7 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, false);
 			if (rv2 != SS_SUCCESS) {
-				drbd_khelper(device, "pri-lost-after-sb");
+				drbd_khelper(device, connection, "pri-lost-after-sb");
 			} else {
 				drbd_warn(device, "Successfully gave up primary role.\n");
 				rv = hg;
@@ -2869,11 +2870,12 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	int hg, rv = -100;
 	enum drbd_after_sb_p after_sb_2p;
 
 	rcu_read_lock();
-	after_sb_2p = rcu_dereference(peer_device->connection->net_conf)->after_sb_2p;
+	after_sb_2p = rcu_dereference(connection->net_conf)->after_sb_2p;
 	rcu_read_unlock();
 	switch (after_sb_2p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -2901,7 +2903,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, false);
 			if (rv2 != SS_SUCCESS) {
-				drbd_khelper(device, "pri-lost-after-sb");
+				drbd_khelper(device, connection, "pri-lost-after-sb");
 			} else {
 				drbd_warn(device, "Successfully gave up primary role.\n");
 				rv = hg;
@@ -3137,6 +3139,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 						enum drbd_disk_state peer_disk_state) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state rv = -1;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
@@ -3174,7 +3177,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	}
 
 	if (abs(hg) == 100)
-		drbd_khelper(device, "initial-split-brain");
+		drbd_khelper(device, connection, "initial-split-brain");
 
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->net_conf);
@@ -3228,7 +3231,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		 * We just refuse to attach -- well, we drop the "connection"
 		 * to that disk, in a way... */
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
-		drbd_khelper(device, "split-brain");
+		drbd_khelper(device, connection, "split-brain");
 		return -1;
 	}
 
@@ -3241,7 +3244,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT) {
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
-			drbd_khelper(device, "pri-lost");
+			drbd_khelper(device, connection, "pri-lost");
 			/* fall through */
 		case ASB_DISCONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
