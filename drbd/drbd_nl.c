@@ -3340,7 +3340,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		resource_to_info(&resource_info, resource, NOW);
-		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE, id);
+		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE | NOTIFY_CONTINUED, id);
 		connection_to_info(&connection_info, connection, NOW);
 		notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE, id);
 	}
@@ -3399,14 +3399,22 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 		struct drbd_peer_device *peer_device;
 		struct device_info info;
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
+		unsigned int peer_devices = 0;
+		enum drbd_notification_type flags;
+
+		for_each_peer_device(peer_device, device)
+			peer_devices++;
 
 		device_to_info(&info, device, NOW);
-		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE, id);
+		flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE | flags, id);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
 			peer_device_to_info(&peer_device_info, peer_device, NOW);
-			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE, id);
+			flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info,
+						 NOTIFY_CREATE | flags, id);
 		}
 	}
 	mutex_unlock(&resource->conf_update);
@@ -3428,7 +3436,8 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
 			CS_VERBOSE | CS_WAIT_COMPLETE);
 		for_each_peer_device(peer_device, device)
-			notify_peer_device_state(NULL, 0, peer_device, NULL, NOTIFY_DESTROY, id);
+			notify_peer_device_state(NULL, 0, peer_device, NULL,
+						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
 		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
 		drbd_delete_device(device);
 		return NO_ERROR;
@@ -3471,7 +3480,8 @@ static int adm_del_resource(struct drbd_resource *resource)
 	err = NO_ERROR;
 
 	for_each_connection(connection, resource)
-		notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY, id);
+		notify_connection_state(NULL, 0, connection, NULL,
+					NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
 	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY, id);
 
 	list_del_rcu(&resource->resources);
@@ -3594,7 +3604,7 @@ void notify_resource_state(struct sk_buff *skb,
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL) ||
 	    nla_put_notification_header(skb, type, id) ||
-	    (type != NOTIFY_DESTROY &&
+	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     resource_info_to_skb(skb, resource_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
@@ -3641,7 +3651,7 @@ void notify_device_state(struct sk_buff *skb,
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device) ||
 	    nla_put_notification_header(skb, type, id) ||
-	    (type != NOTIFY_DESTROY &&
+	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     device_info_to_skb(skb, device_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
@@ -3688,7 +3698,7 @@ void notify_connection_state(struct sk_buff *skb,
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL) ||
 	    nla_put_notification_header(skb, type, id) ||
-	    (type != NOTIFY_DESTROY &&
+	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
@@ -3736,7 +3746,7 @@ void notify_peer_device_state(struct sk_buff *skb,
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
 	    nla_put_notification_header(skb, type, id) ||
-	    (type != NOTIFY_DESTROY &&
+	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
@@ -3816,33 +3826,37 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	unsigned int seq = cb->args[4];
 	struct list_head head;
 	unsigned int n;
+	enum drbd_notification_type flags = 0;
 
     next_resource:
 	state_change = list_entry((struct list_head *)cb->args[0],
 				  struct drbd_state_change, list);
 	n = cb->args[2];
+	if (n < state_change->n_connections + state_change->n_devices +
+	    state_change->n_devices * state_change->n_connections)
+		flags |= NOTIFY_CONTINUED;
 
 	if (n < 1) {
 		notify_resource_state_change(skb, seq, state_change->resource,
-					     OLD, NOTIFY_EXISTS, id);
+					     OLD, NOTIFY_EXISTS | flags, id);
 		goto next;
 	}
 	n--;
 	if (n < state_change->n_connections) {
 		notify_connection_state_change(skb, seq, &state_change->connections[n],
-					       OLD, NOTIFY_EXISTS, id);
+					       OLD, NOTIFY_EXISTS | flags, id);
 		goto next;
 	}
 	n -= state_change->n_connections;
 	if (n < state_change->n_devices) {
 		notify_device_state_change(skb, seq, &state_change->devices[n],
-					   OLD, NOTIFY_EXISTS, id);
+					   OLD, NOTIFY_EXISTS | flags, id);
 		goto next;
 	}
 	n -= state_change->n_devices;
 	if (n < state_change->n_devices * state_change->n_connections) {
 		notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
-						OLD, NOTIFY_EXISTS, id);
+						OLD, NOTIFY_EXISTS | flags, id);
 		goto next;
 	}
 

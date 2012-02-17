@@ -2624,8 +2624,9 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		last_seq_known = true;
 	}
 
-	printf("%u %s %s",
+	printf("%u%s %s %s",
 	       nh.nh_id,
+	       (nh.nh_type & NOTIFY_CONTINUED) ? "*" : "",
 	       action_name[action],
 	       object_name[info->genlhdr->cmd]);
 	if (ctx.ctx_resource_name)
@@ -2733,7 +2734,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 	if (dh->ret_code != NO_ERROR)
 		return dh->ret_code;
 
-	if (nh.nh_type == NOTIFY_DESTROY)
+	if ((nh.nh_type & ~NOTIFY_FLAGS) == NOTIFY_DESTROY)
 		return 0;
 	if (info->genlhdr->cmd != DRBD_CONNECTION_STATE &&
 	    info->genlhdr->cmd != DRBD_PEER_DEVICE_STATE)
