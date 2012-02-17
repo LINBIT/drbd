@@ -141,6 +141,7 @@ static struct drbd_config_context {
 	struct drbd_device *device;
 	struct drbd_resource *resource;
 	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
 } adm_ctx;
 
 static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
@@ -186,6 +187,7 @@ extern struct genl_ops drbd_genl_ops[];
 #define DRBD_ADM_NEED_MINOR	1
 #define DRBD_ADM_NEED_RESOURCE	2
 #define DRBD_ADM_NEED_CONNECTION 4
+#define DRBD_ADM_NEED_PEER_DEVICE 8
 static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 		unsigned flags)
 {
@@ -275,7 +277,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 		goto finish;
 	}
 
-	if (flags & DRBD_ADM_NEED_CONNECTION) {
+	if (flags & (DRBD_ADM_NEED_CONNECTION | DRBD_ADM_NEED_PEER_DEVICE)) {
 		if (adm_ctx.resource) {
 			drbd_msg_put_info("no resource name expected");
 			err = ERR_INVALID_REQUEST;
@@ -292,6 +294,17 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 				nla_data(adm_ctx.peer_addr), nla_len(adm_ctx.peer_addr));
 		if (!adm_ctx.connection) {
 			drbd_msg_put_info("unknown connection");
+			err = ERR_INVALID_REQUEST;
+			goto finish;
+		}
+	}
+	if (flags & DRBD_ADM_NEED_PEER_DEVICE) {
+		if (adm_ctx.volume != VOLUME_UNSPECIFIED)
+			adm_ctx.peer_device =
+				idr_find(&adm_ctx.connection->peer_devices,
+					 adm_ctx.volume);
+		if (!adm_ctx.peer_device) {
+			drbd_msg_put_info("unknown volume");
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
