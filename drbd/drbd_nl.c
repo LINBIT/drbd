@@ -2528,10 +2528,11 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	peer_device = first_peer_device(adm_ctx.device);
+
+	peer_device = adm_ctx.peer_device;
 	resource = adm_ctx.device->resource;
 
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
