@@ -2471,38 +2471,40 @@ fail:
 
 int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	device = adm_ctx.device;
+	peer_device = adm_ctx.peer_device;
+	device = peer_device->device;
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
-	retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
 					   CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
-		retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+		retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 
 	while (retcode == SS_NEED_CONNECTION) {
 		unsigned long irq_flags;
 
 		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
+		if (peer_device->repl_state[NOW] < L_CONNECTED)
 			__change_disk_state(device, D_INCONSISTENT);
 		retcode = end_state_change(device->resource, &irq_flags);
 
 		if (retcode != SS_NEED_CONNECTION)
 			break;
 
-		retcode = stable_change_repl_state(first_peer_device(device), L_STARTING_SYNC_T,
+		retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	}
 
