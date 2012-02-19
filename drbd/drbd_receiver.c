@@ -1798,6 +1798,26 @@ STATIC int e_send_discard_ack(struct drbd_conf *mdev, struct drbd_work *w, int u
 	return ok;
 }
 
+static bool overlaping_resync_write(struct drbd_conf *mdev, struct drbd_epoch_entry *data_e)
+{
+	struct drbd_epoch_entry *rs_e;
+	bool rv = 0;
+
+	spin_lock_irq(&mdev->req_lock);
+	list_for_each_entry(rs_e, &mdev->sync_ee, w.list) {
+		if (overlaps(data_e->sector, data_e->size, rs_e->sector, rs_e->size)) {
+			rv = 1;
+			break;
+		}
+	}
+	spin_unlock_irq(&mdev->req_lock);
+
+	if (rv)
+		dev_warn(DEV, "WARN: Avoiding concurrent data/resync write to single sector.\n");
+
+	return rv;
+}
+
 /* Called from receive_Data.
  * Synchronize packets on sock with packets on msock.
  *
@@ -2079,6 +2099,9 @@ STATIC int receive_Data(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned 
 
 	list_add(&e->w.list, &mdev->active_ee);
 	spin_unlock_irq(&mdev->req_lock);
+
+	if (mdev->state.conn == C_SYNC_TARGET)
+		wait_event(mdev->ee_wait, !overlaping_resync_write(mdev, e));
 
 	switch (mdev->net_conf->wire_protocol) {
 	case DRBD_PROT_C:
