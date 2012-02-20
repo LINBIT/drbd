@@ -3472,18 +3472,19 @@ out:
 static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 {
 	if (device->disk_state[NOW] == D_DISKLESS &&
-	    /* no need to be first_peer_device(device)->repl_state[NOW] == L_STANDALONE &&
+	    /* no need to be repl_state[NOW] == L_STANDALONE &&
 	     * we may want to delete a minor from a live replication group.
 	     */
 	    device->resource->role[NOW] == R_SECONDARY) {
 		struct drbd_peer_device *peer_device;
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
-		stable_change_repl_state(first_peer_device(device), L_STANDALONE,
-			CS_VERBOSE | CS_WAIT_COMPLETE);
-		for_each_peer_device(peer_device, device)
+		for_each_peer_device(peer_device, device) {
+			stable_change_repl_state(peer_device, L_STANDALONE,
+						 CS_VERBOSE | CS_WAIT_COMPLETE);
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
 						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
+		}
 		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
 		drbd_delete_device(device);
 		return NO_ERROR;
