@@ -2657,10 +2657,17 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	__change_io_susp_fencing(resource, false);
 	retcode = end_state_change(resource, &irq_flags);
 	if (retcode == SS_SUCCESS) {
-		if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED)
-			tl_clear(first_peer_device(device)->connection);
-		if (device->disk_state[NOW] == D_DISKLESS || device->disk_state[NOW] == D_FAILED)
-			tl_restart(first_peer_device(device)->connection, FAIL_FROZEN_DISK_IO);
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device) {
+			struct drbd_connection *connection = peer_device->connection;
+
+			if (peer_device->repl_state[NOW] < L_CONNECTED)
+				tl_clear(connection);
+			if (device->disk_state[NOW] == D_DISKLESS ||
+			    device->disk_state[NOW] == D_FAILED)
+				tl_restart(connection, FAIL_FROZEN_DISK_IO);
+		}
 	}
 	drbd_resume_io(device);
 
