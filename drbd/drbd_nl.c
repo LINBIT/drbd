@@ -3206,12 +3206,12 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	device = adm_ctx.device;
-	peer_device = first_peer_device(device);
+	peer_device = adm_ctx.peer_device;
+	device = peer_device->device;
 	if (info->attrs[DRBD_NLA_START_OV_PARMS]) {
 		/* resume from last known position, if possible */
 		struct start_ov_parms parms =
@@ -3228,7 +3228,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
-	retcode = stable_change_repl_state(first_peer_device(device),
+	retcode = stable_change_repl_state(peer_device,
 		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 out:
 	drbd_adm_finish(info, retcode);

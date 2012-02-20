@@ -370,7 +370,7 @@ struct drbd_cmd commands[] = {
 	{"suspend-io", CTX_MINOR, DRBD_ADM_SUSPEND_IO, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"resume-io", CTX_MINOR, DRBD_ADM_RESUME_IO, NO_PAYLOAD, F_CONFIG_CMD, },
 	{"outdate", CTX_MINOR, DRBD_ADM_OUTDATE, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"verify", CTX_MINOR, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
+	{"verify", CTX_PEER_DEVICE, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
 		F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx },
 	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
