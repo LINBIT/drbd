@@ -584,6 +584,7 @@ const char *read_balancing_map[] = {
           .unit = "bytes/second" },							\
 	{ "resync-after", NUMERIC(resync_after, MINOR_NUMBER) },			\
 	{ "al-extents", NUMERIC(al_extents, AL_EXTENTS) },				\
+	{ "al-updates", BOOLEAN(al_updates, AL_UPDATES) },				\
 	{ "c-plan-ahead", NUMERIC(c_plan_ahead, C_PLAN_AHEAD),				\
           .unit = "1/10 seconds" },							\
 	{ "c-delay-target", NUMERIC(c_delay_target, C_DELAY_TARGET),			\

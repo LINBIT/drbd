@@ -292,7 +292,7 @@
             <option>disk-barrier</option>, <option>disk-flushes</option>,
             <option>disk-drain</option>, <option>md-flushes</option>,
             <option>max-bio-bvecs</option>, <option>resync-rate</option>,
-            <option>resync-after</option>, <option>al-extents</option>,
+            <option>resync-after</option>, <option>al-extents</option>, <option>al-updates</option>,
             <option>c-plan-ahead</option>, <option>c-fill-target</option>,
             <option>c-delay-target</option>, <option>c-max-rate</option>,
             <option>c-min-rate</option>, <option>disk-timeout</option>,
@@ -1530,6 +1530,26 @@
             of extents gives longer resync times but less updates to the meta-data. The default
             number of <replaceable>extents</replaceable> is 127. (Minimum: 7, Maximum:
             6433)</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>al-updates <group choice="req" rep="norepeat">
+	     <arg choice="plain" rep="norepeat">yes</arg>
+	     <arg choice="plain" rep="norepeat">no</arg>
+	  </group></option></term>
+
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
+                <secondary>al-updates</secondary>
+	      </indexterm> DRBD's activity log transaction writing makes it possible, that
+	    after the crash of a primary node a partial (bit-map based) resync is
+	    sufficient to bring the node back to up-to-date.
+	    Setting <option>al-updates</option> to <option>no</option> might increase
+	    normal operation performance but causes DRBD to do a full resync
+	    when a crashed primary gets reconnected. The default value is <option>yes</option>.
+	    </para>
           </listitem>
         </varlistentry>
 

@@ -411,6 +411,23 @@
         </varlistentry>
 
         <varlistentry>
+          <term><option>--al-updates <group choice="req" rep="norepeat">
+	     <arg choice="plain" rep="norepeat">yes</arg>
+	     <arg choice="plain" rep="norepeat">no</arg>
+	  </group></option></term>
+
+	  <listitem>
+	    <para>DRBD's activity log transaction writing makes it possible, that
+	    after the crash of a primary node a partial (bit-map based) resync is
+	    sufficient to bring the node back to up-to-date.
+	    Setting <option>al-updates</option> to <option>no</option> might increase
+	    normal operation performance but causes DRBD to do a full resync
+	    when a crashed primary gets reconnected. The default value is <option>yes</option>.
+	    </para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
           <term><option>--c-plan-ahead
           <replaceable>plan_time</replaceable></option></term>
 
