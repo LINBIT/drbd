@@ -938,6 +938,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
+		int good_data_count[2];
 
 		if ((resource->state_change_flags & CS_IGN_OUTD_FAIL) &&
 		    disk_state[OLD] < D_OUTDATED && disk_state[NEW] == D_OUTDATED)
@@ -1071,12 +1072,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[OLD] != D_UNKNOWN))
 				resource->susp_fen[NEW] = true;
 
-			/* Suspend IO while no data available (no accessible data available) */
-			if (resource->res_opts.on_no_data == OND_SUSPEND_IO &&
-			    (role[NEW] == R_PRIMARY &&
-			     (disk_state[OLD] != disk_state[NEW] && disk_state[NEW] < D_UP_TO_DATE) &&
-			     (peer_disk_state[OLD] != peer_disk_state[NEW] && peer_disk_state[NEW] < D_UP_TO_DATE)))
-				resource->susp_nod[NEW] = true;
+			/* Count access to good data */
+			if (peer_disk_state[OLD] == D_UP_TO_DATE)
+				++good_data_count[OLD];
+			if (peer_disk_state[NEW] == D_UP_TO_DATE)
+				++good_data_count[NEW];
 
 			if (resync_suspended(peer_device, NEW)) {
 				if (repl_state[NEW] == L_SYNC_SOURCE)
@@ -1089,6 +1089,18 @@ static void sanitize_state(struct drbd_resource *resource)
 					repl_state[NEW] = L_SYNC_TARGET;
 			}
 		}
+		if (disk_state[OLD] == D_UP_TO_DATE)
+			++good_data_count[OLD];
+		if (disk_state[NEW] == D_UP_TO_DATE)
+			++good_data_count[NEW];
+
+		/* Suspend IO if we have no accessible data available.
+		 * Policy may be extended later to be able to suspend
+		 * if redundancy falls below a certain level. */
+		if (resource->res_opts.on_no_data == OND_SUSPEND_IO &&
+		    (role[NEW] == R_PRIMARY && good_data_count[NEW] == 0) &&
+		   !(role[OLD] == R_PRIMARY && good_data_count[OLD] == 0))
+			resource->susp_nod[NEW] = true;
 	}
 	rcu_read_unlock();
 }
