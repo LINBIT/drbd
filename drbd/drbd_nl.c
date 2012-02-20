@@ -2343,6 +2343,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	sector_t u_size;
 	int err;
 	struct drbd_peer_device *peer_device;
+	bool has_primary;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -2366,8 +2367,16 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (device->resource->role[NOW] == R_SECONDARY &&
-	    first_peer_device(device)->connection->peer_role[NOW] == R_SECONDARY) {
+	has_primary = device->resource->role[NOW] == R_PRIMARY;
+	if (!has_primary) {
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->connection->peer_role[NOW] == R_PRIMARY) {
+				has_primary = true;
+				break;
+			}
+		}
+	}
+	if (!has_primary) {
 		retcode = ERR_NO_PRIMARY;
 		goto fail;
 	}
