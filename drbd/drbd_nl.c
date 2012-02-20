@@ -2572,11 +2572,11 @@ int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	peer_device = first_peer_device(adm_ctx.device);
+	peer_device = adm_ctx.peer_device;
 	if (change_resync_susp_user(peer_device, true,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) == SS_NOTHING_TO_DO)
 		retcode = ERR_PAUSE_IS_SET;
@@ -2590,11 +2590,11 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	peer_device = first_peer_device(adm_ctx.device);
+	peer_device = adm_ctx.peer_device;
 	if (change_resync_susp_user(peer_device, false,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) == SS_NOTHING_TO_DO) {
 
