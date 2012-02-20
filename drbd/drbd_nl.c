@@ -3235,12 +3235,18 @@ out:
 	return 0;
 }
 
+static bool should_skip_initial_sync(struct drbd_peer_device *peer_device)
+{
+	return peer_device->repl_state[NOW] == L_CONNECTED &&
+	       peer_device->connection->agreed_pro_version >= 90 &&
+	       drbd_uuid(peer_device, UI_CURRENT) == UUID_JUST_CREATED;
+}
 
 int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
-	int skip_initial_sync = 0;
 	int err;
 	struct new_c_uuid_parms args;
 
@@ -3267,37 +3273,42 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* this is "skip initial sync", assume to be clean */
-	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED &&
-	    first_peer_device(device)->connection->agreed_pro_version >= 90 &&
-	    drbd_uuid(first_peer_device(device), UI_CURRENT) == UUID_JUST_CREATED && args.clear_bm) {
-		drbd_info(device, "Preparing to skip initial sync\n");
-		skip_initial_sync = 1;
-	} else if (first_peer_device(device)->repl_state[NOW] != L_STANDALONE) {
-		retcode = ERR_CONNECTED;
-		goto out_dec;
+	for_each_peer_device(peer_device, device) {
+		if (args.clear_bm && should_skip_initial_sync(peer_device))
+			drbd_info(peer_device, "Preparing to skip initial sync\n");
+		else if (peer_device->repl_state[NOW] != L_STANDALONE) {
+			retcode = ERR_CONNECTED;
+			goto out_dec;
+		}
 	}
 
-	drbd_uuid_set(first_peer_device(device), UI_BITMAP, 0); /* Rotate UI_BITMAP to History 1, etc... */
+	for_each_peer_device(peer_device, device)
+		drbd_uuid_set(peer_device, UI_BITMAP, 0); /* Rotate UI_BITMAP to History 1, etc... */
 	drbd_uuid_new_current(device); /* New current, previous to UI_BITMAP */
 
 	if (args.clear_bm) {
+		unsigned long irq_flags;
+
 		err = drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
 			"clear_n_write from new_c_uuid", BM_LOCK_ALL, NULL);
 		if (err) {
 			drbd_err(device, "Writing bitmap failed with %d\n",err);
 			retcode = ERR_IO_MD_DISK;
 		}
-		if (skip_initial_sync) {
-			unsigned long irq_flags;
-
-			drbd_send_uuids_skip_initial_sync(first_peer_device(device));
-			_drbd_uuid_set(first_peer_device(device), UI_BITMAP, 0);
-			drbd_print_uuids(first_peer_device(device), "cleared bitmap UUID");
-			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			__change_disk_state(device, D_UP_TO_DATE);
-			__change_peer_disk_state(first_peer_device(device), D_UP_TO_DATE);
-			end_state_change(device->resource, &irq_flags);
+		for_each_peer_device(peer_device, device) {
+			if (should_skip_initial_sync(peer_device)) {
+				drbd_send_uuids_skip_initial_sync(peer_device);
+				_drbd_uuid_set(peer_device, UI_BITMAP, 0);
+				drbd_print_uuids(peer_device, "cleared bitmap UUID");
+			}
 		}
+		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+		__change_disk_state(device, D_UP_TO_DATE);
+		for_each_peer_device(peer_device, device) {
+			if (should_skip_initial_sync(peer_device))
+				__change_peer_disk_state(peer_device, D_UP_TO_DATE);
+		}
+		end_state_change(device->resource, &irq_flags);
 	}
 
 	drbd_md_sync(device);
