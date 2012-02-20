@@ -3180,10 +3180,10 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 	struct timeout_parms tp;
 	int err;
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
-	peer_device = first_peer_device(adm_ctx.device);
+	peer_device = adm_ctx.peer_device;
 
 	tp.timeout_type =
 		peer_device->disk_state[NOW] == D_OUTDATED ? UT_PEER_OUTDATED :

@@ -1205,6 +1205,7 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
+	struct nlattr *nla;
 	int rr;
 
 	if (0 < ctx->wfc_timeout &&
@@ -1225,6 +1226,13 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 	dhdr = genlmsg_put(ctx->smsg, &drbd_genl_family, 0, DRBD_ADM_GET_TIMEOUT_TYPE);
 	dhdr->minor = ctx->minor;
 	dhdr->flags = 0;
+
+	assert((context & CTX_VOLUME) && (context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR));
+	nla = nla_nest_start(ctx->smsg, DRBD_NLA_CFG_CONTEXT);
+	nla_put_u32(ctx->smsg, T_ctx_volume, volume);
+	nla_put(ctx->smsg, T_ctx_my_addr, my_addr_len, &my_addr);
+	nla_put(ctx->smsg, T_ctx_peer_addr, peer_addr_len, &peer_addr);
+	nla_nest_end(ctx->smsg, nla);
 
 	if (genl_send(drbd_sock, ctx->smsg)) {
 		desc = "error sending config command";
