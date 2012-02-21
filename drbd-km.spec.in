@@ -10,7 +10,7 @@
 Name: @PACKAGE_TARNAME@-km
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 1@RPM_DIST_TAG@
+Release: 2@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -100,6 +100,9 @@ uname -r | grep BOOT ||
 
 
 %changelog
+* Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
+- Build fix for RHEL 6 and ubuntu lucid
+
 * Tue Dec 20 2011 Philipp Reisner <phil@linbit.com> - 8.4.1-1
 - New upstream release.
 

@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: @PACKAGE_VERSION@
-Release: 1%{?dist}
+Release: 2%{?dist}
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
@@ -97,6 +97,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
+- Build fix for RHEL 6 and ubuntu lucid
+
 * Tue Dec 20 2011 Philipp Reisner <phil@linbit.com> - 8.4.1-1
 - New upstream release.
 

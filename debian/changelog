@@ -1,3 +1,9 @@
+drbd8 (2:8.4.1-2) unstable; urgency=low
+
+  * Build fix for certain gcc + kernel combinations
+
+ -- Lars Ellenberg <lars@linbit.com>  Tue, 21 Feb 2012 11:45:08 +0100
+
 drbd8 (2:8.4.1-0) unstable; urgency=low
 
   * New upstream release.
