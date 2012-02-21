@@ -3219,7 +3219,10 @@ void drbd_md_sync(struct drbd_device *device)
 
 	memset(buffer, 0, 512);
 
-	buffer->la_size = cpu_to_be64(drbd_get_capacity(device->this_bdev));
+	/* FIXME: Only set the size when the local disk or a peer disk becomes D_UP_TO_DATE! */
+	device->ldev->md.la_size_sect = drbd_get_capacity(device->this_bdev);
+
+	buffer->la_size = cpu_to_be64(device->ldev->md.la_size_sect);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_09);
@@ -3249,10 +3252,6 @@ void drbd_md_sync(struct drbd_device *device)
 		drbd_err(device, "meta data update failed!\n");
 		drbd_chk_io_error(device, 1, true);
 	}
-
-	/* Update device->ldev->md.la_size_sect,
-	 * since we updated it on metadata. */
-	device->ldev->md.la_size_sect = drbd_get_capacity(device->this_bdev);
 
 	drbd_md_put_buffer(device);
 out:
