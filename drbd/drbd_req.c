@@ -1017,8 +1017,8 @@ allocate_barrier:
 	}
 
 	if (drbd_suspended(device)) {
-		/* If we got suspended, use the retry mechanism of
-		   generic_make_request() to restart processing of this
+		/* If we got suspended, use the retry mechanism in
+		   drbd_make_request() to restart processing of this
 		   bio. In the next call to drbd_make_request
 		   we sleep in inc_ap_bio() */
 		ret = 1;
@@ -1209,8 +1209,11 @@ int drbd_make_request(struct request_queue *q, struct bio *bio)
 	D_ASSERT(device, bio->bi_size > 0);
 	D_ASSERT(device, IS_ALIGNED(bio->bi_size, 512));
 
-	inc_ap_bio(device);
-	return __drbd_make_request(device, bio, start_time);
+	do {
+		inc_ap_bio(device);
+	} while (__drbd_make_request(device, bio, start_time));
+
+	return 0;
 }
 
 /* This is called by bio_add_page().
