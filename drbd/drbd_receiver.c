@@ -5467,8 +5467,8 @@ STATIC int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
-	drbd_err(device, "Got NegDReply; Sector %llus, len %u; Fail original request.\n",
-	    (unsigned long long)sector, be32_to_cpu(p->blksize));
+	drbd_err(device, "Got NegDReply; Sector %llus, len %u.\n",
+		 (unsigned long long)sector, be32_to_cpu(p->blksize));
 
 	return validate_req_change_req_state(device, p->block_id, sector,
 					     &device->read_requests, __func__,

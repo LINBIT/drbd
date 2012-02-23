@@ -517,6 +517,7 @@ enum {
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
+	READ_BALANCE_RR,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock

@@ -559,6 +559,14 @@ const char *on_congestion_map[] = {
 	[OC_DISCONNECT] = "disconnect",
 };
 
+const char *read_balancing_map[] = {
+	[RB_PREFER_LOCAL] = "prefer-local",
+	[RB_PREFER_REMOTE] = "prefer-remote",
+	[RB_ROUND_ROBIN] = "round-robin",
+	[RB_LEAST_PENDING] = "least-pending",
+	[RB_CONGESTED_REMOTE] = "when-congested-remote",
+};
+
 #define CHANGEABLE_DISK_OPTIONS								\
 	{ "on-io-error", ENUM(on_io_error, ON_IO_ERROR) },				\
 	/*{ "fencing", ENUM(fencing_policy, FENCING) },*/				\
@@ -581,7 +589,8 @@ const char *on_congestion_map[] = {
 	{ "c-min-rate", NUMERIC(c_min_rate, C_MIN_RATE),				\
 	  .unit = "bytes/second" },							\
 	{ "disk-timeout", NUMERIC(disk_timeout,	DISK_TIMEOUT),				\
-          .unit = "1/10 seconds" }
+	  .unit = "1/10 seconds" },							\
+	{ "read-balancing", ENUM(read_balancing, READ_BALANCING) }			\
 
 #define CHANGEABLE_NET_OPTIONS								\
 	{ "protocol", ENUM_NOCASE(wire_protocol, PROTOCOL) },				\
