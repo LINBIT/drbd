@@ -42,6 +42,8 @@
 #define _drbd_end_io_acct(...)   do {} while (0)
 #else
 
+STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
+
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req, struct bio *bio)
 {
@@ -598,20 +600,21 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* assert something? */
 		if (req->rq_state & RQ_NET_PENDING)
 			dec_ap_pending(first_peer_device(device));
+
+		p = !(req->rq_state & RQ_WRITE) && req->rq_state & RQ_NET_PENDING;
+
 		req->rq_state &= ~(RQ_NET_OK|RQ_NET_PENDING);
 		req->rq_state |= RQ_NET_DONE;
 		if (req->rq_state & RQ_NET_SENT && req->rq_state & RQ_WRITE)
 			atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 
-		if (!(req->rq_state & RQ_WRITE) &&
-		    device->disk_state[NOW] == D_UP_TO_DATE &&
-		    !IS_ERR_OR_NULL(req->private_bio))
-			goto goto_read_retry_local;
-
 		/* if it is still queued, we may not complete it here.
 		 * it will be canceled soon. */
-		if (!(req->rq_state & RQ_NET_QUEUED))
+		if (!(req->rq_state & RQ_NET_QUEUED)) {
+			if (p)
+				goto goto_read_retry_local;
 			_req_may_be_done(req, m); /* Allowed while state.susp */
+		}
 		break;
 
 	case WRITE_ACKED_BY_PEER_AND_SIS:
@@ -671,9 +674,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		req->rq_state |= RQ_NET_DONE;
 
-		if (!(req->rq_state & RQ_WRITE) &&
-		    device->disk_state[NOW] == D_UP_TO_DATE &&
-		    !IS_ERR_OR_NULL(req->private_bio))
+		if (!(req->rq_state & RQ_WRITE))
 			goto goto_read_retry_local;
 
 		_req_may_be_done_not_susp(req, m);
@@ -681,9 +682,16 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	goto_read_retry_local:
+		if (!drbd_may_do_local_read(device, req->i.sector, req->i.size)) {
+			_req_may_be_done_not_susp(req, m);
+			break;
+		}
+		D_ASSERT(device, !(req->rq_state & RQ_LOCAL_PENDING));
 		req->rq_state |= RQ_LOCAL_PENDING;
-		req->private_bio->bi_bdev = device->ldev->backing_bdev;
-		generic_make_request(req->private_bio);
+
+		get_ldev(device);
+		req->w.cb = w_restart_disk_io;
+		drbd_queue_work(&first_peer_device(device)->connection->data.work, &req->w);
 		break;
 
 	case FAIL_FROZEN_DISK_IO:
@@ -747,11 +755,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		dec_ap_pending(first_peer_device(device));
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
-		if (!IS_ERR_OR_NULL(req->private_bio)) {
-			bio_put(req->private_bio);
-			req->private_bio = NULL;
-			put_ldev(device);
-		}
 		_req_may_be_done_not_susp(req, m);
 		break;
 	};
@@ -915,7 +918,8 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	} else {
 		/* READ || READA */
 		if (local) {
-			if (!drbd_may_do_local_read(device, sector, size)) {
+			if (!drbd_may_do_local_read(device, sector, size) ||
+			    remote_due_to_read_balancing(device, sector)) {
 				/* we could kick the syncer to
 				 * sync this extent asap, wait for
 				 * it, then continue locally.
@@ -925,10 +929,6 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
 				put_ldev(device);
-			} else if (remote_due_to_read_balancing(device, sector)) {
-				/* Keep the private bio in case we need it
-				   for a local retry */
-				local = 0;
 			}
 		}
 		if (!local) {
@@ -1171,7 +1171,7 @@ fail_free_complete:
 	if (req->rq_state & RQ_IN_ACT_LOG)
 		drbd_al_complete_io(device, &req->i);
 fail_and_free_req:
-	if (!IS_ERR_OR_NULL(req->private_bio)) {
+	if (local) {
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
 		put_ldev(device);
