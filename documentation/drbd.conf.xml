@@ -426,7 +426,7 @@
                 <primary>drbd.conf</primary>
 
                 <secondary>minor-count</secondary>
-              </indexterm><replaceable>count</replaceable> may be a number from 1 to FIXME.</para>
+              </indexterm><replaceable>count</replaceable> may be a number from 1 to 1048575.</para>
 
             <para><replaceable>Minor-count</replaceable> is a sizing hint for DRBD. It helps to
             right-size various memory pools. It should be set in the in the same order of
