@@ -4937,6 +4937,11 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 
 	drbd_finish_peer_reqs(device);
 
+	/* This second workqueue flush is necessary, since drbd_finish_peer_reqs()
+	   might have issued a work again. The one before drbd_finish_peer_reqs() is
+	   necessary to reclain net_ee in drbd_finish_peer_reqs(). */
+	drbd_flush_workqueue(&peer_device->connection->data.work);
+
 	kfree(peer_device->p_uuid);
 	peer_device->p_uuid = NULL;
 
