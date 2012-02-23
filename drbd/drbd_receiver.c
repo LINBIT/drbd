@@ -4260,6 +4260,12 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
  retry:
 	new_repl_state = max_t(enum drbd_repl_state, os.conn, L_STANDALONE);
 
+	/* If some other part of the code (asender thread, timeout)
+	 * already decided to close the connection again,
+	 * we must not "re-establish" it here. */
+	if (os.conn <= C_TEAR_DOWN)
+		return false;
+
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * transitions from D_INCONSISTENT to D_UP_TO_DATE. For empty (0 bits
 	 * set) resync started in PausedSyncT, or if the timing of pause-/
@@ -4863,6 +4869,13 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;
+
+	/* We are about to start the cleanup after connection loss.
+	 * Make sure drbd_make_request knows about that.
+	 * Usually we should be in some network failure state already,
+	 * but just in case we are not, we fix it up here.
+	 */
+	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&connection->asender);
