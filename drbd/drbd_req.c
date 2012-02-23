@@ -797,11 +797,12 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	return true;
 }
 
-static bool remote_due_to_read_balancing(struct drbd_device *device)
+static bool remote_due_to_read_balancing(struct drbd_device *device, sector_t sector)
 {
 	enum drbd_read_balancing rbm;
 	struct backing_dev_info *bdi;
 	struct drbd_peer_device *peer_device = first_peer_device(device);
+	int stripe_shift;
 
 	if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 		return false;
@@ -817,6 +818,14 @@ static bool remote_due_to_read_balancing(struct drbd_device *device)
 	case RB_LEAST_PENDING:
 		return atomic_read(&device->local_cnt) >
 			atomic_read(&peer_device->ap_pending_cnt) + atomic_read(&peer_device->rs_pending_cnt);
+	case RB_32K_STRIPING:  /* stripe_shift = 15 */
+	case RB_64K_STRIPING:
+	case RB_128K_STRIPING:
+	case RB_256K_STRIPING:
+	case RB_512K_STRIPING:
+	case RB_1M_STRIPING:   /* stripe_shift = 20 */
+		stripe_shift = (rbm - RB_32K_STRIPING + 15);
+		return (sector >> (stripe_shift - 9)) & 1;
 	case RB_ROUND_ROBIN:
 		return test_and_change_bit(READ_BALANCE_RR, &device->flags);
 	case RB_PREFER_REMOTE:
@@ -916,7 +925,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 				bio_put(req->private_bio);
 				req->private_bio = NULL;
 				put_ldev(device);
-			} else if (remote_due_to_read_balancing(device)) {
+			} else if (remote_due_to_read_balancing(device, sector)) {
 				/* Keep the private bio in case we need it
 				   for a local retry */
 				local = 0;
