@@ -227,6 +227,7 @@ in the Cluster distribution.
 %files rgmanager
 %defattr(755,root,root,-)
 %{_datadir}/cluster/drbd.sh
+%{_prefix}/lib/%{name}/rhcs_fence
 
 %defattr(-,root,root,-)
 %{_datadir}/cluster/drbd.metadata
