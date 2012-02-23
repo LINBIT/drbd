@@ -1104,4 +1104,11 @@ static inline void kref_sub(struct kref *kref, unsigned int count,
 
 #endif
 
+#ifndef COMPAT_HAVE_IS_ERR_OR_NULL
+static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
+{
+	return !ptr || IS_ERR_VALUE((unsigned long)ptr);
+}
+#endif
+
 #endif
