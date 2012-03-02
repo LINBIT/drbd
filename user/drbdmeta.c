@@ -1976,7 +1976,7 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	 * We can skip this, if it was clean anyways (err == 0),
 	 * or if we know that this is for 0.7.
 	 */
-	if (re_initialize_anyways || err > 0 && !is_v07(cfg))
+	if (re_initialize_anyways || (err > 0 && !is_v07(cfg)))
 		initialize_al(cfg);
 
 	if (is_v08(cfg) &&
