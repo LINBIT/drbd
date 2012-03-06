@@ -1220,7 +1220,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight))
-		wait_until_done_or_disk_failure(device, &ctx->done);
+		wait_until_done_or_disk_failure(device, device->ldev, &ctx->done);
 	else
 		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 
@@ -1370,7 +1370,7 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 		}
 
 		bm_page_io_async(ctx, page_nr, WRITE_SYNC);
-		wait_until_done_or_disk_failure(device, &ctx->done);
+		wait_until_done_or_disk_failure(device, device->ldev, &ctx->done);
 
 		if (ctx->error)
 			drbd_chk_io_error(device, 1, true);

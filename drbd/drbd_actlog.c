@@ -132,9 +132,21 @@ static bool md_io_allowed(struct drbd_device *device)
 	return ds >= D_NEGOTIATING || ds == D_ATTACHING;
 }
 
-void wait_until_done_or_disk_failure(struct drbd_device *device, unsigned int *done)
+void wait_until_done_or_disk_failure(struct drbd_device *device, struct drbd_backing_dev *bdev,
+				     unsigned int *done)
 {
-	wait_event(device->misc_wait, *done || !md_io_allowed(device));
+	long dt;
+
+	rcu_read_lock();
+	dt = rcu_dereference(bdev->disk_conf)->disk_timeout;
+	rcu_read_unlock();
+	dt = dt * HZ / 10;
+	if (dt == 0)
+		dt = MAX_SCHEDULE_TIMEOUT;
+
+	dt = wait_event_timeout(device->misc_wait, *done || !md_io_allowed(device), dt);
+	if (dt == 0)
+		drbd_err(device, "meta-data IO operation timed out\n");
 }
 
 STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
@@ -178,7 +190,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
 		bio_endio(bio, -EIO);
 	else
 		submit_bio(rw, bio);
-	wait_until_done_or_disk_failure(device, &device->md_io.done);
+	wait_until_done_or_disk_failure(device, bdev, &device->md_io.done);
 	if (bio_flagged(bio, BIO_UPTODATE))
 		err = device->md_io.error;
 

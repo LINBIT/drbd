@@ -1716,45 +1716,51 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		/* first half of local IO error, failure to attach,
 		 * or administrative detach */
 		if (disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) {
-			enum drbd_io_error_p eh;
-			int was_io_error;
+			enum drbd_io_error_p eh = EP_PASS_ON;
+			int was_io_error = 0;
 
 			/*
 			 * finish_state_change() has grabbed a reference on
 			 * ldev in this case.
-			 */
-			rcu_read_lock();
-			eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
-			rcu_read_unlock();
-			was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
+			 *
+			 * our cleanup here with the transition to D_DISKLESS.
+			 * But is is still not save to dreference ldev here, since
+			 * we might come from an failed Attach before ldev was set. */
+			if (device->ldev) {
+				rcu_read_lock();
+				eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
+				rcu_read_unlock();
 
-			/* Immediately allow completion of all application IO, that waits
-			   for completion from the local disk. */
-			tl_abort_disk_io(device);
+				was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
 
-			/* current state still has to be D_FAILED,
-			 * there is only one way out: to D_DISKLESS,
-			 * and that may only happen after our put_ldev below. */
-			if (device->disk_state[NOW] != D_FAILED)
-				drbd_err(device,
-					"ASSERT FAILED: disk is %s during detach\n",
-					drbd_disk_str(device->disk_state[NOW]));
+				/* Immediately allow completion of all application IO, that waits
+				   for completion from the local disk. */
+				tl_abort_disk_io(device);
 
-			send_new_state_to_all_peer_devices(state_change, n_device);
+				/* current state still has to be D_FAILED,
+				 * there is only one way out: to D_DISKLESS,
+				 * and that may only happen after our put_ldev below. */
+				if (device->disk_state[NOW] != D_FAILED)
+					drbd_err(device,
+						 "ASSERT FAILED: disk is %s during detach\n",
+						 drbd_disk_str(device->disk_state[NOW]));
 
-			for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
-				struct drbd_peer_device *peer_device;
+				send_new_state_to_all_peer_devices(state_change, n_device);
 
-				peer_device_state_change = &state_change->peer_devices[
-					n_device * state_change->n_connections + n_connection];
-				peer_device = peer_device_state_change->peer_device;
-				drbd_rs_cancel_all(peer_device);
+				for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+					struct drbd_peer_device *peer_device;
+
+					peer_device_state_change = &state_change->peer_devices[
+						n_device * state_change->n_connections + n_connection];
+					peer_device = peer_device_state_change->peer_device;
+					drbd_rs_cancel_all(peer_device);
+				}
+
+				/* In case we want to get something to stable storage still,
+				 * this may be the last chance.
+				 * Following put_ldev may transition to D_DISKLESS. */
+				drbd_md_sync(device);
 			}
-
-			/* In case we want to get something to stable storage still,
-			 * this may be the last chance.
-			 * Following put_ldev may transition to D_DISKLESS. */
-			drbd_md_sync(device);
 			put_ldev(device);
 
 			if (was_io_error && eh == EP_CALL_HELPER)
