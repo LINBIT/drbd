@@ -3848,16 +3848,10 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	}
 
 	ddsf = be16_to_cpu(p->dds_flags);
-	if (get_ldev(device)) {
-		dd = drbd_determine_dev_size(device, ddsf);
-		put_ldev(device);
-		if (dd == DEV_SIZE_ERROR)
-			return -EIO;
-		drbd_md_sync(device);
-	} else {
-		/* I am diskless, need to accept the peer's size. */
-		drbd_set_my_capacity(device, p_size);
-	}
+	dd = drbd_determine_dev_size(device, ddsf);
+	if (dd == DEV_SIZE_ERROR)
+		return -EIO;
+	drbd_md_sync(device);
 
 	/* The protocol version limits how big requests can be.  In addition,
 	 * peers before protocol version 94 cannot split large requests into

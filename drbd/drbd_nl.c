@@ -941,6 +941,12 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 	int md_moved, la_size_changed;
 	enum determine_dev_size rv = UNCHANGED;
 
+	if (!get_ldev_if_state(device, D_ATTACHING)) {
+		/* I am diskless, need to accept the peer's size. */
+		drbd_set_my_capacity(device, first_peer_device(device)->max_size);
+		return rv;
+	}
+
 	/* race:
 	 * application request passes inc_ap_bio,
 	 * but then cannot get an AL-reference.
@@ -1023,7 +1029,7 @@ out:
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
 	drbd_resume_io(device);
-
+	put_ldev(device);
 	return rv;
 }
 
