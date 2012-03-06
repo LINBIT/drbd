@@ -2418,8 +2418,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (device->ldev->known_size != drbd_get_capacity(device->ldev->backing_bdev))
-		device->ldev->known_size = drbd_get_capacity(device->ldev->backing_bdev);
+	device->ldev->known_size = drbd_get_capacity(device->ldev->backing_bdev);
 
 	if (new_disk_conf) {
 		mutex_lock(&device->resource->conf_update);
