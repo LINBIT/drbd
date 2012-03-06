@@ -1190,7 +1190,7 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 		if (drbd_tla_parse(nlh)
 		|| timeout_parms_from_attrs(&parms, &info)) {
 			desc = "reply did not validate - "
-				"do you need to upgrade your useland tools?";
+				"do you need to upgrade your userland tools?";
 			goto error;
 		}
 		rr = parms.timeout_type;
@@ -1473,7 +1473,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				 * should continuous_poll continue?
 				 */
 				desc = "reply did not validate - "
-					"do you need to upgrade your useland tools?";
+					"do you need to upgrade your userland tools?";
 				rv = OTHER_ERROR;
 				goto out2;
 			}
