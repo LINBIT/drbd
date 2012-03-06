@@ -928,7 +928,6 @@ void drbd_resume_io(struct drbd_device *device)
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.
  *
- * Returns 0 on success, negative return values indicate errors.
  * You should call drbd_md_sync() after calling this function.
  */
 enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags) __must_hold(local)
