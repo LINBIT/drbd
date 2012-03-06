@@ -2523,6 +2523,8 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 	}
 
 	for_each_resource(res, t, config) {
+		if (res->ignore)
+			continue;
 		if (strcmp(name, res->name) == 0)
 			break;
 	}
@@ -3260,13 +3262,15 @@ void validate_resource(struct d_resource *res)
 	 * see commit 89cd0585 */
 	opt = res->disk_options;
 	while ((opt = find_opt(opt, "resync-after"))) {
+		struct d_resource *rs_after_res = res_by_name(opt->value);
 		next = opt->next;
-		if (res_by_name(opt->value) == NULL) {
+		if (rs_after_res == NULL || rs_after_res->ignore) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
-				"'resync-after' option is not known.\n",
+				"'resync-after' option is not known%s.\n",
 				res->config_file, res->start_line, res->name,
-				opt->value);
+				opt->value,
+				rs_after_res ? " on this host" : "");
 			/* Non-fatal if run from some script.
 			 * When deleting resources, it is an easily made
 			 * oversight to leave references to the deleted
@@ -4087,7 +4091,7 @@ int main(int argc, char **argv)
 					ctx_by_minor(&ctx, resource_names[i]);
 				if (!ctx.res) {
 					fprintf(stderr,
-						"'%s' not defined in your config.\n",
+						"'%s' not defined in your config (for this host).\n",
 						resource_names[i]);
 					exit(E_usage);
 				}
