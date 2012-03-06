@@ -922,26 +922,35 @@ is_valid_conn_transition(enum drbd_conn_state oc, enum drbd_conn_state nc)
  */
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 {
-	enum drbd_state_rv rv = SS_SUCCESS;
+	enum drbd_state_rv rv;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	for_each_connection(connection, resource) {
 		rv = is_valid_conn_transition(connection->cstate[OLD], connection->cstate[NEW]);
 		if (rv != SS_SUCCESS)
-			break;
+			return rv;
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		for_each_peer_device(peer_device, device) {
+			/* When establishing a connection we need to go through C_CONNECTED!
+			   Necessary to do the right thing upon invalidate-remote on a disconnected
+			   resource */
+			if (connection->cstate[OLD] < C_CONNECTED &&
+			    peer_device->repl_state[NEW] >= L_CONNECTED)
+				return SS_NEED_CONNECTION;
+		}
+
 		/* we cannot fail (again) if we already detached */
 		if (device->disk_state[NEW] == D_FAILED && device->disk_state[OLD] == D_DISKLESS) {
-			rv = SS_IS_DISKLESS;
-			break;
+			return SS_IS_DISKLESS;
 		}
 	}
 
-	return rv;
+	return SS_SUCCESS;
 }
 
 static void sanitize_state(struct drbd_resource *resource)

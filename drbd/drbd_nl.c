@@ -2464,18 +2464,46 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static int drbd_bmio_set_susp_al(struct drbd_device *device,
+				 struct drbd_peer_device *peer_device)
+{
+	int rv;
+
+	rv = drbd_bmio_set_n_write(device, peer_device);
+	drbd_suspend_al(device);
+	return rv;
+}
+
 int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_peer_device *peer_device;
-	enum drbd_ret_code retcode;
+	struct drbd_resource *resource;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 	peer_device = first_peer_device(adm_ctx.device);
+	resource = adm_ctx.device->resource;
 
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
-			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+					   CS_WAIT_COMPLETE | CS_SERIALIZE);
+	if (retcode < SS_SUCCESS) {
+		if (retcode == SS_NEED_CONNECTION && resource->role[NOW] == R_PRIMARY) {
+			/* The peer will get a resync upon connect anyways.
+			 * Just make that into a full resync. */
+			retcode = change_peer_disk_state(peer_device, D_INCONSISTENT,
+							 CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+			if (retcode >= SS_SUCCESS) {
+				if (drbd_bitmap_io(adm_ctx.device, &drbd_bmio_set_susp_al,
+						   "set_n_write from invalidate_peer",
+						   BM_LOCK_CLEAR, peer_device))
+					retcode = ERR_IO_MD_DISK;
+			}
+		} else
+			retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
+							   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+	}
 
 	drbd_adm_finish(info, retcode);
 	return 0;
