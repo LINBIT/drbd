@@ -3776,7 +3776,6 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	struct drbd_device *device;
 	struct p_sizes *p = pi->data;
 	enum determine_dev_size dd = UNCHANGED;
-	sector_t p_size, p_usize, my_usize;
 	int ldsc = 0; /* local disk size changed */
 	enum dds_flags ddsf;
 	unsigned int protocol_max_bio_size;
@@ -3786,20 +3785,19 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		return config_unknown_volume(connection, pi);
 	device = peer_device->device;
 
-	p_size = be64_to_cpu(p->d_size);
-	p_usize = be64_to_cpu(p->u_size);
-
 	/* just store the peer's disk size for now.
 	 * we still need to figure out whether we accept that. */
-	peer_device->max_size = p_size;
+	peer_device->max_size = be64_to_cpu(p->d_size);
 
 	if (get_ldev(device)) {
+		sector_t p_usize = be64_to_cpu(p->u_size), my_usize;
+
 		rcu_read_lock();
 		my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
 
 		warn_if_differ_considerably(device, "lower level device sizes",
-			   p_size, drbd_get_max_capacity(device->ldev));
+			   peer_device->max_size, drbd_get_max_capacity(device->ldev));
 		warn_if_differ_considerably(device, "user requested size",
 					    p_usize, my_usize);
 
@@ -3821,7 +3819,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 
 		if (my_usize != p_usize) {
-			struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
+			struct disk_conf *old_disk_conf, *new_disk_conf;
 
 			new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 			if (!new_disk_conf) {
