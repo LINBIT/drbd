@@ -970,7 +970,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
-	size = drbd_new_dev_size(device, device->ldev, u_size, flags & DDSF_FORCED);
+	size = drbd_new_dev_size(device, u_size, flags & DDSF_FORCED);
 
 	if (drbd_get_capacity(device->this_bdev) != size ||
 	    drbd_bm_capacity(device) != size) {
@@ -1033,15 +1033,14 @@ out:
 }
 
 sector_t
-drbd_new_dev_size(struct drbd_device *device, struct drbd_backing_dev *bdev,
-		  sector_t u_size, int assume_peer_has_space)
+drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_has_space)
 {
 	sector_t p_size = first_peer_device(device)->max_size;
-	sector_t la_size = bdev->md.effective_size; /* last agreed size */
+	sector_t la_size = device->ldev->md.effective_size; /* last agreed size */
 	sector_t m_size; /* my size */
 	sector_t size = 0;
 
-	m_size = drbd_get_max_capacity(bdev);
+	m_size = drbd_get_max_capacity(device->ldev);
 
 	if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED && assume_peer_has_space) {
 		drbd_warn(device, "Resize while not connected was forced by the user!\n");
@@ -1608,7 +1607,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT) &&
-	    drbd_new_dev_size(device, device->ldev, device->ldev->disk_conf->disk_size, 0) <
+	    drbd_new_dev_size(device, device->ldev->disk_conf->disk_size, 0) <
 	    device->ldev->md.effective_size) {
 		drbd_warn(device, "refusing to truncate a consistent device\n");
 		retcode = ERR_DISK_TOO_SMALL;

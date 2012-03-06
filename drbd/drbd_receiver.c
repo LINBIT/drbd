@@ -3808,7 +3808,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 		/* Never shrink a device with usable data during connect.
 		   But allow online shrinking if we are connected. */
-		if (drbd_new_dev_size(device, device->ldev, p_usize, 0) <
+		if (drbd_new_dev_size(device, p_usize, 0) <
 		    drbd_get_capacity(device->this_bdev) &&
 		    device->disk_state[NOW] >= D_OUTDATED &&
 		    peer_device->repl_state[NOW] < L_CONNECTED) {
