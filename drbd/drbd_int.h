@@ -597,7 +597,7 @@ struct drbd_md_peer {
 struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
-	u64 la_size_sect;	/* last agreed size, unit sectors */
+	u64 effective_size;	/* last agreed size (sectors) */
 	u64 current_uuid;
 	u64 device_uuid;
 	u32 flags;

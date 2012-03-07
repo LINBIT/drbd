@@ -957,7 +957,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 
 	prev_first_sect = drbd_md_first_sector(device->ldev);
 	prev_size = device->ldev->md.md_size_sect;
-	la_size = device->ldev->md.la_size_sect;
+	la_size = device->ldev->md.effective_size;
 
 	/* TODO: should only be some assert here, not (re)init... */
 	drbd_md_set_sector_offsets(device, device->ldev);
@@ -986,14 +986,14 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 		}
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
-		device->ldev->md.la_size_sect = size;
+		device->ldev->md.effective_size = size;
 		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size>>1),
 		     (unsigned long long)size>>1);
 	}
 	if (rv == DEV_SIZE_ERROR)
 		goto out;
 
-	la_size_changed = (la_size != device->ldev->md.la_size_sect);
+	la_size_changed = (la_size != device->ldev->md.effective_size);
 
 	md_moved = prev_first_sect != drbd_md_first_sector(device->ldev)
 		|| prev_size	   != device->ldev->md.md_size_sect;
@@ -1032,7 +1032,7 @@ drbd_new_dev_size(struct drbd_device *device, struct drbd_backing_dev *bdev,
 		  sector_t u_size, int assume_peer_has_space)
 {
 	sector_t p_size = first_peer_device(device)->disk_size;
-	sector_t la_size = bdev->md.la_size_sect; /* last agreed size. */
+	sector_t la_size = bdev->md.effective_size; /* last agreed size */
 	sector_t m_size; /* my size */
 	sector_t size = 0;
 
@@ -1573,7 +1573,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Prevent shrinking of consistent devices ! */
 	if (drbd_md_test_flag(nbc, MDF_CONSISTENT) &&
-	    drbd_new_dev_size(device, nbc, nbc->disk_conf->disk_size, 0) < nbc->md.la_size_sect) {
+	    drbd_new_dev_size(device, nbc, nbc->disk_conf->disk_size, 0) < nbc->md.effective_size) {
 		drbd_warn(device, "refusing to truncate a consistent device\n");
 		retcode = ERR_DISK_TOO_SMALL;
 		goto force_diskless_dec;

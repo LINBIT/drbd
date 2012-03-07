@@ -4440,7 +4440,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	clear_bit(DISCARD_MY_DATA, &device->flags);
 
-	drbd_md_sync(device); /* update connected indicator, la_size, ... */
+	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
 	return 0;
 }

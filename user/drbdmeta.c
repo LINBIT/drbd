@@ -249,9 +249,9 @@ struct md_cpu {
 	uint32_t gc[GEN_CNT_SIZE];	/* generation counter */
 	uint32_t magic;
 	/* added in drbd 0.7;
-	 * 0.7 stores la_size on disk as kb, 0.8 in units of sectors.
+	 * 0.7 stores effevtive_size on disk as kb, 0.8 in units of sectors.
 	 * we use sectors in our general working structure here */
-	uint64_t la_sect;		/* last agreed size. */
+	uint64_t effective_size;	/* last agreed size */
 	uint32_t md_size_sect;
 	int32_t al_offset;		/* signed sector offset to this block */
 	uint32_t al_nr_extents;	/* important for restoring the AL */
@@ -395,7 +395,7 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	int i;
 
 	memset(cpu, 0, sizeof(*cpu));
-	cpu->la_sect = be64_to_cpu(disk->la_kb.be) << 1;
+	cpu->effective_size = be64_to_cpu(disk->la_kb.be) << 1;
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		cpu->gc[i] = be32_to_cpu(disk->gc[i].be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
@@ -411,7 +411,7 @@ void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cp
 {
 	int i;
 
-	disk->la_kb.be = cpu_to_be64(cpu->la_sect >> 1);
+	disk->la_kb.be = cpu_to_be64(cpu->effective_size >> 1);
 	for (i = 0; i < GEN_CNT_SIZE; i++)
 		disk->gc[i].be = cpu_to_be32(cpu->gc[i]);
 	disk->magic.be = cpu_to_be32(cpu->magic);
@@ -483,7 +483,7 @@ int is_valid_md(enum md_format f,
 		break;
 	}
 
-	/* FIXME consistency check, la_size < ll_device_size,
+	/* FIXME consistency check, effevtive_size < ll_device_size,
 	 * no overlap with internal meta data,
 	 * no overlap of flexible meta data offsets/sizes
 	 * ...
@@ -538,7 +538,7 @@ int v07_al_disk_to_cpu(struct al_sector_cpu *al_cpu, struct al_sector_on_disk *a
  */
 
 struct __packed md_on_disk_08 {
-	be_u64 la_sect;		/* last agreed size. */
+	be_u64 effective_size;	/* last agreed size. */
 	be_u64 uuid[UI_SIZE];   // UUIDs.
 	be_u64 device_uuid;
 	be_u64 reserved_u64_1;
@@ -560,7 +560,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	int i;
 
 	memset(cpu, 0, sizeof(*cpu));
-	cpu->la_sect = be64_to_cpu(disk->la_sect.be);
+	cpu->effective_size = be64_to_cpu(disk->effective_size.be);
 	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ )
 		cpu->peers[0].uuid[i] = be64_to_cpu(disk->uuid[i].be);
 	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
@@ -578,7 +578,7 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 {
 	int i;
-	disk->la_sect.be = cpu_to_be64(cpu->la_sect);
+	disk->effective_size.be = cpu_to_be64(cpu->effective_size);
 	for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
 		disk->uuid[i].be = cpu_to_be64(cpu->peers[0].uuid[i]);
 	}
@@ -798,7 +798,7 @@ struct peer_dev_md_on_disk {
 } __packed;
 
 struct md_on_disk_09 {
-	be_u64 la_size;           /* last agreed size. */
+	be_u64 effective_size;    /* last agreed size */
 	be_u64 current_uuid;
 	be_u64 reserved_u64[4];   /* to have the magic at the same position as in v07, and v08 */
 	be_u64 device_uuid;
@@ -823,7 +823,7 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 	int p, i;
 
 	memset(cpu, 0, sizeof(*cpu));
-	cpu->la_sect = be64_to_cpu(disk->la_size.be);
+	cpu->effective_size = be64_to_cpu(disk->effective_size.be);
 	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
 	cpu->flags = be32_to_cpu(disk->flags.be);
 	cpu->magic = be32_to_cpu(disk->magic.be);
@@ -849,7 +849,7 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 	int p, i;
 
 	memset(disk, 0, sizeof(disk));
-	disk->la_size.be = cpu_to_be64(cpu->la_sect);
+	disk->effective_size.be = cpu_to_be64(cpu->effective_size);
 	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
 	disk->flags.be = cpu_to_be32(cpu->flags);
 	disk->magic.be = cpu_to_be32(cpu->magic);
@@ -2376,14 +2376,14 @@ int v07_style_md_open(struct format *cfg)
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
 
-	// For the case that someone modified la_sect by hand..
+	// For the case that someone modified effective_size by hand..
 	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
 	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
-	    (cfg->md.la_sect*512 > cfg->md_offset) ) {
+	    (cfg->md.effective_size*512 > cfg->md_offset) ) {
 		printf("la-size-sect was too big, fixed.\n");
-		cfg->md.la_sect = cfg->md_offset/512;
+		cfg->md.effective_size = cfg->md_offset/512;
 	}
-	words = bm_words(&cfg->md, cfg->md.la_sect);
+	words = bm_words(&cfg->md, cfg->md.effective_size);
 	cfg->bm_bytes = words * sizeof(long);
 
 	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
@@ -2460,7 +2460,7 @@ int v07_md_initialize(struct format *cfg, int do_disk_writes,
 {
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
-	cfg->md.la_sect = 0;
+	cfg->md.effective_size = 0;
 	cfg->md.gc[Flags] = 0;
 	cfg->md.gc[HumanCnt] = 1;	/* THINK 0? 1? */
 	cfg->md.gc[TimeoutCnt] = 1;
@@ -2607,7 +2607,7 @@ int v08_md_initialize(struct format *cfg, int do_disk_writes,
 
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
-	cfg->md.la_sect = 0;
+	cfg->md.effective_size = 0;
 	cfg->md.peers[0].uuid[UI_CURRENT] = UUID_JUST_CREATED;
 	cfg->md.peers[0].uuid[UI_BITMAP] = 0;
 	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
@@ -2672,7 +2672,7 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 
 	memset(&cfg->md, 0, sizeof(cfg->md));
 
-	cfg->md.la_sect = 0;
+	cfg->md.effective_size = 0;
 	cfg->md.bm_max_peers = max_peers;
 	cfg->md.flags = 0;
 	cfg->md.magic = DRBD_MD_MAGIC_09;
@@ -2719,10 +2719,10 @@ int meta_show_gi(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	cfg->ops->show_gi(&cfg->md);
 
-	if (cfg->md.la_sect) {
+	if (cfg->md.effective_size) {
 		printf("last agreed size: %s (%llu sectors)\n",
-		       ppsize(ppb, cfg->md.la_sect >> 1),
-		       (unsigned long long)cfg->md.la_sect);
+		       ppsize(ppb, cfg->md.effective_size >> 1),
+		       (unsigned long long)cfg->md.effective_size);
 		printf("last agreed max bio size: %u Byte\n",
 			       cfg->md.la_peer_max_bio_size);
 #if 0
@@ -2873,7 +2873,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 		cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 		cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
-		cfg->bm_bytes = sizeof(long) * bm_words(&cfg->md, cfg->md.la_sect);
+		cfg->bm_bytes = sizeof(long) * bm_words(&cfg->md, cfg->md.effective_size);
 	}
 	printf("# md_offset %llu\n", (long long unsigned)cfg->md_offset);
 	printf("# al_offset %llu\n", (long long unsigned)cfg->al_offset);
@@ -2910,7 +2910,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 	if (format_version(cfg) >= DRBD_V07) {
 		printf("# al-extents %u;\n", cfg->md.al_nr_extents);
-		printf("la-size-sect "U64";\n", cfg->md.la_sect);
+		printf("la-size-sect "U64";\n", cfg->md.effective_size);
 		if (format_version(cfg) >= DRBD_V08) {
 			printf("bm-byte-per-bit "U32";\n",
 			       cfg->md.bm_bytes_per_bit);
@@ -3276,7 +3276,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		}
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
-	cfg->md.la_sect = yylval.u64;
+	cfg->md.effective_size = yylval.u64;
 	if (format_version(cfg) >= DRBD_V08) {
 		EXP(TK_BM_BYTE_PER_BIT); EXP(TK_NUM); EXP(';');
 		cfg->md.bm_bytes_per_bit = yylval.u64;

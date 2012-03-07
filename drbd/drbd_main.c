@@ -3174,7 +3174,7 @@ struct peer_dev_md_on_disk {
 } __packed;
 
 struct meta_data_on_disk {
-	u64 la_size;           /* last agreed size. */
+	u64 effective_size;    /* last agreed size (sectors) */
 	u64 current_uuid;
 	u64 reserved_u64[4];   /* to have the magic at the same position as in v07, and v08 */
 	u64 device_uuid;
@@ -3220,9 +3220,9 @@ void drbd_md_sync(struct drbd_device *device)
 	memset(buffer, 0, 512);
 
 	/* FIXME: Only set the size when the local disk or a peer disk becomes D_UP_TO_DATE! */
-	device->ldev->md.la_size_sect = drbd_get_capacity(device->this_bdev);
+	device->ldev->md.effective_size = drbd_get_capacity(device->this_bdev);
 
-	buffer->la_size = cpu_to_be64(device->ldev->md.la_size_sect);
+	buffer->effective_size = cpu_to_be64(device->ldev->md.effective_size);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_09);
@@ -3345,7 +3345,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		goto err;
 	}
 
-	bdev->md.la_size_sect = be64_to_cpu(buffer->la_size);
+	bdev->md.effective_size = be64_to_cpu(buffer->effective_size);
 	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
