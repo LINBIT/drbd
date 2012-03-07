@@ -3791,7 +3791,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	/* just store the peer's disk size for now.
 	 * we still need to figure out whether we accept that. */
-	peer_device->disk_size = p_size;
+	peer_device->max_size = p_size;
 
 	if (get_ldev(device)) {
 		rcu_read_lock();

@@ -2126,7 +2126,7 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 		D_ASSERT(device, list_empty(&connection->sender_work.q));
 
 		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
-		peer_device->disk_size = 0;
+		peer_device->max_size = 0;
 		peer_device->rs_start = 0;
 		peer_device->rs_total = 0;
 		peer_device->rs_failed = 0;
