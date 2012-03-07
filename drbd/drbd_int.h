@@ -1354,7 +1354,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_delete_device(struct drbd_device *mdev);
 
-extern struct drbd_resource *drbd_create_resource(const char *name);
+extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_free_resource(struct drbd_resource *resource);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);

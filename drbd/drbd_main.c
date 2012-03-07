@@ -2676,7 +2676,8 @@ fail:
 
 }
 
-struct drbd_resource *drbd_create_resource(const char *name)
+struct drbd_resource *drbd_create_resource(const char *name,
+					   struct res_opts *res_opts)
 {
 	struct drbd_resource *resource;
 
@@ -2694,6 +2695,8 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	INIT_LIST_HEAD(&resource->transfer_log);
 	mutex_init(&resource->state_mutex);
 	resource->role[NOW] = R_SECONDARY;
+	if (set_resource_options(resource, res_opts))
+		goto fail_free_name;
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
@@ -2727,13 +2730,13 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (drbd_alloc_socket(&connection->meta))
 		goto fail;
 
-	resource = drbd_create_resource(name);
+	resource = drbd_create_resource(name, res_opts);
 	if (!resource)
 		goto fail;
 
 	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
 	if (!connection->current_epoch)
-		goto fail;
+		goto fail_resource;
 
 	INIT_LIST_HEAD(&connection->current_epoch->list);
 	connection->epochs = 1;
@@ -2768,9 +2771,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	kref_get(&resource->kref);
 	connection->resource = resource;
 	list_add_tail_rcu(&connection->connections, &resource->connections);
-
-	if (set_resource_options(resource, res_opts))
-		goto fail_resource;
 
 	return connection;
 
