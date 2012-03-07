@@ -196,7 +196,7 @@ int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
  * DOC: The transfer log
  *
  * The transfer log is a single linked list of &struct drbd_tl_epoch objects.
- * first_peer_device(device)->connection->newest_tle points to the head, first_peer_device(device)->connection->oldest_tle points to the tail
+ * connection->newest_tle points to the head, connection->oldest_tle points to the tail
  * of the list. There is always at least one &struct drbd_tl_epoch object.
  *
  * Each &struct drbd_tl_epoch has a circular double linked list of requests
