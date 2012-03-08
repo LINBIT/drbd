@@ -414,7 +414,7 @@ static void probe_drbd_bio(struct drbd_conf *mdev, const char *pfx, struct bio *
 	if (trace_level >= TRACE_LVL_METRICS &&
 	    ((biorw == WRITE) ^ complete)) {
 		printk(KERN_DEBUG "  ind     page   offset   length\n");
-		__bio_for_each_segment(bvec, bio, segno, 0) {
+		bio_for_each_segment(bvec, bio, segno) {
 			printk(KERN_DEBUG "  [%d] %p %8.8x %8.8x\n", segno,
 			       bvec->bv_page, bvec->bv_offset, bvec->bv_len);
 
