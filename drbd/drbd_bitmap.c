@@ -1053,8 +1053,8 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned lazy_writeout_upper_id
 
 	if (!get_ldev_if_state(mdev, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
 		dev_err(DEV, "ASSERT FAILED: get_ldev_if_state() == 1 in bm_rw()\n");
-		err = -ENODEV;
-		goto out;
+		kfree(ctx);
+		return -ENODEV;
 	}
 
 	if (!ctx->flags)
@@ -1128,7 +1128,6 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned lazy_writeout_upper_id
 	dev_info(DEV, "%s (%lu bits) marked out-of-sync by on disk bit-map.\n",
 	     ppsize(ppb, now << (BM_BLOCK_SHIFT-10)), now);
 
-out:
 	kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 	return err;
 }
@@ -1201,8 +1200,8 @@ int drbd_bm_write_page(struct drbd_conf *mdev, unsigned int idx) __must_hold(loc
 
 	if (!get_ldev_if_state(mdev, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
 		dev_err(DEV, "ASSERT FAILED: get_ldev_if_state() == 1 in drbd_bm_write_page()\n");
-		err = -ENODEV;
-		goto out;
+		kfree(ctx);
+		return -ENODEV;
 	}
 
 	bm_page_io_async(ctx, idx, WRITE_SYNC);
@@ -1215,7 +1214,6 @@ int drbd_bm_write_page(struct drbd_conf *mdev, unsigned int idx) __must_hold(loc
 
 	mdev->bm_writ_cnt++;
 	err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
- out:
 	kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 	return err;
 }
