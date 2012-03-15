@@ -1032,17 +1032,60 @@ out:
 	return rv;
 }
 
+/**
+ * all_known_peer_devices_connected()
+ *
+ * Check if all peer devices that have bitmap slots assigned in the metadata
+ * are connected.
+ */
+static bool all_known_peer_devices_connected(struct drbd_device *device)
+{
+	int bitmap_index, max_peers;
+	bool all_known;
+
+	if (!get_ldev_if_state(device, D_ATTACHING))
+		return true;
+
+	all_known = true;
+	max_peers = device->bitmap->bm_max_peers;
+	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
+		struct drbd_peer_device *peer_device;
+
+		if (!device->ldev->md.peers[bitmap_index].uuid[MD_UI(UI_BITMAP)])
+			continue;
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->bitmap_index == bitmap_index &&
+			    peer_device->repl_state[NOW] >= L_CONNECTED)
+				goto next_bitmap_index;
+		}
+		all_known = false;
+		break;
+
+	    next_bitmap_index:
+		/* nothing */ ;
+	}
+	put_ldev(device);
+	return all_known;
+}
+
 sector_t
 drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_has_space)
 {
-	sector_t p_size = first_peer_device(device)->max_size;
+	struct drbd_peer_device *peer_device;
+	sector_t p_size = 0;
 	sector_t la_size = device->ldev->md.effective_size; /* last agreed size */
 	sector_t m_size; /* my size */
 	sector_t size = 0;
 
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NOW] < L_CONNECTED)
+			continue;
+		p_size = min_not_zero(p_size, peer_device->max_size);
+	}
+
 	m_size = drbd_get_max_capacity(device->ldev);
 
-	if (first_peer_device(device)->repl_state[NOW] < L_CONNECTED && assume_peer_has_space) {
+	if (assume_peer_has_space && !all_known_peer_devices_connected(device)) {
 		drbd_warn(device, "Resize while not connected was forced by the user!\n");
 		p_size = m_size;
 	}
