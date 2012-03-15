@@ -970,8 +970,17 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 	enum determine_dev_size rv = UNCHANGED;
 
 	if (!get_ldev_if_state(device, D_ATTACHING)) {
-		/* I am diskless, need to accept the peer's size. */
-		drbd_set_my_capacity(device, first_peer_device(device)->max_size);
+		struct drbd_peer_device *peer_device;
+
+		/* I am diskless, need to accept the peer disk sizes. */
+		size = 0;
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->repl_state[NOW] < L_CONNECTED)
+				continue;
+			size = min_not_zero(size, peer_device->max_size);
+		}
+		if (size)
+			drbd_set_my_capacity(device, size);
 		return rv;
 	}
 
