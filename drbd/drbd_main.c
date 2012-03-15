@@ -3219,9 +3219,6 @@ void drbd_md_sync(struct drbd_device *device)
 
 	memset(buffer, 0, 512);
 
-	/* FIXME: Only set the size when the local disk or a peer disk becomes D_UP_TO_DATE! */
-	device->ldev->md.effective_size = drbd_get_capacity(device->this_bdev);
-
 	buffer->effective_size = cpu_to_be64(device->ldev->md.effective_size);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);

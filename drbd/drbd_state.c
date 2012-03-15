@@ -1587,6 +1587,10 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
 		struct drbd_device *device = device_state_change->device;
 		enum drbd_disk_state *disk_state = device_state_change->disk_state;
+		bool effective_disk_size_determined = false;
+
+		if (disk_state[NEW] == D_UP_TO_DATE)
+			effective_disk_size_determined = true;
 
 		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++, peer_device_state_change++) {
 			struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
@@ -1601,6 +1605,9 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_dependency = peer_device_state_change->resync_susp_dependency;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
+
+			if (peer_disk_state[NEW] == D_UP_TO_DATE)
+				effective_disk_size_determined = true;
 
 			if (repl_state[OLD] != L_CONNECTED && repl_state[NEW] == L_CONNECTED) {
 				clear_bit(CRASHED_PRIMARY, &device->flags);
@@ -1791,6 +1798,22 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				if (resync_susp_dependency[OLD] != resync_susp_dependency[NEW])
 					resume_next_sg(device);
 			}
+		}
+
+		/* Make sure the effective disk size is stored in the metadata
+		 * if a local disk is attached and either the local disk state
+		 * or a peer disk state is D_UP_TO_DATE.  */
+		if (effective_disk_size_determined && get_ldev(device)) {
+			sector_t size = drbd_get_capacity(device->this_bdev);
+			if (device->ldev->md.effective_size != size) {
+				char ppb[10];
+
+				drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
+				     (unsigned long long)size >> 1);
+				device->ldev->md.effective_size = size;
+				drbd_md_mark_dirty(device);
+			}
+			put_ldev(device);
 		}
 
 		/* first half of local IO error, failure to attach,
