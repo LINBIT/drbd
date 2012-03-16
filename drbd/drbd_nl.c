@@ -925,6 +925,35 @@ void drbd_resume_io(struct drbd_device *device)
 }
 
 /**
+ * effective_disk_size_determined()  -  is the effective disk size "fixed" already?
+ *
+ * When a device is configured in a cluster, the size of the replicated disk is
+ * determined by the minimum size of the disks on all nodes.  Additional nodes
+ * can be added, and this can still change the effective size of the replicated
+ * disk.
+ *
+ * When the disk on any node becomes D_UP_TO_DATE, the effective disk size
+ * becomes "fixed".  It is written to the metadata so that it will not be
+ * forgotten across node restarts.  Further nodes can only be added if their
+ * disks are big enough.
+ */
+static bool effective_disk_size_determined(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	if (device->ldev->md.effective_size != 0)
+		return true;
+	if (device->disk_state[NEW] == D_UP_TO_DATE)
+		return true;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
+			return true;
+	}
+	return false;
+}
+
+/**
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.
  *
@@ -991,9 +1020,11 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 		}
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
-		device->ldev->md.effective_size = size;
-		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size>>1),
-		     (unsigned long long)size>>1);
+		if (effective_disk_size_determined(device)) {
+			device->ldev->md.effective_size = size;
+			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
+			     (unsigned long long)size >> 1);
+		}
 	}
 	if (rv == DEV_SIZE_ERROR)
 		goto out;
