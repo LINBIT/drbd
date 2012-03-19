@@ -1343,7 +1343,7 @@ STATIC int drbd_nl_detach(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp,
 {
 	enum drbd_ret_code retcode;
 	int ret;
-	struct detach dt;
+	struct detach dt = {};
 
 	if (!detach_from_tags(mdev, nlp->tag_list, &dt)) {
 		reply->ret_code = ERR_MANDATORY_TAG;
