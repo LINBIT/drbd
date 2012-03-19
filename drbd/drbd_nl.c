@@ -1576,14 +1576,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
-	/* Prevent shrinking of consistent devices ! */
-	if (drbd_md_test_flag(nbc, MDF_CONSISTENT) &&
-	    drbd_new_dev_size(device, nbc, nbc->disk_conf->disk_size, 0) < nbc->md.effective_size) {
-		drbd_warn(device, "refusing to truncate a consistent device\n");
-		retcode = ERR_DISK_TOO_SMALL;
-		goto force_diskless_dec;
-	}
-
 	lock_all_resources();
 	retcode = drbd_resync_after_valid(device, new_disk_conf->resync_after);
 	if (retcode != NO_ERROR) {
@@ -1613,6 +1605,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_resync_after_changed(device);
 	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
 	unlock_all_resources();
+
+	/* Prevent shrinking of consistent devices ! */
+	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT) &&
+	    drbd_new_dev_size(device, device->ldev, device->ldev->disk_conf->disk_size, 0) <
+	    device->ldev->md.effective_size) {
+		drbd_warn(device, "refusing to truncate a consistent device\n");
+		retcode = ERR_DISK_TOO_SMALL;
+		goto force_diskless_dec;
+	}
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
 		set_bit(CRASHED_PRIMARY, &device->flags);
