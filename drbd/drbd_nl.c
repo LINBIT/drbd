@@ -1934,9 +1934,6 @@ static bool conn_ov_running(struct drbd_connection *connection)
 static enum drbd_ret_code
 _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_conf, struct net_conf *new_net_conf)
 {
-	struct drbd_peer_device *peer_device;
-	int i;
-
 	if (old_net_conf && connection->cstate[NOW] == C_CONNECTED && connection->agreed_pro_version < 100) {
 		if (new_net_conf->wire_protocol != old_net_conf->wire_protocol)
 			return ERR_NEED_APV_100;
@@ -1964,13 +1961,12 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 	    new_net_conf->fencing_policy == FP_STONITH)
 		return ERR_STONITH_AND_PROT_A;
 
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		if (peer_device->device->resource->role[NOW] == R_PRIMARY &&
-		    new_net_conf->discard_my_data)
-			return ERR_DISCARD;
-	}
+	if (connection->resource->role[NOW] == R_PRIMARY &&
+	    new_net_conf->discard_my_data)
+		return ERR_DISCARD;
 
-	if (new_net_conf->on_congestion != OC_BLOCK && new_net_conf->wire_protocol != DRBD_PROT_A)
+	if (new_net_conf->on_congestion != OC_BLOCK &&
+	    new_net_conf->wire_protocol != DRBD_PROT_A)
 		return ERR_CONG_NOT_PROTO_A;
 
 	return NO_ERROR;
@@ -1980,7 +1976,7 @@ static enum drbd_ret_code
 check_net_options(struct drbd_connection *connection, struct net_conf *new_net_conf)
 {
 	static enum drbd_ret_code rv;
-	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
 	int i;
 
 	rcu_read_lock();
@@ -1988,8 +1984,7 @@ check_net_options(struct drbd_connection *connection, struct net_conf *new_net_c
 	rcu_read_unlock();
 
 	/* connection->volumes protected by genl_lock() here */
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		struct drbd_device *device = peer_device->device;
+	idr_for_each_entry(&connection->resource->devices, device, i) {
 		if (!device->bitmap) {
 			device->bitmap = drbd_bm_alloc();
 			if (!device->bitmap)
