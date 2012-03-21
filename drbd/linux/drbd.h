@@ -356,6 +356,11 @@ enum drbd_uuid_index {
 
 #define MD_UI(i) ((i)-1)
 
+#define UUID_FLAG_DISCARD_MY_DATA 1
+#define UUID_FLAG_CRASHED_PRIMARY 2
+#define UUID_FLAG_INCONSISTENT 4
+#define UUID_FLAG_SKIP_INITIAL_SYNC 8
+
 enum drbd_timeout_flag {
 	UT_DEFAULT      = 0,
 	UT_DEGRADED     = 1,

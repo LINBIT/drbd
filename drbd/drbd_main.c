@@ -895,10 +895,13 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->uuid[UI_SIZE] = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
-	uuid_flags |= rcu_dereference(peer_device->connection->net_conf)->discard_my_data ? 1 : 0;
+	if (rcu_dereference(peer_device->connection->net_conf)->discard_my_data)
+		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
 	rcu_read_unlock();
-	uuid_flags |= test_bit(CRASHED_PRIMARY, &device->flags) ? 2 : 0;
-	uuid_flags |= device->disk_state_from_metadata == D_INCONSISTENT ? 4 : 0;
+	if (test_bit(CRASHED_PRIMARY, &device->flags))
+		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
+	if (device->disk_state_from_metadata == D_INCONSISTENT)
+		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
@@ -912,7 +915,7 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device)
 
 int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *peer_device)
 {
-	return _drbd_send_uuids(peer_device, 8);
+	return _drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC);
 }
 
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)

@@ -3039,7 +3039,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 		/* Common power [off|failure] */
 		rct = (test_bit(CRASHED_PRIMARY, &device->flags) ? 1 : 0) +
-			(peer_device->p_uuid[UI_FLAGS] & 2);
+			(peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_CRASHED_PRIMARY);
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
 		*rule_nr = 40;
@@ -3228,9 +3228,11 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	}
 
 	if (hg == -100) {
-		if (test_bit(DISCARD_MY_DATA, &device->flags) && !(peer_device->p_uuid[UI_FLAGS]&1))
+		if (test_bit(DISCARD_MY_DATA, &device->flags) &&
+		    !(peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_DISCARD_MY_DATA))
 			hg = -1;
-		if (!test_bit(DISCARD_MY_DATA, &device->flags) && (peer_device->p_uuid[UI_FLAGS]&1))
+		if (!test_bit(DISCARD_MY_DATA, &device->flags) &&
+		    (peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_DISCARD_MY_DATA))
 			hg = 1;
 
 		if (abs(hg) < 100)
@@ -3939,7 +3941,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			peer_device->repl_state[NOW] == L_CONNECTED &&
 			peer_device->connection->agreed_pro_version >= 90 &&
 			drbd_uuid(peer_device, UI_CURRENT) == UUID_JUST_CREATED &&
-			(p_uuid[UI_FLAGS] & 8);
+			(p_uuid[UI_FLAGS] & UUID_FLAG_SKIP_INITIAL_SYNC);
 		if (skip_initial_sync) {
 			unsigned long irq_flags;
 
@@ -4267,7 +4269,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
-		peer_disk_state = peer_device->p_uuid[UI_FLAGS] & 4 ? D_INCONSISTENT : D_CONSISTENT;
+		peer_disk_state = peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_INCONSISTENT ?
+			D_INCONSISTENT : D_CONSISTENT;
 		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
 
