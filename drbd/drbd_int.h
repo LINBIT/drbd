@@ -1349,8 +1349,9 @@ extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 extern struct mutex global_state_mutex;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
-enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
-				      struct device_conf *, struct drbd_device **);
+extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);
+extern enum drbd_ret_code drbd_create_device(struct drbd_resource *, unsigned int, int,
+					     struct device_conf *, struct drbd_device **);
 extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_put_device(struct drbd_device *);
@@ -1359,7 +1360,7 @@ extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts 
 extern void drbd_free_resource(struct drbd_resource *resource);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
-extern struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts);
+extern struct drbd_connection *drbd_create_connection(struct drbd_resource *);
 extern void drbd_destroy_connection(struct kref *kref);
 extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
 						 void *peer_addr, int peer_addr_len);

@@ -2718,9 +2718,8 @@ fail:
 }
 
 /* caller must be under genl_lock() */
-struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
+struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource;
 	struct drbd_connection *connection;
 
 	connection = kzalloc(sizeof(struct drbd_connection), GFP_KERNEL);
@@ -2732,13 +2731,9 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (drbd_alloc_socket(&connection->meta))
 		goto fail;
 
-	resource = drbd_create_resource(name, res_opts);
-	if (!resource)
-		goto fail;
-
 	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
 	if (!connection->current_epoch)
-		goto fail_resource;
+		goto fail;
 
 	INIT_LIST_HEAD(&connection->current_epoch->list);
 	connection->epochs = 1;
@@ -2776,8 +2771,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 
 	return connection;
 
-fail_resource:
-	drbd_free_resource(resource);
 fail:
 	kfree(connection->current_epoch);
 	drbd_free_socket(&connection->meta);
@@ -2806,7 +2799,7 @@ void drbd_destroy_connection(struct kref *kref)
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
-static struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct drbd_connection *connection)
+struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int got;

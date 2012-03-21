@@ -2190,6 +2190,11 @@ static void peer_device_to_info(struct peer_device_info *info,
 
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
+	unsigned int id = atomic_inc_return(&drbd_notify_id);
+	struct connection_info connection_info;
+	enum drbd_notification_type flags;
+	unsigned int peer_devices = 0;
+	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
 	struct crypto crypto = { };
@@ -2230,10 +2235,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	connection = first_connection(adm_ctx.resource);
-
-	if (connection->cstate[NOW] > C_STANDALONE) {
-		retcode = ERR_NET_CONFIGURED;
+	connection = drbd_create_connection(adm_ctx.resource);
+	if (!connection) {
+		retcode = ERR_NOMEM;
 		goto fail;
 	}
 
@@ -2241,7 +2245,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
 	if (!new_net_conf) {
 		retcode = ERR_NOMEM;
-		goto fail;
+		goto fail_free_connection;
 	}
 
 	set_net_conf_defaults(new_net_conf);
@@ -2250,25 +2254,31 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
-		goto fail;
+		goto fail_free_connection;
 	}
 
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
-		goto fail;
+		goto fail_free_connection;
 
 	retcode = alloc_crypto(&crypto, new_net_conf);
 	if (retcode != NO_ERROR)
-		goto fail;
+		goto fail_free_connection;
 
 	((char *)new_net_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
 	mutex_lock(&adm_ctx.resource->conf_update);
+	idr_for_each_entry(&adm_ctx.resource->devices, device, i) {
+		if (!create_peer_device(device, connection)) {
+			retcode = ERR_NOMEM;
+			goto unlock_fail_free_connection;
+		}
+		peer_devices++;
+	}
 	old_net_conf = connection->net_conf;
 	if (old_net_conf) {
 		retcode = ERR_NET_CONFIGURED;
-		mutex_unlock(&adm_ctx.resource->conf_update);
-		goto fail;
+		goto unlock_fail_free_connection;
 	}
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
@@ -2285,21 +2295,39 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
 	connection->alive = true;
 
+	connection_to_info(&connection_info, connection, NOW);
+	flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+	notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE | flags, id);
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		struct peer_device_info peer_device_info;
+
+		peer_device_to_info(&peer_device_info, peer_device, NOW);
+		flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags, id);
+	}
+
 	mutex_unlock(&adm_ctx.resource->conf_update);
 
-	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		drbd_attach_peer_device(peer_device);
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}
-	rcu_read_unlock();
 
 	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
 
 	drbd_thread_start(&connection->sender);
 	goto out;
 
+unlock_fail_free_connection:
+	mutex_unlock(&adm_ctx.resource->conf_update);
+fail_free_connection:
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		idr_remove(&connection->peer_devices, peer_device->device->vnr);
+		kref_put(&peer_device->device->kref, drbd_destroy_device);
+	}
+	list_del(&connection->connections);
+	kref_put(&connection->kref, drbd_destroy_connection);
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);
@@ -3415,7 +3443,7 @@ static void resource_to_info(struct resource_info *info,
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_connection *connection;
+	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 	struct res_opts res_opts;
 	int err;
@@ -3440,21 +3468,17 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	mutex_lock(&global_state_mutex);
-	connection = conn_create(adm_ctx.resource_name, &res_opts);
-	if (!connection)
+	resource = drbd_create_resource(adm_ctx.resource_name, &res_opts);
+	if (!resource)
 		retcode = ERR_NOMEM;
 	mutex_unlock(&global_state_mutex);
 
-	if (connection) {
-		struct drbd_resource *resource = connection->resource;
+	if (resource) {
 		struct resource_info resource_info;
-		struct connection_info connection_info;
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
 		resource_to_info(&resource_info, resource, NOW);
-		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE | NOTIFY_CONTINUED, id);
-		connection_to_info(&connection_info, connection, NOW);
-		notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE, id);
+		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE, id);
 	}
 
 out:
