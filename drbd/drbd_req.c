@@ -1259,7 +1259,6 @@ void request_timer_fn(unsigned long data)
 	struct drbd_device *device = (struct drbd_device *) data;
 	struct drbd_connection *connection = first_peer_device(device)->connection;
 	struct drbd_request *req; /* oldest request */
-	struct block_device *bdev;
 	struct list_head *le;
 	struct net_conf *nc;
 	unsigned long ent = 0, dt = 0, et, nt; /* effective timeout = ko_count * timeout */
@@ -1270,7 +1269,6 @@ void request_timer_fn(unsigned long data)
 
 	if (get_ldev(device)) {
 		dt = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
-		bdev = device->ldev->backing_bdev;
 		put_ldev(device);
 	}
 	rcu_read_unlock();
@@ -1299,7 +1297,7 @@ void request_timer_fn(unsigned long data)
 			end_state_change_locked(device->resource);
 		}
 	}
-	if (dt && req->rq_state & RQ_LOCAL_PENDING && req->private_bio->bi_bdev == bdev) {
+	if (dt && req->rq_state & RQ_LOCAL_PENDING && req->device == device) {
 		if (time_is_before_eq_jiffies(req->start_time + dt)) {
 			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
 			__drbd_chk_io_error(device, 1);
