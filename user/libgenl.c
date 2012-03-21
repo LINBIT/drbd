@@ -23,18 +23,28 @@ int genl_join_mc_group(struct genl_sock *s, const char *name) {
 	return -2;
 }
 
+#define DO_OR_LOG_AND_FAIL(x) \
+	do {							\
+		int err = x;					\
+		if (err) {					\
+			dbg(1, "%s failed: %d %s\n",		\
+				#x, err, strerror(errno));	\
+			goto fail;				\
+		}						\
+	} while(0)
+
 static struct genl_sock *genl_connect(__u32 nl_groups)
 {
 	struct genl_sock *s = calloc(1, sizeof(*s));
-	int err;
+	socklen_t sock_len;
 	int bsz = 2 << 10;
 
 	if (!s)
 		return NULL;
 
-	/* the netlink port id - use the process id, it is unique,
-	 * and "everyone else does it". */
-	s->s_local.nl_pid = getpid();
+	/* autobind; kernel is responsible to give us something unique
+	 * in bind() below. */
+	s->s_local.nl_pid = 0;
 	s->s_local.nl_family = AF_NETLINK;
 	/*
 	 * If we want to receive multicast traffic on this socket, kernels
@@ -50,12 +60,15 @@ static struct genl_sock *genl_connect(__u32 nl_groups)
 	if (s->s_fd == -1)
 		goto fail;
 
-	err = setsockopt(s->s_fd, SOL_SOCKET, SO_SNDBUF, &bsz, sizeof(bsz)) ||
-	      setsockopt(s->s_fd, SOL_SOCKET, SO_RCVBUF, &bsz, sizeof(bsz)) ||
-	      bind(s->s_fd, (struct sockaddr*) &s->s_local, sizeof(s->s_local));
+	sock_len = sizeof(s->s_local);
+	DO_OR_LOG_AND_FAIL(setsockopt(s->s_fd, SOL_SOCKET, SO_SNDBUF, &bsz, sizeof(bsz)));
+	DO_OR_LOG_AND_FAIL(setsockopt(s->s_fd, SOL_SOCKET, SO_RCVBUF, &bsz, sizeof(bsz)));
+	DO_OR_LOG_AND_FAIL(bind(s->s_fd, (struct sockaddr*) &s->s_local, sizeof(s->s_local)));
+	DO_OR_LOG_AND_FAIL(getsockname(s->s_fd, (struct sockaddr*) &s->s_local, &sock_len));
 
-	if (err)
-		goto fail;
+	dbg(3, "bound socket to nl_pid:%u, my pid:%u, len:%u, sizeof:%u\n",
+		s->s_local.nl_pid, getpid(),
+		(unsigned)sock_len, (unsigned)sizeof(s->s_local));
 
 	return s;
 
@@ -63,6 +76,7 @@ fail:
 	free(s);
 	return NULL;
 }
+#undef DO_OR_LOG_AND_FAIL
 
 static int do_send(int fd, const void *buf, int len)
 {
