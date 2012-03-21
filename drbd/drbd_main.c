@@ -216,13 +216,17 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	/* find latest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
-		const unsigned s = r->rq_state;
+		struct drbd_peer_device *peer_device;
+		int idx;
+		peer_device = conn_peer_device(connection, r->device->vnr);
+		idx = 1 + peer_device->bitmap_index;
+
 		if (!req) {
-			if (!(s & RQ_WRITE))
+			if (!(r->rq_state[0] & RQ_WRITE))
 				continue;
-			if (!(s & RQ_NET_MASK))
+			if (!(r->rq_state[idx] & RQ_NET_MASK))
 				continue;
-			if (s & RQ_NET_DONE)
+			if (r->rq_state[idx] & RQ_NET_DONE)
 				continue;
 			req = r;
 			expect_epoch = req->epoch;
@@ -230,7 +234,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		} else {
 			if (r->epoch != expect_epoch)
 				break;
-			if (!(s & RQ_WRITE))
+			if (!(r->rq_state[0] & RQ_WRITE))
 				continue;
 			/* if (s & RQ_DONE): not expected */
 			/* if (!(s & RQ_NET_MASK)): not expected */
@@ -328,7 +332,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 
 	spin_lock_irq(&connection->resource->req_lock);
 	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
-		if (!(req->rq_state & RQ_LOCAL_PENDING))
+		if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
 			continue;
 		if (req->device != device)
 			continue;
@@ -1811,6 +1815,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	unsigned int dp_flags = 0;
 	int dgs;
 	int err;
+	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 
 	sock = &peer_device->connection->data;
 	p = drbd_prepare_command(peer_device, sock);
@@ -1826,9 +1831,9 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 	if (peer_device->connection->agreed_pro_version >= 100) {
-		if (req->rq_state & RQ_EXP_RECEIVE_ACK)
+		if (s & RQ_EXP_RECEIVE_ACK)
 			dp_flags |= DP_SEND_RECEIVE_ACK;
-		if (req->rq_state & RQ_EXP_WRITE_ACK)
+		if (s & RQ_EXP_WRITE_ACK)
 			dp_flags |= DP_SEND_WRITE_ACK;
 	}
 	p->dp_flags = cpu_to_be32(dp_flags);
@@ -1847,7 +1852,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		if (!(req->rq_state & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || dgs)
+		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || dgs)
 			err = _drbd_send_bio(peer_device, req->master_bio);
 		else
 			err = _drbd_send_zc_bio(peer_device, req->master_bio);

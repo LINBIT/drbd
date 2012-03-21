@@ -1395,7 +1395,8 @@ int w_restart_disk_io(struct drbd_work *w, int cancel)
 	struct drbd_request *req = container_of(w, struct drbd_request, w);
 	struct drbd_device *device = req->device;
 
-	if (bio_data_dir(req->master_bio) == WRITE && req->rq_state & RQ_IN_ACT_LOG)
+	if (bio_data_dir(req->master_bio) == WRITE &&
+		req->rq_state[0] & RQ_IN_ACT_LOG)
 		drbd_al_begin_io(device, &req->i, false);
 
 	drbd_req_make_private_bio(req, req->master_bio);

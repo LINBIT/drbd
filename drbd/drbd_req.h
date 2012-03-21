@@ -242,6 +242,15 @@ enum drbd_req_state_bits {
 #define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
 #define RQ_EXP_BARR_ACK    (1UL << __RQ_EXP_BARR_ACK)
 
+/* these flags go into rq_state[0],
+ * orhter flags go into their respective rq_state[idx] */
+#define RQ_STATE_0_MASK	\
+	(RQ_LOCAL_MASK	|\
+	 RQ_WRITE	|\
+	 RQ_IN_ACT_LOG	|\
+	 RQ_POSTPONED	|\
+	 RQ_COMPLETION_SUSP)
+
 /* For waking up the frozen transfer log mod_req() has to return if the request
    should be counted in the epoch object*/
 #define MR_WRITE       1

@@ -395,9 +395,9 @@ struct drbd_request {
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
-	/* FIXME: needs to become an (optionally allocated) array soon,
-	 * maybe unsigned short? */
-	unsigned rq_state; /* see comments above _req_mod() */
+	/* rq_state[0] is for local disk,
+	 * rest is indexed by peer_device->bitmap_index + 1 */
+	unsigned rq_state[1 + MAX_PEERS];
 };
 
 struct drbd_epoch {
@@ -926,6 +926,17 @@ static inline struct drbd_peer_device *
 conn_peer_device(struct drbd_connection *connection, int volume_number)
 {
 	return idr_find(&connection->peer_devices, volume_number);
+}
+
+static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
+		struct drbd_peer_device *peer_device)
+{
+	int idx = peer_device->bitmap_index;
+	if (idx < 0 || idx >= MAX_PEERS) {
+		WARN(1, "bitmap_index: %d", idx);
+		return 0;
+	}
+	return req->rq_state[1 + idx];
 }
 
 #define for_each_resource(resource, _resources) \

@@ -1933,12 +1933,14 @@ static void restart_conflicting_writes(struct drbd_device *device,
 		if (!i->local)
 			continue;
 		req = container_of(i, struct drbd_request, i);
-		if (req->rq_state & RQ_LOCAL_PENDING ||
-		    !(req->rq_state & RQ_POSTPONED))
+		if ((req->rq_state[0] & RQ_LOCAL_PENDING) ||
+		   !(req->rq_state[0] & RQ_POSTPONED))
 			continue;
 		/* as it is RQ_POSTPONED, this will cause it to
 		 * be queued on the retry workqueue. */
-		__req_mod(req, DISCARD_WRITE, NULL, NULL);
+		/* FIXME: only a single connection?
+		 * iterate over all connections? */
+		__req_mod(req, DISCARD_WRITE, first_peer_device(req->device), NULL);
 	}
 }
 
@@ -2188,9 +2190,9 @@ static void fail_postponed_requests(struct drbd_device *device, sector_t sector,
 		if (!i->local)
 			continue;
 		req = container_of(i, struct drbd_request, i);
-		if (!(req->rq_state & RQ_POSTPONED))
+		if (!(req->rq_state[0] & RQ_POSTPONED))
 			continue;
-		req->rq_state &= ~RQ_POSTPONED;
+		req->rq_state[0] &= ~RQ_POSTPONED;
 		__req_mod(req, NEG_ACKED, peer_device, &m);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (m.bio)
@@ -2271,8 +2273,8 @@ static int handle_write_conflicts(struct drbd_device *device,
 					  (unsigned long long)i->sector, i->size,
 					  (unsigned long long)sector, size);
 
-			if (req->rq_state & RQ_LOCAL_PENDING ||
-			    !(req->rq_state & RQ_POSTPONED)) {
+			if (req->rq_state[0] & RQ_LOCAL_PENDING ||
+			    !(req->rq_state[0] & RQ_POSTPONED)) {
 				/*
 				 * Wait for the node with the discard flag to
 				 * decide if this request will be discarded or
