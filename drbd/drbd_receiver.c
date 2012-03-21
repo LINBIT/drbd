@@ -3075,7 +3075,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 			peer_device->p_uuid[UI_BITMAP] = peer_device->p_uuid[UI_HISTORY_START];
 			peer_device->p_uuid[UI_HISTORY_START] = peer_device->p_uuid[UI_HISTORY_START + 1];
 
-			drbd_info(device, "Did not got last syncUUID packet, corrected:\n");
+			drbd_info(device, "Did not get last syncUUID packet, corrected:\n");
 			drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
 
 			return -1;
