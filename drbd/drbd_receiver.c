@@ -813,6 +813,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 {
 	struct socket *s, *sock, *msock;
 	int try, h, ok;
+	enum drbd_state_rv rv;
 
 	D_ASSERT(!mdev->data.socket);
 
@@ -959,6 +960,7 @@ retry:
 
 	if (drbd_send_protocol(mdev) == -1)
 		return -1;
+	set_bit(STATE_SENT, &mdev->flags);
 	drbd_send_sync_param(mdev, &mdev->sync_conf);
 	drbd_send_sizes(mdev, 0, 0);
 	drbd_send_uuids(mdev);
@@ -966,8 +968,11 @@ retry:
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	clear_bit(RESIZE_PENDING, &mdev->flags);
 
-	if (drbd_request_state(mdev, NS(conn, C_WF_REPORT_PARAMS)) < SS_SUCCESS)
+	rv = _drbd_request_state(mdev, NS(conn, C_WF_REPORT_PARAMS), CS_VERBOSE);
+	if (rv < SS_SUCCESS) {
+		clear_bit(STATE_SENT, &mdev->flags);
 		return 0;
+	}
 
 	drbd_thread_start(&mdev->asender);
 	mod_timer(&mdev->request_timer, jiffies + HZ); /* just start it here. */
