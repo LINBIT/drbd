@@ -191,6 +191,7 @@ Pacemaker High Availability cluster manager.
 %defattr(755,root,root,-)
 %{_prefix}/lib/%{name}/crm-fence-peer.sh
 %{_prefix}/lib/%{name}/crm-unfence-peer.sh
+%{_prefix}/lib/%{name}/stonith_admin-fence-peer.sh
 %{_prefix}/lib/ocf/resource.d/linbit/drbd
 %endif # with pacemaker
 

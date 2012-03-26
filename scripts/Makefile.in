@@ -69,6 +69,7 @@ ifeq ($(WITH_UTILS),yes)
 	install -m 755 outdate-peer.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 snapshot-resync-target-lvm.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 notify.sh $(DESTDIR)$(LIBDIR)
+	install -m 755 stonith_admin-fence-peer.sh $(DESTDIR)$(LIBDIR)
 	( set -e ; cd $(DESTDIR)$(LIBDIR) ;\
 	  $(LN_S) -f snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh ;\
 	  $(LN_S) -f notify.sh notify-split-brain.sh ;\
