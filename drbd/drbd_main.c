@@ -901,7 +901,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	rcu_read_unlock();
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
-	if (device->disk_state_from_metadata == D_INCONSISTENT)
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
@@ -3935,6 +3935,80 @@ void unlock_all_resources(void)
 		spin_unlock(&resource->req_lock);
 	local_irq_enable();
 	mutex_unlock(&global_state_mutex);
+}
+
+/**
+ * negotiated_disk_state()  -  determine initial disk state
+ *
+ * When a disk is attached to a device, we set the disk state to D_NEGOTIATING.
+ * We then wait for all connected peers to send the peer disk state.  Once that
+ * has happened, we can determine the actual disk state based on the peer disk
+ * states and the state of the disk itself.
+ *
+ * The initial disk state becomes D_UP_TO_DATE without fencing or when we know
+ * that all peers have been outdated, and D_CONSISTENT otherwise.
+ *
+ * Returns D_NEGOTIATING while still negotiating, and the new disk state
+ * afterwards.
+ */
+enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	enum drbd_disk_state disk_state;
+
+	disk_state = device->disk_state[NEW];
+
+	if (disk_state != D_NEGOTIATING)
+		goto out;
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->cstate[NEW] == C_CONNECTED &&
+		    peer_device->disk_state[NEW] == D_UNKNOWN) {
+			/* Wait for peer to send peer disk state. */
+			goto out;
+		}
+	}
+	if (device->exposed_data_uuid != drbd_current_uuid(device))
+		disk_state = D_DISKLESS;
+	else if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		disk_state = D_INCONSISTENT;
+	else if (!drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
+		disk_state = D_OUTDATED;
+	else {
+		bool all_peers_outdated = true;
+
+		if (get_ldev_if_state(device, D_NEGOTIATING)) {
+			struct drbd_bitmap *bitmap = device->bitmap;
+			int bitmap_index;
+
+			for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
+				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+				enum drbd_disk_state peer_disk_state;
+
+				if (!peer_md->uuid[MD_UI(UI_BITMAP)] ||
+				    !(peer_md->flags & MDF_PEER_FENCING))
+					continue;
+				peer_disk_state = D_UNKNOWN;
+				for_each_peer_device(peer_device, device) {
+					if (peer_device->bitmap_index == bitmap_index) {
+						peer_disk_state = peer_device->disk_state[NEW];
+						break;
+					}
+				}
+				if (peer_disk_state == D_OUTDATED ||
+				    peer_disk_state == D_INCONSISTENT)
+					continue;
+				else if (peer_disk_state != D_UNKNOWN ||
+					 !(peer_md->flags & MDF_PEER_OUTDATED)) {
+						all_peers_outdated = false;
+						break;
+				}
+			}
+			put_ldev(device);
+		}
+		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
+	}
+out:
+	return disk_state;
 }
 
 #ifdef DRBD_ENABLE_FAULTS

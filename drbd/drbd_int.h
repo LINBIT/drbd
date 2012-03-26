@@ -364,6 +364,8 @@ extern bool idr_is_empty(struct idr *idr);
 extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
+extern enum drbd_disk_state negotiated_disk_state(struct drbd_device *);
+
 struct drbd_request {
 	struct drbd_device *device;
 

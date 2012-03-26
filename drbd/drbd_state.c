@@ -938,6 +938,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
+		bool lost_connection = false;
 		int good_data_count[2];
 
 		if ((resource->state_change_flags & CS_IGN_OUTD_FAIL) &&
@@ -959,19 +960,9 @@ static void sanitize_state(struct drbd_resource *resource)
 				if (peer_disk_state[NEW] > D_UNKNOWN ||
 				    peer_disk_state[NEW] < D_INCONSISTENT)
 					peer_disk_state[NEW] = D_UNKNOWN;
-
-				if (disk_state[NEW] == D_NEGOTIATING &&
-				    get_ldev_if_state(device, D_NEGOTIATING)) {
-					disk_state[NEW] = D_DISKLESS;
-					peer_disk_state[NEW] = D_UNKNOWN;
-					if (device->exposed_data_uuid == drbd_current_uuid(device)) {
-						/* FIXME: This makes no sense anymore. */
-						disk_state[NEW] = device->disk_state_from_metadata;
-						peer_disk_state[NEW] = peer_device->disk_state_from_metadata;
-					}
-					put_ldev(device);
-				}
 			}
+			if (repl_state[OLD] >= L_CONNECTED && repl_state[NEW] < L_CONNECTED)
+				lost_connection = true;
 
 			/* Clear the aftr_isp when becoming unconfigured */
 			if (cstate[NEW] == C_STANDALONE &&
@@ -1101,6 +1092,11 @@ static void sanitize_state(struct drbd_resource *resource)
 		    (role[NEW] == R_PRIMARY && good_data_count[NEW] == 0) &&
 		   !(role[OLD] == R_PRIMARY && good_data_count[OLD] == 0))
 			resource->susp_nod[NEW] = true;
+		if (lost_connection && disk_state[NEW] == D_NEGOTIATING &&
+		    get_ldev_if_state(device, D_NEGOTIATING)) {
+			disk_state[NEW] = negotiated_disk_state(device);
+			put_ldev(device);
+		}
 	}
 	rcu_read_unlock();
 }

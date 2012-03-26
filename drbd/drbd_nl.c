@@ -1450,6 +1450,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
+	enum drbd_disk_state disk_state;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1788,22 +1789,19 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
-	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED) {
-		__change_disk_state(device, D_NEGOTIATING);
-
-		/* We expect to receive up-to-date UUIDs soon.
-		   To avoid a race in receive_state, free p_uuid while
-		   holding req_lock. I.e. atomic with the state change */
-		kfree(first_peer_device(device)->p_uuid);
-		first_peer_device(device)->p_uuid = NULL;
-	} else {
-		__change_disk_state(device, device->disk_state_from_metadata);
-		for_each_peer_device(peer_device, device) {
-			if (peer_device->disk_state_from_metadata != D_UNKNOWN)
-				__change_peer_disk_state(peer_device,
-					peer_device->disk_state_from_metadata);
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
+			/* We expect to receive up-to-date UUIDs soon.
+			   To avoid a race in receive_state, free p_uuid while
+			   holding req_lock. I.e. atomic with the state change */
+			kfree(peer_device->p_uuid);
+			peer_device->p_uuid = NULL;
 		}
 	}
+	__change_disk_state(device, D_NEGOTIATING);
+	disk_state = negotiated_disk_state(device);
+	if (disk_state != D_NEGOTIATING)
+		__change_disk_state(device, disk_state);
 
 	rv = end_state_change(device->resource, &irq_flags);
 
