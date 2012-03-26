@@ -1158,17 +1158,17 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_tconn *tconn, struct
 
 STATIC int w_flush(struct drbd_work *w, int cancel)
 {
-	struct flush_work *fw = (struct flush_work *)w;
+	struct flush_work *fw = container_of(w, struct flush_work, w);
 	struct drbd_epoch *epoch = fw->epoch;
-	struct drbd_conf *mdev = w->mdev;
+	struct drbd_tconn *tconn = epoch->tconn;
 
 	kfree(w);
 
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
-		drbd_flush_after_epoch(mdev->tconn, epoch);
+		drbd_flush_after_epoch(tconn, epoch);
 
-	drbd_may_finish_epoch(mdev->tconn, epoch, EV_PUT |
-			      (mdev->state.conn < C_CONNECTED ? EV_CLEANUP : 0));
+	drbd_may_finish_epoch(tconn, epoch, EV_PUT |
+			      (tconn->cstate < C_WF_REPORT_PARAMS ? EV_CLEANUP : 0));
 
 	return 0;
 }
@@ -1238,11 +1238,15 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_tconn *tconn,
 		if (finish) {
 			if (!(ev & EV_CLEANUP)) {
 				spin_unlock(&tconn->epoch_lock);
-				drbd_send_b_ack(epoch->mdev, epoch->barrier_nr, epoch_size);
+				drbd_send_b_ack(epoch->tconn, epoch->barrier_nr, epoch_size);
 				spin_lock(&tconn->epoch_lock);
 			}
+#if 0
+			/* FIXME: dec unacked on connection, once we have
+			 * something to count pending connection packets in. */
 			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))
-				dec_unacked(epoch->mdev);
+				dec_unacked(epoch->tconn);
+#endif
 
 			if (tconn->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
@@ -1276,7 +1280,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_tconn *tconn,
 		if (fw) {
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
-			fw->w.mdev = epoch->mdev;
+			fw->w.tconn = tconn;
 			drbd_queue_work(&tconn->data.work, &fw->w);
 		} else {
 			conn_warn(tconn, "Could not kmalloc a flush_work obj\n");
@@ -1522,21 +1526,33 @@ void conn_wait_active_ee_empty(struct drbd_tconn *tconn)
 	rcu_read_unlock();
 }
 
-STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
+void conn_wait_done_ee_empty(struct drbd_tconn *tconn)
 {
 	struct drbd_conf *mdev;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		kref_get(&mdev->kref);
+		rcu_read_unlock();
+		drbd_wait_ee_list_empty(mdev, &mdev->done_ee);
+		kref_put(&mdev->kref, &drbd_minor_destroy);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+
+STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
+{
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
 
-	mdev = vnr_to_mdev(tconn, pi->vnr);
-	if (!mdev)
-		return -EIO;
-
-	inc_unacked(mdev);
-
+	/* FIXME these are unacked on connection,
+	 * not a specific (peer)device.
+	 */
 	tconn->current_epoch->barrier_nr = p->barrier;
-	tconn->current_epoch->mdev = mdev;
+	tconn->current_epoch->tconn = tconn;
 	rv = drbd_may_finish_epoch(tconn, tconn->current_epoch, EV_GOT_BARRIER_NR);
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
@@ -1571,7 +1587,6 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 	 * avoid potential distributed deadlock */
 	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_NOIO);
 	if (!epoch) {
-		dev_warn(DEV, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &tconn->current_epoch->flags);
 		conn_wait_active_ee_empty(tconn);
 		if (issue_flush) {
@@ -1580,7 +1595,7 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 				return 0;
 		}
 
-		drbd_wait_ee_list_empty(mdev, &mdev->done_ee);
+		conn_wait_done_ee_empty(tconn);
 
 		return 0;
 	}
@@ -5260,21 +5275,22 @@ STATIC int got_NegRSDReply(struct drbd_tconn *tconn, struct packet_info *pi)
 
 STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	struct drbd_conf *mdev;
 	struct p_barrier_ack *p = pi->data;
+	struct drbd_conf *mdev;
+	int vnr;
 
-	mdev = vnr_to_mdev(tconn, pi->vnr);
-	if (!mdev)
-		return -EIO;
+	tl_release(tconn, p->barrier, be32_to_cpu(p->set_size));
 
-	tl_release(mdev->tconn, p->barrier, be32_to_cpu(p->set_size));
-
-	if (mdev->state.conn == C_AHEAD &&
-	    atomic_read(&mdev->ap_in_flight) == 0 &&
-	    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &mdev->flags)) {
-		mdev->start_resync_timer.expires = jiffies + HZ;
-		add_timer(&mdev->start_resync_timer);
+	rcu_read_lock();
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		if (mdev->state.conn == C_AHEAD &&
+		    atomic_read(&mdev->ap_in_flight) == 0 &&
+		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &mdev->flags)) {
+			mdev->start_resync_timer.expires = jiffies + HZ;
+			add_timer(&mdev->start_resync_timer);
+		}
 	}
+	rcu_read_unlock();
 
 	return 0;
 }
