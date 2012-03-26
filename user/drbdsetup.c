@@ -1554,28 +1554,30 @@ static char *af_to_str(int af)
 
 static void show_address(void* address, int addr_len)
 {
-	struct sockaddr     *addr;
-	struct sockaddr_in  *addr4;
-	struct sockaddr_in6 *addr6;
+	union {
+		struct sockaddr     addr;
+		struct sockaddr_in  addr4;
+		struct sockaddr_in6 addr6;
+	} a;
 	char buffer[INET6_ADDRSTRLEN];
 
-	addr = (struct sockaddr *)address;
-	if (addr->sa_family == AF_INET
-	|| addr->sa_family == get_af_ssocks(0)
-	|| addr->sa_family == AF_INET_SDP) {
-		addr4 = (struct sockaddr_in *)address;
+	/* avoid alignment issues on certain platforms (e.g. armel) */
+	memset(&a, 0, sizeof(a));
+	memcpy(&a.addr, address, addr_len);
+	if (a.addr.sa_family == AF_INET
+	|| a.addr.sa_family == get_af_ssocks(0)
+	|| a.addr.sa_family == AF_INET_SDP) {
 		printI("address\t\t\t%s %s:%d;\n",
-		       af_to_str(addr4->sin_family),
-		       inet_ntoa(addr4->sin_addr),
-		       ntohs(addr4->sin_port));
-	} else if (addr->sa_family == AF_INET6) {
-		addr6 = (struct sockaddr_in6 *)address;
+		       af_to_str(a.addr4.sin_family),
+		       inet_ntoa(a.addr4.sin_addr),
+		       ntohs(a.addr4.sin_port));
+	} else if (a.addr.sa_family == AF_INET6) {
 		printI("address\t\t\t%s [%s]:%d;\n",
-		       af_to_str(addr6->sin6_family),
-		       inet_ntop(addr6->sin6_family, &addr6->sin6_addr, buffer, INET6_ADDRSTRLEN),
-		       ntohs(addr6->sin6_port));
+		       af_to_str(a.addr6.sin6_family),
+		       inet_ntop(a.addr6.sin6_family, &a.addr6.sin6_addr, buffer, INET6_ADDRSTRLEN),
+		       ntohs(a.addr6.sin6_port));
 	} else {
-		printI("address\t\t\t[unknown af=%d, len=%d]\n", addr->sa_family, addr_len);
+		printI("address\t\t\t[unknown af=%d, len=%d]\n", a.addr.sa_family, addr_len);
 	}
 }
 
