@@ -1765,7 +1765,7 @@ static int _drbd_send_bio(struct drbd_conf *mdev, struct bio *bio)
 	struct bio_vec *bvec;
 	int i;
 	/* hint all but last page with MSG_MORE */
-	__bio_for_each_segment(bvec, bio, i, 0) {
+	bio_for_each_segment(bvec, bio, i) {
 		int err;
 
 		err = _drbd_no_send_page(mdev, bvec->bv_page,
@@ -1782,7 +1782,7 @@ static int _drbd_send_zc_bio(struct drbd_conf *mdev, struct bio *bio)
 	struct bio_vec *bvec;
 	int i;
 	/* hint all but last page with MSG_MORE */
-	__bio_for_each_segment(bvec, bio, i, 0) {
+	bio_for_each_segment(bvec, bio, i) {
 		int err;
 
 		err = _drbd_send_page(mdev, bvec->bv_page,
