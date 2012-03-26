@@ -964,7 +964,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				    get_ldev_if_state(device, D_NEGOTIATING)) {
 					disk_state[NEW] = D_DISKLESS;
 					peer_disk_state[NEW] = D_UNKNOWN;
-					if (device->exposed_data_uuid == drbd_uuid(peer_device, UI_CURRENT)) {
+					if (device->exposed_data_uuid == drbd_current_uuid(device)) {
 						/* FIXME: This makes no sense anymore. */
 						disk_state[NEW] = device->disk_state_from_metadata;
 						peer_disk_state[NEW] = peer_device->disk_state_from_metadata;

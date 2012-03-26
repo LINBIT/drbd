@@ -889,8 +889,9 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 		put_ldev(device);
 		return -EIO;
 	}
-	for (i = UI_CURRENT; i < UI_SIZE; i++)
-		p->uuid[i] = cpu_to_be64(drbd_uuid(peer_device, i));
+	p->uuid[UI_CURRENT] = cpu_to_be64(drbd_current_uuid(device));
+	for (i = UI_BITMAP; i < UI_SIZE; i++)
+		p->uuid[i] = cpu_to_be64(drbd_peer_uuid(peer_device, i));
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->uuid[UI_SIZE] = cpu_to_be64(peer_device->comm_bm_set);
@@ -925,10 +926,10 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
 		drbd_info(peer_device, "%s %016llX:%016llX:%016llX:%016llX\n",
 			  text,
-			  (unsigned long long)drbd_uuid(peer_device, UI_CURRENT),
-			  (unsigned long long)drbd_uuid(peer_device, UI_BITMAP),
-			  (unsigned long long)drbd_uuid(peer_device, UI_HISTORY_START),
-			  (unsigned long long)drbd_uuid(peer_device, UI_HISTORY_END));
+			  (unsigned long long)drbd_current_uuid(device),
+			  (unsigned long long)drbd_peer_uuid(peer_device, UI_BITMAP),
+			  (unsigned long long)drbd_peer_uuid(peer_device, UI_HISTORY_START),
+			  (unsigned long long)drbd_peer_uuid(peer_device, UI_HISTORY_END));
 		put_ldev(device);
 	} else {
 		drbd_info(device, "%s effective data uuid: %016llX\n",
@@ -946,7 +947,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 
 	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
 
-	uuid = drbd_uuid(peer_device, UI_BITMAP);
+	uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
 	if (uuid && uuid != UUID_JUST_CREATED)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else
@@ -3401,7 +3402,7 @@ static void drbd_uuid_move_history(struct drbd_peer_device *peer_device) __must_
 		peer_md->uuid[MD_UI(i+1)] = peer_md->uuid[MD_UI(i)];
 }
 
-static void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
+void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
 	if (device->resource->role[NOW] == R_PRIMARY)
 		val |= 1;
@@ -3429,10 +3430,10 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
 {
 	struct drbd_device *device = peer_device->device;
 
-	if (drbd_uuid(peer_device, idx)) {
+	if (drbd_peer_uuid(peer_device, idx)) {
 		drbd_uuid_move_history(peer_device);
 		device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(UI_HISTORY_START)] =
-			drbd_uuid(peer_device, idx);
+			drbd_peer_uuid(peer_device, idx);
 	}
 	_drbd_uuid_set(peer_device, idx, val);
 }
@@ -3453,7 +3454,7 @@ void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 	u64 val;
 
 	for_each_peer_device(peer_device, device) {
-		bm_uuid = drbd_uuid(peer_device, UI_BITMAP);
+		bm_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
 		pdsk = peer_device->disk_state[NOW];
 		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
 		    (pdsk < D_INCONSISTENT || pdsk == D_UNKNOWN || pdsk == D_OUTDATED) &&

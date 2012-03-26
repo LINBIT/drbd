@@ -3334,7 +3334,7 @@ static bool should_skip_initial_sync(struct drbd_peer_device *peer_device)
 {
 	return peer_device->repl_state[NOW] == L_CONNECTED &&
 	       peer_device->connection->agreed_pro_version >= 90 &&
-	       drbd_uuid(peer_device, UI_CURRENT) == UUID_JUST_CREATED;
+	       drbd_current_uuid(peer_device->device) == UUID_JUST_CREATED;
 }
 
 int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)

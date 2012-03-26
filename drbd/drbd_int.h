@@ -1100,6 +1100,7 @@ extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
+extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
 extern void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
@@ -2144,15 +2145,19 @@ static inline int drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val
 	return changed;
 }
 
-static inline u64 drbd_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+static inline u64 drbd_current_uuid(struct drbd_device *device)
+{
+	if (!device->ldev)
+		return 0;
+	return device->ldev->md.current_uuid;
+}
+
+static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
 {
 	struct drbd_device *device = peer_device->device;
 
 	if (!device->ldev)
 		return 0;
-
-	if (i == UI_CURRENT)
-		return device->ldev->md.current_uuid;
 
 	if (peer_device->bitmap_index != -1)
 		return device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(i)];
