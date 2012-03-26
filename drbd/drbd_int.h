@@ -837,24 +837,12 @@ enum bm_flag {
 	/* clear is not expected while bitmap is locked for bulk operation */
 };
 
-
-/* TODO sort members for performance
- * MAYBE group them further */
-
-/* THINK maybe we actually want to use the default "event/%s" worker threads
- * or similar in linux 2.6, which uses per cpu data and threads.
- */
 struct drbd_work_queue {
 	struct list_head q;
 	struct semaphore s; /* producers up it, worker down()s it */
 	spinlock_t q_lock;  /* to protect the list. */
 };
 
-/* If Philipp agrees, we remove the "mutex", and make_request will only
- * (throttle on "queue full" condition and) queue it to the worker thread...
- * which then is free to do whatever is needed, and has exclusive send access
- * to the data socket ...
- */
 struct drbd_socket {
 	struct drbd_work_queue work;
 	struct mutex mutex;
