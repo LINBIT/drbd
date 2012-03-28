@@ -1768,24 +1768,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_try_suspend_al(device); /* IO is still suspended here... */
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-	device->disk_state_from_metadata = D_INCONSISTENT;
-	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT)) {
-		if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
-			device->disk_state_from_metadata = D_CONSISTENT;
-		else
-			device->disk_state_from_metadata = D_OUTDATED;
-	}
-
-	for_each_peer_device(peer_device, device) {
-		peer_device->disk_state_from_metadata = D_UNKNOWN;
-		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_OUTDATED))
-			peer_device->disk_state_from_metadata = D_OUTDATED;
-	}
-
-	if (device->disk_state_from_metadata == D_CONSISTENT &&
-	    (first_peer_device(device)->disk_state_from_metadata == D_OUTDATED ||
-	     !drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_FENCING)))
-		device->disk_state_from_metadata = D_UP_TO_DATE;
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
