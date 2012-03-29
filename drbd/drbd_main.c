@@ -2005,7 +2005,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
-	p->seq_num = cpu_to_be32(req->seq_num = atomic_inc_return(&peer_device->packet_seq));
+	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio->bi_rw);
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
