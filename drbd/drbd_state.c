@@ -2256,7 +2256,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 
 	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) &&
-	    device->disk_state[NOW] != D_DISKLESS && disk_state == D_DISKLESS &&
+	    device->disk_state[NOW] != D_FAILED && disk_state == D_FAILED &&
 	    device_has_connected_peer_devices(device)) {
 		enum drbd_state_rv rv;
 
