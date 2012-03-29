@@ -449,7 +449,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		maybe_wakeup_conflicting_requests(req);
 		req_may_be_completed_not_susp(req, m);
-		put_ldev(device);
 		break;
 
 	case ABORT_DISK_IO:
@@ -467,7 +466,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		__drbd_chk_io_error(device, false);
 		maybe_wakeup_conflicting_requests(req);
 		req_may_be_completed_not_susp(req, m);
-		put_ldev(device);
 		break;
 
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
@@ -475,7 +473,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 		req_may_be_completed_not_susp(req, m);
-		put_ldev(device);
 		break;
 
 	case READ_COMPLETED_WITH_ERROR:
@@ -488,7 +485,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, !(req->rq_state & RQ_NET_MASK));
 
 		__drbd_chk_io_error(device, false);
-		put_ldev(device);
 
 	goto_queue_for_net_read:
 

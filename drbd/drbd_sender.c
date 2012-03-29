@@ -264,6 +264,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	spin_lock_irqsave(&device->resource->req_lock, flags);
 	__req_mod(req, what, &m);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	put_ldev(device);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
