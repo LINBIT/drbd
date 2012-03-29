@@ -254,13 +254,44 @@ static void maybe_wakeup_conflicting_requests(struct drbd_request *req)
 		wake_up(&req->device->misc_wait);
 }
 
+static
+void req_may_be_done(struct drbd_request *req)
+{
+	const unsigned long s = req->rq_state;
+	struct drbd_device *device = req->device;
+	int rw = req->rq_state & RQ_WRITE ? WRITE : READ;
+
+	/* req->master_bio still present means: Not yet completed.
+	 *
+	 * Unless this is RQ_POSTPONED, which will cause _req_is_done() to
+	 * queue it on the retry workqueue instead of destroying it.
+	 */
+	if (req->master_bio && !(s & RQ_POSTPONED))
+		return;
+
+	/* Local still pending, even though master_bio is already completed?
+	 * may happen for RQ_LOCAL_ABORTED requests. */
+	if (s & RQ_LOCAL_PENDING)
+		return;
+
+	if ((s & RQ_NET_MASK) == 0 || (s & RQ_NET_DONE)) {
+		/* this is disconnected (local only) operation,
+		 * or protocol A, B, or C P_BARRIER_ACK,
+		 * or killed from the transfer log due to connection loss. */
+		_req_is_done(device, req, rw);
+	}
+	/* else: network part and not DONE yet. that is
+	 * protocol A, B, or C, barrier ack still pending... */
+}
+
 /* Helper for __req_mod().
  * Set m->bio to the master bio, if it is fit to be completed,
  * or leave it alone (it is initialized to NULL in __req_mod),
  * if it has already been completed, or cannot be completed yet.
  * If m->bio is set, the error status to be returned is placed in m->error.
  */
-void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
+static
+void req_may_be_completed(struct drbd_request *req, struct bio_and_error *m)
 {
 	const unsigned long s = req->rq_state;
 	struct drbd_device *device = req->device;
@@ -342,26 +373,15 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 			D_ASSERT(device, (s & RQ_NET_DONE));
 		}
 	}
-
-	if (s & RQ_LOCAL_PENDING)
-		return;
-
-	if ((s & RQ_NET_MASK) == 0 || (s & RQ_NET_DONE)) {
-		/* this is disconnected (local only) operation,
-		 * or protocol A, B, or C P_BARRIER_ACK,
-		 * or killed from the transfer log due to connection loss. */
-		_req_is_done(device, req, rw);
-	}
-	/* else: network part and not DONE yet. that is
-	 * protocol A, B, or C, barrier ack still pending... */
+	req_may_be_done(req);
 }
 
-static void _req_may_be_done_not_susp(struct drbd_request *req, struct bio_and_error *m)
+static void req_may_be_completed_not_susp(struct drbd_request *req, struct bio_and_error *m)
 {
 	struct drbd_device *device = req->device;
 
 	if (!drbd_suspended(device))
-		_req_may_be_done(req, m);
+		req_may_be_completed(req, m);
 }
 
 /* obviously this could be coded as many single functions
@@ -428,14 +448,14 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		maybe_wakeup_conflicting_requests(req);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		put_ldev(device);
 		break;
 
 	case ABORT_DISK_IO:
 		req->rq_state |= RQ_LOCAL_ABORTED;
 		if (req->rq_state & RQ_WRITE)
-			_req_may_be_done_not_susp(req, m);
+			req_may_be_completed_not_susp(req, m);
 		else
 			goto goto_queue_for_net_read;
 		break;
@@ -446,7 +466,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		__drbd_chk_io_error(device, false);
 		maybe_wakeup_conflicting_requests(req);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		put_ldev(device);
 		break;
 
@@ -454,7 +474,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* it is legal to fail READA */
 		req->rq_state |= RQ_LOCAL_COMPLETED;
 		req->rq_state &= ~RQ_LOCAL_PENDING;
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		put_ldev(device);
 		break;
 
@@ -475,7 +495,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* no point in retrying if there is no good remote data,
 		 * or we have no connection. */
 		if (first_peer_device(device)->disk_state[NOW] != D_UP_TO_DATE) {
-			_req_may_be_done_not_susp(req, m);
+			req_may_be_completed_not_susp(req, m);
 			break;
 		}
 
@@ -492,8 +512,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* from __drbd_make_request
 		 * or from bio_endio during read io-error recovery */
 
-		/* so we can verify the handle in the answer packet
-		 * corresponding hlist_del is in _req_may_be_done() */
+		/* So we can verify the handle in the answer packet.
+		 * Corresponding drbd_remove_request_interval is in
+		 * req_may_be_completed() */
 		D_ASSERT(device, drbd_interval_empty(&req->i));
 		drbd_insert_interval(&device->read_requests, &req->i);
 
@@ -512,7 +533,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* assert something? */
 		/* from __drbd_make_request only */
 
-		/* corresponding hlist_del is in _req_may_be_done() */
+		/* Corresponding drbd_remove_request_interval is in
+		 * req_may_be_completed() */
 		D_ASSERT(device, drbd_interval_empty(&req->i));
 		drbd_insert_interval(&device->write_requests, &req->i);
 
@@ -579,7 +601,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state &= ~RQ_NET_QUEUED;
 		/* if we did it right, tl_clear should be scheduled only after
 		 * this, so this should not be necessary! */
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case HANDED_OVER_TO_NETWORK:
@@ -602,7 +624,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		}
 		req->rq_state &= ~RQ_NET_QUEUED;
 		req->rq_state |= RQ_NET_SENT;
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
@@ -610,7 +632,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * as far as this connection is concerned. */
 		req->rq_state &= ~RQ_NET_QUEUED;
 		req->rq_state |= RQ_NET_DONE;
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case CONNECTION_LOST_WHILE_PENDING:
@@ -631,7 +653,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (!(req->rq_state & RQ_NET_QUEUED)) {
 			if (p)
 				goto goto_read_retry_local;
-			_req_may_be_done(req, m); /* Allowed while state.susp */
+			req_may_be_completed(req, m); /* Allowed while state.susp */
 		}
 		break;
 
@@ -664,7 +686,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 		req->rq_state &= ~RQ_NET_PENDING;
 		maybe_wakeup_conflicting_requests(req);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case POSTPONE_WRITE:
@@ -676,7 +698,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_POSTPONED;
 		maybe_wakeup_conflicting_requests(req);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case NEG_ACKED:
@@ -694,13 +716,13 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			goto goto_read_retry_local;
 
 		maybe_wakeup_conflicting_requests(req);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		/* else: done by HANDED_OVER_TO_NETWORK */
 		break;
 
 	goto_read_retry_local:
 		if (!drbd_may_do_local_read(device, req->i.sector, req->i.size)) {
-			_req_may_be_done_not_susp(req, m);
+			req_may_be_completed_not_susp(req, m);
 			break;
 		}
 		D_ASSERT(device, !(req->rq_state & RQ_LOCAL_PENDING));
@@ -715,7 +737,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (!(req->rq_state & RQ_LOCAL_COMPLETED))
 			break;
 
-		_req_may_be_done(req, m); /* Allowed while state.susp */
+		req_may_be_completed(req, m); /* Allowed while state.susp */
 		break;
 
 	case RESTART_FROZEN_DISK_IO:
@@ -736,8 +758,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case RESEND:
 		/* If RQ_NET_OK is already set, we got a P_WRITE_ACK or P_RECV_ACK
 		   before the connection loss (B&C only); only P_BARRIER_ACK was missing.
-		   Trowing them out of the TL here by pretending we got a BARRIER_ACK
-		   We ensure that the peer was not rebooted */
+		   Throwing them out of the TL here by pretending we got a BARRIER_ACK.
+		   During connection handshake, we ensure that the peer was not rebooted. */
 		if (!(req->rq_state & RQ_NET_OK)) {
 			if (req->w.cb) {
 				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
@@ -764,7 +786,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			if (!(req->rq_state & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)))
 				atomic_sub(req->i.size>>9, &device->ap_in_flight);
 		}
-		_req_may_be_done(req, m); /* Allowed while state.susp */
+		req_may_be_done(req); /* Allowed while state.susp */
 		break;
 
 	case DATA_RECEIVED:
@@ -772,7 +794,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		dec_ap_pending(first_peer_device(device));
 		req->rq_state &= ~RQ_NET_PENDING;
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
-		_req_may_be_done_not_susp(req, m);
+		req_may_be_completed_not_susp(req, m);
 		break;
 	};
 
