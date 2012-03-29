@@ -3967,7 +3967,8 @@ enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
 			goto out;
 		}
 	}
-	if (device->exposed_data_uuid != drbd_current_uuid(device))
+	if (device->exposed_data_uuid != drbd_current_uuid(device) &&
+	    device->resource->role[NEW] == R_PRIMARY)
 		disk_state = D_DISKLESS;
 	else if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		disk_state = D_INCONSISTENT;
