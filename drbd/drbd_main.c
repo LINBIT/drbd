@@ -255,9 +255,7 @@ void _tl_add_barrier(struct drbd_connection *connection, struct drbd_tl_epoch *n
 	new->n_writes = 0;
 
 	newest_before = connection->newest_tle;
-	/* never send a barrier number == 0, because that is special-cased
-	 * when using TCQ for our write ordering code */
-	new->br_number = (newest_before->br_number+1) ?: 1;
+	new->br_number = newest_before->br_number+1;
 	if (connection->newest_tle != new) {
 		connection->newest_tle->next = new;
 		connection->newest_tle = new;
