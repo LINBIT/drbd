@@ -1172,8 +1172,8 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 
 	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
 		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in bm_rw()\n");
-		err = -ENODEV;
-		goto out;
+		kfree(ctx);
+		return -ENODEV;
 	}
 
 	if (!ctx->flags)
@@ -1248,7 +1248,6 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 		     jiffies - now);
 	}
 
-out:
 	kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	return err;
 }
@@ -1365,8 +1364,8 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 		};
 
 		if (!expect(device, get_ldev_if_state(device, D_ATTACHING))) {  /* put is in bm_aio_ctx_destroy() */
-			err = -ENODEV;
-			goto out;
+			kfree(ctx);
+			return -ENODEV;
 		}
 
 		bm_page_io_async(ctx, page_nr, WRITE_SYNC);
@@ -1379,7 +1378,6 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 
 		device->bm_writ_cnt++;
 		err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
-	 out:
 		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 	}
 	return err;
