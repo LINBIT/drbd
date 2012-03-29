@@ -853,21 +853,33 @@ static bool remote_due_to_read_balancing(struct drbd_device *device, sector_t se
  * The write_requests tree contains all active write requests which we
  * currently know about.  Wait for any requests to complete which conflict with
  * the new one.
+ *
+ * Only way out: remove the conflicting intervals from the tree.
  */
-static int complete_conflicting_writes(struct drbd_device *device,
-				       sector_t sector, int size)
+static void complete_conflicting_writes(struct drbd_request *req)
 {
-	for(;;) {
-		struct drbd_interval *i;
-		int err;
+	DEFINE_WAIT(wait);
+	struct drbd_device *device = req->device;
+	struct drbd_interval *i;
+	sector_t sector = req->i.sector;
+	int size = req->i.size;
 
+	i = drbd_find_overlap(&device->write_requests, sector, size);
+	if (!i)
+		return;
+
+	for (;;) {
+		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i = drbd_find_overlap(&device->write_requests, sector, size);
 		if (!i)
-			return 0;
-		err = drbd_wait_misc(device, i);
-		if (err)
-			return err;
+			break;
+		/* Indicate to wake up device->misc_wait on progress.  */
+		i->waiting = true;
+		spin_unlock_irq(&device->resource->req_lock);
+		schedule();
+		spin_lock_irq(&device->resource->req_lock);
 	}
+	finish_wait(&device->misc_wait, &wait);
 }
 
 static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
@@ -899,7 +911,7 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 	struct drbd_request *req;
 	struct net_conf *nc;
 	int local, remote, send_oos = 0;
-	int err;
+	int err = 0;
 	int ret = 0;
 	int congested = 0;
 	enum drbd_on_congestion on_congestion;
@@ -1018,17 +1030,10 @@ allocate_barrier:
 	spin_lock_irq(&device->resource->req_lock);
 
 	if (rw == WRITE) {
-		err = complete_conflicting_writes(device, sector, size);
-		if (err) {
-			if (err != -ERESTARTSYS) {
-				begin_state_change_locked(device->resource, CS_HARD);
-				__change_cstate(first_peer_device(device)->connection, C_TIMEOUT);
-				end_state_change_locked(device->resource);
-			}
-			spin_unlock_irq(&device->resource->req_lock);
-			err = -EIO;
-			goto fail_free_complete;
-		}
+		/* This may temporarily give up the req_lock,
+		 * but will re-aquire it before it returns here.
+		 * Needs to be before the check on drbd_suspended() */
+		complete_conflicting_writes(req);
 	}
 
 	if (drbd_suspended(device)) {
