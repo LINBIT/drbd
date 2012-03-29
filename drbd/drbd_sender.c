@@ -271,26 +271,6 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-int w_read_retry_remote(struct drbd_work *w, int cancel)
-{
-	struct drbd_request *req = container_of(w, struct drbd_request, w);
-	struct drbd_device *device = req->device;
-
-	/* We should not detach for read io-error,
-	 * but try to WRITE the P_DATA_REPLY to the failed location,
-	 * to give the disk the chance to relocate that block */
-
-	spin_lock_irq(&device->resource->req_lock);
-	if (cancel || first_peer_device(device)->disk_state[NOW] != D_UP_TO_DATE) {
-		_req_mod(req, READ_RETRY_REMOTE_CANCELED);
-		spin_unlock_irq(&device->resource->req_lock);
-		return 0;
-	}
-	spin_unlock_irq(&device->resource->req_lock);
-
-	return w_send_read_req(w, 0);
-}
-
 void drbd_csum_ee(struct crypto_hash *tfm, struct drbd_peer_request *peer_req, void *digest)
 {
 	struct hash_desc desc;

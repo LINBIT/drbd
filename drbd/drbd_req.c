@@ -295,7 +295,6 @@ void req_may_be_completed(struct drbd_request *req, struct bio_and_error *m)
 {
 	const unsigned long s = req->rq_state;
 	struct drbd_device *device = req->device;
-	int rw = req->rq_state & RQ_WRITE ? WRITE : READ;
 
 	/* we must not complete the master bio, while it is
 	 *	still being processed by _drbd_send_zc_bio (drbd_send_dblock)
@@ -315,6 +314,8 @@ void req_may_be_completed(struct drbd_request *req, struct bio_and_error *m)
 		return;
 
 	if (req->master_bio) {
+		int rw = bio_rw(req->master_bio);
+
 		/* this is DATA_RECEIVED (remote read)
 		 * or protocol C P_WRITE_ACK
 		 * or protocol B P_RECV_ACK
@@ -359,7 +360,18 @@ void req_may_be_completed(struct drbd_request *req, struct bio_and_error *m)
 		/* Update disk stats */
 		_drbd_end_io_acct(device, req);
 
-		if (!(s & RQ_POSTPONED)) {
+		/* if READ failed,
+		 * have it be pushed back to the retry work queue,
+		 * so it will re-enter __drbd_make_request,
+		 * and be re-assigned to a suitable local or remote path,
+		 * or failed if we do not have access to good data anymore.
+		 * READA may fail.
+		 * WRITE should have used all available paths already.
+		 */
+		if (!ok && rw == READ)
+			req->rq_state |= RQ_POSTPONED;
+
+		if (!(req->rq_state & RQ_POSTPONED)) {
 			m->error = ok ? 0 : (error ?: -EIO);
 			m->bio = req->master_bio;
 			req->master_bio = NULL;
@@ -453,10 +465,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case ABORT_DISK_IO:
 		req->rq_state |= RQ_LOCAL_ABORTED;
-		if (req->rq_state & RQ_WRITE)
-			req_may_be_completed_not_susp(req, m);
-		else
-			goto goto_queue_for_net_read;
+		req_may_be_completed_not_susp(req, m);
 		break;
 
 	case WRITE_COMPLETED_WITH_ERROR:
@@ -485,20 +494,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, !(req->rq_state & RQ_NET_MASK));
 
 		__drbd_chk_io_error(device, false);
-
-	goto_queue_for_net_read:
-
-		/* no point in retrying if there is no good remote data,
-		 * or we have no connection. */
-		if (first_peer_device(device)->disk_state[NOW] != D_UP_TO_DATE) {
-			req_may_be_completed_not_susp(req, m);
-			break;
-		}
-
-		/* _req_mod(req,TO_BE_SENT); oops, recursion... */
-		req->rq_state |= RQ_NET_PENDING;
-		inc_ap_pending(first_peer_device(device));
-		/* fall through: _req_mod(req,QUEUE_FOR_NET_READ); */
+		break;
 
 	case QUEUE_FOR_NET_READ:
 		/* READ or READA, and
@@ -517,10 +513,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		set_bit(UNPLUG_REMOTE, &device->flags);
 
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
+		D_ASSERT(device, (req->rq_state & RQ_LOCAL_MASK) == 0);
 		req->rq_state |= RQ_NET_QUEUED;
-		req->w.cb = (req->rq_state & RQ_LOCAL_MASK)
-			? w_read_retry_remote
-			: w_send_read_req;
+		req->w.cb = w_send_read_req;
 		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
 				&req->w);
 		break;
@@ -644,13 +639,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (req->rq_state & RQ_NET_SENT && req->rq_state & RQ_WRITE)
 			atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 
-		/* if it is still queued, we may not complete it here.
-		 * it will be canceled soon. */
-		if (!(req->rq_state & RQ_NET_QUEUED)) {
-			if (p)
-				goto goto_read_retry_local;
-			req_may_be_completed(req, m); /* Allowed while state.susp */
-		}
+		req_may_be_completed(req, m); /* Allowed while state.susp */
 		break;
 
 	case DISCARD_WRITE:
@@ -708,25 +697,9 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		req->rq_state |= RQ_NET_DONE;
 
-		if (!(req->rq_state & RQ_WRITE))
-			goto goto_read_retry_local;
-
 		maybe_wakeup_conflicting_requests(req);
 		req_may_be_completed_not_susp(req, m);
 		/* else: done by HANDED_OVER_TO_NETWORK */
-		break;
-
-	goto_read_retry_local:
-		if (!drbd_may_do_local_read(device, req->i.sector, req->i.size)) {
-			req_may_be_completed_not_susp(req, m);
-			break;
-		}
-		D_ASSERT(device, !(req->rq_state & RQ_LOCAL_PENDING));
-		req->rq_state |= RQ_LOCAL_PENDING;
-
-		get_ldev(device);
-		req->w.cb = w_restart_disk_io;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &req->w);
 		break;
 
 	case FAIL_FROZEN_DISK_IO:
