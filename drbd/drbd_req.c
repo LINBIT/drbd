@@ -971,8 +971,16 @@ int __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned lo
 		drbd_al_begin_io(device, &req->i, true);
 	}
 
+	/* Grab a the spinlock, to avoid a race that could lead in both remote
+	 * and send_oos to be false if the state changes between evaluation for
+	 * remote and send_oss, in which case we would not mirror a write that
+	 * should have been mirrored.
+	 * A followup commit will rewrite this section and get rid of this again.
+	 */
+	spin_lock_irq(&device->resource->req_lock);
 	remote = remote && drbd_should_do_remote(first_peer_device(device));
 	send_oos = rw == WRITE && drbd_should_send_out_of_sync(first_peer_device(device));
+	spin_unlock_irq(&device->resource->req_lock);
 	D_ASSERT(device, !(remote && send_oos));
 
 	if (!(local || remote) && !drbd_suspended(device)) {
