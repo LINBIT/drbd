@@ -1212,6 +1212,7 @@ int drbd_rs_del_all(struct drbd_peer_device *peer_device)
 		put_ldev(device);
 	}
 	spin_unlock_irq(&device->al_lock);
+	wake_up(&device->al_wait);
 
 	return 0;
 }
