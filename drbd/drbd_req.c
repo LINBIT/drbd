@@ -244,6 +244,16 @@ static void drbd_remove_request_interval(struct rb_root *root,
 		wake_up(&device->misc_wait);
 }
 
+static void maybe_wakeup_conflicting_requests(struct drbd_request *req)
+{
+	const unsigned long s = req->rq_state;
+	if (s & RQ_LOCAL_PENDING && !(s & RQ_LOCAL_ABORTED))
+		return;
+	if (req->i.waiting)
+		/* Retry all conflicting peer requests.  */
+		wake_up(&req->device->misc_wait);
+}
+
 /* Helper for __req_mod().
  * Set m->bio to the master bio, if it is fit to be completed,
  * or leave it alone (it is initialized to NULL in __req_mod),
@@ -268,10 +278,6 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 	 */
 	if (s & RQ_LOCAL_PENDING && !(s & RQ_LOCAL_ABORTED))
 		return;
-	if (req->i.waiting) {
-		/* Retry all conflicting peer requests.  */
-		wake_up(&device->misc_wait);
-	}
 	if (s & RQ_NET_QUEUED)
 		return;
 	if (s & RQ_NET_PENDING)
@@ -421,6 +427,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |= (RQ_LOCAL_COMPLETED|RQ_LOCAL_OK);
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
+		maybe_wakeup_conflicting_requests(req);
 		_req_may_be_done_not_susp(req, m);
 		put_ldev(device);
 		break;
@@ -438,6 +445,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state &= ~RQ_LOCAL_PENDING;
 
 		__drbd_chk_io_error(device, false);
+		maybe_wakeup_conflicting_requests(req);
 		_req_may_be_done_not_susp(req, m);
 		put_ldev(device);
 		break;
@@ -655,6 +663,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		dec_ap_pending(first_peer_device(device));
 		atomic_sub(req->i.size >> 9, &device->ap_in_flight);
 		req->rq_state &= ~RQ_NET_PENDING;
+		maybe_wakeup_conflicting_requests(req);
 		_req_may_be_done_not_susp(req, m);
 		break;
 
@@ -666,6 +675,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 */
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		req->rq_state |= RQ_POSTPONED;
+		maybe_wakeup_conflicting_requests(req);
 		_req_may_be_done_not_susp(req, m);
 		break;
 
@@ -683,6 +693,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		if (!(req->rq_state & RQ_WRITE))
 			goto goto_read_retry_local;
 
+		maybe_wakeup_conflicting_requests(req);
 		_req_may_be_done_not_susp(req, m);
 		/* else: done by HANDED_OVER_TO_NETWORK */
 		break;
