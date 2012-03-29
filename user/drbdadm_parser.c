@@ -1346,8 +1346,18 @@ void set_on_hosts_in_res(struct d_resource *res)
 			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
 			last = NULL;
 			for (host2 = l_res->all_hosts; host2; host2 = host2->next)
-				if (!host2->lower_name)
+				if (!host2->lower_name) {
 					append_names(&host->on_hosts, &last, host2->on_hosts);
+
+					for_each_host(h, host2->on_hosts) {
+						check_uniq("device-minor", "device-minor:%s:%u", h->name,
+							   host->device_minor);
+
+						if (host->device)
+							check_uniq("device", "device:%s:%s", h->name,
+								   host->device);
+					}
+				}
 
 			host->lower = l_res;
 
