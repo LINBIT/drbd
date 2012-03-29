@@ -1469,21 +1469,21 @@ int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_d
 	return err;
 }
 
-void drbd_send_b_ack(struct drbd_peer_device *peer_device, u32 barrier_nr, u32 set_size)
+void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size)
 {
 	struct drbd_socket *sock;
 	struct p_barrier_ack *p;
 
-	if (peer_device->repl_state[NOW] < L_CONNECTED)
+	if (connection->cstate[NOW] < C_CONNECTED)
 		return;
 
-	sock = &peer_device->connection->meta;
-	p = drbd_prepare_command(peer_device, sock);
+	sock = &connection->meta;
+	p = conn_prepare_command(connection, sock);
 	if (!p)
 		return;
 	p->barrier = barrier_nr;
 	p->set_size = cpu_to_be32(set_size);
-	drbd_send_command(peer_device, sock, P_BARRIER_ACK, sizeof(*p), NULL, 0);
+	conn_send_command(connection, sock, P_BARRIER_ACK, sizeof(*p), NULL, 0);
 }
 
 /**

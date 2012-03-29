@@ -1146,8 +1146,7 @@ STATIC int w_flush(struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = container_of(w, struct flush_work, w);
 	struct drbd_epoch *epoch = fw->epoch;
-	struct drbd_peer_device *peer_device = epoch->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_connection *connection = epoch->connection;
 
 	kfree(fw);
 
@@ -1155,7 +1154,7 @@ STATIC int w_flush(struct drbd_work *w, int cancel)
 		drbd_flush_after_epoch(connection, epoch);
 
 	drbd_may_finish_epoch(connection, epoch, EV_PUT |
-			      (peer_device->repl_state[NOW] < L_CONNECTED ? EV_CLEANUP : 0));
+			      (connection->cstate[NOW] < C_CONNECTED ? EV_CLEANUP : 0));
 
 	return 0;
 }
@@ -1226,11 +1225,15 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 		if (finish) {
 			if (!(ev & EV_CLEANUP)) {
 				spin_unlock(&connection->epoch_lock);
-				drbd_send_b_ack(epoch->peer_device, epoch->barrier_nr, epoch_size);
+				drbd_send_b_ack(epoch->connection, epoch->barrier_nr, epoch_size);
 				spin_lock(&connection->epoch_lock);
 			}
+#if 0
+			/* FIXME: dec unacked on connection, once we have
+			 * something to count pending connection packets in. */
 			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))
-				dec_unacked(epoch->peer_device);
+				dec_unacked(epoch->connection);
+#endif
 
 			if (connection->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
@@ -1520,23 +1523,34 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
+void conn_wait_done_ee_empty(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		drbd_wait_ee_list_empty(device, &device->done_ee);
+		kref_put(&device->kref, &drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+
+STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
+{
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
 
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return -EIO;
-	device = peer_device->device;
-
-	inc_unacked(peer_device);
-
+	/* FIXME these are unacked on connection,
+	 * not a specific (peer)device.
+	 */
 	connection->current_epoch->barrier_nr = p->barrier;
-	connection->current_epoch->peer_device = peer_device;
+	connection->current_epoch->connection = connection;
 	rv = drbd_may_finish_epoch(connection, connection->current_epoch, EV_GOT_BARRIER_NR);
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
@@ -1580,7 +1594,7 @@ STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 				return 0;
 		}
 
-		drbd_wait_ee_list_empty(device, &device->done_ee);
+		conn_wait_done_ee_empty(connection);
 
 		return 0;
 	}
@@ -5540,22 +5554,22 @@ STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 STATIC int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
 	struct p_barrier_ack *p = pi->data;
+	int vnr;
 
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return -EIO;
-	device = peer_device->device;
+	tl_release(connection, p->barrier, be32_to_cpu(p->set_size));
 
-	tl_release(peer_device->connection, p->barrier, be32_to_cpu(p->set_size));
-
-	if (peer_device->repl_state[NOW] == L_AHEAD &&
-	    atomic_read(&device->ap_in_flight) == 0 &&
-	    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
-		peer_device->start_resync_timer.expires = jiffies + HZ;
-		add_timer(&peer_device->start_resync_timer);
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		if (peer_device->repl_state[NOW] == L_AHEAD &&
+		    atomic_read(&device->ap_in_flight) == 0 &&
+		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
+			peer_device->start_resync_timer.expires = jiffies + HZ;
+			add_timer(&peer_device->start_resync_timer);
+		}
 	}
+	rcu_read_unlock();
 
 	return 0;
 }

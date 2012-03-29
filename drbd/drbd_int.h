@@ -393,7 +393,7 @@ struct drbd_request {
 };
 
 struct drbd_epoch {
-	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
 	struct list_head list;
 	unsigned int barrier_nr;
 	atomic_t epoch_size; /* increased on every request added. */
@@ -997,7 +997,7 @@ extern int conn_send_state(struct drbd_connection *, union drbd_state);
 extern int drbd_send_current_state(struct drbd_peer_device *);
 extern int conn_send_current_state(struct drbd_connection *, bool);
 extern int drbd_send_sync_param(struct drbd_peer_device *);
-extern void drbd_send_b_ack(struct drbd_peer_device *, u32 barrier_nr, u32 set_size);
+extern void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
 extern void drbd_send_ack_rp(struct drbd_peer_device *, enum drbd_packet,
