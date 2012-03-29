@@ -1786,10 +1786,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	     !drbd_md_test_peer_flag(first_peer_device(device), MDF_PEER_FENCING)))
 		device->disk_state_from_metadata = D_UP_TO_DATE;
 
-	/* All tests on MDF_PRIMARY_IND, MDF_CONNECTED_IND,
-	   MDF_CONSISTENT and MDF_WAS_UP_TO_DATE must happen before
-	   this point because state changes modify these flags. */
-
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
 	if (first_peer_device(device)->repl_state[NOW] == L_CONNECTED) {

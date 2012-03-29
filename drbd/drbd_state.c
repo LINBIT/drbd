@@ -1245,7 +1245,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				}
 			}
 
-			if (get_ldev(device)) {
+			if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
 				if (peer_device->bitmap_index != -1) {
 					u32 mdf = device->ldev->md.peers[peer_device->bitmap_index].flags;
 					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
@@ -1274,7 +1274,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 		}
 
-		if (get_ldev(device)) {
+		if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
 			u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
 							 MDF_WAS_UP_TO_DATE|MDF_CRASHED_PRIMARY);
 			mdf &= ~MDF_AL_CLEAN;
