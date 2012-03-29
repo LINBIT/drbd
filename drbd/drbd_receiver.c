@@ -3152,19 +3152,13 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
  * on failure.
  */
 static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
-						enum drbd_role peer_role,
-						enum drbd_disk_state peer_disk_state) __must_hold(local)
+						enum drbd_role peer_role) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state rv = -1;
-	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative;
-
-	disk_state = device->disk_state[NOW];
-	if (disk_state == D_NEGOTIATING)
-		disk_state = device->disk_state_from_metadata;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
 	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
@@ -3181,16 +3175,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (hg < -1000) {
 		drbd_alert(device, "To resolve this both sides have to support at least protocol %d\n", -hg - 1000);
 		return -1;
-	}
-
-	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
-	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
-		int f = (hg == -100) || abs(hg) == 2;
-		hg = disk_state > D_INCONSISTENT ? 1 : -1;
-		if (f)
-			hg = hg*2;
-		drbd_info(device, "Becoming sync %s due to disk states.\n",
-		     hg > 0 ? "source" : "target");
 	}
 
 	if (abs(hg) == 100)
@@ -3251,11 +3235,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		 * to that disk, in a way... */
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_khelper(device, connection, "split-brain");
-		return -1;
-	}
-
-	if (hg > 0 && disk_state <= D_INCONSISTENT) {
-		drbd_err(device, "I shall become SyncSource, but I am inconsistent!\n");
 		return -1;
 	}
 
@@ -4352,7 +4331,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 				 peer_state.conn <= L_WF_BITMAP_T));
 
 		if (consider_resync)
-			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
+			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role);
 
 		put_ldev(device);
 		if (new_repl_state == -1) {
