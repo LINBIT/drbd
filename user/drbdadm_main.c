@@ -3531,7 +3531,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 	int i;
 
 	*cmd = NULL;
-	*resource_names = malloc(sizeof(char *));
+	*resource_names = malloc(sizeof(char **));
 	(*resource_names)[0] = NULL;
 
 	opterr = 1;
@@ -3673,7 +3673,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			for (n = 0; (*resource_names)[n]; n++)
 				/* do nothing */ ;
 			*resource_names = realloc(*resource_names,
-						  (n + 2) * sizeof(char *));
+						  (n + 2) * sizeof(char **));
 			(*resource_names)[n++] = optarg;
 			(*resource_names)[n] = NULL;
 		} else if (!strcmp(optarg, "help"))
@@ -3745,7 +3745,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		char *res = getenv("DRBD_RESOURCE");
 		char *volume = getenv("DRBD_VOLUME");
 
-		*resource_names = realloc(*resource_names, 2 * sizeof(char *));
+		*resource_names = realloc(*resource_names, 2 * sizeof(char **));
 		if (res && volume)
 			m_asprintf(*resource_names, "%s/%s", res, volume);
 		else if (res)
