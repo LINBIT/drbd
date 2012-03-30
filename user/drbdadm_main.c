@@ -3735,6 +3735,24 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		}
 	}
 
+	/* For handlers, when called from kernel, there is nothing more on the
+	 * commandline.  What counts are the environment variables
+	 * DRBD_RESOURCE, DRBD_MINOR and DRBD_VOLUME.
+	 *
+	 * If somehing is given on the command line, that superseeded the
+	 * environment. This can be used to test handlers from the shell. */
+	if ((*cmd)->function == adm_khelper && !(*resource_names)[0]) {
+		char *res = getenv("DRBD_RESOURCE");
+		char *volume = getenv("DRBD_VOLUME");
+
+		*resource_names = realloc(*resource_names, 2 * sizeof(char *));
+		if (res && volume)
+			m_asprintf(*resource_names, "%s/%s", res, volume);
+		else if (res)
+			m_asprintf(*resource_names, "%s", res);
+		(*resource_names)[1] = NULL;
+	}
+
 	return 0;
 
 help:
