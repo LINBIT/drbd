@@ -2688,6 +2688,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	kref_init(&resource->kref);
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
+	INIT_LIST_HEAD(&resource->transfer_log);
 	mutex_init(&resource->state_mutex);
 	resource->role[NOW] = R_SECONDARY;
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
@@ -2730,8 +2731,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
 	if (!connection->current_epoch)
 		goto fail;
-
-	INIT_LIST_HEAD(&resource->transfer_log);
 
 	INIT_LIST_HEAD(&connection->current_epoch->list);
 	connection->epochs = 1;
