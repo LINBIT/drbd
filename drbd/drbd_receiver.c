@@ -2202,10 +2202,11 @@ static void fail_postponed_requests(struct drbd_device *device, sector_t sector,
 	}
 }
 
-static int handle_write_conflicts(struct drbd_device *device,
-				  struct drbd_peer_request *peer_req)
+static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 {
-	struct drbd_connection *connection = peer_req->peer_device->connection;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	bool resolve_conflicts = test_bit(DISCARD_CONCURRENT, &connection->flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
@@ -2230,7 +2231,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 			 * should not happen in a two-node setup.  Wait for the
 			 * earlier peer request to complete.
 			 */
-			err = drbd_wait_misc(device, i);
+			err = drbd_wait_misc(device, peer_device, i);
 			if (err)
 				goto out;
 			goto repeat;
@@ -2255,7 +2256,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 					  (unsigned long long)sector, size,
 					  discard ? "local" : "remote");
 
-			inc_unacked(peer_req->peer_device);
+			inc_unacked(peer_device);
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
@@ -2285,7 +2286,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 				 * request to finish locally before submitting
 				 * the conflicting peer request.
 				 */
-				err = drbd_wait_misc(device, &req->i);
+				err = drbd_wait_misc(device, NULL, &req->i);
 				if (err) {
 					begin_state_change_locked(connection->resource, CS_HARD);
 					__change_cstate(connection, C_TIMEOUT);
@@ -2408,7 +2409,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		if (err)
 			goto out_interrupted;
 		spin_lock_irq(&device->resource->req_lock);
-		err = handle_write_conflicts(device, peer_req);
+		err = handle_write_conflicts(peer_req);
 		if (err) {
 			spin_unlock_irq(&device->resource->req_lock);
 			if (err == -ENOENT) {
