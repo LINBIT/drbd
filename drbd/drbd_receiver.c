@@ -1428,8 +1428,8 @@ fail:
 	return err;
 }
 
-static void drbd_remove_epoch_entry_interval(struct drbd_device *device,
-					     struct drbd_peer_request *peer_req)
+static void drbd_remove_peer_req_interval(struct drbd_device *device,
+					  struct drbd_peer_request *peer_req)
 {
 	struct drbd_interval *i = &peer_req->i;
 
@@ -1489,7 +1489,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		 * and cause a "Network failure" */
 		spin_lock_irq(&device->resource->req_lock);
 		list_del(&peer_req->w.list);
-		drbd_remove_epoch_entry_interval(device, peer_req);
+		drbd_remove_peer_req_interval(device, peer_req);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
 			drbd_al_complete_io(device, &peer_req->i);
@@ -1984,7 +1984,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 	if (peer_req->flags & EE_IN_INTERVAL_TREE) {
 		spin_lock_irq(&device->resource->req_lock);
 		D_ASSERT(device, !drbd_interval_empty(&peer_req->i));
-		drbd_remove_epoch_entry_interval(device, peer_req);
+		drbd_remove_peer_req_interval(device, peer_req);
 		if (peer_req->flags & EE_RESTART_REQUESTS)
 			restart_conflicting_writes(device, sector, peer_req->i.size);
 		spin_unlock_irq(&device->resource->req_lock);
@@ -2306,7 +2306,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 
     out:
 	if (err)
-		drbd_remove_epoch_entry_interval(device, peer_req);
+		drbd_remove_peer_req_interval(device, peer_req);
 	return err;
 }
 
@@ -2467,7 +2467,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
-	drbd_remove_epoch_entry_interval(device, peer_req);
+	drbd_remove_peer_req_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
 	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
 		drbd_al_complete_io(device, &peer_req->i);
