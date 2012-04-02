@@ -326,11 +326,10 @@ void tl_clear(struct drbd_connection *connection)
  */
 void tl_abort_disk_io(struct drbd_device *device)
 {
-	struct drbd_connection *connection = first_peer_device(device)->connection;
-	struct drbd_resource *resource = connection->resource;
+	struct drbd_resource *resource = device->resource;
 	struct drbd_request *req, *r;
 
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
 	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
 		if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
 			continue;
@@ -338,7 +337,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 			continue;
 		_req_mod(req, ABORT_DISK_IO, NULL);
 	}
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&resource->req_lock);
 }
 
 STATIC int drbd_thread_setup(void *arg)
