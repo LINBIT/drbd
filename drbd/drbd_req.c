@@ -1330,51 +1330,66 @@ struct drbd_request *find_oldest_request(struct drbd_resource *resource)
 void request_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
-	struct drbd_connection *connection = first_peer_device(device)->connection;
+	struct drbd_connection *connection;
 	struct drbd_request *req; /* oldest request */
-	struct net_conf *nc;
-	unsigned long ent = 0, dt = 0, et, nt; /* effective timeout = ko_count * timeout */
+	unsigned long ent = 0, dt = 0, et = 0, nt; /* effective timeout = ko_count * timeout */
+	bool restart_timer = false;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	ent = nc ? nc->timeout * HZ/10 * nc->ko_count : 0;
-
 	if (get_ldev(device)) {
 		dt = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
 		put_ldev(device);
 	}
 	rcu_read_unlock();
 
-	et = min_not_zero(dt, ent);
-
-	if (!et || (first_peer_device(device)->repl_state[NOW] < L_STANDALONE &&
-		    device->disk_state[NOW] <= D_FAILED))
-		return; /* Recurring timer stopped */
-
 	spin_lock_irq(&device->resource->req_lock);
 	req = find_oldest_request(device->resource);
-	if (!req) {
-		spin_unlock_irq(&device->resource->req_lock);
-		mod_timer(&device->request_timer, jiffies + et);
-		return;
+	if (dt) {
+		if (device->disk_state[NOW] > D_FAILED) {
+			restart_timer = true;
+			et = dt;
+		}
+		if (req && req->rq_state[0] & RQ_LOCAL_PENDING && req->device == device) {
+			if (time_is_before_eq_jiffies(req->start_time + dt)) {
+				drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
+				__drbd_chk_io_error(device, 1);
+			}
+		}
 	}
+	for_each_connection(connection, device->resource) {
+		struct drbd_peer_device *peer_device;
+		struct net_conf *nc;
+		int idx;
 
-	/* FIXME iterate over all connections */
-	if (ent && req->rq_state[1] & RQ_NET_PENDING) {
-		if (time_is_before_eq_jiffies(req->start_time + ent)) {
-			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
-			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
-			__change_cstate(connection, C_TIMEOUT);
-			end_state_change_locked(device->resource);
+		rcu_read_lock();
+		nc = rcu_dereference(connection->net_conf);
+		ent = nc ? nc->timeout * HZ/10 * nc->ko_count : 0;
+		rcu_read_unlock();
+
+		et = min_not_zero(et, ent);
+
+		peer_device = conn_peer_device(connection, device->vnr);
+		if (!ent || (peer_device->repl_state[NOW] < L_STANDALONE))
+			continue;
+
+		restart_timer = true;
+		idx = peer_device->bitmap_index;
+		if (req && req->rq_state[idx] & RQ_NET_PENDING) {
+			if (time_is_before_eq_jiffies(req->start_time + ent)) {
+				drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
+				begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
+				__change_cstate(connection, C_TIMEOUT);
+				end_state_change_locked(device->resource);
+			}
 		}
 	}
-	if (dt && req->rq_state[0] & RQ_LOCAL_PENDING && req->device == device) {
-		if (time_is_before_eq_jiffies(req->start_time + dt)) {
-			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-			__drbd_chk_io_error(device, 1);
-		}
-	}
-	nt = (time_is_before_eq_jiffies(req->start_time + et) ? jiffies : req->start_time) + et;
 	spin_unlock_irq(&connection->resource->req_lock);
-	mod_timer(&device->request_timer, nt);
+
+	if (restart_timer) {
+		if (req)
+			nt = (time_is_before_eq_jiffies(req->start_time + et) ? jiffies : req->start_time) + et;
+		else
+			nt = jiffies + et;
+		mod_timer(&device->request_timer, nt);
+	}
 }
