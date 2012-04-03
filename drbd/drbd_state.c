@@ -471,20 +471,6 @@ static inline bool is_susp(union drbd_state s)
         return s.susp || s.susp_nod || s.susp_fen;
 }
 
-enum drbd_role highest_peer_role(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection;
-	enum drbd_role role = R_UNKNOWN;
-
-	for_each_connection(connection, resource) {
-		if (connection->peer_role[NOW] == R_PRIMARY)
-			return R_PRIMARY;
-		if (connection->peer_role[NOW] == R_SECONDARY)
-			role = R_SECONDARY;
-	}
-	return role;
-}
-
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 {
 	enum drbd_disk_state ds = D_DISKLESS;
@@ -1156,6 +1142,20 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	}
 }
 
+static bool diskless_primary_present(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->disk_state[NEW] < D_INCONSISTENT &&
+		    peer_device->connection->peer_role[NEW] == R_PRIMARY)
+			rv = true;
+	}
+
+	return rv;
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -1276,9 +1276,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			mdf &= ~MDF_AL_CLEAN;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
-			if (device->resource->role[NEW] == R_PRIMARY ||
-			    (first_peer_device(device)->disk_state[NEW] < D_INCONSISTENT &&
-			     highest_peer_role(device->resource) == R_PRIMARY))
+			if (device->resource->role[NEW] == R_PRIMARY || diskless_primary_present(device))
 				mdf |= MDF_PRIMARY_IND;
 			if (disk_state[NEW] > D_INCONSISTENT)
 				mdf |= MDF_CONSISTENT;
