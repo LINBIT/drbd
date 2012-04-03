@@ -1927,20 +1927,6 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
 			drbd_thread_start(&connection->receiver);
 
-		if (cstate[OLD] == C_DISCONNECTING && cstate[NEW] == C_STANDALONE) {
-			struct net_conf *old_conf;
-
-			mutex_lock(&resource->conf_update);
-			old_conf = connection->net_conf;
-			connection->alive = false;
-			rcu_assign_pointer(connection->net_conf, NULL);
-			conn_free_crypto(connection);
-			mutex_unlock(&resource->conf_update);
-
-			synchronize_rcu();
-			kfree(old_conf);
-		}
-
 		if (susp_fen[NEW]) {
 			bool all_peer_disks_outdated = true;
 			bool all_peer_disks_connected = true;

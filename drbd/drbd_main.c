@@ -2799,8 +2799,8 @@ void drbd_destroy_connection(struct kref *kref)
 
 	drbd_free_socket(&connection->meta);
 	drbd_free_socket(&connection->data);
-	kfree(connection->int_dig_in);
-	kfree(connection->int_dig_vv);
+	kfree(connection->net_conf);
+	conn_free_crypto(connection);
 	kfree(connection);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
