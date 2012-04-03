@@ -1301,7 +1301,7 @@ static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 		other_device = minor_to_mdev(resync_after);
 		if (!expect(peer_device, other_device))
 			break;
-		other_peer_device = find_peer_device(other_device, peer_device->connection);
+		other_peer_device = conn_peer_device(peer_device->connection, other_device->vnr);
 		if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
 		     other_peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
 		    other_peer_device->resync_susp_dependency[NOW] ||
