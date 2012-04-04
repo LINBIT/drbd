@@ -2466,8 +2466,10 @@ STATIC void drbd_cleanup(void)
 
 	drbd_genl_unregister();
 
-	idr_for_each_entry(&drbd_devices, device, i)
-		drbd_delete_device(device);
+	idr_for_each_entry(&drbd_devices, device, i) {
+		drbd_unregister_device(device);
+		drbd_put_device(device);
+	}
 
 	/* not _rcu since, no other updater anymore. Genl already unregistered */
 	for_each_resource_safe(resource, tmp, &drbd_resources) {
@@ -3035,20 +3037,32 @@ out_no_q:
 	return err;
 }
 
-void drbd_delete_device(struct drbd_device *device)
+/**
+ * drbd_unregister_device()  -  make a device "invisible"
+ *
+ * Remove the device from the drbd object model and unregister it in the
+ * kernel.  Keep reference counts on device->kref; they are dropped in
+ * drbd_put_device().
+ */
+void drbd_unregister_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
-	int refs = 3;
 
-	for_each_connection(connection, resource) {
+	for_each_connection(connection, resource)
 		idr_remove(&connection->peer_devices, device->vnr);
-		refs++;
-	}
 	idr_remove(&resource->devices, device->vnr);
 	idr_remove(&drbd_devices, device_to_minor(device));
+}
+
+void drbd_put_device(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	int refs = 3;
+
 	del_gendisk(device->vdisk);
-	synchronize_rcu();
+	for_each_peer_device(peer_device, device)
+		refs++;
 	kref_sub(&device->kref, refs, drbd_destroy_device);
 }
 

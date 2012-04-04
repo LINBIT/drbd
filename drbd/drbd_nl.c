@@ -3545,14 +3545,16 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		struct drbd_peer_device *peer_device;
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device(peer_device, device)
 			stable_change_repl_state(peer_device, L_STANDALONE,
 						 CS_VERBOSE | CS_WAIT_COMPLETE);
+		drbd_unregister_device(device);
+		for_each_peer_device(peer_device, device)
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
 						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
-		}
 		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
-		drbd_delete_device(device);
+		synchronize_rcu();
+		drbd_put_device(device);
 		return NO_ERROR;
 	} else
 		return ERR_MINOR_CONFIGURED;

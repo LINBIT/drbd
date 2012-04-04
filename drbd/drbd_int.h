@@ -1352,7 +1352,8 @@ extern int conn_lowest_minor(struct drbd_connection *connection);
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
 				      struct device_conf *, struct drbd_device **);
 extern void drbd_destroy_device(struct kref *kref);
-extern void drbd_delete_device(struct drbd_device *mdev);
+extern void drbd_unregister_device(struct drbd_device *);
+extern void drbd_put_device(struct drbd_device *);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_free_resource(struct drbd_resource *resource);
