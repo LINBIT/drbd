@@ -235,13 +235,11 @@ static bool state_has_changed(struct drbd_resource *resource)
 	return false;
 }
 
-static void ___begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
+static void ___begin_state_change(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int minor;
-
-	resource->state_change_flags = flags;
 
 	resource->role[NEW] = resource->role[NOW];
 	resource->susp[NEW] = resource->susp[NOW];
@@ -271,10 +269,10 @@ static void ___begin_state_change(struct drbd_resource *resource, enum chg_state
 	}
 }
 
-static void __begin_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
+static void __begin_state_change(struct drbd_resource *resource)
 {
 	rcu_read_lock();
-	___begin_state_change(resource, flags);
+	___begin_state_change(resource);
 }
 
 static enum drbd_state_rv try_state_change(struct drbd_resource *resource)
@@ -345,10 +343,35 @@ out:
 	return rv;
 }
 
+void state_change_lock(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
+{
+	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED)))
+		mutex_lock(&resource->state_mutex);
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	resource->state_change_flags = flags;
+}
+
+static void __state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flags, struct completion *done)
+{
+	enum chg_state_flags flags = resource->state_change_flags;
+
+	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	if (done && expect(resource, current != resource->worker.task))
+		wait_for_completion(done);
+	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARE)))
+		mutex_unlock(&resource->state_mutex);
+}
+
+void state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flags)
+{
+	__state_change_unlock(resource, irq_flags, NULL);
+}
+
 void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
 {
 	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE | CS_PREPARE | CS_ABORT));
-	__begin_state_change(resource, flags);
+	resource->state_change_flags = flags;
+	__begin_state_change(resource);
 }
 
 enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
@@ -358,10 +381,8 @@ enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource)
 
 void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
-	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED)))
-		mutex_lock(&resource->state_mutex);
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
-	__begin_state_change(resource, flags);
+	state_change_lock(resource, irq_flags, flags);
+	__begin_state_change(resource);
 }
 
 static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
@@ -376,12 +397,7 @@ static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
 		init_completion(done);
 	}
 	rv = ___end_state_change(resource, done, rv);
-	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
-	if (done && rv >= SS_SUCCESS &&
-	    expect(resource, current != resource->worker.task))
-		wait_for_completion(done);
-	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARE)))
-		mutex_unlock(&resource->state_mutex);
+	__state_change_unlock(resource, irq_flags, rv >= SS_SUCCESS ? done : NULL);
 	return rv;
 }
 
@@ -412,7 +428,8 @@ static void end_remote_state_change(struct drbd_resource *resource, unsigned lon
 {
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	rcu_read_lock();
-	___begin_state_change(resource, flags);
+	resource->state_change_flags = flags;
+	___begin_state_change(resource);
 }
 
 static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
