@@ -968,11 +968,14 @@ retry:
 	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
 	clear_bit(RESIZE_PENDING, &mdev->flags);
 
-	rv = _drbd_request_state(mdev, NS(conn, C_WF_REPORT_PARAMS), CS_VERBOSE);
-	if (rv < SS_SUCCESS) {
+	spin_lock_irq(&mdev->req_lock);
+	rv = _drbd_set_state(_NS(mdev, conn, C_WF_REPORT_PARAMS), CS_VERBOSE, NULL);
+	if (mdev->state.conn != C_WF_REPORT_PARAMS)
 		clear_bit(STATE_SENT, &mdev->flags);
+	spin_unlock_irq(&mdev->req_lock);
+
+	if (rv < SS_SUCCESS)
 		return 0;
-	}
 
 	drbd_thread_start(&mdev->asender);
 	mod_timer(&mdev->request_timer, jiffies + HZ); /* just start it here. */
