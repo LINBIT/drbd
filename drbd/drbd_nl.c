@@ -3544,11 +3544,14 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	    device->resource->role[NOW] == R_SECONDARY) {
 		struct drbd_peer_device *peer_device;
 		unsigned int id = atomic_inc_return(&drbd_notify_id);
+		long irq_flags;
 
 		for_each_peer_device(peer_device, device)
 			stable_change_repl_state(peer_device, L_STANDALONE,
 						 CS_VERBOSE | CS_WAIT_COMPLETE);
+		state_change_lock(device->resource, &irq_flags, 0);
 		drbd_unregister_device(device);
+		state_change_unlock(device->resource, &irq_flags);
 		for_each_peer_device(peer_device, device)
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
 						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
