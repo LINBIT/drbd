@@ -933,8 +933,6 @@ static void sanitize_state(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
-		if (!connection_is_alive(connection))
-			continue;
 		if (cstate[NEW] < C_CONNECTED)
 			connection->peer_role[NEW] = R_UNKNOWN;
 	}
@@ -957,8 +955,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 
-			if (!connection_is_alive(connection))
-				continue;
 			if (repl_state[NEW] < L_CONNECTED) {
 				peer_device->resync_susp_peer[NEW] = false;
 				if (peer_disk_state[NEW] > D_UNKNOWN ||

@@ -747,7 +747,6 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
 	struct drbd_thread asender;
-	bool alive;  /* temporary */
 
 	/* sender side */
 	struct drbd_work_queue sender_work;
@@ -2209,11 +2208,6 @@ struct bm_extent {
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {
 	return list_first_entry(&resource->connections, struct drbd_connection, connections);
-}
-
-static inline bool connection_is_alive(struct drbd_connection *connection)
-{
-	return connection->alive;
 }
 
 #endif

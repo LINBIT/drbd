@@ -435,7 +435,7 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 		snprintf(volume, sizeof(volume), "DRBD_VOLUME=%u", device->vnr);
 		envp[envi++] = volume;
 	}
-	if (connection && connection_is_alive(connection)) {
+	if (connection) {
 			khelper_put_address(&my_addr, "DRBD_MY_", &connection->my_addr);
 			envp[envi++] = my_addr.family;
 			envp[envi++] = my_addr.address;
@@ -2293,7 +2293,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	memcpy(&connection->my_addr, nla_data(adm_ctx.my_addr), connection->my_addr_len);
 	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
-	connection->alive = true;
 
 	connection_to_info(&connection_info, connection, NOW);
 	flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
@@ -3078,9 +3077,6 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 
 found_connection:
 	list_for_each_entry_continue_rcu(connection, &resource->connections, connections) {
-		if (!connection_is_alive(connection))
-			continue;
-
 		retcode = NO_ERROR;
 		goto put_result;  /* only one iteration */
 	}
