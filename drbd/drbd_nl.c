@@ -2283,7 +2283,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
 
-	conn_free_crypto(connection);
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
 	connection->integrity_tfm = crypto.integrity_tfm;
 	connection->csums_tfm = crypto.csums_tfm;
@@ -2343,7 +2342,8 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 
 	switch (rv) {
 	case SS_ALREADY_STANDALONE:
-		return SS_SUCCESS;
+		rv = SS_SUCCESS;
+		break;
 	case SS_IS_DISKLESS:
 	case SS_LOWER_THAN_OUTDATED:
 		rv = change_cstate(connection, C_DISCONNECTING, CS_HARD);
@@ -2353,6 +2353,8 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 
 	if (rv >= SS_SUCCESS) {
 		enum drbd_state_rv rv2;
+		long irq_flags;
+
 		/* No one else can reconfigure the network while I am here.
 		 * The state handling only uses drbd_thread_stop_nowait(),
 		 * we want to really wait here until the receiver is no more.
@@ -2370,6 +2372,11 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 			drbd_err(connection,
 				"unexpected rv2=%d in conn_try_disconnect()\n",
 				rv2);
+		state_change_lock(connection->resource, &irq_flags, 0);
+		drbd_unregister_connection(connection);
+		state_change_unlock(connection->resource, &irq_flags);
+		synchronize_rcu();
+		drbd_put_connection(connection);
 	}
 	return rv;
 }
@@ -2397,7 +2404,9 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	mutex_lock(&connection->resource->conf_update);
 	rv = conn_try_disconnect(connection, parms.force_disconnect);
+	mutex_unlock(&connection->resource->conf_update);
 	if (rv < SS_SUCCESS)
 		retcode = rv;  /* FIXME: Type mismatch. */
 	else
@@ -3637,7 +3646,7 @@ out:
 int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_resource *resource;
-	struct drbd_connection *connection;
+	struct drbd_connection *connection, *tmp;
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 	unsigned i;
@@ -3654,11 +3663,12 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	for_each_connection(connection, resource) {
+	mutex_lock(&resource->conf_update);
+	for_each_connection_safe(connection, tmp, resource) {
 		retcode = conn_try_disconnect(connection, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to disconnect");
-			goto out;
+			goto unlock_out;
 		}
 	}
 
@@ -3667,7 +3677,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		retcode = adm_detach(device, 0);
 		if (retcode < SS_SUCCESS) {
 			drbd_msg_put_info("failed to detach");
-			goto out;
+			goto unlock_out;
 		}
 	}
 
@@ -3677,12 +3687,14 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		if (retcode != NO_ERROR) {
 			/* "can not happen" */
 			drbd_msg_put_info("failed to delete volume");
-			goto out;
+			goto unlock_out;
 		}
 	}
 
 	retcode = adm_del_resource(resource);
 
+unlock_out:
+	mutex_unlock(&resource->conf_update);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
