@@ -158,4 +158,8 @@ extern const char *drbd_buildtag(void);
 /* In ancient kernels (2.6.5) kref_put() only takes a kref as argument */
 //#define COMPAT_KREF_PUT_HAS_SINGLE_ARG
 
+/* in Commit 5a7bbad27a410350e64a2d7f5ec18fc73836c14f (between Linux-3.1 and 3.2)
+   make_request() becomes type void. Before it had type int. */
+#define COMPAT_HAVE_VOID_MAKE_REQUEST
+
 #endif

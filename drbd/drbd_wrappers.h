@@ -101,6 +101,16 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 	return bdev ? i_size_read(bdev->bd_inode) >> 9 : 0;
 }
 
+#ifdef COMPAT_HAVE_VOID_MAKE_REQUEST
+/* in Commit 5a7bbad27a410350e64a2d7f5ec18fc73836c14f (between Linux-3.1 and 3.2)
+   make_request() becomes type void. Before it had type int. */
+#define MAKE_REQUEST_TYPE void
+#define MAKE_REQUEST_RETURN return
+#else
+#define MAKE_REQUEST_TYPE int
+#define MAKE_REQUEST_RETURN return 0
+#endif
+
 /* sets the number of 512 byte sectors of our virtual device */
 static inline void drbd_set_my_capacity(struct drbd_conf *mdev,
 					sector_t size)

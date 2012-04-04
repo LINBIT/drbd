@@ -226,6 +226,11 @@ then
   else
     kref_put_has_single_arg=0
   fi
+  if grep_q "typedef void (make_request_fn)" $KDIR/include/linux/blkdev.h ; then
+	  compat_have_void_make_request=1
+  else
+	  compat_have_void_make_request=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -291,6 +296,8 @@ perl -pe "
   { ( $have_find_next_zero_bit_le ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_KREF_PUT_HAS_SINGLE_ARG.*)}
   { ( $kref_put_has_single_arg ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_VOID_MAKE_REQUEST.*)}
+  { ( $compat_have_void_make_request ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
