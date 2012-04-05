@@ -12,7 +12,9 @@
 # exit code != 0. So be carefull with the exit code!
 #
 
-if [ -z "$DRBD_RESOURCE" || -z "$DRBD_LL_DISK" ]; then
+export LC_ALL=C LANG=C
+
+if [[ -z "$DRBD_RESOURCE" || -z "$DRBD_LL_DISK" ]]; then
 	echo "DRBD_RESOURCE/DRBD_LL_DISK is not set. This script is supposed to"
 	echo "get called by drbdadm as a handler script"
 	exit 0
@@ -29,14 +31,38 @@ if [ $? != 0 ]; then
 	exit 0
 fi
 
-lvdisplay "$DRBD_LL_DISK" > /dev/null || exit 0 # not a LV
+if BACKING_BDEV=$(drbdadm sh-ll-dev "$DRBD_RESOURCE/$DRBD_VOLUME"); then
+	is_stacked=false
+elif BACKING_BDEV=$(drbdadm sh-ll-dev "$(drbdadm -S sh-lr-of "$DRBD_RESOURCE")/$DRBD_VOLUME"); then
+	is_stacked=true
+else
+	echo "Cannot determine lower level device of resource $DRBD_RESOURCE/$DRBD_VOLUME, sorry."
+	exit 0
+fi
+
+set_vg_lv_size()
+{
+	local X
+	if ! X=$(lvs --noheadings --nosuffix --units s -o vg_name,lv_name,lv_size "$BACKING_BDEV") ; then
+		# if lvs cannot tell me the info I need,
+		# this is:
+		echo "Cannot create snapshot of $BACKING_BDEV, apparently no LVM LV."
+		return 1
+	fi
+	set -- $X
+	VG_NAME=$1 LV_NAME=$2 LV_SIZE_K=$[$3 / 2]
+	return 0
+}
+set_vg_lv_size || exit 0 # clean exit if not an lvm lv
+
 
 SNAP_PERC=10
 SNAP_ADDITIONAL=10240
 DISCONNECT_ON_ERROR=0
 LVC_OPTIONS=""
 BE_VERBOSE=0
-SNAP_NAME=${DRBD_LL_DISK##*/}-before-resync
+SNAP_NAME=$LV_NAME-before-resync
+$is_stacked && SNAP_NAME=$SNAP_NAME-stacked
 DEFAULTFILE="/etc/default/drbd-snapshot"
 
 if [ -f $DEFAULTFILE ]; then
@@ -74,23 +100,32 @@ LVC_OPTIONS="$@"
 
 if [[ $0 == *unsnapshot* ]]; then
 	[ $BE_VERBOSE = 1 ] && set -x
-	VG_PATH=${DRBD_LL_DISK%/*}
-	lvremove -f ${VG_PATH}/${SNAP_NAME}
+	lvremove -f $VG_NAME/$SNAP_NAME
 	exit 0
 else
 	(
 		set -e
 		[ $BE_VERBOSE = 1 ] && set -x
+		case $DRBD_MINOR in
+			*[!0-9]*|"")
+			if $is_stacked; then
+				DRBD_MINOR=$(drbdadm -S sh-minor "$DRBD_RESOURCE")
+			else
+				DRBD_MINOR=$(drbdadm sh-minor "$DRBD_RESOURCE")
+			fi
+			;;
+		*)
+			:;; # ok, already exported by drbdadm
+		esac
+
 		OUT_OF_SYNC=$(sed -ne "/^ *$DRBD_MINOR:/ "'{
 				n;
 				s/^.* oos:\([0-9]*\).*$/\1/;
 				s/^$/0/; # default if not found
 				p;
 				q; }' < /proc/drbd) # unit KiB
-		_BDS=$(blockdev --getsize64 $DRBD_LL_DISK)
-		BACKING=$((_BDS / 1024)) # unit KiB
-		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + BACKING * SNAP_PERC / 100))
-		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $LVC_OPTIONS $DRBD_LL_DISK
+		SNAP_SIZE=$((OUT_OF_SYNC + SNAP_ADDITIONAL + LV_SIZE_K * SNAP_PERC / 100))
+		lvcreate -s -n $SNAP_NAME -L ${SNAP_SIZE}k $LVC_OPTIONS $VG_NAME/$LV_NAME
 	)
 	RV=$?
 	[ $DISCONNECT_ON_ERROR = 0 ] && exit 0
