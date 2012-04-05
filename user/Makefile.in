@@ -32,6 +32,7 @@ INITDIR = @INITDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 CC = @CC@
 CFLAGS = @CFLAGS@
+LDFLAGS = @LDFLAGS@
 LN_S = @LN_S@
 
 # features enabled or disabled by configure
@@ -73,7 +74,7 @@ drbd_strings.c: ../drbd/drbd_strings.c
 	cp $^ $@
 
 drbdadm: $(drbdadm-obj)
-	$(CC) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -82,10 +83,10 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 	flex -s -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 drbdsetup: $(drbdsetup-obj)
-	$(CC) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^
 
 drbdmeta: $(drbdmeta-obj)
-	$(CC) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
