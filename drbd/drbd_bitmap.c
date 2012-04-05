@@ -1131,9 +1131,10 @@ STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 	 * no need to wait.  Still, we need to put the kref associated with the
 	 * "in_flight reached zero, all done" event.
 	 */
-	if (!atomic_dec_and_test(&ctx->in_flight))
+	if (!atomic_dec_and_test(&ctx->in_flight)) {
+		drbd_blk_run_queue(bdev_get_queue(mdev->ldev->md_bdev));
 		wait_until_done_or_disk_failure(mdev, mdev->ldev, &ctx->done);
-	else
+	} else
 		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 
 	/* summary for global bitmap IO */

@@ -218,6 +218,23 @@ static struct page *__drbd_alloc_pages(struct drbd_conf *mdev,
 	return NULL;
 }
 
+/* kick lower level device, if we have more than (arbitrary number)
+ * reference counts on it, which typically are locally submitted io
+ * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
+static void maybe_kick_lo(struct drbd_conf *mdev)
+{
+	unsigned int watermark;
+	struct net_conf *nc;
+
+	rcu_read_lock();
+	nc = rcu_dereference(mdev->tconn->net_conf);
+	watermark = nc ? nc->unplug_watermark : 1000000;
+	rcu_read_unlock();
+
+	if (atomic_read(&mdev->local_cnt) >= watermark)
+		drbd_kick_lo(mdev);
+}
+
 static void reclaim_finished_net_peer_reqs(struct drbd_conf *mdev,
 					   struct list_head *to_be_freed)
 {
@@ -237,11 +254,12 @@ static void reclaim_finished_net_peer_reqs(struct drbd_conf *mdev,
 	}
 }
 
-static void drbd_reclaim_net(struct drbd_conf *mdev)
+static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
 
+	maybe_kick_lo(mdev);
 	spin_lock_irq(&mdev->tconn->req_lock);
 	reclaim_finished_net_peer_reqs(mdev, &reclaimed);
 	spin_unlock_irq(&mdev->tconn->req_lock);
@@ -283,7 +301,7 @@ struct page *drbd_alloc_pages(struct drbd_conf *mdev, unsigned int number,
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		drbd_reclaim_net(mdev);
+		drbd_kick_lo_and_reclaim_net(mdev);
 
 		if (atomic_read(&mdev->pp_in_use) < mxb) {
 			page = __drbd_alloc_pages(mdev, number);
@@ -469,6 +487,7 @@ static void _drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 	while (!list_empty(head)) {
 		prepare_to_wait(&mdev->ee_wait, &wait, TASK_UNINTERRUPTIBLE);
 		spin_unlock_irq(&mdev->tconn->req_lock);
+		drbd_kick_lo(mdev);
 		schedule();
 		finish_wait(&mdev->ee_wait, &wait);
 		spin_lock_irq(&mdev->tconn->req_lock);
@@ -1438,6 +1457,7 @@ next_bio:
 		if (bios && bios->bi_next)
 			bios->bi_rw &= ~DRBD_REQ_FLUSH;
 	} while (bios);
+	maybe_kick_lo(mdev);
 	return 0;
 
 fail:
@@ -1556,6 +1576,24 @@ STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
+
+#ifdef blk_queue_plugged
+	struct drbd_conf *mdev;
+	int vnr;
+	/* unplug all volumes, unless protocol C */
+	rcu_read_lock();
+	if (rcu_dereference(tconn->net_conf)->wire_protocol != DRBD_PROT_C) {
+		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+				break;
+			kref_get(&mdev->kref);
+			rcu_read_unlock();
+			drbd_kick_lo(mdev);
+			kref_put(&mdev->kref, &drbd_minor_destroy);
+			rcu_read_lock();
+		}
+	}
+	rcu_read_unlock();
+#endif
 
 	/* FIXME these are unacked on connection,
 	 * not a specific (peer)device.
@@ -4490,6 +4528,9 @@ STATIC int receive_UnplugRemote(struct drbd_tconn *tconn, struct packet_info *pi
 	mdev = vnr_to_mdev(tconn, pi->vnr);
 	if (!mdev)
 		return -EIO;
+
+	if (mdev->state.disk >= D_INCONSISTENT)
+		drbd_kick_lo(mdev);
 
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
