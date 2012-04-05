@@ -2784,11 +2784,17 @@ void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	int vnr;
 
 	if (atomic_read(&connection->current_epoch->epoch_size) !=  0)
 		drbd_err(connection, "epoch_size:%d\n", atomic_read(&connection->current_epoch->epoch_size));
 	kfree(connection->current_epoch);
 
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		kref_put(&peer_device->device->kref, drbd_destroy_device);
+		free_peer_device(peer_device);
+	}
 	idr_destroy(&connection->peer_devices);
 
 	drbd_free_socket(&connection->meta);
