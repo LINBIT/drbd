@@ -3065,6 +3065,32 @@ void drbd_put_device(struct drbd_device *device)
 	kref_sub(&device->kref, refs, drbd_destroy_device);
 }
 
+/**
+ * drbd_unregister_connection()  -  make a connection "invisible"
+ *
+ * Remove the connection from the drbd object model.  Keep reference counts on
+ * connection->kref; they are dropped in drbd_put_connection().
+ */
+void drbd_unregister_connection(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		list_del_rcu(&peer_device->peer_devices);
+	list_del_rcu(&connection->connections);
+}
+
+void drbd_put_connection(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr, refs = 1;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		refs++;
+	kref_sub(&connection->kref, refs, drbd_destroy_connection);
+}
+
 int __init drbd_init(void)
 {
 	int err;

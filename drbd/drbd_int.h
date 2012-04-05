@@ -1355,6 +1355,8 @@ extern enum drbd_ret_code drbd_create_device(struct drbd_resource *, unsigned in
 extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_put_device(struct drbd_device *);
+extern void drbd_unregister_connection(struct drbd_connection *);
+extern void drbd_put_connection(struct drbd_connection *);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_free_resource(struct drbd_resource *resource);
