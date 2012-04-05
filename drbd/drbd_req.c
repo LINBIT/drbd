@@ -1281,7 +1281,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_time);
-	return 0;
+	MAKE_REQUEST_RETURN;
 }
 
 /* This is called by bio_add_page().
