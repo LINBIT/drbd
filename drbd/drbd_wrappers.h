@@ -235,7 +235,7 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 	if (!bio->bi_bdev) {
 		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
 				"bio->bi_bdev == NULL\n",
-		       mdev_to_minor(device));
+		       device_to_minor(device));
 		dump_stack();
 		bio_endio(bio, -ENODEV);
 		return;

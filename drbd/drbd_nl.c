@@ -430,7 +430,7 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	snprintf(resource_name, sizeof(resource_name), "DRBD_RESOURCE=%s", resource->name);
 	envp[envi++] = resource_name;
 	if (device) {
-		snprintf(minor, sizeof(minor), "DRBD_MINOR=%u", mdev_to_minor(device));
+		snprintf(minor, sizeof(minor), "DRBD_MINOR=%u", device_to_minor(device));
 		envp[envi++] = minor;
 		snprintf(volume, sizeof(volume), "DRBD_VOLUME=%u", device->vnr);
 		envp[envi++] = volume;

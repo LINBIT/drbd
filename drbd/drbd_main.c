@@ -537,7 +537,7 @@ int conn_lowest_minor(struct drbd_connection *connection)
 	rcu_read_lock();
 	peer_device = idr_get_next(&connection->peer_devices, &vnr);
 	if (peer_device)
-		minor = mdev_to_minor(peer_device->device);
+		minor = device_to_minor(peer_device->device);
 	rcu_read_unlock();
 
 	return minor;
@@ -3046,7 +3046,7 @@ void drbd_delete_device(struct drbd_device *device)
 		refs++;
 	}
 	idr_remove(&resource->devices, device->vnr);
-	idr_remove(&drbd_devices, mdev_to_minor(device));
+	idr_remove(&drbd_devices, device_to_minor(device));
 	del_gendisk(device->vdisk);
 	synchronize_rcu();
 	kref_sub(&device->kref, refs, drbd_destroy_device);
@@ -4071,7 +4071,7 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 
 	unsigned int ret = (
 		(fault_devs == 0 ||
-			((1 << mdev_to_minor(device)) & fault_devs) != 0) &&
+			((1 << device_to_minor(device)) & fault_devs) != 0) &&
 		(((_drbd_fault_random(&rrs) % 100) + 1) <= fault_rate));
 
 	if (ret) {

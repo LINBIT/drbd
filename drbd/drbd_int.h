@@ -1006,7 +1006,7 @@ static inline unsigned drbd_req_state_by_conn(struct drbd_request *req,
 #define for_each_peer_device_safe(peer_device, tmp, device) \
 	list_for_each_entry_safe(peer_device, tmp, &device->peer_devices, peer_devices)
 
-static inline unsigned int mdev_to_minor(struct drbd_device *device)
+static inline unsigned int device_to_minor(struct drbd_device *device)
 {
 	return device->minor;
 }
