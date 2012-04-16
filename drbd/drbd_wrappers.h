@@ -647,7 +647,6 @@ enum {
 				 * now equivalent to bi_rw */
 
 #define DRBD_REQ_SYNC		REQ_SYNC
-#define DRBD_REQ_UNPLUG		REQ_UNPLUG
 #define DRBD_REQ_FLUSH		REQ_FLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_DISCARD	REQ_DISCARD
@@ -660,6 +659,14 @@ enum {
 #else
 /* ... but REQ_HARDBARRIER was removed again in 02e031c (v2.6.37-rc4). */
 #define DRBD_REQ_HARDBARRIER	0
+#endif
+
+/* again: testing on this _inside_ the ifdef REQ_FLUSH,
+ * see 721a960 block: kill off REQ_UNPLUG */
+#ifdef REQ_UNPLUG
+#define DRBD_REQ_UNPLUG		REQ_UNPLUG
+#else
+#define DRBD_REQ_UNPLUG		0
 #endif
 
 #else				/* "older", and hopefully not
