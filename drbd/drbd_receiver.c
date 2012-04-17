@@ -1571,29 +1571,35 @@ void conn_wait_done_ee_empty(struct drbd_tconn *tconn)
 	rcu_read_unlock();
 }
 
+#ifdef blk_queue_plugged
+static void drbd_unplug_all_devices(struct drbd_tconn *tconn)
+{
+	struct drbd_conf *mdev;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
+		kref_get(&mdev->kref);
+		rcu_read_unlock();
+		drbd_kick_lo(mdev);
+		kref_put(&mdev->kref, &drbd_minor_destroy);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+#else
+static void drbd_unplug_all_devices(struct drbd_tconn *tconn)
+{
+}
+#endif
+
 STATIC int receive_Barrier(struct drbd_tconn *tconn, struct packet_info *pi)
 {
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
 
-#ifdef blk_queue_plugged
-	struct drbd_conf *mdev;
-	int vnr;
-	/* unplug all volumes, unless protocol C */
-	rcu_read_lock();
-	if (rcu_dereference(tconn->net_conf)->wire_protocol != DRBD_PROT_C) {
-		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-				break;
-			kref_get(&mdev->kref);
-			rcu_read_unlock();
-			drbd_kick_lo(mdev);
-			kref_put(&mdev->kref, &drbd_minor_destroy);
-			rcu_read_lock();
-		}
-	}
-	rcu_read_unlock();
-#endif
+	drbd_unplug_all_devices(tconn);
 
 	/* FIXME these are unacked on connection,
 	 * not a specific (peer)device.
@@ -4523,18 +4529,12 @@ STATIC int receive_skip(struct drbd_tconn *tconn, struct packet_info *pi)
 
 STATIC int receive_UnplugRemote(struct drbd_tconn *tconn, struct packet_info *pi)
 {
-	struct drbd_conf *mdev;
-
-	mdev = vnr_to_mdev(tconn, pi->vnr);
-	if (!mdev)
-		return -EIO;
-
-	if (mdev->state.disk >= D_INCONSISTENT)
-		drbd_kick_lo(mdev);
+	/* just unplug all devices always, regardless which volume number */
+	drbd_unplug_all_devices(tconn);
 
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
-	drbd_tcp_quickack(mdev->tconn->data.socket);
+	drbd_tcp_quickack(tconn->data.socket);
 
 	return 0;
 }
