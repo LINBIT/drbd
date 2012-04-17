@@ -2174,13 +2174,12 @@ static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 d
 	return dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0;
 }
 
-static void fail_postponed_requests(struct drbd_device *device, sector_t sector,
-				    unsigned int size)
+static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 {
-	/* FIXME when/where do we iterate over peer devices,
-	 * if we support > 2 primaries? */
-	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_device *device = peer_req->peer_device->device;
 	struct drbd_interval *i;
+	const sector_t sector = peer_req->i.sector;
+	const unsigned int size = peer_req->i.size;
 
     repeat:
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
@@ -2193,7 +2192,7 @@ static void fail_postponed_requests(struct drbd_device *device, sector_t sector,
 		if (!(req->rq_state[0] & RQ_POSTPONED))
 			continue;
 		req->rq_state[0] &= ~RQ_POSTPONED;
-		__req_mod(req, NEG_ACKED, peer_device, &m);
+		__req_mod(req, NEG_ACKED, peer_req->peer_device, &m);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (m.bio)
 			complete_master_bio(device, &m);
@@ -2291,7 +2290,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 					begin_state_change_locked(connection->resource, CS_HARD);
 					__change_cstate(connection, C_TIMEOUT);
 					end_state_change_locked(connection->resource);
-					fail_postponed_requests(device, sector, size);
+					fail_postponed_requests(peer_req);
 					goto out;
 				}
 				goto repeat;
