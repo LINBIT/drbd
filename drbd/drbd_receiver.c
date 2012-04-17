@@ -1923,11 +1923,13 @@ STATIC int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	return err;
 }
 
-static void restart_conflicting_writes(struct drbd_device *device,
-				       sector_t sector, int size)
+static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 {
 	struct drbd_interval *i;
 	struct drbd_request *req;
+	struct drbd_device *device = peer_req->peer_device->device;
+	const sector_t sector = peer_req->i.sector;
+	const unsigned int size = peer_req->i.size;
 
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		if (!i->local)
@@ -1938,9 +1940,7 @@ static void restart_conflicting_writes(struct drbd_device *device,
 			continue;
 		/* as it is RQ_POSTPONED, this will cause it to
 		 * be queued on the retry workqueue. */
-		/* FIXME: only a single connection?
-		 * iterate over all connections? */
-		__req_mod(req, DISCARD_WRITE, first_peer_device(req->device), NULL);
+		__req_mod(req, DISCARD_WRITE, peer_req->peer_device, NULL);
 	}
 }
 
@@ -1986,7 +1986,7 @@ STATIC int e_end_block(struct drbd_work *w, int cancel)
 		D_ASSERT(device, !drbd_interval_empty(&peer_req->i));
 		drbd_remove_peer_req_interval(device, peer_req);
 		if (peer_req->flags & EE_RESTART_REQUESTS)
-			restart_conflicting_writes(device, sector, peer_req->i.size);
+			restart_conflicting_writes(peer_req);
 		spin_unlock_irq(&device->resource->req_lock);
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
