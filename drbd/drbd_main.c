@@ -1799,12 +1799,13 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long b
 {
 	if (connection->agreed_pro_version >= 95)
 		return  (bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
+			(bi_rw & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
 			(bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
 			(bi_rw & DRBD_REQ_FLUSH ? DP_FLUSH : 0) |
 			(bi_rw & DRBD_REQ_DISCARD ? DP_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
-	return bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0;
+	return bi_rw & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
 }
 
 /* Used to send write requests
