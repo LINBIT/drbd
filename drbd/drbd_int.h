@@ -954,10 +954,6 @@ static inline struct drbd_device *minor_to_mdev(unsigned int minor)
 	return (struct drbd_device *)idr_find(&drbd_devices, minor);
 }
 
-static inline struct drbd_peer_device *first_peer_device(struct drbd_device *device)
-{
-	return list_first_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
-}
 
 static inline struct drbd_peer_device *
 conn_peer_device(struct drbd_connection *connection, int volume_number)
