@@ -957,7 +957,7 @@ static void _convert_after_option(struct d_resource *res, struct d_volume *vol)
 		return;
 
 	STAILQ_FOREACH(opt, &vol->disk_options, link) {
-		if (strcpy(opt->name, "resync-after"))
+		if (strcmp(opt->name, "resync-after"))
 			continue;
 		ctx_by_name(&depends_on_ctx, opt->value);
 		volumes = ctx_set_implicit_volume(&depends_on_ctx);
