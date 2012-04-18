@@ -484,7 +484,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	struct d_volume *vol;
 	struct connection *conn;
 	bool iterate_vols, iterate_conns;
-	int ret;
+	int ret = 0;
 
 	if (!res->peers_addrs_set && cmd->need_peer)
 		set_peer_in_resource(res, cmd->need_peer);
@@ -503,7 +503,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 			ctx->vol = vol;
 			ret = call_cmd_fn(cmd->function, ctx, on_error);
 			if (ret)
-				return ret;
+				break;
 		}
 	} else if (iterate_conns) {
 		for_each_connection(conn, &res->connections) {
@@ -512,7 +512,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 			ctx->conn = conn;
 			ret = call_cmd_fn(cmd->function, ctx, on_error);
 			if (ret)
-				return ret;
+				break;
 		}
 	} else {
 		ret = call_cmd_fn(cmd->function, ctx, on_error);
