@@ -443,5 +443,16 @@ extern void add_setup_option(bool explicit, char *option);
 #define PARSER_CHECK_PROXY_KEYWORD (1)
 #define PARSER_STOP_IF_INVALID (2)
 
+#ifndef STAILQ_CONCAT
+/* compat for older libc sys/queue.h */
+#define	STAILQ_CONCAT(head1, head2) do {				\
+	if (!STAILQ_EMPTY((head2))) {					\
+		*(head1)->stqh_last = (head2)->stqh_first;		\
+		(head1)->stqh_last = (head2)->stqh_last;		\
+		STAILQ_INIT((head2));					\
+	}								\
+} while (/*CONSTCOND*/0)
+#endif
+
 #endif
 
