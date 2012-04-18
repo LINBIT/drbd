@@ -1383,7 +1383,7 @@ void request_timer_fn(unsigned long data)
 			}
 		}
 	}
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&device->resource->req_lock);
 
 	if (restart_timer) {
 		if (req)
