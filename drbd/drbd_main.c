@@ -2116,7 +2116,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->done_ee));
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->net_ee));
-	D_ASSERT(device, list_empty(&device->unplug_work.list));
 	D_ASSERT(device, list_empty(&device->go_diskless.list));
 
 	rcu_read_lock();
@@ -2907,12 +2906,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
-	INIT_LIST_HEAD(&device->unplug_work.list);
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
 
-	device->unplug_work.cb  = w_send_write_hint;
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
 

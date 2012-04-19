@@ -1269,20 +1269,6 @@ int drbd_send_barrier(struct drbd_connection *connection)
 	return conn_send_command(connection, sock, P_BARRIER, sizeof(*p), NULL, 0);
 }
 
-int w_send_write_hint(struct drbd_work *w, int cancel)
-{
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, unplug_work);
-	struct drbd_socket *sock;
-
-	if (cancel)
-		return 0;
-	sock = &first_peer_device(device)->connection->data;
-	if (!drbd_prepare_command(first_peer_device(device), sock))
-		return -EIO;
-	return drbd_send_command(first_peer_device(device), sock, P_UNPLUG_REMOTE, 0, NULL, 0);
-}
-
 static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *other_device = peer_device->device;
