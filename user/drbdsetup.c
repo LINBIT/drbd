@@ -521,9 +521,7 @@ char *cmdname = NULL; /* "drbdsetup" for reporting in usage etc. */
  */
 char *objname;
 unsigned minor = -1U;
-struct sockaddr_storage my_addr, peer_addr;
-int my_addr_len, peer_addr_len;
-unsigned int volume;
+struct drbd_cfg_context global_ctx;
 enum cfg_ctx_key context;
 
 int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the environment */
@@ -540,10 +538,10 @@ struct genl_family drbd_genl_family = {
 
 static bool endpoints_found(struct drbd_cfg_context *ctx)
 {
-	return my_addr_len == ctx->ctx_my_addr_len &&
-	       peer_addr_len == ctx->ctx_peer_addr_len &&
-	       !memcmp(&my_addr, ctx->ctx_my_addr, my_addr_len) &&
-	       !memcmp(&peer_addr, ctx->ctx_peer_addr, peer_addr_len);
+	return global_ctx.ctx_my_addr_len == ctx->ctx_my_addr_len &&
+	       global_ctx.ctx_peer_addr_len == ctx->ctx_peer_addr_len &&
+	       !memcmp(&global_ctx.ctx_my_addr, ctx->ctx_my_addr, global_ctx.ctx_my_addr_len) &&
+	       !memcmp(&global_ctx.ctx_peer_addr, ctx->ctx_peer_addr, global_ctx.ctx_peer_addr_len);
 }
 
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg,
@@ -986,11 +984,11 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	if (context & CTX_MINOR)
 		dhdr->minor = minor;
 	if (context & CTX_VOLUME)
-		nla_put_u32(smsg, T_ctx_volume, volume);
+		nla_put_u32(smsg, T_ctx_volume, global_ctx.ctx_volume);
 	if (context & CTX_MY_ADDR)
-		nla_put(smsg, T_ctx_my_addr, my_addr_len, &my_addr);
+		nla_put(smsg, T_ctx_my_addr, global_ctx.ctx_my_addr_len, &global_ctx.ctx_my_addr);
 	if (context & CTX_PEER_ADDR)
-		nla_put(smsg, T_ctx_peer_addr, peer_addr_len, &peer_addr);
+		nla_put(smsg, T_ctx_peer_addr, global_ctx.ctx_peer_addr_len, &global_ctx.ctx_peer_addr);
 	if (context & ~CTX_MINOR)
 		nla_nest_end(smsg, nla);
 
@@ -1229,9 +1227,9 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 
 	assert((context & CTX_VOLUME) && (context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR));
 	nla = nla_nest_start(ctx->smsg, DRBD_NLA_CFG_CONTEXT);
-	nla_put_u32(ctx->smsg, T_ctx_volume, volume);
-	nla_put(ctx->smsg, T_ctx_my_addr, my_addr_len, &my_addr);
-	nla_put(ctx->smsg, T_ctx_peer_addr, peer_addr_len, &peer_addr);
+	nla_put_u32(ctx->smsg, T_ctx_volume, global_ctx.ctx_volume);
+	nla_put(ctx->smsg, T_ctx_my_addr, global_ctx.ctx_my_addr_len, &global_ctx.ctx_my_addr);
+	nla_put(ctx->smsg, T_ctx_peer_addr, global_ctx.ctx_peer_addr_len, &global_ctx.ctx_peer_addr);
 	nla_nest_end(ctx->smsg, nla);
 
 	if (genl_send(drbd_sock, ctx->smsg)) {
@@ -2133,20 +2131,20 @@ static struct resources_list *list_resources(void)
 	struct resources_list *r;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
-	int old_my_addr_len = my_addr_len;
-	int old_peer_addr_len = peer_addr_len;
+	int old_my_addr_len = global_ctx.ctx_my_addr_len;
+	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
 	__remembered_resources_tail = &__remembered_resources;
 	objname = "all";
 	minor = -1;
-	my_addr_len = 0;
-	peer_addr_len = 0;
+	global_ctx.ctx_my_addr_len = 0;
+	global_ctx.ctx_peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
 	objname = old_objname;
 	minor = old_minor;
-	my_addr_len = old_my_addr_len;
-	peer_addr_len = old_peer_addr_len;
+	global_ctx.ctx_my_addr_len = old_my_addr_len;
+	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
 	r = __remembered_resources;
 	__remembered_resources = NULL;
 	if (err) {
@@ -2197,20 +2195,20 @@ static struct devices_list *list_devices(char *resource_name)
 	struct devices_list *r;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
-	int old_my_addr_len = my_addr_len;
-	int old_peer_addr_len = peer_addr_len;
+	int old_my_addr_len = global_ctx.ctx_my_addr_len;
+	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
 	__remembered_devices_tail = &__remembered_devices;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
-	my_addr_len = 0;
-	peer_addr_len = 0;
+	global_ctx.ctx_my_addr_len = 0;
+	global_ctx.ctx_peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
 	objname = old_objname;
 	minor = old_minor;
-	my_addr_len = old_my_addr_len;
-	peer_addr_len = old_peer_addr_len;
+	global_ctx.ctx_my_addr_len = old_my_addr_len;
+	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
 	r = __remembered_devices;
 	__remembered_devices = NULL;
 	if (err) {
@@ -2266,20 +2264,20 @@ static struct connections_list *list_connections(char *resource_name)
 	struct connections_list *c;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
-	int old_my_addr_len = my_addr_len;
-	int old_peer_addr_len = peer_addr_len;
+	int old_my_addr_len = global_ctx.ctx_my_addr_len;
+	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
 	__remembered_connections_tail = &__remembered_connections;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
-	my_addr_len = 0;
-	peer_addr_len = 0;
+	global_ctx.ctx_my_addr_len = 0;
+	global_ctx.ctx_peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
 	objname = old_objname;
 	minor = old_minor;
-	my_addr_len = old_my_addr_len;
-	peer_addr_len = old_peer_addr_len;
+	global_ctx.ctx_my_addr_len = old_my_addr_len;
+	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
 	c = __remembered_connections;
 	__remembered_connections = NULL;
 	if (err) {
@@ -2335,20 +2333,20 @@ static struct peer_devices_list *list_peer_devices(char *resource_name)
 	struct peer_devices_list *r;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
-	int old_my_addr_len = my_addr_len;
-	int old_peer_addr_len = peer_addr_len;
+	int old_my_addr_len = global_ctx.ctx_my_addr_len;
+	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
 	__remembered_peer_devices_tail = &__remembered_peer_devices;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
-	my_addr_len = 0;
-	peer_addr_len = 0;
+	global_ctx.ctx_my_addr_len = 0;
+	global_ctx.ctx_peer_addr_len = 0;
 	err = generic_get_cmd(&cmd, 0, NULL);
 	objname = old_objname;
 	minor = old_minor;
-	my_addr_len = old_my_addr_len;
-	peer_addr_len = old_peer_addr_len;
+	global_ctx.ctx_my_addr_len = old_my_addr_len;
+	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
 	r = __remembered_peer_devices;
 	__remembered_peer_devices = NULL;
 	if (err) {
@@ -2497,12 +2495,12 @@ static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	peer_devices = list_peer_devices(NULL);
 	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
 		if (!endpoints_found(&peer_device->ctx) ||
-		    peer_device->ctx.ctx_volume != volume)
+		    peer_device->ctx.ctx_volume != global_ctx.ctx_volume)
 			continue;
 
 		devices = list_devices(peer_device->ctx.ctx_resource_name);
 		for (device = devices; device; device = device->next) {
-			if (device->ctx.ctx_volume == volume)
+			if (device->ctx.ctx_volume == global_ctx.ctx_volume)
 				goto found;
 		}
 	}
@@ -3127,18 +3125,24 @@ int main(int argc, char **argv)
 		} else {
 			if (next_arg == CTX_MY_ADDR) {
 				const char *str = argv[optind];
+				struct sockaddr_storage *x;
 
 				if (strncmp(str, "local:", 6) == 0)
 					str += 6;
-				my_addr_len = sockaddr_from_str(&my_addr, str);
+				assert(sizeof(global_ctx.ctx_my_addr) >= sizeof(*x));
+				x = (struct sockaddr_storage *)&global_ctx.ctx_my_addr;
+				global_ctx.ctx_my_addr_len = sockaddr_from_str(x, str);
 			} else if (next_arg == CTX_PEER_ADDR) {
 				const char *str = argv[optind];
+				struct sockaddr_storage *x;
 
 				if (strncmp(str, "peer:", 5) == 0)
 					str += 5;
-				peer_addr_len = sockaddr_from_str(&peer_addr, str);
+				assert(sizeof(global_ctx.ctx_peer_addr) >= sizeof(*x));
+				x = (struct sockaddr_storage *)&global_ctx.ctx_peer_addr;
+				global_ctx.ctx_peer_addr_len = sockaddr_from_str(x, str);
 			} else if (next_arg == CTX_VOLUME)
-				volume = m_strtoll(argv[optind], 1);
+				global_ctx.ctx_volume = m_strtoll(argv[optind], 1);
 			context |= next_arg;
 		}
 	}
