@@ -1498,25 +1498,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	for_each_peer_device(peer_device, device) {
-		struct fifo_buffer *new_plan;
-
-		new_plan = fifo_alloc((new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
-		if (!new_plan) {
-			retcode = ERR_NOMEM;
-			goto fail;
-		}
-		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
-		peer_device->resync_lru =
-			 lc_create("resync", drbd_bm_ext_cache,
-				   1, 61, sizeof(struct bm_extent),
-				   offsetof(struct bm_extent, lce));
-		if (!peer_device->resync_lru) {
-			retcode = ERR_NOMEM;
-			goto fail;
-		}
-	}
-
 	bdev = blkdev_get_by_path(new_disk_conf->backing_dev,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, device);
 	if (IS_ERR(bdev)) {
@@ -1659,23 +1640,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
-	lock_all_resources();
-	retcode = drbd_resync_after_valid(device, new_disk_conf->resync_after);
-	if (retcode != NO_ERROR) {
-		unlock_all_resources();
-		goto force_diskless_dec;
-	}
-
-	for_each_peer_device(peer_device, device)
-		drbd_attach_peer_device(peer_device);
-
-	/* Reset the "barriers don't work" bits here, then force meta data to
-	 * be written, to ensure we determine if barriers are supported. */
-	if (new_disk_conf->md_flushes)
-		clear_bit(MD_NO_BARRIER, &device->flags);
-	else
-		set_bit(MD_NO_BARRIER, &device->flags);
-
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
 	 * now device takes over responsibility, and the state engine should
@@ -1684,6 +1648,28 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	device->ldev = nbc;
 	nbc = NULL;
 	new_disk_conf = NULL;
+
+	for_each_peer_device(peer_device, device) {
+		err = drbd_attach_peer_device(peer_device);
+		if (err) {
+			retcode = ERR_NOMEM;
+			goto force_diskless_dec;
+		}
+	}
+
+	lock_all_resources();
+	retcode = drbd_resync_after_valid(device, device->ldev->disk_conf->resync_after);
+	if (retcode != NO_ERROR) {
+		unlock_all_resources();
+		goto force_diskless_dec;
+	}
+
+	/* Reset the "barriers don't work" bits here, then force meta data to
+	 * be written, to ensure we determine if barriers are supported. */
+	if (device->ldev->disk_conf->md_flushes)
+		clear_bit(MD_NO_BARRIER, &device->flags);
+	else
+		set_bit(MD_NO_BARRIER, &device->flags);
 
 	drbd_resync_after_changed(device);
 	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
@@ -2307,7 +2293,11 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		drbd_attach_peer_device(peer_device);
+		err = drbd_attach_peer_device(peer_device);
+		if (err) {
+			retcode = ERR_NOMEM;
+			goto fail_free_connection;
+		}
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}

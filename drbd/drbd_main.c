@@ -979,9 +979,27 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 	struct drbd_connection *connection = peer_device->connection;
 	u32 peer_addr_hash;
 	int i, err = 0;
+	struct disk_conf *disk_conf;
+	struct fifo_buffer *resync_plan;
+	struct lru_cache *resync_lru;
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
+
+	disk_conf = rcu_dereference(device->ldev->disk_conf);
+
+	resync_plan = fifo_alloc((disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+	if (!resync_plan)
+		return -ENOMEM;
+	resync_lru = lc_create("resync", drbd_bm_ext_cache,
+			       1, 61, sizeof(struct bm_extent),
+			       offsetof(struct bm_extent, lce));
+	if (!resync_lru) {
+		kfree(resync_plan);
+		return -ENOMEM;
+	}
+	rcu_assign_pointer(peer_device->rs_plan_s, resync_plan);
+	peer_device->resync_lru = resync_lru;
 
 	peer_addr_hash = crc32c(0, &connection->peer_addr, connection->peer_addr_len);
 	i = find_peer_addr_hash(device, peer_addr_hash);
