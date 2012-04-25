@@ -1529,7 +1529,7 @@
             change of the active set is a write operation to the meta-data device. A higher number
             of extents gives longer resync times but less updates to the meta-data. The default
             number of <replaceable>extents</replaceable> is 127. (Minimum: 7, Maximum:
-            3843)</para>
+            6433)</para>
           </listitem>
         </varlistentry>
 
