@@ -198,9 +198,9 @@ const char *ctx_arg_string(enum cfg_ctx_key key)
 	case CTX_VOLUME:
 		return "{volume}";
 	case CTX_MY_ADDR:
-		return "[{af}:]{local_addr}[:{port}]";
+		return "[local:][{af}:]{local_addr}[:{port}]";
 	case CTX_PEER_ADDR:
-		return "[{af}:]{remote_addr}[:{port}]";
+		return "[peer:][{af}:]{remote_addr}[:{port}]";
 	case CTX_ALL:
 		return "all";
 	default:
@@ -3125,11 +3125,19 @@ int main(int argc, char **argv)
 			} else
 				context |= CTX_RESOURCE;
 		} else {
-			if (next_arg == CTX_MY_ADDR)
-				my_addr_len = sockaddr_from_str(&my_addr, argv[optind]);
-			else if (next_arg == CTX_PEER_ADDR)
-				peer_addr_len = sockaddr_from_str(&peer_addr, argv[optind]);
-			else if (next_arg == CTX_VOLUME)
+			if (next_arg == CTX_MY_ADDR) {
+				const char *str = argv[optind];
+
+				if (strncmp(str, "local:", 6) == 0)
+					str += 6;
+				my_addr_len = sockaddr_from_str(&my_addr, str);
+			} else if (next_arg == CTX_PEER_ADDR) {
+				const char *str = argv[optind];
+
+				if (strncmp(str, "peer:", 5) == 0)
+					str += 5;
+				peer_addr_len = sockaddr_from_str(&peer_addr, str);
+			} else if (next_arg == CTX_VOLUME)
 				volume = m_strtoll(argv[optind], 1);
 			context |= next_arg;
 		}
