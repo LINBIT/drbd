@@ -536,12 +536,12 @@ struct genl_family drbd_genl_family = {
 	.hdrsize = GENL_MAGIC_FAMILY_HDRSZ,
 };
 
-static bool endpoints_found(struct drbd_cfg_context *ctx)
+static bool endpoints_equal(struct drbd_cfg_context *a, struct drbd_cfg_context *b)
 {
-	return global_ctx.ctx_my_addr_len == ctx->ctx_my_addr_len &&
-	       global_ctx.ctx_peer_addr_len == ctx->ctx_peer_addr_len &&
-	       !memcmp(&global_ctx.ctx_my_addr, ctx->ctx_my_addr, global_ctx.ctx_my_addr_len) &&
-	       !memcmp(&global_ctx.ctx_peer_addr, ctx->ctx_peer_addr, global_ctx.ctx_peer_addr_len);
+	return a->ctx_my_addr_len == b->ctx_my_addr_len &&
+	       a->ctx_peer_addr_len == b->ctx_peer_addr_len &&
+	       !memcmp(a->ctx_my_addr, b->ctx_my_addr, a->ctx_my_addr_len) &&
+	       !memcmp(a->ctx_peer_addr, b->ctx_peer_addr, a->ctx_peer_addr_len);
 }
 
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg,
@@ -1857,7 +1857,7 @@ static void peer_devices_status(struct drbd_cfg_context *ctx, struct peer_device
 	struct peer_devices_list *peer_device;
 
 	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
-		if (!endpoints_found(ctx))
+		if (!endpoints_equal(ctx, &global_ctx))
 			continue;
 		peer_device_status(peer_device, peer_device);
 	}
@@ -1989,7 +1989,7 @@ static int cstate_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	connections = list_connections(NULL);
 	for (connection = connections; connection; connection = connection->next) {
-		if (!endpoints_found(&connection->ctx))
+		if (!endpoints_equal(&connection->ctx, &global_ctx))
 			continue;
 
 		printf("%s\n", drbd_conn_str(connection->info.conn_connection_state));
@@ -2494,7 +2494,7 @@ static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	peer_devices = list_peer_devices(NULL);
 	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
-		if (!endpoints_found(&peer_device->ctx) ||
+		if (!endpoints_equal(&peer_device->ctx, &global_ctx) ||
 		    peer_device->ctx.ctx_volume != global_ctx.ctx_volume)
 			continue;
 
@@ -2747,7 +2747,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 	if (info->genlhdr->cmd != DRBD_CONNECTION_STATE &&
 	    info->genlhdr->cmd != DRBD_PEER_DEVICE_STATE)
 		return 0;
-	if (!endpoints_found(&ctx))
+	if (!endpoints_equal(&ctx, &global_ctx))
 		return 0;
 
 	switch(info->genlhdr->cmd) {
