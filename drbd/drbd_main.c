@@ -3513,6 +3513,25 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	drbd_set_defaults(mdev);
 }
 
+#ifndef COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL
+/* Introduced with 6e0678f3 */
+void *mempool_alloc_pages(gfp_t gfp_mask, void *pool_data)
+{
+	int order = (int)(long)pool_data;
+	return alloc_pages(gfp_mask, order);
+}
+void mempool_free_pages(void *element, void *pool_data)
+{
+	int order = (int)(long)pool_data;
+	__free_pages(element, order);
+}
+static inline mempool_t *mempool_create_page_pool(int min_nr, int order)
+{
+	return mempool_create(min_nr, mempool_alloc_pages, mempool_free_pages,
+			      (void *)(long)order);
+}
+#endif
+
 
 STATIC void drbd_destroy_mempools(void)
 {

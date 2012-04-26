@@ -162,4 +162,7 @@ extern const char *drbd_buildtag(void);
    make_request() becomes type void. Before it had type int. */
 #define COMPAT_HAVE_VOID_MAKE_REQUEST
 
+/* mempool_create_page_pool did not exist prior to 2.6.16 */
+#define COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL
+
 #endif

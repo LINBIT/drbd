@@ -231,6 +231,11 @@ then
   else
 	  compat_have_void_make_request=0
   fi
+  if grep_q "mempool_create_page_pool" $KDIR/include/linux/mempool.h ; then
+	  compat_have_mempool_create_page_pool=1
+  else
+	  compat_have_mempool_create_page_pool=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -298,6 +303,8 @@ perl -pe "
   { ( $kref_put_has_single_arg ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_VOID_MAKE_REQUEST.*)}
   { ( $compat_have_void_make_request ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL.*)}
+  { ( $compat_have_mempool_create_page_pool ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
