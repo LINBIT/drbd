@@ -1035,6 +1035,12 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 #define time_is_after_eq_jiffies(a) time_before_eq(jiffies, a)
 #endif
 
+#ifndef time_in_range
+#define time_in_range(a,b,c) \
+	(time_after_eq(a,b) && \
+	 time_before_eq(a,c))
+#endif
+
 /*
  * In commit c4945b9e (v2.6.39-rc1), the little-endian bit operations have been
  * renamed to be less weird.
