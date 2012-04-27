@@ -2364,6 +2364,10 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 			drbd_err(connection,
 				"unexpected rv2=%d in conn_try_disconnect()\n",
 				rv2);
+		/* Make sure the sender thread has actually stopped: state
+		 * handling only does drbd_thread_stop_nowait().
+		 */
+		drbd_thread_stop(&connection->sender);
 		state_change_lock(connection->resource, &irq_flags, 0);
 		drbd_unregister_connection(connection);
 		state_change_unlock(connection->resource, &irq_flags);
@@ -3611,8 +3615,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	mutex_lock(&global_state_mutex);
 	err = ERR_NET_CONFIGURED;
 	for_each_connection(connection, resource)
-		if (connection->cstate[NOW] > C_STANDALONE)
-			goto out;
+		goto out;
 	err = ERR_RES_IN_USE;
 	if (!idr_is_empty(&resource->devices))
 		goto out;
@@ -3624,10 +3627,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY, id);
 
 	list_del_rcu(&resource->resources);
-	/* Make sure all threads have actually stopped: state handling only
-	 * does drbd_thread_stop_nowait(). */
-	list_for_each_entry(connection, &resource->connections, connections)
-		drbd_thread_stop(&connection->sender);
 	synchronize_rcu();
 	drbd_free_resource(resource);
 out:
