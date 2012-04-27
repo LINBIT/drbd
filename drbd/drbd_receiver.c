@@ -5292,10 +5292,8 @@ int drbd_receiver(struct drbd_thread *thi)
 			conn_disconnect(connection);
 			schedule_timeout_interruptible(HZ);
 		}
-		if (h == -1) {
-			drbd_warn(connection, "Discarding network configuration.\n");
+		if (h == -1)
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		}
 	} while (h == 0);
 
 	if (h > 0)
