@@ -261,6 +261,12 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
+#define DRBD_acf1_disconnect		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.need_peer = 1,			\
+	.uc_dialog = 1,			\
+
 #define DRBD_acf1_defnet		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
@@ -355,7 +361,7 @@ struct adm_cmd cmds[] = {
 	 .drbdsetup_ctx = &connect_cmd_ctx, },
 	{"net-options", adm_net_options, DRBD_acf1_connect
 	 .drbdsetup_ctx = &net_options_ctx, },
-	{"disconnect", adm_disconnect, DRBD_acf1_resname
+	{"disconnect", adm_disconnect, DRBD_acf1_disconnect
 	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
 	{"up", adm_up, DRBD_acf1_connect},
 	{"resource-options", adm_res_options, DRBD_acf1_resname
