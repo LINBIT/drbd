@@ -374,7 +374,7 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	sib.sib_reason = SIB_HELPER_PRE;
 	sib.helper_name = cmd;
 	drbd_bcast_event(mdev, &sib);
-	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
+	ret = call_usermodehelper(usermode_helper, argv, envp, UMH_WAIT_PROC);
 	if (ret)
 		dev_warn(DEV, "helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
@@ -426,7 +426,7 @@ int conn_khelper(struct drbd_tconn *tconn, char *cmd)
 	conn_info(tconn, "helper command: %s %s %s\n", usermode_helper, cmd, tconn->name);
 	/* TODO: conn_bcast_event() ?? */
 
-	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
+	ret = call_usermodehelper(usermode_helper, argv, envp, UMH_WAIT_PROC);
 	if (ret)
 		conn_warn(tconn, "helper command: %s %s %s exit code %u (0x%x)\n",
 			  usermode_helper, cmd, tconn->name,
