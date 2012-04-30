@@ -236,6 +236,26 @@ then
   else
 	  compat_have_mempool_create_page_pool=0
   fi
+  if grep_q "extern struct bio_set \*bioset_create(unsigned int, unsigned int);" $KDIR/include/linux/bio.h ; then
+	  compat_have_bioset_create=1
+	  compat_have_bioset_create_front_pad=1
+	  compat_bioset_create_has_three_parameters=0
+  elif grep_q "extern struct bio_set \*bioset_create(int, int, int);" $KDIR/include/linux/bio.h ; then
+	  compat_have_bioset_create=1
+	  compat_have_bioset_create_front_pad=0
+	  compat_bioset_create_has_three_parameters=1
+  elif grep_q "extern struct bio_set \*bioset_create(int, int);" $KDIR/include/linux/bio.h ; then
+	  compat_have_bioset_create=1
+	  compat_have_bioset_create_front_pad=0
+	  compat_bioset_create_has_three_parameters=0
+  elif ! grep_q "bioset_create" $KDIR/include/linux/bio.h ; then
+	  compat_have_bioset_create=0
+	  compat_have_bioset_create_front_pad=0
+	  compat_bioset_create_has_three_parameters=0
+  else
+	echo >&2 "Sorry, was not able to detect bioset_create variant..."
+	exit 1
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -305,6 +325,12 @@ perl -pe "
   { ( $compat_have_void_make_request ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL.*)}
   { ( $compat_have_mempool_create_page_pool ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_BIOSET_CREATE.*)}
+  { ( $compat_have_bioset_create ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD.*)}
+  { ( $compat_have_bioset_create_front_pad ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS.*)}
+  { ( $compat_bioset_create_has_three_parameters ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

@@ -165,4 +165,9 @@ extern const char *drbd_buildtag(void);
 /* mempool_create_page_pool did not exist prior to 2.6.16 */
 #define COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL
 
+/* bioset_create did change its signature a few times */
+#define COMPAT_HAVE_BIOSET_CREATE
+#define COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
+//#define COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
+
 #endif

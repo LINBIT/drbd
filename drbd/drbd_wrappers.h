@@ -1041,6 +1041,55 @@ static inline signed long schedule_timeout_uninterruptible(signed long timeout)
 	 time_before_eq(a,c))
 #endif
 
+#ifdef COMPAT_HAVE_BIOSET_CREATE
+#ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
+/*
+ * upstream commit (included in 2.6.29)
+ * commit bb799ca0202a360fa74d5f17039b9100caebdde7
+ * Author: Jens Axboe <jens.axboe@oracle.com>
+ * Date:   Wed Dec 10 15:35:05 2008 +0100
+ *
+ *     bio: allow individual slabs in the bio_set
+ *
+ * does
+ * -struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size)
+ * +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
+ *
+ * Note that up until 2.6.21 inclusive, it was
+ * struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size, int scale)
+ * so if we want to support old kernels (RHEL5), we will need an additional compat check.
+ *
+ * This also means that we must not use the front_pad trick as long as we want
+ * to keep compatibility with < 2.6.29.
+ */
+#ifdef COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
+#define bioset_create(pool_size, front_pad)    bioset_create(pool_size, pool_size, 1)
+#else
+#define bioset_create(pool_size, front_pad)    bioset_create(pool_size, pool_size)
+#endif
+#endif /* COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD */
+#else /* COMPAT_HAVE_BIOSET_CREATE */
+/* Old kernel, no bioset_create at all!
+ * Just do plain alloc_bio, and forget about the dedicated bioset */
+static inline struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
+{
+	return NULL;
+}
+static inline void bioset_free(struct bio_set *bs)
+{
+	BUG();
+}
+static inline void bio_free(struct bio *bio, struct bio_set *bs)
+{
+	BUG();
+}
+static inline struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct bio_set *bs)
+{
+	BUG();
+	return NULL;
+}
+#endif /* COMPAT_HAVE_BIOSET_CREATE */
+
 /*
  * In commit c4945b9e (v2.6.39-rc1), the little-endian bit operations have been
  * renamed to be less weird.
