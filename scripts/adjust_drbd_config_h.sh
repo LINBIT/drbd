@@ -261,6 +261,11 @@ then
   else
       compat_have_vzalloc=0
   fi
+  if grep_q "UMH_WAIT_PROC" $KDIR/include/linux/kmod.h ; then
+      compat_have_umh_wait_proc=1
+  else
+      compat_have_umh_wait_proc=1
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -338,6 +343,8 @@ perl -pe "
   { ( $compat_bioset_create_has_three_parameters ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_VZALLOC.*)}
   { ( $compat_have_vzalloc ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_UMH_WAIT_PROC.*)}
+  { ( $compat_have_umh_wait_proc ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

@@ -173,4 +173,7 @@ extern const char *drbd_buildtag(void);
 /* Was added with 2.6.37 */
 //#define COMPAT_HAVE_VZALLOC
 
+/* Was added with 2.6.35 */
+#define COMPAT_HAVE_UMH_WAIT_PROC
+
 #endif
