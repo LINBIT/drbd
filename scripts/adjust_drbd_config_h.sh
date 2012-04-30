@@ -256,6 +256,11 @@ then
 	echo >&2 "Sorry, was not able to detect bioset_create variant..."
 	exit 1
   fi
+  if grep_q "vzalloc(" $KDIR/include/linux/vmalloc.h ; then
+      compat_have_vzalloc=1
+  else
+      compat_have_vzalloc=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -331,6 +336,8 @@ perl -pe "
   { ( $compat_have_bioset_create_front_pad ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS.*)}
   { ( $compat_bioset_create_has_three_parameters ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_VZALLOC.*)}
+  { ( $compat_have_vzalloc ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

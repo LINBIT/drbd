@@ -170,4 +170,7 @@ extern const char *drbd_buildtag(void);
 #define COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
 //#define COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
 
+/* Was added with 2.6.37 */
+//#define COMPAT_HAVE_VZALLOC
+
 #endif
