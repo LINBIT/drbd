@@ -441,6 +441,12 @@ static inline void *vzalloc(unsigned long size)
 }
 #endif
 
+#ifndef COMPAT_HAVE_UMH_WAIT_PROC
+/* On May 26 2010 with commit a06a4dc3 UMH_WAIT_PROC was added as 1.
+   On Mar 23 2012 with commit 9d944ef3 that got changed to 2. */
+#define UMH_WAIT_PROC 1
+#endif
+
 /* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
 #ifndef cpumask_bits
