@@ -161,6 +161,19 @@ int drbd_msg_put_info(const char *info)
 	return 0;
 }
 
+#ifdef COMPAT_HAVE_SECURITY_NETLINK_RECV
+#define drbd_security_netlink_recv(skb, cap) \
+	security_netlink_recv(skb, cap)
+#else
+/* see
+ * fd77846 security: remove the security_netlink_recv hook as it is equivalent to capable()
+ */
+static inline bool drbd_security_netlink_recv(struct sk_buff *skb, int cap)
+{
+	return !capable(cap);
+}
+#endif
+
 /* This would be a good candidate for a "pre_doit" hook,
  * and per-family private info->pointers.
  * But we need to stay compatible with older kernels.
@@ -180,7 +193,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 
 	/* genl_rcv_msg only checks for CAP_NET_ADMIN on "GENL_ADMIN_PERM" :( */
 	if (cmd != DRBD_ADM_GET_STATUS
-	&& security_netlink_recv(skb, CAP_SYS_ADMIN))
+	&& drbd_security_netlink_recv(skb, CAP_SYS_ADMIN))
 	       return -EPERM;
 
 	adm_ctx.reply_skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
