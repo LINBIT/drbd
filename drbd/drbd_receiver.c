@@ -5284,8 +5284,6 @@ int drbd_receiver(struct drbd_thread *thi)
 	struct drbd_connection *connection = thi->connection;
 	int h;
 
-	drbd_info(connection, "receiver (re)started\n");
-
 	do {
 		h = conn_connect(connection);
 		if (h == 0) {
@@ -5300,8 +5298,6 @@ int drbd_receiver(struct drbd_thread *thi)
 		drbdd(connection);
 
 	conn_disconnect(connection);
-
-	drbd_info(connection, "receiver terminated\n");
 	return 0;
 }
 
