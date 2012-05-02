@@ -2044,19 +2044,6 @@ int drbd_sender(struct drbd_thread *thi)
 		dequeue_work_batch(&connection->sender_work, &connection->todo.work_list);
 	} while (!list_empty(&connection->todo.work_list));
 
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		D_ASSERT(device, device->disk_state[NOW] == D_DISKLESS &&
-			 peer_device->repl_state[NOW] == L_STANDALONE);
-		kref_get(&device->kref);
-		rcu_read_unlock();
-		drbd_mdev_cleanup(device);  /* FIXME: we "clean up" the wrong stuff here! */
-		kref_put(&device->kref, drbd_destroy_device);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-
 	return 0;
 }
 

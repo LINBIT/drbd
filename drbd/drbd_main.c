@@ -2105,11 +2105,8 @@ STATIC void drbd_set_defaults(struct drbd_device *device)
 	device->disk_state[NOW] = D_DISKLESS;
 }
 
-void drbd_mdev_cleanup(struct drbd_device *device)
+void drbd_cleanup_device(struct drbd_device *device)
 {
-	struct drbd_peer_device *peer_device;
-	int i;
-
 	device->al_writ_cnt = 0;
 	device->bm_writ_cnt = 0;
 	device->read_cnt = 0;
@@ -2123,9 +2120,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 		device->bitmap = NULL;
 	}
 
-	drbd_free_bc(device->ldev);
-	device->ldev = NULL;
-
 	clear_bit(AL_SUSPENDED, &device->flags);
 
 	D_ASSERT(device, list_empty(&device->active_ee));
@@ -2134,32 +2128,6 @@ void drbd_mdev_cleanup(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->net_ee));
 	D_ASSERT(device, list_empty(&device->go_diskless.list));
-
-	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
-		struct drbd_connection *connection = peer_device->connection;
-
-		if (connection->receiver.t_state != NONE)
-			drbd_err(connection, "ASSERT FAILED: receiver t_state == %d expected 0.\n",
-				 connection->receiver.t_state);
-		D_ASSERT(device, connection->net_conf == NULL);
-		D_ASSERT(device, list_empty(&connection->sender_work.q));
-
-		D_ASSERT(device, list_empty(&peer_device->resync_work.list));
-		peer_device->max_size = 0;
-		peer_device->rs_start = 0;
-		peer_device->rs_total = 0;
-		peer_device->rs_failed = 0;
-		peer_device->rs_last_events = 0;
-		peer_device->rs_last_sect_ev = 0;
-		for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-			peer_device->rs_mark_left[i] = 0;
-			peer_device->rs_mark_time[i] = 0;
-		}
-		peer_device->bitmap_index = -1;
-	}
-	rcu_read_unlock();
-
 	drbd_set_defaults(device);
 }
 
