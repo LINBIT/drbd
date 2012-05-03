@@ -3532,8 +3532,9 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	drbd_set_defaults(mdev);
 }
 
-#ifndef COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL
-/* Introduced with 6e0678f3 */
+#if !defined(COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL) || LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
+/* sles10 (2.6.16 +patches) has it,
+ * but does not EXPORT_SYMBOL() the helpers :( */
 void *mempool_alloc_pages(gfp_t gfp_mask, void *pool_data)
 {
 	int order = (int)(long)pool_data;
@@ -3544,6 +3545,9 @@ void mempool_free_pages(void *element, void *pool_data)
 	int order = (int)(long)pool_data;
 	__free_pages(element, order);
 }
+#endif
+#if !defined(COMPAT_HAVE_MEMPOOL_CREATE_PAGE_POOL)
+/* Introduced with 6e0678f3, 2.6.17 */
 static inline mempool_t *mempool_create_page_pool(int min_nr, int order)
 {
 	return mempool_create(min_nr, mempool_alloc_pages, mempool_free_pages,
