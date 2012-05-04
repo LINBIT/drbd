@@ -2502,7 +2502,7 @@ STATIC void drbd_connector_callback(void *data)
 		goto fail;
 	}
 # else
-	if (!cap_raised(current_cap(), CAP_SYS_ADMIN)) {
+	if (!capable(CAP_SYS_ADMIN)) {
 		retcode = ERR_PERM;
 		goto fail;
 	}
