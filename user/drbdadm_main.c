@@ -3056,6 +3056,7 @@ void verify_ips(struct d_resource *res)
 }
 
 static char *conf_file[] = {
+	DRBD_CONFIG_DIR "/drbd-90.conf",
 	DRBD_CONFIG_DIR "/drbd-84.conf",
 	DRBD_CONFIG_DIR "/drbd-83.conf",
 	DRBD_CONFIG_DIR "/drbd-82.conf",
