@@ -31,7 +31,8 @@ UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
 INITDIR = @INITDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 CC = @CC@
-CFLAGS := @CFLAGS@
+CFLAGS = @CFLAGS@
+LDFLAGS = @LDFLAGS@
 LN_S = @LN_S@
 
 # features enabled or disabled by configure
@@ -79,7 +80,7 @@ drbd_strings.c: ../drbd/drbd_strings.c
 	cp $^ $@
 
 drbdadm: $(drbdadm-obj)
-	$(LINK.c) -o $@ $^
+	$(LINK.c) $(LDFLAGS) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
@@ -88,10 +89,10 @@ drbdmeta_scanner.c: drbdmeta_scanner.fl drbdmeta_parser.h
 	flex -s -odrbdmeta_scanner.c drbdmeta_scanner.fl
 
 drbdsetup: $(drbdsetup-obj)
-	$(LINK.c) -o $@ $^
+	$(LINK.c) $(LDFLAGS) -o $@ $^
 
 drbdmeta: $(drbdmeta-obj)
-	$(LINK.c) -o $@ $^
+	$(LINK.c) $(LDFLAGS) -o $@ $^
 
 legacy-tools:
 ifeq ($(WITH_LEGACY_UTILS),yes)

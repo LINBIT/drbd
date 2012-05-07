@@ -32,6 +32,7 @@ INITDIR = @INITDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 CC = @CC@
 CFLAGS = @CFLAGS@
+LDFLAGS = @LDFLAGS@
 LN_S = @LN_S@
 
 # features enabled or disabled by configure
@@ -74,13 +75,13 @@ drbd_endian.h: ../drbd_endian.h
 drbdtool_common.h: drbd_endian.h
 
 drbdadm-83: $(drbdadm-obj)
-	$(LINK.c) -o $@ $^
+	$(LINK.c) $(LDFLAGS) -o $@ $^
 
 drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
 	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
 
 drbdsetup-83: $(drbdsetup-obj)
-	$(LINK.c) -o $@ $^
+	$(LINK.c) $(LDFLAGS) -o $@ $^
 
 clean:
 	rm -f drbdadm_scanner.c
