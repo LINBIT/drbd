@@ -2408,6 +2408,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync. */
+	drbd_suspend_io(mdev);
 	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
 
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
@@ -2426,6 +2427,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 		retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
 	}
+	drbd_resume_io(mdev);
 
 out:
 	drbd_adm_finish(info, retcode);
@@ -2471,6 +2473,11 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 	mdev = adm_ctx.mdev;
 
+	/* If there is still bitmap IO pending, probably because of a previous
+	 * resync just being finished, wait for it before requesting a new resync. */
+	drbd_suspend_io(mdev);
+	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
+
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S), CS_ORDERED);
 	if (retcode < SS_SUCCESS) {
 		if (retcode == SS_NEED_CONNECTION && mdev->state.role == R_PRIMARY) {
@@ -2486,6 +2493,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 		} else
 			retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S));
 	}
+	drbd_resume_io(mdev);
 
 out:
 	drbd_adm_finish(info, retcode);
@@ -2939,8 +2947,10 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	}
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
+	drbd_suspend_io(mdev);
 	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
 	retcode = drbd_request_state(mdev,NS(conn,C_VERIFY_S));
+	drbd_resume_io(mdev);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
