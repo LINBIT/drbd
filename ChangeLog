@@ -2,34 +2,31 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.3.13rc2 (api:88/proto:86-96)
---------
- * Dedicated page pool for meta data IOs
- * Implemented stable bitmap pages when we do a full write out of
-   the bitmap
- * Fixed resend/resubmit for requests with disk or network timeout
-
-8.3.13rc1 (api:88/proto:86-96)
+8.3.13 (api:88/proto:86-96)
 --------
  * Fixed a write ordering problem on SyncTarget nodes for a write
    to a block that gets resynced at the same time. The bug can
    only be triggered with a device that has a firmware that
    actually reorders writes to the same block
- * Fixed a race between disconnect and receive_state, that could case
+ * Fixed a race between disconnect and receive_state, that could cause
    a IO lockup
+ * Fixed resend/resubmit for requests with disk or network timeout
  * Make sure that hard state changed do not disturb the connection
    establishing process (I.e. detach due to an IO error). When the
    bug was triggered it caused a retry in the connect process
  * Postpone soft state changes to no disturb the connection
    establishing process (I.e. becoming primary). When the bug
-   was triggered it could case both nodes going into SyncSource state
+   was triggered it could cause both nodes going into SyncSource state
  * Fixed a refcount leak that could cause failures when trying to
    unload a protocol family modules, that was used by DRBD
+ * Dedicated page pool for meta data IOs
  * Deny normal detach (as opposed to --forced) if the user tries
    to detach from the last UpToDate disk in the resource
  * Fixed a possible protocol error that could be caused by
    "unusual" BIOs.
  * Enforce the disk-timeout option also on meta-data IO operations
+ * Implemented stable bitmap pages when we do a full write out of
+   the bitmap
 
 8.3.12 (api:88/proto:86-96)
 --------
