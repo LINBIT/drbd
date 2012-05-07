@@ -802,6 +802,12 @@ DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
 #define time_is_after_eq_jiffies(a) time_before_eq(jiffies, a)
 #endif
 
+#ifndef time_in_range
+#define time_in_range(a,b,c) \
+	(time_after_eq(a,b) && \
+	 time_before_eq(a,c))
+#endif
+
 #ifdef COMPAT_BIO_SPLIT_HAS_BIO_SPLIT_POOL_PARAMETER
 #define bio_split(bi, first_sectors) bio_split(bi, bio_split_pool, first_sectors)
 #endif
