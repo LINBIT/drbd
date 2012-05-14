@@ -147,6 +147,12 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 		ha->host_info = host_info;
 		if (!ha->address.addr && !ha->address.af && ha->address.port) {
 			/* this was the 'port' keyword in the config file */
+			if (!host_info->address.addr) {
+				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
+					"with \"host\" and \"port\" keywords, but there is no host-section with an explicit address\n",
+					config_file, ha->config_line, res->name, ha->name);
+				config_valid = 0;
+			}
 			ha->address.addr = host_info->address.addr;
 			ha->address.af = host_info->address.af;
 		}
