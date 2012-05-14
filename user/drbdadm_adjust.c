@@ -558,6 +558,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	 * with parsing of drbdsetup show output */
 	config_valid = 2;
 
+	set_peer_in_resource(ctx->res, true);
 
 	/* setup error reporting context for the parsing routines */
 	line = 1;
@@ -622,14 +623,19 @@ int adm_adjust(struct cfg_ctx *ctx)
 	}
 
 	for_each_connection(conn, &ctx->res->connections) {
-		struct connection *configured_conn;
+		struct connection *running_conn = NULL;
+		struct cfg_ctx tmp_ctx = { .res = ctx->res, .conn = conn };
 
-		configured_conn = matching_conn(conn, &running->connections);
-		if (!configured_conn) {
-			schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+		if (conn->ignore)
+			continue;
+
+		if (running)
+			running_conn = matching_conn(conn, &running->connections);
+		if (!running_conn) {
+			schedule_deferred_cmd(adm_connect, &tmp_ctx, "connect", CFG_NET);
 		} else {
-			if (!opts_equal(&net_options_ctx, &ctx->res->net_options, &running->net_options))
-				schedule_deferred_cmd(adm_set_default_net_options, ctx, "net-options", CFG_NET);
+			if (!opts_equal(&net_options_ctx, &conn->net_options, &running_conn->net_options))
+				schedule_deferred_cmd(adm_set_default_net_options, &tmp_ctx, "net-options", CFG_NET);
 		}
 	}
 

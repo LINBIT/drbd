@@ -377,7 +377,7 @@ struct adm_cmd cmds[] = {
 	{"verify", adm_generic_s, DRBD_acf1_defnet},
 	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
 	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"adjust", adm_adjust, DRBD_acf1_connect},
+	{"adjust", adm_adjust, DRBD_acf1_resname},
 	{"adjust-with-progress", adm_adjust_wp, DRBD_acf1_connect},
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
 	{"wait-con-int", adm_wait_ci,
