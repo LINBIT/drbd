@@ -577,8 +577,8 @@ int adm_adjust(struct cfg_ctx *ctx)
 	waitpid(pid, 0, 0);
 
 	if (running) {
-		/* Sets "me" and "peer" pointer */
 		post_parse(0);
+		set_me_in_resource(running, 0);
 		set_peer_in_resource(running, 0);
 	}
 

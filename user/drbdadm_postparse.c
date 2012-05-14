@@ -202,7 +202,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 				host->lower ? "stacked-on-top-of" : "on",
 				host->lower ? host->lower->name : names_to_str(&host->on_hosts));
 		}
-		if (res->me) {
+		if (res->me && res->me != host) {
 			config_valid = 0;
 			fprintf(stderr,
 				"%s:%d: in resource %s, %s %s { ... } ... %s %s { ... }:\n"
