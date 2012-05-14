@@ -829,6 +829,9 @@ static void dump_host_info(struct d_host_info *hi)
 		return;
 	}
 
+	if (hi->implicit && !verbose)
+		return;
+
 	if (hi->lower) {
 		printI("stacked-on-top-of %s {\n", esc(hi->lower->name));
 		++indent;
@@ -846,7 +849,7 @@ static void dump_host_info(struct d_host_info *hi)
 	for_each_volume(vol, &hi->volumes)
 		dump_volume(!!hi->lower, vol);
 
-	if (!hi->by_address)
+	if (!hi->by_address && hi->address.addr)
 		dump_address("address", &hi->address, ";\n");
 	if (hi->proxy)
 		dump_proxy_info(hi->proxy);
@@ -3038,6 +3041,8 @@ void verify_ips(struct d_resource *res)
 	if (res->ignore)
 		return;
 	if (res->stacked && !is_drbd_top)
+		return;
+	if (!res->me->address.addr)
 		return;
 
 	if (!have_ip(res->me->address.af, res->me->address.addr)) {

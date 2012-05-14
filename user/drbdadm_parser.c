@@ -1089,6 +1089,7 @@ static void parse_host_section(struct d_resource *res,
 	STAILQ_INIT(&host->volumes);
 	host->on_hosts = *on_hosts;
 	host->config_line = c_section_start;
+	host->implicit = 0;
 	host->require_all = flags & REQUIRE_ALL ? 1 : 0;
 
 	if (flags & BY_ADDRESS) {

@@ -143,6 +143,7 @@ struct d_host_info
 	struct d_resource* lower;  /* for device stacking */
 	char *lower_name;          /* for device stacking, before bind_stacked_res() */
 	int config_line;
+	unsigned int implicit:1;   /* Implicitly declared with an host xx address statement*/
 	unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
 	unsigned int used_as_me:1; /* May be set in set_me_in_resource() */
 	unsigned int require_all:1; /* Requires device, disk, meta-disk and meta-index */

@@ -131,8 +131,10 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 				STAILQ_INIT(&host_info->volumes);
 
 				insert_head(&host_info->on_hosts, names_from_str(ha->name));
+				host_info->implicit = 1;
 				host_info->config_line = ha->config_line;
 
+				insert_tail(&res->all_hosts, host_info);
 				inherit_volumes(&res->volumes, host_info);
 			} else {
 				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
