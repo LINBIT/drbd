@@ -701,6 +701,7 @@ static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 
 int adm_create_md(struct cfg_ctx *ctx)
 {
+	struct connection *conn;
 	char answer[ANSWER_SIZE];
 	struct node_info ni;
 	uint64_t device_uuid=0;
@@ -710,13 +711,18 @@ int adm_create_md(struct cfg_ctx *ctx)
 	char *tb;
 	int rv,fd;
 	char *r;
+	int peers = 0;
 
 	tb = run_admm_generic(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
+	for_each_connection(conn, &ctx->res->connections)
+		if (!conn->ignore)
+			peers++;
+
 	/* this is "drbdmeta ... create-md" */
-	rv = _admm_generic(ctx, SLEEPS_VERY_LONG, "1"); /* TODO: Actual number of peers */
+	rv = _admm_generic(ctx, SLEEPS_VERY_LONG, ssprintf("%d", peers));
 
 	if(rv || dry_run) return rv;
 
