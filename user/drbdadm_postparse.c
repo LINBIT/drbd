@@ -150,6 +150,12 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 			ha->address.addr = host_info->address.addr;
 			ha->address.af = host_info->address.af;
 		}
+
+		fline = ha->config_line;
+		check_uniq("IP", "%s:%s:%s", ha->name,
+			   ha->address.addr ? ha->address.addr : host_info->address.addr,
+			   ha->address.port ? ha->address.port : host_info->address.port);
+
 	}
 }
 
