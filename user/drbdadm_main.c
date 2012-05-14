@@ -363,7 +363,7 @@ struct adm_cmd cmds[] = {
 	 .drbdsetup_ctx = &net_options_ctx, },
 	{"disconnect", adm_disconnect, DRBD_acf1_disconnect
 	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
-	{"up", adm_up, DRBD_acf1_connect},
+	{"up", adm_up, DRBD_acf1_resname },
 	{"resource-options", adm_res_options, DRBD_acf1_resname
 	 .drbdsetup_ctx = &resource_options_ctx, },
 	{"down", adm_generic_l, DRBD_acf1_resname},
@@ -2325,10 +2325,20 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * and then configure the network part */
 static int adm_up(struct cfg_ctx *ctx)
 {
+	struct connection *conn;
 	struct d_volume *vol;
 
 	schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
-	schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+
+	set_peer_in_resource(ctx->res, true);
+	for_each_connection(conn, &ctx->res->connections) {
+		if (conn->ignore)
+			continue;
+
+		ctx->conn = conn;
+		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+	}
+	ctx->conn = NULL;
 
 	for_each_volume(vol, &ctx->res->me->volumes) {
 		ctx->vol = vol;
