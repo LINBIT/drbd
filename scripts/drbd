@@ -17,6 +17,7 @@
 # Default-Stop:   0 1 6
 # X-Start-Before: heartbeat corosync
 # X-Stop-After:   heartbeat corosync
+# X-Interactive:  true
 # Short-Description:    Control drbd resources.
 ### END INIT INFO
 
