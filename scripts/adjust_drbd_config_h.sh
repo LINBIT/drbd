@@ -264,7 +264,7 @@ then
   if grep_q "UMH_WAIT_PROC" $KDIR/include/linux/kmod.h ; then
       compat_have_umh_wait_proc=1
   else
-      compat_have_umh_wait_proc=1
+      compat_have_umh_wait_proc=0
   fi
 else
     # not a 2.6. kernel. just leave it alone...
