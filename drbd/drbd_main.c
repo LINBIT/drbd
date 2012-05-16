@@ -3024,7 +3024,11 @@ int __init drbd_init(void)
 		printk(KERN_ERR "drbd: unable to create retry workqueue\n");
 		goto fail;
 	}
+#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
+	INIT_WORK(&retry.worker, do_retry, &retry.worker);
+#else
 	INIT_WORK(&retry.worker, do_retry);
+#endif
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
 
