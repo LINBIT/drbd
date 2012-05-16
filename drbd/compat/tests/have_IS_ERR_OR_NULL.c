@@ -1,6 +1,6 @@
 #include <linux/err.h>
 
-int foo()
+int foo(void)
 {
 	void *x = 0;
 
