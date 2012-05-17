@@ -1407,7 +1407,11 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 			break;
 		}
 
+		if (!get_ldev_if_state(other_device, D_ATTACHING))
+			break;
 		resync_after = rcu_dereference(other_device->ldev->disk_conf)->resync_after;
+		put_ldev(other_device);
+
 		/* dependency chain ends here, no cycles. */
 		if (resync_after == -1)
 			break;
