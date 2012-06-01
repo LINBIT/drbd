@@ -319,6 +319,9 @@ fi
 
 
 %changelog
+* Fri Jun  1 2012 Lars Ellenberg <lars@linbit.com> - 8.99.0-1
+- 9.0 alpha
+
 * Wed Jul 15 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1
 - New upstream release.
 
