@@ -647,6 +647,10 @@ struct bm_io_work {
 };
 
 struct fifo_buffer {
+	/* singly linked list to accumulate multiple such struct fifo_buffers,
+	 * to be freed after a single syncronize_rcu(),
+	 * outside a critical section. */
+	struct fifo_buffer *next;
 	unsigned int head_index;
 	unsigned int size;
 	int total; /* sum of all values */

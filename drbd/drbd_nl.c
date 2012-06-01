@@ -1332,6 +1332,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *new_disk_conf, *old_disk_conf;
 	int err, fifo_size;
 	struct drbd_peer_device *peer_device;
+	struct fifo_buffer *fifo_to_be_freed = NULL;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1371,20 +1372,19 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 	for_each_peer_device(peer_device, device) {
-		if (fifo_size != rcu_dereference(peer_device->rs_plan_s)->size) {
-			struct fifo_buffer *old_plan, *new_plan;
-
+		struct fifo_buffer *old_plan, *new_plan;
+		old_plan = rcu_dereference(peer_device->rs_plan_s);
+		if (!old_plan || fifo_size != old_plan->size) {
 			new_plan = fifo_alloc(fifo_size);
 			if (!new_plan) {
 				drbd_err(peer_device, "kmalloc of fifo_buffer failed");
 				retcode = ERR_NOMEM;
 				goto fail_unlock;
 			}
-			old_plan = rcu_dereference(peer_device->rs_plan_s);
 			rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 			if (old_plan) {
-				synchronize_rcu();
-				kfree(old_plan);
+				old_plan->next = fifo_to_be_freed;
+				fifo_to_be_freed = old_plan;
 			}
 		}
 	}
@@ -1429,6 +1429,13 @@ fail_unlock:
  fail:
 	kfree(new_disk_conf);
 success:
+	if (retcode != NO_ERROR)
+		synchronize_rcu();
+	while (fifo_to_be_freed) {
+		struct fifo_buffer *next = fifo_to_be_freed->next;
+		kfree(fifo_to_be_freed);
+		fifo_to_be_freed = next;
+	}
 	put_ldev(device);
  out:
 	drbd_adm_finish(info, retcode);
