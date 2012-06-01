@@ -1815,10 +1815,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		kfree(nbc);
 	}
 	kfree(new_disk_conf);
-	for_each_peer_device(peer_device, device) {
-		kfree(rcu_dereference(peer_device->rs_plan_s));
-		rcu_assign_pointer(peer_device->rs_plan_s, NULL);
-	}
 
 	mutex_unlock(&resource->conf_update);
 	drbd_adm_finish(info, retcode);
