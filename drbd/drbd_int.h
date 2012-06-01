@@ -366,6 +366,13 @@ extern void unlock_all_resources(void);
 
 extern enum drbd_disk_state negotiated_disk_state(struct drbd_device *);
 
+/* sequence arithmetic for dagtag (data generation tag) sector numbers.
+ * dagtag_newer_eq: true, if a is newer than b */
+#define dagtag_newer_eq(a,b)      \
+	(typecheck(u64, a) && \
+	 typecheck(u64, b) && \
+	((s64)(a) - (s64)(b) >= 0))
+
 struct drbd_request {
 	struct drbd_device *device;
 
@@ -754,6 +761,30 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct sender_todo {
 		struct list_head work_list;
 
+#ifdef blk_queue_plugged
+		/* For older kernels that do and need explicit unplug,
+		 * we store here the resource->dagtag_sector of unplug events
+		 * when they occur.
+		 *
+		 * If upper layers trigger an unplug on this side, we want to
+		 * send and unplug hint over to the peer.  Sending it too
+		 * early, or missing it completely, causes a potential latency
+		 * penalty (requests idling too long in the remote queue).
+		 * There is no harm done if we occasionally send one too many
+		 * such unplug hints.
+		 *
+		 * We have two slots, which are used in an alternating fashion:
+		 * If a new unplug event happens while the current pending one
+		 * has not even been processed yet, we overwrite the next
+		 * pending slot: there is not much point in unplugging on the
+		 * remote side, if we have a full request queue to be send on
+		 * this side still, and not even reached the position in the
+		 * change stream when the previous local unplug happened.
+		 */
+		u64 unplug_dagtag_sector[2];
+		unsigned int unplug_slot; /* 0 or 1 */
+#endif
+
 		/* the currently (or last) processed request,
 		 * see process_sender_todo() */
 		struct drbd_request *req;
@@ -965,7 +996,8 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 {
 	int idx = peer_device->bitmap_index;
 	if (idx < 0 || idx >= MAX_PEERS) {
-		WARN(1, "bitmap_index: %d", idx);
+		drbd_warn(peer_device, "FIXME: bitmap_index: %d\n", idx);
+		/* WARN(1, "bitmap_index: %d", idx); */
 		return 0;
 	}
 	return req->rq_state[1 + idx];
@@ -2160,6 +2192,29 @@ static inline int drbd_queue_order_type(struct drbd_device *device)
 #endif
 	return QUEUE_ORDERED_NONE;
 }
+
+#ifdef blk_queue_plugged
+static inline void drbd_blk_run_queue(struct request_queue *q)
+{
+	if (q && q->unplug_fn)
+		q->unplug_fn(q);
+}
+
+static inline void drbd_kick_lo(struct drbd_device *device)
+{
+	if (get_ldev(device)) {
+		drbd_blk_run_queue(bdev_get_queue(device->ldev->backing_bdev));
+		put_ldev(device);
+	}
+}
+#else
+static inline void drbd_blk_run_queue(struct request_queue *q)
+{
+}
+static inline void drbd_kick_lo(struct drbd_device *device)
+{
+}
+#endif
 
 static inline void drbd_md_flush(struct drbd_device *device)
 {

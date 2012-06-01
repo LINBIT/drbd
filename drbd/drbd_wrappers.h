@@ -247,6 +247,31 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 		generic_make_request(bio);
 }
 
+/* see 7eaceac block: remove per-queue plugging */
+#ifdef blk_queue_plugged
+static inline void drbd_plug_device(struct drbd_device *device)
+{
+	struct request_queue *q;
+	q = bdev_get_queue(device->this_bdev);
+
+	spin_lock_irq(q->queue_lock);
+
+/* XXX the check on !blk_queue_plugged is redundant,
+ * implicitly checked in blk_plug_device */
+
+	if (!blk_queue_plugged(q)) {
+		blk_plug_device(q);
+		del_timer(&q->unplug_timer);
+		/* unplugging should not happen automatically... */
+	}
+	spin_unlock_irq(q->queue_lock);
+}
+#else
+static inline void drbd_plug_device(struct drbd_device *device)
+{
+}
+#endif
+
 static inline int drbd_backing_bdev_events(struct drbd_device *device)
 {
 	struct gendisk *disk = device->ldev->backing_bdev->bd_contains->bd_disk;

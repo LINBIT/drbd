@@ -580,6 +580,7 @@ const char *read_balancing_map[] = {
 	{ "disk-flushes", BOOLEAN(disk_flushes, DISK_FLUSHES) },			\
 	{ "disk-drain", BOOLEAN(disk_drain, DISK_DRAIN) },				\
 	{ "md-flushes", BOOLEAN(md_flushes, MD_FLUSHES) },				\
+	{ "unplug-watermark", NUMERIC(unplug_watermark, UNPLUG_WATERMARK) },		\
 	{ "resync-rate", NUMERIC(resync_rate, RESYNC_RATE),				\
           .unit = "bytes/second" },							\
 	{ "resync-after", NUMERIC(resync_after, MINOR_NUMBER) },			\
@@ -603,7 +604,6 @@ const char *read_balancing_map[] = {
 	{ "timeout", NUMERIC(timeout, TIMEOUT),						\
           .unit = "1/10 seconds" },							\
 	{ "max-epoch-size", NUMERIC(max_epoch_size, MAX_EPOCH_SIZE) },			\
-	{ "unplug-watermark", NUMERIC(unplug_watermark, UNPLUG_WATERMARK) },		\
 	{ "connect-int", NUMERIC(connect_int, CONNECT_INT),				\
           .unit = "seconds" },								\
 	{ "ping-int", NUMERIC(ping_int, PING_INT),					\

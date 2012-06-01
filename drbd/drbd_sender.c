@@ -820,6 +820,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		 * queue (or even the read operations for those packets
 		 * is not finished by now).   Retry in 100ms. */
 
+		drbd_kick_lo(device);
 		schedule_timeout_interruptible(HZ / 10);
 		dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
 		if (dw) {
@@ -1268,6 +1269,48 @@ int drbd_send_barrier(struct drbd_connection *connection)
 
 	return conn_send_command(connection, sock, P_BARRIER, sizeof(*p), NULL, 0);
 }
+
+#ifdef blk_queue_plugged
+static bool need_unplug(struct drbd_connection *connection)
+{
+	unsigned i = connection->todo.unplug_slot;
+	return dagtag_newer_eq(connection->send.current_dagtag_sector,
+			connection->todo.unplug_dagtag_sector[i]);
+}
+
+void maybe_send_write_hint(struct drbd_connection *connection)
+{
+	struct drbd_socket *sock;
+
+	if (!need_unplug(connection))
+		return;
+
+	/* Yes, this is non-atomic wrt. its use in drbd_unplug_fn.
+	 * We save a spin_lock_irq, and worst case
+	 * we occasionally miss an unplug event. */
+
+	/* Paranoia: to avoid a continuous stream of unplug-hints,
+	 * in case we never get any unplug events */
+	connection->todo.unplug_dagtag_sector[connection->todo.unplug_slot] =
+		connection->send.current_dagtag_sector + (1ULL << 63);
+	/* advance the current unplug slot */
+	connection->todo.unplug_slot ^= 1;
+
+	sock = &connection->data;
+	if (!conn_prepare_command(connection, sock))
+		return;
+
+	conn_send_command(connection, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
+}
+#else
+static bool need_unplug(struct drbd_connection *connection)
+{
+	return false;
+}
+static void maybe_send_write_hint(struct drbd_connection *connection)
+{
+}
+#endif
 
 static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 {
@@ -1783,7 +1826,6 @@ static struct drbd_request *tl_next_request_for_connection(struct drbd_connectio
 	return connection->todo.req;
 }
 
-
 /* This finds the next not yet processed request from
  * connection->resource->transfer_log.
  * It also moves all currently queued connection->sender_work
@@ -1799,11 +1841,9 @@ bool check_sender_todo(struct drbd_connection *connection)
 	list_splice_tail_init(&connection->sender_work.q, &connection->todo.work_list);
 	spin_unlock(&connection->sender_work.q_lock);
 
-	/* MAYBE: if (req == NULL), kref_get() the previous request,
-	 * and remember that, so we do not need to walk the full transfer log
-	 * next time. */
-
-	return connection->todo.req || !list_empty(&connection->todo.work_list);
+	return connection->todo.req
+		|| need_unplug(connection)
+		|| !list_empty(&connection->todo.work_list);
 }
 
 void wait_for_sender_todo(struct drbd_connection *connection)
@@ -1937,6 +1977,9 @@ int process_one_request(struct drbd_connection *connection)
 
 	if (m.bio)
 		complete_master_bio(device, &m);
+
+	maybe_send_write_hint(connection);
+
 	return err;
 }
 
@@ -1953,7 +1996,10 @@ int process_sender_todo(struct drbd_connection *connection)
 	 * Stop processing as soon as an error is encountered.
 	 */
 
-	if (list_empty(&connection->todo.work_list) && connection->todo.req)
+	if (!connection->todo.req)
+		maybe_send_write_hint(connection);
+
+	else if (list_empty(&connection->todo.work_list))
 		return process_one_request(connection);
 
 	while (!list_empty(&connection->todo.work_list)) {

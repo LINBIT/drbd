@@ -1252,6 +1252,10 @@ out:
 		kref_put(&req->kref, drbd_req_destroy);
 	spin_unlock_irq(&device->resource->req_lock);
 
+	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
+	 * we plug after submit, so we won't miss an unplug event */
+	drbd_plug_device(device);
+
 	if (m.bio)
 		complete_master_bio(device, &m);
 	return;

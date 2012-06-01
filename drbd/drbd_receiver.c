@@ -212,6 +212,24 @@ static struct page *__drbd_alloc_pages(struct drbd_device *device,
 	return NULL;
 }
 
+/* kick lower level device, if we have more than (arbitrary number)
+ * reference counts on it, which typically are locally submitted io
+ * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
+static void maybe_kick_lo(struct drbd_device *device)
+{
+	struct disk_conf *dc;
+	unsigned int watermark = 1000000;
+
+	rcu_read_lock();
+	dc = rcu_dereference(device->ldev->disk_conf);
+	if (dc)
+		min_not_zero(dc->unplug_watermark, watermark);
+	rcu_read_unlock();
+
+	if (atomic_read(&device->local_cnt) >= watermark)
+		drbd_kick_lo(device);
+}
+
 static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 					   struct list_head *to_be_freed)
 {
@@ -229,11 +247,12 @@ static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 	}
 }
 
-static void drbd_reclaim_net(struct drbd_device *device)
+static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
 
+	maybe_kick_lo(device);
 	spin_lock_irq(&device->resource->req_lock);
 	reclaim_finished_net_peer_reqs(device, &reclaimed);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -267,7 +286,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		drbd_reclaim_net(device);
+		drbd_kick_lo_and_reclaim_net(device);
 
 		if (atomic_read(&device->pp_in_use) < device->device_conf.max_buffers) {
 			page = __drbd_alloc_pages(device, number);
@@ -454,6 +473,7 @@ static void _drbd_wait_ee_list_empty(struct drbd_device *device,
 	while (!list_empty(head)) {
 		prepare_to_wait(&device->ee_wait, &wait, TASK_UNINTERRUPTIBLE);
 		spin_unlock_irq(&device->resource->req_lock);
+		drbd_kick_lo(device);
 		schedule();
 		finish_wait(&device->ee_wait, &wait);
 		spin_lock_irq(&device->resource->req_lock);
@@ -1420,6 +1440,7 @@ next_bio:
 		if (bios && bios->bi_next)
 			bios->bi_rw &= ~DRBD_REQ_FLUSH;
 	} while (bios);
+	maybe_kick_lo(device);
 	return 0;
 
 fail:
@@ -1537,11 +1558,35 @@ void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
+#ifdef blk_queue_plugged
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		drbd_kick_lo(device);
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+#else
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
+{
+}
+#endif
+
 STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
+
+	drbd_unplug_all_devices(connection->resource);
 
 	/* FIXME these are unacked on connection,
 	 * not a specific (peer)device.
@@ -4747,15 +4792,12 @@ STATIC int receive_skip(struct drbd_connection *connection, struct packet_info *
 
 STATIC int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_peer_device *peer_device;
-
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return -EIO;
+	/* just unplug all devices always, regardless which volume number */
+	drbd_unplug_all_devices(connection->resource);
 
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
-	drbd_tcp_quickack(peer_device->connection->data.socket);
+	drbd_tcp_quickack(connection->data.socket);
 
 	return 0;
 }

@@ -2100,6 +2100,33 @@ static int drbd_release(struct inode *inode, struct file *file)
 }
 #endif
 
+#ifdef blk_queue_plugged
+STATIC void drbd_unplug_fn(struct request_queue *q)
+{
+	struct drbd_device *device = q->queuedata;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
+	u64 dagtag_sector;
+
+	/* unplug FIRST */
+	/* note: q->queue_lock == resource->req_lock */
+	spin_lock_irq(&resource->req_lock);
+	blk_remove_plug(q);
+
+	dagtag_sector = resource->dagtag_sector;
+
+	for_each_connection(connection, resource) {
+		/* use the "next" slot */
+		unsigned int i = !connection->todo.unplug_slot;
+		connection->todo.unplug_dagtag_sector[i] = dagtag_sector;
+		wake_up(&connection->sender_work.q_wait);
+	}
+	spin_unlock_irq(&resource->req_lock);
+
+	drbd_kick_lo(device);
+}
+#endif
+
 STATIC void drbd_set_defaults(struct drbd_device *device)
 {
 	device->disk_state[NOW] = D_DISKLESS;
@@ -2941,7 +2968,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
-	q->queue_lock = &resource->req_lock;
+	q->queue_lock = &resource->req_lock; /* needed since we use */
+#ifdef blk_queue_plugged
+		/* plugging on a queue, that actually has no requests! */
+	q->unplug_fn = drbd_unplug_fn;
+#endif
 
 	device->md_io_page = alloc_page(GFP_KERNEL);
 	if (!device->md_io_page)
