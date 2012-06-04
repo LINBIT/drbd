@@ -2233,7 +2233,7 @@ next:
 				count += tmp;
 				r += tmp * max_peers;
 				i += tmp * max_peers;
-				if (j == n_buffer && r < n)
+				if (j >= n_buffer && r < n)
 					continue;
 			}
 			if (count) {
