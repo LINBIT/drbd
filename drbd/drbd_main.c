@@ -1637,6 +1637,13 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	/* Do not change the order of the if above and the two below... */
 	if (os.pdsk == D_DISKLESS && ns.pdsk > D_DISKLESS) {      /* attach on the peer */
+		/* we probably will start a resync soon.
+		 * make sure those things are properly reset. */
+		mdev->rs_total = 0;
+		mdev->rs_failed = 0;
+		atomic_set(&mdev->rs_pending_cnt, 0);
+		drbd_rs_cancel_all(mdev);
+
 		drbd_send_uuids(mdev);
 		drbd_send_state(mdev, ns);
 	}
@@ -1803,10 +1810,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
                         dev_err(DEV,
                                 "ASSERT FAILED: disk is %s while going diskless\n",
                                 drbd_disk_str(mdev->state.disk));
-
-                mdev->rs_total = 0;
-                mdev->rs_failed = 0;
-                atomic_set(&mdev->rs_pending_cnt, 0);
 
 		if (ns.conn >= C_CONNECTED)
 			drbd_send_state(mdev, ns);
