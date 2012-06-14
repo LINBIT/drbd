@@ -148,6 +148,9 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 	char *argv[] = {usermode_helper, cmd, mb, NULL };
 	int ret;
 
+	if (current == mdev->worker.task)
+		set_bit(CALLBACK_PENDING, &mdev->flags);
+
 	snprintf(mb, 12, "minor-%d", mdev_to_minor(mdev));
 
 	if (get_net_conf(mdev)) {
@@ -189,6 +192,9 @@ int drbd_khelper(struct drbd_conf *mdev, char *cmd)
 		dev_info(DEV, "helper command: %s %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd, mb,
 				(ret >> 8) & 0xff, ret);
+
+	if (current == mdev->worker.task)
+		clear_bit(CALLBACK_PENDING, &mdev->flags);
 
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;
