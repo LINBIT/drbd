@@ -127,7 +127,11 @@ retry:
 		memcpy(device_state_change->disk_state,
 		       device->disk_state, sizeof(device->disk_state));
 
-		for_each_peer_device(peer_device, device) {
+		/* The peer_devices for each device have to be enumerated in
+		   the order of the connections. We may not use for_each_peer_device() here. */
+		for_each_connection(connection, resource) {
+			peer_device = conn_peer_device(connection, device->vnr);
+
 			peer_device_state_change->peer_device = peer_device;
 			memcpy(peer_device_state_change->disk_state,
 			       peer_device->disk_state, sizeof(peer_device->disk_state));
