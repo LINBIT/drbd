@@ -155,6 +155,7 @@ retry:
 		       connection->cstate, sizeof(connection->cstate));
 		memcpy(connection_state_change->peer_role,
 		       connection->peer_role, sizeof(connection->peer_role));
+		connection_state_change++;
 	}
 	rcu_read_unlock();
 
