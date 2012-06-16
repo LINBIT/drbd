@@ -632,7 +632,8 @@ const char *read_balancing_map[] = {
 	{ "csums-alg", STRING(csums_alg) },						\
 	{ "verify-alg", STRING(verify_alg) },						\
 	{ "use-rle", BOOLEAN(use_rle, USE_RLE) },					\
-	{ "fencing", ENUM(fencing_policy, FENCING) }
+	{ "fencing", ENUM(fencing_policy, FENCING) },					\
+	{ "_name", STRING(name) }
 
 struct context_def disk_options_ctx = {
 	NLA_POLICY(disk_conf),

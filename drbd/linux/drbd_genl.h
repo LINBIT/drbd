@@ -168,6 +168,7 @@ GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
 	__flg_field(28, DRBD_GENLA_F_MANDATORY | DRBD_F_INVARIANT,	tentative)
 	__flg_field_def(29,	DRBD_GENLA_F_MANDATORY,	use_rle, DRBD_USE_RLE_DEF)
 	__u32_field_def(30,	DRBD_GENLA_F_MANDATORY,	fencing_policy, DRBD_FENCING_DEF)
+	__str_field_def(31,	DRBD_GENLA_F_MANDATORY, name, SHARED_SECRET_MAX)
 )
 
 GENL_struct(DRBD_NLA_SET_ROLE_PARMS, 6, set_role_parms,

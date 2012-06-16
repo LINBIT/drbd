@@ -106,6 +106,7 @@ no-disk-barrier		{ DP; CP; return TK_DISK_NO_FLAG;		}
 no-disk-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
 no-disk-drain		{ DP; CP; return TK_DISK_NO_FLAG;		}
 no-md-flushes		{ DP; CP; return TK_DISK_NO_FLAG;		}
+_name			{ DP; CP; return TK_NET_OPTION;			}
 timeout			{ DP; CP; RC(TIMEOUT); return TK_NET_OPTION;	}
 fencing			{ DP; CP; return TK_NET_OPTION;	}  /* FIXME, TODO: 8.4 compatibility */
 protocol		{ DP; CP; RC(PROTOCOL); return TK_NET_OPTION;	}

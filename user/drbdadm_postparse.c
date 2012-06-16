@@ -296,6 +296,23 @@ static void set_peer_in_connection(struct d_resource* res, struct connection *co
 	config_valid = 0;
 }
 
+void create_implicit_net_options(struct connection *conn)
+{
+	char *value;
+
+	if (find_opt(&conn->net_options, "_name"))
+		return;
+
+	if (conn->name)
+		value = conn->name;
+	else if (conn->peer)
+		value = names_to_str_c(&conn->peer->on_hosts, '_');
+	else
+		return;
+
+	insert_head(&conn->net_options, new_opt(strdup("_name"), strdup(value)));
+}
+
 void set_peer_in_resource(struct d_resource* res, int peer_required)
 {
 	struct connection *conn;
@@ -305,6 +322,7 @@ void set_peer_in_resource(struct d_resource* res, int peer_required)
 		set_peer_in_connection(res, conn, peer_required);
 		if (!conn->peer_address)
 			peers_addrs_set = 0;
+		create_implicit_net_options(conn);
 	}
 	res->peers_addrs_set = peers_addrs_set;
 }
