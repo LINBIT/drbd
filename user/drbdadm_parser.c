@@ -1390,7 +1390,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 	return 0;
 }
 
-static struct hname_address *parse_hname_address_pair(int prev_token)
+static struct hname_address *parse_hname_address_pair(struct connection *conn, int prev_token)
 {
 	struct hname_address *ha;
 	int token;
@@ -1398,10 +1398,23 @@ static struct hname_address *parse_hname_address_pair(int prev_token)
 	ha = calloc(1, sizeof(struct hname_address));
 	ha->config_line = line;
 
-	if (prev_token == TK_ADDRESS) {
+	switch (prev_token) {
+	case TK_ADDRESS:
 		ha->name = "UNKNOWN"; /* updated in set_host_info_in_host_address_pairs() */
 		ha->by_address = 1;
 		goto parse_address;
+	case TK__THIS_HOST:
+		ha->name = "_this_host";
+		conn->my_address = &ha->address;
+		goto parse_address;
+	case TK__REMOTE_HOST:
+		ha->name = "_remote_host";
+		conn->connect_to = &ha->address;
+		goto parse_address;
+	default:
+		assert(0);
+	case TK_HOST:
+		break;
 	}
 
 	EXP(TK_STRING);
@@ -1456,7 +1469,9 @@ static struct connection *parse_connection(enum pr_flags flags)
 		switch(token) {
 		case TK_ADDRESS:
 		case TK_HOST:
-			insert_tail(&conn->hname_address_pairs, parse_hname_address_pair(token));
+		case TK__THIS_HOST:
+		case TK__REMOTE_HOST:
+			insert_tail(&conn->hname_address_pairs, parse_hname_address_pair(conn, token));
 			if (++hosts >= 3) {
 				fprintf(stderr,	"%s:%d: only two 'host' keywords per connection allowed\n",
 					config_file, fline);
@@ -1533,12 +1548,6 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			EXP('{');
 			STAILQ_INIT(&host_names);
 			insert_head(&host_names, names_from_str("_this_host"));
-			parse_host_section(res, &host_names, 0);
-			break;
-		case TK__REMOTE_HOST:
-			EXP('{');
-			STAILQ_INIT(&host_names);
-			insert_head(&host_names, names_from_str("_remote_host"));
 			parse_host_section(res, &host_names, 0);
 			break;
 		case TK_FLOATING:

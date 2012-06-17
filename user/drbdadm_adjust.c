@@ -558,6 +558,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	 * with parsing of drbdsetup show output */
 	config_valid = 2;
 
+	set_me_in_resource(ctx->res, true);
 	set_peer_in_resource(ctx->res, true);
 
 	/* setup error reporting context for the parsing routines */
