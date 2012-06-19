@@ -4069,11 +4069,24 @@ void drbd_free_tl_hash(struct drbd_conf *mdev)
 	mdev->ee_hash = NULL;
 	mdev->ee_hash_s = 0;
 
-	/* paranoia code */
-	for (h = mdev->tl_hash; h < mdev->tl_hash + mdev->tl_hash_s; h++)
-		if (h->first)
-			dev_err(DEV, "ASSERT FAILED tl_hash[%u] == %p, expected NULL\n",
-				(int)(h - mdev->tl_hash), h->first);
+	/* We may not have had the chance to wait for all locally pending
+	 * application requests. The hlist_add_fake() prevents access after
+	 * free on master bio completion. */
+	for (h = mdev->tl_hash; h < mdev->tl_hash + mdev->tl_hash_s; h++) {
+		struct drbd_request *req;
+		struct hlist_node *pos, *n;
+		hlist_for_each_entry_safe(req, pos, n, h, collision) {
+#if 0
+			hlist_del_init(&req->collision);
+			hlist_add_fake(&req->collision);
+#else
+			/* open code it: */
+			req->collision.next = NULL;
+			req->collision.pprev = &req->collision.next;
+#endif
+		}
+	}
+
 	kfree(mdev->tl_hash);
 	mdev->tl_hash = NULL;
 	mdev->tl_hash_s = 0;
