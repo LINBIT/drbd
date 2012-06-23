@@ -903,7 +903,7 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 
 	for_each_connection(connection, resource) {
 		rv = is_valid_conn_transition(connection->cstate[OLD], connection->cstate[NEW]);
-		if (rv != SS_SUCCESS)
+		if (rv < SS_SUCCESS)
 			return rv;
 	}
 
