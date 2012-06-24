@@ -905,10 +905,8 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 		rv = is_valid_conn_transition(connection->cstate[OLD], connection->cstate[NEW]);
 		if (rv < SS_SUCCESS)
 			return rv;
-	}
 
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		for_each_peer_device(peer_device, device) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			/* When establishing a connection we need to go through C_CONNECTED!
 			   Necessary to do the right thing upon invalidate-remote on a disconnected
 			   resource */
@@ -916,7 +914,9 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 			    peer_device->repl_state[NEW] >= L_CONNECTED)
 				return SS_NEED_CONNECTION;
 		}
+	}
 
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		/* we cannot fail (again) if we already detached */
 		if (device->disk_state[NEW] == D_FAILED && device->disk_state[OLD] == D_DISKLESS) {
 			return SS_IS_DISKLESS;
