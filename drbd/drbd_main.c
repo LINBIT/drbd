@@ -3519,7 +3519,7 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
  */
-void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
+void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	unsigned long long bm_uuid;
 	struct drbd_peer_device *peer_device;
@@ -3531,7 +3531,7 @@ void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
 		bm_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
 		pdsk = peer_device->disk_state[NOW];
 		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
-		    (pdsk < D_INCONSISTENT || pdsk == D_UNKNOWN || pdsk == D_OUTDATED) &&
+		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
 		    bm_uuid == 0) {
 			_drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
 			do_it = 1;

@@ -1123,7 +1123,7 @@ extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bd
 extern void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
-extern void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local);
+extern void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
@@ -1151,6 +1151,11 @@ extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_de
 extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern void drbd_go_diskless(struct drbd_device *device);
 extern void drbd_ldev_destroy(struct drbd_device *device);
+
+static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
+{
+	_drbd_uuid_new_current(device, false);
+}
 
 /* Meta data layout
    We reserve a 128MB Block (4k aligned)
