@@ -1785,10 +1785,10 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			    (resync_susp_user[OLD] && !resync_susp_user[NEW]))
 				resume_next_sg(device);
 
-			/* sync target done with resync.  Explicitly notify peer, even though
-			 * it should (at least for non-empty resyncs) already know itself. */
+			/* sync target done with resync. Explicitly notify all peers. Our sync
+			   source should even know by himself, but the others need that info. */
 			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_CONNECTED)
-				drbd_send_state(peer_device, new_state);
+				send_new_state_to_all_peer_devices(state_change, n_device);
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
 			 * if the resync finished cleanly, or aborted because of peer disk
