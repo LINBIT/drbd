@@ -3206,25 +3206,32 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	rcu_read_lock();
 	minor = cb->args[1];
 	idr_to_search = resource ? &resource->devices : &drbd_devices;
-	device = idr_get_next(idr_to_search, &minor);
+	device = idr_find(idr_to_search, minor);
 	if (!device) {
-		err = 0;
-		goto out;
+next_device:
+		minor++;
+		cb->args[2] = 0;
+		device = idr_get_next(idr_to_search, &minor);
+		if (!device) {
+			err = 0;
+			goto out;
+		}
 	}
 	if (cb->args[2]) {
 		for_each_peer_device(peer_device, device)
-			if (peer_device == (struct drbd_peer_device *)cb->args[1])
+			if (peer_device == (struct drbd_peer_device *)cb->args[2])
 				goto found_peer_device;
 	}
-	peer_device = list_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
+	peer_device = list_first_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
+	retcode = NO_ERROR;
+	goto put_result;
 
 found_peer_device:
 	list_for_each_entry_continue_rcu(peer_device, &device->peer_devices, peer_devices) {
 		retcode = NO_ERROR;
 		goto put_result;  /* only one iteration */
 	}
-	err = 0;
-	goto out;  /* no more connections */
+	goto next_device;
 
 put_result:
 	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
@@ -3239,7 +3246,7 @@ put_result:
 		struct peer_device_info peer_device_info;
 		struct peer_device_statistics peer_device_statistics;
 
-		dh->minor = device->minor;
+		dh->minor = minor;
 		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
 		if (err)
 			goto out;
@@ -3258,7 +3265,7 @@ put_result:
 		err = peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		cb->args[1] = minor + 1;
+		cb->args[1] = minor;
 		cb->args[2] = (long)peer_device;
 	}
 	genlmsg_end(skb, dh);
