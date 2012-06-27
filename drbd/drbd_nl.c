@@ -132,6 +132,94 @@ name ## _to_tags(struct drbd_conf *mdev, \
 	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include <linux/drbd_nl.h>
 
+struct drbd_md_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct drbd_backing_dev *bdev, char *buf);
+	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
+};
+
+static ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
+static ssize_t current_show(struct drbd_backing_dev *, char *);
+static ssize_t bitmap_show(struct drbd_backing_dev *, char *);
+static ssize_t history1_show(struct drbd_backing_dev *, char *);
+static ssize_t history2_show(struct drbd_backing_dev *, char *);
+static void backing_dev_release(struct kobject *kobj);
+
+static struct kobj_type drbd_bdev_kobj_type = {
+	.release = backing_dev_release,
+	.sysfs_ops = &(struct sysfs_ops) {
+		.show = drbd_md_attr_show,
+		.store = NULL,
+	},
+};
+
+#define DRBD_MD_ATTR(_name) struct drbd_md_attribute drbd_md_attr_##_name = __ATTR_RO(_name)
+
+/* since "current" is a macro, the expansion of DRBD_MD_ATTR(current) does not work: */
+static struct drbd_md_attribute drbd_md_attr_current = {
+	.attr = { .name = "current", .mode = 0444 },
+	.show = current_show,
+};
+static DRBD_MD_ATTR(bitmap);
+static DRBD_MD_ATTR(history1);
+static DRBD_MD_ATTR(history2);
+
+static struct attribute *drbd_md_attrs[] = {
+	&drbd_md_attr_current.attr,
+	&drbd_md_attr_bitmap.attr,
+	&drbd_md_attr_history1.attr,
+	&drbd_md_attr_history2.attr,
+	NULL,
+};
+
+struct attribute_group drbd_md_attr_group = {
+	.attrs = drbd_md_attrs,
+	.name = "data_gen_id",
+};
+
+static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
+{
+	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
+	struct drbd_md_attribute *drbd_md_attr = container_of(attr, struct drbd_md_attribute, attr);
+
+	return drbd_md_attr->show(bdev, buffer);
+}
+
+static ssize_t show_uuid_value(struct drbd_backing_dev *bdev, enum drbd_uuid_index idx, char *buf)
+{
+	ssize_t size = 0;
+
+	size = sprintf(buf, "0x%016llX\n", bdev->md.uuid[idx]);
+
+	return size;
+}
+
+static ssize_t current_show(struct drbd_backing_dev *bdev, char *buf)
+{
+	return show_uuid_value(bdev, UI_CURRENT, buf);
+}
+
+static ssize_t bitmap_show(struct drbd_backing_dev *bdev, char *buf)
+{
+	return show_uuid_value(bdev, UI_BITMAP, buf);
+}
+
+static ssize_t history1_show(struct drbd_backing_dev *bdev, char *buf)
+{
+	return show_uuid_value(bdev, UI_HISTORY_START, buf);
+}
+
+static ssize_t history2_show(struct drbd_backing_dev *bdev, char *buf)
+{
+	return show_uuid_value(bdev, UI_HISTORY_END, buf);
+}
+
+static void backing_dev_release(struct kobject *kobj)
+{
+	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
+	kfree(bdev);
+}
+
 void drbd_bcast_ev_helper(struct drbd_conf *mdev, char *helper_name);
 void drbd_nl_send_reply(struct cn_msg *, int);
 
@@ -1174,6 +1262,14 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto force_diskless_dec;
 	}
 
+	if (kobject_init_and_add(&nbc->kobject, &drbd_bdev_kobj_type, mdev->kobj, "meta_data")) {
+		retcode = ERR_NOMEM;
+		goto force_diskless_dec;
+	}
+
+	if (sysfs_create_group(&nbc->kobject, &drbd_md_attr_group))
+		goto remove_kobject;
+
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (nbc->dc.no_md_flush)
@@ -1235,7 +1331,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	dd = drbd_determine_dev_size(mdev, 0);
 	if (dd == dev_size_error) {
 		retcode = ERR_NOMEM_BITMAP;
-		goto force_diskless_dec;
+		goto remove_kobject;
 	} else if (dd == grew)
 		set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 
@@ -1245,13 +1341,13 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write,
 			"set_n_write from attaching", BM_LOCKED_MASK)) {
 			retcode = ERR_IO_MD_DISK;
-			goto force_diskless_dec;
+			goto remove_kobject;
 		}
 	} else {
 		if (drbd_bitmap_io(mdev, &drbd_bm_read,
 			"read from attaching", BM_LOCKED_MASK) < 0) {
 			retcode = ERR_IO_MD_DISK;
-			goto force_diskless_dec;
+			goto remove_kobject;
 		}
 	}
 
@@ -1260,7 +1356,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		if (drbd_bitmap_io(mdev, &drbd_bm_write,
 			"crashed primary apply AL", BM_LOCKED_MASK)) {
 			retcode = ERR_IO_MD_DISK;
-			goto force_diskless_dec;
+			goto remove_kobject;
 		}
 	}
 
@@ -1316,7 +1412,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_SUCCESS)
-		goto force_diskless_dec;
+		goto remove_kobject;
 
 	if (mdev->state.role == R_PRIMARY)
 		mdev->ldev->md.uuid[UI_CURRENT] |=  (u64)1;
@@ -1332,6 +1428,9 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 	drbd_reconfig_done(mdev);
 	return 0;
 
+ remove_kobject:
+	drbd_free_bc(nbc);
+	nbc = NULL;
  force_diskless_dec:
 	put_ldev(mdev);
  force_diskless:
