@@ -400,6 +400,7 @@ struct drbd_cmd commands[] = {
 	{"verify", P_start_ov, F_CONFIG_CMD, {{ NULL,
 	 (struct drbd_option[]) {
 		 { "start",'s',T_start_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
+		 { "stop",'S',T_stop_sector, EN(DISK_SIZE_SECT,'s',"bytes") },
 		 CLOSE_OPTIONS }} }, },
 	{"down",            0, down_cmd, get_usage, { {NULL, NULL }} },
 	/* "state" is deprecated! please use "role".

@@ -157,6 +157,7 @@
       </arg>
       <arg choice="plain" rep="norepeat">verify</arg>
       <arg choice="opt" rep="norepeat">-s<arg choice="req" rep="norepeat"><replaceable>start-position</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">-S<arg choice="req" rep="norepeat"><replaceable>stop-position</replaceable></arg></arg>
     </cmdsynopsis>
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdsetup</command>
@@ -1328,8 +1329,11 @@
         are <emphasis>not</emphasis> brought back in sync automatically. To
         do that, simply disconnect and reconnect the resource.
       </para>
-      <para>        If on-line verification is already in progress, this command
-        silently does nothing.
+      <para>If on-line verification is already in progress (and this node is "VerifyS"),
+	this command silently "succeeds". In this case, any start-sector (see
+	below) will be ignored, and any stop-sector (see below) will be honored.
+	This can be used to stop a running verify, or to update/shorten/extend
+	the coverage of the currently running verify.
       </para>
       <para>	This command will fail if the <replaceable>device</replaceable> is
 	not part of a connected device pair.
@@ -1340,12 +1344,27 @@
           <term><option>-s</option>,
 	  <option>--start <replaceable>start-sector</replaceable></option></term>
           <listitem>
-            <para>              Since version 8.3.2, on-line verification should resume from the
-	      last position after connection loss.  It may also be started from
-	      an arbitrary position by setting this option.
+            <para>Since version 8.3.2, on-line verification should resume from the
+	      last position after connection loss. It may also be started from
+	      an arbitrary position by setting this option. If you had reached some
+	      stop-sector before, and you do not specify an explicit start-sector,
+	      verify should resume from the previous stop-sector.
             </para>
-            <para>              Default unit is sectors. You may also specify a unit explicitly.
+            <para>Default unit is sectors. You may also specify a unit explicitly.
               The <option>start-sector</option> will be rounded down to a multiple of 8 sectors (4kB).
+            </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-S</option>,
+	  <option>--stop <replaceable>stop-sector</replaceable></option></term>
+          <listitem>
+            <para>Since version 8.3.14, on-line verification can be stopped
+	      before it reaches end-of-device. This can be 
+            </para>
+            <para>Default unit is sectors. You may also specify a unit explicitly.
+              The <option>stop-sector</option> may be updated by issuing an additional
+	      drbdsetup verify command on the same node while the verify is running.
             </para>
           </listitem>
         </varlistentry>
