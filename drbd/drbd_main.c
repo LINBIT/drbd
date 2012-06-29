@@ -3975,6 +3975,8 @@ out_no_cpumask:
  * last part of drbd_delete_device. */
 void drbd_free_mdev(struct drbd_conf *mdev)
 {
+	kobject_del(mdev->kobj);
+	kobject_put(mdev->kobj);
 	kfree(mdev->current_epoch);
 	kfree(mdev->app_reads_hash);
 	tl_cleanup(mdev);

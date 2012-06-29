@@ -1136,6 +1136,7 @@ struct drbd_conf {
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
 
+	struct kobject *kobj;
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; /* protected by get_net_conf() and put_net_conf() */
 	struct syncer_conf sync_conf;

@@ -471,15 +471,22 @@ STATIC struct drbd_conf *ensure_mdev(int minor, int create)
 		if (minor_table[minor] == NULL) {
 			minor_table[minor] = mdev;
 			disk = mdev->vdisk;
-			mdev = NULL;
 		} /* else: we lost the race */
 		spin_unlock_irq(&drbd_pp_lock);
 
-		if (disk) /* we won the race above */
-			/* in case we ever add a drbd_delete_device(),
-			 * don't forget the del_gendisk! */
+		if (disk) {
+			struct kobject *parent;
+
 			add_disk(disk);
-		else /* we lost the race above */
+			parent = &disk_to_dev(disk)->kobj;
+			mdev->kobj = kobject_create_and_add("drbd", parent);
+			if (!mdev->kobj) {
+				minor_table[minor] = NULL;
+				del_gendisk(mdev->vdisk);
+				drbd_free_mdev(mdev);
+				return NULL;
+			}
+		} else
 			drbd_free_mdev(mdev);
 
 		mdev = minor_to_mdev(minor);
