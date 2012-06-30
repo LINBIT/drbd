@@ -835,6 +835,9 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
 	cpu->bm_max_peers = be32_to_cpu(disk->bm_max_peers.be);
 
+	if (cpu->bm_max_peers > MAX_PEERS)
+		cpu->bm_max_peers = MAX_PEERS;
+
 	for (p = 0; p < cpu->bm_max_peers; p++) {
 		cpu->peers[p].uuid[UI_CURRENT] = be64_to_cpu(disk->current_uuid.be);
 		cpu->peers[p].addr_hash = be32_to_cpu(disk->peers[p].addr_hash.be);
