@@ -973,15 +973,16 @@ static int find_peer_addr_hash(struct drbd_device *device, u32 peer_addr_hash)
 	return -1;
 }
 
+/* All callers hold resource->conf_update */
 int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	u32 peer_addr_hash;
-	int i, err = 0;
+	int i, err = -ENOMEM;
 	struct disk_conf *disk_conf;
-	struct fifo_buffer *resync_plan;
-	struct lru_cache *resync_lru;
+	struct fifo_buffer *resync_plan = NULL;
+	struct lru_cache *resync_lru = NULL;
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
@@ -990,14 +991,12 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 
 	resync_plan = fifo_alloc((disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
 	if (!resync_plan)
-		return -ENOMEM;
+		goto out;
 	resync_lru = lc_create("resync", drbd_bm_ext_cache,
 			       1, 61, sizeof(struct bm_extent),
 			       offsetof(struct bm_extent, lce));
-	if (!resync_lru) {
-		kfree(resync_plan);
-		return -ENOMEM;
-	}
+	if (!resync_lru)
+		goto out;
 	rcu_assign_pointer(peer_device->rs_plan_s, resync_plan);
 	peer_device->resync_lru = resync_lru;
 
@@ -1006,11 +1005,25 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 	if (i != -1) {
 		drbd_info(peer_device, "Bitmap slot %u was assigned to "
 			  "peer with address hash %08X\n", i, peer_addr_hash);
-		peer_device->bitmap_index = i;
-		goto out;
+	} else {
+		i = find_peer_addr_hash(device, 0 /* UNUSED_SLOT */);
+		if (i == -1) {
+			drbd_warn(peer_device, "No bitmap vacant Bitmap slot available\n");
+			goto out;
+		}
+		drbd_info(peer_device, "Bitmap slot %u was allocated to "
+			  "peer with address hash %08X\n", i, peer_addr_hash);
+		device->ldev->md.peers[i].addr_hash = peer_addr_hash;
+		drbd_md_mark_dirty(device);
 	}
+	peer_device->bitmap_index = i;
+	err = 0;
 
 out:
+	if (err) {
+		kfree(resync_lru);
+		kfree(resync_plan);
+	}
 	put_ldev(device);
 	return err;
 }
