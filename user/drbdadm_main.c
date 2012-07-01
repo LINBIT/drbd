@@ -274,6 +274,14 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
 
+#define DRBD_acf1_peer_device		\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.iterate_volumes = 1,		\
+	.need_peer = 1,			\
+	.verify_ips = 0,		\
+	.uc_dialog = 1,			\
+
 #define DRBD_acf3_handler		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
@@ -370,13 +378,13 @@ struct adm_cmd cmds[] = {
 	{"primary", adm_generic_l, DRBD_acf1_resname
 	 .drbdsetup_ctx = &primary_cmd_ctx, },
 	{"secondary", adm_generic_l, DRBD_acf1_resname},
-	{"invalidate", adm_generic_b, DRBD_acf1_default},
-	{"invalidate-remote", adm_generic_l, DRBD_acf1_defnet},
+	{"invalidate", adm_generic_b, DRBD_acf1_peer_device},
+	{"invalidate-remote", adm_generic_l, DRBD_acf1_peer_device},
 	{"outdate", adm_outdate, DRBD_acf1_default},
 	{"resize", adm_resize, DRBD_acf1_defnet},
-	{"verify", adm_generic_s, DRBD_acf1_defnet},
-	{"pause-sync", adm_generic_s, DRBD_acf1_defnet},
-	{"resume-sync", adm_generic_s, DRBD_acf1_defnet},
+	{"verify", adm_generic_s, DRBD_acf1_peer_device},
+	{"pause-sync", adm_generic_s, DRBD_acf1_peer_device},
+	{"resume-sync", adm_generic_s, DRBD_acf1_peer_device},
 	{"adjust", adm_adjust, DRBD_acf1_resname},
 	{"adjust-with-progress", adm_adjust_wp, DRBD_acf1_connect},
 	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
@@ -392,7 +400,7 @@ struct adm_cmd cmds[] = {
 
 	{"create-md", adm_create_md, DRBD_acf1_default},
 	{"show-gi", adm_generic_b, DRBD_acf1_default},
-	{"get-gi", adm_generic_b, DRBD_acf1_default},
+	{"get-gi", adm_generic_b, DRBD_acf1_peer_device},
 	{"dump-md", admm_generic, DRBD_acf1_default},
 	{"wipe-md", admm_generic, DRBD_acf1_default},
 	{"apply-al", admm_generic, DRBD_acf1_default},
@@ -499,12 +507,18 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	iterate_conns = ctx->conn ? 0 : cmd->need_peer;
 
 	if (iterate_vols && iterate_conns) {
-		fprintf(stderr, "logic bug in %s:%d\n", __FILE__,
-			__LINE__);
-		exit(E_THINKO);
-	}
-
-	if (iterate_vols) {
+		for_each_volume(vol, &res->me->volumes) {
+			ctx->vol = vol;
+			for_each_connection(conn, &res->connections) {
+				if (conn->ignore)
+					continue;
+				ctx->conn = conn;
+				ret = call_cmd_fn(cmd->function, ctx, on_error);
+				if (ret)
+					goto out;
+			}
+		}
+	} else if (iterate_vols) {
 		for_each_volume(vol, &res->me->volumes) {
 			ctx->vol = vol;
 			ret = call_cmd_fn(cmd->function, ctx, on_error);
@@ -523,7 +537,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	} else {
 		ret = call_cmd_fn(cmd->function, ctx, on_error);
 	}
-
+out:
 	return ret;
 }
 
@@ -1811,6 +1825,12 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 		argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
 	else
 		argv[NA(argc)] = ssprintf("%s", ctx->res->name);
+
+	if (ctx->cmd->need_peer) {
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
+	}
+
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
@@ -3762,6 +3782,7 @@ int main(int argc, char **argv)
 	if (cmd->uc_dialog)
 		uc_node(global_options.usage_count);
 
+	ctx.cmd = cmd;
 	ctx.arg = cmd->name;
 	if (cmd->res_name_required) {
 		if (STAILQ_EMPTY(&config)) {
