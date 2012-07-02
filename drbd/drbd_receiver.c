@@ -4103,7 +4103,8 @@ __change_peer_device_state(struct drbd_peer_device *peer_device,
 		mask.conn ^= -1;
 		__change_repl_state(peer_device,
 				max_t(enum drbd_repl_state, val.conn, L_STANDALONE));
-	if (mask.pdsk)
+	}
+	if (mask.pdsk) {
 		mask.pdsk ^= -1;
 		__change_peer_disk_state(peer_device, val.pdsk);
 	}
