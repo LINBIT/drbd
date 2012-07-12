@@ -1264,7 +1264,7 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 
 	if (kobject_init_and_add(&nbc->kobject, &drbd_bdev_kobj_type, mdev->kobj, "meta_data")) {
 		retcode = ERR_NOMEM;
-		goto force_diskless_dec;
+		goto remove_kobject;
 	}
 
 	if (sysfs_create_group(&nbc->kobject, &drbd_md_attr_group))
