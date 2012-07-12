@@ -502,33 +502,6 @@ static void drbd_wait_ee_list_empty(struct drbd_conf *mdev,
 	spin_unlock_irq(&mdev->tconn->req_lock);
 }
 
-/* see also kernel_accept; which is only present since 2.6.18.
- * also we want to log which part of it failed, exactly */
-STATIC int drbd_accept(const char **what, struct socket *sock, struct socket **newsock)
-{
-	struct sock *sk = sock->sk;
-	int err = 0;
-
-	*what = "sock_create_lite";
-	err = sock_create_lite(sk->sk_family, sk->sk_type, sk->sk_protocol,
-			       newsock);
-	if (err < 0)
-		goto out;
-
-	*what = "accept";
-	err = sock->ops->accept(sock, *newsock, 0);
-	if (err < 0) {
-		sock_release(*newsock);
-		*newsock = NULL;
-		goto out;
-	}
-	(*newsock)->ops  = sock->ops;
-	__module_get((*newsock)->ops->owner);
-
-out:
-	return err;
-}
-
 STATIC int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
@@ -783,7 +756,8 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_tconn *tconn)
 	if (err < 0)
 		goto out;
 
-	err = drbd_accept(&what, s_listen, &s_estab);
+	what = "accept";
+	err = kernel_accept(s_listen, &s_estab, 0);
 
 out:
 	if (s_listen)
