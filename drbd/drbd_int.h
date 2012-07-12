@@ -73,6 +73,14 @@
 # endif
 #endif
 
+#ifdef NEED_BOOL_TYPE
+typedef _Bool                   bool;
+enum {
+	false = 0,
+	true = 1
+};
+#endif
+
 /* module parameter, defined in drbd_main.c */
 extern unsigned int minor_count;
 extern bool disable_sendpage;
