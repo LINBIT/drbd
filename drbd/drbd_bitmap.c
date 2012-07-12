@@ -38,17 +38,6 @@
  * On recent kernels this is not needed. */
 #include "compat/bitops.h"
 
-
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-/* see 980c19e3
- * highmem: mark k[un]map_atomic() with two arguments as deprecated */
-#define drbd_kmap_atomic(page, km)	kmap_atomic(page)
-#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr)
-#else
-#define drbd_kmap_atomic(page, km)	kmap_atomic(page, km)
-#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
-#endif
-
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
 

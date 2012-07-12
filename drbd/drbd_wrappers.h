@@ -1187,4 +1187,14 @@ int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
 			 struct kobject *parent, const char *name);
 #endif
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+/* see 980c19e3
+ * highmem: mark k[un]map_atomic() with two arguments as deprecated */
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr)
+#else
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page, km)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
+#endif
+
 #endif
