@@ -2738,10 +2738,10 @@ void drbd_bcast_ee(struct drbd_conf *mdev,
 
 	page = e->pages;
 	page_chain_for_each(page) {
-		void *d = kmap_atomic(page, KM_USER0);
+		void *d = drbd_kmap_atomic(page, KM_USER0);
 		unsigned l = min_t(unsigned, len, PAGE_SIZE);
 		memcpy(tl, d, l);
-		kunmap_atomic(d, KM_USER0);
+		drbd_kunmap_atomic(d, KM_USER0);
 		tl = (unsigned short*)((char*)tl + l);
 		len -= l;
 		if (len == 0)
