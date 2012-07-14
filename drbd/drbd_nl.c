@@ -774,7 +774,8 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 	idr_for_each_entry(&resource->devices, device, minor) {
 		drbd_md_sync(device);
-		drbd_kobject_uevent(device);
+		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
+			drbd_kobject_uevent(device);
 	}
 
 out:

@@ -1167,7 +1167,7 @@ static void parse_host_section(struct d_resource *res,
 			break;
 		case TK_OPTIONS:
 			EXP('{');
-			host->res_options = parse_options(0,
+			host->res_options = parse_options(TK_RES_FLAG,
 							  0,
 							  TK_RES_OPTION);
 			break;
@@ -1615,7 +1615,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_OPTIONS:
 			check_upr("resource options section", "%s:res_options", res->name);
 			EXP('{');
-			options = parse_options(0, 0, TK_RES_OPTION);
+			options = parse_options(TK_RES_FLAG, 0, TK_RES_OPTION);
 			STAILQ_CONCAT(&res->res_options, &options);
 			break;
 		case TK_CONNECTION:

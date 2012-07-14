@@ -320,7 +320,8 @@ enum drbd_state_rv {
 	SS_CONCURRENT_ST_CHG = -19,   /* Concurrent cluster side state change! */
 	SS_O_VOL_PEER_PRI = -20,
 	SS_INTERRUPTED = -21,	/* interrupted in stable_state_change() */
-	SS_AFTER_LAST_ERROR = -22,    /* Keep this at bottom */
+	SS_PRIMARY_READER = -22,
+	SS_AFTER_LAST_ERROR = -23,    /* Keep this at bottom */	
 };
 
 #define SHARED_SECRET_MAX 64

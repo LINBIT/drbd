@@ -734,6 +734,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
+		enum drbd_role *peer_role = connection->peer_role;
+		struct net_conf *nc;
+		bool two_primaries;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
 			return SS_ALREADY_STANDALONE;
@@ -744,10 +747,14 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
 			return SS_IN_TRANSIENT_STATE;
 
+		nc = rcu_dereference(connection->net_conf);
+		two_primaries = nc ? nc->two_primaries : false;
+		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY &&
+		    resource->open_ro_cnt && !two_primaries)
+			return SS_PRIMARY_READER;
 	}
 
-	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY &&
-	    resource->open_rw_cnt + resource->open_ro_cnt)
+	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && resource->open_rw_cnt)
 		return SS_DEVICE_IN_USE;
 
 

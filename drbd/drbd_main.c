@@ -2069,6 +2069,28 @@ int drbd_send_all(struct drbd_connection *connection, struct socket *sock, void 
 	return 0;
 }
 
+/* primary_peer_present_and_not_two_primaries_allowed() */
+static bool primary_peer_present(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	struct net_conf *nc;
+	bool two_primaries, rv = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		nc = rcu_dereference(connection->net_conf);
+		two_primaries = nc ? nc->two_primaries : false;
+
+		if (connection->peer_role[NOW] == R_PRIMARY && !two_primaries) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
@@ -2076,13 +2098,30 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	unsigned long flags;
 	int rv = 0;
 
+	if (resource->res_opts.auto_promote) {
+		enum drbd_state_rv rv;
+		/* Allow opening in read-only mode on an unconnected secondary.
+		   This avoids split brain when the drbd volume gets opened
+		   temporarily by udev while it scans for PV signatures. */
+
+		if (mode & FMODE_WRITE && resource->role[NOW] == R_SECONDARY) {
+			rv = drbd_set_role(resource, R_PRIMARY, false);
+			if (rv < SS_SUCCESS)
+				drbd_warn(resource, "Auto-promote failed: %s\n",
+					  drbd_set_st_err_str(rv));
+		}
+	}
+
 	spin_lock_irqsave(&resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
 
-	if (resource->role[NOW] != R_PRIMARY) {
-		if (mode & FMODE_WRITE)
+	if (mode & FMODE_WRITE) {
+		if (resource->role[NOW] != R_PRIMARY)
 			rv = -EROFS;
-		else if (!allow_oos)
+	} else /* READ access only */ {
+		if (resource->role[NOW] != R_PRIMARY &&
+		    primary_peer_present(resource) &&
+		    !allow_oos)
 			rv = -EMEDIUMTYPE;
 	}
 
@@ -2101,11 +2140,28 @@ static int drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
+	unsigned long flags;
+	int open_rw_cnt;
 
+	spin_lock_irqsave(&resource->req_lock, flags);
 	if (mode & FMODE_WRITE)
 		resource->open_rw_cnt--;
 	else
 		resource->open_ro_cnt--;
+	open_rw_cnt = resource->open_rw_cnt;
+	spin_unlock_irqrestore(&resource->req_lock, flags);
+
+	if (resource->res_opts.auto_promote) {
+		enum drbd_state_rv rv;
+
+		if (open_rw_cnt == 0 && resource->role[NOW] == R_PRIMARY) {
+			rv = drbd_set_role(resource, R_SECONDARY, false);
+			if (rv < SS_SUCCESS)
+				drbd_warn(resource, "Auto-demote failed: %s\n",
+					  drbd_set_st_err_str(rv));
+		}
+	}
+
 	return 0;
 }
 
