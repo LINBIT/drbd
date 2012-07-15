@@ -2086,8 +2086,12 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 			rv = -EMEDIUMTYPE;
 	}
 
-	if (!rv)
-		resource->open_cnt++;
+	if (!rv) {
+		if (mode & FMODE_WRITE)
+			resource->open_rw_cnt++;
+		else
+			resource->open_ro_cnt++;
+	}
 	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	return rv;
@@ -2097,7 +2101,11 @@ static int drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
-	resource->open_cnt--;
+
+	if (mode & FMODE_WRITE)
+		resource->open_rw_cnt--;
+	else
+		resource->open_ro_cnt--;
 	return 0;
 }
 

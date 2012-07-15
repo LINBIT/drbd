@@ -688,7 +688,7 @@ struct drbd_resource {
 	struct res_opts res_opts;
 	/* conf_update protects the devices, connections, peer devices, net_conf, disk_conf */
 	struct mutex conf_update;
-	int open_cnt;
+	int open_rw_cnt, open_ro_cnt;
 	spinlock_t req_lock;
 	u64 dagtag_sector;		/* Protected by req_lock.
 					 * See also dagtag_sector in

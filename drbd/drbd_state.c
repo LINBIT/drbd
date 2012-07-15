@@ -746,7 +746,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 	}
 
-	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && resource->open_cnt)
+	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY &&
+	    resource->open_rw_cnt + resource->open_ro_cnt)
 		return SS_DEVICE_IN_USE;
 
 
