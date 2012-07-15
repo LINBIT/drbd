@@ -197,10 +197,6 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
-# define BD_OPS_USE_FMODE
-#endif
-
 /* how to get to the kobj of a gendisk.
  * see also upstream commits
  * edfaa7c36574f1bf09c65ad602412db9da5f96bf

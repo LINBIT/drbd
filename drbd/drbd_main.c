@@ -62,13 +62,8 @@
 #include <linux/swab.h>
 #endif
 
-#ifdef BD_OPS_USE_FMODE
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static int drbd_release(struct gendisk *gd, fmode_t mode);
-#else
-static int drbd_open(struct inode *inode, struct file *file);
-static int drbd_release(struct inode *inode, struct file *file);
-#endif
 static int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
@@ -2074,18 +2069,9 @@ int drbd_send_all(struct drbd_connection *connection, struct socket *sock, void 
 	return 0;
 }
 
-#ifdef BD_OPS_USE_FMODE
 static int drbd_open(struct block_device *bdev, fmode_t mode)
-#else
-static int drbd_open(struct inode *inode, struct file *file)
-#endif
 {
-#ifdef BD_OPS_USE_FMODE
 	struct drbd_device *device = bdev->bd_disk->private_data;
-#else
-	int mode = file->f_mode;
-	struct drbd_device *device = inode->i_bdev->bd_disk->private_data;
-#endif
 	unsigned long flags;
 	int rv = 0;
 
@@ -2106,21 +2092,12 @@ static int drbd_open(struct inode *inode, struct file *file)
 	return rv;
 }
 
-#ifdef BD_OPS_USE_FMODE
 static int drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	device->open_cnt--;
 	return 0;
 }
-#else
-static int drbd_release(struct inode *inode, struct file *file)
-{
-	struct drbd_device *device = inode->i_bdev->bd_disk->private_data;
-	device->open_cnt--;
-	return 0;
-}
-#endif
 
 #ifdef blk_queue_plugged
 STATIC void drbd_unplug_fn(struct request_queue *q)
