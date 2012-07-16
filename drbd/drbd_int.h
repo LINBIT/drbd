@@ -459,6 +459,7 @@ struct digest_info {
 struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
+	struct list_head recv_order; /* writes only */
 	struct drbd_epoch *epoch; /* for writes */
 	struct page *pages;
 	atomic_t pending_bios;
@@ -788,6 +789,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
 	struct drbd_thread asender;
+	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 
 	/* sender side */
 	struct drbd_work_queue sender_work;

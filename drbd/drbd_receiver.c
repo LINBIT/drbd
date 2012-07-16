@@ -384,6 +384,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 	peer_req->i.local = false;
 	peer_req->i.waiting = false;
 
+	INIT_LIST_HEAD(&peer_req->recv_order);
 	peer_req->epoch = NULL;
 	peer_req->peer_device = peer_device;
 	peer_req->pages = page;
@@ -405,6 +406,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
 		       int is_net)
 {
+	list_del(&peer_req->recv_order);
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	drbd_free_pages(device, peer_req->pages, is_net);
@@ -2497,6 +2499,8 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	} else
 		spin_lock_irq(&device->resource->req_lock);
 	list_add(&peer_req->w.list, &device->active_ee);
+	if (connection->agreed_pro_version >= 110)
+		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET)
@@ -2544,6 +2548,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
+	list_del_init(&peer_req->recv_order);
 	drbd_remove_peer_req_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
 	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)

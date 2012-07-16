@@ -2769,6 +2769,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	connection->sender.connection = connection;
 	drbd_thread_init(resource, &connection->asender, drbd_asender, "asender");
 	connection->asender.connection = connection;
+	INIT_LIST_HEAD(&connection->peer_requests);
 
 	kref_init(&connection->kref);
 
