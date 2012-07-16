@@ -3973,6 +3973,7 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_CONN_ST_CHG_PREPARE] = "conn_st_chg_prepare",
 		[P_CONN_ST_CHG_ABORT]	= "conn_st_chg_abort",
 		[P_DAGTAG]		= "dagtag",
+		[P_PEER_ACK]		= "peer_ack",
 
 		/* enum drbd_packet, but not commands - obsoleted flags:
 		 *	P_MAY_IGNORE

@@ -58,6 +58,8 @@ enum drbd_packet {
 	P_CONN_ST_CHG_ABORT   = 0x2f, /* data sock: abort state change */
 
 	P_DAGTAG	      = 0x30, /* data sock: set the current dagtag */
+	/* P_TRIM                = 0x31, Reserved */
+	P_PEER_ACK            = 0x32, /* meta sock: tell which nodes have acked a request */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
@@ -290,6 +292,11 @@ struct p_delay_probe93 {
 } __packed;
 
 struct p_dagtag {
+	u64 dagtag;
+} __packed;
+
+struct p_peer_ack {
+	u64 mask;
 	u64 dagtag;
 } __packed;
 

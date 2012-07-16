@@ -406,7 +406,6 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
 		       int is_net)
 {
-	list_del(&peer_req->recv_order);
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	drbd_free_pages(device, peer_req->pages, is_net);
@@ -462,7 +461,8 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 		err2 = peer_req->w.cb(&peer_req->w, !!err);
 		if (!err)
 			err = err2;
-		drbd_free_peer_req(device, peer_req);
+		if (list_empty(&peer_req->recv_order))
+			drbd_free_peer_req(device, peer_req);
 	}
 	wake_up(&device->ee_wait);
 
@@ -5722,6 +5722,46 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids)
 	return bitmap_bits;
 }
 
+STATIC int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct p_peer_ack *p = pi->data;
+	u64 dagtag, in_sync;
+	struct drbd_peer_request *peer_req, *tmp;
+	struct list_head work_list;
+
+	dagtag = be64_to_cpu(p->dagtag);
+	in_sync = be64_to_cpu(p->mask);
+
+	spin_lock_irq(&resource->req_lock);
+	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
+		if (dagtag == peer_req->dagtag_sector)
+			goto found;
+	}
+	spin_unlock_irq(&resource->req_lock);
+
+	drbd_err(connection, "peer request with dagtag %llu not found\n", dagtag);
+	return -EIO;
+
+found:
+	list_cut_position(&work_list, &connection->peer_requests, &peer_req->recv_order);
+	spin_unlock_irq(&resource->req_lock);
+
+	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
+		struct drbd_peer_device *peer_device = peer_req->peer_device;
+		struct drbd_device *device = peer_device->device;
+		u64 in_sync_b;
+
+		in_sync_b = node_ids_to_bitmap(device, in_sync);
+
+		drbd_set_sync(device, peer_req->i.sector,
+			      peer_req->i.size, ~in_sync_b, -1);
+		list_del(&peer_req->recv_order);
+		drbd_free_peer_req(device, peer_req);
+	}
+	return 0;
+}
+
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -5782,6 +5822,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RS_CANCEL]       = { sizeof(struct p_block_ack), got_NegRSDReply },
 	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
+	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
 };
 
 int drbd_asender(struct drbd_thread *thi)
