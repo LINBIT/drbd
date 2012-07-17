@@ -4248,7 +4248,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	}
 
 	spin_lock_irq(&resource->req_lock);
-	if ((flags & CS_PREPARE) && rv >= SS_SUCCESS)
+	if (flags & CS_PREPARE)
 		resource->remote_state_change_prepared = connection;
 	else {
 		if (flags & CS_PREPARED)
