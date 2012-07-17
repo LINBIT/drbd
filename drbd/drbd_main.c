@@ -2154,7 +2154,9 @@ static int drbd_release(struct gendisk *gd, fmode_t mode)
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
 
-		if (open_rw_cnt == 0 && resource->role[NOW] == R_PRIMARY) {
+		if (open_rw_cnt == 0 &&
+		    resource->role[NOW] == R_PRIMARY &&
+		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
 			rv = drbd_set_role(resource, R_SECONDARY, false);
 			if (rv < SS_SUCCESS)
 				drbd_warn(resource, "Auto-demote failed: %s\n",

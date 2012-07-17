@@ -677,6 +677,11 @@ enum {
 	INITIAL_STATE_RECEIVED,
 };
 
+/* flag bits per resource */
+enum {
+	EXPLICIT_PRIMARY,
+};
+
 enum which_state { NOW, OLD = NOW, NEW };
 
 struct drbd_resource {
@@ -693,6 +698,7 @@ struct drbd_resource {
 	u64 dagtag_sector;		/* Protected by req_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
+	unsigned long flags;
 
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 

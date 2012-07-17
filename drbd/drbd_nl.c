@@ -796,7 +796,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 {
 	struct set_role_parms parms;
 	int err;
-	enum drbd_ret_code retcode;
+	enum drbd_state_rv retcode;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
@@ -812,12 +812,17 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY)
+	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
 		retcode = drbd_set_role(adm_ctx.resource, R_PRIMARY, parms.assume_uptodate);
-	else
+		if (retcode >= SS_SUCCESS)
+			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
+	} else {
 		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false);
+		if (retcode >= SS_SUCCESS)
+			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
+	}
 out:
-	drbd_adm_finish(info, retcode);
+	drbd_adm_finish(info, (enum drbd_ret_code)retcode);
 	return 0;
 }
 
