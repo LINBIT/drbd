@@ -688,6 +688,7 @@ struct drbd_resource {
 	struct res_opts res_opts;
 	/* conf_update protects the devices, connections, peer devices, net_conf, disk_conf */
 	struct mutex conf_update;
+	int open_cnt;
 	spinlock_t req_lock;
 	u64 dagtag_sector;		/* Protected by req_lock.
 					 * See also dagtag_sector in
@@ -954,7 +955,6 @@ struct drbd_device {
 	struct drbd_bitmap *bitmap;
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
-	int open_cnt;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 

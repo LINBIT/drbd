@@ -2072,13 +2072,14 @@ int drbd_send_all(struct drbd_connection *connection, struct socket *sock, void 
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
+	struct drbd_resource *resource = device->resource;
 	unsigned long flags;
 	int rv = 0;
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+	spin_lock_irqsave(&resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
 
-	if (device->resource->role[NOW] != R_PRIMARY) {
+	if (resource->role[NOW] != R_PRIMARY) {
 		if (mode & FMODE_WRITE)
 			rv = -EROFS;
 		else if (!allow_oos)
@@ -2086,8 +2087,8 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	}
 
 	if (!rv)
-		device->open_cnt++;
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+		resource->open_cnt++;
+	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	return rv;
 }
@@ -2095,7 +2096,8 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 static int drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
-	device->open_cnt--;
+	struct drbd_resource *resource = device->resource;
+	resource->open_cnt--;
 	return 0;
 }
 
@@ -2330,10 +2332,6 @@ void drbd_destroy_device(struct kref *kref)
 	struct drbd_peer_device *peer_device, *tmp;
 
 	del_timer_sync(&device->request_timer);
-
-	/* paranoia asserts */
-	D_ASSERT(device, device->open_cnt == 0);
-	/* end paranoia asserts */
 
 	/* cleanup stuff that may have been allocated during
 	 * device (re-)configuration or state changes */

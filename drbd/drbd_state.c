@@ -746,12 +746,13 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 	}
 
+	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && resource->open_cnt)
+		return SS_DEVICE_IN_USE;
+
+
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
-
-		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_cnt)
-			return SS_DEVICE_IN_USE;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
 			return SS_IS_DISKLESS;
