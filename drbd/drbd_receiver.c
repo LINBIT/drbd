@@ -5354,8 +5354,12 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 		set_bit(CONN_WD_ST_CHG_OKAY, &connection->flags);
 	} else {
 		set_bit(CONN_WD_ST_CHG_FAIL, &connection->flags);
-		drbd_err(connection, "Requested state change failed by peer: %s (%d)\n",
-			drbd_set_st_err_str(retcode), retcode);
+		if (connection->last_remote_state_error != retcode ||
+		    jiffies - connection->last_remote_state_error_jiffies > HZ/10)
+			drbd_err(connection, "Requested state change failed by peer: %s (%d)\n",
+				 drbd_set_st_err_str(retcode), retcode);
+		connection->last_remote_state_error = retcode;
+		connection->last_remote_state_error_jiffies = jiffies;
 	}
 	wake_up(&connection->resource->state_wait);
 	wake_up(&connection->ping_wait);
