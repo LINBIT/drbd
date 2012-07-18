@@ -132,6 +132,10 @@ name ## _to_tags(struct drbd_conf *mdev, \
 	tags = (unsigned short *)((char *)tags + arg->member ## _len);
 #include <linux/drbd_nl.h>
 
+#ifndef HAVE_KOBJECT_CREATE_AND_ADD
+#include "compat/kobject.c"
+#endif
+
 struct drbd_md_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct drbd_backing_dev *bdev, char *buf);
@@ -566,7 +570,7 @@ STATIC struct drbd_conf *ensure_mdev(int minor, int create)
 			struct kobject *parent;
 
 			add_disk(disk);
-			parent = &disk_to_dev(disk)->kobj;
+			parent = drbd_kobj_of_disk(disk);
 			mdev->kobj = kobject_create_and_add("drbd", parent);
 			if (!mdev->kobj) {
 				minor_table[minor] = NULL;
