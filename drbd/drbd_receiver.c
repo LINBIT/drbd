@@ -462,7 +462,10 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 		err2 = peer_req->w.cb(&peer_req->w, !!err);
 		if (!err)
 			err = err2;
-		if (list_empty(&peer_req->recv_order))
+		if (!list_empty(&peer_req->recv_order)) {
+			drbd_free_pages(device, peer_req->pages, 0);
+			peer_req->pages = NULL;
+		} else
 			drbd_free_peer_req(device, peer_req);
 	}
 	wake_up(&device->ee_wait);
