@@ -214,7 +214,7 @@ void tl_release(struct drbd_tconn *tconn, unsigned int barrier_nr,
 
 	spin_lock_irq(&tconn->req_lock);
 
-	/* find latest not yet barrier-acked write request,
+	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &tconn->transfer_log, tl_requests) {
 		const unsigned s = r->rq_state;
@@ -257,8 +257,14 @@ void tl_release(struct drbd_tconn *tconn, unsigned int barrier_nr,
 		goto bail;
 	}
 
-	/* Clean up list of requests processed during current epoch */
-	list_for_each_entry_safe(req, r, &tconn->transfer_log, tl_requests) {
+	/* Clean up list of requests processed during current epoch. */
+	/* this extra list walk restart is paranoia,
+	 * to catch requests being barrier-acked "unexpectedly".
+	 * It usually should find the same req again, or some READ preceding it. */
+	list_for_each_entry(req, &tconn->transfer_log, tl_requests)
+		if (req->epoch == expect_epoch)
+			break;
+	list_for_each_entry_safe_from(req, r, &tconn->transfer_log, tl_requests) {
 		if (req->epoch != expect_epoch)
 			break;
 		_req_mod(req, BARRIER_ACKED);
