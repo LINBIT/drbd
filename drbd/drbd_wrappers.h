@@ -1154,4 +1154,11 @@ static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
 #define drbd_kunmap_atomic(addr, km)   kunmap_atomic(addr, km)
 #endif
 
+#ifndef SK_CAN_REUSE
+/* This constant was introduced by Pavel Emelyanov <xemul@parallels.com> on
+   Thu Apr 19 03:39:36 2012 +0000. Before the release of linux-3.5
+   commit 4a17fd52 sock: Introduce named constants for sk_reuse */
+#define SK_CAN_REUSE   1
+#endif
+
 #endif
