@@ -65,3 +65,11 @@ static int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
 	}
 	return retval;
 }
+
+#ifndef __ATTR_RO
+/* That is missing from the 2.6.5 kernel */
+#define __ATTR_RO(_name) { \
+	.attr	= { .name = __stringify(_name), .mode = 0444 },	\
+	.show	= _name##_show,					\
+}
+#endif
