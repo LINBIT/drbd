@@ -140,7 +140,7 @@ struct drbd_md_attribute {
 	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
 };
 
-static ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
+STATIC ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
 static ssize_t current_show(struct drbd_backing_dev *, char *);
 static ssize_t bitmap_show(struct drbd_backing_dev *, char *);
 static ssize_t history1_show(struct drbd_backing_dev *, char *);
@@ -179,7 +179,7 @@ struct attribute_group drbd_md_attr_group = {
 	.name = "data_gen_id",
 };
 
-static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
+STATIC ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
 {
 	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
 	struct drbd_md_attribute *drbd_md_attr = container_of(attr, struct drbd_md_attribute, attr);
