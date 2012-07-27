@@ -1159,4 +1159,9 @@ static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
 }
 #endif
 
+#ifndef ULLONG_MAX
+/* introduced in 2.6.18 */
+#define ULLONG_MAX (~0ULL)
+#endif
+
 #endif
