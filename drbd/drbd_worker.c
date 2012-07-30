@@ -1891,10 +1891,10 @@ int drbd_worker(struct drbd_thread *thi)
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 		D_ASSERT(mdev->state.disk == D_DISKLESS && mdev->state.conn == C_STANDALONE);
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_mdev_cleanup(mdev);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();

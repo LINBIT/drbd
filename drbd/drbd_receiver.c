@@ -1094,7 +1094,7 @@ retry:
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 
 		if (discard_my_data)
@@ -1103,7 +1103,7 @@ retry:
 			clear_bit(DISCARD_MY_DATA, &mdev->flags);
 
 		drbd_connected(mdev);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1198,7 +1198,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_tconn *tconn, struct
 		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 			if (!get_ldev(mdev))
 				continue;
-			kref_get(&mdev->kref);
+			kobject_get(&mdev->kobj);
 			rcu_read_unlock();
 
 			rv = blkdev_issue_flush(mdev->ldev->backing_bdev,
@@ -1211,7 +1211,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_tconn *tconn, struct
 				drbd_bump_write_ordering(tconn, WO_drain_io);
 			}
 			put_ldev(mdev);
-			kref_put(&mdev->kref, &drbd_minor_destroy);
+			kobject_put(&mdev->kobj);
 
 			rcu_read_lock();
 			if (rv)
@@ -1588,10 +1588,10 @@ void conn_wait_active_ee_empty(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(mdev, &mdev->active_ee);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1604,10 +1604,10 @@ void conn_wait_done_ee_empty(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(mdev, &mdev->done_ee);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1621,10 +1621,10 @@ static void drbd_unplug_all_devices(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_kick_lo(mdev);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -4718,10 +4718,10 @@ STATIC void conn_disconnect(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_disconnected(mdev);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -5452,13 +5452,13 @@ static int tconn_finish_peer_reqs(struct drbd_tconn *tconn)
 
 		rcu_read_lock();
 		idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-			kref_get(&mdev->kref);
+			kobject_get(&mdev->kobj);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(mdev)) {
-				kref_put(&mdev->kref, &drbd_minor_destroy);
+				kobject_put(&mdev->kobj);
 				return 1;
 			}
-			kref_put(&mdev->kref, &drbd_minor_destroy);
+			kobject_put(&mdev->kobj);
 			rcu_read_lock();
 		}
 		set_bit(SIGNAL_ASENDER, &tconn->flags);

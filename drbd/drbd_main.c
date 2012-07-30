@@ -77,6 +77,7 @@ STATIC int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 STATIC int w_bitmap_io(struct drbd_work *w, int unused);
 STATIC int w_go_diskless(struct drbd_work *w, int unused);
+static void drbd_minor_destroy(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -154,6 +155,10 @@ STATIC const struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_release,
+};
+
+static struct kobj_type drbd_device_kobj_type = {
+	.release = drbd_minor_destroy,
 };
 
 static void bio_destructor_drbd(struct bio *bio)
@@ -2248,9 +2253,9 @@ static void drbd_release_all_peer_reqs(struct drbd_conf *mdev)
 }
 
 /* caution. no locking. */
-void drbd_minor_destroy(struct kref *kref)
+static void drbd_minor_destroy(struct kobject *kobj)
 {
-	struct drbd_conf *mdev = container_of(kref, struct drbd_conf, kref);
+	struct drbd_conf *mdev = container_of(kobj, struct drbd_conf, kobj);
 	struct drbd_tconn *tconn = mdev->tconn;
 
 	del_timer_sync(&mdev->request_timer);
@@ -2395,7 +2400,7 @@ STATIC void drbd_cleanup(void)
 		idr_remove(&mdev->tconn->volumes, mdev->vnr);
 		del_gendisk(mdev->vdisk);
 		/* synchronize_rcu(); No other threads running at this point */
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 	}
 
 	/* not _rcu since, no other updater anymore. Genl already unregistered */
@@ -2684,6 +2689,7 @@ void conn_destroy(struct kref *kref)
 
 enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, int vnr)
 {
+	struct kobject *parent;
 	struct drbd_conf *mdev;
 	struct gendisk *disk;
 	struct request_queue *q;
@@ -2776,7 +2782,11 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 		goto out_idr_remove_vol;
 	}
 	add_disk(disk);
-	kref_init(&mdev->kref); /* one ref for both idrs and the the add_disk */
+	parent = &disk_to_dev(disk)->kobj;
+
+	/* one ref for both idrs and the the add_disk */
+	if (kobject_init_and_add(&mdev->kobj, &drbd_device_kobj_type, parent, "drbd"))
+		goto out_del_disk;
 
 	/* inherit the connection state */
 	mdev->state.conn = tconn->cstate;
@@ -2785,6 +2795,8 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 
 	return NO_ERROR;
 
+out_del_disk:
+	del_gendisk(mdev->vdisk);
 out_idr_remove_vol:
 	idr_remove(&tconn->volumes, vnr_got);
 out_idr_remove_minor:

@@ -407,10 +407,10 @@ static void conn_md_sync(struct drbd_tconn *tconn)
 
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-		kref_get(&mdev->kref);
+		kobject_get(&mdev->kobj);
 		rcu_read_unlock();
 		drbd_md_sync(mdev);
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -3174,8 +3174,9 @@ static enum drbd_ret_code adm_delete_minor(struct drbd_conf *mdev)
 		idr_remove(&mdev->tconn->volumes, mdev->vnr);
 		idr_remove(&minors, mdev_to_minor(mdev));
 		del_gendisk(mdev->vdisk);
+		kobject_del(&mdev->kobj);
 		synchronize_rcu();
-		kref_put(&mdev->kref, &drbd_minor_destroy);
+		kobject_put(&mdev->kobj);
 		return NO_ERROR;
 	} else
 		return ERR_MINOR_CONFIGURED;
