@@ -650,14 +650,6 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 }
 #endif
 
-#ifndef COMPAT_HAVE_BOOL_TYPE
-typedef _Bool                   bool;
-enum {
-	false = 0,
-	true = 1
-};
-#endif
-
 /* REQ_* and BIO_RW_* flags have been moved around in the tree,
  * and have finally been "merged" with
  * 7b6d91daee5cac6402186ff224c3af39d79f4a0e and
