@@ -1637,7 +1637,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (kobject_init_and_add(&nbc->kobject, &drbd_bdev_kobj_type, &mdev->kobj, "meta_data")) {
 		retcode = ERR_NOMEM;
-		goto force_diskless_dec;
+		goto remove_kobject;
 	}
 
 	if (sysfs_create_group(&nbc->kobject, &drbd_md_attr_group))
