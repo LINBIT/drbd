@@ -2782,7 +2782,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 		goto out_idr_remove_vol;
 	}
 	add_disk(disk);
-	parent = &disk_to_dev(disk)->kobj;
+	parent = drbd_kobj_of_disk(disk);
 
 	/* one ref for both idrs and the the add_disk */
 	if (kobject_init_and_add(&mdev->kobj, &drbd_device_kobj_type, parent, "drbd"))

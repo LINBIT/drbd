@@ -1150,4 +1150,21 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 }
 #endif
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
+#define HAVE_KOBJECT_CREATE_AND_ADD
+#endif
+
+#ifndef disk_to_dev
+/* disk_to_dev was introduced with 2.6.27. Before that the kobj was directly in gendisk */
+static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
+{
+	return &disk->kobj;
+}
+#else
+static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
+{
+	return &disk_to_dev(disk)->kobj;
+}
+#endif
+
 #endif
