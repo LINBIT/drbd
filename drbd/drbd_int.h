@@ -1165,8 +1165,8 @@ struct drbd_conf {
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, tconn->conn_update) */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
-	int peer_max_bio_size;
-	int local_max_bio_size;
+	unsigned int peer_max_bio_size;
+	unsigned int local_max_bio_size;
 };
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
@@ -1427,14 +1427,14 @@ extern void drbd_ldev_destroy(struct drbd_conf *mdev);
  * we limit us to a platform agnostic constant here for now.
  * A followup commit may allow even bigger BIO sizes,
  * once we thought that through. */
-#define DRBD_MAX_BIO_SIZE (1 << 20)
+#define DRBD_MAX_BIO_SIZE (1U << 20)
 #if DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #error Architecture not supported: DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #endif
-#define DRBD_MAX_BIO_SIZE_SAFE (1 << 12)       /* Works always = 4k */
+#define DRBD_MAX_BIO_SIZE_SAFE (1U << 12)       /* Works always = 4k */
 
-#define DRBD_MAX_SIZE_H80_PACKET (1 << 15) /* Header 80 only allows packets up to 32KiB data */
-#define DRBD_MAX_BIO_SIZE_P95    (1 << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
+#define DRBD_MAX_SIZE_H80_PACKET (1U << 15) /* Header 80 only allows packets up to 32KiB data */
+#define DRBD_MAX_BIO_SIZE_P95    (1U << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
 
 extern int  drbd_bm_init(struct drbd_conf *mdev);
 extern int  drbd_bm_resize(struct drbd_conf *mdev, sector_t sectors, int set_new_bits);
