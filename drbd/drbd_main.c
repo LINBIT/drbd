@@ -89,6 +89,7 @@ STATIC int w_md_sync(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 STATIC int w_bitmap_io(struct drbd_conf *mdev, struct drbd_work *w, int unused);
 STATIC int w_go_diskless(struct drbd_conf *mdev, struct drbd_work *w, int unused);
+static void _tl_clear(struct drbd_conf *mdev);
 
 DEFINE_TRACE(drbd_unplug);
 DEFINE_TRACE(drbd_uuid);
@@ -452,19 +453,10 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
 
 	/* Actions operating on the disk state, also want to work on
 	   requests that got barrier acked. */
-	switch (what) {
-	case fail_frozen_disk_io:
-	case restart_frozen_disk_io:
-		list_for_each_safe(le, tle, &mdev->barrier_acked_requests) {
-			req = list_entry(le, struct drbd_request, tl_requests);
-			_req_mod(req, what);
-		}
 
-	case connection_lost_while_pending:
-	case resend:
-		break;
-	default:
-		dev_err(DEV, "what = %d in _tl_restart()\n", what);
+	list_for_each_safe(le, tle, &mdev->barrier_acked_requests) {
+		req = list_entry(le, struct drbd_request, tl_requests);
+		_req_mod(req, what);
 	}
 }
 
@@ -479,10 +471,15 @@ static void _tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
  */
 void tl_clear(struct drbd_conf *mdev)
 {
+	spin_lock_irq(&mdev->req_lock);
+	_tl_clear(mdev);
+	spin_unlock_irq(&mdev->req_lock);
+}
+
+static void _tl_clear(struct drbd_conf *mdev)
+{
 	struct list_head *le, *tle;
 	struct drbd_request *r;
-
-	spin_lock_irq(&mdev->req_lock);
 
 	_tl_restart(mdev, connection_lost_while_pending);
 
@@ -502,7 +499,6 @@ void tl_clear(struct drbd_conf *mdev)
 
 	memset(mdev->app_reads_hash, 0, APP_R_HSIZE*sizeof(void *));
 
-	spin_unlock_irq(&mdev->req_lock);
 }
 
 void tl_restart(struct drbd_conf *mdev, enum drbd_req_event what)
@@ -1601,12 +1597,12 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	if (ns.susp_fen) {
 		/* case1: The outdate peer handler is successful: */
 		if (os.pdsk > D_OUTDATED  && ns.pdsk <= D_OUTDATED) {
-			tl_clear(mdev);
 			if (test_bit(NEW_CUR_UUID, &mdev->flags)) {
 				drbd_uuid_new_current(mdev);
 				clear_bit(NEW_CUR_UUID, &mdev->flags);
 			}
 			spin_lock_irq(&mdev->req_lock);
+			_tl_clear(mdev);
 			_drbd_set_state(_NS(mdev, susp_fen, 0), CS_VERBOSE, NULL);
 			spin_unlock_irq(&mdev->req_lock);
 		}
