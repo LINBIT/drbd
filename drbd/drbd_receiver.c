@@ -72,6 +72,7 @@ static int drbd_disconnected(struct drbd_peer_device *);
 
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_work *, int);
+static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -4992,6 +4993,8 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 
+	cleanup_unacked_peer_requests(connection);
+
 	if (!list_empty(&connection->current_epoch->list))
 		drbd_err(connection, "ASSERTION FAILED: connection->current_epoch->list not empty\n");
 	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
@@ -5760,6 +5763,29 @@ found:
 		drbd_free_peer_req(device, peer_req);
 	}
 	return 0;
+}
+
+static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_request *peer_req, *tmp;
+	LIST_HEAD(work_list);
+
+	spin_lock_irq(&resource->req_lock);
+	list_splice_init(&connection->peer_requests, &work_list);
+	spin_unlock_irq(&resource->req_lock);
+
+	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
+		struct drbd_peer_device *peer_device = peer_req->peer_device;
+		struct drbd_device *device = peer_device->device;
+		u64 mask = ~(1 << peer_device->bitmap_index);
+
+		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
+			      mask, mask);
+
+		list_del(&peer_req->recv_order);
+		drbd_free_peer_req(device, peer_req);
+	}
 }
 
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
