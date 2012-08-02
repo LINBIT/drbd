@@ -766,7 +766,7 @@ static int prepare_listen_socket(struct drbd_tconn *tconn, struct accept_wait_da
 		goto out;
 	}
 
-	s_listen->sk->sk_reuse = 1; /* SO_REUSEADDR */
+	s_listen->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	drbd_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
@@ -1030,8 +1030,8 @@ randomize:
 	if (ad.s_listen)
 		sock_release(ad.s_listen);
 
-	sock.socket->sk->sk_reuse = 1; /* SO_REUSEADDR */
-	msock.socket->sk->sk_reuse = 1; /* SO_REUSEADDR */
+	sock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
+	msock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 
 	sock.socket->sk->sk_allocation = GFP_NOIO;
 	msock.socket->sk->sk_allocation = GFP_NOIO;
