@@ -1896,7 +1896,7 @@ extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
 static inline void wake_asender(struct drbd_connection *connection)
 {
-	if (test_bit(SIGNAL_ASENDER, &connection->flags))
+	if (test_and_clear_bit(SIGNAL_ASENDER, &connection->flags))
 		force_sig(DRBD_SIG, connection->asender.task);
 }
 
