@@ -96,6 +96,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 					       struct bio *bio_src)
 {
 	struct drbd_request *req;
+	int i;
 
 	req = mempool_alloc(drbd_request_mempool, GFP_NOIO | __GFP_ZERO);
 	if (!req)
@@ -119,6 +120,10 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	atomic_set(&req->completion_ref, 1);
 	/* one kref as long as completion_ref > 0 */
 	kref_init(&req->kref);
+
+	for (i = 1; i <= device->bitmap->bm_max_peers; i++)
+		req->rq_state[i] = 0;
+
 	return req;
 }
 
