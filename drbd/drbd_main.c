@@ -1049,9 +1049,12 @@ static bool has_bitmap_index_matching_uuids(int bi, struct drbd_peer_device *pee
 	if ((peer_device->p_uuid[UI_CURRENT] & ~((u64)1)) == self_current)
 		return true;
 
-	for (ui = UI_BITMAP; ui <= UI_HISTORY_END; ui++) {
-		if ((md->peers[bi].uuid[MD_UI(ui)] & ~((u64)1)) == peer ||
-		    (peer_device->p_uuid[ui] & ~((u64)1))== self_current)
+	if ((md->peers[bi].bitmap_uuid & ~((u64)1)) == peer ||
+	    (peer_device->p_uuid[UI_BITMAP] & ~((u64)1)) == self_current)
+		return true;
+	for (ui = UI_HISTORY_START; ui <= UI_HISTORY_END; ui++) {
+		if ((md->peers[bi].history_uuids[ui - UI_HISTORY_START] & ~((u64)1)) == peer ||
+		    (peer_device->p_uuid[ui] & ~((u64)1)) == self_current)
 			return true;
 	}
 
@@ -3364,7 +3367,8 @@ void drbd_free_sock(struct drbd_connection *connection)
 /* meta data management */
 
 struct peer_dev_md_on_disk {
-	u64 uuid[UI_HISTORY_END - UI_BITMAP + 1];
+	u64 bitmap_uuid;
+	u64 history_uuids[HISTORY_UUIDS];
 	u32 addr_hash;
 	u32 flags;
 	u32 reserved_u32[4];
@@ -3431,11 +3435,15 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
 	buffer->bm_max_peers = cpu_to_be32(device->bitmap->bm_max_peers);
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
+		struct drbd_md_peer *peer_md = &device->ldev->md.peers[i];
 		int j;
-		for (j = 0; j < ARRAY_SIZE(buffer->peers[i].uuid); j++)
-			buffer->peers[i].uuid[j] = cpu_to_be64(device->ldev->md.peers[i].uuid[j]);
-		buffer->peers[i].addr_hash = cpu_to_be32(device->ldev->md.peers[i].addr_hash);
-		buffer->peers[i].flags = cpu_to_be32(device->ldev->md.peers[i].flags);
+
+		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
+		for (j = 0; j < HISTORY_UUIDS; j++)
+			buffer->peers[i].history_uuids[j] =
+				cpu_to_be64(peer_md->history_uuids[j]);
+		buffer->peers[i].addr_hash = cpu_to_be32(peer_md->addr_hash);
+		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
 	}
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
@@ -3545,12 +3553,15 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
+		struct drbd_md_peer *peer_md = &bdev->md.peers[i];
 		int j;
-		for (j = 0; j < ARRAY_SIZE(buffer->peers[i].uuid); j++)
-			bdev->md.peers[i].uuid[j] = be64_to_cpu(buffer->peers[i].uuid[j]);
 
-		bdev->md.peers[i].addr_hash = be32_to_cpu(buffer->peers[i].addr_hash);
-		bdev->md.peers[i].flags = be32_to_cpu(buffer->peers[i].flags);
+		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
+		for (j = 0; j < HISTORY_UUIDS; j++)
+			peer_md->history_uuids[j] =
+				be64_to_cpu(buffer->peers[i].history_uuids[j]);
+		peer_md->addr_hash = be32_to_cpu(buffer->peers[i].addr_hash);
+		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 	}
 
  err:
@@ -3591,8 +3602,8 @@ void drbd_uuid_move_history(struct drbd_peer_device *peer_device) __must_hold(lo
 	struct drbd_md_peer *peer_md = &peer_device->device->ldev->md.peers[peer_device->bitmap_index];
 	int i;
 
-	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++)
-		peer_md->uuid[MD_UI(i+1)] = peer_md->uuid[MD_UI(i)];
+	for (i = HISTORY_UUIDS - 1; i > 0; i--)
+		peer_md->history_uuids[i - 1] = peer_md->history_uuids[i];
 }
 
 void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
@@ -3614,8 +3625,13 @@ void __drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val)
 
 	if (idx == UI_CURRENT)
 		__drbd_uuid_set_current(device, val);
-	else
-		device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(idx)] = val;
+	else {
+		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+		if (idx == UI_BITMAP)
+			peer_md->bitmap_uuid = val;
+		else
+			peer_md->history_uuids[idx - UI_HISTORY_START] = val;
+	}
 }
 
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local)
@@ -3645,7 +3661,7 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	if (drbd_peer_uuid(peer_device, idx)) {
 		drbd_uuid_move_history(peer_device);
-		device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(UI_HISTORY_START)] =
+		device->ldev->md.peers[peer_device->bitmap_index].history_uuids[0] =
 			drbd_peer_uuid(peer_device, idx);
 	}
 	__drbd_uuid_set(peer_device, idx, val);
@@ -3704,20 +3720,20 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 	unsigned long flags;
 
-	if (peer_md->uuid[MD_UI(UI_BITMAP)] == 0 && val == 0)
+	if (peer_md->bitmap_uuid == 0 && val == 0)
 		return;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	if (val == 0) {
 		drbd_uuid_move_history(peer_device);
-		peer_md->uuid[MD_UI(UI_HISTORY_START)] = peer_md->uuid[MD_UI(UI_BITMAP)];
-		peer_md->uuid[MD_UI(UI_BITMAP)] = 0;
+		peer_md->history_uuids[0] = peer_md->bitmap_uuid;
+		peer_md->bitmap_uuid = 0;
 	} else {
-		unsigned long long bm_uuid = peer_md->uuid[MD_UI(UI_BITMAP)];
+		unsigned long long bm_uuid = peer_md->bitmap_uuid;
 		if (bm_uuid)
 			drbd_warn(device, "bm UUID was already set: %llX\n", bm_uuid);
 
-		peer_md->uuid[MD_UI(UI_BITMAP)] = val & ~((u64)1);
+		peer_md->bitmap_uuid = val & ~((u64)1);
 	}
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
@@ -4217,7 +4233,7 @@ enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
 				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
 				enum drbd_disk_state peer_disk_state;
 
-				if (!peer_md->uuid[MD_UI(UI_BITMAP)] ||
+				if (!peer_md->bitmap_uuid ||
 				    !(peer_md->flags & MDF_PEER_FENCING))
 					continue;
 				peer_disk_state = D_UNKNOWN;

@@ -3081,8 +3081,8 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 				drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
 				drbd_uuid_move_history(peer_device);
-				peer_md->uuid[MD_UI(UI_HISTORY_START)] = peer_md->uuid[MD_UI(UI_BITMAP)];
-				peer_md->uuid[MD_UI(UI_BITMAP)] = 0;
+				peer_md->history_uuids[0] = peer_md->bitmap_uuid;
+				peer_md->bitmap_uuid = 0;
 
 				drbd_uuid_dump_self(peer_device,
 						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(peer_device) : 0, 0);

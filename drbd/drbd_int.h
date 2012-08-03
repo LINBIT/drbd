@@ -610,7 +610,8 @@ struct drbd_socket {
 };
 
 struct drbd_md_peer {
-	u64 uuid[UI_HISTORY_END - UI_BITMAP + 1];
+	u64 bitmap_uuid;
+	u64 history_uuids[HISTORY_UUIDS];
 	u32 addr_hash;
 	u32 flags;
 };
@@ -2235,9 +2236,14 @@ static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd
 	if (!device->ldev)
 		return 0;
 
-	if (peer_device->bitmap_index != -1)
-		return device->ldev->md.peers[peer_device->bitmap_index].uuid[MD_UI(i)];
-	else
+	if (peer_device->bitmap_index != -1) {
+		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+
+		if (i == UI_BITMAP)
+			return peer_md->bitmap_uuid;
+		else
+			return peer_md->history_uuids[i - UI_HISTORY_START];
+	} else
 		return 0;
 }
 

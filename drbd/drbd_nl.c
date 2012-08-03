@@ -1117,7 +1117,7 @@ static bool all_known_peer_devices_connected(struct drbd_device *device)
 	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
 		struct drbd_peer_device *peer_device;
 
-		if (!device->ldev->md.peers[bitmap_index].uuid[MD_UI(UI_BITMAP)])
+		if (!device->ldev->md.peers[bitmap_index].bitmap_uuid)
 			continue;
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->bitmap_index == bitmap_index &&
@@ -3248,14 +3248,14 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
 	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
 	if (peer_device->bitmap_index != -1 && get_ldev(device)) {
-		u64 *peer_device_uuids = device->ldev->md.peers[peer_device->bitmap_index].uuid;
+		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 		u64 *history_uuids = (u64 *)s->peer_dev_history_uuids;
 		int n;
 
 		spin_lock_irq(&device->ldev->md.uuid_lock);
-		s->peer_dev_bitmap_uuid = peer_device_uuids[MD_UI(UI_BITMAP)];
+		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
 		for (n = 0; n < HISTORY_UUIDS; n++)
-			history_uuids[n] = peer_device_uuids[MD_UI(UI_HISTORY_START + n)];
+			history_uuids[n] = peer_md->history_uuids[n];
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		s->peer_dev_history_uuids_len = HISTORY_UUIDS * sizeof(u64);
 		put_ldev(device);

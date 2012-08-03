@@ -356,8 +356,6 @@ enum drbd_uuid_index {
 
 #define HISTORY_UUIDS (UI_HISTORY_END - UI_HISTORY_START + 1)
 
-#define MD_UI(i) ((i)-1)
-
 #define UUID_FLAG_DISCARD_MY_DATA 1
 #define UUID_FLAG_CRASHED_PRIMARY 2
 #define UUID_FLAG_INCONSISTENT 4
