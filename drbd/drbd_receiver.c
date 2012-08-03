@@ -825,8 +825,6 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 	if (drbd_request_state(mdev, NS(conn, C_WF_CONNECTION)) < SS_SUCCESS)
 		return -2;
 
-	clear_bit(DISCARD_CONCURRENT, &mdev->flags);
-
 	sock  = NULL;
 	msock = NULL;
 
@@ -846,6 +844,7 @@ STATIC int drbd_connect(struct drbd_conf *mdev)
 				sock = s;
 				s = NULL;
 			} else if (!msock) {
+				clear_bit(DISCARD_CONCURRENT, &mdev->flags);
 				drbd_send_fp(mdev, s, P_HAND_SHAKE_M);
 				msock = s;
 				s = NULL;
