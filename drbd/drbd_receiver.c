@@ -73,6 +73,7 @@ static int drbd_disconnected(struct drbd_peer_device *);
 STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 STATIC int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
+static void cleanup_peer_ack_list(struct drbd_connection *connection);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -4997,6 +4998,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	rcu_read_unlock();
 
 	cleanup_unacked_peer_requests(connection);
+	cleanup_peer_ack_list(connection);
 
 	if (!list_empty(&connection->current_epoch->list))
 		drbd_err(connection, "ASSERTION FAILED: connection->current_epoch->list not empty\n");
@@ -5825,6 +5827,32 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 		list_del(&peer_req->recv_order);
 		drbd_free_peer_req(device, peer_req);
 	}
+}
+
+static void destroy_request(struct kref *kref)
+{
+	struct drbd_request *req =
+		container_of(kref, struct drbd_request, kref);
+
+	list_del(&req->tl_requests);
+	mempool_free(req, drbd_request_mempool);
+}
+
+static void cleanup_peer_ack_list(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_request *req, *tmp;
+	int idx;
+
+	spin_lock_irq(&resource->req_lock);
+	idx = 1 + connection->net_conf->peer_node_id;
+	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
+		if (!(req->rq_state[idx] & RQ_PEER_ACK))
+			continue;
+		req->rq_state[idx] &= ~RQ_PEER_ACK;
+		kref_put(&req->kref, destroy_request);
+	}
+	spin_unlock_irq(&resource->req_lock);
 }
 
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
