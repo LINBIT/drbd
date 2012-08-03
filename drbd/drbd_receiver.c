@@ -942,8 +942,6 @@ STATIC int conn_connect(struct drbd_tconn *tconn)
 	msock.rbuf = tconn->meta.rbuf;
 	msock.socket = NULL;
 
-	clear_bit(DISCARD_CONCURRENT, &tconn->flags);
-
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	tconn->agreed_pro_version = 80;
 
@@ -959,6 +957,7 @@ STATIC int conn_connect(struct drbd_tconn *tconn)
 				sock.socket = s;
 				send_first_packet(tconn, &sock, P_INITIAL_DATA);
 			} else if (!msock.socket) {
+				clear_bit(DISCARD_CONCURRENT, &tconn->flags);
 				msock.socket = s;
 				send_first_packet(tconn, &msock, P_INITIAL_META);
 			} else {
