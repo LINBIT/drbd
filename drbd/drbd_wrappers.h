@@ -1142,10 +1142,6 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 }
 #endif
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
-#define HAVE_KOBJECT_CREATE_AND_ADD
-#endif
-
 #ifndef disk_to_dev
 /* disk_to_dev was introduced with 2.6.27. Before that the kobj was directly in gendisk */
 static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
@@ -1183,6 +1179,12 @@ static inline int kref_sub(struct kref *kref, unsigned int count,
 	}
 	return 0;
 }
+#endif
+
+#ifndef KOBJECT_CREATE_AND_ADD_EXPORTED
+struct kobject *kobject_create_and_add(const char *name, struct kobject *parent);
+int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
+			 struct kobject *parent, const char *name);
 #endif
 
 #endif

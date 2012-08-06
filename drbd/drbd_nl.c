@@ -130,10 +130,6 @@ static struct drbd_config_context {
 	struct drbd_tconn *tconn;
 } adm_ctx;
 
-#ifndef HAVE_KOBJECT_CREATE_AND_ADD
-#include "compat/kobject.c"
-#endif
-
 struct drbd_md_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct drbd_backing_dev *bdev, char *buf);
