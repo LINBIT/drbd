@@ -614,6 +614,7 @@ struct drbd_md_peer {
 	u64 history_uuids[HISTORY_UUIDS];
 	u32 addr_hash;
 	u32 flags;
+	u32 node_id;
 };
 
 struct drbd_md {
@@ -624,6 +625,7 @@ struct drbd_md {
 	u64 current_uuid;
 	u64 device_uuid;
 	u32 flags;
+	u32 node_id;
 	u32 md_size_sect;
 
 	s32 al_offset;	/* signed relative sector offset to al area */

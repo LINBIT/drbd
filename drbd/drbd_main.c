@@ -3371,7 +3371,8 @@ struct peer_dev_md_on_disk {
 	u64 history_uuids[HISTORY_UUIDS];
 	u32 addr_hash;
 	u32 flags;
-	u32 reserved_u32[4];
+	u32 node_id;
+	u32 reserved_u32[3];
 } __packed;
 
 struct meta_data_on_disk {
@@ -3389,7 +3390,8 @@ struct meta_data_on_disk {
 	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 	u32 bm_max_peers;
-	u32 reserved_u32[5];
+	u32 node_id;
+	u32 reserved_u32[4];
 
 	struct peer_dev_md_on_disk peers[MAX_PEERS];
 } __packed;
@@ -3434,6 +3436,7 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
 	buffer->bm_max_peers = cpu_to_be32(device->bitmap->bm_max_peers);
+	buffer->node_id = cpu_to_be32(device->ldev->md.node_id);
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		struct drbd_md_peer *peer_md = &device->ldev->md.peers[i];
 		int j;
@@ -3444,6 +3447,7 @@ void drbd_md_sync(struct drbd_device *device)
 				cpu_to_be64(peer_md->history_uuids[j]);
 		buffer->peers[i].addr_hash = cpu_to_be32(peer_md->addr_hash);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
+		buffer->peers[i].node_id = cpu_to_be32(peer_md->node_id);
 	}
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
@@ -3551,6 +3555,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
+	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		struct drbd_md_peer *peer_md = &bdev->md.peers[i];
@@ -3562,6 +3567,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 				be64_to_cpu(buffer->peers[i].history_uuids[j]);
 		peer_md->addr_hash = be32_to_cpu(buffer->peers[i].addr_hash);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
+		peer_md->node_id = be32_to_cpu(buffer->peers[i].node_id);
 	}
 
  err:
