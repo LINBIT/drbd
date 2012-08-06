@@ -58,7 +58,6 @@ enum drbd_packet {
 	P_CONN_ST_CHG_ABORT   = 0x2f, /* data sock: abort state change */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
-	P_MAX_OPT_CMD	      = 0x101,
 
 	/* special command ids for handshake */
 
