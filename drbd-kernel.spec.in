@@ -97,6 +97,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Mon Aug  6 2012 Philipp Reisner <phil@linbit.com> - 8.4.2rc1-1
+- New upstream release.
+
 * Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
 - Build fix for RHEL 6 and ubuntu lucid
 

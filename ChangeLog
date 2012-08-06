@@ -2,6 +2,31 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.2rc1 (api:genl1/proto:86-100)
+--------
+ * Fixed a write ordering problem on SyncTarget nodes for a write to a block
+   that gets resynced at the same time. The bug can only be triggered with a
+   device that has a firmware that actually reorders writes to the same
+   block (merged from 8.3.13)
+ * Fixed a potential deadlock during restart of conflicting writes
+ * All fixes that went into 8.3.13
+ * Removed a null pointer access when using on-congestion policy on a
+   diskless device
+ * In case of a graceful detach under IO load, wait for the outstanding
+   IO. (As opposed to aborting IOs as a forcefully detach does)
+ * Reinstate disabling AL updates with invalidate-remote (8.4.0 regression)
+ * Reinstate the 'disk-barrier no', 'disk-flushes no', and 'disk-drain no'
+   switches (8.4.0 regression)
+ * Backported the request code from DRBD-9. Improves handling of many corner
+   cases.
+ * Support FLUSH/FUA bio flags
+ * Made the establishing of connections faster
+ * New option 'al-updates no' to disable writing transactions into the
+   activity log. It is use full if you prefer a full sync after a primary
+   crash, for improved performance of a spread out random write work load
+ * Expose the data generation identifies via sysfs
+ * "--stop" option for online verify to specify a stop sector
+
 8.4.1 (api:genl1/proto:86-100)
 --------
  * Fixed a bug that might cause in kernel list corruption triggered by
