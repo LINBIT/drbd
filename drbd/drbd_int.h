@@ -480,6 +480,9 @@ enum {
 	 * and the P_BARRIER_ACK send. */
 	__EE_IS_BARRIER,
 
+	/* is this a TRIM aka REQ_DISCARD? */
+	__EE_IS_TRIM,
+
 	/* In case a barrier failed,
 	 * we need to resubmit without the barrier flag. */
 	__EE_RESUBMITTED,
@@ -504,6 +507,7 @@ enum {
 #define EE_CALL_AL_COMPLETE_IO (1<<__EE_CALL_AL_COMPLETE_IO)
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_IS_BARRIER          (1<<__EE_IS_BARRIER)
+#define EE_IS_TRIM             (1<<__EE_IS_TRIM)
 #define	EE_RESUBMITTED         (1<<__EE_RESUBMITTED)
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
@@ -1264,6 +1268,12 @@ extern void drbd_ldev_destroy(struct drbd_device *device);
 #define DRBD_MAX_SIZE_H80_PACKET (1U << 15) /* Header 80 only allows packets up to 32KiB data */
 #define DRBD_MAX_BIO_SIZE_P95    (1U << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
 
+/* For now, don't allow more than one activity log extent worth of data
+ * to be discarded in one go. We may need to rework drbd_al_begin_io()
+ * to allow for even larger discard ranges */
+#define DRBD_MAX_DISCARD_SIZE	AL_EXTENT_SIZE
+#define DRBD_MAX_DISCARD_SECTORS (DRBD_MAX_DISCARD_SIZE >> 9)
+
 extern int  drbd_bm_init(struct drbd_device *device);
 extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);
 extern void drbd_bm_cleanup(struct drbd_device *device);
@@ -1462,6 +1472,8 @@ extern int w_start_resync(struct drbd_work *, int);
 extern void resync_timer_fn(unsigned long data);
 extern void start_resync_timer_fn(unsigned long data);
 
+extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
+
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
 extern int drbd_asender(struct drbd_thread *thi);
@@ -1473,6 +1485,7 @@ extern int drbd_submit_peer_request(struct drbd_device *,
 extern int drbd_free_peer_reqs(struct drbd_device *, struct list_head *);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, u64,
 						     sector_t, unsigned int,
+						     bool,
 						     gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_device *, struct drbd_peer_request *,
 				 int);
