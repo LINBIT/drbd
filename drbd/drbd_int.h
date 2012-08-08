@@ -1723,7 +1723,6 @@ extern void drbd_al_shrink(struct drbd_conf *mdev);
 
 /* drbd_sysfs.c */
 extern struct kobj_type drbd_bdev_kobj_type;
-extern struct attribute_group drbd_md_attr_group;
 
 /* drbd_nl.c */
 /* state info broadcast */

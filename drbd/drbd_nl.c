@@ -1553,9 +1553,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto remove_kobject;
 	}
 
-	if (sysfs_create_group(&nbc->kobject, &drbd_md_attr_group))
-		goto remove_kobject;
-
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (new_disk_conf->md_flushes)
