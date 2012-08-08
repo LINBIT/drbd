@@ -65,12 +65,16 @@ static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, c
 
 static ssize_t data_gen_id_show(struct drbd_backing_dev *bdev, char *buf)
 {
+	unsigned long flags;
 	enum drbd_uuid_index idx;
 	char *b = buf;
 
+	/* does this need to be _irqsave, or is _irq good enough */
+	spin_lock_irqsave(&bdev->md.uuid_lock, flags);
 	for (idx = UI_CURRENT; idx <= UI_HISTORY_END; idx++) {
 		b += sprintf(b, "0x%016llX\n", bdev->md.uuid[idx]);
 	}
+	spin_unlock_irqrestore(&bdev->md.uuid_lock, flags);
 
 	return b - buf;
 }
