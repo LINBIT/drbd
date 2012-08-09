@@ -310,7 +310,12 @@ static unsigned int bm_bit_to_page_idx(struct drbd_bitmap *b, u64 bitnr)
 	return page_nr;
 }
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define __bm_map_pidx(b, idx, km) ___bm_map_pidx(b, idx)
+static unsigned long *___bm_map_pidx(struct drbd_bitmap *b, unsigned int idx)
+#else
 static unsigned long *__bm_map_pidx(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
+#endif
 {
 	struct page *page = b->bm_pages[idx];
 	return (unsigned long *) drbd_kmap_atomic(page, km);
@@ -321,10 +326,16 @@ static unsigned long *bm_map_pidx(struct drbd_bitmap *b, unsigned int idx)
 	return __bm_map_pidx(b, idx, KM_IRQ1);
 }
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define __bm_unmap(p_addr, km) ___bm_unmap(p_addr)
+static void ___bm_unmap(unsigned long *p_addr)
+#else
 static void __bm_unmap(unsigned long *p_addr, const enum km_type km)
+#endif
 {
 	drbd_kunmap_atomic(p_addr, km);
 };
+
 
 static void bm_unmap(unsigned long *p_addr)
 {
@@ -1287,8 +1298,14 @@ int drbd_bm_write_page(struct drbd_conf *mdev, unsigned int idx) __must_hold(loc
  *
  * this returns a bit number, NOT a sector!
  */
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define __bm_find_next(mdev, bm_fo, find_zero_bit, km) ___bm_find_next(mdev, bm_fo, find_zero_bit)
+static unsigned long ___bm_find_next(struct drbd_conf *mdev, unsigned long bm_fo,
+	const int find_zero_bit)
+#else
 static unsigned long __bm_find_next(struct drbd_conf *mdev, unsigned long bm_fo,
 	const int find_zero_bit, const enum km_type km)
+#endif
 {
 	struct drbd_bitmap *b = mdev->bitmap;
 	unsigned long *p_addr;
