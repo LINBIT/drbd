@@ -1033,14 +1033,11 @@ static void convert_after_option(struct d_resource *res)
 }
 
 // need to convert discard-node-nodename to discard-local or discard-remote.
-static void convert_discard_opt(struct d_resource *res)
+static void convert_discard_opt(struct options *net_options)
 {
 	struct d_option *opt;
 
-	if (res == NULL)
-		return;
-
-	if ((opt = find_opt(&res->net_options, "after-sb-0pri"))) {
+	if ((opt = find_opt(net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
 			if (!strcmp(nodeinfo.nodename, opt->value + 13)) {
 				free(opt->value);
@@ -1061,8 +1058,13 @@ void global_validate_maybe_expand_die_if_invalid(int expand)
 		if (!config_valid)
 			exit(E_CONFIG_INVALID);
 		if (expand) {
+			struct connection *conn;
+
 			convert_after_option(res);
-			convert_discard_opt(res);
+			convert_discard_opt(&res->net_options);
+
+			for_each_connection(conn, &res->connections)
+				convert_discard_opt(&conn->net_options);
 		}
 		if (!config_valid)
 			exit(E_CONFIG_INVALID);
