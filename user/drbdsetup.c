@@ -1035,6 +1035,10 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 				nla = nla_nest_start(smsg, cm->tla_id);
 			}
 			if (!field->put(cm->ctx, field, smsg, optarg)) {
+				if (!quiet)
+					fprintf(stderr, "Option --%s: invalid "
+						"argument '%s'\n",
+						field->name, optarg);
 				rv = OTHER_ERROR;
 				goto error;
 			}
