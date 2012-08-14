@@ -66,12 +66,14 @@ int	force = 0;
 int	verbose = 0;
 int	ignore_sanity_checks = 0;
 int	dry_run = 0;
+int     option_peer_max_bio_size = 0;
 
 struct option metaopt[] = {
     { "ignore-sanity-checks",  no_argument, &ignore_sanity_checks, 1000 },
     { "dry-run",  no_argument, &dry_run, 1000 },
     { "force",  no_argument,    0, 'f' },
     { "verbose",  no_argument,    0, 'v' },
+    { "peer-max-bio-size",  required_argument, NULL, 'p' },
     { NULL,     0,              0, 0 },
 };
 
@@ -914,7 +916,7 @@ struct meta_cmd cmds[] = {
 	{"restore-md", "file", meta_restore_md, 1},
 	{"verify-dump", "file", meta_verify_dump_file, 1},
 	{"apply-al", 0, meta_apply_al, 1},
-	{"create-md", 0, meta_create_md, 1},
+	{"create-md", "[--peer-max-bio-size {val}]", meta_create_md, 1},
 	{"wipe-md", 0, meta_wipe_md, 1},
 	{"outdate", 0, meta_outdate, 1},
 	{"invalidate", 0, meta_invalidate, 1},
@@ -3683,6 +3685,9 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	else
 		err = 0; /* we have sucessfully converted somthing */
 
+
+	cfg->md.la_peer_max_bio_size = option_peer_max_bio_size;
+
 	/* FIXME
 	 * if this converted fixed-size 128MB internal meta data
 	 * to flexible size, we'd need to move the AL and bitmap
@@ -4035,6 +4040,14 @@ int main(int argc, char **argv)
 	    case 'v':
 		verbose++;
 		break;
+	    case 'p':
+		    option_peer_max_bio_size = m_strtoll(optarg, 1);
+		    if (option_peer_max_bio_size < 0 ||
+			option_peer_max_bio_size > 128 * 1024) {
+			    fprintf(stderr, "peer-max-bio-size out of range (0...128k)\n");
+			    exit(10);
+		    }
+		    break;
 	    default:
 		print_usage_and_exit();
 		break;
@@ -4089,6 +4102,12 @@ int main(int argc, char **argv)
 				cfg->drbd_dev_name);
 			exit(20);
 		}
+	}
+
+	if (option_peer_max_bio_size &&
+	    command->function != &meta_create_md) {
+		fprintf(stderr, "The --peer-max-bio-size option is only allowed with create-md\n");
+		exit(10);
 	}
 
 	return command->function(cfg, argv + ai, argc - ai);

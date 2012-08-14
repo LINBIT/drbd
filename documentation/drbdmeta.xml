@@ -80,7 +80,7 @@
     <title>Commands</title>
     <variablelist>
       <varlistentry>
-        <term>create-md</term>
+        <term>create-md <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
           Create-md initializes the meta data storage. This needs to be
@@ -88,6 +88,12 @@
 	  time. In case there is already a meta data signature of an
 	  older format in place, drbdmeta will ask you if it should
 	  convert the older format to the selected format.
+	</para>
+	<para>
+	  If you will use the resource before it is connected to its peer
+	  for the first time DRBD may perform better if you use the
+	  <option>--peer-max-bio-size</option> option. For DRBD versions of
+	  the peer use up to these values: &lt;8.3.7 -&gt; 4k, 8.3.8 -&gt; 32k, 8.3.9 -&gt; 128k, 8.4.0 -&gt; 1M.
 	</para>
         </listitem>
       </varlistentry>
