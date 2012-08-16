@@ -1180,9 +1180,6 @@ STATIC int drbd_nl_disk_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nlp
 		goto remove_kobject;
 	}
 
-	if (sysfs_create_group(&nbc->kobject, &drbd_md_attr_group))
-		goto remove_kobject;
-
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (nbc->dc.no_md_flush)
