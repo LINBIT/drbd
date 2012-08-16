@@ -1,4 +1,4 @@
-
+#include <linux/slab.h>
 /* These functions mimmic the post 2.6.24 kobject api on the pre 2.6.24 api
  */
 
@@ -26,7 +26,7 @@ static struct kobject *kobject_create(void)
 	return kobj;
 }
 
-static struct kobject *kobject_create_and_add(const char *name, struct kobject *parent)
+struct kobject *kobject_create_and_add(const char *name, struct kobject *parent)
 {
 	struct kobject *kobj;
 	int retval;
@@ -47,7 +47,7 @@ static struct kobject *kobject_create_and_add(const char *name, struct kobject *
 	return kobj;
 }
 
-static int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
+int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
 				struct kobject *parent, const char *name)
 {
 	int retval;
