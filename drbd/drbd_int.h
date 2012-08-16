@@ -1039,13 +1039,6 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 	return req->rq_state[1 + idx];
 }
 
-static inline unsigned drbd_req_state_by_conn(struct drbd_request *req,
-		struct drbd_connection *connection)
-{
-	return drbd_req_state_by_peer_device(req,
-			conn_peer_device(connection, req->device->vnr));
-}
-
 #define for_each_resource(resource, _resources) \
 	list_for_each_entry(resource, _resources, resources)
 

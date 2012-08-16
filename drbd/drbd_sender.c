@@ -1772,7 +1772,9 @@ static struct drbd_request *__next_request_for_connection(
 {
 	r = list_prepare_entry(r, &connection->resource->transfer_log, tl_requests);
 	list_for_each_entry_continue(r, &connection->resource->transfer_log, tl_requests) {
-		unsigned s = drbd_req_state_by_conn(r, connection);
+		int vnr = r->device->vnr;
+		struct drbd_peer_device *peer_device = conn_peer_device(connection, vnr);
+		unsigned s = drbd_req_state_by_peer_device(r, peer_device);
 		if (!(s & RQ_NET_QUEUED))
 			continue;
 		return r;
