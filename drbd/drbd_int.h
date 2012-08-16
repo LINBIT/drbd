@@ -1913,6 +1913,9 @@ extern int __drbd_set_out_of_sync(struct drbd_conf *mdev, sector_t sector,
 extern void drbd_al_apply_to_bm(struct drbd_conf *mdev);
 extern void drbd_al_shrink(struct drbd_conf *mdev);
 
+/* drbd_sysfs.c */
+extern struct kobj_type drbd_bdev_kobj_type;
+extern struct attribute_group drbd_md_attr_group;
 
 /* drbd_nl.c */
 

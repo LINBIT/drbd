@@ -1123,6 +1123,10 @@ static inline struct bio *bio_alloc_bioset(gfp_t gfp_mask, int nr_iovecs, struct
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
 #define HAVE_KOBJECT_CREATE_AND_ADD
+#else
+extern struct kobject *kobject_create_and_add(const char *name, struct kobject *parent);
+extern int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
+				struct kobject *parent, const char *name);
 #endif
 
 #ifndef disk_to_dev
