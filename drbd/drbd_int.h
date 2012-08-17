@@ -1607,7 +1607,6 @@ extern int drbd_rs_del_all(struct drbd_peer_device *);
 extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
 extern void drbd_set_in_sync(struct drbd_peer_device *, sector_t, int);
-extern void drbd_set_all_in_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_out_of_sync(struct drbd_peer_device *, sector_t, int);
 extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);

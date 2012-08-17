@@ -827,11 +827,6 @@ void drbd_set_in_sync(struct drbd_peer_device *peer_device, sector_t sector, int
 	set_in_sync(peer_device->device, peer_device, sector, size);
 }
 
-void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
-{
-	set_in_sync(device, NULL, sector, size);
-}
-
 static bool __set_out_of_sync(struct drbd_peer_device *peer_device,
 			      unsigned long sbnr, unsigned long ebnr)
 {
@@ -916,7 +911,7 @@ bool drbd_set_out_of_sync(struct drbd_peer_device *peer_device, sector_t sector,
 
 bool drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
-	return set_out_of_sync(device, NULL, sector, size);
+	return drbd_set_sync(device, sector, size, -1, -1);
 }
 
 /**
