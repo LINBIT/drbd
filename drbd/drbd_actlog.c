@@ -919,6 +919,92 @@ bool drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int s
 	return set_out_of_sync(device, NULL, sector, size);
 }
 
+/**
+ * drbd_set_sync  -  Set a disk range in or out of sync
+ * @device:	DRBD device
+ * @sector:	start sector of disk range
+ * @size:	size of disk range in bytes
+ * @bits:	bit values to use by bitmap index
+ * @mask:	bitmap indexes to modify (mask set)
+ */
+bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+		   unsigned long bits, unsigned long mask)
+{
+	unsigned long set_start, set_end, clear_start, clear_end;
+	unsigned long flags;
+	sector_t esector, nr_sectors;
+	bool set = false, wake_up = false;
+	struct drbd_peer_device *peer_device;
+
+	mask &= (1 << device->bitmap->bm_max_peers) - 1;
+
+	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+		drbd_err(device, "sector: %llus, size: %d\n",
+			(unsigned long long)sector, size);
+		return false;
+	}
+
+	if (!get_ldev(device))
+		return false; /* no disk, no metadata, no bitmap to set bits in */
+
+	nr_sectors = drbd_get_capacity(device->this_bdev);
+	esector = sector + (size >> 9) - 1;
+
+	if (!expect(device, sector < nr_sectors))
+		goto out;
+	if (!expect(device, esector < nr_sectors))
+		esector = nr_sectors - 1;
+
+	/* we set it out of sync,
+	 * we do not need to round anything here */
+	set_start = BM_SECT_TO_BIT(sector);
+	set_end = BM_SECT_TO_BIT(esector);
+
+	clear_start = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT - 1);
+	if (esector == nr_sectors - 1)
+		clear_end = BM_SECT_TO_BIT(nr_sectors - 1);
+	else
+		clear_end = BM_SECT_TO_BIT(esector - BM_SECT_PER_BIT + 1);
+
+	spin_lock_irqsave(&device->al_lock, flags);
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		int bitmap_index = peer_device->bitmap_index;
+
+		if (bitmap_index == -1 || !test_and_clear_bit(bitmap_index, &mask))
+			continue;
+
+		if (test_bit(bitmap_index, &bits))
+			wake_up |= __set_out_of_sync(peer_device,
+						     set_start, set_end);
+		else if (clear_start <= clear_end)
+			set |= __set_in_sync(peer_device, sector,
+					     clear_start, clear_end);
+	}
+	rcu_read_unlock();
+	if (mask) {
+		int bitmap_index;
+
+		for_each_set_bit(bitmap_index, &mask, BITS_PER_LONG) {
+			if (test_bit(bitmap_index, &bits))
+				drbd_bm_set_bits(device, bitmap_index,
+						 set_start, set_end);
+			else if (clear_start <= clear_end)
+				drbd_bm_clear_bits(device, bitmap_index,
+						   clear_start, clear_end);
+		}
+	}
+	spin_unlock_irqrestore(&device->al_lock, flags);
+
+	if (wake_up)
+		wake_up(&device->al_wait);
+
+out:
+	put_ldev(device);
+
+	return set;
+}
+
 static
 struct bm_extent *_bme_get(struct drbd_peer_device *peer_device, unsigned int enr)
 {
