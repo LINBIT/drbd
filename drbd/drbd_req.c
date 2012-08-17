@@ -176,24 +176,25 @@ void drbd_req_destroy(struct kref *kref)
 		 * In that case we do not want to touch the bitmap at all.
 		 */
 		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED) {
-			if (!(s & RQ_LOCAL_OK))
-				drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
-			else {
-				rcu_read_lock();
-				for_each_peer_device(peer_device, device) {
-					unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
-					if (!(ns & RQ_NET_OK))
-						/* this can not be moved to drbd_req_complete(),
-						 * because of protocol A "faking" RQ_NET_OK.
-						 * Here, we end up only after RQ_NET_DONE,
-						 * And on CONNECTION_LOST_WHILE_PENDING, RQ_NET_OK
-						 * will be cleared first. */
-						drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
-					else if (ns & RQ_NET_SIS)
-						drbd_set_in_sync(peer_device, req->i.sector, req->i.size);
-				}
-				rcu_read_unlock();
+			unsigned long bits = -1, mask = -1;
+			int bm_max_peers = 0, bitmap_index;
+
+			if ((s & RQ_LOCAL_OK) && get_ldev(device)) {
+				bm_max_peers = device->bitmap->bm_max_peers;
+				put_ldev(device);
 			}
+			for (bitmap_index = 0; bitmap_index < bm_max_peers; bitmap_index++) {
+				unsigned int rq_state;
+
+				rq_state = req->rq_state[1 + bitmap_index];
+				if (rq_state & RQ_NET_OK) {
+					if (rq_state & RQ_NET_SIS)
+						clear_bit(bitmap_index, &bits);
+					else
+						clear_bit(bitmap_index, &mask);
+				}
+			}
+			drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
 		}
 
 		/* one might be tempted to move the drbd_al_complete_io
