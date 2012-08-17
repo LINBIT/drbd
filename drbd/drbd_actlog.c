@@ -833,10 +833,13 @@ void drbd_set_all_in_sync(struct drbd_device *device, sector_t sector, int size)
 }
 
 static int __set_out_of_sync(struct drbd_peer_device *peer_device, unsigned long sbnr,
-			     unsigned long ebnr, unsigned int enr)
+			     unsigned long ebnr)
 {
 	struct lc_element *e;
-	unsigned int count;
+	unsigned int enr, count;
+
+	BUILD_BUG_ON(BM_EXT_SHIFT < BM_BLOCK_SHIFT);
+	enr = sbnr >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
 
 	count = drbd_bm_set_bits(peer_device->device, peer_device->bitmap_index, sbnr, ebnr);
 	e = lc_find(peer_device->resync_lru, enr);
@@ -858,7 +861,7 @@ static int set_out_of_sync(struct drbd_device *device, struct drbd_peer_device *
 {
 	unsigned long sbnr, ebnr, flags;
 	sector_t esector, nr_sectors;
-	unsigned int enr, total = 0;
+	unsigned int total = 0;
 
 	/* this should be an empty REQ_FLUSH */
 	if (size == 0)
@@ -885,17 +888,16 @@ static int set_out_of_sync(struct drbd_device *device, struct drbd_peer_device *
 	 * we do not need to round anything here */
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
-	enr = BM_SECT_TO_EXT(sector);
 
 	/* ok, (capacity & 7) != 0 sometimes, but who cares...
 	 * we count rs_{total,left} in bits, not sectors.  */
 	spin_lock_irqsave(&device->al_lock, flags);
 	if (peer_device)
-		total = __set_out_of_sync(peer_device, sbnr, ebnr, enr);
+		total = __set_out_of_sync(peer_device, sbnr, ebnr);
 	else {
 		rcu_read_lock();
 		for_each_peer_device(peer_device, device)
-			total += __set_out_of_sync(peer_device, sbnr, ebnr, enr);
+			total += __set_out_of_sync(peer_device, sbnr, ebnr);
 		rcu_read_unlock();
 	}
 	spin_unlock_irqrestore(&device->al_lock, flags);
