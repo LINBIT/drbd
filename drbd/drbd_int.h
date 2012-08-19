@@ -470,6 +470,7 @@ struct drbd_peer_request {
 		u64 block_id;
 		struct digest_info *digest;
 	};
+	u64 dagtag_sector;
 };
 
 /* ee flag bits.
@@ -790,6 +791,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_thread sender;
 	struct drbd_thread asender;
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
+	u64 last_dagtag_sector;
 
 	/* sender side */
 	struct drbd_work_queue sender_work;

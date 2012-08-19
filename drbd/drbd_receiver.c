@@ -2428,6 +2428,9 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 	}
 
+	peer_req->dagtag_sector = connection->last_dagtag_sector + (pi->size >> 9);
+	connection->last_dagtag_sector = peer_req->dagtag_sector;
+
 	peer_req->w.cb = e_end_block;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
@@ -4866,6 +4869,14 @@ STATIC int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	return 0;
 }
 
+static int receive_dagtag(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_dagtag *p = pi->data;
+
+	connection->last_dagtag_sector = be64_to_cpu(p->dagtag);
+	return 0;
+}
+
 struct data_cmd {
 	int expect_payload;
 	size_t pkt_size;
@@ -4899,6 +4910,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_PROTOCOL_UPDATE] = { 1, sizeof(struct p_protocol), receive_protocol },
 	[P_CONN_ST_CHG_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_CONN_ST_CHG_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)

@@ -57,6 +57,8 @@ enum drbd_packet {
 	P_CONN_ST_CHG_PREPARE = 0x2e, /* data sock: prepare state change */
 	P_CONN_ST_CHG_ABORT   = 0x2f, /* data sock: abort state change */
 
+	P_DAGTAG	      = 0x30, /* data sock: set the current dagtag */
+
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
 	/* special command ids for handshake */
@@ -285,6 +287,10 @@ struct p_compressed_bm {
 struct p_delay_probe93 {
 	u32     seq_num; /* sequence number to match the two probe packets */
 	u32     offset;  /* usecs the probe got sent after the reference time point */
+} __packed;
+
+struct p_dagtag {
+	u64 dagtag;
 } __packed;
 
 /*
