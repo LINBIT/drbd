@@ -1845,6 +1845,19 @@ int drbd_send_out_of_sync(struct drbd_peer_device *peer_device, struct drbd_requ
 	return drbd_send_command(peer_device, sock, P_OUT_OF_SYNC, sizeof(*p), NULL, 0);
 }
 
+int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
+{
+	struct drbd_socket *sock;
+	struct p_dagtag *p;
+
+	sock = &connection->data;
+	p = conn_prepare_command(connection, sock);
+	if (!p)
+		return -EIO;
+	p->dagtag = cpu_to_be64(dagtag);
+	return conn_send_command(connection, sock, P_DAGTAG, sizeof(*p), NULL, 0);
+}
+
 /*
   drbd_send distinguishes two cases:
 

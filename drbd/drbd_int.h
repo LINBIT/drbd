@@ -1138,6 +1138,7 @@ extern int drbd_send_drequest_csum(struct drbd_peer_device *, sector_t sector,
 extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int size);
 
 extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
+extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
 extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv retcode);
 extern void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);

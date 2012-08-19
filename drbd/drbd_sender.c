@@ -2001,10 +2001,16 @@ int process_one_request(struct drbd_connection *connection)
 		/* If a WRITE does not expect a barrier ack,
 		 * we are supposed to only send an "out of sync" info packet */
 		if (s & RQ_EXP_BARR_ACK) {
+			u64 current_dagtag_sector =
+				req->dagtag_sector - (req->i.size >> 9);
+
 			re_init_if_first_write(connection, req->epoch);
 			maybe_send_barrier(connection, req->epoch);
+			if (current_dagtag_sector != connection->send.current_dagtag_sector)
+				err = drbd_send_dagtag(connection, current_dagtag_sector);
+
 			connection->send.current_epoch_writes++;
-			connection->send.current_dagtag_sector = req->dagtag_sector;
+			connection->send.current_dagtag_sector = current_dagtag_sector;
 
 			err = drbd_send_dblock(peer_device, req);
 			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
