@@ -635,20 +635,17 @@ static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sector_t sector,
+static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, unsigned int enr,
 				      int count, int success)
 {
 	struct drbd_device *device = peer_device->device;
 	struct lc_element *e;
 	struct update_odbm_work *udw;
 
-	unsigned int enr;
-
 	D_ASSERT(device, atomic_read(&device->local_cnt));
 
 	/* I simply assume that a sector/size pair never crosses
 	 * a 16 MB extent border. (Currently this is true...) */
-	enr = BM_SECT_TO_EXT(sector);
 
 	e = lc_get(peer_device->resync_lru, enr);
 	if (e) {
@@ -661,9 +658,8 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, sect
 			if (ext->rs_left < ext->rs_failed) {
 				struct drbd_peer_device *pd = peer_device;
 				unsigned s = combined_conn_state(pd, NOW);
-				drbd_warn(device, "BAD! sector=%llus enr=%u rs_left=%d "
+				drbd_warn(device, "BAD! enr=%u rs_left=%d "
 				    "rs_failed=%d count=%d cstate=%s\n",
-				     (unsigned long long)sector,
 				     ext->lce.lc_number, ext->rs_left,
 				     ext->rs_failed, count,
 				     drbd_conn_str(s));
@@ -742,7 +738,7 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 	}
 }
 
-static bool __set_in_sync(struct drbd_peer_device *peer_device, sector_t sector,
+static bool __set_in_sync(struct drbd_peer_device *peer_device,
 			  unsigned long sbnr, unsigned long ebnr)
 {
 	struct drbd_device *device = peer_device->device;
@@ -751,10 +747,14 @@ static bool __set_in_sync(struct drbd_peer_device *peer_device, sector_t sector,
 	count = drbd_bm_clear_bits(device, peer_device->bitmap_index, sbnr, ebnr);
 	if (count && get_ldev(device)) {
 		unsigned long flags;
+		unsigned int enr;
+
+		BUILD_BUG_ON(BM_EXT_SHIFT < BM_BLOCK_SHIFT);
+		enr = sbnr >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
 
 		drbd_advance_rs_marks(peer_device, drbd_bm_total_weight(peer_device));
 		spin_lock_irqsave(&device->al_lock, flags);
-		drbd_try_clear_on_disk_bm(peer_device, sector, count, true);
+		drbd_try_clear_on_disk_bm(peer_device, enr, count, true);
 		spin_unlock_irqrestore(&device->al_lock, flags);
 		put_ldev(device);
 		return true;
@@ -811,11 +811,11 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 	 * we count rs_{total,left} in bits, not sectors.
 	 */
 	if (peer_device)
-		wake_up = __set_in_sync(peer_device, sector, sbnr, ebnr);
+		wake_up = __set_in_sync(peer_device, sbnr, ebnr);
 	else {
 		rcu_read_lock();
 		for_each_peer_device(peer_device, device)
-			wake_up |= __set_in_sync(peer_device, sector, sbnr, ebnr);
+			wake_up |= __set_in_sync(peer_device, sbnr, ebnr);
 		rcu_read_unlock();
 	}
 	if (wake_up)
@@ -973,7 +973,7 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 			wake_up |= __set_out_of_sync(peer_device,
 						     set_start, set_end);
 		else if (clear_start <= clear_end)
-			set |= __set_in_sync(peer_device, sector,
+			set |= __set_in_sync(peer_device,
 					     clear_start, clear_end);
 	}
 	rcu_read_unlock();
@@ -1367,7 +1367,7 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 		peer_device->rs_failed += count;
 
 		if (get_ldev(device)) {
-			drbd_try_clear_on_disk_bm(peer_device, sector, count, false);
+			drbd_try_clear_on_disk_bm(peer_device, BM_SECT_TO_EXT(sector), count, false);
 			put_ldev(device);
 		}
 
