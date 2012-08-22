@@ -3180,6 +3180,7 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
  */
 STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr) __must_hold(local)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	u64 self, peer;
 	int i, j;
@@ -3204,7 +3205,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	if (self == peer) {
 		int rct, dc; /* roles at crash time */
 
-		{
+		if (connection->agreed_pro_version < 110) {
 			int rv = uuid_fixup_resync_end(peer_device, rule_nr);
 			if (rv > -2000)
 				return rv;
@@ -3232,7 +3233,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	if (self == peer)
 		return -1;
 
-	{
+	if (connection->agreed_pro_version < 110) {
 		int rv = uuid_fixup_resync_start1(peer_device, rule_nr);
 		if (rv > -2000)
 			return rv;
@@ -3252,7 +3253,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	if (self == peer)
 		return 1;
 
-	{
+	if (connection->agreed_pro_version < 110) {
 		int rv = uuid_fixup_resync_start2(peer_device, rule_nr);
 		if (rv > -2000)
 			return rv;
@@ -4855,8 +4856,13 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 			goto out;
 		/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
 		 * transition to avoid deadlocks. */
-		rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
-		D_ASSERT(device, rv == SS_SUCCESS);
+
+		if (connection->agreed_pro_version < 110) {
+			rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
+			D_ASSERT(device, rv == SS_SUCCESS);
+		} else {
+			drbd_start_resync(peer_device, L_SYNC_TARGET);
+		}
 	} else if (peer_device->repl_state[NOW] != L_WF_BITMAP_S) {
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */

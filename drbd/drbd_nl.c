@@ -2654,21 +2654,23 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 
 void resync_after_online_grow(struct drbd_peer_device *peer_device)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	bool sync_source;
 
 	drbd_info(peer_device, "Resync of new storage after online grow\n");
-	if (device->resource->role[NOW] != peer_device->connection->peer_role[NOW])
+	if (device->resource->role[NOW] != connection->peer_role[NOW])
 		sync_source = (device->resource->role[NOW] == R_PRIMARY);
 	else
 		sync_source = test_bit(RESOLVE_CONFLICTS,
 				       &peer_device->connection->flags);
 
-	if (sync_source)
-		drbd_start_resync(peer_device, L_SYNC_SOURCE);
-	else
+	if (!sync_source && connection->agreed_pro_version < 110) {
 		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
 					 CS_VERBOSE | CS_SERIALIZE);
+		return;
+	}
+	drbd_start_resync(peer_device, sync_source ? L_SYNC_SOURCE : L_SYNC_TARGET);
 }
 
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)

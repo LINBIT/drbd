@@ -1430,7 +1430,10 @@ static void abw_start_sync(struct drbd_device *device,
 
 	switch (peer_device->repl_state[NOW]) {
 	case L_STARTING_SYNC_T:
-		stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
+		if (peer_device->connection->agreed_pro_version < 110)
+			stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
+		else
+			drbd_start_resync(peer_device, L_SYNC_TARGET);
 		break;
 	case L_STARTING_SYNC_S:
 		drbd_start_resync(peer_device, L_SYNC_SOURCE);
@@ -1743,7 +1746,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			 * which is unexpected. */
 			if (!(repl_state[OLD] == L_SYNC_SOURCE || repl_state[OLD] == L_PAUSED_SYNC_S) &&
 			     (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_PAUSED_SYNC_S) &&
-			    connection->agreed_pro_version >= 96 && get_ldev(device)) {
+			    connection->agreed_pro_version >= 96 && connection->agreed_pro_version < 110 &&
+			    get_ldev(device)) {
 				drbd_gen_and_send_sync_uuid(peer_device);
 				put_ldev(device);
 			}
