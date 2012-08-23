@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.2rc2 (api:genl1/proto:86-100)
+--------
+ * Complete requests that reached completion state while IO was
+   frozen. (Introduced with 8.4.2rc1)
+ * Write all pages of the bitmap if it gets moved during an
+   online resize operation. (This issue was introduced with 8.3.10)
+ * Fixed a locking with the callbacks of the listening socket.
+   (Issue found by lockdep, introduced with 8.4.2rc1)
+ * Fixed a race condition could cause DRBD to go through a
+   NetworkFailure state during disconnect
+ * Fixed issues with the new request code that caused "BAD!"
+   messages (introduced with 8.4.2rc1)
+ * Fixed a race condition in the disconnect code path that
+   could lead to a BUG() (introduced with 8.4.0)
+
 8.4.2rc1 (api:genl1/proto:86-100)
 --------
  * Fixed a write ordering problem on SyncTarget nodes for a write to a block
