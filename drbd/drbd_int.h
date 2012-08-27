@@ -546,6 +546,8 @@ enum {
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
 	READ_BALANCE_RR,
+	INITIAL_STATE_SENT,
+	INITIAL_STATE_RECEIVED,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock
@@ -682,8 +684,6 @@ enum {
 	CONN_WD_ST_CHG_FAIL,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
-	INITIAL_STATE_SENT,
-	INITIAL_STATE_RECEIVED,
 	DISCONNECT_SENT,
 };
 

@@ -1053,6 +1053,10 @@ randomize:
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	}
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kobject_get(&device->kobj);
 		/* peer_device->connection cannot go away: caller holds a reference. */
@@ -4036,13 +4040,13 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
-	if (!test_bit(INITIAL_STATE_RECEIVED, &connection->flags)) {
+	if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
 		err = drbd_validate_bitmap_index(peer_device);
-		if (!test_bit(INITIAL_STATE_SENT, &connection->flags)) {
+		if (!test_bit(INITIAL_STATE_SENT, &peer_device->flags)) {
 			if (err == -EAGAIN)
 				err = drbd_send_uuids(peer_device);
 
-			set_bit(INITIAL_STATE_SENT, &connection->flags);
+			set_bit(INITIAL_STATE_SENT, &peer_device->flags);
 			if (!err)
 				err = drbd_send_current_state(peer_device);
 		} else if (err) {
@@ -4484,7 +4488,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 	rv = end_state_change_locked(resource);
 	new_repl_state = peer_device->repl_state[NOW];
-	set_bit(INITIAL_STATE_RECEIVED, &connection->flags);
+	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	spin_unlock_irq(&resource->req_lock);
 
 	if (rv < SS_SUCCESS) {
