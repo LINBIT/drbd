@@ -1571,6 +1571,9 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 		}
 	}
 	kref_put(&tconn->kref, &conn_destroy);
+
+	conn_md_sync(tconn);
+
 	return 0;
 }
 
