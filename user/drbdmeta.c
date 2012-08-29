@@ -244,6 +244,7 @@ struct md_peer_cpu {
 	uint64_t uuid[UI_SIZE];
 	uint32_t addr_hash;
 	uint32_t flags;
+	uint32_t node_id;
 };
 
 struct md_cpu {
@@ -265,6 +266,7 @@ struct md_cpu {
 	uint32_t la_peer_max_bio_size;
 	/* Since DRBD 9.0 the following new stuff: */
 	uint32_t bm_max_peers;
+	uint32_t node_id;
 	struct md_peer_cpu peers[MAX_PEERS];
 };
 
@@ -797,7 +799,8 @@ struct peer_dev_md_on_disk {
 	be_u64 history_uuids[HISTORY_UUIDS];
 	be_u32 addr_hash;
 	be_u32 flags;
-	be_u32 reserved_u32[4];
+	be_u32 node_id;
+	be_u32 reserved_u32[3];
 } __packed;
 
 struct md_on_disk_09 {
@@ -814,7 +817,8 @@ struct md_on_disk_09 {
 	be_u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	be_u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 	be_u32 bm_max_peers;
-	be_u32 reserved_u32[5];
+	be_u32 node_id;
+	be_u32 reserved_u32[4];
 
 	struct peer_dev_md_on_disk peers[MAX_PEERS];
 
@@ -837,6 +841,7 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
 	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
 	cpu->bm_max_peers = be32_to_cpu(disk->bm_max_peers.be);
+	cpu->node_id = be32_to_cpu(disk->node_id.be);
 
 	if (cpu->bm_max_peers > MAX_PEERS)
 		cpu->bm_max_peers = MAX_PEERS;
@@ -845,6 +850,7 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 		cpu->peers[p].uuid[UI_CURRENT] = be64_to_cpu(disk->current_uuid.be);
 		cpu->peers[p].addr_hash = be32_to_cpu(disk->peers[p].addr_hash.be);
 		cpu->peers[p].flags = be32_to_cpu(disk->peers[p].flags.be);
+		cpu->peers[p].node_id = be32_to_cpu(disk->peers[p].node_id.be);
 		cpu->peers[p].uuid[UI_BITMAP] =
 			be64_to_cpu(disk->peers[p].bitmap_uuid.be);
 		for (i = 0; i < HISTORY_UUIDS; i++)
@@ -869,11 +875,13 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
 	disk->la_peer_max_bio_size.be = cpu_to_be32(cpu->la_peer_max_bio_size);
 	disk->bm_max_peers.be = cpu_to_be32(cpu->bm_max_peers);
+	disk->node_id.be = cpu_to_be32(cpu->node_id);
 
 	disk->current_uuid.be = cpu_to_be64(cpu->peers[0].uuid[UI_CURRENT]);
 	for (p = 0; p < cpu->bm_max_peers; p++) {
 		disk->peers[p].addr_hash.be = cpu_to_be32(cpu->peers[p].addr_hash);
 		disk->peers[p].flags.be = cpu_to_be32(cpu->peers[p].flags);
+		disk->peers[p].node_id.be = cpu_to_be32(cpu->peers[p].node_id);
 		disk->peers[p].bitmap_uuid.be =
 			cpu_to_be64(cpu->peers[p].uuid[UI_BITMAP]);
 		for (i = 0; i < HISTORY_UUIDS; i++)
@@ -1056,6 +1064,7 @@ struct meta_cmd cmds[] = {
 	{"dstate", 0, meta_dstate, 1},
 	{"read-dev-uuid", 0,  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
+	/* FIXME: Get and set node and peer ids */
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
 	{"check-resize", 0, meta_chk_offline_resize, 1},
 };
@@ -2687,6 +2696,7 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 	cfg->md.effective_size = 0;
 	cfg->md.bm_max_peers = max_peers;
 	cfg->md.flags = 0;
+	cfg->md.node_id = -1;
 	cfg->md.magic = DRBD_MD_MAGIC_09;
 
 	for (p = 0; p < max_peers; p++) {
@@ -2695,6 +2705,7 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 			cfg->md.peers[p].uuid[i] = 0;
 		cfg->md.peers[p].addr_hash = 0;
 		cfg->md.peers[p].flags = 0;
+		cfg->md.peers[p].node_id = -1;
 	}
 
 	return md_initialize_common(cfg, do_disk_writes);
@@ -2833,13 +2844,12 @@ void print_dump_uuids(struct md_peer_cpu *peer, int ui_start, const char* indent
 {
 	int i;
 
-	printf("{\n%s   ", indent);
+	printf("%s   ", indent);
 	for (i = ui_start; i < UI_SIZE; i++ ) {
 		printf(" 0x"X64(016)";", peer->uuid[i]);
 	}
 	printf("\n");
 	printf("%s    flags 0x"X32(08)";\n", indent, peer->flags);
-	printf("%s}\n", indent);
 }
 
 int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc)
@@ -2902,17 +2912,26 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		printf("\n}\n");
 		break;
 	case DRBD_V08:
-		printf("uuid ");
+		printf("uuid {\n");
 		print_dump_uuids(&cfg->md.peers[0], UI_CURRENT, "");
+		printf("}\n");
 		break;
 	case DRBD_V09:
 		printf("uuid {\n"
+		       "   node-id %d;\n"
 		       "   current 0x"X64(016)";\n"
 		       "   flags 0x"X32(08)";\n",
+		       cfg->md.node_id,
 		       cfg->md.peers[0].uuid[UI_CURRENT], cfg->md.flags);
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			printf("   peer[%d] hash 0x%08X ", i, cfg->md.peers[i].addr_hash);
+			printf("   peer[%d] hash 0x%08X {\n",
+			       i, cfg->md.peers[i].addr_hash);
 			print_dump_uuids(&cfg->md.peers[i], UI_BITMAP, "   ");
+			if (format_version(cfg) >= DRBD_V09) {
+				printf("       node-id %d;\n",
+				       cfg->md.peers[i].node_id);
+			}
+			printf("   }\n");
 		}
 		printf("}\n");
 		break;
@@ -2973,6 +2992,8 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 			etext = "keyword 'uuid'"; break;
 		case TK_VERSION:
 			etext = "keyword 'version'"; break;
+		case TK_NODE_ID:
+			etext = "keyword 'node-id'"; break;
 		case TK_CURRENT:
 			etext = "keyword 'current'"; break;
 		case TK_PEER:
@@ -3246,8 +3267,10 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			}
 			EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
 			cfg->md.flags = (uint32_t)yylval.u64;
-			EXP('}');
 		} else /* >= 09 */ {
+			EXP(TK_NODE_ID);
+			EXP(TK_NUM); EXP(';');
+			cfg->md.node_id = yylval.u64;
 			EXP(TK_CURRENT);
 			EXP(TK_U64); EXP(';');
 			cfg->md.peers[0].uuid[UI_CURRENT] = yylval.u64;
@@ -3274,10 +3297,13 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 				}
 				EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
 				cfg->md.peers[i].flags = (uint32_t)yylval.u64;
+				EXP(TK_NODE_ID);
+				EXP(TK_NUM); EXP(';');
+				cfg->md.peers[i].node_id = yylval.u64;
 				EXP('}');
 			}
-			EXP('}');
 		}
+		EXP('}');
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.effective_size = yylval.u64;

@@ -27,7 +27,7 @@ COMMENT		\#[^\n]*
 
 /* 1<<63 is 19 digits. has to be enough.
  * 20 digits would risk overflow of 64bit unsigned int */
-NUM		[0-9]{1,19}
+NUM		-?[0-9]{1,19}
 NUM_TOO_LONG	{NUM}[0-9]
 
 U64		0x[0-9A-Fa-f]{16}
@@ -60,6 +60,7 @@ device-uuid	DP; CP; return TK_DEVICE_UUID;
 times		DP; CP; return TK_TIMES;
 flags		DP; CP; return TK_FLAGS;
 la-peer-max-bio-size DP; CP; return TK_LA_BIO_SIZE;
+node-id	DP; CP; return TK_NODE_ID;
 current		DP; CP; return TK_CURRENT;
 peer		DP; CP; return TK_PEER;
 hash		DP; CP; return TK_HASH;

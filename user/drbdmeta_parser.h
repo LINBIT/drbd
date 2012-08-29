@@ -27,6 +27,7 @@ enum yytokentype {
 	TK_INVALID,
 	TK_INVALID_CHAR,
 	TK_LA_BIO_SIZE,
+	TK_NODE_ID,
 	TK_CURRENT,
 	TK_PEER,
 	TK_HASH,
