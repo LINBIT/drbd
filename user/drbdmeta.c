@@ -793,7 +793,8 @@ int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_dis
  */
 
 struct peer_dev_md_on_disk {
-	be_u64 uuid[UI_HISTORY_END - UI_BITMAP + 1];
+	be_u64 bitmap_uuid;
+	be_u64 history_uuids[HISTORY_UUIDS];
 	be_u32 addr_hash;
 	be_u32 flags;
 	be_u32 reserved_u32[4];
@@ -844,8 +845,11 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 		cpu->peers[p].uuid[UI_CURRENT] = be64_to_cpu(disk->current_uuid.be);
 		cpu->peers[p].addr_hash = be32_to_cpu(disk->peers[p].addr_hash.be);
 		cpu->peers[p].flags = be32_to_cpu(disk->peers[p].flags.be);
-		for (i=UI_BITMAP ; i<UI_SIZE ; i++)
-			cpu->peers[p].uuid[i] = be64_to_cpu(disk->peers[p].uuid[MD_UI(i)].be);
+		cpu->peers[p].uuid[UI_BITMAP] =
+			be64_to_cpu(disk->peers[p].bitmap_uuid.be);
+		for (i = 0; i < HISTORY_UUIDS; i++)
+			cpu->peers[p].uuid[UI_HISTORY_START + i] =
+				be64_to_cpu(disk->peers[p].history_uuids[i].be);
 	}
 }
 
@@ -870,8 +874,11 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 	for (p = 0; p < cpu->bm_max_peers; p++) {
 		disk->peers[p].addr_hash.be = cpu_to_be32(cpu->peers[p].addr_hash);
 		disk->peers[p].flags.be = cpu_to_be32(cpu->peers[p].flags);
-		for (i=UI_BITMAP ; i<UI_SIZE ; i++)
-			disk->peers[p].uuid[MD_UI(i)].be = cpu_to_be64(cpu->peers[p].uuid[i]);
+		disk->peers[p].bitmap_uuid.be =
+			cpu_to_be64(cpu->peers[p].uuid[UI_BITMAP]);
+		for (i = 0; i < HISTORY_UUIDS; i++)
+			disk->peers[p].history_uuids[i].be =
+				cpu_to_be64(cpu->peers[p].uuid[UI_HISTORY_START + i]);
 	}
 }
 
