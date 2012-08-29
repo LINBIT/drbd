@@ -173,15 +173,14 @@ void drbd_req_destroy(struct kref *kref)
 		 * but after the extent has been dropped from the al,
 		 * we would forget to resync the corresponding extent.
 		 */
-		if (s & RQ_LOCAL_MASK) {
+		if (s & RQ_IN_ACT_LOG) {
 			if (get_ldev_if_state(mdev, D_FAILED)) {
-				if (s & RQ_IN_ACT_LOG)
-					drbd_al_complete_io(mdev, &req->i);
+				drbd_al_complete_io(mdev, &req->i);
 				put_ldev(mdev);
 			} else if (DRBD_ratelimit(5*HZ, 3)) {
 				dev_warn(DEV, "Should have called drbd_al_complete_io(, %llu, %u), "
-				     "but my Disk seems to have failed :(\n",
-				     (unsigned long long) req->i.sector, req->i.size);
+					 "but my Disk seems to have failed :(\n",
+					 (unsigned long long) req->i.sector, req->i.size);
 			}
 		}
 	}
