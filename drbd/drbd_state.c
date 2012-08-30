@@ -787,6 +787,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
+		bool all_peer_disks_consistent[2];
+		enum which_state which;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
 			return SS_IS_DISKLESS;
@@ -794,22 +796,30 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
 			return SS_LOWER_THAN_OUTDATED;
 
+		for (which = OLD; which <= NEW; which++) {
+			all_peer_disks_consistent[which] = true;
+			for_each_peer_device(peer_device, device) {
+				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+
+				if (peer_disk_state[which] <= D_INCONSISTENT ||
+				    peer_disk_state[which] == D_UNKNOWN)
+					all_peer_disks_consistent[which] = false;
+			}
+		}
+		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE &&
+		      (disk_state[OLD] <= D_INCONSISTENT || !all_peer_disks_consistent[OLD])) &&
+		     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE &&
+		      (disk_state[NEW] <= D_INCONSISTENT || !all_peer_disks_consistent[NEW])))
+			return SS_NO_UP_TO_DATE_DISK;
+
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
-
-			if (!(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE) &&
-			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE))
-				return SS_NO_UP_TO_DATE_DISK;
 
 			if (peer_device->connection->fencing_policy >= FP_RESOURCE &&
 			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
 			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
 				return SS_PRIMARY_NOP;
-
-			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] <= D_INCONSISTENT && peer_disk_state[OLD] <= D_INCONSISTENT) &&
-			     (role[NEW] == R_PRIMARY && disk_state[NEW] <= D_INCONSISTENT && peer_disk_state[NEW] <= D_INCONSISTENT))
-				return SS_NO_UP_TO_DATE_DISK;
 
 			if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
 			     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
