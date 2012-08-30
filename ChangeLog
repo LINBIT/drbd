@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.2rc3 (api:genl1/proto:86-101)
+--------
+ * Fixed IO resuming after connection was established before fence
+   peer handler returned
+ * Fixed an issue in the state engine that could cause state lockup
+   with multiple volumes
+ * Fixed multiple issues with postponed requests (introduced with 8.4.2rc1)
+
 8.4.2rc2 (api:genl1/proto:86-100)
 --------
  * Complete requests that reached completion state while IO was
