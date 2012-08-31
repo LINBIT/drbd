@@ -216,7 +216,7 @@ struct option wait_cmds_options[] = {
 	{ "wfc-timeout",required_argument, 0, 't' },
 	{ "degr-wfc-timeout",required_argument,0,'d'},
 	{ "outdated-wfc-timeout",required_argument,0,'o'},
-	{ "wait-after-sb",no_argument,0,'w'},
+	{ "wait-after-sb",optional_argument,0,'w'},
 	{ 0,            0,           0,  0  }
 };
 
@@ -1315,7 +1315,8 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			break;
 
 		case 'w':
-			wait_after_split_brain = true;
+			if (!optarg || !strcmp(optarg, "yes"))
+				wait_after_split_brain = true;
 			break;
 
 		case 'D':
