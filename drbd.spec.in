@@ -319,7 +319,7 @@ fi
 
 
 %changelog
-* Thu Aug 30 2012 Philipp Reisner <phil@linbit.com> - 8.4.2rc3-1
+* Thu Sep  6 2012 Philipp Reisner <phil@linbit.com> - 8.4.2-1
 - New upstream release.
 
 * Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
