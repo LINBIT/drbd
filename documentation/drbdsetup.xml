@@ -274,8 +274,13 @@
           <listitem>
             <para>DRBD has four implementations to express write-after-write dependencies to its
             backing storage device. DRBD will use the first method that is supported by the
-            backing storage device and that is not disabled by the user. By default all three
-            options are enabled.</para>
+            backing storage device and that is not disabled. By default the <emphasis>flush</emphasis> 
+	    method is used.</para>
+
+	    <para>Since drbd-8.4.2 <option>disk-barrier</option> is disabled by default
+	    because since linux-2.6.36 (or 2.6.32 RHEL6) there is no reliable way to determine if queuing
+	    of IO-barriers works. <emphasis>Dangerous</emphasis> only enable if you are
+	    told so by one that knows for sure.</para>
 
             <para>When selecting the method you should not only base your decision on the
             measurable performance. In case your backing storage device has a volatile write cache
@@ -298,8 +303,8 @@
                 <listitem>
                   <para>The first requires that the driver of the backing storage device support
                   barriers (called 'tagged command queuing' in SCSI and 'native command queuing'
-                  in SATA speak). The use of this method can be disabled by setting the
-                  <option>disk-barrier</option> options to <option>no</option>.</para>
+                  in SATA speak). The use of this method can be enabled by setting the
+                  <option>disk-barrier</option> options to <option>yes</option>.</para>
                 </listitem>
               </varlistentry>
 
