@@ -1827,7 +1827,8 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		wrap_printf(indent, " replication:%s", drbd_conn_str(peer_device->info.peer_repl_state));
 		indent = 8;
 	}
-	if (peer_device->info.peer_repl_state != L_STANDALONE ||
+	if (opt_verbose ||
+	    peer_device->info.peer_repl_state != L_STANDALONE ||
 	    peer_device->info.peer_disk_state != D_UNKNOWN) {
 		wrap_printf(indent, " disk:%s", drbd_disk_str(peer_device->info.peer_disk_state));
 		indent = 8;
@@ -1890,7 +1891,7 @@ static void connection_status(struct connections_list *connection,
 		wrap_printf(6, " congested:%s", connection->statistics.conn_congested ? "yes" : "no");
 	}
 	wrap_printf(0, "\n");
-	if (connection->info.conn_connection_state == C_CONNECTED)
+	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
 }
 
