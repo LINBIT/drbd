@@ -693,6 +693,7 @@ resource r0 {
                   backing storage device support barriers (called 'tagged command queuing' in
                   SCSI and 'native command queuing' in SATA speak). The use of this
                   method can be disabled by the <option>no-disk-barrier</option> option.
+		  Note: Since Linux-2.6.36 (or RHEL's 2.6.32) this method is disabled.
 	        </para>
                 </listitem>
               </varlistentry>

@@ -1186,7 +1186,14 @@ void drbd_bump_write_ordering(struct drbd_conf *mdev, enum write_ordering_e wo) 
 
 	pwo = mdev->write_ordering;
 	wo = min(pwo, wo);
-	if (wo == WO_bio_barrier && mdev->ldev->dc.no_disk_barrier)
+	if (wo == WO_bio_barrier
+#ifndef REQ_FLUSH
+	/* Since 2.6.36 (RedHat's 2.6.32) there is no reliable way to queue
+	   a write barrier into the request stream. Disabling it completely for
+	   drbd-8.3. See commit linux commit: 1e87901e18 */
+	    && mdev->ldev->dc.no_disk_barrier
+#endif
+	    )
 		wo = WO_bdev_flush;
 	if (wo == WO_bdev_flush && mdev->ldev->dc.no_disk_flush)
 		wo = WO_drain_io;
