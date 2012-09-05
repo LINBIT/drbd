@@ -3628,10 +3628,10 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 
 	if (apv >= 88) {
 		if (apv == 88) {
-			if (data_size > SHARED_SECRET_MAX) {
+			if (data_size > SHARED_SECRET_MAX || data_size == 0) {
 				drbd_err(device, "verify-alg too long, "
-				    "peer wants %u, accepting only %u byte\n",
-						data_size, SHARED_SECRET_MAX);
+					 "peer wants %u, accepting only %u byte\n",
+					 data_size, SHARED_SECRET_MAX);
 				err = -EIO;
 				goto reconnect;
 			}
