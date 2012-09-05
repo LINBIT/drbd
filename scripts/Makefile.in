@@ -69,7 +69,6 @@ ifeq ($(WITH_UTILS),yes)
 	install -m 755 outdate-peer.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 snapshot-resync-target-lvm.sh $(DESTDIR)$(LIBDIR)
 	install -m 755 notify.sh $(DESTDIR)$(LIBDIR)
-	install -m 755 rhcs_fence $(DESTDIR)$(LIBDIR)
 	install -m 755 stonith_admin-fence-peer.sh $(DESTDIR)$(LIBDIR)
 	( set -e ; cd $(DESTDIR)$(LIBDIR) ;\
 	  $(LN_S) -f snapshot-resync-target-lvm.sh unsnapshot-resync-target-lvm.sh ;\
@@ -118,6 +117,8 @@ ifeq ($(WITH_RGMANAGER),yes)
 	mkdir -p $(DESTDIR)$(datadir)/cluster
 	install -m 755 drbd.sh.rhcs $(DESTDIR)$(datadir)/cluster/drbd.sh
 	install -m 644 drbd.metadata.rhcs $(DESTDIR)$(datadir)/cluster/drbd.metadata
+	install -d $(DESTDIR)$(LIBDIR)
+	install -m 755 rhcs_fence $(DESTDIR)$(LIBDIR)
 endif
 
 install-xen:
