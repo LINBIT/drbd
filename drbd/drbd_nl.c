@@ -1418,6 +1418,9 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail_unlock;
 
 	mutex_unlock(&device->resource->conf_update);
+
+	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
+
 	drbd_md_sync(device);
 
 	for_each_peer_device(peer_device, device) {

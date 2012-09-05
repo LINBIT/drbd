@@ -1325,7 +1325,7 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_orderin
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (i++ == 1 && wo == WO_BIO_BARRIER)
 			wo = WO_BDEV_FLUSH; /* WO = barrier does not handle multiple volumes */
-		if (!get_ldev(device))
+		if (!get_ldev_if_state(device, D_ATTACHING))
 			continue;
 
 		dc = rcu_dereference(device->ldev->disk_conf);
