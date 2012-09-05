@@ -174,8 +174,7 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 
 	spin_lock_irqsave(&mdev->req_lock, flags);
 	mdev->writ_cnt += e->size >> 9;
-	list_del(&e->w.list); /* has been on active_ee or sync_ee */
-	list_add_tail(&e->w.list, &mdev->done_ee);
+	list_move_tail(&e->w.list, &mdev->done_ee);
 
 	trace_drbd_ee(mdev, e, "write completed");
 
