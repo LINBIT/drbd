@@ -540,7 +540,9 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	drbd_info(connection, "fence-peer helper returned %d (%s)\n",
 		  (r>>8) & 0xff, ex_to_string);
 
-	if (connection->cstate[NOW] >= C_CONNECTED) {
+	if (connection->cstate[NOW] >= C_CONNECTED ||
+	    (test_bit(INITIAL_STATE_SENT, &connection->flags) &&
+	     !test_bit(INITIAL_STATE_RECEIVED, &connection->flags))) {
 		/* connection re-established; do not fence */
 		abort_state_change(connection->resource, &irq_flags);
 		goto out;

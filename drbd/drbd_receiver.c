@@ -1029,8 +1029,6 @@ retry:
 	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
 		return -1;
 
-	clear_bit(INITIAL_STATE_SENT, &connection->flags);
-	clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
@@ -4012,9 +4010,9 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			if (err == -EAGAIN)
 				err = drbd_send_uuids(peer_device);
 
+			set_bit(INITIAL_STATE_SENT, &connection->flags);
 			if (!err)
 				err = drbd_send_current_state(peer_device);
-			set_bit(INITIAL_STATE_SENT, &connection->flags);
 		} else if (err) {
 			drbd_err(peer_device, "Needed to change bitmap slot late! Aborting handshake.\n");
 		}
@@ -4293,8 +4291,6 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return 0;
 	}
 
-	set_bit(INITIAL_STATE_RECEIVED, &connection->flags);
-
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
 		peer_disk_state = peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_INCONSISTENT ?
@@ -4448,6 +4444,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 	rv = end_state_change_locked(resource);
 	new_repl_state = peer_device->repl_state[NOW];
+	set_bit(INITIAL_STATE_RECEIVED, &connection->flags);
 	spin_unlock_irq(&resource->req_lock);
 
 	if (rv < SS_SUCCESS) {

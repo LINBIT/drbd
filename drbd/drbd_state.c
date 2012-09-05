@@ -747,6 +747,14 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
 			return SS_IN_TRANSIENT_STATE;
 
+		/* While establishing a connection only allow cstate to change.
+		   Delay/refuse role changes, detach attach etc... */
+		if (test_bit(INITIAL_STATE_SENT, &connection->flags) &&
+		    !test_bit(INITIAL_STATE_RECEIVED, &connection->flags) &&
+		    !(cstate[OLD] == C_CONNECTED ||
+		      (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_WF_CONNECTION)))
+			return SS_IN_TRANSIENT_STATE;
+
 		nc = rcu_dereference(connection->net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
 		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY &&
@@ -1347,6 +1355,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if (cstate[OLD] > C_WF_CONNECTION &&
 		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
 			drbd_thread_restart_nowait(&connection->receiver);
+
+		if (cstate[NEW] < C_CONNECTED) {
+			clear_bit(INITIAL_STATE_SENT, &connection->flags);
+			clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
+		}
 	}
 
 	queue_after_state_change_work(resource, done, GFP_ATOMIC);
