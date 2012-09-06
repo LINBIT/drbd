@@ -426,6 +426,17 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 
 #endif
 
+#ifndef COMPAT_HAVE_VZALLOC
+static inline void *vzalloc(unsigned long size)
+{
+	void *rv = vmalloc(size);
+	if (rv)
+		memset(rv, 0, size);
+
+	return rv;
+}
+#endif
+
 /* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
 #ifndef cpumask_bits
