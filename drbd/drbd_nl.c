@@ -2618,6 +2618,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync. */
+	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
@@ -2641,6 +2642,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	}
+	drbd_resume_io(device);
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -2660,6 +2662,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_resource *resource;
+	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
@@ -2668,7 +2671,10 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 	peer_device = adm_ctx.peer_device;
 	resource = adm_ctx.device->resource;
+	device = adm_ctx.device;
 
+	drbd_suspend_io(device);
+	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
 					   CS_WAIT_COMPLETE | CS_SERIALIZE);
 	if (retcode < SS_SUCCESS) {
@@ -2687,6 +2693,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 			retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
 							   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	}
+	drbd_resume_io(device);
 
 	drbd_adm_finish(info, retcode);
 	return 0;
@@ -3356,9 +3363,11 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	}
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
+	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	retcode = stable_change_repl_state(peer_device,
 		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+	drbd_resume_io(device);
 out:
 	drbd_adm_finish(info, retcode);
 	return 0;
