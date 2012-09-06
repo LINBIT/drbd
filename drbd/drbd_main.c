@@ -105,8 +105,8 @@ module_param(fault_devs, int, 0644);
 
 /* module parameter, defined */
 unsigned int minor_count = DRBD_MINOR_COUNT_DEF;
-int disable_sendpage;
-int allow_oos;
+bool disable_sendpage;
+bool allow_oos;
 int proc_details;       /* Detail level in proc drbd*/
 
 /* Module parameter for setting the user mode helper program
