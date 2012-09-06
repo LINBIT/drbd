@@ -765,6 +765,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	spinlock_t epoch_lock;
 	unsigned int epochs;
 
+	unsigned long last_reconnect_jif;
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
 	struct drbd_thread asender;
@@ -937,6 +938,7 @@ struct drbd_device {
 	struct block_device *this_bdev;
 	struct gendisk	    *vdisk;
 
+	unsigned long last_reattach_jif;
 	struct drbd_work go_diskless;
 	struct drbd_work md_sync_work;
 

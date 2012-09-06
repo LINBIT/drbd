@@ -1325,6 +1325,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				drbd_set_exposed_data_uuid(device, device->ldev->md.current_uuid);
 			put_ldev(device);
 		}
+
+		/* remember last attach time so request_timer_fn() won't
+		 * kill newly established sessions while we are still trying to thaw
+		 * previously frozen IO */
+		if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
+		    disk_state[NEW] > D_NEGOTIATING)
+			device->last_reattach_jif = jiffies;
 	}
 
 	for_each_connection(connection, resource) {
@@ -1360,6 +1367,12 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			clear_bit(INITIAL_STATE_SENT, &connection->flags);
 			clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
 		}
+
+		/* remember last connect time so request_timer_fn() won't
+		 * kill newly established sessions while we are still trying to thaw
+		 * previously frozen IO */
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+			connection->last_reconnect_jif = jiffies;
 	}
 
 	queue_after_state_change_work(resource, done, GFP_ATOMIC);

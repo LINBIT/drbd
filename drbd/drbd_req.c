@@ -1344,9 +1344,10 @@ void request_timer_fn(unsigned long data)
 	struct drbd_request *req; /* oldest request */
 	unsigned long ent = 0, dt = 0, et = 0, nt; /* effective timeout = ko_count * timeout */
 	bool restart_timer = false;
+	unsigned long now = jiffies;
 
 	rcu_read_lock();
-	if (get_ldev(device)) {
+	if (get_ldev(device)) { /* implicit state.disk >= D_INCONSISTENT */
 		dt = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
 		put_ldev(device);
 	}
@@ -1359,11 +1360,12 @@ void request_timer_fn(unsigned long data)
 			restart_timer = true;
 			et = dt;
 		}
-		if (req && req->rq_state[0] & RQ_LOCAL_PENDING && req->device == device) {
-			if (time_is_before_eq_jiffies(req->start_time + dt)) {
-				drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-				__drbd_chk_io_error(device, 1);
-			}
+
+		if (req && req->rq_state[0] & RQ_LOCAL_PENDING && req->device == device &&
+		    time_after(now, req->start_time + dt) &&
+		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
+			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
+			__drbd_chk_io_error(device, 1);
 		}
 	}
 	for_each_connection(connection, device->resource) {
@@ -1373,33 +1375,52 @@ void request_timer_fn(unsigned long data)
 
 		rcu_read_lock();
 		nc = rcu_dereference(connection->net_conf);
-		ent = nc ? nc->timeout * HZ/10 * nc->ko_count : 0;
+		if (nc && connection->cstate[NOW] == C_CONNECTED)
+			ent = nc->timeout * HZ/10 * nc->ko_count;
 		rcu_read_unlock();
 
 		et = min_not_zero(et, ent);
 
-		peer_device = conn_peer_device(connection, device->vnr);
-		if (!ent || (peer_device->repl_state[NOW] < L_STANDALONE))
+		if (!ent)
 			continue;
 
 		restart_timer = true;
+		peer_device = conn_peer_device(connection, device->vnr);
 		idx = peer_device->bitmap_index;
-		if (req && req->rq_state[idx] & RQ_NET_PENDING) {
-			if (time_is_before_eq_jiffies(req->start_time + ent)) {
-				drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
-				begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
-				__change_cstate(connection, C_TIMEOUT);
-				end_state_change_locked(device->resource);
-			}
+
+		/* The request is considered timed out, if
+		 * - we have some effective timeout from the configuration,
+		 *   with above state restrictions applied,
+		 * - the oldest request is waiting for a response from the network
+		 *   resp. the local disk,
+		 * - the oldest request is in fact older than the effective timeout,
+		 * - the connection was established (resp. disk was attached)
+		 *   for longer than the timeout already.
+		 * Note that for 32bit jiffies and very stable connections/disks,
+		 * we may have a wrap around, which is catched by
+		 *   !time_in_range(now, last_..._jif, last_..._jif + timeout).
+		 *
+		 * Side effect: once per 32bit wrap-around interval, which means every
+		 * ~198 days with 250 HZ, we have a window where the timeout would need
+		 * to expire twice (worst case) to become effective. Good enough.
+		 */
+
+		if (req->rq_state[idx] & RQ_NET_PENDING &&
+		    time_after(now, req->start_time + ent) &&
+		    !time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
+			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
+			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
+			__change_cstate(connection, C_TIMEOUT);
+			end_state_change_locked(device->resource);
 		}
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (restart_timer) {
 		if (req)
-			nt = (time_is_before_eq_jiffies(req->start_time + et) ? jiffies : req->start_time) + et;
+			nt = (time_after(now, req->start_time + et) ? now : req->start_time) + et;
 		else
-			nt = jiffies + et;
+			nt = now + et;
 		mod_timer(&device->request_timer, nt);
 	}
 }
