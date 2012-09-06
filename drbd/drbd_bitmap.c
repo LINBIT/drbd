@@ -1322,6 +1322,23 @@ int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_ho
 }
 
 /**
+ * drbd_bm_write_copy_pages() - Write the whole bitmap to its on disk location.
+ * @device:	DRBD device.
+ *
+ * Will only write pages that have changed since last IO.
+ * In contrast to drbd_bm_write(), this will copy the bitmap pages
+ * to temporary writeout pages. It is intended to trigger a full write-out
+ * while still allowing the bitmap to change, for example if a resync or online
+ * verify is aborted due to a failed peer disk, while local IO continues, or
+ * pending resync acks are still being processed.
+ */
+int drbd_bm_write_copy_pages(struct drbd_device *device,
+			     struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	return bm_rw(device, WRITE, BM_AIO_COPY_PAGES, 0);
+}
+
+/**
  * drbd_bm_write_hinted() - Write bitmap pages with "hint" marks, if they have changed.
  * @device:	DRBD device.
  */

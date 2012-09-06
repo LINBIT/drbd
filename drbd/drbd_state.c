@@ -1720,7 +1720,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			    peer_device->repl_state[NOW] == L_WF_BITMAP_S)
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
-						BM_LOCK_SET | BM_LOCK_CLEAR,
+						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 						peer_device);
 
 			/* Lost contact to peer's copy of the data */
@@ -1745,7 +1745,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					 * No harm done if the bitmap still changes,
 					 * redirtied pages will follow later. */
 					drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote diskless peer", BM_LOCK_CLEAR,
+						"demote diskless peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
 						NULL);
 				put_ldev(device);
 			}
@@ -1758,7 +1758,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				/* No changes to the bitmap expected this time, so assert that,
 				 * even though no harm was done if it did change. */
 				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote", BM_LOCK_SET | BM_LOCK_CLEAR,
+						"demote", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 						NULL);
 				put_ldev(device);
 			}
@@ -1796,7 +1796,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				/* no other bitmap changes expected during this phase */
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
-					"set_n_write from StartingSync", BM_LOCK_SET | BM_LOCK_CLEAR,
+					"set_n_write from StartingSync", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 					peer_device);
 
 			/* We are invalidating our self... */
@@ -1833,8 +1833,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			 * No harm done if some bits change during this phase.
 			 */
 			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED && get_ldev(device)) {
-				drbd_queue_bitmap_io(device, &drbd_bm_write, NULL,
-					"write from resync_finished", BM_LOCK_CLEAR,
+				drbd_queue_bitmap_io(device, &drbd_bm_write_copy_pages, NULL,
+					"write from resync_finished", BM_LOCK_BULK,
 					NULL);
 				put_ldev(device);
 			}

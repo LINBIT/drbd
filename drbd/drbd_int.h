@@ -560,8 +560,9 @@ enum bm_flag {
 	BM_LOCK_TEST = 0x1,
 	BM_LOCK_SET = 0x2,
 	BM_LOCK_CLEAR = 0x4,
+	BM_LOCK_BULK = 0x8, /* locked for bulk operation, allow all non-bulk operations */
 
-	BM_LOCK_ALL = BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR,
+	BM_LOCK_ALL = BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 };
 
 struct drbd_bitmap {
@@ -1335,6 +1336,7 @@ extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must
 extern void drbd_bm_mark_range_for_writeout(struct drbd_device *, unsigned long, unsigned long);
 extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
+extern int drbd_bm_write_copy_pages(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern size_t	     drbd_bm_words(struct drbd_device *device);
 extern unsigned long drbd_bm_bits(struct drbd_device *device);
 extern sector_t      drbd_bm_capacity(struct drbd_device *device);

@@ -2686,7 +2686,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 			if (retcode >= SS_SUCCESS) {
 				if (drbd_bitmap_io(adm_ctx.device, &drbd_bmio_set_susp_al,
 						   "set_n_write from invalidate_peer",
-						   BM_LOCK_CLEAR, peer_device))
+						   BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
 					retcode = ERR_IO_MD_DISK;
 			}
 		} else
