@@ -2833,15 +2833,15 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (!nla)
 		goto nla_put_failure;
 	if (device)
-		NLA_PUT_U32(skb, T_ctx_volume, device->vnr);
+		nla_put_u32(skb, T_ctx_volume, device->vnr);
 	if (resource)
-		NLA_PUT_STRING(skb, T_ctx_resource_name, resource->name);
+		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
 		if (connection->my_addr_len)
-			NLA_PUT(skb, T_ctx_my_addr,
+			nla_put(skb, T_ctx_my_addr,
 				connection->my_addr_len, &connection->my_addr);
 		if (connection->peer_addr_len)
-			NLA_PUT(skb, T_ctx_peer_addr,
+			nla_put(skb, T_ctx_peer_addr,
 				connection->peer_addr_len, &connection->peer_addr);
 	}
 	nla_nest_end(skb, nla);
