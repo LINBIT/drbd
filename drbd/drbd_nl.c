@@ -468,7 +468,7 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 
 	drbd_info(resource, "helper command: %s %s\n", usermode_helper, cmd);
 	notify_helper(NOTIFY_CALL, device, connection, cmd, 0);
-	ret = call_usermodehelper(usermode_helper, argv, envp, 1);
+	ret = call_usermodehelper(usermode_helper, argv, envp, UMH_WAIT_PROC);
 	if (ret)
 		drbd_warn(resource, "helper command: %s %s exit code %u (0x%x)\n",
 				usermode_helper, cmd,
