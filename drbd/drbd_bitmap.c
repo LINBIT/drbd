@@ -38,6 +38,16 @@
  * On recent kernels this is not needed. */
 #include "compat/bitops.h"
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+/* see 980c19e3
+ * highmem: mark k[un]map_atomic() with two arguments as deprecated */
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr)
+#else
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page, km)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
+#endif
+
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 
 /* OPAQUE outside this file!
@@ -256,12 +266,12 @@ static int bm_test_page_lazy_writeout(struct page *page)
 static unsigned long *bm_kmap(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
 {
 	struct page *page = b->bm_pages[idx];
-	return (unsigned long *) kmap_atomic(page, km);
+	return (unsigned long *) drbd_kmap_atomic(page, km);
 }
 
 static void bm_kunmap(unsigned long *p_addr, const enum km_type km)
 {
-	kunmap_atomic(p_addr, km);
+	drbd_kunmap_atomic(p_addr, km);
 };
 
 /*
@@ -1109,11 +1119,11 @@ STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 	if (ctx->flags & BM_AIO_COPY_PAGES) {
 		void *src, *dest;
 		page = mempool_alloc(drbd_md_io_page_pool, __GFP_HIGHMEM|__GFP_WAIT);
-		dest = kmap_atomic(page, KM_USER0);
-		src = kmap_atomic(b->bm_pages[page_nr], KM_USER1);
+		dest = drbd_kmap_atomic(page, KM_USER0);
+		src = drbd_kmap_atomic(b->bm_pages[page_nr], KM_USER1);
 		memcpy(dest, src, PAGE_SIZE);
-		kunmap_atomic(src, KM_USER1);
-		kunmap_atomic(dest, KM_USER0);
+		drbd_kunmap_atomic(src, KM_USER1);
+		drbd_kunmap_atomic(dest, KM_USER0);
 		bm_store_page_idx(page, page_nr);
 	} else
 		page = b->bm_pages[page_nr];
