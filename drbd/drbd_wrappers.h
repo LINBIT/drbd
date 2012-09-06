@@ -589,11 +589,6 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 }
 #endif
 
-#ifndef __CHECKER__
-# undef __cond_lock
-# define __cond_lock(x,c) (c)
-#endif
-
 #ifndef net_random
 #define random32 net_random
 #endif
