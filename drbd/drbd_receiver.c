@@ -693,7 +693,32 @@ out:
 	return sock;
 }
 
-static struct socket *prepare_listen_socket(struct drbd_connection *connection)
+struct accept_wait_data {
+	struct drbd_connection *connection;
+	struct socket *s_listen;
+	struct completion door_bell;
+	void (*original_sk_state_change)(struct sock *sk);
+
+};
+
+static void incomming_connection(struct sock *sk)
+{
+	struct accept_wait_data *ad = sk->sk_user_data;
+	struct drbd_connection *connection = ad->connection;
+
+	if (sk->sk_state != TCP_ESTABLISHED)
+		drbd_warn(connection, "unexpected tcp state change. sk_state = %d\n", sk->sk_state);
+
+	write_lock_bh(&sk->sk_callback_lock);
+	sk->sk_state_change = ad->original_sk_state_change;
+	sk->sk_user_data = NULL;
+	write_unlock_bh(&sk->sk_callback_lock);
+
+	sk->sk_state_change(sk);
+	complete(&ad->door_bell);
+}
+
+static int prepare_listen_socket(struct drbd_connection *connection, struct accept_wait_data *ad)
 {
 	int err, sndbuf_size, rcvbuf_size, my_addr_len;
 	struct sockaddr_in6 my_addr;
@@ -705,7 +730,7 @@ static struct socket *prepare_listen_socket(struct drbd_connection *connection)
 	nc = rcu_dereference(connection->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return NULL;
+		return -EIO;
 	}
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
@@ -730,12 +755,19 @@ static struct socket *prepare_listen_socket(struct drbd_connection *connection)
 	if (err < 0)
 		goto out;
 
+	ad->s_listen = s_listen;
+	write_lock_bh(&s_listen->sk->sk_callback_lock);
+	ad->original_sk_state_change = s_listen->sk->sk_state_change;
+	s_listen->sk->sk_state_change = incomming_connection;
+	s_listen->sk->sk_user_data = ad;
+	write_unlock_bh(&s_listen->sk->sk_callback_lock);
+
 	what = "listen";
 	err = s_listen->ops->listen(s_listen, 5);
 	if (err < 0)
 		goto out;
 
-	return s_listen;
+	return 0;
 out:
 	if (s_listen)
 		sock_release(s_listen);
@@ -746,14 +778,13 @@ out:
 		}
 	}
 
-	return NULL;
+	return -EIO;
 }
 
-STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
+STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection, struct accept_wait_data *ad)
 {
 	int timeo, connect_int, err = 0;
 	struct socket *s_estab = NULL;
-	struct socket *s_listen;
 	struct net_conf *nc;
 
 	rcu_read_lock();
@@ -768,18 +799,11 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
 	timeo = connect_int * HZ;
 	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
-	s_listen = prepare_listen_socket(connection);
-	if (!s_listen)
-		goto out;
+	err = wait_for_completion_interruptible_timeout(&ad->door_bell, timeo);
+	if (err <= 0)
+		return NULL;
 
-	s_listen->sk->sk_rcvtimeo = timeo;
-	s_listen->sk->sk_sndtimeo = timeo;
-
-	err = kernel_accept(s_listen, &s_estab, 0);
-
-out:
-	if (s_listen)
-		sock_release(s_listen);
+	err = kernel_accept(ad->s_listen, &s_estab, 0);
 	if (err < 0) {
 		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
 			drbd_err(connection, "accept failed, err = %d\n", err);
@@ -876,6 +900,10 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	struct net_conf *nc;
 	int vnr, timeout, try, h, ok;
 	bool discard_my_data;
+	struct accept_wait_data ad = {
+		.connection = connection,
+		.door_bell = COMPLETION_INITIALIZER_ONSTACK(ad.door_bell),
+	};
 
 	if (change_cstate(connection, C_WF_CONNECTION, CS_VERBOSE) < SS_SUCCESS)
 		return -2;
@@ -893,6 +921,9 @@ STATIC int conn_connect(struct drbd_connection *connection)
 
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	connection->agreed_pro_version = 80;
+
+	if (prepare_listen_socket(connection, &ad))
+		return 0;
 
 	do {
 		struct socket *s;
@@ -932,7 +963,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 		}
 
 retry:
-		s = drbd_wait_for_connect(connection);
+		s = drbd_wait_for_connect(connection, &ad);
 		if (s) {
 			try = receive_first_packet(connection, s);
 			drbd_socket_okay(&sock.socket);
@@ -977,6 +1008,9 @@ retry:
 				break;
 		}
 	} while (1);
+
+	if (ad.s_listen)
+		sock_release(ad.s_listen);
 
 	sock.socket->sk->sk_reuse = 1; /* SO_REUSEADDR */
 	msock.socket->sk->sk_reuse = 1; /* SO_REUSEADDR */
@@ -1071,6 +1105,8 @@ retry:
 	return h;
 
 out_release_sockets:
+	if (ad.s_listen)
+		sock_release(ad.s_listen);
 	if (sock.socket)
 		sock_release(sock.socket);
 	if (msock.socket)
