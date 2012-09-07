@@ -693,12 +693,11 @@ out:
 	return sock;
 }
 
-STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
+static struct socket *prepare_listen_socket(struct drbd_connection *connection)
 {
-	int timeo, err, my_addr_len;
-	int sndbuf_size, rcvbuf_size, connect_int;
-	struct socket *s_estab = NULL, *s_listen;
+	int err, sndbuf_size, rcvbuf_size, my_addr_len;
 	struct sockaddr_in6 my_addr;
+	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what;
 
@@ -710,7 +709,6 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
 	}
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
-	connect_int = nc->connect_int;
 	rcu_read_unlock();
 
 	my_addr_len = min_t(int, connection->my_addr_len, sizeof(struct sockaddr_in6));
@@ -718,18 +716,13 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
 
 	what = "sock_create_kern";
 	err = sock_create_kern(((struct sockaddr *)&my_addr)->sa_family,
-		SOCK_STREAM, IPPROTO_TCP, &s_listen);
+			       SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;
 	}
 
-	timeo = connect_int * HZ;
-	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
-
-	s_listen->sk->sk_reuse    = 1; /* SO_REUSEADDR */
-	s_listen->sk->sk_rcvtimeo = timeo;
-	s_listen->sk->sk_sndtimeo = timeo;
+	s_listen->sk->sk_reuse = 1; /* SO_REUSEADDR */
 	drbd_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
@@ -742,7 +735,46 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
 	if (err < 0)
 		goto out;
 
-	what = "accept";
+	return s_listen;
+out:
+	if (s_listen)
+		sock_release(s_listen);
+	if (err < 0) {
+		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+			drbd_err(connection, "%s failed, err = %d\n", what, err);
+			change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		}
+	}
+
+	return NULL;
+}
+
+STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection)
+{
+	int timeo, connect_int, err = 0;
+	struct socket *s_estab = NULL;
+	struct socket *s_listen;
+	struct net_conf *nc;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	if (!nc) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	connect_int = nc->connect_int;
+	rcu_read_unlock();
+
+	timeo = connect_int * HZ;
+	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+
+	s_listen = prepare_listen_socket(connection);
+	if (!s_listen)
+		goto out;
+
+	s_listen->sk->sk_rcvtimeo = timeo;
+	s_listen->sk->sk_sndtimeo = timeo;
+
 	err = kernel_accept(s_listen, &s_estab, 0);
 
 out:
@@ -750,7 +782,7 @@ out:
 		sock_release(s_listen);
 	if (err < 0) {
 		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-			drbd_err(connection, "%s failed, err = %d\n", what, err);
+			drbd_err(connection, "accept failed, err = %d\n", err);
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 		}
 	}
