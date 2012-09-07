@@ -1434,6 +1434,11 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_unlock(&device->resource->conf_update);
 
+	if (new_disk_conf->al_updates)
+		device->ldev->md.flags &= MDF_AL_DISABLED;
+	else
+		device->ldev->md.flags |= MDF_AL_DISABLED;
+
 	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
 
 	drbd_md_sync(device);
@@ -1770,9 +1775,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_peer_device(peer_device, device) {
-		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
+		if ((test_bit(CRASHED_PRIMARY, &device->flags) &&
+		     drbd_md_test_flag(device->ldev, MDF_AL_DISABLED)) ||
+		    drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
 			drbd_info(peer_device, "Assuming that all blocks are out of sync "
-			     "(aka FullSync)\n");
+				  "(aka FullSync)\n");
 			if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
 				"set_n_write from attaching", BM_LOCK_ALL,
 				peer_device)) {
@@ -1783,6 +1790,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	drbd_try_suspend_al(device); /* IO is still suspended here... */
+
+	rcu_read_lock();
+	if (rcu_dereference(device->ldev->disk_conf)->al_updates)
+		device->ldev->md.flags &= MDF_AL_DISABLED;
+	else
+		device->ldev->md.flags |= MDF_AL_DISABLED;
+	rcu_read_unlock();
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 

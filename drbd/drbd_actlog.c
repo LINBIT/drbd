@@ -313,8 +313,16 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 		/* Double check: it may have been committed by someone else
 		 * while we were waiting for the lock. */
 		if (device->act_log->pending_changes) {
-			al_write_transaction(device, delegate);
-			device->al_writ_cnt++;
+			bool write_al_updates;
+
+			rcu_read_lock();
+			write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
+			rcu_read_unlock();
+
+			if (write_al_updates) {
+				al_write_transaction(device, delegate);
+				device->al_writ_cnt++;
+			}
 
 			spin_lock_irq(&device->al_lock);
 			/* FIXME

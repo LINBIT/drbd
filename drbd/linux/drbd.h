@@ -332,6 +332,7 @@ enum mdf_flag {
 	MDF_WAS_UP_TO_DATE =	1 << 4,
 	MDF_CRASHED_PRIMARY =	1 << 6,
 	MDF_AL_CLEAN =		1 << 7,
+	MDF_AL_DISABLED =       1 << 8,
 };
 
 enum mdf_peer_flag {

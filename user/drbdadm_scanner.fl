@@ -139,6 +139,7 @@ resync-after		{ DP; CP; return TK_DISK_OPTION;	}
 verify-alg              { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 csums-alg               { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;}
+al-updates		{ DP; CP; return TK_DISK_FLAG; 	}
 cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
 use-rle			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_FLAG;	}
 delay-probe-volume	{ DP; CP; return TK_DEPRECATED_OPTION;  }
