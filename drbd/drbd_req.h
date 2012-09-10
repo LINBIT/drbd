@@ -293,7 +293,7 @@ extern void tl_restart(struct drbd_connection *connection, enum drbd_req_event w
 extern void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what);
 
 /* this is in drbd_main.c */
-extern void drbd_restart_write(struct drbd_request *req);
+extern void drbd_restart_request(struct drbd_request *req);
 
 /* use this if you don't want to deal with calling complete_master_bio()
  * outside the spinlock, e.g. when walking some list on cleanup. */

@@ -207,7 +207,7 @@ static void drbd_req_destroy(struct kref *kref)
 	}
 
 	if (s & RQ_POSTPONED)
-		drbd_restart_write(req);
+		drbd_restart_request(req);
 	else
 		mempool_free(req, drbd_request_mempool);
 }
