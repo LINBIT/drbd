@@ -3723,7 +3723,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* detach */
 	idr_for_each_entry(&resource->devices, device, i) {
 		retcode = adm_detach(device, 0);
-		if (retcode < SS_SUCCESS) {
+		if (retcode < SS_SUCCESS || retcode > NO_ERROR) {
 			drbd_msg_put_info("failed to detach");
 			goto unlock_out;
 		}
