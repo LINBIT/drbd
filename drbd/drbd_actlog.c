@@ -481,7 +481,7 @@ _al_write_transaction(struct drbd_device *device)
 		/* drbd_chk_io_error done already */
 	else if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
 		err = -EIO;
-		drbd_chk_io_error(device, 1, true);
+		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 	} else {
 		/* advance ringbuffer position and transaction counter */
 		device->al_tr_pos = (device->al_tr_pos + 1) % (MD_AL_SECTORS*512/MD_BLOCK_SIZE);

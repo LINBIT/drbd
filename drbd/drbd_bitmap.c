@@ -1242,7 +1242,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 
 	if (ctx->error) {
 		drbd_alert(device, "we had at least one MD IO ERROR during bitmap IO\n");
-		drbd_chk_io_error(device, 1, true);
+		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 		err = -EIO; /* ctx->error ? */
 	}
 
@@ -1399,7 +1399,7 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 		wait_until_done_or_disk_failure(device, device->ldev, &ctx->done);
 
 		if (ctx->error)
-			drbd_chk_io_error(device, 1, true);
+			drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 			/* that should force detach, so the in memory bitmap will be
 			 * gone in a moment as well. */
 

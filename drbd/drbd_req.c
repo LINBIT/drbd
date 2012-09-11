@@ -616,7 +616,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
 		/* fall through. */
 	case WRITE_COMPLETED_WITH_ERROR:
-		__drbd_chk_io_error(device, false);
+		__drbd_chk_io_error(device, DRBD_IO_ERROR);
 		/* fall through. */
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
 		/* it is legal to fail READA, no __drbd_chk_io_error in that case. */
@@ -1372,7 +1372,7 @@ void request_timer_fn(unsigned long data)
 		    time_after(now, req->start_time + dt) &&
 		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
 			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-			__drbd_chk_io_error(device, 1);
+			__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
 		}
 	}
 	for_each_connection(connection, device->resource) {

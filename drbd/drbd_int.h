@@ -528,6 +528,7 @@ enum {
 	SUSPEND_IO,		/* suspend application io */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_IO_ERROR,		/* Local disk failed returned IO error */
+	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
@@ -1676,8 +1677,16 @@ static inline int combined_conn_state(struct drbd_peer_device *peer_device, enum
 		return peer_device->connection->cstate[which];
 }
 
+enum drbd_force_detach_flags {
+	DRBD_IO_ERROR,
+	DRBD_META_IO_ERROR,
+	DRBD_FORCE_DETACH,
+};
+
 #define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
-static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedetach, const char *where)
+static inline void __drbd_chk_io_error_(struct drbd_device *device,
+					enum drbd_force_detach_flags forcedetach,
+					const char *where)
 {
 	enum drbd_io_error_p ep;
 
@@ -1686,7 +1695,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	rcu_read_unlock();
 	switch (ep) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
-		if (!forcedetach) {
+		if (forcedetach == DRBD_IO_ERROR) {
 			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
@@ -1700,6 +1709,8 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
 	case EP_DETACH:
 	case EP_CALL_HELPER:
 		set_bit(WAS_IO_ERROR, &device->flags);
+		if (forcedetach == DRBD_FORCE_DETACH)
+			set_bit(FORCE_DETACH, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {
 			begin_state_change_locked(device->resource, CS_HARD);
 			__change_disk_state(device, D_FAILED);
@@ -1721,7 +1732,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device, int forcedet
  */
 #define drbd_chk_io_error(m,e,f) drbd_chk_io_error_(m,e,f, __func__)
 static inline void drbd_chk_io_error_(struct drbd_device *device,
-	int error, int forcedetach, const char *where)
+	int error, enum drbd_force_detach_flags forcedetach, const char *where)
 {
 	if (error) {
 		unsigned long flags;

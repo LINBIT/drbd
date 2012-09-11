@@ -107,7 +107,7 @@ void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(lo
 	if (list_empty(&device->read_ee))
 		wake_up(&device->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
-		__drbd_chk_io_error(device, false);
+		__drbd_chk_io_error(device, DRBD_IO_ERROR);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
@@ -171,7 +171,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	do_wake = list_empty(block_id == ID_SYNCER ? &device->sync_ee : &device->active_ee);
 
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
-		__drbd_chk_io_error(device, false);
+		__drbd_chk_io_error(device, DRBD_IO_ERROR);
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (block_id == ID_SYNCER)

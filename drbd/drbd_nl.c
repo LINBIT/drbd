@@ -1506,6 +1506,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * to realize a "hot spare" feature (not that I'd recommend that) */
 	wait_event(device->misc_wait, !atomic_read(&device->local_cnt));
 
+	/* make sure there is no leftover from previous force-detach attempts */
+	clear_bit(FORCE_DETACH, &device->flags);
+
 	/* allocation not in the IO path, drbdsetup context */
 	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {
@@ -1865,6 +1868,7 @@ static int adm_detach(struct drbd_device *device, int force)
 	int ret;
 
 	if (force) {
+		set_bit(FORCE_DETACH, &device->flags);
 		change_disk_state(device, D_FAILED, CS_HARD);
 		retcode = SS_SUCCESS;
 		goto out;
