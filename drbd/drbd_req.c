@@ -966,7 +966,7 @@ static void complete_conflicting_writes(struct drbd_request *req)
 }
 
 /* called within req_lock and rcu_read_lock() */
-static bool conn_check_congested(struct drbd_peer_device *peer_device)
+static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
@@ -978,7 +978,14 @@ static bool conn_check_congested(struct drbd_peer_device *peer_device)
 	on_congestion = nc ? nc->on_congestion : OC_BLOCK;
 	if (on_congestion == OC_BLOCK ||
 	    connection->agreed_pro_version < 96)
-		return false;
+		return;
+
+	/* If I don't even have good local storage, we can not reasonably try
+	 * to pull ahead of the peer. We also need the local reference to make
+	 * sure mdev->act_log is there.
+	 */
+	if (!get_ldev_if_state(device, D_UP_TO_DATE))
+		return;
 
 	if (nc->cong_fill &&
 	    atomic_read(&device->ap_in_flight) >= nc->cong_fill) {
@@ -1001,8 +1008,7 @@ static bool conn_check_congested(struct drbd_peer_device *peer_device)
 		else			/* on_congestion == OC_DISCONNECT */
 			change_cstate(peer_device->connection, C_DISCONNECTING, 0);
 	}
-
-	return congested;
+	put_ldev(device);
 }
 
 static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
@@ -1086,7 +1092,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 	for_each_peer_device(peer_device, device) {
 		remote = drbd_should_do_remote(peer_device);
 		if (remote) {
-			conn_check_congested(peer_device);
+			maybe_pull_ahead(peer_device);
 			remote = drbd_should_do_remote(peer_device);
 		}
 		send_oos = drbd_should_send_out_of_sync(peer_device);
