@@ -40,15 +40,6 @@ do { fprintf(stderr,fmt ": " , ##args); perror(0); } while (0)
 */
 #define PERROR(fmt, args...) fprintf(stderr, fmt ": %m\n" , ##args);
 
-enum new_strtoll_errs {
-	MSE_OK,
-	MSE_DEFAULT_UNIT,
-	MSE_MISSING_NUMBER,
-	MSE_INVALID_NUMBER,
-	MSE_INVALID_UNIT,
-	MSE_OUT_OF_RANGE,
-};
-
 /* Flags which used to be in enum mdf_flag before version 09 */
 enum mdf_flag_08 {
 	MDF_CONNECTED_IND =  1 << 2,
@@ -64,7 +55,6 @@ extern int dt_lock_drbd(int minor);
 extern void dt_unlock_drbd(int lock_fd);
 extern void dt_release_lockfile(int drbd_fd);
 extern int dt_minor_of_dev(const char *device);
-extern int new_strtoll(const char *s, const char def_unit, unsigned long long *rv);
 extern unsigned long long m_strtoll(const char* s,const char def_unit);
 extern const char* make_optstring(struct option *options);
 extern char* ppsize(char* buf, unsigned long long size);

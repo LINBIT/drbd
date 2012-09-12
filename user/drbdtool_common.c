@@ -91,7 +91,16 @@ const char *make_optstring(struct option *options)
 	return buffer;
 }
 
-int
+enum new_strtoll_errs {
+	MSE_OK,
+	MSE_DEFAULT_UNIT,
+	MSE_MISSING_NUMBER,
+	MSE_INVALID_NUMBER,
+	MSE_INVALID_UNIT,
+	MSE_OUT_OF_RANGE,
+};
+
+static enum new_strtoll_errs
 new_strtoll(const char *s, const char def_unit, unsigned long long *rv)
 {
 	char unit = 0;
