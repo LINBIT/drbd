@@ -177,12 +177,15 @@ resource drbd_9_two_connection {
 	}
 
 	on alpha {
+		node-id 0;
 		address 192.168.31.1:7800;
 	}
 	on bravo {
+		node-id 1;
 		address 192.168.31.2:7800;
 	}
 	on charlie {
+		node-id 2;
 		address 192.168.31.3:7800;
 	}
 

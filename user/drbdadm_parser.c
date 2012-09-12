@@ -38,6 +38,7 @@
 #include <assert.h>
 
 #include "drbdadm.h"
+#include "linux/drbd.h"
 #include "linux/drbd_limits.h"
 #include "drbdtool_common.h"
 #include "drbdadm_parser.h"
@@ -248,6 +249,10 @@ void range_check(const enum range_checks what, const char *name,
 			config_valid = 0;
 			fprintf(stderr, "unknown protocol '%s', should be one of A,B,C\n", value);
 		}
+		break;
+	case R_NODE_ID:
+		M_STRTOLL_RANGE(NODE_ID);
+		break;
 	}
 }
 
@@ -1165,6 +1170,15 @@ static void parse_host_section(struct d_resource *res,
 			EXP(TK_INTEGER);
 			insert_volume(&host->volumes, parse_volume(atoi(yylval.txt), on_hosts));
 			break;
+		case TK_NODE_ID:
+			EXP(TK_INTEGER);
+			range_check(R_NODE_ID, "node-id", yylval.txt);
+			host->node_id = yylval.txt;
+			STAILQ_FOREACH(h, on_hosts, link)
+				check_upr("node-id statement", "%s:%s:node-id", res->name, h->name);
+			check_upr("node-id", "%s:%s", res->name, host->node_id);
+			EXP(';');
+			break;
 		case TK_OPTIONS:
 			EXP('{');
 			host->res_options = parse_options(TK_RES_FLAG,
@@ -1180,7 +1194,7 @@ static void parse_host_section(struct d_resource *res,
 			/* else fall through */
 		default:
 			pe_expected("disk | device | address | meta-disk "
-				    "| flexible-meta-disk");
+				    "| flexible-meta-disk | node-id");
 		}
 	}
 }

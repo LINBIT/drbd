@@ -148,6 +148,7 @@ struct d_host_info
 	unsigned int used_as_me:1; /* May be set in set_me_in_resource() */
 	unsigned int require_all:1; /* Requires device, disk, meta-disk and meta-index */
 	struct options res_options; /* Additional per host options */
+	char* node_id;
 };
 
 STAILQ_HEAD(hosts, d_host_info);

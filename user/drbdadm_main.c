@@ -857,6 +857,7 @@ static void dump_host_info(struct d_host_info *hi)
 		printI("on %s {\n", names_to_str(&hi->on_hosts));
 		++indent;
 	}
+	printI("node-id %s;\n", hi->node_id);
 
 	dump_options("options", &hi->res_options);
 
@@ -1693,23 +1694,25 @@ int adm_new_minor(struct cfg_ctx *ctx)
 
 static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_resource, bool reset)
 {
+	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	int argc = 0, ex;
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_new_resource ? "new-resource" : "resource-options";
-	argv[NA(argc)] = ssprintf("%s", ctx->res->name);
+	argv[NA(argc)] = ssprintf("%s", res->name);
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
+	if (do_new_resource)
+		argv[NA(argc)] = ssprintf("--node-id=%s", ctx->res->me->node_id);
 	if (reset || do_new_resource)
-		make_options(argv[NA(argc)], &ctx->res->res_options);
-
+		make_options(argv[NA(argc)], &res->res_options);
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = NULL;
 
-	ex = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
+	ex = m_system_ex(argv, SLEEPS_SHORT, res->name);
 	if (!ex && do_new_resource && do_register)
-		register_resource(ctx->res->name, config_save);
+		register_resource(res->name, config_save);
 	return ex;
 }
 
@@ -2127,6 +2130,8 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
+	if (do_connect)
+		argv[NA(argc)] = ssprintf("--peer-node-id=%s", conn->peer->node_id);
 	if (reset || do_connect)
 		make_options(argv[NA(argc)], &conn->net_options);
 

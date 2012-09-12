@@ -84,6 +84,7 @@ dialog-refresh		{ DP; return TK_DIALOG_REFRESH;		}
 resource		{ DP; return TK_RESOURCE;		}
 meta-disk		{ DP; return TK_META_DISK;		}
 flexible-meta-disk	{ DP; return TK_FLEX_META_DISK;		}
+node-id			{ DP; return TK_NODE_ID;		}
 usage-count 		{ DP; return TK_USAGE_COUNT;		}
 _this_host 		{ DP; return TK__THIS_HOST;		}
 _remote_host 		{ DP; return TK__REMOTE_HOST;		}

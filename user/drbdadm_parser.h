@@ -54,6 +54,7 @@ enum range_checks
 	R_CONG_FILL,
 	R_CONG_EXTENTS,
 	R_PROTOCOL,
+	R_NODE_ID,
 };
 
 enum yytokentype {
@@ -76,6 +77,7 @@ enum yytokentype {
 	TK_MINOR,
 	TK_META_DISK,
 	TK_FLEX_META_DISK,
+	TK_NODE_ID,
 	TK_MINOR_COUNT,
 	TK_IPADDR,
 	TK_INTEGER,

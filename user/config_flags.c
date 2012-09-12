@@ -689,6 +689,7 @@ struct context_def connect_cmd_ctx = {
 	.fields = {
 		{ "tentative", FLAG(tentative) },
 		{ "discard-my-data", FLAG(discard_my_data) },
+		{ "peer-node-id", NUMERIC(peer_node_id, NODE_ID) },
 		CHANGEABLE_NET_OPTIONS,
 		{ } },
 };
@@ -719,6 +720,7 @@ struct context_def resource_options_ctx = {
 		{ "cpu-mask", STRING(cpu_mask) },
 		{ "on-no-data-accessible", ENUM(on_no_data, ON_NO_DATA) },
 		{ "auto-promote", FLAG(auto_promote) },
+		{ "node-id", NUMERIC(node_id, NODE_ID) },
 		{ } },
 };
 

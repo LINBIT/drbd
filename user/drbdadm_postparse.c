@@ -629,9 +629,14 @@ void post_parse(enum pp_flags flags)
 			set_on_hosts_in_res(res); /* sets on_hosts and host->lower */
 
 	for_each_resource(res, &config) {
+		struct d_host_info *host;
 		create_implicit_connections(res);
 		for_each_connection(con, &res->connections)
 			set_host_info_in_host_address_pairs(res, con);
+		for_each_host(host, &res->all_hosts) {
+			if (!host->node_id)
+				derror(host, res, "node-id");
+		}
 	}
 	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, &config)
