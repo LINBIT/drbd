@@ -1890,6 +1890,9 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 				was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
 
+				if (was_io_error && eh == EP_CALL_HELPER)
+					drbd_khelper(device, NULL, "local-io-error");
+
 				/* Immediately allow completion of all application IO,
 				 * that waits for completion from the local disk,
 				 * if this was a force-detach due to disk_timeout
@@ -1931,9 +1934,6 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_md_sync(device);
 			}
 			put_ldev(device);
-
-			if (was_io_error && eh == EP_CALL_HELPER)
-				drbd_khelper(device, NULL, "local-io-error");
 		}
 
 		/* second half of local IO error, failure to attach,
