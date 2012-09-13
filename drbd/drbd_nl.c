@@ -2313,6 +2313,20 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	retcode = 0;
+	if (adm_ctx.resource->res_opts.node_id == new_net_conf->peer_node_id)
+		retcode = ERR_INVALID_REQUEST;
+	for_each_connection(connection, adm_ctx.resource) {
+		if (connection->net_conf->peer_node_id == new_net_conf->peer_node_id)
+			retcode = ERR_INVALID_REQUEST;
+	}
+	if (retcode) {
+		drbd_err(adm_ctx.resource, "Peer node id %u is not unique\n",
+			 new_net_conf->peer_node_id);
+		retcode = ERR_INVALID_REQUEST;
+		goto fail;
+	}
+
 	connection = drbd_create_connection(adm_ctx.resource);
 	if (!connection) {
 		retcode = ERR_NOMEM;
