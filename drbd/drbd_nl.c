@@ -1494,6 +1494,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_disk_state disk_state;
+	unsigned int bitmap_index, slots_needed = 0;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1679,6 +1680,86 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_info(device, "Maximum number of peer devices = %u\n",
 		  device->bitmap->bm_max_peers);
+
+	/* Make sure the local node id matches or is unassigned */
+	if (nbc->md.node_id != -1 && nbc->md.node_id != resource->res_opts.node_id) {
+		drbd_err(device, "Local node id %d differs from local "
+			 "node id %d on device\n",
+			 resource->res_opts.node_id,
+			 nbc->md.node_id);
+		retcode = ERR_INVALID_REQUEST;
+		goto force_diskless_dec;
+	}
+
+	/* Make sure no bitmap slot has our own node id */
+	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+		struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+
+		if (peer_md->node_id == resource->res_opts.node_id) {
+			drbd_err(device, "Peer %d node id %d is identical to "
+				 "this resource's node id\n",
+				 bitmap_index,
+				 resource->res_opts.node_id);
+			retcode = ERR_INVALID_REQUEST;
+			goto force_diskless_dec;
+		}
+	}
+
+	/* Make sure we have a bitmap slot for each peer id */
+	for_each_peer_device(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+			struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+
+			if (peer_md->node_id == connection->net_conf->peer_node_id)
+				goto next_peer_device_1;
+		}
+		slots_needed++;
+
+	    next_peer_device_1: ;
+	}
+	if (slots_needed) {
+		unsigned int slots_available = 0;
+
+		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+			struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+
+			if (peer_md->node_id == -1)
+				slots_available++;
+		}
+		if (slots_needed > slots_available) {
+			drbd_err(device, "Not enough free bitmap "
+				 "slots (available=%d, needed=%d)\n",
+				 slots_available,
+				 slots_needed);
+			retcode = ERR_INVALID_REQUEST;
+			goto force_diskless_dec;
+		}
+		for_each_peer_device(peer_device, device) {
+			struct drbd_connection *connection = peer_device->connection;
+
+			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+				struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+
+				if (peer_md->node_id == connection->net_conf->peer_node_id)
+					goto next_peer_device_2;
+			}
+			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+				struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+
+				if (peer_md->node_id == -1) {
+					peer_md->node_id = connection->net_conf->peer_node_id;
+					peer_device->bitmap_index = bitmap_index;
+					break;
+				}
+			}
+		    next_peer_device_2: ;
+		}
+	}
+
+	/* Assign the local node id (if not assigned already) */
+	nbc->md.node_id = resource->res_opts.node_id;
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
