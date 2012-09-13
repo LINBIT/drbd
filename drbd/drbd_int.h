@@ -632,6 +632,7 @@ struct drbd_md {
 };
 
 struct drbd_backing_dev {
+	struct kobject kobject;
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;

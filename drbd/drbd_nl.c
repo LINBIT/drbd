@@ -144,6 +144,65 @@ static struct drbd_config_context {
 	struct drbd_peer_device *peer_device;
 } adm_ctx;
 
+struct drbd_md_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct drbd_backing_dev *bdev, char *buf);
+	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
+};
+
+static ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
+static ssize_t current_show(struct drbd_backing_dev *, char *);
+static void backing_dev_release(struct kobject *kobj);
+
+static struct kobj_type drbd_bdev_kobj_type = {
+	.release = backing_dev_release,
+	.sysfs_ops = &(struct sysfs_ops) {
+		.show = drbd_md_attr_show,
+		.store = NULL,
+	},
+};
+
+#define DRBD_MD_ATTR(_name) struct drbd_md_attribute drbd_md_attr_##_name = __ATTR_RO(_name)
+
+/* since "current" is a macro, the expansion of DRBD_MD_ATTR(current) does not work: */
+static struct drbd_md_attribute drbd_md_attr_current = {
+	.attr = { .name = "current", .mode = 0444 },
+	.show = current_show,
+};
+
+static struct attribute *drbd_md_attrs[] = {
+	&drbd_md_attr_current.attr,
+	NULL,
+};
+
+struct attribute_group drbd_md_attr_group = {
+	.attrs = drbd_md_attrs,
+	.name = "data_gen_id",
+};
+
+static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
+{
+	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
+	struct drbd_md_attribute *drbd_md_attr = container_of(attr, struct drbd_md_attribute, attr);
+
+	return drbd_md_attr->show(bdev, buffer);
+}
+
+static ssize_t current_show(struct drbd_backing_dev *bdev, char *buf)
+{
+	ssize_t size = 0;
+
+	size = sprintf(buf, "0x%016llX\n", bdev->md.current_uuid);
+
+	return size;
+}
+
+static void backing_dev_release(struct kobject *kobj)
+{
+	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
+	kfree(bdev);
+}
+
 static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
 {
 	genlmsg_end(skb, genlmsg_data(nlmsg_data(nlmsg_hdr(skb))));
@@ -1738,6 +1797,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
+	if (kobject_init_and_add(&device->ldev->kobject, &drbd_bdev_kobj_type,
+				 &device->kobj, "meta_data")) {
+		retcode = ERR_NOMEM;
+		goto remove_kobject;
+	}
+
+	if (sysfs_create_group(&device->ldev->kobject, &drbd_md_attr_group))
+		goto remove_kobject;
+
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 	else
@@ -1779,7 +1847,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	dd = drbd_determine_dev_size(device, 0);
 	if (dd == DEV_SIZE_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
-		goto force_diskless_dec;
+		goto remove_kobject;
 	} else if (dd == GREW) {
 		for_each_peer_device(peer_device, device)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
@@ -1789,7 +1857,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		"read from attaching", BM_LOCK_ALL,
 		NULL)) {
 		retcode = ERR_IO_MD_DISK;
-		goto force_diskless_dec;
+		goto remove_kobject;
 	}
 
 	for_each_peer_device(peer_device, device) {
@@ -1802,7 +1870,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				"set_n_write from attaching", BM_LOCK_ALL,
 				peer_device)) {
 				retcode = ERR_IO_MD_DISK;
-				goto force_diskless_dec;
+				goto remove_kobject;
 			}
 		}
 	}
@@ -1837,7 +1905,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	rv = end_state_change(device->resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)
-		goto force_diskless_dec;
+		goto remove_kobject;
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
@@ -1855,6 +1923,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_adm_finish(info, retcode);
 	return 0;
 
+ remove_kobject:
+	drbd_free_bc(nbc);
+	nbc = NULL;
  force_diskless_dec:
 	put_ldev(device);
  force_diskless:
