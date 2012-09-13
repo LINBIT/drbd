@@ -1652,9 +1652,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			   (!atomic_read(&peer_device->ap_pending_cnt) ||
 			    drbd_suspended(device)));
 	/* and for other previously queued resource work */
-	drbd_flush_workqueue(&device->resource->work);
+	drbd_flush_workqueue(&resource->work);
 
-	rv = stable_state_change(device->resource,
+	rv = stable_state_change(resource,
 		change_disk_state(device, D_ATTACHING, CS_VERBOSE));
 	retcode = rv;  /* FIXME: Type mismatch. */
 	drbd_resume_io(device);
@@ -1682,7 +1682,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_CONNECTED &&
-		    device->resource->role[NOW] == R_PRIMARY &&
+		    resource->role[NOW] == R_PRIMARY &&
 		    (device->exposed_data_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
 			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
 			    (unsigned long long)device->exposed_data_uuid);
@@ -1729,7 +1729,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		set_bit(MD_NO_BARRIER, &device->flags);
 
 	drbd_resync_after_changed(device);
-	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
+	drbd_bump_write_ordering(resource, WO_BIO_BARRIER);
 	unlock_all_resources();
 
 	/* Prevent shrinking of consistent devices ! */
@@ -1753,7 +1753,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		clear_bit(CRASHED_PRIMARY, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-	    !(device->resource->role[NOW] == R_PRIMARY && device->resource->susp_nod[NOW]))
+	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
 	device->read_cnt = 0;
@@ -1778,7 +1778,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
-		if (device->resource->role[NOW] != R_PRIMARY &&
+		if (resource->role[NOW] != R_PRIMARY &&
 		    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
 		    !drbd_md_test_peer_flag(peer_device, MDF_PEER_CONNECTED))
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
@@ -1825,7 +1825,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		device->ldev->md.flags |= MDF_AL_DISABLED;
 	rcu_read_unlock();
 
-	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
@@ -1843,14 +1843,14 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (disk_state != D_NEGOTIATING)
 		__change_disk_state(device, disk_state);
 
-	rv = end_state_change(device->resource, &irq_flags);
+	rv = end_state_change(resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)
 		goto remove_kobject;
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
-	if (device->resource->role[NOW] == R_PRIMARY)
+	if (resource->role[NOW] == R_PRIMARY)
 		device->ldev->md.current_uuid |=  (u64)1;
 	else
 		device->ldev->md.current_uuid &= ~(u64)1;
