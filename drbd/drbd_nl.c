@@ -2650,9 +2650,11 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	device = peer_device->device;
 
 	/* If there is still bitmap IO pending, probably because of a previous
-	 * resync just being finished, wait for it before requesting a new resync. */
+	 * resync just being finished, wait for it before requesting a new resync.
+	 * Also wait for it's after_state_ch(). */
 	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
+	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
 					   CS_WAIT_COMPLETE | CS_SERIALIZE);
@@ -2708,6 +2710,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
+	drbd_flush_workqueue(&peer_device->connection->sender_work);
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
 					   CS_WAIT_COMPLETE | CS_SERIALIZE);
 	if (retcode < SS_SUCCESS) {

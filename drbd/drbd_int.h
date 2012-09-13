@@ -2133,16 +2133,18 @@ static inline void dec_ap_bio(struct drbd_device *device)
 	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
 
 	D_ASSERT(device, ap_bio >= 0);
-	/* this currently does wake_up for every dec_ap_bio!
-	 * maybe rather introduce some type of hysteresis?
-	 * e.g. (ap_bio == max_buffers/2 || ap_bio == 0) ? */
-	if (ap_bio < device->device_conf.max_buffers)
-		wake_up(&device->misc_wait);
+
 	if (ap_bio == 0) {
 		smp_rmb();
 		if (!list_empty(&device->pending_bitmap_work))
 			drbd_queue_pending_bitmap_work(device);
 	}
+
+	/* this currently does wake_up for every dec_ap_bio!
+	 * maybe rather introduce some type of hysteresis?
+	 * e.g. (ap_bio == max_buffers/2 || ap_bio == 0) ? */
+	if (ap_bio < device->device_conf.max_buffers)
+		wake_up(&device->misc_wait);
 }
 
 static inline int drbd_suspended(struct drbd_device *device)
