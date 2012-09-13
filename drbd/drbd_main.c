@@ -68,6 +68,7 @@ static int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int w_go_diskless(struct drbd_work *w, int unused);
+static void drbd_destroy_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -147,6 +148,10 @@ STATIC const struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_release,
+};
+
+static struct kobj_type drbd_device_kobj_type = {
+	.release = drbd_destroy_device,
 };
 
 static void bio_destructor_drbd(struct bio *bio)
@@ -2397,9 +2402,9 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 }
 
 /* caution. no locking. */
-void drbd_destroy_device(struct kref *kref)
+static void drbd_destroy_device(struct kobject *kobj)
 {
-	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
+	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device, *tmp;
 
@@ -2901,7 +2906,7 @@ void drbd_destroy_connection(struct kref *kref)
 	kfree(connection->current_epoch);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		kref_put(&peer_device->device->kref, drbd_destroy_device);
+		kobject_put(&peer_device->device->kobj);
 		free_peer_device(peer_device);
 	}
 	idr_destroy(&connection->peer_devices);
@@ -2960,7 +2965,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 		goto fail;
 	}
 	kref_get(&connection->kref);
-	kref_get(&device->kref);
+	kobject_get(&device->kobj);
 	return peer_device;
 
 fail:
@@ -2972,6 +2977,7 @@ fail:
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
+	struct kobject *parent;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
@@ -2988,7 +2994,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
 	if (!device)
 		return ERR_NOMEM;
-	kref_init(&device->kref);
+	kobject_init(&device->kobj, &drbd_device_kobj_type);
 
 	kref_get(&resource->kref);
 	device->resource = resource;
@@ -3089,7 +3095,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		idr_remove(&drbd_devices, got);
 		goto out_idr_synchronize_rcu;
 	}
-	kref_get(&device->kref);
+	kobject_get(&device->kobj);
 
 	if (!idr_pre_get(&resource->devices, GFP_KERNEL) ||
 	    idr_get_new_above(&resource->devices, device, vnr, &got))
@@ -3099,15 +3105,19 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		idr_remove(&resource->devices, got);
 		goto out_idr_remove_minor;
 	}
-	kref_get(&device->kref);
+	kobject_get(&device->kobj);
 
 	INIT_LIST_HEAD(&device->peer_devices);
 	for_each_connection(connection, resource)
 		if (!create_peer_device(device, connection))
 			goto out_no_peer_device;
 
-	/* kref_get(&device->kref); */
+	/* kobject_get(&device->kobj); */
 	add_disk(disk);
+	parent = &disk_to_dev(disk)->kobj;
+
+	if (kobject_add(&device->kobj, parent, "drbd"))
+		goto out_del_disk;
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->connection->cstate[NOW] >= C_CONNECTED)
@@ -3117,6 +3127,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	*p_device = device;
 	return NO_ERROR;
 
+out_del_disk:
+	del_gendisk(device->vdisk);
 out_no_peer_device:
 	for_each_connection(connection, resource) {
 		peer_device = idr_find(&connection->peer_devices, vnr);
@@ -3170,12 +3182,14 @@ void drbd_unregister_device(struct drbd_device *device)
 void drbd_put_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
-	int refs = 3;
+	int refs = 3, i;
 
 	del_gendisk(device->vdisk);
 	for_each_peer_device(peer_device, device)
 		refs++;
-	kref_sub(&device->kref, refs, drbd_destroy_device);
+
+	for (i = 0; i < refs; i++)
+		kobject_put(&device->kobj);
 }
 
 /**

@@ -1072,7 +1072,7 @@ retry:
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		/* peer_device->connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
 
@@ -1082,7 +1082,7 @@ retry:
 			clear_bit(DISCARD_MY_DATA, &device->flags);
 
 		drbd_connected(peer_device);
-		kref_put(&device->kref, drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1177,7 +1177,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (!get_ldev(device))
 				continue;
-			kref_get(&device->kref);
+			kobject_get(&device->kobj);
 			rcu_read_unlock();
 
 			rv = blkdev_issue_flush(device->ldev->backing_bdev, GFP_KERNEL,
@@ -1190,7 +1190,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 				drbd_bump_write_ordering(resource, WO_DRAIN_IO);
 			}
 			put_ldev(device);
-			kref_put(&device->kref, drbd_destroy_device);
+			kobject_put(&device->kobj);
 
 			rcu_read_lock();
 			if (rv)
@@ -1572,10 +1572,10 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->active_ee);
-		kref_put(&device->kref, &drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1589,10 +1589,10 @@ void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->done_ee);
-		kref_put(&device->kref, &drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1606,10 +1606,10 @@ static void drbd_unplug_all_devices(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_kick_lo(device);
-		kref_put(&device->kref, drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -4970,10 +4970,10 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_disconnected(peer_device);
-		kref_put(&device->kref, drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -5701,13 +5701,13 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
-			kref_get(&device->kref);
+			kobject_get(&device->kobj);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(device)) {
-				kref_put(&device->kref, drbd_destroy_device);
+				kobject_put(&device->kobj);
 				return 1;
 			}
-			kref_put(&device->kref, drbd_destroy_device);
+			kobject_put(&device->kobj);
 			rcu_read_lock();
 		}
 		set_bit(SIGNAL_ASENDER, &connection->flags);

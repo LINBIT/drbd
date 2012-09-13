@@ -937,7 +937,7 @@ struct drbd_device {
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
 	int vnr;			/* volume number within the connection */
-	struct kref kref;
+	struct kobject kobj;
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
@@ -1419,7 +1419,6 @@ extern int conn_lowest_minor(struct drbd_connection *connection);
 extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);
 extern enum drbd_ret_code drbd_create_device(struct drbd_resource *, unsigned int, int,
 					     struct device_conf *, struct drbd_device **);
-extern void drbd_destroy_device(struct kref *kref);
 extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_put_device(struct drbd_device *);
 extern void drbd_unregister_connection(struct drbd_connection *);

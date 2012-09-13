@@ -385,10 +385,10 @@ static void conn_md_sync(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kref_get(&device->kref);
+		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		drbd_md_sync(device);
-		kref_put(&device->kref, drbd_destroy_device);
+		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -2374,7 +2374,7 @@ unlock_fail_free_connection:
 fail_free_connection:
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		idr_remove(&connection->peer_devices, peer_device->device->vnr);
-		kref_put(&peer_device->device->kref, drbd_destroy_device);
+		kobject_put(&peer_device->device->kobj);
 	}
 	list_del(&connection->connections);
 	kref_put(&connection->kref, drbd_destroy_connection);
@@ -3660,6 +3660,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
 						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
 		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
+		kobject_del(&device->kobj);
 		synchronize_rcu();
 		drbd_put_device(device);
 		return NO_ERROR;
