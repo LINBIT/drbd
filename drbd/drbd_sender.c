@@ -728,6 +728,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	int number, i, size;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
+	bool stop_sector_reached = false;
 
 	if (unlikely(cancel))
 		return 1;
@@ -736,9 +737,17 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 	sector = peer_device->ov_position;
 	for (i = 0; i < number; i++) {
-		if (sector >= capacity) {
+		if (sector >= capacity)
 			return 1;
-		}
+
+		/* We check for "finished" only in the reply path:
+		 * w_e_end_ov_reply().
+		 * We need to send at least one request out. */
+		stop_sector_reached = i > 0
+			&& verify_can_do_stop_sector(peer_device)
+			&& sector >= peer_device->ov_stop_sector;
+		if (stop_sector_reached)
+			break;
 
 		size = BM_BLOCK_SIZE;
 
@@ -762,7 +771,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
  requeue:
 	peer_device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
+	if (i == 0 || !stop_sector_reached)
+		mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
 	return 1;
 }
 
@@ -836,6 +846,10 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	if (dt <= 0)
 		dt = 1;
 	db = peer_device->rs_total;
+	/* adjust for verify start and stop sectors, respective reached position */
+	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)
+		db -= peer_device->ov_left;
+
 	dbdt = Bit2KB(db/dt);
 	peer_device->rs_paused /= HZ;
 
@@ -855,7 +869,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	__change_repl_state(peer_device, L_CONNECTED);
 
 	drbd_info(device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
-	     verify_done ? "Online verify " : "Resync",
+	     verify_done ? "Online verify" : "Resync",
 	     dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
 
 	n_oos = drbd_bm_total_weight(peer_device);
@@ -936,7 +950,9 @@ out:
 	peer_device->rs_total  = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
-	if (verify_done)
+
+	/* reset start sector, if we reached end of device */
+	if (verify_done && peer_device->ov_left == 0)
 		peer_device->ov_start_sector = 0;
 
 	drbd_md_sync(device);
@@ -1190,6 +1206,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	unsigned int size = peer_req->i.size;
 	int digest_size;
 	int err, eq = 0;
+	bool stop_sector_reached = false;
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(device, peer_req);
@@ -1240,7 +1257,10 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	if ((peer_device->ov_left & 0x200) == 0x200)
 		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
 
-	if (peer_device->ov_left == 0) {
+	stop_sector_reached = verify_can_do_stop_sector(peer_device) &&
+		(sector + (size>>9)) >= peer_device->ov_stop_sector;
+
+	if (peer_device->ov_left == 0 || stop_sector_reached) {
 		ov_out_of_sync_print(peer_device);
 		drbd_resync_finished(peer_device);
 	}

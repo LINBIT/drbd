@@ -912,6 +912,7 @@ struct drbd_peer_device {
 
 	/* where does the admin want us to start? (sector) */
 	sector_t ov_start_sector;
+	sector_t ov_stop_sector;
 	/* where are we now? (sector) */
 	sector_t ov_position;
 	/* Start sector of out of sync range (to merge printk reporting). */
@@ -2216,6 +2217,12 @@ static inline u64 drbd_current_uuid(struct drbd_device *device)
 	if (!device->ldev)
 		return 0;
 	return device->ldev->md.current_uuid;
+}
+
+static inline bool verify_can_do_stop_sector(struct drbd_peer_device *peer_device)
+{
+	return peer_device->connection->agreed_pro_version >= 97 &&
+		peer_device->connection->agreed_pro_version != 100;
 }
 
 static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)

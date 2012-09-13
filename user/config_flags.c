@@ -736,6 +736,8 @@ struct context_def verify_cmd_ctx = {
 	.fields = {
 		{ "start", NUMERIC(ov_start_sector, DISK_SIZE),
 		  .unit = "bytes" },
+		{ "stopt", NUMERIC(ov_stop_sector, DISK_SIZE),
+		  .unit = "bytes" },
 		{ } },
 };
 

@@ -4347,7 +4347,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	 * already decided to close the connection again,
 	 * we must not "re-establish" it here. */
 	if (os.conn <= C_TEAR_DOWN)
-		return false;
+		return -ECONNRESET;
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * transitions from D_INCONSISTENT to D_UP_TO_DATE. For empty (0 bits
@@ -4377,6 +4377,14 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 				drbd_resync_finished(peer_device);
 			return 0;
 		}
+	}
+
+	/* explicit verify finished notification, stop sector reached. */
+	if (os.conn == L_VERIFY_T && os.disk == D_UP_TO_DATE &&
+	    peer_state.conn == C_CONNECTED && peer_disk_state == D_UP_TO_DATE) {
+		ov_out_of_sync_print(peer_device);
+		drbd_resync_finished(peer_device);
+		return 0;
 	}
 
 	/* peer says his disk is inconsistent, while we think it is uptodate,

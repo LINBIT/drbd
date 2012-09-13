@@ -1226,13 +1226,15 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_role *peer_role = connection->peer_role;
 
-			/* aborted verify run. log the last position */
+			/* Aborted verify run, or we reached the stop sector.
+			 * Log the last position, unless end-of-device. */
 			if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-			    repl_state[NEW] < L_CONNECTED) {
+			    repl_state[NEW] <= L_CONNECTED) {
 				peer_device->ov_start_sector =
 					BM_BIT_TO_SECT(drbd_bm_bits(device) - peer_device->ov_left);
-				drbd_info(peer_device, "Online Verify reached sector %llu\n",
-					(unsigned long long)peer_device->ov_start_sector);
+				if (peer_device->ov_left)
+					drbd_info(peer_device, "Online Verify reached sector %llu\n",
+						  (unsigned long long)peer_device->ov_start_sector);
 			}
 
 			if ((repl_state[OLD] == L_PAUSED_SYNC_T || repl_state[OLD] == L_PAUSED_SYNC_S) &&
@@ -1845,6 +1847,13 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					NULL);
 				put_ldev(device);
 			}
+
+			/* Verify finished, or reached stop sector.  Peer did not know about
+			 * the stop sector, and we may even have changed the stop sector during
+			 * verify to interrupt/stop early.  Send the new state. */
+			if (repl_state[OLD] == L_VERIFY_S && repl_state[NEW] == L_CONNECTED
+			    && verify_can_do_stop_sector(peer_device))
+				send_new_state_to_all_peer_devices(state_change, n_device);
 
 			if (disk_state[NEW] == D_DISKLESS &&
 			    cstate[NEW] == C_STANDALONE &&
