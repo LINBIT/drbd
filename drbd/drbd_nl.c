@@ -1515,6 +1515,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* make sure there is no leftover from previous force-detach attempts */
 	clear_bit(FORCE_DETACH, &device->flags);
 
+	/* and no leftover from previously aborted resync or verify, either */
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		peer_device->rs_total = 0;
+		peer_device->rs_failed = 0;
+		atomic_set(&peer_device->rs_pending_cnt, 0);
+	}
+	rcu_read_unlock();
+
 	/* allocation not in the IO path, drbdsetup context */
 	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
 	if (!nbc) {

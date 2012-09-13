@@ -1710,6 +1710,13 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* Do not change the order of the if above and the two below... */
 			if (peer_disk_state[OLD] == D_DISKLESS &&
 			    peer_disk_state[NEW] > D_DISKLESS && peer_disk_state[NEW] != D_UNKNOWN) {      /* attach on the peer */
+				/* we probably will start a resync soon.
+				 * make sure those things are properly reset. */
+				peer_device->rs_total = 0;
+				peer_device->rs_failed = 0;
+				atomic_set(&peer_device->rs_pending_cnt, 0);
+				drbd_rs_cancel_all(peer_device);
+
 				drbd_send_uuids(peer_device);
 				drbd_send_state(peer_device, new_state);
 			}
@@ -1933,22 +1940,12 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		 * or administrative detach,
 		 * after local_cnt references have reached zero again */
 		if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS) {
-			struct drbd_peer_device *peer_device;
-
 			/* We must still be diskless,
 			 * re-attach has to be serialized with this! */
 			if (device->disk_state[NOW] != D_DISKLESS)
 				drbd_err(device,
 					"ASSERT FAILED: disk is %s while going diskless\n",
 					drbd_disk_str(device->disk_state[NOW]));
-
-			rcu_read_lock();
-			for_each_peer_device(peer_device, device) {
-				peer_device->rs_total = 0;
-				peer_device->rs_failed = 0;
-				atomic_set(&peer_device->rs_pending_cnt, 0);
-			}
-			rcu_read_unlock();
 
 			send_new_state_to_all_peer_devices(state_change, n_device);
 			/*
