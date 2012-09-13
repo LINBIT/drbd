@@ -437,6 +437,9 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	char *envp[11];
 	int envi = 0, ret;
 
+	if (current == resource->worker.task)
+		set_bit(CALLBACK_PENDING, &resource->flags);
+
 	envp[envi++] = "HOME=/";
 	envp[envi++] = "TERM=linux";
 	envp[envi++] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
@@ -478,6 +481,9 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 				usermode_helper, cmd,
 				(ret >> 8) & 0xff, ret);
 	notify_helper(NOTIFY_RESPONSE, device, connection, cmd, ret);
+
+	if (current == resource->worker.task)
+		clear_bit(CALLBACK_PENDING, &resource->flags);
 
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;

@@ -2598,6 +2598,21 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		goto out;
 	}
 
+	if (test_bit(CALLBACK_PENDING, &device->resource->flags)) {
+		r |= (1 << BDI_async_congested);
+		/* Without good local data, we would need to read from remote,
+		 * and that would need the worker thread as well, which is
+		 * currently blocked waiting for that usermode helper to
+		 * finish.
+		 */
+		if (!get_ldev_if_state(device, D_UP_TO_DATE))
+			r |= (1 << BDI_sync_congested);
+		else
+			put_ldev(device);
+		r &= bdi_bits;
+		goto out;
+	}
+
 	if (get_ldev(device)) {
 		q = bdev_get_queue(device->ldev->backing_bdev);
 		r = bdi_congested(&q->backing_dev_info, bdi_bits);
