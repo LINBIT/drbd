@@ -394,21 +394,6 @@ static int drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_
 	if (!atomic_sub_and_test(put, &req->completion_ref))
 		return 0;
 
-	if (drbd_req_is_write(req) && drbd_suspended(req->device)) {
-		/* We do not allow completion of WRITE requests while suspended.
-		 * Successful READ may be completed. Failed READ will be queued
-		 * for retry anyways.
-		 *
-		 * Re-get a reference, so whatever happens when this is resumed
-		 * may put and complete. */
-
-		D_ASSERT(req->device, !(req->rq_state[0] & RQ_COMPLETION_SUSP));
-		req->rq_state[0] |= RQ_COMPLETION_SUSP;
-		atomic_inc(&req->completion_ref);
-		return 0;
-	}
-
-	/* else */
 	drbd_req_complete(req, m);
 
 	if (req->rq_state[0] & RQ_POSTPONED) {
@@ -451,6 +436,9 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		BUG_ON(clear);
 	}
 
+	if (drbd_suspended(req->device) && !((old_local | clear_local) & RQ_COMPLETION_SUSP))
+		set_local |= RQ_COMPLETION_SUSP;
+
 	/* apply */
 
 	req->rq_state[0] &= ~clear_local;
@@ -482,6 +470,9 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT))
 		atomic_add(req->i.size >> 9, &req->device->ap_in_flight);
+
+	if (!(old_local & RQ_COMPLETION_SUSP) && (set_local & RQ_COMPLETION_SUSP))
+		atomic_inc(&req->completion_ref);
 
 	/* progress: put references */
 
