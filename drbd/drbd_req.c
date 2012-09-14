@@ -1088,6 +1088,20 @@ static int drbd_process_write_request(struct drbd_request *req)
 	int remote, send_oos;
 	int count = 0;
 
+	/* Need to replicate writes.  Unless it is an empty flush,
+	 * which is better mapped to a DRBD P_BARRIER packet,
+	 * also for drbd wire protocol compatibility reasons.
+	 * If this was a flush, just start a new epoch.
+	 * Unless the current epoch was empty anyways, or we are not currently
+	 * replicating, in which case there is no point. */
+	if (unlikely(req->i.size == 0)) {
+		/* The only size==0 bios we expect are empty flushes. */
+		D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
+		if (device->resource->current_tle_writes)
+			start_new_tl_epoch(device->resource);
+		return 0;
+	}
+
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		remote = drbd_should_do_remote(peer_device);
@@ -1176,8 +1190,10 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	 * extent.  This waits for any resync activity in the corresponding
 	 * resync extent to finish, and, if necessary, pulls in the target
 	 * extent into the activity log, which involves further disk io because
-	 * of transactional on-disk meta data updates. */
-	if (rw == WRITE && req->private_bio
+	 * of transactional on-disk meta data updates.
+	 * Empty flushes don't need to go into the activity log, they can only
+	 * flush data for pending writes which are already in there. */
+	if (rw == WRITE && req->private_bio && req->i.size
 	&& !test_bit(AL_SUSPENDED, &device->flags)) {
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
 		drbd_al_begin_io(device, &req->i, true);
@@ -1223,7 +1239,10 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	if (rw == WRITE)
 		device->resource->dagtag_sector += bio_sectors(bio);
 	req->dagtag_sector = device->resource->dagtag_sector;
-	list_add_tail(&req->tl_requests, &device->resource->transfer_log);
+	/* no point in adding empty flushes to the transfer log,
+	 * they are mapped to drbd barriers already. */
+	if (likely(req->i.size!=0))
+		list_add_tail(&req->tl_requests, &device->resource->transfer_log);
 
 	if (rw == WRITE) {
 		if (!drbd_process_write_request(req))
