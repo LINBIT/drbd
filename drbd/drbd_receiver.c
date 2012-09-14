@@ -937,7 +937,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 				sock.socket = s;
 				send_first_packet(connection, &sock, P_INITIAL_DATA);
 			} else if (!msock.socket) {
-				clear_bit(DISCARD_CONCURRENT, &connection->flags);
+				clear_bit(RESOLVE_CONFLICTS, &connection->flags);
 				msock.socket = s;
 				send_first_packet(connection, &msock, P_INITIAL_META);
 			} else {
@@ -975,7 +975,7 @@ retry:
 				sock.socket = s;
 				break;
 			case P_INITIAL_META:
-				set_bit(DISCARD_CONCURRENT, &connection->flags);
+				set_bit(RESOLVE_CONFLICTS, &connection->flags);
 				if (msock.socket) {
 					drbd_warn(connection, "initial packet M crossed\n");
 					sock_release(msock.socket);
@@ -2141,7 +2141,7 @@ static bool need_peer_seq(struct drbd_peer_device *peer_device)
 	tp = rcu_dereference(connection->net_conf)->two_primaries;
 	rcu_read_unlock();
 
-	return tp && test_bit(DISCARD_CONCURRENT, &connection->flags);
+	return tp && test_bit(RESOLVE_CONFLICTS, &connection->flags);
 }
 
 static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int peer_seq)
@@ -2290,7 +2290,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	bool resolve_conflicts = test_bit(DISCARD_CONCURRENT, &connection->flags);
+	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
 	struct drbd_interval *i;
@@ -2880,7 +2880,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			  "Using discard-least-changes instead\n");
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
-			rv = test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
 				? -1 : 1;
 			break;
 		} else {
@@ -2896,7 +2896,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			rv =  1;
 		else /* ( ch_self == ch_peer ) */
 		     /* Well, then use something else. */
-			rv = test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
 				? -1 : 1;
 		break;
 	case ASB_DISCARD_LOCAL:
@@ -3137,7 +3137,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 		case 1: /*  self_pri && !peer_pri */ return 1;
 		case 2: /* !self_pri &&  peer_pri */ return -1;
 		case 3: /*  self_pri &&  peer_pri */
-			dc = test_bit(DISCARD_CONCURRENT, &peer_device->connection->flags);
+			dc = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags);
 			return dc ? -1 : 1;
 		}
 	}

@@ -2552,7 +2552,7 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 	if (device->resource->role[NOW] != peer_device->connection->peer_role[NOW])
 		sync_source = (device->resource->role[NOW] == R_PRIMARY);
 	else
-		sync_source = test_bit(DISCARD_CONCURRENT,
+		sync_source = test_bit(RESOLVE_CONFLICTS,
 				       &peer_device->connection->flags);
 
 	if (sync_source)
