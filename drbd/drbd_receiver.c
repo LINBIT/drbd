@@ -903,7 +903,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	struct drbd_socket sock, msock;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
-	int vnr, timeout, try, h, ok;
+	int vnr, timeout, h, ok;
 	bool discard_my_data;
 	struct accept_wait_data ad = {
 		.connection = connection,
@@ -933,15 +933,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	do {
 		struct socket *s;
 
-		for (try = 0;;) {
-			/* 3 tries, this should take less than a second! */
-			s = drbd_try_connect(connection);
-			if (s || ++try >= 3)
-				break;
-			/* give the other side time to call bind() & listen() */
-			schedule_timeout_interruptible(HZ / 10);
-		}
-
+		s = drbd_try_connect(connection);
 		if (s) {
 			if (!sock.socket) {
 				sock.socket = s;
@@ -970,10 +962,10 @@ STATIC int conn_connect(struct drbd_connection *connection)
 retry:
 		s = drbd_wait_for_connect(connection, &ad);
 		if (s) {
-			try = receive_first_packet(connection, s);
+			int fp = receive_first_packet(connection, s);
 			drbd_socket_okay(&sock.socket);
 			drbd_socket_okay(&msock.socket);
-			switch (try) {
+			switch (fp) {
 			case P_INITIAL_DATA:
 				if (sock.socket) {
 					drbd_warn(connection, "initial packet S crossed\n");
