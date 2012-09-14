@@ -253,13 +253,23 @@ static int bm_test_page_lazy_writeout(struct page *page)
 	return test_bit(BM_PAGE_LAZY_WRITEOUT, &page_private(page));
 }
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define bm_kmap(b, idx, km) _bm_kmap(b, idx)
+static unsigned long *_bm_kmap(struct drbd_bitmap *b, unsigned int idx)
+#else
 static unsigned long *bm_kmap(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
+#endif
 {
 	struct page *page = b->bm_pages[idx];
 	return (unsigned long *) drbd_kmap_atomic(page, km);
 }
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define bm_kunmap(p_addr, km) _bm_kunmap(p_addr)
+static void _bm_kunmap(unsigned long *p_addr)
+#else
 static void bm_kunmap(unsigned long *p_addr, const enum km_type km)
+#endif
 {
 	drbd_kunmap_atomic(p_addr, km);
 };
