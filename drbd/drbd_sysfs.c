@@ -33,9 +33,17 @@ struct drbd_md_attribute {
 	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
 };
 
-STATIC ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
-static ssize_t current_show(struct drbd_backing_dev *, char *);
+static ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
+static ssize_t data_gen_id_show(struct drbd_backing_dev *, char *);
 static void backing_dev_release(struct kobject *kobj);
+
+#define DRBD_MD_ATTR(_name) struct drbd_md_attribute drbd_md_attr_##_name = __ATTR_RO(_name)
+static DRBD_MD_ATTR(data_gen_id);
+
+static struct attribute *bdev_attrs[] = {
+	&drbd_md_attr_data_gen_id.attr,
+	NULL
+};
 
 struct kobj_type drbd_bdev_kobj_type = {
 	.release = backing_dev_release,
@@ -43,27 +51,11 @@ struct kobj_type drbd_bdev_kobj_type = {
 		.show = drbd_md_attr_show,
 		.store = NULL,
 	},
+	.default_attrs = bdev_attrs,
 };
 
-#define DRBD_MD_ATTR(_name) struct drbd_md_attribute drbd_md_attr_##_name = __ATTR_RO(_name)
 
-/* since "current" is a macro, the expansion of DRBD_MD_ATTR(current) does not work: */
-static struct drbd_md_attribute drbd_md_attr_current = {
-	.attr = { .name = "current", .mode = 0444 },
-	.show = current_show,
-};
-
-static struct attribute *drbd_md_attrs[] = {
-	&drbd_md_attr_current.attr,
-	NULL,
-};
-
-struct attribute_group drbd_md_attr_group = {
-	.attrs = drbd_md_attrs,
-	.name = "data_gen_id",
-};
-
-STATIC ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
+static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
 {
 	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
 	struct drbd_md_attribute *drbd_md_attr = container_of(attr, struct drbd_md_attribute, attr);
@@ -71,7 +63,7 @@ STATIC ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, c
 	return drbd_md_attr->show(bdev, buffer);
 }
 
-static ssize_t current_show(struct drbd_backing_dev *bdev, char *buf)
+static ssize_t data_gen_id_show(struct drbd_backing_dev *bdev, char *buf)
 {
 	ssize_t size = 0;
 

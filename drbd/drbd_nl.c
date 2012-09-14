@@ -1744,9 +1744,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto remove_kobject;
 	}
 
-	if (sysfs_create_group(&device->ldev->kobject, &drbd_md_attr_group))
-		goto remove_kobject;
-
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 	else
