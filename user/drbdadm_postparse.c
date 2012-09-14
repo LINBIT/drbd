@@ -353,14 +353,6 @@ void set_disk_in_res(struct d_resource *res)
 		if (!host->lower)
 			continue;
 
-		if (res->stacked && host->lower->stacked) {
-			fprintf(stderr,
-				"%s:%d: in resource %s, stacked-on-top-of %s { ... }:\n"
-				"\tFIXME. I won't stack stacked resources.\n",
-				res->config_file, res->start_line, res->name, host->lower_name);
-			config_valid = 0;
-		}
-
 		if (host->lower->ignore)
 			continue;
 
