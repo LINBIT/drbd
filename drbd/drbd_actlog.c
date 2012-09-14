@@ -281,7 +281,7 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;
 	bool locked = false;
 
@@ -297,6 +297,7 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 	if (delegate)
 		BUG_ON(current == device->resource->worker.task);
 
+	D_ASSERT(device, first <= last);
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
 
 	for (enr = first; enr <= last; enr++)
@@ -342,12 +343,13 @@ void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;
 	struct lc_element *extent;
 	unsigned long flags;
 	bool wake = false;
 
+	D_ASSERT(device, first <= last);
 	spin_lock_irqsave(&device->al_lock, flags);
 
 	for (enr = first; enr <= last; enr++) {
@@ -858,7 +860,11 @@ static int set_out_of_sync(struct drbd_device *device, struct drbd_peer_device *
 	sector_t esector, nr_sectors;
 	unsigned int enr, total = 0;
 
-	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+	/* this should be an empty REQ_FLUSH */
+	if (size == 0)
+		return 0;
+
+	if (size < 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
 		drbd_err(device, "sector: %llus, size: %d\n",
 			(unsigned long long)sector, size);
 		return 0;

@@ -320,6 +320,9 @@ STATIC void drbd_free_pages(struct drbd_device *device, struct page *page, int i
 	atomic_t *a = is_net ? &device->pp_in_use_by_net : &device->pp_in_use;
 	int i;
 
+	if (page == NULL)
+		return;
+
 	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count)
 		i = page_chain_free(page);
 	else {
@@ -357,7 +360,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
-	struct page *page;
+	struct page *page = NULL;
 	unsigned nr_pages = (data_size + PAGE_SIZE -1) >> PAGE_SHIFT;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_AL_EE))
@@ -370,9 +373,11 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 		return NULL;
 	}
 
-	page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_WAIT));
-	if (!page)
-		goto fail;
+	if (data_size) {
+		page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_WAIT));
+		if (!page)
+			goto fail;
+	}
 
 	drbd_clear_interval(&peer_req->i);
 	peer_req->i.size = data_size;
@@ -1727,8 +1732,6 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		data_size -= dgs;
 	}
 
-	if (!expect(peer_device, data_size != 0))
-		return NULL;
 	if (!expect(peer_device, IS_ALIGNED(data_size, 512)))
 		return NULL;
 	if (!expect(peer_device, data_size <= DRBD_MAX_BIO_SIZE))
@@ -1750,6 +1753,9 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	peer_req = drbd_alloc_peer_req(peer_device, id, sector, data_size, GFP_NOIO);
 	if (!peer_req)
 		return NULL;
+
+	if (!data_size)
+		return peer_req;
 
 	ds = data_size;
 	page = peer_req->pages;
@@ -2443,6 +2449,10 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	rw |= wire_flags_to_bio(connection, dp_flags);
+	if (peer_req->pages == NULL) {
+		D_ASSERT(device, peer_req->i.size == 0);
+		D_ASSERT(device, dp_flags & DP_FLUSH);
+	}
 
 	if (dp_flags & DP_MAY_SET_IN_SYNC)
 		peer_req->flags |= EE_MAY_SET_IN_SYNC;
