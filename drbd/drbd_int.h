@@ -1327,8 +1327,8 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
 #error Architecture not supported: DRBD_MAX_BIO_SIZE > BIO_MAX_SIZE
 #endif
 
-#define DRBD_MAX_SIZE_H80_PACKET (1 << 15) /* Header 80 only allows packets up to 32KiB data */
-#define DRBD_MAX_BIO_SIZE_P95    (1 << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
+#define DRBD_MAX_SIZE_H80_PACKET (1U << 15) /* Header 80 only allows packets up to 32KiB data */
+#define DRBD_MAX_BIO_SIZE_P95    (1U << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
 
 extern struct drbd_bitmap *drbd_bm_alloc(void);
 extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);

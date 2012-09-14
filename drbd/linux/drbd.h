@@ -411,6 +411,6 @@ enum drbd_notification_type {
 
 #define DRBD_CPU_MASK_SIZE 32
 
-#define DRBD_MAX_BIO_SIZE (1 << 20)
+#define DRBD_MAX_BIO_SIZE (1U << 20)
 
 #endif

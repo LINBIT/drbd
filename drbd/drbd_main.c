@@ -1143,7 +1143,8 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 	struct drbd_socket *sock;
 	struct p_sizes *p;
 	sector_t d_size, u_size;
-	int q_order_type, max_bio_size;
+	int q_order_type;
+	unsigned int max_bio_size;
 
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
 		D_ASSERT(device, device->ldev->backing_bdev);
@@ -1153,7 +1154,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 		rcu_read_unlock();
 		q_order_type = drbd_queue_order_type(device);
 		max_bio_size = queue_max_hw_sectors(device->ldev->backing_bdev->bd_disk->queue) << 9;
-		max_bio_size = min_t(int, max_bio_size, DRBD_MAX_BIO_SIZE);
+		max_bio_size = min(max_bio_size, DRBD_MAX_BIO_SIZE);
 		put_ldev(device);
 	} else {
 		d_size = 0;
@@ -1168,9 +1169,9 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 		return -EIO;
 
 	if (peer_device->connection->agreed_pro_version <= 94)
-		max_bio_size = min_t(int, max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
+		max_bio_size = min(max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
 	else if (peer_device->connection->agreed_pro_version < 100)
-		max_bio_size = min_t(int, max_bio_size, DRBD_MAX_BIO_SIZE_P95);
+		max_bio_size = min(max_bio_size, DRBD_MAX_BIO_SIZE_P95);
 
 	p->d_size = cpu_to_be64(d_size);
 	p->u_size = cpu_to_be64(u_size);

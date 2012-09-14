@@ -1303,8 +1303,8 @@ STATIC int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_bio_size)
 {
 	struct request_queue * const q = device->rq_queue;
-	int max_hw_sectors = max_bio_size >> 9;
-	int max_segments = 0;
+	unsigned int max_hw_sectors = max_bio_size >> 9;
+	unsigned int max_segments = 0;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
