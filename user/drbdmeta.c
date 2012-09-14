@@ -242,7 +242,6 @@ typedef struct { unsigned long be; } be_ulong;
  */
 struct md_peer_cpu {
 	uint64_t uuid[UI_SIZE];
-	uint32_t addr_hash;
 	uint32_t flags;
 	uint32_t node_id;
 };
@@ -797,7 +796,6 @@ int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_dis
 struct peer_dev_md_on_disk {
 	be_u64 bitmap_uuid;
 	be_u64 history_uuids[HISTORY_UUIDS];
-	be_u32 addr_hash;
 	be_u32 flags;
 	be_u32 node_id;
 	be_u32 reserved_u32[3];
@@ -848,7 +846,6 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 
 	for (p = 0; p < cpu->bm_max_peers; p++) {
 		cpu->peers[p].uuid[UI_CURRENT] = be64_to_cpu(disk->current_uuid.be);
-		cpu->peers[p].addr_hash = be32_to_cpu(disk->peers[p].addr_hash.be);
 		cpu->peers[p].flags = be32_to_cpu(disk->peers[p].flags.be);
 		cpu->peers[p].node_id = be32_to_cpu(disk->peers[p].node_id.be);
 		cpu->peers[p].uuid[UI_BITMAP] =
@@ -879,7 +876,6 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 
 	disk->current_uuid.be = cpu_to_be64(cpu->peers[0].uuid[UI_CURRENT]);
 	for (p = 0; p < cpu->bm_max_peers; p++) {
-		disk->peers[p].addr_hash.be = cpu_to_be32(cpu->peers[p].addr_hash);
 		disk->peers[p].flags.be = cpu_to_be32(cpu->peers[p].flags);
 		disk->peers[p].node_id.be = cpu_to_be32(cpu->peers[p].node_id);
 		disk->peers[p].bitmap_uuid.be =
@@ -2297,7 +2293,7 @@ void printf_bm(struct format *cfg)
 	case DRBD_V09:
 		printf("bm {\n");
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			printf("   peer[%d] hash 0x%08X ", i, cfg->md.peers[i].addr_hash);
+			printf("   peer[%d] ", i);
 			fprintf_bm(stdout, cfg, i, "   ");
 		}
 		printf("}\n");
@@ -2703,7 +2699,6 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 		cfg->md.peers[p].uuid[UI_CURRENT] = UUID_JUST_CREATED;
 		for (i = UI_BITMAP; i <= UI_HISTORY_END; i++)
 			cfg->md.peers[p].uuid[i] = 0;
-		cfg->md.peers[p].addr_hash = 0;
 		cfg->md.peers[p].flags = 0;
 		cfg->md.peers[p].node_id = -1;
 	}
@@ -2924,8 +2919,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		       cfg->md.node_id,
 		       cfg->md.peers[0].uuid[UI_CURRENT], cfg->md.flags);
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			printf("   peer[%d] hash 0x%08X {\n",
-			       i, cfg->md.peers[i].addr_hash);
+			printf("   peer[%d] {\n", i);
 			print_dump_uuids(&cfg->md.peers[i], UI_BITMAP, "   ");
 			if (format_version(cfg) >= DRBD_V09) {
 				printf("       node-id %d;\n",
@@ -3151,14 +3145,6 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 					yylineno, i, (int)yylval.u64);
 				exit(10);
 			}
-			EXP(TK_HASH); EXP(TK_U32);
-			if (cfg->md.peers[i].addr_hash != (uint32_t)yylval.u64) {
-				fprintf(stderr, "Parse error in line %u: "
-					"Expected hash value %08X but found %08X\n"
-					"Hash values in uuid and in bm sections have to match!\n",
-					yylineno, cfg->md.peers[i].addr_hash,  (uint32_t)yylval.u64);
-				exit(10);
-			}
 			words = parse_bitmap_window_one_peer(cfg, window, i, parse_only);
 		}
 		EXP('}');
@@ -3288,8 +3274,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 						yylineno, i, (int)yylval.u64);
 					exit(10);
 				}
-				EXP(TK_HASH); EXP(TK_U32); EXP('{');
-				cfg->md.peers[i].addr_hash = (uint32_t)yylval.u64;
+				EXP('{');
 				cfg->md.peers[i].uuid[UI_CURRENT] = cfg->md.peers[0].uuid[UI_CURRENT];
 				for (j = UI_BITMAP; j < UI_SIZE; j++) {
 					EXP(TK_U64); EXP(';');
