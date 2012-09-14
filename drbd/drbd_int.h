@@ -1612,6 +1612,10 @@ extern int drbd_set_out_of_sync(struct drbd_peer_device *, sector_t, int);
 extern int drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern void drbd_al_shrink(struct drbd_device *device);
 
+/* drbd_sysfs.c */
+extern struct kobj_type drbd_bdev_kobj_type;
+extern struct attribute_group drbd_md_attr_group;
+
 /* drbd_nl.c */
 
 extern atomic_t drbd_notify_id;

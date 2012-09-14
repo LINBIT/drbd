@@ -144,65 +144,6 @@ static struct drbd_config_context {
 	struct drbd_peer_device *peer_device;
 } adm_ctx;
 
-struct drbd_md_attribute {
-	struct attribute attr;
-	ssize_t (*show)(struct drbd_backing_dev *bdev, char *buf);
-	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
-};
-
-static ssize_t drbd_md_attr_show(struct kobject *, struct attribute *, char *);
-static ssize_t current_show(struct drbd_backing_dev *, char *);
-static void backing_dev_release(struct kobject *kobj);
-
-static struct kobj_type drbd_bdev_kobj_type = {
-	.release = backing_dev_release,
-	.sysfs_ops = &(struct sysfs_ops) {
-		.show = drbd_md_attr_show,
-		.store = NULL,
-	},
-};
-
-#define DRBD_MD_ATTR(_name) struct drbd_md_attribute drbd_md_attr_##_name = __ATTR_RO(_name)
-
-/* since "current" is a macro, the expansion of DRBD_MD_ATTR(current) does not work: */
-static struct drbd_md_attribute drbd_md_attr_current = {
-	.attr = { .name = "current", .mode = 0444 },
-	.show = current_show,
-};
-
-static struct attribute *drbd_md_attrs[] = {
-	&drbd_md_attr_current.attr,
-	NULL,
-};
-
-struct attribute_group drbd_md_attr_group = {
-	.attrs = drbd_md_attrs,
-	.name = "data_gen_id",
-};
-
-static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
-{
-	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
-	struct drbd_md_attribute *drbd_md_attr = container_of(attr, struct drbd_md_attribute, attr);
-
-	return drbd_md_attr->show(bdev, buffer);
-}
-
-static ssize_t current_show(struct drbd_backing_dev *bdev, char *buf)
-{
-	ssize_t size = 0;
-
-	size = sprintf(buf, "0x%016llX\n", bdev->md.current_uuid);
-
-	return size;
-}
-
-static void backing_dev_release(struct kobject *kobj)
-{
-	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
-	kfree(bdev);
-}
-
 static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
 {
 	genlmsg_end(skb, genlmsg_data(nlmsg_data(nlmsg_hdr(skb))));
