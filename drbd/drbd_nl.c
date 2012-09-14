@@ -2082,7 +2082,7 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 
 	if (connection->resource->role[NOW] == R_PRIMARY &&
 	    new_net_conf->discard_my_data)
-		return ERR_DISCARD;
+		return ERR_DISCARD_IMPOSSIBLE;
 
 	if (new_net_conf->on_congestion != OC_BLOCK &&
 	    new_net_conf->wire_protocol != DRBD_PROT_A)
