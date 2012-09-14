@@ -1175,4 +1175,14 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 #define SK_CAN_REUSE   1
 #endif
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+/* see 980c19e3
+ * highmem: mark k[un]map_atomic() with two arguments as deprecated */
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr)
+#else
+#define drbd_kmap_atomic(page, km)	kmap_atomic(page, km)
+#define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
+#endif
+
 #endif
