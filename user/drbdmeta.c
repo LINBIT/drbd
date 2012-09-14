@@ -4099,7 +4099,7 @@ int v08_move_internal_md_after_resize(struct format *cfg)
 		printf("Internal drbd meta data successfully moved.\n");
 
 	if (!err && old_offset < cfg->bm_offset) {
-		/* wipe out previous meta data block, it has been superseeded. */
+		/* wipe out previous meta data block, it has been superseded. */
 		memset(on_disk_buffer, 0, 4096);
 		PWRITE(cfg->md_fd, on_disk_buffer, 4096, old_offset);
 	}
