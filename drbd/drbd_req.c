@@ -223,6 +223,10 @@ static void wake_all_senders(struct drbd_resource *resource) {
 /* must hold resource->req_lock */
 static void start_new_tl_epoch(struct drbd_resource *resource)
 {
+	/* no point closing an epoch, if it is empty, anyways. */
+	if (resource->current_tle_writes == 0)
+		return;
+
 	resource->current_tle_writes = 0;
 	atomic_inc(&resource->current_tle_nr);
 	wake_all_senders(resource);
@@ -1006,8 +1010,7 @@ static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 
 	if (congested) {
 		/* start a new epoch for non-mirrored writes */
-		if (device->resource->current_tle_writes)
-			start_new_tl_epoch(device->resource);
+		start_new_tl_epoch(device->resource);
 
 		if (on_congestion == OC_PULL_AHEAD)
 			change_repl_state(peer_device, L_AHEAD, 0);
@@ -1103,8 +1106,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 	if (unlikely(req->i.size == 0)) {
 		/* The only size==0 bios we expect are empty flushes. */
 		D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
-		if (device->resource->current_tle_writes)
-			start_new_tl_epoch(device->resource);
+		start_new_tl_epoch(device->resource);
 		return 0;
 	}
 
@@ -1239,16 +1241,18 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 
 	/* which transfer log epoch does this belong to? */
 	req->epoch = atomic_read(&device->resource->current_tle_nr);
-	if (rw == WRITE)
-		device->resource->current_tle_writes++;
 
 	if (rw == WRITE)
 		device->resource->dagtag_sector += bio_sectors(bio);
 	req->dagtag_sector = device->resource->dagtag_sector;
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
-	if (likely(req->i.size!=0))
+	if (likely(req->i.size != 0)) {
+		if (rw == WRITE)
+			device->resource->current_tle_writes++;
+
 		list_add_tail(&req->tl_requests, &device->resource->transfer_log);
+	}
 
 	if (rw == WRITE) {
 		if (!drbd_process_write_request(req))
