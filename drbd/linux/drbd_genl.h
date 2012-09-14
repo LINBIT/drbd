@@ -138,6 +138,7 @@ GENL_struct(DRBD_NLA_RESOURCE_OPTS, 4, res_opts,
 	__str_field_def(1,	DRBD_GENLA_F_MANDATORY,	cpu_mask,       DRBD_CPU_MASK_SIZE)
 	__u32_field_def(2,	DRBD_GENLA_F_MANDATORY,	on_no_data, DRBD_ON_NO_DATA_DEF)
 	__flg_field_def(3,	DRBD_GENLA_F_MANDATORY,	auto_promote, DRBD_AUTO_PROMOTE_DEF)
+	__u32_field(4,		DRBD_F_REQUIRED | DRBD_F_INVARIANT,	node_id)
 )
 
 GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
@@ -171,6 +172,7 @@ GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
 	__flg_field_def(29,	DRBD_GENLA_F_MANDATORY,	use_rle, DRBD_USE_RLE_DEF)
 	__u32_field_def(30,	DRBD_GENLA_F_MANDATORY,	fencing_policy, DRBD_FENCING_DEF)
 	__str_field_def(31,	DRBD_GENLA_F_MANDATORY, name, SHARED_SECRET_MAX)
+	__u32_field(32,		DRBD_F_REQUIRED | DRBD_F_INVARIANT,	peer_node_id)
 )
 
 GENL_struct(DRBD_NLA_SET_ROLE_PARMS, 6, set_role_parms,
