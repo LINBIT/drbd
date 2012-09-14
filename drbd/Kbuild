@@ -21,12 +21,12 @@ ifeq ($(shell grep -e '\<rb_augment_insert\>' \
 		   -e '\<rb_augment_erase_begin\>' \
 		   -e '\<rb_augment_erase_end\>' \
 		   $(objtree)/Module.symvers | wc -l),3)
-EXTRA_CFLAGS += -DAUGMENTED_RBTREE_SYMBOLS_EXPORTED
+override EXTRA_CFLAGS += -DAUGMENTED_RBTREE_SYMBOLS_EXPORTED
 endif
 
 ifeq ($(shell grep -e '\<idr_get_next\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
-EXTRA_CFLAGS += -DIDR_GET_NEXT_EXPORTED
+override EXTRA_CFLAGS += -DIDR_GET_NEXT_EXPORTED
 else
 compat_objs += compat/idr.o
 endif
