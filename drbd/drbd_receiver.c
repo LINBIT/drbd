@@ -970,20 +970,25 @@ retry:
 				if (sock.socket) {
 					drbd_warn(connection, "initial packet S crossed\n");
 					sock_release(sock.socket);
+					sock.socket = s;
+					goto randomize;
 				}
 				sock.socket = s;
 				break;
 			case P_INITIAL_META:
+				set_bit(DISCARD_CONCURRENT, &connection->flags);
 				if (msock.socket) {
 					drbd_warn(connection, "initial packet M crossed\n");
 					sock_release(msock.socket);
+					msock.socket = s;
+					goto randomize;
 				}
 				msock.socket = s;
-				set_bit(DISCARD_CONCURRENT, &connection->flags);
 				break;
 			default:
 				drbd_warn(connection, "Error receiving initial packet\n");
 				sock_release(s);
+randomize:
 				if (random32() & 1)
 					goto retry;
 			}
