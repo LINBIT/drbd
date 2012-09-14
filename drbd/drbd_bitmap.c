@@ -1026,6 +1026,7 @@ struct bm_aio_ctx {
 	unsigned flags;
 #define BM_AIO_COPY_PAGES	1
 #define BM_AIO_WRITE_HINTED	2
+#define BM_WRITE_ALL_PAGES	4
 	int error;
 	struct kref kref;
 };
@@ -1202,7 +1203,8 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 			    !test_and_clear_bit(BM_PAGE_HINT_WRITEOUT,
 				    &page_private(b->bm_pages[i])))
 				continue;
-			if (bm_test_page_unchanged(b->bm_pages[i])) {
+			if (!(flags & BM_WRITE_ALL_PAGES) &&
+			    bm_test_page_unchanged(b->bm_pages[i])) {
 				dynamic_drbd_dbg(device, "skipped bm write for idx %u\n", i);
 				continue;
 			}
@@ -1308,6 +1310,18 @@ int drbd_bm_write(struct drbd_device *device,
 		  struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	return bm_rw(device, WRITE, 0, 0);
+}
+
+/**
+ * drbd_bm_write_all() - Write the whole bitmap to its on disk location.
+ * @mdev:	DRBD device.
+ *
+ * Will write all pages.
+ */
+int drbd_bm_write_all(struct drbd_device *device,
+		      struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	return bm_rw(device, WRITE, BM_WRITE_ALL_PAGES, 0);
 }
 
 /**

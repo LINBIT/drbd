@@ -1348,6 +1348,7 @@ extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must
 extern void drbd_bm_mark_range_for_writeout(struct drbd_device *, unsigned long, unsigned long);
 extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
+extern int drbd_bm_write_all(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bm_write_copy_pages(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern size_t	     drbd_bm_words(struct drbd_device *device);
 extern unsigned long drbd_bm_bits(struct drbd_device *device);

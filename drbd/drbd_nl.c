@@ -1137,7 +1137,7 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 			 la_size_changed && md_moved ? "size changed and md moved" :
 			 la_size_changed ? "size changed" : "md moved");
 		/* next line implicitly does drbd_suspend_io()+drbd_resume_io() */
-		err = drbd_bitmap_io(device, &drbd_bm_write,
+		err = drbd_bitmap_io(device, md_moved ? &drbd_bm_write_all : &drbd_bm_write,
 				"size changed", BM_LOCK_ALL, NULL);
 		if (err) {
 			rv = DEV_SIZE_ERROR;
