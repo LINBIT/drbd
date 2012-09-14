@@ -2003,7 +2003,6 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				unsigned long irq_flags;
 				int vnr;
 
-				tl_clear(connection);
 				rcu_read_lock();
 				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 					struct drbd_device *device = peer_device->device;
@@ -2014,6 +2013,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				}
 				rcu_read_unlock();
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);
+				_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 				__change_io_susp_fencing(resource, false);
 				end_state_change(resource, &irq_flags);
 			}

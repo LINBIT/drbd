@@ -811,6 +811,12 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 #endif
 
 	case RESEND:
+		/* Simply complete (local only) READs. */
+		if (!(req->rq_state[0] & RQ_WRITE) && !(req->rq_state[idx] & RQ_NET_MASK)) {
+			mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+			break;
+		}
+
 		/* If RQ_NET_OK is already set, we got a P_WRITE_ACK or P_RECV_ACK
 		   before the connection loss (B&C only); only P_BARRIER_ACK
 		   (or the local completion?) was missing when we suspended.
