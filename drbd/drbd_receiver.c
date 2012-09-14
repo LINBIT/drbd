@@ -2097,7 +2097,7 @@ static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
 
 static int e_send_discard_write(struct drbd_work *w, int unused)
 {
-	return e_send_ack(w, P_DISCARD_WRITE);
+	return e_send_ack(w, P_SUPERSEDED);
 }
 
 static int e_send_retry_write(struct drbd_work *w, int unused)
@@ -2108,7 +2108,7 @@ static int e_send_retry_write(struct drbd_work *w, int unused)
 	struct drbd_connection *connection = peer_request->peer_device->connection;
 
 	return e_send_ack(w, connection->agreed_pro_version >= 100 ?
-			     P_RETRY_WRITE : P_DISCARD_WRITE);
+			     P_RETRY_WRITE : P_SUPERSEDED);
 }
 
 static bool seq_greater(u32 a, u32 b)
@@ -5511,7 +5511,7 @@ STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	case P_RECV_ACK:
 		what = RECV_ACKED_BY_PEER;
 		break;
-	case P_DISCARD_WRITE:
+	case P_SUPERSEDED:
 		what = DISCARD_WRITE;
 		break;
 	case P_RETRY_WRITE:
@@ -5747,7 +5747,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RECV_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_WRITE_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_RS_WRITE_ACK]    = { sizeof(struct p_block_ack), got_BlockAck },
-	[P_DISCARD_WRITE]   = { sizeof(struct p_block_ack), got_BlockAck },
+	[P_SUPERSEDED]      = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_NEG_ACK]	    = { sizeof(struct p_block_ack), got_NegAck },
 	[P_NEG_DREPLY]	    = { sizeof(struct p_block_ack), got_NegDReply },
 	[P_NEG_RS_DREPLY]   = { sizeof(struct p_block_ack), got_NegRSDReply },
