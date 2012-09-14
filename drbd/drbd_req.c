@@ -904,7 +904,7 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 		struct drbd_md_peer *peer_md = &md->peers[bitmap_index];
 
 		/* Skip bitmap indexes which are not assigned to a peer. */
-		if (! peer_md->addr_hash)
+		if (peer_md->node_id == -1)
 			continue;
 
 		if (drbd_bm_count_bits(device, bitmap_index, sbnr, ebnr))

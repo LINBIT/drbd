@@ -4041,16 +4041,9 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
 	if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
-		err = drbd_validate_bitmap_index(peer_device);
 		if (!test_bit(INITIAL_STATE_SENT, &peer_device->flags)) {
-			if (err == -EAGAIN)
-				err = drbd_send_uuids(peer_device);
-
 			set_bit(INITIAL_STATE_SENT, &peer_device->flags);
-			if (!err)
-				err = drbd_send_current_state(peer_device);
-		} else if (err) {
-			drbd_err(peer_device, "Needed to change bitmap slot late! Aborting handshake.\n");
+			err = drbd_send_current_state(peer_device);
 		}
 	}
 

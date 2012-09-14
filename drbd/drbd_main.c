@@ -971,23 +971,11 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	}
 }
 
-static int find_peer_addr_hash(struct drbd_device *device, u32 peer_addr_hash)
-{
-	int i;
-
-	for (i = 0; i < device->bitmap->bm_max_peers; i++)
-		if (device->ldev->md.peers[i].addr_hash == peer_addr_hash)
-			return i;
-	return -1;
-}
-
 /* All callers hold resource->conf_update */
 int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_connection *connection = peer_device->connection;
-	u32 peer_addr_hash;
-	int i, err = -ENOMEM;
+	int err = -ENOMEM;
 	struct disk_conf *disk_conf;
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
@@ -1007,24 +995,6 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 		goto out;
 	rcu_assign_pointer(peer_device->rs_plan_s, resync_plan);
 	peer_device->resync_lru = resync_lru;
-
-	peer_addr_hash = crc32c(0, &connection->peer_addr, connection->peer_addr_len);
-	i = find_peer_addr_hash(device, peer_addr_hash);
-	if (i != -1) {
-		drbd_info(peer_device, "Bitmap slot %u was assigned to "
-			  "peer with address hash %08X\n", i, peer_addr_hash);
-	} else {
-		i = find_peer_addr_hash(device, 0 /* UNUSED_SLOT */);
-		if (i == -1) {
-			drbd_warn(peer_device, "No bitmap vacant Bitmap slot available\n");
-			goto out;
-		}
-		drbd_info(peer_device, "Bitmap slot %u was allocated to "
-			  "peer with address hash %08X\n", i, peer_addr_hash);
-		device->ldev->md.peers[i].addr_hash = peer_addr_hash;
-		drbd_md_mark_dirty(device);
-	}
-	peer_device->bitmap_index = i;
 	err = 0;
 
 out:
@@ -1035,112 +1005,6 @@ out:
 	put_ldev(device);
 	return err;
 }
-
-static bool has_bitmap_index_matching_uuids(int bi, struct drbd_peer_device *peer_device)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_md *md = &device->ldev->md;
-	enum drbd_uuid_index ui;
-	u64 peer, self_current;
-
-	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
-	self_current = device->ldev->md.current_uuid;
-
-	if ((peer_device->p_uuid[UI_CURRENT] & ~((u64)1)) == self_current)
-		return true;
-
-	if ((md->peers[bi].bitmap_uuid & ~((u64)1)) == peer ||
-	    (peer_device->p_uuid[UI_BITMAP] & ~((u64)1)) == self_current)
-		return true;
-	for (ui = UI_HISTORY_START; ui <= UI_HISTORY_END; ui++) {
-		if ((md->peers[bi].history_uuids[ui - UI_HISTORY_START] & ~((u64)1)) == peer ||
-		    (peer_device->p_uuid[ui] & ~((u64)1)) == self_current)
-			return true;
-	}
-
-	return false;
-}
-
-static bool is_bitmap_index_unclaimed(int bi, struct drbd_resource *resource)
-{
-	struct drbd_device *device;
-	int vnr;
-
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		struct drbd_peer_device *peer_device;
-
-		for_each_peer_device(peer_device, device) {
-			if (peer_device->bitmap_index == bi)
-				return false;
-		}
-	}
-
-	return true;
-}
-
-static int _drbd_validate_bitmap_index(struct drbd_peer_device *peer_device)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_resource *resource = connection->resource;
-	struct drbd_md *md = &device->ldev->md;
-	int bi, old_bi, new_bi;
-	u32 peer_addr_hash;
-
-	old_bi = peer_device->bitmap_index;
-	if (has_bitmap_index_matching_uuids(old_bi, peer_device))
-		return 0;
-
-	for (bi = 0; bi < device->bitmap->bm_max_peers; bi++) {
-		if (has_bitmap_index_matching_uuids(bi, peer_device)) {
-			if (is_bitmap_index_unclaimed(bi, resource)) {
-				new_bi = bi;
-				goto reassign;
-			} else {
-				drbd_warn(peer_device, "WARN: Bitmap slot (%d) would fit better.\n", bi);
-				break;
-			}
-		}
-	}
-
-	drbd_warn(peer_device, "WARN: Could not affirm bitmap slot association by UUIDs.\n");
-	return 0;
-
-reassign:
-	drbd_warn(peer_device, "ATTENTION: Using bitmap slot %u instead of %u\n",
-		  new_bi, old_bi);
-	drbd_warn(peer_device, "ATTENTION: Marking bitmap slot %u as unused\n", old_bi);
-	device->ldev->md.peers[old_bi].addr_hash = 0;
-
-	peer_device->bitmap_index = new_bi;
-	peer_addr_hash = crc32c(0, &connection->peer_addr, connection->peer_addr_len);
-	md->peers[new_bi].addr_hash = peer_addr_hash;
-	drbd_md_mark_dirty(device);
-
-	return -EAGAIN;
-}
-/**
- * drbd_validate_bitmap_index()
- * @peer_device
- *
- * Validates the bitmap_index based on the UUIDs
- *
- * Returns 0 if bitmap_index was not changed,
- * -ENOSPC when it was not possible to find a vacant bitmap stop,
- * -EAGAIN when the bitmap_index was changed.
- */
-int drbd_validate_bitmap_index(struct drbd_peer_device *peer_device)
-{
-	struct drbd_device *device = peer_device->device;
-	int err = 0;
-
-	if (get_ldev_if_state(device, D_NEGOTIATING)) {
-		err = _drbd_validate_bitmap_index(peer_device);
-		put_ldev(device);
-	}
-	return err;
-}
-
 
 int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enum dds_flags flags)
 {
@@ -3369,7 +3233,6 @@ void drbd_free_sock(struct drbd_connection *connection)
 struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
 	u64 history_uuids[HISTORY_UUIDS];
-	u32 addr_hash;
 	u32 flags;
 	u32 node_id;
 	u32 reserved_u32[3];
@@ -3445,7 +3308,6 @@ void drbd_md_sync(struct drbd_device *device)
 		for (j = 0; j < HISTORY_UUIDS; j++)
 			buffer->peers[i].history_uuids[j] =
 				cpu_to_be64(peer_md->history_uuids[j]);
-		buffer->peers[i].addr_hash = cpu_to_be32(peer_md->addr_hash);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
 		buffer->peers[i].node_id = cpu_to_be32(peer_md->node_id);
 	}
@@ -3565,7 +3427,6 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		for (j = 0; j < HISTORY_UUIDS; j++)
 			peer_md->history_uuids[j] =
 				be64_to_cpu(buffer->peers[i].history_uuids[j]);
-		peer_md->addr_hash = be32_to_cpu(buffer->peers[i].addr_hash);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 		peer_md->node_id = be32_to_cpu(buffer->peers[i].node_id);
 	}

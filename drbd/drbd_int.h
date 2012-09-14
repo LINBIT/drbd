@@ -612,7 +612,6 @@ struct drbd_socket {
 struct drbd_md_peer {
 	u64 bitmap_uuid;
 	u64 history_uuids[HISTORY_UUIDS];
-	u32 addr_hash;
 	u32 flags;
 	u32 node_id;
 };
@@ -1107,7 +1106,6 @@ extern int drbd_send_uuids(struct drbd_peer_device *);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *);
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_attach_peer_device(struct drbd_peer_device *);
-extern int drbd_validate_bitmap_index(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, int trigger_reply, enum dds_flags flags);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state);
 extern int conn_send_state(struct drbd_connection *, union drbd_state);
