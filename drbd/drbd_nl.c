@@ -2346,6 +2346,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_ret_code retcode;
 	int i;
 	int err;
+	bool allocate_bitmap_slots;
 
 	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
@@ -2402,7 +2403,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_INVALID_REQUEST;
 	}
 	if (retcode) {
-		drbd_err(adm_ctx.resource, "Peer node id %u is not unique\n",
+		drbd_err(adm_ctx.resource, "Peer node id %d is not unique\n",
 			 new_net_conf->peer_node_id);
 		retcode = ERR_INVALID_REQUEST;
 		goto fail;
@@ -2449,6 +2450,63 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	memcpy(&connection->my_addr, nla_data(adm_ctx.my_addr), connection->my_addr_len);
 	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
+
+	/* Make sure we have a bitmap slot for this peer id on each device */
+	allocate_bitmap_slots = false;
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		unsigned int bitmap_index, slots_available = 0;
+
+		device = peer_device->device;
+		if (!get_ldev(device))
+			continue;
+		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+			struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+
+			if (new_net_conf->peer_node_id == peer_md->node_id) {
+				peer_device->bitmap_index = bitmap_index;
+				goto next_device_1;
+			}
+			if (peer_md->node_id == -1)
+				slots_available++;
+		}
+		allocate_bitmap_slots = true;
+		if (!slots_available) {
+			drbd_err(device, "Not enough free bitmap "
+				 "slots (available=%d, needed=%d)\n",
+				 0, 1);
+			retcode = ERR_INVALID_REQUEST;
+			goto unlock_fail_free_connection;
+		}
+	    next_device_1:
+		put_ldev(device);
+	}
+	if (allocate_bitmap_slots) {
+		idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+			unsigned int bitmap_index;
+
+			device = peer_device->device;
+			if (!get_ldev(device))
+				continue;
+			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+
+				if (new_net_conf->peer_node_id == peer_md->node_id)
+					goto next_device_2;
+			}
+			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+
+				if (peer_md->node_id == -1) {
+					peer_md->node_id = new_net_conf->peer_node_id;
+					drbd_md_mark_dirty(device);
+					peer_device->bitmap_index = bitmap_index;
+					break;
+				}
+			}
+		    next_device_2:
+			put_ldev(device);
+		}
+	}
 
 	connection_to_info(&connection_info, connection, NOW);
 	flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
