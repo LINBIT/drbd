@@ -3093,8 +3093,12 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 			if ((drbd_peer_uuid(peer_device, UI_BITMAP) & ~((u64)1)) == (peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
 			    (drbd_peer_uuid(peer_device, UI_HISTORY_START) & ~((u64)1)) == (peer_device->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
+				struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+
 				drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
-				drbd_uuid_set_bm(peer_device, 0UL);
+				drbd_uuid_move_history(peer_device);
+				peer_md->uuid[MD_UI(UI_HISTORY_START)] = peer_md->uuid[MD_UI(UI_BITMAP)];
+				peer_md->uuid[MD_UI(UI_BITMAP)] = 0;
 
 				drbd_uuid_dump_self(peer_device,
 						    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(peer_device) : 0, 0);
@@ -3202,8 +3206,8 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 			if (peer_device->connection->agreed_pro_version < 91)
 				return -1091;
 
-			_drbd_uuid_set(peer_device, UI_BITMAP, drbd_peer_uuid(peer_device, UI_HISTORY_START));
-			_drbd_uuid_set(peer_device, UI_HISTORY_START, drbd_peer_uuid(peer_device, UI_HISTORY_START + 1));
+			__drbd_uuid_set(peer_device, UI_BITMAP, drbd_peer_uuid(peer_device, UI_HISTORY_START));
+			__drbd_uuid_set(peer_device, UI_HISTORY_START, drbd_peer_uuid(peer_device, UI_HISTORY_START + 1));
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
@@ -3254,10 +3258,12 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	int hg, rule_nr, rr_conflict, tentative;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
+	spin_lock_irq(&device->ldev->md.uuid_lock);
 	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
 	drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
 
 	hg = drbd_uuid_compare(peer_device, &rule_nr);
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	drbd_info(device, "uuid_compare()=%d by rule %d\n", hg, rule_nr);
 

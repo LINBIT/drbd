@@ -615,6 +615,7 @@ struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
 	u64 effective_size;	/* last agreed size (sectors) */
+	spinlock_t uuid_lock;
 	u64 current_uuid;
 	u64 device_uuid;
 	u32 flags;
@@ -1150,6 +1151,8 @@ extern void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 va
 extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
 extern void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
+extern void drbd_uuid_move_history(struct drbd_peer_device *peer_device) __must_hold(local);
+extern void __drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);

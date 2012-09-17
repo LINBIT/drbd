@@ -1530,6 +1530,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+	spin_lock_init(&nbc->md.uuid_lock);
+
 	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
@@ -3249,9 +3251,11 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		u64 *history_uuids = (u64 *)s->peer_dev_history_uuids;
 		int n;
 
+		spin_lock_irq(&device->ldev->md.uuid_lock);
 		s->peer_dev_bitmap_uuid = peer_device_uuids[MD_UI(UI_BITMAP)];
 		for (n = 0; n < HISTORY_UUIDS; n++)
 			history_uuids[n] = peer_device_uuids[MD_UI(UI_HISTORY_START + n)];
+		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		s->peer_dev_history_uuids_len = HISTORY_UUIDS * sizeof(u64);
 		put_ldev(device);
 	}

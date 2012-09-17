@@ -65,9 +65,12 @@ static ssize_t drbd_md_attr_show(struct kobject *kobj, struct attribute *attr, c
 
 static ssize_t data_gen_id_show(struct drbd_backing_dev *bdev, char *buf)
 {
+	unsigned long flags;
 	ssize_t size = 0;
 
+	spin_lock_irqsave(&bdev->md.uuid_lock, flags);
 	size = sprintf(buf, "0x%016llX\n", bdev->md.current_uuid);
+	spin_unlock_irqrestore(&bdev->md.uuid_lock, flags);
 
 	return size;
 }
