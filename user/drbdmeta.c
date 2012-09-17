@@ -1047,7 +1047,7 @@ struct meta_cmd cmds[] = {
 	{"outdate", 0, meta_outdate, 1},
 	{"invalidate", 0, meta_invalidate, 1},
 	{"dstate", 0, meta_dstate, 1},
-	{"read-dev-uuid", "VAL",  meta_read_dev_uuid,  0},
+	{"read-dev-uuid", 0,  meta_read_dev_uuid,  0},
 	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
 	{"check-resize", 0, meta_chk_offline_resize, 1},
