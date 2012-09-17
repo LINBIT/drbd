@@ -549,7 +549,6 @@ STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 				drbd_err(connection, "sock_recvmsg returned %d\n", rv);
 			break;
 		} else if (rv == 0) {
-			drbd_info(connection, "sock was shut down by peer\n");
 			break;
 		} else	{
 			/* signal came in, or peer/link went down,
@@ -562,9 +561,25 @@ STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 
 	set_fs(oldfs);
 
+	if (rv == 0) {
+		if (test_bit(DISCONNECT_SENT, &connection->flags)) {
+			long t;
+			rcu_read_lock();
+			t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
+			rcu_read_unlock();
+
+			t = wait_event_timeout(connection->ping_wait, connection->cstate[NOW] < C_CONNECTED, t);
+
+			if (t)
+				goto out;
+		}
+		drbd_info(connection, "sock was shut down by peer\n");
+	}
+
 	if (rv != size)
 		change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 
+out:
 	return rv;
 }
 
@@ -915,6 +930,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 		.door_bell = COMPLETION_INITIALIZER_ONSTACK(ad.door_bell),
 	};
 
+	clear_bit(DISCONNECT_SENT, &connection->flags);
 	if (change_cstate(connection, C_WF_CONNECTION, CS_VERBOSE) < SS_SUCCESS)
 		return -2;
 
@@ -5843,6 +5859,18 @@ int drbd_asender(struct drbd_thread *thi)
 			received += rv;
 			buf	 += rv;
 		} else if (rv == 0) {
+			if (test_bit(DISCONNECT_SENT, &connection->flags)) {
+				long t;
+				rcu_read_lock();
+				t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
+				rcu_read_unlock();
+
+				t = wait_event_timeout(connection->ping_wait,
+						       connection->cstate[NOW] < C_CONNECTED,
+						       t);
+				if (t)
+					break;
+			}
 			drbd_err(connection, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {

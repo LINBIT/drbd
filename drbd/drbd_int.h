@@ -682,6 +682,7 @@ enum {
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
+	DISCONNECT_SENT,
 };
 
 /* flag bits per resource */
