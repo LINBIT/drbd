@@ -1925,6 +1925,27 @@ void wait_for_sender_todo(struct drbd_connection *connection)
 	mutex_unlock(&connection->data.mutex);
 }
 
+static void re_init_if_first_write(struct drbd_connection *connection, unsigned int epoch)
+{
+	if (!connection->send.seen_any_write_yet) {
+		connection->send.seen_any_write_yet = true;
+		connection->send.current_epoch_nr = epoch;
+		connection->send.current_epoch_writes = 0;
+	}
+}
+
+static void maybe_send_barrier(struct drbd_connection *connection, unsigned int epoch)
+{
+	/* re-init if first write on this connection */
+	if (!connection->send.seen_any_write_yet)
+		return;
+	if (connection->send.current_epoch_nr != epoch) {
+		if (connection->send.current_epoch_writes)
+			drbd_send_barrier(connection);
+		connection->send.current_epoch_nr = epoch;
+	}
+}
+
 int process_one_request(struct drbd_connection *connection)
 {
 	struct bio_and_error m;
@@ -1937,20 +1958,11 @@ int process_one_request(struct drbd_connection *connection)
 	enum drbd_req_event what;
 
 	if (drbd_req_is_write(req)) {
-		/* need to send a P_BARRIER first? */
-		if (!connection->send.seen_any_write_yet) {
-			connection->send.seen_any_write_yet = true;
-			connection->send.current_epoch_nr = req->epoch;
-		}
-		if (connection->send.current_epoch_nr != req->epoch) {
-			if (connection->send.current_epoch_writes)
-				drbd_send_barrier(connection);
-			connection->send.current_epoch_nr = req->epoch;
-		}
-
 		/* If a WRITE does not expect a barrier ack,
 		 * we are supposed to only send an "out of sync" info packet */
 		if (s & RQ_EXP_BARR_ACK) {
+			re_init_if_first_write(connection, req->epoch);
+			maybe_send_barrier(connection, req->epoch);
 			connection->send.current_epoch_writes++;
 			connection->send.current_dagtag_sector = req->dagtag_sector;
 
@@ -1961,18 +1973,12 @@ int process_one_request(struct drbd_connection *connection)
 			 * If it was sent, it was the closing barrier for the last
 			 * replicated epoch, before we went into AHEAD mode.
 			 * No more barriers will be sent, until we leave AHEAD mode again. */
-
+			maybe_send_barrier(connection, req->epoch);
 			err = drbd_send_out_of_sync(peer_device, req);
 			what = OOS_HANDED_TO_NETWORK;
 		}
 	} else {
-		if (connection->send.seen_any_write_yet &&
-		    connection->send.current_epoch_nr != req->epoch) {
-			if (connection->send.current_epoch_writes)
-				drbd_send_barrier(connection);
-			connection->send.current_epoch_nr = req->epoch;
-		}
-
+		maybe_send_barrier(connection, req->epoch);
 		err = drbd_send_drequest(peer_device, P_DATA_REQUEST,
 				req->i.sector, req->i.size, (unsigned long)req);
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
