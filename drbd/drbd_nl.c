@@ -1416,11 +1416,13 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	drbd_suspend_io(device);
 	wait_event(device->al_wait, lc_try_lock(device->act_log));
 	drbd_al_shrink(device);
 	err = drbd_check_al_size(device, new_disk_conf);
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
+	drbd_resume_io(device);
 
 	if (err) {
 		retcode = ERR_NOMEM;
