@@ -164,23 +164,25 @@ void drbd_req_destroy(struct kref *kref)
 	list_del_init(&req->tl_requests);
 
 	if (s & RQ_WRITE) {
-		if (!(s & RQ_LOCAL_OK))
-			drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
-		else {
-			rcu_read_lock();
-			for_each_peer_device(peer_device, device) {
-				unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
-				if (!(ns & RQ_NET_OK))
-					/* this can not be moved to drbd_req_complete(),
-					 * because of protocol A "faking" RQ_NET_OK.
-					 * Here, we end up only after RQ_NET_DONE,
-					 * And on CONNECTION_LOST_WHILE_PENDING, RQ_NET_OK
-					 * will be cleared first. */
-					drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
-				else if (ns & RQ_NET_SIS)
-					drbd_set_in_sync(peer_device, req->i.sector, req->i.size);
+		if (!(s & RQ_POSTPONED)) {
+			if (!(s & RQ_LOCAL_OK))
+				drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
+			else {
+				rcu_read_lock();
+				for_each_peer_device(peer_device, device) {
+					unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
+					if (!(ns & RQ_NET_OK))
+						/* this can not be moved to drbd_req_complete(),
+						 * because of protocol A "faking" RQ_NET_OK.
+						 * Here, we end up only after RQ_NET_DONE,
+						 * And on CONNECTION_LOST_WHILE_PENDING, RQ_NET_OK
+						 * will be cleared first. */
+						drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
+					else if (ns & RQ_NET_SIS)
+						drbd_set_in_sync(peer_device, req->i.sector, req->i.size);
+				}
+				rcu_read_unlock();
 			}
-			rcu_read_unlock();
 		}
 
 		/* one might be tempted to move the drbd_al_complete_io
@@ -1214,6 +1216,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 		if (req->private_bio) {
 			bio_put(req->private_bio);
 			req->private_bio = NULL;
+			put_ldev(device);
 		}
 		goto out;
 	}
