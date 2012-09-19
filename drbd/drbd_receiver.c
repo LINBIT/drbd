@@ -516,22 +516,9 @@ STATIC int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flag
 
 STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 {
-	mm_segment_t oldfs;
-	struct kvec iov = {
-		.iov_base = buf,
-		.iov_len = size,
-	};
-	struct msghdr msg = {
-		.msg_iovlen = 1,
-		.msg_iov = (struct iovec *)&iov,
-		.msg_flags = MSG_WAITALL | MSG_NOSIGNAL
-	};
 	int rv;
 
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-	rv = sock_recvmsg(connection->data.socket, &msg, size, msg.msg_flags);
-	set_fs(oldfs);
+	rv = drbd_recv_short(connection->data.socket, buf, size, 0);
 
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
