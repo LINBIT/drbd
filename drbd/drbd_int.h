@@ -203,6 +203,8 @@ void drbd_printk_with_wrong_object_type(void);
 	drbd_dbg(device, fmt, ## args)
 #endif
 
+#define drbd_emerg(device, fmt, args...) \
+	drbd_printk(KERN_EMERG, device, fmt, ## args)
 #define drbd_alert(device, fmt, args...) \
 	drbd_printk(KERN_ALERT, device, fmt, ## args)
 #define drbd_err(device, fmt, args...) \
