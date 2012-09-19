@@ -26,7 +26,6 @@
 
  */
 
-#include <linux/autoconf.h>
 #include <linux/module.h>
 #include <linux/drbd.h>
 #include <asm/uaccess.h>
