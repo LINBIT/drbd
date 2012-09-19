@@ -389,6 +389,24 @@ void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags
 	__begin_state_change(resource);
 }
 
+static bool all_peer_devices_connected(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+	bool rv = true;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->repl_state[NOW] < L_CONNECTED) {
+			rv = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
 					     unsigned long *irq_flags,
 					     enum drbd_state_rv rv)
@@ -1216,6 +1234,16 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
 			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.current_uuid);
+
+		for_each_peer_device(peer_device, device) {
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
+			struct drbd_connection *connection = peer_device->connection;
+
+			/* Wake up role changes, that were delayed because of connection establishing */
+			if (repl_state[OLD] == L_STANDALONE && repl_state[NEW] != L_STANDALONE &&
+			    all_peer_devices_connected(connection))
+				clear_bit(INITIAL_STATE_SENT, &connection->flags);
+		}
 
 		wake_up(&device->misc_wait);
 		wake_up(&device->resource->state_wait);
