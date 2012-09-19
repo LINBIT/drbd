@@ -163,7 +163,13 @@ void drbd_req_destroy(struct kref *kref)
 	list_del_init(&req->tl_requests);
 
 	if (s & RQ_WRITE) {
-		if (!(s & RQ_POSTPONED)) {
+		/* There is a special case:
+		 * we may notice late that IO was suspended,
+		 * and postpone, or schedule for retry, a write,
+		 * before it even was submitted or sent.
+		 * In that case we do not want to touch the bitmap at all.
+		 */
+		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED) {
 			if (!(s & RQ_LOCAL_OK))
 				drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
 			else {
