@@ -869,13 +869,14 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 /* we may do a local read if:
  * - we are consistent (of course),
  * - or we are generally inconsistent,
- *   BUT we are still/already IN SYNC for this area.
+ *   BUT we are still/already IN SYNC with all peers for this area.
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
 STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
 {
-	struct drbd_peer_device *peer_device;
+	struct drbd_md *md = &device->ldev->md;
+	unsigned int bitmap_index;
 
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
@@ -892,15 +893,16 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	/* FIXME: Which policy do we want here? */
-	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
-		if (drbd_bm_count_bits(peer_device->device, peer_device->bitmap_index, sbnr, ebnr)) {
-			rcu_read_unlock();
+	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+		struct drbd_md_peer *peer_md = &md->peers[bitmap_index];
+
+		/* Skip bitmap indexes which are not assigned to a peer. */
+		if (! peer_md->addr_hash)
+			continue;
+
+		if (drbd_bm_count_bits(device, bitmap_index, sbnr, ebnr))
 			return false;
-		}
 	}
-	rcu_read_unlock();
 	return true;
 }
 
