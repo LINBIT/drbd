@@ -3651,7 +3651,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
 		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
 		    bm_uuid == 0) {
-			_drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
+			__drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
 			do_it = 1;
 		}
 	}
@@ -3662,7 +3662,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 	}
 
 	get_random_bytes(&val, sizeof(u64));
-	_drbd_uuid_set_current(device, val);
+	__drbd_uuid_set_current(device, val);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	drbd_info(device, "new current UUID: %016llX\n", device->ldev->md.current_uuid);
 
