@@ -1376,7 +1376,7 @@ void request_timer_fn(unsigned long data)
 	struct drbd_device *device = (struct drbd_device *) data;
 	struct drbd_connection *connection;
 	struct drbd_request *req; /* oldest request */
-	unsigned long ent = 0, dt = 0, et = 0, nt; /* effective timeout = ko_count * timeout */
+	unsigned long dt = 0, et = 0, nt; /* effective timeout = ko_count * timeout */
 	bool restart_timer = false;
 	unsigned long now = jiffies;
 
@@ -1405,6 +1405,7 @@ void request_timer_fn(unsigned long data)
 	for_each_connection(connection, device->resource) {
 		struct drbd_peer_device *peer_device;
 		struct net_conf *nc;
+		unsigned long ent = 0;
 		int idx;
 
 		rcu_read_lock();
@@ -1439,7 +1440,7 @@ void request_timer_fn(unsigned long data)
 		 * to expire twice (worst case) to become effective. Good enough.
 		 */
 
-		if (req->rq_state[idx] & RQ_NET_PENDING &&
+		if (req && req->rq_state[idx] & RQ_NET_PENDING &&
 		    time_after(now, req->start_time + ent) &&
 		    !time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
 			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
