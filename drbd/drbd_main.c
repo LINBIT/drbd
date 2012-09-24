@@ -2105,6 +2105,28 @@ static bool primary_peer_present(struct drbd_resource *resource)
 	return rv;
 }
 
+static bool any_disk_is_uptodate(struct drbd_device *device)
+{
+	bool ret = false;
+
+	rcu_read_lock();
+	if (device->disk_state[NOW] == D_UP_TO_DATE)
+		ret = true;
+	else {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+				ret = true;
+				break;
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
@@ -2133,9 +2155,10 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		if (resource->role[NOW] != R_PRIMARY)
 			rv = -EROFS;
 	} else /* READ access only */ {
-		if (resource->role[NOW] != R_PRIMARY &&
-		    primary_peer_present(resource) &&
-		    !allow_oos)
+		if (!any_disk_is_uptodate(device) ||
+		    (resource->role[NOW] != R_PRIMARY &&
+		     primary_peer_present(resource) &&
+		     !allow_oos))
 			rv = -EMEDIUMTYPE;
 	}
 
