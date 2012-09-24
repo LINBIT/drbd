@@ -2297,17 +2297,11 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	connection = drbd_create_connection(adm_ctx.resource);
-	if (!connection) {
-		retcode = ERR_NOMEM;
-		goto fail;
-	}
-
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
 	if (!new_net_conf) {
 		retcode = ERR_NOMEM;
-		goto fail_free_connection;
+		goto out;
 	}
 
 	set_net_conf_defaults(new_net_conf);
@@ -2316,7 +2310,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
-		goto fail_free_connection;
+		goto fail;
+	}
+
+	connection = drbd_create_connection(adm_ctx.resource);
+	if (!connection) {
+		retcode = ERR_NOMEM;
+		goto fail;
 	}
 
 	retcode = check_net_options(connection, new_net_conf);
