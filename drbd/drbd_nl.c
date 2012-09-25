@@ -3401,7 +3401,7 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
 	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
 	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
-	if (peer_device->bitmap_index != -1 && get_ldev(device)) {
+	if (get_ldev(device)) {
 		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 		u64 *history_uuids = (u64 *)s->peer_dev_history_uuids;
 		int n;

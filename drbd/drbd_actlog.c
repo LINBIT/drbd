@@ -966,7 +966,7 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	for_each_peer_device(peer_device, device) {
 		int bitmap_index = peer_device->bitmap_index;
 
-		if (bitmap_index == -1 || !test_and_clear_bit(bitmap_index, &mask))
+		if (!test_and_clear_bit(bitmap_index, &mask))
 			continue;
 
 		if (test_bit(bitmap_index, &bits))
