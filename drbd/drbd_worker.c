@@ -1621,7 +1621,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 	}
 
 	drbd_start_resync(mdev, C_SYNC_SOURCE);
-	clear_bit(AHEAD_TO_SYNC_SOURCE, &mdev->flags);
+	drbd_clear_flag(mdev, AHEAD_TO_SYNC_SOURCE);
 	return 0;
 }
 
@@ -1643,7 +1643,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		return;
 	}
 
-	if (!test_bit(B_RS_H_DONE, &mdev->flags)) {
+	if (!drbd_test_flag(mdev, B_RS_H_DONE)) {
 		if (side == C_SYNC_TARGET) {
 			/* Since application IO was locked out during C_WF_BITMAP_T and
 			   C_WF_SYNC_UUID we are still unmodified. Before going to C_SYNC_TARGET
@@ -1677,7 +1677,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 		/* The worker should not sleep waiting for state_mutex,
 		   that can take long */
 		if (!mutex_trylock(mdev->state_mutex)) {
-			set_bit(B_RS_H_DONE, &mdev->flags);
+			drbd_set_flag(mdev, B_RS_H_DONE);
 			mdev->start_resync_timer.expires = jiffies + HZ/5;
 			add_timer(&mdev->start_resync_timer);
 			return;
@@ -1685,7 +1685,7 @@ void drbd_start_resync(struct drbd_conf *mdev, enum drbd_conns side)
 	} else {
 		mutex_lock(mdev->state_mutex);
 	}
-	clear_bit(B_RS_H_DONE, &mdev->flags);
+	drbd_clear_flag(mdev, B_RS_H_DONE);
 
 	write_lock_irq(&global_state_lock);
 	if (!get_ldev_if_state(mdev, D_NEGOTIATING)) {

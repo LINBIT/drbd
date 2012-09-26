@@ -822,7 +822,7 @@ char *ppsize(char *buf, unsigned long long size)
  * and should be short-lived. */
 void drbd_suspend_io(struct drbd_conf *mdev)
 {
-	set_bit(SUSPEND_IO, &mdev->flags);
+	drbd_set_flag(mdev, SUSPEND_IO);
 	if (drbd_suspended(mdev))
 		return;
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->ap_bio_cnt));
@@ -830,7 +830,7 @@ void drbd_suspend_io(struct drbd_conf *mdev)
 
 void drbd_resume_io(struct drbd_conf *mdev)
 {
-	clear_bit(SUSPEND_IO, &mdev->flags);
+	drbd_clear_flag(mdev, SUSPEND_IO);
 	wake_up(&mdev->misc_wait);
 }
 
@@ -1151,7 +1151,7 @@ static void drbd_suspend_al(struct drbd_conf *mdev)
 	drbd_al_shrink(mdev);
 	spin_lock_irq(&mdev->tconn->req_lock);
 	if (mdev->state.conn < C_CONNECTED)
-		s = !test_and_set_bit(AL_SUSPENDED, &mdev->flags);
+		s = !drbd_test_and_set_flag(mdev, AL_SUSPENDED);
 	spin_unlock_irq(&mdev->tconn->req_lock);
 	lc_unlock(mdev->act_log);
 
@@ -1332,7 +1332,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	wait_event(mdev->misc_wait, !atomic_read(&mdev->local_cnt));
 
 	/* make sure there is no leftover from previous force-detach attempts */
-	clear_bit(FORCE_DETACH, &mdev->flags);
+	drbd_clear_flag(mdev, FORCE_DETACH);
 
 	/* and no leftover from previously aborted resync or verify, either */
 	mdev->rs_total = 0;
@@ -1543,9 +1543,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (new_disk_conf->md_flushes)
-		clear_bit(MD_NO_BARRIER, &mdev->flags);
+		drbd_clear_flag(mdev, MD_NO_BARRIER);
 	else
-		set_bit(MD_NO_BARRIER, &mdev->flags);
+		drbd_set_flag(mdev, MD_NO_BARRIER);
 
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.
@@ -1563,13 +1563,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_bump_write_ordering(mdev->tconn, WO_bio_barrier);
 
 	if (drbd_md_test_flag(mdev->ldev, MDF_CRASHED_PRIMARY))
-		set_bit(CRASHED_PRIMARY, &mdev->flags);
+		drbd_set_flag(mdev, CRASHED_PRIMARY);
 	else
-		clear_bit(CRASHED_PRIMARY, &mdev->flags);
+		drbd_clear_flag(mdev, CRASHED_PRIMARY);
 
 	if (drbd_md_test_flag(mdev->ldev, MDF_PRIMARY_IND) &&
 	    !(mdev->state.role == R_PRIMARY && mdev->tconn->susp_nod))
-		set_bit(CRASHED_PRIMARY, &mdev->flags);
+		drbd_set_flag(mdev, CRASHED_PRIMARY);
 
 	mdev->send_cnt = 0;
 	mdev->recv_cnt = 0;
@@ -1592,21 +1592,21 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * so we can automatically recover from a crash of a
 	 * degraded but active "cluster" after a certain timeout.
 	 */
-	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
+	drbd_clear_flag(mdev, USE_DEGR_WFC_T);
 	if (mdev->state.role != R_PRIMARY &&
 	     drbd_md_test_flag(mdev->ldev, MDF_PRIMARY_IND) &&
 	    !drbd_md_test_flag(mdev->ldev, MDF_CONNECTED_IND))
-		set_bit(USE_DEGR_WFC_T, &mdev->flags);
+		drbd_set_flag(mdev, USE_DEGR_WFC_T);
 
 	dd = drbd_determine_dev_size(mdev, 0);
 	if (dd == dev_size_error) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto remove_kobject;
 	} else if (dd == grew)
-		set_bit(RESYNC_AFTER_NEG, &mdev->flags);
+		drbd_set_flag(mdev, RESYNC_AFTER_NEG);
 
 	if (drbd_md_test_flag(mdev->ldev, MDF_FULL_SYNC) ||
-	    (test_bit(CRASHED_PRIMARY, &mdev->flags) &&
+	    (drbd_test_flag(mdev, CRASHED_PRIMARY) &&
 	     drbd_md_test_flag(mdev->ldev, MDF_AL_DISABLED))) {
 		dev_info(DEV, "Assuming that all blocks are out of sync "
 		     "(aka FullSync)\n");
@@ -1733,7 +1733,7 @@ static int adm_detach(struct drbd_conf *mdev, int force)
 	int ret;
 
 	if (force) {
-		set_bit(FORCE_DETACH, &mdev->flags);
+		drbd_set_flag(mdev, FORCE_DETACH);
 		drbd_force_state(mdev, NS(disk, D_FAILED));
 		retcode = SS_SUCCESS;
 		goto out;
@@ -2374,7 +2374,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 
 	if (mdev->state.conn == C_CONNECTED) {
 		if (dd == grew)
-			set_bit(RESIZE_PENDING, &mdev->flags);
+			drbd_set_flag(mdev, RESIZE_PENDING);
 
 		drbd_send_uuids(mdev);
 		drbd_send_sizes(mdev, 1, ddsf);
@@ -2443,7 +2443,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync.
 	 * Also wait for it's after_state_ch(). */
 	drbd_suspend_io(mdev);
-	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
+	wait_event(mdev->misc_wait, !drbd_test_flag(mdev, BITMAP_IO));
 	drbd_flush_workqueue(mdev);
 
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
@@ -2512,7 +2512,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync.
 	 * Also wait for it's after_state_ch(). */
 	drbd_suspend_io(mdev);
-	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
+	wait_event(mdev->misc_wait, !drbd_test_flag(mdev, BITMAP_IO));
 	drbd_flush_workqueue(mdev);
 
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S), CS_ORDERED);
@@ -2597,9 +2597,9 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	mdev = adm_ctx.mdev;
-	if (test_bit(NEW_CUR_UUID, &mdev->flags)) {
+	if (drbd_test_flag(mdev, NEW_CUR_UUID)) {
 		drbd_uuid_new_current(mdev);
-		clear_bit(NEW_CUR_UUID, &mdev->flags);
+		drbd_clear_flag(mdev, NEW_CUR_UUID);
 	}
 	drbd_suspend_io(mdev);
 	retcode = drbd_request_state(mdev, NS3(susp, 0, susp_nod, 0, susp_fen, 0));
@@ -2971,7 +2971,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 
 	tp.timeout_type =
 		adm_ctx.mdev->state.pdsk == D_OUTDATED ? UT_PEER_OUTDATED :
-		test_bit(USE_DEGR_WFC_T, &adm_ctx.mdev->flags) ? UT_DEGRADED :
+		drbd_test_flag(adm_ctx.mdev, USE_DEGR_WFC_T) ? UT_DEGRADED :
 		UT_DEFAULT;
 
 	err = timeout_parms_to_priv_skb(adm_ctx.reply_skb, &tp);
@@ -3016,7 +3016,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
 	drbd_suspend_io(mdev);
-	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
+	wait_event(mdev->misc_wait, !drbd_test_flag(mdev, BITMAP_IO));
 	retcode = drbd_request_state(mdev,NS(conn,C_VERIFY_S));
 	drbd_resume_io(mdev);
 out:
