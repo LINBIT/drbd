@@ -153,6 +153,7 @@ c-min-rate		{ DP; CP; RC(C_MIN_RATE); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;
 throttle-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 hold-off-threshold	{ DP; CP; return TK_DEPRECATED_OPTION;  }
 on-no-data-accessible   { DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
+peer-ack-window		{ DP; CP; return TK_RES_OPTION;         }
 auto-promote		{ DP; CP; return TK_RES_FLAG;	}
 wfc-timeout		{ DP; CP; RC(WFC_TIMEOUT); return TK_STARTUP_OPTION;}
 degr-wfc-timeout	{ DP; CP; RC(DEGR_WFC_TIMEOUT); return TK_STARTUP_OPTION;}
