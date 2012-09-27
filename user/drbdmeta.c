@@ -3029,17 +3029,21 @@ static void EXP(int expected_token) {
 		md_parse_error(expected_token, tok, NULL);
 }
 
-static void assign_32_of_64bit(int i, uint64_t value, int max_peers)
+static int assign_32_of_64bit(int i, uint64_t value, int max_peers)
 {
 	le_u32 *bm = on_disk_buffer;
 
-	if (i < 0)
-		return;
+	if (i >= buffer_size / sizeof(*bm))
+		return i; // Do no advance i after leaving the window
 
-	if (((i / max_peers) & 1) == 0)
-		bm[i].le = cpu_to_le32((uint32_t) value); // little endian low word => lower address
-	else
-		bm[i].le = cpu_to_le32((uint32_t) (value >> 32));
+	if (i >= 0) { // only assign data, while within the window
+		if (((i / max_peers) & 1) == 0)
+			bm[i].le = cpu_to_le32((uint32_t) value); // little endian low word => lower address
+		else
+			bm[i].le = cpu_to_le32((uint32_t) (value >> 32));
+	}
+
+	return i + max_peers;
 }
 
 int parse_bitmap_window_one_peer(struct format *cfg, int window, int peer_nr, int parse_only)
@@ -3071,14 +3075,8 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int peer_nr, in
 			}
 			value = yylval.u64;
 
-			assign_32_of_64bit(i, value, max_peers);
-			i += max_peers;
-			if (i >= buffer_size / sizeof(*bm))
-				goto break_loop;
-			assign_32_of_64bit(i, value, max_peers);
-			i += max_peers;
-			if (i >= buffer_size / sizeof(*bm))
-				goto break_loop;
+			i = assign_32_of_64bit(i, value, max_peers);
+			i = assign_32_of_64bit(i, value, max_peers);
 			break;
 		case TK_NUM:
 			times = yylval.u64;
@@ -3091,14 +3089,8 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int peer_nr, in
 			}
 			value = yylval.u64;
 			while(times--) {
-				assign_32_of_64bit(i, value, max_peers);
-				i += max_peers;
-				if (i >= buffer_size / sizeof(*bm))
-					goto break_loop;
-				assign_32_of_64bit(i, value, max_peers);
-				i += max_peers;
-				if (i >= buffer_size / sizeof(*bm))
-					goto break_loop;
+				i = assign_32_of_64bit(i, value, max_peers);
+				i = assign_32_of_64bit(i, value, max_peers);
 			}
 			break;
 		case '}':
