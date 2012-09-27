@@ -131,9 +131,14 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	struct drbd_device *device = req->device;
+	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
-	const unsigned s = req->rq_state[0];
+	unsigned int req_size, s;
+
+tail_recursion:
+	device = req->device;
+	s = req->rq_state[0];
+	req_size = req->i.size;
 
 	/* paranoia */
 	rcu_read_lock();
@@ -221,6 +226,21 @@ void drbd_req_destroy(struct kref *kref)
 	}
 
 	mempool_free(req, drbd_request_mempool);
+
+	if (s & RQ_WRITE && req_size) {
+		list_for_each_entry(req, &device->resource->transfer_log, tl_requests) {
+			if (req->rq_state[0] & RQ_WRITE) {
+				/*
+				 * Do the equivalent of:
+				 *   kref_put(&req->kref, drbd_req_destroy)
+				 * without recursing into the destructor.
+				 */
+				if (atomic_dec_and_test(&req->kref.refcount))
+					goto tail_recursion;
+				break;
+			}
+		}
+	}
 }
 
 static void wake_all_senders(struct drbd_resource *resource) {
@@ -1257,9 +1277,19 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
 	if (likely(req->i.size != 0)) {
-		if (rw == WRITE)
-			resource->current_tle_writes++;
+		if (rw == WRITE) {
+			struct drbd_request *req2;
 
+			resource->current_tle_writes++;
+			list_for_each_entry_reverse(req2, &resource->transfer_log, tl_requests) {
+				if (req2->rq_state[0] & RQ_WRITE) {
+					/* Make the new write request depend on
+					 * the previous one. */
+					kref_get(&req->kref);
+					break;
+				}
+			}
+		}
 		list_add_tail(&req->tl_requests, &resource->transfer_log);
 	}
 
