@@ -227,4 +227,9 @@
 #define DRBD_NODE_ID_MAX		MAX_PEERS
 #define DRBD_NODE_ID_SCALE		'1'
 
+#define DRBD_PEER_ACK_WINDOW_DEF	4096   /* 2 MiByte */
+#define DRBD_PEER_ACK_WINDOW_MIN	2048   /* 1 MiByte */
+#define DRBD_PEER_ACK_WINDOW_MAX	204800 /* 100 MiByte */
+#define DRBD_PEER_ACK_WINDOW_SCALE 's' /* sectors*/
+
 #endif
