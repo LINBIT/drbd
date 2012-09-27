@@ -1178,6 +1178,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 
 void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_time)
 {
+	struct drbd_resource *resource = device->resource;
 	const int rw = bio_rw(bio);
 	struct bio_and_error m = { NULL, };
 	struct drbd_request *req;
@@ -1214,7 +1215,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 		drbd_al_begin_io(device, &req->i, true);
 	}
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-aquire it before it returns here.
@@ -1248,25 +1249,25 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	}
 
 	/* which transfer log epoch does this belong to? */
-	req->epoch = atomic_read(&device->resource->current_tle_nr);
+	req->epoch = atomic_read(&resource->current_tle_nr);
 
 	if (rw == WRITE)
-		device->resource->dagtag_sector += bio_sectors(bio);
-	req->dagtag_sector = device->resource->dagtag_sector;
+		resource->dagtag_sector += bio_sectors(bio);
+	req->dagtag_sector = resource->dagtag_sector;
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
 	if (likely(req->i.size != 0)) {
 		if (rw == WRITE)
-			device->resource->current_tle_writes++;
+			resource->current_tle_writes++;
 
-		list_add_tail(&req->tl_requests, &device->resource->transfer_log);
+		list_add_tail(&req->tl_requests, &resource->transfer_log);
 	}
 
 	if (rw == WRITE) {
 		if (!drbd_process_write_request(req))
 			no_remote = true;
 		else
-			wake_all_senders(device->resource);
+			wake_all_senders(resource);
 	} else {
 		if (peer_device) {
 			_req_mod(req, TO_BE_SENT, peer_device);
@@ -1280,9 +1281,9 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 		/* needs to be marked within the same spinlock */
 		_req_mod(req, TO_BE_SUBMITTED, NULL);
 		/* but we need to give up the spinlock to submit */
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irq(&resource->req_lock);
 		drbd_submit_req_private_bio(req);
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irq(&resource->req_lock);
 	} else if (no_remote) {
 nodata:
 		if (drbd_ratelimit())
@@ -1294,7 +1295,7 @@ nodata:
 out:
 	if (drbd_req_put_completion_ref(req, &m, 1))
 		kref_put(&req->kref, drbd_req_destroy);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&resource->req_lock);
 
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
 	 * we plug after submit, so we won't miss an unplug event */
