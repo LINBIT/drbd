@@ -1333,6 +1333,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* make sure there is no leftover from previous force-detach attempts */
 	drbd_clear_flag(mdev, FORCE_DETACH);
+	drbd_clear_flag(mdev, WAS_IO_ERROR);
+	drbd_clear_flag(mdev, WAS_READ_ERROR);
 
 	/* and no leftover from previously aborted resync or verify, either */
 	mdev->rs_total = 0;

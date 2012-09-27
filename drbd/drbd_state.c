@@ -1165,7 +1165,7 @@ static void abw_start_sync(struct drbd_conf *mdev, int rv)
 	}
 }
 
-static int drbd_bitmap_io_from_worker(struct drbd_conf *mdev,
+int drbd_bitmap_io_from_worker(struct drbd_conf *mdev,
 		int (*io_fn)(struct drbd_conf *),
 		char *why, enum bm_flag flags)
 {
