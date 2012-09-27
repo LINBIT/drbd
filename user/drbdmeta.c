@@ -3217,9 +3217,9 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		new_max_peers = yylval.u64;
 	}
 
+	cfg->ops->md_initialize(cfg, 0, new_max_peers);
 	if (!parse_only) {
 		fprintf(stderr, "reinitializing\n");
-		cfg->ops->md_initialize(cfg, 0, new_max_peers);
 		if (old_max_peers < new_max_peers &&
 		    cfg->md_index != DRBD_MD_INDEX_FLEX_INT) {
 			printf("Meta data needs more space now, since max_peers\n"
