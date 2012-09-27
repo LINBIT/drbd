@@ -645,6 +645,7 @@ struct drbd_backing_dev {
 	struct drbd_md md;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
+	char id_to_bit[MAX_PEERS];
 };
 
 struct drbd_md_io {

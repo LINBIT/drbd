@@ -1482,7 +1482,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_device *device;
 	struct drbd_resource *resource;
-	int err;
+	int n, err;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
 	sector_t max_possible_sectors;
@@ -1533,6 +1533,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 	spin_lock_init(&nbc->md.uuid_lock);
+	for (n = 0; n < ARRAY_SIZE(nbc->id_to_bit); n++)
+		nbc->id_to_bit[n] = -1;
 
 	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 	if (!new_disk_conf) {
@@ -1712,8 +1714,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
 			struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
 
-			if (peer_md->node_id == connection->net_conf->peer_node_id)
+			if (peer_md->node_id == connection->net_conf->peer_node_id) {
+				nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 				goto next_peer_device_1;
+			}
 		}
 		slots_needed++;
 
@@ -1751,6 +1755,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				if (peer_md->node_id == -1) {
 					peer_md->node_id = connection->net_conf->peer_node_id;
 					peer_device->bitmap_index = bitmap_index;
+					nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 					break;
 				}
 			}
@@ -2464,6 +2469,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 			if (new_net_conf->peer_node_id == peer_md->node_id) {
 				peer_device->bitmap_index = bitmap_index;
+				device->ldev->id_to_bit[peer_md->node_id] = bitmap_index;
 				goto next_device_1;
 			}
 			if (peer_md->node_id == -1)
@@ -2500,6 +2506,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 					peer_md->node_id = new_net_conf->peer_node_id;
 					drbd_md_mark_dirty(device);
 					peer_device->bitmap_index = bitmap_index;
+					device->ldev->id_to_bit[peer_md->node_id] = bitmap_index;
 					break;
 				}
 			}

@@ -5690,6 +5690,21 @@ STATIC int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 	return 0;
 }
 
+static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids)
+{
+	char *id_to_bit = device->ldev->id_to_bit;
+	u64 bitmap_bits = 0;
+	int node_id;
+
+	for_each_set_bit(node_id, (unsigned long *)&node_ids,
+			 sizeof(node_ids) * BITS_PER_BYTE) {
+		int bitmap_bit = id_to_bit[node_id];
+		if (bitmap_bit >= 0)
+			bitmap_bits |= ((u64)1 << bitmap_bit);
+	}
+	return bitmap_bits;
+}
+
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
