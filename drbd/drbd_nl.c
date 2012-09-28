@@ -1442,7 +1442,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&device->resource->conf_update);
 
 	if (new_disk_conf->al_updates)
-		device->ldev->md.flags &= MDF_AL_DISABLED;
+		device->ldev->md.flags &= ~MDF_AL_DISABLED;
 	else
 		device->ldev->md.flags |= MDF_AL_DISABLED;
 
@@ -1820,7 +1820,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	rcu_read_lock();
 	if (rcu_dereference(device->ldev->disk_conf)->al_updates)
-		device->ldev->md.flags &= MDF_AL_DISABLED;
+		device->ldev->md.flags &= ~MDF_AL_DISABLED;
 	else
 		device->ldev->md.flags |= MDF_AL_DISABLED;
 	rcu_read_unlock();
