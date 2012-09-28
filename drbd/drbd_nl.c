@@ -2235,6 +2235,8 @@ static void connection_to_info(struct connection_info *info,
 {
 	info->conn_connection_state = connection->cstate[which];
 	info->conn_role = connection->peer_role[which];
+	strcpy(info->conn_name, connection->net_conf->name);
+	info->conn_name_len = connection->net_conf->name_len;
 }
 
 static void peer_device_to_info(struct peer_device_info *info,
@@ -3211,8 +3213,7 @@ put_result:
 			if (err)
 				goto out;
 		}
-		connection_info.conn_connection_state = connection->cstate[NOW];
-		connection_info.conn_role = connection->peer_role[NOW];
+		connection_to_info(&connection_info, connection, NOW);
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
