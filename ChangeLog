@@ -2,6 +2,31 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.14rc1 (api:88/proto:86-97)
+--------
+ * No longer support write-ordering "barrier" on kernels newer than 2.6.36
+   (or RHEL's 2.6.32), since it is no longer supported by the kernel's IO-layer
+ * Fixed the cause of the "ASSERT FAILED tl_hash..." messages
+ * Fixed an OOPS in case a on-congestion policy was set and the node becomes
+   disk less
+ * Fixed a list corruption for read requests that complete with an error
+   after they were aborted
+ * Fixed a kernel panic if the device size was an exact multiple of 128MiB
+ * Finish requests that completed while IO on DRBD was frozen. Before such
+   requests where never completed by DRBD
+ * Fixed a potential memory allocation during deadlock online resize
+ * Online resize with internal meta data failed to write the bitmap to
+   the new on-disk-location after the resize operation. This issue was
+   introduced with 8.3.10
+ * Do not go through NetworkFailure state during a regular disconnect
+ * Improve the handling of read-errors: Make sure that sectors that had a
+   read error are overwritten with data from the peer on the next resync
+ * Expose the data-generation-uuids through /sys/block/drbdXX/drbd/
+ * Add a stop-sector to the online verify feature
+ * Support FLUSH/FUA for layers above DRBD
+ * The new flag --peer-max-bio-size for drbdmeta create-md is of use
+   if you plan to use the device for long time without peer
+
 8.3.13 (api:88/proto:86-96)
 --------
  * Fixed a write ordering problem on SyncTarget nodes for a write

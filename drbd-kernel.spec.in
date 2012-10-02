@@ -94,6 +94,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Wed Oct  3 2012 Philipp Reisner <phil@linbit.com> - 8.3.14rc1-1
+- New upstream release.
+
 * Mon May  7 2012 Philipp Reisner <phil@linbit.com> - 8.3.13-1
 - New upstream release.
 
