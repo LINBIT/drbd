@@ -767,6 +767,34 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 	return conn_send_command(connection, sock, P_PING_ACK, 0, NULL, 0);
 }
 
+extern int drbd_send_peer_ack(struct drbd_connection *connection,
+			      struct drbd_request *req)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_socket *sock;
+	struct p_peer_ack *p;
+	u64 mask = 0;
+
+	if (req->rq_state[0] & RQ_LOCAL_OK)
+		mask |= (u64)1 << connection->resource->res_opts.node_id;
+	rcu_read_lock();
+	for_each_peer_device(peer_device, req->device) {
+		int idx = 1 + peer_device->node_id;
+
+		if (req->rq_state[idx] & RQ_NET_OK)
+			mask |= (u64)1 << peer_device->node_id;
+	}
+	rcu_read_unlock();
+
+	sock = &connection->meta;
+	p = conn_prepare_command(connection, sock);
+	if (!p)
+		return -EIO;
+	p->mask = cpu_to_be64(mask);
+	p->dagtag = cpu_to_be64(req->dagtag_sector);
+	return conn_send_command(connection, sock, P_PEER_ACK, sizeof(*p), NULL, 0);
+}
+
 int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
 	struct drbd_socket *sock;
@@ -2715,6 +2743,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
+	INIT_LIST_HEAD(&resource->peer_ack_list);
 	mutex_init(&resource->state_mutex);
 	resource->role[NOW] = R_SECONDARY;
 	if (set_resource_options(resource, res_opts))

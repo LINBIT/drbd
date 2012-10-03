@@ -214,6 +214,9 @@ enum drbd_req_state_bits {
 
 	/* waiting for a barrier ack, did an extra kref_get */
 	__RQ_EXP_BARR_ACK,
+
+	/* p_peer_ack packet needs to be sent */
+	__RQ_PEER_ACK,
 };
 
 #define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
@@ -240,6 +243,7 @@ enum drbd_req_state_bits {
 #define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
 #define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
 #define RQ_EXP_BARR_ACK    (1UL << __RQ_EXP_BARR_ACK)
+#define RQ_PEER_ACK	   (1UL << __RQ_PEER_ACK)
 
 /* these flags go into rq_state[0],
  * orhter flags go into their respective rq_state[idx] */

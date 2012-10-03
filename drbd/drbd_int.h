@@ -723,6 +723,7 @@ struct drbd_resource {
 	unsigned long flags;
 
 	struct list_head transfer_log;	/* all requests not yet fully processed */
+	struct list_head peer_ack_list;  /* requests to send peer acks for */
 
 	struct mutex state_mutex;
 	wait_queue_head_t state_wait;  /* upon each state change. */
@@ -1926,6 +1927,7 @@ extern int drbd_send_command(struct drbd_peer_device *, struct drbd_socket *,
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
+extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_request *);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {

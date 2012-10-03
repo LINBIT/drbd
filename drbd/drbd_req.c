@@ -128,6 +128,32 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	return req;
 }
 
+static void queue_peer_ack(struct drbd_request *req)
+{
+	struct drbd_resource *resource = req->device->resource;
+	struct drbd_connection *connection;
+	bool queued = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		unsigned int node_id = connection->net_conf->peer_node_id;
+		if (connection->agreed_pro_version < 110 ||
+		    connection->cstate[NOW] != C_CONNECTED)
+			continue;
+		atomic_inc(&req->kref.refcount); /* was 0, instead of kref_get() */
+		req->rq_state[1 + node_id] |= RQ_PEER_ACK;
+		if (!queued) {
+			list_add_tail(&req->tl_requests, &resource->peer_ack_list);
+			queued = true;
+		}
+		wake_asender(connection);
+	}
+	rcu_read_unlock();
+
+	if (!queued)
+		mempool_free(req, drbd_request_mempool);
+}
+
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);

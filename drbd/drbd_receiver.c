@@ -5405,6 +5405,42 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
+static int process_peer_ack_list(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_request *req;
+	unsigned int idx;
+	int err;
+
+	rcu_read_lock();
+	idx = 1 + connection->net_conf->peer_node_id;
+	rcu_read_unlock();
+
+restart:
+	spin_lock_irq(&resource->req_lock);
+	list_for_each_entry(req, &resource->peer_ack_list, tl_requests) {
+		bool destroy;
+
+		if (!(req->rq_state[idx] & RQ_PEER_ACK))
+			continue;
+		req->rq_state[idx] &= ~RQ_PEER_ACK;
+		destroy = atomic_dec_and_test(&req->kref.refcount);
+		if (destroy)
+			list_del(&req->tl_requests);
+		spin_unlock_irq(&resource->req_lock);
+
+		err = drbd_send_peer_ack(connection, req);
+		if (destroy)
+			mempool_free(req, drbd_request_mempool);
+		if (err)
+			return err;
+		goto restart;
+
+	}
+	spin_unlock_irq(&resource->req_lock);
+	return 0;
+}
+
 STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_req_state_reply *p = pi->data;
@@ -5898,6 +5934,9 @@ int drbd_asender(struct drbd_thread *thi)
 			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
 			goto reconnect;
 		}
+		if (process_peer_ack_list(connection))
+			goto reconnect;
+
 		/* but unconditionally uncork unless disabled */
 		if (tcp_cork)
 			drbd_tcp_uncork(connection->meta.socket);
