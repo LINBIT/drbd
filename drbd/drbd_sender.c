@@ -1351,6 +1351,9 @@ void maybe_send_write_hint(struct drbd_connection *connection)
 	/* advance the current unplug slot */
 	connection->todo.unplug_slot ^= 1;
 
+	if (connection->cstate[NOW] < C_CONNECTED)
+		return;
+
 	sock = &connection->data;
 	if (!conn_prepare_command(connection, sock))
 		return;
