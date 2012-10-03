@@ -2545,8 +2545,8 @@ found:
 	uuids[UI_CURRENT] = device->statistics.dev_current_uuid;
 	uuids[UI_BITMAP] = peer_device->statistics.peer_dev_bitmap_uuid;
 	i = peer_device->statistics.peer_dev_history_uuids_len / 8;
-	if (i > HISTORY_UUIDS)
-		i = HISTORY_UUIDS;
+	if (i >= HISTORY_UUIDS)
+		i = HISTORY_UUIDS - 1;
 	for (; i >= 0; i--)
 		uuids[UI_HISTORY_START + i] =
 			((uint64_t *)peer_device->statistics.peer_dev_history_uuids)[i];
