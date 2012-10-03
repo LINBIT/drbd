@@ -1165,4 +1165,16 @@ static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
 #define SK_CAN_REUSE   1
 #endif
 
+#ifndef __GFP_ZERO
+#define __GFP_ZERO 0x8000u
+static inline void *__drbd_vmalloc(unsigned long size, gfp_t gfp_mask, pgprot_t prot)
+{
+	void *rv = __vmalloc(size, gfp_mask & ~__GFP_ZERO, prot);
+	if (rv && (gfp_mask & __GFP_ZERO))
+		memset(rv, 0, size);
+	return rv;
+}
+#define __vmalloc(SIZE, GFP, PROT) __drbd_vmalloc(SIZE, GFP, PROT)
+#endif
+
 #endif
