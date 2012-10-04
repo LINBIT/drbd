@@ -3632,7 +3632,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_CONNECTED)
-			drbd_send_uuids(peer_device);
+			_drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN);
 	}
 }
 
@@ -3659,6 +3659,29 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
 	drbd_md_mark_dirty(device);
+}
+
+void drbd_uuid_received_new_current(struct drbd_device *device, u64 val)
+{
+	bool set_current = true;
+	struct drbd_peer_device *peer_device;
+
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
+		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
+			peer_device->p_uuid[UI_CURRENT] = val;
+			set_current = false;
+		}
+	}
+
+	if (set_current) {
+		rotate_current_into_bitmap(device, false);
+		__drbd_uuid_set_current(device, val);
+	}
+
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
 }
 
 /**

@@ -360,6 +360,7 @@ enum drbd_uuid_index {
 #define UUID_FLAG_CRASHED_PRIMARY 2
 #define UUID_FLAG_INCONSISTENT 4
 #define UUID_FLAG_SKIP_INITIAL_SYNC 8
+#define UUID_FLAG_NEW_DATAGEN 16
 
 enum drbd_timeout_flag {
 	UT_DEFAULT      = 0,

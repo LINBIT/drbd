@@ -4077,6 +4077,12 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			drbd_md_sync(device);
 			updated_uuids = 1;
 		}
+
+		if (p_uuid[UI_FLAGS] & UUID_FLAG_NEW_DATAGEN) {
+			drbd_warn(peer_device, "received new current UUID: %llX\n", p_uuid[UI_CURRENT]);
+			drbd_uuid_received_new_current(device, p_uuid[UI_CURRENT]);
+		}
+
 		put_ldev(device);
 	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
 		   device->resource->role[NOW] == R_PRIMARY) {
