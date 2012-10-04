@@ -2459,6 +2459,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
 		peer_device->node_id = connection->net_conf->peer_node_id;
 
+	if (connection->net_conf->peer_node_id > adm_ctx.resource->max_node_id)
+		adm_ctx.resource->max_node_id = connection->net_conf->peer_node_id;
+
 	/* Make sure we have a bitmap slot for this peer id on each device */
 	allocate_bitmap_slots = false;
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
