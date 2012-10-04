@@ -103,7 +103,6 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 		return NULL;
 
 	drbd_req_make_private_bio(req, bio_src);
-	req->rq_state[0] |= bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0;
 	req->device      = device;
 	req->master_bio  = bio_src;
 	req->epoch       = 0;
@@ -121,8 +120,10 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	/* one kref as long as completion_ref > 0 */
 	kref_init(&req->kref);
 
-	for (i = 1; i <= device->bitmap->bm_max_peers; i++)
+	for (i = 0; i <= device->bitmap->bm_max_peers; i++)
 		req->rq_state[i] = 0;
+	if (bio_data_dir(bio_src) == WRITE)
+		req->rq_state[0] |= RQ_WRITE;
 
 	return req;
 }
