@@ -120,7 +120,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	/* one kref as long as completion_ref > 0 */
 	kref_init(&req->kref);
 
-	for (i = 0; i <= device->bitmap->bm_max_peers; i++)
+	for (i = 0; i < ARRAY_SIZE(req->rq_state); i++)
 		req->rq_state[i] = 0;
 	if (bio_data_dir(bio_src) == WRITE)
 		req->rq_state[0] |= RQ_WRITE;
@@ -151,7 +151,7 @@ tail_recursion:
 
 		drbd_err(device,
 			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
-			s, 1 + peer_device->bitmap_index, ns, atomic_read(&req->completion_ref));
+			s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
 		rcu_read_unlock();
 		return;
 	}
@@ -180,19 +180,19 @@ tail_recursion:
 		 * before it even was submitted or sent.
 		 * In that case we do not want to touch the bitmap at all.
 		 */
-		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED) {
+		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED &&
+		    get_ldev_if_state(device, D_FAILED)) {
+			char *id_to_bit = device->ldev->id_to_bit;
 			unsigned long bits = -1, mask = -1;
-			int bm_max_peers = 0, bitmap_index;
+			int node_id, max_node_id = device->resource->max_node_id;
 
-			if ((s & RQ_LOCAL_OK) && get_ldev(device)) {
-				bm_max_peers = device->bitmap->bm_max_peers;
-				put_ldev(device);
-			}
-			for (bitmap_index = 0; bitmap_index < bm_max_peers; bitmap_index++) {
+			for (node_id = 0; node_id <= max_node_id; node_id++) {
 				unsigned int rq_state;
 
-				rq_state = req->rq_state[1 + bitmap_index];
+				rq_state = req->rq_state[1 + node_id];
 				if (rq_state & RQ_NET_OK) {
+					int bitmap_index = id_to_bit[node_id];
+
 					if (rq_state & RQ_NET_SIS)
 						clear_bit(bitmap_index, &bits);
 					else
@@ -200,6 +200,7 @@ tail_recursion:
 				}
 			}
 			drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
+			put_ldev(device);
 		}
 
 		/* one might be tempted to move the drbd_al_complete_io
@@ -452,7 +453,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	unsigned clear_local = clear & RQ_STATE_0_MASK;
 	int c_put = 0;
 	int k_put = 0;
-	const int idx = peer_device ?  1 + peer_device->bitmap_index : 0;
+	const int idx = peer_device ? 1 + peer_device->node_id : 0;
 
 	/* FIXME n_connections, when this request was created/scheduled. */
 	BUG_ON(idx > MAX_PEERS);
@@ -594,7 +595,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	if (m)
 		m->bio = NULL;
 
-	idx = peer_device ? 1 + peer_device->bitmap_index : 0;
+	idx = peer_device ? 1 + peer_device->node_id : 0;
 
 	switch (what) {
 	default:
@@ -1461,7 +1462,7 @@ void request_timer_fn(unsigned long data)
 
 		restart_timer = true;
 		peer_device = conn_peer_device(connection, device->vnr);
-		idx = peer_device->bitmap_index;
+		idx = peer_device->node_id;
 
 		/* The request is considered timed out, if
 		 * - we have some effective timeout from the configuration,

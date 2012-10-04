@@ -218,7 +218,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		struct drbd_peer_device *peer_device;
 		int idx;
 		peer_device = conn_peer_device(connection, r->device->vnr);
-		idx = 1 + peer_device->bitmap_index;
+		idx = 1 + peer_device->node_id;
 
 		if (!req) {
 			if (!(r->rq_state[0] & RQ_WRITE))

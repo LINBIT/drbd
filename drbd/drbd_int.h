@@ -1039,7 +1039,7 @@ conn_peer_device(struct drbd_connection *connection, int volume_number)
 static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 		struct drbd_peer_device *peer_device)
 {
-	int idx = peer_device->bitmap_index;
+	int idx = peer_device->node_id;
 	if (idx < 0 || idx >= MAX_PEERS) {
 		drbd_warn(peer_device, "FIXME: bitmap_index: %d\n", idx);
 		/* WARN(1, "bitmap_index: %d", idx); */
