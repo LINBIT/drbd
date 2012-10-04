@@ -1123,6 +1123,7 @@ static void sanitize_state(struct drbd_resource *resource)
 					repl_state[NEW] = L_PAUSED_SYNC_S;
 				if (repl_state[NEW] == L_SYNC_TARGET)
 					repl_state[NEW] = L_PAUSED_SYNC_T;
+			} else {
 				if (repl_state[NEW] == L_PAUSED_SYNC_S)
 					repl_state[NEW] = L_SYNC_SOURCE;
 				if (repl_state[NEW] == L_PAUSED_SYNC_T)
