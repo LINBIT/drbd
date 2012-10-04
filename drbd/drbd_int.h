@@ -880,6 +880,7 @@ struct drbd_peer_device {
 	bool resync_susp_user[2];
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
+	bool resync_susp_other_c[2];
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	atomic_t packet_seq;

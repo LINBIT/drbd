@@ -146,6 +146,9 @@ retry:
 			memcpy(peer_device_state_change->resync_susp_dependency,
 			       peer_device->resync_susp_dependency,
 			       sizeof(peer_device->resync_susp_dependency));
+			memcpy(peer_device_state_change->resync_susp_other_c,
+			       peer_device->resync_susp_other_c,
+			       sizeof(peer_device->resync_susp_other_c));
 			peer_device_state_change++;
 		}
 		device_state_change++;
@@ -232,7 +235,9 @@ static bool state_has_changed(struct drbd_resource *resource)
 			    peer_device->resync_susp_peer[OLD] !=
 				peer_device->resync_susp_peer[NEW] ||
 			    peer_device->resync_susp_dependency[OLD] !=
-				peer_device->resync_susp_dependency[NEW])
+				peer_device->resync_susp_dependency[NEW] ||
+			    peer_device->resync_susp_other_c[OLD] !=
+				peer_device->resync_susp_other_c[NEW])
 				return true;
 		}
 	}
@@ -269,6 +274,8 @@ static void ___begin_state_change(struct drbd_resource *resource)
 				peer_device->resync_susp_peer[NOW];
 			peer_device->resync_susp_dependency[NEW] =
 				peer_device->resync_susp_dependency[NOW];
+			peer_device->resync_susp_other_c[NEW] =
+				peer_device->resync_susp_other_c[NOW];
 		}
 	}
 }
@@ -340,6 +347,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_peer[NEW];
 			peer_device->resync_susp_dependency[NOW] =
 				peer_device->resync_susp_dependency[NEW];
+			peer_device->resync_susp_other_c[NOW] =
+				peer_device->resync_susp_other_c[NEW];
 		}
 	}
 out:
@@ -488,7 +497,7 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	rv = drbd_get_device_state(peer_device->device, which);
 	rv.user_isp = peer_device->resync_susp_user[which];
 	rv.peer_isp = peer_device->resync_susp_peer[which];
-	rv.aftr_isp = peer_device->resync_susp_dependency[which];
+	rv.aftr_isp = peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which];
 	rv.conn = combined_conn_state(peer_device, which);
 	rv.peer = connection->peer_role[which];
 	rv.pdsk = peer_device->disk_state[which];
@@ -580,7 +589,22 @@ static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_st
 {
 	return peer_device->resync_susp_user[which] ||
 	       peer_device->resync_susp_peer[which] ||
-	       peer_device->resync_susp_dependency[which];
+	       peer_device->resync_susp_dependency[which] ||
+	       peer_device->resync_susp_other_c[which];
+}
+
+static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool val)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_device *p;
+
+	for_each_peer_device(p, device) {
+		if (p == peer_device)
+			continue;
+		p->resync_susp_other_c[NEW] = val;
+		if (!val && p->repl_state[NEW] == L_PAUSED_SYNC_T && !resync_suspended(p, NEW))
+			p->repl_state[NEW] = L_SYNC_TARGET;
+	}
 }
 
 static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
@@ -597,7 +621,9 @@ static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
 	if (peer_device->resync_susp_peer[which])
 		b += scnprintf(b, end - b, "peer,");
 	if (peer_device->resync_susp_dependency[which])
-		b += scnprintf(b, end - b, "dependency,");
+		b += scnprintf(b, end - b, "after dependency,");
+	if (peer_device->resync_susp_other_c[which])
+		b += scnprintf(b, end - b, "connection dependency,");
 	*(--b) = 0;
 
 	return b - buffer;
@@ -1129,6 +1155,13 @@ static void sanitize_state(struct drbd_resource *resource)
 				if (repl_state[NEW] == L_PAUSED_SYNC_T)
 					repl_state[NEW] = L_SYNC_TARGET;
 			}
+
+			/* This needs to be after the previous block, since we should not set
+			   the bit if we are paused ourself */
+			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
+				set_resync_susp_other_c(peer_device, true);
+			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
+				set_resync_susp_other_c(peer_device, false);
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
@@ -1496,7 +1529,8 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 		if (state.conn <= L_STANDALONE)
 			state.conn = connection_state_change->cstate[which];
 		state.pdsk = peer_device_state_change->disk_state[which];
-		state.aftr_isp = peer_device_state_change->resync_susp_dependency[which];
+		state.aftr_isp = peer_device_state_change->resync_susp_dependency[which] ||
+			peer_device_state_change->resync_susp_other_c[which];
 		state.peer_isp = peer_device_state_change->resync_susp_peer[which];
 		state.user_isp = peer_device_state_change->resync_susp_user[which];
 	}
@@ -1563,7 +1597,7 @@ void notify_peer_device_state_change(struct sk_buff *skb,
 		.peer_disk_state = p->disk_state[which],
 		.peer_resync_susp_user = p->resync_susp_user[which],
 		.peer_resync_susp_peer = p->resync_susp_peer[which],
-		.peer_resync_susp_dependency = p->resync_susp_dependency[which],
+		.peer_resync_susp_dependency = p->resync_susp_dependency[which] || p->resync_susp_other_c[which],
 	};
 
 	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type, id);
@@ -1628,7 +1662,8 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 		    HAS_CHANGED(p->repl_state) ||
 		    HAS_CHANGED(p->resync_susp_user) ||
 		    HAS_CHANGED(p->resync_susp_peer) ||
-		    HAS_CHANGED(p->resync_susp_dependency))
+		    HAS_CHANGED(p->resync_susp_dependency) ||
+		    HAS_CHANGED(p->resync_susp_other_c))
 			REMEMBER_STATE_CHANGE(notify_peer_device_state_change,
 					      p, NOTIFY_CHANGE, id);
 	}
@@ -1694,6 +1729,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_user = peer_device_state_change->resync_susp_user;
 			bool *resync_susp_peer = peer_device_state_change->resync_susp_peer;
 			bool *resync_susp_dependency = peer_device_state_change->resync_susp_dependency;
+			bool *resync_susp_other_c = peer_device_state_change->resync_susp_other_c;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
 
@@ -1826,6 +1862,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* We want to pause/continue resync, tell peer. */
 			if (repl_state[NEW] >= L_CONNECTED &&
 			     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
+			      (resync_susp_other_c[OLD] != resync_susp_other_c[NEW]) ||
 			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
 				drbd_send_state(peer_device, new_state);
 
