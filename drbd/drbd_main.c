@@ -3580,6 +3580,27 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
+static bool rotate_current_into_bitmap(struct drbd_device *device, bool forced) __must_hold(local)
+{
+	unsigned long long bm_uuid;
+	struct drbd_peer_device *peer_device;
+	enum drbd_disk_state pdsk;
+	bool do_it = false;
+
+	for_each_peer_device(peer_device, device) {
+		bm_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
+		pdsk = peer_device->disk_state[NOW];
+		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
+		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
+		    bm_uuid == 0) {
+			__drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
+			do_it = true;
+		}
+	}
+
+	return do_it;
+}
+
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
  * @device:	DRBD device.
@@ -3589,23 +3610,12 @@ void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __mus
  */
 void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
-	unsigned long long bm_uuid;
 	struct drbd_peer_device *peer_device;
-	enum drbd_disk_state pdsk;
-	int do_it = 0;
+	bool do_it;
 	u64 val;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	for_each_peer_device(peer_device, device) {
-		bm_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
-		pdsk = peer_device->disk_state[NOW];
-		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
-		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
-		    bm_uuid == 0) {
-			__drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
-			do_it = 1;
-		}
-	}
+	do_it = rotate_current_into_bitmap(device, forced);
 
 	if (!do_it) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
