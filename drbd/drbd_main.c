@@ -2393,6 +2393,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 		list_del(&connection->connections);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
+	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 

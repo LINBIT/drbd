@@ -154,6 +154,27 @@ static void queue_peer_ack(struct drbd_request *req)
 		mempool_free(req, drbd_request_mempool);
 }
 
+static bool peer_ack_differs(struct drbd_request *req1, struct drbd_request *req2)
+{
+	unsigned int max_node_id = req1->device->resource->max_node_id;
+	unsigned int node_id;
+
+	for (node_id = 0; node_id <= max_node_id; node_id++)
+		if ((req1->rq_state[1 + node_id] & RQ_NET_OK) !=
+		    (req2->rq_state[1 + node_id] & RQ_NET_OK))
+			return true;
+	return false;
+}
+
+static bool peer_ack_window_full(struct drbd_request *req)
+{
+	struct drbd_resource *resource = req->device->resource;
+	u32 peer_ack_window = resource->res_opts.peer_ack_window;
+	u64 last_dagtag = resource->last_peer_acked_dagtag + peer_ack_window;
+
+	return dagtag_newer_eq(req->dagtag_sector, last_dagtag);
+}
+
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
@@ -252,7 +273,23 @@ tail_recursion:
 		}
 	}
 
-	mempool_free(req, drbd_request_mempool);
+	if (s & RQ_WRITE && req->i.size) {
+		struct drbd_resource *resource = device->resource;
+		struct drbd_request *peer_ack_req = resource->peer_ack_req;
+
+		if (peer_ack_req) {
+			if (peer_ack_differs(req, peer_ack_req) ||
+			    peer_ack_window_full(req)) {
+				queue_peer_ack(peer_ack_req);
+				peer_ack_req = NULL;
+			} else
+				mempool_free(peer_ack_req, drbd_request_mempool);
+		}
+		resource->peer_ack_req = req;
+		if (!peer_ack_req)
+			resource->last_peer_acked_dagtag = req->dagtag_sector;
+	} else
+		mempool_free(req, drbd_request_mempool);
 
 	if (s & RQ_WRITE && req_size) {
 		list_for_each_entry(req, &device->resource->transfer_log, tl_requests) {

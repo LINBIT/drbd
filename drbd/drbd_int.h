@@ -723,7 +723,10 @@ struct drbd_resource {
 	unsigned long flags;
 
 	struct list_head transfer_log;	/* all requests not yet fully processed */
+
 	struct list_head peer_ack_list;  /* requests to send peer acks for */
+	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
+	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */
 
 	struct mutex state_mutex;
 	wait_queue_head_t state_wait;  /* upon each state change. */
