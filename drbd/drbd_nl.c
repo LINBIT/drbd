@@ -2456,6 +2456,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
 	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
 
+	idr_for_each_entry(&connection->peer_devices, peer_device, i)
+		peer_device->node_id = connection->net_conf->peer_node_id;
+
 	/* Make sure we have a bitmap slot for this peer id on each device */
 	allocate_bitmap_slots = false;
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {

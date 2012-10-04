@@ -3030,6 +3030,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		goto out_del_disk;
 
 	for_each_peer_device(peer_device, device) {
+		peer_device->node_id = connection->net_conf->peer_node_id;
+
 		if (peer_device->connection->cstate[NOW] >= C_CONNECTED)
 			drbd_connected(peer_device);
 	}

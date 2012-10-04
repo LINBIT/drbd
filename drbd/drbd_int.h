@@ -883,6 +883,7 @@ struct drbd_peer_device {
 	unsigned int max_bio_size;
 	sector_t max_size;  /* maximum disk size allowed by peer */
 	int bitmap_index;
+	int node_id;
 
 	unsigned long flags;
 
