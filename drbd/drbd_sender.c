@@ -903,7 +903,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		goto out_unlock;
 	__change_repl_state(peer_device, L_CONNECTED);
 
-	drbd_info(device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
+	drbd_info(peer_device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     verify_done ? "Online verify" : "Resync",
 	     dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
 
@@ -911,12 +911,12 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T) {
 		if (n_oos) {
-			drbd_alert(device, "Online verify found %lu %dk block out of sync!\n",
+			drbd_alert(peer_device, "Online verify found %lu %dk block out of sync!\n",
 			      n_oos, Bit2KB(1));
 			khelper_cmd = "out-of-sync";
 		}
 	} else {
-		D_ASSERT(device, (n_oos - peer_device->rs_failed) == 0);
+		D_ASSERT(peer_device, (n_oos - peer_device->rs_failed) == 0);
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
@@ -927,7 +927,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 			const int ratio =
 				(t == 0)     ? 0 :
 			(t < 100000) ? ((s*100)/t) : (s/(t/100));
-			drbd_info(device, "%u %% had equal checksums, eliminated: %luK; "
+			drbd_info(peer_device, "%u %% had equal checksums, eliminated: %luK; "
 			     "transferred %luK total %luK\n",
 			     ratio,
 			     Bit2KB(peer_device->rs_same_csum),
@@ -937,7 +937,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	}
 
 	if (peer_device->rs_failed) {
-		drbd_info(device, "            %lu failed blocks\n", peer_device->rs_failed);
+		drbd_info(peer_device, "            %lu failed blocks\n", peer_device->rs_failed);
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			__change_disk_state(device, D_INCONSISTENT);
@@ -958,7 +958,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				drbd_uuid_set(peer_device, UI_BITMAP, drbd_current_uuid(device));
 				_drbd_uuid_set_current(device, peer_device->p_uuid[UI_CURRENT]);
 			} else {
-				drbd_err(device, "peer_device->p_uuid is NULL! BUG\n");
+				drbd_err(peer_device, "peer_device->p_uuid is NULL! BUG\n");
 			}
 		}
 
