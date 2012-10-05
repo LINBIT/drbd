@@ -121,14 +121,37 @@ static struct d_host_info *find_host_info_by_address(struct d_resource* res, str
 	return NULL;
 }
 
+static int hash_str(char *str)
+{
+	int rv = 0;
+	char c;
+
+	do {
+		c = *str++;
+		rv += c;
+	} while (c);
+
+	return rv;
+}
+
 static void set_host_info_in_host_address_pairs(struct d_resource *res, struct connection *con)
 {
 	struct hname_address *ha;
 	struct d_host_info *host_info;
+	int addr_hash[2], i = 0;
+	struct d_host_info *host_info_array[2];
 
 	STAILQ_FOREACH(ha, &con->hname_address_pairs, link) {
-		if (ha->host_info) /* Implicit connection have that already set. */
+		if (ha->host_info) { /* Implicit connection have that already set. */
+			host_info = ha->host_info;
+			if (i == 2) {
+				fprintf(stderr, "LOGIC BUG in set_host_info_in_host_address_pairs()\n");
+				exit(20);
+			}
+			addr_hash[i] = hash_str(host_info->address.addr);
+			host_info_array[i++] = host_info;
 			continue;
+		}
 		if (ha->by_address) {
 			host_info = find_host_info_by_address(res, &ha->address);
 			/* The name will be used for nice comments only ... */
@@ -175,7 +198,20 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 		check_uniq("IP", "%s:%s:%s", ha->name,
 			   ha->address.addr ? ha->address.addr : host_info->address.addr,
 			   ha->address.port ? ha->address.port : host_info->address.port);
+	}
 
+	if (con->implicit && i == 2 && !host_info_array[0]->node_id && !host_info_array[1]->node_id) {
+		/* This is drbd-8.3 / drbd-8.4 compatibility, auto created node-id */
+		if (addr_hash[0] > addr_hash[1]) {
+			host_info_array[0]->node_id = strdup("0");
+			host_info_array[1]->node_id = strdup("1");
+		} else if (addr_hash[0] < addr_hash[1]) {
+			host_info_array[0]->node_id = strdup("1");
+			host_info_array[1]->node_id = strdup("0");
+		} else {
+			fprintf(stderr, "BAD LUCK, equal hashes\n");
+			exit(20);
+		}
 	}
 }
 
