@@ -67,6 +67,7 @@ int	verbose = 0;
 int	ignore_sanity_checks = 0;
 int	dry_run = 0;
 int     option_peer_max_bio_size = 0;
+int     option_node_id = -1;
 
 struct option metaopt[] = {
     { "ignore-sanity-checks",  no_argument, &ignore_sanity_checks, 1000 },
@@ -74,6 +75,7 @@ struct option metaopt[] = {
     { "force",  no_argument,    0, 'f' },
     { "verbose",  no_argument,    0, 'v' },
     { "peer-max-bio-size",  required_argument, NULL, 'p' },
+    { "node-id",  required_argument, NULL, 'i' },
     { NULL,     0,              0, 0 },
 };
 
@@ -331,9 +333,9 @@ struct format_ops {
 	int (*md_initialize) (struct format *, int do_disk_writes, int max_peers);
 	int (*md_disk_to_cpu) (struct format *);
 	int (*md_cpu_to_disk) (struct format *);
-	void (*get_gi) (struct md_cpu *md);
-	void (*show_gi) (struct md_cpu *md);
-	void (*set_gi) (struct md_cpu *md, char **argv, int argc);
+	void (*get_gi) (struct md_cpu *md, int bm_idx);
+	void (*show_gi) (struct md_cpu *md, int bm_idx);
+	void (*set_gi) (struct md_cpu *md, int bm_idx, char **argv, int argc);
 	int (*outdate_gi) (struct md_cpu *md);
 	int (*invalidate_gi) (struct md_cpu *md);
 };
@@ -891,14 +893,14 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
  */
 
 /* pre declarations */
-void m_get_gc(struct md_cpu *md);
-void m_show_gc(struct md_cpu *md);
-void m_set_gc(struct md_cpu *md, char **argv, int argc);
+void m_get_gc(struct md_cpu *md, int bm_idx);
+void m_show_gc(struct md_cpu *md, int bm_idx);
+void m_set_gc(struct md_cpu *md, int bm_idx, char **argv, int argc);
 int m_outdate_gc(struct md_cpu *md);
 int m_invalidate_gc(struct md_cpu *md);
-void m_get_uuid(struct md_cpu *md);
-void m_show_uuid(struct md_cpu *md);
-void m_set_uuid(struct md_cpu *md, char **argv, int argc);
+void m_get_uuid(struct md_cpu *md, int bm_idx);
+void m_show_uuid(struct md_cpu *md, int bm_idx);
+void m_set_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc);
 int m_outdate_uuid(struct md_cpu *md);
 int m_invalidate_uuid(struct md_cpu *md);
 
@@ -1026,7 +1028,8 @@ struct meta_cmd {
 	const char *name;
 	const char *args;
 	int (*function) (struct format *, char **argv, int argc);
-	int show_in_usage;
+	int show_in_usage:1;
+	int node_id_required:1;
 };
 
 /* pre declarations */
@@ -1047,22 +1050,22 @@ int meta_dstate(struct format *cfg, char **argv, int argc);
 int meta_chk_offline_resize(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
-	{"get-gi", 0, meta_get_gi, 1},
-	{"show-gi", 0, meta_show_gi, 1},
-	{"dump-md", 0, meta_dump_md, 1},
-	{"restore-md", "file", meta_restore_md, 1},
-	{"verify-dump", "file", meta_verify_dump_file, 1},
-	{"apply-al", 0, meta_apply_al, 1},
-	{"create-md", "[--peer-max-bio-size {val}] {max_peers}", meta_create_md, 1},
-	{"wipe-md", 0, meta_wipe_md, 1},
-	{"outdate", 0, meta_outdate, 1},
-	{"invalidate", 0, meta_invalidate, 1},
-	{"dstate", 0, meta_dstate, 1},
-	{"read-dev-uuid", 0,  meta_read_dev_uuid,  0},
-	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0},
+	{"get-gi", 0, meta_get_gi, 1, 1},
+	{"show-gi", 0, meta_show_gi, 1, 1},
+	{"dump-md", 0, meta_dump_md, 1, 0},
+	{"restore-md", "file", meta_restore_md, 1, 0},
+	{"verify-dump", "file", meta_verify_dump_file, 1, 0},
+	{"apply-al", 0, meta_apply_al, 1, 0},
+	{"create-md", "[--peer-max-bio-size {val}] {max_peers}", meta_create_md, 1, 0},
+	{"wipe-md", 0, meta_wipe_md, 1, 0},
+	{"outdate", 0, meta_outdate, 1, 0},
+	{"invalidate", 0, meta_invalidate, 1, 0},
+	{"dstate", 0, meta_dstate, 1, 0},
+	{"read-dev-uuid", 0,  meta_read_dev_uuid, 0, 0},
+	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0, 0},
 	/* FIXME: Get and set node and peer ids */
-	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0},
-	{"check-resize", 0, meta_chk_offline_resize, 1},
+	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0, 1},
+	{"check-resize", 0, meta_chk_offline_resize, 1, 0},
 };
 
 /*
@@ -1135,24 +1138,24 @@ void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const ch
 	}
 }
 
-void m_get_gc(struct md_cpu *md)
+void m_get_gc(struct md_cpu *md, int bm_idx __attribute((unused)))
 {
 	dt_print_gc(md->gc);
 }
 
-void m_show_gc(struct md_cpu *md)
+void m_show_gc(struct md_cpu *md, int bm_idx __attribute((unused)))
 {
 	dt_pretty_print_gc(md->gc);
 }
 
-void m_get_uuid(struct md_cpu *md)
+void m_get_uuid(struct md_cpu *md, int bm_idx)
 {
-	dt_print_uuids(md->peers[0].uuid,md->flags);
+	dt_print_uuids(md->peers[bm_idx].uuid,md->flags);
 }
 
-void m_show_uuid(struct md_cpu *md)
+void m_show_uuid(struct md_cpu *md, int bm_idx)
 {
-	dt_pretty_print_uuids(md->peers[0].uuid,md->flags);
+	dt_pretty_print_uuids(md->peers[bm_idx].uuid,md->flags);
 }
 
 int m_strsep_u32(char **s, uint32_t *val)
@@ -1235,7 +1238,7 @@ int m_strsep_bit(char **s, uint32_t *val, int mask)
 	return rv;
 }
 
-void m_set_gc(struct md_cpu *md, char **argv, int argc __attribute((unused)))
+void m_set_gc(struct md_cpu *md, int bm_idx __attribute((unused)), char **argv, int argc __attribute((unused)))
 {
 	char **str;
 
@@ -1253,7 +1256,7 @@ void m_set_gc(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 	} while (0);
 }
 
-void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
+void m_set_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc __attribute((unused)))
 {
 	char **str;
 	int i;
@@ -1262,7 +1265,7 @@ void m_set_uuid(struct md_cpu *md, char **argv, int argc __attribute((unused)))
 
 	do {
 		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
-			if (!m_strsep_u64(str, &md->peers[0].uuid[i])) return;
+			if (!m_strsep_u64(str, &md->peers[bm_idx].uuid[i])) return;
 		}
 		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
@@ -2710,6 +2713,24 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
   }}} end of v09
  ******************************************/
 
+static int node_id_to_bm_idx(struct format *cfg, int node_id)
+{
+	int bm_idx;
+
+	if (format_version(cfg) < DRBD_V09)
+		return 0;
+
+	for (bm_idx = 0; bm_idx < cfg->md.bm_max_peers; bm_idx++) {
+		/*if (cfg->md.peers[bm_idx].node_id == -1)
+		  vacant_idx = bm_idx; */
+		if (cfg->md.peers[bm_idx].node_id == node_id)
+			return bm_idx;
+	}
+
+	fprintf(stderr, "The node-id %d not known (yet) in meta data\n", node_id);
+	exit(10);
+}
+
 int meta_get_gi(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	if (argc > 0) {
@@ -2719,7 +2740,7 @@ int meta_get_gi(struct format *cfg, char **argv __attribute((unused)), int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	cfg->ops->get_gi(&cfg->md);
+	cfg->ops->get_gi(&cfg->md, node_id_to_bm_idx(cfg, option_node_id));
 
 	return cfg->ops->close(cfg);
 }
@@ -2735,7 +2756,9 @@ int meta_show_gi(struct format *cfg, char **argv __attribute((unused)), int argc
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	cfg->ops->show_gi(&cfg->md);
+	// find the correct slot from node-id.
+
+	cfg->ops->show_gi(&cfg->md, node_id_to_bm_idx(cfg, option_node_id));
 
 	if (cfg->md.effective_size) {
 		printf("last agreed size: %s (%llu sectors)\n",
@@ -2783,6 +2806,7 @@ int meta_set_gi(struct format *cfg, char **argv, int argc)
 {
 	struct md_cpu tmp;
 	int err;
+	int bm_idx;
 
 	if (argc > 1) {
 		fprintf(stderr, "Ignoring additional arguments\n");
@@ -2795,13 +2819,14 @@ int meta_set_gi(struct format *cfg, char **argv, int argc)
 	if (cfg->ops->open(cfg))
 		return -1;
 
-	tmp = cfg->md;
+	bm_idx = node_id_to_bm_idx(cfg, option_node_id);
 
-	cfg->ops->set_gi(&tmp,argv,argc);
+	tmp = cfg->md;
+	cfg->ops->set_gi(&tmp, bm_idx, argv, argc);
 	printf("previously ");
-	cfg->ops->get_gi(&cfg->md);
+	cfg->ops->get_gi(&cfg->md, bm_idx);
 	printf("set GI to  ");
-	cfg->ops->get_gi(&tmp);
+	cfg->ops->get_gi(&tmp, bm_idx);
 
 	if (!confirmed("Write new GI to disk?")) {
 		printf("Operation canceled.\n");
@@ -4350,7 +4375,8 @@ void print_usage_and_exit()
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (!cmds[i].show_in_usage)
 			continue;
-		printf("  %s %s\n", cmds[i].name,
+		printf("  %s%s %s\n", cmds[i].name,
+		       cmds[i].node_id_required ? " --node-id {val}" : "",
 		       cmds[i].args ? cmds[i].args : "");
 	}
 
@@ -4553,6 +4579,13 @@ int main(int argc, char **argv)
 			    exit(10);
 		    }
 		    break;
+	    case 'i':
+		    option_node_id = m_strtoll(optarg, 1);
+		    if (option_node_id < 0 || option_node_id > (MAX_PEERS - 1)) {
+			    fprintf(stderr, "node-id out of range (0...%d)\n", MAX_PEERS - 1);
+			    exit(10);
+		    }
+		    break;
 	    default:
 		print_usage_and_exit();
 		break;
@@ -4612,6 +4645,18 @@ int main(int argc, char **argv)
 	if (option_peer_max_bio_size &&
 	    command->function != &meta_create_md) {
 		fprintf(stderr, "The --peer-max-bio-size option is only allowed with create-md\n");
+		exit(10);
+	}
+
+	if (option_node_id != -1 && !command->node_id_required) {
+		fprintf(stderr, "The %s command does not accept the --node-id option\n",
+			command->name);
+		exit(10);
+	}
+
+	if (option_node_id == -1 && command->node_id_required) {
+		fprintf(stderr, "The %s command requires the --node-id option\n",
+			command->name);
 		exit(10);
 	}
 
