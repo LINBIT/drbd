@@ -3412,6 +3412,7 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 			history_uuids[n] = peer_md->history_uuids[n];
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		s->peer_dev_history_uuids_len = HISTORY_UUIDS * sizeof(u64);
+		s->peer_dev_flags = peer_md->flags;
 		put_ldev(device);
 	}
 }

@@ -69,6 +69,9 @@ extern void get_random_bytes(void* buffer, int len);
 
 extern const char* shell_escape(const char* s);
 
+void dt_print_v9_uuids(const uint64_t*, unsigned int, unsigned int);
+void dt_pretty_print_v9_uuids(const uint64_t*, unsigned int, unsigned int);
+
 /* In-place unescape double quotes and backslash escape sequences from a
  * double quoted string. Note: backslash is only useful to quote itself, or
  * double quote, no special treatment to any c-style escape sequences. */

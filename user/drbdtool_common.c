@@ -452,6 +452,54 @@ void dt_pretty_print_uuids(const uint64_t* uuid, unsigned int flags)
 	printf("meta-data: %s\n", (flags & MDF_AL_CLEAN) ? "clean" : "need apply-al");
 }
 
+void dt_print_v9_uuids(const uint64_t* uuid, unsigned int mdf_flags, unsigned int mdf_peer_flags)
+{
+	int i;
+	printf(X64(016)":"X64(016)":",
+	       uuid[UI_CURRENT],
+	       uuid[UI_BITMAP]);
+	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
+		printf(X64(016)":", uuid[i]);
+	}
+	printf("%d:%d:%d:%d:%d:%d",
+	       mdf_flags & MDF_CONSISTENT ? 1 : 0,
+	       mdf_flags & MDF_WAS_UP_TO_DATE ? 1 : 0,
+	       mdf_flags & MDF_PRIMARY_IND ? 1 : 0,
+	       mdf_flags & MDF_CRASHED_PRIMARY ? 1 : 0,
+	       mdf_flags & MDF_AL_CLEAN ? 1 : 0,
+	       mdf_flags & MDF_AL_DISABLED ? 1 : 0);
+	printf(":%d:%d:%d:%d\n",
+	       mdf_peer_flags & MDF_PEER_CONNECTED ? 1 : 0,
+	       mdf_peer_flags & MDF_PEER_OUTDATED ? 1 : 0,
+	       mdf_peer_flags & MDF_PEER_FENCING ? 1 : 0,
+	       mdf_peer_flags & MDF_PEER_FULL_SYNC ? 1 : 0);
+}
+
+void dt_pretty_print_v9_uuids(const uint64_t* uuid, unsigned int mdf_flags, unsigned int mdf_peer_flags)
+{
+	printf(
+"\n"
+"       +--<  Current data generation UUID  >-\n"
+"       |               +--<  Bitmap's base data generation UUID  >-\n"
+"       |               |                 +--<  younger history UUID  >-\n"
+"       |               |                 |         +-<  older history  >-\n"
+"       V               V                 V         V\n");
+	dt_print_v9_uuids(uuid, mdf_flags, mdf_peer_flags);
+	printf(
+"                                                                    ^ ^ ^ ^ ^ ^ ^ ^ ^ ^\n"
+"                                      -<  Data consistency flag  >--+ | | | | | | | | |\n"
+"                             -<  Data was/is currently up-to-date  >--+ | | | | | | | |\n"
+"                                  -<  Node was/is currently primary  >--+ | | | | | | |\n"
+" -<  This node was a crashed primary, and has not seen its peer since  >--+ | | | | | |\n"
+"             -<  The activity-log was applied, the disk can be attached  >--+ | | | | |\n"
+"        -<  The activity-log was disabled, peer is completely out of sync  >--+ | | | |\n"
+"                                        -<  Node was/is currently connected  >--+ | | |\n"
+"                            -<  The peer's disk was out-dated or inconsistent  >--+ | |\n"
+"                               -<   A fence policy other the dont-care was used  >--+ |\n"
+"                -<  Node was in the progress of marking all blocks as out of sync  >--+\n"
+"\n");
+}
+
 /*    s: token buffer
  * size: size of s, _including_ the terminating NUL
  * stream: to read from.

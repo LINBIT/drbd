@@ -269,6 +269,7 @@ GENL_struct(DRBD_NLA_PEER_DEVICE_STATISTICS, 22, peer_device_statistics,
 	__u64_field(6, 0, peer_dev_resync_failed)  /* sectors */
 	__u64_field(7, 0, peer_dev_bitmap_uuid)
 	__bin_field(8, 0, peer_dev_history_uuids, HISTORY_UUIDS * sizeof(__u64))
+	__u32_field(9, 0, peer_dev_flags)
 )
 
 GENL_struct(DRBD_NLA_NOTIFICATION_HEADER, 23, drbd_notification_header,

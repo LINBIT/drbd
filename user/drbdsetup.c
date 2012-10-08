@@ -2551,9 +2551,11 @@ found:
 		uuids[UI_HISTORY_START + i] =
 			((uint64_t *)peer_device->statistics.peer_dev_history_uuids)[i];
 	if(!strcmp(cm->cmd, "show-gi"))
-		dt_pretty_print_uuids(uuids, device->statistics.dev_disk_flags);
+		dt_pretty_print_v9_uuids(uuids, device->statistics.dev_disk_flags,
+					 peer_device->statistics.peer_dev_flags);
 	else
-		dt_print_uuids(uuids, device->statistics.dev_disk_flags);
+		dt_print_v9_uuids(uuids, device->statistics.dev_disk_flags,
+				  peer_device->statistics.peer_dev_flags);
 	goto out;
 }
 
