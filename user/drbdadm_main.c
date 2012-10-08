@@ -383,7 +383,7 @@ struct adm_cmd cmds[] = {
 	{"dump-xml", adm_dump_xml, DRBD_acf1_dump},
 
 	{"create-md", adm_create_md, DRBD_acf1_default},
-	{"show-gi", adm_generic_b, DRBD_acf1_default},
+	{"show-gi", adm_generic_b, DRBD_acf1_peer_device},
 	{"get-gi", adm_generic_b, DRBD_acf1_peer_device},
 	{"dump-md", admm_generic, DRBD_acf1_default},
 	{"wipe-md", admm_generic, DRBD_acf1_default},
@@ -426,7 +426,7 @@ struct adm_cmd cmds[] = {
 
 	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
-	{"set-gi", admm_generic, DRBD_acf4_advanced_need_vol},
+	{"set-gi", admm_generic, .need_peer = 1, DRBD_acf4_advanced_need_vol},
 	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced_need_vol
 	 .drbdsetup_ctx = &new_current_uuid_cmd_ctx, },
 	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
@@ -1245,6 +1245,8 @@ int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
 	} else {
 		argv[NA(argc)] = vol->meta_index;
 	}
+	if (ctx->cmd->need_peer)
+		argv[NA(argc)] = ssprintf("--node-id=%s", ctx->conn->peer->node_id);
 	argv[NA(argc)] = (char *)ctx->arg;
 	if (argument)
 		argv[NA(argc)] = argument;
