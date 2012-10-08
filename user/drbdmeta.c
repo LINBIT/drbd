@@ -901,6 +901,9 @@ int m_invalidate_gc(struct md_cpu *md);
 void m_get_uuid(struct md_cpu *md, int bm_idx);
 void m_show_uuid(struct md_cpu *md, int bm_idx);
 void m_set_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc);
+void m_get_v9_uuid(struct md_cpu *md, int bm_idx);
+void m_show_v9_uuid(struct md_cpu *md, int bm_idx);
+void m_set_v9_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc);
 int m_outdate_uuid(struct md_cpu *md);
 int m_invalidate_uuid(struct md_cpu *md);
 
@@ -991,9 +994,9 @@ struct format_ops f_ops[] = {
 		     .md_initialize = v09_md_initialize,
 		     .md_disk_to_cpu = v09_md_disk_to_cpu,
 		     .md_cpu_to_disk = v09_md_cpu_to_disk,
-		     .get_gi = m_get_uuid,
-		     .show_gi = m_show_uuid,
-		     .set_gi = m_set_uuid,
+		     .get_gi = m_get_v9_uuid,
+		     .show_gi = m_show_v9_uuid,
+		     .set_gi = m_set_v9_uuid,
 		     .outdate_gi = m_outdate_uuid,
 		     .invalidate_gi = m_invalidate_uuid,
 		     },
@@ -1158,6 +1161,16 @@ void m_show_uuid(struct md_cpu *md, int bm_idx)
 	dt_pretty_print_uuids(md->peers[bm_idx].uuid,md->flags);
 }
 
+void m_get_v9_uuid(struct md_cpu *md, int bm_idx)
+{
+	dt_print_v9_uuids(md->peers[bm_idx].uuid, md->flags, md->peers[bm_idx].flags);
+}
+
+void m_show_v9_uuid(struct md_cpu *md, int bm_idx)
+{
+	dt_pretty_print_v9_uuids(md->peers[bm_idx].uuid, md->flags, md->peers[bm_idx].flags);
+}
+
 int m_strsep_u32(char **s, uint32_t *val)
 {
 	char *t, *e;
@@ -1274,6 +1287,30 @@ void m_set_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc __attribute
 		if (!m_strsep_bit(str, &md->flags, MDF_FULL_SYNC)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_PEER_OUT_DATED)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_CRASHED_PRIMARY)) break;
+	} while (0);
+}
+
+void m_set_v9_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc __attribute((unused)))
+{
+	char **str;
+	int i;
+
+	str = &argv[0];
+
+	do {
+		for ( i=UI_CURRENT ; i<UI_SIZE ; i++ ) {
+			if (!m_strsep_u64(str, &md->peers[bm_idx].uuid[i])) return;
+		}
+		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_PRIMARY_IND)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_CRASHED_PRIMARY)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_AL_CLEAN)) break;
+		if (!m_strsep_bit(str, &md->flags, MDF_AL_DISABLED)) break;
+		if (!m_strsep_bit(str, &md->peers[bm_idx].flags, MDF_PEER_CONNECTED)) break;
+		if (!m_strsep_bit(str, &md->peers[bm_idx].flags, MDF_PEER_OUTDATED)) break;
+		if (!m_strsep_bit(str, &md->peers[bm_idx].flags, MDF_PEER_FENCING)) break;
+		if (!m_strsep_bit(str, &md->peers[bm_idx].flags, MDF_PEER_FULL_SYNC)) break;
 	} while (0);
 }
 
