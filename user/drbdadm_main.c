@@ -1149,10 +1149,10 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = do_new_resource ? "new-resource" : "resource-options";
 	argv[NA(argc)] = ssprintf("%s", res->name);
+	if (do_new_resource)
+		argv[NA(argc)] = ctx->res->me->node_id;
 	if (reset)
 		argv[NA(argc)] = "--set-defaults";
-	if (do_new_resource)
-		argv[NA(argc)] = ssprintf("--node-id=%s", ctx->res->me->node_id);
 	if (reset || do_new_resource)
 		make_options(argv[NA(argc)], &res->res_options);
 	add_setup_options(argv, &argc);

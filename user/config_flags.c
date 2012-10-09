@@ -720,7 +720,6 @@ struct context_def resource_options_ctx = {
 		{ "cpu-mask", STRING(cpu_mask) },
 		{ "on-no-data-accessible", ENUM(on_no_data, ON_NO_DATA) },
 		{ "auto-promote", FLAG(auto_promote) },
-		{ "node-id", NUMERIC(node_id, NODE_ID) },
 		{ } },
 };
 

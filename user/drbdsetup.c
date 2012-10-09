@@ -254,6 +254,7 @@ static char *address_str(char *buffer, void* address, int addr_len);
 // convert functions for arguments
 static int conv_block_dev(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
 static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg, struct drbd_genlmsghdr *dhdr, char* arg);
+static int conv_u32(struct drbd_argument *, struct msg_buff *, struct drbd_genlmsghdr *, char *);
 
 struct resources_list {
 	struct resources_list *next;
@@ -407,6 +408,9 @@ struct drbd_cmd commands[] = {
 		.lockless = true, },
 
 	{"new-resource", CTX_RESOURCE, DRBD_ADM_NEW_RESOURCE, DRBD_NLA_RESOURCE_OPTS, F_CONFIG_CMD,
+	 .drbd_args = (struct drbd_argument[]) {
+		 { "node_id",		T_node_id,	conv_u32 },
+		 { } },
 	 .ctx = &resource_options_ctx },
 
 	/* only payload is resource name and volume number */
@@ -583,6 +587,16 @@ static int conv_md_idx(struct drbd_argument *ad, struct msg_buff *msg,
 	else idx = m_strtoll(arg,1);
 
 	nla_put_u32(msg, ad->nla_type, idx);
+
+	return NO_ERROR;
+}
+
+static int conv_u32(struct drbd_argument *ad, struct msg_buff *msg,
+		    struct drbd_genlmsghdr *dhdr, char* arg)
+{
+	unsigned int i = m_strtoll(arg, 1);
+
+	nla_put_u32(msg, ad->nla_type, i);
 
 	return NO_ERROR;
 }
