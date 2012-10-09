@@ -1680,6 +1680,7 @@ static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	for (resource = resources_list; resource; resource = resource->next) {
 		struct drbd_cmd cmd = {};
+		struct nlattr *nla;
 
 		if (strcmp(old_objname, "all") && strcmp(old_objname, resource->name))
 			continue;
@@ -1693,6 +1694,10 @@ static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 		printI("_this_host {\n");
 		++indent;
+
+		nla = nla_find_nested(resource->res_opts, __nla_type(T_node_id));
+		if (nla)
+			printI("node-id\t\t\t%d;\n", *(uint32_t *)nla_data(nla));
 
 		cmd.cmd_id = DRBD_ADM_GET_DEVICES;
 		cmd.show_function = show_current_volume;
