@@ -3319,6 +3319,7 @@ struct meta_data_on_disk {
 	u32 reserved_u32[4];
 
 	struct peer_dev_md_on_disk peers[MAX_PEERS];
+	u64 history_uuids[HISTORY_UUIDS];
 } __packed;
 
 /**
@@ -3373,6 +3374,9 @@ void drbd_md_sync(struct drbd_device *device)
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
 		buffer->peers[i].node_id = cpu_to_be32(peer_md->node_id);
 	}
+	BUILD_BUG_ON(ARRAY_SIZE(device->ldev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
+	for (i = 0; i < ARRAY_SIZE(buffer->history_uuids); i++)
+		buffer->history_uuids[i] = cpu_to_be64(device->ldev->md.history_uuids[i]);
 
 	D_ASSERT(device, drbd_md_ss__(device, device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
@@ -3492,6 +3496,9 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 		peer_md->node_id = be32_to_cpu(buffer->peers[i].node_id);
 	}
+	BUILD_BUG_ON(ARRAY_SIZE(bdev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
+	for (i = 0; i < ARRAY_SIZE(buffer->history_uuids); i++)
+		bdev->md.history_uuids[i] = be64_to_cpu(buffer->history_uuids[i]);
 
  err:
 	drbd_md_put_buffer(device);

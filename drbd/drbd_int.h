@@ -638,6 +638,7 @@ struct drbd_md {
 	 */
 
 	struct drbd_md_peer *peers;
+	u64 history_uuids[HISTORY_UUIDS];
 };
 
 struct drbd_backing_dev {
