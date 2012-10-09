@@ -1691,9 +1691,15 @@ static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 		print_options(resource->res_opts, &resource_options_ctx, "options");
 
+		printI("_this_host {\n");
+		++indent;
+
 		cmd.cmd_id = DRBD_ADM_GET_DEVICES;
 		cmd.show_function = show_current_volume;
 		generic_get_cmd(&cmd, 0, NULL);
+
+		--indent;
+		printI("}\n");
 
 		cmd.cmd_id = DRBD_ADM_GET_CONNECTIONS;
 		cmd.show_function = print_current_connection;
@@ -2393,7 +2399,7 @@ static void free_peer_devices(struct peer_devices_list *peer_devices)
 	}
 }
 
-static int __show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
+static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 {
 	unsigned minor;
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -2434,27 +2440,6 @@ static int __show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
 	printI("}\n"); /* close volume */
 
 	return 0;
-}
-
-static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
-{
-	static bool in_this_host_section;
-
-	if (info) {
-		if (!in_this_host_section) {
-			printI("_this_host {\n");
-			++indent;
-			in_this_host_section = true;
-		}
-	} else {
-		if (in_this_host_section) {
-			--indent;
-			printI("}\n");
-			in_this_host_section = false;
-		}
-	}
-
-	return __show_current_volume(cm, info);
 }
 
 static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv)
