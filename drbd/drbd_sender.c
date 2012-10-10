@@ -952,11 +952,15 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			if (peer_device->p_uuid) {
+				unsigned long flags;
 				int i;
-				for (i = UI_BITMAP ; i <= UI_HISTORY_END ; i++)
-					_drbd_uuid_set(peer_device, i, peer_device->p_uuid[i]);
-				drbd_uuid_set(peer_device, UI_BITMAP, drbd_current_uuid(device));
-				_drbd_uuid_set_current(device, peer_device->p_uuid[UI_CURRENT]);
+
+				spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+				for (i = UI_HISTORY_END - 1; i >= UI_HISTORY_START; i--)
+					_drbd_uuid_push_history(peer_device, peer_device->p_uuid[i]);
+				__drbd_uuid_set(peer_device, UI_BITMAP, drbd_current_uuid(device));
+				__drbd_uuid_set_current(device, peer_device->p_uuid[UI_CURRENT]);
+				spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 			} else {
 				drbd_err(peer_device, "peer_device->p_uuid is NULL! BUG\n");
 			}
