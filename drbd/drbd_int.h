@@ -2265,9 +2265,9 @@ static inline u64 __drbd_peer_uuid(struct drbd_peer_device *peer_device, enum dr
 		return 0;
 }
 
-static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+static inline u64 drbd_history_uuid(struct drbd_peer_device *peer_device, int i)
 {
-	return __drbd_peer_uuid(peer_device, i);
+	return __drbd_peer_uuid(peer_device, UI_HISTORY_START + i);
 }
 
 static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
