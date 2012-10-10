@@ -3060,7 +3060,7 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 			struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 
 			drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
-			drbd_uuid_push_history(peer_device, peer_md->bitmap_uuid);
+			_drbd_uuid_push_history(peer_device, peer_md->bitmap_uuid);
 			peer_md->bitmap_uuid = 0;
 
 			drbd_uuid_dump_self(peer_device,
