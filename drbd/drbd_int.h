@@ -2247,7 +2247,7 @@ static inline bool verify_can_do_stop_sector(struct drbd_peer_device *peer_devic
 		peer_device->connection->agreed_pro_version != 100;
 }
 
-static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+static inline u64 __drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
 {
 	struct drbd_device *device = peer_device->device;
 
@@ -2263,6 +2263,16 @@ static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd
 			return peer_md->history_uuids[i - UI_HISTORY_START];
 	} else
 		return 0;
+}
+
+static inline u64 drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+{
+	return __drbd_peer_uuid(peer_device, i);
+}
+
+static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
+{
+	return __drbd_peer_uuid(peer_device, UI_BITMAP);
 }
 
 static inline int drbd_queue_order_type(struct drbd_device *device)

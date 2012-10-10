@@ -924,7 +924,8 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	p->uuid[UI_CURRENT] = cpu_to_be64(drbd_current_uuid(device));
-	for (i = UI_BITMAP; i < UI_SIZE; i++)
+	p->uuid[UI_BITMAP] = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++)
 		p->uuid[i] = cpu_to_be64(drbd_peer_uuid(peer_device, i));
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
@@ -962,7 +963,7 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 		drbd_info(peer_device, "%s %016llX:%016llX:%016llX:%016llX\n",
 			  text,
 			  (unsigned long long)drbd_current_uuid(device),
-			  (unsigned long long)drbd_peer_uuid(peer_device, UI_BITMAP),
+			  (unsigned long long)drbd_bitmap_uuid(peer_device),
 			  (unsigned long long)drbd_peer_uuid(peer_device, UI_HISTORY_START),
 			  (unsigned long long)drbd_peer_uuid(peer_device, UI_HISTORY_END));
 		put_ldev(device);
@@ -982,7 +983,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 
 	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
 
-	uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
+	uuid = drbd_bitmap_uuid(peer_device);
 	if (uuid && uuid != UUID_JUST_CREATED)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else
@@ -3595,7 +3596,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	u64 previous_uuid;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	previous_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
+	previous_uuid = drbd_bitmap_uuid(peer_device);
 	if (previous_uuid)
 		_drbd_uuid_push_history(peer_device, previous_uuid);
 	__drbd_uuid_set_bitmap(peer_device, uuid);
@@ -3610,7 +3611,7 @@ static bool rotate_current_into_bitmap(struct drbd_device *device, bool forced) 
 	bool do_it = false;
 
 	for_each_peer_device(peer_device, device) {
-		bm_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
+		bm_uuid = drbd_bitmap_uuid(peer_device);
 		pdsk = peer_device->disk_state[NOW];
 		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
 		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
