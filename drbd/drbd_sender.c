@@ -958,7 +958,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 				for (i = UI_HISTORY_END - 1; i >= UI_HISTORY_START; i--)
 					_drbd_uuid_push_history(peer_device, peer_device->p_uuid[i]);
-				__drbd_uuid_set(peer_device, UI_BITMAP, drbd_current_uuid(device));
+				__drbd_uuid_set_bitmap(peer_device, drbd_current_uuid(device));
 				__drbd_uuid_set_current(device, peer_device->p_uuid[UI_CURRENT]);
 				spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 			} else {

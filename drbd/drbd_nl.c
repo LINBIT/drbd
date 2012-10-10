@@ -3645,7 +3645,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_peer_device(peer_device, device)
-		drbd_uuid_set(peer_device, UI_BITMAP, 0); /* Rotate UI_BITMAP to History 1, etc... */
+		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
 	drbd_uuid_new_current(device); /* New current, previous to UI_BITMAP */
 
 	if (args.clear_bm) {
@@ -3660,7 +3660,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		for_each_peer_device(peer_device, device) {
 			if (should_skip_initial_sync(peer_device)) {
 				drbd_send_uuids_skip_initial_sync(peer_device);
-				_drbd_uuid_set(peer_device, UI_BITMAP, 0);
+				_drbd_uuid_set_bitmap(peer_device, 0);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
 			}
 		}

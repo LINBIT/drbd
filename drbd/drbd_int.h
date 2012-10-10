@@ -1158,15 +1158,15 @@ extern void drbd_md_set_sector_offsets(struct drbd_device *device,
 extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_received_new_current(struct drbd_device *device, u64 val) __must_hold(local);
-extern void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
-extern void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
+extern void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
+extern void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
 extern void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
-extern void __drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local);
 extern void __drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
+extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);

@@ -987,7 +987,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else
 		get_random_bytes(&uuid, sizeof(u64));
-	drbd_uuid_set(peer_device, UI_BITMAP, uuid);
+	drbd_uuid_set_bitmap(peer_device, uuid);
 	drbd_print_uuids(peer_device, "updated sync UUID");
 	drbd_md_sync(device);
 
@@ -3560,21 +3560,13 @@ void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 	drbd_set_exposed_data_uuid(device, val);
 }
 
-void __drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val)
+void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 
 	drbd_md_mark_dirty(device);
-
-	if (idx == UI_CURRENT)
-		__drbd_uuid_set_current(device, val);
-	else {
-		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
-		if (idx == UI_BITMAP)
-			peer_md->bitmap_uuid = val;
-		else
-			peer_md->history_uuids[idx - UI_HISTORY_START] = val;
-	}
+	peer_md->bitmap_uuid = val;
 }
 
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local)
@@ -3586,25 +3578,27 @@ void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(loc
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-void _drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)
+void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	__drbd_uuid_set(peer_device, idx, val);
+	__drbd_uuid_set_bitmap(peer_device, val);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-void drbd_uuid_set(struct drbd_peer_device *peer_device, int idx, u64 val) __must_hold(local)
+void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
+	u64 previous_uuid;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	if (drbd_peer_uuid(peer_device, idx))
-		_drbd_uuid_push_history(peer_device, drbd_peer_uuid(peer_device, idx));
-	__drbd_uuid_set(peer_device, idx, val);
+	previous_uuid = drbd_peer_uuid(peer_device, UI_BITMAP);
+	if (previous_uuid)
+		_drbd_uuid_push_history(peer_device, previous_uuid);
+	__drbd_uuid_set_bitmap(peer_device, uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
@@ -3621,7 +3615,7 @@ static bool rotate_current_into_bitmap(struct drbd_device *device, bool forced) 
 		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
 		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
 		    bm_uuid == 0) {
-			__drbd_uuid_set(peer_device, UI_BITMAP, device->ldev->md.current_uuid);
+			__drbd_uuid_set_bitmap(peer_device, device->ldev->md.current_uuid);
 			do_it = true;
 		}
 	}

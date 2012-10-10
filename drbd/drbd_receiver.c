@@ -3156,7 +3156,7 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 				return -1091;
 
 			bitmap_uuid = _drbd_uuid_pull_history(peer_device);
-			__drbd_uuid_set(peer_device, UI_BITMAP, bitmap_uuid);
+			__drbd_uuid_set_bitmap(peer_device, bitmap_uuid);
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
@@ -4071,7 +4071,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 					"clear_n_write from receive_uuids",
 					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
 			_drbd_uuid_set_current(device, p_uuid[UI_CURRENT]);
-			_drbd_uuid_set(peer_device, UI_BITMAP, 0);
+			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
 			__change_disk_state(device, D_UP_TO_DATE);
@@ -4596,7 +4596,7 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 	   _not_ be rotated into the history */
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
 		_drbd_uuid_set_current(device, be64_to_cpu(p->uuid));
-		_drbd_uuid_set(peer_device, UI_BITMAP, 0UL);
+		_drbd_uuid_set_bitmap(peer_device, 0UL);
 
 		drbd_print_uuids(peer_device, "updated sync uuid");
 		drbd_start_resync(peer_device, L_SYNC_TARGET);
