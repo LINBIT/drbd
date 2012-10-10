@@ -3146,6 +3146,8 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 		    (drbd_peer_uuid(peer_device, UI_HISTORY_START + 1) & ~((u64)1)) ==
 		    (peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1)) :
 		    self + UUID_NEW_BM_OFFSET == (drbd_peer_uuid(peer_device, UI_BITMAP) & ~((u64)1))) {
+			u64 bitmap_uuid;
+
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of our UUIDs. */
 			*rule_nr = 71;
@@ -3153,8 +3155,8 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 			if (peer_device->connection->agreed_pro_version < 91)
 				return -1091;
 
-			__drbd_uuid_set(peer_device, UI_BITMAP, drbd_peer_uuid(peer_device, UI_HISTORY_START));
-			__drbd_uuid_set(peer_device, UI_HISTORY_START, drbd_peer_uuid(peer_device, UI_HISTORY_START + 1));
+			bitmap_uuid = _drbd_uuid_pull_history(peer_device);
+			__drbd_uuid_set(peer_device, UI_BITMAP, bitmap_uuid);
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,

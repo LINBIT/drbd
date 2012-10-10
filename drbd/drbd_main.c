@@ -3535,6 +3535,20 @@ void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __mu
 	peer_md->history_uuids[i] = val;
 }
 
+u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_md_peer *peer_md = &peer_device->device->ldev->md.peers[peer_device->bitmap_index];
+	u64 first_history_uuid;
+	int i;
+
+	first_history_uuid = peer_md->history_uuids[0];
+	for (i = 0; i < HISTORY_UUIDS_V08 - 1; i++)
+		peer_md->history_uuids[i] = peer_md->history_uuids[i + 1];
+	peer_md->history_uuids[i] = 0;
+
+	return first_history_uuid;
+}
+
 void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
 	if (device->resource->role[NOW] == R_PRIMARY)
