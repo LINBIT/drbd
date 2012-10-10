@@ -3535,24 +3535,36 @@ void drbd_md_mark_dirty(struct drbd_device *device)
 
 void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
 {
-	struct drbd_md_peer *peer_md = &peer_device->device->ldev->md.peers[peer_device->bitmap_index];
+	struct drbd_device *device = peer_device->device;
+	struct drbd_md *md = &device->ldev->md;
+	struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
 	int i;
 
 	for (i = HISTORY_UUIDS_V08 - 1; i > 0; i--)
 		peer_md->history_uuids[i] = peer_md->history_uuids[i - 1];
 	peer_md->history_uuids[i] = val;
+
+	for (i = ARRAY_SIZE(md->history_uuids) - 1; i > 0; i--)
+		md->history_uuids[i] = md->history_uuids[i - 1];
+	md->history_uuids[i] = val;
 }
 
 u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	struct drbd_md_peer *peer_md = &peer_device->device->ldev->md.peers[peer_device->bitmap_index];
+	struct drbd_device *device = peer_device->device;
+	struct drbd_md *md = &device->ldev->md;
+	struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
 	u64 first_history_uuid;
 	int i;
 
-	first_history_uuid = peer_md->history_uuids[0];
 	for (i = 0; i < HISTORY_UUIDS_V08 - 1; i++)
 		peer_md->history_uuids[i] = peer_md->history_uuids[i + 1];
 	peer_md->history_uuids[i] = 0;
+
+	first_history_uuid = md->history_uuids[0];
+	for (i = 0; i < ARRAY_SIZE(md->history_uuids) - 1; i++)
+		md->history_uuids[i] = md->history_uuids[i + 1];
+	md->history_uuids[i] = 0;
 
 	return first_history_uuid;
 }
