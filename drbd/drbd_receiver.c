@@ -3081,10 +3081,13 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 
 		if ((drbd_history_uuid(peer_device, 0) & ~((u64)1)) == (peer_device->bitmap_uuid & ~((u64)1)) &&
 		    (drbd_history_uuid(peer_device, 1) & ~((u64)1)) == (peer_device->history_uuids[0] & ~((u64)1))) {
+			int i;
+
 			drbd_info(device, "was SyncTarget, peer missed the resync finished event, corrected peer:\n");
 
-			peer_device->history_uuids[1] = peer_device->history_uuids[0];
-			peer_device->history_uuids[0] = peer_device->bitmap_uuid;
+			for (i = ARRAY_SIZE(peer_device->history_uuids) - 1; i > 0; i--)
+				peer_device->history_uuids[i] = peer_device->history_uuids[i - 1];
+			peer_device->history_uuids[i] = peer_device->bitmap_uuid;
 			peer_device->bitmap_uuid = 0;
 
 			drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
@@ -3113,6 +3116,8 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 		    (drbd_history_uuid(peer_device, 0) & ~((u64)1)) ==
 		    (peer_device->history_uuids[1] & ~((u64)1)) :
 		    peer + UUID_NEW_BM_OFFSET == (peer_device->bitmap_uuid & ~((u64)1))) {
+			int i;
+
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of the peer's UUIDs. */
 			*rule_nr = 51;
@@ -3121,7 +3126,9 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 				return -1091;
 
 			peer_device->bitmap_uuid = peer_device->history_uuids[0];
-			peer_device->history_uuids[0] = peer_device->history_uuids[1];
+			for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids) - 1; i++)
+				peer_device->history_uuids[i] = peer_device->history_uuids[i + 1];
+			peer_device->history_uuids[i] = 0;
 
 			drbd_info(device, "Lost last syncUUID packet, corrected:\n");
 			drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
