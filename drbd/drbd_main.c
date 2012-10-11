@@ -925,9 +925,8 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
 	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
-	BUILD_BUG_ON(ARRAY_SIZE(p->history_uuids) != HISTORY_UUIDS_V08);
-	for (i = 0; i < HISTORY_UUIDS_V08; i++)
-		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(peer_device, i));
+	for (i = 0; i < ARRAY_SIZE(p->history_uuids); i++)
+		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(device, i));
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
@@ -965,8 +964,8 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 			  text,
 			  (unsigned long long)drbd_current_uuid(device),
 			  (unsigned long long)drbd_bitmap_uuid(peer_device),
-			  (unsigned long long)drbd_history_uuid(peer_device, 0),
-			  (unsigned long long)drbd_history_uuid(peer_device, 1));
+			  (unsigned long long)drbd_history_uuid(device, 0),
+			  (unsigned long long)drbd_history_uuid(device, 1));
 		put_ldev(device);
 	} else {
 		drbd_info(device, "%s effective data uuid: %016llX\n",

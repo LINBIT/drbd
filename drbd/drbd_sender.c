@@ -977,10 +977,9 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				int i;
 				peer_device->current_uuid = drbd_current_uuid(device);
 				peer_device->bitmap_uuid = drbd_bitmap_uuid(peer_device);
-				BUILD_BUG_ON(HISTORY_UUIDS_V08 != ARRAY_SIZE(peer_device->history_uuids));
-				for (i = 0; i < HISTORY_UUIDS_V08; i++)
+				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 					peer_device->history_uuids[i] =
-						drbd_history_uuid(peer_device, i);
+						drbd_history_uuid(device, i);
 			}
 		}
 	}

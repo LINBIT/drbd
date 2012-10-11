@@ -2254,32 +2254,24 @@ static inline bool verify_can_do_stop_sector(struct drbd_peer_device *peer_devic
 		peer_device->connection->agreed_pro_version != 100;
 }
 
-static inline u64 __drbd_peer_uuid(struct drbd_peer_device *peer_device, enum drbd_uuid_index i)
+static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_md_peer *peer_md;
 
 	if (!device->ldev)
 		return 0;
 
-	if (peer_device->bitmap_index != -1) {
-		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+	peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+	return peer_md->bitmap_uuid;
+}
 
-		if (i == UI_BITMAP)
-			return peer_md->bitmap_uuid;
-		else
-			return peer_md->history_uuids[i - UI_HISTORY_START];
-	} else
+static inline u64 drbd_history_uuid(struct drbd_device *device, int i)
+{
+	if (!device->ldev || i >= ARRAY_SIZE(device->ldev->md.history_uuids))
 		return 0;
-}
 
-static inline u64 drbd_history_uuid(struct drbd_peer_device *peer_device, int i)
-{
-	return __drbd_peer_uuid(peer_device, UI_HISTORY_START + i);
-}
-
-static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
-{
-	return __drbd_peer_uuid(peer_device, UI_BITMAP);
+	return device->ldev->md.history_uuids[i];
 }
 
 static inline int drbd_queue_order_type(struct drbd_device *device)
