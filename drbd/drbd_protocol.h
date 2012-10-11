@@ -222,7 +222,11 @@ struct p_protocol {
 } __packed;
 
 struct p_uuids {
-	u64 uuid[UI_EXTENDED_SIZE];
+	u64 current_uuid;
+	u64 bitmap_uuid;
+	u64 history_uuids[HISTORY_UUIDS_V08];
+	u64 dirty_bits;
+	u64 uuid_flags;
 } __packed;
 
 struct p_rs_uuid {

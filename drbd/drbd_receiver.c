@@ -4026,26 +4026,10 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
-STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info *pi)
+static int __receive_uuids(struct drbd_peer_device *peer_device)
 {
-	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
-	struct p_uuids *p = pi->data;
-	int i, updated_uuids = 0, err = 0;
-
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return config_unknown_volume(connection, pi);
-	device = peer_device->device;
-
-	peer_device->current_uuid = be64_to_cpu(p->uuid[UI_CURRENT]);
-	peer_device->bitmap_uuid = be64_to_cpu(p->uuid[UI_BITMAP]);
-	BUILD_BUG_ON(HISTORY_UUIDS_V08 != ARRAY_SIZE(peer_device->history_uuids));
-	for (i = 0; i < HISTORY_UUIDS_V08; i++)
-		peer_device->history_uuids[i] = be64_to_cpu(p->uuid[UI_HISTORY_START + i]);
-	peer_device->dirty_bits = be64_to_cpu(p->uuid[UI_SIZE]);
-	peer_device->uuid_flags = be64_to_cpu(p->uuid[UI_FLAGS]);
-	peer_device->uuids_received = true;
+	struct drbd_device *device = device = peer_device->device;
+	int updated_uuids = 0, err = 0;
 
 	if (peer_device->repl_state[NOW] < L_CONNECTED &&
 	    device->disk_state[NOW] < D_INCONSISTENT &&
@@ -4114,6 +4098,28 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	}
 
 	return err;
+}
+
+static int receive_uuids(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct p_uuids *p = pi->data;
+	int i;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return config_unknown_volume(connection, pi);
+
+	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+	peer_device->bitmap_uuid = be64_to_cpu(p->bitmap_uuid);
+	BUILD_BUG_ON(HISTORY_UUIDS_V08 != ARRAY_SIZE(peer_device->history_uuids));
+	for (i = 0; i < HISTORY_UUIDS_V08; i++)
+		peer_device->history_uuids[i] = be64_to_cpu(p->history_uuids[i]);
+	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
+	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+	peer_device->uuids_received = true;
+
+	return __receive_uuids(peer_device);
 }
 
 /**

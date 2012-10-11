@@ -923,14 +923,15 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	}
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	p->uuid[UI_CURRENT] = cpu_to_be64(drbd_current_uuid(device));
-	p->uuid[UI_BITMAP] = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
+	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+	BUILD_BUG_ON(ARRAY_SIZE(p->history_uuids) != HISTORY_UUIDS_V08);
 	for (i = 0; i < HISTORY_UUIDS_V08; i++)
-		p->uuid[UI_HISTORY_START + i] = cpu_to_be64(drbd_history_uuid(peer_device, i));
+		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(peer_device, i));
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
-	p->uuid[UI_SIZE] = cpu_to_be64(peer_device->comm_bm_set);
+	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
 	if (rcu_dereference(peer_device->connection->net_conf)->discard_my_data)
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
@@ -939,7 +940,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
-	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
+	p->uuid_flags = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
