@@ -1918,10 +1918,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
 			/* We expect to receive up-to-date UUIDs soon.
-			   To avoid a race in receive_state, free p_uuid while
+			   To avoid a race in receive_state, "clear" uuids while
 			   holding req_lock. I.e. atomic with the state change */
-			kfree(peer_device->p_uuid);
-			peer_device->p_uuid = NULL;
+			peer_device->uuids_received = false;
 		}
 	}
 	__change_disk_state(device, D_NEGOTIATING);

@@ -2842,9 +2842,9 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 	enum drbd_after_sb_p after_sb_0p;
 
 	self = drbd_bitmap_uuid(peer_device) & 1;
-	peer = peer_device->p_uuid[UI_BITMAP] & 1;
+	peer = peer_device->bitmap_uuid & 1;
 
-	ch_peer = peer_device->p_uuid[UI_SIZE];
+	ch_peer = peer_device->dirty_bits;
 	ch_self = peer_device->comm_bm_set;
 
 	rcu_read_lock();
@@ -3038,10 +3038,10 @@ STATIC void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, 
 STATIC void drbd_uuid_dump_peer(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
 {
 	drbd_info(peer_device, "peer %016llX:%016llX:%016llX:%016llX bits:%llu flags:%llX\n",
-	     (unsigned long long)peer_device->p_uuid[UI_CURRENT],
-	     (unsigned long long)peer_device->p_uuid[UI_BITMAP],
-	     (unsigned long long)peer_device->p_uuid[UI_HISTORY_START],
-	     (unsigned long long)peer_device->p_uuid[UI_HISTORY_END],
+	     (unsigned long long)peer_device->current_uuid,
+	     (unsigned long long)peer_device->bitmap_uuid,
+	     (unsigned long long)peer_device->history_uuids[0],
+	     (unsigned long long)peer_device->history_uuids[1],
 	     (unsigned long long)bits,
 	     (unsigned long long)flags);
 }
@@ -3050,13 +3050,13 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 {
 	struct drbd_device *device = peer_device->device;
 
-	if (peer_device->p_uuid[UI_BITMAP] == (u64)0 && drbd_bitmap_uuid(peer_device) != (u64)0) {
+	if (peer_device->bitmap_uuid == (u64)0 && drbd_bitmap_uuid(peer_device) != (u64)0) {
 
 		if (peer_device->connection->agreed_pro_version < 91)
 			return -1091;
 
-		if ((drbd_bitmap_uuid(peer_device) & ~((u64)1)) == (peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1)) &&
-		    (drbd_history_uuid(peer_device, 0) & ~((u64)1)) == (peer_device->p_uuid[UI_HISTORY_START + 1] & ~((u64)1))) {
+		if ((drbd_bitmap_uuid(peer_device) & ~((u64)1)) == (peer_device->history_uuids[0] & ~((u64)1)) &&
+		    (drbd_history_uuid(peer_device, 0) & ~((u64)1)) == (peer_device->history_uuids[0] & ~((u64)1))) {
 			struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 
 			drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
@@ -3074,20 +3074,20 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 		return 1;
 	}
 
-	if (drbd_bitmap_uuid(peer_device) == (u64)0 && peer_device->p_uuid[UI_BITMAP] != (u64)0) {
+	if (drbd_bitmap_uuid(peer_device) == (u64)0 && peer_device->bitmap_uuid != (u64)0) {
 
 		if (peer_device->connection->agreed_pro_version < 91)
 			return -1091;
 
-		if ((drbd_history_uuid(peer_device, 0) & ~((u64)1)) == (peer_device->p_uuid[UI_BITMAP] & ~((u64)1)) &&
-		    (drbd_history_uuid(peer_device, 1) & ~((u64)1)) == (peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1))) {
+		if ((drbd_history_uuid(peer_device, 0) & ~((u64)1)) == (peer_device->bitmap_uuid & ~((u64)1)) &&
+		    (drbd_history_uuid(peer_device, 1) & ~((u64)1)) == (peer_device->history_uuids[0] & ~((u64)1))) {
 			drbd_info(device, "was SyncTarget, peer missed the resync finished event, corrected peer:\n");
 
-			peer_device->p_uuid[UI_HISTORY_START + 1] = peer_device->p_uuid[UI_HISTORY_START];
-			peer_device->p_uuid[UI_HISTORY_START] = peer_device->p_uuid[UI_BITMAP];
-			peer_device->p_uuid[UI_BITMAP] = 0UL;
+			peer_device->history_uuids[1] = peer_device->history_uuids[0];
+			peer_device->history_uuids[0] = peer_device->bitmap_uuid;
+			peer_device->bitmap_uuid = 0;
 
-			drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
+			drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 			*rule_nr = 35;
 		} else {
 			drbd_info(device, "was SyncTarget (failed to write sync_uuid)\n");
@@ -3106,13 +3106,13 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 	u64 self, peer;
 
 	self = drbd_current_uuid(device) & ~((u64)1);
-	peer = peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1);
+	peer = peer_device->history_uuids[0] & ~((u64)1);
 
 	if (self == peer) {
 		if (peer_device->connection->agreed_pro_version < 96 ?
 		    (drbd_history_uuid(peer_device, 0) & ~((u64)1)) ==
-		    (peer_device->p_uuid[UI_HISTORY_START + 1] & ~((u64)1)) :
-		    peer + UUID_NEW_BM_OFFSET == (peer_device->p_uuid[UI_BITMAP] & ~((u64)1))) {
+		    (peer_device->history_uuids[1] & ~((u64)1)) :
+		    peer + UUID_NEW_BM_OFFSET == (peer_device->bitmap_uuid & ~((u64)1))) {
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
 			   resync as sync source modifications of the peer's UUIDs. */
 			*rule_nr = 51;
@@ -3120,11 +3120,11 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 			if (peer_device->connection->agreed_pro_version < 91)
 				return -1091;
 
-			peer_device->p_uuid[UI_BITMAP] = peer_device->p_uuid[UI_HISTORY_START];
-			peer_device->p_uuid[UI_HISTORY_START] = peer_device->p_uuid[UI_HISTORY_START + 1];
+			peer_device->bitmap_uuid = peer_device->history_uuids[0];
+			peer_device->history_uuids[0] = peer_device->history_uuids[1];
 
 			drbd_info(device, "Lost last syncUUID packet, corrected:\n");
-			drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
+			drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 
 			return -1;
 		}
@@ -3139,12 +3139,12 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 	u64 self, peer;
 
 	self = drbd_history_uuid(peer_device, 0) & ~((u64)1);
-	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
+	peer = peer_device->current_uuid & ~((u64)1);
 
 	if (self == peer) {
 		if (peer_device->connection->agreed_pro_version < 96 ?
 		    (drbd_history_uuid(peer_device, 1) & ~((u64)1)) ==
-		    (peer_device->p_uuid[UI_HISTORY_START] & ~((u64)1)) :
+		    (peer_device->history_uuids[0] & ~((u64)1)) :
 		    self + UUID_NEW_BM_OFFSET == (drbd_bitmap_uuid(peer_device) & ~((u64)1))) {
 			u64 bitmap_uuid;
 
@@ -3189,7 +3189,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	int i, j;
 
 	self = drbd_current_uuid(device) & ~((u64)1);
-	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
+	peer = peer_device->current_uuid & ~((u64)1);
 
 	*rule_nr = 10;
 	if (self == UUID_JUST_CREATED && peer == UUID_JUST_CREATED)
@@ -3216,7 +3216,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 		/* Common power [off|failure] */
 		rct = (test_bit(CRASHED_PRIMARY, &device->flags) ? 1 : 0) +
-			(peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_CRASHED_PRIMARY);
+			(peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY);
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
 		*rule_nr = 40;
@@ -3232,7 +3232,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	}
 
 	*rule_nr = 50;
-	peer = peer_device->p_uuid[UI_BITMAP] & ~((u64)1);
+	peer = peer_device->bitmap_uuid & ~((u64)1);
 	if (self == peer)
 		return -1;
 
@@ -3244,15 +3244,15 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 	*rule_nr = 60;
 	self = drbd_current_uuid(device) & ~((u64)1);
-	for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++) {
-		peer = peer_device->p_uuid[i] & ~((u64)1);
+	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
+		peer = peer_device->history_uuids[i] & ~((u64)1);
 		if (self == peer)
 			return -2;
 	}
 
 	*rule_nr = 70;
 	self = drbd_bitmap_uuid(peer_device) & ~((u64)1);
-	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
+	peer = peer_device->current_uuid & ~((u64)1);
 	if (self == peer)
 		return 1;
 
@@ -3263,7 +3263,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	}
 
 	*rule_nr = 80;
-	peer = peer_device->p_uuid[UI_CURRENT] & ~((u64)1);
+	peer = peer_device->current_uuid & ~((u64)1);
 	for (i = 0; i < HISTORY_UUIDS_V08; i++) {
 		self = drbd_history_uuid(peer_device, i) & ~((u64)1);
 		if (self == peer)
@@ -3272,15 +3272,15 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 	*rule_nr = 90;
 	self = drbd_bitmap_uuid(peer_device) & ~((u64)1);
-	peer = peer_device->p_uuid[UI_BITMAP] & ~((u64)1);
+	peer = peer_device->bitmap_uuid & ~((u64)1);
 	if (self == peer && self != ((u64)0))
 		return 100;
 
 	*rule_nr = 100;
 	for (i = 0; i < HISTORY_UUIDS_V08; i++) {
 		self = drbd_history_uuid(peer_device, i) & ~((u64)1);
-		for (j = UI_HISTORY_START; j <= UI_HISTORY_END; j++) {
-			peer = peer_device->p_uuid[j] & ~((u64)1);
+		for (j = 0; j < ARRAY_SIZE(peer_device->history_uuids); j++) {
+			peer = peer_device->history_uuids[j] & ~((u64)1);
 			if (self == peer)
 				return -100;
 		}
@@ -3304,7 +3304,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	drbd_info(device, "drbd_sync_handshake:\n");
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
-	drbd_uuid_dump_peer(peer_device, peer_device->p_uuid[UI_SIZE], peer_device->p_uuid[UI_FLAGS]);
+	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 
 	hg = drbd_uuid_compare(peer_device, &rule_nr);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
@@ -3356,10 +3356,10 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	if (hg == -100) {
 		if (test_bit(DISCARD_MY_DATA, &device->flags) &&
-		    !(peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_DISCARD_MY_DATA))
+		    !(peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
 			hg = -1;
 		if (!test_bit(DISCARD_MY_DATA, &device->flags) &&
-		    (peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_DISCARD_MY_DATA))
+		    (peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
 			hg = 1;
 
 		if (abs(hg) < 100)
@@ -4031,7 +4031,6 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_uuids *p = pi->data;
-	u64 *p_uuid;
 	int i, updated_uuids = 0, err = 0;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -4039,18 +4038,19 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		return config_unknown_volume(connection, pi);
 	device = peer_device->device;
 
-	p_uuid = kmalloc(sizeof(u64)*UI_EXTENDED_SIZE, GFP_NOIO);
-
-	for (i = UI_CURRENT; i < UI_EXTENDED_SIZE; i++)
-		p_uuid[i] = be64_to_cpu(p->uuid[i]);
-
-	kfree(peer_device->p_uuid);
-	peer_device->p_uuid = p_uuid;
+	peer_device->current_uuid = be64_to_cpu(p->uuid[UI_CURRENT]);
+	peer_device->bitmap_uuid = be64_to_cpu(p->uuid[UI_BITMAP]);
+	BUILD_BUG_ON(HISTORY_UUIDS_V08 != ARRAY_SIZE(peer_device->history_uuids));
+	for (i = 0; i < HISTORY_UUIDS_V08; i++)
+		peer_device->history_uuids[i] = be64_to_cpu(p->uuid[UI_HISTORY_START + i]);
+	peer_device->dirty_bits = be64_to_cpu(p->uuid[UI_SIZE]);
+	peer_device->uuid_flags = be64_to_cpu(p->uuid[UI_FLAGS]);
+	peer_device->uuids_received = true;
 
 	if (peer_device->repl_state[NOW] < L_CONNECTED &&
 	    device->disk_state[NOW] < D_INCONSISTENT &&
 	    device->resource->role[NOW] == R_PRIMARY &&
-	    (device->exposed_data_uuid & ~((u64)1)) != (p_uuid[UI_CURRENT] & ~((u64)1))) {
+	    (device->exposed_data_uuid & ~((u64)1)) != (peer_device->current_uuid & ~((u64)1))) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
 		    (unsigned long long)device->exposed_data_uuid);
 		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
@@ -4062,7 +4062,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			peer_device->repl_state[NOW] == L_CONNECTED &&
 			peer_device->connection->agreed_pro_version >= 90 &&
 			drbd_current_uuid(device) == UUID_JUST_CREATED &&
-			(p_uuid[UI_FLAGS] & UUID_FLAG_SKIP_INITIAL_SYNC);
+			(peer_device->uuid_flags & UUID_FLAG_SKIP_INITIAL_SYNC);
 		if (skip_initial_sync) {
 			unsigned long irq_flags;
 
@@ -4070,7 +4070,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
 					"clear_n_write from receive_uuids",
 					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
-			_drbd_uuid_set_current(device, p_uuid[UI_CURRENT]);
+			_drbd_uuid_set_current(device, peer_device->current_uuid);
 			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
@@ -4081,9 +4081,9 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			updated_uuids = 1;
 		}
 
-		if (p_uuid[UI_FLAGS] & UUID_FLAG_NEW_DATAGEN) {
-			drbd_warn(peer_device, "received new current UUID: %llX\n", p_uuid[UI_CURRENT]);
-			drbd_uuid_received_new_current(device, p_uuid[UI_CURRENT]);
+		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
+			drbd_warn(peer_device, "received new current UUID: %llX\n", peer_device->current_uuid);
+			drbd_uuid_received_new_current(device, peer_device->current_uuid);
 		}
 
 		put_ldev(device);
@@ -4091,7 +4091,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		   device->resource->role[NOW] == R_PRIMARY) {
 		/* I am a diskless primary, the peer just created a new current UUID
 		   for me. */
-		updated_uuids = drbd_set_exposed_data_uuid(device, p_uuid[UI_CURRENT]);
+		updated_uuids = drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 	}
 
 	/* Before we test for the disk state, we should wait until an eventually
@@ -4101,7 +4101,7 @@ STATIC int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	mutex_lock(&device->resource->state_mutex);
 	mutex_unlock(&device->resource->state_mutex);
 	if (peer_device->repl_state[NOW] >= L_CONNECTED && device->disk_state[NOW] < D_INCONSISTENT)
-		updated_uuids |= drbd_set_exposed_data_uuid(device, p_uuid[UI_CURRENT]);
+		updated_uuids |= drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
@@ -4388,7 +4388,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
-		peer_disk_state = peer_device->p_uuid[UI_FLAGS] & UUID_FLAG_INCONSISTENT ?
+		peer_disk_state = peer_device->uuid_flags & UUID_FLAG_INCONSISTENT ?
 			D_INCONSISTENT : D_CONSISTENT;
 		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
@@ -4458,7 +4458,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
 
-	if (peer_device->p_uuid && peer_state.disk >= D_NEGOTIATING &&
+	if (peer_device->uuids_received &&
+	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		bool consider_resync;
 
@@ -5127,8 +5128,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	 * again via drbd_try_clear_on_disk_bm(). */
 	drbd_rs_cancel_all(peer_device);
 
-	kfree(peer_device->p_uuid);
-	peer_device->p_uuid = NULL;
+	peer_device->uuids_received = false;
 
 	if (!drbd_suspended(device))
 		tl_clear(peer_device->connection);

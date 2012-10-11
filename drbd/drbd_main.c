@@ -2346,7 +2346,6 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 {
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
-	kfree(peer_device->p_uuid);
 	kfree(peer_device);
 }
 
@@ -3694,7 +3693,7 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val)
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
-			peer_device->p_uuid[UI_CURRENT] = val;
+			peer_device->current_uuid = val;
 			set_current = false;
 		}
 	}

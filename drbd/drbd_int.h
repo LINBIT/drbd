@@ -946,7 +946,13 @@ struct drbd_peer_device {
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	unsigned long ov_left; /* in bits */
 
-	u64 *p_uuid; /* The peer's UUIDs */
+	u64 current_uuid;
+	u64 bitmap_uuid;
+	u64 history_uuids[HISTORY_UUIDS_V08];
+	u64 dirty_bits;
+	u64 uuid_flags;
+	bool uuids_received;
+
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 };
 
