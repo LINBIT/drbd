@@ -60,6 +60,7 @@ enum drbd_packet {
 	P_DAGTAG	      = 0x30, /* data sock: set the current dagtag */
 	/* P_TRIM                = 0x31, Reserved */
 	P_PEER_ACK            = 0x32, /* meta sock: tell which nodes have acked a request */
+	P_PEERS_IN_SYNC       = 0x33, /* data sock: Mark area as in sync */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
@@ -298,6 +299,13 @@ struct p_dagtag {
 struct p_peer_ack {
 	u64 mask;
 	u64 dagtag;
+} __packed;
+
+struct p_peer_block_desc {
+	u64 sector;
+	u64 mask;
+	u32 size;
+	u32 pad;	/* to multiple of 8 Byte */
 } __packed;
 
 /*

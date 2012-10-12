@@ -74,6 +74,7 @@ STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct 
 STATIC int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
+static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -5499,6 +5500,30 @@ restart:
 	return 0;
 }
 
+static int got_peers_in_sync(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	struct p_peer_block_desc *p = pi->data;
+	sector_t sector;
+	u64 in_sync_b;
+	int size;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+
+	device = peer_device->device;
+
+	sector = be64_to_cpu(p->sector);
+	size = be32_to_cpu(p->size);
+	in_sync_b = node_ids_to_bitmap(device, be64_to_cpu(p->mask));
+
+	drbd_set_sync(device, sector, size, 0, in_sync_b);
+
+	return 0;
+}
+
 STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_req_state_reply *p = pi->data;
@@ -5972,6 +5997,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
+	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
 };
 
 int drbd_asender(struct drbd_thread *thi)
