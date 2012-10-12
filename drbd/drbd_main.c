@@ -905,7 +905,7 @@ int drbd_send_protocol(struct drbd_connection *connection)
 	return err;
 }
 
-int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
+static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
@@ -943,6 +943,57 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
 
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
+}
+
+static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_socket *sock;
+	struct p_uuids110 *p;
+	int i;
+
+	if (!get_ldev_if_state(device, D_NEGOTIATING))
+		return 0;
+
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
+	if (!p) {
+		put_ldev(device);
+		return -EIO;
+	}
+
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
+	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+	for (i = 0; i < HISTORY_UUIDS; i++)
+		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(device, i));
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
+	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
+	rcu_read_lock();
+	if (rcu_dereference(peer_device->connection->net_conf)->discard_my_data)
+		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
+	rcu_read_unlock();
+	if (test_bit(CRASHED_PRIMARY, &device->flags))
+		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		uuid_flags |= UUID_FLAG_INCONSISTENT;
+	p->uuid_flags = cpu_to_be64(uuid_flags);
+
+	put_ldev(device);
+	return drbd_send_command(peer_device, sock, P_UUIDS110,
+				 sizeof(*p) +
+				 HISTORY_UUIDS * sizeof(p->history_uuids[0]),
+				 NULL, 0);
+}
+
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
+{
+	if (peer_device->connection->agreed_pro_version >= 110)
+		return _drbd_send_uuids110(peer_device, uuid_flags);
+	else
+		return _drbd_send_uuids(peer_device, uuid_flags);
 }
 
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)

@@ -4113,19 +4113,55 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 {
 	struct drbd_peer_device *peer_device;
 	struct p_uuids *p = pi->data;
-	int i;
+	int history_uuids, i;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return config_unknown_volume(connection, pi);
 
+	history_uuids = min_t(int, HISTORY_UUIDS_V08,
+			      ARRAY_SIZE(peer_device->history_uuids));
+
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->bitmap_uuid = be64_to_cpu(p->bitmap_uuid);
-	BUILD_BUG_ON(HISTORY_UUIDS_V08 != ARRAY_SIZE(peer_device->history_uuids));
-	for (i = 0; i < HISTORY_UUIDS_V08; i++)
+	for (i = 0; i < history_uuids; i++)
 		peer_device->history_uuids[i] = be64_to_cpu(p->history_uuids[i]);
+	for (; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+		peer_device->history_uuids[i] = 0;
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+	peer_device->uuids_received = true;
+
+	return __receive_uuids(peer_device);
+}
+
+static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct p_uuids110 *p = pi->data;
+	int history_uuids, i, rest;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return config_unknown_volume(connection, pi);
+
+	history_uuids = min(pi->size / sizeof(p->history_uuids[0]),
+			    ARRAY_SIZE(peer_device->history_uuids));
+	if (drbd_recv_all_warn(peer_device->connection, p->history_uuids,
+			       history_uuids * sizeof(p->history_uuids[0])))
+		return -EIO;
+	rest = pi->size - history_uuids * sizeof(p->history_uuids[0]);
+	if (rest > 0 && !drbd_drain_block(peer_device, rest))
+		return -EIO;
+
+	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+	peer_device->bitmap_uuid = be64_to_cpu(p->bitmap_uuid);
+	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
+	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+	for (i = 0; i < history_uuids; i++)
+		peer_device->history_uuids[i] = be64_to_cpu(p->history_uuids[i]);
+	for (; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+		peer_device->history_uuids[i] = 0;
 	peer_device->uuids_received = true;
 
 	return __receive_uuids(peer_device);
@@ -4991,6 +5027,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_CONN_ST_CHG_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_CONN_ST_CHG_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
+	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)

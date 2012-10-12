@@ -62,6 +62,8 @@ enum drbd_packet {
 	P_PEER_ACK            = 0x32, /* meta sock: tell which nodes have acked a request */
 	P_PEERS_IN_SYNC       = 0x33, /* data sock: Mark area as in sync */
 
+	P_UUIDS110	      = 0x34, /* data socket */
+
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
 	/* special command ids for handshake */
@@ -227,6 +229,14 @@ struct p_uuids {
 	u64 history_uuids[HISTORY_UUIDS_V08];
 	u64 dirty_bits;
 	u64 uuid_flags;
+} __packed;
+
+struct p_uuids110 {
+	u64 current_uuid;
+	u64 bitmap_uuid;
+	u64 dirty_bits;
+	u64 uuid_flags;
+	u64 history_uuids[0];
 } __packed;
 
 struct p_rs_uuid {
