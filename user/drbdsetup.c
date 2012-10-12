@@ -2549,12 +2549,12 @@ found:
 	memset(uuids, 0, sizeof(uuids));
 	uuids[UI_CURRENT] = device->statistics.dev_current_uuid;
 	uuids[UI_BITMAP] = peer_device->statistics.peer_dev_bitmap_uuid;
-	i = peer_device->statistics.peer_dev_history_uuids_len / 8;
+	i = device->statistics.history_uuids_len / 8;
 	if (i >= HISTORY_UUIDS_V08)
 		i = HISTORY_UUIDS_V08 - 1;
 	for (; i >= 0; i--)
 		uuids[UI_HISTORY_START + i] =
-			((uint64_t *)peer_device->statistics.peer_dev_history_uuids)[i];
+			((uint64_t *)device->statistics.history_uuids)[i];
 	if(!strcmp(cm->cmd, "show-gi"))
 		dt_pretty_print_v9_uuids(uuids, device->statistics.dev_disk_flags,
 					 peer_device->statistics.peer_dev_flags);
