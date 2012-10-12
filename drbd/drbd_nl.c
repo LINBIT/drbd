@@ -3157,10 +3157,20 @@ static void device_to_statistics(struct device_statistics *s,
 	memset(s, 0, sizeof(*s));
 	s->dev_upper_blocked = !may_inc_ap_bio(device);
 	if (get_ldev(device)) {
+		struct drbd_md *md = &device->ldev->md;
+		u64 *history_uuids = (u64 *)s->history_uuids;
 		struct request_queue *q;
+		int n;
 
-		s->dev_current_uuid = device->ldev->md.current_uuid;
-		s->dev_disk_flags = device->ldev->md.flags;
+		spin_lock_irq(&md->uuid_lock);
+		s->dev_current_uuid = md->current_uuid;
+		BUILD_BUG_ON(sizeof(s->history_uuids) != sizeof(md->history_uuids));
+		for (n = 0; n < ARRAY_SIZE(md->history_uuids); n++)
+			history_uuids[n] = md->history_uuids[n];
+		s->history_uuids_len = sizeof(s->history_uuids);
+		spin_unlock_irq(&md->uuid_lock);
+
+		s->dev_disk_flags = md->flags;
 		q = bdev_get_queue(device->ldev->backing_bdev);
 		s->dev_lower_blocked =
 			bdi_congested(&q->backing_dev_info,
@@ -3416,16 +3426,12 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
 	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
 	if (get_ldev(device)) {
-		struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
-		u64 *history_uuids = (u64 *)s->peer_dev_history_uuids;
-		int n;
+		struct drbd_md *md = &device->ldev->md;
+		struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
 
-		spin_lock_irq(&device->ldev->md.uuid_lock);
+		spin_lock_irq(&md->uuid_lock);
 		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
-		for (n = 0; n < HISTORY_UUIDS_V08; n++)
-			history_uuids[n] = peer_md->history_uuids[n];
-		spin_unlock_irq(&device->ldev->md.uuid_lock);
-		s->peer_dev_history_uuids_len = HISTORY_UUIDS_V08 * sizeof(u64);
+		spin_unlock_irq(&md->uuid_lock);
 		s->peer_dev_flags = peer_md->flags;
 		put_ldev(device);
 	}

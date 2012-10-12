@@ -255,6 +255,7 @@ GENL_struct(DRBD_NLA_DEVICE_STATISTICS, 20, device_statistics,
 	__u64_field(11, 0, dev_exposed_data_uuid)
 	__u64_field(12, 0, dev_current_uuid)
 	__u32_field(13, 0, dev_disk_flags)
+	__bin_field(14, 0, history_uuids, HISTORY_UUIDS * sizeof(__u64))
 )
 
 GENL_struct(DRBD_NLA_CONNECTION_STATISTICS, 21, connection_statistics,
@@ -269,7 +270,6 @@ GENL_struct(DRBD_NLA_PEER_DEVICE_STATISTICS, 22, peer_device_statistics,
 	__u64_field(5, 0, peer_dev_out_of_sync)  /* sectors */
 	__u64_field(6, 0, peer_dev_resync_failed)  /* sectors */
 	__u64_field(7, 0, peer_dev_bitmap_uuid)
-	__bin_field(8, 0, peer_dev_history_uuids, HISTORY_UUIDS_V08 * sizeof(__u64))
 	__u32_field(9, 0, peer_dev_flags)
 )
 
