@@ -3529,6 +3529,11 @@ void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __mu
 	struct drbd_md *md = &device->ldev->md;
 	int i;
 
+	for (i = 0; i < ARRAY_SIZE(md->history_uuids); i++) {
+		if (md->history_uuids[i] == val)
+			return;
+	}
+
 	for (i = ARRAY_SIZE(md->history_uuids) - 1; i > 0; i--)
 		md->history_uuids[i] = md->history_uuids[i - 1];
 	md->history_uuids[i] = val;
