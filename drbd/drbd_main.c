@@ -1196,6 +1196,20 @@ void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv r
 	}
 }
 
+void drbd_send_peers_in_sync(struct drbd_peer_device *peer_device, u64 mask, sector_t sector, int size)
+{
+	struct drbd_socket *sock = &peer_device->connection->meta;
+	struct p_peer_block_desc *p;
+
+	p = drbd_prepare_command(peer_device, sock);
+	if (p) {
+		p->sector = cpu_to_be64(sector);
+		p->mask = cpu_to_be64(mask);
+		p->size = cpu_to_be32(size);
+		drbd_send_command(peer_device, sock, P_PEERS_IN_SYNC, sizeof(*p), NULL, 0);
+	}
+}
+
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
 {
 	BUG_ON(code & ~0xf);

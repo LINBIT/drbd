@@ -108,6 +108,7 @@ struct update_al_work {
 
 
 static int al_write_transaction(struct drbd_device *device, bool delegate);
+static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
 
 void *drbd_md_get_buffer(struct drbd_device *device)
 {
@@ -566,6 +567,67 @@ void drbd_al_shrink(struct drbd_device *device)
 	wake_up(&device->al_wait);
 }
 
+static bool extent_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
+{
+	if (peer_device->repl_state[NOW] == L_CONNECTED) {
+		if (drbd_bm_total_weight(peer_device) == 0)
+			return true;
+		if (bm_e_weight(peer_device, rs_enr) == 0)
+			return true;
+	} else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE) {
+		bool rv = false;
+
+		if (!drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr))) {
+			struct bm_extent *bm_ext;
+			struct lc_element *e;
+
+			e = lc_find(peer_device->resync_lru, rs_enr);
+			bm_ext = lc_entry(e, struct bm_extent, lce);
+			rv = (bm_ext->rs_left == 0);
+			drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
+		}
+
+		return rv;
+	}
+
+	return false;
+}
+
+static void
+consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 mask = ((u64)1 << peer_device->node_id);
+	struct drbd_peer_device *p;
+	int peers = 1;
+	int size_sect;
+
+	if (peer_device->repl_state[NOW] != L_SYNC_SOURCE)
+		return;
+
+	if (peer_device->connection->agreed_pro_version < 110)
+		return;
+
+	for_each_peer_device(p, device) {
+		if (p == peer_device)
+			continue;
+		if (extent_in_sync(p, rs_enr))
+			mask |= ((u64)1 << p->node_id);
+		peers++;
+	}
+
+	if (peers == 1)
+		return;
+
+	size_sect = min(BM_SECT_PER_EXT,
+			drbd_get_capacity(device->this_bdev) - BM_EXT_TO_SECT(rs_enr));
+
+	for_each_peer_device(p, device) {
+		if (mask & ((u64)1 << p->node_id))
+			drbd_send_peers_in_sync(p, mask, BM_EXT_TO_SECT(rs_enr), size_sect << 9);
+	}
+}
+
 STATIC int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
@@ -584,6 +646,8 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 	end = rs_extent_to_bm_bit(udw->enr + 1) - 1;
 	drbd_bm_write_range(peer_device, start, end);
 	put_ldev(device);
+
+	consider_sending_peers_in_sync(peer_device, udw->enr);
 
 	kfree(udw);
 
@@ -933,9 +997,9 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 
 	mask &= (1 << device->bitmap->bm_max_peers) - 1;
 
-	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
-		drbd_err(device, "sector: %llus, size: %d\n",
-			(unsigned long long)sector, size);
+	if (size <= 0 || !IS_ALIGNED(size, 512)) {
+		drbd_err(device, "%s sector: %llus, size: %d\n",
+			 __func__, (unsigned long long)sector, size);
 		return false;
 	}
 
