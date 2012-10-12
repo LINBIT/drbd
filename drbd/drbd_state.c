@@ -1799,7 +1799,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				atomic_set(&peer_device->rs_pending_cnt, 0);
 				drbd_rs_cancel_all(peer_device);
 
-				drbd_send_uuids(peer_device);
+				drbd_send_uuids(peer_device, 0);
 				drbd_send_state(peer_device, new_state);
 			}
 			/* No point in queuing send_bitmap if we don't have a connection
@@ -1856,7 +1856,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			if (repl_state[NEW] >= L_CONNECTED &&
 			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] == D_NEGOTIATING) {
 				drbd_send_sizes(peer_device, 0, 0);  /* to start sync... */
-				drbd_send_uuids(peer_device);
+				drbd_send_uuids(peer_device, 0);
 				drbd_send_state(peer_device, new_state);
 			}
 

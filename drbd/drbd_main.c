@@ -905,7 +905,7 @@ int drbd_send_protocol(struct drbd_connection *connection)
 	return err;
 }
 
-static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
@@ -943,16 +943,6 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
-}
-
-int drbd_send_uuids(struct drbd_peer_device *peer_device)
-{
-	return _drbd_send_uuids(peer_device, 0);
-}
-
-int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *peer_device)
-{
-	return _drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC);
 }
 
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
@@ -3659,7 +3649,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_CONNECTED)
-			_drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN);
+			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN);
 	}
 }
 

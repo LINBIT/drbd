@@ -786,7 +786,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 			if (peer_device->repl_state[NOW] >= L_STANDALONE) {
 				/* if this was forced, we should consider sync */
 				if (forced)
-					drbd_send_uuids(peer_device);
+					drbd_send_uuids(peer_device, 0);
 				drbd_send_current_state(peer_device);
 			}
 		}
@@ -2770,7 +2770,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		if (peer_device->repl_state[NOW] == L_CONNECTED) {
 			if (dd == GREW)
 				set_bit(RESIZE_PENDING, &peer_device->flags);
-			drbd_send_uuids(peer_device);
+			drbd_send_uuids(peer_device, 0);
 			drbd_send_sizes(peer_device, 1, ddsf);
 		}
 	}
@@ -3664,7 +3664,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 		for_each_peer_device(peer_device, device) {
 			if (should_skip_initial_sync(peer_device)) {
-				drbd_send_uuids_skip_initial_sync(peer_device);
+				drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC);
 				_drbd_uuid_set_bitmap(peer_device, 0);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
 			}
