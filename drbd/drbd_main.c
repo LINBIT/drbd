@@ -3293,7 +3293,6 @@ void drbd_free_sock(struct drbd_connection *connection)
 
 struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
-	u64 history_uuids[HISTORY_UUIDS_V08];
 	u32 flags;
 	u32 node_id;
 	u32 reserved_u32[3];
@@ -3364,12 +3363,8 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->node_id = cpu_to_be32(device->ldev->md.node_id);
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		struct drbd_md_peer *peer_md = &device->ldev->md.peers[i];
-		int j;
 
 		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
-		for (j = 0; j < HISTORY_UUIDS_V08; j++)
-			buffer->peers[i].history_uuids[j] =
-				cpu_to_be64(peer_md->history_uuids[j]);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
 		buffer->peers[i].node_id = cpu_to_be32(peer_md->node_id);
 	}
@@ -3486,12 +3481,8 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
 		struct drbd_md_peer *peer_md = &bdev->md.peers[i];
-		int j;
 
 		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
-		for (j = 0; j < HISTORY_UUIDS_V08; j++)
-			peer_md->history_uuids[j] =
-				be64_to_cpu(buffer->peers[i].history_uuids[j]);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 		peer_md->node_id = be32_to_cpu(buffer->peers[i].node_id);
 	}
@@ -3536,12 +3527,7 @@ void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __mu
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
-	struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
 	int i;
-
-	for (i = HISTORY_UUIDS_V08 - 1; i > 0; i--)
-		peer_md->history_uuids[i] = peer_md->history_uuids[i - 1];
-	peer_md->history_uuids[i] = val;
 
 	for (i = ARRAY_SIZE(md->history_uuids) - 1; i > 0; i--)
 		md->history_uuids[i] = md->history_uuids[i - 1];
@@ -3552,13 +3538,8 @@ u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(lo
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
-	struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
 	u64 first_history_uuid;
 	int i;
-
-	for (i = 0; i < HISTORY_UUIDS_V08 - 1; i++)
-		peer_md->history_uuids[i] = peer_md->history_uuids[i + 1];
-	peer_md->history_uuids[i] = 0;
 
 	first_history_uuid = md->history_uuids[0];
 	for (i = 0; i < ARRAY_SIZE(md->history_uuids) - 1; i++)
