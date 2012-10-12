@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.14rc2 (api:88/proto:86-97)
+--------
+ * Fixed a possible NULL pointer deference introduced in rc1, during
+   bitmap write out upon detach
+
 8.3.14rc1 (api:88/proto:86-97)
 --------
  * No longer support write-ordering "barrier" on kernels newer than 2.6.36
