@@ -434,6 +434,7 @@ int is_valid_md(enum md_format f,
 {
 	uint64_t md_size_sect;
 	const char *v = f_ops[f].name;
+	int n;
 
 	ASSERT(f == DRBD_V07 || f == DRBD_V08 || f == DRBD_V09);
 
@@ -444,6 +445,24 @@ int is_valid_md(enum md_format f,
 		if (verbose >= 1)
 			fprintf(stderr, "%s Magic number not found\n", v);
 		return 0;
+	}
+
+	if (md->bm_max_peers < 1 || md->bm_max_peers > MAX_PEERS) {
+		fprintf(stderr, "%s max-peers value %d out of bounds\n",
+			v, md->bm_max_peers);
+		return 0;
+	}
+	if (md->node_id < -1 || md->node_id > MAX_PEERS + 1) {
+		fprintf(stderr, "%s device node-id value %d out of bounds\n",
+			v, md->node_id);
+		return 0;
+	}
+	for (n = 0; n < md->bm_max_peers; n++) {
+		if (md->peers[n].node_id < -1 || md->peers[n].node_id > MAX_PEERS + 1) {
+			fprintf(stderr, "%s peer device %d node-id value %d out of bounds\n",
+				v, n, md->peers[n].node_id);
+			return 0;
+		}
 	}
 
 	switch(md_index) {
@@ -3588,6 +3607,7 @@ void md_convert_09_to_08(struct format *cfg)
 		cfg->md.flags |= MDF_PEER_OUT_DATED;
 
 	cfg->md.magic = DRBD_MD_MAGIC_08;
+	cfg->md.bm_max_peers = 1;
 	re_initialize_md_offsets(cfg);
 
 	if (!is_valid_md(DRBD_V08, &cfg->md, cfg->md_index, cfg->bd_size)) {
