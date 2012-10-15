@@ -2934,25 +2934,6 @@ void print_dump_header()
 	printf("\n#\n\n");
 }
 
-void print_dump_uuids(struct md_cpu *md, struct md_peer_cpu *peer, int ui_start, const char* indent)
-{
-	int i;
-
-	printf("%s   ", indent);
-	for (i = ui_start; i < UI_SIZE; i++ ) {
-		uint64_t uuid;
-		if (i == UI_CURRENT)
-			uuid = md->current_uuid;
-		else if (i == UI_BITMAP)
-			uuid = peer->bitmap_uuid;
-		else
-			uuid = md->history_uuids[i - UI_HISTORY_START];
-		printf(" 0x"X64(016)";", uuid);
-	}
-	printf("\n");
-	printf("%s    flags 0x"X32(08)";\n", indent, peer->flags);
-}
-
 int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
 	int i;
@@ -3014,25 +2995,41 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		break;
 	case DRBD_V08:
 		printf("uuid {\n");
-		print_dump_uuids(&cfg->md, &cfg->md.peers[0], UI_CURRENT, "");
+		printf("    0x"X64(016)"; 0x"X64(016)"; 0x"X64(016)"; 0x"X64(016)";\n",
+		       cfg->md.current_uuid,
+		       cfg->md.peers[0].bitmap_uuid,
+		       cfg->md.history_uuids[0],
+		       cfg->md.history_uuids[1]);
+		printf("    flags 0x"X32(08)";\n", cfg->md.peers[0].flags);
 		printf("}\n");
 		break;
 	case DRBD_V09:
 		printf("uuid {\n"
-		       "   node-id %d;\n"
-		       "   current 0x"X64(016)";\n"
-		       "   flags 0x"X32(08)";\n",
+		       "    node-id %d;\n"
+		       "    current 0x"X64(016)";\n"
+		       "    flags 0x"X32(08)";\n",
 		       cfg->md.node_id,
 		       cfg->md.current_uuid, cfg->md.flags);
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			printf("   peer[%d] {\n", i);
-			print_dump_uuids(&cfg->md, &cfg->md.peers[i], UI_BITMAP, "   ");
+			struct md_peer_cpu *peer = &cfg->md.peers[i];
+
+			printf("    peer[%d] {\n", i);
 			if (format_version(cfg) >= DRBD_V09) {
-				printf("       node-id %d;\n",
-				       cfg->md.peers[i].node_id);
+				printf("        node-id %d;\n",
+				       peer->node_id);
 			}
-			printf("   }\n");
+			printf("        bitmap 0x"X64(016)";\n"
+			       "        flags 0x"X32(08)";\n",
+			       peer->bitmap_uuid,
+			       peer->flags);
+			printf("    }\n");
 		}
+		printf("    history {");
+		for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++)
+			printf("%s0x"X64(016)";",
+			       i % 4 ? " " : "\n        ",
+			       cfg->md.history_uuids[i]);
+		printf("\n    }\n");
 		printf("}\n");
 		break;
 	case DRBD_UNKNOWN:
@@ -3374,8 +3371,6 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			cfg->md.flags = (uint32_t)yylval.u64;
 
 			for (i = 0; i < cfg->md.bm_max_peers; i++) {
-				int j;
-
 				EXP(TK_PEER); EXP('[');
 				EXP(TK_NUM); EXP(']');
 				if (yylval.u64 != i) {
@@ -3385,19 +3380,21 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 					exit(10);
 				}
 				EXP('{');
-				EXP(TK_U64); EXP(';');
-				cfg->md.peers[i].bitmap_uuid = yylval.u64;
-				for (j = 0; j < HISTORY_UUIDS_V08; j++) {
-					EXP(TK_U64); EXP(';');
-					cfg->md.history_uuids[j] = yylval.u64;
-				}
-				EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
-				cfg->md.peers[i].flags = (uint32_t)yylval.u64;
 				EXP(TK_NODE_ID);
 				EXP(TK_NUM); EXP(';');
 				cfg->md.peers[i].node_id = yylval.u64;
+				EXP(TK_BITMAP); EXP(TK_U64); EXP(';');
+				cfg->md.peers[i].bitmap_uuid = yylval.u64;
+				EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
+				cfg->md.peers[i].flags = (uint32_t)yylval.u64;
 				EXP('}');
 			}
+			EXP(TK_HISTORY); EXP('{');
+			for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++) {
+				EXP(TK_U64); EXP(';');
+				cfg->md.history_uuids[i] = yylval.u64;
+			}
+			EXP('}');
 		}
 		EXP('}');
 	}

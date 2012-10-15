@@ -29,6 +29,8 @@ enum yytokentype {
 	TK_LA_BIO_SIZE,
 	TK_NODE_ID,
 	TK_CURRENT,
+	TK_BITMAP,
+	TK_HISTORY,
 	TK_PEER,
 	TK_HASH,
 	TK_BM_MAX_PEERS,

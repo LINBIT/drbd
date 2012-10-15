@@ -62,6 +62,8 @@ flags		DP; CP; return TK_FLAGS;
 la-peer-max-bio-size DP; CP; return TK_LA_BIO_SIZE;
 node-id	DP; CP; return TK_NODE_ID;
 current		DP; CP; return TK_CURRENT;
+bitmap		DP; CP; return TK_BITMAP;
+history		DP; CP; return TK_HISTORY;
 peer		DP; CP; return TK_PEER;
 hash		DP; CP; return TK_HASH;
 bm-max-peers	DP; CP; return TK_BM_MAX_PEERS;
