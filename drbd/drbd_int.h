@@ -613,7 +613,7 @@ struct drbd_socket {
 
 struct drbd_md_peer {
 	u64 bitmap_uuid;
-	u64 history_uuids[HISTORY_UUIDS];
+	u64 history_uuids[HISTORY_UUIDS_V08];
 	u32 flags;
 	u32 node_id;
 };

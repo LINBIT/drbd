@@ -3293,7 +3293,7 @@ void drbd_free_sock(struct drbd_connection *connection)
 
 struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
-	u64 history_uuids[HISTORY_UUIDS];
+	u64 history_uuids[HISTORY_UUIDS_V08];
 	u32 flags;
 	u32 node_id;
 	u32 reserved_u32[3];
@@ -3366,7 +3366,7 @@ void drbd_md_sync(struct drbd_device *device)
 		int j;
 
 		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
-		for (j = 0; j < HISTORY_UUIDS; j++)
+		for (j = 0; j < HISTORY_UUIDS_V08; j++)
 			buffer->peers[i].history_uuids[j] =
 				cpu_to_be64(peer_md->history_uuids[j]);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
@@ -3485,7 +3485,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		int j;
 
 		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
-		for (j = 0; j < HISTORY_UUIDS; j++)
+		for (j = 0; j < HISTORY_UUIDS_V08; j++)
 			peer_md->history_uuids[j] =
 				be64_to_cpu(buffer->peers[i].history_uuids[j]);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
@@ -3530,7 +3530,7 @@ void drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __mus
 	struct drbd_md_peer *peer_md = &peer_device->device->ldev->md.peers[peer_device->bitmap_index];
 	int i;
 
-	for (i = HISTORY_UUIDS - 1; i > 0; i--)
+	for (i = HISTORY_UUIDS_V08 - 1; i > 0; i--)
 		peer_md->history_uuids[i] = peer_md->history_uuids[i - 1];
 	peer_md->history_uuids[0] = val;
 }
