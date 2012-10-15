@@ -245,7 +245,7 @@ typedef struct { unsigned long be; } be_ulong;
 struct md_peer_cpu {
 	uint64_t bitmap_uuid;
 	uint32_t flags;
-	uint32_t node_id;
+	int32_t node_id;
 };
 
 struct md_cpu {
@@ -269,7 +269,7 @@ struct md_cpu {
 	uint32_t la_peer_max_bio_size;
 	/* Since DRBD 9.0 the following new stuff: */
 	uint32_t bm_max_peers;
-	uint32_t node_id;
+	int32_t node_id;
 	struct md_peer_cpu peers[MAX_PEERS];
 };
 
@@ -805,7 +805,7 @@ int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_dis
 struct peer_dev_md_on_disk {
 	be_u64 bitmap_uuid;
 	be_u32 flags;
-	be_u32 node_id;
+	be_s32 node_id;
 	be_u32 reserved_u32[3];
 } __packed;
 
@@ -823,7 +823,7 @@ struct md_on_disk_09 {
 	be_u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	be_u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 	be_u32 bm_max_peers;
-	be_u32 node_id;
+	be_s32 node_id;
 	be_u32 reserved_u32[4];
 
 	struct peer_dev_md_on_disk peers[MAX_PEERS];
