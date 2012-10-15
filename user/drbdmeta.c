@@ -243,6 +243,7 @@ typedef struct { unsigned long be; } be_ulong;
  * aligned, nor does it need to be in the same order as the on_disk variants.
  */
 struct md_peer_cpu {
+	uint64_t bitmap_uuid;
 	uint64_t uuid[UI_SIZE];
 	uint32_t flags;
 	uint32_t node_id;
@@ -568,7 +569,8 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	memset(cpu, 0, sizeof(*cpu));
 	cpu->effective_size = be64_to_cpu(disk->effective_size.be);
 	cpu->current_uuid = be64_to_cpu(disk->uuid[UI_CURRENT].be);
-	for (i = UI_BITMAP; i < UI_SIZE; i++)
+	cpu->peers[0].bitmap_uuid = be64_to_cpu(disk->uuid[UI_BITMAP].be);
+	for (i = UI_HISTORY_START; i < UI_SIZE; i++)
 		cpu->peers[0].uuid[i] = be64_to_cpu(disk->uuid[i].be);
 	cpu->device_uuid = be64_to_cpu(disk->device_uuid.be);
 	cpu->flags = be32_to_cpu(disk->flags.be);
@@ -587,7 +589,8 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	int i;
 	disk->effective_size.be = cpu_to_be64(cpu->effective_size);
 	disk->uuid[UI_CURRENT].be = cpu_to_be64(cpu->current_uuid);
-	for (i = UI_BITMAP; i < UI_SIZE; i++)
+	disk->uuid[UI_BITMAP].be = cpu_to_be64(cpu->peers[0].bitmap_uuid);
+	for (i = UI_HISTORY_START; i < UI_SIZE; i++)
 		disk->uuid[i].be = cpu_to_be64(cpu->peers[0].uuid[i]);
 	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
 	disk->flags.be = cpu_to_be32(cpu->flags);
@@ -852,7 +855,7 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 	for (p = 0; p < cpu->bm_max_peers; p++) {
 		cpu->peers[p].flags = be32_to_cpu(disk->peers[p].flags.be);
 		cpu->peers[p].node_id = be32_to_cpu(disk->peers[p].node_id.be);
-		cpu->peers[p].uuid[UI_BITMAP] =
+		cpu->peers[p].bitmap_uuid =
 			be64_to_cpu(disk->peers[p].bitmap_uuid.be);
 		for (i = 0; i < HISTORY_UUIDS_V08; i++)
 			cpu->peers[p].uuid[UI_HISTORY_START + i] =
@@ -883,7 +886,7 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 		disk->peers[p].flags.be = cpu_to_be32(cpu->peers[p].flags);
 		disk->peers[p].node_id.be = cpu_to_be32(cpu->peers[p].node_id);
 		disk->peers[p].bitmap_uuid.be =
-			cpu_to_be64(cpu->peers[p].uuid[UI_BITMAP]);
+			cpu_to_be64(cpu->peers[p].bitmap_uuid);
 		for (i = 0; i < HISTORY_UUIDS_V08; i++)
 			disk->peers[p].history_uuids[i].be =
 				cpu_to_be64(cpu->peers[p].uuid[UI_HISTORY_START + i]);
@@ -1280,7 +1283,8 @@ void m_set_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc __attribute
 
 	do {
 		if (!m_strsep_u64(str, &md->current_uuid)) break;
-		for (i = UI_BITMAP; i < UI_SIZE; i++)
+		if (!m_strsep_u64(str, &md->peers[bm_idx].bitmap_uuid)) break;
+		for (i = UI_HISTORY_START; i < UI_SIZE; i++)
 			if (!m_strsep_u64(str, &md->peers[bm_idx].uuid[i])) return;
 		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
@@ -1301,7 +1305,8 @@ void m_set_v9_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc __attrib
 
 	do {
 		if (!m_strsep_u64(str, &md->current_uuid)) break;
-		for (i = UI_BITMAP; i < UI_SIZE; i++)
+		if (!m_strsep_u64(str, &md->peers[bm_idx].bitmap_uuid)) break;
+		for (i = UI_HISTORY_START; i < UI_SIZE; i++)
 			if (!m_strsep_u64(str, &md->peers[bm_idx].uuid[i])) return;
 		if (!m_strsep_bit(str, &md->flags, MDF_CONSISTENT)) break;
 		if (!m_strsep_bit(str, &md->flags, MDF_WAS_UP_TO_DATE)) break;
@@ -2668,7 +2673,7 @@ int v08_md_initialize(struct format *cfg, int do_disk_writes,
 
 	cfg->md.effective_size = 0;
 	cfg->md.current_uuid = UUID_JUST_CREATED;
-	cfg->md.peers[0].uuid[UI_BITMAP] = 0;
+	cfg->md.peers[0].bitmap_uuid = 0;
 	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
 		cfg->md.peers[0].uuid[i]=0;
 	}
@@ -2739,7 +2744,8 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 
 	cfg->md.current_uuid = UUID_JUST_CREATED;
 	for (p = 0; p < max_peers; p++) {
-		for (i = UI_BITMAP; i <= UI_HISTORY_END; i++)
+		cfg->md.peers[p].bitmap_uuid = 0;
+		for (i = UI_HISTORY_START; i <= UI_HISTORY_END; i++)
 			cfg->md.peers[p].uuid[i] = 0;
 		cfg->md.peers[p].flags = 0;
 		cfg->md.peers[p].node_id = -1;
@@ -2908,6 +2914,8 @@ void print_dump_uuids(struct md_cpu *md, struct md_peer_cpu *peer, int ui_start,
 		uint64_t uuid;
 		if (i == UI_CURRENT)
 			uuid = md->current_uuid;
+		else if (i == UI_BITMAP)
+			uuid = peer->bitmap_uuid;
 		else
 			uuid = peer->uuid[i];
 		printf(" 0x"X64(016)";", uuid);
@@ -3318,7 +3326,9 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		if (is_v08(cfg)) {
 			EXP(TK_U64); EXP(';');
 			cfg->md.current_uuid = yylval.u64;
-			for (i = UI_BITMAP; i < UI_SIZE; i++) {
+			EXP(TK_U64); EXP(';');
+			cfg->md.peers[0].bitmap_uuid = yylval.u64;
+			for (i = UI_HISTORY_START; i < UI_SIZE; i++) {
 				EXP(TK_U64); EXP(';');
 				cfg->md.peers[0].uuid[i] = yylval.u64;
 			}
@@ -3346,7 +3356,9 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 					exit(10);
 				}
 				EXP('{');
-				for (j = UI_BITMAP; j < UI_SIZE; j++) {
+				EXP(TK_U64); EXP(';');
+				cfg->md.peers[i].bitmap_uuid = yylval.u64;
+				for (j = UI_HISTORY_START; j < UI_SIZE; j++) {
 					EXP(TK_U64); EXP(';');
 					cfg->md.peers[i].uuid[j] = yylval.u64;
 				}
@@ -3451,11 +3463,15 @@ void md_convert_07_to_08(struct format *cfg)
 		(uint64_t)((cfg->md.gc[ConnectedCnt]+cfg->md.gc[ArbitraryCnt])
 		       & 0xffff) << 16 |
 		(uint64_t)0xbabe;
-	cfg->md.peers[0].uuid[UI_BITMAP] = (uint64_t)0;
+	cfg->md.peers[0].bitmap_uuid = (uint64_t)0;
 
 	for (i = cfg->bits_set ? UI_BITMAP : UI_HISTORY_START, j = 1;
-		i <= UI_HISTORY_END ; i++, j++)
-		cfg->md.peers[0].uuid[i] = cfg->md.current_uuid - j*0x10000;
+		i <= UI_HISTORY_END ; i++, j++) {
+		if (i == UI_BITMAP)
+			cfg->md.peers[0].bitmap_uuid = cfg->md.current_uuid - j*0x10000;
+		else
+			cfg->md.peers[0].uuid[i] = cfg->md.current_uuid - j*0x10000;
+	}
 
 	/* unconditionally re-initialize offsets,
 	 * not necessary if fixed size external,
