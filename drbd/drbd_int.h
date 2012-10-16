@@ -1274,12 +1274,12 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
 #define BM_BLOCK_SHIFT	12			 /* 4k per bit */
 #define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SHIFT)
 /* mostly arbitrarily set the represented size of one bitmap extent,
- * aka resync extent, to 16 MiB (which is also 512 Byte worth of bitmap
+ * aka resync extent, to 128 MiB (which is also 4096 Byte worth of bitmap
  * at 4k per bit resolution) */
-#define BM_EXT_SHIFT	 24	/* 16 MiB per resync extent */
+#define BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
 #define BM_EXT_SIZE	 (1<<BM_EXT_SHIFT)
 
-#if (BM_EXT_SHIFT != 24) || (BM_BLOCK_SHIFT != 12)
+#if (BM_BLOCK_SHIFT != 12)
 #error "HAVE YOU FIXED drbdmeta AS WELL??"
 #endif
 
