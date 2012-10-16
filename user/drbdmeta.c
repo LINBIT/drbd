@@ -4014,10 +4014,7 @@ void check_internal_md_flavours(struct format * cfg) {
 			printf("Operation cancelled.\n");
 			exit(1); // 1 to avoid online resource counting
 		}
-		/* no need to wipe flex offset,
-		 * will be overwritten with new data */
 		cfg->md.magic = 0;
-		have = DRBD_UNKNOWN;
 	} else {
 		char msg[160];
 
@@ -4026,8 +4023,6 @@ void check_internal_md_flavours(struct format * cfg) {
 		if (confirmed(msg)) {
 			cfg->md = md_now;
 			convert_md(cfg, have);
-			if (is_v07(cfg) && have == DRBD_V08 && cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
-				have = DRBD_UNKNOWN;
 		} else {
 			snprintf(msg, 160, "So you want me to replace the %s meta-data\n"
 				 "with newly initialized %s meta-data?",
@@ -4040,12 +4035,21 @@ void check_internal_md_flavours(struct format * cfg) {
 		}
 	}
 
-	if (have != DRBD_UNKNOWN) {
-		if (fixed)
-			cfg->wipe_fixed = fixed_offset;
-		else
-			cfg->wipe_flex = flex_offset;
-	}
+	/* we have two "internal" layouts:
+	 * v07 "fixed" internal:
+	 * | data .... |MD super block |AL | bitmap                      |
+	 * v07 "plus", v08, v09 "flexible" internal:
+	 * | data ....                  |    bitmap  |AL |MD super block |
+	 * If we change from one layout to the other,
+	 * we want to wipe the former MD super block
+	 * after successful conversion.
+	 */
+	/* we convert from v07 "fixed" to flexible internal, we wipe the "fixed" offset */
+	if (have == DRBD_V07 && fixed && cfg->md_index == DRBD_MD_INDEX_FLEX_INT)
+		cfg->wipe_fixed = fixed_offset;
+	/* we convert from "flexible" to v07 fixed, we wipe the "flexible" offset */
+	else if ((have != DRBD_V07 || fixed == 0) && (is_v07(cfg) && cfg->md_index == DRBD_MD_INDEX_INTERNAL))
+		cfg->wipe_flex = flex_offset;
 }
 
 void wipe_after_convert(struct format *cfg)
