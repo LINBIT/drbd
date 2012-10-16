@@ -880,8 +880,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
 				return SS_CONNECTED_OUTDATES;
 
-			if ((repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
-			    repl_state[OLD] > L_CONNECTED)
+			if (repl_state[NEW] != repl_state[OLD] &&
+			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
+			    repl_state[OLD] > L_CONNECTED )
 				return SS_RESYNC_RUNNING;
 
 			/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)

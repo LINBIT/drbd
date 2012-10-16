@@ -2887,8 +2887,8 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	peer_device = adm_ctx.peer_device;
-	resource = adm_ctx.device->resource;
-	device = adm_ctx.device;
+	device = peer_device->device;
+	resource = device->resource;
 
 	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
