@@ -1945,6 +1945,13 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 			fprintf(stderr,
 				"Host name '%s' (given with --peer option) is not "
 				"mentioned in any connection section\n", connect_to_host);
+			return -ENOENT;
+		}
+		if (res->me == hi) {
+			fprintf(stderr,
+				"Host name '%s' (given with --peer option) is not a "
+				"peer, but the local node\n", connect_to_host);
+			return -ENOENT;
 		}
 		set_peer_in_resource(res, 1);
 		ctx->conn = NULL;
@@ -3270,17 +3277,22 @@ int main(int argc, char **argv)
 		} else {
 			/* explicit list of resources to work on */
 			for (i = 0; resource_names[i]; i++) {
+				int rv;
 				ctx.res = NULL;
 				ctx.vol = NULL;
-				ctx_by_name(&ctx, resource_names[i]);
-				if (!ctx.res)
+				rv = ctx_by_name(&ctx, resource_names[i]);
+				if (!ctx.res) {
 					ctx_by_minor(&ctx, resource_names[i]);
+					rv = 0;
+				}
 				if (!ctx.res) {
 					fprintf(stderr,
 						"'%s' not defined in your config (for this host).\n",
 						resource_names[i]);
 					exit(E_USAGE);
 				}
+				if (rv)
+					exit(E_USAGE);
 				if (!cmd->vol_id_required && !cmd->iterate_volumes && ctx.vol != NULL) {
 					if (ctx.vol->implicit)
 						ctx.vol = NULL;
