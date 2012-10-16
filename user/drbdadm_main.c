@@ -1930,12 +1930,18 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 		return -ENOENT;
 	ctx->res = res;
 
+	set_peer_in_resource(res, 1);
+
 	if (conn_name) {
 		ctx->conn = NULL;
 		for_each_connection(conn, &res->connections) {
-			if (conn->name && !strcmp(conn->name, conn_name))
+			struct d_option *opt;
+
+			opt = find_opt(&conn->net_options, "_name");
+			if (opt && !strcmp(opt->value, conn_name))
 				goto found;
 		}
+		fprintf(stderr,	"Connection/peer name '%s' is not a peer\n", conn_name);
 		return -ENOENT;
 	} else if (connect_to_host) {
 		struct d_host_info *hi;
@@ -1953,7 +1959,6 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 				"peer, but the local node\n", connect_to_host);
 			return -ENOENT;
 		}
-		set_peer_in_resource(res, 1);
 		ctx->conn = NULL;
 		for_each_connection(conn, &res->connections) {
 			if (conn->peer == hi)
