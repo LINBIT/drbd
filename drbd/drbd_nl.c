@@ -2691,6 +2691,11 @@ void drbd_bcast_sync_progress(struct drbd_conf *mdev)
 	unsigned long rs_left;
 	unsigned int res;
 
+	if (time_after(jiffies, mdev->rs_last_bcast + HZ))
+		mdev->rs_last_bcast = jiffies;
+	else
+		return;
+
 	/* no local ref, no bitmap, no syncer progress, no broadcast. */
 	if (!get_ldev(mdev))
 		return;
