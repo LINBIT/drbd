@@ -3652,25 +3652,27 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-static bool rotate_current_into_bitmap(struct drbd_device *device, bool forced) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	unsigned long long bm_uuid;
 	struct drbd_peer_device *peer_device;
 	enum drbd_disk_state pdsk;
-	bool do_it = false;
+	u64 mask = 0;
+
+	if (device->disk_state[NOW] < D_UP_TO_DATE)
+		return mask;
 
 	for_each_peer_device(peer_device, device) {
 		bm_uuid = drbd_bitmap_uuid(peer_device);
 		pdsk = peer_device->disk_state[NOW];
-		if (device->disk_state[NOW] >= D_UP_TO_DATE &&
-		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
+		if ((pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
 		    bm_uuid == 0) {
 			__drbd_uuid_set_bitmap(peer_device, device->ldev->md.current_uuid);
-			do_it = true;
+			mask |= (u64)1 << peer_device->node_id;
 		}
 	}
 
-	return do_it;
+	return mask;
 }
 
 /**
@@ -3683,13 +3685,12 @@ static bool rotate_current_into_bitmap(struct drbd_device *device, bool forced) 
 void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
-	bool do_it;
-	u64 val;
+	u64 node_mask, val;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	do_it = rotate_current_into_bitmap(device, forced);
+	node_mask = rotate_current_into_bitmap(device, forced);
 
-	if (!do_it) {
+	if (!node_mask) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		return;
 	}
