@@ -945,7 +945,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
 }
 
-static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags)
+static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
@@ -980,6 +980,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	p->uuid_flags = cpu_to_be64(uuid_flags);
+	p->offline_mask = cpu_to_be64(mask);
 
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS110,
@@ -988,10 +989,10 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 				 NULL, 0);
 }
 
-int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
 {
 	if (peer_device->connection->agreed_pro_version >= 110)
-		return _drbd_send_uuids110(peer_device, uuid_flags);
+		return _drbd_send_uuids110(peer_device, uuid_flags, mask);
 	else
 		return _drbd_send_uuids(peer_device, uuid_flags);
 }
@@ -3705,7 +3706,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_CONNECTED)
-			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN);
+			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, node_mask);
 	}
 }
 

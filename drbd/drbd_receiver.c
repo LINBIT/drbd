@@ -875,7 +875,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)
-		err = drbd_send_uuids(peer_device, 0);
+		err = drbd_send_uuids(peer_device, 0, 0);
 	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
@@ -4613,7 +4613,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 			/* we want resync, peer has not yet decided to sync... */
 			/* Nowadays only used when forcing a node into primary role and
 			   setting its disk to UpToDate with that */
-			drbd_send_uuids(peer_device, 0);
+			drbd_send_uuids(peer_device, 0, 0);
 			drbd_send_current_state(peer_device);
 		}
 	}

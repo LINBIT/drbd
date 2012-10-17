@@ -236,6 +236,7 @@ struct p_uuids110 {
 	u64 bitmap_uuid;
 	u64 dirty_bits;
 	u64 uuid_flags;
+	u64 offline_mask;
 	u64 history_uuids[0];
 } __packed;
 
