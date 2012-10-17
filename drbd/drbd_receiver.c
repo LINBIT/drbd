@@ -4035,7 +4035,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
-static int __receive_uuids(struct drbd_peer_device *peer_device)
+static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 {
 	struct drbd_device *device = device = peer_device->device;
 	int updated_uuids = 0, err = 0;
@@ -4076,7 +4076,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device)
 
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
 			drbd_warn(peer_device, "received new current UUID: %llX\n", peer_device->current_uuid);
-			drbd_uuid_received_new_current(device, peer_device->current_uuid);
+			drbd_uuid_received_new_current(device, peer_device->current_uuid, mask);
 		}
 
 		put_ldev(device);
@@ -4132,7 +4132,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	peer_device->uuids_received = true;
 
-	return __receive_uuids(peer_device);
+	return __receive_uuids(peer_device, 0);
 }
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
@@ -4164,7 +4164,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i] = 0;
 	peer_device->uuids_received = true;
 
-	return __receive_uuids(peer_device);
+	return __receive_uuids(peer_device, be64_to_cpu(p->offline_mask));
 }
 
 /**

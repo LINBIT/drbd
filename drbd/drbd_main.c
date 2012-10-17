@@ -3653,7 +3653,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-static u64 rotate_current_into_bitmap(struct drbd_device *device, bool forced) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
 {
 	unsigned long long bm_uuid;
 	struct drbd_peer_device *peer_device;
@@ -3666,8 +3666,9 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, bool forced) _
 	for_each_peer_device(peer_device, device) {
 		bm_uuid = drbd_bitmap_uuid(peer_device);
 		pdsk = peer_device->disk_state[NOW];
-		if ((pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED || forced) &&
-		    bm_uuid == 0) {
+		if (bm_uuid == 0 &&
+		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED ||
+		     (u64)1 << peer_device->node_id & force_mask)) {
 			__drbd_uuid_set_bitmap(peer_device, device->ldev->md.current_uuid);
 			mask |= (u64)1 << peer_device->node_id;
 		}
@@ -3689,7 +3690,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 	u64 node_mask, val;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	node_mask = rotate_current_into_bitmap(device, forced);
+	node_mask = rotate_current_into_bitmap(device, forced ? ~0ULL : 0);
 
 	if (!node_mask) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
@@ -3735,7 +3736,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	drbd_md_mark_dirty(device);
 }
 
-void drbd_uuid_received_new_current(struct drbd_device *device, u64 val)
+void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 node_mask)
 {
 	bool set_current = true;
 	struct drbd_peer_device *peer_device;
@@ -3751,7 +3752,7 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val)
 	}
 
 	if (set_current) {
-		rotate_current_into_bitmap(device, false);
+		rotate_current_into_bitmap(device, node_mask);
 		__drbd_uuid_set_current(device, val);
 	}
 
