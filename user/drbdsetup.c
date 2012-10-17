@@ -280,6 +280,7 @@ static void free_devices(struct devices_list *);
 struct connections_list {
 	struct connections_list *next;
 	struct drbd_cfg_context ctx;
+	struct nlattr *net_conf;
 	struct connection_info info;
 	struct connection_statistics statistics;
 };
@@ -2279,9 +2280,16 @@ static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
 	drbd_cfg_context_from_attrs(&ctx, info);
 	if (ctx.ctx_resource_name) {
 		struct connections_list *c = malloc(sizeof(*c));
+		struct nlattr *net_conf = global_attrs[DRBD_NLA_NET_CONF];
 
 		memset(c, 0, sizeof(*c));
 		c->ctx = ctx;
+		if (net_conf) {
+			int size = nla_total_size(nla_len(net_conf));
+
+			c->net_conf = malloc(size);
+			memcpy(c->net_conf, net_conf, size);
+		}
 		connection_info_from_attrs(&c->info, info);
 		memset(&c->statistics, -1, sizeof(c->statistics));
 		connection_statistics_from_attrs(&c->statistics, info);
