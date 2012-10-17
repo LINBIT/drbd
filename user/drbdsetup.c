@@ -1743,6 +1743,13 @@ static const char *susp_str(struct resource_info *info)
 void resource_status(struct resources_list *resource)
 {
 	wrap_printf(0, "%s", resource->name);
+	if (opt_verbose) {
+		struct nlattr *nla;
+
+		nla = nla_find_nested(resource->res_opts, __nla_type(T_node_id));
+		if (nla)
+			wrap_printf(4, " node-id:%d", *(uint32_t *)nla_data(nla));
+	}
 	wrap_printf(4, " role:%s", drbd_role_str(resource->info.res_role));
 	if (opt_verbose ||
 	    resource->info.res_susp ||
@@ -1916,6 +1923,13 @@ static void connection_status(struct connections_list *connection,
 		else
 			wrap_printf(6, " local:%s", local_addr);
 		wrap_printf(6, " peer:%s", peer_addr);
+	}
+	if (opt_verbose) {
+		struct nlattr *nla;
+
+		nla = nla_find_nested(connection->net_conf, __nla_type(T_peer_node_id));
+		if (nla)
+			wrap_printf(6, " node-id:%d", *(uint32_t *)nla_data(nla));
 	}
 	if (opt_verbose || connection->info.conn_connection_state != C_CONNECTED)
 		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
