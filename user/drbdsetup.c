@@ -170,8 +170,6 @@ enum cfg_ctx_key {
 
 	CTX_CONNECTION = CTX_MY_ADDR | CTX_PEER_ADDR | CTX_MULTIPLE_ARGUMENTS,
 	CTX_PEER_DEVICE = CTX_MY_ADDR | CTX_PEER_ADDR | CTX_VOLUME | CTX_MULTIPLE_ARGUMENTS,
-
-	CTX_RESOURCE_AND_CONNECTION = 0,
 };
 
 enum cfg_ctx_key ctx_next_arg(enum cfg_ctx_key *key)
