@@ -3570,6 +3570,10 @@ void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __mu
 	struct drbd_md *md = &device->ldev->md;
 	int i;
 
+	if (val == UUID_JUST_CREATED)
+		return;
+	val &= ~1;  /* The lowest bit only indicates that the node was primary */
+
 	for (i = 0; i < ARRAY_SIZE(md->history_uuids); i++) {
 		if (md->history_uuids[i] == val)
 			return;
