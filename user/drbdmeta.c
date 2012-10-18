@@ -4309,12 +4309,14 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	else
 		check_external_md_flavours(cfg);
 
-	printf("Writing meta data...\n");
 	if (!cfg->md.magic) /* not converted: initialize */
 		err = cfg->ops->md_initialize(cfg, 1, max_peers); /* Clears on disk AL implicitly */
-	else
+	else {
+		if (format_version(cfg) >= DRBD_V09 && max_peers != 1)
+			printf("Warning: setting max_peers to 1 instead of %d\n\n",
+			       max_peers);
 		err = 0; /* we have sucessfully converted somthing */
-
+	}
 
 	cfg->md.la_peer_max_bio_size = option_peer_max_bio_size;
 
@@ -4326,6 +4328,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * the previous DRBD into "clean" L_CONNECTED R_SECONDARY/R_SECONDARY, so AL
 	 * and bitmap should be empty anyways.
 	 */
+	printf("Writing meta data...\n");
 	err = err || cfg->ops->md_cpu_to_disk(cfg); // <- short circuit
 	if (!err)
 		wipe_after_convert(cfg);
