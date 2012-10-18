@@ -2387,12 +2387,10 @@ void printf_bm(struct format *cfg)
 		fprintf_bm(stdout, cfg, 0, "");
 		break;
 	case DRBD_V09:
-		printf("bm {\n");
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			printf("   peer[%d] ", i);
-			fprintf_bm(stdout, cfg, i, "   ");
+			printf("bitmap[%d] ", i);
+			fprintf_bm(stdout, cfg, i, "");
 		}
-		printf("}\n");
 		break;
 	case DRBD_UNKNOWN:
 		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
@@ -2970,7 +2968,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
 	if (format_version(cfg) >= DRBD_V09)
-		printf("bm-max-peers %d;\n", cfg->md.bm_max_peers);
+		printf("max-peers %d;\n", cfg->md.bm_max_peers);
 	printf("# md_size_sect %llu\n", (long long unsigned)cfg->md.md_size_sect);
 
 	if (i == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
@@ -3023,33 +3021,31 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		printf("}\n");
 		break;
 	case DRBD_V09:
-		printf("uuid {\n"
-		       "    node-id %d;\n"
-		       "    current 0x"X64(016)";\n"
-		       "    flags 0x"X32(08)";\n",
+		printf("node-id %d;\n"
+		       "current-uuid 0x"X64(016)";\n"
+		       "flags 0x"X32(08)";\n",
 		       cfg->md.node_id,
 		       cfg->md.current_uuid, cfg->md.flags);
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
 			struct peer_md_cpu *peer = &cfg->md.peers[i];
 
-			printf("    peer[%d] {\n", i);
+			printf("peer[%d] {\n", i);
 			if (format_version(cfg) >= DRBD_V09) {
-				printf("        node-id %d;\n",
+				printf("    node-id %d;\n",
 				       peer->node_id);
 			}
-			printf("        bitmap 0x"X64(016)";\n"
-			       "        flags 0x"X32(08)";\n",
+			printf("    bitmap-uuid 0x"X64(016)";\n"
+			       "    flags 0x"X32(08)";\n",
 			       peer->bitmap_uuid,
 			       peer->flags);
-			printf("    }\n");
+			printf("}\n");
 		}
-		printf("    history {");
+		printf("history-uuids {");
 		for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++)
 			printf("%s0x"X64(016)";",
 			       i % 4 ? " " : "\n        ",
 			       cfg->md.history_uuids[i]);
-		printf("\n    }\n");
-		printf("}\n");
+		printf("\n}\n");
 		break;
 	case DRBD_UNKNOWN:
 		fprintf(stderr, "BUG in %s().\n", __FUNCTION__);
@@ -3092,6 +3088,8 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 		case ']': etext = "closing bracket (])"; break;
 		case TK_BM:
 			etext = "keyword 'bm'"; break;
+		case TK_BITMAP:
+			etext = "keyword 'bitmap'"; break;
 		case TK_BM_BYTE_PER_BIT:
 			etext = "keyword 'bm-byte-per-bit'"; break;
 		case TK_DEVICE_UUID:
@@ -3110,14 +3108,16 @@ void md_parse_error(int expected_token, int seen_token,const char *etext)
 			etext = "keyword 'version'"; break;
 		case TK_NODE_ID:
 			etext = "keyword 'node-id'"; break;
-		case TK_CURRENT:
-			etext = "keyword 'current'"; break;
+		case TK_CURRENT_UUID:
+			etext = "keyword 'current-uuid'"; break;
+		case TK_BITMAP_UUID:
+			etext = "keyword 'bitmap-uuid'"; break;
 		case TK_PEER:
 			etext = "keyword 'peer'"; break;
 		case TK_HASH:
 			etext = "keyword 'hash'"; break;
-		case TK_BM_MAX_PEERS:
-			etext = "keyword 'bm-max-peers'"; break;
+		case TK_MAX_PEERS:
+			etext = "keyword 'max-peers'"; break;
 		case TK_NUM:
 			etext = "number ([0-9], up to 20 digits)"; break;
 		case TK_STRING:
@@ -3198,6 +3198,19 @@ int parse_bitmap_window_one_peer(struct format *cfg, int window, int peer_nr, in
 	int i, times;
 
 	i = peer_nr - window * (buffer_size / sizeof(*bm));
+
+	if (format_version(cfg) < DRBD_V09)
+		EXP(TK_BM);
+	else {
+		EXP(TK_BITMAP); EXP('[');
+		EXP(TK_NUM); EXP(']');
+		if (yylval.u64 != peer_nr) {
+			fprintf(stderr, "Parse error in line %u: "
+				"Expected peer slot %d but found %d\n",
+				yylineno, i, (int)yylval.u64);
+			exit(10);
+		}
+	}
 	EXP('{');
 
 	while(1) {
@@ -3257,19 +3270,9 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 	if (format_version(cfg) < DRBD_V09) {
 		return parse_bitmap_window_one_peer(cfg, window, 0, parse_only);
 	} else /* >= DRBD_V09 */ {
-		EXP('{');
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			EXP(TK_PEER); EXP('[');
-			EXP(TK_NUM); EXP(']');
-			if (yylval.u64 != i) {
-				fprintf(stderr, "Parse error in line %u: "
-					"Expected peer slot %d but found %d\n",
-					yylineno, i, (int)yylval.u64);
-				exit(10);
-			}
 			words = parse_bitmap_window_one_peer(cfg, window, i, parse_only);
 		}
-		EXP('}');
 	}
 	return words;
 }
@@ -3340,7 +3343,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(';');
 	if (is_v09(cfg)) {
-		EXP(TK_BM_MAX_PEERS);
+		EXP(TK_MAX_PEERS);
 		EXP(TK_NUM); EXP(';');
 		new_max_peers = yylval.u64;
 	}
@@ -3367,8 +3370,8 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		}
 		EXP('}');
 	} else { // >= 08
-		EXP(TK_UUID); EXP('{');
 		if (is_v08(cfg)) {
+			EXP(TK_UUID); EXP('{');
 			EXP(TK_U64); EXP(';');
 			cfg->md.current_uuid = yylval.u64;
 			EXP(TK_U64); EXP(';');
@@ -3379,11 +3382,12 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			}
 			EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
 			cfg->md.flags = (uint32_t)yylval.u64;
-		} else /* >= 09 */ {
+			EXP('}');
+	} else /* >= 09 */ {
 			EXP(TK_NODE_ID);
 			EXP(TK_NUM); EXP(';');
 			cfg->md.node_id = yylval.u64;
-			EXP(TK_CURRENT);
+			EXP(TK_CURRENT_UUID);
 			EXP(TK_U64); EXP(';');
 			cfg->md.current_uuid = yylval.u64;
 			EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
@@ -3402,20 +3406,19 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 				EXP(TK_NODE_ID);
 				EXP(TK_NUM); EXP(';');
 				cfg->md.peers[i].node_id = yylval.u64;
-				EXP(TK_BITMAP); EXP(TK_U64); EXP(';');
+				EXP(TK_BITMAP_UUID); EXP(TK_U64); EXP(';');
 				cfg->md.peers[i].bitmap_uuid = yylval.u64;
 				EXP(TK_FLAGS); EXP(TK_U32); EXP(';');
 				cfg->md.peers[i].flags = (uint32_t)yylval.u64;
 				EXP('}');
 			}
-			EXP(TK_HISTORY); EXP('{');
+			EXP(TK_HISTORY_UUIDS); EXP('{');
 			for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++) {
 				EXP(TK_U64); EXP(';');
 				cfg->md.history_uuids[i] = yylval.u64;
 			}
 			EXP('}');
 		}
-		EXP('}');
 	}
 	EXP(TK_LA_SIZE); EXP(TK_NUM); EXP(';');
 	cfg->md.effective_size = yylval.u64;
@@ -3424,22 +3427,11 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		cfg->md.bm_bytes_per_bit = yylval.u64;
 		EXP(TK_DEVICE_UUID); EXP(TK_U64); EXP(';');
 		cfg->md.device_uuid = yylval.u64;
-		int tok = yylex();
-		switch(tok) {
-		case TK_LA_BIO_SIZE:
-			EXP(TK_NUM); EXP(';');
-			cfg->md.la_peer_max_bio_size = yylval.u64;
-			break;
-		case TK_BM:
-			goto start_of_bm;
-		default:
-			md_parse_error(TK_BM, 0, "keyword 'bm' or 'la-peer-max-bio-size'");
-		}
+		EXP(TK_LA_BIO_SIZE); EXP(TK_NUM); EXP(';');
+		cfg->md.la_peer_max_bio_size = yylval.u64;
 	} else {
 		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
-	EXP(TK_BM);
-start_of_bm:
 	parse_bitmap(cfg, parse_only);
 
 	/* there should be no trailing garbage in the input file */

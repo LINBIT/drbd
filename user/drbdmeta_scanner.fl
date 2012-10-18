@@ -61,12 +61,13 @@ times		DP; CP; return TK_TIMES;
 flags		DP; CP; return TK_FLAGS;
 la-peer-max-bio-size DP; CP; return TK_LA_BIO_SIZE;
 node-id	DP; CP; return TK_NODE_ID;
-current		DP; CP; return TK_CURRENT;
+current-uuid	DP; CP; return TK_CURRENT_UUID;
 bitmap		DP; CP; return TK_BITMAP;
-history		DP; CP; return TK_HISTORY;
+bitmap-uuid	DP; CP; return TK_BITMAP_UUID;
+history-uuids	DP; CP; return TK_HISTORY_UUIDS;
 peer		DP; CP; return TK_PEER;
 hash		DP; CP; return TK_HASH;
-bm-max-peers	DP; CP; return TK_BM_MAX_PEERS;
+max-peers	DP; CP; return TK_MAX_PEERS;
 
 {INVALID_STRING} CP; bad_token("invalid string"); return TK_INVALID;
 {EMPTY_STRING}	 CP; bad_token("invalid string"); return TK_INVALID;
