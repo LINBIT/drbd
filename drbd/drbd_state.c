@@ -1325,6 +1325,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				peer_device->rs_mark_time[peer_device->rs_last_mark] = jiffies;
 			}
 
+
+			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED)
+				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+
 			if (repl_state[OLD] == L_CONNECTED &&
 			    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
 				unsigned long now = jiffies;

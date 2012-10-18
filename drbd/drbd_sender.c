@@ -833,7 +833,7 @@ STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-static void ping_peer(struct drbd_connection *connection)
+void drbd_ping_peer(struct drbd_connection *connection)
 {
 	clear_bit(GOT_PING_ACK, &connection->flags);
 	request_ping(connection);
@@ -890,7 +890,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 	if (!get_ldev(device))
 		goto out;
 
-	ping_peer(connection);
+	drbd_ping_peer(connection);
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 
@@ -950,7 +950,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 		__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
-			if (peer_device->uuids_received) {
+			if (!test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
+			    peer_device->uuids_received) {
 				unsigned long flags;
 				int i;
 
@@ -960,7 +961,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				__drbd_uuid_set_bitmap(peer_device, drbd_current_uuid(device));
 				__drbd_uuid_set_current(device, peer_device->current_uuid);
 				spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
-			} else {
+			} else if (!peer_device->uuids_received) {
 				drbd_err(peer_device, "BUG: uuids were not received!\n");
 			}
 		}
