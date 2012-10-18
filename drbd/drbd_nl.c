@@ -1695,7 +1695,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Make sure no bitmap slot has our own node id */
 	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-		struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+		struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 		if (peer_md->node_id == resource->res_opts.node_id) {
 			drbd_err(device, "Peer %d node id %d is identical to "
@@ -1712,7 +1712,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		struct drbd_connection *connection = peer_device->connection;
 
 		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-			struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+			struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 			if (peer_md->node_id == connection->net_conf->peer_node_id) {
 				nbc->id_to_bit[peer_md->node_id] = bitmap_index;
@@ -1727,7 +1727,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		unsigned int slots_available = 0;
 
 		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-			struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+			struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 			if (peer_md->node_id == -1)
 				slots_available++;
@@ -1744,13 +1744,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			struct drbd_connection *connection = peer_device->connection;
 
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+				struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 				if (peer_md->node_id == connection->net_conf->peer_node_id)
 					goto next_peer_device_2;
 			}
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_md_peer *peer_md = &nbc->md.peers[bitmap_index];
+				struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 				if (peer_md->node_id == -1) {
 					peer_md->node_id = connection->net_conf->peer_node_id;
@@ -2470,7 +2470,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		if (!get_ldev(device))
 			continue;
 		for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-			struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
 
 			if (new_net_conf->peer_node_id == peer_md->node_id) {
 				peer_device->bitmap_index = bitmap_index;
@@ -2499,13 +2499,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			if (!get_ldev(device))
 				continue;
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+				struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
 
 				if (new_net_conf->peer_node_id == peer_md->node_id)
 					goto next_device_2;
 			}
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+				struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
 
 				if (peer_md->node_id == -1) {
 					peer_md->node_id = new_net_conf->peer_node_id;
@@ -3427,7 +3427,7 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
 	if (get_ldev(device)) {
 		struct drbd_md *md = &device->ldev->md;
-		struct drbd_md_peer *peer_md = &md->peers[peer_device->bitmap_index];
+		struct drbd_peer_md *peer_md = &md->peers[peer_device->bitmap_index];
 
 		spin_lock_irq(&md->uuid_lock);
 		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;

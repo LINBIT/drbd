@@ -611,7 +611,7 @@ struct drbd_socket {
 	void *rbuf;
 };
 
-struct drbd_md_peer {
+struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u32 flags;
 	u32 node_id;
@@ -636,7 +636,7 @@ struct drbd_md {
 	 * gets applied to act_log->nr_elements
 	 */
 
-	struct drbd_md_peer *peers;
+	struct drbd_peer_md *peers;
 	u64 history_uuids[HISTORY_UUIDS];
 };
 
@@ -2255,7 +2255,7 @@ static inline bool verify_can_do_stop_sector(struct drbd_peer_device *peer_devic
 static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_md_peer *peer_md;
+	struct drbd_peer_md *peer_md;
 
 	if (!device->ldev)
 		return 0;

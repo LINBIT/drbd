@@ -985,7 +985,7 @@ STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	ebnr = BM_SECT_TO_BIT(esector);
 
 	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-		struct drbd_md_peer *peer_md = &md->peers[bitmap_index];
+		struct drbd_peer_md *peer_md = &md->peers[bitmap_index];
 
 		/* Skip bitmap indexes which are not assigned to a peer. */
 		if (peer_md->node_id == -1)

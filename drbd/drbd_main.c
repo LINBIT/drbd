@@ -3403,7 +3403,7 @@ void drbd_md_sync(struct drbd_device *device)
 	buffer->bm_max_peers = cpu_to_be32(device->bitmap->bm_max_peers);
 	buffer->node_id = cpu_to_be32(device->ldev->md.node_id);
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
-		struct drbd_md_peer *peer_md = &device->ldev->md.peers[i];
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[i];
 
 		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
@@ -3508,7 +3508,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		goto err;
 	}
 
-	bdev->md.peers = kmalloc(sizeof(struct drbd_md_peer) * i, GFP_NOIO);
+	bdev->md.peers = kmalloc(sizeof(struct drbd_peer_md) * i, GFP_NOIO);
 	if (!bdev->md.peers) {
 		rv = ERR_NOMEM;
 		goto err;
@@ -3521,7 +3521,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
 	for (i = 0; i < device->bitmap->bm_max_peers; i++) {
-		struct drbd_md_peer *peer_md = &bdev->md.peers[i];
+		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
 
 		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
@@ -3609,7 +3609,7 @@ void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 
 	drbd_md_mark_dirty(device);
 	peer_md->bitmap_uuid = val;
@@ -3707,7 +3707,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_md_peer *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
 	unsigned long flags;
 
 	if (peer_md->bitmap_uuid == 0 && val == 0)
@@ -4244,7 +4244,7 @@ enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
 			int bitmap_index;
 
 			for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_md_peer *peer_md = &device->ldev->md.peers[bitmap_index];
+				struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
 				enum drbd_disk_state peer_disk_state;
 
 				if (!peer_md->bitmap_uuid ||
