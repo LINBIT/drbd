@@ -63,6 +63,7 @@ enum drbd_packet {
 	P_PEERS_IN_SYNC       = 0x33, /* data sock: Mark area as in sync */
 
 	P_UUIDS110	      = 0x34, /* data socket */
+	P_PEER_DAGTAG         = 0x35, /* data socket, used to trigger reconciliation resync */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
@@ -321,6 +322,11 @@ struct p_peer_block_desc {
 	u64 mask;
 	u32 size;
 	u32 pad;	/* to multiple of 8 Byte */
+} __packed;
+
+struct p_peer_dagtag {
+	u64 dagtag;
+	u32 node_id;
 } __packed;
 
 /*

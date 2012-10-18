@@ -551,6 +551,7 @@ enum {
 	READ_BALANCE_RR,
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
+	RECONCILIATION_RESYNC,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock
@@ -1515,6 +1516,7 @@ extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
 extern void wait_until_done_or_force_detached(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, unsigned int *done);
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
+extern void drbd_ping_peer(struct drbd_connection *connection);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {

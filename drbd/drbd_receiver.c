@@ -4993,6 +4993,80 @@ static int receive_dagtag(struct drbd_connection *connection, struct packet_info
 	return 0;
 }
 
+struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resource, int node_id)
+{
+	struct drbd_connection *connection;
+	struct net_conf *nc;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		nc = rcu_dereference(connection->net_conf);
+		if (nc && nc->peer_node_id == node_id) {
+			rcu_read_unlock();
+			return connection;
+		}
+	}
+	rcu_read_unlock();
+
+	return NULL;
+}
+
+static int receive_peer_dagtag(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	enum drbd_repl_state new_repl_state;
+	struct p_peer_dagtag *p = pi->data;
+	struct drbd_connection *lost_peer;
+	s64 dagtag_offset;
+	int vnr = 0;
+
+	lost_peer = drbd_connection_by_node_id(resource, be32_to_cpu(p->node_id));
+	if (!lost_peer)
+		return 0;
+
+	if (lost_peer->cstate[NOW] == C_CONNECTED) {
+		drbd_ping_peer(lost_peer);
+		if (lost_peer->cstate[NOW] == C_CONNECTED)
+			return 0;
+	}
+
+	/* Need to wait until the other receiver thread has called the
+	   cleanup_unacked_peer_requests() function */
+	wait_event(resource->state_wait,
+		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_WF_CONNECTION);
+
+	dagtag_offset = (s64)lost_peer->last_dagtag_sector - (s64)be64_to_cpu(p->dagtag);
+	if (dagtag_offset > 0)
+		new_repl_state = L_WF_BITMAP_S;
+	else if (dagtag_offset < 0)
+		new_repl_state = L_WF_BITMAP_T;
+	else
+		new_repl_state = L_CONNECTED;
+
+	if (new_repl_state != L_CONNECTED) {
+		unsigned long irq_flags;
+
+		drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
+			  lost_peer->net_conf->name, (int)dagtag_offset);
+
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			__change_repl_state(peer_device, new_repl_state);
+			set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+		}
+		end_state_change(resource, &irq_flags);
+	} else {
+		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
+			  lost_peer->net_conf->name, (int)dagtag_offset);
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+	}
+
+	return 0;
+}
+
 struct data_cmd {
 	int expect_payload;
 	size_t pkt_size;
@@ -5028,6 +5102,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_CONN_ST_CHG_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
+	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)
