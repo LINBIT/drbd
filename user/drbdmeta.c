@@ -242,7 +242,7 @@ typedef struct { unsigned long be; } be_ulong;
 /* NOTE that this structure does not need to be packed,
  * aligned, nor does it need to be in the same order as the on_disk variants.
  */
-struct md_peer_cpu {
+struct peer_md_cpu {
 	uint64_t bitmap_uuid;
 	uint32_t flags;
 	int32_t node_id;
@@ -270,7 +270,7 @@ struct md_cpu {
 	/* Since DRBD 9.0 the following new stuff: */
 	uint32_t bm_max_peers;
 	int32_t node_id;
-	struct md_peer_cpu peers[MAX_PEERS];
+	struct peer_md_cpu peers[MAX_PEERS];
 };
 
 /*
@@ -3030,7 +3030,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		       cfg->md.node_id,
 		       cfg->md.current_uuid, cfg->md.flags);
 		for (i = 0; i < cfg->md.bm_max_peers; i++) {
-			struct md_peer_cpu *peer = &cfg->md.peers[i];
+			struct peer_md_cpu *peer = &cfg->md.peers[i];
 
 			printf("    peer[%d] {\n", i);
 			if (format_version(cfg) >= DRBD_V09) {
