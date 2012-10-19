@@ -2312,7 +2312,7 @@ static inline void drbd_md_flush(struct drbd_device *device)
 	if (test_bit(MD_NO_BARRIER, &device->flags))
 		return;
 
-	r = blkdev_issue_flush(device->ldev->md_bdev, GFP_KERNEL, NULL);
+	r = blkdev_issue_flush(device->ldev->md_bdev, GFP_NOIO, NULL);
 	if (r) {
 		set_bit(MD_NO_BARRIER, &device->flags);
 		drbd_err(device, "meta data flush failed with status %d, disabling md-flushes\n", r);
