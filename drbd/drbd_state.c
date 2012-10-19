@@ -1695,6 +1695,19 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 	}
 }
 
+static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
+{
+	struct drbd_resource *resource = lost_peer->resource;
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (connection == lost_peer)
+			continue;
+		if (connection->cstate[NOW] == C_CONNECTED)
+			drbd_send_peer_dagtag(connection, lost_peer);
+	}
+}
+
 /*
  * Perform after state change actions that may sleep.
  */
@@ -2060,6 +2073,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
 		struct drbd_connection *connection = connection_state_change->connection;
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
+		enum drbd_role *peer_role = connection_state_change->peer_role;
 
 		/* Upon network configuration, we need to start the receiver */
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
@@ -2119,6 +2133,12 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				__change_io_susp_fencing(resource, false);
 				end_state_change(resource, &irq_flags);
 			}
+		}
+
+		if (peer_role[OLD] == R_PRIMARY &&
+		    cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
+			/* A connection to a primary went down, notify other peers about that */
+			notify_peers_lost_primary(connection);
 		}
 	}
 

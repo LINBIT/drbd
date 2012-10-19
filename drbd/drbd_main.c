@@ -1253,6 +1253,30 @@ void drbd_send_peers_in_sync(struct drbd_peer_device *peer_device, u64 mask, sec
 	}
 }
 
+int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer)
+{
+	struct drbd_socket *sock = &connection->data;
+	struct p_peer_dagtag *p;
+	struct net_conf *nc;
+	int lost_node_id;
+
+	p = conn_prepare_command(connection, sock);
+	if (!p)
+		return -EIO;
+
+	rcu_read_lock();
+	nc = rcu_dereference(lost_peer->net_conf);
+	if (nc)
+		lost_node_id = nc->peer_node_id;
+	rcu_read_unlock();
+	if (!nc)
+		return 0;
+
+	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
+	p->node_id = cpu_to_be32(lost_node_id);
+	return conn_send_command(connection, sock, P_PEER_DAGTAG, sizeof(*p), NULL, 0);
+}
+
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
 {
 	BUG_ON(code & ~0xf);
