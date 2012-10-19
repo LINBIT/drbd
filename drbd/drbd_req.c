@@ -631,6 +631,20 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		kref_sub(&req->kref, k_put, drbd_req_destroy);
 }
 
+static void drbd_report_io_error(struct drbd_device *device, struct drbd_request *req)
+{
+        char b[BDEVNAME_SIZE];
+
+	if (!drbd_ratelimit())
+		return;
+
+	drbd_warn(device, "local %s IO error sector %llu+%u on %s\n",
+		  (req->rq_state[0] & RQ_WRITE) ? "WRITE" : "READ",
+		  (unsigned long long)req->i.sector,
+		  req->i.size >> 9,
+		  bdevname(device->ldev->backing_bdev, b));
+}
+
 /* obviously this could be coded as many single functions
  * instead of one huge switch,
  * or by putting the code directly in the respective locations
@@ -706,12 +720,14 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case WRITE_COMPLETED_WITH_ERROR:
+		drbd_report_io_error(device, req);
 		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
 		break;
 
 	case READ_COMPLETED_WITH_ERROR:
 		drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
+		drbd_report_io_error(device, req);
 		__drbd_chk_io_error(device, DRBD_READ_ERROR);
 		/* fall through. */
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
@@ -1384,7 +1400,8 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	} else if (no_remote) {
 nodata:
 		if (drbd_ratelimit())
-			drbd_err(req->device, "IO ERROR: neither local nor remote disk\n");
+			drbd_err(req->device, "IO ERROR: neither local nor remote data, sector %llu+%u\n",
+					(unsigned long long)req->i.sector, req->i.size >> 9);
 		/* A write may have been queued for send_oos, however.
 		 * So we can not simply free it, we must go through drbd_req_put_completion_ref() */
 	}
