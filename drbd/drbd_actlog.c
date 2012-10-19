@@ -806,7 +806,7 @@ static bool __set_in_sync(struct drbd_peer_device *peer_device,
 	unsigned long count;
 
 	count = drbd_bm_clear_bits(device, peer_device->bitmap_index, sbnr, ebnr);
-	if (count && get_ldev(device)) {
+	if (count) {
 		unsigned long flags;
 		unsigned int enr;
 
@@ -817,7 +817,6 @@ static bool __set_in_sync(struct drbd_peer_device *peer_device,
 		spin_lock_irqsave(&device->al_lock, flags);
 		drbd_try_clear_on_disk_bm(peer_device, enr, count, true);
 		spin_unlock_irqrestore(&device->al_lock, flags);
-		put_ldev(device);
 		return true;
 	}
 	return false;
@@ -843,11 +842,14 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 				(unsigned long long)sector, size);
 		return;
 	}
+	if (!get_ldev(device))
+		return; /* no disk, no metadata, no bitmap to clear bits in */
+
 	nr_sectors = drbd_get_capacity(device->this_bdev);
 	esector = sector + (size >> 9) - 1;
 
 	if (!expect(device, sector < nr_sectors))
-		return;
+		goto out;
 	if (!expect(device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
@@ -857,7 +859,7 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 	 * round up start sector, round down end sector.  we make sure we only
 	 * clear full, aligned, BM_BLOCK_SIZE (4K) blocks */
 	if (unlikely(esector < BM_SECT_PER_BIT-1))
-		return;
+		goto out;
 	if (unlikely(esector == (nr_sectors-1)))
 		ebnr = lbnr;
 	else
@@ -865,7 +867,7 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 	sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
 
 	if (sbnr > ebnr)
-		return;
+		goto out;
 
 	/*
 	 * ok, (capacity & 7) != 0 sometimes, but who cares...
@@ -879,6 +881,8 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 			wake_up |= __set_in_sync(peer_device, sbnr, ebnr);
 		rcu_read_unlock();
 	}
+out:
+	put_ldev(device);
 	if (wake_up)
 		wake_up(&device->al_wait);
 }
