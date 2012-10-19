@@ -2337,6 +2337,11 @@ static inline void drbd_md_flush(struct drbd_device *device)
 {
 	int r;
 
+	if (device->ldev == NULL) {
+		drbd_warn(device, "device->ldev == NULL in drbd_md_flush\n");
+		return;
+	}
+
 	if (test_bit(MD_NO_BARRIER, &device->flags))
 		return;
 
