@@ -2510,8 +2510,10 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 {
 	int r;
 
-	if (WARN_ON(mdev->ldev == NULL))
+	if (mdev->ldev == NULL) {
+		dev_warn(DEV, "mdev->ldev == NULL in drbd_md_flush\n");
 		return;
+	}
 
 	if (drbd_test_flag(mdev, MD_NO_BARRIER))
 		return;
