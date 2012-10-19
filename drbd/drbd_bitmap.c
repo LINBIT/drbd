@@ -1234,7 +1234,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight)) {
 		drbd_blk_run_queue(bdev_get_queue(device->ldev->md_bdev));
-		wait_until_done_or_disk_failure(device, device->ldev, &ctx->done);
+		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
 	} else
 		kref_put(&ctx->kref, bm_aio_ctx_destroy);
 
@@ -1251,7 +1251,7 @@ STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	}
 
 	if (atomic_read(&ctx->in_flight))
-		err = -EIO; /* Disk failed during IO... */
+		err = -EIO; /* Disk timeout/force-detach during IO... */
 
 	if (rw == WRITE) {
 		drbd_md_flush(device);
@@ -1412,11 +1412,11 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 		}
 
 		bm_page_io_async(ctx, page_nr, WRITE_SYNC);
-		wait_until_done_or_disk_failure(device, device->ldev, &ctx->done);
+		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
 
 		if (ctx->error)
 			drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
-			/* that should force detach, so the in memory bitmap will be
+			/* that causes us to detach, so the in memory bitmap will be
 			 * gone in a moment as well. */
 
 		device->bm_writ_cnt++;

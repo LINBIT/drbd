@@ -1506,8 +1506,8 @@ extern void drbd_md_put_buffer(struct drbd_device *device);
 extern int drbd_md_sync_page_io(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, sector_t sector, int rw);
 extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
-extern void wait_until_done_or_disk_failure(struct drbd_device *device, struct drbd_backing_dev *bdev,
-					    unsigned int *done);
+extern void wait_until_done_or_force_detached(struct drbd_device *device,
+		struct drbd_backing_dev *bdev, unsigned int *done);
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
