@@ -1477,7 +1477,7 @@ static void abw_start_sync(struct drbd_device *device,
 	}
 }
 
-static int drbd_bitmap_io_from_worker(struct drbd_device *device,
+int drbd_bitmap_io_from_worker(struct drbd_device *device,
 		int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
 		char *why, enum bm_flag flags,
 		struct drbd_peer_device *peer_device)

@@ -531,7 +531,8 @@ enum {
 				   so don't even try */
 	SUSPEND_IO,		/* suspend application io */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
-	WAS_IO_ERROR,		/* Local disk failed returned IO error */
+	WAS_IO_ERROR,		/* Local disk failed, returned IO error */
+	WAS_READ_ERROR,		/* Local disk READ failed (set additionally to the above) */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
@@ -1194,6 +1195,10 @@ extern int drbd_bitmap_io(struct drbd_device *,
 		int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
 		char *why, enum bm_flag flags,
 		struct drbd_peer_device *);
+extern int drbd_bitmap_io_from_worker(struct drbd_device *,
+		int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
+		char *why, enum bm_flag flags,
+		struct drbd_peer_device *);
 extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern void drbd_go_diskless(struct drbd_device *device);
@@ -1711,14 +1716,15 @@ static inline int combined_conn_state(struct drbd_peer_device *peer_device, enum
 }
 
 enum drbd_force_detach_flags {
-	DRBD_IO_ERROR,
+	DRBD_READ_ERROR,
+	DRBD_WRITE_ERROR,
 	DRBD_META_IO_ERROR,
 	DRBD_FORCE_DETACH,
 };
 
 #define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
 static inline void __drbd_chk_io_error_(struct drbd_device *device,
-					enum drbd_force_detach_flags forcedetach,
+					enum drbd_force_detach_flags df,
 					const char *where)
 {
 	enum drbd_io_error_p ep;
@@ -1728,7 +1734,7 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device,
 	rcu_read_unlock();
 	switch (ep) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
-		if (forcedetach == DRBD_IO_ERROR) {
+		if (df == DRBD_READ_ERROR ||  df == DRBD_WRITE_ERROR) {
 			if (drbd_ratelimit())
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
@@ -1738,11 +1744,33 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device,
 			}
 			break;
 		}
-		/* NOTE fall through to detach case if forcedetach set */
+		/* NOTE fall through for DRBD_META_IO_ERROR or DRBD_FORCE_DETACH */
 	case EP_DETACH:
 	case EP_CALL_HELPER:
+		/* Remember whether we saw a READ or WRITE error.
+		 *
+		 * Recovery of the affected area for WRITE failure is covered
+		 * by the activity log.
+		 * READ errors may fall outside that area though. Certain READ
+		 * errors can be "healed" by writing good data to the affected
+		 * blocks, which triggers block re-allocation in lower layers.
+		 *
+		 * If we can not write the bitmap after a READ error,
+		 * we may need to trigger a full sync (see w_go_diskless()).
+		 *
+		 * Force-detach is not really an IO error, but rather a
+		 * desperate measure to try to deal with a completely
+		 * unresponsive lower level IO stack.
+		 * Still it should be treated as a WRITE error.
+		 *
+		 * Meta IO error is always WRITE error:
+		 * we read meta data only once during attach,
+		 * which will fail in case of errors.
+		 */
 		set_bit(WAS_IO_ERROR, &device->flags);
-		if (forcedetach == DRBD_FORCE_DETACH)
+		if (df == DRBD_READ_ERROR)
+			set_bit(WAS_READ_ERROR, &device->flags);
+		if (df == DRBD_FORCE_DETACH)
 			set_bit(FORCE_DETACH, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {
 			begin_state_change_locked(device->resource, CS_HARD);
