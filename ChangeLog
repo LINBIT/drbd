@@ -2,9 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.99.0 (api:genl1/proto:86-110)
+9.0.0alpha1 (api:genl1/proto:86-110)
 --------
- * 9.0 alpha
+ * Support for multiple connections in a single resource; this feature
+   obsoletes device stacking; new configuration keywords: connection,
+   host, node-id.
+ * Automatic promote; if a process opens a drbd device for r/w, drbd
+   tries to promotes that resource to primary; it the last process
+   closes the device drbd demotes that resource to secondary; opens
+   fails if promotion fails
+ * Resync extents are now 128MiByte instead of 16MiBytes
 
 8.4.0 (api:genl1/proto:86-100)
 --------
