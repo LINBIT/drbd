@@ -4194,6 +4194,7 @@ void notify_helper(enum drbd_notification_type type,
 	int err;
 
 	strlcpy(helper_info.helper_name, name, sizeof(helper_info.helper_name));
+	helper_info.helper_name_len = min(strlen(name), sizeof(helper_info.helper_name));
 	helper_info.helper_status = status;
 
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
