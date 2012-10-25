@@ -1269,6 +1269,11 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	else
 		mdev->ldev->md.flags |= MDF_AL_DISABLED;
 
+	if (new_disk_conf->md_flushes)
+		clear_bit(MD_NO_BARRIER, &mdev->flags);
+	else
+		set_bit(MD_NO_BARRIER, &mdev->flags);
+
 	drbd_bump_write_ordering(mdev->tconn, WO_bio_barrier);
 
 	drbd_md_sync(mdev);
