@@ -3336,6 +3336,10 @@ STATIC int receive_uuids(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned
 	int i, updated_uuids = 0;
 
 	p_uuid = kmalloc(sizeof(u64)*UI_EXTENDED_SIZE, GFP_NOIO);
+	if (!p_uuid) {
+		dev_err(DEV, "kmalloc of p_uuid failed\n");
+		return false;
+	}
 
 	for (i = UI_CURRENT; i < UI_EXTENDED_SIZE; i++)
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
