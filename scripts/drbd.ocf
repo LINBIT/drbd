@@ -351,11 +351,11 @@ drbd_update_master_score() {
 	# 10000: Please promote me/keep me Primary.
 	#        I'm confident that my data is as good as it gets.
 	#
-	: == DEBUG == ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]}/${DRBD_DSTATE_REMOTE[*]}/ ==
 	# For multi volume, we need to compare who is "better" a bit more sophisticated.
 	# The ${XXX[*]//UpToDate}, without being in double quotes, results in a single space,
 	# if all are UpToDate.
-	case ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]//UpToDate}/${DRBD_DSTATE_REMOTE[*]//UpToDate}/ in
+	: == DEBUG == ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]//UpToDate/ }/${DRBD_DSTATE_REMOTE[*]//UpToDate/ }/ ==
+	case ${DRBD_ROLE_LOCAL[*]}/${DRBD_DSTATE_LOCAL[*]//UpToDate/ }/${DRBD_DSTATE_REMOTE[*]//UpToDate/ }/ in
 	*Primary*/\ /*/)
 		# I am Primary, all local disks are UpToDate
 		set_master_score 10000
@@ -389,12 +389,17 @@ drbd_update_master_score() {
 		# data, but must expect degraded performance.
 		set_master_score 10
 		;;
-	*/*Attaching*/*/|*/*Negotiating*/*/)
+	*/*Attaching*/*/|\
+	*/*Negotiating*/*/)
 		# some transitional state.
 		# just don't do anything
 		: ;;
 
-	*/*Diskless*/*/|*/*Failed*/*/|*/*Inconsistent*/*/|*/*Outdated*/*/)
+	Unconfigured*|\
+	*/*Diskless*/*/|\
+	*/*Failed*/*/|\
+	*/*Inconsistent*/*/|\
+	*/*Outdated*/*/)
 		# ALWAYS put the cluster in MAINTENANCE MODE
 		# if you add a volume to a live replication group,
 		# because the new volume will typically come up as Inconsistent
@@ -482,6 +487,12 @@ drbd_status() {
 # I'm sorry, but there is no $OCF_DEGRADED_MASTER or similar yet.
 drbd_monitor() {
 	local status
+
+	DRBD_ROLE_LOCAL=(Unconfigured)
+	DRBD_ROLE_REMOTE=(Unknown)
+	DRBD_CSTATE=(Unconfigured)
+	DRBD_DSTATE_LOCAL=(Unconfigured)
+	DRBD_DSTATE_REMOTE=(DUnknown)
 
 	drbd_status
 	status=$?
