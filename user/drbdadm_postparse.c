@@ -175,7 +175,7 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 				inherit_volumes(&res->volumes, host_info);
 			} else {
 				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
-					"with a \"host\" keyword, has no \"address\" keyword, and not mathing\n"
+					"with a \"host\" keyword, has no \"address\" keyword, and not matching\n"
 					"host section (\"on\" keyword)\n",
 					config_file, ha->config_line, res->name, ha->name);
 				config_valid = 0;
