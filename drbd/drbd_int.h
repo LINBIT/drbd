@@ -1469,8 +1469,6 @@ extern struct drbd_resource *drbd_find_resource(const char *name);
 extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
 
-extern int proc_details;
-
 /* drbd_req */
 extern void __drbd_make_request(struct drbd_device *, struct bio *, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);

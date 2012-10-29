@@ -86,7 +86,6 @@ MODULE_PARM_DESC(allow_oos, "DONT USE!");
 module_param(minor_count, uint, 0444);
 module_param(disable_sendpage, bool, 0644);
 module_param(allow_oos, bool, 0);
-module_param(proc_details, int, 0644);
 
 #ifdef DRBD_ENABLE_FAULTS
 int enable_faults;
@@ -107,7 +106,6 @@ module_param(fault_devs, int, 0644);
 unsigned int minor_count = DRBD_MINOR_COUNT_DEF;
 bool disable_sendpage;
 bool allow_oos;
-int proc_details;       /* Detail level in proc drbd*/
 
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
