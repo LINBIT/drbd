@@ -4270,6 +4270,11 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	} else if (argc > 0)
 		fprintf(stderr, "Ignoring additional arguments\n");
 
+	if (max_peers < 1 || max_peers > MAX_PEERS) {
+		fprintf(stderr, "MAX_PEERS argument not in allowed range 1 .. %d.\n", MAX_PEERS);
+		exit(20);
+	}
+
 	err = cfg->ops->open(cfg);
 
 	/* Maybe we want to use some library that provides detection of
