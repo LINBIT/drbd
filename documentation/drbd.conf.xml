@@ -234,8 +234,8 @@
               </indexterm> Defines a connection between two hosts. The <replaceable>name</replaceable>
 	      is optional. In case no name is given, the connection is implicitly named with the
 	      host name of peer node.
-	      It is required to give two <option>host</option> parameters in this section.</para>
-	      It may contain one <option>net</option> section.
+	      It is required to give two <option>host</option> parameters in this section.
+	      The <option>connection</option> section may contain a <option>net</option> section.</para>
           </listitem>
         </varlistentry>
 
