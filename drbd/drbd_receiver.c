@@ -963,8 +963,10 @@ retry:
 
 	spin_lock_irq(&mdev->req_lock);
 	rv = _drbd_set_state(_NS(mdev, conn, C_WF_REPORT_PARAMS), CS_VERBOSE, NULL);
-	if (mdev->state.conn != C_WF_REPORT_PARAMS)
+	if (mdev->state.conn != C_WF_REPORT_PARAMS) {
 		drbd_clear_flag(mdev, STATE_SENT);
+		rv = SS_UNKNOWN_ERROR;
+	}
 	spin_unlock_irq(&mdev->req_lock);
 
 	if (rv < SS_SUCCESS)
