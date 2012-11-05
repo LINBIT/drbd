@@ -21,7 +21,7 @@
   <refnamediv>
     <refname>drbd.conf</refname>
 
-    <refpurpose>Configuration file for DRBD's devices <indexterm significance="normal">
+    <refpurpose>Configuration file for DRBD devices<indexterm significance="normal">
         <primary>drbd.conf</primary>
       </indexterm></refpurpose>
   </refnamediv>
@@ -29,17 +29,51 @@
   <refsect1>
     <title>Introduction</title>
 
-    <para>The file <option>/etc/drbd.conf</option> is read by <option>drbdadm</option>.</para>
+    <para>DRBD implements block devices which replicate their data to all nodes
+    of a cluster.  The actual data and associated metadata are usually stored
+    redundandly on "ordinary" block devices on each cluster node.</para>
 
-    <para>The file format is designed as to allow to have a verbatim copy of the file on all
-    nodes of the cluster. It is highly recommended to do so in order to keep your configuration
-    manageable.</para>
+    <para>Replicated block devices are called
+    <option>/dev/drbd<replaceable>minor</replaceable></option> by default. They
+    are grouped into resources, with one or more device per resource.
+    Replication among the devices in a resource takes place in order. In DRBD,
+    We refer to the devices inside a resource as volumes.</para>
 
-    <para>By convention the main config contains two include statements. The first one includes
-    the file <option>/etc/drbd.d/global_common.conf</option>, the second one all file with a
-    <option>.res</option> suffix. It is highly recommended to keep all files in /etc/drbd.d/
-    in sync on all machines of the cluster.</para>
+    <para>In addition to resources, the volumes inside resources, and the
+    cluster nodes on which a resource is replicated, drbd implements the
+    concept of connections between nodes. At least for now, a connection is a
+    point-to-point link between two cluster nodes.</para>
 
+    <para>In DRBD 9.0, a resource can be replicated to two or more cluster
+    nodes (or to a single cluster node only when constructing a new cluster or
+    when recovering from a node failure). Connections must be defined between
+    all pairs of cluster nodes, at least for the time being.</para>
+
+    <para>DRBD consists of a kernel component, low-level user-space components
+    which interact with the kernel and perform basic operations
+    (<option>drbdsetup</option>, <option>drbdmeta</option>), and a high-level
+    user-space component which understands and processes the DRBD configuration
+    and translates it into basic operations of the low-level components
+    (<option>drbdadm</option>).</para>
+
+    <para>The default DRBD configuration consists of
+    <option>/etc/drbd.conf</option> and of additional files included from
+    there, usually <option>global_common.conf</option> and all
+    <option><replaceable>*</replaceable>.res</option> files inside
+    <option>/etc/drbd.d/</option>.  It has turned out to be useful to define
+    each resource in a separate
+    <option><replaceable>*</replaceable>.res</option> file.</para>
+
+    <para>The configuration files are designed so that each cluster node can
+    contain an identical copy of the entire cluster configuration. The host
+    name of each node determines which parts of the configuration apply (uname
+    -n).  It is highly recommended to keep the cluster configuration on all
+    nodes in sync by manually updating it on all nodes, or by automating the
+    process with <option>csync2</option> or a similar tool.</para>
+
+  </refsect1>
+  <refsect1>
+    <title>example configuration file</title>
     <para>
         <title>A small example.res file</title>
 
