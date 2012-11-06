@@ -567,7 +567,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(drbd_interval_empty(&req->i));
 		drbd_insert_interval(&mdev->read_requests, &req->i);
 
-		drbd_set_flag(mdev, UNPLUG_REMOTE);
+		set_bit(UNPLUG_REMOTE, &mdev->flags);
 
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
 		D_ASSERT((req->rq_state & RQ_LOCAL_MASK) == 0);
@@ -602,7 +602,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* otherwise we may lose an unplug, which may cause some remote
 		 * io-scheduler timeout to expire, increasing maximum latency,
 		 * hurting performance. */
-		drbd_set_flag(mdev, UNPLUG_REMOTE);
+		set_bit(UNPLUG_REMOTE, &mdev->flags);
 
 		/* queue work item to send data */
 		D_ASSERT(req->rq_state & RQ_NET_PENDING);
@@ -840,7 +840,7 @@ static bool remote_due_to_read_balancing(struct drbd_conf *mdev, sector_t sector
 		stripe_shift = (rbm - RB_32K_STRIPING + 15);
 		return (sector >> (stripe_shift - 9)) & 1;
 	case RB_ROUND_ROBIN:
-		return drbd_test_and_change_flag(mdev, READ_BALANCE_RR);
+		return test_and_change_bit(READ_BALANCE_RR, &mdev->flags);
 	case RB_PREFER_REMOTE:
 		return true;
 	case RB_PREFER_LOCAL:
@@ -1083,7 +1083,7 @@ void __drbd_make_request(struct drbd_conf *mdev, struct bio *bio, unsigned long 
 	 * Empty flushes don't need to go into the activity log, they can only
 	 * flush data for pending writes which are already in there. */
 	if (rw == WRITE && req->private_bio && req->i.size
-	&& !drbd_test_flag(mdev, AL_SUSPENDED)) {
+	&& !test_bit(AL_SUSPENDED, &mdev->flags)) {
 		req->rq_state |= RQ_IN_ACT_LOG;
 		drbd_al_begin_io(mdev, &req->i);
 	}

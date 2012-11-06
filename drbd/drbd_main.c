@@ -895,7 +895,7 @@ int _drbd_send_uuids(struct drbd_conf *mdev, u64 uuid_flags)
 	rcu_read_lock();
 	uuid_flags |= rcu_dereference(mdev->tconn->net_conf)->discard_my_data ? 1 : 0;
 	rcu_read_unlock();
-	uuid_flags |= drbd_test_flag(mdev, CRASHED_PRIMARY) ? 2 : 0;
+	uuid_flags |= test_bit(CRASHED_PRIMARY, &mdev->flags) ? 2 : 0;
 	uuid_flags |= mdev->new_state_tmp.disk == D_INCONSISTENT ? 4 : 0;
 	p->uuid[UI_FLAGS] = cpu_to_be64(uuid_flags);
 
@@ -1937,7 +1937,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 	spin_lock_irq(&mdev->tconn->req_lock);
 	if (mdev->state.pdsk >= D_INCONSISTENT && mdev->state.conn >= C_CONNECTED) {
 		D_ASSERT(mdev->state.role == R_PRIMARY);
-		if (drbd_test_and_clear_flag(mdev, UNPLUG_REMOTE)) {
+		if (test_and_clear_bit(UNPLUG_REMOTE, &mdev->flags)) {
 			/* add to the sender_work queue,
 			 * unless already queued.
 			 * XXX this might be a good addition to drbd_queue_work
@@ -2081,7 +2081,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 	drbd_free_bc(mdev->ldev);
 	mdev->ldev = NULL;
 
-	drbd_clear_flag(mdev, AL_SUSPENDED);
+	clear_bit(AL_SUSPENDED, &mdev->flags);
 
 	D_ASSERT(list_empty(&mdev->active_ee));
 	D_ASSERT(list_empty(&mdev->sync_ee));
@@ -2986,7 +2986,7 @@ void drbd_md_sync(struct drbd_conf *mdev)
 
 	del_timer(&mdev->md_sync_timer);
 	/* timer may be rearmed by drbd_md_mark_dirty() now. */
-	if (!drbd_test_and_clear_flag(mdev, MD_DIRTY))
+	if (!test_and_clear_bit(MD_DIRTY, &mdev->flags))
 		return;
 
 	/* We use here D_FAILED and not D_ATTACHING because we try to write
@@ -3139,7 +3139,7 @@ int drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 #ifdef DRBD_DEBUG_MD_SYNC
 void drbd_md_mark_dirty_(struct drbd_conf *mdev, unsigned int line, const char *func)
 {
-	if (!drbd_test_and_set_flag(mdev, MD_DIRTY)) {
+	if (!test_and_set_bit(MD_DIRTY, &mdev->flags)) {
 		mod_timer(&mdev->md_sync_timer, jiffies + HZ);
 		mdev->last_md_mark_dirty.line = line;
 		mdev->last_md_mark_dirty.func = func;
@@ -3148,7 +3148,7 @@ void drbd_md_mark_dirty_(struct drbd_conf *mdev, unsigned int line, const char *
 #else
 void drbd_md_mark_dirty(struct drbd_conf *mdev)
 {
-	if (!drbd_test_and_set_flag(mdev, MD_DIRTY))
+	if (!test_and_set_bit(MD_DIRTY, &mdev->flags))
 		mod_timer(&mdev->md_sync_timer, jiffies + 5*HZ);
 }
 #endif
@@ -3311,13 +3311,13 @@ STATIC int w_bitmap_io(struct drbd_work *w, int unused)
 		put_ldev(mdev);
 	}
 
-	drbd_clear_flag_unlock(mdev, BITMAP_IO);
+	clear_bit_unlock(BITMAP_IO, &mdev->flags);
 	wake_up(&mdev->misc_wait);
 
 	if (work->done)
 		work->done(mdev, rv);
 
-	drbd_clear_flag(mdev, BITMAP_IO_QUEUED);
+	clear_bit(BITMAP_IO_QUEUED, &mdev->flags);
 	work->why = NULL;
 	work->flags = 0;
 
@@ -3334,7 +3334,7 @@ void drbd_ldev_destroy(struct drbd_conf *mdev)
 		drbd_free_bc(mdev->ldev);
 		mdev->ldev = NULL;);
 
-	drbd_clear_flag(mdev, GO_DISKLESS);
+	clear_bit(GO_DISKLESS, &mdev->flags);
 }
 
 STATIC int w_go_diskless(struct drbd_work *w, int unused)
@@ -3363,7 +3363,7 @@ STATIC int w_go_diskless(struct drbd_work *w, int unused)
 	if (mdev->bitmap && mdev->ldev) {
 		if (drbd_bitmap_io_from_worker(mdev, drbd_bm_write,
 					"detach", BM_LOCKED_MASK)) {
-			if (drbd_test_flag(mdev, WAS_READ_ERROR)) {
+		  if (test_bit(WAS_READ_ERROR, &mdev->flags)) {
 				drbd_md_set_flag(mdev, MDF_FULL_SYNC);
 				drbd_md_sync(mdev);
 			}
@@ -3377,7 +3377,7 @@ STATIC int w_go_diskless(struct drbd_work *w, int unused)
 void drbd_go_diskless(struct drbd_conf *mdev)
 {
 	D_ASSERT(mdev->state.disk == D_FAILED);
-	if (!drbd_test_and_set_flag(mdev, GO_DISKLESS))
+	if (!test_and_set_bit(GO_DISKLESS, &mdev->flags))
 		drbd_queue_work(&mdev->tconn->sender_work, &mdev->go_diskless);
 }
 
@@ -3400,8 +3400,8 @@ void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 {
 	D_ASSERT(current == mdev->tconn->worker.task);
 
-	D_ASSERT(!drbd_test_flag(mdev, BITMAP_IO_QUEUED));
-	D_ASSERT(!drbd_test_flag(mdev, BITMAP_IO));
+	D_ASSERT(!test_bit(BITMAP_IO_QUEUED, &mdev->flags));
+	D_ASSERT(!test_bit(BITMAP_IO, &mdev->flags));
 	D_ASSERT(list_empty(&mdev->bm_io_work.w.list));
 	if (mdev->bm_io_work.why)
 		dev_err(DEV, "FIXME going to queue '%s' but '%s' still pending?\n",
@@ -3413,9 +3413,9 @@ void drbd_queue_bitmap_io(struct drbd_conf *mdev,
 	mdev->bm_io_work.flags = flags;
 
 	spin_lock_irq(&mdev->tconn->req_lock);
-	drbd_set_flag(mdev, BITMAP_IO);
+	set_bit(BITMAP_IO, &mdev->flags);
 	if (atomic_read(&mdev->ap_bio_cnt) == 0) {
-		if (!drbd_test_and_set_flag(mdev, BITMAP_IO_QUEUED))
+		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
 			drbd_queue_work(&mdev->tconn->sender_work, &mdev->bm_io_work.w);
 	}
 	spin_unlock_irq(&mdev->tconn->req_lock);

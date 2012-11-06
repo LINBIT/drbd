@@ -267,10 +267,10 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
 	unsigned long flags;
 	enum drbd_state_rv rv;
 
-	if (drbd_test_and_clear_flag(mdev, CL_ST_CHG_SUCCESS))
+	if (test_and_clear_bit(CL_ST_CHG_SUCCESS, &mdev->flags))
 		return SS_CW_SUCCESS;
 
-	if (drbd_test_and_clear_flag(mdev, CL_ST_CHG_FAIL))
+	if (test_and_clear_bit(CL_ST_CHG_FAIL, &mdev->flags))
 		return SS_CW_FAILED_BY_PEER;
 
 	spin_lock_irqsave(&mdev->tconn->req_lock, flags);
@@ -889,7 +889,7 @@ STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state 
 
 void drbd_resume_al(struct drbd_conf *mdev)
 {
-	if (drbd_test_and_clear_flag(mdev, AL_SUSPENDED))
+	if (test_and_clear_bit(AL_SUSPENDED, &mdev->flags))
 		dev_info(DEV, "Resumed AL updates\n");
 }
 
@@ -1064,7 +1064,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 						 MDF_PEER_OUT_DATED|MDF_CRASHED_PRIMARY);
 
 		mdf &= ~MDF_AL_CLEAN;
-		if (drbd_test_flag(mdev, CRASHED_PRIMARY))
+		if (test_bit(CRASHED_PRIMARY, &mdev->flags))
 			mdf |= MDF_CRASHED_PRIMARY;
 		if (mdev->state.role == R_PRIMARY ||
 		    (mdev->state.pdsk < D_INCONSISTENT && mdev->state.peer == R_PRIMARY))
@@ -1089,7 +1089,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
 	if (os.disk == D_INCONSISTENT && os.pdsk == D_INCONSISTENT &&
 	    os.peer == R_SECONDARY && ns.peer == R_PRIMARY)
-		drbd_set_flag(mdev, CONSIDER_RESYNC);
+		set_bit(CONSIDER_RESYNC, &mdev->flags);
 
 	/* Receiver should clean up itself */
 	if (os.conn != C_DISCONNECTING && ns.conn == C_DISCONNECTING)
@@ -1174,7 +1174,7 @@ int drbd_bitmap_io_from_worker(struct drbd_conf *mdev,
 	D_ASSERT(current == mdev->tconn->worker.task);
 
 	/* open coded non-blocking drbd_suspend_io(mdev); */
-	drbd_set_flag(mdev, SUSPEND_IO);
+	set_bit(SUSPEND_IO, &mdev->flags);
 
 	drbd_bm_lock(mdev, why, flags);
 	rv = io_fn(mdev);
@@ -1202,7 +1202,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	sib.ns = ns;
 
 	if (os.conn != C_CONNECTED && ns.conn == C_CONNECTED) {
-		drbd_clear_flag(mdev, CRASHED_PRIMARY);
+		clear_bit(CRASHED_PRIMARY, &mdev->flags);
 		if (mdev->p_uuid)
 			mdev->p_uuid[UI_FLAGS] &= ~((u64)2);
 	}
@@ -1250,7 +1250,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 			rcu_read_lock();
 			idr_for_each_entry(&tconn->volumes, odev, vnr)
-				drbd_clear_flag(odev, NEW_CUR_UUID);
+				clear_bit(NEW_CUR_UUID, &odev->flags);
 			rcu_read_unlock();
 			_tl_restart(tconn, RESEND);
 			_conn_request_state(tconn,
@@ -1305,7 +1305,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			if ((ns.role == R_PRIMARY || ns.peer == R_PRIMARY) &&
 			    mdev->ldev->md.uuid[UI_BITMAP] == 0 && ns.disk >= D_UP_TO_DATE) {
 				if (drbd_suspended(mdev)) {
-					drbd_set_flag(mdev, NEW_CUR_UUID);
+					set_bit(NEW_CUR_UUID, &mdev->flags);
 				} else {
 					drbd_uuid_new_current(mdev);
 					drbd_send_uuids(mdev);
@@ -1399,7 +1399,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			eh = rcu_dereference(mdev->ldev->disk_conf)->on_io_error;
 			rcu_read_unlock();
 
-			was_io_error = drbd_test_and_clear_flag(mdev, WAS_IO_ERROR);
+			was_io_error = test_and_clear_bit(WAS_IO_ERROR, &mdev->flags);
 
 			if (was_io_error && eh == EP_CALL_HELPER)
 				drbd_khelper(mdev, "local-io-error");
@@ -1417,7 +1417,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			 * So aborting local requests may cause crashes,
 			 * or even worse, silent data corruption.
 			 */
-			if (drbd_test_and_clear_flag(mdev, FORCE_DETACH))
+			if (test_and_clear_bit(FORCE_DETACH, &mdev->flags))
 				tl_abort_disk_io(mdev);
 
 			/* current state still has to be D_FAILED,
@@ -1465,7 +1465,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	/* Disks got bigger while they were detached */
 	if (ns.disk > D_NEGOTIATING && ns.pdsk > D_NEGOTIATING &&
-	    drbd_test_and_clear_flag(mdev, RESYNC_AFTER_NEG)) {
+	    test_and_clear_bit(RESYNC_AFTER_NEG, &mdev->flags)) {
 		if (ns.conn == C_CONNECTED)
 			resync_after_online_grow(mdev);
 	}
@@ -1555,9 +1555,9 @@ STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
 		if (ns_max.pdsk <= D_OUTDATED) {
 			rcu_read_lock();
 			idr_for_each_entry(&tconn->volumes, mdev, vnr) {
-				if (drbd_test_flag(mdev, NEW_CUR_UUID)) {
+				if (test_bit(NEW_CUR_UUID, &mdev->flags)) {
 					drbd_uuid_new_current(mdev);
-					drbd_clear_flag(mdev, NEW_CUR_UUID);
+					clear_bit(NEW_CUR_UUID, &mdev->flags);
 				}
 			}
 			rcu_read_unlock();

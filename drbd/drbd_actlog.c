@@ -137,7 +137,7 @@ void wait_until_done_or_force_detached(struct drbd_conf *mdev, struct drbd_backi
 		dt = MAX_SCHEDULE_TIMEOUT;
 
 	dt = wait_event_timeout(mdev->misc_wait,
-			*done || drbd_test_flag(mdev, FORCE_DETACH), dt);
+			*done || test_bit(FORCE_DETACH, &mdev->flags), dt);
 	if (dt == 0) {
 		dev_err(DEV, "meta-data IO operation timed out\n");
 		drbd_chk_io_error(mdev, 1, DRBD_FORCE_DETACH);
@@ -152,7 +152,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	struct bio *bio;
 	int err;
 
-	if ((rw & WRITE) && !drbd_test_flag(mdev, MD_NO_BARRIER))
+	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &mdev->flags))
 		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
 	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC;
 
@@ -196,7 +196,7 @@ STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 	if (err && mdev->md_io.done && (bio->bi_rw & DRBD_REQ_HARDBARRIER)) {
 		/* Try again with no barrier */
 		dev_warn(DEV, "Barriers not supported on meta data device - disabling\n");
-		drbd_set_flag(mdev, MD_NO_BARRIER);
+		set_bit(MD_NO_BARRIER, &mdev->flags);
 		rw &= ~DRBD_REQ_HARDBARRIER;
 		bio_put(bio);
 		goto retry;

@@ -887,8 +887,8 @@ int drbd_connected(struct drbd_conf *mdev)
 		err = drbd_send_uuids(mdev);
 	if (!err)
 		err = drbd_send_current_state(mdev);
-	drbd_clear_flag(mdev, USE_DEGR_WFC_T);
-	drbd_clear_flag(mdev, RESIZE_PENDING);
+	clear_bit(USE_DEGR_WFC_T, &mdev->flags);
+	clear_bit(RESIZE_PENDING, &mdev->flags);
 	mod_timer(&mdev->request_timer, jiffies + HZ); /* just start it here. */
 	return err;
 }
@@ -1080,9 +1080,9 @@ randomize:
 		rcu_read_unlock();
 
 		if (discard_my_data)
-			drbd_set_flag(mdev, DISCARD_MY_DATA);
+			set_bit(DISCARD_MY_DATA, &mdev->flags);
 		else
-			drbd_clear_flag(mdev, DISCARD_MY_DATA);
+			clear_bit(DISCARD_MY_DATA, &mdev->flags);
 
 		drbd_connected(mdev);
 		kobject_put(&mdev->kobj);
@@ -3084,7 +3084,7 @@ STATIC int drbd_uuid_compare(struct drbd_conf *mdev, int *rule_nr) __must_hold(l
 		}
 
 		/* Common power [off|failure] */
-		rct = (drbd_test_flag(mdev, CRASHED_PRIMARY) ? 1 : 0) +
+		rct = (test_bit(CRASHED_PRIMARY, &mdev->flags) ? 1 : 0) +
 			(mdev->p_uuid[UI_FLAGS] & 2);
 		/* lowest bit is set when we were primary,
 		 * next bit (weight 2) is set when peer was primary */
@@ -3275,9 +3275,9 @@ STATIC enum drbd_conns drbd_sync_handshake(struct drbd_conf *mdev, enum drbd_rol
 	}
 
 	if (hg == -100) {
-		if (drbd_test_flag(mdev, DISCARD_MY_DATA) && !(mdev->p_uuid[UI_FLAGS]&1))
+		if (test_bit(DISCARD_MY_DATA, &mdev->flags) && !(mdev->p_uuid[UI_FLAGS]&1))
 			hg = -1;
-		if (!drbd_test_flag(mdev, DISCARD_MY_DATA) && (mdev->p_uuid[UI_FLAGS]&1))
+		if (!test_bit(DISCARD_MY_DATA, &mdev->flags) && (mdev->p_uuid[UI_FLAGS]&1))
 			hg = 1;
 
 		if (abs(hg) < 100)
@@ -3910,7 +3910,7 @@ STATIC int receive_sizes(struct drbd_tconn *tconn, struct packet_info *pi)
 			 * needs to know my new size... */
 			drbd_send_sizes(mdev, 0, ddsf);
 		}
-		if (drbd_test_and_clear_flag(mdev, RESIZE_PENDING) ||
+		if (test_and_clear_bit(RESIZE_PENDING, &mdev->flags) ||
 		    (dd == grew && mdev->state.conn == C_CONNECTED)) {
 			if (mdev->state.pdsk >= D_INCONSISTENT &&
 			    mdev->state.disk >= D_INCONSISTENT) {
@@ -3919,7 +3919,7 @@ STATIC int receive_sizes(struct drbd_tconn *tconn, struct packet_info *pi)
 				else
 					resync_after_online_grow(mdev);
 			} else
-				drbd_set_flag(mdev, RESYNC_AFTER_NEG);
+				set_bit(RESYNC_AFTER_NEG, &mdev->flags);
 		}
 	}
 
@@ -4180,7 +4180,7 @@ STATIC int receive_state(struct drbd_tconn *tconn, struct packet_info *pi)
 			os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --overwrite-data */
-		cr |= drbd_test_flag(mdev, CONSIDER_RESYNC);
+		cr |= test_bit(CONSIDER_RESYNC, &mdev->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
 		cr |= (os.conn == C_CONNECTED &&
@@ -4212,7 +4212,7 @@ STATIC int receive_state(struct drbd_tconn *tconn, struct packet_info *pi)
 	spin_lock_irq(&mdev->tconn->req_lock);
 	if (os.i != drbd_read_state(mdev).i)
 		goto retry;
-	drbd_clear_flag(mdev, CONSIDER_RESYNC);
+	clear_bit(CONSIDER_RESYNC, &mdev->flags);
 	ns.peer = peer_state.role;
 	ns.pdsk = real_peer_disk;
 	ns.peer_isp = (peer_state.aftr_isp | peer_state.user_isp);
@@ -4220,14 +4220,14 @@ STATIC int receive_state(struct drbd_tconn *tconn, struct packet_info *pi)
 		ns.disk = mdev->new_state_tmp.disk;
 	cs_flags = CS_VERBOSE + (os.conn < C_CONNECTED && ns.conn >= C_CONNECTED ? 0 : CS_HARD);
 	if (ns.pdsk == D_CONSISTENT && drbd_suspended(mdev) && ns.conn == C_CONNECTED && os.conn < C_CONNECTED &&
-	    drbd_test_flag(mdev, NEW_CUR_UUID)) {
+	    test_bit(NEW_CUR_UUID, &mdev->flags)) {
 		/* Do not allow tl_restart(RESEND) for a rebooted peer. We can only allow this
 		   for temporal network outages! */
 		spin_unlock_irq(&mdev->tconn->req_lock);
 		dev_err(DEV, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_clear(mdev->tconn);
 		drbd_uuid_new_current(mdev);
-		drbd_clear_flag(mdev, NEW_CUR_UUID);
+		clear_bit(NEW_CUR_UUID, &mdev->flags);
 		conn_request_state(mdev->tconn, NS2(conn, C_PROTOCOL_ERROR, susp, 0), CS_HARD);
 		return -EIO;
 	}
@@ -4251,7 +4251,7 @@ STATIC int receive_state(struct drbd_tconn *tconn, struct packet_info *pi)
 		}
 	}
 
-	drbd_clear_flag(mdev, DISCARD_MY_DATA);
+	clear_bit(DISCARD_MY_DATA, &mdev->flags);
 
 	drbd_md_sync(mdev); /* update connected indicator, la_size, ... */
 
@@ -4805,7 +4805,7 @@ STATIC int drbd_disconnected(struct drbd_conf *mdev)
 
 	/* serialize with bitmap writeout triggered by the state change,
 	 * if any. */
-	wait_event(mdev->misc_wait, !drbd_test_flag(mdev, BITMAP_IO));
+	wait_event(mdev->misc_wait, !test_bit(BITMAP_IO, &mdev->flags));
 
 	/* tcp_close and release of sendpage pages can be deferred.  I don't
 	 * want to use SO_LINGER, because apparently it can be deferred for
@@ -5162,9 +5162,9 @@ STATIC int got_RqSReply(struct drbd_tconn *tconn, struct packet_info *pi)
 	}
 
 	if (retcode >= SS_SUCCESS) {
-		drbd_set_flag(mdev, CL_ST_CHG_SUCCESS);
+		set_bit(CL_ST_CHG_SUCCESS, &mdev->flags);
 	} else {
-		drbd_set_flag(mdev, CL_ST_CHG_FAIL);
+		set_bit(CL_ST_CHG_FAIL, &mdev->flags);
 		dev_err(DEV, "Requested state change failed by peer: %s (%d)\n",
 			drbd_set_st_err_str(retcode), retcode);
 	}
@@ -5381,7 +5381,7 @@ STATIC int got_BarrierAck(struct drbd_tconn *tconn, struct packet_info *pi)
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 		if (mdev->state.conn == C_AHEAD &&
 		    atomic_read(&mdev->ap_in_flight) == 0 &&
-		    !drbd_test_and_set_flag(mdev, AHEAD_TO_SYNC_SOURCE)) {
+		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &mdev->flags)) {
 			mdev->start_resync_timer.expires = jiffies + HZ;
 			add_timer(&mdev->start_resync_timer);
 		}

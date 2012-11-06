@@ -785,7 +785,7 @@ enum {
 #define EE_IN_INTERVAL_TREE	(1<<__EE_IN_INTERVAL_TREE)
 
 /* flag bits per mdev */
-enum drbd_flag {
+enum {
 	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
 	MD_DIRTY,		/* current uuids and flags not yet on disk */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
@@ -815,9 +815,6 @@ enum drbd_flag {
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	READ_BALANCE_RR,
-
-	/* keep last */
-	DRBD_N_FLAGS,
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -1030,7 +1027,8 @@ struct drbd_conf {
 	int vnr;			/* volume number within the connection */
 	struct kobject kobj;
 
-	unsigned long drbd_flags[(DRBD_N_FLAGS + BITS_PER_LONG -1)/BITS_PER_LONG];
+	/* things that are stored as / read from meta data on disk */
+	unsigned long flags;
 
 	/* configured by drbdsetup */
 	struct drbd_backing_dev *ldev __protected_by(local);
@@ -1168,41 +1166,6 @@ struct drbd_conf {
 	unsigned int peer_max_bio_size;
 	unsigned int local_max_bio_size;
 };
-
-static inline void drbd_set_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	set_bit(f, &mdev->drbd_flags[0]);
-}
-
-static inline void drbd_clear_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	clear_bit(f, &mdev->drbd_flags[0]);
-}
-
-static inline void drbd_clear_flag_unlock(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	clear_bit_unlock(f, &mdev->drbd_flags[0]);
-}
-
-static inline int drbd_test_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	return test_bit(f, &mdev->drbd_flags[0]);
-}
-
-static inline int drbd_test_and_set_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	return test_and_set_bit(f, &mdev->drbd_flags[0]);
-}
-
-static inline int drbd_test_and_clear_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	return test_and_clear_bit(f, &mdev->drbd_flags[0]);
-}
-
-static inline int drbd_test_and_change_flag(struct drbd_conf *mdev, enum drbd_flag f)
-{
-	return test_and_change_bit(f, &mdev->drbd_flags[0]);
-}
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
 {
@@ -1889,11 +1852,11 @@ static inline void __drbd_chk_io_error_(struct drbd_conf *mdev,
 		 * we read meta data only once during attach,
 		 * which will fail in case of errors.
 		 */
-		drbd_set_flag(mdev, WAS_IO_ERROR);
+		set_bit(WAS_IO_ERROR, &mdev->flags);
 		if (df == DRBD_READ_ERROR)
-			drbd_set_flag(mdev, WAS_READ_ERROR);
+			set_bit(WAS_READ_ERROR, &mdev->flags);
 		if (df == DRBD_FORCE_DETACH)
-			drbd_set_flag(mdev, FORCE_DETACH);
+			set_bit(FORCE_DETACH, &mdev->flags);
 		if (mdev->state.disk > D_FAILED) {
 			_drbd_set_state(_NS(mdev, disk, D_FAILED), CS_HARD, NULL);
 			dev_err(DEV,
@@ -2396,7 +2359,7 @@ static inline bool may_inc_ap_bio(struct drbd_conf *mdev)
 
 	if (drbd_suspended(mdev))
 		return false;
-	if (drbd_test_flag(mdev, SUSPEND_IO))
+	if (test_bit(SUSPEND_IO, &mdev->flags))
 		return false;
 
 	/* to avoid potential deadlock or bitmap corruption,
@@ -2411,7 +2374,7 @@ static inline bool may_inc_ap_bio(struct drbd_conf *mdev)
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&mdev->ap_bio_cnt) > mxb)
 		return false;
-	if (drbd_test_flag(mdev, BITMAP_IO))
+	if (test_bit(BITMAP_IO, &mdev->flags))
 		return false;
 	return true;
 }
@@ -2449,8 +2412,8 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 
 	D_ASSERT(ap_bio >= 0);
 
-	if (ap_bio == 0 && drbd_test_flag(mdev, BITMAP_IO)) {
-		if (!drbd_test_and_set_flag(mdev, BITMAP_IO_QUEUED))
+	if (ap_bio == 0 && test_bit(BITMAP_IO, &mdev->flags)) {
+		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
 			drbd_queue_work(&mdev->tconn->sender_work, &mdev->bm_io_work.w);
 	}
 
@@ -2516,12 +2479,12 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 		return;
 	}
 
-	if (drbd_test_flag(mdev, MD_NO_BARRIER))
+	if (test_bit(MD_NO_BARRIER, &mdev->flags))
 		return;
 
 	r = blkdev_issue_flush(mdev->ldev->md_bdev, GFP_NOIO, NULL);
 	if (r) {
-		drbd_set_flag(mdev, MD_NO_BARRIER);
+		set_bit(MD_NO_BARRIER, &mdev->flags);
 		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
