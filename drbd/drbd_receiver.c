@@ -3938,6 +3938,10 @@ STATIC int receive_uuids(struct drbd_tconn *tconn, struct packet_info *pi)
 		return config_unknown_volume(tconn, pi);
 
 	p_uuid = kmalloc(sizeof(u64)*UI_EXTENDED_SIZE, GFP_NOIO);
+	if (!p_uuid) {
+		dev_err(DEV, "kmalloc of p_uuid failed\n");
+		return false;
+	}
 
 	for (i = UI_CURRENT; i < UI_EXTENDED_SIZE; i++)
 		p_uuid[i] = be64_to_cpu(p->uuid[i]);
