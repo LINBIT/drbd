@@ -266,14 +266,6 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf3_handler		\
-	.show_in_usage = 3,		\
-	.res_name_required = 1,		\
-	.iterate_volumes = 0,		\
-	.vol_id_required = 1,		\
-	.verify_ips = 0,		\
-	.use_cached_config_file = 1,	\
-
 #define DRBD_acf3_res_handler		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
@@ -412,17 +404,17 @@ struct adm_cmd cmds[] = {
 	{"new-resource", adm_new_resource, DRBD_acf2_sh_resname},
 	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
 
-	{"before-resync-target", adm_khelper, DRBD_acf3_handler},
-	{"after-resync-target", adm_khelper, DRBD_acf3_handler},
-	{"before-resync-source", adm_khelper, DRBD_acf3_handler},
-	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_handler},
-	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_handler},
+	{"before-resync-target", adm_khelper, DRBD_acf3_res_handler},
+	{"after-resync-target", adm_khelper, DRBD_acf3_res_handler},
+	{"before-resync-source", adm_khelper, DRBD_acf3_res_handler},
+	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_res_handler},
+	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_res_handler},
 	{"fence-peer", adm_khelper, DRBD_acf3_res_handler},
-	{"local-io-error", adm_khelper, DRBD_acf3_handler},
-	{"pri-lost", adm_khelper, DRBD_acf3_handler},
-	{"initial-split-brain", adm_khelper, DRBD_acf3_handler},
-	{"split-brain", adm_khelper, DRBD_acf3_handler},
-	{"out-of-sync", adm_khelper, DRBD_acf3_handler},
+	{"local-io-error", adm_khelper, DRBD_acf3_res_handler},
+	{"pri-lost", adm_khelper, DRBD_acf3_res_handler},
+	{"initial-split-brain", adm_khelper, DRBD_acf3_res_handler},
+	{"split-brain", adm_khelper, DRBD_acf3_res_handler},
+	{"out-of-sync", adm_khelper, DRBD_acf3_res_handler},
 
 	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
 	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
@@ -1461,101 +1453,12 @@ static int adm_generic_b(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static struct connection
-*determin_connection(struct d_resource *res, char *peer_af, char *peer_addr)
-{
-	struct connection *conn;
-	struct hname_address *ha;
-	int hit = 0;
-
-	for_each_connection(conn, &res->connections) {
-		STAILQ_FOREACH(ha, &conn->hname_address_pairs, link) {
-			if (!strcmp(ha->address.af, peer_af) &&
-			    !strcmp(ha->address.addr, peer_addr)) {
-				if (!conn->peer_address)
-					conn->peer_address = &ha->address;
-				hit = 1;
-			}
-			if (!strcmp(ha->host_info->address.af, peer_af) &&
-			    !strcmp(ha->host_info->address.addr, peer_addr)) {
-				if (!conn->peer_address)
-					conn->peer_address = &ha->host_info->address;
-				hit = 1;
-			}
-
-			if (hit)
-				return conn;
-		}
-	}
-
-	return NULL;
-}
-
 static int adm_khelper(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
-	struct d_volume *vol = ctx->vol;
-	struct connection *conn;
 	int rv = 0;
 	char *sh_cmd;
-	char minor_string[8];
-	char volume_string[8];
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
-
-	/* Since 8.3.2 we get DRBD_PEER_AF and DRBD_PEER_ADDRESS from the kernel.
-	   If we do not know the peer by now, use these to find the peer. */
-	conn = determin_connection(res,
-				   getenv("DRBD_PEER_AF"),
-				   getenv("DRBD_PEER_ADDRESS"));
-	/* ctx->conn = conn */
-
-	if (conn) {
-		setenv("DRBD_PEER_AF", conn->peer_address->af, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEER_ADDRESS", conn->peer_address->addr, 1);	/* since 8.3.0 */
-		setenv("DRBD_PEERS", names_to_str(&conn->peer->on_hosts), 1);
-			/* since 8.3.0, but not usable when using a config with "floating" statements. */
-	}
-
-	if (vol) {
-		snprintf(minor_string, sizeof(minor_string), "%u", vol->device_minor);
-		snprintf(volume_string, sizeof(volume_string), "%u", vol->vnr);
-		setenv("DRBD_MINOR", minor_string, 1);
-		setenv("DRBD_VOLUME", volume_string, 1);
-		setenv("DRBD_LL_DISK", vol->disk, 1);
-	} else {
-		char *minor_list;
-		char *separator = "";
-		char *pos;
-		int volumes = 0;
-		int bufsize;
-		int n;
-
-		for_each_volume(vol, &res->me->volumes)
-			volumes++;
-
-		/* max minor number is 2**20 - 1, which is 7 decimal digits.
-		 * plus separator respective trailing zero. */
-		bufsize = volumes * 8 + 1;
-		minor_list = alloca(bufsize);
-
-		pos = minor_list;
-		for_each_volume(vol, &res->me->volumes) {
-			n = snprintf(pos, bufsize, "%s%d", separator, vol->device_minor);
-			if (n >= bufsize) {
-				/* "can not happen" */
-				fprintf(stderr, "buffer too small when generating the minor list\n");
-				abort();
-				break;
-			}
-			bufsize -= n;
-			pos += n;
-			separator = " ";
-		}
-		setenv("DRBD_MINOR", minor_list, 1);
-	}
-
-	setenv("DRBD_RESOURCE", res->name, 1);
-	setenv("DRBD_CONF", config_save, 1);
 
 	if ((sh_cmd = get_opt_val(&res->handlers, ctx->arg, NULL))) {
 		argv[2] = sh_cmd;
@@ -2925,24 +2828,6 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 				goto help;
 			}
 		}
-	}
-
-	/* For handlers, when called from kernel, there is nothing more on the
-	 * commandline.  What counts are the environment variables
-	 * DRBD_RESOURCE, DRBD_MINOR and DRBD_VOLUME.
-	 *
-	 * If somehing is given on the command line, that superseeded the
-	 * environment. This can be used to test handlers from the shell. */
-	if ((*cmd)->function == adm_khelper && !(*resource_names)[0]) {
-		char *res = getenv("DRBD_RESOURCE");
-		char *volume = getenv("DRBD_VOLUME");
-
-		*resource_names = realloc(*resource_names, 2 * sizeof(char **));
-		if (res && volume)
-			m_asprintf(*resource_names, "%s/%s", res, volume);
-		else if (res)
-			m_asprintf(*resource_names, "%s", res);
-		(*resource_names)[1] = NULL;
 	}
 
 	return 0;
