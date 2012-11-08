@@ -393,73 +393,159 @@ static void conn_md_sync(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-struct khelper_address_buffer {
-	char family[20];
-	char address[60];
+/* Buffer to construct the environment of a user-space helper in. */
+struct env {
+	char *buffer;
+	int size, pos;
 };
 
-static void khelper_put_address(struct khelper_address_buffer *buffer,
-				const char *prefix, struct sockaddr_storage *storage)
+/* Print into an env buffer. */
+static __printf(2, 3) int env_print(struct env *env, const char *fmt, ...)
 {
-	char *afs;
+	va_list args;
+	int pos, ret;
+
+	pos = env->pos;
+	if (pos < 0)
+		return pos;
+	va_start(args, fmt);
+	ret = vsnprintf(env->buffer + pos, env->size - pos, fmt, args);
+	va_end(args);
+	if (ret < 0) {
+		env->pos = ret;
+		goto out;
+	}
+	if (ret >= env->size - pos) {
+		ret = env->pos = -ENOMEM;
+		goto out;
+	}
+	env->pos += ret + 1;
+    out:
+	return ret;
+}
+
+/* Put env variables for an address into an env buffer. */
+static void env_print_address(struct env *env, const char *prefix,
+			      struct sockaddr_storage *storage)
+{
+	const char *afs;
 
 	switch (((struct sockaddr *)storage)->sa_family) {
 	case AF_INET6:
 		afs = "ipv6";
-		snprintf(buffer->address, sizeof(buffer->address),
-			 "%sADDRESS=%pI6", prefix,
-			 &((struct sockaddr_in6 *)storage)->sin6_addr);
+		env_print(env, "%sADDRESS=%pI6", prefix,
+			  &((struct sockaddr_in6 *)storage)->sin6_addr);
 		break;
 	case AF_INET:
 		afs = "ipv4";
-		snprintf(buffer->address, sizeof(buffer->address),
-			 "%sADDRESS=%pI4", prefix,
-			 &((struct sockaddr_in *)storage)->sin_addr);
+		env_print(env, "%sADDRESS=%pI4", prefix,
+			  &((struct sockaddr_in *)storage)->sin_addr);
 		break;
 	default:
 		afs = "ssocks";
-		snprintf(buffer->address, sizeof(buffer->address),
-			 "%sADDRESS=%pI4", prefix,
-			 &((struct sockaddr_in *)storage)->sin_addr);
+		env_print(env, "%sADDRESS=%pI4", prefix,
+			  &((struct sockaddr_in *)storage)->sin_addr);
 	}
-	snprintf(buffer->family, sizeof(buffer->family), "%sAF=%s", prefix, afs);
+	env_print(env, "%sAF=%s", prefix, afs);
+}
+
+/* Construct char **envp inside an env buffer. */
+static char **make_envp(struct env *env)
+{
+	char **envp, *b;
+	unsigned int n;
+
+	if (env->pos < 0)
+		return NULL;
+	if (env->pos >= env->size)
+		goto out_nomem;
+	env->buffer[env->pos++] = 0;
+	for (b = env->buffer, n = 1; *b; n++)
+		b = strchr(b, 0) + 1;
+	if (env->size - env->pos < sizeof(envp) * n)
+		goto out_nomem;
+	envp = (char **)(env->buffer + env->size) - n;
+
+	for (b = env->buffer; *b; ) {
+		*envp++ = b;
+		b = strchr(b, 0) + 1;
+	}
+	*envp++ = NULL;
+	return envp - n;
+
+    out_nomem:
+	env->pos = -ENOMEM;
+	return NULL;
 }
 
 int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
 {
 	struct drbd_resource *resource = device ? device->resource : connection->resource;
-	char *argv[] = {usermode_helper, cmd, NULL };
-	char resource_name[14 + 128];
-	char minor[30];
-	char volume[30];
-	struct khelper_address_buffer my_addr, peer_addr;
-	char *envp[11];
-	int envi = 0, ret;
+	char *argv[] = {usermode_helper, cmd, resource->name, NULL };
+	struct env env = { .size = PAGE_SIZE };
+	char **envp;
+	int ret;
+
+    enlarge_buffer:
+	env.buffer = (char *)__get_free_pages(GFP_NOIO, get_order(env.size));
+	if (!env.buffer) {
+		ret = -ENOMEM;
+		goto out_err;
+	}
+	env.pos = 0;
+
+	rcu_read_lock();
+	env_print(&env, "HOME=/");
+	env_print(&env, "TERM=linux");
+	env_print(&env, "PATH=/sbin:/usr/sbin:/bin:/usr/bin");
+	if (device) {
+		env_print(&env, "DRBD_MINOR=%u", device_to_minor(device));
+		env_print(&env, "DRBD_VOLUME=%u", device->vnr);
+		if (get_ldev(device)) {
+			struct disk_conf *disk_conf =
+				rcu_dereference(device->ldev->disk_conf);
+			env_print(&env, "DRBD_BACKING_DEV=%s",
+				  disk_conf->backing_dev);
+			put_ldev(device);
+		}
+	}
+	if (connection) {
+		env_print_address(&env, "DRBD_MY_", &connection->my_addr);
+		env_print_address(&env, "DRBD_PEER_", &connection->peer_addr);
+	}
+	if (connection && !device) {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+
+			env_print(&env, "DRBD_MINOR_%u=%u",
+				  vnr, peer_device->device->minor);
+			if (get_ldev(device)) {
+				struct disk_conf *disk_conf =
+					rcu_dereference(device->ldev->disk_conf);
+				env_print(&env, "DRBD_BACKING_DEV_%u=%s",
+					  vnr, disk_conf->backing_dev);
+				put_ldev(device);
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	envp = make_envp(&env);
+	if (!envp) {
+		if (env.pos == -ENOMEM) {
+			free_pages((unsigned long)env.buffer, get_order(env.size));
+			env.size += PAGE_SIZE;
+			goto enlarge_buffer;
+		}
+		ret = env.pos;
+		goto out_err;
+	}
 
 	if (current == resource->worker.task)
 		set_bit(CALLBACK_PENDING, &resource->flags);
-
-	envp[envi++] = "HOME=/";
-	envp[envi++] = "TERM=linux";
-	envp[envi++] = "PATH=/sbin:/usr/sbin:/bin:/usr/bin";
-	snprintf(resource_name, sizeof(resource_name), "DRBD_RESOURCE=%s", resource->name);
-	envp[envi++] = resource_name;
-	if (device) {
-		snprintf(minor, sizeof(minor), "DRBD_MINOR=%u", device_to_minor(device));
-		envp[envi++] = minor;
-		snprintf(volume, sizeof(volume), "DRBD_VOLUME=%u", device->vnr);
-		envp[envi++] = volume;
-	}
-	if (connection) {
-			khelper_put_address(&my_addr, "DRBD_MY_", &connection->my_addr);
-			envp[envi++] = my_addr.family;
-			envp[envi++] = my_addr.address;
-			khelper_put_address(&peer_addr, "DRBD_PEER_", &connection->peer_addr);
-			envp[envi++] = peer_addr.family;
-			envp[envi++] = peer_addr.address;
-	}
-	envp[envi++] = NULL;
-	BUG_ON(envi > ARRAY_SIZE(envp));
 
 	/* The helper may take some time.
 	 * write out any unsynced meta data changes now */
@@ -487,7 +573,13 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	if (ret < 0) /* Ignore any ERRNOs we got. */
 		ret = 0;
 
+	free_pages((unsigned long)env.buffer, get_order(env.size));
 	return ret;
+
+    out_err:
+	drbd_err(resource, "Could not call %s user-space helper: error %d"
+		 "out of memory\n", cmd, ret);
+	return 0;
 }
 
 bool conn_try_outdate_peer(struct drbd_connection *connection)
