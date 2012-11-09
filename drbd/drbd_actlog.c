@@ -799,6 +799,18 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 	}
 }
 
+static void after_clear_bits(struct drbd_peer_device *peer_device, unsigned long sbnr,
+			     unsigned long count)
+{
+	unsigned int enr;
+
+	BUILD_BUG_ON(BM_EXT_SHIFT < BM_BLOCK_SHIFT);
+	enr = sbnr >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
+
+	drbd_advance_rs_marks(peer_device, drbd_bm_total_weight(peer_device));
+	drbd_try_clear_on_disk_bm(peer_device, enr, count, true);
+}
+
 static bool __set_in_sync(struct drbd_peer_device *peer_device,
 			  unsigned long sbnr, unsigned long ebnr)
 {
@@ -808,18 +820,26 @@ static bool __set_in_sync(struct drbd_peer_device *peer_device,
 	count = drbd_bm_clear_bits(device, peer_device->bitmap_index, sbnr, ebnr);
 	if (count) {
 		unsigned long flags;
-		unsigned int enr;
 
-		BUILD_BUG_ON(BM_EXT_SHIFT < BM_BLOCK_SHIFT);
-		enr = sbnr >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
-
-		drbd_advance_rs_marks(peer_device, drbd_bm_total_weight(peer_device));
 		spin_lock_irqsave(&device->al_lock, flags);
-		drbd_try_clear_on_disk_bm(peer_device, enr, count, true);
+		after_clear_bits(peer_device, sbnr, count);
 		spin_unlock_irqrestore(&device->al_lock, flags);
 		return true;
 	}
 	return false;
+}
+
+static bool __set_in_sync_locked(struct drbd_peer_device *peer_device,
+				 unsigned long sbnr, unsigned long ebnr)
+{
+	struct drbd_device *device = peer_device->device;
+	unsigned long count;
+
+	count = drbd_bm_clear_bits(device, peer_device->bitmap_index, sbnr, ebnr);
+	if (count)
+		after_clear_bits(peer_device, sbnr, count);
+
+	return count > 0;
 }
 
 /* clear the bit corresponding to the piece of storage in question:
@@ -1038,7 +1058,7 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 			wake_up |= __set_out_of_sync(peer_device,
 						     set_start, set_end);
 		else if (clear_start <= clear_end)
-			set |= __set_in_sync(peer_device,
+			set |= __set_in_sync_locked(peer_device,
 					     clear_start, clear_end);
 	}
 	rcu_read_unlock();
