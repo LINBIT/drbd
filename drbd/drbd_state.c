@@ -813,7 +813,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
-		bool all_peer_disks_consistent[2];
+		bool one_peer_disk_up_to_date[2];
 		enum which_state which;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
@@ -823,19 +823,18 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			return SS_LOWER_THAN_OUTDATED;
 
 		for (which = OLD; which <= NEW; which++) {
-			all_peer_disks_consistent[which] = true;
+			one_peer_disk_up_to_date[which] = false;
 			for_each_peer_device(peer_device, device) {
 				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 
-				if (peer_disk_state[which] <= D_INCONSISTENT ||
-				    peer_disk_state[which] == D_UNKNOWN)
-					all_peer_disks_consistent[which] = false;
+				if (peer_disk_state[which] == D_UP_TO_DATE) {
+					one_peer_disk_up_to_date[which] = true;
+					break;
+				}
 			}
 		}
-		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE &&
-		      (disk_state[OLD] <= D_INCONSISTENT || !all_peer_disks_consistent[OLD])) &&
-		     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE &&
-		      (disk_state[NEW] <= D_INCONSISTENT || !all_peer_disks_consistent[NEW])))
+		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
+		    (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]))
 			return SS_NO_UP_TO_DATE_DISK;
 
 		for_each_peer_device(peer_device, device) {
