@@ -119,6 +119,12 @@ drbdsetup_xml-help_%.xml: ../user/drbdsetup
 drbdsetup_%.xml: drbdsetup_xml-help_%.xml xml-usage-to-docbook.xsl
 	$(XSLTPROC) -o $@ xml-usage-to-docbook.xsl $<
 
+drbd.conf.xml: drbd.conf.xml.in drbd.conf.xsl drbdsetup-options.xml
+	$(XSLTPROC) -o $@ drbd.conf.xsl $<
+
+drbdsetup.xml: drbdsetup.xml.in drbdsetup.xsl drbdsetup-options.xml
+	$(XSLTPROC) -o $@ drbdsetup.xsl $<
+
 distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
