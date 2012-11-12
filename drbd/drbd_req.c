@@ -1163,7 +1163,7 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device = req->device;
-	enum drbd_read_balancing rbm;
+	enum drbd_read_balancing rbm = RB_PREFER_REMOTE;
 
 	if (req->private_bio) {
 		if (!drbd_may_do_local_read(device,
@@ -1173,26 +1173,29 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 			put_ldev(device);
 		}
 	}
+
+	if (device->disk_state[NOW] > D_DISKLESS) {
+		rcu_read_lock();
+		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
+		rcu_read_unlock();
+		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
+			rcu_read_unlock();
+			return NULL; /* submit locally */
+		}
+	}
+
 	/* TODO: improve read balancing decisions, take into account drbd
 	 * protocol, all peers, pending requests etc. */
 
-	rcu_read_lock();
-	rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
-	if (rbm == RB_PREFER_LOCAL && req->private_bio) {
-		rcu_read_unlock();
-		return NULL; /* submit locally */
-	}
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
 			continue;
 		if (req->private_bio == NULL ||
 		    remote_due_to_read_balancing(device, peer_device,
 						 req->i.sector, rbm)) {
-			rcu_read_unlock();
 			return peer_device;
 		}
 	}
-	rcu_read_unlock();
 
 	return NULL;
 }
