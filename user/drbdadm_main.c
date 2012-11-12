@@ -225,19 +225,19 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
  * to avoid merge conflicts and unreadable diffs
  * when we add the next flag */
 
-#define DRBD_acf1_default		\
+#define ACF1_DEFAULT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_resname		\
+#define ACF1_RESNAME			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_connect		\
+#define ACF1_CONNECT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 0,		\
@@ -245,20 +245,20 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_disconnect		\
+#define ACF1_DISCONNECT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_defnet		\
+#define ACF1_DEFNET			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_peer_device		\
+#define ACF1_PEER_DEVICE		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 1,		\
@@ -266,7 +266,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf3_res_handler		\
+#define ACF3_RES_HANDLER		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 0,		\
@@ -274,14 +274,14 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 0,		\
 	.use_cached_config_file = 1,	\
 
-#define DRBD_acf4_advanced		\
+#define ACF4_ADVANCED			\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf4_advanced_need_vol	\
+#define ACF4_ADVANCED_NEED_VOL		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
 	.iterate_volumes = 0,		\
@@ -289,39 +289,39 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
 
-#define DRBD_acf1_dump			\
+#define ACF1_DUMP			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
 	.test_config = 1,		\
 
-#define DRBD_acf2_shell			\
+#define ACF2_SHELL			\
 	.show_in_usage = 2,		\
 	.iterate_volumes = 1,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 
-#define DRBD_acf2_sh_resname		\
+#define ACF2_SH_RESNAME			\
 	.show_in_usage = 2,		\
 	.iterate_volumes = 0,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 
-#define DRBD_acf2_proxy			\
+#define ACF2_PROXY			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,		\
 	.need_peer = 1,			\
 	.is_proxy_cmd = 1,		\
 
-#define DRBD_acf2_hook			\
+#define ACF2_HOOK			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
 	.verify_ips = 0,                \
 	.use_cached_config_file = 1,	\
 
-#define DRBD_acf2_gen_shell		\
+#define ACF2_GEN_SHELL			\
 	.show_in_usage = 2,		\
 	.res_name_required = 0,		\
 	.verify_ips = 0,		\
@@ -335,93 +335,93 @@ struct adm_cmd cmds[] = {
 	 *  - handler
 	 *  - advanced
 	 ***/
-	{"attach", adm_attach, DRBD_acf1_default
+	{"attach", adm_attach, ACF1_DEFAULT
 	 .drbdsetup_ctx = &attach_cmd_ctx, },
-	{"disk-options", adm_disk_options, DRBD_acf1_default
+	{"disk-options", adm_disk_options, ACF1_DEFAULT
 	 .drbdsetup_ctx = &disk_options_ctx, },
-	{"detach", adm_generic_l, DRBD_acf1_default
+	{"detach", adm_generic_l, ACF1_DEFAULT
 	 .drbdsetup_ctx = &detach_cmd_ctx, },
-	{"connect", adm_connect, DRBD_acf1_connect
+	{"connect", adm_connect, ACF1_CONNECT
 	 .drbdsetup_ctx = &connect_cmd_ctx, },
-	{"net-options", adm_net_options, DRBD_acf1_connect
+	{"net-options", adm_net_options, ACF1_CONNECT
 	 .drbdsetup_ctx = &net_options_ctx, },
-	{"disconnect", adm_disconnect, DRBD_acf1_disconnect
+	{"disconnect", adm_disconnect, ACF1_DISCONNECT
 	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
-	{"up", adm_up, DRBD_acf1_resname },
-	{"resource-options", adm_res_options, DRBD_acf1_resname
+	{"up", adm_up, ACF1_RESNAME },
+	{"resource-options", adm_res_options, ACF1_RESNAME
 	 .drbdsetup_ctx = &resource_options_ctx, },
-	{"down", adm_generic_l, DRBD_acf1_resname},
-	{"primary", adm_generic_l, DRBD_acf1_resname
+	{"down", adm_generic_l, ACF1_RESNAME},
+	{"primary", adm_generic_l, ACF1_RESNAME
 	 .drbdsetup_ctx = &primary_cmd_ctx, },
-	{"secondary", adm_generic_l, DRBD_acf1_resname},
-	{"invalidate", adm_generic_b, DRBD_acf1_peer_device},
-	{"invalidate-remote", adm_generic_l, DRBD_acf1_peer_device},
-	{"outdate", adm_outdate, DRBD_acf1_default},
-	{"resize", adm_resize, DRBD_acf1_defnet},
-	{"verify", adm_generic_s, DRBD_acf1_peer_device},
-	{"pause-sync", adm_generic_s, DRBD_acf1_peer_device},
-	{"resume-sync", adm_generic_s, DRBD_acf1_peer_device},
-	{"adjust", adm_adjust, DRBD_acf1_resname},
-	{"adjust-with-progress", adm_adjust_wp, DRBD_acf1_connect},
-	{"wait-connect", adm_wait_c, DRBD_acf1_defnet},
+	{"secondary", adm_generic_l, ACF1_RESNAME},
+	{"invalidate", adm_generic_b, ACF1_PEER_DEVICE},
+	{"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE},
+	{"outdate", adm_outdate, ACF1_DEFAULT},
+	{"resize", adm_resize, ACF1_DEFNET},
+	{"verify", adm_generic_s, ACF1_PEER_DEVICE},
+	{"pause-sync", adm_generic_s, ACF1_PEER_DEVICE},
+	{"resume-sync", adm_generic_s, ACF1_PEER_DEVICE},
+	{"adjust", adm_adjust, ACF1_RESNAME},
+	{"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT},
+	{"wait-connect", adm_wait_c, ACF1_DEFNET},
 	{"wait-con-int", adm_wait_ci,
 	 .show_in_usage = 1,.verify_ips = 1,},
-	{"role", adm_generic_s, DRBD_acf1_default},
-	{"cstate", adm_generic_s, DRBD_acf1_default},
-	{"dstate", adm_generic_b, DRBD_acf1_default},
-	{"status", adm_generic_l, DRBD_acf1_resname},
+	{"role", adm_generic_s, ACF1_DEFAULT},
+	{"cstate", adm_generic_s, ACF1_DEFAULT},
+	{"dstate", adm_generic_b, ACF1_DEFAULT},
+	{"status", adm_generic_l, ACF1_RESNAME},
 
-	{"dump", adm_dump, DRBD_acf1_dump},
-	{"dump-xml", adm_dump_xml, DRBD_acf1_dump},
+	{"dump", adm_dump, ACF1_DUMP},
+	{"dump-xml", adm_dump_xml, ACF1_DUMP},
 
-	{"create-md", adm_create_md, DRBD_acf1_default},
-	{"show-gi", adm_generic_b, DRBD_acf1_peer_device},
-	{"get-gi", adm_generic_b, DRBD_acf1_peer_device},
-	{"dump-md", admm_generic, DRBD_acf1_default},
-	{"wipe-md", admm_generic, DRBD_acf1_default},
-	{"apply-al", admm_generic, DRBD_acf1_default},
+	{"create-md", adm_create_md, ACF1_DEFAULT},
+	{"show-gi", adm_generic_b, ACF1_PEER_DEVICE},
+	{"get-gi", adm_generic_b, ACF1_PEER_DEVICE},
+	{"dump-md", admm_generic, ACF1_DEFAULT},
+	{"wipe-md", admm_generic, ACF1_DEFAULT},
+	{"apply-al", admm_generic, ACF1_DEFAULT},
 
 	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
 
-	{"sh-nop", sh_nop, DRBD_acf2_gen_shell .uc_dialog = 1, .test_config = 1},
-	{"sh-resources", sh_resources, DRBD_acf2_gen_shell},
-	{"sh-resource", sh_resource, DRBD_acf2_sh_resname},
-	{"sh-mod-parms", sh_mod_parms, DRBD_acf2_gen_shell},
-	{"sh-dev", sh_dev, DRBD_acf2_shell},
-	{"sh-udev", sh_udev, .vol_id_required = 1, DRBD_acf2_hook},
-	{"sh-minor", sh_minor, DRBD_acf2_shell},
-	{"sh-ll-dev", sh_ll_dev, DRBD_acf2_shell},
-	{"sh-md-dev", sh_md_dev, DRBD_acf2_shell},
-	{"sh-md-idx", sh_md_idx, DRBD_acf2_shell},
-	{"sh-ip", sh_ip, DRBD_acf2_shell},
-	{"sh-lr-of", sh_lres, DRBD_acf2_shell},
-	{"sh-b-pri", sh_b_pri, DRBD_acf2_shell},
-	{"sh-status", sh_status, DRBD_acf2_gen_shell},
+	{"sh-nop", sh_nop, ACF2_GEN_SHELL .uc_dialog = 1, .test_config = 1},
+	{"sh-resources", sh_resources, ACF2_GEN_SHELL},
+	{"sh-resource", sh_resource, ACF2_SH_RESNAME},
+	{"sh-mod-parms", sh_mod_parms, ACF2_GEN_SHELL},
+	{"sh-dev", sh_dev, ACF2_SHELL},
+	{"sh-udev", sh_udev, .vol_id_required = 1, ACF2_HOOK},
+	{"sh-minor", sh_minor, ACF2_SHELL},
+	{"sh-ll-dev", sh_ll_dev, ACF2_SHELL},
+	{"sh-md-dev", sh_md_dev, ACF2_SHELL},
+	{"sh-md-idx", sh_md_idx, ACF2_SHELL},
+	{"sh-ip", sh_ip, ACF2_SHELL},
+	{"sh-lr-of", sh_lres, ACF2_SHELL},
+	{"sh-b-pri", sh_b_pri, ACF2_SHELL},
+	{"sh-status", sh_status, ACF2_GEN_SHELL},
 
-	{"proxy-up", adm_proxy_up, DRBD_acf2_proxy},
-	{"proxy-down", adm_proxy_down, DRBD_acf2_proxy},
+	{"proxy-up", adm_proxy_up, ACF2_PROXY},
+	{"proxy-down", adm_proxy_down, ACF2_PROXY},
 
-	{"new-resource", adm_new_resource, DRBD_acf2_sh_resname},
-	{"sh-new-minor", adm_new_minor, DRBD_acf4_advanced},
+	{"new-resource", adm_new_resource, ACF2_SH_RESNAME},
+	{"sh-new-minor", adm_new_minor, ACF4_ADVANCED},
 
-	{"before-resync-target", adm_khelper, DRBD_acf3_res_handler},
-	{"after-resync-target", adm_khelper, DRBD_acf3_res_handler},
-	{"before-resync-source", adm_khelper, DRBD_acf3_res_handler},
-	{"pri-on-incon-degr", adm_khelper, DRBD_acf3_res_handler},
-	{"pri-lost-after-sb", adm_khelper, DRBD_acf3_res_handler},
-	{"fence-peer", adm_khelper, DRBD_acf3_res_handler},
-	{"local-io-error", adm_khelper, DRBD_acf3_res_handler},
-	{"pri-lost", adm_khelper, DRBD_acf3_res_handler},
-	{"initial-split-brain", adm_khelper, DRBD_acf3_res_handler},
-	{"split-brain", adm_khelper, DRBD_acf3_res_handler},
-	{"out-of-sync", adm_khelper, DRBD_acf3_res_handler},
+	{"before-resync-target", adm_khelper, ACF3_RES_HANDLER},
+	{"after-resync-target", adm_khelper, ACF3_RES_HANDLER},
+	{"before-resync-source", adm_khelper, ACF3_RES_HANDLER},
+	{"pri-on-incon-degr", adm_khelper, ACF3_RES_HANDLER},
+	{"pri-lost-after-sb", adm_khelper, ACF3_RES_HANDLER},
+	{"fence-peer", adm_khelper, ACF3_RES_HANDLER},
+	{"local-io-error", adm_khelper, ACF3_RES_HANDLER},
+	{"pri-lost", adm_khelper, ACF3_RES_HANDLER},
+	{"initial-split-brain", adm_khelper, ACF3_RES_HANDLER},
+	{"split-brain", adm_khelper, ACF3_RES_HANDLER},
+	{"out-of-sync", adm_khelper, ACF3_RES_HANDLER},
 
-	{"suspend-io", adm_generic_s, DRBD_acf4_advanced},
-	{"resume-io", adm_generic_s, DRBD_acf4_advanced},
-	{"set-gi", admm_generic, .need_peer = 1, DRBD_acf4_advanced_need_vol},
-	{"new-current-uuid", adm_generic_s, DRBD_acf4_advanced_need_vol
+	{"suspend-io", adm_generic_s, ACF4_ADVANCED},
+	{"resume-io", adm_generic_s, ACF4_ADVANCED},
+	{"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL},
+	{"new-current-uuid", adm_generic_s, ACF4_ADVANCED_NEED_VOL
 	 .drbdsetup_ctx = &new_current_uuid_cmd_ctx, },
-	{"check-resize", adm_chk_resize, DRBD_acf4_advanced},
+	{"check-resize", adm_chk_resize, ACF4_ADVANCED},
 };
 
 static void initialize_deferred_cmds()
