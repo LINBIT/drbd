@@ -63,6 +63,7 @@ char *progname;
 struct adm_cmd {
 	const char *name;
 	int (*function) (struct cfg_ctx *);
+	const struct context_def *drbdsetup_ctx;
 	/* which level this command is for.
 	 * 0: don't show this command, ever
 	 * 1: normal administrative commands, shown in normal help
@@ -89,7 +90,6 @@ struct adm_cmd {
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
 	unsigned int test_config:1; /* Allow -t option */
-	const struct context_def *drbdsetup_ctx;
 };
 
 struct deferred_cmd {
@@ -335,24 +335,16 @@ struct adm_cmd cmds[] = {
 	 *  - handler
 	 *  - advanced
 	 ***/
-	{"attach", adm_attach, ACF1_DEFAULT
-	 .drbdsetup_ctx = &attach_cmd_ctx, },
-	{"disk-options", adm_disk_options, ACF1_DEFAULT
-	 .drbdsetup_ctx = &disk_options_ctx, },
-	{"detach", adm_generic_l, ACF1_DEFAULT
-	 .drbdsetup_ctx = &detach_cmd_ctx, },
-	{"connect", adm_connect, ACF1_CONNECT
-	 .drbdsetup_ctx = &connect_cmd_ctx, },
-	{"net-options", adm_net_options, ACF1_CONNECT
-	 .drbdsetup_ctx = &net_options_ctx, },
-	{"disconnect", adm_disconnect, ACF1_DISCONNECT
-	 .drbdsetup_ctx = &disconnect_cmd_ctx, },
+	{"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT},
+	{"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT},
+	{"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT},
+	{"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT},
+	{"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT},
+	{"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT},
 	{"up", adm_up, ACF1_RESNAME },
-	{"resource-options", adm_res_options, ACF1_RESNAME
-	 .drbdsetup_ctx = &resource_options_ctx, },
+	{"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME},
 	{"down", adm_generic_l, ACF1_RESNAME},
-	{"primary", adm_generic_l, ACF1_RESNAME
-	 .drbdsetup_ctx = &primary_cmd_ctx, },
+	{"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME},
 	{"secondary", adm_generic_l, ACF1_RESNAME},
 	{"invalidate", adm_generic_b, ACF1_PEER_DEVICE},
 	{"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE},
@@ -364,8 +356,7 @@ struct adm_cmd cmds[] = {
 	{"adjust", adm_adjust, ACF1_RESNAME},
 	{"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT},
 	{"wait-connect", adm_wait_c, ACF1_DEFNET},
-	{"wait-con-int", adm_wait_ci,
-	 .show_in_usage = 1,.verify_ips = 1,},
+	{"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,},
 	{"role", adm_generic_s, ACF1_DEFAULT},
 	{"cstate", adm_generic_s, ACF1_DEFAULT},
 	{"dstate", adm_generic_b, ACF1_DEFAULT},
@@ -419,8 +410,7 @@ struct adm_cmd cmds[] = {
 	{"suspend-io", adm_generic_s, ACF4_ADVANCED},
 	{"resume-io", adm_generic_s, ACF4_ADVANCED},
 	{"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL},
-	{"new-current-uuid", adm_generic_s, ACF4_ADVANCED_NEED_VOL
-	 .drbdsetup_ctx = &new_current_uuid_cmd_ctx, },
+	{"new-current-uuid", adm_generic_s, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL},
 	{"check-resize", adm_chk_resize, ACF4_ADVANCED},
 };
 
