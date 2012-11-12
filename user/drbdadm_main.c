@@ -326,7 +326,84 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.res_name_required = 0,		\
 	.verify_ips = 0,		\
 
-struct adm_cmd cmds[] = {
+static struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
+static struct adm_cmd disk_options_cmd = {"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT};
+static struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
+static struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
+static struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
+static struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
+static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
+static struct adm_cmd res_options_cmd = {"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME};
+static struct adm_cmd down_cmd = {"down", adm_generic_l, ACF1_RESNAME};
+static struct adm_cmd primary_cmd = {"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME};
+static struct adm_cmd secondary_cmd = {"secondary", adm_generic_l, ACF1_RESNAME};
+static struct adm_cmd invalidate_cmd = {"invalidate", adm_generic_b, ACF1_PEER_DEVICE};
+static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE};
+static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
+static struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
+static struct adm_cmd verify_cmd = {"verify", adm_generic_s, ACF1_PEER_DEVICE};
+static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_generic_s, ACF1_PEER_DEVICE};
+static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_generic_s, ACF1_PEER_DEVICE};
+static struct adm_cmd adjust_cmd = {"adjust", adm_adjust, ACF1_RESNAME};
+static struct adm_cmd adjust_wp_cmd = {"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT};
+static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
+static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
+static struct adm_cmd role_cmd = {"role", adm_generic_s, ACF1_DEFAULT};
+static struct adm_cmd cstate_cmd = {"cstate", adm_generic_s, ACF1_DEFAULT};
+static struct adm_cmd dstate_cmd = {"dstate", adm_generic_b, ACF1_DEFAULT};
+static struct adm_cmd status_cmd = {"status", adm_generic_l, ACF1_RESNAME};
+static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
+static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
+
+static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT};
+static struct adm_cmd show_gi_cmd = {"show-gi", adm_generic_b, ACF1_PEER_DEVICE};
+static struct adm_cmd get_gi_cmd = {"get-gi", adm_generic_b, ACF1_PEER_DEVICE};
+static struct adm_cmd dump_md_cmd = {"dump-md", admm_generic, ACF1_DEFAULT};
+static struct adm_cmd wipe_md_cmd = {"wipe-md", admm_generic, ACF1_DEFAULT};
+static struct adm_cmd apply_al_cmd = {"apply-al", admm_generic, ACF1_DEFAULT};
+
+static struct adm_cmd hidden_cmd = {"hidden-commands", hidden_cmds,.show_in_usage = 1,};
+
+static struct adm_cmd sh_nop_cmd = {"sh-nop", sh_nop, ACF2_GEN_SHELL .uc_dialog = 1, .test_config = 1};
+static struct adm_cmd sh_resources_cmd = {"sh-resources", sh_resources, ACF2_GEN_SHELL};
+static struct adm_cmd sh_resource_cmd = {"sh-resource", sh_resource, ACF2_SH_RESNAME};
+static struct adm_cmd sh_mod_parms_cmd = {"sh-mod-parms", sh_mod_parms, ACF2_GEN_SHELL};
+static struct adm_cmd sh_dev_cmd = {"sh-dev", sh_dev, ACF2_SHELL};
+static struct adm_cmd sh_udev_cmd = {"sh-udev", sh_udev, .vol_id_required = 1, ACF2_HOOK};
+static struct adm_cmd sh_minor_cmd = {"sh-minor", sh_minor, ACF2_SHELL};
+static struct adm_cmd sh_ll_dev_cmd = {"sh-ll-dev", sh_ll_dev, ACF2_SHELL};
+static struct adm_cmd sh_md_dev_cmd = {"sh-md-dev", sh_md_dev, ACF2_SHELL};
+static struct adm_cmd sh_md_idx_cmd = {"sh-md-idx", sh_md_idx, ACF2_SHELL};
+static struct adm_cmd sh_ip_cmd = {"sh-ip", sh_ip, ACF2_SHELL};
+static struct adm_cmd sh_lr_of_cmd = {"sh-lr-of", sh_lres, ACF2_SHELL};
+static struct adm_cmd sh_b_pri_cmd = {"sh-b-pri", sh_b_pri, ACF2_SHELL};
+static struct adm_cmd sh_status_cmd = {"sh-status", sh_status, ACF2_GEN_SHELL};
+
+static struct adm_cmd proxy_up_cmd = {"proxy-up", adm_proxy_up, ACF2_PROXY};
+static struct adm_cmd proxy_down_cmd = {"proxy-down", adm_proxy_down, ACF2_PROXY};
+
+static struct adm_cmd new_resource_cmd = {"new-resource", adm_new_resource, ACF2_SH_RESNAME};
+static struct adm_cmd new_minor_cmd = {"sh-new-minor", adm_new_minor, ACF4_ADVANCED};
+
+static struct adm_cmd khelper01_cmd = {"before-resync-target", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper02_cmd = {"after-resync-target", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper03_cmd = {"before-resync-source", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper04_cmd = {"pri-on-incon-degr", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper05_cmd = {"pri-lost-after-sb", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper06_cmd = {"fence-peer", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper07_cmd = {"local-io-error", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper08_cmd = {"pri-lost", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper09_cmd = {"initial-split-brain", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper10_cmd = {"split-brain", adm_khelper, ACF3_RES_HANDLER};
+static struct adm_cmd khelper11_cmd = {"out-of-sync", adm_khelper, ACF3_RES_HANDLER};
+
+static struct adm_cmd suspend_io_cmd = {"suspend-io", adm_generic_s, ACF4_ADVANCED};
+static struct adm_cmd resume_io_cmd = {"resume-io", adm_generic_s, ACF4_ADVANCED};
+static struct adm_cmd set_gi_cmd = {"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
+static struct adm_cmd new_current_uuid_cmd = {"new-current-uuid", adm_generic_s, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL};
+static struct adm_cmd check_resize_cmd = {"check-resize", adm_chk_resize, ACF4_ADVANCED};
+
+struct adm_cmd *cmds[] = {
 	/*  name, function, flags
 	 *  sort order:
 	 *  - normal config commands,
@@ -335,83 +412,82 @@ struct adm_cmd cmds[] = {
 	 *  - handler
 	 *  - advanced
 	 ***/
-	{"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT},
-	{"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT},
-	{"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT},
-	{"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT},
-	{"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT},
-	{"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT},
-	{"up", adm_up, ACF1_RESNAME },
-	{"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME},
-	{"down", adm_generic_l, ACF1_RESNAME},
-	{"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME},
-	{"secondary", adm_generic_l, ACF1_RESNAME},
-	{"invalidate", adm_generic_b, ACF1_PEER_DEVICE},
-	{"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE},
-	{"outdate", adm_outdate, ACF1_DEFAULT},
-	{"resize", adm_resize, ACF1_DEFNET},
-	{"verify", adm_generic_s, ACF1_PEER_DEVICE},
-	{"pause-sync", adm_generic_s, ACF1_PEER_DEVICE},
-	{"resume-sync", adm_generic_s, ACF1_PEER_DEVICE},
-	{"adjust", adm_adjust, ACF1_RESNAME},
-	{"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT},
-	{"wait-connect", adm_wait_c, ACF1_DEFNET},
-	{"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,},
-	{"role", adm_generic_s, ACF1_DEFAULT},
-	{"cstate", adm_generic_s, ACF1_DEFAULT},
-	{"dstate", adm_generic_b, ACF1_DEFAULT},
-	{"status", adm_generic_l, ACF1_RESNAME},
+	&attach_cmd,
+	&disk_options_cmd,
+	&detach_cmd,
+	&connect_cmd,
+	&net_options_cmd,
+	&disconnect_cmd,
+	&up_cmd,
+	&res_options_cmd,
+	&down_cmd,
+	&primary_cmd,
+	&secondary_cmd,
+	&invalidate_cmd,
+	&invalidate_remote_cmd,
+	&outdate_cmd,
+	&resize_cmd,
+	&verify_cmd,
+	&pause_sync_cmd,
+	&resume_sync_cmd,
+	&adjust_cmd,
+	&adjust_wp_cmd,
+	&wait_c_cmd,
+	&wait_ci_cmd,
+	&role_cmd,
+	&cstate_cmd,
+	&dstate_cmd,
+	&status_cmd,
+	&dump_cmd,
+	&dump_xml_cmd,
 
-	{"dump", adm_dump, ACF1_DUMP},
-	{"dump-xml", adm_dump_xml, ACF1_DUMP},
+	&create_md_cmd,
+	&show_gi_cmd,
+	&get_gi_cmd,
+	&dump_md_cmd,
+	&wipe_md_cmd,
+	&apply_al_cmd,
 
-	{"create-md", adm_create_md, ACF1_DEFAULT},
-	{"show-gi", adm_generic_b, ACF1_PEER_DEVICE},
-	{"get-gi", adm_generic_b, ACF1_PEER_DEVICE},
-	{"dump-md", admm_generic, ACF1_DEFAULT},
-	{"wipe-md", admm_generic, ACF1_DEFAULT},
-	{"apply-al", admm_generic, ACF1_DEFAULT},
+	&hidden_cmd,
 
-	{"hidden-commands", hidden_cmds,.show_in_usage = 1,},
+	&sh_nop_cmd,
+	&sh_resources_cmd,
+	&sh_resource_cmd,
+	&sh_mod_parms_cmd,
+	&sh_dev_cmd,
+	&sh_udev_cmd,
+	&sh_minor_cmd,
+	&sh_ll_dev_cmd,
+	&sh_md_dev_cmd,
+	&sh_md_idx_cmd,
+	&sh_ip_cmd,
+	&sh_lr_of_cmd,
+	&sh_b_pri_cmd,
+	&sh_status_cmd,
 
-	{"sh-nop", sh_nop, ACF2_GEN_SHELL .uc_dialog = 1, .test_config = 1},
-	{"sh-resources", sh_resources, ACF2_GEN_SHELL},
-	{"sh-resource", sh_resource, ACF2_SH_RESNAME},
-	{"sh-mod-parms", sh_mod_parms, ACF2_GEN_SHELL},
-	{"sh-dev", sh_dev, ACF2_SHELL},
-	{"sh-udev", sh_udev, .vol_id_required = 1, ACF2_HOOK},
-	{"sh-minor", sh_minor, ACF2_SHELL},
-	{"sh-ll-dev", sh_ll_dev, ACF2_SHELL},
-	{"sh-md-dev", sh_md_dev, ACF2_SHELL},
-	{"sh-md-idx", sh_md_idx, ACF2_SHELL},
-	{"sh-ip", sh_ip, ACF2_SHELL},
-	{"sh-lr-of", sh_lres, ACF2_SHELL},
-	{"sh-b-pri", sh_b_pri, ACF2_SHELL},
-	{"sh-status", sh_status, ACF2_GEN_SHELL},
+	&proxy_up_cmd,
+	&proxy_down_cmd,
 
-	{"proxy-up", adm_proxy_up, ACF2_PROXY},
-	{"proxy-down", adm_proxy_down, ACF2_PROXY},
+	&new_resource_cmd,
+	&new_minor_cmd,
 
-	{"new-resource", adm_new_resource, ACF2_SH_RESNAME},
-	{"sh-new-minor", adm_new_minor, ACF4_ADVANCED},
+	&khelper01_cmd,
+	&khelper02_cmd,
+	&khelper03_cmd,
+	&khelper04_cmd,
+	&khelper05_cmd,
+	&khelper06_cmd,
+	&khelper07_cmd,
+	&khelper08_cmd,
+	&khelper09_cmd,
+	&khelper10_cmd,
+	&khelper11_cmd,
 
-	{"before-resync-target", adm_khelper, ACF3_RES_HANDLER},
-	{"after-resync-target", adm_khelper, ACF3_RES_HANDLER},
-	{"before-resync-source", adm_khelper, ACF3_RES_HANDLER},
-	{"pri-on-incon-degr", adm_khelper, ACF3_RES_HANDLER},
-	{"pri-lost-after-sb", adm_khelper, ACF3_RES_HANDLER},
-	{"fence-peer", adm_khelper, ACF3_RES_HANDLER},
-	{"local-io-error", adm_khelper, ACF3_RES_HANDLER},
-	{"pri-lost", adm_khelper, ACF3_RES_HANDLER},
-	{"initial-split-brain", adm_khelper, ACF3_RES_HANDLER},
-	{"split-brain", adm_khelper, ACF3_RES_HANDLER},
-	{"out-of-sync", adm_khelper, ACF3_RES_HANDLER},
-
-	{"suspend-io", adm_generic_s, ACF4_ADVANCED},
-	{"resume-io", adm_generic_s, ACF4_ADVANCED},
-	{"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL},
-	{"new-current-uuid", adm_generic_s, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL},
-	{"check-resize", adm_chk_resize, ACF4_ADVANCED},
+	&suspend_io_cmd,
+	&resume_io_cmd,
+	&set_gi_cmd,
+	&new_current_uuid_cmd,
+	&check_resize_cmd,
 };
 
 static void initialize_deferred_cmds()
@@ -2184,12 +2260,12 @@ static void print_cmds(int level)
 	int j = 0;
 
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
-		if (cmds[i].show_in_usage != level)
+		if (cmds[i]->show_in_usage != level)
 			continue;
 		if (j++ % 2) {
-			printf("%-35s\n", cmds[i].name);
+			printf("%-35s\n", cmds[i]->name);
 		} else {
-			printf(" %-35s", cmds[i].name);
+			printf(" %-35s", cmds[i]->name);
 		}
 	}
 	if (j % 2)
@@ -2569,7 +2645,7 @@ static void recognize_all_drbdsetup_options(void)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
-		const struct adm_cmd *cmd = &cmds[i];
+		const struct adm_cmd *cmd = cmds[i];
 		const struct field_def *field;
 
 		if (!cmd->drbdsetup_ctx)
@@ -2863,8 +2939,8 @@ struct adm_cmd *find_cmd(char *cmdname)
 	substitute_deprecated_cmd(&cmdname, "outdate-peer", "fence-peer");
 
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
-		if (!strcmp(cmds[i].name, cmdname)) {
-			cmd = cmds + i;
+		if (!strcmp(cmds[i]->name, cmdname)) {
+			cmd = cmds[i];
 			break;
 		}
 	}
