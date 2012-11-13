@@ -521,12 +521,13 @@ void schedule_deferred_cmd(struct adm_cmd *cmd,
 }
 
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
-int call_cmd_fn(int (*function) (struct cfg_ctx *),
-		struct cfg_ctx *ctx, enum on_error on_error)
+int call_cmd_fn(struct adm_cmd *cmd, struct cfg_ctx *ctx, enum on_error on_error)
 {
+	struct cfg_ctx tmp_ctx = *ctx;
 	int rv;
 
-	rv = function(ctx);
+	tmp_ctx.cmd = cmd;
+	rv = cmd->function(&tmp_ctx);
 	if (rv >= 20) {
 		if (on_error == EXIT_ON_FAIL)
 			exit(rv);
@@ -560,7 +561,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 				if (conn->ignore)
 					continue;
 				ctx->conn = conn;
-				ret = call_cmd_fn(cmd->function, ctx, on_error);
+				ret = call_cmd_fn(cmd, ctx, on_error);
 				if (ret)
 					goto out;
 			}
@@ -568,7 +569,7 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	} else if (iterate_vols) {
 		for_each_volume(vol, &res->me->volumes) {
 			ctx->vol = vol;
-			ret = call_cmd_fn(cmd->function, ctx, on_error);
+			ret = call_cmd_fn(cmd, ctx, on_error);
 			if (ret)
 				break;
 		}
@@ -577,12 +578,12 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 			if (conn->ignore)
 				continue;
 			ctx->conn = conn;
-			ret = call_cmd_fn(cmd->function, ctx, on_error);
+			ret = call_cmd_fn(cmd, ctx, on_error);
 			if (ret)
 				break;
 		}
 	} else {
-		ret = call_cmd_fn(cmd->function, ctx, on_error);
+		ret = call_cmd_fn(cmd, ctx, on_error);
 	}
 out:
 	return ret;
@@ -624,7 +625,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 				if (d->ctx.res != last_res)
 					printf(" %s", d->ctx.res->name);
 			}
-			r = call_cmd_fn(d->cmd->function, &d->ctx, KEEP_RUNNING);
+			r = call_cmd_fn(d->cmd, &d->ctx, KEEP_RUNNING);
 			if (r) {
 				/* If something in the "prerequisite" stages failed,
 				 * there is no point in trying to continue.
@@ -3121,8 +3122,8 @@ int main(int argc, char **argv)
 
 	do_verify_ips = cmd->verify_ips;
 
-	is_dump_xml = (cmd->function == adm_dump_xml);
-	is_dump = (is_dump_xml || cmd->function == adm_dump);
+	is_dump_xml = (cmd == &dump_xml_cmd);
+	is_dump = (is_dump_xml || cmd == &dump_cmd);
 
 	if (!resource_names[0]) {
 		if (is_dump)
@@ -3298,7 +3299,7 @@ int main(int argc, char **argv)
 		/* no call_cmd, as that implies register_minor,
 		 * which does not make sense for resource independent commands.
 		 * It does also not need to iterate over volumes: it does not even know the resource. */
-		rv = cmd->function(&ctx);
+		rv = call_cmd_fn(cmd, &ctx, KEEP_RUNNING);
 		if (rv >= 10) {	/* why do we special case the "generic sh-*" commands? */
 			fprintf(stderr, "command %s exited with code %d\n",
 				cmd->name, rv);
