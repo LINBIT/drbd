@@ -89,8 +89,7 @@ extern int yydebug;
 extern FILE *yyin;
 
 static int adm_new_minor(struct cfg_ctx *ctx);
-static int adm_new_resource(struct cfg_ctx *);
-static int adm_res_options(struct cfg_ctx *);
+static int adm_resource(struct cfg_ctx *);
 static int adm_attach(struct cfg_ctx *);
 static int adm_disk_options(struct cfg_ctx *);
 static int adm_connect(struct cfg_ctx *);
@@ -125,7 +124,6 @@ static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
 static int adm_generic_s(struct cfg_ctx *);
 
-static int adm_set_default_res_options(struct cfg_ctx *);
 static int adm_set_default_disk_options(struct cfg_ctx *);
 static int adm_set_default_net_options(struct cfg_ctx *);
 
@@ -314,7 +312,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 /*  */ struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
 static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
-/*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME};
+/*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_resource, &resource_options_ctx, ACF1_RESNAME};
 static struct adm_cmd down_cmd = {"down", adm_generic_l, ACF1_RESNAME};
 static struct adm_cmd primary_cmd = {"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME};
 static struct adm_cmd secondary_cmd = {"secondary", adm_generic_l, ACF1_RESNAME};
@@ -363,7 +361,7 @@ static struct adm_cmd sh_status_cmd = {"sh-status", sh_status, ACF2_GEN_SHELL};
 static struct adm_cmd proxy_up_cmd = {"proxy-up", adm_proxy_up, ACF2_PROXY};
 static struct adm_cmd proxy_down_cmd = {"proxy-down", adm_proxy_down, ACF2_PROXY};
 
-/*  */ struct adm_cmd new_resource_cmd = {"new-resource", adm_new_resource, ACF2_SH_RESNAME};
+/*  */ struct adm_cmd new_resource_cmd = {"new-resource", adm_resource, ACF2_SH_RESNAME};
 /*  */ struct adm_cmd new_minor_cmd = {"sh-new-minor", adm_new_minor, ACF4_ADVANCED};
 
 static struct adm_cmd khelper01_cmd = {"before-resync-target", adm_khelper, ACF3_RES_HANDLER};
@@ -475,7 +473,7 @@ struct adm_cmd *cmds[] = {
 /*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_generic_s, ACF1_DEFAULT};
 /*  */ struct adm_cmd res_options_defaults_cmd = {
 	"resource-options",
-	adm_set_default_res_options,
+	adm_resource,
 	&resource_options_ctx,
 	ACF1_RESNAME
 };
@@ -1200,14 +1198,16 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	return ex;
 }
 
-static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_resource, bool reset)
+static int adm_resource(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
 	int argc = 0, ex;
+	bool do_new_resource = (ctx->cmd == &new_resource_cmd);
+	bool reset = (ctx->cmd == &res_options_defaults_cmd);
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = do_new_resource ? "new-resource" : "resource-options";
+	argv[NA(argc)] = (char *)ctx->cmd->name; /* "new-resource" or "resource-options" */
 	argv[NA(argc)] = ssprintf("%s", res->name);
 	if (do_new_resource)
 		argv[NA(argc)] = ctx->res->me->node_id;
@@ -1222,21 +1222,6 @@ static int adm_new_resource_or_res_options(struct cfg_ctx *ctx, bool do_new_reso
 	if (!ex && do_new_resource && do_register)
 		register_resource(res->name, config_save);
 	return ex;
-}
-
-int adm_new_resource(struct cfg_ctx *ctx)
-{
-	return adm_new_resource_or_res_options(ctx, true, false);
-}
-
-int adm_res_options(struct cfg_ctx *ctx)
-{
-	return adm_new_resource_or_res_options(ctx, false, false);
-}
-
-int adm_set_default_res_options(struct cfg_ctx *ctx)
-{
-	return adm_new_resource_or_res_options(ctx, false, true);
 }
 
 int adm_resize(struct cfg_ctx *ctx)
