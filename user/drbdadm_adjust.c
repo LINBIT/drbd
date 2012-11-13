@@ -213,7 +213,7 @@ static int disk_equal(struct d_volume *conf, struct d_volume *running)
 static int do_proxy_reconf(struct cfg_ctx *ctx)
 {
 	int rv;
-	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)ctx->arg, NULL };
+	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)ctx->cmd->name, NULL };
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 	return rv;
