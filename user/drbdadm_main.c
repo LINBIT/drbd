@@ -91,7 +91,6 @@ extern FILE *yyin;
 static int adm_new_minor(struct cfg_ctx *ctx);
 static int adm_resource(struct cfg_ctx *);
 static int adm_attach(struct cfg_ctx *);
-static int adm_disk_options(struct cfg_ctx *);
 static int adm_connect(struct cfg_ctx *);
 static int adm_net_options(struct cfg_ctx *);
 static int adm_disconnect(struct cfg_ctx *);
@@ -124,7 +123,6 @@ static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
 static int adm_generic_s(struct cfg_ctx *);
 
-static int adm_set_default_disk_options(struct cfg_ctx *);
 static int adm_set_default_net_options(struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
@@ -306,7 +304,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.verify_ips = 0,		\
 
 /*  */ struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
-/*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
@@ -479,7 +477,7 @@ struct adm_cmd *cmds[] = {
 };
 /*  */ struct adm_cmd disk_options_defaults_cmd = {
 	"disk-options",
-	adm_set_default_disk_options,
+	adm_attach,
 	&attach_cmd_ctx,
 	ACF1_DEFAULT
 };
@@ -1113,14 +1111,22 @@ static void add_setup_options(char **argv, int *argcp)
 ssprintf(strcmp((A)->af, "ipv6") ? "%s:%s:%s" : "%s:[%s]:%s",	\
 	 (A)->af, (A)->addr, (A)->port);
 
-static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool reset)
+static int adm_attach(struct cfg_ctx *ctx)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
 	int argc = 0;
+	bool do_attach = (ctx->cmd == &attach_cmd);
+	bool reset = (ctx->cmd == &disk_options_defaults_cmd);
+
+	if (do_attach) {
+		int rv = call_cmd_fn(&apply_al_cmd, ctx, KEEP_RUNNING);
+		if (rv)
+			return rv;
+	}
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = do_attach ? "attach" : "disk-options";
+	argv[NA(argc)] = (char *)ctx->cmd->name; /* "attach" : "disk-options"; */
 	argv[NA(argc)] = ssprintf("%d", vol->device_minor);
 	if (do_attach) {
 		argv[NA(argc)] = vol->disk;
@@ -1147,26 +1153,6 @@ static int adm_attach_or_disk_options(struct cfg_ctx *ctx, bool do_attach, bool 
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_LONG, ctx->res->name);
-}
-
-int adm_attach(struct cfg_ctx *ctx)
-{
-	int rv;
-
-	rv = call_cmd_fn(&apply_al_cmd, ctx, KEEP_RUNNING);
-	if (rv)
-		return rv;
-	return adm_attach_or_disk_options(ctx, true, false);
-}
-
-int adm_disk_options(struct cfg_ctx *ctx)
-{
-	return adm_attach_or_disk_options(ctx, false, false);
-}
-
-int adm_set_default_disk_options(struct cfg_ctx *ctx)
-{
-	return adm_attach_or_disk_options(ctx, false, true);
 }
 
 struct d_option *find_opt(struct options *base, const char *name)
