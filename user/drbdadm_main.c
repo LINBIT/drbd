@@ -494,6 +494,7 @@ struct adm_cmd *cmds[] = {
 /*  */ struct adm_cmd proxy_conn_down_cmd = { "", do_proxy_conn_down, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_up_cmd = { "", do_proxy_conn_up, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_plugins_cmd = { "", do_proxy_conn_plugins, ACF1_DEFAULT};
+static struct adm_cmd primary_s_cmd = {"primary", adm_generic_s, &primary_cmd_ctx, ACF1_RESNAME};
 
 static void initialize_deferred_cmds()
 {
@@ -618,7 +619,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 					printf(" [skipped:%s]", d->ctx.res->name);
 			} else
 				fprintf(stderr, "%s: %s %s: skipped due to earlier error\n",
-					progname, d->ctx.arg, d->ctx.res->name);
+					progname, d->cmd->name, d->ctx.res->name);
 			r = 0;
 		} else {
 			if (adjust_with_progress) {
@@ -636,7 +637,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 				if (stage == CFG_PREREQ || stage == CFG_DISK_PREREQ)
 					d->ctx.res->skip_further_deferred_command = 1;
 				if (adjust_with_progress)
-					printf(":failed(%s:%u)", d->ctx.arg, r);
+					printf(":failed(%s:%u)", d->cmd->name, r);
 			}
 		}
 		last_res = d->ctx.res;
@@ -801,10 +802,7 @@ static int sh_b_pri(struct cfg_ctx *ctx)
 		/* upon connect resync starts, and both sides become primary at the same time.
 		   One's try might be declined since an other state transition happens. Retry. */
 		for (i = 0; i < 5; i++) {
-			const char *old_arg = ctx->arg;
-			ctx->arg = "primary";
-			rv = adm_generic_s(ctx);
-			ctx->arg = old_arg;
+			rv = call_cmd_fn(&primary_s_cmd, ctx, KEEP_RUNNING);
 			if (rv == 0)
 				return rv;
 			sleep(1);
@@ -1157,11 +1155,9 @@ int adm_attach(struct cfg_ctx *ctx)
 {
 	int rv;
 
-	ctx->arg = "apply-al";
-	rv = admm_generic(ctx);
+	rv = call_cmd_fn(&apply_al_cmd, ctx, KEEP_RUNNING);
 	if (rv)
 		return rv;
-	ctx->arg = "attach";
 	return adm_attach_or_disk_options(ctx, true, false);
 }
 
@@ -1263,7 +1259,7 @@ int adm_resize(struct cfg_ctx *ctx)
 	argv[NA(argc)] = 0;
 
 	/* if this is not "resize", but "check-resize", be silent! */
-	silent = !strcmp(ctx->arg, "check-resize") ? SUPRESS_STDERR : 0;
+	silent = !strcmp(ctx->cmd->name, "check-resize") ? SUPRESS_STDERR : 0;
 	ex = m_system_ex(argv, SLEEPS_SHORT | silent, ctx->res->name);
 
 	if (ex)
@@ -1311,7 +1307,7 @@ int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
 	}
 	if (ctx->cmd->need_peer)
 		argv[NA(argc)] = ssprintf("--node-id=%s", ctx->conn->peer->node_id);
-	argv[NA(argc)] = (char *)ctx->arg;
+	argv[NA(argc)] = (char *)ctx->cmd->name;
 	if (argument)
 		argv[NA(argc)] = argument;
 	add_setup_options(argv, &argc);
@@ -1337,7 +1333,7 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	}
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = (char *)ctx->arg;
+	argv[NA(argc)] = (char *)ctx->cmd->name;
 	if (ctx->vol)
 		argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
 	else
@@ -1532,7 +1528,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	char *sh_cmd;
 	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
 
-	if ((sh_cmd = get_opt_val(&res->handlers, ctx->arg, NULL))) {
+	if ((sh_cmd = get_opt_val(&res->handlers, ctx->cmd->name, NULL))) {
 		argv[2] = sh_cmd;
 		rv = m_system_ex(argv, SLEEPS_VERY_LONG, res->name);
 	}
@@ -1593,7 +1589,7 @@ int adm_disconnect(struct cfg_ctx *ctx)
 	}
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = (char *)ctx->arg;
+	argv[NA(argc)] = (char *)ctx->cmd->name;
 	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
 	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
 	add_setup_options(argv, &argc);
@@ -3079,7 +3075,7 @@ int main(int argc, char **argv)
 	char *env_drbd_nodename = NULL;
 	int is_dump_xml;
 	int is_dump;
-	struct cfg_ctx ctx = { .arg = NULL };
+	struct cfg_ctx ctx = { };
 
 	initialize_deferred_cmds();
 	yyin = NULL;
@@ -3191,7 +3187,6 @@ int main(int argc, char **argv)
 		uc_node(global_options.usage_count);
 
 	ctx.cmd = cmd;
-	ctx.arg = cmd->name;
 	if (cmd->res_name_required) {
 		if (STAILQ_EMPTY(&config)) {
 			fprintf(stderr, "no resources defined!\n");

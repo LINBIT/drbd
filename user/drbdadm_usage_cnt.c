@@ -670,14 +670,15 @@ static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 		exit(E_EXEC_ERROR);
 	}
 	if(pid == 0) {
+		struct adm_cmd local_cmd = *ctx->cmd;
+		struct cfg_ctx local_ctx = *ctx;
 		// child
 		close(pipes[0]); // close reading end
 		dup2(pipes[1],1); // 1 = stdout
 		close(pipes[1]);
-		/* local modification in child,
-		 * no propagation to parent */
-		ctx->arg = arg_override;
-		rr = _admm_generic(ctx,
+		local_cmd.name = arg_override;
+		local_ctx.cmd = &local_cmd;
+		rr = _admm_generic(&local_ctx,
 				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
 				   DONT_REPORT_FAILED,
 				   NULL);
@@ -768,6 +769,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 
 	/* HACK */
 	{
+		struct adm_cmd local_cmd = *ctx->cmd;
 		struct cfg_ctx local_ctx = *ctx;
 		struct setup_option *old_setup_options;
 		char *opt;
@@ -777,7 +779,8 @@ int adm_create_md(struct cfg_ctx *ctx)
 		setup_options = NULL;
 		add_setup_option(false, opt);
 
-		local_ctx.arg = "write-dev-uuid";
+		local_cmd.name = "write-dev-uuid";
+		local_ctx.cmd = &local_cmd;
 		_admm_generic(&local_ctx, SLEEPS_VERY_LONG, NULL);
 
 		free(setup_options);

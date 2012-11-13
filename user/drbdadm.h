@@ -265,7 +265,6 @@ struct cfg_ctx {
 	struct connection *conn;
 
 	struct adm_cmd *cmd;
-	const char *arg;
 };
 
 
