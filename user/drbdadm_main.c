@@ -325,7 +325,7 @@ static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage
 static struct adm_cmd role_cmd = {"role", adm_generic_s, ACF1_DEFAULT};
 static struct adm_cmd cstate_cmd = {"cstate", adm_generic_s, ACF1_DEFAULT};
 static struct adm_cmd dstate_cmd = {"dstate", adm_generic_b, ACF1_DEFAULT};
-static struct adm_cmd status_cmd = {"status", adm_generic_l, ACF1_RESNAME};
+static struct adm_cmd status_cmd = {"status", adm_generic_l, .show_in_usage = 1, .uc_dialog = 1};
 static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
 static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 
@@ -1294,17 +1294,11 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	char *argv[MAX_ARGS];
 	int argc = 0;
 
-	if (!ctx->res) {
-		/* ASSERT */
-		fprintf(stderr, "sorry, need at least a resource name to call drbdsetup\n");
-		abort();
-	}
-
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = (char *)ctx->cmd->name;
 	if (ctx->vol)
 		argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
-	else
+	else if (ctx->res)
 		argv[NA(argc)] = ssprintf("%s", ctx->res->name);
 
 	if (ctx->cmd->need_peer) {
@@ -1315,8 +1309,10 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	add_setup_options(argv, &argc);
 	argv[NA(argc)] = 0;
 
-	setenv("DRBD_RESOURCE", ctx->res->name, 1);
-	m__system(argv, flags, ctx->res->name, pid, fd, ex);
+	if (ctx->res)
+		setenv("DRBD_RESOURCE", ctx->res->name, 1);
+
+	m__system(argv, flags, ctx->res ? ctx->res->name : NULL, pid, fd, ex);
 }
 
 static int adm_generic(struct cfg_ctx *ctx, int flags)
@@ -3142,7 +3138,7 @@ int main(int argc, char **argv)
 		uc_node(global_options.usage_count);
 
 	ctx.cmd = cmd;
-	if (cmd->res_name_required) {
+	if (cmd->res_name_required || resource_names[0]) {
 		if (STAILQ_EMPTY(&config)) {
 			fprintf(stderr, "no resources defined!\n");
 			exit(E_USAGE);
