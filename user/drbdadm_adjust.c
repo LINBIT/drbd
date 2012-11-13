@@ -203,6 +203,13 @@ static int disk_equal(struct d_volume *conf, struct d_volume *running)
 	return eq;
 }
 
+/* The following is a cruel misuse of the cmd->name field. The whole proxy_reconf
+   function should be rewritten in a sane way!
+   It should schedule itself to get invoked later, and at the late point in time
+   iterate the config and find out what to do...
+
+   Obviously the schedule_deferred_proxy_reconf() function should go away */
+
 static int do_proxy_reconf(struct cfg_ctx *ctx)
 {
 	int rv;
@@ -210,6 +217,21 @@ static int do_proxy_reconf(struct cfg_ctx *ctx)
 
 	rv = m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 	return rv;
+}
+
+static void schedule_deferred_proxy_reconf(struct cfg_ctx *ctx, char *text)
+{
+	struct adm_cmd *cmd;
+
+	cmd = calloc(1, sizeof(struct adm_cmd));
+	if (cmd == NULL) {
+		perror("calloc");
+		exit(E_EXEC_ERROR);
+	}
+
+	cmd->name = text;
+	cmd->function = &do_proxy_reconf;
+	schedule_deferred_cmd(cmd, ctx, CFG_NET);
 }
 
 #define MAX_PLUGINS (10)
@@ -286,9 +308,9 @@ redo_whole_conn:
 		/* As the memory is in use while the connection is allocated we have to
 		 * completely destroy and rebuild the connection. */
 
-		schedule_deferred_cmd( do_proxy_conn_down, ctx, NULL, CFG_NET_PREREQ);
-		schedule_deferred_cmd( do_proxy_conn_up, ctx, NULL, CFG_NET_PREREQ);
-		schedule_deferred_cmd( do_proxy_conn_plugins, ctx, NULL, CFG_NET_PREREQ);
+		schedule_deferred_cmd(&proxy_conn_down_cmd, ctx, CFG_NET_PREREQ);
+		schedule_deferred_cmd(&proxy_conn_up_cmd, ctx, CFG_NET_PREREQ);
+		schedule_deferred_cmd(&proxy_conn_plugins_cmd, ctx, CFG_NET_PREREQ);
 
 		/* With connection cleanup and reopen everything is rebuild anyway, and
 		 * DRBD will get a reconnect too.  */
@@ -367,7 +389,7 @@ redo_whole_conn:
 
 	/* change only a few plugin settings. */
 	for(i=0; i<used; i++)
-		schedule_deferred_cmd(do_proxy_reconf, ctx, plugin_changes[i], CFG_NET);
+		schedule_deferred_proxy_reconf(ctx, plugin_changes[i]);
 
 	return reconn;
 }
@@ -620,7 +642,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	if (running) {
 		do_res_options = !opts_equal(&resource_options_ctx, &ctx->res->res_options, &running->res_options);
 	} else {
-		schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
+		schedule_deferred_cmd(&new_resource_cmd, ctx, CFG_PREREQ);
 	}
 
 	for_each_connection(conn, &ctx->res->connections) {
@@ -633,10 +655,10 @@ int adm_adjust(struct cfg_ctx *ctx)
 		if (running)
 			running_conn = matching_conn(conn, &running->connections);
 		if (!running_conn) {
-			schedule_deferred_cmd(adm_connect, &tmp_ctx, "connect", CFG_NET);
+			schedule_deferred_cmd(&connect_cmd, &tmp_ctx, CFG_NET);
 		} else {
 			if (!opts_equal(&net_options_ctx, &conn->net_options, &running_conn->net_options))
-				schedule_deferred_cmd(adm_set_default_net_options, &tmp_ctx, "net-options", CFG_NET);
+				schedule_deferred_cmd(&net_options_defaults_cmd, &tmp_ctx, CFG_NET);
 		}
 	}
 
@@ -644,7 +666,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 		proxy_reconf(ctx, running);
 
 	if (do_res_options)
-		schedule_deferred_cmd(adm_set_default_res_options, ctx, "resource-options", CFG_RESOURCE);
+		schedule_deferred_cmd(&res_options_defaults_cmd, ctx, CFG_RESOURCE);
 
 	/* do we need to attach,
 	 * do we need to detach first,
@@ -652,17 +674,17 @@ int adm_adjust(struct cfg_ctx *ctx)
 	for_each_volume(vol, &ctx->res->me->volumes) {
 		struct cfg_ctx tmp_ctx = { .res = ctx->res, .vol = vol };
 		if (vol->adj_detach)
-			schedule_deferred_cmd(adm_generic_s, &tmp_ctx, "detach", CFG_PREREQ);
+			schedule_deferred_cmd(&detach_cmd, &tmp_ctx, CFG_PREREQ);
 		if (vol->adj_del_minor)
-			schedule_deferred_cmd(adm_generic_s, &tmp_ctx, "del-minor", CFG_PREREQ);
+			schedule_deferred_cmd(&del_minor_cmd, &tmp_ctx, CFG_PREREQ);
 		if (vol->adj_add_minor)
-			schedule_deferred_cmd(adm_new_minor, &tmp_ctx, "new-minor", CFG_DISK_PREREQ);
+			schedule_deferred_cmd(&new_minor_cmd, &tmp_ctx, CFG_DISK_PREREQ);
 		if (vol->adj_attach)
-			schedule_deferred_cmd(adm_attach, &tmp_ctx, "attach", CFG_DISK);
+			schedule_deferred_cmd(&attach_cmd, &tmp_ctx, CFG_DISK);
 		if (vol->adj_disk_opts)
-			schedule_deferred_cmd(adm_set_default_disk_options, &tmp_ctx, "disk-options", CFG_DISK);
+			schedule_deferred_cmd(&disk_options_defaults_cmd, &tmp_ctx, CFG_DISK);
 		if (vol->adj_resize)
-			schedule_deferred_cmd(adm_resize, &tmp_ctx, "resize", CFG_DISK);
+			schedule_deferred_cmd(&resize_cmd, &tmp_ctx, CFG_DISK);
 	}
 
 	return 0;

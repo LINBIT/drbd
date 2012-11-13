@@ -220,7 +220,39 @@ struct d_resource
 
 STAILQ_HEAD(resources, d_resource);
 
-struct adm_cmd;
+struct cfg_ctx;
+
+struct adm_cmd {
+	const char *name;
+	int (*function) (struct cfg_ctx *);
+	const struct context_def *drbdsetup_ctx;
+	/* which level this command is for.
+	 * 0: don't show this command, ever
+	 * 1: normal administrative commands, shown in normal help
+	 * 2-4: shown on "drbdadm hidden-commands"
+	 * 2: useful for shell scripts
+	 * 3: callbacks potentially called from kernel module on certain events
+	 * 4: advanced, experts and developers only */
+	unsigned int show_in_usage:3;
+	/* if set, command requires an explicit resource name */
+	unsigned int res_name_required:1;
+	/* if set, command requires an explicit volume number as well */
+	unsigned int vol_id_required:1;
+	/* most commands need to iterate over all volumes in the resource */
+	unsigned int iterate_volumes:1;
+	/* error out if the ip specified is not available/active now */
+	unsigned int verify_ips:1;
+	/* if set, use the "cache" in /var/lib/drbd to figure out
+	 * which config file to use.
+	 * This is necessary for handlers (callbacks from kernel) to work
+	 * when using "drbdadm -c /some/other/config/file" */
+	unsigned int use_cached_config_file:1;
+	unsigned int need_peer:1;
+	/* need_peer and iterate_volumes may not be set together! */
+	unsigned int is_proxy_cmd:1;
+	unsigned int uc_dialog:1; /* May show usage count dialog */
+	unsigned int test_config:1; /* Allow -t option */
+};
 
 struct cfg_ctx {
 	/* res == NULL: does not care for resources, or iterates over all
@@ -240,19 +272,25 @@ struct cfg_ctx {
 extern char *canonify_path(char *path);
 
 extern int adm_adjust(struct cfg_ctx *);
-extern int adm_new_minor(struct cfg_ctx *ctx);
-extern int adm_new_resource(struct cfg_ctx *);
-extern int adm_res_options(struct cfg_ctx *);
-extern int adm_set_default_res_options(struct cfg_ctx *);
-extern int adm_attach(struct cfg_ctx *);
-extern int adm_disk_options(struct cfg_ctx *);
-extern int adm_set_default_disk_options(struct cfg_ctx *);
-extern int adm_resize(struct cfg_ctx *);
-extern int adm_connect(struct cfg_ctx *);
-extern int adm_net_options(struct cfg_ctx *);
-extern int adm_set_default_net_options(struct cfg_ctx *);
-extern int adm_disconnect(struct cfg_ctx *);
-extern int adm_generic_s(struct cfg_ctx *);
+
+extern struct adm_cmd new_minor_cmd;
+extern struct adm_cmd new_resource_cmd;
+extern struct adm_cmd res_options_cmd;
+extern struct adm_cmd res_options_defaults_cmd;
+extern struct adm_cmd attach_cmd;
+extern struct adm_cmd disk_options_cmd;
+extern struct adm_cmd disk_options_defaults_cmd;
+extern struct adm_cmd resize_cmd;
+extern struct adm_cmd connect_cmd;
+extern struct adm_cmd net_options_cmd;
+extern struct adm_cmd net_options_defaults_cmd;
+extern struct adm_cmd disconnect_cmd;
+extern struct adm_cmd detach_cmd;
+extern struct adm_cmd del_minor_cmd;
+extern struct adm_cmd proxy_conn_down_cmd;
+extern struct adm_cmd proxy_conn_up_cmd;
+extern struct adm_cmd proxy_conn_plugins_cmd;
+extern struct adm_cmd proxy_reconf_cmd;
 
 extern int adm_create_md(struct cfg_ctx *);
 extern int _admm_generic(struct cfg_ctx *, int flags, char *argument);
@@ -293,11 +331,7 @@ enum drbd_cfg_stage {
 	__CFG_LAST
 };
 
-extern void schedule_deferred_cmd( int (*function)(struct cfg_ctx *),
-				   struct cfg_ctx *ctx,
-				   const char *arg,
-				   enum drbd_cfg_stage stage);
-
+extern void schedule_deferred_cmd(struct adm_cmd *, struct cfg_ctx *, enum drbd_cfg_stage);
 extern int version_code_kernel(void);
 extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);

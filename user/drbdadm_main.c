@@ -60,40 +60,8 @@
 
 char *progname;
 
-struct adm_cmd {
-	const char *name;
-	int (*function) (struct cfg_ctx *);
-	const struct context_def *drbdsetup_ctx;
-	/* which level this command is for.
-	 * 0: don't show this command, ever
-	 * 1: normal administrative commands, shown in normal help
-	 * 2-4: shown on "drbdadm hidden-commands"
-	 * 2: useful for shell scripts
-	 * 3: callbacks potentially called from kernel module on certain events
-	 * 4: advanced, experts and developers only */
-	unsigned int show_in_usage:3;
-	/* if set, command requires an explicit resource name */
-	unsigned int res_name_required:1;
-	/* if set, command requires an explicit volume number as well */
-	unsigned int vol_id_required:1;
-	/* most commands need to iterate over all volumes in the resource */
-	unsigned int iterate_volumes:1;
-	/* error out if the ip specified is not available/active now */
-	unsigned int verify_ips:1;
-	/* if set, use the "cache" in /var/lib/drbd to figure out
-	 * which config file to use.
-	 * This is necessary for handlers (callbacks from kernel) to work
-	 * when using "drbdadm -c /some/other/config/file" */
-	unsigned int use_cached_config_file:1;
-	unsigned int need_peer:1;
-	/* need_peer and iterate_volumes may not be set together! */
-	unsigned int is_proxy_cmd:1;
-	unsigned int uc_dialog:1; /* May show usage count dialog */
-	unsigned int test_config:1; /* Allow -t option */
-};
-
 struct deferred_cmd {
-	int (*function) (struct cfg_ctx *);
+	struct adm_cmd *cmd;
 	struct cfg_ctx ctx;
 	STAILQ_ENTRY(deferred_cmd) link;
 };
@@ -120,7 +88,15 @@ extern int my_parse();
 extern int yydebug;
 extern FILE *yyin;
 
-
+static int adm_new_minor(struct cfg_ctx *ctx);
+static int adm_new_resource(struct cfg_ctx *);
+static int adm_res_options(struct cfg_ctx *);
+static int adm_attach(struct cfg_ctx *);
+static int adm_disk_options(struct cfg_ctx *);
+static int adm_connect(struct cfg_ctx *);
+static int adm_net_options(struct cfg_ctx *);
+static int adm_disconnect(struct cfg_ctx *);
+static int adm_resize(struct cfg_ctx *);
 static int adm_generic_l(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
 static int adm_wait_c(struct cfg_ctx *);
@@ -147,6 +123,11 @@ static int adm_generic_b(struct cfg_ctx *);
 static int hidden_cmds(struct cfg_ctx *);
 static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
+static int adm_generic_s(struct cfg_ctx *);
+
+static int adm_set_default_res_options(struct cfg_ctx *);
+static int adm_set_default_disk_options(struct cfg_ctx *);
+static int adm_set_default_net_options(struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -326,21 +307,21 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.res_name_required = 0,		\
 	.verify_ips = 0,		\
 
-static struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
-static struct adm_cmd disk_options_cmd = {"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT};
-static struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
-static struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
-static struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
-static struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
+/*  */ struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_disk_options, &attach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
+/*  */ struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
+/*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
 static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
-static struct adm_cmd res_options_cmd = {"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME};
+/*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_res_options, &resource_options_ctx, ACF1_RESNAME};
 static struct adm_cmd down_cmd = {"down", adm_generic_l, ACF1_RESNAME};
 static struct adm_cmd primary_cmd = {"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME};
 static struct adm_cmd secondary_cmd = {"secondary", adm_generic_l, ACF1_RESNAME};
 static struct adm_cmd invalidate_cmd = {"invalidate", adm_generic_b, ACF1_PEER_DEVICE};
 static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE};
 static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
-static struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
+/*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
 static struct adm_cmd verify_cmd = {"verify", adm_generic_s, ACF1_PEER_DEVICE};
 static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_generic_s, ACF1_PEER_DEVICE};
 static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_generic_s, ACF1_PEER_DEVICE};
@@ -382,8 +363,8 @@ static struct adm_cmd sh_status_cmd = {"sh-status", sh_status, ACF2_GEN_SHELL};
 static struct adm_cmd proxy_up_cmd = {"proxy-up", adm_proxy_up, ACF2_PROXY};
 static struct adm_cmd proxy_down_cmd = {"proxy-down", adm_proxy_down, ACF2_PROXY};
 
-static struct adm_cmd new_resource_cmd = {"new-resource", adm_new_resource, ACF2_SH_RESNAME};
-static struct adm_cmd new_minor_cmd = {"sh-new-minor", adm_new_minor, ACF4_ADVANCED};
+/*  */ struct adm_cmd new_resource_cmd = {"new-resource", adm_new_resource, ACF2_SH_RESNAME};
+/*  */ struct adm_cmd new_minor_cmd = {"sh-new-minor", adm_new_minor, ACF4_ADVANCED};
 
 static struct adm_cmd khelper01_cmd = {"before-resync-target", adm_khelper, ACF3_RES_HANDLER};
 static struct adm_cmd khelper02_cmd = {"after-resync-target", adm_khelper, ACF3_RES_HANDLER};
@@ -490,6 +471,30 @@ struct adm_cmd *cmds[] = {
 	&check_resize_cmd,
 };
 
+/* internal commands: */
+/*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_generic_s, ACF1_DEFAULT};
+/*  */ struct adm_cmd res_options_defaults_cmd = {
+	"resource-options",
+	adm_set_default_res_options,
+	&resource_options_ctx,
+	ACF1_RESNAME
+};
+/*  */ struct adm_cmd disk_options_defaults_cmd = {
+	"disk-options",
+	adm_set_default_disk_options,
+	&attach_cmd_ctx,
+	ACF1_DEFAULT
+};
+/*  */ struct adm_cmd net_options_defaults_cmd = {
+	"net-options",
+	adm_set_default_net_options,
+	&net_options_ctx,
+	ACF1_CONNECT
+};
+/*  */ struct adm_cmd proxy_conn_down_cmd = { "", do_proxy_conn_down, ACF1_DEFAULT};
+/*  */ struct adm_cmd proxy_conn_up_cmd = { "", do_proxy_conn_up, ACF1_DEFAULT};
+/*  */ struct adm_cmd proxy_conn_plugins_cmd = { "", do_proxy_conn_plugins, ACF1_DEFAULT};
+
 static void initialize_deferred_cmds()
 {
 	enum drbd_cfg_stage stage;
@@ -497,9 +502,9 @@ static void initialize_deferred_cmds()
 		STAILQ_INIT(&deferred_cmds[stage]);
 }
 
-void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
-		   struct cfg_ctx *ctx,
-		   const char *arg, enum drbd_cfg_stage stage)
+void schedule_deferred_cmd(struct adm_cmd *cmd,
+			   struct cfg_ctx *ctx,
+			   enum drbd_cfg_stage stage)
 {
 	struct deferred_cmd *d;
 
@@ -509,7 +514,7 @@ void schedule_deferred_cmd(int (*function) (struct cfg_ctx *),
 		exit(E_EXEC_ERROR);
 	}
 
-	d->function = function;
+	d->cmd = cmd;
 	d->ctx = *ctx;
 
 	STAILQ_INSERT_TAIL(&deferred_cmds[stage], d, link);
@@ -619,7 +624,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 				if (d->ctx.res != last_res)
 					printf(" %s", d->ctx.res->name);
 			}
-			r = call_cmd_fn(d->function, &d->ctx, KEEP_RUNNING);
+			r = call_cmd_fn(d->cmd->function, &d->ctx, KEEP_RUNNING);
 			if (r) {
 				/* If something in the "prerequisite" stages failed,
 				 * there is no point in trying to continue.
@@ -1705,7 +1710,6 @@ int do_proxy_conn_down(struct cfg_ctx *ctx)
 	return rv;
 }
 
-
 static int check_proxy(struct cfg_ctx *ctx, int do_up)
 {
 	struct d_resource *res = ctx->res;
@@ -1772,7 +1776,7 @@ static int adm_up(struct cfg_ctx *ctx)
 	struct connection *conn;
 	struct d_volume *vol;
 
-	schedule_deferred_cmd(adm_new_resource, ctx, "new-resource", CFG_PREREQ);
+	schedule_deferred_cmd(&new_resource_cmd, ctx, CFG_PREREQ);
 
 	set_peer_in_resource(ctx->res, true);
 	for_each_connection(conn, &ctx->res->connections) {
@@ -1780,14 +1784,14 @@ static int adm_up(struct cfg_ctx *ctx)
 			continue;
 
 		ctx->conn = conn;
-		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
+		schedule_deferred_cmd(&connect_cmd, ctx, CFG_NET);
 	}
 	ctx->conn = NULL;
 
 	for_each_volume(vol, &ctx->res->me->volumes) {
 		ctx->vol = vol;
-		schedule_deferred_cmd(adm_new_minor, ctx, "new-minor", CFG_PREREQ);
-		schedule_deferred_cmd(adm_attach, ctx, "attach", CFG_DISK);
+		schedule_deferred_cmd(&new_minor_cmd, ctx, CFG_PREREQ);
+		schedule_deferred_cmd(&attach_cmd, ctx, CFG_DISK);
 	}
 
 	return 0;
