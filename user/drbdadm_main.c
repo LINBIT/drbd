@@ -92,7 +92,6 @@ static int adm_new_minor(struct cfg_ctx *ctx);
 static int adm_resource(struct cfg_ctx *);
 static int adm_attach(struct cfg_ctx *);
 static int adm_connect(struct cfg_ctx *);
-static int adm_net_options(struct cfg_ctx *);
 static int adm_disconnect(struct cfg_ctx *);
 static int adm_resize(struct cfg_ctx *);
 static int adm_generic_l(struct cfg_ctx *);
@@ -122,8 +121,6 @@ static int hidden_cmds(struct cfg_ctx *);
 static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
 static int adm_generic_s(struct cfg_ctx *);
-
-static int adm_set_default_net_options(struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -307,7 +304,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 /*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
-/*  */ struct adm_cmd net_options_cmd = {"net-options", adm_net_options, &net_options_ctx, ACF1_CONNECT};
+/*  */ struct adm_cmd net_options_cmd = {"net-options", adm_connect, &net_options_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
 static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 /*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_resource, &resource_options_ctx, ACF1_RESNAME};
@@ -483,7 +480,7 @@ struct adm_cmd *cmds[] = {
 };
 /*  */ struct adm_cmd net_options_defaults_cmd = {
 	"net-options",
-	adm_set_default_net_options,
+	adm_connect,
 	&net_options_ctx,
 	ACF1_CONNECT
 };
@@ -1506,15 +1503,17 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool reset)
+static int adm_connect(struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct connection *conn = ctx->conn;
 	char *argv[MAX_ARGS];
 	int argc = 0;
+	bool do_connect = (ctx->cmd == &connect_cmd);
+	bool reset = (ctx->cmd == &net_options_defaults_cmd);
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = do_connect ? "connect" : "net-options";
+	argv[NA(argc)] = (char *)ctx->cmd->name; /* "connect" : "net-options"; */
 	if (do_connect)
 		argv[NA(argc)] = ssprintf("%s", res->name);
 	argv[NA(argc)] = ssprintf_addr(conn->my_address);
@@ -1531,21 +1530,6 @@ static int adm_connect_or_net_options(struct cfg_ctx *ctx, bool do_connect, bool
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
-}
-
-int adm_connect(struct cfg_ctx *ctx)
-{
-	return adm_connect_or_net_options(ctx, true, false);
-}
-
-int adm_net_options(struct cfg_ctx *ctx)
-{
-	return adm_connect_or_net_options(ctx, false, false);
-}
-
-int adm_set_default_net_options(struct cfg_ctx *ctx)
-{
-	return adm_connect_or_net_options(ctx, false, true);
 }
 
 int adm_disconnect(struct cfg_ctx *ctx)
