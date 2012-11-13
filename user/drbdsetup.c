@@ -307,6 +307,12 @@ struct option show_cmd_options[] = {
 	{ }
 };
 
+static struct option status_cmd_options[] = {
+	{ "verbose", no_argument, 0, 'v' },
+	{ "statistics", no_argument, 0, 's' },
+	{ }
+};
+
 #define F_CONFIG_CMD	generic_config_cmd
 #define NO_PAYLOAD	0
 #define F_NEW_EVENTS_CMD(scmd)	DRBD_ADM_GET_INITIAL_STATE, NO_PAYLOAD, generic_get_cmd, \
@@ -388,6 +394,7 @@ struct drbd_cmd commands[] = {
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd,
 		.lockless = true, },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd,
+		.options = status_cmd_options,
 		.lockless = true, },
 	{"check-resize", CTX_MINOR, 0, NO_PAYLOAD, check_resize_cmd,
 		.lockless = true, },
@@ -1950,13 +1957,7 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	optind = 0;  /* reset getopt_long() */
 	for (;;) {
-		static struct option status_cmd_options[] = {
-			{ "verbose", no_argument, 0, 'v' },
-			{ "statistics", no_argument, 0, 's' },
-			{ }
-		};
-
-		c = getopt_long(argc, argv, "vs", status_cmd_options, 0);
+		c = getopt_long(argc, argv, make_optstring(cm->options), cm->options, 0);
 		if (c == -1)
 			break;
 		switch(c) {
