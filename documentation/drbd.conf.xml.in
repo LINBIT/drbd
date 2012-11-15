@@ -445,7 +445,9 @@ resource
 
       <variablelist>
         <varlistentry>
-          <term><option>host <replaceable>name</replaceable> port <replaceable>port-no</replaceable></option></term>
+	  <term><option>host <replaceable>name</replaceable></option>
+	    <optional><option>port
+		<replaceable>port-number</replaceable></option></optional></term>
 
           <listitem>
             <para><indexterm significance="normal">
@@ -453,9 +455,12 @@ resource
 
                 <secondary>host</secondary>
               </indexterm>
-	    A host statement must refer to an host section (<option>on</option> keyword). Optionally
-	    the port keyword may override the port given in the host section for this connection. Two
-	    host statements are expected in an <option>connection</option> section.</para>
+	    Define an endpoint for a connection. Each <option>host</option>
+	    statement refers to an <option>on</option> section in a resource.
+	    If a port number is defined, this endpoint will use the specified
+	    port instead of the port defined in the <option>on</option>
+	    section.  Each <option>connection</option> section must contain
+	    exactly two <option>host</option> parameters.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -503,10 +508,10 @@ resource
 		<primary>drbd.conf</primary>
 
 		<secondary>after-resync-target</secondary>
-	      </indexterm> DRBD calls this handler just after a resync operation finished on the
-	    node whose disk just became consistent after being inconsistent for the duration of
-	    the resync. It might be used to remove a snapshot of the backing device that was
-	    created by the <option>before-resync-target</option> handler.</para>
+	      </indexterm> Called on a resync target when a node's state
+	      changes from Inconsistent to Consistent when a resync finishes.
+	      This handler can be used for removing the snapshot created in the
+	      <option>before-resync-target</option> handler.</para>
 	  </listitem>
 	</varlistentry>
 
@@ -518,9 +523,11 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>before-resync-target</secondary>
-              </indexterm> DRBD calls this handler just before a resync begins on the node that
-            becomes resync target. It might be used to take a snapshot of the backing block
-            device.</para>
+	      </indexterm> Called on a resync target before a resync begins.
+	      This handler can be used for creating a snapshot of the
+	      lower-level device for the duration of the resync: if the resync
+	      source becomes unavailable during a resync, reverting to the
+	      snapshot can restore a consistent state.</para>
           </listitem>
         </varlistentry>
 
@@ -532,9 +539,9 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>fence-peer</secondary>
-              </indexterm> The handler is part of the <option>fencing</option> mechanism. This
-            handler is called in case the node needs to fence the peer's disk. It should use other
-            communication paths than DRBD's network link.</para>
+	      </indexterm> Called when a node should fence a resource on a
+	      particular peer. The handler should not use the same
+	      communication path that DRBD uses for talking to the peer.</para>
           </listitem>
         </varlistentry>
 
@@ -546,9 +553,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>initial-split-brain</secondary>
-              </indexterm> DRBD has connected and detected a split brain situation. This handler
-            can alert someone in all cases of split brain, not just those that go
-            unresolved.</para>
+	      </indexterm> Called when DRBD connects to a peer and detects that
+	      the peer is in a split-brain state with the local node.  This
+	      handler is also called for split-brain scenarios which will be
+	      resolved automatically.</para>
           </listitem>
         </varlistentry>
 
@@ -560,7 +568,8 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>local-io-error</secondary>
-              </indexterm> DRBD got an IO error from the local IO subsystem.</para>
+	      </indexterm> Called when an I/O error occurs on a lower-level device.
+	    </para>
           </listitem>
         </varlistentry>
 
@@ -572,8 +581,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-lost</secondary>
-              </indexterm> The node is currently primary, but DRBD's algorithm thinks that it
-            should become sync target. As a consequence it should give up its primary role.</para>
+	      </indexterm>
+	      The local node is currently primary, but DRBD believes that it
+	      should become a sync target. The node should give up its primary
+	      role.</para>
           </listitem>
         </varlistentry>
 
@@ -585,8 +596,9 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-lost-after-sb</secondary>
-              </indexterm> The node is currently primary, but lost the after-split-brain auto
-            recovery procedure. As as consequence, it should be abandoned.</para>
+	      </indexterm> The local node is currently primary, but it has lost
+	      the after-split-brain auto recovery procedure. The node should be
+	      abandoned. <!-- FIXME: What is "abandon a node" supposed to mean? --></para>
           </listitem>
         </varlistentry>
 
@@ -598,8 +610,8 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-on-incon-degr</secondary>
-              </indexterm> This handler is called if the node is primary, degraded and if the
-            local copy of the data is inconsistent.</para>
+	      </indexterm> This handler is called if the local node is primary,
+	      degraded, and if the lower-level device is inconsistent.</para>
           </listitem>
         </varlistentry>
 
@@ -611,8 +623,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>split-brain</secondary>
-              </indexterm> DRBD detected a split brain situation but remains unresolved. Manual
-            recovery is necessary. This handler should alert someone on duty.</para>
+	      </indexterm> DRBD has detected a split-brain situation which
+	      could not be resolved automatically.  Manual recovery is
+	      necessary. This handler can be used to call for administrator
+	      attention.</para>
           </listitem>
         </varlistentry>
 
@@ -656,25 +670,34 @@ resource
 
       <variablelist>
         <varlistentry>
-	  <term><option>address <replaceable><optional>address-family</optional></replaceable> <replaceable>addr:port</replaceable></option></term>
+	  <term><option>address
+	      <replaceable><optional>address-family</optional></replaceable>
+	      <replaceable>address:port</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>address</secondary>
-              </indexterm> A resource needs one <replaceable>IP</replaceable> address per device,
-            which is used to wait for incoming connections from the partner device respectively to
-            reach the partner device. <replaceable>address-family</replaceable> must be one of
-            <option>ipv4</option>, <option>ipv6</option>, <option>ssocks</option> or
-            <option>sdp</option> (for compatibility reasons <option>sci</option> is an alias for
-            <option>ssocks</option>). It may be omited for IPv4 addresses. The actual IPv6 address
-            that follows the <option>ipv6</option> keyword must be placed inside brackets:
-            <literal moreinfo="none">ipv6 [fd01:2345:6789:abcd::1]:7800</literal>.</para>
+	      </indexterm> Define the address family, address, and port of a
+	      connection endpoint.</para>
 
-            <para>Each DRBD resource needs a TCP <replaceable>port</replaceable> which is used to
-            connect to the node's partner device. Two different DRBD resources may not use the
-            same <replaceable>addr:port</replaceable> combination on the same node.</para>
+	    <para>The address families <option>ipv4</option>,
+	      <option>ipv6</option>, <option>ssocks</option>,
+	      <option>sdp</option>, and <option>sci</option> are supported
+	      (<option>sci</option> being an alias for <option>ssocks</option>).
+	      If no address family is specified, <option>ipv4</option> is
+	      assumed.  For all address families except <option>ipv6</option>,
+	      the address is specified in IPV4 address syntax (1.2.3.4
+	      notation).  For <option>ipv6</option>, the address is enclosed in
+	      brackets and uses IPv6 address syntax (for example, <literal
+		moreinfo="none">[fd01:2345:6789:abcd::1]</literal>).  The port
+	      is always specified as a decimal number between 1 and 65535.</para>
+
+	    <para>On each host, the port numbers must be unique for each
+	      address; ports cannot be shared.</para>
+	  <!-- FIXME: The port should be made optional to avoid duplicate
+		      information here and in the connection sections. -->
           </listitem>
         </varlistentry>
 
@@ -687,18 +710,29 @@ resource
 
                 <secondary>node-id</secondary>
               </indexterm>
-	      <replaceable>value</replaceable> must be a integer number in the range
-	      from 0 to 33. Each node needs an unique node-id in the cluster.</para>
+	      Define the unique node identifier for a node in the cluster.
+	      Node identifiers are used to identify individual nodes in the
+	      network protocol, and to assign bitmap slots to nodes in the
+	      metadata.</para>
 
-            <para>Only change the node-id if all nodes of the cluster are down, and
-	    change the node-id in the meta-data at the same time.</para>
-          </listitem>
-        </varlistentry>
+	    <para>Node identifiers can only be reasssigned in a cluster when
+	      the cluster is down.  It is essential that the node identifiers
+	      in the configuration and in the device metadata are changed
+	      consistently on all hosts.  To change the metadata, dump the
+	      current state with "drbdmeta dump-md", adjust the bitmap slot
+	      assignment, and update the metadata with "drbdmeta
+	      restore-md".</para>
+
+	    <para>The <option>node-id</option> parameter exists since DRBD
+	      9.0.0.  Its value ranges from 0 to 16; there is no
+	      default.</para>
+	  </listitem>
+	</varlistentry>
       </variablelist>
     </refsect2>
 
     <refsect2>
-      <title>Section <option>options</option> Parameters (In <option>resource</option> Sections)</title>
+      <title>Section <option>options</option> Parameters (Resource Options)</title>
 
       <variablelist>
 	<pick_drbdsetup_option name="auto-promote"/>
@@ -711,46 +745,71 @@ resource
     <refsect2>
       <title>Section <option>startup</option> Parameters</title>
 
+      <para>The parameters in this section define the behavior of DRBD at
+	system startup time, in the DRBD init script.  They have no effect once
+	the system is up and running.</para>
+
       <variablelist>
         <varlistentry>
           <term><option>become-primary-on <replaceable>node-name</replaceable></option></term>
 
           <listitem>
-            <para>Sets on which node the device should be promoted to primary role by the init
-            script. The <replaceable>node-name</replaceable> might either be a host name or the
-            keyword <option>both</option>. When this option is not set the devices stay in
-            secondary role on both nodes. Usually one delegates the role assignment to a cluster
-            manager (e.g. heartbeat).</para>
-          </listitem>
+	    <para>Define the node on which to promote the DRBD device to
+	      Primary role.  The node name can be a hostname, or the special
+	      keyword <option>both</option> for dual-primary setups.  This
+	      parameter is not defined by default, which leaves the device in
+	      Secondary role on all nodes.  Note that device role assignment in
+	      a cluster is usually handled by a cluster resource manager like
+	      heartbeat, and not configured statically.</para>
+	  </listitem>
         </varlistentry>
 
         <varlistentry>
-          <term><option>degr-wfc-timeout <replaceable>time</replaceable></option></term>
+          <term><option>degr-wfc-timeout <replaceable>timeout</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>degr-wfc-timeout</secondary>
-              </indexterm> Wait for connection timeout, if this node was a degraded cluster. In
-            case a degraded cluster (= cluster with only one node left) is rebooted, this timeout
-            value is used instead of wfc-timeout, because the peer is less likely to show up in
-            time, if it had been dead before. Value 0 means unlimited.</para>
+	      </indexterm> Define how long to wait until all peers are
+	      connected in case the cluster consisted of a single node only
+	      when the system went down.  This parameter is usually set to a
+	      timeout smaller than <option>wfc-timeout</option>.  The
+	      assumption here is that peers which were unreachable before a
+	      reboot are less likele to be be reachable after the reboot, so
+	      waiting is less likely to help.</para>
+
+	    <para>The timeout is specified in seconds. The default value is 0,
+	      or an infinite timeout.  Also see the
+	      <option>wfc-timeout</option> parameter.</para>
+	      <!-- FIXME: How does wfc-timeout vs. degr-wfc-timeout work with
+		   more than two nodes in the cluster?  If a cluster is only
+		   "degraded" when only one node remains and only one out of
+		   three nodes fails, we will still wait for that one node for
+		   wfc-timeout, which might be forever. -->
           </listitem>
         </varlistentry>
 
         <varlistentry>
-          <term><option>outdated-wfc-timeout <replaceable>time</replaceable></option></term>
+          <term><option>outdated-wfc-timeout <replaceable>timeout</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>outdated-wfc-timeout</secondary>
-              </indexterm> Wait for connection timeout, if the peer was outdated. In case a
-            degraded cluster (= cluster with only one node left) with an outdated peer disk is
-            rebooted, this timeout value is used instead of wfc-timeout, because the peer is not
-            allowed to become primary in the meantime. Value 0 means unlimited.</para>
+	      </indexterm> Define how long to wait until all peers are
+	      connected if all peers were outdated when the system went down.
+	      This parameter is usually set to a timeout smaller than
+	      <option>wfc-timeout</option>.  The assumption here is that an
+	      outdated peer cannot have become primary in the meantime, so we
+	      don't need to wait for it as long as for a node which was alive
+	      before.</para>
+
+	    <para>The timeout is specified in seconds. The default value is 0,
+	      or an infinite timeout.  Also see the
+	      <option>wfc-timeout</option> parameter.</para>
           </listitem>
         </varlistentry>
 
@@ -758,13 +817,17 @@ resource
           <term><option>stacked-timeouts</option></term>
 
           <listitem>
-            <para>Usually <option>wfc-timeout</option> and <option>degr-wfc-timeout</option> are
-            ignored for stacked devices, instead twice the amount of <option>connect-int</option>
-            is used for the connection timeouts. With the <option>stacked-timeouts</option>
-            keyword you disable this, and force DRBD to mind the <option>wfc-timeout</option> and
-            <option>degr-wfc-timeout</option> statements. Only do that if the peer of the stacked
-            resource is usually not available or will usually not become primary. By using this
-            option incorrectly, you run the risk of causing unexpected split brain.</para>
+	    <para>On stacked devices, the <option>wfc-timeout</option> and
+	      <option>degr-wfc-timeout</option> parameters in the configuration
+	      are usually ignored, and both timeouts are set to twice the
+	      <option>connect-int</option> timeout.  The
+	      <option>stacked-timeouts</option> parameter tells DRBD to use the
+	      <option>wfc-timeout</option> and
+	      <option>degr-wfc-timeout</option> parameters as defined in the
+	      configuration, even on stacked devices.  Only use this parameter
+	      if the peer of the stacked resource is usually not available, or
+	      will not become primary.  Incorrect use of this parameter can
+	      lead to unexpected split-brain scenarios.</para>
           </listitem>
         </varlistentry>
 
@@ -772,27 +835,26 @@ resource
           <term><option>wait-after-sb</option></term>
 
           <listitem>
-            <para>By setting this option you can make the init script to continue to wait even if
-            the device pair had a split brain situation and therefore refuses to connect.</para>
+	    <para>This parameter causes DRBD to continue waiting in the init
+	      script even when a split-brain situation has been detected, and
+	      the nodes therefore refuse to connect to each other.</para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-          <term><option>wfc-timeout <replaceable>time</replaceable></option></term>
+          <term><option>wfc-timeout <replaceable>timeout</replaceable></option></term>
 
           <listitem>
-            <para>Wait for connection timeout. <indexterm significance="normal">
+	    <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>wfc-timeout</secondary>
-              </indexterm> The init script <citerefentry>
-                <refentrytitle>drbd</refentrytitle>
-
-                <manvolnum>8</manvolnum>
-              </citerefentry> blocks the boot process until the DRBD resources are connected. When
-            the cluster manager starts later, it does not see a resource with internal
-            split-brain. In case you want to limit the wait time, do it here. Default is 0, which
-            means unlimited. The unit is seconds.</para>
+	      </indexterm> Define how long to wait until all peers are
+	      connected.  Later when the cluster manager starts, it will not
+	      see a resource with internal split-brain.  The timeout is
+	      specified in seconds. The default value is 0, or an infinite
+	      timeout.  Also see the <option>degr-wfc-timeout</option>
+	      parameter.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -803,43 +865,48 @@ resource
 
       <variablelist>
         <varlistentry>
-          <term><option>device <replaceable>name</replaceable> minor
-          <replaceable>nr</replaceable></option></term>
+	  <term><option>device /dev/drbd<replaceable>minor-number</replaceable></option></term>
+	  <term><option>device <replaceable><optional>name</optional></replaceable> <optional>minor
+		<replaceable>minor-number</replaceable></optional></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>device</secondary>
-              </indexterm> The name of the block device node of the resource being described. You
-            must use this device with your application (file system) and you must not use the low
-            level block device which is specified with the <option>disk</option> parameter.</para>
+	      </indexterm> Define the device name and minor number of a
+	      replicated block device.  This is the device that applications
+	      are supposed to access; in most cases, the device is not used
+	      directly, but as a file system.</para>
 
-            <para>One can ether omit the <replaceable>name</replaceable> or <option>minor</option>
-            and the <replaceable>minor number</replaceable>. If you omit the
-            <replaceable>name</replaceable> a default of /dev/drbd<replaceable>minor</replaceable>
-            will be used.</para>
+	    <para>The first form of this parameter assumes the standard
+	      device naming convention.  The second form supports arbitrary
+	      device names: if the device name is omitted, the standard device
+	      naming convention is used; if the minor number is omitted, one of
+	      the available minor numbers is used.</para>
 
-            <para>Udev will create additional symlinks in /dev/drbd/by-res and
-            /dev/drbd/by-disk.</para>
+	    <para>In addition to this device, udev will create
+	      /dev/drbd/by-res/<replaceable>resource</replaceable>/<replaceable>volume</replaceable>
+	      and /dev/drbd/by-disk/drbd<replaceable>minor-number</replaceable>
+	      symlinks to the device.</para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-          <term><option>disk <replaceable>name</replaceable></option></term>
+          <term><option>disk <replaceable>device</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>disk</secondary>
-              </indexterm> DRBD uses this block device to actually store and retrieve the data.
-            Never access such a device while DRBD is running on top of it. This also holds true
-            for <citerefentry>
-                <refentrytitle>dumpe2fs</refentrytitle>
-
-                <manvolnum>8</manvolnum>
-              </citerefentry> and similar commands.</para>
+	      </indexterm> Define the lower-level block device that DRBD will
+	      use for storing the actual data.  While the replicated drbd
+	      device is configured, the lower-level device must not be used.
+	      Even read-only access with tools like <citerefentry>
+		<refentrytitle>dumpe2fs</refentrytitle>
+		<manvolnum>8</manvolnum> </citerefentry> and similar is not
+	      allowed.</para>
           </listitem>
         </varlistentry>
 
@@ -855,23 +922,25 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>meta-disk</secondary>
-              </indexterm> Internal means that the last part of the backing device is used to
-	      store the meta-data.  The size of the meta-data is computed based on the size of the
+	      </indexterm> Define where the metadata of a replicated block
+	      device resides: it can be internal, meaning that the lower-level
+	      device contains both the data and the metadata, or on a separate
 	      device.</para>
 
-            <para>When a <replaceable>device</replaceable> is specified, either with or without an
-	    <replaceable>index</replaceable>, DRBD stores the meta-data on this device.  Without
-	    <replaceable>index</replaceable>, the size of the meta-data is determined by the size
-	    of the data device. This is usually used with LVM, which allows to have many variable
-	    sized block devices. The meta-data size is 36kB + Backing-Storage-size / 32k, rounded up
-	    to the next 4kb boundary.  (Rule of the thumb: 32kByte per 1GByte of storage, rounded up
-	    to the next MB.)</para>
+	    <para>When the <replaceable>index</replaceable> form of this
+	      parameter is used, multiple replicated devices can share the same
+	      metadata device, each using a separate index.  Each index
+	      occupies 128 MiB of data, which corresponds to a replicated
+	      device size of at most 4 GiB.  We recommend not to share metadata
+	      devices anymore, and to instead use the lvm volume manager for
+	      creating metadata devices as needed.</para>
 
-	    <para>When an <replaceable>index</replaceable> is specified, each index number refers to
-	    a fixed slot of meta-data of 128 MB, which allows a maximum data size of 4 GB. This way,
-	    multiple DBRD devices can share the same meta-data device.  For example, if /dev/sde6[0]
-	    and /dev/sde6[1] are used, /dev/sde6 must be at least 256 MB big. Because of the hard size
-	    limit, use of meta-disk indexes is discouraged.</para>
+	    <para>When the <replaceable>index</replaceable> form of this
+	      parameter is not used, the size of the lower-level device
+	      determines the size of the metadata.  The size needed is 36 KiB +
+	      (size of lower-level device) / 32K * (number of nodes - 1).  If
+	      the metadata device is bigger than that, the extra space is not
+	      used.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -881,41 +950,37 @@ resource
   <refsect1 id="data-integrity">
     <title>Notes on data integrity</title>
 
-    <para>There are two independent methods in DRBD to ensure the integrity of the mirrored data.
-    The online-verify mechanism and the <option>data-integrity-alg</option> of the
-    <option>network</option> section.</para>
+    <para>DRBD supports two different mechanisms for data integrity checking:
+      first, the <option>data-integrity-alg</option> network parameter allows
+      to integrity check the data sent over the network.  Second, the online
+      verification mechanism (<command moreinfo="none">drbdadm verify</command>
+      and the <option>verify-alg</option> parameter) allows to check for
+      differences in the on-disk data.</para>
 
-    <para>Both mechanisms might deliver false positives if the user of DRBD modifies the data
-    which gets written to disk while the transfer goes on. This may happen for swap, or for
-    certain append while global sync, or truncate/rewrite workloads, and not necessarily poses a
-    problem for the integrity of the data. Usually when the initiator of the data transfer does
-    this, it already knows that that data block will not be part of an on disk data structure, or
-    will be resubmitted with correct data soon enough.</para>
+    <para>Both mechanisms can produce false positives if the data is modified
+      under I/O (i.e., while it is being sent over the network or written to
+      disk).  This does not necessarily indicate a problem: for example, some
+      file systems and applications do modify data under I/O for certain
+      operations.  Swap space can also undergo changes while under I/O.</para>
 
-    <para>The <option>data-integrity-alg</option> causes the receiving side to log an error about
-    "Digest integrity check FAILED: Ns +x\n", where N is the sector offset, and x is the size of
-    the request in bytes. It will then disconnect, and reconnect, thus causing a quick resync. If
-    the sending side at the same time detected a modification, it warns about "Digest mismatch,
-    buffer modified by upper layers during write: Ns +x\n", which shows that this was a false
-    positive. The sending side may detect these buffer modifications immediately after the
-    unmodified data has been copied to the tcp buffers, in which case the receiving side won't
-    notice it.</para>
+    <para>Network data integrity checking tries to identify data modification
+      under I/O by verifying the checksums on the sender side after sending the
+      data.  If it detects a mismatch, it logs an error.  The receiver also
+      logs an error when it detects a mismatch.  Thus, an error logged only on
+      the receiver side indicates an error on the network, and an error logged
+      on both sides indicates data modification under I/O.</para>
 
-    <para>The most recent (2007) example of systematic corruption was an issue with the TCP
-    offloading engine and the driver of a certain type of GBit NIC. The actual corruption happened
-    on the DMA transfer from core memory to the card. Since the TCP checksum gets calculated on
-    the card, this type of corruption stays undetected as long as you do not use either the online
-    <option>verify</option> or the <option>data-integrity-alg</option>.</para>
-
-    <para>We suggest to use the <option>data-integrity-alg</option> only during a pre-production
-    phase due to its CPU costs. Further we suggest to do online <option>verify</option> runs
-    regularly e.g. once a month during a low load period.</para>
+    <para>The most recent example of systematic data corruption was identified
+      as a bug in the TCP offloading engine and driver of a certain type of
+      GBit NIC in 2007: the data corruption happened on the DMA transfer from
+      core memory to the card. Because the TCP checksum were calculated on the
+      card, the TCP/IP protocol checksums did not detect this problem.</para>
   </refsect1>
 
   <refsect1>
     <title>Version</title>
 
-    <simpara>This document was revised for version 8.4.0 of the DRBD distribution.</simpara>
+    <simpara>This document was revised for version 9.0.0 of the DRBD distribution.</simpara>
   </refsect1>
 
   <refsect1>
@@ -934,7 +999,7 @@ resource
   <refsect1>
     <title>Copyright</title>
 
-    <simpara>Copyright 2001-2008 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
+    <simpara>Copyright 2001-2012 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
     This is free software; see the source for copying conditions. There is NO warranty; not even
     for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</simpara>
   </refsect1>
