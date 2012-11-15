@@ -1049,7 +1049,7 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
 
-	if (!get_ldev_if_state(device, D_NEGOTIATING))
+	if (!get_ldev_if_state(device, D_ATTACHING))
 		return 0;
 
 	disk_conf = rcu_dereference(device->ldev->disk_conf);
