@@ -666,7 +666,6 @@ struct context_def attach_cmd_ctx = {
 	.fields = {
 		{ "size", NUMERIC(disk_size, DISK_SIZE),
 		  .unit = "bytes" },
-		{ "max-bio-bvecs", NUMERIC(max_bio_bvecs, MAX_BIO_BVECS) },
 		CHANGEABLE_DISK_OPTIONS,
 		/* { "*", STRING(backing_dev) }, */
 		/* { "*", STRING(meta_dev) }, */

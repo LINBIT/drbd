@@ -424,10 +424,10 @@ int need_trigger_kobj_change(struct d_resource *res)
 	return 0;
 }
 
-void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
+void compare_size(struct d_volume *conf, struct d_volume *kern)
 {
-	struct d_option *c = find_opt(&conf->disk_options, "max-bio-bvecs");
-	struct d_option *k = find_opt(&kern->disk_options, "max-bio-bvecs");
+	struct d_option *c = find_opt(&conf->disk_options, "size");
+	struct d_option *k = find_opt(&kern->disk_options, "size");
 
 	if (c)
 		c->adj_skip = 1;
@@ -439,40 +439,18 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 	if (k && is_default(&disk_options_ctx, k))
 		k = NULL;
 
-	/* there was a bvec restriction set,
-	 * but it is no longer in config, or vice versa */
-	if (!k != !c)
-		conf->adj_attach = 1;
-
-	/* restrictions differ */
-	if (k && c && !is_equal(&disk_options_ctx, k, c))
-		conf->adj_attach = 1;
-}
-
-/* similar to compare_max_bio_bvecs above */
-void compare_size(struct d_volume *conf, struct d_volume *kern)
-{
-	struct d_option *c = find_opt(&conf->disk_options, "size");
-	struct d_option *k = find_opt(&kern->disk_options, "size");
-
-	if (c)
-		c->adj_skip = 1;
-	if (k)
-		k->adj_skip = 1;
-
-	if (k && is_default(&disk_options_ctx, k))
-		k = NULL;
+	/* size was set, but it is no longer in config, or vice versa */
 	if (!k != !c)
 		conf->adj_resize = 1;
+
+	/* size options differ */
 	if (k && c && !is_equal(&disk_options_ctx, c, k))
 		conf->adj_resize = 1;
 }
 
 void compare_volume(struct d_volume *conf, struct d_volume *kern)
 {
-	/* Special-case "max-bio-bvecs", we do not allow to change that
-	 * while attached, yet.
-	 * Also special case "size", we need to issue a resize command to change that.
+	/* Special case "size", we need to issue a resize command to change that.
 	 * Move both options to the head of the disk_options list,
 	 * so we can easily skip them in the opts_equal, later.
 	 */
@@ -481,10 +459,6 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 	 * potentially with a detach first? */
 	conf->adj_attach = (conf->device_minor != kern->device_minor)
 			|| !disk_equal(conf, kern);
-
-	/* do we need to do a full (detach/)attach,
-	 * because max_bio_bvec setting differs? */
-	compare_max_bio_bvecs(conf, kern);
 
 	/* do we need to resize? */
 	compare_size(conf, kern);
