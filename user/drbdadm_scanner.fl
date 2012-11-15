@@ -97,7 +97,6 @@ ipv4			{ DP; CP; return TK_IPV4;		}
 ipv6			{ DP; CP; return TK_IPV6;		}
 size			{ DP; CP; RC(DISK_SIZE); return TK_DISK_OPTION;	}
 on-io-error		{ DP; CP; return TK_DISK_OPTION;	}
-max-bio-bvecs		{ DP; CP; return TK_DISK_OPTION;	}
 disk-timeout		{ DP; CP; return TK_DISK_OPTION;	}
 read-balancing		{ DP; CP; return TK_DISK_OPTION;	}
 use-bmbv		{ DP; CP; return TK_DISK_FLAG;		}
