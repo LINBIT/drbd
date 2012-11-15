@@ -278,35 +278,6 @@
     </definition>
   </drbdsetup_option>
 
-  <drbdsetup_option name="max-bio-bvecs">
-    <term><option>max-bio-bvecs</option></term>
-
-    <definition>
-      <indexterm significance="normal">
-	<primary>drbd.conf</primary>
-
-	<secondary>max-bio-bvecs</secondary>
-      </indexterm>
-
-      <para>In some special circumstances the device mapper stack manages to pass BIOs to
-      DRBD that violate the constraints that are set forth by DRBD's merge_bvec() function
-      and which have more than one bvec. A known example is: phys-disk -&gt; DRBD -&gt; LVM
-      -&gt; Xen -&gt; misaligned partition (63) -&gt; DomU FS. Then you might see "bio would
-      need to, but cannot, be split:" in the Dom0's kernel log.</para>
-
-      <para>The best workaround is to proper align the partition within the VM (E.g. start
-      it at sector 1024). This costs 480 KiB of storage. Unfortunately the default of most
-      Linux partitioning tools is to start the first partition at an odd number (63).
-      Therefore most distribution's install helpers for virtual linux machines will end up
-      with misaligned partitions. The second best workaround is to limit DRBD's max bvecs
-      per BIO (= <option>max-bio-bvecs</option>) to 1, but that might cost
-      performance.</para>
-
-      <para>The default value of <option>max-bio-bvecs</option> is 0, which means that there
-      is no user imposed limitation.</para>
-    </definition>
-  </drbdsetup_option>
-
   <drbdsetup_option name="md-flushes">
     <term><option>md-flushes</option></term>
 
