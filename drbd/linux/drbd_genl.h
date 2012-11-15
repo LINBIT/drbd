@@ -108,9 +108,7 @@ GENL_struct(DRBD_NLA_DISK_CONF, 3, disk_conf,
 
 	/* use the resize command to try and change the disk_size */
 	__u64_field(4, DRBD_GENLA_F_MANDATORY | DRBD_F_INVARIANT,	disk_size)
-	/* we could change the max_bio_bvecs,
-	 * but it won't propagate through the stack */
-	__u32_field(5, DRBD_GENLA_F_MANDATORY | DRBD_F_INVARIANT,	max_bio_bvecs)
+	/*__u32_field(5, DRBD_GENLA_F_MANDATORY | DRBD_F_INVARIANT,	max_bio_bvecs)*/
 
 	__u32_field_def(6, DRBD_GENLA_F_MANDATORY,	on_io_error, DRBD_ON_IO_ERROR_DEF)
 	/*__u32_field_def(7, DRBD_GENLA_F_MANDATORY,	fencing_policy, DRBD_FENCING_DEF)*/

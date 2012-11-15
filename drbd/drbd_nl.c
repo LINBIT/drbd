@@ -1344,22 +1344,17 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 {
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
-	unsigned int max_segments = 0;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
 
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
-		rcu_read_lock();
-		max_segments = rcu_dereference(device->ldev->disk_conf)->max_bio_bvecs;
-		rcu_read_unlock();
 		put_ldev(device);
 	}
 
 	blk_queue_logical_block_size(q, 512);
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
-	blk_queue_max_segments(q, max_segments ? max_segments : BLK_MAX_SEGMENTS);
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
