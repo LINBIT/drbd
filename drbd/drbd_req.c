@@ -1456,8 +1456,6 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
  * We need to call down to our lower level device,
  * in case it has special restrictions.
  *
- * We also may need to enforce configured max-bio-bvecs limits.
- *
  * As long as the BIO is empty we have to allow at least one bvec,
  * regardless of size and offset, so no need to ask lower levels.
  */
