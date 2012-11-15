@@ -1809,6 +1809,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			struct drbd_peer_md *peer_md = &nbc->md.peers[bitmap_index];
 
 			if (peer_md->node_id == connection->net_conf->peer_node_id) {
+				peer_device->bitmap_index = bitmap_index;
 				nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 				goto next_peer_device_1;
 			}
