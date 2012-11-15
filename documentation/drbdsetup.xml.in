@@ -200,7 +200,6 @@
 	<pick_drbdsetup_option name="disk-size"/>
 	<pick_drbdsetup_option name="disk-timeout"/>
 	<pick_drbdsetup_option name="fencing"/>
-	<pick_drbdsetup_option name="max-bio-bvecs"/>
 	<pick_drbdsetup_option name="md-flushes"/>
 	<pick_drbdsetup_option name="on-io-error"/>
 	<pick_drbdsetup_option name="read-balancing"/>
