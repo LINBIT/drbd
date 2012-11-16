@@ -850,6 +850,14 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 			if (get_ldev(device)) {
 				_drbd_uuid_new_current(device, forced);
 				put_ldev(device);
+			} else {
+				struct drbd_peer_device *peer_device;
+				/* The peers will store the new current UUID... */
+				u64 current_uuid;
+				get_random_bytes(&current_uuid, sizeof(u64));
+
+				for_each_peer_device(peer_device, device)
+					drbd_send_current_uuid(peer_device, current_uuid);
 			}
 		}
 	}

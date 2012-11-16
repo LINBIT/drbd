@@ -1829,18 +1829,21 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 						peer_device);
 
 			/* Lost contact to peer's copy of the data */
-			if (!(peer_disk_state[OLD] < D_INCONSISTENT || peer_disk_state[OLD] == D_UNKNOWN || peer_disk_state[OLD] == D_OUTDATED) &&
-			     (peer_disk_state[NEW] < D_INCONSISTENT || peer_disk_state[NEW] == D_UNKNOWN || peer_disk_state[NEW] == D_OUTDATED)) {
-				if (get_ldev(device)) {
-					if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
-					    disk_state[NEW] >= D_UP_TO_DATE) {
-						if (drbd_suspended(device))
-							set_bit(NEW_CUR_UUID, &device->flags);
-						else
-							drbd_uuid_new_current(device);
-					}
-					put_ldev(device);
+			if (connection->agreed_pro_version < 110 &&
+			    !(peer_disk_state[OLD] < D_INCONSISTENT ||
+			      peer_disk_state[OLD] == D_UNKNOWN ||
+			      peer_disk_state[OLD] == D_OUTDATED) &&
+			    (peer_disk_state[NEW] < D_INCONSISTENT ||
+			     peer_disk_state[NEW] == D_UNKNOWN ||
+			     peer_disk_state[NEW] == D_OUTDATED) && get_ldev(device)) {
+				if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
+				    disk_state[NEW] >= D_UP_TO_DATE) {
+					if (drbd_suspended(device))
+						set_bit(NEW_CUR_UUID, &device->flags);
+					else
+						drbd_uuid_new_current(device);
 				}
+				put_ldev(device);
 			}
 
 			if (peer_disk_state[NEW] < D_INCONSISTENT && get_ldev(device)) {

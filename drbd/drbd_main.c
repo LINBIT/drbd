@@ -1014,11 +1014,24 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 	}
 }
 
+void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid)
+{
+	struct drbd_socket *sock;
+	struct p_uuid *p;
+
+	sock = &peer_device->connection->data;
+	p = drbd_prepare_command(peer_device, sock);
+	if (p) {
+		p->uuid = cpu_to_be64(current_uuid);
+		drbd_send_command(peer_device, sock, P_CURRENT_UUID, sizeof(*p), NULL, 0);
+	}
+}
+
 void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_socket *sock;
-	struct p_rs_uuid *p;
+	struct p_uuid *p;
 	u64 uuid;
 
 	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
