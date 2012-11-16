@@ -4258,7 +4258,7 @@ void unlock_all_resources(void)
 }
 
 /**
- * negotiated_disk_state()  -  determine initial disk state
+ * disk_state_from_md()  -  determine initial disk state
  *
  * When a disk is attached to a device, we set the disk state to D_NEGOTIATING.
  * We then wait for all connected peers to send the peer disk state.  Once that
@@ -4267,37 +4267,20 @@ void unlock_all_resources(void)
  *
  * The initial disk state becomes D_UP_TO_DATE without fencing or when we know
  * that all peers have been outdated, and D_CONSISTENT otherwise.
- *
- * Returns D_NEGOTIATING while still negotiating, and the new disk state
- * afterwards.
  */
-enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
+enum drbd_disk_state disk_state_from_md(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 	enum drbd_disk_state disk_state;
 
-	disk_state = device->disk_state[NEW];
-
-	if (disk_state != D_NEGOTIATING)
-		goto out;
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->cstate[NEW] == C_CONNECTED &&
-		    peer_device->disk_state[NEW] == D_UNKNOWN) {
-			/* Wait for peer to send peer disk state. */
-			goto out;
-		}
-	}
-	if (device->exposed_data_uuid != drbd_current_uuid(device) &&
-	    device->resource->role[NEW] == R_PRIMARY)
-		disk_state = D_DISKLESS;
-	else if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		disk_state = D_INCONSISTENT;
 	else if (!drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
 		disk_state = D_OUTDATED;
 	else {
 		bool all_peers_outdated = true;
 
-		if (get_ldev_if_state(device, D_NEGOTIATING)) {
+		if (get_ldev_if_state(device, D_ATTACHING)) {
 			struct drbd_bitmap *bitmap = device->bitmap;
 			int bitmap_index;
 
@@ -4328,7 +4311,7 @@ enum drbd_disk_state negotiated_disk_state(struct drbd_device *device)
 		}
 		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
 	}
-out:
+
 	return disk_state;
 }
 

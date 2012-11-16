@@ -2008,6 +2008,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 
+	disk_state = D_DISKLESS;
 	/* In case we are L_CONNECTED postpone any decision on the new disk
 	   state after the negotiation phase. */
 	for_each_peer_device(peer_device, device) {
@@ -2016,13 +2017,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			   To avoid a race in receive_state, "clear" uuids while
 			   holding req_lock. I.e. atomic with the state change */
 			peer_device->uuids_received = false;
+			if (peer_device->disk_state[NOW] > D_DISKLESS)
+				disk_state = D_NEGOTIATING;
 		}
 	}
-	__change_disk_state(device, D_NEGOTIATING);
-	disk_state = negotiated_disk_state(device);
-	if (disk_state != D_NEGOTIATING)
-		__change_disk_state(device, disk_state);
-
+	if (disk_state == D_DISKLESS)
+		disk_state = disk_state_from_md(device);
+	__change_disk_state(device, disk_state);
 	rv = end_state_change(resource, &irq_flags);
 
 	if (rv < SS_SUCCESS)

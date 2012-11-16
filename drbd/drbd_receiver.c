@@ -4565,15 +4565,10 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	__change_peer_role(connection, peer_state.role);
 	__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
-	if (device->disk_state[NEW] == D_NEGOTIATING) {
-		enum drbd_disk_state disk_state;
-
-		disk_state = negotiated_disk_state(device);
-		if (disk_state != D_NEGOTIATING)
-			__change_disk_state(device, disk_state);
-	}
-
 	repl_state = peer_device->repl_state;
+	if (device->disk_state[NEW] == D_NEGOTIATING &&
+	    (repl_state[NEW] == L_CONNECTED || repl_state[NEW] == L_WF_BITMAP_S))
+		__change_disk_state(device, disk_state_from_md(device));
 	if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
 		resource->state_change_flags |= CS_HARD;
 	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
