@@ -64,6 +64,7 @@ enum drbd_packet {
 
 	P_UUIDS110	      = 0x34, /* data socket */
 	P_PEER_DAGTAG         = 0x35, /* data socket, used to trigger reconciliation resync */
+	P_CURRENT_UUID	      = 0x36, /* data socket */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
@@ -241,7 +242,7 @@ struct p_uuids110 {
 	u64 history_uuids[0];
 } __packed;
 
-struct p_rs_uuid {
+struct p_uuid {
 	u64	    uuid;
 } __packed;
 
