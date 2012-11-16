@@ -1177,7 +1177,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			resource->susp_nod[NEW] = true;
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING &&
 		    get_ldev_if_state(device, D_NEGOTIATING)) {
-			disk_state[NEW] = negotiated_disk_state(device);
+			disk_state[NEW] = disk_state_from_md(device);
 			put_ldev(device);
 		}
 	}

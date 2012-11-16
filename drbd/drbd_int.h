@@ -372,7 +372,7 @@ extern bool idr_is_empty(struct idr *idr);
 extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
-extern enum drbd_disk_state negotiated_disk_state(struct drbd_device *);
+extern enum drbd_disk_state disk_state_from_md(struct drbd_device *);
 
 /* sequence arithmetic for dagtag (data generation tag) sector numbers.
  * dagtag_newer_eq: true, if a is newer than b */
