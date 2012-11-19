@@ -3027,9 +3027,6 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			cfg->md.al_stripes = yylval.u64;
 			EXP(TK_AL_STRIPE_SIZE_4K); EXP(TK_NUM); EXP(';');
 			cfg->md.al_stripe_size_4k = yylval.u64;
-			if (verbose >= 2)
-				fprintf(stderr, "adjusting activity-log and bitmap offsets\n");
-			re_initialize_md_offsets(cfg);
 			/* FIXME reject invalid values */
 			break;
 		case TK_BM:
@@ -3042,6 +3039,17 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	}
 	EXP(TK_BM);
 start_of_bm:
+	if (option_al_stripes != cfg->md.al_stripes ||
+	    option_al_stripe_size_4k != cfg->md.al_stripe_size_4k) {
+		if (option_al_stripes_used) {
+			fprintf(stderr, "override activity log striping from commandline\n");
+			cfg->md.al_stripes = option_al_stripes;
+			cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
+		}
+		if (verbose >= 2)
+			fprintf(stderr, "adjusting activity-log and bitmap offsets\n");
+		re_initialize_md_offsets(cfg);
+	}
 	clip_la_sect_and_bm_bytes(cfg);
 	EXP('{');
 	bm = (le_u64 *)on_disk_buffer;
@@ -4357,8 +4365,9 @@ int main(int argc, char **argv)
 		exit(10);
 	}
 	if (option_al_stripes_used &&
-	    command->function != &meta_create_md) {
-		fprintf(stderr, "The --al-stripe* options are only allowed with create-md\n");
+	    command->function != &meta_create_md &&
+	    command->function != &meta_restore_md) {
+		fprintf(stderr, "The --al-stripe* options are only allowed with create-md and restore-md\n");
 		exit(10);
 	}
 
