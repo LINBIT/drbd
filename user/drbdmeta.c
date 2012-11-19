@@ -3548,6 +3548,8 @@ void check_internal_md_flavours(struct format * cfg) {
 			if (cfg->md.al_stripes != option_al_stripes
 			||  cfg->md.al_stripe_size_4k != option_al_stripe_size_4k) {
 				if (confirmed("Do you want to change the activity log stripe settings only?")) {
+					fprintf(stderr, "sorry, not yet fully implemented\n");
+					exit(30);
 					cfg->md.al_stripes = option_al_stripes;
 					cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
 					re_initialize_md_offsets(cfg);
