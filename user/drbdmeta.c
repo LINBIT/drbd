@@ -242,7 +242,7 @@ struct md_cpu {
 	uint32_t gc[GEN_CNT_SIZE];	/* generation counter */
 	uint32_t magic;
 	/* added in drbd 0.7;
-	 * 0.7 stores la_size on disk as kb, 0.8 in units of sectors.
+	 * 0.7 stores la_size_sect on disk as kb, 0.8 in units of sectors.
 	 * we use sectors in our general working structure here */
 	uint64_t la_sect;		/* last agreed size. */
 	uint32_t md_size_sect;
@@ -470,7 +470,7 @@ int is_valid_md(int f,
 		break;
 	}
 
-	/* FIXME consistency check, la_size < ll_device_size,
+	/* FIXME consistency check, la_size_sect < ll_device_size,
 	 * no overlap with internal meta data,
 	 * no overlap of flexible meta data offsets/sizes
 	 * ...
