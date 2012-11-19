@@ -44,6 +44,7 @@
 #include <linux/reboot.h>
 #include <linux/notifier.h>
 #include <linux/kthread.h>
+#include <linux/workqueue.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
@@ -2383,6 +2384,7 @@ STATIC void drbd_cleanup(void)
 	idr_for_each_entry(&minors, mdev, i) {
 		idr_remove(&minors, mdev_to_minor(mdev));
 		idr_remove(&mdev->tconn->volumes, mdev->vnr);
+		destroy_workqueue(mdev->submit.wq);
 		del_gendisk(mdev->vdisk);
 		/* synchronize_rcu(); No other threads running at this point */
 		kobject_put(&mdev->kobj);
@@ -2672,6 +2674,28 @@ void conn_destroy(struct kref *kref)
 	kfree(tconn);
 }
 
+int init_submitter(struct drbd_conf *mdev)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
+	/* opencoded create_singlethread_workqueue(),
+	 * to be able to say "drbd%d", ..., minor */
+	mdev->submit.wq = alloc_workqueue("drbd%u_submit",
+			WQ_UNBOUND | WQ_MEM_RECLAIM, 1, mdev->minor);
+#else
+	mdev->submit.wq = create_singlethread_workqueue("drbd_submit");
+#endif
+	if (!mdev->submit.wq)
+		return -ENOMEM;
+#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
+	INIT_WORK(&mdev->submit.worker, do_submit, &mdev->submit.worker);
+#else
+	INIT_WORK(&mdev->submit.worker, do_submit);
+#endif
+	spin_lock_init(&mdev->submit.lock);
+	INIT_LIST_HEAD(&mdev->submit.writes);
+	return 0;
+}
+
 enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, int vnr)
 {
 	struct kobject *parent;
@@ -2769,6 +2793,13 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 		drbd_msg_put_info("requested volume exists already");
 		goto out_idr_remove_vol;
 	}
+
+	if (init_submitter(mdev)) {
+		err = ERR_NOMEM;
+		drbd_msg_put_info("unable to create submit workqueue");
+		goto out_idr_remove_vol;
+	}
+
 	add_disk(disk);
 	parent = drbd_kobj_of_disk(disk);
 
@@ -2784,6 +2815,7 @@ enum drbd_ret_code conn_new_minor(struct drbd_tconn *tconn, unsigned int minor, 
 	return NO_ERROR;
 
 out_del_disk:
+	destroy_workqueue(mdev->submit.wq);
 	del_gendisk(mdev->vdisk);
 out_idr_remove_vol:
 	idr_remove(&tconn->volumes, vnr_got);

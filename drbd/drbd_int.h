@@ -1022,6 +1022,14 @@ struct drbd_tconn {			/* is a resource from the config file */
 	} send;
 };
 
+struct submit_worker {
+	struct workqueue_struct *wq;
+	struct work_struct worker;
+
+	spinlock_t lock;
+	struct list_head writes;
+};
+
 struct drbd_conf {
 #ifdef PARANOIA
 	long magic;
@@ -1167,6 +1175,10 @@ struct drbd_conf {
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	unsigned int peer_max_bio_size;
 	unsigned int local_max_bio_size;
+
+	/* any requests that would block in drbd_make_request()
+	 * are deferred to this single-threaded work queue */
+	struct submit_worker submit;
 };
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
@@ -1568,6 +1580,7 @@ extern void conn_free_crypto(struct drbd_tconn *tconn);
 extern int proc_details;
 
 /* drbd_req */
+extern void do_submit(struct work_struct *ws);
 extern void __drbd_make_request(struct drbd_conf *, struct bio *, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(struct drbd_conf *mdev, struct drbd_request *req);
