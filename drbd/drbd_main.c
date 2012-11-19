@@ -3852,9 +3852,15 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 	int rv = -EIO;
 
 	if (get_ldev(device)) {
-		drbd_bm_lock(device, work->why, work->flags);
+		if (work->flags & BM_LOCK_SINGLE_SLOT)
+			drbd_bm_slot_lock(work->peer_device, work->why, work->flags);
+		else
+			drbd_bm_lock(device, work->why, work->flags);
 		rv = work->io_fn(device, work->peer_device);
-		drbd_bm_unlock(device);
+		if (work->flags & BM_LOCK_SINGLE_SLOT)
+			drbd_bm_slot_unlock(work->peer_device);
+		else
+			drbd_bm_unlock(device);
 		put_ldev(device);
 	}
 
@@ -4035,9 +4041,17 @@ int drbd_bitmap_io(struct drbd_device *device,
 	if (!(flags & BM_LOCK_CLEAR))
 		drbd_suspend_io(device);
 
-	drbd_bm_lock(device, why, flags);
+	if (flags & BM_LOCK_SINGLE_SLOT)
+		drbd_bm_slot_lock(peer_device, why, flags);
+	else
+		drbd_bm_lock(device, why, flags);
+
 	rv = io_fn(device, peer_device);
-	drbd_bm_unlock(device);
+
+	if (flags & BM_LOCK_SINGLE_SLOT)
+		drbd_bm_slot_unlock(peer_device);
+	else
+		drbd_bm_unlock(device);
 
 	if (!(flags & BM_LOCK_CLEAR))
 		drbd_resume_io(device);

@@ -1492,9 +1492,16 @@ int drbd_bitmap_io_from_worker(struct drbd_device *device,
 	/* open coded non-blocking drbd_suspend_io(device); */
 	set_bit(SUSPEND_IO, &device->flags);
 
-	drbd_bm_lock(device, why, flags);
+
+	if (flags & BM_LOCK_SINGLE_SLOT)
+		drbd_bm_slot_lock(peer_device, why, flags);
+	else
+		drbd_bm_lock(device, why, flags);
 	rv = io_fn(device, peer_device);
-	drbd_bm_unlock(device);
+	if (flags & BM_LOCK_SINGLE_SLOT)
+		drbd_bm_slot_unlock(peer_device);
+	else
+		drbd_bm_unlock(device);
 
 	drbd_resume_io(device);
 
@@ -1825,7 +1832,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			    peer_device->repl_state[NOW] == L_WF_BITMAP_S)
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
-						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 						peer_device);
 
 			/* Lost contact to peer's copy of the data */

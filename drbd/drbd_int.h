@@ -575,6 +575,8 @@ enum bm_flag {
 	BM_LOCK_BULK = 0x8, /* locked for bulk operation, allow all non-bulk operations */
 
 	BM_LOCK_ALL = BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+
+	BM_LOCK_SINGLE_SLOT = 0x10,
 };
 
 struct drbd_bitmap {
