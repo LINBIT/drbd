@@ -4852,7 +4852,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		return -EIO;
 	device = peer_device->device;
 
-	drbd_bm_lock(device, "receive bitmap", BM_LOCK_CLEAR | BM_LOCK_BULK);
+	drbd_bm_slot_lock(peer_device, "receive bitmap", BM_LOCK_CLEAR | BM_LOCK_BULK);
 	/* you are supposed to send additional out-of-sync information
 	 * if you actually set bits during this phase */
 
@@ -4928,7 +4928,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	err = 0;
 
  out:
-	drbd_bm_unlock(device);
+	drbd_bm_slot_unlock(peer_device);
 	if (!err && peer_device->repl_state[NOW] == L_WF_BITMAP_S)
 		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	return err;

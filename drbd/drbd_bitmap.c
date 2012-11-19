@@ -111,7 +111,22 @@ static void __bm_print_lock_info(struct drbd_device *device, const char *func)
 		 b->bm_task->comm, task_pid_nr(b->bm_task));
 }
 
-void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
+/* drbd_bm_lock() was introduced before drbd-9.0 to ensure that access to
+   bitmap is locked out by other means (states, etc..). If a needed lock was
+   not acquired or already taken a warning gets logged, and the critical
+   sections get serialized on a mutex.
+
+   Since drbd-9.0 actions on the bitmap could happen in parallel (e.g. "receive
+   bitmap").
+   The cheap solution taken right now, is to completely serialize bitmap
+   operations but do not warn if they operate on different bitmap slots.
+
+   The real solution is to make the locking more fine grained (one lock per
+   bitmap slot) and to allow those operations to happen parallel.
+ */
+static void
+_drbd_bm_lock(struct drbd_device *device, struct drbd_peer_device *peer_device,
+	      char *why, enum bm_flag flags)
 {
 	struct drbd_bitmap *b = device->bitmap;
 	int trylock_failed;
@@ -122,6 +137,11 @@ void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
 	}
 
 	trylock_failed = !mutex_trylock(&b->bm_change);
+
+	if (trylock_failed && peer_device && b->bm_locked_peer != peer_device) {
+		mutex_lock(&b->bm_change);
+		trylock_failed = 0;
+	}
 
 	if (trylock_failed) {
 		drbd_warn(device, "%s[%d] going to '%s' but bitmap already locked for '%s' by %s[%d]\n",
@@ -136,6 +156,17 @@ void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
 
 	b->bm_why  = why;
 	b->bm_task = current;
+	b->bm_locked_peer = peer_device;
+}
+
+void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
+{
+	_drbd_bm_lock(device, NULL, why, flags);
+}
+
+void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why, enum bm_flag flags)
+{
+	_drbd_bm_lock(peer_device->device, peer_device, why, flags);
 }
 
 void drbd_bm_unlock(struct drbd_device *device)
@@ -152,7 +183,13 @@ void drbd_bm_unlock(struct drbd_device *device)
 	b->bm_flags &= ~BM_LOCK_ALL;
 	b->bm_why  = NULL;
 	b->bm_task = NULL;
+	b->bm_locked_peer = NULL;
 	mutex_unlock(&b->bm_change);
+}
+
+void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device)
+{
+	drbd_bm_unlock(peer_device->device);
 }
 
 /* we store some "meta" info about our pages in page->private */

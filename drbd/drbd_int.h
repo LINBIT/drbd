@@ -596,6 +596,7 @@ struct drbd_bitmap {
 	/* debugging aid, in case we are still racy somewhere */
 	char          *bm_why;
 	struct task_struct *bm_task;
+	struct drbd_peer_device *bm_locked_peer;
 };
 
 struct drbd_work_queue {
@@ -1401,6 +1402,8 @@ extern void drbd_bm_get_lel(struct drbd_peer_device *peer_device, size_t offset,
 
 extern void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags);
 extern void drbd_bm_unlock(struct drbd_device *device);
+extern void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why, enum bm_flag flags);
+extern void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
 /* drbd_main.c */
 
 /* needs to be included here,
