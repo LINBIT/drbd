@@ -1478,7 +1478,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 	if (get_ldev(device)) {
 		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
 			drbd_info(device, "Writing the whole bitmap, MDF_FullSync was set.\n");
-			drbd_bm_set_all(device);
+			drbd_bm_set_many_bits(peer_device, 0, -1UL);
 			if (drbd_bm_write(device, NULL)) {
 				/* write_bm did fail! Leave full sync flag set in Meta P_DATA
 				 * but otherwise process as per normal - need to tell other
