@@ -2772,8 +2772,17 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		return -1;
 	}
 
+	if (DRBD_MD_MAGIC_84_UNCLEAN == cfg->md.magic) {
+		fprintf(stderr, "Found meta data is \"unclean\", please apply-al first\n");
+		if (!force)
+			return -1;
+	}
+
 	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
+	if (DRBD_MD_MAGIC_84_UNCLEAN == cfg->md.magic) {
+		printf("This_is_an_unclean_meta_data_dump._Don't_trust_the_bitmap.\n\n");
+	}
 	printf("# md_size_sect %llu\n", (long long unsigned)cfg->md.md_size_sect);
 
 	if (i == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
