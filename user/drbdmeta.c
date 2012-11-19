@@ -1368,6 +1368,13 @@ void re_initialize_md_offsets(struct format *cfg)
 	}
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
+
+	if (verbose >= 2) {
+		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
+		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
+	}
 }
 
 void initialize_al(struct format *cfg)
@@ -1410,13 +1417,6 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
 	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
-
-	if (verbose >= 2) {
-		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
-		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
-	}
 
 	if (!do_disk_writes)
 		return 0;
@@ -2769,10 +2769,12 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.device_uuid);
 			printf("la-peer-max-bio-size %d;\n",
 			       cfg->md.la_peer_max_bio_size);
-			printf("al-stripes "U32";\n",
-				cfg->md.al_stripes);
-			printf("al-stripe-size-4k "U32";\n",
-				cfg->md.al_stripe_size_4k);
+			if (cfg->md.al_stripes != 1 || cfg->md.al_stripe_size_4k != 8) {
+				printf("al-stripes "U32";\n",
+					cfg->md.al_stripes);
+				printf("al-stripe-size-4k "U32";\n",
+					cfg->md.al_stripe_size_4k);
+			}
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf_bm(cfg); /* pretty prints the whole bitmap */
@@ -2893,7 +2895,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 
 			ASSERT(!is_v06(cfg));
 		}
-		fprintf(stderr, "reinitializing\n");
+		fprintf(stderr, "initializing with defaults\n");
 		if (is_v07(cfg))
 			_v07_md_initialize(cfg,0);
 		else
@@ -2941,6 +2943,25 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 			goto start_of_bm;
 		default:
 			md_parse_error(TK_BM, 0, "keyword 'bm' or 'la-peer-max-bio-size'");
+		}
+
+		/* do we have al stripe settings? */
+		tok = yylex();
+		switch(tok) {
+		case TK_AL_STRIPES:
+			EXP(TK_NUM); EXP(';');
+			cfg->md.al_stripes = yylval.u64;
+			EXP(TK_AL_STRIPE_SIZE_4K); EXP(TK_NUM); EXP(';');
+			cfg->md.al_stripe_size_4k = yylval.u64;
+			if (verbose >= 2)
+				fprintf(stderr, "adjusting activity-log and bitmap offsets\n");
+			re_initialize_md_offsets(cfg);
+			/* FIXME reject invalid values */
+			break;
+		case TK_BM:
+			goto start_of_bm;
+		default:
+			md_parse_error(TK_BM, 0, "keyword 'bm' or 'al-stripe-size'");
 		}
 	} else {
 		cfg->md.bm_bytes_per_bit = 4096;
