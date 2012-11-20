@@ -2856,7 +2856,7 @@ next_tconn:
 			}
 		}
 
-		dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+		dh = genlmsg_put(skb, NETLINK_CB_PORTID(cb->skb),
 				cb->nlh->nlmsg_seq, &drbd_genl_family,
 				NLM_F_MULTI, DRBD_ADM_GET_STATUS);
 		if (!dh)

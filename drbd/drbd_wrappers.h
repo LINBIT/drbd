@@ -1197,4 +1197,10 @@ int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
 #define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
 #endif
 
+#ifdef COMPAT_HAVE_NETLINK_SKB_PARMS_PORTID
+#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).portid
+#else
+#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).pid
+#endif
+
 #endif
