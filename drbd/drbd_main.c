@@ -160,6 +160,7 @@ static struct kobj_type drbd_device_kobj_type = {
 	.release = drbd_minor_destroy,
 };
 
+#ifdef COMPAT_HAVE_BIO_BI_DESTRUCTOR
 static void bio_destructor_drbd(struct bio *bio)
 {
 	bio_free(bio, drbd_md_io_bio_set);
@@ -178,6 +179,20 @@ struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 	bio->bi_destructor = bio_destructor_drbd;
 	return bio;
 }
+#else
+struct bio *bio_alloc_drbd(gfp_t gfp_mask)
+{
+	struct bio *bio;
+
+	if (!drbd_md_io_bio_set)
+		return bio_alloc(gfp_mask, 1);
+
+	bio = bio_alloc_bioset(gfp_mask, 1, drbd_md_io_bio_set);
+	if (!bio)
+		return NULL;
+	return bio;
+}
+#endif
 
 #ifdef __CHECKER__
 /* When checking with sparse, and this is an inline function, sparse will
