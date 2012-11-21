@@ -120,7 +120,7 @@
             Characters between the keyword <option>skip</option> and the opening brace
             (<quote>{</quote>) are ignored. Everything enclosed by the braces is skipped. This
             comes in handy, if you just want to comment out some '<option>resource [name]
-            {...}</option>' section: just precede it with '<quote>skip</quote>'.</para>
+            {...}</option>' section: just precede it with '<option>skip</option>'.</para>
           </listitem>
         </varlistentry>
 
