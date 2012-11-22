@@ -266,6 +266,16 @@ then
   else
       compat_have_umh_wait_proc=0
   fi
+  if grep_q "kmap_atomic(struct page \*page)" $KDIR/include/linux/highmem.h ; then
+      compat_kmap_atomic_has_one_parameter=1
+  else
+      compat_kmap_atomic_has_one_parameter=0
+  fi
+  if grep_q "enum km_type" $KDIR/include/asm-generic/kmap_types.h ; then
+      compat_have_km_type=1
+  else
+      compat_have_km_type=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -345,6 +355,10 @@ perl -pe "
   { ( $compat_have_vzalloc ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_UMH_WAIT_PROC.*)}
   { ( $compat_have_umh_wait_proc ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_KMAP_ATOMIC_HAS_ONE_PARAMETER.*)}
+  { ( $compat_kmap_atomic_has_one_parameter ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_HAVE_KM_TYPE.*)}
+  { ( $compat_have_km_type ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new

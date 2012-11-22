@@ -1148,7 +1148,16 @@ static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
 #endif
 
 #include <linux/highmem.h>
-#ifdef kmap_atomic2
+#ifdef COMPAT_KMAP_ATOMIC_HAS_ONE_PARAMETER
+#ifndef COMPAT_HAVE_KM_TYPE
+/* Just so that the compiler knows the type. The values will never be passed
+   to the kernel... */
+enum km_type {
+	KM_USER0,
+	KM_USER1,
+	KM_IRQ1,
+};
+#endif
 /* see 980c19e3
  * highmem: mark k[un]map_atomic() with two arguments as deprecated */
 #define drbd_kmap_atomic(page, km)     kmap_atomic(page)

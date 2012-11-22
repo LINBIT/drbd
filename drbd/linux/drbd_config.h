@@ -176,4 +176,7 @@ extern const char *drbd_buildtag(void);
 /* Was added with 2.6.35 */
 #define COMPAT_HAVE_UMH_WAIT_PROC
 
+#define COMPAT_KMAP_ATOMIC_HAS_ONE_PARAMETER
+//#define COMPAT_HAVE_KM_TYPE
+
 #endif
