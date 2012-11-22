@@ -1077,6 +1077,16 @@ randomize:
 	rcu_read_lock();
 	idr_for_each_entry(&tconn->volumes, mdev, vnr) {
 		kobject_get(&mdev->kobj);
+		/* Prevent a race between resync-handshake and
+		 * being promoted to Primary.
+		 *
+		 * Grab and release the state mutex, so we know that any current
+		 * drbd_set_role() is finished, and any incoming drbd_set_role
+		 * will see the STATE_SENT flag, and wait for it to be cleared.
+		 */
+		mutex_lock(mdev->state_mutex);
+		mutex_unlock(mdev->state_mutex);
+
 		rcu_read_unlock();
 
 		if (discard_my_data)
