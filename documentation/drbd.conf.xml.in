@@ -751,20 +751,6 @@ resource
 
       <variablelist>
         <varlistentry>
-          <term><option>become-primary-on <replaceable>node-name</replaceable></option></term>
-
-          <listitem>
-	    <para>Define the node on which to promote the DRBD device to
-	      Primary role.  The node name can be a hostname, or the special
-	      keyword <option>both</option> for dual-primary setups.  This
-	      parameter is not defined by default, which leaves the device in
-	      Secondary role on all nodes.  Note that device role assignment in
-	      a cluster is usually handled by a cluster resource manager like
-	      heartbeat, and not configured statically.</para>
-	  </listitem>
-        </varlistentry>
-
-        <varlistentry>
           <term><option>degr-wfc-timeout <replaceable>timeout</replaceable></option></term>
 
           <listitem>
