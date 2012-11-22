@@ -43,6 +43,7 @@
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
+#include <linux/kthread.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
@@ -363,20 +364,6 @@ STATIC int drbd_thread_setup(void *arg)
 	unsigned long flags;
 	int retval;
 
-	daemonize("drbd_thread");
-	/* state engine takes this lock (in drbd_thread_stop_nowait)
-	 * while holding the req_lock irqsave */
-	spin_lock_irqsave(&thi->t_lock, flags);
-	thi->task = current;
-	smp_mb();
-	spin_unlock_irqrestore(&thi->t_lock, flags);
-
-	__set_current_state(TASK_UNINTERRUPTIBLE);
-	complete(&thi->startstop); /* notify: thi->task is set. */
-	schedule_timeout(10*HZ);
-	snprintf(current->comm, sizeof(current->comm), "drbd_%c_%s",
-			thi->name[0], thi->tconn->name);
-
 restart:
 	retval = thi->function(thi);
 
@@ -402,11 +389,10 @@ restart:
 	thi->task = NULL;
 	thi->t_state = NONE;
 	smp_mb();
-
-	/* THINK maybe two different completions? */
-	complete_all(&thi->startstop); /* notify: thi->task unset. */
-	conn_info(tconn, "Terminating %s thread\n", thi->name);
+	complete_all(&thi->stop);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
+
+	conn_info(tconn, "Terminating %s\n", current->comm);
 
 	/* Release mod reference taken when thread was started */
 
@@ -429,8 +415,8 @@ STATIC void drbd_thread_init(struct drbd_tconn *tconn, struct drbd_thread *thi,
 int drbd_thread_start(struct drbd_thread *thi)
 {
 	struct drbd_tconn *tconn = thi->tconn;
+	struct task_struct *nt;
 	unsigned long flags;
-	int pid;
 
 	/* is used from state engine doing drbd_thread_stop_nowait,
 	 * while holding the req lock irqsave */
@@ -450,29 +436,27 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 		kref_get(&thi->tconn->kref);
 
-		init_completion(&thi->startstop);
+		init_completion(&thi->stop);
 		thi->reset_cpu_mask = 1;
 		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		flush_signals(current); /* otherw. may get -ERESTARTNOINTR */
 
-		pid = kernel_thread(drbd_thread_setup, (void *) thi, CLONE_FS);
-		if (pid < 0) {
-			conn_err(tconn, "Couldn't start thread (%d)\n", pid);
+		nt = kthread_create(drbd_thread_setup, (void *) thi,
+				    "drbd_%c_%s", thi->name[0], thi->tconn->name);
+
+		if (IS_ERR(nt)) {
+			conn_err(tconn, "Couldn't start thread\n");
 
 			kref_put(&tconn->kref, &conn_destroy);
 			module_put(THIS_MODULE);
 			return false;
 		}
-		/* waits until thi->task is set */
-		wait_for_completion(&thi->startstop);
-		if (thi->t_state != RUNNING)
-			conn_err(tconn, "ASSERT FAILED: %s t_state == %d expected %d.\n",
-					thi->name, thi->t_state, RUNNING);
-		if (thi->task)
-			wake_up_process(thi->task);
-		else
-			conn_err(tconn, "ASSERT FAILED thi->task is NULL where it should be set!?\n");
+		spin_lock_irqsave(&thi->t_lock, flags);
+		thi->task = nt;
+		thi->t_state = RUNNING;
+		spin_unlock_irqrestore(&thi->t_lock, flags);
+		wake_up_process(nt);
 		break;
 	case EXITING:
 		thi->t_state = RESTARTING;
@@ -492,16 +476,12 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 {
-	struct drbd_tconn *tconn = thi->tconn;
 	unsigned long flags;
+
 	enum drbd_thread_state ns = restart ? RESTARTING : EXITING;
 
 	/* may be called from state engine, holding the req lock irqsave */
 	spin_lock_irqsave(&thi->t_lock, flags);
-
-	/* conn_err(tconn, "drbd_thread_stop: %s [%d]: %s %d -> %d; %d\n",
-	     current->comm, current->pid,
-	     thi->task ? thi->task->comm : "NULL", thi->t_state, ns, wait); */
 
 	if (thi->t_state == NONE) {
 		spin_unlock_irqrestore(&thi->t_lock, flags);
@@ -518,26 +498,14 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 
 		thi->t_state = ns;
 		smp_mb();
-		init_completion(&thi->startstop);
+		init_completion(&thi->stop);
 		if (thi->task != current)
 			force_sig(DRBD_SIGKILL, thi->task);
-		else if (wait)
-			conn_err(tconn, "ASSERT FAILED: wait=%d\n", wait);
 	}
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
-	if (wait) {
-		if (thi->task == current) {
-			conn_err(tconn, "ASSERT FAILED: Trying to wait for current task!\n");
-			return;
-		}
-		wait_for_completion(&thi->startstop);
-		spin_lock_irqsave(&thi->t_lock, flags);
-		if (thi->t_state != NONE)
-			conn_err(tconn, "ASSERT FAILED: %s t_state == %d expected %d.\n",
-				 thi->name, thi->t_state, NONE);
-		spin_unlock_irqrestore(&thi->t_lock, flags);
-	}
+	if (wait)
+		wait_for_completion(&thi->stop);
 }
 
 static struct drbd_thread *drbd_task_to_thread(struct drbd_tconn *tconn, struct task_struct *task)
