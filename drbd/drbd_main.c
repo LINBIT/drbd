@@ -181,10 +181,12 @@ STATIC const struct block_device_operations drbd_ops = {
 	.release = drbd_release,
 };
 
+#ifdef COMPAT_BIO_HAS_BI_DESTRUCTOR
 static void bio_destructor_drbd(struct bio *bio)
 {
 	bio_free(bio, drbd_md_io_bio_set);
 }
+#endif
 
 struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 {
@@ -194,9 +196,11 @@ struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 		return bio_alloc(gfp_mask, 1);
 
 	bio = bio_alloc_bioset(gfp_mask, 1, drbd_md_io_bio_set);
+#ifdef COMPAT_BIO_HAS_BI_DESTRUCTOR
 	if (!bio)
 		return NULL;
 	bio->bi_destructor = bio_destructor_drbd;
+#endif
 	return bio;
 }
 

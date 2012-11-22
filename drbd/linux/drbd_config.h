@@ -178,5 +178,6 @@ extern const char *drbd_buildtag(void);
 
 #define COMPAT_KMAP_ATOMIC_HAS_ONE_PARAMETER
 //#define COMPAT_HAVE_KM_TYPE
+//#define COMPAT_BIO_HAS_BI_DESTRUCTOR
 
 #endif

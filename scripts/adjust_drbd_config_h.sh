@@ -276,6 +276,11 @@ then
   else
       compat_have_km_type=0
   fi
+  if grep_q "\*bi_destructor;" $KDIR/include/linux/blk_types.h ; then
+      compat_bio_has_bi_destructor=1
+  else
+      compat_bio_has_bi_destructor=0
+  fi
 else
     # not a 2.6. kernel. just leave it alone...
     exit 0
@@ -359,6 +364,8 @@ perl -pe "
   { ( $compat_kmap_atomic_has_one_parameter ? '' : '//' ) . \$1}e;
  s{.*(#define COMPAT_HAVE_KM_TYPE.*)}
   { ( $compat_have_km_type ? '' : '//' ) . \$1}e;
+ s{.*(#define COMPAT_BIO_HAS_BI_DESTRUCTOR.*)}
+  { ( $compat_bio_has_bi_destructor ? '' : '//' ) . \$1}e;
  " \
 	  < ./linux/drbd_config.h \
 	  > ./linux/drbd_config.h.new
