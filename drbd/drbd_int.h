@@ -343,7 +343,7 @@ enum drbd_thread_state {
 struct drbd_thread {
 	spinlock_t t_lock;
 	struct task_struct *task;
-	struct completion startstop;
+	struct completion stop;
 	enum drbd_thread_state t_state;
 	int (*function) (struct drbd_thread *);
 	struct drbd_resource *resource;
