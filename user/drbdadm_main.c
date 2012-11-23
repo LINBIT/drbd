@@ -322,7 +322,7 @@ static struct adm_cmd adjust_cmd = {"adjust", adm_adjust, ACF1_RESNAME};
 static struct adm_cmd adjust_wp_cmd = {"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT};
 static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
 static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
-static struct adm_cmd role_cmd = {"role", adm_generic_s, ACF1_DEFAULT};
+static struct adm_cmd role_cmd = {"role", adm_generic_s, ACF1_RESNAME};
 static struct adm_cmd cstate_cmd = {"cstate", adm_generic_s, ACF1_DEFAULT};
 static struct adm_cmd dstate_cmd = {"dstate", adm_generic_b, ACF1_DEFAULT};
 static struct adm_cmd status_cmd = {"status", adm_generic_l, .show_in_usage = 1, .uc_dialog = 1};
