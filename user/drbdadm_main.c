@@ -92,7 +92,6 @@ static int adm_new_minor(struct cfg_ctx *ctx);
 static int adm_resource(struct cfg_ctx *);
 static int adm_attach(struct cfg_ctx *);
 static int adm_connect(struct cfg_ctx *);
-static int adm_disconnect(struct cfg_ctx *);
 static int adm_resize(struct cfg_ctx *);
 static int adm_generic_l(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
@@ -202,6 +201,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF1_DEFAULT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
@@ -209,11 +209,13 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF1_RESNAME			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.uc_dialog = 1,			\
 
 #define ACF1_CONNECT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 0,		\
 	.verify_ips = 1,		\
 	.need_peer = 1,			\
@@ -222,12 +224,14 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF1_DISCONNECT			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 0,		\
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
 #define ACF1_DEFNET			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
@@ -235,6 +239,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF1_PEER_DEVICE		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 1,		\
 	.need_peer = 1,			\
 	.verify_ips = 0,		\
@@ -243,6 +248,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF3_RES_HANDLER		\
 	.show_in_usage = 3,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 0,		\
 	.vol_id_required = 0,		\
 	.verify_ips = 0,		\
@@ -251,6 +257,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF4_ADVANCED			\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 0,		\
 	.uc_dialog = 1,			\
@@ -258,6 +265,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF4_ADVANCED_NEED_VOL		\
 	.show_in_usage = 4,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.iterate_volumes = 0,		\
 	.vol_id_required = 1,		\
 	.verify_ips = 0,		\
@@ -266,6 +274,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF1_DUMP			\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.verify_ips = 1,		\
 	.uc_dialog = 1,			\
 	.test_config = 1,		\
@@ -274,17 +283,20 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 	.show_in_usage = 2,		\
 	.iterate_volumes = 1,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.verify_ips = 0,		\
 
 #define ACF2_SH_RESNAME			\
 	.show_in_usage = 2,		\
 	.iterate_volumes = 0,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.verify_ips = 0,		\
 
 #define ACF2_PROXY			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.verify_ips = 0,		\
 	.need_peer = 1,			\
 	.is_proxy_cmd = 1,		\
@@ -292,6 +304,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 #define ACF2_HOOK			\
 	.show_in_usage = 2,		\
 	.res_name_required = 1,		\
+	.backend_res_name = 1,		\
 	.verify_ips = 0,                \
 	.use_cached_config_file = 1,	\
 
@@ -305,7 +318,7 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 /*  */ struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd net_options_cmd = {"net-options", adm_connect, &net_options_ctx, ACF1_CONNECT};
-/*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_disconnect, &disconnect_cmd_ctx, ACF1_DISCONNECT};
+/*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_generic_s, &disconnect_cmd_ctx, ACF1_DISCONNECT};
 static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 /*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_resource, &resource_options_ctx, ACF1_RESNAME};
 static struct adm_cmd down_cmd = {"down", adm_generic_l, ACF1_RESNAME};
@@ -1298,7 +1311,7 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 	argv[NA(argc)] = (char *)ctx->cmd->name;
 	if (ctx->vol)
 		argv[NA(argc)] = ssprintf("%d", ctx->vol->device_minor);
-	else if (ctx->res)
+	else if (ctx->cmd->backend_res_name && ctx->res)
 		argv[NA(argc)] = ssprintf("%s", ctx->res->name);
 
 	if (ctx->cmd->need_peer) {
@@ -1526,28 +1539,6 @@ static int adm_connect(struct cfg_ctx *ctx)
 	argv[NA(argc)] = 0;
 
 	return m_system_ex(argv, SLEEPS_SHORT, res->name);
-}
-
-int adm_disconnect(struct cfg_ctx *ctx)
-{
-	char *argv[MAX_ARGS];
-	int argc = 0;
-
-	if (!ctx->res) {
-		/* ASSERT */
-		fprintf(stderr, "sorry, need at least a resource name to call drbdsetup\n");
-		abort();
-	}
-
-	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = (char *)ctx->cmd->name;
-	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
-	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
-	add_setup_options(argv, &argc);
-	argv[NA(argc)] = 0;
-
-	setenv("DRBD_RESOURCE", ctx->res->name, 1);
-	return m_system_ex(argv, SLEEPS_SHORT, ctx->res->name);
 }
 
 void free_opt(struct d_option *item)

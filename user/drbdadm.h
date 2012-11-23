@@ -236,6 +236,8 @@ struct adm_cmd {
 	unsigned int show_in_usage:3;
 	/* if set, command requires an explicit resource name */
 	unsigned int res_name_required:1;
+	/* if set, the backend command expects the resource name */
+	unsigned int backend_res_name:1;
 	/* if set, command requires an explicit volume number as well */
 	unsigned int vol_id_required:1;
 	/* most commands need to iterate over all volumes in the resource */
