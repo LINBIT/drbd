@@ -162,7 +162,6 @@ case "$1" in
 	[ -d /var/lock/subsys ] && touch /var/lock/subsys/drbd	# for RedHat
 	$DRBDADM wait-con-int # User interruptible version of wait-connect all
 
-	$DRBDADM sh-b-pri all # Become primary if configured
 	log_end_msg 0
 	;;
     stop)

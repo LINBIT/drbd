@@ -110,7 +110,6 @@ static int sh_lres(struct cfg_ctx *);
 static int sh_ll_dev(struct cfg_ctx *);
 static int sh_md_dev(struct cfg_ctx *);
 static int sh_md_idx(struct cfg_ctx *);
-static int sh_b_pri(struct cfg_ctx *);
 static int sh_status(struct cfg_ctx *);
 static int adm_drbdmeta(struct cfg_ctx *);
 static int adm_khelper(struct cfg_ctx *);
@@ -362,7 +361,6 @@ static struct adm_cmd sh_md_dev_cmd = {"sh-md-dev", sh_md_dev, ACF2_SHELL};
 static struct adm_cmd sh_md_idx_cmd = {"sh-md-idx", sh_md_idx, ACF2_SHELL};
 static struct adm_cmd sh_ip_cmd = {"sh-ip", sh_ip, ACF2_SHELL};
 static struct adm_cmd sh_lr_of_cmd = {"sh-lr-of", sh_lres, ACF2_SHELL};
-static struct adm_cmd sh_b_pri_cmd = {"sh-b-pri", sh_b_pri, ACF2_SHELL};
 static struct adm_cmd sh_status_cmd = {"sh-status", sh_status, ACF2_GEN_SHELL};
 
 static struct adm_cmd proxy_up_cmd = {"proxy-up", adm_proxy_up, ACF2_PROXY};
@@ -448,7 +446,6 @@ struct adm_cmd *cmds[] = {
 	&sh_md_idx_cmd,
 	&sh_ip_cmd,
 	&sh_lr_of_cmd,
-	&sh_b_pri_cmd,
 	&sh_status_cmd,
 
 	&proxy_up_cmd,
@@ -499,7 +496,6 @@ struct adm_cmd *cmds[] = {
 /*  */ struct adm_cmd proxy_conn_down_cmd = { "", do_proxy_conn_down, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_up_cmd = { "", do_proxy_conn_up, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_plugins_cmd = { "", do_proxy_conn_plugins, ACF1_DEFAULT};
-static struct adm_cmd primary_s_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME};
 
 static void initialize_deferred_cmds()
 {
@@ -794,26 +790,6 @@ static int sh_md_dev(struct cfg_ctx *ctx)
 static int sh_md_idx(struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->vol->meta_index);
-	return 0;
-}
-
-static int sh_b_pri(struct cfg_ctx *ctx)
-{
-	struct d_resource *res = ctx->res;
-	int i, rv;
-
-	if (name_in_names(nodeinfo.nodename, &res->become_primary_on) ||
-	    name_in_names("both", &res->become_primary_on)) {
-		/* upon connect resync starts, and both sides become primary at the same time.
-		   One's try might be declined since an other state transition happens. Retry. */
-		for (i = 0; i < 5; i++) {
-			rv = call_cmd_fn(&primary_s_cmd, ctx, KEEP_RUNNING);
-			if (rv == 0)
-				return rv;
-			sleep(1);
-		}
-		return rv;
-	}
 	return 0;
 }
 

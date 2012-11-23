@@ -496,17 +496,9 @@ static void dump_connection_xml(struct connection *conn)
 static void fake_startup_options(struct d_resource *res)
 {
 	struct d_option *opt;
-	char *val;
 
 	if (res->stacked_timeouts) {
 		opt = new_opt(strdup("stacked-timeouts"), NULL);
-		insert_tail(&res->startup_options, opt);
-	}
-
-	if (!STAILQ_EMPTY(&res->become_primary_on)) {
-		val = strdup(names_to_str(&res->become_primary_on));
-		opt = new_opt(strdup("become-primary-on"), val);
-		opt->is_escaped = 1;
 		insert_tail(&res->startup_options, opt);
 	}
 }

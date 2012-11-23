@@ -1293,7 +1293,11 @@ void startup_delegate(void *ctx)
 	struct d_resource *res = (struct d_resource *)ctx;
 
 	if (!strcmp(yytext, "become-primary-on")) {
-		parse_hosts(&res->become_primary_on, ';');
+		/* fprintf(stderr, "Warn: Ignoring deprecated become-primary-on. Use automatic-promote\n"); */
+		int token;
+		do {
+			token = yylex();
+		} while (token != ';');
 	} else if (!strcmp(yytext, "stacked-timeouts")) {
 		res->stacked_timeouts = 1;
 		EXP(';');

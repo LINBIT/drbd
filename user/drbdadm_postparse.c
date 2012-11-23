@@ -731,9 +731,6 @@ void expand_common(void)
 			if (common->stacked_timeouts)
 				res->stacked_timeouts = 1;
 
-			if (STAILQ_EMPTY(&res->become_primary_on))
-				res->become_primary_on = common->become_primary_on;
-
 			expand_opts(&common->proxy_plugins, &res->proxy_plugins);
 		}
 
@@ -907,7 +904,6 @@ static void ensure_proxy_sections(struct d_resource *res)
 static void validate_resource(struct d_resource *res)
 {
 	struct d_option *opt, *next;
-	struct d_name *bpo;
 
 	/* there may be more than one "resync-after" statement,
 	 * see commit 89cd0585 */
@@ -968,35 +964,7 @@ static void validate_resource(struct d_resource *res)
 			sanity_check_perm();
 	}
 
-	opt = find_opt(&res->net_options, "allow-two-primaries");
-	if (name_in_names("both", &res->become_primary_on) && opt == NULL) {
-		fprintf(stderr,
-			"%s:%d: in resource %s:\n"
-			"become-primary-on is set to both, but allow-two-primaries "
-			"is not set.\n", res->config_file, res->start_line,
-			res->name);
-		config_valid = 0;
-	}
-
 	ensure_proxy_sections(res); /* All or none. */
-
-	STAILQ_FOREACH(bpo, &res->become_primary_on, link) {
-		struct d_host_info *host;
-		if (!strcmp(bpo->name, "both"))
-			break;
-
-		for_each_host(host, &res->all_hosts) {
-			if (name_in_names(bpo->name, &host->on_hosts))
-				break;
-
-			fprintf(stderr,
-				"%s:%d: in resource %s:\n\t"
-				"become-primary-on contains '%s', which is not named with the 'on' sections.\n",
-				res->config_file, res->start_line, res->name,
-				bpo->name);
-			config_valid = 0;
-		}
-	}
 }
 
 static int ctx_set_implicit_volume(struct cfg_ctx *ctx)

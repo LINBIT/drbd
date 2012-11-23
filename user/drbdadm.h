@@ -204,7 +204,6 @@ struct d_resource
 	struct options proxy_options;
 	struct options proxy_plugins;
 	STAILQ_ENTRY(d_resource) link;
-	struct names become_primary_on;
 	char *config_file; /* The config file this resource is define in.*/
 	int start_line;
 	unsigned int stacked_timeouts:1;
