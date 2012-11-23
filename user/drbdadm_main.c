@@ -1302,7 +1302,7 @@ static int admm_generic(struct cfg_ctx *ctx)
 	return _admm_generic(ctx, SLEEPS_VERY_LONG, NULL);
 }
 
-static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
+static void __adm_drbdsteup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0;
@@ -1331,7 +1331,7 @@ static void _adm_generic(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, in
 static int adm_generic(struct cfg_ctx *ctx, int flags)
 {
 	int ex;
-	_adm_generic(ctx, flags, NULL, NULL, &ex);
+	__adm_drbdsteup(ctx, flags, NULL, NULL, &ex);
 	return ex;
 }
 
@@ -1449,7 +1449,7 @@ static int adm_generic_b(struct cfg_ctx *ctx)
 	int fd, status, rv = 0, rr, s = 0;
 	pid_t pid;
 
-	_adm_generic(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
+	__adm_drbdsteup(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
