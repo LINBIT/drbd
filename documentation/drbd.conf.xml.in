@@ -78,9 +78,9 @@
   </refsect1>
 
   <refsect1>
-    <title>example configuration file</title>
+    <title>Example Configuration File</title>
     <para>
-        <title>A small example.res file</title>
+        <title>A small r0.res example file</title>
 
         <programlisting format="linespecific">resource r0 {
 	net {
@@ -101,21 +101,22 @@
 		address   10.1.1.32:7000;
 	}
 	connection {
-		host alice port 7001;
-		host bob port 7001;
+		host alice port 7000;
+		host bob port 7000;
 		net { protocol C; }
 	}
 }</programlisting>
-    In this example, there is a single DRBD resource (called r0) which uses protocol C
-    for the connection between alice and bob, and protocol A for the other connections.
-    It contains a single volume which runs on host
-    <replaceable>alice</replaceable> uses <replaceable>/dev/drbd1</replaceable> as devices for its
-    application, and <replaceable>/dev/sda7</replaceable> as low-level storage for the data. The
-    IP addresses are used to specify the networking interfaces to be used.</para>
+    This example defines a resource r0 which contains a single replicated
+    device with volume number 0.  The resource is replicated among hosts alice
+    and bob, which have the IPv4 addresses 10.1.1.31 and 10.1.1.32 and the
+    node identifiers 0 and 1, respectively.  On both hosts, the replicated
+    device is called /dev/drbd1, and the actual data and metadata are stored on
+    the lower-level device /dev/sda7.  The connection between the hosts uses
+    protocol C.</para>
 
-    <para>There may be multiple resource sections in a single drbd.conf file. For more examples,
-    please have a look at the
-    <ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>.</para>
+    <para>Please refer to the <ulink
+	url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's
+	  Guide</citetitle></ulink> for more examples.</para>
 
   </refsect1>
 
