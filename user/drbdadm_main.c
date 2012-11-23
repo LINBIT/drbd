@@ -114,7 +114,7 @@ static int sh_b_pri(struct cfg_ctx *);
 static int sh_status(struct cfg_ctx *);
 static int adm_drbdmeta(struct cfg_ctx *);
 static int adm_khelper(struct cfg_ctx *);
-static int adm_generic_b(struct cfg_ctx *);
+static int adm_setup_and_meta(struct cfg_ctx *);
 static int hidden_cmds(struct cfg_ctx *);
 static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
@@ -323,7 +323,7 @@ static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 static struct adm_cmd down_cmd = {"down", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd primary_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd secondary_cmd = {"secondary", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
-static struct adm_cmd invalidate_cmd = {"invalidate", adm_generic_b, ACF1_PEER_DEVICE};
+static struct adm_cmd invalidate_cmd = {"invalidate", adm_setup_and_meta, ACF1_PEER_DEVICE};
 static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_drbdsetup, ACF1_PEER_DEVICE .takes_long = 1};
 static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
 /*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
@@ -336,14 +336,14 @@ static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
 static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
 static struct adm_cmd role_cmd = {"role", adm_drbdsetup, ACF1_RESNAME};
 static struct adm_cmd cstate_cmd = {"cstate", adm_drbdsetup, ACF1_DISCONNECT};
-static struct adm_cmd dstate_cmd = {"dstate", adm_generic_b, ACF1_DEFAULT};
+static struct adm_cmd dstate_cmd = {"dstate", adm_setup_and_meta, ACF1_DEFAULT};
 static struct adm_cmd status_cmd = {"status", adm_drbdsetup, .show_in_usage = 1, .uc_dialog = 1};
 static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
 static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 
 static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT};
-static struct adm_cmd show_gi_cmd = {"show-gi", adm_generic_b, ACF1_PEER_DEVICE};
-static struct adm_cmd get_gi_cmd = {"get-gi", adm_generic_b, ACF1_PEER_DEVICE};
+static struct adm_cmd show_gi_cmd = {"show-gi", adm_setup_and_meta, ACF1_PEER_DEVICE};
+static struct adm_cmd get_gi_cmd = {"get-gi", adm_setup_and_meta, ACF1_PEER_DEVICE};
 static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT};
 static struct adm_cmd wipe_md_cmd = {"wipe-md", adm_drbdmeta, ACF1_DEFAULT};
 static struct adm_cmd apply_al_cmd = {"apply-al", adm_drbdmeta, ACF1_DEFAULT};
@@ -1437,7 +1437,7 @@ static int adm_chk_resize(struct cfg_ctx *ctx)
 	return adm_drbdmeta(ctx);
 }
 
-static int adm_generic_b(struct cfg_ctx *ctx)
+static int adm_setup_and_meta(struct cfg_ctx *ctx)
 {
 	char buffer[4096];
 	int fd, status, rv = 0, rr, s = 0;
