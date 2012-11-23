@@ -757,6 +757,9 @@ struct drbd_resource {
 
 	struct drbd_work_queue work;
 	struct drbd_thread worker;
+
+	struct list_head listeners;
+	spinlock_t listeners_lock;
 };
 
 struct drbd_connection {			/* is a resource from the config file */

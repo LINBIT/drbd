@@ -2844,6 +2844,8 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
+	INIT_LIST_HEAD(&resource->listeners);
+	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");

@@ -41,6 +41,7 @@
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/random.h>
+#include <net/ipv6.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
@@ -64,6 +65,25 @@ enum finish_epoch {
 	FE_STILL_LIVE,
 	FE_DESTROYED,
 	FE_RECYCLED,
+};
+
+struct listener {
+	struct kref kref;
+	struct drbd_resource *resource;
+	struct socket *s_listen;
+	struct sockaddr_storage listen_addr;
+	void (*original_sk_state_change)(struct sock *sk);
+	struct list_head list; /* link for resource->listeners */
+	struct list_head waiters; /* list head for waiter structs*/
+	int pending_accepts;
+};
+
+struct waiter {
+	struct drbd_connection *connection;
+	wait_queue_head_t wait;
+	struct list_head list;
+	struct listener *listener;
+	struct socket *socket;
 };
 
 STATIC int drbd_do_features(struct drbd_connection *connection);
@@ -685,26 +705,25 @@ out:
 	return sock;
 }
 
-struct accept_wait_data {
-	struct drbd_connection *connection;
-	struct socket *s_listen;
-	struct completion door_bell;
-	void (*original_sk_state_change)(struct sock *sk);
-
-};
-
 static void drbd_incoming_connection(struct sock *sk)
 {
-	struct accept_wait_data *ad = sk->sk_user_data;
+	struct listener *listener = sk->sk_user_data;
 	void (*state_change)(struct sock *sk);
 
-	state_change = ad->original_sk_state_change;
-	if (sk->sk_state == TCP_ESTABLISHED)
-		complete(&ad->door_bell);
+	state_change = listener->original_sk_state_change;
+	if (sk->sk_state == TCP_ESTABLISHED) {
+		struct waiter *waiter;
+
+		spin_lock(&listener->resource->listeners_lock);
+		listener->pending_accepts++;
+		waiter = list_entry(listener->waiters.next, struct waiter, list);
+		wake_up(&waiter->wait);
+		spin_unlock(&listener->resource->listeners_lock);
+	}
 	state_change(sk);
 }
 
-static int prepare_listen_socket(struct drbd_connection *connection, struct accept_wait_data *ad)
+static int prepare_listener(struct drbd_connection *connection, struct listener *listener)
 {
 	int err, sndbuf_size, rcvbuf_size, my_addr_len;
 	struct sockaddr_in6 my_addr;
@@ -741,17 +760,19 @@ static int prepare_listen_socket(struct drbd_connection *connection, struct acce
 	if (err < 0)
 		goto out;
 
-	ad->s_listen = s_listen;
+	listener->s_listen = s_listen;
 	write_lock_bh(&s_listen->sk->sk_callback_lock);
-	ad->original_sk_state_change = s_listen->sk->sk_state_change;
+	listener->original_sk_state_change = s_listen->sk->sk_state_change;
 	s_listen->sk->sk_state_change = drbd_incoming_connection;
-	s_listen->sk->sk_user_data = ad;
+	s_listen->sk->sk_user_data = listener;
 	write_unlock_bh(&s_listen->sk->sk_callback_lock);
 
 	what = "listen";
 	err = s_listen->ops->listen(s_listen, 5);
 	if (err < 0)
 		goto out;
+
+	memcpy(&listener->listen_addr, &my_addr, my_addr_len);
 
 	return 0;
 out:
@@ -767,19 +788,170 @@ out:
 	return -EIO;
 }
 
-static void unregister_state_change(struct sock *sk, struct accept_wait_data *ad)
+static struct listener* find_listener(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct listener *listener;
+
+	list_for_each_entry(listener, &resource->listeners, list) {
+		if (!memcmp(&listener->listen_addr, &connection->my_addr, connection->my_addr_len)) {
+			kref_get(&listener->kref);
+			return listener;
+		}
+	}
+	return NULL;
+}
+
+static int get_listener(struct drbd_connection *connection, struct waiter *waiter)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct listener *listener, *new_listener = NULL;
+	int rv;
+
+	waiter->connection = connection;
+	waiter->socket = NULL;
+	init_waitqueue_head(&waiter->wait);
+
+	while (1) {
+		spin_lock(&resource->listeners_lock);
+		listener = find_listener(connection);
+		if (!listener && new_listener) {
+			list_add(&new_listener->list, &resource->listeners);
+			listener = new_listener;
+			new_listener = NULL;
+		}
+		if (listener) {
+			list_add(&waiter->list, &listener->waiters);
+			waiter->listener = listener;
+		}
+		spin_unlock(&resource->listeners_lock);
+
+		if (new_listener) {
+			sock_release(new_listener->s_listen);
+			kfree(new_listener);
+		}
+
+		if (listener)
+			return 0;
+
+		new_listener = kmalloc(sizeof(*new_listener), GFP_KERNEL);
+		if (!new_listener)
+			return -ENOMEM;
+
+		rv = prepare_listener(connection, new_listener);
+		if (rv) {
+			kfree(new_listener);
+			return rv;
+		}
+		kref_init(&new_listener->kref);
+		INIT_LIST_HEAD(&new_listener->waiters);
+		new_listener->resource = resource;
+		new_listener->pending_accepts = 0;
+	}
+}
+
+static void drbd_listener_destroy(struct kref *kref)
+{
+	struct listener *listener = container_of(kref, struct listener, kref);
+	struct drbd_resource *resource = listener->resource;
+
+	list_del(&listener->list);
+	spin_unlock(&resource->listeners_lock);
+	sock_release(listener->s_listen);
+	kfree(listener);
+	spin_lock(&resource->listeners_lock);
+}
+
+static void put_listener(struct waiter *waiter)
+{
+	struct drbd_resource *resource;
+
+	if (!waiter->listener)
+		return;
+
+	resource = waiter->listener->resource;
+	spin_lock(&resource->listeners_lock);
+	list_del(&waiter->list);
+	if (!list_empty(&waiter->listener->waiters) && waiter->listener->pending_accepts) {
+		/* This receiver no longer does accept calls. In case we got woken up to do
+		   one, and there are more receivers, wake one of the other guys to do it */
+		struct waiter *ad2;
+		ad2 = list_entry(waiter->listener->waiters.next, struct waiter, list);
+		wake_up(&ad2->wait);
+	}
+	kref_put(&waiter->listener->kref, drbd_listener_destroy);
+	spin_unlock(&resource->listeners_lock);
+	waiter->listener = NULL;
+	if (waiter->socket) {
+		sock_release(waiter->socket);
+		waiter->socket = NULL;
+	}
+}
+
+static void unregister_state_change(struct sock *sk, struct listener *listener)
 {
 	write_lock_bh(&sk->sk_callback_lock);
-	sk->sk_state_change = ad->original_sk_state_change;
+	sk->sk_state_change = listener->original_sk_state_change;
 	sk->sk_user_data = NULL;
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
-STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection, struct accept_wait_data *ad)
+static bool addr_equal(const struct sockaddr *addr1, const struct sockaddr *addr2)
 {
-	int timeo, connect_int, err = 0;
-	struct socket *s_estab = NULL;
+	if (addr1->sa_family != addr2->sa_family)
+		return false;
+
+	if (addr1->sa_family == AF_INET6) {
+		const struct sockaddr_in6 *v6a1 = (const struct sockaddr_in6 *)addr1;
+		const struct sockaddr_in6 *v6a2 = (const struct sockaddr_in6 *)addr2;
+
+		if (!ipv6_addr_equal(&v6a1->sin6_addr, &v6a2->sin6_addr))
+			return false;
+		else if (ipv6_addr_type(&v6a1->sin6_addr) & IPV6_ADDR_LINKLOCAL)
+			return v6a1->sin6_scope_id == v6a2->sin6_scope_id;
+		return true;
+	} else /* AF_INET, AF_SSOCKS, AF_SDP */ {
+		const struct sockaddr_in *v4a1 = (const struct sockaddr_in *)addr1;
+		const struct sockaddr_in *v4a2 = (const struct sockaddr_in *)addr2;
+		return v4a1->sin_addr.s_addr == v4a2->sin_addr.s_addr;
+	}
+}
+
+static struct waiter *
+	find_waiter_by_addr(struct listener *listener, struct sockaddr *addr)
+{
+	struct waiter *waiter;
+
+	list_for_each_entry(waiter, &listener->waiters, list) {
+		if (addr_equal((struct sockaddr *)&waiter->connection->peer_addr, addr))
+			return waiter;
+	}
+
+	return NULL;
+}
+
+static bool _wait_connect_cond(struct waiter *waiter)
+{
+	struct drbd_connection *connection = waiter->connection;
+	struct drbd_resource *resource = connection->resource;
+	bool rv;
+
+	spin_lock(&resource->listeners_lock);
+	rv = waiter->listener->pending_accepts > 0 || waiter->socket != NULL;
+	spin_unlock(&resource->listeners_lock);
+
+	return rv;
+}
+
+STATIC struct socket *drbd_wait_for_connect(struct waiter *waiter)
+{
+	struct drbd_connection *connection = waiter->connection;
+	struct drbd_resource *resource = connection->resource;
+	struct sockaddr_storage peer_addr;
+	int timeo, connect_int, peer_addr_len, err = 0;
+	struct socket *s_estab;
 	struct net_conf *nc;
+	struct waiter *waiter2;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -793,22 +965,60 @@ STATIC struct socket *drbd_wait_for_connect(struct drbd_connection *connection, 
 	timeo = connect_int * HZ;
 	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
-	err = wait_for_completion_interruptible_timeout(&ad->door_bell, timeo);
-	if (err <= 0)
+retry:
+	timeo = wait_event_interruptible_timeout(waiter->wait, _wait_connect_cond(waiter), timeo);
+	if (timeo <= 0)
 		return NULL;
 
-	err = kernel_accept(ad->s_listen, &s_estab, 0);
-	if (err < 0) {
-		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-			drbd_err(connection, "accept failed, err = %d\n", err);
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	spin_lock(&resource->listeners_lock);
+	if (waiter->socket) {
+		s_estab = waiter->socket;
+		waiter->socket = NULL;
+	} else if (waiter->listener->pending_accepts > 0) {
+		waiter->listener->pending_accepts--;
+		spin_unlock(&resource->listeners_lock);
+
+		s_estab = NULL;
+		err = kernel_accept(waiter->listener->s_listen, &s_estab, 0);
+		if (err < 0) {
+			if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+				drbd_err(connection, "accept failed, err = %d\n", err);
+				change_cstate(connection, C_DISCONNECTING, CS_HARD);
+			}
+		}
+
+		if (!s_estab)
+			return NULL;
+
+		unregister_state_change(s_estab->sk, waiter->listener);
+
+		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
+
+		spin_lock(&resource->listeners_lock);
+		waiter2 = find_waiter_by_addr(waiter->listener, (struct sockaddr *)&peer_addr);
+		if (!waiter2) {
+			drbd_err(connection, "Closing connection from unexpected peer\n");
+			sock_release(s_estab);
+			goto retry;
+		}
+		if (waiter2 != waiter) {
+			if (waiter2->socket) {
+				drbd_err(connection, "Target receiver busy, closing connection\n");
+				sock_release(s_estab);
+				goto retry_locked;
+			}
+			waiter2->socket = s_estab;
+			wake_up(&waiter2->wait);
+			goto retry_locked;
 		}
 	}
-
-	if (s_estab)
-		unregister_state_change(s_estab->sk, ad);
-
+	spin_unlock(&resource->listeners_lock);
 	return s_estab;
+
+retry_locked:
+	spin_unlock(&resource->listeners_lock);
+	goto retry;
+
 }
 
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
@@ -897,10 +1107,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	struct net_conf *nc;
 	int vnr, timeout, h, ok;
 	bool discard_my_data;
-	struct accept_wait_data ad = {
-		.connection = connection,
-		.door_bell = COMPLETION_INITIALIZER_ONSTACK(ad.door_bell),
-	};
+	struct waiter waiter;
 
 	clear_bit(DISCONNECT_SENT, &connection->flags);
 	if (change_cstate(connection, C_WF_CONNECTION, CS_VERBOSE) < SS_SUCCESS)
@@ -918,7 +1125,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	connection->agreed_pro_version = 80;
 
-	if (prepare_listen_socket(connection, &ad))
+	if (get_listener(connection, &waiter))
 		return 0;
 
 	do {
@@ -952,7 +1159,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 		}
 
 retry:
-		s = drbd_wait_for_connect(connection, &ad);
+		s = drbd_wait_for_connect(&waiter);
 		if (s) {
 			int fp = receive_first_packet(connection, s);
 			drbd_socket_okay(&sock.socket);
@@ -999,8 +1206,7 @@ randomize:
 		ok = drbd_socket_okay(&msock.socket) && ok;
 	} while (!ok);
 
-	if (ad.s_listen)
-		sock_release(ad.s_listen);
+	put_listener(&waiter);
 
 	sock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	msock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
@@ -1099,8 +1305,7 @@ randomize:
 	return h;
 
 out_release_sockets:
-	if (ad.s_listen)
-		sock_release(ad.s_listen);
+	put_listener(&waiter);
 	if (sock.socket)
 		sock_release(sock.socket);
 	if (msock.socket)
