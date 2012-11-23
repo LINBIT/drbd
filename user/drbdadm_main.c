@@ -112,7 +112,7 @@ static int sh_md_dev(struct cfg_ctx *);
 static int sh_md_idx(struct cfg_ctx *);
 static int sh_b_pri(struct cfg_ctx *);
 static int sh_status(struct cfg_ctx *);
-static int admm_generic(struct cfg_ctx *);
+static int adm_drbdmeta(struct cfg_ctx *);
 static int adm_khelper(struct cfg_ctx *);
 static int adm_generic_b(struct cfg_ctx *);
 static int hidden_cmds(struct cfg_ctx *);
@@ -344,9 +344,9 @@ static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT};
 static struct adm_cmd show_gi_cmd = {"show-gi", adm_generic_b, ACF1_PEER_DEVICE};
 static struct adm_cmd get_gi_cmd = {"get-gi", adm_generic_b, ACF1_PEER_DEVICE};
-static struct adm_cmd dump_md_cmd = {"dump-md", admm_generic, ACF1_DEFAULT};
-static struct adm_cmd wipe_md_cmd = {"wipe-md", admm_generic, ACF1_DEFAULT};
-static struct adm_cmd apply_al_cmd = {"apply-al", admm_generic, ACF1_DEFAULT};
+static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT};
+static struct adm_cmd wipe_md_cmd = {"wipe-md", adm_drbdmeta, ACF1_DEFAULT};
+static struct adm_cmd apply_al_cmd = {"apply-al", adm_drbdmeta, ACF1_DEFAULT};
 
 static struct adm_cmd hidden_cmd = {"hidden-commands", hidden_cmds,.show_in_usage = 1,};
 
@@ -385,7 +385,7 @@ static struct adm_cmd khelper11_cmd = {"out-of-sync", adm_khelper, ACF3_RES_HAND
 
 static struct adm_cmd suspend_io_cmd = {"suspend-io", adm_drbdsetup, ACF4_ADVANCED};
 static struct adm_cmd resume_io_cmd = {"resume-io", adm_drbdsetup, ACF4_ADVANCED};
-static struct adm_cmd set_gi_cmd = {"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
+static struct adm_cmd set_gi_cmd = {"set-gi", adm_drbdmeta, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
 static struct adm_cmd new_current_uuid_cmd = {"new-current-uuid", adm_drbdsetup, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL};
 static struct adm_cmd check_resize_cmd = {"check-resize", adm_chk_resize, ACF4_ADVANCED};
 
@@ -1262,7 +1262,7 @@ int adm_resize(struct cfg_ctx *ctx)
 	return 0;
 }
 
-int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
+int _adm_drbdmeta(struct cfg_ctx *ctx, int flags, char *argument)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
@@ -1296,9 +1296,9 @@ int _admm_generic(struct cfg_ctx *ctx, int flags, char *argument)
 	return m_system_ex(argv, flags, ctx->res->name);
 }
 
-static int admm_generic(struct cfg_ctx *ctx)
+static int adm_drbdmeta(struct cfg_ctx *ctx)
 {
-	return _admm_generic(ctx, SLEEPS_VERY_LONG, NULL);
+	return _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, NULL);
 }
 
 static void __adm_drbdsteup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
@@ -1412,14 +1412,14 @@ static int adm_outdate(struct cfg_ctx *ctx)
 
 	if (rv == 5) {
 		/* That might mean it is diskless. */
-		rv = admm_generic(ctx);
+		rv = adm_drbdmeta(ctx);
 		if (rv)
 			rv = 5;
 		return rv;
 	}
 
 	if (rv || dry_run) {
-		rv = admm_generic(ctx);
+		rv = adm_drbdmeta(ctx);
 	}
 	return rv;
 }
@@ -1434,7 +1434,7 @@ static int adm_chk_resize(struct cfg_ctx *ctx)
 		return 0;
 
 	/* try drbdmeta check-resize */
-	return admm_generic(ctx);
+	return adm_drbdmeta(ctx);
 }
 
 static int adm_generic_b(struct cfg_ctx *ctx)
@@ -1487,7 +1487,7 @@ static int adm_generic_b(struct cfg_ctx *ctx)
 		   rv = 16 .. we are diskless here
 		   retry with drbdmeta.
 		 */
-		rv = admm_generic(ctx);
+		rv = adm_drbdmeta(ctx);
 	}
 	return rv;
 }

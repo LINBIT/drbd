@@ -296,7 +296,7 @@ extern struct adm_cmd proxy_conn_plugins_cmd;
 extern struct adm_cmd proxy_reconf_cmd;
 
 extern int adm_create_md(struct cfg_ctx *);
-extern int _admm_generic(struct cfg_ctx *, int flags, char *argument);
+extern int _adm_drbdmeta(struct cfg_ctx *, int flags, char *argument);
 
 extern void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd, int *ex);
 static inline int m_system_ex(char **argv, int flags, const char *res_name)

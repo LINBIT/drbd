@@ -652,7 +652,7 @@ void uc_node(enum usage_count_type type)
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
+static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
 {
 	const int SLURP_SIZE = 4096;
 	int rr,pipes[2];
@@ -678,7 +678,7 @@ static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 		close(pipes[1]);
 		local_cmd.name = arg_override;
 		local_ctx.cmd = &local_cmd;
-		rr = _admm_generic(&local_ctx,
+		rr = _adm_drbdmeta(&local_ctx,
 				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
 				   DONT_REPORT_FAILED,
 				   NULL);
@@ -714,7 +714,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 	char *r;
 	int peers = 0;
 
-	tb = run_admm_generic(ctx, "read-dev-uuid");
+	tb = run_adm_drbdmeta(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
@@ -723,7 +723,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 			peers++;
 
 	/* this is "drbdmeta ... create-md" */
-	rv = _admm_generic(ctx, SLEEPS_VERY_LONG, ssprintf("%d", peers));
+	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, ssprintf("%d", peers));
 
 	if(rv || dry_run) return rv;
 
@@ -781,7 +781,7 @@ int adm_create_md(struct cfg_ctx *ctx)
 
 		local_cmd.name = "write-dev-uuid";
 		local_ctx.cmd = &local_cmd;
-		_admm_generic(&local_ctx, SLEEPS_VERY_LONG, NULL);
+		_adm_drbdmeta(&local_ctx, SLEEPS_VERY_LONG, NULL);
 
 		free(setup_options);
 		setup_options = old_setup_options;
