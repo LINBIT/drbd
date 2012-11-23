@@ -1328,7 +1328,7 @@ static void __adm_drbdsteup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd,
 	m__system(argv, flags, ctx->res ? ctx->res->name : NULL, pid, fd, ex);
 }
 
-static int adm_generic(struct cfg_ctx *ctx, int flags)
+static int _adm_drbdsteup(struct cfg_ctx *ctx, int flags)
 {
 	int ex;
 	__adm_drbdsteup(ctx, flags, NULL, NULL, &ex);
@@ -1337,7 +1337,7 @@ static int adm_generic(struct cfg_ctx *ctx, int flags)
 
 int adm_generic_s(struct cfg_ctx *ctx)
 {
-	return adm_generic(ctx, SLEEPS_SHORT);
+	return _adm_drbdsteup(ctx, SLEEPS_SHORT);
 }
 
 int sh_status(struct cfg_ctx *ctx)
@@ -1388,7 +1388,7 @@ int sh_status(struct cfg_ctx *ctx)
 			printf("_conf_volume=%d\n", vol->vnr);
 
 			ctx->vol = vol;
-			rv = adm_generic(ctx, SLEEPS_SHORT);
+			rv = _adm_drbdsteup(ctx, SLEEPS_SHORT);
 			if (rv)
 				return rv;
 
@@ -1402,14 +1402,14 @@ int sh_status(struct cfg_ctx *ctx)
 
 int adm_generic_l(struct cfg_ctx *ctx)
 {
-	return adm_generic(ctx, SLEEPS_LONG);
+	return _adm_drbdsteup(ctx, SLEEPS_LONG);
 }
 
 static int adm_outdate(struct cfg_ctx *ctx)
 {
 	int rv;
 
-	rv = adm_generic(ctx, SLEEPS_SHORT | SUPRESS_STDERR);
+	rv = _adm_drbdsteup(ctx, SLEEPS_SHORT | SUPRESS_STDERR);
 	/* special cases for outdate:
 	 * 17: drbdsetup outdate, but is primary and thus cannot be outdated.
 	 *  5: drbdsetup outdate, and is inconsistent or worse anyways. */
