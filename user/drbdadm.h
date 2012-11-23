@@ -238,6 +238,8 @@ struct adm_cmd {
 	unsigned int res_name_required:1;
 	/* if set, the backend command expects the resource name */
 	unsigned int backend_res_name:1;
+	/* Give the backend(drbdsetup) more time to complete its mission */
+	unsigned int takes_long:1;
 	/* if set, command requires an explicit volume number as well */
 	unsigned int vol_id_required:1;
 	/* most commands need to iterate over all volumes in the resource */

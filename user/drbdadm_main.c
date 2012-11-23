@@ -93,7 +93,6 @@ static int adm_resource(struct cfg_ctx *);
 static int adm_attach(struct cfg_ctx *);
 static int adm_connect(struct cfg_ctx *);
 static int adm_resize(struct cfg_ctx *);
-static int adm_generic_l(struct cfg_ctx *);
 static int adm_up(struct cfg_ctx *);
 static int adm_wait_c(struct cfg_ctx *);
 static int adm_wait_ci(struct cfg_ctx *);
@@ -119,7 +118,7 @@ static int adm_generic_b(struct cfg_ctx *);
 static int hidden_cmds(struct cfg_ctx *);
 static int adm_outdate(struct cfg_ctx *);
 static int adm_chk_resize(struct cfg_ctx *);
-static int adm_generic_s(struct cfg_ctx *);
+static int adm_drbdsetup(struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -315,30 +314,30 @@ int adm_adjust_wp(struct cfg_ctx *ctx)
 
 /*  */ struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
 /*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
-/*  */ struct adm_cmd detach_cmd = {"detach", adm_generic_l, &detach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd detach_cmd = {"detach", adm_drbdsetup, &detach_cmd_ctx, ACF1_DEFAULT .takes_long = 1};
 /*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd net_options_cmd = {"net-options", adm_connect, &net_options_ctx, ACF1_CONNECT};
-/*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_generic_s, &disconnect_cmd_ctx, ACF1_DISCONNECT};
+/*  */ struct adm_cmd disconnect_cmd = {"disconnect", adm_drbdsetup, &disconnect_cmd_ctx, ACF1_DISCONNECT};
 static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 /*  */ struct adm_cmd res_options_cmd = {"resource-options", adm_resource, &resource_options_ctx, ACF1_RESNAME};
-static struct adm_cmd down_cmd = {"down", adm_generic_l, ACF1_RESNAME};
-static struct adm_cmd primary_cmd = {"primary", adm_generic_l, &primary_cmd_ctx, ACF1_RESNAME};
-static struct adm_cmd secondary_cmd = {"secondary", adm_generic_l, ACF1_RESNAME};
+static struct adm_cmd down_cmd = {"down", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
+static struct adm_cmd primary_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME .takes_long = 1};
+static struct adm_cmd secondary_cmd = {"secondary", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd invalidate_cmd = {"invalidate", adm_generic_b, ACF1_PEER_DEVICE};
-static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_generic_l, ACF1_PEER_DEVICE};
+static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_drbdsetup, ACF1_PEER_DEVICE .takes_long = 1};
 static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
 /*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
-static struct adm_cmd verify_cmd = {"verify", adm_generic_s, ACF1_PEER_DEVICE};
-static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_generic_s, ACF1_PEER_DEVICE};
-static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_generic_s, ACF1_PEER_DEVICE};
+static struct adm_cmd verify_cmd = {"verify", adm_drbdsetup, ACF1_PEER_DEVICE};
+static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_drbdsetup, ACF1_PEER_DEVICE};
+static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_drbdsetup, ACF1_PEER_DEVICE};
 static struct adm_cmd adjust_cmd = {"adjust", adm_adjust, ACF1_RESNAME};
 static struct adm_cmd adjust_wp_cmd = {"adjust-with-progress", adm_adjust_wp, ACF1_CONNECT};
 static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
 static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
-static struct adm_cmd role_cmd = {"role", adm_generic_s, ACF1_RESNAME};
-static struct adm_cmd cstate_cmd = {"cstate", adm_generic_s, ACF1_DISCONNECT};
+static struct adm_cmd role_cmd = {"role", adm_drbdsetup, ACF1_RESNAME};
+static struct adm_cmd cstate_cmd = {"cstate", adm_drbdsetup, ACF1_DISCONNECT};
 static struct adm_cmd dstate_cmd = {"dstate", adm_generic_b, ACF1_DEFAULT};
-static struct adm_cmd status_cmd = {"status", adm_generic_l, .show_in_usage = 1, .uc_dialog = 1};
+static struct adm_cmd status_cmd = {"status", adm_drbdsetup, .show_in_usage = 1, .uc_dialog = 1};
 static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
 static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 
@@ -384,10 +383,10 @@ static struct adm_cmd khelper09_cmd = {"initial-split-brain", adm_khelper, ACF3_
 static struct adm_cmd khelper10_cmd = {"split-brain", adm_khelper, ACF3_RES_HANDLER};
 static struct adm_cmd khelper11_cmd = {"out-of-sync", adm_khelper, ACF3_RES_HANDLER};
 
-static struct adm_cmd suspend_io_cmd = {"suspend-io", adm_generic_s, ACF4_ADVANCED};
-static struct adm_cmd resume_io_cmd = {"resume-io", adm_generic_s, ACF4_ADVANCED};
+static struct adm_cmd suspend_io_cmd = {"suspend-io", adm_drbdsetup, ACF4_ADVANCED};
+static struct adm_cmd resume_io_cmd = {"resume-io", adm_drbdsetup, ACF4_ADVANCED};
 static struct adm_cmd set_gi_cmd = {"set-gi", admm_generic, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
-static struct adm_cmd new_current_uuid_cmd = {"new-current-uuid", adm_generic_s, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL};
+static struct adm_cmd new_current_uuid_cmd = {"new-current-uuid", adm_drbdsetup, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL};
 static struct adm_cmd check_resize_cmd = {"check-resize", adm_chk_resize, ACF4_ADVANCED};
 
 struct adm_cmd *cmds[] = {
@@ -478,7 +477,7 @@ struct adm_cmd *cmds[] = {
 };
 
 /* internal commands: */
-/*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_generic_s, ACF1_DEFAULT};
+/*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_drbdsetup, ACF1_DEFAULT};
 /*  */ struct adm_cmd res_options_defaults_cmd = {
 	"resource-options",
 	adm_resource,
@@ -500,7 +499,7 @@ struct adm_cmd *cmds[] = {
 /*  */ struct adm_cmd proxy_conn_down_cmd = { "", do_proxy_conn_down, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_up_cmd = { "", do_proxy_conn_up, ACF1_DEFAULT};
 /*  */ struct adm_cmd proxy_conn_plugins_cmd = { "", do_proxy_conn_plugins, ACF1_DEFAULT};
-static struct adm_cmd primary_s_cmd = {"primary", adm_generic_s, &primary_cmd_ctx, ACF1_RESNAME};
+static struct adm_cmd primary_s_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME};
 
 static void initialize_deferred_cmds()
 {
@@ -1335,9 +1334,9 @@ static int _adm_drbdsteup(struct cfg_ctx *ctx, int flags)
 	return ex;
 }
 
-int adm_generic_s(struct cfg_ctx *ctx)
+static int adm_drbdsetup(struct cfg_ctx *ctx)
 {
-	return _adm_drbdsteup(ctx, SLEEPS_SHORT);
+	return _adm_drbdsteup(ctx, ctx->cmd->takes_long ? SLEEPS_LONG : SLEEPS_SHORT);
 }
 
 int sh_status(struct cfg_ctx *ctx)
@@ -1398,11 +1397,6 @@ int sh_status(struct cfg_ctx *ctx)
 		}
 	}
 	return 0;
-}
-
-int adm_generic_l(struct cfg_ctx *ctx)
-{
-	return _adm_drbdsteup(ctx, SLEEPS_LONG);
 }
 
 static int adm_outdate(struct cfg_ctx *ctx)
