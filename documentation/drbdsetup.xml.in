@@ -31,74 +31,40 @@
   </refnamediv>
 
   <refsynopsisdiv>
-    <xi:include href="drbdsetup_new-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_new-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_del-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_del-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
     <xi:include href="drbdsetup_attach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_disk-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_net-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_resource-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_disconnect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_detach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_primary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_secondary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_down.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_verify.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_invalidate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_invalidate-remote.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_wait-connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_wait-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_role.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_cstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_dstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
     <xi:include href="drbdsetup_check-resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_pause-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_resume-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_outdate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_show-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_get-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_show.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_suspend-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
-    <xi:include href="drbdsetup_resume-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
+    <xi:include href="drbdsetup_connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_cstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_del-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_del-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_detach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_disconnect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_disk-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_down.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_dstate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
     <xi:include href="drbdsetup_events.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
+    <xi:include href="drbdsetup_get-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_invalidate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_invalidate-remote.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_net-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
     <xi:include href="drbdsetup_new-current-uuid.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-
+    <xi:include href="drbdsetup_new-minor.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_new-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_outdate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_pause-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_primary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_resize.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_resource-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_resume-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_resume-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_role.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_secondary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_show.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_show-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_suspend-io.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_verify.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_wait-connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+    <xi:include href="drbdsetup_wait-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
   </refsynopsisdiv>
 
   <refsect1>
@@ -139,40 +105,6 @@
     </refsect2>
 
     <refsect2>
-      <title>new-resource</title>
-
-      <para>Resources are the primary objects of any DRBD configuration. A resource must be created
-      with the <option>new-resource</option> command before any volumes or minor devices can be created.
-      Connections are referenced by name.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>new-minor</title>
-
-      <para>A <emphasis>minor</emphasis> is used as a synonym for replicated block device. It is
-      represented in the /dev/ directory by a block device. It is the application's interface to
-      the DRBD-replicated block devices. These block devices get addressed by their minor numbers
-      on the drbdsetup commandline.</para>
-
-      <para>A pair of replicated block devices may have different minor numbers on the two
-      machines. They are associated by a common <emphasis>volume-number</emphasis>. Volume numbers
-      are local to each connection. Minor numbers are global on one node.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>del-resource</title>
-
-      <para>Destroys a resource object. This is only possible if the resource has no
-      volumes.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>del-minor</title>
-
-      <para>Minors can only be destroyed if its disk is detached.</para>
-    </refsect2>
-
-    <refsect2>
       <title>attach, disk-options</title>
 
       <indexterm significance="normal">
@@ -207,6 +139,24 @@
 	<pick_drbdsetup_option name="resync-rate"/>
 
       </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>check-resize</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>check-resize</secondary>
+      </indexterm>
+
+      <para>To enable DRBD to detect offline resizing of backing devices this command may be used
+      to record the current size of backing devices. The size is stored in files in /var/lib/drbd/
+      named drbd-minor-??.lkbd</para>
+
+      <para>This command is called by <command moreinfo="none">drbdadm resize
+      <replaceable>res</replaceable></command> after <command moreinfo="none">drbdsetup
+      <replaceable>device</replaceable> resize</command> returned.</para>
     </refsect2>
 
     <refsect2>
@@ -262,244 +212,28 @@
     </refsect2>
 
     <refsect2>
-      <title>resource-options</title>
+      <title>cstate</title>
 
       <indexterm significance="normal">
         <primary>drbdsetup</primary>
 
-        <secondary>resource-options</secondary>
+        <secondary>cstate</secondary>
       </indexterm>
 
-      <para>Changes the options of the resource at runtime.</para>
-
-      <variablelist>
-	<pick_drbdsetup_option name="auto-promote"/>
-	<pick_drbdsetup_option name="cpu-mask"/>
-	<pick_drbdsetup_option name="on-no-data-accessible"/>
-	<pick_drbdsetup_option name="peer-ack-window"/>
-      </variablelist>
+      <para>Shows the current connection state of the <replaceable>device</replaceable>.</para>
     </refsect2>
 
     <refsect2>
-      <title>primary</title>
+      <title>del-minor</title>
 
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>primary</secondary>
-      </indexterm>
-
-      <para>Sets the <replaceable>device</replaceable> into primary role. This means that
-      applications (e.g. a file system) may open the <replaceable>device</replaceable> for read
-      and write access. Data written to the <replaceable>device</replaceable> in primary role are
-      mirrored to the device in secondary role.</para>
-
-      <para>Normally it is not possible to set both devices of a connected DRBD device pair to
-      primary role. By using the <option>--allow-two-primaries</option> option, you override this
-      behavior and instruct DRBD to allow two primaries.</para>
-
-      <variablelist>
-        <varlistentry>
-          <term><option>--overwrite-data-of-peer</option></term>
-
-          <listitem>
-            <para>Alias for --force.</para>
-          </listitem>
-        </varlistentry>
-      </variablelist>
-
-      <variablelist>
-        <varlistentry>
-          <term><option>--force</option></term>
-
-          <listitem>
-            <para>Becoming primary fails if the local replica is not up-to-date. I.e. when it is
-            inconsistent, outdated of consistent. By using this option you can force it into
-            primary role anyway. USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
-          </listitem>
-        </varlistentry>
-      </variablelist>
+      <para>Minors can only be destroyed if its disk is detached.</para>
     </refsect2>
 
     <refsect2>
-      <title>secondary</title>
+      <title>del-resource</title>
 
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>secondary</secondary>
-      </indexterm>
-
-      <para>Brings the <replaceable>device</replaceable> into secondary role. This operation fails
-      as long as at least one application (or file system) has opened the device.</para>
-
-      <para>It is possible that both devices of a connected DRBD device pair are secondary.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>verify</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>verify</secondary>
-      </indexterm>
-
-      <para>This initiates on-line device verification. During on-line verification, the contents
-      of every block on the local node are compared to those on the peer node. Device verification
-      progress can be monitored via <filename moreinfo="none">/proc/drbd</filename>. Any blocks
-      whose content differs from that of the corresponding block on the peer node will be marked
-      out-of-sync in DRBD's on-disk bitmap; they are <emphasis>not</emphasis> brought back in sync
-      automatically. To do that, simply disconnect and reconnect the resource.</para>
-
-      <para>If on-line verification is already in progress (and this node is "VerifyS"),
-	this command silently "succeeds". In this case, any start-sector (see
-	below) will be ignored, and any stop-sector (see below) will be honored.
-	This can be used to stop a running verify, or to update/shorten/extend
-	the coverage of the currently running verify.
-      </para>
-
-      <para>This command will fail if the <replaceable>device</replaceable> is not part of a
-      connected device pair.</para>
-
-      <para>See also the notes on data integrity on the drbd.conf manpage.</para>
-
-      <variablelist>
-        <varlistentry>
-          <term><option>--start
-          <replaceable>start-sector</replaceable></option></term>
-
-          <listitem>
-            <para>Since version 8.3.2, on-line verification should resume from the last position
-            after connection loss. It may also be started from an arbitrary position by setting
-	    this option. If you had reached some stop-sector before, and you do
-	    not specify an explicit start-sector, verify should resume from the
-	    previous stop-sector.</para>
-
-            <para>Default unit is sectors. You may also specify a unit explicitly. The
-            <option>start-sector</option> will be rounded down to a multiple of 8 sectors
-            (4kB).</para>
-          </listitem>
-        </varlistentry>
-        <varlistentry>
-          <term><option>-S</option>,
-	  <option>--stop <replaceable>stop-sector</replaceable></option></term>
-          <listitem>
-            <para>Since version 8.3.14, on-line verification can be stopped
-	      before it reaches end-of-device.
-            </para>
-            <para>Default unit is sectors. You may also specify a unit explicitly.
-              The <option>stop-sector</option> may be updated by issuing an additional
-	      drbdsetup verify command on the same node while the verify is running.
-	      This can be used to stop a running verify, or to update/shorten/extend
-	      the coverage of the currently running verify.
-            </para>
-          </listitem>
-        </varlistentry>
-      </variablelist>
-    </refsect2>
-
-    <refsect2>
-      <title>invalidate</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>invalidate</secondary>
-      </indexterm>
-
-      <para>This forces the local device of a pair of connected DRBD devices into SyncTarget
-      state, which means that all data blocks of the device are copied over from the peer.</para>
-
-      <para>This command will fail if the <replaceable>device</replaceable> is not part of a
-      connected device pair.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>invalidate-remote</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>invalidate-remote</secondary>
-      </indexterm>
-
-      <para>This forces the local device of a pair of connected DRBD devices into SyncSource
-      state, which means that all data blocks of the device are copied to the peer.</para>
-
-      <para>On a disconnected device, this will set all bits in the out of sync bitmap. As a side
-      effect, this suspends updates to the on disk activity log. Updates to the on disk activity log
-      will be resumed automatically when necessary.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>wait-connect</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>wait-connect</secondary>
-      </indexterm>
-
-      <para>Returns as soon as the <replaceable>device</replaceable> can communicate with its
-      partner device.</para>
-
-      <variablelist>
-        <varlistentry>
-          <term><option>--wfc-timeout
-          <replaceable>wfc_timeout</replaceable></option></term>
-
-          <term><option>--degr-wfc-timeout
-          <replaceable>degr_wfc_timeout</replaceable></option></term>
-
-          <term><option>--outdated-wfc-timeout
-          <replaceable>outdated_wfc_timeout</replaceable></option></term>
-
-          <term><option>--wait-after-sb</option></term>
-
-          <listitem>
-            <para>This command will fail if the <replaceable>device</replaceable> cannot
-            communicate with its partner for <replaceable>timeout</replaceable> seconds. If the
-            peer was working before this node was rebooted, the
-            <replaceable>wfc_timeout</replaceable> is used. If the peer was already down before
-            this node was rebooted, the <replaceable>degr_wfc_timeout</replaceable> is used. If
-            the peer was successfully outdated before this node was rebooted the
-            <replaceable>outdated_wfc_timeout</replaceable> is used. The default value for all
-            those timeout values is 0 which means to wait forever. The unit is seconds. In case
-            the connection status goes down to StandAlone because the peer appeared but the
-            devices had a split brain situation, the default for the command is to terminate. You
-            can change this behavior with the <option>--wait-after-sb</option> option.</para>
-          </listitem>
-        </varlistentry>
-      </variablelist>
-    </refsect2>
-
-    <refsect2>
-      <title>wait-sync</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>wait-sync</secondary>
-      </indexterm>
-
-      <para>Returns as soon as the <replaceable>device</replaceable> leaves any synchronization
-      into connected state. The options are the same as with the
-      <replaceable>wait-connect</replaceable> command.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>disconnect</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>disconnect</secondary>
-      </indexterm>
-
-      <para>Removes the information set by the <option>net</option> command from the
-      <replaceable>device</replaceable>. This means that the <replaceable>device</replaceable>
-      goes into unconnected state and will no longer listen for incoming connections.</para>
+      <para>Destroys a resource object. This is only possible if the resource has no
+      volumes.</para>
     </refsect2>
 
     <refsect2>
@@ -533,6 +267,20 @@
     </refsect2>
 
     <refsect2>
+      <title>disconnect</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>disconnect</secondary>
+      </indexterm>
+
+      <para>Removes the information set by the <option>net</option> command from the
+      <replaceable>device</replaceable>. This means that the <replaceable>device</replaceable>
+      goes into unconnected state and will no longer listen for incoming connections.</para>
+    </refsect2>
+
+    <refsect2>
       <title>down</title>
 
       <indexterm significance="normal">
@@ -546,43 +294,6 @@
     </refsect2>
 
     <refsect2>
-      <title>role</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>role</secondary>
-      </indexterm>
-
-      <para>Shows the current roles of the <replaceable>device</replaceable> and its peer, as
-      <replaceable>local</replaceable>/<replaceable>peer</replaceable>.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>state</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>state</secondary>
-      </indexterm>
-
-      <para>Deprecated alias for "role"</para>
-    </refsect2>
-
-    <refsect2>
-      <title>cstate</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>cstate</secondary>
-      </indexterm>
-
-      <para>Shows the current connection state of the <replaceable>device</replaceable>.</para>
-    </refsect2>
-
-    <refsect2>
       <title>dstate</title>
 
       <indexterm significance="normal">
@@ -593,152 +304,6 @@
 
       <para>Shows the current states of the backing storage devices, as
       <replaceable>local</replaceable>/<replaceable>peer</replaceable>.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>resize</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>resize</secondary>
-      </indexterm>
-
-      <para>This causes DRBD to reexamine the size of the <replaceable>device</replaceable>'s
-      backing storage device. To actually do online growing you need to extend the backing
-      storages on both devices and call the <option>resize</option> command on one of your
-      nodes.</para>
-
-      <para>The <option>--assume-peer-has-space</option> allows you to resize a device which is
-      currently not connected to the peer. Use with care, since if you do not resize the peer's
-      disk as well, further connect attempts of the two will fail.</para>
-
-      <para>When the <option>--assume-clean</option> option is given DRBD will skip the resync of
-      the new storage. Only do this if you know that the new storage was initialized to the same
-      content by other means.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>check-resize</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>check-resize</secondary>
-      </indexterm>
-
-      <para>To enable DRBD to detect offline resizing of backing devices this command may be used
-      to record the current size of backing devices. The size is stored in files in /var/lib/drbd/
-      named drbd-minor-??.lkbd</para>
-
-      <para>This command is called by <command moreinfo="none">drbdadm resize
-      <replaceable>res</replaceable></command> after <command moreinfo="none">drbdsetup
-      <replaceable>device</replaceable> resize</command> returned.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>pause-sync</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>pause-sync</secondary>
-      </indexterm>
-
-      <para>Temporarily suspend an ongoing resynchronization by setting the local pause flag.
-      Resync only progresses if neither the local nor the remote pause flag is set. It might be
-      desirable to postpone DRBD's resynchronization after eventual resynchronization of the
-      backing storage's RAID setup.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>resume-sync</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>resume-sync</secondary>
-      </indexterm>
-
-      <para>Unset the local sync pause flag.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>outdate</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>outdate</secondary>
-      </indexterm>
-
-      <para>Mark the data on the local backing storage as outdated. An outdated device refuses to
-      become primary. This is used in conjunction with <option>fencing</option> and by the peer's
-      <option>fence-peer</option> handler.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>show-gi</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>show-gi</secondary>
-      </indexterm>
-
-      <para>Displays the device's data generation identifiers verbosely.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>get-gi</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>get-gi</secondary>
-      </indexterm>
-
-      <para>Displays the device's data generation identifiers.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>show</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>show</secondary>
-      </indexterm>
-
-      <para>Shows all available configuration information of the
-      <replaceable>device</replaceable>.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>suspend-io</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>suspend-io</secondary>
-      </indexterm>
-
-      <para>This command is of no apparent use and just provided for the sake of
-      completeness.</para>
-    </refsect2>
-
-    <refsect2>
-      <title>resume-io</title>
-
-      <indexterm significance="normal">
-        <primary>drbdsetup</primary>
-
-        <secondary>resume-io</secondary>
-      </indexterm>
-
-      <para>If the fence-peer handler fails to stonith the peer node, and your
-      <option>fencing</option> policy is set to resource-and-stonith, you can unfreeze IO
-      operations with this command.</para>
     </refsect2>
 
     <refsect2>
@@ -770,6 +335,51 @@
             </listitem>
           </varlistentry>
         </variablelist></para>
+    </refsect2>
+
+    <refsect2>
+      <title>get-gi</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>get-gi</secondary>
+      </indexterm>
+
+      <para>Displays the device's data generation identifiers.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>invalidate</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>invalidate</secondary>
+      </indexterm>
+
+      <para>This forces the local device of a pair of connected DRBD devices into SyncTarget
+      state, which means that all data blocks of the device are copied over from the peer.</para>
+
+      <para>This command will fail if the <replaceable>device</replaceable> is not part of a
+      connected device pair.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>invalidate-remote</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>invalidate-remote</secondary>
+      </indexterm>
+
+      <para>This forces the local device of a pair of connected DRBD devices into SyncSource
+      state, which means that all data blocks of the device are copied to the peer.</para>
+
+      <para>On a disconnected device, this will set all bits in the out of sync bitmap. As a side
+      effect, this suspends updates to the on disk activity log. Updates to the on disk activity log
+      will be resumed automatically when necessary.</para>
     </refsect2>
 
     <refsect2>
@@ -867,6 +477,361 @@
         </orderedlist> Now add the disk to the new secondary node, and join it to the cluster. You
       will get a resync of that parts that were changed since the first call to <command
       moreinfo="none">drbdsetup</command> in step 1.</para>
+    </refsect2>
+    <refsect2>
+      <title>new-minor</title>
+
+      <para>A <emphasis>minor</emphasis> is used as a synonym for replicated block device. It is
+      represented in the /dev/ directory by a block device. It is the application's interface to
+      the DRBD-replicated block devices. These block devices get addressed by their minor numbers
+      on the drbdsetup commandline.</para>
+
+      <para>A pair of replicated block devices may have different minor numbers on the two
+      machines. They are associated by a common <emphasis>volume-number</emphasis>. Volume numbers
+      are local to each connection. Minor numbers are global on one node.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>new-resource</title>
+
+      <para>Resources are the primary objects of any DRBD configuration. A resource must be created
+      with the <option>new-resource</option> command before any volumes or minor devices can be created.
+      Connections are referenced by name.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>outdate</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>outdate</secondary>
+      </indexterm>
+
+      <para>Mark the data on the local backing storage as outdated. An outdated device refuses to
+      become primary. This is used in conjunction with <option>fencing</option> and by the peer's
+      <option>fence-peer</option> handler.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>pause-sync</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>pause-sync</secondary>
+      </indexterm>
+
+      <para>Temporarily suspend an ongoing resynchronization by setting the local pause flag.
+      Resync only progresses if neither the local nor the remote pause flag is set. It might be
+      desirable to postpone DRBD's resynchronization after eventual resynchronization of the
+      backing storage's RAID setup.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>primary</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>primary</secondary>
+      </indexterm>
+
+      <para>Sets the <replaceable>device</replaceable> into primary role. This means that
+      applications (e.g. a file system) may open the <replaceable>device</replaceable> for read
+      and write access. Data written to the <replaceable>device</replaceable> in primary role are
+      mirrored to the device in secondary role.</para>
+
+      <para>Normally it is not possible to set both devices of a connected DRBD device pair to
+      primary role. By using the <option>--allow-two-primaries</option> option, you override this
+      behavior and instruct DRBD to allow two primaries.</para>
+
+      <variablelist>
+        <varlistentry>
+          <term><option>--overwrite-data-of-peer</option></term>
+
+          <listitem>
+            <para>Alias for --force.</para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+
+      <variablelist>
+        <varlistentry>
+          <term><option>--force</option></term>
+
+          <listitem>
+            <para>Becoming primary fails if the local replica is not up-to-date. I.e. when it is
+            inconsistent, outdated of consistent. By using this option you can force it into
+            primary role anyway. USE THIS OPTION ONLY IF YOU KNOW WHAT YOU ARE DOING.</para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>resize</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>resize</secondary>
+      </indexterm>
+
+      <para>This causes DRBD to reexamine the size of the <replaceable>device</replaceable>'s
+      backing storage device. To actually do online growing you need to extend the backing
+      storages on both devices and call the <option>resize</option> command on one of your
+      nodes.</para>
+
+      <para>The <option>--assume-peer-has-space</option> allows you to resize a device which is
+      currently not connected to the peer. Use with care, since if you do not resize the peer's
+      disk as well, further connect attempts of the two will fail.</para>
+
+      <para>When the <option>--assume-clean</option> option is given DRBD will skip the resync of
+      the new storage. Only do this if you know that the new storage was initialized to the same
+      content by other means.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>resource-options</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>resource-options</secondary>
+      </indexterm>
+
+      <para>Changes the options of the resource at runtime.</para>
+
+      <variablelist>
+	<pick_drbdsetup_option name="auto-promote"/>
+	<pick_drbdsetup_option name="cpu-mask"/>
+	<pick_drbdsetup_option name="on-no-data-accessible"/>
+	<pick_drbdsetup_option name="peer-ack-window"/>
+      </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>resume-io</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>resume-io</secondary>
+      </indexterm>
+
+      <para>If the fence-peer handler fails to stonith the peer node, and your
+      <option>fencing</option> policy is set to resource-and-stonith, you can unfreeze IO
+      operations with this command.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>resume-sync</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>resume-sync</secondary>
+      </indexterm>
+
+      <para>Unset the local sync pause flag.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>role</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>role</secondary>
+      </indexterm>
+
+      <para>Shows the current roles of the <replaceable>device</replaceable> and its peer, as
+      <replaceable>local</replaceable>/<replaceable>peer</replaceable>.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>secondary</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>secondary</secondary>
+      </indexterm>
+
+      <para>Brings the <replaceable>device</replaceable> into secondary role. This operation fails
+      as long as at least one application (or file system) has opened the device.</para>
+
+      <para>It is possible that both devices of a connected DRBD device pair are secondary.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>show</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>show</secondary>
+      </indexterm>
+
+      <para>Shows all available configuration information of the
+      <replaceable>device</replaceable>.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>show-gi</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>show-gi</secondary>
+      </indexterm>
+
+      <para>Displays the device's data generation identifiers verbosely.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>state</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>state</secondary>
+      </indexterm>
+
+      <para>Deprecated alias for "role"</para>
+    </refsect2>
+
+    <refsect2>
+      <title>suspend-io</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>suspend-io</secondary>
+      </indexterm>
+
+      <para>This command is of no apparent use and just provided for the sake of
+      completeness.</para>
+    </refsect2>
+
+    <refsect2>
+      <title>verify</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>verify</secondary>
+      </indexterm>
+
+      <para>This initiates on-line device verification. During on-line verification, the contents
+      of every block on the local node are compared to those on the peer node. Device verification
+      progress can be monitored via <filename moreinfo="none">/proc/drbd</filename>. Any blocks
+      whose content differs from that of the corresponding block on the peer node will be marked
+      out-of-sync in DRBD's on-disk bitmap; they are <emphasis>not</emphasis> brought back in sync
+      automatically. To do that, simply disconnect and reconnect the resource.</para>
+
+      <para>If on-line verification is already in progress (and this node is "VerifyS"),
+	this command silently "succeeds". In this case, any start-sector (see
+	below) will be ignored, and any stop-sector (see below) will be honored.
+	This can be used to stop a running verify, or to update/shorten/extend
+	the coverage of the currently running verify.
+      </para>
+
+      <para>This command will fail if the <replaceable>device</replaceable> is not part of a
+      connected device pair.</para>
+
+      <para>See also the notes on data integrity on the drbd.conf manpage.</para>
+
+      <variablelist>
+        <varlistentry>
+          <term><option>--start
+          <replaceable>start-sector</replaceable></option></term>
+
+          <listitem>
+            <para>Since version 8.3.2, on-line verification should resume from the last position
+            after connection loss. It may also be started from an arbitrary position by setting
+	    this option. If you had reached some stop-sector before, and you do
+	    not specify an explicit start-sector, verify should resume from the
+	    previous stop-sector.</para>
+
+            <para>Default unit is sectors. You may also specify a unit explicitly. The
+            <option>start-sector</option> will be rounded down to a multiple of 8 sectors
+            (4kB).</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term><option>-S</option>,
+	  <option>--stop <replaceable>stop-sector</replaceable></option></term>
+          <listitem>
+            <para>Since version 8.3.14, on-line verification can be stopped
+	      before it reaches end-of-device.
+            </para>
+            <para>Default unit is sectors. You may also specify a unit explicitly.
+              The <option>stop-sector</option> may be updated by issuing an additional
+	      drbdsetup verify command on the same node while the verify is running.
+	      This can be used to stop a running verify, or to update/shorten/extend
+	      the coverage of the currently running verify.
+            </para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>wait-connect</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>wait-connect</secondary>
+      </indexterm>
+
+      <para>Returns as soon as the <replaceable>device</replaceable> can communicate with its
+      partner device.</para>
+
+      <variablelist>
+        <varlistentry>
+          <term><option>--wfc-timeout
+          <replaceable>wfc_timeout</replaceable></option></term>
+
+          <term><option>--degr-wfc-timeout
+          <replaceable>degr_wfc_timeout</replaceable></option></term>
+
+          <term><option>--outdated-wfc-timeout
+          <replaceable>outdated_wfc_timeout</replaceable></option></term>
+
+          <term><option>--wait-after-sb</option></term>
+
+          <listitem>
+            <para>This command will fail if the <replaceable>device</replaceable> cannot
+            communicate with its partner for <replaceable>timeout</replaceable> seconds. If the
+            peer was working before this node was rebooted, the
+            <replaceable>wfc_timeout</replaceable> is used. If the peer was already down before
+            this node was rebooted, the <replaceable>degr_wfc_timeout</replaceable> is used. If
+            the peer was successfully outdated before this node was rebooted the
+            <replaceable>outdated_wfc_timeout</replaceable> is used. The default value for all
+            those timeout values is 0 which means to wait forever. The unit is seconds. In case
+            the connection status goes down to StandAlone because the peer appeared but the
+            devices had a split brain situation, the default for the command is to terminate. You
+            can change this behavior with the <option>--wait-after-sb</option> option.</para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>wait-sync</title>
+
+      <indexterm significance="normal">
+        <primary>drbdsetup</primary>
+
+        <secondary>wait-sync</secondary>
+      </indexterm>
+
+      <para>Returns as soon as the <replaceable>device</replaceable> leaves any synchronization
+      into connected state. The options are the same as with the
+      <replaceable>wait-connect</replaceable> command.</para>
     </refsect2>
   </refsect1>
 
