@@ -221,6 +221,7 @@ struct drbd_cmd {
 	bool set_defaults;
 	bool lockless;
 	struct context_def *ctx;
+	const char *summary;
 };
 
 // other functions
@@ -321,9 +322,11 @@ static struct option status_cmd_options[] = {
 struct drbd_cmd commands[] = {
 	{"primary", CTX_RESOURCE, DRBD_ADM_PRIMARY, DRBD_NLA_SET_ROLE_PARMS,
 		F_CONFIG_CMD,
-	 .ctx = &primary_cmd_ctx },
+	 .ctx = &primary_cmd_ctx,
+	 .summary = "Change the role of a node in a resource to Primary." },
 
-	{"secondary", CTX_RESOURCE, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD },
+	{"secondary", CTX_RESOURCE, DRBD_ADM_SECONDARY, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Change the role of a node in a resource to Secondary." },
 
 	{"attach", CTX_MINOR, DRBD_ADM_ATTACH, DRBD_NLA_DISK_CONF,
 		F_CONFIG_CMD,
@@ -332,101 +335,133 @@ struct drbd_cmd commands[] = {
 		 { "meta_data_dev",	T_meta_dev,	conv_block_dev },
 		 { "meta_data_index",	T_meta_dev_idx,	conv_md_idx },
 		 { } },
-	 .ctx = &attach_cmd_ctx },
+	 .ctx = &attach_cmd_ctx,
+	 .summary = "Attach a lower-level device to an existing replicated device." },
 
 	{"disk-options", CTX_MINOR, DRBD_ADM_CHG_DISK_OPTS, DRBD_NLA_DISK_CONF,
 		F_CONFIG_CMD,
 	 .set_defaults = true,
-	 .ctx = &disk_options_ctx },
+	 .ctx = &disk_options_ctx,
+	 .summary = "Change the disk options of an attached lower-level device." },
 
 	{"detach", CTX_MINOR, DRBD_ADM_DETACH, DRBD_NLA_DETACH_PARMS, F_CONFIG_CMD,
-	 .ctx = &detach_cmd_ctx },
+	 .ctx = &detach_cmd_ctx,
+	 .summary = "Detach the lower-level device of a replicated device." },
 
 	{"connect", CTX_RESOURCE | CTX_CONNECTION,
 		DRBD_ADM_CONNECT, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
-	 .ctx = &connect_cmd_ctx },
+	 .ctx = &connect_cmd_ctx,
+	 .summary = "Connect a resource to a peer host." },
 
 	{"net-options", CTX_CONNECTION, DRBD_ADM_CHG_NET_OPTS, DRBD_NLA_NET_CONF,
 		F_CONFIG_CMD,
 	 .set_defaults = true,
-	 .ctx = &net_options_ctx },
+	 .ctx = &net_options_ctx,
+	 .summary = "Change the network options of a connection." },
 
 	{"disconnect", CTX_CONNECTION, DRBD_ADM_DISCONNECT, DRBD_NLA_DISCONNECT_PARMS,
 		F_CONFIG_CMD,
-	 .ctx = &disconnect_cmd_ctx },
+	 .ctx = &disconnect_cmd_ctx,
+	 .summary = "Remove a connection to a peer host." },
 
 	{"resize", CTX_MINOR, DRBD_ADM_RESIZE, DRBD_NLA_RESIZE_PARMS,
 		F_CONFIG_CMD,
-	 .ctx = &resize_cmd_ctx },
+	 .ctx = &resize_cmd_ctx,
+	 .summary = "Reexamine the lower-level device sizes to resize a replicated device." },
 
 	{"resource-options", CTX_RESOURCE, DRBD_ADM_RESOURCE_OPTS, DRBD_NLA_RESOURCE_OPTS,
 		F_CONFIG_CMD,
 	 .set_defaults = true,
-	 .ctx = &resource_options_ctx },
+	 .ctx = &resource_options_ctx,
+	 .summary = "Change the resource options of an existing resource." },
 
 	{"new-current-uuid", CTX_MINOR, DRBD_ADM_NEW_C_UUID, DRBD_NLA_NEW_C_UUID_PARMS,
 		F_CONFIG_CMD,
-	 .ctx = &new_current_uuid_cmd_ctx },
+	 .ctx = &new_current_uuid_cmd_ctx,
+	 .summary = "Generate a new current UUID." },
 
-	{"invalidate", CTX_PEER_DEVICE, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"invalidate-remote", CTX_PEER_DEVICE, DRBD_ADM_INVAL_PEER, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"pause-sync", CTX_PEER_DEVICE, DRBD_ADM_PAUSE_SYNC, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"resume-sync", CTX_PEER_DEVICE, DRBD_ADM_RESUME_SYNC, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"suspend-io", CTX_MINOR, DRBD_ADM_SUSPEND_IO, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"resume-io", CTX_MINOR, DRBD_ADM_RESUME_IO, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"outdate", CTX_MINOR, DRBD_ADM_OUTDATE, NO_PAYLOAD, F_CONFIG_CMD, },
-	{"verify", CTX_PEER_DEVICE, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS,
-		F_CONFIG_CMD,
-	 .ctx = &verify_cmd_ctx },
+	{"invalidate", CTX_PEER_DEVICE, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Replace the local data of a volume with that of a peer." },
+	{"invalidate-remote", CTX_PEER_DEVICE, DRBD_ADM_INVAL_PEER, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Replace a peer's data of a volume with the local data." },
+	{"pause-sync", CTX_PEER_DEVICE, DRBD_ADM_PAUSE_SYNC, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Stop resynchronizing between a local and a peer device." },
+	{"resume-sync", CTX_PEER_DEVICE, DRBD_ADM_RESUME_SYNC, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Allow resynchronization to resume on a replicated device." },
+	{"suspend-io", CTX_MINOR, DRBD_ADM_SUSPEND_IO, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Suspend I/O on a replicated device." },
+	{"resume-io", CTX_MINOR, DRBD_ADM_RESUME_IO, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Resume I/O on a replicated device." },
+	{"outdate", CTX_MINOR, DRBD_ADM_OUTDATE, NO_PAYLOAD, F_CONFIG_CMD,
+	 .summary = "Mark the data on a local lower-level device as outdated." },
+	{"verify", CTX_PEER_DEVICE, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS, F_CONFIG_CMD,
+	 .ctx = &verify_cmd_ctx,
+	 .summary = "Verify the data on a local lower-level device against a peer device." },
 	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
-		.missing_ok = true, },
+	 .missing_ok = true,
+	 .summary = "Take a resource down." },
 	{"role", CTX_RESOURCE, 0, NO_PAYLOAD, role_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the current role of a resource." },
 	{"cstate", CTX_CONNECTION, 0, NO_PAYLOAD, cstate_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the current state of a connection." },
 	{"dstate", CTX_MINOR, 0, NO_PAYLOAD, dstate_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the current disk state of a lower-level device." },
 	{"show-gi", CTX_PEER_DEVICE, 0, NO_PAYLOAD, show_or_get_gi_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the data generation identifiers for a device on a particular connection, with explanations." },
 	{"get-gi", CTX_PEER_DEVICE, 0, NO_PAYLOAD, show_or_get_gi_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the data generation identifiers for a device on a particular connection." },
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Show the current configuration of a resource (or all resources)." },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd,
-		.options = status_cmd_options,
-		.lockless = true, },
+	 .options = status_cmd_options,
+	 .lockless = true,
+	 .summary = "Show the status of a resource (or all resources)." },
 	{"check-resize", CTX_MINOR, 0, NO_PAYLOAD, check_resize_cmd,
-		.lockless = true, },
+	 .lockless = true,
+	 .summary = "Remember the current size of a lower-level device." },
 	{"events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
-		.missing_ok = true,
-		.continuous_poll = true,
-		.lockless = true, },
+	 .missing_ok = true,
+	 .continuous_poll = true,
+	 .lockless = true,
+	 .summary = "Show the current state and all state changes of all resources." },
 	{"wait-connect", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
-		.options = wait_cmds_options,
-		.continuous_poll = true,
-		.wait_for_connect_timeouts = true,
-		.lockless = true, },
+	 .options = wait_cmds_options,
+	 .continuous_poll = true,
+	 .wait_for_connect_timeouts = true,
+	 .lockless = true,
+	 .summary = "Wait until a device on a peer is visible." },
 	{"wait-sync", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
-		.options = wait_cmds_options,
-		.continuous_poll = true,
-		.wait_for_connect_timeouts = true,
-		.lockless = true, },
+	 .options = wait_cmds_options,
+	 .continuous_poll = true,
+	 .wait_for_connect_timeouts = true,
+	 .lockless = true,
+	 .summary = "Wait until a device on a peer is up to date." },
 
 	{"new-resource", CTX_RESOURCE, DRBD_ADM_NEW_RESOURCE, DRBD_NLA_RESOURCE_OPTS, F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
 		 { "node_id",		T_node_id,	conv_u32 },
 		 { } },
-	 .ctx = &resource_options_ctx },
+	 .ctx = &resource_options_ctx,
+	 .summary = "Create a new resource." },
 
 	/* only payload is resource name and volume number */
 	{"new-minor", CTX_RESOURCE | CTX_MINOR | CTX_VOLUME | CTX_MULTIPLE_ARGUMENTS,
 		DRBD_ADM_NEW_MINOR, DRBD_NLA_CFG_CONTEXT,
 		F_CONFIG_CMD,
-	 .ctx = &device_options_ctx },
+	 .ctx = &device_options_ctx,
+	 .summary = "Create a new replicated device within a resource." },
 
-	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd, },
-	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd, }
+	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd,
+	 .summary = "Remove a replicated device." },
+	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd,
+	 .summary = "Remove a resource." }
 };
 
 bool show_defaults;
@@ -2848,6 +2883,8 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		enum cfg_ctx_key ctx = cm->ctx_key;
 
 		printf("<command name=\"%s\">\n", cm->cmd);
+		if (cm->summary)
+			printf("\t<summary>%s</summary>\n", cm->summary);
 		if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
 			bool more_than_one_choice =
 				!(ctx & CTX_MULTIPLE_ARGUMENTS) &&
@@ -2907,12 +2944,19 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 		return;
 	}
 
-	if (ut == BRIEF)
-		wrap_printf(4, "%-18s  ", cm->cmd);
-	else {
-		wrap_printf(0, "USAGE:\n");
+	if (ut == BRIEF) {
+		wrap_printf(4, "%s", cm->cmd);
+		if (cm->summary)
+			wrap_printf(4, " - %s", cm->summary);
+		wrap_printf(4, "\n");
+	} else {
+		wrap_printf(0, "%s %s", progname, cm->cmd);
+		if (cm->summary)
+			wrap_printf(4, " - %s", cm->summary);
+		wrap_printf(4, "\n\n");
 
-		wrap_printf(1, "%s %s", progname, cm->cmd);
+		wrap_printf(0, "USAGE: %s %s", progname, cm->cmd);
+
 		if (cm->ctx_key && ut != BRIEF) {
 			enum cfg_ctx_key ctx = cm->ctx_key, arg;
 			bool more_than_one_choice =
@@ -2937,6 +2981,9 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 			for (args = cm->drbd_args; args->name; args++)
 				wrap_printf(4, " {%s}", args->name);
 		}
+
+		if (cm->options || cm->set_defaults || cm->ctx)
+			wrap_printf(4, "\n");
 
 		if (cm->options) {
 			struct option *option;
@@ -2970,23 +3017,16 @@ static void print_usage_and_exit(const char* addinfo)
 {
 	size_t i;
 
-	printf("\nUSAGE: %s command device arguments options\n\n"
-	       "Device is usually /dev/drbdX or /dev/drbd/X.\n"
-	       "\nCommands are:\n",cmdname);
+	printf("drbdsetup - Configure the DRBD kernel module.\n\n"
+	       "USAGE: %s command {arguments} [options]\n"
+	       "\nCommands:\n",cmdname);
 
 
 	for (i = 0; i < ARRAY_SIZE(commands); i++)
 		print_command_usage(&commands[i], BRIEF);
 
-	printf("\n\n"
-	       "To get more details about a command issue "
-	       "'drbdsetup help cmd'.\n"
-	       "\n");
-	/*
-	printf("\n\nVersion: "REL_VERSION" (api:%d)\n%s\n",
-	       API_VERSION, drbd_buildtag());
-	*/
-	if (addinfo)
+	printf("\nUse 'drbdsetup help command' for command-specific help.\n\n");
+	if (addinfo)  /* FIXME: ?! */
 		printf("\n%s\n",addinfo);
 
 	exit(20);
