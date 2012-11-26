@@ -2471,7 +2471,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	 * concurrent reconfiguration/addition/deletion */
 	for_each_resource(resource, &drbd_resources) {
 		for_each_connection(connection, resource) {
-			if (nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
+			if (resource != adm_ctx.resource &&
+			    nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
 			    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr,
 				    connection->my_addr_len)) {
 				retcode = ERR_LOCAL_ADDR;
