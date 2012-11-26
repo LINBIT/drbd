@@ -5318,7 +5318,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
  *
  * for now, they are expected to be zero, but ignored.
  */
-STATIC int drbd_send_features(struct drbd_connection *connection)
+STATIC int drbd_send_features(struct drbd_connection *connection, int peer_node_id)
 {
 	struct drbd_socket *sock;
 	struct p_connection_features *p;
@@ -5330,6 +5330,8 @@ STATIC int drbd_send_features(struct drbd_connection *connection)
 	memset(p, 0, sizeof(*p));
 	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
+	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
+	p->receiver_node_id = cpu_to_be32(peer_node_id);
 	return conn_send_command(connection, sock, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0);
 }
 
@@ -5343,12 +5345,20 @@ STATIC int drbd_send_features(struct drbd_connection *connection)
 STATIC int drbd_do_features(struct drbd_connection *connection)
 {
 	/* ASSERT current == connection->receiver ... */
+	struct drbd_resource *resource = connection->resource;
 	struct p_connection_features *p;
 	const int expect = sizeof(struct p_connection_features);
 	struct packet_info pi;
-	int err;
+	struct net_conf *nc;
+	int peer_node_id = -1, err;
 
-	err = drbd_send_features(connection);
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	if (nc)
+		peer_node_id = nc->peer_node_id;
+	rcu_read_unlock();
+
+	err = drbd_send_features(connection, peer_node_id);
 	if (err)
 		return 0;
 
@@ -5392,13 +5402,26 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 	if (connection->agreed_pro_version < 110) {
 		struct drbd_connection *connection2;
 
-		for_each_connection(connection2, connection->resource) {
+		for_each_connection(connection2, resource) {
 			if (connection == connection2)
 				continue;
 			drbd_err(connection, "Peer supports protocols %d-%d, but "
 				 "multiple connections are only supported in protocol "
 				 "110 and above\n", p->protocol_min, p->protocol_max);
 			return -1;
+		}
+	}
+
+	if (connection->agreed_pro_version >= 110) {
+		if (be32_to_cpu(p->sender_node_id) != peer_node_id) {
+			drbd_err(connection, "Peer presented a node_id of %d instead of %d\n",
+				 be32_to_cpu(p->sender_node_id), peer_node_id);
+			return 0;
+		}
+		if (be32_to_cpu(p->receiver_node_id) != resource->res_opts.node_id) {
+			drbd_err(connection, "Peer expects me to have a node_id of %d instead of %d\n",
+				 be32_to_cpu(p->receiver_node_id), resource->res_opts.node_id);
+			return 0;
 		}
 	}
 

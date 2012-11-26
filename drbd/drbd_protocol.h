@@ -164,13 +164,15 @@ struct p_connection_features {
 	u32 protocol_min;
 	u32 feature_flags;
 	u32 protocol_max;
+	u32 sender_node_id;
+	u32 receiver_node_id;
 
 	/* should be more than enough for future enhancements
 	 * for now, feature_flags and the reserved array shall be zero.
 	 */
 
 	u32 _pad;
-	u64 reserved[7];
+	u64 reserved[6];
 } __packed;
 
 struct p_barrier {
