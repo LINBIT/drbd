@@ -983,6 +983,7 @@ retry:
 	if (rv < SS_SUCCESS)
 		return 0;
 
+	atomic_set(&mdev->ap_in_flight, 0);
 	drbd_thread_start(&mdev->asender);
 	mod_timer(&mdev->request_timer, jiffies + HZ); /* just start it here. */
 
