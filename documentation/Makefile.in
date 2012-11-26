@@ -130,6 +130,8 @@ distclean:
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
 	rm -f drbdsetup_*.xml
 
+.PRECIOUS: drbd.conf.xml drbdsetup.xml
+
 #######
 
 man:	$(MANPAGES)
