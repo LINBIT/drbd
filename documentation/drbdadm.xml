@@ -462,8 +462,8 @@
               <primary>drbdadm</primary>
 
               <secondary>role</secondary>
-            </indexterm> Shows the current roles of the devices (local/peer). E.g.
-          Primary/Secondary</para>
+            </indexterm> Shows the current local role of the devices. E.g.
+          <option>Primary</option></para>
         </listitem>
       </varlistentry>
 
@@ -586,8 +586,8 @@
               <primary>drbdadm</primary>
 
               <secondary>dstate</secondary>
-            </indexterm> Show the current state of the backing storage devices.
-          (local/peer)</para>
+            </indexterm> Show the current (local) state of the backing storage devices.
+          </para>
         </listitem>
       </varlistentry>
 
