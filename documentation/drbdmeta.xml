@@ -80,7 +80,9 @@
     <title>Commands</title>
     <variablelist>
       <varlistentry>
-        <term>create-md <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
+        <term>create-md 
+          <arg choice="opt" rep="norepeat">number-of-bitmap-slots</arg>
+          <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
           Create-md initializes the meta data storage. This needs to be
@@ -88,6 +90,11 @@
 	  time. In case there is already a meta data signature of an
 	  older format in place, drbdmeta will ask you if it should
 	  convert the older format to the selected format.
+	</para>
+	<para>
+          Normally <option>drbdadm</option> will count the number of peers in 
+          the resource, and use that count for the number of bitmap slots, but you can override this with the optional
+          <option>number-of-bitmap-slots</option> argument.
 	</para>
 	<para>
 	  If you will use the resource before it is connected to its peer
