@@ -595,7 +595,7 @@
 	    <para>Always decide like the <option>after-sb-0pri</option>
 	    algorithm, even if that causes an erratic change of the primary's
 	    view of the data. This is only useful if you use a one-node file
-	    system (i.e. not OCFS2 or GFS) with the
+	    system (i.e., not OCFS2 or GFS) with the
 	    <option>allow-two-primaries</option> flag, <emphasis>AND</emphasis>
 	    if you really know what you are doing. This is <emphasis>DANGEROUS
 	    and MAY CRASH YOUR MACHINE</emphasis> if you have a file system
@@ -656,7 +656,7 @@
 	  <listitem>
 	    <para>Always take the decision of the <option>after-sb-0pri</option> algorithm,
 	    even if that causes an erratic change of the primary's view of the data. This is
-	    only useful if you use a one-node file system (i.e. not OCFS2 or GFS) with the
+	    only useful if you use a one-node file system (i.e., not OCFS2 or GFS) with the
 	    <option>allow-two-primaries</option> flag, <emphasis>AND</emphasis> if you
 	    really know what you are doing. This is <emphasis>DANGEROUS and MAY CRASH YOUR
 	    MACHINE</emphasis> if you have a file system mounted on the primary node.</para>
@@ -1335,7 +1335,7 @@
 	when the system went down.  This parameter is usually set to a
 	timeout smaller than <option>wfc-timeout</option>.  The
 	assumption here is that peers which were unreachable before a
-	reboot are less likele to be be reachable after the reboot, so
+	reboot are less likely to be be reachable after the reboot, so
 	waiting is less likely to help.</para>
 
       <para>The timeout is specified in seconds. The default value is 0,
@@ -1392,8 +1392,8 @@
 	</indexterm> Define how long to wait until all peers are
 	connected.  Later when the cluster manager starts, it will not
 	see a resource with internal split-brain.  The timeout is
-	specified in seconds. The default value is 0, or an infinite
-	timeout.  Also see the <option>degr-wfc-timeout</option>
+	specified in seconds. The default value is 0, which indicates an
+	infinite timeout.  Also see the <option>degr-wfc-timeout</option>
 	parameter.</para>
     </definition>
   </drbdsetup_option>
