@@ -129,6 +129,7 @@ distclean:
 	rm -f *.[58] manpage.links manpage.refs *~ manpage.log
 	rm -f *.ps.gz *.pdf *.ps *.html pod2htm*
 	rm -f drbdsetup_*.xml
+	rm -f drbd.conf.xml drbdsetup.xml
 
 .PRECIOUS: drbd.conf.xml drbdsetup.xml
 
