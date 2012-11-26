@@ -36,30 +36,29 @@
 
     <para>DRBD implements block devices which replicate their data to all nodes
     of a cluster.  The actual data and associated metadata are usually stored
-    redundandly on "ordinary" block devices on each cluster node.</para>
+    redundantly on "ordinary" block devices on each cluster node.</para>
 
     <para>Replicated block devices are called
     <option>/dev/drbd<replaceable>minor</replaceable></option> by default. They
-    are grouped into resources, with one or more device per resource.
-    Replication among the devices in a resource takes place in order. In DRBD,
-    We refer to the devices inside a resource as volumes.</para>
+    are grouped into resources, with one or more devices per resource.
+    Replication among the devices in a resource takes place in chronological order. In DRBD,
+    we refer to the devices inside a resource as <emphasis>volumes</emphasis>.</para>
 
     <para>In addition to resources, the volumes inside resources, and the
     cluster nodes on which a resource is replicated, drbd implements the
     concept of connections between nodes. At least for now, a connection is a
     point-to-point link between two cluster nodes.</para>
 
-    <para>In DRBD 9.0, a resource can be replicated to two or more cluster
-    nodes (or to a single cluster node only when constructing a new cluster or
-    when recovering from a node failure). Connections must be defined between
+    <para>In DRBD 9.0, a resource can be replicated between two or more cluster
+    nodes. Connections must be defined between
     all pairs of cluster nodes, at least for the time being.</para>
 
-    <para>DRBD consists of a kernel component, low-level user-space components
+    <para>DRBD consists of low-level user-space components
     which interact with the kernel and perform basic operations
-    (<option>drbdsetup</option>, <option>drbdmeta</option>), and a high-level
+    (<option>drbdsetup</option>, <option>drbdmeta</option>), a high-level
     user-space component which understands and processes the DRBD configuration
     and translates it into basic operations of the low-level components
-    (<option>drbdadm</option>).</para>
+    (<option>drbdadm</option>), and a kernel component.</para>
 
     <para>The default DRBD configuration consists of
     <option>/etc/drbd.conf</option> and of additional files included from
@@ -71,52 +70,56 @@
 
     <para>The configuration files are designed so that each cluster node can
     contain an identical copy of the entire cluster configuration. The host
-    name of each node determines which parts of the configuration apply (uname
-    -n).  It is highly recommended to keep the cluster configuration on all
-    nodes in sync by manually updating it on all nodes, or by automating the
+    name of each node determines which parts of the configuration apply
+    (<option>uname -n</option>).
+    It is highly recommended to keep the cluster configuration on all
+    nodes in sync by manually copying it to all nodes, or by automating the
     process with <option>csync2</option> or a similar tool.</para>
   </refsect1>
 
   <refsect1>
     <title>Example Configuration File</title>
     <para>
+      <example>
         <title>A small r0.res example file</title>
-
         <programlisting format="linespecific">resource r0 {
-	net {
-		cram-hmac-alg sha1;
-		shared-secret "FooFunFactory";
-	}
-	volume 0 {
-		device    /dev/drbd1;
-		disk      /dev/sda7;
-		meta-disk internal;
-	}
-	on alice {
-		node-id   0;
-		address   10.1.1.31:7000;
-	}
-	on bob {
-		node-id   1;
-		address   10.1.1.32:7000;
-	}
-	connection {
-		host alice port 7000;
-		host bob port 7000;
-		net { protocol C; }
-	}
+        net {
+                cram-hmac-alg sha1;
+                shared-secret "FooFunFactory";
+        }
+        volume 0 {
+                device    /dev/drbd1;
+                disk      /dev/sda7;
+                meta-disk internal;
+        }
+        on alice {
+                node-id   0;
+                address   10.1.1.31:7000;
+        }
+        on bob {
+                node-id   1;
+                address   10.1.1.32:7000;
+        }
+        connection {
+                host      alice  port 7000;
+                host      bob    port 7000;
+                net {
+                          protocol C;
+                }
+        }
 }</programlisting>
-    This example defines a resource r0 which contains a single replicated
-    device with volume number 0.  The resource is replicated among hosts alice
-    and bob, which have the IPv4 addresses 10.1.1.31 and 10.1.1.32 and the
+      </example>
+    This example defines a resource <option>r0</option> which contains a single replicated
+    device with volume number 0.  The resource is replicated among hosts <option>alice</option>
+    and <option>bob</option>, which have the IPv4 addresses <option>10.1.1.31</option> and <option>10.1.1.32</option> and the
     node identifiers 0 and 1, respectively.  On both hosts, the replicated
-    device is called /dev/drbd1, and the actual data and metadata are stored on
-    the lower-level device /dev/sda7.  The connection between the hosts uses
+    device is called <option>/dev/drbd1</option>, and the actual data and metadata are stored on
+    the lower-level device <option>/dev/sda7</option>.  The connection between the hosts uses
     protocol C.</para>
 
     <para>Please refer to the <ulink
-	url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's
-	  Guide</citetitle></ulink> for more examples.</para>
+        url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's
+          Guide</citetitle></ulink> for more examples.</para>
 
   </refsect1>
 
@@ -124,17 +127,17 @@
     <title>File Format</title>
 
     <para>DRBD configuration files consist of sections, which contain other
-    sections and parameters depending on the sections' type. Each section
+    sections, and parameters depending on the sections' type. Each section
     consists of one or more keywords, sometimes a section name, an opening
     brace (<quote>{</quote>), the section's contents, and a closing brace
     (<quote>}</quote>). Parameters inside a section consist of a keyword,
-    followed by one or more keyword or value, and a semicolon
+    followed by one or more keywords or values, and a semicolon
     (<quote>;</quote>).</para>
 
     <para>Some parameter values have a default scale which applies when a plain
     number is specified (for example Kilo, or 1024 times the numeric value).
-    Such default scales can be overridden by using a suffix (for example, 10M
-    for 10 Mega).  The common suffixes K = 2^10 = 1024, M = 1024 K, and G =
+    Such default scales can be overridden by using a suffix (for example, <option>10M</option>
+    for 10 Mega).  The common suffixes <option>K</option> = 2^10 = 1024, <option>M</option> = 1024 K, and <option>G</option> =
     1024 M are supported.</para>
 
     <para>Comments start with a hash sign (<quote>#</quote>) and extend to the
@@ -150,7 +153,7 @@
 
     <para>The following sections are defined (indentation indicates in
     which context):
-      <programlisting>
+    <programlisting>
 common
    [disk]
    [handlers]
@@ -171,11 +174,10 @@ resource
          disk
    options
    stacked-on-top-of
-   startup
-      </programlisting>
+   startup</programlisting>
     Sections in brackets affect other parts of the configuration: inside the
     <option>common</option> section, they apply to all resources. A
-    <option>disk </option>section inside a <option>resource</option> or
+    <option>disk</option> section inside a <option>resource</option> or
     <option>on</option> section applies to all volumes of that resource, and a
     <option>net</option> section inside a <option>resource</option> section
     applies to all connections of that resource. This allows to avoid repeating
@@ -196,28 +198,28 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>common</secondary>
-	      </indexterm> This section can contain each a
-	      <option>disk</option>, <option>handlers</option>,
-	      <option>net</option>, <option>options</option>, and
-	      <option>startup</option> section. All resources inherit the
-	      parameters in these sections as their default values.</para>
+              </indexterm> This section can contain each a
+              <option>disk</option>, <option>handlers</option>,
+              <option>net</option>, <option>options</option>, and
+              <option>startup</option> section. All resources inherit the
+              parameters in these sections as their default values.</para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-	  <term><option>connection <replaceable><optional>name</optional></replaceable></option></term>
+          <term><option>connection <replaceable><optional>name</optional></replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>connection</secondary>
-	      </indexterm> Define a connection between two hosts. This section
-	      must contain two <option>host</option> parameters.
-	      The <replaceable>name</replaceable> is
-	      used to refer to the connection in the system log and in other
-	      messages. If no name is specified, the peer's host name
-	      is used instead.</para>
+              </indexterm> Define a connection between two hosts. This section
+              must contain two <option>host</option> parameters.
+              The optional <replaceable>name</replaceable> is
+              used to refer to the connection in the system log and in other
+              messages. If no name is specified, the peer's host name
+              is used instead.</para>
           </listitem>
         </varlistentry>
 
@@ -229,31 +231,31 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>disk</secondary>
-	      </indexterm> Define parameters for a volume. All parameters in
-	      this section are optional.
-	    </para>
+              </indexterm> Define parameters for a volume. All parameters in
+              this section are optional.
+            </para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-	  <term><option>floating <replaceable><optional>address-family</optional></replaceable> <replaceable>addr:port</replaceable></option></term>
+          <term><option>floating <replaceable><optional>address-family</optional></replaceable> <replaceable>addr</replaceable>:<replaceable>port</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>floating</secondary>
-	      </indexterm> Like the <option>on</option> section, except that
-	      instead of the host name, the IP addresses of a host are used to
-	      determine if it matches a <option>floating</option>
-	      section.</para>
+              </indexterm> Like the <option>on</option> section, except that
+              instead of the host name a network address is used to
+              determine if it matches a <option>floating</option>
+              section.</para>
 
-	    <para>The
-	    <option>node-id</option> parameter must be defined in this
-	    section.  The <option>address</option> parameter is not required.
-	    The <option>device</option>, <option>disk</option>, and
-	    <option>meta-disk</option> parameters must be defined in or
-	    inherited by this section.</para>
+            <para>The
+            <option>node-id</option> parameter must be defined in this
+            section.  The <option>address</option> parameter is not required.
+            The <option>device</option>, <option>disk</option>, and
+            <option>meta-disk</option> parameters must be defined in, or
+            inherited by, this section.</para>
           </listitem>
         </varlistentry>
 
@@ -265,9 +267,9 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>global</secondary>
-	      </indexterm> Define some global parameters.  All parameters in
-	      this section are optional.  Only one <option>global</option>
-	      section is allowed in the configuration.</para>
+              </indexterm> Define some global parameters.  All parameters in
+              this section are optional.  Only one <option>global</option>
+              section is allowed in the configuration.</para>
           </listitem>
         </varlistentry>
 
@@ -279,92 +281,92 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>handlers</secondary>
-	      </indexterm> Define handlers to be invoked when certain events
-	      occur. The kernel passes the resource name in the first
-	      command-line argument and sets the following environment
-	      variables depending on the event's context:
-	      <itemizedlist>
-		<listitem>
-			<para>For events related to a particular device:
-			the device's minor number in
-			<option>DRBD_MINOR</option>, the device's volume number
-			in <option>DRBD_VOLUME</option>.
-		  </para>
-		</listitem>
-		<listitem>
-		  <para>For events related to a particular device on a
-		  particular peer: the connection endpoints in
-		  <option>DRBD_MY_ADDRESS</option>,
-		  <option>DRBD_MY_AF</option>,
-		  <option>DRBD_PEER_ADDRESS</option>,
-		  <option>DRBD_PEER_AF</option>, the device's local minor
-		  number in <option>DRBD_MINOR</option>, the device's volume
-		  number in <option>DRBD_VOLUME</option>.
-		  </para>
-		</listitem>
-		<listitem>
-		  <para>For events related to a particular connection: the
-		  connection endpoints in <option>DRBD_MY_ADDRESS</option>,
-		  <option>DRBD_MY_AF</option>,
-		  <option>DRBD_PEER_ADDRESS</option>,
-		  <option>DRBD_PEER_AF</option>, for each device defined for
-		  that connection: the device's minor number in
-		  <option>DRBD_MINOR_<replaceable>volume-number</replaceable></option>.
-		  </para>
-		</listitem>
-		<listitem>
-		  <para>For events that identify a device, if a lower-level
-		  device is attached, the lower-level device's device name is
-		  passed in <option>DRBD_BACKING_DEV</option> (or
-		  <option>DRBD_BACKING_DEV_<replaceable>volume-number</replaceable></option>).
-		  </para>
-	      </listitem>
-	      </itemizedlist>
-	    </para>
-	    <para>All parameters in this section are optional. Only a single
-	    handler can be defined for each event; if no handler is defined,
-	    nothing will happen.</para>
+              </indexterm> Define handlers to be invoked when certain events
+              occur. The kernel passes the resource name in the first
+              command-line argument and sets the following environment
+              variables depending on the event's context:
+              <itemizedlist>
+                <listitem>
+                        <para>For events related to a particular device:
+                        the device's minor number in
+                        <option>DRBD_MINOR</option>, the device's volume number
+                        in <option>DRBD_VOLUME</option>.
+                  </para>
+                </listitem>
+                <listitem>
+                  <para>For events related to a particular device on a
+                  particular peer: the connection endpoints in
+                  <option>DRBD_MY_ADDRESS</option>,
+                  <option>DRBD_MY_AF</option>,
+                  <option>DRBD_PEER_ADDRESS</option>, and
+                  <option>DRBD_PEER_AF</option>; the device's local minor
+                  number in <option>DRBD_MINOR</option>, and the device's volume
+                  number in <option>DRBD_VOLUME</option>.
+                  </para>
+                </listitem>
+                <listitem>
+                  <para>For events related to a particular connection: the
+                  connection endpoints in <option>DRBD_MY_ADDRESS</option>,
+                  <option>DRBD_MY_AF</option>,
+                  <option>DRBD_PEER_ADDRESS</option>, and
+                  <option>DRBD_PEER_AF</option>; and, for each device defined for
+                  that connection: the device's minor number in
+                  <option>DRBD_MINOR_<replaceable>volume-number</replaceable></option>.
+                  </para>
+                </listitem>
+                <listitem>
+                  <para>For events that identify a device, if a lower-level
+                  device is attached, the lower-level device's device name is
+                  passed in <option>DRBD_BACKING_DEV</option> (or
+                  <option>DRBD_BACKING_DEV_<replaceable>volume-number</replaceable></option>).
+                  </para>
+              </listitem>
+              </itemizedlist>
+            </para>
+            <para>All parameters in this section are optional. Only a single
+            handler can be defined for each event; if no handler is defined,
+            nothing will happen.</para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-          <term><option>net</option></term>
+          <term><anchor xml:id="net"/><option>net</option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>net</secondary>
-	      </indexterm> Define parameters for a connection. All parameters
-	      in this section are optional.
+              </indexterm> Define parameters for a connection. All parameters
+              in this section are optional.
             </para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-	  <term><option>on</option> <option><replaceable>host-name</replaceable></option> <replaceable><optional>...</optional></replaceable></term>
+          <term><option>on</option> <option><replaceable>host-name</replaceable></option> <replaceable><optional>...</optional></replaceable></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>on</secondary>
-	      </indexterm> Define the properties of a resource on a particular
-	      host or set of hosts. Specifying more than one host names can
-	      make sense in a setup with IP address failover, for
-	      example. The <replaceable>host-name</replaceable> argument must
-	      match the Linux host name (uname -n).</para>
+              </indexterm> Define the properties of a resource on a particular
+              host or set of hosts. Specifying more than one host name can
+              make sense in a setup with IP address failover, for
+              example. The <replaceable>host-name</replaceable> argument must
+              match the Linux host name (<option>uname -n</option>).</para>
 
-	    <para>Usually contains or inherits at least one
-	    <option>volume</option> section. The <option>node-id</option> and
-	    <option>address</option> parameters must be defined in this
-	    section. The <option>device</option>, <option>disk</option>, and
-	    <option>meta-disk</option> parameters must be defined in or
-	    inherited by this section.</para>
+            <para>Usually contains or inherits at least one
+            <option>volume</option> section. The <option>node-id</option> and
+            <option>address</option> parameters must be defined in this
+            section. The <option>device</option>, <option>disk</option>, and
+            <option>meta-disk</option> parameters must be defined in, or
+            inherited by, this section.</para>
 
-	    <para>A normal configuration file contains two or more
-	    <option>on</option> sections for each resource. Also see the
-	    <option>floating</option> section.</para>
+            <para>A normal configuration file contains two or more
+            <option>on</option> sections for each resource. Also see the
+            <option>floating</option> section.</para>
           </listitem>
         </varlistentry>
 
@@ -376,22 +378,22 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>options</secondary>
-	      </indexterm> Define parameters for a resource. All parameters
-	      in this section are optional.</para>
-	  </listitem>
-	</varlistentry>
+              </indexterm> Define parameters for a resource. All parameters
+              in this section are optional.</para>
+          </listitem>
+        </varlistentry>
 
         <varlistentry>
-	  <term><option>resource</option> <option><replaceable>name</replaceable></option></term>
+          <term><option>resource</option> <option><replaceable>name</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>resource</secondary>
-	      </indexterm> Define a resource. Usually contains at least two
-	      <option>on</option> sections and at least one
-	      <option>connection</option> section.</para>
+              </indexterm> Defines a resource. Usually contains at least two
+              <option>on</option> sections and at least one
+              <option>connection</option> section. <!-- FIXME? auto-mesh? --></para>
           </listitem>
         </varlistentry>
 
@@ -403,11 +405,11 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>stacked-on-top-of</secondary>
-	    </indexterm> Used instead of an <option>on</option> section for
-	    configuring a stacked resource with three to four nodes.</para>
-	  <para>Starting with DRBD 9.0, stacking is deprecated.  It
-	  is advised to use resources with more than two hosts (and more than
-	  one connection) instead.</para>
+            </indexterm> Used instead of an <option>on</option> section for
+            configuring a stacked resource with three to four nodes.</para>
+          <para>Starting with DRBD 9.0, stacking is deprecated.  It
+          is advised to use resources with more than two hosts (and more than
+          one connection) instead.</para>
           </listitem>
         </varlistentry>
 
@@ -419,23 +421,23 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>startup</secondary>
-	      </indexterm> The parameters in this section determine the
-	      behavior of a resource at startup time.</para>
+              </indexterm> The parameters in this section determine the
+              behavior of a resource at startup time.</para>
           </listitem>
         </varlistentry>
 
         <varlistentry>
-	  <term><option>volume</option> <option><replaceable>volume-number</replaceable></option></term>
+          <term><option>volume</option> <option><replaceable>volume-number</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>volume</secondary>
-	      </indexterm> Define a volume within a resource. The volume
-	      numbers in the various <option>volume</option> sections of a
-	      resource define which devices on which hosts form a replicated
-	      device.</para>
+              </indexterm> Define a volume within a resource. The volume
+              numbers in the various <option>volume</option> sections of a
+              resource define which devices on which hosts form a replicated
+              device.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -446,9 +448,12 @@ resource
 
       <variablelist>
         <varlistentry>
-	  <term><option>host <replaceable>name</replaceable></option>
-	    <optional><option>port
-		<replaceable>port-number</replaceable></option></optional></term>
+          <term><option>host <replaceable>name</replaceable></option>
+            <optional><option>address
+                <optional>address-family</optional>
+                <replaceable>address</replaceable></option></optional>
+            <optional><option>port
+                <replaceable>port-number</replaceable></option></optional></term>
 
           <listitem>
             <para><indexterm significance="normal">
@@ -456,12 +461,15 @@ resource
 
                 <secondary>host</secondary>
               </indexterm>
-	    Define an endpoint for a connection. Each <option>host</option>
-	    statement refers to an <option>on</option> section in a resource.
-	    If a port number is defined, this endpoint will use the specified
-	    port instead of the port defined in the <option>on</option>
-	    section.  Each <option>connection</option> section must contain
-	    exactly two <option>host</option> parameters.</para>
+            Defines an endpoint for a connection. Each <option>host</option>
+            statement refers to an <option>on</option> section in a resource.
+            If a port number is defined, this endpoint will use the specified
+            port instead of the port defined in the <option>on</option>
+            section.  Each <option>connection</option> section must contain
+            exactly two <option>host</option> parameters.</para>
+            <para>Optionally a different address to listen respectively to
+              connect to can be given; this is useful to use a different physical
+              connection (eg. a dedicated cross-over cable) for a host pair.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -491,9 +499,9 @@ resource
       <title>Section <option>global</option> Parameters</title>
 
       <variablelist>
-	<pick_drbdsetup_option name="dialog-refresh"/>
-	<pick_drbdsetup_option name="disable-ip-verification"/>
-	<pick_drbdsetup_option name="usage-count"/>
+        <pick_drbdsetup_option name="dialog-refresh"/>
+        <pick_drbdsetup_option name="disable-ip-verification"/>
+        <pick_drbdsetup_option name="usage-count"/>
       </variablelist>
     </refsect2>
 
@@ -501,20 +509,20 @@ resource
       <title>Section <option>handlers</option> Parameters</title>
 
       <variablelist>
-	<varlistentry>
-	  <term><option>after-resync-target <replaceable>cmd</replaceable></option></term>
+        <varlistentry>
+          <term><option>after-resync-target <replaceable>cmd</replaceable></option></term>
 
-	  <listitem>
-	    <para><indexterm significance="normal">
-		<primary>drbd.conf</primary>
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
 
-		<secondary>after-resync-target</secondary>
-	      </indexterm> Called on a resync target when a node's state
-	      changes from Inconsistent to Consistent when a resync finishes.
-	      This handler can be used for removing the snapshot created in the
-	      <option>before-resync-target</option> handler.</para>
-	  </listitem>
-	</varlistentry>
+                <secondary>after-resync-target</secondary>
+              </indexterm> Called on a resync target when a node state
+              changes from <option>Inconsistent</option> to <option>Consistent</option> when a resync finishes.
+              This handler can be used for removing the snapshot created in the
+              <option>before-resync-target</option> handler.</para>
+          </listitem>
+        </varlistentry>
 
         <varlistentry>
           <term><option>before-resync-target <replaceable>cmd</replaceable></option></term>
@@ -524,11 +532,11 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>before-resync-target</secondary>
-	      </indexterm> Called on a resync target before a resync begins.
-	      This handler can be used for creating a snapshot of the
-	      lower-level device for the duration of the resync: if the resync
-	      source becomes unavailable during a resync, reverting to the
-	      snapshot can restore a consistent state.</para>
+              </indexterm> Called on a resync target before a resync begins.
+              This handler can be used for creating a snapshot of the
+              lower-level device for the duration of the resync: if the resync
+              source becomes unavailable during a resync, reverting to the
+              snapshot can restore a consistent state.</para>
           </listitem>
         </varlistentry>
 
@@ -540,9 +548,9 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>fence-peer</secondary>
-	      </indexterm> Called when a node should fence a resource on a
-	      particular peer. The handler should not use the same
-	      communication path that DRBD uses for talking to the peer.</para>
+              </indexterm> Called when a node should fence a resource on a
+              particular peer. The handler should not use the same
+              communication path that DRBD uses for talking to the peer.</para>
           </listitem>
         </varlistentry>
 
@@ -554,10 +562,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>initial-split-brain</secondary>
-	      </indexterm> Called when DRBD connects to a peer and detects that
-	      the peer is in a split-brain state with the local node.  This
-	      handler is also called for split-brain scenarios which will be
-	      resolved automatically.</para>
+              </indexterm> Called when DRBD connects to a peer and detects that
+              the peer is in a split-brain state with the local node.  This
+              handler is also called for split-brain scenarios which will be
+              resolved automatically.</para>
           </listitem>
         </varlistentry>
 
@@ -569,8 +577,8 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>local-io-error</secondary>
-	      </indexterm> Called when an I/O error occurs on a lower-level device.
-	    </para>
+              </indexterm> Called when an I/O error occurs on a lower-level device.
+            </para>
           </listitem>
         </varlistentry>
 
@@ -582,10 +590,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-lost</secondary>
-	      </indexterm>
-	      The local node is currently primary, but DRBD believes that it
-	      should become a sync target. The node should give up its primary
-	      role.</para>
+              </indexterm>
+              The local node is currently primary, but DRBD believes that it
+              should become a sync target. The node should give up its primary
+              role.</para>
           </listitem>
         </varlistentry>
 
@@ -597,9 +605,9 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-lost-after-sb</secondary>
-	      </indexterm> The local node is currently primary, but it has lost
-	      the after-split-brain auto recovery procedure. The node should be
-	      abandoned. <!-- FIXME: What is "abandon a node" supposed to mean? --></para>
+              </indexterm> The local node is currently primary, but it has lost
+              the after-split-brain auto recovery procedure. The node should be
+              abandoned. <!-- FIXME: What is "abandon a node" supposed to mean? --></para>
           </listitem>
         </varlistentry>
 
@@ -611,8 +619,8 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-on-incon-degr</secondary>
-	      </indexterm> This handler is called if the local node is primary,
-	      degraded, and if the lower-level device is inconsistent.</para>
+              </indexterm> This handler is called if the local node is primary,
+              degraded, and the lower-level device is inconsistent.</para>
           </listitem>
         </varlistentry>
 
@@ -624,10 +632,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>split-brain</secondary>
-	      </indexterm> DRBD has detected a split-brain situation which
-	      could not be resolved automatically.  Manual recovery is
-	      necessary. This handler can be used to call for administrator
-	      attention.</para>
+              </indexterm> DRBD has detected a split-brain situation which
+              could not be resolved automatically.  Manual recovery is
+              necessary. This handler can be used to call for administrator
+              attention.</para>
           </listitem>
         </varlistentry>
 
@@ -638,31 +646,31 @@ resource
       <title>Section <option>net</option> Parameters</title>
 
       <variablelist>
-	<pick_drbdsetup_option name="after-sb-0pri"/>
-	<pick_drbdsetup_option name="after-sb-1pri"/>
-	<pick_drbdsetup_option name="after-sb-2pri"/>
-	<pick_drbdsetup_option name="allow-two-primaries"/>
-	<pick_drbdsetup_option name="always-asbp"/>
-	<pick_drbdsetup_option name="connect-int"/>
-	<pick_drbdsetup_option name="cram-hmac-alg"/>
-	<pick_drbdsetup_option name="csums-alg"/>
-	<pick_drbdsetup_option name="data-integrity-alg"/>
-	<pick_drbdsetup_option name="ko-count"/>
-	<pick_drbdsetup_option name="max-buffers"/>
-	<pick_drbdsetup_option name="max-epoch-size"/>
-	<pick_drbdsetup_option name="on-congestion"/>
-	<pick_drbdsetup_option name="ping-int"/>
-	<pick_drbdsetup_option name="ping-timeout"/>
-	<pick_drbdsetup_option name="protocol"/>
-	<pick_drbdsetup_option name="rcvbuf-size"/>
-	<pick_drbdsetup_option name="rr-conflict"/>
-	<pick_drbdsetup_option name="shared-secret"/>
-	<pick_drbdsetup_option name="sndbuf-size"/>
-	<pick_drbdsetup_option name="tcp-cork"/>
-	<pick_drbdsetup_option name="timeout"/>
-	<pick_drbdsetup_option name="unplug-watermark"/>
-	<pick_drbdsetup_option name="use-rle"/>
-	<pick_drbdsetup_option name="verify-alg"/>
+        <pick_drbdsetup_option name="after-sb-0pri"/>
+        <pick_drbdsetup_option name="after-sb-1pri"/>
+        <pick_drbdsetup_option name="after-sb-2pri"/>
+        <pick_drbdsetup_option name="allow-two-primaries"/>
+        <pick_drbdsetup_option name="always-asbp"/>
+        <pick_drbdsetup_option name="connect-int"/>
+        <pick_drbdsetup_option name="cram-hmac-alg"/>
+        <pick_drbdsetup_option name="csums-alg"/>
+        <pick_drbdsetup_option name="data-integrity-alg"/>
+        <pick_drbdsetup_option name="ko-count"/>
+        <pick_drbdsetup_option name="max-buffers"/>
+        <pick_drbdsetup_option name="max-epoch-size"/>
+        <pick_drbdsetup_option name="on-congestion"/>
+        <pick_drbdsetup_option name="ping-int"/>
+        <pick_drbdsetup_option name="ping-timeout"/>
+        <pick_drbdsetup_option name="protocol"/>
+        <pick_drbdsetup_option name="rcvbuf-size"/>
+        <pick_drbdsetup_option name="rr-conflict"/>
+        <pick_drbdsetup_option name="shared-secret"/>
+        <pick_drbdsetup_option name="sndbuf-size"/>
+        <pick_drbdsetup_option name="tcp-cork"/>
+        <pick_drbdsetup_option name="timeout"/>
+        <pick_drbdsetup_option name="unplug-watermark"/>
+        <pick_drbdsetup_option name="use-rle"/>
+        <pick_drbdsetup_option name="verify-alg"/>
       </variablelist>
     </refsect2>
 
@@ -671,34 +679,34 @@ resource
 
       <variablelist>
         <varlistentry>
-	  <term><option>address
-	      <replaceable><optional>address-family</optional></replaceable>
-	      <replaceable>address:port</replaceable></option></term>
+          <term><option>address
+              <replaceable><optional>address-family</optional></replaceable>
+              <replaceable>address</replaceable>:<replaceable>port</replaceable></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>address</secondary>
-	      </indexterm> Define the address family, address, and port of a
-	      connection endpoint.</para>
+              </indexterm> Defines the address family, address, and port of a
+              connection endpoint.</para>
 
-	    <para>The address families <option>ipv4</option>,
-	      <option>ipv6</option>, <option>ssocks</option>,
-	      <option>sdp</option>, and <option>sci</option> are supported
-	      (<option>sci</option> being an alias for <option>ssocks</option>).
-	      If no address family is specified, <option>ipv4</option> is
-	      assumed.  For all address families except <option>ipv6</option>,
-	      the address is specified in IPV4 address syntax (1.2.3.4
-	      notation).  For <option>ipv6</option>, the address is enclosed in
-	      brackets and uses IPv6 address syntax (for example, <literal
-		moreinfo="none">[fd01:2345:6789:abcd::1]</literal>).  The port
-	      is always specified as a decimal number between 1 and 65535.</para>
+            <para>The address families <option>ipv4</option>,
+              <option>ipv6</option>, <option>ssocks</option>,
+              <option>sdp</option>, and <option>sci</option> are supported
+              (<option>sci</option> being an alias for <option>ssocks</option>).
+              If no address family is specified, <option>ipv4</option> is
+              assumed.  For all address families except <option>ipv6</option>,
+              the address is specified in IPV4 address syntax (1.2.3.4
+              notation).  For <option>ipv6</option>, the address is enclosed in
+              brackets and uses IPv6 address syntax (for example, <literal
+                moreinfo="none">[fd01:2345:6789:abcd::1]</literal>).  The port
+              is always specified as a decimal number from 1 to 65535.</para>
 
-	    <para>On each host, the port numbers must be unique for each
-	      address; ports cannot be shared.</para>
-	  <!-- FIXME: The port should be made optional to avoid duplicate
-		      information here and in the connection sections. -->
+            <para>On each host, the port numbers must be unique for each
+              address; ports cannot be shared.</para>
+          <!-- FIXME: The port should be made optional to avoid duplicate
+                      information here and in the connection sections. -->
           </listitem>
         </varlistentry>
 
@@ -711,24 +719,24 @@ resource
 
                 <secondary>node-id</secondary>
               </indexterm>
-	      Define the unique node identifier for a node in the cluster.
-	      Node identifiers are used to identify individual nodes in the
-	      network protocol, and to assign bitmap slots to nodes in the
-	      metadata.</para>
+              Defines the unique node identifier for a node in the cluster.
+              Node identifiers are used to identify individual nodes in the
+              network protocol, and to assign bitmap slots to nodes in the
+              metadata.</para>
 
-	    <para>Node identifiers can only be reasssigned in a cluster when
-	      the cluster is down.  It is essential that the node identifiers
-	      in the configuration and in the device metadata are changed
-	      consistently on all hosts.  To change the metadata, dump the
-	      current state with "drbdmeta dump-md", adjust the bitmap slot
-	      assignment, and update the metadata with "drbdmeta
-	      restore-md".</para>
+            <para>Node identifiers can only be reasssigned in a cluster when
+              the cluster is down.  It is essential that the node identifiers
+              in the configuration and in the device metadata are changed
+              consistently on all hosts.  To change the metadata, dump the
+              current state with <command>drbdmeta dump-md</command>, adjust the bitmap slot
+              assignment, and update the metadata with
+              <command>drbdmeta restore-md</command>.</para>
 
-	    <para>The <option>node-id</option> parameter exists since DRBD
-	      9.0.0.  Its value ranges from 0 to 16; there is no
-	      default.</para>
-	  </listitem>
-	</varlistentry>
+            <para>The <option>node-id</option> parameter exists since DRBD
+              9.0.0.  Its value ranges from 0 to 16; there is no
+              default.</para>
+          </listitem>
+        </varlistentry>
       </variablelist>
     </refsect2>
 
@@ -736,10 +744,10 @@ resource
       <title>Section <option>options</option> Parameters (Resource Options)</title>
 
       <variablelist>
-	<pick_drbdsetup_option name="auto-promote"/>
-	<pick_drbdsetup_option name="cpu-mask"/>
-	<pick_drbdsetup_option name="on-no-data-accessible"/>
-	<pick_drbdsetup_option name="peer-ack-window"/>
+        <pick_drbdsetup_option name="auto-promote"/>
+        <pick_drbdsetup_option name="cpu-mask"/>
+        <pick_drbdsetup_option name="on-no-data-accessible"/>
+        <pick_drbdsetup_option name="peer-ack-window"/>
       </variablelist>
     </refsect2>
 
@@ -747,8 +755,8 @@ resource
       <title>Section <option>startup</option> Parameters</title>
 
       <para>The parameters in this section define the behavior of DRBD at
-	system startup time, in the DRBD init script.  They have no effect once
-	the system is up and running.</para>
+        system startup time, in the DRBD init script.  They have no effect once
+        the system is up and running.</para>
 
       <variablelist>
 	<pick_drbdsetup_option name="degr-wfc-timeout"/>
@@ -758,17 +766,17 @@ resource
           <term><option>stacked-timeouts</option></term>
 
           <listitem>
-	    <para>On stacked devices, the <option>wfc-timeout</option> and
-	      <option>degr-wfc-timeout</option> parameters in the configuration
-	      are usually ignored, and both timeouts are set to twice the
-	      <option>connect-int</option> timeout.  The
-	      <option>stacked-timeouts</option> parameter tells DRBD to use the
-	      <option>wfc-timeout</option> and
-	      <option>degr-wfc-timeout</option> parameters as defined in the
-	      configuration, even on stacked devices.  Only use this parameter
-	      if the peer of the stacked resource is usually not available, or
-	      will not become primary.  Incorrect use of this parameter can
-	      lead to unexpected split-brain scenarios.</para>
+            <para>On stacked devices, the <option>wfc-timeout</option> and
+              <option>degr-wfc-timeout</option> parameters in the configuration
+              are usually ignored, and both timeouts are set to twice the
+              <option>connect-int</option> timeout.  The
+              <option>stacked-timeouts</option> parameter tells DRBD to use the
+              <option>wfc-timeout</option> and
+              <option>degr-wfc-timeout</option> parameters as defined in the
+              configuration, even on stacked devices.  Only use this parameter
+              if the peer of the stacked resource is usually not available, or
+              will not become primary.  Incorrect use of this parameter can
+              lead to unexpected split-brain scenarios.</para>
           </listitem>
         </varlistentry>
 
@@ -782,30 +790,30 @@ resource
 
       <variablelist>
         <varlistentry>
-	  <term><option>device /dev/drbd<replaceable>minor-number</replaceable></option></term>
-	  <term><option>device <replaceable><optional>name</optional></replaceable> <optional>minor
-		<replaceable>minor-number</replaceable></optional></option></term>
+          <term><option>device /dev/drbd<replaceable>minor-number</replaceable></option></term>
+          <term><option>device <replaceable><optional>name</optional></replaceable> <optional>minor
+                <replaceable>minor-number</replaceable></optional></option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>device</secondary>
-	      </indexterm> Define the device name and minor number of a
-	      replicated block device.  This is the device that applications
-	      are supposed to access; in most cases, the device is not used
-	      directly, but as a file system.</para>
+              </indexterm> Define the device name and minor number of a
+              replicated block device.  This is the device that applications
+              are supposed to access; in most cases, the device is not used
+              directly, but as a file system.</para>
 
-	    <para>The first form of this parameter assumes the standard
-	      device naming convention.  The second form supports arbitrary
-	      device names: if the device name is omitted, the standard device
-	      naming convention is used; if the minor number is omitted, one of
-	      the available minor numbers is used.</para>
+            <para>The first form of this parameter assumes the standard
+              device naming convention.  The second form supports arbitrary
+              device names: if the device name is omitted, the standard device
+              naming convention is used; if the minor number is omitted, one of
+              the available minor numbers is used.</para>
 
-	    <para>In addition to this device, udev will create
-	      /dev/drbd/by-res/<replaceable>resource</replaceable>/<replaceable>volume</replaceable>
-	      and /dev/drbd/by-disk/drbd<replaceable>minor-number</replaceable>
-	      symlinks to the device.</para>
+            <para>In addition to this device, udev will create
+              <option>/dev/drbd/by-res/<replaceable>resource</replaceable>/<replaceable>volume</replaceable></option>
+              and <option>/dev/drbd/by-disk/drbd<replaceable>minor-number</replaceable></option>
+              symlinks to the device.</para>
           </listitem>
         </varlistentry>
 
@@ -817,13 +825,13 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>disk</secondary>
-	      </indexterm> Define the lower-level block device that DRBD will
-	      use for storing the actual data.  While the replicated drbd
-	      device is configured, the lower-level device must not be used.
-	      Even read-only access with tools like <citerefentry>
-		<refentrytitle>dumpe2fs</refentrytitle>
-		<manvolnum>8</manvolnum> </citerefentry> and similar is not
-	      allowed.</para>
+              </indexterm> Define the lower-level block device that DRBD will
+              use for storing the actual data.  While the replicated drbd
+              device is configured, the lower-level device must not be used.
+              Even read-only access with tools like <citerefentry>
+                <refentrytitle>dumpe2fs</refentrytitle>
+                <manvolnum>8</manvolnum> </citerefentry> and similar is not
+              allowed.</para>
           </listitem>
         </varlistentry>
 
@@ -832,32 +840,32 @@ resource
 
           <term><option>meta-disk <replaceable>device</replaceable></option></term>
 
-	  <term><option>meta-disk <replaceable>device</replaceable> [<replaceable>index</replaceable>]</option></term>
+          <term><option>meta-disk <replaceable>device</replaceable> [<replaceable>index</replaceable>]</option></term>
 
           <listitem>
             <para><indexterm significance="normal">
                 <primary>drbd.conf</primary>
 
                 <secondary>meta-disk</secondary>
-	      </indexterm> Define where the metadata of a replicated block
-	      device resides: it can be internal, meaning that the lower-level
-	      device contains both the data and the metadata, or on a separate
-	      device.</para>
+              </indexterm> Define where the metadata of a replicated block
+              device resides: it can be <option>internal</option>, meaning that the lower-level
+              device contains both the data and the metadata, or on a separate
+              device.</para>
 
-	    <para>When the <replaceable>index</replaceable> form of this
-	      parameter is used, multiple replicated devices can share the same
-	      metadata device, each using a separate index.  Each index
-	      occupies 128 MiB of data, which corresponds to a replicated
-	      device size of at most 4 GiB.  We recommend not to share metadata
-	      devices anymore, and to instead use the lvm volume manager for
-	      creating metadata devices as needed.</para>
+            <para>When the <replaceable>index</replaceable> form of this
+              parameter is used, multiple replicated devices can share the same
+              metadata device, each using a separate index.  Each index
+              occupies 128 MiB of data, which corresponds to a replicated <!-- FIXME: 512GB? -->
+              device size of at most 4 GiB.  We recommend not to share metadata
+              devices anymore, and to instead use the lvm volume manager for
+              creating metadata devices as needed.</para>
 
-	    <para>When the <replaceable>index</replaceable> form of this
-	      parameter is not used, the size of the lower-level device
-	      determines the size of the metadata.  The size needed is 36 KiB +
-	      (size of lower-level device) / 32K * (number of nodes - 1).  If
-	      the metadata device is bigger than that, the extra space is not
-	      used.</para>
+            <para>When the <replaceable>index</replaceable> form of this
+              parameter is not used, the size of the lower-level device
+              determines the size of the metadata.  The size needed is 36 KiB +
+              (size of lower-level device) / 32K * (number of nodes - 1).  If <!-- FIXME: al-striping, al-extents 65536? -->
+              the metadata device is bigger than that, the extra space is not
+              used.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -869,19 +877,19 @@ resource
 
     <para>DRBD supports two different mechanisms for data integrity checking:
       first, the <option>data-integrity-alg</option> network parameter allows
-      to integrity check the data sent over the network.  Second, the online
+      to add a checksum to the data sent over the network.  Second, the online
       verification mechanism (<command moreinfo="none">drbdadm verify</command>
       and the <option>verify-alg</option> parameter) allows to check for
       differences in the on-disk data.</para>
 
     <para>Both mechanisms can produce false positives if the data is modified
-      under I/O (i.e., while it is being sent over the network or written to
+      during I/O (i.e., while it is being sent over the network or written to
       disk).  This does not necessarily indicate a problem: for example, some
       file systems and applications do modify data under I/O for certain
       operations.  Swap space can also undergo changes while under I/O.</para>
 
     <para>Network data integrity checking tries to identify data modification
-      under I/O by verifying the checksums on the sender side after sending the
+      during I/O by verifying the checksums on the sender side after sending the
       data.  If it detects a mismatch, it logs an error.  The receiver also
       logs an error when it detects a mismatch.  Thus, an error logged only on
       the receiver side indicates an error on the network, and an error logged
