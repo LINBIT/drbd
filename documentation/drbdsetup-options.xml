@@ -24,7 +24,7 @@
       <replaceable>al-extents</replaceable> parameter determines how many of
       those segments can be active at the same time.  The default value for
       <replaceable>al-extents</replaceable> is 1237, with a minimum of 7 and a
-      maximum of 6433.</para>
+      maximum of 65536.</para>
     </definition>
   </drbdsetup_option>
 
