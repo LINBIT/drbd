@@ -2,9 +2,9 @@
 <!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdmeta">
   <refentryinfo>
-    <date>15 Oct 2008</date>
+    <date>22 November 2012</date>
     <productname>DRBD</productname>
-    <productnumber>8.3.2</productnumber>
+    <productnumber>9.0.0</productnumber>
   </refentryinfo>
   <refmeta>
     <refentrytitle>drbdmeta</refentrytitle>
@@ -31,6 +31,7 @@
         <arg choice="plain" rep="norepeat">v06 <replaceable>minor</replaceable></arg>
         <arg choice="plain" rep="norepeat">v07 <replaceable>meta_dev index</replaceable></arg>
         <arg choice="plain" rep="norepeat">v08 <replaceable>meta_dev index</replaceable></arg>
+        <arg choice="plain" rep="norepeat">v09 <replaceable>meta_dev index</replaceable></arg>
       </group>
       <arg choice="req" rep="norepeat">
         <replaceable>command</replaceable>
@@ -51,7 +52,7 @@
       or at least detached from its backing storage. The first parameter
       is the device node associated to the resource. With the second
       parameter you can select the version of the meta data. Currently
-      all major DRBD releases (0.6, 0.7 and 8) are supported.
+      all major DRBD releases (0.6, 0.7, 8, and 9) are supported.
     </para>
   </refsect1>
   <refsect1>
@@ -69,7 +70,7 @@
         <term>--ignore-sanity-checks</term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>--ignore-sanity-checks</secondary></indexterm>
-            Some sanity checks cause drbdmeta to terminate. E.g. if a file system image would get
+            Some sanity checks cause drbdmeta to terminate, e.g. if a file system image would get
 	    destroyed by creating the meta data. By using that option you can force drbdmeta
 	    to ignore these checks.</para>
         </listitem>
@@ -85,7 +86,7 @@
           <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
-          Create-md initializes the meta data storage. This needs to be
+          <option>create-md</option> initializes the meta data storage. This needs to be
 	  done before a DRBD resource can be taken online for the first
 	  time. In case there is already a meta data signature of an
 	  older format in place, drbdmeta will ask you if it should
@@ -105,20 +106,24 @@
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>get-gi</term>
+        <term>get-gi
+          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+        </term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
-          Get-gi shows a short textual representation of the data generation
+          <option>get-gi</option> shows a short textual representation of the data generation
 	  identifier. In version 0.6 and 0.7 these are generation counters,
-	  while in version 8 it is a set of UUIDs.
+	  while in version 8 it is a set of UUIDs; in version 9 you have to specify the peer's <option>node-id</option>.
 	</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>show-gi</term>
+        <term>show-gi
+          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+        </term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>show-gi</secondary></indexterm>
-	  Show-gi prints a textual representation of the data generation
+	  <option>show-gi</option> prints a textual representation of the data generation
 	  identifiers including explanatory information.
         </para>
         </listitem>
@@ -147,7 +152,7 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>dstate</secondary></indexterm>
           Prints the state of the data on the  backing storage. The output
-	  is always followed by '/DUnknown' since drbdmeta only looks
+          is always followed by <quote>/DUnknown</quote> since drbdmeta only looks
 	  at the local meta data.
         </para>
         </listitem>
@@ -158,7 +163,7 @@
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>check-resize</secondary></indexterm>
           Examines the device size of a backing device, and it's last known device size,
-	  recorded in a file /var/lib/drbd/drbd-minor-??.lkbd. In case the size of the
+          recorded in a file <option>/var/lib/drbd/drbd-minor-<replaceable>minor number</replaceable>.lkbd</option>. In case the size of the
 	  backing device changed, and the meta data can be found at the old position,
 	  it moves the meta data to the right position at the end of the block device.
         </para>
@@ -178,14 +183,21 @@
     </para>
     <variablelist>
       <varlistentry>
-        <term>set-gi <replaceable>gi</replaceable></term>
+        <term>set-gi <replaceable>gi</replaceable>
+          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+        </term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>set-gi </secondary></indexterm>
-          Set-gi allows you to set the generation identifier.
+          <option>set-gi</option> allows you to set the generation identifier.
 	  <replaceable>Gi</replaceable> needs to be a generation
 	  counter for the 0.6 and 0.7 format, and a UUID set for 8.x.
 	  Specify it in the same way as get-gi shows it.
 	</para>
+        <para>
+          For DRBD version 9 you have to give the <option>node-id</option> of 
+          the peer you want to modify.
+          <!-- FIXME: only the bitmap value taken? or current overwritten, too? -->
+        </para>
         </listitem>
       </varlistentry>
       <varlistentry>
@@ -201,7 +213,7 @@
   </refsect1>
   <refsect1>
     <title>Version</title>
-    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.</simpara>
+    <simpara>This document was revised for version 9.0.0 of the DRBD distribution.</simpara>
   </refsect1>
   <refsect1>
     <title>Author</title>
@@ -216,7 +228,7 @@
   </refsect1>
   <refsect1>
     <title>Copyright</title>
-    <simpara>Copyright 2001-2008 LINBIT Information Technologies,
+    <simpara>Copyright 2001-2012 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
