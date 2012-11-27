@@ -66,8 +66,12 @@ echo "O=$O"
 # some paranoia: check that all files are where we expect them
 ls > /dev/null \
 $KDIR/{Makefile,include/linux/{gfp,types,slab,net}.h}
-ls > /dev/null \
-$O/{.config,Makefile,include/linux/version.h}
+ls > /dev/null $O/{.config,Makefile}
+
+test -e $O/include/linux/version.h ||
+test -e $O/include/generated/uapi/linux/version.h ||
+exit 1
+
 test -e $O/include/asm/atomic.h  ||
 test -e $O/include/asm/arch/atomic.h  ||
 test -e $O/include2/asm/atomic.h ||
