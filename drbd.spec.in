@@ -252,15 +252,6 @@ License: GPLv2
 This package contains the DRBD resource agents for the Heartbeat cluster
 resource manager (in v1 compatibility mode).
 
-%files heartbeat
-%defattr(755,root,root,-)
-%{_sysconfdir}/ha.d/resource.d/drbddisk
-%{_sysconfdir}/ha.d/resource.d/drbdupper
-
-%defattr(-,root,root,-)
-%{_mandir}/man8/drbddisk.8.*
-%endif # with heartbeat
-
 %if %{with bashcompletion}
 %package bash-completion
 Summary: Programmable bash completion support for drbdadm

@@ -640,10 +640,6 @@
 
         <manvolnum>8</manvolnum>
       </citerefentry>, <citerefentry>
-        <refentrytitle>drbddisk</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>, <citerefentry>
         <refentrytitle>drbdsetup</refentrytitle>
 
         <manvolnum>8</manvolnum>

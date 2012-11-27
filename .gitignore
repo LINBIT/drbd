@@ -52,7 +52,6 @@ user/drbdsetup
 documentation/drbd.8
 documentation/drbd.conf.5
 documentation/drbdadm.8
-documentation/drbddisk.8
 documentation/drbdmeta.8
 documentation/drbdsetup.8
 documentation/manpage.links

@@ -1032,10 +1032,6 @@ drbd0 node-id:1 role:Primary suspended:no
 
         <manvolnum>8</manvolnum>
       </citerefentry>, <citerefentry>
-        <refentrytitle>drbddisk</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>, <citerefentry>
         <refentrytitle>drbdadm</refentrytitle>
 
         <manvolnum>8</manvolnum>

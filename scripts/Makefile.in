@@ -92,13 +92,6 @@ else
 endif
 endif
 
-install-heartbeat:
-ifeq ($(WITH_HEARTBEAT),yes)
-	mkdir -p $(DESTDIR)$(sysconfdir)/ha.d/resource.d
-	install -m 755 drbddisk $(DESTDIR)$(sysconfdir)/ha.d/resource.d
-	install -m 755 drbdupper $(DESTDIR)$(sysconfdir)/ha.d/resource.d
-endif
-
 # Do not use $(prefix) for the resource agent. The OCF standard
 # explicitly mandates where resource agents must live,
 # no matter what prefix is configured to.
@@ -147,8 +140,6 @@ distclean: clean
 
 uninstall:
 	rm -f $(DESTDIR)$(INITDIR)/drbd
-	rm -f $(DESTDIR)$(sysconfdir)/ha.d/resource.d/drbddisk
-	rm -f $(DESTDIR)$(sysconfdir)/ha.d/resource.d/drbdupper
 	rm -f $(DESTDIR)$(sysconfdir)/xen/scripts/block-drbd
 	rm -f $(DESTDIR)$(sysconfdir)/bash_completion.d/$(COMPLETION)
 	! test -L $(DESTDIR)/sbin/rcdrbd || rm $(DESTDIR)/sbin/rcdrbd
