@@ -419,6 +419,7 @@ struct drbd_cmd commands[] = {
 	 .lockless = true,
 	 .summary = "Show the data generation identifiers for a device on a particular connection." },
 	{"show", CTX_RESOURCE | CTX_ALL, 0, 0, show_cmd,
+	 .options = show_cmd_options,
 	 .lockless = true,
 	 .summary = "Show the current configuration of a resource (or all resources)." },
 	{"status", CTX_RESOURCE | CTX_ALL, 0, 0, status_cmd,
