@@ -276,7 +276,8 @@ then
   else
       compat_have_km_type=0
   fi
-  if grep_q "\*bi_destructor;" $KDIR/include/linux/blk_types.h ; then
+  if grep_q "\*bi_destructor;" $KDIR/include/linux/blk_types.h ||
+     grep_q "\*bi_destructor;" $KDIR/include/linux/bio.h ; then
       compat_bio_has_bi_destructor=1
   else
       compat_bio_has_bi_destructor=0
