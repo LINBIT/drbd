@@ -79,7 +79,6 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   <refsect1>
     <title>See Also</title>
     <para><citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>,
-    <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry><citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry><ulink url="http://www.drbd.org/"><citetitle>DRBD Homepage</citetitle></ulink></para>
   </refsect1>
 </refentry>
