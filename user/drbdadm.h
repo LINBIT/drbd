@@ -164,6 +164,7 @@ struct hname_address
 	unsigned int by_address;
 	unsigned int parsed_address:1;
 	unsigned int parsed_port:1;
+	unsigned int conflicts:1;
 	STAILQ_ENTRY(hname_address) link;
 };
 STAILQ_HEAD(hname_address_pairs, hname_address);

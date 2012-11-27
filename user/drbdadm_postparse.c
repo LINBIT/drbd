@@ -195,9 +195,6 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 		}
 
 		fline = ha->config_line;
-		check_uniq("IP", "%s:%s:%s", ha->name,
-			   ha->address.addr ? ha->address.addr : host_info->address.addr,
-			   ha->address.port ? ha->address.port : host_info->address.port);
 	}
 
 	if (con->implicit && i == 2 && !host_info_array[0]->node_id && !host_info_array[1]->node_id) {
@@ -635,6 +632,96 @@ static void create_implicit_connections(struct d_resource *res)
 	STAILQ_INSERT_TAIL(&res->connections, conn, link);
 }
 
+static bool addresses_equal(struct d_address *addr1, struct d_address *addr2)
+{
+	if (strcmp(addr1->af, addr2->af))
+		return false;
+
+	if (strcmp(addr1->addr, addr2->addr))
+		return false;
+
+	if (strcmp(addr1->port, addr2->port))
+		return false;
+
+	return true;
+}
+
+static struct hname_address *find_hname_addr_in_res(struct d_resource *res, struct d_address *addr)
+{
+	struct hname_address *ha;
+	struct connection *con;
+
+	for_each_connection(con, &res->connections) {
+		STAILQ_FOREACH(ha, &con->hname_address_pairs, link) {
+			struct d_address *addr2;
+			addr2 = ha->address.addr ? &ha->address : &ha->host_info->address;
+
+			if (addresses_equal(addr, addr2))
+				return ha;
+		}
+	}
+
+	return NULL;
+}
+
+static bool addr_scope_local(struct d_address *addr)
+{
+	return !strcmp(addr->addr, "127.0.0.1") || !strcmp(addr->addr, "::1");
+}
+
+/* An AF/IP/addr triple might be used by multiple connections within one resource,
+   but may not be mentioned in any other resource. Also make sure that the two
+   endpoints are not configured as the same.
+ */
+static void check_addr_conflict(struct d_resource *res)
+{
+	struct d_resource *res2;
+	struct hname_address *ha1, *ha2;
+	struct connection *con;
+
+	for_each_resource(res2, &config) {
+		if (res2 == res)
+			continue;
+
+		for_each_connection(con, &res->connections) {
+			struct d_address *addr[2];
+			int i = 0;
+
+			STAILQ_FOREACH(ha1, &con->hname_address_pairs, link) {
+				addr[i] = ha1->address.addr ? &ha1->address : &ha1->host_info->address;
+				if (addr_scope_local(addr[i]))
+					continue;
+
+				if (ha1->conflicts)
+					continue;
+
+				ha2 = find_hname_addr_in_res(res2, addr[i]);
+				if (!ha2)
+					continue;
+
+				if (ha2->conflicts)
+					continue;
+
+				fprintf(stderr, "%s:%d: in resource %s\n"
+					"    %s:%s:%s is also used %s:%d (resource %s)\n",
+					res->config_file, ha1->config_line, res->name,
+					addr[i]->af, addr[i]->addr, addr[i]->port,
+					res2->config_file, ha2->config_line, res2->name);
+				ha2->conflicts = 1;
+				ha1->conflicts = 1;
+				config_valid = 0;
+				i++;
+			}
+			if (i == 2 && addresses_equal(addr[0], addr[1]) && !addr_scope_local(addr[0])) {
+				fprintf(stderr, "%s:%d: in resource %s %s:%s:%s is used for both endpoints\n",
+					res->config_file, con->config_line, res->name,
+					addr[0]->af, addr[0]->addr, addr[0]->port);
+				config_valid = 0;
+			}
+		}
+	}
+}
+
 void post_parse(enum pp_flags flags)
 {
 	struct d_resource *res;
@@ -674,6 +761,10 @@ void post_parse(enum pp_flags flags)
 				derror(host, res, "node-id");
 		}
 	}
+
+	for_each_resource(res, &config)
+		check_addr_conflict(res);
+
 	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, &config)
 		if (!res->stacked_on_one)

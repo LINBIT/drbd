@@ -751,15 +751,7 @@ static void __parse_address(struct d_address *a)
 
 static void parse_address(struct names *on_hosts, struct d_address *address)
 {
-	struct d_name *h;
 	__parse_address(address);
-	if ((!strcmp(address->addr, "127.0.0.1") || !strcmp(address->addr, "::1")) &&
-		on_hosts)
-		STAILQ_FOREACH(h, on_hosts, link)
-			check_uniq("IP", "%s:%s:%s", h->name, address->addr,
-				   address->port);
-	else
-		check_uniq("IP", "%s:%s", address->addr, address->port);
 	EXP(';');
 }
 
@@ -1104,7 +1096,6 @@ static void parse_host_section(struct d_resource *res,
 
 		host->by_address = 1;
 		__parse_address(&host->address);
-		check_uniq("IP", "%s:%s", host->address.addr, host->address.port);
 		if (!strcmp(host->address.af, "ipv6"))
 			m_asprintf(&fake_uname, "ipv6 [%s]:%s", host->address.addr, host->address.port);
 		else
