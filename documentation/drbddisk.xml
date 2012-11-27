@@ -6,9 +6,9 @@
     <refpurpose>Script to mark devices as primary and mount file systems</refpurpose>
   </refnamediv>
   <refentryinfo>
-    <date>15 Oct 2008</date>
+    <date>22 November 2012</date>
     <productname>DRBD</productname>
-    <productnumber>8.3.2</productnumber>
+    <productnumber>9.0.0</productnumber>
   </refentryinfo>
   <refmeta>
     <refentrytitle>drbddisk</refentrytitle>
@@ -61,7 +61,7 @@
   </refsect1>
   <refsect1>
     <title>Copyright</title>
-    <simpara>Copyright 2001-2008 LINBIT Information Technologies,
+    <simpara>Copyright 2001-2008,2012 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

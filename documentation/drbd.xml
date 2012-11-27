@@ -7,8 +7,8 @@
   </refnamediv>
   <refentryinfo>
     <productname>DRBD</productname>
-    <productnumber>8.3.2</productnumber>
-    <date>15 Oct 2008</date>
+    <productnumber>9.0.0</productnumber>
+    <date>22 November 2012</date>
   </refentryinfo>
   <refmeta>
     <refentrytitle>drbd</refentrytitle>
@@ -49,11 +49,12 @@
   </para>
     <para>    Only answer this question with <quote>yes</quote> if you are sure
     that it is impossible to repair the other node.
+    <!-- FIXME - which other node? see also wfc-timeouts -->
   </para>
   </refsect1>
   <refsect1>
     <title>Version</title>
-    <simpara>This document was revised for version 8.3.2 of the DRBD distribution.
+    <simpara>This document was revised for version 9.0.0 of the DRBD distribution.
   </simpara>
   </refsect1>
   <refsect1>
@@ -69,7 +70,7 @@
   </refsect1>
   <refsect1>
     <title>Copyright</title>
-    <simpara>Copyright 2001-2008 LINBIT Information Technologies,
+    <simpara>Copyright 2001-2008,2012 LINBIT Information Technologies,
 Philipp Reisner, Lars Ellenberg. This  is  free software;
 see the source for copying conditions.  There is NO warranty;
 not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
