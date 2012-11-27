@@ -1867,9 +1867,14 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 	}
 
 	vol = volume_by_vnr(&res->me->volumes, vol_nr);
-	if (vol) {
-		ctx->vol = vol;
-		return 0;
+	if (vol_nr != ~0U) {
+		if (vol) {
+			ctx->vol = vol;
+			return 0;
+		} else {
+			fprintf(stderr, "Connection '%s' has no volume %d\n", conn_name, vol_nr);
+			return -ENOENT;
+		}
 	}
 
 	return -ENOENT;
