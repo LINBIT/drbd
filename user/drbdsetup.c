@@ -1943,7 +1943,7 @@ static void peer_devices_status(struct drbd_cfg_context *ctx, struct peer_device
 	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
 		if (!endpoints_equal(ctx, &peer_device->ctx))
 			continue;
-		peer_device_status(peer_device, peer_device);
+		peer_device_status(peer_device, single_device);
 	}
 }
 
