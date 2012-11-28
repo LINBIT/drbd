@@ -585,6 +585,18 @@ static void check_volumes_hosts(struct d_resource *res)
 		check_volume_sets_equal(res, host1, host2);
 }
 
+static struct hname_address *alloc_hname_address()
+{
+	struct hname_address *ha;
+
+	ha = calloc(1, sizeof(struct hname_address));
+	if (ha == NULL) {
+		perror("calloc");
+		exit(E_EXEC_ERROR);
+	}
+	return ha;
+}
+
 static void create_implicit_connections(struct d_resource *res)
 {
 	struct connection *conn;
@@ -599,11 +611,7 @@ static void create_implicit_connections(struct d_resource *res)
 	conn->implicit = 1;
 
 	for_each_host(host_info, &res->all_hosts) {
-		ha = calloc(1, sizeof(struct hname_address));
-		if (ha == NULL) {
-			perror("calloc");
-			exit(E_EXEC_ERROR);
-		}
+		ha = alloc_hname_address();
 		ha->host_info = host_info;
 		if (!host_info->lower) {
 			ha->name = STAILQ_FIRST(&host_info->on_hosts)->name;
