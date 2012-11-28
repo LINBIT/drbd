@@ -256,7 +256,7 @@
 	    <para>If a node becomes a disconnected primary, it tries to fence the peer's
 	    disk. This is done by calling the <option>fence-peer</option> handler. The
 	    handler is supposed to reach the other node over alternative communication paths
-	    and call '<option>drbdadm outdate res</option>' there.</para>
+	    and call '<option>drbdadm outdate minor</option>' there.</para>
 	  </listitem>
 	</varlistentry>
 
@@ -266,10 +266,11 @@
 	  <listitem>
 	    <para>If a node becomes a disconnected primary, it freezes all its IO operations
 	    and calls its fence-peer handler. The fence-peer handler is supposed to reach
-	    the peer over alternative communication paths and call 'drbdadm outdate res'
-	    there. In case it cannot reach the peer it should stonith the peer. IO is
-	    resumed as soon as the situation is resolved. In case the
-	    fence-peer  handler fails, I/O can be resumed manually with '<option>drbdadm
+	    the peer over alternative communication paths and call
+	    '<option>drbdadm outdate minor</option>' there. In case it cannot
+	    reach the peer, it should stonith the peer. IO is resumed as soon as
+	    the situation is resolved. In case the fence-peer  handler fails,
+	    I/O can be resumed manually with '<option>drbdadm
 	    resume-io</option>'.</para>
 	  </listitem>
 	</varlistentry>
@@ -385,19 +386,33 @@
     </definition>
   </drbdsetup_option>
 
-  <drbdsetup_option name="disk-size">
-    <term><option>--disk-size
-    <replaceable>size</replaceable></option></term>
+  <drbdsetup_option name="size">
+    <!-- NOTE: This description is neither used in drbd.conf.xml.in nor in
+	 drbdsetup.xml.in. -->
+    <term><option>size <replaceable>size</replaceable></option></term>
 
     <definition>
-      <para>You can override DRBD's size determination method with this option. If you need
-      to use the device before it was ever connected to its peer, use this option to pass
-      the <replaceable>size</replaceable> of the DRBD device to the driver. Default unit is
-      sectors (1s = 512 bytes).</para>
+      <para>Specify the size of the lower-level device explicitly instead of
+	determining it automatically.  The device size must be determined once
+	and is remembered for the lifetime of the device.  In order to
+	determine it automatically, all the lower-level devices on all nodes
+	must be attached, and all nodes must be connected.  If the size is
+	specified explicitly, this is not necessary.  Unless explicitly
+	specified, the <option>size</option> valus is assumed to be in units of
+	sectors (512 bytes).</para>
 
-      <para>If you use the <replaceable>size</replaceable> parameter in drbd.conf, we
-      strongly recommend to add an explicit unit postfix. drbdadm and drbdsetup used to have
-      mismatching default units.</para>
+      <!-- FIXME:
+	The <option>- - size</option> option should only be used if you wish not
+	to use as much as possible from the backing block devices. If you do
+	not use <option>-d</option>, the <replaceable>device</replaceable> is
+	only ready for use as soon as it was connected to its peer once.
+	-->
+
+      <!--
+	<para>If you use the <replaceable>size</replaceable> parameter in
+	drbd.conf, we strongly recommend to add an explicit unit postfix.
+	drbdadm and drbdsetup used to have mismatching default units.</para>
+      -->
     </definition>
   </drbdsetup_option>
 
@@ -1158,7 +1173,7 @@
   </drbdsetup_option>
 
   <drbdsetup_option name="discard-my-data">
-    <term><option>--discard-my-data</option></term>
+    <term><option>discard-my-data</option></term>
 
     <definition>
       <para>Discard the local data and resynchronize with the peer that has the
@@ -1168,7 +1183,7 @@
   </drbdsetup_option>
 
   <drbdsetup_option name="tentative">
-    <term><option>--tentative</option></term>
+    <term><option>tentative</option></term>
 
     <definition>
       <para>Only determine if a connection to the peer can be established and
@@ -1304,6 +1319,82 @@
 	the default unit is sectors.</para>
 
       <para>This option is available since 9.0.0.</para>
+    </definition>
+  </drbdsetup_option>
+
+  <drbdsetup_option name="degr-wfc-timeout">
+    <term><option>degr-wfc-timeout <replaceable>timeout</replaceable></option></term>
+
+    <definition>
+      <para><indexterm significance="normal">
+	  <primary>drbd.conf</primary>
+
+	  <secondary>degr-wfc-timeout</secondary>
+	</indexterm> Define how long to wait until all peers are
+	connected in case the cluster consisted of a single node only
+	when the system went down.  This parameter is usually set to a
+	timeout smaller than <option>wfc-timeout</option>.  The
+	assumption here is that peers which were unreachable before a
+	reboot are less likele to be be reachable after the reboot, so
+	waiting is less likely to help.</para>
+
+      <para>The timeout is specified in seconds. The default value is 0,
+	or an infinite timeout.  Also see the
+	<option>wfc-timeout</option> parameter.</para>
+	<!-- FIXME: How does wfc-timeout vs. degr-wfc-timeout work with
+	     more than two nodes in the cluster?  If a cluster is only
+	     "degraded" when only one node remains and only one out of
+	     three nodes fails, we will still wait for that one node for
+	     wfc-timeout, which might be forever. -->
+    </definition>
+  </drbdsetup_option>
+
+  <drbdsetup_option name="outdated-wfc-timeout">
+    <term><option>outdated-wfc-timeout <replaceable>timeout</replaceable></option></term>
+
+    <definition>
+      <para><indexterm significance="normal">
+	  <primary>drbd.conf</primary>
+
+	  <secondary>outdated-wfc-timeout</secondary>
+	</indexterm> Define how long to wait until all peers are
+	connected if all peers were outdated when the system went down.
+	This parameter is usually set to a timeout smaller than
+	<option>wfc-timeout</option>.  The assumption here is that an
+	outdated peer cannot have become primary in the meantime, so we
+	don't need to wait for it as long as for a node which was alive
+	before.</para>
+
+      <para>The timeout is specified in seconds. The default value is 0,
+	or an infinite timeout.  Also see the
+	<option>wfc-timeout</option> parameter.</para>
+    </definition>
+  </drbdsetup_option>
+
+  <drbdsetup_option name="wait-after-sb">
+    <term><option>wait-after-sb</option></term>
+
+    <definition>
+      <para>This parameter causes DRBD to continue waiting in the init
+	script even when a split-brain situation has been detected, and
+	the nodes therefore refuse to connect to each other.</para>
+    </definition>
+  </drbdsetup_option>
+
+  <drbdsetup_option name="wfc-timeout">
+    <term><option>wfc-timeout <replaceable>timeout</replaceable></option></term>
+
+    <definition>
+      <para><indexterm significance="normal">
+	  <primary>drbd.conf</primary>
+
+	  <secondary>wfc-timeout</secondary>
+	</indexterm> Define how long to wait until all peers are
+	connected.  Later when the cluster manager starts, it will not
+	see a resource with internal split-brain.  The timeout is
+	specified in seconds. The default value is 0, or an infinite
+	timeout.  Also see the <option>degr-wfc-timeout</option>
+	parameter.</para>
     </definition>
   </drbdsetup_option>
 </drbdsetup_options>
