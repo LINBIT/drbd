@@ -1185,4 +1185,8 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 #define drbd_kunmap_atomic(addr, km)	kunmap_atomic(addr, km)
 #endif
 
+#if !defined(for_each_set_bit) && defined(for_each_bit)
+#define for_each_set_bit(bit, addr, size) for_each_bit(bit, addr, size)
+#endif
+
 #endif
