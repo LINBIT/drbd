@@ -4519,40 +4519,77 @@ int parse_format(struct format *cfg, char **argv, int argc, int *ai)
 	return cfg->ops->parse(cfg, argv + 1, argc - 1, ai);
 }
 
+
+static enum drbd_disk_state drbd_str_disk(const char *str)
+{
+	static const char *drbd_disk_s_names[] = {
+		[D_DISKLESS]     = "Diskless",
+		[D_ATTACHING]    = "Attaching",
+		[D_FAILED]       = "Failed",
+		[D_NEGOTIATING]  = "Negotiating",
+		[D_INCONSISTENT] = "Inconsistent",
+		[D_OUTDATED]     = "Outdated",
+		[D_UNKNOWN]      = "DUnknown",
+		[D_CONSISTENT]   = "Consistent",
+		[D_UP_TO_DATE]   = "UpToDate",
+	};
+
+	enum drbd_disk_state disk_state;
+
+	for (disk_state = 0; disk_state < ARRAY_SIZE(drbd_disk_s_names); disk_state++) {
+		if (!strcmp(str, drbd_disk_s_names[disk_state]))
+			return disk_state;
+	}
+
+	fprintf(stderr, "Unexpected output from drbdsetup >%s<\n", str);
+	exit(20);
+}
+
+
 int is_attached(int minor)
 {
-	FILE *pr;
-	char token[128];	/* longest interesting token is 40 Byte (git hash) */
-	int rv = -1;
-	long m, cm = -1;
-	char *p;
+	char minor_string[7], result[40];
+	char *argv[] = { "drbdsetup", minor_string, "dstate", NULL };
+	int pipes[2];
+	pid_t pid;
+	int rr, exitcode;
 
-	pr = fopen("/proc/drbd", "r");
-	if (!pr)
-		return 0;
-
-	while (fget_token(token, sizeof(token), pr) != EOF) {
-		m = strtol(token, &p, 10);
-		/* keep track of currently parsed minor */
-		if (p[0] == ':' && p[1] == 0)
-			cm = m;
-		/* we found the minor number that was asked for */
-		if (cm == minor) {
-			/* first, assume it is attached */
-			if (rv == -1)
-				rv = 1;
-			/* unless, of course, it is unconfigured or diskless */
-			if (!strcmp(token, "cs:Unconfigured"))
-				rv = 0;
-			if (!strncmp(token, "ds:Diskless", 11))
-				rv = 0;
-		}
+	if (pipe(pipes)) {
+		perror("drbdsetup pipe");
+		exit(20);
 	}
-	fclose(pr);
 
-	if (rv == -1)
-		rv = 0;		// minor not found -> not attached.
-	return rv;
+	snprintf(minor_string, ARRAY_SIZE(minor_string), "%d", minor);
+
+	pid = fork();
+	if (pid == -1) {
+		perror("fork for drbdsetup");
+		exit(20);
+	}
+	if (pid == 0) {
+		fclose(stderr);
+		close(pipes[0]);
+		dup2(pipes[1], 1);
+
+		execvp(argv[0], argv);
+		fprintf(stderr, "Can not exec drbdsetup\n");
+		exit(20);
+	}
+	close(pipes[1]);
+
+	rr = read(pipes[0], result, ARRAY_SIZE(result));
+	close(pipes[0]);
+	waitpid(pid, &exitcode, 0);
+	if (WEXITSTATUS(exitcode) == 20 || WEXITSTATUS(exitcode) == 10)
+		return 0; /* 20 == no module; 10 == no minor */
+
+	if (rr < 1) {
+		perror("read from drbdsetup\n");
+		exit(20);
+	}
+	result[rr-1] = 0;
+
+	return drbd_str_disk(result) > D_DISKLESS ? 1 : 0;
 }
 
 int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
