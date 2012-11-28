@@ -1452,14 +1452,27 @@ static struct hname_address *parse_hname_address_pair(struct connection *conn, i
 	return ha;
 }
 
+struct connection *alloc_connection()
+{
+	struct connection *conn;
+
+	conn = calloc(1, sizeof(struct connection));
+	if (conn == NULL) {
+		perror("calloc");
+		exit(E_EXEC_ERROR);
+	}
+	STAILQ_INIT(&conn->hname_address_pairs);
+	STAILQ_INIT(&conn->net_options);
+
+	return conn;
+}
+
 static struct connection *parse_connection(enum pr_flags flags)
 {
 	struct connection *conn;
 	int hosts = 0, token;
 
-	conn = calloc(1, sizeof(struct connection));
-	STAILQ_INIT(&conn->hname_address_pairs);
-	STAILQ_INIT(&conn->net_options);
+	conn = alloc_connection();
 	conn->config_line = line;
 
 	token = yylex();
