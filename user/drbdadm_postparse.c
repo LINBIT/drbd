@@ -595,13 +595,7 @@ static void create_implicit_connections(struct d_resource *res)
 	if (!STAILQ_EMPTY(&res->connections))
 		return;
 
-	conn = calloc(1, sizeof(struct connection));
-	if (conn == NULL) {
-		perror("calloc");
-		exit(E_EXEC_ERROR);
-	}
-	STAILQ_INIT(&conn->net_options);
-	STAILQ_INIT(&conn->hname_address_pairs);
+	conn = alloc_connection();
 	conn->implicit = 1;
 
 	for_each_host(host_info, &res->all_hosts) {

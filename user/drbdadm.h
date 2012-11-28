@@ -355,6 +355,7 @@ extern int check_uniq(const char *what, const char *fmt, ...);
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(enum pp_flags);
+extern struct connection *alloc_connection();
 extern void expand_common(void);
 extern void global_validate_maybe_expand_die_if_invalid(int expand);
 extern struct d_option *new_opt(char *name, char *value);
