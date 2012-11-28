@@ -8,7 +8,7 @@
   &drbdsetup_options;
 
   <refentryinfo>
-    <date>22 November 2012</date>
+    <date>3 December 2012</date>
 
     <productname>DRBD</productname>
 
@@ -26,7 +26,7 @@
   <refnamediv>
     <refname>drbd.conf</refname>
 
-    <refpurpose>Configuration file for DRBD devices<indexterm significance="normal">
+    <refpurpose>DRBD Configuration Files<indexterm significance="normal">
         <primary>drbd.conf</primary>
       </indexterm></refpurpose>
   </refnamediv>
@@ -476,7 +476,6 @@ resource
 	<pick_drbdsetup_option name="c-delay-target"/>
 	<pick_drbdsetup_option name="c-min-rate"/>
 	<pick_drbdsetup_option name="disk-barrier"/>
-	<!-- <pick_drbdsetup_option name="disk-size"/> -->
 	<pick_drbdsetup_option name="disk-timeout"/>
 	<pick_drbdsetup_option name="fencing"/>
 	<pick_drbdsetup_option name="md-flushes"/>
@@ -484,6 +483,7 @@ resource
 	<pick_drbdsetup_option name="read-balancing"/>
 	<pick_drbdsetup_option name="resync-after"/>
 	<pick_drbdsetup_option name="resync-rate"/>
+	<!-- <pick_drbdsetup_option name="size"/> -->
       </variablelist>
     </refsect2>
 
@@ -751,54 +751,8 @@ resource
 	the system is up and running.</para>
 
       <variablelist>
-        <varlistentry>
-          <term><option>degr-wfc-timeout <replaceable>timeout</replaceable></option></term>
-
-          <listitem>
-            <para><indexterm significance="normal">
-                <primary>drbd.conf</primary>
-
-                <secondary>degr-wfc-timeout</secondary>
-	      </indexterm> Define how long to wait until all peers are
-	      connected in case the cluster consisted of a single node only
-	      when the system went down.  This parameter is usually set to a
-	      timeout smaller than <option>wfc-timeout</option>.  The
-	      assumption here is that peers which were unreachable before a
-	      reboot are less likele to be be reachable after the reboot, so
-	      waiting is less likely to help.</para>
-
-	    <para>The timeout is specified in seconds. The default value is 0,
-	      or an infinite timeout.  Also see the
-	      <option>wfc-timeout</option> parameter.</para>
-	      <!-- FIXME: How does wfc-timeout vs. degr-wfc-timeout work with
-		   more than two nodes in the cluster?  If a cluster is only
-		   "degraded" when only one node remains and only one out of
-		   three nodes fails, we will still wait for that one node for
-		   wfc-timeout, which might be forever. -->
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>outdated-wfc-timeout <replaceable>timeout</replaceable></option></term>
-
-          <listitem>
-            <para><indexterm significance="normal">
-                <primary>drbd.conf</primary>
-
-                <secondary>outdated-wfc-timeout</secondary>
-	      </indexterm> Define how long to wait until all peers are
-	      connected if all peers were outdated when the system went down.
-	      This parameter is usually set to a timeout smaller than
-	      <option>wfc-timeout</option>.  The assumption here is that an
-	      outdated peer cannot have become primary in the meantime, so we
-	      don't need to wait for it as long as for a node which was alive
-	      before.</para>
-
-	    <para>The timeout is specified in seconds. The default value is 0,
-	      or an infinite timeout.  Also see the
-	      <option>wfc-timeout</option> parameter.</para>
-          </listitem>
-        </varlistentry>
+	<pick_drbdsetup_option name="degr-wfc-timeout"/>
+	<pick_drbdsetup_option name="outdated-wfc-timeout"/>
 
         <varlistentry>
           <term><option>stacked-timeouts</option></term>
@@ -818,32 +772,8 @@ resource
           </listitem>
         </varlistentry>
 
-        <varlistentry>
-          <term><option>wait-after-sb</option></term>
-
-          <listitem>
-	    <para>This parameter causes DRBD to continue waiting in the init
-	      script even when a split-brain situation has been detected, and
-	      the nodes therefore refuse to connect to each other.</para>
-          </listitem>
-        </varlistentry>
-
-        <varlistentry>
-          <term><option>wfc-timeout <replaceable>timeout</replaceable></option></term>
-
-          <listitem>
-	    <para><indexterm significance="normal">
-                <primary>drbd.conf</primary>
-
-                <secondary>wfc-timeout</secondary>
-	      </indexterm> Define how long to wait until all peers are
-	      connected.  Later when the cluster manager starts, it will not
-	      see a resource with internal split-brain.  The timeout is
-	      specified in seconds. The default value is 0, or an infinite
-	      timeout.  Also see the <option>degr-wfc-timeout</option>
-	      parameter.</para>
-          </listitem>
-        </varlistentry>
+	<pick_drbdsetup_option name="wait-after-sb"/>
+	<pick_drbdsetup_option name="wfc-timeout"/>
       </variablelist>
     </refsect2>
 

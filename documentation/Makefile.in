@@ -71,7 +71,7 @@ DRBDSETUP_CMDS += disconnect detach primary secondary verify invalidate invalida
 DRBDSETUP_CMDS += down wait-connect wait-sync role cstate dstate
 DRBDSETUP_CMDS += resize check-resize pause-sync resume-sync
 DRBDSETUP_CMDS += outdate show-gi get-gi show events
-DRBDSETUP_CMDS += suspend-io resume-io new-current-uuid
+DRBDSETUP_CMDS += status suspend-io resume-io new-current-uuid
 
 
 all:

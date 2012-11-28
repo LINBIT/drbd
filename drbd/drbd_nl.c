@@ -2932,7 +2932,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync.
-	 * Also wait for it's after_state_ch(). */
+	 * Also wait for its after_state_ch(). */
 	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
