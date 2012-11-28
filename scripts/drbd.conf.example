@@ -211,3 +211,31 @@ resource drbd_9_two_connection {
 		net { protocol A; }
 	}
 }
+
+resource drbd_9_mesh {
+	volume 0 {
+	       device minor 11;
+	       disk /dev/foo/bar2;
+	       meta-disk internal;
+	}
+
+	on alpha {
+		node-id 0;
+		address 192.168.31.1:7900;
+	}
+	on bravo {
+		node-id 1;
+		address 192.168.31.2:7900;
+	}
+	on charlie {
+		node-id 2;
+		address 192.168.31.3:7900;
+	}
+
+	connection-mesh {
+		hosts alpha bravo charlie;
+		net {
+			protocol C;
+		}
+	}
+}

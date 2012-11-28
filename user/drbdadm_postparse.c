@@ -33,6 +33,7 @@
 
 static void inherit_volumes(struct volumes *from, struct d_host_info *host);
 static void check_volume_sets_equal(struct d_resource *, struct d_host_info *, struct d_host_info *);
+static void expand_opts(struct options *common, struct options *options);
 
 static void append_names(struct names *head, struct names *to_copy)
 {
@@ -634,6 +635,63 @@ static void create_implicit_connections(struct d_resource *res)
 	STAILQ_INSERT_TAIL(&res->connections, conn, link);
 }
 
+static struct d_host_info *find_host_info_or_invalid(struct d_resource *res, char *name)
+{
+	struct d_host_info *host_info = find_host_info_by_name(res, name);
+
+	if (!host_info) {
+		fprintf(stderr,
+			"%s:%d: in resource %s:\n\t"
+			"There is no 'on' section for hostname '%s' named in the connection-mesh\n",
+			res->config_file, res->start_line, res->name, name);
+		config_valid = 0;
+	}
+
+	return host_info;
+}
+
+static void create_connections_from_mesh(struct d_resource *res)
+{
+	struct d_name *hname1, *hname2;
+	struct d_host_info *hi1, *hi2;
+	struct hname_address *ha;
+	struct connection *conn;
+
+	for_each_host(hname1, &res->mesh) {
+		hi1 = find_host_info_or_invalid(res, hname1->name);
+		if (!hi1)
+			return;
+		hname2 = STAILQ_NEXT(hname1, link);
+		while (hname2) {
+			hi2 = find_host_info_or_invalid(res, hname2->name);
+			if (!hi2)
+				return;
+
+			if (hi1 == hi2)
+				continue;
+
+			conn = alloc_connection();
+			conn->implicit = 1;
+
+			expand_opts(&res->mesh_net_options, &conn->net_options);
+
+			ha = alloc_hname_address();
+			ha->host_info = hi1;
+			ha->name = STAILQ_FIRST(&hi1->on_hosts)->name;
+			STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
+
+			ha = alloc_hname_address();
+			ha->host_info = hi2;
+			ha->name = STAILQ_FIRST(&hi2->on_hosts)->name;
+			STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
+
+			STAILQ_INSERT_TAIL(&res->connections, conn, link);
+
+			hname2 = STAILQ_NEXT(hname2, link);
+		}
+	}
+}
+
 static bool addresses_equal(struct d_address *addr1, struct d_address *addr2)
 {
 	if (strcmp(addr1->af, addr2->af))
@@ -755,6 +813,7 @@ void post_parse(enum pp_flags flags)
 
 	for_each_resource(res, &config) {
 		struct d_host_info *host;
+		create_connections_from_mesh(res);
 		create_implicit_connections(res);
 		for_each_connection(con, &res->connections)
 			set_host_info_in_host_address_pairs(res, con);
