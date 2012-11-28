@@ -127,6 +127,8 @@ enum yytokentype {
 	TK_CONNECTION,
 	TK_HOST,
 	TK_PORT,
+	TK_CONNECTION_MESH,
+	TK_HOSTS,
 	TK__GROUPING_BASE = 0x1000,
 	TK_SYNCER_OLD_OPT = 0x2000, /* Might be or'ed to TK_[NET|DISK]_[OPTION|SWITCH] */
 	TK_PROXY_GROUP = 0x3000, /* Gets or'ed to some options */

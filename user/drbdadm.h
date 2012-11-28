@@ -197,6 +197,9 @@ struct d_resource
 	struct d_host_info* me;
 	struct hosts all_hosts;
 
+	struct names mesh; /* parsed here. Expanded to connections in post_parse */
+	struct options mesh_net_options;
+
 	struct options net_options; /* parsed here, inherited to connections */
 	struct options disk_options;
 	struct options res_options;
