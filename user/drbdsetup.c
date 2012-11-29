@@ -997,20 +997,21 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	dhdr->minor = -1;
 	dhdr->flags = 0;
 
-	if (context & ~CTX_MINOR)
-		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
-	if (context & CTX_RESOURCE)
-		nla_put_string(smsg, T_ctx_resource_name, objname);
 	if (context & CTX_MINOR)
 		dhdr->minor = minor;
-	if (context & CTX_VOLUME)
-		nla_put_u32(smsg, T_ctx_volume, global_ctx.ctx_volume);
-	if (context & CTX_MY_ADDR)
-		nla_put(smsg, T_ctx_my_addr, global_ctx.ctx_my_addr_len, &global_ctx.ctx_my_addr);
-	if (context & CTX_PEER_ADDR)
-		nla_put(smsg, T_ctx_peer_addr, global_ctx.ctx_peer_addr_len, &global_ctx.ctx_peer_addr);
-	if (context & ~CTX_MINOR)
+
+	if (context & ~CTX_MINOR) {
+		nla = nla_nest_start(smsg, DRBD_NLA_CFG_CONTEXT);
+		if (context & CTX_RESOURCE)
+			nla_put_string(smsg, T_ctx_resource_name, objname);
+		if (context & CTX_VOLUME)
+			nla_put_u32(smsg, T_ctx_volume, global_ctx.ctx_volume);
+		if (context & CTX_MY_ADDR)
+			nla_put(smsg, T_ctx_my_addr, global_ctx.ctx_my_addr_len, &global_ctx.ctx_my_addr);
+		if (context & CTX_PEER_ADDR)
+			nla_put(smsg, T_ctx_peer_addr, global_ctx.ctx_peer_addr_len, &global_ctx.ctx_peer_addr);
 		nla_nest_end(smsg, nla);
+	}
 
 	nla = NULL;
 	for (i = 1, ad = cm->drbd_args; ad && ad->name; i++) {
