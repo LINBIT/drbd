@@ -1282,6 +1282,14 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 		bio_endio(bio, -EIO);
 }
 
+static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
+{
+	spin_lock(&device->submit.lock);
+	list_add_tail(&req->tl_requests, &device->submit.writes);
+	spin_unlock(&device->submit.lock);
+	queue_work(device->submit.wq, &device->submit.worker);
+}
+
 /* returns the new drbd_request pointer, if the caller is expected to
  * drbd_send_and_submit() it (to save latency), or NULL if we queued the
  * request on the submitter thread.
@@ -1310,17 +1318,13 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 		req->private_bio = NULL;
 	}
 
-	/* For WRITES going to the local disk, grab a reference on the target
-	 * extent.  This waits for any resync activity in the corresponding
-	 * resync extent to finish, and, if necessary, pulls in the target
-	 * extent into the activity log, which involves further disk io because
-	 * of transactional on-disk meta data updates.
-	 * Empty flushes don't need to go into the activity log, they can only
-	 * flush data for pending writes which are already in there. */
 	if (rw == WRITE && req->private_bio && req->i.size
 	&& !test_bit(AL_SUSPENDED, &device->flags)) {
+		if (!drbd_al_begin_io_fastpath(device, &req->i)) {
+			drbd_queue_write(device, req);
+			return NULL;
+		}
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
-		drbd_al_begin_io(device, &req->i, true);
 	}
 
 	return req;
