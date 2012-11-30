@@ -186,19 +186,21 @@ enum cfg_ctx_key ctx_next_arg(enum cfg_ctx_key *key)
 	return next_arg;
 }
 
-const char *ctx_arg_string(enum cfg_ctx_key key)
+const char *ctx_arg_string(enum cfg_ctx_key key, enum usage_type ut)
 {
+	bool xml = (ut == XML);
+
 	switch(key) {
 	case CTX_RESOURCE:
-		return "{resource}";
+		return xml ? "resource" : "{resource}";
 	case CTX_MINOR:
-		return "{minor}";
+		return xml ? "minor" : "{minor}";
 	case CTX_VOLUME:
-		return "{volume}";
+		return xml ? "volume" : "{volume}";
 	case CTX_MY_ADDR:
-		return "[local:][{af}:]{local_addr}[:{port}]";
+		return xml ? "local_addr" : "[local:][{af}:]{local_addr}[:{port}]";
 	case CTX_PEER_ADDR:
-		return "[peer:][{af}:]{remote_addr}[:{port}]";
+		return xml ? "remote_addr" : "[peer:][{af}:]{remote_addr}[:{port}]";
 	case CTX_ALL:
 		return "all";
 	default:
@@ -2880,30 +2882,24 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 	struct drbd_argument *args;
 
 	if(ut == XML) {
-		enum cfg_ctx_key ctx = cm->ctx_key;
-
 		printf("<command name=\"%s\">\n", cm->cmd);
 		if (cm->summary)
 			printf("\t<summary>%s</summary>\n", cm->summary);
-		if (ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL)) {
+		if (cm->ctx_key && ut != BRIEF) {
+			enum cfg_ctx_key ctx = cm->ctx_key, arg;
 			bool more_than_one_choice =
-				!(ctx & CTX_MULTIPLE_ARGUMENTS) &&
-				!power_of_two(ctx & (CTX_RESOURCE | CTX_MINOR | CTX_ALL));
+				!power_of_two(ctx & ~CTX_MULTIPLE_ARGUMENTS) &&
+				!(ctx & CTX_MULTIPLE_ARGUMENTS);
 			const char *indent = "\t\t" + !more_than_one_choice;
+
 			if (more_than_one_choice)
 				printf("\t<group>\n");
-			if (ctx & CTX_RESOURCE)
-				printf("%s<argument>resource</argument>\n", indent);
-			if (ctx & CTX_MINOR)
-				printf("%s<argument>minor</argument>\n", indent);
-			if (ctx & CTX_ALL)
-				printf("%s<argument>all</argument>\n", indent);
+			ctx |= CTX_MULTIPLE_ARGUMENTS;
+			for (arg = ctx_next_arg(&ctx); arg; arg = ctx_next_arg(&ctx))
+				printf("%s<argument>%s</argument>\n",
+				       indent, ctx_arg_string(arg, ut));
 			if (more_than_one_choice)
 				printf("\t</group>\n");
-		}
-		if (ctx & CTX_CONNECTION) {
-			printf("\t<argument>local_addr</argument>\n");
-			printf("\t<argument>remote_addr</argument>\n");
 		}
 
 		if(cm->drbd_args) {
@@ -2971,7 +2967,7 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 				if (more_than_one_choice && !first)
 					wrap_printf(4, " |");
 				first = false;
-				wrap_printf(4, " %s", ctx_arg_string(arg));
+				wrap_printf(4, " %s", ctx_arg_string(arg, ut));
 			}
 			if (more_than_one_choice)
 				wrap_printf(4, " }");
