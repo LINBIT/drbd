@@ -44,23 +44,23 @@
 STATIC bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
 /* Update disk stats at start of I/O request */
-static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req, struct bio *bio)
+static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	const int rw = bio_data_dir(bio);
+	const int rw = bio_data_dir(req->master_bio);
 #ifndef __disk_stat_inc
 	int cpu;
 #endif
 
 #ifdef __disk_stat_inc
 	__disk_stat_inc(device->vdisk, ios[rw]);
-	__disk_stat_add(device->vdisk, sectors[rw], bio_sectors(bio));
+	__disk_stat_add(device->vdisk, sectors[rw], req->i.size >> 9);
 	disk_round_stats(device->vdisk);
 	device->vdisk->in_flight++;
 #else
 	cpu = part_stat_lock();
 	part_round_stats(cpu, &device->vdisk->part0);
 	part_stat_inc(cpu, &device->vdisk->part0, ios[rw]);
-	part_stat_add(cpu, &device->vdisk->part0, sectors[rw], bio_sectors(bio));
+	part_stat_add(cpu, &device->vdisk->part0, sectors[rw], req->i.size >> 9);
 	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
 		       the compiler warning about cpu only assigned but never used... */
 	part_inc_in_flight(&device->vdisk->part0, rw);
@@ -1102,7 +1102,7 @@ static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 
 	/* If I don't even have good local storage, we can not reasonably try
 	 * to pull ahead of the peer. We also need the local reference to make
-	 * sure mdev->act_log is there.
+	 * sure device->act_log is there.
 	 */
 	if (!get_ldev_if_state(device, D_UP_TO_DATE))
 		return;
@@ -1282,14 +1282,16 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 		bio_endio(bio, -EIO);
 }
 
-void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_time)
+/* returns the new drbd_request pointer, if the caller is expected to
+ * drbd_send_and_submit() it (to save latency), or NULL if we queued the
+ * request on the submitter thread.
+ * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
+ */
+struct drbd_request *
+drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long start_time)
 {
-	struct drbd_resource *resource = device->resource;
-	const int rw = bio_rw(bio);
-	struct bio_and_error m = { NULL, };
+	const int rw = bio_data_dir(bio);
 	struct drbd_request *req;
-	struct drbd_peer_device *peer_device = NULL; /* for read */
-	bool no_remote = false;
 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
@@ -1299,7 +1301,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
 		bio_endio(bio, -ENOMEM);
-		return;
+		return ERR_PTR(-ENOMEM);
 	}
 	req->start_time = start_time;
 
@@ -1320,6 +1322,17 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
 		drbd_al_begin_io(device, &req->i, true);
 	}
+
+	return req;
+}
+
+static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device = NULL; /* for read */
+	const int rw = bio_data_dir(req->master_bio);
+	struct bio_and_error m = { NULL, };
+	bool no_remote = false;
 
 	spin_lock_irq(&resource->req_lock);
 	if (rw == WRITE) {
@@ -1343,7 +1356,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	}
 
 	/* Update disk stats */
-	_drbd_start_io_acct(device, req, bio);
+	_drbd_start_io_acct(device, req);
 
 	/* We fail READ/READA early, if we can not serve it.
 	 * We must do this before req is registered on any lists.
@@ -1358,7 +1371,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	req->epoch = atomic_read(&resource->current_tle_nr);
 
 	if (rw == WRITE)
-		resource->dagtag_sector += bio_sectors(bio);
+		resource->dagtag_sector += req->i.size >> 9;
 	req->dagtag_sector = resource->dagtag_sector;
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
@@ -1420,7 +1433,14 @@ out:
 
 	if (m.bio)
 		complete_master_bio(device, &m);
-	return;
+}
+
+void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_time)
+{
+	struct drbd_request *req = drbd_request_prepare(device, bio, start_time);
+	if (IS_ERR_OR_NULL(req))
+		return;
+	drbd_send_and_submit(device, req);
 }
 
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
