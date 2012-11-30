@@ -790,6 +790,23 @@ static void bm_count_bits(struct drbd_device *device)
 	}
 }
 
+/* For the layout, see comment above drbd_md_set_sector_offsets(). */
+static u64 drbd_md_on_disk_bits(struct drbd_device *device)
+{
+	struct drbd_backing_dev *ldev = device->ldev;
+	u64 bitmap_sectors, word64_on_disk;
+	if (ldev->md.al_offset == 8)
+		bitmap_sectors = ldev->md.md_size_sect - ldev->md.bm_offset;
+	else
+		bitmap_sectors = ldev->md.al_offset - ldev->md.bm_offset;
+
+	/* for interoperability between 32bit and 64bit architectures,
+	 * we round on 64bit words.  FIXME do we still need this? */
+	word64_on_disk = bitmap_sectors << (9 - 3); /* x * (512/8) */
+	do_div(word64_on_disk, device->bitmap->bm_max_peers);
+	return word64_on_disk << 6; /* x * 64 */;
+}
+
 /*
  * make sure the bitmap has enough room for the attached storage,
  * if necessary, resize.
@@ -843,17 +860,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	words = (ALIGN(bits, 64) * b->bm_max_peers) >> LN2_BPL;
 
 	if (get_ldev(device)) {
-		struct drbd_md *md = &device->ldev->md;
-		u64 words_on_disk, bits_on_disk;
-
-		/* if we would use
-		   words = ALIGN(bits,BITS_PER_LONG) >> LN2_BPL;
-		   a 32bit host could present the wrong number of words
-		   to a 64bit host.
-		*/
-		words_on_disk = ((u64)md->md_size_sect - MD_BM_OFFSET) << (12 - LN2_BPL);
-		do_div(words_on_disk, b->bm_max_peers);
-		bits_on_disk = words_on_disk << LN2_BPL;
+		u64 bits_on_disk = drbd_md_on_disk_bits(device);
 		put_ldev(device);
 		if (bits > bits_on_disk) {
 			drbd_err(device, "Not enough space for bitmap: %lu > %lu\n",
