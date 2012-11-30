@@ -825,7 +825,7 @@ struct peer_dev_md_on_disk {
 	be_u64 bitmap_uuid;
 	be_u32 flags;
 	be_s32 node_id;
-	be_u32 reserved_u32[3];
+	be_u32 reserved_u32[4];
 } __packed;
 
 struct md_on_disk_09 {
