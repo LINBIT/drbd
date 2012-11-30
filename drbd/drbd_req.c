@@ -51,6 +51,10 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 	int cpu;
 #endif
 
+#ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
+	spin_unlock_irq(&device->resource->req_lock);
+#endif
+
 #ifdef __disk_stat_inc
 	__disk_stat_inc(device->vdisk, ios[rw]);
 	__disk_stat_add(device->vdisk, sectors[rw], req->i.size >> 9);
@@ -65,6 +69,10 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 		       the compiler warning about cpu only assigned but never used... */
 	part_inc_in_flight(&device->vdisk->part0, rw);
 	part_stat_unlock();
+#endif
+
+#ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
+	spin_unlock_irq(&device->resource->req_lock);
 #endif
 }
 
