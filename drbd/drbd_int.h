@@ -967,6 +967,14 @@ struct drbd_peer_device {
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 };
 
+struct submit_worker {
+	struct workqueue_struct *wq;
+	struct work_struct worker;
+
+	spinlock_t lock;
+	struct list_head writes;
+};
+
 struct drbd_device {
 #ifdef PARANOIA
 	long magic;
@@ -1043,6 +1051,10 @@ struct drbd_device {
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
 	struct device_conf device_conf;
+
+	/* any requests that would block in drbd_make_request()
+	 * are deferred to this single-threaded work queue */
+	struct submit_worker submit;
 };
 
 static inline struct drbd_device *minor_to_mdev(unsigned int minor)
@@ -1502,6 +1514,7 @@ extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */
+extern void do_submit(struct work_struct *ws);
 extern void __drbd_make_request(struct drbd_device *, struct bio *, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
 extern int drbd_read_remote(struct drbd_device *device, struct drbd_request *req);

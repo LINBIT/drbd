@@ -1443,6 +1443,35 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	drbd_send_and_submit(device, req);
 }
 
+void __drbd_make_request_from_worker(struct drbd_device *device, struct drbd_request *req)
+{
+	const int rw = bio_rw(req->master_bio);
+
+	if (rw == WRITE && req->private_bio && req->i.size
+	&& !test_bit(AL_SUSPENDED, &device->flags)) {
+		drbd_al_begin_io(device, &req->i, false);
+		req->rq_state[0] |= RQ_IN_ACT_LOG;
+	}
+	drbd_send_and_submit(device, req);
+}
+
+
+void do_submit(struct work_struct *ws)
+{
+	struct drbd_device *device = container_of(ws, struct drbd_device, submit.worker);
+	LIST_HEAD(writes);
+	struct drbd_request *req, *tmp;
+
+	spin_lock(&device->submit.lock);
+	list_splice_init(&device->submit.writes, &writes);
+	spin_unlock(&device->submit.lock);
+
+	list_for_each_entry_safe(req, tmp, &writes, tl_requests) {
+		list_del_init(&req->tl_requests);
+		__drbd_make_request_from_worker(device, req);
+	}
+}
+
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
