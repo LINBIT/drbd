@@ -342,7 +342,7 @@ enum mdf_peer_flag {
 	MDF_PEER_FULL_SYNC =	1 << 3,
 };
 
-#define MAX_PEERS 16
+#define MAX_PEERS 32
 
 enum drbd_uuid_index {
 	UI_CURRENT,

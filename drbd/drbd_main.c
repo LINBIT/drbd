@@ -3372,7 +3372,7 @@ struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
 	u32 flags;
 	u32 node_id;
-	u32 reserved_u32[3];
+	u32 reserved_u32[4];
 } __packed;
 
 struct meta_data_on_disk {
