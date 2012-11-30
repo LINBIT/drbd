@@ -638,6 +638,14 @@ struct drbd_md {
 
 	struct drbd_peer_md *peers;
 	u64 history_uuids[HISTORY_UUIDS];
+
+	/* cached value of bdev->disk_conf->meta_dev_idx */
+	s32 meta_dev_idx;
+
+	/* see al_tr_number_to_on_disk_sector() */
+	u32 al_stripes;
+	u32 al_stripe_size_4k;
+	u32 al_size_4k; /* cached product of the above */
 };
 
 struct drbd_backing_dev {
@@ -1922,38 +1930,24 @@ static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 }
 
 /**
- * drbd_md_ss__() - Return the sector number of our meta data super block
- * @device:	DRBD device.
+ * drbd_md_ss() - Return the sector number of our meta data super block
  * @bdev:	Meta data block device.
  */
-static inline sector_t drbd_md_ss__(struct drbd_device *device,
-				    struct drbd_backing_dev *bdev)
+static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 {
-	int meta_dev_idx;
+	const int meta_dev_idx = bdev->md.meta_dev_idx;
 
-	rcu_read_lock();
-	meta_dev_idx = rcu_dereference(bdev->disk_conf)->meta_dev_idx;
-	rcu_read_unlock();
-
-	switch (meta_dev_idx) {
-	default: /* external, some index; this is the old fixed size layout */
-		return MD_128MB_SECT * meta_dev_idx;
-	case DRBD_MD_INDEX_INTERNAL:
-		/* with drbd08, internal meta data is always "flexible" */
-	case DRBD_MD_INDEX_FLEX_INT:
-		if (!bdev->backing_bdev) {
-			if (drbd_ratelimit()) {
-				drbd_err(device, "bdev->backing_bdev==NULL\n");
-				dump_stack();
-			}
-			return 0;
-		}
-		/* sizeof(struct md_on_disk_07) == 4k
-		 * position: last 4k aligned block of 4k size */
-		return (drbd_get_capacity(bdev->backing_bdev) & ~7ULL) - 8;
-	case DRBD_MD_INDEX_FLEX_EXT:
+	if (meta_dev_idx == DRBD_MD_INDEX_FLEX_EXT)
 		return 0;
-	}
+
+	/* Since drbd08, internal meta data is always "flexible".
+	 * position: last 4k aligned block of 4k size */
+	if (meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
+	    meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)
+		return (drbd_get_capacity(bdev->backing_bdev) & ~7ULL) - 8;
+
+	/* external, some index; this is the old fixed size layout */
+	return MD_128MB_SECT * bdev->md.meta_dev_idx;
 }
 
 static inline void

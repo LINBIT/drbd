@@ -982,25 +982,24 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 	else
 		max_peers = 1;
 
+	bdev->md.md_offset = drbd_md_ss(bdev);
+
 	switch (meta_dev_idx) {
 	default:
 		/* v07 style fixed size indexed meta data */
 		/* FIXME we should drop support for this! */
 		bdev->md.md_size_sect = MD_128MB_SECT;
-		bdev->md.md_offset = drbd_md_ss__(device, bdev);
 		bdev->md.al_offset = MD_4kB_SECT;
 		bdev->md.bm_offset = MD_4kB_SECT + al_size_sect;
 		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
 		bdev->md.md_size_sect = drbd_get_capacity(bdev->md_bdev);
-		bdev->md.md_offset = 0;
 		bdev->md.al_offset = MD_4kB_SECT;
 		bdev->md.bm_offset = MD_4kB_SECT + al_size_sect;
 		break;
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		bdev->md.md_offset = drbd_md_ss__(device, bdev);
 		/* al size is still fixed */
 		bdev->md.al_offset = -al_size_sect;
 
