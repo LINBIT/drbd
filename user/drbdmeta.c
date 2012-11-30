@@ -325,6 +325,9 @@ struct format {
 	/* convenience */
 	uint64_t bd_size; /* size of block device for internal meta data */
 
+	/* size limit due to available on-disk bitmap */
+	uint64_t max_usable_sect;
+
 	/* last-known bdev info,
 	 * to increase the chance of finding internal meta data in case the
 	 * lower level device has been resized without telling DRBD.
@@ -1217,6 +1220,23 @@ void pwrite_or_die(int fd, const void *buf, size_t count, off_t offset, const ch
 	}
 }
 
+size_t pwrite_with_limit_or_die(int fd, const void *buf, size_t count, off_t offset, off_t limit, const char* tag)
+{
+	if (offset >= limit) {
+		fprintf(stderr,"confused in %s: offset (%llu) > limit (%llu)\n",
+			tag, (unsigned long long)offset, (unsigned long long)limit);
+		exit(10);
+	}
+	if (count > limit - offset) {
+		fprintf(stderr,"in %s: truncating byte count from %lu to %lu\n", tag,
+				(unsigned long)count,
+				(unsigned long)(limit -offset));
+		count = limit - offset;
+	}
+	pwrite_or_die(fd, buf, count, offset, tag);
+	return count;
+}
+
 void m_get_gc(struct md_cpu *md, int bm_idx __attribute((unused)))
 {
 	dt_print_gc(md->gc);
@@ -1564,6 +1584,59 @@ int v06_md_initialize(struct format *cfg,
   }}} end of v06
  ******************************************/
 
+static uint64_t max_usable_sectors(struct format *cfg)
+{
+#define min(x,y) ((x) < (y) ? (x) : (y))
+	/* We currently have two possible layouts:
+	 * external:
+	 *   |----------- md_size_sect ------------------|
+	 *   [ 4k superblock ][ activity log ][  Bitmap  ]
+	 *   | al_offset == 8 |
+	 *   | bm_offset = al_offset + X      |
+	 *  ==> bitmap sectors = md_size_sect - bm_offset
+	 *
+	 * internal:
+	 *            |----------- md_size_sect ------------------|
+	 * [data.....][  Bitmap  ][ activity log ][ 4k superblock ]
+	 *                        | al_offset < 0 |
+	 *            | bm_offset = al_offset - Y |
+	 *  ==> bitmap sectors = Y = al_offset - bm_offset
+	 *
+	 * There also used to be the fixed size internal meta data,
+	 * which covers the last 128 MB of the device,
+	 * and has the same layout as the "external:" above.
+	 */
+	if(cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
+	   cfg->md_index == DRBD_MD_INDEX_FLEX_INT) {
+		/* for internal meta data, the available storage is limitted by
+		 * the first meta data sector, even if the available bitmap
+		 * space would support more. */
+		return	min( cfg->md_offset,
+			min( cfg->al_offset,
+			     cfg->bm_offset )) >> 9;
+	} else {
+		/* For external meta data,
+		 * we are limited by available on-disk bitmap space.
+		 * Ok, and by the lower level storage device;
+		 * which we don't know about here :-( */
+		ASSERT(cfg->md.bm_bytes_per_bit == 4096);
+
+		return
+			/* bitmap sectors */
+			(uint64_t)(cfg->md.md_size_sect - cfg->md.bm_offset)
+			* 512	/* sector size */
+			* 8	/* bits per byte */
+			/ 64	/* 64 bit words, for interoperability */
+			/ cfg->md.max_peers
+			* 64	/* back to bits, per bitmap slot */
+				/* storage bytes per bitmap bit;
+				 * currently always 4096 */
+			* cfg->md.bm_bytes_per_bit
+			/ 512;	/* and back to sectors */;
+	}
+#undef min
+}
+
 void re_initialize_md_offsets(struct format *cfg)
 {
 	uint64_t md_size_sect;
@@ -1621,12 +1694,14 @@ void re_initialize_md_offsets(struct format *cfg)
 	}
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
+	cfg->max_usable_sect = max_usable_sectors(cfg);
 
 	if (verbose >= 2) {
 		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
 		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
 		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
+		fprintf(stderr,"md_size_sect: "U32"\n", cfg->md.md_size_sect);
+		fprintf(stderr,"max_usable_sect: "U64"\n", cfg->max_usable_sect);
 	}
 }
 
@@ -1663,13 +1738,10 @@ void check_for_existing_data(struct format *cfg);
 /* MAYBE DOES DISK WRITES!! */
 int md_initialize_common(struct format *cfg, int do_disk_writes)
 {
-	/* no need to re-initialize the offset of md
-	 * FIXME we need to, if we convert, or resize, in case we allow/implement that...
-	 */
-	re_initialize_md_offsets(cfg);
-
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
 	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
+
+	re_initialize_md_offsets(cfg);
 
 	if (!do_disk_writes)
 		return 0;
@@ -2510,10 +2582,21 @@ void printf_bm(struct format *cfg)
 	}
 }
 
+static void clip_effective_size_and_bm_bytes(struct format *cfg)
+{
+	if (cfg->md.effective_size > cfg->max_usable_sect) {
+		printf("# la-size-sect was too big (%llu), truncated (%llu)!\n",
+			(unsigned long long)cfg->md.effective_size,
+			(unsigned long long)cfg->max_usable_sect);
+		cfg->md.effective_size = cfg->max_usable_sect;
+	}
+	cfg->bm_bytes = sizeof(long) *
+		bm_words(&cfg->md, cfg->md.bm_bytes_per_bit);
+}
+
 int v07_style_md_open(struct format *cfg)
 {
 	struct stat sb;
-	unsigned long words;
 	unsigned long hard_sect_size = 0;
 	int ioctl_err;
 	int open_flags = O_RDWR | O_DIRECT;
@@ -2593,25 +2676,13 @@ int v07_style_md_open(struct format *cfg)
 		/* no valid meta data found.  but we want to initialize
 		 * al_offset and bm_offset anyways, so check_for_existing_data
 		 * has something to work with. */
-		re_initialize_md_offsets(cfg);
 		return NO_VALID_MD_FOUND;
 	}
 
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
-
-	// For the case that someone modified effective_size by hand..
-	if( (cfg->md_index == DRBD_MD_INDEX_INTERNAL ||
-	     cfg->md_index == DRBD_MD_INDEX_FLEX_INT ) &&
-	    (cfg->md.effective_size*512 > cfg->md_offset) ) {
-		printf("la-size-sect was too big, fixed.\n");
-		cfg->md.effective_size = cfg->md_offset/512;
-	}
-	words = bm_words(&cfg->md, cfg->md.effective_size);
-	cfg->bm_bytes = words * sizeof(long);
-
-	//fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-	//fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+	cfg->max_usable_sect = max_usable_sectors(cfg);
+	clip_effective_size_and_bm_bytes(cfg);
 
 	cfg->bits_set = -1U;
 
@@ -3401,11 +3472,15 @@ int parse_bitmap_window(struct format *cfg, int window, int parse_only)
 void parse_bitmap(struct format *cfg, int parse_only)
 {
 	le_u32 *bm = on_disk_buffer;
+	off_t bm_max_on_disk_off;
 	long start_pos;
 	int window = 0;
 	int words;
+	int truncated = 0;
 
 	start_pos = ftell(yyin) - my_yy_unscaned_characters();
+
+	bm_max_on_disk_off = cfg->bm_offset + ALIGN(cfg->bm_bytes, 4096);
 
 	do {
 		fseek(yyin, start_pos, SEEK_SET);
@@ -3413,16 +3488,33 @@ void parse_bitmap(struct format *cfg, int parse_only)
 
 		words = parse_bitmap_window(cfg, window, parse_only);
 
-		if (words > 0 && !parse_only) {
+		if (words > 0 && !truncated) {
 			size_t s = words * sizeof(*bm);
+			size_t c;
 
 			memset(bm + words, 0x00, buffer_size - s);
 			/* need to sector-align this for O_DIRECT. to be
 			 * generic, maybe we even need to PAGE align it? */
 			s = ALIGN(s, cfg->md_hard_sect_size);
-			pwrite_or_die(cfg->md_fd, on_disk_buffer,
+			if (parse_only) {
+				c = bm_max_on_disk_off -
+					(cfg->bm_offset + window * buffer_size);
+				if (c > s)
+					c = s;
+			} else
+				c = pwrite_with_limit_or_die(cfg->md_fd, on_disk_buffer,
 				      s, cfg->bm_offset + window * buffer_size,
+				      bm_max_on_disk_off,
 				      "meta_restore_md");
+			if (s != c) {
+				fprintf(stderr, "Bitmap info too large, truncated!\n");
+				/* If the bitmap info was truncated, there will
+				 * be garbage, still, and the EXP(0) below would
+				 * crap out.  "Drain" that garbage here,
+				 * while still checking for parse errors.
+				 */
+				truncated = 1;
+			}
 		}
 
 		window++;
@@ -3558,6 +3650,7 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 	} else {
 		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
+	clip_effective_size_and_bm_bytes(cfg);
 	parse_bitmap(cfg, parse_only);
 
 	/* there should be no trailing garbage in the input file */
@@ -4047,13 +4140,7 @@ void check_for_existing_data(struct format *cfg)
 	 * seems irrelevant to me for now.
 	 */
 	fs_kB = ((f.bsize * f.bnum) + (1<<10)-1) >> 10;
-#define min(x,y) ((x) < (y) ? (x) : (y))
-	max_usable_kB =
-		min( cfg->md_offset,
-		min( cfg->al_offset,
-		     cfg->bm_offset )) >> 10;
-#undef min
-
+	max_usable_kB = max_usable_sectors(cfg) >> 1;
 
 	if (f.bnum) {
 		if (cfg->md_index >= 0 ||
