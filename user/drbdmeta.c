@@ -217,7 +217,12 @@ static int confirmed(const char *text)
  * global variables and data types
  */
 
-const size_t buffer_size = 128*1024; /* has to be a multiple of 4096! */
+/* buffer_size has to be a multiple of 4096, and at least 32k.
+ * Pending a "nice" implementation of replay_al_84 for striped activity log,
+ * I chose a big buffer hopefully large enough to hold the whole activity log,
+ * even with "large" number of stripes and stripe sizes.
+ */
+const size_t buffer_size = 32 * 1024 * 1024;
 size_t pagesize; /* = sysconf(_SC_PAGESIZE) */
 int opened_odirect = 1;
 void *on_disk_buffer = NULL;
@@ -735,6 +740,7 @@ struct al_4k_cpu {
 	uint16_t	update_slot_nr[AL_UPDATES_PER_TRANSACTION];
 	uint32_t	update_extent_nr[AL_UPDATES_PER_TRANSACTION];
 	uint32_t	context[AL_CONTEXT_PER_TRANSACTION];
+	uint32_t	is_valid;
 };
 
 /* from linux/crypto/crc32.c */
@@ -843,7 +849,8 @@ int v84_al_disk_to_cpu(struct al_4k_cpu *al_cpu, struct al_4k_transaction_on_dis
 
 	al_disk->crc32c.be = 0;
 	crc = crc32c(crc, (void*)al_disk, 4096);
-	return al_cpu->magic == DRBD_AL_MAGIC && al_cpu->crc32c == crc;
+	al_cpu->is_valid = (al_cpu->magic == DRBD_AL_MAGIC && al_cpu->crc32c == crc);
+	return al_cpu->is_valid;
 }
 
 /*
@@ -1569,7 +1576,7 @@ void re_initialize_md_offsets(struct format *cfg)
 		cfg->md.max_peers = 1;
 
 	if (is_v09(cfg))
-		al_size_sect = option_al_stripes * option_al_stripe_size_4k * 8;
+		al_size_sect = cfg->md.al_stripes * cfg->md.al_stripe_size_4k * 8;
 	else
 		al_size_sect = MD_AL_MAX_SECT_07;
 
@@ -1618,7 +1625,9 @@ void re_initialize_md_offsets(struct format *cfg)
 
 void initialize_al(struct format *cfg)
 {
-	memset(on_disk_buffer, 0x00, MD_AL_MAX_SECT_07*512);
+	unsigned int mx = cfg->md.al_stripes * cfg->md.al_stripe_size_4k;
+	size_t al_size = mx * 4096;
+	memset(on_disk_buffer, 0x00, al_size);
 	if (format_version(cfg) >= DRBD_V08) {
 		/* DRBD <= 8.3 does not care if it is all zero,
 		 * or otherwise wrong magic.
@@ -1629,7 +1638,7 @@ void initialize_al(struct format *cfg)
 		struct al_4k_transaction_on_disk *al = on_disk_buffer;
 		unsigned crc_be = 0;
 		int i;
-		for (i = 0; i < MD_AL_MAX_SECT_07/8; i++, al++) {
+		for (i = 0; i < mx; i++, al++) {
 			al->magic.be = cpu_to_be32(DRBD_AL_MAGIC);
 			al->transaction_type.be = cpu_to_be16(AL_TR_INITIALIZED);
 			/* crc calculated once */
@@ -1638,9 +1647,11 @@ void initialize_al(struct format *cfg)
 			al->crc32c.be = crc_be;
 		}
 	}
-	pwrite_or_die(cfg->md_fd, on_disk_buffer, MD_AL_MAX_SECT_07*512, cfg->al_offset,
+	pwrite_or_die(cfg->md_fd, on_disk_buffer, al_size, cfg->al_offset,
 		"md_initialize_common:AL");
 }
+
+void check_for_existing_data(struct format *cfg);
 
 /* MAYBE DOES DISK WRITES!! */
 int md_initialize_common(struct format *cfg, int do_disk_writes)
@@ -1662,6 +1673,8 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 
 	if (!do_disk_writes)
 		return 0;
+
+	check_for_existing_data(cfg);
 
 	/* do you want to initialize al to something more useful? */
 	printf("initializing activity log\n");
@@ -1975,29 +1988,47 @@ static int replay_al_07(struct format *cfg, uint32_t *hot_extent)
 	return found_valid;
 }
 
+static unsigned int al_tr_number_to_on_disk_slot(struct format *cfg, unsigned int b, unsigned int mx)
+{
+	const unsigned int stripes = cfg->md.al_stripes;
+	const unsigned int stripe_size_4kB = cfg->md.al_stripe_size_4k;
+	
+	/* transaction number, modulo on-disk ring buffer wrap around */
+	unsigned int t = b % mx;
+
+	/* ... to aligned 4k on disk block */
+	t = ((t % stripes) * stripe_size_4kB) + t/stripes;
+
+	return t;
+}
+
+
 /* Expects the AL to be read into on_disk_buffer already.
  * Returns negative error code for non-interpretable data,
  * 0 for "just mark me clean, nothing more to do",
  * and positive if we have to apply something. */
-static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
+int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 {
-	const unsigned int mx = MD_AL_MAX_SECT_07/8;
-	struct al_4k_cpu al_cpu[mx];
-	unsigned char valid[mx];
-
+	const unsigned int mx = cfg->md.al_stripes * cfg->md.al_stripe_size_4k;
 	struct al_4k_transaction_on_disk *al_disk = on_disk_buffer;
-
-	unsigned b, i;
+	struct al_4k_cpu *al_cpu = NULL;
+	unsigned b, o, i;
 
 	int found_valid = 0;
 	int found_valid_updates = 0;
 	struct al_cursor oldest = { 0, };
 	struct al_cursor newest = { 0, };
 
+	al_cpu = calloc(mx, sizeof(*al_cpu));
+	if (!al_cpu) {
+		fprintf(stderr, "Could not calloc(%u, sizeof(*al_cpu))\n", mx);
+		exit(30); /* FIXME sane exit codes */
+	}
+	
 	/* endian convert, validate, and find oldest to newest log range */
 	for (b = 0; b < mx; b++) {
-		valid[b] = v84_al_disk_to_cpu(al_cpu + b, al_disk + b);
-		if (!valid[b])
+		o = al_tr_number_to_on_disk_slot(cfg, b, mx);
+		if (!v84_al_disk_to_cpu(al_cpu + b, al_disk + o))
 		       continue;
 		++found_valid;
 		if (al_cpu[b].transaction_type == AL_TR_INITIALIZED)
@@ -2042,7 +2073,7 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 
 		/* this is only expected, in case the _first_ transaction
 		 * somehow failed. */
-		if (!valid[0] && found_valid == mx - 1)
+		if (!al_cpu[0].is_valid && found_valid == mx - 1)
 			return 0;
 
 		/* Hmm. Some transactions are valid.
@@ -2066,7 +2097,7 @@ static int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 
 	for (b = oldest.i; b <= newest.i; b++) {
 		unsigned idx = b % mx;
-		if (!valid[idx] || al_cpu[idx].transaction_type == AL_TR_INITIALIZED)
+		if (!al_cpu[idx].is_valid || al_cpu[idx].transaction_type == AL_TR_INITIALIZED)
 			continue;
 
 		for (i = 0; i < AL_CONTEXT_PER_TRANSACTION; i++) {
@@ -2213,9 +2244,9 @@ int need_to_apply_al(struct format *cfg)
 int v08_move_internal_md_after_resize(struct format *cfg);
 int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
+	off_t al_size;
 	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
 	uint32_t hot_extent[AL_EXTENTS_MAX];
-	size_t al_size = MD_AL_MAX_SECT_07 * 512;
 	int need_to_update_md_flags = 0;
 	int re_initialize_anyways = 0;
 	int err;
@@ -2238,7 +2269,13 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 		return -1;
 	}
 
-	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, cfg->al_offset, "apply_al");
+	al_size = cfg->md.al_stripes * cfg->md.al_stripe_size_4k * 4096;
+
+	/* read in first chunk (which is actually the whole AL
+	 * for old fixed size 32k activity log */
+	pread_or_die(cfg->md_fd, on_disk_buffer,
+		al_size < buffer_size ? al_size : buffer_size,
+		cfg->al_offset, "apply_al");
 
 	/* init all extent numbers to -1U aka "unused" */
 	memset(hot_extent, 0xff, sizeof(hot_extent));
@@ -2254,7 +2291,8 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	else if (DRBD_MD_MAGIC_84_UNCLEAN == cfg->md.magic ||
 		 DRBD_MD_MAGIC_09 == cfg->md.magic ||
 		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
-		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
+		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be) ||
+		 cfg->md.al_stripes != 1 || cfg->md.al_stripe_size_4k != 8) {
 		err = replay_al_84(cfg, hot_extent);
 	} else {
 		/* try the old al format anyways, this may be the first time we
@@ -3391,8 +3429,6 @@ void parse_bitmap(struct format *cfg, int parse_only)
 	} while (words == buffer_size / sizeof(*bm));
 }
 
-void check_for_existing_data(struct format *cfg);
-
 int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int parse_only)
 {
 	int old_max_peers = -1;
@@ -4156,6 +4192,23 @@ void check_internal_md_flavours(struct format * cfg) {
 		fixed ? (long long unsigned)fixed_offset : (long long unsigned)flex_offset);
 
 	if (format_version(cfg) == have) {
+		if (cfg->md.al_stripes != option_al_stripes
+		||  cfg->md.al_stripe_size_4k != option_al_stripe_size_4k) {
+			if (confirmed("Do you want to change the activity log stripe settings *only*?")) {
+				fprintf(stderr,
+					"Sorry, not yet fully implemented\n"
+					"Try dump-md > dump.txt; restore-md -s x -z y dump.txt\n");
+				exit(30);
+				/*
+				 *  ???
+				 * cfg->md.al_stripes = option_al_stripes;
+				 * cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
+				 * re_initialize_md_offsets(cfg);
+				 * return;
+				 *  ???
+				 */
+			}
+		}
 		if (!confirmed("Do you really want to overwrite the existing meta-data?")) {
 			printf("Operation cancelled.\n");
 			exit(1); // 1 to avoid online resource counting
@@ -4363,18 +4416,25 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 
 	err = cfg->ops->open(cfg);
 
-	/* Maybe we want to use some library that provides detection of
-	 * fs/partition/usage types? */
-	check_for_existing_data(cfg);
-
 	/* Suggest to move existing meta data after offline resize.  Though, if
 	 * you --force create-md, you probably mean it, so we don't even ask.
 	 * If you want to automatically move it, use check-resize.
 	 */
 	if (err == VALID_MD_FOUND_AT_LAST_KNOWN_LOCATION) {
+		if (option_al_stripes_used) {
+			if (option_al_stripes != cfg->md.al_stripes
+			||  option_al_stripe_size_4k != cfg->md.al_stripe_size_4k) {
+				fprintf(stderr, "Cannot move after offline resize and change AL-striping at the same time, yet.\n");
+				exit(20);
+			}
+		}
 		if (!force &&
-		    confirmed("Move internal meta data from last-known position?\n"))
+		    confirmed("Move internal meta data from last-known position?\n")) {
+			/* Maybe we want to use some library that provides detection of
+			 * fs/partition/usage types? */
+			check_for_existing_data(cfg);
 			return v08_move_internal_md_after_resize(cfg);
+		}
 		/* else: reset cfg->md, it needs to be re-initialized below */
 		memset(&cfg->md, 0, sizeof(cfg->md));
 	}
@@ -4401,12 +4461,15 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 		check_external_md_flavours(cfg);
 
 	if (!cfg->md.magic) /* not converted: initialize */
+		/* calls check_for_existing_data() internally */
 		err = cfg->ops->md_initialize(cfg, 1, max_peers); /* Clears on disk AL implicitly */
 	else {
 		if (format_version(cfg) >= DRBD_V09 && max_peers != 1)
 			printf("Warning: setting max_peers to 1 instead of %d\n\n",
 			       max_peers);
 		err = 0; /* we have sucessfully converted somthing */
+
+		check_for_existing_data(cfg);
 	}
 
 	cfg->md.la_peer_max_bio_size = option_peer_max_bio_size;
@@ -4896,12 +4959,13 @@ int main(int argc, char **argv)
 		exit(10);
 	}
 
-	if ((uint64_t)option_al_stripes * option_al_stripe_size_4k > (16*1024*1024/4)) {
-		    fprintf(stderr, "invalid al-stripe* settings\n");
+	/* at some point I'd like to go for this: (16*1024*1024/4) */
+	if ((uint64_t)option_al_stripes * option_al_stripe_size_4k > (buffer_size/4096)) {
+		    fprintf(stderr, "invalid (too large) al-stripe* settings\n");
 		    exit(10);
 	}
 	if (option_al_stripes * option_al_stripe_size_4k < 32/4) {
-		    fprintf(stderr, "invalid al-stripe* settings\n");
+		    fprintf(stderr, "invalid (too small) al-stripe* settings\n");
 		    exit(10);
 	}
 
