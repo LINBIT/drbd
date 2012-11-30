@@ -176,7 +176,11 @@ STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio->bi_end_io = drbd_md_io_complete;
 	bio->bi_rw = rw;
 
-	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* Corresponding put_ldev in drbd_md_io_complete() */
+	if (!(rw & WRITE) && device->disk_state[NOW] == D_DISKLESS && device->ldev == NULL)
+		/* special case, drbd_md_read() during drbd_adm_attach(): no get_ldev */
+		;
+	else if (!get_ldev_if_state(device, D_ATTACHING)) {
+		/* Corresponding put_ldev in drbd_md_io_complete() */
 		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in _drbd_md_sync_page_io()\n");
 		err = -ENODEV;
 		goto out;
@@ -226,9 +230,10 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 		return -EIO;
 	}
 
-	drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s)\n",
+	drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s) %pS\n",
 	     current->comm, current->pid, __func__,
-	     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
+	     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ",
+	     (void*)_RET_IP_ );
 
 	if (sector < drbd_md_first_sector(bdev) ||
 	    sector + 7 > drbd_md_last_sector(bdev))
