@@ -1621,6 +1621,13 @@ void re_initialize_md_offsets(struct format *cfg)
 	}
 	cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 	cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
+
+	if (verbose >= 2) {
+		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
+		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
+		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
+		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
+	}
 }
 
 void initialize_al(struct format *cfg)
@@ -1663,13 +1670,6 @@ int md_initialize_common(struct format *cfg, int do_disk_writes)
 
 	cfg->md.al_nr_extents = 257;	/* arbitrary. */
 	cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
-
-	if (verbose >= 2) {
-		fprintf(stderr,"md_offset: "U64"\n", cfg->md_offset);
-		fprintf(stderr,"al_offset: "U64" (%d)\n", cfg->al_offset, cfg->md.al_offset);
-		fprintf(stderr,"bm_offset: "U64" (%d)\n", cfg->bm_offset, cfg->md.bm_offset);
-		fprintf(stderr,"md_size_sect: %lu\n", (unsigned long)cfg->md.md_size_sect);
-	}
 
 	if (!do_disk_writes)
 		return 0;
@@ -3548,6 +3548,13 @@ int verify_dumpfile_or_restore(struct format *cfg, char **argv, int argc, int pa
 		cfg->md.device_uuid = yylval.u64;
 		EXP(TK_LA_BIO_SIZE); EXP(TK_NUM); EXP(';');
 		cfg->md.la_peer_max_bio_size = yylval.u64;
+
+		EXP(TK_AL_STRIPES); EXP(TK_NUM); EXP(';');
+		cfg->md.al_stripes = yylval.u64;
+		EXP(TK_AL_STRIPE_SIZE_4K); EXP(TK_NUM); EXP(';');
+		cfg->md.al_stripe_size_4k = yylval.u64;
+
+		re_initialize_md_offsets(cfg);
 	} else {
 		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	}
