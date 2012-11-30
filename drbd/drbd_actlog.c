@@ -236,7 +236,8 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 		     current->comm, current->pid, __func__,
 		     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
 
-	err = _drbd_md_sync_page_io(device, bdev, iop, sector, rw, MD_BLOCK_SIZE);
+	/* we do all our meta data IO in aligned 4k blocks. */
+	err = _drbd_md_sync_page_io(device, bdev, iop, sector, rw, 4096);
 	if (err) {
 		drbd_err(device, "drbd_md_sync_page_io(,%llus,%s) failed with error %d\n",
 		    (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ", err);
@@ -383,6 +384,24 @@ static unsigned long rs_extent_to_bm_bit(unsigned int rs_enr)
 	return (unsigned long)rs_enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
 }
 
+static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
+{
+	const unsigned int stripes = 1;
+	const unsigned int stripe_size_4kB = MD_32kB_SECT/MD_4kB_SECT;
+
+	/* transaction number, modulo on-disk ring buffer wrap around */
+	unsigned int t = device->al_tr_number % (stripe_size_4kB * stripes);
+
+	/* ... to aligned 4k on disk block */
+	t = ((t % stripes) * stripe_size_4kB) + t/stripes;
+
+	/* ... to 512 byte sector in activity log */
+	t *= 8;
+
+	/* ... plus offset to the on disk position */
+	return device->ldev->md.md_offset + device->ldev->md.al_offset + t;
+}
+
 static int
 _al_write_transaction(struct drbd_device *device)
 {
@@ -469,13 +488,12 @@ _al_write_transaction(struct drbd_device *device)
 	if (device->al_tr_cycle >= device->act_log->nr_elements)
 		device->al_tr_cycle = 0;
 
-	sector =  device->ldev->md.md_offset
-		+ device->ldev->md.al_offset
-		+ device->al_tr_pos * (MD_BLOCK_SIZE>>9);
+	sector = al_tr_number_to_on_disk_sector(device);
 
 	crc = crc32c(0, buffer, 4096);
 	buffer->crc32c = cpu_to_be32(crc);
 
+	/* normal execution path goes through all three branches */
 	if (drbd_bm_write_hinted(device))
 		err = -EIO;
 		/* drbd_chk_io_error done already */
@@ -483,8 +501,6 @@ _al_write_transaction(struct drbd_device *device)
 		err = -EIO;
 		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 	} else {
-		/* advance ringbuffer position and transaction counter */
-		device->al_tr_pos = (device->al_tr_pos + 1) % (MD_AL_SECTORS*512/MD_BLOCK_SIZE);
 		device->al_tr_number++;
 	}
 
