@@ -107,9 +107,6 @@ struct update_al_work {
 };
 
 
-static int al_write_transaction(struct drbd_device *device, bool delegate);
-static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
-
 void *drbd_md_get_buffer(struct drbd_device *device)
 {
 	int r;
@@ -251,7 +248,7 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 }
 
 static
-struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
+struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool nonblock)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *al_ext;
@@ -272,15 +269,35 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 			}
 		}
 	}
-	al_ext = lc_get(device->act_log, enr);
+	if (nonblock)
+		al_ext = lc_try_get(device->act_log, enr);
+	else
+		al_ext = lc_get(device->act_log, enr);
 	spin_unlock_irq(&device->al_lock);
 	return al_ext;
 }
 
-/*
- * @delegate:	delegate activity log I/O to the worker thread
- */
-void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate)
+bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i)
+{
+	/* for bios crossing activity log extent boundaries,
+	 * we may need to activate two extents in one go */
+	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	bool fastpath_ok = true;
+
+
+	D_ASSERT(device, (unsigned)(last - first) <= 1);
+	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
+
+	/* FIXME figure out a fast path for bios crossing AL extent boundaries */
+	if (first != last)
+		return false;
+
+	fastpath_ok = _al_get(device, first, true);
+	return fastpath_ok;
+}
+
+bool drbd_al_begin_io_prepare(struct drbd_device *device, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
@@ -288,7 +305,6 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;
 	bool need_transaction = false;
-	bool locked = false;
 
 	/* When called through generic_make_request(), we must delegate
 	 * activity log I/O to the worker thread: a further request
@@ -299,23 +315,28 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 	 * However, if we *are* the worker, we must not delegate to ourselves.
 	 */
 
-	if (delegate)
-		BUG_ON(current == device->resource->worker.task);
-
 	D_ASSERT(device, first <= last);
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
 
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
-		wait_event(device->al_wait, (al_ext = _al_get(device, enr)) != NULL);
+		wait_event(device->al_wait,
+				(al_ext = _al_get(device, enr, false)) != NULL);
 		if (al_ext->lc_number != enr)
 			need_transaction = true;
 	}
+	return need_transaction;
+}
 
-	/* If *this* request was to an already active extent,
-	 * we're done, even if there are pending changes. */
-	if (!need_transaction)
-		return;
+static int al_write_transaction(struct drbd_device *device, bool delegate);
+static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
+
+void drbd_al_begin_io_commit(struct drbd_device *device, bool delegate)
+{
+	bool locked = false;
+
+	if (delegate)
+		BUG_ON(current == device->resource->worker.task);
 
 	/* Serialize multiple transactions.
 	 * This uses test_and_set_bit, memory barrier is implicit.
@@ -334,10 +355,8 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 			write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
 			rcu_read_unlock();
 
-			if (write_al_updates) {
+			if (write_al_updates)
 				al_write_transaction(device, delegate);
-				device->al_writ_cnt++;
-			}
 
 			spin_lock_irq(&device->al_lock);
 			/* FIXME
@@ -350,6 +369,18 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 		lc_unlock(device->act_log);
 		wake_up(&device->al_wait);
 	}
+}
+
+/*
+ * @delegate:	delegate activity log I/O to the worker thread
+ */
+void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate)
+{
+	if (delegate)
+		BUG_ON(current == device->resource->worker.task);
+
+	if (drbd_al_begin_io_prepare(device, i))
+		drbd_al_begin_io_commit(device, delegate);
 }
 
 void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
@@ -508,15 +539,22 @@ _al_write_transaction(struct drbd_device *device)
 	crc = crc32c(0, buffer, 4096);
 	buffer->crc32c = cpu_to_be32(crc);
 
-	/* normal execution path goes through all three branches */
 	if (drbd_bm_write_hinted(device))
 		err = -EIO;
-		/* drbd_chk_io_error done already */
-	else if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
-		err = -EIO;
-		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
-	} else {
-		device->al_tr_number++;
+	else {
+		bool write_al_updates;
+		rcu_read_lock();
+		write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
+		rcu_read_unlock();
+		if (write_al_updates) {
+			if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
+				err = -EIO;
+				drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
+			} else {
+				device->al_tr_number++;
+				device->al_writ_cnt++;
+			}
+		}
 	}
 
 	drbd_md_put_buffer(device);
