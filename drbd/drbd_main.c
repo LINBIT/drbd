@@ -43,6 +43,7 @@
 #include <linux/crc32c.h>
 #include <linux/reboot.h>
 #include <linux/notifier.h>
+#include <linux/workqueue.h>
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
@@ -324,8 +325,8 @@ void tl_clear(struct drbd_connection *connection)
 }
 
 /**
- * tl_abort_disk_io() - Abort disk I/O for all requests for a certain mdev in the TL
- * @mdev:	DRBD device.
+ * tl_abort_disk_io() - Abort disk I/O for all requests for a certain device in the TL
+ * @device:	DRBD device.
  */
 void tl_abort_disk_io(struct drbd_device *device)
 {
@@ -3005,6 +3006,28 @@ fail:
 	return NULL;
 }
 
+int init_submitter(struct drbd_device *device)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
+	/* opencoded create_singlethread_workqueue(),
+	 * to be able to say "drbd%d", ..., minor */
+	device->submit.wq = alloc_workqueue("drbd%u_submit",
+			WQ_UNBOUND | WQ_MEM_RECLAIM, 1, device->minor);
+#else
+	device->submit.wq = create_singlethread_workqueue("drbd_submit");
+#endif
+	if (!device->submit.wq)
+		return -ENOMEM;
+#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
+	INIT_WORK(&device->submit.worker, do_submit, &device->submit.worker);
+#else
+	INIT_WORK(&device->submit.worker, do_submit);
+#endif
+	spin_lock_init(&device->submit.lock);
+	INIT_LIST_HEAD(&device->submit.writes);
+	return 0;
+}
+
 enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
@@ -3146,7 +3169,12 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		if (!create_peer_device(device, connection))
 			goto out_no_peer_device;
 
-	/* kobject_get(&device->kobj); */
+	if (init_submitter(device)) {
+		err = ERR_NOMEM;
+		drbd_err(device, "unable to create submit workqueue");
+		goto out_no_peer_device;
+	}
+
 	add_disk(disk);
 	parent = &disk_to_dev(disk)->kobj;
 
@@ -3164,6 +3192,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	return NO_ERROR;
 
 out_del_disk:
+	destroy_workqueue(device->submit.wq);
 	del_gendisk(device->vdisk);
 out_no_peer_device:
 	for_each_connection(connection, resource) {
@@ -3178,7 +3207,6 @@ out_no_peer_device:
 		kfree(peer_device);
 	}
 
-	idr_remove(&resource->devices, vnr);
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
 out_idr_synchronize_rcu:
@@ -3220,6 +3248,8 @@ void drbd_put_device(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 	int refs = 3, i;
 
+	destroy_workqueue(device->submit.wq);
+	device->submit.wq = NULL;
 	del_gendisk(device->vdisk);
 	for_each_peer_device(peer_device, device)
 		refs++;
@@ -3629,7 +3659,7 @@ err:
  * something goes wrong.
  *
  * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
- * even before @bdev is assigned to @mdev->ldev.
+ * even before @bdev is assigned to @device->ldev.
  */
 int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
