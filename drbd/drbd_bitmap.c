@@ -407,10 +407,6 @@ STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 	return new_pages;
 }
 
-/*
- * called on driver init only. TODO call when a device is created.
- * allocates the drbd_bitmap, and stores it in device->bitmap.
- */
 struct drbd_bitmap *drbd_bm_alloc(void)
 {
 	struct drbd_bitmap *b;
@@ -435,8 +431,6 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 	return device->bitmap->bm_dev_capacity;
 }
 
-/* called on driver unload. TODO: call when a device is destroyed.
- */
 void drbd_bm_free(struct drbd_bitmap *bitmap)
 {
 	bm_free_pages(bitmap->bm_pages, bitmap->bm_number_of_pages);
