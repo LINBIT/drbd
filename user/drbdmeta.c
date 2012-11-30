@@ -68,6 +68,9 @@ int	ignore_sanity_checks = 0;
 int	dry_run = 0;
 int     option_peer_max_bio_size = 0;
 int     option_node_id = -1;
+unsigned option_al_stripes = 1;
+unsigned option_al_stripe_size_4k = 8;
+unsigned option_al_stripes_used = 0;
 
 struct option metaopt[] = {
     { "ignore-sanity-checks",  no_argument, &ignore_sanity_checks, 1000 },
@@ -76,6 +79,8 @@ struct option metaopt[] = {
     { "verbose",  no_argument,    0, 'v' },
     { "peer-max-bio-size",  required_argument, NULL, 'p' },
     { "node-id",  required_argument, NULL, 'i' },
+    { "al-stripes",  required_argument, NULL, 's' },
+    { "al-stripe-size-kB",  required_argument, NULL, 'z' },
     { NULL,     0,              0, 0 },
 };
 
@@ -212,7 +217,7 @@ static int confirmed(const char *text)
  * global variables and data types
  */
 
-const size_t buffer_size = 128*1024;
+const size_t buffer_size = 128*1024; /* has to be a multiple of 4096! */
 size_t pagesize; /* = sysconf(_SC_PAGESIZE) */
 int opened_odirect = 1;
 void *on_disk_buffer = NULL;
@@ -271,6 +276,8 @@ struct md_cpu {
 	uint32_t max_peers;
 	int32_t node_id;
 	struct peer_md_cpu peers[MAX_PEERS];
+	uint32_t al_stripes;
+	uint32_t al_stripe_size_4k;
 };
 
 /*
@@ -412,6 +419,8 @@ void md_disk_07_to_cpu(struct md_cpu *cpu, const struct md_on_disk_07 *disk)
 	cpu->bm_offset = be32_to_cpu(disk->bm_offset.be);
 	cpu->bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	cpu->max_peers = 1;
+	cpu->al_stripes = 1;
+	cpu->al_stripe_size_4k = 8;
 }
 
 void md_cpu_to_disk_07(struct md_on_disk_07 *disk, const struct md_cpu const *cpu)
@@ -434,6 +443,7 @@ int is_valid_md(enum md_format f,
 {
 	uint64_t md_size_sect;
 	const char *v = f_ops[f].name;
+	int al_size_sect;
 	int n;
 
 	ASSERT(f == DRBD_V07 || f == DRBD_V08 || f == DRBD_V09);
@@ -465,6 +475,8 @@ int is_valid_md(enum md_format f,
 		}
 	}
 
+	al_size_sect = md->al_stripes * md->al_stripe_size_4k * 8;
+
 	switch(md_index) {
 	default:
 	case DRBD_MD_INDEX_INTERNAL:
@@ -475,16 +487,16 @@ int is_valid_md(enum md_format f,
 				MD_AL_OFFSET_07, md->al_offset);
 			return 0;
 		}
-		if (md->bm_offset != MD_BM_OFFSET_07) {
-			fprintf(stderr, "%s Magic number (bm_offset) not found\n", v);
+		if (md->bm_offset != MD_AL_OFFSET_07 + al_size_sect) {
+			fprintf(stderr, "%s bm_offset: expected %d, found %d\n", v,
+				MD_AL_OFFSET_07 + al_size_sect, md->bm_offset);
 			return 0;
 		}
 		break;
 	case DRBD_MD_INDEX_FLEX_INT:
-		if (md->al_offset != -MD_AL_MAX_SECT_07) {
-			fprintf(stderr, "%s Magic number (al_offset) not found\n", v);
-			fprintf(stderr, "\texpected: %d, found %d\n",
-				-MD_AL_MAX_SECT_07, md->al_offset);
+		if (md->al_offset != -al_size_sect) {
+			fprintf(stderr, "%s al_offset: expected %d, found %d\n", v,
+				-al_size_sect, md->al_offset);
 			return 0;
 		}
 
@@ -492,7 +504,7 @@ int is_valid_md(enum md_format f,
 		md_size_sect = ALIGN(md_size_sect, 8);    /* align on 4K blocks */
 		/* plus the "drbd meta data super block",
 		 * and the activity log; unit still sectors */
-		md_size_sect += MD_BM_OFFSET_07;
+		md_size_sect += MD_AL_OFFSET_07 + al_size_sect;
 
 		if (md->bm_offset != -(int64_t)md_size_sect + MD_AL_OFFSET_07) {
 			fprintf(stderr, "strange bm_offset %d (expected: "D64")\n",
@@ -576,7 +588,12 @@ struct __packed md_on_disk_08 {
 	be_s32 bm_offset;	/* signed sector offset to the bitmap, from here */
 	be_u32 bm_bytes_per_bit;
 	be_u32 la_peer_max_bio_size; /* last peer max_bio_size */
-	be_u32 reserved_u32[3];
+
+	/* see al_tr_number_to_on_disk_sector() */
+	be_u32 al_stripes;
+	be_u32 al_stripe_size_4k;
+
+	be_u32 reserved_u32[1];
 
 	char reserved[8 * 512 - (8*(UI_SIZE+3)+4*11)];
 };
@@ -602,11 +619,22 @@ void md_disk_08_to_cpu(struct md_cpu *cpu, const struct md_on_disk_08 *disk)
 	cpu->bm_bytes_per_bit = be32_to_cpu(disk->bm_bytes_per_bit.be);
 	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
 	cpu->max_peers = 1;
+	cpu->al_stripes = be32_to_cpu(disk->al_stripes.be);
+	cpu->al_stripe_size_4k = be32_to_cpu(disk->al_stripe_size_4k.be);
+
+	/* not set? --> default to old fixed size activity log */
+	if (cpu->al_stripes == 0 && cpu->al_stripe_size_4k == 0) {
+		cpu->al_stripes = 1;
+		cpu->al_stripe_size_4k = 8;
+	}
 }
 
 void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 {
 	int i;
+
+	memset(disk, 0, sizeof(*disk));
+
 	disk->effective_size.be = cpu_to_be64(cpu->effective_size);
 	disk->uuid[UI_CURRENT].be = cpu_to_be64(cpu->current_uuid);
 	disk->uuid[UI_BITMAP].be = cpu_to_be64(cpu->peers[0].bitmap_uuid);
@@ -622,7 +650,8 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 	disk->bm_offset.be = cpu_to_be32(cpu->bm_offset);
 	disk->bm_bytes_per_bit.be = cpu_to_be32(cpu->bm_bytes_per_bit);
 	disk->la_peer_max_bio_size.be = cpu_to_be32(cpu->la_peer_max_bio_size);
-	memset(disk->reserved, 0, sizeof(disk->reserved));
+	disk->al_stripes.be = cpu_to_be32(cpu->al_stripes);
+	disk->al_stripe_size_4k.be = cpu_to_be32(cpu->al_stripe_size_4k);
 }
 
 /*
@@ -843,7 +872,12 @@ struct md_on_disk_09 {
 	be_u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 	be_u32 max_peers;
 	be_s32 node_id;
-	be_u32 reserved_u32[4];
+
+	/* see al_tr_number_to_on_disk_sector() */
+	be_u32 al_stripes;
+	be_u32 al_stripe_size_4k;
+
+	be_u32 reserved_u32[2];
 
 	struct peer_dev_md_on_disk peers[MAX_PEERS];
 	be_u64 history_uuids[HISTORY_UUIDS];
@@ -868,6 +902,8 @@ void md_disk_09_to_cpu(struct md_cpu *cpu, const struct md_on_disk_09 *disk)
 	cpu->la_peer_max_bio_size = be32_to_cpu(disk->la_peer_max_bio_size.be);
 	cpu->max_peers = be32_to_cpu(disk->max_peers.be);
 	cpu->node_id = be32_to_cpu(disk->node_id.be);
+	cpu->al_stripes = be32_to_cpu(disk->al_stripes.be);
+	cpu->al_stripe_size_4k = be32_to_cpu(disk->al_stripe_size_4k.be);
 
 	if (cpu->max_peers > MAX_PEERS)
 		cpu->max_peers = MAX_PEERS;
@@ -901,6 +937,8 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 	disk->la_peer_max_bio_size.be = cpu_to_be32(cpu->la_peer_max_bio_size);
 	disk->max_peers.be = cpu_to_be32(cpu->max_peers);
 	disk->node_id.be = cpu_to_be32(cpu->node_id);
+	disk->al_stripes.be = cpu_to_be32(cpu->al_stripes);
+	disk->al_stripe_size_4k.be = cpu_to_be32(cpu->al_stripe_size_4k);
 
 	disk->current_uuid.be = cpu_to_be64(cpu->current_uuid);
 	for (p = 0; p < cpu->max_peers; p++) {
@@ -1085,7 +1123,6 @@ struct meta_cmd cmds[] = {
 	{"restore-md", "file", meta_restore_md, 1, 0},
 	{"verify-dump", "file", meta_verify_dump_file, 1, 0},
 	{"apply-al", 0, meta_apply_al, 1, 0},
-	{"create-md", "[--peer-max-bio-size {val}] {max_peers}", meta_create_md, 1, 0},
 	{"wipe-md", 0, meta_wipe_md, 1, 0},
 	{"outdate", 0, meta_outdate, 1, 0},
 	{"invalidate", 0, meta_invalidate, 1, 0},
@@ -1095,6 +1132,12 @@ struct meta_cmd cmds[] = {
 	/* FIXME: Get and set node and peer ids */
 	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0, 1},
 	{"check-resize", 0, meta_chk_offline_resize, 1, 0},
+	{"create-md",
+		"[--peer-max-bio-size {val}] "
+		"[--al-stripes {val}] "
+		"[--al-stripe-size-kB {val}] "
+		"{max_peers}",
+		meta_create_md, 1, 0},
 };
 
 /*
@@ -1517,6 +1560,7 @@ int v06_md_initialize(struct format *cfg,
 void re_initialize_md_offsets(struct format *cfg)
 {
 	uint64_t md_size_sect;
+	int al_size_sect;
 
 	/* These two are needed for bm_words()... Ensure sane defaults... */
 	if (cfg->md.bm_bytes_per_bit == 0)
@@ -1524,26 +1568,31 @@ void re_initialize_md_offsets(struct format *cfg)
 	if (cfg->md.max_peers == 0)
 		cfg->md.max_peers = 1;
 
+	if (is_v09(cfg))
+		al_size_sect = option_al_stripes * option_al_stripe_size_4k * 8;
+	else
+		al_size_sect = MD_AL_MAX_SECT_07;
+
 	switch(cfg->md_index) {
 	default:
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
 		cfg->md.al_offset = MD_AL_OFFSET_07;
-		cfg->md.bm_offset = MD_BM_OFFSET_07;
+		cfg->md.bm_offset = cfg->md.al_offset + al_size_sect;
 		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
 		cfg->md.md_size_sect = cfg->bd_size >> 9;
 		cfg->md.al_offset = MD_AL_OFFSET_07;
-		cfg->md.bm_offset = MD_BM_OFFSET_07;
+		cfg->md.bm_offset = cfg->md.al_offset + al_size_sect;
 		break;
-	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_INTERNAL: /* only v07 */
 		cfg->md.md_size_sect = MD_RESERVED_SECT_07;
 		cfg->md.al_offset = MD_AL_OFFSET_07;
 		cfg->md.bm_offset = MD_BM_OFFSET_07;
 		break;
 	case DRBD_MD_INDEX_FLEX_INT:
 		/* al size is still fixed */
-		cfg->md.al_offset = -MD_AL_MAX_SECT_07;
+		cfg->md.al_offset = -al_size_sect;
 
 		/* we need (slightly less than) ~ this much bitmap sectors: */
 		md_size_sect = bm_words(&cfg->md, cfg->bd_size >> 9) * sizeof(long) >> 9;
@@ -1558,7 +1607,7 @@ void re_initialize_md_offsets(struct format *cfg)
 		}
 		/* plus the "drbd meta data super block",
 		 * and the activity log; unit still sectors */
-		md_size_sect += MD_BM_OFFSET_07;
+		md_size_sect += MD_AL_OFFSET_07 + al_size_sect;
 		cfg->md.md_size_sect = md_size_sect;
 		cfg->md.bm_offset = -md_size_sect + MD_AL_OFFSET_07;
 		break;
@@ -1718,22 +1767,23 @@ void printf_al_07(struct format *cfg, struct al_sector_on_disk *al_disk)
 		max_slot_nr, cfg->md.al_nr_extents);
 }
 
-void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk)
+void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk,
+	unsigned block_nr_offset, unsigned N)
 {
 	struct al_4k_cpu al_cpu;
 	unsigned b, i;
 	unsigned max_slot_nr = 0;
-	for (b = 0; b < MD_AL_MAX_SECT_07/8; b++) {
+	for (b = 0; b < N; b++) {
 		int ok = v84_al_disk_to_cpu(&al_cpu, al_disk + b);
 		if (!ok) {
-			printf("#     block %2u { INVALID }\n", b);
+			printf("#     block %2u { INVALID }\n", b + block_nr_offset);
 			continue;
 		}
 		if (al_cpu.transaction_type == 0xffff) {
-			printf("#     block %2u { INITIALIZED }\n", b);
+			printf("#     block %2u { INITIALIZED }\n", b + block_nr_offset);
 			continue;
 		}
-		printf("#     block %2u {\n", b);
+		printf("#     block %2u {\n", b + block_nr_offset);
 		printf("# \tmagic: 0x%08x\n", al_cpu.magic);
 		printf("# \ttype: 0x%04x\n", al_cpu.transaction_type);
 		printf("# \ttr: %10u\n", al_cpu.tr_number);
@@ -1772,28 +1822,53 @@ void printf_al_84(struct format *cfg, struct al_4k_transaction_on_disk *al_disk)
 void printf_al(struct format *cfg)
 {
 	off_t al_on_disk_off = cfg->al_offset;
-	off_t al_size = MD_AL_MAX_SECT_07 * 512;
+	off_t al_size = cfg->md.al_stripes * cfg->md.al_stripe_size_4k * 4096;
 	struct al_sector_on_disk *al_512_disk = on_disk_buffer;
 	struct al_4k_transaction_on_disk *al_4k_disk = on_disk_buffer;
+	unsigned block_nr_offset = 0;
+	unsigned N;
+
+	int is_al_84 = is_v09(cfg) ||
+		(is_v08(cfg) &&
+		(cfg->md.al_stripes != 1 || cfg->md.al_stripe_size_4k != 8));
 
 	printf("# al {\n");
-	pread_or_die(cfg->md_fd, on_disk_buffer, al_size, al_on_disk_off, "printf_al");
 
-	/* FIXME
-	 * we should introduce a new meta data "super block" magic, so we won't
-	 * have the same super block with two different activity log
-	 * transaction layouts */
-	if (format_version(cfg) < DRBD_V08)
-		printf_al_07(cfg, al_512_disk);
+	while (al_size) {
+		off_t chunk = al_size;
+		if (chunk > buffer_size)
+			chunk = buffer_size;
+		ASSERT(chunk);
+		pread_or_die(cfg->md_fd, on_disk_buffer,
+			chunk, al_on_disk_off, "printf_al");
+		al_on_disk_off += chunk;
+		al_size -= chunk;
+		N = chunk/4096;
 
-	/* looks like we have the new al format */
-	else if (DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
-		 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be))
-		printf_al_84(cfg, al_4k_disk);
+		/* FIXME
+		 * we should introduce a new meta data "super block" magic, so we won't
+		 * have the same super block with two different activity log
+		 * transaction layouts */
+		if (format_version(cfg) < DRBD_V08)
+			printf_al_07(cfg, al_512_disk);
 
-	/* try the old al format anyways */
-	else
-		printf_al_07(cfg, al_512_disk);
+		/* looks like we have the new al format */
+		else if (is_al_84 ||
+			 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[0].magic.be) ||
+			 DRBD_AL_MAGIC == be32_to_cpu(al_4k_disk[1].magic.be)) {
+			is_al_84 = 1;
+			printf_al_84(cfg, al_4k_disk, block_nr_offset, N);
+		}
+
+		/* try the old al format anyways */
+		else
+			printf_al_07(cfg, al_512_disk);
+
+		block_nr_offset += N;
+		if (al_size && !is_al_84) {
+			printf("### UNEXPECTED ACTIVITY LOG SIZE!\n");
+		}
+	}
 	printf("# }\n");
 }
 
@@ -2726,6 +2801,8 @@ int v08_md_initialize(struct format *cfg, int do_disk_writes,
 	cfg->md.flags = 0;
 	cfg->md.max_peers = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
+	cfg->md.al_stripes = option_al_stripes;
+	cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
 
 	return md_initialize_common(cfg, do_disk_writes);
 }
@@ -2787,6 +2864,8 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 	cfg->md.flags = 0;
 	cfg->md.node_id = -1;
 	cfg->md.magic = DRBD_MD_MAGIC_09;
+	cfg->md.al_stripes = option_al_stripes;
+	cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
 
 	cfg->md.current_uuid = UUID_JUST_CREATED;
 	for (p = 0; p < max_peers; p++) {
@@ -3061,6 +3140,10 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 			       cfg->md.device_uuid);
 			printf("la-peer-max-bio-size %d;\n",
 			       cfg->md.la_peer_max_bio_size);
+			printf("al-stripes "U32";\n",
+				cfg->md.al_stripes);
+			printf("al-stripe-size-4k "U32";\n",
+				cfg->md.al_stripe_size_4k);
 		}
 		printf("# bm-bytes %u;\n", cfg->bm_bytes);
 		printf_bm(cfg); /* pretty prints the whole bitmap */
@@ -4738,6 +4821,14 @@ int main(int argc, char **argv)
 			    exit(10);
 		    }
 		    break;
+	    case 's':
+		    option_al_stripes = m_strtoll(optarg, 1);
+		    option_al_stripes_used = 1;
+		    break;
+	    case 'z':
+		    option_al_stripe_size_4k = m_strtoll(optarg, 'k')/4;
+		    option_al_stripes_used = 1;
+		    break;
 	    default:
 		print_usage_and_exit();
 		break;
@@ -4798,6 +4889,20 @@ int main(int argc, char **argv)
 	    command->function != &meta_create_md) {
 		fprintf(stderr, "The --peer-max-bio-size option is only allowed with create-md\n");
 		exit(10);
+	}
+	if (option_al_stripes_used &&
+	    command->function != &meta_create_md) {
+		fprintf(stderr, "The --al-stripe* options are only allowed with create-md\n");
+		exit(10);
+	}
+
+	if ((uint64_t)option_al_stripes * option_al_stripe_size_4k > (16*1024*1024/4)) {
+		    fprintf(stderr, "invalid al-stripe* settings\n");
+		    exit(10);
+	}
+	if (option_al_stripes * option_al_stripe_size_4k < 32/4) {
+		    fprintf(stderr, "invalid al-stripe* settings\n");
+		    exit(10);
 	}
 
 	if (option_node_id != -1 && !command->node_id_required) {
