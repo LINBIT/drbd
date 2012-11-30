@@ -972,10 +972,7 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 {
 	sector_t capacity_sect, bits, bytes, md_size_sect = 0;
 	unsigned int al_size_sect = MD_32kB_SECT;
-	int meta_dev_idx, max_peers;
-
-	rcu_read_lock();
-	meta_dev_idx = rcu_dereference(bdev->disk_conf)->meta_dev_idx;
+	int max_peers;
 
 	if (device->bitmap)
 		max_peers = device->bitmap->bm_max_peers;
@@ -984,7 +981,7 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 
 	bdev->md.md_offset = drbd_md_ss(bdev);
 
-	switch (meta_dev_idx) {
+	switch (bdev->md.meta_dev_idx) {
 	default:
 		/* v07 style fixed size indexed meta data */
 		/* FIXME we should drop support for this! */
@@ -1017,7 +1014,6 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 		bdev->md.bm_offset   = -md_size_sect + MD_4kB_SECT;
 		break;
 	}
-	rcu_read_unlock();
 }
 
 /* input size is expected to be in KB */
