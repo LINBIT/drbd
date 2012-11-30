@@ -35,6 +35,8 @@ enum yytokentype {
 	TK_PEER,
 	TK_HASH,
 	TK_MAX_PEERS,
+	TK_AL_STRIPES,
+	TK_AL_STRIPE_SIZE_4K,
 };
 
 /* avoid compiler warnings about implicit declaration */
