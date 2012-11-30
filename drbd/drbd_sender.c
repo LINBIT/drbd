@@ -86,7 +86,8 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 	md_io->done = 1;
 	wake_up(&device->misc_wait);
 	bio_put(bio);
-	put_ldev(device);
+	if (device->ldev) /* special case: drbd_md_read() during drbd_adm_attach() */
+		put_ldev(device);
 
 	BIO_ENDIO_FN_RETURN;
 }

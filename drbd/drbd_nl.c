@@ -946,6 +946,26 @@ out:
 	return 0;
 }
 
+u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers)
+{
+	u64 bits, bytes;
+
+	/* round up storage sectors to full "bitmap sectors per bit", then
+	 * convert to number of bits needed, and round that up to 64bit words
+	 * to ease interoperability between 32bit and 64bit architectures.
+	 */
+	bits = ALIGN(BM_SECT_TO_BIT(ALIGN(capacity_sect, BM_SECT_PER_BIT)), 64);
+
+	/* convert to bytes, multiply by number of peers,
+	 * and, because we do all our meta data IO in 4k blocks,
+	 * round up to full 4k
+	 */
+	bytes = ALIGN(bits / 8 * max_peers, 4096);
+
+	/* convert to number of sectors */
+	return bytes >> 9;
+}
+
 /* Initializes the md.*_offset members, so we are able to find
  * the on disk meta data.
  *
@@ -970,8 +990,8 @@ out:
 void drbd_md_set_sector_offsets(struct drbd_device *device,
 				struct drbd_backing_dev *bdev)
 {
-	sector_t capacity_sect, bits, bytes, md_size_sect = 0;
-	unsigned int al_size_sect = MD_32kB_SECT;
+	sector_t md_size_sect = 0;
+	unsigned int al_size_sect = bdev->md.al_size_4k * 8;
 	int max_peers;
 
 	if (device->bitmap)
@@ -997,17 +1017,15 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 		break;
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		/* al size is still fixed */
 		bdev->md.al_offset = -al_size_sect;
 
-		capacity_sect = drbd_get_capacity(bdev->backing_bdev);
-		bits = ALIGN(BM_SECT_TO_BIT(ALIGN(capacity_sect, BM_SECT_PER_BIT)), 64);
-		bytes = ALIGN(bits / 8 * max_peers, BM_BLOCK_SIZE);
-		md_size_sect = bytes >> 9;
-
-		/* plus the "drbd meta data super block",
+		/* enough bitmap to cover the storage,
+		 * plus the "drbd meta data super block",
 		 * and the activity log; */
-		md_size_sect += MD_4kB_SECT + al_size_sect;
+		md_size_sect = drbd_capacity_to_on_disk_bm_sect(
+				drbd_get_capacity(bdev->backing_bdev),
+				max_peers)
+			+ MD_4kB_SECT + al_size_sect;
 
 		bdev->md.md_size_sect = md_size_sect;
 		/* bitmap offset is adjusted by 'super' block size */
@@ -1708,8 +1726,19 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	/* RT - for drbd_get_max_capacity() DRBD_MD_INDEX_FLEX_INT */
-	drbd_md_set_sector_offsets(device, nbc);
+	if (!device->bitmap) {
+		device->bitmap = drbd_bm_alloc();
+		if (!device->bitmap) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	}
+
+	/* Read our meta data super block early.
+	 * This also sets other on-disk offsets. */
+	retcode = drbd_md_read(device, nbc);
+	if (retcode != NO_ERROR)
+		goto fail;
 
 	if (drbd_get_max_capacity(nbc) < new_disk_conf->disk_size) {
 		drbd_err(device, "max capacity %llu smaller than disk size %llu\n",
@@ -1779,19 +1808,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (!get_ldev_if_state(device, D_ATTACHING))
 		goto force_diskless;
-
-	if (!device->bitmap) {
-		device->bitmap = drbd_bm_alloc();
-		if (!device->bitmap) {
-			retcode = ERR_NOMEM;
-			goto force_diskless_dec;
-		}
-	}
-
-	drbd_md_set_sector_offsets(device, nbc);
-	retcode = drbd_md_read(device, nbc);
-	if (retcode != NO_ERROR)
-		goto force_diskless_dec;
 
 	drbd_info(device, "Maximum number of peer devices = %u\n",
 		  device->bitmap->bm_max_peers);

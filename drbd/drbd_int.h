@@ -1170,6 +1170,7 @@ extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern void drbd_cleanup_device(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 
+extern u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers);
 extern void drbd_md_set_sector_offsets(struct drbd_device *device,
 				       struct drbd_backing_dev *bdev);
 extern void drbd_md_sync(struct drbd_device *device);
