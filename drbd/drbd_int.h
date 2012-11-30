@@ -1671,6 +1671,8 @@ extern const char *drbd_conn_str(enum drbd_conn_state s);
 extern const char *drbd_role_str(enum drbd_role s);
 
 /* drbd_actlog.c */
+extern int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i);
+extern void drbd_al_begin_io_commit(struct drbd_device *device, bool defer_to_worker);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate);
 extern void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);

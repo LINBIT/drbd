@@ -1447,32 +1447,73 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	drbd_send_and_submit(device, req);
 }
 
-void __drbd_make_request_from_worker(struct drbd_device *device, struct drbd_request *req)
+static void submit_fast_path(struct drbd_device *device, struct list_head *incoming)
 {
-	const int rw = bio_rw(req->master_bio);
+	struct drbd_request *req, *tmp;
+	list_for_each_entry_safe(req, tmp, incoming, tl_requests) {
+		const int rw = bio_data_dir(req->master_bio);
 
-	if (rw == WRITE && req->private_bio && req->i.size
-	&& !test_bit(AL_SUSPENDED, &device->flags)) {
-		drbd_al_begin_io(device, &req->i, false);
-		req->rq_state[0] |= RQ_IN_ACT_LOG;
+		if (rw == WRITE && req->private_bio && req->i.size
+		&& !test_bit(AL_SUSPENDED, &device->flags)) {
+			if (!drbd_al_begin_io_fastpath(device, &req->i))
+				continue;
+
+			req->rq_state[0] |= RQ_IN_ACT_LOG;
+		}
+
+		list_del_init(&req->tl_requests);
+		drbd_send_and_submit(device, req);
 	}
-	drbd_send_and_submit(device, req);
 }
 
+static bool prepare_al_transaction_nonblock(struct drbd_device *device,
+					    struct list_head *incoming,
+					    struct list_head *pending)
+{
+	struct drbd_request *req, *tmp;
+	int wake = 0;
+	int err;
+
+	spin_lock_irq(&device->al_lock);
+	list_for_each_entry_safe(req, tmp, incoming, tl_requests) {
+		err = drbd_al_begin_io_nonblock(device, &req->i);
+		if (err == -EBUSY)
+			wake = 1;
+		if (err)
+			continue;
+		req->rq_state[0] |= RQ_IN_ACT_LOG;
+		list_move_tail(&req->tl_requests, pending);
+	}
+	spin_unlock_irq(&device->al_lock);
+	if (wake)
+		wake_up(&device->al_wait);
+
+	return !list_empty(pending);
+}
 
 void do_submit(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, submit.worker);
-	LIST_HEAD(writes);
+	LIST_HEAD(incoming);
+	LIST_HEAD(pending);
 	struct drbd_request *req, *tmp;
 
-	spin_lock(&device->submit.lock);
-	list_splice_init(&device->submit.writes, &writes);
-	spin_unlock(&device->submit.lock);
+	for (;;) {
+		spin_lock(&device->submit.lock);
+		list_splice_tail_init(&device->submit.writes, &incoming);
+		spin_unlock(&device->submit.lock);
 
-	list_for_each_entry_safe(req, tmp, &writes, tl_requests) {
-		list_del_init(&req->tl_requests);
-		__drbd_make_request_from_worker(device, req);
+		submit_fast_path(device, &incoming);
+		if (list_empty(&incoming))
+			break;
+
+		wait_event(device->al_wait, prepare_al_transaction_nonblock(device, &incoming, &pending));
+		drbd_al_begin_io_commit(device, false);
+
+		list_for_each_entry_safe(req, tmp, &pending, tl_requests) {
+			list_del_init(&req->tl_requests);
+			drbd_send_and_submit(device, req);
+		}
 	}
 }
 

@@ -247,27 +247,37 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
-static
-struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool nonblock)
+struct bm_extent*
+find_active_resync_extent(struct drbd_device *device, unsigned int enr)
 {
 	struct drbd_peer_device *peer_device;
-	struct lc_element *al_ext;
 	struct lc_element *tmp;
-	int wake;
-
-	spin_lock_irq(&device->al_lock);
 	for_each_peer_device(peer_device, device) {
 		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
 		if (unlikely(tmp != NULL)) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
-				wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
-				spin_unlock_irq(&device->al_lock);
-				if (wake)
-					wake_up(&device->al_wait);
-				return NULL;
-			}
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags))
+				return bm_ext;
 		}
+	}
+	return false;
+}
+
+static
+struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool nonblock)
+{
+	struct lc_element *al_ext;
+	struct bm_extent *bm_ext;
+	int wake;
+
+	spin_lock_irq(&device->al_lock);
+	bm_ext = find_active_resync_extent(device, enr);
+	if (bm_ext) {
+		wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+		spin_unlock_irq(&device->al_lock);
+		if (wake)
+			wake_up(&device->al_wait);
+		return NULL;
 	}
 	if (nonblock)
 		al_ext = lc_try_get(device->act_log, enr);
@@ -381,6 +391,54 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 
 	if (drbd_al_begin_io_prepare(device, i))
 		drbd_al_begin_io_commit(device, delegate);
+}
+
+int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i)
+{
+	struct lru_cache *al = device->act_log;
+	struct bm_extent *bm_ext;
+	/* for bios crossing activity log extent boundaries,
+	 * we may need to activate two extents in one go */
+	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned nr_al_extents;
+	unsigned available_update_slots;
+	unsigned enr;
+
+	D_ASSERT(device, first <= last);
+
+	nr_al_extents = 1 + last - first; /* worst case: all touched extends are cold. */
+	available_update_slots = min(al->nr_elements - al->used,
+				al->max_pending_changes - al->pending_changes);
+
+	/* We want all necessary updates for a given request within the same transaction
+	 * We could first check how many updates are *actually* needed,
+	 * and use that instead of the worst-case nr_al_extents */
+	if (available_update_slots < nr_al_extents)
+		return -EWOULDBLOCK;
+
+	/* Is resync active in this area? */
+	for (enr = first; enr <= last; enr++) {
+		bm_ext = find_active_resync_extent(device, enr);
+		if (unlikely(bm_ext != NULL)) {
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
+				if (!test_and_set_bit(BME_PRIORITY, &bm_ext->flags));
+					return -EBUSY;
+				return -EWOULDBLOCK;
+			}
+		}
+	}
+
+	/* Checkout the refcounts.
+	 * Given that we checked for available elements and update slots above,
+	 * this has to be successful. */
+	for (enr = first; enr <= last; enr++) {
+		struct lc_element *al_ext;
+		al_ext = lc_get_cumulative(device->act_log, enr);
+		if (!al_ext)
+			drbd_err(device, "LOGIC BUG for enr=%u\n", enr);
+	}
+	return 0;
 }
 
 void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
