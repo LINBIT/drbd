@@ -3141,6 +3141,7 @@ void print_dump_header()
 
 int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc)
 {
+	int al_is_clean;
 	int i;
 
 	if (argc > 0) {
@@ -3153,8 +3154,24 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 		return -1;
 	}
 
+	al_is_clean =
+		DRBD_MD_MAGIC_84_UNCLEAN != cfg->md.magic &&
+		(cfg->md.flags & MDF_AL_CLEAN) != 0;
+
+	if (!al_is_clean) {
+		fprintf(stderr, "Found meta data is \"unclean\", please apply-al first\n");
+		if (!force)
+			return -1;
+	}
+
 	print_dump_header();
 	printf("version \"%s\";\n\n", cfg->ops->name);
+
+	if (!al_is_clean)
+		/* So we have been forced. Still cause a parse error for restore-md. */
+		printf("This_is_an_unclean_meta_data_dump._Don't_trust_the_bitmap.\n"
+			"# You should \"apply-al\" first, if you plan to restore this.\n\n");
+
 	if (format_version(cfg) >= DRBD_V09)
 		printf("max-peers %d;\n", cfg->md.max_peers);
 	printf("# md_size_sect %llu\n", (long long unsigned)cfg->md.md_size_sect);
