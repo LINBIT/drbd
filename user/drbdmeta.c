@@ -4147,6 +4147,9 @@ void check_external_md_flavours(struct format * cfg) {
 	PREAD(cfg->md_fd, on_disk_buffer, 4096, cfg->md_offset);
 	have = detect_md(&md_now, cfg->bd_size);
 
+	if (have == DRBD_UNKNOWN)
+		return;
+
 	snprintf(msg, 160, "Valid %s meta-data found, convert to %s?",
 		 f_ops[have].name, cfg->ops->name);
 	if (confirmed(msg)) {
