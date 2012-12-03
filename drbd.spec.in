@@ -310,7 +310,7 @@ fi
 
 
 %changelog
-* Tue Oct 23 2012 Philipp Reisner <phil@linbit.com> - 9.0.0alpha1-1
+* Mon Dec  3 2012 Philipp Reisner <phil@linbit.com> - 9.0.0pre1-1
 - New upstream release.
 
 * Wed Jul 15 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1
