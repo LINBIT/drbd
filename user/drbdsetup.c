@@ -1979,10 +1979,8 @@ static void connection_status(struct connections_list *connection,
 		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
 	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
 		wrap_printf(6, " role:%s", drbd_role_str(connection->info.conn_role));
-	if (opt_verbose || connection->statistics.conn_congested > 0) {
-		wrap_printf(6, "\n");
+	if (opt_verbose || connection->statistics.conn_congested > 0)
 		wrap_printf(6, " congested:%s", connection->statistics.conn_congested ? "yes" : "no");
-	}
 	wrap_printf(0, "\n");
 	if (opt_verbose || opt_statistics || connection->info.conn_connection_state == C_CONNECTED)
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
