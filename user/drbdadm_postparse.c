@@ -180,6 +180,7 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 					"host section (\"on\" keyword)\n",
 					config_file, ha->config_line, res->name, ha->name);
 				config_valid = 0;
+				continue;
 			}
 		}
 		ha->host_info = host_info;
