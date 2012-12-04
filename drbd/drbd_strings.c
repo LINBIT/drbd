@@ -34,10 +34,14 @@ static const char *drbd_conn_s_names[] = {
 	[C_BROKEN_PIPE]      = "BrokenPipe",
 	[C_NETWORK_FAILURE]  = "NetworkFailure",
 	[C_PROTOCOL_ERROR]   = "ProtocolError",
-	[C_WF_CONNECTION]    = "WFConnection",
-	[L_STANDALONE] = "WFReportParams",
 	[C_TEAR_DOWN]        = "TearDown",
-	[L_CONNECTED]        = "Connected",
+	[C_WF_CONNECTION]    = "WFConnection",
+	[C_CONNECTED]	     = "Connected",
+};
+
+static const char *drbd_repl_s_names[] = {
+	[L_STANDALONE]       = "WFReportParams",
+	[L_CONNECTED]        = "Established",
 	[L_STARTING_SYNC_S]  = "StartingSyncS",
 	[L_STARTING_SYNC_T]  = "StartingSyncT",
 	[L_WF_BITMAP_S]      = "WFBitMapS",
@@ -45,10 +49,10 @@ static const char *drbd_conn_s_names[] = {
 	[L_WF_SYNC_UUID]     = "WFSyncUUID",
 	[L_SYNC_SOURCE]      = "SyncSource",
 	[L_SYNC_TARGET]      = "SyncTarget",
-	[L_PAUSED_SYNC_S]    = "PausedSyncS",
-	[L_PAUSED_SYNC_T]    = "PausedSyncT",
 	[L_VERIFY_S]         = "VerifyS",
 	[L_VERIFY_T]         = "VerifyT",
+	[L_PAUSED_SYNC_S]    = "PausedSyncS",
+	[L_PAUSED_SYNC_T]    = "PausedSyncT",
 	[L_AHEAD]            = "Ahead",
 	[L_BEHIND]           = "Behind",
 };
@@ -95,9 +99,16 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_INTERRUPTED] = "Interrupted state change",
 };
 
-const char *drbd_conn_str(unsigned int s)
+const char *drbd_repl_str(enum drbd_repl_state s)
 {
-	return s > L_BEHIND ? "TOO_LARGE" : drbd_conn_s_names[s];
+	return s < L_STANDALONE ? "TOO_SMALL" :
+		s > L_BEHIND ? "TOO_LARGE" :
+		drbd_repl_s_names[s];
+}
+
+const char *drbd_conn_str(enum drbd_conn_state s)
+{
+	return s > C_CONNECTED ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 
 const char *drbd_role_str(enum drbd_role s)

@@ -1901,7 +1901,7 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		indent = 8;
 	}
 	if (opt_verbose || peer_device->info.peer_repl_state > L_CONNECTED) {
-		wrap_printf(indent, " replication:%s", drbd_conn_str(peer_device->info.peer_repl_state));
+		wrap_printf(indent, " replication:%s", drbd_repl_str(peer_device->info.peer_repl_state));
 		indent = 8;
 	}
 	if (opt_verbose || opt_statistics ||
@@ -2777,7 +2777,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 				goto out;
 			}
 			printf(" replication:%s disk:%s resync-suspended:%s",
-			       drbd_conn_str(peer_device_info.peer_repl_state),
+			       drbd_repl_str(peer_device_info.peer_repl_state),
 			       drbd_disk_str(peer_device_info.peer_disk_state),
 			       resync_susp_str(&peer_device_info));
 		}

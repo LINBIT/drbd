@@ -722,8 +722,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 					       drbd_disk_str(peer_disk_state[NEW]));
 			if (repl_state[OLD] != repl_state[NEW])
 				b += scnprintf(b, end - b, "repl( %s -> %s ) ",
-					       drbd_conn_str(repl_state[OLD]),
-					       drbd_conn_str(repl_state[NEW]));
+					       drbd_repl_str(repl_state[OLD]),
+					       drbd_repl_str(repl_state[NEW]));
 
 			if (resync_suspended(peer_device, OLD) !=
 			    resync_suspended(peer_device, NEW)) {

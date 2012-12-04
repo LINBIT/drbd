@@ -1686,7 +1686,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 
 	if (r == SS_SUCCESS) {
 		drbd_info(peer_device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
-		     drbd_conn_str(repl_state),
+		     drbd_repl_str(repl_state),
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
 		if (side == L_SYNC_TARGET)

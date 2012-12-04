@@ -844,13 +844,13 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, unsi
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				struct drbd_peer_device *pd = peer_device;
-				unsigned s = combined_conn_state(pd, NOW);
+				struct drbd_connection *connection = peer_device->connection;
 				drbd_warn(device, "BAD! enr=%u rs_left=%d "
-				    "rs_failed=%d count=%d cstate=%s\n",
+				    "rs_failed=%d count=%d cstate=%s %s\n",
 				     ext->lce.lc_number, ext->rs_left,
 				     ext->rs_failed, count,
-				     drbd_conn_str(s));
+				     drbd_conn_str(connection->cstate[NOW]),
+				     drbd_repl_str(peer_device->repl_state[NOW]));
 
 				/* We don't expect to be able to clear more bits
 				 * than have been set when we originally counted

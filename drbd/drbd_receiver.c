@@ -3615,7 +3615,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			drbd_info(device, "dry-run connect: No resync, would become Connected immediately.\n");
 		else
 			drbd_info(device, "dry-run connect: Would become %s, doing a %s resync.",
-				 drbd_conn_str(hg > 0 ? L_SYNC_SOURCE : L_SYNC_TARGET),
+				 drbd_repl_str(hg > 0 ? L_SYNC_SOURCE : L_SYNC_TARGET),
 				 abs(hg) >= 2 ? "full" : "bit-map based");
 		return -1;
 	}
@@ -5128,7 +5128,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
 		drbd_info(device, "unexpected repl_state (%s) in receive_bitmap\n",
-		    drbd_conn_str(peer_device->repl_state[NOW]));
+		    drbd_repl_str(peer_device->repl_state[NOW]));
 	}
 	err = 0;
 
@@ -5177,7 +5177,7 @@ STATIC int receive_out_of_sync(struct drbd_connection *connection, struct packet
 			break;
 	default:
 		drbd_err(device, "ASSERT FAILED cstate = %s, expected: WFSyncUUID|WFBitMapT|Behind\n",
-				drbd_conn_str(peer_device->repl_state[NOW]));
+				drbd_repl_str(peer_device->repl_state[NOW]));
 	}
 
 	drbd_set_out_of_sync(peer_device, be64_to_cpu(p->sector), be32_to_cpu(p->blksize));

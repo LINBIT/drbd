@@ -1,6 +1,7 @@
 #ifndef __DRBD_STRINGS_H
 #define __DRBD_STRINGS_H
 
+extern const char *drbd_repl_str(enum drbd_repl_state);
 extern const char *drbd_conn_str(enum drbd_conn_state);
 extern const char *drbd_role_str(enum drbd_role);
 extern const char *drbd_disk_str(enum drbd_disk_state);
