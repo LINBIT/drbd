@@ -161,27 +161,12 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 			host_info = find_host_info_by_name(res, ha->name);
 		}
 		if (!host_info) {
-			if (ha->address.addr) {
-				/* Consider this as an implicit declaration of a host section */
-				host_info = calloc(1, sizeof(struct d_host_info));
-				STAILQ_INIT(&host_info->res_options);
-				STAILQ_INIT(&host_info->on_hosts);
-				STAILQ_INIT(&host_info->volumes);
-
-				insert_head(&host_info->on_hosts, names_from_str(ha->name));
-				host_info->implicit = 1;
-				host_info->config_line = ha->config_line;
-
-				insert_tail(&res->all_hosts, host_info);
-				inherit_volumes(&res->volumes, host_info);
-			} else {
-				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
-					"with a \"host\" keyword, has no \"address\" keyword, and not matching\n"
-					"host section (\"on\" keyword)\n",
-					config_file, ha->config_line, res->name, ha->name);
-				config_valid = 0;
-				continue;
-			}
+			fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
+				"with a \"host\" keyword, has no \"address\" keyword, and not matching\n"
+				"host section (\"on\" keyword)\n",
+				config_file, ha->config_line, res->name, ha->name);
+			config_valid = 0;
+			continue;
 		}
 		ha->host_info = host_info;
 		if (!ha->address.addr && !ha->address.af && ha->address.port) {
