@@ -2940,9 +2940,9 @@ static void print_command_usage(struct drbd_cmd *cm, enum usage_type ut)
 	}
 
 	if (ut == BRIEF) {
-		wrap_printf(4, "%s", cm->cmd);
+		wrap_printf(4, "%s - ", cm->cmd);
 		if (cm->summary)
-			wrap_printf(4, " - %s", cm->summary);
+			wrap_printf_wordwise(8, cm->summary);
 		wrap_printf(4, "\n");
 	} else {
 		wrap_printf(0, "%s %s", progname, cm->cmd);

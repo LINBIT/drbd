@@ -46,3 +46,28 @@ int wrap_printf(int indent, char *format, ...)
 
 	return n;
 }
+
+int wrap_printf_wordwise(int indent, const char *str)
+{
+	int n = 0;
+
+	do {
+		const char *fmt = "%.*s", *s;
+		int m;
+
+		if (*str == ' ') {
+			fmt = " %.*s";
+			while (*str == ' ')
+				str++;
+		}
+		for (s = str; *s && *s != ' '; s++)
+			/* nothing */ ;
+		m = wrap_printf(indent, fmt, s - str, str);
+		if (m < 0)
+			return m;
+		n += m;
+		str = s;
+	} while (*str);
+
+	return n;
+}
