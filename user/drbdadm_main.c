@@ -1872,7 +1872,7 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 			ctx->vol = vol;
 			return 0;
 		} else {
-			fprintf(stderr, "Connection '%s' has no volume %d\n", conn_name, vol_nr);
+			fprintf(stderr, "Resource '%s' has no volume %d\n", res_name, vol_nr);
 			return -ENOENT;
 		}
 	}
