@@ -16,7 +16,6 @@
 %bcond_without udev
 %bcond_without pacemaker
 %bcond_with rgmanager
-%bcond_without heartbeat
 # conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without bashcompletion
 # --with xen is ignored on any non-x86 architecture
@@ -56,9 +55,6 @@ Requires: %{name}-pacemaker = %{version}
 ## ## by pulling in the full rgmanager stack via drbd-rgmanager as well.
 ## Requires: %{name}-rgmanager = %{version}
 ## %endif
-%if %{with heartbeat}
-Requires: %{name}-heartbeat = %{version}
-%endif
 %if %{with bashcompletion}
 Requires: %{name}-bash-completion = %{version}
 %endif
@@ -239,19 +235,6 @@ in the Cluster distribution.
 %{_datadir}/cluster/drbd.metadata
 %endif # with rgmanager
 
-%if %{with heartbeat}
-%package heartbeat
-Summary: Heartbeat resource agent for DRBD
-Group: System Environment/Base
-Requires: %{name}-utils = %{version}-%{release}
-@RPM_REQ_HEARTBEAT@
-License: GPLv2
-@RPM_SUBPACKAGE_NOARCH@
-
-%description heartbeat
-This package contains the DRBD resource agents for the Heartbeat cluster
-resource manager (in v1 compatibility mode).
-
 %if %{with bashcompletion}
 %package bash-completion
 Summary: Programmable bash completion support for drbdadm
@@ -280,7 +263,6 @@ management utility.
     %{?_without_udev} \
     %{?_without_xen} \
     %{?_without_pacemaker} \
-    %{?_without_heartbeat} \
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
     %{?_without_legacy_utils} \

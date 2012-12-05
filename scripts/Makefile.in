@@ -52,7 +52,7 @@ DESTDIR ?= /
 
 all:
 
-install: install-utils install-udev install-xen install-heartbeat install-pacemaker install-rgmanager install-bashcompletion
+install: install-utils install-udev install-xen install-pacemaker install-rgmanager install-bashcompletion
 
 install-utils:
 ifeq ($(WITH_UTILS),yes)
