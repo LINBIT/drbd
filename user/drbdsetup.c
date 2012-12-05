@@ -1900,12 +1900,12 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		wrap_printf(indent, "volume:%d", peer_device->ctx.ctx_volume);
 		indent = 8;
 	}
-	if (opt_verbose || peer_device->info.peer_repl_state > L_CONNECTED) {
+	if (opt_verbose || peer_device->info.peer_repl_state > L_ESTABLISHED) {
 		wrap_printf(indent, " replication:%s", drbd_repl_str(peer_device->info.peer_repl_state));
 		indent = 8;
 	}
 	if (opt_verbose || opt_statistics ||
-	    peer_device->info.peer_repl_state != L_STANDALONE ||
+	    peer_device->info.peer_repl_state != L_OFF ||
 	    peer_device->info.peer_disk_state != D_UNKNOWN) {
 		wrap_printf(indent, " disk:%s", drbd_disk_str(peer_device->info.peer_disk_state));
 		indent = 8;
@@ -2590,7 +2590,7 @@ out:
 	return ret;
 
 found:
-	if (peer_device->info.peer_repl_state == L_STANDALONE &&
+	if (peer_device->info.peer_repl_state == L_OFF &&
 	    device->info.dev_disk_state == D_DISKLESS) {
 		fprintf(stderr, "Device is unconfigured\n");
 		ret = 1;
@@ -2856,9 +2856,9 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 			goto out;
 		}
 		if ((!strcmp(cm->cmd, "wait-connect") &&
-		     peer_device_info.peer_repl_state >= L_CONNECTED) ||
+		     peer_device_info.peer_repl_state >= L_ESTABLISHED) ||
 		    (/* !strcmp(cm->cmd, "wait-sync") && */
-		     peer_device_info.peer_repl_state == L_CONNECTED))
+		     peer_device_info.peer_repl_state == L_ESTABLISHED))
 			return -1;  /* done waiting */
 		}
 		break;

@@ -63,7 +63,7 @@
 #define DRBD_DISK_TIMEOUT_DEF 0    /* disabled */
 #define DRBD_DISK_TIMEOUT_SCALE '1'
 
-  /* active connection retries when C_WF_CONNECTION */
+  /* active connection retries when C_CONNECTING */
 #define DRBD_CONNECT_INT_MIN 1
 #define DRBD_CONNECT_INT_MAX 120
 #define DRBD_CONNECT_INT_DEF 10   /* seconds */

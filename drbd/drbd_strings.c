@@ -35,13 +35,13 @@ static const char *drbd_conn_s_names[] = {
 	[C_NETWORK_FAILURE]  = "NetworkFailure",
 	[C_PROTOCOL_ERROR]   = "ProtocolError",
 	[C_TEAR_DOWN]        = "TearDown",
-	[C_WF_CONNECTION]    = "WFConnection",
+	[C_CONNECTING]       = "Connecting",
 	[C_CONNECTED]	     = "Connected",
 };
 
 static const char *drbd_repl_s_names[] = {
-	[L_STANDALONE]       = "WFReportParams",
-	[L_CONNECTED]        = "Established",
+	[L_OFF]              = "Off",
+	[L_ESTABLISHED]      = "Established",
 	[L_STARTING_SYNC_S]  = "StartingSyncS",
 	[L_STARTING_SYNC_T]  = "StartingSyncT",
 	[L_WF_BITMAP_S]      = "WFBitMapS",
@@ -101,7 +101,7 @@ static const char *drbd_state_sw_errors[] = {
 
 const char *drbd_repl_str(enum drbd_repl_state s)
 {
-	return s < L_STANDALONE ? "TOO_SMALL" :
+	return s < L_OFF ? "TOO_SMALL" :
 		s > L_BEHIND ? "TOO_LARGE" :
 		drbd_repl_s_names[s];
 }

@@ -899,9 +899,9 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 
 	/* This protects us against multiple calls (that can happen in the presence
 	   of application IO), and against connectivity loss just before we arrive here. */
-	if (peer_device->repl_state[NOW] <= L_CONNECTED)
+	if (peer_device->repl_state[NOW] <= L_ESTABLISHED)
 		goto out_unlock;
-	__change_repl_state(peer_device, L_CONNECTED);
+	__change_repl_state(peer_device, L_ESTABLISHED);
 
 	drbd_info(peer_device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
 	     verify_done ? "Online verify" : "Resync",
@@ -1432,7 +1432,7 @@ static bool drbd_pause_after(struct drbd_device *device)
 			continue;
 		}
 		for_each_peer_device(other_peer_device, other_device) {
-			if (other_peer_device->repl_state[NOW] == L_STANDALONE)
+			if (other_peer_device->repl_state[NOW] == L_OFF)
 				continue;
 			if (!__drbd_may_sync_now(other_peer_device))
 				__change_resync_susp_dependency(other_peer_device, true);
@@ -1466,7 +1466,7 @@ static bool drbd_resume_next(struct drbd_device *device)
 			continue;
 		}
 		for_each_peer_device(other_peer_device, other_device) {
-			if (other_peer_device->repl_state[NOW] == L_STANDALONE)
+			if (other_peer_device->repl_state[NOW] == L_OFF)
 				continue;
 			if (other_peer_device->resync_susp_dependency[NOW] &&
 			    __drbd_may_sync_now(other_peer_device))
@@ -1661,7 +1661,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	r = end_state_change_locked(device->resource);
 	repl_state = peer_device->repl_state[NOW];
 
-	if (repl_state < L_CONNECTED)
+	if (repl_state < L_ESTABLISHED)
 		r = SS_UNKNOWN_ERROR;
 
 	if (r == SS_SUCCESS) {

@@ -198,7 +198,7 @@ enum drbd_conn_state {
 	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */
 
 	/* These temporary states are used on the way
-	 * from >= L_CONNECTED to Unconnected.
+	 * from >= L_ESTABLISHED to Unconnected.
 	 * The 'disconnect reason' states
 	 * I do not allow to change between them. */
 	C_TIMEOUT,
@@ -207,7 +207,7 @@ enum drbd_conn_state {
 	C_PROTOCOL_ERROR,
 	C_TEAR_DOWN,
 
-	C_WF_CONNECTION,
+	C_CONNECTING,
 
 	C_CONNECTED, /* we have a socket */
 
@@ -215,9 +215,9 @@ enum drbd_conn_state {
 };
 
 enum drbd_repl_state {
-	L_STANDALONE = C_CONNECTED,
+	L_OFF = C_CONNECTED,
 
-	L_CONNECTED,      /* we have introduced each other */
+	L_ESTABLISHED,      /* we have introduced each other */
 	L_STARTING_SYNC_S,  /* starting full sync by admin request. */
 	L_STARTING_SYNC_T,  /* starting full sync by admin request. */
 	L_WF_BITMAP_S,

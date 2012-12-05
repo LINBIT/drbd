@@ -1548,7 +1548,7 @@ STATIC int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet
 	struct drbd_socket *sock;
 	struct p_block_ack *p;
 
-	if (peer_device->repl_state[NOW] < L_CONNECTED)
+	if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 		return -EIO;
 
 	sock = &peer_device->connection->meta;
@@ -1763,7 +1763,7 @@ STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 		}
 		len    -= sent;
 		offset += sent;
-	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_CONNECTED */);
+	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_ESTABLISHED */);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
 
@@ -2963,7 +2963,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->connection = connection;
 	peer_device->device = device;
 	peer_device->disk_state[NOW] = D_UNKNOWN;
-	peer_device->repl_state[NOW] = L_STANDALONE;
+	peer_device->repl_state[NOW] = L_OFF;
 	spin_lock_init(&peer_device->peer_seq_lock);
 
 	INIT_LIST_HEAD(&peer_device->start_resync_work.list);
@@ -3913,7 +3913,7 @@ void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold
 	drbd_md_sync(device);
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, node_mask);
 	}
 }
@@ -4419,7 +4419,7 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_dev
 	timeout = schedule_timeout(timeout);
 	finish_wait(&device->misc_wait, &wait);
 	spin_lock_irq(&device->resource->req_lock);
-	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_CONNECTED))
+	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
 		return -ETIMEDOUT;
 	if (signal_pending(current))
 		return -ERESTARTSYS;

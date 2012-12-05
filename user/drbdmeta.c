@@ -4601,7 +4601,7 @@ int meta_create_md(struct format *cfg, char **argv __attribute((unused)), int ar
 	 * to flexible size, we'd need to move the AL and bitmap
 	 * over to the new location!
 	 * But the upgrade procedure in such case is documented to first get
-	 * the previous DRBD into "clean" L_CONNECTED R_SECONDARY/R_SECONDARY, so AL
+	 * the previous DRBD into "clean" L_ESTABLISHED R_SECONDARY/R_SECONDARY, so AL
 	 * and bitmap should be empty anyways.
 	 */
 	printf("Writing meta data...\n");

@@ -675,7 +675,7 @@ STATIC struct socket *drbd_try_connect(struct drbd_connection *connection)
 		goto out;
 
 	/* connect may fail, peer not yet available.
-	 * stay C_WF_CONNECTION, don't go Disconnecting! */
+	 * stay C_CONNECTING, don't go Disconnecting! */
 	disconnect_on_error = 0;
 	what = "connect";
 	err = sock->ops->connect(sock, (struct sockaddr *) &peer_in6, peer_addr_len, 0);
@@ -1110,7 +1110,7 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	struct waiter waiter;
 
 	clear_bit(DISCONNECT_SENT, &connection->flags);
-	if (change_cstate(connection, C_WF_CONNECTION, CS_VERBOSE) < SS_SUCCESS)
+	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS)
 		return -2;
 
 	mutex_init(&sock.mutex);
@@ -3161,7 +3161,7 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 
 			drbd_set_role(device->resource, R_SECONDARY, false);
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
-			  * we might be here in L_STANDALONE which is transient.
+			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, false);
 			if (rv2 != SS_SUCCESS) {
@@ -3212,7 +3212,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 			enum drbd_state_rv rv2;
 
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
-			  * we might be here in L_STANDALONE which is transient.
+			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, false);
 			if (rv2 != SS_SUCCESS) {
@@ -3632,7 +3632,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	} else if (hg < 0) { /* become sync target */
 		rv = L_WF_BITMAP_T;
 	} else {
-		rv = L_CONNECTED;
+		rv = L_ESTABLISHED;
 		if (drbd_bm_total_weight(peer_device)) {
 			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
 			     drbd_bm_total_weight(peer_device));
@@ -3964,7 +3964,7 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 
 		if (strcmp(old_net_conf->verify_alg, p->verify_alg)) {
-			if (peer_device->repl_state[NOW] == L_STANDALONE) {
+			if (peer_device->repl_state[NOW] == L_OFF) {
 				drbd_err(device, "Different verify-alg settings. me=\"%s\" peer=\"%s\"\n",
 				    old_net_conf->verify_alg, p->verify_alg);
 				goto disconnect;
@@ -3978,7 +3978,7 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 
 		if (apv >= 89 && strcmp(old_net_conf->csums_alg, p->csums_alg)) {
-			if (peer_device->repl_state[NOW] == L_STANDALONE) {
+			if (peer_device->repl_state[NOW] == L_OFF) {
 				drbd_err(device, "Different csums-alg settings. me=\"%s\" peer=\"%s\"\n",
 				    old_net_conf->csums_alg, p->csums_alg);
 				goto disconnect;
@@ -4140,7 +4140,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 		/* if this is the first connect, or an otherwise expected
 		 * param exchange, choose the minimum */
-		if (peer_device->repl_state[NOW] == L_STANDALONE)
+		if (peer_device->repl_state[NOW] == L_OFF)
 			p_usize = min_not_zero(my_usize, p_usize);
 
 		/* Never shrink a device with usable data during connect.
@@ -4148,7 +4148,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		if (drbd_new_dev_size(device, p_usize, 0) <
 		    drbd_get_capacity(device->this_bdev) &&
 		    device->disk_state[NOW] >= D_OUTDATED &&
-		    peer_device->repl_state[NOW] < L_CONNECTED) {
+		    peer_device->repl_state[NOW] < L_ESTABLISHED) {
 			drbd_err(device, "The peer's disk size is too small!\n");
 			change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 			put_ldev(device);
@@ -4217,7 +4217,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 	}
 
-	if (peer_device->repl_state[NOW] > L_STANDALONE) {
+	if (peer_device->repl_state[NOW] > L_OFF) {
 		if (be64_to_cpu(p->c_size) !=
 		    drbd_get_capacity(device->this_bdev) || ldsc) {
 			/* we have different sizes, probably peer
@@ -4225,7 +4225,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			drbd_send_sizes(peer_device, 0, ddsf);
 		}
 		if (test_and_clear_bit(RESIZE_PENDING, &peer_device->flags) ||
-		    (dd == GREW && peer_device->repl_state[NOW] == L_CONNECTED)) {
+		    (dd == GREW && peer_device->repl_state[NOW] == L_ESTABLISHED)) {
 			if (peer_device->disk_state[NOW] >= D_INCONSISTENT &&
 			    device->disk_state[NOW] >= D_INCONSISTENT) {
 				if (ddsf & DDSF_NO_RESYNC)
@@ -4245,7 +4245,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 	struct drbd_device *device = device = peer_device->device;
 	int updated_uuids = 0, err = 0;
 
-	if (peer_device->repl_state[NOW] < L_CONNECTED &&
+	if (peer_device->repl_state[NOW] < L_ESTABLISHED &&
 	    device->disk_state[NOW] < D_INCONSISTENT &&
 	    device->resource->role[NOW] == R_PRIMARY &&
 	    (device->exposed_data_uuid & ~((u64)1)) != (peer_device->current_uuid & ~((u64)1))) {
@@ -4257,7 +4257,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 
 	if (get_ldev(device)) {
 		int skip_initial_sync =
-			peer_device->repl_state[NOW] == L_CONNECTED &&
+			peer_device->repl_state[NOW] == L_ESTABLISHED &&
 			peer_device->connection->agreed_pro_version >= 90 &&
 			drbd_current_uuid(device) == UUID_JUST_CREATED &&
 			(peer_device->uuid_flags & UUID_FLAG_SKIP_INITIAL_SYNC);
@@ -4298,7 +4298,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 	   new disk state... */
 	mutex_lock(&device->resource->state_mutex);
 	mutex_unlock(&device->resource->state_mutex);
-	if (peer_device->repl_state[NOW] >= L_CONNECTED && device->disk_state[NOW] < D_INCONSISTENT)
+	if (peer_device->repl_state[NOW] >= L_ESTABLISHED && device->disk_state[NOW] < D_INCONSISTENT)
 		updated_uuids |= drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 
 	if (updated_uuids)
@@ -4381,8 +4381,8 @@ STATIC union drbd_state convert_state(union drbd_state peer_state)
 	union drbd_state state;
 
 	static enum drbd_conn_state c_tab[] = {
-		[L_STANDALONE] = L_STANDALONE,
-		[L_CONNECTED] = L_CONNECTED,
+		[L_OFF] = L_OFF,
+		[L_ESTABLISHED] = L_ESTABLISHED,
 
 		[L_STARTING_SYNC_S] = L_STARTING_SYNC_T,
 		[L_STARTING_SYNC_T] = L_STARTING_SYNC_S,
@@ -4451,7 +4451,7 @@ __change_peer_device_state(struct drbd_peer_device *peer_device,
 	if (mask.conn) {
 		mask.conn ^= -1;
 		__change_repl_state(peer_device,
-				max_t(enum drbd_repl_state, val.conn, L_STANDALONE));
+				max_t(enum drbd_repl_state, val.conn, L_OFF));
 	}
 	if (mask.pdsk) {
 		mask.pdsk ^= -1;
@@ -4653,7 +4653,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	os = drbd_get_peer_device_state(peer_device, NOW);
 	spin_unlock_irq(&resource->req_lock);
  retry:
-	new_repl_state = max_t(enum drbd_repl_state, os.conn, L_STANDALONE);
+	new_repl_state = max_t(enum drbd_repl_state, os.conn, L_OFF);
 
 	/* If some other part of the code (asender thread, timeout)
 	 * already decided to close the connection again,
@@ -4669,14 +4669,14 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	 */
 	if ((os.pdsk == D_INCONSISTENT || os.pdsk == D_CONSISTENT) &&
 	    peer_disk_state == D_UP_TO_DATE &&
-	    os.conn > L_CONNECTED && os.disk == D_UP_TO_DATE) {
+	    os.conn > L_ESTABLISHED && os.disk == D_UP_TO_DATE) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
 		 * will change to inconsistent once the peer reaches active
 		 * syncing states.
 		 * It may have changed syncer-paused flags, however, so we
 		 * cannot ignore this completely. */
-		if (peer_state.conn > L_CONNECTED &&
+		if (peer_state.conn > L_ESTABLISHED &&
 		    peer_state.conn < L_SYNC_SOURCE)
 			peer_disk_state = D_INCONSISTENT;
 
@@ -4684,7 +4684,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		 * it explicitly notifies us that it finished resync.
 		 * Maybe we should finish it up, too? */
 		else if (os.conn >= L_SYNC_SOURCE &&
-			 peer_state.conn == L_CONNECTED) {
+			 peer_state.conn == L_ESTABLISHED) {
 			if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
 				drbd_resync_finished(peer_device);
 			return 0;
@@ -4705,11 +4705,11 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	 * We ignore this to avoid flapping pdsk.
 	 * This should not happen, if the peer is a recent version of drbd. */
 	if (os.pdsk == D_UP_TO_DATE && peer_disk_state == D_INCONSISTENT &&
-	    os.conn == L_CONNECTED && peer_state.conn > L_SYNC_SOURCE)
+	    os.conn == L_ESTABLISHED && peer_state.conn > L_SYNC_SOURCE)
 		peer_disk_state = D_UP_TO_DATE;
 
-	if (new_repl_state == L_STANDALONE)
-		new_repl_state = L_CONNECTED;
+	if (new_repl_state == L_OFF)
+		new_repl_state = L_ESTABLISHED;
 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
@@ -4720,10 +4720,10 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		bool consider_resync;
 
 		/* if we established a new connection */
-		consider_resync = (os.conn < L_CONNECTED);
+		consider_resync = (os.conn < L_ESTABLISHED);
 		/* if we had an established connection
 		 * and one of the nodes newly attaches a disk */
-		consider_resync |= (os.conn == L_CONNECTED &&
+		consider_resync |= (os.conn == L_ESTABLISHED &&
 				    (peer_state.disk == D_NEGOTIATING ||
 				     os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
@@ -4731,7 +4731,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
-		consider_resync |= (os.conn == L_CONNECTED &&
+		consider_resync |= (os.conn == L_ESTABLISHED &&
 				(peer_state.conn >= L_STARTING_SYNC_S &&
 				 peer_state.conn <= L_WF_BITMAP_T));
 
@@ -4740,7 +4740,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		put_ldev(device);
 		if (new_repl_state == -1) {
-			new_repl_state = L_CONNECTED;
+			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				change_disk_state(device, D_FAILED, CS_HARD);
 			} else if (peer_state.disk == D_NEGOTIATING) {
@@ -4750,7 +4750,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
-				D_ASSERT(device, os.conn == L_STANDALONE);
+				D_ASSERT(device, os.conn == L_OFF);
 				change_cstate(connection, C_DISCONNECTING, CS_HARD);
 				return -EIO;
 			}
@@ -4772,13 +4772,13 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
 	repl_state = peer_device->repl_state;
 	if (device->disk_state[NEW] == D_NEGOTIATING &&
-	    (repl_state[NEW] == L_CONNECTED || repl_state[NEW] == L_WF_BITMAP_S))
+	    (repl_state[NEW] == L_ESTABLISHED || repl_state[NEW] == L_WF_BITMAP_S))
 		__change_disk_state(device, disk_state_from_md(device));
-	if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
+	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
 	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
 	    drbd_suspended(device) &&
-	    repl_state[OLD] < L_CONNECTED && repl_state[NEW] == L_CONNECTED &&
+	    repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED &&
 	    test_bit(NEW_CUR_UUID, &device->flags)) {
 		unsigned long irq_flags;
 
@@ -4807,8 +4807,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 
-	if (os.conn > L_STANDALONE) {
-		if (new_repl_state > L_CONNECTED && peer_state.conn <= L_CONNECTED &&
+	if (os.conn > L_OFF) {
+		if (new_repl_state > L_ESTABLISHED && peer_state.conn <= L_ESTABLISHED &&
 		    peer_state.disk != D_NEGOTIATING ) {
 			/* we want resync, peer has not yet decided to sync... */
 			/* Nowadays only used when forcing a node into primary role and
@@ -4839,7 +4839,7 @@ STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 	wait_event(device->misc_wait,
 		   peer_device->repl_state[NOW] == L_WF_SYNC_UUID ||
 		   peer_device->repl_state[NOW] == L_BEHIND ||
-		   peer_device->repl_state[NOW] < L_CONNECTED ||
+		   peer_device->repl_state[NOW] < L_ESTABLISHED ||
 		   device->disk_state[NOW] < D_NEGOTIATING);
 
 	/* D_ASSERT(device,  peer_device->repl_state[NOW] == L_WF_SYNC_UUID ); */
@@ -5234,7 +5234,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	/* Need to wait until the other receiver thread has called the
 	   cleanup_unacked_peer_requests() function */
 	wait_event(resource->state_wait,
-		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_WF_CONNECTION);
+		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_CONNECTING);
 
 	dagtag_offset = (s64)lost_peer->last_dagtag_sector - (s64)be64_to_cpu(p->dagtag);
 	if (dagtag_offset > 0)
@@ -5242,9 +5242,9 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	else if (dagtag_offset < 0)
 		new_repl_state = L_WF_BITMAP_T;
 	else
-		new_repl_state = L_CONNECTED;
+		new_repl_state = L_ESTABLISHED;
 
-	if (new_repl_state != L_CONNECTED) {
+	if (new_repl_state != L_ESTABLISHED) {
 		unsigned long irq_flags;
 
 		drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",

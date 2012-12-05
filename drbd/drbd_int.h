@@ -526,7 +526,7 @@ enum {
 	MD_DIRTY,		/* current uuids and flags not yet on disk */
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
-				 * goes into L_CONNECTED state. */
+				 * goes into L_ESTABLISHED state. */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	SUSPEND_IO,		/* suspend application io */
@@ -1749,15 +1749,15 @@ static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_r
 }
 
 /*
- * When a device has a replication state above L_STANDALONE, it must be
+ * When a device has a replication state above L_OFF, it must be
  * connected.  Otherwise, we report the connection state, which has values up
- * to C_CONNECTED == L_STANDALONE.
+ * to C_CONNECTED == L_OFF.
  */
 static inline int combined_conn_state(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[which];
 
-	if (repl_state > L_STANDALONE)
+	if (repl_state > L_OFF)
 		return repl_state;
 	else
 		return peer_device->connection->cstate[which];
@@ -2141,8 +2141,8 @@ static inline bool drbd_state_is_stable(struct drbd_device *device)
 		switch (peer_device->repl_state[NOW]) {
 		/* New io is only accepted when the peer device is unknown or there is
 		 * a well-established connection. */
-		case L_STANDALONE:
-		case L_CONNECTED:
+		case L_OFF:
+		case L_ESTABLISHED:
 		case L_SYNC_SOURCE:
 		case L_SYNC_TARGET:
 		case L_VERIFY_S:

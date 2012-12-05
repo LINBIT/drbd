@@ -693,7 +693,7 @@ void drbd_al_shrink(struct drbd_device *device)
 
 static bool extent_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
 {
-	if (peer_device->repl_state[NOW] == L_CONNECTED) {
+	if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
 		if (drbd_bm_total_weight(peer_device) == 0)
 			return true;
 		if (bm_e_weight(peer_device, rs_enr) == 0)

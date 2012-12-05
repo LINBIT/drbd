@@ -406,7 +406,7 @@ static bool all_peer_devices_connected(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state[NOW] < L_CONNECTED) {
+		if (peer_device->repl_state[NOW] < L_ESTABLISHED) {
 			rv = false;
 			break;
 		}
@@ -580,7 +580,7 @@ static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *conne
 	rcu_read_unlock();
 
 	if (repl_state == -1U)
-		return L_STANDALONE;
+		return L_OFF;
 
 	return repl_state;
 }
@@ -745,7 +745,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 {
 	switch(repl_state) {
-	case L_CONNECTED:
+	case L_ESTABLISHED:
 	case L_WF_BITMAP_S:
 	case L_SYNC_SOURCE:
 	case L_PAUSED_SYNC_S:
@@ -785,7 +785,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
 			return SS_ALREADY_STANDALONE;
 
-		if (cstate[NEW] == C_WF_CONNECTION && cstate[OLD] < C_UNCONNECTED)
+		if (cstate[NEW] == C_CONNECTING && cstate[OLD] < C_UNCONNECTED)
 			return SS_NO_NET_CONFIG;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
@@ -796,7 +796,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (test_bit(INITIAL_STATE_SENT, &connection->flags) &&
 		    !test_bit(INITIAL_STATE_RECEIVED, &connection->flags) &&
 		    !(cstate[OLD] == C_CONNECTED ||
-		      (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_WF_CONNECTION)))
+		      (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_CONNECTING)))
 			return SS_IN_TRANSIENT_STATE;
 
 		nc = rcu_dereference(connection->net_conf);
@@ -842,20 +842,20 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 
 			if (peer_device->connection->fencing_policy >= FP_RESOURCE &&
-			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_CONNECTED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
-			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_CONNECTED && !(peer_disk_state[NEW] <= D_OUTDATED)))
+			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_ESTABLISHED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
+			     (role[NEW] == R_PRIMARY && repl_state[NEW] < L_ESTABLISHED && !(peer_disk_state[NEW] <= D_OUTDATED)))
 				return SS_PRIMARY_NOP;
 
-			if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_INCONSISTENT) &&
-			     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_INCONSISTENT))
+			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_INCONSISTENT) &&
+			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_INCONSISTENT))
 				return SS_NO_LOCAL_DISK;
 
-			if (!(repl_state[OLD] > L_CONNECTED && peer_disk_state[OLD] < D_INCONSISTENT) &&
-			     (repl_state[NEW] > L_CONNECTED && peer_disk_state[NEW] < D_INCONSISTENT))
+			if (!(repl_state[OLD] > L_ESTABLISHED && peer_disk_state[OLD] < D_INCONSISTENT) &&
+			     (repl_state[NEW] > L_ESTABLISHED && peer_disk_state[NEW] < D_INCONSISTENT))
 				return SS_NO_REMOTE_DISK;
 
-			if (!(repl_state[OLD] > L_CONNECTED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-			     (repl_state[NEW] > L_CONNECTED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
+			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
 				return SS_NO_UP_TO_DATE_DISK;
 
 			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
@@ -875,31 +875,31 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 				  peer_device->connection->agreed_pro_version < 88)
 				return SS_NOT_SUPPORTED;
 
-			if (!(repl_state[OLD] >= L_CONNECTED && peer_disk_state[OLD] == D_UNKNOWN) &&
-			     (repl_state[NEW] >= L_CONNECTED && peer_disk_state[NEW] == D_UNKNOWN))
+			if (!(repl_state[OLD] >= L_ESTABLISHED && peer_disk_state[OLD] == D_UNKNOWN) &&
+			     (repl_state[NEW] >= L_ESTABLISHED && peer_disk_state[NEW] == D_UNKNOWN))
 				return SS_CONNECTED_OUTDATES;
 
 			if (repl_state[NEW] != repl_state[OLD] &&
 			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
-			    repl_state[OLD] > L_CONNECTED )
+			    repl_state[OLD] > L_ESTABLISHED )
 				return SS_RESYNC_RUNNING;
 
-			/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_STANDALONE)
+			/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_OFF)
 				return SS_IN_TRANSIENT_STATE; */
 
-			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_CONNECTED)
+			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_ESTABLISHED)
 				return SS_NEED_CONNECTION;
 
 			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
-			    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_CONNECTED)
+			    repl_state[NEW] != repl_state[OLD] && repl_state[OLD] > L_ESTABLISHED)
 				return SS_RESYNC_RUNNING;
 
 			if ((repl_state[NEW] == L_STARTING_SYNC_S || repl_state[NEW] == L_STARTING_SYNC_T) &&
-			    repl_state[OLD] < L_CONNECTED)
+			    repl_state[OLD] < L_ESTABLISHED)
 				return SS_NEED_CONNECTION;
 
 			if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
-			    && repl_state[OLD] < L_STANDALONE)
+			    && repl_state[OLD] < L_OFF)
 				return SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
 		}
 	}
@@ -982,7 +982,7 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 			   Necessary to do the right thing upon invalidate-remote on a disconnected
 			   resource */
 			if (connection->cstate[OLD] < C_CONNECTED &&
-			    peer_device->repl_state[NEW] >= L_CONNECTED)
+			    peer_device->repl_state[NEW] >= L_ESTABLISHED)
 				return SS_NEED_CONNECTION;
 		}
 	}
@@ -1030,13 +1030,13 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 
-			if (repl_state[NEW] < L_CONNECTED) {
+			if (repl_state[NEW] < L_ESTABLISHED) {
 				peer_device->resync_susp_peer[NEW] = false;
 				if (peer_disk_state[NEW] > D_UNKNOWN ||
 				    peer_disk_state[NEW] < D_INCONSISTENT)
 					peer_disk_state[NEW] = D_UNKNOWN;
 			}
-			if (repl_state[OLD] >= L_CONNECTED && repl_state[NEW] < L_CONNECTED)
+			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED)
 				lost_connection = true;
 
 			/* Clear the aftr_isp when becoming unconfigured */
@@ -1046,13 +1046,13 @@ static void sanitize_state(struct drbd_resource *resource)
 				peer_device->resync_susp_dependency[NEW] = false;
 
 			/* Abort resync if a disk fails/detaches */
-			if (repl_state[NEW] > L_CONNECTED &&
+			if (repl_state[NEW] > L_ESTABLISHED &&
 			    (disk_state[NEW] <= D_FAILED ||
 			     peer_disk_state[NEW] <= D_FAILED))
-				repl_state[NEW] = L_CONNECTED;
+				repl_state[NEW] = L_ESTABLISHED;
 
 			/* D_CONSISTENT and D_OUTDATED vanish when we get connected */
-			if (repl_state[NEW] >= L_CONNECTED && repl_state[NEW] < L_AHEAD) {
+			if (repl_state[NEW] >= L_ESTABLISHED && repl_state[NEW] < L_AHEAD) {
 				if (disk_state[NEW] == D_CONSISTENT ||
 				    disk_state[NEW] == D_OUTDATED)
 					disk_state[NEW] = D_UP_TO_DATE;
@@ -1067,7 +1067,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			min_peer_disk_state = D_INCONSISTENT;
 			max_peer_disk_state = D_UNKNOWN;
 			switch (repl_state[NEW]) {
-			case L_STANDALONE:
+			case L_OFF:
 				/* values from above */
 				break;
 			case L_WF_BITMAP_T:
@@ -1087,7 +1087,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				min_peer_disk_state = D_UP_TO_DATE;
 				max_peer_disk_state = D_UP_TO_DATE;
 				break;
-			case L_CONNECTED:
+			case L_ESTABLISHED:
 				min_disk_state = D_DISKLESS;
 				max_disk_state = D_UP_TO_DATE;
 				min_peer_disk_state = D_DISKLESS;
@@ -1132,7 +1132,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* Suspend IO while fence-peer handler runs (peer lost) */
 			if (connection->fencing_policy == FP_STONITH &&
 			    (role[NEW] == R_PRIMARY &&
-			     repl_state[NEW] < L_CONNECTED &&
+			     repl_state[NEW] < L_ESTABLISHED &&
 			     peer_disk_state[NEW] == D_UNKNOWN) &&
 			    (role[OLD] != R_PRIMARY ||
 			     peer_disk_state[OLD] != D_UNKNOWN))
@@ -1284,7 +1284,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			struct drbd_connection *connection = peer_device->connection;
 
 			/* Wake up role changes, that were delayed because of connection establishing */
-			if (repl_state[OLD] == L_STANDALONE && repl_state[NEW] != L_STANDALONE &&
+			if (repl_state[OLD] == L_OFF && repl_state[NEW] != L_OFF &&
 			    all_peer_devices_connected(connection))
 				clear_bit(INITIAL_STATE_SENT, &connection->flags);
 		}
@@ -1301,7 +1301,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			/* Aborted verify run, or we reached the stop sector.
 			 * Log the last position, unless end-of-device. */
 			if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
-			    repl_state[NEW] <= L_CONNECTED) {
+			    repl_state[NEW] <= L_ESTABLISHED) {
 				peer_device->ov_start_sector =
 					BM_BIT_TO_SECT(drbd_bm_bits(device) - peer_device->ov_left);
 				if (peer_device->ov_left)
@@ -1325,10 +1325,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 
-			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED)
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
 				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 
-			if (repl_state[OLD] == L_CONNECTED &&
+			if (repl_state[OLD] == L_ESTABLISHED &&
 			    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
 				unsigned long now = jiffies;
 				int i;
@@ -1358,7 +1358,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				if (peer_device->bitmap_index != -1) {
 					u32 mdf = device->ldev->md.peers[peer_device->bitmap_index].flags;
 					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
-					if (repl_state[NEW] > L_STANDALONE)
+					if (repl_state[NEW] > L_OFF)
 						mdf |= MDF_PEER_CONNECTED;
 					if (peer_device->disk_state[NEW] <= D_OUTDATED &&
 					    peer_device->disk_state[NEW] >= D_INCONSISTENT)
@@ -1377,7 +1377,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 					set_bit(CONSIDER_RESYNC, &peer_device->flags);
 
 				/* Resume AL writing if we get a connection */
-				if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] >= L_CONNECTED)
+				if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 					drbd_resume_al(device);
 				put_ldev(device);
 			}
@@ -1437,7 +1437,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			drbd_thread_stop_nowait(&connection->receiver);
 
 		/* Upon network failure, we need to restart the receiver. */
-		if (cstate[OLD] > C_WF_CONNECTION &&
+		if (cstate[OLD] > C_CONNECTING &&
 		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
 			drbd_thread_restart_nowait(&connection->receiver);
 
@@ -1461,7 +1461,7 @@ static void abw_start_sync(struct drbd_device *device,
 {
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
-		stable_change_repl_state(peer_device, L_CONNECTED, CS_VERBOSE);
+		stable_change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE);
 		return;
 	}
 
@@ -1537,7 +1537,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 
 		state.peer = connection_state_change->peer_role[which];
 		state.conn = peer_device_state_change->repl_state[which];
-		if (state.conn <= L_STANDALONE)
+		if (state.conn <= L_OFF)
 			state.conn = connection_state_change->cstate[which];
 		state.pdsk = peer_device_state_change->disk_state[which];
 		state.aftr_isp = peer_device_state_change->resync_susp_dependency[which] ||
@@ -1760,7 +1760,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
 
-			if (repl_state[OLD] != L_CONNECTED && repl_state[NEW] == L_CONNECTED) {
+			if (repl_state[OLD] != L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED) {
 				clear_bit(CRASHED_PRIMARY, &device->flags);
 				if (peer_device->uuids_received)
 					peer_device->uuid_flags &= ~((u64)UUID_FLAG_CRASHED_PRIMARY);
@@ -1773,8 +1773,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			if (susp_nod[NEW]) {
 				enum drbd_req_event what = NOTHING;
 
-				if (repl_state[OLD] < L_CONNECTED &&
-				    conn_lowest_repl_state(connection) >= L_CONNECTED)
+				if (repl_state[OLD] < L_ESTABLISHED &&
+				    conn_lowest_repl_state(connection) >= L_ESTABLISHED)
 					what = RESEND;
 
 #if 0
@@ -1869,7 +1869,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			 * Though, no need to da that just yet
 			 * if there is a resync going on still */
 			if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY &&
-				peer_device->repl_state[NOW] <= L_CONNECTED && get_ldev(device)) {
+				peer_device->repl_state[NOW] <= L_ESTABLISHED && get_ldev(device)) {
 				/* No changes to the bitmap expected this time, so assert that,
 				 * even though no harm was done if it did change. */
 				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
@@ -1879,7 +1879,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			/* Last part of the attaching process ... */
-			if (repl_state[NEW] >= L_CONNECTED &&
+			if (repl_state[NEW] >= L_ESTABLISHED &&
 			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] == D_NEGOTIATING) {
 				drbd_send_sizes(peer_device, 0, 0);  /* to start sync... */
 				drbd_send_uuids(peer_device, 0, 0);
@@ -1887,7 +1887,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			/* We want to pause/continue resync, tell peer. */
-			if (repl_state[NEW] >= L_CONNECTED &&
+			if (repl_state[NEW] >= L_ESTABLISHED &&
 			     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
 			      (resync_susp_other_c[OLD] != resync_susp_other_c[NEW]) ||
 			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
@@ -1899,8 +1899,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				suspend_other_sg(device);
 
 			/* Make sure the peer gets informed about eventual state
-			   changes (ISP bits) while we were in L_STANDALONE. */
-			if (repl_state[OLD] == L_STANDALONE && repl_state[NEW] >= L_CONNECTED)
+			   changes (ISP bits) while we were in L_OFF. */
+			if (repl_state[OLD] == L_OFF && repl_state[NEW] >= L_ESTABLISHED)
 				drbd_send_state(peer_device, new_state);
 
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
@@ -1916,7 +1916,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					peer_device);
 
 			/* We are invalidating our self... */
-			if (repl_state[OLD] < L_CONNECTED && repl_state[NEW] < L_CONNECTED &&
+			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED &&
 			    disk_state[OLD] > D_INCONSISTENT && disk_state[NEW] == D_INCONSISTENT)
 				/* other bitmap operation expected during this phase */
 				drbd_queue_bitmap_io(device, &drbd_bmio_set_n_write, NULL,
@@ -1926,19 +1926,19 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* Disks got bigger while they were detached */
 			if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&
 			    test_and_clear_bit(RESYNC_AFTER_NEG, &peer_device->flags)) {
-				if (repl_state[NEW] == L_CONNECTED)
+				if (repl_state[NEW] == L_ESTABLISHED)
 					resync_after_online_grow(peer_device);
 			}
 
 			/* A resync finished or aborted, wake paused devices... */
-			if ((repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED) ||
+			if ((repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) ||
 			    (resync_susp_peer[OLD] && !resync_susp_peer[NEW]) ||
 			    (resync_susp_user[OLD] && !resync_susp_user[NEW]))
 				resume_next_sg(device);
 
 			/* sync target done with resync. Explicitly notify all peers. Our sync
 			   source should even know by himself, but the others need that info. */
-			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_CONNECTED)
+			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_ESTABLISHED)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
@@ -1948,7 +1948,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			 * any bitmap writeout anymore.
 			 * No harm done if some bits change during this phase.
 			 */
-			if (repl_state[OLD] > L_CONNECTED && repl_state[NEW] <= L_CONNECTED && get_ldev(device)) {
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED && get_ldev(device)) {
 				drbd_queue_bitmap_io(device, &drbd_bm_write_copy_pages, NULL,
 					"write from resync_finished", BM_LOCK_BULK,
 					NULL);
@@ -1958,7 +1958,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* Verify finished, or reached stop sector.  Peer did not know about
 			 * the stop sector, and we may even have changed the stop sector during
 			 * verify to interrupt/stop early.  Send the new state. */
-			if (repl_state[OLD] == L_VERIFY_S && repl_state[NEW] == L_CONNECTED
+			if (repl_state[OLD] == L_VERIFY_S && repl_state[NEW] == L_ESTABLISHED
 			    && verify_can_do_stop_sector(peer_device))
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
@@ -2101,7 +2101,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 
 				if (peer_disk_state[NEW] > D_OUTDATED)
 					all_peer_disks_outdated = false;
-				if (repl_state[NEW] < L_CONNECTED)
+				if (repl_state[NEW] < L_ESTABLISHED)
 					all_peer_disks_connected = false;
 			}
 
@@ -2452,7 +2452,7 @@ static bool device_has_connected_peer_devices(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device)
-		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			return true;
 	return false;
 }
@@ -2496,7 +2496,7 @@ void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cs
 
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-			__change_repl_state(peer_device, L_STANDALONE);
+			__change_repl_state(peer_device, L_OFF);
 		rcu_read_unlock();
 	}
 }
@@ -2507,7 +2507,7 @@ static bool connection_has_connected_peer_devices(struct drbd_connection *connec
 	int vnr;
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state[NOW] >= L_CONNECTED)
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			return true;
 	}
 	return false;
@@ -2612,7 +2612,7 @@ void __change_peer_role(struct drbd_connection *connection, enum drbd_role peer_
 void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
 {
 	peer_device->repl_state[NEW] = repl_state;
-	if (repl_state > L_STANDALONE)
+	if (repl_state > L_OFF)
 		peer_device->connection->cstate[NEW] = C_CONNECTED;
 }
 
@@ -2626,10 +2626,10 @@ enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 
 	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) && repl_state[NOW] != new_repl_state &&
-	    ((repl_state[NOW] >= L_CONNECTED &&
+	    ((repl_state[NOW] >= L_ESTABLISHED &&
 	      (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
-	     (repl_state[NOW] == L_CONNECTED &&
-	      (new_repl_state == L_VERIFY_S || new_repl_state == L_STANDALONE)))) {
+	     (repl_state[NOW] == L_ESTABLISHED &&
+	      (new_repl_state == L_VERIFY_S || new_repl_state == L_OFF)))) {
 		enum drbd_state_rv rv;
 
 		__change_repl_state(peer_device, new_repl_state);
