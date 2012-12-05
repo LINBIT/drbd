@@ -999,7 +999,7 @@ retry:
 		if (!waiter2) {
 			drbd_err(connection, "Closing connection from unexpected peer\n");
 			sock_release(s_estab);
-			goto retry;
+			goto retry_locked;
 		}
 		if (waiter2 != waiter) {
 			if (waiter2->socket) {
