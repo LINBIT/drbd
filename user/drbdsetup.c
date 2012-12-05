@@ -295,6 +295,7 @@ struct peer_devices_list {
 	struct drbd_cfg_context ctx;
 	struct peer_device_info info;
 	struct peer_device_statistics statistics;
+	struct devices_list *device;
 };
 static struct peer_devices_list *list_peer_devices(char *);
 static void free_peer_devices(struct peer_devices_list *);
@@ -1931,6 +1932,12 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 			    drbd_disk_str(disk_state),
 			    disk_state_color_stop(disk_state));
 		indent = 8;
+		if (peer_device->info.peer_repl_state >= L_SYNC_SOURCE &&
+		    peer_device->info.peer_repl_state <= L_PAUSED_SYNC_T) {
+			wrap_printf(indent, " done:%.2f", 100 * (1 -
+				(double)peer_device->statistics.peer_dev_out_of_sync /
+				(double)peer_device->device->statistics.dev_size));
+		}
 		if (opt_verbose ||
 		    peer_device->info.peer_resync_susp_user ||
 		    peer_device->info.peer_resync_susp_peer ||
@@ -2024,6 +2031,21 @@ static void stop_colors(int sig)
 	kill(getpid(), sig);
 }
 
+static void link_peer_devices_to_devices(struct peer_devices_list *peer_devices, struct devices_list *devices)
+{
+	struct peer_devices_list *peer_device;
+	struct devices_list *device;
+
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
+		for (device = devices; device; device = device->next) {
+			if (peer_device->ctx.ctx_volume == device->ctx.ctx_volume) {
+				peer_device->device = device;
+				break;
+			}
+		}
+	}
+}
+
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct resources_list *resources, *resource;
@@ -2082,6 +2104,8 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		connections = list_connections(resource->name);
 		if (devices && connections)
 			peer_devices = list_peer_devices(resource->name);
+
+		link_peer_devices_to_devices(peer_devices, devices);
 
 		resource_status(resource);
 		single_device = devices && !devices->next;
