@@ -813,7 +813,7 @@ static int get_listener(struct drbd_connection *connection, struct waiter *waite
 	init_waitqueue_head(&waiter->wait);
 
 	while (1) {
-		spin_lock(&resource->listeners_lock);
+		spin_lock_bh(&resource->listeners_lock);
 		listener = find_listener(connection);
 		if (!listener && new_listener) {
 			list_add(&new_listener->list, &resource->listeners);
@@ -824,7 +824,7 @@ static int get_listener(struct drbd_connection *connection, struct waiter *waite
 			list_add(&waiter->list, &listener->waiters);
 			waiter->listener = listener;
 		}
-		spin_unlock(&resource->listeners_lock);
+		spin_unlock_bh(&resource->listeners_lock);
 
 		if (new_listener) {
 			sock_release(new_listener->s_listen);
@@ -856,10 +856,10 @@ static void drbd_listener_destroy(struct kref *kref)
 	struct drbd_resource *resource = listener->resource;
 
 	list_del(&listener->list);
-	spin_unlock(&resource->listeners_lock);
+	spin_unlock_bh(&resource->listeners_lock);
 	sock_release(listener->s_listen);
 	kfree(listener);
-	spin_lock(&resource->listeners_lock);
+	spin_lock_bh(&resource->listeners_lock);
 }
 
 static void put_listener(struct waiter *waiter)
@@ -870,7 +870,7 @@ static void put_listener(struct waiter *waiter)
 		return;
 
 	resource = waiter->listener->resource;
-	spin_lock(&resource->listeners_lock);
+	spin_lock_bh(&resource->listeners_lock);
 	list_del(&waiter->list);
 	if (!list_empty(&waiter->listener->waiters) && waiter->listener->pending_accepts) {
 		/* This receiver no longer does accept calls. In case we got woken up to do
@@ -880,7 +880,7 @@ static void put_listener(struct waiter *waiter)
 		wake_up(&ad2->wait);
 	}
 	kref_put(&waiter->listener->kref, drbd_listener_destroy);
-	spin_unlock(&resource->listeners_lock);
+	spin_unlock_bh(&resource->listeners_lock);
 	waiter->listener = NULL;
 	if (waiter->socket) {
 		sock_release(waiter->socket);
@@ -936,9 +936,9 @@ static bool _wait_connect_cond(struct waiter *waiter)
 	struct drbd_resource *resource = connection->resource;
 	bool rv;
 
-	spin_lock(&resource->listeners_lock);
+	spin_lock_bh(&resource->listeners_lock);
 	rv = waiter->listener->pending_accepts > 0 || waiter->socket != NULL;
-	spin_unlock(&resource->listeners_lock);
+	spin_unlock_bh(&resource->listeners_lock);
 
 	return rv;
 }
@@ -970,13 +970,13 @@ retry:
 	if (timeo <= 0)
 		return NULL;
 
-	spin_lock(&resource->listeners_lock);
+	spin_lock_bh(&resource->listeners_lock);
 	if (waiter->socket) {
 		s_estab = waiter->socket;
 		waiter->socket = NULL;
 	} else if (waiter->listener->pending_accepts > 0) {
 		waiter->listener->pending_accepts--;
-		spin_unlock(&resource->listeners_lock);
+		spin_unlock_bh(&resource->listeners_lock);
 
 		s_estab = NULL;
 		err = kernel_accept(waiter->listener->s_listen, &s_estab, 0);
@@ -994,7 +994,7 @@ retry:
 
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
 
-		spin_lock(&resource->listeners_lock);
+		spin_lock_bh(&resource->listeners_lock);
 		waiter2 = find_waiter_by_addr(waiter->listener, (struct sockaddr *)&peer_addr);
 		if (!waiter2) {
 			drbd_err(connection, "Closing connection from unexpected peer\n");
@@ -1012,11 +1012,11 @@ retry:
 			goto retry_locked;
 		}
 	}
-	spin_unlock(&resource->listeners_lock);
+	spin_unlock_bh(&resource->listeners_lock);
 	return s_estab;
 
 retry_locked:
-	spin_unlock(&resource->listeners_lock);
+	spin_unlock_bh(&resource->listeners_lock);
 	goto retry;
 
 }
