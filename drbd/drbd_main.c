@@ -98,7 +98,7 @@ module_param(disable_sendpage, bool, 0644);
 module_param(allow_oos, bool, 0);
 module_param(proc_details, int, 0644);
 
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 int enable_faults;
 int fault_rate;
 static int fault_count;
@@ -3580,7 +3580,7 @@ int drbd_wait_misc(struct drbd_conf *mdev, struct drbd_interval *i)
 	return 0;
 }
 
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 /* Fault insertion support including random number generator shamelessly
  * stolen from kernel/rcutorture.c */
 struct fault_random_state {

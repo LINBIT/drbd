@@ -53,7 +53,7 @@ extern const char *drbd_buildtag(void);
  */
 
 /* Enable fault insertion code */
-#define DRBD_ENABLE_FAULTS
+#define CONFIG_DRBD_FAULT_INJECTION
 
 #ifdef __KERNEL__
 #include "compat.h"

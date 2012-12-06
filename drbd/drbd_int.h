@@ -95,7 +95,7 @@ extern unsigned int minor_count;
 extern bool disable_sendpage;
 extern bool allow_oos;
 
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int enable_faults;
 extern int fault_rate;
 extern int fault_devs;
@@ -254,7 +254,7 @@ _drbd_insert_fault(struct drbd_conf *mdev, unsigned int type);
 
 static inline int
 drbd_insert_fault(struct drbd_conf *mdev, unsigned int type) {
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 	return fault_rate &&
 		(enable_faults & (1<<type)) &&
 		_drbd_insert_fault(mdev, type);
