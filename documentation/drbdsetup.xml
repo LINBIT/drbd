@@ -1382,7 +1382,7 @@
 	device are copied over from the peer.
       </para>
       <para>	This command will fail if the <replaceable>device</replaceable> is
-	not part of a connected device pair.
+	not either part of a connected device pair, or disconnected Secondary.
       </para>
     </refsect2>
     <refsect2>
@@ -1396,9 +1396,9 @@
 	device are copied to the peer.
       </para>
       <para>
-	On a disconnected device, this will set all bits in the out of sync bitmap.
-	As a side affect this suspend updates to the on disk activity log. Updates
-	to the on disk activity log will get resumes automatically when necessary.
+	On a disconnected Primary device, this will set all bits in the out of sync bitmap.
+	As a side affect this suspends updates to the on disk activity log. Updates
+	to the on disk activity log resume automatically when necessary.
       </para>
     </refsect2>
     <refsect2>

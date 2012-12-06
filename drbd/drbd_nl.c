@@ -2035,22 +2035,25 @@ STATIC int drbd_nl_invalidate(struct drbd_conf *mdev, struct drbd_nl_cfg_req *nl
 
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T), CS_ORDERED);
 
-	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
-		retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
-
-	while (retcode == SS_NEED_CONNECTION) {
-		spin_lock_irq(&mdev->req_lock);
-		if (mdev->state.conn < C_CONNECTED)
-			retcode = _drbd_set_state(_NS(mdev, disk, D_INCONSISTENT), CS_VERBOSE, NULL);
-		spin_unlock_irq(&mdev->req_lock);
-
-		if (retcode != SS_NEED_CONNECTION)
-			break;
-
-		retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
+	/* If that did not work, try again,
+	 * but log failures this time (implicit CS_VERBOSE).
+	 *
+	 * If we happen to be C_STANDALONE R_SECONDARY,
+	 * just change to D_INCONSISTENT, and set all bits in the bitmap.
+	 * Otherwise, we just fail, to avoid races with the resync handshake.
+	 */
+	if (retcode < SS_SUCCESS) {
+		if (mdev->state.conn == C_STANDALONE && mdev->state.role == R_SECONDARY) {
+			retcode = drbd_request_state(mdev, NS(disk, D_INCONSISTENT));
+			if (retcode >= SS_SUCCESS) {
+				if (drbd_bitmap_io(mdev, &drbd_bmio_set_n_write,
+					"set_n_write from invalidate", BM_LOCKED_MASK))
+					retcode = ERR_IO_MD_DISK;
+			}
+		} else
+			retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_T));
 	}
 	drbd_resume_io(mdev);
-
 	reply->ret_code = retcode;
 	return 0;
 }
@@ -2079,7 +2082,7 @@ STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_re
 	retcode = _drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S), CS_ORDERED);
 
 	if (retcode < SS_SUCCESS) {
-		if (retcode == SS_NEED_CONNECTION && mdev->state.role == R_PRIMARY) {
+		if (mdev->state.conn == C_STANDALONE && mdev->state.role == R_PRIMARY) {
 			/* The peer will get a resync upon connect anyways. Just make that
 			   into a full resync. */
 			retcode = drbd_request_state(mdev, NS(pdsk, D_INCONSISTENT));
@@ -2093,7 +2096,6 @@ STATIC int drbd_nl_invalidate_peer(struct drbd_conf *mdev, struct drbd_nl_cfg_re
 			retcode = drbd_request_state(mdev, NS(conn, C_STARTING_SYNC_S));
 	}
 	drbd_resume_io(mdev);
-
 	reply->ret_code = retcode;
 	return 0;
 }
