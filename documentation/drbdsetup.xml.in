@@ -47,20 +47,14 @@
       Users usually interact with the <command
 	moreinfo="none">drbdadm</command> utility, which provides a more
       high-level interface to DRBD than <command
-	moreinfo="none">drbdsetup</command>.</para>
+	moreinfo="none">drbdsetup</command>.  (See <option>drbdadm</option>'s
+      <option>--dry-run</option> option to see how <option>drbdadm</option>
+      uses <option>drbdsetup</option>.)</para>
 
-    <para>The <command moreinfo="none">drbdadm</command> utility can be invoked
-      with the <option>-d</option> option to report which other utilities it
-      would invoke instead of actually invoking them (for example, <command
-	moreinfo="none">drbdadm -d up
-	<replaceable>resource</replaceable></command>).  This can be a useful
-      way to learn how <command moreinfo="none">drbdsetup</command> is
-      used.</para>
-
-    <para>Some option values have a default scale which applies when a plain
+    <para>Some option arguments have a default scale which applies when a plain
     number is specified (for example Kilo, or 1024 times the numeric value).
-    Such default scales can be overridden by using a suffix (for example, 10M
-    for 10 Mega). The common suffixes K = 2^10 = 1024, M = 1024 K, and G = 1024
+    Such default scales can be overridden by using a suffix (for example, M
+    for Mega). The common suffixes K = 2^10 = 1024, M = 1024 K, and G = 1024
     M are supported.</para>
   </refsect1>
 
@@ -73,6 +67,8 @@
 	   lines instead of comma separated?
       -->
       <varlistentry>
+	<?dbfo variablelist.term.break.after="1" ?>
+	<?dbfo variablelist.term.separator="" ?>
 	<xi:include href="drbdsetup_attach.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 	<!-- Attach a lower-level device to an existing replicated device. -->
 	<xi:include href="drbdsetup_disk-options.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
@@ -154,8 +150,8 @@
 	    <secondary>net</secondary>
 	  </indexterm>
 
-	  <para>The <option>connect</option> command connects to a
-	  <replaceable>resource</replaceable> on a peer host.  The resource
+	  <para>The <option>connect</option> command connects a
+	  <replaceable>resource</replaceable> to a peer host.  The resource
 	  must have been create with <command moreinfo="none">drbdsetup
 	  new-resource</command>.  The <option>net-options</option> command
 	  changes the network options of an existing connection.  In both
@@ -163,14 +159,16 @@
 	  <replaceable>remote_addr</replaceable> refer to the local and remote
 	  protocol, network address, and port in the format
 	  <optional><replaceable>address-family</replaceable>:</optional><replaceable>address</replaceable><optional>:<replaceable>port</replaceable></optional>.
-	  The address family can be one of <option>ipv4</option>,
+	  The address families <option>ipv4</option>,
 	  <option>ipv6</option>, <option>ssocks</option> (Dolphin Interconnect
-	  Solutions' "super sockets"), or <option>sdp</option> (Infiniband
-	  Sockets Direct Protocol), and defaults to <option>ipv4</option>.  For
+	  Solutions' "super sockets"), <option>sdp</option> (Infiniband Sockets
+	  Direct Protocol), and <option>sci</option> are supported
+	  (<option>sci</option> is an alias for <option>ssocks</option>).  If
+	  no address family is specified, <option>ipv4</option> is assumed. For
 	  all address families except <option>ipv6</option>, the
-	  <replaceable>address</replaceable> is specified in IPv4 address
-	  syntax (1.2.3.4 notation). For <option>ipv6</option>, the address is
-	  enclosed in brackets and uses IPv6 address syntax (for example,
+	  <replaceable>address</replaceable> uses IPv4 address notation (for
+	  example, 1.2.3.4). For <option>ipv6</option>, the address is enclosed
+	  in brackets and uses IPv6 address notation (for example,
 	  [fd01:2345:6789:abcd::1]).  The <replaceable>port</replaceable>
 	  defaults to 7788.  Available options:</para>
 
@@ -230,7 +228,7 @@
 
 	<listitem>
 	  <para>Remove a replicated device.  No lower-level device may be
-	  attached (see <command moreinfo="none">drbdsetup detach</command>).</para>
+	  attached; see <command moreinfo="none">drbdsetup detach</command>.</para>
 	</listitem>
       </varlistentry>
 
@@ -265,10 +263,9 @@
 	      <listitem>
 		<para>Force the detach and return immediately.  This puts the
 		lower-level device into failed state until all pending I/O
-		device has completed, and then detaches the device.  Any I/O
-		not yet submitted to the lower-level device (for example,
-		because I/O on the device was suspended) is assumed to have
-		failed.</para>
+		has completed, and then detaches the device.  Any I/O not yet
+		submitted to the lower-level device (for example, because I/O
+		on the device was suspended) is assumed to have failed.</para>
 	      </listitem>
 	    </varlistentry>
 	  </variablelist>
@@ -304,8 +301,9 @@
 	    <secondary>down</secondary>
 	  </indexterm>
 
-	  <para>Take a resource down: this comprises detaching and removing all
-	  voloumes, removing all connections, and removing the resource itself.</para>
+	  <para>Take a resource down by removing all volumes, connections, and
+	    the resource itself.
+	  </para>
 	</listitem>
       </varlistentry>
 
@@ -337,18 +335,19 @@
 
 	  <para>Show the current state of all resources, all state changes, and
 	  all calls do event handlers.  The output format is meant to be human
-	  or machine readable. Each line starts with the event number, which is
-	  followed by an asterisk if the event continues in the next line.  The
-	  second word indicates the kind of event (<option>exists</option> for
-	  an existing object; <option>create</option>,
-	  <option>destroy</option>, and <option>change</option> when an object
-	  is created, destroyed, or changed; <option>call</option> or
-	  <option>response</option> when an event handler is called or
-	  returns).  The third word indicates the object the event applies to
-	  (<option>resource</option>, <option>device</option>,
-	  <option>connection</option>, <option>peer-device</option>,
-	  <option>helper</option>).  The remaining words identify the object
-	  and indicate the state which it is in.</para>
+	  as well as machine readable. Each line starts with the event number,
+	  which is followed by an asterisk if the event continues in the next
+	  line.  The second word indicates the kind of event
+	  (<option>exists</option> for an existing object;
+	  <option>create</option>, <option>destroy</option>, and
+	  <option>change</option> when an object is created, destroyed, or
+	  changed; <option>call</option> or <option>response</option> when an
+	  event handler is called or returns).  The third word indicates the
+	  object the event applies to (<option>resource</option>,
+	  <option>device</option>, <option>connection</option>,
+	  <option>peer-device</option>, <option>helper</option>).  The
+	  remaining words identify the object and indicate the state which it
+	  is in.</para>
 	</listitem>
       </varlistentry>
 
@@ -368,12 +367,12 @@
 	  number.  The connection is identified by its endpoints; see the
 	  <command moreinfo="none">drbdsetup connect</command> command.</para>
 
-	  <para>The output consists of the current, bitmap, and the first two
-	  history UUIDS, folowed by a set of flags.  The current UUID and
-	  history UUIDs are device specific, while the bitmap UUID and
-	  flags are peer device specific.  Note that this command only shows
-	  the first two history UUIDs; internally, DRBD currently maintains one
-	  history UUID for each possible peer device.</para>
+	  <para>The output consists of the current UUID, bitmap UUID, and the
+	  first two history UUIDS, folowed by a set of flags.  The current UUID
+	  and history UUIDs are device specific; the bitmap UUID and flags are
+	  peer device specific.  This command only shows the first two history
+	  UUIDs.  Internally, DRBD maintains one history UUID for each possible
+	  peer device.</para>
 	</listitem>
       </varlistentry>
 
@@ -425,7 +424,9 @@
 	  </indexterm>
 
 	  <!-- FIXME: The description does not really explain what is going on
-	       and why; this needs to be completely analyzed and revised.  -->
+	  and why; this needs to be completely analyzed and revised.  Also, we
+	  should have separate commands for creating a new current uuid and for
+	  clearing unused bitmap slots. -->
 
 	  <para>Generate a new current UUID and rotates all other UUID values. This has at least two
 	  use cases, namely to skip the initial sync, and to reduce network bandwidth when starting in
@@ -476,6 +477,7 @@
 
 		<simpara><command moreinfo="none">mkfs -t <replaceable>fs-type</replaceable> $(drbdadm
 		sh-dev <replaceable>res</replaceable>)</command></simpara>
+		<!-- FIXME: sh-dev can probably return more than one device; we can no longer use it like this. -->
 	      </listitem>
 	    </orderedlist></para>
 
@@ -552,7 +554,7 @@
 
       <varlistentry>
 	<xi:include href="drbdsetup_outdate.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Mark the data on a local lower-level device as outdated. -->
+	<!-- Mark the data on a lower-level device as outdated. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -561,7 +563,7 @@
 	    <secondary>outdate</secondary>
 	  </indexterm>
 
-	  <para>Mark the data on a local lower-level device as outdated.  This
+	  <para>Mark the data on a lower-level device as outdated.  This
 	    is used for fencing, and prevents the resource the device is part
 	    of from becoming primary in the future.  See the
 	    <option>--fencing</option> disk option.</para>
@@ -587,7 +589,7 @@
 
       <varlistentry>
 	<xi:include href="drbdsetup_primary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Change the role of a node in a resource to Primary. -->
+	<!-- Change the role of a node in a resource to primary. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -596,7 +598,7 @@
 	    <secondary>primary</secondary>
 	  </indexterm>
 
-	  <para>Change the role of a node in a resource to Primary.  This
+	  <para>Change the role of a node in a resource to primary.  This
 	  allows the replicated devices in this resource to be mounted or
 	  opened for writing.  Available options:</para>
 
@@ -615,7 +617,7 @@
 	      <term><option>--force</option></term>
 
 	      <listitem>
-		<para>Force the resource to become Primary even if some devices
+		<para>Force the resource to become primary even if some devices
 		  are not guaranteed to have up-to-date data.  This option is
 		  used to turn one of the nodes in a newly created cluster into
 		  the primary node, or when manually recovering from a
@@ -633,9 +635,9 @@
 	  <para>Note that DRBD usually only allows one node in a cluster to be
 	    in primary role at any time; this allows DRBD to coordinate access
 	    to the devices in a resource across nodes.  The
-	    <option>--allow-two-primaries</option> network option allows to
-	    change this; in that case, a mechanism outside of DRBD needs to
-	    coordinate device access.</para>
+	    <option>--allow-two-primaries</option> network option changes this;
+	    in that case, a mechanism outside of DRBD needs to coordinate
+	    device access.</para>
 	</listitem>
       </varlistentry>
 
@@ -670,11 +672,12 @@
 	      <varlistentry>
 		<term><option>--assume-clean</option></term>
 		<listitem>
-		  <para>Do not resynchronize the added disk space; assume that it
-		  is identical on all nodes instead.  This option can be used
-		  when the disk space is uninitialized, or when it is known to be
-		  identical on all nodes.  See the <command
-		  moreinfo="none">drbdsetup verify</command> command.</para>
+		  <para>Do not resynchronize the added disk space; instead,
+		  assume that it is identical on all nodes.  This option can be
+		  used when the disk space is uninitialized and differences do
+		  not matter, or when it is known to be identical on all nodes.
+		  See the <command moreinfo="none">drbdsetup verify</command>
+		  command.</para>
 		</listitem>
 	      </varlistentry>
 	    </variablelist>
@@ -730,7 +733,7 @@
 
       <varlistentry>
 	<xi:include href="drbdsetup_secondary.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Change the role of a node in a resource to Secondary. -->
+	<!-- Change the role of a node in a resource to secondary. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -739,14 +742,14 @@
 	    <secondary>secondary</secondary>
 	  </indexterm>
 
-	  <para>Change the role of a node in a resource to Secondary.  This
+	  <para>Change the role of a node in a resource to secondary.  This
 	  command fails if the replicated device is in use.</para>
 	</listitem>
       </varlistentry>
 
       <varlistentry>
 	<xi:include href="drbdsetup_show.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Show the current configuration of a resource (or all resources). -->
+	<!-- Show the current configuration of a resource, or of all resources. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -755,8 +758,8 @@
 	    <secondary>show</secondary>
 	  </indexterm>
 
-	  <para>Show the current configuration of a resource (or all
-	  resources).  Available options:
+	  <para>Show the current configuration of a resource, or of all
+	  resources.  Available options:
 
 	    <variablelist>
 	      <varlistentry>
@@ -764,7 +767,8 @@
 
 		<listitem>
 		  <para>Show all configuration parameters, even the ones with
-		  default values.</para>
+		  default values.  Normally, parameters with default values are
+		  not shown.</para>
 		</listitem>
 	      </varlistentry>
 	    </variablelist>
@@ -807,7 +811,7 @@
 
       <varlistentry>
 	<xi:include href="drbdsetup_status.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Show the status of a resource (or all resources). -->
+	<!-- Show the status of a resource, or of all resources. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -816,17 +820,16 @@
 	    <secondary>status</secondary>
 	  </indexterm>
 
-	  <para>Show the status of a resource (or of all resources).  The
+	  <para>Show the status of a resource, or of all resources.  The
 	  output consists of one paragraph for each configured resource.  Each
 	  paragraph contains one line for each resource, followed by one line
 	  for each device, and one line for each connection.  The device and
 	  connection lines are indented.  The connection lines are followed by
-	  one line for each peer device; this line is indented against the
+	  one line for each peer device; these lines are indented against the
 	  connection line.</para>
 
-	  <para>Long lines are wrapped around at terminal width, and the
-	  continuation lines are indented to indicate how the lines belongs
-	  together.  Available options:
+	  <para>Long lines are wrapped around at terminal width, and indented
+	  to indicate how the lines belongs together.  Available options:
 
 	    <variablelist>
 	      <varlistentry>
@@ -890,7 +893,7 @@ drbd0 node-id:1 role:Primary suspended:no
 
       <varlistentry>
 	<xi:include href="drbdsetup_verify.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
-	<!-- Verify the data on a local lower-level device against a peer device. -->
+	<!-- Verify the data on a lower-level device against a peer device. -->
 
 	<listitem>
 	  <indexterm significance="normal">
@@ -903,13 +906,13 @@ drbd0 node-id:1 role:Primary suspended:no
 	  be verified, or stop online verification.  The command requires the
 	  specified peer to be connected.</para>
 
-	  <para>Online verification compares each disk block on he local and
+	  <para>Online verification compares each disk block on the local and
 	  peer node.  Blocks which differ between the nodes are marked
-	  out-of-sync, but they are <emphasis>not</emphasis> automatically
+	  as out-of-sync, but they are <emphasis>not</emphasis> automatically
 	  brought back into sync.  To bring them into sync, the resource must
 	  be disconnected and reconnected.  Progress can be monitored in the
-	  <command moreinfo="none">drbdsetup status --statistics</command>
-	  output.  Available options:</para>
+	  output of <command moreinfo="none">drbdsetup status
+	    --statistics</command>.  Available options:</para>
 
 	  <variablelist>
 	    <varlistentry>
@@ -920,12 +923,13 @@ drbd0 node-id:1 role:Primary suspended:no
 		parameter is ignored if online verification is already in
 		progress.  If the start parameter is not specified, online
 		verification will continue where it was interrupted (if the
-		connection to the peer was lost), after the previous stop
-		sector (if the previous online verification has finished), or
-		at the beginning of the device (if the end of the device was
-		reached or no online verify has run before).</para>
+		connection to the peer was lost while verifying), after the
+		previous stop sector (if the previous online verification has
+		finished), or at the beginning of the device (if the end of the
+		device was reached, or online verify has not run
+		before).</para>
 
-		<para>The position on disk is specified in disk sectors (52
+		<para>The position on disk is specified in disk sectors (512
 		bytes) by default.</para>
 	      </listitem>
 	    </varlistentry>
@@ -934,10 +938,10 @@ drbd0 node-id:1 role:Primary suspended:no
 	      <listitem>
 		<para>Define where online verification should stop.  If online
 		verification is already in progress, the stop position of the
-		active online verification process is changed.  This can be
-		used to stop online verification.</para>
+		active online verification process is changed.  Use this to
+		stop online verification.</para>
 
-		<para>The position on disk is specified in disk sectors (52
+		<para>The position on disk is specified in disk sectors (512
 		bytes) by default.</para>
 	      </listitem>
 	    </varlistentry>
@@ -988,8 +992,8 @@ drbd0 node-id:1 role:Primary suspended:no
     <title>Examples</title>
 
     <para>Please see the <ulink
-    url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's
-    Guide</citetitle></ulink> for examples.</para>
+	url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>
+      for examples.</para>
 
   </refsect1>
 
@@ -1003,7 +1007,7 @@ drbd0 node-id:1 role:Primary suspended:no
     <title>Author</title>
 
     <simpara>Written by Philipp Reisner <email>philipp.reisner@linbit.com</email> and Lars
-    Ellenberg <email>lars.ellenberg@linbit.com</email></simpara>
+    Ellenberg <email>lars.ellenberg@linbit.com</email>.</simpara>
   </refsect1>
 
   <refsect1>
@@ -1037,7 +1041,7 @@ drbd0 node-id:1 role:Primary suspended:no
         <manvolnum>8</manvolnum>
       </citerefentry>,
       <ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>,
-       <ulink url="http://www.drbd.org/"><citetitle>DRBD web site</citetitle></ulink></para>
+       <ulink url="http://www.drbd.org/"><citetitle>DRBD Web Site</citetitle></ulink></para>
 
   </refsect1>
 </refentry>

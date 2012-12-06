@@ -57,6 +57,8 @@ HTML_STYLESHEET ?= $(STYLESHEET_PREFIX)/xhtml/docbook.xsl
 FO_STYLESHEET ?= $(STYLESHEET_PREFIX)/fo/docbook.xsl
 
 XSLTPROC_OPTIONS ?= --xinclude
+XSLTPROC_OPTIONS += --stringparam variablelist.term.break.after 1
+#XSLTPROC_OPTIONS += --stringparam variablelist.term.separator ""
 XSLTPROC_MANPAGES_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_HTML_OPTIONS ?= $(XSLTPROC_OPTIONS)
 XSLTPROC_FO_OPTIONS ?= $(XSLTPROC_OPTIONS)

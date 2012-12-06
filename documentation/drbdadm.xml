@@ -3,11 +3,11 @@
 "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdadm">
   <refentryinfo>
-    <date>6 May 2011</date>
+    <date>6 December 2012</date>
 
     <productname>DRBD</productname>
 
-    <productnumber>8.4.0</productnumber>
+    <productnumber>9.0.0</productnumber>
   </refentryinfo>
 
   <refmeta>
@@ -21,7 +21,7 @@
   <refnamediv>
     <refname>drbdadm</refname>
 
-    <refpurpose>Administration tool for DRBD <indexterm significance="normal">
+    <refpurpose>Utility for DRBD administration<indexterm significance="normal">
         <primary>drbdadm</primary>
       </indexterm></refpurpose>
   </refnamediv>
@@ -30,61 +30,100 @@
     <cmdsynopsis sepchar=" ">
       <command moreinfo="none">drbdadm</command>
 
-      <arg choice="opt" rep="norepeat">-d</arg>
+      <arg choice="opt" rep="repeat">options</arg>
 
-      <arg choice="opt" rep="norepeat">-c<arg choice="req"
-      rep="norepeat"><replaceable>file</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-t<arg choice="req"
-      rep="norepeat"><replaceable>file</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-s<arg choice="req"
-      rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-m<arg choice="req"
-      rep="norepeat"><replaceable>cmd</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">-S</arg>
-
-      <arg choice="opt" rep="norepeat">-h<arg choice="req"
-      rep="norepeat"><replaceable>host</replaceable></arg></arg>
-
-      <arg choice="opt" rep="norepeat">--<arg choice="req"
-      rep="norepeat"><replaceable>backend-options</replaceable></arg></arg>
+      <arg choice="opt" rep="norepeat">--<arg choice="opt"
+      rep="repeat"><replaceable>backend-options</replaceable></arg></arg>
 
       <arg choice="req" rep="norepeat"><replaceable>command</replaceable></arg>
 
+      <arg choice="req" rep="repeat"><replaceable>context</replaceable></arg>
+
+      <!--
       <group choice="opt" rep="norepeat">
         <arg choice="req" rep="norepeat">all</arg>
 
         <arg choice="req" rep="repeat"><replaceable>resource<arg choice="opt"
-        rep="norepeat">/volume&gt;</arg></replaceable></arg>
+        rep="norepeat">/volume</arg></replaceable></arg>
       </group>
+      -->
     </cmdsynopsis>
   </refsynopsisdiv>
 
   <refsect1>
     <title>Description</title>
 
-    <para><option>Drbdadm</option> is the high level tool of the DRBD program suite.
-    <option>Drbdadm</option> is to <option>drbdsetup</option> and <option>drbdmeta</option> what
-    <option>ifup</option>/<option>ifdown</option> is to <option>ifconfig</option>.
-    <option>Drbdadm</option> reads its configuration file and performs the specified commands by
-    calling the <option>drbdsetup</option> and/or the <option>drbdmeta</option> program.</para>
+    <para>The <option>drbdadm</option> utility is used for managing DRBD based
+      on its configuration files, see <citerefentry>
+      <refentrytitle>drbd.conf</refentrytitle> <manvolnum>5</manvolnum>
+      </citerefentry>.  It translates high-level commands into one or more
+      lower-level commands for the <option>drbdsetup</option> and
+      <option>drbdmeta</option> utilities, which control the kernel module
+      and manipulate the on-disk metadata.</para>
 
-    <para><option>Drbdadm</option> can operate on whole resources or on individual volumes in a
-    resource. The sub commands: <option>attach</option>, <option>detach</option>,
-    <option>primary</option>, <option>secondary</option>, <option>invalidate</option>,
-    <option>invalidate-remote</option>, <option>outdate</option>, <option>resize</option>,
-    <option>verify</option>, <option>pause-sync</option>, <option>resume-sync</option>,
-    <option>role</option>, <option>csytate</option>, <option>dstate</option>,
-    <option>create-md</option>, <option>show-gi</option>, <option>get-gi</option>,
-    <option>dump-md</option>, <option>wipe-md</option> work on whole resources and on
-    individual volumes. </para>
+    <para>Depending on the command, the <option>drbdadm</option> utility
+      operates on one or more resources, devices, connections, or peer devices.
+      The following command contexts are defined:</para>
 
-    <para>Resource level only commands are: <option>connect</option>, <option>disconnect</option>,
-    <option>up</option>, <option>down</option>, <option>wait-connect</option> and
-    <option>dump</option>.</para>
+    <para>
+      <variablelist>
+	<varlistentry>
+	  <term><replaceable>resource</replaceable></term>
+
+	  <listitem>
+	    <para>A resource specified by name, or the keyword
+	      <option>all</option> for all defined resources.</para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><replaceable>device</replaceable></term>
+
+	  <listitem>
+	    <para>A device, specified by minor number
+	      (<option>minor-</option><replaceable>minor</replaceable>) or by resource and
+	      volume number
+	      (<replaceable>resource</replaceable>/<replaceable>volume</replaceable>).
+	      If only a <replaceable>resource</replaceable> is
+	      specified, the command iterates over all devices of that resource.</para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><replaceable>connection</replaceable></term>
+
+	  <listitem>
+	    <para>A connection, specified by resource and connection name
+	      (<replaceable>resource</replaceable>:<replaceable>connection-name</replaceable>).
+	      If only a <replaceable>resource</replaceable> is specified, the
+	      command iterates over all connections of that resource.
+	    </para>
+	  </listitem>
+	</varlistentry>
+
+	<varlistentry>
+	  <term><replaceable>peer_device</replaceable></term>
+
+	  <listitem>
+	    <para>A peer device, specified by resource, connection name, and
+	      volume number
+	      (<replaceable>resource</replaceable>:<replaceable>connection-name</replaceable>/<replaceable>volume</replaceable>).
+	      If only a <replaceable>resource</replaceable>,
+	      <replaceable>device</replaceable>, or
+	      <replaceable>connection</replaceable> is specified, the command
+	      iterates over all peer devices of that resource, device, or
+	      connection.</para>
+	  </listitem>
+	</varlistentry>
+      </variablelist>
+    </para>
+
+    <para>All options following a double-dash are passed through to the
+      lower-level utilities as specified.  In addition,
+      <option>drbdadm</option> understands most of the options of
+      <option>drbdsetup</option>, and will pass them through even without the
+      double-dash.
+    </para>
   </refsect1>
 
   <refsect1>
@@ -95,8 +134,12 @@
         <term><option>-d</option>, <option>--dry-run</option></term>
 
         <listitem>
-          <para>Just prints the calls of <option>drbdsetup</option> to stdout, but does not run
-          the commands.</para>
+	  <para>Show which commands <option>drbdadm</option> would execute
+	    instead of actually executing them (for example, <command
+	      moreinfo="none">drbdadm -d up <replaceable>resource</replaceable></command>).
+	    This can be a useful way to learn how <command
+	      moreinfo="none">drbdsetup</command> and <command
+	      moreinfo="none">drbdmeta</command> are used.</para>
         </listitem>
       </varlistentry>
 
@@ -105,10 +148,14 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-          <para>Specifies the configuration file drbdadm will use. If this parameter is not
-          specified, drbdadm will look for <option>/etc/drbd-84.conf</option>,
-          <option>/etc/drbd-83.conf</option>, <option>/etc/drbd-08.conf</option> and
-          <option>/etc/drbd.conf</option>.</para>
+	  <para>Use an alternative configuration file.  By default,
+	    <option>drbdadm</option> will use the the first of the following
+	    files that exists: <option>/etc/drbd-90.conf</option>,
+	    <option>/etc/drbd-84.conf</option>,
+	    <option>/etc/drbd-83.conf</option>,
+	    <option>/etc/drbd-82.conf</option>,
+	    <option>/etc/drbd-08.conf</option>,
+	    <option>/etc/drbd.conf</option>.</para>
         </listitem>
       </varlistentry>
 
@@ -117,8 +164,8 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-          <para>Specifies an additional configuration file drbdadm to check. This option is only
-          allowed with the dump and the sh-nop commands.</para>
+	  <para>Check an additional configuration file.  This option is only
+	    allowed with the dump and the sh-nop commands.</para>
         </listitem>
       </varlistentry>
 
@@ -127,9 +174,10 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-          <para>Specifies the full path to the <option>drbdsetup</option> program. If this option
-          is omitted, drbdadm will look for <option>/sbin/drbdsetup</option> and
-          <option>./drbdsetup</option>.</para>
+	  <para>The full path to the <option>drbdsetup</option> utility.  If
+	    this option is omitted, drbdadm will search for
+	    <option>/sbin/drbdsetup</option> and
+	    <option>./drbdsetup</option>.</para>
         </listitem>
       </varlistentry>
 
@@ -138,9 +186,10 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-          <para>Specifies the full path to the <option>drbdmeta</option> program. If this option
-          is omitted, drbdadm will look for <option>/sbin/drbdmeta</option> and
-          <option>./drbdmeta</option>.</para>
+	  <para>The full path to the <option>drbdmeta</option> utility. If this
+	    option is omitted, drbdadm will look for
+	    <option>/sbin/drbdmeta</option> and
+	    <option>./drbdmeta</option>.</para>
         </listitem>
       </varlistentry>
 
@@ -148,27 +197,7 @@
         <term><option>-S</option>, <option>--stacked</option></term>
 
         <listitem>
-          <para>Specifies that this command should be performed on a stacked resource.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>-P</option>, <option>--peer</option></term>
-
-        <listitem>
-          <para>Specifies to which peer node to connect. Only necessary if there are more than two
-          host sections in the resource you are working on.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>--</option> <replaceable>backend-options</replaceable></term>
-
-        <listitem>
-          <para>All options following the doubly hyphen are considered
-          <replaceable>backend-options</replaceable>. These are passed through to the backend
-          command. I.e. to <option>drbdsetup</option>, <option>drbdmeta</option> or
-          <option>drbd-proxy-ctl</option>.</para>
+          <para>Perform the command on a stacked resource.</para>
         </listitem>
       </varlistentry>
     </variablelist>
@@ -176,426 +205,596 @@
 
   <refsect1>
     <title>Commands</title>
-
-    <variablelist>
       <varlistentry>
-        <term>attach</term>
-
-        <listitem>
-          <para>Attaches a local backing block device to the DRBD resource's device.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>detach</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>detach</secondary>
-            </indexterm> Removes the backing storage device from a DRBD resource's device.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>connect</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>connect</secondary>
-            </indexterm> Sets up the network configuration of the resource's device. If the peer
-          device is already configured, the two DRBD devices will connect. If there are more than
-          two host sections in the resource you need to use the <option>--peer</option> option to
-          select the peer you want to connect to.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>disconnect</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>disconnect</secondary>
-            </indexterm> Removes the network configuration from the resource. The device will then
-          go into StandAlone state.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>syncer</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>syncer</secondary>
-            </indexterm> Loads the resynchronization parameters into the device.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>up</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>up</secondary>
-            </indexterm> Is a shortcut for attach and connect.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>down</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>down</secondary>
-            </indexterm> Is a shortcut for disconnect and detach.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>primary</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>primary</secondary>
-            </indexterm> Promote the resource's device into primary role. You need to do this
-          before any access to the device, such as creating or mounting a file system.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>secondary</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>secondary</secondary>
-            </indexterm> Brings the device back into secondary role. This is needed since in a
-          connected DRBD device pair, only one of the two peers may have primary role (except if
-          <option>allow-two-primaries</option> is explicitly set in the configuration
-          file).</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>invalidate</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>invalidate</secondary>
-            </indexterm> Forces DRBD to consider the data on the <emphasis>local</emphasis>
-          backing storage device as out-of-sync. Therefore DRBD will copy each and every block
-          from its peer, to bring the local storage device back in sync.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>invalidate-remote</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>invalidate-remote</secondary>
-            </indexterm> This command is similar to the invalidate command, however, the
-          <emphasis>peer's</emphasis> backing storage is invalidated and hence rewritten with the
-          data of the local node.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>resize</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>resize</secondary>
-            </indexterm> Causes DRBD to re-examine all sizing constraints, and resize the
-          resource's device accordingly. For example, if you increased the size of your backing
-          storage devices (on both nodes, of course), then DRBD will adopt the new size after you
-          called this command on one of your nodes. Since new storage space must be synchronised
-          this command only works if there is at least one primary node present.</para>
-
-          <para>The <option>--assume-peer-has-space</option> allows you to resize a device which
-          is currently not connected to the peer. Use with care, since if you do not resize the
-          peer's disk as well, further connect attempts of the two will fail.</para>
-
-	  <para>The <option>--assume-clean</option> allows you to resize an existing device and avoid
-          syncing the new space. This is useful when adding addtional blank storage to your device.
-          Example:
-          <programlisting format="linespecific">
-# drbdadm -- --assume-clean resize r0</programlisting>
-        </para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>check-resize</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>check-resize</secondary>
-            </indexterm> Calls drbdmeta to eventually move internal meta data. If the backing
-          device was resized, while DRBD was not running, meta data has to be moved to the end of
-          the device, so that the next <option>attach</option> command can succeed.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>create-md</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>create-md</secondary>
-            </indexterm> Initializes the meta data storage. This needs to be done before a DRBD
-          resource can be taken online for the first time. In case of issues with that command
-          have a look at <citerefentry>
-              <refentrytitle>drbdmeta</refentrytitle>
-
-              <manvolnum>8</manvolnum>
-            </citerefentry>.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>get-gi</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>get-gi</secondary>
-            </indexterm> Shows a short textual representation of the data generation
-          identifiers.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>show-gi</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>show-gi</secondary>
-            </indexterm> Prints a textual representation of the data generation identifiers
-          including explanatory information.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>dump-md</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>dump-md</secondary>
-            </indexterm> Dumps the whole contents of the meta data storage, including the stored
-          bit-map and activity-log, in a textual representation.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>outdate</term>
-
-        <listitem>
-          <para><indexterm significance="normal">
-              <primary>drbdadm</primary>
-
-              <secondary>outdate</secondary>
-            </indexterm> Sets the outdated flag in the meta data.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>adjust</term>
+	<term>adjust
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
               <secondary>adjust</secondary>
-            </indexterm> Synchronizes the configuration of the device with your configuration
-          file. You should always examine the output of the dry-run mode before actually executing
-          this command.</para>
+	    </indexterm> Adjust the configuration of the kernel module so that
+	    it matches the configuration files.  The result should be the same
+	    as when stopping and restarting all resources (<command
+	      moreinfo="none">drbdadm down all</command> followed by <command
+	      moreinfo="none">drbdadm up all</command>), but without the
+	    interruptions.</para>
+
+	  <para>Note that the adjust command can misinterpret the configuration
+	    change in some cases.  To be safe, check what the command would do
+	    (with the <option>--dry-run</option> option) before running the
+	    actual command.</para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>wait-connect</term>
+        <term>adjust-with-progress
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>wait-connect</secondary>
-            </indexterm> Waits until the device is connected to its peer device.</para>
+              <secondary>adjust-with-progress</secondary>
+	    </indexterm> The same as <option>adjust</option>, but with some
+	    more information about the command's progress.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>role</term>
+        <term>apply-al
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>role</secondary>
-            </indexterm> Shows the current local role of the devices. E.g.
-          <option>Primary</option></para>
+              <secondary>apply-al</secondary>
+	      </indexterm> Apply the activity log of the specified device.  See
+	      <citerefentry> <refentrytitle>drbdmeta</refentrytitle>
+		<manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+    <variablelist>
+      <varlistentry>
+        <term>attach
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+	  <para>Attach a lower-level device to an existing replicated device.
+	    See <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.</para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>state</term>
+        <term>check-resize
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>state</secondary>
-            </indexterm> Deprecated alias for "role", see above.</para>
+              <secondary>check-resize</secondary>
+            </indexterm> Call drbdmeta to eventually move internal meta data. If the backing
+          device was resized, while DRBD was not running, meta data has to be moved to the end of
+          the device, so that the next <option>attach</option> command can succeed.</para>
+        </listitem>
+	<!-- FIXME: This is not very clear.  When does the end user need to
+	     call this command? -->
+      </varlistentry>
+
+      <varlistentry>
+        <term>connect
+	  <arg choice="req" rep="norepeat"><replaceable>connection</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>connect</secondary> </indexterm> Connect a resource to
+	    a peer host.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>cstate</term>
+        <term>create-md
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>create-md</secondary>
+	    </indexterm> Initialize the metadata of a device. This is necessary
+	    before a device can be attached; see <citerefentry>
+	      <refentrytitle>drbdmeta</refentrytitle> <manvolnum>8</manvolnum>
+	  </citerefentry> for details.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>cstate
+	  <arg choice="req" rep="norepeat"><replaceable>connection</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
               <secondary>cstate</secondary>
-            </indexterm> Shows the current connection state of the devices.</para>
+	    </indexterm> Show the current state of a connection.  See
+	    <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.</para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>dump</term>
+        <term>detach
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>detach</secondary> </indexterm> Detach the lower-level
+	    device of a replicated device. See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	  </citerefentry> for details.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>disconnect
+	  <arg choice="req" rep="norepeat"><replaceable>connection</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>disconnect</secondary> </indexterm> Remove a
+	    connection to a peer host.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	  </citerefentry> for details.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>disk-options
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+              <secondary>disk-options</secondary>
+	      </indexterm> Cange the disk options of an attached lower-level
+	      device.  See <citerefentry>
+		<refentrytitle>drbdsetup</refentrytitle>
+		<manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>down
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>down</secondary> </indexterm> Take a resource down by
+	    removing all volumes, connections, and the resource itself.
+	    See <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>dstate
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>dstate</secondary>
+	    </indexterm> Show the current disk
+	    state of a lower-level device.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+          </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>dump
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
               <secondary>dump</secondary>
-            </indexterm> Just parse the configuration file and dump it to stdout. May be used to
-          check the configuration file for syntactic correctness.</para>
+	    </indexterm> Parse the configuration file and dump it to stdout.
+	    This will fail if the configuration file is syntactically
+	    incorrect.</para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>outdate</term>
+        <term>dump-md
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>outdate</secondary>
-            </indexterm> Used to mark the node's data as outdated. Usually used by the peer's
-          fence-peer handler.</para>
+              <secondary>dump-md</secondary>
+	  </indexterm> Dump the metadata of a device in text form, including
+	  the bitmap and activity log.  See <citerefentry>
+	    <refentrytitle>drbdmeta</refentrytitle> <manvolnum>8</manvolnum>
+	</citerefentry> for details.</para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>verify</term>
+        <term>get-gi
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>verify</secondary>
-            </indexterm> Starts online verify. During online verify, data on both nodes is
-          compared for equality. See <filename moreinfo="none">/proc/drbd</filename> for online
-          verify progress. If out-of-sync blocks are found, they are <emphasis>not</emphasis>
-          resynchronized automatically. To do that, <command moreinfo="none">disconnect</command>
-          and <command moreinfo="none">connect</command> the resource when verification has
-          completed.</para>
-
-          <para>See also the notes on data integrity on the drbd.conf manpage.</para>
+              <secondary>get-gi</secondary>
+	    </indexterm> Show the data generation identifiers for a device on a
+	    particular connection.  Uses <option>drbdsetup</option> for
+	    attached devices and <option>drbdmeta</option> for unattached
+	    devices.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>pause-sync</term>
+        <term>hidden-commands
+	</term>
+
+        <listitem>
+          <para>Shows all commands which are not explicitly documented.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>invalidate
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>invalidate</secondary> </indexterm> Replace the local
+	    data of a device with that of a peer.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>invalidate-remote
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>invalidate-remote</secondary> </indexterm> Replace a
+	    peer device's data of a resource with the local data.  See
+	    <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>net-options
+	  <arg choice="req" rep="norepeat"><replaceable>connection</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+              <secondary>net-options</secondary>
+	    </indexterm> Change the network options of an existing connection.
+	    See <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>new-current-uuid
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>new-current-uuid</secondary> </indexterm> Generate a
+	    new currend UUID.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>outdate
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+	  <para><indexterm significance="normal"> <primary>drbdadm</primary>
+
+	      <secondary>outdate</secondary> </indexterm> Mark the data on a
+	    lower-level device as outdated.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>pause-sync
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
               <secondary>pause-sync</secondary>
-            </indexterm> Temporarily suspend an ongoing resynchronization by setting the local
-          pause flag. Resync only progresses if neither the local nor the remote pause flag is
-          set. It might be desirable to postpone DRBD's resynchronization until after any
-          resynchronization of the backing storage's RAID setup.</para>
+	    </indexterm> Stop resynchronizing between a local and a peer device
+	    by setting the local pause flag.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>resume-sync</term>
+        <term>primary
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>resume-sync</secondary>
-            </indexterm> Unset the local sync pause flag.</para>
+	      <secondary>primary</secondary> </indexterm> Change the role of a
+	    node in a resource to primary.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>new-current-uuid</term>
+        <term>resize
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>new-current-uuid</secondary>
-            </indexterm> Generates a new currend UUID and rotates all other UUID values.</para>
-
-          <para>This can be used to shorten the initial resync of a cluster. See the
-          <option>drbdsetup</option> manpage for a more details.</para>
+	      <secondary>resize</secondary> </indexterm> Resize the lower-level
+	    devices of a replicated device on all nodes.  This combines the
+	    <option>check-resize</option> and <option>resize</option>
+	    lower-level commands; see <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>dstate</term>
+        <term>resource-options
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
 
         <listitem>
           <para><indexterm significance="normal">
               <primary>drbdadm</primary>
 
-              <secondary>dstate</secondary>
-            </indexterm> Show the current (local) state of the backing storage devices.
-          </para>
+              <secondary>resource-options</secondary>
+	  </indexterm> Change the resource options of an existing
+	  resource.  See <citerefentry>
+	    <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>hidden-commands</term>
+        <term>resume-sync
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
 
         <listitem>
-          <para>Shows all commands undocumented on purpose.</para>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>resume-sync</secondary> </indexterm> Allow
+	    resynchronization to resume by clearing the local sync pause flag.
+	    See <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>role
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>role</secondary>
+	    </indexterm> Show the current role of a resource.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>secondary
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>secondary</secondary>
+	    </indexterm> Change the role of a node in a resource to secondary.
+	    This command fails if the replicated device is in use.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>show-gi
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>show-gi</secondary>
+	    </indexterm> Show the data generation identifiers for a device on a
+	    particular connection. In addition, explain the output.  See
+	    <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>state
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>state</secondary>
+	    </indexterm> This is an alias for <command
+	    moreinfo="none">drbdsetup role</command>. Deprecated.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>up
+	  <arg choice="req" rep="norepeat"><replaceable>resource</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>up</secondary>
+	    </indexterm> Bring up a resource by applying the activity log of
+	    all volumes, creating the resource, creating the replicated
+	    devices, attaching the lower-level devices, and connecting to all
+	    peers.  See the <option>apply-al</option> drbdmeta command and the
+	    <option>new-resource</option>, <option>new-device</option>,
+	    <option>new-minor</option>, <option>attach</option>, and
+	    <option>connect</option> drbdsetup commands.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>verify
+	  <arg choice="req" rep="norepeat"><replaceable>peer_device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+              <secondary>verify</secondary>
+	    </indexterm> Start online verification, change which part of the
+	    device will be verified, or stop online verification.  See
+	    <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>wait-connect
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>wait-connect</secondary> </indexterm> Wait until a
+	    device on a peer is visible.  See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>wipe-md
+	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>wipe-md</secondary> </indexterm> Wipe out the DRBD
+	    metadata of a device.  See <citerefentry>
+	      <refentrytitle>drbdmeta</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
         </listitem>
       </varlistentry>
     </variablelist>
@@ -604,7 +803,7 @@
   <refsect1>
     <title>Version</title>
 
-    <simpara>This document was revised for version 8.4.0 of the DRBD distribution.</simpara>
+    <simpara>This document was revised for version 9.0.0 of the DRBD distribution.</simpara>
   </refsect1>
 
   <refsect1>
@@ -623,7 +822,7 @@
   <refsect1>
     <title>Copyright</title>
 
-    <simpara>Copyright 2001-2011 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
+    <simpara>Copyright 2001-2012 LINBIT Information Technologies, Philipp Reisner, Lars Ellenberg.
     This is free software; see the source for copying conditions. There is NO warranty; not even
     for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</simpara>
   </refsect1>

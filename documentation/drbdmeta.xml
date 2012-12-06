@@ -2,7 +2,7 @@
 <!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd">
 <refentry id="re-drbdmeta">
   <refentryinfo>
-    <date>22 November 2012</date>
+    <date>6 December 2012</date>
     <productname>DRBD</productname>
     <productnumber>9.0.0</productnumber>
   </refentryinfo>
@@ -13,8 +13,7 @@
   </refmeta>
   <refnamediv>
     <refname>drbdmeta</refname>
-    <refpurpose>DRBD's meta data management tool
-    <indexterm significance="normal">
+    <refpurpose>Manipulate the DRBD on-disk metadata<indexterm significance="normal">
       <primary>drbdmeta</primary>
     </indexterm>
     </refpurpose>
@@ -43,17 +42,31 @@
   </refsynopsisdiv>
   <refsect1>
     <title>Description</title>
-    <para>      Drbdmeta is used to create, display and modify the contents of
-      DRBD's meta data storage. Usually you do not want to use this
-      command directly, but start it via the frontend
-      <citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry>.
-    </para>
-    <para>      This command only works if the DRBD resource is currently down,
-      or at least detached from its backing storage. The first parameter
-      is the device node associated to the resource. With the second
-      parameter you can select the version of the meta data. Currently
-      all major DRBD releases (0.6, 0.7, 8, and 9) are supported.
-    </para>
+    <para>The <option>drbdmeta</option> utility is used for creating,
+      displaying, and modifying DRBD's on-disk metadata.  Users usually
+      interact with the <option>drbdadm</option> utility, which provides a more
+      high-level interface to DRBD than <option>drbdmeta</option>.  (See
+      <option>drbdadm</option>'s <option>--dry-run</option> option to see how
+      <option>drbdadm</option> uses <option>drbdmeta</option>.)</para>
+
+    <para>This utility can only be used on devices which are not currently in
+      use by the kernel.</para>
+
+    <para>The first argument (<replaceable>device</replaceable>) specifies the
+      lower-level device of a volume.  The second argument specifies the
+      metadata version to use (v06, v07, v08, v09).  In most metadata versions,
+      the third argument (<replaceable>meta_dev</replaceable>) specifies the
+      device which contains the metadata; this argument can be the same as
+      <replaceable>device</replaceable>.  The fourth argument
+      (<replaceable>index</replaceable>) can be one of the keywords
+      <option>internal</option> (for internal metadata),
+      <option>flex-internal</option> (in v07 for variable-sized metadata; v07
+      otherwise defaults to fixed-size internal metadata),
+      <option>flex-external</option> (for variable-sized external metadata), or
+      a numeric matadata index (for fixed-size external metadata).  See the
+      <option>meta-disk</option> parameter in <citerefentry>
+	<refentrytitle>drbd.conf</refentrytitle> <manvolnum>5</manvolnum>
+        </citerefentry>.</para>
   </refsect1>
   <refsect1>
     <title>Options</title>
@@ -62,17 +75,18 @@
         <term>--force</term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>--force</secondary></indexterm>
-            All questions that get asked by drbdmeta are treated as if
-	    the user answered 'yes'.</para>
+	    Assume yes as the answer to all questions drbdmeta would ask.</para>
         </listitem>
       </varlistentry>
       <varlistentry>
         <term>--ignore-sanity-checks</term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>--ignore-sanity-checks</secondary></indexterm>
-            Some sanity checks cause drbdmeta to terminate, e.g. if a file system image would get
-	    destroyed by creating the meta data. By using that option you can force drbdmeta
-	    to ignore these checks.</para>
+	    Normally, <option>drbdmeta</option> performs some sanity checks
+	    before writing to the metadata device: for example, if the device
+	    appears to contain a file system, it refuses to destroy the file
+	    system by writing into it.  Use this option to ignore these
+	    checks.</para>
         </listitem>
       </varlistentry>
     </variablelist>
@@ -81,91 +95,108 @@
     <title>Commands</title>
     <variablelist>
       <varlistentry>
-        <term>create-md 
-          <arg choice="opt" rep="norepeat">number-of-bitmap-slots</arg>
-          <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
+	<term><option>create-md</option>
+	  <arg choice="opt" rep="norepeat"><option>--peer-max-bio-size=</option><replaceable>val</replaceable></arg> (metadata versions v06, v07, and v08)</term>
+	<term><option>create-md</option>
+          <arg choice="req" rep="norepeat">number-of-bitmap-slots</arg>
+	  <arg choice="opt" rep="norepeat"><option>--peer-max-bio-size=</option><replaceable>val</replaceable></arg> (metadata version v09)</term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
-          <option>create-md</option> initializes the meta data storage. This needs to be
-	  done before a DRBD resource can be taken online for the first
-	  time. In case there is already a meta data signature of an
-	  older format in place, drbdmeta will ask you if it should
-	  convert the older format to the selected format.
-	</para>
-	<para>
-          Normally <option>drbdadm</option> will count the number of peers in 
-          the resource, and use that count for the number of bitmap slots, but you can override this with the optional
-          <option>number-of-bitmap-slots</option> argument.
-	</para>
-	<para>
-	  If you will use the resource before it is connected to its peer
-	  for the first time DRBD may perform better if you use the
-	  <option>--peer-max-bio-size</option> option. For DRBD versions of
-	  the peer use up to these values: &lt;8.3.7 -&gt; 4k, 8.3.8 -&gt; 32k, 8.3.9 -&gt; 128k, 8.4.0 -&gt; 1M.
-	</para>
+	  <para><indexterm
+	      significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
+	    Initialize the metadata. This is necessary before a DRBD resource
+	    can be attached.  If <option>drbdmeta</option> finds an older
+	    version of DRBD metadata on the device, it asks if the format
+	    should be converted.</para>
+
+	  <para>When <option>drbdadm</option> calls <option>drbdmeta</option>'s
+	    <option>create-md</option> command for a device, it sets the
+	    <replaceable>number-of-bitmap-slots</replaceable> argument to the
+	    number of peers in the resource.  To reserve additional bitmap
+	    slots (which allows to add more peers in the future), call
+	    <option>drbdmeta</option> directly instead.</para>
+
+	  <para>When a device is used before being connected to its peers the
+	    first time, DRBD assumes that peers can only handle 4 KiB requests
+	    by default.  The <option>--peer-max-bio-size</option> option allows
+	    to set more optimistic values; use this if the versions of DRBD
+	    that this device will connect to are known.  DRBD supports a
+	    maximum bio size of 32 KiB since version 8.3.8, of 128 KiB since
+	    version 8.3.9, and of 1 MiB since version 8.4.0.</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>get-gi
-          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+	<term><option>get-gi</option>
+	  <arg rep="norepeat"><option>--node-id=</option><replaceable>id</replaceable></arg>
         </term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
-          <option>get-gi</option> shows a short textual representation of the data generation
-	  identifier. In version 0.6 and 0.7 these are generation counters,
-	  while in version 8 it is a set of UUIDs; in version 9 you have to specify the peer's <option>node-id</option>.
+	  <para><indexterm
+	      significance="normal"><primary>drbdmeta</primary><secondary>get-gi</secondary></indexterm>
+	    Show the data generation identifiers for a device on a particular
+	    connection.  DRBD version 9.0.0 and beyond support multiple peers;
+	    use the <replaceable>node-id</replaceable> option to define which
+	    peer's data generation identifiers to show.
 	</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>show-gi
-          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+	<term><option>show-gi</option>
+	  <arg rep="norepeat"><option>--node-id=</option><replaceable>id</replaceable></arg>
         </term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>show-gi</secondary></indexterm>
-	  <option>show-gi</option> prints a textual representation of the data generation
-	  identifiers including explanatory information.
+	    Similar to <option>get-gi</option>, but with explanatory information.
         </para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>dump-md</term>
+	<term><option>dump-md</option></term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>dump-md</secondary></indexterm>
-          Dumps the whole contents of the meta data storage including
-	  the stored bit-map and activity-log in a textual representation.
+	  <para><indexterm
+	      significance="normal"><primary>drbdmeta</primary><secondary>dump-md</secondary></indexterm>
+	    Dump the metadata of a device in text form, including the bitmap
+	    and activity log.
         </para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>outdate</term>
+        <term><option>outdate</option></term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>outdate</secondary></indexterm>
-          Sets the outdated flag in the meta data. This is used by the
-	  peer node when it wants to become primary, but cannot
-	  communicate with the DRBD stack on this host.
+	  <para>
+	    Mark the data on a lower-level device as outdated. See
+	    <citerefentry> <refentrytitle>drbdsetup</refentrytitle>
+	      <manvolnum>8</manvolnum> </citerefentry> for details.
         </para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>dstate</term>
+        <term><option>dstate</option></term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>dstate</secondary></indexterm>
-          Prints the state of the data on the  backing storage. The output
-          is always followed by <quote>/DUnknown</quote> since drbdmeta only looks
-	  at the local meta data.
+	  <para>
+	    Show the current disk state of a lower-level device.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><option>check-resize</option></term>
+        <listitem>
+          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>check-resize</secondary></indexterm>
+          Examine the device size of a lower-level device and its last known device size
+	  (saved in <option>/var/lib/drbd/drbd-minor-<replaceable>minor</replaceable>.lkbd</option>
+	  by <option>drbdsetup check-resize</option>).  For internal metadata,
+	  if the size of the lower-level device has changed and the metadata
+	  can be found at the previous position, move the metadata to the new
+	  position at the end of the block device.
         </para>
         </listitem>
       </varlistentry>
 
       <varlistentry>
-        <term>check-resize</term>
+        <term><option>apply-al</option></term>
         <listitem>
-          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>check-resize</secondary></indexterm>
-          Examines the device size of a backing device, and it's last known device size,
-          recorded in a file <option>/var/lib/drbd/drbd-minor-<replaceable>minor number</replaceable>.lkbd</option>. In case the size of the
-	  backing device changed, and the meta data can be found at the old position,
-	  it moves the meta data to the right position at the end of the block device.
+          <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>apply-al</secondary></indexterm>
+	  Apply the activity log of the specified device.  This is necessary
+	  before the device can be attached by the kernel again.
         </para>
         </listitem>
       </varlistentry>
@@ -173,39 +204,35 @@
     </variablelist>
   </refsect1>
   <refsect1>
-    <title>Expert's commands</title>
-    <para>      Drbdmeta allows you to modify the meta data as well. This is
-      intentionally omitted for the command's usage output, since you
-      should only use it if you really know what you are doing.
-      By setting the generation identifiers to wrong values, you
-      risk to overwrite your up-to-data data with an older version
-      of your data.
+    <title>Expert commands</title>
+    <para>The <option>drbdmeta</option> utility can be used to fine tune
+      metdata.  Please note that this can lead to destroyed metadata or even
+      silent data corruption; use with great care only.
     </para>
     <variablelist>
       <varlistentry>
-        <term>set-gi <replaceable>gi</replaceable>
-          <arg rep="norepeat">--node-id <replaceable>id</replaceable></arg>
+        <term><option>set-gi</option> <replaceable>gi</replaceable>
+	  <arg rep="norepeat"><option>--node-id=</option><replaceable>id</replaceable></arg>
         </term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>set-gi </secondary></indexterm>
-          <option>set-gi</option> allows you to set the generation identifier.
-	  <replaceable>Gi</replaceable> needs to be a generation
-	  counter for the 0.6 and 0.7 format, and a UUID set for 8.x.
-	  Specify it in the same way as get-gi shows it.
-	</para>
-        <para>
-          For DRBD version 9 you have to give the <option>node-id</option> of 
-          the peer you want to modify.
+	  Set the generation identifiers.  The <replaceable>gi</replaceable>
+	  argument is a generation counter for the v06 and v07 formats, and a
+	  set of UUIDs for v08 and beyond.  Accepts the same syntax as in the
+	  <option>get-gi</option> output.  DRBD version 9.0.0 and beyond
+	  support multiple peers; use the <replaceable>--node-id</replaceable>
+	  option to define which peer's data generation identifiers to set.
           <!-- FIXME: only the bitmap value taken? or current overwritten, too? -->
-        </para>
+	</para>
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term>restore-md <replaceable>dump_file</replaceable></term>
+        <term><option>restore-md</option> <replaceable>dump_file</replaceable></term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>restore-md </secondary></indexterm>
-          Reads the <replaceable>dump_file</replaceable> and writes
-	  it to the meta data.
+	    Replace the metadata on the device with the contents of
+	    <replaceable>dump_file</replaceable>.  The dump file format is
+	    defined by the output of the <option>dump-md</option> command.
 	</para>
         </listitem>
       </varlistentry>
@@ -240,6 +267,10 @@ not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
       <citerefentry>
         <refentrytitle>drbdadm</refentrytitle>
         <manvolnum>8</manvolnum>
+      </citerefentry>
+      <citerefentry>
+        <refentrytitle>drbd.conf</refentrytitle>
+        <manvolnum>5</manvolnum>
       </citerefentry>
     </para>
   </refsect1>

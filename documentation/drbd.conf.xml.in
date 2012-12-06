@@ -44,14 +44,10 @@
     Replication among the devices in a resource takes place in chronological order. In DRBD,
     we refer to the devices inside a resource as <emphasis>volumes</emphasis>.</para>
 
-    <para>In addition to resources, the volumes inside resources, and the
-    cluster nodes on which a resource is replicated, drbd implements the
-    concept of connections between nodes. At least for now, a connection is a
-    point-to-point link between two cluster nodes.</para>
-
     <para>In DRBD 9.0, a resource can be replicated between two or more cluster
-    nodes. Connections must be defined between
-    all pairs of cluster nodes, at least for the time being.</para>
+    nodes.  The connections between cluster nodes are point-to-point links, and
+    use TCP or a TCP-like protocol.  All nodes must be directly
+    connected.</para>
 
     <para>DRBD consists of low-level user-space components
     which interact with the kernel and perform basic operations
@@ -80,35 +76,32 @@
   <refsect1>
     <title>Example Configuration File</title>
     <para>
-      <example>
-        <title>A small r0.res example file</title>
-        <programlisting format="linespecific">resource r0 {
-        net {
-                cram-hmac-alg sha1;
-                shared-secret "FooFunFactory";
-        }
-        volume 0 {
-                device    /dev/drbd1;
-                disk      /dev/sda7;
-                meta-disk internal;
-        }
-        on alice {
-                node-id   0;
-                address   10.1.1.31:7000;
-        }
-        on bob {
-                node-id   1;
-                address   10.1.1.32:7000;
-        }
-        connection {
-                host      alice  port 7000;
-                host      bob    port 7000;
-                net {
-                          protocol C;
-                }
-        }
+      <programlisting format="linespecific">resource r0 {
+      net {
+	      cram-hmac-alg sha1;
+	      shared-secret "FooFunFactory";
+      }
+      volume 0 {
+	      device    /dev/drbd1;
+	      disk      /dev/sda7;
+	      meta-disk internal;
+      }
+      on alice {
+	      node-id   0;
+	      address   10.1.1.31:7000;
+      }
+      on bob {
+	      node-id   1;
+	      address   10.1.1.32:7000;
+      }
+      connection {
+	      host      alice  port 7000;
+	      host      bob    port 7000;
+	      net {
+			protocol C;
+	      }
+      }
 }</programlisting>
-      </example>
     This example defines a resource <option>r0</option> which contains a single replicated
     device with volume number 0.  The resource is replicated among hosts <option>alice</option>
     and <option>bob</option>, which have the IPv4 addresses <option>10.1.1.31</option> and <option>10.1.1.32</option> and the
@@ -118,8 +111,8 @@
     protocol C.</para>
 
     <para>Please refer to the <ulink
-        url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's
-          Guide</citetitle></ulink> for more examples.</para>
+	url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>
+      for more examples.</para>
 
   </refsect1>
 
@@ -127,7 +120,7 @@
     <title>File Format</title>
 
     <para>DRBD configuration files consist of sections, which contain other
-    sections, and parameters depending on the sections' type. Each section
+    sections and parameters depending on the section types. Each section
     consists of one or more keywords, sometimes a section name, an opening
     brace (<quote>{</quote>), the section's contents, and a closing brace
     (<quote>}</quote>). Parameters inside a section consist of a keyword,
@@ -136,9 +129,10 @@
 
     <para>Some parameter values have a default scale which applies when a plain
     number is specified (for example Kilo, or 1024 times the numeric value).
-    Such default scales can be overridden by using a suffix (for example, <option>10M</option>
-    for 10 Mega).  The common suffixes <option>K</option> = 2^10 = 1024, <option>M</option> = 1024 K, and <option>G</option> =
-    1024 M are supported.</para>
+    Such default scales can be overridden by using a suffix (for example,
+    <option>M</option> for Mega).  The common suffixes <option>K</option> =
+    2^10 = 1024, <option>M</option> = 1024 K, and <option>G</option> = 1024 M
+    are supported.</para>
 
     <para>Comments start with a hash sign (<quote>#</quote>) and extend to the
     end of the line. In addition, any section can be prefixed with the keyword
@@ -391,7 +385,7 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>resource</secondary>
-              </indexterm> Defines a resource. Usually contains at least two
+              </indexterm> Define a resource. Usually contains at least two
               <option>on</option> sections and at least one
               <option>connection</option> section. <!-- FIXME? auto-mesh? --></para>
           </listitem>
@@ -407,9 +401,9 @@ resource
                 <secondary>stacked-on-top-of</secondary>
             </indexterm> Used instead of an <option>on</option> section for
             configuring a stacked resource with three to four nodes.</para>
-          <para>Starting with DRBD 9.0, stacking is deprecated.  It
-          is advised to use resources with more than two hosts (and more than
-          one connection) instead.</para>
+	  <para>Starting with DRBD 9.0, stacking is deprecated.  It is advised
+	    to use resources which are replicated among more than two nodes
+	    instead.</para>
           </listitem>
         </varlistentry>
 
@@ -691,17 +685,19 @@ resource
               </indexterm> Defines the address family, address, and port of a
               connection endpoint.</para>
 
-            <para>The address families <option>ipv4</option>,
-              <option>ipv6</option>, <option>ssocks</option>,
-              <option>sdp</option>, and <option>sci</option> are supported
-              (<option>sci</option> being an alias for <option>ssocks</option>).
-              If no address family is specified, <option>ipv4</option> is
-              assumed.  For all address families except <option>ipv6</option>,
-              the address is specified in IPV4 address syntax (1.2.3.4
-              notation).  For <option>ipv6</option>, the address is enclosed in
-              brackets and uses IPv6 address syntax (for example, <literal
-                moreinfo="none">[fd01:2345:6789:abcd::1]</literal>).  The port
-              is always specified as a decimal number from 1 to 65535.</para>
+	    <para>The address families <option>ipv4</option>,
+	      <option>ipv6</option>, <option>ssocks</option> (Dolphin
+	      Interconnect Solutions' "super sockets"), <option>sdp</option>
+	      (Infiniband Sockets Direct Protocol), and <option>sci</option>
+	      are supported (<option>sci</option> is an alias for
+	      <option>ssocks</option>).  If no address family is specified,
+	      <option>ipv4</option> is assumed.  For all address families
+	      except <option>ipv6</option>, the address is specified in IPV4
+	      address notation (for example, 1.2.3.4).  For
+	      <option>ipv6</option>, the address is enclosed in brackets and
+	      uses IPv6 address notation (for example, <literal
+		moreinfo="none">[fd01:2345:6789:abcd::1]</literal>).  The port
+	      is always specified as a decimal number from 1 to 65535.</para>
 
             <para>On each host, the port numbers must be unique for each
               address; ports cannot be shared.</para>
@@ -884,7 +880,7 @@ resource
 
     <para>Both mechanisms can produce false positives if the data is modified
       during I/O (i.e., while it is being sent over the network or written to
-      disk).  This does not necessarily indicate a problem: for example, some
+      disk).  This does not always indicate a problem: for example, some
       file systems and applications do modify data under I/O for certain
       operations.  Swap space can also undergo changes while under I/O.</para>
 
@@ -899,7 +895,7 @@ resource
       as a bug in the TCP offloading engine and driver of a certain type of
       GBit NIC in 2007: the data corruption happened on the DMA transfer from
       core memory to the card. Because the TCP checksum were calculated on the
-      card, the TCP/IP protocol checksums did not detect this problem.</para>
+      card, the TCP/IP protocol checksums did not reveal this problem.</para>
   </refsect1>
 
   <refsect1>
@@ -946,7 +942,7 @@ resource
         <manvolnum>8</manvolnum>
       </citerefentry>,
       <ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>,
-       <ulink url="http://www.drbd.org/"><citetitle>DRBD web site</citetitle></ulink></para>
+       <ulink url="http://www.drbd.org/"><citetitle>DRBD Web Site</citetitle></ulink></para>
 
   </refsect1>
 </refentry>

@@ -8,7 +8,7 @@
   <refentryinfo>
     <productname>DRBD</productname>
     <productnumber>9.0.0</productnumber>
-    <date>22 November 2012</date>
+    <date>6 December 2012</date>
   </refentryinfo>
   <refmeta>
     <refentrytitle>drbd</refentrytitle>
@@ -38,18 +38,11 @@
     <para>   The <option>/etc/init.d/drbd</option> script is used
    to start and stop drbd on a system V style init system.
   </para>
-    <para>    In order to use <option>/etc/init.d/drbd</option> you must define
-    a resource, a host, and any other configuration options in the drbd
-    configuration file.  See <option>/etc/drbd.conf</option> for details.
-    If <replaceable>resource</replaceable> is omitted, then all of the
-    resources listed in the config file are configured.
-  </para>
-    <para>    This script might ask you <quote>Do you want to abort waiting for
-    other server and make this one primary?</quote>
-  </para>
-    <para>    Only answer this question with <quote>yes</quote> if you are sure
-    that it is impossible to repair the other node.
-    <!-- FIXME - which other node? see also wfc-timeouts -->
+    <para>In order to use <option>/etc/init.d/drbd</option>, define a resource
+      drbd configuration; See
+      <citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>
+      for details.  If <replaceable>resource</replaceable> is omitted, all
+      resources are configured.
   </para>
   </refsect1>
   <refsect1>

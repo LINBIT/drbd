@@ -2105,10 +2105,10 @@ static int adm_wait_ci(struct cfg_ctx *ctx)
 		printf
 		    ("\n***************************************************************\n"
 		     " DRBD's startup script waits for the peer node(s) to appear.\n"
-		     " - In case this node was already a degraded cluster before the\n"
-		     "   reboot the timeout is %s seconds. [degr-wfc-timeout]\n"
-		     " - If the peer was available before the reboot the timeout will\n"
-		     "   expire after %s seconds. [wfc-timeout]\n"
+		     " - If this node was already a degraded cluster before the\n"
+		     "   reboot, the timeout is %s seconds. [degr-wfc-timeout]\n"
+		     " - If the peer was available before the reboot, the timeout\n"
+		     "   is %s seconds. [wfc-timeout]\n"
 		     "   (These values are for resource '%s'; 0 sec -> wait forever)\n",
 		     get_opt_val(&STAILQ_FIRST(&config)->startup_options, "degr-wfc-timeout",
 				 "0"), get_opt_val(&STAILQ_FIRST(&config)->startup_options,
