@@ -95,7 +95,7 @@ module_param(minor_count, uint, 0444);
 module_param(disable_sendpage, bool, 0644);
 module_param(allow_oos, bool, 0);
 
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 int enable_faults;
 int fault_rate;
 static int fault_count;
@@ -4740,7 +4740,7 @@ long twopc_timeout(struct drbd_resource *resource)
 	return resource->res_opts.twopc_timeout * HZ/10;
 }
 
-#ifdef DRBD_ENABLE_FAULTS
+#ifdef CONFIG_DRBD_FAULT_INJECTION
 /* Fault insertion support including random number generator shamelessly
  * stolen from kernel/rcutorture.c */
 struct fault_random_state {
