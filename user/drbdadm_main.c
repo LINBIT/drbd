@@ -1277,7 +1277,7 @@ static int adm_drbdmeta(struct cfg_ctx *ctx)
 	return _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, NULL);
 }
 
-static void __adm_drbdsteup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
+static void __adm_drbdsetup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0;
@@ -1303,16 +1303,16 @@ static void __adm_drbdsteup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd,
 	m__system(argv, flags, ctx->res ? ctx->res->name : NULL, pid, fd, ex);
 }
 
-static int _adm_drbdsteup(struct cfg_ctx *ctx, int flags)
+static int _adm_drbdsetup(struct cfg_ctx *ctx, int flags)
 {
 	int ex;
-	__adm_drbdsteup(ctx, flags, NULL, NULL, &ex);
+	__adm_drbdsetup(ctx, flags, NULL, NULL, &ex);
 	return ex;
 }
 
 static int adm_drbdsetup(struct cfg_ctx *ctx)
 {
-	return _adm_drbdsteup(ctx, ctx->cmd->takes_long ? SLEEPS_LONG : SLEEPS_SHORT);
+	return _adm_drbdsetup(ctx, ctx->cmd->takes_long ? SLEEPS_LONG : SLEEPS_SHORT);
 }
 
 int sh_status(struct cfg_ctx *ctx)
@@ -1363,7 +1363,7 @@ int sh_status(struct cfg_ctx *ctx)
 			printf("_conf_volume=%d\n", vol->vnr);
 
 			ctx->vol = vol;
-			rv = _adm_drbdsteup(ctx, SLEEPS_SHORT);
+			rv = _adm_drbdsetup(ctx, SLEEPS_SHORT);
 			if (rv)
 				return rv;
 
@@ -1379,7 +1379,7 @@ static int adm_outdate(struct cfg_ctx *ctx)
 {
 	int rv;
 
-	rv = _adm_drbdsteup(ctx, SLEEPS_SHORT | SUPRESS_STDERR);
+	rv = _adm_drbdsetup(ctx, SLEEPS_SHORT | SUPRESS_STDERR);
 	/* special cases for outdate:
 	 * 17: drbdsetup outdate, but is primary and thus cannot be outdated.
 	 *  5: drbdsetup outdate, and is inconsistent or worse anyways. */
@@ -1419,7 +1419,7 @@ static int adm_setup_and_meta(struct cfg_ctx *ctx)
 	int fd, status, rv = 0, rr, s = 0;
 	pid_t pid;
 
-	__adm_drbdsteup(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
+	__adm_drbdsetup(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
 
 	if (fd < 0) {
 		fprintf(stderr, "Strange: got negative fd.\n");
