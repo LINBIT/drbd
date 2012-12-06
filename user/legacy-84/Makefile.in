@@ -1,0 +1,130 @@
+# Makefile for drbd.o
+#
+# This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
+#
+# drbd is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+#
+# drbd is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with drbd; see the file COPYING.  If not, write to
+# the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+#
+
+# variables set by configure
+DISTRO = @DISTRO@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+localstatedir = @localstatedir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+sbindir = @sbindir@
+sysconfdir = @sysconfdir@
+BASH_COMPLETION_SUFFIX = @BASH_COMPLETION_SUFFIX@
+UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
+INITDIR = @INITDIR@
+LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
+CC = @CC@
+CFLAGS = @CFLAGS@
+LDFLAGS = @LDFLAGS@
+LN_S = @LN_S@
+
+# features enabled or disabled by configure
+WITH_UTILS = @WITH_UTILS@
+WITH_LEGACY_UTILS_84 = @WITH_LEGACY_UTILS_84@
+WITH_KM = @WITH_KM@
+WITH_UDEV = @WITH_UDEV@
+WITH_XEN = @WITH_XEN@
+WITH_PACEMAKER = @WITH_PACEMAKER@
+WITH_HEARTBEAT = @WITH_HEARTBEAT@
+WITH_RGMANAGER = @WITH_RGMANAGER@
+WITH_BASHCOMPLETION = @WITH_BASHCOMPLETION@
+
+# variables meant to be overridden from the make command line
+DESTDIR ?= /
+
+#CFLAGS += -Wall -I. -I.. -I../../drbd -I../../drbd/compat
+CFLAGS += -Wall -I. -I..
+
+GENETLINK_H := /usr/include/linux/genetlink.h
+
+drbdadm-obj = drbdadm_scanner.o drbdadm_parser.o drbdadm_main.o \
+	      drbdadm_adjust.o drbdtool_common.o drbdadm_usage_cnt.o \
+	      drbd_buildtag.o registry.o config_flags.o ../libgenl.o \
+	      drbd_nla.o
+
+drbdsetup-obj = ../libgenl.o registry.o drbdsetup.o drbdtool_common.o \
+		drbd_buildtag.o drbd_strings.o config_flags.o drbd_nla.o \
+		wrap_printf.o
+
+all: tools
+
+ifeq ($(WITH_LEGACY_UTILS_84),yes)
+tools: drbdadm-84 drbdsetup-84
+else
+tools:
+endif
+
+drbd_buildtag.c: ../../drbd/drbd_buildtag.c
+	cp $^ $@
+
+drbdadm-84: $(drbdadm-obj)
+	$(LINK.c) $(LDFLAGS) -o $@ $^
+
+drbdadm_scanner.c: drbdadm_scanner.fl drbdadm_parser.h
+	flex -s -odrbdadm_scanner.c drbdadm_scanner.fl
+
+drbdsetup-84: $(drbdsetup-obj)
+	$(LINK.c) $(LDFLAGS) -o $@ $^
+
+clean:
+	rm -f drbdadm_scanner.c
+	rm -f drbdsetup-84 drbdadm-84 *.o
+	rm -f drbd_buildtag.c
+	rm -f *~
+
+distclean: clean
+
+install:
+ifeq ($(WITH_UTILS),yes)
+ifeq ($(WITH_LEGACY_UTILS_84),yes)
+	install -d $(DESTDIR)/sbin/
+	install -d $(DESTDIR)$(localstatedir)/lib/drbd
+	install -d $(DESTDIR)$(localstatedir)/lock
+	if getent group haclient > /dev/null 2> /dev/null ; then	\
+		install -g haclient -m 4750 drbdsetup-84 $(DESTDIR)/lib/drbd/ ;	\
+		install -m 755 drbdadm-84 $(DESTDIR)/lib/drbd/ ;		\
+	else								\
+		install -m 755 drbdsetup-84 $(DESTDIR)/lib/drbd/ ;		\
+		install -m 755 drbdadm-84 $(DESTDIR)/lib/drbd/ ; 		\
+	fi
+endif
+endif
+
+uninstall:
+	rm -f $(DESTDIR)/lib/drbd/drbdsetup-84
+	rm -f $(DESTDIR)/lib/drbd/drbdadm-84
+
+spell:
+	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdsetup.c drbdtool_common.c; do \
+	 	aspell --save-repl --dont-backup --personal=./../documentation/aspell.en.per check $$f; \
+	done
+
+###dependencies
+drbdset.o:     drbdtool_common.h ../../drbd/linux/drbd_limits.h
+drbdsetup.o:       ../../drbd/linux/drbd_genl.h ../../drbd/linux/drbd.h
+drbdsetup.o:       ../../drbd/linux/genl_magic_struct.h ../../drbd/linux/genl_magic_func.h
+drbdsetup.o:       ../libgenl.h config_flags.h
+drbdtool_common.o: drbdtool_common.h
+drbdadm_main.o:    drbdtool_common.h drbdadm.h
+drbdadm_adjust.o:  drbdtool_common.h drbdadm.h
+drbdadm_parser.o:  drbdtool_common.h drbdadm.h ../../drbd/linux/drbd_limits.h
+drbdadm_scanner.o: drbdtool_common.h drbdadm.h               drbdadm_parser.h
+drbdsetup.o:       drbdtool_common.h           ../../drbd/linux/drbd_limits.h
+drbdadm_usage_cnt.o: drbdtool_common.h drbdadm.h drbd_endian.h

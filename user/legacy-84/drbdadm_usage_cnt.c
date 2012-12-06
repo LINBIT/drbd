@@ -289,7 +289,7 @@ void add_lib_drbd_to_path(void)
 	setenv("PATH", new_path, 1);
 }
 
-void maybe_exec_legacy_drbdadm(char **argv)
+void maybe_exec_drbdadm_83(char **argv)
 {
 	if (current_vcs_rel.version.major == 8 &&
 	    current_vcs_rel.version.minor == 3) {
@@ -301,26 +301,10 @@ void maybe_exec_legacy_drbdadm(char **argv)
 		fprintf(stderr, "execvp() failed to exec %s: %m\n", drbdadm_83);
 #else
 		fprintf(stderr, "This drbdadm was build without support for legacy\n"
-			"drbd kernel code (8.3). Consider to rebuild your user land\n"
+			"drbd kernel code. Consider to rebuild your user land\n"
 			"tools with ./configure --with-legacy-connector\n");
 #endif
-		exit(E_EXEC_ERROR);
-	}
-	if (current_vcs_rel.version.major == 8 &&
-	    current_vcs_rel.version.minor == 4) {
-#ifdef DRBD_LEGACY_84
-		/* This drbdadm warned already... */
-		setenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH", "1", 0);
-		add_lib_drbd_to_path();
-		execvp(drbdadm_84, argv);
-		fprintf(stderr, "execvp() failed to exec %s: %m\n", drbdadm_84);
-#else
-		fprintf(stderr, "This drbdadm was build without support for legacy\n"
-			"drbd kernel code (8.4). Consider to rebuild your user land\n"
-			"tools with and do not give --without-legacy-utils-8.4 on the\n"
-			"commandline\n");
-#endif
-		exit(E_EXEC_ERROR);
+		exit(E_exec_error);
 	}
 }
 
@@ -504,13 +488,14 @@ static int make_get_request(char *uri) {
 	}
 
 
-	req_buf = ssprintf("GET %s HTTP/1.0\r\n"
-			   "Host: "HTTP_HOST"\r\n"
-			   "User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"
-			   "\r\n",
-			   uri,
-			   nodeinfo.sysname, nodeinfo.release,
-			   nodeinfo.version, nodeinfo.machine);
+	ssprintf(req_buf,
+		"GET %s HTTP/1.0\r\n"
+		"Host: "HTTP_HOST"\r\n"
+		"User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"
+		"\r\n",
+		uri,
+		nodeinfo.sysname, nodeinfo.release,
+		nodeinfo.version, nodeinfo.machine);
 
 	server.sin_family = AF_INET;
 	server.sin_port = htons(HTTP_PORT);
@@ -641,9 +626,9 @@ void uc_node(enum usage_count_type type)
 		url_encode(answer,n_comment);
 	}
 
-	uri = ssprintf("http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s%s%s",
-		       ni.node_uuid, vcs_to_str(&ni.rev),
-		       n_comment[0] ? "&nc=" : "", n_comment);
+	ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?nu="U64"&%s%s%s",
+		 ni.node_uuid, vcs_to_str(&ni.rev),
+		 n_comment[0] ? "&nc=" : "", n_comment);
 
 	if (send) {
 		write_node_id(&ni);
@@ -668,7 +653,7 @@ void uc_node(enum usage_count_type type)
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
+static char* run_admm_generic(struct cfg_ctx *ctx, const char *arg_override)
 {
 	const int SLURP_SIZE = 4096;
 	int rr,pipes[2];
@@ -683,21 +668,19 @@ static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
 	pid = fork();
 	if(pid == -1) {
 		fprintf(stderr,"Can not fork\n");
-		exit(E_EXEC_ERROR);
+		exit(E_exec_error);
 	}
 	if(pid == 0) {
-		struct adm_cmd local_cmd = *ctx->cmd;
-		struct cfg_ctx local_ctx = *ctx;
 		// child
 		close(pipes[0]); // close reading end
 		dup2(pipes[1],1); // 1 = stdout
 		close(pipes[1]);
-		local_cmd.name = arg_override;
-		local_ctx.cmd = &local_cmd;
-		rr = _adm_drbdmeta(&local_ctx,
+		/* local modification in child,
+		 * no propagation to parent */
+		ctx->arg = arg_override;
+		rr = _admm_generic(ctx,
 				   SLEEPS_VERY_LONG|SUPRESS_STDERR|
-				   DONT_REPORT_FAILED,
-				   NULL);
+				   DONT_REPORT_FAILED);
 		exit(rr);
 	}
 	close(pipes[1]); // close writing end
@@ -718,7 +701,6 @@ static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
 
 int adm_create_md(struct cfg_ctx *ctx)
 {
-	struct connection *conn;
 	char answer[ANSWER_SIZE];
 	struct node_info ni;
 	uint64_t device_uuid=0;
@@ -728,18 +710,13 @@ int adm_create_md(struct cfg_ctx *ctx)
 	char *tb;
 	int rv,fd;
 	char *r;
-	int peers = 0;
 
-	tb = run_adm_drbdmeta(ctx, "read-dev-uuid");
+	tb = run_admm_generic(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
-	for_each_connection(conn, &ctx->res->connections)
-		if (!conn->ignore)
-			peers++;
-
 	/* this is "drbdmeta ... create-md" */
-	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, ssprintf("%d", peers));
+	rv = _admm_generic(ctx, SLEEPS_VERY_LONG);
 
 	if(rv || dry_run) return rv;
 
@@ -777,27 +754,25 @@ int adm_create_md(struct cfg_ctx *ctx)
 	}
 
 	if (send) {
-		uri = ssprintf("http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
-			       "nu="U64"&ru="U64"&rs="U64,
-			       ni.node_uuid, device_uuid, device_size);
+		ssprintf(uri,"http://"HTTP_HOST"/cgi-bin/insert_usage.pl?"
+			 "nu="U64"&ru="U64"&rs="U64,
+			 ni.node_uuid, device_uuid, device_size);
 		make_get_request(uri);
 	}
 
 	/* HACK */
 	{
-		struct adm_cmd local_cmd = *ctx->cmd;
 		struct cfg_ctx local_ctx = *ctx;
 		struct setup_option *old_setup_options;
 		char *opt;
 
-		opt = ssprintf(X64(016), device_uuid);
+		ssprintf(opt, X64(016), device_uuid);
 		old_setup_options = setup_options;
 		setup_options = NULL;
 		add_setup_option(false, opt);
 
-		local_cmd.name = "write-dev-uuid";
-		local_ctx.cmd = &local_cmd;
-		_adm_drbdmeta(&local_ctx, SLEEPS_VERY_LONG, NULL);
+		local_ctx.arg = "write-dev-uuid";
+		_admm_generic(&local_ctx, SLEEPS_VERY_LONG);
 
 		free(setup_options);
 		setup_options = old_setup_options;

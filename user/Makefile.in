@@ -38,6 +38,7 @@ LN_S = @LN_S@
 # features enabled or disabled by configure
 WITH_UTILS = @WITH_UTILS@
 WITH_LEGACY_UTILS = @WITH_LEGACY_UTILS@
+WITH_LEGACY_UTILS_84 = @WITH_LEGACY_UTILS_84@
 WITH_KM = @WITH_KM@
 WITH_UDEV = @WITH_UDEV@
 WITH_XEN = @WITH_XEN@
@@ -67,7 +68,7 @@ drbdmeta-obj = drbdmeta.o drbdmeta_scanner.o drbdtool_common.o drbd_buildtag.o
 all: tools
 
 ifeq ($(WITH_UTILS),yes)
-tools: drbdadm drbdmeta drbdsetup legacy-tools
+tools: drbdadm drbdmeta drbdsetup legacy-tools legacy-tools-84
 else
 tools:
 endif
@@ -103,13 +104,21 @@ ifeq ($(WITH_LEGACY_UTILS),yes)
 	ln -f -s legacy/drbdsetup-83
 endif
 
+legacy-tools-84:
+ifeq ($(WITH_LEGACY_UTILS_84),yes)
+	$(MAKE) -C legacy-84
+	ln -f -s legacy-84/drbdadm-84
+	ln -f -s legacy-84/drbdsetup-84
+endif
+
 clean:
 	rm -f drbdadm_scanner.c drbdmeta_scanner.c
 	rm -f drbdsetup drbdadm drbdmeta *.o
 	rm -f drbd_buildtag.c drbd_strings.c drbd_strings.h
-	rm -f drbdadm-83 drbdsetup-83
+	rm -f drbdadm-83 drbdsetup-83 drbdadm-84 drbdsetup-84
 	rm -f *~
 	$(MAKE) -C legacy clean
+	$(MAKE) -C legacy-84 clean
 
 distclean: clean
 
@@ -128,12 +137,14 @@ ifeq ($(WITH_UTILS),yes)
 		install -m 755 drbdadm $(DESTDIR)/sbin/ ; 		\
 	fi
 	$(MAKE) -C legacy install
+	$(MAKE) -C legacy-84 install
 endif
 
 uninstall:
 	rm -f $(DESTDIR)/sbin/drbdsetup
 	rm -f $(DESTDIR)/sbin/drbdadm
 	$(MAKE) -C legacy uninstall
+	$(MAKE) -C legacy-84 uninstall
 
 spell:
 	for f in drbdadm_adjust.c drbdadm_main.c drbdadm_parser.c drbdadm_usage_cnt.c drbdmeta.c drbdsetup.c drbdtool_common.c; do \

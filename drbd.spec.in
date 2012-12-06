@@ -21,6 +21,7 @@
 # --with xen is ignored on any non-x86 architecture
 %bcond_without xen
 %bcond_without legacy_utils
+%bcond_without legacy_utils_84
 %ifnarch %{ix86} x86_64
 %global _without_xen --without-xen
 %endif
@@ -102,6 +103,10 @@ This packages includes the DRBD administration tools.
 %dir /lib/drbd/
 /lib/drbd/drbdsetup-83
 /lib/drbd/drbdadm-83
+%endif
+%if %{with legacy_utils_84}
+/lib/drbd/drbdsetup-84
+/lib/drbd/drbdadm-84
 %endif
 %{_initddir}/%{name}
 %{_sbindir}/drbd-overview
@@ -266,6 +271,7 @@ management utility.
     %{?_with_rgmanager} \
     %{?_without_bashcompletion} \
     %{?_without_legacy_utils} \
+    %{?_without_legacy_utils_84} \
     --with-initdir=%{_initddir}
 make %{?_smp_mflags}
 

@@ -341,7 +341,7 @@ extern void schedule_deferred_cmd(struct adm_cmd *, struct cfg_ctx *, enum drbd_
 extern int version_code_kernel(void);
 extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);
-extern void maybe_exec_drbdadm_83(char **argv);
+extern void maybe_exec_legacy_drbdadm(char **argv);
 extern void uc_node(enum usage_count_type type);
 extern int have_ip(const char *af, const char *ip);
 extern void free_opt(struct d_option *item);
@@ -400,6 +400,7 @@ extern char* drbdsetup;
 extern char* drbdmeta;
 extern char* drbd_proxy_ctl;
 extern char* drbdadm_83;
+extern char* drbdadm_84;
 extern char ss_buffer[1024];
 extern struct utsname nodeinfo;
 

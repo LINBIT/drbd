@@ -42,6 +42,7 @@ docdir="`eval echo ${docdir}`"
 dnl "--with-<foo>" options (all except km enabled by default, pass --without-<foo> to disable)
 WITH_UTILS=yes
 WITH_LEGACY_UTILS=yes
+WITH_LEGACY_UTILS_84=yes
 WITH_KM=no
 WITH_UDEV=yes
 WITH_XEN=yes
@@ -57,6 +58,10 @@ AC_ARG_WITH([legacy_utils],
 	[AS_HELP_STRING([--without-legacy_utils],
 			[Do not include legacy <= 8.3 drbdsetup/drbdadm])],
 	[WITH_LEGACY_UTILS=$withval])
+AC_ARG_WITH([legacy_utils_84],
+	[AS_HELP_STRING([--without-legacy-utils-8.4],
+			[Do not include legacy 8.4 drbdsetup/drbdadm])],
+	[WITH_LEGACY_UTILS_84=$withval])
 AC_ARG_WITH([km],
 	[AS_HELP_STRING([--with-km],
 			[Enable kernel module])],
@@ -102,6 +107,7 @@ AC_ARG_ENABLE([spec],
 
 AC_SUBST(WITH_UTILS)
 AC_SUBST(WITH_LEGACY_UTILS)
+AC_SUBST(WITH_LEGACY_UTILS_84)
 AC_SUBST(WITH_KM)
 AC_SUBST(WITH_UDEV)
 AC_SUBST(WITH_XEN)
@@ -295,6 +301,8 @@ AH_TEMPLATE(DRBD_CONFIG_DIR, [Local configuration directory. Commonly
 			   /etc or
 			   /usr/local/etc])
 AH_TEMPLATE(DRBD_LEGACY_83, [Include support for drbd-8.3 kernel code])
+AH_TEMPLATE(DRBD_LEGACY_84, [Include support for drbd-8.4 kernel code])
+
 
 AC_DEFINE_UNQUOTED(DRBD_LIB_DIR, ["$localstatedir/lib/$PACKAGE_TARNAME"])
 AC_DEFINE_UNQUOTED(DRBD_RUN_DIR, ["$localstatedir/run/$PACKAGE_TARNAME"])
@@ -305,9 +313,13 @@ if test "$WITH_LEGACY_UTILS" = "yes"; then
    AC_DEFINE(DRBD_LEGACY_83, [1])
 fi
 
+if test "$WITH_LEGACY_UTILS_84" = "yes"; then
+   AC_DEFINE(DRBD_LEGACY_84, [1])
+fi
+
 dnl The configuration files we create (from their .in template)
 if test -z $SPECMODE; then
-   AC_CONFIG_FILES(Makefile user/Makefile user/legacy/Makefile scripts/Makefile documentation/Makefile)
+   AC_CONFIG_FILES(Makefile user/Makefile user/legacy/Makefile user/legacy-84/Makefile scripts/Makefile documentation/Makefile)
    AC_CONFIG_HEADERS(user/config.h user/legacy/config.h)
 else
    if test "$WITH_UTILS" = "yes"; then
