@@ -26,6 +26,8 @@ int wrap_printf(int indent, char *format, ...)
 	va_end(ap1);
 	if (col + n > columns) {
 		putchar('\n');
+		if (*format == '\n')
+			format++;
 		col = 0;
 	}
 	if (col == 0) {
