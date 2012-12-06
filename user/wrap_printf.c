@@ -4,7 +4,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
-int wrap_printf(int indent, char *format, ...)
+int wrap_printf(int indent, const char *format, ...)
 {
 	static int columns, col;
 	va_list ap1, ap2;
