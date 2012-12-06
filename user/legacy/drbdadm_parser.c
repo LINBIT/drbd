@@ -614,7 +614,7 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 					void *ctx)
 {
 	char *opt_name;
-	int token;
+	int token, token_group;
 	enum range_checks rc;
 
 	struct d_option *options = NULL, *ro = NULL;
@@ -622,11 +622,15 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 	fline = line;
 
 	while (1) {
-		token = yylex();
+		token_group = yylex();
+		/* Keep the higher bits in token_option, remove them from token. */
+		token = REMOVE_GROUP_FROM_TOKEN(token_group);
 		fline = line;
+
 		if (token == token_switch) {
 			options = APPEND(options, new_opt(yylval.txt, NULL));
-		} else if (token == token_option) {
+		} else if (token == token_option ||
+				GET_TOKEN_GROUP(token_option & token_group)) {
 			opt_name = yylval.txt;
 			check_and_change_deprecated_alias(&opt_name, token_option);
 			rc = yylval.rc;
@@ -634,7 +638,8 @@ static struct d_option *parse_options_d(int token_switch, int token_option,
 			range_check(rc, opt_name, yylval.txt);
 			ro = new_opt(opt_name, yylval.txt);
 			options = APPEND(options, ro);
-		} else if (token == token_delegate) {
+		} else if (token == token_delegate ||
+				GET_TOKEN_GROUP(token_delegate & token_group)) {
 			delegate(ctx);
 			continue;
 		} else if (token == TK_DEPRECATED_OPTION) {
@@ -882,7 +887,8 @@ static void parse_device(struct d_name* on_hosts, unsigned *minor, char **device
 out:
 	for_each_host(h, on_hosts) {
 		check_uniq("device-minor", "device-minor:%s:%u", h->name, *minor);
-		check_uniq("device", "device:%s:%s", h->name, *device);
+		if (*device)
+			check_uniq("device", "device:%s:%s", h->name, *device);
 	}
 }
 
@@ -1120,8 +1126,10 @@ static void parse_stacked_section(struct d_resource* res)
 	/* inherit device */
 	if (!host->device && res->device) {
 		host->device = strdup(res->device);
-		for_each_host(h, host->on_hosts)
-			check_uniq("device", "device:%s:%s", h->name, host->device);
+		for_each_host(h, host->on_hosts) {
+			if (host->device)
+				check_uniq("device", "device:%s:%s", h->name, host->device);
+		}
 	}
 
 	if (host->device_minor == -1U && res->device_minor != -1U) {
@@ -1338,8 +1346,18 @@ void set_on_hosts_in_res(struct d_resource *res)
 			/* Simple: host->on_hosts = concat_names(l_res->me->on_hosts, l_res->peer->on_hosts); */
 			last = NULL;
 			for (host2 = l_res->all_hosts; host2; host2 = host2->next)
-				if (!host2->lower_name)
+				if (!host2->lower_name) {
 					append_names(&host->on_hosts, &last, host2->on_hosts);
+
+					for_each_host(h, host2->on_hosts) {
+						check_uniq("device-minor", "device-minor:%s:%u", h->name,
+							   host->device_minor);
+
+						if (host->device)
+							check_uniq("device", "device:%s:%s", h->name,
+								   host->device);
+					}
+				}
 
 			host->lower = l_res;
 
@@ -1454,7 +1472,7 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 
 	res->proxy_options =
 		parse_options_d(TK_PROXY_SWITCH,
-				TK_PROXY_OPTION,
+				TK_PROXY_OPTION | TK_PROXY_GROUP,
 				TK_PROXY_DELEGATE,
 				proxy_delegate, res);
 
