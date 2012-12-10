@@ -1790,23 +1790,19 @@ int ctx_by_name(struct cfg_ctx *ctx, const char *id)
 	struct d_volume *vol;
 	struct connection *conn;
 	char *input = strdupa(id);
-	char *vol_id = strchr(input, '/');
+	char *vol_id;
 	char *res_name, *conn_name;
 	unsigned vol_nr = ~0U;
 
+	res_name = input;
+	vol_id = strrchr(input, '/');
 	if (vol_id) {
 		*vol_id++ = '\0';
 		vol_nr = m_strtoll(vol_id, 0);
 	}
-
-	res_name = strchr(input, '@');
-	if (res_name) {
-		*res_name++ = '\0';
-		conn_name = input;
-	} else {
-		res_name = input;
-		conn_name = NULL;
-	}
+	conn_name = strchr(input, ':');
+	if (conn_name)
+		*conn_name++ = '\0';
 
 	res = res_by_name(res_name);
 	if (!res || res->ignore)
