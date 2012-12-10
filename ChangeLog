@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.15rc1 (api:88/proto:86-97)
+--------
+ * Do not end up in Unconnected state if the connection breaks at a
+   certain point during the handshake (was introduced with 8.3.12)
+ * Closed a race condition between promoting and connection handshake,
+   that could lead to an inconsistent view of the peer's UUIDS
+ * Fixed a race condition that could lead to a full sync, if connection
+   breaks at a certain point while starting a regular resync
+ * Fixed crm-fence-peer.sh for pacemaker 1.1.8
+ * Now builds on Linux-3.7
+
 8.3.14 (api:88/proto:86-97)
 --------
  * No longer support write-ordering "barrier" on kernels newer than 2.6.36

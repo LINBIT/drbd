@@ -312,6 +312,9 @@ fi
 
 
 %changelog
+* Mon Dec 10 2012 Philipp Reisner <phil@linbit.com> - 8.3.15rc1-1
+- New upstream release.
+
 * Fri Oct 19 2012 Philipp Reisner <phil@linbit.com> - 8.3.14-1
 - New upstream release.
 
