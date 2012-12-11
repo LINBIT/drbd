@@ -1009,56 +1009,6 @@ void drbd_bm_get_lel(struct drbd_peer_device *peer_device, size_t offset, size_t
 	bm_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_EXTRACT, (__le32 *)buffer);
 }
 
-/* set all bits in the bitmap */
-void drbd_bm_set_all(struct drbd_device *device)
-{
-       struct drbd_bitmap *bitmap = device->bitmap;
-       unsigned int bitmap_index;
-
-       spin_lock_irq(&bitmap->bm_lock);
-       for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
-               unsigned long bit = 0;
-
-               while (bit < bitmap->bm_bits) {
-                       unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
-
-                       __bm_op(device, bitmap_index, bit, last_bit, BM_OP_SET, NULL);
-                       bit = last_bit + 1;
-                       if (need_resched()) {
-                               spin_unlock_irq(&bitmap->bm_lock);
-                               cond_resched();
-                               spin_lock_irq(&bitmap->bm_lock);
-                       }
-               }
-       }
-       spin_unlock_irq(&bitmap->bm_lock);
-}
-
-/* clear all bits in the bitmap */
-void drbd_bm_clear_all(struct drbd_device *device)
-{
-	struct drbd_bitmap *bitmap = device->bitmap;
-	unsigned int bitmap_index;
-
-	spin_lock_irq(&bitmap->bm_lock);
-	for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
-		unsigned long bit = 0;
-
-		while (bit < bitmap->bm_bits) {
-			unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
-
-			__bm_op(device, bitmap_index, bit, last_bit, BM_OP_CLEAR, NULL);
-			bit = last_bit + 1;
-			if (need_resched()) {
-				spin_unlock_irq(&bitmap->bm_lock);
-				cond_resched();
-				spin_lock_irq(&bitmap->bm_lock);
-			}
-		}
-	}
-	spin_unlock_irq(&bitmap->bm_lock);
-}
-
 struct bm_aio_ctx {
 	struct drbd_device *device;
 	atomic_t in_flight;
@@ -1537,6 +1487,25 @@ void drbd_bm_clear_many_bits(struct drbd_peer_device *peer_device, unsigned long
 	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_CLEAR);
 }
 
+/* set all bits in the bitmap */
+void drbd_bm_set_all(struct drbd_device *device)
+{
+       struct drbd_bitmap *bitmap = device->bitmap;
+       unsigned int bitmap_index;
+
+       for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++)
+	       __bm_many_bits_op(device, bitmap_index, 0, -1, BM_OP_SET);
+}
+
+/* clear all bits in the bitmap */
+void drbd_bm_clear_all(struct drbd_device *device)
+{
+	struct drbd_bitmap *bitmap = device->bitmap;
+	unsigned int bitmap_index;
+
+       for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++)
+	       __bm_many_bits_op(device, bitmap_index, 0, -1, BM_OP_CLEAR);
+}
 
 unsigned int drbd_bm_clear_bits(struct drbd_device *device, unsigned int bitmap_index,
 				unsigned long start, unsigned long end)
