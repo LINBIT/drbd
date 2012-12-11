@@ -3980,7 +3980,7 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 		drbd_md_sync(device);
-		drbd_bm_set_bits(device, peer_device->bitmap_index, 0, -1UL);
+		drbd_bm_set_many_bits(peer_device, 0, -1UL);
 
 		rv = drbd_bm_write(device, NULL);
 
