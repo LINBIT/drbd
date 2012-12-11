@@ -1502,11 +1502,10 @@ unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned int bitmap_in
 }
 
 static __always_inline void
-__bm_many_bits_op(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end,
+__bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
 		  enum bitmap_operations op)
 {
-	struct drbd_bitmap *bitmap = peer_device->device->bitmap;
-	unsigned int bitmap_index = peer_device->bitmap_index;
+	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned long bit = start;
 
 	spin_lock_irq(&bitmap->bm_lock);
@@ -1517,7 +1516,7 @@ __bm_many_bits_op(struct drbd_peer_device *peer_device, unsigned long start, uns
 	while (bit <= end) {
 		unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
-		__bm_op(peer_device->device, bitmap_index, bit, last_bit, op, NULL);
+		__bm_op(device, bitmap_index, bit, last_bit, op, NULL);
 		bit = last_bit + 1;
 		if (need_resched()) {
 			spin_unlock_irq(&bitmap->bm_lock);
@@ -1530,12 +1529,12 @@ __bm_many_bits_op(struct drbd_peer_device *peer_device, unsigned long start, uns
 
 void drbd_bm_set_many_bits(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end)
 {
-	__bm_many_bits_op(peer_device, start, end, BM_OP_SET);
+	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_SET);
 }
 
 void drbd_bm_clear_many_bits(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end)
 {
-	__bm_many_bits_op(peer_device, start, end, BM_OP_CLEAR);
+	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_CLEAR);
 }
 
 
