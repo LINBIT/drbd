@@ -290,27 +290,6 @@ static int bm_test_page_lazy_writeout(struct page *page)
 	return test_bit(BM_PAGE_LAZY_WRITEOUT, &page_private(page));
 }
 
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-#define bm_kmap(b, idx, km) _bm_kmap(b, idx)
-static unsigned long *_bm_kmap(struct drbd_bitmap *b, unsigned int idx)
-#else
-static unsigned long *bm_kmap(struct drbd_bitmap *b, unsigned int idx, const enum km_type km)
-#endif
-{
-	struct page *page = b->bm_pages[idx];
-	return (unsigned long *) drbd_kmap_atomic(page, km);
-}
-
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-#define bm_kunmap(p_addr, km) _bm_kunmap(p_addr)
-static void _bm_kunmap(unsigned long *p_addr)
-#else
-static void bm_kunmap(unsigned long *p_addr, const enum km_type km)
-#endif
-{
-	drbd_kunmap_atomic(p_addr, km);
-};
-
 /*
  * actually most functions herein should take a struct drbd_bitmap*, not a
  * struct drbd_device*, but for the debug macros I like to have the device around
@@ -503,7 +482,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		unsigned int count = 0;
 		void *addr;
 
-		addr = bm_kmap(bitmap, page, KM_IRQ1);
+		addr = drbd_kmap_atomic(bitmap->bm_pages[page], KM_IRQ1);
 		if (((start & 31) && (start | 31) <= end) || op == BM_OP_TEST) {
 			unsigned int last = bit_in_page | 31;
 
@@ -525,7 +504,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 						break;
 					case BM_OP_TEST:
 						total = !!test_bit_le(bit_in_page, addr);
-						bm_kunmap(addr, KM_IRQ1);
+						drbd_kunmap_atomic(addr, KM_IRQ1);
 						return total;
 					default:
 						break;
@@ -647,7 +626,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		}
 
 	    next_page:
-		bm_kunmap(addr, KM_IRQ1);
+		drbd_kunmap_atomic(addr, KM_IRQ1);
 		bit_in_page -= BITS_PER_PAGE;
 		switch(op) {
 		case BM_OP_CLEAR:
@@ -669,7 +648,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		continue;
 
 	    found:
-		bm_kunmap(addr, KM_IRQ1);
+		drbd_kunmap_atomic(addr, KM_IRQ1);
 		return start + count - bit_in_page;
 	}
 	switch(op) {
