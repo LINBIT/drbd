@@ -593,7 +593,7 @@ static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_st
 	       peer_device->resync_susp_other_c[which];
 }
 
-static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool val)
+static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool val, bool start)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_device *p;
@@ -604,6 +604,9 @@ static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool v
 		p->resync_susp_other_c[NEW] = val;
 		if (!val && p->repl_state[NEW] == L_PAUSED_SYNC_T && !resync_suspended(p, NEW))
 			p->repl_state[NEW] = L_SYNC_TARGET;
+		if (val && start &&
+		    p->disk_state[NEW] == D_UP_TO_DATE && p->repl_state[NEW] == L_ESTABLISHED)
+			p->repl_state[NEW] = L_PAUSED_SYNC_T;
 	}
 }
 
@@ -1159,9 +1162,13 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* This needs to be after the previous block, since we should not set
 			   the bit if we are paused ourself */
 			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, true);
+				set_resync_susp_other_c(peer_device, true, false);
 			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, false);
+				set_resync_susp_other_c(peer_device, false, false);
+
+			/* Implication of the repl state on other peer's repl state */
+			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
+				set_resync_susp_other_c(peer_device, true, true);
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
@@ -1906,13 +1913,20 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
 				drbd_send_state(peer_device, new_state);
 
-			/* We are in the progress to start a full sync... */
-			if ((repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T) ||
-			    (repl_state[OLD] != L_STARTING_SYNC_S && repl_state[NEW] == L_STARTING_SYNC_S))
-				/* no other bitmap changes expected during this phase */
+			/* We are in the progress to start a full sync. SyncTarget sets all slots. */
+			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
+				drbd_queue_bitmap_io(device,
+					&drbd_bmio_set_all_n_write, &abw_start_sync,
+					"set_n_write from StartingSync",
+					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					peer_device);
+
+			/* We are in the progress to start a full sync. SyncSource one slot. */
+			if (repl_state[OLD] != L_STARTING_SYNC_S && repl_state[NEW] == L_STARTING_SYNC_S)
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
-					"set_n_write from StartingSync", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					"set_n_write from StartingSync",
+					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 					peer_device);
 
 			/* We are invalidating our self... */
