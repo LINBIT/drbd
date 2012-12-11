@@ -461,9 +461,13 @@ static inline unsigned long bit_to_page_interleaved(struct drbd_bitmap *bitmap,
 	return word32_to_page(interleaved_word32(bitmap, bitmap_index, bit));
 }
 
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define ____bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
+	____bm_op(device, bitmap_index, start, end, op, buffer)
+#endif
 static __always_inline unsigned long
-___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
-	 enum bitmap_operations op, __le32 *buffer)
+____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
+	 enum bitmap_operations op, __le32 *buffer, enum km_type km_type)
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int word32_skip = 32 * bitmap->bm_max_peers;
@@ -482,7 +486,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		unsigned int count = 0;
 		void *addr;
 
-		addr = drbd_kmap_atomic(bitmap->bm_pages[page], KM_IRQ1);
+		addr = drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
 		if (((start & 31) && (start | 31) <= end) || op == BM_OP_TEST) {
 			unsigned int last = bit_in_page | 31;
 
@@ -504,7 +508,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 						break;
 					case BM_OP_TEST:
 						total = !!test_bit_le(bit_in_page, addr);
-						drbd_kunmap_atomic(addr, KM_IRQ1);
+						drbd_kunmap_atomic(addr, km_type);
 						return total;
 					default:
 						break;
@@ -626,7 +630,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		}
 
 	    next_page:
-		drbd_kunmap_atomic(addr, KM_IRQ1);
+		drbd_kunmap_atomic(addr, km_type);
 		bit_in_page -= BITS_PER_PAGE;
 		switch(op) {
 		case BM_OP_CLEAR:
@@ -648,7 +652,7 @@ ___bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long st
 		continue;
 
 	    found:
-		drbd_kunmap_atomic(addr, KM_IRQ1);
+		drbd_kunmap_atomic(addr, km_type);
 		return start + count - bit_in_page;
 	}
 	switch(op) {
@@ -705,7 +709,7 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 			bm_print_lock_info(device);
 		break;
 	}
-	return ___bm_op(device, bitmap_index, start, end, op, buffer);
+	return ____bm_op(device, bitmap_index, start, end, op, buffer, KM_IRQ1);
 }
 
 static __always_inline unsigned long
@@ -738,14 +742,19 @@ bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start
 	   ret = __bm_op(device, bitmap_index, start, end, op, buffer); \
 	   drbd_info(device, "= %lu\n", ret); \
 	   ret; })
+#endif
 
-#define ___bm_op(device, bitmap_index, start, end, op, buffer) \
+#ifdef BITMAP_DEBUG
+#define ___bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
 	({ unsigned long ret; \
 	   drbd_info(device, "%s: ___bm_op(..., %u, %lu, %lu, %u, %p)\n", \
 		     __func__, bitmap_index, start, end, op, buffer); \
-	   ret = ___bm_op(device, bitmap_index, start, end, op, buffer); \
+	   ret = ____bm_op(device, bitmap_index, start, end, op, buffer, km_type); \
 	   drbd_info(device, "= %lu\n", ret); \
 	   ret; })
+#else
+#define ___bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
+	____bm_op(device, bitmap_index, start, end, op, buffer, km_type)
 #endif
 
 /* you better not modify the bitmap while this is running,
@@ -761,7 +770,7 @@ static void bm_count_bits(struct drbd_device *device)
 		while (bit < bitmap->bm_bits) {
 			unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
-			bits_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL);
+			bits_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL, KM_USER0);
 			bit = last_bit + 1;
 			cond_resched();
 		}
@@ -883,7 +892,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 		unsigned int bitmap_index;
 
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
-			___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
+			___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL, KM_IRQ1);
 	}
 
 	if (want < have) {
