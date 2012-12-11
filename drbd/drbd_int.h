@@ -1225,6 +1225,8 @@ extern int drbd_bitmap_io_from_worker(struct drbd_device *,
 		struct drbd_peer_device *);
 extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
+extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *);
+
 extern void drbd_go_diskless(struct drbd_device *device);
 extern void drbd_ldev_destroy(struct drbd_device *device);
 

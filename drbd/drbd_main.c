@@ -3966,6 +3966,20 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 nod
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 }
 
+int drbd_bmio_set_all_n_write(struct drbd_device *device,
+			      struct drbd_peer_device *peer_device)
+{
+	int rv = -EIO;
+
+	if (get_ldev_if_state(device, D_ATTACHING)) {
+		drbd_bm_set_all(device);
+		rv = drbd_bm_write(device, NULL);
+		put_ldev(device);
+	}
+
+	return rv;
+}
+
 /**
  * drbd_bmio_set_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
  * @device:	DRBD device.
