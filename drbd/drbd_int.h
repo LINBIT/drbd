@@ -1405,6 +1405,7 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
 extern struct drbd_bitmap *drbd_bm_alloc(void);
 extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);
 void drbd_bm_free(struct drbd_bitmap *bitmap);
+extern void drbd_bm_set_all(struct drbd_device *device);
 extern void drbd_bm_clear_all(struct drbd_device *device);
 /* set/clear/test only a few bits at a time */
 extern unsigned int drbd_bm_set_bits(struct drbd_device *, unsigned int, unsigned long, unsigned long);
