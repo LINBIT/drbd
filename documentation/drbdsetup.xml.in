@@ -848,6 +848,25 @@
 		  <para>Include data transfer statistics in the output.</para>
 		</listitem>
 	      </varlistentry>
+
+	      <varlistentry>
+		<term>
+		  <option>--color=<group choice="req" rep="norepeat">
+		      <arg choice="plain" rep="norepeat">always</arg>
+		      <arg choice="plain" rep="norepeat">auto</arg>
+		      <arg choice="plain" rep="norepeat">never</arg>
+		    </group>
+		  </option>
+		</term>
+
+		<listitem>
+		  <para>Colorize the output.  With
+		    <option>--color=auto</option>, <option>drbdsetup</option>
+		    emits color codes only when standard output is connected to
+		    a terminal.
+		  </para>
+		</listitem>
+	      </varlistentry>
 	    </variablelist>
 	  </para>
 

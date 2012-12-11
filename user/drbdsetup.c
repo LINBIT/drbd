@@ -77,6 +77,7 @@
 #include "config.h"
 #include "config_flags.h"
 #include "wrap_printf.h"
+#include "drbdsetup_colors.h"
 
 char *progname;
 
@@ -229,6 +230,7 @@ struct drbd_cmd {
 // other functions
 static int get_af_ssocks(int warn);
 static void print_command_usage(struct drbd_cmd *cm, enum usage_type);
+static void print_usage_and_exit(const char* addinfo);
 
 // command functions
 static int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv);
@@ -313,6 +315,7 @@ struct option show_cmd_options[] = {
 static struct option status_cmd_options[] = {
 	{ "verbose", no_argument, 0, 'v' },
 	{ "statistics", no_argument, 0, 's' },
+	{ "color", optional_argument, 0, 'c' },
 	{ }
 };
 
@@ -1786,6 +1789,8 @@ static const char *susp_str(struct resource_info *info)
 
 void resource_status(struct resources_list *resource)
 {
+	enum drbd_role role = resource->info.res_role;
+
 	wrap_printf(0, "%s", resource->name);
 	if (opt_verbose) {
 		struct nlattr *nla;
@@ -1794,7 +1799,10 @@ void resource_status(struct resources_list *resource)
 		if (nla)
 			wrap_printf(4, " node-id:%d", *(uint32_t *)nla_data(nla));
 	}
-	wrap_printf(4, " role:%s", drbd_role_str(resource->info.res_role));
+	wrap_printf(4, " role:%s%s%s",
+		    role_color_start(role, true),
+		    drbd_role_str(role),
+		    role_color_stop(role));
 	if (opt_verbose ||
 	    resource->info.res_susp ||
 	    resource->info.res_susp_nod ||
@@ -1821,6 +1829,7 @@ void resource_status(struct resources_list *resource)
 
 static void device_status(struct devices_list *device, bool single_device)
 {
+	enum drbd_disk_state disk_state = device->info.dev_disk_state;
 	int indent = 2;
 
 	if (opt_verbose || !(single_device && device->ctx.ctx_volume == 0)) {
@@ -1829,7 +1838,10 @@ static void device_status(struct devices_list *device, bool single_device)
 		if (opt_verbose)
 			wrap_printf(indent, " minor:%u", device->minor);
 	}
-	wrap_printf(indent, " disk:%s", drbd_disk_str(device->info.dev_disk_state));
+	wrap_printf(indent, " disk:%s%s%s",
+		    disk_state_color_start(disk_state, true),
+		    drbd_disk_str(disk_state),
+		    disk_state_color_stop(disk_state));
 	indent = 6;
 	if (opt_statistics && device->statistics.dev_size != -1) {
 		wrap_printf(indent, "\n");
@@ -1901,13 +1913,23 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		indent = 8;
 	}
 	if (opt_verbose || peer_device->info.peer_repl_state > L_ESTABLISHED) {
-		wrap_printf(indent, " replication:%s", drbd_repl_str(peer_device->info.peer_repl_state));
+		enum drbd_repl_state repl_state = peer_device->info.peer_repl_state;
+
+		wrap_printf(indent, " replication:%s%s%s",
+			    repl_state_color_start(repl_state),
+			    drbd_repl_str(repl_state),
+			    repl_state_color_stop(repl_state));
 		indent = 8;
 	}
 	if (opt_verbose || opt_statistics ||
 	    peer_device->info.peer_repl_state != L_OFF ||
 	    peer_device->info.peer_disk_state != D_UNKNOWN) {
-		wrap_printf(indent, " disk:%s", drbd_disk_str(peer_device->info.peer_disk_state));
+		enum drbd_disk_state disk_state = peer_device->info.peer_disk_state;
+
+		wrap_printf(indent, " disk:%s%s%s",
+			    disk_state_color_start(disk_state, false),
+			    drbd_disk_str(disk_state),
+			    disk_state_color_stop(disk_state));
 		indent = 8;
 		if (opt_verbose ||
 		    peer_device->info.peer_resync_susp_user ||
@@ -1975,10 +1997,20 @@ static void connection_status(struct connections_list *connection,
 		if (nla)
 			wrap_printf(6, " node-id:%d", *(uint32_t *)nla_data(nla));
 	}
-	if (opt_verbose || connection->info.conn_connection_state != C_CONNECTED)
-		wrap_printf(6, " connection:%s", drbd_conn_str(connection->info.conn_connection_state));
-	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED)
-		wrap_printf(6, " role:%s", drbd_role_str(connection->info.conn_role));
+	if (opt_verbose || connection->info.conn_connection_state != C_CONNECTED) {
+		enum drbd_conn_state cstate = connection->info.conn_connection_state;
+		wrap_printf(6, " connection:%s%s%s",
+			    cstate_color_start(cstate),
+			    drbd_conn_str(cstate),
+			    cstate_color_stop(cstate));
+	}
+	if (opt_verbose || connection->info.conn_connection_state == C_CONNECTED) {
+		enum drbd_role role = connection->info.conn_role;
+		wrap_printf(6, " role:%s%s%s",
+			    role_color_start(role, false),
+			    drbd_role_str(role),
+			    role_color_stop(role));
+	}
 	if (opt_verbose || connection->statistics.conn_congested > 0)
 		wrap_printf(6, " congested:%s", connection->statistics.conn_congested ? "yes" : "no");
 	wrap_printf(0, "\n");
@@ -1986,9 +2018,19 @@ static void connection_status(struct connections_list *connection,
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
 }
 
+static void stop_colors(int sig)
+{
+	printf("%s", stop_color_code());
+	kill(getpid(), sig);
+}
+
 static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct resources_list *resources, *resource;
+	struct sigaction sa = {
+		.sa_handler = stop_colors,
+		.sa_flags = SA_RESETHAND,
+	};
 	bool found = false;
 	int c;
 
@@ -2007,10 +2049,25 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		case 's':
 			opt_statistics = true;
 			break;
+		case 'c':
+			if (!optarg || !strcmp(optarg, "always"))
+				opt_color = ALWAYS_COLOR;
+			else if (!strcmp(optarg, "never"))
+				opt_color = NEVER_COLOR;
+			else if (!strcmp(optarg, "auto"))
+				opt_color = AUTO_COLOR;
+			else
+				print_usage_and_exit("unknown --color argument");
+			break;
 		}
 	}
 
 	resources = list_resources();
+
+	sigaction(SIGHUP, &sa, NULL);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGPIPE, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 
 	for (resource = resources; resource; resource = resource->next) {
 		struct devices_list *devices, *device;
