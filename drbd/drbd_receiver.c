@@ -4714,6 +4714,15 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
 
+	if (peer_state.conn == L_PAUSED_SYNC_T && peer_state.disk == D_OUTDATED &&
+	    os.conn == L_ESTABLISHED) {
+		/* Looks like the peer was invalidated with drbdadm */
+		drbd_info(peer_device, "Setting bits\n");
+		drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from receive_state",
+			       BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
+		new_repl_state = L_PAUSED_SYNC_S;
+	}
+
 	if (peer_device->uuids_received &&
 	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
