@@ -20,4 +20,12 @@
       </listitem>
     </varlistentry>
   </xsl:template>
+
+  <xsl:template match="drbdsetup_option//only-drbdsetup">
+    <!-- ignore -->
+  </xsl:template>
+
+  <xsl:template match="drbdsetup_option//only-drbd-conf">
+    <xsl:copy-of select="node()"/>
+  </xsl:template>
 </xsl:stylesheet>

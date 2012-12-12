@@ -84,7 +84,7 @@
       machines hosting DRBD-proxy, or to the available disk bandwidth.</para>
 
       <para>The default values of these parameters are:
-      <option>c-plan-ahead</option> = 0 (in units of 0.1 seconds),
+      <option>c-plan-ahead</option> = 20 (in units of 0.1 seconds),
       <option>c-fill-target</option> = 0 (in units of sectors),
       <option>c-delay-target</option> = 1 (in units of 0.1 seconds),
       and <option>c-max-rate</option> = 102400 (in units of KiB/s).</para>
@@ -351,7 +351,14 @@
   </drbdsetup_option>
 
   <drbdsetup_option name="resync-after">
-    <term><option>resync-after <replaceable>res-name</replaceable>/<replaceable>volume</replaceable></option></term>
+      <term>
+	<only-drbdsetup>
+	  <option>resync-after <replaceable>minor</replaceable></option>
+	</only-drbdsetup>
+	<only-drbd-conf>
+	  <option>resync-after <replaceable>res-name</replaceable>/<replaceable>volume</replaceable></option>
+	</only-drbd-conf>
+      </term>
 
     <definition>
       <para><indexterm significance="normal">
@@ -1137,9 +1144,7 @@
 	time and bandwidth for the bitmap transfers.</para>
 
 	<para>The <option>use-rle</option> parameter determines if run-length
-	encoding should be used.  It is off by default because there often is
-	no improvement on fast networks, and should be turned on on slow
-	networks.</para>
+	encoding should be used.  It is on by default since DRBD 8.4.0.</para>
     </definition>
   </drbdsetup_option>
 

@@ -25,6 +25,14 @@
     <!-- ignore -->
   </xsl:template>
 
+  <xsl:template match="drbdsetup_option//only-drbdsetup">
+    <xsl:copy-of select="node()"/>
+  </xsl:template>
+
+  <xsl:template match="drbdsetup_option//only-drbd-conf">
+    <!-- ignore -->
+  </xsl:template>
+
   <xsl:template match="drbdsetup_option/term/option">
     <xsl:variable name="args" select="@*"/>
     <option>
