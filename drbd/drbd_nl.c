@@ -2653,13 +2653,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	connection_to_info(&connection_info, connection, NOW);
-	flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+	flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 	notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE | flags, id);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct peer_device_info peer_device_info;
 
 		peer_device_to_info(&peer_device_info, peer_device, NOW);
-		flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags, id);
 	}
 
@@ -3947,13 +3947,13 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 			peer_devices++;
 
 		device_to_info(&info, device, NOW);
-		flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE | flags, id);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
 			peer_device_to_info(&peer_device_info, peer_device, NOW);
-			flags = (peer_devices--) ? NOTIFY_CONTINUED : 0;
+			flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info,
 						 NOTIFY_CREATE | flags, id);
 		}
@@ -3983,7 +3983,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		state_change_unlock(device->resource, &irq_flags);
 		for_each_peer_device(peer_device, device)
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
-						 NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
+						 NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
 		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
 		kobject_del(&device->kobj);
 		synchronize_rcu();
@@ -4028,7 +4028,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 
 	for_each_connection(connection, resource)
 		notify_connection_state(NULL, 0, connection, NULL,
-					NOTIFY_DESTROY | NOTIFY_CONTINUED, id);
+					NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
 	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY, id);
 
 	list_del_rcu(&resource->resources);
@@ -4381,7 +4381,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	n = cb->args[2];
 	if (n < state_change->n_connections + state_change->n_devices +
 	    state_change->n_devices * state_change->n_connections)
-		flags |= NOTIFY_CONTINUED;
+		flags |= NOTIFY_CONTINUES;
 
 	if (n < 1) {
 		notify_resource_state_change(skb, seq, state_change->resource,

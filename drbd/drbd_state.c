@@ -1629,7 +1629,7 @@ static void broadcast_state_change(struct drbd_state_change *state_change, unsig
 		last_func(NULL, 0, last_arg, NEW, type, id); \
 	})
 #define REMEMBER_STATE_CHANGE(func, arg, type, id) \
-	({ FINAL_STATE_CHANGE(type | NOTIFY_CONTINUED, id); \
+	({ FINAL_STATE_CHANGE(type | NOTIFY_CONTINUES, id); \
 	   last_func = (typeof(last_func))func; \
 	   last_arg = arg; \
 	 })

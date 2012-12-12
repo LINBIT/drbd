@@ -386,8 +386,8 @@ enum drbd_notification_type {
 	NOTIFY_CALL,
 	NOTIFY_RESPONSE,
 
-	NOTIFY_CONTINUED = 0x8000,
-	NOTIFY_FLAGS = NOTIFY_CONTINUED,
+	NOTIFY_CONTINUES = 0x8000,
+	NOTIFY_FLAGS = NOTIFY_CONTINUES,
 };
 
 /* magic numbers used in meta data and network packets */
