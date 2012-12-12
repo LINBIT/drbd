@@ -301,11 +301,16 @@ static struct peer_devices_list *list_peer_devices(char *);
 static void free_peer_devices(struct peer_devices_list *);
 
 struct option wait_cmds_options[] = {
-	{ "wfc-timeout",required_argument, 0, 't' },
-	{ "degr-wfc-timeout",required_argument,0,'d'},
-	{ "outdated-wfc-timeout",required_argument,0,'o'},
-	{ "wait-after-sb",optional_argument,0,'w'},
-	{ 0,            0,           0,  0  }
+	{ "wfc-timeout", required_argument, 0, 't' },
+	{ "degr-wfc-timeout", required_argument, 0, 'd'},
+	{ "outdated-wfc-timeout", required_argument, 0, 'o'},
+	{ "wait-after-sb", optional_argument, 0, 'w'},
+	{ }
+};
+
+struct option events_cmd_options[] = {
+	{ "now", no_argument, 0, 'n' },
+	{ }
 };
 
 struct option show_cmd_options[] = {
@@ -434,6 +439,7 @@ struct drbd_cmd commands[] = {
 	 .lockless = true,
 	 .summary = "Remember the current size of a lower-level device." },
 	{"events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
+	 .options = events_cmd_options,
 	 .missing_ok = true,
 	 .continuous_poll = true,
 	 .lockless = true,
@@ -1371,6 +1377,8 @@ static bool kernel_older_than(int version, int patchlevel, int sublevel)
 	return true;
 }
 
+static bool opt_now;
+
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	char *desc = NULL;
@@ -1451,6 +1459,9 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			}
 			break;
 
+		case 'n':
+			opt_now = true;
+			break;
 		case 'w':
 			if (!optarg || !strcmp(optarg, "yes"))
 				wait_after_split_brain = true;
@@ -2782,6 +2793,8 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 	}
 
 	if (action != NOTIFY_EXISTS) {
+		if (opt_now)
+			return 0;
 		if (last_seq_known) {
 			uint32_t skipped = info->nlhdr->nlmsg_seq - (last_seq + 1);
 
@@ -2881,6 +2894,9 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 
 out:
 	fflush(stdout);
+
+	if (opt_now && !(nh.nh_type & NOTIFY_CONTINUES))
+		return -1;
 
 	return 0;
 }
