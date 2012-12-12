@@ -2770,7 +2770,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 
 	printf("%u%s %s %s",
 	       nh.nh_id,
-	       (nh.nh_type & NOTIFY_CONTINUED) ? "*" : "",
+	       (nh.nh_type & NOTIFY_CONTINUES) ? "*" : "",
 	       action_name[action],
 	       object_name[info->genlhdr->cmd]);
 	if (ctx.ctx_resource_name)
