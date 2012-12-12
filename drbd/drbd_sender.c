@@ -1664,24 +1664,9 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	if (repl_state < L_ESTABLISHED)
 		r = SS_UNKNOWN_ERROR;
 
-	if (r == SS_SUCCESS) {
-		unsigned long tw = drbd_bm_total_weight(peer_device);
-		unsigned long now = jiffies;
-		int i;
-
-		peer_device->rs_failed    = 0;
-		peer_device->rs_paused    = 0;
-		peer_device->rs_same_csum = 0;
-		peer_device->rs_last_events = 0;
-		peer_device->rs_last_sect_ev = 0;
-		peer_device->rs_total     = tw;
-		peer_device->rs_start     = now;
-		for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-			peer_device->rs_mark_left[i] = tw;
-			peer_device->rs_mark_time[i] = now;
-		}
+	if (r == SS_SUCCESS)
 		drbd_pause_after(device);
-	}
+
 	unlock_all_resources();
 
 	if (r == SS_SUCCESS) {
@@ -1726,7 +1711,6 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 			drbd_resync_finished(peer_device);
 		}
 
-		drbd_rs_controller_reset(peer_device);
 		/* ns.conn may already be != peer_device->repl_state[NOW],
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.

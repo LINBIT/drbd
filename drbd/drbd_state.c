@@ -1260,6 +1260,27 @@ static bool diskless_primary_present(struct drbd_device *device)
 	return rv;
 }
 
+static void initialize_resync(struct drbd_peer_device *peer_device)
+{
+	unsigned long tw = drbd_bm_total_weight(peer_device);
+	unsigned long now = jiffies;
+	int i;
+
+	peer_device->rs_failed = 0;
+	peer_device->rs_paused = 0;
+	peer_device->rs_same_csum = 0;
+	peer_device->rs_last_events = 0;
+	peer_device->rs_last_sect_ev = 0;
+	peer_device->rs_total = tw;
+	peer_device->rs_start = now;
+	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
+		peer_device->rs_mark_left[i] = tw;
+		peer_device->rs_mark_time[i] = now;
+	}
+
+	drbd_rs_controller_reset(peer_device);
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -1323,6 +1344,12 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				if (repl_state[NEW] == L_SYNC_TARGET)
 					mod_timer(&peer_device->resync_timer, jiffies);
+
+				device->bm_resync_fo &= ~BM_BLOCKS_PER_BM_EXT_MASK;
+				/* Setting the find_offset back is necessary when switching resync from
+				   one peer to the other. Since in the bitmap of the new peer, there
+				   might be bits before the current find_offset. Since the peer is
+				   notified about the resync progress in BM_EXT sized chunks. */
 			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&
@@ -1359,6 +1386,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 							(unsigned long long)peer_device->ov_position);
 					mod_timer(&peer_device->resync_timer, jiffies);
 				}
+			} else if (!(repl_state[OLD] >= L_SYNC_SOURCE && repl_state[OLD] <= L_PAUSED_SYNC_T) &&
+				   (repl_state[NEW] >= L_SYNC_SOURCE && repl_state[NEW] <= L_PAUSED_SYNC_T)) {
+				initialize_resync(peer_device);
 			}
 
 			if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
@@ -1466,6 +1496,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 static void abw_start_sync(struct drbd_device *device,
 			   struct drbd_peer_device *peer_device, int rv)
 {
+	struct drbd_peer_device *pd;
+
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
 		stable_change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE);
@@ -1474,6 +1506,11 @@ static void abw_start_sync(struct drbd_device *device,
 
 	switch (peer_device->repl_state[NOW]) {
 	case L_STARTING_SYNC_T:
+		/* Since the number of set bits changed and the other peer_devices are
+		   lready in L_PAUSED_SYNC_T state, we need to set rs_total here */
+		for_each_peer_device(pd, device)
+			initialize_resync(pd);
+
 		if (peer_device->connection->agreed_pro_version < 110)
 			stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
 		else
