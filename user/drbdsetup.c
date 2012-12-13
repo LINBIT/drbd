@@ -1651,11 +1651,9 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 						continue;
 					}
 				} else if (strcmp(objname, "all")) {
-					struct drbd_cfg_context ctx =
-						{ .ctx_volume = -1U };
+					struct drbd_cfg_context ctx;
 
-					drbd_cfg_context_from_attrs(&ctx, &info);
-					if (ctx.ctx_volume == -1U ||
+					if (drbd_cfg_context_from_attrs(&ctx, &info) ||
 					    strcmp(objname, ctx.ctx_resource_name))
 						continue;
 				}
