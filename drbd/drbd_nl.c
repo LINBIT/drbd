@@ -4129,6 +4129,7 @@ void notify_resource_state(struct sk_buff *skb,
 			   enum drbd_notification_type type,
 			   unsigned int id)
 {
+	struct resource_statistics resource_statistics;
 	struct drbd_genlmsghdr *dh;
 	bool multicast = false;
 	int err;
@@ -4153,6 +4154,10 @@ void notify_resource_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     resource_info_to_skb(skb, resource_info, true)))
 		goto nla_put_failure;
+	resource_statistics.res_stat_write_ordering = resource->write_ordering;
+	err = resource_statistics_to_skb(skb, &resource_statistics, !capable(CAP_SYS_ADMIN));
+	if (err)
+		goto nla_put_failure;
 	genlmsg_end(skb, dh);
 	if (multicast) {
 		err = drbd_genl_multicast_events(skb, 0);
@@ -4176,6 +4181,7 @@ void notify_device_state(struct sk_buff *skb,
 			 enum drbd_notification_type type,
 			 unsigned int id)
 {
+	struct device_statistics device_statistics;
 	struct drbd_genlmsghdr *dh;
 	bool multicast = false;
 	int err;
@@ -4200,6 +4206,8 @@ void notify_device_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     device_info_to_skb(skb, device_info, true)))
 		goto nla_put_failure;
+	device_to_statistics(&device_statistics, device);
+	device_statistics_to_skb(skb, &device_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {
 		err = drbd_genl_multicast_events(skb, 0);
@@ -4223,6 +4231,7 @@ void notify_connection_state(struct sk_buff *skb,
 			     enum drbd_notification_type type,
 			     unsigned int id)
 {
+	struct connection_statistics connection_statistics;
 	struct drbd_genlmsghdr *dh;
 	bool multicast = false;
 	int err;
@@ -4247,6 +4256,8 @@ void notify_connection_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
+	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->flags);
+	connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {
 		err = drbd_genl_multicast_events(skb, 0);
@@ -4270,6 +4281,7 @@ void notify_peer_device_state(struct sk_buff *skb,
 			      enum drbd_notification_type type,
 			      unsigned int id)
 {
+	struct peer_device_statistics peer_device_statistics;
 	struct drbd_resource *resource = peer_device->device->resource;
 	struct drbd_genlmsghdr *dh;
 	bool multicast = false;
@@ -4295,6 +4307,8 @@ void notify_peer_device_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
 		goto nla_put_failure;
+	peer_device_to_statistics(&peer_device_statistics, peer_device);
+	peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {
 		err = drbd_genl_multicast_events(skb, 0);
