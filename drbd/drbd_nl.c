@@ -2451,8 +2451,6 @@ static void connection_to_info(struct connection_info *info,
 {
 	info->conn_connection_state = connection->cstate[which];
 	info->conn_role = connection->peer_role[which];
-	strcpy(info->conn_name, connection->net_conf->name);
-	info->conn_name_len = connection->net_conf->name_len;
 }
 
 static void peer_device_to_info(struct peer_device_info *info,
@@ -3192,6 +3190,10 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 		if (connection->peer_addr_len)
 			nla_put(skb, T_ctx_peer_addr,
 				connection->peer_addr_len, &connection->peer_addr);
+		rcu_read_lock();
+		if (connection->net_conf && connection->net_conf->name)
+			nla_put_string(skb, T_ctx_conn_name, connection->net_conf->name);
+		rcu_read_unlock();
 	}
 	nla_nest_end(skb, nla);
 	return 0;

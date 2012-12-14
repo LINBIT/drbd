@@ -99,6 +99,7 @@ GENL_struct(DRBD_NLA_CFG_CONTEXT, 2, drbd_cfg_context,
 	__str_field(2, DRBD_GENLA_F_MANDATORY,	ctx_resource_name, 128)
 	__bin_field(3, DRBD_GENLA_F_MANDATORY,	ctx_my_addr, 128)
 	__bin_field(4, DRBD_GENLA_F_MANDATORY,	ctx_peer_addr, 128)
+	__str_field_def(5, 0, ctx_conn_name, SHARED_SECRET_MAX)
 )
 
 GENL_struct(DRBD_NLA_DISK_CONF, 3, disk_conf,
@@ -224,7 +225,6 @@ GENL_struct(DRBD_NLA_DEVICE_INFO, 16, device_info,
 GENL_struct(DRBD_NLA_CONNECTION_INFO, 17, connection_info,
 	__u32_field(1, 0, conn_connection_state)
 	__u32_field(2, 0, conn_role)
-	__str_field_def(3, 0, conn_name, SHARED_SECRET_MAX)
 )
 
 GENL_struct(DRBD_NLA_PEER_DEVICE_INFO, 18, peer_device_info,
