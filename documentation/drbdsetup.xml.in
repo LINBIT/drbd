@@ -333,23 +333,49 @@
 	    <secondary>events</secondary>
 	  </indexterm>
 
-	  <para>Show the current state of all resources, all state changes, and
-	  all calls do event handlers.  The output format is meant to be human
-	  as well as machine readable. Each line starts with the event number,
-	  which is followed by an asterisk if the event continues in the next
-	  line.  The second word indicates the kind of event
-	  (<option>exists</option> for an existing object;
-	  <option>create</option>, <option>destroy</option>, and
-	  <option>change</option> when an object is created, destroyed, or
-	  changed; <option>call</option> or <option>response</option> when an
-	  event handler is called or returns).  The third word indicates the
-	  object the event applies to (<option>resource</option>,
-	  <option>device</option>, <option>connection</option>,
-	  <option>peer-device</option>, <option>helper</option>).  The
-	  remaining words identify the object and indicate the state which it
-	  is in.</para>
+	  <para>Show the current state of all configured DRBD objects, followed
+	    by all changes to the state.</para>
+
+	  <para>The output format is meant to be human as well as machine
+	    readable.  Each line starts with the event number, which is
+	    followed by an asterisk if the event continues in the next line.
+	    The second word in each line indicates the kind of event:
+	    <option>exists</option> for an existing object;
+	    <option>create</option>, <option>destroy</option>, and
+	    <option>change</option> if an object is created, destroyed, or
+	    changed; or <option>call</option> or <option>response</option> if
+	    an event handler is called or it returns.  The third word indicates
+	    the object the event applies to: <option>resource</option>,
+	    <option>device</option>, <option>connection</option>,
+	    <option>peer-device</option>, <option>helper</option>, or a dash
+	    (<option>-</option>) to indicate that the current state has been
+	    dumped completely.</para>
+
+	  <para>The remaining words identify the object and describe the state
+	    that he object is in.  Available options:
+
+	    <variablelist>
+	      <varlistentry>
+		<term><option>--now</option></term>
+
+		<listitem>
+		  <para>Terminate after reporting the current state.  The
+		    default is to continuously listen and report state
+		    changes.</para>
+		</listitem>
+	      </varlistentry>
+
+	      <varlistentry>
+		<term><option>--statistics</option></term>
+
+		<listitem>
+		  <para>Include statistics in the output.</para>
+		</listitem>
+	      </varlistentry>
+	    </variablelist>
+	  </para>
 	</listitem>
-      </varlistentry>
+    </varlistentry>
 
       <varlistentry>
 	<xi:include href="drbdsetup_get-gi.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
