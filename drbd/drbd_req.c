@@ -1187,7 +1187,6 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
 		rcu_read_unlock();
 		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
-			rcu_read_unlock();
 			return NULL; /* submit locally */
 		}
 	}
