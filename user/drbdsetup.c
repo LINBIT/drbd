@@ -2035,16 +2035,16 @@ static void connection_status(struct connections_list *connection,
 {
 	char local_addr[ADDRESS_STR_MAX], peer_addr[ADDRESS_STR_MAX];
 
-	if (connection->info.conn_name_len)
-		wrap_printf(2, "%s", connection->info.conn_name);
+	if (connection->ctx.ctx_conn_name_len)
+		wrap_printf(2, "%s", connection->ctx.ctx_conn_name);
 
-	if (opt_verbose || connection->info.conn_name_len == 0) {
+	if (opt_verbose || connection->ctx.ctx_conn_name_len == 0) {
 		if (!address_str(local_addr, connection->ctx.ctx_my_addr, connection->ctx.ctx_my_addr_len))
 			strcpy(local_addr, "?");
 		if (!address_str(peer_addr, connection->ctx.ctx_peer_addr, connection->ctx.ctx_peer_addr_len))
 			strcpy(peer_addr, "?");
 		/* FIXME: Reject undefined endpoints once the kernel stops creating NULL connections. */
-		if (connection->info.conn_name_len == 0)
+		if (connection->ctx.ctx_conn_name_len == 0)
 			wrap_printf(2, "local:%s", local_addr);
 		else
 			wrap_printf(6, " local:%s", local_addr);
