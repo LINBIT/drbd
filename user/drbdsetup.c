@@ -2862,6 +2862,8 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
 		if (ctx.ctx_resource_name)
 			printf(" name:%s", ctx.ctx_resource_name);
+		if (ctx.ctx_conn_name_len)
+			printf(" conn-name:%s", ctx.ctx_conn_name);
 		if (ctx.ctx_my_addr_len &&
 		    address_str(addr, ctx.ctx_my_addr, ctx.ctx_my_addr_len))
 			printf(" local:%s", addr);
