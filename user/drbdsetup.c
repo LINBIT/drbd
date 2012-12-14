@@ -2800,6 +2800,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		[DRBD_CONNECTION_STATE] = "connection",
 		[DRBD_PEER_DEVICE_STATE] = "peer-device",
 		[DRBD_HELPER] = "helper",
+		[DRBD_INITIAL_STATE_DONE] = "-",
 	};
 	static uint32_t last_seq;
 	static bool last_seq_known;
@@ -2819,14 +2820,8 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 	if (dh->ret_code != NO_ERROR)
 		return dh->ret_code;
 
-	if (drbd_cfg_context_from_attrs(&ctx, info) ||
-	    drbd_notification_header_from_attrs(&nh, info))
+	if (drbd_notification_header_from_attrs(&nh, info))
 		return 0;
-	if (info->genlhdr->cmd >= ARRAY_SIZE(object_name) ||
-	    !object_name[info->genlhdr->cmd]) {
-		dbg(1, "unknown notification\n");
-		goto out;
-	}
 	action = nh.nh_type & ~NOTIFY_FLAGS;
 	if (action >= ARRAY_SIZE(action_name) ||
 	    !action_name[action]) {
@@ -2834,9 +2829,20 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		goto out;
 	}
 
-	if (action != NOTIFY_EXISTS) {
-		if (opt_now)
+	if (opt_now && action != NOTIFY_EXISTS)
+		return 0;
+
+	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
+		if (drbd_cfg_context_from_attrs(&ctx, info))
 			return 0;
+		if (info->genlhdr->cmd >= ARRAY_SIZE(object_name) ||
+		    !object_name[info->genlhdr->cmd]) {
+			dbg(1, "unknown notification\n");
+			goto out;
+		}
+	}
+
+	if (action != NOTIFY_EXISTS) {
 		if (last_seq_known) {
 			uint32_t skipped = info->nlhdr->nlmsg_seq - (last_seq + 1);
 
@@ -2852,18 +2858,21 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 	       (nh.nh_type & NOTIFY_CONTINUES) ? "*" : "",
 	       action_name[action],
 	       object_name[info->genlhdr->cmd]);
-	if (ctx.ctx_resource_name)
-		printf(" name:%s", ctx.ctx_resource_name);
-	if (ctx.ctx_my_addr_len &&
-	    address_str(addr, ctx.ctx_my_addr, ctx.ctx_my_addr_len))
-		printf(" local:%s", addr);
-	if (ctx.ctx_peer_addr_len &&
-	    address_str(addr, ctx.ctx_peer_addr, ctx.ctx_peer_addr_len))
-		printf(" peer:%s", addr);
-	if (ctx.ctx_volume != -1U)
-		printf(" volume:%u", ctx.ctx_volume);
-	if (dh->minor != -1U)
-		printf(" minor:%u", dh->minor);
+
+	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
+		if (ctx.ctx_resource_name)
+			printf(" name:%s", ctx.ctx_resource_name);
+		if (ctx.ctx_my_addr_len &&
+		    address_str(addr, ctx.ctx_my_addr, ctx.ctx_my_addr_len))
+			printf(" local:%s", addr);
+		if (ctx.ctx_peer_addr_len &&
+		    address_str(addr, ctx.ctx_peer_addr, ctx.ctx_peer_addr_len))
+			printf(" peer:%s", addr);
+		if (ctx.ctx_volume != -1U)
+			printf(" volume:%u", ctx.ctx_volume);
+		if (dh->minor != -1U)
+			printf(" minor:%u", dh->minor);
+	}
 
 	switch(info->genlhdr->cmd) {
 	case DRBD_RESOURCE_STATE:
@@ -2944,15 +2953,15 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 		}
 		}
 		break;
+	case DRBD_INITIAL_STATE_DONE:
+		break;
 	}
 	printf("\n");
 
 out:
 	fflush(stdout);
-
-	if (opt_now && !(nh.nh_type & NOTIFY_CONTINUES))
+	if (opt_now && info->genlhdr->cmd == DRBD_INITIAL_STATE_DONE)
 		return -1;
-
 	return 0;
 }
 
