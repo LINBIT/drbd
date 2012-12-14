@@ -4370,6 +4370,27 @@ failed:
 		 err, seq);
 }
 
+static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq, unsigned int id)
+{
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_INITIAL_STATE_DONE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (nla_put_notification_header(skb, NOTIFY_EXISTS, id))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	return;
+
+nla_put_failure:
+	nlmsg_free(skb);
+	printk(KERN_ERR "Error %d sending event. Event seq:%u\n", err, seq);
+}
+
 static void free_state_changes(struct list_head *list)
 {
 	while (!list_empty(list)) {
@@ -4396,22 +4417,14 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	unsigned int n;
 	enum drbd_notification_type flags = 0;
 
-		if (!cb->args[5]) {
-		if (state_change) {
-			struct list_head head;
-
-			/* connect list to head */
-			list_add(&head, (struct list_head *)cb->args[0]);
-			free_state_changes(&head);
-			cb->args[0] = 0;
-		}
-		return 0;
-	}
 	cb->args[5]--;
-	if (cb->args[5])
+	if (cb->args[5] == 1) {
+		notify_initial_state_done(skb, seq, id);
+		goto out;
+	}
+	n = cb->args[4]++;
+	if (cb->args[4] < cb->args[3])
 		flags |= NOTIFY_CONTINUES;
-
-	n = cb->args[4];
 	if (n < 1) {
 		notify_resource_state_change(skb, seq, state_change->resource,
 					     OLD, NOTIFY_EXISTS | flags, id);
@@ -4437,29 +4450,39 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 
 next:
-	cb->args[4]++;
 	if (cb->args[4] == cb->args[3]) {
 		struct drbd_state_change *next_state_change =
 			list_entry(state_change->list.next,
 				   struct drbd_state_change, list);
 		cb->args[0] = (long)next_state_change;
+		cb->args[1] = atomic_inc_return(&drbd_notify_id);
 		cb->args[3] = notifications_for_state_change(next_state_change);
 		cb->args[4] = 0;
 	}
+out:
 	return skb->len;
 }
 
 int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct drbd_state_change *first_state_change;
 	struct drbd_resource *resource;
 	LIST_HEAD(head);
-	unsigned int number_of_resources = 0;
-	unsigned int total_notifications = 0;
 
-	if (cb->args[0])
-		return get_initial_state(skb, cb);
+	if (cb->args[5] >= 1) {
+		if (cb->args[5] > 1)
+			return get_initial_state(skb, cb);
+		if (cb->args[0]) {
+			struct drbd_state_change *state_change =
+				(struct drbd_state_change *)cb->args[0];
 
+			/* connect list to head */
+			list_add(&head, &state_change->list);
+			free_state_changes(&head);
+		}
+		return 0;
+	}
+
+	cb->args[5] = 2;  /* number of iterations */
 	mutex_lock(&global_state_mutex);
 	for_each_resource(resource, &drbd_resources) {
 		struct drbd_state_change *state_change;
@@ -4471,20 +4494,19 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 			return -ENOMEM;
 		}
 		list_add_tail(&state_change->list, &head);
-		number_of_resources++;
-		total_notifications += notifications_for_state_change(state_change);
+		cb->args[5] += notifications_for_state_change(state_change);
 	}
 	mutex_unlock(&global_state_mutex);
 
-	if (list_empty(&head))
-		return 0;
-	first_state_change = list_entry(head.next, struct drbd_state_change, list);
-	list_del(&head);  /* disconnect list from head */
+	if (!list_empty(&head)) {
+		struct drbd_state_change *state_change =
+			list_entry(head.next, struct drbd_state_change, list);
+		cb->args[0] = (long)state_change;
+		cb->args[3] = notifications_for_state_change(state_change);
+		list_del(&head);  /* detach list from head */
+	}
 
-	cb->args[0] = (long)first_state_change;
 	cb->args[1] = atomic_inc_return(&drbd_notify_id);
 	cb->args[2] = cb->nlh->nlmsg_seq;
-	cb->args[3] = notifications_for_state_change(first_state_change);
-	cb->args[5] = total_notifications;  /* decremented for each notification */
 	return get_initial_state(skb, cb);
 }
