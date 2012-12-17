@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+# vim: set sw=4 ts=4 et : 
 
 use strict;
 use warnings;
@@ -187,82 +188,81 @@ sub shorten_list {
 }
 
 sub slurp_drbdsetup() {
-	unless (open(DS,"drbdsetup status --verbose all |")) {
+	unless (open(DS,"drbdsetup events --now --statistics |")) {
 		print "drbdsetup not started\n";
 		exit 0;
 	}
 
-	my($res, @minor, $host, $name, $my_role);
-	my %vol2minor;
-	while (defined($_ = <DS>)) {
-		chomp;
-		my ($vol) = (/^\s+volume:(\d+)/);
-		my ($role) = (/\brole:(\w+)\b/);
-		my ($disk) = (/\bdisk:(\w+)\b/);
+	my($continued, %peers, $my_role, %vol_minor, %hosts);
+    while (<DS>) {
+        chomp;
+        next unless s/^\d+(\*)? exists //;
+        $continued = $1;
+        s/^([\w.-]+) name:(\w+) //;
+        my $what = $1;
+        my $res = $2;
 
-		if (/^(\w+)\s/) {
-			$res = $1;
-			$host = undef;
-			$name = undef; # need a volume/minor description first
-			$my_role = $role; # remember for next line
-			@minor = ();
-			next;
-		} elsif (length($vol) && !$host) {
-			die "drbdsetup output unexpected\n" unless $res;
-			my ($minor) = m/\bminor:(\d+)\b/;
+        if ($what eq "resource" &&
+                /^role:(\w+)/) { 
+            $my_role = $1;
+            $peers{states}{$HOSTNAME} = $my_role;
+            # local node is always connected
+            $peers{conns}{$HOSTNAME} = "Connected";
+        } elsif ($what eq "connection" &&
+                m/^conn-name:(\S+) /) { 
+            my $p = $1;
+            my ($cs) = m/ connection:(\w+)/;
+            my ($r)  = m/ role:(\w+)/;
+# Increase difference between "Connecting" and "Connected"
+            $cs =~ s/^Connecting/'ing/;
+            $peers{states}{$p} = $r;
+            $peers{conns}{$p}  = $cs;
+            $hosts{$p}++;
+        } elsif ($what eq "device") {
+            my %kv = map { split(/:/); } split(/ /);
+            my $minor = $kv{minor};
+            my $vol = $kv{volume};
+            $vol_minor{$vol} = $minor;
+            $peers{dstates}{$HOSTNAME}  = $kv{disk};
+        } elsif ($what eq "peer-device") {
+            my %kv = map { split(/:/); } split(/ /);
+            my $p = $kv{"conn-name"};
+            $peers{dstates}{$p} = $kv{disk};
+        } else {
+            warn("unknown key $what\n");
+        }
 
-#			exit print("$_") unless length($minor);
 
-			push @minor, $minor;
+        if (!$continued) {
+            my @h = sort keys %hosts;
+            my @h_incl = ($HOSTNAME, @h);
 
-			$name = "$res/$vol";
-			$drbd{$minor}{name} = $name if length($vol);
+            for my $vol (keys %vol_minor) {
+                my $minor = $vol_minor{$vol};
 
-			$vol2minor{$vol} = $minor;
+                my $name = length($vol) ? "$res/$vol" : $res;
+# create hash
+                $drbd{$minor}{name} = $name;
+                my $v = $drbd{$minor};
 
-			$drbd{$minor}{state} = $my_role;
-			$drbd{$minor}{states}{$HOSTNAME} = $my_role;
-			$drbd{$minor}{dstates}{$HOSTNAME} = $disk;
-
-			#$drbd{$minor}{sync} = "NOT YET";
-			next;
-		} else {
-			die "drbdsetup output unexpected 2\n" unless $name;
-			my ($h) = /^\s+([\w.-]+) local:/;
-			$host = $h || $host;
-			my ($conn) = (/\bconnection:(\w+)\b/);
-
-			if ($conn) {
-				for my $minor (@minor) {
-					$drbd{$minor}{states}{$host} .= $role if $role && $host;
-					$drbd{$minor}{conns}{$host} .= $conn if $role && $conn;
-				}
-			}
-
-			if (length($vol)) {
-				my $minor = $vol2minor{$vol} // die;
-
-				$drbd{$minor}{hosts}{$host}++ if $host;
-				$drbd{$vol2minor{$vol}}{dstates}{$host} .= $disk
-					if $host && $disk && length($vol);
-			}
-		}
-	}
-	close DS;
-	for my $v (values %drbd) {
-#print Dumper($v);
-		my @h = sort keys %{$v->{hosts}};
-		my @h_incl = ($HOSTNAME, @h);
 
 # role with local=first
-		$v->{role} = join("/", $v->{state},
-				shorten_list(\@h, $v->{states}));
+                $v->{role} = join("/", $my_role,
+                        shorten_list(\@h, $peers{states}));
 # role with all mixed together
-		$v->{role} = shorten_list(\@h_incl, $v->{states});
+                $v->{role} = shorten_list(\@h_incl, $peers{states});
 
-		$v->{dstate} = shorten_list(\@h_incl, $v->{dstates});
-		$v->{conn} = shorten_list(\@h, $v->{conns});
-	}
+                $v->{dstate} = shorten_list(\@h_incl, $peers{dstates});
+                $v->{conn} = shorten_list(\@h_incl, $peers{conns});
+            }
+
+            %vol_minor = ();
+            %peers = ();
+            %hosts = ();
+        }
+    }
+
+	close DS;
 }
 
 
@@ -411,7 +411,10 @@ my @out = [];
 my @maxw = ();
 my $line = 0;
 
-for my $m (sort { $a <=> $b } keys %drbd) {
+my @minors_sorted = sort { $a <=> $b } keys %drbd;
+my $max_minor = $minors_sorted[-1];
+my $minor_width = $max_minor > 10 ? 1+int(log($max_minor)/log(10)) : 2;
+for my $m (@minors_sorted) {
 	my $t = $drbd{$m};
 	my @used_by = exists $t->{xen_info} ? "xen-vbd: $t->{xen_info}"
 		    : exists $t->{pv_info} ? pv_info $t->{pv_info}
@@ -421,7 +424,7 @@ for my $m (sort { $a <=> $b } keys %drbd) {
 		    : ();
 
 	$out[$line] = [
-		sprintf("%3u:%s", $m, $t->{name} || "??not-found??"),
+		sprintf("%*u:%s", $minor_width, $m, $t->{name} || "??not-found??"),
 		defined($t->{ll_dev}) ? "^^$t->{ll_dev}" : "",
 		$t->{conn},
 		$t->{role},
