@@ -466,12 +466,14 @@ static void check_volume_complete(struct d_resource *res, struct d_host_info *ho
 {
 	if (!vol->device && vol->device_minor == -1U)
 		derror(host, res, "device");
-	if (!vol->disk)
-		derror(host, res, "disk");
-	if (!vol->meta_disk)
-		derror(host, res, "meta-disk");
-	if (!vol->meta_index)
-		derror(host, res, "meta-index");
+	if (vol->disk || vol->meta_disk || vol->meta_index) {
+		if (!vol->disk)
+			derror(host, res, "disk");
+		if (!vol->meta_disk)
+			derror(host, res, "meta-disk");
+		if (!vol->meta_index)
+			derror(host, res, "meta-index");
+	}
 }
 
 static void check_volumes_complete(struct d_resource *res, struct d_host_info *host)
@@ -788,7 +790,7 @@ void post_parse(enum pp_flags flags)
 			for_each_volume(vol, &host->volumes)
 				check_meta_disk(vol, host);
 
-			if (host->require_all)
+			if (host->require_minor)
 				check_volumes_complete(res, host);
 		}
 

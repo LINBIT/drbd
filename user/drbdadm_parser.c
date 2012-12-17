@@ -1066,7 +1066,7 @@ exit_loop:
 }
 
 enum parse_host_section_flags {
-	REQUIRE_ALL = 1,
+	REQUIRE_MINOR = 1,
 	BY_ADDRESS  = 2,
 };
 
@@ -1087,7 +1087,7 @@ static void parse_host_section(struct d_resource *res,
 	host->on_hosts = *on_hosts;
 	host->config_line = c_section_start;
 	host->implicit = 0;
-	host->require_all = flags & REQUIRE_ALL ? 1 : 0;
+	host->require_minor = flags & REQUIRE_MINOR ? 1 : 0;
 
 	if (flags & BY_ADDRESS) {
 		/* floating <address> {} */
@@ -1590,7 +1590,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_ON:
 			STAILQ_INIT(&host_names);
 			parse_hosts(&host_names, '{');
-			parse_host_section(res, &host_names, REQUIRE_ALL);
+			parse_host_section(res, &host_names, REQUIRE_MINOR);
 			break;
 		case TK_STACKED:
 			parse_stacked_section(res);
@@ -1603,7 +1603,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_FLOATING:
 			STAILQ_INIT(&host_names);
-			parse_host_section(res, &host_names, REQUIRE_ALL + BY_ADDRESS);
+			parse_host_section(res, &host_names, REQUIRE_MINOR + BY_ADDRESS);
 			break;
 		case TK_DISK:
 			switch (token=yylex()) {

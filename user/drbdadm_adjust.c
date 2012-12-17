@@ -455,20 +455,25 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 	 * so we can easily skip them in the opts_equal, later.
 	 */
 
-	/* do we need to do a full attach,
-	 * potentially with a detach first? */
-	conf->adj_attach = (conf->device_minor != kern->device_minor)
-			|| !disk_equal(conf, kern);
+	conf->adj_new_minor = conf->device_minor != kern->device_minor;
+	conf->adj_del_minor = conf->adj_new_minor && kern->disk;
+
+	if (!disk_equal(conf, kern)) {
+		if (conf->disk && kern->disk) {
+			conf->adj_attach = 1;
+			conf->adj_detach = 1;
+		} else {
+			conf->adj_attach = conf->disk != NULL;
+			conf->adj_detach = kern->disk != NULL;
+		}
+	}
 
 	/* do we need to resize? */
 	compare_size(conf, kern);
 
 	/* is it sufficient to only adjust the disk options? */
-	if (!conf->adj_attach)
+	if (!(conf->adj_detach || conf->adj_attach))
 		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, &conf->disk_options, &kern->disk_options);
-
-	if (conf->adj_attach && kern->disk)
-		conf->adj_detach = 1;
 }
 
 struct d_volume *new_to_be_deleted_minor_from_template(struct d_volume *kern)
@@ -510,8 +515,9 @@ void compare_volumes(struct volumes *conf_head, struct volumes *kern_head)
 			insert_volume(&to_be_deleted, new_to_be_deleted_minor_from_template(kern));
 			kern = STAILQ_NEXT(kern, link);
 		} else if (conf && (kern == NULL || kern->vnr > conf->vnr)) {
-			conf->adj_add_minor = 1;
-			conf->adj_attach = 1;
+			conf->adj_new_minor = 1;
+			if (conf->disk)
+				conf->adj_attach = 1;
 			conf = STAILQ_NEXT(conf, link);
 		} else {
 			ASSERT(conf);
@@ -651,7 +657,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 			schedule_deferred_cmd(&detach_cmd, &tmp_ctx, CFG_PREREQ);
 		if (vol->adj_del_minor)
 			schedule_deferred_cmd(&del_minor_cmd, &tmp_ctx, CFG_PREREQ);
-		if (vol->adj_add_minor)
+		if (vol->adj_new_minor)
 			schedule_deferred_cmd(&new_minor_cmd, &tmp_ctx, CFG_DISK_PREREQ);
 		if (vol->adj_attach)
 			schedule_deferred_cmd(&attach_cmd, &tmp_ctx, CFG_DISK);

@@ -121,7 +121,7 @@ struct d_volume
 
 	/* flags for "drbdadm adjust" */
 	unsigned int adj_del_minor :1;
-	unsigned int adj_add_minor :1;
+	unsigned int adj_new_minor :1;
 	unsigned int adj_detach :1;
 	unsigned int adj_attach :1;
 	unsigned int adj_resize :1;
@@ -146,7 +146,7 @@ struct d_host_info
 	unsigned int implicit:1;   /* Implicitly declared with an host xx address statement*/
 	unsigned int by_address:1; /* Match to machines by address, not by names (=on_hosts) */
 	unsigned int used_as_me:1; /* May be set in set_me_in_resource() */
-	unsigned int require_all:1; /* Requires device, disk, meta-disk and meta-index */
+	unsigned int require_minor:1; /* Requires device */
 	struct options res_options; /* Additional per host options */
 	char* node_id;
 };

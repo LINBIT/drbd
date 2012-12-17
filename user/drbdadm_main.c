@@ -1701,7 +1701,8 @@ static int adm_up(struct cfg_ctx *ctx)
 	for_each_volume(vol, &ctx->res->me->volumes) {
 		ctx->vol = vol;
 		schedule_deferred_cmd(&new_minor_cmd, ctx, CFG_PREREQ);
-		schedule_deferred_cmd(&attach_cmd, ctx, CFG_DISK);
+		if (vol->disk)
+			schedule_deferred_cmd(&attach_cmd, ctx, CFG_DISK);
 	}
 
 	return 0;
