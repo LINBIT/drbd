@@ -6216,7 +6216,7 @@ STATIC int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 	return 0;
 }
 
-static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids)
+static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_hold(local)
 {
 	char *id_to_bit = device->ldev->id_to_bit;
 	u64 bitmap_bits = 0;
@@ -6261,10 +6261,13 @@ found:
 		struct drbd_device *device = peer_device->device;
 		u64 in_sync_b;
 
-		in_sync_b = node_ids_to_bitmap(device, in_sync);
+		if (get_ldev(device)) {
+			in_sync_b = node_ids_to_bitmap(device, in_sync);
 
-		drbd_set_sync(device, peer_req->i.sector,
-			      peer_req->i.size, ~in_sync_b, -1);
+			drbd_set_sync(device, peer_req->i.sector,
+				      peer_req->i.size, ~in_sync_b, -1);
+			put_ldev(device);
+		}
 		list_del(&peer_req->recv_order);
 		drbd_free_peer_req(device, peer_req);
 	}
