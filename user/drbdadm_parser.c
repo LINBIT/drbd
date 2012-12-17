@@ -1192,39 +1192,26 @@ static void parse_host_section(struct d_resource *res,
 
 void parse_skip()
 {
-	int level;
+	int level = 0;
 	int token;
 	fline = line;
 
-	token = yylex();
-	switch (token) {
-	case TK_STRING:
-		EXP('{');
-		break;
-	case '{':
-		break;
-	default:
-		check_string_error(token);
-		pe_expected("[ some_text ] {");
-	}
-
-	level = 1;
-	while (level) {
-		switch (yylex()) {
+	while ((token = yylex())) {
+		switch(token) {
 		case '{':
-			/* if you really want to,
-			   you can wrap this with a GB size config file :) */
 			level++;
 			break;
 		case '}':
-			level--;
+			if (!--level)
+				return;
 			break;
-		case 0:
-			fprintf(stderr, "%s:%u: reached eof "
-				"while parsing this skip block.\n",
-				config_file, fline);
-			exit(E_CONFIG_INVALID);
 		}
+	}
+	if (!token) {
+		fprintf(stderr, "%s:%u: reached eof "
+			"while parsing this skip block.\n",
+			config_file, fline);
+		exit(E_CONFIG_INVALID);
 	}
 }
 
