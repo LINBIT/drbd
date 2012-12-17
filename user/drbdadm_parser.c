@@ -1454,6 +1454,11 @@ struct connection *alloc_connection()
 	return conn;
 }
 
+void free_connection(struct connection *connection)
+{
+	free(connection);
+}
+
 static struct connection *parse_connection(enum pr_flags flags)
 {
 	struct connection *conn;

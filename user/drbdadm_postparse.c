@@ -598,27 +598,32 @@ static void create_implicit_connections(struct d_resource *res)
 	conn->implicit = 1;
 
 	for_each_host(host_info, &res->all_hosts) {
-		ha = alloc_hname_address();
-		ha->host_info = host_info;
-		if (!host_info->lower) {
-			ha->name = STAILQ_FIRST(&host_info->on_hosts)->name;
-		} else {
-			ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
-			ha->address = host_info->address;
-			ha->faked_hostname = 1;
-			ha->parsed_address = 1; /* not true, but makes dump nicer */
-		}
 		if (++hosts == 3) {
 			fprintf(stderr,
-				"%s:%d: in resource %s:\n\t"
+				"Resource %s:\n\t"
 				"Use explicit 'connection' sections with more than two 'on' sections.\n",
-				res->config_file, res->start_line, res->name);
-			config_valid = 0;
+				res->name);
+			break;
 		}
-		STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
+		if (host_info->address.af && host_info->address.addr && host_info->address.port) {
+			ha = alloc_hname_address();
+			ha->host_info = host_info;
+			if (!host_info->lower) {
+				ha->name = STAILQ_FIRST(&host_info->on_hosts)->name;
+			} else {
+				ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
+				ha->address = host_info->address;
+				ha->faked_hostname = 1;
+				ha->parsed_address = 1; /* not true, but makes dump nicer */
+			}
+			STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
+		}
 	}
 
-	STAILQ_INSERT_TAIL(&res->connections, conn, link);
+	if (hosts == 2)
+		STAILQ_INSERT_TAIL(&res->connections, conn, link);
+	else
+		free_connection(conn);
 }
 
 static struct d_host_info *find_host_info_or_invalid(struct d_resource *res, char *name)
