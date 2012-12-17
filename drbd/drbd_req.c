@@ -146,7 +146,8 @@ static void queue_peer_ack(struct drbd_request *req)
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->net_conf->peer_node_id;
 		if (connection->agreed_pro_version < 110 ||
-		    connection->cstate[NOW] != C_CONNECTED)
+		    connection->cstate[NOW] != C_CONNECTED ||
+		    !(req->rq_state[1 + node_id] & RQ_NET_SENT))
 			continue;
 		atomic_inc(&req->kref.refcount); /* was 0, instead of kref_get() */
 		req->rq_state[1 + node_id] |= RQ_PEER_ACK;
