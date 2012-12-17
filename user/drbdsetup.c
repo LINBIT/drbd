@@ -268,6 +268,7 @@ struct resources_list {
 	struct resource_statistics statistics;
 };
 static struct resources_list *list_resources(void);
+static struct resources_list *sort_resources(struct resources_list *);
 static void free_resources(struct resources_list *);
 
 struct devices_list {
@@ -1744,7 +1745,7 @@ static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		}
 	}
 
-	resources_list = list_resources();
+	resources_list = sort_resources(list_resources());
 
 	for (resource = resources_list; resource; resource = resource->next) {
 		struct drbd_cmd cmd = {};
@@ -2137,7 +2138,7 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		}
 	}
 
-	resources = list_resources();
+	resources = sort_resources(list_resources());
 
 	sigaction(SIGHUP, &sa, NULL);
 	sigaction(SIGINT, &sa, NULL);
@@ -2343,6 +2344,35 @@ static void free_resources(struct resources_list *resources)
 	}
 }
 
+int resource_name_cmp(const struct resources_list * const *a, const struct resources_list * const *b)
+{
+	return strcmp((*a)->name, (*b)->name);
+}
+
+static struct resources_list *sort_resources(struct resources_list *resources)
+{
+	struct resources_list *r;
+	int n;
+
+	for (r = resources, n = 0; r; r = r->next)
+		n++;
+	if (n > 1) {
+		struct resources_list **array;
+
+		array = malloc(sizeof(*array) * n);
+		for (r = resources, n = 0; r; r = r->next)
+			array[n++] = r;
+		qsort(array, n, sizeof(*array), (int (*)(const void *, const void *)) resource_name_cmp);
+		n--;
+		array[n]->next = NULL;
+		for (; n > 0; n--)
+			array[n - 1]->next = array[n];
+		resources = array[0];
+		free(array);
+	}
+	return resources;
+}
+
 /*
  * Expects objname to be set to the resource name or "all".
  */
@@ -2376,6 +2406,7 @@ static struct resources_list *list_resources(void)
 		free_resources(r);
 		r = NULL;
 	}
+
 	return r;
 }
 
