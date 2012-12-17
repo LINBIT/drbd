@@ -2244,7 +2244,6 @@ void drbd_cleanup_device(struct drbd_device *device)
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
-	drbd_set_my_capacity(device, 0);
 	if (device->bitmap) {
 		/* maybe never allocated. */
 		drbd_bm_resize(device, 0, 1);
