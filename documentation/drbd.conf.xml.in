@@ -244,12 +244,12 @@ resource
               determine if it matches a <option>floating</option>
               section.</para>
 
-            <para>The
-            <option>node-id</option> parameter must be defined in this
-            section.  The <option>address</option> parameter is not required.
-            The <option>device</option>, <option>disk</option>, and
-            <option>meta-disk</option> parameters must be defined in, or
-            inherited by, this section.</para>
+	    <para>The <option>node-id</option> parameter in this section is
+	      required.  If the <option>address</option> parameter is not
+	      provided, no connections to peers will be created by default.
+	      The <option>device</option>, <option>disk</option>, and
+	      <option>meta-disk</option> parameters must be defined in, or
+	      inherited by, this section.</para>
           </listitem>
         </varlistentry>
 
@@ -798,7 +798,8 @@ resource
               </indexterm> Define the device name and minor number of a
               replicated block device.  This is the device that applications
               are supposed to access; in most cases, the device is not used
-              directly, but as a file system.</para>
+	      directly, but as a file system.  This parameter is
+	      required.</para>
 
             <para>The first form of this parameter assumes the standard
               device naming convention.  The second form supports arbitrary
@@ -833,7 +834,7 @@ resource
                 <refentrytitle>dumpe2fs</refentrytitle>
                 <manvolnum>8</manvolnum> </citerefentry> and similar is not
 	      allowed. The keyword <option>none</option> specifies that no
-	      lower-level block device is configured; this overrides
+	      lower-level block device is configured; this also overrides
 	      inheritance of the lower-level device.</para>
           </listitem>
         </varlistentry>
@@ -869,6 +870,11 @@ resource
               (size of lower-level device) / 32K * (number of nodes - 1).  If <!-- FIXME: al-striping, al-extents 65536? -->
               the metadata device is bigger than that, the extra space is not
               used.</para>
+	    <para>This parameter is required if a <option>disk</option> other
+	      than <option>none</option> is specified, and ignored if
+	      <option>disk</option> is set to <option>none</option>.  A
+	      <option>meta-disk</option> parameter without a
+	      <option>disk</option> parameter is not allowed.</para>
           </listitem>
         </varlistentry>
       </variablelist>
