@@ -467,12 +467,14 @@ static void check_volume_complete(struct d_resource *res, struct d_host_info *ho
 	if (!vol->device && vol->device_minor == -1U)
 		derror(host, res, "device");
 	if (vol->disk || vol->meta_disk || vol->meta_index) {
-		if (!vol->disk)
-			derror(host, res, "disk");
-		if (!vol->meta_disk)
-			derror(host, res, "meta-disk");
-		if (!vol->meta_index)
-			derror(host, res, "meta-index");
+		if (!(vol->disk && !strcmp(vol->disk, "none"))) {
+			if (!vol->disk)
+				derror(host, res, "disk");
+			if (!vol->meta_disk)
+				derror(host, res, "meta-disk");
+			if (!vol->meta_index)
+				derror(host, res, "meta-index");
+		}
 	}
 }
 
@@ -856,6 +858,15 @@ void expand_common(void)
 		/* make sure vol->device is non-NULL */
 		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, &h->volumes) {
+				if (vol->disk && !strcmp(vol->disk, "none")) {
+					free(vol->disk);
+					free(vol->meta_disk);
+					free(vol->meta_index);
+					vol->disk = NULL;
+					vol->meta_disk = NULL;
+					vol->meta_index = NULL;
+				}
+
 				if (!vol->device)
 					m_asprintf(&vol->device, "/dev/drbd%u",
 						   vol->device_minor);

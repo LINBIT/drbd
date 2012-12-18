@@ -814,7 +814,12 @@ resource
         </varlistentry>
 
         <varlistentry>
-          <term><option>disk <replaceable>device</replaceable></option></term>
+	  <term><option>disk</option>
+	      <group choice="req" rep="norepeat">
+		<arg rep="norepeat">disk</arg>
+		<arg choice="plain" rep="norepeat"><option>none</option></arg>
+	      </group>
+	    </term>
 
           <listitem>
             <para><indexterm significance="normal">
@@ -823,11 +828,13 @@ resource
                 <secondary>disk</secondary>
               </indexterm> Define the lower-level block device that DRBD will
               use for storing the actual data.  While the replicated drbd
-              device is configured, the lower-level device must not be used.
+              device is configured, the lower-level device must not be used directly.
               Even read-only access with tools like <citerefentry>
                 <refentrytitle>dumpe2fs</refentrytitle>
                 <manvolnum>8</manvolnum> </citerefentry> and similar is not
-              allowed.</para>
+	      allowed. The keyword <option>none</option> specifies that no
+	      lower-level block device is configured; this overrides
+	      inheritance of the lower-level device.</para>
           </listitem>
         </varlistentry>
 
