@@ -151,9 +151,7 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 			}
 			addr_hash[i] = hash_str(host_info->address.addr);
 			host_info_array[i++] = host_info;
-			continue;
-		}
-		if (ha->by_address) {
+		} else if (ha->by_address) {
 			host_info = find_host_info_by_address(res, &ha->address);
 			/* The name will be used for nice comments only ... */
 			ha->name = strdup(names_to_str_c(&host_info->on_hosts, '_'));
@@ -169,16 +167,32 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 			continue;
 		}
 		ha->host_info = host_info;
-		if (!ha->address.addr && !ha->address.af && ha->address.port) {
-			/* this was the 'port' keyword in the config file */
-			if (!host_info->address.addr) {
-				fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
-					"with \"host\" and \"port\" keywords, but there is no host-section with an explicit address\n",
-					config_file, ha->config_line, res->name, ha->name);
+		if (!(ha->address.addr && ha->address.af && ha->address.port)) {
+			bool have_address = true;
+			bool have_port = true;
+
+			if (!(ha->address.addr && ha->address.af)) {
+				if (host_info->address.addr && host_info->address.af) {
+					ha->address.addr = host_info->address.addr;
+					ha->address.af = host_info->address.af;
+				} else
+					have_address = false;
+			}
+			if (!ha->address.port) {
+				if (host_info->address.port)
+					ha->address.port = host_info->address.port;
+				else
+					have_port = false;
+			}
+			if (!(have_address && have_port)) {
+				fprintf(stderr, "%s:%d: Resource %s, host %s: "
+						"cannot determine which %s%s%s to use\n",
+					config_file, ha->config_line, res->name, ha->name,
+					have_address ? "" : "address",
+					have_address != have_port ? "" : " and ",
+					have_port ? "" : "port");
 				config_valid = 0;
 			}
-			ha->address.addr = host_info->address.addr;
-			ha->address.af = host_info->address.af;
 		}
 
 		fline = ha->config_line;
