@@ -1985,11 +1985,13 @@ STATIC int drbd_nl_syncer_conf(struct drbd_conf *mdev, struct drbd_nl_cfg_req *n
 	spin_unlock(&mdev->peer_seq_lock);
 
 	if (get_ldev(mdev)) {
+		drbd_suspend_io(mdev);
 		wait_event(mdev->al_wait, lc_try_lock(mdev->act_log));
 		drbd_al_shrink(mdev);
 		err = drbd_check_al_size(mdev);
 		lc_unlock(mdev->act_log);
 		wake_up(&mdev->al_wait);
+		drbd_resume_io(mdev);
 
 		put_ldev(mdev);
 		drbd_md_sync(mdev);
