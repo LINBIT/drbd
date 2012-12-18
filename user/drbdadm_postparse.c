@@ -815,8 +815,10 @@ void post_parse(enum pp_flags flags)
 		}
 	}
 
-	for_each_resource(res, &config)
-		check_addr_conflict(res);
+	if (config_valid) {
+		for_each_resource(res, &config)
+			check_addr_conflict(res);
+	}
 
 	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, &config)
