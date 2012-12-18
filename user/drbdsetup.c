@@ -289,6 +289,7 @@ struct connections_list {
 	struct connection_info info;
 	struct connection_statistics statistics;
 };
+static struct connections_list *sort_connections(struct connections_list *);
 static struct connections_list *list_connections(char *);
 static void free_connections(struct connections_list *);
 
@@ -2155,7 +2156,7 @@ static int status_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			continue;
 
 		devices = list_devices(resource->name);
-		connections = list_connections(resource->name);
+		connections = sort_connections(list_connections(resource->name));
 		if (devices && connections)
 			peer_devices = list_peer_devices(resource->name);
 
@@ -2344,7 +2345,7 @@ static void free_resources(struct resources_list *resources)
 	}
 }
 
-int resource_name_cmp(const struct resources_list * const *a, const struct resources_list * const *b)
+static int resource_name_cmp(const struct resources_list * const *a, const struct resources_list * const *b)
 {
 	return strcmp((*a)->name, (*b)->name);
 }
@@ -2512,6 +2513,37 @@ static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
 		__remembered_connections_tail = &c->next;
 	}
 	return 0;
+}
+
+static int connection_name_cmp(const struct connections_list * const *a, const struct connections_list * const *b)
+{
+	if (!(*a)->ctx.ctx_conn_name_len != !(*b)->ctx.ctx_conn_name_len)
+		return !(*b)->ctx.ctx_conn_name_len;
+	return strcmp((*a)->ctx.ctx_conn_name, (*b)->ctx.ctx_conn_name);
+}
+
+static struct connections_list *sort_connections(struct connections_list *connections)
+{
+	struct connections_list *c;
+	int n;
+
+	for (c = connections, n = 0; c; c = c->next)
+		n++;
+	if (n > 1) {
+		struct connections_list **array;
+
+		array = malloc(sizeof(*array) * n);
+		for (c = connections, n = 0; c; c = c->next)
+			array[n++] = c;
+		qsort(array, n, sizeof(*array), (int (*)(const void *, const void *)) connection_name_cmp);
+		n--;
+		array[n]->next = NULL;
+		for (; n > 0; n--)
+			array[n - 1]->next = array[n];
+		connections = array[0];
+		free(array);
+	}
+	return connections;
 }
 
 /*
