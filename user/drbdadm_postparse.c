@@ -788,11 +788,8 @@ void post_parse(enum pp_flags flags)
 			for_each_volume(vol, &host->volumes)
 				check_meta_disk(vol, host);
 
-			if (host->require_all) {
-				if (!host->address.addr)
-					derror(host, res, "address");
+			if (host->require_all)
 				check_volumes_complete(res, host);
-			}
 		}
 
 		check_volumes_hosts(res);
