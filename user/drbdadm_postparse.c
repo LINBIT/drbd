@@ -791,6 +791,20 @@ static void check_addr_conflict(struct d_resource *res)
 	}
 }
 
+static void must_have_two_hosts(struct d_resource *res, struct connection *con)
+{
+	struct hname_address *ha;
+	int i = 0;
+
+	STAILQ_FOREACH(ha, &con->hname_address_pairs, link)
+		i++;
+	if (i != 2) {
+		fprintf(stderr, "%s:%d: Resource %s: connection needs to have two endpoints\n",
+			res->config_file, con->config_line, res->name);
+		config_valid = 0;
+	}
+}
+
 void post_parse(enum pp_flags flags)
 {
 	struct d_resource *res;
@@ -819,6 +833,9 @@ void post_parse(enum pp_flags flags)
 
 	for_each_resource(res, &config) {
 		struct d_host_info *host;
+
+		for_each_connection(con, &res->connections)
+			must_have_two_hosts(res, con);
 		create_connections_from_mesh(res);
 		create_implicit_connections(res);
 		for_each_connection(con, &res->connections)
