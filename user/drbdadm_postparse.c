@@ -742,13 +742,13 @@ static bool addr_scope_local(struct d_address *addr)
    but may not be mentioned in any other resource. Also make sure that the two
    endpoints are not configured as the same.
  */
-static void check_addr_conflict(struct d_resource *res)
+static void check_addr_conflict(struct d_resource *res, struct resources *resources)
 {
 	struct d_resource *res2;
 	struct hname_address *ha1, *ha2;
 	struct connection *con;
 
-	for_each_resource(res2, &config) {
+	for_each_resource(res2, resources) {
 		if (res2 == res)
 			continue;
 
@@ -848,7 +848,7 @@ void post_parse(struct resources *resources, enum pp_flags flags)
 
 	if (config_valid) {
 		for_each_resource(res, resources)
-			check_addr_conflict(res);
+			check_addr_conflict(res, resources);
 	}
 
 	/* Needs "on_hosts" and host->lower already set */
