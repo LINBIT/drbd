@@ -238,9 +238,9 @@ static void dump_volume(int has_lower, struct d_volume *vol)
 	}
 
 	if (!has_lower && (vol->parsed_disk || verbose))
-		printA("disk", esc(vol->disk));
+		printA("disk", esc(vol->disk ? vol->disk : "none"));
 
-	if (!has_lower && (vol->parsed_meta_disk || verbose)) {
+	if (!has_lower && (vol->parsed_meta_disk || verbose) && vol->disk) {
 		if (!strcmp(vol->meta_index, "flexible"))
 			printI(MDISK, "meta-disk", esc(vol->meta_disk));
 		else if (!strcmp(vol->meta_index, "internal"))
