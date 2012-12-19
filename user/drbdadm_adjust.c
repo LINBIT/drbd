@@ -581,7 +581,11 @@ int adm_adjust(struct cfg_ctx *ctx)
 	waitpid(pid, 0, 0);
 
 	if (running) {
-		post_parse(0);
+		struct resources running_as_list;
+		STAILQ_INIT(&running_as_list);
+		insert_tail(&running_as_list, running);
+		post_parse(&running_as_list, 0);
+
 		set_me_in_resource(running, 0);
 		set_peer_in_resource(running, 0);
 	}

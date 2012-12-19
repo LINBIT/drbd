@@ -3090,7 +3090,7 @@ int main(int argc, char **argv)
 	if (!config_valid)
 		exit(E_CONFIG_INVALID);
 
-	post_parse(cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
+	post_parse(&config, cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();

@@ -805,13 +805,13 @@ static void must_have_two_hosts(struct d_resource *res, struct connection *con)
 	}
 }
 
-void post_parse(enum pp_flags flags)
+void post_parse(struct resources *resources, enum pp_flags flags)
 {
 	struct d_resource *res;
 	struct connection *con;
 
 	/* inherit volumes from resource level into the d_host_info objects */
-	for_each_resource(res, &config) {
+	for_each_resource(res, resources) {
 		struct d_host_info *host;
 		for_each_host(host, &res->all_hosts) {
 			struct d_volume *vol;
@@ -827,11 +827,11 @@ void post_parse(enum pp_flags flags)
 		check_volumes_hosts(res);
 	}
 
-	for_each_resource(res, &config)
+	for_each_resource(res, resources)
 		if (res->stacked_on_one)
 			set_on_hosts_in_res(res); /* sets on_hosts and host->lower */
 
-	for_each_resource(res, &config) {
+	for_each_resource(res, resources) {
 		struct d_host_info *host;
 
 		for_each_connection(con, &res->connections)
@@ -847,22 +847,22 @@ void post_parse(enum pp_flags flags)
 	}
 
 	if (config_valid) {
-		for_each_resource(res, &config)
+		for_each_resource(res, resources)
 			check_addr_conflict(res);
 	}
 
 	/* Needs "on_hosts" and host->lower already set */
-	for_each_resource(res, &config)
+	for_each_resource(res, resources)
 		if (!res->stacked_on_one)
 			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	/* Needs host->lower->me already set */
-	for_each_resource(res, &config)
+	for_each_resource(res, resources)
 		if (res->stacked_on_one)
 			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	// Needs "me" set already
-	for_each_resource(res, &config)
+	for_each_resource(res, resources)
 		if (res->stacked_on_one)
 			set_disk_in_res(res);
 }

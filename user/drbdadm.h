@@ -357,7 +357,7 @@ enum pp_flags {
 extern int check_uniq(const char *what, const char *fmt, ...);
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
-extern void post_parse(enum pp_flags);
+extern void post_parse(struct resources *, enum pp_flags);
 extern struct connection *alloc_connection();
 extern void free_connection(struct connection *connection);
 extern void expand_common(void);
