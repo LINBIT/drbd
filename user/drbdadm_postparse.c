@@ -682,7 +682,7 @@ static void create_connections_from_mesh(struct d_resource *res)
 				return;
 
 			if (hi1 == hi2)
-				continue;
+				goto skip;
 
 			conn = alloc_connection();
 			conn->implicit = 1;
@@ -700,7 +700,7 @@ static void create_connections_from_mesh(struct d_resource *res)
 			STAILQ_INSERT_TAIL(&conn->hname_address_pairs, ha, link);
 
 			STAILQ_INSERT_TAIL(&res->connections, conn, link);
-
+		skip:
 			hname2 = STAILQ_NEXT(hname2, link);
 		}
 	}
