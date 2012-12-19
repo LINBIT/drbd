@@ -1246,20 +1246,6 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	}
 }
 
-static bool diskless_primary_present(struct drbd_device *device)
-{
-	struct drbd_peer_device *peer_device;
-	bool rv = false;
-
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->disk_state[NEW] < D_INCONSISTENT &&
-		    peer_device->connection->peer_role[NEW] == R_PRIMARY)
-			rv = true;
-	}
-
-	return rv;
-}
-
 static void initialize_resync(struct drbd_peer_device *peer_device)
 {
 	unsigned long tw = drbd_bm_total_weight(peer_device);
@@ -1426,7 +1412,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			mdf &= ~MDF_AL_CLEAN;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
-			if (device->resource->role[NEW] == R_PRIMARY || diskless_primary_present(device))
+			if (device->resource->role[NEW] == R_PRIMARY)
 				mdf |= MDF_PRIMARY_IND;
 			if (disk_state[NEW] > D_INCONSISTENT)
 				mdf |= MDF_CONSISTENT;
