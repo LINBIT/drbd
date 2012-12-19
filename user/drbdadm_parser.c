@@ -49,6 +49,7 @@ YYSTYPE yylval;
 
 static int c_section_start;
 void my_parse(void);
+static void parse_skip(void);
 
 struct d_name *names_from_str(char* str)
 {
@@ -1001,6 +1002,9 @@ int parse_volume_stmt(struct d_volume *vol, struct names* on_hosts, int token)
 		EXP(';');
 		vol->parsed_meta_disk = 1;
 		break;
+	case TK_SKIP:
+		parse_skip();
+		break;
 	default:
 		return 0;
 	}
@@ -1176,6 +1180,9 @@ static void parse_host_section(struct d_resource *res,
 							  0,
 							  TK_RES_OPTION);
 			break;
+		case TK_SKIP:
+			parse_skip();
+			break;
 		case '}':
 			in_braces = 0;
 			break;
@@ -1185,12 +1192,12 @@ static void parse_host_section(struct d_resource *res,
 			/* else fall through */
 		default:
 			pe_expected("disk | device | address | meta-disk "
-				    "| flexible-meta-disk | node-id");
+				    "| flexible-meta-disk | node-id | skip");
 		}
 	}
 }
 
-void parse_skip()
+static void parse_skip()
 {
 	int level = 0;
 	int token;
@@ -1502,10 +1509,13 @@ static struct connection *parse_connection(enum pr_flags flags)
 			conn->net_options = parse_options_d(TK_NET_FLAG, TK_NET_NO_FLAG, TK_NET_OPTION,
 							    TK_NET_DELEGATE, &net_delegate, (void *)flags);
 			break;
+		case TK_SKIP:
+			parse_skip();
+			break;
 		case '}':
 			return conn;
 		default:
-			pe_expected_got( "host | net | }", token);
+			pe_expected_got( "host | net | skip | }", token);
 		}
 	}
 }
@@ -1675,6 +1685,9 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		case TK_CONNECTION_MESH:
 			parse_connection_mesh(res, flags);
 			break;
+		case TK_SKIP:
+			parse_skip();
+			break;
 		case '}':
 		case 0:
 			goto exit_loop;
@@ -1682,7 +1695,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 		goto_default:
 			pe_expected_got("protocol | on | disk | net | syncer |"
 					" startup | handlers | connection |"
-					" ignore-on | stacked-on-top-of",token);
+					" ignore-on | stacked-on-top-of | skip",token);
 		}
 	}
 
