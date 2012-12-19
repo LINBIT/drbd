@@ -158,6 +158,11 @@ static void set_host_info_in_host_address_pairs(struct d_resource *res, struct c
 		} else {
 			host_info = find_host_info_by_name(res, ha->name);
 		}
+		if (!host_info && !strcmp(ha->name, "_remote_host")) {
+			/* drbdsetup show does not output a host section for the _remote_host */
+			continue;
+		}
+
 		if (!host_info) {
 			fprintf(stderr, "%s:%d: in resource %s a hostname (\"%s\") is given\n"
 				"with a \"host\" keyword, has no \"address\" keyword, and not matching\n"
@@ -298,7 +303,7 @@ static void set_peer_in_connection(struct d_resource* res, struct connection *co
 	struct d_host_info *host_info;
 	int nr_hosts = 0, candidates = 0;
 
-	if (res->ignore || conn->ignore)
+	if (res->ignore || conn->ignore || conn->connect_to)
 		return;
 
 	/* me must be already set */
