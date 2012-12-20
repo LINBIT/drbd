@@ -319,6 +319,7 @@ check_peer_node_reachable()
 	# we are going to increase the cib timeout with every timeout.
 	# for the actual invocation, we use int(cibtimeout/10).
 	local cibtimeout=10
+	local full_timeout
 	local node_state state_lines nr_other_nodes
 	while :; do
 		while :; do
@@ -365,25 +366,27 @@ check_peer_node_reachable()
 			# we try to solve is relevant on two-node clusters
 			# (no real quorum)
 			if [[ $DRBD_PEER ]]; then
-				if ! echo "$state_lines" | grep -v -F uname=\"$DRBD_PEER\" | grep -q 'ha="active"'; then
+				if echo "$state_lines" | grep -F uname=\"$DRBD_PEER\" | grep -q ' crmd="offline"'; then
 					peer_state="unreachable"
 					return
 				fi
 			else
-				# Loop through DRBD_PEERS. FIXME If at least
-				# one of the potential peers was not "active"
-				# even before this handler was called, but some
-				# others are, then this may not be good enough.
-				for P in $DRBD_PEERS; do
-					if ! echo "$state_lines" | grep -v -F uname=\"$P\" | grep -q 'ha="active"'; then
-						peer_state="unreachable"
-						return
-					fi
-				done
+				# Multi node cluster, but unknown DRBD Peer.
+				# This should not be a problem, unless you have
+				# no_quorum_policy=ignore in an N > 2 cluster.
+				# (yes, I've seen such beasts in the wild!)
+				# As we don't know the peer,
+				# we could only safely return here if *all*
+				# potential peers are confirmed down.
+				# Don't try to be smart, just wait for the full
+				# timeout, which should allow STONITH to
+				# complete.
+				full_timeout=$(( $timeout - $SECONDS ))
+				(( $full_timeout > 0 )) && sleep $full_timeout
 			fi
 		else
 			# two node case, ignore $DRBD_PEERS
-			if ! echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | grep -q 'ha="active"'; then
+			if echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | grep -q ' crmd="offline"'; then
 				peer_state="unreachable"
 				return
 			fi
