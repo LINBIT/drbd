@@ -1234,12 +1234,13 @@
 
         <secondary>invalidate</secondary>
       </indexterm>
-
-      <para>This forces the local device of a pair of connected DRBD devices into SyncTarget
-      state, which means that all data blocks of the device are copied over from the peer.</para>
-
-      <para>This command will fail if the <replaceable>device</replaceable> is not part of a
-      connected device pair.</para>
+      <para>	This forces the local device of a pair of connected DRBD devices
+	into SyncTarget state, which means that all data blocks of the
+	device are copied over from the peer.
+      </para>
+      <para>	This command will fail if the <replaceable>device</replaceable> is
+	not either part of a connected device pair, or disconnected Secondary.
+      </para>
     </refsect2>
 
     <refsect2>
@@ -1250,13 +1251,15 @@
 
         <secondary>invalidate-remote</secondary>
       </indexterm>
-
-      <para>This forces the local device of a pair of connected DRBD devices into SyncSource
-      state, which means that all data blocks of the device are copied to the peer.</para>
-
-      <para>On a disconnected device, this will set all bits in the out of sync bitmap. As a side
-      effect, this suspends updates to the on disk activity log. Updates to the on disk activity log
-      will be resumed automatically when necessary.</para>
+      <para>	This forces the local device of a pair of connected DRBD devices
+	into SyncSource state, which means that all data blocks of the
+	device are copied to the peer.
+      </para>
+      <para>
+	On a disconnected Primary device, this will set all bits in the out of sync bitmap.
+	As a side affect this suspends updates to the on disk activity log. Updates
+	to the on disk activity log resume automatically when necessary.
+      </para>
     </refsect2>
 
     <refsect2>

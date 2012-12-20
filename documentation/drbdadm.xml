@@ -298,9 +298,13 @@
               <primary>drbdadm</primary>
 
               <secondary>invalidate</secondary>
-            </indexterm> Forces DRBD to consider the data on the <emphasis>local</emphasis>
-          backing storage device as out-of-sync. Therefore DRBD will copy each and every block
-          from its peer, to bring the local storage device back in sync.</para>
+            </indexterm> Forces DRBD to consider the data on the <emphasis>local</emphasis> backing
+	  storage device as out-of-sync. Therefore DRBD will copy each
+	  and every block from its peer, to bring the local storage
+	  device back in sync.
+	  To avoid races, you need an established replication link,
+	  or be disconnected Secondary.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -313,8 +317,11 @@
 
               <secondary>invalidate-remote</secondary>
             </indexterm> This command is similar to the invalidate command, however, the
-          <emphasis>peer's</emphasis> backing storage is invalidated and hence rewritten with the
-          data of the local node.</para>
+	  <emphasis>peer's</emphasis> backing storage is invalidated and hence rewritten
+	  with the data of the local node.
+	  To avoid races, you need an established replication link,
+	  or be disconnected Primary.
+        </para>
         </listitem>
       </varlistentry>
 
