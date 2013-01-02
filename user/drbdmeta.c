@@ -2064,7 +2064,7 @@ static unsigned int al_tr_number_to_on_disk_slot(struct format *cfg, unsigned in
 {
 	const unsigned int stripes = cfg->md.al_stripes;
 	const unsigned int stripe_size_4kB = cfg->md.al_stripe_size_4k;
-	
+
 	/* transaction number, modulo on-disk ring buffer wrap around */
 	unsigned int t = b % mx;
 
@@ -2096,7 +2096,7 @@ int replay_al_84(struct format *cfg, uint32_t *hot_extent)
 		fprintf(stderr, "Could not calloc(%u, sizeof(*al_cpu))\n", mx);
 		exit(30); /* FIXME sane exit codes */
 	}
-	
+
 	/* endian convert, validate, and find oldest to newest log range */
 	for (b = 0; b < mx; b++) {
 		o = al_tr_number_to_on_disk_slot(cfg, b, mx);
