@@ -461,9 +461,6 @@ resource
             port instead of the port defined in the <option>on</option>
             section.  Each <option>connection</option> section must contain
             exactly two <option>host</option> parameters.</para>
-            <para>Optionally a different address to listen respectively to
-              connect to can be given; this is useful to use a different physical
-              connection (eg. a dedicated cross-over cable) for a host pair.</para>
           </listitem>
         </varlistentry>
       </variablelist>
