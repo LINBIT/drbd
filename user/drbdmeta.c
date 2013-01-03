@@ -2209,6 +2209,7 @@ int cmp_u32(const void *p1, const void *p2)
 
 void apply_al(struct format *cfg, uint32_t *hot_extent)
 {
+	const unsigned int extents_size = BM_BYTES_PER_AL_EXT * cfg->md.max_peers;
 	const size_t bm_bytes = ALIGN(cfg->bm_bytes, cfg->md_hard_sect_size);
 	off_t bm_on_disk_off = cfg->bm_offset;
 	size_t bm_on_disk_pos = 0;
@@ -2223,7 +2224,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 	char ppb[10];
 
 	/* Now, actually apply this stuff to the on-disk bitmap.
-	 * Since one AL extent corresponds to 128 Byte of bitmap,
+	 * Since one AL extent corresponds to 128 bytes of bitmap,
 	 * we need to do some read/modify/write cycles here.
 	 *
 	 * Note that this can be slow due to the use of O_DIRECT,
@@ -2243,14 +2244,17 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 		unsigned bits_set = 0;
 		if (hot_extent[i] == ~0U)
 			break;
-		bm_pos = hot_extent[i] * BM_BYTES_PER_AL_EXT;
+
+		ASSERT(cfg->md.bm_bytes_per_bit == 4096);
+		ASSERT(BM_BYTES_PER_AL_EXT % 4 == 0);
+
+		bm_pos = hot_extent[i] * extents_size;
 		if (bm_pos >= bm_bytes) {
 			fprintf(stderr, "extent %u beyond end of bitmap!\n", hot_extent[i]);
 			/* could break or return error here,
 			 * but I'll just print a warning, and skip, each of them. */
 			continue;
 		}
-
 
 		/* On first iteration, or when the current position in the bitmap
 		 * exceeds the current buffer, write out the current buffer, if any,
@@ -2259,7 +2263,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 		 */
 
 		if (i == 0 ||
-		    bm_pos + BM_BYTES_PER_AL_EXT >= bm_on_disk_pos + chunk) {
+		    bm_pos + extents_size >= bm_on_disk_pos + chunk) {
 			if (i != 0)
 				pwrite_or_die(cfg->md_fd, on_disk_buffer, chunk,
 						bm_on_disk_off + bm_on_disk_pos,
@@ -2275,16 +2279,16 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 					bm_on_disk_off + bm_on_disk_pos,
 					"apply_al");
 		}
-		ASSERT(bm_pos - bm_on_disk_pos <= chunk - BM_BYTES_PER_AL_EXT);
+		ASSERT(bm_pos - bm_on_disk_pos <= chunk - extents_size);
 		ASSERT((bm_pos - bm_on_disk_pos) % sizeof(uint64_t) == 0);
 		w = (uint64_t *)on_disk_buffer
 			+ (bm_pos - bm_on_disk_pos)/sizeof(uint64_t);
-		for (j = 0; j < BM_BYTES_PER_AL_EXT/sizeof(uint64_t); j++)
+		for (j = 0; j < extents_size/sizeof(uint64_t); j++)
 			bits_set += generic_hweight64(w[j]);
 
-		additional_bits_set += BM_BYTES_PER_AL_EXT * 8 - bits_set;
+		additional_bits_set += extents_size * 8 - bits_set;
 		memset((char*)on_disk_buffer + (bm_pos - bm_on_disk_pos),
-			0xff, BM_BYTES_PER_AL_EXT);
+			0xff, extents_size);
 	}
 	/* we still need to write out the buffer of the last iteration */
 	if (i != 0) {
