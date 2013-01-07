@@ -2970,7 +2970,7 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 
 	cfg->md.effective_size = 0;
 	cfg->md.max_peers = max_peers;
-	cfg->md.flags = 0;
+	cfg->md.flags = MDF_AL_CLEAN;
 	cfg->md.node_id = -1;
 	cfg->md.magic = DRBD_MD_MAGIC_09;
 	cfg->md.al_stripes = option_al_stripes;
