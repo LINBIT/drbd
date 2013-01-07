@@ -2746,13 +2746,8 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
 	}
 
-	if (peer_device->disk_state[NOW] < D_INCONSISTENT) {
-		/* In case we have the only disk of the cluster, */
-		drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
-		peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
-		peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
-		drbd_al_begin_io(device, &peer_req->i, true);
-	}
+	peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
+	drbd_al_begin_io(device, &peer_req->i, true);
 
 	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
 	if (!err)
