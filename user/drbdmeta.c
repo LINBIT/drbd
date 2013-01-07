@@ -2433,7 +2433,7 @@ int _v08_md_initialize(struct format *cfg, int do_disk_writes)
 	for ( i=UI_HISTORY_START ; i<=UI_HISTORY_END ; i++ ) {
 		cfg->md.uuid[i]=0;
 	}
-	cfg->md.flags = 0;
+	cfg->md.flags = MDF_AL_CLEAN;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 
 	return md_initialize_common(cfg, do_disk_writes);
