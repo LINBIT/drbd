@@ -399,7 +399,7 @@ int v06_validate_md(struct format *cfg)
 /*
  * -- DRBD 0.7 --------------------------------------
  */
-unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors);
+unsigned long bm_bytes(const struct md_cpu const *md, uint64_t sectors);
 
 struct __packed md_on_disk_07 {
 	be_u64 la_kb;		/* last agreed size. */
@@ -508,7 +508,7 @@ int is_valid_md(enum md_format f,
 			return 0;
 		}
 
-		md_size_sect = bm_words(md, ll_size >> 9) * sizeof(long) >> 9;
+		md_size_sect = bm_bytes(md, ll_size >> 9) >> 9;
 		md_size_sect = ALIGN(md_size_sect, 8);    /* align on 4K blocks */
 		/* plus the "drbd meta data super block",
 		 * and the activity log; unit still sectors */
@@ -1642,7 +1642,7 @@ void re_initialize_md_offsets(struct format *cfg)
 	uint64_t md_size_sect;
 	int al_size_sect;
 
-	/* These two are needed for bm_words()... Ensure sane defaults... */
+	/* These two are needed for bm_bytes()... Ensure sane defaults... */
 	if (cfg->md.bm_bytes_per_bit == 0)
 		cfg->md.bm_bytes_per_bit = DEFAULT_BM_BLOCK_SIZE;
 	if (cfg->md.max_peers == 0)
@@ -1675,7 +1675,7 @@ void re_initialize_md_offsets(struct format *cfg)
 		cfg->md.al_offset = -al_size_sect;
 
 		/* we need (slightly less than) ~ this much bitmap sectors: */
-		md_size_sect = bm_words(&cfg->md, cfg->bd_size >> 9) * sizeof(long) >> 9;
+		md_size_sect = bm_bytes(&cfg->md, cfg->bd_size >> 9) >> 9;
 		md_size_sect = ALIGN(md_size_sect, 8);    /* align on 4K blocks */
 		if (md_size_sect > (MD_BM_MAX_BYTE_FLEX>>9)) {
 			char ppbuf[10];
@@ -2448,15 +2448,12 @@ int meta_apply_al(struct format *cfg, char **argv __attribute((unused)), int arg
 	return err;
 }
 
-unsigned long bm_words(const struct md_cpu const *md, uint64_t sectors)
+unsigned long bm_bytes(const struct md_cpu const *md, uint64_t sectors)
 {
-	unsigned long long bits;
-	unsigned long long words;
+	unsigned long long bm_bits;
 
-	bits = ALIGN(sectors, 8) / (md->bm_bytes_per_bit >> 9);
-	words = (ALIGN(bits, 64) >> LN2_BPL) * md->max_peers;
-
-	return words;
+	bm_bits = ALIGN(sectors, 8) / (md->bm_bytes_per_bit >> 9);
+	return (ALIGN(bm_bits, 64) / 8) * md->max_peers;
 }
 
 static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr, const char* indent)
@@ -2590,8 +2587,7 @@ static void clip_effective_size_and_bm_bytes(struct format *cfg)
 			(unsigned long long)cfg->max_usable_sect);
 		cfg->md.effective_size = cfg->max_usable_sect;
 	}
-	cfg->bm_bytes = sizeof(long) *
-		bm_words(&cfg->md, cfg->md.effective_size);
+	cfg->bm_bytes = bm_bytes(&cfg->md, cfg->md.effective_size);
 }
 
 int v07_style_md_open(struct format *cfg)
@@ -3199,7 +3195,7 @@ int meta_dump_md(struct format *cfg, char **argv __attribute((unused)), int argc
 
 		cfg->al_offset = cfg->md_offset + cfg->md.al_offset * 512LL;
 		cfg->bm_offset = cfg->md_offset + cfg->md.bm_offset * 512LL;
-		cfg->bm_bytes = sizeof(long) * bm_words(&cfg->md, cfg->md.effective_size);
+		cfg->bm_bytes = bm_bytes(&cfg->md, cfg->md.effective_size);
 	}
 	printf("# md_offset %llu\n", (long long unsigned)cfg->md_offset);
 	printf("# al_offset %llu\n", (long long unsigned)cfg->al_offset);
