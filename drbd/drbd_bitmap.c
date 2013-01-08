@@ -845,7 +845,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 		goto out;
 	}
 	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
-	words = (ALIGN(bits, 64) * b->bm_max_peers) >> LN2_BPL;
+	words = (ALIGN(bits, 64) * b->bm_max_peers) / BITS_PER_LONG;
 
 	if (get_ldev(device)) {
 		u64 bits_on_disk = drbd_md_on_disk_bits(device);

@@ -1293,18 +1293,6 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
 #define AL_UPDATES_PER_TRANSACTION	 64	// arbitrary
 #define AL_CONTEXT_PER_TRANSACTION	919	// (4096 - 36 - 6*64)/4
 
-#if BITS_PER_LONG == 32
-#define LN2_BPL 5
-#define cpu_to_lel(A) cpu_to_le32(A)
-#define lel_to_cpu(A) le32_to_cpu(A)
-#elif BITS_PER_LONG == 64
-#define LN2_BPL 6
-#define cpu_to_lel(A) cpu_to_le64(A)
-#define lel_to_cpu(A) le64_to_cpu(A)
-#else
-#error "LN2 of BITS_PER_LONG unknown!"
-#endif
-
 /* drbd_bitmap.c */
 /*
  * We need to store one bit for a block.
