@@ -2591,7 +2591,7 @@ static void clip_effective_size_and_bm_bytes(struct format *cfg)
 		cfg->md.effective_size = cfg->max_usable_sect;
 	}
 	cfg->bm_bytes = sizeof(long) *
-		bm_words(&cfg->md, cfg->md.bm_bytes_per_bit);
+		bm_words(&cfg->md, cfg->md.effective_size);
 }
 
 int v07_style_md_open(struct format *cfg)
