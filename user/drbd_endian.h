@@ -96,18 +96,6 @@
 # error "sorry, weird endianness on this box"
 #endif
 
-#if BITS_PER_LONG == 32
-# define LN2_BPL 5
-# define cpu_to_le_long cpu_to_le32
-# define le_long_to_cpu le32_to_cpu
-#elif BITS_PER_LONG == 64
-# define LN2_BPL 6
-# define cpu_to_le_long cpu_to_le64
-# define le_long_to_cpu le64_to_cpu
-#else
-# error "LN2 of BITS_PER_LONG unknown!"
-#endif
-
 /* linux/bitops.h */
 
 /*
