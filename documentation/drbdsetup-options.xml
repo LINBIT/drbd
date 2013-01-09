@@ -80,7 +80,7 @@
       <option>c-fill-target</option> parameter is undefined or set to 0.  The
       <option>c-delay-target</option> parameter should be set to five times the
       network round-trip time or more. The <option>c-max-rate</option> option
-      should be set to the bandwidth available between the DRBD-hosts and the
+      should be set to either the bandwidth available between the DRBD-hosts and the
       machines hosting DRBD-proxy, or to the available disk bandwidth.</para>
 
       <para>The default values of these parameters are:
@@ -156,7 +156,7 @@
 	      corruption. Until DRBD 8.4.1, <option>disk-barrier</option> was
 	      turned on if the I/O stack below DRBD did support barriers.
 	      Kernels since linux-2.6.36 (or 2.6.32 RHEL6) no longer allow to
-	      detect if barriers are supported, and so since drbd-8.4.2,
+	      detect if barriers are supported. Since drbd-8.4.2,
 	      this option is off by default and needs to be enabled explicitly.
 	      </para>
 	    </listitem>
@@ -368,7 +368,7 @@
 	</indexterm> Define that a device should only resynchronize after the
 	specified other device. By default, no order between devices is
 	defined, and all devices will resynchronize in parallel. Depending on
-	the configuration of the lower-level devices and on the available
+	the configuration of the lower-level devices, and the available
 	network and disk bandwidth, this can slow down the overall resync
 	process.  This option can be used to form a chain or tree of
 	dependencies among devices.</para>
@@ -386,7 +386,9 @@
 	</indexterm> Define how much bandwidth DRBD may use for
 	resynchronizing.  DRBD allows "normal" application I/O even during a
 	resync. If the resync takes up too much bandwidth, application I/O
-	can become very slow. This parameter allows to avoid that.</para>
+	can become very slow. This parameter allows to avoid that. Please
+	note this is option only works when the dynamic resync controller is
+	disabled.</para>
     </definition>
   </drbdsetup_option>
 
@@ -756,7 +758,7 @@
 	  <secondary>csums-alg</secondary>
 	</indexterm> Normally, when two nodes resynchronize, the sync target
 	requests a piece of out-of-sync data from the sync source, and the sync
-	source sends the data.  With many usage patterns, many of those blocks
+	source sends the data.  With many usage patterns, a significant number of those blocks
 	will actually be identical.</para>
 
 	<para>When a <option>csums-alg</option> algorithm is specified, when
@@ -859,8 +861,8 @@
     <replaceable>threshold</replaceable></option></term>
 
     <definition>
-      <para>By default, DRBD blocks when the TCP send queue is full. This slows
-      down applications generating further write requests until more buffer
+      <para>By default, DRBD blocks when the TCP send queue is full. This prevents
+      applications from generating further write requests until more buffer
       space becomes available again.</para>
 
       <para>When DRBD is used together with DRBD-proxy, it can be better to use
@@ -1290,8 +1292,8 @@
 	</indexterm>
 	On each node and for each device, DRBD maintains a bitmap of the
 	differences between the local and remote data for each peer device.
-	For example, in a three-node setup (nodes A, B, C) and with a single
-	device, each node maintains one bitmap for each of its peers.</para>
+	For example, in a three-node setup (nodes A, B, C) each with a single
+	device, every node maintains one bitmap for each of its peers.</para>
 
       <para>When nodes receive write requests, they know how to update the
 	bitmaps for the writing node, but not how to update the bitmaps between

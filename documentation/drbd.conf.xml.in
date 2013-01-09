@@ -41,10 +41,10 @@
     <para>Replicated block devices are called
     <option>/dev/drbd<replaceable>minor</replaceable></option> by default. They
     are grouped into resources, with one or more devices per resource.
-    Replication among the devices in a resource takes place in chronological order. In DRBD,
+    Replication among the devices in a resource takes place in chronological order. With DRBD,
     we refer to the devices inside a resource as <emphasis>volumes</emphasis>.</para>
 
-    <para>In DRBD 9.0, a resource can be replicated between two or more cluster
+    <para>In DRBD 9, a resource can be replicated between two or more cluster
     nodes.  The connections between cluster nodes are point-to-point links, and
     use TCP or a TCP-like protocol.  All nodes must be directly
     connected.</para>
@@ -401,7 +401,7 @@ resource
                 <secondary>stacked-on-top-of</secondary>
             </indexterm> Used instead of an <option>on</option> section for
             configuring a stacked resource with three to four nodes.</para>
-	  <para>Starting with DRBD 9.0, stacking is deprecated.  It is advised
+	  <para>Starting with DRBD 9, stacking is deprecated.  It is advised
 	    to use resources which are replicated among more than two nodes
 	    instead.</para>
           </listitem>
@@ -725,9 +725,8 @@ resource
               assignment, and update the metadata with
               <command>drbdmeta restore-md</command>.</para>
 
-            <para>The <option>node-id</option> parameter exists since DRBD
-              9.0.0.  Its value ranges from 0 to 16; there is no
-              default.</para>
+            <para>The <option>node-id</option> parameter exists since DRBD 9.
+              Its value ranges from 0 to 16; there is no default.</para>
           </listitem>
         </varlistentry>
       </variablelist>
@@ -856,10 +855,11 @@ resource
             <para>When the <replaceable>index</replaceable> form of this
               parameter is used, multiple replicated devices can share the same
               metadata device, each using a separate index.  Each index
-              occupies 128 MiB of data, which corresponds to a replicated <!-- FIXME: 512GB? -->
-              device size of at most 4 GiB.  We recommend not to share metadata
-              devices anymore, and to instead use the lvm volume manager for
-              creating metadata devices as needed.</para>
+              occupies 128 MiB of data, which corresponds to a replicated
+	      device size of at most 4 TiB with two cluster nodes.  We
+	      recommend not to share metadata devices anymore, and to instead
+	      use the lvm volume manager for creating metadata devices as
+	      needed.</para>
 
             <para>When the <replaceable>index</replaceable> form of this
               parameter is not used, the size of the lower-level device

@@ -152,7 +152,7 @@
 
 	  <para>The <option>connect</option> command connects a
 	  <replaceable>resource</replaceable> to a peer host.  The resource
-	  must have been create with <command moreinfo="none">drbdsetup
+	  must have been created with <command moreinfo="none">drbdsetup
 	  new-resource</command>.  The <option>net-options</option> command
 	  changes the network options of an existing connection.  In both
 	  commands, <replaceable>local_addr</replaceable> and
@@ -490,7 +490,7 @@
 		<simpara>They are now Connected Secondary/Secondary Inconsistent/Inconsistent.
 		Generate a new current-uuid and clear the dirty bitmap.</simpara>
 
-		<simpara><command moreinfo="none">drbdadm new-current-uuid --clear-bitmap
+		<simpara><command moreinfo="none">drbdadm --clear-bitmap new-current-uuid
 		<replaceable>res</replaceable></command></simpara>
 	      </listitem>
 
@@ -647,7 +647,7 @@
 		  are not guaranteed to have up-to-date data.  This option is
 		  used to turn one of the nodes in a newly created cluster into
 		  the primary node, or when manually recovering from a
-		  desaster.</para>
+		  disaster.</para>
 		<para>Note that this can lead to split-brain scenarios.  Also,
 		  when forcefully turning an inconsistent device into an
 		  up-to-date device, it is highly recommended to use any
