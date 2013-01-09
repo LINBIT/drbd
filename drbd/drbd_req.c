@@ -1329,8 +1329,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	/* Update disk stats */
 	_drbd_start_io_acct(device, req);
 
-	if (rw == WRITE && req->private_bio && req->i.size
-	&& !test_bit(AL_SUSPENDED, &device->flags)) {
+	if (rw == WRITE && req->private_bio && req->i.size &&
+	    !test_bit(AL_SUSPENDED, &device->flags)) {
 		if (!drbd_al_begin_io_fastpath(device, &req->i)) {
 			drbd_queue_write(device, req);
 			return NULL;
