@@ -1434,9 +1434,11 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 	bool suspend = true;
+	int max_peers = device->bitmap->bm_max_peers, bitmap_index;
 
-	for_each_peer_device(peer_device, device) {
-		if (_drbd_bm_total_weight(peer_device) != drbd_bm_bits(device))
+	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
+		if (_drbd_bm_total_weight(device, bitmap_index) !=
+		    drbd_bm_bits(device))
 			return;
 	}
 

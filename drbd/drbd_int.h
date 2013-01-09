@@ -1422,7 +1422,7 @@ extern unsigned long drbd_bm_find_next(struct drbd_peer_device *, unsigned long)
 /* bm_find_next variants for use while you hold drbd_bm_lock() */
 extern unsigned long _drbd_bm_find_next(struct drbd_peer_device *, unsigned long);
 extern unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *, unsigned long);
-extern unsigned long _drbd_bm_total_weight(struct drbd_peer_device *);
+extern unsigned long _drbd_bm_total_weight(struct drbd_device *, int);
 extern unsigned long drbd_bm_total_weight(struct drbd_peer_device *);
 extern int drbd_bm_rs_done(struct drbd_device *device);
 /* for receive_bitmap */

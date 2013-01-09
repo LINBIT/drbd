@@ -918,9 +918,8 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
  * we still need to lock it, since it is important that this returns
  * bm_set == 0 precisely.
  */
-unsigned long _drbd_bm_total_weight(struct drbd_peer_device *peer_device)
+unsigned long _drbd_bm_total_weight(struct drbd_device *device, int bitmap_index)
 {
-	struct drbd_device *device = peer_device->device;
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned long s;
 	unsigned long flags;
@@ -931,7 +930,7 @@ unsigned long _drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 		return 0;
 
 	spin_lock_irqsave(&b->bm_lock, flags);
-	s = b->bm_set[peer_device->bitmap_index];
+	s = b->bm_set[bitmap_index];
 	spin_unlock_irqrestore(&b->bm_lock, flags);
 
 	return s;
@@ -944,7 +943,7 @@ unsigned long drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 	/* if I don't have a disk, I don't know about out-of-sync status */
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
-	s = _drbd_bm_total_weight(peer_device);
+	s = _drbd_bm_total_weight(device, peer_device->bitmap_index);
 	put_ldev(device);
 	return s;
 }
