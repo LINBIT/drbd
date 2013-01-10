@@ -31,7 +31,7 @@ else
 compat_objs += compat/idr.o
 endif
 
-ifeq ($(shell grep -e '\<kobject_create_and_add\>' \
+ifeq ($(shell grep -e '\<kobject_create_and_add[[:space:]]*vmlinux\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
 override EXTRA_CFLAGS += -DKOBJECT_CREATE_AND_ADD_EXPORTED
 else
