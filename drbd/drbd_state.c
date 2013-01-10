@@ -1757,26 +1757,41 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	enum drbd_role *role = resource_state_change->role;
 	bool *susp_nod = resource_state_change->susp_nod;
 	bool *susp_fen = resource_state_change->susp_fen;
-	struct drbd_peer_device_state_change *peer_device_state_change;
 	int n_device, n_connection;
 
 	broadcast_state_change(state_change, work->id);
 
-	peer_device_state_change = &state_change->peer_devices[0];
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
 		struct drbd_device *device = device_state_change->device;
 		enum drbd_disk_state *disk_state = device_state_change->disk_state;
 		bool effective_disk_size_determined = false;
+		bool one_peer_disk_up_to_date[2] = { };
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
 			effective_disk_size_determined = true;
 
-		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++, peer_device_state_change++) {
+		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+			struct drbd_peer_device_state_change *peer_device_state_change =
+				&state_change->peer_devices[
+					n_device * state_change->n_connections + n_connection];
+			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
+			enum which_state which;
+
+			for (which = OLD; which <= NEW; which++) {
+				if (peer_disk_state[which] == D_UP_TO_DATE)
+					one_peer_disk_up_to_date[which] = true;
+			}
+		}
+
+		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 			struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
 			struct drbd_connection *connection = connection_state_change->connection;
 			enum drbd_conn_state *cstate = connection_state_change->cstate;
 			enum drbd_role *peer_role = connection_state_change->peer_role;
+			struct drbd_peer_device_state_change *peer_device_state_change =
+				&state_change->peer_devices[
+					n_device * state_change->n_connections + n_connection];
 			struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 			enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
@@ -1796,8 +1811,8 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 					peer_device->uuid_flags &= ~((u64)UUID_FLAG_CRASHED_PRIMARY);
 			}
 
-			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
+			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]))
 				drbd_khelper(device, connection, "pri-on-incon-degr");
 
 			if (susp_nod[NEW]) {
@@ -2073,11 +2088,10 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
 				for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
-					struct drbd_peer_device *peer_device;
-
-					peer_device_state_change = &state_change->peer_devices[
-						n_device * state_change->n_connections + n_connection];
-					peer_device = peer_device_state_change->peer_device;
+					struct drbd_peer_device_state_change *peer_device_state_change =
+						&state_change->peer_devices[
+							n_device * state_change->n_connections + n_connection];
+					struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 					drbd_rs_cancel_all(peer_device);
 				}
 
