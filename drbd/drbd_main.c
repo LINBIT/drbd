@@ -4378,6 +4378,7 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_DAGTAG]		= "dagtag",
 		[P_PEER_ACK]		= "peer_ack",
 		[P_PEERS_IN_SYNC]       = "peers_in_sync",
+		[P_UUIDS110]            = "uuids_110",
 		[P_PEER_DAGTAG]         = "peer_dagtag",
 		[P_CURRENT_UUID]        = "current_uuid",
 		/* enum drbd_packet, but not commands - obsoleted flags:
