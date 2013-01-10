@@ -1618,7 +1618,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum determine_dev_size dd;
 	sector_t max_possible_sectors;
 	sector_t min_md_device_sectors;
-	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
+	struct drbd_backing_dev *nbc; /* new_backing_conf */
 	struct disk_conf *new_disk_conf = NULL;
 	struct block_device *bdev;
 	enum drbd_state_rv rv;
@@ -1632,32 +1632,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 	device = adm_ctx.device;
 	resource = device->resource;
-	mutex_lock(&resource->conf_update);
-
-	/* if you want to reconfigure, please tear down first */
-	if (device->disk_state[NOW] > D_DISKLESS) {
-		retcode = ERR_DISK_CONFIGURED;
-		goto fail;
-	}
-	/* It may just now have detached because of IO error.  Make sure
-	 * drbd_ldev_destroy is done already, we may end up here very fast,
-	 * e.g. if someone calls attach from the on-io-error handler,
-	 * to realize a "hot spare" feature (not that I'd recommend that) */
-	wait_event(device->misc_wait, !atomic_read(&device->local_cnt));
-
-	/* make sure there is no leftover from previous force-detach attempts */
-	clear_bit(FORCE_DETACH, &device->flags);
-	clear_bit(WAS_IO_ERROR, &device->flags);
-	clear_bit(WAS_READ_ERROR, &device->flags);
-
-	/* and no leftover from previously aborted resync or verify, either */
-	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
-		peer_device->rs_total = 0;
-		peer_device->rs_failed = 0;
-		atomic_set(&peer_device->rs_pending_cnt, 0);
-	}
-	rcu_read_unlock();
 
 	/* allocation not in the IO path, drbdsetup context */
 	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
@@ -1727,6 +1701,33 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_MD_IDX_INVALID;
 		goto fail;
 	}
+
+	mutex_lock(&resource->conf_update);
+
+	/* if you want to reconfigure, please tear down first */
+	if (device->disk_state[NOW] > D_DISKLESS) {
+		retcode = ERR_DISK_CONFIGURED;
+		goto fail;
+	}
+	/* It may just now have detached because of IO error.  Make sure
+	 * drbd_ldev_destroy is done already, we may end up here very fast,
+	 * e.g. if someone calls attach from the on-io-error handler,
+	 * to realize a "hot spare" feature (not that I'd recommend that) */
+	wait_event(device->misc_wait, !atomic_read(&device->local_cnt));
+
+	/* make sure there is no leftover from previous force-detach attempts */
+	clear_bit(FORCE_DETACH, &device->flags);
+	clear_bit(WAS_IO_ERROR, &device->flags);
+	clear_bit(WAS_READ_ERROR, &device->flags);
+
+	/* and no leftover from previously aborted resync or verify, either */
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		peer_device->rs_total = 0;
+		peer_device->rs_failed = 0;
+		atomic_set(&peer_device->rs_pending_cnt, 0);
+	}
+	rcu_read_unlock();
 
 	if (!device->bitmap) {
 		device->bitmap = drbd_bm_alloc();
