@@ -3070,12 +3070,12 @@ int meta_dstate(struct format *cfg, char **argv __attribute((unused)), int argc)
 
 	if(cfg->md.flags & MDF_CONSISTENT) {
 		if(cfg->md.flags & MDF_WAS_UP_TO_DATE) {
-			printf("Consistent/DUnknown\n");
+			printf("Consistent\n");
 		} else {
-			printf("Outdated/DUnknown\n");
+			printf("Outdated\n");
 		}
 	} else {
-		printf("Inconsistent/DUnknown\n");
+		printf("Inconsistent\n");
 	}
 
 	return cfg->ops->close(cfg);
