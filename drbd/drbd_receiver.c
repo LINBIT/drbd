@@ -1084,8 +1084,15 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
-	if (!err)
-		err = drbd_send_uuids(peer_device, 0, 0);
+	if (!err) {
+		if (device->disk_state[NOW] > D_DISKLESS) {
+			err = drbd_send_uuids(peer_device, 0, 0);
+		} else {
+			set_bit(INITIAL_STATE_SENT, &peer_device->flags);
+			err = drbd_send_current_state(peer_device);
+		}
+	}
+
 	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
