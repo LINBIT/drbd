@@ -610,8 +610,10 @@ resource
                 <primary>drbd.conf</primary>
 
                 <secondary>pri-on-incon-degr</secondary>
-              </indexterm> This handler is called if the local node is primary,
-              degraded, and the lower-level device is inconsistent.</para>
+	      </indexterm> The local node is primary, and neither the local
+	    lower-level device nor a lower-level device on a peer is up to
+	    date.  (The primary has no device to read from or to write
+	    to.)</para>
           </listitem>
         </varlistentry>
 
