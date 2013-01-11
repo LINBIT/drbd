@@ -2931,8 +2931,8 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 	if (should_set_defaults(info))
 		set_res_opts_defaults(&res_opts);
 
-	err = res_opts_from_attrs(&res_opts, info);
-	if (err && err != -ENOMSG) {
+	err = res_opts_from_attrs_for_change(&res_opts, info);
+	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(from_attrs_err_to_txt(err));
 		goto fail;
