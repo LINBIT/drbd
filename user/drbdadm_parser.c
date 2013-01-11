@@ -259,13 +259,11 @@ void range_check(const enum range_checks what, const char *name,
 
 struct d_option *new_opt(char *name, char *value)
 {
-	struct d_option *cn = malloc(sizeof(struct d_option));
+	struct d_option *cn = calloc(1, sizeof(struct d_option));
 
 	/* fprintf(stderr,"%s:%d: %s = %s\n",config_file,line,name,value); */
 	cn->name = name;
 	cn->value = value;
-	cn->mentioned = 0;
-	cn->is_escaped = 0;
 
 	return cn;
 }
