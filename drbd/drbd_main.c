@@ -2147,7 +2147,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 				drbd_warn(resource, "Auto-promote failed: %s\n",
 					  drbd_set_st_err_str(rv));
 		}
-	}
+	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos)
+		return -EMEDIUMTYPE;
+
 
 	spin_lock_irqsave(&resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
