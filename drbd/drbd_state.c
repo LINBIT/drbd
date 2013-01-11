@@ -1345,8 +1345,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 
-			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) {
 				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+				peer_device->max_size = 0;
+			}
 
 			if (repl_state[OLD] == L_ESTABLISHED &&
 			    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {

@@ -1135,8 +1135,8 @@ enum determine_dev_size drbd_determine_dev_size(struct drbd_device *device, enum
 		/* I am diskless, need to accept the peer disk sizes. */
 		size = 0;
 		for_each_peer_device(peer_device, device) {
-			if (peer_device->repl_state[NOW] < L_ESTABLISHED)
-				continue;
+			/* When a peer device is in L_OFF state, max_size is zero
+			 * until a P_SIZES packet is received.  */
 			size = min_not_zero(size, peer_device->max_size);
 		}
 		if (size)
