@@ -1818,7 +1818,8 @@ int nowrap_printf(int indent, const char *format, ...)
 	return ret;
 }
 
-void print_resource_statistics(struct resource_statistics *statistics,
+void print_resource_statistics(int indent,
+			       struct resource_statistics *statistics,
 			       int (*wrap_printf)(int, const char *, ...))
 {
 	static const char *write_ordering_str[] = {
@@ -1830,11 +1831,12 @@ void print_resource_statistics(struct resource_statistics *statistics,
 	uint32_t wo = statistics->res_stat_write_ordering;
 
 	if (wo < ARRAY_SIZE(write_ordering_str) && write_ordering_str[wo]) {
-		wrap_printf(4, " write-ordering:%s", write_ordering_str[wo]);
+		wrap_printf(indent, " write-ordering:%s", write_ordering_str[wo]);
 	}
 }
 
-void print_device_statistics(struct device_statistics *statistics,
+void print_device_statistics(int indent,
+			     struct device_statistics *statistics,
 			     int (*wrap_printf)(int, const char *, ...))
 {
 	if (opt_statistics) {
@@ -1879,13 +1881,15 @@ void print_device_statistics(struct device_statistics *statistics,
 	}
 }
 
-void print_connection_statistics(struct connection_statistics *statistics,
+void print_connection_statistics(int indent,
+				 struct connection_statistics *statistics,
 				 int (*wrap_printf)(int, const char *, ...))
 {
-	wrap_printf(6, " congested:%s", statistics->conn_congested ? "yes" : "no");
+	wrap_printf(indent, " congested:%s", statistics->conn_congested ? "yes" : "no");
 }
 
-void print_peer_device_statistics(struct peer_device_statistics *statistics,
+void print_peer_device_statistics(int indent,
+				  struct peer_device_statistics *statistics,
 				  int (*wrap_printf)(int, const char *, ...))
 {
 	wrap_printf(indent, " received:" U64,
@@ -1926,7 +1930,7 @@ void resource_status(struct resources_list *resource)
 		wrap_printf(4, " suspended:%s", susp_str(&resource->info));
 	if (opt_statistics && opt_verbose) {
 		wrap_printf(4, "\n");
-		print_resource_statistics(&resource->statistics, wrap_printf);
+		print_resource_statistics(4, &resource->statistics, wrap_printf);
 	}
 	wrap_printf(0, "\n");
 }
@@ -1950,7 +1954,7 @@ static void device_status(struct devices_list *device, bool single_device)
 	if (device->statistics.dev_size != -1) {
 		if (opt_statistics)
 			wrap_printf(indent, "\n");
-		print_device_statistics(&device->statistics, wrap_printf);
+		print_device_statistics(indent, &device->statistics, wrap_printf);
 	}
 	wrap_printf(indent, "\n");
 }
@@ -2013,7 +2017,7 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 				    resync_susp_str(&peer_device->info));
 		if (opt_statistics && peer_device->statistics.peer_dev_received != -1) {
 			wrap_printf(indent, "\n");
-			print_peer_device_statistics(&peer_device->statistics, wrap_printf);
+			print_peer_device_statistics(indent, &peer_device->statistics, wrap_printf);
 		}
 	}
 
@@ -2074,7 +2078,7 @@ static void connection_status(struct connections_list *connection,
 			    role_color_stop(role));
 	}
 	if (opt_verbose || connection->statistics.conn_congested > 0)
-		print_connection_statistics(&connection->statistics, wrap_printf);
+		print_connection_statistics(6, &connection->statistics, wrap_printf);
 	wrap_printf(0, "\n");
 	if (opt_verbose || opt_statistics || connection->info.conn_connection_state == C_CONNECTED)
 		peer_devices_status(&connection->ctx, peer_devices, single_device);
@@ -2954,7 +2958,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 			       susp_str(&resource_info));
 
 			if (opt_statistics && !resource_statistics_from_attrs(&resource_statistics, info))
-				print_resource_statistics(&resource_statistics, nowrap_printf);
+				print_resource_statistics(0, &resource_statistics, nowrap_printf);
 		}
 		break;
 	case DRBD_DEVICE_STATE:
@@ -2969,7 +2973,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 			printf(" disk:%s",
 			       drbd_disk_str(device_info.dev_disk_state));
 			if (opt_statistics && !device_statistics_from_attrs(&device_statistics, info))
-				print_device_statistics(&device_statistics, nowrap_printf);
+				print_device_statistics(0, &device_statistics, nowrap_printf);
 		}
 		break;
 	case DRBD_CONNECTION_STATE:
@@ -2985,7 +2989,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 			       drbd_conn_str(connection_info.conn_connection_state),
 			       drbd_role_str(connection_info.conn_role));
 			if (opt_statistics && !connection_statistics_from_attrs(&connection_statistics, info))
-				print_connection_statistics(&connection_statistics, nowrap_printf);
+				print_connection_statistics(0, &connection_statistics, nowrap_printf);
 		}
 		break;
 	case DRBD_PEER_DEVICE_STATE:
@@ -3002,7 +3006,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
 			       drbd_disk_str(peer_device_info.peer_disk_state),
 			       resync_susp_str(&peer_device_info));
 			if (opt_statistics && !peer_device_statistics_from_attrs(&peer_device_statistics, info))
-				print_peer_device_statistics(&peer_device_statistics, nowrap_printf);
+				print_peer_device_statistics(0, &peer_device_statistics, nowrap_printf);
 		}
 		break;
 	case DRBD_HELPER: {
