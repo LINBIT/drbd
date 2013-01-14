@@ -998,16 +998,15 @@ retry:
 		waiter2 = find_waiter_by_addr(waiter->listener, (struct sockaddr *)&peer_addr);
 		if (!waiter2) {
 			drbd_err(connection, "Closing connection from unexpected peer\n");
-			sock_release(s_estab);
 			goto retry_locked;
 		}
 		if (waiter2 != waiter) {
 			if (waiter2->socket) {
 				drbd_err(connection, "Target receiver busy, closing connection\n");
-				sock_release(s_estab);
 				goto retry_locked;
 			}
 			waiter2->socket = s_estab;
+			s_estab = NULL;
 			wake_up(&waiter2->wait);
 			goto retry_locked;
 		}
@@ -1017,8 +1016,11 @@ retry:
 
 retry_locked:
 	spin_unlock_bh(&resource->listeners_lock);
+	if (s_estab) {
+		sock_release(s_estab);
+		s_estab = NULL;
+	}
 	goto retry;
-
 }
 
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
