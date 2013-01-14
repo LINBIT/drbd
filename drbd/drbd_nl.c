@@ -2618,6 +2618,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			drbd_err(device, "Not enough free bitmap "
 				 "slots (available=%d, needed=%d)\n",
 				 0, 1);
+			put_ldev(device);
 			retcode = ERR_INVALID_REQUEST;
 			goto unlock_fail_free_connection;
 		}
