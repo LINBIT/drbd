@@ -3614,10 +3614,11 @@ next_device:
 		for_each_peer_device(peer_device, device)
 			if (peer_device == (struct drbd_peer_device *)cb->args[2])
 				goto found_peer_device;
+		/* peer device was probably deleted */
+		goto next_device;
 	}
-	peer_device = list_first_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
-	retcode = NO_ERROR;
-	goto put_result;
+	/* Make peer_device point to the list head (not the first entry). */
+	peer_device = list_entry(&device->peer_devices, struct drbd_peer_device, peer_devices);
 
 found_peer_device:
 	list_for_each_entry_continue_rcu(peer_device, &device->peer_devices, peer_devices) {
