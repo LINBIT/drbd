@@ -2691,6 +2691,7 @@ fail_free_connection:
 	}
 	list_del(&connection->connections);
 	kref_put(&connection->kref, drbd_destroy_connection);
+	goto out;
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);
