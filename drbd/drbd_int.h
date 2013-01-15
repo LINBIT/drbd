@@ -1523,7 +1523,6 @@ extern int drbd_bitmap_io(struct drbd_conf *mdev,
 		char *why, enum bm_flag flags);
 extern int drbd_bmio_set_n_write(struct drbd_conf *mdev);
 extern int drbd_bmio_clear_n_write(struct drbd_conf *mdev);
-extern void drbd_go_diskless(struct drbd_conf *mdev);
 extern void drbd_ldev_destroy(struct drbd_conf *mdev);
 
 
@@ -2463,9 +2462,11 @@ static inline void put_ldev(struct drbd_conf *mdev)
 		if (mdev->state.disk == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
 			drbd_ldev_destroy(mdev);
-		if (mdev->state.disk == D_FAILED)
+		if (mdev->state.disk == D_FAILED) {
 			/* all application IO references gone. */
-			drbd_go_diskless(mdev);
+			if (!drbd_test_and_set_flag(mdev, GO_DISKLESS))
+				drbd_queue_work(&mdev->data.work, &mdev->go_diskless);
+		}
 		wake_up(&mdev->misc_wait);
 	}
 }

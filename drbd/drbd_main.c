@@ -4526,13 +4526,6 @@ STATIC int w_go_diskless(struct drbd_conf *mdev, struct drbd_work *w, int unused
 	return 1;
 }
 
-void drbd_go_diskless(struct drbd_conf *mdev)
-{
-	D_ASSERT(mdev->state.disk == D_FAILED);
-	if (!drbd_test_and_set_flag(mdev, GO_DISKLESS))
-		drbd_queue_work(&mdev->data.work, &mdev->go_diskless);
-}
-
 /**
  * drbd_queue_bitmap_io() - Queues an IO operation on the whole bitmap
  * @mdev:	DRBD device.
