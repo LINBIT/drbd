@@ -1561,7 +1561,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 {
 	enum drbd_fencing_p fp;
 	enum drbd_req_event what = nothing;
-	union drbd_state nsm = (union drbd_state){ .i = -1 };
+	union drbd_state nsm;
 
 #if DRBD_DEBUG_STATE_CHANGES
 	if (ns.seq) {
@@ -1594,6 +1594,12 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 
 	if (os.disk <= D_NEGOTIATING && ns.disk > D_NEGOTIATING)
 		mod_timer(&mdev->request_timer, jiffies + HZ);
+
+	/* Wake up role changes, that were delayed because of connection establishing */
+	if (os.conn == C_WF_REPORT_PARAMS && ns.conn != C_WF_REPORT_PARAMS) {
+		drbd_clear_flag(mdev, STATE_SENT);
+		wake_up(&mdev->state_wait);
+	}
 
 	nsm.i = -1;
 	if (ns.susp_nod) {
@@ -1632,6 +1638,7 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 		spin_lock_irq(&mdev->req_lock);
 		_tl_restart(mdev, what);
 		nsm.i &= mdev->state.i;
+		DRBD_STATE_DEBUG_INIT_VAL(nsm);
 		_drbd_set_state(mdev, nsm, CS_VERBOSE, NULL);
 		spin_unlock_irq(&mdev->req_lock);
 	}
@@ -1855,12 +1862,6 @@ STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 	if (os.conn == C_VERIFY_S && ns.conn == C_CONNECTED
 	&& mdev->agreed_pro_version >= 97)
 		drbd_send_state(mdev, ns);
-
-	/* Wake up role changes, that were delayed because of connection establishing */
-	if (os.conn == C_WF_REPORT_PARAMS && ns.conn != C_WF_REPORT_PARAMS) {
-		drbd_clear_flag(mdev, STATE_SENT);
-		wake_up(&mdev->state_wait);
-	}
 
 	/* This triggers bitmap writeout of potentially still unwritten pages
 	 * if the resync finished cleanly, or aborted because of peer disk
