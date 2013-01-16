@@ -524,7 +524,7 @@ void schedule_deferred_cmd(struct adm_cmd *cmd,
 }
 
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
-int call_cmd_fn(struct adm_cmd *cmd, struct cfg_ctx *ctx, enum on_error on_error)
+int call_cmd_fn(struct adm_cmd *cmd, const struct cfg_ctx *ctx, enum on_error on_error)
 {
 	struct cfg_ctx tmp_ctx = *ctx;
 	int rv;
@@ -542,9 +542,10 @@ int call_cmd_fn(struct adm_cmd *cmd, struct cfg_ctx *ctx, enum on_error on_error
  * iterate over all volumes in ctx->res.
  * Else, just pass it on.
  * */
-int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
+int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 	     enum on_error on_error)
 {
+	struct cfg_ctx tmp_ctx = *ctx;
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol;
 	struct connection *conn;
@@ -559,20 +560,20 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 
 	if (iterate_vols && iterate_conns) {
 		for_each_volume(vol, &res->me->volumes) {
-			ctx->vol = vol;
+			tmp_ctx.vol = vol;
 			for_each_connection(conn, &res->connections) {
 				if (conn->ignore)
 					continue;
-				ctx->conn = conn;
-				ret = call_cmd_fn(cmd, ctx, on_error);
+				tmp_ctx.conn = conn;
+				ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
 				if (ret)
 					goto out;
 			}
 		}
 	} else if (iterate_vols) {
 		for_each_volume(vol, &res->me->volumes) {
-			ctx->vol = vol;
-			ret = call_cmd_fn(cmd, ctx, on_error);
+			tmp_ctx.vol = vol;
+			ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
 			if (ret)
 				break;
 		}
@@ -580,8 +581,8 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 		for_each_connection(conn, &res->connections) {
 			if (conn->ignore)
 				continue;
-			ctx->conn = conn;
-			ret = call_cmd_fn(cmd, ctx, on_error);
+			tmp_ctx.conn = conn;
+			ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
 			if (ret)
 				break;
 		}
