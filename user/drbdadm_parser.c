@@ -1711,7 +1711,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 	return res;
 }
 
-struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx)
+struct d_resource* parse_resource_for_adjust(const struct cfg_ctx *ctx)
 {
 	int token;
 

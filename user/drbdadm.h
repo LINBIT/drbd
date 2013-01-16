@@ -227,7 +227,7 @@ struct cfg_ctx;
 
 struct adm_cmd {
 	const char *name;
-	int (*function) (struct cfg_ctx *);
+	int (*function) (const struct cfg_ctx *);
 	const struct context_def *drbdsetup_ctx;
 	/* which level this command is for.
 	 * 0: don't show this command, ever
@@ -277,7 +277,7 @@ struct cfg_ctx {
 
 extern char *canonify_path(char *path);
 
-extern int adm_adjust(struct cfg_ctx *);
+extern int adm_adjust(const struct cfg_ctx *);
 
 extern struct adm_cmd new_minor_cmd;
 extern struct adm_cmd new_resource_cmd;
@@ -298,8 +298,8 @@ extern struct adm_cmd proxy_conn_up_cmd;
 extern struct adm_cmd proxy_conn_plugins_cmd;
 extern struct adm_cmd proxy_reconf_cmd;
 
-extern int adm_create_md(struct cfg_ctx *);
-extern int _adm_drbdmeta(struct cfg_ctx *, int flags, char *argument);
+extern int adm_create_md(const struct cfg_ctx *);
+extern int _adm_drbdmeta(const struct cfg_ctx *, int flags, char *argument);
 
 extern void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd, int *ex);
 static inline int m_system_ex(char **argv, int flags, const char *res_name)
@@ -337,7 +337,7 @@ enum drbd_cfg_stage {
 	__CFG_LAST
 };
 
-extern void schedule_deferred_cmd(struct adm_cmd *, struct cfg_ctx *, enum drbd_cfg_stage);
+extern void schedule_deferred_cmd(struct adm_cmd *, const struct cfg_ctx *, enum drbd_cfg_stage);
 extern int version_code_kernel(void);
 extern int version_code_userland(void);
 extern void warn_on_version_mismatch(void);
@@ -355,7 +355,7 @@ enum pp_flags {
 };
 
 extern int check_uniq(const char *what, const char *fmt, ...);
-extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
+extern struct d_resource* parse_resource_for_adjust(const struct cfg_ctx *ctx);
 extern struct d_resource* parse_resource(char*, enum pr_flags);
 extern void post_parse(struct resources *, enum pp_flags);
 extern struct connection *alloc_connection();
@@ -376,14 +376,14 @@ extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
-extern char *proxy_connection_name(struct cfg_ctx *ctx);
+extern char *proxy_connection_name(const struct cfg_ctx *ctx);
 extern struct d_resource *res_by_name(const char *name);
 extern struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name);
 int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
 /* conn_name is optional and mostly for compatibility with dcmd */
-int do_proxy_conn_up(struct cfg_ctx *ctx);
-int do_proxy_conn_down(struct cfg_ctx *ctx);
-int do_proxy_conn_plugins(struct cfg_ctx *ctx);
+int do_proxy_conn_up(const struct cfg_ctx *ctx);
+int do_proxy_conn_down(const struct cfg_ctx *ctx);
+int do_proxy_conn_plugins(const struct cfg_ctx *ctx);
 
 extern char *config_file;
 extern char *config_save;

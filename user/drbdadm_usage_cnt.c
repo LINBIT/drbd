@@ -668,7 +668,7 @@ void uc_node(enum usage_count_type type)
 
 /* For our purpose (finding the revision) SLURP_SIZE is always enough.
  */
-static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
+static char* run_adm_drbdmeta(const struct cfg_ctx *ctx, const char *arg_override)
 {
 	const int SLURP_SIZE = 4096;
 	int rr,pipes[2];
@@ -716,7 +716,7 @@ static char* run_adm_drbdmeta(struct cfg_ctx *ctx, const char *arg_override)
 	return buffer;
 }
 
-int adm_create_md(struct cfg_ctx *ctx)
+int adm_create_md(const struct cfg_ctx *ctx)
 {
 	struct connection *conn;
 	char answer[ANSWER_SIZE];

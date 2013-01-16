@@ -521,7 +521,7 @@ static void dump_mesh(struct d_resource *res)
 	printI("}\n");
 }
 
-int adm_dump(struct cfg_ctx *ctx)
+int adm_dump(const struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
@@ -563,7 +563,7 @@ int adm_dump(struct cfg_ctx *ctx)
 	return 0;
 }
 
-int adm_dump_xml(struct cfg_ctx *ctx)
+int adm_dump_xml(const struct cfg_ctx *ctx)
 {
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;

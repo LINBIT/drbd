@@ -88,36 +88,36 @@ extern int my_parse();
 extern int yydebug;
 extern FILE *yyin;
 
-static int adm_new_minor(struct cfg_ctx *ctx);
-static int adm_resource(struct cfg_ctx *);
-static int adm_attach(struct cfg_ctx *);
-static int adm_connect(struct cfg_ctx *);
-static int adm_resize(struct cfg_ctx *);
-static int adm_up(struct cfg_ctx *);
-static int adm_wait_c(struct cfg_ctx *);
-static int adm_wait_ci(struct cfg_ctx *);
-static int adm_proxy_up(struct cfg_ctx *);
-static int adm_proxy_down(struct cfg_ctx *);
-static int sh_nop(struct cfg_ctx *);
-static int sh_resources(struct cfg_ctx *);
-static int sh_resource(struct cfg_ctx *);
-static int sh_mod_parms(struct cfg_ctx *);
-static int sh_dev(struct cfg_ctx *);
-static int sh_udev(struct cfg_ctx *);
-static int sh_minor(struct cfg_ctx *);
-static int sh_ip(struct cfg_ctx *);
-static int sh_lres(struct cfg_ctx *);
-static int sh_ll_dev(struct cfg_ctx *);
-static int sh_md_dev(struct cfg_ctx *);
-static int sh_md_idx(struct cfg_ctx *);
-static int sh_status(struct cfg_ctx *);
-static int adm_drbdmeta(struct cfg_ctx *);
-static int adm_khelper(struct cfg_ctx *);
-static int adm_setup_and_meta(struct cfg_ctx *);
-static int hidden_cmds(struct cfg_ctx *);
-static int adm_outdate(struct cfg_ctx *);
-static int adm_chk_resize(struct cfg_ctx *);
-static int adm_drbdsetup(struct cfg_ctx *);
+static int adm_new_minor(const struct cfg_ctx *ctx);
+static int adm_resource(const struct cfg_ctx *);
+static int adm_attach(const struct cfg_ctx *);
+static int adm_connect(const struct cfg_ctx *);
+static int adm_resize(const struct cfg_ctx *);
+static int adm_up(const struct cfg_ctx *);
+static int adm_wait_c(const struct cfg_ctx *);
+static int adm_wait_ci(const struct cfg_ctx *);
+static int adm_proxy_up(const struct cfg_ctx *);
+static int adm_proxy_down(const struct cfg_ctx *);
+static int sh_nop(const struct cfg_ctx *);
+static int sh_resources(const struct cfg_ctx *);
+static int sh_resource(const struct cfg_ctx *);
+static int sh_mod_parms(const struct cfg_ctx *);
+static int sh_dev(const struct cfg_ctx *);
+static int sh_udev(const struct cfg_ctx *);
+static int sh_minor(const struct cfg_ctx *);
+static int sh_ip(const struct cfg_ctx *);
+static int sh_lres(const struct cfg_ctx *);
+static int sh_ll_dev(const struct cfg_ctx *);
+static int sh_md_dev(const struct cfg_ctx *);
+static int sh_md_idx(const struct cfg_ctx *);
+static int sh_status(const struct cfg_ctx *);
+static int adm_drbdmeta(const struct cfg_ctx *);
+static int adm_khelper(const struct cfg_ctx *);
+static int adm_setup_and_meta(const struct cfg_ctx *);
+static int hidden_cmds(const struct cfg_ctx *);
+static int adm_outdate(const struct cfg_ctx *);
+static int adm_chk_resize(const struct cfg_ctx *);
+static int adm_drbdsetup(const struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -186,7 +186,7 @@ void add_setup_option(bool explicit, char *option)
 	setup_options[n].option = NULL;
 }
 
-int adm_adjust_wp(struct cfg_ctx *ctx)
+int adm_adjust_wp(const struct cfg_ctx *ctx)
 {
 	if (!verbose && !dry_run)
 		adjust_with_progress = 1;
@@ -506,7 +506,7 @@ static void initialize_deferred_cmds()
 }
 
 void schedule_deferred_cmd(struct adm_cmd *cmd,
-			   struct cfg_ctx *ctx,
+			   const struct cfg_ctx *ctx,
 			   enum drbd_cfg_stage stage)
 {
 	struct deferred_cmd *d;
@@ -673,12 +673,12 @@ int run_deferred_cmds(void)
 	return ret;
 }
 
-static int sh_nop(struct cfg_ctx *ctx)
+static int sh_nop(const struct cfg_ctx *ctx)
 {
 	return 0;
 }
 
-static int sh_resources(struct cfg_ctx *ctx)
+static int sh_resources(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res;
 	int first = 1;
@@ -697,19 +697,19 @@ static int sh_resources(struct cfg_ctx *ctx)
 	return 0;
 }
 
-static int sh_resource(struct cfg_ctx *ctx)
+static int sh_resource(const struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->res->name);
 	return 0;
 }
 
-static int sh_dev(struct cfg_ctx *ctx)
+static int sh_dev(const struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->vol->device);
 	return 0;
 }
 
-static int sh_udev(struct cfg_ctx *ctx)
+static int sh_udev(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol = ctx->vol;
@@ -738,19 +738,19 @@ static int sh_udev(struct cfg_ctx *ctx)
 	return 0;
 }
 
-static int sh_minor(struct cfg_ctx *ctx)
+static int sh_minor(const struct cfg_ctx *ctx)
 {
 	printf("%d\n", ctx->vol->device_minor);
 	return 0;
 }
 
-static int sh_ip(struct cfg_ctx *ctx)
+static int sh_ip(const struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->res->me->address.addr);
 	return 0;
 }
 
-static int sh_lres(struct cfg_ctx *ctx)
+static int sh_lres(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	if (!is_drbd_top) {
@@ -768,14 +768,14 @@ static int sh_lres(struct cfg_ctx *ctx)
 	return 0;
 }
 
-static int sh_ll_dev(struct cfg_ctx *ctx)
+static int sh_ll_dev(const struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->vol->disk);
 	return 0;
 }
 
 
-static int sh_md_dev(struct cfg_ctx *ctx)
+static int sh_md_dev(const struct cfg_ctx *ctx)
 {
 	struct d_volume *vol = ctx->vol;
 	char *r;
@@ -789,14 +789,14 @@ static int sh_md_dev(struct cfg_ctx *ctx)
 	return 0;
 }
 
-static int sh_md_idx(struct cfg_ctx *ctx)
+static int sh_md_idx(const struct cfg_ctx *ctx)
 {
 	printf("%s\n", ctx->vol->meta_index);
 	return 0;
 }
 
 /* FIXME this module parameter will go */
-static int sh_mod_parms(struct cfg_ctx *ctx)
+static int sh_mod_parms(const struct cfg_ctx *ctx)
 {
 	int mc = global_options.minor_count;
 
@@ -1098,7 +1098,7 @@ static void add_setup_options(char **argv, int *argcp)
 ssprintf(strcmp((A)->af, "ipv6") ? "%s:%s:%s" : "%s:[%s]:%s",	\
 	 (A)->af, (A)->addr, (A)->port);
 
-static int adm_attach(struct cfg_ctx *ctx)
+static int adm_attach(const struct cfg_ctx *ctx)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
@@ -1153,7 +1153,7 @@ struct d_option *find_opt(struct options *base, const char *name)
 	return NULL;
 }
 
-int adm_new_minor(struct cfg_ctx *ctx)
+int adm_new_minor(const struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0, ex;
@@ -1171,7 +1171,7 @@ int adm_new_minor(struct cfg_ctx *ctx)
 	return ex;
 }
 
-static int adm_resource(struct cfg_ctx *ctx)
+static int adm_resource(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
@@ -1197,7 +1197,7 @@ static int adm_resource(struct cfg_ctx *ctx)
 	return ex;
 }
 
-int adm_resize(struct cfg_ctx *ctx)
+int adm_resize(const struct cfg_ctx *ctx)
 {
 	char *argv[MAX_ARGS];
 	struct d_option *opt;
@@ -1240,7 +1240,7 @@ int adm_resize(struct cfg_ctx *ctx)
 	return 0;
 }
 
-int _adm_drbdmeta(struct cfg_ctx *ctx, int flags, char *argument)
+int _adm_drbdmeta(const struct cfg_ctx *ctx, int flags, char *argument)
 {
 	struct d_volume *vol = ctx->vol;
 	char *argv[MAX_ARGS];
@@ -1274,12 +1274,12 @@ int _adm_drbdmeta(struct cfg_ctx *ctx, int flags, char *argument)
 	return m_system_ex(argv, flags, ctx->res->name);
 }
 
-static int adm_drbdmeta(struct cfg_ctx *ctx)
+static int adm_drbdmeta(const struct cfg_ctx *ctx)
 {
 	return _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, NULL);
 }
 
-static void __adm_drbdsetup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
+static void __adm_drbdsetup(const struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd, int *ex)
 {
 	char *argv[MAX_ARGS];
 	int argc = 0;
@@ -1305,20 +1305,21 @@ static void __adm_drbdsetup(struct cfg_ctx *ctx, int flags, pid_t *pid, int *fd,
 	m__system(argv, flags, ctx->res ? ctx->res->name : NULL, pid, fd, ex);
 }
 
-static int _adm_drbdsetup(struct cfg_ctx *ctx, int flags)
+static int _adm_drbdsetup(const struct cfg_ctx *ctx, int flags)
 {
 	int ex;
 	__adm_drbdsetup(ctx, flags, NULL, NULL, &ex);
 	return ex;
 }
 
-static int adm_drbdsetup(struct cfg_ctx *ctx)
+static int adm_drbdsetup(const struct cfg_ctx *ctx)
 {
 	return _adm_drbdsetup(ctx, ctx->cmd->takes_long ? SLEEPS_LONG : SLEEPS_SHORT);
 }
 
-int sh_status(struct cfg_ctx *ctx)
+int sh_status(const struct cfg_ctx *ctx)
 {
+	struct cfg_ctx tmp_ctx = *ctx;
 	struct d_resource *r;
 	struct d_volume *vol, *lower_vol;
 	int rv = 0;
@@ -1332,7 +1333,7 @@ int sh_status(struct cfg_ctx *ctx)
 	for_each_resource(r, &config) {
 		if (r->ignore)
 			continue;
-		ctx->res = r;
+		tmp_ctx.res = r;
 
 		printf("_conf_res_name=%s\n", shell_escape(r->name));
 		printf("_conf_file_line=%s:%u\n\n", shell_escape(r->config_file), r->start_line);
@@ -1364,8 +1365,8 @@ int sh_status(struct cfg_ctx *ctx)
 			}
 			printf("_conf_volume=%d\n", vol->vnr);
 
-			ctx->vol = vol;
-			rv = _adm_drbdsetup(ctx, SLEEPS_SHORT);
+			tmp_ctx.vol = vol;
+			rv = _adm_drbdsetup(&tmp_ctx, SLEEPS_SHORT);
 			if (rv)
 				return rv;
 
@@ -1377,7 +1378,7 @@ int sh_status(struct cfg_ctx *ctx)
 	return 0;
 }
 
-static int adm_outdate(struct cfg_ctx *ctx)
+static int adm_outdate(const struct cfg_ctx *ctx)
 {
 	int rv;
 
@@ -1404,7 +1405,7 @@ static int adm_outdate(struct cfg_ctx *ctx)
 
 /* shell equivalent:
  * ( drbdsetup resize && drbdsetup check-resize ) || drbdmeta check-resize */
-static int adm_chk_resize(struct cfg_ctx *ctx)
+static int adm_chk_resize(const struct cfg_ctx *ctx)
 {
 	/* drbdsetup resize && drbdsetup check-resize */
 	int ex = adm_resize(ctx);
@@ -1415,7 +1416,7 @@ static int adm_chk_resize(struct cfg_ctx *ctx)
 	return adm_drbdmeta(ctx);
 }
 
-static int adm_setup_and_meta(struct cfg_ctx *ctx)
+static int adm_setup_and_meta(const struct cfg_ctx *ctx)
 {
 	char buffer[4096];
 	int fd, status, rv = 0, rr, s = 0;
@@ -1470,7 +1471,7 @@ static int adm_setup_and_meta(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static int adm_khelper(struct cfg_ctx *ctx)
+static int adm_khelper(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	int rv = 0;
@@ -1484,7 +1485,7 @@ static int adm_khelper(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static int adm_connect(struct cfg_ctx *ctx)
+static int adm_connect(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct connection *conn = ctx->conn;
@@ -1520,7 +1521,7 @@ void free_opt(struct d_option *item)
 	free(item);
 }
 
-char *proxy_connection_name(struct cfg_ctx *ctx)
+char *proxy_connection_name(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct connection *conn = ctx->conn;
@@ -1542,7 +1543,7 @@ char *proxy_connection_name(struct cfg_ctx *ctx)
 	return conn_name;
 }
 
-int do_proxy_conn_up(struct cfg_ctx *ctx)
+int do_proxy_conn_up(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct connection *conn = ctx->conn;
@@ -1568,7 +1569,7 @@ int do_proxy_conn_up(struct cfg_ctx *ctx)
 	return rv;
 }
 
-int do_proxy_conn_plugins(struct cfg_ctx *ctx)
+int do_proxy_conn_plugins(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	char *argv[MAX_ARGS];
@@ -1607,7 +1608,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 	return 0;
 }
 
-int do_proxy_conn_down(struct cfg_ctx *ctx)
+int do_proxy_conn_down(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	char *conn_name;
@@ -1621,7 +1622,7 @@ int do_proxy_conn_down(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static int check_proxy(struct cfg_ctx *ctx, int do_up)
+static int check_proxy(const struct cfg_ctx *ctx, int do_up)
 {
 	struct d_resource *res = ctx->res;
 	struct connection *conn = ctx->conn;
@@ -1666,12 +1667,12 @@ static int check_proxy(struct cfg_ctx *ctx, int do_up)
 	return rv;
 }
 
-static int adm_proxy_up(struct cfg_ctx *ctx)
+static int adm_proxy_up(const struct cfg_ctx *ctx)
 {
 	return check_proxy(ctx, 1);
 }
 
-static int adm_proxy_down(struct cfg_ctx *ctx)
+static int adm_proxy_down(const struct cfg_ctx *ctx)
 {
 	return check_proxy(ctx, 0);
 }
@@ -1682,8 +1683,9 @@ static int adm_proxy_down(struct cfg_ctx *ctx)
  * then attach all local disks,
  * adjust various settings,
  * and then configure the network part */
-static int adm_up(struct cfg_ctx *ctx)
+static int adm_up(const struct cfg_ctx *ctx)
 {
+	struct cfg_ctx tmp_ctx = *ctx;
 	struct connection *conn;
 	struct d_volume *vol;
 
@@ -1694,16 +1696,16 @@ static int adm_up(struct cfg_ctx *ctx)
 		if (conn->ignore)
 			continue;
 
-		ctx->conn = conn;
-		schedule_deferred_cmd(&connect_cmd, ctx, CFG_NET);
+		tmp_ctx.conn = conn;
+		schedule_deferred_cmd(&connect_cmd, &tmp_ctx, CFG_NET);
 	}
-	ctx->conn = NULL;
+	tmp_ctx.conn = NULL;
 
 	for_each_volume(vol, &ctx->res->me->volumes) {
-		ctx->vol = vol;
-		schedule_deferred_cmd(&new_minor_cmd, ctx, CFG_PREREQ);
+		tmp_ctx.vol = vol;
+		schedule_deferred_cmd(&new_minor_cmd, &tmp_ctx, CFG_PREREQ);
 		if (vol->disk)
-			schedule_deferred_cmd(&attach_cmd, ctx, CFG_DISK);
+			schedule_deferred_cmd(&attach_cmd, &tmp_ctx, CFG_DISK);
 	}
 
 	return 0;
@@ -1713,7 +1715,7 @@ static int adm_up(struct cfg_ctx *ctx)
    to enforce the use of the specified timeouts instead the use
    of a sane value. Should only be used if the third node should
    never become primary. */
-static int adm_wait_c(struct cfg_ctx *ctx)
+static int adm_wait_c(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol = ctx->vol;
@@ -2006,7 +2008,7 @@ static int check_exit_codes(pid_t * pids)
 	return rv;
 }
 
-static int adm_wait_ci(struct cfg_ctx *ctx)
+static int adm_wait_ci(const struct cfg_ctx *ctx)
 {
 	struct d_resource *res;
 	char *argv[20], answer[40];
@@ -2189,7 +2191,7 @@ static void print_cmds(int level)
 		printf("\n");
 }
 
-static int hidden_cmds(struct cfg_ctx *ignored __attribute((unused)))
+static int hidden_cmds(const struct cfg_ctx *ignored __attribute((unused)))
 {
 	printf("\nThese additional commands might be useful for writing\n"
 	       "nifty shell scripts around drbdadm:\n\n");

@@ -210,7 +210,7 @@ static int disk_equal(struct d_volume *conf, struct d_volume *running)
 
    Obviously the schedule_deferred_proxy_reconf() function should go away */
 
-static int do_proxy_reconf(struct cfg_ctx *ctx)
+static int do_proxy_reconf(const struct cfg_ctx *ctx)
 {
 	int rv;
 	char *argv[4] = { drbd_proxy_ctl, "-c", (char*)ctx->cmd->name, NULL };
@@ -219,7 +219,7 @@ static int do_proxy_reconf(struct cfg_ctx *ctx)
 	return rv;
 }
 
-static void schedule_deferred_proxy_reconf(struct cfg_ctx *ctx, char *text)
+static void schedule_deferred_proxy_reconf(const struct cfg_ctx *ctx, char *text)
 {
 	struct adm_cmd *cmd;
 
@@ -276,7 +276,7 @@ int _is_plugin_in_list(char *string,
 }
 
 
-static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
+static int proxy_reconf(const struct cfg_ctx *ctx, struct d_resource *running)
 {
 	int reconn = 0;
 	struct d_resource *res = ctx->res;
@@ -536,7 +536,7 @@ void compare_volumes(struct volumes *conf_head, struct volumes *kern_head)
 /*
  * CAUTION this modifies global static char * config_file!
  */
-int adm_adjust(struct cfg_ctx *ctx)
+int adm_adjust(const struct cfg_ctx *ctx)
 {
 	char* argv[20];
 	int pid,argc, i;
