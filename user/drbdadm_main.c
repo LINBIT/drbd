@@ -61,7 +61,6 @@
 char *progname;
 
 struct deferred_cmd {
-	struct adm_cmd *cmd;
 	struct cfg_ctx ctx;
 	STAILQ_ENTRY(deferred_cmd) link;
 };
@@ -517,25 +516,31 @@ void schedule_deferred_cmd(struct adm_cmd *cmd,
 		exit(E_EXEC_ERROR);
 	}
 
-	d->cmd = cmd;
 	d->ctx = *ctx;
+	d->ctx.cmd = cmd;
 
 	STAILQ_INSERT_TAIL(&deferred_cmds[stage], d, link);
 }
 
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
-int call_cmd_fn(struct adm_cmd *cmd, const struct cfg_ctx *ctx, enum on_error on_error)
+static int __call_cmd_fn(const struct cfg_ctx *ctx, enum on_error on_error)
 {
-	struct cfg_ctx tmp_ctx = *ctx;
 	int rv;
 
-	tmp_ctx.cmd = cmd;
-	rv = cmd->function(&tmp_ctx);
+	rv = ctx->cmd->function(ctx);
 	if (rv >= 20) {
 		if (on_error == EXIT_ON_FAIL)
 			exit(rv);
 	}
 	return rv;
+}
+
+static int call_cmd_fn(struct adm_cmd *cmd, const struct cfg_ctx *ctx, enum on_error on_error)
+{
+	struct cfg_ctx tmp_ctx = *ctx;
+
+	tmp_ctx.cmd = cmd;
+	return __call_cmd_fn(&tmp_ctx, on_error);
 }
 
 /* If ctx->vol is NULL, and cmd->iterate_volumes is set,
@@ -558,6 +563,8 @@ int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 	iterate_vols = ctx->vol ? 0 : cmd->iterate_volumes;
 	iterate_conns = ctx->conn ? 0 : cmd->need_peer;
 
+	tmp_ctx.cmd = cmd;
+
 	if (iterate_vols && iterate_conns) {
 		for_each_volume(vol, &res->me->volumes) {
 			tmp_ctx.vol = vol;
@@ -565,7 +572,7 @@ int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 				if (conn->ignore)
 					continue;
 				tmp_ctx.conn = conn;
-				ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
+				ret = __call_cmd_fn(&tmp_ctx, on_error);
 				if (ret)
 					goto out;
 			}
@@ -573,7 +580,7 @@ int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 	} else if (iterate_vols) {
 		for_each_volume(vol, &res->me->volumes) {
 			tmp_ctx.vol = vol;
-			ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
+			ret = __call_cmd_fn(&tmp_ctx, on_error);
 			if (ret)
 				break;
 		}
@@ -582,12 +589,12 @@ int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 			if (conn->ignore)
 				continue;
 			tmp_ctx.conn = conn;
-			ret = call_cmd_fn(cmd, &tmp_ctx, on_error);
+			ret = __call_cmd_fn(&tmp_ctx, on_error);
 			if (ret)
 				break;
 		}
 	} else {
-		ret = call_cmd_fn(cmd, ctx, on_error);
+		ret = __call_cmd_fn(&tmp_ctx, on_error);
 	}
 out:
 	return ret;
@@ -622,14 +629,14 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 					printf(" [skipped:%s]", d->ctx.res->name);
 			} else
 				fprintf(stderr, "%s: %s %s: skipped due to earlier error\n",
-					progname, d->cmd->name, d->ctx.res->name);
+					progname, d->ctx.cmd->name, d->ctx.res->name);
 			r = 0;
 		} else {
 			if (adjust_with_progress) {
 				if (d->ctx.res != last_res)
 					printf(" %s", d->ctx.res->name);
 			}
-			r = call_cmd_fn(d->cmd, &d->ctx, KEEP_RUNNING);
+			r = __call_cmd_fn(&d->ctx, KEEP_RUNNING);
 			if (r) {
 				/* If something in the "prerequisite" stages failed,
 				 * there is no point in trying to continue.
@@ -640,7 +647,7 @@ int _run_deferred_cmds(enum drbd_cfg_stage stage)
 				if (stage == CFG_PREREQ || stage == CFG_DISK_PREREQ)
 					d->ctx.res->skip_further_deferred_command = 1;
 				if (adjust_with_progress)
-					printf(":failed(%s:%u)", d->cmd->name, r);
+					printf(":failed(%s:%u)", d->ctx.cmd->name, r);
 			}
 		}
 		last_res = d->ctx.res;
@@ -3213,7 +3220,8 @@ int main(int argc, char **argv)
 		/* no call_cmd, as that implies register_minor,
 		 * which does not make sense for resource independent commands.
 		 * It does also not need to iterate over volumes: it does not even know the resource. */
-		rv = call_cmd_fn(cmd, &ctx, KEEP_RUNNING);
+		ctx.cmd = cmd;
+		rv = __call_cmd_fn(&ctx, KEEP_RUNNING);
 		if (rv >= 10) {	/* why do we special case the "generic sh-*" commands? */
 			fprintf(stderr, "command %s exited with code %d\n",
 				cmd->name, rv);
