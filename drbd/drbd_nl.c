@@ -2685,10 +2685,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, i)
 		idr_remove(&connection->peer_devices, peer_device->device->vnr);
-		kobject_put(&peer_device->device->kobj);
-	}
 	list_del(&connection->connections);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	goto out;
