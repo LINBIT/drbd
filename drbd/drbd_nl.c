@@ -2564,12 +2564,30 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&adm_ctx.resource->conf_update);
 	idr_for_each_entry(&adm_ctx.resource->devices, device, i) {
-		if (!create_peer_device(device, connection)) {
+		int got;
+
+		peer_device = create_peer_device(device, connection);
+		if (!peer_device ||
+		    !idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
+		    idr_get_new_above(&connection->peer_devices,
+				      peer_device, device->vnr, &got) ||
+		    !expect(connection, got == device->vnr)) {
 			retcode = ERR_NOMEM;
 			goto unlock_fail_free_connection;
 		}
+	}
+
+	spin_lock_irq(&adm_ctx.resource->req_lock);
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		struct drbd_device *device = peer_device->device;
+
+		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
+		kref_get(&connection->kref);
+		kobject_get(&device->kobj);
 		peer_devices++;
 	}
+	spin_unlock_irq(&adm_ctx.resource->req_lock);
+
 	old_net_conf = connection->net_conf;
 	if (old_net_conf) {
 		retcode = ERR_NET_CONFIGURED;
@@ -2685,8 +2703,10 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
-	idr_for_each_entry(&connection->peer_devices, peer_device, i)
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		idr_remove(&connection->peer_devices, peer_device->device->vnr);
+		kfree(peer_device);
+	}
 	list_del(&connection->connections);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	goto out;

@@ -2958,7 +2958,6 @@ void drbd_destroy_connection(struct kref *kref)
 struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
-	int got;
 
 	peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
 	if (!peer_device)
@@ -2989,25 +2988,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
-
-	list_add(&peer_device->peer_devices, &device->peer_devices);
-
-	if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
-	    idr_get_new_above(&connection->peer_devices, peer_device, device->vnr, &got))
-		goto fail;
-
-	if (!expect(device, got == device->vnr)) {
-		idr_remove(&connection->peer_devices, got);
-		goto fail;
-	}
-	kref_get(&connection->kref);
-	kobject_get(&device->kobj);
 	return peer_device;
-
-fail:
-	list_del(&peer_device->peer_devices);
-	kfree(peer_device);
-	return NULL;
 }
 
 int init_submitter(struct drbd_device *device)
@@ -3169,9 +3150,35 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	kobject_get(&device->kobj);
 
 	INIT_LIST_HEAD(&device->peer_devices);
-	for_each_connection(connection, resource)
-		if (!create_peer_device(device, connection))
+	for_each_connection(connection, resource) {
+		peer_device = create_peer_device(device, connection);
+		if (!peer_device)
 			goto out_no_peer_device;
+		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
+		if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL))
+			goto out_no_peer_device;
+	}
+
+	spin_lock_irq(&resource->req_lock);
+	for_each_peer_device(peer_device, device) {
+		connection = peer_device->connection;
+		if (idr_get_new_above(&connection->peer_devices,
+				      peer_device, device->vnr, &got) ||
+		    !expect(device, got == device->vnr)) {
+			for_each_peer_device(peer_device, device) {
+				connection = peer_device->connection;
+				idr_remove(&connection->peer_devices, device->vnr);
+			}
+			spin_unlock_irq(&resource->req_lock);
+			synchronize_rcu();
+			goto out_no_peer_device;
+		}
+	}
+	for_each_peer_device(peer_device, device) {
+		kref_get(&connection->kref);
+		kobject_get(&device->kobj);
+	}
+	spin_unlock_irq(&resource->req_lock);
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
@@ -3199,13 +3206,6 @@ out_del_disk:
 	destroy_workqueue(device->submit.wq);
 	del_gendisk(device->vdisk);
 out_no_peer_device:
-	for_each_connection(connection, resource) {
-		peer_device = idr_find(&connection->peer_devices, vnr);
-		if (peer_device) {
-			idr_remove(&connection->peer_devices, got);
-			kref_put(&connection->kref, drbd_destroy_connection);
-		}
-	}
 	for_each_peer_device_safe(peer_device, tmp_peer_device, device) {
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
