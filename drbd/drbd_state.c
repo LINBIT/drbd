@@ -80,9 +80,9 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 {
 	struct drbd_state_change *state_change;
 	struct drbd_device *device;
-	unsigned int n_devices = 0;
+	unsigned int n_devices;
 	struct drbd_connection *connection;
-	unsigned int n_connections = 0;
+	unsigned int n_connections;
 	int vnr;
 
 	struct drbd_device_state_change *device_state_change;
@@ -95,8 +95,10 @@ retry:
 		return NULL;
 
 	rcu_read_lock();
+	n_devices = 0;
 	idr_for_each_entry(&resource->devices, device, vnr)
 		n_devices++;
+	n_connections = 0;
 	for_each_connection(connection, resource)
 		n_connections++;
 	if (n_devices != state_change->n_devices ||
