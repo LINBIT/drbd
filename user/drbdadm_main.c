@@ -498,6 +498,7 @@ int call_cmd_fn(int (*function) (struct cfg_ctx *),
 int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 	     enum on_error on_error)
 {
+	struct cfg_ctx tmp_ctx = *ctx;
 	struct d_resource *res = ctx->res;
 	struct d_volume *vol;
 	int ret;
@@ -506,11 +507,11 @@ int call_cmd(struct adm_cmd *cmd, struct cfg_ctx *ctx,
 		set_peer_in_resource(res, cmd->need_peer);
 
 	if (!cmd->iterate_volumes || ctx->vol != NULL)
-		return call_cmd_fn(cmd->function, ctx, on_error);
+		return call_cmd_fn(cmd->function, &tmp_ctx, on_error);
 
 	for_each_volume(vol, res->me->volumes) {
-		ctx->vol = vol;
-		ret = call_cmd_fn(cmd->function, ctx, on_error);
+		tmp_ctx.vol = vol;
+		ret = call_cmd_fn(cmd->function, &tmp_ctx, on_error);
 		/* FIXME: Do we want to keep running?
 		 * When?
 		 * How would we determine which return value to return? */
