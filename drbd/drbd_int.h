@@ -94,6 +94,7 @@ extern bool allow_oos;
 extern int enable_faults;
 extern int fault_rate;
 extern int fault_devs;
+extern int two_phase_commit_fail;
 #endif
 
 extern char usermode_helper[];

@@ -93,6 +93,8 @@ int enable_faults;
 int fault_rate;
 static int fault_count;
 int fault_devs;
+int two_phase_commit_fail;
+
 /* bitmap of enabled faults */
 module_param(enable_faults, int, 0664);
 /* fault rate % value - applies to all enabled faults */
@@ -101,6 +103,7 @@ module_param(fault_rate, int, 0664);
 module_param(fault_count, int, 0664);
 /* bitmap of devices to insert faults on */
 module_param(fault_devs, int, 0644);
+module_param(two_phase_commit_fail, int, 0644);
 #endif
 
 /* module parameter, defined */

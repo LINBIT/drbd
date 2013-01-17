@@ -2284,6 +2284,8 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 		kref_get(&connection->kref);
 		rcu_read_unlock();
 		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
+			drbd_debug(connection, "State change request %s [%u|%u] sent\n",
+				   cmdname(cmd), val.i, mask.i);
 			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
 			rv = SS_CW_SUCCESS;
 		}
@@ -2378,6 +2380,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
+
+	drbd_debug(resource, "Preparing cluster-wide state change\n");
 	resource->remote_state_change = true;
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_CONN_ST_CHG_PREPARE, mask, val, true);
@@ -2387,20 +2391,25 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		if (rv == SS_CW_SUCCESS) {
 			enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
 
+			drbd_debug(resource, "Committing cluster-wide state change\n");
 			rv = __cluster_wide_request(resource, vnr, cmd, mask, val, false);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
-		} else
+		} else {
+			drbd_debug(resource, "Aborting cluster-wide state change\n");
 			__cluster_wide_request(resource, vnr, P_CONN_ST_CHG_ABORT, mask, val, false);
+		}
 
 		rcu_read_lock();
 		for_each_connection(connection, resource)
-			clear_bit(CONN_WD_ST_CHG_REQ,  &connection->flags);
+			clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
 		rcu_read_unlock();
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 	resource->remote_state_change = false;
+	drbd_debug(resource, "Cluster-wide state change %s\n",
+		   rv < 0 ? "failed" : "succeeded");
 	return rv;
 }
 

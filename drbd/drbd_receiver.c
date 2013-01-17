@@ -4548,6 +4548,13 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	rv = SS_SUCCESS;
 	spin_lock_irq(&resource->req_lock);
+
+#ifdef DRBD_ENABLE_FAULTS
+	if (two_phase_commit_fail > 0) {
+		two_phase_commit_fail--;
+		rv = SS_CONCURRENT_ST_CHG;
+	} else
+#endif
 	if (resource->remote_state_change) {
 		if (resource->remote_state_change_prepared == connection)
 			flags |= CS_PREPARED;
@@ -5927,8 +5934,11 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 
 	if (retcode >= SS_SUCCESS)
 		set_bit(CONN_WD_ST_CHG_OKAY, &connection->flags);
-	else
+	else {
 		set_bit(CONN_WD_ST_CHG_FAIL, &connection->flags);
+		drbd_debug(connection, "Requested state change failed by peer: %s (%d)\n",
+			   drbd_set_st_err_str(retcode), retcode);
+	}
 
 	wake_up(&connection->resource->state_wait);
 	wake_up(&connection->ping_wait);
