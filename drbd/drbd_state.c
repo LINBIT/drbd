@@ -2315,8 +2315,10 @@ static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
 			if (!test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
 				continue;
 			clear_bit(CONN_WD_ST_CHG_OKAY,  &connection->flags);
-			if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
+			if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags)) {
+				clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
 			        rv = SS_CW_FAILED_BY_PEER;
+			}
 		}
 	}
 	rcu_read_unlock();
@@ -2386,11 +2388,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
 
 			rv = __cluster_wide_request(resource, vnr, cmd, mask, val, false);
-			if (rv == SS_CW_SUCCESS) {
-				wait_event(resource->state_wait,
-					((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
-				if (rv == SS_CW_FAILED_BY_PEER)
-					/* this is fatal! */ ;
+			if (rv != SS_CW_SUCCESS) {
+				/* FIXME: disconnect all peers? */
 			}
 		} else
 			__cluster_wide_request(resource, vnr, P_CONN_ST_CHG_ABORT, mask, val, false);

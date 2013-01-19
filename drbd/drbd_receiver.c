@@ -4538,6 +4538,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
+	bool reply = false;
 
 	if (pi->cmd == P_STATE_CHG_REQ || (pi->cmd != P_CONN_ST_CHG_REQ && pi->vnr != -1)) {
 		peer_device = conn_peer_device(connection, pi->vnr);
@@ -4569,6 +4570,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	case P_CONN_ST_CHG_PREPARE:
 		drbd_info(connection, "Preparing remote state change\n");
 		flags |= CS_PREPARE;
+		reply = true;
 		break;
 	case P_CONN_ST_CHG_ABORT:
 		if (!(flags & CS_PREPARED)) {
@@ -4579,6 +4581,10 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		}
 		drbd_info(connection, "Aborting remote state change\n");
 		flags |= CS_ABORT;
+		break;
+	case P_STATE_CHG_REQ:
+	case P_CONN_ST_CHG_REQ:
+		reply = !(flags & CS_PREPARED);
 		break;
 	default:
 		break;
@@ -4592,12 +4598,14 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (peer_device) {
 		rv = change_peer_device_state(peer_device, mask, val, flags);
-		drbd_send_sr_reply(peer_device, rv);
+		if (reply)
+			drbd_send_sr_reply(peer_device, rv);
 		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 			drbd_md_sync(peer_device->device);
 	} else {
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
-		conn_send_sr_reply(connection, rv);
+		if (reply)
+			conn_send_sr_reply(connection, rv);
 	}
 
 	spin_lock_irq(&resource->req_lock);
