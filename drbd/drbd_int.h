@@ -214,6 +214,13 @@ void drbd_printk_with_wrong_object_type(void);
 #define drbd_info(device, fmt, args...) \
 	drbd_printk(KERN_INFO, device, fmt, ## args)
 
+#if defined(DEBUG)
+#define drbd_debug(obj, fmt, args...) \
+	drbd_printk(KERN_DEBUG, obj, fmt, ## args)
+#else
+#define drbd_debug(obj, fmt, args...)
+#endif
+
 extern struct ratelimit_state drbd_ratelimit_state;
 
 static inline int drbd_ratelimit(void)
