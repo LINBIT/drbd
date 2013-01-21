@@ -812,10 +812,6 @@ struct drbd_connection {			/* is a resource from the config file */
 	/* sender side */
 	struct drbd_work_queue sender_work;
 
-	/* For limiting logging verbosity of the asender thread */
-	enum drbd_state_rv last_remote_state_error;
-	unsigned long last_remote_state_error_jiffies;
-
 	struct sender_todo {
 		struct list_head work_list;
 
