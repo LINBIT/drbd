@@ -52,7 +52,7 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 #endif
 
 #ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->resource->req_lock);
 #endif
 
 #ifdef __disk_stat_inc
