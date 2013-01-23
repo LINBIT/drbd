@@ -807,7 +807,7 @@ resource
 
             <para>In addition to this device, udev will create
               <option>/dev/drbd/by-res/<replaceable>resource</replaceable>/<replaceable>volume</replaceable></option>
-              and <option>/dev/drbd/by-disk/drbd<replaceable>minor-number</replaceable></option>
+              and <option>/dev/drbd/by-disk/<replaceable>lower-level-device</replaceable></option>
               symlinks to the device.</para>
           </listitem>
         </varlistentry>

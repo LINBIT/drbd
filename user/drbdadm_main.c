@@ -727,20 +727,23 @@ static int sh_udev(const struct cfg_ctx *ctx)
 		return 1;
 	}
 
-	if (vol->implicit)
-		printf("RESOURCE=%s\n", res->name);
-	else
-		printf("RESOURCE=%s/%u\n", res->name, vol->vnr);
-
 	if (!strncmp(vol->device, "/dev/drbd", 9))
 		printf("DEVICE=%s\n", vol->device + 5);
 	else
 		printf("DEVICE=drbd%u\n", vol->device_minor);
 
-	if (!strncmp(vol->disk, "/dev/", 5))
-		printf("DISK=%s\n", vol->disk + 5);
+	printf("SYMLINK=");
+	if (vol->implicit)
+		printf("drbd/by-res/%s", res->name);
 	else
-		printf("DISK=%s\n", vol->disk);
+		printf("drbd/by-res/%s/%u", res->name, vol->vnr);
+	if (vol->disk) {
+		if (!strncmp(vol->disk, "/dev/", 5))
+			printf(" drbd/by-disk/%s", vol->disk + 5);
+		else
+			printf(" drbd/by-disk/%s", vol->disk);
+	}
+	printf("\n");
 
 	return 0;
 }
