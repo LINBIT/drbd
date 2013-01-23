@@ -2516,8 +2516,10 @@ struct bm_extent {
 
 #endif
 
-/* This is defined in drivers/md/md.h as well. Should go into wait.h */
-#define __wait_event_lock_irq(wq, condition, lock, cmd) 		\
+/* Used to be defined in drivers/md/md.h.
+ * Since 3.8 it is available from wait.h */
+#ifndef wait_event_lock_irq
+#define __wait_event_lock_irq(wq, condition, lock, cmd)			\
 do {									\
 	wait_queue_t __wait;						\
 	init_waitqueue_entry(&__wait, current);				\
@@ -2536,9 +2538,10 @@ do {									\
 	remove_wait_queue(&wq, &__wait);				\
 } while (0)
 
-#define wait_event_lock_irq(wq, condition, lock, cmd) 			\
+#define wait_event_lock_irq(wq, condition, lock)			\
 do {									\
-	if (condition)	 						\
+	if (condition)							\
 		break;							\
-	__wait_event_lock_irq(wq, condition, lock, cmd);		\
+	__wait_event_lock_irq(wq, condition, lock, );			\
 } while (0)
+#endif
