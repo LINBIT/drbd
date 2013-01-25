@@ -2,6 +2,40 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.4.3rc1 (api:genl1/proto:86-101)
+--------
+ * Changes from drbd-8.3.14 and drbd-8.3.15
+   * Do not end up in Unconnected state if the connection breaks at a
+     certain point during the handshake (was introduced with 8.3.12)
+   * Closed a race condition between promoting and connection handshake,
+     that could lead to an inconsistent view of the peer's UUIDS
+   * Fixed a race condition that could lead to a full sync, if connection
+     breaks at a certain point while starting a regular resync
+   * Fixed crm-fence-peer.sh for pacemaker 1.1.8
+   * Fixed a list corruption for read requests that complete with an error
+     after they were aborted
+   * Fixed a kernel panic if the device size was an exact multiple of 128MiB
+   * Fixed a potential memory allocation during deadlock online resize
+   * Improve the handling of read-errors: Make sure that sectors that had a
+     read error are overwritten with data from the peer on the next resync
+   * Expose the data-generation-uuids through /sys/block/drbdXX/drbd/
+   * The new flag --peer-max-bio-size for drbdmeta create-md is of use
+     if you plan to use the device for long time without peer
+ * Fixed a potential protocol error and resulting disconnect/reconnect,
+   when a disk fails on the secondary node. (Introduced with 8.4.2)
+ * Do not fail empty flushed on diskless, primary node
+ * Fixed calculation of master scores for single volume and
+   unconfigured resources in the drbd.ocf RA
+ * When the connection breaks during a grace full disconnect DRBD failed
+   to call the eventually configured fence-peer handler. Fixed.
+ * Obey md-barrier setting when changed via the disk-options command
+ * Non blocking queuing of AL-updates; This change significantly
+   improves the number of IOPs in case the workload does not fit into
+   the configured AL size. (Backport from drbd-9)
+ * New options for drbdmeta create-md --al-stripes and --al-stripe-size
+   to create a larger and striped AL
+ * Compiles on Linux v3.7
+
 8.4.2 (api:genl1/proto:86-101)
 --------
  * Fixed IO resuming after connection was established before fence
