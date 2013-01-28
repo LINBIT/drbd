@@ -4543,6 +4543,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
+	int vnr = -1;
 
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr.  In the other packets, vnr == -1
@@ -4551,6 +4552,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		peer_device = conn_peer_device(connection, pi->vnr);
 		if (!peer_device)
 			return -EIO;
+		vnr = peer_device->device->vnr;
 	}
 
 	rv = SS_SUCCESS;
@@ -4563,10 +4565,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (rv != SS_SUCCESS) {
 		drbd_info(connection, "Rejecting concurrent remote state change\n");
-		if (peer_device)
-			drbd_send_sr_reply(peer_device, rv, false);
-		else
-			conn_send_sr_reply(connection, rv, false);
+		drbd_send_sr_reply(connection, vnr, rv, false);
 		return 0;
 	}
 
@@ -4578,7 +4577,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (peer_device) {
 		rv = change_peer_device_state(peer_device, mask, val, flags);
-		drbd_send_sr_reply(peer_device, rv, false);
+		drbd_send_sr_reply(connection, vnr, rv, false);
 		if (rv >= SS_SUCCESS)
 			drbd_md_sync(peer_device->device);
 	} else {
@@ -4586,7 +4585,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		/* Send the reply before carrying out the state change: this is
 		 * needed for state changes which close the network connection.  */
 		rv = change_connection_state(connection, mask, val, flags | CS_PREPARE);
-		conn_send_sr_reply(connection, rv, false);
+		drbd_send_sr_reply(connection, vnr, rv, false);
 		rv = change_connection_state(connection, mask, val, flags | CS_PREPARED);
 	}
 
@@ -4632,10 +4631,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	if (rv != SS_SUCCESS) {
 		drbd_info(connection, "Rejecting concurrent remote state change\n");
-		if (peer_device)
-			drbd_send_sr_reply(peer_device, rv, true);
-		else
-			conn_send_sr_reply(connection, rv, true);
+		drbd_send_sr_reply(connection, pi->vnr, rv, true);
 		return 0;
 	}
 
@@ -4666,17 +4662,14 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	if (peer_device) {
+	if (peer_device)
 		rv = change_peer_device_state(peer_device, mask, val, flags);
-		if (flags & CS_PREPARE)
-			drbd_send_sr_reply(peer_device, rv, true);
-		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
-			drbd_md_sync(peer_device->device);
-	} else {
+	else
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
-		if (flags & CS_PREPARE)
-			conn_send_sr_reply(connection, rv, true);
-	}
+	if (flags & CS_PREPARE)
+		drbd_send_sr_reply(connection, pi->vnr, rv, true);
+	if (peer_device && rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
+		drbd_md_sync(peer_device->device);
 
 	spin_lock_irq(&resource->req_lock);
 	if (flags & CS_PREPARE)

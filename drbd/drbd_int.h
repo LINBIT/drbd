@@ -1177,8 +1177,8 @@ extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int 
 
 extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
 extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
-extern void drbd_send_sr_reply(struct drbd_peer_device *, enum drbd_state_rv retcode, bool twopc);
-extern void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode, bool twopc);
+extern void drbd_send_sr_reply(struct drbd_connection *connection, int vnr,
+			       enum drbd_state_rv retcode, bool twopc);
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);
 extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid);

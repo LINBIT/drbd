@@ -1216,22 +1216,7 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 	return err;
 }
 
-void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv retcode, bool twopc)
-{
-	struct drbd_socket *sock;
-	struct p_req_state_reply *p;
-
-	sock = &peer_device->connection->meta;
-	p = drbd_prepare_command(peer_device, sock);
-	if (p) {
-		enum drbd_packet cmd = twopc ? P_TWOPC_REPLY : P_STATE_CHG_REPLY;
-
-		p->retcode = cpu_to_be32(retcode);
-		drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
-	}
-}
-
-void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode, bool twopc)
+void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode, bool twopc)
 {
 	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
@@ -1243,7 +1228,7 @@ void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv r
 			connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
 
 		p->retcode = cpu_to_be32(retcode);
-		send_command(connection, -1, sock, cmd, sizeof(*p), NULL, 0);
+		send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }
 
