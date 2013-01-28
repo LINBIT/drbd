@@ -6008,6 +6008,25 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 	return 0;
 }
 
+STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_req_state_reply *p = pi->data;
+	int retcode = be32_to_cpu(p->retcode);
+
+	if (retcode >= SS_SUCCESS)
+		set_bit(TWOPC_YES, &connection->flags);
+	else {
+		set_bit(TWOPC_NO, &connection->flags);
+		drbd_debug(connection, "Requested state change failed by peer: %s (%d)\n",
+			   drbd_set_st_err_str(retcode), retcode);
+	}
+
+	wake_up(&connection->resource->state_wait);
+	wake_up(&connection->ping_wait);
+
+	return 0;
+}
+
 STATIC int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
 	return drbd_send_ping_ack(connection);
@@ -6463,7 +6482,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
-	[P_TWOPC_REPLY]     = { sizeof(struct p_req_state_reply), got_RqSReply },
+	[P_TWOPC_REPLY]     = { sizeof(struct p_req_state_reply), got_twopc_reply },
 };
 
 int drbd_asender(struct drbd_thread *thi)
