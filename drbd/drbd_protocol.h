@@ -66,6 +66,8 @@ enum drbd_packet {
 	P_PEER_DAGTAG         = 0x35, /* data socket, used to trigger reconciliation resync */
 	P_CURRENT_UUID	      = 0x36, /* data socket */
 
+	P_TWOPC_REPLY         = 0x37, /* meta sock: state change reply */
+
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
 	/* special command ids for handshake */

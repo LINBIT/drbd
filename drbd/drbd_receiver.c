@@ -4544,6 +4544,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
 	bool reply = false;
+	bool twopc;
 
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr.  In the other packets, vnr == -1
@@ -4572,12 +4573,22 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		resource->remote_state_change = true;
 	spin_unlock_irq(&resource->req_lock);
 
+	switch(pi->cmd) {
+	case P_TWOPC_PREPARE:
+	case P_TWOPC_ABORT:
+		twopc = true;
+		break;
+	default:
+		twopc = (flags & CS_PREPARED);
+		break;
+	}
+
 	if (rv != SS_SUCCESS) {
 		drbd_info(connection, "Rejecting concurrent remote state change\n");
 		if (peer_device)
-			drbd_send_sr_reply(peer_device, rv);
+			drbd_send_sr_reply(peer_device, rv, twopc);
 		else
-			conn_send_sr_reply(connection, rv);
+			conn_send_sr_reply(connection, rv, twopc);
 		return 0;
 	}
 
@@ -4614,7 +4625,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	if (peer_device) {
 		rv = change_peer_device_state(peer_device, mask, val, flags);
 		if (reply)
-			drbd_send_sr_reply(peer_device, rv);
+			drbd_send_sr_reply(peer_device, rv, twopc);
 		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 			drbd_md_sync(peer_device->device);
 	} else if (pi->cmd == P_CONN_ST_CHG_REQ) {
@@ -4626,7 +4637,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	} else {
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
 		if (reply)
-			conn_send_sr_reply(connection, rv);
+			conn_send_sr_reply(connection, rv, twopc);
 	}
 
 	spin_lock_irq(&resource->req_lock);
@@ -6420,6 +6431,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
+	[P_TWOPC_REPLY]     = { sizeof(struct p_req_state_reply), got_RqSReply },
 };
 
 int drbd_asender(struct drbd_thread *thi)

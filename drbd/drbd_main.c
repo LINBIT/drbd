@@ -1227,7 +1227,7 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 	return err;
 }
 
-void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv retcode)
+void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv retcode, bool twopc)
 {
 	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
@@ -1235,20 +1235,24 @@ void drbd_send_sr_reply(struct drbd_peer_device *peer_device, enum drbd_state_rv
 	sock = &peer_device->connection->meta;
 	p = drbd_prepare_command(peer_device, sock);
 	if (p) {
+		enum drbd_packet cmd = twopc ? P_TWOPC_REPLY : P_STATE_CHG_REPLY;
+
 		p->retcode = cpu_to_be32(retcode);
-		drbd_send_command(peer_device, sock, P_STATE_CHG_REPLY, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }
 
-void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode)
+void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv retcode, bool twopc)
 {
 	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
-	enum drbd_packet cmd = connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
 
 	sock = &connection->meta;
 	p = conn_prepare_command(connection, sock);
 	if (p) {
+		enum drbd_packet cmd = twopc ? P_TWOPC_REPLY :
+			connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
+
 		p->retcode = cpu_to_be32(retcode);
 		conn_send_command(connection, sock, cmd, sizeof(*p), NULL, 0);
 	}
@@ -4416,6 +4420,7 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_UUIDS110]            = "uuids_110",
 		[P_PEER_DAGTAG]         = "peer_dagtag",
 		[P_CURRENT_UUID]        = "current_uuid",
+		[P_TWOPC_REPLY]		= "twopc_reply",
 		/* enum drbd_packet, but not commands - obsoleted flags:
 		 *	P_MAY_IGNORE
 		 *	P_MAX_OPT_CMD
