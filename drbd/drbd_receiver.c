@@ -4564,7 +4564,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	} else
 #endif
 	if (resource->remote_state_change) {
-		if (resource->remote_state_change_prepared == connection)
+		if (resource->twopc_parent == connection)
 			flags |= CS_PREPARED;
 		else
 			rv = SS_CONCURRENT_ST_CHG;
@@ -4631,12 +4631,12 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	spin_lock_irq(&resource->req_lock);
 	if (flags & CS_PREPARE)
-		resource->remote_state_change_prepared = connection;
+		resource->twopc_parent = connection;
 	else {
 		if (flags & CS_PREPARED)
 			drbd_info(connection, "Remote state change finished\n");
 		resource->remote_state_change = false;
-		resource->remote_state_change_prepared = NULL;
+		resource->twopc_parent = NULL;
 	}
 	spin_unlock_irq(&resource->req_lock);
 

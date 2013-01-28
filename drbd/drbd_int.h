@@ -747,7 +747,7 @@ struct drbd_resource {
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	enum chg_state_flags state_change_flags;
 	bool remote_state_change;  /* remote state change in progress */
-	struct drbd_connection *remote_state_change_prepared;  /* prepared on behalf of peer */
+	struct drbd_connection *twopc_parent;  /* prepared on behalf of peer */
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
