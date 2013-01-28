@@ -4543,13 +4543,70 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
-	bool reply = false;
-	bool twopc;
 
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr.  In the other packets, vnr == -1
 	 * means that the packet applies to the connection.  */
 	if (pi->cmd == P_STATE_CHG_REQ || (pi->cmd != P_CONN_ST_CHG_REQ && pi->vnr != -1)) {
+		peer_device = conn_peer_device(connection, pi->vnr);
+		if (!peer_device)
+			return -EIO;
+	}
+
+	rv = SS_SUCCESS;
+	spin_lock_irq(&resource->req_lock);
+	if (resource->remote_state_change)
+		rv = SS_CONCURRENT_ST_CHG;
+	else
+		resource->remote_state_change = true;
+	spin_unlock_irq(&resource->req_lock);
+
+	if (rv != SS_SUCCESS) {
+		drbd_info(connection, "Rejecting concurrent remote state change\n");
+		if (peer_device)
+			drbd_send_sr_reply(peer_device, rv, false);
+		else
+			conn_send_sr_reply(connection, rv, false);
+		return 0;
+	}
+
+	mask.i = be32_to_cpu(p->mask);
+	val.i = be32_to_cpu(p->val);
+
+	mask = convert_state(mask);
+	val = convert_state(val);
+
+	if (peer_device) {
+		rv = change_peer_device_state(peer_device, mask, val, flags);
+		drbd_send_sr_reply(peer_device, rv, false);
+		if (rv >= SS_SUCCESS)
+			drbd_md_sync(peer_device->device);
+	} else {
+		flags |= CS_IGN_OUTD_FAIL;
+		/* Send the reply before carrying out the state change: this is
+		 * needed for state changes which close the network connection.  */
+		rv = change_connection_state(connection, mask, val, flags | CS_PREPARE);
+		conn_send_sr_reply(connection, rv, false);
+		rv = change_connection_state(connection, mask, val, flags | CS_PREPARED);
+	}
+
+	spin_lock_irq(&resource->req_lock);
+	resource->remote_state_change = false;
+	spin_unlock_irq(&resource->req_lock);
+
+	return 0;
+}
+
+static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device = NULL;
+	struct p_req_state *p = pi->data;
+	union drbd_state mask, val;
+	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
+	enum drbd_state_rv rv;
+
+	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(connection, pi->vnr);
 		if (!peer_device)
 			return -EIO;
@@ -4573,48 +4630,31 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		resource->remote_state_change = true;
 	spin_unlock_irq(&resource->req_lock);
 
-	switch(pi->cmd) {
-	case P_TWOPC_PREPARE:
-	case P_TWOPC_COMMIT:
-	case P_TWOPC_ABORT:
-		twopc = true;
-		break;
-	default:
-		twopc = false;
-		break;
-	}
-
 	if (rv != SS_SUCCESS) {
 		drbd_info(connection, "Rejecting concurrent remote state change\n");
 		if (peer_device)
-			drbd_send_sr_reply(peer_device, rv, twopc);
+			drbd_send_sr_reply(peer_device, rv, true);
 		else
-			conn_send_sr_reply(connection, rv, twopc);
+			conn_send_sr_reply(connection, rv, true);
 		return 0;
+	}
+
+	/* Double P_TWOPC_PREPARE, P_TWOPC_COMMIT or P_TWOPC_ABORT without
+	 * prior P_TWOPC_PREPARE? */
+	if (!(flags & CS_PREPARED) ^ (pi->cmd == P_TWOPC_PREPARE)) {
+		rv = SS_NOT_SUPPORTED;
+		drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
+		return rv;
 	}
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
 		drbd_info(connection, "Preparing remote state change\n");
 		flags |= CS_PREPARE;
-		reply = true;
 		break;
-	case P_TWOPC_COMMIT:
 	case P_TWOPC_ABORT:
-		if (!(flags & CS_PREPARED)) {
-			/* No prior P_TWOPC_PREPARE */
-			rv = SS_NOT_SUPPORTED;
-			drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
-			return rv;
-		}
-		if (pi->cmd == P_TWOPC_ABORT) {
-			drbd_info(connection, "Aborting remote state change\n");
-			flags |= CS_ABORT;
-		}
-		break;
-	case P_STATE_CHG_REQ:
-	case P_CONN_ST_CHG_REQ:
-		reply = true;
+		drbd_info(connection, "Aborting remote state change\n");
+		flags |= CS_ABORT;
 		break;
 	default:
 		break;
@@ -4628,20 +4668,14 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (peer_device) {
 		rv = change_peer_device_state(peer_device, mask, val, flags);
-		if (reply)
-			drbd_send_sr_reply(peer_device, rv, twopc);
+		if (flags & CS_PREPARE)
+			drbd_send_sr_reply(peer_device, rv, true);
 		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 			drbd_md_sync(peer_device->device);
-	} else if (pi->cmd == P_CONN_ST_CHG_REQ) {
-		/* There is no prepare step for P_CONN_ST_CHG_REQ
-		   need to send the reply before doing the transition */
-		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL | CS_PREPARE);
-		conn_send_sr_reply(connection, rv);
-		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL | CS_PREPARED);
 	} else {
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
-		if (reply)
-			conn_send_sr_reply(connection, rv, twopc);
+		if (flags & CS_PREPARE)
+			conn_send_sr_reply(connection, rv, true);
 	}
 
 	spin_lock_irq(&resource->req_lock);
@@ -5382,13 +5416,13 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_OUT_OF_SYNC]     = { 0, sizeof(struct p_block_desc), receive_out_of_sync },
 	[P_CONN_ST_CHG_REQ] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_PROTOCOL_UPDATE] = { 1, sizeof(struct p_protocol), receive_protocol },
-	[P_TWOPC_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
-	[P_TWOPC_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_TWOPC_PREPARE] = { 0, sizeof(struct p_req_state), receive_twopc },
+	[P_TWOPC_ABORT] = { 0, sizeof(struct p_req_state), receive_twopc },
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
-	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_req_state), receive_twopc },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)
