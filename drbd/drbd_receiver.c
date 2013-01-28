@@ -1030,7 +1030,7 @@ static int send_first_packet(struct drbd_connection *connection, struct drbd_soc
 {
 	if (!conn_prepare_command(connection, sock))
 		return -EIO;
-	return conn_send_command(connection, sock, cmd, 0, NULL, 0);
+	return send_command(connection, -1, sock, cmd, 0, NULL, 0);
 }
 
 static int receive_first_packet(struct drbd_connection *connection, struct socket *sock)
@@ -5634,7 +5634,7 @@ STATIC int drbd_send_features(struct drbd_connection *connection, int peer_node_
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(peer_node_id);
-	return conn_send_command(connection, sock, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0);
 }
 
 /*
@@ -5790,8 +5790,8 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 		rv = 0;
 		goto fail;
 	}
-	rv = !conn_send_command(connection, sock, P_AUTH_CHALLENGE, 0,
-				my_challenge, CHALLENGE_LEN);
+	rv = !send_command(connection, -1, sock, P_AUTH_CHALLENGE, 0,
+			   my_challenge, CHALLENGE_LEN);
 	if (!rv)
 		goto fail;
 
@@ -5849,8 +5849,8 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 		rv = 0;
 		goto fail;
 	}
-	rv = !conn_send_command(connection, sock, P_AUTH_RESPONSE, 0,
-				response, resp_size);
+	rv = !send_command(connection, -1, sock, P_AUTH_RESPONSE, 0,
+			   response, resp_size);
 	if (!rv)
 		goto fail;
 

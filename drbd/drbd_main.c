@@ -719,20 +719,13 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	return err;
 }
 
-static int __conn_send_command(struct drbd_connection *connection, struct drbd_socket *sock,
-			       enum drbd_packet cmd, unsigned int header_size,
-			       void *data, unsigned int size)
-{
-	return __send_command(connection, -1, sock, cmd, header_size, data, size);
-}
-
-int conn_send_command(struct drbd_connection *connection, struct drbd_socket *sock,
-		      enum drbd_packet cmd, unsigned int header_size,
-		      void *data, unsigned int size)
+int send_command(struct drbd_connection *connection, int vnr, struct drbd_socket *sock,
+		 enum drbd_packet cmd, unsigned int header_size,
+		 void *data, unsigned int size)
 {
 	int err;
 
-	err = __conn_send_command(connection, sock, cmd, header_size, data, size);
+	err = __send_command(connection, vnr, sock, cmd, header_size, data, size);
 	mutex_unlock(&sock->mutex);
 	return err;
 }
@@ -741,12 +734,8 @@ int drbd_send_command(struct drbd_peer_device *peer_device, struct drbd_socket *
 		      enum drbd_packet cmd, unsigned int header_size,
 		      void *data, unsigned int size)
 {
-	int err;
-
-	err = __send_command(peer_device->connection, peer_device->device->vnr,
-			     sock, cmd, header_size, data, size);
-	mutex_unlock(&sock->mutex);
-	return err;
+	return send_command(peer_device->connection, peer_device->device->vnr,
+			    sock, cmd, header_size, data, size);
 }
 
 int drbd_send_ping(struct drbd_connection *connection)
@@ -756,7 +745,7 @@ int drbd_send_ping(struct drbd_connection *connection)
 	sock = &connection->meta;
 	if (!conn_prepare_command(connection, sock))
 		return -EIO;
-	return conn_send_command(connection, sock, P_PING, 0, NULL, 0);
+	return send_command(connection, -1, sock, P_PING, 0, NULL, 0);
 }
 
 int drbd_send_ping_ack(struct drbd_connection *connection)
@@ -766,7 +755,7 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 	sock = &connection->meta;
 	if (!conn_prepare_command(connection, sock))
 		return -EIO;
-	return conn_send_command(connection, sock, P_PING_ACK, 0, NULL, 0);
+	return send_command(connection, -1, sock, P_PING_ACK, 0, NULL, 0);
 }
 
 extern int drbd_send_peer_ack(struct drbd_connection *connection,
@@ -794,7 +783,7 @@ extern int drbd_send_peer_ack(struct drbd_connection *connection,
 		return -EIO;
 	p->mask = cpu_to_be64(mask);
 	p->dagtag = cpu_to_be64(req->dagtag_sector);
-	return conn_send_command(connection, sock, P_PEER_ACK, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_PEER_ACK, sizeof(*p), NULL, 0);
 }
 
 int drbd_send_sync_param(struct drbd_peer_device *peer_device)
@@ -893,7 +882,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 		strcpy(p->integrity_alg, nc->integrity_alg);
 	rcu_read_unlock();
 
-	return __conn_send_command(connection, sock, cmd, size, NULL, 0);
+	return __send_command(connection, -1, sock, cmd, size, NULL, 0);
 }
 
 int drbd_send_protocol(struct drbd_connection *connection)
@@ -1201,7 +1190,7 @@ int conn_send_state(struct drbd_connection *connection, union drbd_state state)
 	if (!p)
 		return -EIO;
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
-	return conn_send_command(connection, sock, P_STATE, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_STATE, sizeof(*p), NULL, 0);
 }
 
 int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
@@ -1254,7 +1243,7 @@ void conn_send_sr_reply(struct drbd_connection *connection, enum drbd_state_rv r
 			connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
 
 		p->retcode = cpu_to_be32(retcode);
-		conn_send_command(connection, sock, cmd, sizeof(*p), NULL, 0);
+		send_command(connection, -1, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }
 
@@ -1293,7 +1282,7 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 
 	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
 	p->node_id = cpu_to_be32(lost_node_id);
-	return conn_send_command(connection, sock, P_PEER_DAGTAG, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_PEER_DAGTAG, sizeof(*p), NULL, 0);
 }
 
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
@@ -1538,7 +1527,7 @@ void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set
 		return;
 	p->barrier = barrier_nr;
 	p->set_size = cpu_to_be32(set_size);
-	conn_send_command(connection, sock, P_BARRIER_ACK, sizeof(*p), NULL, 0);
+	send_command(connection, -1, sock, P_BARRIER_ACK, sizeof(*p), NULL, 0);
 }
 
 /**
@@ -1983,7 +1972,7 @@ int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 	if (!p)
 		return -EIO;
 	p->dagtag = cpu_to_be64(dagtag);
-	return conn_send_command(connection, sock, P_DAGTAG, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_DAGTAG, sizeof(*p), NULL, 0);
 }
 
 /*

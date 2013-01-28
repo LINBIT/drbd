@@ -1329,7 +1329,7 @@ int drbd_send_barrier(struct drbd_connection *connection)
 	p->pad = 0;
 	connection->send.current_epoch_writes = 0;
 
-	return conn_send_command(connection, sock, P_BARRIER, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, sock, P_BARRIER, sizeof(*p), NULL, 0);
 }
 
 #ifdef blk_queue_plugged
@@ -1365,7 +1365,7 @@ void maybe_send_write_hint(struct drbd_connection *connection)
 	if (!conn_prepare_command(connection, sock))
 		return;
 
-	conn_send_command(connection, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
+	send_command(connection, -1, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
 }
 #else
 static bool need_unplug(struct drbd_connection *connection)
