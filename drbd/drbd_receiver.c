@@ -4545,6 +4545,9 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	enum drbd_state_rv rv;
 	bool reply = false;
 
+	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
+	 * packets have an undefined vnr.  In the other packets, vnr == -1
+	 * means that the packet applies to the connection.  */
 	if (pi->cmd == P_STATE_CHG_REQ || (pi->cmd != P_CONN_ST_CHG_REQ && pi->vnr != -1)) {
 		peer_device = conn_peer_device(connection, pi->vnr);
 		if (!peer_device)
@@ -4579,14 +4582,14 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	}
 
 	switch(pi->cmd) {
-	case P_CONN_ST_CHG_PREPARE:
+	case P_TWOPC_PREPARE:
 		drbd_info(connection, "Preparing remote state change\n");
 		flags |= CS_PREPARE;
 		reply = true;
 		break;
-	case P_CONN_ST_CHG_ABORT:
+	case P_TWOPC_ABORT:
 		if (!(flags & CS_PREPARED)) {
-			/* P_CONN_ST_CHG_ABORT without prior P_CONN_ST_CHG_PREPARE */
+			/* P_TWOPC_ABORT without prior P_TWOPC_PREPARE */
 			rv = SS_NOT_SUPPORTED;
 			drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
 			return rv;
@@ -5364,8 +5367,8 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_OUT_OF_SYNC]     = { 0, sizeof(struct p_block_desc), receive_out_of_sync },
 	[P_CONN_ST_CHG_REQ] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_PROTOCOL_UPDATE] = { 1, sizeof(struct p_protocol), receive_protocol },
-	[P_CONN_ST_CHG_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
-	[P_CONN_ST_CHG_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_TWOPC_PREPARE] = { 0, sizeof(struct p_req_state), receive_req_state },
+	[P_TWOPC_ABORT] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
@@ -5949,9 +5952,9 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 	int retcode = be32_to_cpu(p->retcode);
 
 	if (retcode >= SS_SUCCESS)
-		set_bit(CONN_WD_ST_CHG_OKAY, &connection->flags);
+		set_bit(TWOPC_YES, &connection->flags);
 	else {
-		set_bit(CONN_WD_ST_CHG_FAIL, &connection->flags);
+		set_bit(TWOPC_NO, &connection->flags);
 		drbd_debug(connection, "Requested state change failed by peer: %s (%d)\n",
 			   drbd_set_st_err_str(retcode), retcode);
 	}

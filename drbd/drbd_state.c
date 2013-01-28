@@ -1450,7 +1450,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		enum drbd_conn_state *cstate = connection->cstate;
 
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED) {
-			if (test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+			if (test_and_clear_bit(TWOPC_PREPARED, &connection->flags))
 				wake_up(&resource->state_wait);
 			if (resource->remote_state_change_prepared == connection) {
 				/* Remote state change request was prepared but
@@ -2243,7 +2243,7 @@ __peer_request(struct drbd_connection *connection, int vnr,
 	if (connection->cstate[NOW] == C_CONNECTED) {
 		enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
 		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
-			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			set_bit(TWOPC_PREPARED, &connection->flags);
 			rv = SS_CW_SUCCESS;
 		}
 	}
@@ -2252,10 +2252,10 @@ __peer_request(struct drbd_connection *connection, int vnr,
 
 static enum drbd_state_rv __peer_reply(struct drbd_connection *connection)
 {
-	if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))
+	if (test_and_clear_bit(TWOPC_NO, &connection->flags))
 		return SS_CW_FAILED_BY_PEER;
-	if (test_and_clear_bit(CONN_WD_ST_CHG_OKAY, &connection->flags) ||
-	    !test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+	if (test_and_clear_bit(TWOPC_YES, &connection->flags) ||
+	    !test_bit(TWOPC_PREPARED, &connection->flags))
 		return SS_CW_SUCCESS;
 	return SS_UNKNOWN_ERROR;
 }
@@ -2276,7 +2276,7 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	if (rv == SS_CW_SUCCESS) {
 		wait_event(resource->state_wait,
 			((rv = __peer_reply(connection)) != SS_UNKNOWN_ERROR));
-		clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+		clear_bit(TWOPC_PREPARED, &connection->flags);
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 	resource->remote_state_change = false;
@@ -2292,7 +2292,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		if (!(test_and_clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags) || all))
+		if (!(test_and_clear_bit(TWOPC_PREPARED, &connection->flags) || all))
 			continue;
 		if (connection->cstate[NOW] < C_CONNECTED)
 			continue;
@@ -2301,7 +2301,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
 			drbd_debug(connection, "State change request %s [%u|%u] sent\n",
 				   cmdname(cmd), val.i, mask.i);
-			set_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			set_bit(TWOPC_PREPARED, &connection->flags);
 			rv = SS_CW_SUCCESS;
 		}
 		rcu_read_lock();
@@ -2318,10 +2318,10 @@ static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		if (!test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		if (!(test_bit(CONN_WD_ST_CHG_OKAY, &connection->flags) ||
-		      test_bit(CONN_WD_ST_CHG_FAIL, &connection->flags))) {
+		if (!(test_bit(TWOPC_YES, &connection->flags) ||
+		      test_bit(TWOPC_NO, &connection->flags))) {
 			/* Keep waiting until all replies have arrived.  */
 			rv = SS_UNKNOWN_ERROR;
 			break;
@@ -2329,11 +2329,11 @@ static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
 	}
 	if (rv != SS_UNKNOWN_ERROR) {
 		for_each_connection(connection, resource) {
-			if (!test_bit(CONN_WD_ST_CHG_REQ, &connection->flags))
+			if (!test_bit(TWOPC_PREPARED, &connection->flags))
 				continue;
-			clear_bit(CONN_WD_ST_CHG_OKAY,  &connection->flags);
-			if (test_and_clear_bit(CONN_WD_ST_CHG_FAIL, &connection->flags)) {
-				clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			clear_bit(TWOPC_YES,  &connection->flags);
+			if (test_and_clear_bit(TWOPC_NO, &connection->flags)) {
+				clear_bit(TWOPC_PREPARED, &connection->flags);
 			        rv = SS_CW_FAILED_BY_PEER;
 			}
 		}
@@ -2399,7 +2399,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	drbd_debug(resource, "Preparing cluster-wide state change\n");
 	resource->remote_state_change = true;
 	begin_remote_state_change(resource, irq_flags);
-	rv = __cluster_wide_request(resource, vnr, P_CONN_ST_CHG_PREPARE, mask, val, true);
+	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, mask, val, true);
 	if (rv == SS_CW_SUCCESS) {
 		wait_event(resource->state_wait,
 			((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
@@ -2413,12 +2413,12 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 		} else {
 			drbd_debug(resource, "Aborting cluster-wide state change\n");
-			__cluster_wide_request(resource, vnr, P_CONN_ST_CHG_ABORT, mask, val, false);
+			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, mask, val, false);
 		}
 
 		rcu_read_lock();
 		for_each_connection(connection, resource)
-			clear_bit(CONN_WD_ST_CHG_REQ, &connection->flags);
+			clear_bit(TWOPC_PREPARED, &connection->flags);
 		rcu_read_unlock();
 	}
 	end_remote_state_change(resource, irq_flags, flags);

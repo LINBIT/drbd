@@ -699,9 +699,9 @@ enum {
 	SEND_PING,		/* whether asender should send a ping asap */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
-	CONN_WD_ST_CHG_REQ,
-	CONN_WD_ST_CHG_OKAY,
-	CONN_WD_ST_CHG_FAIL,
+	TWOPC_PREPARED,
+	TWOPC_YES,
+	TWOPC_NO,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	DISCONNECT_SENT,

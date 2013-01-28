@@ -54,8 +54,8 @@ enum drbd_packet {
 	P_CONN_ST_CHG_REPLY   = 0x2b, /* meta sock: state change reply */
 	P_RETRY_WRITE	      = 0x2c, /* Protocol C: retry conflicting write request */
 	P_PROTOCOL_UPDATE     = 0x2d, /* data sock: is used in established connections */
-	P_CONN_ST_CHG_PREPARE = 0x2e, /* data sock: prepare state change */
-	P_CONN_ST_CHG_ABORT   = 0x2f, /* data sock: abort state change */
+	P_TWOPC_PREPARE       = 0x2e, /* data sock: prepare state change */
+	P_TWOPC_ABORT         = 0x2f, /* data sock: abort state change */
 
 	P_DAGTAG	      = 0x30, /* data sock: set the current dagtag */
 	/* P_TRIM                = 0x31, Reserved */
