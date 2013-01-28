@@ -67,6 +67,7 @@ enum drbd_packet {
 	P_CURRENT_UUID	      = 0x36, /* data socket */
 
 	P_TWOPC_REPLY         = 0x37, /* meta sock: state change reply */
+	P_TWOPC_COMMIT        = 0x38, /* data sock: commit state change */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 

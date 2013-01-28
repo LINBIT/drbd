@@ -4575,11 +4575,12 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
+	case P_TWOPC_COMMIT:
 	case P_TWOPC_ABORT:
 		twopc = true;
 		break;
 	default:
-		twopc = (flags & CS_PREPARED);
+		twopc = false;
 		break;
 	}
 
@@ -4598,19 +4599,22 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		flags |= CS_PREPARE;
 		reply = true;
 		break;
+	case P_TWOPC_COMMIT:
 	case P_TWOPC_ABORT:
 		if (!(flags & CS_PREPARED)) {
-			/* P_TWOPC_ABORT without prior P_TWOPC_PREPARE */
+			/* No prior P_TWOPC_PREPARE */
 			rv = SS_NOT_SUPPORTED;
 			drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
 			return rv;
 		}
-		drbd_info(connection, "Aborting remote state change\n");
-		flags |= CS_ABORT;
+		if (pi->cmd == P_TWOPC_ABORT) {
+			drbd_info(connection, "Aborting remote state change\n");
+			flags |= CS_ABORT;
+		}
 		break;
 	case P_STATE_CHG_REQ:
 	case P_CONN_ST_CHG_REQ:
-		reply = !(flags & CS_PREPARED);
+		reply = true;
 		break;
 	default:
 		break;
@@ -5384,6 +5388,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
+	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_req_state), receive_req_state },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)

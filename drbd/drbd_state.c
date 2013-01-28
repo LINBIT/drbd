@@ -2404,10 +2404,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		wait_event(resource->state_wait,
 			((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
 		if (rv == SS_CW_SUCCESS) {
-			enum drbd_packet cmd = (vnr == -1) ? P_CONN_ST_CHG_REQ : P_STATE_CHG_REQ;
-
 			drbd_debug(resource, "Committing cluster-wide state change\n");
-			rv = __cluster_wide_request(resource, vnr, cmd, mask, val, false);
+			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, mask, val, false);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
