@@ -1203,4 +1203,30 @@ int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
 #define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).pid
 #endif
 
+
+#ifndef COMPAT_HAVE_LIST_SPLICE_TAIL_INIT
+static inline void __backported_list_splice(const struct list_head *list,
+					    struct list_head *prev,
+					    struct list_head *next)
+{
+        struct list_head *first = list->next;
+        struct list_head *last = list->prev;
+
+        first->prev = prev;
+        prev->next = first;
+
+        last->next = next;
+        next->prev = last;
+}
+
+static inline void list_splice_tail_init(struct list_head *list,
+                                         struct list_head *head)
+{
+        if (!list_empty(list)) {
+		__backported_list_splice(list, head->prev, head);
+                INIT_LIST_HEAD(list);
+        }
+}
+#endif
+
 #endif
