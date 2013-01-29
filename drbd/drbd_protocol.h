@@ -72,6 +72,8 @@ enum drbd_packet {
 	P_TWOPC_COMMIT        = 0x40, /* data sock: commit state change */
 	P_TWOPC_RETRY         = 0x41, /* meta sock: retry two-phase commit */
 
+	P_PRI_REACHABLE       = 0x42, /* The set of reachable primaries got smaller */
+
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
 	/* special command ids for handshake */
@@ -355,6 +357,10 @@ struct p_peer_block_desc {
 struct p_peer_dagtag {
 	u64 dagtag;
 	u32 node_id;
+} __packed;
+
+struct p_pri_reachable {
+	u64 primary_mask;
 } __packed;
 
 /*

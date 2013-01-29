@@ -798,6 +798,8 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conn_state cstate[2];
 	enum drbd_role peer_role[2];
+	u64 primary_mask; /* received over this connection */
+	u64 primary_mask_sent; /* last primary_mask sent on this connection */
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */
@@ -1206,6 +1208,7 @@ extern void drbd_send_twopc_reply(struct drbd_connection *connection,
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);
 extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid);
+extern int drbd_propagate_reachability(struct drbd_connection *connection);
 extern void drbd_free_bc(struct drbd_backing_dev *ldev);
 extern void drbd_cleanup_device(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);

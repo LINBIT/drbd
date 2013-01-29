@@ -124,4 +124,6 @@ extern int abort_nested_twopc_work(struct drbd_work *, int);
 extern u64 directly_connected_nodes(struct drbd_resource *);
 extern enum drbd_state_rv connect_transaction(struct drbd_connection *);
 
+extern bool drbd_calc_weak(struct drbd_resource *resource);
+
 #endif

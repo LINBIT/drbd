@@ -1026,6 +1026,24 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 	return SS_SUCCESS;
 }
 
+bool drbd_calc_weak(struct drbd_resource *resource)
+{
+	enum drbd_role *role = resource->role;
+	struct drbd_connection *connection;
+	u64 primaries = 0, direct_primaries = 0;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NEW] >= C_CONNECTED) {
+			int peer_node_id = connection->net_conf->peer_node_id;
+			primaries |= connection->primary_mask;
+			if (NODE_MASK(peer_node_id) & primaries)
+				direct_primaries |= NODE_MASK(peer_node_id);
+		}
+	}
+
+	return role[NEW] == R_SECONDARY && primaries && primaries != direct_primaries;
+}
+
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -1037,8 +1055,14 @@ static void sanitize_state(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
-		if (cstate[NEW] < C_CONNECTED)
+		if (cstate[NEW] < C_CONNECTED) {
 			connection->peer_role[NEW] = R_UNKNOWN;
+			if (connection->primary_mask > 0)
+				resource->weak[NEW] = drbd_calc_weak(resource);
+				/* One might be tempted to reset primary_mask to 0 here, but
+				   it is not clear if this state transition will be committed.
+				   The primary_mask gets set to 0 in finish_state_change() */
+		}
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1491,6 +1515,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if (cstate[NEW] < C_CONNECTED) {
 			clear_bit(INITIAL_STATE_SENT, &connection->flags);
 			clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
+			if (cstate[OLD] >= C_CONNECTED)
+				connection->primary_mask = 0;
 		}
 
 		/* remember last connect time so request_timer_fn() won't
@@ -2236,8 +2262,10 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			notify_peers_lost_primary(connection);
 		}
 
-		if (cstate[NEW] == C_CONNECTED)
+		if (cstate[NEW] == C_CONNECTED) {
 			still_connected = true;
+			drbd_propagate_reachability(connection);
+		}
 	}
 
 	if (!still_connected)

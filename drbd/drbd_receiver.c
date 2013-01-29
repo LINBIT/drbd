@@ -5612,6 +5612,20 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
+static int receive_reachability(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	const int my_node_id = resource->res_opts.node_id;
+	struct p_pri_reachable *p = pi->data;
+	unsigned long irq_flags;
+
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
+	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~(1ULL << my_node_id);
+	__change_weak(resource, drbd_calc_weak(resource));
+	end_state_change(resource, &irq_flags);
+
+	return 0;
+}
 
 struct data_cmd {
 	int expect_payload;
@@ -5651,6 +5665,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
 	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_twopc_request), receive_twopc },
+	[P_PRI_REACHABLE]   = { 0, sizeof(struct p_pri_reachable), receive_reachability },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)
