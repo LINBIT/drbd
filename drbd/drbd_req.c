@@ -298,8 +298,6 @@ void _req_may_be_done(struct drbd_request *req, struct bio_and_error *m)
 		 * respective block_id verification hash */
 		if (!hlist_unhashed(&req->collision))
 			hlist_del(&req->collision);
-		else
-			D_ASSERT((s & (RQ_NET_MASK & ~RQ_NET_DONE)) == 0);
 
 		/* for writes we need to do some extra housekeeping */
 		if (rw == WRITE)
@@ -795,6 +793,11 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
 		_req_may_be_done_not_susp(req, m);
 		break;
+
+	case queue_as_drbd_barrier:
+		req->rq_state |= (RQ_NET_OK|RQ_NET_DONE);
+		_req_may_be_done_not_susp(req, m);
+		break;
 	};
 
 	return rv;
@@ -868,6 +871,7 @@ STATIC void maybe_pull_ahead(struct drbd_conf *mdev)
 STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, unsigned long start_time)
 {
 	const int rw = bio_rw(bio);
+	const int is_flush = (bio->bi_rw & DRBD_REQ_FLUSH);
 	const int size = bio->bi_size;
 	const sector_t sector = bio->bi_sector;
 	struct drbd_tl_epoch *b = NULL;
@@ -900,12 +904,10 @@ STATIC int drbd_make_request_common(struct drbd_conf *mdev, struct bio *bio, uns
 		/* Need to replicate writes.  Unless it is an empty flush,
 		 * which is better mapped to a DRBD P_BARRIER packet,
 		 * also for drbd wire protocol compatibility reasons. */
-		if (unlikely(size == 0)) {
+		if (unlikely(size == 0))
 			/* The only size==0 bios we expect are empty flushes. */
-			D_ASSERT(bio->bi_rw & DRBD_REQ_FLUSH);
-			remote = 0;
-		} else
-			remote = 1;
+			D_ASSERT(is_flush);
+		remote = 1;
 	} else {
 		/* READ || READA */
 		if (local) {
@@ -1058,10 +1060,22 @@ allocate_barrier:
 
 	/* mark them early for readability.
 	 * this just sets some state flags. */
-	if (remote)
-		_req_mod(req, to_be_send);
 	if (local)
 		_req_mod(req, to_be_submitted);
+	if (remote) {
+		if (likely(size!=0))
+			_req_mod(req, to_be_send);
+		else {
+			_req_mod(req, queue_as_drbd_barrier);
+			/* if local == 0,
+			 * both bio and req have been freed now! */
+			if (local == 0) {
+				bio = NULL;
+				req = NULL;
+			}
+			goto queue_barrier;
+		}
+	}
 
 	/* check this request on the collision detection hash tables.
 	 * if we have a conflict, just complete it here.
@@ -1071,8 +1085,7 @@ allocate_barrier:
 
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
-	if (likely(size!=0))
-		list_add_tail(&req->tl_requests, &mdev->newest_tle->requests);
+	list_add_tail(&req->tl_requests, &mdev->newest_tle->requests);
 
 	/* NOTE remote first: to get the concurrent write detection right,
 	 * we must register the request before start of local IO.  */
@@ -1092,10 +1105,11 @@ allocate_barrier:
 	    mdev->net_conf->on_congestion != OC_BLOCK && mdev->agreed_pro_version >= 96)
 		maybe_pull_ahead(mdev);
 
+queue_barrier:
 	/* If this was a flush, queue a drbd barrier/start a new epoch.
 	 * Unless the current epoch was empty anyways, or we are not currently
 	 * replicating, in which case there is no point. */
-	if (unlikely(bio->bi_rw & DRBD_REQ_FLUSH)
+	if (is_flush
 		&& mdev->newest_tle->n_writes
 		&& drbd_should_do_remote(mdev->state))
 		queue_barrier(mdev);

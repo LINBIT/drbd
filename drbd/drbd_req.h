@@ -87,6 +87,14 @@ enum drbd_req_event {
 	queue_for_net_read,
 	queue_for_send_oos,
 
+	/* An empty flush is queued as P_BARRIER,
+	 * which will cause it to complete "successfully",
+	 * even if the local disk flush failed.
+	 *
+	 * Just like "real" requests, empty flushes (blkdev_issue_flush()) will
+	 * only see an error if neither local nor remote data is reachable. */
+	queue_as_drbd_barrier,
+
 	send_canceled,
 	send_failed,
 	handed_over_to_network,
