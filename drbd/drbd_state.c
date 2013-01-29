@@ -1452,11 +1452,18 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED) {
 			if (test_and_clear_bit(TWOPC_PREPARED, &connection->flags))
 				wake_up(&resource->state_wait);
-			if (resource->twopc_parent == connection) {
+			if (resource->twopc_reply.initiator_node_id ==
+			    connection->net_conf->peer_node_id) {
 				/* Remote state change request was prepared but
 				 * neither executed nor aborted; it still holds
 				 * the state mutex.  */
 				mutex_unlock(&resource->state_mutex);
+				resource->twopc_reply.initiator_node_id = -1;
+				if (resource->twopc_parent) {
+					kref_put(&resource->twopc_parent->kref,
+						 drbd_destroy_connection);
+					resource->twopc_parent = NULL;
+				}
 			}
 		}
 

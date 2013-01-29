@@ -2499,6 +2499,9 @@ void drbd_free_resource(struct drbd_resource *resource)
 		list_del(&connection->connections);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
+	if (resource->twopc_parent)
+		kref_put(&resource->twopc_parent->kref,
+			 drbd_destroy_connection);
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
@@ -2856,6 +2859,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	if (set_resource_options(resource, res_opts))
 		goto fail_free_name;
 	resource->max_node_id = res_opts->node_id;
+	resource->twopc_reply.initiator_node_id = -1;
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);

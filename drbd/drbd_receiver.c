@@ -4625,7 +4625,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	} else
 #endif
 	if (resource->remote_state_change) {
-		if (resource->twopc_parent == connection)
+		if (resource->twopc_reply.initiator_node_id == reply.initiator_node_id)
 			flags |= CS_PREPARED;
 		else
 			rv = SS_CONCURRENT_ST_CHG;
@@ -4678,13 +4678,20 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		drbd_md_sync(peer_device->device);
 
 	spin_lock_irq(&resource->req_lock);
-	if (flags & CS_PREPARE)
+	if (flags & CS_PREPARE) {
+		kref_get(&connection->kref);
 		resource->twopc_parent = connection;
-	else {
+		resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
+	} else {
 		if (flags & CS_PREPARED)
 			drbd_info(connection, "Remote state change finished\n");
 		resource->remote_state_change = false;
-		resource->twopc_parent = NULL;
+		if (resource->twopc_parent) {
+			kref_put(&resource->twopc_parent->kref,
+				 drbd_destroy_connection);
+			resource->twopc_parent = NULL;
+		}
+		resource->twopc_reply.initiator_node_id = -1;
 	}
 	spin_unlock_irq(&resource->req_lock);
 
