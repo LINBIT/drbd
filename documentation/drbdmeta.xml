@@ -80,7 +80,11 @@
     <title>Commands</title>
     <variablelist>
       <varlistentry>
-        <term>create-md <option>--peer-max-bio-size <replaceable>val</replaceable></option></term>
+	<term>create-md
+	  <option>--peer-max-bio-size <replaceable>val</replaceable></option>
+	  <option>--al-stripes <replaceable>val</replaceable></option>
+	  <option>--al-stripe-size-kB <replaceable>val</replaceable></option>
+	</term>
         <listitem>
           <para><indexterm significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
           Create-md initializes the meta data storage. This needs to be
@@ -94,6 +98,26 @@
 	  for the first time DRBD may perform better if you use the
 	  <option>--peer-max-bio-size</option> option. For DRBD versions of
 	  the peer use up to these values: &lt;8.3.7 -&gt; 4k, 8.3.8 -&gt; 32k, 8.3.9 -&gt; 128k, 8.4.0 -&gt; 1M.
+	</para>
+	<para>
+	  If you want to use more than 6433 activity log extents, or live on
+	  top of a spriped RAID, you may specify the number of stripes
+	  (<option>--al-stripes</option>, default 1), and the stripe size
+	  (<option>--al-stripe-size-kB</option>, default 32).
+	  To just use a larger linear on-disk ring-buffer, leave
+	  the number of stripes at 1, and increase the size only:
+	  <?linebreak?>
+	  <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripe-size 1M</command>
+	</para>
+	<para>
+	  To avoid a single "spindle" from becoming a bottleneck,
+	  increase the number of stripes, to achieve an interleaved layout
+	  of the on-disk activity-log transactions.
+	  What you give as "stripe-size" should be what is a.k.a. "chunk size"
+	  or "granularity" or "strip unit": the minimum skip to the next
+	  "spindle".
+	  <?linebreak?>
+	  <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripes 7 --al-stripe-size 64k</command>
 	</para>
         </listitem>
       </varlistentry>

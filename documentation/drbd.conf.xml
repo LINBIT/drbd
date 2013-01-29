@@ -1534,7 +1534,16 @@
             change of the active set is a write operation to the meta-data device. A higher number
             of extents gives longer resync times but less updates to the meta-data. The default
             number of <replaceable>extents</replaceable> is 1237. (Minimum: 7, Maximum:
-            6433)</para>
+            65534)</para>
+	    <para>
+	      Note that the effective maximum may be smaller, depending on how
+	      you created the device meta data, see also
+	      <citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry>.
+	      The effective maximum is 919 * (available on-disk activity-log ring-buffer area/4kB -1),
+	      the default 32kB ring-buffer effects a maximum of 6433 (covers more than 25 GiB of data).
+	      We recommend to keep this well within the amount your backend storage
+	      and replication link are able to resync inside of about 5 minutes.
+	    </para>
           </listitem>
         </varlistentry>
 
@@ -1898,25 +1907,15 @@
   <refsect1>
     <title>See Also</title>
 
-    <para><citerefentry>
-        <refentrytitle>drbd</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>, <citerefentry>
-        <refentrytitle>drbddisk</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>, <citerefentry>
-        <refentrytitle>drbdsetup</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>, <citerefentry>
-        <refentrytitle>drbdadm</refentrytitle>
-
-        <manvolnum>8</manvolnum>
-      </citerefentry>,
+    <para>
+      <citerefentry><refentrytitle>drbd</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbddisk</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbdsetup</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
+      <citerefentry><refentrytitle>drbdadm</refentrytitle><manvolnum>8</manvolnum></citerefentry>,
       <ulink url="http://www.drbd.org/users-guide/"><citetitle>DRBD User's Guide</citetitle></ulink>,
-       <ulink url="http://www.drbd.org/"><citetitle>DRBD web site</citetitle></ulink></para>
+      <ulink url="http://www.drbd.org/"><citetitle>DRBD web site</citetitle></ulink>
+    </para>
 
   </refsect1>
 </refentry>

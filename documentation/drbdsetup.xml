@@ -411,7 +411,13 @@
             is stored in the meta-data area, therefore each change of the active set is a write
             operation to the meta-data device. A higher number of extents gives longer resync
             times but less updates to the meta-data. The default number of
-            <replaceable>extents</replaceable> is 1237. (Minimum: 7, Maximum: 6433)</para>
+            <replaceable>extents</replaceable> is 1237. (Minimum: 7, Maximum: 65534)</para>
+	    <para>See also
+	      <citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry>
+	      and
+	      <citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry>
+	      for additional limitations and necessary preparation.
+	    </para>
           </listitem>
         </varlistentry>
 
