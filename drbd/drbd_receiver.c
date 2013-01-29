@@ -4598,19 +4598,43 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
+	struct drbd_connection *affected_connection = connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply;
-	union drbd_state mask, val;
+	union drbd_state mask = {}, val = {};
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
 
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
 
+	if (reply.initiator_node_id != connection->net_conf->peer_node_id) {
+		/*
+		 * This is an indirect request.  Unless we are directly
+		 * connected to the initiator as well as indirectly, we don't
+		 * have connection or peer device objects for this peer.
+		 */
+		for_each_connection(affected_connection, resource) {
+			if (reply.initiator_node_id ==
+			    affected_connection->net_conf->peer_node_id)
+				goto directly_affected;
+		}
+		/* only indirectly affected */
+		affected_connection = NULL;
+
+		if (pi->cmd == P_TWOPC_PREPARE) {
+			drbd_debug(connection, "Failing indirect request %u for now.\n",
+				   reply.tid);
+			drbd_send_twopc_reply(connection, pi->vnr, P_TWOPC_NO, &reply);
+		}
+		return 0;
+	}
+
+    directly_affected:
 	if (pi->vnr != -1) {
-		peer_device = conn_peer_device(connection, pi->vnr);
+		peer_device = conn_peer_device(affected_connection, pi->vnr);
 		if (!peer_device)
 			return -EIO;
 	}
@@ -4649,27 +4673,40 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
-		drbd_info(connection, "Preparing remote state change\n");
+		drbd_info(connection, "Preparing remote state change %u\n",
+			  reply.tid);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_ABORT:
-		drbd_info(connection, "Aborting remote state change\n");
+		drbd_info(connection, "Aborting remote state change %u\n",
+			  reply.tid);
 		flags |= CS_ABORT;
 		break;
 	default:
+		drbd_info(connection, "Committing remote state change %u\n",
+			  reply.tid);
 		break;
 	}
 
-	mask.i = be32_to_cpu(p->mask);
-	val.i = be32_to_cpu(p->val);
+	if (affected_connection) {
+		mask.i = be32_to_cpu(p->mask);
+		val.i = be32_to_cpu(p->val);
 
-	mask = convert_state(mask);
-	val = convert_state(val);
+		mask = convert_state(mask);
+		val = convert_state(val);
+	} else {
+		/* Do nothing to the connection itself; only prepare, commit,
+		 * or abort the transaction. */
+		affected_connection = connection;
+		rv = change_connection_state(connection, mask, val,
+					     flags | CS_IGN_OUTD_FAIL);
+	}
 
 	if (peer_device)
 		rv = change_peer_device_state(peer_device, mask, val, flags);
 	else
-		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
+		rv = change_connection_state(affected_connection, mask, val,
+					     flags | CS_IGN_OUTD_FAIL);
 	if (flags & CS_PREPARE)
 		drbd_send_twopc_reply(connection, pi->vnr,
 				      rv >= SS_SUCCESS ? P_TWOPC_YES : P_TWOPC_NO,

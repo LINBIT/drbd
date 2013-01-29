@@ -2422,7 +2422,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	request.mask = cpu_to_be32(mask.i);
 	request.val = cpu_to_be32(val.i);
 
-	drbd_debug(resource, "Preparing cluster-wide state change\n");
+	drbd_debug(resource, "Preparing cluster-wide state change %u\n",
+		   be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
@@ -2447,8 +2448,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 	resource->remote_state_change = false;
-	drbd_debug(resource, "Cluster-wide state change %s\n",
-		   rv < 0 ? "failed" : "succeeded");
+	drbd_debug(resource, "Cluster-wide state change %u %s\n",
+		   be32_to_cpu(request.tid),
+		   rv >= SS_SUCCESS ? "succeeded" : "failed");
 	return rv;
 }
 
