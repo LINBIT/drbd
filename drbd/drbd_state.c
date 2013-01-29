@@ -2285,22 +2285,27 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 
 static enum drbd_state_rv
 __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
-		       union drbd_state mask, union drbd_state val, bool all)
+		       struct p_twopc_request *request)
 {
+	u64 nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_SUCCESS;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		if (!(test_and_clear_bit(TWOPC_PREPARED, &connection->flags) || all))
+		if (!(test_and_clear_bit(TWOPC_PREPARED, &connection->flags) ||
+		      test_bit(connection->net_conf->peer_node_id,
+			       (unsigned long *)&nodes_to_reach)))
 			continue;
 		if (connection->cstate[NOW] < C_CONNECTED)
 			continue;
 		kref_get(&connection->kref);
 		rcu_read_unlock();
-		if (!conn_send_state_req(connection, vnr, cmd, mask, val)) {
+		if (!conn_send_twopc_request(connection, vnr, cmd, request)) {
 			drbd_debug(connection, "State change request %s [%u|%u] sent\n",
-				   cmdname(cmd), val.i, mask.i);
+				   cmdname(cmd),
+				   be32_to_cpu(request->val),
+				   be32_to_cpu(request->mask));
 			set_bit(TWOPC_PREPARED, &connection->flags);
 			rv = SS_CW_SUCCESS;
 		}
@@ -2379,9 +2384,12 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			  union drbd_state mask, union drbd_state val,
 			  unsigned long *irq_flags)
 {
+	struct p_twopc_request request;
+	struct twopc_reply *reply = &resource->twopc_reply;
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
+	u64 nodes_to_reach;
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2396,22 +2404,33 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
 
+	do
+		reply->tid = random32();
+	while (!reply->tid);
+	nodes_to_reach = ~NODE_MASK(resource->res_opts.node_id);
+
+	request.tid = cpu_to_be32(reply->tid);
+	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
+	request.nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	request.mask = cpu_to_be32(mask.i);
+	request.val = cpu_to_be32(val.i);
+
 	drbd_debug(resource, "Preparing cluster-wide state change\n");
 	resource->remote_state_change = true;
 	begin_remote_state_change(resource, irq_flags);
-	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, mask, val, true);
+	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
 	if (rv == SS_CW_SUCCESS) {
 		wait_event(resource->state_wait,
 			((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
 		if (rv == SS_CW_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change\n");
-			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, mask, val, false);
+			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, &request);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
 		} else {
 			drbd_debug(resource, "Aborting cluster-wide state change\n");
-			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, mask, val, false);
+			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, &request);
 		}
 
 		rcu_read_lock();

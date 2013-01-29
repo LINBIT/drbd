@@ -1216,6 +1216,23 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 	return err;
 }
 
+int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
+			    struct p_twopc_request *request)
+{
+	struct drbd_socket *sock;
+	struct p_twopc_request *p;
+	int err;
+
+	sock = &connection->data;
+	p = conn_prepare_command(connection, sock);
+	if (!p)
+		return -EIO;
+	memcpy(p, request, sizeof(*request));
+	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
+	mutex_unlock(&sock->mutex);
+	return err;
+}
+
 void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)
 {
 	struct drbd_socket *sock;

@@ -4600,7 +4600,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
-	struct p_req_state *p = pi->data;
+	struct p_twopc_request *p = pi->data;
 	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
@@ -5409,13 +5409,13 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_OUT_OF_SYNC]     = { 0, sizeof(struct p_block_desc), receive_out_of_sync },
 	[P_CONN_ST_CHG_REQ] = { 0, sizeof(struct p_req_state), receive_req_state },
 	[P_PROTOCOL_UPDATE] = { 1, sizeof(struct p_protocol), receive_protocol },
-	[P_TWOPC_PREPARE] = { 0, sizeof(struct p_req_state), receive_twopc },
-	[P_TWOPC_ABORT] = { 0, sizeof(struct p_req_state), receive_twopc },
+	[P_TWOPC_PREPARE] = { 0, sizeof(struct p_twopc_request), receive_twopc },
+	[P_TWOPC_ABORT] = { 0, sizeof(struct p_twopc_request), receive_twopc },
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
-	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_req_state), receive_twopc },
+	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_twopc_request), receive_twopc },
 };
 
 STATIC void drbdd(struct drbd_connection *connection)

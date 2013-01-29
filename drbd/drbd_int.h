@@ -720,6 +720,11 @@ enum {
 
 enum which_state { NOW, OLD = NOW, NEW };
 
+struct twopc_reply {
+	unsigned int tid;  /* transaction identifier */
+	int initiator_node_id;  /* initiator of the transaction */
+};
+
 struct drbd_resource {
 	char *name;
 	struct kref kref;
@@ -748,6 +753,7 @@ struct drbd_resource {
 	enum chg_state_flags state_change_flags;
 	bool remote_state_change;  /* remote state change in progress */
 	struct drbd_connection *twopc_parent;  /* prepared on behalf of peer */
+	struct twopc_reply twopc_reply;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
@@ -1975,6 +1981,7 @@ extern int drbd_send_command(struct drbd_peer_device *, struct drbd_socket *,
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
+extern int conn_send_twopc_request(struct drbd_connection *, int vnr, enum drbd_packet, struct p_twopc_request *);
 extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_request *);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
