@@ -281,6 +281,12 @@ struct p_twopc_request {
 	u32 val;
 } __packed;
 
+struct p_twopc_reply {
+	u32 tid;  /* transaction identifier */
+	u32 initiator_node_id;  /* initiator of the transaction */
+	u32 retcode;
+} __packed;
+
 struct p_drbd06_param {
 	u64	  size;
 	u32	  state;

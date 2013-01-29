@@ -1186,7 +1186,7 @@ extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
 extern void drbd_send_sr_reply(struct drbd_connection *connection, int vnr,
 			       enum drbd_state_rv retcode);
 extern void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr,
-				  enum drbd_state_rv retcode);
+				  struct twopc_reply *, enum drbd_state_rv retcode);
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);
 extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid);

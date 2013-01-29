@@ -1249,14 +1249,17 @@ void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_s
 	}
 }
 
-void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)
+void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr,
+			   struct twopc_reply *reply, enum drbd_state_rv retcode)
 {
 	struct drbd_socket *sock;
-	struct p_req_state_reply *p;
+	struct p_twopc_reply *p;
 
 	sock = &connection->meta;
 	p = conn_prepare_command(connection, sock);
 	if (p) {
+		p->tid = cpu_to_be32(reply->tid);
+		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
 		p->retcode = cpu_to_be32(retcode);
 		send_command(connection, vnr, sock, P_TWOPC_REPLY, sizeof(*p), NULL, 0);
 	}
