@@ -4635,7 +4635,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	if (rv != SS_SUCCESS) {
 		drbd_info(connection, "Rejecting concurrent remote state change\n");
-		drbd_send_twopc_reply(connection, pi->vnr, &reply, rv);
+		drbd_send_twopc_reply(connection, pi->vnr, P_TWOPC_NO, &reply);
 		return 0;
 	}
 
@@ -4671,7 +4671,9 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	else
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
 	if (flags & CS_PREPARE)
-		drbd_send_twopc_reply(connection, pi->vnr, &reply, rv);
+		drbd_send_twopc_reply(connection, pi->vnr,
+				      rv >= SS_SUCCESS ? P_TWOPC_YES : P_TWOPC_NO,
+				      &reply);
 	if (peer_device && rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 		drbd_md_sync(peer_device->device);
 
@@ -6014,15 +6016,11 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 
 STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct p_twopc_reply *p = pi->data;
-	int retcode = be32_to_cpu(p->retcode);
-
-	if (retcode >= SS_SUCCESS)
+	if (pi->cmd == P_TWOPC_YES)
 		set_bit(TWOPC_YES, &connection->flags);
 	else {
 		set_bit(TWOPC_NO, &connection->flags);
-		drbd_debug(connection, "Requested state change failed by peer: %s (%d)\n",
-			   drbd_set_st_err_str(retcode), retcode);
+		drbd_debug(connection, "Requested state change failed by peer.\n");
 	}
 
 	wake_up(&connection->resource->state_wait);
@@ -6486,7 +6484,8 @@ static struct asender_cmd asender_tbl[] = {
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
-	[P_TWOPC_REPLY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 
 int drbd_asender(struct drbd_thread *thi)

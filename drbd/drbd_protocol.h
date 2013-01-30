@@ -66,8 +66,9 @@ enum drbd_packet {
 	P_PEER_DAGTAG         = 0x35, /* data socket, used to trigger reconciliation resync */
 	P_CURRENT_UUID	      = 0x36, /* data socket */
 
-	P_TWOPC_REPLY         = 0x37, /* meta sock: state change reply */
-	P_TWOPC_COMMIT        = 0x38, /* data sock: commit state change */
+	P_TWOPC_YES           = 0x37, /* meta sock: allow two-phase commit */
+	P_TWOPC_NO            = 0x38, /* meta sock: reject two-phase commit */
+	P_TWOPC_COMMIT        = 0x39, /* data sock: commit state change */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
@@ -284,7 +285,6 @@ struct p_twopc_request {
 struct p_twopc_reply {
 	u32 tid;  /* transaction identifier */
 	u32 initiator_node_id;  /* initiator of the transaction */
-	u32 retcode;
 } __packed;
 
 struct p_drbd06_param {
