@@ -4610,6 +4610,41 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
 
+	/* Check for concurrent transactions and duplicate packets. */
+	spin_lock_irq(&resource->req_lock);
+	if (resource->remote_state_change) {
+		if (resource->twopc_reply.initiator_node_id != reply.initiator_node_id ||
+		    resource->twopc_reply.tid != reply.tid) {
+			spin_unlock_irq(&resource->req_lock);
+			drbd_info(connection, "Rejecting concurrent remote state change %u\n",
+				  reply.tid);
+			drbd_send_twopc_reply(connection, pi->vnr, P_TWOPC_NO, &reply);
+			return 0;
+		}
+		if (pi->cmd == P_TWOPC_PREPARE) {
+			/* We have prepared this transaction already. */
+			spin_unlock_irq(&resource->req_lock);
+			drbd_debug(resource, "Ignoring duplicate %s packet %u\n",
+				   cmdname(pi->cmd),
+				   reply.tid);
+			drbd_send_twopc_reply(connection, pi->vnr, P_TWOPC_SKIP, &reply);
+			return 0;
+		}
+		flags |= CS_PREPARED;
+	} else {
+		if (pi->cmd != P_TWOPC_PREPARE) {
+			/* We have committed or aborted this transaction already. */
+			spin_unlock_irq(&resource->req_lock);
+			drbd_debug(resource, "Ignoring %s packet %u (duplicate?)\n",
+				   cmdname(pi->cmd),
+				   reply.tid);
+			return 0;
+		}
+		resource->remote_state_change = true;
+		resource->twopc_reply.tid = reply.tid;
+		resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
+	}
+
 	if (reply.initiator_node_id != connection->net_conf->peer_node_id) {
 		/*
 		 * This is an indirect request.  Unless we are directly
@@ -4624,6 +4659,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		/* only indirectly affected */
 		affected_connection = NULL;
 
+		resource->remote_state_change = false;
+		resource->twopc_reply.tid = 0;
+		resource->twopc_reply.initiator_node_id = -1;
+		spin_unlock_irq(&resource->req_lock);
 		if (pi->cmd == P_TWOPC_PREPARE) {
 			drbd_debug(connection, "Failing indirect request %u for now.\n",
 				   reply.tid);
@@ -4635,41 +4674,13 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
     directly_affected:
 	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
-		if (!peer_device)
+		if (!peer_device) {
+			spin_unlock_irq(&resource->req_lock);
 			return -EIO;
+		}
 	}
 
-	rv = SS_SUCCESS;
-	spin_lock_irq(&resource->req_lock);
-
-#ifdef DRBD_ENABLE_FAULTS
-	if (two_phase_commit_fail > 0) {
-		two_phase_commit_fail--;
-		rv = SS_CONCURRENT_ST_CHG;
-	} else
-#endif
-	if (resource->remote_state_change) {
-		if (resource->twopc_reply.initiator_node_id == reply.initiator_node_id)
-			flags |= CS_PREPARED;
-		else
-			rv = SS_CONCURRENT_ST_CHG;
-	} else
-		resource->remote_state_change = true;
 	spin_unlock_irq(&resource->req_lock);
-
-	if (rv != SS_SUCCESS) {
-		drbd_info(connection, "Rejecting concurrent remote state change\n");
-		drbd_send_twopc_reply(connection, pi->vnr, P_TWOPC_NO, &reply);
-		return 0;
-	}
-
-	/* Double P_TWOPC_PREPARE, P_TWOPC_COMMIT or P_TWOPC_ABORT without
-	 * prior P_TWOPC_PREPARE? */
-	if (!(flags & CS_PREPARED) ^ (pi->cmd == P_TWOPC_PREPARE)) {
-		rv = SS_NOT_SUPPORTED;
-		drbd_err(connection, "Remote state change: %s", drbd_set_st_err_str(rv));
-		return rv;
-	}
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
@@ -4720,8 +4731,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		resource->twopc_parent = connection;
 		resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
 	} else {
-		if (flags & CS_PREPARED)
-			drbd_info(connection, "Remote state change finished\n");
 		resource->remote_state_change = false;
 		if (resource->twopc_parent) {
 			kref_put(&resource->twopc_parent->kref,
@@ -6060,15 +6069,24 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 
 STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_info *pi)
 {
-	if (pi->cmd == P_TWOPC_YES)
-		set_bit(TWOPC_YES, &connection->flags);
-	else {
-		set_bit(TWOPC_NO, &connection->flags);
-		drbd_debug(connection, "Requested state change failed by peer.\n");
-	}
+	struct drbd_resource *resource = connection->resource;
+	struct p_twopc_reply *p = pi->data;
 
-	wake_up(&connection->resource->state_wait);
-	wake_up(&connection->ping_wait);
+	spin_lock_irq(&resource->req_lock);
+	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
+	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
+		if (pi->cmd == P_TWOPC_YES || pi->cmd == P_TWOPC_SKIP)
+			set_bit(TWOPC_YES, &connection->flags);
+		else {
+			set_bit(TWOPC_NO, &connection->flags);
+			drbd_debug(connection, "Requested state change failed by peer.\n");
+		}
+		if (cluster_wide_reply_ready(resource)) {
+			wake_up(&connection->resource->state_wait);
+			wake_up(&connection->ping_wait);
+		}
+	}
+	spin_unlock_irq(&resource->req_lock);
 
 	return 0;
 }
@@ -6530,6 +6548,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
 	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_SKIP]      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 
 int drbd_asender(struct drbd_thread *thi)

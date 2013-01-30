@@ -2278,6 +2278,8 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
 	resource->remote_state_change = true;
+	resource->twopc_reply.initiator_node_id = resource->res_opts.node_id;
+	resource->twopc_reply.tid = 0;
 	begin_remote_state_change(resource, irq_flags);
 	rv = __peer_request(connection, vnr, mask, val);
 	if (rv == SS_CW_SUCCESS) {
@@ -2287,6 +2289,7 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 	resource->remote_state_change = false;
+	resource->twopc_reply.initiator_node_id = -1;
 	return rv;
 }
 
@@ -2433,19 +2436,23 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	drbd_debug(resource, "Preparing cluster-wide state change %u\n",
 		   be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
+	reply->initiator_node_id = resource->res_opts.node_id;
+
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
 	if (rv == SS_CW_SUCCESS) {
 		wait_event(resource->state_wait, cluster_wide_reply_ready(resource));
 		rv = get_cluster_wide_reply(resource);
 		if (rv == SS_CW_SUCCESS) {
-			drbd_debug(resource, "Committing cluster-wide state change\n");
+			drbd_debug(resource, "Committing cluster-wide state change %u\n",
+				   be32_to_cpu(request.tid));
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, &request);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
 		} else {
-			drbd_debug(resource, "Aborting cluster-wide state change\n");
+			drbd_debug(resource, "Aborting cluster-wide state change %u\n",
+				   be32_to_cpu(request.tid));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, &request);
 		}
 
@@ -2455,10 +2462,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		rcu_read_unlock();
 	}
 	end_remote_state_change(resource, irq_flags, flags);
+
 	resource->remote_state_change = false;
-	drbd_debug(resource, "Cluster-wide state change %u %s\n",
-		   be32_to_cpu(request.tid),
-		   rv >= SS_SUCCESS ? "succeeded" : "failed");
+	reply->initiator_node_id = -1;
 	return rv;
 }
 
