@@ -460,7 +460,7 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 
 	/* simplify logic below, would otherwise have to
 	 * (!x || is_default(x) all the time. */
-	if (k && is_default(&disk_options_ctx, k))
+	if (k && is_default(&attach_cmd_ctx, k))
 		k = NULL;
 
 	/* there was a bvec restriction set,
@@ -469,7 +469,7 @@ void compare_max_bio_bvecs(struct d_volume *conf, struct d_volume *kern)
 		conf->adj_attach = 1;
 
 	/* restrictions differ */
-	if (k && c && !is_equal(&disk_options_ctx, k, c))
+	if (k && c && !is_equal(&attach_cmd_ctx, k, c))
 		conf->adj_attach = 1;
 }
 
@@ -482,11 +482,11 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 	move_opt_to_head(&conf->disk_options, c);
 	move_opt_to_head(&kern->disk_options, k);
 
-	if (k && is_default(&disk_options_ctx, k))
+	if (k && is_default(&attach_cmd_ctx, k))
 		k = NULL;
 	if (!k != !c)
 		conf->adj_resize = 1;
-	if (k && c && !is_equal(&disk_options_ctx, c, k))
+	if (k && c && !is_equal(&attach_cmd_ctx, c, k))
 		conf->adj_resize = 1;
 }
 
