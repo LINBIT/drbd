@@ -1197,15 +1197,15 @@ static unsigned int drbd_al_extents_max(struct drbd_backing_dev *bdev)
 	 */
 	const unsigned int max_al_nr = DRBD_AL_EXTENTS_MAX;
 	const unsigned int sufficient_on_disk =
-		(max_al_nr + AL_UPDATES_PER_TRANSACTION -1)
-		/AL_UPDATES_PER_TRANSACTION;
+		(max_al_nr + AL_CONTEXT_PER_TRANSACTION -1)
+		/AL_CONTEXT_PER_TRANSACTION;
 
 	unsigned int al_size_4k = bdev->md.al_size_4k;
 
 	if (al_size_4k > sufficient_on_disk)
 		return max_al_nr;
 
-	return (al_size_4k - 1) * AL_UPDATES_PER_TRANSACTION;
+	return (al_size_4k - 1) * AL_CONTEXT_PER_TRANSACTION;
 }
 
 int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
