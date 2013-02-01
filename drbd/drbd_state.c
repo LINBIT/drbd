@@ -1811,6 +1811,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_other_c = peer_device_state_change->resync_susp_other_c;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
+			bool create_new_uuid;
 
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
@@ -1890,21 +1891,29 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 						peer_device);
 
+			create_new_uuid = false;
 			/* Lost contact to peer's copy of the data */
-			if (connection->agreed_pro_version < 110 &&
-			    !(peer_disk_state[OLD] < D_INCONSISTENT ||
+			if (!(peer_disk_state[OLD] < D_INCONSISTENT ||
 			      peer_disk_state[OLD] == D_UNKNOWN ||
 			      peer_disk_state[OLD] == D_OUTDATED) &&
 			    (peer_disk_state[NEW] < D_INCONSISTENT ||
 			     peer_disk_state[NEW] == D_UNKNOWN ||
-			     peer_disk_state[NEW] == D_OUTDATED) && get_ldev(device)) {
-				if ((role[NEW] == R_PRIMARY || peer_role[NEW] == R_PRIMARY) &&
-				    disk_state[NEW] >= D_UP_TO_DATE) {
-					if (drbd_suspended(device))
-						set_bit(NEW_CUR_UUID, &device->flags);
-					else
-						drbd_uuid_new_current(device);
-				}
+			     peer_disk_state[NEW] == D_OUTDATED)) {
+
+				if (role[NEW] == R_PRIMARY)
+					create_new_uuid = true;
+
+				if (connection->agreed_pro_version < 110 &&
+				    peer_role[NEW] == R_PRIMARY &&
+				    disk_state[NEW] >= D_UP_TO_DATE)
+					create_new_uuid = true;
+			}
+
+			if (create_new_uuid && get_ldev(device)) {
+				if (drbd_suspended(device))
+					set_bit(NEW_CUR_UUID, &device->flags);
+				else
+					drbd_uuid_new_current(device);
 				put_ldev(device);
 			}
 
