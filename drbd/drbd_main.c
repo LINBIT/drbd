@@ -3864,24 +3864,54 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
+static struct drbd_peer_device *
+peer_device_by_bitmap_index(struct drbd_device *device, int bitmap_index)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->bitmap_index == bitmap_index)
+			return peer_device;
+	}
+
+	return NULL;
+}
+
 static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
 {
-	unsigned long long bm_uuid;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
-	enum drbd_disk_state pdsk;
+	int max_peers, bitmap_index, node_id;
+	unsigned long long bm_uuid;
 	u64 mask = 0;
+	bool do_it;
 
 	if (device->disk_state[NOW] < D_UP_TO_DATE)
 		return mask;
 
-	for_each_peer_device(peer_device, device) {
-		bm_uuid = drbd_bitmap_uuid(peer_device);
-		pdsk = peer_device->disk_state[NOW];
-		if (bm_uuid == 0 &&
-		    (pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED ||
-		     (u64)1 << peer_device->node_id & force_mask)) {
-			__drbd_uuid_set_bitmap(peer_device, device->ldev->md.current_uuid);
-			mask |= (u64)1 << peer_device->node_id;
+	max_peers = device->bitmap->bm_max_peers;
+	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
+		bm_uuid = peer_md[bitmap_index].bitmap_uuid;
+		if (bm_uuid)
+			continue;
+		peer_device = peer_device_by_bitmap_index(device, bitmap_index);
+		if (peer_device) {
+			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+			do_it = pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED;
+			node_id = peer_device->node_id;
+			do_it = do_it || (1ULL << peer_device->node_id) & force_mask;
+		} else {
+			do_it = true;
+			node_id = peer_md[bitmap_index].node_id;
+			if (node_id == -1) {
+				node_id = 63; /* Works as long as MAX_PEERS < 63 */
+				BUILD_BUG_ON(MAX_PEERS >= 63);
+			}
+		}
+		if (do_it) {
+			peer_md[bitmap_index].bitmap_uuid = device->ldev->md.current_uuid;
+			drbd_md_mark_dirty(device);
+			mask |= 1ULL << node_id;
 		}
 	}
 
