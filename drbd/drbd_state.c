@@ -681,6 +681,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	enum drbd_role *role = resource->role;
+	bool *weak = resource->weak;
 	int vnr;
 
 	b = buffer;
@@ -695,6 +696,9 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		b += scnprintf_io_suspend_flags(b, end - b, resource, NEW);
 		b += scnprintf(b, end - b, ") ");
 	}
+	if (weak[OLD] != weak[NEW])
+		b+= scnprintf(b, end - b, "weak( %d -> %d ) ",
+			      weak[OLD], weak[NEW]);
 	if (b != buffer) {
 		*(b-1) = 0;
 		drbd_info(resource, "%s%s\n", prefix, buffer);
