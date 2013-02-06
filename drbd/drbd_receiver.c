@@ -3637,9 +3637,14 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		rv = L_WF_BITMAP_T;
 	} else {
 		rv = L_ESTABLISHED;
-		if (drbd_bm_total_weight(peer_device)) {
+		if (drbd_bitmap_uuid(peer_device)) {
+			drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
+				  drbd_bm_total_weight(peer_device));
+			drbd_uuid_set_bitmap(peer_device, 0);
+			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+		} else if (drbd_bm_total_weight(peer_device)) {
 			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
-			     drbd_bm_total_weight(peer_device));
+				  drbd_bm_total_weight(peer_device));
 		}
 	}
 
