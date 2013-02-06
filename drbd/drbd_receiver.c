@@ -4609,6 +4609,12 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 			drbd_send_sr_reply(peer_device, rv);
 		if (rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 			drbd_md_sync(peer_device->device);
+	} else if (pi->cmd == P_CONN_ST_CHG_REQ) {
+		/* There is no prepare step for P_CONN_ST_CHG_REQ
+		   need to send the reply before doing the transition */
+		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL | CS_PREPARE);
+		conn_send_sr_reply(connection, rv);
+		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL | CS_PREPARED);
 	} else {
 		rv = change_connection_state(connection, mask, val, flags | CS_IGN_OUTD_FAIL);
 		if (reply)
