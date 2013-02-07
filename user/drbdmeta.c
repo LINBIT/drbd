@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -1107,6 +1108,7 @@ struct meta_cmd {
 	int (*function) (struct format *, char **argv, int argc);
 	int show_in_usage:1;
 	int node_id_required:1;
+	int modifies_md:1;
 };
 
 /* pre declarations */
@@ -1127,27 +1129,27 @@ int meta_dstate(struct format *cfg, char **argv, int argc);
 int meta_chk_offline_resize(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
-	{"get-gi", 0, meta_get_gi, 1, 1},
-	{"show-gi", 0, meta_show_gi, 1, 1},
-	{"dump-md", 0, meta_dump_md, 1, 0},
-	{"restore-md", "file", meta_restore_md, 1, 0},
-	{"verify-dump", "file", meta_verify_dump_file, 1, 0},
-	{"apply-al", 0, meta_apply_al, 1, 0},
-	{"wipe-md", 0, meta_wipe_md, 1, 0},
-	{"outdate", 0, meta_outdate, 1, 0},
-	{"invalidate", 0, meta_invalidate, 1, 0},
-	{"dstate", 0, meta_dstate, 1, 0},
-	{"read-dev-uuid", 0,  meta_read_dev_uuid, 0, 0},
-	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0, 0},
+	{"get-gi", 0, meta_get_gi, 1, 1, 0},
+	{"show-gi", 0, meta_show_gi, 1, 1, 0},
+	{"dump-md", 0, meta_dump_md, 1, 0, 0},
+	{"restore-md", "file", meta_restore_md, 1, 0, 1},
+	{"verify-dump", "file", meta_verify_dump_file, 1, 0, 0},
+	{"apply-al", 0, meta_apply_al, 1, 0, 1},
+	{"wipe-md", 0, meta_wipe_md, 1, 0, 1},
+	{"outdate", 0, meta_outdate, 1, 0, 1},
+	{"invalidate", 0, meta_invalidate, 1, 0, 1},
+	{"dstate", 0, meta_dstate, 1, 0, 0},
+	{"read-dev-uuid", 0,  meta_read_dev_uuid, 0, 0, 0},
+	{"write-dev-uuid", "VAL", meta_write_dev_uuid, 0, 0, 1},
 	/* FIXME: Get and set node and peer ids */
-	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0, 1},
-	{"check-resize", 0, meta_chk_offline_resize, 1, 0},
+	{"set-gi", ":::VAL:VAL:...", meta_set_gi, 0, 1, 1},
+	{"check-resize", 0, meta_chk_offline_resize, 1, 0, 1},
 	{"create-md",
 		"[--peer-max-bio-size {val}] "
 		"[--al-stripes {val}] "
 		"[--al-stripe-size-kB {val}] "
 		"{max_peers}",
-		meta_create_md, 1, 0},
+		meta_create_md, 1, 0, 1},
 };
 
 /*
@@ -4931,8 +4933,8 @@ int main(int argc, char **argv)
 	struct meta_cmd *command = NULL;
 	struct format *cfg;
 	size_t i;
-	int ai;
-
+	int ai, rv;
+	bool minor_attached;
 
 #if 1
 	if (sizeof(struct md_on_disk_07) != 4096) {
@@ -5062,12 +5064,11 @@ int main(int argc, char **argv)
 	cfg->lock_fd = dt_lock_drbd(cfg->minor);
 
 	/* unconditionally check whether this is in use */
-	if (is_attached(cfg->minor)) {
-		if (!(force && (command->function == meta_dump_md))) {
-			fprintf(stderr, "Device '%s' is configured!\n",
-				cfg->drbd_dev_name);
-			exit(20);
-		}
+	minor_attached = is_attached(cfg->minor);
+	if (minor_attached && command->modifies_md) {
+		fprintf(stderr, "Device '%s' is configured!\n",
+			cfg->drbd_dev_name);
+		exit(20);
 	}
 
 	if (option_peer_max_bio_size &&
@@ -5104,7 +5105,11 @@ int main(int argc, char **argv)
 		exit(10);
 	}
 
-	return command->function(cfg, argv + ai, argc - ai);
+	rv = command->function(cfg, argv + ai, argc - ai);
+	if (minor_attached)
+		fprintf(stderr, "# Output might be stale, since minor %d is attached\n", cfg->minor);
+
+	return rv;
 	/* and if we want an explicit free,
 	 * this would be the place for it.
 	 * free(cfg->md_device_name), free(cfg) ...
