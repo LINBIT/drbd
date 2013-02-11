@@ -1,6 +1,8 @@
 #ifndef DRBD_STATE_H
 #define DRBD_STATE_H
 
+#include "drbd_protocol.h"
+
 struct drbd_resource;
 struct drbd_device;
 struct drbd_connection;
@@ -82,6 +84,7 @@ extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum
 		err;								\
 	})
 
+extern enum drbd_state_rv nested_twopc_request(struct drbd_resource *, int, enum drbd_packet, struct p_twopc_request *);
 extern bool cluster_wide_reply_ready(struct drbd_resource *);
 
 extern void __change_role(struct drbd_resource *, enum drbd_role, bool);
@@ -113,5 +116,8 @@ extern void __change_resync_susp_user(struct drbd_peer_device *, bool);
 extern enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *, bool, enum chg_state_flags);
 extern void __change_resync_susp_peer(struct drbd_peer_device *, bool);
 extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
+
+struct drbd_work;
+extern int abort_nested_twopc_work(struct drbd_work *, int);
 
 #endif

@@ -1249,7 +1249,7 @@ void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_s
 	}
 }
 
-void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr,
+void drbd_send_twopc_reply(struct drbd_connection *connection,
 			   enum drbd_packet cmd, struct twopc_reply *reply)
 {
 	struct drbd_socket *sock;
@@ -1260,7 +1260,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr,
 	if (p) {
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
-		send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
+		send_command(connection, reply->vnr, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }
 

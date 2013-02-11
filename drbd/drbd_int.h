@@ -722,6 +722,7 @@ enum {
 enum which_state { NOW, OLD = NOW, NEW };
 
 struct twopc_reply {
+	int vnr;
 	unsigned int tid;  /* transaction identifier */
 	int initiator_node_id;  /* initiator of the transaction */
 };
@@ -1188,7 +1189,7 @@ extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
 extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
 extern void drbd_send_sr_reply(struct drbd_connection *connection, int vnr,
 			       enum drbd_state_rv retcode);
-extern void drbd_send_twopc_reply(struct drbd_connection *connection, int vnr,
+extern void drbd_send_twopc_reply(struct drbd_connection *connection,
 				  enum drbd_packet, struct twopc_reply *);
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);

@@ -2303,9 +2303,9 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		if (!(test_and_clear_bit(TWOPC_PREPARED, &connection->flags) ||
-		      test_bit(connection->net_conf->peer_node_id,
-			       (unsigned long *)&nodes_to_reach)))
+		clear_bit(TWOPC_PREPARED, &connection->flags);
+		if (!test_bit(connection->net_conf->peer_node_id,
+			      (unsigned long *)&nodes_to_reach))
 			continue;
 		if (connection->cstate[NOW] < C_CONNECTED)
 			continue;
@@ -2480,6 +2480,67 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	resource->remote_state_change = false;
 	reply->initiator_node_id = -1;
+	return rv;
+}
+
+static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
+{
+	struct drbd_connection *twopc_parent;
+	struct twopc_reply twopc_reply;
+
+	spin_lock_irq(&resource->req_lock);
+	twopc_parent = resource->twopc_parent;
+	resource->twopc_parent = NULL;
+	spin_unlock_irq(&resource->req_lock);
+
+	if (!expect(resource, twopc_parent))
+		return;
+
+	drbd_debug(twopc_parent, "Nested state change result: %s\n",
+		   cmdname(cmd));
+	twopc_reply = resource->twopc_reply;
+
+	if (cmd == P_TWOPC_NO) {
+		del_timer(&resource->twopc_timer);
+		abort_nested_twopc_work(&resource->twopc_work, false);
+	}
+
+	drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
+	kref_put(&twopc_parent->kref, drbd_destroy_connection);
+}
+
+static int nested_twopc_work(struct drbd_work *work, int cancel)
+{
+	struct drbd_resource *resource =
+		container_of(work, struct drbd_resource, twopc_work);
+	enum drbd_state_rv rv;
+
+	rv = get_cluster_wide_reply(resource);
+	twopc_end_nested(resource, rv >= SS_SUCCESS ? P_TWOPC_YES : P_TWOPC_NO);
+	return 0;
+}
+
+enum drbd_state_rv
+nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
+		     struct p_twopc_request *request)
+{
+	enum drbd_state_rv rv;
+	u64 nodes_to_reach;
+
+	spin_lock_irq(&resource->req_lock);
+	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
+	nodes_to_reach &= ~NODE_MASK(resource->res_opts.node_id);
+	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	resource->twopc_work.cb = nested_twopc_work;
+	spin_unlock_irq(&resource->req_lock);
+
+	rv = __cluster_wide_request(resource, vnr, cmd, request);
+	if (cmd == P_TWOPC_PREPARE) {
+		if (rv <= SS_SUCCESS) {
+			cmd = (rv == SS_SUCCESS) ? P_TWOPC_YES : P_TWOPC_NO;
+			twopc_end_nested(resource, cmd);
+		}
+	}
 	return rv;
 }
 
