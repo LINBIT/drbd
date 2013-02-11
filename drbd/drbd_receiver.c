@@ -6112,8 +6112,8 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 		}
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
-			wake_up(&connection->resource->state_wait);
-			wake_up(&connection->ping_wait);
+			drbd_queue_work(&resource->work,
+					&resource->twopc_work);
 		}
 	}
 	spin_unlock_irq(&resource->req_lock);

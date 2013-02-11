@@ -2869,6 +2869,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	init_waitqueue_head(&resource->state_wait);
 
 	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
+	INIT_LIST_HEAD(&resource->twopc_work.list);
 
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");

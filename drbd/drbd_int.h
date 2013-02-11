@@ -756,6 +756,7 @@ struct drbd_resource {
 	struct drbd_connection *twopc_parent;  /* prepared on behalf of peer */
 	struct twopc_reply twopc_reply;
 	struct timer_list twopc_timer;
+	struct drbd_work twopc_work;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */

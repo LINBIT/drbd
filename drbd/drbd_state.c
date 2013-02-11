@@ -2397,6 +2397,15 @@ static struct drbd_connection *get_first_connection(struct drbd_resource *resour
 	return connection;
 }
 
+static int twopc_initiator_work(struct drbd_work *work, int cancel)
+{
+	struct drbd_resource *resource =
+		container_of(work, struct drbd_resource, twopc_work);
+
+	wake_up(&resource->state_wait);
+	return 0;
+}
+
 static enum drbd_state_rv
 change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			  union drbd_state mask, union drbd_state val,
@@ -2438,6 +2447,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
 
+	resource->twopc_work.cb = twopc_initiator_work;
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
 	if (rv == SS_CW_SUCCESS) {
