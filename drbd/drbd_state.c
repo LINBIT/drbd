@@ -2323,7 +2323,27 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 	return rv;
 }
 
-static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
+bool cluster_wide_reply_ready(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool ready = true;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (!test_bit(TWOPC_PREPARED, &connection->flags))
+			continue;
+		if (!(test_bit(TWOPC_YES, &connection->flags) ||
+		      test_bit(TWOPC_NO, &connection->flags))) {
+			drbd_debug(connection, "Reply not ready yet\n");
+			ready = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return ready;
+}
+
+static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_CW_SUCCESS;
@@ -2332,22 +2352,10 @@ static enum drbd_state_rv __cluster_wide_reply(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		if (!(test_bit(TWOPC_YES, &connection->flags) ||
-		      test_bit(TWOPC_NO, &connection->flags))) {
-			/* Keep waiting until all replies have arrived.  */
-			rv = SS_UNKNOWN_ERROR;
-			break;
-		}
-	}
-	if (rv != SS_UNKNOWN_ERROR) {
-		for_each_connection(connection, resource) {
-			if (!test_bit(TWOPC_PREPARED, &connection->flags))
-				continue;
-			clear_bit(TWOPC_YES,  &connection->flags);
-			if (test_and_clear_bit(TWOPC_NO, &connection->flags)) {
-				clear_bit(TWOPC_PREPARED, &connection->flags);
-			        rv = SS_CW_FAILED_BY_PEER;
-			}
+		clear_bit(TWOPC_YES,  &connection->flags);
+		if (test_and_clear_bit(TWOPC_NO, &connection->flags)) {
+			clear_bit(TWOPC_PREPARED, &connection->flags);
+			rv = SS_CW_FAILED_BY_PEER;
 		}
 	}
 	rcu_read_unlock();
@@ -2428,8 +2436,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
 	if (rv == SS_CW_SUCCESS) {
-		wait_event(resource->state_wait,
-			((rv = __cluster_wide_reply(resource)) != SS_UNKNOWN_ERROR));
+		wait_event(resource->state_wait, cluster_wide_reply_ready(resource));
+		rv = get_cluster_wide_reply(resource);
 		if (rv == SS_CW_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change\n");
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, &request);

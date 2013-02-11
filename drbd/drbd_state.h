@@ -80,6 +80,8 @@ extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum
 		err;								\
 	})
 
+extern bool cluster_wide_reply_ready(struct drbd_resource *);
+
 extern void __change_role(struct drbd_resource *, enum drbd_role, bool);
 extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags, bool);
 
