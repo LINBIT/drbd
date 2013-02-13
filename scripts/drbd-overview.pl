@@ -155,7 +155,7 @@ sub shorten_list {
 
 # only a single value? Fine!
 #	return abbreviate($hash->{$keys->[0]}, 6) . "(*)"
-	return $hash->{$keys->[0]} . "(*)"
+	return $hash->{$keys->[0]} . "(" . (values %vl)[0] . "*)"
 		if 1 == (keys %vals);
 
 # only 1 or 2 keys, ie. 2 values? Fine, done.
@@ -173,7 +173,7 @@ sub shorten_list {
 
 	my @stg;
 	my %done;
-	push(@stg, abbreviate($wc_data, 4) . "(*)"),
+	push(@stg, abbreviate($wc_data, 4) . "(" . $v[0] . "*)"),
 		$done{$wc_data}++
 			if ($wc_data);
 
