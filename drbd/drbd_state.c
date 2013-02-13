@@ -2303,21 +2303,27 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		clear_bit(TWOPC_PREPARED, &connection->flags);
 		if (!test_bit(connection->net_conf->peer_node_id,
-			      (unsigned long *)&nodes_to_reach))
-			continue;
-		if (connection->cstate[NOW] < C_CONNECTED)
+			      (unsigned long *)&nodes_to_reach) ||
+		    connection->cstate[NOW] < C_CONNECTED)
+			clear_bit(TWOPC_PREPARED, &connection->flags);
+		else
+			set_bit(TWOPC_PREPARED, &connection->flags);
+	}
+	for_each_connection(connection, resource) {
+		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		kref_get(&connection->kref);
 		rcu_read_unlock();
-		if (!conn_send_twopc_request(connection, vnr, cmd, request)) {
-			drbd_debug(connection, "State change request %s [%u|%u] sent\n",
-				   cmdname(cmd),
-				   be32_to_cpu(request->val),
-				   be32_to_cpu(request->mask));
-			set_bit(TWOPC_PREPARED, &connection->flags);
+		drbd_debug(connection, "Sending state change request %s [%u|%u]\n",
+			   cmdname(cmd),
+			   be32_to_cpu(request->val),
+			   be32_to_cpu(request->mask));
+		if (!conn_send_twopc_request(connection, vnr, cmd, request))
 			rv = SS_CW_SUCCESS;
+		else {
+			clear_bit(TWOPC_PREPARED, &connection->flags);
+			wake_up(&resource->work.q_wait);
 		}
 		rcu_read_lock();
 		kref_put(&connection->kref, drbd_destroy_connection);
