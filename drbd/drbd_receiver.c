@@ -5098,6 +5098,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	__change_repl_state(peer_device, new_repl_state);
 	__change_peer_role(connection, peer_state.role);
+	__change_peer_weak(connection, peer_state.weak);
 	__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
 	repl_state = peer_device->repl_state;

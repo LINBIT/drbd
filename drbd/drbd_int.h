@@ -800,6 +800,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	enum drbd_role peer_role[2];
 	u64 primary_mask; /* received over this connection */
 	u64 primary_mask_sent; /* last primary_mask sent on this connection */
+	bool peer_weak[2];
 
 	unsigned long flags;
 	struct net_conf *net_conf;	/* content protected by rcu */

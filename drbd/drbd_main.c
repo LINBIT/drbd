@@ -1176,6 +1176,10 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	p = drbd_prepare_command(peer_device, sock);
 	if (!p)
 		return -EIO;
+
+	if (peer_device->connection->agreed_pro_version < 110)
+		state.weak = 0;
+
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
 }

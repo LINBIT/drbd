@@ -273,9 +273,11 @@ union drbd_state {
 		unsigned user_isp:1 ;
 		unsigned susp_nod:1 ; /* IO suspended because no data */
 		unsigned susp_fen:1 ; /* IO suspended because fence peer handler runs*/
-		unsigned _pad:9;   /* 0	 unused */
+		unsigned weak:1;
+		unsigned _pad:8;   /* 0	 unused */
 #elif defined(__BIG_ENDIAN_BITFIELD)
-		unsigned _pad:9;
+		unsigned _pad:8;
+		unsigned weak:1;
 		unsigned susp_fen:1 ;
 		unsigned susp_nod:1 ;
 		unsigned user_isp:1 ;

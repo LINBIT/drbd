@@ -119,6 +119,8 @@ retry:
 	       resource->susp_nod, sizeof(resource->susp_nod));
 	memcpy(state_change->resource->susp_fen,
 	       resource->susp_fen, sizeof(resource->susp_fen));
+	memcpy(state_change->resource->weak,
+	       resource->weak, sizeof(resource->weak));
 
 	device_state_change = state_change->devices;
 	peer_device_state_change = state_change->peer_devices;
@@ -263,6 +265,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
 		connection->peer_role[NEW] = connection->peer_role[NOW];
+		connection->peer_weak[NEW] = connection->peer_weak[NOW];
 	}
 
 	idr_for_each_entry(&resource->devices, device, minor) {
@@ -337,6 +340,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
 		connection->peer_role[NOW] = connection->peer_role[NEW];
+		connection->peer_weak[NOW] = connection->peer_weak[NEW];
 	}
 
 	idr_for_each_entry(&resource->devices, device, minor) {
@@ -497,6 +501,7 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.susp_nod = resource->susp_nod[which],
 		.susp_fen = resource->susp_fen[which],
 		.pdsk = D_UNKNOWN,  /* really: undefined */
+		.weak = resource->weak[which],
 	} };
 
 	return rv;
@@ -1607,6 +1612,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	state.susp = resource_state_change->susp[which];
 	state.susp_nod = resource_state_change->susp_nod[which];
 	state.susp_fen = resource_state_change->susp_fen[which];
+	state.weak = resource_state_change->weak[which];
 	state.disk = device_state_change->disk_state[which];
 	if (n_connection != -1) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -3148,6 +3154,11 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 void __change_peer_role(struct drbd_connection *connection, enum drbd_role peer_role)
 {
 	connection->peer_role[NEW] = peer_role;
+}
+
+void __change_peer_weak(struct drbd_connection *connection, bool peer_weak)
+{
+	connection->peer_weak[NEW] = peer_weak;
 }
 
 void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
