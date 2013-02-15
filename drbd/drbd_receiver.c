@@ -4437,32 +4437,44 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
 {
-	const int node_id = connection->resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
-	int history_uuids, i, rest;
+	int other_uuids, i, rest, pos = 0;
+	u64 bitmap_uuids_mask;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return config_unknown_volume(connection, pi);
 
-	history_uuids = min(pi->size / sizeof(p->history_uuids[0]),
-			    ARRAY_SIZE(peer_device->history_uuids));
-	if (drbd_recv_all_warn(peer_device->connection, p->history_uuids,
-			       history_uuids * sizeof(p->history_uuids[0])))
+	other_uuids = min(pi->size / sizeof(p->other_uuids[0]),
+			  ARRAY_SIZE(peer_device->history_uuids) +
+			  ARRAY_SIZE(peer_device->bitmap_uuids));
+
+	if (drbd_recv_all_warn(peer_device->connection, p->other_uuids,
+			       other_uuids * sizeof(p->other_uuids[0])))
 		return -EIO;
-	rest = pi->size - history_uuids * sizeof(p->history_uuids[0]);
+	rest = pi->size - other_uuids * sizeof(p->other_uuids[0]);
 	if (rest > 0 && !drbd_drain_block(peer_device, rest))
 		return -EIO;
 
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
-	peer_device->bitmap_uuids[node_id] = be64_to_cpu(p->bitmap_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
-	for (i = 0; i < history_uuids; i++)
-		peer_device->history_uuids[i] = be64_to_cpu(p->history_uuids[i]);
-	for (; i < ARRAY_SIZE(peer_device->history_uuids); i++)
-		peer_device->history_uuids[i] = 0;
+	bitmap_uuids_mask = be64_to_cpu(p->bitmap_uuids_mask);
+
+	for (i = 0; i < MAX_PEERS; i++) {
+		if (bitmap_uuids_mask & (1ULL << i))
+			peer_device->bitmap_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
+		else
+			peer_device->bitmap_uuids[i] = 0;
+	}
+
+	i = 0;
+	while (pos < other_uuids)
+		peer_device->history_uuids[i++] = be64_to_cpu(p->other_uuids[pos++]);
+
+	while (i < HISTORY_UUIDS)
+		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
 
 	return __receive_uuids(peer_device, be64_to_cpu(p->offline_mask));

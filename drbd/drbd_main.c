@@ -939,9 +939,11 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_socket *sock;
 	struct p_uuids110 *p;
-	int i;
+	int max_peers, i, pos = 0;
+	u64 bitmap_uuids_mask = 0;
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
@@ -955,10 +957,23 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
-	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+
+	max_peers = device->bitmap->bm_max_peers;
+	for (i = 0; i < max_peers; i++) {
+		if (peer_md[i].bitmap_uuid)
+			bitmap_uuids_mask |= 1ULL << peer_md[i].node_id;
+	}
+
+	for_each_set_bit(i, (unsigned long *)&bitmap_uuids_mask, sizeof(bitmap_uuids_mask)) {
+		int bitmap_index = device->ldev->id_to_bit[i];
+		p->other_uuids[pos++] = cpu_to_be64(peer_md[bitmap_index].bitmap_uuid);
+	}
+
 	for (i = 0; i < HISTORY_UUIDS; i++)
-		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(device, i));
+		p->other_uuids[pos++] = cpu_to_be64(drbd_history_uuid(device, i));
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	p->bitmap_uuids_mask = cpu_to_be64(bitmap_uuids_mask);
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
@@ -976,7 +991,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS110,
 				 sizeof(*p) +
-				 HISTORY_UUIDS * sizeof(p->history_uuids[0]),
+				 (hweight64(bitmap_uuids_mask) + HISTORY_UUIDS) * sizeof(p->other_uuids[0]),
 				 NULL, 0);
 }
 

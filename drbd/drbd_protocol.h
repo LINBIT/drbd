@@ -245,11 +245,13 @@ struct p_uuids {
 
 struct p_uuids110 {
 	u64 current_uuid;
-	u64 bitmap_uuid;
 	u64 dirty_bits;
 	u64 uuid_flags;
 	u64 offline_mask;
-	u64 history_uuids[0];
+	u64 bitmap_uuids_mask; /* non zero bitmap UUIDS for these nodes */
+	u64 other_uuids[0]; /* the first hweight(nr_bitmap_uuids) slots carry bitmap uuids.
+			       The node with the lowest node_id first.
+			       The remaining slots carry history uuids */
 } __packed;
 
 struct p_uuid {
