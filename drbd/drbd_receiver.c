@@ -3473,21 +3473,25 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 
 /*
   100	after split brain try auto recover
+    3   L_SYNC_SOURCE copy BitMap from
     2	L_SYNC_SOURCE set BitMap
     1	L_SYNC_SOURCE use BitMap
     0	no Sync
    -1	L_SYNC_TARGET use BitMap
    -2	L_SYNC_TARGET set BitMap
+   -3   L_SYNC_TARGET clear BitMap
  -100	after split brain, disconnect
 -1000	unrelated data
 -1091   requires proto 91
 -1096   requires proto 96
  */
-STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr) __must_hold(local)
+STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device,
+			     int *rule_nr, int *peer_node_id) __must_hold(local)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
+	struct drbd_peer_device *pd2;
 	u64 self, peer;
 	int i, j;
 
@@ -3539,6 +3543,15 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	if (self == peer)
 		return -1;
 
+	*rule_nr = 52;
+	for (i = 0; i < MAX_PEERS; i++) {
+		peer = peer_device->bitmap_uuids[i] & ~((u64)1);
+		if (self == peer) {
+			*peer_node_id = i;
+			return -3;
+		}
+	}
+
 	if (connection->agreed_pro_version < 110) {
 		int rv = uuid_fixup_resync_start1(peer_device, rule_nr);
 		if (rv > -2000)
@@ -3558,6 +3571,17 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	peer = peer_device->current_uuid & ~((u64)1);
 	if (self == peer)
 		return 1;
+
+	*rule_nr = 72;
+	for_each_peer_device(pd2, device) {
+		if (pd2 == peer_device)
+			continue;
+		self = drbd_bitmap_uuid(pd2) & ~((u64)1);
+		if (self == peer) {
+			*peer_node_id = pd2->node_id;
+			return 3;
+		}
+	}
 
 	if (connection->agreed_pro_version < 110) {
 		int rv = uuid_fixup_resync_start2(peer_device, rule_nr);
@@ -3602,14 +3626,14 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state rv = -1;
 	struct net_conf *nc;
-	int hg, rule_nr, rr_conflict, tentative;
+	int hg, rule_nr, rr_conflict, tentative, peer_node_id;
 
 	drbd_info(device, "drbd_sync_handshake:\n");
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
 	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 
-	hg = drbd_uuid_compare(peer_device, &rule_nr);
+	hg = drbd_uuid_compare(peer_device, &rule_nr, &peer_node_id);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	drbd_info(device, "uuid_compare()=%d by rule %d\n", hg, rule_nr);
@@ -3709,7 +3733,23 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if (abs(hg) >= 2) {
+	if (hg == 3) {
+		drbd_info(device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
+		drbd_suspend_io(device);
+		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
+		drbd_bm_copy_slot(device, device->ldev->id_to_bit[peer_node_id], peer_device->bitmap_index);
+		drbd_bm_write(device, NULL);
+		drbd_bm_slot_unlock(peer_device);
+		drbd_resume_io(device);
+	} else if (hg == -3) {
+		drbd_info(device, "synced up with node %d in the mean time\n", peer_node_id);
+		drbd_suspend_io(device);
+		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits from sync_handshake", BM_LOCK_BULK);
+		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+		drbd_bm_write(device, NULL);
+		drbd_bm_slot_unlock(peer_device);
+		drbd_resume_io(device);
+	} else if (abs(hg) >= 2) {
 		drbd_info(device, "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
 					BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))

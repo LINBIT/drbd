@@ -1543,3 +1543,49 @@ int drbd_bm_count_bits(struct drbd_device *device, unsigned int bitmap_index, un
 {
 	return bm_op(device, bitmap_index, s, e, BM_OP_COUNT, NULL);
 }
+
+void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsigned int to_index)
+{
+	struct drbd_bitmap *bitmap = device->bitmap;
+	unsigned long word_nr, *addr, data_word, from_word_nr, to_word_nr;
+	unsigned int from_page_nr, to_page_nr, current_page_nr;
+
+	spin_lock_irq(&bitmap->bm_lock);
+
+	bitmap->bm_set[to_index] = 0;
+	current_page_nr = 0;
+	addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_USER0);
+	for (word_nr = 0; word_nr < bitmap->bm_words; word_nr += bitmap->bm_max_peers) {
+		from_word_nr = word_nr + from_index;
+		from_page_nr = word32_to_page(from_word_nr);
+		to_word_nr = word_nr + to_index;
+		to_page_nr = word32_to_page(to_word_nr);
+
+		if (current_page_nr != from_page_nr) {
+			if (need_resched()) {
+				spin_unlock_irq(&bitmap->bm_lock);
+				cond_resched();
+				spin_lock_irq(&bitmap->bm_lock);
+			}
+
+			drbd_kunmap_atomic(addr, KM_USER0);
+			current_page_nr = from_page_nr;
+			addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_USER0);
+		}
+		data_word = addr[word32_in_page(from_word_nr)];
+
+		if (current_page_nr != to_page_nr) {
+			drbd_kunmap_atomic(addr, KM_USER0);
+			current_page_nr = to_page_nr;
+			addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_USER0);
+		}
+
+		if (addr[word32_in_page(to_word_nr)] != data_word)
+			bm_set_page_need_writeout(bitmap->bm_pages[current_page_nr]);
+		addr[word32_in_page(to_word_nr)] = data_word;
+		bitmap->bm_set[to_index] += hweight32(data_word);
+	}
+	drbd_kunmap_atomic(addr, KM_USER0);
+
+	spin_unlock_irq(&bitmap->bm_lock);
+}

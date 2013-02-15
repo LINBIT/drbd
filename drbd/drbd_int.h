@@ -1469,6 +1469,7 @@ extern void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag fla
 extern void drbd_bm_unlock(struct drbd_device *device);
 extern void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why, enum bm_flag flags);
 extern void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
+extern void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsigned int to_index);
 /* drbd_main.c */
 
 /* needs to be included here,
