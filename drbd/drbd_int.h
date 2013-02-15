@@ -987,7 +987,7 @@ struct drbd_peer_device {
 	unsigned long ov_left; /* in bits */
 
 	u64 current_uuid;
-	u64 bitmap_uuid;
+	u64 bitmap_uuids[MAX_PEERS];
 	u64 history_uuids[HISTORY_UUIDS];
 	u64 dirty_bits;
 	u64 uuid_flags;

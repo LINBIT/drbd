@@ -3125,12 +3125,13 @@ out_free_e:
  */
 static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	const int node_id = peer_device->device->resource->res_opts.node_id;
 	int self, peer, rv = -100;
 	unsigned long ch_self, ch_peer;
 	enum drbd_after_sb_p after_sb_0p;
 
 	self = drbd_bitmap_uuid(peer_device) & 1;
-	peer = peer_device->bitmap_uuid & 1;
+	peer = peer_device->bitmap_uuids[node_id] & 1;
 
 	ch_peer = peer_device->dirty_bits;
 	ch_self = peer_device->comm_bm_set;
@@ -3327,9 +3328,11 @@ STATIC void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, 
 
 STATIC void drbd_uuid_dump_peer(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
 {
+	const int node_id = peer_device->device->resource->res_opts.node_id;
+
 	drbd_info(peer_device, "peer %016llX:%016llX:%016llX:%016llX bits:%llu flags:%llX\n",
 	     (unsigned long long)peer_device->current_uuid,
-	     (unsigned long long)peer_device->bitmap_uuid,
+	     (unsigned long long)peer_device->bitmap_uuids[node_id],
 	     (unsigned long long)peer_device->history_uuids[0],
 	     (unsigned long long)peer_device->history_uuids[1],
 	     (unsigned long long)bits,
@@ -3339,8 +3342,9 @@ STATIC void drbd_uuid_dump_peer(struct drbd_peer_device *peer_device, u64 bits, 
 static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule_nr) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
 
-	if (peer_device->bitmap_uuid == (u64)0 && drbd_bitmap_uuid(peer_device) != (u64)0) {
+	if (peer_device->bitmap_uuids[node_id] == (u64)0 && drbd_bitmap_uuid(peer_device) != (u64)0) {
 
 		if (peer_device->connection->agreed_pro_version < 91)
 			return -1091;
@@ -3364,12 +3368,12 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 		return 1;
 	}
 
-	if (drbd_bitmap_uuid(peer_device) == (u64)0 && peer_device->bitmap_uuid != (u64)0) {
+	if (drbd_bitmap_uuid(peer_device) == (u64)0 && peer_device->bitmap_uuids[node_id] != (u64)0) {
 
 		if (peer_device->connection->agreed_pro_version < 91)
 			return -1091;
 
-		if ((drbd_history_uuid(device, 0) & ~((u64)1)) == (peer_device->bitmap_uuid & ~((u64)1)) &&
+		if ((drbd_history_uuid(device, 0) & ~((u64)1)) == (peer_device->bitmap_uuids[node_id] & ~((u64)1)) &&
 		    (drbd_history_uuid(device, 1) & ~((u64)1)) == (peer_device->history_uuids[0] & ~((u64)1))) {
 			int i;
 
@@ -3377,8 +3381,8 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 
 			for (i = ARRAY_SIZE(peer_device->history_uuids) - 1; i > 0; i--)
 				peer_device->history_uuids[i] = peer_device->history_uuids[i - 1];
-			peer_device->history_uuids[i] = peer_device->bitmap_uuid;
-			peer_device->bitmap_uuid = 0;
+			peer_device->history_uuids[i] = peer_device->bitmap_uuids[node_id];
+			peer_device->bitmap_uuids[node_id] = 0;
 
 			drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 			*rule_nr = 35;
@@ -3396,6 +3400,7 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *rule_nr) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
+	const int node_id = peer_device->device->resource->res_opts.node_id;
 	u64 self, peer;
 
 	self = drbd_current_uuid(device) & ~((u64)1);
@@ -3405,7 +3410,7 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 		if (peer_device->connection->agreed_pro_version < 96 ?
 		    (drbd_history_uuid(device, 0) & ~((u64)1)) ==
 		    (peer_device->history_uuids[1] & ~((u64)1)) :
-		    peer + UUID_NEW_BM_OFFSET == (peer_device->bitmap_uuid & ~((u64)1))) {
+		    peer + UUID_NEW_BM_OFFSET == (peer_device->bitmap_uuids[node_id] & ~((u64)1))) {
 			int i;
 
 			/* The last P_SYNC_UUID did not get though. Undo the last start of
@@ -3415,7 +3420,7 @@ static int uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, int *r
 			if (peer_device->connection->agreed_pro_version < 91)
 				return -1091;
 
-			peer_device->bitmap_uuid = peer_device->history_uuids[0];
+			peer_device->bitmap_uuids[node_id] = peer_device->history_uuids[0];
 			for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids) - 1; i++)
 				peer_device->history_uuids[i] = peer_device->history_uuids[i + 1];
 			peer_device->history_uuids[i] = 0;
@@ -3482,6 +3487,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
 	u64 self, peer;
 	int i, j;
 
@@ -3529,7 +3535,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 	}
 
 	*rule_nr = 50;
-	peer = peer_device->bitmap_uuid & ~((u64)1);
+	peer = peer_device->bitmap_uuids[node_id] & ~((u64)1);
 	if (self == peer)
 		return -1;
 
@@ -3569,7 +3575,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device, int *rule_nr)
 
 	*rule_nr = 90;
 	self = drbd_bitmap_uuid(peer_device) & ~((u64)1);
-	peer = peer_device->bitmap_uuid & ~((u64)1);
+	peer = peer_device->bitmap_uuids[node_id] & ~((u64)1);
 	if (self == peer && self != ((u64)0))
 		return 100;
 
@@ -4404,6 +4410,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 
 static int receive_uuids(struct drbd_connection *connection, struct packet_info *pi)
 {
+	const int node_id = connection->resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct p_uuids *p = pi->data;
 	int history_uuids, i;
@@ -4416,7 +4423,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 			      ARRAY_SIZE(peer_device->history_uuids));
 
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
-	peer_device->bitmap_uuid = be64_to_cpu(p->bitmap_uuid);
+	peer_device->bitmap_uuids[node_id] = be64_to_cpu(p->bitmap_uuid);
 	for (i = 0; i < history_uuids; i++)
 		peer_device->history_uuids[i] = be64_to_cpu(p->history_uuids[i]);
 	for (; i < ARRAY_SIZE(peer_device->history_uuids); i++)
@@ -4430,6 +4437,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
 {
+	const int node_id = connection->resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
 	int history_uuids, i, rest;
@@ -4448,7 +4456,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		return -EIO;
 
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
-	peer_device->bitmap_uuid = be64_to_cpu(p->bitmap_uuid);
+	peer_device->bitmap_uuids[node_id] = be64_to_cpu(p->bitmap_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	for (i = 0; i < history_uuids; i++)
@@ -5611,6 +5619,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 /* Accept a new current UUID generated on a diskless node, that just became primary */
 static int receive_current_uuid(struct drbd_connection *connection, struct packet_info *pi)
 {
+	const int node_id = connection->resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_uuid *p = pi->data;
@@ -5632,8 +5641,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 			drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 			drbd_uuid_received_new_current(device, current_uuid, 0);
 		} else {
-			if (peer_device->bitmap_uuid == 0 && connection->resource->weak[NOW])
-				peer_device->bitmap_uuid = peer_device->current_uuid;
+			if (peer_device->bitmap_uuids[node_id] == 0 && connection->resource->weak[NOW])
+				peer_device->bitmap_uuids[node_id] = peer_device->current_uuid;
 		}
 		put_ldev(device);
 	} else if (device->resource->role[NOW] == R_PRIMARY) {

@@ -984,9 +984,10 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (peer_device->uuids_received) {
 				/* Now the two UUID sets are equal, update what we
 				 * know of the peer. */
+				const int node_id = device->resource->res_opts.node_id;
 				int i;
 				peer_device->current_uuid = drbd_current_uuid(device);
-				peer_device->bitmap_uuid = drbd_bitmap_uuid(peer_device);
+				peer_device->bitmap_uuids[node_id] = drbd_bitmap_uuid(peer_device);
 				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 					peer_device->history_uuids[i] =
 						drbd_history_uuid(device, i);

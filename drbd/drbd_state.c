@@ -1142,12 +1142,14 @@ static void sanitize_state(struct drbd_resource *resource)
 			   weak bit and have no primary in reach (== there are no primaries reachable) */
 			if (weak[OLD] && !weak[NEW] && !primary_visible &&
 			    repl_state[NEW] == L_ESTABLISHED && peer_disk_state[NEW] == D_UP_TO_DATE) {
-				if (peer_device->bitmap_uuid == drbd_current_uuid(device))
+				const int my_node_id = resource->res_opts.node_id;
+				if (peer_device->bitmap_uuids[my_node_id] == drbd_current_uuid(device))
 					repl_state[NEW] = L_WF_BITMAP_T;
 				else
 					drbd_err(peer_device, "ASSERT FAILED "
 						 "bitmap of peer (%llX) == my current (%llX)",
-						 peer_device->bitmap_uuid, drbd_current_uuid(device));
+						 peer_device->bitmap_uuids[my_node_id],
+						 drbd_current_uuid(device));
 			}
 
 			/* Implications of the repl state on the disk states */
