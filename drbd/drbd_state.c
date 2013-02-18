@@ -361,7 +361,7 @@ out:
 void state_change_lock(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
 	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED)))
-		mutex_lock(&resource->state_mutex);
+		down(&resource->state_sem);
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	resource->state_change_flags = flags;
 }
@@ -374,7 +374,7 @@ static void __state_change_unlock(struct drbd_resource *resource, unsigned long 
 	if (done && expect(resource, current != resource->worker.task))
 		wait_for_completion(done);
 	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARE)))
-		mutex_unlock(&resource->state_mutex);
+		up(&resource->state_sem);
 }
 
 void state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flags)
@@ -390,7 +390,7 @@ void state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flag
  */
 void abort_prepared_state_change(struct drbd_resource *resource)
 {
-	mutex_unlock(&resource->state_mutex);
+	up(&resource->state_sem);
 }
 
 void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
@@ -2686,7 +2686,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 
 	/*
 	 * Hard connection state changes like a protocol error or forced
-	 * disconnect may occur while we are holding resource->state_mutex.  In
+	 * disconnect may occur while we are holding resource->state_sem.  In
 	 * that case, omit CS_SERIALIZE so that we don't deadlock trying to
 	 * grab that mutex again.
 	 */

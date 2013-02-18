@@ -1635,7 +1635,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	}
 
 	if (current == connection->sender.task) {
-		/* The sender should not sleep waiting for state_mutex,
+		/* The sender should not sleep waiting for state_sem,
 		   that can take long */
 		set_bit(B_RS_H_DONE, &peer_device->flags);
 		peer_device->start_resync_timer.expires = jiffies + HZ/5;
@@ -1643,7 +1643,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		return;
 	}
 
-	mutex_lock(&device->resource->state_mutex);
+	down(&device->resource->state_sem);
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &peer_device->flags);
 	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
@@ -1722,7 +1722,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	}
 	put_ldev(device);
     out:
-	mutex_unlock(&device->resource->state_mutex);
+	up(&device->resource->state_sem);
 }
 
 /* If the resource already closed the current epoch, but we did not

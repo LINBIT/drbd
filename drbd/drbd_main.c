@@ -2855,7 +2855,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
-	mutex_init(&resource->state_mutex);
+	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	if (set_resource_options(resource, res_opts))
 		goto fail_free_name;

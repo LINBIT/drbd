@@ -749,7 +749,7 @@ struct drbd_resource {
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
 	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */
 
-	struct mutex state_mutex;
+	struct semaphore state_sem;
 	wait_queue_head_t state_wait;  /* upon each state change. */
 	enum chg_state_flags state_change_flags;
 	bool remote_state_change;  /* remote state change in progress */

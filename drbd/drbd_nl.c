@@ -707,7 +707,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	bool with_force = false;
 
 	mutex_lock(&resource->conf_update);
-	mutex_lock(&resource->state_mutex);
+	down(&resource->state_sem);
 
 	if (role == R_PRIMARY) {
 		struct drbd_connection *connection;
@@ -899,7 +899,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	}
 
 out:
-	mutex_unlock(&resource->state_mutex);
+	up(&resource->state_sem);
 	mutex_unlock(&resource->conf_update);
 	return rv;
 }
@@ -3792,7 +3792,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	mutex_lock(&device->resource->state_mutex);
+	down(&device->resource->state_sem);
 
 	if (!get_ldev(device)) {
 		retcode = ERR_NO_DISK;
@@ -3842,7 +3842,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 out_dec:
 	put_ldev(device);
 out:
-	mutex_unlock(&device->resource->state_mutex);
+	up(&device->resource->state_sem);
 out_nolock:
 	drbd_adm_finish(info, retcode);
 	return 0;

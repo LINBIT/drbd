@@ -4305,8 +4305,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 	   ongoing cluster wide state change is finished. That is important if
 	   we are primary and are detaching from our disk. We need to see the
 	   new disk state... */
-	mutex_lock(&device->resource->state_mutex);
-	mutex_unlock(&device->resource->state_mutex);
+	down(&device->resource->state_sem);
+	up(&device->resource->state_sem);
 	if (peer_device->repl_state[NOW] >= L_ESTABLISHED && device->disk_state[NOW] < D_INCONSISTENT)
 		updated_uuids |= drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 
