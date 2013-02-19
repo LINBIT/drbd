@@ -725,6 +725,7 @@ struct twopc_reply {
 	int vnr;
 	unsigned int tid;  /* transaction identifier */
 	int initiator_node_id;  /* initiator of the transaction */
+	u64 primary_nodes;
 };
 
 struct drbd_resource {

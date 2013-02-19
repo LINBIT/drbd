@@ -2482,6 +2482,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	request.tid = cpu_to_be32(reply->tid);
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
 	request.nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(mask.i);
 	request.val = cpu_to_be32(val.i);
 
@@ -2489,6 +2490,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		   be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
+	reply->primary_nodes = 0;
 
 	resource->twopc_work.cb = twopc_initiator_work;
 	begin_remote_state_change(resource, irq_flags);
@@ -2504,6 +2506,14 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		if (rv == SS_CW_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change %u\n",
 				   be32_to_cpu(request.tid));
+
+			if (mask.role == role_MASK && val.role == R_PRIMARY) {
+				reply->primary_nodes |=
+					NODE_MASK(resource->res_opts.node_id);
+			}
+			request.primary_nodes =
+				cpu_to_be64(reply->primary_nodes);
+
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, &request);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
@@ -2513,6 +2523,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				   be32_to_cpu(request.tid));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, &request);
 		}
+		drbd_debug(resource, "primary node mask = %llx",
+			   (unsigned long long) reply->primary_nodes);
 
 		rcu_read_lock();
 		for_each_connection(connection, resource)

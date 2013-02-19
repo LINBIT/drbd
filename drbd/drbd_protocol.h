@@ -279,6 +279,7 @@ struct p_twopc_request {
 	u32 tid;  /* transaction identifier */
 	u32 initiator_node_id;  /* initiator of the transaction */
 	u64 nodes_to_reach;
+	u64 primary_nodes;
 	u32 mask;
 	u32 val;
 } __packed;
@@ -286,6 +287,7 @@ struct p_twopc_request {
 struct p_twopc_reply {
 	u32 tid;  /* transaction identifier */
 	u32 initiator_node_id;  /* initiator of the transaction */
+	u64 primary_nodes;
 } __packed;
 
 struct p_drbd06_param {

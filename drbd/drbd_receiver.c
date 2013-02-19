@@ -4645,9 +4645,15 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
+	reply.primary_nodes = 0;
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
+
+	if (resource->role[NOW] == R_PRIMARY) {
+		reply.primary_nodes |= NODE_MASK(resource->res_opts.node_id);
+	}
+
 	if (resource->remote_state_change) {
 		if (resource->twopc_reply.initiator_node_id != reply.initiator_node_id ||
 		    resource->twopc_reply.tid != reply.tid) {
@@ -4677,8 +4683,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			return 0;
 		}
 		resource->remote_state_change = true;
-		resource->twopc_reply.tid = reply.tid;
-		resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
 	}
 
 	if (reply.initiator_node_id != connection->net_conf->peer_node_id) {
@@ -4716,6 +4720,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
+	resource->twopc_reply = reply;
 	spin_unlock_irq(&resource->req_lock);
 
 	switch(pi->cmd) {
@@ -4758,7 +4763,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {
 			spin_lock_irq(&resource->req_lock);
-			resource->twopc_reply = reply;
 			kref_get(&connection->kref);
 			resource->twopc_parent = connection;
 			resource->twopc_timer.expires = jiffies + twopc_timeout(resource);
@@ -4784,6 +4788,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			}
 			resource->twopc_reply.initiator_node_id = -1;
 			resource->twopc_reply.tid = 0;
+			if (!(flags & CS_ABORT)) {
+				drbd_debug(resource, "primary node mask = %llx",
+					   (unsigned long long)
+					   resource->twopc_reply.primary_nodes);
+			}
 			spin_unlock_irq(&resource->req_lock);
 		}
 	}
@@ -6128,6 +6137,8 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			set_bit(TWOPC_NO, &connection->flags);
 			drbd_debug(connection, "Requested state change failed by peer.\n");
 		}
+		resource->twopc_reply.primary_nodes |=
+			be64_to_cpu(p->primary_nodes);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
 			drbd_queue_work(&resource->work,

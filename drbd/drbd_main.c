@@ -1260,8 +1260,10 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 	if (p) {
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
-		drbd_debug(connection, "Sending %s reply\n",
-			   cmdname(cmd));
+		p->primary_nodes = cpu_to_be64(reply->primary_nodes);
+		drbd_debug(connection, "Sending %s reply (primary_nodes=%lX)\n",
+			   cmdname(cmd),
+			   (unsigned long)reply->primary_nodes);
 		send_command(connection, reply->vnr, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }
