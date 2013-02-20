@@ -720,6 +720,7 @@ struct context_def resource_options_ctx = {
 		{ "on-no-data-accessible", ENUM(on_no_data, ON_NO_DATA) },
 		{ "auto-promote", BOOLEAN(auto_promote, AUTO_PROMOTE) },
 		{ "peer-ack-window", NUMERIC(peer_ack_window, PEER_ACK_WINDOW) },
+		{ "twopc-timeout", NUMERIC(twopc_timeout, TWOPC_TIMEOUT) },
 		{ } },
 };
 

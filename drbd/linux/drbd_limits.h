@@ -232,4 +232,10 @@
 #define DRBD_PEER_ACK_WINDOW_MAX	204800 /* 100 MiByte */
 #define DRBD_PEER_ACK_WINDOW_SCALE 's' /* sectors*/
 
+/* Two-phase commit timeout (1/10 seconds). */
+#define DRBD_TWOPC_TIMEOUT_MIN	10
+#define DRBD_TWOPC_TIMEOUT_MAX	300
+#define DRBD_TWOPC_TIMEOUT_DEF	100
+#define DRBD_TWOPC_TIMEOUT_SCALE '1'
+
 #endif

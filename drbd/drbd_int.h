@@ -381,6 +381,7 @@ extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
 extern enum drbd_disk_state disk_state_from_md(struct drbd_device *);
+extern long twopc_timeout(struct drbd_resource *);
 
 /* sequence arithmetic for dagtag (data generation tag) sector numbers.
  * dagtag_newer_eq: true, if a is newer than b */
@@ -754,6 +755,7 @@ struct drbd_resource {
 	bool remote_state_change;  /* remote state change in progress */
 	struct drbd_connection *twopc_parent;  /* prepared on behalf of peer */
 	struct twopc_reply twopc_reply;
+	struct timer_list twopc_timer;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
@@ -1666,6 +1668,8 @@ static inline void drbd_tcp_quickack(struct socket *sock)
 }
 
 void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo);
+
+extern void twopc_timer_fn(unsigned long);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

@@ -382,6 +382,17 @@ void state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flag
 	__state_change_unlock(resource, irq_flags, NULL);
 }
 
+/**
+ * abort_prepared_state_change
+ *
+ * Use when a remote state change request was prepared but neither committed
+ * nor aborted; the remote state change still "holds the state mutex".
+ */
+void abort_prepared_state_change(struct drbd_resource *resource)
+{
+	mutex_unlock(&resource->state_mutex);
+}
+
 void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
 {
 	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE | CS_PREPARE | CS_ABORT));
@@ -1449,24 +1460,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] != C_CONNECTED) {
-			if (test_and_clear_bit(TWOPC_PREPARED, &connection->flags))
-				wake_up(&resource->state_wait);
-			if (resource->twopc_reply.initiator_node_id ==
-			    connection->net_conf->peer_node_id) {
-				/* Remote state change request was prepared but
-				 * neither executed nor aborted; it still holds
-				 * the state mutex.  */
-				mutex_unlock(&resource->state_mutex);
-				resource->twopc_reply.initiator_node_id = -1;
-				if (resource->twopc_parent) {
-					kref_put(&resource->twopc_parent->kref,
-						 drbd_destroy_connection);
-					resource->twopc_parent = NULL;
-				}
-			}
-		}
-
 		wake_up(&connection->ping_wait);
 
 		/* Receiver should clean up itself */
@@ -1775,6 +1768,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	bool *susp_nod = resource_state_change->susp_nod;
 	bool *susp_fen = resource_state_change->susp_fen;
 	int n_device, n_connection;
+	bool still_connected = false;
 
 	broadcast_state_change(state_change, work->id);
 
@@ -2226,7 +2220,13 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* A connection to a primary went down, notify other peers about that */
 			notify_peers_lost_primary(connection);
 		}
+
+		if (cstate[NEW] == C_CONNECTED)
+			still_connected = true;
 	}
+
+	if (!still_connected)
+		mod_timer_pending(&resource->twopc_timer, jiffies);
 
 	if (work->done)
 		complete(work->done);
@@ -2441,8 +2441,13 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE, &request);
 	if (rv == SS_CW_SUCCESS) {
-		wait_event(resource->state_wait, cluster_wide_reply_ready(resource));
-		rv = get_cluster_wide_reply(resource);
+		if (wait_event_timeout(resource->state_wait,
+				       cluster_wide_reply_ready(resource),
+				       twopc_timeout(resource)))
+			rv = get_cluster_wide_reply(resource);
+		else
+			rv = SS_TIMEOUT;
+
 		if (rv == SS_CW_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change %u\n",
 				   be32_to_cpu(request.tid));

@@ -63,6 +63,8 @@ extern void abort_state_change_locked(struct drbd_resource *resource);
 extern void begin_state_change_locked(struct drbd_resource *, enum chg_state_flags);
 extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
 
+extern void abort_prepared_state_change(struct drbd_resource *);
+
 enum which_state;
 extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_state);
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);

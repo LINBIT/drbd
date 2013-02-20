@@ -139,6 +139,7 @@ GENL_struct(DRBD_NLA_RESOURCE_OPTS, 4, res_opts,
 	__flg_field_def(3,	DRBD_GENLA_F_MANDATORY,	auto_promote, DRBD_AUTO_PROMOTE_DEF)
 	__u32_field(4,		DRBD_F_REQUIRED | DRBD_F_INVARIANT,	node_id)
 	__u32_field_def(5,	DRBD_GENLA_F_MANDATORY,	peer_ack_window, DRBD_PEER_ACK_WINDOW_DEF)
+	__u32_field_def(6,	DRBD_GENLA_F_MANDATORY,	twopc_timeout, DRBD_TWOPC_TIMEOUT_DEF)
 )
 
 GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,

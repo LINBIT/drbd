@@ -2503,6 +2503,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 		kref_put(&resource->twopc_parent->kref,
 			 drbd_destroy_connection);
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
+	del_timer_sync(&resource->twopc_timer);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2866,6 +2867,9 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
+
+	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
+
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
@@ -4580,6 +4584,11 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device)
 	}
 
 	return disk_state;
+}
+
+long twopc_timeout(struct drbd_resource *resource)
+{
+	return resource->res_opts.twopc_timeout * HZ/10;
 }
 
 #ifdef DRBD_ENABLE_FAULTS

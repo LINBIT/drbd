@@ -4596,6 +4596,29 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	return 0;
 }
 
+void twopc_timer_fn(unsigned long data)
+{
+	struct drbd_resource *resource = (struct drbd_resource *) data;
+	bool prepared = false;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&resource->req_lock, irq_flags);
+	if (resource->twopc_reply.initiator_node_id != -1) {
+		resource->remote_state_change = false;
+		resource->twopc_reply.initiator_node_id = -1;
+		if (resource->twopc_parent) {
+			kref_put(&resource->twopc_parent->kref,
+				 drbd_destroy_connection);
+			resource->twopc_parent = NULL;
+		}
+		prepared = true;
+	}
+	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
+
+	if (prepared)
+		abort_prepared_state_change(resource);
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -4727,10 +4750,16 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	spin_lock_irq(&resource->req_lock);
 	if (flags & CS_PREPARE) {
-		kref_get(&connection->kref);
-		resource->twopc_parent = connection;
-		resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
+		if (rv >= SS_SUCCESS) {
+			kref_get(&connection->kref);
+			resource->twopc_parent = connection;
+			resource->twopc_reply.initiator_node_id = reply.initiator_node_id;
+			resource->twopc_timer.expires = jiffies + twopc_timeout(resource);
+			add_timer(&resource->twopc_timer);
+		}
 	} else {
+		if (flags & CS_PREPARED)
+			del_timer(&resource->twopc_timer);
 		resource->remote_state_change = false;
 		if (resource->twopc_parent) {
 			kref_put(&resource->twopc_parent->kref,
@@ -6082,6 +6111,7 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			drbd_debug(connection, "Requested state change failed by peer.\n");
 		}
 		if (cluster_wide_reply_ready(resource)) {
+			del_timer(&resource->twopc_timer);
 			wake_up(&connection->resource->state_wait);
 			wake_up(&connection->ping_wait);
 		}
