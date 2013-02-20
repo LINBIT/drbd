@@ -2430,6 +2430,34 @@ u64 directly_connected_nodes(struct drbd_resource *resource)
 	return directly_connected;
 }
 
+static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	enum drbd_state_rv rv = SS_SUCCESS;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		u64 mask;
+
+		/* If this peer is primary as well, the config must allow it. */
+		mask = NODE_MASK(connection->net_conf->peer_node_id);
+		if ((resource->twopc_reply.primary_nodes & mask) &&
+		    !(connection->net_conf->two_primaries)) {
+			rv = SS_TWO_PRIMARIES;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	/* We must be directly connected to all primary nodes. */
+	if (rv == SS_SUCCESS &&
+	    (resource->twopc_reply.weak_nodes &
+	      NODE_MASK(resource->res_opts.node_id)))
+		rv = SS_WEAKLY_CONNECTED;
+
+	return rv;
+}
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -2524,9 +2552,6 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			rv = SS_TIMEOUT;
 
 		if (rv == SS_CW_SUCCESS) {
-			drbd_debug(resource, "Committing cluster-wide state change %u\n",
-				   be32_to_cpu(request.tid));
-
 			if ((mask.role == role_MASK && val.role == R_PRIMARY) ||
 			    (mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
 				u64 m = NODE_MASK(resource->res_opts.node_id);
@@ -2535,6 +2560,13 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				m |= directly_connected_nodes(resource);
 				reply->weak_nodes |= ~m;
 			}
+
+			if (mask.role == role_MASK && val.role == R_PRIMARY)
+				rv = primary_nodes_allowed(resource);
+		}
+		if (rv >= SS_SUCCESS) {
+			drbd_debug(resource, "Committing cluster-wide state change\n");
+
 			request.primary_nodes =
 				cpu_to_be64(reply->primary_nodes);
 			request.weak_nodes =

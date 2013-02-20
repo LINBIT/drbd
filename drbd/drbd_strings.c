@@ -98,6 +98,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_PRIMARY_READER] = "Peer may not become primary while device is opened read-only",
 	[-SS_INTERRUPTED] = "Interrupted state change",
 	[-SS_TIMEOUT] = "Timeout in operation",
+	[-SS_WEAKLY_CONNECTED] = "Primary nodes must be strongly connected among each other",
 };
 
 const char *drbd_repl_str(enum drbd_repl_state s)
