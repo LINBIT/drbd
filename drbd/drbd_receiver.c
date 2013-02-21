@@ -4708,17 +4708,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		}
 		/* only indirectly affected */
 		affected_connection = NULL;
-
-		resource->remote_state_change = false;
-		resource->twopc_reply.tid = 0;
-		resource->twopc_reply.initiator_node_id = -1;
-		spin_unlock_irq(&resource->req_lock);
-		if (pi->cmd == P_TWOPC_PREPARE) {
-			drbd_debug(connection, "Failing indirect request %u for now.\n",
-				   reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_NO, &reply);
-		}
-		return 0;
+		goto next;
 	}
 
     directly_affected:
@@ -4730,6 +4720,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
+    next:
 	resource->twopc_reply = reply;
 	spin_unlock_irq(&resource->req_lock);
 
