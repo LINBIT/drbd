@@ -3947,7 +3947,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	drbd_md_mark_dirty(device);
 }
 
-void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 node_mask)
+void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 node_mask) __must_hold(local)
 {
 	bool set_current = true;
 	struct drbd_peer_device *peer_device;

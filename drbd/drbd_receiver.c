@@ -5317,7 +5317,12 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	current_uuid = be64_to_cpu(p->uuid);
 
 	drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
-	drbd_uuid_received_new_current(device, current_uuid, 0);
+	if (get_ldev(device)) {
+		drbd_uuid_received_new_current(device, current_uuid, 0);
+		put_ldev(device);
+	} else if (device->resource->role[NOW] == R_PRIMARY) {
+		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+	}
 
 	return 0;
 }
