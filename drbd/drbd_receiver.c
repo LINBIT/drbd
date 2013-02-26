@@ -4581,15 +4581,16 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	mask = convert_state(mask);
 	val = convert_state(val);
 
+	/* Send the reply before carrying out the state change: this is needed
+	 * for connection state changes which close the network connection.  */
 	if (peer_device) {
-		rv = change_peer_device_state(peer_device, mask, val, flags);
+		rv = change_peer_device_state(peer_device, mask, val, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
+		rv = change_peer_device_state(peer_device, mask, val, flags | CS_PREPARED);
 		if (rv >= SS_SUCCESS)
 			drbd_md_sync(peer_device->device);
 	} else {
 		flags |= CS_IGN_OUTD_FAIL;
-		/* Send the reply before carrying out the state change: this is
-		 * needed for state changes which close the network connection.  */
 		rv = change_connection_state(connection, mask, val, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
 		rv = change_connection_state(connection, mask, val, flags | CS_PREPARED);
