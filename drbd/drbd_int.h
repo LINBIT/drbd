@@ -537,7 +537,6 @@ enum {
 				 * goes into L_ESTABLISHED state. */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
-	SUSPEND_IO,		/* suspend application io */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_IO_ERROR,		/* Local disk failed, returned IO error */
 	WAS_READ_ERROR,		/* Local disk READ failed (set additionally to the above) */
@@ -1019,6 +1018,7 @@ struct drbd_device {
 	unsigned int bm_writ_cnt;
 	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
 	atomic_t local_cnt;	 /* Waiting for local completion */
+	atomic_t suspend_cnt;
 
 	/* Interval trees of pending local requests */
 	struct rb_root read_requests;
@@ -2220,7 +2220,7 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 {
 	if (drbd_suspended(device))
 		return false;
-	if (test_bit(SUSPEND_IO, &device->flags))
+	if (atomic_read(&device->suspend_cnt))
 		return false;
 
 	/* to avoid potential deadlock or bitmap corruption,
