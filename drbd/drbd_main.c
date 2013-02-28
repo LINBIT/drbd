@@ -3255,22 +3255,18 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
 
-	if (!idr_pre_get(&drbd_devices, GFP_KERNEL) ||
-	    idr_get_new_above(&drbd_devices, device, minor, &id))
+	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_KERNEL);
+	if (id < 0) {
+		if (id == -ENOSPC)
+			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_no_minor_idr;
-	if (id != minor) {
-		err = ERR_MINOR_OR_VOLUME_EXISTS;
-		idr_remove(&drbd_devices, id);
-		goto out_idr_synchronize_rcu;
 	}
 	kobject_get(&device->kobj);
 
-	if (!idr_pre_get(&resource->devices, GFP_KERNEL) ||
-	    idr_get_new_above(&resource->devices, device, vnr, &id))
-		goto out_idr_remove_minor;
-	if (id != vnr) {
-		err = ERR_MINOR_OR_VOLUME_EXISTS;
-		idr_remove(&resource->devices, id);
+	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
+	if (id < 0) {
+		if (id == -ENOSPC)
+			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_idr_remove_minor;
 	}
 	kobject_get(&device->kobj);
@@ -3281,25 +3277,13 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 		if (!peer_device)
 			goto out_no_peer_device;
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
-		if (!idr_pre_get(&connection->peer_devices, GFP_KERNEL))
+		id = idr_alloc(&connection->peer_devices, peer_device,
+			       device->vnr, device->vnr + 1, GFP_KERNEL);
+		if (id < 0)
 			goto out_no_peer_device;
 	}
 
 	spin_lock_irq(&resource->req_lock);
-	for_each_peer_device(peer_device, device) {
-		connection = peer_device->connection;
-		if (idr_get_new_above(&connection->peer_devices,
-				      peer_device, device->vnr, &id) ||
-		    !expect(device, id == device->vnr)) {
-			for_each_peer_device(peer_device, device) {
-				connection = peer_device->connection;
-				idr_remove(&connection->peer_devices, device->vnr);
-			}
-			spin_unlock_irq(&resource->req_lock);
-			synchronize_rcu();
-			goto out_no_peer_device;
-		}
-	}
 	for_each_peer_device(peer_device, device) {
 		kref_get(&connection->kref);
 		kobject_get(&device->kobj);
@@ -3333,13 +3317,15 @@ out_del_disk:
 	del_gendisk(device->vdisk);
 out_no_peer_device:
 	for_each_peer_device_safe(peer_device, tmp_peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		idr_remove(&connection->peer_devices, device->vnr);
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
 	}
 
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
-out_idr_synchronize_rcu:
 	synchronize_rcu();
 out_no_minor_idr:
 	drbd_bm_free(device->bitmap);
