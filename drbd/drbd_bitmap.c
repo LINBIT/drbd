@@ -605,8 +605,23 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 			}
 			break;
 		case BM_OP_MERGE:
+			{
+				__le32 *p = (__le32 *)addr + (bit_in_page >> 5);
+				__le32 b = *buffer++ & cpu_to_le32((1 << (end - start)) - 1);
+
+				count += hweight32(~*p & b);
+				*p |= b;
+
+				start = end + 1;
+			}
+			break;
 		case BM_OP_EXTRACT:
-			BUG();
+			{
+				__le32 *p = (__le32 *)addr + (bit_in_page >> 5);
+
+				*buffer++ = *p & cpu_to_le32((1 << (end - start)) - 1);
+				start = end + 1;
+			}
 			break;
 		case BM_OP_FIND_BIT:
 			{
