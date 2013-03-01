@@ -937,6 +937,7 @@ struct drbd_peer_device {
 	struct timer_list start_resync_timer;
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
+	struct drbd_work propagate_uuids_work;
 
 	/* Used to track operations of resync... */
 	struct lru_cache *resync_lru;
@@ -1614,6 +1615,7 @@ extern int w_e_reissue(struct drbd_work *, int);
 extern int w_restart_disk_io(struct drbd_work *, int);
 extern int w_send_out_of_sync(struct drbd_work *, int);
 extern int w_start_resync(struct drbd_work *, int);
+extern int w_send_uuids(struct drbd_work *, int);
 
 extern void resync_timer_fn(unsigned long data);
 extern void start_resync_timer_fn(unsigned long data);

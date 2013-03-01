@@ -3096,6 +3096,9 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->resync_timer.function = resync_timer_fn;
 	peer_device->resync_timer.data = (unsigned long) peer_device;
 
+	INIT_LIST_HEAD(&peer_device->propagate_uuids_work.list);
+	peer_device->propagate_uuids_work.cb = w_send_uuids;
+
 	atomic_set(&peer_device->ap_pending_cnt, 0);
 	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);
@@ -4094,10 +4097,27 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	drbd_md_mark_dirty(device);
 }
 
+static void propagate_uuids(struct drbd_device *device, u64 nodes)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		if (!(nodes & (1ULL << peer_device->node_id)))
+			continue;
+		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
+			continue;
+
+		if (list_empty(&peer_device->propagate_uuids_work.list))
+			drbd_queue_work(&peer_device->connection->sender_work,
+					&peer_device->propagate_uuids_work);
+	}
+}
+
 void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 node_mask) __must_hold(local)
 {
 	bool set_current = true;
 	struct drbd_peer_device *peer_device;
+	u64 got_new_bitmap_uuid = 0;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
@@ -4110,11 +4130,12 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 nod
 	}
 
 	if (set_current) {
-		rotate_current_into_bitmap(device, node_mask);
+		got_new_bitmap_uuid = rotate_current_into_bitmap(device, node_mask);
 		__drbd_uuid_set_current(device, val);
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	propagate_uuids(device, got_new_bitmap_uuid);
 }
 
 int drbd_bmio_set_all_n_write(struct drbd_device *device,

@@ -463,6 +463,16 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+int w_send_uuids(struct drbd_work *w, int cancel)
+{
+	struct drbd_peer_device *peer_device =
+		container_of(w, struct drbd_peer_device, propagate_uuids_work);
+
+	drbd_send_uuids(peer_device, 0, 0);
+
+	return 0;
+}
+
 void resync_timer_fn(unsigned long data)
 {
 	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
