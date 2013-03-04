@@ -965,15 +965,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (!test_bit(WEAK_WHILE_RESYNC, &device->flags) &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
-				unsigned long flags;
-				int i;
-
-				spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-				for (i = ARRAY_SIZE(peer_device->history_uuids) - 1; i >= 0; i--)
-					_drbd_uuid_push_history(peer_device, peer_device->history_uuids[i]);
-				__drbd_uuid_set_bitmap(peer_device, drbd_current_uuid(device));
-				__drbd_uuid_set_current(device, peer_device->current_uuid);
-				spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
+				drbd_uuid_resync_finished(peer_device);
 			} else {
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");

@@ -3997,7 +3997,7 @@ peer_device_by_bitmap_index(struct drbd_device *device, int bitmap_index)
 	return NULL;
 }
 
-static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
+static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
@@ -4005,9 +4005,6 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
 	unsigned long long bm_uuid;
 	u64 mask = 0;
 	bool do_it;
-
-	if (device->disk_state[NOW] < D_UP_TO_DATE)
-		return mask;
 
 	max_peers = device->bitmap->bm_max_peers;
 	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
@@ -4037,6 +4034,15 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
 
 	return mask;
 }
+
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
+{
+	if (device->disk_state[NOW] < D_UP_TO_DATE)
+		return 0;
+
+	return _rotate_current_into_bitmap(device, force_mask);
+}
+
 
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
@@ -4135,6 +4141,20 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 nod
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	propagate_uuids(device, got_new_bitmap_uuid);
+}
+
+void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 got_new_bitmap_uuid;
+	unsigned long flags;
+
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+	got_new_bitmap_uuid = _rotate_current_into_bitmap(device, 1ULL << peer_device->node_id);
+	__drbd_uuid_set_current(device, peer_device->current_uuid);
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
+
 	propagate_uuids(device, got_new_bitmap_uuid);
 }
 
