@@ -4652,6 +4652,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
+	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
 	reply.weak_nodes = be64_to_cpu(p->weak_nodes);
 
@@ -4705,14 +4706,24 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		for_each_connection(affected_connection, resource) {
 			if (reply.initiator_node_id ==
 			    affected_connection->net_conf->peer_node_id)
-				goto directly_affected;
+				goto directly_connected;
 		}
-		/* only indirectly affected */
+		/* only indirectly connected */
 		affected_connection = NULL;
 		goto next;
 	}
 
-    directly_affected:
+    directly_connected:
+	if (reply.target_node_id != -1 &&
+	    reply.target_node_id != resource->res_opts.node_id) {
+		affected_connection = NULL;
+		goto next;
+	}
+	mask.i = be32_to_cpu(p->mask);
+	val.i = be32_to_cpu(p->val);
+
+	mask = convert_state(mask);
+	val = convert_state(val);
 	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
 		if (!peer_device) {
@@ -4745,25 +4756,12 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		break;
 	}
 
-	if (affected_connection) {
-		mask.i = be32_to_cpu(p->mask);
-		val.i = be32_to_cpu(p->val);
-
-		mask = convert_state(mask);
-		val = convert_state(val);
-	} else {
-		/* Do nothing to the connection itself; only prepare, commit,
-		 * or abort the transaction. */
-		affected_connection = connection;
-		rv = change_connection_state(connection, mask, val,
-					     flags | CS_IGN_OUTD_FAIL);
-	}
-
 	if (peer_device)
 		rv = change_peer_device_state(peer_device, mask, val, flags | CS_TWOPC);
 	else
-		rv = change_connection_state(affected_connection, mask, val,
-					     flags | CS_TWOPC | CS_IGN_OUTD_FAIL);
+		rv = change_connection_state(
+			affected_connection ? affected_connection : connection,
+			mask, val, flags | CS_TWOPC | CS_IGN_OUTD_FAIL);
 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {

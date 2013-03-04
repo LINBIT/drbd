@@ -725,6 +725,7 @@ struct twopc_reply {
 	int vnr;
 	unsigned int tid;  /* transaction identifier */
 	int initiator_node_id;  /* initiator of the transaction */
+	int target_node_id;  /* target of the transaction (or -1) */
 	u64 primary_nodes;
 	u64 weak_nodes;
 };

@@ -278,6 +278,7 @@ struct p_req_state_reply {
 struct p_twopc_request {
 	u32 tid;  /* transaction identifier */
 	u32 initiator_node_id;  /* initiator of the transaction */
+	u32 target_node_id;  /* target of the transaction (or -1) */
 	u64 nodes_to_reach;
 	u64 primary_nodes;
 	u64 weak_nodes;

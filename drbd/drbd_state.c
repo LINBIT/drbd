@@ -2499,6 +2499,7 @@ static enum drbd_state_rv
 change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			  union drbd_state mask, union drbd_state val,
 			  unsigned long *irq_flags,
+			  int target_node_id,
 			  u64 reach_immediately)
 {
 	struct p_twopc_request request;
@@ -2528,6 +2529,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	request.tid = cpu_to_be32(reply->tid);
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
+	request.target_node_id = cpu_to_be32(target_node_id);
 	request.nodes_to_reach = cpu_to_be64(nodes_to_reach);
 	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.weak_nodes = 0;  /* Computed in phase 1. */
@@ -2538,6 +2540,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		   be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
+	reply->target_node_id = target_node_id;
 	reply->primary_nodes = 0;
 	reply->weak_nodes = 0;
 
@@ -2560,6 +2563,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 				reply->primary_nodes |= m;
 				m |= directly_connected_nodes(resource);
+				if (mask.conn == conn_MASK && val.conn == C_CONNECTED)
+					m |= NODE_MASK(target_node_id);
 				reply->weak_nodes |= ~m;
 			}
 
@@ -2711,7 +2716,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, -1,
-				NS(role, role), &irq_flags,
+				NS(role, role), &irq_flags, -1,
 				directly_connected_nodes(resource));
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
@@ -2796,7 +2801,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, device->vnr,
-				NS(disk, disk_state), &irq_flags,
+				NS(disk, disk_state), &irq_flags, -1,
 				directly_connected_nodes(resource));
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
