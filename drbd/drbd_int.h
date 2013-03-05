@@ -810,6 +810,9 @@ struct drbd_connection {			/* is a resource from the config file */
 	unsigned long last_received;	/* in jiffies, either socket */
 	unsigned int ko_count;
 
+	struct drbd_work connect_timer_work;
+	struct timer_list connect_timer;
+
 	struct crypto_hash *cram_hmac_tfm;
 	struct crypto_hash *integrity_tfm;  /* checksums we compute, updates protected by connection->data->mutex */
 	struct crypto_hash *peer_integrity_tfm;  /* checksums we verify, only accessed from receiver thread  */
@@ -1676,6 +1679,8 @@ static inline void drbd_tcp_quickack(struct socket *sock)
 void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo);
 
 extern void twopc_timer_fn(unsigned long);
+extern void connect_timer_fn(unsigned long);
+int connect_timer_work(struct drbd_work *, int);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

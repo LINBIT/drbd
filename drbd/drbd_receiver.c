@@ -1101,6 +1101,36 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
+int connect_timer_work(struct drbd_work *work, int cancel)
+{
+	struct drbd_connection *connection =
+		container_of(work, struct drbd_connection, connect_timer_work);
+	struct drbd_resource *resource = connection->resource;
+	enum drbd_conn_state cstate;
+
+	spin_lock_irq(&resource->req_lock);
+	cstate = connection->cstate[NOW];
+	spin_unlock_irq(&resource->req_lock);
+	if (cstate == C_CONNECTING) {
+		drbd_info(connection, "Failure to connect; retrying\n");
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+	}
+	kref_put(&connection->kref, drbd_destroy_connection);
+	return 0;
+}
+
+void connect_timer_fn(unsigned long data)
+{
+	struct drbd_connection *connection = (struct drbd_connection *) data;
+	struct drbd_resource *resource = connection->resource;
+	unsigned long irq_flags;
+
+	kref_get(&connection->kref);
+	spin_lock_irqsave(&resource->req_lock, irq_flags);
+	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
+	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
+}
+
 /*
  * return values:
  *   1 yes, we have a valid connection

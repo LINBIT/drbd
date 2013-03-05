@@ -2939,6 +2939,12 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	mutex_init(&connection->data.mutex);
 	mutex_init(&connection->meta.mutex);
 
+	INIT_LIST_HEAD(&connection->connect_timer_work.list);
+	connection->connect_timer_work.cb = connect_timer_work;
+	setup_timer(&connection->connect_timer,
+		    connect_timer_fn,
+		    (unsigned long) connection);
+
 	drbd_thread_init(resource, &connection->receiver, drbd_receiver, "receiver");
 	connection->receiver.connection = connection;
 	drbd_thread_init(resource, &connection->sender, drbd_sender, "sender");
@@ -3316,6 +3322,8 @@ void drbd_put_connection(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr, refs = 1;
+
+	del_timer_sync(&connection->connect_timer);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		refs++;
