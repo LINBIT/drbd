@@ -119,5 +119,6 @@ extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
 
 struct drbd_work;
 extern int abort_nested_twopc_work(struct drbd_work *, int);
+extern u64 directly_connected_nodes(struct drbd_resource *);
 
 #endif

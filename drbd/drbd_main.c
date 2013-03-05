@@ -1223,6 +1223,14 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	struct p_twopc_request *p;
 	int err;
 
+	drbd_debug(connection, "Sending state change request %s [%u|%u] "
+		   "(primary_nodes=%lX, weak_nodes=%lX)\n",
+		   cmdname(cmd),
+		   be32_to_cpu(request->val),
+		   be32_to_cpu(request->mask),
+		   (unsigned long)be64_to_cpu(request->primary_nodes),
+		   (unsigned long)be64_to_cpu(request->weak_nodes));
+
 	sock = &connection->data;
 	p = conn_prepare_command(connection, sock);
 	if (!p)
@@ -1261,9 +1269,11 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
 		p->primary_nodes = cpu_to_be64(reply->primary_nodes);
-		drbd_debug(connection, "Sending %s reply (primary_nodes=%lX)\n",
+		p->weak_nodes = cpu_to_be64(reply->weak_nodes);
+		drbd_debug(connection, "Sending %s reply (primary_nodes=%lX, weak_nodes=%lX)\n",
 			   cmdname(cmd),
-			   (unsigned long)reply->primary_nodes);
+			   (unsigned long)reply->primary_nodes,
+			   (unsigned long)reply->weak_nodes);
 		send_command(connection, reply->vnr, sock, cmd, sizeof(*p), NULL, 0);
 	}
 }

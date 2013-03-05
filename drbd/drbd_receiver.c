@@ -4645,13 +4645,17 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
-	reply.primary_nodes = 0;
+	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
+	reply.weak_nodes = be64_to_cpu(p->weak_nodes);
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
 
 	if (resource->role[NOW] == R_PRIMARY) {
-		reply.primary_nodes |= NODE_MASK(resource->res_opts.node_id);
+		u64 m = NODE_MASK(resource->res_opts.node_id);
+		reply.primary_nodes |= m;
+		m |= directly_connected_nodes(resource);
+		reply.weak_nodes |= ~m;
 	}
 
 	if (resource->remote_state_change) {
@@ -4735,8 +4739,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		flags |= CS_ABORT;
 		break;
 	default:
-		drbd_info(connection, "Committing remote state change %u\n",
-			  reply.tid);
+		drbd_info(connection, "Committing remote state change %u "
+				"(primary_nodes=%lX, weak_nodes=%lX)\n",
+			  reply.tid,
+			  (unsigned long)reply.primary_nodes,
+			  (unsigned long)reply.weak_nodes);
 		break;
 	}
 
@@ -4788,11 +4795,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			}
 			resource->twopc_reply.initiator_node_id = -1;
 			resource->twopc_reply.tid = 0;
-			if (!(flags & CS_ABORT)) {
-				drbd_debug(resource, "primary node mask = %llx",
-					   (unsigned long long)
-					   resource->twopc_reply.primary_nodes);
-			}
 			spin_unlock_irq(&resource->req_lock);
 		}
 	}
@@ -6131,14 +6133,16 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	spin_lock_irq(&resource->req_lock);
 	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
 	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
+		resource->twopc_reply.primary_nodes |=
+			be64_to_cpu(p->primary_nodes);
+		resource->twopc_reply.weak_nodes |=
+			be64_to_cpu(p->weak_nodes);
 		if (pi->cmd == P_TWOPC_YES || pi->cmd == P_TWOPC_SKIP)
 			set_bit(TWOPC_YES, &connection->flags);
 		else {
 			set_bit(TWOPC_NO, &connection->flags);
 			drbd_debug(connection, "Requested state change failed by peer.\n");
 		}
-		resource->twopc_reply.primary_nodes |=
-			be64_to_cpu(p->primary_nodes);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
 			drbd_queue_work(&resource->work,

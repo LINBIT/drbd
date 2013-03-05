@@ -2315,10 +2315,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 			continue;
 		kref_get(&connection->kref);
 		rcu_read_unlock();
-		drbd_debug(connection, "Sending state change request %s [%u|%u]\n",
-			   cmdname(cmd),
-			   be32_to_cpu(request->val),
-			   be32_to_cpu(request->mask));
+
 		if (!conn_send_twopc_request(connection, vnr, cmd, request))
 			rv = SS_CW_SUCCESS;
 		else {
@@ -2412,6 +2409,20 @@ static int twopc_initiator_work(struct drbd_work *work, int cancel)
 	return 0;
 }
 
+u64 directly_connected_nodes(struct drbd_resource *resource)
+{
+	u64 directly_connected = 0;
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			continue;
+		directly_connected |=
+			NODE_MASK(connection->net_conf->peer_node_id);
+	}
+	return directly_connected;
+}
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -2483,6 +2494,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
 	request.nodes_to_reach = cpu_to_be64(nodes_to_reach);
 	request.primary_nodes = 0;  /* Computed in phase 1. */
+	request.weak_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(mask.i);
 	request.val = cpu_to_be32(val.i);
 
@@ -2491,6 +2503,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->primary_nodes = 0;
+	reply->weak_nodes = 0;
 
 	resource->twopc_work.cb = twopc_initiator_work;
 	begin_remote_state_change(resource, irq_flags);
@@ -2507,12 +2520,18 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			drbd_debug(resource, "Committing cluster-wide state change %u\n",
 				   be32_to_cpu(request.tid));
 
-			if (mask.role == role_MASK && val.role == R_PRIMARY) {
-				reply->primary_nodes |=
-					NODE_MASK(resource->res_opts.node_id);
+			if ((mask.role == role_MASK && val.role == R_PRIMARY) ||
+			    (mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
+				u64 m = NODE_MASK(resource->res_opts.node_id);
+
+				reply->primary_nodes |= m;
+				m |= directly_connected_nodes(resource);
+				reply->weak_nodes |= ~m;
 			}
 			request.primary_nodes =
 				cpu_to_be64(reply->primary_nodes);
+			request.weak_nodes =
+				cpu_to_be64(reply->weak_nodes);
 
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT, &request);
 			if (rv != SS_CW_SUCCESS) {
@@ -2523,8 +2542,6 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				   be32_to_cpu(request.tid));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT, &request);
 		}
-		drbd_debug(resource, "primary node mask = %llx",
-			   (unsigned long long) reply->primary_nodes);
 
 		rcu_read_lock();
 		for_each_connection(connection, resource)
