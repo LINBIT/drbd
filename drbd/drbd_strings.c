@@ -97,6 +97,7 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_O_VOL_PEER_PRI] = "Other vol primary on peer not allowed by config",
 	[-SS_PRIMARY_READER] = "Peer may not become primary while device is opened read-only",
 	[-SS_INTERRUPTED] = "Interrupted state change",
+	[-SS_TIMEOUT] = "Timeout in operation",
 };
 
 const char *drbd_repl_str(enum drbd_repl_state s)

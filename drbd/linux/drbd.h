@@ -321,7 +321,8 @@ enum drbd_state_rv {
 	SS_O_VOL_PEER_PRI = -20,
 	SS_INTERRUPTED = -21,	/* interrupted in stable_state_change() */
 	SS_PRIMARY_READER = -22,
-	SS_AFTER_LAST_ERROR = -23,    /* Keep this at bottom */	
+	SS_TIMEOUT = -23,
+	SS_AFTER_LAST_ERROR = -24,    /* Keep this at bottom */
 };
 
 #define SHARED_SECRET_MAX 64
