@@ -214,7 +214,8 @@ static bool state_has_changed(struct drbd_resource *resource)
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp[OLD] != resource->susp[NEW] ||
 	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
-	    resource->susp_fen[OLD] != resource->susp_fen[NEW])
+	    resource->susp_fen[OLD] != resource->susp_fen[NEW] ||
+	    resource->weak[OLD] != resource->weak[NEW])
 		return true;
 
 	for_each_connection(connection, resource) {
@@ -256,6 +257,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->susp[NEW] = resource->susp[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
 	resource->susp_fen[NEW] = resource->susp_fen[NOW];
+	resource->weak[NEW] = resource->weak[NOW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
@@ -329,6 +331,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->susp[NOW] = resource->susp[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
 	resource->susp_fen[NOW] = resource->susp_fen[NEW];
+	resource->weak[NOW] = resource->weak[NEW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
@@ -2550,6 +2553,12 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 	end_remote_state_change(resource, irq_flags, flags);
 
+	if (rv >= SS_SUCCESS) {
+		__change_weak(resource,
+			reply->weak_nodes &
+			NODE_MASK(resource->res_opts.node_id));
+	}
+
 	resource->remote_state_change = false;
 	reply->initiator_node_id = -1;
 	return rv;
@@ -2695,6 +2704,11 @@ void __change_io_susp_no_data(struct drbd_resource *resource, bool value)
 void __change_io_susp_fencing(struct drbd_resource *resource, bool value)
 {
 	resource->susp_fen[NEW] = value;
+}
+
+void __change_weak(struct drbd_resource *resource, bool value)
+{
+	resource->weak[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)

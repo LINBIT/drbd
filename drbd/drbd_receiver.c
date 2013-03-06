@@ -4414,7 +4414,8 @@ STATIC union drbd_state convert_state(union drbd_state peer_state)
 
 static union drbd_state
 __change_connection_state(struct drbd_connection *connection,
-			  union drbd_state mask, union drbd_state val)
+			  union drbd_state mask, union drbd_state val,
+			  enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
 
@@ -4432,6 +4433,11 @@ __change_connection_state(struct drbd_connection *connection,
 	if (mask.susp_fen) {
 		mask.susp_fen ^= -1;
 		__change_io_susp_fencing(resource, val.susp_fen);
+	}
+	if (flags & CS_TWOPC) {
+		__change_weak(resource,
+			resource->twopc_reply.weak_nodes &
+			NODE_MASK(resource->res_opts.node_id));
 	}
 
 	if (mask.conn) {
@@ -4501,7 +4507,7 @@ change_connection_state(struct drbd_connection *connection,
 	begin_state_change(connection->resource, &irq_flags, flags);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
-	mask_unused.i &= __change_connection_state(connection, mask, val).i;
+	mask_unused.i &= __change_connection_state(connection, mask, val, flags).i;
 	if (mask_unused.i) {
 		abort_state_change(connection->resource, &irq_flags);
 		return SS_NOT_SUPPORTED;
@@ -4527,7 +4533,7 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 
 	begin_state_change(connection->resource, &irq_flags, flags);
 	mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
-	mask_unused.i &= __change_connection_state(connection, mask, val).i;
+	mask_unused.i &= __change_connection_state(connection, mask, val, flags).i;
 	if (mask_unused.i) {
 		abort_state_change(connection->resource, &irq_flags);
 		return SS_NOT_SUPPORTED;
@@ -4762,10 +4768,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 
 	if (peer_device)
-		rv = change_peer_device_state(peer_device, mask, val, flags);
+		rv = change_peer_device_state(peer_device, mask, val, flags | CS_TWOPC);
 	else
 		rv = change_connection_state(affected_connection, mask, val,
-					     flags | CS_IGN_OUTD_FAIL);
+					     flags | CS_TWOPC | CS_IGN_OUTD_FAIL);
 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {

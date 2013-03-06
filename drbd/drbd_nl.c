@@ -3292,6 +3292,7 @@ put_result:
 	resource_info.res_susp = resource->susp[NOW];
 	resource_info.res_susp_nod = resource->susp_nod[NOW];
 	resource_info.res_susp_fen = resource->susp_fen[NOW];
+	resource_info.res_weak = resource->weak[NOW];
 	err = resource_info_to_skb(skb, &resource_info, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;

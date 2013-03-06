@@ -1928,6 +1928,9 @@ void resource_status(struct resources_list *resource)
 	    resource->info.res_susp_nod ||
 	    resource->info.res_susp_fen)
 		wrap_printf(4, " suspended:%s", susp_str(&resource->info));
+	if (opt_verbose || resource->info.res_weak)
+		wrap_printf(4, " weak:%s",
+			    resource->info.res_weak ? "yes" : "no");
 	if (opt_statistics && opt_verbose) {
 		wrap_printf(4, "\n");
 		print_resource_statistics(4, &resource->statistics, wrap_printf);
