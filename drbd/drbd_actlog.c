@@ -740,9 +740,6 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 		peers++;
 	}
 
-	if (peers == 1)
-		return;
-
 	size_sect = min(BM_SECT_PER_EXT,
 			drbd_get_capacity(device->this_bdev) - BM_EXT_TO_SECT(rs_enr));
 
