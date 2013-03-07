@@ -1962,7 +1962,8 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 		connection->send.seen_any_write_yet = true;
 		connection->send.current_epoch_nr = epoch;
 		connection->send.current_epoch_writes = 0;
-		connection->send.current_dagtag_sector = 0;
+		connection->send.current_dagtag_sector =
+			connection->resource->dagtag_sector - (BIO_MAX_SIZE >> 9) - 1;
 	}
 }
 
