@@ -3141,7 +3141,7 @@ static int check_offsets_and_sizes(struct drbd_conf *mdev, struct drbd_backing_d
 		||  in_core->al_offset != MD_4kB_SECT
 		||  in_core->bm_offset != MD_4kB_SECT + MD_32kB_SECT
 		||  in_core->al_stripes != 1
-		||  in_core->al_stripe_size_4k != MD_32kB_SECT)
+		||  in_core->al_stripe_size_4k != MD_32kB_SECT/8)
 			goto err;
 	}
 
