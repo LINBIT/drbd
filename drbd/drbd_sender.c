@@ -2002,7 +2002,7 @@ int process_one_request(struct drbd_connection *connection)
 				err = drbd_send_dagtag(connection, current_dagtag_sector);
 
 			connection->send.current_epoch_writes++;
-			connection->send.current_dagtag_sector = current_dagtag_sector;
+			connection->send.current_dagtag_sector = req->dagtag_sector;
 
 			err = drbd_send_dblock(peer_device, req);
 			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
