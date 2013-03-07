@@ -1274,11 +1274,18 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
  */
 static void finish_state_change(struct drbd_resource *resource, struct completion *done)
 {
+	enum drbd_role *role = resource->role;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
 
 	print_state_change(resource, "");
+
+	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && resource->peer_ack_req) {
+		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
+		drbd_queue_peer_ack(resource->peer_ack_req);
+		resource->peer_ack_req = NULL;
+	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
