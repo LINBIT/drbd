@@ -1138,6 +1138,7 @@ STATIC void conn_disconnect(struct drbd_connection *connection);
  */
 static bool conn_connect(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_socket sock, msock;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *nc;
@@ -1332,7 +1333,15 @@ randomize:
 	}
 	rcu_read_unlock();
 
-	if (stable_state_change(connection->resource,
+	mutex_lock(&resource->conf_update);
+	/* The discard_my_data flag is a single-shot modifier to the next
+	 * connection attempt, the handshake of which is now well underway.
+	 * No need for rcu style copying of the whole struct
+	 * just to clear a single value. */
+	connection->net_conf->discard_my_data = 0;
+	mutex_unlock(&resource->conf_update);
+
+	if (stable_state_change(resource,
 		change_cstate(connection, C_CONNECTED,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE)) < SS_SUCCESS) {
 		h = 0;  /* retry */
@@ -1340,14 +1349,6 @@ randomize:
 	}
 
 	drbd_thread_start(&connection->asender);
-
-	mutex_lock(&connection->resource->conf_update);
-	/* The discard_my_data flag is a single-shot modifier to the next
-	 * connection attempt, the handshake of which is now well underway.
-	 * No need for rcu style copying of the whole struct
-	 * just to clear a single value. */
-	connection->net_conf->discard_my_data = 0;
-	mutex_unlock(&connection->resource->conf_update);
 	goto out;
 
 out_release_sockets:
