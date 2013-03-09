@@ -1131,15 +1131,12 @@ void connect_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+STATIC void conn_disconnect(struct drbd_connection *connection);
+
 /*
- * return values:
- *   1 yes, we have a valid connection
- *   0 oops, did not work out, please try again
- *  -1 peer talks different language,
- *     no point in trying again, please go standalone.
- *  -2 We do not have a network config...
+ * Returns true if we have a valid connection.
  */
-STATIC int conn_connect(struct drbd_connection *connection)
+static bool conn_connect(struct drbd_connection *connection)
 {
 	struct drbd_socket sock, msock;
 	struct drbd_peer_device *peer_device;
@@ -1148,9 +1145,12 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	bool discard_my_data;
 	struct waiter waiter;
 
+start:
 	clear_bit(DISCONNECT_SENT, &connection->flags);
-	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS)
-		return -2;
+	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS) {
+		/* We do not have a network config. */
+		return false;
+	}
 
 	mutex_init(&sock.mutex);
 	sock.sbuf = connection->data.sbuf;
@@ -1164,8 +1164,10 @@ STATIC int conn_connect(struct drbd_connection *connection)
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	connection->agreed_pro_version = 80;
 
-	if (get_listener(connection, &waiter))
-		return 0;
+	if (get_listener(connection, &waiter)) {
+		h = 0;  /* retry */
+		goto out;
+	}
 
 	do {
 		struct socket *s;
@@ -1285,24 +1287,28 @@ randomize:
 
 	h = drbd_do_features(connection);
 	if (h <= 0)
-		return h;
+		goto out;
 
 	if (connection->cram_hmac_tfm) {
 		switch (drbd_do_auth(connection)) {
 		case -1:
 			drbd_err(connection, "Authentication of peer failed\n");
-			return -1;
+			h = -1;  /* give up; go standalone */
+			goto out;
 		case 0:
 			drbd_err(connection, "Authentication of peer failed, trying again.\n");
-			return 0;
+			h = 0;  /* retry */
+			goto out;
 		}
 	}
 
 	connection->data.socket->sk->sk_sndtimeo = timeout;
 	connection->data.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
-	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
-		return -1;
+	if (drbd_send_protocol(connection) == -EOPNOTSUPP) {
+		h = -1;  /* give up; go standalone */
+		goto out;
+	}
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1328,8 +1334,10 @@ randomize:
 
 	if (stable_state_change(connection->resource,
 		change_cstate(connection, C_CONNECTED,
-			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE)) < SS_SUCCESS)
-		return 0;
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE)) < SS_SUCCESS) {
+		h = 0;  /* retry */
+		goto out;
+	}
 
 	drbd_thread_start(&connection->asender);
 
@@ -1340,8 +1348,7 @@ randomize:
 	 * just to clear a single value. */
 	connection->net_conf->discard_my_data = 0;
 	mutex_unlock(&connection->resource->conf_update);
-
-	return h;
+	goto out;
 
 out_release_sockets:
 	put_listener(&waiter);
@@ -1349,7 +1356,17 @@ out_release_sockets:
 		sock_release(sock.socket);
 	if (msock.socket)
 		sock_release(msock.socket);
-	return -1;
+	h = -1;  /* give up; go standalone */
+
+out:
+	if (h == 0) {
+		conn_disconnect(connection);
+		schedule_timeout_interruptible(HZ);
+		goto start;
+	}
+	if (h == -1)
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	return h > 0;
 }
 
 static int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
@@ -5660,8 +5677,11 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 
 	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
 	oc = connection->cstate[NOW];
-	if (oc >= C_UNCONNECTED)
+	if (oc >= C_UNCONNECTED) {
 		__change_cstate(connection, C_UNCONNECTED);
+		/* drbd_receiver() has to be restarted after it returns */
+		drbd_thread_restart_nowait(&connection->receiver);
+	}
 	end_state_change(connection->resource, &irq_flags);
 
 	if (oc == C_DISCONNECTING)
@@ -6055,21 +6075,9 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 int drbd_receiver(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
-	int h;
 
-	do {
-		h = conn_connect(connection);
-		if (h == 0) {
-			conn_disconnect(connection);
-			schedule_timeout_interruptible(HZ);
-		}
-		if (h == -1)
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-	} while (h == 0);
-
-	if (h > 0)
+	if (conn_connect(connection))
 		drbdd(connection);
-
 	conn_disconnect(connection);
 	return 0;
 }
