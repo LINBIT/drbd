@@ -198,7 +198,7 @@ enum drbd_conn_state {
 	C_UNCONNECTED,    /* >= C_UNCONNECTED -> inc_net() succeeds */
 
 	/* These temporary states are used on the way
-	 * from >= L_ESTABLISHED to Unconnected.
+	 * from C_CONNECTED to C_UNCONNECTED.
 	 * The 'disconnect reason' states
 	 * I do not allow to change between them. */
 	C_TIMEOUT,
