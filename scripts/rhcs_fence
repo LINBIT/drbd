@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 #
 # Author:   Digimer (digimer@alteeve.com)
-# Version:  0.2.4
-# Released: 2012-01-20
+#           Alteeve's Niche! - https://alteeve.com/w/
+# Version:  0.2.5
+# Released: 2012-08-01
 # License:  GPL v2+
 # 
 # This program ties Linbit's DRBD into Red Hat's RHCS's fence daemon via the 
@@ -233,7 +234,6 @@ sub kill_target
 	
 	# Variables
 	my $remote_node=$conf->{env}{DRBD_PEERS};
-	my $exit=1;
 	my $sc="";
 	my $shell_call="";
 	my $line="";
@@ -253,7 +253,7 @@ sub kill_target
 		if ($conf->{sys}{debug}) { to_log($conf, 0, __LINE__, "DEBUG: $line"); }
 		if ($line=~/fence .*? success/)
 		{
-			$exit=0;
+			if ($conf->{sys}{debug}) { to_log($conf, 0, __LINE__, "'fence_node $remote_node' appears to have succeeded!"); }
 		}
 		else
 		{
@@ -262,20 +262,23 @@ sub kill_target
 		}
 	}
 	$sc->close();
-	$sc_exit=$?;
+	$sc_exit = $?;
 	if ($conf->{sys}{debug}) { to_log($conf, 0, __LINE__, "DEBUG: Attempt to fence node: [$remote_node] exited with: [$sc_exit]"); }
 
 	# Exit.
-	if (not $exit)
+	if ($sc_exit)
 	{
 		if ($conf->{sys}{debug}) { to_log($conf, 1, __LINE__, "Attempt to fence: [$remote_node] failed!"); }
+		nice_exit($conf, 1);
 	}
 	else
 	{
 		if ($conf->{sys}{debug}) { to_log($conf, 7, __LINE__, "Fencing of: [$remote_node] succeeded!"); }
+		nice_exit($conf, 7);
 	}
 	
-	return($exit);
+	# This should not be reachable.
+	return(0);
 }
 
 # This ejects the remote node from the cluster, if cluster comms are still up.
