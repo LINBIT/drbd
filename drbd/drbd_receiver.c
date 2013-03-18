@@ -4900,6 +4900,7 @@ int drbd_asender(struct drbd_thread *thi)
 	struct drbd_conf *mdev = thi->mdev;
 	struct p_header80 *h = &mdev->meta.rbuf.header.h80;
 	struct asender_cmd *cmd = NULL;
+	struct sched_param param = { .sched_priority = 2 };
 
 	int rv, len;
 	void *buf    = h;
@@ -4910,8 +4911,9 @@ int drbd_asender(struct drbd_thread *thi)
 
 	sprintf(current->comm, "drbd%d_asender", mdev_to_minor(mdev));
 
-	current->policy = SCHED_RR;  /* Make this a realtime task! */
-	current->rt_priority = 2;    /* more important than all other tasks */
+	rv = sched_setscheduler(current, SCHED_RR, &param);
+	if (rv < 0)
+		dev_err(DEV, "drbd_asender: ERROR set priority, ret=%d\n", rv);
 
 	while (get_t_state(thi) == Running) {
 		drbd_thread_current_set_cpu(mdev);
