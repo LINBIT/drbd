@@ -2412,6 +2412,43 @@ static int twopc_initiator_work(struct drbd_work *work, int cancel)
 	return 0;
 }
 
+/**
+ * change_cluster_wide_state  -  Cluster-wide two-phase commit
+ *
+ * Perform a two-phase commit transaction among all (reachable) nodes in the
+ * cluster.  In our transaction model, the initiator of a transaction is also
+ * the coordinator.
+ *
+ * In phase one of the transaction, the coordinator sends all nodes in the
+ * cluster a P_TWOPC_PREPARE packet.  Each node replies with either P_TWOPC_YES
+ * if it consents or with P_TWOPC_NO if it denies the transaction.  Once all
+ * replies have been received, the coordinator sends all nodes in the cluster a
+ * P_TWOPC_COMMIT or P_TWOPC_ABORT packet to finish the transaction.
+ *
+ * When a node in the cluster is busy with another transaction, it replies with
+ * P_TWOPC_NO.  The coordinator is then responsible for retrying the
+ * transaction.
+ *
+ * Since a cluster is not guaranteed to always be fully connected, some nodes
+ * will not be directly reachable from other nodes.  In order to still reach
+ * all nodes in the cluster, participants will forward requests to nodes which
+ * haven't received the request yet:
+ *
+ * The nodes_to_reach field in requests indicates which nodes have received the
+ * request already.  Before forwarding a request to a peer, a node removes
+ * itself from nodes_to_reach; it then sends the request to all directly
+ * connected nodes in nodes_to_reach.
+ *
+ * If there are redundant paths in the cluster, requests will reach some nodes
+ * more than once.  Nodes remember when they are taking part in a transaction;
+ * they detect duplicate requests and reply to them with P_TWOPC_SKIP packets.
+ * (Transactions are identified by the node id of the initiator and a random,
+ * unique-enough transaction identifier.)
+ *
+ * A configurable timeout determines how long a coordinator or participant will
+ * wait for a transaction to finish.  A transaction that times out is assumed
+ * to have aborted.
+ */
 static enum drbd_state_rv
 change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			  union drbd_state mask, union drbd_state val,
