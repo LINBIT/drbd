@@ -70,6 +70,7 @@ enum drbd_packet {
 	P_TWOPC_NO            = 0x38, /* meta sock: reject two-phase commit */
 	P_TWOPC_SKIP          = 0x39, /* meta sock: duplicate request */
 	P_TWOPC_COMMIT        = 0x40, /* data sock: commit state change */
+	P_TWOPC_RETRY         = 0x41, /* meta sock: retry two-phase commit */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 

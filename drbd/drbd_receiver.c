@@ -4753,7 +4753,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			spin_unlock_irq(&resource->req_lock);
 			drbd_info(connection, "Rejecting concurrent remote state change %u\n",
 				  reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_NO, &reply);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
 			return 0;
 		}
 		if (pi->cmd == P_TWOPC_PREPARE) {
@@ -6235,8 +6235,10 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 
 		if (pi->cmd == P_TWOPC_YES || pi->cmd == P_TWOPC_SKIP)
 			set_bit(TWOPC_YES, &connection->flags);
-		else
+		else if (pi->cmd == P_TWOPC_NO)
 			set_bit(TWOPC_NO, &connection->flags);
+		else if (pi->cmd == P_TWOPC_RETRY)
+			set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
 			drbd_queue_work(&resource->work,
@@ -6711,6 +6713,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_SKIP]      = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_RETRY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 
 int drbd_asender(struct drbd_thread *thi)

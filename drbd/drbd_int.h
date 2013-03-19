@@ -703,6 +703,7 @@ enum {
 	TWOPC_PREPARED,
 	TWOPC_YES,
 	TWOPC_NO,
+	TWOPC_RETRY,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	DISCONNECT_SENT,

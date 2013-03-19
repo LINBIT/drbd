@@ -26,6 +26,7 @@
  */
 
 #include <linux/drbd_limits.h>
+#include <linux/random.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
@@ -2325,6 +2326,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
+		clear_bit(TWOPC_RETRY, &connection->flags);
 
 		if (!conn_send_twopc_request(connection, vnr, cmd, request))
 			rv = SS_CW_SUCCESS;
@@ -2349,7 +2351,8 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		if (!(test_bit(TWOPC_YES, &connection->flags) ||
-		      test_bit(TWOPC_NO, &connection->flags))) {
+		      test_bit(TWOPC_NO, &connection->flags) ||
+		      test_bit(TWOPC_RETRY, &connection->flags))) {
 			drbd_debug(connection, "Reply not ready yet\n");
 			ready = false;
 			break;
@@ -2370,6 +2373,10 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource)
 			continue;
 		if (test_bit(TWOPC_NO, &connection->flags))
 			rv = SS_CW_FAILED_BY_PEER;
+		if (test_bit(TWOPC_RETRY, &connection->flags)) {
+			rv = SS_CONCURRENT_ST_CHG;
+			break;
+		}
 	}
 	rcu_read_unlock();
 	return rv;
@@ -2458,6 +2465,24 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 	return rv;
 }
 
+static long max_ping_timeout(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	long timeout = 0;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		struct net_conf *net_conf =
+			rcu_dereference(connection->net_conf);
+		long t = net_conf->ping_timeo * HZ / 10;
+
+		if (timeout < t)
+			timeout = t;
+	}
+	rcu_read_unlock();
+	return timeout;
+}
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -2508,6 +2533,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	u64 nodes_to_reach;
+	int attempts = 3;
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2522,6 +2548,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
 
+    retry:
 	do
 		reply->tid = random32();
 	while (!reply->tid);
@@ -2607,6 +2634,16 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 		rcu_read_unlock();
 	}
+	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
+	    --attempts > 0) {
+		long timeout = max_ping_timeout(resource);
+		if (timeout <= 0)
+			timeout = HZ;
+		schedule_timeout(random32() % timeout);
+		end_remote_state_change(resource, irq_flags, flags);
+		goto retry;
+	}
+
 	end_remote_state_change(resource, irq_flags, flags);
 
 	if (rv >= SS_SUCCESS) {
@@ -2651,9 +2688,16 @@ static int nested_twopc_work(struct drbd_work *work, int cancel)
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
 	enum drbd_state_rv rv;
+	enum drbd_packet cmd;
 
 	rv = get_cluster_wide_reply(resource);
-	twopc_end_nested(resource, rv >= SS_SUCCESS ? P_TWOPC_YES : P_TWOPC_NO);
+	if (rv >= SS_SUCCESS)
+		cmd = P_TWOPC_YES;
+	else if (rv == SS_CONCURRENT_ST_CHG)
+		cmd = P_TWOPC_RETRY;
+	else
+		cmd = P_TWOPC_NO;
+	twopc_end_nested(resource, cmd);
 	return 0;
 }
 

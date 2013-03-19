@@ -4462,6 +4462,7 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_TWOPC_YES]		= "twopc_yes",
 		[P_TWOPC_NO]		= "twopc_no",
 		[P_TWOPC_SKIP]		= "twopc_skip",
+		[P_TWOPC_RETRY]		= "twopc_retry",
 		/* enum drbd_packet, but not commands - obsoleted flags:
 		 *	P_MAY_IGNORE
 		 *	P_MAX_OPT_CMD
