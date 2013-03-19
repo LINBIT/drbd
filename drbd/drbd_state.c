@@ -2323,6 +2323,9 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 		kref_get(&connection->kref);
 		rcu_read_unlock();
 
+		clear_bit(TWOPC_YES, &connection->flags);
+		clear_bit(TWOPC_NO, &connection->flags);
+
 		if (!conn_send_twopc_request(connection, vnr, cmd, request))
 			rv = SS_CW_SUCCESS;
 		else {
@@ -2365,11 +2368,8 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		clear_bit(TWOPC_YES,  &connection->flags);
-		if (test_and_clear_bit(TWOPC_NO, &connection->flags)) {
-			clear_bit(TWOPC_PREPARED, &connection->flags);
+		if (test_bit(TWOPC_NO, &connection->flags))
 			rv = SS_CW_FAILED_BY_PEER;
-		}
 	}
 	rcu_read_unlock();
 	return rv;
