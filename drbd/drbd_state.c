@@ -2610,7 +2610,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 		}
 		if (rv >= SS_SUCCESS) {
-			drbd_debug(resource, "Committing cluster-wide state change\n");
+			drbd_debug(resource, "Committing cluster-wide state change %u\n",
+				   be32_to_cpu(request.tid));
 
 			request.primary_nodes =
 				cpu_to_be64(reply->primary_nodes);
@@ -2670,7 +2671,8 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	if (!expect(resource, twopc_parent))
 		return;
 
-	drbd_debug(twopc_parent, "Nested state change result: %s\n",
+	drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
+		   resource->twopc_reply.tid,
 		   cmdname(cmd));
 	twopc_reply = resource->twopc_reply;
 
