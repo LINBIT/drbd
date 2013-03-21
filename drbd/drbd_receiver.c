@@ -4983,13 +4983,10 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -ECONNRESET;
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
-	 * transitions from D_INCONSISTENT to D_UP_TO_DATE. For empty (0 bits
-	 * set) resync started in PausedSyncT, or if the timing of pause-/
-	 * unpause-sync events has been "just right", the peer disk may
-	 * transition from D_CONSISTENT to D_UP_TO_DATE as well.
+	 * was D_INCONSISTENT or D_CONSISTENT. (Since the peer might be
+	 * weak we do not know anything about its new disk state)
 	 */
 	if ((os.pdsk == D_INCONSISTENT || os.pdsk == D_CONSISTENT) &&
-	    peer_disk_state == D_UP_TO_DATE &&
 	    os.conn > L_ESTABLISHED && os.disk == D_UP_TO_DATE) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
@@ -5007,7 +5004,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		else if (os.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_ESTABLISHED) {
 			if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
-				drbd_resync_finished(peer_device);
+				drbd_resync_finished(peer_device, peer_state.disk);
 			return 0;
 		}
 	}
@@ -5016,7 +5013,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (os.conn == L_VERIFY_T && os.disk == D_UP_TO_DATE &&
 	    peer_state.conn == C_CONNECTED && peer_disk_state == D_UP_TO_DATE) {
 		ov_out_of_sync_print(peer_device);
-		drbd_resync_finished(peer_device);
+		drbd_resync_finished(peer_device, D_MASK);
 		return 0;
 	}
 
@@ -6590,7 +6587,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		} else {
 			drbd_err(device, "kmalloc(dw) failed.");
 			ov_out_of_sync_print(peer_device);
-			drbd_resync_finished(peer_device);
+			drbd_resync_finished(peer_device, D_MASK);
 		}
 	}
 	put_ldev(device);

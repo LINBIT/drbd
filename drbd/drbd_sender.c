@@ -609,7 +609,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	if (peer_device->rs_total == 0) {
 		/* empty resync? */
-		drbd_resync_finished(peer_device);
+		drbd_resync_finished(peer_device, D_MASK);
 		return 0;
 	}
 
@@ -818,7 +818,7 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	struct drbd_peer_device *peer_device = dw->peer_device;
 	kfree(dw);
 	ov_out_of_sync_print(peer_device);
-	drbd_resync_finished(peer_device);
+	drbd_resync_finished(peer_device, D_MASK);
 
 	return 0;
 }
@@ -829,7 +829,7 @@ STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device_work, w);
 	struct drbd_peer_device *peer_device = dw->peer_device;
 	kfree(dw);
-	drbd_resync_finished(peer_device);
+	drbd_resync_finished(peer_device, D_MASK);
 
 	return 0;
 }
@@ -843,7 +843,8 @@ void drbd_ping_peer(struct drbd_connection *connection)
 		   connection->cstate[NOW] < C_CONNECTED);
 }
 
-int drbd_resync_finished(struct drbd_peer_device *peer_device)
+int drbd_resync_finished(struct drbd_peer_device *peer_device,
+			 enum drbd_disk_state new_peer_disk_state)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -947,11 +948,12 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 			__change_peer_disk_state(peer_device, D_INCONSISTENT);
 		}
 	} else {
-		__change_disk_state(device, D_UP_TO_DATE);
-		__change_peer_disk_state(peer_device, D_UP_TO_DATE);
-
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
-			if (!test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
+			if (!test_bit(WEAK_WHILE_RESYNC, &device->flags))
+				__change_disk_state(device, D_UP_TO_DATE);
+
+			if (!test_bit(WEAK_WHILE_RESYNC, &device->flags) &&
+			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
 				unsigned long flags;
 				int i;
@@ -962,9 +964,16 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device)
 				__drbd_uuid_set_bitmap(peer_device, drbd_current_uuid(device));
 				__drbd_uuid_set_current(device, peer_device->current_uuid);
 				spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
-			} else if (!peer_device->uuids_received) {
-				drbd_err(peer_device, "BUG: uuids were not received!\n");
+			} else {
+				if (!peer_device->uuids_received)
+					drbd_err(peer_device, "BUG: uuids were not received!\n");
+
+				if (test_bit(WEAK_WHILE_RESYNC, &device->flags))
+					drbd_info(peer_device, "Was weak during resync\n");
 			}
+		} else if ((repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) &&
+			   new_peer_disk_state != D_MASK) {
+			__change_peer_disk_state(peer_device, new_peer_disk_state);
 		}
 
 		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
@@ -1304,7 +1313,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 
 	if (peer_device->ov_left == 0 || stop_sector_reached) {
 		ov_out_of_sync_print(peer_device);
-		drbd_resync_finished(peer_device);
+		drbd_resync_finished(peer_device, D_MASK);
 	}
 
 	return err;
@@ -1708,7 +1717,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 				rcu_read_unlock();
 				schedule_timeout_interruptible(timeo);
 			}
-			drbd_resync_finished(peer_device);
+			drbd_resync_finished(peer_device, D_MASK);
 		}
 
 		/* ns.conn may already be != peer_device->repl_state[NOW],

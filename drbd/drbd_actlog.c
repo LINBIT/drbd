@@ -779,7 +779,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
 		switch (peer_device->repl_state[NEW]) {
 		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
-			drbd_resync_finished(peer_device);
+			drbd_resync_finished(peer_device, D_MASK);
 			break;
 		default:
 			/* nothing to do */

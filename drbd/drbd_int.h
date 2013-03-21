@@ -560,6 +560,7 @@ enum {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
+	WEAK_WHILE_RESYNC,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock
@@ -1573,7 +1574,7 @@ void drbd_resync_after_changed(struct drbd_device *device);
 extern void drbd_start_resync(struct drbd_peer_device *, enum drbd_repl_state);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
-extern int drbd_resync_finished(struct drbd_peer_device *);
+extern int drbd_resync_finished(struct drbd_peer_device *, enum drbd_disk_state);
 /* maybe rather drbd_main.c ? */
 extern void *drbd_md_get_buffer(struct drbd_device *device);
 extern void drbd_md_put_buffer(struct drbd_device *device);
