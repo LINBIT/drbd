@@ -8,12 +8,12 @@ extern enum when_color opt_color;
 
 extern const char *stop_color_code(void);
 extern const char *role_color_start(enum drbd_role, bool);
-extern const char *role_color_stop(enum drbd_role);
+extern const char *role_color_stop(enum drbd_role, bool);
 extern const char *cstate_color_start(enum drbd_conn_state);
 extern const char *cstate_color_stop(enum drbd_conn_state);
 extern const char *repl_state_color_start(enum drbd_repl_state);
 extern const char *repl_state_color_stop(enum drbd_repl_state);
 extern const char *disk_state_color_start(enum drbd_disk_state, bool);
-extern const char *disk_state_color_stop(enum drbd_disk_state);
+extern const char *disk_state_color_stop(enum drbd_disk_state, bool);
 
 #endif  /* DRBDSETUP_COLORS_H */

@@ -97,10 +97,10 @@ const char *role_color_start(enum drbd_role role, bool local)
 			  ARRAY_SIZE(role_colors), true, local);
 }
 
-const char *role_color_stop(enum drbd_role role)
+const char *role_color_stop(enum drbd_role role, bool local)
 {
 	return color_code(role, role_colors,
-			  ARRAY_SIZE(role_colors), false, false);
+			  ARRAY_SIZE(role_colors), false, local);
 }
 
 const char *cstate_color_start(enum drbd_conn_state cstate)
@@ -112,31 +112,34 @@ const char *cstate_color_start(enum drbd_conn_state cstate)
 const char *cstate_color_stop(enum drbd_conn_state cstate)
 {
 	return color_code(cstate, cstate_colors,
-			  ARRAY_SIZE(cstate_colors), false, false);
+			  ARRAY_SIZE(cstate_colors), false, true);
 }
 
-const char *repl_state_color_start(enum drbd_repl_state repl_state)
+static bool
+is_local_repl_state(enum drbd_repl_state repl_state)
 {
-	bool local;
-
 	switch(repl_state) {
 		case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_T:
 		case L_BEHIND:
-			local = true;
-			break;
+			return true;
 		default:
-			local = false;
-			break;
+			return false;
 	}
+}
+
+const char *repl_state_color_start(enum drbd_repl_state repl_state)
+{
 	return color_code(repl_state, repl_state_colors,
-			  ARRAY_SIZE(repl_state_colors), true, local);
+			  ARRAY_SIZE(repl_state_colors), true,
+			  is_local_repl_state(repl_state));
 }
 
 const char *repl_state_color_stop(enum drbd_repl_state repl_state)
 {
 	return color_code(repl_state, repl_state_colors,
-			  ARRAY_SIZE(repl_state_colors), false, false);
+			  ARRAY_SIZE(repl_state_colors), false,
+			  is_local_repl_state(repl_state));
 }
 
 const char *disk_state_color_start(enum drbd_disk_state disk_state, bool local)
@@ -145,8 +148,8 @@ const char *disk_state_color_start(enum drbd_disk_state disk_state, bool local)
 			  ARRAY_SIZE(disk_state_colors), true, local);
 }
 
-const char *disk_state_color_stop(enum drbd_disk_state disk_state)
+const char *disk_state_color_stop(enum drbd_disk_state disk_state, bool local)
 {
 	return color_code(disk_state, disk_state_colors,
-			  ARRAY_SIZE(disk_state_colors), false, false);
+			  ARRAY_SIZE(disk_state_colors), false, local);
 }

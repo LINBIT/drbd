@@ -1922,7 +1922,7 @@ void resource_status(struct resources_list *resource)
 	wrap_printf(4, " role:%s%s%s",
 		    role_color_start(role, true),
 		    drbd_role_str(role),
-		    role_color_stop(role));
+		    role_color_stop(role, true));
 	if (opt_verbose ||
 	    resource->info.res_susp ||
 	    resource->info.res_susp_nod ||
@@ -1952,7 +1952,7 @@ static void device_status(struct devices_list *device, bool single_device)
 	wrap_printf(indent, " disk:%s%s%s",
 		    disk_state_color_start(disk_state, true),
 		    drbd_disk_str(disk_state),
-		    disk_state_color_stop(disk_state));
+		    disk_state_color_stop(disk_state, true));
 	indent = 6;
 	if (device->statistics.dev_size != -1) {
 		if (opt_statistics)
@@ -2004,7 +2004,7 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 		wrap_printf(indent, " disk:%s%s%s",
 			    disk_state_color_start(disk_state, false),
 			    drbd_disk_str(disk_state),
-			    disk_state_color_stop(disk_state));
+			    disk_state_color_stop(disk_state, false));
 		indent = 8;
 		if (peer_device->info.peer_repl_state >= L_SYNC_SOURCE &&
 		    peer_device->info.peer_repl_state <= L_PAUSED_SYNC_T) {
@@ -2078,7 +2078,7 @@ static void connection_status(struct connections_list *connection,
 		wrap_printf(6, " role:%s%s%s",
 			    role_color_start(role, false),
 			    drbd_role_str(role),
-			    role_color_stop(role));
+			    role_color_stop(role, false));
 	}
 	if (opt_verbose || connection->statistics.conn_congested > 0)
 		print_connection_statistics(6, &connection->statistics, wrap_printf);
