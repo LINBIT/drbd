@@ -5059,11 +5059,16 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
 		consider_resync |= (os.conn == L_ESTABLISHED &&
-				(peer_state.conn >= L_STARTING_SYNC_S &&
-				 peer_state.conn <= L_WF_BITMAP_T));
+				    (peer_state.conn == L_STARTING_SYNC_S ||
+				     peer_state.conn == L_STARTING_SYNC_T));
 
 		if (consider_resync)
 			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role);
+		else if (os.conn == L_ESTABLISHED && peer_state.conn == L_WF_BITMAP_T &&
+			 connection->peer_weak[NOW] && !peer_state.weak) {
+			drbd_info(peer_device, "Resync because peer leaves weak state\n");
+			new_repl_state = L_WF_BITMAP_S;
+		}
 
 		put_ldev(device);
 		if (new_repl_state == -1) {
@@ -5623,8 +5628,13 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 	if (get_ldev(device)) {
-		if (connection->peer_role[NOW] == R_PRIMARY)
+		if (connection->peer_role[NOW] == R_PRIMARY) {
+			drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 			drbd_uuid_received_new_current(device, current_uuid, 0);
+		} else {
+			if (peer_device->bitmap_uuid == 0 && connection->resource->weak[NOW])
+				peer_device->bitmap_uuid = peer_device->current_uuid;
+		}
 		put_ldev(device);
 	} else if (device->resource->role[NOW] == R_PRIMARY) {
 		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);

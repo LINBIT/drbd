@@ -1059,8 +1059,10 @@ bool drbd_calc_weak(struct drbd_resource *resource)
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
+	bool *weak = resource->weak;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	bool primary_visible = false;
 	int vnr;
 
 	rcu_read_lock();
@@ -1070,11 +1072,14 @@ static void sanitize_state(struct drbd_resource *resource)
 		if (cstate[NEW] < C_CONNECTED) {
 			connection->peer_role[NEW] = R_UNKNOWN;
 			if (connection->primary_mask > 0)
-				resource->weak[NEW] = drbd_calc_weak(resource);
+				weak[NEW] = drbd_calc_weak(resource);
 				/* One might be tempted to reset primary_mask to 0 here, but
 				   it is not clear if this state transition will be committed.
 				   The primary_mask gets set to 0 in finish_state_change() */
 		}
+
+		if (connection->peer_role[NEW] == R_PRIMARY)
+			primary_visible = true;
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1132,6 +1137,18 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			if (peer_weak[NEW] && peer_disk_state[NEW] > D_OUTDATED)
 				peer_disk_state[NEW] = D_OUTDATED;
+
+			/* Start to resync from reachable secondaries, if I loose the
+			   weak bit and have no primary in reach (== there are no primaries reachable) */
+			if (weak[OLD] && !weak[NEW] && !primary_visible &&
+			    repl_state[NEW] == L_ESTABLISHED && peer_disk_state[NEW] == D_UP_TO_DATE) {
+				if (peer_device->bitmap_uuid == drbd_current_uuid(device))
+					repl_state[NEW] = L_WF_BITMAP_T;
+				else
+					drbd_err(peer_device, "ASSERT FAILED "
+						 "bitmap of peer (%llX) == my current (%llX)",
+						 peer_device->bitmap_uuid, drbd_current_uuid(device));
+			}
 
 			/* Implications of the repl state on the disk states */
 			min_disk_state = D_DISKLESS;
@@ -1344,6 +1361,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	enum drbd_role *role = resource->role;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+	bool *weak = resource->weak;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -1395,6 +1413,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_role *peer_role = connection->peer_role;
+
+			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
+				drbd_info(peer_device, "Resync because leaving weak state\n");
 
 			if (resource->weak[NEW] &&
 			    (repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_PAUSED_SYNC_T))
@@ -1845,6 +1866,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 	enum drbd_role *role = resource_state_change->role;
 	bool *susp_nod = resource_state_change->susp_nod;
 	bool *susp_fen = resource_state_change->susp_fen;
+	bool *weak = resource_state_change->weak;
 	int n_device, n_connection;
 	bool still_connected = false;
 
@@ -2047,6 +2069,9 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_send_state(peer_device, new_state);
 
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
+				drbd_send_state(peer_device, new_state);
+
+			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
 				drbd_send_state(peer_device, new_state);
 
 			/* We are in the progress to start a full sync. SyncTarget sets all slots. */
@@ -2303,6 +2328,13 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* A connection to a primary went down, notify other peers about that */
 			notify_peers_lost_primary(connection);
 		}
+	}
+
+	/* reachability changes must go out after notify_peer_lost_primary() */
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
+		struct drbd_connection *connection = connection_state_change->connection;
+		enum drbd_conn_state *cstate = connection_state_change->cstate;
 
 		if (cstate[NEW] == C_CONNECTED) {
 			still_connected = true;
