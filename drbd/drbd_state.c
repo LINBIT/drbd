@@ -792,6 +792,7 @@ static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
+	bool *weak = resource->weak;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int vnr;
@@ -809,6 +810,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 				return SS_TWO_PRIMARIES;
 		}
 	}
+
+	if (weak[NEW] && role[NEW] == R_PRIMARY)
+		return SS_WEAKLY_CONNECTED;
 
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
@@ -2526,6 +2530,8 @@ u64 directly_connected_nodes(struct drbd_resource *resource)
 	return directly_connected;
 }
 
+
+/* Think: Can this be replaced by a call to __is_valid_soft_transition() */
 static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
