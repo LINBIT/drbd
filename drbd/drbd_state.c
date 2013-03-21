@@ -776,8 +776,11 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	}
 }
 
-static bool local_disk_may_be_outdated(enum drbd_repl_state repl_state)
+static bool local_disk_may_be_outdated(bool weak, enum drbd_repl_state repl_state)
 {
+	if (weak)
+		return true;
+
 	switch(repl_state) {
 	case L_ESTABLISHED:
 	case L_WF_BITMAP_S:
@@ -896,8 +899,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
 				return SS_NO_UP_TO_DATE_DISK;
 
-			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[OLD])) &&
-			     (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(repl_state[NEW])))
+			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(weak[OLD], repl_state[OLD])) &&
+			    (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(weak[NEW], repl_state[NEW])))
 				return SS_CONNECTED_OUTDATES;
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
@@ -1089,6 +1092,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_conn_state *cstate = connection->cstate;
+			bool *peer_weak = connection->peer_weak;
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 
@@ -1122,6 +1126,12 @@ static void sanitize_state(struct drbd_resource *resource)
 				    peer_disk_state[NEW] == D_OUTDATED)
 					peer_disk_state[NEW] = D_UP_TO_DATE;
 			}
+
+			if (weak[NEW] && disk_state[NEW] > D_OUTDATED)
+				disk_state[NEW] = D_OUTDATED;
+
+			if (peer_weak[NEW] && peer_disk_state[NEW] > D_OUTDATED)
+				peer_disk_state[NEW] = D_OUTDATED;
 
 			/* Implications of the repl state on the disk states */
 			min_disk_state = D_DISKLESS;
@@ -2061,6 +2071,11 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			   source should even know by himself, but the others need that info. */
 			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_ESTABLISHED)
 				send_new_state_to_all_peer_devices(state_change, n_device);
+
+			/* Outdated myself because became weak, tell peers */
+			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
+			    repl_state[NEW] >= L_ESTABLISHED)
+				drbd_send_state(peer_device, new_state);
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
 			 * if the resync finished cleanly, or aborted because of peer disk
