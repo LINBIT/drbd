@@ -5559,6 +5559,14 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			return 0;
 	}
 
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device)) {
+			if (!connection->resource->weak[NOW])
+				drbd_err(peer_device, "ASSERT FAILED not weak and non matching current UUIDs\n");
+			return 0;
+		}
+	}
+
 	/* Need to wait until the other receiver thread has called the
 	   cleanup_unacked_peer_requests() function */
 	wait_event(resource->state_wait,
@@ -5609,10 +5617,14 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	device = peer_device->device;
 
 	current_uuid = be64_to_cpu(p->uuid);
+	if (current_uuid == drbd_current_uuid(peer_device->device))
+		return 0;
+	peer_device->current_uuid = current_uuid;
 
 	drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 	if (get_ldev(device)) {
-		drbd_uuid_received_new_current(device, current_uuid, 0);
+		if (connection->peer_role[NOW] == R_PRIMARY)
+			drbd_uuid_received_new_current(device, current_uuid, 0);
 		put_ldev(device);
 	} else if (device->resource->role[NOW] == R_PRIMARY) {
 		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);

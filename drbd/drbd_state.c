@@ -1820,8 +1820,15 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 	for_each_connection(connection, resource) {
 		if (connection == lost_peer)
 			continue;
-		if (connection->cstate[NOW] == C_CONNECTED)
+		if (connection->cstate[NOW] == C_CONNECTED) {
+			struct drbd_peer_device *peer_device;
+			int vnr;
+
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+				drbd_send_current_uuid(peer_device, drbd_current_uuid(peer_device->device));
+
 			drbd_send_peer_dagtag(connection, lost_peer);
+		}
 	}
 }
 
