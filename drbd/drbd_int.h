@@ -762,6 +762,7 @@ struct drbd_resource {
 	struct twopc_reply twopc_reply;
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
+	wait_queue_head_t twopc_wait;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */

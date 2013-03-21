@@ -4679,6 +4679,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	spin_lock_irq(&resource->req_lock);
 	resource->remote_state_change = false;
 	spin_unlock_irq(&resource->req_lock);
+	wake_up(&resource->twopc_wait);
 
 	return 0;
 }
@@ -4701,6 +4702,7 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 		prepared = true;
 	}
 	spin_unlock_irq(&resource->req_lock);
+	wake_up(&resource->twopc_wait);
 
 	if (prepared)
 		abort_prepared_state_change(resource);
@@ -4890,6 +4892,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			resource->twopc_reply.initiator_node_id = -1;
 			resource->twopc_reply.tid = 0;
 			spin_unlock_irq(&resource->req_lock);
+			wake_up(&resource->twopc_wait);
 
 			if (connect_transaction)
 				conn_connect2(affected_connection);

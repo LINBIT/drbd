@@ -472,12 +472,17 @@ static void begin_remote_state_change(struct drbd_resource *resource, unsigned l
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 }
 
-static void end_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
+static void __end_remote_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	rcu_read_lock();
 	resource->state_change_flags = flags;
 	___begin_state_change(resource);
+}
+
+static void end_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
+{
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	__end_remote_state_change(resource, flags);
 }
 
 static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
@@ -2277,6 +2282,32 @@ static enum drbd_state_rv __peer_reply(struct drbd_connection *connection)
 	return SS_UNKNOWN_ERROR;
 }
 
+static bool when_done_lock(struct drbd_resource *resource,
+			   unsigned long *irq_flags)
+{
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	if (!resource->remote_state_change)
+		return true;
+	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	return false;
+}
+
+/**
+ * complete_remote_state_change  -  Wait for other remote state changes to complete
+ */
+static void complete_remote_state_change(struct drbd_resource *resource,
+					 unsigned long *irq_flags)
+{
+	if (resource->remote_state_change) {
+		enum chg_state_flags flags = resource->state_change_flags;
+
+		begin_remote_state_change(resource, irq_flags);
+		wait_event(resource->twopc_wait,
+			   when_done_lock(resource, irq_flags));
+		__end_remote_state_change(resource, flags);
+	}
+}
+
 static enum drbd_state_rv
 change_peer_state(struct drbd_connection *connection, int vnr,
 		  union drbd_state mask, union drbd_state val, unsigned long *irq_flags)
@@ -2287,6 +2318,9 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
+
+	complete_remote_state_change(resource, irq_flags);
+
 	resource->remote_state_change = true;
 	resource->twopc_reply.initiator_node_id = resource->res_opts.node_id;
 	resource->twopc_reply.tid = 0;
@@ -2300,6 +2334,7 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	end_remote_state_change(resource, irq_flags, flags);
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
+	wake_up(&resource->twopc_wait);
 	return rv;
 }
 
@@ -2548,6 +2583,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	if (!expect(resource, flags & CS_SERIALIZE))
 		return SS_CW_FAILED_BY_PEER;
 
+	complete_remote_state_change(resource, irq_flags);
+
     retry:
 	do
 		reply->tid = random32();
@@ -2655,6 +2692,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	resource->remote_state_change = false;
 	reply->initiator_node_id = -1;
+	wake_up(&resource->twopc_wait);
 	return rv;
 }
 

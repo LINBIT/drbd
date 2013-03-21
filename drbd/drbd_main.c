@@ -2883,6 +2883,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
+	init_waitqueue_head(&resource->twopc_wait);
 
 	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
