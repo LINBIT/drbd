@@ -3491,7 +3491,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
-	struct drbd_peer_device *pd2;
+	const int max_peers = device->bitmap->bm_max_peers;
 	u64 self, peer;
 	int i, j;
 
@@ -3573,12 +3573,12 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		return 1;
 
 	*rule_nr = 72;
-	for_each_peer_device(pd2, device) {
-		if (pd2 == peer_device)
+	for (i = 0; i < max_peers; i++) {
+		if (i == peer_device->node_id)
 			continue;
-		self = drbd_bitmap_uuid(pd2) & ~((u64)1);
+		self = device->ldev->md.peers[i].bitmap_uuid & ~((u64)1);
 		if (self == peer) {
-			*peer_node_id = pd2->node_id;
+			*peer_node_id = device->ldev->md.peers[i].node_id;
 			return 3;
 		}
 	}

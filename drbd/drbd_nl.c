@@ -1839,6 +1839,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_INVALID_REQUEST;
 			goto force_diskless_dec;
 		}
+
+		if (peer_md->node_id >= 0)
+			nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 	}
 
 	/* Make sure we have a bitmap slot for each peer id */
@@ -1850,7 +1853,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 			if (peer_md->node_id == connection->net_conf->peer_node_id) {
 				peer_device->bitmap_index = bitmap_index;
-				nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 				goto next_peer_device_1;
 			}
 		}
