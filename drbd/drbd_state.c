@@ -1775,8 +1775,6 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 		union drbd_state new_state = state_change_word(state_change, n_device, n_connection, NEW);
 
-		/* FIXME: Ignore role changes here? */
-
 		if (new_state.conn >= C_CONNECTED)
 			drbd_send_state(peer_device, new_state);
 	}
@@ -2894,7 +2892,8 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 	unsigned long irq_flags;
 
 	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
-	if (!local_state_change(flags)) {
+	if (!local_state_change(flags) &&
+	    resource->role[NOW] != R_PRIMARY && role == R_PRIMARY) {
 		enum drbd_state_rv rv;
 
 		__change_role(resource, role, force);

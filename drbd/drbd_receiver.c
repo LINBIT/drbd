@@ -4928,10 +4928,6 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_repl_state new_repl_state;
 	int rv;
 
-	/* FIXME: Can we ignore role changes received here?
-	 * (Requires that the roles are sent around while establishing the connection!)
-	 */
-
 	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(connection, pi->vnr);
 		if (!peer_device)
