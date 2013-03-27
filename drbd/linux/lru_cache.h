@@ -53,6 +53,19 @@ enum {
 };
 #define COMPAT_HAVE_BOOL_TYPE
 #endif
+
+#ifndef COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS
+#define hlist_entry_safe(ptr, type, member) \
+	(ptr) ? hlist_entry(ptr, type, member) : NULL
+#ifdef hlist_for_each_entry
+#undef hlist_for_each_entry
+#endif
+#define hlist_for_each_entry(pos, head, member)				\
+	for (pos = hlist_entry_safe((head)->first, typeof(*(pos)), member);\
+	     pos;							\
+	     pos = hlist_entry_safe((pos)->member.next, typeof(*(pos)), member))
+#define COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS
+#endif
 /* End of Compatibility code */
 
 /*
