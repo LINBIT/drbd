@@ -1249,4 +1249,19 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
 }
 #endif
 
+#ifndef COMPAT_HAVE_IDR_FOR_EACH_ENTRY
+/**
+ * idr_for_each_entry - iterate over an idr's elements of a given type
+ * @idp:     idr handle
+ * @entry:   the type * to use as cursor
+ * @id:      id entry's key
+ *
+ * @entry and @id do not need to be initialized before the loop, and
+ * after normal terminatinon @entry is left with the value NULL.  This
+ * is convenient for a "not found" value.
+  */
+#define idr_for_each_entry(idp, entry, id)                     \
+       for (id = 0; ((entry) = idr_get_next(idp, &(id))) != NULL; ++id)
+#endif
+
 #endif
