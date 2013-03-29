@@ -4726,6 +4726,18 @@ void twopc_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+static void update_reachability(struct drbd_connection *connection, u64 mask)
+{
+	struct drbd_resource *resource = connection->resource;
+
+	spin_lock_irq(&resource->req_lock);
+	if (connection->cstate[NOW] >= C_CONNECTED) {
+		mask &= ~((u64)1 << resource->res_opts.node_id);
+		connection->primary_mask = mask;
+	}
+	spin_unlock_irq(&resource->req_lock);
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -4776,6 +4788,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_debug(resource, "Ignoring %s packet %u (duplicate?)\n",
 				   cmdname(pi->cmd),
 				   reply.tid);
+			update_reachability(connection, reply.primary_nodes);
 			return 0;
 		}
 		resource->remote_state_change = true;
@@ -4910,6 +4923,8 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 			if (connect_transaction)
 				conn_connect2(affected_connection);
+
+			update_reachability(connection, reply.primary_nodes);
 		}
 	}
 

@@ -1236,6 +1236,10 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	if (!p)
 		return -EIO;
 	memcpy(p, request, sizeof(*request));
+	if (cmd == P_TWOPC_COMMIT) {
+		connection->primary_mask_sent =
+			be64_to_cpu(request->primary_nodes) & ~NODE_MASK(connection->net_conf->peer_node_id);
+	}
 	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
 	mutex_unlock(&sock->mutex);
 	return err;
