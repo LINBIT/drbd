@@ -2354,10 +2354,32 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 	}
 	for_each_connection(connection, resource) {
+		struct twopc_reply *reply = &resource->twopc_reply;
+		u64 primary_nodes, weak_nodes;
+
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		kref_get(&connection->kref);
 		rcu_read_unlock();
+
+		/* If the cluster is still connected after this transaction,
+		 * all nodes will receive the same primary_nodes and weak_nodes
+		 * masks (set by the caller).  Otherwise, there will be two
+		 * cluster segments after this transaction.
+		 */
+		primary_nodes = reply->primary_nodes;
+		if (be32_to_cpu(request->initiator_node_id) ==
+		    resource->res_opts.node_id &&
+		    be32_to_cpu(request->target_node_id) ==
+		    connection->net_conf->peer_node_id) {
+			primary_nodes &= reply->target_reachable_nodes;
+			weak_nodes = reply->target_weak_nodes;
+		} else {
+			primary_nodes &= reply->reachable_nodes;
+			weak_nodes = reply->weak_nodes;
+		}
+		request->primary_nodes = cpu_to_be64(primary_nodes);
+		request->weak_nodes = cpu_to_be64(weak_nodes);
 
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
@@ -2606,7 +2628,20 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = target_node_id;
 	reply->primary_nodes = 0;
+	reply->target_weak_nodes = 0;
 	reply->weak_nodes = 0;
+
+	reply->reachable_nodes = directly_connected_nodes(resource) |
+				       NODE_MASK(resource->res_opts.node_id);
+	if (mask.conn == conn_MASK && val.conn == C_CONNECTING) {
+		reply->reachable_nodes |= NODE_MASK(target_node_id);
+		reply->target_reachable_nodes = reply->reachable_nodes;
+	} else if (mask.conn == conn_MASK && val.conn == C_DISCONNECTING) {
+		reply->target_reachable_nodes = NODE_MASK(target_node_id);
+		reply->reachable_nodes &= ~reply->target_reachable_nodes;
+	} else {
+		reply->target_reachable_nodes = reply->reachable_nodes;
+	}
 
 	resource->twopc_work.cb = twopc_initiator_work;
 	begin_remote_state_change(resource, irq_flags);
@@ -2621,20 +2656,26 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			rv = SS_TIMEOUT;
 
 		if (rv == SS_CW_SUCCESS) {
+			u64 directly_reachable =
+				directly_connected_nodes(resource) |
+				NODE_MASK(resource->res_opts.node_id);
+
+			if (mask.conn == conn_MASK) {
+				if (val.conn == C_CONNECTING)
+					directly_reachable |= NODE_MASK(target_node_id);
+				if (val.conn == C_DISCONNECTING)
+					directly_reachable &= ~NODE_MASK(target_node_id);
+			}
 			if ((mask.role == role_MASK && val.role == R_PRIMARY) ||
 			    (mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
-				u64 m = NODE_MASK(resource->res_opts.node_id);
-
-				reply->primary_nodes |= m;
-				m |= directly_connected_nodes(resource);
-				if (mask.conn == conn_MASK && val.conn == C_CONNECTED)
-					m |= NODE_MASK(target_node_id);
-				reply->weak_nodes |= ~m;
+				reply->primary_nodes |=
+					NODE_MASK(resource->res_opts.node_id);
+				reply->weak_nodes |= ~directly_reachable;
 			}
 
 			if (mask.role == role_MASK && val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
-			if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
+			if (mask.conn == conn_MASK && val.conn == C_CONNECTING) {
 				/* This is a request to establish a connection. */
 				/* Establishing the connection is only allowed
 				 * if the resulting cluster contains no primary
@@ -2645,15 +2686,36 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				/* FIXME: Where do we check against the
 				 * configuration if the set of primaries is allowed? */
 			}
+			if (!(mask.conn == conn_MASK && val.conn == C_DISCONNECTING) ||
+			    (reply->reachable_nodes & reply->target_reachable_nodes)) {
+				/* The cluster is still connected after this
+				 * transaction: either this transaction does
+				 * not disconnect a connection, or there are
+				 * redundant connections.  */
+
+				u64 m;
+
+				m = reply->reachable_nodes | reply->target_reachable_nodes;
+				reply->reachable_nodes = m;
+				reply->target_reachable_nodes = m;
+
+				m = reply->weak_nodes | reply->target_weak_nodes;
+				reply->weak_nodes = m;
+				reply->target_weak_nodes = m;
+			} else {
+				for_each_connection(connection, resource) {
+					int node_id = connection->net_conf->peer_node_id;
+
+					if (node_id == target_node_id) {
+						drbd_info(connection, "Cluster is now split");
+						break;
+					}
+				}
+			}
 		}
 		if (rv >= SS_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change %u\n",
 				   be32_to_cpu(request.tid));
-
-			request.primary_nodes =
-				cpu_to_be64(reply->primary_nodes);
-			request.weak_nodes =
-				cpu_to_be64(reply->weak_nodes);
 
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT,
 						    &request, reach_immediately);
@@ -3025,6 +3087,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS) {
 			union drbd_state mask = {}, val = {};
+			int target_node_id = connection->net_conf->peer_node_id;
 
 			mask.conn = conn_MASK;
 			val.conn = cstate;
@@ -3042,7 +3105,9 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 				break;
 			}
 
-			rv = change_peer_state(connection, -1, mask, val, &irq_flags);
+			rv = change_cluster_wide_state(resource, -1, mask, val,
+					&irq_flags, target_node_id,
+					directly_connected_nodes(resource));
 		}
 	}
 	__change_cstate(connection, cstate);

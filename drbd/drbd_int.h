@@ -727,8 +727,11 @@ struct twopc_reply {
 	unsigned int tid;  /* transaction identifier */
 	int initiator_node_id;  /* initiator of the transaction */
 	int target_node_id;  /* target of the transaction (or -1) */
+	u64 target_reachable_nodes;  /* behind the target node */
+	u64 reachable_nodes;  /* behind other nodes */
 	u64 primary_nodes;
-	u64 weak_nodes;
+	u64 target_weak_nodes;  /* behind the target node */
+	u64 weak_nodes;  /* behind other nodes */
 };
 
 struct drbd_resource {

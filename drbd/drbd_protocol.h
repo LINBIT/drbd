@@ -290,6 +290,7 @@ struct p_twopc_request {
 struct p_twopc_reply {
 	u32 tid;  /* transaction identifier */
 	u32 initiator_node_id;  /* initiator of the transaction */
+	u64 reachable_nodes;
 	u64 primary_nodes;
 	u64 weak_nodes;
 } __packed;

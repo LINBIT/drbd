@@ -4744,16 +4744,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
 	reply.weak_nodes = be64_to_cpu(p->weak_nodes);
+	reply.reachable_nodes = directly_connected_nodes(resource) |
+				NODE_MASK(resource->res_opts.node_id);
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
-
-	if (resource->role[NOW] == R_PRIMARY) {
-		u64 m = NODE_MASK(resource->res_opts.node_id);
-		reply.primary_nodes |= m;
-		m |= directly_connected_nodes(resource);
-		reply.weak_nodes |= ~m;
-	}
 
 	if (resource->remote_state_change) {
 		if (resource->twopc_reply.initiator_node_id != reply.initiator_node_id ||
@@ -4808,14 +4803,19 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		affected_connection = NULL;
 		goto next;
 	}
+
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
 
-	if (resource->role[NOW] == R_PRIMARY) {
-		if (mask.conn == conn_MASK && val.conn == C_CONNECTING)
-			reply.weak_nodes &=
-				~NODE_MASK(affected_connection->net_conf->peer_node_id);
+	if (mask.conn == conn_MASK) {
+		u64 m = NODE_MASK(reply.initiator_node_id);
+
+		if (val.conn == C_CONNECTING)
+			reply.reachable_nodes |= m;
+		if (val.conn == C_DISCONNECTING)
+			reply.reachable_nodes &= ~m;
 	}
+
 	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
 		if (!peer_device) {
@@ -4825,6 +4825,18 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 
     next:
+	if (pi->cmd == P_TWOPC_PREPARE) {
+		if ((mask.peer == role_MASK &&
+		     val.peer == R_PRIMARY) ||
+		    (mask.peer != role_MASK &&
+		     resource->role[NOW] == R_PRIMARY)) {
+			u64 m = NODE_MASK(resource->res_opts.node_id);
+			reply.primary_nodes |= m;
+			m |= reply.reachable_nodes;
+			reply.weak_nodes |= ~m;
+		}
+	}
+
 	resource->twopc_reply = reply;
 	spin_unlock_irq(&resource->req_lock);
 
@@ -4856,8 +4868,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			mask, val, flags | CS_TWOPC | CS_IGN_OUTD_FAIL);
 
 	connect_transaction =
-		reply.initiator_node_id == affected_connection->net_conf->peer_node_id &&
-		target_node_id == resource->res_opts.node_id &&
+		affected_connection &&
 		mask.conn == conn_MASK && val.conn == C_CONNECTING;
 
 	if (connect_transaction) {
@@ -6234,10 +6245,27 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 		drbd_debug(connection, "Got a %s reply\n",
 			   cmdname(pi->cmd));
 
-		resource->twopc_reply.primary_nodes |=
-			be64_to_cpu(p->primary_nodes);
-		resource->twopc_reply.weak_nodes |=
-			be64_to_cpu(p->weak_nodes);
+		if (pi->cmd == P_TWOPC_YES) {
+			u64 reachable_nodes =
+				be64_to_cpu(p->reachable_nodes);
+
+			if (resource->res_opts.node_id ==
+			    resource->twopc_reply.initiator_node_id &&
+			    connection->net_conf->peer_node_id ==
+			    resource->twopc_reply.target_node_id) {
+				resource->twopc_reply.target_reachable_nodes |=
+					reachable_nodes;
+				resource->twopc_reply.target_weak_nodes |=
+					be64_to_cpu(p->weak_nodes);
+			} else {
+				resource->twopc_reply.reachable_nodes |=
+					reachable_nodes;
+				resource->twopc_reply.weak_nodes |=
+					be64_to_cpu(p->weak_nodes);
+			}
+			resource->twopc_reply.primary_nodes |=
+				be64_to_cpu(p->primary_nodes);
+		}
 
 		if (pi->cmd == P_TWOPC_YES || pi->cmd == P_TWOPC_SKIP)
 			set_bit(TWOPC_YES, &connection->flags);

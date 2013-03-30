@@ -1268,11 +1268,15 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 	if (p) {
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
+		p->reachable_nodes = cpu_to_be64(reply->reachable_nodes);
 		p->primary_nodes = cpu_to_be64(reply->primary_nodes);
 		p->weak_nodes = cpu_to_be64(reply->weak_nodes);
-		drbd_debug(connection, "Sending %s reply for %u (primary_nodes=%lX, weak_nodes=%lX)\n",
+		drbd_debug(connection, "Sending %s reply for %u "
+			   "(reachable_nodes=%lX, primary_nodes=%lX, "
+			   "weak_nodes=%lX)\n",
 			   cmdname(cmd),
 			   reply->tid,
+			   (unsigned long)reply->reachable_nodes,
 			   (unsigned long)reply->primary_nodes,
 			   (unsigned long)reply->weak_nodes);
 		send_command(connection, reply->vnr, sock, cmd, sizeof(*p), NULL, 0);
