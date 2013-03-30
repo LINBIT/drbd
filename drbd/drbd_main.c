@@ -767,13 +767,13 @@ extern int drbd_send_peer_ack(struct drbd_connection *connection,
 	u64 mask = 0;
 
 	if (req->rq_state[0] & RQ_LOCAL_OK)
-		mask |= (u64)1 << connection->resource->res_opts.node_id;
+		mask |= NODE_MASK(connection->resource->res_opts.node_id);
 	rcu_read_lock();
 	for_each_peer_device(peer_device, req->device) {
 		int idx = 1 + peer_device->node_id;
 
 		if (req->rq_state[idx] & RQ_NET_OK)
-			mask |= (u64)1 << peer_device->node_id;
+			mask |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
 
@@ -3890,7 +3890,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 			do_it = pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED;
 			node_id = peer_device->node_id;
-			do_it = do_it || (1ULL << peer_device->node_id) & force_mask;
+			do_it = do_it || NODE_MASK(peer_device->node_id) & force_mask;
 		} else {
 			do_it = true;
 			node_id = peer_md[bitmap_index].node_id;
@@ -3902,7 +3902,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
 		if (do_it) {
 			peer_md[bitmap_index].bitmap_uuid = device->ldev->md.current_uuid;
 			drbd_md_mark_dirty(device);
-			mask |= 1ULL << node_id;
+			mask |= NODE_MASK(node_id);
 		}
 	}
 

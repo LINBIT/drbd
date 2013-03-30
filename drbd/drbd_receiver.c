@@ -6323,7 +6323,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_h
 			 sizeof(node_ids) * BITS_PER_BYTE) {
 		int bitmap_bit = id_to_bit[node_id];
 		if (bitmap_bit >= 0)
-			bitmap_bits |= ((u64)1 << bitmap_bit);
+			bitmap_bits |= NODE_MASK(bitmap_bit);
 	}
 	return bitmap_bits;
 }

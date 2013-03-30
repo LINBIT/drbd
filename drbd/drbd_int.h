@@ -2394,4 +2394,6 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 	return list_first_entry(&resource->connections, struct drbd_connection, connections);
 }
 
+#define NODE_MASK(id) ((u64)1 << (id))
+
 #endif

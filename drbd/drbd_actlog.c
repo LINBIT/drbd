@@ -721,7 +721,7 @@ static void
 consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 mask = ((u64)1 << peer_device->node_id);
+	u64 mask = NODE_MASK(peer_device->node_id);
 	struct drbd_peer_device *p;
 	int peers = 1;
 	int size_sect;
@@ -736,7 +736,7 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 		if (p == peer_device)
 			continue;
 		if (extent_in_sync(p, rs_enr))
-			mask |= ((u64)1 << p->node_id);
+			mask |= NODE_MASK(p->node_id);
 		peers++;
 	}
 
@@ -747,7 +747,7 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 			drbd_get_capacity(device->this_bdev) - BM_EXT_TO_SECT(rs_enr));
 
 	for_each_peer_device(p, device) {
-		if (mask & ((u64)1 << p->node_id))
+		if (mask & NODE_MASK(p->node_id))
 			drbd_send_peers_in_sync(p, mask, BM_EXT_TO_SECT(rs_enr), size_sect << 9);
 	}
 }
