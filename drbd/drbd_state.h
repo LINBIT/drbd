@@ -10,19 +10,6 @@ struct drbd_peer_device;
  * DOC: DRBD State macros
  *
  * These macros are used to express state changes in easily readable form.
- *
- * The NS macros expand to a mask and a value, that can be bit ored onto the
- * current state as soon as the spinlock (req_lock) was taken.
- *
- * The _NS macros are used for state functions that get called with the
- * spinlock. These macros expand directly to the new state value.
- *
- * Besides the basic forms NS() and _NS() additional _?NS[23] are defined
- * to express state changes that affect more than one aspect of the state.
- *
- * E.g. NS2(conn, L_ESTABLISHED, peer, R_SECONDARY)
- * Means that the network connection was established and that the peer
- * is in secondary role.
  */
 #define role_MASK R_MASK
 #define peer_MASK R_MASK
@@ -45,12 +32,6 @@ struct drbd_peer_device;
 #define NS(T, S) \
 	STATE_TYPE(STATE_MASK(T)), \
 	STATE_TYPE(STATE_VALUE(T, S))
-#define NS2(T1, S1, T2, S2) \
-	STATE_TYPE(STATE_MASK(T1) | STATE_MASK(T2)), \
-	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2))
-#define NS3(T1, S1, T2, S2, T3, S3) \
-	STATE_TYPE(STATE_MASK(T1) | STATE_MASK(T2) | STATE_MASK(T3)), \
-	STATE_TYPE(STATE_VALUE(T1, S1) | STATE_VALUE(T2, S2) | STATE_VALUE(T3, S3))
 
 enum chg_state_flags {
 	CS_HARD          = 1 << 0, /* Forced state change, such as a connection loss */

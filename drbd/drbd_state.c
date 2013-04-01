@@ -2658,20 +2658,25 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 		__change_cstate_and_outdate(connection, cstate, outdate_what);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS) {
+			union drbd_state mask = {}, val = {};
+
+			mask.conn = conn_MASK;
+			val.conn = cstate;
+
 			switch(outdate_what) {
 			case OUTDATE_DISKS:
-				rv = change_peer_state(connection, -1,
-					NS2(conn, cstate, disk, D_OUTDATED), &irq_flags);
+				mask.disk = disk_MASK;
+				val.disk = D_OUTDATED;
 				break;
 			case OUTDATE_PEER_DISKS:
-				rv = change_peer_state(connection, -1,
-					NS2(conn, cstate, pdsk, D_OUTDATED), &irq_flags);
+				mask.pdsk = pdsk_MASK;
+				val.pdsk = D_OUTDATED;
 				break;
 			case OUTDATE_NOTHING:
-				rv = change_peer_state(connection, -1,
-					NS(conn, cstate), &irq_flags);
 				break;
 			}
+
+			rv = change_peer_state(connection, -1, mask, val, &irq_flags);
 		}
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
