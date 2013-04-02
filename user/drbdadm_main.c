@@ -2183,22 +2183,34 @@ static int adm_wait_ci(const struct cfg_ctx *ctx)
 	return 0;
 }
 
+static int adm_cmd_cmp(const void *a, const void *b)
+{
+	return strcmp((*(struct adm_cmd **)a)->name,
+		      (*(struct adm_cmd **)b)->name);
+}
+
 static void print_cmds(int level)
 {
-	size_t i;
-	int j = 0;
+	const struct adm_cmd **cmds2;
+	int i, j, half;
 
-	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
+	cmds2 = alloca(ARRAY_SIZE(cmds) * sizeof(struct adm_cmd));
+	for (i = 0, j = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (cmds[i]->show_in_usage != level)
 			continue;
-		if (j++ % 2) {
-			printf("%-35s\n", cmds[i]->name);
-		} else {
-			printf(" %-35s", cmds[i]->name);
-		}
+		cmds2[j++] = cmds[i];
 	}
-	if (j % 2)
-		printf("\n");
+	qsort(cmds2, j, sizeof(struct adm_cmd *), adm_cmd_cmp);
+	half = (j + 1) / 2;
+	for (i = 0; i < half; i++) {
+		if (i + half < j)
+			printf(" %-35s %-35s\n",
+			       cmds2[i]->name,
+			       cmds2[i + half]->name);
+		else
+			printf(" %-35s\n",
+			       cmds2[i]->name);
+	}
 }
 
 static int hidden_cmds(const struct cfg_ctx *ignored __attribute((unused)))
