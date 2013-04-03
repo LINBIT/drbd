@@ -2570,6 +2570,17 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 			if (mask.role == role_MASK && val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
+			if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
+				/* This is a request to establish a connection. */
+				/* Establishing the connection is only allowed
+				 * if the resulting cluster contains no primary
+				 * nodes or all primary nodes are connected to each
+				 * other (i.e., they are in strongly_connected_nodes).  */
+				if (reply->primary_nodes & reply->weak_nodes)
+					rv = SS_WEAKLY_CONNECTED;
+				/* FIXME: Where do we check against the
+				 * configuration if the set of primaries is allowed? */
+			}
 		}
 		if (rv >= SS_SUCCESS) {
 			drbd_debug(resource, "Committing cluster-wide state change\n");
@@ -2874,6 +2885,27 @@ static void __change_cstate_and_outdate(struct drbd_connection *connection,
 	}
 }
 
+enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
+{
+	int target_node_id = connection->net_conf->peer_node_id;
+	struct drbd_resource *resource = connection->resource;
+	unsigned long irq_flags;
+	enum drbd_state_rv rv;
+
+	begin_state_change(resource, &irq_flags, CS_SERIALIZE | CS_LOCAL_ONLY);
+	if (connection->cstate[NOW] != C_CONNECTING)
+		rv = SS_IN_TRANSIENT_STATE;
+	else {
+		u64 m = directly_connected_nodes(resource);
+		m |= NODE_MASK(connection->net_conf->peer_node_id);
+		rv = change_cluster_wide_state(resource, -1,
+			NS(conn, C_CONNECTING), &irq_flags,
+			target_node_id, m);
+	}
+	end_state_change(resource, &irq_flags);
+	return rv;
+}
+
 /**
  * change_cstate()  -  change the connection state of a connection
  *
@@ -2886,8 +2918,8 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 				 enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	enum drbd_state_rv rv = SS_SUCCESS;
 	unsigned long irq_flags;
-	enum outdate_what outdate_what = OUTDATE_NOTHING;
 
 	/*
 	 * Hard connection state changes like a protocol error or forced
@@ -2900,11 +2932,11 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 
 	begin_state_change(resource, &irq_flags, flags | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) &&
-	    cstate == C_DISCONNECTING &&
-	    connection_has_connected_peer_devices(connection)) {
-		enum drbd_state_rv rv;
+		   cstate == C_DISCONNECTING &&
+		   connection_has_connected_peer_devices(connection)) {
+		enum outdate_what outdate_what =
+			outdate_on_disconnect(connection);
 
-		outdate_what = outdate_on_disconnect(connection);
 		__change_cstate_and_outdate(connection, cstate, outdate_what);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS) {
@@ -2928,12 +2960,12 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 
 			rv = change_peer_state(connection, -1, mask, val, &irq_flags);
 		}
-		if (rv < SS_SUCCESS) {
-			abort_state_change(resource, &irq_flags);
-			return rv;
-		}
 	}
-	__change_cstate_and_outdate(connection, cstate, outdate_what);
+	__change_cstate(connection, cstate);
+	if (rv < SS_SUCCESS) {
+		abort_state_change(resource, &irq_flags);
+		return rv;
+	}
 	return end_state_change(resource, &irq_flags);
 }
 
