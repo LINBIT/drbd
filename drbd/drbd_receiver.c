@@ -4584,6 +4584,9 @@ change_connection_state(struct drbd_connection *connection,
 	unsigned long irq_flags;
 	int vnr;
 
+	mask = convert_state(mask);
+	val = convert_state(val);
+
 	begin_state_change(connection->resource, &irq_flags, flags);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
@@ -4610,6 +4613,9 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	union drbd_state mask_unused = mask;
 	unsigned long irq_flags;
+
+	mask = convert_state(mask);
+	val = convert_state(val);
 
 	begin_state_change(connection->resource, &irq_flags, flags);
 	mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
@@ -4804,9 +4810,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
-
-	mask = convert_state(mask);
-	val = convert_state(val);
 
 	if (resource->role[NOW] == R_PRIMARY) {
 		if (mask.conn == conn_MASK && val.conn == C_CONNECTING)
