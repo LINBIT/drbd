@@ -4012,18 +4012,18 @@ int __init drbd_init(void)
 	/*
 	 * allocate all necessary structs
 	 */
-	err = -ENOMEM;
-
 	init_waitqueue_head(&drbd_pp_wait);
 
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
-	minor_table = kzalloc(sizeof(struct drbd_conf *)*minor_count,
-				GFP_KERNEL);
-	if (!minor_table)
-		goto Enomem;
 
 	err = drbd_create_mempools();
 	if (err)
+		goto Enomem;
+
+	err = -ENOMEM;
+	minor_table = kzalloc(sizeof(struct drbd_conf *)*minor_count,
+				GFP_KERNEL);
+	if (!minor_table)
 		goto Enomem;
 
 	drbd_proc = proc_create_data("drbd", S_IFREG | S_IRUGO , NULL, &drbd_proc_fops, NULL);
