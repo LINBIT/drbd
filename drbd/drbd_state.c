@@ -2060,6 +2060,11 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
 				drbd_send_state(peer_device, new_state);
 
+			/* finished resync, tell sync source */
+			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
+			    repl_state[NEW] == L_ESTABLISHED)
+				drbd_send_state(peer_device, new_state);
+
 			/* In case one of the isp bits got set, suspend other devices. */
 			if (!(resync_susp_dependency[OLD] || resync_susp_peer[OLD] || resync_susp_user[OLD]) &&
 			     (resync_susp_dependency[NEW] || resync_susp_peer[NEW] || resync_susp_user[NEW]))
