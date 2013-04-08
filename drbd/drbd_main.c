@@ -961,7 +961,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	max_peers = device->bitmap->bm_max_peers;
 	for (i = 0; i < max_peers; i++) {
 		if (peer_md[i].bitmap_uuid)
-			bitmap_uuids_mask |= 1ULL << peer_md[i].node_id;
+			bitmap_uuids_mask |= NODE_MASK(peer_md[i].node_id);
 	}
 
 	for_each_set_bit(i, (unsigned long *)&bitmap_uuids_mask, sizeof(bitmap_uuids_mask)) {
@@ -3527,7 +3527,7 @@ void drbd_free_sock(struct drbd_connection *connection)
 struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
 	u32 flags;
-	u32 node_id;
+	s32 node_id;
 	u32 reserved_u32[4];
 } __packed;
 
@@ -3547,7 +3547,7 @@ struct meta_data_on_disk {
 	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
 	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 	u32 bm_max_peers;
-	u32 node_id;
+	s32 node_id;
 
 	/* see al_tr_number_to_on_disk_sector() */
 	u32 al_stripes;

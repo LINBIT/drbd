@@ -628,7 +628,7 @@ struct drbd_socket {
 struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u32 flags;
-	u32 node_id;
+	s32 node_id;
 };
 
 struct drbd_md {
@@ -639,7 +639,7 @@ struct drbd_md {
 	u64 current_uuid;
 	u64 device_uuid;
 	u32 flags;
-	u32 node_id;
+	s32 node_id;
 	u32 md_size_sect;
 
 	s32 al_offset;	/* signed relative sector offset to activity log */

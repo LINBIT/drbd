@@ -1840,7 +1840,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			goto force_diskless_dec;
 		}
 
-		if (peer_md->node_id >= 0)
+		if (peer_md->node_id != -1)
 			nbc->id_to_bit[peer_md->node_id] = bitmap_index;
 	}
 
