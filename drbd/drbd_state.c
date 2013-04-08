@@ -1915,6 +1915,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
 			bool create_new_uuid;
+			bool send_state = false;
 
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
@@ -2058,12 +2059,12 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
 			      (resync_susp_other_c[OLD] != resync_susp_other_c[NEW]) ||
 			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			/* finished resync, tell sync source */
 			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    repl_state[NEW] == L_ESTABLISHED)
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			/* In case one of the isp bits got set, suspend other devices. */
 			if (!(resync_susp_dependency[OLD] || resync_susp_peer[OLD] || resync_susp_user[OLD]) &&
@@ -2073,13 +2074,13 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* Make sure the peer gets informed about eventual state
 			   changes (ISP bits) while we were in L_OFF. */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] >= L_ESTABLISHED)
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			/* We are in the progress to start a full sync. SyncTarget sets all slots. */
 			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
@@ -2126,7 +2127,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 			/* Outdated myself because became weak, tell peers */
 			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
 			    repl_state[NEW] >= L_ESTABLISHED)
-				drbd_send_state(peer_device, new_state);
+				send_state = true;
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
 			 * if the resync finished cleanly, or aborted because of peer disk
@@ -2155,6 +2156,9 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				if (resync_susp_dependency[OLD] != resync_susp_dependency[NEW])
 					resume_next_sg(device);
 			}
+
+			if (send_state)
+				drbd_send_state(peer_device, new_state);
 		}
 
 		/* Make sure the effective disk size is stored in the metadata
