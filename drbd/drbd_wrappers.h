@@ -519,8 +519,8 @@ static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-#define __bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK) \
-	backport_bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK)
+#define bitmap_parse(BUF, BUFLEN, MASKP, NMASK) \
+	backport_bitmap_parse(BUF, BUFLEN, 0, MASKP, NMASK)
 
 #define CHUNKSZ                         32
 #define nbits_to_hold_value(val)        fls(val)
