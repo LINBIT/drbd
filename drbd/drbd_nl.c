@@ -885,8 +885,10 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 			if (peer_device->repl_state[NOW] >= L_OFF) {
 				/* if this was forced, we should consider sync */
-				if (forced)
+				if (forced) {
 					drbd_send_uuids(peer_device, 0, 0);
+					set_bit(CONSIDER_RESYNC, &peer_device->flags);
+				}
 				drbd_send_current_state(peer_device);
 			}
 		}
