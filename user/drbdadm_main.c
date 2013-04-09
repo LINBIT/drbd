@@ -3254,7 +3254,7 @@ void sanity_check_perm()
 	checked = 1;
 }
 
-void validate_resource(struct d_resource *res)
+void validate_resource(struct d_resource *res, enum pp_flags flags)
 {
 	struct d_option *opt, *next;
 	struct d_name *bpo;
@@ -3265,7 +3265,8 @@ void validate_resource(struct d_resource *res)
 	while ((opt = find_opt(opt, "resync-after"))) {
 		struct d_resource *rs_after_res = res_by_name(opt->value);
 		next = opt->next;
-		if (rs_after_res == NULL || rs_after_res->ignore) {
+		if (rs_after_res == NULL ||
+		    (rs_after_res->ignore && !(flags & MATCH_ON_PROXY))) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
 				"'resync-after' option is not known%s.\n",
@@ -3358,11 +3359,11 @@ void validate_resource(struct d_resource *res)
 	}
 }
 
-static void global_validate_maybe_expand_die_if_invalid(int expand)
+static void global_validate_maybe_expand_die_if_invalid(int expand, enum pp_flags flags)
 {
 	struct d_resource *res, *tmp;
 	for_each_resource(res, tmp, config) {
-		validate_resource(res);
+		validate_resource(res, flags);
 		if (!config_valid)
 			exit(E_config_invalid);
 		if (expand) {
@@ -4043,7 +4044,8 @@ int main(int argc, char **argv)
 			exit(E_usage);
 		}
 
-		global_validate_maybe_expand_die_if_invalid(!is_dump);
+		global_validate_maybe_expand_die_if_invalid(!is_dump,
+							    cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
 
 		if (!resource_names[0] || !strcmp(resource_names[0], "all")) {
 			/* either no resource arguments at all,

@@ -46,6 +46,10 @@ enum usage_count_type {
   UC_ASK,
 };
 
+enum pp_flags {
+	MATCH_ON_PROXY = 1,
+};
+
 struct d_globals
 {
   int disable_io_hints;
@@ -208,7 +212,7 @@ static inline int m_system_ex(char **argv, int flags, const char *res_name)
 	return ex;
 }
 extern struct d_option* find_opt(struct d_option*,char*);
-extern void validate_resource(struct d_resource *);
+extern void validate_resource(struct d_resource *, enum pp_flags);
 /* stages of configuration, as performed on "drbdadm up"
  * or "drbdadm adjust":
  */
@@ -254,9 +258,6 @@ extern int have_ip(const char *af, const char *ip);
 enum pr_flags {
   NoneHAllowed  = 4,
   PARSE_FOR_ADJUST = 8
-};
-enum pp_flags {
-	MATCH_ON_PROXY = 1,
 };
 
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
