@@ -4024,7 +4024,7 @@ int main(int argc, char **argv)
 	if (!config_valid)
 		exit(E_config_invalid);
 
-	post_parse(config, cmd->is_proxy_cmd ? match_on_proxy : 0);
+	post_parse(config, cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
 
 	if (!is_dump || dry_run || verbose)
 		expand_common();

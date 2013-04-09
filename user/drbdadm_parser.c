@@ -2035,12 +2035,12 @@ void post_parse(struct d_resource *config, enum pp_flags flags)
 	/* Needs "on_hosts" and host->lower already set */
 	for_each_resource(res, tmp, config)
 		if (!res->stacked_on_one)
-			set_me_in_resource(res, flags & match_on_proxy);
+			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	/* Needs host->lower->me already set */
 	for_each_resource(res, tmp, config)
 		if (res->stacked_on_one)
-			set_me_in_resource(res, flags & match_on_proxy);
+			set_me_in_resource(res, flags & MATCH_ON_PROXY);
 
 	// Needs "me" set already
 	for_each_resource(res, tmp, config)

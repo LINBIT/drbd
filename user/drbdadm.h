@@ -256,7 +256,7 @@ enum pr_flags {
   PARSE_FOR_ADJUST = 8
 };
 enum pp_flags {
-	match_on_proxy = 1,
+	MATCH_ON_PROXY = 1,
 };
 
 extern struct d_resource* parse_resource_for_adjust(struct cfg_ctx *ctx);
