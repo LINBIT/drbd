@@ -997,7 +997,27 @@ retry:
 		spin_lock_bh(&resource->listeners_lock);
 		waiter2 = find_waiter_by_addr(waiter->listener, (struct sockaddr *)&peer_addr);
 		if (!waiter2) {
-			drbd_err(connection, "Closing connection from unexpected peer\n");
+			struct sockaddr_in6 *from_sin6, *to_sin6;
+			struct sockaddr_in *from_sin, *to_sin;
+
+			switch(peer_addr.ss_family) {
+			case AF_INET6:
+				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
+				to_sin6 = (struct sockaddr_in6 *)&connection->my_addr;
+				drbd_err(resource, "Closing unexpected connection from "
+					 "%pI6 to port %u\n",
+					 &from_sin6->sin6_addr,
+					 be16_to_cpu(to_sin6->sin6_port));
+				break;
+			default:
+				from_sin = (struct sockaddr_in *)&peer_addr;
+				to_sin = (struct sockaddr_in *)&connection->my_addr;
+				drbd_err(resource, "Closing unexpected connection from "
+					 "%pI4 to port %u\n",
+					 &from_sin->sin_addr,
+					 be16_to_cpu(to_sin->sin_port));
+				break;
+			}
 			goto retry_locked;
 		}
 		if (waiter2 != waiter) {
