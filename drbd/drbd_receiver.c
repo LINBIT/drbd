@@ -5815,6 +5815,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 
 STATIC void conn_disconnect(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
@@ -5828,6 +5829,10 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 	 * Usually we should be in some network failure state already,
 	 * but just in case we are not, we fix it up here.
 	 */
+	spin_lock_irq(&resource->req_lock);
+	del_timer(&connection->connect_timer);
+	spin_unlock_irq(&resource->req_lock);
+
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 
 	/* asender does not clean up anything. it must not interfere, either */
@@ -5856,17 +5861,17 @@ STATIC void conn_disconnect(struct drbd_connection *connection)
 
 	drbd_info(connection, "Connection closed\n");
 
-	if (connection->resource->role[NOW] == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
+	if (resource->role[NOW] == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
 
-	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
+	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED) {
 		__change_cstate(connection, C_UNCONNECTED);
 		/* drbd_receiver() has to be restarted after it returns */
 		drbd_thread_restart_nowait(&connection->receiver);
 	}
-	end_state_change(connection->resource, &irq_flags);
+	end_state_change(resource, &irq_flags);
 
 	if (oc == C_DISCONNECTING)
 		change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY);
