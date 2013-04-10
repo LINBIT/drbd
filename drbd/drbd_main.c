@@ -351,6 +351,7 @@ STATIC int drbd_thread_setup(void *arg)
 {
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
 	struct drbd_resource *resource = thi->resource;
+	struct drbd_connection *connection = thi->connection;
 	unsigned long flags;
 	int retval;
 
@@ -382,7 +383,10 @@ restart:
 	 */
 
 	if (thi->t_state == RESTARTING) {
-		drbd_info(resource, "Restarting %s thread\n", thi->name);
+		if (connection)
+			drbd_info(connection, "Restarting %s thread\n", thi->name);
+		else
+			drbd_info(resource, "Restarting %s thread\n", thi->name);
 		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
 		goto restart;
@@ -394,7 +398,10 @@ restart:
 
 	/* THINK maybe two different completions? */
 	complete_all(&thi->startstop); /* notify: thi->task unset. */
-	drbd_info(resource, "Terminating %s thread\n", thi->name);
+	if (connection)
+		drbd_info(connection, "Terminating %s thread\n", thi->name);
+	else
+		drbd_info(resource, "Terminating %s thread\n", thi->name);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	/* Release mod reference taken when thread was started */
@@ -421,6 +428,7 @@ STATIC void drbd_thread_init(struct drbd_resource *resource, struct drbd_thread 
 int drbd_thread_start(struct drbd_thread *thi)
 {
 	struct drbd_resource *resource = thi->resource;
+	struct drbd_connection *connection = thi->connection;
 	unsigned long flags;
 	int pid;
 
@@ -430,8 +438,12 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 	switch (thi->t_state) {
 	case NONE:
-		drbd_info(resource, "Starting %s thread (from %s [%d])\n",
-			 thi->name, current->comm, current->pid);
+		if (connection)
+			drbd_info(connection, "Starting %s thread (from %s [%d])\n",
+				 thi->name, current->comm, current->pid);
+		else
+			drbd_info(resource, "Starting %s thread (from %s [%d])\n",
+				 thi->name, current->comm, current->pid);
 
 		/* Get ref on module for thread - this is released when thread exits */
 		if (!try_module_get(THIS_MODULE)) {
@@ -472,8 +484,12 @@ int drbd_thread_start(struct drbd_thread *thi)
 		break;
 	case EXITING:
 		thi->t_state = RESTARTING;
-		drbd_info(resource, "Restarting %s thread (from %s [%d])\n",
-				thi->name, current->comm, current->pid);
+		if (connection)
+			drbd_info(connection, "Restarting %s thread (from %s [%d])\n",
+					thi->name, current->comm, current->pid);
+		else
+			drbd_info(resource, "Restarting %s thread (from %s [%d])\n",
+					thi->name, current->comm, current->pid);
 		/* fall through */
 	case RUNNING:
 	case RESTARTING:
