@@ -1018,11 +1018,13 @@ retry:
 					 be16_to_cpu(to_sin->sin_port));
 				break;
 			}
+
 			goto retry_locked;
 		}
 		if (waiter2 != waiter) {
 			if (waiter2->socket) {
-				drbd_err(connection, "Target receiver busy, closing connection\n");
+				drbd_err(waiter2->connection,
+					 "Receiver busy; rejecting incoming connection\n");
 				goto retry_locked;
 			}
 			waiter2->socket = s_estab;
