@@ -999,6 +999,17 @@ retry:
 		if (!waiter2) {
 			struct sockaddr_in6 *from_sin6, *to_sin6;
 			struct sockaddr_in *from_sin, *to_sin;
+			struct drbd_connection *connection2;
+
+			connection2 = conn_get_by_addrs(
+				&connection->my_addr, connection->my_addr_len,
+				&peer_addr, peer_addr_len);
+			if (connection2) {
+				drbd_info(connection2,
+					  "Receiver busy; rejecting incoming connection\n");
+				kref_put(&connection2->kref, drbd_destroy_connection);
+				goto retry_locked;
+			}
 
 			switch(peer_addr.ss_family) {
 			case AF_INET6:
