@@ -158,6 +158,8 @@ global
 resource
    connection
       net
+   connection-mesh
+      net
    [disk]
    floating
    handlers
@@ -214,6 +216,21 @@ resource
               used to refer to the connection in the system log and in other
               messages. If no name is specified, the peer's host name
               is used instead.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>connection-mesh</option></term>
+
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
+
+                <secondary>connection-mesh</secondary>
+              </indexterm> Define a connection mesh between multiple hosts. This section
+              must contain a <option>hosts</option> parameter, which has the
+	      host names as arguments. This section is a shortcut to define many
+	      connections which share the same network options.</para>
           </listitem>
         </varlistentry>
 
@@ -461,6 +478,29 @@ resource
             port instead of the port defined in the <option>on</option>
             section.  Each <option>connection</option> section must contain
             exactly two <option>host</option> parameters.</para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </refsect2>
+
+    <refsect2>
+      <title>Section <option>connection-mesh</option> Parameters</title>
+
+      <variablelist>
+        <varlistentry>
+          <term><option>hosts <arg choice="plain" rep="repeat"><replaceable>name</replaceable></arg></option></term>
+
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
+
+                <secondary>host</secondary>
+              </indexterm>
+            Defines all nodes of a mesh. Each
+	    <option><replaceable>name</replaceable></option> refers to an
+	    <option>on</option> section in a resource. The port
+	    that is defined in the <option>on</option> section will
+	    be used.</para>
           </listitem>
         </varlistentry>
       </variablelist>
