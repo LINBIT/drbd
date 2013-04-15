@@ -7,7 +7,7 @@ dnl Minimum autoconf version we require
 AC_PREREQ(2.53)
 
 dnl What we are, our version, who to bug in case of problems
-AC_INIT(DRBD, 9.0.0pre1, [drbd-dev@lists.linbit.com])
+AC_INIT(DRBD, 9.0.0pre2, [drbd-dev@lists.linbit.com])
 
 dnl Sanitize $prefix. Autoconf does this by itself, but so late in the
 dnl generated configure script that the expansion does not occur until

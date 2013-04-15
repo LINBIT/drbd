@@ -2,6 +2,18 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre2 (api:genl1/proto:86-110)
+--------
+ * Introduced two phase commits that span include all (direct
+   and indirectly) connected nodes. This new type of transactions
+   is used when a node bacomes primary, or when a new connection
+   is established.
+ * Introduce a new state flag "weak"; if it is set, the node has
+   no direct connection to a primary node, but a primary node is
+   present in the cluster.
+ * Reworked resync decissions for multiple connections, and weakly
+   connected nodes.
+
 9.0.0pre1 (api:genl1/proto:86-110)
 --------
  * Support for multiple connections in a single resource; this feature
