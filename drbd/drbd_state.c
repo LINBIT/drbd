@@ -2704,16 +2704,19 @@ static enum drbd_state_rv
 change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			  union drbd_state mask, union drbd_state val,
 			  unsigned long *irq_flags,
-			  int target_node_id,
-			  u64 reach_immediately)
+			  int target_node_id)
 {
 	struct p_twopc_request request;
 	struct twopc_reply *reply = &resource->twopc_reply;
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
-	u64 nodes_to_reach;
+	u64 reach_immediately;
 	int attempts = 5;
+
+	reach_immediately = directly_connected_nodes(resource);
+	if (target_node_id != -1)
+		reach_immediately |= NODE_MASK(target_node_id);
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2734,12 +2737,11 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	do
 		reply->tid = random32();
 	while (!reply->tid);
-	nodes_to_reach = ~NODE_MASK(resource->res_opts.node_id);
 
 	request.tid = cpu_to_be32(reply->tid);
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
 	request.target_node_id = cpu_to_be32(target_node_id);
-	request.nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	request.nodes_to_reach = cpu_to_be64(~NODE_MASK(resource->res_opts.node_id));
 	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.weak_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(mask.i);
@@ -3000,8 +3002,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, -1,
-				NS(role, role), &irq_flags, -1,
-				directly_connected_nodes(resource));
+				NS(role, role), &irq_flags, -1);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;
@@ -3085,8 +3086,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, device->vnr,
-				NS(disk, disk_state), &irq_flags, -1,
-				directly_connected_nodes(resource));
+				NS(disk, disk_state), &irq_flags, -1);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;
@@ -3169,11 +3169,9 @@ enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
 	if (connection->cstate[NOW] != C_CONNECTING)
 		rv = SS_IN_TRANSIENT_STATE;
 	else {
-		u64 m = directly_connected_nodes(resource);
-		m |= NODE_MASK(connection->net_conf->peer_node_id);
 		rv = change_cluster_wide_state(resource, -1,
 			NS(conn, C_CONNECTING), &irq_flags,
-			target_node_id, m);
+			target_node_id);
 	}
 	end_state_change(resource, &irq_flags);
 	return rv;
@@ -3233,8 +3231,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 			}
 
 			rv = change_cluster_wide_state(resource, -1, mask, val,
-					&irq_flags, target_node_id,
-					directly_connected_nodes(resource));
+					&irq_flags, target_node_id);
 		}
 	}
 	__change_cstate(connection, cstate);
