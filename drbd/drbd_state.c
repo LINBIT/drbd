@@ -2721,11 +2721,13 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			rv = change_peer_state(connection, vnr, mask, val, irq_flags);
 			kref_put(&connection->kref, drbd_destroy_connection);
 		}
-		return rv;
+		goto out;
 	}
 
-	if (!expect(resource, flags & CS_SERIALIZE))
-		return SS_CW_FAILED_BY_PEER;
+	if (!expect(resource, flags & CS_SERIALIZE)) {
+		rv = SS_CW_FAILED_BY_PEER;
+		goto out;
+	}
 
 	complete_remote_state_change(resource, irq_flags);
 
@@ -2739,14 +2741,17 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			if (connection->net_conf->peer_node_id == target_node_id)
 				goto found_target_node;
 		}
-		return SS_CW_FAILED_BY_PEER;
+		rv = SS_CW_FAILED_BY_PEER;
+		goto out;
 
 	    found_target_node:
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
 		      (connection->cstate[NOW] == C_CONNECTING &&
 		       mask.conn == conn_MASK &&
-		       val.conn == C_CONNECTING)))
-			return SS_CW_FAILED_BY_PEER;
+		       val.conn == C_CONNECTING))) {
+			rv = SS_CW_FAILED_BY_PEER;
+			goto out;
+		}
 
 		/* For connect transactions, add the target node id. */
 		reach_immediately |= NODE_MASK(target_node_id);
@@ -2900,6 +2905,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	resource->remote_state_change = false;
 	reply->initiator_node_id = -1;
+    out:
 	wake_up(&resource->twopc_wait);
 	return rv;
 }
