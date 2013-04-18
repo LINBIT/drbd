@@ -2714,10 +2714,6 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	u64 reach_immediately;
 	int attempts = 5;
 
-	reach_immediately = directly_connected_nodes(resource);
-	if (target_node_id != -1)
-		reach_immediately |= NODE_MASK(target_node_id);
-
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
 		rv = SS_SUCCESS;
@@ -2734,6 +2730,28 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	complete_remote_state_change(resource, irq_flags);
 
     retry:
+	reach_immediately = directly_connected_nodes(resource);
+	if (target_node_id != -1) {
+		struct drbd_connection *connection;
+
+		/* Fail if the target node is no longer directly reachable. */
+		for_each_connection(connection, resource) {
+			if (connection->net_conf->peer_node_id == target_node_id)
+				goto found_target_node;
+		}
+		return SS_CW_FAILED_BY_PEER;
+
+	    found_target_node:
+		if (!(connection->cstate[NOW] == C_CONNECTED ||
+		      (connection->cstate[NOW] == C_CONNECTING &&
+		       mask.conn == conn_MASK &&
+		       val.conn == C_CONNECTING)))
+			return SS_CW_FAILED_BY_PEER;
+
+		/* For connect transactions, add the target node id. */
+		reach_immediately |= NODE_MASK(target_node_id);
+	}
+
 	do
 		reply->tid = random32();
 	while (!reply->tid);
