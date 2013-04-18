@@ -2355,7 +2355,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_connection *connection = connection_state_change->connection;
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
 
-		if (cstate[NEW] == C_CONNECTED) {
+		if (cstate[NEW] == C_CONNECTED || cstate[NEW] == C_CONNECTING) {
 			still_connected = true;
 			drbd_propagate_reachability(connection);
 		}
