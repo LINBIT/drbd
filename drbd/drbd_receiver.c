@@ -5009,8 +5009,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			spin_unlock_irq(&resource->req_lock);
 
 			rv = nested_twopc_request(resource, pi->vnr, pi->cmd, p);
-		} else
-			drbd_send_twopc_reply(connection, P_TWOPC_NO, &reply);
+		} else {
+			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
+				P_TWOPC_RETRY : P_TWOPC_NO;
+			drbd_send_twopc_reply(connection, cmd, &reply);
+		}
 	} else {
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		if (peer_device && rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
