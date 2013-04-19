@@ -1243,15 +1243,6 @@ start:
 		return false;
 	}
 
-	timeout = 0;
-	rcu_read_lock();
-	if (connection != first_connection(resource))
-		timeout = twopc_retry_timeout(resource);
-	rcu_read_unlock();
-	drbd_debug(connection, "Waiting for %ums to avoid transaction "
-		   "conflicts\n", jiffies_to_msecs(timeout));
-	schedule_timeout(timeout);
-
 	mutex_init(&sock.mutex);
 	sock.sbuf = connection->data.sbuf;
 	sock.rbuf = connection->data.rbuf;
@@ -1408,6 +1399,11 @@ randomize:
 
 	if (connection->agreed_pro_version >= 110) {
 		if (resource->res_opts.node_id < connection->net_conf->peer_node_id) {
+			timeout = twopc_retry_timeout(resource);
+			drbd_debug(connection, "Waiting for %ums to avoid transaction "
+				   "conflicts\n", jiffies_to_msecs(timeout));
+			schedule_timeout(timeout);
+
 			if (connect_transaction(connection) < SS_SUCCESS) {
 				h = 0;
 				goto out;
@@ -4828,6 +4824,10 @@ void twopc_timer_fn(unsigned long data)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
+	if (resource->twopc_reply.tid != -1) {
+		drbd_debug(resource, "Two-phase commit %u timeout\n",
+			   resource->twopc_reply.tid);
+	}
 	resource->twopc_work.cb = abort_nested_twopc_work;
 	drbd_queue_work(&resource->work, &resource->twopc_work);
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
