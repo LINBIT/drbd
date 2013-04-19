@@ -2713,7 +2713,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	u64 nodes_to_reach;
-	int attempts = 3;
+	int attempts = 5;
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2862,7 +2862,10 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		long timeout = max_ping_timeout(resource);
 		if (timeout <= 0)
 			timeout = HZ;
-		schedule_timeout(random32() % timeout);
+		timeout = random32() % timeout;
+		drbd_debug(resource, "Retrying cluster-wide state after %ld jiffies\n",
+			   timeout);
+		schedule_timeout(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
 		goto retry;
 	}
