@@ -1042,16 +1042,24 @@ bool drbd_calc_weak(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
-	u64 primaries = 0, direct_primaries = 0;
+	u64 primaries = 0, direct_primaries = 0, direct_secondaries = 0;
 
 	for_each_connection(connection, resource) {
 		if (connection->cstate[NEW] >= C_CONNECTED) {
-			int peer_node_id = connection->net_conf->peer_node_id;
+			const int peer_node_id = connection->net_conf->peer_node_id;
+			const u64 peer_node_mask = NODE_MASK(peer_node_id);
 			primaries |= connection->primary_mask;
-			if (NODE_MASK(peer_node_id) & primaries)
-				direct_primaries |= NODE_MASK(peer_node_id);
+			if (peer_node_mask & connection->primary_mask)
+				direct_primaries |= peer_node_mask;
+			else
+				direct_secondaries |= peer_node_mask;
 		}
 	}
+
+	/* We might see temporarily false primaries because P_PRI_REACHABLE packets
+	   come in in arbitrary order. If a directly connected neighbor considers
+	   himself as secondary, trust that more than what other nodes say. */
+	primaries = primaries & ~direct_secondaries;
 
 	return role[NEW] == R_SECONDARY && primaries && primaries != direct_primaries;
 }
