@@ -4865,15 +4865,25 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		if (resource->twopc_reply.initiator_node_id != reply.initiator_node_id ||
 		    resource->twopc_reply.tid != reply.tid) {
 			spin_unlock_irq(&resource->req_lock);
-			drbd_info(connection, "Rejecting concurrent remote state change %u\n",
-				  reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+			if (pi->cmd == P_TWOPC_COMMIT) {
+				drbd_err(connection, "Invalid two-phase commit "
+					 "request %u\n", reply.tid);
+				/* FIXME: Close all connections? */
+			} else if (pi->cmd == P_TWOPC_PREPARE) {
+				drbd_info(connection, "Rejecting concurrent "
+					  "remote state change %u\n", reply.tid);
+				drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+			} else {
+				drbd_info(connection, "Ignoring %s packet %u\n",
+					  cmdname(pi->cmd),
+					  reply.tid);
+			}
 			return 0;
 		}
 		if (pi->cmd == P_TWOPC_PREPARE) {
 			/* We have prepared this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
-			drbd_debug(resource, "Ignoring duplicate %s packet %u\n",
+			drbd_debug(connection, "Ignoring %s packet %u\n",
 				   cmdname(pi->cmd),
 				   reply.tid);
 			drbd_send_twopc_reply(connection, P_TWOPC_SKIP, &reply);
@@ -4884,7 +4894,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		if (pi->cmd != P_TWOPC_PREPARE) {
 			/* We have committed or aborted this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
-			drbd_debug(resource, "Ignoring %s packet %u (duplicate?)\n",
+			drbd_debug(connection, "Ignoring %s packet %u\n",
 				   cmdname(pi->cmd),
 				   reply.tid);
 			update_reachability(connection, reply.primary_nodes);
