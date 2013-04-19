@@ -2713,6 +2713,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	enum drbd_state_rv rv;
 	u64 reach_immediately;
 	int attempts = 5;
+	unsigned long start_time;
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2730,6 +2731,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 
 	complete_remote_state_change(resource, irq_flags);
+	start_time = jiffies;
 
     retry:
 	reach_immediately = directly_connected_nodes(resource);
@@ -2862,8 +2864,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 		}
 		if (rv >= SS_SUCCESS) {
-			drbd_debug(resource, "Committing cluster-wide state change %u\n",
-				   be32_to_cpu(request.tid));
+			drbd_debug(resource, "Committing cluster-wide state change %u (%ums)\n",
+				   be32_to_cpu(request.tid),
+				   jiffies_to_msecs(jiffies - start_time));
 
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT,
 						    &request, reach_immediately);
@@ -2871,8 +2874,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				/* FIXME: disconnect all peers? */
 			}
 		} else {
-			drbd_debug(resource, "Aborting cluster-wide state change %u\n",
-				   be32_to_cpu(request.tid));
+			drbd_debug(resource, "Aborting cluster-wide state change %u (%ums)\n",
+				   be32_to_cpu(request.tid),
+				   jiffies_to_msecs(jiffies - start_time));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT,
 					       &request, reach_immediately);
 		}
@@ -2888,8 +2892,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		if (timeout <= 0)
 			timeout = HZ;
 		timeout = random32() % timeout;
-		drbd_debug(resource, "Retrying cluster-wide state after %ld jiffies\n",
-			   timeout);
+		drbd_debug(resource, "Retrying cluster-wide state after %ums\n",
+			   jiffies_to_msecs(timeout));
 		schedule_timeout(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
 		goto retry;
