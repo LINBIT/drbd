@@ -2645,21 +2645,25 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 	return rv;
 }
 
-static long max_ping_timeout(struct drbd_resource *resource)
+long twopc_retry_timeout(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	int connections = 0;
 	long timeout = 0;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		struct net_conf *net_conf =
-			rcu_dereference(connection->net_conf);
-		long t = net_conf->ping_timeo * HZ / 10;
-
-		if (timeout < t)
-			timeout = t;
+		if (connection->cstate[NOW] < C_CONNECTING)
+			continue;
+		connections++;
 	}
 	rcu_read_unlock();
+
+	if (connections > 1) {
+		timeout = resource->res_opts.twopc_retry_timeout *
+			  HZ / 10 * (connections - 1);
+		timeout = random32() % timeout;
+	}
 	return timeout;
 }
 
@@ -2888,11 +2892,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
 	    --attempts > 0) {
-		long timeout = max_ping_timeout(resource);
-		if (timeout <= 0)
-			timeout = HZ;
-		timeout = random32() % timeout;
-		drbd_debug(resource, "Retrying cluster-wide state after %ums\n",
+		long timeout = twopc_retry_timeout(resource);
+		drbd_debug(resource, "Retrying cluster-wide state change after %ums\n",
 			   jiffies_to_msecs(timeout));
 		schedule_timeout(timeout);
 		end_remote_state_change(resource, irq_flags, flags);

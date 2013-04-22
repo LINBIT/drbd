@@ -1243,6 +1243,15 @@ start:
 		return false;
 	}
 
+	timeout = 0;
+	rcu_read_lock();
+	if (connection != first_connection(resource))
+		timeout = twopc_retry_timeout(resource);
+	rcu_read_unlock();
+	drbd_debug(connection, "Waiting for %ums to avoid transaction "
+		   "conflicts\n", jiffies_to_msecs(timeout));
+	schedule_timeout(timeout);
+
 	mutex_init(&sock.mutex);
 	sock.sbuf = connection->data.sbuf;
 	sock.rbuf = connection->data.rbuf;

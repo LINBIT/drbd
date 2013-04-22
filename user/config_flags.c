@@ -721,6 +721,7 @@ struct context_def resource_options_ctx = {
 		{ "auto-promote", BOOLEAN(auto_promote, AUTO_PROMOTE) },
 		{ "peer-ack-window", NUMERIC(peer_ack_window, PEER_ACK_WINDOW) },
 		{ "twopc-timeout", NUMERIC(twopc_timeout, TWOPC_TIMEOUT) },
+		{ "twopc-retry-timeout", NUMERIC(twopc_retry_timeout, TWOPC_RETRY_TIMEOUT) },
 		{ } },
 };
 
