@@ -1166,74 +1166,17 @@ void connect_timer_fn(unsigned long data)
 
 STATIC void conn_disconnect(struct drbd_connection *connection);
 
-static int conn_connect2(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct drbd_peer_device *peer_device;
-	struct net_conf *nc;
-	bool discard_my_data;
-	int vnr;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	discard_my_data = nc->discard_my_data;
-	rcu_read_unlock();
-
-	if (drbd_send_protocol(connection) == -EOPNOTSUPP) {
-		/* give up; go standalone */
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		return -1;
-	}
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-	}
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		kobject_get(&device->kobj);
-		/* peer_device->connection cannot go away: caller holds a reference. */
-		rcu_read_unlock();
-
-		if (discard_my_data)
-			set_bit(DISCARD_MY_DATA, &device->flags);
-		else
-			clear_bit(DISCARD_MY_DATA, &device->flags);
-
-		drbd_connected(peer_device);
-		kobject_put(&device->kobj);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-
-	mutex_lock(&resource->conf_update);
-	/* The discard_my_data flag is a single-shot modifier to the next
-	 * connection attempt, the handshake of which is now well underway.
-	 * No need for rcu style copying of the whole struct
-	 * just to clear a single value. */
-	connection->net_conf->discard_my_data = 0;
-	mutex_unlock(&resource->conf_update);
-
-	if (change_cstate(connection, C_CONNECTED,
-			  CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) < SS_SUCCESS) {
-		/* retry */
-		conn_disconnect(connection);
-		schedule_timeout_interruptible(HZ);
-		return 0;
-	}
-	return 1;  /* success */
-}
-
 /*
  * Returns true if we have a valid connection.
  */
 static bool conn_connect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
 	struct drbd_socket sock, msock;
+	bool discard_my_data;
 	struct net_conf *nc;
-	int timeout, h, ok;
+	int timeout, h, ok, vnr;
 	struct waiter waiter;
 
 start:
@@ -1395,6 +1338,47 @@ randomize:
 	connection->data.socket->sk->sk_sndtimeo = timeout;
 	connection->data.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	discard_my_data = nc->discard_my_data;
+	rcu_read_unlock();
+
+	if (drbd_send_protocol(connection) == -EOPNOTSUPP) {
+		/* give up; go standalone */
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		return -1;
+	}
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	}
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		kobject_get(&device->kobj);
+		/* peer_device->connection cannot go away: caller holds a reference. */
+		rcu_read_unlock();
+
+		if (discard_my_data)
+			set_bit(DISCARD_MY_DATA, &device->flags);
+		else
+			clear_bit(DISCARD_MY_DATA, &device->flags);
+
+		drbd_connected(peer_device);
+		kobject_put(&device->kobj);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+
+	mutex_lock(&resource->conf_update);
+	/* The discard_my_data flag is a single-shot modifier to the next
+	 * connection attempt, the handshake of which is now well underway.
+	 * No need for rcu style copying of the whole struct
+	 * just to clear a single value. */
+	connection->net_conf->discard_my_data = 0;
+	mutex_unlock(&resource->conf_update);
+
 	drbd_thread_start(&connection->asender);
 
 	if (connection->agreed_pro_version >= 110) {
@@ -1408,16 +1392,15 @@ randomize:
 				h = 0;
 				goto out;
 			}
-			return conn_connect2(connection);
-		} else {
-			connection->connect_timer.expires =
-				jiffies + twopc_timeout(resource);
-			add_timer(&connection->connect_timer);
-			h = 1;
-			goto out;
 		}
+	} else {
+	    if (change_cstate(connection, C_CONNECTED,
+			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) < SS_SUCCESS) {
+		    h = 0;
+		    goto out;
+	    }
 	}
-	return conn_connect2(connection);
+	return 1;
 
 out_release_sockets:
 	put_listener(&waiter);
@@ -4855,7 +4838,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	union drbd_state mask = {}, val = {};
 	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
-	bool connect_transaction;
 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
@@ -4940,7 +4922,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	if (mask.conn == conn_MASK) {
 		u64 m = NODE_MASK(reply.initiator_node_id);
 
-		if (val.conn == C_CONNECTING)
+		if (val.conn == C_CONNECTED)
 			reply.reachable_nodes |= m;
 		if (val.conn == C_DISCONNECTING)
 			reply.reachable_nodes &= ~m;
@@ -5001,16 +4983,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			affected_connection ? affected_connection : connection,
 			mask, val, flags | CS_IGN_OUTD_FAIL);
 
-	connect_transaction =
-		affected_connection &&
-		mask.conn == conn_MASK && val.conn == C_CONNECTING;
-
-	if (connect_transaction) {
-		spin_lock_irq(&resource->req_lock);
-		del_timer(&affected_connection->connect_timer);
-		spin_unlock_irq(&resource->req_lock);
-	}
-
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {
 			spin_lock_irq(&resource->req_lock);
@@ -5032,9 +5004,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 		if (flags & CS_PREPARED) {
 			del_timer(&resource->twopc_timer);
-
-			if (connect_transaction)
-				conn_connect2(affected_connection);
 
 			update_reachability(connection, reply.primary_nodes);
 		}

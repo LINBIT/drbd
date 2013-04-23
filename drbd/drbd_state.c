@@ -2764,7 +2764,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
 		      (connection->cstate[NOW] == C_CONNECTING &&
 		       mask.conn == conn_MASK &&
-		       val.conn == C_CONNECTING))) {
+		       val.conn == C_CONNECTED))) {
 			rv = SS_CW_FAILED_BY_PEER;
 			goto out;
 		}
@@ -2797,7 +2797,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	reply->reachable_nodes = directly_connected_nodes(resource) |
 				       NODE_MASK(resource->res_opts.node_id);
-	if (mask.conn == conn_MASK && val.conn == C_CONNECTING) {
+	if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
 		reply->reachable_nodes |= NODE_MASK(target_node_id);
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	} else if (mask.conn == conn_MASK && val.conn == C_DISCONNECTING) {
@@ -2825,7 +2825,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				NODE_MASK(resource->res_opts.node_id);
 
 			if (mask.conn == conn_MASK) {
-				if (val.conn == C_CONNECTING)
+				if (val.conn == C_CONNECTED)
 					directly_reachable |= NODE_MASK(target_node_id);
 				if (val.conn == C_DISCONNECTING)
 					directly_reachable &= ~NODE_MASK(target_node_id);
@@ -2839,7 +2839,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 			if (mask.role == role_MASK && val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
-			if (mask.conn == conn_MASK && val.conn == C_CONNECTING) {
+			if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
 				/* This is a request to establish a connection. */
 				/* Establishing the connection is only allowed
 				 * if the resulting cluster contains no primary
@@ -3207,9 +3207,10 @@ enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
 		rv = SS_IN_TRANSIENT_STATE;
 	else {
 		rv = change_cluster_wide_state(resource, -1,
-			NS(conn, C_CONNECTING), &irq_flags,
+			NS(conn, C_CONNECTED), &irq_flags,
 			target_node_id);
 	}
+	__change_cstate(connection, C_CONNECTED);
 	end_state_change(resource, &irq_flags);
 	return rv;
 }
