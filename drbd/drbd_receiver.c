@@ -4736,7 +4736,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_req_state *p = pi->data;
 	union drbd_state mask, val;
-	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
+	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
 	int vnr = -1;
 
@@ -4853,7 +4853,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply;
 	union drbd_state mask = {}, val = {};
-	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY;
+	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
 	bool connect_transaction;
 
@@ -4987,15 +4987,19 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			  reply.tid,
 			  (unsigned long)reply.primary_nodes,
 			  (unsigned long)reply.weak_nodes);
+		flags |= CS_WEAK_NODES;
 		break;
 	}
 
+	if (!(flags & CS_PREPARE))
+		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+
 	if (peer_device)
-		rv = change_peer_device_state(peer_device, mask, val, flags | CS_WEAK_NODES);
+		rv = change_peer_device_state(peer_device, mask, val, flags);
 	else
 		rv = change_connection_state(
 			affected_connection ? affected_connection : connection,
-			mask, val, flags | CS_WEAK_NODES | CS_IGN_OUTD_FAIL);
+			mask, val, flags | CS_IGN_OUTD_FAIL);
 
 	connect_transaction =
 		affected_connection &&
@@ -5023,23 +5027,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_send_twopc_reply(connection, cmd, &reply);
 		}
 	} else {
-		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		if (peer_device && rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
 			drbd_md_sync(peer_device->device);
 
 		if (flags & CS_PREPARED) {
 			del_timer(&resource->twopc_timer);
-			spin_lock_irq(&resource->req_lock);
-			resource->remote_state_change = false;
-			if (resource->twopc_parent) {
-				kref_put(&resource->twopc_parent->kref,
-					 drbd_destroy_connection);
-				resource->twopc_parent = NULL;
-			}
-			resource->twopc_reply.initiator_node_id = -1;
-			resource->twopc_reply.tid = 0;
-			spin_unlock_irq(&resource->req_lock);
-			wake_up(&resource->twopc_wait);
 
 			if (connect_transaction)
 				conn_connect2(affected_connection);

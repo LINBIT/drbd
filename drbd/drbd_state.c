@@ -363,6 +363,19 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	}
 out:
 	rcu_read_unlock();
+
+	if ((flags & CS_TWOPC) && !(flags & CS_PREPARE)) {
+		resource->remote_state_change = false;
+		resource->twopc_reply.initiator_node_id = -1;
+		resource->twopc_reply.tid = 0;
+		if (resource->twopc_parent) {
+			kref_put(&resource->twopc_parent->kref,
+				 drbd_destroy_connection);
+			resource->twopc_parent = NULL;
+		}
+		wake_up(&resource->twopc_wait);
+	}
+
 	return rv;
 }
 
@@ -2434,7 +2447,7 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 		  union drbd_state mask, union drbd_state val, unsigned long *irq_flags)
 {
 	struct drbd_resource *resource = connection->resource;
-	enum chg_state_flags flags = resource->state_change_flags;
+	enum chg_state_flags flags = resource->state_change_flags | CS_TWOPC;
 	enum drbd_state_rv rv;
 
 	if (!expect(resource, flags & CS_SERIALIZE))
@@ -2453,9 +2466,6 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 		clear_bit(TWOPC_PREPARED, &connection->flags);
 	}
 	end_remote_state_change(resource, irq_flags, flags);
-	resource->remote_state_change = false;
-	resource->twopc_reply.initiator_node_id = -1;
-	wake_up(&resource->twopc_wait);
 	return rv;
 }
 
@@ -2712,7 +2722,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 {
 	struct p_twopc_request request;
 	struct twopc_reply *reply = &resource->twopc_reply;
-	enum chg_state_flags flags = resource->state_change_flags;
+	enum chg_state_flags flags = resource->state_change_flags | CS_TWOPC;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	u64 reach_immediately;
@@ -2877,6 +2887,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
+			flags |= CS_WEAK_NODES;
 		} else {
 			drbd_debug(resource, "Aborting cluster-wide state change %u (%ums)\n",
 				   be32_to_cpu(request.tid),
@@ -2908,10 +2919,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			NODE_MASK(resource->res_opts.node_id));
 	}
 
-	resource->remote_state_change = false;
-	reply->initiator_node_id = -1;
     out:
-	wake_up(&resource->twopc_wait);
 	return rv;
 }
 
