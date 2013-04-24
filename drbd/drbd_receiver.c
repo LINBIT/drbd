@@ -5814,6 +5814,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 
 	while (get_t_state(&connection->receiver) == RUNNING) {
 		struct data_cmd *cmd;
+		long start;
 
 		drbd_thread_current_set_cpu(&connection->receiver);
 		if (drbd_recv_header(connection, &pi))
@@ -5840,11 +5841,16 @@ STATIC void drbdd(struct drbd_connection *connection)
 			pi.size -= shs;
 		}
 
+		start = jiffies;
 		err = cmd->fn(connection, &pi);
 		if (err) {
 			drbd_err(connection, "error receiving %s, e: %d l: %d!\n",
 				 cmdname(pi.cmd), err, pi.size);
 			goto err_out;
+		}
+		if (jiffies - start > HZ) {
+			drbd_debug(connection, "Request %s took %ums\n",
+				   cmdname(pi.cmd), jiffies_to_msecs(jiffies - start));
 		}
 	}
 	return;
