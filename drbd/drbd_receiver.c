@@ -4731,6 +4731,13 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	enum drbd_state_rv rv;
 	int vnr = -1;
 
+	if (!expect(connection, connection->agreed_pro_version >= 110)) {
+		drbd_err(connection, "Packet %s not allowed in protocol version %d\n",
+			 cmdname(pi->cmd),
+			 connection->agreed_pro_version);
+		return -EIO;
+	}
+
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr.  In the other packets, vnr == -1
 	 * means that the packet applies to the connection.  */
