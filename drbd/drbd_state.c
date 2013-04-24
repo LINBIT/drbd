@@ -2707,7 +2707,7 @@ long twopc_retry_timeout(struct drbd_resource *resource)
  *
  * If there are redundant paths in the cluster, requests will reach some nodes
  * more than once.  Nodes remember when they are taking part in a transaction;
- * they detect duplicate requests and reply to them with P_TWOPC_SKIP packets.
+ * they detect duplicate requests and reply to them with P_TWOPC_YES packets.
  * (Transactions are identified by the node id of the initiator and a random,
  * unique-enough transaction identifier.)
  *

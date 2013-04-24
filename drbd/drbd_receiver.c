@@ -4881,10 +4881,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		if (pi->cmd == P_TWOPC_PREPARE) {
 			/* We have prepared this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
-			drbd_debug(connection, "Ignoring %s packet %u\n",
-				   cmdname(pi->cmd),
-				   reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_SKIP, &reply);
+			drbd_send_twopc_reply(connection, P_TWOPC_YES, &reply);
 			return 0;
 		}
 		flags |= CS_PREPARED;
@@ -6431,7 +6428,7 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 				be64_to_cpu(p->primary_nodes);
 		}
 
-		if (pi->cmd == P_TWOPC_YES || pi->cmd == P_TWOPC_SKIP)
+		if (pi->cmd == P_TWOPC_YES)
 			set_bit(TWOPC_YES, &connection->flags);
 		else if (pi->cmd == P_TWOPC_NO)
 			set_bit(TWOPC_NO, &connection->flags);
@@ -6910,7 +6907,6 @@ static struct asender_cmd asender_tbl[] = {
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
 	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
-	[P_TWOPC_SKIP]      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_RETRY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 

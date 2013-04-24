@@ -4593,7 +4593,6 @@ const char *cmdname(enum drbd_packet cmd)
 		[P_TWOPC_COMMIT]	= "twopc_commit",
 		[P_TWOPC_YES]		= "twopc_yes",
 		[P_TWOPC_NO]		= "twopc_no",
-		[P_TWOPC_SKIP]		= "twopc_skip",
 		[P_TWOPC_RETRY]		= "twopc_retry",
 		[P_PRI_REACHABLE]       = "pri_reachable",
 		/* enum drbd_packet, but not commands - obsoleted flags:
