@@ -2781,7 +2781,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	request.tid = cpu_to_be32(reply->tid);
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
 	request.target_node_id = cpu_to_be32(target_node_id);
-	request.nodes_to_reach = cpu_to_be64(~NODE_MASK(resource->res_opts.node_id));
+	request.nodes_to_reach = cpu_to_be64(
+		~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
 	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.weak_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(mask.i);
@@ -2974,17 +2975,17 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 		     struct p_twopc_request *request)
 {
 	enum drbd_state_rv rv;
-	u64 nodes_to_reach;
+	u64 nodes_to_reach, reach_immediately;
 
 	spin_lock_irq(&resource->req_lock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
-	nodes_to_reach &= ~NODE_MASK(resource->res_opts.node_id);
+	reach_immediately = directly_connected_nodes(resource) & nodes_to_reach;
+	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
 	resource->twopc_work.cb = nested_twopc_work;
 	spin_unlock_irq(&resource->req_lock);
 
-	nodes_to_reach &= directly_connected_nodes(resource);
-	rv = __cluster_wide_request(resource, vnr, cmd, request, nodes_to_reach);
+	rv = __cluster_wide_request(resource, vnr, cmd, request, reach_immediately);
 	if (cmd == P_TWOPC_PREPARE) {
 		if (rv <= SS_SUCCESS) {
 			cmd = (rv == SS_SUCCESS) ? P_TWOPC_YES : P_TWOPC_NO;
