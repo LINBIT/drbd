@@ -4617,7 +4617,7 @@ __change_connection_state(struct drbd_connection *connection,
 		mask.susp_fen ^= -1;
 		__change_io_susp_fencing(resource, val.susp_fen);
 	}
-	if (flags & CS_TWOPC) {
+	if (flags & CS_WEAK_NODES) {
 		__change_weak(resource,
 			resource->twopc_reply.weak_nodes &
 			NODE_MASK(resource->res_opts.node_id));
@@ -4991,11 +4991,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 
 	if (peer_device)
-		rv = change_peer_device_state(peer_device, mask, val, flags | CS_TWOPC);
+		rv = change_peer_device_state(peer_device, mask, val, flags | CS_WEAK_NODES);
 	else
 		rv = change_connection_state(
 			affected_connection ? affected_connection : connection,
-			mask, val, flags | CS_TWOPC | CS_IGN_OUTD_FAIL);
+			mask, val, flags | CS_WEAK_NODES | CS_IGN_OUTD_FAIL);
 
 	connect_transaction =
 		affected_connection &&
