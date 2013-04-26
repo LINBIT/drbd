@@ -3229,6 +3229,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 				 enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	enum outdate_what outdate_what = OUTDATE_NOTHING;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	unsigned long irq_flags;
 
@@ -3245,9 +3246,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 	if (!local_state_change(flags) &&
 		   cstate == C_DISCONNECTING &&
 		   connection_has_connected_peer_devices(connection)) {
-		enum outdate_what outdate_what =
-			outdate_on_disconnect(connection);
-
+		outdate_what = outdate_on_disconnect(connection);
 		__change_cstate_and_outdate(connection, cstate, outdate_what);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS) {
@@ -3274,7 +3273,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 					&irq_flags, target_node_id);
 		}
 	}
-	__change_cstate(connection, cstate);
+	__change_cstate_and_outdate(connection, cstate, outdate_what);
 	if (rv < SS_SUCCESS) {
 		abort_state_change(resource, &irq_flags);
 		return rv;
