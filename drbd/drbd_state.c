@@ -486,12 +486,18 @@ void abort_state_change_locked(struct drbd_resource *resource)
 
 static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
+	enum chg_state_flags flags = resource->state_change_flags;
+
 	rcu_read_unlock();
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+        if (flags & CS_SERIALIZE)
+		up(&resource->state_sem);
 }
 
 static void __end_remote_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
+        if (flags & CS_SERIALIZE)
+		down(&resource->state_sem);
 	rcu_read_lock();
 	resource->state_change_flags = flags;
 	___begin_state_change(resource);
