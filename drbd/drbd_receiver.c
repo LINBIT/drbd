@@ -1164,6 +1164,24 @@ void connect_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+static void conn_connect2(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		kobject_get(&device->kobj);
+		/* peer_device->connection cannot go away: caller holds a reference. */
+		rcu_read_unlock();
+		drbd_connected(peer_device);
+		rcu_read_lock();
+		kobject_put(&device->kobj);
+	}
+	rcu_read_unlock();
+}
+
 STATIC void conn_disconnect(struct drbd_connection *connection);
 
 /*
@@ -1356,18 +1374,11 @@ randomize:
 	}
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kobject_get(&device->kobj);
-		/* peer_device->connection cannot go away: caller holds a reference. */
-		rcu_read_unlock();
 
 		if (discard_my_data)
 			set_bit(DISCARD_MY_DATA, &device->flags);
 		else
 			clear_bit(DISCARD_MY_DATA, &device->flags);
-
-		drbd_connected(peer_device);
-		kobject_put(&device->kobj);
-		rcu_read_lock();
 	}
 	rcu_read_unlock();
 
@@ -1378,7 +1389,6 @@ randomize:
 	 * just to clear a single value. */
 	connection->net_conf->discard_my_data = 0;
 	mutex_unlock(&resource->conf_update);
-
 	drbd_thread_start(&connection->asender);
 
 	if (connection->agreed_pro_version >= 110) {
@@ -1400,6 +1410,7 @@ randomize:
 		    goto out;
 	    }
 	}
+	conn_connect2(connection);
 	return 1;
 
 out_release_sockets:
@@ -5004,6 +5015,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			int vnr;
 
 			del_timer(&resource->twopc_timer);
+
+			if (affected_connection &&
+			    mask.conn == conn_MASK && val.conn == C_CONNECTED)
+				conn_connect2(connection);
 
 			update_reachability(connection, reply.primary_nodes);
 
