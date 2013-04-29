@@ -880,8 +880,20 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
 			return SS_IS_DISKLESS;
 
-		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED && disk_state[OLD] != D_ATTACHING)
+		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED &&
+		    disk_state[OLD] != D_ATTACHING) {
+			/* Do not allow outdate of inconsistent or diskless.
+			   But we have to allow Inconsistent -> Outdated if a resync
+			   finishes over one connection, and is paused on other connections */
+
+			for_each_peer_device(peer_device, device) {
+				enum drbd_repl_state *repl_state = peer_device->repl_state;
+				if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] == L_ESTABLISHED)
+					goto allow;
+			}
 			return SS_LOWER_THAN_OUTDATED;
+		}
+		allow:
 
 		for (which = OLD; which <= NEW; which++) {
 			one_peer_disk_up_to_date[which] = false;
