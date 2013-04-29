@@ -796,20 +796,45 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	}
 }
 
-static bool local_disk_may_be_outdated(bool weak, enum drbd_repl_state repl_state)
+static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_state which)
 {
+	bool weak = device->resource->weak[which];
+	struct drbd_peer_device *peer_device;
+	int established = 0;
+
 	if (weak)
 		return true;
 
-	switch(repl_state) {
-	case L_ESTABLISHED:
-	case L_WF_BITMAP_S:
-	case L_SYNC_SOURCE:
-	case L_PAUSED_SYNC_S:
-		return false;
-	default:
-		return true;
+	for_each_peer_device(peer_device, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[which];
+
+		switch(repl_state) {
+		case L_WF_BITMAP_S:
+		case L_STARTING_SYNC_S:
+		case L_SYNC_SOURCE:
+		case L_PAUSED_SYNC_S:
+		case L_AHEAD:
+			return false;
+		case L_ESTABLISHED:
+		case L_VERIFY_S:
+		case L_VERIFY_T:
+			established++;
+			continue;
+		case L_OFF:
+			continue;
+		case L_WF_SYNC_UUID:
+		case L_WF_BITMAP_T:
+		case L_STARTING_SYNC_T:
+		case L_SYNC_TARGET:
+		case L_PAUSED_SYNC_T:
+		case L_BEHIND:
+			return true;
+		}
 	}
+	if (established)
+		return false;
+
+	return true;
 }
 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
@@ -931,8 +956,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
 				return SS_NO_UP_TO_DATE_DISK;
 
-			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(weak[OLD], repl_state[OLD])) &&
-			    (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(weak[NEW], repl_state[NEW])))
+			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(device, OLD)) &&
+			    (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(device, NEW)))
 				return SS_CONNECTED_OUTDATES;
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
