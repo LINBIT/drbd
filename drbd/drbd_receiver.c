@@ -4445,21 +4445,18 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 		}
 
 		put_ldev(device);
-	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
-		   device->resource->role[NOW] == R_PRIMARY) {
-		/* I am a diskless primary, the peer just created a new current UUID
-		   for me. */
-		updated_uuids = drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
-	}
+	} else if (device->disk_state[NOW] < D_INCONSISTENT) {
+		struct drbd_resource *resource = device->resource;
 
-	/* Before we test for the disk state, we should wait until an eventually
-	   ongoing cluster wide state change is finished. That is important if
-	   we are primary and are detaching from our disk. We need to see the
-	   new disk state... */
-	down(&device->resource->state_sem);
-	up(&device->resource->state_sem);
-	if (peer_device->repl_state[NOW] >= L_ESTABLISHED && device->disk_state[NOW] < D_INCONSISTENT)
-		updated_uuids |= drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+		spin_lock_irq(&resource->req_lock);
+		if (resource->state_change_flags) {
+			drbd_info(peer_device, "Delaying update of exposed data uuid\n");
+			device->next_exposed_data_uuid = peer_device->current_uuid;
+		} else
+			updated_uuids = drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+		spin_unlock_irq(&resource->req_lock);
+
+	}
 
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
@@ -5003,9 +5000,22 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_md_sync(peer_device->device);
 
 		if (flags & CS_PREPARED) {
+			struct drbd_device *device;
+			int vnr;
+
 			del_timer(&resource->twopc_timer);
 
 			update_reachability(connection, reply.primary_nodes);
+
+			idr_for_each_entry(&resource->devices, device, vnr) {
+				u64 nedu = device->next_exposed_data_uuid;
+				if (!nedu)
+					continue;
+				if (device->disk_state[NOW] < D_INCONSISTENT)
+					drbd_set_exposed_data_uuid(device, nedu);
+				device->next_exposed_data_uuid = 0;
+			}
+
 		}
 	}
 

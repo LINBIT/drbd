@@ -391,6 +391,7 @@ static void __state_change_unlock(struct drbd_resource *resource, unsigned long 
 {
 	enum chg_state_flags flags = resource->state_change_flags;
 
+	resource->state_change_flags = 0;
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 	if (done && expect(resource, current != resource->worker.task))
 		wait_for_completion(done);

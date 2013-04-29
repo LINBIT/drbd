@@ -1079,6 +1079,7 @@ struct drbd_device {
 	wait_queue_head_t seq_wait;
 	unsigned int minor;
 	u64 exposed_data_uuid; /* UUID of the exposed data */
+	u64 next_exposed_data_uuid;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
