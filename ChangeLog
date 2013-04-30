@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre3 (api:genl1/proto:86-110)
+--------
+ * Lots of bugs fixed in the two phase cluster wide commits
+ * Work on the state engine, to fit it to multiple connections
+
 9.0.0pre2 (api:genl1/proto:86-110)
 --------
  * Introduced two phase commits that span include all (direct
