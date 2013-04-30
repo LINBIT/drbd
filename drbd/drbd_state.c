@@ -1429,6 +1429,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	bool *weak = resource->weak;
+	bool starting_resync = false;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -1480,6 +1481,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_role *peer_role = connection->peer_role;
+
+			if (repl_state[OLD] <= L_ESTABLISHED && repl_state[NEW] == L_WF_BITMAP_S)
+				starting_resync = true;
 
 			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
 				drbd_info(peer_device, "Resync because leaving weak state\n");
@@ -1615,6 +1619,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
+		enum drbd_role *peer_role = connection->peer_role;
 
 		wake_up(&connection->ping_wait);
 
@@ -1643,6 +1648,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		 * previously frozen IO */
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			connection->last_reconnect_jif = jiffies;
+
+		if (starting_resync && peer_role[NEW] == R_PRIMARY)
+			apply_unacked_peer_requests(connection);
 	}
 
 	queue_after_state_change_work(resource, done, GFP_ATOMIC);
