@@ -31,6 +31,9 @@
 #include "drbd_int.h"
 #include "drbd_wrappers.h"
 
+#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
+#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
+#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
 enum al_transaction_types {
 	AL_TR_UPDATE = 0,
@@ -1587,4 +1590,20 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 	spin_unlock_irq(&device->al_lock);
 	if (wake_up)
 		wake_up(&device->al_wait);
+}
+
+bool drbd_sector_has_priority(struct drbd_peer_device *peer_device, sector_t sector)
+{
+	struct drbd_device *device = peer_device->device;
+	struct lc_element *tmp;
+	bool has_priority = false;
+
+	spin_lock_irq(&device->al_lock);
+	tmp = lc_find(peer_device->resync_lru, BM_SECT_TO_EXT(sector));
+	if (tmp) {
+		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
+		has_priority = test_bit(BME_PRIORITY, &bm_ext->flags);
+	}
+	spin_unlock_irq(&device->al_lock);
+	return has_priority;
 }

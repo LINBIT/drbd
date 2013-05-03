@@ -2883,7 +2883,6 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long db, dt, dbdt;
-	struct lc_element *tmp;
 	int curr_events;
 	int throttle = 0;
 	unsigned int c_min_rate;
@@ -2896,17 +2895,10 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 	if (c_min_rate == 0)
 		return 0;
 
-	spin_lock_irq(&device->al_lock);
-	tmp = lc_find(peer_device->resync_lru, BM_SECT_TO_EXT(sector));
-	if (tmp) {
-		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-		if (test_bit(BME_PRIORITY, &bm_ext->flags)) {
-			spin_unlock_irq(&device->al_lock);
-			return 0;
-		}
+	if (drbd_sector_has_priority(peer_device, sector)) {
 		/* Do not slow down if app IO is already waiting for this extent */
+		return 0;
 	}
-	spin_unlock_irq(&device->al_lock);
 
 	curr_events = drbd_backing_bdev_events(device) - atomic_read(&device->rs_sect_ev);
 

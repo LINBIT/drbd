@@ -1720,6 +1720,7 @@ extern bool drbd_set_out_of_sync(struct drbd_peer_device *, sector_t, int);
 extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
 extern void drbd_al_shrink(struct drbd_device *device);
+extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 
 /* drbd_sysfs.c */
 extern struct kobj_type drbd_bdev_kobj_type;
@@ -2405,10 +2406,6 @@ struct bm_extent {
 	unsigned long flags;
 	struct lc_element lce;
 };
-
-#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
-#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
-#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
 /* should be moved to idr.h */
 /**
