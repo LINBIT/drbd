@@ -1402,15 +1402,16 @@ randomize:
 				h = 0;
 				goto out;
 			}
+			conn_connect2(connection);
 		}
 	} else {
-	    if (change_cstate(connection, C_CONNECTED,
+		if (change_cstate(connection, C_CONNECTED,
 			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) < SS_SUCCESS) {
-		    h = 0;
-		    goto out;
-	    }
+			h = 0;
+			goto out;
+		}
+		conn_connect2(connection);
 	}
-	conn_connect2(connection);
 	return 1;
 
 out_release_sockets:
