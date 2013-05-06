@@ -4730,9 +4730,6 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
 
-	mask = convert_state(mask);
-	val = convert_state(val);
-
 	/* Send the reply before carrying out the state change: this is needed
 	 * for connection state changes which close the network connection.  */
 	if (peer_device) {
