@@ -1016,7 +1016,8 @@ struct bm_aio_ctx {
 	unsigned flags;
 #define BM_AIO_COPY_PAGES	1
 #define BM_AIO_WRITE_HINTED	2
-#define BM_WRITE_ALL_PAGES	4
+#define BM_AIO_WRITE_ALL	4
+#define BM_AIO_WRITE_LAZY	8
 	int error;
 	struct kref kref;
 };
@@ -1131,14 +1132,29 @@ static void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 	}
 }
 
-/*
- * bm_rw: read/write the whole bitmap from/to its on disk location.
+/**
+ * bm_rw_range() - read/write the specified range of bitmap pages
+ * @device: drbd device this bitmap is associated with
+ * @rw:	READ or WRITE
+ * @start_page, @end_page: inclusive range of bitmap page indices to process
+ * @flags: BM_AIO_*, see struct bm_aio_ctx.
+ *
+ * Silently limits end_page to the current bitmap size.
+ *
+ * We don't want to special case on logical_block_size of the backend device,
+ * so we submit PAGE_SIZE aligned pieces.
+ * Note that on "most" systems, PAGE_SIZE is 4k.
+ *
+ * In case this becomes an issue on systems with larger PAGE_SIZE,
+ * we may want to change this again to do 4k aligned 4k pieces.
  */
-static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned lazy_writeout_upper_idx) __must_hold(local)
+static int bm_rw_range(struct drbd_device *device, int rw,
+	unsigned int start_page, unsigned int end_page,
+	unsigned flags) __must_hold(local)
 {
 	struct bm_aio_ctx *ctx;
 	struct drbd_bitmap *b = device->bitmap;
-	int num_pages, i, count = 0;
+	unsigned int i, count = 0;
 	unsigned long now;
 	int err = 0;
 
@@ -1150,6 +1166,10 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	 * For lazy writeout, we don't care for ongoing changes to the bitmap,
 	 * as we submit copies of pages anyways.
 	 */
+
+	/* if we reach this, we should have at least *some* bitmap pages. */
+	if (!expect(device, b->bm_number_of_pages))
+		return -ENODEV;
 
 	ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
 	if (!ctx)
@@ -1165,7 +1185,7 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	};
 
 	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
-		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in bm_rw()\n");
+		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in bm_rw_range()\n");
 		kfree(ctx);
 		return -ENODEV;
 	}
@@ -1175,28 +1195,28 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	if (!ctx->flags)
 		WARN_ON(!(b->bm_flags & BM_LOCK_ALL));
 
-	num_pages = b->bm_number_of_pages;
+	if (end_page >= b->bm_number_of_pages)
+		end_page = b->bm_number_of_pages -1;
 
 	now = jiffies;
 
 	/* let the layers below us try to merge these bios... */
-	for (i = 0; i < num_pages; i++) {
-		/* ignore completely unchanged pages */
-		if (lazy_writeout_upper_idx && i == lazy_writeout_upper_idx)
-			break;
+	for (i = start_page; i <= end_page; i++) {
 		if (rw & WRITE) {
 			if ((flags & BM_AIO_WRITE_HINTED) &&
 			    !test_and_clear_bit(BM_PAGE_HINT_WRITEOUT,
 				    &page_private(b->bm_pages[i])))
 				continue;
-			if (!(flags & BM_WRITE_ALL_PAGES) &&
+			/* ignore completely unchanged pages,
+			 * unless specifically requested to write ALL pages */
+			if (!(flags & BM_AIO_WRITE_ALL) &&
 			    bm_test_page_unchanged(b->bm_pages[i])) {
 				dynamic_drbd_dbg(device, "skipped bm write for idx %u\n", i);
 				continue;
 			}
 			/* during lazy writeout,
 			 * ignore those pages not marked for lazy writeout. */
-			if (lazy_writeout_upper_idx &&
+			if ((flags & BM_AIO_WRITE_LAZY) &&
 			    !bm_test_page_lazy_writeout(b->bm_pages[i])) {
 				dynamic_drbd_dbg(device, "skipped bm lazy write for idx %u\n", i);
 				continue;
@@ -1250,6 +1270,11 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	return err;
 }
 
+int bm_rw(struct drbd_device *device, int rw, unsigned flags)
+{
+	return bm_rw_range(device, rw, 0, -1U, flags);
+}
+
 /**
  * drbd_bm_read() - Read the whole bitmap from its on disk location.
  * @device:	DRBD device.
@@ -1257,7 +1282,7 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 int drbd_bm_read(struct drbd_device *device,
 		 struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	return bm_rw(device, READ, 0, 0);
+	return bm_rw(device, READ, 0);
 }
 
 /**
@@ -1295,7 +1320,7 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
 int drbd_bm_write(struct drbd_device *device,
 		  struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	return bm_rw(device, WRITE, 0, 0);
+	return bm_rw(device, WRITE, 0);
 }
 
 /**
@@ -1307,7 +1332,17 @@ int drbd_bm_write(struct drbd_device *device,
 int drbd_bm_write_all(struct drbd_device *device,
 		      struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	return bm_rw(device, WRITE, BM_WRITE_ALL_PAGES, 0);
+	return bm_rw(device, WRITE, BM_AIO_WRITE_ALL);
+}
+
+/**
+ * drbd_bm_write_lazy() - Write bitmap pages 0 to @upper_idx-1, if they have changed.
+ * @device:	DRBD device.
+ * @upper_idx:	0: write all changed pages; +ve: page index to stop scanning for changed pages
+ */
+int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_hold(local)
+{
+	return bm_rw_range(device, WRITE, 0, upper_idx - 1, BM_AIO_COPY_PAGES | BM_AIO_WRITE_LAZY);
 }
 
 /**
@@ -1324,7 +1359,7 @@ int drbd_bm_write_all(struct drbd_device *device,
 int drbd_bm_write_copy_pages(struct drbd_device *device,
 			     struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	return bm_rw(device, WRITE, BM_AIO_COPY_PAGES, 0);
+	return bm_rw(device, WRITE, BM_AIO_COPY_PAGES);
 }
 
 /**
@@ -1333,71 +1368,29 @@ int drbd_bm_write_copy_pages(struct drbd_device *device,
  */
 int drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local)
 {
-	return bm_rw(device, WRITE, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES, 0);
+	return bm_rw(device, WRITE, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES);
 }
 
 /**
  * drbd_bm_write_range() - Writes a range of bitmap pages
  * @device:	DRBD device.
+ * @start:
+ * @end:	inclusive range of bit numbers
  *
- * We don't want to special case on logical_block_size of the backend device,
- * so we submit PAGE_SIZE aligned pieces.
- * Note that on "most" systems, PAGE_SIZE is 4k.
- *
- * In case this becomes an issue on systems with larger PAGE_SIZE,
- * we may want to change this again to write 4k aligned 4k pieces.
+ * Maps the bit numbers to bitmap page indices, and call bm_rw_range().
  */
 int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int page_nr, end_page;
-	int err = 0;
 
 	if (end >= bitmap->bm_bits)
 		end = bitmap->bm_bits - 1;
 
 	page_nr = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, start);
 	end_page = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, end);
-	for (; page_nr <= end_page; page_nr++) {
-		struct bm_aio_ctx *ctx;
-
-		if (bm_test_page_unchanged(device->bitmap->bm_pages[page_nr])) {
-			dynamic_drbd_dbg(device, "skipped bm page write for page %u\n", page_nr);
-			continue;
-		}
-
-		ctx = kmalloc(sizeof(struct bm_aio_ctx), GFP_NOIO);
-		if (!ctx)
-			return -ENOMEM;
-
-		*ctx = (struct bm_aio_ctx) {
-			.device = device,
-			.in_flight = ATOMIC_INIT(1),
-			.done = 0,
-			.flags = BM_AIO_COPY_PAGES,
-			.error = 0,
-			.kref = { ATOMIC_INIT(2) },
-		};
-
-		if (!expect(device, get_ldev(device))) {  /* put is in bm_aio_ctx_destroy() */
-			kfree(ctx);
-			return -ENODEV;
-		}
-
-		bm_page_io_async(ctx, page_nr, WRITE_SYNC);
-		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
-
-		if (ctx->error)
-			drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
-			/* that causes us to detach, so the in memory bitmap will be
-			 * gone in a moment as well. */
-
-		device->bm_writ_cnt++;
-		err = atomic_read(&ctx->in_flight) ? -EIO : ctx->error;
-		kref_put(&ctx->kref, bm_aio_ctx_destroy);
-	}
-	return err;
+	return bm_rw_range(device, WRITE, page_nr, end_page, BM_AIO_COPY_PAGES);
 }
 
 unsigned long drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned long start)
