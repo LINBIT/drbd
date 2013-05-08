@@ -1393,10 +1393,10 @@ randomize:
 
 	if (connection->agreed_pro_version >= 110) {
 		if (resource->res_opts.node_id < connection->net_conf->peer_node_id) {
-			timeout = twopc_retry_timeout(resource);
+			timeout = twopc_retry_timeout(resource, 0);
 			drbd_debug(connection, "Waiting for %ums to avoid transaction "
 				   "conflicts\n", jiffies_to_msecs(timeout));
-			schedule_timeout(timeout);
+			schedule_timeout_interruptible(timeout);
 
 			if (connect_transaction(connection) < SS_SUCCESS) {
 				h = 0;

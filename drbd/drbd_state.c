@@ -2710,7 +2710,7 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 	return rv;
 }
 
-long twopc_retry_timeout(struct drbd_resource *resource)
+long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 {
 	struct drbd_connection *connection;
 	int connections = 0;
@@ -2724,9 +2724,11 @@ long twopc_retry_timeout(struct drbd_resource *resource)
 	}
 	rcu_read_unlock();
 
-	if (connections > 1) {
+	if (connections > 0) {
+		if (retries > 5)
+			retries = 5;
 		timeout = resource->res_opts.twopc_retry_timeout *
-			  HZ / 10 * (connections - 1);
+			  HZ / 10 * connections * (1 << retries);
 		timeout = random32() % timeout;
 	}
 	return timeout;
@@ -2781,7 +2783,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	u64 reach_immediately;
-	int attempts = 5;
+	int retries = 1;
 	unsigned long start_time;
 
 	if (!supports_two_phase_commit(resource)) {
@@ -2957,13 +2959,12 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 		rcu_read_unlock();
 	}
-	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
-	    --attempts > 0) {
-		long timeout = twopc_retry_timeout(resource);
+	if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+		long timeout = twopc_retry_timeout(resource, retries++);
 		drbd_debug(resource, "Retrying cluster-wide state change after %ums\n",
 			   jiffies_to_msecs(timeout));
 		clear_remote_state_change(resource, irq_flags);
-		schedule_timeout(timeout);
+		schedule_timeout_interruptible(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
 		goto retry;
 	}
