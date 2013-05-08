@@ -4693,7 +4693,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_req_state *p = pi->data;
 	union drbd_state mask, val;
-	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY | CS_TWOPC;
+	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
 	int vnr = -1;
 
@@ -4814,7 +4814,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply;
 	union drbd_state mask = {}, val = {};
-	enum chg_state_flags flags = CS_VERBOSE | CS_SERIALIZE | CS_LOCAL_ONLY | CS_TWOPC;
+	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
 
 	reply.vnr = pi->vnr;

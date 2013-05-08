@@ -307,6 +307,18 @@ static enum drbd_state_rv try_state_change(struct drbd_resource *resource)
 	return rv;
 }
 
+static void __clear_remote_state_change(struct drbd_resource *resource) {
+	resource->remote_state_change = false;
+	resource->twopc_reply.initiator_node_id = -1;
+	resource->twopc_reply.tid = 0;
+	if (resource->twopc_parent) {
+		kref_put(&resource->twopc_parent->kref,
+			 drbd_destroy_connection);
+		resource->twopc_parent = NULL;
+	}
+	wake_up(&resource->twopc_wait);
+}
+
 static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
 					      enum drbd_state_rv rv)
 {
@@ -364,17 +376,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 out:
 	rcu_read_unlock();
 
-	if ((flags & CS_TWOPC) && !(flags & CS_PREPARE)) {
-		resource->remote_state_change = false;
-		resource->twopc_reply.initiator_node_id = -1;
-		resource->twopc_reply.tid = 0;
-		if (resource->twopc_parent) {
-			kref_put(&resource->twopc_parent->kref,
-				 drbd_destroy_connection);
-			resource->twopc_parent = NULL;
-		}
-		wake_up(&resource->twopc_wait);
-	}
+	if ((flags & CS_TWOPC) && !(flags & CS_PREPARE))
+		__clear_remote_state_change(resource);
 
 	return rv;
 }
@@ -486,18 +489,12 @@ void abort_state_change_locked(struct drbd_resource *resource)
 
 static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
-	enum chg_state_flags flags = resource->state_change_flags;
-
 	rcu_read_unlock();
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
-        if (flags & CS_SERIALIZE)
-		up(&resource->state_sem);
 }
 
 static void __end_remote_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
-        if (flags & CS_SERIALIZE)
-		down(&resource->state_sem);
 	rcu_read_lock();
 	resource->state_change_flags = flags;
 	___begin_state_change(resource);
@@ -507,6 +504,12 @@ static void end_remote_state_change(struct drbd_resource *resource, unsigned lon
 {
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	__end_remote_state_change(resource, flags);
+}
+
+static void clear_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags) {
+	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	__clear_remote_state_change(resource);
+	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 }
 
 static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
@@ -2796,10 +2799,10 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		goto out;
 	}
 
+    retry:
 	complete_remote_state_change(resource, irq_flags);
 	start_time = jiffies;
 
-    retry:
 	reach_immediately = directly_connected_nodes(resource);
 	if (target_node_id != -1) {
 		struct drbd_connection *connection;
@@ -2959,6 +2962,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		long timeout = twopc_retry_timeout(resource);
 		drbd_debug(resource, "Retrying cluster-wide state change after %ums\n",
 			   jiffies_to_msecs(timeout));
+		clear_remote_state_change(resource, irq_flags);
 		schedule_timeout(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
 		goto retry;
