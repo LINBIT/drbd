@@ -882,11 +882,17 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		/* While establishing a connection only allow cstate to change.
 		   Delay/refuse role changes, detach attach etc... */
-		if (test_bit(INITIAL_STATE_SENT, &connection->flags) &&
-		    !test_bit(INITIAL_STATE_RECEIVED, &connection->flags) &&
-		    !(cstate[OLD] == C_CONNECTED ||
-		      (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_CONNECTING)))
-			return SS_IN_TRANSIENT_STATE;
+		if (!(cstate[OLD] == C_CONNECTED ||
+		     (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_CONNECTING))) {
+			struct drbd_peer_device *peer_device;
+			int vnr;
+
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+				    !test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags))
+					return SS_IN_TRANSIENT_STATE;
+			}
+		}
 
 		nc = rcu_dereference(connection->net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
@@ -1465,7 +1471,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			/* Wake up role changes, that were delayed because of connection establishing */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] != L_OFF &&
 			    all_peer_devices_connected(connection))
-				clear_bit(INITIAL_STATE_SENT, &connection->flags);
+				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		}
 
 		wake_up(&device->misc_wait);
@@ -1640,8 +1646,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			drbd_thread_restart_nowait(&connection->receiver);
 
 		if (cstate[NEW] < C_CONNECTED) {
-			clear_bit(INITIAL_STATE_SENT, &connection->flags);
-			clear_bit(INITIAL_STATE_RECEIVED, &connection->flags);
+			struct drbd_peer_device *peer_device;
+			int vnr;
+
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+				clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+			}
 			if (cstate[OLD] >= C_CONNECTED)
 				connection->primary_mask = 0;
 		}

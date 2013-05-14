@@ -582,6 +582,24 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	return 0;
 }
 
+static bool initial_states_pending(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+	bool pending = false;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+		    !test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
+			pending = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return pending;
+}
+
 bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
 	enum drbd_fencing_policy fencing_policy;
@@ -651,8 +669,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		  (r>>8) & 0xff, ex_to_string);
 
 	if (connection->cstate[NOW] >= C_CONNECTED ||
-	    (test_bit(INITIAL_STATE_SENT, &connection->flags) &&
-	     !test_bit(INITIAL_STATE_RECEIVED, &connection->flags))) {
+	    initial_states_pending(connection)) {
 		/* connection re-established; do not fence */
 		abort_state_change(connection->resource, &irq_flags);
 		goto out;
