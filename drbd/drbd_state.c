@@ -2502,8 +2502,19 @@ static void complete_remote_state_change(struct drbd_resource *resource,
 		enum chg_state_flags flags = resource->state_change_flags;
 
 		begin_remote_state_change(resource, irq_flags);
-		wait_event(resource->twopc_wait,
-			   when_done_lock(resource, irq_flags));
+		for(;;) {
+			long t = twopc_timeout(resource);
+
+			t = wait_event_timeout(resource->twopc_wait,
+				   when_done_lock(resource, irq_flags), t);
+			if (t)
+				break;
+			if (when_done_lock(resource, irq_flags)) {
+				drbd_info(resource, "Two-phase commit: "
+					  "not woken up in time\n");
+				break;
+			}
+		}
 		__end_remote_state_change(resource, flags);
 	}
 }
