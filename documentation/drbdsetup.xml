@@ -1445,6 +1445,10 @@
       storages on both devices and call the <option>resize</option> command on one of your
       nodes.</para>
 
+      <para>The <option>--size</option> option can be used to online shrink the usable
+      size of a drbd device. It's the users responsibility to make sure that a file system
+      on the device is not truncated by that operation.</para>
+
       <para>The <option>--assume-peer-has-space</option> allows you to resize a device which is
       currently not connected to the peer. Use with care, since if you do not resize the peer's
       disk as well, further connect attempts of the two will fail.</para>
@@ -1452,6 +1456,11 @@
       <para>When the <option>--assume-clean</option> option is given DRBD will skip the resync of
       the new storage. Only do this if you know that the new storage was initialized to the same
       content by other means.</para>
+
+      <para>The options <option>--al-stripes</option> and <option>--al-stripe-size-kB</option> may
+      be used to change the layout of the activity log online. In case of internal meta data
+      this may invovle shrinking the user visible size at the same time (unsing the
+      <option>--size</option>) or increasing the avalable space on the backing devices.</para>
     </refsect2>
 
     <refsect2>
