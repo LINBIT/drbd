@@ -357,7 +357,7 @@ sub get_virsh_info()
 		# parent
 		$_ = <V>;
 		close(V) or warn "virsh dumpxml exit code: $?\n";
-		for (m{<disk\ [^>]*>.*</disk>}gs) {
+		for (m{<disk\ [^>]*>.*?</disk>}gs) {
 			m{<source\ (?:dev|file)='/dev/drbd([^']+)'/>} or next;
 			my $dev = $1;
 			if ($dev !~ /^\d+$/) {
