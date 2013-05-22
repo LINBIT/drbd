@@ -259,6 +259,7 @@ struct adm_cmd {
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
 	unsigned int test_config:1; /* Allow -t option */
+	unsigned int disk_required:1; /* cmd needs vol->disk or vol->meta_[disk|index] */
 };
 
 struct cfg_ctx {

@@ -472,7 +472,7 @@ void compare_volume(struct d_volume *conf, struct d_volume *kern)
 	compare_size(conf, kern);
 
 	/* is it sufficient to only adjust the disk options? */
-	if (!(conf->adj_detach || conf->adj_attach))
+	if (!(conf->adj_detach || conf->adj_attach) && conf->disk)
 		conf->adj_disk_opts = !opts_equal(&disk_options_ctx, &conf->disk_options, &kern->disk_options);
 }
 

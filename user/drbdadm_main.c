@@ -311,8 +311,8 @@ int adm_adjust_wp(const struct cfg_ctx *ctx)
 	.res_name_required = 0,		\
 	.verify_ips = 0,		\
 
-/*  */ struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
-/*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT};
+/*  */ struct adm_cmd attach_cmd = {"attach", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT .disk_required = 1};
+/*  */ struct adm_cmd disk_options_cmd = {"disk-options", adm_attach, &attach_cmd_ctx, ACF1_DEFAULT .disk_required = 1};
 /*  */ struct adm_cmd detach_cmd = {"detach", adm_drbdsetup, &detach_cmd_ctx, ACF1_DEFAULT .takes_long = 1};
 /*  */ struct adm_cmd connect_cmd = {"connect", adm_connect, &connect_cmd_ctx, ACF1_CONNECT};
 /*  */ struct adm_cmd net_options_cmd = {"net-options", adm_connect, &net_options_ctx, ACF1_CONNECT};
@@ -322,10 +322,10 @@ static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 static struct adm_cmd down_cmd = {"down", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd primary_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd secondary_cmd = {"secondary", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
-static struct adm_cmd invalidate_cmd = {"invalidate", adm_setup_and_meta, ACF1_PEER_DEVICE};
+static struct adm_cmd invalidate_cmd = {"invalidate", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
 static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_drbdsetup, ACF1_PEER_DEVICE .takes_long = 1};
 static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
-/*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET};
+/*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET .disk_required = 1};
 static struct adm_cmd verify_cmd = {"verify", adm_drbdsetup, ACF1_PEER_DEVICE};
 static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_drbdsetup, ACF1_PEER_DEVICE};
 static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_drbdsetup, ACF1_PEER_DEVICE};
@@ -335,17 +335,17 @@ static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
 static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
 static struct adm_cmd role_cmd = {"role", adm_drbdsetup, ACF1_RESNAME};
 static struct adm_cmd cstate_cmd = {"cstate", adm_drbdsetup, ACF1_DISCONNECT};
-static struct adm_cmd dstate_cmd = {"dstate", adm_setup_and_meta, ACF1_DEFAULT};
+static struct adm_cmd dstate_cmd = {"dstate", adm_setup_and_meta, ACF1_DEFAULT .disk_required = 1};
 static struct adm_cmd status_cmd = {"status", adm_drbdsetup, .show_in_usage = 1, .uc_dialog = 1};
 static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
 static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 
-static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT};
-static struct adm_cmd show_gi_cmd = {"show-gi", adm_setup_and_meta, ACF1_PEER_DEVICE};
-static struct adm_cmd get_gi_cmd = {"get-gi", adm_setup_and_meta, ACF1_PEER_DEVICE};
-static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT};
-static struct adm_cmd wipe_md_cmd = {"wipe-md", adm_drbdmeta, ACF1_DEFAULT};
-static struct adm_cmd apply_al_cmd = {"apply-al", adm_drbdmeta, ACF1_DEFAULT};
+static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT .disk_required = 1};
+static struct adm_cmd show_gi_cmd = {"show-gi", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
+static struct adm_cmd get_gi_cmd = {"get-gi", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
+static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
+static struct adm_cmd wipe_md_cmd = {"wipe-md", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
+static struct adm_cmd apply_al_cmd = {"apply-al", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
 
 static struct adm_cmd hidden_cmd = {"hidden-commands", hidden_cmds,.show_in_usage = 1,};
 
@@ -356,9 +356,9 @@ static struct adm_cmd sh_mod_parms_cmd = {"sh-mod-parms", sh_mod_parms, ACF2_GEN
 static struct adm_cmd sh_dev_cmd = {"sh-dev", sh_dev, ACF2_SHELL};
 static struct adm_cmd sh_udev_cmd = {"sh-udev", sh_udev, .vol_id_required = 1, ACF2_HOOK};
 static struct adm_cmd sh_minor_cmd = {"sh-minor", sh_minor, ACF2_SHELL};
-static struct adm_cmd sh_ll_dev_cmd = {"sh-ll-dev", sh_ll_dev, ACF2_SHELL};
-static struct adm_cmd sh_md_dev_cmd = {"sh-md-dev", sh_md_dev, ACF2_SHELL};
-static struct adm_cmd sh_md_idx_cmd = {"sh-md-idx", sh_md_idx, ACF2_SHELL};
+static struct adm_cmd sh_ll_dev_cmd = {"sh-ll-dev", sh_ll_dev, ACF2_SHELL .disk_required = 1};
+static struct adm_cmd sh_md_dev_cmd = {"sh-md-dev", sh_md_dev, ACF2_SHELL .disk_required = 1};
+static struct adm_cmd sh_md_idx_cmd = {"sh-md-idx", sh_md_idx, ACF2_SHELL .disk_required = 1};
 static struct adm_cmd sh_ip_cmd = {"sh-ip", sh_ip, ACF2_SHELL};
 static struct adm_cmd sh_lr_of_cmd = {"sh-lr-of", sh_lres, ACF2_SHELL};
 static struct adm_cmd sh_status_cmd = {"sh-status", sh_status, ACF2_GEN_SHELL};
@@ -383,7 +383,7 @@ static struct adm_cmd khelper11_cmd = {"out-of-sync", adm_khelper, ACF3_RES_HAND
 
 static struct adm_cmd suspend_io_cmd = {"suspend-io", adm_drbdsetup, ACF4_ADVANCED};
 static struct adm_cmd resume_io_cmd = {"resume-io", adm_drbdsetup, ACF4_ADVANCED};
-static struct adm_cmd set_gi_cmd = {"set-gi", adm_drbdmeta, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
+static struct adm_cmd set_gi_cmd = {"set-gi", adm_drbdmeta, .disk_required = 1, .need_peer = 1, ACF4_ADVANCED_NEED_VOL};
 static struct adm_cmd new_current_uuid_cmd = {"new-current-uuid", adm_drbdsetup, &new_current_uuid_cmd_ctx, ACF4_ADVANCED_NEED_VOL};
 static struct adm_cmd check_resize_cmd = {"check-resize", adm_chk_resize, ACF4_ADVANCED};
 
@@ -485,7 +485,7 @@ struct adm_cmd *cmds[] = {
 	"disk-options",
 	adm_attach,
 	&attach_cmd_ctx,
-	ACF1_DEFAULT
+	ACF1_DEFAULT .disk_required = 1
 };
 /*  */ struct adm_cmd net_options_defaults_cmd = {
 	"net-options",
@@ -525,7 +525,18 @@ void schedule_deferred_cmd(struct adm_cmd *cmd,
 enum on_error { KEEP_RUNNING, EXIT_ON_FAIL };
 static int __call_cmd_fn(const struct cfg_ctx *ctx, enum on_error on_error)
 {
+	struct d_volume *vol = ctx->vol;
 	int rv;
+
+	if (ctx->cmd->disk_required &&
+	    (!vol->disk || !vol->meta_disk || !vol->meta_index)) {
+		rv = 10;
+		fprintf(stderr, "The %s command requires a local disk, but the configuration gives none.\n",
+			ctx->cmd->name);
+		if (on_error == EXIT_ON_FAIL)
+			exit(rv);
+		return rv;
+	}
 
 	rv = ctx->cmd->function(ctx);
 	if (rv >= 20) {
