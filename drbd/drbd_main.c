@@ -3156,7 +3156,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
 	struct gendisk *disk;
 	struct request_queue *q;
-	int got;
+	int id;
 	enum drbd_ret_code err = ERR_NOMEM;
 
 	device = minor_to_mdev(minor);
@@ -3264,21 +3264,21 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	device->write_requests = RB_ROOT;
 
 	if (!idr_pre_get(&drbd_devices, GFP_KERNEL) ||
-	    idr_get_new_above(&drbd_devices, device, minor, &got))
+	    idr_get_new_above(&drbd_devices, device, minor, &id))
 		goto out_no_minor_idr;
-	if (got != minor) {
+	if (id != minor) {
 		err = ERR_MINOR_OR_VOLUME_EXISTS;
-		idr_remove(&drbd_devices, got);
+		idr_remove(&drbd_devices, id);
 		goto out_idr_synchronize_rcu;
 	}
 	kobject_get(&device->kobj);
 
 	if (!idr_pre_get(&resource->devices, GFP_KERNEL) ||
-	    idr_get_new_above(&resource->devices, device, vnr, &got))
+	    idr_get_new_above(&resource->devices, device, vnr, &id))
 		goto out_idr_remove_minor;
-	if (got != vnr) {
+	if (id != vnr) {
 		err = ERR_MINOR_OR_VOLUME_EXISTS;
-		idr_remove(&resource->devices, got);
+		idr_remove(&resource->devices, id);
 		goto out_idr_remove_minor;
 	}
 	kobject_get(&device->kobj);
@@ -3297,8 +3297,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
 		if (idr_get_new_above(&connection->peer_devices,
-				      peer_device, device->vnr, &got) ||
-		    !expect(device, got == device->vnr)) {
+				      peer_device, device->vnr, &id) ||
+		    !expect(device, id == device->vnr)) {
 			for_each_peer_device(peer_device, device) {
 				connection = peer_device->connection;
 				idr_remove(&connection->peer_devices, device->vnr);
