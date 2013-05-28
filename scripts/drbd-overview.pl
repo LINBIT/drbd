@@ -216,11 +216,11 @@ sub get_virsh_info()
 		# parent
 		$_ = <V>;
 		close(V) or warn "virsh dumpxml exit code: $?\n";
-		for (m{<disk\ [^>]*>.*</disk>}gs) {
-			m{<source\ dev='/dev/drbd([^']+)'/>} or next;
-			my $dev = $1;
+		for (m{<disk\ [^>]*>.+?</disk>}gs) {
+			m{<source\ dev='(/dev/drbd([^']+))'/>} or next;
+			my ($path,$dev) = ($1,$2);
 			if ($dev !~ /^\d+$/) {
-				my @stat = stat("/dev/drbd$dev") or next;
+				my @stat = stat($path) or next;
 				$dev = $stat[6] & 0xff;
 			}
 			m{<target\ dev='([^']*)'\s+bus='([^']*)'}xg;
