@@ -2236,11 +2236,8 @@ static inline void dec_ap_bio(struct drbd_device *device)
 
 	D_ASSERT(device, ap_bio >= 0);
 
-	if (ap_bio == 0) {
-		smp_rmb();
-		if (!list_empty(&device->pending_bitmap_work))
-			drbd_queue_pending_bitmap_work(device);
-	}
+	if (ap_bio == 0 && !list_empty(&device->pending_bitmap_work))
+		drbd_queue_pending_bitmap_work(device);
 
 	/* this currently does wake_up for every dec_ap_bio!
 	 * maybe rather introduce some type of hysteresis?
