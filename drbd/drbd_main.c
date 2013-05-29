@@ -522,6 +522,12 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 		return;
 	}
 
+	if (thi->t_state == EXITING && ns == RESTARTING) {
+		/* Do not abort a stop request, otherwise a waiter might never wake up */
+		spin_unlock_irqrestore(&thi->t_lock, flags);
+		return;
+	}
+
 	if (thi->t_state != ns) {
 		if (thi->task == NULL) {
 			spin_unlock_irqrestore(&thi->t_lock, flags);
