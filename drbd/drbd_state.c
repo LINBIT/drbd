@@ -3216,7 +3216,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cstate)
 {
 	if (cstate == C_DISCONNECTING)
-		set_bit(DISCONNECT_SENT, &connection->flags);
+		set_bit(DISCONNECT_EXPECTED, &connection->flags);
 
 	connection->cstate[NEW] = cstate;
 	if (cstate < C_CONNECTED) {

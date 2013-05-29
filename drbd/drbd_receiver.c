@@ -554,7 +554,7 @@ STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 		else if (rv != -ERESTARTSYS)
 			drbd_info(connection, "sock_recvmsg returned %d\n", rv);
 	} else if (rv == 0) {
-		if (test_bit(DISCONNECT_SENT, &connection->flags)) {
+		if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
 			long t;
 			rcu_read_lock();
 			t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
@@ -1198,7 +1198,7 @@ static bool conn_connect(struct drbd_connection *connection)
 	struct waiter waiter;
 
 start:
-	clear_bit(DISCONNECT_SENT, &connection->flags);
+	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
 	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS) {
 		/* We do not have a network config. */
 		return false;
@@ -6969,7 +6969,7 @@ int drbd_asender(struct drbd_thread *thi)
 			received += rv;
 			buf	 += rv;
 		} else if (rv == 0) {
-			if (test_bit(DISCONNECT_SENT, &connection->flags)) {
+			if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
 				long t;
 				rcu_read_lock();
 				t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
