@@ -734,6 +734,7 @@ struct twopc_reply {
 	u64 primary_nodes;
 	u64 target_weak_nodes;  /* behind the target node */
 	u64 weak_nodes;  /* behind other nodes */
+	bool is_disconnect;
 };
 
 struct drbd_resource {

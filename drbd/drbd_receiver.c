@@ -4825,6 +4825,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.weak_nodes = be64_to_cpu(p->weak_nodes);
 	reply.reachable_nodes = directly_connected_nodes(resource) |
 				NODE_MASK(resource->res_opts.node_id);
+	reply.is_disconnect = 0;
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
@@ -4899,8 +4900,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 		if (val.conn == C_CONNECTED)
 			reply.reachable_nodes |= m;
-		if (val.conn == C_DISCONNECTING)
+		if (val.conn == C_DISCONNECTING) {
 			reply.reachable_nodes &= ~m;
+			reply.is_disconnect = 1;
+		}
 	}
 
 	if (pi->vnr != -1) {

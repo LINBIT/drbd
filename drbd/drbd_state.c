@@ -3024,6 +3024,9 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	if (cmd == P_TWOPC_NO) {
 		del_timer(&resource->twopc_timer);
 		abort_nested_twopc_work(&resource->twopc_work, false);
+	} else {
+		if (twopc_reply.is_disconnect)
+			set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
 	}
 
 	drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
