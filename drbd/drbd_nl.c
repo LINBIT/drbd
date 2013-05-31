@@ -3028,6 +3028,13 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 			__change_disk_state(device, D_INCONSISTENT);
 		retcode = end_state_change(device->resource, &irq_flags);
 
+		if (retcode >= SS_SUCCESS) {
+			drbd_bitmap_io(device, &drbd_bmio_set_n_write,
+				       "set_n_write from invalidate",
+				       BM_LOCK_CLEAR | BM_LOCK_BULK,
+				       peer_device);
+		}
+
 		if (retcode != SS_NEED_CONNECTION)
 			break;
 
