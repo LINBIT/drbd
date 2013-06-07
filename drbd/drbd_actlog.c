@@ -690,7 +690,7 @@ int drbd_initialize_al(struct drbd_conf *mdev, void *buffer)
 	struct drbd_md *md = &mdev->ldev->md;
 	sector_t al_base = md->md_offset + md->al_offset;
 	int al_size_4k = md->al_stripes * md->al_stripe_size_4k;
-	int err, i;
+	int i;
 
 	memset(al, 0, 4096);
 	al->magic = cpu_to_be32(DRBD_AL_MAGIC);
@@ -698,12 +698,11 @@ int drbd_initialize_al(struct drbd_conf *mdev, void *buffer)
 	al->crc32c = cpu_to_be32(crc32c(0, al, 4096));
 
 	for (i = 0; i < al_size_4k; i++) {
-		err = drbd_md_sync_page_io(mdev, mdev->ldev, al_base + i * 8, WRITE);
+		int err = drbd_md_sync_page_io(mdev, mdev->ldev, al_base + i * 8, WRITE);
 		if (err)
-			break;
+			return err;
 	}
-
-	return err;
+	return 0;
 }
 
 STATIC int w_update_odbm(struct drbd_work *w, int unused)
