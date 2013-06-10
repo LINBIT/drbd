@@ -981,6 +981,7 @@ void m_show_v9_uuid(struct md_cpu *md, int bm_idx);
 void m_set_v9_uuid(struct md_cpu *md, int bm_idx, char **argv, int argc);
 int m_outdate_uuid(struct md_cpu *md);
 int m_invalidate_uuid(struct md_cpu *md);
+int m_invalidate_v9_uuid(struct md_cpu *md);
 
 int generic_md_close(struct format *cfg);
 
@@ -1073,7 +1074,7 @@ struct format_ops f_ops[] = {
 		     .show_gi = m_show_v9_uuid,
 		     .set_gi = m_set_v9_uuid,
 		     .outdate_gi = m_outdate_uuid,
-		     .invalidate_gi = m_invalidate_uuid,
+		     .invalidate_gi = m_invalidate_v9_uuid,
 		     },
 };
 
@@ -1473,6 +1474,20 @@ int m_invalidate_uuid(struct md_cpu *md)
 	md->flags &= ~MDF_CONSISTENT;
 	md->flags &= ~MDF_WAS_UP_TO_DATE;
 	md->flags |= MDF_FULL_SYNC;
+
+	return 0;
+}
+
+int m_invalidate_v9_uuid(struct md_cpu *md)
+{
+	int bm_idx;
+
+	md->flags &= ~MDF_CONSISTENT;
+	md->flags &= ~MDF_WAS_UP_TO_DATE;
+
+	for (bm_idx = 0; bm_idx < md->max_peers; bm_idx++) {
+		md->peers[bm_idx].flags |= MDF_PEER_FULL_SYNC;
+	}
 
 	return 0;
 }
