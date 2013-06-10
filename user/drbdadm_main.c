@@ -1338,6 +1338,47 @@ static int adm_drbdsetup(const struct cfg_ctx *ctx)
 	return _adm_drbdsetup(ctx, ctx->cmd->takes_long ? SLEEPS_LONG : SLEEPS_SHORT);
 }
 
+static int __adm_drbdsetup_silent(const struct cfg_ctx *ctx)
+{
+	char buffer[4096];
+	int fd, status, rv = 0, rr, s = 0;
+	pid_t pid;
+
+	__adm_drbdsetup(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
+
+	if (fd < 0) {
+		fprintf(stderr, "Strange: got negative fd.\n");
+		exit(E_THINKO);
+	}
+
+	if (!dry_run) {
+		while (1) {
+			rr = read(fd, buffer + s, 4096 - s);
+			if (rr <= 0)
+				break;
+			s += rr;
+		}
+
+		close(fd);
+		rr = waitpid(pid, &status, 0);
+		alarm(0);
+
+		if (WIFEXITED(status))
+			rv = WEXITSTATUS(status);
+		if (alarm_raised) {
+			rv = 0x100;
+		}
+	}
+
+	/* see drbdsetup.c, print_config_error():
+	 *  11: some unspecific state change error. (ignore for invalidate)
+	 *  17: SS_NO_UP_TO_DATE_DISK */
+	if ((strcmp(ctx->cmd->name, "invalidate") && rv == 11) || rv == 17)
+		rr = write(fileno(stderr), buffer, s);
+
+	return rv;
+}
+
 int sh_status(const struct cfg_ctx *ctx)
 {
 	struct cfg_ctx tmp_ctx = *ctx;
@@ -1439,56 +1480,20 @@ static int adm_chk_resize(const struct cfg_ctx *ctx)
 
 static int adm_setup_and_meta(const struct cfg_ctx *ctx)
 {
-	char buffer[4096];
-	int fd, status, rv = 0, rr, s = 0;
-	pid_t pid;
+	int rv;
 
-	__adm_drbdsetup(ctx, SLEEPS_SHORT | RETURN_STDERR_FD, &pid, &fd, NULL);
+	rv = __adm_drbdsetup_silent(ctx);
 
-	if (fd < 0) {
-		fprintf(stderr, "Strange: got negative fd.\n");
-		exit(E_THINKO);
-	}
-
-	if (!dry_run) {
-		while (1) {
-			rr = read(fd, buffer + s, 4096 - s);
-			if (rr <= 0)
-				break;
-			s += rr;
-		}
-
-		close(fd);
-		rr = waitpid(pid, &status, 0);
-		alarm(0);
-
-		if (WIFEXITED(status))
-			rv = WEXITSTATUS(status);
-		if (alarm_raised) {
-			rv = 0x100;
-		}
-	}
-
-	/* see drbdsetup.c, print_config_error():
-	 *  11: some unspecific state change error
-	 *  17: SS_NO_UP_TO_DATE_DISK
-	 * In both cases, we don't need to retry with drbdmeta,
-	 * it would fail anyways with "Device is configured!" */
 	if (rv == 11 || rv == 17) {
-		/* Some state transition error, report it ... */
-		rr = write(fileno(stderr), buffer, s);
+		/* see drbdsetup.c, print_config_error():
+		 *  11: some unspecific state change error. (ignore for invalidate)
+		 *  17: SS_NO_UP_TO_DATE_DISK */
 		return rv;
 	}
 
-	if (rv || dry_run) {
-		/* On other errors
-		   rv = 10 .. no minor allocated
-		   rv = 20 .. module not loaded
-		   rv = 16 .. we are diskless here
-		   retry with drbdmeta.
-		 */
+	if (rv || dry_run)
 		rv = adm_drbdmeta(ctx);
-	}
+
 	return rv;
 }
 
