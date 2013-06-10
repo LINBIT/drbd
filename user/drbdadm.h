@@ -254,8 +254,8 @@ struct adm_cmd {
 	 * This is necessary for handlers (callbacks from kernel) to work
 	 * when using "drbdadm -c /some/other/config/file" */
 	unsigned int use_cached_config_file:1;
+	/* need_peer could also be named iterate_peers */
 	unsigned int need_peer:1;
-	/* need_peer and iterate_volumes may not be set together! */
 	unsigned int is_proxy_cmd:1;
 	unsigned int uc_dialog:1; /* May show usage count dialog */
 	unsigned int test_config:1; /* Allow -t option */

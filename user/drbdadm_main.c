@@ -117,6 +117,7 @@ static int hidden_cmds(const struct cfg_ctx *);
 static int adm_outdate(const struct cfg_ctx *);
 static int adm_chk_resize(const struct cfg_ctx *);
 static int adm_drbdsetup(const struct cfg_ctx *);
+static int adm_invalidate(const struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -322,7 +323,7 @@ static struct adm_cmd up_cmd = {"up", adm_up, ACF1_RESNAME };
 static struct adm_cmd down_cmd = {"down", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd primary_cmd = {"primary", adm_drbdsetup, &primary_cmd_ctx, ACF1_RESNAME .takes_long = 1};
 static struct adm_cmd secondary_cmd = {"secondary", adm_drbdsetup, ACF1_RESNAME .takes_long = 1};
-static struct adm_cmd invalidate_cmd = {"invalidate", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
+static struct adm_cmd invalidate_cmd = {"invalidate", adm_invalidate, ACF1_RESNAME};
 static struct adm_cmd invalidate_remote_cmd = {"invalidate-remote", adm_drbdsetup, ACF1_PEER_DEVICE .takes_long = 1};
 static struct adm_cmd outdate_cmd = {"outdate", adm_outdate, ACF1_DEFAULT};
 /*  */ struct adm_cmd resize_cmd = {"resize", adm_resize, ACF1_DEFNET .disk_required = 1};
@@ -1493,6 +1494,37 @@ static int adm_setup_and_meta(const struct cfg_ctx *ctx)
 
 	if (rv || dry_run)
 		rv = adm_drbdmeta(ctx);
+
+	return rv;
+}
+
+static int adm_invalidate(const struct cfg_ctx *ctx)
+{
+	static const struct adm_cmd inv_s_ctx = {
+		"invalidate",
+		__adm_drbdsetup_silent,
+		ACF1_PEER_DEVICE .disk_required = 1
+	};
+
+	static const struct adm_cmd inv_m_ctx = {
+		"invalidate",
+		adm_drbdmeta,
+		ACF1_DEFAULT .disk_required = 1
+	};
+
+	int rv;
+
+	rv = call_cmd(&inv_s_ctx, ctx, KEEP_RUNNING);
+	if (rv == 11 || rv == 17) {
+		/* see drbdsetup.c, print_config_error():
+		 *  11: some unspecific state change error.
+		 *       Means that there are multiple peers
+		 *  17: SS_NO_UP_TO_DATE_DISK */
+		return rv;
+	}
+
+	if (rv || dry_run == 1)
+		rv = call_cmd(&inv_m_ctx, ctx, KEEP_RUNNING);
 
 	return rv;
 }
