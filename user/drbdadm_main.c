@@ -558,7 +558,7 @@ static int call_cmd_fn(struct adm_cmd *cmd, const struct cfg_ctx *ctx, enum on_e
  * iterate over all volumes in ctx->res.
  * Else, just pass it on.
  * */
-int call_cmd(struct adm_cmd *cmd, const struct cfg_ctx *ctx,
+int call_cmd(const struct adm_cmd *cmd, const struct cfg_ctx *ctx,
 	     enum on_error on_error)
 {
 	struct cfg_ctx tmp_ctx = *ctx;
