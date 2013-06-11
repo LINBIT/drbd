@@ -704,8 +704,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 	if (ctx->res->me->proxy && can_do_proxy)
 		do_connect |= proxy_reconf(ctx, running);
 
-	if (do_connect && running)
-		do_disconnect = running->net_options != NULL;
+	do_disconnect = do_connect && running && (running->peer || running->net_options);
 
 	if (do_res_options)
 		schedule_deferred_cmd(adm_set_default_res_options, ctx, "resource-options", CFG_RESOURCE);
@@ -730,8 +729,12 @@ int adm_adjust(struct cfg_ctx *ctx)
 	}
 
 	if (do_connect) {
-		if (do_disconnect && ctx->res->peer)
-			schedule_deferred_cmd(adm_disconnect, ctx, "disconnect", CFG_NET_PREREQ);
+		/* "disconnect" specifying the end-point addresses currently in-use,
+		 * before "connect"ing with the addresses currently in-config-file. */
+		if (do_disconnect) {
+			struct cfg_ctx tmp_ctx = { .res = running, .vol = vol, };
+			schedule_deferred_cmd(adm_disconnect, &tmp_ctx, "disconnect", CFG_NET_PREREQ);
+		}
 		schedule_deferred_cmd(adm_connect, ctx, "connect", CFG_NET);
 		do_net_options = 0;
 	}
