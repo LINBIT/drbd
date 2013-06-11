@@ -140,5 +140,6 @@ distclean: clean
 uninstall:
 	rm -f $(DESTDIR)$(INITDIR)/drbd
 	rm -f $(DESTDIR)$(sysconfdir)/xen/scripts/block-drbd
-	rm -f $(DESTDIR)$(sysconfdir)/bash_completion.d/$(COMPLETION)
+	rm -f $(DESTDIR)$(sysconfdir)/bash_completion.d/drbdadm$(BASH_COMPLETION_SUFFIX)
+	rm -f $(DESTDIR)$(sbindir)/drbd-overview
 	! test -L $(DESTDIR)/sbin/rcdrbd || rm $(DESTDIR)/sbin/rcdrbd
