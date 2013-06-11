@@ -157,6 +157,7 @@ static int opts_equal(struct context_def *ctx, struct d_option* conf, struct d_o
 static int addr_equal(struct d_resource* conf, struct d_resource* running)
 {
 	int equal;
+	char *peer_addr, *peer_af, *peer_port;
 
 	if (conf->peer == NULL && running->peer == NULL) return 1;
 	if (running->peer == NULL) return 0;
@@ -165,16 +166,29 @@ static int addr_equal(struct d_resource* conf, struct d_resource* running)
 		!strcmp(conf->me->port,           running->me->port) &&
 		!strcmp(conf->me->address_family, running->me->address_family);
 
-	if(conf->me->proxy)
-		equal = equal &&
-			!strcmp(conf->me->proxy->inside_addr, running->peer->address) &&
-			!strcmp(conf->me->proxy->inside_port, running->peer->port) &&
-			!strcmp(conf->me->proxy->inside_af,   running->peer->address_family);
-	else
-		equal = equal && conf->peer &&
-			!strcmp(conf->peer->address,        running->peer->address) &&
-			!strcmp(conf->peer->port,           running->peer->port) &&
-			!strcmp(conf->peer->address_family, running->peer->address_family);
+	if(conf->me->proxy) {
+		peer_addr = conf->me->proxy->inside_addr;
+		peer_port = conf->me->proxy->inside_port;
+		peer_af = conf->me->proxy->inside_af;
+	} else {
+		peer_addr = conf->peer->address;
+		peer_port = conf->peer->port;
+		peer_af = conf->peer->address_family;
+	}
+
+	equal = equal && conf->peer &&
+		!strcmp(peer_addr, running->peer->address) &&
+		!strcmp(peer_port, running->peer->port) &&
+		!strcmp(peer_af, running->peer->address_family);
+
+	if (verbose > 2)
+		fprintf(stderr, "Network addresses differ:\n"
+			"\trunning: %s:%s:%s -- %s:%s:%s\n"
+			"\t config: %s:%s:%s -- %s:%s:%s\n",
+			running->me->address_family, running->me->address, running->me->port,
+			running->peer->address_family, running->peer->address, running->peer->port,
+			conf->me->address_family, conf->me->address, conf->me->port,
+			peer_af, peer_addr, peer_port);
 
 	return equal;
 }
