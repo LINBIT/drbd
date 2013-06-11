@@ -140,7 +140,7 @@ install:
 uninstall:
 	@ set -e; for f in $(MANPAGES) ; do \
 		s=$${f##*.}; \
-		rm -v $(DESTDIR)$(mandir)/man$$s/$$f ; \
+		rm -vf $(DESTDIR)$(mandir)/man$$s/$$f ; \
 	done
 
 html:	$(SOURCES:.xml=.html)

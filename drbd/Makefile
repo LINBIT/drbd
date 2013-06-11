@@ -191,6 +191,8 @@ else
 	   /sbin/depmod -F $(KDIR)/System.map -n -e ./$(MODOBJ) # 2>&1 >/dev/null
 endif
 
+uninstall:
+
 spell:
 	for f in $(wildcard *.c); do \
 	 	aspell --save-repl --dont-backup --personal=./../documentation/aspell.en.per check $$f; \

@@ -113,24 +113,23 @@ distclean: clean
 
 install:
 ifeq ($(WITH_UTILS),yes)
-	install -d $(DESTDIR)/sbin/
+	install -d $(DESTDIR)$(sbindir)
 	install -d $(DESTDIR)$(localstatedir)/lib/drbd
 	install -d $(DESTDIR)$(localstatedir)/lock
 	if getent group haclient > /dev/null 2> /dev/null ; then	\
-		install -g haclient -m 4750 drbdsetup $(DESTDIR)/sbin/ ;	\
-		install -g haclient -m 4750 drbdmeta $(DESTDIR)/sbin/ ;	\
-		install -m 755 drbdadm $(DESTDIR)/sbin/ ;		\
+		install -g haclient -m 4750 drbdsetup $(DESTDIR)$(sbindir) ;	\
+		install -g haclient -m 4750 drbdmeta $(DESTDIR)$(sbindir) ;	\
+		install -m 755 drbdadm $(DESTDIR)$(sbindir) ;		\
 	else								\
-		install -m 755 drbdsetup $(DESTDIR)/sbin/ ;		\
-		install -m 755 drbdmeta $(DESTDIR)/sbin/ ;		\
-		install -m 755 drbdadm $(DESTDIR)/sbin/ ; 		\
+		install -m 755 drbdsetup $(DESTDIR)$(sbindir) ;		\
+		install -m 755 drbdmeta $(DESTDIR)$(sbindir) ;		\
+		install -m 755 drbdadm $(DESTDIR)$(sbindir) ;		\
 	fi
 	$(MAKE) -C legacy install
 endif
 
 uninstall:
-	rm -f $(DESTDIR)/sbin/drbdsetup
-	rm -f $(DESTDIR)/sbin/drbdadm
+	rm -f $(DESTDIR)$(sbindir)/{drbdsetup,drbdadm,drbdmeta}
 	$(MAKE) -C legacy uninstall
 
 spell:
