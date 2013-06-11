@@ -46,6 +46,7 @@
 #include <signal.h>
 #include <assert.h>
 #include <libgen.h>
+#include <time.h>
 
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -2384,20 +2385,31 @@ static void print_usage_and_exit(const char* addinfo)
 	exit(20);
 }
 
-static int is_drbd_driver_missing(void)
+static int modprobe_drbd(void)
 {
 	struct stat sb;
-	int err;
+	int ret, retries = 10;
 
-	err = stat("/proc/drbd", &sb);
-	if (!err)
-		return 0;
+	ret = stat("/proc/drbd", &sb);
+	if (ret && errno == ENOENT) {
+		system("/sbin/modprobe drbd");
+		for(;;) {
+			struct timespec ts = {
+				.tv_nsec = 1000000,
+			};
 
-	if (err == ENOENT)
-		fprintf(stderr, "DRBD driver appears to be missing\n");
-	else
-		fprintf(stderr, "Could not stat(\"/proc/drbd\"): %m\n");
-	return 1;
+			ret = stat("/proc/drbd", &sb);
+			if (!ret || retries-- == 0)
+				break;
+			nanosleep(&ts, NULL);
+		}
+	}
+	if (ret) {
+		fprintf(stderr, "Could not stat /proc/drbd: %m\n");
+		fprintf(stderr, "Make sure that the DRBD kernel module is installed "
+				"and can be loaded!\n");
+	}
+	return ret == 0;
 }
 
 void exec_legacy_drbdsetup(char **argv)
@@ -2493,15 +2505,12 @@ int main(int argc, char **argv)
 	if (!cmd)
 		print_usage_and_exit("invalid command");
 
-	if (is_drbd_driver_missing()) {
+	if (!modprobe_drbd()) {
 		if (!strcmp(argv[1], "down") ||
 		    !strcmp(argv[1], "secondary") ||
 		    !strcmp(argv[1], "disconnect") ||
 		    !strcmp(argv[1], "detach"))
 			return 0; /* "down" succeeds even if drbd is missing */
-
-		fprintf(stderr, "do you need to load the module?\n"
-				"try: modprobe drbd\n");
 		return 20;
 	}
 
