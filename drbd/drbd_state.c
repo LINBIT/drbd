@@ -49,13 +49,13 @@ enum sanitize_state_warnings {
 	IMPLICITLY_UPGRADED_PDSK,
 };
 
-STATIC int w_after_state_ch(struct drbd_work *w, int unused);
-STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
+static int w_after_state_ch(struct drbd_work *w, int unused);
+static void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags);
-STATIC enum drbd_state_rv is_valid_state(struct drbd_conf *, union drbd_state);
-STATIC enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state, struct drbd_tconn *);
-STATIC enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
-STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state ns,
+static enum drbd_state_rv is_valid_state(struct drbd_conf *, union drbd_state);
+static enum drbd_state_rv is_valid_soft_transition(union drbd_state, union drbd_state, struct drbd_tconn *);
+static enum drbd_state_rv is_valid_transition(union drbd_state os, union drbd_state ns);
+static union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state ns,
 				       enum sanitize_state_warnings *warn);
 
 static inline bool is_susp(union drbd_state s)
@@ -210,7 +210,7 @@ static bool no_peer_wf_report_params(struct drbd_tconn *tconn)
  * @os:		old (current) state.
  * @ns:		new (wanted) state.
  */
-STATIC int cl_wide_st_chg(struct drbd_conf *mdev,
+static int cl_wide_st_chg(struct drbd_conf *mdev,
 			  union drbd_state os, union drbd_state ns)
 {
 	return (os.conn >= C_CONNECTED && ns.conn >= C_CONNECTED &&
@@ -259,7 +259,7 @@ void drbd_force_state(struct drbd_conf *mdev,
 	drbd_change_state(mdev, CS_HARD, mask, val);
 }
 
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
 	     union drbd_state val)
 {
@@ -305,7 +305,7 @@ _req_st_cond(struct drbd_conf *mdev, union drbd_state mask,
  * Should not be called directly, use drbd_request_state() or
  * _drbd_request_state().
  */
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 drbd_req_state(struct drbd_conf *mdev, union drbd_state mask,
 	       union drbd_state val, enum chg_state_flags f)
 {
@@ -511,7 +511,7 @@ static void conn_pr_state_change(struct drbd_tconn *tconn, union drbd_state os, 
  * @mdev:	DRBD device.
  * @ns:		State to consider.
  */
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
 {
 	/* See drbd_state_sw_errors in drbd_strings.c */
@@ -599,7 +599,7 @@ is_valid_state(struct drbd_conf *mdev, union drbd_state ns)
  * @ns:		new state.
  * @os:		old state.
  */
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 is_valid_soft_transition(union drbd_state os, union drbd_state ns, struct drbd_tconn *tconn)
 {
 	enum drbd_state_rv rv = SS_SUCCESS;
@@ -655,7 +655,7 @@ is_valid_soft_transition(union drbd_state os, union drbd_state ns, struct drbd_t
 	return rv;
 }
 
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 is_valid_conn_transition(enum drbd_conns oc, enum drbd_conns nc)
 {
 	/* no change -> nothing to do, at least for the connection part */
@@ -695,7 +695,7 @@ is_valid_conn_transition(enum drbd_conns oc, enum drbd_conns nc)
  * @ns:		new state.
  * @os:		old state.
  */
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 is_valid_transition(union drbd_state os, union drbd_state ns)
 {
 	enum drbd_state_rv rv;
@@ -734,7 +734,7 @@ static void print_sanitize_warnings(struct drbd_conf *mdev, enum sanitize_state_
  * When we loose connection, we have to set the state of the peers disk (pdsk)
  * to D_UNKNOWN. This rule and many more along those lines are in this function.
  */
-STATIC union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state ns,
+static union drbd_state sanitize_state(struct drbd_conf *mdev, union drbd_state ns,
 				       enum sanitize_state_warnings *warn)
 {
 	enum drbd_fencing_p fp;
@@ -1149,7 +1149,7 @@ __drbd_set_state(struct drbd_conf *mdev, union drbd_state ns,
 	return rv;
 }
 
-STATIC int w_after_state_ch(struct drbd_work *w, int unused)
+static int w_after_state_ch(struct drbd_work *w, int unused)
 {
 	struct after_state_chg_work *ascw =
 		container_of(w, struct after_state_chg_work, w);
@@ -1210,7 +1210,7 @@ int drbd_bitmap_io_from_worker(struct drbd_conf *mdev,
  * @ns:		new state.
  * @flags:	Flags
  */
-STATIC void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
+static void after_state_ch(struct drbd_conf *mdev, union drbd_state os,
 			   union drbd_state ns, enum chg_state_flags flags)
 {
 	struct sib_info sib;
@@ -1530,7 +1530,7 @@ struct after_conn_state_chg_work {
 	enum chg_state_flags flags;
 };
 
-STATIC int w_after_conn_state_ch(struct drbd_work *w, int unused)
+static int w_after_conn_state_ch(struct drbd_work *w, int unused)
 {
 	struct after_conn_state_chg_work *acscw =
 		container_of(w, struct after_conn_state_chg_work, w);

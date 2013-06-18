@@ -142,7 +142,7 @@ void wait_until_done_or_force_detached(struct drbd_conf *mdev, struct drbd_backi
 	}
 }
 
-STATIC int _drbd_md_sync_page_io(struct drbd_conf *mdev,
+static int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
@@ -705,7 +705,7 @@ int drbd_initialize_al(struct drbd_conf *mdev, void *buffer)
 	return 0;
 }
 
-STATIC int w_update_odbm(struct drbd_work *w, int unused)
+static int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -745,7 +745,7 @@ STATIC int w_update_odbm(struct drbd_work *w, int unused)
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
  */
-STATIC void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
+static void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 				      int count, int success)
 {
 	struct lc_element *e;

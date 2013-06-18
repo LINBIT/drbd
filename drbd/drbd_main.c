@@ -74,10 +74,10 @@ static int drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static int drbd_release(struct inode *inode, struct file *file);
 #endif
-STATIC int w_md_sync(struct drbd_work *w, int unused);
-STATIC void md_sync_timer_fn(unsigned long data);
-STATIC int w_bitmap_io(struct drbd_work *w, int unused);
-STATIC int w_go_diskless(struct drbd_work *w, int unused);
+static int w_md_sync(struct drbd_work *w, int unused);
+static void md_sync_timer_fn(unsigned long data);
+static int w_bitmap_io(struct drbd_work *w, int unused);
+static int w_go_diskless(struct drbd_work *w, int unused);
 static void drbd_minor_destroy(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
@@ -152,7 +152,7 @@ spinlock_t   drbd_pp_lock;
 int          drbd_pp_vacant;
 wait_queue_head_t drbd_pp_wait;
 
-STATIC const struct block_device_operations drbd_ops = {
+static const struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_release,
@@ -358,7 +358,7 @@ void tl_abort_disk_io(struct drbd_conf *mdev)
 	spin_unlock_irq(&tconn->req_lock);
 }
 
-STATIC int drbd_thread_setup(void *arg)
+static int drbd_thread_setup(void *arg)
 {
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
 	struct drbd_tconn *tconn = thi->tconn;
@@ -402,7 +402,7 @@ restart:
 	return retval;
 }
 
-STATIC void drbd_thread_init(struct drbd_tconn *tconn, struct drbd_thread *thi,
+static void drbd_thread_init(struct drbd_tconn *tconn, struct drbd_thread *thi,
 			     int (*func) (struct drbd_thread *), char *name)
 {
 	spin_lock_init(&thi->t_lock);
@@ -1201,7 +1201,7 @@ int fill_bitmap_rle_bits(struct drbd_conf *mdev,
  * Return 0 when done, 1 when another iteration is needed, and a negative error
  * code upon failure.
  */
-STATIC int
+static int
 send_bitmap_rle_or_plain(struct drbd_conf *mdev, struct bm_xfer_ctx *c)
 {
 	struct drbd_socket *sock = &mdev->tconn->data;
@@ -1332,7 +1332,7 @@ void drbd_send_b_ack(struct drbd_tconn *tconn, u32 barrier_nr, u32 set_size)
  * @blksize:	size in byte, needs to be in big endian byte order
  * @block_id:	Id, big endian byte order
  */
-STATIC int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
+static int _drbd_send_ack(struct drbd_conf *mdev, enum drbd_packet cmd,
 			  u64 sector, u32 blksize, u64 block_id)
 {
 	struct drbd_socket *sock;
@@ -1450,7 +1450,7 @@ int drbd_send_ov_request(struct drbd_conf *mdev, sector_t sector, int size)
  * returns false if we should retry,
  * true if we think connection is dead
  */
-STATIC int we_should_drop_the_connection(struct drbd_tconn *tconn, struct socket *sock)
+static int we_should_drop_the_connection(struct drbd_tconn *tconn, struct socket *sock)
 {
 	int drop_it;
 
@@ -1500,7 +1500,7 @@ static void drbd_update_congested(struct drbd_tconn *tconn)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
+static int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket;
@@ -1516,7 +1516,7 @@ STATIC int _drbd_no_send_page(struct drbd_conf *mdev, struct page *page,
 	return err;
 }
 
-STATIC int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
+static int _drbd_send_page(struct drbd_conf *mdev, struct page *page,
 		    int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket = mdev->tconn->data.socket;
@@ -1908,7 +1908,7 @@ static int drbd_release(struct inode *inode, struct file *file)
 #endif
 
 #ifdef blk_queue_plugged
-STATIC void drbd_unplug_fn(struct request_queue *q)
+static void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_conf *mdev = q->queuedata;
 
@@ -1938,7 +1938,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 }
 #endif
 
-STATIC void drbd_set_defaults(struct drbd_conf *mdev)
+static void drbd_set_defaults(struct drbd_conf *mdev)
 {
 	/* Beware! The actual layout differs
 	 * between big endian and little endian */
@@ -2082,7 +2082,7 @@ void drbd_mdev_cleanup(struct drbd_conf *mdev)
 }
 
 
-STATIC void drbd_destroy_mempools(void)
+static void drbd_destroy_mempools(void)
 {
 	struct page *page;
 
@@ -2124,7 +2124,7 @@ STATIC void drbd_destroy_mempools(void)
 	return;
 }
 
-STATIC int drbd_create_mempools(void)
+static int drbd_create_mempools(void)
 {
 	struct page *page;
 	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count;
@@ -2199,7 +2199,7 @@ Enomem:
 	return -ENOMEM;
 }
 
-STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
+static int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	void *unused)
 {
 	/* just so we have it.  you never know what interesting things we
@@ -2209,7 +2209,7 @@ STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	return NOTIFY_DONE;
 }
 
-STATIC struct notifier_block drbd_notifier = {
+static struct notifier_block drbd_notifier = {
 	.notifier_call = drbd_notify_sys,
 };
 
@@ -2357,7 +2357,7 @@ void drbd_restart_request(struct drbd_request *req)
 }
 
 
-STATIC void drbd_cleanup(void)
+static void drbd_cleanup(void)
 {
 	unsigned int i;
 	struct drbd_conf *mdev;
@@ -3465,7 +3465,7 @@ int drbd_bmio_clear_n_write(struct drbd_conf *mdev)
 	return rv;
 }
 
-STATIC int w_bitmap_io(struct drbd_work *w, int unused)
+static int w_bitmap_io(struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work = container_of(w, struct bm_io_work, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -3506,7 +3506,7 @@ void drbd_ldev_destroy(struct drbd_conf *mdev)
 	clear_bit(GO_DISKLESS, &mdev->flags);
 }
 
-STATIC int w_go_diskless(struct drbd_work *w, int unused)
+static int w_go_diskless(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 
@@ -3636,7 +3636,7 @@ int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
 	return (bdev->md.flags & flag) != 0;
 }
 
-STATIC void md_sync_timer_fn(unsigned long data)
+static void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_conf *mdev = (struct drbd_conf *) data;
 
@@ -3645,7 +3645,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 		drbd_queue_work_front(&mdev->tconn->sender_work, &mdev->md_sync_work);
 }
 
-STATIC int w_md_sync(struct drbd_work *w, int unused)
+static int w_md_sync(struct drbd_work *w, int unused)
 {
 	struct drbd_conf *mdev = w->mdev;
 
@@ -3779,7 +3779,7 @@ struct fault_random_state {
  * Crude but fast random-number generator.  Uses a linear congruential
  * generator, with occasional help from get_random_bytes().
  */
-STATIC unsigned long
+static unsigned long
 _drbd_fault_random(struct fault_random_state *rsp)
 {
 	long refresh;
@@ -3793,7 +3793,7 @@ _drbd_fault_random(struct fault_random_state *rsp)
 	return swahw32(rsp->state);
 }
 
-STATIC char *
+static char *
 _drbd_fault_str(unsigned int type) {
 	static char *_faults[] = {
 		[DRBD_FAULT_MD_WR] = "Meta-data write",

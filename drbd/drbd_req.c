@@ -41,7 +41,7 @@
 #define _drbd_end_io_acct(...)   do {} while (0)
 #else
 
-STATIC bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size);
+static bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size);
 
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_conf *mdev, struct drbd_request *req)
@@ -810,7 +810,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
  *   since size may be bigger than BM_BLOCK_SIZE,
  *   we may need to check several bits.
  */
-STATIC bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
+static bool drbd_may_do_local_read(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;

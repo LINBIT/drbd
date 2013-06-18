@@ -767,7 +767,7 @@ out:
  *  Activity log size used to be fixed 32kB,
  *  but is about to become configurable.
  */
-STATIC void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
+static void drbd_md_set_sector_offsets(struct drbd_conf *mdev,
 				       struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
@@ -1071,7 +1071,7 @@ drbd_new_dev_size(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
  * failed, and 0 on success. You should call drbd_md_sync() after you called
  * this function.
  */
-STATIC int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
+static int drbd_check_al_size(struct drbd_conf *mdev, struct disk_conf *dc)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;

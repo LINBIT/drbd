@@ -136,12 +136,6 @@ extern char usermode_helper[];
 struct drbd_conf;
 struct drbd_tconn;
 
-#ifdef DBG_ALL_SYMBOLS
-# define STATIC
-#else
-# define STATIC static
-#endif
-
 /* upstream kernel wants us to use dev_warn(), ...
  * dev_printk() expects to be presented a struct device *;
  * in older kernels, (<= 2.6.24), there is nothing suitable there.

@@ -37,7 +37,7 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-STATIC int w_make_ov_request(struct drbd_work *w, int cancel);
+static int w_make_ov_request(struct drbd_work *w, int cancel);
 
 
 
@@ -359,7 +359,7 @@ void drbd_csum_bio(struct drbd_conf *mdev, struct crypto_hash *tfm, struct bio *
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
-STATIC int w_e_send_csum(struct drbd_work *w, int cancel)
+static int w_e_send_csum(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_conf *mdev = w->mdev;
@@ -407,7 +407,7 @@ out:
 
 #define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
 
-STATIC int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
+static int read_for_csum(struct drbd_conf *mdev, sector_t sector, int size)
 {
 	struct drbd_peer_request *peer_req;
 
@@ -514,7 +514,7 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-STATIC int drbd_rs_controller(struct drbd_conf *mdev)
+static int drbd_rs_controller(struct drbd_conf *mdev)
 {
 	struct disk_conf *dc;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
@@ -570,7 +570,7 @@ STATIC int drbd_rs_controller(struct drbd_conf *mdev)
 	return req_sect;
 }
 
-STATIC int drbd_rs_number_requests(struct drbd_conf *mdev)
+static int drbd_rs_number_requests(struct drbd_conf *mdev)
 {
 	int number;
 
@@ -756,7 +756,7 @@ next_sector:
 	return 0;
 }
 
-STATIC int w_make_ov_request(struct drbd_work *w, int cancel)
+static int w_make_ov_request(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	int number, i, size;
@@ -820,7 +820,7 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC int w_resync_finished(struct drbd_work *w, int cancel)
+static int w_resync_finished(struct drbd_work *w, int cancel)
 {
 	struct drbd_conf *mdev = w->mdev;
 	kfree(w);
@@ -830,7 +830,7 @@ STATIC int w_resync_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC void ping_peer(struct drbd_conf *mdev)
+static void ping_peer(struct drbd_conf *mdev)
 {
 	struct drbd_tconn *tconn = mdev->tconn;
 
@@ -1456,7 +1456,7 @@ int w_restart_disk_io(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC int _drbd_may_sync_now(struct drbd_conf *mdev)
+static int _drbd_may_sync_now(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev = mdev;
 	int resync_after;
@@ -1486,7 +1486,7 @@ STATIC int _drbd_may_sync_now(struct drbd_conf *mdev)
  *
  * Called from process context only (admin command and after_state_ch).
  */
-STATIC int _drbd_pause_after(struct drbd_conf *mdev)
+static int _drbd_pause_after(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev;
 	int i, rv = 0;
@@ -1510,7 +1510,7 @@ STATIC int _drbd_pause_after(struct drbd_conf *mdev)
  *
  * Called from process context only (admin command and worker).
  */
-STATIC int _drbd_resume_next(struct drbd_conf *mdev)
+static int _drbd_resume_next(struct drbd_conf *mdev)
 {
 	struct drbd_conf *odev;
 	int i, rv = 0;

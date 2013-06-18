@@ -362,7 +362,7 @@ static void bm_unmap(unsigned long *p_addr)
  */
 
 
-STATIC void bm_free_pages(struct page **pages, unsigned long number)
+static void bm_free_pages(struct page **pages, unsigned long number)
 {
 	unsigned long i;
 	if (!pages)
@@ -380,7 +380,7 @@ STATIC void bm_free_pages(struct page **pages, unsigned long number)
 	}
 }
 
-STATIC void bm_vk_free(void *ptr, int v)
+static void bm_vk_free(void *ptr, int v)
 {
 	if (v)
 		vfree(ptr);
@@ -391,7 +391,7 @@ STATIC void bm_vk_free(void *ptr, int v)
 /*
  * "have" and "want" are NUMBER OF PAGES.
  */
-STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
+static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 {
 	struct page **old_pages = b->bm_pages;
 	struct page **new_pages, *page;
@@ -498,7 +498,7 @@ void drbd_bm_cleanup(struct drbd_conf *mdev)
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 #define BITS_PER_PAGE_MASK	(BITS_PER_PAGE - 1)
 #define BITS_PER_LONG_MASK	(BITS_PER_LONG - 1)
-STATIC int bm_clear_surplus(struct drbd_bitmap *b)
+static int bm_clear_surplus(struct drbd_bitmap *b)
 {
 	unsigned long mask;
 	unsigned long *p_addr, *bm;
@@ -535,7 +535,7 @@ STATIC int bm_clear_surplus(struct drbd_bitmap *b)
 	return cleared;
 }
 
-STATIC void bm_set_surplus(struct drbd_bitmap *b)
+static void bm_set_surplus(struct drbd_bitmap *b)
 {
 	unsigned long mask;
 	unsigned long *p_addr, *bm;
@@ -570,7 +570,7 @@ STATIC void bm_set_surplus(struct drbd_bitmap *b)
 
 /* you better not modify the bitmap while this is running,
  * or its results will be stale */
-STATIC unsigned long bm_count_bits(struct drbd_bitmap *b)
+static unsigned long bm_count_bits(struct drbd_bitmap *b)
 {
 	unsigned long *p_addr;
 	unsigned long bits = 0;
@@ -600,7 +600,7 @@ STATIC unsigned long bm_count_bits(struct drbd_bitmap *b)
 }
 
 /* offset and len in long words.*/
-STATIC void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
+static void bm_memset(struct drbd_bitmap *b, size_t offset, int c, size_t len)
 {
 	unsigned long *p_addr, *bm;
 	unsigned int idx;
@@ -1017,7 +1017,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 	BIO_ENDIO_FN_RETURN;
 }
 
-STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must_hold(local)
+static void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must_hold(local)
 {
 	struct bio *bio = bio_alloc_drbd(GFP_NOIO);
 	struct drbd_conf *mdev = ctx->mdev;
@@ -1069,7 +1069,7 @@ STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 /*
  * bm_rw: read/write the whole bitmap from/to its on disk location.
  */
-STATIC int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_writeout_upper_idx) __must_hold(local)
+static int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_writeout_upper_idx) __must_hold(local)
 {
 	struct bm_aio_ctx *ctx;
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -1419,7 +1419,7 @@ unsigned long _drbd_bm_find_next_zero(struct drbd_conf *mdev, unsigned long bm_f
  * wants bitnr, not sector.
  * expected to be called for only a few bits (e - s about BITS_PER_LONG).
  * Must hold bitmap lock already. */
-STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+static int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	unsigned long e, int val)
 {
 	struct drbd_bitmap *b = mdev->bitmap;
@@ -1468,7 +1468,7 @@ STATIC int __bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
  * for val != 0, we change 0 -> 1, return code positive
  * for val == 0, we change 1 -> 0, return code negative
  * wants bitnr, not sector */
-STATIC int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
+static int bm_change_bits_to(struct drbd_conf *mdev, const unsigned long s,
 	const unsigned long e, int val)
 {
 	unsigned long flags;
