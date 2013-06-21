@@ -963,7 +963,7 @@ STATIC struct socket *drbd_wait_for_connect(struct waiter *waiter)
 	rcu_read_unlock();
 
 	timeo = connect_int * HZ;
-	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
 retry:
 	timeo = wait_event_interruptible_timeout(waiter->wait, _wait_connect_cond(waiter), timeo);
@@ -1281,7 +1281,7 @@ retry:
 				drbd_warn(connection, "Error receiving initial packet\n");
 				sock_release(s);
 randomize:
-				if (random32() & 1)
+				if (prandom_u32() & 1)
 					goto retry;
 			}
 		}

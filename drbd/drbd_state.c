@@ -2743,7 +2743,7 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 			retries = 5;
 		timeout = resource->res_opts.twopc_retry_timeout *
 			  HZ / 10 * connections * (1 << retries);
-		timeout = random32() % timeout;
+		timeout = prandom_u32() % timeout;
 	}
 	return timeout;
 }
@@ -2845,7 +2845,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 
 	do
-		reply->tid = random32();
+		reply->tid = prandom_u32();
 	while (!reply->tid);
 
 	request.tid = cpu_to_be32(reply->tid);
