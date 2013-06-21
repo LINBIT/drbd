@@ -1264,4 +1264,11 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
        for (id = 0; ((entry) = idr_get_next(idp, &(id))) != NULL; ++id)
 #endif
 
+#ifndef COMPAT_HAVE_PRANDOM_U32
+static inline u32 prandom_u32(void)
+{
+	return random32();
+}
+#endif
+
 #endif
