@@ -63,8 +63,14 @@
 #include <linux/swab.h>
 #endif
 
+#ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
+#define DRBD_RELEASE_RETURN void
+#else
+#define DRBD_RELEASE_RETURN int
+#endif
+
 static int drbd_open(struct block_device *bdev, fmode_t mode);
-static int drbd_release(struct gendisk *gd, fmode_t mode);
+static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static int w_md_sync(struct drbd_work *w, int unused);
 STATIC void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
@@ -2278,7 +2284,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	return rv;
 }
 
-static int drbd_release(struct gendisk *gd, fmode_t mode)
+static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
@@ -2305,8 +2311,9 @@ static int drbd_release(struct gendisk *gd, fmode_t mode)
 					  drbd_set_st_err_str(rv));
 		}
 	}
-
+#ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
+#endif
 }
 
 #ifdef blk_queue_plugged
