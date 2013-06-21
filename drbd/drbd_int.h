@@ -2412,15 +2412,19 @@ struct bm_extent {
  * @entry:   the type * to use as cursor
  * @id:      id entry's key
  */
+#ifndef idr_for_each_entry
 #define idr_for_each_entry(idp, entry, id)				\
 	for (id = 0, entry = (typeof(entry))idr_get_next((idp), &(id)); \
 	     entry != NULL;						\
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+#endif
 
+#ifndef idr_for_each_entry_continue
 #define idr_for_each_entry_continue(idp, entry, id)			\
 	for (entry = (typeof(entry))idr_get_next((idp), &(id));		\
 	     entry;							\
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+#endif
 
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {
