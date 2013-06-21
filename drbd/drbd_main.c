@@ -66,13 +66,19 @@ int drbdd_init(struct drbd_thread *);
 int drbd_worker(struct drbd_thread *);
 int drbd_asender(struct drbd_thread *);
 
+#ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
+#define DRBD_RELEASE_RETURN void
+#else
+#define DRBD_RELEASE_RETURN int
+#endif
+
 int drbd_init(void);
 #ifdef BD_OPS_USE_FMODE
 static int drbd_open(struct block_device *bdev, fmode_t mode);
-static int drbd_release(struct gendisk *gd, fmode_t mode);
+static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 #else
 static int drbd_open(struct inode *inode, struct file *file);
-static int drbd_release(struct inode *inode, struct file *file);
+static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file);
 #endif
 static int w_md_sync(struct drbd_work *w, int unused);
 static void md_sync_timer_fn(unsigned long data);
@@ -1892,18 +1898,22 @@ static int drbd_open(struct inode *inode, struct file *file)
 }
 
 #ifdef BD_OPS_USE_FMODE
-static int drbd_release(struct gendisk *gd, fmode_t mode)
+static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_conf *mdev = gd->private_data;
 	mdev->open_cnt--;
+#ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
+#endif
 }
 #else
-static int drbd_release(struct inode *inode, struct file *file)
+static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file)
 {
 	struct drbd_conf *mdev = inode->i_bdev->bd_disk->private_data;
 	mdev->open_cnt--;
+#ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
+#endif
 }
 #endif
 
