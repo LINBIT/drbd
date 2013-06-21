@@ -1271,4 +1271,8 @@ static inline u32 prandom_u32(void)
 }
 #endif
 
+#ifndef COMPAT_HAVE_PROC_PDE_DATA
+#define PDE_DATA(inode) PDE(inode)->data
+#endif
+
 #endif
