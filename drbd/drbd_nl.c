@@ -3302,7 +3302,7 @@ found_resource:
 	goto out;
 
 put_result:
-	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+	dh = genlmsg_put(skb, NETLINK_CB_PORTID(cb->skb),
 			cb->nlh->nlmsg_seq, &drbd_genl_family,
 			NLM_F_MULTI, DRBD_ADM_GET_RESOURCES);
 	err = -ENOMEM;
@@ -3431,7 +3431,7 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	goto out;  /* no more devices */
 
 put_result:
-	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+	dh = genlmsg_put(skb, NETLINK_CB_PORTID(cb->skb),
 			cb->nlh->nlmsg_seq, &drbd_genl_family,
 			NLM_F_MULTI, DRBD_ADM_GET_DEVICES);
 	err = -ENOMEM;
@@ -3558,7 +3558,7 @@ found_resource:
 	goto out;  /* no more resources */
 
 put_result:
-	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+	dh = genlmsg_put(skb, NETLINK_CB_PORTID(cb->skb),
 			cb->nlh->nlmsg_seq, &drbd_genl_family,
 			NLM_F_MULTI, DRBD_ADM_GET_CONNECTIONS);
 	err = -ENOMEM;
@@ -3679,7 +3679,7 @@ found_peer_device:
 	goto next_device;
 
 put_result:
-	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).pid,
+	dh = genlmsg_put(skb, NETLINK_CB_PORTID(cb->skb),
 			cb->nlh->nlmsg_seq, &drbd_genl_family,
 			NLM_F_MULTI, DRBD_ADM_GET_PEER_DEVICES);
 	err = -ENOMEM;

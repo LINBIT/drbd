@@ -1204,4 +1204,10 @@ static inline u32 prandom_u32(void)
 }
 #endif
 
+#ifdef COMPAT_HAVE_NETLINK_CB_PORTID
+#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).portid
+#else
+#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).pid
+#endif
+
 #endif
