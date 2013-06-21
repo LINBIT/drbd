@@ -155,10 +155,12 @@ static struct kobj_type drbd_device_kobj_type = {
 	.release = drbd_destroy_device,
 };
 
+#ifdef COMPAT_HAVE_BIO_FREE
 static void bio_destructor_drbd(struct bio *bio)
 {
 	bio_free(bio, drbd_md_io_bio_set);
 }
+#endif
 
 struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 {
@@ -170,7 +172,9 @@ struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 	bio = bio_alloc_bioset(gfp_mask, 1, drbd_md_io_bio_set);
 	if (!bio)
 		return NULL;
+#ifdef COMPAT_HAVE_BIO_FREE
 	bio->bi_destructor = bio_destructor_drbd;
+#endif
 	return bio;
 }
 
