@@ -413,7 +413,7 @@ struct drbd_cmd commands[] = {
 	{"verify", CTX_PEER_DEVICE, DRBD_ADM_START_OV, DRBD_NLA_START_OV_PARMS, F_CONFIG_CMD,
 	 .ctx = &verify_cmd_ctx,
 	 .summary = "Verify the data on a lower-level device against a peer device." },
-	{"down", CTX_RESOURCE, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
+	{"down", CTX_RESOURCE | CTX_ALL, DRBD_ADM_DOWN, NO_PAYLOAD, down_cmd,
 	 .missing_ok = true,
 	 .summary = "Take a resource down." },
 	{"role", CTX_RESOURCE, 0, NO_PAYLOAD, role_cmd,
@@ -2828,8 +2828,9 @@ found:
 
 static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	struct devices_list *devices;
-	int rv;
+	struct resources_list *resources, *resource;
+	char *old_objname;
+	int rv = NO_ERROR;
 	int success;
 
 	if(argc > 2) {
@@ -2837,20 +2838,32 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		return OTHER_ERROR;
 	}
 
-	devices = list_devices(NULL);
-	rv = _generic_config_cmd(cm, argc, argv, 1);
-	success = (rv >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv == NO_ERROR;
-	if (success) {
-		struct devices_list *device;
+	old_objname = objname;
+	context = CTX_RESOURCE;
 
-		for (device = devices; device; device = device->next)
-			unregister_minor(device->minor);
+	resources = list_resources();
+	for (resource = resources; resource; resource = resource->next) {
+		struct devices_list *devices;
+		int rv2;
+
+		if (strcmp(old_objname, "all") && strcmp(old_objname, resource->name))
+			continue;
+
+		objname = resource->name;
+		devices = list_devices(objname);
+		rv2 = _generic_config_cmd(cm, argc, argv, 1);
+		success = (rv2 >= SS_SUCCESS && rv < ERR_CODE_BASE) || rv2 == NO_ERROR;
+		if (success) {
+			struct devices_list *device;
+
+			for (device = devices; device; device = device->next)
+				unregister_minor(device->minor);
+			unregister_resource(objname);
+		} else
+			rv = print_config_error(rv2, NULL);
 		free_devices(devices);
-		unregister_resource(objname);
-	} else {
-		free_devices(devices);
-		return print_config_error(rv, NULL);
 	}
+	free_resources(resources);
 	return 0;
 }
 
