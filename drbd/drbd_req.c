@@ -1317,12 +1317,15 @@ int drbd_merge_bvec(struct request_queue *q,
 	unsigned int bio_offset =
 		(unsigned int)bvm->bi_sector << 9; /* 32 bit */
 	unsigned int bio_size = bvm->bi_size;
+	unsigned int max_hw_sectors = queue_max_hw_sectors(q);
 	int limit, backing_limit;
 
 	limit = DRBD_MAX_BIO_SIZE
 	      - ((bio_offset & (DRBD_MAX_BIO_SIZE-1)) + bio_size);
 	if (limit < 0)
 		limit = 0;
+	if ((limit >> 9) > max_hw_sectors)
+		limit = max_hw_sectors << 9;
 	if (bio_size == 0) {
 		if (limit <= bvec->bv_len)
 			limit = bvec->bv_len;
