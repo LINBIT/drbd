@@ -2,6 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+8.3.16rc1 (api:88/proto:86-97)
+--------
+ * fix decoding of bitmap vli rle for device sizes > 64 TB
+ * fix for deadlock when using automatic split-brain-recovery
+ * only fail empty flushes if no good data is reachable
+ * avoid to shrink max_bio_size due to peer re-configuration
+ * fix resume-io after reconnect with broken fence-peer handler
+ * fencing script improvements
+
 8.3.15 (api:88/proto:86-97)
 --------
  * Do not end up in Unconnected state if the connection breaks at a
