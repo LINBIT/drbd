@@ -3459,8 +3459,15 @@ int main(int argc, char **argv)
 					exit(20);
 				}
 				context |= CTX_MINOR;
-			} else
+			} else if (strcmp(argv[optind], "all")) {
+				if (!(next_arg & CTX_RESOURCE)) {
+					fprintf(stderr, "command does not accept argument '%s'\n",
+						objname);
+					print_command_usage(cmd, FULL);
+					exit(20);
+				}
 				context |= CTX_RESOURCE;
+			}
 		} else {
 			if (next_arg == CTX_MY_ADDR) {
 				const char *str = argv[optind];
