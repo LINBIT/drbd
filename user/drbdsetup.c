@@ -443,7 +443,7 @@ struct drbd_cmd commands[] = {
 	{"check-resize", CTX_MINOR, 0, NO_PAYLOAD, check_resize_cmd,
 	 .lockless = true,
 	 .summary = "Remember the current size of a lower-level device." },
-	{"events", CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
+	{"events", CTX_RESOURCE | CTX_ALL, F_NEW_EVENTS_CMD(print_notifications),
 	 .options = events_cmd_options,
 	 .missing_ok = true,
 	 .continuous_poll = true,
