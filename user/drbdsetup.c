@@ -397,7 +397,8 @@ struct drbd_cmd commands[] = {
 	 .ctx = &new_current_uuid_cmd_ctx,
 	 .summary = "Generate a new current UUID." },
 
-	{"invalidate", CTX_PEER_DEVICE, DRBD_ADM_INVALIDATE, NO_PAYLOAD, F_CONFIG_CMD,
+	{"invalidate", CTX_MINOR, DRBD_ADM_INVALIDATE, DRBD_NLA_INVALIDATE_PARMS, F_CONFIG_CMD,
+	 .ctx = &invalidate_ctx,
 	 .summary = "Replace the local data of a volume with that of a peer." },
 	{"invalidate-remote", CTX_PEER_DEVICE, DRBD_ADM_INVAL_PEER, NO_PAYLOAD, F_CONFIG_CMD,
 	 .summary = "Replace a peer's data of a volume with the local data." },

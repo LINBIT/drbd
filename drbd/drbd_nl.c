@@ -2993,54 +2993,113 @@ fail:
 	return 0;
 }
 
+static enum drbd_state_rv invalidate_resync(struct drbd_peer_device *peer_device)
+{
+	enum drbd_state_rv rv;
+
+	drbd_flush_workqueue(&peer_device->connection->sender_work);
+
+	rv = change_repl_state(peer_device, L_STARTING_SYNC_T,
+			       CS_WAIT_COMPLETE | CS_SERIALIZE);
+
+	if (rv < SS_SUCCESS && rv != SS_NEED_CONNECTION)
+		rv = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
+			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+
+	return rv;
+}
+
+static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
+	unsigned long irq_flags;
+	enum drbd_state_rv rv;
+
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
+	for_each_connection(connection, resource) {
+		peer_device = conn_peer_device(connection, device->vnr);
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
+			abort_state_change(resource, &irq_flags);
+			return SS_UNKNOWN_ERROR;
+		}
+	}
+	__change_disk_state(device, D_INCONSISTENT);
+	rv = end_state_change(resource, &irq_flags);
+
+	if (rv >= SS_SUCCESS) {
+		drbd_bitmap_io(device, &drbd_bmio_set_all_n_write,
+			       "set_n_write from invalidate",
+			       BM_LOCK_CLEAR | BM_LOCK_BULK,
+			       NULL);
+	}
+
+	return rv;
+}
+
 int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 {
-	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *sync_from_peer_device = NULL;
+	struct drbd_resource *resource;
 	struct drbd_device *device;
-	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	int retcode = 0; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
-	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_PEER_DEVICE);
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	peer_device = adm_ctx.peer_device;
-	device = peer_device->device;
+	device = adm_ctx.device;
+	resource = device->resource;
+
+	if (info->attrs[DRBD_NLA_INVALIDATE_PARMS]) {
+		struct invalidate_parms inv = {};
+		int err;
+
+		inv.sync_from_peer_node_id = -1;
+		err = invalidate_parms_from_attrs(&inv, info);
+		if (err) {
+			retcode = ERR_MANDATORY_TAG;
+			drbd_msg_put_info(from_attrs_err_to_txt(err));
+			goto out;
+		}
+
+		if (inv.sync_from_peer_node_id != -1) {
+			struct drbd_connection *connection =
+				drbd_connection_by_node_id(resource, inv.sync_from_peer_node_id);
+			sync_from_peer_device = conn_peer_device(connection, device->vnr);
+		}
+	}
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync.
 	 * Also wait for its after_state_ch(). */
 	drbd_suspend_io(device);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
-	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
-	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
-					   CS_WAIT_COMPLETE | CS_SERIALIZE);
+	do {
+		struct drbd_connection *connection;
 
-	if (retcode < SS_SUCCESS && retcode != SS_NEED_CONNECTION)
-		retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
-			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+		if (sync_from_peer_device) {
+			retcode = invalidate_resync(sync_from_peer_device);
 
-	while (retcode == SS_NEED_CONNECTION) {
-		unsigned long irq_flags;
-
-		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
-			__change_disk_state(device, D_INCONSISTENT);
-		retcode = end_state_change(device->resource, &irq_flags);
-
-		if (retcode >= SS_SUCCESS) {
-			drbd_bitmap_io(device, &drbd_bmio_set_n_write,
-				       "set_n_write from invalidate",
-				       BM_LOCK_CLEAR | BM_LOCK_BULK,
-				       peer_device);
+			if (retcode >= SS_SUCCESS)
+				break;
 		}
 
-		if (retcode != SS_NEED_CONNECTION)
-			break;
+		for_each_connection(connection, resource) {
+			struct drbd_peer_device *peer_device;
 
-		retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
-			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
-	}
+			peer_device = conn_peer_device(connection, device->vnr);
+			retcode = invalidate_resync(peer_device);
+			if (retcode >= SS_SUCCESS)
+				goto out;
+		}
+
+		retcode = invalidate_no_resync(device);
+	} while (retcode == SS_UNKNOWN_ERROR);
+
+out:
 	drbd_resume_io(device);
 
 	drbd_adm_finish(info, retcode);

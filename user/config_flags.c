@@ -752,3 +752,11 @@ struct context_def device_options_ctx = {
 		{ "max-buffers", NUMERIC(max_buffers, MAX_BUFFERS) },
 		{ } },
 };
+
+struct context_def invalidate_ctx = {
+	NLA_POLICY(invalidate_parms),
+	.nla_type = DRBD_NLA_INVALIDATE_PARMS,
+	.fields = {
+		{ "sync-from-peer-node-id", NUMERIC(sync_from_peer_node_id, SYNC_FROM_NID) },
+		{ } },
+};

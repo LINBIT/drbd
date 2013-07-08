@@ -1643,6 +1643,7 @@ extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
+extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 
 /* Yes, there is kernel_setsockopt, but only since 2.6.18.
  * So we have our own copy of it here. */
