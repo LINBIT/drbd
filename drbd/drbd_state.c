@@ -2174,7 +2174,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_all_n_write, &abw_start_sync,
 					"set_n_write from StartingSync",
-					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					BM_LOCK_CLEAR | BM_LOCK_BULK,
 					peer_device);
 
 			/* We are in the progress to start a full sync. SyncSource one slot. */
@@ -2182,7 +2182,7 @@ STATIC int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
 					"set_n_write from StartingSync",
-					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					BM_LOCK_CLEAR | BM_LOCK_BULK,
 					peer_device);
 
 			/* Disks got bigger while they were detached */
