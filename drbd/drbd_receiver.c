@@ -779,13 +779,14 @@ out:
 	if (s_listen)
 		sock_release(s_listen);
 	if (err < 0) {
-		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS &&
+		    err != -EADDRINUSE) {
 			drbd_err(connection, "%s failed, err = %d\n", what, err);
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 		}
 	}
 
-	return -EIO;
+	return err;
 }
 
 static struct listener* find_listener(struct drbd_connection *connection)
@@ -806,7 +807,7 @@ static int get_listener(struct drbd_connection *connection, struct waiter *waite
 {
 	struct drbd_resource *resource = connection->resource;
 	struct listener *listener, *new_listener = NULL;
-	int rv;
+	int err;
 
 	waiter->connection = connection;
 	waiter->socket = NULL;
@@ -838,15 +839,19 @@ static int get_listener(struct drbd_connection *connection, struct waiter *waite
 		if (!new_listener)
 			return -ENOMEM;
 
-		rv = prepare_listener(connection, new_listener);
-		if (rv) {
+		err = prepare_listener(connection, new_listener);
+		if (err < 0) {
 			kfree(new_listener);
-			return rv;
+			new_listener = NULL;
+			if (err != -EADDRINUSE)
+				return err;
+			schedule_timeout_interruptible(HZ / 10);
+		} else {
+			kref_init(&new_listener->kref);
+			INIT_LIST_HEAD(&new_listener->waiters);
+			new_listener->resource = resource;
+			new_listener->pending_accepts = 0;
 		}
-		kref_init(&new_listener->kref);
-		INIT_LIST_HEAD(&new_listener->waiters);
-		new_listener->resource = resource;
-		new_listener->pending_accepts = 0;
 	}
 }
 
