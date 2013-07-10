@@ -1382,13 +1382,15 @@ randomize:
 	}
 	rcu_read_unlock();
 
-	mutex_lock(&resource->conf_update);
-	/* The discard_my_data flag is a single-shot modifier to the next
-	 * connection attempt, the handshake of which is now well underway.
-	 * No need for rcu style copying of the whole struct
-	 * just to clear a single value. */
-	connection->net_conf->discard_my_data = 0;
-	mutex_unlock(&resource->conf_update);
+	if (mutex_lock_interruptible(&resource->conf_update) == 0) {
+		/* The discard_my_data flag is a single-shot modifier to the next
+		 * connection attempt, the handshake of which is now well underway.
+		 * No need for rcu style copying of the whole struct
+		 * just to clear a single value. */
+		connection->net_conf->discard_my_data = 0;
+		mutex_unlock(&resource->conf_update);
+	}
+
 	drbd_thread_start(&connection->asender);
 
 	if (connection->agreed_pro_version >= 110) {
@@ -3924,7 +3926,11 @@ STATIC int receive_protocol(struct drbd_connection *connection, struct packet_in
 		goto disconnect;
 	}
 
-	mutex_lock(&connection->resource->conf_update);
+	if (mutex_lock_interruptible(&connection->resource->conf_update)) {
+		drbd_err(connection, "Interrupted while waiting for conf_update\n");
+		goto disconnect;
+	}
+
 	mutex_lock(&connection->data.mutex);
 	old_net_conf = connection->net_conf;
 	*new_net_conf = *old_net_conf;
@@ -4077,7 +4083,11 @@ STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	if (err)
 		return err;
 
-	mutex_lock(&connection->resource->conf_update);
+	err = mutex_lock_interruptible(&connection->resource->conf_update);
+	if (err) {
+		drbd_err(connection, "Interrupted while waiting for conf_update\n");
+		return err;
+	}
 	old_net_conf = peer_device->connection->net_conf;
 	if (get_ldev(device)) {
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
@@ -4315,6 +4325,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
+			int err;
 
 			new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 			if (!new_disk_conf) {
@@ -4323,7 +4334,11 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				return -ENOMEM;
 			}
 
-			mutex_lock(&connection->resource->conf_update);
+			err = mutex_lock_interruptible(&connection->resource->conf_update);
+			if (err) {
+				drbd_err(connection, "Interrupted while waiting for conf_update\n");
+				return err;
+			}
 			old_disk_conf = device->ldev->disk_conf;
 			*new_disk_conf = *old_disk_conf;
 			new_disk_conf->disk_size = p_usize;
