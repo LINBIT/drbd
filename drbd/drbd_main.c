@@ -946,7 +946,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	struct drbd_peer_md *peer_md;
 	struct drbd_socket *sock;
 	struct p_uuids110 *p;
 	int max_peers, i, pos = 0;
@@ -954,6 +954,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
+
+	peer_md = device->ldev->md.peers;
 
 	sock = &peer_device->connection->data;
 	p = drbd_prepare_command(peer_device, sock);
