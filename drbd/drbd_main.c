@@ -2276,6 +2276,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	}
 
 	if (!rv) {
+		kobject_get(&device->kobj);
 		if (mode & FMODE_WRITE)
 			resource->open_rw_cnt++;
 		else
@@ -2313,6 +2314,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 					  drbd_set_st_err_str(rv));
 		}
 	}
+	kobject_put(&device->kobj); /* might destroy the resource as well */
 #ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
 #endif
