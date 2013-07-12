@@ -2,6 +2,18 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre5 (api:genl1/proto:86-110)
+--------
+ * Fixed the drbdadm invalidate command (Now it takes a device or
+   a peer device)
+ * Builds on recent linux kernels not (up to 3.10)
+ * drbdsetup down all (downs everything independent of the config file)
+ * Fixed an OOPS on a diskless node in case of an detach/attach on an
+   other node in the cluster
+ * Fixed a deadlock in the down code path
+ * Fixed the "bind before listen failed, err = -98" race
+ * Do not OOPS when "downing" an opened device
+
 9.0.0pre4 (api:genl1/proto:86-110)
 --------
  * Fixes in the area of cluster wide commits
