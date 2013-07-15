@@ -234,6 +234,7 @@ int adm_adjust_wp(const struct cfg_ctx *ctx)
 	.backend_res_name = 1,		\
 	.iterate_volumes = 1,		\
 	.verify_ips = 1,		\
+	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
 #define ACF1_PEER_DEVICE		\
@@ -1787,7 +1788,10 @@ static int adm_wait_c(const struct cfg_ctx *ctx)
 
 	argv[NA(argc)] = drbdsetup;
 	argv[NA(argc)] = "wait-connect";
-	argv[NA(argc)] = ssprintf("%d", vol->device_minor);
+	argv[NA(argc)] = ssprintf("%d", vol->vnr);
+	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
+	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
+
 	if (is_drbd_top && !res->stacked_timeouts) {
 		struct d_option *opt;
 		unsigned long timeout = 20;
