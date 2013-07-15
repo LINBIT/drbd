@@ -218,7 +218,7 @@ struct drbd_cmd {
 	int tla_id; /* top level attribute id */
 	int (*function)(struct drbd_cmd *, int, char **);
 	struct drbd_argument *drbd_args;
-	int (*show_function)(struct drbd_cmd*, struct genl_info *);
+	int (*show_function)(struct drbd_cmd*, struct genl_info *, void *u_ptr);
 	struct option *options;
 	bool missing_ok;
 	bool continuous_poll;
@@ -249,9 +249,14 @@ static int check_resize_cmd(struct drbd_cmd *cm, int argc, char **argv);
 static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
-static int print_notifications(struct drbd_cmd *, struct genl_info *);
-static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *);
-static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info);
+static int print_notifications(struct drbd_cmd *, struct genl_info *, void *);
+static int wait_connect_or_sync(struct drbd_cmd *, struct genl_info *, void *);
+static int show_current_volume(struct drbd_cmd *, struct genl_info *, void *);
+static int print_current_connection(struct drbd_cmd *, struct genl_info *, void *);
+static int remember_resource(struct drbd_cmd *, struct genl_info *, void *);
+static int remember_device(struct drbd_cmd *, struct genl_info *, void *);
+static int remember_connection(struct drbd_cmd *, struct genl_info *, void *);
+static int remember_peer_device(struct drbd_cmd *, struct genl_info *, void *);
 
 #define ADDRESS_STR_MAX 256
 static char *address_str(char *buffer, void* address, int addr_len);
@@ -1573,7 +1578,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			case -E_RCV_NLMSG_DONE:
 				if (cm->continuous_poll)
 					continue;
-				err = cm->show_function(cm, NULL);
+				err = cm->show_function(cm, NULL, NULL);
 				if (err)
 					goto out2;
 				err = -*(int*)nlmsg_data(nlh);
@@ -1688,7 +1693,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				rv = NO_ERROR;
 			if (rv != NO_ERROR)
 				goto out2;
-			err = cm->show_function(cm, &info);
+			err = cm->show_function(cm, &info, NULL);
 			if (err) {
 				if (err < 0)
 					err = 0;
@@ -1697,7 +1702,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		}
 		if (!cm->continuous_poll && !(flags & NLM_F_DUMP)) {
 			/* There will be no more reply packets.  */
-			err = cm->show_function(cm, NULL);
+			err = cm->show_function(cm, NULL, NULL);
 			goto out2;
 		}
 	}
@@ -1712,7 +1717,7 @@ out:
 	return err;
 }
 
-static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info)
+static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info, void * u)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
@@ -2335,7 +2340,7 @@ static char *address_str(char *buffer, void* address, int addr_len)
 
 struct resources_list *__remembered_resources, **__remembered_resources_tail;
 
-static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info)
+static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
@@ -2443,7 +2448,7 @@ static struct resources_list *list_resources(void)
 
 struct devices_list *__remembered_devices, **__remembered_devices_tail;
 
-static int remember_device(struct drbd_cmd *cm, struct genl_info *info)
+static int remember_device(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
@@ -2516,7 +2521,7 @@ static void free_devices(struct devices_list *devices)
 
 struct connections_list *__remembered_connections, **__remembered_connections_tail;
 
-static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info)
+static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
@@ -2623,7 +2628,7 @@ static void free_connections(struct connections_list *connections)
 
 struct peer_devices_list *__remembered_peer_devices, **__remembered_peer_devices_tail;
 
-static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info)
+static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
@@ -2690,7 +2695,7 @@ static void free_peer_devices(struct peer_devices_list *peer_devices)
 	}
 }
 
-static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info)
+static int show_current_volume(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	unsigned minor;
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
@@ -2890,7 +2895,7 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
-static int print_notifications(struct drbd_cmd *cm, struct genl_info *info)
+static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	static const char *action_name[] = {
 		[NOTIFY_EXISTS] = "exists",
@@ -3073,7 +3078,7 @@ out:
 	return 0;
 }
 
-static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
+static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 	struct drbd_notification_header nh = { .nh_type = -1U };
