@@ -1392,7 +1392,7 @@ static bool opt_now;
 static bool opt_verbose;
 static bool opt_statistics;
 
-static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
+static int _generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv, void *u_ptr)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
@@ -1578,7 +1578,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			case -E_RCV_NLMSG_DONE:
 				if (cm->continuous_poll)
 					continue;
-				err = cm->show_function(cm, NULL, NULL);
+				err = cm->show_function(cm, NULL, u_ptr);
 				if (err)
 					goto out2;
 				err = -*(int*)nlmsg_data(nlh);
@@ -1693,7 +1693,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				rv = NO_ERROR;
 			if (rv != NO_ERROR)
 				goto out2;
-			err = cm->show_function(cm, &info, NULL);
+			err = cm->show_function(cm, &info, u_ptr);
 			if (err) {
 				if (err < 0)
 					err = 0;
@@ -1702,7 +1702,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		}
 		if (!cm->continuous_poll && !(flags & NLM_F_DUMP)) {
 			/* There will be no more reply packets.  */
-			err = cm->show_function(cm, NULL, NULL);
+			err = cm->show_function(cm, NULL, u_ptr);
 			goto out2;
 		}
 	}
@@ -1715,6 +1715,11 @@ out:
 		err = print_config_error(rv, desc);
 	free(iov.iov_base);
 	return err;
+}
+
+static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
+{
+	return _generic_get_cmd(cm, argc, argv, NULL);
 }
 
 static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info, void * u)
@@ -2338,10 +2343,9 @@ static char *address_str(char *buffer, void* address, int addr_len)
 		return NULL;
 }
 
-struct resources_list *__remembered_resources, **__remembered_resources_tail;
-
 static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
+	struct resources_list ***tail = u_ptr;
 	struct drbd_cfg_context cfg = { .ctx_volume = -1U };
 
 	if (!info)
@@ -2363,8 +2367,8 @@ static int remember_resource(struct drbd_cmd *cmd, struct genl_info *info, void 
 		resource_info_from_attrs(&r->info, info);
 		memset(&r->statistics, -1, sizeof(r->statistics));
 		resource_statistics_from_attrs(&r->statistics, info);
-		*__remembered_resources_tail = r;
-		__remembered_resources_tail = &r->next;
+		**tail = r;
+		*tail = &r->next;
 	}
 	return 0;
 }
@@ -2419,37 +2423,33 @@ static struct resources_list *list_resources(void)
 		.show_function = remember_resource,
 		.missing_ok = false,
 	};
-	struct resources_list *r;
+	struct resources_list *list, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
 	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
-	__remembered_resources_tail = &__remembered_resources;
 	objname = "all";
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = generic_get_cmd(&cmd, 0, NULL);
+	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
 	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
-	r = __remembered_resources;
-	__remembered_resources = NULL;
 	if (err) {
-		free_resources(r);
-		r = NULL;
+		free_resources(list);
+		list = NULL;
 	}
 
-	return r;
+	return list;
 }
-
-struct devices_list *__remembered_devices, **__remembered_devices_tail;
 
 static int remember_device(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
+	struct devices_list ***tail = u_ptr;
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
 	if (!info)
@@ -2468,8 +2468,8 @@ static int remember_device(struct drbd_cmd *cm, struct genl_info *info, void *u_
 		device_info_from_attrs(&d->info, info);
 		memset(&d->statistics, -1, sizeof(d->statistics));
 		device_statistics_from_attrs(&d->statistics, info);
-		*__remembered_devices_tail = d;
-		__remembered_devices_tail = &d->next;
+		**tail = d;
+		*tail = &d->next;
 	}
 	return 0;
 }
@@ -2484,30 +2484,27 @@ static struct devices_list *list_devices(char *resource_name)
 		.show_function = remember_device,
 		.missing_ok = false,
 	};
-	struct devices_list *r;
+	struct devices_list *list, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
 	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
-	__remembered_devices_tail = &__remembered_devices;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = generic_get_cmd(&cmd, 0, NULL);
+	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
 	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
-	r = __remembered_devices;
-	__remembered_devices = NULL;
 	if (err) {
-		free_devices(r);
-		r = NULL;
+		free_devices(list);
+		list = NULL;
 	}
-	return r;
+	return list;
 }
 
 static void free_devices(struct devices_list *devices)
@@ -2519,10 +2516,9 @@ static void free_devices(struct devices_list *devices)
 	}
 }
 
-struct connections_list *__remembered_connections, **__remembered_connections_tail;
-
 static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
+	struct connections_list ***tail = u_ptr;
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
 	if (!info)
@@ -2544,8 +2540,8 @@ static int remember_connection(struct drbd_cmd *cmd, struct genl_info *info, voi
 		connection_info_from_attrs(&c->info, info);
 		memset(&c->statistics, -1, sizeof(c->statistics));
 		connection_statistics_from_attrs(&c->statistics, info);
-		*__remembered_connections_tail = c;
-		__remembered_connections_tail = &c->next;
+		**tail = c;
+		*tail = &c->next;
 	}
 	return 0;
 }
@@ -2591,30 +2587,27 @@ static struct connections_list *list_connections(char *resource_name)
 		.show_function = remember_connection,
 		.missing_ok = true,
 	};
-	struct connections_list *c;
+	struct connections_list *list, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
 	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
-	__remembered_connections_tail = &__remembered_connections;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = generic_get_cmd(&cmd, 0, NULL);
+	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
 	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
-	c = __remembered_connections;
-	__remembered_connections = NULL;
 	if (err) {
-		free_connections(c);
-		c = NULL;
+		free_connections(list);
+		list = NULL;
 	}
-	return c;
+	return list;
 }
 
 static void free_connections(struct connections_list *connections)
@@ -2626,10 +2619,9 @@ static void free_connections(struct connections_list *connections)
 	}
 }
 
-struct peer_devices_list *__remembered_peer_devices, **__remembered_peer_devices_tail;
-
 static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info, void *u_ptr)
 {
+	struct peer_devices_list ***tail = u_ptr;
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 
 	if (!info)
@@ -2644,8 +2636,8 @@ static int remember_peer_device(struct drbd_cmd *cmd, struct genl_info *info, vo
 		peer_device_info_from_attrs(&p->info, info);
 		memset(&p->statistics, -1, sizeof(p->statistics));
 		peer_device_statistics_from_attrs(&p->statistics, info);
-		*__remembered_peer_devices_tail = p;
-		__remembered_peer_devices_tail = &p->next;
+		**tail = p;
+		*tail = &p->next;
 	}
 	return 0;
 }
@@ -2660,30 +2652,27 @@ static struct peer_devices_list *list_peer_devices(char *resource_name)
 		.show_function = remember_peer_device,
 		.missing_ok = false,
 	};
-	struct peer_devices_list *r;
+	struct peer_devices_list *list, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
 	int old_peer_addr_len = global_ctx.ctx_peer_addr_len;
 	int err;
 
-	__remembered_peer_devices_tail = &__remembered_peer_devices;
 	objname = resource_name ? resource_name : "all";
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = generic_get_cmd(&cmd, 0, NULL);
+	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
 	global_ctx.ctx_peer_addr_len = old_peer_addr_len;
-	r = __remembered_peer_devices;
-	__remembered_peer_devices = NULL;
 	if (err) {
-		free_peer_devices(r);
-		r = NULL;
+		free_peer_devices(list);
+		list = NULL;
 	}
-	return r;
+	return list;
 }
 
 static void free_peer_devices(struct peer_devices_list *peer_devices)
