@@ -1636,6 +1636,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				goto out2;
 			}
 			if (cm->continuous_poll) {
+				struct drbd_cfg_context ctx;
 				/*
 				 * We will receive all events and have to
 				 * filter for what we want ourself.
@@ -1643,7 +1644,12 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 				/* FIXME
 				 * Do we want to ignore broadcasts until the
 				 * initial get/dump requests is done? */
-				if (minor != -1U) {
+
+				if (drbd_cfg_context_from_attrs(&ctx, &info))
+					continue;
+
+				switch (cm->ctx_key) {
+				case CTX_MINOR:
 					/* Assert that, for an unicast reply,
 					 * reply minor matches request minor.
 					 * "unsolicited" kernel broadcasts are "pid=0" (netlink "port id")
@@ -1654,12 +1660,27 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 								dh->minor, minor);
 						continue;
 					}
-				} else if (strcmp(objname, "all")) {
-					struct drbd_cfg_context ctx;
+					break;
+				case CTX_RESOURCE:
+				case CTX_RESOURCE | CTX_ALL:
+					if (!strcmp(objname, "all"))
+						break;
 
-					if (drbd_cfg_context_from_attrs(&ctx, &info) ||
-					    strcmp(objname, ctx.ctx_resource_name))
+					if (strcmp(objname, ctx.ctx_resource_name))
 						continue;
+
+					break;
+				case CTX_CONNECTION:
+					if (!endpoints_equal(&ctx, &global_ctx))
+						continue;
+					break;
+				case CTX_PEER_DEVICE:
+					if (!endpoints_equal(&ctx, &global_ctx) ||
+					    ctx.ctx_volume != global_ctx.ctx_volume)
+						continue;
+					break;
+				default:
+					assert(0);
 				}
 			}
 			rv = dh->ret_code;
@@ -3083,7 +3104,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 
 		if (connection_info_from_attrs(&connection_info, info)) {
 			dbg(1, "connection info missing\n");
-			goto out;
+			break;
 		}
 		if (connection_info.conn_connection_state < C_CONNECTED)
 			if (!wait_after_split_brain)
@@ -3101,7 +3122,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 
 		if (peer_device_info_from_attrs(&peer_device_info, info)) {
 			dbg(1, "peer device info missing\n");
-			goto out;
+			break;
 		}
 		if ((!strcmp(cm->cmd, "wait-connect") &&
 		     peer_device_info.peer_repl_state >= L_ESTABLISHED) ||
@@ -3112,7 +3133,6 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 		break;
 	}
 
-out:
 	return 0;
 }
 
