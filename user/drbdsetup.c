@@ -3106,7 +3106,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 			dbg(1, "connection info missing\n");
 			break;
 		}
-		if (connection_info.conn_connection_state < C_CONNECTED)
+		if (connection_info.conn_connection_state < C_UNCONNECTED) {
 			if (!wait_after_split_brain)
 				return -1;  /* done waiting */
 
@@ -3117,6 +3117,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info)
 				       drbd_conn_str(connection_info.conn_connection_state));
 		}
 		break;
+	}
 	case DRBD_PEER_DEVICE_STATE: {
 		struct peer_device_info peer_device_info;
 
