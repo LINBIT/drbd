@@ -1392,24 +1392,18 @@ static bool opt_now;
 static bool opt_verbose;
 static bool opt_statistics;
 
-static int _generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv, void *u_ptr)
+static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
-	struct choose_timo_ctx timeo_ctx = {
-		.wfc_timeout = DRBD_WFC_TIMEOUT_DEF,
-		.degr_wfc_timeout = DRBD_DEGR_WFC_TIMEOUT_DEF,
-		.outdated_wfc_timeout = DRBD_OUTDATED_WFC_TIMEOUT_DEF,
-	};
-	int timeout_ms = -1;  /* "infinite" */
 	int flags;
 	int rv = NO_ERROR;
 	int err = 0;
 
 	/* pre allocate request message and reply buffer */
-	iov.iov_len = 8192;
+	iov.iov_len = DEFAULT_MSG_SIZE;
 	iov.iov_base = malloc(iov.iov_len);
 	smsg = msg_new(DEFAULT_MSG_SIZE);
 	if (!smsg || !iov.iov_base) {
@@ -1418,110 +1412,12 @@ static int _generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv, void *u_
 		goto out;
 	}
 
-	struct option *options = cm->options;
-	if (!options) {
-		static struct option none[] = { { } };
-		options = none;
-	}
-	const char *opts = make_optstring(options);
-	int c;
-
-	optind = 0;  /* reset getopt_long() */
-	for(;;) {
-		c = getopt_long(argc, argv, opts, options, 0);
-		if (c == -1)
-			break;
-		switch(c) {
-		default:
-		case '?':
-			return 20;
-		case 't':
-			timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
-			if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
-			   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					timeo_ctx.wfc_timeout,
-					DRBD_WFC_TIMEOUT_MIN,
-					DRBD_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-		case 'd':
-			timeo_ctx.degr_wfc_timeout = m_strtoll(optarg, 1);
-			if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
-			   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "degr_wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					timeo_ctx.degr_wfc_timeout,
-					DRBD_DEGR_WFC_TIMEOUT_MIN,
-					DRBD_DEGR_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-		case 'o':
-			timeo_ctx.outdated_wfc_timeout = m_strtoll(optarg, 1);
-			if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
-			   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
-				fprintf(stderr, "outdated_wfc_timeout => %d"
-					" out of range [%d..%d]\n",
-					timeo_ctx.outdated_wfc_timeout,
-					DRBD_OUTDATED_WFC_TIMEOUT_MIN,
-					DRBD_OUTDATED_WFC_TIMEOUT_MAX);
-				return 20;
-			}
-			break;
-
-		case 'n':
-			opt_now = true;
-			break;
-
-		case 's':
-			opt_verbose = true;
-			opt_statistics = true;
-			break;
-
-		case 'w':
-			if (!optarg || !strcmp(optarg, "yes"))
-				wait_after_split_brain = true;
-			break;
-
-		case 'D':
-			show_defaults = true;
-		}
-	}
-	if (optind + 1 < argc) {
-		warn_print_excess_args(argc, argv, optind + 1);
-		return 20;
-	}
-
-	dump_argv(argc, argv, optind, 0);
-
-	if (cm->wait_for_connect_timeouts) {
-		/* wait-connect, wait-sync */
-		int rr;
-
-		timeo_ctx.minor = minor;
-		timeo_ctx.smsg = smsg;
-		timeo_ctx.iov = &iov;
-		rr = choose_timeout(&timeo_ctx);
-		if (rr)
-			return rr;
-		if (timeo_ctx.timeout)
-			timeout_ms = timeo_ctx.timeout * 1000;
-
-		/* rewind send message buffer */
-		smsg->tail = smsg->data;
-	} else if (!cm->continuous_poll)
-		/* normal "get" request, or "show" */
-		timeout_ms = 120000;
-	/* else: events command, defaults to "infinity" */
-
 	if (cm->continuous_poll) {
 		if (genl_join_mc_group(drbd_sock, "events") &&
 		    !kernel_older_than(2, 6, 23)) {
-			fprintf(stderr, "unable to join drbd events multicast group\n");
-			return 20;
+			desc = "unable to join drbd events multicast group";
+			rv = OTHER_ERROR;
+			goto out2;
 		}
 	}
 
@@ -1719,7 +1615,122 @@ out:
 
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	return _generic_get_cmd(cm, argc, argv, NULL);
+	static struct option no_options[] = { { } };
+	struct choose_timo_ctx timeo_ctx = {
+		.wfc_timeout = DRBD_WFC_TIMEOUT_DEF,
+		.degr_wfc_timeout = DRBD_DEGR_WFC_TIMEOUT_DEF,
+		.outdated_wfc_timeout = DRBD_OUTDATED_WFC_TIMEOUT_DEF,
+	};
+	int c, timeout_ms, err = NO_ERROR;
+	struct option *options = cm->options ? cm->options : no_options;
+	const char *opts = make_optstring(options);
+
+	optind = 0;  /* reset getopt_long() */
+	for(;;) {
+		c = getopt_long(argc, argv, opts, options, 0);
+		if (c == -1)
+			break;
+		switch(c) {
+		default:
+		case '?':
+			return 20;
+		case 't':
+			timeo_ctx.wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_WFC_TIMEOUT_MIN > timeo_ctx.wfc_timeout ||
+			   timeo_ctx.wfc_timeout > DRBD_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.wfc_timeout,
+					DRBD_WFC_TIMEOUT_MIN,
+					DRBD_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+		case 'd':
+			timeo_ctx.degr_wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_DEGR_WFC_TIMEOUT_MIN > timeo_ctx.degr_wfc_timeout ||
+			   timeo_ctx.degr_wfc_timeout > DRBD_DEGR_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "degr_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.degr_wfc_timeout,
+					DRBD_DEGR_WFC_TIMEOUT_MIN,
+					DRBD_DEGR_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+		case 'o':
+			timeo_ctx.outdated_wfc_timeout = m_strtoll(optarg, 1);
+			if(DRBD_OUTDATED_WFC_TIMEOUT_MIN > timeo_ctx.outdated_wfc_timeout ||
+			   timeo_ctx.outdated_wfc_timeout > DRBD_OUTDATED_WFC_TIMEOUT_MAX) {
+				fprintf(stderr, "outdated_wfc_timeout => %d"
+					" out of range [%d..%d]\n",
+					timeo_ctx.outdated_wfc_timeout,
+					DRBD_OUTDATED_WFC_TIMEOUT_MIN,
+					DRBD_OUTDATED_WFC_TIMEOUT_MAX);
+				return 20;
+			}
+			break;
+
+		case 'n':
+			opt_now = true;
+			break;
+
+		case 's':
+			opt_verbose = true;
+			opt_statistics = true;
+			break;
+
+		case 'w':
+			if (!optarg || !strcmp(optarg, "yes"))
+				wait_after_split_brain = true;
+			break;
+
+		case 'D':
+			show_defaults = true;
+		}
+	}
+	if (optind + 1 < argc) {
+		warn_print_excess_args(argc, argv, optind + 1);
+		return 20;
+	}
+
+	dump_argv(argc, argv, optind, 0);
+
+	timeout_ms = -1;
+	if (cm->wait_for_connect_timeouts) {
+		/* wait-connect, wait-sync */
+		struct msg_buff *smsg;
+		struct iovec iov;
+		int rr;
+
+		iov.iov_len = DEFAULT_MSG_SIZE;
+		iov.iov_base = malloc(iov.iov_len);
+		smsg = msg_new(DEFAULT_MSG_SIZE);
+		if (!smsg || !iov.iov_base) {
+			fprintf(stderr, "could not allocate netlink messages\n");
+			return 20;
+		}
+
+		timeo_ctx.minor = minor;
+		timeo_ctx.smsg = smsg;
+		timeo_ctx.iov = &iov;
+		rr = choose_timeout(&timeo_ctx);
+		msg_free(smsg);
+		free(iov.iov_base);
+
+		if (rr)
+			return rr;
+		if (timeo_ctx.timeout)
+			timeout_ms = timeo_ctx.timeout * 1000;
+
+		/* rewind send message buffer */
+		smsg->tail = smsg->data;
+	} else if (!cm->continuous_poll)
+		timeout_ms = 120000; /* normal "get" request, or "show" */
+
+	err = generic_get(cm, timeout_ms, NULL);
+
+	return err;
 }
 
 static int print_current_connection(struct drbd_cmd *cm, struct genl_info *info, void * u)
@@ -2434,7 +2445,7 @@ static struct resources_list *list_resources(void)
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
+	err = generic_get(&cmd, 120000, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
@@ -2495,7 +2506,7 @@ static struct devices_list *list_devices(char *resource_name)
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
+	err = generic_get(&cmd, 120000, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
@@ -2598,7 +2609,7 @@ static struct connections_list *list_connections(char *resource_name)
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
+	err = generic_get(&cmd, 120000, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
@@ -2663,7 +2674,7 @@ static struct peer_devices_list *list_peer_devices(char *resource_name)
 	minor = -1;
 	global_ctx.ctx_my_addr_len = 0;
 	global_ctx.ctx_peer_addr_len = 0;
-	err = _generic_get_cmd(&cmd, 0, NULL, &tail);
+	err = generic_get(&cmd, 120000, &tail);
 	objname = old_objname;
 	minor = old_minor;
 	global_ctx.ctx_my_addr_len = old_my_addr_len;
