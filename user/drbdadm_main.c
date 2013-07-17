@@ -237,6 +237,13 @@ int adm_adjust_wp(const struct cfg_ctx *ctx)
 	.need_peer = 1,			\
 	.uc_dialog = 1,			\
 
+#define ACF1_WAIT			\
+	.show_in_usage = 1,		\
+	.res_name_required = 1,		\
+	.vol_id_optional = 1,		\
+	.verify_ips = 1,		\
+	.uc_dialog = 1,			\
+
 #define ACF1_PEER_DEVICE		\
 	.show_in_usage = 1,		\
 	.res_name_required = 1,		\
@@ -334,7 +341,8 @@ static struct adm_cmd pause_sync_cmd = {"pause-sync", adm_drbdsetup, ACF1_PEER_D
 static struct adm_cmd resume_sync_cmd = {"resume-sync", adm_drbdsetup, ACF1_PEER_DEVICE};
 static struct adm_cmd adjust_cmd = {"adjust", adm_adjust, ACF1_RESNAME};
 static struct adm_cmd adjust_wp_cmd = {"adjust-with-progress", adm_adjust_wp, ACF1_RESNAME};
-static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_DEFNET};
+static struct adm_cmd wait_c_cmd = {"wait-connect", adm_wait_c, ACF1_WAIT};
+static struct adm_cmd wait_sync_cmd = {"wait-sync", adm_wait_c, ACF1_WAIT};
 static struct adm_cmd wait_ci_cmd = {"wait-con-int", adm_wait_ci, .show_in_usage = 1,.verify_ips = 1,};
 static struct adm_cmd role_cmd = {"role", adm_drbdsetup, ACF1_RESNAME};
 static struct adm_cmd cstate_cmd = {"cstate", adm_drbdsetup, ACF1_DISCONNECT};
@@ -420,6 +428,7 @@ struct adm_cmd *cmds[] = {
 	&adjust_cmd,
 	&adjust_wp_cmd,
 	&wait_c_cmd,
+	&wait_sync_cmd,
 	&wait_ci_cmd,
 	&role_cmd,
 	&cstate_cmd,
@@ -1787,10 +1796,20 @@ static int adm_wait_c(const struct cfg_ctx *ctx)
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = "wait-connect-volume";
-	argv[NA(argc)] = ssprintf("%d", vol->vnr);
-	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
-	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
+	if (ctx->vol && ctx->conn) {
+		argv[NA(argc)] = ssprintf("%s-%s", ctx->cmd->name, "volume");
+		argv[NA(argc)] = ssprintf("%d", vol->vnr);
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
+	} else if (ctx->conn) {
+		argv[NA(argc)] = ssprintf("%s-%s", ctx->cmd->name, "connection");
+		argv[NA(argc)] = res->name;
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
+		argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
+	} else {
+		argv[NA(argc)] = ssprintf("%s-%s", ctx->cmd->name, "resource");
+		argv[NA(argc)] = res->name;
+	}
 
 	if (is_drbd_top && !res->stacked_timeouts) {
 		struct d_option *opt;
@@ -3247,7 +3266,7 @@ int main(int argc, char **argv)
 				}
 				if (rv)
 					exit(E_USAGE);
-				if (!cmd->vol_id_required && !cmd->iterate_volumes && ctx.vol != NULL) {
+				if (!cmd->vol_id_required && !cmd->iterate_volumes && ctx.vol != NULL && !cmd->vol_id_optional) {
 					if (ctx.vol->implicit)
 						ctx.vol = NULL;
 					else {

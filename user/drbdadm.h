@@ -247,6 +247,7 @@ struct adm_cmd {
 	unsigned int vol_id_required:1;
 	/* most commands need to iterate over all volumes in the resource */
 	unsigned int iterate_volumes:1;
+	unsigned int vol_id_optional:1;
 	/* error out if the ip specified is not available/active now */
 	unsigned int verify_ips:1;
 	/* if set, use the "cache" in /var/lib/drbd to figure out
