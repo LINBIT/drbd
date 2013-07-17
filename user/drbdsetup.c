@@ -250,8 +250,7 @@ static int show_or_get_gi_cmd(struct drbd_cmd *cm, int argc, char **argv);
 
 // sub commands for generic_get_cmd
 static int print_notifications(struct drbd_cmd *, struct genl_info *, void *);
-static int wait_for_volume(struct drbd_cmd *, struct genl_info *, void *);
-static int wait_for_connection(struct drbd_cmd *, struct genl_info *, void *);
+static int wait_for_family(struct drbd_cmd *, struct genl_info *, void *);
 static int show_current_volume(struct drbd_cmd *, struct genl_info *, void *);
 static int print_current_connection(struct drbd_cmd *, struct genl_info *, void *);
 static int remember_resource(struct drbd_cmd *, struct genl_info *, void *);
@@ -456,24 +455,42 @@ struct drbd_cmd commands[] = {
 	 .continuous_poll = true,
 	 .lockless = true,
 	 .summary = "Show the current state and all state changes of all resources." },
-	{"wait-connect-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_volume),
+	{"wait-sync-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_family),
+	 .options = wait_cmds_options,
+	 .continuous_poll = true,
+	 .wait_for_connect_timeouts = true,
+	 .lockless = true,
+	 .summary = "Wait until resync finished on a volume." },
+	{"wait-sync-connection", CTX_RESOURCE | CTX_CONNECTION, F_NEW_EVENTS_CMD(wait_for_family),
+	 .options = wait_cmds_options,
+	 .continuous_poll = true,
+	 .wait_for_connect_timeouts = false,
+	 .lockless = true,
+	 .summary = "Wait until resync finished on all volumes of a connection." },
+	{"wait-sync-resource", CTX_RESOURCE, F_NEW_EVENTS_CMD(wait_for_family),
+	 .options = wait_cmds_options,
+	 .continuous_poll = true,
+	 .wait_for_connect_timeouts = false,
+	 .lockless = true,
+	 .summary = "Wait until resync finished on all volumes." },
+	{"wait-connect-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
 	 .wait_for_connect_timeouts = true,
 	 .lockless = true,
 	 .summary = "Wait until a device on a peer is visible." },
-	{"wait-sync", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_volume),
+	{"wait-connect-connection", CTX_RESOURCE | CTX_CONNECTION, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = true,
+	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
-	 .summary = "Wait until a device on a peer is up to date." },
-	{"wait-connect", CTX_CONNECTION, F_NEW_EVENTS_CMD(wait_for_connection),
+	 .summary = "Wait until all peer volumes of connection are visible." },
+	{"wait-connect-resource", CTX_RESOURCE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = true,
+	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
-	 .summary = "Wait until a device on a peer is up to date." },
+	 .summary = "Wait until all connections are establised." },
 
 	{"new-resource", CTX_RESOURCE, DRBD_ADM_NEW_RESOURCE, DRBD_NLA_RESOURCE_OPTS, F_CONFIG_CMD,
 	 .drbd_args = (struct drbd_argument[]) {
@@ -1556,7 +1573,7 @@ static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
 				if (drbd_cfg_context_from_attrs(&ctx, &info))
 					continue;
 
-				switch (cm->ctx_key) {
+				switch ((int)cm->ctx_key) {
 				case CTX_MINOR:
 					/* Assert that, for an unicast reply,
 					 * reply minor matches request minor.
@@ -1579,6 +1596,7 @@ static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
 
 					break;
 				case CTX_CONNECTION:
+				case CTX_CONNECTION | CTX_RESOURCE:
 					if (!endpoints_equal(&ctx, &global_ctx))
 						continue;
 					break;
@@ -1736,8 +1754,10 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	} else if (!cm->continuous_poll)
 		timeout_ms = 120000; /* normal "get" request, or "show" */
 
-	if (!strcmp(cm->cmd, "wait-connect"))
-		peer_devices = list_peer_devices(objname);
+	if (cm->show_function == &wait_for_family) {
+		char *res_name = cm->ctx_key & CTX_RESOURCE ? objname : "all";
+		peer_devices = list_peer_devices(res_name);
+	}
 
 	err = generic_get(cm, timeout_ms, peer_devices);
 
@@ -3091,8 +3111,18 @@ out:
 	return 0;
 }
 
+void peer_devices_append(struct peer_devices_list *peer_devices, struct genl_info *info)
+{
+	struct peer_devices_list *peer_device, **tail;
+
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next)
+		tail = &peer_device->next;
+
+	remember_peer_device(NULL, info, &tail);
+}
+
 /* Actually waits for all volumes of a connection... */
-static int wait_for_connection(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
+static int wait_for_family(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	struct peer_devices_list *peer_devices = u_ptr;
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
@@ -3117,6 +3147,9 @@ static int wait_for_connection(struct drbd_cmd *cm, struct genl_info *info, void
 	case DRBD_CONNECTION_STATE: {
 		struct connection_info connection_info;
 
+		if ((nh.nh_type & ~NOTIFY_FLAGS) == NOTIFY_CREATE)
+			break; /* Ignore C_STANDALONE while creating it */
+
 		if (connection_info_from_attrs(&connection_info, info)) {
 			dbg(1, "connection info missing\n");
 			break;
@@ -3137,23 +3170,38 @@ static int wait_for_connection(struct drbd_cmd *cm, struct genl_info *info, void
 		struct peer_device_info peer_device_info;
 		struct peer_devices_list *peer_device;
 		int nr_peer_devices = 0, nr_connected = 0;
+		bool wait_connect;
 
 		if (peer_device_info_from_attrs(&peer_device_info, info)) {
 			dbg(1, "peer device info missing\n");
 			break;
 		}
 
+		wait_connect = strstr(cm->cmd, "sync") == NULL;
+
+		if ((nh.nh_type & ~NOTIFY_FLAGS) == NOTIFY_CREATE)
+			peer_devices_append(peer_devices, info);
+
 		for (peer_device = peer_devices;
 		     peer_device;
 		     peer_device = peer_device->next) {
+			enum drbd_repl_state rs;
+
 			if (endpoints_equal(&ctx, &peer_device->ctx) &&
 			    ctx.ctx_volume == peer_device->ctx.ctx_volume)
 				peer_device->info = peer_device_info;
 
-			if (endpoints_equal(&peer_device->ctx, &global_ctx)) {
+			if ((cm->ctx_key == CTX_PEER_DEVICE &&
+			    (endpoints_equal(&peer_device->ctx, &global_ctx) &&
+			     peer_device->ctx.ctx_volume == global_ctx.ctx_volume)) ||
+			    (cm->ctx_key == (CTX_RESOURCE | CTX_CONNECTION) &&
+			     endpoints_equal(&peer_device->ctx, &global_ctx)) ||
+			    cm->ctx_key == CTX_RESOURCE) {
 				nr_peer_devices++;
 
-				if (peer_device->info.peer_repl_state >= L_ESTABLISHED)
+				rs = peer_device->info.peer_repl_state;
+				if (rs == L_ESTABLISHED ||
+				    (wait_connect && rs > L_ESTABLISHED))
 					nr_connected++;
 			}
 		}
@@ -3161,72 +3209,8 @@ static int wait_for_connection(struct drbd_cmd *cm, struct genl_info *info, void
 		if (nr_peer_devices == nr_connected)
 			return -1; /* Done with waiting */
 
-		}
 		break;
 	}
-
-	return 0;
-}
-
-static int wait_for_volume(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
-{
-	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
-	struct drbd_notification_header nh = { .nh_type = -1U };
-	struct drbd_genlmsghdr *dh;
-
-	if (!info)
-		return 0;
-
-	if (drbd_cfg_context_from_attrs(&ctx, info) ||
-	    drbd_notification_header_from_attrs(&nh, info))
-		return 0;
-
-	dh = info->userhdr;
-	if (dh->ret_code != NO_ERROR)
-		return dh->ret_code;
-
-	if ((nh.nh_type & ~NOTIFY_FLAGS) == NOTIFY_DESTROY)
-		return 0;
-	if (info->genlhdr->cmd != DRBD_CONNECTION_STATE &&
-	    info->genlhdr->cmd != DRBD_PEER_DEVICE_STATE)
-		return 0;
-	if (!endpoints_equal(&ctx, &global_ctx))
-		return 0;
-
-	switch(info->genlhdr->cmd) {
-	case DRBD_CONNECTION_STATE: {
-		struct connection_info connection_info;
-
-		if (connection_info_from_attrs(&connection_info, info)) {
-			dbg(1, "connection info missing\n");
-			break;
-		}
-		if (connection_info.conn_connection_state < C_UNCONNECTED) {
-			if (!wait_after_split_brain)
-				return -1;  /* done waiting */
-
-			fprintf(stderr, "\ndrbd%u (%s[%u]) is %s, "
-				       "but I'm configured to wait anways (--wait-after-sb)\n",
-				       dh->minor,
-				       ctx.ctx_resource_name, ctx.ctx_volume,
-				       drbd_conn_str(connection_info.conn_connection_state));
-		}
-		break;
-	}
-	case DRBD_PEER_DEVICE_STATE: {
-		struct peer_device_info peer_device_info;
-
-		if (peer_device_info_from_attrs(&peer_device_info, info)) {
-			dbg(1, "peer device info missing\n");
-			break;
-		}
-		if ((!strcmp(cm->cmd, "wait-connect-volume") &&
-		     peer_device_info.peer_repl_state >= L_ESTABLISHED) ||
-		    (/* !strcmp(cm->cmd, "wait-sync") && */
-		     peer_device_info.peer_repl_state == L_ESTABLISHED))
-			return -1;  /* done waiting */
-		}
-		break;
 	}
 
 	return 0;
