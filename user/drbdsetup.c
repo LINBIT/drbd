@@ -1815,14 +1815,14 @@ static int show_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 		cmd.cmd_id = DRBD_ADM_GET_DEVICES;
 		cmd.show_function = show_current_volume;
-		generic_get_cmd(&cmd, 0, NULL);
+		generic_get(&cmd, 120000, NULL);
 
 		--indent;
 		printI("}\n");
 
 		cmd.cmd_id = DRBD_ADM_GET_CONNECTIONS;
 		cmd.show_function = print_current_connection;
-		generic_get_cmd(&cmd, 0, NULL);
+		generic_get(&cmd, 120000, NULL);
 
 		--indent;
 		printI("}\n\n");
