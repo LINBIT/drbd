@@ -1787,7 +1787,7 @@ static int adm_wait_c(const struct cfg_ctx *ctx)
 	int argc = 0, rv;
 
 	argv[NA(argc)] = drbdsetup;
-	argv[NA(argc)] = "wait-connect";
+	argv[NA(argc)] = "wait-connect-volume";
 	argv[NA(argc)] = ssprintf("%d", vol->vnr);
 	argv[NA(argc)] = ssprintf_addr(ctx->conn->my_address);
 	argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);

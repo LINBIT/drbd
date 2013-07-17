@@ -455,7 +455,7 @@ struct drbd_cmd commands[] = {
 	 .continuous_poll = true,
 	 .lockless = true,
 	 .summary = "Show the current state and all state changes of all resources." },
-	{"wait-connect", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
+	{"wait-connect-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_connect_or_sync),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
 	 .wait_for_connect_timeouts = true,
@@ -1698,7 +1698,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 	timeout_ms = -1;
 	if (cm->wait_for_connect_timeouts) {
-		/* wait-connect, wait-sync */
+		/* wait-connect-volume, wait-sync */
 		struct msg_buff *smsg;
 		struct iovec iov;
 		int rr;
@@ -3130,7 +3130,7 @@ static int wait_connect_or_sync(struct drbd_cmd *cm, struct genl_info *info, voi
 			dbg(1, "peer device info missing\n");
 			break;
 		}
-		if ((!strcmp(cm->cmd, "wait-connect") &&
+		if ((!strcmp(cm->cmd, "wait-connect-volume") &&
 		     peer_device_info.peer_repl_state >= L_ESTABLISHED) ||
 		    (/* !strcmp(cm->cmd, "wait-sync") && */
 		     peer_device_info.peer_repl_state == L_ESTABLISHED))
