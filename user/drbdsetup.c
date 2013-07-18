@@ -1297,8 +1297,9 @@ static void print_current_options(struct context_def *ctx, const char *sect_name
 	print_options(global_attrs[ctx->nla_type], ctx, sect_name);
 }
 
-struct choose_timo_ctx {
+struct choose_timeout_ctx {
 	unsigned minor;
+	struct drbd_cfg_context ctx;
 	struct msg_buff *smsg;
 	struct iovec *iov;
 	int timeout;
@@ -1307,7 +1308,7 @@ struct choose_timo_ctx {
 	int outdated_wfc_timeout;
 };
 
-int choose_timeout(struct choose_timo_ctx *ctx)
+int choose_timeout(struct choose_timeout_ctx *ctx)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
@@ -1333,11 +1334,10 @@ int choose_timeout(struct choose_timo_ctx *ctx)
 	dhdr->minor = ctx->minor;
 	dhdr->flags = 0;
 
-	assert((context & CTX_VOLUME) && (context & CTX_MY_ADDR) && (context & CTX_PEER_ADDR));
 	nla = nla_nest_start(ctx->smsg, DRBD_NLA_CFG_CONTEXT);
-	nla_put_u32(ctx->smsg, T_ctx_volume, global_ctx.ctx_volume);
-	nla_put(ctx->smsg, T_ctx_my_addr, global_ctx.ctx_my_addr_len, &global_ctx.ctx_my_addr);
-	nla_put(ctx->smsg, T_ctx_peer_addr, global_ctx.ctx_peer_addr_len, &global_ctx.ctx_peer_addr);
+	nla_put_u32(ctx->smsg, T_ctx_volume, ctx->ctx.ctx_volume);
+	nla_put(ctx->smsg, T_ctx_my_addr, ctx->ctx.ctx_my_addr_len, &ctx->ctx.ctx_my_addr);
+	nla_put(ctx->smsg, T_ctx_peer_addr, ctx->ctx.ctx_peer_addr_len, &ctx->ctx.ctx_peer_addr);
 	nla_nest_end(ctx->smsg, nla);
 
 	if (genl_send(drbd_sock, ctx->smsg)) {
@@ -1641,7 +1641,7 @@ out:
 static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	static struct option no_options[] = { { } };
-	struct choose_timo_ctx timeo_ctx = {
+	struct choose_timeout_ctx timeo_ctx = {
 		.wfc_timeout = DRBD_WFC_TIMEOUT_DEF,
 		.degr_wfc_timeout = DRBD_DEGR_WFC_TIMEOUT_DEF,
 		.outdated_wfc_timeout = DRBD_OUTDATED_WFC_TIMEOUT_DEF,
@@ -1738,6 +1738,7 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 		}
 
 		timeo_ctx.minor = minor;
+		timeo_ctx.ctx = global_ctx;
 		timeo_ctx.smsg = smsg;
 		timeo_ctx.iov = &iov;
 		rr = choose_timeout(&timeo_ctx);
