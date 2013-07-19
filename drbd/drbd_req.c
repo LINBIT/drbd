@@ -1362,6 +1362,7 @@ int drbd_merge_bvec(struct request_queue *q,
 	int backing_limit;
 
 	if (bio_size && get_ldev(mdev)) {
+		unsigned int max_hw_sectors = queue_max_hw_sectors(q);
 		struct request_queue * const b =
 			mdev->ldev->backing_bdev->bd_disk->queue;
 		if (b->merge_bvec_fn) {
@@ -1369,6 +1370,8 @@ int drbd_merge_bvec(struct request_queue *q,
 			limit = min(limit, backing_limit);
 		}
 		put_ldev(mdev);
+		if ((limit >> 9) > max_hw_sectors)
+			limit = max_hw_sectors << 9;
 	}
 	return limit;
 }
