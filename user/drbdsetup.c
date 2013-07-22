@@ -136,6 +136,8 @@ int main(void)
 #define PF_INET_SDP AF_INET_SDP
 #endif
 
+#define MULTIPLE_TIMEOUTS (-2)
+
 /* pretty print helpers */
 static int indent = 0;
 #define INDENT_WIDTH	4
@@ -222,7 +224,6 @@ struct drbd_cmd {
 	struct option *options;
 	bool missing_ok;
 	bool continuous_poll;
-	bool wait_for_connect_timeouts;
 	bool set_defaults;
 	bool lockless;
 	struct context_def *ctx;
@@ -305,6 +306,7 @@ struct peer_devices_list {
 	struct peer_device_info info;
 	struct peer_device_statistics statistics;
 	struct devices_list *device;
+	int timeout_ms; /* used only by wait_for_family() */
 };
 static struct peer_devices_list *list_peer_devices(char *);
 static void free_peer_devices(struct peer_devices_list *);
@@ -458,37 +460,31 @@ struct drbd_cmd commands[] = {
 	{"wait-sync-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = true,
 	 .lockless = true,
 	 .summary = "Wait until resync finished on a volume." },
 	{"wait-sync-connection", CTX_RESOURCE | CTX_CONNECTION, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
 	 .summary = "Wait until resync finished on all volumes of a connection." },
 	{"wait-sync-resource", CTX_RESOURCE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
 	 .summary = "Wait until resync finished on all volumes." },
 	{"wait-connect-volume", CTX_PEER_DEVICE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = true,
 	 .lockless = true,
 	 .summary = "Wait until a device on a peer is visible." },
 	{"wait-connect-connection", CTX_RESOURCE | CTX_CONNECTION, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
 	 .summary = "Wait until all peer volumes of connection are visible." },
 	{"wait-connect-resource", CTX_RESOURCE, F_NEW_EVENTS_CMD(wait_for_family),
 	 .options = wait_cmds_options,
 	 .continuous_poll = true,
-	 .wait_for_connect_timeouts = false,
 	 .lockless = true,
 	 .summary = "Wait until all connections are establised." },
 
@@ -1298,7 +1294,6 @@ static void print_current_options(struct context_def *ctx, const char *sect_name
 }
 
 struct choose_timeout_ctx {
-	unsigned minor;
 	struct drbd_cfg_context ctx;
 	struct msg_buff *smsg;
 	struct iovec *iov;
@@ -1331,7 +1326,7 @@ int choose_timeout(struct choose_timeout_ctx *ctx)
 				ctx->degr_wfc_timeout);
 	}
 	dhdr = genlmsg_put(ctx->smsg, &drbd_genl_family, 0, DRBD_ADM_GET_TIMEOUT_TYPE);
-	dhdr->minor = ctx->minor;
+	dhdr->minor = -1;
 	dhdr->flags = 0;
 
 	nla = nla_nest_start(ctx->smsg, DRBD_NLA_CFG_CONTEXT);
@@ -1357,7 +1352,6 @@ int choose_timeout(struct choose_timeout_ctx *ctx)
 		};
 		struct drbd_genlmsghdr *dh = info.userhdr;
 		struct timeout_parms parms;
-		ASSERT(dh->minor == ctx->minor);
 		rr = dh->ret_code;
 		if (rr == ERR_MINOR_INVALID) {
 			desc = "minor not available";
@@ -1412,17 +1406,49 @@ static bool kernel_older_than(int version, int patchlevel, int sublevel)
 	return true;
 }
 
+static int shortest_timeout(struct peer_devices_list *peer_devices)
+{
+	struct peer_devices_list *peer_device;
+	int timeout = -1;
+
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
+		if (peer_device->timeout_ms > 0 &&
+		    (peer_device->timeout_ms < timeout || timeout == -1))
+			timeout = peer_device->timeout_ms;
+	}
+
+	return timeout;
+}
+
+static bool update_timeouts(struct peer_devices_list *peer_devices, int elapsed)
+{
+	struct peer_devices_list *peer_device;
+	bool all_expired = true;
+
+	for (peer_device = peer_devices; peer_device; peer_device = peer_device->next) {
+		if (peer_device->timeout_ms != -1) {
+			peer_device->timeout_ms -= elapsed;
+			if (peer_device->timeout_ms < 0)
+				peer_device->timeout_ms = 0;
+		}
+		if (peer_device->timeout_ms != 0)
+			all_expired = false;
+	}
+
+	return all_expired;
+}
+
 static bool opt_now;
 static bool opt_verbose;
 static bool opt_statistics;
 
-static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
+static int generic_get(struct drbd_cmd *cm, int timeout_arg, void *u_ptr)
 {
 	char *desc = NULL;
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
-	int flags;
+	int timeout_ms, flags;
 	int rv = NO_ERROR;
 	int err = 0;
 
@@ -1473,8 +1499,10 @@ static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
 		struct nlmsghdr *nlh = (struct nlmsghdr *)iov.iov_base;
 		struct timeval before;
 
-		if (timeout_ms != -1)
-			gettimeofday(&before, NULL);
+		gettimeofday(&before, NULL);
+
+		timeout_ms =
+			timeout_arg == MULTIPLE_TIMEOUTS ? shortest_timeout(u_ptr) : timeout_arg;
 
 		received = genl_recv_msgs(drbd_sock, &iov, &desc, timeout_ms);
 		if (received < 0) {
@@ -1528,11 +1556,22 @@ static int generic_get(struct drbd_cmd *cm, int timeout_ms, void *u_ptr)
 
 		if (timeout_ms != -1) {
 			struct timeval after;
+			int elapsed_ms;
+			bool exit;
 
 			gettimeofday(&after, NULL);
-			timeout_ms -= (after.tv_sec - before.tv_sec) * 1000 +
-				      (after.tv_usec - before.tv_usec) / 1000;
-			if (timeout_ms <= 0) {
+			elapsed_ms =
+				(after.tv_sec - before.tv_sec) * 1000 +
+				(after.tv_usec - before.tv_usec) / 1000;
+
+			if (timeout_arg == MULTIPLE_TIMEOUTS) {
+				exit = update_timeouts(u_ptr, elapsed_ms);
+			} else {
+				timeout_ms -= elapsed_ms;
+				exit = timeout_ms <= 0;
+			}
+
+			if (exit) {
 				err = 5;
 				goto out2;
 			}
@@ -1723,11 +1762,14 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	dump_argv(argc, argv, optind, 0);
 
 	timeout_ms = -1;
-	if (cm->wait_for_connect_timeouts) {
-		/* wait-connect-volume, wait-sync */
+	if (cm->show_function == &wait_for_family) {
+		struct peer_devices_list *peer_device;
 		struct msg_buff *smsg;
 		struct iovec iov;
 		int rr;
+		char *res_name = cm->ctx_key & CTX_RESOURCE ? objname : "all";
+
+		peer_devices = list_peer_devices(res_name);
 
 		iov.iov_len = DEFAULT_MSG_SIZE;
 		iov.iov_base = malloc(iov.iov_len);
@@ -1737,28 +1779,34 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 			return 20;
 		}
 
-		timeo_ctx.minor = minor;
-		timeo_ctx.ctx = global_ctx;
 		timeo_ctx.smsg = smsg;
 		timeo_ctx.iov = &iov;
-		rr = choose_timeout(&timeo_ctx);
+
+		for (peer_device = peer_devices;
+		     peer_device;
+		     peer_device = peer_device->next) {
+
+			timeo_ctx.ctx = peer_device->ctx;
+			rr = choose_timeout(&timeo_ctx);
+
+			if (rr)
+				return rr;
+
+			peer_device->timeout_ms =
+				timeo_ctx.timeout ? timeo_ctx.timeout * 1000 : -1;
+
+			/* rewind send message buffer */
+			smsg->tail = smsg->data;
+		}
+
 		msg_free(smsg);
 		free(iov.iov_base);
 
-		if (rr)
-			return rr;
-		if (timeo_ctx.timeout)
-			timeout_ms = timeo_ctx.timeout * 1000;
-
-		/* rewind send message buffer */
-		smsg->tail = smsg->data;
-	} else if (!cm->continuous_poll)
-		timeout_ms = 120000; /* normal "get" request, or "show" */
-
-	if (cm->show_function == &wait_for_family) {
-		char *res_name = cm->ctx_key & CTX_RESOURCE ? objname : "all";
-		peer_devices = list_peer_devices(res_name);
+		timeout_ms = MULTIPLE_TIMEOUTS;
 	}
+
+	if (!cm->continuous_poll)
+		timeout_ms = 120000; /* normal "get" request, or "show" */
 
 	err = generic_get(cm, timeout_ms, peer_devices);
 
@@ -3170,7 +3218,7 @@ static int wait_for_family(struct drbd_cmd *cm, struct genl_info *info, void *u_
 	case DRBD_PEER_DEVICE_STATE: {
 		struct peer_device_info peer_device_info;
 		struct peer_devices_list *peer_device;
-		int nr_peer_devices = 0, nr_connected = 0;
+		int nr_peer_devices = 0, nr_done = 0;
 		bool wait_connect;
 
 		if (peer_device_info_from_attrs(&peer_device_info, info)) {
@@ -3202,12 +3250,13 @@ static int wait_for_family(struct drbd_cmd *cm, struct genl_info *info, void *u_
 
 				rs = peer_device->info.peer_repl_state;
 				if (rs == L_ESTABLISHED ||
-				    (wait_connect && rs > L_ESTABLISHED))
-					nr_connected++;
+				    (wait_connect && rs > L_ESTABLISHED) ||
+				    peer_device->timeout_ms == 0)
+					nr_done++;
 			}
 		}
 
-		if (nr_peer_devices == nr_connected)
+		if (nr_peer_devices == nr_done)
 			return -1; /* Done with waiting */
 
 		break;
