@@ -1360,6 +1360,7 @@ randomize:
 
 	connection->data.socket->sk->sk_sndtimeo = timeout;
 	connection->data.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+	connection->primary_mask_sent = -1; /* make sure to send it out soon */
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
