@@ -2140,23 +2140,20 @@ static int adm_wait_ci(const struct cfg_ctx *ctx)
 	memset(pids, 0, N * sizeof(pid_t));
 
 	for_each_resource(res, &config) {
-		struct d_volume *vol;
 		if (res->ignore)
 			continue;
 		if (is_drbd_top != res->stacked)
 			continue;
 
-		for_each_volume(vol, &res->me->volumes) {
-			/* ctx is not used */
-			argc = 0;
-			argv[NA(argc)] = drbdsetup;
-			argv[NA(argc)] = "wait-connect";
-			argv[NA(argc)] = ssprintf("%u", vol->device_minor);
-			make_options(argv[NA(argc)], &res->startup_options);
-			argv[NA(argc)] = 0;
+		/* ctx is not used */
+		argc = 0;
+		argv[NA(argc)] = drbdsetup;
+		argv[NA(argc)] = "wait-connect-resource";
+		argv[NA(argc)] = res->name;
+		make_options(argv[NA(argc)], &res->startup_options);
+		argv[NA(argc)] = 0;
 
-			m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
-		}
+		m__system(argv, RETURN_PID, res->name, &pids[i++], NULL, NULL);
 	}
 
 	wtime = global_options.dialog_refresh ? : -1;
