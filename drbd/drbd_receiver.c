@@ -5066,17 +5066,6 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (!peer_device) {
-		unsigned long irq_flags;
-
-		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		__change_peer_role(connection, peer_state.role);
-		rv = end_state_change(resource, &irq_flags);
-		if (rv < SS_SUCCESS)
-			return -EIO;
-		return 0;
-	}
-
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
 		peer_disk_state = peer_device->uuid_flags & UUID_FLAG_INCONSISTENT ?
@@ -5213,7 +5202,8 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	__change_repl_state(peer_device, new_repl_state);
-	__change_peer_role(connection, peer_state.role);
+	if (connection->peer_role[NOW] == R_UNKNOWN)
+		__change_peer_role(connection, peer_state.role);
 	__change_peer_weak(connection, peer_state.weak);
 	__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
@@ -5762,12 +5752,16 @@ static int receive_reachability(struct drbd_connection *connection, struct packe
 {
 	struct drbd_resource *resource = connection->resource;
 	const int my_node_id = resource->res_opts.node_id;
+	const int peer_node_id = connection->net_conf->peer_node_id;
 	struct p_pri_reachable *p = pi->data;
 	unsigned long irq_flags;
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~(1ULL << my_node_id);
 	__change_weak(resource, drbd_calc_weak(resource));
+	if (!(connection->primary_mask & NODE_MASK(peer_node_id)) &&
+	    connection->peer_role[NOW] != R_SECONDARY)
+		__change_peer_role(connection, R_SECONDARY);
 	end_state_change(resource, &irq_flags);
 
 	return 0;

@@ -879,20 +879,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		}
 	}
 
-	if (role == R_SECONDARY) {
-		struct drbd_connection *connection;
-
-		/* When changing our role from primary to secondary, we inform
-		 * peers about the state change with a per-connection packet:
-		 * otherwise, if no volumes were defined, the peer wouldn't be
-		 * notified.
-		 */
-		for_each_connection(connection, resource) {
-			if (connection->cstate[NOW] == C_CONNECTED)
-				conn_send_current_state(connection, true);
-		}
-	}
-
 	idr_for_each_entry(&resource->devices, device, minor) {
 		 struct drbd_peer_device *peer_device;
 
