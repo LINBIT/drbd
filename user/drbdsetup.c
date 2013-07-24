@@ -2516,7 +2516,7 @@ static struct resources_list *list_resources(void)
 		.show_function = remember_resource,
 		.missing_ok = false,
 	};
-	struct resources_list *list, **tail = &list;
+	struct resources_list *list = NULL, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
@@ -2577,7 +2577,7 @@ static struct devices_list *list_devices(char *resource_name)
 		.show_function = remember_device,
 		.missing_ok = false,
 	};
-	struct devices_list *list, **tail = &list;
+	struct devices_list *list = NULL, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
@@ -2680,7 +2680,7 @@ static struct connections_list *list_connections(char *resource_name)
 		.show_function = remember_connection,
 		.missing_ok = true,
 	};
-	struct connections_list *list, **tail = &list;
+	struct connections_list *list = NULL, **tail = &list;
 	char *old_objname = objname;
 	unsigned old_minor = minor;
 	int old_my_addr_len = global_ctx.ctx_my_addr_len;
