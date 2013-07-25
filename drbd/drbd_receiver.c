@@ -3585,7 +3585,7 @@ STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 
 	*rule_nr = 72;
 	for (i = 0; i < max_peers; i++) {
-		if (i == peer_device->node_id)
+		if (i == peer_device->bitmap_index)
 			continue;
 		self = device->ldev->md.peers[i].bitmap_uuid & ~((u64)1);
 		if (self == peer) {
