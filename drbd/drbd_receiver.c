@@ -5669,9 +5669,14 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	}
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->repl_state[NOW] > L_ESTABLISHED)
+			return 0;
 		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device)) {
-			if (!connection->resource->weak[NOW])
+			if (!connection->resource->weak[NOW]) {
 				drbd_err(peer_device, "ASSERT FAILED not weak and non matching current UUIDs\n");
+				drbd_uuid_dump_self(peer_device, 0, 0);
+				drbd_uuid_dump_peer(peer_device, 0, 0);
+			}
 			return 0;
 		}
 	}
