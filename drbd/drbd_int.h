@@ -490,7 +490,6 @@ struct drbd_peer_request {
  * non-atomic modification to ee->flags is ok.
  */
 enum {
-	__EE_CALL_AL_COMPLETE_IO,
 	__EE_MAY_SET_IN_SYNC,
 
 	/* This peer request closes an epoch using a barrier.

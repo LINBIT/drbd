@@ -1882,8 +1882,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		list_del(&peer_req->w.list);
 		drbd_remove_peer_req_interval(device, peer_req);
 		spin_unlock_irq(&device->resource->req_lock);
-		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
-			drbd_al_complete_io(device, &peer_req->i);
+		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 		drbd_free_peer_req(device, peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
@@ -2880,7 +2879,6 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
 	}
 
-	peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
 	drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
 
 	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
@@ -2894,8 +2892,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_del_init(&peer_req->recv_order);
 	drbd_remove_peer_req_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
-	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
-		drbd_al_complete_io(device, &peer_req->i);
+	drbd_al_complete_io(device, &peer_req->i);
 
 out_interrupted:
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
