@@ -127,7 +127,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_interval i;
+	sector_t sector;
 	int do_wake;
 	u64 block_id;
 
@@ -150,7 +150,7 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	 * we may no longer access it,
 	 * it may be freed/reused already!
 	 * (as soon as we release the req_lock) */
-	i = peer_req->i;
+	sector = peer_req->i.sector;
 	block_id = peer_req->block_id;
 
 	spin_lock_irqsave(&device->resource->req_lock, flags);
@@ -172,12 +172,10 @@ static void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __rel
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (block_id == ID_SYNCER)
-		drbd_rs_complete_io(peer_device, i.sector);
+		drbd_rs_complete_io(peer_device, sector);
 
 	if (do_wake)
 		wake_up(&device->ee_wait);
-
-	drbd_al_complete_io(device, &i);
 
 	wake_asender(peer_device->connection);
 	put_ldev(device);

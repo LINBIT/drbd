@@ -6823,6 +6823,7 @@ found:
 			put_ldev(device);
 		}
 		list_del(&peer_req->recv_order);
+		drbd_al_complete_io(device, &peer_req->i);
 		drbd_free_peer_req(device, peer_req);
 	}
 	return 0;
