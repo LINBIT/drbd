@@ -250,12 +250,15 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
-struct bm_extent*
-find_active_resync_extent(struct drbd_device *device, unsigned int enr)
+static struct bm_extent*
+find_active_resync_extent(struct drbd_device *device, struct drbd_peer_device *except,
+			  unsigned int enr)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;
 	for_each_peer_device(peer_device, device) {
+		if (peer_device == except)
+			continue;
 		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
 		if (unlikely(tmp != NULL)) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
@@ -263,7 +266,7 @@ find_active_resync_extent(struct drbd_device *device, unsigned int enr)
 				return bm_ext;
 		}
 	}
-	return false;
+	return NULL;
 }
 
 static
@@ -274,7 +277,7 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool no
 	int wake;
 
 	spin_lock_irq(&device->al_lock);
-	bm_ext = find_active_resync_extent(device, enr);
+	bm_ext = find_active_resync_extent(device, NULL, enr);
 	if (bm_ext) {
 		wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
 		spin_unlock_irq(&device->al_lock);
@@ -396,6 +399,62 @@ void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool 
 		drbd_al_begin_io_commit(device, delegate);
 }
 
+static
+struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsigned int enr)
+{
+	struct drbd_device *device = peer_device->device;
+	struct lc_element *al_ext;
+	struct bm_extent *bm_ext;
+	int wake;
+
+	spin_lock_irq(&device->al_lock);
+	bm_ext = find_active_resync_extent(device, peer_device, enr);
+	if (bm_ext) {
+		wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+		spin_unlock_irq(&device->al_lock);
+		if (wake)
+			wake_up(&device->al_wait);
+		return NULL;
+	}
+	al_ext = lc_get(device->act_log, enr);
+	spin_unlock_irq(&device->al_lock);
+	return al_ext;
+}
+
+/**
+ * drbd_al_begin_io_for_peer() - Gets (a) reference(s) to AL extent(s)
+ * @device:	DRBD device.
+ *
+ * Ensures that the extents covered by the interval @i are hot in the
+ * activity log. This function makes sure the area is not active by any
+ * resync operation on any other connection. But it ignores local
+ * resync activity to the @peer_device.
+ * This is necessary to ensure progress on Pri/SyncSouce - Sec/SyncTarget
+ */
+void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
+{
+	/* compare with drbd_al_begin_io_prepare() */
+	struct drbd_device *device = peer_device->device;
+	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned enr;
+	bool need_transaction = false;
+
+	D_ASSERT(device, first <= last);
+	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
+
+	for (enr = first; enr <= last; enr++) {
+		struct lc_element *al_ext;
+		wait_event(device->al_wait,
+				(al_ext = _al_get_for_peer(peer_device, enr)) != NULL);
+		if (al_ext->lc_number != enr)
+			need_transaction = true;
+	}
+
+	if (need_transaction)
+		drbd_al_begin_io_commit(peer_device->device, false);
+}
+
 int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i)
 {
 	struct lru_cache *al = device->act_log;
@@ -422,7 +481,7 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 
 	/* Is resync active in this area? */
 	for (enr = first; enr <= last; enr++) {
-		bm_ext = find_active_resync_extent(device, enr);
+		bm_ext = find_active_resync_extent(device, NULL, enr);
 		if (unlikely(bm_ext != NULL)) {
 			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
 				if (!test_and_set_bit(BME_PRIORITY, &bm_ext->flags))

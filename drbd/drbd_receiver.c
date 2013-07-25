@@ -2854,7 +2854,7 @@ STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *
 	}
 
 	peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
-	drbd_al_begin_io(device, &peer_req->i, true);
+	drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
 
 	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
 	if (!err)

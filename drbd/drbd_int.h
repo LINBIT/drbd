@@ -1707,6 +1707,7 @@ extern int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_int
 extern void drbd_al_begin_io_commit(struct drbd_device *device, bool defer_to_worker);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate);
+extern void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i);
 extern void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_rs_complete_io(struct drbd_peer_device *, sector_t);
 extern int drbd_rs_begin_io(struct drbd_peer_device *, sector_t);
