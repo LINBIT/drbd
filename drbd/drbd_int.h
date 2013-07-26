@@ -791,6 +791,8 @@ struct drbd_resource {
 
 	struct list_head listeners;
 	spinlock_t listeners_lock;
+
+	struct timer_list peer_ack_timer; /* send a P_PEER_ACK after last completion */
 };
 
 struct drbd_connection {			/* is a resource from the config file */

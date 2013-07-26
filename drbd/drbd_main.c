@@ -2560,6 +2560,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 			 drbd_destroy_connection);
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	del_timer_sync(&resource->twopc_timer);
+	del_timer_sync(&resource->peer_ack_timer);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2834,6 +2835,19 @@ static void drbd_free_socket(struct drbd_socket *socket)
 	free_page((unsigned long) socket->rbuf);
 }
 
+static void peer_ack_timer_fn(unsigned long data)
+{
+	struct drbd_resource *resource = (struct drbd_resource *) data;
+
+	spin_lock_irq(&resource->req_lock);
+	if (resource->peer_ack_req) {
+		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
+		drbd_queue_peer_ack(resource->peer_ack_req);
+		resource->peer_ack_req = NULL;
+	}
+	spin_unlock_irq(&resource->req_lock);
+}
+
 void conn_free_crypto(struct drbd_connection *connection)
 {
 	drbd_free_sock(connection);
@@ -2911,6 +2925,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
+	setup_timer(&resource->peer_ack_timer, peer_ack_timer_fn, (unsigned long) resource);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	resource->weak[NOW] = false;

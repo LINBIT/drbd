@@ -232,6 +232,11 @@
 #define DRBD_PEER_ACK_WINDOW_MAX	204800 /* 100 MiByte */
 #define DRBD_PEER_ACK_WINDOW_SCALE 's' /* sectors*/
 
+#define DRBD_PEER_ACK_DELAY_DEF	100    /* 100ms */
+#define DRBD_PEER_ACK_DELAY_MIN 1
+#define DRBD_PEER_ACK_DELAY_MAX 10000  /* 10 seconds */
+#define DRBD_PEER_ACK_DELAY_SCALE '1' /* milliseconds */
+
 /* Two-phase commit timeout (1/10 seconds). */
 #define DRBD_TWOPC_TIMEOUT_MIN	10
 #define DRBD_TWOPC_TIMEOUT_MAX	300

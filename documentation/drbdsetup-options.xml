@@ -1310,10 +1310,37 @@
 	value causes increased network traffic; a high value causes less
 	network traffic but higher memory consumption on secondary nodes and
 	higher resync times between the secondary nodes after primary node
-	failures.</para>
+	failures. (Note: peer-ack packets may be sent due to other reasons as
+        well, e.g. membership changes or expiry of the
+        <option>peer-ack-delay</option> timer.)</para>
 
       <para>The default value for <option>peer-ack-window</option> is 2 MiB,
 	the default unit is sectors.  This option is available since
+	9.0.0.</para>
+    </definition>
+  </drbdsetup_option>
+
+  <drbdsetup_option name="peer-ack-delay">
+    <term><option>peer-ack-delay <replaceable>expiry-time</replaceable></option></term>
+
+    <definition>
+      <para><indexterm significance="normal">
+	  <primary>drbd.conf</primary>
+
+	  <secondary>peer-ack-delay</secondary>
+	</indexterm>
+	If after the last finished write request no new write request gets issued for
+	<replaceable>expiry-time</replaceable>, then a peer-ack packet is sent.
+	If a new write request is issued before the timer expires, the timer gets reset
+	to <replaceable>expiry-time</replaceable>. (Note: peer-ack packets may be sent
+        due to other reasons as well, e.g. membership changes or the
+        <option>peer-ack-window</option> option.)</para>
+      <para>This parameter may influence resync behavior on remote nodes. Peer nodes
+	need to wait until they receive an peer-ack for releasing a lock on an AL-extent.
+	Resync operations between peers may need to wait for for these locks.
+	</para>
+      <para>The default value for <option>peer-ack-delay</option> is 100 milliseconds,
+	the default unit is milliseconds.  This option is available since
 	9.0.0.</para>
     </definition>
   </drbdsetup_option>
