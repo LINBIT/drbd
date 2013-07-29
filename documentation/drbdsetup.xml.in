@@ -999,25 +999,39 @@ drbd0 node-id:1 role:Primary suspended:no
       </varlistentry>
 
       <varlistentry>
-	<xi:include href="drbdsetup_wait-connect.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+
+	<xi:include href="drbdsetup_wait-connect-volume.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 	<!-- Wait until a device on a peer is visible. -->
-	<xi:include href="drbdsetup_wait-sync.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<xi:include href="drbdsetup_wait-connect-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<!-- Wait until all peer volumes of connection are visible. -->
+	<xi:include href="drbdsetup_wait-connect-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<!-- Wait until all connections are establised. -->
+
+	<xi:include href="drbdsetup_wait-sync-volume.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
 	<!-- Wait until a device on a peer is up to date. -->
+	<xi:include href="drbdsetup_wait-sync-connection.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<!-- Wait until resync finished on all volumes of a connection. -->
+	<xi:include href="drbdsetup_wait-sync-resource.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<!-- Wait until resync finished on all volumes. -->
 
 	<listitem>
 	  <indexterm significance="normal">
 	    <primary>drbdsetup</primary>
 
-	    <secondary>wait-connect</secondary>
+	    <secondary>wait-connect-volume</secondary>
+	    <secondary>wait-connect-connection</secondary>
+	    <secondary>wait-connect-resource</secondary>
 	  </indexterm>
 	  <indexterm significance="normal">
 	    <primary>drbdsetup</primary>
 
-	    <secondary>wait-sync</secondary>
+	    <secondary>wait-sync-volume</secondary>
+	    <secondary>wait-sync-connection</secondary>
+	    <secondary>wait-sync-resource</secondary>
 	  </indexterm>
 
-	  <para>The <option>wait-connect</option> command waits until a device
-	  on a peer is visible.  The <option>wait-sync</option> command waits
+	  <para>The <option>wait-connect-*</option> commands waits until a device
+	  on a peer is visible.  The <option>wait-sync-*</option> commands waits
 	  until a device on a peer is up to date.  Available options for both
 	  commands:
 

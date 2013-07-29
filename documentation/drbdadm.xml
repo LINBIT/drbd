@@ -766,7 +766,11 @@
 
       <varlistentry>
         <term>wait-connect
-	  <arg choice="req" rep="norepeat"><replaceable>device</replaceable></arg>
+	  <group choice="req">
+	    <arg><replaceable>device</replaceable></arg>
+	    <arg><replaceable>connection</replaceable></arg>
+	    <arg><replaceable>resource</replaceable></arg>
+	  </group>
 	</term>
 
         <listitem>
@@ -774,7 +778,31 @@
               <primary>drbdadm</primary>
 
 	      <secondary>wait-connect</secondary> </indexterm> Wait until a
-	    device on a peer is visible.  See <citerefentry>
+	    device on a peer, all devices over a connection, or all devices on
+	    all peers are visible. See <citerefentry>
+	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term>wait-sync
+	  <group choice="req">
+	    <arg><replaceable>device</replaceable></arg>
+	    <arg><replaceable>connection</replaceable></arg>
+	    <arg><replaceable>resource</replaceable></arg>
+	  </group>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>wait-sync</secondary> </indexterm> Wait until a
+	    device is connected and has finished eventual resync operation. Also
+	    available on connection and resource level.  See <citerefentry>
 	      <refentrytitle>drbdsetup</refentrytitle> <manvolnum>8</manvolnum>
 	    </citerefentry> for details.
 	  </para>
