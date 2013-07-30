@@ -1552,17 +1552,22 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		to_page_nr = word32_to_page(to_word_nr);
 
 		if (current_page_nr != from_page_nr) {
+			drbd_kunmap_atomic(addr, KM_USER0);
 			if (need_resched()) {
 				spin_unlock_irq(&bitmap->bm_lock);
 				cond_resched();
 				spin_lock_irq(&bitmap->bm_lock);
 			}
-
-			drbd_kunmap_atomic(addr, KM_USER0);
 			current_page_nr = from_page_nr;
 			addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_USER0);
 		}
 		data_word = addr[word32_in_page(from_word_nr)];
+
+		if (word_nr == bitmap->bm_words - bitmap->bm_max_peers) {
+			unsigned long lw = word_nr / bitmap->bm_max_peers;
+			if (bitmap->bm_bits < (lw + 1) * 32)
+			    data_word &= cpu_to_le32((1 << (bitmap->bm_bits - lw * 32)) - 1);
+		}
 
 		if (current_page_nr != to_page_nr) {
 			drbd_kunmap_atomic(addr, KM_USER0);
