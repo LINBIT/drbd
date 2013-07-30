@@ -96,6 +96,7 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info);
 /* .dumpit */
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
@@ -4611,4 +4612,66 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	cb->args[1] = atomic_inc_return(&drbd_notify_id);
 	cb->args[2] = cb->nlh->nlmsg_seq;
 	return get_initial_state(skb, cb);
+}
+
+int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_resource *resource;
+	struct drbd_device *device;
+	struct forget_peer_parms parms = { };
+	enum drbd_state_rv retcode;
+	int minor, peer_node_id, err;
+
+	retcode = drbd_adm_prepare(skb, info, DRBD_ADM_NEED_RESOURCE);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	resource = adm_ctx.resource;
+
+	err = forget_peer_parms_from_attrs(&parms, info);
+	if (err) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(from_attrs_err_to_txt(err));
+		goto out;
+	}
+
+	peer_node_id = parms.forget_peer_node_id;
+	if (drbd_connection_by_node_id(resource, peer_node_id)) {
+		retcode = ERR_NET_CONFIGURED;
+		goto out;
+	}
+
+	if (peer_node_id < 0 || peer_node_id >= MAX_PEERS) {
+		retcode = ERR_INVALID_PEER_NODE_ID;
+		goto out;
+	}
+
+	idr_for_each_entry(&resource->devices, device, minor) {
+		struct drbd_peer_md *peer_md;
+		int bitmap_index;
+
+		if (!get_ldev(device))
+			continue;
+
+		bitmap_index = device->ldev->id_to_bit[peer_node_id];
+		if (bitmap_index < 0) {
+			put_ldev(device);
+			retcode = ERR_INVALID_PEER_NODE_ID;
+			goto out;
+		}
+
+		peer_md = &device->ldev->md.peers[bitmap_index];
+		peer_md->bitmap_uuid = 0;
+		peer_md->flags = 0;
+		peer_md->node_id = -1;
+		device->ldev->id_to_bit[peer_node_id] = -1;
+
+		drbd_md_sync(device);
+		put_ldev(device);
+	}
+
+out:
+	drbd_adm_finish(info, (enum drbd_ret_code)retcode);
+	return 0;
+
 }

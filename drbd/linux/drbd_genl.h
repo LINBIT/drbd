@@ -289,6 +289,10 @@ GENL_struct(DRBD_NLA_INVALIDATE_PARMS, 25, invalidate_parms,
 	__s32_field_def(1, DRBD_GENLA_F_MANDATORY, sync_from_peer_node_id, DRBD_SYNC_FROM_NID_DEF)
 )
 
+GENL_struct(DRBD_NLA_FORGET_PEER_PARMS, 26, forget_peer_parms,
+	__s32_field_def(1, DRBD_GENLA_F_MANDATORY, forget_peer_node_id, DRBD_SYNC_FROM_NID_DEF)
+)
+
 /*
  * Notifications and commands (genlmsghdr->cmd)
  */
@@ -478,3 +482,7 @@ GENL_notification(
 GENL_notification(
 	DRBD_INITIAL_STATE_DONE, 41, events,
 	GENL_tla_expected(DRBD_NLA_NOTIFICATION_HEADER, DRBD_F_REQUIRED))
+
+GENL_op(DRBD_ADM_FORGET_PEER,		42, GENL_doit(drbd_adm_forget_peer),
+	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_F_REQUIRED)
+	GENL_tla_expected(DRBD_NLA_FORGET_PEER_PARMS, DRBD_F_REQUIRED))

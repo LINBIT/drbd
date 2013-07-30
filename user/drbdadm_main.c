@@ -119,6 +119,7 @@ static int adm_chk_resize(const struct cfg_ctx *);
 static int adm_drbdsetup(const struct cfg_ctx *);
 static int adm_invalidate(const struct cfg_ctx *);
 static int __adm_drbdsetup_silent(const struct cfg_ctx *ctx);
+static int adm_forget_peer(const struct cfg_ctx *);
 
 int ctx_by_name(struct cfg_ctx *ctx, const char *id);
 
@@ -357,6 +358,7 @@ static struct adm_cmd get_gi_cmd = {"get-gi", adm_setup_and_meta, ACF1_PEER_DEVI
 static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
 static struct adm_cmd wipe_md_cmd = {"wipe-md", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
 static struct adm_cmd apply_al_cmd = {"apply-al", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};
+static struct adm_cmd forget_peer_cmd = {"forget-peer", adm_forget_peer, ACF1_DISCONNECT };
 
 static struct adm_cmd hidden_cmd = {"hidden-commands", hidden_cmds,.show_in_usage = 1,};
 
@@ -443,6 +445,7 @@ struct adm_cmd *cmds[] = {
 	&dump_md_cmd,
 	&wipe_md_cmd,
 	&apply_al_cmd,
+	&forget_peer_cmd,
 
 	&hidden_cmd,
 
@@ -513,6 +516,12 @@ static const struct adm_cmd invalidate_setup_cmd = {
 	"invalidate",
 	__adm_drbdsetup_silent,
 	ACF1_DEFAULT .disk_required = 1
+};
+
+static const struct adm_cmd forget_peer_setup_cmd = {
+	"forget-peer",
+	__adm_drbdsetup_silent,
+	ACF1_DISCONNECT .backend_res_name = 1, .need_peer = 0
 };
 
 static void initialize_deferred_cmds()
@@ -1335,6 +1344,9 @@ static void __adm_drbdsetup(const struct cfg_ctx *ctx, int flags, pid_t *pid, in
 		argv[NA(argc)] = ssprintf_addr(ctx->conn->connect_to);
 	}
 
+	if (ctx->cmd == &forget_peer_setup_cmd)
+		argv[NA(argc)] = ssprintf("%s", ctx->conn->peer->node_id);
+
 	add_setup_options(argv, &argc);
 
 	if (ctx->cmd == &invalidate_setup_cmd && ctx->conn)
@@ -1540,6 +1552,26 @@ static int adm_invalidate(const struct cfg_ctx *ctx)
 
 	if (rv || dry_run == 1)
 		rv = call_cmd(&invalidate_meta_cmd, ctx, KEEP_RUNNING);
+
+	return rv;
+}
+
+static int adm_forget_peer(const struct cfg_ctx *ctx)
+{
+	static const struct adm_cmd forget_peer_meta_cmd = {
+		"forget-peer",
+		adm_drbdmeta,
+		ACF1_PEER_DEVICE .disk_required = 1
+	};
+
+	int rv;
+
+	rv = call_cmd(&forget_peer_setup_cmd, ctx, KEEP_RUNNING);
+	if (rv == 11 || rv == 17)
+		return rv;
+
+	if (rv || dry_run == 1)
+		rv = call_cmd(&forget_peer_meta_cmd, ctx, KEEP_RUNNING);
 
 	return rv;
 }

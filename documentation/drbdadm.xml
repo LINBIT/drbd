@@ -825,6 +825,25 @@
 	  </para>
         </listitem>
       </varlistentry>
+
+      <varlistentry>
+        <term>forget-peer
+	  <arg choice="req" rep="norepeat"><replaceable>connection</replaceable></arg>
+	</term>
+
+        <listitem>
+          <para><indexterm significance="normal">
+              <primary>drbdadm</primary>
+
+	      <secondary>forget-peer</secondary> </indexterm> Completely remove any
+	      reference to a unconnected peer from meta-data.
+	      See <citerefentry>
+	      <refentrytitle>drbdmeta</refentrytitle> <manvolnum>8</manvolnum>
+	    </citerefentry> for details.
+	  </para>
+        </listitem>
+      </varlistentry>
+
     </variablelist>
   </refsect1>
 

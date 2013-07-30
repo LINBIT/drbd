@@ -1128,6 +1128,7 @@ int meta_read_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_write_dev_uuid(struct format *cfg, char **argv, int argc);
 int meta_dstate(struct format *cfg, char **argv, int argc);
 int meta_chk_offline_resize(struct format *cfg, char **argv, int argc);
+int meta_forget_peer(struct format *cfg, char **argv, int argc);
 
 struct meta_cmd cmds[] = {
 	{"get-gi", 0, meta_get_gi, 1, 1, 0},
@@ -1151,6 +1152,7 @@ struct meta_cmd cmds[] = {
 		"[--al-stripe-size-kB {val}] "
 		"{max_peers}",
 		meta_create_md, 1, 0, 1},
+	{"forget-peer", 0, meta_forget_peer, 1, 1, 1},
 };
 
 /*
@@ -4917,6 +4919,28 @@ int meta_chk_offline_resize(struct format *cfg, char **argv, int argc)
 	ASSERT(cfg->md.magic);
 
 	return v08_move_internal_md_after_resize(cfg);
+}
+
+int meta_forget_peer(struct format *cfg, char **argv, int argc)
+{
+	int bm_idx, err;
+
+	err = cfg->ops->open(cfg);
+	if (err)
+		return -1;
+
+	bm_idx = node_id_to_bm_idx(cfg, option_node_id);
+
+	cfg->md.peers[bm_idx].node_id = -1;
+	cfg->md.peers[bm_idx].bitmap_uuid = 0;
+	cfg->md.peers[bm_idx].flags = 0;
+
+	cfg->ops->md_cpu_to_disk(cfg);
+	err = cfg->ops->close(cfg) || err;
+	if (err)
+		fprintf(stderr, "update failed\n");
+
+	return err;
 }
 
 /* CALL ONLY ONCE as long as on_disk_buffer is global! */

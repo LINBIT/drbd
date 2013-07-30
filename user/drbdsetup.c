@@ -505,7 +505,12 @@ struct drbd_cmd commands[] = {
 	{"del-minor", CTX_MINOR, DRBD_ADM_DEL_MINOR, NO_PAYLOAD, del_minor_cmd,
 	 .summary = "Remove a replicated device." },
 	{"del-resource", CTX_RESOURCE, DRBD_ADM_DEL_RESOURCE, NO_PAYLOAD, del_resource_cmd,
-	 .summary = "Remove a resource." }
+	 .summary = "Remove a resource." },
+	{"forget-peer", CTX_RESOURCE, DRBD_ADM_FORGET_PEER, DRBD_NLA_FORGET_PEER_PARMS, F_CONFIG_CMD,
+	 .drbd_args = (struct drbd_argument[]) {
+		 { "peer_node_id",	T_forget_peer_node_id,	conv_u32 },
+		 { } },
+	 .summary = "Completely remove any reference to a unconnected peer from meta-data." },
 };
 
 bool show_defaults;
@@ -592,6 +597,7 @@ static const char *error_messages[] = {
 	"these network options while connected",
 	EM(ERR_NEED_ALLOW_TWO_PRI) = "Can not clear allow_two_primaries as long as\n"
 	"there a primaries on both sides",
+	EM(ERR_INVALID_PEER_NODE_ID) = "Invalid peer-node-id\n",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))
 const char * error_to_string(int err_no)

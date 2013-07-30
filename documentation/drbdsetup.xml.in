@@ -1045,6 +1045,28 @@ drbd0 node-id:1 role:Primary suspended:no
 	  </para>
 	</listitem>
       </varlistentry>
+
+      <varlistentry>
+	<xi:include href="drbdsetup_forget-peer.xml" xmlns:xi="http://www.w3.org/2001/XInclude" />
+	<!-- Completely remove any reference to a unconnected peer from meta-data. -->
+
+	<listitem>
+	  <indexterm significance="normal">
+	    <primary>drbdsetup</primary>
+
+	    <secondary>forget-peer</secondary>
+	  </indexterm>
+
+	  <para>The <option>forget-peer</option> command removes all traces of
+	  a peer node from the meta-data. It frees a bitmap slot in the meta-data
+	  and make it avalable for futher bitmap slot allocation in case a
+	  so-far never seen node connects.</para>
+	  <para>The connection must be taken down before this command may be used.
+	  In case the peer re-connects at a later point a bit-map based resync
+	  will be turned into a full-sync.</para>
+	</listitem>
+      </varlistentry>
+
     </variablelist>
   </refsect1>
 

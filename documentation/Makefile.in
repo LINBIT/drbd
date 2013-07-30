@@ -72,6 +72,7 @@ DRBDSETUP_CMDS += outdate show-gi get-gi show events
 DRBDSETUP_CMDS += status suspend-io resume-io new-current-uuid
 DRBDSETUP_CMDS += wait-connect-volume wait-connect-connection wait-connect-resource
 DRBDSETUP_CMDS += wait-sync-volume wait-sync-connection wait-sync-resource
+DRBDSETUP_CMDS += forget-peer
 
 
 all:
