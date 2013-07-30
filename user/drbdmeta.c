@@ -2994,10 +2994,11 @@ int v09_md_initialize(struct format *cfg, int do_disk_writes, int max_peers)
 	cfg->md.al_stripe_size_4k = option_al_stripe_size_4k;
 
 	cfg->md.current_uuid = UUID_JUST_CREATED;
+	for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++)
+		cfg->md.history_uuids[i] = 0;
+
 	for (p = 0; p < max_peers; p++) {
 		cfg->md.peers[p].bitmap_uuid = 0;
-		for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++)
-			cfg->md.history_uuids[i] = 0;
 		cfg->md.peers[p].flags = 0;
 		cfg->md.peers[p].node_id = -1;
 	}
