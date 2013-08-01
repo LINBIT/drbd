@@ -821,7 +821,7 @@ static u64 drbd_md_on_disk_bits(struct drbd_device *device)
 int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bits)
 {
 	struct drbd_bitmap *b = device->bitmap;
-	unsigned long bits, words, owords, obits;
+	unsigned long bits, words, obits;
 	unsigned long want, have, onpages; /* number of pages */
 	struct page **npages, **opages = NULL;
 	int err = 0, growing;
@@ -846,7 +846,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 		spin_lock_irq(&b->bm_lock);
 		opages = b->bm_pages;
 		onpages = b->bm_number_of_pages;
-		owords = b->bm_words;
 		b->bm_pages = NULL;
 		b->bm_number_of_pages = 0;
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
@@ -892,7 +891,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 
 	spin_lock_irq(&b->bm_lock);
 	opages = b->bm_pages;
-	owords = b->bm_words;
 	obits  = b->bm_bits;
 
 	growing = bits > obits;
