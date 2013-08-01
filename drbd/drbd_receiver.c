@@ -5081,12 +5081,10 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_repl_state new_repl_state;
 	int rv;
 
-	if (pi->vnr != -1) {
-		peer_device = conn_peer_device(connection, pi->vnr);
-		if (!peer_device)
-			return config_unknown_volume(connection, pi);
-		device = peer_device->device;
-	}
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return config_unknown_volume(connection, pi);
+	device = peer_device->device;
 
 	peer_state.i = be32_to_cpu(p->state);
 
