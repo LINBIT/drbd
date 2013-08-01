@@ -5032,7 +5032,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			add_timer(&resource->twopc_timer);
 			spin_unlock_irq(&resource->req_lock);
 
-			rv = nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		} else {
 			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
 				P_TWOPC_RETRY : P_TWOPC_NO;
