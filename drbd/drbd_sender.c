@@ -2007,7 +2007,7 @@ int process_one_request(struct drbd_connection *connection)
 			re_init_if_first_write(connection, req->epoch);
 			maybe_send_barrier(connection, req->epoch);
 			if (current_dagtag_sector != connection->send.current_dagtag_sector)
-				err = drbd_send_dagtag(connection, current_dagtag_sector);
+				drbd_send_dagtag(connection, current_dagtag_sector);
 
 			connection->send.current_epoch_writes++;
 			connection->send.current_dagtag_sector = req->dagtag_sector;
