@@ -4809,7 +4809,7 @@ STATIC int receive_req_state(struct drbd_connection *connection, struct packet_i
 		flags |= CS_IGN_OUTD_FAIL;
 		rv = change_connection_state(connection, mask, val, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
-		rv = change_connection_state(connection, mask, val, flags | CS_PREPARED);
+		change_connection_state(connection, mask, val, flags | CS_PREPARED);
 	}
 
 	spin_lock_irq(&resource->req_lock);
