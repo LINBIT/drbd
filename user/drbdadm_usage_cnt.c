@@ -728,7 +728,7 @@ int adm_create_md(const struct cfg_ctx *ctx)
 	char *tb;
 	int rv,fd;
 	char *r;
-	int peers = 0;
+	int max_peers = 0;
 
 	tb = run_adm_drbdmeta(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
@@ -736,10 +736,14 @@ int adm_create_md(const struct cfg_ctx *ctx)
 
 	for_each_connection(conn, &ctx->res->connections)
 		if (!conn->ignore)
-			peers++;
+			max_peers++;
+
+	/* The metadata allow at least one peer. */
+	if (max_peers == 0)
+		max_peers = 1;
 
 	/* this is "drbdmeta ... create-md" */
-	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, ssprintf("%d", peers));
+	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, ssprintf("%d", max_peers));
 
 	if(rv || dry_run) return rv;
 
