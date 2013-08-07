@@ -35,11 +35,27 @@
 #	OCF_RESKEY_drbd_resource
 #	OCF_RESKEY_drbdconf
 #	OCF_RESKEY_stop_outdates_secondary
+#	OCF_RESKEY_adjust_master_score
 #
+# meta stuff this agent looks at:
 #	OCF_RESKEY_CRM_meta_clone_max
 #	OCF_RESKEY_CRM_meta_clone_node_max
 #	OCF_RESKEY_CRM_meta_master_max
 #	OCF_RESKEY_CRM_meta_master_node_max
+#
+#	OCF_RESKEY_CRM_meta_interval
+#
+#	OCF_RESKEY_CRM_meta_notify
+#	OCF_RESKEY_CRM_meta_notify_active_uname
+#	OCF_RESKEY_CRM_meta_notify_demote_uname
+#	OCF_RESKEY_CRM_meta_notify_master_uname
+#	OCF_RESKEY_CRM_meta_notify_operation
+#	OCF_RESKEY_CRM_meta_notify_promote_uname
+#	OCF_RESKEY_CRM_meta_notify_slave_uname
+#	OCF_RESKEY_CRM_meta_notify_start_uname
+#	OCF_RESKEY_CRM_meta_notify_stop_uname
+#	OCF_RESKEY_CRM_meta_notify_type
+#
 
 #######################################################################
 # Initialization:
@@ -75,8 +91,16 @@ OCF_RESKEY_drbdconf_default="/etc/drbd.conf"
 # Disable.
 OCF_RESKEY_stop_outdates_secondary_default="false"
 
+  OCF_RESKEY_adjust_master_score_default="5 10 1000 10000"
+#   ignored  |  Consistent    |  Unknown -'  |   |     |
+#   ignored  |  NOT UpToDate  |  UpToDate ---'   |     |
+# Secondary  |  UpToDate      |  unknown --------'     |
+#   ignored  |  UpToDate      |  known   --------------+
+#   Primary  |  UpToDate      |  ignored --------------'
+
 : ${OCF_RESKEY_drbdconf:=${OCF_RESKEY_drbdconf_default}}
 : ${OCF_RESKEY_stop_outdates_secondary:=${OCF_RESKEY_stop_outdates_secondary_default}}
+: ${OCF_RESKEY_adjust_master_score:=${OCF_RESKEY_adjust_master_score_default}}
 
 # Defaults according to "Configuration 1.0 Explained",
 # "Multi-state resource configuration options"
@@ -142,9 +166,33 @@ Full path to the drbd.conf file.
 <content type="string" default="${OCF_RESKEY_drbdconf_default}"/>
 </parameter>
 
+<parameter name="adjust_master_score">
+<longdesc lang="en">
+Space separated list of four master score adjustments for different scenarios:
+ - only access to 'consistent' data
+ - only remote access to 'uptodate' data
+ - currently Secondary, local access to 'uptodate' data, but remote is unknown
+ - local access to 'uptodate' data, and currently Primary or remote is known
+
+Numeric values are expected to be non-decreasing.
+
+Default are the previously hardcoded values.
+
+Set the first value to 0 (and configure proper fencing methods)
+to prevent pacemaker from trying to promote while it is unclear
+whether the data is really the most recent copy.
+(DRBD knows it is "consistent", but is unsure about "uptodate"ness).
+
+Advanced use: Adjust the other values to better fit into complex
+dependency score calculations.
+</longdesc>
+<shortdesc lang="en">master score adjustments</shortdesc>
+<content type="string" default="${OCF_RESKEY_adjust_master_score_default}"/>
+</parameter>
+
 <parameter name="stop_outdates_secondary">
 <longdesc lang="en">
-Recommended setting: until pacemaker is fixed, leave at default (disabled).
+Recommended setting: leave at default (disabled).
 
 Note that this feature depends on the passed in information in
 OCF_RESKEY_CRM_meta_notify_master_uname to be correct, which unfortunately is
@@ -344,6 +392,8 @@ maybe_outdate_self()
 }
 
 drbd_update_master_score() {
+	set -- $OCF_RESKEY_adjust_master_score
+	local only_consistent=$1 only_remote=$2 local_ok=$3 as_good_as_it_gets=$4
 	# NOTE
 	# there may be constraint scores from rules on role=Master,
 	# that in some ways can add to the node attribute based master score we
@@ -379,7 +429,7 @@ drbd_update_master_score() {
 		# Trust that the primary will also notice the disconnect,
 		# and will place an appropriate fencing constraint via
 		# its fence-peer handler callback.
-		set_master_score  1000
+		set_master_score  $local_ok
 		;;
 
 	*/UpToDate/*)
@@ -388,7 +438,7 @@ drbd_update_master_score() {
 		# consistent last time we talked to each other.
 		# Also our local disk is UpToDate, which means even if we are
 		# currently synchronizing, we do so as SyncSource.
-		set_master_score 10000
+		set_master_score $as_good_as_it_gets
 		;;
 
 	*/*/UpToDate)
@@ -396,7 +446,7 @@ drbd_update_master_score() {
 		# But our peer is OK.
 		# We can expect to have access to useful
 		# data, but must expect degraded performance.
-		set_master_score 10
+		set_master_score $only_remote
 		;;
 	*/Consistent/*)
 		# Our local disk is Consistent.
@@ -405,7 +455,7 @@ drbd_update_master_score() {
 		# place, so we won't be promoted with stale data.
 		# But in case this was a cluster crash,
 		# at least allow _someone_ to be promoted.
-		set_master_score 5
+		set_master_score $only_consistent
 		;;
 	*)
 		# Our local disk is not up to date.
@@ -895,6 +945,15 @@ drbd_validate_all () {
 			return $OCF_ERR_CONFIGURED
 		fi
 	esac
+
+	local i j n=0 fallback=false
+	for i in $OCF_RESKEY_adjust_master_score; do
+		[[ $i = *[!0-9]* ]]   && fallback=true && ocf_log err "BAD adjust_master_score value $i ; falling back to default"
+		[[ $j && $i -lt $j ]] && fallback=true && ocf_log err "BAD adjust_master_score value $j > $i ; falling back to default"
+		n=$(( n+1 ))
+	done
+	[[ $n != 4 ]] && fallback=true && ocf_log err "Not enough adjust_master_score values ($n != 4); falling back to default"
+	$fallback && OCF_RESKEY_adjust_master_score=$OCF_RESKEY_adjust_master_score_default
 
 	# we use it in various places,
 	# just make sure it contains what we expect.
