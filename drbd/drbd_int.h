@@ -2512,8 +2512,6 @@ struct bm_extent {
 #define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
 
-#endif
-
 /* Used to be defined in drivers/md/md.h.
  * Since 3.8 it is available from wait.h */
 #ifndef wait_event_lock_irq
@@ -2542,4 +2540,6 @@ do {									\
 		break;							\
 	__wait_event_lock_irq(wq, condition, lock, );			\
 } while (0)
+#endif
+
 #endif
