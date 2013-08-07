@@ -1222,7 +1222,7 @@ static int w_flush(struct drbd_work *w, int cancel)
 	struct drbd_epoch *epoch = fw->epoch;
 	struct drbd_tconn *tconn = epoch->tconn;
 
-	kfree(w);
+	kfree(fw);
 
 	if (!test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags))
 		drbd_flush_after_epoch(tconn, epoch);
