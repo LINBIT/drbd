@@ -1107,17 +1107,11 @@ STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 	bm_set_page_unchanged(b->bm_pages[page_nr]);
 
 	if (ctx->flags & BM_AIO_COPY_PAGES) {
-		void *src, *dest;
 		page = mempool_alloc(drbd_md_io_page_pool, __GFP_HIGHMEM|__GFP_WAIT);
-		dest = drbd_kmap_atomic(page, KM_USER0);
-		src = drbd_kmap_atomic(b->bm_pages[page_nr], KM_USER1);
-		memcpy(dest, src, PAGE_SIZE);
-		drbd_kunmap_atomic(src, KM_USER1);
-		drbd_kunmap_atomic(dest, KM_USER0);
+		copy_highpage(page, b->bm_pages[page_nr]);
 		bm_store_page_idx(page, page_nr);
 	} else
 		page = b->bm_pages[page_nr];
-
 	bio->bi_bdev = device->ldev->md_bdev;
 	bio->bi_sector = on_disk_sector;
 	/* bio_add_page of a single page to an empty bio will always succeed,
