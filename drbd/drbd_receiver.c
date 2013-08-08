@@ -1413,8 +1413,10 @@ randomize:
 			conn_connect2(connection);
 		}
 	} else {
-		if (change_cstate(connection, C_CONNECTED,
-			      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE) < SS_SUCCESS) {
+		enum drbd_state_rv rv;
+		rv = change_cstate(connection, C_CONNECTED,
+				   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+		if (rv < SS_SUCCESS || connection->cstate[NOW] != C_CONNECTED) {
 			h = 0;
 			goto out;
 		}
