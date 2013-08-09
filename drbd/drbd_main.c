@@ -4264,7 +4264,9 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	 */
 	if (device->bitmap && device->ldev) {
 		if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
-					       "detach", BM_LOCK_ALL, NULL)) {
+					       "detach",
+					       BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					       NULL)) {
 			if (test_bit(CRASHED_PRIMARY, &device->flags)) {
 				struct drbd_peer_device *peer_device;
 
