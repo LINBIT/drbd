@@ -267,11 +267,8 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 			(r>>8) & 0xff, ex_to_string);
 
 out:
-	if (mdev->state.susp_fen && nps >= D_UNKNOWN) {
-		/* The handler was not successful... unfreeze here, the
-		   state engine can not unfreeze... */
-		_drbd_request_state(mdev, NS(susp_fen, 0), CS_VERBOSE);
-	}
+	if (mdev->state.susp_fen && nps >= D_UNKNOWN)
+		drbd_change_state(mdev, CS_VERBOSE | CS_HARD, NS(susp_fen, 0));
 
 	return nps;
 }

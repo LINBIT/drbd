@@ -954,7 +954,6 @@ retry:
 	if (drbd_send_protocol(mdev) == -1)
 		return -1;
 
-	drbd_set_flag(mdev, STATE_SENT);
 	/* Prevent a race between resync-handshake and
 	 * being promoted to Primary.
 	 *
@@ -963,6 +962,7 @@ retry:
 	 * will see the STATE_SENT flag, and wait for it to be cleared.
 	 */
 	mutex_lock(&mdev->state_mutex);
+	drbd_set_flag(mdev, STATE_SENT);
 	mutex_unlock(&mdev->state_mutex);
 
 	drbd_send_sync_param(mdev, &mdev->sync_conf);
