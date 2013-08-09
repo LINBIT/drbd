@@ -1147,6 +1147,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 
 	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
+	atomic_set(&device->ap_in_flight, 0);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
 	return err;
 }
