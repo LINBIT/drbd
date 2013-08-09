@@ -1653,7 +1653,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	down(&device->resource->state_sem);
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &peer_device->flags);
-	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
+	if (connection->cstate[NOW] < C_CONNECTED ||
+	    !get_ldev_if_state(device, D_NEGOTIATING)) {
 		unlock_all_resources();
 		goto out;
 	}
