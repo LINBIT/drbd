@@ -2926,7 +2926,7 @@ int v08_md_initialize(struct format *cfg, int do_disk_writes,
 	cfg->md.peers[0].bitmap_uuid = 0;
 	for (i = 0; i < ARRAY_SIZE(cfg->md.history_uuids); i++)
 		cfg->md.history_uuids[i] = 0;
-	cfg->md.flags = 0;
+	cfg->md.flags = MDF_AL_CLEAN;
 	cfg->md.max_peers = 1;
 	cfg->md.magic = DRBD_MD_MAGIC_08;
 	cfg->md.al_stripes = option_al_stripes;
