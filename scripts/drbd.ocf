@@ -524,6 +524,20 @@ drbd_monitor() {
 
 	drbd_update_master_score
 
+	case $status in
+	(0) : "OCF_SUCCESS" ;;
+	(1) : "OCF_ERR_GENERIC" ;;
+	(2) : "OCF_ERR_ARGS" ;;
+	(3) : "OCF_ERR_UNIMPLEMENTED" ;;
+	(4) : "OCF_ERR_PERM" ;;
+	(5) : "OCF_ERR_INSTALLED" ;;
+	(6) : "OCF_ERR_CONFIGURED" ;;
+	(7) : "OCF_NOT_RUNNING" ;;
+	(8) : "OCF_RUNNING_MASTER" ;;
+	(9) : "OCF_FAILED_MASTER" ;;
+	(*) : " WTF? $status " ;;
+	esac
+
 	return $status
 }
 
@@ -965,7 +979,7 @@ drbd_validate_all () {
 #######################################################################
 
 if [ $# != 1 ]; then
-	usage
+	drbd_usage
 	exit $OCF_ERR_ARGS
 fi
 
