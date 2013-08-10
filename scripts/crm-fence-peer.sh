@@ -837,8 +837,8 @@ done
 
 # defaults suitable for most cases
 : "== net_hickup_time     == ${net_hickup_time:=0}"
-: "== timeout             == ${timeout:=1}"
-: "== dc_timeout          == ${dc_timeout:=$[20+timeout]}"
+: "== timeout             == ${timeout:=90}"
+: "== dc_timeout          == ${dc_timeout:=20}"
 
 # check envars normally passed in by drbdadm
 # TODO DRBD_CONF is also passed in.  we may need to use it in the
