@@ -675,6 +675,13 @@ drbd_promote() {
 		first_try=false
 	done
 
+	# avoid too tight pacemaker driven "recovery" loop,
+	# if promotion keeps failing for some reason
+	if [[ $rc != 0 ]] && (( $SECONDS < 15 )) ; then
+		delay=$(( 15 - SECONDS ))
+		ocf_log warn "promotion failed; sleep $delay # to prevent tight recovery loop"
+		sleep $delay
+	fi
 	return $rc
 }
 
