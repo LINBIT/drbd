@@ -108,6 +108,11 @@ fence_peer_init()
 # fractions of a second, but it can take much longer (the default election
 # timeout in pacemaker is ~2 minutes!).
 #
+# --network-hickup is how long we wait for the replication link to recover,
+# if crmadmin confirms that the peer is in fact still alive.
+# It may have been just a network hickup. If so, no need to potentially trigger
+# node level fencing.
+#
 # a) Small-ish (1s) timeout, medium (10..20s) dc-timeout:
 #    Intended use case: fencing resource-only, no STONITH configured.
 #
@@ -176,7 +181,16 @@ fence_peer_init()
 try_place_constraint()
 {
 	local peer_state
-	check_peer_node_reachable
+
+	while :; do
+		check_peer_node_reachable
+		[[ $peer_state != "reachable" ]] && break
+		# if it really is still reachable, maybe the replication link
+		# recovers by itself, and we can get away without taking action?
+		(( $net_hickup_time > $SECONDS )) || break
+		sleep $(( net_hickup_time - SECONDS ))
+	done
+
 	set_states_from_proc_drbd
 	case $DRBD_peer in
 	Secondary|Primary)
@@ -558,6 +572,13 @@ while [[ $# != 0 ]]; do
 		dc_timeout=$2
 		shift
 		;;
+	--net-hickup=*|--network-hickup=*)
+		net_hickup_time=${1#*=}
+		;;
+	--net-hickup|--network-hickup)
+		net_hickup_time=$2
+		shift
+		;;
 	--CTS-mode)
 		CTS_mode=true
 		;;
@@ -589,7 +610,8 @@ done
 : "== id_prefix           == ${id_prefix:="drbd-fence-by-handler"}"
 : "== role                == ${role:="Master"}"
 
-# defaults suitable for single-primary no-stonith.
+# defaults suitable for most cases
+: "== net_hickup_time     == ${net_hickup_time:=0}"
 : "== timeout             == ${timeout:=1}"
 : "== dc_timeout          == ${dc_timeout:=$[20+timeout]}"
 
