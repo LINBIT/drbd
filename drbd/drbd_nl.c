@@ -215,8 +215,8 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 		put_ldev(mdev);
 	} else {
 		dev_warn(DEV, "Not fencing peer, I'm not even Consistent myself.\n");
-		nps = mdev->state.pdsk;
-		goto out;
+		drbd_change_state(mdev, CS_VERBOSE | CS_HARD, NS(susp_fen, 0));
+		return mdev->state.pdsk;
 	}
 
 	r = drbd_khelper(mdev, "fence-peer");
@@ -265,10 +265,6 @@ enum drbd_disk_state drbd_try_outdate_peer(struct drbd_conf *mdev)
 
 	dev_info(DEV, "fence-peer helper returned %d (%s)\n",
 			(r>>8) & 0xff, ex_to_string);
-
-out:
-	if (mdev->state.susp_fen && nps >= D_UNKNOWN)
-		drbd_change_state(mdev, CS_VERBOSE | CS_HARD, NS(susp_fen, 0));
 
 	return nps;
 }
