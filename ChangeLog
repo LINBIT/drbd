@@ -2,6 +2,19 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre6 (api:genl1/proto:86-110)
+--------
+ * Fixed the wait-[connect|sync] drbdadm commands. Now they actually
+   work on all three object types (resources, connections, volumes)
+ * Fixed the resync vs application IO deadlock on a resync from
+   Primary/SyncSource to Secondary/SyncTarget [Was introduced in
+   drbd9 development]
+ * Correctly deal with writes from a Primary on two Secondaries that
+   do a resync
+ * New command called "forget-peer". It is used to free a peer-device
+   slot. Online (via drbdsetup) or offline (via drbdmeta)
+ * Lots of minor fixes
+
 9.0.0pre5 (api:genl1/proto:86-110)
 --------
  * Fixed the drbdadm invalidate command (Now it takes a device or
