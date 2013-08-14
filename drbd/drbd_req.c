@@ -331,7 +331,7 @@ static void wake_all_senders(struct drbd_resource *resource) {
 }
 
 /* must hold resource->req_lock */
-static void start_new_tl_epoch(struct drbd_resource *resource)
+void start_new_tl_epoch(struct drbd_resource *resource)
 {
 	/* no point closing an epoch, if it is empty, anyways. */
 	if (resource->current_tle_writes == 0)
@@ -1142,14 +1142,14 @@ static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 	put_ldev(device);
 }
 
-static bool drbd_should_do_remote(struct drbd_peer_device *peer_device)
+bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_state which)
 {
-	enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+	enum drbd_disk_state peer_disk_state = peer_device->disk_state[which];
 
 	return peer_disk_state == D_UP_TO_DATE ||
 		(peer_disk_state == D_INCONSISTENT &&
-		 peer_device->repl_state[NOW] >= L_WF_BITMAP_T &&
-		 peer_device->repl_state[NOW] < L_AHEAD);
+		 peer_device->repl_state[which] >= L_WF_BITMAP_T &&
+		 peer_device->repl_state[which] < L_AHEAD);
 	/* Before proto 96 that was >= CONNECTED instead of >= L_WF_BITMAP_T.
 	   That is equivalent since before 96 IO was frozen in the L_WF_BITMAP*
 	   states. */
@@ -1236,10 +1236,10 @@ static int drbd_process_write_request(struct drbd_request *req)
 
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
-		remote = drbd_should_do_remote(peer_device);
+	  remote = drbd_should_do_remote(peer_device, NOW);
 		if (remote) {
 			maybe_pull_ahead(peer_device);
-			remote = drbd_should_do_remote(peer_device);
+			remote = drbd_should_do_remote(peer_device, NOW);
 		}
 		send_oos = drbd_should_send_out_of_sync(peer_device);
 

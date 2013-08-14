@@ -284,6 +284,7 @@ struct bio_and_error {
 	int error;
 };
 
+extern void start_new_tl_epoch(struct drbd_resource *resource);
 extern void drbd_req_destroy(struct kref *kref);
 extern void _req_may_be_done(struct drbd_request *req,
 		struct bio_and_error *m);
@@ -296,7 +297,7 @@ extern void request_timer_fn(unsigned long data);
 extern void tl_restart(struct drbd_connection *connection, enum drbd_req_event what);
 extern void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what);
 extern void drbd_queue_peer_ack(struct drbd_request *req);
-
+extern bool drbd_should_do_remote(struct drbd_peer_device *, enum which_state);
 
 /* this is in drbd_main.c */
 extern void drbd_restart_request(struct drbd_request *req);

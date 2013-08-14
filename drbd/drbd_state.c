@@ -1439,9 +1439,26 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	struct drbd_connection *connection;
 	bool *weak = resource->weak;
 	bool starting_resync = false;
+	bool start_new_epoch = false;
 	int vnr;
 
 	print_state_change(resource, "");
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device) {
+			bool did, should;
+
+			did = drbd_should_do_remote(peer_device, NOW);
+			should = drbd_should_do_remote(peer_device, NEW);
+
+			if (did != should)
+				start_new_epoch = true;
+		}
+	}
+	if (start_new_epoch)
+		start_new_tl_epoch(resource);
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
