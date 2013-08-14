@@ -671,7 +671,7 @@ void md_cpu_to_disk_08(struct md_on_disk_08 *disk, const struct md_cpu *cpu)
 #define AL_UPDATES_PER_TRANSACTION 64
 #define AL_CONTEXT_PER_TRANSACTION 919
 /* from DRBD 8.4 linux/drbd/drbd_limits.h, DRBD_AL_EXTENTS_MAX */
-#define AL_EXTENTS_MAX  6433
+#define AL_EXTENTS_MAX  65534
 enum al_transaction_types {
 	AL_TR_UPDATE = 0,
 	AL_TR_INITIALIZED = 0xffff
@@ -2236,7 +2236,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 	int i, j;
 
 	/* can only be AL_EXTENTS_MAX * BM_BYTES_PER_AL_EXT * 8,
-	 * which currently is 6433 * 128 * 8 == 6587392;
+	 * which currently is 65534 * 128 * 8 == 67106816
 	 * fits easily into 32bit. */
 	unsigned additional_bits_set = 0;
 	uint64_t *w;
@@ -2247,7 +2247,7 @@ void apply_al(struct format *cfg, uint32_t *hot_extent)
 	 * we need to do some read/modify/write cycles here.
 	 *
 	 * Note that this can be slow due to the use of O_DIRECT,
-	 * worst case it does 6433 (AL_EXTENTS_MAX) cycles of
+	 * worst case it does 65534 (AL_EXTENTS_MAX) cycles of
 	 *  - read 128 kByte (buffer_size)
 	 *  - memset 128 Bytes (BM_BYTES_PER_AL_EXT) to 0xff
 	 *  - write 128 kByte
