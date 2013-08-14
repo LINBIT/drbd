@@ -1263,7 +1263,6 @@ extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_de
 extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *);
 
-extern void drbd_go_diskless(struct drbd_device *device);
 extern void drbd_ldev_destroy(struct drbd_device *device);
 
 static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
@@ -2141,7 +2140,8 @@ static inline void put_ldev(struct drbd_device *device)
 			drbd_ldev_destroy(device);
 		if (device->disk_state[NOW] == D_FAILED)
 			/* all application IO references gone. */
-			drbd_go_diskless(device);
+			if (!test_and_set_bit(GO_DISKLESS, &device->flags))
+				drbd_queue_work(&device->resource->work, &device->go_diskless);
 		wake_up(&device->misc_wait);
 	}
 }

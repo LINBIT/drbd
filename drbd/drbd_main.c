@@ -4282,13 +4282,6 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	return 0;
 }
 
-void drbd_go_diskless(struct drbd_device *device)
-{
-	D_ASSERT(device, device->disk_state[NOW] == D_FAILED);
-	if (!test_and_set_bit(GO_DISKLESS, &device->flags))
-		drbd_queue_work(&device->resource->work, &device->go_diskless);
-}
-
 void drbd_queue_pending_bitmap_work(struct drbd_device *device)
 {
 	unsigned long flags;
