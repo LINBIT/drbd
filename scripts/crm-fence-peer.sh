@@ -157,6 +157,10 @@ fence_peer_init()
 #	In dual-primary setups, if it is only replication link loss, both nodes
 #	will call this handler, but only one will succeed to place the
 #	constraint. The other will then typically need to "commit suicide".
+#	With stonith enabled, and --suicide-on-failure-if-primary,
+#	we will trigger a node level fencing, telling
+#	pacemaker to "terminate" that node,
+#	and scheduling a reboot -f just in case.
 #
 #    Primary crash, promotion of former Secondary:
 #	DC-election, if any, will have taken place already.
@@ -178,11 +182,45 @@ fence_peer_init()
 #	know that the peer is dead - if it is.
 #
 
+# slightly different logic than crm_is_true
+crm_is_not_false()
+{
+	case $1 in
+	no|n|false|0|off)
+		false ;;
+	*)
+		true ;;
+	esac
+}
+
+check_cluster_properties()
+{
+	local x properties=$(set +x; echo "$cib_xml" |
+		sed -n -e '/<crm_config/,/<\/crm_config/ !d;' \
+			-e '/<cluster_property_set/,/<\/cluster_property_set/ !d;' \
+			-e '/<nvpair / !d' \
+			-e 's/^.* name="\([^"]*\)".* value="\([^"]*\)".*$/\1=\2/p' \
+			-e 's/^.* value="\([^"]*\)".* name="\([^"]*\)".*$/\2=\1/p')
+
+	for x in $properties ; do
+		case $x in
+		startup[-_]fencing=*)	startup_fencing=${x#*=} ;;
+		stonith[-_]enabled=*)	stonith_enabled=${x#*=} ;;
+		esac
+	done
+
+	crm_is_not_false $startup_fencing && startup_fencing=true || startup_fencing=false
+	crm_is_not_false $stonith_enabled && stonith_enabled=true || stonith_enabled=false
+}
+
 try_place_constraint()
 {
 	local peer_state
+	local startup_fencing stonith_enabled
 
 	rc=1
+
+	check_cluster_properties
 
 	while :; do
 		check_peer_node_reachable
@@ -248,6 +286,44 @@ try_place_constraint()
 		# forever to promote, even though 6 is not strictly correct.
 	fi
 	return $rc
+}
+
+commit_suicide()
+{
+	local reboot_timeout=20
+	local extra_msg
+
+	if $stonith_enabled ; then
+		# avoid double fence, tell pacemaker to kill me
+		echo WARNING "trying to have pacemaker kill me now!"
+		crm_attribute -t status -N $HOSTNAME -n terminate -v 1
+		echo WARNING "told pacemaker to kill me, but scheduling reboot -f in 300 seconds just in case"
+
+		# -------------------------
+		echo WARNING $'\n'"    told pacemaker to kill me,"\
+			     $'\n'"    but scheduling reboot -f in 300 seconds just in case."\
+			     $'\n'"    kill $$ # to cancel" | wall
+		# -------------------------
+
+		reboot_timeout=300
+		extra_msg="Pacemaker terminate pending. If that fails, I'm "
+
+	else
+		# -------------------------
+		echo WARNING $'\n'"    going to reboot -f in $reboot_timeout seconds"\
+			     $'\n'"    kill $$ # to cancel!" | wall
+		# -------------------------
+	fi
+
+	reboot_timeout=$(( reboot_timeout + SECONDS ))
+	# pacemaker apparently cannot kill me.
+	while (( $SECONDS  > $reboot_timeout )); do
+		echo WARNING "${extra_msg}going to reboot -f in $(( reboot_timeout - SECONDS )) seconds! To cancel: kill $$"
+		sleep 2
+	done
+	echo WARNING "going to reboot -f now!"
+	reboot -f
+	sleep 864000
 }
 
 # drbd_peer_fencing fence|unfence
@@ -336,7 +412,7 @@ drbd_peer_fencing()
 		# XXX policy decision:
 		if $suicide_on_failure_if_primary && [[ $DRBD_role = Primary ]] &&
 			[[ $drbd_fence_peer_exit_code != [3457] ]]; then
-			commit_suicide # shell function yet to be written
+			commit_suicide
 		fi
 
 		return $rc
@@ -635,9 +711,9 @@ while [[ $# != 0 ]]; do
 		test -t 0 &&
 		unreachable_peer_is=outdated
 		;;
-	# --suicide-on-failure-if-primary)
-	# 	suicide_on_failure_if_primary=true
-	# 	;;
+	--suicide-on-failure-if-primary)
+		suicide_on_failure_if_primary=true
+		;;
 	-*)
 		echo >&2 "ignoring unknown option $1"
 		;;
