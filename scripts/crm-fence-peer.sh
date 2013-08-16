@@ -72,10 +72,10 @@ fence_peer_init()
 #    On loss of all cluster comm (cluster split-brain),
 #    without STONITH configured, you always still risk data divergence.
 #
-# There are two timeouts:
+# There are different timeouts:
 #
 # --timeout is how long we poll the DC for a definite "unreachable" node state,
-# before we deduce that the peer is in fact still reachable.
+# before we give up and say "unknown".
 # This should be longer than "dead time" or "stonith timeout",
 # the time it takes the cluster manager to declare the other node dead and
 # shoot it, just to be sure.
@@ -104,7 +104,8 @@ fence_peer_init()
 #    Difference to a)
 #
 #       If peer is still reachable according to the cib,
-#	we first poll the cib until timeout has elapsed,
+#	we first poll the cib/try to confirm with crmadmin,
+#	until either crmadim confirms reachability, timeout has elapsed,
 #	or the peer becomes definetely unreachable.
 #
 #	This gives STONITH the chance to kill us.
@@ -112,14 +113,16 @@ fence_peer_init()
 #	completing transactions to userland which might otherwise be lost.
 #
 #	We then place the constraint (if we are UpToDate), as explained below,
-#	and return reachable/unreachable according to our last cib status poll.
+#	and return reachable/unreachable according to our last cib status poll
+#	or crmadmin -S result.
 #
 
 #
 #    replication link loss, current Primary calls this handler:
 #	We are UpToDate, but we potentially need to wait for a DC election.
 #	Once we have contacted the DC, we poll the cib until the peer is
-#	confirmed unreachable, or timeout expired.
+#	confirmed unreachable, or crmadmin -S confirms it as reachable,
+#	or timeout expired.
 #	Then we place the constraint, and are done.
 #
 #	If it is complete communications loss, one will stonith the other.
@@ -312,12 +315,10 @@ drbd_peer_fencing()
 #	We have not been able to contact the DC.
 check_peer_node_reachable()
 {
-	# We would really need a reliable method to find out if hearbeat/pacemaker
-	# can reach the other node(s). Waiting for heartbeat's dead time and then
-	# looking at the CIB is the only solution I currently have.
-
-	# we are going to increase the cib timeout with every timeout.
+	# we are going to increase the cib timeout with every timeout (see below).
 	# for the actual invocation, we use int(cibtimeout/10).
+	# scaled by 5 / 4 with each iteration,
+	# this results in a timeout sequence of 1 2 2 3 4 5 6 7 9 ... seconds 
 	local cibtimeout=18
 	local full_timeout
 	local node_state state_lines nr_other_nodes
@@ -329,6 +330,12 @@ check_peer_node_reachable()
 			# apparently use -t use milliseconds, so will timeout
 			# many times until a suitably long timeout is reached
 			# by increasing below.
+			#
+			# Why not use the default timeout?
+			# Because that would unecessarily wait for 30 seconds
+			# or longer, even if the DC is re-elected right now,
+			# and available within the next second.
+			#
 			cib_xml=$(cibadmin -Q -t $[cibtimeout/10]) && break
 
 			# bash magic $SECONDS is seconds since shell invocation.
@@ -402,6 +409,7 @@ check_peer_node_reachable()
 
 		# try crmadmin; if we can sucessfully query the state of the remote crmd,
 		# it is obviously reachable.
+		#
 		# Do this only after we have been able to reach a DC above.
 		# Note: crmadmin timeout is in milli-seconds, and defaults to 30000 (30 seconds).
 		# Our variable $cibtimeout should be in deci-seconds (see above)
