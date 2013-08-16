@@ -324,6 +324,8 @@ check_peer_node_reachable()
 	local node_state state_lines nr_other_nodes
 	while :; do
 		while :; do
+			local t=$SECONDS
+			#
 			# Update our view of the cib, ask the DC this time.
 			# Timeout, in case no DC is available.
 			# Caution, some cibadmin (pacemaker 0.6 and earlier)
@@ -344,6 +346,9 @@ check_peer_node_reachable()
 				peer_state="DC-unreachable"
 				return
 			fi
+
+			# avoid busy loop
+			[[ $t = $SECONDS ]] && sleep 1
 
 			# try again, longer timeout.
 			let "cibtimeout = cibtimeout * 5 / 4"
@@ -425,7 +430,7 @@ check_peer_node_reachable()
 		fi
 
 		# wait a bit before we poll the DC again
-		sleep 1
+		sleep 2
 	done
 	# NOT REACHED
 }
