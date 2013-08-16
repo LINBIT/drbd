@@ -1,0 +1,120 @@
+# vim: set foldenable foldmethod=indent sw=4 ts=8 :
+
+# Copyright 2013 Linbit HA Solutions GmbH
+# Lars Ellenberg @ linbit.com
+
+TODO:
+	someone convert this into proper ascii doc please ;-)
+	... and draw some pictures ...
+
+How crm-fence-peer.sh, pacemaker, and the OCF Linbit DRBD resource agent
+are supposed to work together.
+
+Two node cluster is the trickier one, because it has not real quorum.
+
+Relative Timeouts
+	--dc-timeout > dead-time resp. stonith-timeout
+	if stonith enabled, --timeout >= --dc-timeout
+	if no stonith, then timeout may be small.
+
+Pacemaker operations timeouts
+	monitor and promote action timeout > max(dc_timeout, timeout)
+
+Node reboot, possibly because of crash or stonith due to communication loss
+	no peer reachable	[no delay]
+		crm may decide to elect itself, shoot the peer,
+		and start services.
+
+		If DRBD peer disk state is known Outdated or worse, DRBD will
+		switch itself to UpToDate, allowing it to be promoted,
+		without further fencing actions.
+
+		If DRBD peer disk state is DUnknown, DRBD will be only Consistent.
+		In case crm decides to promote this instance, the fence-peer callback
+		runs, finds the peer "unreachable", finds itself Consistent only,
+		does NOT set any constraint, and DRBD refuses to be promoted.
+
+		CRM will now try in an endless loop to promote this instance.
+
+		Avoid this by adding
+		param adjust_master_score="0 10 1000 10000"
+		to the DRBD resource definition.
+
+	no replication link
+		CRM can see both nodes. [delay: crmadmin -S $peer]
+
+		If currently both nodes are Secondary Consistent, CRM will decide to
+		promote one instance. The fence-peer callback will find the other node
+		still reachable after timeout, and set the constraint.
+
+		If there is already one Primary, and this is a node rejoining the
+		cluster, there should already be a constraint preventing this node
+		from being promoted.
+
+Only Replication link breaks during normal operation
+	Single Primary  [delay: crmadmin -S $peer]
+		fence-peer callback finds DC,
+		crmadmin -S confirms peer still "reachable",
+		and sets contraint.
+
+	Dual Primary
+		both fence-peer callbacks find DC,
+		both see node_state "reachable",
+		optionaly delay for --network-hickup timeout,
+		and if DRBD is still disconnected,
+		both try to set the constraint.
+		Only one succeeds.
+
+		The loser should probably commit suicide,
+		to reduce the overall recovery time.
+		--suicide-on-failure-if-primary
+
+Node crash
+	surviving node is Secondary,	[no delay]
+		If not DC, triggers DC election, elects itself.
+		Is DC now.
+		If stonith enabled, shoots the peer.
+		Promotes this node.
+		During promotion, fenc-peer callback
+		finds a DC, and a node_state "unreachable",
+		so sets the constraint "immediately".
+
+	surviving node is Primary (DC)	[delay up to timeout]
+		If stonith enabled, shoots the peer.
+		fence-peer callback finds DC, after some
+		time sees node_state "unreachable",
+		or times out while node_state is still "reachable".
+		Either way still sets the constraint.
+
+	surviving node is Primary (not DC) [delay up to mac(dc_timeout,timeout)]
+		fence-peer callback loops trying to contact DC.
+		eventually this node is elected DC.
+		If stonith enabled, shoots the peer.
+
+		Fence-peer callback either times out while no DC is available,
+		thus fails.  Make sure you chose a suitable --dc-timeout.
+
+		Or it finds the other node "unreachable",
+		and sets the constraint.
+
+Total communication loss
+	To the single node, this looks like node crash, so see above.
+
+	The difference is the potential of data divergence.
+
+	If DRBD was configured for "fencing resource-and-stonith",
+	IO on any Primary is frozen while the fence-peer callback runs.
+
+	If stonith is enabled, timeouts should be selected so that
+	we are shot while waiting for the DC to confirm node_state
+	"unreachable" of the peer, thus combined with freezing IO,
+	no harmful data diversion can happen at this time.
+
+	If there is no stonith enabled, data divergence is unavoidable.
+
+		==> Multi-Primary *requires*
+		    both node level fencing (stonith)
+		    AND drbd resource level fencing
+
+	Again: Multi-Primary REQUIRES stonith enabled and working.
+
