@@ -77,6 +77,7 @@
 #include "config.h"
 #include "config_flags.h"
 #include "wrap_printf.h"
+#include "drbd_strings.h"
 
 char *progname;
 
