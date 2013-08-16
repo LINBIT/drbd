@@ -138,10 +138,19 @@ extern char usermode_helper[];
 struct drbd_device;
 struct drbd_connection;
 
+#if defined(dev_to_disk) && defined(disk_to_dev)
 #define __drbd_printk_device(level, device, fmt, args...) \
 	dev_printk(level, disk_to_dev((device)->vdisk), fmt, ## args)
 #define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
 	dev_printk(level, disk_to_dev((peer_device)->device->vdisk), fmt, ## args)
+#else
+/* For kernels <= 2.6.24 */
+#define __drbd_printk_device(level, device, fmt, args...) \
+	printk(level "block drbd%u: " fmt, (device)->minor, ## args)
+#define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
+	printk(level "block drbd%u: " fmt, (peer_device)->device->minor, ## args)
+#endif
+
 #define __drbd_printk_resource(level, resource, fmt, args...) \
 	printk(level "drbd %s: " fmt, (resource)->name, ## args)
 #define __drbd_printk_connection(level, connection, fmt, args...) \
@@ -182,8 +191,12 @@ void drbd_printk_with_wrong_object_type(void);
 #define drbd_emerg(obj, fmt, args...) \
 	drbd_printk(KERN_EMERG, obj, fmt, ## args)
 
+#if defined(dev_to_disk) && defined(disk_to_dev)
 #define dynamic_drbd_dbg(device, fmt, args...) \
 	dynamic_dev_dbg(disk_to_dev(device->vdisk), fmt, ## args)
+#else
+#define dynamic_drbd_dbg(device, fmt, args...)
+#endif
 
 /* see kernel/printk.c:printk_ratelimit
  * macro, so it is easy do have independent rate limits at different locations
