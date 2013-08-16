@@ -1210,4 +1210,13 @@ static inline pid_t task_pid_nr(struct task_struct *tsk)
 }
 #endif
 
+#ifndef for_each_cpu
+# define for_each_cpu(cpu, mask) for_each_cpu_mask(cpu, mask)
+#endif
+
+#ifndef COMPAT_HAVE_CPUMASK_EMPTY
+#include <linux/cpumask.h>
+#define cpumask_empty(mask) cpus_empty(mask)
+#endif
+
 #endif
