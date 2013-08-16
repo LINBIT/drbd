@@ -266,7 +266,10 @@ try_place_constraint()
 		set_constraint &&
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo INFO "peer is not reachable, my disk is UpToDate: placed constraint '$id_prefix-$master_id'"
-	elif [[ $peer_state = unreachable ]] && [[ $unreachable_peer_is = outdated ]] && $DRBD_disk_all_consistent; then
+
+	# This block is reachable by operator intervention only
+	# (unless you are hacking this script and know what you are doing)
+	elif [[ $peer_state != reachable ]] && [[ $unreachable_peer_is = outdated ]] && $DRBD_disk_all_consistent; then
 		# If the peer is not reachable, but we are only Consistent, we
 		# may need some way to still allow promotion.
 		# Easy way out: --force primary with drbdsetup.
@@ -279,6 +282,9 @@ try_place_constraint()
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo WARNING "peer is unreachable, my disk is only Consistent: --unreachable-peer-is-outdated FORCED constraint '$id_prefix-$master_id'" &&
 		echo WARNING "This MAY RISK DATA INTEGRITY"
+
+	# So I'm not UpToDate, and peer is not reachable.
+	# Tell the module about "not reachable", and don't do anything else.
 	else
 		echo WARNING "peer is $peer_state, my disk is ${DRBD_disk[*]}: did not place the constraint!"
 		drbd_fence_peer_exit_code=5 rc=0
@@ -428,13 +434,17 @@ drbd_peer_fencing()
 }
 
 # return value in $peer_state:
-# reachable
-#	Peer is probably still reachable.  We have had at least one successful
-#	round-trip with cibadmin -Q to the DC.
-# unreachable
-#	Peer is not reachable, according to the cib of the DC.
 # DC-unreachable
 #	We have not been able to contact the DC.
+# reachable
+#	cib says it's online, and crmadmin -S says peer state is "ok"
+# unreachable
+#	cib says it's offline (but does not yet say "expected" down)
+#	and we reached the timeout
+# unknown
+#	cib does not say it was offline (or we don't know who the peer is)
+#	and we reached the timeout
+#
 check_peer_node_reachable()
 {
 	# we are going to increase the cib timeout with every timeout (see below).
@@ -443,8 +453,20 @@ check_peer_node_reachable()
 	# this results in a timeout sequence of 1 2 2 3 4 5 6 7 9 ... seconds 
 	local cibtimeout=18
 	local full_timeout
-	local node_state state_lines nr_other_nodes
+	local nr_other_nodes
+	local other_node_uname_attrs
+
+	# we have a cibadmin -Ql in cib_xml already
+	# filter out <node uname, but ignore type="ping" nodes,
+	# they don't run resources
+	other_node_uname_attrs=$(set +x; echo "$cib_xml" |
+		sed -e '/<node /!d; / type="ping"/d;s/^.* \(uname="[^"]*"\).*>$/\1/' |
+		grep -v -F uname=\"$HOSTNAME\")
+	set -- $other_node_uname_attrs
+	nr_other_nodes=$#
+
 	while :; do
+		local state_lines= node_state=
 		while :; do
 			local t=$SECONDS
 			#
@@ -475,7 +497,8 @@ check_peer_node_reachable()
 			# try again, longer timeout.
 			let "cibtimeout = cibtimeout * 5 / 4"
 		done
-		state_lines=$(echo "$cib_xml" | grep '<node_state')
+		state_lines=$( set +x; echo "$cib_xml" | grep '<node_state ' |
+			grep -F -e "$other_node_uname_attrs" )
 
 		if $CTS_mode; then
 			# CTS requires startup-fencing=false.
@@ -490,49 +513,50 @@ check_peer_node_reachable()
 			fi
 		fi
 
-		nr_other_nodes=$(echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | wc -l)
-		if [[ $nr_other_nodes -gt 1 ]]; then
-			# Many nodes cluster, look at $DRBD_PEER, if set.
-			# Note that this should not be neccessary.  The problem
-			# we try to solve is relevant on two-node clusters
-			# (no real quorum)
-			if [[ $DRBD_PEER ]]; then
-				if echo "$state_lines" | grep -F uname=\"$DRBD_PEER\" | grep -q ' crmd="offline"'; then
-					peer_state="unreachable"
-					return
-				fi
-			else
-				# Multi node cluster, but unknown DRBD Peer.
-				# This should not be a problem, unless you have
-				# no_quorum_policy=ignore in an N > 2 cluster.
-				# (yes, I've seen such beasts in the wild!)
-				# As we don't know the peer,
-				# we could only safely return here if *all*
-				# potential peers are confirmed down.
-				# Don't try to be smart, just wait for the full
-				# timeout, which should allow STONITH to
-				# complete.
-				full_timeout=$(( $timeout - $SECONDS ))
-				(( $full_timeout > 0 )) && sleep $full_timeout
-			fi
-		else
-			# two node case, ignore $DRBD_PEERS
-			if echo "$state_lines" | grep -v -F uname=\"$HOSTNAME\" | grep -q ' crmd="offline"'; then
-				peer_state="unreachable"
-				return
-			fi
+		# very unlikely: no DRBD_PEER passed in,
+		# but in fact only one other cluster node.
+		# Use that one as DRBD_PEER.
+		if [[ -z $DRBD_PEER ]] && [[ $nr_other_nodes = 1 ]]; then
+			DRBD_PEER=${other_node_uname_attrs#uname=\"}
+			DRBD_PEER=${DRBD_PEER%\"}
 		fi
 
-		# For a resource-and-stonith setup, or dual-primaries (which
-		# you should only use with resource-and-stonith, anyways),
-		# the recommended timeout is larger than the deadtime or
-		# stonith timeout, and according to beekhof maybe should be
-		# tuned up to the election-timeout (which, btw, defaults to 2
-		# minutes!).
-		if (( $SECONDS >= $timeout )) ; then
-			peer_state="reachable"
+		if [[ -z $DRBD_PEER ]]; then
+			# Multi node cluster, but unknown DRBD Peer.
+			# This should not be a problem, unless you have
+			# no_quorum_policy=ignore in an N > 2 cluster.
+			# (yes, I've seen such beasts in the wild!)
+			# As we don't know the peer,
+			# we could only safely return here if *all*
+			# potential peers are confirmed down.
+			# Don't try to be smart, just wait for the full
+			# timeout, which should allow STONITH to
+			# complete.
+			full_timeout=$(( $timeout - $SECONDS ))
+			if (( $full_timeout > 0 )) ; then
+				echo WARNING "don't know who my peer is; sleep $full_timeout seconds just in case"
+				sleep $full_timeout
+			fi
+
+			# In the unlikely case that we don't know our DRBD peer,
+			#	there is no point in polling the cib again,
+			#	that won't teach us who our DRBD peer is.
+			#
+			#	We waited $full_timeout seconds already,
+			#	to allow for node level fencing to shoot us.
+			#
+			#	So if we are still alive, then obviously no-one has shot us.
+			#
+
+			peer_state="unknown"
 			return
 		fi
+
+		#
+		# we know the peer or/and are a two node cluster
+		#
+
+		node_state=$(set +x; echo "$state_lines" | grep -F uname=\"$DRBD_PEER\")
 
 		# try crmadmin; if we can sucessfully query the state of the remote crmd,
 		# it is obviously reachable.
@@ -549,6 +573,26 @@ check_peer_node_reachable()
 				peer_state="reachable"
 				return
 			fi
+		fi
+
+		# We know our DRBD peer.
+		# We are still not sure about its status, though.
+		#
+		# It is not (yet) "expected down" per the cib, but it is not
+		# reliably reachable via crmadmin -S either.
+		#
+		# If we already polled for longer than timeout, give up.
+		#
+		# For a resource-and-stonith setup, or dual-primaries (which
+		# you should only use with resource-and-stonith, anyways),
+		# the recommended timeout is larger than the deadtime or
+		# stonith timeout, and according to beekhof maybe should be
+		# tuned up to the election-timeout (which, btw, defaults to 2
+		# minutes!).
+		#
+		if (( $SECONDS >= $timeout )) ; then
+			[[ $crmd = offline ]] && peer_state="unreachable" || peer_state="unknown"
+			return
 		fi
 
 		# wait a bit before we poll the DC again
