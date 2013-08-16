@@ -1201,4 +1201,13 @@ static inline u32 prandom_u32(void)
 #define PDE_DATA(inode) PDE(inode)->data
 #endif
 
+#ifndef COMPAT_HAVE_TASK_PID_NR
+#include <linux/sched.h>
+
+static inline pid_t task_pid_nr(struct task_struct *tsk)
+{
+	return tsk->pid;
+}
+#endif
+
 #endif
