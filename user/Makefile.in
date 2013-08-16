@@ -79,6 +79,9 @@ drbd_buildtag.c: ../drbd/drbd_buildtag.c
 drbd_strings.c: ../drbd/drbd_strings.c
 	cp $^ $@
 
+drbd_strings.h: ../drbd/drbd_strings.h
+	cp $^ $@
+
 drbdadm: $(drbdadm-obj)
 	$(LINK.c) $(LDFLAGS) -o $@ $^
 
