@@ -2626,7 +2626,7 @@ int drbd_rs_should_slow_down(struct drbd_device *device, sector_t sector)
 	}
 	spin_unlock_irq(&device->al_lock);
 
-	curr_events = drbd_backing_bdev_events(device)
+	curr_events = drbd_backing_bdev_events(device->ldev->backing_bdev->bd_contains->bd_disk)
 		    - atomic_read(&device->rs_sect_ev);
 
 	if (!device->rs_last_events || curr_events - device->rs_last_events > 64) {
