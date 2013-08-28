@@ -1615,43 +1615,42 @@ static int generic_get(struct drbd_cmd *cm, int timeout_arg, void *u_ptr)
 				 * Do we want to ignore broadcasts until the
 				 * initial get/dump requests is done? */
 
-				if (drbd_cfg_context_from_attrs(&ctx, &info))
-					continue;
-
-				switch ((int)cm->ctx_key) {
-				case CTX_MINOR:
-					/* Assert that, for an unicast reply,
-					 * reply minor matches request minor.
-					 * "unsolicited" kernel broadcasts are "pid=0" (netlink "port id")
-					 * (and expected to be genlmsghdr.cmd == DRBD_EVENT) */
-					if (minor != dh->minor) {
-						if (info.nlhdr->nlmsg_pid != 0)
-							dbg(1, "received netlink packet for minor %u, while expecting %u\n",
-								dh->minor, minor);
-						continue;
-					}
-					break;
-				case CTX_RESOURCE:
-				case CTX_RESOURCE | CTX_ALL:
-					if (!strcmp(objname, "all"))
+				if (!drbd_cfg_context_from_attrs(&ctx, &info)) {
+					switch ((int)cm->ctx_key) {
+					case CTX_MINOR:
+						/* Assert that, for an unicast reply,
+						 * reply minor matches request minor.
+						 * "unsolicited" kernel broadcasts are "pid=0" (netlink "port id")
+						 * (and expected to be genlmsghdr.cmd == DRBD_EVENT) */
+						if (minor != dh->minor) {
+							if (info.nlhdr->nlmsg_pid != 0)
+								dbg(1, "received netlink packet for minor %u, while expecting %u\n",
+									dh->minor, minor);
+							continue;
+						}
 						break;
+					case CTX_RESOURCE:
+					case CTX_RESOURCE | CTX_ALL:
+						if (!strcmp(objname, "all"))
+							break;
 
-					if (strcmp(objname, ctx.ctx_resource_name))
-						continue;
+						if (strcmp(objname, ctx.ctx_resource_name))
+							continue;
 
-					break;
-				case CTX_CONNECTION:
-				case CTX_CONNECTION | CTX_RESOURCE:
-					if (!endpoints_equal(&ctx, &global_ctx))
-						continue;
-					break;
-				case CTX_PEER_DEVICE:
-					if (!endpoints_equal(&ctx, &global_ctx) ||
-					    ctx.ctx_volume != global_ctx.ctx_volume)
-						continue;
-					break;
-				default:
-					assert(0);
+						break;
+					case CTX_CONNECTION:
+					case CTX_CONNECTION | CTX_RESOURCE:
+						if (!endpoints_equal(&ctx, &global_ctx))
+							continue;
+						break;
+					case CTX_PEER_DEVICE:
+						if (!endpoints_equal(&ctx, &global_ctx) ||
+						    ctx.ctx_volume != global_ctx.ctx_volume)
+							continue;
+						break;
+					default:
+						assert(0);
+					}
 				}
 			}
 			rv = dh->ret_code;
