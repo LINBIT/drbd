@@ -2982,6 +2982,78 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 	return 0;
 }
 
+static int event_key(char *key, int size, const char *name, unsigned minor,
+		     struct drbd_cfg_context *ctx)
+{
+	char addr[ADDRESS_STR_MAX];
+	int ret, pos = 0;
+
+	ret = snprintf(key + pos, size,
+		       "%s", name);
+	if (ret < 0)
+		return ret;
+	pos += ret;
+	if (size)
+		size -= ret;
+	if (ctx->ctx_resource_name) {
+		ret = snprintf(key + pos, size,
+			       " name:%s", ctx->ctx_resource_name);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	if (ctx->ctx_conn_name_len) {
+		ret = snprintf(key + pos, size,
+			       " conn-name:%s", ctx->ctx_conn_name);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	if (ctx->ctx_my_addr_len &&
+	    address_str(addr, ctx->ctx_my_addr, ctx->ctx_my_addr_len)) {
+		ret = snprintf(key + pos, size,
+			      " local:%s", addr);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	if (ctx->ctx_peer_addr_len &&
+	    address_str(addr, ctx->ctx_peer_addr, ctx->ctx_peer_addr_len)) {
+		ret = snprintf(key + pos, size,
+			      " peer:%s", addr);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	if (ctx->ctx_volume != -1U) {
+		ret = snprintf(key + pos, size,
+			      " volume:%u", ctx->ctx_volume);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	if (minor != -1U) {
+		ret = snprintf(key + pos, size,
+			      " minor:%u", minor);
+		if (ret < 0)
+			return ret;
+		pos += ret;
+		if (size)
+			size -= ret;
+	}
+	return pos;
+}
+
 static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	static const char *action_name[] = {
@@ -2998,7 +3070,6 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 		[DRBD_CONNECTION_STATE] = "connection",
 		[DRBD_PEER_DEVICE_STATE] = "peer-device",
 		[DRBD_HELPER] = "helper",
-		[DRBD_INITIAL_STATE_DONE] = "-",
 	};
 	static uint32_t last_seq;
 	static bool last_seq_known;
@@ -3006,8 +3077,8 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 	struct drbd_cfg_context ctx = { .ctx_volume = -1U };
 	struct drbd_notification_header nh = { .nh_type = -1U };
 	enum drbd_notification_type action;
-	char addr[ADDRESS_STR_MAX];
 	struct drbd_genlmsghdr *dh;
+	char *key = NULL;
 
 	if (!info)
 		return 0;
@@ -3051,28 +3122,24 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 		last_seq_known = true;
 	}
 
+	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
+		const char *name = object_name[info->genlhdr->cmd];
+		int size;
+
+		size = event_key(NULL, 0, name, dh->minor, &ctx);
+		if (size < 0)
+			goto fail;
+		key = malloc(size + 1);
+		if (!key)
+			goto fail;
+		event_key(key, size + 1, name, dh->minor, &ctx);
+	}
 	printf("%u%s %s %s",
 	       nh.nh_id,
 	       (nh.nh_type & NOTIFY_CONTINUES) ? "*" : "",
 	       action_name[action],
-	       object_name[info->genlhdr->cmd]);
-
-	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
-		if (ctx.ctx_resource_name)
-			printf(" name:%s", ctx.ctx_resource_name);
-		if (ctx.ctx_conn_name_len)
-			printf(" conn-name:%s", ctx.ctx_conn_name);
-		if (ctx.ctx_my_addr_len &&
-		    address_str(addr, ctx.ctx_my_addr, ctx.ctx_my_addr_len))
-			printf(" local:%s", addr);
-		if (ctx.ctx_peer_addr_len &&
-		    address_str(addr, ctx.ctx_peer_addr, ctx.ctx_peer_addr_len))
-			printf(" peer:%s", addr);
-		if (ctx.ctx_volume != -1U)
-			printf(" volume:%u", ctx.ctx_volume);
-		if (dh->minor != -1U)
-			printf(" minor:%u", dh->minor);
-	}
+	       key ? key : "-");
+	free(key);
 
 	switch(info->genlhdr->cmd) {
 	case DRBD_RESOURCE_STATE:
@@ -3163,6 +3230,10 @@ out:
 	if (opt_now && info->genlhdr->cmd == DRBD_INITIAL_STATE_DONE)
 		return -1;
 	return 0;
+
+fail:
+	perror(progname);
+	exit(20);
 }
 
 void peer_devices_append(struct peer_devices_list *peer_devices, struct genl_info *info)
