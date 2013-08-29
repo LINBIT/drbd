@@ -48,6 +48,7 @@
 #include <stdarg.h>
 #include <libgen.h>
 #include <time.h>
+#include <search.h>
 
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -3054,6 +3055,48 @@ static int event_key(char *key, int size, const char *name, unsigned minor,
 	return pos;
 }
 
+static void *update_info(char **key, void *value, size_t size)
+{
+	static struct hsearch_data *known_objects;
+
+	struct entry entry = {
+		.key = *key,
+	}, *found = NULL;
+
+	if (!known_objects) {
+		known_objects = malloc(sizeof(*known_objects));
+		if (!known_objects || !hcreate_r(64, known_objects))
+			goto fail;
+	}
+
+	if (value) {
+		entry.data = malloc(size);
+		if (!entry.data)
+			goto fail;
+		memcpy(entry.data, value, size);
+	}
+	if (!hsearch_r(entry, ENTER, &found, known_objects))
+		goto fail;
+	if (found->key == entry.key) {
+		*key = NULL;
+		return NULL;
+	} else {
+		if (value) {
+			void *old_value = found->data;
+			found->data = entry.data;
+			return old_value;
+		} else {
+			free(found->data);
+			found->data = NULL;
+			return NULL;
+		}
+	}
+
+fail:
+	perror(progname);
+	exit(20);
+}
+
 static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void *u_ptr)
 {
 	static const char *action_name[] = {
@@ -3139,73 +3182,103 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 	       (nh.nh_type & NOTIFY_CONTINUES) ? "*" : "",
 	       action_name[action],
 	       key ? key : "-");
-	free(key);
 
 	switch(info->genlhdr->cmd) {
 	case DRBD_RESOURCE_STATE:
 		if (action != NOTIFY_DESTROY) {
-			struct resource_info resource_info;
+			struct resource_info new, *old;
 			struct resource_statistics resource_statistics;
 
-			if (resource_info_from_attrs(&resource_info, info)) {
+			if (resource_info_from_attrs(&new, info)) {
 				dbg(1, "resource info missing\n");
 				goto out;
 			}
-			printf(" role:%s suspended:%s",
-			       drbd_role_str(resource_info.res_role),
-			       susp_str(&resource_info));
-
+			old = update_info(&key, &new, sizeof(new));
+			if (!old || new.res_role != old->res_role)
+				printf(" role:%s",
+				       drbd_role_str(new.res_role));
+			if (!old ||
+			    new.res_susp != old->res_susp ||
+			    new.res_susp_nod != old->res_susp_nod ||
+			    new.res_susp_fen != old->res_susp_fen)
+				printf(" suspended:%s",
+				       susp_str(&new));
 			if (opt_statistics && !resource_statistics_from_attrs(&resource_statistics, info))
 				print_resource_statistics(0, &resource_statistics, nowrap_printf);
-		}
+			free(old);
+		} else
+			update_info(&key, NULL, 0);
 		break;
 	case DRBD_DEVICE_STATE:
 		if (action != NOTIFY_DESTROY) {
-			struct device_info device_info;
+			struct device_info new, *old;
 			struct device_statistics device_statistics;
 
-			if (device_info_from_attrs(&device_info, info)) {
+			if (device_info_from_attrs(&new, info)) {
 				dbg(1, "device info missing\n");
 				goto out;
 			}
-			printf(" disk:%s",
-			       drbd_disk_str(device_info.dev_disk_state));
+			old = update_info(&key, &new, sizeof(new));
+			if (!old || new.dev_disk_state != old->dev_disk_state)
+				printf(" disk:%s",
+				       drbd_disk_str(new.dev_disk_state));
 			if (opt_statistics && !device_statistics_from_attrs(&device_statistics, info))
 				print_device_statistics(0, &device_statistics, nowrap_printf);
-		}
+			free(old);
+		} else
+			update_info(&key, NULL, 0);
 		break;
 	case DRBD_CONNECTION_STATE:
 		if (action != NOTIFY_DESTROY) {
-			struct connection_info connection_info;
+			struct connection_info new, *old;
 			struct connection_statistics connection_statistics;
 
-			if (connection_info_from_attrs(&connection_info, info)) {
+			if (connection_info_from_attrs(&new, info)) {
 				dbg(1, "connection info missing\n");
 				goto out;
 			}
-			printf(" connection:%s role:%s",
-			       drbd_conn_str(connection_info.conn_connection_state),
-			       drbd_role_str(connection_info.conn_role));
+			old = update_info(&key, &new, sizeof(new));
+			if (!old ||
+			    new.conn_connection_state != old->conn_connection_state)
+				printf(" connection:%s",
+				       drbd_conn_str(new.conn_connection_state));
+			if (!old ||
+			    new.conn_role != old->conn_role)
+				printf(" role:%s",
+				       drbd_role_str(new.conn_role));
 			if (opt_statistics && !connection_statistics_from_attrs(&connection_statistics, info))
 				print_connection_statistics(0, &connection_statistics, nowrap_printf);
-		}
+			free(old);
+		} else
+			update_info(&key, NULL, 0);
 		break;
 	case DRBD_PEER_DEVICE_STATE:
 		if (action != NOTIFY_DESTROY) {
-			struct peer_device_info peer_device_info;
+			struct peer_device_info new, *old;
 			struct peer_device_statistics peer_device_statistics;
 
-			if (peer_device_info_from_attrs(&peer_device_info, info)) {
+			if (peer_device_info_from_attrs(&new, info)) {
 				dbg(1, "peer device info missing\n");
 				goto out;
 			}
-			printf(" replication:%s disk:%s resync-suspended:%s",
-			       drbd_repl_str(peer_device_info.peer_repl_state),
-			       drbd_disk_str(peer_device_info.peer_disk_state),
-			       resync_susp_str(&peer_device_info));
+			old = update_info(&key, &new, sizeof(new));
+			if (!old || new.peer_repl_state != old->peer_repl_state)
+				printf(" replication:%s",
+				       drbd_repl_str(new.peer_repl_state));
+			if (!old || new.peer_disk_state != old->peer_disk_state)
+				printf(" disk:%s",
+				       drbd_disk_str(new.peer_disk_state));
+			if (!old ||
+			    new.peer_resync_susp_user != old->peer_resync_susp_user ||
+			    new.peer_resync_susp_peer != old->peer_resync_susp_peer ||
+			    new.peer_resync_susp_dependency != old->peer_resync_susp_dependency)
+				printf(" resync-suspended:%s",
+				       resync_susp_str(&new));
 			if (opt_statistics && !peer_device_statistics_from_attrs(&peer_device_statistics, info))
 				print_peer_device_statistics(0, &peer_device_statistics, nowrap_printf);
-		}
+			free(old);
+		} else
+			update_info(&key, NULL, 0);
 		break;
 	case DRBD_HELPER: {
 		struct drbd_helper_info helper_info;
@@ -3224,6 +3297,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 		break;
 	}
 	printf("\n");
+	free(key);
 
 out:
 	fflush(stdout);
