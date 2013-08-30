@@ -935,7 +935,7 @@ void md_cpu_to_disk_09(struct md_on_disk_09 *disk, const struct md_cpu *cpu)
 {
 	int p, i;
 
-	memset(disk, 0, sizeof(disk));
+	memset(disk, 0, sizeof(*disk));
 	disk->effective_size.be = cpu_to_be64(cpu->effective_size);
 	disk->device_uuid.be = cpu_to_be64(cpu->device_uuid);
 	disk->flags.be = cpu_to_be32(cpu->flags);
