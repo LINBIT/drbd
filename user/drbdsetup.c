@@ -321,6 +321,7 @@ struct option wait_cmds_options[] = {
 };
 
 struct option events_cmd_options[] = {
+	{ "timestamps", no_argument, 0, 'T' },
 	{ "statistics", no_argument, 0, 's' },
 	{ "now", no_argument, 0, 'n' },
 	{ }
@@ -1448,6 +1449,7 @@ static bool update_timeouts(struct peer_devices_list *peer_devices, int elapsed)
 static bool opt_now;
 static bool opt_verbose;
 static bool opt_statistics;
+static bool opt_timestamps;
 
 static int generic_get(struct drbd_cmd *cm, int timeout_arg, void *u_ptr)
 {
@@ -1758,6 +1760,11 @@ static int generic_get_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 		case 'D':
 			show_defaults = true;
+			break;
+
+		case 'T':
+			opt_timestamps = true;
+			break;
 		}
 	}
 	if (optind + 1 < argc) {
@@ -3180,6 +3187,19 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 		last_seq_known = true;
 	}
 
+	if (opt_timestamps) {
+		struct timeval tv;
+		struct tm *tm;
+
+		gettimeofday(&tv, NULL);
+		tm = localtime(&tv.tv_sec);
+		printf("%04u-%02u-%02uT%02u:%02u:%02u.%06u%+03d:%02u ",
+		       tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+		       tm->tm_hour, tm->tm_min, tm->tm_sec,
+		       (int)tv.tv_usec,
+		       (int)(tm->tm_gmtoff / 3600),
+		       (int)((abs(tm->tm_gmtoff) / 60) % 60));
+	}
 	if (info->genlhdr->cmd != DRBD_INITIAL_STATE_DONE) {
 		const char *name = object_name[info->genlhdr->cmd];
 		int size;
