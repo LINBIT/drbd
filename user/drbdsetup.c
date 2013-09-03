@@ -3087,6 +3087,7 @@ static void *update_info(char **key, void *value, size_t size)
 
 	if (!known_objects) {
 		known_objects = malloc(sizeof(*known_objects));
+		memset(known_objects, 0, sizeof(*known_objects));
 		if (!known_objects || !hcreate_r(64, known_objects))
 			goto fail;
 	}
