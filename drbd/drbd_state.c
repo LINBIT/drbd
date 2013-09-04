@@ -3126,13 +3126,17 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) &&
 	    resource->role[NOW] != R_PRIMARY && role == R_PRIMARY) {
+		union drbd_state mask = {}, val = {};
 		enum drbd_state_rv rv;
+
+		mask.role = role_MASK;
+		val.role = role;
 
 		__change_role(resource, role, force);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, -1,
-				NS(role, role), &irq_flags, -1);
+				mask, val, &irq_flags, -1);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;
@@ -3210,13 +3214,17 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 	if (!local_state_change(flags) &&
 	    device->disk_state[NOW] != D_FAILED && disk_state == D_FAILED &&
 	    device_has_connected_peer_devices(device)) {
+		union drbd_state mask = {}, val = {};
 		enum drbd_state_rv rv;
+
+		mask.disk = disk_MASK;
+		val.disk = disk_state;
 
 		__change_disk_state(device, disk_state);
 		rv = try_state_change(resource);
 		if (rv == SS_SUCCESS)
 			rv = change_cluster_wide_state(resource, device->vnr,
-				NS(disk, disk_state), &irq_flags, -1);
+				mask, val, &irq_flags, -1);
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;
@@ -3414,9 +3422,15 @@ enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 
 		__change_repl_state(peer_device, new_repl_state);
 		rv = try_state_change(resource);
-		if (rv == SS_SUCCESS)
+		if (rv == SS_SUCCESS) {
+			union drbd_state mask = {}, val = {};
+
+			mask.conn = conn_MASK;
+			val.conn = new_repl_state;
+
 			rv = change_peer_state(peer_device->connection, peer_device->device->vnr,
-					       NS(conn, new_repl_state), &irq_flags);
+					       mask, val, &irq_flags);
+		}
 		if (rv < SS_SUCCESS) {
 			abort_state_change(resource, &irq_flags);
 			return rv;

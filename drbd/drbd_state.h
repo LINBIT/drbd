@@ -24,17 +24,6 @@ struct drbd_peer_device;
 #define susp_nod_MASK 1
 #define susp_fen_MASK 1
 
-#define STATE_MASK(T) \
-	({ union drbd_state mask; mask.i = 0; mask.T = T##_MASK; mask.i; })
-#define STATE_VALUE(T, S) \
-	({ union drbd_state val; val.i = 0; val.T = (S); val.i; })
-#define STATE_TYPE(S) \
-	((union drbd_state)(S))
-
-#define NS(T, S) \
-	STATE_TYPE(STATE_MASK(T)), \
-	STATE_TYPE(STATE_VALUE(T, S))
-
 enum chg_state_flags {
 	CS_HARD          = 1 << 0, /* Forced state change, such as a connection loss */
 	CS_VERBOSE       = 1 << 1,
