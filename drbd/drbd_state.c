@@ -3299,8 +3299,15 @@ enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
 	if (connection->cstate[NOW] != C_CONNECTING)
 		rv = SS_IN_TRANSIENT_STATE;
 	else {
+		union drbd_state mask = {}, val = {};
+
+		mask.conn = conn_MASK;
+		val.conn = C_CONNECTED;
+		mask.role = role_MASK;
+		val.role = resource->role[NOW];
+
 		rv = change_cluster_wide_state(resource, -1,
-			NS(conn, C_CONNECTED), &irq_flags,
+			mask, val, &irq_flags,
 			target_node_id);
 	}
 	__change_cstate(connection, C_CONNECTED);
