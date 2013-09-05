@@ -2812,7 +2812,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	struct p_twopc_request request;
 	struct twopc_reply *reply = &resource->twopc_reply;
 	enum chg_state_flags flags = resource->state_change_flags | CS_TWOPC;
-	struct drbd_connection *connection;
+	struct drbd_connection *connection, *target_connection = NULL;
 	enum drbd_state_rv rv;
 	u64 reach_immediately;
 	int retries = 1;
@@ -2857,6 +2857,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			rv = SS_CW_FAILED_BY_PEER;
 			goto out;
 		}
+		kref_get(&connection->kref);
+		target_connection = connection;
 
 		/* For connect transactions, add the target node id. */
 		reach_immediately |= NODE_MASK(target_node_id);
@@ -3004,12 +3006,21 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	end_remote_state_change(resource, irq_flags, flags);
 
 	if (rv >= SS_SUCCESS) {
+		if (target_connection &&
+		    target_connection->peer_role[NOW] == R_UNKNOWN) {
+			enum drbd_role target_role =
+				(reply->primary_nodes & NODE_MASK(target_node_id)) ?
+				R_PRIMARY : R_SECONDARY;
+			__change_peer_role(target_connection, target_role);
+		}
 		__change_weak(resource,
 			reply->weak_nodes &
 			NODE_MASK(resource->res_opts.node_id));
 	}
 
     out:
+	if (target_connection)
+		kref_put(&target_connection->kref, drbd_destroy_connection);
 	return rv;
 }
 
