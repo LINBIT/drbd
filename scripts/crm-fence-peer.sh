@@ -216,11 +216,8 @@ check_cluster_properties()
 try_place_constraint()
 {
 	local peer_state
-	local startup_fencing stonith_enabled
 
 	rc=1
-
-	check_cluster_properties
 
 	while :; do
 		check_peer_node_reachable
@@ -343,7 +340,7 @@ commit_suicide()
 
 	reboot_timeout=$(( reboot_timeout + SECONDS ))
 	# pacemaker apparently cannot kill me.
-	while (( $SECONDS  > $reboot_timeout )); do
+	while (( $SECONDS < $reboot_timeout )); do
 		echo WARNING "${extra_msg}going to reboot -f in $(( reboot_timeout - SECONDS )) seconds! To cancel: kill $$"
 		sleep 2
 	done
@@ -369,6 +366,10 @@ drbd_peer_fencing()
 
 	case $1 in
 	fence)
+
+		local startup_fencing stonith_enabled
+		check_cluster_properties
+
 		if [[ $fencing_attribute = "#uname" ]]; then
 			fencing_value=$HOSTNAME
 		elif ! fencing_value=$(crm_attribute -Q -t nodes -n $fencing_attribute 2>/dev/null); then
@@ -436,9 +437,9 @@ drbd_peer_fencing()
 		fi
 
 		# XXX policy decision:
-		if $suicide_on_failure_if_primary && [[ $DRBD_role = Primary ]] &&
-			[[ $drbd_fence_peer_exit_code != [3457] ]]; then
-			commit_suicide
+		if $suicide_on_failure_if_primary && [[ $drbd_fence_peer_exit_code != [3457] ]]; then
+			set_states_from_proc_drbd
+			[[ $DRBD_role = Primary ]] && commit_suicide
 		fi
 
 		return $rc
