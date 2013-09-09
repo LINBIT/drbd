@@ -1771,8 +1771,10 @@ static int replay_al_07(struct format *cfg, uint32_t *hot_extent)
 
 	/* we do expect at most one corrupt transaction, and only in case
 	 * things went wrong during transaction write. */
-	if (found_valid != mx)
+	if (found_valid != mx) {
 		fprintf(stderr, "%u corrupt or uninitialized AL transactions found\n", mx - found_valid);
+		fprintf(stderr, "You can safely ignore this if this node was cleanly stopped (no crash).\n");
+	}
 
 	/* Any other paranoia checks possible with this log format? */
 
