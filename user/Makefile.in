@@ -128,11 +128,18 @@ ifeq ($(WITH_UTILS),yes)
 		install -m 755 drbdmeta $(DESTDIR)$(sbindir) ;		\
 		install -m 755 drbdadm $(DESTDIR)$(sbindir) ;		\
 	fi
+	if test -d $(DESTDIR)/sbin && \
+	 ! test $(DESTDIR)/sbin -ef $(DESTDIR)$(sbindir) ; then		\
+		ln -sf $(sbindir)/drbdsetup $(DESTDIR)/sbin ;		\
+		ln -sf $(sbindir)/drbdmeta $(DESTDIR)/sbin ;		\
+		ln -sf $(sbindir)/drbdadm $(DESTDIR)/sbin ;		\
+	fi
 	$(MAKE) -C legacy install
 endif
 
 uninstall:
 	rm -f $(DESTDIR)$(sbindir)/{drbdsetup,drbdadm,drbdmeta}
+	rm -f $(DESTDIR)/sbin/{drbdsetup,drbdadm,drbdmeta}
 	$(MAKE) -C legacy uninstall
 
 spell:
