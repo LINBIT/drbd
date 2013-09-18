@@ -533,9 +533,8 @@ static void fifo_add_val(struct fifo_buffer *fb, int value)
 		fb->values[i] += value;
 }
 
-STATIC int drbd_rs_controller(struct drbd_conf *mdev)
+STATIC int drbd_rs_controller(struct drbd_conf *mdev, unsigned int sect_in)
 {
-	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	unsigned int want;     /* The number of sectors we want in the proxy */
 	int req_sect; /* Number of sectors to request in this turn */
 	int correction; /* Number of sectors more we need in the proxy*/
@@ -543,9 +542,6 @@ STATIC int drbd_rs_controller(struct drbd_conf *mdev)
 	int steps; /* Number of time steps to plan ahead */
 	int curr_corr;
 	int max_sect;
-
-	sect_in = atomic_xchg(&mdev->rs_sect_in, 0); /* Number of sectors that came in */
-	mdev->rs_in_flight -= sect_in;
 
 	spin_lock(&mdev->peer_seq_lock); /* get an atomic view on mdev->rs_plan_s */
 
@@ -589,17 +585,29 @@ STATIC int drbd_rs_controller(struct drbd_conf *mdev)
 
 STATIC int drbd_rs_number_requests(struct drbd_conf *mdev)
 {
-	int number;
+	int number, mb;
+	unsigned int sect_in; /* Number of sectors that came in since the last turn */
+
+	sect_in = atomic_xchg(&mdev->rs_sect_in, 0);
+	mdev->rs_in_flight -= sect_in;
+
 	if (mdev->rs_plan_s.size) { /* mdev->sync_conf.c_plan_ahead */
-		number = drbd_rs_controller(mdev) >> (BM_BLOCK_SHIFT - 9);
+		number = drbd_rs_controller(mdev, sect_in) >> (BM_BLOCK_SHIFT - 9);
 		mdev->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;
 	} else {
 		mdev->c_sync_rate = mdev->sync_conf.rate;
 		number = SLEEP_TIME * mdev->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	}
 
-	/* ignore the amount of pending requests, the resync controller should
-	 * throttle down to incoming reply rate soon enough anyways. */
+	/* Don't have more than "max-buffers"/2 in-flight.
+	 * Otherwise we may cause the remote site to stall on drbd_pp_alloc(),
+	 * potentially causing a distributed deadlock on congestion during
+	 * online-verify or (checksum-based) resync, if max-buffers,
+	 * socket buffer sizes and resync rate settings are mis-configured. */
+	mb = mdev->net_conf->max_buffers/2;
+	if (mb - mdev->rs_in_flight < number)
+		number = mb - mdev->rs_in_flight;
+
 	return number;
 }
 
@@ -636,7 +644,7 @@ STATIC int w_make_resync_request(struct drbd_conf *mdev,
 
 	max_bio_size = queue_max_hw_sectors(mdev->rq_queue) << 9;
 	number = drbd_rs_number_requests(mdev);
-	if (number == 0)
+	if (number <= 0)
 		goto requeue;
 
 	for (i = 0; i < number; i++) {

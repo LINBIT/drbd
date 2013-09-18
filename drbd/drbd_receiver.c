@@ -263,19 +263,26 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_conf *mdev)
  * @retry:	whether to retry, if not enough pages are available right now
  *
  * Tries to allocate number pages, first from our own page pool, then from
- * the kernel, unless this allocation would exceed the max_buffers setting.
+ * the kernel.
  * Possibly retry until DRBD frees sufficient pages somewhere else.
+ *
+ * If this allocation would exceed the max_buffers setting, we throttle
+ * allocation (schedule_timeout) to give the system some room to breathe.
+ *
+ * We do not use max-buffers as hard limit, because it could lead to
+ * congestion and further to a distributed deadlock during online-verify or
+ * (checksum based) resync, if the max-buffers, socket buffer sizes and
+ * resync-rate settings are mis-configured.
  *
  * Returns a page chain linked via page->private.
  */
 STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned number, bool retry)
 {
 	struct page *page = NULL;
+	unsigned int max_buffers = mdev->net_conf->max_buffers;
 	DEFINE_WAIT(wait);
 
-	/* Yes, we may run up to @number over max_buffers. If we
-	 * follow it strictly, the admin will get it wrong anyways. */
-	if (atomic_read(&mdev->pp_in_use) < mdev->net_conf->max_buffers)
+	if (atomic_read(&mdev->pp_in_use) < max_buffers)
 		page = drbd_pp_first_pages_or_try_alloc(mdev, number);
 
 	while (page == NULL) {
@@ -283,7 +290,7 @@ STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned number, bool 
 
 		drbd_kick_lo_and_reclaim_net(mdev);
 
-		if (atomic_read(&mdev->pp_in_use) < mdev->net_conf->max_buffers) {
+		if (atomic_read(&mdev->pp_in_use) < max_buffers) {
 			page = drbd_pp_first_pages_or_try_alloc(mdev, number);
 			if (page)
 				break;
@@ -297,7 +304,8 @@ STATIC struct page *drbd_pp_alloc(struct drbd_conf *mdev, unsigned number, bool 
 			break;
 		}
 
-		schedule();
+		if (schedule_timeout(HZ/10) == 0)
+			max_buffers = UINT_MAX;
 	}
 	finish_wait(&drbd_pp_wait, &wait);
 
