@@ -881,12 +881,16 @@ the unit is 1 second.
           </term>
           <listitem>
             <para><indexterm significance="normal"><primary>drbd.conf</primary><secondary>max-buffers </secondary></indexterm>
-  Maximum number of requests to be allocated by DRBD. Unit is PAGE_SIZE,
-  which is 4 KiB on most systems.
-  The minimum is hard coded to 32 (=128 KiB).
-  For high-performance installations it might help if you
-  increase that number. These buffers are used to hold
-  data blocks while they are written to disk.
+  Limits the memory usage per DRBD minor device on the receiving side,
+  or for internal buffers during resync or online-verify.
+  Unit is PAGE_SIZE, which is 4 KiB on most systems.
+  The minimum possible setting is hard coded to 32 (=128 KiB).
+  These buffers are used to hold data blocks while they are written to/read from disk.
+  To avoid possible distributed deadlocks on congestion, this setting is used
+  as a throttle threshold rather than a hard limit.  Once more than max-buffers
+  pages are in use, further allocation from this pool is throttled.
+  You want to increase max-buffers if you cannot saturate the IO backend on the
+  receiving side.
   </para>
           </listitem>
         </varlistentry>
