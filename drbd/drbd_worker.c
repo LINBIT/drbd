@@ -680,7 +680,7 @@ next_sector:
 		 */
 		align = 1;
 		rollback_i = i;
-		for (;;) {
+		while (i < number) {
 			if (size + BM_BLOCK_SIZE > max_bio_size)
 				break;
 
