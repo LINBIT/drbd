@@ -2234,23 +2234,20 @@ void convert_after_option(struct d_resource *res)
 			_convert_after_option(res, vol);
 }
 
-char *proxy_connection_name(struct d_resource *res)
+int _proxy_connect_name_len(struct d_resource *res)
 {
-	static char conn_name[128];
-	int counter;
+	return strlen(res->name) +
+		strlen(names_to_str_c(res->peer->proxy->on_hosts, '_')) +
+		strlen(names_to_str_c(res->me->proxy->on_hosts, '_')) +
+		3 /* for the two dashes and the trailing 0 character */;
+}
 
-	counter = snprintf(conn_name, sizeof(conn_name), "%s-%s-%s",
-			 res->name,
-			 names_to_str_c(res->peer->proxy->on_hosts, '_'),
-			 names_to_str_c(res->me->proxy->on_hosts, '_')
-			 );
-	if (counter >= sizeof(conn_name)-3) {
-		fprintf(stderr,
-				"The connection name in resource %s got too long.\n",
-				res->name);
-		exit(E_config_invalid);
-	}
-
+char *_proxy_connection_name(char *conn_name, struct d_resource *res)
+{
+	sprintf(conn_name, "%s-%s-%s",
+		res->name,
+		names_to_str_c(res->peer->proxy->on_hosts, '_'),
+		names_to_str_c(res->me->proxy->on_hosts, '_'));
 	return conn_name;
 }
 
