@@ -279,7 +279,7 @@ extern int _proxy_connect_name_len(struct d_resource *res);
 extern char *_proxy_connection_name(char *conn_name, struct d_resource *res);
 #define proxy_connection_name(RES) \
 	_proxy_connection_name(alloca(_proxy_connect_name_len(RES)), RES)
-int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
+int parse_proxy_options_section(struct d_resource *res);
 /* conn_name is optional and mostly for compatibility with dcmd */
 int do_proxy_conn_up(struct cfg_ctx *ctx);
 int do_proxy_conn_down(struct cfg_ctx *ctx);
@@ -376,9 +376,6 @@ extern void add_setup_option(bool explicit, char *option);
   _l;					      \
 })
 
-
-#define PARSER_CHECK_PROXY_KEYWORD (1)
-#define PARSER_STOP_IF_INVALID (2)
 
 #endif
 
