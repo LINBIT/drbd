@@ -942,13 +942,17 @@ the unit is 1 second.
               <primary>drbd.conf</primary>
               <secondary>unplug-watermark </secondary>
             </indexterm>
+	    <para>
+      This setting has no effect with recent kernels that use explicit on-stack
+      plugging (upstream Linux kernel 2.6.39, distributions may have backported).
+            </para>
             <para>      When the number of pending write requests on the standby
       (secondary) node exceeds the <option>unplug-watermark</option>, we trigger
       the request processing of our backing storage device.
       Some storage controllers deliver better performance with small
       values, others deliver best performance when the value is set to
-      the same value as max-buffers. Minimum 16, default 128, maximum
-      131072.
+      the same value as max-buffers, yet others don't feel much effect at all.
+      Minimum 16, default 128, maximum 131072.
     </para>
           </listitem>
         </varlistentry>
