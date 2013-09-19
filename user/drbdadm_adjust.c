@@ -311,7 +311,7 @@ static int proxy_reconf(struct cfg_ctx *ctx, struct d_resource *running)
 		goto redo_whole_conn;
 
 	find_option_in_resources("memlimit",
-			res->proxy_options, &res_o,
+			res->me->proxy->options, &res_o,
 			running->proxy_options, &run_o,
 			NULL, NULL);
 	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
@@ -336,7 +336,7 @@ redo_whole_conn:
 	}
 
 
-	res_o = res->proxy_plugins;
+	res_o = res->me->proxy->plugins;
 	run_o = running->proxy_plugins;
 	used = 0;
 	conn_name = proxy_connection_name(res);

@@ -773,8 +773,9 @@ static void dump_proxy_info(struct d_proxy_info *pi)
 	printI("proxy on %s {\n", names_to_str(pi->on_hosts));
 	++indent;
 	dump_address("inside", pi->inside_addr, pi->inside_port, pi->inside_af);
-	dump_address("outside", pi->outside_addr, pi->outside_port,
-		     pi->outside_af);
+	dump_address("outside", pi->outside_addr, pi->outside_port, pi->outside_af);
+	dump_options2("options", pi->options,
+			dump_proxy_plugins, pi->plugins);
 	--indent;
 	printI("}\n");
 }
@@ -931,6 +932,8 @@ static void dump_proxy_info_xml(struct d_proxy_info *pi)
 	       pi->inside_port, pi->inside_addr);
 	printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n",
 	       pi->outside_af, pi->outside_port, pi->outside_addr);
+	dump_options_xml2("options", pi->options,
+			dump_proxy_plugins_xml, pi->plugins);
 	--indent;
 	printI("</proxy>\n");
 }
@@ -1351,6 +1354,11 @@ static void expand_common(void)
 		for (h = res->all_hosts; h; h = h->next) {
 			for_each_volume(vol, h->volumes) {
 				expand_opts(res->disk_options, &vol->disk_options);
+			}
+
+			if (h->proxy) {
+				expand_opts(res->proxy_options, &h->proxy->options);
+				expand_opts(res->proxy_plugins, &h->proxy->plugins);
 			}
 		}
 	}
@@ -2289,7 +2297,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
-	opt = res->proxy_options;
+	opt = res->me->proxy->options;
 	while (opt) {
 		argv[NA(argc)] = "-c";
 		ssprintf(argv[NA(argc)], "set %s %s %s",
@@ -2298,7 +2306,7 @@ int do_proxy_conn_plugins(struct cfg_ctx *ctx)
 	}
 
 	counter = 0;
-	opt = res->proxy_plugins;
+	opt = res->me->proxy->plugins;
 	/* Don't send the "set plugin ... END" line if no plugins are defined 
 	 * - that's incompatible with the drbd proxy version 1. */
 	if (opt) {
