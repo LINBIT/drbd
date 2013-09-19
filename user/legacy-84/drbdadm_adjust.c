@@ -681,8 +681,7 @@ int adm_adjust(struct cfg_ctx *ctx)
 
 		/* actually parse "drbd-proxy-ctl show" output */
 		yyin = m_popen(&pid,argv);
-		can_do_proxy = !parse_proxy_settings(running,
-				PARSER_CHECK_PROXY_KEYWORD | PARSER_STOP_IF_INVALID);
+		can_do_proxy = !parse_proxy_options_section(running);
 		fclose(yyin);
 
 		waitpid(pid,0,0);

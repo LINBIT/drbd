@@ -1806,25 +1806,11 @@ out:
 		res->proxy_plugins = options;
 }
 
-int parse_proxy_settings(struct d_resource *res, int flags)
+static int parse_proxy_options(struct d_resource *res)
 {
-	int token;
 	struct d_option *proxy_options;
 
-	if (flags & PARSER_CHECK_PROXY_KEYWORD) {
-		token = yylex();
-		if (token != TK_PROXY) {
-			if (flags & PARSER_STOP_IF_INVALID) {
-				yyrestart(yyin); /* flushes flex's buffers */
-				return 1;
-			}
-
-			pe_expected_got("proxy", token);
-		}
-	}
-
 	EXP('{');
-
 	proxy_options = parse_options_d(0,
 					0,
 					TK_PROXY_OPTION | TK_PROXY_GROUP,
@@ -1835,6 +1821,19 @@ int parse_proxy_settings(struct d_resource *res, int flags)
 	if (res)
 		res->proxy_options = proxy_options;
 	return 0;
+}
+
+int parse_proxy_options_section(struct d_resource *res)
+{
+	int token;
+
+	token = yylex();
+	if (token != TK_PROXY) {
+		yyrestart(yyin); /* flushes flex's buffers */
+		return 1;
+	}
+
+	return parse_proxy_options(res);
 }
 
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
@@ -1954,7 +1953,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_PROXY:
 			check_upr("proxy section", "%s:proxy", res->name);
-			parse_proxy_settings(res, 0);
+			parse_proxy_options(res);
 			break;
 		case TK_DEVICE:
 			check_upr("device statement", "%s:device", res->name);
