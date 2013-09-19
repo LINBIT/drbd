@@ -87,6 +87,8 @@ struct d_proxy_info
   char* outside_addr;
   char* outside_port;
   char* outside_af;
+  struct d_option *options; /* named proxy_options in other places */
+  struct d_option *plugins; /* named proxy_plugins in other places */
 };
 
 struct d_volume
