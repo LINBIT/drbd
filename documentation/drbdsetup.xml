@@ -653,9 +653,12 @@
           <replaceable>val</replaceable></option></term>
 
           <listitem>
-            <para>With this option the maximal number of write requests between two barriers is
-            limited. Should be set to the same as <option>--max-buffers</option>. Values smaller
-            than 10 can lead to degraded performance. The default value is 2048.</para>
+            <para>With this option the maximal number of write requests between
+	      two barriers is limited. Typically set to the same as
+	      <option>--max-buffers</option>, or the allowed maximum.
+	      Values smaller than 10 can lead to degraded performance.
+	      The default value is 2048.
+            </para>
           </listitem>
         </varlistentry>
 
@@ -665,9 +668,11 @@
 
           <listitem>
             <para>With this option the maximal number of buffer pages allocated by DRBD's receiver
-            thread is limited. Should be set to the same as <option>--max-epoch-size</option>.
-            Small values could lead to degraded performance. The default value is 2048, the
-            minimum 32.</para>
+            thread is limited. Typically set to the same as <option>--max-epoch-size</option>.
+            Small values could lead to degraded performance. The default value is 2048, the minimum 32.
+            Increase this if you cannot saturate the IO backend of the receiving side during linear write
+            or during resync while otherwise idle.</para>
+            <para>See also <citerefentry><refentrytitle>drbd.conf</refentrytitle><manvolnum>5</manvolnum></citerefentry></para>
           </listitem>
         </varlistentry>
 
