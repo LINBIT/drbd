@@ -47,6 +47,7 @@ YYSTYPE yylval;
 /////////////////////
 
 static int c_section_start;
+static int parse_proxy_options(struct d_option **, struct d_option **);
 void my_parse(void);
 
 struct d_name *names_from_str(char* str)
@@ -868,6 +869,9 @@ static void parse_proxy_section(struct d_host_info *host)
 			break;
 		case TK_OUTSIDE:
 			parse_address(proxy->on_hosts, &proxy->outside_addr, &proxy->outside_port, &proxy->outside_af);
+			break;
+		case TK_OPTIONS:
+			parse_proxy_options(&proxy->options, &proxy->plugins);
 			break;
 		case '}':
 			goto break_loop;
@@ -1756,7 +1760,7 @@ void set_disk_in_res(struct d_resource *res)
 
 void proxy_delegate(void *ctx)
 {
-	struct d_resource *res = (struct d_resource *)ctx;
+	struct d_option **proxy_plugins = (struct d_option **)ctx;
 	int token;
 	struct d_option *options, *opt;
 	struct d_name *line, *word, **pnp;
@@ -1802,24 +1806,21 @@ void proxy_delegate(void *ctx)
 		free_names(line);
 	}
 out:
-	if (res)
-		res->proxy_plugins = options;
+	if (proxy_plugins)
+		*proxy_plugins = options;
 }
 
-static int parse_proxy_options(struct d_resource *res)
+static int parse_proxy_options(struct d_option **proxy_options, struct d_option **proxy_plugins)
 {
-	struct d_option *proxy_options;
+	struct d_option *opts;
 
 	EXP('{');
-	proxy_options = parse_options_d(0,
-					0,
-					TK_PROXY_OPTION | TK_PROXY_GROUP,
-					TK_PROXY_DELEGATE,
-					proxy_delegate,
-					res);
+	opts = parse_options_d(0, 0, TK_PROXY_OPTION | TK_PROXY_GROUP,
+			       TK_PROXY_DELEGATE, proxy_delegate, proxy_plugins);
 
-	if (res)
-		res->proxy_options = proxy_options;
+	if (proxy_options)
+		*proxy_options = opts;
+
 	return 0;
 }
 
@@ -1833,7 +1834,7 @@ int parse_proxy_options_section(struct d_resource *res)
 		return 1;
 	}
 
-	return parse_proxy_options(res);
+	return parse_proxy_options(&res->proxy_options, &res->proxy_plugins);
 }
 
 struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
@@ -1953,7 +1954,7 @@ struct d_resource* parse_resource(char* res_name, enum pr_flags flags)
 			break;
 		case TK_PROXY:
 			check_upr("proxy section", "%s:proxy", res->name);
-			parse_proxy_options(res);
+			parse_proxy_options(&res->proxy_options, &res->proxy_plugins);
 			break;
 		case TK_DEVICE:
 			check_upr("device statement", "%s:device", res->name);
