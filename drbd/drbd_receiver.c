@@ -2195,28 +2195,35 @@ out_interrupted:
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-int drbd_rs_should_slow_down(struct drbd_conf *mdev, sector_t sector)
+bool drbd_rs_should_slow_down(struct drbd_conf *mdev, sector_t sector)
 {
-	unsigned long db, dt, dbdt;
 	struct lc_element *tmp;
-	int curr_events;
-	int throttle = 0;
+	bool throttle = true;
 
-	/* feature disabled? */
-	if (mdev->sync_conf.c_min_rate == 0)
-		return 0;
+	if (!drbd_rs_c_min_rate_throttle(mdev))
+		return false;
 
 	spin_lock_irq(&mdev->al_lock);
 	tmp = lc_find(mdev->resync, BM_SECT_TO_EXT(sector));
 	if (tmp) {
 		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-		if (test_bit(BME_PRIORITY, &bm_ext->flags)) {
-			spin_unlock_irq(&mdev->al_lock);
-			return 0;
-		}
+		if (test_bit(BME_PRIORITY, &bm_ext->flags))
+			throttle = false;
 		/* Do not slow down if app IO is already waiting for this extent */
 	}
 	spin_unlock_irq(&mdev->al_lock);
+
+	return throttle;
+}
+
+bool drbd_rs_c_min_rate_throttle(struct drbd_conf *mdev)
+{
+	unsigned long db, dt, dbdt;
+	int curr_events;
+
+	/* feature disabled? */
+	if (mdev->sync_conf.c_min_rate == 0)
+		return false;
 
 	curr_events = drbd_backing_bdev_events(mdev)
 		    - atomic_read(&mdev->rs_sect_ev);
@@ -2243,11 +2250,10 @@ int drbd_rs_should_slow_down(struct drbd_conf *mdev, sector_t sector)
 		dbdt = Bit2KB(db/dt);
 
 		if (dbdt > mdev->sync_conf.c_min_rate)
-			throttle = 1;
+			return true;
 	}
-	return throttle;
+	return false;
 }
-
 
 STATIC int receive_DataRequest(struct drbd_conf *mdev, enum drbd_packets cmd, unsigned int digest_size)
 {
