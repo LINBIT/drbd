@@ -1775,6 +1775,7 @@ void proxy_delegate(void *ctx)
 	while (1) {
 		pnp = &line;
 		while (1) {
+			yylval.txt = NULL;
 			token = yylex();
 			if (token == ';')
 				break;
@@ -1790,7 +1791,7 @@ void proxy_delegate(void *ctx)
 			word = malloc(sizeof(struct d_name));
 			if (!word)
 				pdperror("out of memory.");
-			word->name = yylval.txt;
+			word->name = yylval.txt ? yylval.txt : strdup(yytext);
 			word->next = NULL;
 			*pnp = word;
 			pnp = &word->next;
