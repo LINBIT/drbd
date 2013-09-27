@@ -675,11 +675,11 @@ drbd_set_role(struct drbd_device *device, enum drbd_role new_role, int force)
 			put_ldev(device);
 		}
 	} else {
-		mutex_lock(&device->resource->conf_update);
+		/* Called from drbd_adm_set_role only.
+		 * We are still holding the conf_update mutex. */
 		nc = first_peer_device(device)->connection->net_conf;
 		if (nc)
 			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
-		mutex_unlock(&device->resource->conf_update);
 
 		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
@@ -741,11 +741,16 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 	}
+	mutex_lock(&adm_ctx.device->resource->conf_update);
+	genl_unlock();
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY)
 		retcode = drbd_set_role(adm_ctx.device, R_PRIMARY, parms.assume_uptodate);
 	else
 		retcode = drbd_set_role(adm_ctx.device, R_SECONDARY, 0);
+
+	genl_lock();
+	mutex_unlock(&adm_ctx.device->resource->conf_update);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
