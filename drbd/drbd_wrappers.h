@@ -1201,4 +1201,30 @@ static inline void genl_lock(void)  { }
 static inline void genl_unlock(void)  { }
 #endif
 
+
+#if !defined(QUEUE_FLAG_DISCARD) || !defined(QUEUE_FLAG_SECDISCARD)
+# define queue_flag_set_unlocked(F, Q)				\
+	({							\
+		if ((F) != -1)					\
+			queue_flag_set_unlocked(F, Q);		\
+	})
+
+# define queue_flag_clear_unlocked(F, Q)			\
+	({							\
+		if ((F) != -1)					\
+			queue_flag_clear_unlocked(F, Q);	\
+	})
+
+# ifndef blk_queue_discard
+#  define blk_queue_discard(q)   (0)
+#  define QUEUE_FLAG_DISCARD    (-1)
+# endif
+
+# ifndef blk_queue_secdiscard
+#  define blk_queue_secdiscard(q)   (0)
+#  define QUEUE_FLAG_SECDISCARD    (-1)
+# endif
+#endif
+
+
 #endif
