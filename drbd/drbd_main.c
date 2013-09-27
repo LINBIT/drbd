@@ -2793,7 +2793,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
 	struct gendisk *disk;
 	struct request_queue *q;
-	int id, refs = 3;
+	int id, refs = 2;
 	enum drbd_ret_code err = ERR_NOMEM;
 
 	device = minor_to_device(minor);
