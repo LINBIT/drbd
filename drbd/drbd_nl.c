@@ -1152,6 +1152,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
 		struct drbd_connection *connection = first_peer_device(device)->connection;
 
+#if QUEUE_FLAG_DISCARD != -1 /* If this is not defined, the there is might be no q->limits */
 		if (blk_queue_discard(b) &&
 		    (connection->cstate < C_CONNECTED || connection->agreed_features & FF_TRIM)) {
 			/* inherit from backing queue */
@@ -1170,7 +1171,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
 			queue_flag_clear_unlocked(QUEUE_FLAG_SECDISCARD, q);
 		}
-
+#endif
 		blk_queue_stack_limits(q, b);
 
 		if (q->backing_dev_info.ra_pages != b->backing_dev_info.ra_pages) {
