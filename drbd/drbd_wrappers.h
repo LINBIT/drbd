@@ -1245,4 +1245,17 @@ static inline pid_t task_pid_nr(struct task_struct *tsk)
 #endif
 
 
+#ifndef BLKDEV_ISSUE_ZEROOUT_EXPORTED
+/* Was introduced with 2.6.34 */
+extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
+				sector_t nr_sects, gfp_t gfp_mask);
+#else
+#ifdef COMPAT_BLKDEV_ISSUE_ZEROOUT_HAS_5_PARAMTERS
+/* ... but in 2.6.34 and 2.6.35 it had 5 parameters. Later only 4 */
+#define blkdev_issue_zeroout(BDEV, SS, NS, GFP) \
+	blkdev_issue_zeroout(BDEV, SS, NS, GFP, BLKDEV_IFL_WAIT)
+
+#endif
+#endif
+
 #endif
