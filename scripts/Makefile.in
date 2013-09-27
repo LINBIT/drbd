@@ -36,7 +36,6 @@ UDEV_RULE_SUFFIX = @UDEV_RULE_SUFFIX@
 INITDIR = @INITDIR@
 LIBDIR = @prefix@/lib/@PACKAGE_TARNAME@
 LN_S = @LN_S@
-INITSCRIPT_SYMLINK = @INITSCRIPT_SYMLINK@
 
 # features enabled or disabled by configure
 WITH_UTILS = @WITH_UTILS@
@@ -82,9 +81,6 @@ ifeq ($(WITH_UTILS),yes)
 	  $(LN_S) -f notify.sh notify-out-of-sync.sh; )
 	install -d $(DESTDIR)$(sbindir)
 	install -m 755 drbd-overview.pl $(DESTDIR)$(sbindir)/drbd-overview
-ifeq ($(DISTRO),suse)
-	$(LN_S) -f ..$(sysconfdir)/init.d/drbd $(DESTDIR)$(INITSCRIPT_SYMLINK)
-endif
 ifeq ($(DISTRO),debian)
 	@ echo "Don't forget to run update-rc.d"
 else

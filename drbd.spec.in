@@ -122,7 +122,6 @@ This packages includes the DRBD administration tools.
 %{_prefix}/lib/%{name}/notify-pri-lost.sh
 %{_prefix}/lib/%{name}/notify-pri-on-incon-degr.sh
 %{_prefix}/lib/%{name}/notify.sh
-@INITSCRIPT_SYMLINK@
 
 %defattr(-,root,root,-)
 %dir %{_var}/lib/%{name}
