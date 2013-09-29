@@ -86,12 +86,42 @@ char *_names_to_str(char* buffer, struct names *names)
 	return _names_to_str_c(buffer, names, ' ');
 }
 
+static const char *after_shortname(const char *hostname)
+{
+	while (*hostname != '.') {
+		if (*hostname == 0)
+			break;
+		hostname++;
+	}
+	return hostname;
+}
+
+/*
+ * Determine if two hostnames are either fully qualified and equal,
+ * or one or both do not contain a domain name and the host names
+ * are equal.  (Note that DNS names are not case sensitive.)
+ */
+bool hostnames_equal(const char *a, const char *b)
+{
+	const char *domain_a = after_shortname(a);
+	const char *domain_b = after_shortname(b);
+
+	if (*domain_a && *domain_b) {
+		/* Both hostnames contain a domain part. */
+		return !strcasecmp(a, b);
+	} else {
+		/* One or both hostnames are "short". */
+		return domain_a - a == domain_b - b &&
+		       !strncasecmp(a, b, domain_a - a);
+	}
+}
+
 int hostname_in_list(const char *name, struct names *names)
 {
 	struct d_name *n;
 
 	STAILQ_FOREACH(n, names, link)
-		if (!strcmp(n->name, name))
+		if (hostnames_equal(n->name, name))
 			return 1;
 
 	return 0;
