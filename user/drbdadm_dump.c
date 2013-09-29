@@ -529,7 +529,7 @@ int adm_dump(const struct cfg_ctx *ctx)
 	struct d_volume *vol;
 
 	printI("# resource %s on %s: %s, %s\n",
-	       esc(res->name), nodeinfo.nodename,
+	       esc(res->name), canonname,
 	       res->ignore ? "ignored" : "not ignored",
 	       res->stacked ? "stacked" : "not stacked");
 	printI("# defined at %s:%u\n", res->config_file, res->start_line);

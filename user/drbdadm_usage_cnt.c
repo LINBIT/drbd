@@ -478,6 +478,7 @@ static int make_get_request(char *uri) {
 	FILE *sockfd;
 	int writeit;
 	struct timeval timeout = { .tv_sec = SOCKET_TIMEOUT };
+	struct utsname nodeinfo;
 
 	sock = socket( PF_INET, SOCK_STREAM, 0);
 	if (sock < 0)
@@ -503,7 +504,7 @@ static int make_get_request(char *uri) {
 			host_info->h_length);
 	}
 
-
+	uname(&nodeinfo);
 	req_buf = ssprintf("GET %s HTTP/1.0\r\n"
 			   "Host: "HTTP_HOST"\r\n"
 			   "User-Agent: drbdadm/"REL_VERSION" (%s; %s; %s; %s)\r\n"

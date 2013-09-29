@@ -128,7 +128,7 @@ static char *get_opt_val(struct options *, const char *, char *);
 static struct ifreq *get_ifreq();
 
 char ss_buffer[1024];
-struct utsname nodeinfo;
+const char *canonname;  /* Canonical hostname according to getaddrinfo() */
 int line = 1;
 int fline;
 struct d_globals global_options = { 0, 0, 0, 1, UC_ASK };
@@ -808,7 +808,7 @@ static int sh_lres(const struct cfg_ctx *ctx)
 	}
 	if (!res->stacked) {
 		fprintf(stderr, "'%s' is not stacked on this host (%s)\n",
-			res->name, nodeinfo.nodename);
+			res->name, canonname);
 		exit(E_USAGE);
 	}
 	printf("%s\n", res->me->lower->name);
@@ -1738,16 +1738,16 @@ static int check_proxy(const struct cfg_ctx *ctx, int do_up)
 			return 0;
 		fprintf(stderr,
 			"There is no proxy config for host %s in resource %s.\n",
-			nodeinfo.nodename, res->name);
+			canonname, res->name);
 		exit(E_CONFIG_INVALID);
 	}
 
-	if (!hostname_in_list(nodeinfo.nodename, &res->me->proxy->on_hosts)) {
+	if (!hostname_in_list(canonname, &res->me->proxy->on_hosts)) {
 		if (all_resources)
 			return 0;
 		fprintf(stderr,
 			"The proxy config in resource %s is not for %s.\n",
-			res->name, nodeinfo.nodename);
+			res->name, canonname);
 		exit(E_CONFIG_INVALID);
 	}
 
@@ -3095,18 +3095,18 @@ void die_if_no_resources(void)
 		fprintf(stderr,
 			"WARN: no normal resources defined for this host (%s)!?\n"
 			"Misspelled name of the local machine with the 'on' keyword ?\n",
-			nodeinfo.nodename);
+			canonname);
 		exit(E_USAGE);
 	}
 	if (!is_drbd_top && nr_resources[NORMAL] == 0) {
 		fprintf(stderr,
 			"WARN: no normal resources defined for this host (%s)!?\n",
-			nodeinfo.nodename);
+			canonname);
 		exit(E_USAGE);
 	}
 	if (is_drbd_top && nr_resources[STACKED] == 0) {
 		fprintf(stderr, "WARN: nothing stacked for this host (%s), "
-			"nothing to do in stacked mode!\n", nodeinfo.nodename);
+			"nothing to do in stacked mode!\n", canonname);
 		exit(E_USAGE);
 	}
 }
@@ -3125,18 +3125,16 @@ int main(int argc, char **argv)
 
 	initialize_deferred_cmds();
 	yyin = NULL;
-	uname(&nodeinfo);	/* FIXME maybe fold to lower case ? */
+	canonname = strdup(canonical_hostname());
 	no_tty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
 
 	env_drbd_nodename = getenv("__DRBD_NODE__");
 	if (env_drbd_nodename && *env_drbd_nodename) {
-		strncpy(nodeinfo.nodename, env_drbd_nodename,
-			sizeof(nodeinfo.nodename) - 1);
-		nodeinfo.nodename[sizeof(nodeinfo.nodename) - 1] = 0;
+		canonname = strdup(env_drbd_nodename);
 		fprintf(stderr, "\n"
 			"   found __DRBD_NODE__ in environment\n"
 			"   PRETENDING that I am >>%s<<\n\n",
-			nodeinfo.nodename);
+			canonname);
 	}
 
 	assign_command_names_from_argv0(argv);
@@ -3316,7 +3314,7 @@ int main(int argc, char **argv)
 				if (ctx.res->ignore && !is_dump) {
 					fprintf(stderr,
 						"'%s' ignored, since this host (%s) is not mentioned with an 'on' keyword.\n",
-						ctx.res->name, nodeinfo.nodename);
+						ctx.res->name, canonname);
 					rv = E_USAGE;
 					continue;
 				}

@@ -3145,14 +3145,12 @@ int meta_set_gi(struct format *cfg, char **argv, int argc)
 void print_dump_header()
 {
 	char time_str[60];
-	struct utsname nodeinfo;
 	time_t t = time(NULL);
 	int i;
 
 	strftime(time_str, sizeof(time_str), "%F %T %z [%s]", localtime(&t));
-	uname(&nodeinfo);
 	printf("# DRBD meta data dump\n# %s\n# %s>",
-		time_str, nodeinfo.nodename);
+		time_str, canonical_hostname());
 
 	for (i=0; i < global_argc; i++)
 		printf(" %s",global_argv[i]);

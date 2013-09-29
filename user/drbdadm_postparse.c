@@ -227,12 +227,12 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 	for_each_host(host, &res->all_hosts) {
 		/* do we match  this host? */
 		if (match_on_proxy) {
-		       if (!host->proxy || !hostname_in_list(nodeinfo.nodename, &host->proxy->on_hosts))
+		       if (!host->proxy || !hostname_in_list(canonname, &host->proxy->on_hosts))
 			       continue;
 		} else if (host->by_address) {
 			if (!have_ip(host->address.af, host->address.addr) &&
 				/* for debugging only, e.g. __DRBD_NODE__=10.0.0.1 */
-			    strcmp(nodeinfo.nodename, host->address.addr))
+			    strcmp(canonname, host->address.addr))
 				continue;
 		} else if (host->lower) {
 			if (!host->lower->me)
@@ -241,7 +241,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 			/* huh? a resource without hosts to run on?! */
 			continue;
 		} else {
-			if (!hostname_in_list(nodeinfo.nodename, &host->on_hosts) &&
+			if (!hostname_in_list(canonname, &host->on_hosts) &&
 			    strcmp("_this_host", STAILQ_FIRST(&host->on_hosts)->name))
 				continue;
 		}
@@ -1131,7 +1131,7 @@ static void validate_resource(struct d_resource *res)
 		fprintf(stderr,
 			"%s:%d: in resource %s:\n\tmissing section 'on %s { ... }'.\n",
 			res->config_file, res->start_line, res->name,
-			nodeinfo.nodename);
+			canonname);
 		config_valid = 0;
 	}
 	// need to verify that in the discard-node-nodename options only known
@@ -1236,7 +1236,7 @@ static void convert_discard_opt(struct options *net_options)
 
 	if ((opt = find_opt(net_options, "after-sb-0pri"))) {
 		if (!strncmp(opt->value, "discard-node-", 13)) {
-			if (!strcmp(nodeinfo.nodename, opt->value + 13)) {
+			if (!strcmp(canonname, opt->value + 13)) {
 				free(opt->value);
 				opt->value = strdup("discard-local");
 			} else {
