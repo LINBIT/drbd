@@ -17,6 +17,7 @@
 #include <linux/drbd.h>
 #include <linux/fs.h>           /* for BLKGETSIZE64 */
 #include <string.h>
+#include <netdb.h>
 
 #include "drbdtool_common.h"
 #include "config.h"
@@ -812,4 +813,38 @@ void fprintf_hex(FILE *fp, off_t file_offset, const void *buf, unsigned len)
 		fprintf(fp, "|\n");
 	}
 	fprintf(fp, "%08llx\n", (unsigned long long)len + file_offset);
+}
+
+const char *canonical_hostname(void)
+{
+	static char *canonname;
+
+	if (!canonname) {
+		struct addrinfo *addrinfo = NULL;
+		struct addrinfo hints = {
+			.ai_family = AF_UNSPEC,
+			.ai_flags = AI_PASSIVE | AI_CANONNAME,
+		};
+		char hostname[HOST_NAME_MAX];
+		int err;
+
+		if (gethostname(hostname, sizeof(hostname))) {
+			perror(hostname);
+			exit(20);
+		}
+		err = getaddrinfo(hostname, NULL, &hints, &addrinfo);
+		if (err) {
+			fprintf(stderr, "%s: %s\n", hostname,
+				gai_strerror(err));
+			exit(20);
+		}
+		if (!addrinfo->ai_canonname) {
+			/* We don't have a canonical name for this host; fall
+			 * back to the hostname.  */
+			canonname = strdup(hostname);
+		} else
+			canonname = strdup(addrinfo->ai_canonname);
+		freeaddrinfo(addrinfo);
+	}
+	return canonname;
 }

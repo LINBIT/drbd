@@ -136,5 +136,6 @@ extern int lk_bdev_delete(const unsigned minor);
 /* load info from that file.
  * caller should free(bd->bd_name) once it is no longer needed. */
 extern int lk_bdev_load(const unsigned minor, struct bdev_info *bd);
+const char *canonical_hostname(void);
 
 #endif
