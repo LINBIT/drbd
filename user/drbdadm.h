@@ -365,7 +365,7 @@ extern void free_connection(struct connection *connection);
 extern void expand_common(void);
 extern void global_validate_maybe_expand_die_if_invalid(int expand);
 extern struct d_option *new_opt(char *name, char *value);
-extern int name_in_names(char *name, struct names *names);
+extern int hostname_in_list(const char *name, struct names *names);
 extern char *_names_to_str(char* buffer, struct names *names);
 extern char *_names_to_str_c(char* buffer, struct names *names, char c);
 #define NAMES_STR_SIZE 255

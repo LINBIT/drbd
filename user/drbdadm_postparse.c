@@ -103,7 +103,7 @@ struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name)
 	struct d_host_info *host;
 
 	for_each_host(host, &res->all_hosts)
-		if (name_in_names(name, &host->on_hosts))
+		if (hostname_in_list(name, &host->on_hosts))
 			return host;
 
 	return NULL;
@@ -227,7 +227,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 	for_each_host(host, &res->all_hosts) {
 		/* do we match  this host? */
 		if (match_on_proxy) {
-		       if (!host->proxy || !name_in_names(nodeinfo.nodename, &host->proxy->on_hosts))
+		       if (!host->proxy || !hostname_in_list(nodeinfo.nodename, &host->proxy->on_hosts))
 			       continue;
 		} else if (host->by_address) {
 			if (!have_ip(host->address.af, host->address.addr) &&
@@ -241,7 +241,7 @@ void set_me_in_resource(struct d_resource* res, int match_on_proxy)
 			/* huh? a resource without hosts to run on?! */
 			continue;
 		} else {
-			if (!name_in_names(nodeinfo.nodename, &host->on_hosts) &&
+			if (!hostname_in_list(nodeinfo.nodename, &host->on_hosts) &&
 			    strcmp("_this_host", STAILQ_FIRST(&host->on_hosts)->name))
 				continue;
 		}
@@ -1065,7 +1065,7 @@ static bool host_name_known(struct d_resource *res, char *name)
 	struct d_host_info *host;
 
 	for_each_host(host, &res->all_hosts)
-		if (name_in_names(name, &host->on_hosts))
+		if (hostname_in_list(name, &host->on_hosts))
 			return 1;
 
 	return 0;

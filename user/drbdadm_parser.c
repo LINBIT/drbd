@@ -86,7 +86,7 @@ char *_names_to_str(char* buffer, struct names *names)
 	return _names_to_str_c(buffer, names, ' ');
 }
 
-int name_in_names(char *name, struct names *names)
+int hostname_in_list(const char *name, struct names *names)
 {
 	struct d_name *n;
 

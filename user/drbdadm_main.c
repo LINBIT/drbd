@@ -1742,7 +1742,7 @@ static int check_proxy(const struct cfg_ctx *ctx, int do_up)
 		exit(E_CONFIG_INVALID);
 	}
 
-	if (!name_in_names(nodeinfo.nodename, &res->me->proxy->on_hosts)) {
+	if (!hostname_in_list(nodeinfo.nodename, &res->me->proxy->on_hosts)) {
 		if (all_resources)
 			return 0;
 		fprintf(stderr,
