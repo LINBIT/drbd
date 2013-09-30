@@ -1071,6 +1071,9 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	struct iovec iov;
 	struct nlmsghdr *nlh;
 	struct drbd_genlmsghdr *dh;
+	struct timespec retry_timeout = {
+		.tv_nsec = 62500000L,  /* 1/16 second */
+	};
 
 	/* pre allocate request message and reply buffer */
 	iov.iov_len = DEFAULT_MSG_SIZE;
@@ -1174,27 +1177,41 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 
 	dump_argv(argc, argv, optind, i - 1);
 
-	if (genl_send(drbd_sock, smsg)) {
-		desc = "error sending config command";
-		rv = OTHER_ERROR;
-		goto error;
-	}
-	do {
-		int received;
-
-		/* reduce timeout! limit retries */
-		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
-		if (received <= 0) {
-			if (received == -E_RCV_ERROR_REPLY && !errno)
-				continue;
-			if (!desc)
-				desc = "error receiving config reply";
+	for(;;) {
+		if (genl_send(drbd_sock, smsg)) {
+			desc = "error sending config command";
 			rv = OTHER_ERROR;
 			goto error;
 		}
-	} while (false);
-	ASSERT(dh->minor == minor);
-	rv = dh->ret_code;
+		do {
+			int received;
+
+			/* reduce timeout! limit retries */
+			received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
+			if (received <= 0) {
+				if (received == -E_RCV_ERROR_REPLY && !errno)
+					continue;
+				if (!desc)
+					desc = "error receiving config reply";
+				rv = OTHER_ERROR;
+				goto error;
+			}
+		} while (false);
+		ASSERT(dh->minor == minor);
+		rv = dh->ret_code;
+		if (rv != SS_IN_TRANSIENT_STATE)
+			break;
+		nanosleep(&retry_timeout, NULL);
+		/* Double the timeout, up to 10 seconds. */
+		if (retry_timeout.tv_sec < 10) {
+			retry_timeout.tv_sec *= 2;
+			retry_timeout.tv_nsec *= 2;
+			if (retry_timeout.tv_nsec > 1000000000L) {
+				retry_timeout.tv_sec++;
+				retry_timeout.tv_nsec -= 1000000000L;
+			}
+		}
+	}
 	if (rv == ERR_RES_NOT_KNOWN && cm->missing_ok)
 		rv = NO_ERROR;
 	drbd_tla_parse(nlh);
