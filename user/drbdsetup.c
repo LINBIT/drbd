@@ -1063,12 +1063,14 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 	struct option *lo;
 	int c, i;
 	int n_args;
-	int rv = NO_ERROR;
+	int rv;
 	char *desc = NULL; /* error description from kernel reply message */
 
 	struct drbd_genlmsghdr *dhdr;
 	struct msg_buff *smsg;
 	struct iovec iov;
+	struct nlmsghdr *nlh;
+	struct drbd_genlmsghdr *dh;
 
 	/* pre allocate request message and reply buffer */
 	iov.iov_len = DEFAULT_MSG_SIZE;
@@ -1079,6 +1081,8 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 		rv = OTHER_ERROR;
 		goto error;
 	}
+	nlh = (struct nlmsghdr*)iov.iov_base;
+	dh = genlmsg_data(nlmsg_data(nlh));
 
 	dhdr = genlmsg_put(smsg, &drbd_genl_family, 0, cm->cmd_id);
 	dhdr->minor = -1;
@@ -1157,6 +1161,8 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 			goto error;
 		}
 	}
+	if (nla)
+		nla_nest_end(smsg, nla);
 
 	/* argc should be cmd + n options + n args;
 	 * if it is more, we did not understand some */
@@ -1168,37 +1174,31 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 
 	dump_argv(argc, argv, optind, i - 1);
 
-	if (rv == NO_ERROR) {
+	if (genl_send(drbd_sock, smsg)) {
+		desc = "error sending config command";
+		rv = OTHER_ERROR;
+		goto error;
+	}
+	do {
 		int received;
 
-		if (nla)
-			nla_nest_end(smsg, nla);
-		if (genl_send(drbd_sock, smsg)) {
-			desc = "error sending config command";
+		/* reduce timeout! limit retries */
+		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
+		if (received <= 0) {
+			if (received == -E_RCV_ERROR_REPLY && !errno)
+				continue;
+			if (!desc)
+				desc = "error receiving config reply";
 			rv = OTHER_ERROR;
 			goto error;
 		}
+	} while (false);
+	ASSERT(dh->minor == minor);
+	rv = dh->ret_code;
+	if (rv == ERR_RES_NOT_KNOWN && cm->missing_ok)
+		rv = NO_ERROR;
+	drbd_tla_parse(nlh);
 
-retry_recv:
-		/* reduce timeout! limit retries */
-		received = genl_recv_msgs(drbd_sock, &iov, &desc, 120000);
-		if (received > 0) {
-			struct nlmsghdr *nlh = (struct nlmsghdr*)iov.iov_base;
-			struct drbd_genlmsghdr *dh = genlmsg_data(nlmsg_data(nlh));
-			ASSERT(dh->minor == minor);
-			rv = dh->ret_code;
-			if (rv == ERR_RES_NOT_KNOWN && cm->missing_ok)
-				rv = NO_ERROR;
-			drbd_tla_parse(nlh);
-		} else {
-			if (received == -E_RCV_ERROR_REPLY && !errno)
-					goto retry_recv;
-			if (!desc)
-				desc = "error receiving config reply";
-
-			rv = OTHER_ERROR;
-		}
-	}
 error:
 	msg_free(smsg);
 
