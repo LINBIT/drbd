@@ -1447,20 +1447,19 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	unsigned nr_pages = (ds + PAGE_SIZE -1) >> PAGE_SHIFT;
 	int err = -ENOMEM;
 
-	if (rw & DRBD_REQ_DISCARD) {
-		struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
-		if (!blk_queue_discard(q)) {
-			/* wait for all pending IO completions, before we start
-			 * zeroing things out. */
-			conn_wait_active_ee_empty(first_peer_device(device)->connection);
-			if (blkdev_issue_zeroout(device->ldev->backing_bdev,
-				sector, ds >> 9, GFP_NOIO))
-				peer_req->flags |= EE_WAS_ERROR;
-			drbd_endio_write_sec_final(peer_req);
-			return 0;
-		}
-		nr_pages = 0; /* discards don't have any payload. */
+	if (peer_req->flags & EE_IS_TRIM_USE_ZEROOUT) {
+		/* wait for all pending IO completions, before we start
+		 * zeroing things out. */
+		conn_wait_active_ee_empty(first_peer_device(device)->connection);
+		if (blkdev_issue_zeroout(device->ldev->backing_bdev,
+			sector, ds >> 9, GFP_NOIO))
+			peer_req->flags |= EE_WAS_ERROR;
+		drbd_endio_write_sec_final(peer_req);
+		return 0;
 	}
+
+	if (peer_req->flags & EE_IS_TRIM)
+		nr_pages = 0; /* discards don't have any payload. */
 
 	/* In most cases, we will only need one bio.  But in case the lower
 	 * level restrictions happen to be different at this offset on this
@@ -2500,10 +2499,13 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	dp_flags = be32_to_cpu(p->dp_flags);
 	rw |= wire_flags_to_bio(connection, dp_flags);
 	if (pi->cmd == P_TRIM) {
+		struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
+		peer_req->flags |= EE_IS_TRIM;
+		if (!blk_queue_discard(q))
+			peer_req->flags |= EE_IS_TRIM_USE_ZEROOUT;
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, rw & DRBD_REQ_DISCARD);
 		D_ASSERT(peer_device, peer_req->pages == NULL);
-		peer_req->flags |= EE_IS_TRIM;
 	} else if (peer_req->pages == NULL) {
 		D_ASSERT(device, peer_req->i.size == 0);
 		D_ASSERT(device, dp_flags & DP_FLUSH);
@@ -2572,7 +2574,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		update_peer_seq(peer_device, peer_seq);
 		spin_lock_irq(&device->resource->req_lock);
 	}
-	list_add(&peer_req->w.list, &device->active_ee);
+	/* if we use the zeroout fallback code, we process synchronously
+	 * and we wait for all pending requests, respectively wait for
+	 * active_ee to become empty in drbd_submit_peer_request();
+	 * better not add ourselves here. */
+	if ((peer_req->flags & EE_IS_TRIM_USE_ZEROOUT) == 0)
+		list_add(&peer_req->w.list, &device->active_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (device->state.conn == C_SYNC_TARGET)
