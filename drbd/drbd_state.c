@@ -2878,8 +2878,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	request.mask = cpu_to_be32(mask.i);
 	request.val = cpu_to_be32(val.i);
 
-	drbd_debug(resource, "Preparing cluster-wide state change %u\n",
-		   be32_to_cpu(request.tid));
+	drbd_info(resource, "Preparing cluster-wide state change %u\n",
+		  be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = target_node_id;
@@ -2970,9 +2970,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 		}
 		if (rv >= SS_SUCCESS) {
-			drbd_debug(resource, "Committing cluster-wide state change %u (%ums)\n",
-				   be32_to_cpu(request.tid),
-				   jiffies_to_msecs(jiffies - start_time));
+			drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
+				  be32_to_cpu(request.tid),
+				  jiffies_to_msecs(jiffies - start_time));
 
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT,
 						    &request, reach_immediately);
@@ -2981,9 +2981,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 			flags |= CS_WEAK_NODES;
 		} else {
-			drbd_debug(resource, "Aborting cluster-wide state change %u (%ums)\n",
-				   be32_to_cpu(request.tid),
-				   jiffies_to_msecs(jiffies - start_time));
+			drbd_info(resource, "Aborting cluster-wide state change %u (%ums)\n",
+				  be32_to_cpu(request.tid),
+				  jiffies_to_msecs(jiffies - start_time));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT,
 					       &request, reach_immediately);
 		}
@@ -2995,8 +2995,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 	if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 		long timeout = twopc_retry_timeout(resource, retries++);
-		drbd_debug(resource, "Retrying cluster-wide state change after %ums\n",
-			   jiffies_to_msecs(timeout));
+		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
+			  jiffies_to_msecs(timeout));
 		clear_remote_state_change(resource, irq_flags);
 		schedule_timeout_interruptible(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
