@@ -1011,10 +1011,12 @@ static bool do_remote_read(struct drbd_request *req)
 static int drbd_process_write_request(struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
-	int remote, send_oos;
+	int send_full_data, send_oos;
+	union drbd_dev_state s = device->state;
 
-	remote = drbd_should_do_remote(device->state);
-	send_oos = drbd_should_send_out_of_sync(device->state);
+	send_full_data = drbd_should_do_remote(s);
+	send_oos = !send_full_data &&
+		s.conn >= C_CONNECTED && s.pdsk >= D_INCONSISTENT;
 
 	/* Need to replicate writes.  Unless it is an empty flush,
 	 * which is better mapped to a DRBD P_BARRIER packet,
@@ -1025,23 +1027,21 @@ static int drbd_process_write_request(struct drbd_request *req)
 	if (unlikely(req->i.size == 0)) {
 		/* The only size==0 bios we expect are empty flushes. */
 		D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
-		if (remote)
+		if (send_full_data)
 			_req_mod(req, QUEUE_AS_DRBD_BARRIER);
-		return remote;
+		return send_full_data;
 	}
 
-	if (!remote && !send_oos)
+	if (!send_full_data && !send_oos)
 		return 0;
 
-	D_ASSERT(device, !(remote && send_oos));
-
-	if (remote) {
+	if (send_full_data) {
 		_req_mod(req, TO_BE_SENT);
 		_req_mod(req, QUEUE_FOR_NET_WRITE);
 	} else if (drbd_set_out_of_sync(device, req->i.sector, req->i.size))
 		_req_mod(req, QUEUE_FOR_SEND_OOS);
 
-	return remote;
+	return send_full_data;
 }
 
 static void
