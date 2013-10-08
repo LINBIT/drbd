@@ -1300,13 +1300,6 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
  *  but is about to become configurable.
  */
 
-/* Our old fixed size meta data layout
- * allows up to about 3.8TB, so if you want more,
- * you need to use the "flexible" meta data format. */
-#define MD_128MB_SECT (128LLU << 11)  /* 128 MB, unit sectors */
-#define MD_4kB_SECT	 8
-#define MD_32kB_SECT	64
-
 /* One activity log extent represents 4M of storage */
 #define AL_EXTENT_SHIFT 22
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SHIFT)
@@ -1395,7 +1388,7 @@ static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold
  */
 
 #define DRBD_MAX_SECTORS_FIXED_BM \
-	  ((MD_128MB_SECT - MD_32kB_SECT - MD_4kB_SECT) * (1LL<<(BM_EXT_SHIFT-9)))
+	  (((128 << 20 >> 9) - (32768 >> 9) - (4096 >> 9)) * (1LL<<(BM_EXT_SHIFT-9)))
 #if !defined(CONFIG_LBDAF) && !defined(CONFIG_LBD) && BITS_PER_LONG == 32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
@@ -1916,7 +1909,7 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	switch (bdev->md.meta_dev_idx) {
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
-		return bdev->md.md_offset + MD_4kB_SECT -1;
+		return bdev->md.md_offset + (4096 >> 9) -1;
 	case DRBD_MD_INDEX_FLEX_EXT:
 	default:
 		return bdev->md.md_offset + bdev->md.md_size_sect -1;
@@ -1976,7 +1969,7 @@ static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 		return (drbd_get_capacity(bdev->backing_bdev) & ~7ULL) - 8;
 
 	/* external, some index; this is the old fixed size layout */
-	return MD_128MB_SECT * bdev->md.meta_dev_idx;
+	return (128 << 20 >> 9) * bdev->md.meta_dev_idx;
 }
 
 static inline void

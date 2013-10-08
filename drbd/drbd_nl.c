@@ -1011,15 +1011,15 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 	default:
 		/* v07 style fixed size indexed meta data */
 		/* FIXME we should drop support for this! */
-		bdev->md.md_size_sect = MD_128MB_SECT;
-		bdev->md.al_offset = MD_4kB_SECT;
-		bdev->md.bm_offset = MD_4kB_SECT + al_size_sect;
+		bdev->md.md_size_sect = (128 << 20 >> 9);
+		bdev->md.al_offset = (4096 >> 9);
+		bdev->md.bm_offset = (4096 >> 9) + al_size_sect;
 		break;
 	case DRBD_MD_INDEX_FLEX_EXT:
 		/* just occupy the full device; unit: sectors */
 		bdev->md.md_size_sect = drbd_get_capacity(bdev->md_bdev);
-		bdev->md.al_offset = MD_4kB_SECT;
-		bdev->md.bm_offset = MD_4kB_SECT + al_size_sect;
+		bdev->md.al_offset = (4096 >> 9);
+		bdev->md.bm_offset = (4096 >> 9) + al_size_sect;
 		break;
 	case DRBD_MD_INDEX_INTERNAL:
 	case DRBD_MD_INDEX_FLEX_INT:
@@ -1031,11 +1031,11 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 		md_size_sect = drbd_capacity_to_on_disk_bm_sect(
 				drbd_get_capacity(bdev->backing_bdev),
 				max_peers)
-			+ MD_4kB_SECT + al_size_sect;
+			+ (4096 >> 9) + al_size_sect;
 
 		bdev->md.md_size_sect = md_size_sect;
 		/* bitmap offset is adjusted by 'super' block size */
-		bdev->md.bm_offset   = -md_size_sect + MD_4kB_SECT;
+		bdev->md.bm_offset   = -md_size_sect + (4096 >> 9);
 		break;
 	}
 }
@@ -1799,7 +1799,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		min_md_device_sectors = (2<<10);
 	} else {
 		max_possible_sectors = DRBD_MAX_SECTORS;
-		min_md_device_sectors = MD_128MB_SECT * (new_disk_conf->meta_dev_idx + 1);
+		min_md_device_sectors = (128 << 20 >> 9) * (new_disk_conf->meta_dev_idx + 1);
 	}
 
 	if (drbd_get_capacity(nbc->md_bdev) < min_md_device_sectors) {

@@ -3613,7 +3613,7 @@ static int check_activity_log_stripe_size(struct drbd_device *device,
 	/* both not set: default to old fixed size activity log */
 	if (al_stripes == 0 && al_stripe_size_4k == 0) {
 		al_stripes = 1;
-		al_stripe_size_4k = MD_32kB_SECT/8;
+		al_stripe_size_4k = (32768 >> 9)/8;
 	}
 
 	/* some paranoia plausibility checks */
@@ -3633,7 +3633,7 @@ static int check_activity_log_stripe_size(struct drbd_device *device,
 
 	/* Lower limit: we need at least 8 transaction slots (32kB)
 	 * to not break existing setups */
-	if (al_size_4k < MD_32kB_SECT/8)
+	if (al_size_4k < (32768 >> 9)/8)
 		goto err;
 
 	in_core->al_stripe_size_4k = al_stripe_size_4k;
@@ -3681,22 +3681,22 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 		on_disk_al_sect = -in_core->al_offset;
 		on_disk_bm_sect = in_core->al_offset - in_core->bm_offset;
 	} else {
-		if (in_core->al_offset != MD_4kB_SECT)
+		if (in_core->al_offset != (4096 >> 9))
 			goto err;
-		if (in_core->bm_offset < in_core->al_offset + in_core->al_size_4k * MD_4kB_SECT)
+		if (in_core->bm_offset < in_core->al_offset + in_core->al_size_4k * (4096 >> 9))
 			goto err;
 
-		on_disk_al_sect = in_core->bm_offset - MD_4kB_SECT;
+		on_disk_al_sect = in_core->bm_offset - (4096 >> 9);
 		on_disk_bm_sect = in_core->md_size_sect - in_core->bm_offset;
 	}
 
 	/* old fixed size meta data is exactly that: fixed. */
 	if (in_core->meta_dev_idx >= 0) {
-		if (in_core->md_size_sect != MD_128MB_SECT
-		||  in_core->al_offset != MD_4kB_SECT
-		||  in_core->bm_offset != MD_4kB_SECT + MD_32kB_SECT
+		if (in_core->md_size_sect != (128 << 20 >> 9)
+		||  in_core->al_offset != (4096 >> 9)
+		||  in_core->bm_offset != (4096 >> 9) + (32768 >> 9)
 		||  in_core->al_stripes != 1
-		||  in_core->al_stripe_size_4k != MD_32kB_SECT)
+		||  in_core->al_stripe_size_4k != (32768 >> 9))
 			goto err;
 	}
 
@@ -3706,12 +3706,12 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 		goto err;
 
 	/* should be aligned, and at least 32k */
-	if ((on_disk_al_sect & 7) || (on_disk_al_sect < MD_32kB_SECT))
+	if ((on_disk_al_sect & 7) || (on_disk_al_sect < (32768 >> 9)))
 		goto err;
 
 	/* should fit (for now: exactly) into the available on-disk space;
 	 * overflow prevention is in check_activity_log_stripe_size() above. */
-	if (on_disk_al_sect != in_core->al_size_4k * MD_4kB_SECT)
+	if (on_disk_al_sect != in_core->al_size_4k * (4096 >> 9))
 		goto err;
 
 	/* again, should be aligned */
