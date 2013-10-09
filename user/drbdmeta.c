@@ -2476,7 +2476,7 @@ unsigned long bm_bytes(const struct md_cpu const *md, uint64_t sectors)
 	unsigned long long bm_bits;
 
 	bm_bits = ALIGN(sectors, 8) / (md->bm_bytes_per_bit >> 9);
-	return (ALIGN(bm_bits, 64) / 8) * md->max_peers;
+	return ALIGN(bm_bits / 8 * md->max_peers, 4096);
 }
 
 static void fprintf_bm_eol(FILE *f, unsigned int i, int peer_nr, const char* indent)
