@@ -1660,26 +1660,74 @@ int drbd_merge_bvec(struct request_queue *q,
 	return limit;
 }
 
-struct drbd_request *find_oldest_request(struct drbd_resource *resource)
+/* device: only check for pending local disk completion, if req->device == device
+ * oldest_req:
+ *   input: NULL, or a request cursor from where to continue the list walk
+ *   output: the oldest request we found
+ *           if NULL on return, we have scanned all requests.
+ * check: output: bitmap index indicating what this oldest request is waiting for
+ * ignore: input: bitmap index indicating which connections/local disk to
+ *                ignore for this list walk.
+ * these bitmap indices are 0/1: localdisk, (1 << (node_id + 1)) for the connections.
+ */
+#if ((MAX_PEERS + 1) > BITS_PER_LONG)
+# error "think it over, indices too small"
+#endif
+void find_oldest_requests(struct drbd_device *device,
+		struct drbd_request **oldest_req,
+		unsigned long *check,
+		unsigned long ignore)
 {
-	/* Walk the transfer log,
-	 * and find the oldest not yet completed request */
+	struct drbd_resource *resource = device->resource;
 	struct drbd_request *r;
-	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
-		if (atomic_read(&r->completion_ref))
-			return r;
+	struct drbd_peer_device *peer_device;
+
+	r = list_prepare_entry(*oldest_req, &resource->transfer_log, tl_requests);
+	*oldest_req = NULL;
+	list_for_each_entry_continue(r, &resource->transfer_log, tl_requests) {
+		if (!(ignore & 1)) {
+			const unsigned s = r->rq_state[0];
+			if ((s & RQ_LOCAL_PENDING) && r->device == device) {
+				*oldest_req = r;
+				*check |= 1;
+			}
+		}
+		for_each_peer_device(peer_device, device) {
+			const int idx = 1 + peer_device->node_id;
+			const unsigned s = r->rq_state[idx];
+			if (ignore & (1UL << idx))
+				continue;
+
+			if ((s & RQ_NET_MASK) && !(s & RQ_NET_DONE)) {
+				*oldest_req = r;
+				*check |= 1UL << idx;
+			}
+		}
+		if (*oldest_req)
+			break;
 	}
-	return NULL;
+}
+
+static unsigned long time_min_in_future(unsigned long now,
+		unsigned long t1, unsigned long t2)
+{
+	t1 = time_after(now, t1) ? now : t1;
+	t2 = time_after(now, t2) ? now : t2;
+	return time_after(t1, t2) ? t2 : t1;
 }
 
 void request_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 	struct drbd_connection *connection;
-	struct drbd_request *req; /* oldest request */
-	unsigned long dt = 0, et = 0, nt; /* effective timeout = ko_count * timeout */
-	bool restart_timer = false;
+	struct drbd_request *req = NULL; /* oldest request */
+	unsigned long ignore = 0;
+	unsigned long check = 0;
+	unsigned long dt = 0;
+	unsigned long et = 0;
 	unsigned long now = jiffies;
+	unsigned long next_trigger_time = now;
+	bool restart_timer = false;
 
 	rcu_read_lock();
 	if (get_ldev(device)) { /* implicit state.disk >= D_INCONSISTENT */
@@ -1688,75 +1736,87 @@ void request_timer_fn(unsigned long data)
 	}
 	rcu_read_unlock();
 
+	/* The request is considered timed out, if
+	 * - we have some effective timeout from the configuration,
+	 *   with above state restrictions applied,
+	 * - the oldest request is waiting for a response from the network
+	 *   resp. the local disk,
+	 * - the oldest request is in fact older than the effective timeout,
+	 * - the connection was established (resp. disk was attached)
+	 *   for longer than the timeout already.
+	 * Note that for 32bit jiffies and very stable connections/disks,
+	 * we may have a wrap around, which is catched by
+	 *   !time_in_range(now, last_..._jif, last_..._jif + timeout).
+	 *
+	 * Side effect: once per 32bit wrap-around interval, which means every
+	 * ~198 days with 250 HZ, we have a window where the timeout would need
+	 * to expire twice (worst case) to become effective. Good enough.
+	 */
+
+	/* FIXME right now, this basically does a full transfer log walk *every time* */
 	spin_lock_irq(&device->resource->req_lock);
-	req = find_oldest_request(device->resource);
-	if (dt) {
-		if (device->disk_state[NOW] > D_FAILED) {
-			restart_timer = true;
-			et = dt;
+	for (;;) {
+		ignore |= check;
+		check = 0;
+		find_oldest_requests(device, &req, &check, ignore);
+		if (!check)
+			break;
+
+		if ((check & 1) && dt) {
+			if (device->disk_state[NOW] > D_FAILED) {
+				et = min_not_zero(et, dt);
+				next_trigger_time = time_min_in_future(now,
+						next_trigger_time, req->start_time + dt);
+				restart_timer = true;
+			}
+
+			if (time_after(now, req->start_time + dt) &&
+			    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
+				drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
+				__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
+			}
 		}
-
-		if (req && req->rq_state[0] & RQ_LOCAL_PENDING && req->device == device &&
-		    time_after(now, req->start_time + dt) &&
-		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
-			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-			__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
-		}
-	}
-	for_each_connection(connection, device->resource) {
-		struct drbd_peer_device *peer_device;
-		struct net_conf *nc;
-		unsigned long ent = 0;
-		int idx;
-
-		rcu_read_lock();
-		nc = rcu_dereference(connection->net_conf);
-		if (nc && connection->cstate[NOW] == C_CONNECTED)
-			ent = nc->timeout * HZ/10 * nc->ko_count;
-		rcu_read_unlock();
-
-		et = min_not_zero(et, ent);
-
-		if (!ent)
+		if ((check & ~1UL) == 0)
 			continue;
+		for_each_connection(connection, device->resource) {
+			struct net_conf *nc;
+			unsigned long ent = 0;
+			int idx = 0;
 
-		restart_timer = true;
-		peer_device = conn_peer_device(connection, device->vnr);
-		idx = peer_device->node_id;
+			rcu_read_lock();
+			nc = rcu_dereference(connection->net_conf);
+			if (nc) {
+				/* effective timeout = ko_count * timeout */
+				if (connection->cstate[NOW] == C_CONNECTED)
+					ent = nc->timeout * HZ/10 * nc->ko_count;
+				idx = 1 + nc->peer_node_id;
+			}
+			rcu_read_unlock();
 
-		/* The request is considered timed out, if
-		 * - we have some effective timeout from the configuration,
-		 *   with above state restrictions applied,
-		 * - the oldest request is waiting for a response from the network
-		 *   resp. the local disk,
-		 * - the oldest request is in fact older than the effective timeout,
-		 * - the connection was established (resp. disk was attached)
-		 *   for longer than the timeout already.
-		 * Note that for 32bit jiffies and very stable connections/disks,
-		 * we may have a wrap around, which is catched by
-		 *   !time_in_range(now, last_..._jif, last_..._jif + timeout).
-		 *
-		 * Side effect: once per 32bit wrap-around interval, which means every
-		 * ~198 days with 250 HZ, we have a window where the timeout would need
-		 * to expire twice (worst case) to become effective. Good enough.
-		 */
+			if (!ent || !idx)
+				continue;
 
-		if (req && req->rq_state[idx] & RQ_NET_PENDING &&
-		    time_after(now, req->start_time + ent) &&
-		    !time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
-			drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
-			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
-			__change_cstate(connection, C_TIMEOUT);
-			end_state_change_locked(device->resource);
+			et = min_not_zero(et, ent);
+			next_trigger_time = time_min_in_future(now,
+					next_trigger_time, req->start_time + ent);
+			restart_timer = true;
+
+			if (!(check & (1UL << idx)))
+				continue;
+
+			if (time_after(now, req->start_time + ent) &&
+			    !time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
+				drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
+				begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
+				__change_cstate(connection, C_TIMEOUT);
+				end_state_change_locked(device->resource);
+			}
 		}
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (restart_timer) {
-		if (req)
-			nt = (time_after(now, req->start_time + et) ? now : req->start_time) + et;
-		else
-			nt = now + et;
-		mod_timer(&device->request_timer, nt);
+		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
+		mod_timer(&device->request_timer, next_trigger_time);
 	}
 }
