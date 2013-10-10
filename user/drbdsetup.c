@@ -961,7 +961,7 @@ static struct option *make_longoptions(struct drbd_cmd *cm)
 }
 
 /* prepends global objname to output (if any) */
-static int check_error(int err_no, char *desc, bool quiet)
+static int check_error(int err_no, char *desc)
 {
 	int rv = 0;
 
@@ -969,35 +969,31 @@ static int check_error(int err_no, char *desc, bool quiet)
 		return 0;
 
 	if (err_no == OTHER_ERROR) {
-		if (!quiet && desc)
+		if (desc)
 			fprintf(stderr,"%s: %s\n", objname, desc);
 		return 20;
 	}
 
 	if ( ( err_no >= AFTER_LAST_ERR_CODE || err_no <= ERR_CODE_BASE ) &&
 	     ( err_no > SS_CW_NO_NEED || err_no <= SS_AFTER_LAST_ERROR) ) {
-		if (!quiet)
-			fprintf(stderr,"%s: Error code %d unknown.\n"
-				"You should update the drbd userland tools.\n",
-				objname, err_no);
+		fprintf(stderr,"%s: Error code %d unknown.\n"
+			"You should update the drbd userland tools.\n",
+			objname, err_no);
 		rv = 20;
 	} else {
 		if(err_no > ERR_CODE_BASE ) {
-			if (!quiet)
-				fprintf(stderr,"%s: Failure: (%d) %s\n",
-					objname, err_no, desc ?: error_to_string(err_no));
+			fprintf(stderr,"%s: Failure: (%d) %s\n",
+				objname, err_no, desc ?: error_to_string(err_no));
 			rv = 10;
 		} else if (err_no == SS_UNKNOWN_ERROR) {
-			if (!quiet)
-				fprintf(stderr,"%s: State change failed: (%d)"
-					"unknown error.\n", objname, err_no);
+			fprintf(stderr,"%s: State change failed: (%d)"
+				"unknown error.\n", objname, err_no);
 			rv = 11;
 		} else if (err_no > SS_TWO_PRIMARIES) {
 			// Ignore SS_SUCCESS, SS_NOTHING_TO_DO, SS_CW_Success...
 		} else {
-			if (!quiet)
-				fprintf(stderr,"%s: State change failed: (%d) %s\n",
-					objname, err_no, drbd_set_st_err_str(err_no));
+			fprintf(stderr,"%s: State change failed: (%d) %s\n",
+				objname, err_no, drbd_set_st_err_str(err_no));
 			if (err_no == SS_NO_UP_TO_DATE_DISK) {
 				/* all available disks are inconsistent,
 				 * or I am consistent, but cannot outdate the peer. */
@@ -1014,8 +1010,7 @@ static int check_error(int err_no, char *desc, bool quiet)
 		}
 	}
 	if (global_attrs[DRBD_NLA_CFG_REPLY] &&
-	    global_attrs[DRBD_NLA_CFG_REPLY]->nla_len &&
-	    !quiet) {
+	    global_attrs[DRBD_NLA_CFG_REPLY]->nla_len) {
 		struct nlattr *nla;
 		int rem;
 		fprintf(stderr, "additional info from kernel:\n");
@@ -1065,8 +1060,7 @@ int drbd_tla_parse(struct nlmsghdr *nlh)
 #define ASSERT(exp) if (!(exp)) \
 		fprintf(stderr,"ASSERT( " #exp " ) in %s:%d\n", __FILE__,__LINE__);
 
-static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
-			       char **argv, int quiet)
+static int _generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
 	struct drbd_argument *ad = cm->drbd_args;
 	struct nlattr *nla;
@@ -1160,10 +1154,9 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 				nla = nla_nest_start(smsg, cm->tla_id);
 			}
 			if (!field->put(cm->ctx, field, smsg, optarg)) {
-				if (!quiet)
-					fprintf(stderr, "Option --%s: invalid "
-						"argument '%s'\n",
-						field->name, optarg);
+				fprintf(stderr, "Option --%s: invalid "
+					"argument '%s'\n",
+					field->name, optarg);
 				rv = OTHER_ERROR;
 				goto error;
 			}
@@ -1229,14 +1222,14 @@ static int _generic_config_cmd(struct drbd_cmd *cm, int argc,
 error:
 	msg_free(smsg);
 
-	rv = check_error(rv, desc, quiet);
+	rv = check_error(rv, desc);
 	free(iov.iov_base);
 	return rv;
 }
 
 static int generic_config_cmd(struct drbd_cmd *cm, int argc, char **argv)
 {
-	return _generic_config_cmd(cm, argc, argv, 0);
+	return _generic_config_cmd(cm, argc, argv);
 }
 
 static int del_minor_cmd(struct drbd_cmd *cm, int argc, char **argv)
@@ -1705,7 +1698,7 @@ out2:
 	msg_free(smsg);
 
 out:
-	err = check_error(rv, desc, false);
+	err = check_error(rv, desc);
 	free(iov.iov_base);
 	return err;
 }
@@ -3013,7 +3006,7 @@ static int down_cmd(struct drbd_cmd *cm, int argc, char **argv)
 
 		objname = resource->name;
 		devices = list_devices(objname);
-		rv2 = _generic_config_cmd(cm, argc, argv, 1);
+		rv2 = _generic_config_cmd(cm, argc, argv);
 		if (!rv2) {
 			struct devices_list *device;
 
