@@ -2851,7 +2851,17 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 {
 	enum drbd_state_rv rv;
 
+    repeat:
 	rv = change_cstate(connection, C_DISCONNECTING, force ? CS_HARD : 0);
+	if (rv == SS_CW_FAILED_BY_PEER) {
+		enum drbd_conn_state cstate;
+
+		spin_lock(&connection->resource->req_lock);
+		cstate = connection->cstate[NOW];
+		spin_unlock(&connection->resource->req_lock);
+		if (cstate < C_CONNECTED)
+			goto repeat;
+	}
 
 	switch (rv) {
 	case SS_ALREADY_STANDALONE:
