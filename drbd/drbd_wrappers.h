@@ -1264,8 +1264,16 @@ static inline void genl_lock(void)  { }
 static inline void genl_unlock(void)  { }
 #endif
 
+#ifdef COMPAT_HAVE_STRUCT_QUEUE_LIMITS
+#define DRBD_QUEUE_LIMITS(q) (&(q)->limits)
+#define LIMIT_TYPE struct queue_limits
+#else
+#define DRBD_QUEUE_LIMITS(q) (q)
+#define LIMIT_TYPE struct request_queue
+#endif
+
 #ifndef COMPAT_HAVE_BLK_SET_STACKING_LIMITS
-static inline void blk_set_stacking_limits(struct queue_limits *lim)
+static inline void blk_set_stacking_limits(LIMIT_TYPE *lim)
 {
 # ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
 	lim->discard_zeroes_data = 1;

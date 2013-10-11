@@ -1141,7 +1141,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 		max_segments = rcu_dereference(device->ldev->disk_conf)->max_bio_bvecs;
 		rcu_read_unlock();
 
-		blk_set_stacking_limits(&q->limits);
+		blk_set_stacking_limits(DRBD_QUEUE_LIMITS(q));
 	}
 
 	blk_queue_logical_block_size(q, 512);
