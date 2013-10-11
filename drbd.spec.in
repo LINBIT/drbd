@@ -332,7 +332,7 @@ if [ $1 -eq 0 ]; then
 fi
 
 %changelog
-* Fri Sep 27 2013 Philipp Reisner <phil@linbit.com> - 8.4.4rc2-1
+* Fri Oct 11 2013 Philipp Reisner <phil@linbit.com> - 8.4.4-1
 - New upstream release.
 
 * Tue Feb  5 2013 Philipp Reisner <phil@linbit.com> - 8.4.3-1
