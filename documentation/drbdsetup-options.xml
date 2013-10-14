@@ -25,6 +25,15 @@
       those segments can be active at the same time.  The default value for
       <replaceable>al-extents</replaceable> is 1237, with a minimum of 7 and a
       maximum of 65536.</para>
+      <para>
+	Note that the effective maximum may be smaller, depending on how
+	you created the device meta data, see also
+	<citerefentry><refentrytitle>drbdmeta</refentrytitle><manvolnum>8</manvolnum></citerefentry>
+	The effective maximum is 919 * (available on-disk activity-log ring-buffer area/4kB -1),
+	the default 32kB ring-buffer effects a maximum of 6433 (covers more than 25 GiB of data)
+	We recommend to keep this well within the amount your backend storage
+	and replication link are able to resync inside of about 5 minutes.
+      </para>
     </definition>
   </drbdsetup_option>
 

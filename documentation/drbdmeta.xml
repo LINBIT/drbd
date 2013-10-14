@@ -99,7 +99,9 @@
 	  <arg choice="opt" rep="norepeat"><option>--peer-max-bio-size=</option><replaceable>val</replaceable></arg> (metadata versions v06, v07, and v08)</term>
 	<term><option>create-md</option>
           <arg choice="req" rep="norepeat">number-of-bitmap-slots</arg>
-	  <arg choice="opt" rep="norepeat"><option>--peer-max-bio-size=</option><replaceable>val</replaceable></arg> (metadata version v09)</term>
+	  <arg choice="opt" rep="norepeat"><option>--peer-max-bio-size=</option><replaceable>val</replaceable></arg>
+	  <arg choice="opt" rep="norepeat"><option>--al-stripes=</option><replaceable>val</replaceable></arg>
+	  <arg choice="opt" rep="norepeat"><option>--al-stripe-size-kB=</option><replaceable>val</replaceable></arg> (metadata version v09)</term>
         <listitem>
 	  <para><indexterm
 	      significance="normal"><primary>drbdmeta</primary><secondary>create-md</secondary></indexterm>
@@ -122,6 +124,26 @@
 	    that this device will connect to are known.  DRBD supports a
 	    maximum bio size of 32 KiB since version 8.3.8, of 128 KiB since
 	    version 8.3.9, and of 1 MiB since version 8.4.0.</para>
+	  <para>
+	    If you want to use more than 6433 activity log extents, or live on
+	    top of a spriped RAID, you may specify the number of stripes
+	    (<option>--al-stripes</option>, default 1), and the stripe size
+	    (<option>--al-stripe-size-kB</option>, default 32).
+	    To just use a larger linear on-disk ring-buffer, leave
+	    the number of stripes at 1, and increase the size only:
+	    <?linebreak?>
+	    <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripe-size 1M</command>
+	  </para>
+	  <para>
+	    To avoid a single "spindle" from becoming a bottleneck,
+	    increase the number of stripes, to achieve an interleaved layout
+	    of the on-disk activity-log transactions.
+	    What you give as "stripe-size" should be what is a.k.a. "chunk size"
+	    or "granularity" or "strip unit": the minimum skip to the next
+	    "spindle".
+	    <?linebreak?>
+	    <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripes 7 --al-stripe-size 64
+	  </para>
         </listitem>
       </varlistentry>
       <varlistentry>
