@@ -1394,13 +1394,13 @@ static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 		struct drbd_peer_device *other_peer_device;
 		int resync_after;
 
-		if (!other_device->ldev)
+		if (!other_device->ldev || other_device->disk_state[NOW] == D_DISKLESS)
 			break;
 		resync_after = rcu_dereference(other_device->ldev->disk_conf)->resync_after;
 		if (resync_after == -1)
 			break;
 		other_device = minor_to_mdev(resync_after);
-		if (!expect(peer_device, other_device))
+		if (!other_device)
 			break;
 		other_peer_device = conn_peer_device(peer_device->connection, other_device->vnr);
 		if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
@@ -1521,6 +1521,15 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 			rv = ERR_RESYNC_AFTER_CYCLE;
 			break;
 		}
+
+		/* You are free to depend on diskless, non-existing,
+		 * or not yet/no longer existing minors.
+		 * We only reject dependency loops.
+		 * We cannot follow the dependency chain beyond a detached or
+		 * missing minor.
+		 */
+		if (!other_device)
+			break;
 
 		if (!get_ldev_if_state(other_device, D_ATTACHING))
 			break;

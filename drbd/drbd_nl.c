@@ -1702,6 +1702,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	lock_all_resources();
+	retcode = drbd_resync_after_valid(device, new_disk_conf->resync_after);
+	unlock_all_resources();
+	if (retcode != NO_ERROR)
+		goto fail;
+
 	bdev = blkdev_get_by_path(new_disk_conf->backing_dev,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, device);
 	if (IS_ERR(bdev)) {
