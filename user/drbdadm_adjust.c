@@ -436,7 +436,7 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 
 	/* simplify logic below, would otherwise have to
 	 * (!x || is_default(x) all the time. */
-	if (k && is_default(&disk_options_ctx, k))
+	if (k && is_default(&attach_cmd_ctx, k))
 		k = NULL;
 
 	/* size was set, but it is no longer in config, or vice versa */
@@ -444,7 +444,7 @@ void compare_size(struct d_volume *conf, struct d_volume *kern)
 		conf->adj_resize = 1;
 
 	/* size options differ */
-	if (k && c && !is_equal(&disk_options_ctx, c, k))
+	if (k && c && !is_equal(&attach_cmd_ctx, c, k))
 		conf->adj_resize = 1;
 }
 
