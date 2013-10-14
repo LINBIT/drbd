@@ -78,5 +78,6 @@ static ssize_t data_gen_id_show(struct drbd_backing_dev *bdev, char *buf)
 static void backing_dev_release(struct kobject *kobj)
 {
 	struct drbd_backing_dev *bdev = container_of(kobj, struct drbd_backing_dev, kobject);
+	kfree(bdev->disk_conf);
 	kfree(bdev);
 }
