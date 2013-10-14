@@ -452,12 +452,6 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 			root = &device->read_requests;
 		drbd_remove_request_interval(root, req);
 	}
-	/*
-	     FIXME either drop this paranoia,
-	     or calculate it in for_each_peer_device above.
-	     else if (!(s & RQ_POSTPONED))
-		D_ASSERT(device, (s & (RQ_NET_MASK & ~RQ_NET_DONE)) == 0);
-	 */
 
 	/* Before we can signal completion to the upper layers,
 	 * we may need to close the current transfer log epoch.
@@ -983,6 +977,12 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state[idx] & RQ_NET_PENDING);
 		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK|RQ_NET_DONE);
 		break;
+
+	case QUEUE_AS_DRBD_BARRIER:
+		start_new_tl_epoch(device->resource);
+		for_each_peer_device(peer_device, device)
+			mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
+		break;
 	};
 
 	return rv;
@@ -1230,7 +1230,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 	if (unlikely(req->i.size == 0)) {
 		/* The only size==0 bios we expect are empty flushes. */
 		D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
-		start_new_tl_epoch(device->resource);
+		_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 		return 0;
 	}
 
