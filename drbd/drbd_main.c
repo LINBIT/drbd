@@ -3696,7 +3696,7 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 		||  in_core->al_offset != (4096 >> 9)
 		||  in_core->bm_offset != (4096 >> 9) + (32768 >> 9)
 		||  in_core->al_stripes != 1
-		||  in_core->al_stripe_size_4k != (32768 >> 9))
+		||  in_core->al_stripe_size_4k != (32768 >> 12))
 			goto err;
 	}
 
