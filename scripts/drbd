@@ -3,7 +3,7 @@
 # chkconfig: - 70 08
 # description: Loads and unloads the drbd module
 #
-# Copyright 2001-2010 LINBIT
+# Copyright 2001-2013 LINBIT
 #
 # Philipp Reisner, Lars Ellenberg
 #
@@ -22,13 +22,15 @@
 ### END INIT INFO
 
 DEFAULTFILE="/etc/default/drbd"
-DRBDADM="/sbin/drbdadm"
-DRBDSETUP="/sbin/drbdsetup"
+DRBDADM="drbdadm"
+DRBDSETUP="drbdsetup"
 PROC_DRBD="/proc/drbd"
 MODPROBE="/sbin/modprobe"
 RMMOD="/sbin/rmmod"
 UDEV_TIMEOUT=10
 ADD_MOD_PARAM=""
+
+PATH=/usr/sbin:/sbin:$PATH
 
 if [ -f $DEFAULTFILE ]; then
   . $DEFAULTFILE

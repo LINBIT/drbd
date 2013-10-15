@@ -11,7 +11,8 @@
 ###
 
 DEFAULTFILE="/etc/default/drbd"
-DRBDADM="/sbin/drbdadm"
+DRBDADM="drbdadm"
+PATH=/usr/sbin:/sbin:$PATH
 
 if [ -f $DEFAULTFILE ]; then
   . $DEFAULTFILE
