@@ -3293,7 +3293,6 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 		if (hg == -1 && resource->role[NOW] == R_PRIMARY) {
 			enum drbd_state_rv rv2;
 
-			drbd_set_role(device->resource, R_SECONDARY, false);
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
