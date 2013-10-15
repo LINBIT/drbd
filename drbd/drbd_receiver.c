@@ -1147,7 +1147,6 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 
 	clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	clear_bit(RESIZE_PENDING, &peer_device->flags);
-	atomic_set(&device->ap_in_flight, 0);
 	mod_timer(&device->request_timer, jiffies + HZ); /* just start it here. */
 	return err;
 }
@@ -1187,6 +1186,7 @@ static void conn_connect2(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
+	atomic_set(&connection->ap_in_flight, 0);
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
@@ -6716,7 +6716,7 @@ STATIC int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
-		    atomic_read(&device->ap_in_flight) == 0 &&
+		    atomic_read(&connection->ap_in_flight) == 0 &&
 		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
 			peer_device->start_resync_timer.expires = jiffies + HZ;
 			add_timer(&peer_device->start_resync_timer);

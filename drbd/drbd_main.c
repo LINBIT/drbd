@@ -2983,6 +2983,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	INIT_LIST_HEAD(&connection->todo.work_list);
 	connection->todo.req = NULL;
 
+	atomic_set(&connection->ap_in_flight, 0);
 	connection->send.seen_any_write_yet = false;
 	connection->send.current_epoch_nr = 0;
 	connection->send.current_epoch_writes = 0;
@@ -3152,7 +3153,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
 	atomic_set(&device->rs_sect_ev, 0);
-	atomic_set(&device->ap_in_flight, 0);
 	atomic_set(&device->md_io_in_use, 0);
 
 	spin_lock_init(&device->al_lock);

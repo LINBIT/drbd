@@ -821,6 +821,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	int agreed_pro_version;		/* actually used protocol version */
 	unsigned long last_received;	/* in jiffies, either socket */
 	unsigned int ko_count;
+	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 
 	struct drbd_work connect_timer_work;
 	struct timer_list connect_timer;
@@ -1083,7 +1084,6 @@ struct drbd_device {
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
-	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	struct list_head pending_bitmap_work;
 	struct device_conf device_conf;
 

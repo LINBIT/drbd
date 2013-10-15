@@ -573,7 +573,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		kref_get(&req->kref); /* wait for the DONE */
 
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT))
-		atomic_add(req->i.size >> 9, &req->device->ap_in_flight);
+		atomic_add(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 
 	if (!(old_local & RQ_COMPLETION_SUSP) && (set_local & RQ_COMPLETION_SUSP))
 		atomic_inc(&req->completion_ref);
@@ -608,7 +608,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if ((old_net & RQ_EXP_BARR_ACK) && !(old_net & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
 		if (req->rq_state[idx] & RQ_NET_SENT)
-			atomic_sub(req->i.size >> 9, &req->device->ap_in_flight);
+			atomic_sub(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 		++k_put;
 	}
 
@@ -1120,7 +1120,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 		return;
 
 	if (nc->cong_fill &&
-	    atomic_read(&device->ap_in_flight) >= nc->cong_fill) {
+	    atomic_read(&connection->ap_in_flight) >= nc->cong_fill) {
 		drbd_info(device, "Congestion-fill threshold reached\n");
 		congested = true;
 	}
