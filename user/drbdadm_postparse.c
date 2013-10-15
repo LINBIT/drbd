@@ -1092,7 +1092,7 @@ static void ensure_proxy_sections(struct d_resource *res)
 	}
 }
 
-static void validate_resource(struct d_resource *res)
+static void validate_resource(struct d_resource *res, enum pp_flags flags)
 {
 	struct d_option *opt, *next;
 
@@ -1103,7 +1103,8 @@ static void validate_resource(struct d_resource *res)
 		if (strcmp(opt->name, "resync-after"))
 			continue;
 		rs_after_res = res_by_name(opt->value);
-		if (rs_after_res == NULL || rs_after_res->ignore) {
+		if (rs_after_res == NULL ||
+		    (rs_after_res->ignore && !(flags & MATCH_ON_PROXY))) {
 			fprintf(stderr,
 				"%s:%d: in resource %s:\n\tresource '%s' mentioned in "
 				"'resync-after' option is not known%s.\n",
@@ -1247,11 +1248,11 @@ static void convert_discard_opt(struct options *net_options)
 	}
 }
 
-void global_validate_maybe_expand_die_if_invalid(int expand)
+void global_validate_maybe_expand_die_if_invalid(int expand, enum pp_flags flags)
 {
 	struct d_resource *res;
 	for_each_resource(res, &config) {
-		validate_resource(res);
+		validate_resource(res, flags);
 		if (!config_valid)
 			exit(E_CONFIG_INVALID);
 		if (expand) {

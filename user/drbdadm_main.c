@@ -3237,7 +3237,8 @@ int main(int argc, char **argv)
 			exit(E_USAGE);
 		}
 
-		global_validate_maybe_expand_die_if_invalid(!is_dump);
+		global_validate_maybe_expand_die_if_invalid(!is_dump,
+							    cmd->is_proxy_cmd ? MATCH_ON_PROXY : 0);
 
 		if (!resource_names[0] || !strcmp(resource_names[0], "all")) {
 			/* either no resource arguments at all,

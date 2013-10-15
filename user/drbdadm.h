@@ -47,6 +47,10 @@ enum usage_count_type {
 	UC_ASK,
 };
 
+enum pp_flags {
+	MATCH_ON_PROXY = 1,
+};
+
 struct d_globals
 {
 	int disable_io_hints;
@@ -352,9 +356,6 @@ enum pr_flags {
 	NO_HOST_SECT_ALLOWED  = 4,
 	PARSE_FOR_ADJUST = 8
 };
-enum pp_flags {
-	MATCH_ON_PROXY = 1,
-};
 
 extern int check_uniq(const char *what, const char *fmt, ...);
 extern struct d_resource* parse_resource_for_adjust(const struct cfg_ctx *ctx);
@@ -363,7 +364,7 @@ extern void post_parse(struct resources *, enum pp_flags);
 extern struct connection *alloc_connection();
 extern void free_connection(struct connection *connection);
 extern void expand_common(void);
-extern void global_validate_maybe_expand_die_if_invalid(int expand);
+extern void global_validate_maybe_expand_die_if_invalid(int expand, enum pp_flags flags);
 extern struct d_option *new_opt(char *name, char *value);
 extern int hostname_in_list(const char *name, struct names *names);
 extern char *_names_to_str(char* buffer, struct names *names);
