@@ -6175,8 +6175,8 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 #if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)
 STATIC int drbd_do_auth(struct drbd_connection *connection)
 {
-	drbd_err(device, "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
-	drbd_err(device, "You need to disable 'cram-hmac-alg' in drbd.conf.\n");
+	drbd_err(connection, "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
+	drbd_err(connection, "You need to disable 'cram-hmac-alg' in drbd.conf.\n");
 	return -1;
 }
 #else
