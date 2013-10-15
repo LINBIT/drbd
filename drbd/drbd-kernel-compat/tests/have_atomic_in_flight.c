@@ -5,6 +5,6 @@
 static struct hd_struct hd;
 void dummy(void)
 {
-	atomic_inc(&hd.in_flight[0]);
+	BUILD_BUG_ON(!__same_type(atomic_t, hd.in_flight[0]));
 }
 #endif
