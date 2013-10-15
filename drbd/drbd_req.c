@@ -1098,16 +1098,16 @@ static void complete_conflicting_writes(struct drbd_request *req)
 }
 
 /* called within req_lock and rcu_read_lock() */
-static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
+static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connection *connection)
 {
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_device *device = peer_device->device;
 	struct net_conf *nc;
 	bool congested = false;
 	enum drbd_on_congestion on_congestion;
 
+	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
 	on_congestion = nc ? nc->on_congestion : OC_BLOCK;
+	rcu_read_unlock();
 	if (on_congestion == OC_BLOCK ||
 	    connection->agreed_pro_version < 96)
 		return;
@@ -1131,6 +1131,7 @@ static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 	}
 
 	if (congested) {
+		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 		/* start a new epoch for non-mirrored writes */
 		start_new_tl_epoch(device->resource);
 
@@ -1140,6 +1141,15 @@ static void maybe_pull_ahead(struct drbd_peer_device *peer_device)
 			change_cstate(peer_device->connection, C_DISCONNECTING, 0);
 	}
 	put_ldev(device);
+}
+
+/* called within req_lock and rcu_read_lock() */
+static void maybe_pull_ahead(struct drbd_device *device)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, device->resource)
+		__maybe_pull_ahead(device, connection);
 }
 
 bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_state which)
@@ -1236,11 +1246,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
-	  remote = drbd_should_do_remote(peer_device, NOW);
-		if (remote) {
-			maybe_pull_ahead(peer_device);
-			remote = drbd_should_do_remote(peer_device, NOW);
-		}
+		remote = drbd_should_do_remote(peer_device, NOW);
 		send_oos = drbd_should_send_out_of_sync(peer_device);
 
 		if (!remote && !send_oos)
@@ -1358,9 +1364,13 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		 * but will re-aquire it before it returns here.
 		 * Needs to be before the check on drbd_suspended() */
 		complete_conflicting_writes(req);
+		/* no more giving up req_lock from now on! */
+
+		/* check for congestion, and potentially stop sending
+		 * full data updates, but start sending "dirty bits" only. */
+		maybe_pull_ahead(device);
 	}
 
-	/* no more giving up req_lock from now on! */
 
 	if (drbd_suspended(device)) {
 		/* push back and retry: */
