@@ -19,6 +19,7 @@
 %bcond_without heartbeat
 # conditionals may not contain "-" nor "_", hence "bashcompletion"
 %bcond_without bashcompletion
+%bcond_without sbinsymlinks
 # --with xen is ignored on any non-x86 architecture
 %bcond_without xen
 %bcond_without legacy_utils
@@ -29,7 +30,7 @@
 Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 2@RPM_DIST_TAG@
+Release: 3@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/%{name}-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -99,6 +100,11 @@ This packages includes the DRBD administration tools.
 
 %files utils
 %defattr(755,root,root,-)
+%if %{with sbinsymlinks}
+/sbin/drbdsetup
+/sbin/drbdadm
+/sbin/drbdmeta
+%endif
 %{_sbindir}/drbdsetup
 %{_sbindir}/drbdadm
 %{_sbindir}/drbdmeta
@@ -299,6 +305,18 @@ make %{?_smp_mflags}
 rm -rf %{buildroot}
 make install DESTDIR=%{buildroot}
 
+%if %{with sbinsymlinks}
+# Don't do this if you are already on a /sbin -=> /usr/sbin distro
+# compat: we used to live in /sbin/
+# there may be many hardcoded /sbin/drbd* out there,
+# including variants of our own scripts.
+mkdir %{buildroot}/sbin/
+cd %{buildroot}/sbin/
+ln -sv ..%{_sbindir}/drbdadm .
+ln -sv ..%{_sbindir}/drbdmeta .
+ln -sv ..%{_sbindir}/drbdsetup .
+%endif
+
 %clean
 rm -rf %{buildroot}
 
@@ -310,28 +328,16 @@ for i in `seq 0 15` ; do
 done
 %endif #without udev
 
-# compat: we used to live in /sbin/
-# there may be many hardcoded /sbin/drbd* out there,
-# including variants of our own scripts.
-if ! test /sbin -ef %{_sbindir}; then
-	ln -sf %{_sbindir}/drbdsetup /sbin/
-	ln -sf %{_sbindir}/drbdmeta /sbin/
-	ln -sf %{_sbindir}/drbdadm /sbin/
-fi
-
 %preun utils
 if [ $1 -eq 0 ]; then
         %{_initrddir}/drbd stop >/dev/null 2>&1
         /sbin/chkconfig --del drbd
-	# remove compat symlinks installed by post
-	if ! test /sbin -ef %{_sbindir}; then
-		rm -f /sbin/drbdsetup
-		rm -f /sbin/drbdmeta
-		rm -f /sbin/drbdadm
-	fi
 fi
 
 %changelog
+* Fri Oct 15 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-3
+- fix /sbin/drbd* -> /usr/sbin/drbd* symlinks
+
 * Fri Oct 11 2013 Philipp Reisner <phil@linbit.com> - 8.4.4-1
 - New upstream release.
 
