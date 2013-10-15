@@ -603,6 +603,7 @@ static bool initial_states_pending(struct drbd_connection *connection)
 
 bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
+	unsigned long last_reconnect_jif;
 	enum drbd_fencing_policy fencing_policy;
 	char *ex_to_string;
 	int r;
@@ -612,6 +613,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
 		return false;
 	}
+
+	spin_lock_irq(&connection->resource->req_lock);
+	last_reconnect_jif = connection->last_reconnect_jif;
+	spin_unlock_irq(&connection->resource->req_lock);
 
 	fencing_policy = connection->fencing_policy;
 	switch (fencing_policy) {
@@ -672,11 +677,20 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	if (connection->cstate[NOW] >= C_CONNECTED ||
 	    initial_states_pending(connection)) {
 		/* connection re-established; do not fence */
-		abort_state_change(connection->resource, &irq_flags);
-		goto out;
+		goto abort;
 	}
+	if (connection->last_reconnect_jif != last_reconnect_jif) {
+		/* In case the connection was established and dropped
+		   while the fence-peer handler was running, ignore it */
+		drbd_info(connection, "Ignoring fence-peer exit code\n");
+		goto abort;
+	}
+
 	end_state_change(connection->resource, &irq_flags);
 
+	goto out;
+ abort:
+	abort_state_change(connection->resource, &irq_flags);
  out:
 	return conn_highest_pdsk(connection) <= D_OUTDATED;
 }
