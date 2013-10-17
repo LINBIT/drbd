@@ -2620,11 +2620,31 @@ int v07_style_md_open(struct format *cfg)
 	int ioctl_err;
 	int open_flags = O_RDWR | O_DIRECT;
 
+	/* For old-style fixed size indexed external meta data,
+	 * we cannot really use O_EXCL, we have to trust the given minor.
+	 *
+	 * For internal, or "flexible" external meta data, we open O_EXCL to
+	 * avoid accidentally damaging otherwise in-use data, just because
+	 * someone had a typo in the command line.
+	 */
+	if (cfg->md_index < 0)
+		open_flags |= O_EXCL;
+
  retry:
 	cfg->md_fd = open(cfg->md_device_name, open_flags );
 
 	if (cfg->md_fd == -1) {
-		if (errno == EINVAL && (open_flags & O_DIRECT)) {
+		int save_errno = errno;
+		PERROR("open(%s) failed", cfg->md_device_name);
+		if (save_errno == EBUSY && (open_flags & O_EXCL)) {
+			if (!confirmed("Exclusive open failed. Do it anyways?")) {
+				printf("Operation canceled.\n");
+				exit(20);
+			}
+			open_flags &= ~O_EXCL;
+			goto retry;
+		}
+		if (save_errno == EINVAL && (open_flags & O_DIRECT)) {
 			/* shoo. O_DIRECT is not supported?
 			 * retry, but remember this, so we can
 			 * BLKFLSBUF appropriately */
@@ -2633,7 +2653,6 @@ int v07_style_md_open(struct format *cfg)
 			opened_odirect = 0;
 			goto retry;
 		}
-		PERROR("open(%s) failed", cfg->md_device_name);
 		exit(20);
 	}
 
