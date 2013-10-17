@@ -4400,7 +4400,7 @@ STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	}
 
 	ddsf = be16_to_cpu(p->dds_flags);
-	dd = drbd_determine_dev_size(device, ddsf);
+	dd = drbd_determine_dev_size(device, ddsf, NULL);
 	if (dd == DS_ERROR)
 		return -EIO;
 	drbd_md_sync(device);

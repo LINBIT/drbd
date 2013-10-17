@@ -811,6 +811,28 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 	}
 }
 
+int drbd_initialize_al(struct drbd_device *device, void *buffer)
+{
+	struct al_transaction_on_disk *al = buffer;
+	struct drbd_md *md = &device->ldev->md;
+	sector_t al_base = md->md_offset + md->al_offset;
+	int al_size_4k = md->al_stripes * md->al_stripe_size_4k;
+	int err, i;
+
+	memset(al, 0, 4096);
+	al->magic = cpu_to_be32(DRBD_AL_MAGIC);
+	al->transaction_type = cpu_to_be16(AL_TR_INITIALIZED);
+	al->crc32c = cpu_to_be32(crc32c(0, al, 4096));
+
+	for (i = 0; i < al_size_4k; i++) {
+		err = drbd_md_sync_page_io(device, device->ldev, al_base + i * 8, WRITE);
+		if (err)
+			break;
+	}
+
+	return err;
+}
+
 STATIC int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);

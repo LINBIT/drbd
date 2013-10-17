@@ -707,6 +707,30 @@
 		  command.</para>
 		</listitem>
 	      </varlistentry>
+
+	      <varlistentry>
+		<term><option>--size <replaceable>val</replaceable></option></term>
+		<listitem>
+		  <para>This option can be used to online shrink the usable
+		  size of a drbd device. It's the users responsibility to
+		  make sure that a file system on the device is not
+		  truncated by that operation.</para>
+		</listitem>
+	      </varlistentry>
+
+	      <varlistentry>
+		<term><option>--al-stripes <replaceable>val</replaceable></option>
+		<option>--al-stripes <replaceable>val</replaceable></option></term>
+		<listitem>
+		  <para>These options may be used to change the layout of
+		  the activity log online. In case of internal meta data
+		  this may invovle shrinking the user visible size at the
+		  same time (unsing the <option>--size</option>) or
+		  increasing the avalable space on the backing
+		  devices.</para>
+		</listitem>
+	      </varlistentry>
+
 	    </variablelist>
 	  </para>
 	</listitem>

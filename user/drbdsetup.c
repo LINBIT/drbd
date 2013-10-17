@@ -599,6 +599,11 @@ static const char *error_messages[] = {
 	"these network options while connected",
 	EM(ERR_NEED_ALLOW_TWO_PRI) = "Can not clear allow_two_primaries as long as\n"
 	"there a primaries on both sides",
+	EM(ERR_MD_LAYOUT_CONNECTED) = "DRBD need to be connected for online MD layout change\n",
+	EM(ERR_MD_LAYOUT_TOO_BIG) = "Resulting AL area too big\n",
+	EM(ERR_MD_LAYOUT_TOO_SMALL) = "Resulting AL are too small\n",
+	EM(ERR_MD_LAYOUT_NO_FIT) = "Resulting AL does not fit into available meta data space\n",
+	EM(ERR_IMPLICIT_SHRINK) = "Implicit device shrinking not allowed. See kernel log.\n",
 	EM(ERR_INVALID_PEER_NODE_ID) = "Invalid peer-node-id\n",
 };
 #define MAX_ERROR (sizeof(error_messages)/sizeof(*error_messages))

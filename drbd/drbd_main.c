@@ -3528,34 +3528,11 @@ struct meta_data_on_disk {
 	char reserved_u8[4096 - (7*8 + 14*4 + 32*(8+6*4) + 32*8)];
 } __packed;
 
-/**
- * drbd_md_sync() - Writes the meta data super block if the MD_DIRTY flag bit is set
- * @device:	DRBD device.
- */
-void drbd_md_sync(struct drbd_device *device)
+void drbd_md_write(struct drbd_device *device, void *b)
 {
-	struct meta_data_on_disk *buffer;
+	struct meta_data_on_disk *buffer = b;
 	sector_t sector;
 	int i;
-
-	/* Don't accidentally change the DRBD meta data layout. */
-	BUILD_BUG_ON(MAX_PEERS != 32);
-	BUILD_BUG_ON(HISTORY_UUIDS != 32);
-	BUILD_BUG_ON(sizeof(struct meta_data_on_disk) != 4096);
-
-	del_timer(&device->md_sync_timer);
-	/* timer may be rearmed by drbd_md_mark_dirty() now. */
-	if (!test_and_clear_bit(MD_DIRTY, &device->flags))
-		return;
-
-	/* We use here D_FAILED and not D_ATTACHING because we try to write
-	 * metadata even if we detach due to a disk failure! */
-	if (!get_ldev_if_state(device, D_FAILED))
-		return;
-
-	buffer = drbd_md_get_buffer(device);
-	if (!buffer)
-		goto out;
 
 	memset(buffer, 0, sizeof(*buffer));
 
@@ -3596,6 +3573,36 @@ void drbd_md_sync(struct drbd_device *device)
 		drbd_err(device, "meta data update failed!\n");
 		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 	}
+}
+
+/**
+ * drbd_md_sync() - Writes the meta data super block if the MD_DIRTY flag bit is set
+ * @mdev:	DRBD device.
+ */
+void drbd_md_sync(struct drbd_device *device)
+{
+	struct meta_data_on_disk *buffer;
+
+	/* Don't accidentally change the DRBD meta data layout. */
+	BUILD_BUG_ON(MAX_PEERS != 32);
+	BUILD_BUG_ON(HISTORY_UUIDS != 32);
+	BUILD_BUG_ON(sizeof(struct meta_data_on_disk) != 4096);
+
+	del_timer(&device->md_sync_timer);
+	/* timer may be rearmed by drbd_md_mark_dirty() now. */
+	if (!test_and_clear_bit(MD_DIRTY, &device->flags))
+		return;
+
+	/* We use here D_FAILED and not D_ATTACHING because we try to write
+	 * metadata even if we detach due to a disk failure! */
+	if (!get_ldev_if_state(device, D_FAILED))
+		return;
+
+	buffer = drbd_md_get_buffer(device);
+	if (!buffer)
+		goto out;
+
+	drbd_md_write(device, buffer);
 
 	drbd_md_put_buffer(device);
 out:

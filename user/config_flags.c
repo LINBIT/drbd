@@ -709,6 +709,8 @@ struct context_def resize_cmd_ctx = {
 		  .unit = "bytes" },
 		{ "assume-peer-has-space", FLAG(resize_force) },
 		{ "assume-clean", FLAG(no_resync) },
+		{ "al-stripes", NUMERIC(al_stripes, AL_STRIPES) },
+		{ "al-stripe-size-kB", NUMERIC(al_stripe_size, AL_STRIPE_SIZE) },
 		{ } },
 };
 

@@ -1221,6 +1221,7 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 extern u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers);
 extern void drbd_md_set_sector_offsets(struct drbd_device *device,
 				       struct drbd_backing_dev *bdev);
+extern void drbd_md_write(struct drbd_device *device, void *buffer);
 extern void drbd_md_sync(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_received_new_current(struct drbd_device *, u64 , u64) __must_hold(local);
@@ -1554,12 +1555,15 @@ extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_device *, sector_t, int);
 enum determine_dev_size {
+	DS_ERROR_SHRINK = -3,
+	DS_ERROR_SPACE_MD = -2,
 	DS_ERROR = -1,
 	DS_UNCHANGED = 0,
 	DS_SHRUNK = 1,
 	DS_GREW = 2
 };
-extern enum determine_dev_size drbd_determine_dev_size(struct drbd_device *, enum dds_flags) __must_hold(local);
+extern enum determine_dev_size
+drbd_determine_dev_size(struct drbd_device *, enum dds_flags, struct resize_parms *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_peer_device *);
 extern void drbd_reconsider_max_bio_size(struct drbd_device *device);
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool);
@@ -1720,6 +1724,7 @@ extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
+extern int drbd_initialize_al(struct drbd_device *, void *);
 
 /* drbd_sysfs.c */
 extern struct kobj_type drbd_bdev_kobj_type;
