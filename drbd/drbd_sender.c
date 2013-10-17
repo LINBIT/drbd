@@ -349,7 +349,7 @@ void drbd_csum_bio(struct crypto_hash *tfm, struct bio *bio, void *digest)
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
-STATIC int w_e_send_csum(struct drbd_work *w, int cancel)
+static int w_e_send_csum(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -521,7 +521,7 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-STATIC int drbd_rs_controller(struct drbd_peer_device *peer_device)
+static int drbd_rs_controller(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct disk_conf *dc;
@@ -578,7 +578,7 @@ STATIC int drbd_rs_controller(struct drbd_peer_device *peer_device)
 	return req_sect;
 }
 
-STATIC int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
+static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	int number;
@@ -828,7 +828,7 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-STATIC int w_resync_finished(struct drbd_work *w, int cancel)
+static int w_resync_finished(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device_work *dw =
 		container_of(w, struct drbd_peer_device_work, w);

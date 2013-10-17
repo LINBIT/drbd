@@ -72,7 +72,7 @@
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static int w_md_sync(struct drbd_work *w, int unused);
-STATIC void md_sync_timer_fn(unsigned long data);
+static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int w_go_diskless(struct drbd_work *w, int unused);
 static void drbd_destroy_device(struct kobject *kobj);
@@ -152,7 +152,7 @@ wait_queue_head_t drbd_pp_wait;
 
 DEFINE_RATELIMIT_STATE(drbd_ratelimit_state, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST);
 
-STATIC const struct block_device_operations drbd_ops = {
+static const struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_release,
@@ -358,7 +358,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 	spin_unlock_irq(&resource->req_lock);
 }
 
-STATIC int drbd_thread_setup(void *arg)
+static int drbd_thread_setup(void *arg)
 {
 	struct drbd_thread *thi = (struct drbd_thread *) arg;
 	struct drbd_resource *resource = thi->resource;
@@ -412,7 +412,7 @@ restart:
 	return retval;
 }
 
-STATIC void drbd_thread_init(struct drbd_resource *resource, struct drbd_thread *thi,
+static void drbd_thread_init(struct drbd_resource *resource, struct drbd_thread *thi,
 			     int (*func) (struct drbd_thread *), const char *name)
 {
 	spin_lock_init(&thi->t_lock);
@@ -1608,7 +1608,7 @@ void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set
  * @blksize:	size in byte, needs to be in big endian byte order
  * @block_id:	Id, big endian byte order
  */
-STATIC int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
+static int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 			  u64 sector, u32 blksize, u64 block_id)
 {
 	struct drbd_socket *sock;
@@ -1725,7 +1725,7 @@ int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, 
  * returns false if we should retry,
  * true if we think connection is dead
  */
-STATIC int we_should_drop_the_connection(struct drbd_connection *connection, struct socket *sock)
+static int we_should_drop_the_connection(struct drbd_connection *connection, struct socket *sock)
 {
 	int drop_it;
 
@@ -1775,7 +1775,7 @@ static void drbd_update_congested(struct drbd_connection *connection)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-STATIC int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket;
@@ -1791,7 +1791,7 @@ STATIC int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 	return err;
 }
 
-STATIC int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 		    int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket = peer_device->connection->data.socket;
@@ -2277,7 +2277,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 }
 
 #ifdef blk_queue_plugged
-STATIC void drbd_unplug_fn(struct request_queue *q)
+static void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_device *device = q->queuedata;
 	struct drbd_resource *resource = device->resource;
@@ -2303,7 +2303,7 @@ STATIC void drbd_unplug_fn(struct request_queue *q)
 }
 #endif
 
-STATIC void drbd_set_defaults(struct drbd_device *device)
+static void drbd_set_defaults(struct drbd_device *device)
 {
 	device->disk_state[NOW] = D_DISKLESS;
 }
@@ -2334,7 +2334,7 @@ void drbd_cleanup_device(struct drbd_device *device)
 }
 
 
-STATIC void drbd_destroy_mempools(void)
+static void drbd_destroy_mempools(void)
 {
 	struct page *page;
 
@@ -2376,7 +2376,7 @@ STATIC void drbd_destroy_mempools(void)
 	return;
 }
 
-STATIC int drbd_create_mempools(void)
+static int drbd_create_mempools(void)
 {
 	struct page *page;
 	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count;
@@ -2451,7 +2451,7 @@ Enomem:
 	return -ENOMEM;
 }
 
-STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
+static int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	void *unused)
 {
 	/* just so we have it.  you never know what interesting things we
@@ -2461,7 +2461,7 @@ STATIC int drbd_notify_sys(struct notifier_block *this, unsigned long code,
 	return NOTIFY_DONE;
 }
 
-STATIC struct notifier_block drbd_notifier = {
+static struct notifier_block drbd_notifier = {
 	.notifier_call = drbd_notify_sys,
 };
 
@@ -2643,7 +2643,7 @@ void drbd_restart_request(struct drbd_request *req)
 }
 
 
-STATIC void drbd_cleanup(void)
+static void drbd_cleanup(void)
 {
 	unsigned int i;
 	struct drbd_device *device;
@@ -4461,7 +4461,7 @@ bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_
 	return md->peers[peer_device->bitmap_index].flags & flag;
 }
 
-STATIC void md_sync_timer_fn(unsigned long data)
+static void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 
@@ -4470,7 +4470,7 @@ STATIC void md_sync_timer_fn(unsigned long data)
 		drbd_queue_work(&device->resource->work, &device->md_sync_work);
 }
 
-STATIC int w_md_sync(struct drbd_work *w, int unused)
+static int w_md_sync(struct drbd_work *w, int unused)
 {
 	struct drbd_device *device =
 		container_of(w, struct drbd_device, md_sync_work);
@@ -4717,7 +4717,7 @@ struct fault_random_state {
  * Crude but fast random-number generator.  Uses a linear congruential
  * generator, with occasional help from get_random_bytes().
  */
-STATIC unsigned long
+static unsigned long
 _drbd_fault_random(struct fault_random_state *rsp)
 {
 	long refresh;
@@ -4731,7 +4731,7 @@ _drbd_fault_random(struct fault_random_state *rsp)
 	return swahw32(rsp->state);
 }
 
-STATIC char *
+static char *
 _drbd_fault_str(unsigned int type) {
 	static char *_faults[] = {
 		[DRBD_FAULT_MD_WR] = "Meta-data write",

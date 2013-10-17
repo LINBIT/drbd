@@ -132,12 +132,6 @@ extern char usermode_helper[];
 struct drbd_device;
 struct drbd_connection;
 
-#ifdef DBG_ALL_SYMBOLS
-# define STATIC
-#else
-# define STATIC static
-#endif
-
 /*
  * dev_printk() and dev_dbg() exist since "forever".
  * dynamic_dev_dbg() and disk_to_dev() exists since v2.6.28-rc1.

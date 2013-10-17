@@ -45,7 +45,7 @@ const struct file_operations drbd_proc_fops = {
 	.release	= drbd_proc_release,
 };
 
-STATIC int drbd_seq_show(struct seq_file *seq, void *v)
+static int drbd_seq_show(struct seq_file *seq, void *v)
 {
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)\n%s\n",
 		   API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, drbd_buildtag());

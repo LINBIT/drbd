@@ -1406,7 +1406,7 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
  * failed, and 0 on success. You should call drbd_md_sync() after you called
  * this function.
  */
-STATIC int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
+static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 {
 	struct lru_cache *n, *t;
 	struct lc_element *e;

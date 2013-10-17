@@ -297,7 +297,7 @@ static int bm_test_page_lazy_writeout(struct page *page)
  */
 
 
-STATIC void bm_free_pages(struct page **pages, unsigned long number)
+static void bm_free_pages(struct page **pages, unsigned long number)
 {
 	unsigned long i;
 	if (!pages)
@@ -315,7 +315,7 @@ STATIC void bm_free_pages(struct page **pages, unsigned long number)
 	}
 }
 
-STATIC void bm_vk_free(void *ptr, int v)
+static void bm_vk_free(void *ptr, int v)
 {
 	if (v)
 		vfree(ptr);
@@ -326,7 +326,7 @@ STATIC void bm_vk_free(void *ptr, int v)
 /*
  * "have" and "want" are NUMBER OF PAGES.
  */
-STATIC struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
+static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 {
 	struct page **old_pages = b->bm_pages;
 	struct page **new_pages, *page;
@@ -1082,7 +1082,7 @@ static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int e
 	BIO_ENDIO_FN_RETURN;
 }
 
-STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must_hold(local)
+static void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must_hold(local)
 {
 	struct bio *bio = bio_alloc_drbd(GFP_NOIO);
 	struct drbd_device *device = ctx->device;
@@ -1134,7 +1134,7 @@ STATIC void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 /*
  * bm_rw: read/write the whole bitmap from/to its on disk location.
  */
-STATIC int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned lazy_writeout_upper_idx) __must_hold(local)
+static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned lazy_writeout_upper_idx) __must_hold(local)
 {
 	struct bm_aio_ctx *ctx;
 	struct drbd_bitmap *b = device->bitmap;

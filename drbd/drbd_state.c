@@ -201,7 +201,7 @@ void forget_state_change(struct drbd_state_change *state_change)
 
 static void print_state_change(struct drbd_resource *resource, const char *prefix);
 static void finish_state_change(struct drbd_resource *, struct completion *);
-STATIC int w_after_state_change(struct drbd_work *w, int unused);
+static int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 static void sanitize_state(struct drbd_resource *resource);
@@ -1038,7 +1038,7 @@ static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *resourc
 	return rv;
 }
 
-STATIC enum drbd_state_rv
+static enum drbd_state_rv
 is_valid_conn_transition(enum drbd_conn_state oc, enum drbd_conn_state nc)
 {
 	/* no change -> nothing to do, at least for the connection part */
@@ -1962,7 +1962,7 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 /*
  * Perform after state change actions that may sleep.
  */
-STATIC int w_after_state_change(struct drbd_work *w, int unused)
+static int w_after_state_change(struct drbd_work *w, int unused)
 {
 	struct after_state_change_work *work =
 		container_of(w, struct after_state_change_work, w);

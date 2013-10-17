@@ -86,12 +86,12 @@ struct waiter {
 	struct socket *socket;
 };
 
-STATIC int drbd_do_features(struct drbd_connection *connection);
-STATIC int drbd_do_auth(struct drbd_connection *connection);
+static int drbd_do_features(struct drbd_connection *connection);
+static int drbd_do_auth(struct drbd_connection *connection);
 static int drbd_disconnected(struct drbd_peer_device *);
 
-STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
-STATIC int e_end_block(struct drbd_work *, int);
+static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
+static int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
@@ -337,7 +337,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
  * Is also used from inside an other spin_lock_irq(&resource->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
-STATIC void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
+static void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
 {
 	atomic_t *a = is_net ? &device->pp_in_use_by_net : &device->pp_in_use;
 	int i;
@@ -520,7 +520,7 @@ static void drbd_wait_ee_list_empty(struct drbd_device *device,
 	spin_unlock_irq(&device->resource->req_lock);
 }
 
-STATIC int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flags)
+static int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
 	struct kvec iov = {
@@ -542,7 +542,7 @@ STATIC int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flag
 	return rv;
 }
 
-STATIC int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
+static int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 {
 	int rv;
 
@@ -617,7 +617,7 @@ static void drbd_setbufsize(struct socket *sock, unsigned int snd,
 	}
 }
 
-STATIC struct socket *drbd_try_connect(struct drbd_connection *connection)
+static struct socket *drbd_try_connect(struct drbd_connection *connection)
 {
 	const char *what;
 	struct socket *sock;
@@ -948,7 +948,7 @@ static bool _wait_connect_cond(struct waiter *waiter)
 	return rv;
 }
 
-STATIC struct socket *drbd_wait_for_connect(struct waiter *waiter)
+static struct socket *drbd_wait_for_connect(struct waiter *waiter)
 {
 	struct drbd_connection *connection = waiter->connection;
 	struct drbd_resource *resource = connection->resource;
@@ -1200,7 +1200,7 @@ static void conn_connect2(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-STATIC void conn_disconnect(struct drbd_connection *connection);
+static void conn_disconnect(struct drbd_connection *connection);
 
 /*
  * Returns true if we have a valid connection.
@@ -1507,7 +1507,7 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 	return err;
 }
 
-STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
+static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
 	int rv;
 	struct drbd_resource *resource = connection->resource;
@@ -1544,7 +1544,7 @@ STATIC enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 	return drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE);
 }
 
-STATIC int w_flush(struct drbd_work *w, int cancel)
+static int w_flush(struct drbd_work *w, int cancel)
 {
 	struct flush_work *fw = container_of(w, struct flush_work, w);
 	struct drbd_epoch *epoch = fw->epoch;
@@ -1567,7 +1567,7 @@ STATIC int w_flush(struct drbd_work *w, int cancel)
  * @epoch:	Epoch object.
  * @ev:		Epoch event.
  */
-STATIC enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connection,
+static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connection,
 					       struct drbd_epoch *epoch,
 					       enum epoch_event ev)
 {
@@ -1961,7 +1961,7 @@ static void drbd_unplug_all_devices(struct drbd_resource *resource)
 }
 #endif
 
-STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
@@ -2042,7 +2042,7 @@ STATIC int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data */
-STATIC struct drbd_peer_request *
+static struct drbd_peer_request *
 read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	      int data_size) __must_hold(local)
 {
@@ -2127,7 +2127,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 /* drbd_drain_block() just takes a data block
  * out of the socket input buffer, and discards it.
  */
-STATIC int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
+static int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
 {
 	struct page *page;
 	int err = 0;
@@ -2203,7 +2203,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
  * e_end_resync_block() is called in asender context via
  * drbd_finish_peer_reqs().
  */
-STATIC int e_end_resync_block(struct drbd_work *w, int unused)
+static int e_end_resync_block(struct drbd_work *w, int unused)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -2228,7 +2228,7 @@ STATIC int e_end_resync_block(struct drbd_work *w, int unused)
 	return err;
 }
 
-STATIC int recv_resync_read(struct drbd_peer_device *peer_device, sector_t sector,
+static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t sector,
 			    int data_size) __releases(local)
 {
 	struct drbd_device *device = peer_device->device;
@@ -2289,7 +2289,7 @@ find_request(struct drbd_device *device, struct rb_root *root, u64 id,
 	return NULL;
 }
 
-STATIC int receive_DataReply(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_DataReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -2324,7 +2324,7 @@ STATIC int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	return err;
 }
 
-STATIC int receive_RSDataReply(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_RSDataReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -2383,7 +2383,7 @@ static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 /*
  * e_end_block() is called in asender context via drbd_finish_peer_reqs().
  */
-STATIC int e_end_block(struct drbd_work *w, int cancel)
+static int e_end_block(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -2745,7 +2745,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 }
 
 /* mirrored write */
-STATIC int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -2979,7 +2979,7 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 }
 
 
-STATIC int receive_DataRequest(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_DataRequest(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -3361,7 +3361,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 	return rv;
 }
 
-STATIC void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
+static void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
 {
 	struct drbd_device *device = peer_device->device;
 
@@ -3375,7 +3375,7 @@ STATIC void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, 
 }
 
 
-STATIC void drbd_uuid_dump_peer(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
+static void drbd_uuid_dump_peer(struct drbd_peer_device *peer_device, u64 bits, u64 flags)
 {
 	const int node_id = peer_device->device->resource->res_opts.node_id;
 
@@ -3534,7 +3534,7 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 -1091   requires proto 91
 -1096   requires proto 96
  */
-STATIC int drbd_uuid_compare(struct drbd_peer_device *peer_device,
+static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 			     int *rule_nr, int *peer_node_id) __must_hold(local)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -3677,7 +3677,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	enum drbd_repl_state rv = -1;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
-	int hg, rule_nr, rr_conflict, tentative, peer_node_id;
+	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0;
 
 	disk_state = device->disk_state[NOW];
 	if (disk_state == D_NEGOTIATING)
@@ -3846,7 +3846,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	return rv;
 }
 
-STATIC enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
+static enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
 {
 	/* ASB_DISCARD_REMOTE - ASB_DISCARD_LOCAL is valid */
 	if (peer == ASB_DISCARD_REMOTE)
@@ -3860,7 +3860,7 @@ STATIC enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
 	return peer;
 }
 
-STATIC int receive_protocol(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_protocol(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_protocol *p = pi->data;
 	enum drbd_after_sb_p p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
@@ -4074,7 +4074,7 @@ static int config_unknown_volume(struct drbd_connection *connection, struct pack
 	return ignore_remaining_packet(connection, pi);
 }
 
-STATIC int receive_SyncParam(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_SyncParam(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -4289,7 +4289,7 @@ disconnect:
 	return -EIO;
 }
 
-STATIC void drbd_setup_order_type(struct drbd_device *device, int peer)
+static void drbd_setup_order_type(struct drbd_device *device, int peer)
 {
 	/* sorry, we currently have no working implementation
 	 * of distributed TCQ */
@@ -4319,7 +4319,7 @@ static unsigned int conn_max_bio_size(struct drbd_connection *connection)
 		return DRBD_MAX_SIZE_H80_PACKET;
 }
 
-STATIC int receive_sizes(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_sizes(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -4604,7 +4604,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
  * convert_state() - Converts the peer's view of the cluster state to our point of view
  * @peer_state:	The state as seen by the peer.
  */
-STATIC union drbd_state convert_state(union drbd_state peer_state)
+static union drbd_state convert_state(union drbd_state peer_state)
 {
 	union drbd_state state;
 
@@ -4767,7 +4767,7 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 	return end_state_change(connection->resource, &irq_flags);
 }
 
-STATIC int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
@@ -5083,7 +5083,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
-STATIC int receive_state(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
@@ -5298,7 +5298,7 @@ STATIC int receive_state(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
-STATIC int receive_sync_uuid(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_sync_uuid(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -5518,7 +5518,7 @@ void INFO_bm_xfer_stats(struct drbd_peer_device *peer_device,
    in order to be agnostic to the 32 vs 64 bits issue.
 
    returns 0 on failure, 1 if we successfully received it. */
-STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_bitmap(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -5612,7 +5612,7 @@ STATIC int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	return err;
 }
 
-STATIC int receive_skip(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_skip(struct drbd_connection *connection, struct packet_info *pi)
 {
 	drbd_warn(connection, "skipping unknown optional packet type %d, l: %d!\n",
 		 pi->cmd, pi->size);
@@ -5620,7 +5620,7 @@ STATIC int receive_skip(struct drbd_connection *connection, struct packet_info *
 	return ignore_remaining_packet(connection, pi);
 }
 
-STATIC int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
 	/* just unplug all devices always, regardless which volume number */
 	drbd_unplug_all_devices(connection->resource);
@@ -5632,7 +5632,7 @@ STATIC int receive_UnplugRemote(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
-STATIC int receive_out_of_sync(struct drbd_connection *connection, struct packet_info *pi)
+static int receive_out_of_sync(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -5849,7 +5849,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_PRI_REACHABLE]   = { 0, sizeof(struct p_pri_reachable), receive_reachability },
 };
 
-STATIC void drbdd(struct drbd_connection *connection)
+static void drbdd(struct drbd_connection *connection)
 {
 	struct packet_info pi;
 	size_t shs; /* sub header size */
@@ -5902,7 +5902,7 @@ STATIC void drbdd(struct drbd_connection *connection)
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
-STATIC void conn_disconnect(struct drbd_connection *connection)
+static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
@@ -6058,7 +6058,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
  *
  * for now, they are expected to be zero, but ignored.
  */
-STATIC int drbd_send_features(struct drbd_connection *connection, int peer_node_id)
+static int drbd_send_features(struct drbd_connection *connection, int peer_node_id)
 {
 	struct drbd_socket *sock;
 	struct p_connection_features *p;
@@ -6082,7 +6082,7 @@ STATIC int drbd_send_features(struct drbd_connection *connection, int peer_node_
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.
  */
-STATIC int drbd_do_features(struct drbd_connection *connection)
+static int drbd_do_features(struct drbd_connection *connection)
 {
 	/* ASSERT current == connection->receiver ... */
 	struct drbd_resource *resource = connection->resource;
@@ -6172,7 +6172,7 @@ STATIC int drbd_do_features(struct drbd_connection *connection)
 }
 
 #if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)
-STATIC int drbd_do_auth(struct drbd_connection *connection)
+static int drbd_do_auth(struct drbd_connection *connection)
 {
 	drbd_err(connection, "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
 	drbd_err(connection, "You need to disable 'cram-hmac-alg' in drbd.conf.\n");
@@ -6187,7 +6187,7 @@ STATIC int drbd_do_auth(struct drbd_connection *connection)
 	-1 - auth failed, don't try again.
 */
 
-STATIC int drbd_do_auth(struct drbd_connection *connection)
+static int drbd_do_auth(struct drbd_connection *connection)
 {
 	struct drbd_socket *sock;
 	char my_challenge[CHALLENGE_LEN];  /* 64 Bytes... */
@@ -6422,7 +6422,7 @@ static int got_peers_in_sync(struct drbd_connection *connection, struct packet_i
 	return 0;
 }
 
-STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
+static int got_RqSReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_req_state_reply *p = pi->data;
 	int retcode = be32_to_cpu(p->retcode);
@@ -6441,7 +6441,7 @@ STATIC int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 	return 0;
 }
 
-STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_info *pi)
+static int got_twopc_reply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct p_twopc_reply *p = pi->data;
@@ -6496,13 +6496,13 @@ STATIC int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	return 0;
 }
 
-STATIC int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
+static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
 	return drbd_send_ping_ack(connection);
 
 }
 
-STATIC int got_PingAck(struct drbd_connection *connection, struct packet_info *pi)
+static int got_PingAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	if (!test_and_set_bit(GOT_PING_ACK, &connection->flags))
 		wake_up(&connection->ping_wait);
@@ -6510,7 +6510,7 @@ STATIC int got_PingAck(struct drbd_connection *connection, struct packet_info *p
 	return 0;
 }
 
-STATIC int got_IsInSync(struct drbd_connection *connection, struct packet_info *pi)
+static int got_IsInSync(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6563,7 +6563,7 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 	return 0;
 }
 
-STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *pi)
+static int got_BlockAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6609,7 +6609,7 @@ STATIC int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 					     what, false);
 }
 
-STATIC int got_NegAck(struct drbd_connection *connection, struct packet_info *pi)
+static int got_NegAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6645,7 +6645,7 @@ STATIC int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 	return 0;
 }
 
-STATIC int got_NegDReply(struct drbd_connection *connection, struct packet_info *pi)
+static int got_NegDReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6667,7 +6667,7 @@ STATIC int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 					     NEG_ACKED, false);
 }
 
-STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_info *pi)
+static int got_NegRSDReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6703,7 +6703,7 @@ STATIC int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	return 0;
 }
 
-STATIC int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
+static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct p_barrier_ack *p = pi->data;
@@ -6726,7 +6726,7 @@ STATIC int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 	return 0;
 }
 
-STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *pi)
+static int got_OVResult(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
@@ -6777,7 +6777,7 @@ STATIC int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	return 0;
 }
 
-STATIC int got_skip(struct drbd_connection *connection, struct packet_info *pi)
+static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 {
 	return 0;
 }
@@ -6797,7 +6797,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_h
 	return bitmap_bits;
 }
 
-STATIC int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
+static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct p_peer_ack *p = pi->data;

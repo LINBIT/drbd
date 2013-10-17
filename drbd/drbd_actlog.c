@@ -147,7 +147,7 @@ void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_b
 	}
 }
 
-STATIC int _drbd_md_sync_page_io(struct drbd_device *device,
+static int _drbd_md_sync_page_io(struct drbd_device *device,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
@@ -832,7 +832,7 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-STATIC int w_update_odbm(struct drbd_work *w, int unused)
+static int w_update_odbm(struct drbd_work *w, int unused)
 {
 	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
 	struct drbd_peer_device *peer_device = udw->peer_device;
