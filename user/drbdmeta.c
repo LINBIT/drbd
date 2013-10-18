@@ -1111,6 +1111,9 @@ struct meta_cmd {
 	int node_id_required:1;
 	int modifies_md:1;
 };
+/* Global command pointer, to be able to change behavior in helper functions
+ * based on which top-level command is being processed. */
+static struct meta_cmd *command;
 
 /* pre declarations */
 int meta_get_gi(struct format *cfg, char **argv, int argc);
@@ -2637,7 +2640,9 @@ int v07_style_md_open(struct format *cfg)
 		int save_errno = errno;
 		PERROR("open(%s) failed", cfg->md_device_name);
 		if (save_errno == EBUSY && (open_flags & O_EXCL)) {
-			if (!confirmed("Exclusive open failed. Do it anyways?")) {
+			if ((!force && command->function == &meta_apply_al) ||
+			    !confirmed("Exclusive open failed. Do it anyways?"))
+			{
 				printf("Operation canceled.\n");
 				exit(20);
 			}
@@ -4988,7 +4993,6 @@ struct format *new_cfg()
 
 int main(int argc, char **argv)
 {
-	struct meta_cmd *command = NULL;
 	struct format *cfg;
 	size_t i;
 	int ai, rv;
