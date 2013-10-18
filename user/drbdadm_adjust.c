@@ -171,6 +171,8 @@ static struct connection *matching_conn(struct connection *pattern, struct conne
 	struct connection *conn;
 
 	for_each_connection(conn, pool) {
+		if (conn->ignore)
+			continue;
 		if (addr_equal(pattern->my_address, conn->my_address) &&
 		    addr_equal(pattern->connect_to, conn->connect_to))
 			return conn;
@@ -627,6 +629,18 @@ int adm_adjust(const struct cfg_ctx *ctx)
 		do_res_options = !opts_equal(&resource_options_ctx, &ctx->res->res_options, &running->res_options);
 	} else {
 		schedule_deferred_cmd(&new_resource_cmd, ctx, CFG_PREREQ);
+	}
+
+	if (running) {
+		for_each_connection(conn, &running->connections) {
+			struct connection *configured_conn;
+
+			configured_conn = matching_conn(conn, &ctx->res->connections);
+			if (!configured_conn) {
+				struct cfg_ctx tmp_ctx = { .res = running, .conn = conn };
+				schedule_deferred_cmd(&disconnect_cmd, &tmp_ctx, CFG_NET);
+			}
+		}
 	}
 
 	for_each_connection(conn, &ctx->res->connections) {
