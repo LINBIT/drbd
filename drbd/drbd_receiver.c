@@ -5428,7 +5428,11 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 				(unsigned int)bs.buf_len);
 			return -EIO;
 		}
-		look_ahead >>= bits;
+		/* if we consumed all 64 bits, assign 0; >> 64 is "undefined"; */
+		if (likely(bits < 64))
+			look_ahead >>= bits;
+		else
+			look_ahead = 0;
 		have -= bits;
 
 		bits = bitstream_get_bits(&bs, &tmp, 64 - have);
