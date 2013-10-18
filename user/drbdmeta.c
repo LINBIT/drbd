@@ -4066,12 +4066,13 @@ int guessed_size_from_pvs(struct fstype_s *f, char *dev_name)
 	if (pid < 0)
 		goto out;
 
+	setenv("dev_name", dev_name, 1);
 	if (pid == 0) {
 		/* child */
 		char *argv[] = {
-			"pvs", "-vvv", "--noheadings", "--nosuffix", "--units", "s",
-			"-o", "pv_size",
-			dev_name,
+			"sh", "-vxc",
+			"pvs -vvv --noheadings --nosuffix --units s -o pv_size"
+			" --config \"devices { write_cache_state=0 filter = [ 'a|$dev_name|', 'r|.|' ] }\"",
 			NULL,
 		};
 		close(pipes[0][1]); /* close unused pipe ends */
