@@ -318,14 +318,11 @@ check_peer_node_reachable()
 
 	# we are going to increase the cib timeout with every timeout.
 	# for the actual invocation, we use int(cibtimeout/10).
-	local cibtimeout=10
+	local cibtimeout=18
 	local full_timeout
 	local node_state state_lines nr_other_nodes
 	while :; do
 		while :; do
-			# TODO It would be great to figure out that a node is definitly
-			# still reachable without resorting to sleep and repoll for
-			# timeout seconds.
 			# Update our view of the cib, ask the DC this time.
 			# Timeout, in case no DC is available.
 			# Caution, some cibadmin (pacemaker 0.6 and earlier)
@@ -397,13 +394,29 @@ check_peer_node_reachable()
 		# the recommended timeout is larger than the deadtime or
 		# stonith timeout, and according to beekhof maybe should be
 		# tuned up to the election-timeout (which, btw, defaults to 2
-		# minuts!).
+		# minutes!).
 		if (( $SECONDS >= $timeout )) ; then
 			peer_state="reachable"
 			return
 		fi
 
-		# wait a bit before we poll the DC again.
+		# try crmadmin; if we can sucessfully query the state of the remote crmd,
+		# it is obviously reachable.
+		# Do this only after we have been able to reach a DC above.
+		# Note: crmadmin timeout is in milli-seconds, and defaults to 30000 (30 seconds).
+		# Our variable $cibtimeout should be in deci-seconds (see above)
+		# (unless you use a very old version of pacemaker, so don't do that).
+		# Convert deci-seconds to milli-seconds, and double it.
+		if [[ $DRBD_PEER ]] ; then
+			local out
+			if out=$( crmadmin -t $(( cibtimeout * 200 )) -S $DRBD_PEER ) \
+			&& [[ $out = *"(ok)" ]]; then
+				peer_state="reachable"
+				return
+			fi
+		fi
+
+		# wait a bit before we poll the DC again
 		sleep 1
 	done
 	# NOT REACHED
