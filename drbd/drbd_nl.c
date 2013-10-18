@@ -619,14 +619,8 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	spin_unlock_irq(&connection->resource->req_lock);
 
 	fencing_policy = connection->fencing_policy;
-	switch (fencing_policy) {
-	case FP_NOT_AVAIL:
-		drbd_warn(connection, "Not fencing peer, I'm not even Consistent myself.\n");
-		goto out;
-	case FP_DONT_CARE:
+	if (fencing_policy == FP_DONT_CARE)
 		return true;
-	default: ;
-	}
 
 	r = drbd_khelper(NULL, connection, "fence-peer");
 
