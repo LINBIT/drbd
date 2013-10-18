@@ -1116,7 +1116,6 @@ static int drbd_socket_okay(struct socket **sock)
 int drbd_connected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_resource *resource = device->resource;
 	int err;
 
 	atomic_set(&peer_device->packet_seq, 0);
@@ -1130,17 +1129,6 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 			err = drbd_send_uuids(peer_device, 0, 0);
 		} else {
 			set_bit(INITIAL_STATE_SENT, &peer_device->flags);
-
-			/* Prevent a race between resync-handshake and
-			 * being promoted to Primary.
-			 *
-			 * Grab and release the state semaphore, so we know that any current
-			 * drbd_set_role() is finished, and any incoming drbd_set_role
-			 * will see the STATE_SENT flag, and wait for it to be cleared.
-			 */
-			down(&resource->state_sem);
-			up(&resource->state_sem);
-
 			err = drbd_send_current_state(peer_device);
 		}
 	}
@@ -1183,10 +1171,20 @@ void connect_timer_fn(unsigned long data)
 
 static void conn_connect2(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	atomic_set(&connection->ap_in_flight, 0);
+
+	/* Prevent a race between resync-handshake and
+	 * being promoted to Primary.
+	 *
+	 * Grab the state semaphore, so we know that any current
+	 * drbd_set_role() is finished, and any incoming drbd_set_role
+	 * will see the INITIAL_STATE_SENT flag, and wait for it to be cleared.
+	 */
+	down(&resource->state_sem);
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
@@ -1198,6 +1196,7 @@ static void conn_connect2(struct drbd_connection *connection)
 		kobject_put(&device->kobj);
 	}
 	rcu_read_unlock();
+	up(&resource->state_sem);
 }
 
 static void conn_disconnect(struct drbd_connection *connection);
