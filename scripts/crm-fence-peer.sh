@@ -23,6 +23,26 @@ sed_rsc_location_suitable_for_string_compare()
 	}' | sort
 }
 
+cibadmin_invocations=0
+set_constraint()
+{
+	cibadmin_invocations=$(( $cibadmin_invocations + 1 ))
+	cibadmin -C -o constraints -X "$new_constraint"
+}
+
+remove_constraint()
+{
+	cibadmin_invocations=$(( $cibadmin_invocations + 1 ))
+	cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\"/>"
+}
+
+cib_xml=""
+get_cib_xml() {
+	cibadmin_invocations=$(( $cibadmin_invocations + 1 ))
+	cib_xml=$( set +x; cibadmin "$@" )
+}
+
+
 # if not passed in, try to "guess" it from the cib
 # we only know the DRBD_RESOURCE.
 fence_peer_init()
@@ -181,7 +201,7 @@ try_place_constraint()
 		# which will cause a "script is broken" message in case it was
 		# indeed called as handler from within drbd
 	elif [[ $peer_state = reachable ]] && $DRBD_disk_all_consistent; then
-		cibadmin -C -o constraints -X "$new_constraint" &&
+		set_constraint &&
 		drbd_fence_peer_exit_code=4 rc=0 &&
 		echo INFO "peer is $peer_state, my disk is ${DRBD_disk[*]}: placed constraint '$id_prefix-$master_id'"
 	elif $DRBD_disk_all_uptodate ; then
@@ -189,7 +209,7 @@ try_place_constraint()
 		# and DC-unreachable.  In the latter case, placing the
 		# constraint will fail anyways, and  drbd_fence_peer_exit_code
 		# will stay at "generic error".
-		cibadmin -C -o constraints -X "$new_constraint" &&
+		set_constraint &&
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo INFO "peer is not reachable, my disk is UpToDate: placed constraint '$id_prefix-$master_id'"
 	elif [[ $peer_state = unreachable ]] && [[ $unreachable_peer_is = outdated ]] && $DRBD_disk_all_consistent; then
@@ -201,7 +221,7 @@ try_place_constraint()
 		# to set the constraint.  Next promotion attempt will find the
 		# "correct" constraint, consider the peer as successfully
 		# fenced, and continue.
-		cibadmin -C -o constraints -X "$new_constraint" &&
+		set_constraint &&
 		drbd_fence_peer_exit_code=5 rc=0 &&
 		echo WARNING "peer is unreachable, my disk is only Consistent: --unreachable-peer-is-outdated FORCED constraint '$id_prefix-$master_id'" &&
 		echo WARNING "This MAY RISK DATA INTEGRITY"
@@ -225,8 +245,7 @@ drbd_peer_fencing()
 	local have_constraint new_constraint
 
 	# if I cannot query the local cib, give up
-	local cib_xml
-	cib_xml=$(cibadmin -Ql) || return
+	get_cib_xml -Ql || return
 	fence_peer_init || return
 
 	case $1 in
@@ -298,7 +317,7 @@ drbd_peer_fencing()
 	unfence)
 		if [[ -n $have_constraint ]]; then
 			# remove it based on that id
-			cibadmin -D -X "<rsc_location rsc=\"$master_id\" id=\"$id_prefix-$master_id\"/>"
+			remove_constraint
 		else
 			return 0
 		fi
@@ -338,7 +357,7 @@ check_peer_node_reachable()
 			# or longer, even if the DC is re-elected right now,
 			# and available within the next second.
 			#
-			cib_xml=$(cibadmin -Q -t $[cibtimeout/10]) && break
+			get_cib_xml -Q -t $(( cibtimeout/10 )) && break
 
 			# bash magic $SECONDS is seconds since shell invocation.
 			if (( $SECONDS > $dc_timeout )) ; then
@@ -642,11 +661,15 @@ drbd_fence_peer_exit_code=1
 case $PROG in
     crm-fence-peer.sh)
 	if drbd_peer_fencing fence; then
+		: == DEBUG == $cibadmin_invocations cibadmin calls ==
+		: == DEBUG == $SECONDS seconds ==
 		exit $drbd_fence_peer_exit_code
 	fi
 	;;
     crm-unfence-peer.sh)
 	if drbd_peer_fencing unfence; then
+		: == DEBUG == $cibadmin_invocations cibadmin calls ==
+		: == DEBUG == $SECONDS seconds ==
 		exit 0
 	fi
 esac
