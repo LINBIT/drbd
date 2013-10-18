@@ -1454,7 +1454,7 @@ out:
 
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
 	 * we plug after submit, so we won't miss an unplug event */
-	drbd_plug_device(device);
+	drbd_plug_device(bdev_get_queue(device->this_bdev));
 
 	if (m.bio)
 		complete_master_bio(device, &m);

@@ -1,10 +1,20 @@
 #ifndef _DRBD_WRAPPERS_H
 #define _DRBD_WRAPPERS_H
 
+#include "compat.h"
 #include <linux/ctype.h>
 #include <linux/net.h>
-
 #include <linux/version.h>
+#include <linux/crypto.h>
+#include <linux/netlink.h>
+#include <linux/idr.h>
+#include <linux/fs.h>
+#include <linux/bio.h>
+#include <linux/slab.h>
+#include <linux/completion.h>
+#include <linux/proc_fs.h>
+#include <linux/blkdev.h>
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
 # error "At least kernel version 2.6.18 (with patches) required"
 #endif
@@ -17,7 +27,6 @@
    It had 4 arguments before dd3932eddf428571762596e17b65f5dc92ca361b,
    after it got 3 arguments. (With that commit came BLKDEV_DISCARD_SECURE
    and BLKDEV_IFL_WAIT disappeared again.) */
-#include <linux/blkdev.h>
 #ifndef BLKDEV_IFL_WAIT
 #ifndef BLKDEV_DISCARD_SECURE
 /* before fbd9b09a177 */
@@ -28,14 +37,6 @@
 /* between fbd9b09a177 and dd3932eddf4 */
 #define blkdev_issue_flush(b, gfpf, s)	blkdev_issue_flush(b, gfpf, s, BLKDEV_IFL_WAIT)
 #endif
-
-#include <linux/fs.h>
-#include <linux/bio.h>
-#include <linux/slab.h>
-#include <linux/completion.h>
-
-/* for the proc_create wrapper */
-#include <linux/proc_fs.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
 static inline unsigned short queue_logical_block_size(struct request_queue *q)
@@ -67,13 +68,6 @@ static inline void blk_queue_logical_block_size(struct request_queue *q, unsigne
 }
 #endif
 
-/* Returns the number of 512 byte sectors of the device */
-static inline sector_t drbd_get_capacity(struct block_device *bdev)
-{
-	/* return bdev ? get_capacity(bdev->bd_disk) : 0; */
-	return bdev ? i_size_read(bdev->bd_inode) >> 9 : 0;
-}
-
 #ifdef COMPAT_HAVE_VOID_MAKE_REQUEST
 /* in Commit 5a7bbad27a410350e64a2d7f5ec18fc73836c14f (between Linux-3.1 and 3.2)
    make_request() becomes type void. Before it had type int. */
@@ -83,17 +77,6 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 #define MAKE_REQUEST_TYPE int
 #define MAKE_REQUEST_RETURN return 0
 #endif
-
-#include "drbd_int.h"
-
-/* sets the number of 512 byte sectors of our virtual device */
-static inline void drbd_set_my_capacity(struct drbd_device *device,
-					sector_t size)
-{
-	/* set_capacity(device->this_bdev->bd_disk, size); */
-	set_capacity(device->vdisk, size);
-	device->this_bdev->bd_inode->i_size = (loff_t)size << 9;
-}
 
 #ifndef COMPAT_HAVE_FMODE_T
 typedef unsigned __bitwise__ fmode_t;
@@ -211,45 +194,11 @@ static inline void sg_set_page(struct scatterlist *sg, struct page *page,
 # endif
 # define disk_to_kobj(disk) (&disk_to_dev(disk)->kobj)
 #endif
-static inline void drbd_kobject_uevent(struct drbd_device *device)
-{
-	kobject_uevent(disk_to_kobj(device->vdisk), KOBJ_CHANGE);
-	/* rhel4 / sles9 and older don't have this at all,
-	 * which means user space (udev) won't get events about possible changes of
-	 * corresponding resource + disk names after the initial drbd minor creation.
-	 */
-}
-
-
-/*
- * used to submit our private bio
- */
-static inline void drbd_generic_make_request(struct drbd_device *device,
-					     int fault_type, struct bio *bio)
-{
-	__release(local);
-	if (!bio->bi_bdev) {
-		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
-				"bio->bi_bdev == NULL\n",
-		       device_to_minor(device));
-		dump_stack();
-		bio_endio(bio, -ENODEV);
-		return;
-	}
-
-	if (drbd_insert_fault(device, fault_type))
-		bio_endio(bio, -EIO);
-	else
-		generic_make_request(bio);
-}
 
 /* see 7eaceac block: remove per-queue plugging */
 #ifdef blk_queue_plugged
-static inline void drbd_plug_device(struct drbd_device *device)
+static inline void drbd_plug_device(struct request_queue *q)
 {
-	struct request_queue *q;
-	q = bdev_get_queue(device->this_bdev);
-
 	spin_lock_irq(q->queue_lock);
 
 /* XXX the check on !blk_queue_plugged is redundant,
@@ -263,14 +212,13 @@ static inline void drbd_plug_device(struct drbd_device *device)
 	spin_unlock_irq(q->queue_lock);
 }
 #else
-static inline void drbd_plug_device(struct drbd_device *device)
+static inline void drbd_plug_device(struct request_queue *q)
 {
 }
 #endif
 
-static inline int drbd_backing_bdev_events(struct drbd_device *device)
+static inline int drbd_backing_bdev_events(struct gendisk *disk)
 {
-	struct gendisk *disk = device->ldev->backing_bdev->bd_contains->bd_disk;
 #if defined(__disk_stat_inc)
 	/* older kernel */
 	return (int)disk_stat_read(disk, sectors[0])

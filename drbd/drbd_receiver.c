@@ -2941,7 +2941,8 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 		return 0;
 	}
 
-	curr_events = drbd_backing_bdev_events(device) - atomic_read(&device->rs_sect_ev);
+	curr_events = drbd_backing_bdev_events(device->ldev->backing_bdev->bd_contains->bd_disk)
+		    - atomic_read(&device->rs_sect_ev);
 
 	if (!peer_device->rs_last_events ||
 	    curr_events - peer_device->rs_last_events > 64) {

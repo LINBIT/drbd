@@ -46,6 +46,7 @@
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
 
+#include "drbd_wrappers.h"
 #include "drbd_strings.h"
 #include "compat.h"
 #include "drbd_state.h"
@@ -1462,10 +1463,6 @@ extern void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
 extern void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsigned int to_index);
 /* drbd_main.c */
 
-/* needs to be included here,
- * because of kmem_cache_t weirdness */
-#include "drbd_wrappers.h"
-
 extern struct kmem_cache *drbd_request_cache;
 extern struct kmem_cache *drbd_ee_cache;	/* peer requests */
 extern struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
@@ -1687,6 +1684,52 @@ static inline void drbd_tcp_quickack(struct socket *sock)
 	int val = 2;
 	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
 			(char*)&val, sizeof(val));
+}
+
+static inline sector_t drbd_get_capacity(struct block_device *bdev)
+{
+	/* return bdev ? get_capacity(bdev->bd_disk) : 0; */
+	return bdev ? i_size_read(bdev->bd_inode) >> 9 : 0;
+}
+
+/* sets the number of 512 byte sectors of our virtual device */
+static inline void drbd_set_my_capacity(struct drbd_device *device,
+					sector_t size)
+{
+	/* set_capacity(device->this_bdev->bd_disk, size); */
+	set_capacity(device->vdisk, size);
+	device->this_bdev->bd_inode->i_size = (loff_t)size << 9;
+}
+
+static inline void drbd_kobject_uevent(struct drbd_device *device)
+{
+	kobject_uevent(disk_to_kobj(device->vdisk), KOBJ_CHANGE);
+	/* rhel4 / sles9 and older don't have this at all,
+	 * which means user space (udev) won't get events about possible changes of
+	 * corresponding resource + disk names after the initial drbd minor creation.
+	 */
+}
+
+/*
+ * used to submit our private bio
+ */
+static inline void drbd_generic_make_request(struct drbd_device *device,
+					     int fault_type, struct bio *bio)
+{
+	__release(local);
+	if (!bio->bi_bdev) {
+		printk(KERN_ERR "drbd%d: drbd_generic_make_request: "
+				"bio->bi_bdev == NULL\n",
+		       device_to_minor(device));
+		dump_stack();
+		bio_endio(bio, -ENODEV);
+		return;
+	}
+
+	if (drbd_insert_fault(device, fault_type))
+		bio_endio(bio, -EIO);
+	else
+		generic_make_request(bio);
 }
 
 void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo);
