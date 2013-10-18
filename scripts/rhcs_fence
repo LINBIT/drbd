@@ -2,8 +2,8 @@
 #
 # Author:   Digimer (digimer@alteeve.com)
 #           Alteeve's Niche! - https://alteeve.com/w/
-# Version:  0.2.5
-# Released: 2012-08-01
+# Version:  0.2.6
+# Released: 2013-03-13
 # License:  GPL v2+
 # 
 # This program ties Linbit's DRBD into Red Hat's RHCS's fence daemon via the 
@@ -303,7 +303,7 @@ sub eject_target
 		# next.
 		if ($conf->{sys}{debug}) { to_log($conf, 0, __LINE__, "Target node: [$remote_node] is a cluster member, attempting to eject."); }
 		$sc=IO::Handle->new();
-		$shell_call="$conf->{path}{cman_tool} kill -f $remote_node";
+		$shell_call="$conf->{path}{cman_tool} kill -n $remote_node";
 		if ($conf->{sys}{debug}) { to_log($conf, 0, __LINE__, "DEBUG: shell call: [$shell_call]"); }
 		open ($sc, "$shell_call 2>&1 |") or to_log($conf, 1, __LINE__, "Failed to call: [$sc], error was: $!");
 		while(<$sc>)
