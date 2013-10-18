@@ -1286,7 +1286,7 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	}
 
 	if (size > la_size)
-		rv = DS_GREW;
+		rv = la_size ? DS_GREW : DS_GREW_FROM_ZERO;
 	if (size < la_size)
 		rv = DS_SHRUNK;
 
