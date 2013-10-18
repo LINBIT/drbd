@@ -254,10 +254,27 @@ try_place_constraint()
 		# keep drbd_fence_peer_exit_code at "generic error",
 		# which will cause a "script is broken" message in case it was
 		# indeed called as handler from within drbd
+
+	# No, NOT fenced/Consistent:
+	# just because we have been able to shoot him
+	# does not make our data any better.
 	elif [[ $peer_state = reachable ]] && $DRBD_disk_all_consistent; then
+		#           = reachable ]] && $DRBD_disk_all_uptodate
+		#	is implicitly handled here as well.
 		set_constraint &&
 		drbd_fence_peer_exit_code=4 rc=0 &&
 		echo INFO "peer is $peer_state, my disk is ${DRBD_disk[*]}: placed constraint '$id_prefix-$master_id'"
+
+	elif [[ $peer_state = fenced ]] && $DRBD_disk_all_uptodate ; then
+		set_constraint &&
+		drbd_fence_peer_exit_code=7 rc=0 &&
+		echo INFO "peer is $peer_state, my disk is $DRBD_disk: placed constraint '$id_prefix-$master_id'"
+
+	# Peer is neither "reachable" nor "fenced" (above would have matched)
+	# So we just hit some timeout.
+	# As long as we are UpToDate, place the constraint and continue.
+	# If you don't like that, use a ridiculously high timeout,
+	# or patch this script.
 	elif $DRBD_disk_all_uptodate ; then
 		# We could differentiate between unreachable,
 		# and DC-unreachable.  In the latter case, placing the
@@ -433,9 +450,67 @@ drbd_peer_fencing()
 	esac
 }
 
+guess_if_pacemaker_will_fence()
+{
+	# try to guess whether it is useful to wait and poll again,
+	# (node fencing in progress...),
+	# or if pacemaker thinks the node is "clean" dead.
+	local x
+
+	# "return values:"
+	crmd= in_ccm= expected= join= will_fence=false
+
+	# Older pacemaker has an "ha" attribute, too.
+	# For stonith-enabled=false, the "crmd" attribute may stay "online",
+	# but once ha="dead", we can stop waiting for changes.
+	ha_dead=false
+
+	for x in ${node_state%/>} ; do
+		case $x in
+		in_ccm=\"*\")	x=${x#*=\"}; x=${x%\"}; in_ccm=$x ;;
+		crmd=\"*\")	x=${x#*=\"}; x=${x%\"}; crmd=$x ;;
+		expected=\"*\")	x=${x#*=\"}; x=${x%\"}; expected=$x ;;
+		join=\"*\")	x=${x#*=\"}; x=${x%\"}; join=$x ;;
+		ha=\"dead\")	ha_dead=true ;;
+		esac
+	done
+
+	# if it is not enabled, no point in waiting for it.
+	if ! $stonith_enabled ; then
+		# "normalize" the rest of the logic
+		# where this is called.
+		# for stonith-enabled=false, and ha="dead",
+		# reset crmd="offline".
+		# Then we stop polling the cib for changes.
+
+		$ha_dead && crmd="offline"
+		return
+	fi
+
+	if [[ -z $node_state ]] ; then
+		# if we don't know nothing about the peer,
+		# and startup_fencing is explicitly disabled,
+		# no fencing will take place.
+		$startup_fencing || return
+	fi
+
+	# for further inspiration, see pacemaker:lib/pengine/unpack.c, determine_online_status_fencing()
+	[[ -z $in_ccm ]] && will_fence=true
+	[[ $crmd = "banned" ]] && will_fence=true
+	if [[ ${expected-down} = "down" && $in_ccm = "false"  && $crmd != "online" ]]; then
+		: "pacemaker considers this as clean down"
+	elif [[ $in_ccm = false ]] || [[ $crmd != "online" ]]; then
+		will_fence=true
+	fi
+}
+
 # return value in $peer_state:
 # DC-unreachable
 #	We have not been able to contact the DC.
+# fenced
+#	According to the node_state recorded in the cib,
+#	the peer is offline and expected down
+#	(which means successfully fenced, if stonith is enabled)
 # reachable
 #	cib says it's online, and crmadmin -S says peer state is "ok"
 # unreachable
@@ -467,6 +542,8 @@ check_peer_node_reachable()
 
 	while :; do
 		local state_lines= node_state=
+		local crmd= in_ccm= expected= join= will_fence= ha_dead=
+
 		while :; do
 			local t=$SECONDS
 			#
@@ -558,6 +635,22 @@ check_peer_node_reachable()
 
 		node_state=$(set +x; echo "$state_lines" | grep -F uname=\"$DRBD_PEER\")
 
+		# populates in_ccm, crmd, exxpected, join, will_fence=[false|true]
+		guess_if_pacemaker_will_fence
+
+		if ! $will_fence && [[ $crmd != "online" ]] ; then
+
+			# "legacy" cman + pacemaker clusters older than 1.1.10
+			# may "forget" about startup fencing.
+			# We can detect this because the "expected" attribute is missing.
+			# Does not make much difference for our logic, though.
+			[[ $expected/$in_ccm = "down/false" ]] && peer_state="fenced" || peer_state="unreachable"
+
+			return
+		fi
+
+		# So the cib does still indicate the peer was reachable.
+		#
 		# try crmadmin; if we can sucessfully query the state of the remote crmd,
 		# it is obviously reachable.
 		#
@@ -566,7 +659,7 @@ check_peer_node_reachable()
 		# Our variable $cibtimeout should be in deci-seconds (see above)
 		# (unless you use a very old version of pacemaker, so don't do that).
 		# Convert deci-seconds to milli-seconds, and double it.
-		if [[ $DRBD_PEER ]] ; then
+		if [[ $crmd = "online" ]] ; then
 			local out
 			if out=$( crmadmin -t $(( cibtimeout * 200 )) -S $DRBD_PEER ) \
 			&& [[ $out = *"(ok)" ]]; then
