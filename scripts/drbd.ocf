@@ -497,7 +497,17 @@ drbd_monitor() {
 	drbd_status
 	status=$?
 
-	drbd_update_master_score
+	if [[ $status = $OCF_NOT_RUNNING ]] && ocf_is_probe ; then
+		# see also linux-ha mailing list archives,
+		# From: Andrew Beekhof
+		# Subject: Re: pacemaker+drbd promotion delay
+		# Date: 2012-04-13 01:47:37 GMT
+		# e.g.: http://thread.gmane.org/gmane.linux.highavailability.user/37089/focus=37163
+		# ---
+		: "do nothing" ;
+	else
+		drbd_update_master_score
+	fi
 
 	return $status
 }
