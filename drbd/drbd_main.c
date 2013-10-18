@@ -3399,13 +3399,6 @@ int __init drbd_init(void)
 		return err;
 	}
 
-	err = drbd_genl_register();
-	if (err) {
-		printk(KERN_ERR "drbd: unable to register generic netlink family\n");
-		goto fail;
-	}
-
-
 	register_reboot_notifier(&drbd_notifier);
 
 	/*
@@ -3415,6 +3408,15 @@ int __init drbd_init(void)
 
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
+
+	mutex_init(&global_state_mutex);
+	INIT_LIST_HEAD(&drbd_resources);
+
+	err = drbd_genl_register();
+	if (err) {
+		printk(KERN_ERR "drbd: unable to register generic netlink family\n");
+		goto fail;
+	}
 
 	err = drbd_create_mempools();
 	if (err)
@@ -3426,9 +3428,6 @@ int __init drbd_init(void)
 		printk(KERN_ERR "drbd: unable to register proc file\n");
 		goto fail;
 	}
-
-	mutex_init(&global_state_mutex);
-	INIT_LIST_HEAD(&drbd_resources);
 
 	retry.wq = create_singlethread_workqueue("drbd-reissue");
 	if (!retry.wq) {
