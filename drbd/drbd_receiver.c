@@ -2476,29 +2476,11 @@ static u32 seq_max(u32 a, u32 b)
 	return seq_greater(a, b) ? a : b;
 }
 
-static bool need_peer_seq(struct drbd_peer_device *peer_device)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	int tp;
-
-	/*
-	 * We only need to keep track of the last packet_seq number of our peer
-	 * if we are in dual-primary mode and we have the discard flag set; see
-	 * handle_write_conflicts().
-	 */
-
-	rcu_read_lock();
-	tp = rcu_dereference(connection->net_conf)->two_primaries;
-	rcu_read_unlock();
-
-	return tp && test_bit(RESOLVE_CONFLICTS, &connection->flags);
-}
-
 static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int peer_seq)
 {
 	unsigned int newest_peer_seq;
 
-	if (need_peer_seq(peer_device)) {
+	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)) {
 		spin_lock(&peer_device->peer_seq_lock);
 		newest_peer_seq = seq_max(peer_device->peer_seq, peer_seq);
 		peer_device->peer_seq = newest_peer_seq;
@@ -2556,28 +2538,38 @@ static bool overlapping_resync_write(struct drbd_device *device, struct drbd_pee
  * -ERESTARTSYS if we were interrupted (by disconnect signal). */
 static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, const u32 peer_seq)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	DEFINE_WAIT(wait);
 	long timeout;
-	int ret;
+	int ret = 0, tp;
 
-	if (!need_peer_seq(peer_device))
+	if (!test_bit(RESOLVE_CONFLICTS, &connection->flags))
 		return 0;
 
 	spin_lock(&peer_device->peer_seq_lock);
 	for (;;) {
 		if (!seq_greater(peer_seq - 1, peer_device->peer_seq)) {
 			peer_device->peer_seq = seq_max(peer_device->peer_seq, peer_seq);
-			ret = 0;
 			break;
 		}
+
 		if (signal_pending(current)) {
 			ret = -ERESTARTSYS;
 			break;
 		}
+
+		rcu_read_lock();
+		tp = rcu_dereference(connection->net_conf)->two_primaries;
+		rcu_read_unlock();
+
+		if (!tp)
+			break;
+
+		/* Only need to wait if two_primaries is enabled */
 		prepare_to_wait(&peer_device->device->seq_wait, &wait, TASK_INTERRUPTIBLE);
 		spin_unlock(&peer_device->peer_seq_lock);
 		rcu_read_lock();
-		timeout = rcu_dereference(peer_device->connection->net_conf)->ping_timeo*HZ/10;
+		timeout = rcu_dereference(connection->net_conf)->ping_timeo*HZ/10;
 		rcu_read_unlock();
 		timeout = schedule_timeout(timeout);
 		spin_lock(&peer_device->peer_seq_lock);
@@ -2858,8 +2850,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			}
 			goto out_interrupted;
 		}
-	} else
+	} else {
+		update_peer_seq(peer_device, peer_seq);
 		spin_lock_irq(&device->resource->req_lock);
+	}
 	list_add(&peer_req->w.list, &device->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
