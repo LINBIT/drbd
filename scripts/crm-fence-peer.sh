@@ -182,6 +182,8 @@ try_place_constraint()
 {
 	local peer_state
 
+	rc=1
+
 	while :; do
 		check_peer_node_reachable
 		[[ $peer_state != "reachable" ]] && break
@@ -245,6 +247,7 @@ try_place_constraint()
 		# I'd like to return 6 here, otherwise pacemaker will retry
 		# forever to promote, even though 6 is not strictly correct.
 	fi
+	return $rc
 }
 
 # drbd_peer_fencing fence|unfence
@@ -294,13 +297,23 @@ drbd_peer_fencing()
 			# So we need to differentiate between node reachable or
 			# not, and DRBD "Consistent" or "UpToDate".
 
-			try_place_constraint
-		elif [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
+			try_place_constraint && return
+
+			# maybe callback and operator raced for the same constraint?
+			# before we potentially trigger node level fencing
+			# or keep IO frozen, double check.
+			# try_place_constraint has updated cib_xml from DC
+
+			have_constraint=$(set +x; echo "$cib_xml" |
+				sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")
+		fi
+
+		if [[ "$have_constraint" = "$(set +x; echo "$new_constraint" |
 			sed_rsc_location_suitable_for_string_compare "$id_prefix-$master_id")" ]]; then
 			echo INFO "suitable constraint already placed: '$id_prefix-$master_id'"
 			drbd_fence_peer_exit_code=4
 			rc=0
-		else
+		elif [[ -n "$have_constraint" ]] ; then
 			# if this id already exists, but looks different, we may have lost a shootout
 			echo WARNING "constraint "$have_constraint" already exists"
 			# anything != 0 will do;
