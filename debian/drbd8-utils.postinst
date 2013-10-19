@@ -15,4 +15,13 @@ else
 	done
 fi
 
+# compat: we used to live in /sbin/
+# there may be many hardcoded /sbin/drbd* out there,
+# including variants of our own scripts.
+if ! test /sbin -ef /usr/sbin; then
+	ln -sf /usr/sbin/drbdsetup /sbin/
+	ln -sf /usr/sbin/drbdmeta /sbin/
+	ln -sf /usr/sbin/drbdadm /sbin/
+fi
+
 #DEBHELPER#

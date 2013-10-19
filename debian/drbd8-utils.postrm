@@ -1,6 +1,10 @@
 #!/bin/sh
 
-if [ "$1" = "purge" ] ; then
+case $1 in purge|remove|deconfigure)
 	update-rc.d drbd remove >/dev/null
-fi
+	# remove compat symlinks installed by .postinst
+	rm -f /sbin/drbdsetup /sbin/drbdmeta /sbin/drbdadm
+	;;
+esac
+
 #DEBHELPER#
