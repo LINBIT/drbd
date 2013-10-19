@@ -94,7 +94,6 @@ distclean: clean
 install:
 ifeq ($(WITH_UTILS),yes)
 ifeq ($(WITH_LEGACY_UTILS_84),yes)
-	install -d $(DESTDIR)/sbin/
 	install -d $(DESTDIR)$(localstatedir)/lib/drbd
 	install -d $(DESTDIR)$(localstatedir)/lock
 	if getent group haclient > /dev/null 2> /dev/null ; then	\
