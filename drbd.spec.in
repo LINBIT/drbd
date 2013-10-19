@@ -290,12 +290,26 @@ for i in `seq 0 15` ; do
 done
 %endif #without udev
 
+# compat: we used to live in /sbin/
+# there may be many hardcoded /sbin/drbd* out there,
+# including variants of our own scripts.
+if ! test /sbin -ef %{_sbindir}; then
+	ln -sf %{_sbindir}/drbdsetup /sbin/
+	ln -sf %{_sbindir}/drbdmeta /sbin/
+	ln -sf %{_sbindir}/drbdadm /sbin/
+fi
+
 %preun utils
 if [ $1 -eq 0 ]; then
         %{_initrddir}/drbd stop >/dev/null 2>&1
         /sbin/chkconfig --del drbd
+	# remove compat symlinks installed by post
+	if ! test /sbin -ef %{_sbindir}; then
+		rm -f /sbin/drbdsetup
+		rm -f /sbin/drbdmeta
+		rm -f /sbin/drbdadm
+	fi
 fi
-
 
 %changelog
 * Wed Aug 14 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre6-1
