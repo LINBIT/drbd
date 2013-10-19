@@ -3030,7 +3030,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		/* Removed this pre-condition while merging from 8.4 to 9.0
-		if (device->state.conn != C_CONNECTED) {
+		if (device->state.conn != C_CONNECTED && !rs.resize_force) {
 			retcode = ERR_MD_LAYOUT_CONNECTED;
 			goto fail_ldev;
 		} */
