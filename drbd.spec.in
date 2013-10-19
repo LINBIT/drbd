@@ -96,9 +96,9 @@ This packages includes the DRBD administration tools.
 
 %files utils
 %defattr(755,root,root,-)
-/sbin/drbdsetup
-/sbin/drbdadm
-/sbin/drbdmeta
+%{_sbindir}/drbdsetup
+%{_sbindir}/drbdadm
+%{_sbindir}/drbdmeta
 %if %{with legacy_utils}
 %dir /lib/drbd/
 /lib/drbd/drbdsetup-83
