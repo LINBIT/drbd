@@ -141,12 +141,14 @@ resource stacked_multi_volume {
 		address	192.168.23.23:7780;
 
 		proxy on charly {
-		      # In the regular production site, there is a dedicated host to run
-		      # DRBD-proxy
-		      inside    192.168.23.24:7780; # for connections to DRBD
-		      outside   172.16.17.18:7780; # for connections over the WAN or VPN
+			# In the regular production site, there is a dedicated host to run
+			# DRBD-proxy
+			inside    192.168.23.24:7780; # for connections to DRBD
+			outside   172.16.17.18:7780; # for connections over the WAN or VPN
+			options {
+				memlimit 1G; # Additional proxy options are possible here
+			}
 		}
-
 	}
 	on delta {
 		volume 0 {
