@@ -521,11 +521,10 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-static int drbd_rs_controller(struct drbd_peer_device *peer_device)
+static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int sect_in)
 {
 	struct drbd_device *device = peer_device->device;
 	struct disk_conf *dc;
-	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	unsigned int want;     /* The number of sectors we want in the proxy */
 	int req_sect; /* Number of sectors to request in this turn */
 	int correction; /* Number of sectors more we need in the proxy*/
@@ -534,9 +533,6 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device)
 	int curr_corr;
 	int max_sect;
 	struct fifo_buffer *plan;
-
-	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0); /* Number of sectors that came in */
-	peer_device->rs_in_flight -= sect_in;
 
 	dc = rcu_dereference(device->ldev->disk_conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
@@ -581,11 +577,17 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device)
 static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	int number;
+	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
+	int number, mxb;
+
+	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
+	peer_device->rs_in_flight -= sect_in;
+
+	mxb = device->device_conf.max_buffers;
 
 	rcu_read_lock();
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
-		number = drbd_rs_controller(peer_device) >> (BM_BLOCK_SHIFT - 9);
+		number = drbd_rs_controller(peer_device, sect_in) >> (BM_BLOCK_SHIFT - 9);
 		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;
 	} else {
 		peer_device->c_sync_rate = rcu_dereference(device->ldev->disk_conf)->resync_rate;
@@ -593,8 +595,14 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	}
 	rcu_read_unlock();
 
-	/* ignore the amount of pending requests, the resync controller should
-	 * throttle down to incoming reply rate soon enough anyways. */
+	/* Don't have more than "max-buffers"/2 in-flight.
+	 * Otherwise we may cause the remote site to stall on drbd_alloc_pages(),
+	 * potentially causing a distributed deadlock on congestion during
+	 * online-verify or (checksum-based) resync, if max-buffers,
+	 * socket buffer sizes and resync rate settings are mis-configured. */
+	if (mxb - peer_device->rs_in_flight < number)
+		number = mxb - peer_device->rs_in_flight;
+
 	return number;
 }
 
@@ -629,7 +637,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	max_bio_size = queue_max_hw_sectors(device->rq_queue) << 9;
 	number = drbd_rs_number_requests(peer_device);
-	if (number == 0)
+	if (number <= 0)
 		goto requeue;
 
 	for (i = 0; i < number; i++) {
