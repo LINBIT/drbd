@@ -393,8 +393,8 @@ static void dump_common_info_xml()
 	dump_options_xml("net", &common->net_options);
 	dump_options_xml("disk", &common->disk_options);
 	dump_options_xml("startup", &common->startup_options);
-	dump_options2("proxy", &common->proxy_options,
-			dump_proxy_plugins, &common->proxy_plugins);
+	dump_options_xml2("proxy", &common->proxy_options,
+			  dump_proxy_plugins, &common->proxy_plugins);
 	dump_options_xml("handlers", &common->handlers);
 	--indent;
 	printI("</common>\n");
