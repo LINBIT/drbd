@@ -3115,9 +3115,10 @@ int init_submitter(struct drbd_device *device)
 	return 0;
 }
 
-enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned int minor, int vnr,
+enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
+	struct drbd_resource *resource = adm_ctx->resource;
 	struct kobject *parent;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -3125,6 +3126,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	struct gendisk *disk;
 	struct request_queue *q;
 	int id;
+	int vnr = adm_ctx->volume;
 	enum drbd_ret_code err = ERR_NOMEM;
 
 	device = minor_to_device(minor);
@@ -3267,7 +3269,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
-		drbd_err(device, "unable to create submit workqueue");
+		drbd_msg_put_info(adm_ctx->reply_skb, "unable to create submit workqueue");
 		goto out_no_peer_device;
 	}
 
