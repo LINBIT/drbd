@@ -2932,13 +2932,20 @@ out_interrupted:
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector)
+bool drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector)
+{
+	if (!drbd_rs_c_min_rate_throttle(peer_device))
+		return false;
+
+	return !drbd_sector_has_priority(peer_device, sector);
+}
+
+bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long db, dt, dbdt;
-	int curr_events;
-	int throttle = 0;
 	unsigned int c_min_rate;
+	int curr_events;
 
 	rcu_read_lock();
 	c_min_rate = rcu_dereference(device->ldev->disk_conf)->c_min_rate;
@@ -2946,12 +2953,7 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 
 	/* feature disabled? */
 	if (c_min_rate == 0)
-		return 0;
-
-	if (drbd_sector_has_priority(peer_device, sector)) {
-		/* Do not slow down if app IO is already waiting for this extent */
-		return 0;
-	}
+		return false;
 
 	curr_events = drbd_backing_bdev_events(device->ldev->backing_bdev->bd_contains->bd_disk)
 		    - atomic_read(&device->rs_sect_ev);
@@ -2979,11 +2981,10 @@ int drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sect
 		dbdt = Bit2KB(db/dt);
 
 		if (dbdt > c_min_rate)
-			throttle = 1;
+			return true;
 	}
-	return throttle;
+	return false;
 }
-
 
 static int receive_DataRequest(struct drbd_connection *connection, struct packet_info *pi)
 {
