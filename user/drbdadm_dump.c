@@ -214,6 +214,7 @@ static void dump_proxy_info(struct d_proxy_info *pi)
 	++indent;
 	dump_address("inside", &pi->inside, ";\n");
 	dump_address("outside", &pi->outside, ";\n");
+	dump_options2("options", pi->options, dump_proxy_plugins, pi->plugins);
 	--indent;
 	printI("}\n");
 }
@@ -408,6 +409,7 @@ static void dump_proxy_info_xml(struct d_proxy_info *pi)
 	       pi->inside.port, pi->inside.addr);
 	printI("<outside family=\"%s\" port=\"%s\">%s</outside>\n",
 	       pi->outside.af, pi->outside.port, pi->outside.addr);
+	dump_options_xml2("options", pi->options, dump_proxy_plugins_xml, pi->plugins);
 	--indent;
 	printI("</proxy>\n");
 }

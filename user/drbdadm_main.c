@@ -1688,7 +1688,7 @@ int do_proxy_conn_plugins(const struct cfg_ctx *ctx)
 
 	argc = 0;
 	argv[NA(argc)] = drbd_proxy_ctl;
-	STAILQ_FOREACH(opt, &res->proxy_options, link) {
+	STAILQ_FOREACH(opt, &res->me->proxy->options, link) {
 		argv[NA(argc)] = "-c";
 		argv[NA(argc)] = ssprintf("set %s %s %s",
 			 opt->name, conn_name, opt->value);
@@ -1697,8 +1697,8 @@ int do_proxy_conn_plugins(const struct cfg_ctx *ctx)
 	counter = 0;
 	/* Don't send the "set plugin ... END" line if no plugins are defined
 	 * - that's incompatible with the drbd proxy version 1. */
-	if (!STAILQ_EMPTY(&res->proxy_plugins)) {
-		STAILQ_FOREACH(opt, &res->proxy_options, link) {
+	if (!STAILQ_EMPTY(&res->me->proxy->plugins)) {
+		STAILQ_FOREACH(opt, &res->me->proxy->plugins, link) {
 			argv[NA(argc)] = "-c";
 			argv[NA(argc)] = ssprintf("set plugin %s %d %s",
 					conn_name, counter, opt->name);

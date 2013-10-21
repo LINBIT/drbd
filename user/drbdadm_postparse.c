@@ -927,9 +927,15 @@ void expand_common(void)
 
 		/* now that common disk options (if any) have been propagated to the
 		 * resource level, further propagate them to the volume level. */
-		for_each_host(h, &res->all_hosts)
+		for_each_host(h, &res->all_hosts) {
 			for_each_volume(vol, &h->volumes)
 				expand_opts(&res->disk_options, &vol->disk_options);
+
+			if (h->proxy) {
+				expand_opts(&res->proxy_options, &h->proxy->options);
+				expand_opts(&res->proxy_plugins, &h->proxy->plugins);
+			}
+		}
 
 		/* now from all volume/disk-options on resource level to host level */
 		for_each_volume(vol, &res->volumes) {

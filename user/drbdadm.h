@@ -105,6 +105,8 @@ struct d_proxy_info
 	struct names on_hosts;
 	struct d_address inside;
 	struct d_address outside;
+	struct options options; /* named proxy_options in other places */
+	struct options plugins; /* named proxy_plugins in other places */
 };
 
 struct d_volume

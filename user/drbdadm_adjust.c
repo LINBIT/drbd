@@ -296,7 +296,7 @@ static int proxy_reconf(const struct cfg_ctx *ctx, struct d_resource *running)
 	if (!running)
 		goto redo_whole_conn;
 
-	res_o = find_opt(&res->proxy_options, "memlimit");
+	res_o = find_opt(&res->me->proxy->options, "memlimit");
 	run_o = find_opt(&running->proxy_options, "memlimit");
 	v1 = res_o ? m_strtoll(res_o->value, 1) : 0;
 	v2 = run_o ? m_strtoll(run_o->value, 1) : 0;
@@ -320,7 +320,7 @@ redo_whole_conn:
 	}
 
 
-	res_o = STAILQ_FIRST(&res->proxy_plugins);
+	res_o = STAILQ_FIRST(&res->me->proxy->plugins);
 	run_o = STAILQ_FIRST(&running->proxy_plugins);
 	used = 0;
 	conn_name = proxy_connection_name(ctx);
