@@ -379,7 +379,10 @@ extern void set_me_in_resource(struct d_resource* res, int match_on_proxy);
 extern void set_peer_in_resource(struct d_resource* res, int peer_required);
 extern void set_on_hosts_in_res(struct d_resource *res);
 extern void set_disk_in_res(struct d_resource *res);
-extern char *proxy_connection_name(const struct cfg_ctx *ctx);
+extern int _proxy_connect_name_len(const struct cfg_ctx *ctx);
+extern char *_proxy_connection_name(char *conn_name, const struct cfg_ctx *ctx);
+#define proxy_connection_name(RES) \
+	_proxy_connection_name(alloca(_proxy_connect_name_len(RES)), RES)
 extern struct d_resource *res_by_name(const char *name);
 extern struct d_host_info *find_host_info_by_name(struct d_resource* res, char *name);
 int parse_proxy_settings(struct d_resource *res, int check_proxy_token);
