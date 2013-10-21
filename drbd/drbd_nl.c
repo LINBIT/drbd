@@ -272,7 +272,7 @@ static int drbd_adm_prepare(struct sk_buff *skb, struct genl_info *info,
 	}
 
 	adm_ctx.minor = d_in->minor;
-	adm_ctx.device = minor_to_mdev(d_in->minor);
+	adm_ctx.device = minor_to_device(d_in->minor);
 	if (adm_ctx.resource_name) {
 		adm_ctx.resource = drbd_find_resource(adm_ctx.resource_name);
 	}

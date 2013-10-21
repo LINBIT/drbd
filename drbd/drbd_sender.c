@@ -1407,7 +1407,7 @@ static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 		resync_after = rcu_dereference(other_device->ldev->disk_conf)->resync_after;
 		if (resync_after == -1)
 			break;
-		other_device = minor_to_mdev(resync_after);
+		other_device = minor_to_device(resync_after);
 		if (!other_device)
 			break;
 		other_peer_device = conn_peer_device(peer_device->connection, other_device->vnr);
@@ -1518,7 +1518,7 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 		return NO_ERROR;
 	if (resync_after < -1)
 		return ERR_RESYNC_AFTER;
-	other_device = minor_to_mdev(resync_after);
+	other_device = minor_to_device(resync_after);
 	if (!other_device)
 		return ERR_RESYNC_AFTER;
 
@@ -1549,7 +1549,7 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 			break;
 
 		/* follow the dependency chain */
-		other_device = minor_to_mdev(resync_after);
+		other_device = minor_to_device(resync_after);
 	}
 	rcu_read_unlock();
 

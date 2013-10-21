@@ -3127,7 +3127,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_resource *resource, unsigned i
 	int id;
 	enum drbd_ret_code err = ERR_NOMEM;
 
-	device = minor_to_mdev(minor);
+	device = minor_to_device(minor);
 	if (device)
 		return ERR_MINOR_OR_VOLUME_EXISTS;
 

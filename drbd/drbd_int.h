@@ -1087,7 +1087,7 @@ struct drbd_device {
 	struct submit_worker submit;
 };
 
-static inline struct drbd_device *minor_to_mdev(unsigned int minor)
+static inline struct drbd_device *minor_to_device(unsigned int minor)
 {
 	return (struct drbd_device *)idr_find(&drbd_devices, minor);
 }
