@@ -1795,7 +1795,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 next_bio:
 	bio = bio_alloc(GFP_NOIO, nr_pages);
 	if (!bio) {
-		drbd_err(device, "submit_ee: Allocation of a bio failed\n");
+		drbd_err(device, "submit_ee: Allocation of a bio failed (nr_pages=%u)\n", nr_pages);
 		goto fail;
 	}
 	/* > peer_req->i.sector, unless this is the first bio */
