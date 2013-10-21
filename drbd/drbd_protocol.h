@@ -58,7 +58,11 @@ enum drbd_packet {
 	P_TWOPC_ABORT         = 0x2f, /* data sock: abort state change */
 
 	P_DAGTAG	      = 0x30, /* data sock: set the current dagtag */
-	/* P_TRIM                = 0x31, Reserved */
+
+	/* REQ_DISCARD. We used "discard" in different contexts before,
+	 * which is why I chose TRIM here, to disambiguate. */
+	P_TRIM                = 0x31,
+
 	P_PEER_ACK            = 0x32, /* meta sock: tell which nodes have acked a request */
 	P_PEERS_IN_SYNC       = 0x33, /* data sock: Mark area as in sync */
 
@@ -134,6 +138,11 @@ struct p_data {
 	u64	    block_id;  /* to identify the request in protocol B&C */
 	u32	    seq_num;
 	u32	    dp_flags;
+} __packed;
+
+struct p_trim {
+	struct p_data p_data;
+	u32	    size;	/* == bio->bi_size */
 } __packed;
 
 /*

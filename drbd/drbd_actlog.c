@@ -1064,7 +1064,7 @@ static void set_in_sync(struct drbd_device *device, struct drbd_peer_device *pee
 	sector_t esector, nr_sectors;
 	bool wake_up = false;
 
-	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_DISCARD_SIZE) {
 		drbd_err(device, "drbd_set_in_sync: sector=%llus size=%d nonsense!\n",
 				(unsigned long long)sector, size);
 		return;
@@ -1155,7 +1155,7 @@ static bool set_out_of_sync(struct drbd_device *device,
 	if (size == 0)
 		return 0;
 
-	if (size < 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+	if (size < 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_DISCARD_SIZE) {
 		drbd_err(device, "sector: %llus, size: %d\n",
 			(unsigned long long)sector, size);
 		return false;
@@ -1619,7 +1619,7 @@ void drbd_rs_failed_io(struct drbd_peer_device *peer_device, sector_t sector, in
 	sector_t esector, nr_sectors;
 	int wake_up = 0;
 
-	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_DISCARD_SIZE) {
 		drbd_err(device, "drbd_rs_failed_io: sector=%llus size=%d nonsense!\n",
 				(unsigned long long)sector, size);
 		return;
