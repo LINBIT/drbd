@@ -1195,4 +1195,10 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #endif
 #endif
 
+
+#ifndef COMPAT_HAVE_GENL_LOCK
+static inline void genl_lock(void)  { }
+static inline void genl_unlock(void)  { }
+#endif
+
 #endif
