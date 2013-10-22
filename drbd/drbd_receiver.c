@@ -48,6 +48,8 @@
 #include "drbd_vli.h"
 #include <linux/scatterlist.h>
 
+#define PRO_FEATURES (FF_TRIM)
+
 struct flush_work {
 	struct drbd_work w;
 	struct drbd_device *device;
@@ -4443,6 +4445,13 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 	}
 
+	peer_device->max_bio_size = be32_to_cpu(p->max_bio_size);
+	drbd_reconsider_max_bio_size(device);
+	/* Leave drbd_reconsider_max_bio_size() before drbd_determine_dev_size().
+	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
+	   drbd_reconsider_max_bio_size(), we can be sure that after
+	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
+
 	ddsf = be16_to_cpu(p->dds_flags);
 	dd = drbd_determine_dev_size(device, ddsf, NULL);
 	if (dd == DS_ERROR)
@@ -4465,8 +4474,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 		return -EIO;
 	}
-
-	drbd_reconsider_max_bio_size(device);
 
 	if (get_ldev(device)) {
 		if (device->ldev->known_size != drbd_get_capacity(device->ldev->backing_bdev)) {
@@ -6121,6 +6128,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(peer_node_id);
+	p->feature_flags = cpu_to_be32(PRO_FEATURES);
 	return send_command(connection, -1, sock, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0);
 }
 
@@ -6187,6 +6195,7 @@ static int drbd_do_features(struct drbd_connection *connection)
 	}
 
 	connection->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
+	connection->agreed_features = PRO_FEATURES & be32_to_cpu(p->feature_flags);
 
 	if (connection->agreed_pro_version < 110) {
 		struct drbd_connection *connection2;
@@ -6216,6 +6225,9 @@ static int drbd_do_features(struct drbd_connection *connection)
 
 	drbd_info(connection, "Handshake successful: "
 	     "Agreed network protocol version %d\n", connection->agreed_pro_version);
+
+	drbd_info(connection, "Agreed to%ssupport TRIM on protocol level\n",
+		  connection->agreed_features & FF_TRIM ? " " : " not ");
 
 	return 1;
 }

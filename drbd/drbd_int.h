@@ -818,6 +818,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct drbd_socket data;	/* data/barrier/cstate/parameter packets */
 	struct drbd_socket meta;	/* ping/ack (metadata) packets */
 	int agreed_pro_version;		/* actually used protocol version */
+	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */
 	unsigned int ko_count;
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */

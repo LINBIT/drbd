@@ -1422,6 +1422,20 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 	return 0;
 }
 
+static u32 common_connection_features(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	u32 features = -1;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			continue;
+		features &= connection->agreed_features;
+	}
+
+	return features;
+}
+
 static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_bio_size)
 {
 	struct request_queue * const q = device->rq_queue;
@@ -1441,8 +1455,9 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
 		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
+		u32 agreed_featurs = common_connection_features(device->resource);
 
-		if (blk_queue_discard(b)) {
+		if (blk_queue_discard(b) && (agreed_featurs & FF_TRIM)) {
 			/* inherit from backing queue */
 			q->limits.discard_zeroes_data = 1;
 			/* For now, don't allow more than one activity log extent worth of data
