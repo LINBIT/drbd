@@ -6247,7 +6247,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 	return -1;
 }
 #else
-#define CHALLENGE_LEN 64
+#define CHALLENGE_LEN 64 /* must be multiple of 4 */
 
 /* Return value:
 	1 - auth succeeded,
@@ -6258,23 +6258,25 @@ static int drbd_do_auth(struct drbd_connection *connection)
 static int drbd_do_auth(struct drbd_connection *connection)
 {
 	struct drbd_socket *sock;
-	char my_challenge[CHALLENGE_LEN];  /* 64 Bytes... */
+	u32 my_challenge[CHALLENGE_LEN / sizeof(u32) + 1];  /* 68 Bytes... */
 	struct scatterlist sg;
 	char *response = NULL;
 	char *right_response = NULL;
-	char *peers_ch = NULL;
+	u32 *peers_ch = NULL;
 	unsigned int key_len;
 	char secret[SHARED_SECRET_MAX]; /* 64 byte */
 	unsigned int resp_size;
 	struct hash_desc desc;
 	struct packet_info pi;
 	struct net_conf *nc;
-	int err, rv;
+	int err, rv, peer_node_id;
+	bool peer_is_drbd_9 = connection->agreed_pro_version >= 110;
 
 	/* FIXME: Put the challenge/response into the preallocated socket buffer.  */
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
+	peer_node_id = nc->peer_node_id;
 	key_len = strlen(nc->shared_secret);
 	memcpy(secret, nc->shared_secret, key_len);
 	rcu_read_unlock();
@@ -6326,7 +6328,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	peers_ch = kmalloc(pi.size, GFP_NOIO);
+	peers_ch = kmalloc(pi.size + sizeof(u32), GFP_NOIO);
 	if (peers_ch == NULL) {
 		drbd_err(connection, "kmalloc of peers_ch failed\n");
 		rv = -1;
@@ -6354,7 +6356,10 @@ static int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	sg_init_table(&sg, 1);
-	sg_set_buf(&sg, peers_ch, pi.size);
+	if (peer_is_drbd_9)
+		peers_ch[pi.size / sizeof(u32)] =
+			cpu_to_be32(connection->resource->res_opts.node_id);
+	sg_set_buf(&sg, peers_ch, pi.size + peer_is_drbd_9 ? sizeof(u32) : 0);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
@@ -6404,7 +6409,9 @@ static int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN);
+	if (peer_is_drbd_9)
+		my_challenge[CHALLENGE_LEN / sizeof(u32)] = cpu_to_be32(peer_node_id);
+	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN + peer_is_drbd_9 ? sizeof(u32) : 0);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
