@@ -31,6 +31,13 @@ else
 compat_objs += compat/idr.o
 endif
 
+ifeq ($(shell grep -e '\<blkdev_issue_zeroout\>' \
+		   $(objtree)/Module.symvers | wc -l),1)
+override EXTRA_CFLAGS += -DBLKDEV_ISSUE_ZEROOUT_EXPORTED
+else
+compat_objs += compat/blkdev_issue_zeroout.o
+endif
+
 drbd-y := drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
 drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
