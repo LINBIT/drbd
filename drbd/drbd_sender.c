@@ -40,6 +40,7 @@
 
 static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
+static void maybe_send_barrier(struct drbd_connection *, unsigned int);
 
 /* endio handlers:
  *   drbd_md_io_complete (defined here)
@@ -1759,34 +1760,6 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	up(&device->resource->state_sem);
 }
 
-/* If the resource already closed the current epoch, but we did not
- * (because we have not yet seen new requests), we should send the
- * corresponding barrier now.  Must be checked within the same spinlock
- * that is used to check for new requests. */
-bool need_to_send_barrier(struct drbd_connection *connection)
-{
-	if (!connection->send.seen_any_write_yet)
-		return false;
-
-	/* Skip barriers that do not contain any writes.
-	 * This may happen during AHEAD mode. */
-	if (!connection->send.current_epoch_writes)
-		return false;
-
-	/* resource->req_lock is held when requests are queued on
-	 * connection->sender_work, and put into resource->transfer_log.
-	 * It is also held when resource->current_tle_nr is increased.
-	 * So either there are already new requests queued,
-	 * and corresponding barriers will be send there.
-	 * Or nothing new is queued yet, so the difference will be 1.
-	 */
-	if (atomic_read(&connection->resource->current_tle_nr) !=
-	    connection->send.current_epoch_nr + 1)
-		return false;
-
-	return true;
-}
-
 bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
 	spin_lock_irq(&queue->q_lock);
@@ -1962,12 +1935,22 @@ void wait_for_sender_todo(struct drbd_connection *connection)
 			spin_unlock_irq(&connection->resource->req_lock);
 			break;
 		}
-		send_barrier = need_to_send_barrier(connection);
+
+		/* We found nothing new to do, no to-be-communicated request,
+		 * no other work item.  We may still need to close the last
+		 * epoch.  Next incoming request epoch will be connection ->
+		 * current transfer log epoch number.  If that is different
+		 * from the epoch of the last request we communicated, it is
+		 * safe to send the epoch separating barrier now.
+		 */
+		send_barrier =
+			atomic_read(&connection->resource->current_tle_nr) !=
+			connection->send.current_epoch_nr;
 		spin_unlock_irq(&connection->resource->req_lock);
-		if (send_barrier) {
-			drbd_send_barrier(connection);
-			connection->send.current_epoch_nr++;
-		}
+
+		if (send_barrier)
+			maybe_send_barrier(connection,
+					connection->send.current_epoch_nr + 1);
 		schedule();
 		/* may be woken up for other things but new work, too,
 		 * e.g. if the current epoch got closed.
