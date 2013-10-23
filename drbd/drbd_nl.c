@@ -917,7 +917,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 	}
-	mutex_lock(&adm_ctx.device->resource->conf_update);
+	mutex_lock(&adm_ctx.resource->conf_update);
 	genl_unlock();
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
@@ -930,7 +930,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	}
 	genl_lock();
-	mutex_unlock(&adm_ctx.device->resource->conf_update);
+	mutex_unlock(&adm_ctx.resource->conf_update);
 
 out:
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
