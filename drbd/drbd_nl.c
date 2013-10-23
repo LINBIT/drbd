@@ -703,7 +703,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	int forced = 0;
 	bool with_force = false;
 
-	mutex_lock(&resource->conf_update);
 	down(&resource->state_sem);
 
 	if (role == R_PRIMARY) {
@@ -834,6 +833,8 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	} else {
 		struct drbd_connection *connection;
 
+		/* Called from drbd_adm_set_role only.
+		 *  We are still holding the conf_update mutex. */
 		for_each_connection(connection, resource) {
 			struct net_conf *nc;
 
@@ -885,7 +886,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 out:
 	up(&resource->state_sem);
-	mutex_unlock(&resource->conf_update);
 	return rv;
 }
 
