@@ -367,6 +367,11 @@ struct drbd_peer_device_work {
 	struct drbd_peer_device *peer_device;
 };
 
+struct start_resync_work {
+	struct drbd_work work;
+	enum drbd_repl_state side;
+};
+
 #include "drbd_interval.h"
 
 extern int drbd_wait_misc(struct drbd_device *, struct drbd_peer_device *, struct drbd_interval *);
@@ -941,7 +946,7 @@ struct drbd_peer_device {
 
 	unsigned long flags;
 
-	struct drbd_work start_resync_work;
+	struct start_resync_work start_resync_work;
 	struct timer_list start_resync_timer;
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;

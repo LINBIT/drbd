@@ -1597,13 +1597,13 @@ void start_resync_timer_fn(unsigned long data)
 	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
 	struct drbd_resource *resource = peer_device->device->resource;
 
-	drbd_queue_work(&resource->work, &peer_device->start_resync_work);
+	drbd_queue_work(&resource->work, &peer_device->start_resync_work.work);
 }
 
 int w_start_resync(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device *peer_device =
-		container_of(w, struct drbd_peer_device, start_resync_work);
+		container_of(w, struct drbd_peer_device, start_resync_work.work);
 	struct drbd_device *device = peer_device->device;
 
 	if (atomic_read(&peer_device->unacked_cnt) ||
@@ -1614,7 +1614,7 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	drbd_start_resync(peer_device, L_SYNC_SOURCE);
+	drbd_start_resync(peer_device, peer_device->start_resync_work.side);
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
 	return 0;
 }
@@ -1672,6 +1672,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		/* The sender should not sleep waiting for state_sem,
 		   that can take long */
 		set_bit(B_RS_H_DONE, &peer_device->flags);
+		peer_device->start_resync_work.side = side;
 		peer_device->start_resync_timer.expires = jiffies + HZ/5;
 		add_timer(&peer_device->start_resync_timer);
 		return;

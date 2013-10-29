@@ -3078,8 +3078,8 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->repl_state[NOW] = L_OFF;
 	spin_lock_init(&peer_device->peer_seq_lock);
 
-	INIT_LIST_HEAD(&peer_device->start_resync_work.list);
-	peer_device->start_resync_work.cb = w_start_resync;
+	INIT_LIST_HEAD(&peer_device->start_resync_work.work.list);
+	peer_device->start_resync_work.work.cb = w_start_resync;
 	init_timer(&peer_device->start_resync_timer);
 	peer_device->start_resync_timer.function = start_resync_timer_fn;
 	peer_device->start_resync_timer.data = (unsigned long) peer_device;
