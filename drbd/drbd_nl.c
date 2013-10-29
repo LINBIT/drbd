@@ -325,8 +325,7 @@ fail:
 	return err;
 
 finish:
-	drbd_adm_finish(adm_ctx, info, err);
-	return err;
+	return drbd_adm_finish(adm_ctx, info, err);
 }
 
 static int drbd_adm_finish(struct drbd_config_context *adm_ctx, struct genl_info *info, int retcode)
@@ -345,6 +344,7 @@ static int drbd_adm_finish(struct drbd_config_context *adm_ctx, struct genl_info
 
 	adm_ctx->reply_dh->ret_code = retcode;
 	drbd_adm_send_reply(adm_ctx->reply_skb, info);
+	adm_ctx->reply_skb = NULL;
 	return 0;
 }
 
