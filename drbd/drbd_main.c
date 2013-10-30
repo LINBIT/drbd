@@ -2775,6 +2775,16 @@ static int w_complete(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+void drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&q->q_lock, flags);
+	list_add_tail(&w->list, &q->q);
+	spin_unlock_irqrestore(&q->q_lock, flags);
+	wake_up(&q->q_wait);
+}
+
 void drbd_flush_workqueue(struct drbd_work_queue *work_queue)
 {
 	struct completion_work completion_work;

@@ -2069,16 +2069,7 @@ static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 	return (128 << 20 >> 9) * bdev->md.meta_dev_idx;
 }
 
-static inline void
-drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&q->q_lock, flags);
-	list_add_tail(&w->list, &q->q);
-	spin_unlock_irqrestore(&q->q_lock, flags);
-	wake_up(&q->q_wait);
-}
-
+void drbd_queue_work(struct drbd_work_queue *, struct drbd_work *);
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
 static inline void wake_asender(struct drbd_connection *connection)
