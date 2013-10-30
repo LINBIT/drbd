@@ -282,7 +282,7 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)) : 0))
 
 extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
-extern struct list_head drbd_resources; /* RCU, updates: genl_lock() */
+extern struct list_head drbd_resources; /* RCU, updates: global_state_mutex */
 
 extern const char *cmdname(enum drbd_packet cmd);
 

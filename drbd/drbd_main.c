@@ -2944,20 +2944,19 @@ struct drbd_resource *drbd_create_resource(const char *name,
 		goto fail_free_name;
 	resource->max_node_id = res_opts->node_id;
 	resource->twopc_reply.initiator_node_id = -1;
-	list_add_tail_rcu(&resource->resources, &drbd_resources);
 	mutex_init(&resource->conf_update);
 	spin_lock_init(&resource->req_lock);
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
 	init_waitqueue_head(&resource->twopc_wait);
-
 	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
-
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
+
+	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
 	return resource;
 
