@@ -1668,17 +1668,13 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		}
 	}
 
-	if (current == connection->sender.task) {
-		/* The sender should not sleep waiting for state_sem,
-		   that can take long */
-		set_bit(B_RS_H_DONE, &peer_device->flags);
-		peer_device->start_resync_work.side = side;
+	if (down_trylock(&device->resource->state_sem)) {
+		/* Retry later and let the worker make progress in the
+		 * meantime; two-phase commits depend on that.  */
 		peer_device->start_resync_timer.expires = jiffies + HZ/5;
 		add_timer(&peer_device->start_resync_timer);
 		return;
 	}
-
-	down(&device->resource->state_sem);
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &peer_device->flags);
 	if (connection->cstate[NOW] < C_CONNECTED ||
