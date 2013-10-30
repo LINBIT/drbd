@@ -3272,7 +3272,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	spin_lock_irq(&resource->req_lock);
 	for_each_peer_device(peer_device, device) {
-		kref_get(&connection->kref);
+		kref_get(&peer_device->connection->kref);
 		kobject_get(&device->kobj);
 	}
 	spin_unlock_irq(&resource->req_lock);
@@ -3290,9 +3290,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_del_disk;
 
 	for_each_peer_device(peer_device, device) {
+		connection = peer_device->connection;
 		peer_device->node_id = connection->net_conf->peer_node_id;
 
-		if (peer_device->connection->cstate[NOW] >= C_CONNECTED)
+		if (connection->cstate[NOW] >= C_CONNECTED)
 			drbd_connected(peer_device);
 	}
 
