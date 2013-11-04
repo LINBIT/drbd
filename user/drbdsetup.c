@@ -1616,6 +1616,28 @@ static int generic_get(struct drbd_cmd *cm, int timeout_arg, void *u_ptr)
 				.attrs = global_attrs,
 			};
 
+			if (nlh->nlmsg_type < NLMSG_MIN_TYPE) {
+				/* Ignore netlink control messages. */
+				continue;
+			}
+			if (nlh->nlmsg_type == GENL_ID_CTRL) {
+				if (info.genlhdr->cmd == CTRL_CMD_DELMCAST_GRP) {
+					struct nlattr *nla =
+						nlmsg_find_attr(nlh, GENL_HDRLEN, CTRL_ATTR_FAMILY_ID);
+					if (nla && nla_get_u16(nla) == drbd_genl_family.id) {
+						/* FIXME: We could wait for the
+						   multicast group to be recreated ... */
+						goto out2;
+					}
+				}
+				/* Ignore other generic netlink control messages. */
+				continue;
+			}
+			if (nlh->nlmsg_type != drbd_genl_family.id) {
+				/* Ignore messages for all other netlink families. */
+				continue;
+			}
+
 			/* parse early, otherwise drbd_cfg_context_from_attrs
 			 * can not work */
 			if (drbd_tla_parse(nlh)) {
