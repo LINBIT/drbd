@@ -1606,6 +1606,9 @@ int w_start_resync(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device, start_resync_work.work);
 	struct drbd_device *device = peer_device->device;
 
+	if (cancel)
+		return 0;
+
 	if (atomic_read(&peer_device->unacked_cnt) ||
 	    atomic_read(&peer_device->rs_pending_cnt)) {
 		drbd_warn(peer_device, "w_start_resync later...\n");
@@ -1633,7 +1636,14 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	enum drbd_repl_state repl_state;
 	int r;
 
-	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] < L_AHEAD) {
+	spin_lock_irq(&device->resource->req_lock);
+	repl_state = peer_device->repl_state[NOW];
+	spin_unlock_irq(&device->resource->req_lock);
+	if (repl_state < L_ESTABLISHED) {
+		/* Connection closed meanwhile. */
+		return;
+	}
+	if (repl_state >= L_SYNC_SOURCE && repl_state < L_AHEAD) {
 		drbd_err(peer_device, "Resync already running!\n");
 		return;
 	}
