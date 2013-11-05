@@ -6005,6 +6005,17 @@ static void conn_disconnect(struct drbd_connection *connection)
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);
 
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		int i;
+
+		i = atomic_read(&device->pp_in_use);
+		if (i)
+			drbd_info(device, "pp_in_use = %d, expected 0\n", i);
+	}
+	rcu_read_unlock();
+
 	if (!list_empty(&connection->current_epoch->list))
 		drbd_err(connection, "ASSERTION FAILED: connection->current_epoch->list not empty\n");
 	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
@@ -6101,9 +6112,6 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	i = atomic_read(&device->pp_in_use_by_net);
 	if (i)
 		drbd_info(device, "pp_in_use_by_net = %d, expected 0\n", i);
-	i = atomic_read(&device->pp_in_use);
-	if (i)
-		drbd_info(device, "pp_in_use = %d, expected 0\n", i);
 
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->active_ee));
