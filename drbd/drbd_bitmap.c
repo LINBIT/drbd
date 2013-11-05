@@ -1418,15 +1418,15 @@ unsigned long drbd_bm_find_next_zero(struct drbd_peer_device *peer_device, unsig
 unsigned long _drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
-	return __bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
-		       BM_OP_FIND_BIT, NULL);
+	return ____bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
+		    BM_OP_FIND_BIT, NULL, KM_USER0);
 }
 
 unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
-	return __bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
-		       BM_OP_FIND_ZERO_BIT, NULL);
+	return ____bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
+		    BM_OP_FIND_ZERO_BIT, NULL, KM_USER0);
 }
 
 unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned int bitmap_index,
