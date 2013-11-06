@@ -1670,13 +1670,13 @@ int drbd_merge_bvec(struct request_queue *q,
  *                ignore for this list walk.
  * these bitmap indices are 0/1: localdisk, (1 << (node_id + 1)) for the connections.
  */
-#if ((MAX_PEERS + 1) > BITS_PER_LONG)
+#if ((MAX_PEERS + 1) > 64)
 # error "think it over, indices too small"
 #endif
 void find_oldest_requests(struct drbd_device *device,
 		struct drbd_request **oldest_req,
-		unsigned long *check,
-		unsigned long ignore)
+		u64 *check,
+		u64 ignore)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_request *r;
@@ -1695,12 +1695,12 @@ void find_oldest_requests(struct drbd_device *device,
 		for_each_peer_device(peer_device, device) {
 			const int idx = 1 + peer_device->node_id;
 			const unsigned s = r->rq_state[idx];
-			if (ignore & (1UL << idx))
+			if (ignore & (1ULL << idx))
 				continue;
 
 			if ((s & RQ_NET_MASK) && !(s & RQ_NET_DONE)) {
 				*oldest_req = r;
-				*check |= 1UL << idx;
+				*check |= 1ULL << idx;
 			}
 		}
 		if (*oldest_req)
@@ -1721,8 +1721,8 @@ void request_timer_fn(unsigned long data)
 	struct drbd_device *device = (struct drbd_device *) data;
 	struct drbd_connection *connection;
 	struct drbd_request *req = NULL; /* oldest request */
-	unsigned long ignore = 0;
-	unsigned long check = 0;
+	u64 ignore = 0;
+	u64 check = 0;
 	unsigned long dt = 0;
 	unsigned long et = 0;
 	unsigned long now = jiffies;
