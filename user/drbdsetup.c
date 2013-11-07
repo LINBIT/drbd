@@ -2195,7 +2195,7 @@ static void peer_device_status(struct peer_devices_list *peer_device, bool singl
 	    peer_device->info.peer_disk_state != D_UNKNOWN) {
 		enum drbd_disk_state disk_state = peer_device->info.peer_disk_state;
 
-		wrap_printf(indent, " disk:%s%s%s",
+		wrap_printf(indent, " peer-disk:%s%s%s",
 			    disk_state_color_start(disk_state, false),
 			    drbd_disk_str(disk_state),
 			    disk_state_color_stop(disk_state, false));
@@ -3356,7 +3356,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 				printf(" replication:%s",
 				       drbd_repl_str(new.i.peer_repl_state));
 			if (!old || new.i.peer_disk_state != old->i.peer_disk_state)
-				printf(" disk:%s",
+				printf(" peer-disk:%s",
 				       drbd_disk_str(new.i.peer_disk_state));
 			if (!old ||
 			    new.i.peer_resync_susp_user != old->i.peer_resync_susp_user ||
