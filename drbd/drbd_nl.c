@@ -867,7 +867,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 			/* writeout of activity log covered areas of the bitmap
 			 * to stable storage done in after state change already */
 
-			if (peer_device->repl_state[NOW] >= L_OFF) {
+			if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
 				/* if this was forced, we should consider sync */
 				if (forced) {
 					drbd_send_uuids(peer_device, 0, 0);
