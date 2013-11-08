@@ -408,7 +408,6 @@ restart:
 	if (thi->connection)
 		kref_put(&thi->connection->kref, drbd_destroy_connection);
 	kref_put(&resource->kref, drbd_destroy_resource);
-	module_put(THIS_MODULE);
 	return retval;
 }
 
@@ -444,13 +443,6 @@ int drbd_thread_start(struct drbd_thread *thi)
 			drbd_info(resource, "Starting %s thread (from %s [%d])\n",
 				 thi->name, current->comm, current->pid);
 
-		/* Get ref on module for thread - this is released when thread exits */
-		if (!try_module_get(THIS_MODULE)) {
-			drbd_err(resource, "Failed to get module reference in drbd_thread_start\n");
-			spin_unlock_irqrestore(&thi->t_lock, flags);
-			return false;
-		}
-
 		kref_get(&resource->kref);
 		if (thi->connection)
 			kref_get(&thi->connection->kref);
@@ -474,7 +466,6 @@ int drbd_thread_start(struct drbd_thread *thi)
 			if (thi->connection)
 				kref_put(&thi->connection->kref, drbd_destroy_connection);
 			kref_put(&resource->kref, drbd_destroy_resource);
-			module_put(THIS_MODULE);
 			return false;
 		}
 		spin_lock_irqsave(&thi->t_lock, flags);
@@ -2554,6 +2545,7 @@ void drbd_destroy_resource(struct kref *kref)
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
 	kfree(resource);
+	module_put(THIS_MODULE);
 }
 
 void drbd_free_resource(struct drbd_resource *resource)

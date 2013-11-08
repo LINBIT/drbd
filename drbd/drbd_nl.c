@@ -4150,10 +4150,14 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.resource)
 		goto out;
 
+	if (!try_module_get(THIS_MODULE)) {
+		printk(KERN_ERR "drbd: Could not get a module reference\n");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
 	mutex_lock(&global_state_mutex);
 	resource = drbd_create_resource(adm_ctx.resource_name, &res_opts);
-	if (!resource)
-		retcode = ERR_NOMEM;
 	mutex_unlock(&global_state_mutex);
 
 	if (resource) {
@@ -4162,6 +4166,9 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 
 		resource_to_info(&resource_info, resource, NOW);
 		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE, id);
+	} else {
+		module_put(THIS_MODULE);
+		retcode = ERR_NOMEM;
 	}
 
 out:
