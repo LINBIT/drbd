@@ -1263,11 +1263,14 @@ static void free_host_info(struct d_host_info *hi)
 		return;
 
 	free_names(hi->on_hosts);
-	for_each_volume(vol, hi->volumes)
+	while ((vol = hi->volumes)) {
+		hi->volumes = vol->next;
 		free_volume(vol);
+	}
 	free(hi->address);
 	free(hi->address_family);
 	free(hi->port);
+	free(hi);
 }
 
 static void free_options(struct d_option *opts)
@@ -1284,14 +1287,17 @@ static void free_options(struct d_option *opts)
 
 static void free_config(struct d_resource *res)
 {
-	struct d_resource *f, *t;
+	struct d_resource *f;
 	struct d_host_info *host;
 
-	for_each_resource(f, t, res) {
+	while ((f = res)) {
+		res = f->next;
 		free(f->name);
 		free_volume(f->volumes);
-		for (host = f->all_hosts; host; host = host->next)
+		while ((host = f->all_hosts)) {
+			f->all_hosts = host->next;
 			free_host_info(host);
+		}
 		free_options(f->net_options);
 		free_options(f->disk_options);
 		free_options(f->startup_options);
