@@ -2648,10 +2648,6 @@ void drbd_restart_request(struct drbd_request *req)
 
 static void drbd_cleanup(void)
 {
-	unsigned int i;
-	struct drbd_device *device;
-	struct drbd_resource *resource, *tmp;
-
 	unregister_reboot_notifier(&drbd_notifier);
 
 	/* first remove proc,
@@ -2669,17 +2665,6 @@ static void drbd_cleanup(void)
 		destroy_workqueue(retry.wq);
 
 	drbd_genl_unregister();
-
-	idr_for_each_entry(&drbd_devices, device, i) {
-		drbd_unregister_device(device);
-		drbd_put_device(device);
-	}
-
-	/* not _rcu since, no other updater anymore. Genl already unregistered */
-	for_each_resource_safe(resource, tmp, &drbd_resources) {
-		list_del(&resource->resources);
-		drbd_free_resource(resource);
-	}
 
 	drbd_destroy_mempools();
 	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
