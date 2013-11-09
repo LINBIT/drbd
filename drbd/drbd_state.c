@@ -2856,14 +2856,12 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		struct drbd_connection *connection;
 
 		/* Fail if the target node is no longer directly reachable. */
-		for_each_connection(connection, resource) {
-			if (connection->net_conf->peer_node_id == target_node_id)
-				goto found_target_node;
+		connection = drbd_connection_by_node_id(resource, target_node_id);
+		if (!connection) {
+			rv = SS_CW_FAILED_BY_PEER;
+			goto out;
 		}
-		rv = SS_CW_FAILED_BY_PEER;
-		goto out;
 
-	    found_target_node:
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
 		      (connection->cstate[NOW] == C_CONNECTING &&
 		       mask.conn == conn_MASK &&
