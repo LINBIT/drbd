@@ -110,6 +110,7 @@ retry:
 	}
 
 	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 5);
 	state_change->resource->resource = resource;
 	memcpy(state_change->resource->role,
 	       resource->role, sizeof(resource->role));
@@ -128,6 +129,7 @@ retry:
 		struct drbd_peer_device *peer_device;
 
 		kobject_get(&device->kobj);
+		kref_debug_get(&device->kref_debug, 2);
 		device_state_change->device = device;
 		memcpy(device_state_change->disk_state,
 		       device->disk_state, sizeof(device->disk_state));
@@ -162,6 +164,7 @@ retry:
 	connection_state_change = state_change->connections;
 	for_each_connection(connection, resource) {
 		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 7);
 		connection_state_change->connection = connection;
 		memcpy(connection_state_change->cstate,
 		       connection->cstate, sizeof(connection->cstate));
@@ -181,20 +184,26 @@ void forget_state_change(struct drbd_state_change *state_change)
 	if (!state_change)
 		return;
 
-	if (state_change->resource->resource)
+	if (state_change->resource->resource) {
+		kref_debug_put(&state_change->resource->resource->kref_debug, 5);
 		kref_put(&state_change->resource->resource->kref, drbd_destroy_resource);
+	}
 	for (n = 0; n < state_change->n_devices; n++) {
 		struct drbd_device *device = state_change->devices[n].device;
 
-		if (device)
+		if (device) {
+			kref_debug_put(&device->kref_debug, 2);
 			kobject_put(&device->kobj);
+		}
 	}
 	for (n = 0; n < state_change->n_connections; n++) {
 		struct drbd_connection *connection =
 			state_change->connections[n].connection;
 
-		if (connection)
+		if (connection) {
+			kref_debug_put(&connection->kref_debug, 7);
 			kref_put(&connection->kref, drbd_destroy_connection);
+		}
 	}
 	kfree(state_change);
 }
@@ -312,6 +321,7 @@ static void __clear_remote_state_change(struct drbd_resource *resource) {
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
 	if (resource->twopc_parent) {
+		kref_debug_put(&resource->twopc_parent->kref_debug, 9);
 		kref_put(&resource->twopc_parent->kref,
 			 drbd_destroy_connection);
 		resource->twopc_parent = NULL;
@@ -2578,6 +2588,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 5);
 		rcu_read_unlock();
 
 		/* If the cluster is still connected after this transaction,
@@ -2610,6 +2621,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 			wake_up(&resource->work.q_wait);
 		}
 		rcu_read_lock();
+		kref_debug_put(&connection->kref_debug, 5);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 	rcu_read_unlock();
@@ -2822,7 +2834,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		connection = get_first_connection(resource);
 		rv = SS_SUCCESS;
 		if (connection) {
+			kref_debug_get(&connection->kref_debug, 6);
 			rv = change_peer_state(connection, vnr, mask, val, irq_flags);
+			kref_debug_put(&connection->kref_debug, 6);
 			kref_put(&connection->kref, drbd_destroy_connection);
 		}
 		goto out;
@@ -2858,6 +2872,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			goto out;
 		}
 		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 8);
 		target_connection = connection;
 
 		/* For connect transactions, add the target node id. */
@@ -3019,8 +3034,10 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	}
 
     out:
-	if (target_connection)
+	if (target_connection) {
+		kref_debug_put(&target_connection->kref_debug, 8);
 		kref_put(&target_connection->kref, drbd_destroy_connection);
+	}
 	return rv;
 }
 
@@ -3051,6 +3068,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	}
 
 	drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
+	kref_debug_put(&twopc_parent->kref_debug, 9);
 	kref_put(&twopc_parent->kref, drbd_destroy_connection);
 }
 

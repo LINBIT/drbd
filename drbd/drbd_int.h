@@ -51,6 +51,7 @@
 #include "compat.h"
 #include "drbd_state.h"
 #include "drbd_protocol.h"
+#include "drbd_kref_debug.h"
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
@@ -747,6 +748,7 @@ struct twopc_reply {
 struct drbd_resource {
 	char *name;
 	struct kref kref;
+	struct kref_debug_info kref_debug;
 	struct idr devices;		/* volume number to device mapping */
 	struct list_head connections;
 	struct list_head resources;
@@ -807,6 +809,7 @@ struct drbd_connection {			/* is a resource from the config file */
 	struct list_head connections;
 	struct drbd_resource *resource;
 	struct kref kref;
+	struct kref_debug_info kref_debug;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conn_state cstate[2];
 	enum drbd_role peer_role[2];
@@ -1026,6 +1029,7 @@ struct drbd_device {
 	struct list_head peer_devices;
 	int vnr;			/* volume number within the connection */
 	struct kobject kobj;
+	struct kref_debug_info kref_debug;
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;

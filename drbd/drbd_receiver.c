@@ -1024,6 +1024,7 @@ retry:
 				&connection->my_addr, connection->my_addr_len,
 				&peer_addr, peer_addr_len);
 			if (connection2) {
+				/* conn_get_by_addrs() does a get, put follows here... no debug */
 				drbd_info(connection2,
 					  "Receiver busy; rejecting incoming connection\n");
 				kref_put(&connection2->kref, drbd_destroy_connection);
@@ -1167,6 +1168,7 @@ int connect_timer_work(struct drbd_work *work, int cancel)
 		drbd_info(connection, "Failure to connect; retrying\n");
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
+	kref_debug_put(&connection->kref_debug, 10);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return 0;
 }
@@ -1178,6 +1180,7 @@ void connect_timer_fn(unsigned long data)
 	unsigned long irq_flags;
 
 	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 10);
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
 	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
@@ -4903,6 +4906,7 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
 		if (resource->twopc_parent) {
+			kref_debug_put(&resource->twopc_parent->kref_debug, 9);
 			kref_put(&resource->twopc_parent->kref,
 				 drbd_destroy_connection);
 			resource->twopc_parent = NULL;
@@ -5099,6 +5103,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		if (rv >= SS_SUCCESS) {
 			spin_lock_irq(&resource->req_lock);
 			kref_get(&connection->kref);
+			kref_debug_get(&connection->kref_debug, 9);
 			resource->twopc_parent = connection;
 			resource->twopc_timer.expires = jiffies + twopc_timeout(resource);
 			add_timer(&resource->twopc_timer);

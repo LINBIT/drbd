@@ -405,9 +405,13 @@ restart:
 
 	/* Release mod reference taken when thread was started */
 
-	if (thi->connection)
+	if (thi->connection) {
+		kref_debug_put(&thi->connection->kref_debug, 1);
 		kref_put(&thi->connection->kref, drbd_destroy_connection);
+	}
+	kref_debug_put(&resource->kref_debug, 1);
 	kref_put(&resource->kref, drbd_destroy_resource);
+
 	return retval;
 }
 
@@ -444,8 +448,11 @@ int drbd_thread_start(struct drbd_thread *thi)
 				 thi->name, current->comm, current->pid);
 
 		kref_get(&resource->kref);
-		if (thi->connection)
+		kref_debug_get(&resource->kref_debug, 1);
+		if (thi->connection) {
 			kref_get(&thi->connection->kref);
+			kref_debug_get(&thi->connection->kref_debug, 1);
+		}
 
 		init_completion(&thi->stop);
 		D_ASSERT(resource, thi->task == NULL);
@@ -463,8 +470,11 @@ int drbd_thread_start(struct drbd_thread *thi)
 			else
 				drbd_err(resource, "Couldn't start thread\n");
 
-			if (thi->connection)
+			if (thi->connection) {
+				kref_debug_put(&thi->connection->kref_debug, 1);
 				kref_put(&thi->connection->kref, drbd_destroy_connection);
+			}
+			kref_debug_put(&resource->kref_debug, 1);
 			kref_put(&resource->kref, drbd_destroy_resource);
 			return false;
 		}
@@ -2521,6 +2531,7 @@ static void drbd_destroy_device(struct kobject *kobj)
 
 	lc_destroy(device->act_log);
 	for_each_peer_device_safe(peer_device, tmp, device) {
+		kref_debug_put(&peer_device->connection->kref_debug, 3);
 		kref_put(&peer_device->connection->kref, drbd_destroy_connection);
 		free_peer_device(peer_device);
 	}
@@ -2532,8 +2543,10 @@ static void drbd_destroy_device(struct kobject *kobj)
 	__free_page(device->md_io_page);
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
+	kref_debug_destroy(&device->kref_debug);
 	kfree(device);
 
+	kref_debug_put(&resource->kref_debug, 4);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2544,6 +2557,7 @@ void drbd_destroy_resource(struct kref *kref)
 	idr_destroy(&resource->devices);
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
+	kref_debug_destroy(&resource->kref_debug);
 	kfree(resource);
 	module_put(THIS_MODULE);
 }
@@ -2558,9 +2572,11 @@ void drbd_free_resource(struct drbd_resource *resource)
 		list_del(&connection->connections);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
-	if (resource->twopc_parent)
+	if (resource->twopc_parent) {
+		kref_debug_put(&resource->twopc_parent->kref_debug, 9);
 		kref_put(&resource->twopc_parent->kref,
 			 drbd_destroy_connection);
+	}
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
@@ -2919,6 +2935,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	if (!zalloc_cpumask_var(&resource->cpu_mask, GFP_KERNEL))
 		goto fail_free_name;
 	kref_init(&resource->kref);
+	kref_debug_init(&resource->kref_debug, &kref_class_resource);
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
@@ -3010,8 +3027,10 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	INIT_LIST_HEAD(&connection->peer_requests);
 
 	kref_init(&connection->kref);
+	kref_debug_init(&connection->kref_debug, &kref_class_connection);
 
 	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
 	list_add_tail_rcu(&connection->connections, &resource->connections);
 
@@ -3047,7 +3066,9 @@ void drbd_destroy_connection(struct kref *kref)
 	drbd_free_socket(&connection->data);
 	kfree(connection->net_conf);
 	conn_free_crypto(connection);
+	kref_debug_destroy(&connection->kref_debug);
 	kfree(connection);
+	kref_debug_put(&resource->kref_debug, 3);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -3135,8 +3156,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device)
 		return ERR_NOMEM;
 	kobject_init(&device->kobj, &drbd_device_kobj_type);
+	kref_debug_init(&device->kref_debug, &kref_class_device);
 
 	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 4);
 	device->resource = resource;
 	device->minor = minor;
 	device->vnr = vnr;
@@ -3260,7 +3283,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	spin_lock_irq(&resource->req_lock);
 	for_each_peer_device(peer_device, device) {
 		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 3);
 		kobject_get(&device->kobj);
+		kref_debug_get(&device->kref_debug, 1);
 	}
 	spin_unlock_irq(&resource->req_lock);
 
@@ -3345,8 +3370,10 @@ void drbd_put_device(struct drbd_device *device)
 	for_each_peer_device(peer_device, device)
 		refs++;
 
-	for (i = 0; i < refs; i++)
+	for (i = 0; i < refs; i++) {
+		kref_debug_put(&device->kref_debug, 1);
 		kobject_put(&device->kobj);
+	}
 }
 
 /**
@@ -3374,12 +3401,15 @@ void drbd_put_connection(struct drbd_connection *connection)
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		refs++;
+	kref_debug_sub(&connection->kref_debug, refs, 3);
 	kref_sub(&connection->kref, refs, drbd_destroy_connection);
 }
 
 int __init drbd_init(void)
 {
 	int err;
+
+	initialize_kref_debugging();
 
 	if (minor_count < DRBD_MINOR_COUNT_MIN || minor_count > DRBD_MINOR_COUNT_MAX) {
 		printk(KERN_ERR

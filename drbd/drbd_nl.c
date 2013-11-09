@@ -247,6 +247,8 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	adm_ctx->device = minor_to_device(d_in->minor);
 	if (adm_ctx->resource_name) {
 		adm_ctx->resource = drbd_find_resource(adm_ctx->resource_name);
+		if (adm_ctx->resource)
+			kref_debug_get(&adm_ctx->resource->kref_debug, 2);
 	}
 
 	if (!adm_ctx->device && (flags & DRBD_ADM_NEED_MINOR)) {
@@ -282,6 +284,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
+		kref_debug_get(&adm_ctx->connection->kref_debug, 2);
 	}
 	if (flags & DRBD_ADM_NEED_PEER_DEVICE) {
 		if (adm_ctx->volume != VOLUME_UNSPECIFIED)
@@ -331,10 +334,12 @@ finish:
 static int drbd_adm_finish(struct drbd_config_context *adm_ctx, struct genl_info *info, int retcode)
 {
 	if (adm_ctx->connection) {
+		kref_debug_put(&adm_ctx->connection->kref_debug, 2);
 		kref_put(&adm_ctx->connection->kref, drbd_destroy_connection);
 		adm_ctx->connection = NULL;
 	}
 	if (adm_ctx->resource) {
+		kref_debug_put(&adm_ctx->resource->kref_debug, 2);
 		kref_put(&adm_ctx->resource->kref, drbd_destroy_resource);
 		adm_ctx->resource = NULL;
 	}
@@ -666,6 +671,7 @@ static int _try_outdate_peer_async(void *data)
 
 	conn_try_outdate_peer(connection);
 
+	kref_debug_put(&connection->kref_debug, 4);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return 0;
 }
@@ -675,9 +681,11 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 	struct task_struct *opa;
 
 	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 4);
 	opa = kthread_run(_try_outdate_peer_async, connection, "drbd_async_h");
 	if (IS_ERR(opa)) {
 		drbd_err(connection, "out of mem, failed to invoke fence-peer helper\n");
+		kref_debug_put(&connection->kref_debug, 4);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 }
@@ -2712,7 +2720,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 3);
 		kobject_get(&device->kobj);
+		kref_debug_get(&device->kref_debug, 1);
 		peer_devices++;
 	}
 	spin_unlock_irq(&adm_ctx.resource->req_lock);
@@ -3598,6 +3608,7 @@ static int put_resource_in_arg0(struct netlink_callback *cb)
 	if (cb->args[0]) {
 		struct drbd_resource *resource =
 			(struct drbd_resource *)cb->args[0];
+		kref_debug_put(&resource->kref_debug, 6);
 		kref_put(&resource->kref, drbd_destroy_resource);
 	}
 
@@ -3728,6 +3739,7 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 			goto out;
 		resource = list_first_entry(&drbd_resources, struct drbd_resource, resources);
 		kref_get(&resource->kref);
+		kref_debug_get(&resource->kref_debug, 6);
 		cb->args[0] = (long)resource;
 		cb->args[1] = ITERATE_RESOURCES;
 	}
@@ -3764,9 +3776,11 @@ no_more_connections:
 found_resource:
 	list_for_each_entry_continue_rcu(next_resource, &drbd_resources, resources) {
 		mutex_unlock(&resource->conf_update);
+		kref_debug_put(&resource->kref_debug, 6);
 		kref_put(&resource->kref, drbd_destroy_resource);
 		resource = next_resource;
 		kref_get(&resource->kref);
+		kref_debug_get(&resource->kref_debug, 6);
 		cb->args[0] = (long)resource;
 		cb->args[2] = 0;
 		goto next_resource;

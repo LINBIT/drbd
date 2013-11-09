@@ -53,6 +53,8 @@ extern const char *drbd_buildtag(void);
 #define CONFIG_DRBD_FAULT_INJECTION 1
 #endif
 
+/* CONFIG_KREF_DEBUG has to be enabled in Kbuild */
+
 #ifdef __KERNEL__
 #include "compat.h"
 #endif
