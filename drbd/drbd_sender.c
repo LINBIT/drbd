@@ -1681,6 +1681,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	if (down_trylock(&device->resource->state_sem)) {
 		/* Retry later and let the worker make progress in the
 		 * meantime; two-phase commits depend on that.  */
+		set_bit(B_RS_H_DONE, &peer_device->flags);
+		peer_device->start_resync_work.side = side;
 		peer_device->start_resync_timer.expires = jiffies + HZ/5;
 		add_timer(&peer_device->start_resync_timer);
 		return;
