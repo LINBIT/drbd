@@ -3015,6 +3015,11 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		clear_remote_state_change(resource, irq_flags);
 		schedule_timeout_interruptible(timeout);
 		end_remote_state_change(resource, irq_flags, flags);
+		if (target_connection) {
+			kref_debug_put(&target_connection->kref_debug, 8);
+			kref_put(&target_connection->kref, drbd_destroy_connection);
+			target_connection = NULL;
+		}
 		goto retry;
 	}
 
