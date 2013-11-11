@@ -4320,7 +4320,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 
 	mutex_lock(&global_state_mutex);
 	err = ERR_NET_CONFIGURED;
-	for_each_connection(connection, resource)
+	if (!list_empty(&resource->connections))
 		goto out;
 	err = ERR_RES_IN_USE;
 	if (!idr_is_empty(&resource->devices))
