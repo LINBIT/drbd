@@ -1155,6 +1155,16 @@ static inline void list_splice_tail_init(struct list_head *list,
 }
 #endif
 
+#ifndef list_first_entry
+#define list_first_entry(ptr, type, member) \
+	list_entry((ptr)->next, type, member)
+#endif
+
+#ifndef list_first_entry_or_null
+#define list_first_entry_or_null(ptr, type, member) \
+	(!list_empty(ptr) ? list_first_entry(ptr, type, member) : NULL)
+#endif
+
 #ifndef COMPAT_HAVE_IDR_ALLOC
 static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_t gfp_mask)
 {
