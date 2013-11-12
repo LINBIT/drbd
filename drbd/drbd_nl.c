@@ -3603,12 +3603,12 @@ static void device_to_statistics(struct device_statistics *s,
 	s->dev_exposed_data_uuid = device->exposed_data_uuid;
 }
 
-static int put_resource_in_arg0(struct netlink_callback *cb)
+static int put_resource_in_arg0(struct netlink_callback *cb, int holder_nr)
 {
 	if (cb->args[0]) {
 		struct drbd_resource *resource =
 			(struct drbd_resource *)cb->args[0];
-		kref_debug_put(&resource->kref_debug, 6);
+		kref_debug_put(&resource->kref_debug, holder_nr); /* , 6); , 7); */
 		kref_put(&resource->kref, drbd_destroy_resource);
 	}
 
@@ -3616,7 +3616,7 @@ static int put_resource_in_arg0(struct netlink_callback *cb)
 }
 
 int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
-	return put_resource_in_arg0(cb);
+	return put_resource_in_arg0(cb, 7);
 }
 
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
@@ -3638,6 +3638,7 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
 				goto put_result;
+			kref_debug_get(&resource->kref_debug, 7);
 			cb->args[0] = (long)resource;
 		}
 	}
@@ -3706,7 +3707,7 @@ out:
 
 int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 {
-	return put_resource_in_arg0(cb);
+	return put_resource_in_arg0(cb, 6);
 }
 
 enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
@@ -3730,6 +3731,7 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
 				goto put_result;
+			kref_debug_get(&resource->kref_debug, 6);
 			cb->args[0] = (long)resource;
 			cb->args[1] = SINGLE_RESOURCE;
 		}

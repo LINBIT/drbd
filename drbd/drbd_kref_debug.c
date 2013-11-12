@@ -8,6 +8,7 @@ struct kref_debug_class kref_class_resource = {
 		[4] = "struct drbd_device",
 		[5] = "struct drbd_state_change",
 		[6] = "drbd_adm_dump_connections()",
+		[7] = "drbd_adm_dump_devices()",
 	}
 };
 
