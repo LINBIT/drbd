@@ -6514,11 +6514,14 @@ static int got_peers_in_sync(struct drbd_connection *connection, struct packet_i
 
 	device = peer_device->device;
 
-	sector = be64_to_cpu(p->sector);
-	size = be32_to_cpu(p->size);
-	in_sync_b = node_ids_to_bitmap(device, be64_to_cpu(p->mask));
+	if (get_ldev(device)) {
+		sector = be64_to_cpu(p->sector);
+		size = be32_to_cpu(p->size);
+		in_sync_b = node_ids_to_bitmap(device, be64_to_cpu(p->mask));
 
-	drbd_set_sync(device, sector, size, 0, in_sync_b);
+		drbd_set_sync(device, sector, size, 0, in_sync_b);
+		put_ldev(device);
+	}
 
 	return 0;
 }
