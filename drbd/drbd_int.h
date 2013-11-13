@@ -728,6 +728,7 @@ enum {
 				 * so shrink_page_list() would not recurse into,
 				 * and potentially deadlock on, this drbd worker.
 				 */
+	NEGOTIATION_RESULT_TOCHED,
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
@@ -937,6 +938,7 @@ struct drbd_peer_device {
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
+	enum drbd_repl_state negotiation_result; /* To find disk state after attach */
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
 	atomic_t packet_seq;

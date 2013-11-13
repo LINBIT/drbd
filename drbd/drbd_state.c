@@ -223,6 +223,9 @@ static bool state_has_changed(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int minor;
 
+	if (test_and_clear_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags))
+		return true;
+
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp[OLD] != resource->susp[NEW] ||
 	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
@@ -1176,6 +1179,46 @@ static void sanitize_state(struct drbd_resource *resource)
 		    disk_state[OLD] < D_OUTDATED && disk_state[NEW] == D_OUTDATED)
 			disk_state[NEW] = disk_state[OLD];
 
+		/* Is disk state negotiation finished? */
+		if (disk_state[OLD] == D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
+			for_each_peer_device(peer_device, device) {
+				enum drbd_repl_state nr = peer_device->negotiation_result;
+
+				if (peer_device->connection->cstate[NEW] < C_CONNECTED)
+					continue;
+
+				if (nr == L_ESTABLISHED || nr == L_WF_BITMAP_S)
+					continue;
+				else if (nr == L_NEGOTIATING)
+					goto stay_negotiating;
+				else if (nr == L_WF_BITMAP_T) {
+					disk_state[NEW] = D_INCONSISTENT;
+					goto negotaition_finished;
+				} else
+					drbd_err(peer_device, "Unexpected nr = %s\n", drbd_repl_str(nr));
+			}
+			disk_state[NEW] = disk_state_from_md(device);
+		negotaition_finished:
+			for_each_peer_device(peer_device, device) {
+				enum drbd_repl_state nr = peer_device->negotiation_result;
+
+				if (peer_device->connection->cstate[NEW] < C_CONNECTED)
+					continue;
+
+				if (nr != L_NEGOTIATING) {
+					if (nr == L_WF_BITMAP_S && disk_state[NEW] == D_INCONSISTENT) {
+						/* Should be sync source for one peer and sync
+						   target for an other peer. Delay the sync source
+						   role */
+						nr = L_PAUSED_SYNC_S;
+						drbd_warn(peer_device, "Finish me\n");
+					}
+					peer_device->repl_state[NEW] = nr;
+				}
+			}
+		}
+	stay_negotiating:
+
 		for_each_peer_device(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
@@ -1479,6 +1522,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
+
+		if (disk_state[OLD] != D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
+			for_each_peer_device(peer_device, device)
+				peer_device->negotiation_result = L_NEGOTIATING;
+		}
 
 		/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 		 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
@@ -2162,7 +2210,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* Last part of the attaching process ... */
 			if (repl_state[NEW] >= L_ESTABLISHED &&
-			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] == D_NEGOTIATING) {
+			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING) {
 				drbd_send_sizes(peer_device, 0, 0);  /* to start sync... */
 				drbd_send_uuids(peer_device, 0, 0);
 				drbd_send_state(peer_device, new_state);

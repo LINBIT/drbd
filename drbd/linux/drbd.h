@@ -220,6 +220,7 @@ enum drbd_conn_state {
 };
 
 enum drbd_repl_state {
+	L_NEGOTIATING = C_CONNECTED, /* used for peer_device->negotiation_result only */
 	L_OFF = C_CONNECTED,
 
 	L_ESTABLISHED,      /* we have introduced each other */

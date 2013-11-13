@@ -5256,7 +5256,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				    (peer_state.disk == D_NEGOTIATING ||
 				     os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
-		 * forced to be UpToDate with --overwrite-data */
+		 * forced to be UpToDate with --force */
 		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
@@ -5300,16 +5300,17 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
-	__change_repl_state(peer_device, new_repl_state);
+	if (device->disk_state[NOW] == D_NEGOTIATING) {
+		set_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags);
+		peer_device->negotiation_result = new_repl_state;
+	} else
+		__change_repl_state(peer_device, new_repl_state);
 	if (connection->peer_role[NOW] == R_UNKNOWN)
 		__change_peer_role(connection, peer_state.role);
 	__change_peer_weak(connection, peer_state.weak);
 	__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
 	repl_state = peer_device->repl_state;
-	if (device->disk_state[NEW] == D_NEGOTIATING &&
-	    (repl_state[NEW] == L_ESTABLISHED || repl_state[NEW] == L_WF_BITMAP_S))
-		__change_disk_state(device, disk_state_from_md(device));
 	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
 	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
@@ -5577,6 +5578,18 @@ void INFO_bm_xfer_stats(struct drbd_peer_device *peer_device,
 			total, r/10, r % 10);
 }
 
+static enum drbd_disk_state read_disk_state(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	enum drbd_disk_state disk_state;
+
+	spin_lock_irq(&resource->req_lock);
+	disk_state = device->disk_state[NOW];
+	spin_unlock_irq(&resource->req_lock);
+
+	return disk_state;
+}
+
 /* Since we are processing the bitfield from lower addresses to higher,
    it does not matter if the process it in 32 bit chunks or 64 bit
    chunks as long as it is little endian. (Understand it as byte stream,
@@ -5596,6 +5609,10 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	if (!peer_device)
 		return -EIO;
 	device = peer_device->device;
+
+	/* Final repl_states become visible when the disk leaves NEGOTIATING state */
+	wait_event_interruptible(device->resource->state_wait,
+				 read_disk_state(device) != D_NEGOTIATING);
 
 	drbd_bm_slot_lock(peer_device, "receive bitmap", BM_LOCK_CLEAR | BM_LOCK_BULK);
 	/* you are supposed to send additional out-of-sync information
