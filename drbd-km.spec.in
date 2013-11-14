@@ -10,7 +10,7 @@
 Name: @PACKAGE_TARNAME@-km
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 2@RPM_DIST_TAG@
+Release: 4@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -100,6 +100,11 @@ uname -r | grep BOOT ||
 
 
 %changelog
+* Thu Nov 14 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-4
+- Regression fixes
+  - fix for potential deadlock in adm functions (drbdsetup)
+  - fix for init script and /sbin vs /usr/sbin
+
 * Fri Oct 11 2013 Philipp Reisner <phil@linbit.com> - 8.4.4-1
 - New upstream release.
 

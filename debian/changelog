@@ -1,3 +1,11 @@
+drbd8 (2:8.4.4-4) unstable; urgency=low
+
+  * Regression fixes
+    - fix for potential deadlock in adm functions (drbdsetup)
+    - fix for init script and /sbin vs /usr/sbin
+
+ -- Lars Ellenberg <lars@linbit.com>  Thu, 14 Nov 2013 09:29:49 +0100
+
 drbd8 (2:8.4.4-0) unstable; urgency=low
 
   * New upstream release.
