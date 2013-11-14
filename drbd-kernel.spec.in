@@ -78,7 +78,7 @@ export INSTALL_MOD_DIR=extra/drbd
 for flavor in %flavors_to_build ; do
     make -C %{kernel_source $flavor} modules_install \
 	M=$PWD/obj/$flavor
-    kernelrelease=$(make -s -C %{kernel_source $flavor} kernelrelease)
+    kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv obj/$flavor/.kernel.config.gz obj/k-config-$kernelrelease.gz
 done
 
