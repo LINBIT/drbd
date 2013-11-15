@@ -403,15 +403,6 @@ restart:
 	else
 		drbd_info(resource, "Terminating %s thread\n", thi->name);
 
-	/* Release mod reference taken when thread was started */
-
-	if (thi->connection) {
-		kref_debug_put(&thi->connection->kref_debug, 1);
-		kref_put(&thi->connection->kref, drbd_destroy_connection);
-	}
-	kref_debug_put(&resource->kref_debug, 1);
-	kref_put(&resource->kref, drbd_destroy_resource);
-
 	return retval;
 }
 
@@ -447,13 +438,6 @@ int drbd_thread_start(struct drbd_thread *thi)
 			drbd_info(resource, "Starting %s thread (from %s [%d])\n",
 				 thi->name, current->comm, current->pid);
 
-		kref_get(&resource->kref);
-		kref_debug_get(&resource->kref_debug, 1);
-		if (thi->connection) {
-			kref_get(&thi->connection->kref);
-			kref_debug_get(&thi->connection->kref_debug, 1);
-		}
-
 		init_completion(&thi->stop);
 		D_ASSERT(resource, thi->task == NULL);
 		thi->reset_cpu_mask = 1;
@@ -470,12 +454,6 @@ int drbd_thread_start(struct drbd_thread *thi)
 			else
 				drbd_err(resource, "Couldn't start thread\n");
 
-			if (thi->connection) {
-				kref_debug_put(&thi->connection->kref_debug, 1);
-				kref_put(&thi->connection->kref, drbd_destroy_connection);
-			}
-			kref_debug_put(&resource->kref_debug, 1);
-			kref_put(&resource->kref, drbd_destroy_resource);
 			return false;
 		}
 		spin_lock_irqsave(&thi->t_lock, flags);
