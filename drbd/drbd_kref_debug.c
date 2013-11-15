@@ -9,6 +9,8 @@ struct kref_debug_class kref_class_resource = {
 		[5] = "struct drbd_state_change",
 		[6] = "drbd_adm_dump_connections()",
 		[7] = "drbd_adm_dump_devices()",
+		[8] = "free",
+		[9] = "drbd_adm_dump_peer_devices()",
 	}
 };
 
@@ -23,12 +25,13 @@ struct kref_debug_class kref_class_connection = {
 		[7] = "struct drbd_state_change",
 		[8] = "target_connection/change_cluster_wide_state()",
 		[9] = "resource->twopc_parent",
+		[10] = "free",
 	}
 };
 
 struct kref_debug_class kref_class_device = {
 	"device", {
-		[1] = "struct drbd_peer_device",
+		[1] = "struct drbd_peer_device / free",
 		[2] = "struct drbd_state_change",
 	}
 };

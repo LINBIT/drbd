@@ -2580,6 +2580,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
+	kref_debug_put(&resource->kref_debug, 8);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2935,7 +2936,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	if (!zalloc_cpumask_var(&resource->cpu_mask, GFP_KERNEL))
 		goto fail_free_name;
 	kref_init(&resource->kref);
-	kref_debug_init(&resource->kref_debug, &kref_class_resource);
+	kref_debug_init(&resource->kref_debug, &resource->kref, &kref_class_resource);
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
@@ -3027,7 +3028,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	INIT_LIST_HEAD(&connection->peer_requests);
 
 	kref_init(&connection->kref);
-	kref_debug_init(&connection->kref_debug, &kref_class_connection);
+	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
@@ -3156,7 +3157,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device)
 		return ERR_NOMEM;
 	kobject_init(&device->kobj, &drbd_device_kobj_type);
-	kref_debug_init(&device->kref_debug, &kref_class_device);
+	kref_debug_init(&device->kref_debug, &device->kobj.kref, &kref_class_device);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 4);
@@ -3259,6 +3260,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_no_minor_idr;
 	}
 	kobject_get(&device->kobj);
+	kref_debug_get(&device->kref_debug, 1);
 
 	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
 	if (id < 0) {
@@ -3267,6 +3269,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_idr_remove_minor;
 	}
 	kobject_get(&device->kobj);
+	kref_debug_get(&device->kref_debug, 1);
 
 	INIT_LIST_HEAD(&device->peer_devices);
 	for_each_connection(connection, resource) {
@@ -3401,7 +3404,8 @@ void drbd_put_connection(struct drbd_connection *connection)
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		refs++;
-	kref_debug_sub(&connection->kref_debug, refs, 3);
+	kref_debug_sub(&connection->kref_debug, refs - 1, 3);
+	kref_debug_put(&connection->kref_debug, 10);
 	kref_sub(&connection->kref, refs, drbd_destroy_connection);
 }
 

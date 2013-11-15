@@ -3875,6 +3875,7 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
 				goto put_result;
+			kref_debug_get(&resource->kref_debug, 9);
 		}
 		cb->args[0] = (long)resource;
 	}
