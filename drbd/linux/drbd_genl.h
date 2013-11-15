@@ -436,6 +436,7 @@ GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
 	GENL_op_init(
 		.dumpit = drbd_adm_dump_peer_devices,
+		.done = drbd_adm_dump_peer_devices_done,
 	),
 	GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)

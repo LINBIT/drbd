@@ -105,6 +105,7 @@ int drbd_adm_dump_devices_done(struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_connections_done(struct netlink_callback *cb);
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
+int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb);
 int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
@@ -3855,6 +3856,11 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		s->peer_dev_flags = peer_md->flags;
 		put_ldev(device);
 	}
+}
+
+int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
+{
+	return put_resource_in_arg0(cb, 9);
 }
 
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
