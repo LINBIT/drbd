@@ -57,6 +57,7 @@ extern struct context_def new_current_uuid_cmd_ctx;
 extern struct context_def verify_cmd_ctx;
 extern struct context_def device_options_ctx;
 extern struct context_def invalidate_ctx;
+extern struct context_def create_md_ctx;
 
 extern const char *double_quote_string(const char *str);
 

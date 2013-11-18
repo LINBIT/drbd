@@ -333,7 +333,7 @@ static struct adm_cmd status_cmd = {"status", adm_drbdsetup, .show_in_usage = 1,
 static struct adm_cmd dump_cmd = {"dump", adm_dump, ACF1_DUMP};
 static struct adm_cmd dump_xml_cmd = {"dump-xml", adm_dump_xml, ACF1_DUMP};
 
-static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, ACF1_DEFAULT .disk_required = 1};
+static struct adm_cmd create_md_cmd = {"create-md", adm_create_md, &create_md_ctx, ACF1_DEFAULT .disk_required = 1};
 static struct adm_cmd show_gi_cmd = {"show-gi", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
 static struct adm_cmd get_gi_cmd = {"get-gi", adm_setup_and_meta, ACF1_PEER_DEVICE .disk_required = 1};
 static struct adm_cmd dump_md_cmd = {"dump-md", adm_drbdmeta, ACF1_DEFAULT .disk_required = 1};

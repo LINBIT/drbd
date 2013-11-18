@@ -763,3 +763,10 @@ struct context_def invalidate_ctx = {
 		{ "sync-from-peer-node-id", NUMERIC(sync_from_peer_node_id, SYNC_FROM_NID) },
 		{ } },
 };
+
+// only used in drbdadm:
+struct context_def create_md_ctx = {
+       .fields = {
+		{ .name = "peer-slots", .argument_is_optional = false },
+               { } },
+};

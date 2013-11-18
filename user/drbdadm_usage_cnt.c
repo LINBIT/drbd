@@ -717,6 +717,18 @@ static char* run_adm_drbdmeta(const struct cfg_ctx *ctx, const char *arg_overrid
 	return buffer;
 }
 
+static struct d_name *find_backend_option(const char *opt_name)
+{
+	struct d_name *b_opt;
+	const int str_len = strlen(opt_name);
+
+	STAILQ_FOREACH(b_opt, &backend_options, link) {
+		if (!strncmp(b_opt->name, opt_name, str_len))
+			return b_opt;
+	}
+	return NULL;
+}
+
 int adm_create_md(const struct cfg_ctx *ctx)
 {
 	struct connection *conn;
@@ -728,23 +740,34 @@ int adm_create_md(const struct cfg_ctx *ctx)
 	int send=0;
 	char *tb;
 	int rv,fd;
-	char *r;
-	int max_peers = 0;
+	char *r, *max_peers_str = NULL;
+	struct d_name *b_opt;
+	const char *peer_slots_str = "--peer-slots=";
+
+	b_opt = find_backend_option(peer_slots_str);
+	if (b_opt) {
+		max_peers_str = ssprintf("%s", b_opt->name + strlen(peer_slots_str));
+		STAILQ_REMOVE(&backend_options, b_opt, d_name, link);
+		free(b_opt);
+	} else {
+		int max_peers = 0;
+
+		for_each_connection(conn, &ctx->res->connections)
+			if (!conn->ignore)
+				max_peers++;
+
+		if (max_peers == 0)
+			max_peers = 1;
+
+		max_peers_str = ssprintf("%d", max_peers);
+	}
 
 	tb = run_adm_drbdmeta(ctx, "read-dev-uuid");
 	device_uuid = strto_u64(tb,NULL,16);
 	free(tb);
 
-	for_each_connection(conn, &ctx->res->connections)
-		if (!conn->ignore)
-			max_peers++;
-
-	/* The metadata allow at least one peer. */
-	if (max_peers == 0)
-		max_peers = 1;
-
 	/* this is "drbdmeta ... create-md" */
-	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, ssprintf("%d", max_peers));
+	rv = _adm_drbdmeta(ctx, SLEEPS_VERY_LONG, max_peers_str);
 
 	if(rv || dry_run) return rv;
 
