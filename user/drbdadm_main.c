@@ -162,31 +162,12 @@ char *drbdadm_83 = NULL;
 char *drbdadm_84 = NULL;
 char *drbd_proxy_ctl;
 char *sh_varname = NULL;
-struct setup_option *setup_options;
-
+struct names backend_options = STAILQ_HEAD_INITIALIZER(backend_options);
 
 char *connect_to_host = NULL;
 volatile int alarm_raised;
 
 STAILQ_HEAD(deferred_cmds, deferred_cmd) deferred_cmds[__CFG_LAST];
-
-void add_setup_option(bool explicit, char *option)
-{
-	int n = 0;
-	if (setup_options) {
-		while (setup_options[n].option)
-			n++;
-	}
-
-	setup_options = realloc(setup_options, (n + 2) * sizeof(*setup_options));
-	if (!setup_options) {
-		/* ... */
-	}
-	setup_options[n].explicit = explicit;
-	setup_options[n].option = option;
-	n++;
-	setup_options[n].option = NULL;
-}
 
 int adm_adjust_wp(const struct cfg_ctx *ctx)
 {
@@ -1118,14 +1099,12 @@ void m__system(char **argv, int flags, const char *res_name, pid_t *kid, int *fd
 
 static void add_setup_options(char **argv, int *argcp)
 {
+	struct d_name *b_opt;
 	int argc = *argcp;
-	int i;
 
-	if (!setup_options)
-		return;
-
-	for (i = 0; setup_options[i].option; i++)
-		argv[NA(argc)] = setup_options[i].option;
+	STAILQ_FOREACH(b_opt, &backend_options, link) {
+		argv[NA(argc)] = b_opt->name;
+	}
 	*argcp = argc;
 }
 
@@ -2736,9 +2715,11 @@ struct adm_cmd *find_cmd(char *cmdname);
 int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_names)
 {
 	const char *optstring = make_optstring(admopt);
+	struct names backend_options_check;
+	struct d_name *b_opt;
 	int longindex, first_arg_index;
-	int i;
 
+	STAILQ_INIT(&backend_options_check);
 	*cmd = NULL;
 	*resource_names = malloc(sizeof(char **));
 	(*resource_names)[0] = NULL;
@@ -2756,17 +2737,12 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			{
 				struct option *option = &admopt[longindex];
 				char *opt;
-				int len;
 
-				len = strlen(option->name) + 2;
 				if (optarg)
-					len += 1 + strlen(optarg);
-				opt = malloc(len + 1);
-				if (optarg)
-					sprintf(opt, "--%s=%s", option->name, optarg);
+					opt = ssprintf("--%s=%s", option->name, optarg);
 				else
-					sprintf(opt, "--%s", option->name);
-				add_setup_option(false, opt);
+					opt = ssprintf("--%s", option->name);
+				insert_tail(&backend_options_check, names_from_str(opt));
 			}
 			break;
 		case 'S':
@@ -2864,7 +2840,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			connect_to_host = optarg;
 			break;
 		case 'W':
-			add_setup_option(true, optarg);
+			insert_tail(&backend_options, names_from_str(optarg));
 			break;
 		case 'h':
 			help = true;
@@ -2891,7 +2867,7 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 			*cmd = find_cmd(optarg);
 			if (!*cmd) {
 				/* Passing drbdsetup options like this is discouraged! */
-				add_setup_option(true, optarg);
+				insert_tail(&backend_options, names_from_str(optarg));
 			}
 		}
 	}
@@ -2908,41 +2884,37 @@ int parse_options(int argc, char **argv, struct adm_cmd **cmd, char ***resource_
 		print_usage_and_exit(*cmd, "No command specified", E_USAGE);
 	}
 
-	if (setup_options) {
-		/*
-		 * The drbdsetup options are command specific.  Make sure that only
-		 * setup options that this command recognizes are used.
-		 */
-		for (i = 0; setup_options[i].option; i++) {
-			const struct field_def *field;
-			const char *option;
-			int len;
+	/*
+	 * The backend (drbdsetup) options are command specific.  Make sure that only
+	 * setup options that this command recognizes are used.
+	 */
+	STAILQ_FOREACH(b_opt, &backend_options_check, link) {
+		const struct field_def *field;
+		const char *option;
+		int len;
 
-			if (setup_options[i].explicit)
-				continue;
+		option = b_opt->name;
+		for (len = 0; option[len]; len++)
+			if (option[len] == '=')
+				break;
 
-			option = setup_options[i].option;
-			for (len = 0; option[len]; len++)
-				if (option[len] == '=')
+		field = NULL;
+		if (option[0] == '-' && option[1] == '-' && (*cmd)->drbdsetup_ctx) {
+			for (field = (*cmd)->drbdsetup_ctx->fields; field->name; field++) {
+				if (strlen(field->name) == len - 2 &&
+				    !strncmp(option + 2, field->name, len - 2))
 					break;
-
-			field = NULL;
-			if (option[0] == '-' && option[1] == '-' && (*cmd)->drbdsetup_ctx) {
-				for (field = (*cmd)->drbdsetup_ctx->fields; field->name; field++) {
-					if (strlen(field->name) == len - 2 &&
-					    !strncmp(option + 2, field->name, len - 2))
-						break;
-				}
-				if (!field->name)
-					field = NULL;
 			}
-			if (!field) {
-				fprintf(stderr, "%s: unrecognized option '%.*s'\n",
-					progname, len, option);
-				goto help;
-			}
+			if (!field->name)
+				field = NULL;
+		}
+		if (!field) {
+			fprintf(stderr, "%s: unrecognized option '%.*s'\n",
+				progname, len, option);
+			goto help;
 		}
 	}
+	STAILQ_CONCAT(&backend_options, &backend_options_check);
 
 	return 0;
 

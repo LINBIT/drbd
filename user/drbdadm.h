@@ -412,14 +412,7 @@ extern char* drbdadm_83;
 extern char* drbdadm_84;
 extern char ss_buffer[1024];
 extern const char *canonname;
-
-struct setup_option {
-	bool explicit;
-	char *option;
-};
-struct setup_option *setup_options;
-
-extern void add_setup_option(bool explicit, char *option);
+extern struct names backend_options;
 
 /* ssprintf() places the result of the printf in the current stack
    frame and sets ptr to the resulting string. If the current stack

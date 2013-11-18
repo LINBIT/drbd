@@ -792,20 +792,20 @@ int adm_create_md(const struct cfg_ctx *ctx)
 	{
 		struct adm_cmd local_cmd = *ctx->cmd;
 		struct cfg_ctx local_ctx = *ctx;
-		struct setup_option *old_setup_options;
+		struct names old_backend_options;
 		char *opt;
 
 		opt = ssprintf(X64(016), device_uuid);
-		old_setup_options = setup_options;
-		setup_options = NULL;
-		add_setup_option(false, opt);
+		old_backend_options = backend_options;
+		STAILQ_INIT(&backend_options);
+		insert_tail(&backend_options, names_from_str(opt));
 
 		local_cmd.name = "write-dev-uuid";
 		local_ctx.cmd = &local_cmd;
 		_adm_drbdmeta(&local_ctx, SLEEPS_VERY_LONG, NULL);
 
-		free(setup_options);
-		setup_options = old_setup_options;
+		free_names(&backend_options);
+		backend_options = old_backend_options;
 	}
 	return rv;
 }
