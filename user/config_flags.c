@@ -768,5 +768,8 @@ struct context_def invalidate_ctx = {
 struct context_def create_md_ctx = {
        .fields = {
 		{ .name = "peer-slots", .argument_is_optional = false },
-               { } },
+		{ .name = "peer-max-bio-size", .argument_is_optional = false },
+		{ .name = "al-stripes", .argument_is_optional = false },
+		{ .name = "al-stripe-size-kB", .argument_is_optional = false },
+		{ } },
 };
