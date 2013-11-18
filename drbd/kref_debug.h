@@ -55,7 +55,7 @@ static inline void kref_debug_put(struct kref_debug_info *debug_info, int holder
 {}
 static inline void print_kref_debug_info(struct seq_file *seq)
 {}
-static inline void check_kref_debug_info(struct kref_debug_info *)
+static inline void check_kref_debug_info(struct kref_debug_info *debug_info)
 {}
 #endif
 
