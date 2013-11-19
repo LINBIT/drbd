@@ -18,7 +18,6 @@ struct kref_debug_class {
 struct kref_debug_info {
 	const struct kref_debug_class *class;
 	struct kref *kref;
-	bool lost;
 	int holders[KREF_DEBUG_HOLDER_MAX];
 	struct list_head objects;
 };
@@ -35,8 +34,6 @@ static inline void kref_debug_put(struct kref_debug_info *debug_info, int holder
 {
 	kref_debug_sub(debug_info, 1, holder_nr);
 }
-void __check_kref_debug_info(struct kref_debug_info *, const char *, int);
-#define check_kref_debug_info(D) __check_kref_debug_info(D, __FILE__, __LINE__)
 #else
 struct kref_debug_class {};
 struct kref_debug_info {};
@@ -54,8 +51,6 @@ static inline void kref_debug_sub(struct kref_debug_info *debug_info, int refs, 
 static inline void kref_debug_put(struct kref_debug_info *debug_info, int holder_nr)
 {}
 static inline void print_kref_debug_info(struct seq_file *seq)
-{}
-static inline void check_kref_debug_info(struct kref_debug_info *debug_info)
 {}
 #endif
 
