@@ -33,6 +33,7 @@ struct kref_debug_class kref_class_device = {
 	"device", {
 		[1] = "struct drbd_peer_device / free",
 		[2] = "struct drbd_state_change",
+		[3] = "open / release",
 	}
 };
 
