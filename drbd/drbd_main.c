@@ -3036,6 +3036,7 @@ void drbd_destroy_connection(struct kref *kref)
 	kfree(connection->current_epoch);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		kref_debug_put(&peer_device->device->kref_debug, 1);
 		kobject_put(&peer_device->device->kobj);
 		free_peer_device(peer_device);
 	}
