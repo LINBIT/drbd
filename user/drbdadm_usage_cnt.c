@@ -742,11 +742,11 @@ int adm_create_md(const struct cfg_ctx *ctx)
 	int rv,fd;
 	char *r, *max_peers_str = NULL;
 	struct d_name *b_opt;
-	const char *peer_slots_str = "--peer-slots=";
+	const char *opt_max_peers = "--max-peers=";
 
-	b_opt = find_backend_option(peer_slots_str);
+	b_opt = find_backend_option(opt_max_peers);
 	if (b_opt) {
-		max_peers_str = ssprintf("%s", b_opt->name + strlen(peer_slots_str));
+		max_peers_str = ssprintf("%s", b_opt->name + strlen(opt_max_peers));
 		STAILQ_REMOVE(&backend_options, b_opt, d_name, link);
 		free(b_opt);
 	} else {
