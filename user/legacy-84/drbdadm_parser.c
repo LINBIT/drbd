@@ -1828,12 +1828,16 @@ static int parse_proxy_options(struct d_option **proxy_options, struct d_option 
 int parse_proxy_options_section(struct d_resource *res)
 {
 	int token;
+	struct d_resource dummy_res = { "dummy", };
 
 	token = yylex();
 	if (token != TK_PROXY) {
 		yyrestart(yyin); /* flushes flex's buffers */
 		return 1;
 	}
+
+	if (!res)
+		res = &dummy_res;
 
 	return parse_proxy_options(&res->proxy_options, &res->proxy_plugins);
 }
