@@ -2895,6 +2895,16 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		goto out;
 	}
 
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (!expect(connection, current != connection->receiver.task) ||
+		    !expect(connection, current != connection->asender.task)) {
+			rcu_read_unlock();
+			BUG();
+		}
+	}
+	rcu_read_unlock();
+
     retry:
 	complete_remote_state_change(resource, irq_flags);
 	start_time = jiffies;
