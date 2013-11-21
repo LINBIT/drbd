@@ -1562,6 +1562,7 @@ extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_put_device(struct drbd_device *);
 extern void drbd_unregister_connection(struct drbd_connection *);
 extern void drbd_put_connection(struct drbd_connection *);
+void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_free_resource(struct drbd_resource *resource);
@@ -1791,7 +1792,6 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_orderin
 
 extern void twopc_timer_fn(unsigned long);
 extern void connect_timer_fn(unsigned long);
-int connect_timer_work(struct drbd_work *, int);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

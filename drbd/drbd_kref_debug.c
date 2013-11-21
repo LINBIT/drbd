@@ -26,6 +26,7 @@ struct kref_debug_class kref_class_connection = {
 		[8] = "target_connection/change_cluster_wide_state()",
 		[9] = "resource->twopc_parent",
 		[10] = "free",
+		[11] = "connect_timer",
 	}
 };
 

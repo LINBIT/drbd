@@ -2995,7 +2995,6 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	mutex_init(&connection->meta.mutex);
 
 	INIT_LIST_HEAD(&connection->connect_timer_work.list);
-	connection->connect_timer_work.cb = connect_timer_work;
 	setup_timer(&connection->connect_timer,
 		    connect_timer_fn,
 		    (unsigned long) connection);
@@ -3377,13 +3376,20 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	list_del_rcu(&connection->connections);
 }
 
+void del_connect_timer(struct drbd_connection *connection)
+{
+	if (del_timer_sync(&connection->connect_timer)) {
+		kref_debug_put(&connection->kref_debug, 11);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 void drbd_put_connection(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr, refs = 1;
 
-	del_timer_sync(&connection->connect_timer);
-
+	del_connect_timer(connection);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		refs++;
 	kref_debug_sub(&connection->kref_debug, refs - 1, 3);

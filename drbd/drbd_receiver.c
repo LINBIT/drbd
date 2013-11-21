@@ -1154,7 +1154,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
-int connect_timer_work(struct drbd_work *work, int cancel)
+static int connect_timeout_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
@@ -1168,7 +1168,7 @@ int connect_timer_work(struct drbd_work *work, int cancel)
 		drbd_info(connection, "Failure to connect; retrying\n");
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
-	kref_debug_put(&connection->kref_debug, 10);
+	kref_debug_put(&connection->kref_debug, 11);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return 0;
 }
@@ -1179,8 +1179,6 @@ void connect_timer_fn(unsigned long data)
 	struct drbd_resource *resource = connection->resource;
 	unsigned long irq_flags;
 
-	kref_get(&connection->kref);
-	kref_debug_get(&connection->kref_debug, 10);
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
 	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
@@ -1440,6 +1438,11 @@ randomize:
 				goto out;
 			}
 			conn_connect2(connection);
+		} else {
+			kref_get(&connection->kref);
+			kref_debug_get(&connection->kref_debug, 11);
+			connection->connect_timer_work.cb = connect_timeout_work;
+			mod_timer(&connection->connect_timer, jiffies + twopc_timeout(resource));
 		}
 	} else {
 		enum drbd_state_rv rv;
@@ -5067,6 +5070,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	resource->twopc_reply = reply;
 	spin_unlock_irq(&resource->req_lock);
+	del_connect_timer(connection);
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
