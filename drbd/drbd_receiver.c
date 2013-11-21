@@ -1397,7 +1397,7 @@ randomize:
 	if (drbd_send_protocol(connection) == -EOPNOTSUPP) {
 		/* give up; go standalone */
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		return -1;
+		return false;
 	}
 
 	rcu_read_lock();
@@ -1454,7 +1454,7 @@ randomize:
 		}
 		conn_connect2(connection);
 	}
-	return 1;
+	return true;
 
 out_release_sockets:
 	put_listener(&waiter);
