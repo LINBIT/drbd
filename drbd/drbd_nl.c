@@ -1889,7 +1889,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 
  remove_kobject:
-	drbd_free_bc(nbc);
+	drbd_free_ldev(nbc);
 	nbc = NULL;
  force_diskless_dec:
 	put_ldev(device);

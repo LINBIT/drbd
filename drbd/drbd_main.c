@@ -2083,7 +2083,7 @@ void drbd_device_cleanup(struct drbd_device *device)
 		drbd_bm_cleanup(device);
 	}
 
-	drbd_free_bc(device->ldev);
+	drbd_free_ldev(device->ldev);
 	device->ldev = NULL;
 
 	clear_bit(AL_SUSPENDED, &device->flags);
@@ -2278,7 +2278,7 @@ static void drbd_destroy_device(struct kobject *kobj)
 	if (device->this_bdev)
 		bdput(device->this_bdev);
 
-	drbd_free_bc(device->ldev);
+	drbd_free_ldev(device->ldev);
 	device->ldev = NULL;
 
 	drbd_release_all_peer_reqs(device);
@@ -3079,7 +3079,7 @@ fail:
 	return err;
 }
 
-void drbd_free_bc(struct drbd_backing_dev *ldev)
+void drbd_free_ldev(struct drbd_backing_dev *ldev)
 {
 	if (ldev == NULL)
 		return;
@@ -3653,7 +3653,7 @@ void drbd_ldev_destroy(struct drbd_device *device)
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
 	__no_warn(local,
-		drbd_free_bc(device->ldev);
+		drbd_free_ldev(device->ldev);
 		device->ldev = NULL;);
 
 	clear_bit(GO_DISKLESS, &device->flags);
