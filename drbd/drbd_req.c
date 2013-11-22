@@ -1540,36 +1540,13 @@ int drbd_merge_bvec(struct request_queue *q,
 	return limit;
 }
 
-static void find_oldest_requests(
-		struct drbd_connection *connection,
-		struct drbd_device *device,
-		struct drbd_request **oldest_req_waiting_for_peer,
-		struct drbd_request **oldest_req_waiting_for_disk)
-{
-	struct drbd_request *r;
-	*oldest_req_waiting_for_peer = NULL;
-	*oldest_req_waiting_for_disk = NULL;
-	list_for_each_entry(r, &connection->transfer_log, tl_requests) {
-		const unsigned s = r->rq_state;
-		if (!*oldest_req_waiting_for_peer
-		&& ((s & RQ_NET_MASK) && !(s & RQ_NET_DONE)))
-			*oldest_req_waiting_for_peer = r;
-
-		if (!*oldest_req_waiting_for_disk
-		&& (s & RQ_LOCAL_PENDING) && r->device == device)
-			*oldest_req_waiting_for_disk = r;
-
-		if (*oldest_req_waiting_for_peer && *oldest_req_waiting_for_disk)
-			break;
-	}
-}
-
 void request_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
 	struct drbd_connection *connection = first_peer_device(device)->connection;
-	struct drbd_request *req_disk, *req_peer; /* oldest request */
+	struct drbd_request *req_read, *req_write, *req_peer; /* oldest request */
 	struct net_conf *nc;
+	unsigned long oldest_submit_jif;
 	unsigned long ent = 0, dt = 0, et, nt; /* effective timeout = ko_count * timeout */
 	unsigned long now;
 
@@ -1590,14 +1567,31 @@ void request_timer_fn(unsigned long data)
 		return; /* Recurring timer stopped */
 
 	now = jiffies;
+	nt = now + et;
 
 	spin_lock_irq(&device->resource->req_lock);
-	find_oldest_requests(connection, device, &req_peer, &req_disk);
-	if (req_peer == NULL && req_disk == NULL) {
-		spin_unlock_irq(&device->resource->req_lock);
-		mod_timer(&device->request_timer, now + et);
-		return;
-	}
+	req_read = list_first_entry_or_null(&device->pending_completion[0], struct drbd_request, req_pending_local);
+	req_write = list_first_entry_or_null(&device->pending_completion[1], struct drbd_request, req_pending_local);
+	req_peer = connection->req_not_net_done;
+	/* maybe the oldest request waiting for the peer is in fact still
+	 * blocking in tcp sendmsg */
+	if (!req_peer && connection->req_next && connection->req_next->pre_send_jif)
+		req_peer = connection->req_next;
+
+	/* evaluate the oldest peer request only in one timer! */
+	if (req_peer && req_peer->device != device)
+		req_peer = NULL;
+
+	/* do we have something to evaluate? */
+	if (req_peer == NULL && req_write == NULL && req_read == NULL)
+		goto out;
+
+	oldest_submit_jif =
+		(req_write && req_read)
+		? ( time_before(req_write->pre_submit_jif, req_read->pre_submit_jif)
+		  ? req_write->pre_submit_jif : req_read->pre_submit_jif )
+		: req_write ? req_write->pre_submit_jif
+		: req_read ? req_read->pre_submit_jif : now;
 
 	/* The request is considered timed out, if
 	 * - we have some effective timeout from the configuration,
@@ -1616,13 +1610,13 @@ void request_timer_fn(unsigned long data)
 	 * to expire twice (worst case) to become effective. Good enough.
 	 */
 	if (ent && req_peer &&
-		 time_after(now, req_peer->start_jif + ent) &&
+		 time_after(now, req_peer->pre_send_jif + ent) &&
 		!time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
 		drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
 		_drbd_set_state(_NS(device, conn, C_TIMEOUT), CS_VERBOSE | CS_HARD, NULL);
 	}
-	if (dt && req_disk &&
-		 time_after(now, req_disk->start_jif + dt) &&
+	if (dt && oldest_submit_jif != now &&
+		 time_after(now, oldest_submit_jif + dt) &&
 		!time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
 		drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
 		__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
@@ -1630,11 +1624,12 @@ void request_timer_fn(unsigned long data)
 
 	/* Reschedule timer for the nearest not already expired timeout.
 	 * Fallback to now + min(effective network timeout, disk timeout). */
-	ent = (ent && req_peer && time_before(now, req_peer->start_jif + ent))
-		? req_peer->start_jif + ent : now + et;
-	dt = (dt && req_disk && time_before(now, req_disk->start_jif + dt))
-		? req_disk->start_jif + dt : now + et;
+	ent = (ent && req_peer && time_before(now, req_peer->pre_send_jif + ent))
+		? req_peer->pre_send_jif + ent : now + et;
+	dt = (dt && oldest_submit_jif != now && time_before(now, oldest_submit_jif + dt))
+		? oldest_submit_jif + dt : now + et;
 	nt = time_before(ent, dt) ? ent : dt;
+out:
 	spin_unlock_irq(&connection->resource->req_lock);
 	mod_timer(&device->request_timer, nt);
 }
