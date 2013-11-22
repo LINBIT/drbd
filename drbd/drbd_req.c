@@ -365,12 +365,91 @@ static int drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_
 	return 1;
 }
 
+static void set_if_null_req_next(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_next == NULL)
+		connection->req_next = req;
+}
+
+static void advance_conn_req_next(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_next != req)
+		return;
+	list_for_each_entry_continue(req, &connection->transfer_log, tl_requests) {
+		const unsigned s = req->rq_state;
+		if (s & RQ_NET_QUEUED)
+			break;
+	}
+	if (&req->tl_requests == &connection->transfer_log)
+		req = NULL;
+	connection->req_next = req;
+}
+
+static void set_if_null_req_ack_pending(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_ack_pending == NULL)
+		connection->req_ack_pending = req;
+}
+
+static void advance_conn_req_ack_pending(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_ack_pending != req)
+		return;
+	list_for_each_entry_continue(req, &connection->transfer_log, tl_requests) {
+		const unsigned s = req->rq_state;
+		if ((s & RQ_NET_SENT) && (s & RQ_NET_PENDING))
+			break;
+	}
+	if (&req->tl_requests == &connection->transfer_log)
+		req = NULL;
+	connection->req_ack_pending = req;
+}
+
+static void set_if_null_req_not_net_done(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_not_net_done == NULL)
+		connection->req_not_net_done = req;
+}
+
+static void advance_conn_req_not_net_done(struct drbd_peer_device *peer_device, struct drbd_request *req)
+{
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	if (!connection)
+		return;
+	if (connection->req_not_net_done != req)
+		return;
+	list_for_each_entry_continue(req, &connection->transfer_log, tl_requests) {
+		const unsigned s = req->rq_state;
+		if ((s & RQ_NET_SENT) && !(s & RQ_NET_DONE))
+			break;
+	}
+	if (&req->tl_requests == &connection->transfer_log)
+		req = NULL;
+	connection->req_not_net_done = req;
+}
+
 /* I'd like this to be the only place that manipulates
  * req->completion_ref and req->kref. */
 static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		int clear, int set)
 {
 	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device = first_peer_device(device);
 	unsigned s = req->rq_state;
 	int c_put = 0;
 	int k_put = 0;
@@ -399,6 +478,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (!(s & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
 		atomic_inc(&req->completion_ref);
+		set_if_null_req_next(peer_device, req);
 	}
 
 	if (!(s & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
@@ -406,8 +486,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (!(s & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
 		/* potentially already completed in the asender thread */
-		if (!(s & RQ_NET_DONE))
+		if (!(s & RQ_NET_DONE)) {
 			atomic_add(req->i.size >> 9, &device->ap_in_flight);
+			set_if_null_req_not_net_done(peer_device, req);
+		}
+		if (s & RQ_NET_PENDING)
+			set_if_null_req_ack_pending(peer_device, req);
 	}
 
 	if (!(s & RQ_COMPLETION_SUSP) && (set & RQ_COMPLETION_SUSP))
@@ -438,10 +522,13 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		dec_ap_pending(device);
 		++c_put;
 		req->acked_jif = jiffies;
+		advance_conn_req_ack_pending(peer_device, req);
 	}
 
-	if ((s & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED))
+	if ((s & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
 		++c_put;
+		advance_conn_req_next(peer_device, req);
+	}
 
 	if (!(s & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
 		if (s & RQ_NET_SENT)
@@ -449,6 +536,13 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		if (s & RQ_EXP_BARR_ACK)
 			++k_put;
 		req->net_done_jif = jiffies;
+
+		/* in ahead/behind mode, or just in case,
+		 * before we finally destroy this request,
+		 * the caching pointers must not reference it anymore */
+		advance_conn_req_next(peer_device, req);
+		advance_conn_req_ack_pending(peer_device, req);
+		advance_conn_req_not_net_done(peer_device, req);
 	}
 
 	/* potentially complete and destroy */
