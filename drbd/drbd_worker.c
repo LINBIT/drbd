@@ -1397,6 +1397,7 @@ int w_send_out_of_sync(struct drbd_work *w, int cancel)
 		req_mod(req, SEND_CANCELED);
 		return 0;
 	}
+	req->pre_send_jif = jiffies;
 
 	/* this time, no connection->send.current_epoch_writes++;
 	 * If it was sent, it was the closing barrier for the last
@@ -1427,6 +1428,7 @@ int w_send_dblock(struct drbd_work *w, int cancel)
 		req_mod(req, SEND_CANCELED);
 		return 0;
 	}
+	req->pre_send_jif = jiffies;
 
 	re_init_if_first_write(connection, req->epoch);
 	maybe_send_barrier(connection, req->epoch);
@@ -1456,6 +1458,7 @@ int w_send_read_req(struct drbd_work *w, int cancel)
 		req_mod(req, SEND_CANCELED);
 		return 0;
 	}
+	req->pre_send_jif = jiffies;
 
 	/* Even read requests may close a write epoch,
 	 * if there was any yet. */

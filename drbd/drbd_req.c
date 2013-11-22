@@ -80,7 +80,7 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
 	int rw = bio_data_dir(req->master_bio);
-	unsigned long duration = jiffies - req->start_time;
+	unsigned long duration = jiffies - req->start_jif;
 #ifndef __disk_stat_inc
 	int cpu;
 #endif
@@ -105,7 +105,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 {
 	struct drbd_request *req;
 
-	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
+	req = mempool_alloc(drbd_request_mempool, GFP_NOIO | __GFP_ZERO);
 	if (!req)
 		return NULL;
 
@@ -394,14 +394,18 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_inc(&req->completion_ref);
 	}
 
-	if (!(s & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED))
+	if (!(s & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
 		atomic_inc(&req->completion_ref);
+	}
 
 	if (!(s & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		kref_get(&req->kref); /* wait for the DONE */
 
-	if (!(s & RQ_NET_SENT) && (set & RQ_NET_SENT))
-		atomic_add(req->i.size >> 9, &device->ap_in_flight);
+	if (!(s & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
+		/* potentially already completed in the asender thread */
+		if (!(s & RQ_NET_DONE))
+			atomic_add(req->i.size >> 9, &device->ap_in_flight);
+	}
 
 	if (!(s & RQ_COMPLETION_SUSP) && (set & RQ_COMPLETION_SUSP))
 		atomic_inc(&req->completion_ref);
@@ -429,15 +433,18 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if ((s & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
 		dec_ap_pending(device);
 		++c_put;
+		req->acked_jif = jiffies;
 	}
 
 	if ((s & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED))
 		++c_put;
 
-	if ((s & RQ_EXP_BARR_ACK) && !(s & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
-		if (req->rq_state & RQ_NET_SENT)
+	if (!(s & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
+		if (s & RQ_NET_SENT)
 			atomic_sub(req->i.size >> 9, &device->ap_in_flight);
-		++k_put;
+		if (s & RQ_EXP_BARR_ACK)
+			++k_put;
+		req->net_done_jif = jiffies;
 	}
 
 	/* potentially complete and destroy */
@@ -655,6 +662,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case HANDED_OVER_TO_NETWORK:
 		/* assert something? */
+		mod_rq_state(req, m, RQ_NET_QUEUED, RQ_NET_SENT);
 		if (bio_data_dir(req->master_bio) == WRITE &&
 		    !(req->rq_state & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))) {
 			/* this is what is dangerous about protocol A:
@@ -666,7 +674,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			 * corresponding epoch barrier got acked as well,
 			 * so we know what to dirty on connection loss */
 		}
-		mod_rq_state(req, m, RQ_NET_QUEUED, RQ_NET_SENT);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
@@ -1062,6 +1069,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	 * stable storage, and this is a WRITE, we may not even submit
 	 * this bio. */
 	if (get_ldev(device)) {
+		req->pre_submit_jif = jiffies;
 		if (drbd_insert_fault(device,
 				      rw == WRITE ? DRBD_FAULT_DT_WR
 				    : rw == READ  ? DRBD_FAULT_DT_RD
@@ -1088,7 +1096,7 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
  * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
  */
 struct drbd_request *
-drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long start_time)
+drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long start_jif)
 {
 	const int rw = bio_data_dir(bio);
 	struct drbd_request *req;
@@ -1103,7 +1111,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 		bio_endio(bio, -ENOMEM);
 		return ERR_PTR(-ENOMEM);
 	}
-	req->start_time = start_time;
+	req->start_jif = start_jif;
 
 	if (!get_ldev(device)) {
 		bio_put(req->private_bio);
@@ -1120,6 +1128,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 			return NULL;
 		}
 		req->rq_state |= RQ_IN_ACT_LOG;
+		req->in_actlog_jif = jiffies;
 	}
 
 	return req;
@@ -1222,9 +1231,9 @@ out:
 		complete_master_bio(device, &m);
 }
 
-void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_time)
+void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_jif)
 {
-	struct drbd_request *req = drbd_request_prepare(device, bio, start_time);
+	struct drbd_request *req = drbd_request_prepare(device, bio, start_jif);
 	if (IS_ERR_OR_NULL(req))
 		return;
 	drbd_send_and_submit(device, req);
@@ -1243,6 +1252,7 @@ static void submit_fast_path(struct drbd_device *device, struct list_head *incom
 				continue;
 
 			req->rq_state |= RQ_IN_ACT_LOG;
+			req->in_actlog_jif = jiffies;
 		}
 
 		list_del_init(&req->tl_requests);
@@ -1266,6 +1276,7 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 		if (err)
 			continue;
 		req->rq_state |= RQ_IN_ACT_LOG;
+		req->in_actlog_jif = jiffies;
 		list_move_tail(&req->tl_requests, pending);
 	}
 	spin_unlock_irq(&device->al_lock);
@@ -1336,9 +1347,12 @@ skip_fast_path:
 		 * requests to cold extents. In that case, prepare one request
 		 * in blocking mode. */
 		list_for_each_entry_safe(req, tmp, &incoming, tl_requests) {
+			bool was_cold;
 			list_del_init(&req->tl_requests);
+			was_cold = drbd_al_begin_io_prepare(device, &req->i);
 			req->rq_state |= RQ_IN_ACT_LOG;
-			if (!drbd_al_begin_io_prepare(device, &req->i)) {
+			req->in_actlog_jif = jiffies;
+			if (!was_cold) {
 				/* Corresponding extent was hot after all? */
 				drbd_send_and_submit(device, req);
 			} else {
@@ -1355,7 +1369,7 @@ skip_fast_path:
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
-	unsigned long start_time;
+	unsigned long start_jif;
 
 	/* We never supported BIO_RW_BARRIER.
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
@@ -1366,7 +1380,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-	start_time = jiffies;
+	start_jif = jiffies;
 
 	/*
 	 * what we "blindly" assume:
@@ -1374,7 +1388,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	D_ASSERT(device, IS_ALIGNED(bio->bi_size, 512));
 
 	inc_ap_bio(device);
-	__drbd_make_request(device, bio, start_time);
+	__drbd_make_request(device, bio, start_jif);
 
 	MAKE_REQUEST_RETURN;
 }
@@ -1495,13 +1509,13 @@ void request_timer_fn(unsigned long data)
 	 * to expire twice (worst case) to become effective. Good enough.
 	 */
 	if (ent && req_peer &&
-		 time_after(now, req_peer->start_time + ent) &&
+		 time_after(now, req_peer->start_jif + ent) &&
 		!time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent)) {
 		drbd_warn(device, "Remote failed to finish a request within ko-count * timeout\n");
 		_drbd_set_state(_NS(device, conn, C_TIMEOUT), CS_VERBOSE | CS_HARD, NULL);
 	}
 	if (dt && req_disk &&
-		 time_after(now, req_disk->start_time + dt) &&
+		 time_after(now, req_disk->start_jif + dt) &&
 		!time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
 		drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
 		__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
@@ -1509,10 +1523,10 @@ void request_timer_fn(unsigned long data)
 
 	/* Reschedule timer for the nearest not already expired timeout.
 	 * Fallback to now + min(effective network timeout, disk timeout). */
-	ent = (ent && req_peer && time_before(now, req_peer->start_time + ent))
-		? req_peer->start_time + ent : now + et;
-	dt = (dt && req_disk && time_before(now, req_disk->start_time + dt))
-		? req_disk->start_time + dt : now + et;
+	ent = (ent && req_peer && time_before(now, req_peer->start_jif + ent))
+		? req_peer->start_jif + ent : now + et;
+	dt = (dt && req_disk && time_before(now, req_disk->start_jif + dt))
+		? req_disk->start_jif + dt : now + et;
 	nt = time_before(ent, dt) ? ent : dt;
 	spin_unlock_irq(&connection->resource->req_lock);
 	mod_timer(&device->request_timer, nt);
