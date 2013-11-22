@@ -1202,7 +1202,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
-	if (connection->write_ordering >= WO_bdev_flush) {
+	if (connection->resource->write_ordering >= WO_bdev_flush) {
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
@@ -1219,7 +1219,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 				/* would rather check on EOPNOTSUPP, but that is not reliable.
 				 * don't try again for ANY return value != 0
 				 * if (rv == -EOPNOTSUPP) */
-				drbd_bump_write_ordering(connection, WO_drain_io);
+				drbd_bump_write_ordering(connection->resource, WO_drain_io);
 			}
 			put_ldev(device);
 			kobject_put(&device->kobj);
@@ -1265,6 +1265,7 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 	struct drbd_epoch *next_epoch;
 	int schedule_flush = 0;
 	enum finish_epoch rv = FE_STILL_LIVE;
+	struct drbd_resource *resource = connection->resource;
 
 	spin_lock(&connection->epoch_lock);
 	do {
@@ -1283,7 +1284,7 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 			/* Special case: If we just switched from WO_bio_barrier to
 			   WO_bdev_flush we should not finish the current epoch */
 			if (test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags) && epoch_size == 1 &&
-			    connection->write_ordering != WO_bio_barrier &&
+			    resource->write_ordering != WO_bio_barrier &&
 			    epoch == connection->current_epoch)
 				clear_bit(DE_CONTAINS_A_BARRIER, &epoch->flags);
 			break;
@@ -1302,13 +1303,13 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 		    !test_bit(DE_IS_FINISHING, &epoch->flags)) {
 			/* Nearly all conditions are met to finish that epoch... */
 			if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
-			    connection->write_ordering == WO_none ||
+			    resource->write_ordering == WO_none ||
 			    (epoch_size == 1 && test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) ||
 			    ev & EV_CLEANUP) {
 				finish = 1;
 				set_bit(DE_IS_FINISHING, &epoch->flags);
 			} else if (!test_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags) &&
-				 connection->write_ordering == WO_bio_barrier) {
+				 resource->write_ordering == WO_bio_barrier) {
 				atomic_inc(&epoch->active);
 				schedule_flush = 1;
 			}
@@ -1376,10 +1377,10 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
  * @connection:	DRBD connection.
  * @wo:		Write ordering method to try.
  */
-void drbd_bump_write_ordering(struct drbd_connection *connection, enum write_ordering_e wo)
+void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo)
 {
 	struct disk_conf *dc;
-	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
 	enum write_ordering_e pwo;
 	int vnr, i = 0;
 	static char *write_ordering_str[] = {
@@ -1389,12 +1390,10 @@ void drbd_bump_write_ordering(struct drbd_connection *connection, enum write_ord
 		[WO_bio_barrier] = "barrier",
 	};
 
-	pwo = connection->write_ordering;
+	pwo = resource->write_ordering;
 	wo = min(pwo, wo);
 	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (i++ == 1 && wo == WO_bio_barrier)
 			wo = WO_bdev_flush; /* WO = barrier does not handle multiple volumes */
 		if (!get_ldev_if_state(device, D_ATTACHING))
@@ -1410,9 +1409,9 @@ void drbd_bump_write_ordering(struct drbd_connection *connection, enum write_ord
 		put_ldev(device);
 	}
 	rcu_read_unlock();
-	connection->write_ordering = wo;
-	if (pwo != connection->write_ordering || wo == WO_bio_barrier)
-		drbd_info(connection, "Method to ensure write ordering: %s\n", write_ordering_str[connection->write_ordering]);
+	resource->write_ordering = wo;
+	if (pwo != resource->write_ordering || wo == WO_bio_barrier)
+		drbd_info(resource, "Method to ensure write ordering: %s\n", write_ordering_str[resource->write_ordering]);
 }
 
 void conn_wait_active_ee_empty(struct drbd_connection *connection);
@@ -1701,7 +1700,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	 * R_PRIMARY crashes now.
 	 * Therefore we must send the barrier_ack after the barrier request was
 	 * completed. */
-	switch (connection->write_ordering) {
+	switch (connection->resource->write_ordering) {
 	case WO_bio_barrier:
 	case WO_none:
 		if (rv == FE_RECYCLED)
@@ -2529,7 +2528,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	atomic_inc(&peer_req->epoch->epoch_size);
 	atomic_inc(&peer_req->epoch->active);
 
-	if (first_peer_device(device)->connection->write_ordering == WO_bio_barrier &&
+	if (device->resource->write_ordering == WO_bio_barrier &&
 	    atomic_read(&peer_req->epoch->epoch_size) == 1) {
 		struct drbd_epoch *epoch;
 		/* Issue a barrier if we start a new epoch, and the previous epoch

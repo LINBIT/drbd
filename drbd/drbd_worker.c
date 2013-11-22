@@ -141,7 +141,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	/* if this is a failed barrier request, disable use of barriers,
 	 * and schedule for resubmission */
 	if (is_failed_barrier(peer_req->flags)) {
-		drbd_bump_write_ordering(first_peer_device(device)->connection, WO_bdev_flush);
+		drbd_bump_write_ordering(device->resource, WO_bdev_flush);
 		spin_lock_irqsave(&device->resource->req_lock, flags);
 		list_del(&peer_req->w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
