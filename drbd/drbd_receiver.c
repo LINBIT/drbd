@@ -1219,7 +1219,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 				/* would rather check on EOPNOTSUPP, but that is not reliable.
 				 * don't try again for ANY return value != 0
 				 * if (rv == -EOPNOTSUPP) */
-				drbd_bump_write_ordering(connection->resource, WO_drain_io);
+				drbd_bump_write_ordering(connection->resource, NULL, WO_drain_io);
 			}
 			put_ldev(device);
 			kobject_put(&device->kobj);
@@ -1372,14 +1372,31 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 	return rv;
 }
 
+static enum write_ordering_e
+max_allowed_wo(struct drbd_backing_dev *bdev, enum write_ordering_e wo)
+{
+	struct disk_conf *dc;
+
+	dc = rcu_dereference(bdev->disk_conf);
+
+	if (wo == WO_bio_barrier && !dc->disk_barrier)
+		wo = WO_bdev_flush;
+	if (wo == WO_bdev_flush && !dc->disk_flushes)
+		wo = WO_drain_io;
+	if (wo == WO_drain_io && !dc->disk_drain)
+		wo = WO_none;
+
+	return wo;
+}
+
 /**
  * drbd_bump_write_ordering() - Fall back to an other write ordering method
  * @connection:	DRBD connection.
  * @wo:		Write ordering method to try.
  */
-void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo)
+void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,
+			      enum write_ordering_e wo)
 {
-	struct disk_conf *dc;
 	struct drbd_device *device;
 	enum write_ordering_e pwo;
 	int vnr, i = 0;
@@ -1396,19 +1413,19 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_orderin
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (i++ == 1 && wo == WO_bio_barrier)
 			wo = WO_bdev_flush; /* WO = barrier does not handle multiple volumes */
-		if (!get_ldev_if_state(device, D_ATTACHING))
-			continue;
-		dc = rcu_dereference(device->ldev->disk_conf);
 
-		if (wo == WO_bio_barrier && !dc->disk_barrier)
-			wo = WO_bdev_flush;
-		if (wo == WO_bdev_flush && !dc->disk_flushes)
-			wo = WO_drain_io;
-		if (wo == WO_drain_io && !dc->disk_drain)
-			wo = WO_none;
-		put_ldev(device);
+		if (get_ldev(device)) {
+			wo = max_allowed_wo(device->ldev, wo);
+			if (device->ldev == bdev)
+				bdev = NULL;
+			put_ldev(device);
+		}
 	}
 	rcu_read_unlock();
+
+	if (bdev)
+		wo = max_allowed_wo(bdev, wo);
+
 	resource->write_ordering = wo;
 	if (pwo != resource->write_ordering || wo == WO_bio_barrier)
 		drbd_info(resource, "Method to ensure write ordering: %s\n", write_ordering_str[resource->write_ordering]);
@@ -3995,7 +4012,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	}
 
 	device->peer_max_bio_size = be32_to_cpu(p->max_bio_size);
-	drbd_reconsider_max_bio_size(device);
 	/* Leave drbd_reconsider_max_bio_size() before drbd_determine_dev_size().
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_max_bio_size(), we can be sure that after
@@ -4003,6 +4019,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	ddsf = be16_to_cpu(p->dds_flags);
 	if (get_ldev(device)) {
+		drbd_reconsider_max_bio_size(device, device->ldev);
 		dd = drbd_determine_dev_size(device, ddsf, NULL);
 		put_ldev(device);
 		if (dd == DS_ERROR)
@@ -4010,6 +4027,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_md_sync(device);
 	} else {
 		/* I am diskless, need to accept the peer's size. */
+		drbd_reconsider_max_bio_size(device, NULL);
 		drbd_set_my_capacity(device, p_size);
 	}
 
