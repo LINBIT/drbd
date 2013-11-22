@@ -123,6 +123,8 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 
 	INIT_LIST_HEAD(&req->tl_requests);
 	INIT_LIST_HEAD(&req->w.list);
+	INIT_LIST_HEAD(&req->req_pending_master_completion);
+	INIT_LIST_HEAD(&req->req_pending_local);
 
 	/* one reference to be put by __drbd_make_request */
 	atomic_set(&req->completion_ref, 1);
@@ -339,6 +341,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		m->error = ok ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
+		list_del_init(&req->req_pending_master_completion);
 	}
 }
 
@@ -428,6 +431,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			++k_put;
 		else
 			++c_put;
+		list_del_init(&req->req_pending_local);
 	}
 
 	if ((s & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
@@ -1084,9 +1088,11 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
-	spin_lock(&device->submit.lock);
+	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&req->tl_requests, &device->submit.writes);
-	spin_unlock(&device->submit.lock);
+	list_add_tail(&req->req_pending_master_completion,
+			&device->pending_master_completion[1 /* WRITE */]);
+	spin_unlock_irq(&device->resource->req_lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 }
 
@@ -1200,8 +1206,15 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			no_remote = true;
 	}
 
+	/* If it took the fast path in drbd_request_prepare, add it here.
+	 * The slow path has added it already. */
+	if (list_empty(&req->req_pending_master_completion))
+		list_add_tail(&req->req_pending_master_completion,
+			&device->pending_master_completion[rw == WRITE]);
 	if (req->private_bio) {
 		/* needs to be marked within the same spinlock */
+		list_add_tail(&req->req_pending_local,
+			&device->pending_completion[rw == WRITE]);
 		_req_mod(req, TO_BE_SUBMITTED);
 		/* but we need to give up the spinlock to submit */
 		submit_private_bio = true;
@@ -1294,9 +1307,9 @@ void do_submit(struct work_struct *ws)
 	struct drbd_request *req, *tmp;
 
 	for (;;) {
-		spin_lock(&device->submit.lock);
+		spin_lock_irq(&device->resource->req_lock);
 		list_splice_tail_init(&device->submit.writes, &incoming);
-		spin_unlock(&device->submit.lock);
+		spin_unlock_irq(&device->resource->req_lock);
 
 		submit_fast_path(device, &incoming);
 		if (list_empty(&incoming))
@@ -1320,9 +1333,9 @@ skip_fast_path:
 			if (list_empty(&device->submit.writes))
 				break;
 
-			spin_lock(&device->submit.lock);
+			spin_lock_irq(&device->resource->req_lock);
 			list_splice_tail_init(&device->submit.writes, &more_incoming);
-			spin_unlock(&device->submit.lock);
+			spin_unlock_irq(&device->resource->req_lock);
 
 			if (list_empty(&more_incoming))
 				break;

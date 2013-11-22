@@ -2020,6 +2020,10 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->start_resync_work.list);
 	INIT_LIST_HEAD(&device->bm_io_work.w.list);
+	INIT_LIST_HEAD(&device->pending_master_completion[0]);
+	INIT_LIST_HEAD(&device->pending_master_completion[1]);
+	INIT_LIST_HEAD(&device->pending_completion[0]);
+	INIT_LIST_HEAD(&device->pending_completion[1]);
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
@@ -2793,7 +2797,6 @@ int init_submitter(struct drbd_device *device)
 #else
 	INIT_WORK(&device->submit.worker, do_submit);
 #endif
-	spin_lock_init(&device->submit.lock);
 	INIT_LIST_HEAD(&device->submit.writes);
 	return 0;
 }
