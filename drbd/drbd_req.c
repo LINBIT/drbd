@@ -492,7 +492,9 @@ static void drbd_report_io_error(struct drbd_device *device, struct drbd_request
 int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m)
 {
-	struct drbd_device *device = req->device;
+	struct drbd_device *const device = req->device;
+	struct drbd_peer_device *const peer_device = first_peer_device(device);
+	struct drbd_connection *const connection = peer_device ? peer_device->connection : NULL;
 	struct net_conf *nc;
 	int p, rv = 0;
 
@@ -515,7 +517,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * and from w_read_retry_remote */
 		D_ASSERT(device, !(req->rq_state & RQ_NET_MASK));
 		rcu_read_lock();
-		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+		nc = rcu_dereference(connection->net_conf);
 		p = nc->wire_protocol;
 		rcu_read_unlock();
 		req->rq_state |=
@@ -587,7 +589,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, (req->rq_state & RQ_LOCAL_MASK) == 0);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
 		req->w.cb = w_send_read_req;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&connection->sender_work,
 				&req->w);
 		break;
 
@@ -623,23 +625,23 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state & RQ_NET_PENDING);
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
 		req->w.cb =  w_send_dblock;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&connection->sender_work,
 				&req->w);
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
-		nc = rcu_dereference(first_peer_device(device)->connection->net_conf);
+		nc = rcu_dereference(connection->net_conf);
 		p = nc->max_epoch_size;
 		rcu_read_unlock();
-		if (first_peer_device(device)->connection->current_tle_writes >= p)
-			start_new_tl_epoch(first_peer_device(device)->connection);
+		if (connection->current_tle_writes >= p)
+			start_new_tl_epoch(connection);
 
 		break;
 
 	case QUEUE_FOR_SEND_OOS:
 		mod_rq_state(req, m, 0, RQ_NET_QUEUED);
 		req->w.cb =  w_send_out_of_sync;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&connection->sender_work,
 				&req->w);
 		break;
 
@@ -752,7 +754,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		get_ldev(device); /* always succeeds in this call path */
 		req->w.cb = w_restart_disk_io;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+		drbd_queue_work(&connection->sender_work,
 				&req->w);
 		break;
 
@@ -774,7 +776,8 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 			mod_rq_state(req, m, RQ_COMPLETION_SUSP, RQ_NET_QUEUED|RQ_NET_PENDING);
 			if (req->w.cb) {
-				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
+				/* w.cb expected to be w_send_dblock, or w_send_read_req */
+				drbd_queue_work(&connection->sender_work,
 						&req->w);
 				rv = req->rq_state & RQ_WRITE ? MR_WRITE : MR_READ;
 			} /* else: FIXME can this happen? */
@@ -807,7 +810,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case QUEUE_AS_DRBD_BARRIER:
-		start_new_tl_epoch(first_peer_device(device)->connection);
+		start_new_tl_epoch(connection);
 		mod_rq_state(req, m, 0, RQ_NET_OK|RQ_NET_DONE);
 		break;
 	};
