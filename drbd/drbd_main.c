@@ -161,9 +161,118 @@ static const struct block_device_operations drbd_ops = {
 	.release = drbd_release,
 };
 
+struct drbd_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct drbd_device *device, char *buf);
+	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
+};
+
+static ssize_t oldest_requests_show(struct drbd_device *device, char *buf)
+{
+	struct drbd_peer_device *peer_device = first_peer_device(device);
+	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
+	unsigned long now = jiffies;
+	struct drbd_request *r;
+	size_t count = 0;
+	int age1, age2;
+
+	spin_lock_irq(&connection->resource->req_lock);
+
+	/* oldest READ, waiting for master completion */
+	r = list_first_entry_or_null(&device->pending_master_completion[0],
+		struct drbd_request, req_pending_master_completion);
+	if (r) {
+		age1 = jiffies_to_msecs(now - r->start_jif);
+		if (r->pre_submit_jif)
+			age2 = jiffies_to_msecs(now - r->pre_submit_jif);
+		else if (r->pre_send_jif)
+			age2 = jiffies_to_msecs(now - r->pre_send_jif);
+		else
+			age2 = -1;
+	} else
+		age1 = age2 = -1;
+	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
+
+	/* oldest WRITE, waiting for master completion */
+	r = list_first_entry_or_null(&device->pending_master_completion[1],
+		struct drbd_request, req_pending_master_completion);
+	if (r) {
+		age1 = jiffies_to_msecs(now - r->start_jif);
+		if (r->in_actlog_jif)
+			age2 = jiffies_to_msecs(now - r->in_actlog_jif);
+		else
+			age2 = -1;
+	} else
+		age1 = age2 = -1;
+	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
+
+	/* oldest WRITE, waiting for local disk (may be the same as above) */
+	r = list_first_entry_or_null(&device->pending_completion[1],
+		struct drbd_request, req_pending_master_completion);
+	if (r) {
+		age1 = jiffies_to_msecs(now - r->start_jif);
+		if (r->pre_submit_jif)
+			age2 = jiffies_to_msecs(now - r->pre_submit_jif);
+		else
+			age2 = -1;
+	} else
+		age1 = age2 = -1;
+	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
+
+	/* oldest request, waiting for peer ack */
+	r = connection->req_ack_pending;
+	if (r) {
+		age1 = jiffies_to_msecs(now - r->start_jif);
+		if (r->pre_send_jif)
+			age2 = jiffies_to_msecs(now - r->pre_send_jif);
+		else
+			age2 = -1;
+	} else
+		age1 = age2 = -1;
+	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
+
+	/* oldest request, waiting for barrier */
+	r = connection->req_not_net_done;
+	if (r) {
+		age1 = jiffies_to_msecs(now - r->start_jif);
+		if (r->acked_jif)
+			age2 = jiffies_to_msecs(now - r->acked_jif);
+		else
+			age2 = -1;
+	} else
+		age1 = age2 = -1;
+	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
+
+	spin_unlock_irq(&connection->resource->req_lock);
+	return count;
+}
+
+static ssize_t drbd_attr_show(struct kobject *, struct attribute *, char *);
+#define DRBD_ATTR(_name) struct drbd_attribute drbd_attr_##_name = __ATTR_RO(_name)
+static DRBD_ATTR(oldest_requests);
+
+static struct attribute *drbd_device_attrs[] = {
+	&drbd_attr_oldest_requests.attr,
+	NULL
+};
+
 static struct kobj_type drbd_device_kobj_type = {
 	.release = drbd_destroy_device,
+	.sysfs_ops = &(struct sysfs_ops) {
+		.show = drbd_attr_show,
+		.store = NULL,
+	},
+	.default_attrs = drbd_device_attrs,
 };
+
+static ssize_t drbd_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
+{
+	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
+	struct drbd_attribute *drbd_attr = container_of(attr, struct drbd_attribute, attr);
+
+	return drbd_attr->show(device, buffer);
+}
+
 
 #ifdef COMPAT_HAVE_BIO_BI_DESTRUCTOR
 static void bio_destructor_drbd(struct bio *bio)
