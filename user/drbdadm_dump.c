@@ -163,9 +163,16 @@ static void dump_proxy_plugins(struct options *options)
 
 void dump_global_info()
 {
+	static const char * const yes_no_ask[] = {
+		[UC_YES] = "yes",
+		[UC_NO] = "no",
+		[UC_ASK] = "ask",
+	};
 	if (!global_options.minor_count
 	    && !global_options.disable_ip_verification
-	    && global_options.dialog_refresh == 1)
+	    && global_options.dialog_refresh == 1
+	    && global_options.usage_count == UC_ASK
+	    && !verbose)
 		return;
 	printI("global {\n");
 	++indent;
@@ -175,6 +182,8 @@ void dump_global_info()
 		printI("minor-count %i;\n", global_options.minor_count);
 	if (global_options.dialog_refresh != 1)
 		printI("dialog-refresh %i;\n", global_options.dialog_refresh);
+	if (global_options.usage_count != UC_ASK)
+		printI("usage-count %s;\n", yes_no_ask[global_options.usage_count]);
 	--indent;
 	printI("}\n\n");
 }
@@ -530,6 +539,11 @@ int adm_dump(const struct cfg_ctx *ctx)
 	struct connection *conn;
 	struct d_volume *vol;
 
+	if (!res) {
+		printI("# no resources configured\n");
+		return 0;
+	}
+
 	printI("# resource %s on %s: %s, %s\n",
 	       esc(res->name), canonname,
 	       res->ignore ? "ignored" : "not ignored",
@@ -570,6 +584,11 @@ int adm_dump_xml(const struct cfg_ctx *ctx)
 	struct d_host_info *host;
 	struct d_resource *res = ctx->res;
 	struct connection *conn;
+
+	if (!res) {
+		printI("<!-- No resources configured -->\n");
+		return 0;
+	}
 
 	printI("<resource name=\"%s\" conf-file-line=\"%s:%u\">\n",
 		esc_xml(res->name),

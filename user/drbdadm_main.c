@@ -3205,7 +3205,7 @@ int main(int argc, char **argv)
 
 	ctx.cmd = cmd;
 	if (cmd->res_name_required || resource_names[0]) {
-		if (STAILQ_EMPTY(&config)) {
+		if (STAILQ_EMPTY(&config) && !is_dump) {
 			fprintf(stderr, "no resources defined!\n");
 			exit(E_USAGE);
 		}
