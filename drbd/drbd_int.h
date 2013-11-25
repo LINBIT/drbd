@@ -2517,7 +2517,8 @@ struct bm_extent {
 
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {
-	return list_first_entry(&resource->connections, struct drbd_connection, connections);
+	return list_first_entry_or_null(&resource->connections,
+				struct drbd_connection, connections);
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
