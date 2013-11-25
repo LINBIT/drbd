@@ -2930,6 +2930,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	resource->max_node_id = res_opts->node_id;
 	resource->twopc_reply.initiator_node_id = -1;
 	mutex_init(&resource->conf_update);
+	mutex_init(&resource->adm_mutex);
 	spin_lock_init(&resource->req_lock);
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);

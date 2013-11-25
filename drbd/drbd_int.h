@@ -755,8 +755,9 @@ struct drbd_resource {
 	struct list_head resources;
 	struct res_opts res_opts;
 	int max_node_id;
-	/* conf_update protects the devices, connections, peer devices, net_conf, disk_conf */
-	struct mutex conf_update;
+	struct mutex conf_update;	/* for ready-copy-update of net_conf and disk_conf
+					   and devices, connection and peer_devices lists */
+	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
 	int open_rw_cnt, open_ro_cnt;
 	spinlock_t req_lock;
 	u64 dagtag_sector;		/* Protected by req_lock.
