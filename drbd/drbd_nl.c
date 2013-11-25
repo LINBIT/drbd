@@ -1449,12 +1449,14 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 {
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
+	struct request_queue *b = NULL;
 
 	if (get_ldev_if_state(device, D_ATTACHING)) {
-		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
+		b = device->ldev->backing_bdev->bd_disk->queue;
 
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
-		put_ldev(device);
+
+		blk_set_stacking_limits(&q->limits);
 	}
 
 	blk_queue_logical_block_size(q, 512);
@@ -1462,13 +1464,11 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
 
-	if (get_ldev_if_state(device, D_ATTACHING)) {
+	if (b) {
 		struct request_queue * const b = device->ldev->backing_bdev->bd_disk->queue;
 		u32 agreed_featurs = common_connection_features(device->resource);
 
 		if (blk_queue_discard(b) && (agreed_featurs & FF_TRIM)) {
-			/* inherit from backing queue */
-			q->limits.discard_zeroes_data = 1;
 			/* For now, don't allow more than one activity log extent worth of data
 			 * to be discarded in one go. We may need to rework drbd_al_begin_io()
 			 * to allow for even larger discard ranges */
