@@ -12,4 +12,4 @@
 # having it as one single line avoids those problems.
 #
 # DO NOT WRAP THIS LINE
-SUBSYSTEM=="block", KERNEL=="drbd*", IMPORT{program}="/sbin/drbdadm sh-udev minor-%m", NAME="$env{DEVICE}", SYMLINK="$env{SYMLINK}"
+SUBSYSTEM=="block", KERNEL=="drbd*", IMPORT{program}="/usr/sbin/drbdadm sh-udev minor-%m", NAME="$env{DEVICE}", SYMLINK="$env{SYMLINK}"

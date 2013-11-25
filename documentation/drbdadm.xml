@@ -174,10 +174,8 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-	  <para>The full path to the <option>drbdsetup</option> utility.  If
-	    this option is omitted, drbdadm will search for
-	    <option>/sbin/drbdsetup</option> and
-	    <option>./drbdsetup</option>.</para>
+          <para>Specifies the full path to the <option>drbdsetup</option> program. If this option
+          is omitted, drbdadm will look for it beneath itself first, and then in the PATH.</para>
         </listitem>
       </varlistentry>
 
@@ -186,10 +184,8 @@
         <replaceable>file</replaceable></term>
 
         <listitem>
-	  <para>The full path to the <option>drbdmeta</option> utility. If this
-	    option is omitted, drbdadm will look for
-	    <option>/sbin/drbdmeta</option> and
-	    <option>./drbdmeta</option>.</para>
+          <para>Specifies the full path to the <option>drbdmeta</option> program. If this option
+          is omitted, drbdadm will look for it beneath itself first, and then in the PATH.</para>
         </listitem>
       </varlistentry>
 

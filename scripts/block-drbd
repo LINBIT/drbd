@@ -56,6 +56,8 @@
 dir=$(dirname "$0")
 . "$dir/block-common.sh"
 
+PATH=/usr/sbin:/sbin:$PATH
+
 ##
 # canonicalise_mode mode
 #
@@ -250,11 +252,11 @@ case "$command" in
     case $t in 
       drbd)
         drbd_resource=$p
-        drbd_role="$(/sbin/drbdadm role $drbd_resource)"
+        drbd_role="$(drbdadm role $drbd_resource)"
         drbd_lrole="${drbd_role%%/*}"
-        drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
+        drbd_dev="$(drbdadm sh-dev $drbd_resource)"
         if [ "$drbd_lrole" != 'Primary' ]; then
-          /sbin/drbdadm primary $drbd_resource
+          drbdadm primary $drbd_resource
         fi
         dev=$drbd_dev
         FRONTEND_ID=$(xenstore_read "$XENBUS_PATH/frontend-id")
@@ -279,12 +281,12 @@ case "$command" in
       drbd)
         p=$(xenstore_read "$XENBUS_PATH/params")
         drbd_resource=$p
-        drbd_role="$(/sbin/drbdadm role $drbd_resource)"
+        drbd_role="$(drbdadm role $drbd_resource)"
         drbd_lrole="${drbd_role%%/*}"
-        drbd_dev="$(/sbin/drbdadm sh-dev $drbd_resource)"
+        drbd_dev="$(drbdadm sh-dev $drbd_resource)"
 
         if [ "$drbd_lrole" != 'Secondary' ]; then
-          /sbin/drbdadm secondary $drbd_resource
+          drbdadm secondary $drbd_resource
         fi
         exit 0
         ;;
