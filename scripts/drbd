@@ -36,8 +36,6 @@ if [ -f $DEFAULTFILE ]; then
   . $DEFAULTFILE
 fi
 
-test -f $DRBDADM || exit 5
-
 # we only use these two functions, define fallback versions of them ...
 log_daemon_msg() { echo -n "${1:-}: ${2:-}"; }
 log_end_msg() { echo "."; }
@@ -139,8 +137,10 @@ case "$1" in
 	# redirection.
 	# If "no op" has a non-zero exit code, the config is unusable,
 	# and every other command will fail.
+	out=$($DRBDADM sh-nop 2>&1); ex=$?
+	[[ $ex = 127 ]] && exit 5 # LSB for "not installed"
 	log_daemon_msg "Starting DRBD resources"
-	if ! out=$($DRBDADM sh-nop 2>&1) ; then
+	if [[ $ex != 0 ]] ; then
 	    printf "\n%s\n" "$out" >&2
 	    log_end_msg 1
 	    exit 1
@@ -168,6 +168,7 @@ case "$1" in
 	;;
     stop)
 	$DRBDADM sh-nop
+	[[ $? = 127 ]] && exit 5 # LSB for "not installed"
 	log_daemon_msg "Stopping all DRBD resources"
 	for try in 1 2; do
 	    if [ -e $PROC_DRBD ] ; then
@@ -209,6 +210,7 @@ case "$1" in
 	;;
     reload)
 	$DRBDADM sh-nop
+	[[ $? = 127 ]] && exit 5 # LSB for "not installed"
 	log_daemon_msg  "Reloading DRBD configuration"
 	$DRBDADM adjust all
 	log_end_msg 0
