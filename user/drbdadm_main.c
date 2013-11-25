@@ -887,13 +887,17 @@ static void free_options(struct options *options)
 static void free_config()
 {
 	struct d_resource *f, *t;
-	struct d_host_info *host;
+	struct d_host_info *host, *th;
 
 	f = STAILQ_FIRST(&config);
 	while (f) {
 		free(f->name);
-		for_each_host(host, &f->all_hosts)
+		host = STAILQ_FIRST(&f->all_hosts);
+		while (host) {
+			th = STAILQ_NEXT(host, link);
 			free_host_info(host);
+			host = th;
+		}
 		free_options(&f->net_options);
 		free_options(&f->disk_options);
 		free_options(&f->startup_options);
