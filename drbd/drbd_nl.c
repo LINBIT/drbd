@@ -586,12 +586,13 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	int r;
 	unsigned long irq_flags;
 
+	spin_lock_irq(&connection->resource->req_lock);
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
+		spin_unlock_irq(&connection->resource->req_lock);
 		return false;
 	}
 
-	spin_lock_irq(&connection->resource->req_lock);
 	last_reconnect_jif = connection->last_reconnect_jif;
 	spin_unlock_irq(&connection->resource->req_lock);
 
