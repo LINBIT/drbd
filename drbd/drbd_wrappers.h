@@ -1226,5 +1226,13 @@ static inline void genl_unlock(void)  { }
 # endif
 #endif
 
+#ifndef COMPAT_HAVE_BLK_SET_STACKING_LIMITS
+static inline void blk_set_stacking_limits(struct queue_limits *lim)
+{
+# ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
+	lim->discard_zeroes_data = 1;
+# endif
+}
+#endif
 
 #endif
