@@ -1169,6 +1169,8 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 		kfree(ctx);
 		return -ENODEV;
 	}
+	/* Here D_ATTACHING is sufficient since drbd_bm_read() is called only from
+	   drbd_adm_attach(), after device->ldev was assigned. */
 
 	if (!ctx->flags)
 		WARN_ON(!(b->bm_flags & BM_LOCK_ALL));
@@ -1378,7 +1380,7 @@ int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long star
 			.kref = { ATOMIC_INIT(2) },
 		};
 
-		if (!expect(device, get_ldev_if_state(device, D_ATTACHING))) {  /* put is in bm_aio_ctx_destroy() */
+		if (!expect(device, get_ldev(device))) {  /* put is in bm_aio_ctx_destroy() */
 			kfree(ctx);
 			return -ENODEV;
 		}

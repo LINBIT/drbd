@@ -1050,16 +1050,13 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 }
 
 /* All callers hold resource->conf_update */
-int drbd_attach_peer_device(struct drbd_peer_device *peer_device)
+int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	int err = -ENOMEM;
 	struct disk_conf *disk_conf;
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
-
-	if (!get_ldev_if_state(device, D_ATTACHING))
-		return 0;
 
 	disk_conf = rcu_dereference(device->ldev->disk_conf);
 
@@ -1080,7 +1077,6 @@ out:
 		kfree(resync_lru);
 		kfree(resync_plan);
 	}
-	put_ldev(device);
 	return err;
 }
 
@@ -4154,17 +4150,10 @@ void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold
 }
 
 int drbd_bmio_set_all_n_write(struct drbd_device *device,
-			      struct drbd_peer_device *peer_device)
+			      struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	int rv = -EIO;
-
-	if (get_ldev_if_state(device, D_ATTACHING)) {
-		drbd_bm_set_all(device);
-		rv = drbd_bm_write(device, NULL);
-		put_ldev(device);
-	}
-
-	return rv;
+	drbd_bm_set_all(device);
+	return drbd_bm_write(device, NULL);
 }
 
 /**
@@ -4174,23 +4163,19 @@ int drbd_bmio_set_all_n_write(struct drbd_device *device,
  * Sets all bits in the bitmap and writes the whole bitmap to stable storage.
  */
 int drbd_bmio_set_n_write(struct drbd_device *device,
-			  struct drbd_peer_device *peer_device)
+			  struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	int rv = -EIO;
 
-	if (get_ldev_if_state(device, D_ATTACHING)) {
-		drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+	drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+	drbd_md_sync(device);
+	drbd_bm_set_many_bits(peer_device, 0, -1UL);
+
+	rv = drbd_bm_write(device, NULL);
+
+	if (!rv) {
+		drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 		drbd_md_sync(device);
-		drbd_bm_set_many_bits(peer_device, 0, -1UL);
-
-		rv = drbd_bm_write(device, NULL);
-
-		if (!rv) {
-			drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
-			drbd_md_sync(device);
-		}
-
-		put_ldev(device);
 	}
 
 	return rv;
@@ -4203,18 +4188,11 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
  * Clears all bits in the bitmap and writes the whole bitmap to stable storage.
  */
 int drbd_bmio_clear_n_write(struct drbd_device *device,
-			    struct drbd_peer_device *peer_device)
+			    struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	int rv = -EIO;
-
 	drbd_resume_al(device);
-	if (get_ldev_if_state(device, D_ATTACHING)) {
-		drbd_bm_clear_all(device);
-		rv = drbd_bm_write(device, NULL);
-		put_ldev(device);
-	}
-
-	return rv;
+	drbd_bm_clear_all(device);
+	return drbd_bm_write(device, NULL);
 }
 
 static int w_bitmap_io(struct drbd_work *w, int unused)
@@ -4334,6 +4312,9 @@ void drbd_queue_pending_bitmap_work(struct drbd_device *device)
  * that drbd_set_out_of_sync() can not be called. This function MAY ONLY be
  * called from sender context. It MUST NOT be used while a previous such
  * work is still pending!
+ *
+ * Its worker function encloses the call of io_fn() by get_ldev() and
+ * put_ldev().
  */
 void drbd_queue_bitmap_io(struct drbd_device *device,
 			  int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
@@ -4669,8 +4650,12 @@ void unlock_all_resources(void)
  *
  * The initial disk state becomes D_UP_TO_DATE without fencing or when we know
  * that all peers have been outdated, and D_CONSISTENT otherwise.
+ *
+ * The caller either needs to have a get_ldev() reference, or need to call
+ * this function only if disk_state[NOW] >= D_NEGOTIATING and holding the
+ * req_lock
  */
-enum drbd_disk_state disk_state_from_md(struct drbd_device *device)
+enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
 	enum drbd_disk_state disk_state;
@@ -4681,35 +4666,31 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device)
 		disk_state = D_OUTDATED;
 	else {
 		bool all_peers_outdated = true;
+		struct drbd_bitmap *bitmap = device->bitmap;
+		int bitmap_index;
 
-		if (get_ldev_if_state(device, D_ATTACHING)) {
-			struct drbd_bitmap *bitmap = device->bitmap;
-			int bitmap_index;
+		for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
+			enum drbd_disk_state peer_disk_state;
 
-			for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++) {
-				struct drbd_peer_md *peer_md = &device->ldev->md.peers[bitmap_index];
-				enum drbd_disk_state peer_disk_state;
-
-				if (!peer_md->bitmap_uuid ||
-				    !(peer_md->flags & MDF_PEER_FENCING))
-					continue;
-				peer_disk_state = D_UNKNOWN;
-				for_each_peer_device(peer_device, device) {
-					if (peer_device->bitmap_index == bitmap_index) {
-						peer_disk_state = peer_device->disk_state[NEW];
-						break;
-					}
-				}
-				if (peer_disk_state == D_OUTDATED ||
-				    peer_disk_state == D_INCONSISTENT)
-					continue;
-				else if (peer_disk_state != D_UNKNOWN ||
-					 !(peer_md->flags & MDF_PEER_OUTDATED)) {
-						all_peers_outdated = false;
-						break;
+			if (!peer_md->bitmap_uuid ||
+			    !(peer_md->flags & MDF_PEER_FENCING))
+				continue;
+			peer_disk_state = D_UNKNOWN;
+			for_each_peer_device(peer_device, device) {
+				if (peer_device->bitmap_index == bitmap_index) {
+					peer_disk_state = peer_device->disk_state[NEW];
+					break;
 				}
 			}
-			put_ldev(device);
+			if (peer_disk_state == D_OUTDATED ||
+			    peer_disk_state == D_INCONSISTENT)
+				continue;
+			else if (peer_disk_state != D_UNKNOWN ||
+				 !(peer_md->flags & MDF_PEER_OUTDATED)) {
+				all_peers_outdated = false;
+				break;
+			}
 		}
 		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
 	}

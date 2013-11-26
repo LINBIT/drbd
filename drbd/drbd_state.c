@@ -1397,11 +1397,8 @@ static void sanitize_state(struct drbd_resource *resource)
 		    (role[NEW] == R_PRIMARY && good_data_count[NEW] == 0) &&
 		   !(role[OLD] == R_PRIMARY && good_data_count[OLD] == 0))
 			resource->susp_nod[NEW] = true;
-		if (lost_connection && disk_state[NEW] == D_NEGOTIATING &&
-		    get_ldev_if_state(device, D_NEGOTIATING)) {
+		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
 			disk_state[NEW] = disk_state_from_md(device);
-			put_ldev(device);
-		}
 	}
 	rcu_read_unlock();
 }

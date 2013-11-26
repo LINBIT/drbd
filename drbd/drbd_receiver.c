@@ -1548,7 +1548,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 				/* would rather check on EOPNOTSUPP, but that is not reliable.
 				 * don't try again for ANY return value != 0
 				 * if (rv == -EOPNOTSUPP) */
-				drbd_bump_write_ordering(resource, WO_DRAIN_IO);
+				drbd_bump_write_ordering(resource, NULL, WO_DRAIN_IO);
 			}
 			put_ldev(device);
 			kobject_put(&device->kobj);
@@ -1702,14 +1702,31 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 	return rv;
 }
 
+static enum write_ordering_e
+max_allowed_wo(struct drbd_backing_dev *bdev, enum write_ordering_e wo)
+{
+	struct disk_conf *dc;
+
+	dc = rcu_dereference(bdev->disk_conf);
+
+	if (wo == WO_BIO_BARRIER && !dc->disk_barrier)
+		wo = WO_BDEV_FLUSH;
+	if (wo == WO_BDEV_FLUSH && !dc->disk_flushes)
+		wo = WO_DRAIN_IO;
+	if (wo == WO_DRAIN_IO && !dc->disk_drain)
+		wo = WO_NONE;
+
+	return wo;
+}
+
 /**
  * drbd_bump_write_ordering() - Fall back to an other write ordering method
  * @resource:	DRBD resource.
  * @wo:		Write ordering method to try.
  */
-void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo) __must_hold(local)
+void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,
+			      enum write_ordering_e wo) __must_hold(local)
 {
-	struct disk_conf *dc;
 	struct drbd_device *device;
 	enum write_ordering_e pwo;
 	int vnr, i = 0;
@@ -1726,20 +1743,19 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_orderin
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (i++ == 1 && wo == WO_BIO_BARRIER)
 			wo = WO_BDEV_FLUSH; /* WO = barrier does not handle multiple volumes */
-		if (!get_ldev_if_state(device, D_ATTACHING))
-			continue;
 
-		dc = rcu_dereference(device->ldev->disk_conf);
-
-		if (wo == WO_BIO_BARRIER && !dc->disk_barrier)
-			wo = WO_BDEV_FLUSH;
-		if (wo == WO_BDEV_FLUSH && !dc->disk_flushes)
-			wo = WO_DRAIN_IO;
-		if (wo == WO_DRAIN_IO && !dc->disk_drain)
-			wo = WO_NONE;
-		put_ldev(device);
+		if (get_ldev(device)) {
+			wo = max_allowed_wo(device->ldev, wo);
+			if (device->ldev == bdev)
+				bdev = NULL;
+			put_ldev(device);
+		}
 	}
 	rcu_read_unlock();
+
+	if (bdev)
+		wo = max_allowed_wo(bdev, wo);
+
 	resource->write_ordering = wo;
 	if (pwo != resource->write_ordering || wo == WO_BIO_BARRIER)
 		drbd_info(resource, "Method to ensure write ordering: %s\n", write_ordering_str[resource->write_ordering]);
@@ -4458,25 +4474,41 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 	}
 
-	peer_device->max_bio_size = be32_to_cpu(p->max_bio_size);
-	drbd_reconsider_max_bio_size(device);
-	/* Leave drbd_reconsider_max_bio_size() before drbd_determine_dev_size().
-	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
-	   drbd_reconsider_max_bio_size(), we can be sure that after
-	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
-
-	ddsf = be16_to_cpu(p->dds_flags);
-	dd = drbd_determine_dev_size(device, ddsf, NULL);
-	if (dd == DS_ERROR)
-		return -EIO;
-	drbd_md_sync(device);
-
 	/* The protocol version limits how big requests can be.  In addition,
 	 * peers before protocol version 94 cannot split large requests into
 	 * multiple bios; their reported max_bio_size is a hard limit.
 	 */
 	protocol_max_bio_size = conn_max_bio_size(connection);
 	peer_device->max_bio_size = min(be32_to_cpu(p->max_bio_size), protocol_max_bio_size);
+	ddsf = be16_to_cpu(p->dds_flags);
+
+	/* Leave drbd_reconsider_max_bio_size() before drbd_determine_dev_size().
+	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
+	   drbd_reconsider_max_bio_size(), we can be sure that after
+	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
+	if (get_ldev(device)) {
+		drbd_reconsider_max_bio_size(device, device->ldev);
+		dd = drbd_determine_dev_size(device, ddsf, NULL);
+		put_ldev(device);
+		if (dd == DS_ERROR)
+			return -EIO;
+		drbd_md_sync(device);
+	} else {
+		struct drbd_peer_device *peer_device;
+		sector_t size = 0;
+
+		drbd_reconsider_max_bio_size(device, NULL);
+		/* I am diskless, need to accept the peer disk sizes. */
+
+		for_each_peer_device(peer_device, device) {
+			/* When a peer device is in L_OFF state, max_size is zero
+			 * until a P_SIZES packet is received.  */
+			size = min_not_zero(size, peer_device->max_size);
+		}
+		if (size)
+			drbd_set_my_capacity(device, size);
+	}
+
 	if (device->device_conf.max_bio_size > protocol_max_bio_size ||
 	    (connection->agreed_pro_version < 94 &&
 	     device->device_conf.max_bio_size > peer_device->max_bio_size)) {

@@ -1299,10 +1299,9 @@ extern int drbd_bitmap_io_from_worker(struct drbd_device *,
 		int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
 		char *why, enum bm_flag flags,
 		struct drbd_peer_device *);
-extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *);
-extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *);
-extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *);
-
+extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
+extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
+extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_ldev_destroy(struct drbd_device *device);
 
 static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
@@ -1596,7 +1595,7 @@ extern int drbd_msg_put_info(struct sk_buff *skb, const char *info);
 extern void drbd_suspend_io(struct drbd_device *device);
 extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
-extern sector_t drbd_new_dev_size(struct drbd_device *, sector_t, int);
+extern sector_t drbd_new_dev_size(struct drbd_device *, sector_t, int) __must_hold(local);
 enum determine_dev_size {
 	DS_ERROR_SHRINK = -3,
 	DS_ERROR_SPACE_MD = -2,
@@ -1609,7 +1608,7 @@ enum determine_dev_size {
 extern enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *, enum dds_flags, struct resize_parms *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_peer_device *);
-extern void drbd_reconsider_max_bio_size(struct drbd_device *device);
+extern void drbd_reconsider_max_bio_size(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool);
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
@@ -1788,7 +1787,8 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 		generic_make_request(bio);
 }
 
-void drbd_bump_write_ordering(struct drbd_resource *resource, enum write_ordering_e wo);
+void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,
+			      enum write_ordering_e wo);
 
 extern void twopc_timer_fn(unsigned long);
 extern void connect_timer_fn(unsigned long);

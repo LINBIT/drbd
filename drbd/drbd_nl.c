@@ -1160,21 +1160,6 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	int md_moved, la_size_changed;
 	enum determine_dev_size rv = DS_UNCHANGED;
 
-	if (!get_ldev_if_state(device, D_ATTACHING)) {
-		struct drbd_peer_device *peer_device;
-
-		/* I am diskless, need to accept the peer disk sizes. */
-		size = 0;
-		for_each_peer_device(peer_device, device) {
-			/* When a peer device is in L_OFF state, max_size is zero
-			 * until a P_SIZES packet is received.  */
-			size = min_not_zero(size, peer_device->max_size);
-		}
-		if (size)
-			drbd_set_my_capacity(device, size);
-		return rv;
-	}
-
 	/* race:
 	 * application request passes inc_ap_bio,
 	 * but then cannot get an AL-reference.
@@ -1308,7 +1293,6 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	wake_up(&device->al_wait);
 	drbd_md_put_buffer(device);
 	drbd_resume_io(device);
-	put_ldev(device);
 
 	return rv;
 }
@@ -1319,13 +1303,10 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
  * Check if all peer devices that have bitmap slots assigned in the metadata
  * are connected.
  */
-static bool all_known_peer_devices_connected(struct drbd_device *device)
+static bool all_known_peer_devices_connected(struct drbd_device *device) __must_hold(local)
 {
 	int bitmap_index, max_peers;
 	bool all_known;
-
-	if (!get_ldev_if_state(device, D_ATTACHING))
-		return true;
 
 	all_known = true;
 	max_peers = device->bitmap->bm_max_peers;
@@ -1345,12 +1326,11 @@ static bool all_known_peer_devices_connected(struct drbd_device *device)
 	    next_bitmap_index:
 		/* nothing */ ;
 	}
-	put_ldev(device);
 	return all_known;
 }
 
 sector_t
-drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_has_space)
+drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_has_space) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
 	sector_t p_size = 0;
@@ -1469,14 +1449,15 @@ static u32 common_connection_features(struct drbd_resource *resource)
 	return features;
 }
 
-static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_bio_size)
+static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backing_dev *bdev,
+				   unsigned int max_bio_size)
 {
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
 	struct request_queue *b = NULL;
 
-	if (get_ldev_if_state(device, D_ATTACHING)) {
-		b = device->ldev->backing_bdev->bd_disk->queue;
+	if (bdev) {
+		b = bdev->backing_bdev->bd_disk->queue;
 
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
 
@@ -1516,19 +1497,17 @@ static void drbd_setup_queue_param(struct drbd_device *device, unsigned int max_
 				 b->backing_dev_info.ra_pages);
 			q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
 		}
-		put_ldev(device);
 	}
 }
 
-void drbd_reconsider_max_bio_size(struct drbd_device *device)
+void drbd_reconsider_max_bio_size(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
 	unsigned int max_bio_size = device->device_conf.max_bio_size;
 	struct drbd_peer_device *peer_device;
 
-	if (get_ldev_if_state(device, D_ATTACHING)) {
-		max_bio_size = min(max_bio_size, queue_max_hw_sectors(
-			device->ldev->backing_bdev->bd_disk->queue) << 9);
-		put_ldev(device);
+	if (bdev) {
+		max_bio_size = min(max_bio_size,
+			queue_max_hw_sectors(bdev->backing_bdev->bd_disk->queue) << 9);
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
@@ -1540,7 +1519,7 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device)
 	rcu_read_unlock();
 	spin_unlock_irq(&device->resource->req_lock);
 
-	drbd_setup_queue_param(device, max_bio_size);
+	drbd_setup_queue_param(device, bdev, max_bio_size);
 }
 
 /* Make sure IO is suspended before calling this function(). */
@@ -1722,7 +1701,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	else
 		set_bit(MD_NO_BARRIER, &device->flags);
 
-	drbd_bump_write_ordering(device->resource, WO_BIO_BARRIER);
+	drbd_bump_write_ordering(device->resource, NULL, WO_BIO_BARRIER);
 
 	drbd_md_sync(device);
 
@@ -2110,7 +2089,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		set_bit(MD_NO_BARRIER, &device->flags);
 
 	drbd_resync_after_changed(device);
-	drbd_bump_write_ordering(resource, WO_BIO_BARRIER);
+	drbd_bump_write_ordering(resource, device->ldev, WO_BIO_BARRIER);
 	unlock_all_resources();
 
 	/* Prevent shrinking of consistent devices ! */
@@ -2140,7 +2119,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
-	drbd_reconsider_max_bio_size(device);
+	drbd_reconsider_max_bio_size(device, device->ldev);
 
 	/* If I am currently not R_PRIMARY,
 	 * but meta data primary indicator is set,
@@ -2861,10 +2840,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		err = drbd_attach_peer_device(peer_device);
-		if (err) {
-			retcode = ERR_NOMEM;
-			goto fail_free_connection;
+		if (get_ldev_if_state(peer_device->device, D_NEGOTIATING)) {
+			err = drbd_attach_peer_device(peer_device);
+			put_ldev(peer_device->device);
+			if (err) {
+				retcode = ERR_NOMEM;
+				goto fail_free_connection;
+			}
 		}
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
@@ -3213,7 +3195,7 @@ static enum drbd_state_rv invalidate_resync(struct drbd_peer_device *peer_device
 	return rv;
 }
 
-static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device)
+static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device) __must_hold(local)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
@@ -3255,8 +3237,13 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	device = adm_ctx.device;
+
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out_no_ldev;
+	}
+
 	resource = device->resource;
-	mutex_lock(&resource->adm_mutex);
 
 	if (info->attrs[DRBD_NLA_INVALIDATE_PARMS]) {
 		struct invalidate_parms inv = {};
@@ -3267,7 +3254,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
-			goto out;
+			goto out_no_adm_mutex;
 		}
 
 		if (inv.sync_from_peer_node_id != -1) {
@@ -3276,6 +3263,8 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 			sync_from_peer_device = conn_peer_device(connection, device->vnr);
 		}
 	}
+
+	mutex_lock(&resource->adm_mutex);
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync.
@@ -3308,12 +3297,14 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 out:
 	drbd_resume_io(device);
 	mutex_unlock(&resource->adm_mutex);
+out_no_adm_mutex:
+	put_ldev(device);
+out_no_ldev:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
 
-static int drbd_bmio_set_susp_al(struct drbd_device *device,
-				 struct drbd_peer_device *peer_device)
+static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	int rv;
 
@@ -3337,6 +3328,12 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	peer_device = adm_ctx.peer_device;
 	device = peer_device->device;
 	resource = device->resource;
+
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out;
+	}
+
 	mutex_lock(&resource->adm_mutex);
 
 	drbd_suspend_io(device);
@@ -3363,6 +3360,8 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	drbd_resume_io(device);
 
 	mutex_unlock(&resource->adm_mutex);
+	put_ldev(device);
+out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
