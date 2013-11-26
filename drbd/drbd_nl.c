@@ -254,8 +254,10 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	/* We are protected by the global genl_lock().
 	 * But we may explicitly drop it/retake it in drbd_adm_set_role(),
 	 * so make sure this object stays around. */
-	if (adm_ctx->device)
+	if (adm_ctx->device) {
 		kobject_get(&adm_ctx->device->kobj);
+		kref_debug_get(&adm_ctx->device->kref_debug, 4);
+	}
 
 	if (adm_ctx->resource_name) {
 		adm_ctx->resource = drbd_find_resource(adm_ctx->resource_name);
@@ -336,8 +338,10 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	if (!adm_ctx->resource) {
 		adm_ctx->resource = adm_ctx->device ? adm_ctx->device->resource
 			: adm_ctx->connection ? adm_ctx->connection->resource : NULL;
-		if (adm_ctx->resource)
+		if (adm_ctx->resource) {
 			kref_get(&adm_ctx->resource->kref);
+			kref_debug_get(&adm_ctx->resource->kref_debug, 2);
+		}
 	}
 
 	return NO_ERROR;
@@ -354,6 +358,7 @@ finish:
 static int drbd_adm_finish(struct drbd_config_context *adm_ctx, struct genl_info *info, int retcode)
 {
 	if (adm_ctx->device) {
+		kref_debug_put(&adm_ctx->device->kref_debug, 4);
 		kobject_put(&adm_ctx->device->kobj);
 		adm_ctx->device = NULL;
 	}
