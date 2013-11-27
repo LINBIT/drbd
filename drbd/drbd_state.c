@@ -2874,6 +2874,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	u64 reach_immediately;
 	int retries = 1;
 	unsigned long start_time;
+	bool have_peers;
 
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
@@ -2971,7 +2972,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	begin_remote_state_change(resource, irq_flags);
 	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE,
 				    &request, reach_immediately);
-	if (rv == SS_CW_SUCCESS) {
+	have_peers = rv == SS_CW_SUCCESS;
+	if (have_peers) {
 		if (wait_event_timeout(resource->state_wait,
 				       cluster_wide_reply_ready(resource),
 				       twopc_timeout(resource)))
@@ -3037,11 +3039,13 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				}
 			}
 		}
+	}
+	drbd_info(resource, "%s cluster-wide state change %u (%ums)\n",
+		  rv >= SS_SUCCESS ? "Committing" : "Aborting",
+		  be32_to_cpu(request.tid),
+		  jiffies_to_msecs(jiffies - start_time));
+	if (have_peers) {
 		if (rv >= SS_SUCCESS) {
-			drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
-				  be32_to_cpu(request.tid),
-				  jiffies_to_msecs(jiffies - start_time));
-
 			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT,
 						    &request, reach_immediately);
 			if (rv != SS_CW_SUCCESS) {
@@ -3049,9 +3053,6 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 			}
 			flags |= CS_WEAK_NODES;
 		} else {
-			drbd_info(resource, "Aborting cluster-wide state change %u (%ums)\n",
-				  be32_to_cpu(request.tid),
-				  jiffies_to_msecs(jiffies - start_time));
 			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT,
 					       &request, reach_immediately);
 		}
