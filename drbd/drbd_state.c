@@ -3407,6 +3407,10 @@ enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
 			target_node_id);
 	}
 	__change_cstate(connection, C_CONNECTED);
+	if (rv < SS_SUCCESS) {
+		abort_state_change(resource, &irq_flags);
+		return rv;
+	}
 	end_state_change(resource, &irq_flags);
 	return rv;
 }
