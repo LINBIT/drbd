@@ -1224,9 +1224,9 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 
 	/* summary for global bitmap IO */
 	if (flags == 0)
-		drbd_info(device, "bitmap %s of %u pages took %lu jiffies\n",
+		drbd_info(device, "bitmap %s of %u pages took %ums\n",
 			 rw == WRITE ? "WRITE" : "READ",
-			 count, jiffies - now);
+			 count, jiffies_to_msecs(jiffies - now));
 
 	if (ctx->error) {
 		drbd_alert(device, "we had at least one MD IO ERROR during bitmap IO\n");
@@ -1242,8 +1242,8 @@ static int bm_rw(struct drbd_device *device, int rw, unsigned flags, unsigned la
 	} else /* rw == READ */ {
 		now = jiffies;
 		bm_count_bits(device);
-		drbd_info(device, "recounting of set bits took additional %lu jiffies\n",
-		     jiffies - now);
+		drbd_info(device, "recounting of set bits took additional %ums\n",
+		     jiffies_to_msecs(jiffies - now));
 	}
 
 	kref_put(&ctx->kref, bm_aio_ctx_destroy);
