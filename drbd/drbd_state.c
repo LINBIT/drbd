@@ -2823,6 +2823,15 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 	return timeout;
 }
 
+struct change_context {
+	struct drbd_resource *resource;
+	int vnr;
+	union drbd_state mask;
+	union drbd_state val;
+	int target_node_id;
+	enum chg_state_flags flags;
+};
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -2861,14 +2870,13 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
  * to have aborted.
  */
 static enum drbd_state_rv
-change_cluster_wide_state(struct drbd_resource *resource, int vnr,
-			  union drbd_state mask, union drbd_state val,
-			  unsigned long *irq_flags,
-			  int target_node_id)
+change_cluster_wide_state(bool (*change)(struct change_context *, bool),
+			  struct change_context *context)
 {
+	struct drbd_resource *resource = context->resource;
+	unsigned long irq_flags;
 	struct p_twopc_request request;
 	struct twopc_reply *reply = &resource->twopc_reply;
-	enum chg_state_flags flags = resource->state_change_flags | CS_TWOPC;
 	struct drbd_connection *connection, *target_connection = NULL;
 	enum drbd_state_rv rv;
 	u64 reach_immediately;
@@ -2876,19 +2884,39 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	unsigned long start_time;
 	bool have_peers;
 
+	context->flags |= CS_TWOPC;
+	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
+	if (local_state_change(context->flags)) {
+		/* Not a cluster-wide state change. */
+		change(context, false);
+		return end_state_change(resource, &irq_flags);
+	} else {
+		if (!change(context, true)) {
+			/* Not a cluster-wide state change. */
+			return end_state_change(resource, &irq_flags);
+		}
+		rv = try_state_change(resource);
+		if (rv != SS_SUCCESS) {
+			/* Failure or nothing to do. */
+			abort_state_change(resource, &irq_flags);
+			return rv;
+		}
+		/* Really a cluster-wide state change. */
+	}
+
 	if (!supports_two_phase_commit(resource)) {
 		connection = get_first_connection(resource);
 		rv = SS_SUCCESS;
 		if (connection) {
 			kref_debug_get(&connection->kref_debug, 6);
-			rv = change_peer_state(connection, vnr, mask, val, irq_flags);
+			rv = change_peer_state(connection, context->vnr, context->mask, context->val, &irq_flags);
 			kref_debug_put(&connection->kref_debug, 6);
 			kref_put(&connection->kref, drbd_destroy_connection);
 		}
 		goto out;
 	}
 
-	if (!expect(resource, flags & CS_SERIALIZE)) {
+	if (!expect(resource, context->flags & CS_SERIALIZE)) {
 		rv = SS_CW_FAILED_BY_PEER;
 		goto out;
 	}
@@ -2904,15 +2932,15 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 	rcu_read_unlock();
 
     retry:
-	complete_remote_state_change(resource, irq_flags);
+	complete_remote_state_change(resource, &irq_flags);
 	start_time = jiffies;
 
 	reach_immediately = directly_connected_nodes(resource);
-	if (target_node_id != -1) {
+	if (context->target_node_id != -1) {
 		struct drbd_connection *connection;
 
 		/* Fail if the target node is no longer directly reachable. */
-		connection = drbd_connection_by_node_id(resource, target_node_id);
+		connection = drbd_connection_by_node_id(resource, context->target_node_id);
 		if (!connection) {
 			rv = SS_CW_FAILED_BY_PEER;
 			goto out;
@@ -2920,8 +2948,8 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
 		      (connection->cstate[NOW] == C_CONNECTING &&
-		       mask.conn == conn_MASK &&
-		       val.conn == C_CONNECTED))) {
+		       context->mask.conn == conn_MASK &&
+		       context->val.conn == C_CONNECTED))) {
 			rv = SS_CW_FAILED_BY_PEER;
 			goto out;
 		}
@@ -2930,7 +2958,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		target_connection = connection;
 
 		/* For connect transactions, add the target node id. */
-		reach_immediately |= NODE_MASK(target_node_id);
+		reach_immediately |= NODE_MASK(context->target_node_id);
 	}
 
 	do
@@ -2939,38 +2967,38 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 
 	request.tid = cpu_to_be32(reply->tid);
 	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
-	request.target_node_id = cpu_to_be32(target_node_id);
+	request.target_node_id = cpu_to_be32(context->target_node_id);
 	request.nodes_to_reach = cpu_to_be64(
 		~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
 	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.weak_nodes = 0;  /* Computed in phase 1. */
-	request.mask = cpu_to_be32(mask.i);
-	request.val = cpu_to_be32(val.i);
+	request.mask = cpu_to_be32(context->mask.i);
+	request.val = cpu_to_be32(context->val.i);
 
 	drbd_info(resource, "Preparing cluster-wide state change %u\n",
 		  be32_to_cpu(request.tid));
 	resource->remote_state_change = true;
 	reply->initiator_node_id = resource->res_opts.node_id;
-	reply->target_node_id = target_node_id;
+	reply->target_node_id = context->target_node_id;
 	reply->primary_nodes = 0;
 	reply->target_weak_nodes = 0;
 	reply->weak_nodes = 0;
 
 	reply->reachable_nodes = directly_connected_nodes(resource) |
 				       NODE_MASK(resource->res_opts.node_id);
-	if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
-		reply->reachable_nodes |= NODE_MASK(target_node_id);
+	if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED) {
+		reply->reachable_nodes |= NODE_MASK(context->target_node_id);
 		reply->target_reachable_nodes = reply->reachable_nodes;
-	} else if (mask.conn == conn_MASK && val.conn == C_DISCONNECTING) {
-		reply->target_reachable_nodes = NODE_MASK(target_node_id);
+	} else if (context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) {
+		reply->target_reachable_nodes = NODE_MASK(context->target_node_id);
 		reply->reachable_nodes &= ~reply->target_reachable_nodes;
 	} else {
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
 
 	resource->twopc_work.cb = twopc_initiator_work;
-	begin_remote_state_change(resource, irq_flags);
-	rv = __cluster_wide_request(resource, vnr, P_TWOPC_PREPARE,
+	begin_remote_state_change(resource, &irq_flags);
+	rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_PREPARE,
 				    &request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;
 	if (have_peers) {
@@ -2986,22 +3014,22 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				directly_connected_nodes(resource) |
 				NODE_MASK(resource->res_opts.node_id);
 
-			if (mask.conn == conn_MASK) {
-				if (val.conn == C_CONNECTED)
-					directly_reachable |= NODE_MASK(target_node_id);
-				if (val.conn == C_DISCONNECTING)
-					directly_reachable &= ~NODE_MASK(target_node_id);
+			if (context->mask.conn == conn_MASK) {
+				if (context->val.conn == C_CONNECTED)
+					directly_reachable |= NODE_MASK(context->target_node_id);
+				if (context->val.conn == C_DISCONNECTING)
+					directly_reachable &= ~NODE_MASK(context->target_node_id);
 			}
-			if ((mask.role == role_MASK && val.role == R_PRIMARY) ||
-			    (mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
+			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
+			    (context->mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
 				reply->primary_nodes |=
 					NODE_MASK(resource->res_opts.node_id);
 				reply->weak_nodes |= ~directly_reachable;
 			}
 
-			if (mask.role == role_MASK && val.role == R_PRIMARY)
+			if (context->mask.role == role_MASK && context->val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
-			if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
+			if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED) {
 				/* This is a request to establish a connection. */
 				/* Establishing the connection is only allowed
 				 * if the resulting cluster contains no primary
@@ -3012,7 +3040,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				/* FIXME: Where do we check against the
 				 * configuration if the set of primaries is allowed? */
 			}
-			if (!(mask.conn == conn_MASK && val.conn == C_DISCONNECTING) ||
+			if (!(context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) ||
 			    (reply->reachable_nodes & reply->target_reachable_nodes)) {
 				/* The cluster is still connected after this
 				 * transaction: either this transaction does
@@ -3032,7 +3060,7 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 				for_each_connection(connection, resource) {
 					int node_id = connection->net_conf->peer_node_id;
 
-					if (node_id == target_node_id) {
+					if (node_id == context->target_node_id) {
 						drbd_info(connection, "Cluster is now split");
 						break;
 					}
@@ -3044,16 +3072,24 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		  rv >= SS_SUCCESS ? "Committing" : "Aborting",
 		  be32_to_cpu(request.tid),
 		  jiffies_to_msecs(jiffies - start_time));
+	if (rv >= SS_SUCCESS) {
+		enum drbd_state_rv rv2;
+
+		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
+		change(context, false);
+		rv2 = end_state_change(resource, &irq_flags);
+		/* FIXME: How to deal with failures here? */
+	}
 	if (have_peers) {
 		if (rv >= SS_SUCCESS) {
-			rv = __cluster_wide_request(resource, vnr, P_TWOPC_COMMIT,
+			rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_COMMIT,
 						    &request, reach_immediately);
 			if (rv != SS_CW_SUCCESS) {
 				/* FIXME: disconnect all peers? */
 			}
-			flags |= CS_WEAK_NODES;
+			context->flags |= CS_WEAK_NODES;
 		} else {
-			__cluster_wide_request(resource, vnr, P_TWOPC_ABORT,
+			__cluster_wide_request(resource, context->vnr, P_TWOPC_ABORT,
 					       &request, reach_immediately);
 		}
 
@@ -3066,9 +3102,9 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		long timeout = twopc_retry_timeout(resource, retries++);
 		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
 			  jiffies_to_msecs(timeout));
-		clear_remote_state_change(resource, irq_flags);
+		clear_remote_state_change(resource, &irq_flags);
 		schedule_timeout_interruptible(timeout);
-		end_remote_state_change(resource, irq_flags, flags);
+		end_remote_state_change(resource, &irq_flags, context->flags);
 		if (target_connection) {
 			kref_debug_put(&target_connection->kref_debug, 8);
 			kref_put(&target_connection->kref, drbd_destroy_connection);
@@ -3077,13 +3113,13 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		goto retry;
 	}
 
-	end_remote_state_change(resource, irq_flags, flags);
+	end_remote_state_change(resource, &irq_flags, context->flags);
 
 	if (rv >= SS_SUCCESS) {
 		if (target_connection &&
 		    target_connection->peer_role[NOW] == R_UNKNOWN) {
 			enum drbd_role target_role =
-				(reply->primary_nodes & NODE_MASK(target_node_id)) ?
+				(reply->primary_nodes & NODE_MASK(context->target_node_id)) ?
 				R_PRIMARY : R_SECONDARY;
 			__change_peer_role(target_connection, target_role);
 		}
@@ -3097,7 +3133,11 @@ change_cluster_wide_state(struct drbd_resource *resource, int vnr,
 		kref_debug_put(&target_connection->kref_debug, 8);
 		kref_put(&target_connection->kref, drbd_destroy_connection);
 	}
-	return rv;
+	if (rv < SS_SUCCESS) {
+		abort_state_change(resource, &irq_flags);
+		return rv;
+	}
+	return end_state_change(resource, &irq_flags);
 }
 
 static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
@@ -3204,34 +3244,39 @@ void __change_role(struct drbd_resource *resource, enum drbd_role role,
 	}
 }
 
+struct change_role_context {
+	struct change_context context;
+	bool force;
+};
+
+static bool do_change_role(struct change_context *context, bool prepare)
+{
+	struct change_role_context *role_context =
+		container_of(context, struct change_role_context, context);
+
+	__change_role(context->resource, context->val.role, role_context->force);
+	return !prepare ||
+	       (context->resource->role[NOW] != R_PRIMARY &&
+		context->val.role == R_PRIMARY);
+}
+
 enum drbd_state_rv change_role(struct drbd_resource *resource,
 			       enum drbd_role role,
 			       enum chg_state_flags flags,
 			       bool force)
 {
-	unsigned long irq_flags;
-
-	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
-	if (!local_state_change(flags) &&
-	    resource->role[NOW] != R_PRIMARY && role == R_PRIMARY) {
-		union drbd_state mask = {}, val = {};
-		enum drbd_state_rv rv;
-
-		mask.role = role_MASK;
-		val.role = role;
-
-		__change_role(resource, role, force);
-		rv = try_state_change(resource);
-		if (rv == SS_SUCCESS)
-			rv = change_cluster_wide_state(resource, -1,
-				mask, val, &irq_flags, -1);
-		if (rv < SS_SUCCESS) {
-			abort_state_change(resource, &irq_flags);
-			return rv;
-		}
-	}
-	__change_role(resource, role, force);
-	return end_state_change(resource, &irq_flags);
+	struct change_role_context role_context = {
+		.context = {
+			.resource = resource,
+			.vnr = -1,
+			.mask = { .role = role_MASK },
+			.val = { .role = role },
+			.target_node_id = -1,
+			.flags = flags | CS_SERIALIZE,
+		},
+		.force = force,
+	};
+	return change_cluster_wide_state(do_change_role, &role_context.context);
 }
 
 void __change_io_susp_user(struct drbd_resource *resource, bool value)
@@ -3291,35 +3336,40 @@ static bool device_has_connected_peer_devices(struct drbd_device *device)
 	return false;
 }
 
+struct change_disk_state_context {
+	struct change_context context;
+	struct drbd_device *device;
+};
+
+static bool do_change_disk_state(struct change_context *context, bool prepare)
+{
+	struct drbd_device *device =
+		container_of(context, struct change_disk_state_context, context)->device;
+
+	__change_disk_state(device, context->val.disk);
+	return !prepare ||
+	       (device->disk_state[NOW] != D_FAILED &&
+		context->val.disk == D_FAILED &&
+		device_has_connected_peer_devices(device));
+}
+
 enum drbd_state_rv change_disk_state(struct drbd_device *device,
 				     enum drbd_disk_state disk_state,
 				     enum chg_state_flags flags)
 {
-	struct drbd_resource *resource = device->resource;
-	unsigned long irq_flags;
-
-	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
-	if (!local_state_change(flags) &&
-	    device->disk_state[NOW] != D_FAILED && disk_state == D_FAILED &&
-	    device_has_connected_peer_devices(device)) {
-		union drbd_state mask = {}, val = {};
-		enum drbd_state_rv rv;
-
-		mask.disk = disk_MASK;
-		val.disk = disk_state;
-
-		__change_disk_state(device, disk_state);
-		rv = try_state_change(resource);
-		if (rv == SS_SUCCESS)
-			rv = change_cluster_wide_state(resource, device->vnr,
-				mask, val, &irq_flags, -1);
-		if (rv < SS_SUCCESS) {
-			abort_state_change(resource, &irq_flags);
-			return rv;
-		}
-	}
-	__change_disk_state(device, disk_state);
-	return end_state_change(resource, &irq_flags);
+	struct change_disk_state_context disk_state_context = {
+		.context = {
+			.resource = device->resource,
+			.vnr = device->vnr,
+			.mask = { .disk = disk_MASK },
+			.val = { .disk = disk_state },
+			.target_node_id = -1,
+			.flags = flags | CS_SERIALIZE,
+		},
+		.device = device,
+	};
+	return change_cluster_wide_state(do_change_disk_state,
+					 &disk_state_context.context);
 }
 
 void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cstate)
@@ -3384,35 +3434,43 @@ static void __change_cstate_and_outdate(struct drbd_connection *connection,
 	}
 }
 
-enum drbd_state_rv connect_transaction(struct drbd_connection *connection)
+struct change_cstate_context {
+	struct change_context context;
+	struct drbd_connection *connection;
+	enum outdate_what outdate_what;
+};
+
+static bool do_change_cstate(struct change_context *context, bool prepare)
 {
-	int target_node_id = connection->net_conf->peer_node_id;
-	struct drbd_resource *resource = connection->resource;
-	unsigned long irq_flags;
-	enum drbd_state_rv rv;
+	struct change_cstate_context *cstate_context =
+		container_of(context, struct change_cstate_context, context);
 
-	begin_state_change(resource, &irq_flags, CS_SERIALIZE | CS_LOCAL_ONLY);
-	if (connection->cstate[NOW] != C_CONNECTING)
-		rv = SS_IN_TRANSIENT_STATE;
-	else {
-		union drbd_state mask = {}, val = {};
-
-		mask.conn = conn_MASK;
-		val.conn = C_CONNECTED;
-		mask.role = role_MASK;
-		val.role = resource->role[NOW];
-
-		rv = change_cluster_wide_state(resource, -1,
-			mask, val, &irq_flags,
-			target_node_id);
+	if (prepare) {
+		cstate_context->outdate_what = OUTDATE_NOTHING;
+		if (context->val.conn == C_DISCONNECTING) {
+			cstate_context->outdate_what =
+				outdate_on_disconnect(cstate_context->connection);
+			switch(cstate_context->outdate_what) {
+			case OUTDATE_DISKS:
+				context->mask.disk = disk_MASK;
+				context->val.disk = D_OUTDATED;
+				break;
+			case OUTDATE_PEER_DISKS:
+				context->mask.pdsk = pdsk_MASK;
+				context->val.pdsk = D_OUTDATED;
+				break;
+			case OUTDATE_NOTHING:
+				break;
+			}
+		}
 	}
-	__change_cstate(connection, C_CONNECTED);
-	if (rv < SS_SUCCESS) {
-		abort_state_change(resource, &irq_flags);
-		return rv;
-	}
-	end_state_change(resource, &irq_flags);
-	return rv;
+	__change_cstate_and_outdate(cstate_context->connection,
+				    context->val.conn,
+				    cstate_context->outdate_what);
+	return !prepare ||
+	       context->val.conn == C_CONNECTED ||
+	       (context->val.conn == C_DISCONNECTING &&
+		connection_has_connected_peer_devices(cstate_context->connection));
 }
 
 /**
@@ -3426,10 +3484,26 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 				 enum drbd_conn_state cstate,
 				 enum chg_state_flags flags)
 {
-	struct drbd_resource *resource = connection->resource;
-	enum outdate_what outdate_what = OUTDATE_NOTHING;
-	enum drbd_state_rv rv = SS_SUCCESS;
-	unsigned long irq_flags;
+	struct change_cstate_context cstate_context = {
+		.context = {
+			.resource = connection->resource,
+			.vnr = -1,
+			.mask = {
+				.conn = conn_MASK,
+			},
+			.val = {
+				.conn = cstate,
+			},
+			.target_node_id = connection->net_conf->peer_node_id,
+			.flags = flags,
+		},
+		.connection = connection,
+	};
+
+	if (cstate == C_CONNECTED) {
+		cstate_context.context.mask.role = role_MASK;
+		cstate_context.context.val.role = connection->resource->role[NOW];
+	}
 
 	/*
 	 * Hard connection state changes like a protocol error or forced
@@ -3438,45 +3512,9 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 	 * grab that mutex again.
 	 */
 	if (!(flags & CS_HARD))
-		flags |= CS_SERIALIZE;
+		cstate_context.context.flags |= CS_SERIALIZE;
 
-	begin_state_change(resource, &irq_flags, flags | CS_LOCAL_ONLY);
-	if (!local_state_change(flags) &&
-		   cstate == C_DISCONNECTING &&
-		   connection_has_connected_peer_devices(connection)) {
-		outdate_what = outdate_on_disconnect(connection);
-		__change_cstate_and_outdate(connection, cstate, outdate_what);
-		rv = try_state_change(resource);
-		if (rv == SS_SUCCESS) {
-			union drbd_state mask = {}, val = {};
-			int target_node_id = connection->net_conf->peer_node_id;
-
-			mask.conn = conn_MASK;
-			val.conn = cstate;
-
-			switch(outdate_what) {
-			case OUTDATE_DISKS:
-				mask.disk = disk_MASK;
-				val.disk = D_OUTDATED;
-				break;
-			case OUTDATE_PEER_DISKS:
-				mask.pdsk = pdsk_MASK;
-				val.pdsk = D_OUTDATED;
-				break;
-			case OUTDATE_NOTHING:
-				break;
-			}
-
-			rv = change_cluster_wide_state(resource, -1, mask, val,
-					&irq_flags, target_node_id);
-		}
-	}
-	__change_cstate_and_outdate(connection, cstate, outdate_what);
-	if (rv < SS_SUCCESS) {
-		abort_state_change(resource, &irq_flags);
-		return rv;
-	}
-	return end_state_change(resource, &irq_flags);
+	return change_cluster_wide_state(do_change_cstate, &cstate_context.context);
 }
 
 void __change_peer_role(struct drbd_connection *connection, enum drbd_role peer_role)

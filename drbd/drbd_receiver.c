@@ -1206,12 +1206,12 @@ static void conn_connect2(struct drbd_connection *connection)
 
 static void conn_disconnect(struct drbd_connection *connection);
 
-static int connect_transaction_work(struct drbd_work *work, int cancel)
+static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
 
-	if (connect_transaction(connection) < SS_SUCCESS) {
+	if (change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE) < SS_SUCCESS) {
 		drbd_info(connection, "Failure to connect; retrying\n");
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	} else
@@ -1435,7 +1435,7 @@ randomize:
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 11);
 		if (resource->res_opts.node_id < connection->net_conf->peer_node_id) {
-			connection->connect_timer_work.cb = connect_transaction_work;
+			connection->connect_timer_work.cb = connect_work;
 			timeout = twopc_retry_timeout(resource, 0);
 			drbd_debug(connection, "Waiting for %ums to avoid transaction "
 				   "conflicts\n", jiffies_to_msecs(timeout));
