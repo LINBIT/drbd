@@ -321,7 +321,7 @@ enum drbd_state_rv {
 	SS_DEVICE_IN_USE = -12,
 	SS_NO_NET_CONFIG = -13,
 	SS_NO_VERIFY_ALG = -14,       /* drbd-8.2 only */
-	SS_NEED_CONNECTION = -15,    /* drbd-8.2 only */
+	SS_NEED_CONNECTION = -15,
 	SS_LOWER_THAN_OUTDATED = -16,
 	SS_NOT_SUPPORTED = -17,
 	SS_IN_TRANSIENT_STATE = -18,  /* Retry after the next state change */
