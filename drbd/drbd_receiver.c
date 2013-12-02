@@ -5125,9 +5125,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		break;
 	}
 
-	if (!(flags & CS_PREPARE))
-		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
-
 	if (peer_device)
 		rv = change_peer_device_state(peer_device, mask, val, flags);
 	else
@@ -5152,14 +5149,17 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_send_twopc_reply(connection, cmd, &reply);
 		}
 	} else {
-		if (peer_device && rv >= SS_SUCCESS && !(flags & (CS_PREPARE | CS_ABORT)))
+		if (flags & CS_PREPARED)
+			del_timer(&resource->twopc_timer);
+
+		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+
+		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
 			drbd_md_sync(peer_device->device);
 
-		if (flags & CS_PREPARED) {
+		if (rv >= SS_SUCCESS && !(flags & CS_ABORT)) {
 			struct drbd_device *device;
 			int vnr;
-
-			del_timer(&resource->twopc_timer);
 
 			if (affected_connection &&
 			    mask.conn == conn_MASK && val.conn == C_CONNECTED)
@@ -5175,7 +5175,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 					drbd_set_exposed_data_uuid(device, nedu);
 				device->next_exposed_data_uuid = 0;
 			}
-
 		}
 	}
 
