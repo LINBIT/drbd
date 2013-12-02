@@ -6606,8 +6606,9 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	spin_lock_irq(&resource->req_lock);
 	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
 	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
-		drbd_debug(connection, "Got a %s reply\n",
-			   cmdname(pi->cmd));
+		drbd_debug(connection, "Got a %s reply for tid=%u\n",
+			   cmdname(pi->cmd),
+			   resource->twopc_reply.tid);
 
 		if (pi->cmd == P_TWOPC_YES) {
 			u64 reachable_nodes =
