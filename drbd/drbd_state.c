@@ -3073,20 +3073,14 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		  be32_to_cpu(request.tid),
 		  jiffies_to_msecs(jiffies - start_time));
 	if (rv >= SS_SUCCESS) {
-		enum drbd_state_rv rv2;
-
 		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
 		change(context, false);
-		rv2 = end_state_change(resource, &irq_flags);
-		/* FIXME: How to deal with failures here? */
+		rv = end_state_change(resource, &irq_flags);
 	}
 	if (have_peers) {
 		if (rv >= SS_SUCCESS) {
-			rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_COMMIT,
-						    &request, reach_immediately);
-			if (rv != SS_CW_SUCCESS) {
-				/* FIXME: disconnect all peers? */
-			}
+			__cluster_wide_request(resource, context->vnr, P_TWOPC_COMMIT,
+					       &request, reach_immediately);
 			context->flags |= CS_WEAK_NODES;
 		} else {
 			__cluster_wide_request(resource, context->vnr, P_TWOPC_ABORT,
