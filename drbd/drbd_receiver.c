@@ -1439,10 +1439,12 @@ randomize:
 			timeout = twopc_retry_timeout(resource, 0);
 			drbd_debug(connection, "Waiting for %ums to avoid transaction "
 				   "conflicts\n", jiffies_to_msecs(timeout));
-			mod_timer(&connection->connect_timer, jiffies + timeout);
+			connection->connect_timer.expires = jiffies + timeout;
+			add_timer(&connection->connect_timer);
 		} else {
 			connection->connect_timer_work.cb = connect_timeout_work;
-			mod_timer(&connection->connect_timer, jiffies + twopc_timeout(resource));
+			connection->connect_timer.expires = jiffies + twopc_timeout(resource);
+			add_timer(&connection->connect_timer);
 		}
 	} else {
 		enum drbd_state_rv rv;
@@ -6038,9 +6040,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	 * Usually we should be in some network failure state already,
 	 * but just in case we are not, we fix it up here.
 	 */
-	spin_lock_irq(&resource->req_lock);
-	del_timer(&connection->connect_timer);
-	spin_unlock_irq(&resource->req_lock);
+	del_connect_timer(connection);
 
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 
