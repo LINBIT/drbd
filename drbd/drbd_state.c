@@ -2882,7 +2882,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	u64 reach_immediately;
 	int retries = 1;
 	unsigned long start_time;
-	bool have_peers;
+	bool have_peers, change_local_state_last;
 
 	context->flags |= CS_TWOPC;
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
@@ -3072,7 +3072,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		  rv >= SS_SUCCESS ? "Committing" : "Aborting",
 		  be32_to_cpu(request.tid),
 		  jiffies_to_msecs(jiffies - start_time));
-	if (rv >= SS_SUCCESS) {
+	change_local_state_last =
+		context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING;
+	if (rv >= SS_SUCCESS && !change_local_state_last) {
 		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
 		change(context, false);
 		rv = end_state_change(resource, &irq_flags);
@@ -3091,6 +3093,11 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		for_each_connection(connection, resource)
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 		rcu_read_unlock();
+	}
+	if (rv >= SS_SUCCESS && change_local_state_last) {
+		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
+		change(context, false);
+		rv = end_state_change(resource, &irq_flags);
 	}
 	if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 		long timeout = twopc_retry_timeout(resource, retries++);
