@@ -825,8 +825,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case HANDED_OVER_TO_NETWORK:
 		/* assert something? */
-		if (bio_data_dir(req->master_bio) == WRITE)
-
 		if (bio_data_dir(req->master_bio) == WRITE &&
 		    !(req->rq_state[idx] & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))) {
 			/* this is what is dangerous about protocol A:
