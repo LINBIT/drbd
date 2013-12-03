@@ -1219,11 +1219,17 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		if (req->private_bio == NULL ||
 		    remote_due_to_read_balancing(device, peer_device,
 						 req->i.sector, rbm)) {
-			return peer_device;
+			break;
 		}
 	}
-
-	return NULL;
+	if (peer_device && &peer_device->peer_devices == &device->peer_devices)
+		peer_device = NULL;
+	if (peer_device && req->private_bio) {
+		bio_put(req->private_bio);
+		req->private_bio = NULL;
+		put_ldev(device);
+	}
+	return peer_device;
 }
 
 /* returns the number of connections expected to actually write this data,
