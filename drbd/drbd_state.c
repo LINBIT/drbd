@@ -2823,6 +2823,22 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 	return timeout;
 }
 
+static void twopc_phase2(struct drbd_resource *resource, int vnr,
+			 bool success,
+			 struct p_twopc_request *request,
+			 u64 reach_immediately)
+{
+	enum drbd_packet twopc_cmd = success ? P_TWOPC_COMMIT : P_TWOPC_ABORT;
+	struct drbd_connection *connection;
+
+	__cluster_wide_request(resource, vnr, twopc_cmd, request,
+			       reach_immediately);
+	rcu_read_lock();
+	for_each_connection(connection, resource)
+		clear_bit(TWOPC_PREPARED, &connection->flags);
+	rcu_read_unlock();
+}
+
 struct change_context {
 	struct drbd_resource *resource;
 	int vnr;
@@ -3072,33 +3088,30 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		  rv >= SS_SUCCESS ? "Committing" : "Aborting",
 		  be32_to_cpu(request.tid),
 		  jiffies_to_msecs(jiffies - start_time));
+
 	change_local_state_last =
 		context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING;
-	if (rv >= SS_SUCCESS && !change_local_state_last) {
+	if (have_peers && change_local_state_last)
+		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
+	if (rv >= SS_SUCCESS) {
+		context->flags |= CS_WEAK_NODES;
 		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
 		change(context, false);
-		rv = end_state_change(resource, &irq_flags);
-	}
-	if (have_peers) {
-		if (rv >= SS_SUCCESS) {
-			__cluster_wide_request(resource, context->vnr, P_TWOPC_COMMIT,
-					       &request, reach_immediately);
-			context->flags |= CS_WEAK_NODES;
-		} else {
-			__cluster_wide_request(resource, context->vnr, P_TWOPC_ABORT,
-					       &request, reach_immediately);
+		if (target_connection &&
+		    target_connection->peer_role[NOW] == R_UNKNOWN) {
+			enum drbd_role target_role =
+				(reply->primary_nodes & NODE_MASK(context->target_node_id)) ?
+				R_PRIMARY : R_SECONDARY;
+			__change_peer_role(target_connection, target_role);
 		}
-
-		rcu_read_lock();
-		for_each_connection(connection, resource)
-			clear_bit(TWOPC_PREPARED, &connection->flags);
-		rcu_read_unlock();
-	}
-	if (rv >= SS_SUCCESS && change_local_state_last) {
-		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
-		change(context, false);
+		__change_weak(resource,
+			reply->weak_nodes &
+			NODE_MASK(resource->res_opts.node_id));
 		rv = end_state_change(resource, &irq_flags);
 	}
+	if (have_peers && !change_local_state_last)
+		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
+
 	if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 		long timeout = twopc_retry_timeout(resource, retries++);
 		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
@@ -3116,29 +3129,16 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 
 	end_remote_state_change(resource, &irq_flags, context->flags);
 
-	if (rv >= SS_SUCCESS) {
-		if (target_connection &&
-		    target_connection->peer_role[NOW] == R_UNKNOWN) {
-			enum drbd_role target_role =
-				(reply->primary_nodes & NODE_MASK(context->target_node_id)) ?
-				R_PRIMARY : R_SECONDARY;
-			__change_peer_role(target_connection, target_role);
-		}
-		__change_weak(resource,
-			reply->weak_nodes &
-			NODE_MASK(resource->res_opts.node_id));
-	}
-
     out:
 	if (target_connection) {
 		kref_debug_put(&target_connection->kref_debug, 8);
 		kref_put(&target_connection->kref, drbd_destroy_connection);
 	}
-	if (rv < SS_SUCCESS) {
+	if (rv < SS_SUCCESS)
 		abort_state_change(resource, &irq_flags);
-		return rv;
-	}
-	return end_state_change(resource, &irq_flags);
+	else
+		end_state_change(resource, &irq_flags);
+	return rv;
 }
 
 static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
