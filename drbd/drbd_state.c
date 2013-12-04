@@ -3148,15 +3148,14 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	spin_lock_irq(&resource->req_lock);
 	twopc_parent = resource->twopc_parent;
 	resource->twopc_parent = NULL;
+	twopc_reply = resource->twopc_reply;
 	spin_unlock_irq(&resource->req_lock);
 
-	if (!expect(resource, twopc_parent))
+	if (!twopc_reply.tid || !expect(resource, twopc_parent))
 		return;
 
 	drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
-		   resource->twopc_reply.tid,
-		   cmdname(cmd));
-	twopc_reply = resource->twopc_reply;
+		   twopc_reply.tid, cmdname(cmd));
 
 	if (cmd == P_TWOPC_NO) {
 		del_timer(&resource->twopc_timer);
