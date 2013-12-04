@@ -142,7 +142,7 @@
 	    or "granularity" or "strip unit": the minimum skip to the next
 	    "spindle".
 	    <?linebreak?>
-	    <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripes 7 --al-stripe-size 64
+	    <command>drbdmeta 0 v08 /dev/vg23/lv42 internal create-md --al-stripes 7 --al-stripe-size 64</command>
 	  </para>
         </listitem>
       </varlistentry>
