@@ -2900,7 +2900,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	unsigned long start_time;
 	bool have_peers, change_local_state_last;
 
-	context->flags |= CS_TWOPC;
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
 	if (local_state_change(context->flags)) {
 		/* Not a cluster-wide state change. */
@@ -3118,7 +3117,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			  jiffies_to_msecs(timeout));
 		clear_remote_state_change(resource, &irq_flags);
 		schedule_timeout_interruptible(timeout);
-		end_remote_state_change(resource, &irq_flags, context->flags);
+		end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 		if (target_connection) {
 			kref_debug_put(&target_connection->kref_debug, 8);
 			kref_put(&target_connection->kref, drbd_destroy_connection);
@@ -3127,7 +3126,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		goto retry;
 	}
 
-	end_remote_state_change(resource, &irq_flags, context->flags);
+	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 
     out:
 	if (target_connection) {
