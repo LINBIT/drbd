@@ -237,7 +237,7 @@ tail_recursion:
 		 * In that case we do not want to touch the bitmap at all.
 		 */
 		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED &&
-		    get_ldev_if_state(device, D_FAILED)) {
+		    req->i.size && get_ldev_if_state(device, D_FAILED)) {
 			char *id_to_bit = device->ldev->id_to_bit;
 			unsigned long bits = -1, mask = -1;
 			int node_id, max_node_id = device->resource->max_node_id;
