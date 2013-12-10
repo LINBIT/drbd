@@ -362,6 +362,7 @@ static struct adm_cmd proxy_down_cmd = {"proxy-down", adm_proxy_down, ACF2_PROXY
 
 /*  */ struct adm_cmd new_resource_cmd = {"new-resource", adm_resource, ACF2_SH_RESNAME};
 /*  */ struct adm_cmd new_minor_cmd = {"new-minor", adm_new_minor, ACF4_ADVANCED};
+/*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_drbdsetup, ACF1_DEFAULT	.show_in_usage = 4 };
 
 static struct adm_cmd khelper01_cmd = {"before-resync-target", adm_khelper, ACF3_RES_HANDLER};
 static struct adm_cmd khelper02_cmd = {"after-resync-target", adm_khelper, ACF3_RES_HANDLER};
@@ -449,6 +450,7 @@ struct adm_cmd *cmds[] = {
 
 	&new_resource_cmd,
 	&new_minor_cmd,
+	&del_minor_cmd,
 
 	&khelper01_cmd,
 	&khelper02_cmd,
@@ -470,7 +472,6 @@ struct adm_cmd *cmds[] = {
 };
 
 /* internal commands: */
-/*  */ struct adm_cmd del_minor_cmd = {"del-minor", adm_drbdsetup, ACF1_DEFAULT};
 /*  */ struct adm_cmd res_options_defaults_cmd = {
 	"resource-options",
 	adm_resource,
