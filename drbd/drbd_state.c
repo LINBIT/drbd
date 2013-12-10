@@ -3363,7 +3363,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 			.mask = { { .disk = disk_MASK } },
 			.val = { { .disk = disk_state } },
 			.target_node_id = -1,
-			.flags = flags | CS_SERIALIZE,
+			.flags = flags,
 		},
 		.device = device,
 	};

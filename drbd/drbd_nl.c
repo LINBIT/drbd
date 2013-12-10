@@ -1947,7 +1947,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_flush_workqueue(&resource->work);
 
 	rv = stable_state_change(resource,
-		change_disk_state(device, D_ATTACHING, CS_VERBOSE));
+		change_disk_state(device, D_ATTACHING, CS_VERBOSE | CS_SERIALIZE));
 	retcode = rv;  /* FIXME: Type mismatch. */
 	drbd_resume_io(device);
 	if (rv < SS_SUCCESS)
