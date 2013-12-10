@@ -554,6 +554,7 @@ enum {
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
+	UNREGISTERED,
 };
 
 /* flag bits per peer device */

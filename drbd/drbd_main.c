@@ -2206,6 +2206,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	spin_lock_irqsave(&resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
 
+	if (test_bit(UNREGISTERED, &device->flags))
+		rv = -ENODEV;
+
 	if (mode & FMODE_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
 			rv = -EROFS;

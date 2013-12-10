@@ -4342,31 +4342,43 @@ out:
 
 static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 {
-	if (device->disk_state[NOW] == D_DISKLESS &&
-	    /* no need to be repl_state[NOW] == L_OFF &&
-	     * we may want to delete a minor from a live replication group.
-	     */
-	    device->resource->role[NOW] == R_SECONDARY) {
-		struct drbd_peer_device *peer_device;
-		unsigned int id = atomic_inc_return(&drbd_notify_id);
-		long irq_flags;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	enum drbd_ret_code ret;
+	unsigned int id;
 
-		for_each_peer_device(peer_device, device)
-			stable_change_repl_state(peer_device, L_OFF,
-						 CS_VERBOSE | CS_WAIT_COMPLETE);
-		state_change_lock(device->resource, &irq_flags, 0);
-		drbd_unregister_device(device);
-		state_change_unlock(device->resource, &irq_flags);
-		for_each_peer_device(peer_device, device)
-			notify_peer_device_state(NULL, 0, peer_device, NULL,
-						 NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
-		notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
-		kobject_del(&device->kobj);
-		synchronize_rcu();
-		drbd_put_device(device);
-		return NO_ERROR;
-	} else
-		return ERR_MINOR_CONFIGURED;
+	spin_lock_irq(&resource->req_lock);
+	if (device->disk_state[NOW] == D_DISKLESS &&
+	    device->open_ro_cnt == 0 && device->open_rw_cnt == 0) {
+		set_bit(UNREGISTERED, &device->flags);
+		ret = NO_ERROR;
+	} else {
+		ret = ERR_MINOR_CONFIGURED;
+	}
+	spin_unlock_irq(&resource->req_lock);
+
+	if (ret != NO_ERROR)
+		return ret;
+
+	id = atomic_inc_return(&drbd_notify_id);
+
+	for_each_peer_device(peer_device, device)
+		stable_change_repl_state(peer_device, L_OFF,
+					 CS_VERBOSE | CS_WAIT_COMPLETE);
+
+	spin_lock_irq(&resource->req_lock);
+	drbd_unregister_device(device);
+	spin_unlock_irq(&resource->req_lock);
+
+	for_each_peer_device(peer_device, device)
+		notify_peer_device_state(NULL, 0, peer_device, NULL,
+					 NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
+	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
+	kobject_del(&device->kobj);
+	synchronize_rcu();
+	drbd_put_device(device);
+
+	return ret;
 }
 
 int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
