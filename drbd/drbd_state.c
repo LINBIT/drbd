@@ -909,20 +909,22 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		nc = rcu_dereference(connection->net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
-		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY &&
-		    resource->open_ro_cnt && !two_primaries)
-			return SS_PRIMARY_READER;
+		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY && !two_primaries) {
+			idr_for_each_entry(&resource->devices, device, vnr) {
+				if (device->open_ro_cnt)
+					return SS_PRIMARY_READER;
+			}
+		}
 	}
-
-	if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && resource->open_rw_cnt)
-		return SS_DEVICE_IN_USE;
-
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
 		bool one_peer_disk_up_to_date[2];
 		enum which_state which;
+
+		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_rw_cnt)
+			return SS_DEVICE_IN_USE;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)
 			return SS_IS_DISKLESS;

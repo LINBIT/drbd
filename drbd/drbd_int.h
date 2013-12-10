@@ -758,7 +758,6 @@ struct drbd_resource {
 	struct mutex conf_update;	/* for ready-copy-update of net_conf and disk_conf
 					   and devices, connection and peer_devices lists */
 	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
-	int open_rw_cnt, open_ro_cnt;
 	spinlock_t req_lock;
 	u64 dagtag_sector;		/* Protected by req_lock.
 					 * See also dagtag_sector in
@@ -1074,6 +1073,7 @@ struct drbd_device {
 	struct drbd_bitmap *bitmap;
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
 
+	int open_rw_cnt, open_ro_cnt;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 

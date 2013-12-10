@@ -2221,13 +2221,24 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		kobject_get(&device->kobj);
 		kref_debug_get(&device->kref_debug, 3);
 		if (mode & FMODE_WRITE)
-			resource->open_rw_cnt++;
+			device->open_rw_cnt++;
 		else
-			resource->open_ro_cnt++;
+			device->open_ro_cnt++;
 	}
 	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	return rv;
+}
+
+static int open_rw_count(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr, count = 0;
+
+	idr_for_each_entry(&resource->devices, device, vnr)
+		count += device->open_rw_cnt;
+
+	return count;
 }
 
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
@@ -2239,10 +2250,11 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 
 	spin_lock_irqsave(&resource->req_lock, flags);
 	if (mode & FMODE_WRITE)
-		resource->open_rw_cnt--;
+		device->open_rw_cnt--;
 	else
-		resource->open_ro_cnt--;
-	open_rw_cnt = resource->open_rw_cnt;
+		device->open_ro_cnt--;
+
+	open_rw_cnt = open_rw_count(resource);
 	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	if (resource->res_opts.auto_promote) {
