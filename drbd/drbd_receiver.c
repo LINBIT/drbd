@@ -4993,7 +4993,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply;
 	union drbd_state mask = {}, val = {};
-	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY | CS_TWOPC;
+	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
 
 	reply.vnr = pi->vnr;
@@ -5158,6 +5158,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			del_timer(&resource->twopc_timer);
 
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+		clear_remote_state_change(resource);
 
 		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
 			drbd_md_sync(peer_device->device);

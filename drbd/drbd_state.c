@@ -519,10 +519,12 @@ static void end_remote_state_change(struct drbd_resource *resource, unsigned lon
 	__end_remote_state_change(resource, flags);
 }
 
-static void clear_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags) {
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+void clear_remote_state_change(struct drbd_resource *resource) {
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&resource->req_lock, irq_flags);
 	__clear_remote_state_change(resource);
-	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
 static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
@@ -3121,7 +3123,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		long timeout = twopc_retry_timeout(resource, retries++);
 		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
 			  jiffies_to_msecs(timeout));
-		clear_remote_state_change(resource, &irq_flags);
+		clear_remote_state_change(resource);
 		schedule_timeout_interruptible(timeout);
 		end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 		if (target_connection) {
