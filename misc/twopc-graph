@@ -1,0 +1,65 @@
+#! /usr/bin/perl
+
+my $tid;
+my $ended;
+
+my $nodes = {};
+my $committed = {};
+my $edges = [];
+my $duration = {};
+
+while (<>) {
+    if (/Preparing cluster-wide state change (\d+)/) {
+	print STDERR "$ARG: Preparing transaction $1 during transaction $tid in line $.?\n"
+	    if $tid && !$ended;
+	$nodes->{$1} = 1;
+	$tid = $1;
+	$ended = undef;
+    }
+    if (/(Committing|Aborting) cluster-wide state change (\d+) \((\d+)ms\)/) {
+	print STDERR "$ARG: Ending transaction $2 instead of $tid in line $.?\n"
+	    if $tid ne $2;
+	$ended = 1;
+	$committed->{$2} = 1
+	    if $1 eq "Committing";
+	$duration->{$2} = $3;
+    }
+
+    if (/Preparing remote state change (\d+)/) {
+	print STDERR "$ARG: Preparing transaction $1 during transaction $tid in line $.?\n"
+	    if $tid && !$ended;
+	$tid = $1;
+	$ended = undef;
+    }
+    if (/(?:Committing|Aborting) remote state change (\d+)/) {
+	print STDERR "$ARG: Ending transaction $1 instead of $tid in line $.?\n"
+	    if $tid ne $1;
+	$ended = 1;
+    }
+
+    if (/Rejecting concurrent remote state change (\d+)/) {
+	if ($tid) {
+	    push @$edges, [$tid, $1];
+	} else {
+	    print STDERR "$ARGV: $1: Rejected for an unknown reason\n";
+	}
+    }
+}
+
+open STDOUT, "| dot -Tsvg";
+print "digraph transactions {\n";
+print "\trankdir=LR;\n";
+foreach my $node (keys %$nodes) {
+    my $attrs = [];
+    push @$attrs, "label=\"$node\\n$duration->{$node}ms\""
+	if exists $duration->{$node};
+    push @$attrs, "style=bold"
+	if exists $committed->{$node};
+    push @$attrs, "style=dotted"
+	if !exists $committed->{$node};
+    print "\t$node" . ( @$attrs ? " [" . join(",", @$attrs) . "]" : "" ) . ";\n"
+}
+foreach my $edge (@$edges) {
+    print "\t$edge->[0] -> $edge->[1];\n";
+}
+print "}\n";

@@ -1182,11 +1182,10 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	struct p_twopc_request *p;
 	int err;
 
-	drbd_debug(connection, "Sending state change request %s [%u|%u] "
+	drbd_debug(connection, "Sending %s request for state change %u "
 		   "(primary_nodes=%lX, weak_nodes=%lX)\n",
 		   cmdname(cmd),
-		   be32_to_cpu(request->val),
-		   be32_to_cpu(request->mask),
+		   be32_to_cpu(request->tid),
 		   (unsigned long)be64_to_cpu(request->primary_nodes),
 		   (unsigned long)be64_to_cpu(request->weak_nodes));
 
@@ -1234,7 +1233,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 		p->reachable_nodes = cpu_to_be64(reply->reachable_nodes);
 		p->primary_nodes = cpu_to_be64(reply->primary_nodes);
 		p->weak_nodes = cpu_to_be64(reply->weak_nodes);
-		drbd_debug(connection, "Sending %s reply for %u "
+		drbd_debug(connection, "Sending %s reply for state change %u "
 			   "(reachable_nodes=%lX, primary_nodes=%lX, "
 			   "weak_nodes=%lX)\n",
 			   cmdname(cmd),

@@ -5015,7 +5015,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			spin_unlock_irq(&resource->req_lock);
 			if (pi->cmd == P_TWOPC_PREPARE) {
 				drbd_info(connection, "Rejecting concurrent "
-					  "remote state change %u\n", reply.tid);
+					  "remote state change %u because of "
+					  "state change %u\n",
+					  reply.tid,
+					  resource->twopc_reply.tid);
 				drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
 			} else {
 				drbd_info(connection, "Ignoring %s packet %u\n",
@@ -6605,7 +6608,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	spin_lock_irq(&resource->req_lock);
 	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
 	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
-		drbd_debug(connection, "Got a %s reply for tid=%u\n",
+		drbd_debug(connection, "Got a %s reply for state change %u\n",
 			   cmdname(pi->cmd),
 			   resource->twopc_reply.tid);
 
@@ -6643,9 +6646,8 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 					&resource->twopc_work);
 		}
 	} else {
-		drbd_debug(connection, "Ignoring %s reply for initiator=%d, tid=%u\n",
+		drbd_debug(connection, "Ignoring %s reply for state change %u\n",
 			   cmdname(pi->cmd),
-			   be32_to_cpu(p->initiator_node_id),
 			   be32_to_cpu(p->tid));
 	}
 	spin_unlock_irq(&resource->req_lock);
