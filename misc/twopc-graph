@@ -1,18 +1,58 @@
-#! /usr/bin/perl
+#! /usr/bin/perl -w
 
 my $tid;
 my $ended;
 
-my $nodes = {};
+my $labels;
+my $tids = {};
 my $committed = {};
 my $edges = [];
 my $duration = {};
+
+sub create_labels(@) {
+    my (@files) = @_;
+    my $labels = {};
+    my $a;
+    my $z;
+
+    a: for ($a = 0; ; $a++) {
+	if (length($files[0]) <= $a) {
+	    last a;
+	}
+	for (my $n = 1; $n < @files; $n++) {
+	    if (length($files[$n]) <= $a ||
+		substr($files[0], $a, 1) ne substr($files[$n], $a, 1)) {
+		last a;
+	    }
+	}
+    }
+    z: for ($z = 0; ; $z++) {
+	if (length($files[0]) <= $z) {
+	    last z;
+	}
+	for (my $n = 1; $n < @files; $n++) {
+	    if (length($files[$n]) <= $z ||
+		substr($files[0], -($z + 1), 1) ne substr($files[$n], -($z + 1), 1)) {
+		last z;
+	    }
+	}
+    }
+    for (my $n = 0; $n < @files; $n++) {
+	my $label = substr($files[$n], $a);
+	$label = substr($label, 0, -$z)
+	    if $z;
+	$labels->{$files[$n]} = $label;
+    }
+    return $labels;
+}
+
+$labels = create_labels(@ARGV);
 
 while (<>) {
     if (/Preparing cluster-wide state change (\d+)/) {
 	print STDERR "$ARG: Preparing transaction $1 during transaction $tid in line $.?\n"
 	    if $tid && !$ended;
-	$nodes->{$1} = 1;
+	$tids->{$1} = ($labels->{$ARGV} // $ARGV);
 	$tid = $1;
 	$ended = undef;
     }
@@ -49,17 +89,18 @@ while (<>) {
 open STDOUT, "| dot -Tsvg";
 print "digraph transactions {\n";
 print "\trankdir=LR;\n";
-foreach my $node (keys %$nodes) {
+foreach my $tid (keys %$tids) {
     my $attrs = [];
-    push @$attrs, "label=\"$node\\n$duration->{$node}ms\""
-	if exists $duration->{$node};
+    push @$attrs, "label=\"$tid\\n$tids->{$tid}: $duration->{$tid}ms\""
+	if exists $duration->{$tid};
     push @$attrs, "style=bold"
-	if exists $committed->{$node};
+	if exists $committed->{$tid};
     push @$attrs, "style=dotted"
-	if !exists $committed->{$node};
-    print "\t$node" . ( @$attrs ? " [" . join(",", @$attrs) . "]" : "" ) . ";\n"
+	if !exists $committed->{$tid};
+    print "\t$tid" . ( @$attrs ? " [" . join(",", @$attrs) . "]" : "" ) . ";\n"
 }
 foreach my $edge (@$edges) {
     print "\t$edge->[0] -> $edge->[1];\n";
 }
 print "}\n";
+close STDOUT;
