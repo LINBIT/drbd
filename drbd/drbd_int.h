@@ -1043,6 +1043,7 @@ struct drbd_peer_device {
 	unsigned long rs_mark_time[DRBD_SYNC_MARKS];
 	/* current index into rs_mark_{left,time} */
 	int rs_last_mark;
+	unsigned long rs_last_writeout;
 
 	/* where does the admin want us to start? (sector) */
 	sector_t ov_start_sector;
@@ -1545,6 +1546,7 @@ extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must
 extern void drbd_bm_mark_range_for_writeout(struct drbd_device *, unsigned long, unsigned long);
 extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
+extern int  drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_hold(local);
 extern int drbd_bm_write_all(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bm_write_copy_pages(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern size_t	     drbd_bm_words(struct drbd_device *device);

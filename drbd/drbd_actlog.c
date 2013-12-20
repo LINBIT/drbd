@@ -96,10 +96,10 @@ struct __packed al_transaction_on_disk {
 	__be32	context[AL_CONTEXT_PER_TRANSACTION];
 };
 
-struct update_odbm_work {
-	struct drbd_work w;
-	struct drbd_peer_device *peer_device;
-	unsigned int enr;
+struct update_peers_work {
+       struct drbd_work w;
+       struct drbd_peer_device *peer_device;
+       unsigned int enr;
 };
 
 struct update_al_work {
@@ -552,11 +552,6 @@ static unsigned long al_extent_to_bm_bit(unsigned int al_enr)
 	return (unsigned long)al_enr << (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT);
 }
 
-static unsigned long rs_extent_to_bm_bit(unsigned int rs_enr)
-{
-	return (unsigned long)rs_enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
-}
-
 static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
 {
 	const unsigned int stripes = device->ldev->md.al_stripes;
@@ -839,42 +834,16 @@ int drbd_initialize_al(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-static int w_update_odbm(struct drbd_work *w, int unused)
+static int w_update_peers(struct drbd_work *w, int unused)
 {
-	struct update_odbm_work *udw = container_of(w, struct update_odbm_work, w);
-	struct drbd_peer_device *peer_device = udw->peer_device;
-	struct drbd_device *device = peer_device->device;
-	unsigned long start, end;
+       struct update_peers_work *upw = container_of(w, struct update_peers_work, w);
+       struct drbd_peer_device *peer_device = upw->peer_device;
 
-	if (!get_ldev(device)) {
-		if (drbd_ratelimit())
-			drbd_warn(device, "Can not update on disk bitmap, local IO disabled.\n");
-		kfree(udw);
-		return 0;
-	}
+       consider_sending_peers_in_sync(peer_device, upw->enr);
 
-	start = rs_extent_to_bm_bit(udw->enr);
-	end = rs_extent_to_bm_bit(udw->enr + 1) - 1;
-	drbd_bm_write_range(peer_device, start, end);
-	put_ldev(device);
+       kfree(upw);
 
-	consider_sending_peers_in_sync(peer_device, udw->enr);
-
-	kfree(udw);
-
-	if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed) {
-		switch (peer_device->repl_state[NEW]) {
-		case L_SYNC_SOURCE:  case L_SYNC_TARGET:
-		case L_PAUSED_SYNC_S: case L_PAUSED_SYNC_T:
-			drbd_resync_finished(peer_device, D_MASK);
-			break;
-		default:
-			/* nothing to do */
-			break;
-		}
-	}
-
-	return 0;
+       return 0;
 }
 
 /* inherently racy...
@@ -915,7 +884,6 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, unsi
 {
 	struct drbd_device *device = peer_device->device;
 	struct lc_element *e;
-	struct update_odbm_work *udw;
 
 	D_ASSERT(device, atomic_read(&device->local_cnt));
 
@@ -977,17 +945,22 @@ static void drbd_try_clear_on_disk_bm(struct drbd_peer_device *peer_device, unsi
 		/* no race, we are within the al_lock! */
 
 		if (ext->rs_left == ext->rs_failed) {
+			struct update_peers_work *upw;
+
 			ext->rs_failed = 0;
 
-			udw = kmalloc(sizeof(*udw), GFP_ATOMIC);
-			if (udw) {
-				udw->enr = ext->lce.lc_number;
-				udw->w.cb = w_update_odbm;
-				udw->peer_device = peer_device;
-				drbd_queue_work(&device->resource->work, &udw->w);
+			upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
+			if (upw) {
+				upw->enr = ext->lce.lc_number;
+				upw->w.cb = w_update_peers;
+				upw->peer_device = peer_device;
+				drbd_queue_work(&device->resource->work, &upw->w);
 			} else {
-				drbd_warn(device, "Could not kmalloc an udw\n");
+				if (drbd_ratelimit())
+					drbd_warn(peer_device, "kmalloc(udw) failed.\n");
 			}
+
+			wake_up(&peer_device->connection->sender_work.q_wait);
 		}
 	} else {
 		drbd_err(device, "lc_get() failed! locked=%d/%d flags=%lu\n",
