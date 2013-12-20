@@ -3121,7 +3121,6 @@ int init_submitter(struct drbd_device *device)
 #else
 	INIT_WORK(&device->submit.worker, do_submit);
 #endif
-	spin_lock_init(&device->submit.lock);
 	INIT_LIST_HEAD(&device->submit.writes);
 	return 0;
 }
@@ -3180,6 +3179,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->go_diskless.list);
 	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
+	INIT_LIST_HEAD(&device->pending_master_completion[0]);
+	INIT_LIST_HEAD(&device->pending_master_completion[1]);
+	INIT_LIST_HEAD(&device->pending_completion[0]);
+	INIT_LIST_HEAD(&device->pending_completion[1]);
 
 	device->go_diskless.cb  = w_go_diskless;
 	device->md_sync_work.cb = w_md_sync;
