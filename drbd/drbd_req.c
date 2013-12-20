@@ -1368,6 +1368,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	const int rw = bio_data_dir(req->master_bio);
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
+	bool submit_private_bio = false;
 
 	spin_lock_irq(&resource->req_lock);
 	if (rw == WRITE) {
@@ -1446,9 +1447,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		/* needs to be marked within the same spinlock */
 		_req_mod(req, TO_BE_SUBMITTED, NULL);
 		/* but we need to give up the spinlock to submit */
-		spin_unlock_irq(&resource->req_lock);
-		drbd_submit_req_private_bio(req);
-		spin_lock_irq(&resource->req_lock);
+		submit_private_bio = true;
 	} else if (no_remote) {
 nodata:
 		if (drbd_ratelimit())
@@ -1462,6 +1461,15 @@ out:
 	if (drbd_req_put_completion_ref(req, &m, 1))
 		kref_put(&req->kref, drbd_req_destroy);
 	spin_unlock_irq(&resource->req_lock);
+
+	/* Even though above is a kref_put(), this is safe.
+	 * As long as we still need to submit our private bio,
+	 * we hold a completion ref, and the request cannot disappear.
+	 * If however this request did not even have a private bio to submit
+	 * (e.g. remote read), req may already be invalid now.
+	 * That's why we cannot check on req->private_bio. */
+	if (submit_private_bio)
+		drbd_submit_req_private_bio(req);
 
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
 	 * we plug after submit, so we won't miss an unplug event */
