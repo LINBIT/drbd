@@ -967,6 +967,12 @@ struct drbd_connection {			/* is a resource from the config file */
 		struct drbd_request *req_next;
 	} todo;
 
+	/* cached pointers,
+	 * so we can look up the oldest pending requests more quickly.
+	 * protected by resource->req_lock */
+	struct drbd_request *req_ack_pending;
+	struct drbd_request *req_not_net_done;
+
 	struct {
 		/* whether this sender thread
 		 * has processed a single write yet. */

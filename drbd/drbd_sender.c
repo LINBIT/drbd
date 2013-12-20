@@ -1878,9 +1878,8 @@ static struct drbd_request *tl_next_request_for_connection(struct drbd_connectio
 
 	connection->todo.req = connection->todo.req_next;
 
-	if (connection->todo.req_next != NULL)
-		connection->todo.req_next =
-			__next_request_for_connection(connection, connection->todo.req_next);
+	/* advancement of todo.req_next happens in advance_conn_req_next(),
+	 * called from mod_rq_state() */
 
 	return connection->todo.req;
 }
