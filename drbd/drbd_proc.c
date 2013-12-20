@@ -303,7 +303,8 @@ static int drbd_seq_show(struct seq_file *seq, void *v)
 		}
 
 		if (proc_details >= 2) {
-			if (device->resync) {
+			seq_printf(seq, "\tblocked on activity log: %d\n", atomic_read(&device->ap_actlog_cnt));
+			if (proc_details >= 3 && device->resync) {
 				lc_seq_dump_details(seq, device->resync, "rs_left",
 					resync_dump_detail);
 			}
