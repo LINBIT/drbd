@@ -1408,7 +1408,8 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backin
 	};
 
 	pwo = resource->write_ordering;
-	wo = min(pwo, wo);
+	if (wo != WO_bio_barrier)
+		wo = min(pwo, wo);
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (i++ == 1 && wo == WO_bio_barrier)
