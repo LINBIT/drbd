@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre7 (api:genl1/proto:86-110)
+--------
+ * Merge up and bejone 8.4.4
+ * Do not crash if DRBD runs out of available bitmap slots
+ * Fix reference counting (A few bugs in this area caused crashed
+   when/after unloading the module)
+ * Fix crashes on PAE/highmem
+ * Many fixes to the two phase commit protocol (used for cluster
+   wide state changes)
+ * Lots of minor fixes
+
 9.0.0pre6 (api:genl1/proto:86-110)
 --------
  * Fixed the wait-[connect|sync] drbdadm commands. Now they actually
