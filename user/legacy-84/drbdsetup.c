@@ -2392,8 +2392,7 @@ static int modprobe_drbd(void)
 	int ret, retries = 10;
 
 	ret = stat("/proc/drbd", &sb);
-	if (ret && errno == ENOENT) {
-		system("/sbin/modprobe drbd");
+	if (ret && errno == ENOENT && 0 == system("/sbin/modprobe drbd")) {
 		for(;;) {
 			struct timespec ts = {
 				.tv_nsec = 1000000,
