@@ -1965,6 +1965,9 @@ void wait_for_work(struct drbd_connection *connection, struct list_head *work_li
 		if (send_barrier)
 			maybe_send_barrier(connection,
 					connection->send.current_epoch_nr + 1);
+		/* drbd_send() may have called flush_signals() */
+		if (get_t_state(&connection->worker) != RUNNING)
+			break;
 		schedule();
 		/* may be woken up for other things but new work, too,
 		 * e.g. if the current epoch got closed.
