@@ -635,10 +635,9 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection)
 {
 	const char *what;
 	struct socket *sock;
-	struct sockaddr_in6 src_in6;
-	struct sockaddr_in6 peer_in6;
+	struct sockaddr_storage my_addr, peer_addr;
 	struct net_conf *nc;
-	int err, peer_addr_len, my_addr_len;
+	int err;
 	int sndbuf_size, rcvbuf_size, connect_int;
 	int disconnect_on_error = 1;
 
@@ -653,20 +652,18 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection)
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
 
-	my_addr_len = min_t(int, connection->my_addr_len, sizeof(src_in6));
-	memcpy(&src_in6, &connection->my_addr, my_addr_len);
-
-	if (((struct sockaddr *)&connection->my_addr)->sa_family == AF_INET6)
-		src_in6.sin6_port = 0;
+	my_addr = connection->my_addr;
+	if (my_addr.ss_family == AF_INET6)
+		((struct sockaddr_in6 *)&my_addr)->sin6_port = 0;
 	else
-		((struct sockaddr_in *)&src_in6)->sin_port = 0; /* AF_INET & AF_SCI */
+		((struct sockaddr_in *)&my_addr)->sin_port = 0; /* AF_INET & AF_SCI */
 
-	peer_addr_len = min_t(int, connection->peer_addr_len, sizeof(src_in6));
-	memcpy(&peer_in6, &connection->peer_addr, peer_addr_len);
+	/* In some cases, the network stack can end up overwriting
+	   peer_addr.ss_family, so use a copy here. */
+	peer_addr = connection->peer_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(((struct sockaddr *)&src_in6)->sa_family,
-			       SOCK_STREAM, IPPROTO_TCP, &sock);
+	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err < 0) {
 		sock = NULL;
 		goto out;
@@ -684,7 +681,7 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection)
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = sock->ops->bind(sock, (struct sockaddr *) &src_in6, my_addr_len);
+	err = sock->ops->bind(sock, (struct sockaddr *) &my_addr, connection->my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -692,7 +689,7 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection)
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	disconnect_on_error = 0;
 	what = "connect";
-	err = sock->ops->connect(sock, (struct sockaddr *) &peer_in6, peer_addr_len, 0);
+	err = sock->ops->connect(sock, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
 
 out:
 	if (err < 0) {
@@ -739,8 +736,8 @@ static void drbd_incoming_connection(struct sock *sk)
 
 static int prepare_listener(struct drbd_connection *connection, struct listener *listener)
 {
-	int err, sndbuf_size, rcvbuf_size, my_addr_len;
-	struct sockaddr_in6 my_addr;
+	int err, sndbuf_size, rcvbuf_size;
+	struct sockaddr_storage my_addr;
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what;
@@ -755,12 +752,10 @@ static int prepare_listener(struct drbd_connection *connection, struct listener 
 	rcvbuf_size = nc->rcvbuf_size;
 	rcu_read_unlock();
 
-	my_addr_len = min_t(int, connection->my_addr_len, sizeof(struct sockaddr_in6));
-	memcpy(&my_addr, &connection->my_addr, my_addr_len);
+	my_addr = connection->my_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(((struct sockaddr *)&my_addr)->sa_family,
-			       SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;
@@ -770,7 +765,7 @@ static int prepare_listener(struct drbd_connection *connection, struct listener 
 	drbd_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, my_addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, connection->my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -786,7 +781,7 @@ static int prepare_listener(struct drbd_connection *connection, struct listener 
 	if (err < 0)
 		goto out;
 
-	memcpy(&listener->listen_addr, &my_addr, my_addr_len);
+	listener->listen_addr = my_addr;
 
 	return 0;
 out:
@@ -915,12 +910,12 @@ static void unregister_state_change(struct sock *sk, struct listener *listener)
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
-static bool addr_equal(const struct sockaddr *addr1, const struct sockaddr *addr2)
+static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
 {
-	if (addr1->sa_family != addr2->sa_family)
+	if (addr1->ss_family != addr2->ss_family)
 		return false;
 
-	if (addr1->sa_family == AF_INET6) {
+	if (addr1->ss_family == AF_INET6) {
 		const struct sockaddr_in6 *v6a1 = (const struct sockaddr_in6 *)addr1;
 		const struct sockaddr_in6 *v6a2 = (const struct sockaddr_in6 *)addr2;
 
@@ -937,12 +932,12 @@ static bool addr_equal(const struct sockaddr *addr1, const struct sockaddr *addr
 }
 
 static struct waiter *
-	find_waiter_by_addr(struct listener *listener, struct sockaddr *addr)
+	find_waiter_by_addr(struct listener *listener, struct sockaddr_storage *addr)
 {
 	struct waiter *waiter;
 
 	list_for_each_entry(waiter, &listener->waiters, list) {
-		if (addr_equal((struct sockaddr *)&waiter->connection->peer_addr, addr))
+		if (addr_equal(&waiter->connection->peer_addr, addr))
 			return waiter;
 	}
 
@@ -1014,7 +1009,7 @@ retry:
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
 
 		spin_lock_bh(&resource->listeners_lock);
-		waiter2 = find_waiter_by_addr(waiter->listener, (struct sockaddr *)&peer_addr);
+		waiter2 = find_waiter_by_addr(waiter->listener, &peer_addr);
 		if (!waiter2) {
 			struct sockaddr_in6 *from_sin6, *to_sin6;
 			struct sockaddr_in *from_sin, *to_sin;

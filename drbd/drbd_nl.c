@@ -436,7 +436,7 @@ static void env_print_address(struct env *env, const char *prefix,
 {
 	const char *afs;
 
-	switch (((struct sockaddr *)storage)->sa_family) {
+	switch (storage->ss_family) {
 	case AF_INET6:
 		afs = "ipv6";
 		env_print(env, "%sADDRESS=%pI6", prefix,
