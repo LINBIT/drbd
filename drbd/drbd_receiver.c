@@ -864,16 +864,27 @@ static int get_listener(struct drbd_connection *connection, struct waiter *waite
 	}
 }
 
+static void unregister_state_change(struct sock *sk, struct listener *listener)
+{
+	write_lock_bh(&sk->sk_callback_lock);
+	sk->sk_state_change = listener->original_sk_state_change;
+	sk->sk_user_data = NULL;
+	write_unlock_bh(&sk->sk_callback_lock);
+}
+
 static void drbd_listener_destroy(struct kref *kref)
 {
 	struct listener *listener = container_of(kref, struct listener, kref);
 	struct drbd_resource *resource = listener->resource;
 
+	spin_lock_bh(&resource->listeners_lock);
 	list_del(&listener->list);
 	spin_unlock_bh(&resource->listeners_lock);
+
+	unregister_state_change(listener->s_listen->sk, listener);
 	sock_release(listener->s_listen);
+
 	kfree(listener);
-	spin_lock_bh(&resource->listeners_lock);
 }
 
 static void put_listener(struct waiter *waiter)
@@ -893,21 +904,13 @@ static void put_listener(struct waiter *waiter)
 		ad2 = list_entry(waiter->listener->waiters.next, struct waiter, list);
 		wake_up(&ad2->wait);
 	}
-	kref_put(&waiter->listener->kref, drbd_listener_destroy);
 	spin_unlock_bh(&resource->listeners_lock);
+	kref_put(&waiter->listener->kref, drbd_listener_destroy);
 	waiter->listener = NULL;
 	if (waiter->socket) {
 		sock_release(waiter->socket);
 		waiter->socket = NULL;
 	}
-}
-
-static void unregister_state_change(struct sock *sk, struct listener *listener)
-{
-	write_lock_bh(&sk->sk_callback_lock);
-	sk->sk_state_change = listener->original_sk_state_change;
-	sk->sk_user_data = NULL;
-	write_unlock_bh(&sk->sk_callback_lock);
 }
 
 static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
@@ -1004,6 +1007,8 @@ retry:
 		if (!s_estab)
 			return NULL;
 
+		/* The established socket inherits the sk_state_change callback
+		   from the listening socket. */
 		unregister_state_change(s_estab->sk, waiter->listener);
 
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
