@@ -4885,13 +4885,23 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 		return -EIO;
 	}
 
+	mask.i = be32_to_cpu(p->mask);
+	val.i = be32_to_cpu(p->val);
+
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
-	 * packets have an undefined vnr.  In the other packets, vnr == -1
-	 * means that the packet applies to the connection.  */
-	if (pi->cmd == P_STATE_CHG_REQ || (pi->cmd != P_CONN_ST_CHG_REQ && pi->vnr != -1)) {
+	 * packets have an undefined vnr. */
+	if (pi->cmd == P_STATE_CHG_REQ) {
 		peer_device = conn_peer_device(connection, pi->vnr);
-		if (!peer_device)
+		if (!peer_device) {
+			if (mask.i == ((union drbd_state){{.conn = conn_MASK}}).i &&
+			    val.i == ((union drbd_state){{.conn = L_OFF}}).i) {
+				/* The peer removed this volume, we do not have it... */
+				drbd_send_sr_reply(connection, vnr, SS_NOTHING_TO_DO);
+				return 0;
+			}
+
 			return -EIO;
+		}
 		vnr = peer_device->device->vnr;
 	}
 
@@ -4908,9 +4918,6 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 		drbd_send_sr_reply(connection, vnr, rv);
 		return 0;
 	}
-
-	mask.i = be32_to_cpu(p->mask);
-	val.i = be32_to_cpu(p->val);
 
 	/* Send the reply before carrying out the state change: this is needed
 	 * for connection state changes which close the network connection.  */
