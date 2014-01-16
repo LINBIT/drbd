@@ -1,8 +1,5 @@
 #! /usr/bin/perl -w
 
-my $tid;
-my $ended;
-
 my $labels;
 my $tids = {};
 my $committed = {};
@@ -48,40 +45,48 @@ sub create_labels(@) {
 
 $labels = create_labels(@ARGV);
 
-while (<>) {
-    if (/Preparing cluster-wide state change (\d+)/) {
-	print STDERR "$ARG: Preparing transaction $1 during transaction $tid in line $.?\n"
-	    if $tid && !$ended;
-	$tids->{$1} = ($labels->{$ARGV} // $ARGV);
-	$tid = $1;
-	$ended = undef;
-    }
-    if (/(Committing|Aborting) cluster-wide state change (\d+) \((\d+)ms\)/) {
-	print STDERR "$ARG: Ending transaction $2 instead of $tid in line $.?\n"
-	    if $tid ne $2;
-	$ended = 1;
-	$committed->{$2} = 1
-	    if $1 eq "Committing";
-	$duration->{$2} = $3;
-    }
+foreach my $ARGV (@ARGV) {
+    open STDIN, $ARGV
+	or die "$ARGV: $!\n";
 
-    if (/Preparing remote state change (\d+)/) {
-	print STDERR "$ARG: Preparing transaction $1 during transaction $tid in line $.?\n"
-	    if $tid && !$ended;
-	$tid = $1;
-	$ended = undef;
-    }
-    if (/(?:Committing|Aborting) remote state change (\d+)/) {
-	print STDERR "$ARG: Ending transaction $1 instead of $tid in line $.?\n"
-	    if $tid ne $1;
-	$ended = 1;
-    }
+    my $tid;
+    my $ended;
 
-    if (/Rejecting concurrent remote state change (\d+)/) {
-	if ($tid) {
-	    push @$edges, [$tid, $1];
-	} else {
-	    print STDERR "$ARGV: $1: Rejected for an unknown reason\n";
+    while (<STDIN>) {
+	if (/Preparing cluster-wide state change (\d+)/) {
+	    print STDERR "$ARGV: $& during transaction $tid in line $.?\n"
+		if $tid && !$ended;
+	    $tids->{$1} = ($labels->{$ARGV} // $ARGV);
+	    $tid = $1;
+	    $ended = undef;
+	}
+	if (/(Committing|Aborting) cluster-wide state change (\d+) \((\d+)ms\)/) {
+	    print STDERR "$ARGV: Ending transaction $2 instead of $tid in line $.?\n"
+		if $tid ne $2;
+	    $ended = 1;
+	    $committed->{$2} = 1
+		if $1 eq "Committing";
+	    $duration->{$2} = $3;
+	}
+
+	if (/Preparing remote state change (\d+)/) {
+	    print STDERR "$ARGV: $& during transaction $tid in line $.?\n"
+		if $tid && !$ended;
+	    $tid = $1;
+	    $ended = undef;
+	}
+	if (/(?:Committing|Aborting) remote state change (\d+)/) {
+	    print STDERR "$ARGV: Ending transaction $1 instead of $tid in line $.?\n"
+		if $tid ne $1;
+	    $ended = 1;
+	}
+
+	if (/Rejecting concurrent remote state change (\d+)/) {
+	    if ($tid) {
+		push @$edges, [$tid, $1];
+	    } else {
+		print STDERR "$ARGV: $1: Rejected for an unknown reason\n";
+	    }
 	}
     }
 }
