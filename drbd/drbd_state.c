@@ -1456,8 +1456,7 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 		work->done = done;
 		drbd_queue_work(&resource->work, &work->w);
 	} else {
-		if (work)
-			forget_state_change(work->state_change);
+		kfree(work);
 		drbd_err(resource, "Could not allocate after state change work\n");
 	}
 }
