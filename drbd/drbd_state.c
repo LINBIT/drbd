@@ -1717,7 +1717,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			drbd_thread_stop_nowait(&connection->receiver);
 
 		/* Upon network failure, we need to restart the receiver. */
-		if (cstate[OLD] > C_CONNECTING &&
+		if (cstate[OLD] >= C_CONNECTING &&
 		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
 			drbd_thread_restart_nowait(&connection->receiver);
 
