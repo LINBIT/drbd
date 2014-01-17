@@ -1442,9 +1442,10 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 }
 
 static void queue_after_state_change_work(struct drbd_resource *resource,
-					  struct completion *done, gfp_t gfp)
+					  struct completion *done)
 {
 	struct after_state_change_work *work;
+	gfp_t gfp = GFP_ATOMIC;
 
 	work = kmalloc(sizeof(*work), gfp);
 	if (work) {
@@ -1458,6 +1459,8 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	} else {
 		kfree(work);
 		drbd_err(resource, "Could not allocate after state change work\n");
+		if (done)
+			complete(done);
 	}
 }
 
@@ -1742,7 +1745,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			apply_unacked_peer_requests(connection);
 	}
 
-	queue_after_state_change_work(resource, done, GFP_ATOMIC);
+	queue_after_state_change_work(resource, done);
 }
 
 static void abw_start_sync(struct drbd_device *device,
