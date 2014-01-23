@@ -5096,10 +5096,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	if (pi->vnr != -1) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
-		if (!peer_device) {
-			spin_unlock_irq(&resource->req_lock);
-			return -EIO;
-		}
+		/* If we do not know the peer_device, then we are fine with
+		   whatever is going on in the cluster. E.g. detach and del-minor
+		   one each node, one after the other */
+
+		affected_connection = NULL; /* It is intended for a peer_device! */
 	}
 
     next:
@@ -5142,10 +5143,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	if (peer_device)
 		rv = change_peer_device_state(peer_device, mask, val, flags);
+	else if (affected_connection)
+		rv = change_connection_state(affected_connection,
+					     mask, val, flags | CS_IGN_OUTD_FAIL);
 	else
-		rv = change_connection_state(
-			affected_connection ? affected_connection : connection,
-			mask, val, flags | CS_IGN_OUTD_FAIL);
+		rv = SS_NOTHING_TO_DO;
 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {
