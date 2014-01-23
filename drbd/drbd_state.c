@@ -1388,6 +1388,12 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* Implication of the repl state on other peer's repl state */
 			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
 				set_resync_susp_other_c(peer_device, true, true);
+
+			/* A detach is a cluster wide transaction. The peer_disk_state updates
+			   are coming in while we have it prepared. When the cluster wide
+			   state change gets committed prevent D_DISKLESS -> D_FAILED */
+			if (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] == D_FAILED)
+				peer_disk_state[NEW] = D_DISKLESS;
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
