@@ -1954,6 +1954,9 @@ void wait_for_sender_todo(struct drbd_connection *connection)
 		if (send_barrier)
 			maybe_send_barrier(connection,
 					connection->send.current_epoch_nr + 1);
+		/* drbd_send() may have called flush_signals() */
+		if (get_t_state(&connection->sender) != RUNNING)
+			break;
 		schedule();
 		/* may be woken up for other things but new work, too,
 		 * e.g. if the current epoch got closed.
