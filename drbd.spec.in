@@ -335,7 +335,7 @@ fi
 * Mon Dec  3 2012 Philipp Reisner <phil@linbit.com> - 9.0.0pre1-1
 - New upstream release.
 
-* Wed Jul 15 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1
+* Mon Jul 18 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1
 - New upstream release.
 
 * Fri Jan 28 2011 Philipp Reisner <phil@linbit.com> - 8.3.10-1
@@ -347,22 +347,22 @@ fi
 * Wed Jun  2 2010 Philipp Reisner <phil@linbit.com> - 8.3.8-1
 - New upstream release.
 
-* Thu Jan 13 2010 Philipp Reisner <phil@linbit.com> - 8.3.7-1
+* Wed Jan 13 2010 Philipp Reisner <phil@linbit.com> - 8.3.7-1
 - New upstream release.
 
-* Thu Nov  8 2009 Philipp Reisner <phil@linbit.com> - 8.3.6-1
+* Sun Nov  8 2009 Philipp Reisner <phil@linbit.com> - 8.3.6-1
 - New upstream release.
 
-* Thu Oct 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.5-1
+* Tue Oct 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.5-1
 - New upstream release.
 
 * Wed Oct 21 2009 Florian Haas <florian@linbit.com> - 8.3.4-12
 - Packaging makeover.
 
-* Thu Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
+* Tue Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
 - New upstream release.
 
-* Thu Oct  5 2009 Philipp Reisner <phil@linbit.com> - 8.3.3-1
+* Mon Oct  5 2009 Philipp Reisner <phil@linbit.com> - 8.3.3-1
 - New upstream release.
 
 * Fri Jul  3 2009 Philipp Reisner <phil@linbit.com> - 8.3.2-1
@@ -374,7 +374,7 @@ fi
 * Thu Dec 18 2008 Philipp Reisner <phil@linbit.com> - 8.3.0-1
 - New upstream release.
 
-* Thu Nov 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.7-1
+* Wed Nov 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.7-1
 - New upstream release.
 
 * Fri May 30 2008 Philipp Reisner <phil@linbit.com> - 8.2.6-1
@@ -410,7 +410,7 @@ fi
 * Fri Apr 6 2007 Philipp Reisner <phil@linbit.com> - 8.0.2-1
 - New upstream release.
 
-* Mon Mar 3 2007 Philipp Reisner <phil@linbit.com> - 8.0.1-1
+* Mon Mar  5 2007 Philipp Reisner <phil@linbit.com> - 8.0.1-1
 - New upstream release.
 
 * Wed Jan 24 2007 Philipp Reisner <phil@linbit.com>  - 8.0.0-1
