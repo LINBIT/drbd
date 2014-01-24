@@ -160,8 +160,13 @@ retry:
 		} else if (errno == EAGAIN) {
 			dbg(3, "recvmsg() returned EAGAIN, aborting\n");
 			return 0;
-		} else
+		} else if (errno == ENOBUFS) {
+			dbg(3, "recvmsg() returned ENOBUFS\n");
+			return -E_RCV_ENOBUFS;
+		} else {
+			dbg(3, "recvmsg() returned %d, errno = %d\n", n, errno);
 			return -E_RCV_FAILED;
+		}
 	}
 
 	if (iov->iov_len < (unsigned)n ||
@@ -203,6 +208,8 @@ int genl_recv_msgs(struct genl_sock *s, struct iovec *iov, char **err_desc, int 
 				? "timed out waiting for reply"
 				: (c == -E_RCV_NO_SOURCE_ADDR)
 				? "no source address!"
+				: ( c == -E_RCV_ENOBUFS)
+			        ? "packets droped, socket receive buffer overrun"
 				: "failed to receive netlink reply";
 		return c;
 	}
