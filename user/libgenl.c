@@ -37,7 +37,7 @@ static struct genl_sock *genl_connect(__u32 nl_groups)
 {
 	struct genl_sock *s = calloc(1, sizeof(*s));
 	socklen_t sock_len;
-	int bsz = 2 << 10;
+	int bsz = 1 << 20;
 
 	if (!s)
 		return NULL;
