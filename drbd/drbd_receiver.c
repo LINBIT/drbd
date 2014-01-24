@@ -3005,10 +3005,13 @@ out_interrupted:
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-bool drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector)
+bool drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector,
+			      bool throttle_if_app_is_waiting)
 {
-	if (!drbd_rs_c_min_rate_throttle(peer_device))
-		return false;
+	bool throttle = drbd_rs_c_min_rate_throttle(peer_device);
+
+	if (!throttle || throttle_if_app_is_waiting)
+		return throttle;
 
 	return !drbd_sector_has_priority(peer_device, sector);
 }
@@ -3031,7 +3034,8 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 	curr_events = drbd_backing_bdev_events(device->ldev->backing_bdev->bd_contains->bd_disk)
 		    - atomic_read(&device->rs_sect_ev);
 
-	if (!peer_device->rs_last_events ||
+	if (atomic_read(&device->ap_actlog_cnt) ||
+	    !peer_device->rs_last_events ||
 	    curr_events - peer_device->rs_last_events > 64) {
 		unsigned long rs_left;
 		int i;
@@ -3221,7 +3225,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	 * In that case, throttling is done on the SyncTarget only.
 	 */
 	if (connection->peer_role[NOW] != R_PRIMARY &&
-	    drbd_rs_should_slow_down(peer_device, sector))
+	    drbd_rs_should_slow_down(peer_device, sector, false))
 		schedule_timeout_uninterruptible(HZ/10);
 	if (drbd_rs_begin_io(peer_device, sector))
 		goto out_free_e;

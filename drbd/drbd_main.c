@@ -3164,6 +3164,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	drbd_set_defaults(device);
 
 	atomic_set(&device->ap_bio_cnt, 0);
+	atomic_set(&device->ap_actlog_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
 	atomic_set(&device->rs_sect_ev, 0);

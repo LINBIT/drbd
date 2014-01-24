@@ -1409,6 +1409,15 @@ int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
 	int i;
+	bool throttle = drbd_rs_should_slow_down(peer_device, sector, true);
+
+	/* If we need to throttle, a half-locked (only marked BME_NO_WRITES,
+	 * not yet BME_LOCKED) extent needs to be kicked out explicitly if we
+	 * need to throttle. There is at most one such half-locked extent,
+	 * which is remembered in resync_wenr. */
+
+	if (throttle && peer_device->resync_wenr != enr)
+		return -EAGAIN;
 
 	spin_lock_irq(&device->al_lock);
 	if (peer_device->resync_wenr != LC_FREE && peer_device->resync_wenr != enr) {
@@ -1433,8 +1442,10 @@ int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 			D_ASSERT(device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 			clear_bit(BME_NO_WRITES, &bm_ext->flags);
 			peer_device->resync_wenr = LC_FREE;
-			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0)
+			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
+				bm_ext->flags = 0;
 				peer_device->resync_locked--;
+			}
 			wake_up(&device->al_wait);
 		} else {
 			drbd_alert(device, "LOGIC BUG\n");
@@ -1496,8 +1507,20 @@ proceed:
 	return 0;
 
 try_again:
-	if (bm_ext)
-		peer_device->resync_wenr = enr;
+	if (bm_ext) {
+		if (throttle) {
+			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
+			D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
+			clear_bit(BME_NO_WRITES, &bm_ext->flags);
+			peer_device->resync_wenr = LC_FREE;
+			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
+				bm_ext->flags = 0;
+				peer_device->resync_locked--;
+			}
+			wake_up(&device->al_wait);
+		} else
+			peer_device->resync_wenr = enr;
+	}
 	spin_unlock_irq(&device->al_lock);
 	return -EAGAIN;
 }

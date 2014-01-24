@@ -416,9 +416,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!get_ldev(device))
 		return -EIO;
 
-	if (drbd_rs_should_slow_down(peer_device, sector))
-		goto defer;
-
 	/* GFP_TRY, because if there is no memory available right now, this may
 	 * be rescheduled for later. It is "only" background resync, after all. */
 	peer_req = drbd_alloc_peer_req(peer_device, ID_SYNCER /* unused */, sector,
@@ -676,8 +673,7 @@ next_sector:
 
 		sector = BM_BIT_TO_SECT(bit);
 
-		if (drbd_rs_should_slow_down(peer_device, sector) ||
-		    drbd_try_rs_begin_io(peer_device, sector)) {
+		if (drbd_try_rs_begin_io(peer_device, sector)) {
 			device->bm_resync_fo = bit;
 			goto requeue;
 		}
@@ -809,8 +805,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 		size = BM_BLOCK_SIZE;
 
-		if (drbd_rs_should_slow_down(peer_device, sector) ||
-		    drbd_try_rs_begin_io(peer_device, sector)) {
+		if (drbd_try_rs_begin_io(peer_device, sector)) {
 			peer_device->ov_position = sector;
 			goto requeue;
 		}
