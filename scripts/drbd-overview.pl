@@ -198,7 +198,7 @@ sub slurp_drbdsetup() {
         chomp;
         next unless s/^\d+(\*)? exists //;
         $continued = $1;
-        s/^([\w.-]+) name:(\w+) //;
+        s/^([\w.-]+) name:([\w.-]+) //;
         my $what = $1;
         my $res = $2;
 
@@ -227,7 +227,7 @@ sub slurp_drbdsetup() {
         } elsif ($what eq "peer-device") {
             my %kv = map { split(/:/); } split(/ /);
             my $p = $kv{"conn-name"};
-            $peers{dstates}{$p} = $kv{disk};
+            $peers{dstates}{$p} = $kv{"peer-disk"};
         } else {
             warn("unknown key $what\n");
         }
