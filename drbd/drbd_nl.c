@@ -113,7 +113,8 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 #include <linux/genl_magic_func.h>
 
 atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
-atomic_t drbd_notify_id = ATOMIC_INIT(0);
+
+DEFINE_MUTEX(notification_mutex);
 
 /* used blkdev_get_by_path, to claim our meta data device(s) */
 static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
@@ -2632,7 +2633,6 @@ static void peer_device_to_info(struct peer_device_info *info,
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
-	unsigned int id = atomic_inc_return(&drbd_notify_id);
 	struct connection_info connection_info;
 	enum drbd_notification_type flags;
 	unsigned int peer_devices = 0;
@@ -2841,15 +2841,16 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	connection_to_info(&connection_info, connection, NOW);
 	flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
-	notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE | flags, id);
+	mutex_lock(&notification_mutex);
+	notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE | flags);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct peer_device_info peer_device_info;
 
 		peer_device_to_info(&peer_device_info, peer_device, NOW);
 		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
-		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags, id);
+		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags);
 	}
-
+	mutex_unlock(&notification_mutex);
 	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
@@ -4260,10 +4261,11 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 
 	if (resource) {
 		struct resource_info resource_info;
-		unsigned int id = atomic_inc_return(&drbd_notify_id);
 
+		mutex_lock(&notification_mutex);
 		resource_to_info(&resource_info, resource, NOW);
-		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE, id);
+		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE);
+		mutex_unlock(&notification_mutex);
 	} else {
 		module_put(THIS_MODULE);
 		retcode = ERR_NOMEM;
@@ -4323,7 +4325,6 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	if (retcode == NO_ERROR) {
 		struct drbd_peer_device *peer_device;
 		struct device_info info;
-		unsigned int id = atomic_inc_return(&drbd_notify_id);
 		unsigned int peer_devices = 0;
 		enum drbd_notification_type flags;
 
@@ -4331,16 +4332,18 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 			peer_devices++;
 
 		device_to_info(&info, device, NOW);
+		mutex_lock(&notification_mutex);
 		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
-		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE | flags, id);
+		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE | flags);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
 			peer_device_to_info(&peer_device_info, peer_device, NOW);
 			flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info,
-						 NOTIFY_CREATE | flags, id);
+						 NOTIFY_CREATE | flags);
 		}
+		mutex_unlock(&notification_mutex);
 	}
 	mutex_unlock(&resource->conf_update);
 out:
@@ -4353,7 +4356,6 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code ret;
-	unsigned int id;
 
 	spin_lock_irq(&resource->req_lock);
 	if (device->disk_state[NOW] == D_DISKLESS &&
@@ -4368,8 +4370,6 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	if (ret != NO_ERROR)
 		return ret;
 
-	id = atomic_inc_return(&drbd_notify_id);
-
 	for_each_peer_device(peer_device, device)
 		stable_change_repl_state(peer_device, L_OFF,
 					 CS_VERBOSE | CS_WAIT_COMPLETE);
@@ -4378,10 +4378,12 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	drbd_unregister_device(device);
 	spin_unlock_irq(&resource->req_lock);
 
+	mutex_lock(&notification_mutex);
 	for_each_peer_device(peer_device, device)
 		notify_peer_device_state(NULL, 0, peer_device, NULL,
-					 NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
-	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY, id);
+					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
+	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
+	mutex_unlock(&notification_mutex);
 	kobject_del(&device->kobj);
 	synchronize_rcu();
 	drbd_put_device(device);
@@ -4401,9 +4403,7 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.device->resource;
 	mutex_lock(&adm_ctx.resource->adm_mutex);
-	mutex_lock(&resource->conf_update);
 	retcode = adm_del_minor(adm_ctx.device);
-	mutex_unlock(&resource->conf_update);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 
 	drbd_adm_finish(&adm_ctx, info, retcode);
@@ -4413,7 +4413,6 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 static int adm_del_resource(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
-	unsigned int id = atomic_inc_return(&drbd_notify_id);
 	int err;
 
 	mutex_lock(&global_state_mutex);
@@ -4425,10 +4424,12 @@ static int adm_del_resource(struct drbd_resource *resource)
 		goto out;
 	err = NO_ERROR;
 
+	mutex_lock(&notification_mutex);
 	for_each_connection(connection, resource)
 		notify_connection_state(NULL, 0, connection, NULL,
-					NOTIFY_DESTROY | NOTIFY_CONTINUES, id);
-	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY, id);
+					NOTIFY_DESTROY | NOTIFY_CONTINUES);
+	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
+	mutex_unlock(&notification_mutex);
 
 	list_del_rcu(&resource->resources);
 	synchronize_rcu();
@@ -4514,12 +4515,10 @@ int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 }
 
 static int nla_put_notification_header(struct sk_buff *msg,
-				       enum drbd_notification_type type,
-				       unsigned int id)
+				       enum drbd_notification_type type)
 {
 	struct drbd_notification_header nh = {
 		.nh_type = type,
-		.nh_id = id,
 	};
 
 	return drbd_notification_header_to_skb(msg, &nh, true);
@@ -4529,8 +4528,7 @@ void notify_resource_state(struct sk_buff *skb,
 			   unsigned int seq,
 			   struct drbd_resource *resource,
 			   struct resource_info *resource_info,
-			   enum drbd_notification_type type,
-			   unsigned int id)
+			   enum drbd_notification_type type)
 {
 	struct resource_statistics resource_statistics;
 	struct drbd_genlmsghdr *dh;
@@ -4553,7 +4551,7 @@ void notify_resource_state(struct sk_buff *skb,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL) ||
-	    nla_put_notification_header(skb, type, id) ||
+	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     resource_info_to_skb(skb, resource_info, true)))
 		goto nla_put_failure;
@@ -4581,8 +4579,7 @@ void notify_device_state(struct sk_buff *skb,
 			 unsigned int seq,
 			 struct drbd_device *device,
 			 struct device_info *device_info,
-			 enum drbd_notification_type type,
-			 unsigned int id)
+			 enum drbd_notification_type type)
 {
 	struct device_statistics device_statistics;
 	struct drbd_genlmsghdr *dh;
@@ -4605,7 +4602,7 @@ void notify_device_state(struct sk_buff *skb,
 	dh->minor = device->minor;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device) ||
-	    nla_put_notification_header(skb, type, id) ||
+	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     device_info_to_skb(skb, device_info, true)))
 		goto nla_put_failure;
@@ -4631,8 +4628,7 @@ void notify_connection_state(struct sk_buff *skb,
 			     unsigned int seq,
 			     struct drbd_connection *connection,
 			     struct connection_info *connection_info,
-			     enum drbd_notification_type type,
-			     unsigned int id)
+			     enum drbd_notification_type type)
 {
 	struct connection_statistics connection_statistics;
 	struct drbd_genlmsghdr *dh;
@@ -4655,7 +4651,7 @@ void notify_connection_state(struct sk_buff *skb,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL) ||
-	    nla_put_notification_header(skb, type, id) ||
+	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
@@ -4681,8 +4677,7 @@ void notify_peer_device_state(struct sk_buff *skb,
 			      unsigned int seq,
 			      struct drbd_peer_device *peer_device,
 			      struct peer_device_info *peer_device_info,
-			      enum drbd_notification_type type,
-			      unsigned int id)
+			      enum drbd_notification_type type)
 {
 	struct peer_device_statistics peer_device_statistics;
 	struct drbd_resource *resource = peer_device->device->resource;
@@ -4706,7 +4701,7 @@ void notify_peer_device_state(struct sk_buff *skb,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
-	    nla_put_notification_header(skb, type, id) ||
+	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
 		goto nla_put_failure;
@@ -4735,8 +4730,7 @@ void notify_helper(enum drbd_notification_type type,
 	struct drbd_resource *resource = device ? device->resource : connection->resource;
 	struct drbd_helper_info helper_info;
 	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
-	unsigned int id = atomic_inc_return(&drbd_notify_id);
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	struct drbd_genlmsghdr *dh;
 	int err;
 
@@ -4747,33 +4741,37 @@ void notify_helper(enum drbd_notification_type type,
 	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
 	err = -ENOMEM;
 	if (!skb)
-		goto failed;
+		goto fail;
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_HELPER);
 	if (!dh)
-		goto nla_put_failure;
+		goto fail;
 	dh->minor = device ? device->minor : -1;
 	dh->ret_code = NO_ERROR;
+	mutex_lock(&notification_mutex);
 	if (nla_put_drbd_cfg_context(skb, resource, connection, device) ||
-	    nla_put_notification_header(skb, type, id) ||
+	    nla_put_notification_header(skb, type) ||
 	    drbd_helper_info_to_skb(skb, &helper_info, true))
-		goto nla_put_failure;
+		goto unlock_fail;
 	genlmsg_end(skb, dh);
 	err = drbd_genl_multicast_events(skb, 0);
+	skb = NULL;
 	/* skb has been consumed or freed in netlink_broadcast() */
 	if (err && err != -ESRCH)
-		goto failed;
+		goto unlock_fail;
+	mutex_unlock(&notification_mutex);
 	return;
 
-nla_put_failure:
+unlock_fail:
+	mutex_unlock(&notification_mutex);
+fail:
 	nlmsg_free(skb);
-failed:
 	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
 }
 
-static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq, unsigned int id)
+static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
 {
 	struct drbd_genlmsghdr *dh;
 	int err;
@@ -4784,7 +4782,7 @@ static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq, uns
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (nla_put_notification_header(skb, NOTIFY_EXISTS, id))
+	if (nla_put_notification_header(skb, NOTIFY_EXISTS))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
 	return;
@@ -4815,14 +4813,18 @@ static unsigned int notifications_for_state_change(struct drbd_state_change *sta
 static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_state_change *state_change = (struct drbd_state_change *)cb->args[0];
-	unsigned int id = cb->args[1];
 	unsigned int seq = cb->args[2];
 	unsigned int n;
 	enum drbd_notification_type flags = 0;
 
+	/* There is no need for taking notification_mutex here: it doesn't
+	   matter if the initial state events mix with later state chage
+	   events; we can always tell the events apart by the NOTIFY_EXISTS
+	   flag. */
+
 	cb->args[5]--;
 	if (cb->args[5] == 1) {
-		notify_initial_state_done(skb, seq, id);
+		notify_initial_state_done(skb, seq);
 		goto out;
 	}
 	n = cb->args[4]++;
@@ -4830,25 +4832,25 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		flags |= NOTIFY_CONTINUES;
 	if (n < 1) {
 		notify_resource_state_change(skb, seq, state_change->resource,
-					     OLD, NOTIFY_EXISTS | flags, id);
+					     OLD, NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n--;
 	if (n < state_change->n_connections) {
 		notify_connection_state_change(skb, seq, &state_change->connections[n],
-					       OLD, NOTIFY_EXISTS | flags, id);
+					       OLD, NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n -= state_change->n_connections;
 	if (n < state_change->n_devices) {
 		notify_device_state_change(skb, seq, &state_change->devices[n],
-					   OLD, NOTIFY_EXISTS | flags, id);
+					   OLD, NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n -= state_change->n_devices;
 	if (n < state_change->n_devices * state_change->n_connections) {
 		notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
-						OLD, NOTIFY_EXISTS | flags, id);
+						OLD, NOTIFY_EXISTS | flags);
 		goto next;
 	}
 
@@ -4858,7 +4860,6 @@ next:
 			list_entry(state_change->list.next,
 				   struct drbd_state_change, list);
 		cb->args[0] = (long)next_state_change;
-		cb->args[1] = atomic_inc_return(&drbd_notify_id);
 		cb->args[3] = notifications_for_state_change(next_state_change);
 		cb->args[4] = 0;
 	}
@@ -4894,6 +4895,7 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		if (!state_change) {
 			if (!list_empty(&head))
 				free_state_changes(&head);
+			mutex_unlock(&global_state_mutex);
 			return -ENOMEM;
 		}
 		list_add_tail(&state_change->list, &head);
@@ -4909,7 +4911,6 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		list_del(&head);  /* detach list from head */
 	}
 
-	cb->args[1] = atomic_inc_return(&drbd_notify_id);
 	cb->args[2] = cb->nlh->nlmsg_seq;
 	return get_initial_state(skb, cb);
 }

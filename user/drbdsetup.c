@@ -3218,10 +3218,10 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 
 	if (action != NOTIFY_EXISTS) {
 		if (last_seq_known) {
-			uint32_t skipped = info->nlhdr->nlmsg_seq - (last_seq + 1);
+			int skipped = info->nlhdr->nlmsg_seq - (last_seq + 1);
 
 			if (skipped)
-				printf("- skipped %u\n", skipped);
+				printf("- skipped %d\n", skipped);
 		}
 		last_seq = info->nlhdr->nlmsg_seq;
 		last_seq_known = true;
@@ -3252,9 +3252,7 @@ static int print_notifications(struct drbd_cmd *cm, struct genl_info *info, void
 			goto fail;
 		event_key(key, size + 1, name, dh->minor, &ctx);
 	}
-	printf("%u%s %s %s",
-	       nh.nh_id,
-	       (nh.nh_type & NOTIFY_CONTINUES) ? "*" : "",
+	printf("%s %s",
 	       action_name[action],
 	       key ? key : "-");
 
