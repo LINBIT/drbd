@@ -1523,16 +1523,34 @@ static int generic_get(struct drbd_cmd *cm, int timeout_arg, void *u_ptr)
 	drbd_sock->s_seq_expect = 0;
 
 	for (;;) {
-		int received, rem;
+		int received, rem, ret;
 		struct nlmsghdr *nlh = (struct nlmsghdr *)iov.iov_base;
 		struct timeval before;
+		struct pollfd pollfds[2] = {
+			[0] = {
+				.fd = 1,
+				.events = POLLHUP,
+			},
+			[1] = {
+				.fd = drbd_sock->s_fd,
+				.events = POLLIN,
+			},
+		};
 
 		gettimeofday(&before, NULL);
 
 		timeout_ms =
 			timeout_arg == MULTIPLE_TIMEOUTS ? shortest_timeout(u_ptr) : timeout_arg;
 
-		received = genl_recv_msgs(drbd_sock, &iov, &desc, timeout_ms);
+		ret = poll(pollfds, 2, timeout_arg);
+		if (ret == 0) {
+			err = 5;
+			goto out2;
+		}
+		if (pollfds[0].revents == POLLERR || pollfds[0].revents == POLLHUP)
+			goto out2;
+
+		received = genl_recv_msgs(drbd_sock, &iov, &desc, -1);
 		if (received < 0) {
 			switch(received) {
 			case E_RCV_TIMEDOUT:
@@ -2284,7 +2302,8 @@ static void connection_status(struct connections_list *connection,
 static void stop_colors(int sig)
 {
 	printf("%s", stop_color_code());
-	kill(getpid(), sig);
+	signal(sig, SIG_DFL);
+	raise(sig);
 }
 
 static void link_peer_devices_to_devices(struct peer_devices_list *peer_devices, struct devices_list *devices)
