@@ -755,6 +755,19 @@ static void drbd_report_io_error(struct drbd_device *device, struct drbd_request
 		  bdevname(device->ldev->backing_bdev, b));
 }
 
+/* Helper for HANDED_OVER_TO_NETWORK.
+ * Is this a protocol A write (neither WRITE_ACK nor RECEIVE_ACK expected)?
+ * Is it also still "PENDING"?
+ * --> If so, clear PENDING and set NET_OK below.
+ * If it is a protocol A write, but not RQ_PENDING anymore, neg-ack was faster
+ * (and we must not set RQ_NET_OK) */
+static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx)
+{
+	return (req->rq_state[idx] &
+		   (RQ_WRITE|RQ_NET_PENDING|RQ_EXP_WRITE_ACK|RQ_EXP_RECEIVE_ACK))
+		== (RQ_WRITE|RQ_NET_PENDING);
+}
+
 /* obviously this could be coded as many single functions
  * instead of one huge switch,
  * or by putting the code directly in the respective locations
@@ -923,18 +936,16 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case HANDED_OVER_TO_NETWORK:
 		/* assert something? */
-		mod_rq_state(req, m, peer_device, RQ_NET_QUEUED, RQ_NET_SENT);
-		if (bio_data_dir(req->master_bio) == WRITE &&
-		    !(req->rq_state[idx] & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))) {
+			if (is_pending_write_protocol_A(req, idx))
 			/* this is what is dangerous about protocol A:
 			 * pretend it was successfully written on the peer. */
-			if (req->rq_state[idx] & RQ_NET_PENDING)
-				mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
-			/* else: neg-ack was faster... */
-			/* it is still not yet RQ_NET_DONE until the
-			 * corresponding epoch barrier got acked as well,
-			 * so we know what to dirty on connection loss */
-		}
+			mod_rq_state(req, m, peer_device, RQ_NET_QUEUED|RQ_NET_PENDING,
+				     RQ_NET_SENT|RQ_NET_OK);
+		else
+			mod_rq_state(req, m, peer_device, RQ_NET_QUEUED, RQ_NET_SENT);
+		/* It is still not yet RQ_NET_DONE until the
+		 * corresponding epoch barrier got acked as well,
+		 * so we know what to dirty on connection loss. */
 		break;
 
 	case OOS_HANDED_TO_NETWORK:
