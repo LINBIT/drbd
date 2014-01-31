@@ -1173,6 +1173,9 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		rcu_read_unlock();
 
 		blk_set_stacking_limits(DRBD_QUEUE_LIMITS(q));
+#ifdef REQ_WRITE_SAME
+		blk_queue_max_write_same_sectors(q, 0);
+#endif
 	}
 
 	blk_queue_logical_block_size(q, 512);
