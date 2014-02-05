@@ -695,7 +695,6 @@ drbd_set_role(struct drbd_device *const device, enum drbd_role new_role, int for
 	/* FIXME also wait for all pending P_BARRIER_ACK? */
 
 	if (new_role == R_SECONDARY) {
-		set_disk_ro(device->vdisk, true);
 		if (get_ldev(device)) {
 			device->ldev->md.uuid[UI_CURRENT] &= ~(u64)1;
 			put_ldev(device);
@@ -707,7 +706,6 @@ drbd_set_role(struct drbd_device *const device, enum drbd_role new_role, int for
 			nc->discard_my_data = 0; /* without copy; single bit op is atomic */
 		mutex_unlock(&device->resource->conf_update);
 
-		set_disk_ro(device->vdisk, false);
 		if (get_ldev(device)) {
 			if (((device->state.conn < C_CONNECTED ||
 			       device->state.pdsk <= D_FAILED)
@@ -730,7 +728,7 @@ drbd_set_role(struct drbd_device *const device, enum drbd_role new_role, int for
 	}
 
 	drbd_md_sync(device);
-
+	set_disk_ro(device->vdisk, new_role == R_SECONDARY);
 	drbd_kobject_uevent(device);
 out:
 	mutex_unlock(device->state_mutex);
