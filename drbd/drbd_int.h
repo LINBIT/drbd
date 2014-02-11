@@ -612,6 +612,7 @@ enum {
 	/* to be used in drbd_device_post_work() */
 	GO_DISKLESS,		/* tell worker to schedule cleanup before detach */
 	DESTROY_DISK,		/* tell worker to close backing devices and destroy related structures. */
+	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 	RS_PROGRESS,		/* tell worker that resync made significant progress */
 	RS_DONE,		/* tell worker that resync is done */
 };
@@ -880,7 +881,6 @@ struct drbd_device {
 	unsigned long last_reattach_jif;
 	struct drbd_work resync_work;
 	struct drbd_work unplug_work;
-	struct drbd_work md_sync_work;
 	struct drbd_work start_resync_work;
 	struct timer_list resync_timer;
 	struct timer_list md_sync_timer;

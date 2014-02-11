@@ -77,7 +77,6 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file);
 #endif
-static int w_md_sync(struct drbd_work *w, int unused);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static void drbd_destroy_device(struct kobject *kobj);
@@ -2130,7 +2129,6 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	INIT_LIST_HEAD(&device->resync_reads);
 	INIT_LIST_HEAD(&device->resync_work.list);
 	INIT_LIST_HEAD(&device->unplug_work.list);
-	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->start_resync_work.list);
 	INIT_LIST_HEAD(&device->bm_io_work.w.list);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);
@@ -2140,7 +2138,6 @@ void drbd_init_set_defaults(struct drbd_device *device)
 
 	device->resync_work.cb  = w_resync_timer;
 	device->unplug_work.cb  = w_send_write_hint;
-	device->md_sync_work.cb = w_md_sync;
 	device->bm_io_work.w.cb = w_bitmap_io;
 	device->start_resync_work.cb = w_start_resync;
 
@@ -3859,25 +3856,7 @@ int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
 static void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
-
-	/* must not double-queue! */
-	if (list_empty(&device->md_sync_work.list))
-		drbd_queue_work_front(&first_peer_device(device)->connection->sender_work,
-				      &device->md_sync_work);
-}
-
-static int w_md_sync(struct drbd_work *w, int unused)
-{
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, md_sync_work);
-
-	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
-#ifdef DRBD_DEBUG_MD_SYNC
-	drbd_warn(device, "last md_mark_dirty: %s:%u\n",
-		device->last_md_mark_dirty.func, device->last_md_mark_dirty.line);
-#endif
-	drbd_md_sync(device);
-	return 0;
+	drbd_device_post_work(device, MD_SYNC);
 }
 
 const char *cmdname(enum drbd_packet cmd)
