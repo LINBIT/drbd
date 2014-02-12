@@ -30,7 +30,7 @@
 Name: @PACKAGE_TARNAME@
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 4@RPM_DIST_TAG@
+Release: 6@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/%{name}-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -335,6 +335,16 @@ if [ $1 -eq 0 ]; then
 fi
 
 %changelog
+* Tue Feb 11 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-6
+- fix spurious detach/disconnect: don't announce WRITE_SAME
+- fix NULL pointer deref in blk_add_request_payload
+  (DISCARD/TRIM handling in sd)
+- fix resync-finished detection
+- fix drbd_ldev_destroy to run exactly once and in worker context
+- Regression fixes
+  - fix regression: potential NULL pointer dereference
+  - fix regression: potential list corruption
+
 * Thu Nov 14 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-4
 - Regression fixes
   - fix for potential deadlock in adm functions (drbdsetup)

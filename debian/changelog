@@ -1,3 +1,16 @@
+drbd8 (2:8.4.4-6) unstable; urgency=low
+
+  * fix spurious detach/disconnect: don't announce WRITE_SAME
+  * fix NULL pointer deref in blk_add_request_payload
+    (DISCARD/TRIM handling in sd)
+  * fix resync-finished detection
+  * fix drbd_ldev_destroy to run exactly once and in worker context
+  * Regression fixes
+    - fix regression: potential NULL pointer dereference
+    - fix regression: potential list corruption
+
+ -- Lars Ellenberg <lars@linbit.com>  Tue, 11 Feb 2014 23:26:25 +0100
+
 drbd8 (2:8.4.4-4) unstable; urgency=low
 
   * Regression fixes

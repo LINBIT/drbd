@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: @PACKAGE_VERSION@
-Release: 4%{?dist}
+Release: 6%{?dist}
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
@@ -97,6 +97,15 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Tue Feb 11 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-6
+- fix spurious detach/disconnect: don't announce WRITE_SAME
+- fix NULL pointer deref in blk_add_request_payload
+  (DISCARD/TRIM handling in sd)
+- fix resync-finished detection
+- fix drbd_ldev_destroy to run exactly once and in worker context
+- Regression fixes
+  - fix regression: potential NULL pointer dereference
+  - fix regression: potential list corruption
 
 * Thu Nov 14 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-4
 - Regression fixes
