@@ -1154,25 +1154,6 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
-static int connect_timeout_work(struct drbd_work *work, int cancel)
-{
-	struct drbd_connection *connection =
-		container_of(work, struct drbd_connection, connect_timer_work);
-	struct drbd_resource *resource = connection->resource;
-	enum drbd_conn_state cstate;
-
-	spin_lock_irq(&resource->req_lock);
-	cstate = connection->cstate[NOW];
-	spin_unlock_irq(&resource->req_lock);
-	if (cstate == C_CONNECTING) {
-		drbd_info(connection, "Failure to connect; retrying\n");
-		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-	}
-	kref_debug_put(&connection->kref_debug, 11);
-	kref_put(&connection->kref, drbd_destroy_connection);
-	return 0;
-}
-
 void connect_timer_fn(unsigned long data)
 {
 	struct drbd_connection *connection = (struct drbd_connection *) data;
@@ -1432,18 +1413,14 @@ randomize:
 	drbd_thread_start(&connection->asender);
 
 	if (connection->agreed_pro_version >= 110) {
-		kref_get(&connection->kref);
-		kref_debug_get(&connection->kref_debug, 11);
 		if (resource->res_opts.node_id < connection->net_conf->peer_node_id) {
+			kref_get(&connection->kref);
+			kref_debug_get(&connection->kref_debug, 11);
 			connection->connect_timer_work.cb = connect_work;
 			timeout = twopc_retry_timeout(resource, 0);
 			drbd_debug(connection, "Waiting for %ums to avoid transaction "
 				   "conflicts\n", jiffies_to_msecs(timeout));
 			connection->connect_timer.expires = jiffies + timeout;
-			add_timer(&connection->connect_timer);
-		} else {
-			connection->connect_timer_work.cb = connect_timeout_work;
-			connection->connect_timer.expires = jiffies + twopc_timeout(resource);
 			add_timer(&connection->connect_timer);
 		}
 	} else {
@@ -5124,7 +5101,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	resource->twopc_reply = reply;
 	spin_unlock_irq(&resource->req_lock);
-	del_connect_timer(connection);
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:

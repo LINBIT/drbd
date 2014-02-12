@@ -237,9 +237,9 @@
 #define DRBD_PEER_ACK_DELAY_SCALE '1' /* milliseconds */
 
 /* Two-phase commit timeout (1/10 seconds). */
-#define DRBD_TWOPC_TIMEOUT_MIN	10
-#define DRBD_TWOPC_TIMEOUT_MAX	300
-#define DRBD_TWOPC_TIMEOUT_DEF	100
+#define DRBD_TWOPC_TIMEOUT_MIN	50
+#define DRBD_TWOPC_TIMEOUT_MAX	600
+#define DRBD_TWOPC_TIMEOUT_DEF	300
 #define DRBD_TWOPC_TIMEOUT_SCALE '1'
 
 #define DRBD_TWOPC_RETRY_TIMEOUT_MIN 1
