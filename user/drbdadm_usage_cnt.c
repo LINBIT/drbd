@@ -187,48 +187,52 @@ void vcs_from_str(struct version *rel, const char *text)
 }
 
 static int current_vcs_is_from_proc_drbd;
-static struct version current_vcs_rel;
-static struct version userland_version;
-static void vcs_get_current(void)
+static struct version __drbd_driver_version = {};
+static struct version __drbd_utils_version = {};
+
+const struct version *drbd_driver_version(void)
 {
 	char* version_txt;
 
-	if (current_vcs_rel.version_code)
-		return;
+	if (__drbd_driver_version.version_code)
+		return &__drbd_driver_version;
 
 	version_txt = slurp_proc_drbd();
 	if(version_txt) {
-		vcs_from_str(&current_vcs_rel, version_txt);
+		vcs_from_str(&__drbd_driver_version, version_txt);
 		current_vcs_is_from_proc_drbd = 1;
 		free(version_txt);
 	} else {
-		vcs_from_str(&current_vcs_rel, drbd_buildtag());
-		vcs_ver_from_str(&current_vcs_rel, REL_VERSION);
+		vcs_from_str(&__drbd_driver_version, drbd_buildtag());
+		vcs_ver_from_str(&__drbd_driver_version, REL_VERSION);
 	}
+
+	return &__drbd_driver_version;
 }
 
-static void vcs_get_userland(void)
+const struct version *drbd_utils_version(void)
 {
-	if (userland_version.version_code)
-		return;
-	vcs_ver_from_str(&userland_version, REL_VERSION);
+	if (!__drbd_utils_version.version_code)
+		vcs_ver_from_str(&__drbd_utils_version, REL_VERSION);
+
+	return &__drbd_utils_version;
 }
 
 int version_code_kernel(void)
 {
-	vcs_get_current();
+	const struct version *driver_version = drbd_driver_version();
 	return current_vcs_is_from_proc_drbd
-		? current_vcs_rel.version_code
+		? driver_version->version_code
 		: 0;
 }
 
 int version_code_userland(void)
 {
-	vcs_get_userland();
-	return userland_version.version_code;
+	const struct version *utils_version = drbd_utils_version();
+	return utils_version->version_code;
 }
 
-static int vcs_eq(struct version *rev1, struct version *rev2)
+static int vcs_eq(const struct version *rev1, const struct version *rev2)
 {
 	if( rev1->svn_revision || rev2->svn_revision ) {
 		return rev1->svn_revision == rev2->svn_revision;
@@ -251,10 +255,10 @@ void add_lib_drbd_to_path(void)
 
 void maybe_exec_legacy_drbdadm(char **argv)
 {
-	vcs_get_current();
+	const struct version *driver_version = drbd_driver_version();
 
-	if (current_vcs_rel.version.major == 8 &&
-	    current_vcs_rel.version.minor == 3) {
+	if (driver_version->version.major == 8 &&
+	    driver_version->version.minor == 3) {
 #ifdef DRBD_LEGACY_83
 		/* This drbdadm warned already... */
 		setenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH", "1", 0);
@@ -268,8 +272,8 @@ void maybe_exec_legacy_drbdadm(char **argv)
 #endif
 		exit(E_EXEC_ERROR);
 	}
-	if (current_vcs_rel.version.major == 8 &&
-	    current_vcs_rel.version.minor == 4) {
+	if (driver_version->version.major == 8 &&
+	    driver_version->version.minor == 4) {
 #ifdef DRBD_LEGACY_84
 		/* This drbdadm warned already... */
 		setenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH", "1", 0);
@@ -546,6 +550,7 @@ void uc_node(enum usage_count_type type)
 	char answer[ANSWER_SIZE];
 	char n_comment[ANSWER_SIZE*3];
 	char *r;
+	const struct version *driver_version = drbd_driver_version();
 
 	if( type == UC_NO ) return;
 	if( getuid() != 0 ) return;
@@ -558,16 +563,14 @@ void uc_node(enum usage_count_type type)
 	if (getenv("INIT_VERSION")) return;
 	if (no_tty) return;
 
-	vcs_get_current();
-
 	if( ! read_node_id(&ni) ) {
 		get_random_bytes(&ni.node_uuid,sizeof(ni.node_uuid));
-		ni.rev = current_vcs_rel;
+		ni.rev = *driver_version;
 		send = 1;
 	} else {
 		// read_node_id() was successful
-		if (!vcs_eq(&ni.rev,&current_vcs_rel)) {
-			ni.rev = current_vcs_rel;
+		if (!vcs_eq(&ni.rev, driver_version)) {
+			ni.rev = *driver_version;
 			update = 1;
 			send = 1;
 		}
