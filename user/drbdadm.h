@@ -346,9 +346,6 @@ enum drbd_cfg_stage {
 };
 
 extern void schedule_deferred_cmd(struct adm_cmd *, const struct cfg_ctx *, enum drbd_cfg_stage);
-extern int version_code_kernel(void);
-extern int version_code_userland(void);
-extern void warn_on_version_mismatch(void);
 extern void maybe_exec_legacy_drbdadm(char **argv);
 extern void uc_node(enum usage_count_type type);
 extern int have_ip(const char *af, const char *ip);

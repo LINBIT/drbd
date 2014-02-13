@@ -138,4 +138,29 @@ extern int lk_bdev_delete(const unsigned minor);
 extern int lk_bdev_load(const unsigned minor, struct bdev_info *bd);
 const char *canonical_hostname(void);
 
+#define GIT_HASH_BYTE   20
+#define SRCVERSION_BYTE 12     /* actually 11 and a half. */
+#define SRCVERSION_PAD (GIT_HASH_BYTE - SRCVERSION_BYTE)
+#define SVN_STYLE_OD  16
+
+struct version {
+	uint32_t svn_revision;
+	char git_hash[GIT_HASH_BYTE];
+	struct {
+		unsigned major, minor, sublvl;
+	} version;
+	unsigned version_code;
+};
+
+enum driver_version_policy {
+	STRICT,
+	FALLBACK_TO_UTILS
+};
+extern const struct version *drbd_driver_version(enum driver_version_policy fallback);
+extern const struct version *drbd_utils_version(void);
+extern int version_code_kernel(void);
+extern int version_code_userland(void);
+extern int version_equal(const struct version *rev1, const struct version *rev2);
+extern void add_lib_drbd_to_path(void);
+
 #endif

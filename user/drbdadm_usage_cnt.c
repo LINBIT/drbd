@@ -48,19 +48,7 @@
 #define HTTP_HOST "usage.drbd.org"
 #define HTTP_ADDR "212.69.161.111"
 #define NODE_ID_FILE DRBD_LIB_DIR"/node_id"
-#define GIT_HASH_BYTE   20
-#define SRCVERSION_BYTE 12     /* actually 11 and a half. */
-#define SRCVERSION_PAD (GIT_HASH_BYTE - SRCVERSION_BYTE)
-#define SVN_STYLE_OD  16
 
-struct version {
-	uint32_t svn_revision;
-	char git_hash[GIT_HASH_BYTE];
-	struct {
-		unsigned major, minor, sublvl;
-	} version;
-	unsigned version_code;
-};
 
 struct node_info {
 	uint64_t node_uuid;
@@ -72,196 +60,7 @@ struct node_info_od {
 	struct node_info ni;
 } __packed;
 
-/* For our purpose (finding the revision) SLURP_SIZE is always enough.
- */
-static char* slurp_proc_drbd()
-{
-	const int SLURP_SIZE = 4096;
-	char* buffer;
-	int rr, fd;
 
-	fd = open("/proc/drbd",O_RDONLY);
-	if( fd == -1) return 0;
-
-	buffer = malloc(SLURP_SIZE);
-	if(!buffer) return 0;
-
-	rr = read(fd, buffer, SLURP_SIZE-1);
-	if( rr == -1) {
-		free(buffer);
-		return 0;
-	}
-
-	buffer[rr]=0;
-	close(fd);
-
-	return buffer;
-}
-
-void read_hex(char* dst, char* src, int dst_size, int src_size)
-{
-	int dst_i, u, src_i=0;
-
-	for(dst_i=0;dst_i<dst_size;dst_i++) {
-		if (src[src_i] == 0) break;
-		if (src_size - src_i < 2) {
-			sscanf(src+src_i,"%1x",&u);
-			dst[dst_i]=u<<4;
-		} else {
-			sscanf(src+src_i,"%2x",&u);
-			dst[dst_i]=u;
-		}
-		if(++src_i >= src_size) break;
-		if(src[src_i] == 0) break;
-		if(++src_i >= src_size) break;
-	}
-}
-
-static void version_from_str(struct version *rel, const char *token)
-{
-	char *dot;
-	long maj, min, sub;
-	maj = strtol(token, &dot, 10);
-	if (*dot != '.')
-		return;
-	min = strtol(dot+1, &dot, 10);
-	if (*dot != '.')
-		return;
-	sub = strtol(dot+1, &dot, 10);
-	/* don't check on *dot == 0,
-	 * we may want to add some extraversion tag sometime
-	if (*dot != 0)
-		return;
-	*/
-
-	rel->version.major = maj;
-	rel->version.minor = min;
-	rel->version.sublvl = sub;
-
-	rel->version_code = (maj << 16) + (min << 8) + sub;
-}
-
-static void parse_version(struct version *rel, const char *text)
-{
-	char token[80];
-	int plus=0;
-	enum { BEGIN, F_VER, F_SVN, F_REV, F_GIT, F_SRCV } ex = BEGIN;
-
-	while (sget_token(token, sizeof(token), &text) != EOF) {
-		switch(ex) {
-		case BEGIN:
-			if (!strcmp(token, "version:"))
-				ex = F_VER;
-			if (!strcmp(token, "SVN"))
-				ex = F_SVN;
-			if (!strcmp(token, "GIT-hash:"))
-				ex = F_GIT;
-			if (!strcmp(token, "srcversion:"))
-				ex = F_SRCV;
-			break;
-		case F_VER:
-			if (!strcmp(token, "plus")) {
-				plus = 1;
-				/* still waiting for version */
-			} else {
-				version_from_str(rel, token);
-				ex = BEGIN;
-			}
-			break;
-		case F_SVN:
-			if (!strcmp(token,"Revision:"))
-				ex = F_REV;
-			break;
-		case F_REV:
-			rel->svn_revision = atol(token) * 10;
-			if (plus)
-				rel->svn_revision += 1;
-			memset(rel->git_hash, 0, GIT_HASH_BYTE);
-			return;
-		case F_GIT:
-			read_hex(rel->git_hash, token, GIT_HASH_BYTE, strlen(token));
-			rel->svn_revision = 0;
-			return;
-		case F_SRCV:
-			memset(rel->git_hash, 0, SRCVERSION_PAD);
-			read_hex(rel->git_hash + SRCVERSION_PAD, token, SRCVERSION_BYTE, strlen(token));
-			rel->svn_revision = 0;
-			return;
-		}
-	}
-}
-
-static struct version __drbd_driver_version = {};
-static struct version __drbd_utils_version = {};
-enum driver_version_policy {
-	STRICT,
-	FALLBACK_TO_UTILS
-};
-
-const struct version *drbd_utils_version(void);
-
-const struct version *drbd_driver_version(enum driver_version_policy fallback)
-{
-	char* version_txt;
-
-	if (__drbd_driver_version.version_code)
-		return &__drbd_driver_version;
-
-	version_txt = slurp_proc_drbd();
-	if (version_txt) {
-		parse_version(&__drbd_driver_version, version_txt);
-		free(version_txt);
-		return &__drbd_driver_version;
-	}
-
-	if (fallback == FALLBACK_TO_UTILS)
-		return drbd_utils_version();
-
-	return NULL;
-}
-
-const struct version *drbd_utils_version(void)
-{
-	if (!__drbd_utils_version.version_code) {
-		version_from_str(&__drbd_utils_version, REL_VERSION);
-		parse_version(&__drbd_utils_version, drbd_buildtag());
-	}
-
-	return &__drbd_utils_version;
-}
-
-int version_code_kernel(void)
-{
-	const struct version *driver_version = drbd_driver_version(STRICT);
-	return driver_version ? driver_version->version_code : 0;
-}
-
-int version_code_userland(void)
-{
-	const struct version *utils_version = drbd_utils_version();
-	return utils_version->version_code;
-}
-
-static int vcs_eq(const struct version *rev1, const struct version *rev2)
-{
-	if( rev1->svn_revision || rev2->svn_revision ) {
-		return rev1->svn_revision == rev2->svn_revision;
-	} else {
-		return !memcmp(rev1->git_hash,rev2->git_hash,GIT_HASH_BYTE);
-	}
-}
-
-void add_lib_drbd_to_path(void)
-{
-	char *new_path = NULL;
-	char *old_path = getenv("PATH");
-
-	m_asprintf(&new_path, "%s%s%s",
-			old_path,
-			old_path ? ":" : "",
-			"/lib/drbd");
-	setenv("PATH", new_path, 1);
-}
 
 void maybe_exec_legacy_drbdadm(char **argv)
 {
@@ -579,7 +378,7 @@ void uc_node(enum usage_count_type type)
 		send = 1;
 	} else {
 		// read_node_id() was successful
-		if (!vcs_eq(&ni.rev, driver_version)) {
+		if (!version_equal(&ni.rev, driver_version)) {
 			ni.rev = *driver_version;
 			update = 1;
 			send = 1;
