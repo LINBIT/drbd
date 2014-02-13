@@ -630,7 +630,6 @@ int debug_dump_argv = 0; /* enabled by setting DRBD_DEBUG_DUMP_ARGV in the envir
 int lock_fd;
 
 struct genl_sock *drbd_sock = NULL;
-int try_genl = 1;
 
 struct genl_family drbd_genl_family = {
 	.name = "drbd",
@@ -3714,37 +3713,41 @@ static int modprobe_drbd(void)
 	return ret == 0;
 }
 
-void exec_legacy_drbdsetup(char **argv)
+static void maybe_exec_legacy_drbdsetup(char **argv)
 {
+	const struct version *driver_version = drbd_driver_version(FALLBACK_TO_UTILS);
+
+	if (driver_version->version.major == 8 &&
+	    driver_version->version.minor == 3) {
 #ifdef DRBD_LEGACY_83
-	static const char * const legacy_drbdsetup = "drbdsetup-83";
-	char *progname, *drbdsetup;
+		static const char * const drbdsetup_83 = "drbdsetup-83";
 
-	/* in case drbdsetup is called with an absolute or relative pathname
-	 * look for the legacy drbdsetup binary in the same location,
-	 * otherwise, just let execvp sort it out... */
-	if ((progname = strrchr(argv[0], '/')) == 0) {
-		drbdsetup = strdup(legacy_drbdsetup);
-	} else {
-		size_t len_dir, l;
-
-		++progname;
-		len_dir = progname - argv[0];
-
-		l = len_dir + strlen(legacy_drbdsetup) + 1;
-		drbdsetup = malloc(l);
-		if (!drbdsetup) {
-			fprintf(stderr, "Malloc() failed\n");
-			exit(20);
-		}
-		strncpy(drbdsetup, argv[0], len_dir);
-		strcpy(drbdsetup + len_dir, legacy_drbdsetup);
-	}
-	execvp(drbdsetup, argv);
+		add_lib_drbd_to_path();
+		execvp(drbdsetup_83, argv);
+		fprintf(stderr, "execvp() failed to exec %s: %m\n", drbdsetup_83);
 #else
-	fprintf(stderr, "This drbdsetup was not built with support for legacy drbd-8.3\n"
-		"Eventually rebuild with ./configure --with-legacy-connector\n");
+		fprintf(stderr, "This drbdsetup was not built with support for legacy drbd-8.3\n"
+			"Eventually rebuild with ./configure --with-legacy-connector\n");
+
 #endif
+		exit(20);
+	}
+	if (driver_version->version.major == 8 &&
+	    driver_version->version.minor == 4) {
+#ifdef DRBD_LEGACY_84
+		static const char * const drbdsetup_84 = "drbdsetup-84";
+
+		add_lib_drbd_to_path();
+		execvp(drbdsetup_84, argv);
+		fprintf(stderr, "execvp() failed to exec %s: %m\n", drbdsetup_84);
+#else
+		fprintf(stderr, "This drbdsetup was build without support for legacy\n"
+			"drbd kernel code (8.4). Consider to rebuild your user land\n"
+			"tools with and do not give --without-legacy-utils-8.4 on the\n"
+			"commandline\n");
+#endif
+		exit(20);
+	}
 }
 
 int main(int argc, char **argv)
@@ -3816,27 +3819,25 @@ int main(int argc, char **argv)
 		return 20;
 	}
 
-	if (try_genl) {
-		if (cmd->continuous_poll)
-			drbd_genl_family.nl_groups = -1;
-		drbd_sock = genl_connect_to_family(&drbd_genl_family);
-		if (!drbd_sock) {
-			try_genl = 0;
-			exec_legacy_drbdsetup(argv);
-			/* Only reached in case exec() failed... */
-			fprintf(stderr, "Could not connect to 'drbd' generic netlink family\n");
-			return 20;
-		}
-		if (drbd_genl_family.version != API_VERSION ||
-		    drbd_genl_family.hdrsize != sizeof(struct drbd_genlmsghdr)) {
-			fprintf(stderr, "API mismatch!\n\t"
-				"API version drbdsetup: %u kernel: %u\n\t"
-				"header size drbdsetup: %u kernel: %u\n",
-				API_VERSION, drbd_genl_family.version,
-				(unsigned)sizeof(struct drbd_genlmsghdr),
-				drbd_genl_family.hdrsize);
-			return 20;
-		}
+	maybe_exec_legacy_drbdsetup(argv);
+
+	if (cmd->continuous_poll)
+		drbd_genl_family.nl_groups = -1;
+	drbd_sock = genl_connect_to_family(&drbd_genl_family);
+	if (!drbd_sock) {
+		fprintf(stderr, "Could not connect to 'drbd' generic netlink family\n");
+		return 20;
+	}
+
+	if (drbd_genl_family.version != API_VERSION ||
+	    drbd_genl_family.hdrsize != sizeof(struct drbd_genlmsghdr)) {
+		fprintf(stderr, "API mismatch!\n\t"
+			"API version drbdsetup: %u kernel: %u\n\t"
+			"header size drbdsetup: %u kernel: %u\n",
+			API_VERSION, drbd_genl_family.version,
+			(unsigned)sizeof(struct drbd_genlmsghdr),
+			drbd_genl_family.hdrsize);
+		return 20;
 	}
 
 	context = 0;
