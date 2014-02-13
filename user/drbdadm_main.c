@@ -3122,9 +3122,6 @@ int main(int argc, char **argv)
 		exit(E_EXEC_ERROR);
 	}
 
-	if (!getenv("DRBD_DONT_WARN_ON_VERSION_MISMATCH"))
-		warn_on_version_mismatch();
-
 	maybe_exec_legacy_drbdadm(argv);
 
 	recognize_all_drbdsetup_options();

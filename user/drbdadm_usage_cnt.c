@@ -53,7 +53,7 @@
 #define SRCVERSION_PAD (GIT_HASH_BYTE - SRCVERSION_BYTE)
 #define SVN_STYLE_OD  16
 
-struct vcs_rel {
+struct version {
 	uint32_t svn_revision;
 	char git_hash[GIT_HASH_BYTE];
 	struct {
@@ -64,7 +64,7 @@ struct vcs_rel {
 
 struct node_info {
 	uint64_t node_uuid;
-	struct vcs_rel rev;
+	struct version rev;
 };
 
 struct node_info_od {
@@ -117,7 +117,7 @@ void read_hex(char* dst, char* src, int dst_size, int src_size)
 	}
 }
 
-void vcs_ver_from_str(struct vcs_rel *rel, const char *token)
+void vcs_ver_from_str(struct version *rel, const char *token)
 {
 	char *dot;
 	long maj, min, sub;
@@ -141,7 +141,7 @@ void vcs_ver_from_str(struct vcs_rel *rel, const char *token)
 	rel->version_code = (maj << 16) + (min << 8) + sub;
 }
 
-void vcs_from_str(struct vcs_rel *rel, const char *text)
+void vcs_from_str(struct version *rel, const char *text)
 {
 	char token[80];
 	int plus=0;
@@ -187,8 +187,8 @@ void vcs_from_str(struct vcs_rel *rel, const char *text)
 }
 
 static int current_vcs_is_from_proc_drbd;
-static struct vcs_rel current_vcs_rel;
-static struct vcs_rel userland_version;
+static struct version current_vcs_rel;
+static struct version userland_version;
 static void vcs_get_current(void)
 {
 	char* version_txt;
@@ -228,53 +228,13 @@ int version_code_userland(void)
 	return userland_version.version_code;
 }
 
-static int vcs_eq(struct vcs_rel *rev1, struct vcs_rel *rev2)
+static int vcs_eq(struct version *rev1, struct version *rev2)
 {
 	if( rev1->svn_revision || rev2->svn_revision ) {
 		return rev1->svn_revision == rev2->svn_revision;
 	} else {
 		return !memcmp(rev1->git_hash,rev2->git_hash,GIT_HASH_BYTE);
 	}
-}
-
-static int vcs_ver_cmp(struct vcs_rel *rev1, struct vcs_rel *rev2)
-{
-	return rev1->version_code - rev2->version_code;
-}
-
-void warn_on_version_mismatch(void)
-{
-	char *msg;
-	int cmp;
-
-	/* get the kernel module version from /proc/drbd */
-	vcs_get_current();
-
-	/* get the userland version from REL_VERSION */
-	vcs_get_userland();
-
-	cmp = vcs_ver_cmp(&userland_version, &current_vcs_rel);
-	/* no message if equal */
-	if (cmp == 0)
-		return;
-	if (cmp > 0xffff || cmp < -0xffff)	 /* major version differs! */
-		msg = "mixing different major numbers will not work!";
-	else if (cmp < 0)		/* userland is older. always warn. */
-		msg = "you should upgrade your drbd tools!";
-	else if (cmp & 0xff00)		/* userland is newer minor version */
-		msg = "please don't mix different DRBD series.";
-	else		/* userland is newer, but only differ in sublevel. */
-		msg = "preferably kernel and userland versions should match.";
-
-	fprintf(stderr, "DRBD module version: %u.%u.%u\n"
-			"   userland version: %u.%u.%u\n%s\n",
-			current_vcs_rel.version.major,
-			current_vcs_rel.version.minor,
-			current_vcs_rel.version.sublvl,
-			userland_version.version.major,
-			userland_version.version.minor,
-			userland_version.version.sublvl,
-			msg);
 }
 
 void add_lib_drbd_to_path(void)
@@ -291,6 +251,8 @@ void add_lib_drbd_to_path(void)
 
 void maybe_exec_legacy_drbdadm(char **argv)
 {
+	vcs_get_current();
+
 	if (current_vcs_rel.version.major == 8 &&
 	    current_vcs_rel.version.minor == 3) {
 #ifdef DRBD_LEGACY_83
@@ -324,7 +286,7 @@ void maybe_exec_legacy_drbdadm(char **argv)
 	}
 }
 
-static char *vcs_to_str(struct vcs_rel *rev)
+static char *vcs_to_str(struct version *rev)
 {
 	static char buffer[80]; // Not generic, sufficient for the purpose.
 
