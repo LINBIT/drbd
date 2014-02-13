@@ -117,7 +117,7 @@ void read_hex(char* dst, char* src, int dst_size, int src_size)
 	}
 }
 
-void vcs_ver_from_str(struct version *rel, const char *token)
+static void version_from_str(struct version *rel, const char *token)
 {
 	char *dot;
 	long maj, min, sub;
@@ -141,43 +141,48 @@ void vcs_ver_from_str(struct version *rel, const char *token)
 	rel->version_code = (maj << 16) + (min << 8) + sub;
 }
 
-void vcs_from_str(struct version *rel, const char *text)
+static void parse_version(struct version *rel, const char *text)
 {
 	char token[80];
 	int plus=0;
-	enum { begin, f_ver, f_svn, f_rev, f_git, f_srcv } ex = begin;
+	enum { BEGIN, F_VER, F_SVN, F_REV, F_GIT, F_SRCV } ex = BEGIN;
 
 	while (sget_token(token, sizeof(token), &text) != EOF) {
 		switch(ex) {
-		case begin:
-			if(!strcmp(token,"version:"))
-				ex = f_ver;
-			if(!strcmp(token,"SVN"))  ex = f_svn;
-			if(!strcmp(token,"GIT-hash:"))  ex = f_git;
-			if(!strcmp(token,"srcversion:"))  ex = f_srcv;
+		case BEGIN:
+			if (!strcmp(token, "version:"))
+				ex = F_VER;
+			if (!strcmp(token, "SVN"))
+				ex = F_SVN;
+			if (!strcmp(token, "GIT-hash:"))
+				ex = F_GIT;
+			if (!strcmp(token, "srcversion:"))
+				ex = F_SRCV;
 			break;
-		case f_ver:
-			if(!strcmp(token,"plus"))
+		case F_VER:
+			if (!strcmp(token, "plus")) {
 				plus = 1;
 				/* still waiting for version */
-			else {
-				vcs_ver_from_str(rel, token);
-				ex = begin;
+			} else {
+				version_from_str(rel, token);
+				ex = BEGIN;
 			}
 			break;
-		case f_svn:
-			if(!strcmp(token,"Revision:"))  ex = f_rev;
+		case F_SVN:
+			if (!strcmp(token,"Revision:"))
+				ex = F_REV;
 			break;
-		case f_rev:
+		case F_REV:
 			rel->svn_revision = atol(token) * 10;
-			if( plus ) rel->svn_revision += 1;
+			if (plus)
+				rel->svn_revision += 1;
 			memset(rel->git_hash, 0, GIT_HASH_BYTE);
 			return;
-		case f_git:
+		case F_GIT:
 			read_hex(rel->git_hash, token, GIT_HASH_BYTE, strlen(token));
 			rel->svn_revision = 0;
 			return;
-		case f_srcv:
+		case F_SRCV:
 			memset(rel->git_hash, 0, SRCVERSION_PAD);
 			read_hex(rel->git_hash + SRCVERSION_PAD, token, SRCVERSION_BYTE, strlen(token));
 			rel->svn_revision = 0;
@@ -204,7 +209,7 @@ const struct version *drbd_driver_version(enum driver_version_policy fallback)
 
 	version_txt = slurp_proc_drbd();
 	if (version_txt) {
-		vcs_from_str(&__drbd_driver_version, version_txt);
+		parse_version(&__drbd_driver_version, version_txt);
 		free(version_txt);
 		return &__drbd_driver_version;
 	}
@@ -218,8 +223,8 @@ const struct version *drbd_driver_version(enum driver_version_policy fallback)
 const struct version *drbd_utils_version(void)
 {
 	if (!__drbd_utils_version.version_code) {
-		vcs_ver_from_str(&__drbd_utils_version, REL_VERSION);
-		vcs_from_str(&__drbd_utils_version, drbd_buildtag());
+		version_from_str(&__drbd_utils_version, REL_VERSION);
+		parse_version(&__drbd_utils_version, drbd_buildtag());
 	}
 
 	return &__drbd_utils_version;
