@@ -186,11 +186,16 @@ void vcs_from_str(struct version *rel, const char *text)
 	}
 }
 
-static int current_vcs_is_from_proc_drbd;
 static struct version __drbd_driver_version = {};
 static struct version __drbd_utils_version = {};
+enum driver_version_policy {
+	STRICT,
+	FALLBACK_TO_UTILS
+};
 
-const struct version *drbd_driver_version(void)
+const struct version *drbd_utils_version(void);
+
+const struct version *drbd_driver_version(enum driver_version_policy fallback)
 {
 	char* version_txt;
 
@@ -198,32 +203,32 @@ const struct version *drbd_driver_version(void)
 		return &__drbd_driver_version;
 
 	version_txt = slurp_proc_drbd();
-	if(version_txt) {
+	if (version_txt) {
 		vcs_from_str(&__drbd_driver_version, version_txt);
-		current_vcs_is_from_proc_drbd = 1;
 		free(version_txt);
-	} else {
-		vcs_from_str(&__drbd_driver_version, drbd_buildtag());
-		vcs_ver_from_str(&__drbd_driver_version, REL_VERSION);
+		return &__drbd_driver_version;
 	}
 
-	return &__drbd_driver_version;
+	if (fallback == FALLBACK_TO_UTILS)
+		return drbd_utils_version();
+
+	return NULL;
 }
 
 const struct version *drbd_utils_version(void)
 {
-	if (!__drbd_utils_version.version_code)
+	if (!__drbd_utils_version.version_code) {
 		vcs_ver_from_str(&__drbd_utils_version, REL_VERSION);
+		vcs_from_str(&__drbd_utils_version, drbd_buildtag());
+	}
 
 	return &__drbd_utils_version;
 }
 
 int version_code_kernel(void)
 {
-	const struct version *driver_version = drbd_driver_version();
-	return current_vcs_is_from_proc_drbd
-		? driver_version->version_code
-		: 0;
+	const struct version *driver_version = drbd_driver_version(STRICT);
+	return driver_version ? driver_version->version_code : 0;
 }
 
 int version_code_userland(void)
@@ -255,7 +260,7 @@ void add_lib_drbd_to_path(void)
 
 void maybe_exec_legacy_drbdadm(char **argv)
 {
-	const struct version *driver_version = drbd_driver_version();
+	const struct version *driver_version = drbd_driver_version(FALLBACK_TO_UTILS);
 
 	if (driver_version->version.major == 8 &&
 	    driver_version->version.minor == 3) {
@@ -550,7 +555,7 @@ void uc_node(enum usage_count_type type)
 	char answer[ANSWER_SIZE];
 	char n_comment[ANSWER_SIZE*3];
 	char *r;
-	const struct version *driver_version = drbd_driver_version();
+	const struct version *driver_version = drbd_driver_version(FALLBACK_TO_UTILS);
 
 	if( type == UC_NO ) return;
 	if( getuid() != 0 ) return;
