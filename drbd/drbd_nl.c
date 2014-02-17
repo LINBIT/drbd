@@ -2729,17 +2729,16 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&adm_ctx.resource->conf_update);
 	idr_for_each_entry(&adm_ctx.resource->devices, device, i) {
-		int got;
+		int id;
 
+		retcode = ERR_NOMEM;
 		peer_device = create_peer_device(device, connection);
-		if (!peer_device ||
-		    !idr_pre_get(&connection->peer_devices, GFP_KERNEL) ||
-		    idr_get_new_above(&connection->peer_devices,
-				      peer_device, device->vnr, &got) ||
-		    !expect(connection, got == device->vnr)) {
-			retcode = ERR_NOMEM;
+		if (!peer_device)
 			goto unlock_fail_free_connection;
-		}
+		id = idr_alloc(&connection->peer_devices, peer_device,
+			       device->vnr, device->vnr + 1, GFP_KERNEL);
+		if (id < 0)
+			goto unlock_fail_free_connection;
 	}
 
 	spin_lock_irq(&adm_ctx.resource->req_lock);
