@@ -3138,6 +3138,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	int id;
 	int vnr = adm_ctx->volume;
 	enum drbd_ret_code err = ERR_NOMEM;
+	bool locked = false;
 
 	device = minor_to_device(minor);
 	if (device)
@@ -3249,7 +3250,15 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
 
-	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_KERNEL);
+	/* Insert the new device into all idrs under req_lock
+	   to guarantee a consistent object model. idr_preload() doesn't help
+	   because it can only guarantee that a single idr_alloc() will
+	   succeed. This fails (and will be retried) if no memory is
+	   immediately available. */
+
+	locked = true;
+	spin_lock_irq(&resource->req_lock);
+	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_NOWAIT);
 	if (id < 0) {
 		if (id == -ENOSPC)
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
@@ -3258,7 +3267,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	kobject_get(&device->kobj);
 	kref_debug_get(&device->kref_debug, 1);
 
-	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
+	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_NOWAIT);
 	if (id < 0) {
 		if (id == -ENOSPC)
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
@@ -3274,12 +3283,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			goto out_no_peer_device;
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		id = idr_alloc(&connection->peer_devices, peer_device,
-			       device->vnr, device->vnr + 1, GFP_KERNEL);
+			       device->vnr, device->vnr + 1, GFP_NOWAIT);
 		if (id < 0)
 			goto out_no_peer_device;
 	}
 
-	spin_lock_irq(&resource->req_lock);
 	for_each_peer_device(peer_device, device) {
 		kref_get(&peer_device->connection->kref);
 		kref_debug_get(&peer_device->connection->kref_debug, 3);
@@ -3287,6 +3295,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		kref_debug_get(&device->kref_debug, 1);
 	}
 	spin_unlock_irq(&resource->req_lock);
+	locked = false;
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
@@ -3325,8 +3334,10 @@ out_no_peer_device:
 
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
-	synchronize_rcu();
 out_no_minor_idr:
+	if (locked)
+		spin_unlock_irq(&resource->req_lock);
+	synchronize_rcu();
 	drbd_bm_free(device->bitmap);
 out_no_bitmap:
 	__free_page(device->md_io_page);

@@ -4321,7 +4321,13 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.resource;
 	mutex_lock(&resource->conf_update);
-	retcode = drbd_create_device(&adm_ctx, dh->minor, &device_conf, &device);
+	for(;;) {
+		retcode = drbd_create_device(&adm_ctx, dh->minor, &device_conf, &device);
+		if (retcode != ERR_NOMEM ||
+		    schedule_timeout_interruptible(HZ / 10))
+			break;
+		/* Keep retrying until the memory allocations eventually succeed. */
+	}
 	if (retcode == NO_ERROR) {
 		struct drbd_peer_device *peer_device;
 		struct device_info info;
