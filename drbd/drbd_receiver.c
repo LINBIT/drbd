@@ -6447,7 +6447,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 	if (peer_is_drbd_9)
 		peers_ch[pi.size / sizeof(u32)] =
 			cpu_to_be32(connection->resource->res_opts.node_id);
-	sg_set_buf(&sg, peers_ch, pi.size + peer_is_drbd_9 ? sizeof(u32) : 0);
+	sg_set_buf(&sg, peers_ch, pi.size + (peer_is_drbd_9 ? sizeof(u32) : 0));
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
@@ -6499,7 +6499,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 
 	if (peer_is_drbd_9)
 		my_challenge[CHALLENGE_LEN / sizeof(u32)] = cpu_to_be32(peer_node_id);
-	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN + peer_is_drbd_9 ? sizeof(u32) : 0);
+	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN + (peer_is_drbd_9 ? sizeof(u32) : 0));
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
