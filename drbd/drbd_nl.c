@@ -2265,6 +2265,17 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static enum drbd_disk_state get_disk_state(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	enum drbd_disk_state disk_state;
+
+	spin_lock_irq(&resource->req_lock);
+	disk_state = device->disk_state[NOW];
+	spin_unlock_irq(&resource->req_lock);
+	return disk_state;
+}
+
 static int adm_detach(struct drbd_device *device, int force)
 {
 	enum drbd_state_rv retcode;
@@ -2285,7 +2296,7 @@ static int adm_detach(struct drbd_device *device, int force)
 	drbd_md_put_buffer(device);
 	/* D_FAILED will transition to DISKLESS. */
 	ret = wait_event_interruptible(device->misc_wait,
-			device->disk_state[NOW] != D_FAILED);
+			get_disk_state(device) != D_FAILED);
 	if (retcode >= SS_SUCCESS)
 		drbd_cleanup_device(device);
 	drbd_resume_io(device);
