@@ -2716,6 +2716,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+	INIT_LIST_HEAD(&connection->connections);
 
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
@@ -2742,6 +2743,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	spin_lock_irq(&adm_ctx.resource->req_lock);
+	kref_get(&adm_ctx.resource->kref);
+	kref_debug_get(&adm_ctx.resource->kref_debug, 3);
+	list_add_tail_rcu(&connection->connections, &adm_ctx.resource->connections);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 
@@ -2873,10 +2877,12 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
-	spin_lock_irq(&adm_ctx.resource->req_lock);
-	drbd_unregister_connection(connection);
-	spin_unlock_irq(&adm_ctx.resource->req_lock);
-	synchronize_rcu();
+	if (!list_empty(&connection->connections)) {
+		spin_lock_irq(&adm_ctx.resource->req_lock);
+		drbd_unregister_connection(connection);
+		spin_unlock_irq(&adm_ctx.resource->req_lock);
+		synchronize_rcu();
+	}
 	drbd_put_connection(connection);
 	goto out;
 fail:

@@ -3021,10 +3021,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	kref_init(&connection->kref);
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
-	kref_get(&resource->kref);
-	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
-	list_add_tail_rcu(&connection->connections, &resource->connections);
 
 	return connection;
 
