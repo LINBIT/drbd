@@ -7,17 +7,23 @@
 # encode - to _ to be able to include that in a package name or release "number"
 %global krelver  %(echo %{kernelversion} | tr -s '-' '_')
 
-Name: @PACKAGE_TARNAME@-km
+Name: drbd-km
 Summary: DRBD driver for Linux
-Version: @PACKAGE_VERSION@
-Release: 1@RPM_DIST_TAG@
+Version: 9.0.0pre8
+Release: 1
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: gcc, @RPM_BUILDREQ_KM@
+
+%if 0%{?suse_version} || 0%{?sles_version}
+BuildRequires: gcc, kernel-syms
+%endif
+%if 0%{?fedora} || 0%{?rhel_version} || 0%{?centos_version}
+BuildRequires: gcc, kernel-devel
+%endif
 
 %description
 DRBD mirrors a block device over the network to another machine.
@@ -29,7 +35,15 @@ setting up high availability (HA) clusters.
 %package %{krelver}
 Summary: Kernel driver for DRBD.
 Group: System Environment/Kernel
-Conflicts: @RPM_CONFLICTS_KM@
+
+%if 0%{?suse_version} || 0%{?sles_version}
+Conflicts: km_drbd, drbd-kmp <= %{version}_3
+%endif
+%if 0%{?fedora} || 0%{?rhel_version} || 0%{?centos_version}
+Conflicts: drbd-kmod <= %{version}_3
+%endif
+
+
 # always require a suitable userland and depmod.
 Requires: drbd-utils = %{version}, /sbin/depmod
 # to be able to override from build scripts which flavor of kernel we are building against.
@@ -55,15 +69,6 @@ test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 
 %build
-%configure \
-    --without-utils \
-    --with-km \
-    --without-udev \
-    --without-xen \
-    --without-pacemaker \
-    --without-heartbeat \
-    --without-rgmanager \
-    --without-bashcompletion
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
