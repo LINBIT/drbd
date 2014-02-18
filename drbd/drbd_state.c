@@ -2998,7 +2998,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	request.mask = cpu_to_be32(context->mask.i);
 	request.val = cpu_to_be32(context->val.i);
 
-	drbd_info(resource, "Preparing cluster-wide state change %u (%u->%u %u/%u)",
+	drbd_info(resource, "Preparing cluster-wide state change %u (%u->%d %u/%u)",
 		  be32_to_cpu(request.tid),
 		  resource->res_opts.node_id,
 		  context->target_node_id,
