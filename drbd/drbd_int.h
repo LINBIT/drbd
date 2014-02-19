@@ -384,6 +384,7 @@ extern void unlock_all_resources(void);
 extern enum drbd_disk_state disk_state_from_md(struct drbd_device *);
 extern long twopc_timeout(struct drbd_resource *);
 extern long twopc_retry_timeout(struct drbd_resource *, int);
+extern void twopc_connection_down(struct drbd_connection *);
 
 /* sequence arithmetic for dagtag (data generation tag) sector numbers.
  * dagtag_newer_eq: true, if a is newer than b */

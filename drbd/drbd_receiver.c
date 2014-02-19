@@ -6650,6 +6650,22 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	return 0;
 }
 
+void twopc_connection_down(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+
+	assert_spin_locked(&resource->req_lock);
+	if (resource->twopc_reply.initiator_node_id != -1 &&
+	    test_bit(TWOPC_PREPARED, &connection->flags)) {
+		set_bit(TWOPC_RETRY, &connection->flags);
+		if (cluster_wide_reply_ready(resource)) {
+			del_timer(&resource->twopc_timer);
+			if (list_empty(&resource->twopc_work.list))
+				drbd_queue_work(&resource->work, &resource->twopc_work);
+		}
+	}
+}
+
 static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
 	return drbd_send_ping_ack(connection);

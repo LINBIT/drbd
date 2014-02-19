@@ -1723,8 +1723,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		/* Upon network failure, we need to restart the receiver. */
 		if (cstate[OLD] >= C_CONNECTING &&
-		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
+		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT) {
 			drbd_thread_restart_nowait(&connection->receiver);
+			twopc_connection_down(connection);
+		}
 
 		if (cstate[NEW] < C_CONNECTED) {
 			struct drbd_peer_device *peer_device;
