@@ -113,10 +113,19 @@ struct update_al_work {
 void *drbd_md_get_buffer(struct drbd_device *device)
 {
 	int r;
+	long t;
 
-	wait_event(device->misc_wait,
-		   (r = atomic_cmpxchg(&device->md_io_in_use, 0, 1)) == 0 ||
-		   device->disk_state[NOW] <= D_FAILED);
+	do {
+		t = wait_event_timeout(device->misc_wait,
+				(r = atomic_cmpxchg(&device->md_io_in_use, 0, 1)) == 0 ||
+				device->disk_state[NOW] <= D_FAILED,
+				HZ * 10);
+
+		if (t == 0) {
+			drbd_err(device, "Waited 10 Seconds for md_buffer! BUG?\n");
+			continue;
+		}
+	} while (false);
 
 	return r ? NULL : page_address(device->md_io_page);
 }
