@@ -4957,12 +4957,12 @@ void twopc_timer_fn(unsigned long data)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
-	if (resource->twopc_reply.tid != -1) {
-		drbd_debug(resource, "Two-phase commit %u timeout\n",
+	if (list_empty(&resource->twopc_work.list)) {
+		drbd_err(resource, "Two-phase commit %d timeout\n",
 			   resource->twopc_reply.tid);
+		resource->twopc_work.cb = abort_nested_twopc_work;
+		drbd_queue_work(&resource->work, &resource->twopc_work);
 	}
-	resource->twopc_work.cb = abort_nested_twopc_work;
-	drbd_queue_work(&resource->work, &resource->twopc_work);
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
@@ -6637,8 +6637,8 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
-			drbd_queue_work(&resource->work,
-					&resource->twopc_work);
+			if (list_empty(&resource->twopc_work.list))
+				drbd_queue_work(&resource->work, &resource->twopc_work);
 		}
 	} else {
 		drbd_debug(connection, "Ignoring %s reply for state change %u\n",
