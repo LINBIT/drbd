@@ -2289,11 +2289,9 @@ static int adm_detach(struct drbd_device *device, int force)
 	}
 
 	drbd_suspend_io(device); /* so no-one is stuck in drbd_al_begin_io */
-	drbd_md_get_buffer(device); /* make sure there is no in-flight meta-data IO */
 	retcode = stable_state_change(device->resource,
 		change_disk_state(device, D_FAILED,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
-	drbd_md_put_buffer(device);
 	/* D_FAILED will transition to DISKLESS. */
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_FAILED);
