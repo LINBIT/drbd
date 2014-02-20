@@ -250,7 +250,7 @@ case "$command" in
     fi
 
     case $t in 
-      drbd)
+      drbd|phy)
         drbd_resource=$p
         drbd_role="$(drbdadm role $drbd_resource)"
         drbd_lrole="${drbd_role%%/*}"
@@ -278,7 +278,7 @@ case "$command" in
 
   remove)
     case $t in 
-      drbd)
+      drbd|phy)
         p=$(xenstore_read "$XENBUS_PATH/params")
         drbd_resource=$p
         drbd_role="$(drbdadm role $drbd_resource)"
