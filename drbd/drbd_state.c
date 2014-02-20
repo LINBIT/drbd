@@ -1488,6 +1488,24 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	drbd_rs_controller_reset(peer_device);
 }
 
+/* Is there a primary with access to up to date data known */
+static bool primary_and_data_present(struct drbd_device *device)
+{
+	bool up_to_date_data = device->disk_state[NOW] == D_UP_TO_DATE;
+	bool primary = device->resource->role[NOW] == R_PRIMARY;
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->peer_role[NOW] == R_PRIMARY)
+			primary = true;
+
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
+			up_to_date_data = true;
+	}
+
+	return primary && up_to_date_data;
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -1679,17 +1697,27 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		}
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
-			u32 mdf = device->ldev->md.flags & ~(MDF_CONSISTENT|MDF_PRIMARY_IND|
-							 MDF_WAS_UP_TO_DATE|MDF_CRASHED_PRIMARY);
+			u32 mdf = device->ldev->md.flags & ~(MDF_PRIMARY_IND | MDF_CRASHED_PRIMARY);
 			mdf &= ~MDF_AL_CLEAN;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
 			if (device->resource->role[NEW] == R_PRIMARY)
 				mdf |= MDF_PRIMARY_IND;
-			if (disk_state[NEW] > D_INCONSISTENT)
-				mdf |= MDF_CONSISTENT;
-			if (disk_state[NEW] > D_OUTDATED)
-				mdf |= MDF_WAS_UP_TO_DATE;
+			/* Do not touch MDF_CONSISTENT if we are D_FAILED */
+			if (disk_state[NEW] >= D_INCONSISTENT) {
+				mdf &= ~(MDF_CONSISTENT | MDF_WAS_UP_TO_DATE);
+
+				if (disk_state[NEW] > D_INCONSISTENT)
+					mdf |= MDF_CONSISTENT;
+				if (disk_state[NEW] > D_OUTDATED)
+					mdf |= MDF_WAS_UP_TO_DATE;
+			} else if (disk_state[NEW] == D_FAILED &&
+				   mdf & MDF_WAS_UP_TO_DATE &&
+				   primary_and_data_present(device)) {
+				/* There are cases when we still can update meta-data event disk
+				   state is failed.... Clear MDF_WAS_UP_TO_DATE if appropriate */
+				mdf &= ~MDF_WAS_UP_TO_DATE;
+			}
 			if (mdf != device->ldev->md.flags) {
 				device->ldev->md.flags = mdf;
 				drbd_md_mark_dirty(device);
