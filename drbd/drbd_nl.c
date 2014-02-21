@@ -485,10 +485,20 @@ static char **make_envp(struct env *env)
 	return NULL;
 }
 
+/* Macro refers to local variables peer_device, device and connection! */
+#define magic_printk(level, fmt, args...)				\
+	if (peer_device)						\
+		__drbd_printk_peer_device(level, peer_device, fmt, args); \
+	else if (device)						\
+		__drbd_printk_device(level, device, fmt, args);		\
+	else								\
+		__drbd_printk_connection(level, connection, fmt, args);
+
 int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
 {
 	struct drbd_resource *resource = device ? device->resource : connection->resource;
 	char *argv[] = {usermode_helper, cmd, resource->name, NULL };
+	struct drbd_peer_device *peer_device = NULL;
 	struct env env = { .size = PAGE_SIZE };
 	char **envp;
 	int ret;
@@ -561,17 +571,16 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	else if (connection)
 		conn_md_sync(connection);
 
-	drbd_info(resource, "helper command: %s %s\n", usermode_helper, cmd);
+	if (connection && device)
+		peer_device = conn_peer_device(connection, device->vnr);
+
+	magic_printk(KERN_INFO, "helper command: %s %s\n", usermode_helper, cmd);
 	notify_helper(NOTIFY_CALL, device, connection, cmd, 0);
 	ret = call_usermodehelper(usermode_helper, argv, envp, UMH_WAIT_PROC);
-	if (ret)
-		drbd_warn(resource, "helper command: %s %s exit code %u (0x%x)\n",
-				usermode_helper, cmd,
-				(ret >> 8) & 0xff, ret);
-	else
-		drbd_info(resource, "helper command: %s %s exit code %u (0x%x)\n",
-				usermode_helper, cmd,
-				(ret >> 8) & 0xff, ret);
+	magic_printk(ret ? KERN_WARNING : KERN_INFO,
+		     "helper command: %s %s exit code %u (0x%x)\n",
+		     usermode_helper, cmd,
+		     (ret >> 8) & 0xff, ret);
 	notify_helper(NOTIFY_RESPONSE, device, connection, cmd, ret);
 
 	if (current == resource->worker.task)
@@ -588,6 +597,8 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 		 "out of memory\n", cmd, ret);
 	return 0;
 }
+
+#undef magic_printk
 
 static bool initial_states_pending(struct drbd_connection *connection)
 {
