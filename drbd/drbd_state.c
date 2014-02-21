@@ -2124,7 +2124,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
-			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]))
+			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]) &&
+			    !test_bit(UNREGISTERED, &device->flags))
 				drbd_khelper(device, connection, "pri-on-incon-degr");
 
 			if (susp_nod[NEW]) {
