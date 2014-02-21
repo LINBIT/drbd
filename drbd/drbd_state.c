@@ -2077,6 +2077,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		enum drbd_disk_state *disk_state = device_state_change->disk_state;
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
+		bool create_new_uuid = false;
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
 			effective_disk_size_determined = true;
@@ -2111,7 +2112,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_other_c = peer_device_state_change->resync_susp_other_c;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
-			bool create_new_uuid;
 			bool send_state = false;
 
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
@@ -2193,7 +2193,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 						peer_device);
 
-			create_new_uuid = false;
 			/* Lost contact to peer's copy of the data */
 			if (!(peer_disk_state[OLD] < D_INCONSISTENT ||
 			      peer_disk_state[OLD] == D_UNKNOWN ||
@@ -2202,21 +2201,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			     peer_disk_state[NEW] == D_UNKNOWN ||
 			     peer_disk_state[NEW] == D_OUTDATED)) {
 
-				if (role[NEW] == R_PRIMARY)
+				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags))
 					create_new_uuid = true;
 
 				if (connection->agreed_pro_version < 110 &&
 				    peer_role[NEW] == R_PRIMARY &&
 				    disk_state[NEW] >= D_UP_TO_DATE)
 					create_new_uuid = true;
-			}
-
-			if (create_new_uuid && get_ldev(device)) {
-				if (drbd_suspended(device))
-					set_bit(NEW_CUR_UUID, &device->flags);
-				else
-					drbd_uuid_new_current(device);
-				put_ldev(device);
 			}
 
 			if (peer_disk_state[NEW] < D_INCONSISTENT && get_ldev(device)) {
@@ -2351,6 +2342,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_send_state(peer_device, new_state);
 		}
 
+
 		/* Make sure the effective disk size is stored in the metadata
 		 * if a local disk is attached and either the local disk state
 		 * or a peer disk state is D_UP_TO_DATE.  */
@@ -2454,6 +2446,30 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		/* Notify peers that I had a local IO error and did not detach. */
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
+
+		/* Sending new current UUID out to others must happen AFTER sending out
+		   the failed disk state! */
+		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
+		    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
+			create_new_uuid = true;
+
+		if (create_new_uuid) {
+			if (get_ldev(device)) {
+				if (drbd_suspended(device))
+					set_bit(NEW_CUR_UUID, &device->flags);
+				else
+					drbd_uuid_new_current(device);
+				put_ldev(device);
+			} else {
+				struct drbd_peer_device *peer_device;
+				u64 current_uuid;
+
+				get_random_bytes(&current_uuid, sizeof(u64));
+
+				for_each_peer_device(peer_device, device)
+					drbd_send_current_uuid(peer_device, current_uuid);
+			}
+		}
 
 		drbd_md_sync(device);
 	}
