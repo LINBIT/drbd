@@ -5894,7 +5894,6 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 	if (get_ldev(device)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
-			drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 			drbd_uuid_received_new_current(device, current_uuid, 0);
 		} else {
 			if (peer_device->bitmap_uuids[node_id] == 0 && connection->resource->weak[NOW])
