@@ -2201,7 +2201,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			     peer_disk_state[NEW] == D_UNKNOWN ||
 			     peer_disk_state[NEW] == D_OUTDATED)) {
 
-				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags))
+				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
+				    (disk_state[NEW] == D_UP_TO_DATE || one_peer_disk_up_to_date[NEW]))
 					create_new_uuid = true;
 
 				if (connection->agreed_pro_version < 110 &&
