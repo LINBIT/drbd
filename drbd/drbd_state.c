@@ -2512,7 +2512,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 					struct drbd_device *device = peer_device->device;
 					if (test_bit(NEW_CUR_UUID, &device->flags)) {
-						drbd_uuid_new_current(device);
+						if (get_ldev(device)) {
+							drbd_uuid_new_current(device);
+							put_ldev(device);
+						}
 						clear_bit(NEW_CUR_UUID, &device->flags);
 					}
 				}
