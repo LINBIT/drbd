@@ -2465,6 +2465,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				u64 current_uuid;
 
 				get_random_bytes(&current_uuid, sizeof(u64));
+				drbd_set_exposed_data_uuid(device, current_uuid);
 
 				for_each_peer_device(peer_device, device)
 					drbd_send_current_uuid(peer_device, current_uuid);
