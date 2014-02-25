@@ -957,7 +957,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			}
 		}
 		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
-		    (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]))
+		    (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]))
 			return SS_NO_UP_TO_DATE_DISK;
 
 		for_each_peer_device(peer_device, device) {
