@@ -923,6 +923,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		struct drbd_peer_device *peer_device;
 		bool one_peer_disk_up_to_date[2];
 		enum which_state which;
+		int nr_negotiating = 0;
 
 		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_rw_cnt)
 			return SS_DEVICE_IN_USE;
@@ -960,9 +961,18 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		    (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]))
 			return SS_NO_UP_TO_DATE_DISK;
 
+		if (disk_state[NEW] == D_NEGOTIATING)
+			nr_negotiating++;
+
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
+
+			if (peer_disk_state[NEW] == D_NEGOTIATING)
+				nr_negotiating++;
+
+			if (nr_negotiating > 1)
+				return SS_IN_TRANSIENT_STATE;
 
 			if (peer_device->connection->fencing_policy >= FP_RESOURCE &&
 			    !(role[OLD] == R_PRIMARY && repl_state[OLD] < L_ESTABLISHED && !(peer_disk_state[OLD] <= D_OUTDATED)) &&
@@ -2906,6 +2916,7 @@ struct change_context {
 	union drbd_state val;
 	int target_node_id;
 	enum chg_state_flags flags;
+	bool change_local_state_last;
 };
 
 /**
@@ -2958,7 +2969,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	u64 reach_immediately;
 	int retries = 1;
 	unsigned long start_time;
-	bool have_peers, change_local_state_last;
+	bool have_peers;
 
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
 	if (local_state_change(context->flags)) {
@@ -3152,9 +3163,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		  be32_to_cpu(request.tid),
 		  jiffies_to_msecs(jiffies - start_time));
 
-	change_local_state_last =
-		context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING;
-	if (have_peers && change_local_state_last)
+	if (have_peers && context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 	if (rv >= SS_SUCCESS) {
 		context->flags |= CS_WEAK_NODES;
@@ -3172,7 +3181,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			NODE_MASK(resource->res_opts.node_id));
 		rv = end_state_change(resource, &irq_flags);
 	}
-	if (have_peers && !change_local_state_last)
+	if (have_peers && !context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 
 	if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
@@ -3399,6 +3408,25 @@ static bool device_has_connected_peer_devices(struct drbd_device *device)
 	return false;
 }
 
+static bool device_has_peer_devices_with_disk(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
+			/* We expect to receive up-to-date UUIDs soon.
+			   To avoid a race in receive_state, "clear" uuids while
+			   holding req_lock. I.e. atomic with the state change */
+			peer_device->uuids_received = false;
+			if (peer_device->disk_state[NOW] > D_DISKLESS)
+				rv = true;
+		}
+	}
+
+	return rv;
+}
+
 struct change_disk_state_context {
 	struct change_context context;
 	struct drbd_device *device;
@@ -3408,9 +3436,20 @@ static bool do_change_disk_state(struct change_context *context, bool prepare)
 {
 	struct drbd_device *device =
 		container_of(context, struct change_disk_state_context, context)->device;
+	bool negotiation_cluster_wide = false;
 
+	if (device->disk_state[NOW] == D_ATTACHING &&
+	    context->val.disk == D_NEGOTIATING) {
+		bool do_negotiation = device_has_peer_devices_with_disk(device);
+		if (do_negotiation) {
+			negotiation_cluster_wide =
+				first_connection(device->resource)->agreed_pro_version >= 110;
+		} else {
+			context->val.disk = disk_state_from_md(device);
+		}
+	}
 	__change_disk_state(device, context->val.disk);
-	return !prepare ||
+	return !prepare || negotiation_cluster_wide ||
 	       (device->disk_state[NOW] != D_FAILED &&
 		context->val.disk == D_FAILED &&
 		device_has_connected_peer_devices(device));
@@ -3428,6 +3467,7 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 			.val = { { .disk = disk_state } },
 			.target_node_id = -1,
 			.flags = flags,
+			.change_local_state_last = true,
 		},
 		.device = device,
 	};
@@ -3555,6 +3595,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 			.val = { { .conn = cstate } },
 			.target_node_id = connection->net_conf->peer_node_id,
 			.flags = flags,
+			.change_local_state_last = true,
 		},
 		.connection = connection,
 	};

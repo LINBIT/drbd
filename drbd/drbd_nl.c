@@ -1775,8 +1775,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct block_device *bdev;
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
-	unsigned long irq_flags;
-	enum drbd_disk_state disk_state;
 	unsigned int bitmap_index, slots_needed = 0;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
@@ -2211,25 +2209,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		device->ldev->md.flags |= MDF_AL_DISABLED;
 	rcu_read_unlock();
 
-	begin_state_change(resource, &irq_flags, CS_VERBOSE);
-
-	disk_state = D_DISKLESS;
-	/* In case we are L_ESTABLISHED postpone any decision on the new disk
-	   state after the negotiation phase. */
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
-			/* We expect to receive up-to-date UUIDs soon.
-			   To avoid a race in receive_state, "clear" uuids while
-			   holding req_lock. I.e. atomic with the state change */
-			peer_device->uuids_received = false;
-			if (peer_device->disk_state[NOW] > D_DISKLESS)
-				disk_state = D_NEGOTIATING;
-		}
-	}
-	if (disk_state == D_DISKLESS)
-		disk_state = disk_state_from_md(device);
-	__change_disk_state(device, disk_state);
-	rv = end_state_change(resource, &irq_flags);
+	/* change_disk_state uses disk_state_from_md(device); in case D_NEGOTIATING not
+	   necessary, and falls back to a local state change */
+	rv = stable_state_change(resource,
+		change_disk_state(device, D_NEGOTIATING, CS_VERBOSE | CS_SERIALIZE));
 
 	if (rv < SS_SUCCESS)
 		goto remove_kobject;
