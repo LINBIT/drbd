@@ -3151,7 +3151,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 					int node_id = connection->net_conf->peer_node_id;
 
 					if (node_id == context->target_node_id) {
-						drbd_info(connection, "Cluster is now split");
+						drbd_info(connection, "Cluster is now split\n");
 						break;
 					}
 				}
