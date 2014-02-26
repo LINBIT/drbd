@@ -1,3 +1,4 @@
+#include <linux/spinlock.h>
 #include <linux/idr.h>
 
 static int idr_has_entry(int id, void *p, void *data)

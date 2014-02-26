@@ -5,6 +5,5 @@
 
 int foo(void)
 {
-	int r;
-	r = blkdev_issue_zeroout(NULL, 0, 0, 0, BLKDEV_IFL_WAIT);
+	return blkdev_issue_zeroout(NULL, 0, 0, 0, BLKDEV_IFL_WAIT);
 }
