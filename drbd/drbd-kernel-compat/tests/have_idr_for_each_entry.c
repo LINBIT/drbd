@@ -1,3 +1,4 @@
+#include <linux/spinlock.h>
 #include <linux/idr.h>
 
 void foo(void)
