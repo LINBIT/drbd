@@ -1369,6 +1369,7 @@ extern int drbd_bitmap_io_from_worker(struct drbd_device *,
 		char *why, enum bm_flag flags,
 		struct drbd_peer_device *);
 extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
+extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_ldev_destroy(struct drbd_device *device);
