@@ -1195,40 +1195,53 @@ static void sanitize_state(struct drbd_resource *resource)
 
 		/* Is disk state negotiation finished? */
 		if (disk_state[OLD] == D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
+			int all = 0, target = 0, no_result = 0;
+
 			for_each_peer_device(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
 
-				if (peer_device->connection->cstate[NEW] < C_CONNECTED)
+				if (peer_device->connection->cstate[NEW] < C_CONNECTED ||
+				    peer_device->disk_state[NEW] < D_NEGOTIATING)
 					continue;
 
-				if (nr == L_ESTABLISHED || nr == L_WF_BITMAP_S)
-					continue;
+				all++;
+				if (nr == L_NEG_NO_RESULT)
+					no_result++;
 				else if (nr == L_NEGOTIATING)
 					goto stay_negotiating;
-				else if (nr == L_WF_BITMAP_T) {
-					disk_state[NEW] = D_INCONSISTENT;
-					goto negotaition_finished;
-				} else
+				else if (nr == L_WF_BITMAP_T)
+					target++;
+				else if (nr != L_ESTABLISHED && nr != L_WF_BITMAP_S)
 					drbd_err(peer_device, "Unexpected nr = %s\n", drbd_repl_str(nr));
 			}
-			disk_state[NEW] = disk_state_from_md(device);
-		negotaition_finished:
+
+			/* negotiation finished */
+			if (no_result > 0 && no_result == all)
+				disk_state[NEW] = D_DETACHING;
+			else if (target)
+				disk_state[NEW] = D_INCONSISTENT;
+			else
+				disk_state[NEW] = disk_state_from_md(device);
+
 			for_each_peer_device(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
 
-				if (peer_device->connection->cstate[NEW] < C_CONNECTED)
+				if (peer_device->connection->cstate[NEW] < C_CONNECTED ||
+				    nr == L_NEGOTIATING)
 					continue;
 
-				if (nr != L_NEGOTIATING) {
-					if (nr == L_WF_BITMAP_S && disk_state[NEW] == D_INCONSISTENT) {
-						/* Should be sync source for one peer and sync
-						   target for an other peer. Delay the sync source
-						   role */
-						nr = L_PAUSED_SYNC_S;
-						drbd_warn(peer_device, "Finish me\n");
-					}
-					peer_device->repl_state[NEW] = nr;
+				if (nr == L_NEG_NO_RESULT)
+					nr = L_ESTABLISHED;
+
+				if (nr == L_WF_BITMAP_S && disk_state[NEW] == D_INCONSISTENT) {
+					/* Should be sync source for one peer and sync
+					   target for an other peer. Delay the sync source
+					   role */
+					nr = L_PAUSED_SYNC_S;
+					peer_device->resync_susp_other_c[NEW] = true;
+					drbd_warn(peer_device, "Finish me\n");
 				}
+				peer_device->repl_state[NEW] = nr;
 			}
 		}
 	stay_negotiating:

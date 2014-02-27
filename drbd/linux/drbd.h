@@ -241,6 +241,7 @@ enum drbd_repl_state {
 
 	L_AHEAD,
 	L_BEHIND,
+	L_NEG_NO_RESULT = L_BEHIND,  /* used for peer_device->negotiation_result only */
 };
 
 enum drbd_disk_state {

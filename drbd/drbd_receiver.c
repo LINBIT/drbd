@@ -3728,6 +3728,64 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	return -1000;
 }
 
+static int drbd_handshake(struct drbd_peer_device *peer_device,
+			  int *rule_nr,
+			  int *peer_node_id) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	int hg;
+
+	drbd_info(device, "drbd_sync_handshake:\n");
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
+	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
+
+	hg = drbd_uuid_compare(peer_device, rule_nr, peer_node_id);
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	drbd_info(device, "uuid_compare()=%d by rule %d\n", hg, *rule_nr);
+
+	return hg;
+}
+
+
+static enum drbd_repl_state goodness_to_disk_state(struct drbd_peer_device *peer_device, int hg)
+{
+	struct drbd_device *device = peer_device->device;
+	enum drbd_repl_state rv = -1;
+
+	if (hg > 0) { /* become sync source. */
+		rv = L_WF_BITMAP_S;
+	} else if (hg < 0) { /* become sync target */
+		rv = L_WF_BITMAP_T;
+	} else {
+		rv = L_ESTABLISHED;
+		if (drbd_bitmap_uuid(peer_device)) {
+			drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
+				  drbd_bm_total_weight(peer_device));
+			drbd_uuid_set_bitmap(peer_device, 0);
+			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+		} else if (drbd_bm_total_weight(peer_device)) {
+			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
+				  drbd_bm_total_weight(peer_device));
+		}
+	}
+
+	return rv;
+}
+
+static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	int hg, rule_nr, peer_node_id;
+
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+
+	if (hg <= -2 || hg >= 2)
+		return -1;
+
+	return goodness_to_disk_state(peer_device, hg);
+}
+
 /* drbd_sync_handshake() returns the new replication state on success, and -1
  * on failure.
  */
@@ -3737,24 +3795,15 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	enum drbd_repl_state rv = -1;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0;
 
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+
 	disk_state = device->disk_state[NOW];
 	if (disk_state == D_NEGOTIATING)
 		disk_state = disk_state_from_md(device);
-
-	drbd_info(device, "drbd_sync_handshake:\n");
-	spin_lock_irq(&device->ldev->md.uuid_lock);
-	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
-	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
-
-	hg = drbd_uuid_compare(peer_device, &rule_nr, &peer_node_id);
-	spin_unlock_irq(&device->ldev->md.uuid_lock);
-
-	drbd_info(device, "uuid_compare()=%d by rule %d\n", hg, rule_nr);
 
 	if (hg == -1000) {
 		drbd_alert(device, "Unrelated data, aborting!\n");
@@ -3827,10 +3876,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	rcu_read_unlock();
 
 	if (hg == -100) {
-		/* FIXME this log message is not correct if we end up here
-		 * after an attempted attach on a diskless node.
-		 * We just refuse to attach -- well, we drop the "connection"
-		 * to that disk, in a way... */
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_khelper(device, connection, "split-brain");
 		return -1;
@@ -3889,24 +3934,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			return -1;
 	}
 
-	if (hg > 0) { /* become sync source. */
-		rv = L_WF_BITMAP_S;
-	} else if (hg < 0) { /* become sync target */
-		rv = L_WF_BITMAP_T;
-	} else {
-		rv = L_ESTABLISHED;
-		if (drbd_bitmap_uuid(peer_device)) {
-			drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
-				  drbd_bm_total_weight(peer_device));
-			drbd_uuid_set_bitmap(peer_device, 0);
-			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
-		} else if (drbd_bm_total_weight(peer_device)) {
-			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
-				  drbd_bm_total_weight(peer_device));
-		}
-	}
-
-	return rv;
+	return goodness_to_disk_state(peer_device, hg);
 }
 
 static enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
@@ -5293,11 +5321,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		/* if we established a new connection */
 		consider_resync = (os.conn < L_ESTABLISHED);
-		/* if we had an established connection
-		 * and one of the nodes newly attaches a disk */
-		consider_resync |= (os.conn == L_ESTABLISHED &&
-				    (peer_state.disk == D_NEGOTIATING ||
-				     os.disk == D_NEGOTIATING));
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --force */
 		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
@@ -5307,9 +5330,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				    (peer_state.conn == L_STARTING_SYNC_S ||
 				     peer_state.conn == L_STARTING_SYNC_T));
 
-		if (consider_resync)
+		if (consider_resync) {
 			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
-		else if (os.conn == L_ESTABLISHED && peer_state.conn == L_WF_BITMAP_T &&
+		} else if (os.conn == L_ESTABLISHED &&
+			   (peer_state.disk == D_NEGOTIATING || os.disk == D_NEGOTIATING)) {
+			new_repl_state = drbd_attach_handshake(peer_device);
+		} else if (os.conn == L_ESTABLISHED && peer_state.conn == L_WF_BITMAP_T &&
 			 connection->peer_weak[NOW] && !peer_state.weak) {
 			drbd_info(peer_device, "Resync because peer leaves weak state\n");
 			new_repl_state = L_WF_BITMAP_S;
@@ -5319,11 +5345,16 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (new_repl_state == -1) {
 			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
-				change_disk_state(device, D_DETACHING, CS_HARD);
+				new_repl_state = L_NEG_NO_RESULT;
 			} else if (peer_state.disk == D_NEGOTIATING) {
-				drbd_err(device, "Disk attach process on the peer node was aborted.\n");
-				peer_state.disk = D_DISKLESS;
-				peer_disk_state = D_DISKLESS;
+				if (connection->agreed_pro_version < 110) {
+					drbd_err(device, "Disk attach process on the peer node was aborted.\n");
+					peer_state.disk = D_DISKLESS;
+					peer_disk_state = D_DISKLESS;
+				} else {
+					/* The peer will decide later and let us know... */
+					peer_disk_state = D_NEGOTIATING;
+				}
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
@@ -5331,6 +5362,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				change_cstate(connection, C_DISCONNECTING, CS_HARD);
 				return -EIO;
 			}
+		}
+
+		if (device->disk_state[NOW] == D_NEGOTIATING) {
+			set_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags);
+			peer_device->negotiation_result = new_repl_state;
 		}
 	}
 
@@ -5343,10 +5379,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
-	if (device->disk_state[NOW] == D_NEGOTIATING) {
-		set_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags);
-		peer_device->negotiation_result = new_repl_state;
-	} else
+	if (device->disk_state[NOW] != D_NEGOTIATING)
 		__change_repl_state(peer_device, new_repl_state);
 	if (connection->peer_role[NOW] == R_UNKNOWN)
 		__change_peer_role(connection, peer_state.role);
