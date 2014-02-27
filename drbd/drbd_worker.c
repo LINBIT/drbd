@@ -101,7 +101,7 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -1329,7 +1329,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
  * and to be able to wait for them.
  * See also comment in drbd_adm_attach before drbd_suspend_io.
  */
-int drbd_send_barrier(struct drbd_connection *connection)
+static int drbd_send_barrier(struct drbd_connection *connection)
 {
 	struct p_barrier *p;
 	struct drbd_socket *sock;
@@ -1978,7 +1978,7 @@ static void do_unqueued_work(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
+static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
 	spin_lock_irq(&queue->q_lock);
 	list_splice_init(&queue->q, work_list);
@@ -1988,7 +1988,7 @@ bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_li
 
 /* potentially: dequeue_work_batch(), and use list_splice_tail_init;
  * but that may destabilize stuff... so, not now. */
-bool dequeue_work_item(struct drbd_work_queue *queue, struct list_head *work_list)
+static bool dequeue_work_item(struct drbd_work_queue *queue, struct list_head *work_list)
 {
 	spin_lock_irq(&queue->q_lock);
 	if (!list_empty(&queue->q))
@@ -1997,7 +1997,7 @@ bool dequeue_work_item(struct drbd_work_queue *queue, struct list_head *work_lis
 	return !list_empty(work_list);
 }
 
-void wait_for_work(struct drbd_connection *connection, struct list_head *work_list)
+static void wait_for_work(struct drbd_connection *connection, struct list_head *work_list)
 {
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;

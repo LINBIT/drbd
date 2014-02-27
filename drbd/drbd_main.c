@@ -1221,7 +1221,7 @@ static void dcbp_set_pad_bits(struct p_compressed_bm *p, int n)
 	p->encoding = (p->encoding & (~0x7 << 4)) | (n << 4);
 }
 
-int fill_bitmap_rle_bits(struct drbd_device *device,
+static int fill_bitmap_rle_bits(struct drbd_device *device,
 			 struct p_compressed_bm *p,
 			 unsigned int size,
 			 struct bm_xfer_ctx *c)
@@ -2888,7 +2888,7 @@ void drbd_destroy_connection(struct kref *kref)
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
-int init_submitter(struct drbd_device *device)
+static int init_submitter(struct drbd_device *device)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 	/* opencoded create_singlethread_workqueue(),
@@ -3108,7 +3108,7 @@ void drbd_delete_device(struct drbd_device *device)
 	kobject_put(&device->kobj);
 }
 
-int __init drbd_init(void)
+static int __init drbd_init(void)
 {
 	int err;
 

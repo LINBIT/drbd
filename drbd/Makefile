@@ -99,6 +99,7 @@ else
 	@set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
 	echo -e "#include <linux/drbd.h>";					\
+	echo -e "#include <linux/drbd_config.h>";				\
 	echo -e "const char *drbd_buildtag(void)\n{";				\
 	if test -e ../.git && GITHEAD=$$(git rev-parse HEAD); then		\
 		GITDIFF=$$(cd .. && git diff --name-only HEAD |			\

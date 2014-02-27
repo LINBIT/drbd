@@ -30,9 +30,6 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 
-/* in drbd_main.c */
-extern void tl_abort_disk_io(struct drbd_device *device);
-
 struct after_state_chg_work {
 	struct drbd_work w;
 	struct drbd_device *device;
@@ -431,7 +428,7 @@ _drbd_request_state(struct drbd_device *device, union drbd_state mask,
 		s.susp_fen ? 'F' : '-', \
 		s.susp_nod ? 'N' : '-'
 
-void print_st(struct drbd_device *device, const char *tag, union drbd_state s)
+static void print_st(struct drbd_device *device, const char *tag, union drbd_state s)
 {
 	drbd_err(device, STATE_FMT, STATE_ARGS(tag, s));
 }
@@ -1615,7 +1612,7 @@ static int w_after_conn_state_ch(struct drbd_work *w, int unused)
 	return 0;
 }
 
-void conn_old_common_state(struct drbd_connection *connection, union drbd_state *pcs, enum chg_state_flags *pf)
+static void conn_old_common_state(struct drbd_connection *connection, union drbd_state *pcs, enum chg_state_flags *pf)
 {
 	enum chg_state_flags flags = ~0;
 	struct drbd_peer_device *peer_device;
@@ -1704,7 +1701,7 @@ conn_is_valid_transition(struct drbd_connection *connection, union drbd_state ma
 	return rv;
 }
 
-void
+static void
 conn_set_state(struct drbd_connection *connection, union drbd_state mask, union drbd_state val,
 	       union drbd_state *pns_min, union drbd_state *pns_max, enum chg_state_flags flags)
 {
