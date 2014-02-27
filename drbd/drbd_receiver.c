@@ -4594,7 +4594,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 mask)
 			unsigned long irq_flags;
 
 			drbd_info(device, "Accepted new current UUID, preparing to skip initial sync\n");
-			drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
+			drbd_bitmap_io(device, &drbd_bmio_clear_all_n_write,
 					"clear_n_write from receive_uuids",
 					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
 			_drbd_uuid_set_current(device, peer_device->current_uuid);

@@ -4171,7 +4171,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	if (args.clear_bm) {
 		unsigned long irq_flags;
 
-		err = drbd_bitmap_io(device, &drbd_bmio_clear_n_write,
+		err = drbd_bitmap_io(device, &drbd_bmio_clear_all_n_write,
 			"clear_n_write from new_c_uuid", BM_LOCK_ALL, NULL);
 		if (err) {
 			drbd_err(device, "Writing bitmap failed with %d\n",err);
