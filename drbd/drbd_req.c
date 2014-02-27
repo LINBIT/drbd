@@ -239,7 +239,7 @@ tail_recursion:
 		 * In that case we do not want to touch the bitmap at all.
 		 */
 		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED &&
-		    req->i.size && get_ldev_if_state(device, D_FAILED)) {
+		    req->i.size && get_ldev_if_state(device, D_DETACHING)) {
 			char *id_to_bit = device->ldev->id_to_bit;
 			unsigned long bits = -1, mask = -1;
 			int node_id, max_node_id = device->resource->max_node_id;
@@ -272,7 +272,7 @@ tail_recursion:
 		 * we would forget to resync the corresponding extent.
 		 */
 		if (s & RQ_IN_ACT_LOG) {
-			if (get_ldev_if_state(device, D_FAILED)) {
+			if (get_ldev_if_state(device, D_DETACHING)) {
 				drbd_al_complete_io(device, &req->i);
 				put_ldev(device);
 			} else if (drbd_ratelimit()) {

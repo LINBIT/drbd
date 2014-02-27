@@ -1146,8 +1146,15 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	if (!p)
 		return -EIO;
 
-	if (peer_device->connection->agreed_pro_version < 110)
+	if (peer_device->connection->agreed_pro_version < 110) {
 		state.weak = 0;
+
+		/* D_DETACHING was introduced with drbd-9.0 */
+		if (state.disk > D_DETACHING)
+			state.disk--;
+		if (state.pdsk > D_DETACHING)
+			state.pdsk--;
+	}
 
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
@@ -3654,7 +3661,7 @@ void drbd_md_sync(struct drbd_device *device)
 
 	/* We use here D_FAILED and not D_ATTACHING because we try to write
 	 * metadata even if we detach due to a disk failure! */
-	if (!get_ldev_if_state(device, D_FAILED))
+	if (!get_ldev_if_state(device, D_DETACHING))
 		return;
 
 	buffer = drbd_md_get_buffer(device);
@@ -4291,7 +4298,8 @@ static int w_go_diskless(struct drbd_work *w, int unused)
 	struct drbd_device *device =
 		container_of(w, struct drbd_device, go_diskless);
 
-	D_ASSERT(device, device->disk_state[NOW] == D_FAILED);
+	D_ASSERT(device, device->disk_state[NOW] == D_FAILED ||
+		         device->disk_state[NOW] == D_DETACHING);
 	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
 	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
 	 * the protected members anymore, though, so once put_ldev reaches zero

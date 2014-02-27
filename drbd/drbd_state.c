@@ -1122,7 +1122,8 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		/* we cannot fail (again) if we already detached */
-		if (device->disk_state[NEW] == D_FAILED && device->disk_state[OLD] == D_DISKLESS) {
+		if ((device->disk_state[NEW] == D_FAILED || device->disk_state[NEW] == D_DETACHING) &&
+		    device->disk_state[OLD] == D_DISKLESS) {
 			return SS_IS_DISKLESS;
 		}
 	}
@@ -1401,7 +1402,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* A detach is a cluster wide transaction. The peer_disk_state updates
 			   are coming in while we have it prepared. When the cluster wide
 			   state change gets committed prevent D_DISKLESS -> D_FAILED */
-			if (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] == D_FAILED)
+			if (peer_disk_state[OLD] == D_DISKLESS &&
+			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_DETACHING))
 				peer_disk_state[NEW] = D_DISKLESS;
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
@@ -1567,6 +1569,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		 * drbd_ldev_destroy() won't happen before our corresponding
 		 * w_after_state_change works run, where we put_ldev again. */
 		if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
+		    (disk_state[OLD] != D_DETACHING && disk_state[NEW] == D_DETACHING) ||
 		    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS))
 			atomic_inc(&device->local_cnt);
 
@@ -1721,7 +1724,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 					mdf |= MDF_CONSISTENT;
 				if (disk_state[NEW] > D_OUTDATED)
 					mdf |= MDF_WAS_UP_TO_DATE;
-			} else if (disk_state[NEW] == D_FAILED &&
+			} else if ((disk_state[NEW] == D_FAILED || disk_state[NEW] == D_DETACHING) &&
 				   mdf & MDF_WAS_UP_TO_DATE &&
 				   primary_and_data_present(device)) {
 				/* There are cases when we still can update meta-data event disk
@@ -2372,7 +2375,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		/* first half of local IO error, failure to attach,
 		 * or administrative detach */
-		if (disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) {
+		if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
+		    (disk_state[OLD] != D_DETACHING && disk_state[NEW] == D_DETACHING)) {
 			enum drbd_io_error_p eh = EP_PASS_ON;
 			int was_io_error = 0;
 
@@ -2388,7 +2392,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
 				rcu_read_unlock();
 
-				was_io_error = test_and_clear_bit(WAS_IO_ERROR, &device->flags);
+				was_io_error = disk_state[NEW] == D_FAILED;
 
 				if (was_io_error && eh == EP_CALL_HELPER)
 					drbd_khelper(device, NULL, "local-io-error");
@@ -2408,14 +2412,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 */
 				if (test_and_clear_bit(FORCE_DETACH, &device->flags))
 					tl_abort_disk_io(device);
-
-				/* current state still has to be D_FAILED,
-				 * there is only one way out: to D_DISKLESS,
-				 * and that may only happen after our put_ldev below. */
-				if (device->disk_state[NOW] != D_FAILED)
-					drbd_err(device,
-						 "ASSERT FAILED: disk is %s during detach\n",
-						 drbd_disk_str(device->disk_state[NOW]));
 
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
@@ -3450,8 +3446,8 @@ static bool do_change_disk_state(struct change_context *context, bool prepare)
 	}
 	__change_disk_state(device, context->val.disk);
 	return !prepare || negotiation_cluster_wide ||
-	       (device->disk_state[NOW] != D_FAILED &&
-		context->val.disk == D_FAILED &&
+	       (device->disk_state[NOW] != D_DETACHING &&
+		context->val.disk == D_DETACHING &&
 		device_has_connected_peer_devices(device));
 }
 

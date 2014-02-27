@@ -1097,7 +1097,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	if (get_ldev_if_state(device, D_FAILED)) {
+	if (get_ldev_if_state(device, D_DETACHING)) {
 		drbd_rs_complete_io(peer_device, peer_req->i.sector);
 		put_ldev(device);
 	}

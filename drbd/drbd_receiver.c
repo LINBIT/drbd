@@ -5200,6 +5200,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_state.i = be32_to_cpu(p->state);
 
+	if (peer_device->connection->agreed_pro_version < 110) {
+		/* Before drbd-9.0 there was no D_DETACHING it was D_FAILED... */
+		if (peer_state.disk >= D_DETACHING)
+			peer_state.disk++;
+		if (peer_state.pdsk >= D_DETACHING)
+			peer_state.pdsk++;
+	}
+
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
 		peer_disk_state = peer_device->uuid_flags & UUID_FLAG_INCONSISTENT ?
@@ -5311,7 +5319,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (new_repl_state == -1) {
 			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
-				change_disk_state(device, D_FAILED, CS_HARD);
+				change_disk_state(device, D_DETACHING, CS_HARD);
 			} else if (peer_state.disk == D_NEGOTIATING) {
 				drbd_err(device, "Disk attach process on the peer node was aborted.\n");
 				peer_state.disk = D_DISKLESS;
@@ -6856,7 +6864,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 
 	dec_rs_pending(peer_device);
 
-	if (get_ldev_if_state(device, D_FAILED)) {
+	if (get_ldev_if_state(device, D_DETACHING)) {
 		drbd_rs_complete_io(peer_device, sector);
 		switch (pi->cmd) {
 		case P_NEG_RS_DREPLY:

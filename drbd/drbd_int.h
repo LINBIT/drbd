@@ -605,8 +605,7 @@ enum {
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
-	WAS_IO_ERROR,		/* Local disk failed, returned IO error */
-	WAS_READ_ERROR,		/* Local disk READ failed (set additionally to the above) */
+	WAS_READ_ERROR,		/* Local disk READ failed, returned IO error */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
@@ -2015,7 +2014,6 @@ static inline void __drbd_chk_io_error_(struct drbd_device *device,
 		 * we read meta data only once during attach,
 		 * which will fail in case of errors.
 		 */
-		set_bit(WAS_IO_ERROR, &device->flags);
 		if (df == DRBD_READ_ERROR)
 			set_bit(WAS_READ_ERROR, &device->flags);
 		if (df == DRBD_FORCE_DETACH)
@@ -2293,7 +2291,7 @@ static inline void put_ldev(struct drbd_device *device)
 		if (device->disk_state[NOW] == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
 			drbd_ldev_destroy(device);
-		if (device->disk_state[NOW] == D_FAILED)
+		if (device->disk_state[NOW] == D_FAILED || device->disk_state[NOW] == D_DETACHING)
 			/* all application IO references gone. */
 			if (!test_and_set_bit(GO_DISKLESS, &device->flags))
 				drbd_queue_work(&device->resource->work, &device->go_diskless);
@@ -2371,6 +2369,7 @@ static inline bool drbd_state_is_stable(struct drbd_device *device)
 	case D_CONSISTENT:
 	case D_UP_TO_DATE:
 	case D_FAILED:
+	case D_DETACHING:
 		/* disk state is stable as well. */
 		break;
 

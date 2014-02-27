@@ -1577,7 +1577,7 @@ void drbd_rs_cancel_all(struct drbd_peer_device *peer_device)
 	struct drbd_device *device = peer_device->device;
 	spin_lock_irq(&device->al_lock);
 
-	if (get_ldev_if_state(device, D_FAILED)) { /* Makes sure ->resync is there. */
+	if (get_ldev_if_state(device, D_DETACHING)) { /* Makes sure ->resync is there. */
 		lc_reset(peer_device->resync_lru);
 		put_ldev(device);
 	}
@@ -1602,7 +1602,7 @@ int drbd_rs_del_all(struct drbd_peer_device *peer_device)
 
 	spin_lock_irq(&device->al_lock);
 
-	if (get_ldev_if_state(device, D_FAILED)) {
+	if (get_ldev_if_state(device, D_DETACHING)) {
 		/* ok, ->resync is there. */
 		for (i = 0; i < peer_device->resync_lru->nr_elements; i++) {
 			e = lc_element_by_index(peer_device->resync_lru, i);

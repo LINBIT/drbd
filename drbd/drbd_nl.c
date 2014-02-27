@@ -1875,7 +1875,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* make sure there is no leftover from previous force-detach attempts */
 	clear_bit(FORCE_DETACH, &device->flags);
-	clear_bit(WAS_IO_ERROR, &device->flags);
 	clear_bit(WAS_READ_ERROR, &device->flags);
 
 	/* and no leftover from previously aborted resync or verify, either */
@@ -2278,18 +2277,18 @@ static int adm_detach(struct drbd_device *device, int force)
 
 	if (force) {
 		set_bit(FORCE_DETACH, &device->flags);
-		change_disk_state(device, D_FAILED, CS_HARD);
+		change_disk_state(device, D_DETACHING, CS_HARD);
 		retcode = SS_SUCCESS;
 		goto out;
 	}
 
 	drbd_suspend_io(device); /* so no-one is stuck in drbd_al_begin_io */
 	retcode = stable_state_change(device->resource,
-		change_disk_state(device, D_FAILED,
+		change_disk_state(device, D_DETACHING,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
-	/* D_FAILED will transition to DISKLESS. */
+	/* D_DETACHING will transition to DISKLESS. */
 	ret = wait_event_interruptible(device->misc_wait,
-			get_disk_state(device) != D_FAILED);
+			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS)
 		drbd_cleanup_device(device);
 	drbd_resume_io(device);
@@ -3500,7 +3499,8 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 			if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 				tl_clear(connection);
 			if (device->disk_state[NOW] == D_DISKLESS ||
-			    device->disk_state[NOW] == D_FAILED)
+			    device->disk_state[NOW] == D_FAILED ||
+			    device->disk_state[NOW] == D_DETACHING)
 				tl_restart(connection, FAIL_FROZEN_DISK_IO);
 		}
 	}
