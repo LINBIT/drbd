@@ -1,3 +1,9 @@
+drbd8 (2:8.4.4-7) unstable; urgency=low
+
+  * fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
+
+ -- Lars Ellenberg <lars@linbit.com>  Thu, 27 Feb 2014 09:52:46 +0100
+
 drbd8 (2:8.4.4-6) unstable; urgency=low
 
   * fix spurious detach/disconnect: don't announce WRITE_SAME

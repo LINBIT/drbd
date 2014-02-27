@@ -10,7 +10,7 @@
 Name: @PACKAGE_TARNAME@-km
 Summary: DRBD driver for Linux
 Version: @PACKAGE_VERSION@
-Release: 6@RPM_DIST_TAG@
+Release: 7@RPM_DIST_TAG@
 Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -100,6 +100,9 @@ uname -r | grep BOOT ||
 
 
 %changelog
+* Thu Feb 27 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-7
+- fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
+
 * Tue Feb 11 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-6
 - fix spurious detach/disconnect: don't announce WRITE_SAME
 - fix NULL pointer deref in blk_add_request_payload
