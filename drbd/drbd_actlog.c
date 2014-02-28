@@ -206,10 +206,8 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	D_ASSERT(device, atomic_read(&device->md_io_in_use) == 1);
 
 	if (!bdev->md_bdev) {
-		if (DRBD_ratelimit(5*HZ, 5)) {
+		if (DRBD_ratelimit(5*HZ, 5))
 			drbd_err(device, "bdev->md_bdev==NULL\n");
-			dump_stack();
-		}
 		return -EIO;
 	}
 
