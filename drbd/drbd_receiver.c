@@ -4671,41 +4671,45 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 {
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
-	int other_uuids, i, rest, pos = 0;
+	int bitmap_uuids, history_uuids, rest, i, pos;
 	u64 bitmap_uuids_mask;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return config_unknown_volume(connection, pi);
 
-	other_uuids = min(pi->size / sizeof(p->other_uuids[0]),
-			  ARRAY_SIZE(peer_device->history_uuids) +
-			  ARRAY_SIZE(peer_device->bitmap_uuids));
-
-	if (drbd_recv_all_warn(peer_device->connection, p->other_uuids,
-			       other_uuids * sizeof(p->other_uuids[0])))
-		return -EIO;
-	rest = pi->size - other_uuids * sizeof(p->other_uuids[0]);
-	if (rest > 0 && !drbd_drain_block(peer_device, rest))
-		return -EIO;
-
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	bitmap_uuids_mask = be64_to_cpu(p->bitmap_uuids_mask);
+	if (bitmap_uuids_mask & ~(((u64)1 << MAX_PEERS) - 1))
+		return -EIO;
+	bitmap_uuids = hweight64(bitmap_uuids_mask);
 
-	for (i = 0; i < MAX_PEERS; i++) {
-		if (bitmap_uuids_mask & (1ULL << i))
+	if (pi->size / sizeof(p->other_uuids[0]) < bitmap_uuids)
+		return -EIO;
+	history_uuids = pi->size / sizeof(p->other_uuids[0]) - bitmap_uuids;
+	if (history_uuids > ARRAY_SIZE(peer_device->history_uuids))
+		history_uuids = ARRAY_SIZE(peer_device->history_uuids);
+
+	if (drbd_recv_all_warn(peer_device->connection, p->other_uuids,
+			       (bitmap_uuids + history_uuids) *
+			       sizeof(p->other_uuids[0])))
+		return -EIO;
+	rest = pi->size - (bitmap_uuids + history_uuids) * sizeof(p->other_uuids[0]);
+	if (rest && !drbd_drain_block(peer_device, rest))
+		return -EIO;
+
+	pos = 0;
+	for (i = 0; i < ARRAY_SIZE(peer_device->bitmap_uuids); i++) {
+		if (bitmap_uuids_mask & NODE_MASK(i))
 			peer_device->bitmap_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
 		else
 			peer_device->bitmap_uuids[i] = 0;
 	}
-
-	i = 0;
-	while (pos < other_uuids)
+	for (i = 0; i < history_uuids; i++)
 		peer_device->history_uuids[i++] = be64_to_cpu(p->other_uuids[pos++]);
-
-	while (i < HISTORY_UUIDS)
+	while (i < ARRAY_SIZE(peer_device->history_uuids))
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
 
