@@ -2063,12 +2063,16 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* Assign the local node id (if not assigned already) */
 	nbc->md.node_id = resource->res_opts.node_id;
 
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->repl_state[NOW] < L_ESTABLISHED &&
-		    resource->role[NOW] == R_PRIMARY && device->exposed_data_uuid &&
-		    (device->exposed_data_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
+	if (resource->role[NOW] == R_PRIMARY && device->exposed_data_uuid &&
+	    (device->exposed_data_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
+		int data_present = false;
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
+				data_present = true;
+		}
+		if (!data_present) {
 			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
-			    (unsigned long long)device->exposed_data_uuid);
+				 (unsigned long long)device->exposed_data_uuid);
 			retcode = ERR_DATA_NOT_CURRENT;
 			goto force_diskless_dec;
 		}
