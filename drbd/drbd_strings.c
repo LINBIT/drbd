@@ -26,7 +26,7 @@
 #include <linux/drbd.h>
 #include "drbd_strings.h"
 
-static const char *drbd_conn_s_names[] = {
+const char *drbd_conn_s_names[] = {
 	[C_STANDALONE]       = "StandAlone",
 	[C_DISCONNECTING]    = "Disconnecting",
 	[C_UNCONNECTED]      = "Unconnected",
@@ -37,9 +37,10 @@ static const char *drbd_conn_s_names[] = {
 	[C_TEAR_DOWN]        = "TearDown",
 	[C_CONNECTING]       = "Connecting",
 	[C_CONNECTED]	     = "Connected",
+	0
 };
 
-static const char *drbd_repl_s_names[] = {
+const char *drbd_repl_s_names[] = {
 	[L_OFF]              = "Off",
 	[L_ESTABLISHED]      = "Established",
 	[L_STARTING_SYNC_S]  = "StartingSyncS",
@@ -55,15 +56,17 @@ static const char *drbd_repl_s_names[] = {
 	[L_PAUSED_SYNC_T]    = "PausedSyncT",
 	[L_AHEAD]            = "Ahead",
 	[L_BEHIND]           = "Behind",
+	0
 };
 
-static const char *drbd_role_s_names[] = {
+const char *drbd_role_s_names[] = {
 	[R_PRIMARY]   = "Primary",
 	[R_SECONDARY] = "Secondary",
-	[R_UNKNOWN]   = "Unknown"
+	[R_UNKNOWN]   = "Unknown",
+	0
 };
 
-static const char *drbd_disk_s_names[] = {
+const char *drbd_disk_s_names[] = {
 	[D_DISKLESS]     = "Diskless",
 	[D_ATTACHING]    = "Attaching",
 	[D_DETACHING]    = "Detaching",
@@ -74,9 +77,10 @@ static const char *drbd_disk_s_names[] = {
 	[D_UNKNOWN]      = "DUnknown",
 	[D_CONSISTENT]   = "Consistent",
 	[D_UP_TO_DATE]   = "UpToDate",
+	0
 };
 
-static const char *drbd_state_sw_errors[] = {
+const char *drbd_state_sw_errors[] = {
 	[-SS_TWO_PRIMARIES] = "Multiple primaries not allowed by config",
 	[-SS_NO_UP_TO_DATE_DISK] = "Need access to UpToDate data",
 	[-SS_NO_LOCAL_DISK] = "Can not resync without local disk",
@@ -100,33 +104,40 @@ static const char *drbd_state_sw_errors[] = {
 	[-SS_INTERRUPTED] = "Interrupted state change",
 	[-SS_TIMEOUT] = "Timeout in operation",
 	[-SS_WEAKLY_CONNECTED] = "Primary nodes must be strongly connected among each other",
+	0
 };
 
 const char *drbd_repl_str(enum drbd_repl_state s)
 {
-	return s < L_OFF ? "TOO_SMALL" :
-		s > L_BEHIND ? "TOO_LARGE" :
-		drbd_repl_s_names[s];
+	int size = sizeof drbd_repl_s_names / sizeof drbd_repl_s_names[0];
+	return s < 0 || s >= size ||
+	       !drbd_repl_s_names[s] ? "?" : drbd_repl_s_names[s];
 }
 
 const char *drbd_conn_str(enum drbd_conn_state s)
 {
-	return s > C_CONNECTED ? "TOO_LARGE" : drbd_conn_s_names[s];
+	int size = sizeof drbd_conn_s_names / sizeof drbd_conn_s_names[0];
+	return s < 0 || s >= size ||
+	       !drbd_conn_s_names[s] ? "?" : drbd_conn_s_names[s];
 }
 
 const char *drbd_role_str(enum drbd_role s)
 {
-	return s > R_SECONDARY   ? "TOO_LARGE" : drbd_role_s_names[s];
+	int size = sizeof drbd_role_s_names / sizeof drbd_role_s_names[0];
+	return s < 0 || s >= size ||
+	       !drbd_role_s_names[s] ? "?" : drbd_role_s_names[s];
 }
 
 const char *drbd_disk_str(enum drbd_disk_state s)
 {
-	return s > D_UP_TO_DATE    ? "TOO_LARGE" : drbd_disk_s_names[s];
+	int size = sizeof drbd_disk_s_names / sizeof drbd_disk_s_names[0];
+	return s < 0 || s >= size ||
+	       !drbd_disk_s_names[s] ? "?" : drbd_disk_s_names[s];
 }
 
 const char *drbd_set_st_err_str(enum drbd_state_rv err)
 {
-	return err <= SS_AFTER_LAST_ERROR ? "TOO_SMALL" :
-	       err > SS_TWO_PRIMARIES ? "TOO_LARGE"
-			: drbd_state_sw_errors[-err];
+	int size = sizeof drbd_state_sw_errors / sizeof drbd_state_sw_errors[0];
+	return -err < 0 || -err >= size ||
+	       !drbd_state_sw_errors[-err] ? "?" : drbd_state_sw_errors[-err];
 }
