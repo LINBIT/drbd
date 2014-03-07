@@ -949,7 +949,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	max_peers = device->bitmap->bm_max_peers;
 	for (i = 0; i < max_peers; i++) {
-		if (peer_md[i].bitmap_uuid)
+		if (peer_md[i].node_id != -1 && peer_md[i].bitmap_uuid)
 			bitmap_uuids_mask |= NODE_MASK(peer_md[i].node_id);
 	}
 
