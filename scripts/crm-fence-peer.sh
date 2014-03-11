@@ -537,7 +537,7 @@ check_peer_node_reachable()
 	# they don't run resources
 	other_node_uname_attrs=$(set +x; echo "$cib_xml" |
 		sed -e '/<node /!d; / type="ping"/d;s/^.* \(uname="[^"]*"\).*>$/\1/' |
-		grep -v -F uname=\"$HOSTNAME\")
+		grep -iv -F uname=\"$HOSTNAME\")
 	set -- $other_node_uname_attrs
 	nr_other_nodes=$#
 
@@ -576,7 +576,7 @@ check_peer_node_reachable()
 			let "cibtimeout = cibtimeout * 5 / 4"
 		done
 		state_lines=$( set +x; echo "$cib_xml" | grep '<node_state ' |
-			grep -F -e "$other_node_uname_attrs" )
+			grep -iF -e "$other_node_uname_attrs" )
 
 		if $CTS_mode; then
 			# CTS requires startup-fencing=false.
@@ -584,7 +584,7 @@ check_peer_node_reachable()
 			# we would likely stay Consistent, and refuse to Promote.
 			# And CTS would be very unhappy.
 			# Pretend that the peer was reachable if we are missing a node_state entry for it.
-			if [[ $DRBD_PEER ]] && ! echo "$state_lines" | grep -q -F uname=\"$DRBD_PEER\" ; then
+			if [[ $DRBD_PEER ]] && ! echo "$state_lines" | grep -q -iF uname=\"$DRBD_PEER\" ; then
 				peer_state="reachable"
 				echo WARNING "CTS-mode: pretending that unseen node $DRBD_PEER was reachable"
 				return
@@ -634,7 +634,7 @@ check_peer_node_reachable()
 		# we know the peer or/and are a two node cluster
 		#
 
-		node_state=$(set +x; echo "$state_lines" | grep -F uname=\"$DRBD_PEER\")
+		node_state=$(set +x; echo "$state_lines" | grep -iF uname=\"$DRBD_PEER\")
 
 		# populates in_ccm, crmd, exxpected, join, will_fence=[false|true]
 		guess_if_pacemaker_will_fence
