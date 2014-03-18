@@ -635,7 +635,8 @@ const char *read_balancing_map[] = {
 	{ "csums-after-crash-only", BOOLEAN(csums_after_crash_only,			\
 						CSUMS_AFTER_CRASH_ONLY) },		\
 	{ "verify-alg", STRING(verify_alg) },						\
-	{ "use-rle", BOOLEAN(use_rle, USE_RLE) }
+	{ "use-rle", BOOLEAN(use_rle, USE_RLE) },					\
+	{ "socket-check-timeout", NUMERIC(sock_check_timeo, SOCKET_CHECK_TIMEO) }
 
 struct context_def disk_options_ctx = {
 	NLA_POLICY(disk_conf),

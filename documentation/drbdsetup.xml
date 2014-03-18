@@ -1094,6 +1094,27 @@
             <para>Introduced in 8.3.2.</para>
           </listitem>
         </varlistentry>
+
+        <varlistentry>
+          <term><option>--socket-check-timeout</option></term>
+
+          <listitem>
+            <para>In setups involving a DRBD-proxy and connections that experience a lot of
+	    buffer-bloat it might be necessary to set <option>ping-timeout</option> to an
+	    unusual high value. By default DRBD uses the same value to wait if a newly
+	    established TCP-connection is stable. Since the DRBD-proxy is usually located
+	    in the same data center such a long wait time may hinder DRBD's connect process.
+	    </para>
+	    <para>In such setups <option>socket-check-timeout</option> should be set to
+	    at least to the round trip time between DRBD and DRBD-proxy. I.e. in most
+	    cases to 1.</para>
+	    <para>
+	    The default unit is tenths of a second, the default value is 0 (which causes
+	    DRBD to use the value of <option>ping-timeout</option> instead).
+	    Introduced in 8.4.5.</para>
+          </listitem>
+
+        </varlistentry>
       </variablelist>
     </refsect2>
 
