@@ -325,7 +325,8 @@
             <option>no-tcp-cork</option>, <option>on-congestion</option>,
             <option>congestion-fill</option>, <option>congestion-extents</option>,
             <option>verify-alg</option>, <option>use-rle</option>,
-            <option>csums-alg</option>.</para>
+            <option>csums-alg</option>,
+            <option>csums-after-crash-only</option>.</para>
           </listitem>
         </varlistentry>
 
@@ -1611,6 +1612,28 @@
             for resync. But a large part of those will actually be still in sync, therefore using
             <option>csums-alg</option> will lower the required bandwidth in exchange for CPU
             cycles.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>csums-after-crash-only</option></term>
+          <listitem>
+            <para><indexterm significance="normal">
+                <primary>drbd.conf</primary>
+                <secondary>csums-after-crash-only</secondary>
+              </indexterm>
+	    Enabling this option (and csums-alg, above) makes it possible to
+	    use the checksum based resync only for the first resync after primary crash,
+	    but not for later "network hickups".</para>
+
+	    <para>In most cases, block that are marked as need-to-be-resynced are in fact changed,
+	    so calculating checksums, and both reading and writing the blocks on the resync target
+	    is all effective overhead.</para>
+
+	    <para>The advantage of checksum based resync is mostly after primary crash recovery,
+	    where the recovery marked larger areas (those covered by the activity log)
+	    as need-to-be-resynced, just in case.</para>
+            <para>Introduced in 8.4.5.</para>
           </listitem>
         </varlistentry>
 

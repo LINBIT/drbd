@@ -1057,6 +1057,25 @@
         </varlistentry>
 
         <varlistentry>
+          <term><option>--csums-after-crash-only</option></term>
+          <listitem>
+            <para>Enabling this option (and csums-alg, above) makes it possible to
+	    use the checksum based resync only for the first resync after primary crash,
+	    but not for later "network hickups".</para>
+
+	    <para>In most cases, block that are marked as need-to-be-resynced are in fact changed,
+	    so calculating checksums, and both reading and writing the blocks on the resync target
+	    is all effective overhead.</para>
+
+	    <para>The advantage of checksum based resync is mostly after primary crash recovery,
+	    where the recovery marked larger areas (those covered by the activity log)
+	    as need-to-be-resynced, just in case.</para>
+
+            <para>Introduced in 8.4.5.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
           <term><option>--use-rle</option></term>
 
           <listitem>
