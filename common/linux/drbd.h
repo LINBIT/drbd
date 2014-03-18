@@ -376,6 +376,7 @@ enum drbd_timeout_flag {
 };
 
 #define UUID_JUST_CREATED ((__u64)4)
+#define UUID_PRIMARY ((__u64)1)
 
 enum write_ordering_e {
 	WO_NONE,
