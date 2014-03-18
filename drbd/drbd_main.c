@@ -3956,9 +3956,9 @@ u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(lo
 void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
 	if (device->resource->role[NOW] == R_PRIMARY)
-		val |= 1;
+		val |= UUID_PRIMARY;
 	else
-		val &= ~((u64)1);
+		val &= ~UUID_PRIMARY;
 
 	device->ldev->md.current_uuid = val;
 	drbd_set_exposed_data_uuid(device, val);
@@ -4118,7 +4118,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 		if (bm_uuid)
 			drbd_warn(device, "bm UUID was already set: %llX\n", bm_uuid);
 
-		peer_md->bitmap_uuid = val & ~((u64)1);
+		peer_md->bitmap_uuid = val & ~UUID_PRIMARY;
 	}
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 

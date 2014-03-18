@@ -876,7 +876,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		idr_for_each_entry(&resource->devices, device, minor) {
 			set_disk_ro(device->vdisk, true);
 			if (get_ldev(device)) {
-				device->ldev->md.current_uuid &= ~(u64)1;
+				device->ldev->md.current_uuid &= ~UUID_PRIMARY;
 				put_ldev(device);
 			}
 		}
@@ -2064,7 +2064,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	nbc->md.node_id = resource->res_opts.node_id;
 
 	if (resource->role[NOW] == R_PRIMARY && device->exposed_data_uuid &&
-	    (device->exposed_data_uuid & ~((u64)1)) != (nbc->md.current_uuid & ~((u64)1))) {
+	    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
+	    (nbc->md.current_uuid & ~UUID_PRIMARY)) {
 		int data_present = false;
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
@@ -2223,9 +2224,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	mod_timer(&device->request_timer, jiffies + HZ);
 
 	if (resource->role[NOW] == R_PRIMARY)
-		device->ldev->md.current_uuid |=  (u64)1;
+		device->ldev->md.current_uuid |= UUID_PRIMARY;
 	else
-		device->ldev->md.current_uuid &= ~(u64)1;
+		device->ldev->md.current_uuid &= ~UUID_PRIMARY;
 
 	drbd_md_mark_dirty(device);
 	drbd_md_sync(device);
