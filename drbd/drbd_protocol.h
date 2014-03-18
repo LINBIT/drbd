@@ -245,6 +245,12 @@ struct p_protocol {
 
 } __packed;
 
+#define UUID_FLAG_DISCARD_MY_DATA 1
+#define UUID_FLAG_CRASHED_PRIMARY 2
+#define UUID_FLAG_INCONSISTENT 4
+#define UUID_FLAG_SKIP_INITIAL_SYNC 8
+#define UUID_FLAG_NEW_DATAGEN 16
+
 struct p_uuids {
 	u64 current_uuid;
 	u64 bitmap_uuid;
