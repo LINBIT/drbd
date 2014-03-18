@@ -250,6 +250,7 @@ struct p_protocol {
 #define UUID_FLAG_INCONSISTENT 4
 #define UUID_FLAG_SKIP_INITIAL_SYNC 8
 #define UUID_FLAG_NEW_DATAGEN 16
+#define UUID_FLAG_STABLE 32
 
 struct p_uuids {
 	u64 current_uuid;
