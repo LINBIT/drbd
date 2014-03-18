@@ -632,6 +632,8 @@ const char *read_balancing_map[] = {
           .unit = "bytes" },								\
 	{ "congestion-extents", NUMERIC(cong_extents, CONG_EXTENTS) },			\
 	{ "csums-alg", STRING(csums_alg) },						\
+	{ "csums-after-crash-only", BOOLEAN(csums_after_crash_only,			\
+						CSUMS_AFTER_CRASH_ONLY) },		\
 	{ "verify-alg", STRING(verify_alg) },						\
 	{ "use-rle", BOOLEAN(use_rle, USE_RLE) }
 

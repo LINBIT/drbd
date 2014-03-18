@@ -921,6 +921,8 @@ struct drbd_device {
 	struct list_head pending_master_completion[2];
 	struct list_head pending_completion[2];
 
+	/* use checksums for *this* resync */
+	bool use_csums;
 	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
 	unsigned long rs_total;
 	/* number of resync blocks that failed in this run */
