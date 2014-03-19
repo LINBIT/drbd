@@ -596,6 +596,49 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 #define drbd_calc_cpu_mask(A) ({})
 #endif
 
+bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] >= C_CONNECTED &&
+		    connection->peer_role[NOW] == R_PRIMARY)
+			return false;
+	}
+	rcu_read_unlock();
+
+	return true;
+}
+
+/* This function is supposed to have the same semantics as calc_device_stable() in drbd_state.c */
+static bool drbd_device_stable(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
+
+	if (resource->role[NOW] == R_PRIMARY ||
+	    !drbd_all_neighbor_secondary(resource))
+		return false;
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		peer_device = conn_peer_device(connection, device->vnr);
+		switch (peer_device->repl_state[NOW]) {
+		case L_WF_BITMAP_T:
+		case L_SYNC_TARGET:
+		case L_PAUSED_SYNC_T:
+			return false;
+		default:
+			continue;
+		}
+	}
+	rcu_read_unlock();
+
+	return true;
+}
+
 /**
  * drbd_header_size  -  size of a packet header
  *
@@ -974,6 +1017,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
+	if (drbd_device_stable(device))
+		uuid_flags |= UUID_FLAG_STABLE;
+
 	p->uuid_flags = cpu_to_be64(uuid_flags);
 	p->weak_nodes = cpu_to_be64(weak_nodes);
 
