@@ -119,8 +119,6 @@ retry:
 	       resource->susp_nod, sizeof(resource->susp_nod));
 	memcpy(state_change->resource->susp_fen,
 	       resource->susp_fen, sizeof(resource->susp_fen));
-	memcpy(state_change->resource->weak,
-	       resource->weak, sizeof(resource->weak));
 
 	device_state_change = state_change->devices;
 	peer_device_state_change = state_change->peer_devices;
@@ -228,8 +226,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp[OLD] != resource->susp[NEW] ||
 	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
-	    resource->susp_fen[OLD] != resource->susp_fen[NEW] ||
-	    resource->weak[OLD] != resource->weak[NEW])
+	    resource->susp_fen[OLD] != resource->susp_fen[NEW])
 		return true;
 
 	for_each_connection(connection, resource) {
@@ -271,7 +268,6 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->susp[NEW] = resource->susp[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
 	resource->susp_fen[NEW] = resource->susp_fen[NOW];
-	resource->weak[NEW] = resource->weak[NOW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
@@ -358,7 +354,6 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->susp[NOW] = resource->susp[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
 	resource->susp_fen[NOW] = resource->susp_fen[NEW];
-	resource->weak[NOW] = resource->weak[NEW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
@@ -726,7 +721,6 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	enum drbd_role *role = resource->role;
-	bool *weak = resource->weak;
 	int vnr;
 
 	b = buffer;
@@ -741,9 +735,6 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		b += scnprintf_io_suspend_flags(b, end - b, resource, NEW);
 		b += scnprintf(b, end - b, ") ");
 	}
-	if (weak[OLD] != weak[NEW])
-		b+= scnprintf(b, end - b, "weak( %d -> %d ) ",
-			      weak[OLD], weak[NEW]);
 	if (b != buffer) {
 		*(b-1) = 0;
 		drbd_info(resource, "%s%s\n", prefix, buffer);
@@ -812,11 +803,11 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 
 static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_state which)
 {
-	bool weak = device->resource->weak[which];
 	struct drbd_peer_device *peer_device;
 	int established = 0;
 
-	if (weak)
+	/* FIXME: Does this make sense? */
+	if (test_bit(UNSTABLE_RESYNC, &device->flags))
 		return true;
 
 	for_each_peer_device(peer_device, device) {
@@ -854,7 +845,6 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
-	bool *weak = resource->weak;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int vnr;
@@ -872,9 +862,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 				return SS_TWO_PRIMARIES;
 		}
 	}
-
-	if (weak[NEW] && role[NEW] == R_PRIMARY)
-		return SS_WEAKLY_CONNECTED;
 
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
@@ -1128,56 +1115,19 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 	return SS_SUCCESS;
 }
 
-bool drbd_calc_weak(struct drbd_resource *resource)
-{
-	enum drbd_role *role = resource->role;
-	struct drbd_connection *connection;
-	u64 primaries = 0, direct_primaries = 0, direct_secondaries = 0;
-
-	for_each_connection(connection, resource) {
-		if (connection->cstate[NEW] >= C_CONNECTED) {
-			const int peer_node_id = connection->net_conf->peer_node_id;
-			const u64 peer_node_mask = NODE_MASK(peer_node_id);
-			primaries |= connection->primary_mask;
-			if (peer_node_mask & connection->primary_mask)
-				direct_primaries |= peer_node_mask;
-			else
-				direct_secondaries |= peer_node_mask;
-		}
-	}
-
-	/* We might see temporarily false primaries because P_PRI_REACHABLE packets
-	   come in in arbitrary order. If a directly connected neighbor considers
-	   himself as secondary, trust that more than what other nodes say. */
-	primaries = primaries & ~direct_secondaries;
-
-	return role[NEW] == R_SECONDARY && primaries && primaries != direct_primaries;
-}
-
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
-	bool *weak = resource->weak;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	bool primary_visible = false;
 	int vnr;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
-		if (cstate[NEW] < C_CONNECTED) {
+		if (cstate[NEW] < C_CONNECTED)
 			connection->peer_role[NEW] = R_UNKNOWN;
-			if (connection->primary_mask > 0)
-				weak[NEW] = drbd_calc_weak(resource);
-				/* One might be tempted to reset primary_mask to 0 here, but
-				   it is not clear if this state transition will be committed.
-				   The primary_mask gets set to 0 in finish_state_change() */
-		}
-
-		if (connection->peer_role[NEW] == R_PRIMARY)
-			primary_visible = true;
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1280,23 +1230,6 @@ static void sanitize_state(struct drbd_resource *resource)
 				if (peer_disk_state[NEW] == D_CONSISTENT ||
 				    peer_disk_state[NEW] == D_OUTDATED)
 					peer_disk_state[NEW] = D_UP_TO_DATE;
-			}
-
-			if (weak[NEW] && disk_state[NEW] > D_OUTDATED)
-				disk_state[NEW] = D_OUTDATED;
-
-			/* Start to resync from reachable secondaries, if I loose the
-			   weak bit and have no primary in reach (== there are no primaries reachable) */
-			if (weak[OLD] && !weak[NEW] && !primary_visible &&
-			    repl_state[NEW] == L_ESTABLISHED && peer_disk_state[NEW] == D_UP_TO_DATE) {
-				const int my_node_id = resource->res_opts.node_id;
-				if (peer_device->bitmap_uuids[my_node_id] == drbd_current_uuid(device))
-					repl_state[NEW] = L_WF_BITMAP_T;
-				else
-					drbd_err(peer_device, "ASSERT FAILED "
-						 "bitmap of peer (%llX) == my current (%llX)",
-						 peer_device->bitmap_uuids[my_node_id],
-						 drbd_current_uuid(device));
 			}
 
 			/* Implications of the repl state on the disk states */
@@ -1532,7 +1465,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	enum drbd_role *role = resource->role;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
-	bool *weak = resource->weak;
 	bool starting_resync = false;
 	bool start_new_epoch = false;
 	int vnr;
@@ -1603,9 +1535,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (repl_state[OLD] <= L_ESTABLISHED && repl_state[NEW] == L_WF_BITMAP_S)
 				starting_resync = true;
-
-			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
-				drbd_info(peer_device, "Resync because leaving weak state\n");
 
 			/* Aborted verify run, or we reached the stop sector.
 			 * Log the last position, unless end-of-device. */
@@ -2071,7 +2000,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	enum drbd_role *role = resource_state_change->role;
 	bool *susp_nod = resource_state_change->susp_nod;
 	bool *susp_fen = resource_state_change->susp_fen;
-	bool *weak = resource_state_change->weak;
 	int n_device, n_connection;
 	bool still_connected = false;
 
@@ -2273,9 +2201,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				send_state = true;
 
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
-				send_state = true;
-
-			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
 				send_state = true;
 
 			/* We are in the progress to start a full sync. SyncTarget sets all slots. */
@@ -3161,9 +3086,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				R_PRIMARY : R_SECONDARY;
 			__change_peer_role(target_connection, target_role);
 		}
-		__change_weak(resource,
-			reply->weak_nodes &
-			NODE_MASK(resource->res_opts.node_id));
 		rv = end_state_change(resource, &irq_flags);
 	}
 	if (have_peers && !context->change_local_state_last)
@@ -3360,11 +3282,6 @@ void __change_io_susp_no_data(struct drbd_resource *resource, bool value)
 void __change_io_susp_fencing(struct drbd_resource *resource, bool value)
 {
 	resource->susp_fen[NEW] = value;
-}
-
-void __change_weak(struct drbd_resource *resource, bool value)
-{
-	resource->weak[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)

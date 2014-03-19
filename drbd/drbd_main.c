@@ -2924,7 +2924,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	setup_timer(&resource->peer_ack_timer, peer_ack_timer_fn, (unsigned long) resource);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
-	resource->weak[NOW] = false;
 	if (set_resource_options(resource, res_opts))
 		goto fail_free_name;
 	resource->max_node_id = res_opts->node_id;

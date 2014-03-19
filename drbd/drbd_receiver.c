@@ -5873,14 +5873,8 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (peer_device->repl_state[NOW] > L_ESTABLISHED)
 			return 0;
-		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device)) {
-			if (!connection->resource->weak[NOW]) {
-				drbd_err(peer_device, "ASSERT FAILED not weak and non matching current UUIDs\n");
-				drbd_uuid_dump_self(peer_device, 0, 0);
-				drbd_uuid_dump_peer(peer_device, 0, 0);
-			}
+		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device))
 			return 0;
-		}
 	}
 
 	/* Need to wait until the other receiver thread has called the
@@ -5923,7 +5917,6 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 static int receive_current_uuid(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
-	const int node_id = resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_uuid *p = pi->data;
@@ -5944,8 +5937,12 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_uuid_received_new_current(device, current_uuid, 0);
 		} else {
+#if 0
+			const int node_id = resource->res_opts.node_id;
+			/* FIXME: What does this code do? */
 			if (peer_device->bitmap_uuids[node_id] == 0 && resource->weak[NOW])
 				peer_device->bitmap_uuids[node_id] = peer_device->current_uuid;
+#endif
 		}
 		put_ldev(device);
 	} else if (resource->role[NOW] == R_PRIMARY) {
@@ -5964,8 +5961,7 @@ static int receive_reachability(struct drbd_connection *connection, struct packe
 	unsigned long irq_flags;
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
-	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~NODE_MASK(my_node_id);
-	__change_weak(resource, drbd_calc_weak(resource));
+	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~(1ULL << my_node_id);
 	if (!(connection->primary_mask & NODE_MASK(peer_node_id)) &&
 	    connection->peer_role[NOW] != R_SECONDARY)
 		__change_peer_role(connection, R_SECONDARY);

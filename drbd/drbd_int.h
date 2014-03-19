@@ -840,7 +840,6 @@ struct drbd_resource {
 	bool susp[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
 	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
-	bool weak[2];
 
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
