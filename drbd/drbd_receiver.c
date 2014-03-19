@@ -5020,10 +5020,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
-	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
-	reply.weak_nodes = be64_to_cpu(p->weak_nodes);
 	reply.reachable_nodes = directly_connected_nodes(resource) |
 				NODE_MASK(resource->res_opts.node_id);
+	reply.primary_nodes = 0;
+	reply.weak_nodes = 0;
 	reply.is_disconnect = 0;
 
 	/* Check for concurrent transactions and duplicate packets. */
@@ -5114,14 +5114,10 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
     next:
 	if (pi->cmd == P_TWOPC_PREPARE) {
-		if ((mask.peer == role_MASK &&
-		     val.peer == R_PRIMARY) ||
-		    (mask.peer != role_MASK &&
-		     resource->role[NOW] == R_PRIMARY)) {
-			u64 m = NODE_MASK(resource->res_opts.node_id);
-			reply.primary_nodes |= m;
-			m |= reply.reachable_nodes;
-			reply.weak_nodes |= ~m;
+		if ((mask.peer == role_MASK && val.peer == R_PRIMARY) ||
+		    (mask.peer != role_MASK && resource->role[NOW] == R_PRIMARY)) {
+			reply.primary_nodes = NODE_MASK(resource->res_opts.node_id);
+			reply.weak_nodes = ~reply.reachable_nodes;
 		}
 	}
 
@@ -5130,8 +5126,11 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
-		drbd_info(connection, "Preparing remote state change %u\n",
-			  reply.tid);
+		drbd_info(connection, "Preparing remote state change %u "
+			  "(primary_nodes=%lX, weak_nodes=%lX\n",
+			  reply.tid,
+			  (unsigned long)reply.primary_nodes,
+			  (unsigned long)reply.weak_nodes);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_ABORT:
@@ -5140,11 +5139,8 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		flags |= CS_ABORT;
 		break;
 	default:
-		drbd_info(connection, "Committing remote state change %u "
-				"(primary_nodes=%lX, weak_nodes=%lX)\n",
-			  reply.tid,
-			  (unsigned long)reply.primary_nodes,
-			  (unsigned long)reply.weak_nodes);
+		drbd_info(connection, "Committing remote state change %u\n",
+			  reply.tid);
 		break;
 	}
 
@@ -6625,16 +6621,14 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			    resource->twopc_reply.target_node_id) {
 				resource->twopc_reply.target_reachable_nodes |=
 					reachable_nodes;
-				resource->twopc_reply.target_weak_nodes |=
-					be64_to_cpu(p->weak_nodes);
 			} else {
 				resource->twopc_reply.reachable_nodes |=
 					reachable_nodes;
-				resource->twopc_reply.weak_nodes |=
-					be64_to_cpu(p->weak_nodes);
 			}
 			resource->twopc_reply.primary_nodes |=
 				be64_to_cpu(p->primary_nodes);
+			resource->twopc_reply.weak_nodes |=
+				be64_to_cpu(p->weak_nodes);
 		}
 
 		if (pi->cmd == P_TWOPC_YES)

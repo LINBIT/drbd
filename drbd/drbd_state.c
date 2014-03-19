@@ -2616,33 +2616,11 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 	}
 	for_each_connection(connection, resource) {
-		struct twopc_reply *reply = &resource->twopc_reply;
-		u64 primary_nodes, weak_nodes;
-
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 5);
 		rcu_read_unlock();
-
-		/* If the cluster is still connected after this transaction,
-		 * all nodes will receive the same primary_nodes and weak_nodes
-		 * masks (set by the caller).  Otherwise, there will be two
-		 * cluster segments after this transaction.
-		 */
-		primary_nodes = reply->primary_nodes;
-		if (be32_to_cpu(request->initiator_node_id) ==
-		    resource->res_opts.node_id &&
-		    be32_to_cpu(request->target_node_id) ==
-		    connection->net_conf->peer_node_id) {
-			primary_nodes &= reply->target_reachable_nodes;
-			weak_nodes = reply->target_weak_nodes;
-		} else {
-			primary_nodes &= reply->reachable_nodes;
-			weak_nodes = reply->weak_nodes;
-		}
-		request->primary_nodes = cpu_to_be64(primary_nodes);
-		request->weak_nodes = cpu_to_be64(weak_nodes);
 
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
@@ -2763,13 +2741,6 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 		}
 	}
 	rcu_read_unlock();
-
-	/* We must be directly connected to all primary nodes. */
-	if (rv == SS_SUCCESS &&
-	    (resource->twopc_reply.weak_nodes &
-	      NODE_MASK(resource->res_opts.node_id)))
-		rv = SS_WEAKLY_CONNECTED;
-
 	return rv;
 }
 
@@ -2960,8 +2931,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	request.target_node_id = cpu_to_be32(context->target_node_id);
 	request.nodes_to_reach = cpu_to_be64(
 		~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
-	request.primary_nodes = 0;  /* Computed in phase 1. */
-	request.weak_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(context->mask.i);
 	request.val = cpu_to_be32(context->val.i);
 
@@ -2975,7 +2944,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = context->target_node_id;
 	reply->primary_nodes = 0;
-	reply->target_weak_nodes = 0;
 	reply->weak_nodes = 0;
 
 	reply->reachable_nodes = directly_connected_nodes(resource) |
@@ -3014,25 +2982,22 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				if (context->val.conn == C_DISCONNECTING)
 					directly_reachable &= ~NODE_MASK(context->target_node_id);
 			}
+			reply->weak_nodes |= ~directly_reachable;
 			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
 			    (context->mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
 				reply->primary_nodes |=
 					NODE_MASK(resource->res_opts.node_id);
-				reply->weak_nodes |= ~directly_reachable;
 			}
-
+			drbd_info(resource, "State change %u: primary_nodes=%lX, weak_nodes=%lX\n",
+				  reply->tid, (unsigned long)reply->primary_nodes,
+				  (unsigned long)reply->weak_nodes);
 			if (context->mask.role == role_MASK && context->val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
-			if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED) {
-				/* This is a request to establish a connection. */
-				/* Establishing the connection is only allowed
-				 * if the resulting cluster contains no primary
-				 * nodes or all primary nodes are connected to each
-				 * other (i.e., they are in strongly_connected_nodes).  */
+			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
+			    (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED)) {
+				/* All the primary nodes must be connected to each other. */
 				if (reply->primary_nodes & reply->weak_nodes)
 					rv = SS_WEAKLY_CONNECTED;
-				/* FIXME: Where do we check against the
-				 * configuration if the set of primaries is allowed? */
 			}
 			if (!(context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) ||
 			    (reply->reachable_nodes & reply->target_reachable_nodes)) {
@@ -3046,10 +3011,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				m = reply->reachable_nodes | reply->target_reachable_nodes;
 				reply->reachable_nodes = m;
 				reply->target_reachable_nodes = m;
-
-				m = reply->weak_nodes | reply->target_weak_nodes;
-				reply->weak_nodes = m;
-				reply->target_weak_nodes = m;
 			} else {
 				for_each_connection(connection, resource) {
 					int node_id = connection->net_conf->peer_node_id;

@@ -1188,12 +1188,9 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	struct p_twopc_request *p;
 	int err;
 
-	drbd_debug(connection, "Sending %s request for state change %u "
-		   "(primary_nodes=%lX, weak_nodes=%lX)\n",
+	drbd_debug(connection, "Sending %s request for state change %u\n",
 		   drbd_packet_name(cmd),
-		   be32_to_cpu(request->tid),
-		   (unsigned long)be64_to_cpu(request->primary_nodes),
-		   (unsigned long)be64_to_cpu(request->weak_nodes));
+		   be32_to_cpu(request->tid));
 
 	sock = &connection->data;
 	p = conn_prepare_command(connection, sock);
