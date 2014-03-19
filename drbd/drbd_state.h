@@ -34,9 +34,8 @@ enum chg_state_flags {
 	CS_PREPARE	 = 1 << 6,
 	CS_PREPARED	 = 1 << 7,
 	CS_ABORT	 = 1 << 8,
-	CS_WEAK_NODES	 = 1 << 9,
-	CS_TWOPC	 = 1 << 10,
-	CS_IGN_OUTD_FAIL = 1 << 11,
+	CS_TWOPC	 = 1 << 9,
+	CS_IGN_OUTD_FAIL = 1 << 10,
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

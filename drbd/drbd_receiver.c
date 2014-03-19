@@ -4783,11 +4783,6 @@ __change_connection_state(struct drbd_connection *connection,
 		mask.susp_fen ^= -1;
 		__change_io_susp_fencing(resource, val.susp_fen);
 	}
-	if (flags & CS_WEAK_NODES) {
-		__change_weak(resource,
-			resource->twopc_reply.weak_nodes &
-			NODE_MASK(resource->res_opts.node_id));
-	}
 
 	if (mask.conn) {
 		mask.conn ^= -1;
@@ -5164,7 +5159,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			  reply.tid,
 			  (unsigned long)reply.primary_nodes,
 			  (unsigned long)reply.weak_nodes);
-		flags |= CS_WEAK_NODES;
 		break;
 	}
 

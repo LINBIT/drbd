@@ -3152,7 +3152,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	if (have_peers && context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 	if (rv >= SS_SUCCESS) {
-		context->flags |= CS_WEAK_NODES;
 		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
 		change(context, false);
 		if (target_connection &&
