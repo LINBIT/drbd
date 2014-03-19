@@ -276,7 +276,6 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	for_each_connection(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
 		connection->peer_role[NEW] = connection->peer_role[NOW];
-		connection->peer_weak[NEW] = connection->peer_weak[NOW];
 	}
 
 	idr_for_each_entry(&resource->devices, device, minor) {
@@ -364,7 +363,6 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
 		connection->peer_role[NOW] = connection->peer_role[NEW];
-		connection->peer_weak[NOW] = connection->peer_weak[NEW];
 	}
 
 	idr_for_each_entry(&resource->devices, device, minor) {
@@ -1250,7 +1248,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_conn_state *cstate = connection->cstate;
-			bool *peer_weak = connection->peer_weak;
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 
@@ -1287,9 +1284,6 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			if (weak[NEW] && disk_state[NEW] > D_OUTDATED)
 				disk_state[NEW] = D_OUTDATED;
-
-			if (peer_weak[NEW] && peer_disk_state[NEW] > D_OUTDATED)
-				peer_disk_state[NEW] = D_OUTDATED;
 
 			/* Start to resync from reachable secondaries, if I loose the
 			   weak bit and have no primary in reach (== there are no primaries reachable) */
@@ -3624,11 +3618,6 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 void __change_peer_role(struct drbd_connection *connection, enum drbd_role peer_role)
 {
 	connection->peer_role[NEW] = peer_role;
-}
-
-void __change_peer_weak(struct drbd_connection *connection, bool peer_weak)
-{
-	connection->peer_weak[NEW] = peer_weak;
 }
 
 void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
