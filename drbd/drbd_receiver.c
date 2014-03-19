@@ -5925,7 +5925,8 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 /* Accept a new current UUID generated on a diskless node, that just became primary */
 static int receive_current_uuid(struct drbd_connection *connection, struct packet_info *pi)
 {
-	const int node_id = connection->resource->res_opts.node_id;
+	struct drbd_resource *resource = connection->resource;
+	const int node_id = resource->res_opts.node_id;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_uuid *p = pi->data;
@@ -5946,11 +5947,11 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_uuid_received_new_current(device, current_uuid, 0);
 		} else {
-			if (peer_device->bitmap_uuids[node_id] == 0 && connection->resource->weak[NOW])
+			if (peer_device->bitmap_uuids[node_id] == 0 && resource->weak[NOW])
 				peer_device->bitmap_uuids[node_id] = peer_device->current_uuid;
 		}
 		put_ldev(device);
-	} else if (device->resource->role[NOW] == R_PRIMARY) {
+	} else if (resource->role[NOW] == R_PRIMARY) {
 		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 	}
 
