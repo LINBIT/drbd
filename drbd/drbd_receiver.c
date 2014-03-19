@@ -4687,7 +4687,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	bitmap_uuids_mask = be64_to_cpu(p->bitmap_uuids_mask);
-	if (bitmap_uuids_mask & ~(((u64)1 << MAX_PEERS) - 1))
+	if (bitmap_uuids_mask & ~(NODE_MASK(MAX_PEERS) - 1))
 		return -EIO;
 	bitmap_uuids = hweight64(bitmap_uuids_mask);
 
@@ -5009,7 +5009,7 @@ static void update_reachability(struct drbd_connection *connection, u64 mask)
 
 	spin_lock_irq(&resource->req_lock);
 	if (connection->cstate[NOW] >= C_CONNECTED) {
-		mask &= ~((u64)1 << resource->res_opts.node_id);
+		mask &= ~NODE_MASK(resource->res_opts.node_id);
 		connection->primary_mask = mask;
 	}
 	spin_unlock_irq(&resource->req_lock);
@@ -5962,7 +5962,7 @@ static int receive_reachability(struct drbd_connection *connection, struct packe
 	unsigned long irq_flags;
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
-	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~(1ULL << my_node_id);
+	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~NODE_MASK(my_node_id);
 	__change_weak(resource, drbd_calc_weak(resource));
 	if (!(connection->primary_mask & NODE_MASK(peer_node_id)) &&
 	    connection->peer_role[NOW] != R_SECONDARY)

@@ -1307,7 +1307,7 @@ static u64 calc_reachability(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	const int my_node_id = resource->res_opts.node_id;
-	u64 primary_mask = resource->role[NOW] == R_PRIMARY ? 1ULL << my_node_id : 0;
+	u64 primary_mask = resource->role[NOW] == R_PRIMARY ? NODE_MASK(my_node_id) : 0;
 	struct drbd_connection *c;
 
 	spin_lock_irq(&resource->req_lock);
@@ -1316,7 +1316,7 @@ static u64 calc_reachability(struct drbd_connection *connection)
 			continue;
 		primary_mask |= c->primary_mask;
 	}
-	primary_mask &= ~((u64)1 << connection->net_conf->peer_node_id);
+	primary_mask &= ~NODE_MASK(connection->net_conf->peer_node_id);
 	spin_unlock_irq(&resource->req_lock);
 
 	return primary_mask;
@@ -4128,7 +4128,7 @@ static void propagate_uuids(struct drbd_device *device, u64 nodes)
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
-		if (!(nodes & (1ULL << peer_device->node_id)))
+		if (!(nodes & NODE_MASK(peer_device->node_id)))
 			continue;
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 			continue;
@@ -4171,7 +4171,7 @@ void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	got_new_bitmap_uuid = _rotate_current_into_bitmap(device, 1ULL << peer_device->node_id);
+	got_new_bitmap_uuid = _rotate_current_into_bitmap(device, NODE_MASK(peer_device->node_id));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
