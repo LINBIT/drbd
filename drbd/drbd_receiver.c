@@ -4575,10 +4575,11 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 {
+	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	struct drbd_device *device = device = peer_device->device;
 	int updated_uuids = 0, err = 0;
 
-	if (peer_device->repl_state[NOW] < L_ESTABLISHED &&
+	if (repl_state < L_ESTABLISHED &&
 	    device->disk_state[NOW] < D_INCONSISTENT &&
 	    device->resource->role[NOW] == R_PRIMARY &&
 	    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
@@ -4591,7 +4592,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 
 	if (get_ldev(device)) {
 		int skip_initial_sync =
-			peer_device->repl_state[NOW] == L_ESTABLISHED &&
+			repl_state == L_ESTABLISHED &&
 			peer_device->connection->agreed_pro_version >= 90 &&
 			drbd_current_uuid(device) == UUID_JUST_CREATED &&
 			(peer_device->uuid_flags & UUID_FLAG_SKIP_INITIAL_SYNC);
@@ -4640,6 +4641,13 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 			set_bit(INITIAL_STATE_SENT, &peer_device->flags);
 			err = drbd_send_current_state(peer_device);
 		}
+	}
+
+	if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+	    !(peer_device->uuid_flags & UUID_FLAG_STABLE)) {
+		/* The sync source is receiving data from somewhere else, so
+		 * the resync will not put us into consistent state.  */
+		set_bit(UNSTABLE_RESYNC, &device->flags);
 	}
 
 	return err;

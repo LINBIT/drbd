@@ -1597,14 +1597,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
-
-			if (repl_state[OLD] == L_SYNC_TARGET &&
-			    !(repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_PAUSED_SYNC_T))
-				clear_bit(WEAK_WHILE_RESYNC, &device->flags);
-		}
-
-		for_each_peer_device(peer_device, device) {
-			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_role *peer_role = connection->peer_role;
@@ -1614,10 +1606,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (weak[OLD] && !weak[NEW] && repl_state[NEW] == L_WF_BITMAP_T)
 				drbd_info(peer_device, "Resync because leaving weak state\n");
-
-			if (resource->weak[NEW] &&
-			    (repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_PAUSED_SYNC_T))
-				set_bit(WEAK_WHILE_RESYNC, &device->flags);
 
 			/* Aborted verify run, or we reached the stop sector.
 			 * Log the last position, unless end-of-device. */

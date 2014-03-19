@@ -610,6 +610,7 @@ enum {
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	UNREGISTERED,
+	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 };
 
 /* flag bits per peer device */
@@ -625,7 +626,6 @@ enum {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
-	WEAK_WHILE_RESYNC,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock

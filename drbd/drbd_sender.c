@@ -967,10 +967,10 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		}
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
-			if (!test_bit(WEAK_WHILE_RESYNC, &device->flags))
+			if (!test_bit(UNSTABLE_RESYNC, &device->flags))
 				__change_disk_state(device, D_UP_TO_DATE);
 
-			if (!test_bit(WEAK_WHILE_RESYNC, &device->flags) &&
+			if (!test_bit(UNSTABLE_RESYNC, &device->flags) &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
 				drbd_uuid_resync_finished(peer_device);
@@ -978,8 +978,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
 
-				if (test_bit(WEAK_WHILE_RESYNC, &device->flags))
-					drbd_info(peer_device, "Was weak during resync\n");
+				if (test_bit(UNSTABLE_RESYNC, &device->flags))
+					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
 		} else if ((repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) &&
 			   new_peer_disk_state != D_MASK) {
@@ -1693,8 +1693,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
 	__change_repl_state(peer_device, side);
-	if (side == L_SYNC_TARGET)
+	if (side == L_SYNC_TARGET) {
 		__change_disk_state(device, D_INCONSISTENT);
+		clear_bit(UNSTABLE_RESYNC, &device->flags);
+	}
 	else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	r = end_state_change_locked(device->resource);
