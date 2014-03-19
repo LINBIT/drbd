@@ -5344,10 +5344,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		} else if (os.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING || os.disk == D_NEGOTIATING)) {
 			new_repl_state = drbd_attach_handshake(peer_device);
-		} else if (os.conn == L_ESTABLISHED && peer_state.conn == L_WF_BITMAP_T &&
-			 connection->peer_weak[NOW] && !peer_state.weak) {
-			drbd_info(peer_device, "Resync because peer leaves weak state\n");
-			new_repl_state = L_WF_BITMAP_S;
 		}
 
 		put_ldev(device);
@@ -5392,7 +5388,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		__change_repl_state(peer_device, new_repl_state);
 	if (connection->peer_role[NOW] == R_UNKNOWN)
 		__change_peer_role(connection, peer_state.role);
-	__change_peer_weak(connection, peer_state.weak);
 	__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
 	repl_state = peer_device->repl_state;

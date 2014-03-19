@@ -1147,8 +1147,6 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 		return -EIO;
 
 	if (peer_device->connection->agreed_pro_version < 110) {
-		state.weak = 0;
-
 		/* D_DETACHING was introduced with drbd-9.0 */
 		if (state.disk > D_DETACHING)
 			state.disk--;

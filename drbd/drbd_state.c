@@ -538,7 +538,6 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.susp_nod = resource->susp_nod[which],
 		.susp_fen = resource->susp_fen[which],
 		.pdsk = D_UNKNOWN,  /* really: undefined */
-		.weak = resource->weak[which],
 	} };
 
 	return rv;
@@ -1885,7 +1884,6 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	state.susp = resource_state_change->susp[which];
 	state.susp_nod = resource_state_change->susp_nod[which];
 	state.susp_fen = resource_state_change->susp_fen[which];
-	state.weak = resource_state_change->weak[which];
 	state.disk = device_state_change->disk_state[which];
 	if (n_connection != -1) {
 		struct drbd_connection_state_change *connection_state_change =
