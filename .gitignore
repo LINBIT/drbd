@@ -1,7 +1,3 @@
-/autom4te.cache
-/config.log
-/config.status
-/configure
 /drbd-kernel.spec
 /drbd-km.spec
 /tags
