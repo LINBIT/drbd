@@ -26,7 +26,7 @@
 #include <linux/drbd.h>
 #include "drbd_strings.h"
 
-const char *drbd_conn_s_names[] = {
+static const char *__conn_state_names[] = {
 	[C_STANDALONE]       = "StandAlone",
 	[C_DISCONNECTING]    = "Disconnecting",
 	[C_UNCONNECTED]      = "Unconnected",
@@ -37,10 +37,14 @@ const char *drbd_conn_s_names[] = {
 	[C_TEAR_DOWN]        = "TearDown",
 	[C_CONNECTING]       = "Connecting",
 	[C_CONNECTED]	     = "Connected",
-	0
 };
 
-const char *drbd_repl_s_names[] = {
+struct state_names drbd_conn_state_names = {
+	.names = __conn_state_names,
+	.size = sizeof __conn_state_names / sizeof __conn_state_names[0],
+};
+
+static const char *__repl_state_names[] = {
 	[L_OFF]              = "Off",
 	[L_ESTABLISHED]      = "Established",
 	[L_STARTING_SYNC_S]  = "StartingSyncS",
@@ -56,17 +60,25 @@ const char *drbd_repl_s_names[] = {
 	[L_PAUSED_SYNC_T]    = "PausedSyncT",
 	[L_AHEAD]            = "Ahead",
 	[L_BEHIND]           = "Behind",
-	0
 };
 
-const char *drbd_role_s_names[] = {
+struct state_names drbd_repl_state_names = {
+	.names = __repl_state_names,
+	.size = sizeof __repl_state_names / sizeof __repl_state_names[0],
+};
+
+static const char *__role_state_names[] = {
+	[R_UNKNOWN]   = "Unknown",
 	[R_PRIMARY]   = "Primary",
 	[R_SECONDARY] = "Secondary",
-	[R_UNKNOWN]   = "Unknown",
-	0
 };
 
-const char *drbd_disk_s_names[] = {
+struct state_names drbd_role_state_names = {
+	.names = __role_state_names,
+	.size = sizeof __role_state_names / sizeof __role_state_names[0],
+};
+
+static const char *__disk_state_names[] = {
 	[D_DISKLESS]     = "Diskless",
 	[D_ATTACHING]    = "Attaching",
 	[D_DETACHING]    = "Detaching",
@@ -77,10 +89,14 @@ const char *drbd_disk_s_names[] = {
 	[D_UNKNOWN]      = "DUnknown",
 	[D_CONSISTENT]   = "Consistent",
 	[D_UP_TO_DATE]   = "UpToDate",
-	0
 };
 
-const char *drbd_state_sw_errors[] = {
+struct state_names drbd_disk_state_names = {
+	.names = __disk_state_names,
+	.size = sizeof __disk_state_names / sizeof __disk_state_names[0],
+};
+
+static const char *__error_messages[] = {
 	[-SS_TWO_PRIMARIES] = "Multiple primaries not allowed by config",
 	[-SS_NO_UP_TO_DATE_DISK] = "Need access to UpToDate data",
 	[-SS_NO_LOCAL_DISK] = "Can not resync without local disk",
@@ -104,40 +120,44 @@ const char *drbd_state_sw_errors[] = {
 	[-SS_INTERRUPTED] = "Interrupted state change",
 	[-SS_TIMEOUT] = "Timeout in operation",
 	[-SS_WEAKLY_CONNECTED] = "Primary nodes must be strongly connected among each other",
-	0
+};
+
+struct state_names drbd_error_messages = {
+	.names = __error_messages,
+	.size = sizeof __error_messages / sizeof __error_messages[0],
 };
 
 const char *drbd_repl_str(enum drbd_repl_state s)
 {
-	int size = sizeof drbd_repl_s_names / sizeof drbd_repl_s_names[0];
-	return s < 0 || s >= size ||
-	       !drbd_repl_s_names[s] ? "?" : drbd_repl_s_names[s];
+	return (s < 0 || s >= drbd_repl_state_names.size ||
+	        !drbd_repl_state_names.names[s]) ?
+	       "?" : drbd_repl_state_names.names[s];
 }
 
 const char *drbd_conn_str(enum drbd_conn_state s)
 {
-	int size = sizeof drbd_conn_s_names / sizeof drbd_conn_s_names[0];
-	return s < 0 || s >= size ||
-	       !drbd_conn_s_names[s] ? "?" : drbd_conn_s_names[s];
+	return (s < 0 || s >= drbd_conn_state_names.size ||
+	        !drbd_conn_state_names.names[s]) ?
+	       "?" : drbd_conn_state_names.names[s];
 }
 
 const char *drbd_role_str(enum drbd_role s)
 {
-	int size = sizeof drbd_role_s_names / sizeof drbd_role_s_names[0];
-	return s < 0 || s >= size ||
-	       !drbd_role_s_names[s] ? "?" : drbd_role_s_names[s];
+	return (s < 0 || s >= drbd_role_state_names.size ||
+	        !drbd_role_state_names.names[s]) ?
+	       "?" : drbd_role_state_names.names[s];
 }
 
 const char *drbd_disk_str(enum drbd_disk_state s)
 {
-	int size = sizeof drbd_disk_s_names / sizeof drbd_disk_s_names[0];
-	return s < 0 || s >= size ||
-	       !drbd_disk_s_names[s] ? "?" : drbd_disk_s_names[s];
+	return (s < 0 || s >= drbd_disk_state_names.size ||
+	        !drbd_disk_state_names.names[s]) ?
+	       "?" : drbd_disk_state_names.names[s];
 }
 
 const char *drbd_set_st_err_str(enum drbd_state_rv err)
 {
-	int size = sizeof drbd_state_sw_errors / sizeof drbd_state_sw_errors[0];
-	return -err < 0 || -err >= size ||
-	       !drbd_state_sw_errors[-err] ? "?" : drbd_state_sw_errors[-err];
+	return (-err < 0 || -err >= drbd_error_messages.size ||
+	        !drbd_error_messages.names[-err]) ?
+	       "?" : drbd_error_messages.names[-err];
 }
