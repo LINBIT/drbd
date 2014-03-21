@@ -1,11 +1,16 @@
 #ifndef __DRBD_STRINGS_H
 #define __DRBD_STRINGS_H
 
-extern const char *drbd_conn_s_names[];
-extern const char *drbd_repl_s_names[];
-extern const char *drbd_role_s_names[];
-extern const char *drbd_disk_s_names[];
-extern const char *drbd_state_sw_errors[];
+struct state_names {
+	const char **names;
+	unsigned int size;
+};
+
+extern struct state_names drbd_conn_state_names;
+extern struct state_names drbd_repl_state_names;
+extern struct state_names drbd_role_state_names;
+extern struct state_names drbd_disk_state_names;
+extern struct state_names drbd_error_messages;
 
 extern const char *drbd_repl_str(enum drbd_repl_state);
 extern const char *drbd_conn_str(enum drbd_conn_state);
