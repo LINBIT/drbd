@@ -804,7 +804,6 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
-	int established = 0;
 
 	/* FIXME: Does this make sense? */
 	if (test_bit(UNSTABLE_RESYNC, &device->flags))
@@ -823,8 +822,6 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 		case L_ESTABLISHED:
 		case L_VERIFY_S:
 		case L_VERIFY_T:
-			established++;
-			continue;
 		case L_OFF:
 			continue;
 		case L_WF_SYNC_UUID:
@@ -836,8 +833,6 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 			return true;
 		}
 	}
-	if (established)
-		return false;
 
 	return true;
 }
@@ -991,10 +986,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) &&
 				  peer_device->connection->agreed_pro_version < 88)
 				return SS_NOT_SUPPORTED;
-
-			if (!(repl_state[OLD] >= L_ESTABLISHED && peer_disk_state[OLD] == D_UNKNOWN) &&
-			     (repl_state[NEW] >= L_ESTABLISHED && peer_disk_state[NEW] == D_UNKNOWN))
-				return SS_CONNECTED_OUTDATES;
 
 			if (repl_state[NEW] != repl_state[OLD] &&
 			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
@@ -1222,13 +1213,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[NEW] <= D_FAILED))
 				repl_state[NEW] = L_ESTABLISHED;
 
-			/* D_CONSISTENT and D_OUTDATED vanish when we get connected */
+			/* D_CONSISTENT vanish when we get connected */
 			if (repl_state[NEW] >= L_ESTABLISHED && repl_state[NEW] < L_AHEAD) {
-				if (disk_state[NEW] == D_CONSISTENT ||
-				    disk_state[NEW] == D_OUTDATED)
+				if (disk_state[NEW] == D_CONSISTENT)
 					disk_state[NEW] = D_UP_TO_DATE;
-				if (peer_disk_state[NEW] == D_CONSISTENT ||
-				    peer_disk_state[NEW] == D_OUTDATED)
+				if (peer_disk_state[NEW] == D_CONSISTENT)
 					peer_disk_state[NEW] = D_UP_TO_DATE;
 			}
 

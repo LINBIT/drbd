@@ -4575,7 +4575,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
-	struct drbd_device *device = device = peer_device->device;
+	struct drbd_device *device = peer_device->device;
 	int updated_uuids = 0, err = 0;
 
 	if (repl_state < L_ESTABLISHED &&
@@ -4616,6 +4616,21 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
 			drbd_warn(peer_device, "received new current UUID: %llX\n", peer_device->current_uuid);
 			drbd_uuid_received_new_current(device, peer_device->current_uuid, weak_nodes);
+		}
+
+		if (device->disk_state[NOW] > D_OUTDATED) {
+			int hg, unused_int;
+			hg = drbd_uuid_compare(peer_device, &unused_int, &unused_int);
+
+			if (hg == -2 || hg == -1) {
+				struct drbd_resource *resource = device->resource;
+				unsigned long irq_flags;
+
+				begin_state_change(resource, &irq_flags, CS_VERBOSE);
+				if (device->disk_state[NEW] > D_OUTDATED)
+					__change_disk_state(device, D_OUTDATED);
+				end_state_change(resource, &irq_flags);
+			}
 		}
 
 		put_ldev(device);
@@ -4673,7 +4688,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	for (; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 		peer_device->history_uuids[i] = 0;
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
-	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags) | UUID_FLAG_STABLE;
 	peer_device->uuids_received = true;
 
 	return __receive_uuids(peer_device, 0);
