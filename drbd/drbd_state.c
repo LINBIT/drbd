@@ -1974,6 +1974,40 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 	}
 }
 
+/* This function is supposed to have the same semantics as drbd_device_stable() in drbd_main.c */
+static u64 calc_device_stable(struct drbd_state_change *state_change, int n_device, enum which_state which)
+{
+	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
+	enum drbd_role *role = resource_state_change->role;
+	int n_connection;
+
+	if (role[which] == R_PRIMARY)
+		return false;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_connection_state_change *connection_state_change =
+			&state_change->connections[n_connection];
+		enum drbd_role *peer_role = connection_state_change->peer_role;
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+		enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
+
+		if (peer_role[which] == R_PRIMARY)
+			return false;
+
+		switch (repl_state[which]) {
+		case L_WF_BITMAP_T:
+		case L_SYNC_TARGET:
+		case L_PAUSED_SYNC_T:
+			return false;
+		default:
+			continue;
+		}
+	}
+
+	return true;
+}
+
 /*
  * Perform after state change actions that may sleep.
  */
@@ -1999,6 +2033,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
 		bool create_new_uuid = false;
+		bool device_stable[2];
+		enum which_state which;
+
+		for (which = OLD; which <= NEW; which++)
+			device_stable[which] = calc_device_stable(state_change, n_device, which);
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
 			effective_disk_size_determined = true;
@@ -2008,7 +2047,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				&state_change->peer_devices[
 					n_device * state_change->n_connections + n_connection];
 			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
-			enum which_state which;
 
 			for (which = OLD; which <= NEW; which++) {
 				if (peer_disk_state[which] == D_UP_TO_DATE)
@@ -2267,6 +2305,20 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 							   BM_LOCK_CLEAR | BM_LOCK_BULK,
 							   peer_device);
 				drbd_print_uuids(peer_device, "Clear bitmap; UUIDs");
+			}
+
+			if (!device_stable[OLD] && device_stable[NEW] &&
+			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
+			    !(role[OLD] == R_PRIMARY) &&
+			    !(peer_role[OLD] == R_PRIMARY) &&
+			    get_ldev(device)) {
+				/* Offer all peers a resync, with the exception of ...
+				   ... the node that made me up-to-date (with a resync)
+				   ... I was primary
+				   ... the peer that transitioned from primary to secondary
+				*/
+				drbd_send_uuids(peer_device, UUID_FLAG_GOT_STABLE, 0);
+				put_ldev(device);
 			}
 
 			if (send_state)

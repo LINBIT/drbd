@@ -4572,6 +4572,22 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
+void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	enum drbd_repl_state new_repl_state;
+
+	new_repl_state = drbd_attach_handshake(peer_device);
+	if (new_repl_state == L_ESTABLISHED) {
+		return;
+	} else if (new_repl_state == -1) {
+		drbd_info(peer_device, "Unexpected result of handshake() %d!\n", new_repl_state);
+		return;
+	}
+
+	drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
+	change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+}
+
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
@@ -4698,7 +4714,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 {
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
-	int bitmap_uuids, history_uuids, rest, i, pos;
+	int bitmap_uuids, history_uuids, rest, i, pos, err;
 	u64 bitmap_uuids_mask;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -4740,7 +4756,28 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
 
-	return __receive_uuids(peer_device, be64_to_cpu(p->weak_nodes));
+	err = __receive_uuids(peer_device, be64_to_cpu(p->weak_nodes));
+
+	if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
+		struct drbd_device *device = peer_device->device;
+
+		if (peer_device->repl_state[NOW] == L_ESTABLISHED && get_ldev(device)) {
+			drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
+			drbd_resync_after_unstable(peer_device);
+			put_ldev(device);
+		}
+	}
+
+	if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
+		struct drbd_device *device = peer_device->device;
+
+		if (get_ldev(device)) {
+			drbd_resync_after_unstable(peer_device);
+			put_ldev(device);
+		}
+	}
+
+	return err;
 }
 
 /**
