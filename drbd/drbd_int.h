@@ -285,8 +285,6 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
 extern struct list_head drbd_resources; /* RCU, updates: global_state_mutex */
 
-extern const char *cmdname(enum drbd_packet cmd);
-
 /* for sending/receiving the bitmap,
  * possibly in some encoding scheme */
 struct bm_xfer_ctx {

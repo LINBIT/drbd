@@ -4165,7 +4165,7 @@ static int ignore_remaining_packet(struct drbd_connection *connection, struct pa
 static int config_unknown_volume(struct drbd_connection *connection, struct packet_info *pi)
 {
 	drbd_warn(connection, "%s packet received for volume %d, which is not configured locally\n",
-		  cmdname(pi->cmd), pi->vnr);
+		  drbd_packet_name(pi->cmd), pi->vnr);
 	return ignore_remaining_packet(connection, pi);
 }
 
@@ -4900,7 +4900,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 	if (!expect(connection, connection->agreed_pro_version >= 110)) {
 		drbd_err(connection, "Packet %s not allowed in protocol version %d\n",
-			 cmdname(pi->cmd),
+			 drbd_packet_name(pi->cmd),
 			 connection->agreed_pro_version);
 		return -EIO;
 	}
@@ -5052,7 +5052,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 				drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
 			} else {
 				drbd_info(connection, "Ignoring %s packet %u\n",
-					  cmdname(pi->cmd),
+					  drbd_packet_name(pi->cmd),
 					  reply.tid);
 			}
 			return 0;
@@ -5069,7 +5069,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			/* We have committed or aborted this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
 			drbd_debug(connection, "Ignoring %s packet %u\n",
-				   cmdname(pi->cmd),
+				   drbd_packet_name(pi->cmd),
 				   reply.tid);
 			update_reachability(connection, reply.primary_nodes);
 			return 0;
@@ -6031,14 +6031,14 @@ static void drbdd(struct drbd_connection *connection)
 		cmd = &drbd_cmd_handler[pi.cmd];
 		if (unlikely(pi.cmd >= ARRAY_SIZE(drbd_cmd_handler) || !cmd->fn)) {
 			drbd_err(connection, "Unexpected data packet %s (0x%04x)",
-				 cmdname(pi.cmd), pi.cmd);
+				 drbd_packet_name(pi.cmd), pi.cmd);
 			goto err_out;
 		}
 
 		shs = cmd->pkt_size;
 		if (pi.size > shs && !cmd->expect_payload) {
 			drbd_err(connection, "No payload expected %s l:%d\n",
-				 cmdname(pi.cmd), pi.size);
+				 drbd_packet_name(pi.cmd), pi.size);
 			goto err_out;
 		}
 
@@ -6053,12 +6053,12 @@ static void drbdd(struct drbd_connection *connection)
 		err = cmd->fn(connection, &pi);
 		if (err) {
 			drbd_err(connection, "error receiving %s, e: %d l: %d!\n",
-				 cmdname(pi.cmd), err, pi.size);
+				 drbd_packet_name(pi.cmd), err, pi.size);
 			goto err_out;
 		}
 		if (jiffies - start > HZ) {
 			drbd_debug(connection, "Request %s took %ums\n",
-				   cmdname(pi.cmd), jiffies_to_msecs(jiffies - start));
+				   drbd_packet_name(pi.cmd), jiffies_to_msecs(jiffies - start));
 		}
 	}
 	return;
@@ -6281,7 +6281,7 @@ static int drbd_do_features(struct drbd_connection *connection)
 
 	if (pi.cmd != P_CONNECTION_FEATURES) {
 		drbd_err(connection, "expected ConnectionFeatures packet, received: %s (0x%04x)\n",
-			 cmdname(pi.cmd), pi.cmd);
+			 drbd_packet_name(pi.cmd), pi.cmd);
 		return -1;
 	}
 
@@ -6420,7 +6420,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 
 	if (pi.cmd != P_AUTH_CHALLENGE) {
 		drbd_err(connection, "expected AuthChallenge packet, received: %s (0x%04x)\n",
-			 cmdname(pi.cmd), pi.cmd);
+			 drbd_packet_name(pi.cmd), pi.cmd);
 		rv = 0;
 		goto fail;
 	}
@@ -6494,7 +6494,7 @@ static int drbd_do_auth(struct drbd_connection *connection)
 
 	if (pi.cmd != P_AUTH_RESPONSE) {
 		drbd_err(connection, "expected AuthResponse packet, received: %s (0x%04x)\n",
-			 cmdname(pi.cmd), pi.cmd);
+			 drbd_packet_name(pi.cmd), pi.cmd);
 		rv = 0;
 		goto fail;
 	}
@@ -6649,7 +6649,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
 	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
 		drbd_debug(connection, "Got a %s reply for state change %u\n",
-			   cmdname(pi->cmd),
+			   drbd_packet_name(pi->cmd),
 			   resource->twopc_reply.tid);
 
 		if (pi->cmd == P_TWOPC_YES) {
@@ -6687,7 +6687,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 		}
 	} else {
 		drbd_debug(connection, "Ignoring %s reply for state change %u\n",
-			   cmdname(pi->cmd),
+			   drbd_packet_name(pi->cmd),
 			   be32_to_cpu(p->tid));
 	}
 	spin_unlock_irq(&resource->req_lock);
@@ -7303,7 +7303,7 @@ int drbd_asender(struct drbd_thread *thi)
 			cmd = &asender_tbl[pi.cmd];
 			if (pi.cmd >= ARRAY_SIZE(asender_tbl) || !cmd->fn) {
 				drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
-					 cmdname(pi.cmd), pi.cmd);
+					 drbd_packet_name(pi.cmd), pi.cmd);
 				goto disconnect;
 			}
 			expect = header_size + cmd->pkt_size;

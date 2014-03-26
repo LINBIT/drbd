@@ -3247,7 +3247,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 		return;
 
 	drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
-		   twopc_reply.tid, cmdname(cmd));
+		   twopc_reply.tid, drbd_packet_name(cmd));
 
 	if (cmd == P_TWOPC_NO) {
 		del_timer(&resource->twopc_timer);

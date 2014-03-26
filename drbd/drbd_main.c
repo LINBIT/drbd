@@ -1190,7 +1190,7 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 
 	drbd_debug(connection, "Sending %s request for state change %u "
 		   "(primary_nodes=%lX, weak_nodes=%lX)\n",
-		   cmdname(cmd),
+		   drbd_packet_name(cmd),
 		   be32_to_cpu(request->tid),
 		   (unsigned long)be64_to_cpu(request->primary_nodes),
 		   (unsigned long)be64_to_cpu(request->weak_nodes));
@@ -1242,7 +1242,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 		drbd_debug(connection, "Sending %s reply for state change %u "
 			   "(reachable_nodes=%lX, primary_nodes=%lX, "
 			   "weak_nodes=%lX)\n",
-			   cmdname(cmd),
+			   drbd_packet_name(cmd),
 			   reply->tid,
 			   (unsigned long)reply->reachable_nodes,
 			   (unsigned long)reply->primary_nodes,
@@ -4527,88 +4527,6 @@ static int w_md_sync(struct drbd_work *w, int unused)
 #endif
 	drbd_md_sync(device);
 	return 0;
-}
-
-const char *cmdname(enum drbd_packet cmd)
-{
-	/* THINK may need to become several global tables
-	 * when we want to support more than
-	 * one PRO_VERSION */
-	static const char *cmdnames[] = {
-		[P_DATA]	        = "Data",
-		[P_DATA_REPLY]	        = "DataReply",
-		[P_RS_DATA_REPLY]	= "RSDataReply",
-		[P_BARRIER]	        = "Barrier",
-		[P_BITMAP]	        = "ReportBitMap",
-		[P_BECOME_SYNC_TARGET]  = "BecomeSyncTarget",
-		[P_BECOME_SYNC_SOURCE]  = "BecomeSyncSource",
-		[P_UNPLUG_REMOTE]	= "UnplugRemote",
-		[P_DATA_REQUEST]	= "DataRequest",
-		[P_RS_DATA_REQUEST]     = "RSDataRequest",
-		[P_SYNC_PARAM]	        = "SyncParam",
-		[P_SYNC_PARAM89]	= "SyncParam89",
-		[P_PROTOCOL]            = "ReportProtocol",
-		[P_UUIDS]	        = "ReportUUIDs",
-		[P_SIZES]	        = "ReportSizes",
-		[P_STATE]	        = "ReportState",
-		[P_SYNC_UUID]           = "ReportSyncUUID",
-		[P_AUTH_CHALLENGE]      = "AuthChallenge",
-		[P_AUTH_RESPONSE]	= "AuthResponse",
-		[P_PING]		= "Ping",
-		[P_PING_ACK]	        = "PingAck",
-		[P_RECV_ACK]	        = "RecvAck",
-		[P_WRITE_ACK]	        = "WriteAck",
-		[P_RS_WRITE_ACK]	= "RSWriteAck",
-		[P_SUPERSEDED]		= "DiscardWrite",
-		[P_NEG_ACK]	        = "NegAck",
-		[P_NEG_DREPLY]	        = "NegDReply",
-		[P_NEG_RS_DREPLY]	= "NegRSDReply",
-		[P_BARRIER_ACK]	        = "BarrierAck",
-		[P_STATE_CHG_REQ]       = "StateChgRequest",
-		[P_STATE_CHG_REPLY]     = "StateChgReply",
-		[P_OV_REQUEST]          = "OVRequest",
-		[P_OV_REPLY]            = "OVReply",
-		[P_OV_RESULT]           = "OVResult",
-		[P_CSUM_RS_REQUEST]     = "CsumRSRequest",
-		[P_RS_IS_IN_SYNC]	= "CsumRSIsInSync",
-		[P_COMPRESSED_BITMAP]   = "CBitmap",
-		[P_DELAY_PROBE]         = "DelayProbe",
-		[P_OUT_OF_SYNC]		= "OutOfSync",
-		[P_RETRY_WRITE]		= "RetryWrite",
-		[P_RS_CANCEL]		= "RSCancel",
-		[P_CONN_ST_CHG_REQ]	= "conn_st_chg_req",
-		[P_CONN_ST_CHG_REPLY]	= "conn_st_chg_reply",
-		[P_RETRY_WRITE]		= "retry_write",
-		[P_PROTOCOL_UPDATE]	= "protocol_update",
-		[P_TWOPC_PREPARE]	= "twopc_prepare",
-		[P_TWOPC_ABORT]		= "twopc_abort",
-		[P_DAGTAG]		= "dagtag",
-		[P_PEER_ACK]		= "peer_ack",
-		[P_PEERS_IN_SYNC]       = "peers_in_sync",
-		[P_UUIDS110]            = "uuids_110",
-		[P_PEER_DAGTAG]         = "peer_dagtag",
-		[P_CURRENT_UUID]        = "current_uuid",
-		[P_TWOPC_COMMIT]	= "twopc_commit",
-		[P_TWOPC_YES]		= "twopc_yes",
-		[P_TWOPC_NO]		= "twopc_no",
-		[P_TWOPC_RETRY]		= "twopc_retry",
-		[P_PRI_REACHABLE]       = "pri_reachable",
-		/* enum drbd_packet, but not commands - obsoleted flags:
-		 *	P_MAY_IGNORE
-		 *	P_MAX_OPT_CMD
-		 */
-	};
-
-	/* too big for the array: 0xfffX */
-	if (cmd == P_INITIAL_META)
-		return "InitialMeta";
-	if (cmd == P_INITIAL_DATA)
-		return "InitialData";
-	if (cmd == P_CONNECTION_FEATURES)
-		return "ConnectionFeatures";
-	if (cmd >= ARRAY_SIZE(cmdnames))
-		return "Unknown";
-	return cmdnames[cmd];
 }
 
 /**
