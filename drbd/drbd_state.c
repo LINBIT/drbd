@@ -2410,6 +2410,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		drbd_md_sync(device);
 	}
 
+	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
+		send_new_state_to_all_peer_devices(state_change, 0);
+
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
 		struct drbd_connection *connection = connection_state_change->connection;
