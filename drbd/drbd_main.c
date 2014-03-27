@@ -923,7 +923,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
 }
 
-static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
+static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md;
@@ -975,7 +975,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	p->uuid_flags = cpu_to_be64(uuid_flags);
-	p->offline_mask = cpu_to_be64(mask);
+	p->weak_nodes = cpu_to_be64(weak_nodes);
 
 	put_ldev(device);
 	return drbd_send_command(peer_device, sock, P_UUIDS110,
@@ -984,10 +984,10 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 				 NULL, 0);
 }
 
-int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 mask)
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
 {
 	if (peer_device->connection->agreed_pro_version >= 110)
-		return _drbd_send_uuids110(peer_device, uuid_flags, mask);
+		return _drbd_send_uuids110(peer_device, uuid_flags, weak_nodes);
 	else
 		return _drbd_send_uuids(peer_device, uuid_flags);
 }
@@ -4017,13 +4017,13 @@ peer_device_by_bitmap_index(struct drbd_device *device, int bitmap_index)
 	return NULL;
 }
 
-static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
+static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
 	int max_peers, bitmap_index, node_id;
 	unsigned long long bm_uuid;
-	u64 mask = 0;
+	u64 got_new_bitmap_uuid = 0;
 	bool do_it;
 
 	max_peers = device->bitmap->bm_max_peers;
@@ -4036,7 +4036,7 @@ static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 force_mas
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 			do_it = pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED;
 			node_id = peer_device->node_id;
-			do_it = do_it || NODE_MASK(peer_device->node_id) & force_mask;
+			do_it = do_it || NODE_MASK(peer_device->node_id) & weak_nodes;
 		} else {
 			do_it = true;
 			node_id = peer_md[bitmap_index].node_id;
@@ -4048,19 +4048,19 @@ static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 force_mas
 		if (do_it) {
 			peer_md[bitmap_index].bitmap_uuid = device->ldev->md.current_uuid;
 			drbd_md_mark_dirty(device);
-			mask |= NODE_MASK(node_id);
+			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
 	}
 
-	return mask;
+	return got_new_bitmap_uuid;
 }
 
-static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
 {
 	if (device->disk_state[NOW] < D_UP_TO_DATE)
 		return 0;
 
-	return _rotate_current_into_bitmap(device, force_mask);
+	return _rotate_current_into_bitmap(device, weak_nodes);
 }
 
 
@@ -4074,12 +4074,12 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
 void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
-	u64 node_mask, val;
+	u64 got_new_bitmap_uuid, weak_nodes, val;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	node_mask = rotate_current_into_bitmap(device, forced ? ~0ULL : 0);
+	got_new_bitmap_uuid = rotate_current_into_bitmap(device, forced ? ~0ULL : 0);
 
-	if (!node_mask) {
+	if (!got_new_bitmap_uuid) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		return;
 	}
@@ -4092,9 +4092,10 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
 
+	weak_nodes = ~directly_connected_nodes(device->resource);
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
-			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, node_mask);
+			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
 	}
 }
 
@@ -4139,7 +4140,7 @@ static void propagate_uuids(struct drbd_device *device, u64 nodes)
 	}
 }
 
-void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 node_mask) __must_hold(local)
+void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 weak_nodes) __must_hold(local)
 {
 	bool set_current = true;
 	struct drbd_peer_device *peer_device;
@@ -4156,7 +4157,7 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 nod
 	}
 
 	if (set_current) {
-		got_new_bitmap_uuid = rotate_current_into_bitmap(device, node_mask);
+		got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes);
 		__drbd_uuid_set_current(device, val);
 	}
 
